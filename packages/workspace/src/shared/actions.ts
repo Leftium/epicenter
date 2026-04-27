@@ -141,6 +141,18 @@ export type Actions = {
 };
 
 /**
+ * The runtime-injected `system.*` action namespace. Single canonical type:
+ * `attachSync` constructs `systemActions: SystemActions` (TypeScript checks
+ * the construction shape against this) and `peer.ts` derives the proxy type
+ * `peer<{ system: SystemActions }>` from the same source. Drift between the
+ * runtime handler return and the consumer's expected return becomes a
+ * compile error.
+ */
+export type SystemActions = {
+	describe: Query<undefined, ActionManifest>;
+};
+
+/**
  * Define a query (read operation) with full type inference.
  *
  * Returns the handler with metadata attached — the action callable IS the

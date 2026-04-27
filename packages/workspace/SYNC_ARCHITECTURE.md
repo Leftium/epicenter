@@ -365,3 +365,330 @@ console.log(Y.encodeStateVector(doc));
 | **persistence**      | Local persistence for offline support       |
 
 The architecture scales from "just my devices on Tailscale" to "add a cloud server later" without fundamental changes. Start simple and add providers as needed.
+
+---
+
+# Inside `attachSync`: the supervisor loop
+
+Everything above describes the *topology* — which devices talk to which sync nodes. This section describes what happens inside one `attachSync(doc, config)` call: the WebSocket lifecycle, the supervisor that owns it, the timers that keep it alive, and the RPC dispatch tree.
+
+`attachSync` is the entire network surface. One call wires sync, presence (awareness), and RPC dispatch. Understanding the supervisor is the difference between "WebSocket reconnection just works" and being able to debug "why is my CLI hanging."
+
+## What `attachSync` does at construction
+
+One call, four jobs (in `packages/workspace/src/document/attach-sync.ts`):
+
+```
+attachSync(doc, { device, url, getToken, waitFor: idb })
+        │
+        ├── 1. Validate `'system' not in userActions`
+        │      └─ throws at attach time on collision
+        │
+        ├── 2. Build the dispatch tree:
+        │        actions = {
+        │          ...userActions,   ← yours
+        │          system: {         ← injected
+        │            describe: defineQuery({...}),
+        │          },
+        │        }
+        │
+        ├── 3. If `device` was passed, build awareness:
+        │        awareness.setLocal({ device })   ← presence-only, ~150B
+        │
+        └── 4. Start the supervisor loop
+               └─ owns the WebSocket; reconnects forever
+                  with exponential backoff
+```
+
+The function returns synchronously. The first connect happens asynchronously after `waitFor` resolves (typically `idb.whenLoaded`).
+
+## Layer split: doc factory vs runtime wrapper
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  client.ts          (singleton + lifecycle)             │
+│  ─ resolves device descriptor                           │
+│  ─ wires auth, calls openXxx(...)                       │
+│  ─ exports the workspace binding                        │
+└────────────────────────┬────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────┐
+│  browser.ts/extension.ts   (runtime wrapper)            │
+│  ─ adds idb (persistence)                               │
+│  ─ adds broadcastChannel (cross-tab)                    │
+│  ─ adds sync (network + presence + RPC)                 │
+└────────────────────────┬────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────┐
+│  index.ts           (doc factory — pure)                │
+│  ─ ydoc, encryption, tables, kv, actions                │
+│  ─ no network, no auth, no platform                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+The wrapper takes the doc bundle (which carries `.actions`) and a `device` and hands them to `attachSync`. The doc factory has no awareness, no sync, no platform concerns.
+
+## The dispatch tree
+
+Pretend an app exposes:
+
+```ts
+userActions = {
+  tabs: {
+    close: defineMutation({...}),
+    list:  defineQuery({...}),
+  },
+  bookmarks: {
+    create: defineMutation({...}),
+  },
+}
+```
+
+After `attachSync` runs:
+
+```
+actions = {
+  tabs:                 ┐
+    close                 ← USER (yours)
+    list                ┘
+  bookmarks:
+    create
+  system:               ┐
+    describe              ← SYSTEM (runtime-injected)
+                        ┘
+}
+```
+
+User and system actions are **structurally identical** — both built with `defineQuery`/`defineMutation`, both reachable via `sync.rpc(target, '<path>', ...)`. The dispatcher (`resolveActionPath`) doesn't distinguish.
+
+The only thing that separates them is the reservation: a top-level `system` key in *your* actions throws at construction. The reservation is shallow (only top-level), follows JSON-RPC's `rpc.*` precedent, and the snapshot is taken at attach time — post-attach mutations to `userActions` don't affect dispatch.
+
+## Awareness vs RPC: what's where
+
+This is the architectural split worth memorizing:
+
+```
+AWARENESS                          RPC
+─────────                          ───
+Always-on broadcast                Request/response
+Every ~15s rebroadcast             Once per call
+Presence only                      Capability + dispatch
+~150 bytes/peer                    Whatever you send
+30s TTL (auto-cleanup)             Per-call timeout
+
+"Who's online?"                    "Hey, do this"
+"What's their identity?"           "What can you do?" (system.describe)
+                                   "Close these tabs" (user actions)
+```
+
+Awareness carries `{id, name, platform}` only. The action manifest moved to `system.describe` — fetched on demand instead of broadcast every 15s. The trip-wire was N²·M wire traffic; the fix was on-demand RPC.
+
+## The supervisor loop and its timers
+
+`attachSync` runs ONE loop that owns the WebSocket. Six timers participate:
+
+```
+                    ┌──────────────────────────────┐
+                    │   SUPERVISOR LOOP            │
+                    │   while (desired==='online') │
+                    └──────────────┬───────────────┘
+                                   │
+                       ┌───────────▼───────────┐
+                       │  CONNECT_TIMEOUT_MS   │
+                       │       15_000          │
+                       │  if not OPEN by then, │
+                       │  ws.close()           │
+                       └───────────┬───────────┘
+                                   │ open
+                       ┌───────────▼───────────┐
+                       │   handshake           │  ← STEP1 → STEP2 → resolveConnected()
+                       └───────────┬───────────┘
+                                   │
+        ┌──────────────────────────▼──────────────────────────┐
+        │  CONNECTED — four timers run in parallel             │
+        ├──────────────────────────────────────────────────────┤
+        │                                                      │
+        │  PING_INTERVAL_MS = 60_000                           │
+        │   every 60s: ws.send('ping')                         │
+        │   keeps NAT/proxy alive                              │
+        │                                                      │
+        │  LIVENESS_CHECK_INTERVAL_MS = 10_000                 │
+        │   every 10s: if Date.now() - lastMsg > 90_000        │
+        │              ws.close()  ← server is dead            │
+        │                                                      │
+        │  syncStatusTimer = 100ms (debounce)                  │
+        │   after a doc-update burst, send SYNC_STATUS once    │
+        │   instead of per-keystroke                           │
+        │                                                      │
+        │  RPC timers (per outbound call)                      │
+        │   default DEFAULT_RPC_TIMEOUT_MS = 5_000             │
+        │   if no response by then → RpcError.Timeout          │
+        │                                                      │
+        └──────────────────────────┬───────────────────────────┘
+                                   │ ws.onclose
+                       ┌───────────▼───────────┐
+                       │   BACKOFF             │
+                       │  base 500ms           │
+                       │  × 2^retries          │
+                       │  capped at 30_000     │
+                       │  jittered 0.5–1.0     │
+                       └───────────┬───────────┘
+                                   │
+                                   └──→ back to top
+```
+
+Constants in plain English:
+
+| Constant | Value | What it does |
+|---|---|---|
+| `CONNECT_TIMEOUT_MS` | 15s | Give up on a half-open WebSocket |
+| `PING_INTERVAL_MS` | 60s | Send `'ping'` to keep the connection warm |
+| `LIVENESS_TIMEOUT_MS` | 90s | If no message arrived in this long, declare the server dead |
+| `LIVENESS_CHECK_INTERVAL_MS` | 10s | How often we evaluate the 90s rule |
+| `DEFAULT_RPC_TIMEOUT_MS` | 5s | Per-call timeout for an outbound RPC |
+| `BASE_DELAY_MS` / `MAX_DELAY_MS` | 500ms / 30s | Reconnect backoff bounds |
+| `syncStatusTimer` | 100ms | Debounce for batching SYNC_STATUS frames |
+
+## The cancellation thread (`runId`)
+
+The single load-bearing safety property in the loop. Every `await` in `runLoop` is followed by:
+
+```ts
+if (cancelled(myRunId)) continue;
+```
+
+`cancelled(myRunId)` returns true if `runId` advanced since this iteration captured it. `goOffline()` and `reconnect()` both bump `runId`, so an iteration that was mid-await when intent changed will `continue` to a fresh iteration with fresh state.
+
+Without this thread, a stale token from an awaited `getToken()` could be used to open a new connection that the user already asked to close. Or two supervisor loops could run on top of each other after a reconnect-during-handshake.
+
+## Lifecycle promises
+
+| Promise | Resolves when | Rejects when |
+|---|---|---|
+| `whenConnected` | First successful handshake (STEP2 or UPDATE arrives) | Doc destroyed before first handshake (permanent failure) |
+| `whenDisposed` | Supervisor exits AND WebSocket reaches CLOSED (or 1s safety timeout fires) | Never |
+
+`whenConnected` was previously "may hang forever" — fixed to reject on dispose so CLIs that `await sync.whenConnected` get a useful failure instead of a wedge.
+
+## RPC: peer dispatch surface
+
+`SyncAttachment` is the single source of truth for "who else is here":
+
+```ts
+sync.peers()                           // Map<clientId, PeerAwarenessState>
+sync.find(deviceId)                    // FoundPeer | undefined
+sync.observe(callback)                 // unsubscribe fn
+sync.rpc(target, action, input, opts)  // typed remote call
+```
+
+Cross-device action call:
+
+```ts
+const macbook = peer<TabManagerActions>(fuji.sync, 'macbook-pro');
+const result = await macbook.tabs.close({ tabIds: [1, 2] });
+```
+
+`peer<T>(sync, deviceId)` returns a typed Proxy. Walking `.tabs.close` builds nested proxies; calling `.tabs.close(input)` dispatches via `sync.rpc(clientId, 'tabs.close', input)`.
+
+`describePeer(sync, deviceId)` is a thin wrapper that calls `peer<SystemMeta>(sync, deviceId).system.describe()` to fetch the peer's full action manifest on demand.
+
+### Peer-removed race semantics
+
+Both `peer<T>` and `describePeer` race the RPC against a peer-removed signal. If the matched peer disappears mid-call, the in-flight Promise rejects immediately with `RpcError.PeerLeft` rather than waiting the full RPC timeout:
+
+```
+peer<T>(sync, 'mac').foo()
+  │
+  ├─ subscribe to sync.observe(callback)
+  ├─ fire: sync.rpc(...)
+  │
+  ├─ if RPC resolves first:        → return its result
+  ├─ if peer leaves awareness first → reject with PeerLeft
+  └─ either way: unsubscribe
+```
+
+## A full call: `epicenter list --peer macbook-pro`
+
+End-to-end. The CLI process is "Fuji"; the peer is "macbook-pro" (a tab-manager instance).
+
+```
+┌────────────────────┐                     ┌────────────────────┐
+│  Fuji (CLI)        │                     │  macbook-pro       │
+│  workspace.sync    │                     │  (tab-manager)     │
+└─────────┬──────────┘                     └─────────┬──────────┘
+          │                                          │
+          │ 1. CLI loads epicenter.config.ts         │
+          │    workspace.sync.peers() returns:       │
+          │    Map { 42 → {device:{id:'macbook-pro'}}}│
+          │                                          │
+          │ 2. describePeer(sync, 'macbook-pro')     │
+          │    → peer<SystemMeta>().system.describe()│
+          │                                          │
+          │ 3. internally: sync.find('macbook-pro')  │
+          │    returns { clientId: 42, state }       │
+          │                                          │
+          │ 4. sync.rpc(42, 'system.describe',       │
+          │             undefined)                   │
+          │                                          │
+          │    ─── encodeRpcRequest ───────────►     │
+          │                                          │
+          │    [waits up to 5s, RPC timer running]   │
+          │                                          │ 5. ws.onmessage
+          │                                          │    decodes RPC request
+          │                                          │
+          │                                          │ 6. resolveActionPath(
+          │                                          │      actions,
+          │                                          │      'system.describe')
+          │                                          │
+          │                                          │ 7. handler runs:
+          │                                          │    describeActions(userActions)
+          │                                          │    → ActionManifest
+          │                                          │
+          │   ◄──── encodeRpcResponse ────────────   │
+          │                                          │
+          │ 8. ws.onmessage matches requestId in     │
+          │    pendingRequests, resolves the         │
+          │    Promise with Ok(manifest)             │
+          │                                          │
+          │ 9. CLI renders the manifest as a tree    │
+          │                                          │
+```
+
+## Construction → first connect, in time
+
+```
+t=0ms      attachSync(doc, { device, url, getToken, waitFor: idb })
+              ├─ validates `'system' not in userActions`
+              ├─ injects system.describe
+              ├─ builds awareness, sets {device} synchronously
+              ├─ wires ydoc.on('updateV2'), awareness.on('update')
+              └─ kicks off async waitFor → ensureSupervisor()
+
+              returns SyncAttachment immediately
+
+t=~10ms    idb.whenLoaded resolves (typical hot start)
+
+t=~10ms    supervisor: getToken() → token
+           supervisor: new WebSocket(url, [main, bearer.<token>])
+
+           [CONNECT_TIMEOUT_MS = 15s timer running]
+
+t=~50ms    ws.onopen
+           send STEP1
+           start liveness monitor
+
+t=~80ms    ws.onmessage: STEP2 from server
+           handshakeComplete = true
+           status: { phase: 'connected', hasLocalChanges }
+           resolveConnected()
+
+t=80ms+    [from here on, four loops run forever:]
+            • PING every 60s
+            • LIVENESS check every 10s (90s threshold)
+            • per-RPC 5s timers as calls happen
+            • per-doc-update-burst SYNC_STATUS at 100ms quiet
+```
+
+## Mental model in one paragraph
+
+`attachSync(doc, { device })` is the wire. It owns presence (awareness), dispatch (RPC), and the supervisor (reconnect loop). One call, all of it. The dispatch tree is `{ ...userActions, system: { describe } }` with `system.*` reserved. Awareness is identity-only (~150B/peer, broadcast every 15s, 30s TTL). RPC is capability and dispatch (request/response, 5s timeout, racing against peer-removed). Two typed proxies (`peer<T>` for user actions, `describePeer` for system) walk the same wire. The whole thing is one supervisor loop, six timers, a single dispatch tree, and a `runId` cancellation thread.

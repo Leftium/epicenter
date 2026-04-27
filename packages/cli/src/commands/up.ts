@@ -51,6 +51,8 @@ import {
 	workspaceOption,
 } from '../util/common-options.js';
 import { resolveEntry } from '../util/resolve-entry.js';
+import { listCore, type ListCtx, type ListResult } from './list.js';
+import { runCore, type RunCtx, type RunResult } from './run.js';
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
 const SHUTDOWN_BUDGET_MS = 2000;
@@ -374,26 +376,46 @@ function makeHandler(
 				send({ id: req.id, ok: true, data: rows });
 				return;
 			}
-			case 'list':
-				send({
-					id: req.id,
-					ok: false,
-					error: {
-						name: 'NotImplemented',
-						message: 'list IPC dispatch lands in Wave 6',
-					},
-				});
+			case 'list': {
+				const ctx = req.args as ListCtx;
+				void (async () => {
+					try {
+						const data: ListResult = await listCore(entry, ctx);
+						send({ id: req.id, ok: true, data });
+					} catch (cause) {
+						send({
+							id: req.id,
+							ok: false,
+							error: {
+								name: cause instanceof Error ? cause.name : 'Error',
+								message:
+									cause instanceof Error ? cause.message : String(cause),
+							},
+						});
+					}
+				})();
 				return;
-			case 'run':
-				send({
-					id: req.id,
-					ok: false,
-					error: {
-						name: 'NotImplemented',
-						message: 'run IPC dispatch lands in Wave 6',
-					},
-				});
+			}
+			case 'run': {
+				const ctx = req.args as RunCtx;
+				void (async () => {
+					try {
+						const data: RunResult = await runCore(entry, ctx);
+						send({ id: req.id, ok: true, data });
+					} catch (cause) {
+						send({
+							id: req.id,
+							ok: false,
+							error: {
+								name: cause instanceof Error ? cause.name : 'Error',
+								message:
+									cause instanceof Error ? cause.message : String(cause),
+							},
+						});
+					}
+				})();
 				return;
+			}
 			case 'shutdown':
 				send({ id: req.id, ok: true });
 				triggerShutdown();

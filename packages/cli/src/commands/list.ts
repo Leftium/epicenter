@@ -142,13 +142,6 @@ const waitOption: Options = {
 	description: `Ms to wait for awareness to populate; only meaningful with --peer/--all (default ${DEFAULT_WAIT_MS})`,
 };
 
-const noUpOption: Options = {
-	type: 'boolean',
-	default: false,
-	description:
-		'Skip the `epicenter up` daemon if one is running and use a transient connection instead',
-};
-
 export const listCommand: CommandModule = {
 	command: 'list [path]',
 	describe:
@@ -164,38 +157,35 @@ export const listCommand: CommandModule = {
 			.option('peer', peerOption)
 			.option('all', allOption)
 			.option('wait', waitOption)
-			.option('no-up', noUpOption)
 			.options(formatYargsOptions()),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
 		const path = typeof args.path === 'string' ? args.path : '';
 		const format = args.format as Format;
 		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
-		const noUp = args['no-up'] === true;
 		const userWorkspace = workspaceFromArgv(args);
 
 		const mode = parseMode(args);
 		if (mode === null) return; // mutex error, exitCode already set
 
-		// Auto-detect path: if a daemon is alive for this dir, dispatch through
-		// it instead of bringing up a transient peer of our own.
-		if (!noUp) {
-			const dispatched = await tryDaemonDispatch<ListResult>(
-				args,
-				userWorkspace,
-				'list',
-				() => ({ path, mode, waitMs }),
-			);
-			if (dispatched.kind === 'mismatch') return;
-			if (dispatched.kind === 'dispatched') {
-				if (dispatched.result.error === null) {
-					await renderResult(dispatched.result.data, path, format);
-					return;
-				}
-				outputError(`error: ${dispatched.result.error.message}`);
-				process.exitCode = 1;
+		// Auto-detect: if a daemon is alive for this dir, dispatch through it
+		// instead of bringing up a transient peer of our own. Falls through to
+		// the in-process path when no daemon answers.
+		const dispatched = await tryDaemonDispatch<ListResult>(
+			args,
+			userWorkspace,
+			'list',
+			() => ({ path, mode, waitMs }),
+		);
+		if (dispatched.kind === 'mismatch') return;
+		if (dispatched.kind === 'dispatched') {
+			if (dispatched.result.error === null) {
+				await renderResult(dispatched.result.data, path, format);
 				return;
 			}
+			outputError(`error: ${dispatched.result.error.message}`);
+			process.exitCode = 1;
+			return;
 		}
 
 		// Fallback: load config in-process and run listCore directly.

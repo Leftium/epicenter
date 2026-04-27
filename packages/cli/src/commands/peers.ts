@@ -79,19 +79,12 @@ export const peersCommand: CommandModule = {
 				default: DEFAULT_WAIT_MS,
 				description: `Ms to wait for awareness to populate (default ${DEFAULT_WAIT_MS}; pass 0 for a one-shot snapshot)`,
 			})
-			.option('no-up', {
-				type: 'boolean',
-				default: false,
-				description:
-					'Skip the `epicenter up` daemon if one is running and use a transient connection instead',
-			})
 			.options(formatYargsOptions()),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
 		const userWorkspace = workspaceFromArgv(args);
 		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
 		const format = args.format as 'json' | 'jsonl' | undefined;
-		const noUp = args['no-up'] === true;
 
 		// Invariant 6: cap, hint, then proceed.
 		if (waitMs > HARD_CAP_MS) {
@@ -104,29 +97,27 @@ export const peersCommand: CommandModule = {
 			console.error('Tip: for long-lived presence, see `epicenter up`.');
 		}
 
-		// Auto-detect: if a daemon is alive for this --dir, ask it for the
-		// peers snapshot instead of standing up our own transient peer.
-		if (!noUp) {
-			const dispatched = await tryDaemonDispatch<
-				Array<{ clientID: number; device: AwarenessState['device'] }>
-			>(args, userWorkspace, 'peers', () => ({ wait: waitMs }));
-			if (dispatched.kind === 'mismatch') return;
-			if (dispatched.kind === 'dispatched') {
-				if (dispatched.result.error === null) {
-					const peers = new Map<number, AwarenessState>();
-					for (const row of dispatched.result.data) {
-						peers.set(row.clientID, { device: row.device });
-					}
-					emit(
-						[{ name: userWorkspace ?? '<daemon>', peers, entry: undefined }],
-						{ elideHeader: true, format },
-					);
-					return;
+		// Auto-detect: ask the daemon for the peers snapshot when one is
+		// running. Falls through to the transient in-process path otherwise.
+		const dispatched = await tryDaemonDispatch<
+			Array<{ clientID: number; device: AwarenessState['device'] }>
+		>(args, userWorkspace, 'peers', () => ({ wait: waitMs }));
+		if (dispatched.kind === 'mismatch') return;
+		if (dispatched.kind === 'dispatched') {
+			if (dispatched.result.error === null) {
+				const peers = new Map<number, AwarenessState>();
+				for (const row of dispatched.result.data) {
+					peers.set(row.clientID, { device: row.device });
 				}
-				console.error(`error: ${dispatched.result.error.message}`);
-				process.exitCode = 1;
+				emit(
+					[{ name: userWorkspace ?? '<daemon>', peers, entry: undefined }],
+					{ elideHeader: true, format },
+				);
 				return;
 			}
+			console.error(`error: ${dispatched.result.error.message}`);
+			process.exitCode = 1;
+			return;
 		}
 
 		await using config = await loadConfig(dirFromArgv(args));

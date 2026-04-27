@@ -3,13 +3,11 @@ import { existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { Socket } from 'bun';
-
 import {
-	type IpcHandler,
-	type IpcFrame,
+	type IpcRoutes,
 	type IpcServerHandle,
 	startIpcServer,
+	unlinkSocketFile,
 } from './ipc-server';
 
 let socketPath: string;
@@ -33,157 +31,91 @@ afterEach(() => {
 	}
 });
 
-/** Per-connection state for the test client socket. */
-type TestSocketData = { buffer: string; onLine: (line: string) => void };
-
-/**
- * Connect, send pre-encoded raw lines (each terminated with `\n` by us),
- * collect newline-delimited JSON response frames, then resolve.
- */
-function collectRaw(
+async function post(
 	socketPath: string,
-	rawLines: string[],
-	expectedFrames: number,
-	timeoutMs = 1000,
-): Promise<{ frames: IpcFrame[]; socket: Socket<TestSocketData> }> {
-	return new Promise((resolve, reject) => {
-		const frames: IpcFrame[] = [];
-		const timer = setTimeout(() => {
-			reject(
-				new Error(
-					`timed out waiting for ${expectedFrames} frames; got ${frames.length}`,
-				),
-			);
-		}, timeoutMs);
-
-		Bun.connect<TestSocketData>({
-			unix: socketPath,
-			socket: {
-				open(s) {
-					s.data = {
-						buffer: '',
-						onLine: (line) => {
-							frames.push(JSON.parse(line) as IpcFrame);
-							if (frames.length >= expectedFrames) {
-								clearTimeout(timer);
-								resolve({ frames, socket: s });
-							}
-						},
-					};
-					for (const raw of rawLines) s.write(raw);
-				},
-				data(s, chunk) {
-					s.data.buffer += chunk.toString('utf8');
-					let nl = s.data.buffer.indexOf('\n');
-					while (nl !== -1) {
-						const line = s.data.buffer.slice(0, nl);
-						s.data.buffer = s.data.buffer.slice(nl + 1);
-						s.data.onLine(line);
-						nl = s.data.buffer.indexOf('\n');
-					}
-				},
-				close() {},
-				error(_s, err) {
-					clearTimeout(timer);
-					reject(err);
-				},
-			},
-		}).catch((err) => {
-			clearTimeout(timer);
-			reject(err);
-		});
+	cmd: string,
+	body?: unknown,
+): Promise<Response> {
+	return fetch(`http://daemon/${cmd}`, {
+		unix: socketPath,
+		method: 'POST',
+		body: body === undefined ? '' : JSON.stringify(body),
 	});
-}
-
-function collect(
-	socketPath: string,
-	requests: object[],
-	expectedFrames: number,
-	timeoutMs = 1000,
-): Promise<{ frames: IpcFrame[]; socket: Socket<TestSocketData> }> {
-	return collectRaw(
-		socketPath,
-		requests.map((r) => `${JSON.stringify(r)}\n`),
-		expectedFrames,
-		timeoutMs,
-	);
 }
 
 describe('startIpcServer', () => {
-	test('round-trip: ping → pong', async () => {
-		const handler: IpcHandler = (req, send) => {
-			if (req.cmd === 'ping') {
-				send({ id: req.id, data: 'pong', error: null });
-			}
+	test('round-trip: ping → pong wrapped in Result', async () => {
+		const routes: IpcRoutes = {
+			ping: async () => ({ data: 'pong', error: null }),
 		};
-		const server = await startIpcServer(socketPath, handler);
+		const server = await startIpcServer(socketPath, routes);
 		servers.push(server);
 
-		const { frames, socket } = await collect(
-			socketPath,
-			[{ id: '1', cmd: 'ping' }],
-			1,
-		);
-		socket.end();
-
-		expect(frames).toEqual([{ id: '1', data: 'pong', error: null }]);
+		const res = await post(socketPath, 'ping');
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ data: 'pong', error: null });
 	});
 
-	test('bad JSON on one line does not break subsequent lines', async () => {
-		const handler: IpcHandler = (req, send) => {
-			send({ id: req.id, data: { echoed: req.cmd }, error: null });
+	test('handler args round-trip via JSON body', async () => {
+		const routes: IpcRoutes = {
+			echo: async (args) => ({ data: { echoed: args }, error: null }),
 		};
-		const server = await startIpcServer(socketPath, handler);
+		const server = await startIpcServer(socketPath, routes);
 		servers.push(server);
 
-		const { frames, socket } = await collectRaw(
-			socketPath,
-			['not json at all\n', `${JSON.stringify({ id: '2', cmd: 'echo' })}\n`],
-			2,
-		);
-		socket.end();
-
-		expect(frames).toHaveLength(2);
-		expect(frames[0]).toMatchObject({
-			data: null,
-			error: { name: 'BadRequest' },
-		});
-		expect(frames[1]).toEqual({
-			id: '2',
-			data: { echoed: 'echo' },
+		const res = await post(socketPath, 'echo', { hello: 'world' });
+		expect(await res.json()).toEqual({
+			data: { echoed: { hello: 'world' } },
 			error: null,
 		});
 	});
 
-	test('multiple concurrent connections each get their own response stream', async () => {
-		const handler: IpcHandler = (req, send) => {
-			send({
-				id: req.id,
-				data: (req.args as { tag?: string } | undefined)?.tag ?? null,
-				error: null,
-			});
+	test('thrown handler surfaces as 500 with HandlerCrashed body', async () => {
+		const routes: IpcRoutes = {
+			boom: async () => {
+				throw new Error('kaboom');
+			},
 		};
-		const server = await startIpcServer(socketPath, handler);
+		const server = await startIpcServer(socketPath, routes);
 		servers.push(server);
 
-		const [a, b, c] = await Promise.all([
-			collect(socketPath, [{ id: '1', cmd: 'x', args: { tag: 'a' } }], 1),
-			collect(socketPath, [{ id: '1', cmd: 'x', args: { tag: 'b' } }], 1),
-			collect(socketPath, [{ id: '1', cmd: 'x', args: { tag: 'c' } }], 1),
-		]);
+		const res = await post(socketPath, 'boom');
+		expect(res.status).toBe(500);
+		const body = (await res.json()) as { name: string; message: string };
+		expect(body.name).toBe('HandlerCrashed');
+		expect(body.message).toContain('kaboom');
+	});
 
-		a.socket.end();
-		b.socket.end();
-		c.socket.end();
+	test('domain errors flow through as 200 with Result.error populated', async () => {
+		const routes: IpcRoutes = {
+			refuse: async () => ({
+				data: null,
+				error: { name: 'NotFound', message: 'gone' },
+			}),
+		};
+		const server = await startIpcServer(socketPath, routes);
+		servers.push(server);
 
-		const tags = [a, b, c]
-			.map((r) => (r.frames[0] as { data: string }).data)
-			.sort();
-		expect(tags).toEqual(['a', 'b', 'c']);
+		const res = await post(socketPath, 'refuse');
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({
+			data: null,
+			error: { name: 'NotFound', message: 'gone' },
+		});
+	});
+
+	test('unknown route returns 404', async () => {
+		const server = await startIpcServer(socketPath, {
+			ping: async () => ({ data: 'pong', error: null }),
+		});
+		servers.push(server);
+
+		const res = await post(socketPath, 'nope');
+		expect(res.status).toBe(404);
 	});
 
 	test('socket is created with mode 0600', async () => {
-		const server = await startIpcServer(socketPath, () => {});
+		const server = await startIpcServer(socketPath, {});
 		servers.push(server);
 
 		const mode = statSync(socketPath).mode & 0o777;
@@ -191,8 +123,7 @@ describe('startIpcServer', () => {
 	});
 
 	test('stopping the server + unlinkSocketFile sweeps the socket file', async () => {
-		const { unlinkSocketFile } = await import('./ipc-server');
-		const server = await startIpcServer(socketPath, () => {});
+		const server = await startIpcServer(socketPath, {});
 		expect(existsSync(socketPath)).toBe(true);
 
 		server.stop();

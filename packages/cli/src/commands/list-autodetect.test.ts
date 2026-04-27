@@ -31,7 +31,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { startIpcServer, type IpcHandler } from '../daemon/ipc-server';
+import { startIpcServer, type IpcRoutes } from '../daemon/ipc-server';
 import { ipcCall } from '../daemon/ipc-client';
 import { socketPathFor } from '../daemon/paths';
 import type { LoadedWorkspace, WorkspaceEntry } from '../load-config';
@@ -108,21 +108,19 @@ describe('listCore: IPC parity', () => {
 			waitMs: 0,
 		});
 
-		// IPC path: stand up a tiny server whose handler delegates to listCore,
-		// mirroring the shape `up.ts`'s `makeHandler` uses.
+		// IPC path: stand up a tiny server whose `list` route delegates to
+		// listCore, mirroring the shape `up.ts`'s `makeRoutes` uses.
 		const sockPath = socketPathFor(workDir);
-		const handler: IpcHandler = (req, send) => {
-			if (req.cmd === 'list') {
-				void (async () => {
-					const data: ListResult = await listCore(
-						entry,
-						req.args as Parameters<typeof listCore>[1],
-					);
-					send({ id: req.id, data, error: null });
-				})();
-			}
+		const routes: IpcRoutes = {
+			list: async (args) => {
+				const data: ListResult = await listCore(
+					entry,
+					args as Parameters<typeof listCore>[1],
+				);
+				return { data, error: null };
+			},
 		};
-		const server = await startIpcServer(sockPath, handler);
+		const server = await startIpcServer(sockPath, routes);
 		try {
 			const reply = await ipcCall<ListResult>(sockPath, 'list', {
 				path: '',

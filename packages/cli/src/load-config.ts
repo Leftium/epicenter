@@ -1,16 +1,15 @@
 /**
  * Workspace config loader.
  *
- * Loads `epicenter.config.ts` and collects every named export that quacks
- * like a workspace — an object with `whenReady` and `[Symbol.dispose]`.
- * Optional first-class fields (`actions`, `sync`) are read directly off
- * the export; the loader does no walking, no brand check, no factory
- * trickery.
+ * The contract is one line: a workspace is any named export with
+ * `[Symbol.dispose]`. The loader trusts whatever the user's factory
+ * returns — it does no walking, no brand check, no field validation.
+ * Fields the CLI knows about (`whenReady`, `actions`, `sync`) are read
+ * off the export when present; everything else is ignored.
  *
  * The recommended config style is to export the result of an `openFoo()`
- * factory directly — the same factory the app uses elsewhere — instead of
- * hand-rolling the workspace shape. The CLI consumes whichever fields the
- * factory exposes.
+ * factory directly — the same factory the app uses elsewhere — and let
+ * the factory's return shape be the contract.
  *
  * @example
  * ```ts
@@ -84,46 +83,17 @@ export type LoadConfigResult = {
 };
 
 /**
- * Classify a named export.
- *
- *   - `workspace` — looks like a workspace and validates.
- *   - `invalid`   — has at least one workspace-shaped field (`whenReady`,
- *                   `[Symbol.dispose]`, `actions`, `sync`) but
- *                   is missing required fields. The user clearly intended a
- *                   workspace; the loader should fail loud naming the
- *                   export and what's wrong.
- *   - `unrelated` — no workspace-ish fields. Skipped silently so configs
- *                   can also export type aliases, helpers, constants, etc.
+ * A workspace is anything with `[Symbol.dispose]`. That's the whole
+ * contract — the factory's return shape is the source of truth for
+ * everything else.
  */
-type WorkspaceCheck =
-	| { kind: 'workspace'; value: LoadedWorkspace }
-	| { kind: 'invalid'; reasons: string[] }
-	| { kind: 'unrelated' };
-
-function classifyWorkspaceExport(value: unknown): WorkspaceCheck {
-	if (value == null || typeof value !== 'object') return { kind: 'unrelated' };
-	const v = value as Record<PropertyKey, unknown>;
-
-	const hasWhenReady = 'whenReady' in v;
-	const hasDispose = typeof v[Symbol.dispose] === 'function';
-	const looksWorkspaceShaped =
-		hasWhenReady ||
-		hasDispose ||
-		'actions' in v ||
-		'sync' in v;
-
-	if (!looksWorkspaceShaped) return { kind: 'unrelated' };
-
-	const reasons: string[] = [];
-	if (!hasWhenReady) {
-		reasons.push('missing `whenReady`');
-	} else if (typeof (v.whenReady as { then?: unknown })?.then !== 'function') {
-		reasons.push('`whenReady` must be a Promise (or thenable)');
-	}
-	if (!hasDispose) reasons.push('missing `[Symbol.dispose]`');
-
-	if (reasons.length > 0) return { kind: 'invalid', reasons };
-	return { kind: 'workspace', value: value as LoadedWorkspace };
+function isLoadedWorkspace(value: unknown): value is LoadedWorkspace {
+	return (
+		value != null &&
+		typeof value === 'object' &&
+		typeof (value as Record<PropertyKey, unknown>)[Symbol.dispose] ===
+			'function'
+	);
 }
 
 /**
@@ -131,8 +101,7 @@ function classifyWorkspaceExport(value: unknown): WorkspaceCheck {
  * exports are skipped; use named exports so the CLI can address them by
  * name.
  *
- * @throws If the config file is missing, an export looks like a workspace
- * but is malformed, or no workspace exports are found at all.
+ * @throws If the config file is missing or no workspace exports are found.
  */
 export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	const configPath = join(resolve(targetDir), CONFIG_FILENAME);
@@ -146,23 +115,15 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	const entries: WorkspaceEntry[] = [];
 	for (const [name, value] of Object.entries(module)) {
 		if (name === 'default') continue;
-		const check = classifyWorkspaceExport(value);
-		if (check.kind === 'unrelated') continue;
-		if (check.kind === 'invalid') {
-			throw new Error(
-				`Export \`${name}\` in ${CONFIG_FILENAME} looks like a workspace but is invalid:\n` +
-					check.reasons.map((r) => `  - ${r}`).join('\n'),
-			);
-		}
-		entries.push({ name, workspace: check.value });
+		if (!isLoadedWorkspace(value)) continue;
+		entries.push({ name, workspace: value });
 	}
 
 	if (entries.length === 0) {
 		throw new Error(
 			`No workspaces found in ${CONFIG_FILENAME}.\n` +
-				`Export the result of an openFoo() factory directly:\n` +
-				`  import { openFuji } from '@my/app/server';\n` +
-				`  export const fuji = openFuji({ auth, device });`,
+				`Export at least one named value implementing [Symbol.dispose] — ` +
+				`typically the return of an openFoo() factory.`,
 		);
 	}
 

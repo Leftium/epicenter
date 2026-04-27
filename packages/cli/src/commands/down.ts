@@ -11,20 +11,19 @@
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Process lifecycle".
  */
 
-import { existsSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
 import type { Argv, CommandModule } from 'yargs';
 
 import { ipcCall } from '../daemon/ipc-client.js';
 import {
 	type DaemonMetadata,
+	enumerateDaemons,
 	isProcessAlive,
 	readMetadata,
-	readMetadataFromPath,
 	unlinkMetadata,
 } from '../daemon/metadata.js';
-import { runtimeDir, socketPathFor } from '../daemon/paths.js';
+import { socketPathFor } from '../daemon/paths.js';
 import { dirFromArgv, dirOption } from '../util/common-options.js';
 
 const SHUTDOWN_TIMEOUT_MS = 1000;
@@ -111,15 +110,8 @@ export async function runDown(
 	};
 
 	if (options.all) {
-		const root = runtimeDir();
-		const entries = existsSync(root) ? readdirSync(root) : [];
-		const metas = entries
-			.filter((name) => name.endsWith('.meta.json'))
-			.map((name) => readMetadataFromPath(join(root, name)))
-			.filter((m): m is DaemonMetadata => m !== null);
-
 		const outcomes = await Promise.all(
-			metas.map((m) => shutdownOne(m, resolved)),
+			enumerateDaemons().map((m) => shutdownOne(m, resolved)),
 		);
 		return { outcomes };
 	}

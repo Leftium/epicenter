@@ -11,7 +11,7 @@
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Process lifecycle".
  */
 
-import { existsSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { CommandModule } from 'yargs';
@@ -19,11 +19,11 @@ import type { CommandModule } from 'yargs';
 import { ipcPing } from '../daemon/ipc-client.js';
 import {
 	type DaemonMetadata,
+	enumerateDaemons,
 	isProcessAlive,
-	readMetadataFromPath,
-	unlinkMetadata,
+	sweepOrphan,
 } from '../daemon/metadata.js';
-import { runtimeDir, socketPathFor } from '../daemon/paths.js';
+import { socketPathFor } from '../daemon/paths.js';
 import { CONFIG_FILENAME } from '../load-config.js';
 
 /** A row of the `ps` table. */
@@ -48,19 +48,11 @@ export type RunPsDeps = {
  */
 export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
 	const ping = deps.ipcPing ?? ipcPing;
-	const root = runtimeDir();
-	if (!existsSync(root)) return [];
-
-	const names = readdirSync(root).filter((n) => n.endsWith('.meta.json'));
-
 	const rows: PsRow[] = [];
-	for (const name of names) {
-		const meta = readMetadataFromPath(join(root, name));
-		if (!meta) continue;
-
+	for (const meta of enumerateDaemons()) {
 		// Dead pid → orphan: unlink metadata + socket and skip.
 		if (!isProcessAlive(meta.pid)) {
-			sweepOrphan(meta);
+			sweepOrphan(meta.dir);
 			continue;
 		}
 
@@ -68,7 +60,7 @@ export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
 		const sockPath = socketPathFor(meta.dir);
 		const responsive = await ping(sockPath, 250);
 		if (!responsive) {
-			sweepOrphan(meta);
+			sweepOrphan(meta.dir);
 			continue;
 		}
 
@@ -82,18 +74,6 @@ export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
 		});
 	}
 	return rows;
-}
-
-function sweepOrphan(meta: DaemonMetadata): void {
-	unlinkMetadata(meta.dir);
-	const sockPath = socketPathFor(meta.dir);
-	if (existsSync(sockPath)) {
-		try {
-			unlinkSync(sockPath);
-		} catch {
-			// best effort
-		}
-	}
 }
 
 /**

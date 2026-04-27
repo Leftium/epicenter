@@ -19,18 +19,17 @@ import {
 	closeSync,
 	statSync,
 	watch,
-	readdirSync,
 } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 
 import type { Argv, CommandModule } from 'yargs';
 
 import {
 	type DaemonMetadata,
+	enumerateDaemons,
 	readMetadata,
-	readMetadataFromPath,
 } from '../daemon/metadata.js';
-import { logPathFor, runtimeDir } from '../daemon/paths.js';
+import { logPathFor } from '../daemon/paths.js';
 import { dirFromArgv, dirOption } from '../util/common-options.js';
 
 const DEFAULT_TAIL_LINES = 50;
@@ -71,12 +70,7 @@ export function pickSoleDaemon():
 	| { kind: 'one'; meta: DaemonMetadata }
 	| { kind: 'none' }
 	| { kind: 'many'; dirs: string[] } {
-	const root = runtimeDir();
-	if (!existsSync(root)) return { kind: 'none' };
-	const metas = readdirSync(root)
-		.filter((n) => n.endsWith('.meta.json'))
-		.map((n) => readMetadataFromPath(join(root, n)))
-		.filter((m): m is DaemonMetadata => m !== null);
+	const metas = enumerateDaemons();
 	if (metas.length === 0) return { kind: 'none' };
 	if (metas.length > 1) return { kind: 'many', dirs: metas.map((m) => m.dir) };
 	return { kind: 'one', meta: metas[0]! };

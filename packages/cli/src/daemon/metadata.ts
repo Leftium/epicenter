@@ -11,12 +11,13 @@
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Metadata sidecar".
  */
 
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { createLogger } from 'wellcrafted/logger';
 
 import { ipcPing } from './ipc-client.js';
-import { metadataPathFor, socketPathFor } from './paths.js';
+import { metadataPathFor, runtimeDir, socketPathFor } from './paths.js';
 
 const log = createLogger('cli/daemon/metadata');
 
@@ -128,26 +129,8 @@ export type StartupState = 'in-use' | 'orphan' | 'clean';
 export async function inspectExistingDaemon(
 	dir: string,
 ): Promise<{ state: StartupState; pid?: number }> {
-	const metaPath = metadataPathFor(dir);
 	const sockPath = socketPathFor(dir);
 	const meta = readMetadata(dir);
-
-	const sweep = () => {
-		if (existsSync(metaPath)) {
-			try {
-				unlinkSync(metaPath);
-			} catch (cause) {
-				log.debug('failed to unlink orphan metadata', { metaPath, cause });
-			}
-		}
-		if (existsSync(sockPath)) {
-			try {
-				unlinkSync(sockPath);
-			} catch (cause) {
-				log.debug('failed to unlink orphan socket', { sockPath, cause });
-			}
-		}
-	};
 
 	// Nothing on disk at all → fresh start.
 	if (!meta && !existsSync(sockPath)) {
@@ -156,22 +139,61 @@ export async function inspectExistingDaemon(
 
 	// Socket file but no metadata → orphan from a crashed daemon.
 	if (!meta) {
-		sweep();
+		sweepOrphan(dir);
 		return { state: 'orphan' };
 	}
 
 	// Metadata present but pid is dead → orphan, sweep both.
 	if (!isProcessAlive(meta.pid)) {
-		sweep();
+		sweepOrphan(dir);
 		return { state: 'orphan', pid: meta.pid };
 	}
 
 	// Pid is alive, but only a real ping proves the daemon is actually serving.
 	const responsive = await ipcPing(sockPath);
 	if (!responsive) {
-		sweep();
+		sweepOrphan(dir);
 		return { state: 'orphan', pid: meta.pid };
 	}
 
 	return { state: 'in-use', pid: meta.pid };
+}
+
+/**
+ * Enumerate every daemon's metadata under `runtimeDir()`.
+ *
+ * Reads each `<dirHash>.meta.json` and returns the parsed records, skipping
+ * any file that fails to parse. Does NOT filter out stale/orphan entries —
+ * the caller decides whether to ping, sweep, or display them as-is. This
+ * keeps `enumerateDaemons` cheap and predictable; consumers like `ps` add
+ * the liveness check, while consumers like `down --all` only need the pid
+ * to send a SIGTERM.
+ */
+export function enumerateDaemons(): DaemonMetadata[] {
+	const root = runtimeDir();
+	if (!existsSync(root)) return [];
+	const result: DaemonMetadata[] = [];
+	for (const name of readdirSync(root)) {
+		if (!name.endsWith('.meta.json')) continue;
+		const meta = readMetadataFromPath(join(root, name));
+		if (meta) result.push(meta);
+	}
+	return result;
+}
+
+/**
+ * Unlink the metadata sidecar AND the socket file for `dir`. Used by every
+ * caller that wants to clean up after a dead daemon (orphan-detection at
+ * `up` startup, `ps` liveness sweep, `down` SIGTERM fallback).
+ */
+export function sweepOrphan(dir: string): void {
+	unlinkMetadata(dir);
+	const sockPath = socketPathFor(dir);
+	if (existsSync(sockPath)) {
+		try {
+			unlinkSync(sockPath);
+		} catch (cause) {
+			log.debug('failed to unlink orphan socket', { sockPath, cause });
+		}
+	}
 }

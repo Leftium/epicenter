@@ -43,6 +43,7 @@ export type {
 export {
 	defineMutation,
 	defineQuery,
+	describeActions,
 	invokeNormalized,
 	isAction,
 	isMutation,

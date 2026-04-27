@@ -13,12 +13,11 @@
  */
 
 import {
-	type Action,
 	type ActionManifest,
+	describeActions,
 	invokeNormalized,
-	isAction,
+	resolveActionPath,
 } from '@epicenter/workspace';
-import { collectLocalManifest } from '../util/local-manifest';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type WorkspaceEntry } from '../load-config';
@@ -85,9 +84,9 @@ async function invoke(
 
 	await workspace.whenReady;
 
-	const action = findAction(workspace.actions, actionPath);
+	const action = resolveActionPath(workspace.actions ?? {}, actionPath);
 	if (!action) {
-		const manifest = collectLocalManifest(workspace.actions ?? {});
+		const manifest = describeActions(workspace.actions ?? {});
 		const descendants = entriesUnder(manifest, actionPath);
 		if (descendants.length > 0) {
 			outputError(`"${actionPath}" is not a runnable action.`);
@@ -233,19 +232,4 @@ function emitNearestSiblings(
 		emitActionList(alts);
 		return;
 	}
-}
-
-/**
- * Resolve a dotted action path against the workspace's action tree. Walks
- * segments directly — no full-tree iteration. Returns the callable
- * `Action` so we can invoke it; metadata-only lookups belong on
- * `collectLocalManifest()`.
- */
-function findAction(actions: unknown, path: string): Action | undefined {
-	let target: unknown = actions;
-	for (const segment of path.split('.')) {
-		if (target == null || typeof target !== 'object') return undefined;
-		target = (target as Record<string, unknown>)[segment];
-	}
-	return isAction(target) ? target : undefined;
 }

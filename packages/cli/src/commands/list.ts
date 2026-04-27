@@ -21,11 +21,11 @@
 
 import {
 	type ActionManifest,
+	describeActions,
 	peerSystem,
 	type SyncAttachment,
 } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
-import { collectLocalManifest } from '../util/local-manifest';
 import type { Argv, CommandModule, Options } from 'yargs';
 import {
 	type AwarenessState,
@@ -176,7 +176,7 @@ export function selfSection(
 	mode: 'local' | 'all',
 ): Section {
 	const localActions = entry.workspace.actions;
-	const entries = localActions ? collectLocalManifest(localActions) : {};
+	const entries = localActions ? describeActions(localActions) : {};
 	return {
 		label: mode === 'all' ? 'self (this device)' : entry.name,
 		peer: 'self',
@@ -250,15 +250,15 @@ function renderJson(
 	// Single-section + leaf path = single object (preserves pre-existing
 	// `list <leaf> --format json` shape).
 	if (!multi && path && sections[0]!.entries[path]) {
-		output(describeAction(sections[0]!.entries[path]!, path), { format });
+		output(toActionDescriptor(sections[0]!.entries[path]!, path), { format });
 		return;
 	}
 
-	const rows: Array<{ peer?: string } & ReturnType<typeof describeAction>> = [];
+	const rows: Array<{ peer?: string } & ReturnType<typeof toActionDescriptor>> = [];
 	for (const section of sections) {
 		const subset = filterByPath(section.entries, path);
 		for (const [p, meta] of Object.entries(subset)) {
-			const row = describeAction(meta, p);
+			const row = toActionDescriptor(meta, p);
 			rows.push(multi ? { peer: section.peer, ...row } : row);
 		}
 	}
@@ -348,7 +348,7 @@ type ActionDescriptor = {
 	input?: unknown;
 };
 
-function describeAction(action: ActionManifest[string], path: string): ActionDescriptor {
+function toActionDescriptor(action: ActionManifest[string], path: string): ActionDescriptor {
 	const desc: ActionDescriptor = { path, type: action.type };
 	if (action.description) desc.description = action.description;
 	if (action.input) desc.input = action.input;

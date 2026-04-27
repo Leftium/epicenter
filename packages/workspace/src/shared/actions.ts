@@ -1,46 +1,29 @@
 /**
- * Action System v2: Closure-based handlers for Epicenter.
+ * Actions: typed queries (reads) and mutations (writes) authored as a nested
+ * tree of closures. `defineQuery`/`defineMutation` attach metadata to the
+ * handler and return it — the action callable IS the handler, so local
+ * callers see exactly what the author wrote (sync stays sync, `Result` stays
+ * `Result`).
  *
- * This module provides the core action definition system for Epicenter.
- * Actions are typed operations (queries for reads, mutations for writes) that
- * capture their dependencies via closures at definition time.
+ * Two shapes for the same data:
  *
- * ## Design Pattern: Closure-Based Dependency Injection
+ *     Actions                       ←→     ActionManifest
+ *     nested, callable                     flat, metadata-only
+ *     local, in-memory                     wire form (system.describe)
  *
- * Actions close over their dependencies directly instead of receiving context as a parameter:
- * - Define actions **after** creating the client
- * - Handlers reference the client via closure: signature is `(input?) => output`
- * - Adapters (Server, CLI) receive both client and actions separately: `{ client, actions }`
+ *     {                                    {
+ *       tabs: { close: Mutation },           "tabs.close": { type, ... },
+ *       ping: Query,                         "ping":       { type, ... },
+ *     }                                    }
  *
- * **Key benefits:**
- * - **Zero annotation ceremony**: TypeScript infers handler types naturally
- * - **Type-safe**: Full type inference for client and tables, not `unknown`
- * - **Simpler signatures**: `(input?) => output` instead of `(ctx, input?) => output`
- * - **Natural JavaScript**: Uses standard closures, no framework magic
- * - **Introspectable**: Callable functions with metadata properties for adapters
+ * Functions don't serialize, so the wire form drops them and keeps just the
+ * metadata. Both shapes are public; `describeActions(tree)` converts.
  *
- ## Passthrough — local actions are the handler verbatim
- *
- * `defineMutation` and `defineQuery` attach metadata to the handler and return
- * it. The action callable IS the handler — sync if sync, raw if raw, `Result`
- * if explicit. Local callers see exactly what the author wrote.
- *
- * Transport-imposed shape (`Promise<Result<T, E | RpcError>>`) lives at the
- * boundary that has the transport: the wire (`createRemoteActions`) wraps;
- * generic in-process consumers (AI bridge, CLI dispatch, RPC server-side)
- * call `invokeNormalized(action, input, label)` to get the uniform shape.
- *
- * If a handler throws, the throw propagates to the local caller. The
- * boundary normalizers convert throws to `Err(ActionFailed)` automatically,
- * so AI/CLI/RPC consumers always see a Result. Local UI code that wants
- * Result-shaped output should either `tryAsync` the call or define the
- * handler to return `Result` explicitly.
- *
- * ## Exports
- *
- * - {@link defineQuery} - Define a read operation
- * - {@link defineMutation} - Define a write operation
- * - {@link isAction}, {@link isQuery}, {@link isMutation} - Type guards for action definitions
+ * Transport boundaries (RPC server-side, CLI dispatch, AI bridge) normalize
+ * any handler return into `Promise<Result<T, RpcError>>` via
+ * `invokeNormalized`. The wire client (`RemoteActions`) re-types each leaf
+ * to that uniform shape. Local UI code that wants `Result` either calls
+ * `tryAsync` or defines the handler to return `Result` explicitly.
  *
  * @module
  */
@@ -248,6 +231,33 @@ export function resolveActionPath(
 		target = (target as Record<string, unknown>)[segment];
 	}
 	return isAction(target) ? target : undefined;
+}
+
+/**
+ * Walk an `Actions` tree and produce its flat `ActionManifest` — the wire
+ * form returned by `system.describe`. Live `input` schemas are retained;
+ * functions are dropped. Pairs with `peerSystem(sync, id).describe()`,
+ * which returns the same shape from a remote peer.
+ */
+export function describeActions(actions: Actions): ActionManifest {
+	const out: ActionManifest = {};
+	walk(actions, [], out);
+	return out;
+}
+
+function walk(node: Actions, path: string[], out: ActionManifest): void {
+	for (const [key, value] of Object.entries(node)) {
+		const childPath = [...path, key];
+		if (isAction(value)) {
+			const entry: ActionMeta = { type: value.type };
+			if (value.input !== undefined) entry.input = value.input;
+			if (value.title !== undefined) entry.title = value.title;
+			if (value.description !== undefined) entry.description = value.description;
+			out[childPath.join('.')] = entry;
+		} else if (value != null && typeof value === 'object') {
+			walk(value as Actions, childPath, out);
+		}
+	}
 }
 
 /**

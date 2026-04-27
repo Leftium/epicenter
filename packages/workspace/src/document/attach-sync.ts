@@ -37,12 +37,10 @@ import {
 import * as Y from 'yjs';
 import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
 import {
-	type ActionManifest,
-	type ActionMeta,
 	type Actions,
 	type RemoteCallOptions,
 	defineQuery,
-	isAction,
+	describeActions,
 	resolveActionPath,
 } from '../shared/actions.js';
 import {
@@ -322,7 +320,7 @@ export function attachSync(
 	// rather than receiving a manifest broadcast in awareness.
 	const systemActions: Actions = {
 		describe: defineQuery({
-			handler: () => collectActionManifest(userActions ?? {}),
+			handler: () => describeActions(userActions ?? {}),
 		}),
 	};
 	const actions: Actions = {
@@ -964,36 +962,6 @@ export function attachSync(
 // ============================================================================
 // Helpers
 // ============================================================================
-
-/**
- * Walk an action tree and return a flat dot-path → `ActionMeta` map with
- * live input schemas retained. `system.describe` returns this directly so
- * remote consumers get the full local action surface in one round-trip.
- */
-function collectActionManifest(actions: Actions): ActionManifest {
-	const out: ActionManifest = {};
-	walkActions(actions, [], out);
-	return out;
-}
-
-function walkActions(
-	node: Actions,
-	path: string[],
-	out: ActionManifest,
-): void {
-	for (const [key, value] of Object.entries(node)) {
-		const childPath = [...path, key];
-		if (isAction(value)) {
-			const entry: ActionMeta = { type: value.type };
-			if (value.input !== undefined) entry.input = value.input;
-			if (value.title !== undefined) entry.title = value.title;
-			if (value.description !== undefined) entry.description = value.description;
-			out[childPath.join('.')] = entry;
-		} else if (value != null && typeof value === 'object') {
-			walkActions(value as Actions, childPath, out);
-		}
-	}
-}
 
 function createStatusEmitter<T>(initial: T) {
 	let current = initial;

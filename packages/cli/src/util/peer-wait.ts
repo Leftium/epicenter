@@ -6,8 +6,11 @@
  * and bail when `deadline` expires. They deliberately do NOT block on
  * `sync.whenConnected` — the observe loop already covers that path
  * (awareness can only arrive after the WS handshake completes), and
- * pre-awaiting `whenConnected` would hang forever when the server is
- * unreachable or rejects auth, ignoring the caller's `--wait` budget.
+ * awaiting `whenConnected` would tie us to the workspace's full
+ * connection lifetime instead of the caller's `--wait` budget. (Note:
+ * `whenConnected` now rejects on dispose rather than hanging forever, but
+ * for transient failures it still won't settle until the doc is gone —
+ * we want a deadline-bounded wait, not a doc-bounded wait.)
  *
  * `findPeer` matches by exact `device.id`. The per-installation deviceId
  * convention (`getOrCreateDeviceId`) makes collisions cryptographically

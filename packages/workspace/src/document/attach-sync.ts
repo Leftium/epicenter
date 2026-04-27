@@ -38,6 +38,7 @@ import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
 import {
 	type Actions,
 	type RemoteCallOptions,
+	type SystemActions,
 	defineQuery,
 	describeActions,
 	invokeAction,
@@ -118,6 +119,11 @@ export type SyncAttachment = {
 	 * Resolves after the WebSocket handshake completes and the first sync
 	 * exchange finishes. Unlike `y-indexeddb`'s `whenSynced`, this is a
 	 * real "transport established, initial state reconciled" guarantee.
+	 *
+	 * Rejects with an error if the doc is destroyed before the first
+	 * successful handshake (permanent failure: dead URL, auth denied,
+	 * dispose during outage). Callers awaiting it should attach a `.catch`
+	 * or use `await using` to bound the wait by the doc's lifetime.
 	 *
 	 * Browser apps generally await `idb.whenLoaded` to render; only CLIs
 	 * and tools that strictly need remote state await `whenConnected`.
@@ -309,7 +315,9 @@ export function attachSync(
 
 	if (userActions && 'system' in userActions) {
 		throw new Error(
-			"User actions cannot define the 'system.*' namespace — it's reserved for runtime-injected meta operations.",
+			"User actions cannot define the 'system.*' namespace — it's reserved " +
+				"for runtime-injected meta operations. Use 'app', 'settings', " +
+				"'config', or another app-specific noun.",
 		);
 	}
 
@@ -318,15 +326,24 @@ export function attachSync(
 	// `ActionManifest` (dot-path → ActionMeta with live input schemas).
 	// Consumers fetch on demand via `describePeer(sync, deviceId)`
 	// rather than receiving a manifest broadcast in awareness.
-	const systemActions: Actions = {
+	//
+	// Type-annotate against `SystemActions` (the canonical type in
+	// `shared/actions.ts`): TypeScript checks the runtime construction here
+	// matches the type the `peer<{ system: SystemActions }>` proxy expects.
+	// Drift between handler return and consumer expectation = compile error.
+	//
+	// Freeze the dispatch tree post-merge: the reservation check above
+	// protects the namespace at construction; freezing prevents post-attach
+	// mutation from injecting routes under `system.*`.
+	const systemActions: SystemActions = Object.freeze({
 		describe: defineQuery({
 			handler: () => describeActions(userActions ?? {}),
 		}),
-	};
-	const actions: Actions = {
+	});
+	const actions: Actions = Object.freeze({
 		...(userActions ?? {}),
 		system: systemActions,
-	};
+	});
 
 	if (config.device && config.awareness) {
 		throw new Error(
@@ -356,8 +373,22 @@ export function attachSync(
 	const log = config.log ?? createLogger('attachSync');
 
 	const status = createStatusEmitter<SyncStatus>({ phase: 'offline' });
-	const { promise: whenConnected, resolve: resolveConnected } =
-		Promise.withResolvers<void>();
+	// `whenConnected` settles in one of two ways: resolved when the first
+	// successful handshake lands (STEP2/UPDATE), rejected when the doc is
+	// destroyed before that happens. Without the destroy-side rejection,
+	// callers awaiting `whenConnected` against a permanently dead URL or
+	// failed auth would hang forever.
+	const {
+		promise: whenConnected,
+		resolve: resolveConnected,
+		reject: rejectConnected,
+	} = Promise.withResolvers<void>();
+	let connectedSettled = false;
+	const settleConnected = (op: () => void) => {
+		if (connectedSettled) return;
+		connectedSettled = true;
+		op();
+	};
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
 	const backoff = createBackoff();
@@ -516,6 +547,12 @@ export function attachSync(
 
 	function handleVisibilityChange() {
 		if (document.visibilityState !== 'visible') return;
+		// Wakeup ping after the tab returns to foreground. The server is
+		// expected to echo any inbound message via `liveness.touch()`, so
+		// this also probes "is the wire actually responsive?" beyond what
+		// the 60s PING_INTERVAL_MS keepalive covers. If the server doesn't
+		// echo strings, focus events become a no-op for liveness — the
+		// 90s LIVENESS_TIMEOUT_MS still catches a dead wire eventually.
 		if (websocket?.readyState === WebSocket.OPEN) {
 			websocket.send('ping');
 		}
@@ -705,7 +742,7 @@ export function attachSync(
 							phase: 'connected',
 							hasLocalChanges: localVersion > ackedVersion,
 						});
-						resolveConnected();
+						settleConnected(resolveConnected);
 					}
 					break;
 				}
@@ -793,6 +830,13 @@ export function attachSync(
 		manageWindowListeners('add');
 		currentSupervisorPromise = runLoop().finally(() => {
 			currentSupervisorPromise = null;
+			// If `desired` flipped back to 'online' during the loop's drain
+			// (e.g., a status subscriber called `reconnect()` from inside
+			// `status.set({phase:'offline'})` at the end of runLoop, before
+			// this `.finally` cleared the handle), restart. Without this, the
+			// reconnect's call to `ensureSupervisor` early-returned because
+			// the promise was still set, and the loop would silently die.
+			if (!torn && desired === 'online') ensureSupervisor();
 		});
 	}
 
@@ -833,6 +877,17 @@ export function attachSync(
 	// meant callers awaiting `whenDisposed` saw a socket still in CLOSING.
 	ydoc.once('destroy', async () => {
 		torn = true;
+		// Reject `whenConnected` if dispose lands before the first handshake
+		// (permanent failure: dead URL, denied auth). Callers awaiting it
+		// would otherwise hang forever — the doc is gone, the promise must
+		// settle. Attach a no-op catch BEFORE rejecting so the rejection
+		// isn't unhandled when no consumer awaits.
+		whenConnected.catch(() => {});
+		settleConnected(() => {
+			rejectConnected(
+				new Error('[attachSync] doc destroyed before first handshake'),
+			);
+		});
 		try {
 			ydoc.off('updateV2', handleDocUpdate);
 			if (awareness) {
@@ -863,6 +918,11 @@ export function attachSync(
 			backoff.reset();
 			backoff.wake();
 			websocket?.close();
+			// Flip `desired` back to 'online' BEFORE delegating: ensureSupervisor()
+			// early-returns if a loop is still draining from a recent goOffline(),
+			// which would otherwise leave us silently parked offline.
+			desired = 'online';
+			manageWindowListeners('add');
 			ensureSupervisor();
 		},
 		whenDisposed,
@@ -899,6 +959,21 @@ export function attachSync(
 					action,
 					cause: 'Cannot RPC to self — call the action directly',
 				});
+			}
+
+			// Reject post-dispose calls immediately. Without this, a late
+			// rpc() would register a setTimeout(timeoutMs) entry in
+			// pendingRequests that nothing clears, leaking the timer until
+			// the default 5s timeout fires.
+			if (torn) return RpcError.Disconnected();
+
+			// Short-circuit when the socket is in CONNECTING/CLOSING/CLOSED.
+			// `send()` would silently no-op the request bytes, leaving the
+			// pendingRequests entry to wait the full timeout for a phantom
+			// response. Better to fail fast and let the caller decide whether
+			// to retry once we're back online.
+			if (websocket?.readyState !== WebSocket.OPEN) {
+				return RpcError.Disconnected();
 			}
 
 			const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;

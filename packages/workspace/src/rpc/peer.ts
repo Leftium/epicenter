@@ -34,9 +34,9 @@ import type { SyncAttachment } from '../document/attach-sync.js';
 import type {
 	ActionManifest,
 	Actions,
-	Query,
 	RemoteActions,
 	RemoteCallOptions,
+	SystemActions,
 } from '../shared/actions.js';
 
 /**
@@ -89,7 +89,7 @@ type Sender = (
 	options?: RemoteCallOptions,
 ) => Promise<Result<unknown, RpcError>>;
 
-type SystemMeta = { system: { describe: Query<undefined, ActionManifest> } };
+type SystemMeta = { system: SystemActions };
 
 /**
  * Fetch a peer's full action manifest via the runtime-injected `system.describe`

@@ -118,7 +118,7 @@ export const peersCommand: CommandModule = {
 				const reply = await ipcCall<
 					Array<{ clientID: number; device: AwarenessState['device'] }>
 				>(sock, 'peers', { wait: waitMs });
-				if (reply.ok) {
+				if (reply.error === null) {
 					const peers = new Map<number, AwarenessState>();
 					for (const row of reply.data) {
 						peers.set(row.clientID, { device: row.device });

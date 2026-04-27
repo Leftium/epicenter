@@ -19,7 +19,6 @@ import {
 	unlinkSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import type { Server } from 'node:net';
 
 import {
 	composeSinks,
@@ -33,9 +32,11 @@ import {
 import type { Argv, CommandModule } from 'yargs';
 
 import {
+	type IpcFrame,
 	type IpcHandler,
 	type IpcRequest,
-	type IpcResponse,
+	type IpcServerHandle,
+	type SerializedError,
 	startIpcServer,
 } from '../daemon/ipc-server.js';
 import {
@@ -66,7 +67,6 @@ import { listCore, type ListCtx, type ListResult } from './list.js';
 import { runCore, type RunCtx, type RunResult } from './run.js';
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
-const SHUTDOWN_BUDGET_MS = 2000;
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
 
@@ -162,7 +162,7 @@ export type UpOptions = {
  *   metadata + socket. Idempotent.
  */
 export type UpHandle = {
-	server: Server;
+	server: IpcServerHandle;
 	entry: WorkspaceEntry;
 	config: LoadConfigResult;
 	metadata: DaemonMetadata;
@@ -179,7 +179,7 @@ export type RunUpDeps = {
 	startIpcServer?: (
 		socketPath: string,
 		handler: IpcHandler,
-	) => Promise<Server>;
+	) => Promise<IpcServerHandle>;
 };
 
 /**
@@ -261,7 +261,7 @@ export async function runUp(
 
 	const handler = makeHandler(entry, config, log, () => void teardown());
 	const starter = deps.startIpcServer ?? startIpcServer;
-	let server: Server;
+	let server: IpcServerHandle;
 	try {
 		server = await starter(socketPath, handler);
 	} catch (cause) {
@@ -274,19 +274,14 @@ export async function runUp(
 	const teardown = (): Promise<void> => {
 		if (teardownPromise) return teardownPromise;
 		teardownPromise = (async () => {
-			await new Promise<void>((res) => {
-				let done = false;
-				const finish = () => {
-					if (done) return;
-					done = true;
-					res();
-				};
-				const t = setTimeout(finish, SHUTDOWN_BUDGET_MS);
-				server.close(() => {
-					clearTimeout(t);
-					finish();
-				});
-			});
+			// Bun's `.stop()` is synchronous; the socket file sweep below is
+			// what actually removes the unix path so a follow-up `up` doesn't
+			// see a phantom and bail.
+			try {
+				server.stop();
+			} catch {
+				// best-effort
+			}
 			await safeAsyncDispose(config);
 			unlinkMetadata(absDir);
 			if (existsSync(socketPath)) {
@@ -404,22 +399,36 @@ function makeHandler(
 	log: Logger,
 	triggerShutdown: () => void,
 ): IpcHandler {
-	return (req: IpcRequest, send: (r: IpcResponse) => void) => {
+	const ok = (id: string, data: unknown): IpcFrame => ({
+		id,
+		data,
+		error: null,
+	});
+	const err = (id: string, error: SerializedError): IpcFrame => ({
+		id,
+		data: null,
+		error,
+	});
+	const errFrom = (id: string, cause: unknown): IpcFrame =>
+		err(id, {
+			name: cause instanceof Error ? cause.name : 'Error',
+			message: cause instanceof Error ? cause.message : String(cause),
+		});
+
+	return (req: IpcRequest, send: (frame: IpcFrame) => void) => {
 		log.debug('ipc cmd', { cmd: req.cmd, id: req.id });
 		switch (req.cmd) {
 			case 'ping':
-				send({ id: req.id, ok: true, data: 'pong' });
+				send(ok(req.id, 'pong'));
 				return;
 			case 'status':
-				send({
-					id: req.id,
-					ok: true,
-					data: {
+				send(
+					ok(req.id, {
 						pid: process.pid,
 						workspace: entry.name,
 						syncStatus: entry.workspace.sync?.status ?? null,
-					},
-				});
+					}),
+				);
 				return;
 			case 'peers': {
 				const peers = entry.workspace.sync?.peers() ?? new Map();
@@ -427,7 +436,7 @@ function makeHandler(
 					clientID,
 					device: state.device,
 				}));
-				send({ id: req.id, ok: true, data: rows });
+				send(ok(req.id, rows));
 				return;
 			}
 			case 'list': {
@@ -435,17 +444,9 @@ function makeHandler(
 				void (async () => {
 					try {
 						const data: ListResult = await listCore(entry, ctx);
-						send({ id: req.id, ok: true, data });
+						send(ok(req.id, data));
 					} catch (cause) {
-						send({
-							id: req.id,
-							ok: false,
-							error: {
-								name: cause instanceof Error ? cause.name : 'Error',
-								message:
-									cause instanceof Error ? cause.message : String(cause),
-							},
-						});
+						send(errFrom(req.id, cause));
 					}
 				})();
 				return;
@@ -455,34 +456,24 @@ function makeHandler(
 				void (async () => {
 					try {
 						const data: RunResult = await runCore(entry, ctx);
-						send({ id: req.id, ok: true, data });
+						send(ok(req.id, data));
 					} catch (cause) {
-						send({
-							id: req.id,
-							ok: false,
-							error: {
-								name: cause instanceof Error ? cause.name : 'Error',
-								message:
-									cause instanceof Error ? cause.message : String(cause),
-							},
-						});
+						send(errFrom(req.id, cause));
 					}
 				})();
 				return;
 			}
 			case 'shutdown':
-				send({ id: req.id, ok: true });
+				send(ok(req.id, null));
 				triggerShutdown();
 				return;
 			default:
-				send({
-					id: req.id,
-					ok: false,
-					error: {
+				send(
+					err(req.id, {
 						name: 'UnknownCommand',
 						message: `unknown cmd: ${req.cmd}`,
-					},
-				});
+					}),
+				);
 		}
 	};
 }

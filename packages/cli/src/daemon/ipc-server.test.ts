@@ -1,18 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, statSync } from 'node:fs';
-import { connect, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
+
+import type { Socket } from 'bun';
 
 import {
 	type IpcHandler,
-	type IpcResponse,
+	type IpcFrame,
+	type IpcServerHandle,
 	startIpcServer,
 } from './ipc-server';
 
 let socketPath: string;
-let servers: Awaited<ReturnType<typeof startIpcServer>>[] = [];
+let servers: IpcServerHandle[] = [];
 
 beforeEach(() => {
 	socketPath = join(
@@ -22,27 +23,32 @@ beforeEach(() => {
 	servers = [];
 });
 
-afterEach(async () => {
+afterEach(() => {
 	for (const server of servers) {
-		await new Promise<void>((resolve) => server.close(() => resolve()));
+		try {
+			server.stop();
+		} catch {
+			// already stopped
+		}
 	}
 });
 
-/** Connect, collect newline-delimited JSON responses, then resolve. */
-function collect(
+/** Per-connection state for the test client socket. */
+type TestSocketData = { buffer: string; onLine: (line: string) => void };
+
+/**
+ * Connect, send pre-encoded raw lines (each terminated with `\n` by us),
+ * collect newline-delimited JSON response frames, then resolve.
+ */
+function collectRaw(
 	socketPath: string,
-	requests: object[],
+	rawLines: string[],
 	expectedFrames: number,
 	timeoutMs = 1000,
-): Promise<{ frames: IpcResponse[]; socket: Socket }> {
+): Promise<{ frames: IpcFrame[]; socket: Socket<TestSocketData> }> {
 	return new Promise((resolve, reject) => {
-		const socket = connect(socketPath);
-		const frames: IpcResponse[] = [];
-		const rl = createInterface({ input: socket });
-
+		const frames: IpcFrame[] = [];
 		const timer = setTimeout(() => {
-			rl.close();
-			socket.destroy();
 			reject(
 				new Error(
 					`timed out waiting for ${expectedFrames} frames; got ${frames.length}`,
@@ -50,33 +56,64 @@ function collect(
 			);
 		}, timeoutMs);
 
-		rl.on('line', (line) => {
-			frames.push(JSON.parse(line) as IpcResponse);
-			if (frames.length >= expectedFrames) {
-				clearTimeout(timer);
-				rl.close();
-				resolve({ frames, socket });
-			}
-		});
-
-		socket.on('error', (err) => {
+		Bun.connect<TestSocketData>({
+			unix: socketPath,
+			socket: {
+				open(s) {
+					s.data = {
+						buffer: '',
+						onLine: (line) => {
+							frames.push(JSON.parse(line) as IpcFrame);
+							if (frames.length >= expectedFrames) {
+								clearTimeout(timer);
+								resolve({ frames, socket: s });
+							}
+						},
+					};
+					for (const raw of rawLines) s.write(raw);
+				},
+				data(s, chunk) {
+					s.data.buffer += chunk.toString('utf8');
+					let nl = s.data.buffer.indexOf('\n');
+					while (nl !== -1) {
+						const line = s.data.buffer.slice(0, nl);
+						s.data.buffer = s.data.buffer.slice(nl + 1);
+						s.data.onLine(line);
+						nl = s.data.buffer.indexOf('\n');
+					}
+				},
+				close() {},
+				error(_s, err) {
+					clearTimeout(timer);
+					reject(err);
+				},
+			},
+		}).catch((err) => {
 			clearTimeout(timer);
 			reject(err);
 		});
-
-		socket.on('connect', () => {
-			for (const req of requests) {
-				socket.write(`${JSON.stringify(req)}\n`);
-			}
-		});
 	});
+}
+
+function collect(
+	socketPath: string,
+	requests: object[],
+	expectedFrames: number,
+	timeoutMs = 1000,
+): Promise<{ frames: IpcFrame[]; socket: Socket<TestSocketData> }> {
+	return collectRaw(
+		socketPath,
+		requests.map((r) => `${JSON.stringify(r)}\n`),
+		expectedFrames,
+		timeoutMs,
+	);
 }
 
 describe('startIpcServer', () => {
 	test('round-trip: ping → pong', async () => {
 		const handler: IpcHandler = (req, send) => {
 			if (req.cmd === 'ping') {
-				send({ id: req.id, ok: true, data: 'pong' });
+				send({ id: req.id, data: 'pong', error: null });
 			}
 		};
 		const server = await startIpcServer(socketPath, handler);
@@ -87,51 +124,34 @@ describe('startIpcServer', () => {
 			[{ id: '1', cmd: 'ping' }],
 			1,
 		);
-		socket.destroy();
+		socket.end();
 
-		expect(frames).toEqual([{ id: '1', ok: true, data: 'pong' }]);
+		expect(frames).toEqual([{ id: '1', data: 'pong', error: null }]);
 	});
 
 	test('bad JSON on one line does not break subsequent lines', async () => {
 		const handler: IpcHandler = (req, send) => {
-			send({ id: req.id, ok: true, data: { echoed: req.cmd } });
+			send({ id: req.id, data: { echoed: req.cmd }, error: null });
 		};
 		const server = await startIpcServer(socketPath, handler);
 		servers.push(server);
 
-		// Send a garbage line, then a real one over the same connection.
-		const result = await new Promise<IpcResponse[]>((resolve, reject) => {
-			const socket = connect(socketPath);
-			const frames: IpcResponse[] = [];
-			const rl = createInterface({ input: socket });
-			const timer = setTimeout(
-				() => reject(new Error('timeout')),
-				1000,
-			);
-			rl.on('line', (line) => {
-				frames.push(JSON.parse(line) as IpcResponse);
-				if (frames.length >= 2) {
-					clearTimeout(timer);
-					socket.destroy();
-					resolve(frames);
-				}
-			});
-			socket.on('connect', () => {
-				socket.write('not json at all\n');
-				socket.write(`${JSON.stringify({ id: '2', cmd: 'echo' })}\n`);
-			});
-			socket.on('error', reject);
-		});
+		const { frames, socket } = await collectRaw(
+			socketPath,
+			['not json at all\n', `${JSON.stringify({ id: '2', cmd: 'echo' })}\n`],
+			2,
+		);
+		socket.end();
 
-		expect(result).toHaveLength(2);
-		expect(result[0]).toMatchObject({
-			ok: false,
+		expect(frames).toHaveLength(2);
+		expect(frames[0]).toMatchObject({
+			data: null,
 			error: { name: 'BadRequest' },
 		});
-		expect(result[1]).toEqual({
+		expect(frames[1]).toEqual({
 			id: '2',
-			ok: true,
 			data: { echoed: 'echo' },
+			error: null,
 		});
 	});
 
@@ -139,8 +159,8 @@ describe('startIpcServer', () => {
 		const handler: IpcHandler = (req, send) => {
 			send({
 				id: req.id,
-				ok: true,
 				data: (req.args as { tag?: string } | undefined)?.tag ?? null,
+				error: null,
 			});
 		};
 		const server = await startIpcServer(socketPath, handler);
@@ -152,9 +172,9 @@ describe('startIpcServer', () => {
 			collect(socketPath, [{ id: '1', cmd: 'x', args: { tag: 'c' } }], 1),
 		]);
 
-		a.socket.destroy();
-		b.socket.destroy();
-		c.socket.destroy();
+		a.socket.end();
+		b.socket.end();
+		c.socket.end();
 
 		const tags = [a, b, c]
 			.map((r) => (r.frames[0] as { data: string }).data)
@@ -170,12 +190,13 @@ describe('startIpcServer', () => {
 		expect(mode).toBe(0o600);
 	});
 
-	test('closing the server unlinks the socket file', async () => {
+	test('stopping the server + unlinkSocketFile sweeps the socket file', async () => {
+		const { unlinkSocketFile } = await import('./ipc-server');
 		const server = await startIpcServer(socketPath, () => {});
 		expect(existsSync(socketPath)).toBe(true);
 
-		await new Promise<void>((resolve) => server.close(() => resolve()));
-
+		server.stop();
+		unlinkSocketFile(socketPath);
 		expect(existsSync(socketPath)).toBe(false);
 	});
 });

@@ -42,7 +42,7 @@ import type {
 } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
 
-const CONFIG_FILENAME = 'epicenter.config.ts';
+export const CONFIG_FILENAME = 'epicenter.config.ts';
 
 /**
  * Fields the CLI looks at on each workspace export. Only `[Symbol.dispose]`

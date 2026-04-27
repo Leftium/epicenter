@@ -187,7 +187,7 @@ export async function ipcCall<T = unknown>(
 	args?: unknown,
 	timeoutMs: number = DEFAULT_CALL_TIMEOUT_MS,
 ): Promise<Result<T, IpcClientError | SerializedError>> {
-	const id = `c-${crypto.randomUUID()}`;
+	const id = `c-${Bun.randomUUIDv7()}`;
 
 	if (!existsSync(socketPath)) {
 		return IpcClientError.NoDaemon({ socketPath }) as Result<
@@ -293,7 +293,7 @@ export async function* ipcStream<T = unknown>(
 		throw err;
 	}
 
-	const id = `s-${crypto.randomUUID()}`;
+	const id = `s-${Bun.randomUUIDv7()}`;
 
 	type Item =
 		| { kind: 'data'; value: T }

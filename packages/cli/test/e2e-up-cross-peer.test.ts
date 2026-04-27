@@ -7,7 +7,7 @@
  * § "Acceptance criteria". Each line below cites the criterion and the test
  * that exercises it (or the infra gap that blocks coverage).
  *
- *   [✅] `up` prints "online (deviceId=..., workspace=...)" on stderr,
+ *   [✅] `up` prints "online (workspaces=[...])" on stderr,
  *        followed by the initial peers snapshot.
  *        → `up lifecycle: online banner + peers snapshot + clean exit`
  *   [✅] Ctrl-C / SIGTERM exits cleanly with no orphan socket / metadata.
@@ -101,7 +101,7 @@ function childEnv(env: EnvOverrides): NodeJS.ProcessEnv {
 async function spawnUp(env: EnvOverrides, dir: string) {
 	const child = spawn(
 		'bun',
-		['run', BIN_PATH, 'up', '--dir', dir, '--connect-timeout', '5000'],
+		['run', BIN_PATH, 'up', '--dir', dir],
 		{
 			cwd: dir,
 			env: childEnv(env),
@@ -261,8 +261,6 @@ describe('up lifecycle (scaled-down — no real cross-peer)', () => {
 					'up',
 					'--dir',
 					FIXTURE_DIR,
-					'--connect-timeout',
-					'2000',
 				]);
 				expect(result.exitCode).toBe(1);
 				expect(result.stderr).toContain('daemon already running (pid=');

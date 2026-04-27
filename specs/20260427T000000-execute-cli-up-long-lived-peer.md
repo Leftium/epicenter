@@ -148,8 +148,8 @@ export type DaemonMetadata = {
   configMtime: number;    // ms
 };
 // The daemon serves every workspace its config exports (Invariant 7);
-// the loaded set is not recorded here. Discovery is via the IPC `status`
-// command, not the sidecar.
+// the loaded set is not recorded here. Read the config file to know
+// what's loaded; the sidecar stays static-facts-only.
 
 export function readMetadata(dir: string): DaemonMetadata | null;     // null if absent
 export function writeMetadata(dir: string, meta: DaemonMetadata): void;
@@ -290,8 +290,8 @@ This is the load-bearing one. Pseudocode for `handler`:
 7. Race each entry's workspace.whenReady concurrently against the connect
    timeout (default 10000 ms). One bad workspace fails the whole daemon
    ("connect failed: <name>: ..." — split configs for resource isolation).
-8. Write metadata JSON (no workspace/deviceId fields; the daemon's loaded
-   set is queried via the IPC `status` command).
+8. Write metadata JSON (no workspace/deviceId fields; loaded set is
+   read from the config file, not the sidecar).
 9. const server = await startIpcServer(socketPath, makeHandler(entries, config));
 10. Print "online (workspaces=[a, b, c])" then the initial peers snapshot
     per workspace — so the operator sees current state, not just future deltas.
@@ -313,7 +313,6 @@ This is the load-bearing one. Pseudocode for `handler`:
 | `cmd` | what it calls |
 | --- | --- |
 | `ping` | reply `{ok:true, data:'pong'}` |
-| `status` | reply daemon metadata + current `entry.workspace.sync.status` |
 | `peers` | snapshot `entry.workspace.sync.peers()` |
 | `list` | call into the existing list command's pure section-builder (refactor in Wave 6 — for this commit, stub returns `{ok:false, error:{name:'NotImplemented'}}` and Wave 6 fills it in) |
 | `run` | call into the existing run command's invocation section (same staged approach) |
@@ -321,13 +320,13 @@ This is the load-bearing one. Pseudocode for `handler`:
 
 Yargs builder additions:
 - `--quiet` (boolean; raises stderr floor to `warn`, but sync state changes still print)
-- `--connect-timeout` (number, default 10000, ms; applies per workspace)
+- (no `--connect-timeout`: 10000 ms is hardcoded as a stopgap; see `20260427T120000-workspace-sync-failed-phase.md` for the fix that deletes it)
 
 (No `--workspace` on `up` — Invariant 7. The daemon serves every workspace the config exports. Sibling commands (`list`, `run`, `peers`) keep `--workspace` to address a specific entry; the daemon dispatches by name.)
 
 **Tests** (`up.test.ts`) — unit-level only here; the cross-process e2e lands in Wave 8:
 - Module-level: build a fake `LoadedWorkspace` with an immediately-resolving `whenReady` and a fake `sync`. Run the handler in-process (without `process.exit`-ing) and assert it calls `startIpcServer`, writes metadata, and replies to ping.
-- Stale-auth fast-fail: fake `whenReady` that never resolves; assert the handler errors within `connect-timeout` with the spec's literal message.
+- Stale-auth fast-fail: fake `whenReady` that never resolves; with a small `deps.connectTimeoutMs` override, assert the handler errors within the timeout with the spec's literal message.
 - "Already running" path: pre-write metadata for `process.pid` and a real listening socket; assert the handler exits 1 with `"daemon already running"`.
 - Orphan path: pre-write metadata for pid 99999999 and a phantom socket; assert it logs "cleaned orphan socket" and proceeds.
 - Register the command in `cli.ts` so `epicenter up --help` prints.
@@ -388,7 +387,7 @@ packages/cli/src/commands/list.ts:
 
 **`commands/ps.ts`:**
 - Enumerate `*.meta.json`. For each, read metadata + `ipcPing` to confirm liveness.
-- Print a small table: `dir | pid | uptime | configChanged?`. (No workspace/deviceId columns — the daemon serves every workspace its config exports; ask the daemon directly via `status` for the loaded set.)
+- Print a small table: `dir | pid | uptime | configChanged?`. (No workspace/deviceId columns — the daemon serves every workspace its config exports; read the config file to know what's loaded.)
 - `configChanged` is `true` iff `statSync(<dir>/epicenter.config.ts).mtimeMs !== meta.configMtime`.
 - Drop entries whose `pid` is dead but whose metadata lingers — opportunistically unlink them (same orphan path as `inspectExistingDaemon`).
 
@@ -496,7 +495,7 @@ Each comes straight from the spec. Mark explicitly:
 - **No daemon-side hot-reload of `epicenter.config.ts`.** Invariant 4. Just surface `configChanged: true` in `ps`.
 - **No second `up` "wins" semantics.** Invariant 2. Hard exit-1.
 - **No `EPICENTER_SOCKET_PATH` or similar.** Invariant 1.
-- **No JSON output flags on `ps` / `status` in v1.** Spec defers them.
+- **No JSON output flags on `ps`.** Spec defers them. The `status` IPC verb itself is also deferred until a tooling consumer materializes.
 
 ---
 

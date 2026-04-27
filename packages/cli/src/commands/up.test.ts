@@ -115,10 +115,10 @@ describe('runUp: happy path', () => {
 			{
 				dir: workDir,
 				quiet: true,
-				connectTimeoutMs: 1000,
 			},
 			{
 				loadConfig: async () => config,
+				connectTimeoutMs: 1000,
 			},
 		);
 
@@ -157,10 +157,10 @@ describe('runUp: stale-auth fast-fail', () => {
 				{
 					dir: workDir,
 					quiet: true,
-					connectTimeoutMs: 50,
 				},
 				{
 					loadConfig: async () => config,
+					connectTimeoutMs: 50,
 				},
 			),
 		).rejects.toThrow(/^connect failed:/);
@@ -199,11 +199,11 @@ describe('runUp: already running', () => {
 					{
 						dir: workDir,
 						quiet: true,
-						connectTimeoutMs: 1000,
 					},
 					{
 						loadConfig: async () =>
 							makeFakeConfig(makeFakeWorkspace()),
+						connectTimeoutMs: 1000,
 					},
 				),
 			).rejects.toThrow(/daemon already running \(pid=/);
@@ -235,10 +235,10 @@ describe('runUp: orphan path', () => {
 			{
 				dir: workDir,
 				quiet: true,
-				connectTimeoutMs: 1000,
 			},
 			{
 				loadConfig: async () => config,
+				connectTimeoutMs: 1000,
 			},
 		);
 

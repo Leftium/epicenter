@@ -21,7 +21,10 @@
  * mode only; JSON mode always emits a valid array, even if empty).
  */
 
+import { resolve } from 'node:path';
 import type { Argv, CommandModule } from 'yargs';
+import { ipcCall, ipcPing } from '../daemon/ipc-client';
+import { socketPathFor } from '../daemon/paths';
 import {
 	type AwarenessState,
 	loadConfig,
@@ -36,8 +39,17 @@ import {
 import { formatYargsOptions, output } from '../util/format-output';
 import { explainEmpty, waitForAnyPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
+import { inheritWorkspace } from './list';
 
 const DEFAULT_WAIT_MS = 500;
+
+/**
+ * Invariant 6: `peers --wait` is a snapshot tool, not a daemon. Hard-cap at
+ * 30 s and hint anyone reaching past 5 s toward `epicenter up`, the
+ * purpose-built long-lived presence verb.
+ */
+const HARD_CAP_MS = 30000;
+const HINT_THRESHOLD_MS = 5000;
 
 type PeerRow = {
 	clientID: number;
@@ -49,7 +61,12 @@ type PeerRow = {
 type WorkspaceSnapshot = {
 	name: string;
 	peers: Map<number, AwarenessState>;
-	entry: WorkspaceEntry;
+	/**
+	 * Local entry the snapshot came from (used by `explainEmpty` to surface a
+	 * connect-status hint). Absent when the snapshot was sourced over IPC —
+	 * the daemon already logs its own connect state.
+	 */
+	entry: WorkspaceEntry | undefined;
 };
 
 export const peersCommand: CommandModule = {
@@ -74,18 +91,65 @@ export const peersCommand: CommandModule = {
 			.options(formatYargsOptions()),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
-		const workspaceArg = workspaceFromArgv(args);
+		const userWorkspace = workspaceFromArgv(args);
 		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
 		const format = args.format as 'json' | 'jsonl' | undefined;
+		const noUp = args['no-up'] === true;
+
+		// Invariant 6: cap, hint, then proceed.
+		if (waitMs > HARD_CAP_MS) {
+			console.error(
+				`--wait capped at ${HARD_CAP_MS} ms; use \`epicenter up\` for long-lived presence`,
+			);
+			process.exit(1);
+		}
+		if (waitMs > HINT_THRESHOLD_MS) {
+			console.error('Tip: for long-lived presence, see `epicenter up`.');
+		}
+
+		// Auto-detect: if a daemon is alive for this --dir, ask it for the
+		// peers snapshot instead of standing up our own transient peer.
+		if (!noUp) {
+			const absDir = resolve(dirFromArgv(args));
+			const sock = socketPathFor(absDir);
+			if (await ipcPing(sock)) {
+				const inherited = inheritWorkspace(absDir, userWorkspace);
+				if (inherited === 'mismatch') return; // exitCode already set
+				const reply = await ipcCall<
+					Array<{ clientID: number; device: AwarenessState['device'] }>
+				>(sock, 'peers', { wait: waitMs });
+				if (reply.ok) {
+					const peers = new Map<number, AwarenessState>();
+					for (const row of reply.data) {
+						peers.set(row.clientID, { device: row.device });
+					}
+					emit(
+						[
+							{
+								name: inherited ?? '<daemon>',
+								peers,
+								entry: undefined,
+							},
+						],
+						{ elideHeader: true, format },
+					);
+					return;
+				}
+				console.error(`error: ${reply.error.message}`);
+				process.exitCode = 1;
+				return;
+			}
+		}
+
 		await using config = await loadConfig(dirFromArgv(args));
-		const selected: WorkspaceEntry[] = workspaceArg
-			? [resolveEntry(config.entries, workspaceArg)]
+		const selected: WorkspaceEntry[] = userWorkspace
+			? [resolveEntry(config.entries, userWorkspace)]
 			: config.entries;
 
 		const snapshots = await Promise.all(
 			selected.map((e) => snapshotEntry(e, waitMs)),
 		);
-		emit(snapshots, { elideHeader: workspaceArg !== undefined, format });
+		emit(snapshots, { elideHeader: userWorkspace !== undefined, format });
 	},
 };
 
@@ -120,6 +184,7 @@ function emit(
 		// Surface a connect-status hint per workspace if any are still trying —
 		// turns "silent timeout" into "oh, the server rejected us".
 		for (const { name, entry } of snapshots) {
+			if (!entry) continue;
 			const why = explainEmpty(entry.workspace);
 			if (why) console.error(`  ${name}: ${why}`);
 		}

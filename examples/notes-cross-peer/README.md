@@ -4,7 +4,7 @@ Two-peer minimal repro for the `system.describe` cross-peer fetch.
 
 Both configs construct the same workspace (`epicenter.notes-repro`) with
 distinct deviceIds, so each appears in the other's awareness. Exercises
-`peerSystem(sync, deviceId).describe()` end-to-end against the deployed API.
+`describePeer(sync, deviceId)` end-to-end against the deployed API.
 
 ## Setup
 

@@ -224,7 +224,7 @@ export type SyncAttachmentConfig = {
 	 *
 	 * Awareness carries presence only — no action manifest. Consumers that
 	 * need to enumerate a peer's actions call
-	 * `peerSystem(sync, deviceId).describe()` to fetch the full local
+	 * `describePeer(sync, deviceId)` to fetch the full local
 	 * `ActionManifest` on demand via the runtime-injected `system.describe`
 	 * RPC.
 	 */
@@ -316,7 +316,7 @@ export function attachSync(
 	// Inject `system.*` meta operations into the dispatch tree.
 	// `system.describe` is argless and returns the full local
 	// `ActionManifest` (dot-path → ActionMeta with live input schemas).
-	// Consumers fetch on demand via `peerSystem(sync, deviceId).describe()`
+	// Consumers fetch on demand via `describePeer(sync, deviceId)`
 	// rather than receiving a manifest broadcast in awareness.
 	const systemActions: Actions = {
 		describe: defineQuery({

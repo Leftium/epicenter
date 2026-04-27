@@ -268,7 +268,7 @@ describe('describePeer(sync, deviceId)', () => {
 		// (rewriting requesterClientId so the remote responds with a frame
 		// the local pipe can route back).
 		const REMOTE_FAKE_CLIENT = 42;
-		// Inject a fake "remote" peer into local awareness so peerSystem can
+		// Inject a fake "remote" peer into local awareness so describePeer can
 		// find a clientId to dispatch against.
 		localSync.raw.awareness!.getStates().set(REMOTE_FAKE_CLIENT, {
 			device: { id: 'remote', name: 'remote', platform: 'web' },

@@ -1,5 +1,5 @@
 /**
- * `epicenter logs` — tail the rotating log file for a running daemon.
+ * `epicenter logs`: tail the rotating log file for a running daemon.
  *
  * Default: print the last 50 lines and exit (mirrors `tail` defaults).
  * `--follow`: stream new bytes via `node:fs.watch`, reopening on rotation
@@ -44,7 +44,7 @@ export type LogsOptions = {
  * trailing newline (matching `tail -n` output). Returns the empty string
  * when the file is missing or empty.
  *
- * Implementation note: `readFileSync` is fine here — the log is bounded
+ * Implementation note: `readFileSync` is fine here. The log is bounded
  * to {@link import('../daemon/log-rotation.js').ROTATE_MAX_BYTES} (10 MB)
  * before rotation, so worst-case memory is small and predictable.
  */
@@ -53,7 +53,7 @@ export function tailLines(path: string, n: number): string {
 	const buf = readFileSync(path, 'utf8');
 	if (buf.length === 0) return '';
 	const lines = buf.split('\n');
-	// `split` of "a\nb\n" → ['a','b',''] — drop trailing empty if present.
+	// `split` of "a\nb\n" → ['a','b',''], so drop the trailing empty if present.
 	if (lines[lines.length - 1] === '') lines.pop();
 	return `${lines.slice(-n).join('\n')}\n`;
 }
@@ -64,7 +64,7 @@ export function tailLines(path: string, n: number): string {
  * Returns:
  *   - `{ kind: 'one', dir }`   when exactly one metadata file exists.
  *   - `{ kind: 'none' }`       when none.
- *   - `{ kind: 'many', dirs }` when more than one — caller must error.
+ *   - `{ kind: 'many', dirs }` when more than one (caller must error).
  */
 export function pickSoleDaemon():
 	| { kind: 'one'; meta: DaemonMetadata }
@@ -96,7 +96,7 @@ export function followLog(path: string): () => void {
 			}
 		})();
 		if (size < 0) return;
-		// File was truncated under us — reopen from start.
+		// File was truncated under us; reopen from start.
 		if (size < pos) {
 			closeSync(fd);
 			fd = openSync(path, 'r');
@@ -115,7 +115,7 @@ export function followLog(path: string): () => void {
 	const watcher = watch(dirname(path), (eventType, fn) => {
 		if (fn !== basename(path)) return;
 		if (eventType === 'rename') {
-			// File was rotated away or recreated — reopen.
+			// File was rotated away or recreated; reopen.
 			if (fd >= 0) {
 				try {
 					closeSync(fd);
@@ -168,7 +168,7 @@ export const logsCommand: CommandModule = {
 		let logPath: string;
 		if (explicitDir !== undefined) {
 			const absDir = resolve(dirFromArgv(args));
-			// readMetadata is best-effort — if missing, the log file may still
+			// readMetadata is best-effort; if missing, the log file may still
 			// exist from a previous daemon. Fall through to logPathFor anyway.
 			void readMetadata(absDir);
 			logPath = logPathFor(absDir);
@@ -176,7 +176,7 @@ export const logsCommand: CommandModule = {
 			const sole = pickSoleDaemon();
 			if (sole.kind === 'none') {
 				process.stderr.write(
-					'no daemons running — pass --dir to tail a specific log\n',
+					'no daemons running; pass --dir to tail a specific log\n',
 				);
 				process.exit(1);
 			}

@@ -1,10 +1,10 @@
 /**
- * `attachSessionUnlock` — apply the stored CLI session's encryption keys to
+ * `attachSessionUnlock`: apply the stored CLI session's encryption keys to
  * an `EncryptionAttachment`.
  *
  * Follows the attach-primitive convention: subject first, synchronous return,
  * promise-valued barrier (`whenChecked`). Resolves even in anonymous mode
- * (no stored session, no keys to apply) — it's a "setup complete" barrier,
+ * (no stored session, no keys to apply); it's a "setup complete" barrier,
  * not a "keys were applied" assertion.
  *
  * @example
@@ -31,8 +31,8 @@ export type SessionUnlockAttachment = {
 	/**
 	 * Resolves after the stored session has been checked and any encryption
 	 * keys present on it have been applied to the `EncryptionAttachment`.
-	 * Resolves even in anonymous mode (no stored session, no keys to apply)
-	 * — it's a "setup complete" barrier, not a "keys were applied" assertion.
+	 * Resolves even in anonymous mode (no stored session, no keys to apply);
+	 * it's a "setup complete" barrier, not a "keys were applied" assertion.
 	 */
 	whenChecked: Promise<unknown>;
 };
@@ -43,7 +43,7 @@ export type SessionUnlockAttachment = {
  * @param encryption - The `EncryptionAttachment` whose keys should be applied.
  * @param opts.sessions  - The CLI session store to load the session from.
  * @param opts.serverUrl - The server URL the session is keyed by.
- * @param opts.waitFor   - Optional upstream gate — typically `persistence.whenLoaded`
+ * @param opts.waitFor   - Optional upstream gate, typically `persistence.whenLoaded`,
  *                         so stored keys aren't applied before hydration completes.
  */
 export function attachSessionUnlock(
@@ -51,7 +51,7 @@ export function attachSessionUnlock(
 	opts: {
 		sessions: SessionStore;
 		serverUrl: string;
-		/** Optional upstream gate — typically `persistence.whenLoaded`. */
+		/** Optional upstream gate, typically `persistence.whenLoaded`. */
 		waitFor?: Promise<unknown>;
 	},
 ): SessionUnlockAttachment {

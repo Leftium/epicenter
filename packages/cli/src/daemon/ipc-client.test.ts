@@ -43,7 +43,7 @@ describe('ipcPing', () => {
 		expect(await ipcPing(socketPath)).toBe(true);
 
 		server.stop();
-		// Drop from cleanup list — already stopped.
+		// Drop from cleanup list; already stopped.
 		servers = [];
 
 		expect(await ipcPing(socketPath)).toBe(false);

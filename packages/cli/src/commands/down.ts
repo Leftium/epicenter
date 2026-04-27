@@ -1,12 +1,12 @@
 /**
- * `epicenter down` — stop a running `up` daemon.
+ * `epicenter down`: stop a running `up` daemon.
  *
  * Default: shut down the daemon for `--dir` via IPC `shutdown` (1 s budget).
  * If the daemon doesn't reply in time (hung handler, unresponsive socket),
  * fall back to `SIGTERM` against the recorded pid. `--all` enumerates every
  * daemon for the current user and shuts them down in parallel.
  *
- * No confirmation prompt — daemons are kill-friendly by design.
+ * No confirmation prompt: daemons are kill-friendly by design.
  *
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Process lifecycle".
  */
@@ -75,16 +75,16 @@ async function shutdownOne(
 		return { kind: 'graceful', pid: meta.pid, dir: meta.dir };
 	}
 
-	// IPC didn't ack — fall back to SIGTERM if the pid is alive.
+	// IPC didn't ack; fall back to SIGTERM if the pid is alive.
 	if (isProcessAlive(meta.pid)) {
 		try {
 			deps.kill(meta.pid, 'SIGTERM');
 		} catch {
-			// pid raced to exit between the alive check and the kill —
+			// pid raced to exit between the alive check and the kill;
 			// equivalent to graceful from our perspective.
 		}
 	}
-	// Best-effort sweep — graceful shutdown would have removed these.
+	// Best-effort sweep; graceful shutdown would have removed these.
 	unlinkMetadata(meta.dir);
 	return { kind: 'sigterm', pid: meta.pid, dir: meta.dir };
 }
@@ -160,7 +160,7 @@ export const downCommand: CommandModule = {
 			process.stdout.write(`stopped (pid=${outcome.pid})\n`);
 		} else {
 			process.stderr.write(
-				`shutdown timed out — sent SIGTERM (pid=${outcome.pid})\n`,
+				`shutdown timed out, sent SIGTERM (pid=${outcome.pid})\n`,
 			);
 		}
 	},

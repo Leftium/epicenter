@@ -1,7 +1,7 @@
 /**
  * Path builders for the long-lived `epicenter up` daemon.
  *
- * Pure helpers — no side effects, no directory creation. The `up` command
+ * Pure helpers: no side effects, no directory creation. The `up` command
  * (Wave 5) owns the `mkdir`/`chmod` work; consumers here are free to call
  * these from anywhere without worrying about filesystem mutation.
  *
@@ -35,7 +35,7 @@ export function runtimeDir(): string {
  * Truncated to 16 hex chars (64 bits) so the resulting socket path stays
  * comfortably under the 104-char Unix-socket limit on macOS. Symlinks are
  * resolved via `realpathSync` so two equivalent paths always hash the same.
- * The dir must exist — every production caller hashes a `--dir` that
+ * The dir must exist; every production caller hashes a `--dir` that
  * `loadConfig` has already accepted, so this contract is safe to enforce.
  */
 export function dirHash(dir: string): string {
@@ -55,7 +55,7 @@ export function metadataPathFor(dir: string): string {
 /**
  * Log file for the daemon serving `dir`.
  *
- * Always lives under `~/.epicenter/log/` (persistent) — never tmpfs, so
+ * Always lives under `~/.epicenter/log/` (persistent), never tmpfs, so
  * the operator can read post-mortem logs after a crash or reboot.
  */
 export function logPathFor(dir: string): string {

@@ -148,8 +148,8 @@ export type Actions = {
  * Returns the handler with metadata attached — the action callable IS the
  * handler. Local callers see whatever the handler returns (sync if sync,
  * raw if raw, `Result` if explicit). Remote/AI/CLI consumers see uniform
- * `Promise<Result>` via the boundary normalizers (`createRemoteActions`,
- * `invokeNormalized`).
+ * `Promise<Result>` via the boundary normalizers (`peer()` for the wire,
+ * `invokeNormalized` for in-process).
  */
 /** No input — `TInput` is explicitly `undefined`. */
 export function defineQuery<R>(

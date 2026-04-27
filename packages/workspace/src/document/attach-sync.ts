@@ -26,7 +26,6 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import { Ok, isResult } from 'wellcrafted/result';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import {
 	Awareness as YAwareness,
@@ -41,6 +40,7 @@ import {
 	type RemoteCallOptions,
 	defineQuery,
 	describeActions,
+	invokeNormalized,
 	resolveActionPath,
 } from '../shared/actions.js';
 import {
@@ -460,16 +460,7 @@ export function attachSync(
 			return;
 		}
 
-		// Normalize the return into a `{data, error}` wire payload: raw
-		// throw → Err(ActionFailed); raw value → Ok-wrap; existing Result →
-		// forward unchanged.
-		try {
-			const raw = await target(rpc.input as never);
-			const normalized = isResult(raw) ? raw : Ok(raw);
-			sendResponse(normalized);
-		} catch (cause) {
-			sendResponse(RpcError.ActionFailed({ action: rpc.action, cause }));
-		}
+		sendResponse(await invokeNormalized(target, rpc.input, rpc.action));
 	}
 
 	// ── Message senders ──

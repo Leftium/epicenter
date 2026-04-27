@@ -49,7 +49,6 @@ import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { explainEmpty, waitForPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
-import { emitMissError, emitRpcError } from '../util/run-peer-errors';
 import { inheritWorkspace } from './list';
 
 const DEFAULT_PEER_WAIT_MS = 5000;
@@ -393,4 +392,75 @@ function nearestSiblingLines(
 		return alts.map(([p, a]) => `  ${p}  (${a.type})`);
 	}
 	return [];
+}
+
+// ─── Error formatters ────────────────────────────────────────────────────────
+
+/**
+ * Two miss shapes: nothing seen on the wire (probably a connect-status
+ * problem — caller should follow with `explainEmpty`) vs peers visible but
+ * none matched the requested deviceId (user typo / wrong workspace).
+ */
+export function emitMissError(
+	target: string,
+	sawPeers: boolean,
+	workspace: string | undefined,
+	waitMs: number,
+): void {
+	const scope = workspace ? ` in workspace ${workspace}` : '';
+	if (!sawPeers) {
+		outputError(
+			`error: no peers seen after waiting ${waitMs}ms for "${target}"`,
+		);
+		return;
+	}
+	outputError(`error: no peer matches deviceId "${target}"${scope}`);
+	const peersHint = workspace ? ` -w ${workspace}` : '';
+	outputError(`run \`epicenter peers${peersHint}\` to see connected peers`);
+}
+
+/**
+ * Format every `RpcError` variant labeled with the peer's presence info
+ * (`device.name`, `device.platform`) at resolution time. The exhaustive
+ * switch is enforced at compile time via the `never` check: adding a new
+ * variant to `@epicenter/workspace`'s `RpcError` breaks the build until a
+ * case is added here.
+ */
+export function emitRpcError(
+	error: RpcError,
+	targetClientId: number,
+	peerState: AwarenessState,
+): void {
+	const { device } = peerState;
+	const peerLabel = `${device.name} (${targetClientId}, ${device.platform})`;
+
+	switch (error.name) {
+		case 'ActionNotFound':
+			outputError(`error: ActionNotFound "${error.action}" on ${peerLabel}`);
+			return;
+		case 'Timeout':
+			outputError(`error: timeout after ${error.ms}ms on ${peerLabel}`);
+			return;
+		case 'PeerOffline':
+			outputError(`error: peer ${peerLabel} is offline`);
+			return;
+		case 'PeerNotFound':
+			outputError(`error: no peer with deviceId "${error.peer}"`);
+			return;
+		case 'PeerLeft':
+			outputError(
+				`error: peer "${error.peer}" disconnected before responding`,
+			);
+			return;
+		case 'ActionFailed':
+			outputError(
+				`error: "${error.action}" failed on ${peerLabel}: ${extractErrorMessage(error.cause)}`,
+			);
+			return;
+		case 'Disconnected':
+			outputError(`error: connection lost before ${peerLabel} responded`);
+			return;
+		default:
+			error satisfies never;
+	}
 }

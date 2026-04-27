@@ -99,13 +99,12 @@ Scripts can distinguish these cases without parsing stderr:
 
 ## What your `epicenter.config.ts` must export
 
-An **opened handle** — not a factory. A factory has no id to call on its own; a handle already has refcount `+1`, sync connected, persistence open.
+An **opened workspace** — call your `openX()` factory at module top-level so the export is already constructed (Y.Doc made, attachments wired, sync ready to connect). No framework wrapper, no `.open()` step — just a plain function the CLI consumes via the export.
 
 ```ts
 // epicenter.config.ts
 import * as Y from 'yjs';
 import {
-    defineDocument,
     defineTable,
     attachTables,
     defineQuery,
@@ -116,8 +115,8 @@ import { type } from 'arktype';
 
 const SavedTab = defineTable(type({ id: 'string', title: 'string', url: 'string', _v: '1' }));
 
-const tabManagerFactory = defineDocument((id) => {
-    const ydoc = new Y.Doc({ guid: id });
+function openTabManager() {
+    const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager' });
     const tables = attachTables(ydoc, { savedTabs: SavedTab });
 
     return {
@@ -141,10 +140,10 @@ const tabManagerFactory = defineDocument((id) => {
 
         [Symbol.dispose]() { ydoc.destroy(); },
     };
-});
+}
 
-// The opened handle is what the CLI and scripts consume.
-export const tabManager = tabManagerFactory.open('epicenter.tab-manager');
+// The opened workspace is what the CLI and scripts consume.
+export const tabManager = openTabManager();
 ```
 
 ## Exposing operations via CLI
@@ -192,13 +191,13 @@ There is no default-export shorthand. Even a config with one workspace uses a na
 
 ```ts
 // epicenter.config.ts
-export const tabManager = tabManagerFactory.open('epicenter.tab-manager');
-export const fuji       = fujiFactory.open('epicenter.fuji');
+export const tabManager = openTabManager();
+export const fuji       = openFuji();
 // epicenter run tabManager.savedTabs.list
 // epicenter run fuji.entries.list
 ```
 
-The GUID you pass to `.open()` and the export name serve **different purposes**:
+The Y.Doc GUID (set inside `openX()` via `new Y.Doc({ guid: ... })`) and the export name serve **different purposes**:
 
 - `'epicenter.tab-manager'` — the Y.Doc's GUID. Controls persistence file, sync room, CRDT identity. Don't change this on a workspace with real data.
 - `tabManager` — the JS binding name. Controls the CLI path prefix. Safe to rename any time.

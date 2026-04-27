@@ -539,7 +539,15 @@ export function encodeRpcResponse({
 	requesterClientId: number;
 	result: { data: unknown; error: unknown };
 }): Uint8Array {
-	const jsonBytes = new TextEncoder().encode(JSON.stringify(result));
+	// JSON.stringify silently drops keys whose value is `undefined`, which
+	// would produce `{"error":null}` for void-returning mutation handlers
+	// and trip the receiver's `'data' in raw` check. Normalize at the wire
+	// boundary so the envelope always has both keys.
+	const normalized = {
+		data: result.data === undefined ? null : result.data,
+		error: result.error === undefined ? null : result.error,
+	};
+	const jsonBytes = new TextEncoder().encode(JSON.stringify(normalized));
 	return encoding.encode((encoder) => {
 		encoding.writeVarUint(encoder, MESSAGE_TYPE.RPC);
 		encoding.writeVarUint(encoder, RPC_TYPE.RESPONSE);

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { ipcCall, ipcPing, ipcStream } from './ipc-client';
+import { ipcCall, ipcPing } from './ipc-client';
 import {
 	type IpcHandler,
 	type IpcServerHandle,
@@ -80,23 +80,3 @@ describe('ipcCall', () => {
 	});
 });
 
-describe('ipcStream', () => {
-	test('yields exactly the streamed values before end:true', async () => {
-		const handler: IpcHandler = (req, send) => {
-			if (req.cmd === 'count') {
-				send({ id: req.id, data: 1, error: null });
-				send({ id: req.id, data: 2, error: null });
-				send({ id: req.id, data: 3, error: null, end: true });
-			}
-		};
-		const server = await startIpcServer(socketPath, handler);
-		servers.push(server);
-
-		const collected: number[] = [];
-		for await (const value of ipcStream<number>(socketPath, 'count')) {
-			collected.push(value);
-		}
-
-		expect(collected).toEqual([1, 2, 3]);
-	});
-});

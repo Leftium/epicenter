@@ -1,7 +1,7 @@
 /**
  * Newline-delimited JSON IPC client for the long-lived `epicenter up` daemon.
  *
- * Counterpart to `ipc-server.ts`. Three surfaces:
+ * Counterpart to `ipc-server.ts`. Two surfaces:
  *
  * - {@link ipcPing} — cheap liveness probe used by sibling auto-detect and
  *   orphan inspection. Never throws; returns `false` on any connect / timeout
@@ -10,8 +10,6 @@
  *   Connection failures collapse into the `IpcClientError.NoDaemon` /
  *   `IpcClientError.Timeout` variants so "no daemon running" is just
  *   another `Err` outcome.
- * - {@link ipcStream} — async iterator over a streamed reply. Yields each
- *   `data` payload until the server sends `end: true` or an error frame.
  *
  * Wire format and security model are deliberately internal — see
  * `specs/20260426T235000-cli-up-long-lived-peer.md` § "IPC wire protocol".
@@ -61,7 +59,7 @@ export const IpcClientError = defineErrors({
 });
 export type IpcClientError = InferErrors<typeof IpcClientError>;
 
-/** Default per-frame read timeout (ms) for {@link ipcCall} / {@link ipcStream}. */
+/** Default per-frame read timeout (ms) for {@link ipcCall}. */
 const DEFAULT_CALL_TIMEOUT_MS = 5000;
 
 /** Default ping timeout (ms). Tight on purpose: ping is a fast-path probe. */
@@ -271,104 +269,3 @@ export async function ipcCall<T = unknown>(
 	});
 }
 
-/**
- * Iterate over a streamed reply, yielding each `data` payload in order.
- * The iterator completes when the server sends a frame with `end: true`,
- * an error frame (which throws), or the connection closes.
- *
- * Connection-level failures throw an `IpcClientError`; handler-level error
- * frames also throw with the wire `{name, message, ...}` preserved as
- * `Error.name` / `Error.message`. Streaming is rare enough that try/catch
- * at call sites is acceptable.
- */
-export async function* ipcStream<T = unknown>(
-	socketPath: string,
-	cmd: string,
-	args?: unknown,
-): AsyncGenerator<T> {
-	if (!existsSync(socketPath)) {
-		const tagged = IpcClientError.NoDaemon({ socketPath });
-		const err = new Error(tagged.error.message);
-		err.name = tagged.error.name;
-		throw err;
-	}
-
-	const id = `s-${Bun.randomUUIDv7()}`;
-
-	type Item =
-		| { kind: 'data'; value: T }
-		| { kind: 'end' }
-		| { kind: 'error'; name: string; message: string };
-
-	const queue: Item[] = [];
-	const waiters: Array<(item: Item) => void> = [];
-	const push = (item: Item) => {
-		const w = waiters.shift();
-		if (w) w(item);
-		else queue.push(item);
-	};
-	const next = (): Promise<Item> =>
-		queue.length > 0
-			? Promise.resolve(queue.shift()!)
-			: new Promise<Item>((resolve) => waiters.push(resolve));
-
-	let socket: Socket<ClientSocketData>;
-	try {
-		socket = await connectLineSocket(socketPath, {
-			onLine: (line) => {
-				let frame: IpcFrame<T>;
-				try {
-					frame = JSON.parse(line) as IpcFrame<T>;
-				} catch {
-					return;
-				}
-				if (!('id' in frame) || !frame.id) return;
-				if (frame.id !== id) return;
-
-				if (frame.error !== null) {
-					push({
-						kind: 'error',
-						name: frame.error.name,
-						message: frame.error.message,
-					});
-					return;
-				}
-				if (frame.data !== undefined) {
-					push({ kind: 'data', value: frame.data as T });
-				}
-				if (frame.end) push({ kind: 'end' });
-			},
-			onClose: () => push({ kind: 'end' }),
-			onError: (err) => {
-				const tagged = IpcClientError.NoDaemon({ socketPath, cause: err });
-				push({
-					kind: 'error',
-					name: tagged.error.name,
-					message: tagged.error.message,
-				});
-			},
-		});
-	} catch (cause) {
-		const tagged = IpcClientError.NoDaemon({ socketPath, cause });
-		const err = new Error(tagged.error.message);
-		err.name = tagged.error.name;
-		throw err;
-	}
-
-	socket.write(`${JSON.stringify({ id, cmd, args })}\n`);
-
-	try {
-		while (true) {
-			const item = await next();
-			if (item.kind === 'end') return;
-			if (item.kind === 'error') {
-				const err = new Error(item.message);
-				err.name = item.name;
-				throw err;
-			}
-			yield item.value;
-		}
-	} finally {
-		socket.end();
-	}
-}

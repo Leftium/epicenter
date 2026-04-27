@@ -51,15 +51,21 @@ export const IpcServerError = defineErrors({
 export type IpcServerError = InferErrors<typeof IpcServerError>;
 
 /**
- * The on-the-wire form of any tagged error. `defineErrors` produces objects
- * with `name` + `message` + variant-specific fields (and a `cause` we don't
- * try to JSON-serialize structurally, since `JSON.stringify` reduces an `Error`
- * cause to `{}`, which is fine for the client's `message`-first surface).
+ * Structural shape of any tagged error on the wire — the JSON form of a
+ * `defineErrors` variant after it crosses the socket.
+ *
+ * The type guarantees `name` and `message` only; variant-specific fields
+ * (`socketPath` on `NoDaemon`, `timeoutMs` on `Timeout`, etc.) survive
+ * `JSON.stringify` at runtime but require narrowing on a known variant
+ * union (e.g. `IpcClientError | IpcServerError`) to access. This is
+ * honest about the boundary: the wire receives errors from multiple
+ * domains (transport, app handlers, arbitrary thrown exceptions in the
+ * dispatcher), so the bare-frame type stays minimal and callers tighten
+ * via the `Result<T, ...>` `E` parameter when they need variant access.
  */
 export type SerializedError = {
 	name: string;
 	message: string;
-	[key: string]: unknown;
 };
 
 /** Single JSON request frame from a client. */
@@ -184,17 +190,13 @@ function processLine(
 		// Per-line failure; keep the connection open so other lines
 		// (potentially from a pipelining client) can still be served.
 		const tagged = IpcServerError.BadRequest({ cause });
-		send({ id: '', data: null, error: tagged.error as SerializedError });
+		send({ id: '', data: null, error: tagged.error });
 		return;
 	}
 
 	void Promise.resolve(handler(req, send)).catch((cause) => {
 		const tagged = IpcServerError.HandlerCrashed({ cause });
-		send({
-			id: req.id ?? '',
-			data: null,
-			error: tagged.error as SerializedError,
-		});
+		send({ id: req.id ?? '', data: null, error: tagged.error });
 	});
 }
 

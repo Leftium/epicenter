@@ -57,8 +57,8 @@ packages/cli/src/
     logs.ts                 # tail <h>.log; --follow uses fs.watch
     logs.test.ts
     peers.ts                # MODIFIED: cap --wait at 30000, hint above 5000, auto-detect
-    list.ts                 # MODIFIED: auto-detect IPC; inherit --workspace
-    run.ts                  # MODIFIED: auto-detect IPC; inherit --workspace
+    list.ts                 # MODIFIED: auto-detect IPC; forward --workspace
+    run.ts                  # MODIFIED: auto-detect IPC; forward --workspace
   cli.ts                    # MODIFIED: register the four new commands
   auth/
     paths.ts                # MODIFIED: add `runtime()` and `runFile(hash)` resolvers
@@ -143,12 +143,13 @@ Surface:
 export type DaemonMetadata = {
   pid: number;
   dir: string;            // absolute, fs-resolved
-  workspace: string;      // entry name selected at start
-  deviceId: string;
   startedAt: string;      // ISO 8601
   cliVersion: string;
   configMtime: number;    // ms
 };
+// The daemon serves every workspace its config exports (Invariant 7);
+// the loaded set is not recorded here. Discovery is via the IPC `status`
+// command, not the sidecar.
 
 export function readMetadata(dir: string): DaemonMetadata | null;     // null if absent
 export function writeMetadata(dir: string, meta: DaemonMetadata): void;
@@ -284,18 +285,20 @@ This is the load-bearing one. Pseudocode for `handler`:
      - 'clean'   → continue.
 4. Set up the file logger (Wave 7) tee'd with stderr.
 5. await using config = await loadConfig(dir).
-6. Resolve the workspace entry (workspaceArg via resolveEntry, or single entry).
-7. Race entry.workspace.whenReady against connect timeout (default 10000 ms).
-   On timeout / on auth error → exit 1 with "connect failed: ..." (test asserts
-   on the literal string for stale-auth fast-fail).
-8. Write metadata JSON.
-9. const server = await startIpcServer(socketPath, makeHandler(entry, config));
-10. Print "online (deviceId=..., workspace=...)" then the initial peers snapshot
-    (one line per peer; "no peers connected" if empty) — this is so the operator
-    sees current state, not just future deltas.
-11. Subscribe to entry.workspace.sync.observe(...) → log "peer-X joined" / "left".
-    Subscribe to sync.onStatusChange(...) → log "connecting (retry N)" /
-    "connected" / "offline" — these print regardless of --quiet.
+6. Keep ALL config.entries — the daemon serves every workspace the config
+   exports (Invariant 7). No per-entry selection at startup.
+7. Race each entry's workspace.whenReady concurrently against the connect
+   timeout (default 10000 ms). One bad workspace fails the whole daemon
+   ("connect failed: <name>: ..." — split configs for resource isolation).
+8. Write metadata JSON (no workspace/deviceId fields; the daemon's loaded
+   set is queried via the IPC `status` command).
+9. const server = await startIpcServer(socketPath, makeHandler(entries, config));
+10. Print "online (workspaces=[a, b, c])" then the initial peers snapshot
+    per workspace — so the operator sees current state, not just future deltas.
+11. Per loaded entry: subscribe to sync.observe(...) → log "<name>: peer-X
+    joined" / "left". Subscribe to sync.onStatusChange(...) → log
+    "<name>: connecting (retry N)" / "connected" / "offline" — these print
+    regardless of --quiet.
 12. Install SIGINT/SIGTERM handler:
       a. Stop accepting new connections (server.close()).
       b. Wait for in-flight handlers (best-effort, 2s).
@@ -317,9 +320,10 @@ This is the load-bearing one. Pseudocode for `handler`:
 | `shutdown` | reply `{ok:true}`, then trigger the same teardown as SIGTERM |
 
 Yargs builder additions:
-- `--workspace` (existing pattern; required if the config exports >1)
 - `--quiet` (boolean; raises stderr floor to `warn`, but sync state changes still print)
-- `--connect-timeout` (number, default 10000, ms)
+- `--connect-timeout` (number, default 10000, ms; applies per workspace)
+
+(No `--workspace` on `up` — Invariant 7. The daemon serves every workspace the config exports. Sibling commands (`list`, `run`, `peers`) keep `--workspace` to address a specific entry; the daemon dispatches by name.)
 
 **Tests** (`up.test.ts`) — unit-level only here; the cross-process e2e lands in Wave 8:
 - Module-level: build a fake `LoadedWorkspace` with an immediately-resolving `whenReady` and a fake `sync`. Run the handler in-process (without `process.exit`-ing) and assert it calls `startIpcServer`, writes metadata, and replies to ping.
@@ -365,14 +369,12 @@ packages/cli/src/commands/list.ts:
 
 **(b) In `up.ts`'s `makeHandler`, replace the two `NotImplemented` stubs from Wave 5** with real calls into `listCore` / `runCore` against the daemon's `entry`.
 
-**(c) `--workspace` inheritance (Invariant 7)**: in the auto-detect branch of sibling commands, if the user did not pass `--workspace`, read `meta.json.workspace` and forward it. If they did pass `--workspace` and it disagrees with `meta.json.workspace`, error: `"workspace mismatch: daemon owns 'X', requested 'Y' — restart the daemon or omit --workspace"`.
-
-Also add `--no-up` escape hatch (boolean, default false) on `peers`/`list`/`run` for debugging — when true, skip auto-detect and force transient mode.
+**(c) Workspace routing (Invariant 7)**: the daemon serves every workspace its config exports. Sibling commands forward `--workspace` (or `undefined`) straight to IPC; the daemon resolves the name via `resolveEntry` — the same lookup the cold path uses, so an unknown workspace returns an identical error in either path. There is no "mismatch" concept and no metadata-inheritance step.
 
 **Tests:**
-- `list --no-up` against a running daemon uses the transient path (assert by counting WS connections at a fake relay, or by stubbing `ipcCall` and asserting it was not called).
-- With a daemon running and `--workspace` omitted, sibling inherits from metadata; with mismatching `--workspace`, sibling errors with the spec's literal message.
-- `list` and `run` against a non-running daemon work exactly as today (regression coverage — copy a few cases from `list.test.ts` / `run.test.ts` and run them with both paths).
+- `list` and `run` against a non-running daemon work exactly as today (cold path regression).
+- `list` against a running daemon dispatches via IPC and produces a structurally-identical `ListResult` (the daemon's `listCore` is the same pure function the cold path calls).
+- `list --workspace nonexistent` against a multi-workspace daemon returns the cold-path's `resolveEntry` error message verbatim (rendered through `renderDaemonResult`).
 
 ---
 
@@ -386,7 +388,7 @@ Also add `--no-up` escape hatch (boolean, default false) on `peers`/`list`/`run`
 
 **`commands/ps.ts`:**
 - Enumerate `*.meta.json`. For each, read metadata + `ipcPing` to confirm liveness.
-- Print a small table: `dir | deviceId | workspace | pid | uptime | configChanged?`.
+- Print a small table: `dir | pid | uptime | configChanged?`. (No workspace/deviceId columns — the daemon serves every workspace its config exports; ask the daemon directly via `status` for the loaded set.)
 - `configChanged` is `true` iff `statSync(<dir>/epicenter.config.ts).mtimeMs !== meta.configMtime`.
 - Drop entries whose `pid` is dead but whose metadata lingers — opportunistically unlink them (same orphan path as `inspectExistingDaemon`).
 
@@ -473,15 +475,15 @@ This is allowed to be slower than other tests — gate it behind a `e2e` test ta
 
 Each comes straight from the spec. Mark explicitly:
 
-- [ ] `epicenter up --dir peer-a` prints `"online (deviceId=..., workspace=...)"`, then initial peers snapshot, then `"peer-b joined"` when peer-b connects. Ctrl-C exits cleanly with no orphan files.
+- [ ] `epicenter up --dir peer-a` prints `"online (workspaces=[notes])"`, then initial peers snapshot per workspace, then `"notes: peer-b joined"` when peer-b connects. Ctrl-C exits cleanly with no orphan files.
 - [ ] With `up` running, `epicenter run --dir peer-b --peer notes-repro-peer-a notes.add '...'` succeeds in <100 ms wall time. Without `up`, the same call works via transient mode (slower, no behavior diff).
-- [ ] `epicenter ps` prints every running daemon with deviceId/pid/uptime/configChanged.
+- [ ] `epicenter ps` prints every running daemon with dir/pid/uptime/configChanged.
 - [ ] `epicenter logs --dir peer-a --follow` tails the rotating log.
 - [ ] `kill -9 <up-pid>` then `epicenter up --dir peer-a` again logs `"cleaned orphan socket"` and starts cleanly.
 - [ ] Two `up`s same `--dir`: second exits 1 with `"daemon already running (pid=X)"`.
 - [ ] `down --dir peer-a` is graceful; `down --all` stops every daemon for this user.
 - [ ] **Stale-auth fast-fail:** with an expired token, `up` exits within 10 s with `"connect failed: 401 Unauthorized — try \`epicenter auth login\`"` — never an indefinite hang. (This is the bug we're fixing.)
-- [ ] **Workspace inheritance:** `up --workspace alpha`, then sibling `list --dir <same>` (no flag) resolves to alpha. Mismatched `--workspace` errors clearly.
+- [ ] **Multi-workspace daemon (Invariant 7):** `up` with a config exporting `alpha` and `beta`, then `list --dir <same> --workspace beta` routes through the daemon to `beta`. Unknown workspace names return the cold-path's `resolveEntry` error.
 - [ ] **Invariant 6:** `peers --wait 60000` exits 1 with the cap message; `--wait 10000` prints the hint; `--wait 1000` is silent.
 
 ---

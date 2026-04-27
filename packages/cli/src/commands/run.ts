@@ -1,5 +1,5 @@
 /**
- * `epicenter run <dot.path> [input]` — invoke a `defineQuery` /
+ * `epicenter run <dot.path> [input]`: invoke a `defineQuery` /
  * `defineMutation` by dot-path through a loaded workspace.
  *
  * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
@@ -7,17 +7,20 @@
  * room's RPC channel to a remote peer instead of running locally.
  *
  * Exit codes:
- *   1 — usage error (unknown action, workspace miss, missing sync for `--peer`)
- *   2 — runtime error (local action returned Err, or remote RPC failed)
- *   3 — peer-miss (`--peer <target>` didn't resolve within `--wait`)
+ *   1: usage error (unknown action, workspace miss, missing sync for `--peer`)
+ *   2: runtime error (local action returned Err, or remote RPC failed)
+ *   3: peer-miss (`--peer <target>` didn't resolve within `--wait`)
  *
- * ## Auto-detect (Wave 6)
+ * ## Two execution modes
  *
- * If an `epicenter up` daemon is running for the same `--dir`, the yargs
- * handler dispatches through {@link ipcCall} and the daemon executes
- * {@link runCore} against its already-warm workspace. The result shape
- * ({@link RunResult}) is the same on either side so the renderer doesn't
- * branch.
+ * - **Standalone** (default): the handler loads the workspace in-process,
+ *   calls {@link runCore}, renders, and exits.
+ * - **Attached** (when an `epicenter up` daemon is running for the same
+ *   `--dir`): the handler dispatches over IPC and the daemon runs
+ *   {@link runCore} against its already-open workspace.
+ *
+ * Both paths produce a {@link RunResult} of the same shape, so the
+ * renderer doesn't branch on which side built it.
  */
 
 import {
@@ -60,7 +63,7 @@ const waitOption: Options = {
 };
 
 /**
- * Parsed inputs for {@link runCore}. Mirrors {@link ListCtx} — the daemon
+ * Parsed inputs for {@link runCore}. Mirrors {@link ListCtx}: the daemon
  * builds it from IPC `args`, the local handler builds it from argv. The
  * shape is the wire format too.
  */
@@ -75,7 +78,7 @@ export type RunCtx = {
 /**
  * Domain errors returned by {@link runCore}. Carrying the failure mode
  * in-band lets the renderer set `process.exitCode` exactly the way the
- * in-process path does — even when the result arrived over IPC.
+ * in-process path does, even when the result arrived over IPC.
  *
  * - `UsageError`: bad action path / missing sync; renderer exitCode=1.
  * - `RuntimeError`: action returned Err locally; renderer exitCode=2.
@@ -134,7 +137,7 @@ export type RunError = InferErrors<typeof RunError>;
 /** Success payload for {@link runCore}: the action's return value. */
 export type RunSuccess = { data: unknown };
 
-/** {@link runCore}'s return type — `Result` with the {@link RunError} union. */
+/** {@link runCore}'s return type: `Result` with the {@link RunError} union. */
 export type RunResult = Result<RunSuccess, RunError>;
 
 export const runCommand: CommandModule = {
@@ -180,20 +183,16 @@ export const runCommand: CommandModule = {
 			workspaceArg: target.userWorkspace,
 		};
 
-		// Auto-detect: dispatch through the daemon when one is running. Falls
-		// through to the in-process path when no daemon answers.
+		// Attached path: dispatch through the `up` daemon when one is
+		// running. Falls through to the standalone path otherwise.
 		const daemon = await tryGetDaemon(target);
-		if (daemon === 'mismatch') return;
 		if (daemon) {
-			const result = await daemon.call<RunResult>('run', {
-				...ctx,
-				workspaceArg: daemon.workspace,
-			});
+			const result = await daemon.call<RunResult>('run', ctx);
 			await renderDaemonResult(result, (data) => renderRunResult(data, format));
 			return;
 		}
 
-		// Fallback: load config in-process.
+		// Standalone path: load config in-process.
 		await using config = await loadConfig(target.absDir);
 		const entry = resolveEntry(config.entries, target.userWorkspace);
 		const result = await runCore(entry, ctx);
@@ -204,8 +203,8 @@ export const runCommand: CommandModule = {
 /**
  * Pure core: dispatch an action either locally or via `sync.rpc`,
  * returning a render-ready {@link RunResult}. No yargs, no config
- * loading, no rendering — usable from the daemon's IPC handler against
- * its already-warm `entry`.
+ * loading, no rendering, so it's usable from the daemon's IPC handler
+ * against its already-warm `entry`.
  */
 export async function runCore(
 	entry: WorkspaceEntry,
@@ -356,7 +355,7 @@ function entriesUnder(
 /**
  * Walk up the requested path looking for the longest prefix that has
  * any exposed actions. Returns suggestion lines (already formatted) or
- * an empty array — same UX as the prior emitter, just data-not-stderr.
+ * an empty array (same UX as the prior emitter, just data-not-stderr).
  */
 function nearestSiblingLines(
 	entries: Array<[string, Action]>,
@@ -377,7 +376,7 @@ function nearestSiblingLines(
 
 /**
  * Two miss shapes: nothing seen on the wire (probably a connect-status
- * problem — caller should follow with `explainEmpty`) vs peers visible but
+ * problem; caller should follow with `explainEmpty`) vs peers visible but
  * none matched the requested deviceId (user typo / wrong workspace).
  */
 export function emitMissError(

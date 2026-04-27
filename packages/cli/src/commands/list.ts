@@ -1,5 +1,5 @@
 /**
- * `epicenter list [dot.path]` — render exposed actions, locally or on a peer.
+ * `epicenter list [dot.path]`: render exposed actions, locally or on a peer.
  *
  * Three sources, one shape, one renderer.
  *
@@ -11,20 +11,26 @@
  *
  * `--peer` and `--all` are mutually exclusive. The renderer takes a list
  * of `Section`s (one or many) and prints text or JSON; sources are pure
- * functions that produce sections — that's the whole flow.
+ * functions that produce sections, and that's the whole flow.
  *
  * Peer manifests are fetched once per invocation via
- * `describePeer(sync, deviceId)` — awareness no longer carries action
+ * `describePeer(sync, deviceId)`. Awareness no longer carries action
  * manifests, so detail-mode renders from the same fetched object as
  * tree-mode (no second RTT).
  *
- * ## Auto-detect (Wave 6)
+ * ## Two execution modes
  *
- * When an `epicenter up` daemon is running for the same `--dir`, the
- * yargs handler short-circuits through {@link ipcCall} and asks the
- * daemon to run {@link listCore} against its already-warm workspace.
- * The same {@link ListResult} shape flows out either path so the
- * renderer doesn't care which side built it.
+ * - **Standalone** (default): the handler loads the workspace in-process,
+ *   calls {@link listCore} directly, renders, and exits. Each invocation
+ *   is independent: open, do, close.
+ * - **Attached** (when an `epicenter up` daemon is running for the same
+ *   `--dir`): the handler dispatches over IPC and the daemon runs
+ *   {@link listCore} against its already-open workspace.
+ *
+ * Both paths produce a {@link ListResult} of the same shape, so the
+ * renderer doesn't branch on which side built it. Use `epicenter up` to
+ * keep the workspace warm across multiple commands; otherwise standalone
+ * is the right default for one-offs and scripts.
  */
 
 import {
@@ -62,7 +68,7 @@ type Format = 'json' | 'jsonl' | undefined;
 
 /**
  * One section to render. `peer` is `'self'` for the local source or the
- * remote peer's deviceId — surfaced in JSON output so scripts can
+ * remote peer's deviceId, surfaced in JSON output so scripts can
  * attribute each action back to its source.
  *
  * `unavailableReason` is set when the peer's manifest fetch failed; the
@@ -97,7 +103,7 @@ export type ListCtx = {
 
 /**
  * Domain errors returned by {@link listCore}. `PeerMiss` is the only failure
- * path that survives across IPC — translated to stderr + exitCode=3 by the
+ * path that survives across IPC: translated to stderr + exitCode=3 by the
  * renderer on either side of the wire.
  */
 export const ListError = defineErrors({
@@ -122,7 +128,7 @@ export type ListError = InferErrors<typeof ListError>;
  */
 export type ListSuccess = { sections: Section[]; mode: ListMode };
 
-/** {@link listCore}'s return type — `Result` with the {@link ListError} union. */
+/** {@link listCore}'s return type: `Result` with the {@link ListError} union. */
 export type ListResult = Result<ListSuccess, ListError>;
 
 const peerOption: Options = {
@@ -167,16 +173,15 @@ export const listCommand: CommandModule = {
 		const mode = parseMode(args);
 		if (mode === null) return; // mutex error, exitCode already set
 
-		// Auto-detect: if a daemon is alive for this dir, dispatch through it
-		// instead of bringing up a transient peer of our own. Falls through to
-		// the in-process path when no daemon answers.
+		// Attached path: if an `up` daemon owns this dir, dispatch through
+		// it. Falls through to the standalone path when no daemon answers.
 		const daemon = await tryGetDaemon(target);
-		if (daemon === 'mismatch') return;
 		if (daemon) {
 			const result = await daemon.call<ListResult>('list', {
 				path,
 				mode,
 				waitMs,
+				workspace: target.userWorkspace,
 			});
 			await renderDaemonResult(result, (data) =>
 				renderResult(data, path, format),
@@ -184,7 +189,7 @@ export const listCommand: CommandModule = {
 			return;
 		}
 
-		// Fallback: load config in-process and run listCore directly.
+		// Standalone path: load config in-process and run listCore directly.
 		await using config = await loadConfig(target.absDir);
 		const entry = resolveEntry(config.entries, target.userWorkspace);
 		const result = await listCore(entry, { path, mode, waitMs });
@@ -195,7 +200,7 @@ export const listCommand: CommandModule = {
 /**
  * Pure core: take a resolved {@link WorkspaceEntry} + parsed {@link ListCtx}
  * and produce the {@link ListResult} the renderer wants. No yargs, no
- * config loading, no rendering — so the daemon's IPC handler can call
+ * config loading, no rendering, so the daemon's IPC handler can call
  * this against its own already-warm `entry`.
  */
 export async function listCore(

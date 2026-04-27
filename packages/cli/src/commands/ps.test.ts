@@ -58,8 +58,6 @@ describe('runPs', () => {
 			writeMetadata(aliveDir, {
 				pid: process.pid,
 				dir: aliveDir,
-				workspace: 'wsA',
-				deviceId: 'alive-dev',
 				startedAt: new Date().toISOString(),
 				cliVersion: '0.0.0',
 				configMtime: 0,
@@ -67,8 +65,6 @@ describe('runPs', () => {
 			writeMetadata(deadDir, {
 				pid: 99999999,
 				dir: deadDir,
-				workspace: 'wsB',
-				deviceId: 'dead-dev',
 				startedAt: new Date().toISOString(),
 				cliVersion: '0.0.0',
 				configMtime: 0,
@@ -79,8 +75,8 @@ describe('runPs', () => {
 			const rows = await runPs({ ipcPing: async () => true });
 
 			expect(rows).toHaveLength(1);
-			expect(rows[0]!.deviceId).toBe('alive-dev');
-			expect(rows[0]!.workspace).toBe('wsA');
+			expect(rows[0]!.dir).toBe(aliveDir);
+			expect(rows[0]!.pid).toBe(process.pid);
 
 			// Orphan was swept.
 			expect(existsSync(metadataPathFor(deadDir))).toBe(false);
@@ -98,8 +94,6 @@ describe('runPs', () => {
 			writeMetadata(dir, {
 				pid: process.pid,
 				dir,
-				workspace: 'ws',
-				deviceId: 'd',
 				startedAt: new Date().toISOString(),
 				cliVersion: '0.0.0',
 				configMtime: 0,

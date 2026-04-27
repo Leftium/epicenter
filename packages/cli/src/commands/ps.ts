@@ -1,11 +1,11 @@
 /**
- * `epicenter ps` — list running `up` daemons (this user, this machine).
+ * `epicenter ps`: list running `up` daemons (this user, this machine).
  *
  * Enumerates `<runtimeDir>/*.meta.json`, pings each socket to confirm
  * liveness, and renders a compact table. Dead-pid metadata files are
  * opportunistically swept (same orphan path as `inspectExistingDaemon`).
  *
- * No `--json` flag in v1 — the spec defers it until a tooling consumer
+ * No `--json` flag in v1; the spec defers it until a tooling consumer
  * (Conductor panel, shell prompt) asks.
  *
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Process lifecycle".
@@ -26,17 +26,21 @@ import {
 import { socketPathFor } from '../daemon/paths.js';
 import { CONFIG_FILENAME } from '../load-config.js';
 
-/** A row of the `ps` table. */
+/**
+ * A row of the `ps` table.
+ *
+ * Per Invariant 7 the daemon serves every workspace its config exports;
+ * the row carries the dir + pid + uptime, and consumers who want the
+ * loaded set ask the daemon directly via the `status` IPC command.
+ */
 export type PsRow = {
 	dir: string;
-	deviceId: string;
-	workspace: string;
 	pid: number;
 	uptime: string;
 	configChanged: boolean | '?';
 };
 
-/** Test seam — matches the production `ipcPing` signature. */
+/** Test seam; matches the production `ipcPing` signature. */
 export type RunPsDeps = {
 	ipcPing?: (socketPath: string, timeoutMs?: number) => Promise<boolean>;
 };
@@ -66,8 +70,6 @@ export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
 
 		rows.push({
 			dir: meta.dir,
-			deviceId: meta.deviceId,
-			workspace: meta.workspace,
 			pid: meta.pid,
 			uptime: humanUptime(meta.startedAt),
 			configChanged: detectConfigChange(meta),

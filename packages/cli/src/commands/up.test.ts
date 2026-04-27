@@ -6,12 +6,12 @@
  * cross-process e2e (real CLI binary, real relay) lands in Wave 8.
  *
  * Cases (per the brief):
- *   1. Happy path — startIpcServer is called, metadata is written, ping replies "pong".
- *   2. Stale-auth fast-fail — whenReady never resolves; runUp throws "connect failed: ..."
+ *   1. Happy path: startIpcServer is called, metadata is written, ping replies "pong".
+ *   2. Stale-auth fast-fail: whenReady never resolves; runUp throws "connect failed: ..."
  *      within the connect-timeout window.
- *   3. Already-running — pre-write metadata for `process.pid` + a real listening socket;
+ *   3. Already-running: pre-write metadata for `process.pid` + a real listening socket;
  *      runUp throws "daemon already running (pid=X)".
- *   4. Orphan — pre-write metadata for a dead pid + phantom socket; runUp proceeds
+ *   4. Orphan: pre-write metadata for a dead pid + phantom socket; runUp proceeds
  *      cleanly (no throw).
  */
 
@@ -92,7 +92,7 @@ function makeFakeWorkspace(opts: FakeOptions = {}): LoadedWorkspace {
 			onStatusChange: () => () => {},
 			peers: () => new Map(),
 			observe: () => () => {},
-			// Unused fields — cast through unknown to keep the fake minimal.
+			// Unused fields; cast through unknown to keep the fake minimal.
 		} as unknown as LoadedWorkspace['sync'],
 	};
 }
@@ -106,7 +106,7 @@ function makeFakeConfig(workspace: LoadedWorkspace): LoadConfigResult {
 	};
 }
 
-describe('runUp — happy path', () => {
+describe('runUp: happy path', () => {
 	test('writes metadata, binds socket, replies to ping', async () => {
 		const workspace = makeFakeWorkspace();
 		const config = makeFakeConfig(workspace);
@@ -125,9 +125,10 @@ describe('runUp — happy path', () => {
 		// Metadata was written.
 		expect(existsSync(metadataPathFor(workDir))).toBe(true);
 		expect(handle.metadata.pid).toBe(process.pid);
-		expect(handle.metadata.workspace).toBe('default');
+		expect(handle.entries).toHaveLength(1);
+		expect(handle.entries[0]!.name).toBe('default');
 
-		// Socket is bound — ping it via a fresh connect using the real client.
+		// Socket is bound; ping it via a fresh connect using the real client.
 		const { ipcPing } = await import('../daemon/ipc-client');
 		const sockPath = socketPathFor(workDir);
 		expect(existsSync(sockPath)).toBe(true);
@@ -141,9 +142,9 @@ describe('runUp — happy path', () => {
 	});
 });
 
-describe('runUp — stale-auth fast-fail', () => {
+describe('runUp: stale-auth fast-fail', () => {
 	test('throws "connect failed: ..." when whenReady exceeds the timeout', async () => {
-		// whenReady that never resolves — emulates a hung auth handshake.
+		// whenReady that never resolves; emulates a hung auth handshake.
 		const neverReady = new Promise<void>(() => {
 			/* never */
 		});
@@ -169,7 +170,7 @@ describe('runUp — stale-auth fast-fail', () => {
 	});
 });
 
-describe('runUp — already running', () => {
+describe('runUp: already running', () => {
 	test('throws "daemon already running (pid=X)" when a live daemon is detected', async () => {
 		// Stand up a tiny real listening server at the expected socket path so
 		// `inspectExistingDaemon` sees a responsive ping for `process.pid`.
@@ -187,8 +188,6 @@ describe('runUp — already running', () => {
 		writeMetadata(workDir, {
 			pid: process.pid,
 			dir: workDir,
-			workspace: 'default',
-			deviceId: 'dev',
 			startedAt: new Date().toISOString(),
 			cliVersion: '0.0.0',
 			configMtime: 0,
@@ -214,7 +213,7 @@ describe('runUp — already running', () => {
 	});
 });
 
-describe('runUp — orphan path', () => {
+describe('runUp: orphan path', () => {
 	test('proceeds cleanly when metadata pid is dead and socket is phantom', async () => {
 		const sockPath = socketPathFor(workDir);
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
@@ -224,8 +223,6 @@ describe('runUp — orphan path', () => {
 		writeMetadata(workDir, {
 			pid: 99999999,
 			dir: workDir,
-			workspace: 'default',
-			deviceId: 'dev',
 			startedAt: new Date().toISOString(),
 			cliVersion: '0.0.0',
 			configMtime: 0,
@@ -245,7 +242,7 @@ describe('runUp — orphan path', () => {
 			},
 		);
 
-		// Daemon came up — fresh metadata for *this* pid was written.
+		// Daemon came up; fresh metadata for *this* pid was written.
 		expect(handle.metadata.pid).toBe(process.pid);
 		expect(existsSync(socketPathFor(workDir))).toBe(true);
 

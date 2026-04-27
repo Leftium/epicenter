@@ -25,7 +25,7 @@ beforeEach(() => {
 	process.env.XDG_RUNTIME_DIR = runtimeRoot;
 	mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
-	// A fake "workspace dir" — its content doesn't matter, only its path.
+	// A fake "workspace dir"; its content doesn't matter, only its path.
 	workDir = mkdtempSync(join(tmpdir(), 'epicenter-meta-dir-'));
 });
 
@@ -39,8 +39,6 @@ afterEach(() => {
 const sampleMeta = (overrides: Partial<DaemonMetadata> = {}): DaemonMetadata => ({
 	pid: process.pid,
 	dir: workDir,
-	workspace: 'default',
-	deviceId: 'device-abc',
 	startedAt: new Date().toISOString(),
 	cliVersion: '0.0.0-test',
 	configMtime: 0,
@@ -89,7 +87,7 @@ describe('inspectExistingDaemon', () => {
 		const sockPath = socketPathFor(workDir);
 
 		writeMetadata(workDir, sampleMeta({ pid: 99999999 }));
-		// A "phantom" socket file — just an empty regular file at the socket
+		// A "phantom" socket file: just an empty regular file at the socket
 		// path. inspectExistingDaemon should sweep it without trying to ping
 		// (the dead pid short-circuits the ping step).
 		writeFileSync(sockPath, '');

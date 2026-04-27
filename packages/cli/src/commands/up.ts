@@ -1,11 +1,19 @@
 /**
- * `epicenter up` — long-lived foreground daemon serving one `--dir`.
+ * `epicenter up`: start the long-lived foreground daemon for one `--dir`.
  *
- * Brings the workspace online as a "warm peer" and exposes a Unix-socket IPC
- * channel scoped to that `--dir`. Sibling CLI invocations (Wave 6) auto-detect
- * the socket and reuse this process's already-connected SyncAttachment instead
- * of paying a fresh handshake. Foreground by design — backgrounding is the
- * user's job (see Invariant 5 in the design spec).
+ * Loads every workspace exported by `epicenter.config.ts` and exposes a
+ * Unix-socket IPC channel for that `--dir`. While `up` is running, sibling
+ * commands (`peers`, `list`, `run`) **attach** to this daemon over IPC
+ * instead of opening their own workspaces. Without `up`, those siblings
+ * run **standalone**: each invocation opens the config itself, does its
+ * work, and closes.
+ *
+ * One daemon per `--dir`; that daemon serves every workspace the config
+ * exports (Invariant 7). Resource isolation between workspaces is
+ * expressed by splitting them into different config dirs, not by a flag.
+ *
+ * Foreground by design; backgrounding is the user's job (see Invariant 5
+ * in the design spec).
  *
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Process lifecycle",
  * § "Logging", § "Invariants".
@@ -48,16 +56,10 @@ import {
 import {
 	CONFIG_FILENAME,
 	type LoadConfigResult,
-	type LoadedWorkspace,
 	type WorkspaceEntry,
 	loadConfig,
 } from '../load-config.js';
-import {
-	dirFromArgv,
-	dirOption,
-	workspaceFromArgv,
-	workspaceOption,
-} from '../util/common-options.js';
+import { dirFromArgv, dirOption } from '../util/common-options.js';
 import { resolveEntry } from '../util/resolve-entry.js';
 import { listCore, type ListCtx, type ListResult } from './list.js';
 import { runCore, type RunCtx, type RunResult } from './run.js';
@@ -81,7 +83,7 @@ const LEVEL_RANK: Record<LogLevel, number> = {
 
 /**
  * Build the file sink: structured JSONL, rotated at {@link ROTATE_MAX_BYTES}.
- * Synchronous `appendFileSync` keeps rotation correctness simple — the only
+ * Synchronous `appendFileSync` keeps rotation correctness simple: the only
  * writer is this daemon, so no inter-process coordination is needed.
  *
  * One JSON object per line; native `Error` instances are normalized so
@@ -143,7 +145,6 @@ function logSyncStatus(message: string): void {
 
 export type UpOptions = {
 	dir: string;
-	workspace?: string;
 	quiet: boolean;
 	connectTimeoutMs: number;
 	cliVersion?: string;
@@ -156,14 +157,15 @@ export type UpOptions = {
  * release resources without spawning a child.
  *
  * - `server` is the bound `net.Server` (handler dispatches IPC frames).
- * - `entry` / `config` are the loaded workspace + config result.
+ * - `entries` is every workspace the config exports; the daemon serves
+ *   them all and routes IPC requests by name.
  * - `metadata` is what was written to disk.
  * - `teardown()` closes the server, asyncDisposes the config, and unlinks
  *   metadata + socket. Idempotent.
  */
 export type UpHandle = {
 	server: IpcServerHandle;
-	entry: WorkspaceEntry;
+	entries: WorkspaceEntry[];
 	config: LoadConfigResult;
 	metadata: DaemonMetadata;
 	socketPath: string;
@@ -183,15 +185,16 @@ export type RunUpDeps = {
 };
 
 /**
- * Daemon body. Idempotently sets up disk state, connects the workspace,
- * binds the IPC socket, and returns a handle. The yargs `handler` calls
- * this, prints the operator-facing banner, installs SIGINT/SIGTERM, and
- * parks the process; tests call it directly and assert on the returned
- * handle.
+ * Daemon body. Idempotently sets up disk state, connects every workspace
+ * the config exports, binds the IPC socket, and returns a handle. The
+ * yargs `handler` calls this, prints the operator-facing banner, installs
+ * SIGINT/SIGTERM, and parks the process; tests call it directly and
+ * assert on the returned handle.
  *
- * Errors are thrown (with the literal "connect failed: ..." prefix on
- * timeout) so the caller decides whether to `process.exit(1)` or surface
- * the error to a test runner.
+ * If any workspace fails to connect within the timeout, the whole daemon
+ * fails. Partial-up is muddy semantics ("which subset is online?") and we
+ * already have a way to express "I want only this one online": split the
+ * config.
  */
 export async function runUp(
 	options: UpOptions,
@@ -202,10 +205,6 @@ export async function runUp(
 	const logPath = logPathFor(absDir);
 
 	const stderr = makeStderrSink(options.quiet ? 'warn' : 'info');
-	// File sink: structured JSONL. Always at info-floor regardless of --quiet
-	// — operators rely on the file for post-mortems. Rotates before each write
-	// to stay inside the 10 MB-per-generation budget. The sink ensures its
-	// parent dir exists; `startIpcServer` does the same for the socket parent.
 	const fileSink = makeRotatingJsonlSink(logPath);
 	const sink = composeSinks(stderr, fileSink);
 	const log = createLogger('cli/up', sink);
@@ -221,44 +220,43 @@ export async function runUp(
 	const loader = deps.loadConfig ?? loadConfig;
 	const config = await loader(absDir);
 
-	const entry = resolveEntry(config.entries, options.workspace);
+	if (config.entries.length === 0) {
+		await safeAsyncDispose(config);
+		throw new Error(
+			`no workspaces exported from ${join(absDir, CONFIG_FILENAME)}`,
+		);
+	}
 
-	// Race the workspace's "ready to accept RPC" gate against the connect
-	// timeout. Stale-auth fast-fail acceptance criterion: the spec wording is
-	// `connect failed: 401 Unauthorized — try \`epicenter auth login\`` but we
-	// don't have structured auth-error data wired through `whenReady` /
-	// `whenConnected` yet, so on timeout we surface what we have.
-	const ready = entry.workspace.whenReady ?? entry.workspace.sync?.whenConnected;
-	if (ready) {
-		try {
-			await raceTimeout(
-				ready,
-				options.connectTimeoutMs,
-				() => connectFailedMessage(entry.workspace),
-			);
-		} catch (cause) {
-			// Cleanup partial state before reflecting failure to the caller.
-			await safeAsyncDispose(config);
-			throw cause;
-		}
+	// Wait for every workspace's "ready to accept RPC" gate concurrently.
+	// One bad workspace fails the whole daemon; see runUp's docstring.
+	try {
+		await Promise.all(
+			config.entries.map((entry) =>
+				raceTimeout(
+					entry.workspace.whenReady ??
+						entry.workspace.sync?.whenConnected ??
+						Promise.resolve(),
+					options.connectTimeoutMs,
+					() => connectFailedMessage(entry),
+				),
+			),
+		);
+	} catch (cause) {
+		await safeAsyncDispose(config);
+		throw cause;
 	}
 
 	const configMtime = readConfigMtime(absDir);
 	const metadata: DaemonMetadata = {
 		pid: process.pid,
 		dir: absDir,
-		workspace: entry.name,
-		// SyncAttachment doesn't expose self deviceId today (peers() excludes
-		// self by construction). Until the workspace package surfaces it,
-		// metadata records '<unknown>'. Tracked as a known gap.
-		deviceId: '<unknown>',
 		startedAt: new Date().toISOString(),
 		cliVersion: options.cliVersion ?? CLI_VERSION,
 		configMtime,
 	};
 	writeMetadata(absDir, metadata);
 
-	const handler = makeHandler(entry, config, log, () => void teardown());
+	const handler = makeHandler(config.entries, log, () => void teardown());
 	const starter = deps.startIpcServer ?? startIpcServer;
 	let server: IpcServerHandle;
 	try {
@@ -273,9 +271,6 @@ export async function runUp(
 	const teardown = (): Promise<void> => {
 		if (teardownPromise) return teardownPromise;
 		teardownPromise = (async () => {
-			// `.stop()` releases the listener; `unlinkSocketFile` removes the
-			// unix path so a follow-up `up` doesn't see a phantom and bail.
-			// (Bun's `.stop()` doesn't always sweep the path itself.)
 			try {
 				server.stop();
 			} catch {
@@ -290,7 +285,7 @@ export async function runUp(
 
 	return {
 		server,
-		entry,
+		entries: config.entries,
 		config,
 		metadata,
 		socketPath,
@@ -301,18 +296,16 @@ export async function runUp(
 /**
  * Yargs `up` command. Thin glue: parses argv, calls {@link runUp}, prints
  * the operator-facing banner + initial peers snapshot, wires SIGINT/SIGTERM,
- * subscribes to awareness/status, and parks until a signal triggers teardown.
- *
- * Tests do not call this — they exercise {@link runUp} in-process with fake
- * deps. The cross-process e2e lives in Wave 8.
+ * subscribes to awareness/status across every loaded workspace, and parks
+ * until a signal triggers teardown.
  */
 export const upCommand: CommandModule = {
 	command: 'up',
-	describe: 'Bring this workspace online as a long-lived peer (foreground).',
+	describe:
+		'Bring this config online as a long-lived peer for every workspace it exports (foreground).',
 	builder: (yargs: Argv) =>
 		yargs
 			.option('dir', dirOption)
-			.option('workspace', workspaceOption)
 			.option('quiet', {
 				type: 'boolean',
 				default: false,
@@ -323,13 +316,12 @@ export const upCommand: CommandModule = {
 				type: 'number',
 				default: DEFAULT_CONNECT_TIMEOUT_MS,
 				description:
-					'Max ms to wait for the workspace to become ready before exiting 1',
+					'Max ms to wait for each workspace to become ready before exiting 1',
 			}),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
 		const options: UpOptions = {
 			dir: dirFromArgv(args),
-			workspace: workspaceFromArgv(args),
 			quiet: args.quiet === true,
 			connectTimeoutMs:
 				typeof args['connect-timeout'] === 'number'
@@ -346,20 +338,14 @@ export const upCommand: CommandModule = {
 			process.exit(1);
 		}
 
-		// Banner.
-		logSyncStatus(
-			`online (deviceId=${handle.metadata.deviceId}, workspace=${handle.metadata.workspace})`,
-		);
+		const names = handle.entries.map((e) => e.name).join(', ');
+		logSyncStatus(`online (workspaces=[${names}])`);
 
-		// Initial peers snapshot — print *after* "online" so the operator sees
-		// current state, not just future deltas (per spec § Process lifecycle).
-		printPeersSnapshot(handle.entry.workspace);
-
-		// Awareness deltas (joined/left).
-		subscribeAwareness(handle.entry.workspace, options.quiet);
-
-		// Sync state changes (always print, even with --quiet).
-		subscribeSyncStatus(handle.entry.workspace);
+		for (const entry of handle.entries) {
+			printPeersSnapshot(entry);
+			subscribeAwareness(entry, options.quiet);
+			subscribeSyncStatus(entry);
+		}
 
 		const onSignal = () => {
 			void handle.teardown().then(
@@ -381,13 +367,20 @@ export const upCommand: CommandModule = {
 
 /**
  * Build the per-daemon IPC dispatcher. Each `cmd` maps to a thin wrapper
- * around either workspace state (peers, status), a graceful-shutdown trigger,
- * or one of the refactored command cores (`listCore`, `runCore`) which the
- * daemon shares with sibling CLI invocations via auto-detect.
+ * around either workspace state, a graceful-shutdown trigger, or one of
+ * the refactored command cores (`listCore`, `runCore`).
+ *
+ * Workspace-scoped commands (`list`, `run`) read `args.workspace` /
+ * `args.workspaceArg` and call `resolveEntry` to find the right entry,
+ * the same lookup the cold path uses, so unknown-workspace errors come
+ * out the identical phrasing in either path.
+ *
+ * `peers` returns rows tagged with their workspace, optionally narrowed
+ * by an `args.workspace` filter. The shape matches what `peers.ts` cold
+ * path emits, so the renderer doesn't branch.
  */
 function makeHandler(
-	entry: WorkspaceEntry,
-	_config: LoadConfigResult,
+	entries: WorkspaceEntry[],
 	log: Logger,
 	triggerShutdown: () => void,
 ): IpcHandler {
@@ -407,6 +400,19 @@ function makeHandler(
 			message: cause instanceof Error ? cause.message : String(cause),
 		});
 
+	const lookup = (
+		name: string | undefined,
+		req: IpcRequest,
+		send: (frame: IpcFrame) => void,
+	): WorkspaceEntry | null => {
+		try {
+			return resolveEntry(entries, name);
+		} catch (cause) {
+			send(errFrom(req.id, cause));
+			return null;
+		}
+	};
+
 	return (req: IpcRequest, send: (frame: IpcFrame) => void) => {
 		log.debug('ipc cmd', { cmd: req.cmd, id: req.id });
 		switch (req.cmd) {
@@ -417,22 +423,39 @@ function makeHandler(
 				send(
 					ok(req.id, {
 						pid: process.pid,
-						workspace: entry.name,
-						syncStatus: entry.workspace.sync?.status ?? null,
+						workspaces: entries.map((e) => ({
+							name: e.name,
+							syncStatus: e.workspace.sync?.status ?? null,
+						})),
 					}),
 				);
 				return;
 			case 'peers': {
-				const peers = entry.workspace.sync?.peers() ?? new Map();
-				const rows = [...peers.entries()].map(([clientID, state]) => ({
-					clientID,
-					device: state.device,
-				}));
+				const filter =
+					(req.args as { workspace?: string } | undefined)?.workspace;
+				const rows: Array<{
+					workspace: string;
+					clientID: number;
+					device: unknown;
+				}> = [];
+				for (const entry of entries) {
+					if (filter && entry.name !== filter) continue;
+					const peers = entry.workspace.sync?.peers() ?? new Map();
+					for (const [clientID, state] of peers) {
+						rows.push({
+							workspace: entry.name,
+							clientID,
+							device: state.device,
+						});
+					}
+				}
 				send(ok(req.id, rows));
 				return;
 			}
 			case 'list': {
-				const ctx = req.args as ListCtx;
+				const ctx = req.args as ListCtx & { workspace?: string };
+				const entry = lookup(ctx.workspace, req, send);
+				if (!entry) return;
 				void (async () => {
 					try {
 						const data: ListResult = await listCore(entry, ctx);
@@ -445,6 +468,8 @@ function makeHandler(
 			}
 			case 'run': {
 				const ctx = req.args as RunCtx;
+				const entry = lookup(ctx.workspaceArg, req, send);
+				if (!entry) return;
 				void (async () => {
 					try {
 						const data: RunResult = await runCore(entry, ctx);
@@ -505,16 +530,16 @@ function raceTimeout<T>(
  * matches the prefix. Once the workspace surfaces structured auth errors
  * through `whenReady` / `whenConnected`, this becomes precise.
  */
-function connectFailedMessage(workspace: LoadedWorkspace): string {
-	const status = workspace.sync?.status;
+function connectFailedMessage(entry: WorkspaceEntry): string {
+	const status = entry.workspace.sync?.status;
 	if (
 		status &&
 		status.phase === 'connecting' &&
 		status.lastError?.type === 'auth'
 	) {
-		return '401 Unauthorized — try `epicenter auth login`';
+		return `${entry.name}: 401 Unauthorized. Try \`epicenter auth login\`.`;
 	}
-	return `timed out waiting for workspace ready`;
+	return `${entry.name}: timed out waiting for workspace ready`;
 }
 
 function readConfigMtime(absDir: string): number {
@@ -534,41 +559,39 @@ async function safeAsyncDispose(config: LoadConfigResult): Promise<void> {
 	}
 }
 
-function printPeersSnapshot(workspace: LoadedWorkspace): void {
-	const peers = workspace.sync?.peers();
+function printPeersSnapshot(entry: WorkspaceEntry): void {
+	const peers = entry.workspace.sync?.peers();
 	if (!peers || peers.size === 0) {
-		process.stderr.write('no peers connected\n');
+		process.stderr.write(`${entry.name}: no peers connected\n`);
 		return;
 	}
 	for (const [clientID, state] of peers) {
 		process.stderr.write(
-			`peer: ${state.device.id} (clientID=${clientID}, name=${state.device.name})\n`,
+			`${entry.name}: peer ${state.device.id} (clientID=${clientID}, name=${state.device.name})\n`,
 		);
 	}
 }
 
-function subscribeAwareness(workspace: LoadedWorkspace, quiet: boolean): void {
-	const sync = workspace.sync;
+function subscribeAwareness(entry: WorkspaceEntry, quiet: boolean): void {
+	const sync = entry.workspace.sync;
 	if (!sync) return;
 	let prev = new Map(sync.peers());
 	sync.observe(() => {
 		const next = sync.peers();
-		// Joins
 		for (const [clientID, state] of next) {
 			if (!prev.has(clientID)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${state.device.id} joined (clientID=${clientID})\n`,
+						`${entry.name}: ${state.device.id} joined (clientID=${clientID})\n`,
 					);
 				}
 			}
 		}
-		// Leaves
 		for (const [clientID, state] of prev) {
 			if (!next.has(clientID)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${state.device.id} left (clientID=${clientID})\n`,
+						`${entry.name}: ${state.device.id} left (clientID=${clientID})\n`,
 					);
 				}
 			}
@@ -577,16 +600,16 @@ function subscribeAwareness(workspace: LoadedWorkspace, quiet: boolean): void {
 	});
 }
 
-function subscribeSyncStatus(workspace: LoadedWorkspace): void {
-	const sync = workspace.sync;
+function subscribeSyncStatus(entry: WorkspaceEntry): void {
+	const sync = entry.workspace.sync;
 	if (!sync) return;
 	sync.onStatusChange((status) => {
 		if (status.phase === 'connecting') {
-			logSyncStatus(`connecting (retry ${status.retries})`);
+			logSyncStatus(`${entry.name}: connecting (retry ${status.retries})`);
 		} else if (status.phase === 'connected') {
-			logSyncStatus('connected');
+			logSyncStatus(`${entry.name}: connected`);
 		} else if (status.phase === 'offline') {
-			logSyncStatus('offline');
+			logSyncStatus(`${entry.name}: offline`);
 		}
 	});
 }

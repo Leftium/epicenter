@@ -37,9 +37,7 @@ import Type, { type TSchema } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
-import { ipcCall, ipcPing } from '../daemon/ipc-client';
-import { readMetadata } from '../daemon/metadata';
-import { socketPathFor } from '../daemon/paths';
+import { tryDaemonDispatch } from '../daemon/sibling-dispatch';
 import {
 	type AwarenessState,
 	loadConfig,
@@ -58,7 +56,6 @@ import {
 } from '../util/format-output';
 import { explainEmpty, waitForAnyPeer, waitForPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
-import { resolve } from 'node:path';
 
 const DEFAULT_WAIT_MS = 500;
 
@@ -183,18 +180,19 @@ export const listCommand: CommandModule = {
 		// Auto-detect path: if a daemon is alive for this dir, dispatch through
 		// it instead of bringing up a transient peer of our own.
 		if (!noUp) {
-			const absDir = resolve(dirFromArgv(args));
-			const sock = socketPathFor(absDir);
-			if (await ipcPing(sock)) {
-				const inherited = inheritWorkspace(absDir, userWorkspace);
-				if (inherited === 'mismatch') return; // exitCode already set
-				const ctx: ListCtx = { path, mode, waitMs };
-				const reply = await ipcCall<ListResult>(sock, 'list', ctx);
-				if (reply.error === null) {
-					await renderResult(reply.data, path, format);
+			const dispatched = await tryDaemonDispatch<ListResult>(
+				args,
+				userWorkspace,
+				'list',
+				() => ({ path, mode, waitMs }),
+			);
+			if (dispatched.kind === 'mismatch') return;
+			if (dispatched.kind === 'dispatched') {
+				if (dispatched.result.error === null) {
+					await renderResult(dispatched.result.data, path, format);
 					return;
 				}
-				outputError(`error: ${reply.error.message}`);
+				outputError(`error: ${dispatched.result.error.message}`);
 				process.exitCode = 1;
 				return;
 			}
@@ -276,34 +274,6 @@ function parseMode(args: Record<string, unknown>): ListMode | null {
 	if (peerTarget !== undefined) return { kind: 'peer', deviceId: peerTarget };
 	if (all) return { kind: 'all' };
 	return { kind: 'local' };
-}
-
-/**
- * Workspace inheritance for sibling commands hitting a running daemon
- * (Invariant 7). The daemon owns the entry it was started with; if the
- * user passed a conflicting `--workspace`, refuse rather than silently
- * dispatch to the wrong one.
- *
- * Returns `'mismatch'` after setting exitCode=1 + emitting the literal
- * spec message; otherwise returns the daemon's workspace name (which
- * the IPC handler doesn't actually need — but we still validate, so
- * the user gets the same error in either case).
- */
-export function inheritWorkspace(
-	absDir: string,
-	userWorkspace: string | undefined,
-): string | undefined | 'mismatch' {
-	const meta = readMetadata(absDir);
-	if (!meta) return userWorkspace; // daemon raced away; fall back to user's value
-	if (userWorkspace === undefined) return meta.workspace;
-	if (userWorkspace !== meta.workspace) {
-		outputError(
-			`workspace mismatch: daemon owns '${meta.workspace}', requested '${userWorkspace}' — restart the daemon or omit --workspace`,
-		);
-		process.exitCode = 1;
-		return 'mismatch';
-	}
-	return userWorkspace;
 }
 
 export function selfSection(

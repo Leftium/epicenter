@@ -21,10 +21,8 @@
  * mode only; JSON mode always emits a valid array, even if empty).
  */
 
-import { resolve } from 'node:path';
 import type { Argv, CommandModule } from 'yargs';
-import { ipcCall, ipcPing } from '../daemon/ipc-client';
-import { socketPathFor } from '../daemon/paths';
+import { tryDaemonDispatch } from '../daemon/sibling-dispatch';
 import {
 	type AwarenessState,
 	loadConfig,
@@ -39,7 +37,6 @@ import {
 import { formatYargsOptions, output } from '../util/format-output';
 import { explainEmpty, waitForAnyPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
-import { inheritWorkspace } from './list';
 
 const DEFAULT_WAIT_MS = 500;
 
@@ -110,32 +107,23 @@ export const peersCommand: CommandModule = {
 		// Auto-detect: if a daemon is alive for this --dir, ask it for the
 		// peers snapshot instead of standing up our own transient peer.
 		if (!noUp) {
-			const absDir = resolve(dirFromArgv(args));
-			const sock = socketPathFor(absDir);
-			if (await ipcPing(sock)) {
-				const inherited = inheritWorkspace(absDir, userWorkspace);
-				if (inherited === 'mismatch') return; // exitCode already set
-				const reply = await ipcCall<
-					Array<{ clientID: number; device: AwarenessState['device'] }>
-				>(sock, 'peers', { wait: waitMs });
-				if (reply.error === null) {
+			const dispatched = await tryDaemonDispatch<
+				Array<{ clientID: number; device: AwarenessState['device'] }>
+			>(args, userWorkspace, 'peers', () => ({ wait: waitMs }));
+			if (dispatched.kind === 'mismatch') return;
+			if (dispatched.kind === 'dispatched') {
+				if (dispatched.result.error === null) {
 					const peers = new Map<number, AwarenessState>();
-					for (const row of reply.data) {
+					for (const row of dispatched.result.data) {
 						peers.set(row.clientID, { device: row.device });
 					}
 					emit(
-						[
-							{
-								name: inherited ?? '<daemon>',
-								peers,
-								entry: undefined,
-							},
-						],
+						[{ name: userWorkspace ?? '<daemon>', peers, entry: undefined }],
 						{ elideHeader: true, format },
 					);
 					return;
 				}
-				console.error(`error: ${reply.error.message}`);
+				console.error(`error: ${dispatched.result.error.message}`);
 				process.exitCode = 1;
 				return;
 			}

@@ -35,7 +35,8 @@ import { ipcCall } from '../daemon/ipc-client';
 import { writeMetadata } from '../daemon/metadata';
 import { socketPathFor } from '../daemon/paths';
 import type { LoadedWorkspace, WorkspaceEntry } from '../load-config';
-import { inheritWorkspace, listCore, type ListResult } from './list';
+import { inheritWorkspace } from '../daemon/sibling-dispatch';
+import { listCore, type ListResult } from './list';
 
 let originalXdg: string | undefined;
 let originalHome: string | undefined;
@@ -109,7 +110,7 @@ describe('inheritWorkspace — Invariant 7', () => {
 			configMtime: 0,
 		});
 		const result = inheritWorkspace(workDir, undefined);
-		expect(result).toBe('alpha');
+		expect(result).toEqual({ ok: true, workspace: 'alpha' });
 	});
 
 	test('passes through user value when it agrees with metadata', () => {
@@ -123,10 +124,10 @@ describe('inheritWorkspace — Invariant 7', () => {
 			configMtime: 0,
 		});
 		const result = inheritWorkspace(workDir, 'alpha');
-		expect(result).toBe('alpha');
+		expect(result).toEqual({ ok: true, workspace: 'alpha' });
 	});
 
-	test('returns "mismatch" with literal spec message when --workspace disagrees', () => {
+	test('returns { ok: false } with literal spec message when --workspace disagrees', () => {
 		writeMetadata(workDir, {
 			pid: process.pid,
 			dir: workDir,
@@ -147,7 +148,7 @@ describe('inheritWorkspace — Invariant 7', () => {
 
 		try {
 			const result = inheritWorkspace(workDir, 'beta');
-			expect(result).toBe('mismatch');
+			expect(result).toEqual({ ok: false });
 			expect(process.exitCode).toBe(1);
 		} finally {
 			console.error = origError;
@@ -160,8 +161,14 @@ describe('inheritWorkspace — Invariant 7', () => {
 	});
 
 	test('passes user value through unchanged when no metadata exists', () => {
-		expect(inheritWorkspace(workDir, 'alpha')).toBe('alpha');
-		expect(inheritWorkspace(workDir, undefined)).toBeUndefined();
+		expect(inheritWorkspace(workDir, 'alpha')).toEqual({
+			ok: true,
+			workspace: 'alpha',
+		});
+		expect(inheritWorkspace(workDir, undefined)).toEqual({
+			ok: true,
+			workspace: undefined,
+		});
 	});
 });
 

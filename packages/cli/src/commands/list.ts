@@ -32,7 +32,6 @@ import {
 	loadConfig,
 	type WorkspaceEntry,
 } from '../load-config';
-import { waitForAnyPeer, waitForPeer } from '../util/peer-wait';
 import {
 	dirFromArgv,
 	dirOption,
@@ -44,6 +43,7 @@ import {
 	output,
 	outputError,
 } from '../util/format-output';
+import { explainEmpty, waitForAnyPeer, waitForPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
 
 const DEFAULT_WAIT_MS = 500;
@@ -102,63 +102,71 @@ export const listCommand: CommandModule = {
 		const args = argv as Record<string, unknown>;
 		const path = typeof args.path === 'string' ? args.path : '';
 		const format = args.format as Format;
-		const peerTarget =
-			typeof args.peer === 'string' && args.peer.length > 0
-				? args.peer
-				: undefined;
-		const all = args.all === true;
 		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
 
-		if (peerTarget !== undefined && all) {
-			outputError(
-				'error: --peer and --all are mutually exclusive (--all already includes every peer)',
-			);
-			process.exitCode = 1;
-			return;
-		}
+		const mode = parseMode(args);
+		if (mode === null) return; // mutex error, exitCode already set
 
 		await using config = await loadConfig(dirFromArgv(args));
 		const entry = resolveEntry(config.entries, workspaceFromArgv(args));
-		const sections = await selectSections(entry, { peerTarget, all, waitMs });
+		const sections = await selectSections(entry, mode, waitMs);
 		if (sections === null) return; // peer-not-found, exitCode already set
-		await renderSections(sections, path, format, { multi: all });
+		await renderSections(sections, path, format, mode);
 	},
 };
 
+// ─── Mode ────────────────────────────────────────────────────────────────────
+
+type ListMode =
+	| { kind: 'local' }
+	| { kind: 'peer'; deviceId: string }
+	| { kind: 'all' };
+
+function parseMode(args: Record<string, unknown>): ListMode | null {
+	const peerTarget =
+		typeof args.peer === 'string' && args.peer.length > 0 ? args.peer : undefined;
+	const all = args.all === true;
+	if (peerTarget !== undefined && all) {
+		outputError(
+			'error: --peer and --all are mutually exclusive (--all already includes every peer)',
+		);
+		process.exitCode = 1;
+		return null;
+	}
+	if (peerTarget !== undefined) return { kind: 'peer', deviceId: peerTarget };
+	if (all) return { kind: 'all' };
+	return { kind: 'local' };
+}
+
 // ─── Source selection ────────────────────────────────────────────────────────
 
-type Selection = {
-	peerTarget: string | undefined;
-	all: boolean;
-	waitMs: number;
-};
-
 /**
- * Pick the sections to render based on flags. Returns `null` when a
+ * Pick the sections to render based on `mode`. Returns `null` when a
  * `--peer` lookup misses (the function emits the error and sets the exit
  * code; the caller just bails).
  */
 async function selectSections(
 	entry: WorkspaceEntry,
-	{ peerTarget, all, waitMs }: Selection,
+	mode: ListMode,
+	waitMs: number,
 ): Promise<Section[] | null> {
 	const { workspace } = entry;
 
-	if (peerTarget === undefined && !all) {
-		return [selfSection(entry, 'local')];
-	}
+	if (mode.kind === 'local') return [selfSection(entry, 'local')];
 
 	const deadline = Date.now() + waitMs;
-	if (peerTarget !== undefined) {
-		const found = await waitForPeer(workspace, peerTarget, deadline);
-		if (found.kind !== 'found') {
-			outputError(`error: no peer matches deviceId "${peerTarget}"`);
+	if (mode.kind === 'peer') {
+		const { hit } = await waitForPeer(workspace, mode.deviceId, deadline);
+		if (!hit) {
+			outputError(`error: no peer matches deviceId "${mode.deviceId}"`);
 			outputError('run `epicenter peers` to see connected peers');
+			const why = explainEmpty(workspace);
+			if (why) outputError(`  reason: ${why}`);
 			process.exitCode = 3;
 			return null;
 		}
-		// `waitForPeer` returning 'found' implies sync existed (peers live on it).
-		return [await peerSection(found.state, workspace.sync!)];
+		// Hit implies sync existed (peers live on it).
+		return [await peerSection(hit.state, workspace.sync!)];
 	}
 
 	// --all: best-effort wait for awareness to populate, then snapshot.
@@ -214,30 +222,30 @@ export async function peerSection(
 // ─── Rendering ───────────────────────────────────────────────────────────────
 
 /**
- * `multi` distinguishes `--all` (always tag rows with `peer`, allow zero
- * matches per-section) from local/--peer (single section, missing path is
- * an error). It's a presentation flag, not a structural one — selection
- * already gave us the sections; we just need to know which mode the user
- * asked for.
+ * `--all` is the only mode that tags rows with `peer` and tolerates zero
+ * matches per-section (it can show a partial fan-out). Single-source modes
+ * (local/--peer) treat a missing path as an error. We derive that
+ * presentation bit from `mode` rather than threading a separate flag.
  */
 async function renderSections(
 	sections: Section[],
 	path: string,
 	format: Format,
-	{ multi }: { multi: boolean },
+	mode: ListMode,
 ): Promise<void> {
+	const multi = mode.kind === 'all';
 	if (format) {
-		renderJson(sections, path, format, { multi });
+		renderJson(sections, path, format, multi);
 		return;
 	}
-	await renderText(sections, path, { multi });
+	await renderText(sections, path, multi);
 }
 
 function renderJson(
 	sections: Section[],
 	path: string,
 	format: Exclude<Format, undefined>,
-	{ multi }: { multi: boolean },
+	multi: boolean,
 ): void {
 	// Single-section + leaf path = single object (preserves pre-existing
 	// `list <leaf> --format json` shape).
@@ -264,7 +272,7 @@ function renderJson(
 async function renderText(
 	sections: Section[],
 	path: string,
-	{ multi }: { multi: boolean },
+	multi: boolean,
 ): Promise<void> {
 	let totalMatches = 0;
 	let printed = 0;

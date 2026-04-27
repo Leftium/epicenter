@@ -161,16 +161,16 @@ async function invokeRemote({
 	// about total latency, not per-phase breakdown — see waitOption
 	// description.
 	const deadline = Date.now() + waitMs;
-	const found = await waitForPeer(workspace, peerTarget, deadline);
-	if (found.kind !== 'found') {
-		emitMissError(peerTarget, found.sawPeers, workspaceArg, waitMs);
+	const { hit, sawPeers } = await waitForPeer(workspace, peerTarget, deadline);
+	if (!hit) {
+		emitMissError(peerTarget, sawPeers, workspaceArg, waitMs);
 		const why = explainEmpty(workspace);
 		if (why) outputError(`  reason: ${why}`);
 		process.exitCode = 3; // peer miss
 		return;
 	}
 
-	const { clientID: targetClientId, state: peerState } = found;
+	const { clientID: targetClientId, state: peerState } = hit;
 	const remaining = Math.max(1, deadline - Date.now());
 	const result = await sync.rpc(targetClientId, actionPath, input, {
 		timeout: remaining,

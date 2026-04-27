@@ -20,11 +20,9 @@ describe('findPeer — exact deviceId match, first-match-wins', () => {
 			[188, fakeDevice({ id: 'iphone-15', name: 'Phone' })],
 		]);
 		const result = findPeer('iphone-15', peers);
-		expect(result.kind).toBe('found');
-		if (result.kind === 'found') {
-			expect(result.clientID).toBe(188);
-			expect(result.state.device.id).toBe('iphone-15');
-		}
+		expect(result).not.toBeNull();
+		expect(result?.clientID).toBe(188);
+		expect(result?.state.device.id).toBe('iphone-15');
 	});
 
 	test('first match wins on duplicate deviceIds (clientID-ascending)', () => {
@@ -34,14 +32,13 @@ describe('findPeer — exact deviceId match, first-match-wins', () => {
 			[100, fakeDevice({ id: 'shared' })],
 		]);
 		const result = findPeer('shared', peers);
-		expect(result.kind).toBe('found');
-		if (result.kind === 'found') expect(result.clientID).toBe(50);
+		expect(result?.clientID).toBe(50);
 	});
 
-	test('returns not-found when no peer publishes the deviceId', () => {
+	test('returns null when no peer publishes the deviceId', () => {
 		const peers = new Map<number, AwarenessState>([
 			[42, fakeDevice({ id: 'macbook-pro' })],
 		]);
-		expect(findPeer('ghost', peers)).toEqual({ kind: 'not-found' });
+		expect(findPeer('ghost', peers)).toBeNull();
 	});
 });

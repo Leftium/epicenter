@@ -1,16 +1,13 @@
 /**
  * Find and wait for peers on the sync wire.
  *
- * Every CLI command that targets a remote peer needs the same dance:
- * await `sync.whenConnected` so presence can populate, then wait for
- * the answer to arrive (or the deadline to expire). `findPeer` is the
- * one-shot lookup; `waitForPeer` and `waitForAnyPeer` subscribe to
- * `sync.observe()` so they react to changes without polling.
- *
- * `whenConnected` resolves after the sync handshake; the server
- * typically sends `AWARENESS(all clients)` in the same write window, so
- * a small grace period (callers default to 500ms for `list`/`peers`,
- * 5000ms for `run`) catches the burst plus any concurrent peer joins.
+ * `findPeer` is a one-shot lookup; `waitForPeer` and `waitForAnyPeer`
+ * subscribe to `sync.observe()` so they react to changes without polling
+ * and bail when `deadline` expires. They deliberately do NOT block on
+ * `sync.whenConnected` — the observe loop already covers that path
+ * (awareness can only arrive after the WS handshake completes), and
+ * pre-awaiting `whenConnected` would hang forever when the server is
+ * unreachable or rejects auth, ignoring the caller's `--wait` budget.
  *
  * `findPeer` matches by exact `device.id`. The per-installation deviceId
  * convention (`getOrCreateDeviceId`) makes collisions cryptographically
@@ -22,37 +19,51 @@
 
 import type { AwarenessState, LoadedWorkspace } from '../load-config';
 
-export type FindPeerResult =
-	| { kind: 'found'; clientID: number; state: AwarenessState }
-	| { kind: 'not-found' };
+/**
+ * Explain why no peers are visible, by inspecting the live sync status.
+ * Returns `null` when the connection is healthy (peers are simply absent —
+ * nothing to explain) or when no sync is attached at all.
+ *
+ * Surfacing this matters because `whenConnected` may never resolve (server
+ * down, stale prod, auth rejected), and without this hint the CLI just
+ * prints `no peers connected` after the wait expires — indistinguishable
+ * from "everything is fine, you're alone".
+ */
+export function explainEmpty(workspace: LoadedWorkspace): string | null {
+	const status = workspace.sync?.status;
+	if (!status || status.phase === 'connected') return null;
+	if (status.phase === 'connecting' && status.lastError) {
+		return `not connected (${status.lastError.type} error after ${status.retries} ${status.retries === 1 ? 'retry' : 'retries'})`;
+	}
+	return 'not connected';
+}
+
+export type PeerHit = { clientID: number; state: AwarenessState };
 
 /** One-shot exact-match lookup by `device.id`. First match by clientID-asc. */
 export function findPeer(
 	deviceId: string,
 	peers: Map<number, AwarenessState>,
-): FindPeerResult {
+): PeerHit | null {
 	const sorted = [...peers.keys()].sort((a, b) => a - b);
 	for (const clientID of sorted) {
 		const state = peers.get(clientID)!;
-		if (state.device.id === deviceId) {
-			return { kind: 'found', clientID, state };
-		}
+		if (state.device.id === deviceId) return { clientID, state };
 	}
-	return { kind: 'not-found' };
+	return null;
 }
 
-export type WaitForPeerResult =
-	| { kind: 'found'; clientID: number; state: AwarenessState }
-	| { kind: 'not-found'; sawPeers: boolean };
+/**
+ * `hit` is the match (or `null`); `sawPeers` reports whether *any* peers
+ * were ever visible during the wait, so callers can distinguish "no peers
+ * at all" from "peers seen but none matched" in error messages.
+ */
+export type WaitForPeerResult = { hit: PeerHit | null; sawPeers: boolean };
 
 /**
  * Wait for a peer publishing `deviceId` to appear in awareness.
  * Subscribes to awareness changes — no polling — and resolves on first
  * match or when `deadline` expires.
- *
- * `sawPeers` is reported on the not-found branch so callers can
- * distinguish "no peers seen at all" from "peers seen but none matched"
- * in their error messages.
  */
 export async function waitForPeer(
 	workspace: LoadedWorkspace,
@@ -60,35 +71,33 @@ export async function waitForPeer(
 	deadline: number,
 ): Promise<WaitForPeerResult> {
 	const sync = workspace.sync;
-	if (!sync) return { kind: 'not-found', sawPeers: false };
-	await sync.whenConnected;
+	if (!sync) return { hit: null, sawPeers: false };
 
 	let sawPeers = false;
-	const tryMatch = (): WaitForPeerResult | null => {
+	const tryMatch = (): PeerHit | null => {
 		const list = sync.peers();
 		if (list.size > 0) sawPeers = true;
-		const found = findPeer(deviceId, list);
-		return found.kind === 'found' ? found : null;
+		return findPeer(deviceId, list);
 	};
 
 	const initial = tryMatch();
-	if (initial) return initial;
+	if (initial) return { hit: initial, sawPeers };
 
 	const remaining = deadline - Date.now();
-	if (remaining <= 0) return { kind: 'not-found', sawPeers };
+	if (remaining <= 0) return { hit: null, sawPeers };
 
 	return new Promise((resolve) => {
 		const stop = sync.observe(() => {
-			const result = tryMatch();
-			if (result) {
+			const hit = tryMatch();
+			if (hit) {
 				clearTimeout(timer);
 				stop();
-				resolve(result);
+				resolve({ hit, sawPeers });
 			}
 		});
 		const timer = setTimeout(() => {
 			stop();
-			resolve({ kind: 'not-found', sawPeers });
+			resolve({ hit: null, sawPeers });
 		}, remaining);
 	});
 }
@@ -109,8 +118,6 @@ export async function waitForAnyPeer(
 ): Promise<void> {
 	const sync = workspace.sync;
 	if (!sync) return;
-	await sync.whenConnected;
-
 	if (sync.peers().size > 0) return;
 
 	const remaining = deadline - Date.now();

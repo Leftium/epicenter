@@ -27,7 +27,6 @@ import {
 	loadConfig,
 	type WorkspaceEntry,
 } from '../load-config';
-import { waitForAnyPeer } from '../util/peer-wait';
 import {
 	dirFromArgv,
 	dirOption,
@@ -35,6 +34,7 @@ import {
 	workspaceOption,
 } from '../util/common-options';
 import { formatYargsOptions, output } from '../util/format-output';
+import { explainEmpty, waitForAnyPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
 
 const DEFAULT_WAIT_MS = 500;
@@ -49,6 +49,7 @@ type PeerRow = {
 type WorkspaceSnapshot = {
 	name: string;
 	peers: Map<number, AwarenessState>;
+	entry: WorkspaceEntry;
 };
 
 export const peersCommand: CommandModule = {
@@ -89,7 +90,7 @@ async function snapshotEntry(
 	await waitForAnyPeer(entry.workspace, Date.now() + waitMs);
 	const peers =
 		entry.workspace.sync?.peers() ?? new Map<number, AwarenessState>();
-	return { name: entry.name, peers };
+	return { name: entry.name, peers, entry };
 }
 
 function emit(
@@ -110,6 +111,12 @@ function emit(
 	const nonEmpty = snapshots.filter((s) => s.peers.size > 0);
 	if (nonEmpty.length === 0) {
 		console.error('no peers connected');
+		// Surface a connect-status hint per workspace if any are still trying —
+		// turns "silent timeout" into "oh, the server rejected us".
+		for (const { name, entry } of snapshots) {
+			const why = explainEmpty(entry.workspace);
+			if (why) console.error(`  ${name}: ${why}`);
+		}
 		return;
 	}
 	for (let i = 0; i < nonEmpty.length; i++) {

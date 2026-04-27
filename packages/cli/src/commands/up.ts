@@ -46,6 +46,7 @@ import {
 	rotateIfNeeded,
 } from '../daemon/log-rotation.js';
 import {
+	CONFIG_FILENAME,
 	type LoadConfigResult,
 	type LoadedWorkspace,
 	type WorkspaceEntry,
@@ -63,7 +64,12 @@ import { runCore, type RunCtx, type RunResult } from './run.js';
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
 
-const CONFIG_FILENAME = 'epicenter.config.ts';
+/**
+ * Read once at module load. Bun resolves the JSON import relative to this
+ * file at build/run time, so no runtime fs work happens per `up` invocation.
+ */
+import packageJson from '../../package.json' with { type: 'json' };
+const CLI_VERSION = packageJson.version;
 
 const LEVEL_RANK: Record<LogLevel, number> = {
 	trace: 0,
@@ -247,7 +253,7 @@ export async function runUp(
 		// metadata records '<unknown>'. Tracked as a known gap.
 		deviceId: '<unknown>',
 		startedAt: new Date().toISOString(),
-		cliVersion: options.cliVersion ?? '0.0.0',
+		cliVersion: options.cliVersion ?? CLI_VERSION,
 		configMtime,
 	};
 	writeMetadata(absDir, metadata);

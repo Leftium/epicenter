@@ -11,13 +11,7 @@
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Process lifecycle".
  */
 
-import {
-	existsSync,
-	readFileSync,
-	readdirSync,
-	statSync,
-	unlinkSync,
-} from 'node:fs';
+import { existsSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { CommandModule } from 'yargs';
@@ -26,11 +20,11 @@ import { ipcPing } from '../daemon/ipc-client.js';
 import {
 	type DaemonMetadata,
 	isProcessAlive,
+	readMetadataFromPath,
 	unlinkMetadata,
 } from '../daemon/metadata.js';
 import { runtimeDir, socketPathFor } from '../daemon/paths.js';
-
-const CONFIG_FILENAME = 'epicenter.config.ts';
+import { CONFIG_FILENAME } from '../load-config.js';
 
 /** A row of the `ps` table. */
 export type PsRow = {
@@ -61,8 +55,7 @@ export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
 
 	const rows: PsRow[] = [];
 	for (const name of names) {
-		const path = join(root, name);
-		const meta = readMetaFile(path);
+		const meta = readMetadataFromPath(join(root, name));
 		if (!meta) continue;
 
 		// Dead pid → orphan: unlink metadata + socket and skip.
@@ -89,14 +82,6 @@ export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
 		});
 	}
 	return rows;
-}
-
-function readMetaFile(path: string): DaemonMetadata | null {
-	try {
-		return JSON.parse(readFileSync(path, 'utf8')) as DaemonMetadata;
-	} catch {
-		return null;
-	}
 }
 
 function sweepOrphan(meta: DaemonMetadata): void {

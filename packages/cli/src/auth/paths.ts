@@ -25,8 +25,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { runtimeDir } from '../daemon/paths.js';
-
 /** Resolve the Epicenter home directory. Not exported—use `epicenterPaths.home()`. */
 function resolveHome(): string {
 	return Bun.env.EPICENTER_HOME ?? join(homedir(), '.epicenter');
@@ -90,42 +88,5 @@ export const epicenterPaths = {
 	 */
 	persistence(workspaceId: string) {
 		return join(resolveHome(), 'persistence', `${workspaceId}.db`);
-	},
-
-	/**
-	 * Runtime directory for daemon sockets and metadata sidecars.
-	 *
-	 * Thin wrapper over `runtimeDir()` from `daemon/paths.ts`—kept here so
-	 * `epicenterPaths` remains the one-stop reference for every Epicenter
-	 * filesystem location. The resolution logic (XDG vs. `~/.epicenter/run`)
-	 * lives in `daemon/paths.ts` to keep a single source of truth.
-	 *
-	 * @example
-	 * ```typescript
-	 * epicenterPaths.runtime()
-	 * // → '/run/user/1000/epicenter'         (Linux with XDG_RUNTIME_DIR)
-	 * // → '/Users/braden/.epicenter/run'     (macOS / no XDG)
-	 * ```
-	 */
-	runtime() {
-		return runtimeDir();
-	},
-
-	/**
-	 * Path to a runtime file (socket or metadata sidecar) for a given hash.
-	 *
-	 * The hash is the truncated sha256 of the daemon's absolute `--dir` path
-	 * (see `dirHash` in `daemon/paths.ts`). Callers usually want the more
-	 * specific `socketPathFor` / `metadataPathFor` helpers; this exists for
-	 * iteration cases like `ps` enumerating `<runtime>/*.meta.json`.
-	 *
-	 * @example
-	 * ```typescript
-	 * epicenterPaths.runFile('abc123def4567890.sock')
-	 * // → '/Users/braden/.epicenter/run/abc123def4567890.sock'
-	 * ```
-	 */
-	runFile(hash: string) {
-		return join(runtimeDir(), hash);
 	},
 } as const;

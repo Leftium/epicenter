@@ -16,9 +16,7 @@ import { join, resolve } from 'node:path';
 
 import type { Argv, CommandModule } from 'yargs';
 
-import { ipcCall, type IpcClientError } from '../daemon/ipc-client.js';
-import type { SerializedError } from '../daemon/ipc-server.js';
-import type { Result } from 'wellcrafted/result';
+import { ipcCall } from '../daemon/ipc-client.js';
 import {
 	type DaemonMetadata,
 	isProcessAlive,
@@ -37,23 +35,11 @@ export type DownOptions = {
 };
 
 /**
- * Test seam for `runDown`. Both fields default to the production
- * implementations; tests can stub `ipcCall` to simulate a hung daemon and
- * `kill` to capture the SIGTERM fallback without actually signaling pids.
+ * Test seam for `runDown`. Tests stub `ipcCall` to simulate a hung daemon
+ * and `kill` to capture the SIGTERM fallback without actually signaling pids.
  */
 export type RunDownDeps = {
-	/**
-	 * Non-generic mirror of `ipcCall`. `down` only checks for success, never
-	 * reads `data`, so a `void` payload is sufficient — and avoids the
-	 * generic inference noise that comes with reusing `typeof ipcCall` in
-	 * tests.
-	 */
-	ipcCall?: (
-		socketPath: string,
-		cmd: string,
-		args?: unknown,
-		timeoutMs?: number,
-	) => Promise<Result<void, IpcClientError | SerializedError>>;
+	ipcCall?: typeof ipcCall;
 	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
 

@@ -21,13 +21,14 @@ import {
 	watch,
 	readdirSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import type { Argv, CommandModule } from 'yargs';
 
 import {
 	type DaemonMetadata,
 	readMetadata,
+	readMetadataFromPath,
 } from '../daemon/metadata.js';
 import { logPathFor, runtimeDir } from '../daemon/paths.js';
 import { dirFromArgv, dirOption } from '../util/common-options.js';
@@ -72,15 +73,10 @@ export function pickSoleDaemon():
 	| { kind: 'many'; dirs: string[] } {
 	const root = runtimeDir();
 	if (!existsSync(root)) return { kind: 'none' };
-	const files = readdirSync(root).filter((n) => n.endsWith('.meta.json'));
-	const metas: DaemonMetadata[] = [];
-	for (const f of files) {
-		try {
-			metas.push(JSON.parse(readFileSync(join(root, f), 'utf8')));
-		} catch {
-			// skip
-		}
-	}
+	const metas = readdirSync(root)
+		.filter((n) => n.endsWith('.meta.json'))
+		.map((n) => readMetadataFromPath(join(root, n)))
+		.filter((m): m is DaemonMetadata => m !== null);
 	if (metas.length === 0) return { kind: 'none' };
 	if (metas.length > 1) return { kind: 'many', dirs: metas.map((m) => m.dir) };
 	return { kind: 'one', meta: metas[0]! };
@@ -122,10 +118,8 @@ export function followLog(path: string): () => void {
 	};
 
 	// Watch the parent dir to catch rename → recreate.
-	const dir = path.slice(0, path.lastIndexOf('/')) || '.';
-	const fname = path.slice(path.lastIndexOf('/') + 1);
-	const watcher = watch(dir, (eventType, fn) => {
-		if (fn !== fname) return;
+	const watcher = watch(dirname(path), (eventType, fn) => {
+		if (fn !== basename(path)) return;
 		if (eventType === 'rename') {
 			// File was rotated away or recreated — reopen.
 			if (fd >= 0) {

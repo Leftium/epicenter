@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { epicenterPaths } from '../auth/paths.js';
@@ -34,13 +34,12 @@ export function runtimeDir(): string {
  *
  * Truncated to 16 hex chars (64 bits) so the resulting socket path stays
  * comfortably under the 104-char Unix-socket limit on macOS. Symlinks are
- * resolved via `realpathSync` so two equivalent paths always hash the same;
- * a non-existent path falls back to the literal input (the directory may
- * not exist yet at hash time).
+ * resolved via `realpathSync` so two equivalent paths always hash the same.
+ * The dir must exist — every production caller hashes a `--dir` that
+ * `loadConfig` has already accepted, so this contract is safe to enforce.
  */
 export function dirHash(dir: string): string {
-	const abs = existsSync(dir) ? realpathSync(dir) : dir;
-	return createHash('sha256').update(abs).digest('hex').slice(0, 16);
+	return createHash('sha256').update(realpathSync(dir)).digest('hex').slice(0, 16);
 }
 
 /** Unix-socket path for the daemon serving `dir`. */

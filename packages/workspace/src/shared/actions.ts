@@ -18,6 +18,9 @@
  *
  * Functions don't serialize, so the wire form drops them and keeps just the
  * metadata. Both shapes are public; `describeActions(tree)` converts.
+ * `walkActions(tree)` is the underlying iterator — yields live `[path, Action]`
+ * pairs for callers that want to filter, invoke, or count instead of
+ * materializing the full record.
  *
  * Transport boundaries (RPC server-side, CLI dispatch, AI bridge) normalize
  * any handler return into `Promise<Result<T, RpcError>>` via
@@ -234,30 +237,52 @@ export function resolveActionPath(
 }
 
 /**
- * Walk an `Actions` tree and produce its flat `ActionManifest` — the wire
- * form returned by `system.describe`. Live `input` schemas are retained;
- * functions are dropped. Pairs with `peerSystem(sync, id).describe()`,
- * which returns the same shape from a remote peer.
+ * Lazily yield every action in a tree as `[dotPath, Action]` pairs. Order
+ * is depth-first, left-to-right by author definition (Object key order).
+ * Yields live callables — invoke them, inspect them, or strip to metadata
+ * via {@link describeActions}.
+ *
+ * Pair with `Object.fromEntries`, `Array.from`, or a `for…of` loop:
+ * ```ts
+ * for (const [path, action] of walkActions(workspace.actions)) {
+ *   if (action.type === 'mutation') console.log(path);
+ * }
+ * ```
  */
-export function describeActions(actions: Actions): ActionManifest {
-	const out: ActionManifest = {};
-	walk(actions, [], out);
-	return out;
-}
-
-function walk(node: Actions, path: string[], out: ActionManifest): void {
-	for (const [key, value] of Object.entries(node)) {
-		const childPath = [...path, key];
-		if (isAction(value)) {
-			const entry: ActionMeta = { type: value.type };
-			if (value.input !== undefined) entry.input = value.input;
-			if (value.title !== undefined) entry.title = value.title;
-			if (value.description !== undefined) entry.description = value.description;
-			out[childPath.join('.')] = entry;
-		} else if (value != null && typeof value === 'object') {
-			walk(value as Actions, childPath, out);
+export function* walkActions(
+	actions: Actions,
+	prefix = '',
+): Generator<[string, Action]> {
+	for (const [key, value] of Object.entries(actions)) {
+		const path = prefix ? `${prefix}.${key}` : key;
+		if (isAction(value)) yield [path, value];
+		else if (value != null && typeof value === 'object') {
+			yield* walkActions(value as Actions, path);
 		}
 	}
+}
+
+/**
+ * Walk an `Actions` tree into its flat `ActionManifest` — the wire form
+ * returned by `system.describe`. Live `input` schemas are retained;
+ * functions are dropped. Pairs with `peerSystem(sync, id).describe()`,
+ * which returns the same shape from a remote peer.
+ *
+ * Built atop {@link walkActions}. Use that primitive directly if you want
+ * to iterate live callables instead of metadata.
+ */
+export function describeActions(actions: Actions): ActionManifest {
+	return Object.fromEntries(
+		Array.from(walkActions(actions), ([path, action]) => [path, toMeta(action)]),
+	);
+}
+
+function toMeta({ type, input, title, description }: Action): ActionMeta {
+	const meta: ActionMeta = { type };
+	if (input !== undefined) meta.input = input;
+	if (title !== undefined) meta.title = title;
+	if (description !== undefined) meta.description = description;
+	return meta;
 }
 
 /**

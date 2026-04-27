@@ -50,6 +50,7 @@ export {
 	isQuery,
 	isResult,
 	resolveActionPath,
+	walkActions,
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════

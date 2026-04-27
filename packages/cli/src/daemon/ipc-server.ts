@@ -1,17 +1,11 @@
 /**
- * Newline-delimited JSON IPC server bound to a Unix socket.
+ * HTTP-over-unix-socket IPC server for the `epicenter up` daemon.
  *
- * The `epicenter up` daemon listens here so sibling CLI invocations targeting
- * the same `--dir` can reuse its warm workspace. Clients open the socket,
- * write one JSON request per line, and read zero-or-more JSON responses
- * (each tagged with the matching `id`); a response carrying `end: true`
- * terminates a streamed reply.
- *
- * Wire shape is a `Result<T, SerializedError>` envelope augmented with
- * frame-level metadata (`id`, optional `end`). `data: null + error: ...`
- * means the request failed; `data: T + error: null` is success. This
- * mirrors the codebase's wellcrafted convention so callers don't have to
- * learn a parallel `{ok, error}` shape.
+ * Sibling CLI invocations targeting the same `--dir` reuse the daemon's warm
+ * workspace by issuing JSON POSTs to a per-workspace unix socket. The body of
+ * a 200 response is a `Result<T, SerializedError>` produced by the registered
+ * route handler; transport-level failures (fetch reject, non-200) are
+ * synthesized into `IpcClientError` variants on the client side.
  *
  * Wire format and security model are deliberately internal; see
  * `specs/20260426T235000-cli-up-long-lived-peer.md` § "IPC wire protocol"
@@ -21,7 +15,6 @@
 import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import type { Socket } from 'bun';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -34,15 +27,10 @@ const log = createLogger('cli/daemon/ipc-server');
 
 /**
  * Tagged-error variants emitted by the IPC transport itself (not by command
- * handlers). `BadRequest` for un-parseable JSON lines; `HandlerCrashed` when
- * a handler promise rejects. Both are wire-serialized; the client sees
- * `{name, message, ...}` on the error side of the `Result` envelope.
+ * handlers). `HandlerCrashed` covers any thrown exception in a route handler.
+ * Wire-serialized as `{name, message, ...}` on the error side of `Result`.
  */
 export const IpcServerError = defineErrors({
-	BadRequest: ({ cause }: { cause: unknown }) => ({
-		message: `invalid JSON: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 	HandlerCrashed: ({ cause }: { cause: unknown }) => ({
 		message: extractErrorMessage(cause),
 		cause,
@@ -51,16 +39,10 @@ export const IpcServerError = defineErrors({
 export type IpcServerError = InferErrors<typeof IpcServerError>;
 
 /**
- * Structural shape of any tagged error on the wire — the JSON form of a
- * `defineErrors` variant after it crosses the socket.
- *
- * The type guarantees `name` and `message` only; variant-specific fields
- * (`socketPath` on `NoDaemon`, `timeoutMs` on `Timeout`, etc.) survive
+ * Structural shape of any tagged error on the wire. The type guarantees
+ * `name` and `message` only; variant-specific fields survive
  * `JSON.stringify` at runtime but require narrowing on a known variant
- * union (e.g. `IpcClientError | IpcServerError`) to access. This is
- * honest about the boundary: the wire receives errors from multiple
- * domains (transport, app handlers, arbitrary thrown exceptions in the
- * dispatcher), so the bare-frame type stays minimal and callers tighten
+ * union (e.g. `IpcClientError | IpcServerError`) to access. Callers tighten
  * via the `Result<T, ...>` `E` parameter when they need variant access.
  */
 export type SerializedError = {
@@ -68,96 +50,62 @@ export type SerializedError = {
 	message: string;
 };
 
-/** Single JSON request frame from a client. */
-export type IpcRequest = {
-	id: string;
-	cmd: string;
-	args?: unknown;
-};
-
 /**
- * Single JSON response frame.
- *
- * Streamed handlers may emit multiple ok frames sharing the same `id`; the
- * final one carries `end: true`. Errors are terminal: one error frame
- * closes that request. The body is `Result<T, SerializedError>` with the
- * frame metadata (`id`, optional `end`) sitting alongside.
+ * One route handler. Receives the JSON-parsed `args` from the request body
+ * (or `null` if the caller passed `undefined`) and returns a `Result` whose
+ * shape is the response body. Throwing is allowed; the server traps it as
+ * `IpcServerError.HandlerCrashed` and replies with HTTP 500.
  */
-export type IpcFrame<T = unknown, E extends SerializedError = SerializedError> = {
-	id: string;
-	end?: boolean;
-} & Result<T, E>;
+export type IpcRouteHandler = (
+	args: unknown,
+) => Promise<Result<unknown, SerializedError>>;
 
 /**
- * Per-request handler. Implementations call `send` zero-or-more times to
- * emit response frames; for streamed replies, the last one should set
- * `end: true`. Build success frames as `{id, data, error: null}` and error
- * frames as `{id, data: null, error: TaggedError}`.
- *
- * The server intentionally does not enforce "at least one response": a
- * `cmd: shutdown` handler, for instance, may legitimately reply once and
- * then trigger teardown without further frames.
+ * Routes table passed to {@link startIpcServer}. Keys are command names
+ * (e.g. `ping`, `list`); each becomes a `POST /<cmd>` endpoint on the unix
+ * socket. The client sends `cmd` to `ipcCall(sock, cmd, args)` and the
+ * server dispatches by string match.
  */
-export type IpcHandler = (
-	req: IpcRequest,
-	send: (frame: IpcFrame) => void,
-) => void | Promise<void>;
+export type IpcRoutes = Record<string, IpcRouteHandler>;
 
 /**
- * Public handle returned by {@link startIpcServer}. Narrowed to the surface
- * callers actually use (`.stop()` for graceful shutdown), so the per-socket
- * data generic and the rest of Bun's listener API stay implementation detail.
+ * Public handle returned by {@link startIpcServer}. Narrowed to `.stop()`
+ * so Bun's full Server surface stays implementation detail.
  */
 export type IpcServerHandle = { stop(): void };
 
-/** Per-connection state held in `socket.data` for line-buffered reads. */
-type IpcSocketData = { buffer: string };
-
 /**
- * Bind a Unix socket at `socketPath` and dispatch each newline-delimited
- * JSON request to `handler`.
+ * Bind a unix-socket HTTP server at `socketPath` and route POSTs to the
+ * matching entry in `routes`.
  *
  * Filesystem hardening:
  * - Parent directory is created (recursive) with mode `0700`.
- * - Socket file is `chmod 0600` immediately after `listen`.
- * - Use {@link unlinkSocketFile} after `.stop()` to sweep the path.
- *
- * Returns the underlying Bun listener so the caller owns lifecycle (the
- * daemon needs `.stop()` for graceful shutdown).
+ * - Socket file is `chmod 0600` immediately after `Bun.serve` returns.
+ * - `Bun.serve.stop()` auto-unlinks the socket file; use
+ *   {@link unlinkSocketFile} only for orphan-sweep paths where a crashed
+ *   previous daemon left the file behind.
  */
 export async function startIpcServer(
 	socketPath: string,
-	handler: IpcHandler,
+	routes: IpcRoutes,
 ): Promise<IpcServerHandle> {
 	mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
 
-	const server = Bun.listen<IpcSocketData>({
+	const routeEntries: Record<string, (req: Request) => Promise<Response>> = {};
+	for (const [cmd, handler] of Object.entries(routes)) {
+		routeEntries[`/${cmd}`] = makeRouteAdapter(cmd, handler);
+	}
+
+	const server = Bun.serve({
 		unix: socketPath,
-		socket: {
-			open(socket) {
-				socket.data = { buffer: '' };
-				log.debug('ipc connection accepted', { socketPath });
-			},
-			data(socket, chunk) {
-				// Bun hands us a Buffer; accumulate into the per-socket buffer
-				// and split on newlines, keeping the trailing partial line.
-				socket.data.buffer += chunk.toString('utf8');
-				let nl = socket.data.buffer.indexOf('\n');
-				while (nl !== -1) {
-					const line = socket.data.buffer.slice(0, nl);
-					socket.data.buffer = socket.data.buffer.slice(nl + 1);
-					processLine(socket, line, handler);
-					nl = socket.data.buffer.indexOf('\n');
-				}
-			},
-			close() {
-				// No-op: per-socket buffer goes with the socket.
-			},
-			error(_socket, _err) {
-				// Client side aborts surface here; nothing useful to do but not
-				// crash the daemon. Logging at debug keeps the noise floor low.
-				log.debug('ipc socket error');
-			},
+		routes: routeEntries,
+		fetch() {
+			return new Response('not found', { status: 404 });
+		},
+		error(err) {
+			log.debug('ipc handler crash', { err });
+			const tagged = IpcServerError.HandlerCrashed({ cause: err });
+			return Response.json(tagged.error, { status: 500 });
 		},
 	});
 
@@ -167,44 +115,29 @@ export async function startIpcServer(
 }
 
 /**
- * Process one accumulated line. Dispatches to the handler, emitting
- * `IpcServerError.BadRequest` for un-parseable JSON and
- * `IpcServerError.HandlerCrashed` for rejected handler promises.
+ * Wrap one route handler in the request/response adapter. Parses the JSON
+ * body (treating an empty body as `null`), invokes the handler, and
+ * serializes the resulting `Result` as the response body. A handler that
+ * throws bubbles to `Bun.serve`'s `error()` callback above and surfaces as
+ * `IpcServerError.HandlerCrashed`.
  */
-function processLine(
-	socket: Socket<IpcSocketData>,
-	line: string,
-	handler: IpcHandler,
-): void {
-	// Tolerate blank lines from clients that send trailing newlines.
-	if (line.length === 0) return;
-
-	const send = (frame: IpcFrame) => {
-		socket.write(`${JSON.stringify(frame)}\n`);
+function makeRouteAdapter(
+	cmd: string,
+	handler: IpcRouteHandler,
+): (req: Request) => Promise<Response> {
+	return async (req) => {
+		log.debug('ipc cmd', { cmd });
+		const text = await req.text();
+		const args = text.length === 0 ? null : (JSON.parse(text) as unknown);
+		const result = await handler(args);
+		return Response.json(result);
 	};
-
-	let req: IpcRequest;
-	try {
-		req = JSON.parse(line) as IpcRequest;
-	} catch (cause) {
-		// Per-line failure; keep the connection open so other lines
-		// (potentially from a pipelining client) can still be served.
-		const tagged = IpcServerError.BadRequest({ cause });
-		send({ id: '', data: null, error: tagged.error });
-		return;
-	}
-
-	void Promise.resolve(handler(req, send)).catch((cause) => {
-		const tagged = IpcServerError.HandlerCrashed({ cause });
-		send({ id: req.id ?? '', data: null, error: tagged.error });
-	});
 }
 
 /**
- * Best-effort socket-file cleanup. Bun's `.stop()` doesn't unlink the
- * `unix` socket file in every Bun version; this is the manual sweep we
- * still want for the orphan-detection paths (where the file may have
- * been left behind by a crashed previous daemon).
+ * Best-effort socket-file cleanup. `Bun.serve.stop()` already unlinks on
+ * graceful shutdown; this is the manual sweep for orphan-detection paths
+ * (the file may have been left behind by a crashed previous daemon).
  */
 export function unlinkSocketFile(socketPath: string): void {
 	if (existsSync(socketPath)) {

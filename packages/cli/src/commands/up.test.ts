@@ -33,9 +33,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-	type IpcFrame,
-	type IpcHandler,
-	type IpcRequest,
+	type IpcRoutes,
 	startIpcServer,
 } from '../daemon/ipc-server';
 import { writeMetadata } from '../daemon/metadata';
@@ -177,13 +175,10 @@ describe('runUp: already running', () => {
 		const sockPath = socketPathFor(workDir);
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
-		const pingHandler: IpcHandler = (req: IpcRequest, send) => {
-			if (req.cmd === 'ping') {
-				const r: IpcFrame = { id: req.id, data: 'pong', error: null };
-				send(r);
-			}
+		const routes: IpcRoutes = {
+			ping: async () => ({ data: 'pong', error: null }),
 		};
-		const server = await startIpcServer(sockPath, pingHandler);
+		const server = await startIpcServer(sockPath, routes);
 
 		writeMetadata(workDir, {
 			pid: process.pid,

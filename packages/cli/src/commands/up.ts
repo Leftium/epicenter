@@ -29,14 +29,11 @@ import {
 	type LogEvent,
 	type LogLevel,
 	type LogSink,
-	type Logger,
 } from 'wellcrafted/logger';
 import type { Argv, CommandModule } from 'yargs';
 
 import {
-	type IpcFrame,
-	type IpcHandler,
-	type IpcRequest,
+	type IpcRoutes,
 	type IpcServerHandle,
 	type SerializedError,
 	startIpcServer,
@@ -191,7 +188,7 @@ export type RunUpDeps = {
 	loadConfig?: (dir: string) => Promise<LoadConfigResult>;
 	startIpcServer?: (
 		socketPath: string,
-		handler: IpcHandler,
+		routes: IpcRoutes,
 	) => Promise<IpcServerHandle>;
 	/**
 	 * Test-only override for {@link CONNECT_TIMEOUT_MS}. Production has no
@@ -274,11 +271,11 @@ export async function runUp(
 	};
 	writeMetadata(absDir, metadata);
 
-	const handler = makeHandler(config.entries, log, () => void teardown());
+	const routes = makeRoutes(config.entries, () => void teardown());
 	const starter = deps.startIpcServer ?? startIpcServer;
 	let server: IpcServerHandle;
 	try {
-		server = await starter(socketPath, handler);
+		server = await starter(socketPath, routes);
 	} catch (cause) {
 		unlinkMetadata(absDir);
 		await safeAsyncDispose(config);
@@ -374,121 +371,87 @@ export const upCommand: CommandModule = {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the per-daemon IPC dispatcher. Each `cmd` maps to a thin wrapper
- * around either workspace state, a graceful-shutdown trigger, or one of
- * the refactored command cores (`listCore`, `runCore`).
+ * Build the per-daemon IPC route table. Each route is a thin wrapper around
+ * workspace state, a graceful-shutdown trigger, or one of the refactored
+ * command cores (`listCore`, `runCore`).
  *
- * Workspace-scoped commands (`list`, `run`) read `args.workspace` /
- * `args.workspaceArg` and call `resolveEntry` to find the right entry,
- * the same lookup the cold path uses, so unknown-workspace errors come
- * out the identical phrasing in either path.
+ * Workspace-scoped routes (`list`, `run`) read the user-supplied workspace
+ * arg and call `resolveEntry` to find the right entry, the same lookup the
+ * cold path uses, so unknown-workspace errors come out the identical
+ * phrasing in either path.
  *
- * `peers` returns rows tagged with their workspace, optionally narrowed
- * by an `args.workspace` filter. The shape matches what `peers.ts` cold
- * path emits, so the renderer doesn't branch.
+ * `peers` returns rows tagged with their workspace, optionally narrowed by
+ * a `workspace` filter. The shape matches what `peers.ts` cold path emits,
+ * so the renderer doesn't branch.
  */
-function makeHandler(
+function makeRoutes(
 	entries: WorkspaceEntry[],
-	log: Logger,
 	triggerShutdown: () => void,
-): IpcHandler {
-	const ok = (id: string, data: unknown): IpcFrame => ({
-		id,
-		data,
-		error: null,
+): IpcRoutes {
+	const errFrom = (cause: unknown): SerializedError => ({
+		name: cause instanceof Error ? cause.name : 'Error',
+		message: cause instanceof Error ? cause.message : String(cause),
 	});
-	const err = (id: string, error: SerializedError): IpcFrame => ({
-		id,
-		data: null,
-		error,
-	});
-	const errFrom = (id: string, cause: unknown): IpcFrame =>
-		err(id, {
-			name: cause instanceof Error ? cause.name : 'Error',
-			message: cause instanceof Error ? cause.message : String(cause),
-		});
 
 	const lookup = (
 		name: string | undefined,
-		req: IpcRequest,
-		send: (frame: IpcFrame) => void,
-	): WorkspaceEntry | null => {
+	): { ok: true; entry: WorkspaceEntry } | { ok: false; error: SerializedError } => {
 		try {
-			return resolveEntry(entries, name);
+			return { ok: true, entry: resolveEntry(entries, name) };
 		} catch (cause) {
-			send(errFrom(req.id, cause));
-			return null;
+			return { ok: false, error: errFrom(cause) };
 		}
 	};
 
-	return (req: IpcRequest, send: (frame: IpcFrame) => void) => {
-		log.debug('ipc cmd', { cmd: req.cmd, id: req.id });
-		switch (req.cmd) {
-			case 'ping':
-				send(ok(req.id, 'pong'));
-				return;
-			case 'peers': {
-				const filter =
-					(req.args as { workspace?: string } | undefined)?.workspace;
-				const rows: Array<{
-					workspace: string;
-					clientID: number;
-					device: unknown;
-				}> = [];
-				for (const entry of entries) {
-					if (filter && entry.name !== filter) continue;
-					const peers = entry.workspace.sync?.peers() ?? new Map();
-					for (const [clientID, state] of peers) {
-						rows.push({
-							workspace: entry.name,
-							clientID,
-							device: state.device,
-						});
-					}
+	return {
+		ping: async () => ({ data: 'pong', error: null }),
+		peers: async (args) => {
+			const filter = (args as { workspace?: string } | null)?.workspace;
+			const rows: Array<{
+				workspace: string;
+				clientID: number;
+				device: unknown;
+			}> = [];
+			for (const entry of entries) {
+				if (filter && entry.name !== filter) continue;
+				const peers = entry.workspace.sync?.peers() ?? new Map();
+				for (const [clientID, state] of peers) {
+					rows.push({
+						workspace: entry.name,
+						clientID,
+						device: state.device,
+					});
 				}
-				send(ok(req.id, rows));
-				return;
 			}
-			case 'list': {
-				const ctx = req.args as ListCtx & { workspace?: string };
-				const entry = lookup(ctx.workspace, req, send);
-				if (!entry) return;
-				void (async () => {
-					try {
-						const data: ListResult = await listCore(entry, ctx);
-						send(ok(req.id, data));
-					} catch (cause) {
-						send(errFrom(req.id, cause));
-					}
-				})();
-				return;
+			return { data: rows, error: null };
+		},
+		list: async (args) => {
+			const ctx = args as ListCtx & { workspace?: string };
+			const found = lookup(ctx.workspace);
+			if (!found.ok) return { data: null, error: found.error };
+			try {
+				const data: ListResult = await listCore(found.entry, ctx);
+				return { data, error: null };
+			} catch (cause) {
+				return { data: null, error: errFrom(cause) };
 			}
-			case 'run': {
-				const ctx = req.args as RunCtx;
-				const entry = lookup(ctx.workspaceArg, req, send);
-				if (!entry) return;
-				void (async () => {
-					try {
-						const data: RunResult = await runCore(entry, ctx);
-						send(ok(req.id, data));
-					} catch (cause) {
-						send(errFrom(req.id, cause));
-					}
-				})();
-				return;
+		},
+		run: async (args) => {
+			const ctx = args as RunCtx;
+			const found = lookup(ctx.workspaceArg);
+			if (!found.ok) return { data: null, error: found.error };
+			try {
+				const data: RunResult = await runCore(found.entry, ctx);
+				return { data, error: null };
+			} catch (cause) {
+				return { data: null, error: errFrom(cause) };
 			}
-			case 'shutdown':
-				send(ok(req.id, null));
-				triggerShutdown();
-				return;
-			default:
-				send(
-					err(req.id, {
-						name: 'UnknownCommand',
-						message: `unknown cmd: ${req.cmd}`,
-					}),
-				);
-		}
+		},
+		shutdown: async () => {
+			// Defer teardown so the response flushes before the server stops.
+			queueMicrotask(triggerShutdown);
+			return { data: null, error: null };
+		},
 	};
 }
 

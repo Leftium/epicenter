@@ -60,13 +60,6 @@ const waitOption: Options = {
 	description: `Total ms to wait for peer resolution + RPC; requires --peer (default ${DEFAULT_PEER_WAIT_MS})`,
 };
 
-const noUpOption: Options = {
-	type: 'boolean',
-	default: false,
-	description:
-		'Skip the `epicenter up` daemon if one is running and use a transient connection instead',
-};
-
 /**
  * Parsed inputs for {@link runCore}. Mirrors {@link ListCtx} — the daemon
  * builds it from IPC `args`, the local handler builds it from argv. The
@@ -164,7 +157,6 @@ export const runCommand: CommandModule = {
 			.option('workspace', workspaceOption)
 			.option('peer', peerOption)
 			.option('wait', waitOption)
-			.option('no-up', noUpOption)
 			.implies('wait', 'peer')
 			.options(formatYargsOptions())
 			.strict(),
@@ -178,7 +170,6 @@ export const runCommand: CommandModule = {
 				: undefined;
 		const waitMs =
 			typeof args.wait === 'number' ? args.wait : DEFAULT_PEER_WAIT_MS;
-		const noUp = args['no-up'] === true;
 		const userWorkspace = workspaceFromArgv(args);
 		const input = await resolveInput(args);
 
@@ -190,24 +181,23 @@ export const runCommand: CommandModule = {
 			workspaceArg: userWorkspace,
 		};
 
-		// Auto-detect path.
-		if (!noUp) {
-			const dispatched = await tryDaemonDispatch<RunResult>(
-				args,
-				userWorkspace,
-				'run',
-				(workspace) => ({ ...ctx, workspaceArg: workspace }),
-			);
-			if (dispatched.kind === 'mismatch') return;
-			if (dispatched.kind === 'dispatched') {
-				if (dispatched.result.error === null) {
-					renderRunResult(dispatched.result.data, format);
-					return;
-				}
-				outputError(`error: ${dispatched.result.error.message}`);
-				process.exitCode = 1;
+		// Auto-detect: dispatch through the daemon when one is running. Falls
+		// through to the in-process path when no daemon answers.
+		const dispatched = await tryDaemonDispatch<RunResult>(
+			args,
+			userWorkspace,
+			'run',
+			(workspace) => ({ ...ctx, workspaceArg: workspace }),
+		);
+		if (dispatched.kind === 'mismatch') return;
+		if (dispatched.kind === 'dispatched') {
+			if (dispatched.result.error === null) {
+				renderRunResult(dispatched.result.data, format);
 				return;
 			}
+			outputError(`error: ${dispatched.result.error.message}`);
+			process.exitCode = 1;
+			return;
 		}
 
 		// Fallback: load config in-process.

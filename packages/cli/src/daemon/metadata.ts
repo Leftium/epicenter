@@ -1,5 +1,5 @@
 /**
- * Daemon metadata sidecar — the JSON-on-disk record that lets sibling CLI
+ * Daemon metadata sidecar: the JSON-on-disk record that lets sibling CLI
  * invocations (and `ps` / `down`) discover an `epicenter up` process without
  * connecting to its socket.
  *
@@ -28,15 +28,18 @@ const log = createLogger('cli/daemon/metadata');
  * `--dir` arguments resolving to the same workspace match. `configMtime`
  * is captured at startup so `ps` can flag stale daemons whose
  * `epicenter.config.ts` has changed since they booted (Invariant 4: no
- * hot-reload — surface staleness instead).
+ * hot-reload, surface staleness instead).
+ *
+ * The daemon serves *every* workspace its config exports (Invariant 7);
+ * we don't record the loaded set here. Discovery is "ask the daemon
+ * which workspaces it serves" via the IPC `status` command, not "read
+ * the sidecar." This keeps the metadata file from drifting against a
+ * config that's been edited mid-flight.
  */
 export type DaemonMetadata = {
 	pid: number;
 	/** Absolute, fs-resolved `--dir` path. */
 	dir: string;
-	/** Workspace entry name selected at daemon start. */
-	workspace: string;
-	deviceId: string;
 	/** ISO 8601 timestamp. */
 	startedAt: string;
 	cliVersion: string;
@@ -104,7 +107,7 @@ export function isProcessAlive(pid: number): boolean {
 }
 
 /**
- * Outcome of {@link inspectExistingDaemon} — what `up` should do at startup.
+ * Outcome of {@link inspectExistingDaemon}: what `up` should do at startup.
  *
  * - `'in-use'`: a live daemon already owns this `--dir`. Caller exits 1.
  * - `'orphan'`: stale metadata and/or socket from a dead daemon. Caller has
@@ -118,7 +121,7 @@ export type StartupState = 'in-use' | 'orphan' | 'clean';
  *
  * Liveness check is two-step: pid alive (cheap, local) AND IPC ping responds
  * (proves the daemon is actually serving, not just a recycled pid). Anything
- * less than both is treated as orphan and swept — the orphan branch unlinks
+ * less than both is treated as orphan and swept; the orphan branch unlinks
  * the metadata and socket files before returning so the caller can proceed
  * straight to a fresh bind.
  *
@@ -163,7 +166,7 @@ export async function inspectExistingDaemon(
  * Enumerate every daemon's metadata under `runtimeDir()`.
  *
  * Reads each `<dirHash>.meta.json` and returns the parsed records, skipping
- * any file that fails to parse. Does NOT filter out stale/orphan entries —
+ * any file that fails to parse. Does NOT filter out stale/orphan entries;
  * the caller decides whether to ping, sweep, or display them as-is. This
  * keeps `enumerateDaemons` cheap and predictable; consumers like `ps` add
  * the liveness check, while consumers like `down --all` only need the pid

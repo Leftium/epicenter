@@ -75,8 +75,6 @@ describe('pickSoleDaemon', () => {
 			writeMetadata(dir, {
 				pid: process.pid,
 				dir,
-				workspace: 'w',
-				deviceId: 'd',
 				startedAt: new Date().toISOString(),
 				cliVersion: '0.0.0',
 				configMtime: 0,
@@ -96,8 +94,6 @@ describe('pickSoleDaemon', () => {
 				writeMetadata(d, {
 					pid: process.pid,
 					dir: d,
-					workspace: 'w',
-					deviceId: 'd',
 					startedAt: new Date().toISOString(),
 					cliVersion: '0.0.0',
 					configMtime: 0,
@@ -128,7 +124,7 @@ describe('followLog', () => {
 
 		const stop = followLog(p);
 		try {
-			// Append more bytes — fs.watch should fire 'change'.
+			// Append more bytes; fs.watch should fire 'change'.
 			await new Promise((r) => setTimeout(r, 50));
 			appendFileSync(p, 'second\n');
 			await new Promise((r) => setTimeout(r, 200));
@@ -138,7 +134,7 @@ describe('followLog', () => {
 			writeFileSync(p, 'third\n');
 			await new Promise((r) => setTimeout(r, 300));
 
-			// Append after rotate — should reach the new fd.
+			// Append after rotate; should reach the new fd.
 			appendFileSync(p, 'fourth\n');
 			await new Promise((r) => setTimeout(r, 300));
 		} finally {

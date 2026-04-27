@@ -56,13 +56,11 @@ afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
 });
 
-describe('runDown — graceful', () => {
+describe('runDown: graceful', () => {
 	test('reports graceful when ipcCall returns ok', async () => {
 		writeMetadata(workDir, {
 			pid: process.pid,
 			dir: workDir,
-			workspace: 'default',
-			deviceId: 'dev',
 			startedAt: new Date().toISOString(),
 			cliVersion: '0.0.0',
 			configMtime: 0,
@@ -83,13 +81,11 @@ describe('runDown — graceful', () => {
 	});
 });
 
-describe('runDown — SIGTERM fallback', () => {
+describe('runDown: SIGTERM fallback', () => {
 	test('falls through to kill when ipcCall returns NoDaemon', async () => {
 		writeMetadata(workDir, {
 			pid: process.pid,
 			dir: workDir,
-			workspace: 'default',
-			deviceId: 'dev',
 			startedAt: new Date().toISOString(),
 			cliVersion: '0.0.0',
 			configMtime: 0,
@@ -119,7 +115,7 @@ describe('runDown — SIGTERM fallback', () => {
 	});
 });
 
-describe('runDown — absent', () => {
+describe('runDown: absent', () => {
 	test('reports absent when no metadata file exists for --dir', async () => {
 		const result = await runDown(
 			{ dir: workDir, all: false },
@@ -145,8 +141,6 @@ describe('runDown --all', () => {
 			writeMetadata(dirA, {
 				pid: process.pid,
 				dir: dirA,
-				workspace: 'default',
-				deviceId: 'a',
 				startedAt: new Date().toISOString(),
 				cliVersion: '0.0.0',
 				configMtime: 0,
@@ -154,8 +148,6 @@ describe('runDown --all', () => {
 			writeMetadata(dirB, {
 				pid: process.pid,
 				dir: dirB,
-				workspace: 'default',
-				deviceId: 'b',
 				startedAt: new Date().toISOString(),
 				cliVersion: '0.0.0',
 				configMtime: 0,

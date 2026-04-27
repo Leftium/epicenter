@@ -1,10 +1,10 @@
 /**
- * `epicenter peers` — presence-only view of who's connected right now.
+ * `epicenter peers`: presence-only view of who's connected right now.
  *
  * Shows just the identity fields needed to target a peer with
  * `run --peer` or `list --peer`: deviceId, friendly name, platform, and the
  * session-local clientID. Action introspection lives in `list --peer` and
- * `list --all` — this command stays narrow.
+ * `list --all`; this command stays narrow.
  *
  * For each workspace entry (or a single entry narrowed by `-w`):
  *   1. await `workspace.sync.whenConnected` (presence rides the transport)
@@ -13,12 +13,20 @@
  *   3. emit a `console.table` (default) or JSON (`--format json`)
  *
  * This is a snapshot, not a registry. A peer that hasn't broadcast its
- * awareness state is invisible — pass `--wait 2000` to give slow peers a
+ * awareness state is invisible; pass `--wait 2000` to give slow peers a
  * chance before emitting. Awareness has a ~30s TTL and session-local
  * clientIDs; see `attachAwareness` in `@epicenter/workspace`.
  *
  * Prints `no peers connected` to stderr when every workspace is empty (text
  * mode only; JSON mode always emits a valid array, even if empty).
+ *
+ * ## Two execution modes
+ *
+ * - **Standalone** (default): the handler attaches sync in-process,
+ *   awaits awareness, snapshots, and exits.
+ * - **Attached** (when an `epicenter up` daemon is running for the same
+ *   `--dir`): the handler asks the daemon for its already-populated
+ *   peers map over IPC.
  */
 
 import type { Argv, CommandModule } from 'yargs';
@@ -59,8 +67,8 @@ type WorkspaceSnapshot = {
 	peers: Map<number, AwarenessState>;
 	/**
 	 * Local entry the snapshot came from (used by `explainEmpty` to surface a
-	 * connect-status hint). Absent when the snapshot was sourced over IPC —
-	 * the daemon already logs its own connect state.
+	 * connect-status hint). Absent when the snapshot was sourced over IPC,
+	 * since the daemon already logs its own connect state.
 	 */
 	entry: WorkspaceEntry | undefined;
 };
@@ -96,27 +104,35 @@ export const peersCommand: CommandModule = {
 			console.error('Tip: for long-lived presence, see `epicenter up`.');
 		}
 
-		// Auto-detect: ask the daemon for the peers snapshot when one is
-		// running. Falls through to the transient in-process path otherwise.
+		// Attached path: ask the daemon for the peers snapshot when an `up`
+		// daemon is running. Falls through to the standalone path otherwise.
 		const daemon = await tryGetDaemon(target);
-		if (daemon === 'mismatch') return;
 		if (daemon) {
 			const result = await daemon.call<
-				Array<{ clientID: number; device: AwarenessState['device'] }>
-			>('peers', { wait: waitMs });
+				Array<{
+					workspace: string;
+					clientID: number;
+					device: AwarenessState['device'];
+				}>
+			>('peers', { wait: waitMs, workspace: target.userWorkspace });
 			await renderDaemonResult(result, (rows) => {
-				const peers = new Map<number, AwarenessState>();
-				for (const row of rows) peers.set(row.clientID, { device: row.device });
-				emit(
-					[
-						{
-							name: target.userWorkspace ?? '<daemon>',
-							peers,
-							entry: undefined,
-						},
-					],
-					{ elideHeader: true, format },
-				);
+				const byWorkspace = new Map<string, Map<number, AwarenessState>>();
+				for (const row of rows) {
+					let peers = byWorkspace.get(row.workspace);
+					if (!peers) {
+						peers = new Map();
+						byWorkspace.set(row.workspace, peers);
+					}
+					peers.set(row.clientID, { device: row.device });
+				}
+				const snapshots: WorkspaceSnapshot[] = [];
+				for (const [name, peers] of byWorkspace) {
+					snapshots.push({ name, peers, entry: undefined });
+				}
+				emit(snapshots, {
+					elideHeader: target.userWorkspace !== undefined,
+					format,
+				});
 			});
 			return;
 		}
@@ -161,7 +177,7 @@ function emit(
 	const nonEmpty = snapshots.filter((s) => s.peers.size > 0);
 	if (nonEmpty.length === 0) {
 		console.error('no peers connected');
-		// Surface a connect-status hint per workspace if any are still trying —
+		// Surface a connect-status hint per workspace if any are still trying:
 		// turns "silent timeout" into "oh, the server rejected us".
 		for (const { name, entry } of snapshots) {
 			if (!entry) continue;
@@ -182,7 +198,7 @@ function emit(
 
 /**
  * Project each awareness state to a presence row. Awareness carries
- * presence-only `device.{id, name, platform}` — action manifests are
+ * presence-only `device.{id, name, platform}`. Action manifests are
  * fetched on demand by `list --peer` / `list --all`.
  */
 export function buildPeerRows(peers: Map<number, AwarenessState>): PeerRow[] {

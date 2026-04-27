@@ -33,7 +33,7 @@ These are the things to encode now, before someone "just adds a small flag" late
 4. **No daemon-side config hot-reload.** `up` is bound to the config it loaded at startup. Edit the config → restart. No `--watch`, no SIGHUP-reloads-config, no FS watcher.
 5. **No daemonization flags** (`--background`, `--detach`, `--pidfile`). The verb stays `up`, the process stays foreground. Backgrounding is the user's job (`&`, `nohup`, `tmux`, `systemd --user`). Otherwise we own a process-management story we don't want.
 6. **`peers --wait` capped at 30 000 ms** with a one-line hint when the user passes a value above 5 000: `"Tip: for long-lived presence, see \`epicenter up\`."`. Past 30 s, you're using `peers` as a daemon — that's now a typed-out instruction to do the right thing.
-7. **`--workspace` selection is inherited from daemon metadata when IPC is used.** If `up --workspace foo` is running for a `--dir`, then `epicenter list --dir <same>` (no `--workspace`) picks up `foo` from `<h>.meta.json`. Otherwise we open a slot for "daemon owns one workspace, sibling thinks it's a different one" desync.
+7. **The daemon serves every workspace its config exports.** `epicenter up` is "this config is online," not "this entry is online." There is no `--workspace` flag on `up`. Sibling commands pass `--workspace` straight through to IPC; the daemon resolves the name via the same `resolveEntry` the cold path uses, so an unknown workspace returns the same error in either path. Resource isolation between workspaces is expressed by splitting them into separate config dirs (one daemon per dir, by design — see "Why per-`--dir`" below).
 
 ## Naming
 
@@ -97,7 +97,7 @@ side effects:     none beyond presence side effects:    none beyond presence
 # Foreground — Ctrl-C to stop. Streams structured logs to stderr.
 # Default-on: prints awareness changes ("peer-b joined" / "peer-b left").
 # Pass --quiet to suppress those and emit only errors.
-epicenter up   --dir <path> [--workspace <name>] [--quiet]
+epicenter up   --dir <path> [--quiet]
 
 # Stop a running peer. Defaults to current --dir; --all stops every running peer.
 epicenter down [--dir <path> | --all]
@@ -156,13 +156,13 @@ The metadata file is `<h>.meta.json` (paired visibly with `<h>.sock`):
 {
   "pid": 51234,
   "dir": "/Users/braden/.../examples/notes-cross-peer/peer-a",
-  "workspace": "notes",          // selected entry name; siblings inherit (Invariant 7)
-  "deviceId": "notes-repro-peer-a",
   "startedAt": "2026-04-26T23:50:01.224Z",
   "cliVersion": "0.1.0",
   "configMtime": 1745700301000   // for stale-config detection in `epicenter ps`
 }
 ```
+
+The daemon serves every workspace its config exports (Invariant 7), so the loaded set isn't recorded here — to see it, ask the daemon directly via the IPC `status` command (or read the config file). This keeps the sidecar from drifting against a config edited mid-flight.
 
 ### Why hashed / global rather than `<dir>/.epicenter/run.sock`
 
@@ -209,7 +209,7 @@ CLI commands (`list`, `run`, `peers`) translate their argv into a `cmd` + `args`
 
 | event | behavior |
 | --- | --- |
-| start | resolve abs `--dir` → hash → check existing socket. If existing daemon answers `ping`, exit 1 with `"already running, pid=X"`. If stale, unlink and continue. Validate config (`loadConfig` throw → exit 1 with the error, no partial state). Construct workspace, await `whenConnected` with a hard `--connect-timeout` (default 10 000 ms) so an expired auth token surfaces as `"connect failed: 401 Unauthorized — try \`epicenter auth login\`"` instead of an indefinite hang. Write metadata JSON, listen on socket. Print one-line `"online (deviceId=..., workspace=...)"` followed by an initial peers snapshot so the operator sees current state, not just future deltas. |
+| start | resolve abs `--dir` → hash → check existing socket. If existing daemon answers `ping`, exit 1 with `"already running, pid=X"`. If stale, unlink and continue. Validate config (`loadConfig` throw → exit 1 with the error, no partial state). Construct **every** workspace the config exports, await each `whenConnected` concurrently with a hard `--connect-timeout` (default 10 000 ms; one bad workspace fails the whole daemon — split configs for isolation). An expired auth token surfaces as `"connect failed: <name>: 401 Unauthorized — try \`epicenter auth login\`"` instead of an indefinite hang. Write metadata JSON, listen on socket. Print one-line `"online (workspaces=[a, b, c])"` followed by an initial peers snapshot per workspace so the operator sees current state, not just future deltas. |
 | awareness change | (default) print `"peer-b joined (deviceId=...)"` / `"peer-b left"` to stderr. Suppress with `--quiet`. |
 | sync state change | print `"connecting (retry N)"` / `"connected"` / `"offline"` transitions. These are operationally critical (you want to know the moment the WS drops); not suppressed by `--quiet`. |
 | SIGINT / SIGTERM | stop accepting new IPC, flush in-flight responses (best-effort, 2 s budget), `[Symbol.asyncDispose]` the workspace, unlink socket + metadata, exit 0. |
@@ -264,13 +264,13 @@ No breaking changes. The current two-terminal dance keeps working.
 
 ## Acceptance criteria
 
-- `epicenter up --dir peer-a` starts, prints `"online (deviceId=notes-repro-peer-a, workspace=notes)"` followed by the initial peers snapshot, holds connection, prints `"peer-b joined"` when peer-b connects, exits cleanly on Ctrl-C, leaves no orphan socket/metadata.
+- `epicenter up --dir peer-a` starts, prints `"online (workspaces=[notes])"` followed by the initial peers snapshot per loaded workspace, holds connection, prints `"notes: peer-b joined"` when peer-b connects, exits cleanly on Ctrl-C, leaves no orphan socket/metadata.
 - With `up` running for peer-a, `epicenter run --dir peer-b --peer notes-repro-peer-a notes.add '...'` succeeds in <100 ms wall time (vs >2 s for transient mode), and `up` logs the inbound RPC.
-- `epicenter ps` lists every running daemon with deviceId, pid, uptime, `configChanged` flag.
+- `epicenter ps` lists every running daemon with dir, pid, uptime, `configChanged` flag. (No workspace column: the daemon serves every workspace its config exports; ask the daemon directly via `status` for the loaded set.)
 - `epicenter logs --dir peer-a --follow` tails the rotating log file.
 - Killing the daemon with `kill -9` and restarting `up` produces one `"cleaned orphan socket"` log line and starts cleanly.
 - Two `up` invocations against the same `--dir`: the second exits 1 with `"daemon already running (pid=X)"`.
 - `epicenter down --dir peer-a` shuts down gracefully; `epicenter down --all` shuts down every running daemon for this user without prompting.
 - **Stale-auth fast-fail**: with an expired token, `epicenter up --dir peer-a` exits within `--connect-timeout` (default 10 s) with `"connect failed: 401 Unauthorized — try \`epicenter auth login\`"`, never an indefinite hang. This is the existing failure mode this spec is responsible for fixing.
-- **Workspace inheritance (Invariant 7)**: `epicenter up --dir foo --workspace alpha` running, then `epicenter list --dir foo` (no `--workspace` flag) resolves to the `alpha` workspace via the metadata JSON, not an error about ambiguous selection.
+- **Multi-workspace daemon (Invariant 7)**: `epicenter up --dir foo` running with a config that exports `alpha` and `beta`, then `epicenter list --dir foo --workspace beta` routes through the daemon to `beta` (not an error about a "wrong" workspace). `epicenter peers --dir foo` returns peers grouped by workspace across both. An unknown workspace name returns the same `resolveEntry` error the cold path emits.
 - **Invariant 6 enforced**: `epicenter peers --dir foo --wait 60000` errors with `"--wait capped at 30000 ms; use \`epicenter up\` for long-lived presence"`. `--wait 10000` succeeds but prints the hint to stderr.

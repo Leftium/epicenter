@@ -64,7 +64,19 @@ import { resolveEntry } from '../util/resolve-entry.js';
 import { listCore, type ListCtx, type ListResult } from './list.js';
 import { runCore, type RunCtx, type RunResult } from './run.js';
 
-const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
+/**
+ * Hardcoded ceiling on how long any single workspace's `whenConnected`
+ * may hang before `up` gives up on startup. This exists *only* because
+ * `@epicenter/workspace`'s sync layer doesn't reject `whenConnected` on
+ * permanent auth failures (it just retries forever); without a clock, an
+ * expired token would freeze the daemon's startup indefinitely.
+ *
+ * Tracked: `specs/20260427T120000-workspace-sync-failed-phase.md`. When
+ * the workspace package surfaces a `failed` SyncStatus phase and rejects
+ * `whenConnected` accordingly, this constant and the `raceTimeout` call
+ * site go away.
+ */
+const CONNECT_TIMEOUT_MS = 10000;
 
 /**
  * Read once at module load. Bun resolves the JSON import relative to this
@@ -146,7 +158,6 @@ function logSyncStatus(message: string): void {
 export type UpOptions = {
 	dir: string;
 	quiet: boolean;
-	connectTimeoutMs: number;
 	cliVersion?: string;
 };
 
@@ -182,6 +193,13 @@ export type RunUpDeps = {
 		socketPath: string,
 		handler: IpcHandler,
 	) => Promise<IpcServerHandle>;
+	/**
+	 * Test-only override for {@link CONNECT_TIMEOUT_MS}. Production has no
+	 * way to tune this — it's a stopgap until the workspace package's
+	 * sync layer rejects `whenConnected` on permanent auth failure (spec:
+	 * `20260427T120000-workspace-sync-failed-phase.md`).
+	 */
+	connectTimeoutMs?: number;
 };
 
 /**
@@ -236,7 +254,7 @@ export async function runUp(
 					entry.workspace.whenReady ??
 						entry.workspace.sync?.whenConnected ??
 						Promise.resolve(),
-					options.connectTimeoutMs,
+					deps.connectTimeoutMs ?? CONNECT_TIMEOUT_MS,
 					() => connectFailedMessage(entry),
 				),
 			),
@@ -311,22 +329,12 @@ export const upCommand: CommandModule = {
 				default: false,
 				description:
 					'Suppress awareness join/leave lines (sync state changes still print)',
-			})
-			.option('connect-timeout', {
-				type: 'number',
-				default: DEFAULT_CONNECT_TIMEOUT_MS,
-				description:
-					'Max ms to wait for each workspace to become ready before exiting 1',
 			}),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
 		const options: UpOptions = {
 			dir: dirFromArgv(args),
 			quiet: args.quiet === true,
-			connectTimeoutMs:
-				typeof args['connect-timeout'] === 'number'
-					? (args['connect-timeout'] as number)
-					: DEFAULT_CONNECT_TIMEOUT_MS,
 		};
 
 		let handle: UpHandle;
@@ -418,17 +426,6 @@ function makeHandler(
 		switch (req.cmd) {
 			case 'ping':
 				send(ok(req.id, 'pong'));
-				return;
-			case 'status':
-				send(
-					ok(req.id, {
-						pid: process.pid,
-						workspaces: entries.map((e) => ({
-							name: e.name,
-							syncStatus: e.workspace.sync?.status ?? null,
-						})),
-					}),
-				);
 				return;
 			case 'peers': {
 				const filter =

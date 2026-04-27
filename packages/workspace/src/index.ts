@@ -83,19 +83,13 @@ export type { MaybePromise } from './shared/types';
 
 export { ExtensionError } from './shared/errors';
 
-// ════════════════════════════════════════════════════════════════════════════
-// JSONL FILE SINK (Bun-only)
-// ════════════════════════════════════════════════════════════════════════════
-//
-// The logger core (`createLogger`, `consoleSink`, `memorySink`, `composeSinks`,
-// `tapErr`, types) lives in `wellcrafted/logger` — import directly from there.
-// This package only ships `jsonlFileSink`, which uses `Bun.file(path).writer()`
-// and `node:fs` and can't live in a runtime-agnostic package.
-
-export {
-	type DisposableLogSink,
-	jsonlFileSink,
-} from './shared/logger/jsonl-sink.js';
+// JSONL file sink (Bun-only) lives at the `@epicenter/workspace/logger/jsonl-sink`
+// subpath. Keeping it out of this barrel matters: re-exporting it pulls
+// `node:fs`/`node:path` into every browser bundle that touches `@epicenter/workspace`,
+// which breaks SvelteKit/Vite ssr→client builds (see `__vite-browser-external`
+// "mkdirSync is not exported" errors). Import the sink directly from the subpath
+// in Bun/Node entry points; the logger core (`createLogger`, `consoleSink`, etc.)
+// still comes from `wellcrafted/logger`.
 
 // ════════════════════════════════════════════════════════════════════════════
 // CORE TYPES

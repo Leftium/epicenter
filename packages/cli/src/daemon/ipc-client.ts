@@ -3,20 +3,20 @@
  *
  * Counterpart to `ipc-server.ts`. Two surfaces:
  *
- * - {@link ipcPing} — cheap liveness probe used by sibling auto-detect and
+ * - {@link ipcPing}: cheap liveness probe used by sibling attach and
  *   orphan inspection. Never throws; returns `false` on any connect / timeout
  *   / parse failure so callers can branch without try/catch noise.
- * - {@link ipcCall} — request/response with a single terminal frame.
+ * - {@link ipcCall}: request/response with a single terminal frame.
  *   Connection failures collapse into the `IpcClientError.NoDaemon` /
  *   `IpcClientError.Timeout` variants so "no daemon running" is just
  *   another `Err` outcome.
  *
  * Both surfaces use the connect attempt itself as the single liveness
- * signal — no `existsSync` pre-check. A missing socket file rejects
+ * signal: no `existsSync` pre-check. A missing socket file rejects
  * `Bun.connect` with `ENOENT`, which the rejection path already maps to
  * `NoDaemon` / `false`. One signal beats two that can disagree.
  *
- * Wire format and security model are deliberately internal — see
+ * Wire format and security model are deliberately internal; see
  * `specs/20260426T235000-cli-up-long-lived-peer.md` § "IPC wire protocol".
  */
 
@@ -153,7 +153,7 @@ export async function ipcPing(
 				} catch {
 					return;
 				}
-				// Server may emit BadRequest with id '' for un-parseable lines —
+				// Server may emit BadRequest with id '' for un-parseable lines;
 				// drop frames with no/empty id silently.
 				if (!('id' in frame) || frame.id !== 'ping') return;
 				finish(frame.error === null);

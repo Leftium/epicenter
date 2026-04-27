@@ -13,7 +13,7 @@
  * mirrors the codebase's wellcrafted convention so callers don't have to
  * learn a parallel `{ok, error}` shape.
  *
- * Wire format and security model are deliberately internal — see
+ * Wire format and security model are deliberately internal; see
  * `specs/20260426T235000-cli-up-long-lived-peer.md` § "IPC wire protocol"
  * and § "Security model". The CLI is the only sanctioned client.
  */
@@ -35,7 +35,7 @@ const log = createLogger('cli/daemon/ipc-server');
 /**
  * Tagged-error variants emitted by the IPC transport itself (not by command
  * handlers). `BadRequest` for un-parseable JSON lines; `HandlerCrashed` when
- * a handler promise rejects. Both are wire-serialized — the client sees
+ * a handler promise rejects. Both are wire-serialized; the client sees
  * `{name, message, ...}` on the error side of the `Result` envelope.
  */
 export const IpcServerError = defineErrors({
@@ -53,7 +53,7 @@ export type IpcServerError = InferErrors<typeof IpcServerError>;
 /**
  * The on-the-wire form of any tagged error. `defineErrors` produces objects
  * with `name` + `message` + variant-specific fields (and a `cause` we don't
- * try to JSON-serialize structurally — `JSON.stringify` reduces an `Error`
+ * try to JSON-serialize structurally, since `JSON.stringify` reduces an `Error`
  * cause to `{}`, which is fine for the client's `message`-first surface).
  */
 export type SerializedError = {
@@ -73,7 +73,7 @@ export type IpcRequest = {
  * Single JSON response frame.
  *
  * Streamed handlers may emit multiple ok frames sharing the same `id`; the
- * final one carries `end: true`. Errors are terminal — one error frame
+ * final one carries `end: true`. Errors are terminal: one error frame
  * closes that request. The body is `Result<T, SerializedError>` with the
  * frame metadata (`id`, optional `end`) sitting alongside.
  */
@@ -88,7 +88,7 @@ export type IpcFrame<T = unknown, E extends SerializedError = SerializedError> =
  * `end: true`. Build success frames as `{id, data, error: null}` and error
  * frames as `{id, data: null, error: TaggedError}`.
  *
- * The server intentionally does not enforce "at least one response" — a
+ * The server intentionally does not enforce "at least one response": a
  * `cmd: shutdown` handler, for instance, may legitimately reply once and
  * then trigger teardown without further frames.
  */
@@ -99,7 +99,7 @@ export type IpcHandler = (
 
 /**
  * Public handle returned by {@link startIpcServer}. Narrowed to the surface
- * callers actually use — `.stop()` for graceful shutdown — so the per-socket
+ * callers actually use (`.stop()` for graceful shutdown), so the per-socket
  * data generic and the rest of Bun's listener API stay implementation detail.
  */
 export type IpcServerHandle = { stop(): void };
@@ -133,7 +133,7 @@ export async function startIpcServer(
 				log.debug('ipc connection accepted', { socketPath });
 			},
 			data(socket, chunk) {
-				// Bun hands us a Buffer — accumulate into the per-socket buffer
+				// Bun hands us a Buffer; accumulate into the per-socket buffer
 				// and split on newlines, keeping the trailing partial line.
 				socket.data.buffer += chunk.toString('utf8');
 				let nl = socket.data.buffer.indexOf('\n');
@@ -181,7 +181,7 @@ function processLine(
 	try {
 		req = JSON.parse(line) as IpcRequest;
 	} catch (cause) {
-		// Per-line failure — keep the connection open so other lines
+		// Per-line failure; keep the connection open so other lines
 		// (potentially from a pipelining client) can still be served.
 		const tagged = IpcServerError.BadRequest({ cause });
 		send({ id: '', data: null, error: tagged.error as SerializedError });

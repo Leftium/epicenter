@@ -3,14 +3,14 @@ export type FormatOptions = {
 	format?: 'json' | 'jsonl';
 };
 
-/** Format a single value as JSON — pretty on TTY unless `format: 'jsonl'`. */
+/** Format a single value as JSON: pretty on TTY unless `format: 'jsonl'`. */
 function formatJson(value: unknown, options: FormatOptions = {}): string {
 	const shouldPretty =
 		options.format !== 'jsonl' && (process.stdout.isTTY ?? false);
 	return JSON.stringify(value, null, shouldPretty ? 2 : undefined);
 }
 
-/** Format an array as JSONL — one JSON value per line. */
+/** Format an array as JSONL: one JSON value per line. */
 function formatJsonl(values: unknown[]): string {
 	return values.map((v) => JSON.stringify(v)).join('\n');
 }

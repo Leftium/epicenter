@@ -1,7 +1,7 @@
 /**
  * CLI entry-point tests.
  *
- * The binary surfaces four commands — `auth`, `list`, `peers`, `run`. These
+ * The binary surfaces four commands: `auth`, `list`, `peers`, `run`. These
  * tests assert registration via `--help` output so they stay decoupled from
  * command semantics.
  */

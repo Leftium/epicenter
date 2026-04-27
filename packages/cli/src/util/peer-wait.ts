@@ -4,19 +4,19 @@
  * `findPeer` is a one-shot lookup; `waitForPeer` and `waitForAnyPeer`
  * subscribe to `sync.observe()` so they react to changes without polling
  * and bail when `deadline` expires. They deliberately do NOT block on
- * `sync.whenConnected` — the observe loop already covers that path
+ * `sync.whenConnected`. The observe loop already covers that path
  * (awareness can only arrive after the WS handshake completes), and
  * awaiting `whenConnected` would tie us to the workspace's full
  * connection lifetime instead of the caller's `--wait` budget. (Note:
  * `whenConnected` now rejects on dispose rather than hanging forever, but
- * for transient failures it still won't settle until the doc is gone —
+ * for transient failures it still won't settle until the doc is gone, and
  * we want a deadline-bounded wait, not a doc-bounded wait.)
  *
  * `findPeer` matches by exact `device.id`. The per-installation deviceId
  * convention (`getOrCreateDeviceId`) makes collisions cryptographically
  * improbable, so "first match by clientID-asc" is correct rather than
  * ambiguous. No fuzzy matching, no kv-pair query DSL, no numeric
- * clientID escape hatch — the discovery flow is `epicenter peers` →
+ * clientID escape hatch: the discovery flow is `epicenter peers` →
  * copy the deviceId → `--peer <id>`.
  */
 
@@ -24,12 +24,12 @@ import type { AwarenessState, LoadedWorkspace } from '../load-config';
 
 /**
  * Explain why no peers are visible, by inspecting the live sync status.
- * Returns `null` when the connection is healthy (peers are simply absent —
+ * Returns `null` when the connection is healthy (peers are simply absent,
  * nothing to explain) or when no sync is attached at all.
  *
  * Surfacing this matters because `whenConnected` may never resolve (server
  * down, stale prod, auth rejected), and without this hint the CLI just
- * prints `no peers connected` after the wait expires — indistinguishable
+ * prints `no peers connected` after the wait expires, indistinguishable
  * from "everything is fine, you're alone".
  */
 export function explainEmpty(workspace: LoadedWorkspace): string | null {
@@ -65,7 +65,7 @@ export type WaitForPeerResult = { hit: PeerHit | null; sawPeers: boolean };
 
 /**
  * Wait for a peer publishing `deviceId` to appear in awareness.
- * Subscribes to awareness changes — no polling — and resolves on first
+ * Subscribes to awareness changes (no polling) and resolves on first
  * match or when `deadline` expires.
  */
 export async function waitForPeer(
@@ -109,7 +109,7 @@ export async function waitForPeer(
  * Wait for presence to show *any* peer, up to the deadline. Best-effort:
  * resolves when at least one peer is visible OR the deadline expires.
  *
- * Returns void deliberately. The caller decides freshness — call
+ * Returns void deliberately. The caller decides freshness; call
  * `workspace.sync?.peers()` after this resolves to get the snapshot.
  * This keeps the contract honest: an in-flight peer might appear between
  * "wait satisfied" and "use the snapshot," and pretending otherwise

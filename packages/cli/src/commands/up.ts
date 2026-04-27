@@ -11,11 +11,18 @@
  * § "Logging", § "Invariants".
  */
 
-import { existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	statSync,
+	unlinkSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { Server } from 'node:net';
 
 import {
+	composeSinks,
 	consoleSink,
 	createLogger,
 	type LogEvent,
@@ -38,6 +45,10 @@ import {
 	writeMetadata,
 } from '../daemon/metadata.js';
 import { logPathFor, socketPathFor } from '../daemon/paths.js';
+import {
+	ROTATE_MAX_BYTES,
+	rotateIfNeeded,
+} from '../daemon/log-rotation.js';
 import {
 	type LoadConfigResult,
 	type LoadedWorkspace,
@@ -73,6 +84,44 @@ const LEVEL_RANK: Record<LogLevel, number> = {
  * floor to `warn`, but sync state changes call `log.info` directly through a
  * non-quietable channel (see {@link logSyncStatus}).
  */
+/**
+ * Build the file sink: structured JSONL, rotated at {@link ROTATE_MAX_BYTES}.
+ * Synchronous `appendFileSync` keeps rotation correctness simple — the only
+ * writer is this daemon, so no inter-process coordination is needed.
+ *
+ * One JSON object per line; native `Error` instances are normalized so
+ * stack traces survive serialization.
+ */
+function makeRotatingJsonlSink(filePath: string): LogSink {
+	mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
+	const normalize = (value: unknown): unknown =>
+		value instanceof Error
+			? { name: value.name, message: value.message, stack: value.stack }
+			: value;
+	const sink = (event: LogEvent) => {
+		// Always at info floor (file sink ignores --quiet).
+		const line = {
+			ts: new Date(event.ts).toISOString(),
+			level: event.level,
+			source: event.source,
+			message: event.message,
+			...(event.data === undefined ? {} : { data: event.data }),
+		};
+		try {
+			rotateIfNeeded(filePath, ROTATE_MAX_BYTES);
+			appendFileSync(
+				filePath,
+				`${JSON.stringify(line, (_k, v) => normalize(v))}\n`,
+				{ mode: 0o600 },
+			);
+		} catch {
+			// File-sink failures must not crash the daemon. The stderr sink
+			// remains as a fallback path for the operator.
+		}
+	};
+	return sink as LogSink;
+}
+
 function makeStderrSink(floor: LogLevel): LogSink {
 	const min = LEVEL_RANK[floor];
 	const fn = (event: LogEvent) => {
@@ -157,7 +206,12 @@ export async function runUp(
 	mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
 	mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
 
-	const sink = makeStderrSink(options.quiet ? 'warn' : 'info');
+	const stderr = makeStderrSink(options.quiet ? 'warn' : 'info');
+	// File sink: structured JSONL. Always at info-floor regardless of --quiet
+	// — operators rely on the file for post-mortems. Rotate before each write
+	// so the daemon stays inside the 10 MB-per-generation budget.
+	const fileSink = makeRotatingJsonlSink(logPath);
+	const sink = composeSinks(stderr, fileSink);
 	const log = createLogger('cli/up', sink);
 
 	const inspect = await inspectExistingDaemon(absDir);

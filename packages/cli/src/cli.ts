@@ -1,7 +1,10 @@
 import yargs from 'yargs';
 import { authCommand } from './commands/auth';
+import { downCommand } from './commands/down';
 import { listCommand } from './commands/list';
+import { logsCommand } from './commands/logs';
 import { peersCommand } from './commands/peers';
+import { psCommand } from './commands/ps';
 import { runCommand } from './commands/run';
 import { upCommand } from './commands/up';
 
@@ -25,8 +28,11 @@ export function createCLI() {
 			const cli = yargs()
 				.scriptName('epicenter')
 				.command(authCommand)
+				.command(downCommand)
 				.command(listCommand)
+				.command(logsCommand)
 				.command(peersCommand)
+				.command(psCommand)
 				.command(runCommand)
 				.command(upCommand)
 				.demandCommand(1)

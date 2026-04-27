@@ -37,18 +37,17 @@ import Type, { type TSchema } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
-import { tryDaemonDispatch } from '../daemon/sibling-dispatch';
+import {
+	renderDaemonResult,
+	resolveTarget,
+	tryGetDaemon,
+} from '../daemon/sibling-dispatch';
 import {
 	type AwarenessState,
 	loadConfig,
 	type WorkspaceEntry,
 } from '../load-config';
-import {
-	dirFromArgv,
-	dirOption,
-	workspaceFromArgv,
-	workspaceOption,
-} from '../util/common-options';
+import { dirOption, workspaceOption } from '../util/common-options';
 import {
 	formatYargsOptions,
 	output,
@@ -163,7 +162,7 @@ export const listCommand: CommandModule = {
 		const path = typeof args.path === 'string' ? args.path : '';
 		const format = args.format as Format;
 		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
-		const userWorkspace = workspaceFromArgv(args);
+		const target = resolveTarget(args);
 
 		const mode = parseMode(args);
 		if (mode === null) return; // mutex error, exitCode already set
@@ -171,26 +170,23 @@ export const listCommand: CommandModule = {
 		// Auto-detect: if a daemon is alive for this dir, dispatch through it
 		// instead of bringing up a transient peer of our own. Falls through to
 		// the in-process path when no daemon answers.
-		const dispatched = await tryDaemonDispatch<ListResult>(
-			args,
-			userWorkspace,
-			'list',
-			() => ({ path, mode, waitMs }),
-		);
-		if (dispatched.kind === 'mismatch') return;
-		if (dispatched.kind === 'dispatched') {
-			if (dispatched.result.error === null) {
-				await renderResult(dispatched.result.data, path, format);
-				return;
-			}
-			outputError(`error: ${dispatched.result.error.message}`);
-			process.exitCode = 1;
+		const daemon = await tryGetDaemon(target);
+		if (daemon === 'mismatch') return;
+		if (daemon) {
+			const result = await daemon.call<ListResult>('list', {
+				path,
+				mode,
+				waitMs,
+			});
+			await renderDaemonResult(result, (data) =>
+				renderResult(data, path, format),
+			);
 			return;
 		}
 
 		// Fallback: load config in-process and run listCore directly.
-		await using config = await loadConfig(dirFromArgv(args));
-		const entry = resolveEntry(config.entries, userWorkspace);
+		await using config = await loadConfig(target.absDir);
+		const entry = resolveEntry(config.entries, target.userWorkspace);
 		const result = await listCore(entry, { path, mode, waitMs });
 		await renderResult(result, path, format);
 	},

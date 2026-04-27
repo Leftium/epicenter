@@ -6,23 +6,55 @@
  * the cmd over IPC, render the reply. This module centralizes the dance
  * so the per-command handlers stay focused on argv parsing and rendering.
  *
- * `inheritWorkspace` is the Invariant-7 enforcement (a sibling whose
- * `--workspace` disagrees with the daemon's owner errors instead of
- * silently dispatching to the wrong entry). It used to live in `list.ts`,
- * which forced `run.ts` and `peers.ts` to import sibling-to-sibling; the
- * helper belongs here next to its only consumers.
+ * The public surface is intentionally tight:
+ *
+ *   - {@link resolveTarget} — parse `--dir` / `--workspace` once into a
+ *     {@link ResolvedTarget}. Both the daemon probe and the cold-path
+ *     loader consume the same object.
+ *   - {@link tryGetDaemon} — single dispatch decision: returns a
+ *     {@link Daemon} when one is alive and the workspace inherits cleanly,
+ *     `'mismatch'` when the user's `--workspace` disagrees with the
+ *     daemon (Invariant 7; `process.exitCode` already set), or `null`
+ *     when no daemon answers and the caller should fall through.
+ *   - {@link renderDaemonResult} — consume an IPC `Result` with one
+ *     callback for the success payload; transport errors collapse to
+ *     `outputError` + `exitCode=1` here so handlers don't repeat that
+ *     block three times.
+ *
+ * `inheritWorkspace` stays exported for direct testing (Invariant 7
+ * coverage in `list-autodetect.test.ts`); it is the only consumer-facing
+ * detail of {@link tryGetDaemon}.
  */
 
 import { resolve } from 'node:path';
 
 import type { Result } from 'wellcrafted/result';
 
-import { dirFromArgv } from '../util/common-options.js';
+import { dirFromArgv, workspaceFromArgv } from '../util/common-options.js';
 import { outputError } from '../util/format-output.js';
 import { ipcCall, type IpcClientError, ipcPing } from './ipc-client.js';
 import type { SerializedError } from './ipc-server.js';
 import { readMetadata } from './metadata.js';
 import { socketPathFor } from './paths.js';
+
+/**
+ * Resolved `--dir` + `--workspace` for a single command invocation.
+ *
+ * One source of truth: every handler builds this once at the top, then
+ * passes it to {@link tryGetDaemon} and to the cold-path config loader.
+ * Avoids re-reading `argv` (and re-`resolve`-ing the path) in two places.
+ */
+export type ResolvedTarget = {
+	absDir: string;
+	userWorkspace: string | undefined;
+};
+
+export function resolveTarget(args: Record<string, unknown>): ResolvedTarget {
+	return {
+		absDir: resolve(dirFromArgv(args)),
+		userWorkspace: workspaceFromArgv(args),
+	};
+}
 
 /**
  * Resolve which workspace the sibling should target when a daemon is
@@ -61,45 +93,80 @@ export function inheritWorkspace(
 }
 
 /**
- * Outcome of {@link tryDaemonDispatch}. Three states:
- *
- *   - `'no-daemon'`: the socket didn't ping. Caller falls back to its
- *     transient in-process path.
- *   - `'mismatch'`: workspace inheritance refused. `exitCode` is already
- *     set; caller just returns.
- *   - `'dispatched'`: the IPC call completed. The caller's renderer
- *     consumes `result` exactly the way it consumes the in-process
- *     `result` from `listCore` / `runCore`.
+ * A live daemon endpoint. The handle exposes the inherited workspace
+ * (whatever the daemon owns, possibly disagreeing with the absent
+ * `--workspace` flag) so commands can include it in their IPC payload
+ * without re-reading metadata.
  */
-export type DispatchOutcome<T> =
-	| { kind: 'no-daemon' }
-	| { kind: 'mismatch' }
-	| { kind: 'dispatched'; result: Result<T, IpcClientError | SerializedError> };
+export type Daemon = {
+	/** Workspace the daemon owns; may be `undefined` for unnamed entries. */
+	workspace: string | undefined;
+	/** Issue a single-shot RPC against the daemon. */
+	call: <T>(
+		cmd: string,
+		args: unknown,
+	) => Promise<Result<T, IpcClientError | SerializedError>>;
+};
 
 /**
- * Auto-detect path shared by `peers`, `list`, and `run`. Pings the socket
- * for `--dir`; if a daemon answers, validates `--workspace` against the
- * daemon's owner via {@link inheritWorkspace}, then forwards `cmd` with
- * the (possibly inherited) workspace name.
+ * Outcome of {@link tryGetDaemon}. Three states the caller cares about:
  *
- * `buildArgs(workspace)` lets each command shape its IPC payload — `list`
- * builds a `ListCtx`, `run` builds a `RunCtx`, `peers` ships a `{wait}`
- * object. Whatever shape they pass is what arrives in `req.args` on the
- * daemon side.
+ *   - `Daemon` — dispatch through it.
+ *   - `'mismatch'` — workspace inheritance refused; `exitCode=1` is
+ *     already set, caller just `return`s.
+ *   - `null` — no daemon answers; caller falls through to its in-process
+ *     transient path.
  */
-export async function tryDaemonDispatch<T>(
-	args: Record<string, unknown>,
-	userWorkspace: string | undefined,
-	cmd: string,
-	buildArgs: (workspace: string | undefined) => unknown,
-): Promise<DispatchOutcome<T>> {
-	const absDir = resolve(dirFromArgv(args));
-	const sock = socketPathFor(absDir);
-	if (!(await ipcPing(sock))) return { kind: 'no-daemon' };
+export type DaemonLookup = Daemon | 'mismatch' | null;
 
-	const inherited = inheritWorkspace(absDir, userWorkspace);
-	if (!inherited.ok) return { kind: 'mismatch' };
+/**
+ * Single dispatch decision for sibling commands. Pings the socket; if a
+ * daemon answers, validates `--workspace` against the daemon's owner;
+ * returns a {@link Daemon} the caller can `.call(...)` against.
+ *
+ * Replaces the prior 3-variant dispatch helper: handlers now do
+ *
+ *     const daemon = await tryGetDaemon(target);
+ *     if (daemon === 'mismatch') return;
+ *     if (daemon) {
+ *       const result = await daemon.call<R>('cmd', { ...ctx, ws: daemon.workspace });
+ *       await renderDaemonResult(result, (data) => renderLocal(data));
+ *       return;
+ *     }
+ *     // cold path
+ */
+export async function tryGetDaemon(
+	target: ResolvedTarget,
+): Promise<DaemonLookup> {
+	const sock = socketPathFor(target.absDir);
+	if (!(await ipcPing(sock))) return null;
 
-	const result = await ipcCall<T>(sock, cmd, buildArgs(inherited.workspace));
-	return { kind: 'dispatched', result };
+	const inherited = inheritWorkspace(target.absDir, target.userWorkspace);
+	if (!inherited.ok) return 'mismatch';
+
+	return {
+		workspace: inherited.workspace,
+		call: <T>(cmd: string, args: unknown) => ipcCall<T>(sock, cmd, args),
+	};
+}
+
+/**
+ * Common end-of-IPC rendering. Success flows to `onSuccess`; transport-
+ * and handler-level errors collapse to `outputError` + `exitCode=1`.
+ *
+ * Domain errors that callers want to render distinctly should be carried
+ * inside the `T` payload (e.g. {@link ListResult}'s in-band `PeerMiss`),
+ * not surfaced as IPC errors — that's why the success callback receives
+ * the raw `data` rather than a `Result`.
+ */
+export async function renderDaemonResult<T>(
+	result: Result<T, IpcClientError | SerializedError>,
+	onSuccess: (data: T) => void | Promise<void>,
+): Promise<void> {
+	if (result.error === null) {
+		await onSuccess(result.data);
+		return;
+	}
+	outputError(`error: ${result.error.message}`);
+	process.exitCode = 1;
 }

@@ -22,18 +22,17 @@
  */
 
 import type { Argv, CommandModule } from 'yargs';
-import { tryDaemonDispatch } from '../daemon/sibling-dispatch';
+import {
+	renderDaemonResult,
+	resolveTarget,
+	tryGetDaemon,
+} from '../daemon/sibling-dispatch';
 import {
 	type AwarenessState,
 	loadConfig,
 	type WorkspaceEntry,
 } from '../load-config';
-import {
-	dirFromArgv,
-	dirOption,
-	workspaceFromArgv,
-	workspaceOption,
-} from '../util/common-options';
+import { dirOption, workspaceOption } from '../util/common-options';
 import { formatYargsOptions, output } from '../util/format-output';
 import { explainEmpty, waitForAnyPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
@@ -82,7 +81,7 @@ export const peersCommand: CommandModule = {
 			.options(formatYargsOptions()),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
-		const userWorkspace = workspaceFromArgv(args);
+		const target = resolveTarget(args);
 		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
 		const format = args.format as 'json' | 'jsonl' | undefined;
 
@@ -99,36 +98,38 @@ export const peersCommand: CommandModule = {
 
 		// Auto-detect: ask the daemon for the peers snapshot when one is
 		// running. Falls through to the transient in-process path otherwise.
-		const dispatched = await tryDaemonDispatch<
-			Array<{ clientID: number; device: AwarenessState['device'] }>
-		>(args, userWorkspace, 'peers', () => ({ wait: waitMs }));
-		if (dispatched.kind === 'mismatch') return;
-		if (dispatched.kind === 'dispatched') {
-			if (dispatched.result.error === null) {
+		const daemon = await tryGetDaemon(target);
+		if (daemon === 'mismatch') return;
+		if (daemon) {
+			const result = await daemon.call<
+				Array<{ clientID: number; device: AwarenessState['device'] }>
+			>('peers', { wait: waitMs });
+			await renderDaemonResult(result, (rows) => {
 				const peers = new Map<number, AwarenessState>();
-				for (const row of dispatched.result.data) {
-					peers.set(row.clientID, { device: row.device });
-				}
+				for (const row of rows) peers.set(row.clientID, { device: row.device });
 				emit(
-					[{ name: userWorkspace ?? '<daemon>', peers, entry: undefined }],
+					[
+						{
+							name: target.userWorkspace ?? '<daemon>',
+							peers,
+							entry: undefined,
+						},
+					],
 					{ elideHeader: true, format },
 				);
-				return;
-			}
-			console.error(`error: ${dispatched.result.error.message}`);
-			process.exitCode = 1;
+			});
 			return;
 		}
 
-		await using config = await loadConfig(dirFromArgv(args));
-		const selected: WorkspaceEntry[] = userWorkspace
-			? [resolveEntry(config.entries, userWorkspace)]
+		await using config = await loadConfig(target.absDir);
+		const selected: WorkspaceEntry[] = target.userWorkspace
+			? [resolveEntry(config.entries, target.userWorkspace)]
 			: config.entries;
 
 		const snapshots = await Promise.all(
 			selected.map((e) => snapshotEntry(e, waitMs)),
 		);
-		emit(snapshots, { elideHeader: userWorkspace !== undefined, format });
+		emit(snapshots, { elideHeader: target.userWorkspace !== undefined, format });
 	},
 };
 

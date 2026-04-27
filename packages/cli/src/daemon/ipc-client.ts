@@ -11,11 +11,14 @@
  *   `IpcClientError.Timeout` variants so "no daemon running" is just
  *   another `Err` outcome.
  *
+ * Both surfaces use the connect attempt itself as the single liveness
+ * signal — no `existsSync` pre-check. A missing socket file rejects
+ * `Bun.connect` with `ENOENT`, which the rejection path already maps to
+ * `NoDaemon` / `false`. One signal beats two that can disagree.
+ *
  * Wire format and security model are deliberately internal — see
  * `specs/20260426T235000-cli-up-long-lived-peer.md` § "IPC wire protocol".
  */
-
-import { existsSync } from 'node:fs';
 
 import type { Socket } from 'bun';
 import {
@@ -129,8 +132,6 @@ export async function ipcPing(
 	socketPath: string,
 	timeoutMs: number = DEFAULT_PING_TIMEOUT_MS,
 ): Promise<boolean> {
-	if (!existsSync(socketPath)) return false;
-
 	return new Promise<boolean>((resolve) => {
 		let settled = false;
 		let socket: Socket<ClientSocketData> | undefined;
@@ -186,13 +187,6 @@ export async function ipcCall<T = unknown>(
 	timeoutMs: number = DEFAULT_CALL_TIMEOUT_MS,
 ): Promise<Result<T, IpcClientError | SerializedError>> {
 	const id = `c-${Bun.randomUUIDv7()}`;
-
-	if (!existsSync(socketPath)) {
-		return IpcClientError.NoDaemon({ socketPath }) as Result<
-			T,
-			IpcClientError
-		>;
-	}
 
 	return new Promise<Result<T, IpcClientError | SerializedError>>((resolve) => {
 		let settled = false;

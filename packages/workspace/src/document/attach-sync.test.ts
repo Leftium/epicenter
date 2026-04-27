@@ -749,7 +749,7 @@ describe('attachSync hasLocalChanges', () => {
 // ── Presence (device + standard awareness) ──────────────────────────────
 
 describe('attachSync presence', () => {
-	test('device publishes synchronously with offers derived from actions', () => {
+	test('device publishes synchronously as a presence-only descriptor', () => {
 		const ydoc = new Y.Doc({ guid: 'presence-1' });
 		const actions = {
 			tabs: {
@@ -769,10 +769,14 @@ describe('attachSync presence', () => {
 		);
 
 		const localState = sync.raw.awareness?.getLocalState() as {
-			device: { id: string; offers: Record<string, unknown> };
+			device: Record<string, unknown>;
 		};
-		expect(localState.device.id).toBe('mac-1');
-		expect(Object.keys(localState.device.offers)).toEqual(['tabs.close']);
+		expect(localState.device).toEqual({
+			id: 'mac-1',
+			name: 'MacBook',
+			platform: 'web',
+		});
+		expect(localState.device).not.toHaveProperty('offers');
 
 		ydoc.destroy();
 	});
@@ -792,7 +796,6 @@ describe('attachSync presence', () => {
 				id: 'iphone-15',
 				name: 'Phone',
 				platform: 'tauri',
-				offers: {},
 			},
 		});
 
@@ -829,6 +832,22 @@ describe('attachSync presence', () => {
 				awareness: {} as any,
 			}),
 		).toThrow(/either `device`.*or `awareness`/);
+		ydoc.destroy();
+	});
+
+	test('serialized PeerDevice payload is under 200 bytes', () => {
+		const ydoc = new Y.Doc({ guid: 'presence-size' });
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			device: {
+				id: 'mac-pro-m3-max-2024-braden',
+				name: 'Braden MacBook Pro',
+				platform: 'tauri',
+			},
+		});
+		const local = sync.raw.awareness?.getLocalState();
+		const bytes = JSON.stringify(local).length;
+		expect(bytes).toBeLessThan(200);
 		ydoc.destroy();
 	});
 });

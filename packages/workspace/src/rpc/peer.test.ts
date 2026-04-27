@@ -70,7 +70,6 @@ function mockSync(opts: {
 						id: deviceId,
 						name: deviceId,
 						platform: 'web',
-						offers: {},
 					},
 				},
 			};

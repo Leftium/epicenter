@@ -9,7 +9,6 @@ const fakeDevice = (
 		id: 'mac-1',
 		name: 'MacBook',
 		platform: 'tauri',
-		offers: {},
 		...overrides,
 	},
 });

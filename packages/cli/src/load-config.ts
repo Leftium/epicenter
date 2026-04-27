@@ -59,7 +59,7 @@ export type LoadedWorkspace = {
  * Per-peer awareness state under the standard `device` schema. Re-exported
  * from `@epicenter/workspace` for ergonomic consumption — `state.device` is
  * set synchronously at attach time, so consumers read
- * `state.device.{id,name,platform,offers}` without `?.`.
+ * `state.device.{id,name,platform}` without `?.`.
  */
 export type AwarenessState = PeerAwarenessState;
 

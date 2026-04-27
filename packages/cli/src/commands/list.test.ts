@@ -54,29 +54,93 @@ describe('selfSection', () => {
 		const section = selfSection(fakeEntry('demo'), 'local');
 		expect(section.entries).toEqual({});
 	});
+
+	test('local manifest preserves input schemas for detail-mode lookup', () => {
+		const section = selfSection(fakeEntry('demo', fixtureActions), 'local');
+		expect(section.entries['counter.set']?.input).toMatchObject({
+			type: 'object',
+		});
+	});
 });
 
 describe('peerSection', () => {
-	test('reads device.offers and device.name; uses "(online)" suffix when offers exist', () => {
-		const section = peerSection({
-			device: {
-				id: 'mac-1',
-				name: 'mac',
-				platform: 'tauri',
-				offers: { 'tabs.close': { type: 'mutation' } },
+	function fakeSync(opts: {
+		findClientId?: number;
+		describeResult?: { data?: unknown; error?: unknown };
+	}) {
+		const clientId = opts.findClientId ?? 42;
+		return {
+			find: () =>
+				opts.findClientId === undefined
+					? undefined
+					: { clientId, state: { device: { id: 'mac', name: 'mac', platform: 'web' } } },
+			observe: () => () => {},
+			rpc: async () => opts.describeResult ?? { data: {}, error: null },
+		} as unknown as import('@epicenter/workspace').SyncAttachment;
+	}
+
+	test('fetches manifest via peerSystem and renders "(online)" suffix when entries exist', async () => {
+		const sync = fakeSync({
+			findClientId: 42,
+			describeResult: {
+				data: {
+					'tabs.close': {
+						type: 'mutation',
+						input: { type: 'object', properties: { tabIds: { type: 'array' } } },
+					},
+				},
+				error: null,
 			},
 		});
+		const section = await peerSection(
+			{ device: { id: 'mac', name: 'mac', platform: 'tauri' } },
+			sync,
+		);
 		expect(section.label).toBe('mac (online)');
-		expect(section.peer).toBe('mac-1');
+		expect(section.peer).toBe('mac');
 		expect(Object.keys(section.entries)).toEqual(['tabs.close']);
+		expect(section.entries['tabs.close']?.input).toMatchObject({
+			type: 'object',
+		});
 	});
 
-	test('"(online, offers: 0)" suffix when manifest is empty', () => {
-		const section = peerSection({
-			device: { id: 'silent', name: 'silent', platform: 'web', offers: {} },
+	test('"(online, no actions)" suffix when manifest is empty', async () => {
+		const sync = fakeSync({
+			findClientId: 42,
+			describeResult: { data: {}, error: null },
 		});
-		expect(section.label).toContain('offers: 0');
+		const section = await peerSection(
+			{ device: { id: 'silent', name: 'silent', platform: 'web' } },
+			sync,
+		);
+		expect(section.label).toContain('no actions');
 		expect(section.entries).toEqual({});
+	});
+
+	test('surfaces RPC error as unavailableReason without crashing', async () => {
+		const sync = fakeSync({
+			findClientId: 42,
+			describeResult: {
+				data: null,
+				error: { name: 'ActionFailed', message: 'boom' },
+			},
+		});
+		const section = await peerSection(
+			{ device: { id: 'mac', name: 'mac', platform: 'tauri' } },
+			sync,
+		);
+		expect(section.label).toContain('schema unavailable');
+		expect(section.unavailableReason).toBe('boom');
+		expect(section.entries).toEqual({});
+	});
+
+	test('handles missing sync attachment gracefully', async () => {
+		const section = await peerSection(
+			{ device: { id: 'mac', name: 'mac', platform: 'tauri' } },
+			undefined,
+		);
+		expect(section.label).toContain('schema unavailable');
+		expect(section.unavailableReason).toBe('no sync attachment');
 	});
 });
 

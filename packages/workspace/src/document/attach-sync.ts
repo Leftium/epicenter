@@ -36,11 +36,14 @@ import {
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
-import { actionManifest } from '../shared/action-manifest.js';
 import {
+	type ActionManifest,
+	type ActionMeta,
 	type Actions,
 	type RemoteCallOptions,
-	dispatchAction,
+	defineQuery,
+	isAction,
+	resolveActionPath,
 } from '../shared/actions.js';
 import {
 	type Awareness as TypedAwareness,
@@ -50,7 +53,6 @@ import {
 	type DeviceDescriptor,
 	type FoundPeer,
 	type PeerAwarenessState,
-	type PeerDevice,
 	standardAwarenessDefs,
 } from './standard-awareness-defs.js';
 
@@ -214,39 +216,19 @@ export type SyncAttachmentConfig = {
 	/**
 	 * Publish this peer's identity into awareness. When set, `attachSync`
 	 * constructs a standard-schema awareness internally and synchronously
-	 * publishes `{ device: { ...device, offers: actionManifest(actions) } }`
-	 * before returning. The attachment's `peers()` / `find()` / `observe()`
-	 * become meaningful.
+	 * publishes `{ device }` before returning. The attachment's `peers()` /
+	 * `find()` / `observe()` become meaningful.
 	 *
 	 * Workspace docs pass this; content docs (entries, notes, files) omit
 	 * it — they sync but don't publish identity.
 	 *
 	 * Mutually exclusive with `awareness` (an external instance) — pass one.
 	 *
-	 * ─── Why the action manifest lives in awareness ────────────────────
-	 *
-	 * `device.offers` carries the full action manifest (~10kB typical).
-	 * Awareness is built for tiny ephemeral state, and it rebroadcasts
-	 * the full state of every known peer every ~15s. So this costs
-	 * `N²·M` wire traffic per 15s window where N is peer count and M
-	 * is manifest size.
-	 *
-	 * We do it anyway because awareness's 30s TTL is the load-bearing
-	 * feature. When a peer disconnects — cleanly via `Symbol.dispose`,
-	 * or via crash, lid close, network drop — their manifest evaporates
-	 * with their awareness state. No bookkeeping, no garbage collection,
-	 * no stale entries accumulating in a `Y.Map`. The auto-cleanup is
-	 * the *whole* benefit.
-	 *
-	 * Trip wire — factor offers out of awareness when:
-	 *   - N > 20 concurrent peers, or
-	 *   - M > 100 actions per peer (manifest > ~50kB)
-	 *
-	 * The cleanest alternative is `Y.Map<deviceId, Manifest>` in the
-	 * workspace doc with cleanup on `Symbol.dispose`. You trade
-	 * automatic TTL for proportional wire traffic (manifest syncs once
-	 * via CRDT, not every 15s), but inherit the stale-entry problem on
-	 * ungraceful disconnect.
+	 * Awareness carries presence only — no action manifest. Consumers that
+	 * need to enumerate a peer's actions call
+	 * `peerSystem(sync, deviceId).describe()` to fetch the full local
+	 * `ActionManifest` on demand via the runtime-injected `system.describe`
+	 * RPC.
 	 */
 	device?: DeviceDescriptor;
 	/**
@@ -261,7 +243,7 @@ export type SyncAttachmentConfig = {
 	awareness?: YAwareness;
 	/**
 	 * Inbound action tree. Incoming RPC requests are routed by dot-path
-	 * against this tree via `dispatchAction`; raw returns get `Ok`-wrapped,
+	 * against this tree; raw returns get `Ok`-wrapped,
 	 * throws become `Err(ActionFailed)`, existing `Result`s pass through.
 	 *
 	 * Wrapping the dispatch path (auth gates, audit logs, rate limits) is
@@ -325,7 +307,28 @@ export function attachSync(
 	// Resolve doc bundle vs bare ydoc.
 	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
 	const docActions = doc instanceof Y.Doc ? undefined : doc.actions;
-	const actions = config.actions ?? docActions;
+	const userActions = config.actions ?? docActions;
+
+	if (userActions && 'system' in userActions) {
+		throw new Error(
+			"User actions cannot define the 'system.*' namespace — it's reserved for runtime-injected meta operations.",
+		);
+	}
+
+	// Inject `system.*` meta operations into the dispatch tree.
+	// `system.describe` is argless and returns the full local
+	// `ActionManifest` (dot-path → ActionMeta with live input schemas).
+	// Consumers fetch on demand via `peerSystem(sync, deviceId).describe()`
+	// rather than receiving a manifest broadcast in awareness.
+	const systemActions: Actions = {
+		describe: defineQuery({
+			handler: () => collectActionManifest(userActions ?? {}),
+		}),
+	};
+	const actions: Actions = {
+		...(userActions ?? {}),
+		system: systemActions,
+	};
 
 	if (config.device && config.awareness) {
 		throw new Error(
@@ -342,12 +345,7 @@ export function attachSync(
 	if (config.device) {
 		awareness = new YAwareness(ydoc);
 		typedAwareness = createAwareness(awareness, standardAwarenessDefs);
-		typedAwareness.setLocal({
-			device: {
-				...config.device,
-				offers: actionManifest(actions ?? {}),
-			} satisfies PeerDevice,
-		});
+		typedAwareness.setLocal({ device: config.device });
 	} else if (config.awareness) {
 		awareness = config.awareness;
 	}
@@ -453,9 +451,10 @@ export function attachSync(
 				}),
 			);
 
-		// No actions configured → surface ActionNotFound so the caller sees a
-		// typed error rather than a timeout.
-		if (!actions) {
+		// Resolve the action up front so a missing path surfaces as
+		// ActionNotFound (typed) rather than ActionFailed wrapping a raw throw.
+		const target = resolveActionPath(actions, rpc.action);
+		if (!target) {
 			sendResponse({
 				data: null,
 				error: RpcError.ActionNotFound({ action: rpc.action }).error,
@@ -463,11 +462,11 @@ export function attachSync(
 			return;
 		}
 
-		// Walk the action tree, normalize the return into a `{data, error}` wire
-		// payload: raw throw → Err(ActionFailed); raw value → Ok-wrap; existing
-		// Result → forward unchanged.
+		// Normalize the return into a `{data, error}` wire payload: raw
+		// throw → Err(ActionFailed); raw value → Ok-wrap; existing Result →
+		// forward unchanged.
 		try {
-			const raw = await dispatchAction(actions, rpc.action, rpc.input);
+			const raw = await target(rpc.input as never);
 			const normalized = isResult(raw) ? raw : Ok(raw);
 			sendResponse(normalized);
 		} catch (cause) {
@@ -965,6 +964,36 @@ export function attachSync(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/**
+ * Walk an action tree and return a flat dot-path → `ActionMeta` map with
+ * live input schemas retained. `system.describe` returns this directly so
+ * remote consumers get the full local action surface in one round-trip.
+ */
+function collectActionManifest(actions: Actions): ActionManifest {
+	const out: ActionManifest = {};
+	walkActions(actions, [], out);
+	return out;
+}
+
+function walkActions(
+	node: Actions,
+	path: string[],
+	out: ActionManifest,
+): void {
+	for (const [key, value] of Object.entries(node)) {
+		const childPath = [...path, key];
+		if (isAction(value)) {
+			const entry: ActionMeta = { type: value.type };
+			if (value.input !== undefined) entry.input = value.input;
+			if (value.title !== undefined) entry.title = value.title;
+			if (value.description !== undefined) entry.description = value.description;
+			out[childPath.join('.')] = entry;
+		} else if (value != null && typeof value === 'object') {
+			walkActions(value as Actions, childPath, out);
+		}
+	}
+}
 
 function createStatusEmitter<T>(initial: T) {
 	let current = initial;

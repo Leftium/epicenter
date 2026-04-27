@@ -17,7 +17,6 @@ function mockState(device: Partial<AwarenessState['device']> = {}): AwarenessSta
 			id: 'mac-1',
 			name: 'MacBook',
 			platform: 'tauri',
-			offers: {},
 			...device,
 		},
 	};

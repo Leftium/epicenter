@@ -33,6 +33,7 @@
 export type {
 	Action,
 	ActionFailed,
+	ActionManifest,
 	ActionMeta,
 	Actions,
 	Mutation,
@@ -42,18 +43,13 @@ export type {
 export {
 	defineMutation,
 	defineQuery,
-	dispatchAction,
 	invokeNormalized,
 	isAction,
 	isMutation,
 	isQuery,
 	isResult,
+	resolveActionPath,
 } from './shared/actions';
-
-export {
-	actionManifest,
-	type ActionManifest,
-} from './shared/action-manifest.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // RPC + PEER DISPATCH
@@ -64,6 +60,7 @@ export { isRpcError, RpcError } from '@epicenter/sync';
 
 // Peer dispatch (cross-device action calling) — see `peer<T>(workspace, deviceId)`.
 export { peer } from './rpc/peer.js';
+export { peerSystem } from './rpc/peer-system.js';
 export type { RemoteCallOptions } from './shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════

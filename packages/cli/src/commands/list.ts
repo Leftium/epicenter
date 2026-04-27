@@ -12,10 +12,20 @@
  * `--peer` and `--all` are mutually exclusive. The renderer takes a list
  * of `Section`s (one or many) and prints text or JSON; sources are pure
  * functions that produce sections — that's the whole flow.
+ *
+ * Peer manifests are fetched once per invocation via
+ * `peerSystem(sync, deviceId).describe()` — awareness no longer carries
+ * action manifests, so detail-mode renders from the same fetched object
+ * as tree-mode (no second RTT).
  */
 
-import { actionManifest, type ActionManifest } from '@epicenter/workspace';
+import {
+	type ActionManifest,
+	peerSystem,
+	type SyncAttachment,
+} from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
+import { collectLocalManifest } from '../util/local-manifest';
 import type { Argv, CommandModule, Options } from 'yargs';
 import {
 	type AwarenessState,
@@ -44,11 +54,16 @@ type Format = 'json' | 'jsonl' | undefined;
  * One section to render. `peer` is `'self'` for the local source or the
  * remote peer's deviceId — surfaced in JSON output so scripts can
  * attribute each action back to its source.
+ *
+ * `unavailableReason` is set when the peer's manifest fetch failed; the
+ * detail/tree renderer surfaces it as a "schema unavailable" footer
+ * instead of crashing on a transient RPC failure.
  */
 type Section = {
 	label: string;
 	peer: string;
 	entries: ActionManifest;
+	unavailableReason?: string;
 };
 
 const peerOption: Options = {
@@ -106,7 +121,7 @@ export const listCommand: CommandModule = {
 		const entry = resolveEntry(config.entries, workspaceFromArgv(args));
 		const sections = await selectSections(entry, { peerTarget, all, waitMs });
 		if (sections === null) return; // peer-not-found, exitCode already set
-		renderSections(sections, path, format, { multi: all });
+		await renderSections(sections, path, format, { multi: all });
 	},
 };
 
@@ -142,26 +157,26 @@ async function selectSections(
 			process.exitCode = 3;
 			return null;
 		}
-		return [peerSection(found.state)];
+		return [await peerSection(found.state, workspace.sync)];
 	}
 
 	// --all: best-effort wait for awareness to populate, then snapshot.
 	await waitForAnyPeer(workspace, deadline);
 	const peers = workspace.sync?.peers() ?? new Map<number, AwarenessState>();
 	const ordered = [...peers.entries()].sort(([a], [b]) => a - b);
-	return [
-		selfSection(entry, 'all'),
-		...ordered.map(([, state]) => peerSection(state)),
-	];
+	const sections: Section[] = [selfSection(entry, 'all')];
+	for (const [, state] of ordered) {
+		sections.push(await peerSection(state, workspace.sync));
+	}
+	return sections;
 }
 
 export function selfSection(
 	entry: WorkspaceEntry,
 	mode: 'local' | 'all',
 ): Section {
-	const entries = entry.workspace.actions
-		? actionManifest(entry.workspace.actions)
-		: {};
+	const localActions = entry.workspace.actions;
+	const entries = localActions ? collectLocalManifest(localActions) : {};
 	return {
 		label: mode === 'all' ? 'self (this device)' : entry.name,
 		peer: 'self',
@@ -169,13 +184,38 @@ export function selfSection(
 	};
 }
 
-export function peerSection(state: AwarenessState): Section {
+export async function peerSection(
+	state: AwarenessState,
+	sync: SyncAttachment | undefined,
+): Promise<Section> {
 	const { device } = state;
-	const suffix = Object.keys(device.offers).length === 0 ? ' (online, offers: 0)' : ' (online)';
+	if (!sync) {
+		return {
+			label: `${device.name} (online, schema unavailable)`,
+			peer: device.id,
+			entries: {},
+			unavailableReason: 'no sync attachment',
+		};
+	}
+
+	const result = await peerSystem(sync, device.id).describe();
+	if (result.error) {
+		const err = result.error as { name?: string; message?: string };
+		const reason = err.message ?? err.name ?? 'unknown error';
+		return {
+			label: `${device.name} (online, schema unavailable)`,
+			peer: device.id,
+			entries: {},
+			unavailableReason: reason,
+		};
+	}
+	const entries = result.data;
+	const suffix =
+		Object.keys(entries).length === 0 ? ' (online, no actions)' : ' (online)';
 	return {
 		label: `${device.name}${suffix}`,
 		peer: device.id,
-		entries: device.offers,
+		entries,
 	};
 }
 
@@ -188,17 +228,17 @@ export function peerSection(state: AwarenessState): Section {
  * already gave us the sections; we just need to know which mode the user
  * asked for.
  */
-function renderSections(
+async function renderSections(
 	sections: Section[],
 	path: string,
 	format: Format,
 	{ multi }: { multi: boolean },
-): void {
+): Promise<void> {
 	if (format) {
 		renderJson(sections, path, format, { multi });
 		return;
 	}
-	renderText(sections, path, { multi });
+	await renderText(sections, path, { multi });
 }
 
 function renderJson(
@@ -229,11 +269,11 @@ function renderJson(
 	output(rows, { format });
 }
 
-function renderText(
+async function renderText(
 	sections: Section[],
 	path: string,
 	{ multi }: { multi: boolean },
-): void {
+): Promise<void> {
 	let totalMatches = 0;
 	let printed = 0;
 
@@ -245,11 +285,11 @@ function renderText(
 		// Skip sections with no entries matching the requested path. In
 		// single-section mode the totalMatches==0 fail below speaks for
 		// itself, with no noisy "(no actions exposed)" preamble.
-		if (path && matches === 0) continue;
+		if (path && matches === 0 && !section.unavailableReason) continue;
 
 		if (printed > 0) console.log('');
 		console.log(section.label);
-		printSection(subset, path);
+		await printSection(subset, path, section.unavailableReason);
 		printed++;
 	}
 
@@ -262,10 +302,18 @@ function renderText(
  * Print one section's body. Three cases: empty, exact-leaf detail, tree.
  * The caller has already filtered to entries under `path` (if set).
  */
-function printSection(entries: ActionManifest, path: string): void {
+async function printSection(
+	entries: ActionManifest,
+	path: string,
+	unavailableReason: string | undefined,
+): Promise<void> {
 	const keys = Object.keys(entries);
 	if (keys.length === 0) {
-		console.log('  (no actions exposed)');
+		if (unavailableReason) {
+			console.log(`  schema unavailable: ${unavailableReason}`);
+		} else {
+			console.log('  (no actions exposed)');
+		}
 		return;
 	}
 	const leaf = path ? entries[path] : undefined;
@@ -354,7 +402,10 @@ function printChildren(node: TreeNode, prefix: string): void {
 	});
 }
 
-function printActionDetail(path: string, action: ActionManifest[string]): void {
+export function printActionDetail(
+	path: string,
+	action: ActionManifest[string],
+): void {
 	console.log(`${path}  (${action.type})`);
 	if (action.description) {
 		console.log('');
@@ -380,3 +431,4 @@ function describeInput(schema: TSchema): string[] {
 	}
 	return lines;
 }
+

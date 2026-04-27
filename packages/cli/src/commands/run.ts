@@ -14,11 +14,11 @@
 
 import {
 	type Action,
-	actionManifest,
 	type ActionManifest,
 	invokeNormalized,
 	isAction,
 } from '@epicenter/workspace';
+import { collectLocalManifest } from '../util/local-manifest';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type WorkspaceEntry } from '../load-config';
@@ -87,7 +87,7 @@ async function invoke(
 
 	const action = findAction(workspace.actions, actionPath);
 	if (!action) {
-		const manifest = actionManifest(workspace.actions ?? {});
+		const manifest = collectLocalManifest(workspace.actions ?? {});
 		const descendants = entriesUnder(manifest, actionPath);
 		if (descendants.length > 0) {
 			outputError(`"${actionPath}" is not a runnable action.`);
@@ -239,7 +239,7 @@ function emitNearestSiblings(
  * Resolve a dotted action path against the workspace's action tree. Walks
  * segments directly — no full-tree iteration. Returns the callable
  * `Action` so we can invoke it; metadata-only lookups belong on
- * `actionManifest()`.
+ * `collectLocalManifest()`.
  */
 function findAction(actions: unknown, path: string): Action | undefined {
 	let target: unknown = actions;

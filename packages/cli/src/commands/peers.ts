@@ -123,9 +123,9 @@ function emit(
 }
 
 /**
- * Project each awareness state to a presence row. Reads only `device.{id,
- * name, platform}` — `device.offers` (the action manifest) is intentionally
- * dropped here; that lives in `list --peer` / `list --all`.
+ * Project each awareness state to a presence row. Awareness carries
+ * presence-only `device.{id, name, platform}` — action manifests are
+ * fetched on demand by `list --peer` / `list --all`.
  */
 export function buildPeerRows(peers: Map<number, AwarenessState>): PeerRow[] {
 	const rows: PeerRow[] = [];

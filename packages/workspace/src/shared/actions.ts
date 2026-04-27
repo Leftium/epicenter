@@ -90,10 +90,9 @@ type ActionConfig<TInput extends TSchema | undefined, R> = {
 /**
  * Metadata properties attached to a callable action.
  *
- * Source-agnostic: this same shape describes both a local `Action` (where
- * `input` is a live `TSchema`) and the wire-side `ActionManifestEntry`
- * received over awareness (where `input` is the schema's JSON form). Renderers
- * and inspection tools can take this single type regardless of source.
+ * `input` (a live `TSchema`) is present whenever the action defines one.
+ * Action discovery returns this shape directly — there is no separate
+ * wire form.
  */
 export type ActionMeta<TInput extends TSchema | undefined = TSchema | undefined> = {
 	type: 'query' | 'mutation';
@@ -102,6 +101,13 @@ export type ActionMeta<TInput extends TSchema | undefined = TSchema | undefined>
 	description?: string;
 	input?: TInput;
 };
+
+/**
+ * Flat dot-path → `ActionMeta` map describing a peer's full action surface.
+ * Returned by the runtime-injected `system.describe` RPC and consumed via
+ * `peerSystem(sync, deviceId).describe()`.
+ */
+export type ActionManifest = Record<string, ActionMeta>;
 
 /**
  * A query action definition (read operation).
@@ -227,29 +233,21 @@ export function isMutation(value: unknown): value is Mutation {
 }
 
 /**
- * Resolve a dotted action path against an action tree and invoke it with
- * `input`. Used to adapt workspace actions into the generic
- * `dispatch(action, input)` callback that sync RPC expects.
- *
- * Throws if the path doesn't resolve to an action.
+ * Resolve a dotted path against an action tree, returning the leaf
+ * `Action` if the path lands on one. Returns `undefined` for missing
+ * paths or paths that resolve to a namespace.
  */
-export async function dispatchAction(
+export function resolveActionPath(
 	actions: Actions,
 	path: string,
-	input: unknown,
-): Promise<unknown> {
+): Action | undefined {
 	const segments = path.split('.');
 	let target: unknown = actions;
 	for (const segment of segments) {
-		if (target == null || typeof target !== 'object') {
-			throw new Error(`Action not found: ${path}`);
-		}
+		if (target == null || typeof target !== 'object') return undefined;
 		target = (target as Record<string, unknown>)[segment];
 	}
-	if (!isAction(target)) {
-		throw new Error(`Action not found: ${path}`);
-	}
-	return await target(input as never);
+	return isAction(target) ? target : undefined;
 }
 
 /**

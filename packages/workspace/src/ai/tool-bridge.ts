@@ -21,7 +21,7 @@
 
 import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
 import type { Action, Actions } from '../shared/actions';
-import { invokeNormalized, isAction } from '../shared/actions';
+import { invokeAction, isAction } from '../shared/actions';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -153,11 +153,11 @@ export function actionsToAiTools<TActions extends Actions>(
 		...(action.input && { inputSchema: action.input }),
 		...(action.type === 'mutation' && { needsApproval: true }),
 		// TanStack AI's `execute` contract is: return data on success, throw
-		// on failure. invokeNormalized handles all four handler shapes (raw,
+		// on failure. invokeAction handles all four handler shapes (raw,
 		// Result, sync, async) and converts thrown errors into typed
 		// Err(ActionFailed); we then unwrap for AI consumption.
 		execute: async (args: unknown) => {
-			const result = await invokeNormalized(
+			const result = await invokeAction(
 				action,
 				args,
 				path.join(ACTION_NAME_SEPARATOR),

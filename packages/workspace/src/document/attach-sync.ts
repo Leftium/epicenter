@@ -40,7 +40,7 @@ import {
 	type RemoteCallOptions,
 	defineQuery,
 	describeActions,
-	invokeNormalized,
+	invokeAction,
 	resolveActionPath,
 } from '../shared/actions.js';
 import {
@@ -460,7 +460,7 @@ export function attachSync(
 			return;
 		}
 
-		sendResponse(await invokeNormalized(target, rpc.input, rpc.action));
+		sendResponse(await invokeAction(target, rpc.input, rpc.action));
 	}
 
 	// ── Message senders ──

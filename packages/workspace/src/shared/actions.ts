@@ -24,7 +24,7 @@
  *
  * Transport boundaries (RPC server-side, CLI dispatch, AI bridge) normalize
  * any handler return into `Promise<Result<T, RpcError>>` via
- * `invokeNormalized`. The wire client (`RemoteActions`) re-types each leaf
+ * `invokeAction`. The wire client (`RemoteActions`) re-types each leaf
  * to that uniform shape. Local UI code that wants `Result` either calls
  * `tryAsync` or defines the handler to return `Result` explicitly.
  *
@@ -35,8 +35,6 @@ import { RpcError } from '@epicenter/sync';
 import type { Static, TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import { Ok, isResult } from 'wellcrafted/result';
-
-export { isResult };
 
 // ════════════════════════════════════════════════════════════════════════════
 // ACTION DEFINITION TYPES
@@ -149,7 +147,7 @@ export type Actions = {
  * handler. Local callers see whatever the handler returns (sync if sync,
  * raw if raw, `Result` if explicit). Remote/AI/CLI consumers see uniform
  * `Promise<Result>` via the boundary normalizers (`peer()` for the wire,
- * `invokeNormalized` for in-process).
+ * `invokeAction` for in-process).
  */
 /** No input — `TInput` is explicitly `undefined`. */
 export function defineQuery<R>(
@@ -301,7 +299,7 @@ function toMeta({ type, input, title, description }: Action): ActionMeta {
  *
  * @example
  * ```ts
- * const result = await invokeNormalized<{ closedCount: number }>(
+ * const result = await invokeAction<{ closedCount: number }>(
  *   workspace.actions.tabs.close,
  *   { tabIds: [1, 2] },
  *   'tabs.close',
@@ -310,7 +308,7 @@ function toMeta({ type, input, title, description }: Action): ActionMeta {
  * console.log(result.data.closedCount);
  * ```
  */
-export async function invokeNormalized<T = unknown>(
+export async function invokeAction<T = unknown>(
 	action: Action,
 	input?: unknown,
 	errorLabel: string = action.title ?? 'anonymous',

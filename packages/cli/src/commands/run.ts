@@ -14,7 +14,7 @@
 
 import {
 	type Action,
-	invokeNormalized,
+	invokeAction,
 	resolveActionPath,
 	walkActions,
 } from '@epicenter/workspace';
@@ -118,7 +118,7 @@ async function invoke(
 		return;
 	}
 
-	const result = await invokeNormalized(action, input, actionPath);
+	const result = await invokeAction(action, input, actionPath);
 	if (result.error !== null) {
 		outputError(extractErrorMessage(result.error));
 		process.exitCode = 2; // runtime error (local Err)

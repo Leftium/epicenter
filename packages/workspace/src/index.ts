@@ -32,7 +32,6 @@
 
 export type {
 	Action,
-	ActionFailed,
 	ActionManifest,
 	ActionMeta,
 	Actions,
@@ -44,11 +43,8 @@ export {
 	defineMutation,
 	defineQuery,
 	describeActions,
-	invokeNormalized,
+	invokeAction,
 	isAction,
-	isMutation,
-	isQuery,
-	isResult,
 	resolveActionPath,
 	walkActions,
 } from './shared/actions';

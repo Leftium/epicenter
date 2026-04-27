@@ -1,7 +1,7 @@
 /**
  * Tests for the action system primitives in `actions.ts`.
  *
- * Currently focused on `invokeNormalized` — the canonical "given an action
+ * Currently focused on `invokeAction` — the canonical "given an action
  * and an input, return Promise<Result<T, RpcError>>" util used by every
  * consumer that doesn't know the handler shape ahead of time (AI bridge,
  * CLI dispatch, inbound RPC handler).
@@ -14,20 +14,20 @@ import { isRpcError } from '@epicenter/sync';
 import {
 	defineMutation,
 	defineQuery,
-	invokeNormalized,
+	invokeAction,
 } from './actions.js';
 
 // ────────────────────────────────────────────────────────────────────────────
-// invokeNormalized
+// invokeAction
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('invokeNormalized', () => {
+describe('invokeAction', () => {
 	describe('return shape normalization', () => {
 		test('Ok-wraps a raw return value from a sync handler', async () => {
 			const action = defineMutation({
 				handler: () => ({ count: 7 }),
 			});
-			const result = await invokeNormalized<{ count: number }>(action);
+			const result = await invokeAction<{ count: number }>(action);
 			expect(result.error).toBeNull();
 			expect(result.data).toEqual({ count: 7 });
 		});
@@ -36,7 +36,7 @@ describe('invokeNormalized', () => {
 			const action = defineMutation({
 				handler: async () => ({ count: 11 }),
 			});
-			const result = await invokeNormalized<{ count: number }>(action);
+			const result = await invokeAction<{ count: number }>(action);
 			expect(result.error).toBeNull();
 			expect(result.data).toEqual({ count: 11 });
 		});
@@ -45,7 +45,7 @@ describe('invokeNormalized', () => {
 			const action = defineMutation({
 				handler: () => Ok({ ok: true }),
 			});
-			const result = await invokeNormalized<{ ok: boolean }>(action);
+			const result = await invokeAction<{ ok: boolean }>(action);
 			expect(result.error).toBeNull();
 			expect(result.data).toEqual({ ok: true });
 		});
@@ -56,9 +56,9 @@ describe('invokeNormalized', () => {
 				handler: () =>
 					Err(customError) as unknown as ReturnType<typeof Ok>,
 			});
-			const result = await invokeNormalized(action);
+			const result = await invokeAction(action);
 			expect(result.data).toBeNull();
-			// The handler's typed Err leaks through invokeNormalized's
+			// The handler's typed Err leaks through invokeAction's
 			// declared `RpcError` error type — that's the cost of generic
 			// normalization. Cast to compare structurally.
 			expect(result.error as unknown).toEqual(customError);
@@ -68,12 +68,12 @@ describe('invokeNormalized', () => {
 			// wellcrafted's isResult is structural: any object with both
 			// `data` and `error` properties is treated as a Result. There
 			// is no brand. So a {data,error}-shaped return passes through
-			// to the caller as-is — invokeNormalized does NOT double-wrap.
+			// to the caller as-is — invokeAction does NOT double-wrap.
 			const lookalike = { data: 'fake', error: null };
 			const action = defineMutation({
 				handler: () => lookalike as unknown as ReturnType<typeof Ok>,
 			});
-			const result = await invokeNormalized<string>(action);
+			const result = await invokeAction<string>(action);
 			expect(result.error).toBeNull();
 			expect(result.data).toBe('fake');
 		});
@@ -87,7 +87,7 @@ describe('invokeNormalized', () => {
 					throw cause;
 				},
 			});
-			const result = await invokeNormalized(action);
+			const result = await invokeAction(action);
 			expect(result.data).toBeNull();
 			expect(isRpcError(result.error)).toBe(true);
 			expect(result.error?.name).toBe('ActionFailed');
@@ -103,7 +103,7 @@ describe('invokeNormalized', () => {
 					throw cause;
 				},
 			});
-			const result = await invokeNormalized(action);
+			const result = await invokeAction(action);
 			expect(result.data).toBeNull();
 			expect(result.error?.name).toBe('ActionFailed');
 			if (result.error?.name === 'ActionFailed') {
@@ -117,7 +117,7 @@ describe('invokeNormalized', () => {
 					throw 'string-throw';
 				},
 			});
-			const result = await invokeNormalized(action);
+			const result = await invokeAction(action);
 			expect(result.error?.name).toBe('ActionFailed');
 			if (result.error?.name === 'ActionFailed') {
 				expect(result.error.cause).toBe('string-throw');
@@ -134,7 +134,7 @@ describe('invokeNormalized', () => {
 					return null;
 				},
 			});
-			await invokeNormalized(action, { ignored: true });
+			await invokeAction(action, { ignored: true });
 			expect(seenArgs).toEqual([[]]);
 		});
 
@@ -148,7 +148,7 @@ describe('invokeNormalized', () => {
 					return input.x * 2;
 				},
 			});
-			const result = await invokeNormalized<number>(action, { x: 21 });
+			const result = await invokeAction<number>(action, { x: 21 });
 			expect(seenInputs).toEqual([{ x: 21 }]);
 			expect(result.data).toBe(42);
 		});
@@ -162,7 +162,7 @@ describe('invokeNormalized', () => {
 					throw new Error('x');
 				},
 			});
-			const result = await invokeNormalized(
+			const result = await invokeAction(
 				action,
 				undefined,
 				'tabs.close',
@@ -180,7 +180,7 @@ describe('invokeNormalized', () => {
 					throw new Error('x');
 				},
 			});
-			const result = await invokeNormalized(action);
+			const result = await invokeAction(action);
 			if (result.error?.name === 'ActionFailed') {
 				expect(result.error.action).toBe('My Action');
 			}
@@ -192,7 +192,7 @@ describe('invokeNormalized', () => {
 					throw new Error('x');
 				},
 			});
-			const result = await invokeNormalized(action);
+			const result = await invokeAction(action);
 			if (result.error?.name === 'ActionFailed') {
 				expect(result.error.action).toBe('anonymous');
 			}
@@ -207,8 +207,8 @@ describe('invokeNormalized', () => {
 			const mutation = defineMutation({
 				handler: () => ({ kind: 'mutation' as const }),
 			});
-			const queryResult = await invokeNormalized<{ kind: 'query' }>(query);
-			const mutationResult = await invokeNormalized<{ kind: 'mutation' }>(
+			const queryResult = await invokeAction<{ kind: 'query' }>(query);
+			const mutationResult = await invokeAction<{ kind: 'mutation' }>(
 				mutation,
 			);
 			expect(queryResult.data).toEqual({ kind: 'query' });

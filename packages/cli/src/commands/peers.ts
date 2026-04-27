@@ -108,13 +108,10 @@ export const peersCommand: CommandModule = {
 		// daemon is running. Falls through to the standalone path otherwise.
 		const daemon = await tryGetDaemon(target);
 		if (daemon) {
-			const result = await daemon.call<
-				Array<{
-					workspace: string;
-					clientID: number;
-					device: AwarenessState['device'];
-				}>
-			>('peers', { wait: waitMs, workspace: target.userWorkspace });
+			// `wait` is a cold-path concept (the cold path uses it to settle
+			// awareness before snapshotting); the daemon is already warm, so
+			// only `workspace` matters on the wire.
+			const result = await daemon.peers({ workspace: target.userWorkspace });
 			await renderDaemonResult(result, (rows) => {
 				const byWorkspace = new Map<string, Map<number, AwarenessState>>();
 				for (const row of rows) {
@@ -123,7 +120,9 @@ export const peersCommand: CommandModule = {
 						peers = new Map();
 						byWorkspace.set(row.workspace, peers);
 					}
-					peers.set(row.clientID, { device: row.device });
+					peers.set(row.clientID, {
+						device: row.device as AwarenessState['device'],
+					});
 				}
 				const snapshots: WorkspaceSnapshot[] = [];
 				for (const [name, peers] of byWorkspace) {

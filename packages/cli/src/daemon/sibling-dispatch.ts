@@ -12,8 +12,8 @@
  *     {@link ResolvedTarget}. Both the daemon probe and the cold-path
  *     loader consume the same object.
  *   - {@link tryGetDaemon}: single dispatch decision. Returns a
- *     {@link Daemon} when one is alive, or `null` to fall through to
- *     the in-process path. There is no "mismatch" state: the daemon
+ *     {@link DaemonClient} when one is alive, or `null` to fall through
+ *     to the in-process path. There is no "mismatch" state: the daemon
  *     serves every workspace its config exports (Invariant 7), and an
  *     unknown `--workspace` surfaces from the daemon's own
  *     `resolveEntry` lookup as a normal IPC error (same phrasing the
@@ -30,9 +30,16 @@ import type { Result } from 'wellcrafted/result';
 
 import { dirFromArgv, workspaceFromArgv } from '../util/common-options.js';
 import { outputError } from '../util/format-output.js';
-import { ipcCall, type IpcClientError, ipcPing } from './ipc-client.js';
+import {
+	type DaemonClient,
+	daemonClient,
+	type IpcClientError,
+	ipcPing,
+} from './ipc-client.js';
 import type { SerializedError } from './ipc-server.js';
 import { socketPathFor } from './paths.js';
+
+export type { DaemonClient } from './ipc-client.js';
 
 /**
  * Resolved `--dir` + `--workspace` for a single command invocation.
@@ -52,31 +59,17 @@ export function resolveTarget(args: Record<string, unknown>): ResolvedTarget {
 }
 
 /**
- * A live daemon endpoint. The handle exposes a single `.call(cmd, args)`
- * primitive; callers shape `args` per command (e.g. `list` includes the
- * user's `workspace`, `peers` includes a `workspace` filter).
- */
-export type Daemon = {
-	call: <T>(
-		cmd: string,
-		args: unknown,
-	) => Promise<Result<T, IpcClientError | SerializedError>>;
-};
-
-/**
  * Single dispatch decision for sibling commands. Pings the socket; if a
- * daemon answers, returns a {@link Daemon} the caller can `.call(...)`
- * against. If no daemon is alive, returns `null` and the caller falls
- * through to its in-process transient path.
+ * daemon answers, returns a typed {@link DaemonClient} the caller can
+ * dispatch route methods on. If no daemon is alive, returns `null` and
+ * the caller falls through to its in-process transient path.
  */
 export async function tryGetDaemon(
 	target: ResolvedTarget,
-): Promise<Daemon | null> {
+): Promise<DaemonClient | null> {
 	const sock = socketPathFor(target.absDir);
 	if (!(await ipcPing(sock))) return null;
-	return {
-		call: <T>(cmd: string, args: unknown) => ipcCall<T>(sock, cmd, args),
-	};
+	return daemonClient(sock);
 }
 
 /**

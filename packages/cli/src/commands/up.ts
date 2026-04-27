@@ -32,10 +32,9 @@ import {
 } from 'wellcrafted/logger';
 import type { Argv, CommandModule } from 'yargs';
 
+import { buildApp } from '../daemon/app.js';
 import {
-	type IpcRoutes,
 	type IpcServerHandle,
-	type SerializedError,
 	startIpcServer,
 	unlinkSocketFile,
 } from '../daemon/ipc-server.js';
@@ -57,9 +56,6 @@ import {
 	loadConfig,
 } from '../load-config.js';
 import { dirFromArgv, dirOption } from '../util/common-options.js';
-import { resolveEntry } from '../util/resolve-entry.js';
-import { listCore, type ListCtx, type ListResult } from './list.js';
-import { runCore, type RunCtx, type RunResult } from './run.js';
 
 /**
  * Hardcoded ceiling on how long any single workspace's `whenConnected`
@@ -188,7 +184,7 @@ export type RunUpDeps = {
 	loadConfig?: (dir: string) => Promise<LoadConfigResult>;
 	startIpcServer?: (
 		socketPath: string,
-		routes: IpcRoutes,
+		app: ReturnType<typeof buildApp>,
 	) => Promise<IpcServerHandle>;
 	/**
 	 * Test-only override for {@link CONNECT_TIMEOUT_MS}. Production has no
@@ -271,11 +267,11 @@ export async function runUp(
 	};
 	writeMetadata(absDir, metadata);
 
-	const routes = makeRoutes(config.entries, () => void teardown());
+	const app = buildApp(config.entries, () => void teardown());
 	const starter = deps.startIpcServer ?? startIpcServer;
 	let server: IpcServerHandle;
 	try {
-		server = await starter(socketPath, routes);
+		server = await starter(socketPath, app);
 	} catch (cause) {
 		unlinkMetadata(absDir);
 		await safeAsyncDispose(config);
@@ -365,95 +361,6 @@ export const upCommand: CommandModule = {
 		process.stdin.resume();
 	},
 };
-
-// ---------------------------------------------------------------------------
-// IPC handler
-// ---------------------------------------------------------------------------
-
-/**
- * Build the per-daemon IPC route table. Each route is a thin wrapper around
- * workspace state, a graceful-shutdown trigger, or one of the refactored
- * command cores (`listCore`, `runCore`).
- *
- * Workspace-scoped routes (`list`, `run`) read the user-supplied workspace
- * arg and call `resolveEntry` to find the right entry, the same lookup the
- * cold path uses, so unknown-workspace errors come out the identical
- * phrasing in either path.
- *
- * `peers` returns rows tagged with their workspace, optionally narrowed by
- * a `workspace` filter. The shape matches what `peers.ts` cold path emits,
- * so the renderer doesn't branch.
- */
-function makeRoutes(
-	entries: WorkspaceEntry[],
-	triggerShutdown: () => void,
-): IpcRoutes {
-	const errFrom = (cause: unknown): SerializedError => ({
-		name: cause instanceof Error ? cause.name : 'Error',
-		message: cause instanceof Error ? cause.message : String(cause),
-	});
-
-	const lookup = (
-		name: string | undefined,
-	): { ok: true; entry: WorkspaceEntry } | { ok: false; error: SerializedError } => {
-		try {
-			return { ok: true, entry: resolveEntry(entries, name) };
-		} catch (cause) {
-			return { ok: false, error: errFrom(cause) };
-		}
-	};
-
-	return {
-		ping: async () => ({ data: 'pong', error: null }),
-		peers: async (args) => {
-			const filter = (args as { workspace?: string } | null)?.workspace;
-			const rows: Array<{
-				workspace: string;
-				clientID: number;
-				device: unknown;
-			}> = [];
-			for (const entry of entries) {
-				if (filter && entry.name !== filter) continue;
-				const peers = entry.workspace.sync?.peers() ?? new Map();
-				for (const [clientID, state] of peers) {
-					rows.push({
-						workspace: entry.name,
-						clientID,
-						device: state.device,
-					});
-				}
-			}
-			return { data: rows, error: null };
-		},
-		list: async (args) => {
-			const ctx = args as ListCtx & { workspace?: string };
-			const found = lookup(ctx.workspace);
-			if (!found.ok) return { data: null, error: found.error };
-			try {
-				const data: ListResult = await listCore(found.entry, ctx);
-				return { data, error: null };
-			} catch (cause) {
-				return { data: null, error: errFrom(cause) };
-			}
-		},
-		run: async (args) => {
-			const ctx = args as RunCtx;
-			const found = lookup(ctx.workspaceArg);
-			if (!found.ok) return { data: null, error: found.error };
-			try {
-				const data: RunResult = await runCore(found.entry, ctx);
-				return { data, error: null };
-			} catch (cause) {
-				return { data: null, error: errFrom(cause) };
-			}
-		},
-		shutdown: async () => {
-			// Defer teardown so the response flushes before the server stops.
-			queueMicrotask(triggerShutdown);
-			return { data: null, error: null };
-		},
-	};
-}
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -31,11 +31,12 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { startIpcServer, type IpcRoutes } from '../daemon/ipc-server';
-import { ipcCall } from '../daemon/ipc-client';
+import { buildApp } from '../daemon/app';
+import { daemonClient } from '../daemon/ipc-client';
+import { startIpcServer } from '../daemon/ipc-server';
 import { socketPathFor } from '../daemon/paths';
 import type { LoadedWorkspace, WorkspaceEntry } from '../load-config';
-import { listCore, type ListResult } from './list';
+import { listCore } from './list';
 
 let originalXdg: string | undefined;
 let originalHome: string | undefined;
@@ -108,21 +109,14 @@ describe('listCore: IPC parity', () => {
 			waitMs: 0,
 		});
 
-		// IPC path: stand up a tiny server whose `list` route delegates to
-		// listCore, mirroring the shape `up.ts`'s `makeRoutes` uses.
+		// IPC path: stand up the production Hono app (with the real `/list`
+		// route) bound to a unix socket, then call it through the typed
+		// `daemonClient` and assert structural equality with the cold path.
 		const sockPath = socketPathFor(workDir);
-		const routes: IpcRoutes = {
-			list: async (args) => {
-				const data: ListResult = await listCore(
-					entry,
-					args as Parameters<typeof listCore>[1],
-				);
-				return { data, error: null };
-			},
-		};
-		const server = await startIpcServer(sockPath, routes);
+		const app = buildApp([entry], () => {});
+		const server = await startIpcServer(sockPath, app);
 		try {
-			const reply = await ipcCall<ListResult>(sockPath, 'list', {
+			const reply = await daemonClient(sockPath).list({
 				path: '',
 				mode: { kind: 'local' },
 				waitMs: 0,

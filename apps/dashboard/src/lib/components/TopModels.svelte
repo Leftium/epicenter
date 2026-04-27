@@ -4,7 +4,7 @@
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Table from '@epicenter/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { FEATURE_IDS } from '$lib/constants';
+	import { FEATURE_IDS } from '@epicenter/api/billing-plans';
 	import { usageQueryOptions } from '$lib/query/billing';
 
 	const usage = createQuery(() =>

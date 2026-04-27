@@ -13,10 +13,10 @@
  */
 
 import {
-	type ActionManifest,
-	describeActions,
+	type Action,
 	invokeNormalized,
 	resolveActionPath,
+	walkActions,
 } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
@@ -86,15 +86,15 @@ async function invoke(
 
 	const action = resolveActionPath(workspace.actions ?? {}, actionPath);
 	if (!action) {
-		const manifest = describeActions(workspace.actions ?? {});
-		const descendants = entriesUnder(manifest, actionPath);
+		const entries = [...walkActions(workspace.actions ?? {})];
+		const descendants = entriesUnder(entries, actionPath);
 		if (descendants.length > 0) {
 			outputError(`"${actionPath}" is not a runnable action.`);
 			emitActionList(descendants);
 			throw new Error('Not an action');
 		}
 		outputError(`"${actionPath}" is not defined.`);
-		emitNearestSiblings(manifest, actionPath);
+		emitNearestSiblings(entries, actionPath);
 		throw new Error('Action not found');
 	}
 
@@ -194,19 +194,15 @@ async function resolveInput(
 }
 
 function entriesUnder(
-	manifest: ActionManifest,
+	entries: Array<[string, Action]>,
 	prefix: string,
-): Array<[string, ActionManifest[string]]> {
-	if (!prefix) return Object.entries(manifest);
+): Array<[string, Action]> {
+	if (!prefix) return entries;
 	const pfx = prefix + '.';
-	return Object.entries(manifest).filter(
-		([p]) => p === prefix || p.startsWith(pfx),
-	);
+	return entries.filter(([p]) => p === prefix || p.startsWith(pfx));
 }
 
-function emitActionList(
-	descendants: Array<[string, { type: string }]>,
-): void {
+function emitActionList(descendants: Array<[string, Action]>): void {
 	outputError('');
 	outputError('Exposed actions at this path:');
 	for (const [path, action] of descendants) {
@@ -220,14 +216,14 @@ function emitActionList(
  * matches, stay silent — the top-level "not defined" error stands alone.
  */
 function emitNearestSiblings(
-	manifest: ActionManifest,
+	entries: Array<[string, Action]>,
 	missedPath: string,
 ): void {
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();
 		const prefix = parts.join('.');
-		const alts = entriesUnder(manifest, prefix);
+		const alts = entriesUnder(entries, prefix);
 		if (alts.length === 0) continue;
 		emitActionList(alts);
 		return;

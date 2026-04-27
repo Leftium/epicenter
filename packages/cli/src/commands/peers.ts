@@ -65,6 +65,12 @@ export const peersCommand: CommandModule = {
 				default: DEFAULT_WAIT_MS,
 				description: `Ms to wait for awareness to populate (default ${DEFAULT_WAIT_MS}; pass 0 for a one-shot snapshot)`,
 			})
+			.option('no-up', {
+				type: 'boolean',
+				default: false,
+				description:
+					'Skip the `epicenter up` daemon if one is running and use a transient connection instead',
+			})
 			.options(formatYargsOptions()),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;

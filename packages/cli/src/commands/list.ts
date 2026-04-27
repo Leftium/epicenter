@@ -17,6 +17,14 @@
  * `describePeer(sync, deviceId)` — awareness no longer carries action
  * manifests, so detail-mode renders from the same fetched object as
  * tree-mode (no second RTT).
+ *
+ * ## Auto-detect (Wave 6)
+ *
+ * When an `epicenter up` daemon is running for the same `--dir`, the
+ * yargs handler short-circuits through {@link ipcCall} and asks the
+ * daemon to run {@link listCore} against its already-warm workspace.
+ * The same {@link ListResult} shape flows out either path so the
+ * renderer doesn't care which side built it.
  */
 
 import {
@@ -27,6 +35,9 @@ import {
 } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule, Options } from 'yargs';
+import { ipcCall, ipcPing } from '../daemon/ipc-client';
+import { readMetadata } from '../daemon/metadata';
+import { socketPathFor } from '../daemon/paths';
 import {
 	type AwarenessState,
 	loadConfig,
@@ -45,6 +56,7 @@ import {
 } from '../util/format-output';
 import { explainEmpty, waitForAnyPeer, waitForPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
+import { resolve } from 'node:path';
 
 const DEFAULT_WAIT_MS = 500;
 
@@ -66,6 +78,42 @@ type Section = {
 	unavailableReason?: string;
 };
 
+// ─── Mode ────────────────────────────────────────────────────────────────────
+
+export type ListMode =
+	| { kind: 'local' }
+	| { kind: 'peer'; deviceId: string }
+	| { kind: 'all' };
+
+/**
+ * Parsed inputs for {@link listCore}. Built by the yargs handler from
+ * argv (local path) or by the IPC dispatcher from the wire `args`
+ * (daemon path). The shape is identical so both paths feed the same
+ * pure function.
+ */
+export type ListCtx = {
+	path: string;
+	mode: ListMode;
+	waitMs: number;
+};
+
+/**
+ * Result of {@link listCore}. Render-ready: `sections` is the list the
+ * text/JSON renderers consume, `mode` is preserved so the renderer can
+ * tell single-source from `--all`.
+ *
+ * The `peerMiss` variant is the only failure path that survives across
+ * IPC; it's translated to stderr + exitCode=3 by the renderer on either
+ * side of the wire.
+ */
+export type ListResult =
+	| { kind: 'sections'; sections: Section[]; mode: ListMode }
+	| {
+			kind: 'peerMiss';
+			deviceId: string;
+			emptyReason: string | null;
+	  };
+
 const peerOption: Options = {
 	type: 'string',
 	description: 'Read actions from a remote peer by deviceId',
@@ -80,6 +128,13 @@ const waitOption: Options = {
 	type: 'number',
 	default: DEFAULT_WAIT_MS,
 	description: `Ms to wait for awareness to populate; only meaningful with --peer/--all (default ${DEFAULT_WAIT_MS})`,
+};
+
+const noUpOption: Options = {
+	type: 'boolean',
+	default: false,
+	description:
+		'Skip the `epicenter up` daemon if one is running and use a transient connection instead',
 };
 
 export const listCommand: CommandModule = {
@@ -97,30 +152,101 @@ export const listCommand: CommandModule = {
 			.option('peer', peerOption)
 			.option('all', allOption)
 			.option('wait', waitOption)
+			.option('no-up', noUpOption)
 			.options(formatYargsOptions()),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
 		const path = typeof args.path === 'string' ? args.path : '';
 		const format = args.format as Format;
 		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
+		const noUp = args['no-up'] === true;
+		const userWorkspace = workspaceFromArgv(args);
 
 		const mode = parseMode(args);
 		if (mode === null) return; // mutex error, exitCode already set
 
+		// Auto-detect path: if a daemon is alive for this dir, dispatch through
+		// it instead of bringing up a transient peer of our own.
+		if (!noUp) {
+			const absDir = resolve(dirFromArgv(args));
+			const sock = socketPathFor(absDir);
+			if (await ipcPing(sock)) {
+				const inherited = inheritWorkspace(absDir, userWorkspace);
+				if (inherited === 'mismatch') return; // exitCode already set
+				const ctx: ListCtx = { path, mode, waitMs };
+				const reply = await ipcCall<ListResult>(sock, 'list', ctx);
+				if (reply.ok) {
+					await renderResult(reply.data, path, format);
+					return;
+				}
+				outputError(`error: ${reply.error.message}`);
+				process.exitCode = 1;
+				return;
+			}
+		}
+
+		// Fallback: load config in-process and run listCore directly.
 		await using config = await loadConfig(dirFromArgv(args));
-		const entry = resolveEntry(config.entries, workspaceFromArgv(args));
-		const sections = await selectSections(entry, mode, waitMs);
-		if (sections === null) return; // peer-not-found, exitCode already set
-		await renderSections(sections, path, format, mode);
+		const entry = resolveEntry(config.entries, userWorkspace);
+		const result = await listCore(entry, { path, mode, waitMs });
+		await renderResult(result, path, format);
 	},
 };
 
-// ─── Mode ────────────────────────────────────────────────────────────────────
+/**
+ * Pure core: take a resolved {@link WorkspaceEntry} + parsed {@link ListCtx}
+ * and produce the {@link ListResult} the renderer wants. No yargs, no
+ * config loading, no rendering — so the daemon's IPC handler can call
+ * this against its own already-warm `entry`.
+ */
+export async function listCore(
+	entry: WorkspaceEntry,
+	ctx: ListCtx,
+): Promise<ListResult> {
+	const { workspace } = entry;
+	const { mode, waitMs } = ctx;
 
-type ListMode =
-	| { kind: 'local' }
-	| { kind: 'peer'; deviceId: string }
-	| { kind: 'all' };
+	if (mode.kind === 'local') {
+		return {
+			kind: 'sections',
+			sections: [selfSection(entry, 'local')],
+			mode,
+		};
+	}
+
+	const deadline = Date.now() + waitMs;
+	if (mode.kind === 'peer') {
+		const { hit } = await waitForPeer(workspace, mode.deviceId, deadline);
+		if (!hit) {
+			return {
+				kind: 'peerMiss',
+				deviceId: mode.deviceId,
+				emptyReason: explainEmpty(workspace),
+			};
+		}
+		return {
+			kind: 'sections',
+			sections: [await peerSection(hit.state, workspace.sync!)],
+			mode,
+		};
+	}
+
+	// --all
+	await waitForAnyPeer(workspace, deadline);
+	if (!workspace.sync) {
+		return {
+			kind: 'sections',
+			sections: [selfSection(entry, 'all')],
+			mode,
+		};
+	}
+	const ordered = [...workspace.sync.peers().entries()].sort(([a], [b]) => a - b);
+	const sections: Section[] = [selfSection(entry, 'all')];
+	for (const [, state] of ordered) {
+		sections.push(await peerSection(state, workspace.sync));
+	}
+	return { kind: 'sections', sections, mode };
+}
 
 function parseMode(args: Record<string, unknown>): ListMode | null {
 	const peerTarget =
@@ -138,46 +264,32 @@ function parseMode(args: Record<string, unknown>): ListMode | null {
 	return { kind: 'local' };
 }
 
-// ─── Source selection ────────────────────────────────────────────────────────
-
 /**
- * Pick the sections to render based on `mode`. Returns `null` when a
- * `--peer` lookup misses (the function emits the error and sets the exit
- * code; the caller just bails).
+ * Workspace inheritance for sibling commands hitting a running daemon
+ * (Invariant 7). The daemon owns the entry it was started with; if the
+ * user passed a conflicting `--workspace`, refuse rather than silently
+ * dispatch to the wrong one.
+ *
+ * Returns `'mismatch'` after setting exitCode=1 + emitting the literal
+ * spec message; otherwise returns the daemon's workspace name (which
+ * the IPC handler doesn't actually need — but we still validate, so
+ * the user gets the same error in either case).
  */
-async function selectSections(
-	entry: WorkspaceEntry,
-	mode: ListMode,
-	waitMs: number,
-): Promise<Section[] | null> {
-	const { workspace } = entry;
-
-	if (mode.kind === 'local') return [selfSection(entry, 'local')];
-
-	const deadline = Date.now() + waitMs;
-	if (mode.kind === 'peer') {
-		const { hit } = await waitForPeer(workspace, mode.deviceId, deadline);
-		if (!hit) {
-			outputError(`error: no peer matches deviceId "${mode.deviceId}"`);
-			outputError('run `epicenter peers` to see connected peers');
-			const why = explainEmpty(workspace);
-			if (why) outputError(`  reason: ${why}`);
-			process.exitCode = 3;
-			return null;
-		}
-		// Hit implies sync existed (peers live on it).
-		return [await peerSection(hit.state, workspace.sync!)];
+export function inheritWorkspace(
+	absDir: string,
+	userWorkspace: string | undefined,
+): string | undefined | 'mismatch' {
+	const meta = readMetadata(absDir);
+	if (!meta) return userWorkspace; // daemon raced away; fall back to user's value
+	if (userWorkspace === undefined) return meta.workspace;
+	if (userWorkspace !== meta.workspace) {
+		outputError(
+			`workspace mismatch: daemon owns '${meta.workspace}', requested '${userWorkspace}' — restart the daemon or omit --workspace`,
+		);
+		process.exitCode = 1;
+		return 'mismatch';
 	}
-
-	// --all: best-effort wait for awareness to populate, then snapshot.
-	await waitForAnyPeer(workspace, deadline);
-	if (!workspace.sync) return [selfSection(entry, 'all')];
-	const ordered = [...workspace.sync.peers().entries()].sort(([a], [b]) => a - b);
-	const sections: Section[] = [selfSection(entry, 'all')];
-	for (const [, state] of ordered) {
-		sections.push(await peerSection(state, workspace.sync));
-	}
-	return sections;
+	return userWorkspace;
 }
 
 export function selfSection(
@@ -220,6 +332,26 @@ export async function peerSection(
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
+
+/**
+ * Surface either path's {@link ListResult} to the user. `peerMiss` sets
+ * exitCode=3 + writes the same multi-line stderr block the in-process
+ * path used to emit inline.
+ */
+async function renderResult(
+	result: ListResult,
+	path: string,
+	format: Format,
+): Promise<void> {
+	if (result.kind === 'peerMiss') {
+		outputError(`error: no peer matches deviceId "${result.deviceId}"`);
+		outputError('run `epicenter peers` to see connected peers');
+		if (result.emptyReason) outputError(`  reason: ${result.emptyReason}`);
+		process.exitCode = 3;
+		return;
+	}
+	await renderSections(result.sections, path, format, result.mode);
+}
 
 /**
  * `--all` is the only mode that tags rows with `peer` and tolerates zero
@@ -431,4 +563,3 @@ function describeInput(schema: TSchema): string[] {
 	}
 	return lines;
 }
-

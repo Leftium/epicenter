@@ -11,13 +11,7 @@
  * § "Logging", § "Invariants".
  */
 
-import {
-	appendFileSync,
-	existsSync,
-	mkdirSync,
-	statSync,
-	unlinkSync,
-} from 'node:fs';
+import { appendFileSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import {
@@ -38,6 +32,7 @@ import {
 	type IpcServerHandle,
 	type SerializedError,
 	startIpcServer,
+	unlinkSocketFile,
 } from '../daemon/ipc-server.js';
 import {
 	type DaemonMetadata,
@@ -79,12 +74,6 @@ const LEVEL_RANK: Record<LogLevel, number> = {
 };
 
 /**
- * Build a stderr sink that filters by floor level. Wave 7 wires the file sink
- * alongside this one; for now stderr is the only output. `--quiet` raises the
- * floor to `warn`, but sync state changes call `log.info` directly through a
- * non-quietable channel (see {@link logSyncStatus}).
- */
-/**
  * Build the file sink: structured JSONL, rotated at {@link ROTATE_MAX_BYTES}.
  * Synchronous `appendFileSync` keeps rotation correctness simple — the only
  * writer is this daemon, so no inter-process coordination is needed.
@@ -122,6 +111,11 @@ function makeRotatingJsonlSink(filePath: string): LogSink {
 	return sink as LogSink;
 }
 
+/**
+ * Build a stderr sink that filters by floor level. `--quiet` raises the floor
+ * to `warn`, but sync state changes write directly to `process.stderr` through
+ * a non-quietable channel (see {@link logSyncStatus}).
+ */
 function makeStderrSink(floor: LogLevel): LogSink {
 	const min = LEVEL_RANK[floor];
 	const fn = (event: LogEvent) => {
@@ -201,15 +195,11 @@ export async function runUp(
 	const socketPath = socketPathFor(absDir);
 	const logPath = logPathFor(absDir);
 
-	// Wave 7 will use logPath for the file sink; ensuring the dir exists now
-	// is a free pre-condition the file sink can rely on later.
-	mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
-	mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
-
 	const stderr = makeStderrSink(options.quiet ? 'warn' : 'info');
 	// File sink: structured JSONL. Always at info-floor regardless of --quiet
-	// — operators rely on the file for post-mortems. Rotate before each write
-	// so the daemon stays inside the 10 MB-per-generation budget.
+	// — operators rely on the file for post-mortems. Rotates before each write
+	// to stay inside the 10 MB-per-generation budget. The sink ensures its
+	// parent dir exists; `startIpcServer` does the same for the socket parent.
 	const fileSink = makeRotatingJsonlSink(logPath);
 	const sink = composeSinks(stderr, fileSink);
 	const log = createLogger('cli/up', sink);
@@ -252,7 +242,10 @@ export async function runUp(
 		pid: process.pid,
 		dir: absDir,
 		workspace: entry.name,
-		deviceId: pickDeviceId(entry.workspace),
+		// SyncAttachment doesn't expose self deviceId today (peers() excludes
+		// self by construction). Until the workspace package surfaces it,
+		// metadata records '<unknown>'. Tracked as a known gap.
+		deviceId: '<unknown>',
 		startedAt: new Date().toISOString(),
 		cliVersion: options.cliVersion ?? '0.0.0',
 		configMtime,
@@ -274,9 +267,9 @@ export async function runUp(
 	const teardown = (): Promise<void> => {
 		if (teardownPromise) return teardownPromise;
 		teardownPromise = (async () => {
-			// Bun's `.stop()` is synchronous; the socket file sweep below is
-			// what actually removes the unix path so a follow-up `up` doesn't
-			// see a phantom and bail.
+			// `.stop()` releases the listener; `unlinkSocketFile` removes the
+			// unix path so a follow-up `up` doesn't see a phantom and bail.
+			// (Bun's `.stop()` doesn't always sweep the path itself.)
 			try {
 				server.stop();
 			} catch {
@@ -284,13 +277,7 @@ export async function runUp(
 			}
 			await safeAsyncDispose(config);
 			unlinkMetadata(absDir);
-			if (existsSync(socketPath)) {
-				try {
-					unlinkSync(socketPath);
-				} catch {
-					// Best-effort: server.close already sweeps; another process may have raced us.
-				}
-			}
+			unlinkSocketFile(socketPath);
 		})();
 		return teardownPromise;
 	};
@@ -388,10 +375,9 @@ export const upCommand: CommandModule = {
 
 /**
  * Build the per-daemon IPC dispatcher. Each `cmd` maps to a thin wrapper
- * around either workspace state (peers, status) or a graceful-shutdown
- * trigger. `list` and `run` are intentional `NotImplemented` stubs in this
- * wave — Wave 6 wires them into the refactored `listCore` / `runCore`
- * helpers.
+ * around either workspace state (peers, status), a graceful-shutdown trigger,
+ * or one of the refactored command cores (`listCore`, `runCore`) which the
+ * daemon shares with sibling CLI invocations via auto-detect.
  */
 function makeHandler(
 	entry: WorkspaceEntry,
@@ -532,20 +518,6 @@ function readConfigMtime(absDir: string): number {
 	} catch {
 		return 0;
 	}
-}
-
-/**
- * Read the daemon's own deviceId from awareness if available. Today's public
- * SyncAttachment doesn't expose "self" deviceId directly (it's set inside
- * `attachSync` from the `device` config arg); awareness is the only public
- * shape we can read after-the-fact, and it includes self only post-connect.
- * Falling through to `'<unknown>'` is a known gap — see report notes.
- */
-function pickDeviceId(workspace: LoadedWorkspace): string {
-	// The `peers()` map deliberately excludes self, so we can't read it from
-	// there. Without an upstream surface change, we accept '<unknown>' here.
-	void workspace;
-	return '<unknown>';
 }
 
 async function safeAsyncDispose(config: LoadConfigResult): Promise<void> {

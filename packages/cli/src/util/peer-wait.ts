@@ -1,11 +1,11 @@
 /**
- * Find and wait for peers on the awareness wire.
+ * Find and wait for peers on the sync wire.
  *
  * Every CLI command that targets a remote peer needs the same dance:
- * await `sync.whenConnected` so awareness can populate, then wait for
+ * await `sync.whenConnected` so presence can populate, then wait for
  * the answer to arrive (or the deadline to expire). `findPeer` is the
  * one-shot lookup; `waitForPeer` and `waitForAnyPeer` subscribe to
- * `awareness.observe()` so they react to changes without polling.
+ * `sync.observe()` so they react to changes without polling.
  *
  * `whenConnected` resolves after the sync handshake; the server
  * typically sends `AWARENESS(all clients)` in the same write window, so
@@ -94,12 +94,12 @@ export async function waitForPeer(
 }
 
 /**
- * Wait for awareness to show *any* peer, up to the deadline. Best-effort:
+ * Wait for presence to show *any* peer, up to the deadline. Best-effort:
  * resolves when at least one peer is visible OR the deadline expires.
  *
  * Returns void deliberately. The caller decides freshness — call
- * `readPeers(workspace)` after this resolves to get the snapshot. This
- * keeps the contract honest: an in-flight peer might appear between
+ * `workspace.sync?.peers()` after this resolves to get the snapshot.
+ * This keeps the contract honest: an in-flight peer might appear between
  * "wait satisfied" and "use the snapshot," and pretending otherwise
  * would cache a value that's already a hair stale at return.
  */

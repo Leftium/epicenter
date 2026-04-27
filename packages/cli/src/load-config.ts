@@ -3,9 +3,9 @@
  *
  * Loads `epicenter.config.ts` and collects every named export that quacks
  * like a workspace — an object with `whenReady` and `[Symbol.dispose]`.
- * Optional first-class fields (`actions`, `sync`, `awareness`) are read
- * directly off the export; the loader does no walking, no brand check, no
- * factory trickery.
+ * Optional first-class fields (`actions`, `sync`) are read directly off
+ * the export; the loader does no walking, no brand check, no factory
+ * trickery.
  *
  * The recommended config style is to export the result of an `openFoo()`
  * factory directly — the same factory the app uses elsewhere — instead of
@@ -160,12 +160,9 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	if (entries.length === 0) {
 		throw new Error(
 			`No workspaces found in ${CONFIG_FILENAME}.\n` +
-				`Export an object with whenReady and [Symbol.dispose]:\n` +
-				`  export const notes = {\n` +
-				`    whenReady: idb.whenLoaded,\n` +
-				`    actions, sync,\n` +
-				`    [Symbol.dispose]() { ydoc.destroy(); },\n` +
-				`  };`,
+				`Export the result of an openFoo() factory directly:\n` +
+				`  import { openFuji } from '@my/app/server';\n` +
+				`  export const fuji = openFuji({ auth, device });`,
 		);
 	}
 

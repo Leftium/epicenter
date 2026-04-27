@@ -14,8 +14,8 @@
  *
  * This is a snapshot, not a registry. A peer that hasn't broadcast its
  * awareness state is invisible — pass `--wait 2000` to give slow peers a
- * chance before emitting. See `util/awareness.ts` for awareness invariants
- * (~30s TTL, session-local clientID).
+ * chance before emitting. Awareness has a ~30s TTL and session-local
+ * clientIDs; see `attachAwareness` in `@epicenter/workspace`.
  *
  * Prints `no peers connected` to stderr when every workspace is empty (text
  * mode only; JSON mode always emits a valid array, even if empty).

@@ -20,12 +20,19 @@
 import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { Argv, CommandModule } from 'yargs';
 
 import { buildApp } from '../daemon/app.js';
 import { pingDaemon } from '../daemon/client.js';
 import {
 	bindOrRecover,
+	type StartupError,
 	type UnixSocketServer,
 	unlinkSocketFile,
 } from '../daemon/unix-socket.js';
@@ -79,6 +86,33 @@ export type UpOptions = {
 	quiet: boolean;
 	cliVersion?: string;
 };
+
+/**
+ * Tagged-error variants `runUp` returns on failure.
+ *
+ * - `LoadFailed`: `loadConfig` rejected. Wraps the cause; today the
+ *   message is "No epicenter.config.ts in <dir>" or "No workspaces
+ *   found...". The user-facing wording stays the same.
+ * - `ConnectFailed`: a workspace's `whenReady`/`whenConnected` didn't
+ *   resolve within the connect timeout. Carries the cause from
+ *   `raceTimeout` (which already includes the entry name + reason).
+ *
+ * Bind-time failures (`AlreadyRunning`, `BindFailed`) come from
+ * {@link StartupError} in `unix-socket.ts`; we union them in the return
+ * type rather than re-mapping. The yargs handler doesn't care which
+ * union it came from: `error.message` and exit-1 either way.
+ */
+export const RunUpError = defineErrors({
+	LoadFailed: ({ cause }: { cause: unknown }) => ({
+		message: extractErrorMessage(cause),
+		cause,
+	}),
+	ConnectFailed: ({ cause }: { cause: unknown }) => ({
+		message: extractErrorMessage(cause),
+		cause,
+	}),
+});
+export type RunUpError = InferErrors<typeof RunUpError>;
 
 /**
  * Handle returned by {@link runUp}. The daemon body is exposed as a
@@ -142,37 +176,37 @@ export type RunUpDeps = {
 export async function runUp(
 	options: UpOptions,
 	deps: RunUpDeps = {},
-): Promise<UpHandle> {
+): Promise<Result<UpHandle, RunUpError | StartupError>> {
 	const absDir = resolve(options.dir);
 	const socketPath = socketPathFor(absDir);
 
 	const loader = deps.loadConfig ?? loadConfig;
-	const config = await loader(absDir);
-
-	if (config.entries.length === 0) {
-		await safeAsyncDispose(config);
-		throw new Error(
-			`no workspaces exported from ${join(absDir, CONFIG_FILENAME)}`,
-		);
-	}
+	const { data: config, error: loadErr } = await tryAsync({
+		try: () => loader(absDir),
+		catch: (cause) => RunUpError.LoadFailed({ cause }),
+	});
+	if (loadErr) return RunUpError.LoadFailed({ cause: loadErr.cause });
 
 	// Wait for every workspace's "ready to accept RPC" gate concurrently.
 	// One bad workspace fails the whole daemon; see runUp's docstring.
-	try {
-		await Promise.all(
-			config.entries.map((entry) =>
-				raceTimeout(
-					entry.workspace.whenReady ??
-						entry.workspace.sync?.whenConnected ??
-						Promise.resolve(),
-					deps.connectTimeoutMs ?? CONNECT_TIMEOUT_MS,
-					() => connectFailedMessage(entry),
+	const { error: connectErr } = await tryAsync({
+		try: () =>
+			Promise.all(
+				config.entries.map((entry) =>
+					raceTimeout(
+						entry.workspace.whenReady ??
+							entry.workspace.sync?.whenConnected ??
+							Promise.resolve(),
+						deps.connectTimeoutMs ?? CONNECT_TIMEOUT_MS,
+						() => connectFailedMessage(entry),
+					),
 				),
 			),
-		);
-	} catch (cause) {
+		catch: (cause) => RunUpError.ConnectFailed({ cause }),
+	});
+	if (connectErr) {
 		await safeAsyncDispose(config);
-		throw cause;
+		return RunUpError.ConnectFailed({ cause: connectErr.cause });
 	}
 
 	// Bind before writing our metadata. On AlreadyRunning the live
@@ -183,15 +217,10 @@ export async function runUp(
 	const bind =
 		deps.bind ??
 		((sock, dir, hono) => bindOrRecover(sock, dir, hono, pingDaemon));
-	const bindResult = await bind(socketPath, absDir, app).catch(
-		async (cause: unknown) => {
-			await safeAsyncDispose(config);
-			throw cause;
-		},
-	);
-	if (bindResult.error !== null) {
+	const bindResult = await bind(socketPath, absDir, app);
+	if (bindResult.error) {
 		await safeAsyncDispose(config);
-		throw new Error(bindResult.error.message);
+		return bindResult;
 	}
 	const server = bindResult.data;
 
@@ -221,14 +250,14 @@ export async function runUp(
 		return teardownPromise;
 	};
 
-	return {
+	return Ok({
 		server,
 		entries: config.entries,
 		config,
 		metadata,
 		socketPath,
 		teardown,
-	};
+	});
 }
 
 /**
@@ -257,12 +286,9 @@ export const upCommand: CommandModule = {
 			quiet: args.quiet === true,
 		};
 
-		let handle: UpHandle;
-		try {
-			handle = await runUp(options);
-		} catch (cause) {
-			const msg = cause instanceof Error ? cause.message : String(cause);
-			process.stderr.write(`${msg}\n`);
+		const { data: handle, error } = await runUp(options);
+		if (error) {
+			process.stderr.write(`${error.message}\n`);
 			process.exit(1);
 		}
 

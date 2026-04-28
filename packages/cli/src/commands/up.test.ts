@@ -106,7 +106,7 @@ describe('runUp: happy path', () => {
 		const workspace = makeFakeWorkspace();
 		const config = makeFakeConfig(workspace);
 
-		const handle = await runUp(
+		const { data: handle, error } = await runUp(
 			{
 				dir: workDir,
 				quiet: true,
@@ -116,6 +116,8 @@ describe('runUp: happy path', () => {
 				connectTimeoutMs: 1000,
 			},
 		);
+		expect(error).toBeNull();
+		if (error) throw new Error('runUp failed unexpectedly');
 
 		// Metadata was written.
 		expect(existsSync(metadataPathFor(workDir))).toBe(true);
@@ -138,7 +140,7 @@ describe('runUp: happy path', () => {
 });
 
 describe('runUp: stale-auth fast-fail', () => {
-	test('throws "connect failed: ..." when whenReady exceeds the timeout', async () => {
+	test('returns ConnectFailed when whenReady exceeds the timeout', async () => {
 		// whenReady that never resolves; emulates a hung auth handshake.
 		const neverReady = new Promise<void>(() => {
 			/* never */
@@ -147,18 +149,18 @@ describe('runUp: stale-auth fast-fail', () => {
 		const config = makeFakeConfig(workspace);
 
 		const start = Date.now();
-		await expect(
-			runUp(
-				{
-					dir: workDir,
-					quiet: true,
-				},
-				{
-					loadConfig: async () => config,
-					connectTimeoutMs: 50,
-				},
-			),
-		).rejects.toThrow(/^connect failed:/);
+		const { error } = await runUp(
+			{
+				dir: workDir,
+				quiet: true,
+			},
+			{
+				loadConfig: async () => config,
+				connectTimeoutMs: 50,
+			},
+		);
+		expect(error?.name).toBe('ConnectFailed');
+		expect(error?.message).toMatch(/^connect failed:/);
 		const elapsed = Date.now() - start;
 		// Sanity: we exited within a small multiple of the timeout, not "hung".
 		expect(elapsed).toBeLessThan(2000);
@@ -166,9 +168,7 @@ describe('runUp: stale-auth fast-fail', () => {
 });
 
 describe('runUp: already running', () => {
-	test('throws "daemon already running (pid=X)" when a live daemon is detected', async () => {
-		// Stand up a tiny real listening server at the expected socket path so
-		// `inspectExistingDaemon` sees a responsive ping for `process.pid`.
+	test('returns AlreadyRunning when a live daemon is detected', async () => {
 		const sockPath = socketPathFor(workDir);
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
@@ -186,19 +186,20 @@ describe('runUp: already running', () => {
 		});
 
 		try {
-			await expect(
-				runUp(
-					{
-						dir: workDir,
-						quiet: true,
-					},
-					{
-						loadConfig: async () =>
-							makeFakeConfig(makeFakeWorkspace()),
-						connectTimeoutMs: 1000,
-					},
-				),
-			).rejects.toThrow(/daemon already running \(pid=/);
+			const { error } = await runUp(
+				{
+					dir: workDir,
+					quiet: true,
+				},
+				{
+					loadConfig: async () => makeFakeConfig(makeFakeWorkspace()),
+					connectTimeoutMs: 1000,
+				},
+			);
+			expect(error?.name).toBe('AlreadyRunning');
+			if (error?.name === 'AlreadyRunning') {
+				expect(error.pid).toBe(process.pid);
+			}
 		} finally {
 			server.stop();
 		}
@@ -223,7 +224,7 @@ describe('runUp: orphan path', () => {
 		const workspace = makeFakeWorkspace();
 		const config = makeFakeConfig(workspace);
 
-		const handle = await runUp(
+		const { data: handle, error } = await runUp(
 			{
 				dir: workDir,
 				quiet: true,
@@ -233,6 +234,8 @@ describe('runUp: orphan path', () => {
 				connectTimeoutMs: 1000,
 			},
 		);
+		expect(error).toBeNull();
+		if (error) throw new Error('runUp failed unexpectedly');
 
 		// Daemon came up; fresh metadata for *this* pid was written.
 		expect(handle.metadata.pid).toBe(process.pid);

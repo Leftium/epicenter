@@ -18,36 +18,35 @@ import { dirname } from 'node:path';
 import type { Hono } from 'hono';
 import {
 	defineErrors,
+	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { type Result, tryAsync } from 'wellcrafted/result';
 
 import { readMetadata, unlinkMetadata } from './metadata.js';
-
-/**
- * Structural shape of any tagged error on the wire. The type guarantees
- * `name` and `message` only; variant-specific fields survive
- * `JSON.stringify` at runtime but require narrowing on a known variant
- * union (e.g. `DaemonClientError | RunError`) to access. Callers tighten
- * via the `Result<T, ...>` `E` parameter when they need variant access.
- */
-export type SerializedError = {
-	name: string;
-	message: string;
-};
 
 /** Public handle returned by {@link bindUnixSocket}. */
 export type UnixSocketServer = { stop(): void };
 
 /**
- * Tagged-error variants for daemon startup. Currently one: another
- * daemon already owns the socket. Returned by {@link bindOrRecover}; the
- * `up` handler renders `cause.message` to stderr and exits 1.
+ * Tagged-error variants for daemon startup. `bindOrRecover` returns one of
+ * these on failure; the `up` handler renders `error.message` to stderr and
+ * exits 1.
+ *
+ * - `AlreadyRunning`: another daemon owns this dir's socket and answers ping.
+ * - `BindFailed`: `Bun.serve` raised on an unrecoverable bind error
+ *   (filesystem permission, missing parent dir we couldn't `mkdir`, etc.).
+ *   Reserved for genuinely-unexpected failures; the recovery branch
+ *   (orphan sweep + retry) handles the common stale-socket case.
  */
 export const StartupError = defineErrors({
 	AlreadyRunning: ({ pid }: { pid?: number }) => ({
 		message: `daemon already running${pid !== undefined ? ` (pid=${pid})` : ''}`,
 		pid,
+	}),
+	BindFailed: ({ cause }: { cause: unknown }) => ({
+		message: `bind failed: ${extractErrorMessage(cause)}`,
+		cause,
 	}),
 });
 export type StartupError = InferErrors<typeof StartupError>;
@@ -104,7 +103,10 @@ export async function bindOrRecover(
 		unlinkSocketFile(socketPath);
 		unlinkMetadata(dir);
 	}
-	return Ok(await bindUnixSocket(socketPath, app));
+	return tryAsync({
+		try: () => bindUnixSocket(socketPath, app),
+		catch: (cause) => StartupError.BindFailed({ cause }),
+	});
 }
 
 /**

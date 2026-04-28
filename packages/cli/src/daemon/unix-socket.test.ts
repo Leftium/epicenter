@@ -140,9 +140,10 @@ describe('bindOrRecover', () => {
 			async () => true,
 		);
 		expect(result.data).toBeNull();
-		if (result.error !== null) {
-			expect(result.error.name).toBe('AlreadyRunning');
+		if (result.error?.name === 'AlreadyRunning') {
 			expect(result.error.pid).toBe(4242);
+		} else {
+			throw new Error('expected AlreadyRunning');
 		}
 	});
 

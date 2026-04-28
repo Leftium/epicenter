@@ -1,5 +1,11 @@
 import type { WorkspaceEntry } from '../load-config';
 
+/**
+ * Resolve a single `WorkspaceEntry` from a config's exports. Throws on
+ * unknown workspace name or ambiguity (no `-w` against a multi-export
+ * config). Daemon route handlers let the throw propagate to Hono, which
+ * surfaces it on the client side as `DaemonError.HandlerCrashed`.
+ */
 export function resolveEntry(
 	entries: WorkspaceEntry[],
 	workspace: string | undefined,

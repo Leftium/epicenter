@@ -12,9 +12,9 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { buildApp } from './app';
-import type { LoadedWorkspace, WorkspaceEntry } from '../load-config';
 import type { ListResult } from '../commands/list';
+import type { LoadedWorkspace, WorkspaceEntry } from '../load-config';
+import { buildApp } from './app';
 
 function fakeEntry(
 	name: string,
@@ -31,7 +31,7 @@ function fakeEntry(
 async function postList(
 	entry: WorkspaceEntry,
 	body: unknown,
-): Promise<{ data: ListResult | null; error: { message: string } | null }> {
+): Promise<ListResult> {
 	const app = buildApp([entry], () => {});
 	const res = await app.request('/list', {
 		method: 'POST',
@@ -49,11 +49,10 @@ describe('/list route', () => {
 			waitMs: 0,
 		});
 		expect(reply.error).toBeNull();
-		expect(reply.data?.error).toBeNull();
-		if (reply.data?.error === null) {
-			expect(reply.data.data.sections).toHaveLength(1);
-			expect(reply.data.data.sections[0]!.label).toBe('demo');
-			expect(reply.data.data.sections[0]!.peer).toBe('self');
+		if (reply.error === null) {
+			expect(reply.data.sections).toHaveLength(1);
+			expect(reply.data.sections[0]!.label).toBe('demo');
+			expect(reply.data.sections[0]!.peer).toBe('self');
 		}
 	});
 
@@ -63,8 +62,7 @@ describe('/list route', () => {
 			mode: { kind: 'peer', deviceId: 'nonexistent' },
 			waitMs: 0,
 		});
-		expect(reply.error).toBeNull();
-		expect(reply.data?.error?.name).toBe('PeerMiss');
+		expect(reply.error?.name).toBe('PeerMiss');
 	});
 
 	test('all mode against a workspace without sync still emits a self section', async () => {
@@ -74,10 +72,9 @@ describe('/list route', () => {
 			waitMs: 0,
 		});
 		expect(reply.error).toBeNull();
-		expect(reply.data?.error).toBeNull();
-		if (reply.data?.error === null) {
-			expect(reply.data.data.sections).toHaveLength(1);
-			expect(reply.data.data.sections[0]!.peer).toBe('self');
+		if (reply.error === null) {
+			expect(reply.data.sections).toHaveLength(1);
+			expect(reply.data.sections[0]!.peer).toBe('self');
 		}
 	});
 });

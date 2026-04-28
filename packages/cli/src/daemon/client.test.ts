@@ -10,13 +10,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Hono } from 'hono';
-import { Err, Ok } from 'wellcrafted/result';
+import { Ok } from 'wellcrafted/result';
 
 import { daemonClient, pingDaemon } from './client';
-import {
-	bindUnixSocket,
-	type UnixSocketServer,
-} from './unix-socket';
+import { bindUnixSocket, type UnixSocketServer } from './unix-socket';
 
 let socketPath: string;
 let servers: UnixSocketServer[] = [];
@@ -59,55 +56,43 @@ describe('pingDaemon', () => {
 	});
 });
 
+// Transport-mapping coverage. We use `/peers` as the convenient probe route
+// because the actual `daemonClient` no longer exposes a `.ping()` method
+// (production callers use the boolean `pingDaemon` instead).
 describe('daemonClient', () => {
-	test('ping resolves to the bare value on success', async () => {
-		const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
+	test('peers resolves to the rows on success', async () => {
+		const app = new Hono().post('/peers', (c) => c.json(Ok([])));
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		const { data, error } = await daemonClient(socketPath).ping();
+		const { data, error } = await daemonClient(socketPath).peers({});
 		expect(error).toBeNull();
-		expect(data).toBe('pong');
+		expect(data).toEqual([]);
 	});
 
 	test('returns Unreachable when socket is missing', async () => {
 		const missing = join(tmpdir(), `definitely-not-here-${Date.now()}.sock`);
-		const { error } = await daemonClient(missing).ping();
+		const { error } = await daemonClient(missing).peers({});
 		expect(error?.name).toBe('Unreachable');
 	});
 
 	test('returns Timeout when route hangs past the deadline', async () => {
-		const app = new Hono().post('/ping', () => new Promise(() => {}));
+		const app = new Hono().post('/peers', () => new Promise(() => {}));
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		const { error } = await daemonClient(socketPath, 100).ping();
+		const { error } = await daemonClient(socketPath, 100).peers({});
 		expect(error?.name).toBe('Timeout');
 	});
 
 	test('returns HandlerCrashed on a 500 from the daemon', async () => {
-		const app = new Hono().post('/ping', () => {
+		const app = new Hono().post('/peers', () => {
 			throw new Error('kaboom');
 		});
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		const { error } = await daemonClient(socketPath).ping();
-		expect(error?.name).toBe('HandlerCrashed');
-	});
-
-	test('envelope-level error at HTTP 200 surfaces as HandlerCrashed', async () => {
-		// Routes wrap their work in a blanket try/catch that emits
-		// `{ data: null, error: SerializedError }` at HTTP 200 for unexpected
-		// handler exceptions. That envelope path is HandlerCrashed; typed
-		// domain errors flow through the inner Result instead.
-		const app = new Hono().post('/shutdown', (c) =>
-			c.json(Err({ name: 'NotFound', message: 'gone' })),
-		);
-		const server = await bindUnixSocket(socketPath, app);
-		servers.push(server);
-
-		const { error } = await daemonClient(socketPath).shutdown();
+		const { error } = await daemonClient(socketPath).peers({});
 		expect(error?.name).toBe('HandlerCrashed');
 	});
 });

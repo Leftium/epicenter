@@ -26,11 +26,12 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
+import type { ListError, ListSuccess } from '../commands/list.js';
+import type { RunError, RunSuccess } from '../commands/run.js';
 import { CONFIG_FILENAME } from '../load-config.js';
 import type { ResolvedTarget } from '../util/common-options.js';
 import type { DaemonApp, PeerSnapshot } from './app.js';
 import { socketPathFor } from './paths.js';
-import type { SerializedError } from './unix-socket.js';
 
 /**
  * Tagged-error variants returned by daemon client surfaces. Domain errors
@@ -41,10 +42,9 @@ import type { SerializedError } from './unix-socket.js';
  * - `Required`: no daemon is running for this directory; user must `up`.
  * - `Timeout`: the per-call AbortSignal fired before the daemon answered.
  * - `Unreachable`: socket missing, ECONNREFUSED, transport closed.
- * - `HandlerCrashed`: the daemon answered, but with a non-2xx status or
- *   the route's blanket try/catch surfaced a SerializedError envelope.
- *   Reserved for unexpected exceptions; typed domain errors flow through
- *   the inner Result instead.
+ * - `HandlerCrashed`: the daemon answered with a non-2xx status. Reserved
+ *   for unexpected exceptions; typed domain errors flow through the body
+ *   `Result` instead.
  */
 export const DaemonError = defineErrors({
 	MissingConfig: ({ absDir }: { absDir: string }) => ({
@@ -118,23 +118,19 @@ export async function pingDaemon(
 }
 
 /**
- * Make one route call and flatten the wire envelope.
+ * Make one route call and merge transport + domain errors into one union.
  *
- * Three failure planes collapse into one `DaemonError` union: transport
- * (connect / timeout), HTTP status (non-2xx → `HandlerCrashed`), and the
- * route's blanket `try/catch` (HTTP 200 with `{ error: SerializedError }`,
- * also `HandlerCrashed`). The success body unwraps to `T`.
- *
- * Domain errors (`UsageError`, `PeerMiss`, etc.) live INSIDE `T` — for
- * `/list` and `/run`, `T` is itself a `Result<Success, DomainErr>`. The
- * wrapper methods do that one extra unwrap; this helper stops at the
- * envelope.
+ * Every route's body is `Result<T, E>` (with `E = never` for routes that
+ * have no domain failures). On success, that body is the return value
+ * directly: success/Err narrowing happens once at the call site. On
+ * transport-plane failures (connect / timeout / non-2xx), we synthesize
+ * the matching `DaemonError` variant and return it in the same union.
  */
-async function callRoute<T>(
+async function callRoute<T, E = never>(
 	socketPath: string,
 	timeoutMs: number,
 	pending: Promise<Response>,
-): Promise<Result<T, DaemonError>> {
+): Promise<Result<T, E | DaemonError>> {
 	try {
 		const res = await pending;
 		if (!res.ok) {
@@ -144,14 +140,7 @@ async function callRoute<T>(
 				cause: body || `HTTP ${res.status}`,
 			});
 		}
-		const envelope = (await res.json()) as Result<T, SerializedError>;
-		if (envelope.error) {
-			return DaemonError.HandlerCrashed({
-				socketPath,
-				cause: envelope.error.message,
-			});
-		}
-		return Ok(envelope.data);
+		return (await res.json()) as Result<T, E>;
 	} catch (cause) {
 		if (cause instanceof Error && cause.name === 'TimeoutError') {
 			return DaemonError.Timeout({ socketPath, timeoutMs });
@@ -184,52 +173,29 @@ export function daemonClient(
 	});
 
 	return {
-		ping: () => callRoute<'pong'>(socketPath, timeoutMs, client.ping.$post()),
-
 		peers: (args: { workspace?: string }) =>
-			callRoute<PeerSnapshot[]>(
+			callRoute<PeerSnapshot[], never>(
 				socketPath,
 				timeoutMs,
 				client.peers.$post({ json: args }),
 			),
 
-		// `/list` and `/run` carry a domain `Result` inside the envelope:
-		// `callRoute` strips the envelope; we strip the inner Result so
-		// renderers narrow on a single merged union.
-		list: async (
-			args: Parameters<typeof client.list.$post>[0]['json'],
-		): Promise<
-			Result<
-				import('../commands/list.js').ListSuccess,
-				import('../commands/list.js').ListError | DaemonError
-			>
-		> => {
-			const r = await callRoute<import('../commands/list.js').ListResult>(
+		list: (args: Parameters<typeof client.list.$post>[0]['json']) =>
+			callRoute<ListSuccess, ListError>(
 				socketPath,
 				timeoutMs,
 				client.list.$post({ json: args }),
-			);
-			return r.error ? r : r.data;
-		},
+			),
 
-		run: async (
-			args: Parameters<typeof client.run.$post>[0]['json'],
-		): Promise<
-			Result<
-				import('../commands/run.js').RunSuccess,
-				import('../commands/run.js').RunError | DaemonError
-			>
-		> => {
-			const r = await callRoute<import('../commands/run.js').RunResult>(
+		run: (args: Parameters<typeof client.run.$post>[0]['json']) =>
+			callRoute<RunSuccess, RunError>(
 				socketPath,
 				timeoutMs,
 				client.run.$post({ json: args }),
-			);
-			return r.error ? r : r.data;
-		},
+			),
 
 		shutdown: () =>
-			callRoute<null>(socketPath, timeoutMs, client.shutdown.$post()),
+			callRoute<null, never>(socketPath, timeoutMs, client.shutdown.$post()),
 	};
 }
 

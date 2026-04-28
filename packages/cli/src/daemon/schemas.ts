@@ -26,6 +26,7 @@ const listMode = type({ kind: '"local"' })
 export const peersArgsSchema = type({
 	'workspace?': 'string',
 });
+export type PeersArgs = typeof peersArgsSchema.infer;
 
 export const listCtxSchema = type({
 	path: 'string',
@@ -33,11 +34,13 @@ export const listCtxSchema = type({
 	waitMs: 'number',
 	'workspace?': 'string',
 });
+export type ListCtx = typeof listCtxSchema.infer;
 
 export const runCtxSchema = type({
 	actionPath: 'string',
-	'input?': 'unknown',
+	input: 'unknown',
 	'peerTarget?': 'string',
 	waitMs: 'number',
 	'workspaceArg?': 'string',
 });
+export type RunCtx = typeof runCtxSchema.infer;

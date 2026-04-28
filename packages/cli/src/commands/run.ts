@@ -39,6 +39,7 @@ import {
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { tryGetDaemon } from '../daemon/client';
+import type { RunCtx } from '../daemon/schemas';
 import { loadConfig, type WorkspaceEntry } from '../load-config';
 import { dirOption, resolveTarget, workspaceOption } from '../util/common-options';
 import {
@@ -60,19 +61,6 @@ const peerOption: Options = {
 const waitOption: Options = {
 	type: 'number',
 	description: `Total ms to wait for peer resolution + RPC; requires --peer (default ${DEFAULT_PEER_WAIT_MS})`,
-};
-
-/**
- * Parsed inputs for {@link runCore}. Mirrors {@link ListCtx}: the daemon
- * builds it from IPC `args`, the local handler builds it from argv. The
- * shape is the wire format too.
- */
-export type RunCtx = {
-	actionPath: string;
-	input: unknown;
-	peerTarget?: string;
-	waitMs: number;
-	workspaceArg?: string;
 };
 
 /**

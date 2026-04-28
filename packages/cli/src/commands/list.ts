@@ -44,6 +44,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { tryGetDaemon } from '../daemon/client';
+import type { ListCtx } from '../daemon/schemas';
 import {
 	type AwarenessState,
 	loadConfig,
@@ -88,18 +89,6 @@ export type ListMode =
 	| { kind: 'local' }
 	| { kind: 'peer'; deviceId: string }
 	| { kind: 'all' };
-
-/**
- * Parsed inputs for {@link listCore}. Built by the yargs handler from
- * argv (local path) or by the IPC dispatcher from the wire `args`
- * (daemon path). The shape is identical so both paths feed the same
- * pure function.
- */
-export type ListCtx = {
-	path: string;
-	mode: ListMode;
-	waitMs: number;
-};
 
 /**
  * Domain errors returned by {@link listCore}. `PeerMiss` is the only failure

@@ -15,13 +15,15 @@ import { Hono } from 'hono';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
-import { listCore, type ListCtx, type ListResult } from '../commands/list.js';
+import { listCore, type ListResult } from '../commands/list.js';
 import { runCore, type RunResult } from '../commands/run.js';
 import type { WorkspaceEntry } from '../load-config.js';
 import { resolveEntry } from '../util/resolve-entry.js';
 import {
+	type ListCtx,
 	listCtxSchema,
 	peersArgsSchema,
+	type RunCtx,
 	runCtxSchema,
 } from './schemas.js';
 import type { SerializedError } from './unix-socket.js';
@@ -92,7 +94,7 @@ export function buildApp(
 			>);
 		})
 		.post('/list', sValidator('json', listCtxSchema), async (c) => {
-			const ctx = c.req.valid('json') as ListCtx & { workspace?: string };
+			const ctx = c.req.valid('json') satisfies ListCtx;
 			const found = lookup(ctx.workspace);
 			if (!found.ok) {
 				return c.json({ data: null, error: found.error } satisfies Result<
@@ -114,10 +116,7 @@ export function buildApp(
 			}
 		})
 		.post('/run', sValidator('json', runCtxSchema), async (c) => {
-			const validated = c.req.valid('json');
-			// runCore expects `input: unknown` (not optional); the schema makes it
-			// optional on the wire, so default to undefined here.
-			const ctx = { input: undefined, ...validated };
+			const ctx = c.req.valid('json') satisfies RunCtx;
 			const found = lookup(ctx.workspaceArg);
 			if (!found.ok) {
 				return c.json({ data: null, error: found.error } satisfies Result<

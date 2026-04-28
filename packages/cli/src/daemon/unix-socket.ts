@@ -21,25 +21,25 @@ import type { Hono } from 'hono';
  * Structural shape of any tagged error on the wire. The type guarantees
  * `name` and `message` only; variant-specific fields survive
  * `JSON.stringify` at runtime but require narrowing on a known variant
- * union (e.g. `IpcClientError | RunError`) to access. Callers tighten via
- * the `Result<T, ...>` `E` parameter when they need variant access.
+ * union (e.g. `DaemonClientError | RunError`) to access. Callers tighten
+ * via the `Result<T, ...>` `E` parameter when they need variant access.
  */
 export type SerializedError = {
 	name: string;
 	message: string;
 };
 
-/** Public handle returned by {@link startIpcServer}. */
-export type IpcServerHandle = { stop(): void };
+/** Public handle returned by {@link bindUnixSocket}. */
+export type UnixSocketServer = { stop(): void };
 
 /**
  * Bind `app.fetch` to a unix socket at `socketPath`. Returns the Bun
  * listener narrowed to `.stop()` so the daemon body owns lifecycle.
  */
-export async function startIpcServer(
+export async function bindUnixSocket(
 	socketPath: string,
 	app: Hono,
-): Promise<IpcServerHandle> {
+): Promise<UnixSocketServer> {
 	mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
 
 	const server = Bun.serve({

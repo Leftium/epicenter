@@ -11,19 +11,19 @@ import { join } from 'node:path';
 
 import { Hono } from 'hono';
 
-import { daemonClient, ipcPing } from './ipc-client';
+import { daemonClient, pingDaemon } from './client';
 import {
-	type IpcServerHandle,
-	startIpcServer,
-} from './ipc-server';
+	bindUnixSocket,
+	type UnixSocketServer,
+} from './unix-socket';
 
 let socketPath: string;
-let servers: IpcServerHandle[] = [];
+let servers: UnixSocketServer[] = [];
 
 beforeEach(() => {
 	socketPath = join(
 		tmpdir(),
-		`epicenter-ipc-client-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`,
+		`epicenter-daemon-client-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`,
 	);
 	servers = [];
 });
@@ -38,25 +38,25 @@ afterEach(() => {
 	}
 });
 
-describe('ipcPing', () => {
+describe('pingDaemon', () => {
 	test('returns true against a live ping route, false after server stops', async () => {
 		const app = new Hono().post('/ping', (c) =>
 			c.json({ data: 'pong', error: null }),
 		);
-		const server = await startIpcServer(socketPath, app);
+		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		expect(await ipcPing(socketPath)).toBe(true);
+		expect(await pingDaemon(socketPath)).toBe(true);
 
 		server.stop();
 		servers = [];
 
-		expect(await ipcPing(socketPath)).toBe(false);
+		expect(await pingDaemon(socketPath)).toBe(false);
 	});
 
 	test('returns false against a missing socket', async () => {
 		const missing = join(tmpdir(), `definitely-not-here-${Date.now()}.sock`);
-		expect(await ipcPing(missing)).toBe(false);
+		expect(await pingDaemon(missing)).toBe(false);
 	});
 });
 
@@ -65,7 +65,7 @@ describe('daemonClient', () => {
 		const app = new Hono().post('/ping', (c) =>
 			c.json({ data: 'pong' as const, error: null }),
 		);
-		const server = await startIpcServer(socketPath, app);
+		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
 		const result = await daemonClient(socketPath).ping();
@@ -82,7 +82,7 @@ describe('daemonClient', () => {
 
 	test('Timeout when route hangs past the deadline', async () => {
 		const app = new Hono().post('/ping', () => new Promise(() => {}));
-		const server = await startIpcServer(socketPath, app);
+		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
 		const result = await daemonClient(socketPath, 100).ping();
@@ -94,7 +94,7 @@ describe('daemonClient', () => {
 		const app = new Hono().post('/ping', () => {
 			throw new Error('kaboom');
 		});
-		const server = await startIpcServer(socketPath, app);
+		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
 		const result = await daemonClient(socketPath).ping();
@@ -103,11 +103,10 @@ describe('daemonClient', () => {
 	});
 
 	test('domain Result.error flows through with status 200', async () => {
-		// Use the shutdown route shape (no validator) to return a domain error.
 		const app = new Hono().post('/shutdown', (c) =>
 			c.json({ data: null, error: { name: 'NotFound', message: 'gone' } }),
 		);
-		const server = await startIpcServer(socketPath, app);
+		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
 		const result = await daemonClient(socketPath).shutdown();

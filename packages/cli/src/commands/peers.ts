@@ -30,11 +30,9 @@
  */
 
 import type { Argv, CommandModule } from 'yargs';
-import {
-	renderDaemonResult,
-	resolveTarget,
-	tryGetDaemon,
-} from '../daemon/sibling-dispatch';
+import { tryGetDaemon } from '../daemon/client';
+import { outputError } from '../util/format-output';
+import { resolveTarget } from '../util/common-options';
 import {
 	type AwarenessState,
 	loadConfig,
@@ -112,26 +110,29 @@ export const peersCommand: CommandModule = {
 			// awareness before snapshotting); the daemon is already warm, so
 			// only `workspace` matters on the wire.
 			const result = await daemon.peers({ workspace: target.userWorkspace });
-			await renderDaemonResult(result, (rows) => {
-				const byWorkspace = new Map<string, Map<number, AwarenessState>>();
-				for (const row of rows) {
-					let peers = byWorkspace.get(row.workspace);
-					if (!peers) {
-						peers = new Map();
-						byWorkspace.set(row.workspace, peers);
-					}
-					peers.set(row.clientID, {
-						device: row.device as AwarenessState['device'],
-					});
+			if (result.error !== null) {
+				outputError(`error: ${result.error.message}`);
+				process.exitCode = 1;
+				return;
+			}
+			const byWorkspace = new Map<string, Map<number, AwarenessState>>();
+			for (const row of result.data) {
+				let peers = byWorkspace.get(row.workspace);
+				if (!peers) {
+					peers = new Map();
+					byWorkspace.set(row.workspace, peers);
 				}
-				const snapshots: WorkspaceSnapshot[] = [];
-				for (const [name, peers] of byWorkspace) {
-					snapshots.push({ name, peers, entry: undefined });
-				}
-				emit(snapshots, {
-					elideHeader: target.userWorkspace !== undefined,
-					format,
+				peers.set(row.clientID, {
+					device: row.device as AwarenessState['device'],
 				});
+			}
+			const snapshots: WorkspaceSnapshot[] = [];
+			for (const [name, peers] of byWorkspace) {
+				snapshots.push({ name, peers, entry: undefined });
+			}
+			emit(snapshots, {
+				elideHeader: target.userWorkspace !== undefined,
+				format,
 			});
 			return;
 		}

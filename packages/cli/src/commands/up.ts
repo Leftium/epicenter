@@ -34,10 +34,10 @@ import type { Argv, CommandModule } from 'yargs';
 
 import { buildApp } from '../daemon/app.js';
 import {
-	type IpcServerHandle,
-	startIpcServer,
+	bindUnixSocket,
+	type UnixSocketServer,
 	unlinkSocketFile,
-} from '../daemon/ipc-server.js';
+} from '../daemon/unix-socket.js';
 import {
 	type DaemonMetadata,
 	inspectExistingDaemon,
@@ -168,7 +168,7 @@ export type UpOptions = {
  *   metadata + socket. Idempotent.
  */
 export type UpHandle = {
-	server: IpcServerHandle;
+	server: UnixSocketServer;
 	entries: WorkspaceEntry[];
 	config: LoadConfigResult;
 	metadata: DaemonMetadata;
@@ -182,10 +182,10 @@ export type UpHandle = {
  */
 export type RunUpDeps = {
 	loadConfig?: (dir: string) => Promise<LoadConfigResult>;
-	startIpcServer?: (
+	bindUnixSocket?: (
 		socketPath: string,
 		app: ReturnType<typeof buildApp>,
-	) => Promise<IpcServerHandle>;
+	) => Promise<UnixSocketServer>;
 	/**
 	 * Test-only override for {@link CONNECT_TIMEOUT_MS}. Production has no
 	 * way to tune this — it's a stopgap until the workspace package's
@@ -268,8 +268,8 @@ export async function runUp(
 	writeMetadata(absDir, metadata);
 
 	const app = buildApp(config.entries, () => void teardown());
-	const starter = deps.startIpcServer ?? startIpcServer;
-	let server: IpcServerHandle;
+	const starter = deps.bindUnixSocket ?? bindUnixSocket;
+	let server: UnixSocketServer;
 	try {
 		server = await starter(socketPath, app);
 	} catch (cause) {

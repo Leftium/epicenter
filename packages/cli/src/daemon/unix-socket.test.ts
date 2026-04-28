@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Hono } from 'hono';
 
+import { writeMetadata } from './metadata';
+import { metadataPathFor, socketPathFor } from './paths';
 import {
+	bindOrRecover,
 	bindUnixSocket,
 	type UnixSocketServer,
 	unlinkSocketFile,
@@ -84,5 +87,90 @@ describe('bindUnixSocket', () => {
 			method: 'POST',
 		});
 		expect(res.status).toBe(404);
+	});
+});
+
+describe('bindOrRecover', () => {
+	let originalXdg: string | undefined;
+	let runtimeRoot: string;
+	let workDir: string;
+
+	beforeEach(() => {
+		originalXdg = process.env.XDG_RUNTIME_DIR;
+		runtimeRoot = mkdtempSync(join(tmpdir(), 'ep-'));
+		process.env.XDG_RUNTIME_DIR = runtimeRoot;
+		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
+		workDir = mkdtempSync(join(tmpdir(), 'ep-d-'));
+	});
+
+	afterEach(() => {
+		if (originalXdg === undefined) delete process.env.XDG_RUNTIME_DIR;
+		else process.env.XDG_RUNTIME_DIR = originalXdg;
+		rmSync(runtimeRoot, { recursive: true, force: true });
+		rmSync(workDir, { recursive: true, force: true });
+	});
+
+	test('clean bind: succeeds and returns the server', async () => {
+		const sock = socketPathFor(workDir);
+		const app = new Hono();
+		const result = await bindOrRecover(sock, workDir, app, async () => false);
+		expect(result.error).toBeNull();
+		if (result.error === null) {
+			servers.push(result.data);
+			expect(existsSync(sock)).toBe(true);
+		}
+	});
+
+	test('ping-finds-occupant: returns AlreadyRunning with metadata pid', async () => {
+		const sock = socketPathFor(workDir);
+		const occupant = await bindUnixSocket(sock, new Hono());
+		servers.push(occupant);
+		writeMetadata(workDir, {
+			pid: 4242,
+			dir: workDir,
+			startedAt: new Date().toISOString(),
+			cliVersion: '0.0.0-test',
+			configMtime: 0,
+		});
+
+		const result = await bindOrRecover(
+			sock,
+			workDir,
+			new Hono(),
+			async () => true,
+		);
+		expect(result.data).toBeNull();
+		if (result.error !== null) {
+			expect(result.error.name).toBe('AlreadyRunning');
+			expect(result.error.pid).toBe(4242);
+		}
+	});
+
+	test('orphan recovery: phantom socket + metadata get swept and bind succeeds', async () => {
+		const sock = socketPathFor(workDir);
+		// Phantom socket file with no listener (kill -9'd predecessor).
+		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
+		await Bun.write(sock, '');
+		writeMetadata(workDir, {
+			pid: 99999999,
+			dir: workDir,
+			startedAt: new Date().toISOString(),
+			cliVersion: '0.0.0-test',
+			configMtime: 0,
+		});
+
+		const result = await bindOrRecover(
+			sock,
+			workDir,
+			new Hono(),
+			async () => false,
+		);
+		expect(result.error).toBeNull();
+		if (result.error === null) {
+			servers.push(result.data);
+			expect(existsSync(sock)).toBe(true);
+		}
+		// Stale metadata is swept on the recovery branch.
+		expect(existsSync(metadataPathFor(workDir))).toBe(false);
 	});
 });

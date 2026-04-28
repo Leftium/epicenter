@@ -16,6 +16,13 @@ import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import type { Hono } from 'hono';
+import {
+	defineErrors,
+	type InferErrors,
+} from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
+
+import { readMetadata, unlinkMetadata } from './metadata.js';
 
 /**
  * Structural shape of any tagged error on the wire. The type guarantees
@@ -31,6 +38,19 @@ export type SerializedError = {
 
 /** Public handle returned by {@link bindUnixSocket}. */
 export type UnixSocketServer = { stop(): void };
+
+/**
+ * Tagged-error variants for daemon startup. Currently one: another
+ * daemon already owns the socket. Returned by {@link bindOrRecover}; the
+ * `up` handler renders `cause.message` to stderr and exits 1.
+ */
+export const StartupError = defineErrors({
+	AlreadyRunning: ({ pid }: { pid?: number }) => ({
+		message: `daemon already running${pid !== undefined ? ` (pid=${pid})` : ''}`,
+		pid,
+	}),
+});
+export type StartupError = InferErrors<typeof StartupError>;
 
 /**
  * Bind `app.fetch` to a unix socket at `socketPath`. Returns the Bun
@@ -53,6 +73,41 @@ export async function bindUnixSocket(
 }
 
 /**
+ * Bind, but recover from a stale socket left behind by a crashed
+ * predecessor. The check is socket-first, not pid-first: a recycled pid
+ * that isn't actually serving fails the ping, same as a dead pid.
+ *
+ *   1. Socket file absent: bind clean.
+ *   2. Socket file present, ping answers: live daemon owns the dir;
+ *      return `AlreadyRunning(pid)` from the metadata sidecar.
+ *   3. Socket file present, ping silent: orphan from a crashed daemon.
+ *      Sweep socket + metadata, then bind.
+ *
+ * `Bun.serve({ unix })` overwrites an existing socket file without
+ * raising `EADDRINUSE`, so the "try-bind, recover on EADDRINUSE"
+ * pattern from POSIX TCP doesn't apply here. The pre-ping is what
+ * actually distinguishes a live daemon from an orphan.
+ *
+ * `ping` is injected so this module doesn't depend on `client.ts` (the
+ * import cycle would be ugly) and tests can stub the probe.
+ */
+export async function bindOrRecover(
+	socketPath: string,
+	dir: string,
+	app: Hono,
+	ping: (sock: string, timeoutMs?: number) => Promise<boolean>,
+): Promise<Result<UnixSocketServer, StartupError>> {
+	if (existsSync(socketPath)) {
+		if (await ping(socketPath, 250)) {
+			return StartupError.AlreadyRunning({ pid: readMetadata(dir)?.pid });
+		}
+		unlinkSocketFile(socketPath);
+		unlinkMetadata(dir);
+	}
+	return { data: await bindUnixSocket(socketPath, app), error: null };
+}
+
+/**
  * Best-effort socket-file cleanup. `Bun.serve.stop()` already unlinks on
  * graceful shutdown; this is the manual sweep for orphan-detection paths
  * (the file may have been left behind by a crashed previous daemon).
@@ -66,3 +121,4 @@ export function unlinkSocketFile(socketPath: string): void {
 		}
 	}
 }
+

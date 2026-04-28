@@ -33,14 +33,14 @@ import {
 import type { Argv, CommandModule } from 'yargs';
 
 import { buildApp } from '../daemon/app.js';
+import { pingDaemon } from '../daemon/client.js';
 import {
-	bindUnixSocket,
+	bindOrRecover,
 	type UnixSocketServer,
 	unlinkSocketFile,
 } from '../daemon/unix-socket.js';
 import {
 	type DaemonMetadata,
-	inspectExistingDaemon,
 	unlinkMetadata,
 	writeMetadata,
 } from '../daemon/metadata.js';
@@ -182,10 +182,16 @@ export type UpHandle = {
  */
 export type RunUpDeps = {
 	loadConfig?: (dir: string) => Promise<LoadConfigResult>;
-	bindUnixSocket?: (
+	/**
+	 * Test seam for the bind. Defaults to {@link bindOrRecover} with the
+	 * production `pingDaemon`; tests inject a stub that mirrors the
+	 * Result-returning shape.
+	 */
+	bind?: (
 		socketPath: string,
+		dir: string,
 		app: ReturnType<typeof buildApp>,
-	) => Promise<UnixSocketServer>;
+	) => ReturnType<typeof bindOrRecover>;
 	/**
 	 * Test-only override for {@link CONNECT_TIMEOUT_MS}. Production has no
 	 * way to tune this — it's a stopgap until the workspace package's
@@ -218,15 +224,10 @@ export async function runUp(
 	const stderr = makeStderrSink(options.quiet ? 'warn' : 'info');
 	const fileSink = makeRotatingJsonlSink(logPath);
 	const sink = composeSinks(stderr, fileSink);
-	const log = createLogger('cli/up', sink);
-
-	const inspect = await inspectExistingDaemon(absDir);
-	if (inspect.state === 'in-use') {
-		throw new Error(`daemon already running (pid=${inspect.pid})`);
-	}
-	if (inspect.state === 'orphan') {
-		log.info('cleaned orphan socket', { dir: absDir, pid: inspect.pid });
-	}
+	// Logger has no in-process consumers today (sync-status writes go
+	// straight to stderr via logSyncStatus); kept wired so future
+	// diagnostics land in the rotated log file.
+	void createLogger('cli/up', sink);
 
 	const loader = deps.loadConfig ?? loadConfig;
 	const config = await loader(absDir);
@@ -257,6 +258,26 @@ export async function runUp(
 		throw cause;
 	}
 
+	// Bind before writing our metadata. On AlreadyRunning the live
+	// daemon's sidecar must stay intact; on a stale-socket recovery
+	// `bindOrRecover` unlinks the orphan metadata internally before our
+	// successful retry, so the writeMetadata below records *our* pid.
+	const app = buildApp(config.entries, () => void teardown());
+	const bind =
+		deps.bind ??
+		((sock, dir, hono) => bindOrRecover(sock, dir, hono, pingDaemon));
+	const bindResult = await bind(socketPath, absDir, app).catch(
+		async (cause: unknown) => {
+			await safeAsyncDispose(config);
+			throw cause;
+		},
+	);
+	if (bindResult.error !== null) {
+		await safeAsyncDispose(config);
+		throw new Error(bindResult.error.message);
+	}
+	const server = bindResult.data;
+
 	const configMtime = readConfigMtime(absDir);
 	const metadata: DaemonMetadata = {
 		pid: process.pid,
@@ -266,17 +287,6 @@ export async function runUp(
 		configMtime,
 	};
 	writeMetadata(absDir, metadata);
-
-	const app = buildApp(config.entries, () => void teardown());
-	const starter = deps.bindUnixSocket ?? bindUnixSocket;
-	let server: UnixSocketServer;
-	try {
-		server = await starter(socketPath, app);
-	} catch (cause) {
-		unlinkMetadata(absDir);
-		await safeAsyncDispose(config);
-		throw cause;
-	}
 
 	let teardownPromise: Promise<void> | null = null;
 	const teardown = (): Promise<void> => {

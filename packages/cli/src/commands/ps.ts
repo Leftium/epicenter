@@ -20,11 +20,28 @@ import { pingDaemon } from '../daemon/client.js';
 import {
 	type DaemonMetadata,
 	enumerateDaemons,
-	isProcessAlive,
-	sweepOrphan,
+	unlinkMetadata,
 } from '../daemon/metadata.js';
 import { socketPathFor } from '../daemon/paths.js';
+import { unlinkSocketFile } from '../daemon/unix-socket.js';
 import { CONFIG_FILENAME } from '../load-config.js';
+
+// `ps` shows a liveness column and sweeps obviously-dead entries it sees;
+// the kernel-level `kill -0` predicate stays small and inline rather than
+// re-exported from metadata.ts (no startup-time correctness gate uses it).
+function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (cause) {
+		return (cause as NodeJS.ErrnoException).code === 'EPERM';
+	}
+}
+
+function sweepOrphan(dir: string): void {
+	unlinkMetadata(dir);
+	unlinkSocketFile(socketPathFor(dir));
+}
 
 /**
  * A row of the `ps` table.

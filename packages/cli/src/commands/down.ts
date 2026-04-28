@@ -20,7 +20,6 @@ import { daemonClient } from '../daemon/client.js';
 import {
 	type DaemonMetadata,
 	enumerateDaemons,
-	isProcessAlive,
 	readMetadata,
 	unlinkMetadata,
 } from '../daemon/metadata.js';
@@ -28,6 +27,17 @@ import { socketPathFor } from '../daemon/paths.js';
 import { dirFromArgv, dirOption } from '../util/common-options.js';
 
 const SHUTDOWN_TIMEOUT_MS = 1000;
+
+// SIGTERM fallback only fires when the IPC shutdown didn't ack; we still
+// guard the kill on pid liveness to avoid signaling a recycled pid.
+function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (cause) {
+		return (cause as NodeJS.ErrnoException).code === 'EPERM';
+	}
+}
 
 export type DownOptions = {
 	dir: string;

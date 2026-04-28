@@ -48,8 +48,8 @@ export type DownOptions = {
  * Test seam for `runDown`. Tests stub `shutdown` to simulate a hung daemon
  * and `kill` to capture the SIGTERM fallback without actually signaling pids.
  *
- * `shutdown` returns a Result: `error: null` is graceful ack, any error
- * value triggers the SIGTERM fallback.
+ * `shutdown` returns a Result: `Ok` is graceful ack, `Err` triggers the
+ * SIGTERM fallback.
  */
 export type RunDownDeps = {
 	shutdown?: (

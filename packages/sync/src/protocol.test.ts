@@ -36,6 +36,7 @@ import {
 	RPC_TYPE,
 	SYNC_MESSAGE_TYPE,
 } from './protocol';
+import { Ok } from 'wellcrafted/result';
 import { RpcError } from './rpc-errors';
 
 // ============================================================================
@@ -135,7 +136,7 @@ describe('RPC protocol', () => {
 		const encoded = encodeRpcResponse({
 			requestId: 42,
 			requesterClientId: 200,
-			result: { data: { closedCount: 3 }, error: null },
+			result: Ok({ closedCount: 3 }),
 		});
 
 		expect(decodeMessageType(encoded)).toBe(MESSAGE_TYPE.RPC);
@@ -145,7 +146,7 @@ describe('RPC protocol', () => {
 		if (decoded.type === 'response') {
 			expect(decoded.requestId).toBe(42);
 			expect(decoded.requesterClientId).toBe(200);
-			expect(decoded.result).toEqual({ data: { closedCount: 3 }, error: null });
+			expect(decoded.result).toEqual(Ok({ closedCount: 3 }));
 		}
 	});
 
@@ -192,7 +193,7 @@ describe('RPC protocol', () => {
 		const response = encodeRpcResponse({
 			requestId: 1,
 			requesterClientId: 20,
-			result: { data: 'ok', error: null },
+			result: Ok('ok'),
 		});
 
 		expect(decodeRpcMessage(request).type).toBe('request');
@@ -215,7 +216,7 @@ describe('RPC protocol', () => {
 		const encoded = encodeRpcResponse({
 			requestId: 1,
 			requesterClientId: 1,
-			result: { data: undefined, error: null },
+			result: Ok(undefined),
 		});
 		const decoded = decodeRpcMessage(encoded);
 		expect(decoded.type).toBe('response');

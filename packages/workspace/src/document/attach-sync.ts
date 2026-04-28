@@ -25,7 +25,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import {
 	Awareness as YAwareness,
@@ -452,7 +452,7 @@ export function attachSync(
 		const { error } = RpcError.Disconnected();
 		for (const [, pending] of pendingRequests) {
 			clearTimeout(pending.timer);
-			pending.resolve({ data: null, error });
+			pending.resolve(Err(error));
 		}
 		pendingRequests.clear();
 		nextRequestId = 0;
@@ -484,10 +484,7 @@ export function attachSync(
 		// ActionNotFound (typed) rather than ActionFailed wrapping a raw throw.
 		const target = resolveActionPath(actions, rpc.action);
 		if (!target) {
-			sendResponse({
-				data: null,
-				error: RpcError.ActionNotFound({ action: rpc.action }).error,
-			});
+			sendResponse(RpcError.ActionNotFound({ action: rpc.action }));
 			return;
 		}
 
@@ -1000,7 +997,7 @@ export function attachSync(
 					resolve: (result) => {
 						clearTimeout(timer);
 						if (isRpcError(result.error)) {
-							resolve({ data: null, error: result.error });
+							resolve(Err(result.error));
 						} else if (result.error != null) {
 							resolve(
 								RpcError.ActionFailed({
@@ -1012,10 +1009,7 @@ export function attachSync(
 							// Trust-the-wire cast: both RPC sides are in the same monorepo.
 							// Same pattern as tRPC/Eden Treaty — structural type safety, not
 							// runtime. Unavoidable without output schemas on actions.
-							resolve({
-								data: result.data as TMap[TAction]['output'],
-								error: null,
-							});
+							resolve(Ok(result.data as TMap[TAction]['output']));
 						}
 					},
 					timer,

@@ -22,7 +22,7 @@ import {
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Ok } from 'wellcrafted/result';
+import { Err, Ok } from 'wellcrafted/result';
 
 import { writeMetadata } from '../daemon/metadata';
 import { runDown } from './down';
@@ -96,10 +96,8 @@ describe('runDown: SIGTERM fallback', () => {
 		const result = await runDown(
 			{ dir: workDir, all: false },
 			{
-				shutdown: async () => ({
-					data: null,
-					error: { name: 'Timeout', message: 'timeout after 1000ms' },
-				}),
+				shutdown: async () =>
+					Err({ name: 'Timeout', message: 'timeout after 1000ms' }),
 				kill: (pid, sig) => {
 					killed.push({ pid, sig });
 				},

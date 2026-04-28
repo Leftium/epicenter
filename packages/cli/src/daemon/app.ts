@@ -102,6 +102,8 @@ export function buildApp(
 					SerializedError
 				>);
 			}
+			// Domain errors must arrive as HTTP 200 with serialized Result;
+			// HandlerCrashed (HTTP 500) is reserved for unexpected exceptions.
 			try {
 				const data: ListResult = await listCore(found.entry, ctx);
 				return c.json({ data, error: null } satisfies Result<
@@ -124,6 +126,8 @@ export function buildApp(
 					SerializedError
 				>);
 			}
+			// Domain errors must arrive as HTTP 200 with serialized Result;
+			// HandlerCrashed (HTTP 500) is reserved for unexpected exceptions.
 			try {
 				const data: RunResult = await runCore(found.entry, ctx);
 				return c.json({ data, error: null } satisfies Result<

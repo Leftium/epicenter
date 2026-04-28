@@ -82,7 +82,7 @@ describe('runDown: graceful', () => {
 });
 
 describe('runDown: SIGTERM fallback', () => {
-	test('falls through to kill when shutdown returns NoDaemon', async () => {
+	test('falls through to kill when shutdown returns transport error', async () => {
 		writeMetadata(workDir, {
 			pid: process.pid,
 			dir: workDir,
@@ -97,12 +97,7 @@ describe('runDown: SIGTERM fallback', () => {
 			{
 				shutdown: async () => ({
 					data: null,
-					error: {
-						name: 'NoDaemon',
-						message: 'timeout after 1000ms',
-						socketPath: '',
-						timeoutMs: 1000,
-					},
+					error: { name: 'Timeout', message: 'timeout after 1000ms' },
 				}),
 				kill: (pid, sig) => {
 					killed.push({ pid, sig });

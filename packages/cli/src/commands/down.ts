@@ -13,14 +13,10 @@
 
 import { resolve } from 'node:path';
 
+import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule } from 'yargs';
 
-import {
-	daemonClient,
-	type DaemonClientError,
-} from '../daemon/client.js';
-import type { SerializedError } from '../daemon/unix-socket.js';
-import type { Result } from 'wellcrafted/result';
+import { daemonClient } from '../daemon/client.js';
 import {
 	type DaemonMetadata,
 	enumerateDaemons,
@@ -42,14 +38,14 @@ export type DownOptions = {
  * Test seam for `runDown`. Tests stub `shutdown` to simulate a hung daemon
  * and `kill` to capture the SIGTERM fallback without actually signaling pids.
  *
- * `shutdown(socketPath, timeoutMs)` is the production wiring; the contract
- * is "the daemon ack'd cleanly when `result.error === null`."
+ * `shutdown` returns a Result: `error: null` is graceful ack, any error
+ * value triggers the SIGTERM fallback.
  */
 export type RunDownDeps = {
 	shutdown?: (
 		socketPath: string,
 		timeoutMs: number,
-	) => Promise<Result<null, DaemonClientError | SerializedError>>;
+	) => Promise<Result<unknown, unknown>>;
 	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
 
@@ -80,9 +76,8 @@ async function shutdownOne(
 	deps: Required<RunDownDeps>,
 ): Promise<DownOutcome> {
 	const sock = socketPathFor(meta.dir);
-	const reply = await deps.shutdown(sock, SHUTDOWN_TIMEOUT_MS);
-
-	if (reply.error === null) {
+	const { error } = await deps.shutdown(sock, SHUTDOWN_TIMEOUT_MS);
+	if (!error) {
 		return { kind: 'graceful', pid: meta.pid, dir: meta.dir };
 	}
 

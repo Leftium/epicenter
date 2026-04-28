@@ -38,7 +38,7 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
-import { tryGetDaemon } from '../daemon/client';
+import { type DaemonError, tryGetDaemon } from '../daemon/client';
 import type { RunCtx } from '../daemon/schemas';
 import { loadConfig, type WorkspaceEntry } from '../load-config';
 import { dirOption, resolveTarget, workspaceOption } from '../util/common-options';
@@ -175,14 +175,8 @@ export const runCommand: CommandModule = {
 		// running. Falls through to the standalone path otherwise.
 		const daemon = await tryGetDaemon(target);
 		if (daemon) {
-			const transport = await daemon.run(ctx);
-			// Outer is transport, inner is the runCore Result (UsageError, RpcError, ...).
-			if (transport.error === null) {
-				renderRunResult(transport.data, format);
-			} else {
-				outputError(`error: ${transport.error.message}`);
-				process.exitCode = 1;
-			}
+			const result = await daemon.run(ctx);
+			renderRunResult(result, format);
 			return;
 		}
 
@@ -281,7 +275,7 @@ async function invokeRemoteCore(
 }
 
 function renderRunResult(
-	result: RunResult,
+	result: Result<RunSuccess, RunError | DaemonError>,
 	format: 'json' | 'jsonl' | undefined,
 ): void {
 	if (result.error === null) {
@@ -322,6 +316,13 @@ function renderRunResult(
 				result.error.peerState,
 			);
 			process.exitCode = 2;
+			return;
+		case 'Required':
+		case 'Timeout':
+		case 'Unreachable':
+		case 'HandlerCrashed':
+			outputError(`error: ${result.error.message}`);
+			process.exitCode = 1;
 			return;
 	}
 }

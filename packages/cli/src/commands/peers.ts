@@ -109,14 +109,16 @@ export const peersCommand: CommandModule = {
 			// `wait` is a cold-path concept (the cold path uses it to settle
 			// awareness before snapshotting); the daemon is already warm, so
 			// only `workspace` matters on the wire.
-			const result = await daemon.peers({ workspace: target.userWorkspace });
-			if (result.error !== null) {
-				outputError(`error: ${result.error.message}`);
+			const { data: rows, error } = await daemon.peers({
+				workspace: target.userWorkspace,
+			});
+			if (error) {
+				outputError(`error: ${error.message}`);
 				process.exitCode = 1;
 				return;
 			}
 			const byWorkspace = new Map<string, Map<number, AwarenessState>>();
-			for (const row of result.data) {
+			for (const row of rows) {
 				let peers = byWorkspace.get(row.workspace);
 				if (!peers) {
 					peers = new Map();

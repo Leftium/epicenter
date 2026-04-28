@@ -61,56 +61,56 @@ describe('pingDaemon', () => {
 });
 
 describe('daemonClient', () => {
-	test('ping resolves to the route Result', async () => {
+	test('ping resolves to the bare value on success', async () => {
 		const app = new Hono().post('/ping', (c) =>
 			c.json({ data: 'pong' as const, error: null }),
 		);
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		const result = await daemonClient(socketPath).ping();
-		expect(result.error).toBeNull();
-		if (result.error === null) expect(result.data).toBe('pong');
+		const { data, error } = await daemonClient(socketPath).ping();
+		expect(error).toBeNull();
+		expect(data).toBe('pong');
 	});
 
-	test('NoDaemon when socket is missing', async () => {
+	test('returns Unreachable when socket is missing', async () => {
 		const missing = join(tmpdir(), `definitely-not-here-${Date.now()}.sock`);
-		const result = await daemonClient(missing).ping();
-		expect(result.data).toBeNull();
-		if (result.error !== null) expect(result.error.name).toBe('NoDaemon');
+		const { error } = await daemonClient(missing).ping();
+		expect(error?.name).toBe('Unreachable');
 	});
 
-	test('Timeout when route hangs past the deadline', async () => {
+	test('returns Timeout when route hangs past the deadline', async () => {
 		const app = new Hono().post('/ping', () => new Promise(() => {}));
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		const result = await daemonClient(socketPath, 100).ping();
-		expect(result.data).toBeNull();
-		if (result.error !== null) expect(result.error.name).toBe('Timeout');
+		const { error } = await daemonClient(socketPath, 100).ping();
+		expect(error?.name).toBe('Timeout');
 	});
 
-	test('HandlerCrashed on a 500 from the daemon', async () => {
+	test('returns HandlerCrashed on a 500 from the daemon', async () => {
 		const app = new Hono().post('/ping', () => {
 			throw new Error('kaboom');
 		});
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		const result = await daemonClient(socketPath).ping();
-		expect(result.data).toBeNull();
-		if (result.error !== null) expect(result.error.name).toBe('HandlerCrashed');
+		const { error } = await daemonClient(socketPath).ping();
+		expect(error?.name).toBe('HandlerCrashed');
 	});
 
-	test('domain Result.error flows through with status 200', async () => {
+	test('envelope-level error at HTTP 200 surfaces as HandlerCrashed', async () => {
+		// Routes wrap their work in a blanket try/catch that emits
+		// `{ data: null, error: SerializedError }` at HTTP 200 for unexpected
+		// handler exceptions. That envelope path is HandlerCrashed; typed
+		// domain errors flow through the inner Result instead.
 		const app = new Hono().post('/shutdown', (c) =>
 			c.json({ data: null, error: { name: 'NotFound', message: 'gone' } }),
 		);
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		const result = await daemonClient(socketPath).shutdown();
-		expect(result.data).toBeNull();
-		if (result.error !== null) expect(result.error.name).toBe('NotFound');
+		const { error } = await daemonClient(socketPath).shutdown();
+		expect(error?.name).toBe('HandlerCrashed');
 	});
 });

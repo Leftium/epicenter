@@ -121,9 +121,7 @@ describe('listCore: IPC parity', () => {
 				mode: { kind: 'local' },
 				waitMs: 0,
 			});
-			expect(reply.error).toBeNull();
-			if (reply.error !== null) return;
-			expect(reply.data).toEqual(direct);
+			expect(reply).toEqual(direct);
 		} finally {
 			server.stop();
 		}

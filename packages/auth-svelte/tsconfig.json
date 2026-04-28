@@ -1,3 +1,6 @@
 {
-	"extends": "../../tsconfig.base.dom.json"
+	"extends": "../../tsconfig.base.dom.json",
+	"compilerOptions": {
+		"types": ["bun"]
+	}
 }

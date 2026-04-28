@@ -2,11 +2,9 @@
  * `epicenter up`: start the long-lived foreground daemon for one `--dir`.
  *
  * Loads every workspace exported by `epicenter.config.ts` and exposes a
- * Unix-socket IPC channel for that `--dir`. While `up` is running, sibling
- * commands (`peers`, `list`, `run`) **attach** to this daemon over IPC
- * instead of opening their own workspaces. Without `up`, those siblings
- * run **standalone**: each invocation opens the config itself, does its
- * work, and closes.
+ * Unix-socket IPC channel for that `--dir`. `peers`, `list`, and `run`
+ * dispatch to this daemon over IPC; without `up` they error with a hint
+ * pointing back here.
  *
  * One daemon per `--dir`; that daemon serves every workspace the config
  * exports (Invariant 7). Resource isolation between workspaces is

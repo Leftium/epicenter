@@ -5,10 +5,10 @@
  * `epicenter.config.ts` exports more than one opened handle.
  *
  * {@link resolveTarget} is the canonical way to consume both flags at
- * once. Every attached-mode command (`list`, `run`, `peers`) builds it
- * at the top of its handler; the result feeds both the daemon probe
- * (`tryGetDaemon`) and the cold-path config loader, so the two paths
- * share one source of truth for `--dir` / `--workspace`.
+ * once. Every daemon-dispatching command (`list`, `run`, `peers`)
+ * builds it at the top of its handler; the result feeds `getDaemon`,
+ * which resolves the typed daemon client or surfaces `MissingConfig` /
+ * `Required` for the renderer.
  */
 
 import { resolve } from 'node:path';
@@ -41,8 +41,8 @@ export function workspaceFromArgv(
 
 /**
  * Resolved `--dir` + `--workspace` for a single command invocation. One
- * source of truth: every handler builds this once at the top, then passes
- * it to the daemon probe and to the cold-path config loader.
+ * source of truth: every handler builds this once at the top, then
+ * passes it to `getDaemon`.
  */
 export type ResolvedTarget = {
 	absDir: string;

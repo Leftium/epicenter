@@ -21,9 +21,10 @@ bun x epicenter auth login        # one-time, https://api.epicenter.so
 bun x epicenter up --dir examples/notes-cross-peer/peer-a
 ```
 
-**Terminal 2** — peer-b auto-detects the daemon and reuses its warm connection:
+**Terminal 2** — bring peer-b online too, then dispatch via its daemon to peer-a:
 
 ```bash
+bun x epicenter up --dir examples/notes-cross-peer/peer-b &
 bun x epicenter list --dir examples/notes-cross-peer/peer-b --peer notes-repro-peer-a
 bun x epicenter list --dir examples/notes-cross-peer/peer-b --peer notes-repro-peer-a notes.add
 bun x epicenter run  --dir examples/notes-cross-peer/peer-b --peer notes-repro-peer-a notes.add '{"body":"from peer-b"}'

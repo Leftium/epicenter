@@ -38,12 +38,17 @@ The package exposes the `epicenter` binary via `src/bin.ts`.
 
 ## The four commands
 
+`run`, `list`, and `peers` dispatch to the local `epicenter up` daemon for the resolved `--dir`. Start it once at the top of your session (`epicenter up &`), then run as many shell-shortcut commands as you want; without `up`, those three verbs error with a hint pointing back here. `up`, `down`, `ps`, `logs`, and `auth` work without a daemon.
+
 ```bash
 # auth — server session (pre-workspace; no --dir or --workspace)
 epicenter auth login                              # defaults to https://api.epicenter.so
 epicenter auth login https://self-hosted.example  # self-hosted override
 epicenter auth status                             # most recent session
 epicenter auth logout                             # most recent session
+
+# up — bring the workspace online as a callable peer (run once per session)
+epicenter up &
 
 # list — what actions are exposed (local by default; --peer / --all for remote)
 epicenter list                                      # local: every export + full tree

@@ -34,6 +34,7 @@ import {
 	output,
 	outputError,
 } from '../util/format-output';
+import type { ResolveError } from '../util/resolve-entry';
 
 const DEFAULT_WAIT_MS = 500;
 
@@ -81,7 +82,7 @@ export const ListError = defineErrors({
 export type ListError = InferErrors<typeof ListError>;
 
 export type ListSuccess = { sections: Section[]; mode: ListMode };
-export type ListResult = Result<ListSuccess, ListError>;
+export type ListResult = Result<ListSuccess, ListError | ResolveError>;
 
 const peerOption: Options = {
 	type: 'string',
@@ -158,7 +159,7 @@ function parseMode(args: Record<string, unknown>): ListMode | null {
 }
 
 async function renderResult(
-	result: Result<ListSuccess, ListError | DaemonError>,
+	result: Result<ListSuccess, ListError | ResolveError | DaemonError>,
 	path: string,
 	format: Format,
 ): Promise<void> {
@@ -173,12 +174,14 @@ async function renderResult(
 					outputError(`  reason: ${result.error.emptyReason}`);
 				process.exitCode = 3;
 				return;
+			case 'UnknownWorkspace':
+			case 'AmbiguousWorkspace':
 			case 'MissingConfig':
 			case 'Required':
 			case 'Timeout':
 			case 'Unreachable':
 			case 'HandlerCrashed':
-				outputError(result.error.message);
+				outputError(`error: ${result.error.message}`);
 				process.exitCode = 1;
 				return;
 		}

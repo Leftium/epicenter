@@ -30,6 +30,7 @@ import type { ListError, ListSuccess } from '../commands/list.js';
 import type { RunError, RunSuccess } from '../commands/run.js';
 import { CONFIG_FILENAME } from '../load-config.js';
 import type { ResolvedTarget } from '../util/common-options.js';
+import type { ResolveError } from '../util/resolve-entry.js';
 import type { DaemonApp, PeerSnapshot } from './app.js';
 import { socketPathFor } from './paths.js';
 
@@ -181,14 +182,14 @@ export function daemonClient(
 			),
 
 		list: (args: Parameters<typeof client.list.$post>[0]['json']) =>
-			callRoute<ListSuccess, ListError>(
+			callRoute<ListSuccess, ListError | ResolveError>(
 				socketPath,
 				timeoutMs,
 				client.list.$post({ json: args }),
 			),
 
 		run: (args: Parameters<typeof client.run.$post>[0]['json']) =>
-			callRoute<RunSuccess, RunError>(
+			callRoute<RunSuccess, RunError | ResolveError>(
 				socketPath,
 				timeoutMs,
 				client.run.$post({ json: args }),

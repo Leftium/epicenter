@@ -16,7 +16,7 @@ import { sValidator } from '@hono/standard-validator';
 import { PeerDevice } from '@epicenter/workspace';
 import { type } from 'arktype';
 import { Hono } from 'hono';
-import { Ok } from 'wellcrafted/result';
+import { Err, Ok } from 'wellcrafted/result';
 
 import { resolveEntry } from '../util/resolve-entry.js';
 import type { WorkspaceEntry } from '../load-config.js';
@@ -50,9 +50,9 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * is queued. We use `setTimeout(.., 0)` rather than `queueMicrotask` so the
  * response bytes hit the wire before the server begins teardown.
  *
- * `resolveEntry` throws when the requested workspace doesn't exist; we let
- * those throws propagate to Hono (HTTP 500), which the client surfaces as
- * `DaemonError.HandlerCrashed`. Same path as any other unexpected exception.
+ * `resolveEntry` returns a `ResolveError` for typo'd or missing `-w`; we
+ * fold that into the route's body `Result` so the user sees a clean
+ * error, not `DaemonError.HandlerCrashed`.
  */
 export function buildApp(
 	entries: WorkspaceEntry[],
@@ -78,12 +78,14 @@ export function buildApp(
 		})
 		.post('/list', sValidator('json', listCtxSchema), async (c) => {
 			const ctx = c.req.valid('json') satisfies ListCtx;
-			const entry = resolveEntry(entries, ctx.workspace);
+			const { data: entry, error } = resolveEntry(entries, ctx.workspace);
+			if (error) return c.json(Err(error));
 			return c.json(await executeList(entry, ctx));
 		})
 		.post('/run', sValidator('json', runCtxSchema), async (c) => {
 			const ctx = c.req.valid('json') satisfies RunCtx;
-			const entry = resolveEntry(entries, ctx.workspaceArg);
+			const { data: entry, error } = resolveEntry(entries, ctx.workspaceArg);
+			if (error) return c.json(Err(error));
 			return c.json(await executeRun(entry, ctx));
 		})
 		.post('/shutdown', (c) => {

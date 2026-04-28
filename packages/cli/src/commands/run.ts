@@ -28,6 +28,7 @@ import type { Argv, CommandModule, Options } from 'yargs';
 import { type DaemonError, getDaemon } from '../daemon/client';
 import type { RunCtx } from '../daemon/schemas';
 import type { AwarenessState } from '../load-config';
+import type { ResolveError } from '../util/resolve-entry';
 import {
 	dirOption,
 	resolveTarget,
@@ -114,7 +115,7 @@ export const RunError = defineErrors({
 export type RunError = InferErrors<typeof RunError>;
 
 export type RunSuccess = { data: unknown };
-export type RunResult = Result<RunSuccess, RunError>;
+export type RunResult = Result<RunSuccess, RunError | ResolveError>;
 
 export const runCommand: CommandModule = {
 	command: 'run <action> [input]',
@@ -171,7 +172,7 @@ export const runCommand: CommandModule = {
 };
 
 function renderRunResult(
-	result: Result<RunSuccess, RunError | DaemonError>,
+	result: Result<RunSuccess, RunError | ResolveError | DaemonError>,
 	format: 'json' | 'jsonl' | undefined,
 ): void {
 	if (result.error === null) {
@@ -213,12 +214,14 @@ function renderRunResult(
 			);
 			process.exitCode = 2;
 			return;
+		case 'UnknownWorkspace':
+		case 'AmbiguousWorkspace':
 		case 'MissingConfig':
 		case 'Required':
 		case 'Timeout':
 		case 'Unreachable':
 		case 'HandlerCrashed':
-			outputError(result.error.message);
+			outputError(`error: ${result.error.message}`);
 			process.exitCode = 1;
 			return;
 	}

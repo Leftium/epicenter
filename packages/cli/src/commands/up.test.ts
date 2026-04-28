@@ -32,6 +32,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { Ok } from 'wellcrafted/result';
+
 import { bindUnixSocket } from '../daemon/unix-socket';
 import { writeMetadata } from '../daemon/metadata';
 import { metadataPathFor, socketPathFor } from '../daemon/paths';
@@ -112,7 +114,7 @@ describe('runUp: happy path', () => {
 				quiet: true,
 			},
 			{
-				loadConfig: async () => config,
+				loadConfig: async () => Ok(config),
 				connectTimeoutMs: 1000,
 			},
 		);
@@ -155,7 +157,7 @@ describe('runUp: stale-auth fast-fail', () => {
 				quiet: true,
 			},
 			{
-				loadConfig: async () => config,
+				loadConfig: async () => Ok(config),
 				connectTimeoutMs: 50,
 			},
 		);
@@ -192,7 +194,7 @@ describe('runUp: already running', () => {
 					quiet: true,
 				},
 				{
-					loadConfig: async () => makeFakeConfig(makeFakeWorkspace()),
+					loadConfig: async () => Ok(makeFakeConfig(makeFakeWorkspace())),
 					connectTimeoutMs: 1000,
 				},
 			);
@@ -230,7 +232,7 @@ describe('runUp: orphan path', () => {
 				quiet: true,
 			},
 			{
-				loadConfig: async () => config,
+				loadConfig: async () => Ok(config),
 				connectTimeoutMs: 1000,
 			},
 		);

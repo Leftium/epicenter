@@ -45,6 +45,7 @@ import { socketPathFor } from '../daemon/paths.js';
 import {
 	CONFIG_FILENAME,
 	type LoadConfigResult,
+	type LoadError,
 	type WorkspaceEntry,
 	loadConfig,
 } from '../load-config.js';
@@ -88,25 +89,17 @@ export type UpOptions = {
 };
 
 /**
- * Tagged-error variants `runUp` returns on failure.
+ * `runUp`'s own failure variant: a workspace's `whenReady` /
+ * `whenConnected` didn't resolve within the connect timeout. The cause
+ * from `raceTimeout` already carries the entry name + reason.
  *
- * - `LoadFailed`: `loadConfig` rejected. Wraps the cause; today the
- *   message is "No epicenter.config.ts in <dir>" or "No workspaces
- *   found...". The user-facing wording stays the same.
- * - `ConnectFailed`: a workspace's `whenReady`/`whenConnected` didn't
- *   resolve within the connect timeout. Carries the cause from
- *   `raceTimeout` (which already includes the entry name + reason).
- *
- * Bind-time failures (`AlreadyRunning`, `BindFailed`) come from
- * {@link StartupError} in `unix-socket.ts`; we union them in the return
- * type rather than re-mapping. The yargs handler doesn't care which
- * union it came from: `error.message` and exit-1 either way.
+ * Config-load failures come from {@link LoadError} (in `load-config.ts`)
+ * and bind failures from {@link StartupError} (in `unix-socket.ts`); both
+ * unioned into the return type rather than re-wrapped. The yargs handler
+ * doesn't care which union it came from: `error.message` and exit-1
+ * either way.
  */
 export const RunUpError = defineErrors({
-	LoadFailed: ({ cause }: { cause: unknown }) => ({
-		message: extractErrorMessage(cause),
-		cause,
-	}),
 	ConnectFailed: ({ cause }: { cause: unknown }) => ({
 		message: extractErrorMessage(cause),
 		cause,
@@ -141,7 +134,9 @@ export type UpHandle = {
  * handler passes the production defaults; `up.test.ts` passes fakes.
  */
 export type RunUpDeps = {
-	loadConfig?: (dir: string) => Promise<LoadConfigResult>;
+	loadConfig?: (
+		dir: string,
+	) => Promise<Result<LoadConfigResult, LoadError>>;
 	/**
 	 * Test seam for the bind. Defaults to {@link bindOrRecover} with the
 	 * production `pingDaemon`; tests inject a stub that mirrors the
@@ -176,16 +171,14 @@ export type RunUpDeps = {
 export async function runUp(
 	options: UpOptions,
 	deps: RunUpDeps = {},
-): Promise<Result<UpHandle, RunUpError | StartupError>> {
+): Promise<Result<UpHandle, RunUpError | LoadError | StartupError>> {
 	const absDir = resolve(options.dir);
 	const socketPath = socketPathFor(absDir);
 
 	const loader = deps.loadConfig ?? loadConfig;
-	const { data: config, error: loadErr } = await tryAsync({
-		try: () => loader(absDir),
-		catch: (cause) => RunUpError.LoadFailed({ cause }),
-	});
-	if (loadErr) return RunUpError.LoadFailed({ cause: loadErr.cause });
+	const loadResult = await loader(absDir);
+	if (loadResult.error) return loadResult;
+	const config = loadResult.data;
 
 	// Wait for every workspace's "ready to accept RPC" gate concurrently.
 	// One bad workspace fails the whole daemon; see runUp's docstring.

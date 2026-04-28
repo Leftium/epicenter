@@ -12,31 +12,32 @@
  *   3 — peer-miss (`--peer <target>` didn't resolve within `--wait`)
  */
 
-import { invokeNormalized } from '@epicenter/workspace';
+import {
+	type Action,
+	invokeAction,
+	resolveActionPath,
+	walkActions,
+} from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
-import { loadConfig, type LoadConfigResult } from '../load-config';
-import { readPeers } from '../util/awareness';
+import { loadConfig, type WorkspaceEntry } from '../load-config';
 import {
 	dirFromArgv,
 	dirOption,
 	workspaceFromArgv,
 	workspaceOption,
 } from '../util/common-options';
-import { emitMissError, emitRpcError } from '../util/emit-peer-errors';
-import { findPeer, type FindPeerResult } from '../util/find-peer';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
+import { explainEmpty, waitForPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
-import { actionsUnder, findAction } from '../util/walk-actions';
+import { emitMissError, emitRpcError } from '../util/run-peer-errors';
 
-const POLL_INTERVAL_MS = 100;
 const DEFAULT_PEER_WAIT_MS = 5000;
 
 const peerOption: Options = {
 	type: 'string',
-	description:
-		'Remote peer target: <field>=<value> or numeric clientID',
+	description: 'Invoke on a remote peer by deviceId',
 };
 
 const waitOption: Options = {
@@ -68,35 +69,32 @@ export const runCommand: CommandModule = {
 			.strict(),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
-		const { entries, dispose } = await loadConfig(dirFromArgv(args));
-		try {
-			const entry = resolveEntry(entries, workspaceFromArgv(args));
-			await invoke(args, entry);
-		} finally {
-			await dispose();
-		}
+		await using config = await loadConfig(dirFromArgv(args));
+		const entry = resolveEntry(config.entries, workspaceFromArgv(args));
+		await invoke(args, entry);
 	},
 };
 
 async function invoke(
 	argv: Record<string, unknown>,
-	entry: LoadConfigResult['entries'][number],
+	entry: WorkspaceEntry,
 ): Promise<void> {
 	const actionPath = String(argv.action);
 	const { workspace } = entry;
 
-	await workspace.whenReady;
+	if (workspace.whenReady) await workspace.whenReady;
 
-	const action = findAction(workspace.actions, actionPath);
+	const action = resolveActionPath(workspace.actions ?? {}, actionPath);
 	if (!action) {
-		const descendants = actionsUnder(workspace.actions, actionPath);
+		const entries = [...walkActions(workspace.actions ?? {})];
+		const descendants = entriesUnder(entries, actionPath);
 		if (descendants.length > 0) {
 			outputError(`"${actionPath}" is not a runnable action.`);
 			emitActionList(descendants);
 			throw new Error('Not an action');
 		}
 		outputError(`"${actionPath}" is not defined.`);
-		emitNearestSiblings(workspace.actions, actionPath);
+		emitNearestSiblings(entries, actionPath);
 		throw new Error('Action not found');
 	}
 
@@ -120,7 +118,7 @@ async function invoke(
 		return;
 	}
 
-	const result = await invokeNormalized(action, input, actionPath);
+	const result = await invokeAction(action, input, actionPath);
 	if (result.error !== null) {
 		outputError(extractErrorMessage(result.error));
 		process.exitCode = 2; // runtime error (local Err)
@@ -130,7 +128,7 @@ async function invoke(
 }
 
 type InvokeRemoteOptions = {
-	entry: LoadConfigResult['entries'][number];
+	entry: WorkspaceEntry;
 	actionPath: string;
 	input: unknown;
 	peerTarget: string;
@@ -157,26 +155,22 @@ async function invokeRemote({
 		);
 	}
 
+	// `--wait` is the end-to-end budget: peer resolution + RPC share one
+	// deadline. If the peer is already in awareness, RPC gets the full
+	// budget; if peer resolution chews 4s of 5s, RPC gets 1s. Users care
+	// about total latency, not per-phase breakdown — see waitOption
+	// description.
 	const deadline = Date.now() + waitMs;
-	let lastResult: FindPeerResult = { kind: 'not-found' };
-	let sawPeers = false;
-
-	while (true) {
-		const peers = readPeers(workspace);
-		if (peers.size > 0) sawPeers = true;
-		lastResult = findPeer(peerTarget, peers);
-		if (lastResult.kind !== 'not-found') break;
-		if (Date.now() >= deadline) break;
-		await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-	}
-
-	if (lastResult.kind !== 'found') {
-		emitMissError(peerTarget, lastResult, sawPeers, workspaceArg, waitMs);
+	const { hit, sawPeers } = await waitForPeer(workspace, peerTarget, deadline);
+	if (!hit) {
+		emitMissError(peerTarget, sawPeers, workspaceArg, waitMs);
+		const why = explainEmpty(workspace);
+		if (why) outputError(`  reason: ${why}`);
 		process.exitCode = 3; // peer miss
 		return;
 	}
 
-	const { clientID: targetClientId, state: peerState } = lastResult;
+	const { clientID: targetClientId, state: peerState } = hit;
 	const remaining = Math.max(1, deadline - Date.now());
 	const result = await sync.rpc(targetClientId, actionPath, input, {
 		timeout: remaining,
@@ -201,9 +195,16 @@ async function resolveInput(
 	return parseJsonInput({ positional, stdinContent });
 }
 
-function emitActionList(
-	descendants: Array<[string, { type: string }]>,
-): void {
+function entriesUnder(
+	entries: Array<[string, Action]>,
+	prefix: string,
+): Array<[string, Action]> {
+	if (!prefix) return entries;
+	const pfx = prefix + '.';
+	return entries.filter(([p]) => p === prefix || p.startsWith(pfx));
+}
+
+function emitActionList(descendants: Array<[string, Action]>): void {
 	outputError('');
 	outputError('Exposed actions at this path:');
 	for (const [path, action] of descendants) {
@@ -216,12 +217,15 @@ function emitActionList(
  * that has any exposed actions and emit them as suggestions. If nothing
  * matches, stay silent — the top-level "not defined" error stands alone.
  */
-function emitNearestSiblings(actions: unknown, missedPath: string): void {
+function emitNearestSiblings(
+	entries: Array<[string, Action]>,
+	missedPath: string,
+): void {
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();
 		const prefix = parts.join('.');
-		const alts = actionsUnder(actions, prefix);
+		const alts = entriesUnder(entries, prefix);
 		if (alts.length === 0) continue;
 		emitActionList(alts);
 		return;

@@ -5,14 +5,20 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	dispatchAction,
+	type DeviceDescriptor,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createEntryContentDoc } from '$lib/entry-content-docs';
 import type { EntryId } from '$lib/workspace';
 import { openFuji as openFujiDoc } from './index';
 
-export function openFuji({ auth }: { auth: AuthClient }) {
+export function openFuji({
+	auth,
+	device,
+}: {
+	auth: AuthClient;
+	device: DeviceDescriptor;
+}) {
 	const doc = openFujiDoc();
 
 	const idb = attachIndexedDb(doc.ydoc);
@@ -30,12 +36,11 @@ export function openFuji({ auth }: { auth: AuthClient }) {
 		{ gcTime: 5_000 },
 	);
 
-	const sync = attachSync(doc.ydoc, {
+	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb.whenLoaded,
-		awareness: doc.awareness.raw,
+		waitFor: idb,
+		device,
 		getToken: () => auth.getToken(),
-		dispatch: (action, input) => dispatchAction(doc.actions, action, input),
 	});
 
 	return {
@@ -43,6 +48,11 @@ export function openFuji({ auth }: { auth: AuthClient }) {
 		idb,
 		entryContentDocs,
 		sync,
+		/**
+		 * Resolves when IndexedDB has hydrated the local snapshot — the UI can
+		 * render with persisted data. Does NOT gate sync (the WebSocket can
+		 * connect at any time, including never if the user is offline).
+		 */
 		whenReady: idb.whenLoaded,
 	};
 }

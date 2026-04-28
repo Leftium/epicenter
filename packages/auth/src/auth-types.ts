@@ -1,4 +1,4 @@
-import { EncryptionKeys } from '@epicenter/workspace';
+import { EncryptionKeys } from '@epicenter/workspace/encryption-key';
 import { type } from 'arktype';
 
 /**

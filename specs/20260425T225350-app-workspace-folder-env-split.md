@@ -1,7 +1,7 @@
 # App workspace folder + environment split
 
 **Date**: 2026-04-25
-**Status**: Implemented (manual smoke tests pending)
+**Status**: shipped (manual smoke tests pending)
 **Author**: AI-assisted (Braden + Claude)
 **Branch**: drop-document-factory
 

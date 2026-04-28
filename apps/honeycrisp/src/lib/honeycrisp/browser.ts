@@ -5,14 +5,20 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	dispatchAction,
+	type DeviceDescriptor,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createNoteBodyDoc } from '$lib/note-body-docs';
 import type { NoteId } from '$lib/workspace';
 import { openHoneycrisp as openHoneycrispDoc } from './index';
 
-export function openHoneycrisp({ auth }: { auth: AuthClient }) {
+export function openHoneycrisp({
+	auth,
+	device,
+}: {
+	auth: AuthClient;
+	device: DeviceDescriptor;
+}) {
 	const doc = openHoneycrispDoc();
 
 	const idb = attachIndexedDb(doc.ydoc);
@@ -30,11 +36,11 @@ export function openHoneycrisp({ auth }: { auth: AuthClient }) {
 		{ gcTime: 5_000 },
 	);
 
-	const sync = attachSync(doc.ydoc, {
+	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb.whenLoaded,
+		waitFor: idb,
+		device,
 		getToken: () => auth.getToken(),
-		dispatch: (action, input) => dispatchAction(doc.actions, action, input),
 	});
 
 	return {
@@ -42,6 +48,11 @@ export function openHoneycrisp({ auth }: { auth: AuthClient }) {
 		idb,
 		noteBodyDocs,
 		sync,
+		/**
+		 * Resolves when IndexedDB has hydrated the local snapshot — the UI can
+		 * render with persisted data. Does NOT gate sync (the WebSocket can
+		 * connect at any time, including never if the user is offline).
+		 */
 		whenReady: idb.whenLoaded,
 	};
 }

@@ -205,6 +205,24 @@ describe('RPC protocol', () => {
 			'Expected RPC message (101), got 0',
 		);
 	});
+
+	// The discriminator is the value of `error` (wellcrafted Result convention),
+	// not key presence. JSON.stringify drops `data: undefined`, so a void
+	// handler's response arrives as `{ error: null }` with no `data` key —
+	// that is fine: the decoder validates on `error`, callers discriminate on
+	// `error === null`, and `result.data` is correctly `undefined`.
+	test('void handler round-trips: data dropped on wire, decodes as success', () => {
+		const encoded = encodeRpcResponse({
+			requestId: 1,
+			requesterClientId: 1,
+			result: { data: undefined, error: null },
+		});
+		const decoded = decodeRpcMessage(encoded);
+		expect(decoded.type).toBe('response');
+		if (decoded.type !== 'response') return;
+		expect(decoded.result.error).toBeNull();
+		expect(decoded.result.data).toBeUndefined();
+	});
 });
 
 describe('SYNC_MESSAGE_TYPE constants', () => {

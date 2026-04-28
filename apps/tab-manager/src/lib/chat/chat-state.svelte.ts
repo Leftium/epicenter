@@ -47,7 +47,6 @@ import {
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
 import { auth, tabManager, workspaceAiTools } from '$lib/tab-manager/client';
-import { getDeviceId } from '$lib/device/device-id';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -148,7 +147,7 @@ function createAiChatState() {
 			connection: fetchServerSentEvents(
 				`${APP_URLS.API}/ai/chat`,
 				async () => {
-					const deviceId = await getDeviceId();
+					const { id: deviceId } = tabManager.device;
 					return {
 						fetchClient: createAiChatFetch(auth.fetch),
 						body: {

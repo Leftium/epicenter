@@ -275,6 +275,62 @@ State the simplest possible description of what the old system accomplished, the
 
 The fix then lands with zero effort—the reader is already rooting for it.
 
+##### Lead with What Dies (API-collapse PRs)
+
+For PRs that delete or fundamentally reshape an established API surface — especially when the change ripples across many call sites or packages — flip the usual "open with WHY" into a stronger variant: **open with what dies, named explicitly, and let the deletion verb do the work.** The reader anchors on what's gone before what arrives, which makes the rest of the description make sense.
+
+Use this only for PRs where the deletion IS the news. Bug fixes, additive features, and refactors that don't change call sites should use the standard motivation-first opener instead. Counting callers is the quick test — if the change is invisible to call sites, this isn't the right framing.
+
+Four moves that compose:
+
+**1. Open with the deletion verb, naming the dying API.**
+
+> This branch deletes `defineWorkspace` and the `withExtension` chain that drove every workspace in the codebase for a year. The terminal API is **`attach*` primitives composed inline against a Y.Doc the caller owns** — no builder, no extension slots, no framework-imposed bundle shape.
+
+Not "this PR introduces a new composition primitive." Not "we restructured how workspaces are built." *Deletes*, named, with the timespan that makes the stakes clear.
+
+**2. Show concrete before/after at the headline.**
+
+The before/after code block goes in the first hundred words, not after pages of context. A reader who only reads the opening already knows the shape change. This is stronger than the standard "code examples mandatory for API changes" rule — for API-collapse PRs, the before/after IS the headline.
+
+**3. Diagnose the old API without abstract complaints.**
+
+> The chain wasn't doing real work. Each `.withExtension(name, factory)` call was a typed closure with extra ceremony to make the extension's exports reachable through the framework's generic shape. Once you have a Y.Doc as a local variable, `attachIndexedDb(ydoc)` is shorter and exposes its own typed handle (`idb.whenLoaded`, `idb.clearLocal`) without traveling through a slot.
+
+Specific. Falsifiable. A reader who disagrees can point to which sentence is wrong. Not "the chain was unmaintainable" or "the API didn't scale."
+
+**4. Name every type that died as an explicit inventory; name the survivor with the reason it earned its keep.**
+
+> `Document` (a structural contract for "what a workspace returns"), `DocumentBundle`, `DocumentHandle` (a refcounted brand around bundles), `DocumentFactory`, `createDocumentFactory`, `defineDocument`, `defineWorkspace`, `ActionIndex` (a flat map of branded actions walked from arbitrary bundles), `iterateActions`, `ACTION_BRAND` (the symbol that made the walk possible), `entry.handle` envelope in the CLI loader — all gone. What's left is the smallest set of primitives that can build everything those layers were built to do, plus one piece of factory-shaped infrastructure (`createDisposableCache`) that survived because it does work the caller can't trivially do inline: refcount + grace-period teardown for any `Disposable`.
+
+Not "and other types" — the actual list, parenthetically annotated. Two reasons: (a) it lets the reader grep, (b) it forces the author to verify the inventory is exhaustive. The survivor gets a *justification* in the same sentence — not "we kept the cache" but "survived because it does work the caller can't trivially do inline." Without that justification, the reader assumes the survivor is leftover scaffolding and tries to delete it later.
+
+**Cascade structure when the deletion ripples through layers.**
+
+If the deletion forces structural changes to surrounding code (package surface, app shape, consumer wiring), make the cascade explicit. Each layer's collapse caused the next. The PR-A body's opener uses this:
+
+```
+API change       → defineWorkspace dies; attach* primitives become the surface
+       │
+       ▼
+Package surface  → @epicenter/document gets merged into @epicenter/workspace
+       │            (one published surface, one barrel)
+       ▼
+App shape        → apps split into iso/env/client three files because the iso
+                    layer being importable from Node was the whole point
+       │
+       ▼
+Metadata         → 520 commits, 19 packages — held until AFTER the story
+```
+
+Hold metadata (commit count, scope, file count) until after the story. Numbers don't tell the reader anything until they understand what the numbers count.
+
+**Bad version of this pattern** (just listing deletions without the diagnosis or survivor justification):
+
+> This PR deletes `Document`, `DocumentBundle`, `DocumentHandle`, `createDocumentFactory`, `defineDocument`, `defineWorkspace`, `ActionIndex`, `iterateActions`, `ACTION_BRAND`. We replaced them with inline `attach*` calls. Net: 520 commits, 534 files.
+
+The list is there, but the reader has no idea why any of those types existed in the first place, why they were wrong, or what survived. It reads as destruction without architecture. The good version makes the reader understand the *necessity* of each deletion before the inventory lands.
+
 ##### Bold Topic Sentences for Long PRs
 
 For PRs with multiple distinct concerns, use `---` separators and bold opening sentences as scannable anchors. These are NOT section headers—they're topic sentences that let someone skim the PR and understand its shape.

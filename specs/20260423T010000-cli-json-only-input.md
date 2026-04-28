@@ -1,7 +1,7 @@
 # CLI: JSON-Only Input, Remove Schema-to-Flags Bridge
 
 **Date**: 2026-04-23
-**Status**: Implemented (2026-04-23)
+**Status**: shipped (2026-04-23)
 **Author**: AI-assisted
 
 ## Prerequisite note (2026-04-23 audit)

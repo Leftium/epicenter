@@ -472,6 +472,17 @@
         "vite": "catalog:",
       },
     },
+    "examples/notes-cross-peer": {
+      "name": "@examples/notes-cross-peer",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/cli": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
+        "arktype": "catalog:",
+        "typebox": "catalog:",
+        "yjs": "catalog:",
+      },
+    },
     "examples/yjs-size-benchmark": {
       "name": "@examples/yjs-size-benchmark",
       "version": "0.0.1",
@@ -518,7 +529,7 @@
       "name": "@epicenter/cli",
       "version": "0.1.0",
       "bin": {
-        "epicenter": "./src/bin.ts",
+        "epicenter": "./bin/epicenter.mjs",
       },
       "dependencies": {
         "@epicenter/workspace": "workspace:*",
@@ -1054,6 +1065,8 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.25.12", "", { "os": "win32", "cpu": "ia32" }, "sha512-HkqnmmBoCbCwxUKKNPBixiWDGCpQGVsrQfJoVGYLPT41XWF8lHuE5N6WhVia2n4o5QK5M4tYr21827fNhi4byQ=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.25.12", "", { "os": "win32", "cpu": "x64" }, "sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA=="],
+
+    "@examples/notes-cross-peer": ["@examples/notes-cross-peer@workspace:examples/notes-cross-peer"],
 
     "@examples/yjs-size-benchmark": ["@examples/yjs-size-benchmark@workspace:examples/yjs-size-benchmark"],
 

@@ -21,7 +21,7 @@
 
 import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
 import type { Action, Actions } from '../shared/actions';
-import { invokeNormalized, isAction } from '../shared/actions';
+import { invokeAction, isAction } from '../shared/actions';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -153,11 +153,11 @@ export function actionsToAiTools<TActions extends Actions>(
 		...(action.input && { inputSchema: action.input }),
 		...(action.type === 'mutation' && { needsApproval: true }),
 		// TanStack AI's `execute` contract is: return data on success, throw
-		// on failure. invokeNormalized handles all four handler shapes (raw,
+		// on failure. invokeAction handles all four handler shapes (raw,
 		// Result, sync, async) and converts thrown errors into typed
 		// Err(ActionFailed); we then unwrap for AI consumption.
 		execute: async (args: unknown) => {
-			const result = await invokeNormalized(
+			const result = await invokeAction(
 				action,
 				args,
 				path.join(ACTION_NAME_SEPARATOR),
@@ -203,7 +203,9 @@ const ACTION_NAME_SEPARATOR = '_';
  * Walk an `Actions` tree, yielding each leaf with its key path. Local helper —
  * the CLI has its own `walkActions` that yields the dotted-path form it wants;
  * this one yields path arrays so the AI bridge can join with its own
- * separator.
+ * separator. The `Actions` type guarantees nodes are either `Action` callables
+ * or nested `Actions` objects, so a plain `typeof === 'object'` recurse-guard
+ * is sufficient.
  */
 function* walkActionTree(
 	actions: object,
@@ -213,12 +215,7 @@ function* walkActionTree(
 		const currentPath = [...path, key];
 		if (isAction(value)) {
 			yield [value, currentPath];
-		} else if (
-			value != null &&
-			typeof value === 'object' &&
-			!Array.isArray(value) &&
-			!(value instanceof Promise)
-		) {
+		} else if (typeof value === 'object' && value !== null) {
 			yield* walkActionTree(value, currentPath);
 		}
 	}

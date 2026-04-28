@@ -32,7 +32,8 @@
 
 export type {
 	Action,
-	ActionFailed,
+	ActionManifest,
+	ActionMeta,
 	Actions,
 	Mutation,
 	Query,
@@ -41,21 +42,34 @@ export type {
 export {
 	defineMutation,
 	defineQuery,
-	dispatchAction,
-	invokeNormalized,
+	describeActions,
+	invokeAction,
 	isAction,
-	isMutation,
-	isQuery,
-	isResult,
+	resolveActionPath,
+	walkActions,
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════
-// RPC
+// RPC + PEER DISPATCH
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { InferRpcMap, RpcActionMap } from './rpc/types';
-export { createRemoteActions, type RemoteSend } from './rpc/remote-actions';
 export { isRpcError, RpcError } from '@epicenter/sync';
+
+// Peer dispatch (cross-device action calling) — see `peer<T>(workspace, deviceId)`.
+export { peer, describePeer } from './rpc/peer.js';
+export type { RemoteCallOptions } from './shared/actions.js';
+
+// ════════════════════════════════════════════════════════════════════════════
+// DEVICE IDENTITY
+// ════════════════════════════════════════════════════════════════════════════
+
+export {
+	type AsyncStorage,
+	getOrCreateDeviceId,
+	getOrCreateDeviceIdAsync,
+	type SimpleStorage,
+} from './shared/device-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SHARED TYPES
@@ -69,19 +83,13 @@ export type { MaybePromise } from './shared/types';
 
 export { ExtensionError } from './shared/errors';
 
-// ════════════════════════════════════════════════════════════════════════════
-// JSONL FILE SINK (Bun-only)
-// ════════════════════════════════════════════════════════════════════════════
-//
-// The logger core (`createLogger`, `consoleSink`, `memorySink`, `composeSinks`,
-// `tapErr`, types) lives in `wellcrafted/logger` — import directly from there.
-// This package only ships `jsonlFileSink`, which uses `Bun.file(path).writer()`
-// and `node:fs` and can't live in a runtime-agnostic package.
-
-export {
-	type DisposableLogSink,
-	jsonlFileSink,
-} from './shared/logger/jsonl-sink.js';
+// JSONL file sink (Bun-only) lives at the `@epicenter/workspace/logger/jsonl-sink`
+// subpath. Keeping it out of this barrel matters: re-exporting it pulls
+// `node:fs`/`node:path` into every browser bundle that touches `@epicenter/workspace`,
+// which breaks SvelteKit/Vite ssr→client builds (see `__vite-browser-external`
+// "mkdirSync is not exported" errors). Import the sink directly from the subpath
+// in Bun/Node entry points; the logger core (`createLogger`, `consoleSink`, etc.)
+// still comes from `wellcrafted/logger`.
 
 // ════════════════════════════════════════════════════════════════════════════
 // CORE TYPES
@@ -143,11 +151,11 @@ export {
 export {
 	attachSync,
 	toWsUrl,
-	type DefaultRpcMap,
-	type RpcDispatch,
+	type AttachSyncDoc,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
 	type SyncStatus,
+	type WaitForBarrier,
 } from './document/attach-sync.js';
 
 export {
@@ -171,6 +179,14 @@ export {
 	type KvDefinition,
 	type KvDefinitions,
 } from './document/attach-kv.js';
+
+export {
+	type DeviceDescriptor,
+	type FoundPeer,
+	type PeerAwarenessState,
+	PeerDevice,
+	Platform,
+} from './document/standard-awareness-defs.js';
 
 export {
 	attachAwareness,

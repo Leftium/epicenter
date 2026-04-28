@@ -273,6 +273,9 @@ export function attachTimeline(ydoc: Y.Doc, key = 'timeline'): Timeline {
 					return xmlFragmentToPlaintext(entry.content);
 				case 'sheet':
 					return serializeSheetToCsv(entry);
+				default:
+					entry satisfies never;
+					return '';
 			}
 		},
 
@@ -304,6 +307,8 @@ export function attachTimeline(ydoc: Y.Doc, key = 'timeline'): Timeline {
 						entry.content.delete(0, entry.content.length);
 						entry.content.insert(0, text);
 						break;
+					default:
+						entry satisfies never;
 				}
 			});
 		},
@@ -435,6 +440,8 @@ export function attachTimeline(ydoc: Y.Doc, key = 'timeline'): Timeline {
 						});
 						break;
 					}
+					default:
+						entry satisfies never;
 				}
 			} finally {
 				// Always destroy the temp doc, even if applyUpdateV2 threw on corrupted binary.

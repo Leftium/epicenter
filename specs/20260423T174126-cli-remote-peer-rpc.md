@@ -1,7 +1,7 @@
 # CLI Remote Peer RPC
 
 **Date**: 2026-04-23
-**Status**: Shipped (Phases 1 & 2); Phase 3 (docs) deferred
+**Status**: shipped (Phases 1 & 2); Phase 3 (docs) deferred
 **Author**: AI-assisted
 **Depends on**: `specs/20260423T010000-unify-dot-path-format.md` (shipped)
 

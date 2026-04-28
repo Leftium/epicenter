@@ -1,6 +1,7 @@
 import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
+import { getOrCreateDeviceId } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { openOpensidian } from './browser';
 
@@ -15,7 +16,14 @@ export const auth = createAuth({
 	session,
 });
 
-export const opensidian = openOpensidian({ auth });
+export const opensidian = openOpensidian({
+	auth,
+	device: {
+		id: getOrCreateDeviceId(localStorage),
+		name: 'Opensidian',
+		platform: 'web',
+	},
+});
 
 auth.onSessionChange((next, previous) => {
 	if (next === null) {

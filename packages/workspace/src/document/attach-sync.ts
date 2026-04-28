@@ -26,16 +26,34 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import { Ok, isResult } from 'wellcrafted/result';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import type { Awareness } from 'y-protocols/awareness';
 import {
+	Awareness as YAwareness,
 	applyAwarenessUpdate,
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
 import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
+import {
+	type Actions,
+	type RemoteCallOptions,
+	type SystemActions,
+	defineQuery,
+	describeActions,
+	invokeAction,
+	resolveActionPath,
+} from '../shared/actions.js';
+import {
+	type Awareness as TypedAwareness,
+	createAwareness,
+} from './attach-awareness.js';
+import {
+	type DeviceDescriptor,
+	type FoundPeer,
+	type PeerAwarenessState,
+	standardAwarenessDefs,
+} from './standard-awareness-defs.js';
 
 /**
  * Minimal Y.Doc sync attachment — connects a Y.Doc to a WebSocket sync server.
@@ -73,22 +91,6 @@ export type SyncStatus =
 	| { phase: 'connecting'; retries: number; lastError?: SyncError }
 	| { phase: 'connected'; hasLocalChanges: boolean };
 
-export type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
-
-/**
- * Inbound RPC dispatcher provided by the caller.
- *
- * Returns `Promise<unknown>` — the value may be raw, a Result `{data, error}`,
- * sync or async. `attachSync`'s inbound handler is the sole place that
- * normalizes: already-Result values pass through; raw values get `Ok`-wrapped;
- * throws become `Err(ActionFailed)`. `action` is a dot-path string (e.g.
- * `'tabs.close'`).
- *
- * Defined here (not imported from `@epicenter/workspace`) to avoid a circular
- * dep — `attachSync` stays at the primitive layer and delegates action lookup
- * and invocation to the caller.
- */
-export type RpcDispatch = (action: string, input: unknown) => Promise<unknown>;
 
 /** Errors surfaced by the sync supervisor's background lifecycle. */
 export const SyncSupervisorError = defineErrors({
@@ -117,6 +119,11 @@ export type SyncAttachment = {
 	 * Resolves after the WebSocket handshake completes and the first sync
 	 * exchange finishes. Unlike `y-indexeddb`'s `whenSynced`, this is a
 	 * real "transport established, initial state reconciled" guarantee.
+	 *
+	 * Rejects with an error if the doc is destroyed before the first
+	 * successful handshake (permanent failure: dead URL, auth denied,
+	 * dispose during outage). Callers awaiting it should attach a `.catch`
+	 * or use `await using` to bound the wait by the doc's lifetime.
 	 *
 	 * Browser apps generally await `idb.whenLoaded` to render; only CLIs
 	 * and tools that strictly need remote state await `whenConnected`.
@@ -156,9 +163,45 @@ export type SyncAttachment = {
 		target: number,
 		action: TAction,
 		input?: TMap[TAction]['input'],
-		options?: { timeout?: number },
+		options?: RemoteCallOptions,
 	): Promise<Result<TMap[TAction]['output'], RpcError>>;
+	/**
+	 * Snapshot of every connected peer (excludes self). Empty when this
+	 * sync wasn't constructed with a `device` (i.e. no presence published).
+	 */
+	peers(): Map<number, PeerAwarenessState>;
+	/**
+	 * First peer publishing `deviceId`, by ascending clientId. Returns
+	 * `undefined` when no peer matches or when no presence is configured.
+	 */
+	find(deviceId: string): FoundPeer | undefined;
+	/**
+	 * Subscribe to peer change events. Fires when peers join, leave, or
+	 * update their state. Returns an unsubscribe function. No-op when no
+	 * presence is configured.
+	 */
+	observe(callback: () => void): () => void;
+	/**
+	 * Escape hatch — the underlying y-protocols handles. Use for advanced
+	 * cases (custom event listeners, integrations expecting raw types).
+	 * `awareness` is `null` when no presence was configured.
+	 */
+	raw: { awareness: YAwareness | null };
 };
+
+/**
+ * Anything with a `.whenLoaded` promise (typically `attachIndexedDb` or
+ * `attachSqlite` results). Lets `waitFor` accept the attachment directly
+ * rather than reaching into `.whenLoaded`.
+ */
+export type WaitForBarrier = Promise<unknown> | { whenLoaded: Promise<unknown> };
+
+/**
+ * First arg of `attachSync`. Either a bare `Y.Doc` (content docs) or a
+ * doc bundle (workspace docs); when a bundle is passed and no `actions`
+ * is set in config, sync uses `doc.actions` for inbound RPC dispatch.
+ */
+export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc; actions?: Actions };
 
 export type SyncAttachmentConfig = {
 	/**
@@ -168,26 +211,55 @@ export type SyncAttachmentConfig = {
 	url: string;
 	/**
 	 * Gate the first connection attempt on another promise (typically
-	 * `attachIndexedDb(ydoc).whenLoaded`). Without this, the supervisor
+	 * `attachIndexedDb(ydoc).whenLoaded`). Accepts the attachment directly
+	 * (uses its `.whenLoaded`) or a raw promise. Without this, the supervisor
 	 * connects before local state hydrates and the handshake transfers the
 	 * full document instead of just the delta.
 	 */
-	waitFor?: Promise<unknown>;
+	waitFor?: WaitForBarrier;
 	/**
-	 * Optional awareness instance. When provided, the attachment syncs presence
-	 * state across peers and emits/consumes AWARENESS messages. Per-row content
-	 * docs typically skip this; workspace-level docs provide it.
-	 */
-	awareness?: Awareness;
-	/**
-	 * Inbound RPC dispatcher. When provided, incoming RPC requests are
-	 * forwarded to `dispatch(action, input)`; when omitted, `attachSync`
-	 * responds with `RpcError.ActionNotFound`.
+	 * Publish this peer's identity into awareness. When set, `attachSync`
+	 * constructs a standard-schema awareness internally and synchronously
+	 * publishes `{ device }` before returning. The attachment's `peers()` /
+	 * `find()` / `observe()` become meaningful.
 	 *
-	 * Outbound RPC (the `rpc()` method on the attachment) works regardless
-	 * of whether this is set.
+	 * Workspace docs pass this; content docs (entries, notes, files) omit
+	 * it — they sync but don't publish identity.
+	 *
+	 * Mutually exclusive with `awareness` (an external instance) — pass one.
+	 *
+	 * Awareness carries presence only — no action manifest. Consumers that
+	 * need to enumerate a peer's actions call
+	 * `describePeer(sync, deviceId)` to fetch the full local
+	 * `ActionManifest` on demand via the runtime-injected `system.describe`
+	 * RPC.
 	 */
-	dispatch?: RpcDispatch;
+	device?: DeviceDescriptor;
+	/**
+	 * External awareness instance. Escape hatch for custom presence schemas
+	 * (cursors on content docs, typing indicators). When provided, sync
+	 * carries presence over the wire but does NOT type the `peers()` /
+	 * `find()` surface — those return empty/undefined since the schema is
+	 * unknown to sync. Use the awareness's own typed wrapper instead.
+	 *
+	 * Standard "I am a device" presence: pass `device` instead.
+	 */
+	awareness?: YAwareness;
+	/**
+	 * Inbound action tree. Incoming RPC requests are routed by dot-path
+	 * against this tree; raw returns get `Ok`-wrapped,
+	 * throws become `Err(ActionFailed)`, existing `Result`s pass through.
+	 *
+	 * Wrapping the dispatch path (auth gates, audit logs, rate limits) is
+	 * an upstream concern — compose the action tree itself before passing
+	 * it here. Userland helpers like `withAuthGate(actions, ...)` are the
+	 * right home for that, not a callback in this config.
+	 *
+	 * Defaults to the doc bundle's `.actions` (when first arg is a bundle).
+	 * When neither this nor `doc.actions` is set, inbound RPCs receive
+	 * `RpcError.ActionNotFound`. Outbound RPC works regardless.
+	 */
+	actions?: Actions;
 	/**
 	 * Token sourcing callback. When provided, the supervisor calls `getToken()`
 	 * before each connect attempt to fetch a fresh bearer token (sent over the
@@ -233,15 +305,90 @@ export function toWsUrl(httpUrl: string): string {
 }
 
 export function attachSync(
-	ydoc: Y.Doc,
+	doc: AttachSyncDoc,
 	config: SyncAttachmentConfig,
 ): SyncAttachment {
-	const awareness = config.awareness;
+	// Resolve doc bundle vs bare ydoc.
+	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
+	const docActions = doc instanceof Y.Doc ? undefined : doc.actions;
+	const userActions = config.actions ?? docActions;
+
+	if (userActions && 'system' in userActions) {
+		throw new Error(
+			"User actions cannot define the 'system.*' namespace — it's reserved " +
+				"for runtime-injected meta operations. Use 'app', 'settings', " +
+				"'config', or another app-specific noun.",
+		);
+	}
+
+	// Inject `system.*` meta operations into the dispatch tree.
+	// `system.describe` is argless and returns the full local
+	// `ActionManifest` (dot-path → ActionMeta with live input schemas).
+	// Consumers fetch on demand via `describePeer(sync, deviceId)`
+	// rather than receiving a manifest broadcast in awareness.
+	//
+	// Type-annotate against `SystemActions` (the canonical type in
+	// `shared/actions.ts`): TypeScript checks the runtime construction here
+	// matches the type the `peer<{ system: SystemActions }>` proxy expects.
+	// Drift between handler return and consumer expectation = compile error.
+	//
+	// Freeze the dispatch tree post-merge: the reservation check above
+	// protects the namespace at construction; freezing prevents post-attach
+	// mutation from injecting routes under `system.*`.
+	const systemActions: SystemActions = Object.freeze({
+		describe: defineQuery({
+			handler: () => describeActions(userActions ?? {}),
+		}),
+	});
+	const actions: Actions = Object.freeze({
+		...(userActions ?? {}),
+		system: systemActions,
+	});
+
+	if (config.device && config.awareness) {
+		throw new Error(
+			'[attachSync] pass either `device` (standard presence) or `awareness` ' +
+				'(external instance for custom schemas) — not both.',
+		);
+	}
+
+	// Awareness is internally-owned when `device` is provided; externally-owned
+	// when `awareness` is provided; absent otherwise. Only the internal path
+	// gets a typed wrapper (we know the schema there).
+	let awareness: YAwareness | null = null;
+	let typedAwareness: TypedAwareness<typeof standardAwarenessDefs> | null = null;
+	if (config.device) {
+		awareness = new YAwareness(ydoc);
+		typedAwareness = createAwareness(awareness, standardAwarenessDefs);
+		typedAwareness.setLocal({ device: config.device });
+	} else if (config.awareness) {
+		awareness = config.awareness;
+	}
+
+	const waitForPromise =
+		config.waitFor && 'whenLoaded' in config.waitFor
+			? config.waitFor.whenLoaded
+			: config.waitFor;
+
 	const log = config.log ?? createLogger('attachSync');
 
 	const status = createStatusEmitter<SyncStatus>({ phase: 'offline' });
-	const { promise: whenConnected, resolve: resolveConnected } =
-		Promise.withResolvers<void>();
+	// `whenConnected` settles in one of two ways: resolved when the first
+	// successful handshake lands (STEP2/UPDATE), rejected when the doc is
+	// destroyed before that happens. Without the destroy-side rejection,
+	// callers awaiting `whenConnected` against a permanently dead URL or
+	// failed auth would hang forever.
+	const {
+		promise: whenConnected,
+		resolve: resolveConnected,
+		reject: rejectConnected,
+	} = Promise.withResolvers<void>();
+	let connectedSettled = false;
+	const settleConnected = (op: () => void) => {
+		if (connectedSettled) return;
+		connectedSettled = true;
+		op();
+	};
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
 	const backoff = createBackoff();
@@ -333,8 +480,10 @@ export function attachSync(
 				}),
 			);
 
-		const dispatch = config.dispatch;
-		if (!dispatch) {
+		// Resolve the action up front so a missing path surfaces as
+		// ActionNotFound (typed) rather than ActionFailed wrapping a raw throw.
+		const target = resolveActionPath(actions, rpc.action);
+		if (!target) {
 			sendResponse({
 				data: null,
 				error: RpcError.ActionNotFound({ action: rpc.action }).error,
@@ -342,17 +491,7 @@ export function attachSync(
 			return;
 		}
 
-		// Normalize the dispatch return value into a `{data, error}` wire payload:
-		// - raw throw → Err(ActionFailed)
-		// - raw value → Ok-wrap
-		// - already a Result → forward unchanged
-		try {
-			const raw = await dispatch(rpc.action, rpc.input);
-			const normalized = isResult(raw) ? raw : Ok(raw);
-			sendResponse(normalized);
-		} catch (cause) {
-			sendResponse(RpcError.ActionFailed({ action: rpc.action, cause }));
-		}
+		sendResponse(await invokeAction(target, rpc.input, rpc.action));
 	}
 
 	// ── Message senders ──
@@ -408,6 +547,12 @@ export function attachSync(
 
 	function handleVisibilityChange() {
 		if (document.visibilityState !== 'visible') return;
+		// Wakeup ping after the tab returns to foreground. The server is
+		// expected to echo any inbound message via `liveness.touch()`, so
+		// this also probes "is the wire actually responsive?" beyond what
+		// the 60s PING_INTERVAL_MS keepalive covers. If the server doesn't
+		// echo strings, focus events become a no-op for liveness — the
+		// 90s LIVENESS_TIMEOUT_MS still catches a dead wire eventually.
 		if (websocket?.readyState === WebSocket.OPEN) {
 			websocket.send('ping');
 		}
@@ -597,7 +742,7 @@ export function attachSync(
 							phase: 'connected',
 							hasLocalChanges: localVersion > ackedVersion,
 						});
-						resolveConnected();
+						settleConnected(resolveConnected);
 					}
 					break;
 				}
@@ -685,6 +830,13 @@ export function attachSync(
 		manageWindowListeners('add');
 		currentSupervisorPromise = runLoop().finally(() => {
 			currentSupervisorPromise = null;
+			// If `desired` flipped back to 'online' during the loop's drain
+			// (e.g., a status subscriber called `reconnect()` from inside
+			// `status.set({phase:'offline'})` at the end of runLoop, before
+			// this `.finally` cleared the handle), restart. Without this, the
+			// reconnect's call to `ensureSupervisor` early-returned because
+			// the promise was still set, and the loop would silently die.
+			if (!torn && desired === 'online') ensureSupervisor();
 		});
 	}
 
@@ -709,7 +861,7 @@ export function attachSync(
 	// silently stay offline because persistence failed.
 	void (async () => {
 		try {
-			await config.waitFor;
+			await waitForPromise;
 		} catch (cause) {
 			log.warn(SyncSupervisorError.WaitForRejected({ cause }));
 		}
@@ -725,6 +877,17 @@ export function attachSync(
 	// meant callers awaiting `whenDisposed` saw a socket still in CLOSING.
 	ydoc.once('destroy', async () => {
 		torn = true;
+		// Reject `whenConnected` if dispose lands before the first handshake
+		// (permanent failure: dead URL, denied auth). Callers awaiting it
+		// would otherwise hang forever — the doc is gone, the promise must
+		// settle. Attach a no-op catch BEFORE rejecting so the rejection
+		// isn't unhandled when no consumer awaits.
+		whenConnected.catch(() => {});
+		settleConnected(() => {
+			rejectConnected(
+				new Error('[attachSync] doc destroyed before first handshake'),
+			);
+		});
 		try {
 			ydoc.off('updateV2', handleDocUpdate);
 			if (awareness) {
@@ -755,9 +918,33 @@ export function attachSync(
 			backoff.reset();
 			backoff.wake();
 			websocket?.close();
+			// Flip `desired` back to 'online' BEFORE delegating: ensureSupervisor()
+			// early-returns if a loop is still draining from a recent goOffline(),
+			// which would otherwise leave us silently parked offline.
+			desired = 'online';
+			manageWindowListeners('add');
 			ensureSupervisor();
 		},
 		whenDisposed,
+		peers: () =>
+			typedAwareness ? typedAwareness.peers() : new Map(),
+		find(deviceId) {
+			if (!typedAwareness) return undefined;
+			const all = typedAwareness.peers();
+			const sorted = [...all.keys()].sort((a, b) => a - b);
+			for (const clientId of sorted) {
+				const state = all.get(clientId)!;
+				if (state.device.id === deviceId) {
+					return { clientId, state };
+				}
+			}
+			return undefined;
+		},
+		observe(callback) {
+			if (!typedAwareness) return () => {};
+			return typedAwareness.observe(callback);
+		},
+		raw: { awareness },
 		async rpc<
 			TMap extends RpcActionMap = DefaultRpcMap,
 			TAction extends string & keyof TMap = string & keyof TMap,
@@ -772,6 +959,21 @@ export function attachSync(
 					action,
 					cause: 'Cannot RPC to self — call the action directly',
 				});
+			}
+
+			// Reject post-dispose calls immediately. Without this, a late
+			// rpc() would register a setTimeout(timeoutMs) entry in
+			// pendingRequests that nothing clears, leaking the timer until
+			// the default 5s timeout fires.
+			if (torn) return RpcError.Disconnected();
+
+			// Short-circuit when the socket is in CONNECTING/CLOSING/CLOSED.
+			// `send()` would silently no-op the request bytes, leaving the
+			// pendingRequests entry to wait the full timeout for a phantom
+			// response. Better to fail fast and let the caller decide whether
+			// to retry once we're back online.
+			if (websocket?.readyState !== WebSocket.OPEN) {
+				return RpcError.Disconnected();
 			}
 
 			const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;

@@ -1,12 +1,14 @@
 # Document-primitive rollout — orchestration tracker
 
-**Status**: active (PR-A in flight; PR-D / PR-E queued)
+**Status**: active (PR-A merged 2026-04-26; PR-D / PR-E queued)
 
-Live status for the multi-PR rollout. Update as work lands.
+Live status for the multi-PR rollout. Update as work lands. This file gets deleted once PR-E ships per the post-merge convention.
 
 **Plan revision (2026-04-25):** what was originally PR-B and PR-C have been folded into PR-A. The arc ends with the factory teardown; PR-A ships terminal state. PR-D and PR-E are unchanged.
 
-**Plan revision (2026-04-25, late):** Phase 2's seven deletions executed *with one reversal*. Deletions 1, 2, 4, 5, 6, 7 landed verbatim. Deletion 3 (delete `openFuji()` wrappers) executed first then got reversed by the iso/env/client three-file split — see the gravestone in the Phase 2 spec and the resolution in `specs/20260425T225350-app-workspace-folder-env-split.md`. The article `workspaces-were-documents-all-along.md` got v4 + v5 codas covering both the framework teardown and the wrapper restoration, since that contradiction is the most useful artifact this PR produced.
+**Plan revision (2026-04-25, late):** Phase 2's seven deletions executed *with one reversal*. Deletions 1, 2, 4, 5, 6, 7 landed verbatim. Deletion 3 (delete `openFuji()` wrappers) executed first then got reversed by the iso/env/client three-file split — see `specs/20260425T225350-app-workspace-folder-env-split.md` for the resolution and `docs/articles/workspaces-were-documents-all-along.md` v5 for the narrative. The contradiction between v3 ("delete the wrapper") and v5 ("un-delete the wrapper, but for a different reason — bleed prevention, not encapsulation") is the most durable artifact PR-A produced.
+
+**Status update (2026-04-26):** PR-A merged at `252dced47`. Scaffolding files (PR body draft, Phase 1 + Phase 2 execution prompts) deleted in a follow-up cleanup PR per the convention landed during PR-A: durable artifacts (architecture specs, skills, articles) stay; scaffolding (PR body drafts, executed prompts, in-flight trackers) gets deleted once the work it scaffolds is complete. This tracker stays until PR-E lands.
 
 ---
 
@@ -54,59 +56,20 @@ PR-E (CLI cross-device)       ← spec: 20260425T000000-device-actions-via-aware
 
 | PR | Status | Description location | Notes |
 |---|---|---|---|
-| PR-A | Phase 1 + Phase 2 landed on `drop-document-factory`; PR body finalize pending | `specs/20260425T180000-pr-body-document-primitive.md` | Phase 1 + 6/7 of Phase 2's deletions executed verbatim. Deletion 3 reversed mid-flight (see Phase 2 gravestone + `20260425T225350-app-workspace-folder-env-split.md`). Article v4 + v5 coda shipped. Body file rewrites at finalize time. |
-| PR-D | Architecture specced | `specs/20260425T000000-device-actions-via-awareness.md` | Implementation prompt drafted after PR-A merges, against real merged shapes. |
-| PR-E | Architecture specced | `specs/20260425T000000-device-actions-via-awareness.md` Phase 3 | Implementation prompt drafted after PR-D merges. |
+| PR-A | **MERGED 2026-04-26** (`252dced47`) | https://github.com/EpicenterHQ/epicenter/pull/1705 | 520 commits. Both phases landed; six of seven Deletion targets executed; Deletion 3 reversed mid-flight (iso/env/client split). PR body draft + execution prompts deleted post-merge. |
+| PR-D + PR-E | **Collapsed into one PR.** Execution prompt drafted. | Spec: `specs/20260425T210000-remote-action-dispatch.md` (see "Final design" section). Execution: `specs/20260426T000000-execution-prompt-device-actions-and-remote-dispatch.md`. Awareness publishing convention: `specs/20260425T000000-device-actions-via-awareness.md`. | Single branch `device-actions-and-remote-dispatch`, 8 commits. Public surface collapsed to `peer<T>(workspace, deviceId)` (one function), `--peer <deviceId>` (no DSL), first-match-wins (no ambiguity error), `actions:` data on `attachSync` (no callback). Net negative LoC. |
 
 ---
 
 ## What to do, in order
 
-### Step 1 (now, ~15 min): get Phase 1 onto the PR branch
+### Steps 1–4 — DONE
 
-Phase 1 commits live on `attach-sync-dispatch-revision`, eight commits past `braden-w/document-primitive` head. Push them up so PR-1705 reflects current state.
+PR-A merged at `252dced47` on 2026-04-26. Phase 1 + Phase 2 + iso/env/client + auth split + package consolidation all shipped. PR body, Phase 1 prompt, Phase 2 prompt deleted post-merge per the convention. Article `workspaces-were-documents-all-along.md` carries the v4 + v5 codas.
 
-```bash
-git push origin attach-sync-dispatch-revision:braden-w/document-primitive
-```
+### Step 5 — execute the combined PR-D + PR-E branch
 
-The PR auto-updates. Live body still describes pre-Phase-1 state — that's fine; it gets fully rewritten at Step 4.
-
-### Step 2 (~3-5 days): execute Phase 2 — DONE, with one reversal
-
-Hand off `specs/20260425T180001-execution-prompt-phase-2-teardown.md` to an implementer (you, or an agent). The prompt is self-contained.
-
-**Outcome**: 6/7 deletions landed verbatim. Deletion 3 (delete `openFuji()` wrappers) executed first then got reversed by a same-day decision — bundle bleed prevention required restoring the wrappers under an iso/env/client three-file split (`20260425T225350-app-workspace-folder-env-split.md`). The Phase 2 spec carries a gravestone marking that section superseded.
-
-### Step 3 (~1 hour): add the v4 coda — DONE
-
-`docs/articles/workspaces-were-documents-all-along.md` now carries v4 *and* v5 codas. v4 covers the framework teardown (`Document` / `DocumentHandle` / `createDocumentFactory` → `createDisposableCache`); v5 covers the wrapper restoration under the iso/env/client convention. The v3 → v5 contradiction is the article's strongest payload.
-
-### Step 4 (~1-2 hours): finalize PR-A body and merge
-
-1. Rewrite `specs/20260425T180000-pr-body-document-primitive.md`:
-   - Drop the "What's coming next" entries for the now-folded Phase 1 and Phase 2 specs; keep PR-D and PR-E
-   - Drop the trailing "trajectory" paragraph about the last five commits
-   - Repick keystones from terminal-state commits — `3dec00926` (dispatch/getToken pivot) replaces `b2fd9e158` (setToken/requiresToken, now deleted); pick a Phase 2 keystone for the factory deletion
-   - Update Section 1's action-return wording to reflect always-Result (no `RemoteReturn` conditional type)
-   - Update Section 2's BEFORE/AFTER block — AFTER shows module-scope inline composition with `dispatch:`/`getToken:` callbacks, no `openFuji()` wrapper, no `Document` return type
-   - Cut or rewrite the "Document contract and refcount cache" subsection — the contract is gone
-   - Update Section 3 to reflect the post-teardown CLI loader shape
-   - Add `workspaces-were-documents-all-along.md` to "Articles in this PR"
-   - Update test plan: drop checks for removed shapes (`requiresToken`, `setToken`, `Document`/`fromDocument`); add module-scope composition smoke
-2. Apply to live PR:
-   ```bash
-   gh pr edit 1705 --body-file specs/20260425T180000-pr-body-document-primitive.md
-   ```
-3. Wait for CI green, merge.
-
-### Step 5: draft PR-D prompt
-
-Once PR-A's merged shapes are visible in `main`, draft the awareness-publishing implementation prompt referencing real file paths, types, signatures. Architecture lives in `specs/20260425T000000-device-actions-via-awareness.md`.
-
-### Step 6: draft PR-E prompt
-
-Same pattern for CLI cross-device dispatch, after PR-D lands.
+PR-D (awareness publishing) and PR-E (CLI cross-device dispatch) collapsed into one PR on branch `device-actions-and-remote-dispatch`. Final design lives in `specs/20260425T210000-remote-action-dispatch.md` (the "Final design" section); execution brief in `specs/20260426T000000-execution-prompt-device-actions-and-remote-dispatch.md`. Surface area collapsed to `peer<T>(workspace, deviceId)` (one function), `--peer <deviceId>` (no DSL), first-match-wins (no ambiguity error), `actions:` data on `attachSync` (no callback). Net negative LoC. Eight commits.
 
 ---
 
@@ -136,8 +99,10 @@ Same pattern for CLI cross-device dispatch, after PR-D lands.
 
 | You want | Look at |
 |---|---|
-| Why we made these architectural choices | `specs/20260424T180000-drop-document-factory-attach-everything.md` |
-| What the cross-device action layer looks like | `specs/20260425T000000-device-actions-via-awareness.md` |
-| Phase 2 handoff prompt | `specs/20260425T180001-execution-prompt-phase-2-teardown.md` |
-| The PR-A body to paste at finalize time | `specs/20260425T180000-pr-body-document-primitive.md` |
-| This roadmap | `specs/20260425T180002-orchestration-tracker.md` (the file you're reading) |
+| Why we made these architectural choices (v4 + v5 thesis) | `specs/20260424T180000-drop-document-factory-attach-everything.md` |
+| Why apps are split into iso/env/client | `specs/20260425T225350-app-workspace-folder-env-split.md` and `.claude/skills/workspace-app-layout/SKILL.md` |
+| Why actions are passthrough (not always-Result) | `specs/20260425T200000-actions-passthrough-adr.md` |
+| What the cross-device action layer looks like (PR-D + PR-E) | `specs/20260425T000000-device-actions-via-awareness.md` |
+| What PR-A actually shipped | https://github.com/EpicenterHQ/epicenter/pull/1705 (durable on GitHub; the in-repo body draft was deleted post-merge) |
+| The v1→v5 narrative arc | `docs/articles/workspaces-were-documents-all-along.md` |
+| This roadmap | `specs/20260425T180002-orchestration-tracker.md` (the file you're reading; deleted once PR-E lands) |

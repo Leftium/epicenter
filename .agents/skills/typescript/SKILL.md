@@ -392,6 +392,58 @@ Use block scoping (`{ }`) when a case declares variables with `let` or `const`.
 
 When NOT to use switch: early returns for type narrowing are fine as sequential `if` statements. If each branch returns immediately and the checks are narrowing a union type for subsequent code, keep them as `if` guards.
 
+### Exhaustiveness via `default: x satisfies never`
+
+When switching over a **closed type** — a discriminated union, a defineErrors variant, a literal-string enum, a migration version — guard the switch with an exhaustiveness check so adding a new variant breaks the build until every site handles it.
+
+```typescript
+// Good — adding a new RpcError variant fails the build here
+switch (error.name) {
+	case 'ActionNotFound':
+		handleNotFound(error.action);
+		return;
+	case 'Timeout':
+		handleTimeout(error.ms);
+		return;
+	case 'PeerOffline':
+	case 'PeerLeft':
+		handleDisconnect();
+		return;
+	case 'ActionFailed':
+		handleFailure(error.cause);
+		return;
+	case 'Disconnected':
+		handleDisconnect();
+		return;
+	default:
+		error satisfies never;
+}
+```
+
+Why `satisfies never` and not `const _exhaustive: never = error; void _exhaustive;`? Same compile-time guarantee, less emit, no unused-variable suppression dance.
+
+```typescript
+// satisfies — type-level only, strips to the bare expression
+default: error satisfies never;
+// emits: default: error;
+
+// const form — declares a real binding, needs `void` to silence unused-var
+default: {
+	const _exhaustive: never = error;
+	void _exhaustive;
+}
+// emits: default: { const _exhaustive = error; void _exhaustive; }
+```
+
+`satisfies` (TS 4.9+) is the blessed idiom for "assert conformance without producing a value."
+
+**When NOT to add an exhaustive check:**
+
+- Switches over **open input** — wire bytes (`messageType` from a binary protocol), HTTP status codes, file extensions from user paths, error names from external libraries you don't control. These need real `default:` handling (`throw`, `return null`, etc.) because unknown values are reachable at runtime.
+- Switches whose `default:` is doing intentional fallback (e.g., "anything else gets the noop").
+
+The rule of thumb: if the type checker proves the input is one of N closed values AND adding an N+1th value should require updating this site, add `satisfies never`. Otherwise, leave the switch alone.
+
 See `docs/articles/switch-over-if-else-for-value-comparison.md` for rationale.
 
 ## Record Lookup Over Nested Ternaries

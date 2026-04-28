@@ -1,46 +1,32 @@
 /**
- * Action System v2: Closure-based handlers for Epicenter.
+ * Actions: typed queries (reads) and mutations (writes) authored as a nested
+ * tree of closures. `defineQuery`/`defineMutation` attach metadata to the
+ * handler and return it — the action callable IS the handler, so local
+ * callers see exactly what the author wrote (sync stays sync, `Result` stays
+ * `Result`).
  *
- * This module provides the core action definition system for Epicenter.
- * Actions are typed operations (queries for reads, mutations for writes) that
- * capture their dependencies via closures at definition time.
+ * Two shapes for the same data:
  *
- * ## Design Pattern: Closure-Based Dependency Injection
+ *     Actions                       ←→     ActionManifest
+ *     nested, callable                     flat, metadata-only
+ *     local, in-memory                     wire form (system.describe)
  *
- * Actions close over their dependencies directly instead of receiving context as a parameter:
- * - Define actions **after** creating the client
- * - Handlers reference the client via closure: signature is `(input?) => output`
- * - Adapters (Server, CLI) receive both client and actions separately: `{ client, actions }`
+ *     {                                    {
+ *       tabs: { close: Mutation },           "tabs.close": { type, ... },
+ *       ping: Query,                         "ping":       { type, ... },
+ *     }                                    }
  *
- * **Key benefits:**
- * - **Zero annotation ceremony**: TypeScript infers handler types naturally
- * - **Type-safe**: Full type inference for client and tables, not `unknown`
- * - **Simpler signatures**: `(input?) => output` instead of `(ctx, input?) => output`
- * - **Natural JavaScript**: Uses standard closures, no framework magic
- * - **Introspectable**: Callable functions with metadata properties for adapters
+ * Functions don't serialize, so the wire form drops them and keeps just the
+ * metadata. Both shapes are public; `describeActions(tree)` converts.
+ * `walkActions(tree)` is the underlying iterator — yields live `[path, Action]`
+ * pairs for callers that want to filter, invoke, or count instead of
+ * materializing the full record.
  *
- ## Passthrough — local actions are the handler verbatim
- *
- * `defineMutation` and `defineQuery` attach metadata to the handler and return
- * it. The action callable IS the handler — sync if sync, raw if raw, `Result`
- * if explicit. Local callers see exactly what the author wrote.
- *
- * Transport-imposed shape (`Promise<Result<T, E | RpcError>>`) lives at the
- * boundary that has the transport: the wire (`createRemoteActions`) wraps;
- * generic in-process consumers (AI bridge, CLI dispatch, RPC server-side)
- * call `invokeNormalized(action, input, label)` to get the uniform shape.
- *
- * If a handler throws, the throw propagates to the local caller. The
- * boundary normalizers convert throws to `Err(ActionFailed)` automatically,
- * so AI/CLI/RPC consumers always see a Result. Local UI code that wants
- * Result-shaped output should either `tryAsync` the call or define the
- * handler to return `Result` explicitly.
- *
- * ## Exports
- *
- * - {@link defineQuery} - Define a read operation
- * - {@link defineMutation} - Define a write operation
- * - {@link isAction}, {@link isQuery}, {@link isMutation} - Type guards for action definitions
+ * Transport boundaries (RPC server-side, CLI dispatch, AI bridge) normalize
+ * any handler return into `Promise<Result<T, RpcError>>` via
+ * `invokeAction`. The wire client (`RemoteActions`) re-types each leaf
+ * to that uniform shape. Local UI code that wants `Result` either calls
+ * `tryAsync` or defines the handler to return `Result` explicitly.
  *
  * @module
  */
@@ -49,8 +35,6 @@ import { RpcError } from '@epicenter/sync';
 import type { Static, TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import { Ok, isResult } from 'wellcrafted/result';
-
-export { isResult };
 
 // ════════════════════════════════════════════════════════════════════════════
 // ACTION DEFINITION TYPES
@@ -89,14 +73,25 @@ type ActionConfig<TInput extends TSchema | undefined, R> = {
 
 /**
  * Metadata properties attached to a callable action.
+ *
+ * `input` (a live `TSchema`) is present whenever the action defines one.
+ * Action discovery returns this shape directly — there is no separate
+ * wire form.
  */
-type ActionMeta<TInput extends TSchema | undefined = TSchema | undefined> = {
+export type ActionMeta<TInput extends TSchema | undefined = TSchema | undefined> = {
 	type: 'query' | 'mutation';
 	/** Short, human-readable display name for UI surfaces (e.g. 'Close Tabs'). Falls back to path-derived name if omitted. */
 	title?: string;
 	description?: string;
 	input?: TInput;
 };
+
+/**
+ * Flat dot-path → `ActionMeta` map describing a peer's full action surface.
+ * Returned by the runtime-injected `system.describe` RPC and consumed via
+ * `describePeer(sync, deviceId)`.
+ */
+export type ActionManifest = Record<string, ActionMeta>;
 
 /**
  * A query action definition (read operation).
@@ -146,13 +141,25 @@ export type Actions = {
 };
 
 /**
+ * The runtime-injected `system.*` action namespace. Single canonical type:
+ * `attachSync` constructs `systemActions: SystemActions` (TypeScript checks
+ * the construction shape against this) and `peer.ts` derives the proxy type
+ * `peer<{ system: SystemActions }>` from the same source. Drift between the
+ * runtime handler return and the consumer's expected return becomes a
+ * compile error.
+ */
+export type SystemActions = {
+	describe: Query<undefined, ActionManifest>;
+};
+
+/**
  * Define a query (read operation) with full type inference.
  *
  * Returns the handler with metadata attached — the action callable IS the
  * handler. Local callers see whatever the handler returns (sync if sync,
  * raw if raw, `Result` if explicit). Remote/AI/CLI consumers see uniform
- * `Promise<Result>` via the boundary normalizers (`createRemoteActions`,
- * `invokeNormalized`).
+ * `Promise<Result>` via the boundary normalizers (`peer()` for the wire,
+ * `invokeAction` for in-process).
  */
 /** No input — `TInput` is explicitly `undefined`. */
 export function defineQuery<R>(
@@ -222,29 +229,70 @@ export function isMutation(value: unknown): value is Mutation {
 }
 
 /**
- * Resolve a dotted action path against an action tree and invoke it with
- * `input`. Used to adapt workspace actions into the generic
- * `dispatch(action, input)` callback that sync RPC expects.
- *
- * Throws if the path doesn't resolve to an action.
+ * Resolve a dotted path against an action tree, returning the leaf
+ * `Action` if the path lands on one. Returns `undefined` for missing
+ * paths or paths that resolve to a namespace.
  */
-export async function dispatchAction(
+export function resolveActionPath(
 	actions: Actions,
 	path: string,
-	input: unknown,
-): Promise<unknown> {
+): Action | undefined {
 	const segments = path.split('.');
 	let target: unknown = actions;
 	for (const segment of segments) {
-		if (target == null || typeof target !== 'object') {
-			throw new Error(`Action not found: ${path}`);
-		}
+		if (target == null || typeof target !== 'object') return undefined;
 		target = (target as Record<string, unknown>)[segment];
 	}
-	if (!isAction(target)) {
-		throw new Error(`Action not found: ${path}`);
+	return isAction(target) ? target : undefined;
+}
+
+/**
+ * Lazily yield every action in a tree as `[dotPath, Action]` pairs. Order
+ * is depth-first, left-to-right by author definition (Object key order).
+ * Yields live callables — invoke them, inspect them, or strip to metadata
+ * via {@link describeActions}.
+ *
+ * Pair with `Object.fromEntries`, `Array.from`, or a `for…of` loop:
+ * ```ts
+ * for (const [path, action] of walkActions(workspace.actions)) {
+ *   if (action.type === 'mutation') console.log(path);
+ * }
+ * ```
+ */
+export function* walkActions(
+	actions: Actions,
+	prefix = '',
+): Generator<[string, Action]> {
+	for (const [key, value] of Object.entries(actions)) {
+		const path = prefix ? `${prefix}.${key}` : key;
+		if (isAction(value)) yield [path, value];
+		else if (value != null && typeof value === 'object') {
+			yield* walkActions(value as Actions, path);
+		}
 	}
-	return await target(input as never);
+}
+
+/**
+ * Walk an `Actions` tree into its flat `ActionManifest` — the wire form
+ * returned by `system.describe`. Live `input` schemas are retained;
+ * functions are dropped. Pairs with `describePeer(sync, id)`, which
+ * returns the same shape from a remote peer.
+ *
+ * Built atop {@link walkActions}. Use that primitive directly if you want
+ * to iterate live callables instead of metadata.
+ */
+export function describeActions(actions: Actions): ActionManifest {
+	return Object.fromEntries(
+		Array.from(walkActions(actions), ([path, action]) => [path, toMeta(action)]),
+	);
+}
+
+function toMeta({ type, input, title, description }: Action): ActionMeta {
+	const meta: ActionMeta = { type };
+	if (input !== undefined) meta.input = input;
+	if (title !== undefined) meta.title = title;
+	if (description !== undefined) meta.description = description;
+	return meta;
 }
 
 /**
@@ -263,7 +311,7 @@ export async function dispatchAction(
  *
  * @example
  * ```ts
- * const result = await invokeNormalized<{ closedCount: number }>(
+ * const result = await invokeAction<{ closedCount: number }>(
  *   workspace.actions.tabs.close,
  *   { tabIds: [1, 2] },
  *   'tabs.close',
@@ -272,7 +320,7 @@ export async function dispatchAction(
  * console.log(result.data.closedCount);
  * ```
  */
-export async function invokeNormalized<T = unknown>(
+export async function invokeAction<T = unknown>(
 	action: Action,
 	input?: unknown,
 	errorLabel: string = action.title ?? 'anonymous',
@@ -306,6 +354,30 @@ export type ActionFailed = Extract<RpcError, { name: 'ActionFailed' }>;
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
+ * Per-remote-call options, threaded through every wrapped leaf as a trailing
+ * optional argument. The proxy passes these to `sync.rpc(...)` directly —
+ * same shape, same name, single source of truth.
+ *
+ * Currently just `timeout`. Cancellation via `AbortSignal` is deliberately
+ * out — the underlying transport doesn't support it (a real cancel requires
+ * a CANCEL frame the server understands). Add when plumbed through.
+ */
+export type RemoteCallOptions = {
+	/** Per-call override of the default RPC timeout (ms). Default: 5000. */
+	timeout?: number;
+};
+
+/**
+ * Append an optional `RemoteCallOptions` parameter to an existing arg tuple.
+ * No-arg handlers `(): R` become `(input?: undefined, options?: RemoteCallOptions) => ...`
+ * so callers can always pass options as the second arg, regardless of whether
+ * the action has input.
+ */
+type WithOptions<Args extends readonly unknown[]> = Args extends []
+	? [input?: undefined, options?: RemoteCallOptions]
+	: [...Args, options?: RemoteCallOptions];
+
+/**
  * Compute the wrapped shape of a single action callable for remote/normalized
  * consumption. Four flat branches:
  *
@@ -315,16 +387,17 @@ export type ActionFailed = Extract<RpcError, { name: 'ActionFailed' }>;
  * - `(...) => R`                     → `(...) => Promise<Result<R, RpcError>>`
  *
  * The data type is unchanged; the error union widens by `RpcError` (to cover
- * transport failures: `ActionFailed`, `Disconnected`, etc.).
+ * transport failures: `ActionFailed`, `Disconnected`, etc.). Every wrapped
+ * leaf accepts a trailing `RemoteCallOptions` for per-call overrides.
  */
 export type WrapAction<F> = F extends (...args: infer Args) => infer R
 	? R extends Promise<infer Inner>
 		? Inner extends Result<infer T, infer E>
-			? (...args: Args) => Promise<Result<T, E | RpcError>>
-			: (...args: Args) => Promise<Result<Inner, RpcError>>
+			? (...args: WithOptions<Args>) => Promise<Result<T, E | RpcError>>
+			: (...args: WithOptions<Args>) => Promise<Result<Inner, RpcError>>
 		: R extends Result<infer T, infer E>
-			? (...args: Args) => Promise<Result<T, E | RpcError>>
-			: (...args: Args) => Promise<Result<R, RpcError>>
+			? (...args: WithOptions<Args>) => Promise<Result<T, E | RpcError>>
+			: (...args: WithOptions<Args>) => Promise<Result<R, RpcError>>
 	: never;
 
 /**

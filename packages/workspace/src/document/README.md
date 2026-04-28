@@ -6,14 +6,13 @@ A typed interface over Y.js for apps that need to evolve their data schema over 
 
 This is a wrapper around Y.js that handles schema versioning. Local-first apps can't run migration scripts, so data has to evolve gracefully. Old data coexists with new. The Workspace API bakes that into the design: define your schemas once with versions, write a migration function, and everything else is typed.
 
-The canonical primitive is `defineDocument(builder)`. You own the `Y.Doc` construction and compose every capability (tables, KV, persistence, sync, encryption, awareness) inline with `attach*` primitives. There is no framework convention for the shape of your returned bundle — you return whatever your app needs.
+The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, composes `attach*` calls inline, and returns whatever shape your app needs. There's no framework wrapper — just plain functions and the `attach*` primitives. Apps split into `index.ts` (iso doc factory), `<binding>.ts` (env-specific factory adding persistence/sync), and `client.ts` (singleton + lifecycle); see `.claude/skills/workspace-app-layout/SKILL.md`.
 
 ```
 ┌────────────────────────────────────────────────────────────┐
 │  Your App                                                  │
 ├────────────────────────────────────────────────────────────┤
-│  defineDocument((id) => { ydoc, tables, ...; dispose })    │ ← Public primitive
-│  ↓ .open(id) → your bundle                                 │
+│  function openBlog(): { ydoc, tables, ...; dispose }       │ ← Vanilla factory
 ├────────────────────────────────────────────────────────────┤
 │  attachTable / attachTables / attachKv                     │ ← Data attachments
 │  attachEncryption → .attachTable / .attachTables / .attachKv
@@ -30,7 +29,7 @@ The canonical primitive is `defineDocument(builder)`. You own the `Y.Doc` constr
 
 Three prefixes, each with a consistent meaning:
 
-- **`define*`** is pure — no Y.Doc, no side effects. Schemas, KV definitions, action factories, document factories.
+- **`define*`** is pure — no Y.Doc, no side effects. Schemas, KV definitions, action factories.
 - **`attach*`** binds a capability to an existing `Y.Doc` (or, in one documented cross-package case, to a sibling attachment). Side-effectful — registers observers or destroy listeners at call time. Returns a typed handle.
 - **`create*`** is pure construction — no listeners, no subscriptions at call time. Two flavors: slot-definition builders (`createTable`, `createKv`, `createAwareness`) that pair with an `attach*` sibling, and factory-of-factories (`createFileContentDocs` in `@epicenter/filesystem`) where the returned handle attaches later.
 
@@ -38,33 +37,32 @@ See `.agents/skills/attach-primitive/SKILL.md` for the full contract (shape, inv
 
 ```typescript
 import * as Y from 'yjs';
-import { defineTable, defineDocument, attachTable } from '@epicenter/workspace';
+import { defineTable, attachTable } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 // Pure schema
 const postsTable = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
-// Document factory: owns Y.Doc creation, composes attachments
-const blog = defineDocument((id: string) => {
-  const ydoc = new Y.Doc({ guid: id });
+// Vanilla factory: owns Y.Doc creation, composes attachments
+function openBlog() {
+  const ydoc = new Y.Doc({ guid: 'blog' });
   const tables = {
     posts: attachTable(ydoc, 'posts', postsTable),
   };
   return {
-    id,
     ydoc,
     tables,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
-});
+}
 
-const workspace = blog.open('blog');
+const workspace = openBlog();
 workspace.tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
 ```
 
 ## Composing More
 
-The builder closure is where you wire everything. Because you own the return shape, you can expose whatever handles your app needs.
+The factory body is where you wire everything. Because you own the return shape, you can expose whatever handles your app needs.
 
 ### Encryption (client-side E2E)
 
@@ -73,13 +71,13 @@ The encryption coordinator owns sibling attachments — `attachTable` / `attachT
 ```typescript
 import { attachEncryption } from '@epicenter/workspace';
 
-const factory = defineDocument((id) => {
-  const ydoc = new Y.Doc({ guid: id });
+function openBlog() {
+  const ydoc = new Y.Doc({ guid: 'blog' });
   const encryption = attachEncryption(ydoc);
   const tables = encryption.attachTables(ydoc, myTables);
   const kv = encryption.attachKv(ydoc, myKv);
-  return { id, ydoc, tables, kv, encryption, [Symbol.dispose]() { ydoc.destroy(); } };
-});
+  return { ydoc, tables, kv, encryption, [Symbol.dispose]() { ydoc.destroy(); } };
+}
 ```
 
 ### Persistence + sync
@@ -91,24 +89,24 @@ import {
   attachSync,
 } from '@epicenter/workspace';
 
-const factory = defineDocument((id) => {
-  const ydoc = new Y.Doc({ guid: id });
+function openBlog() {
+  const ydoc = new Y.Doc({ guid: 'blog' });
   const tables = attachTables(ydoc, myTables);
 
   const idb = attachIndexedDb(ydoc);
   attachBroadcastChannel(ydoc);
   const sync = attachSync(ydoc, {
-    url: (docId) => `wss://api.example.com/workspaces/${docId}`,
+    url: `wss://api.example.com/workspaces/${ydoc.guid}`,
     getToken: async () => auth.token,
     waitFor: idb.whenLoaded,
   });
 
   return {
-    id, ydoc, tables, idb, sync,
+    ydoc, tables, idb, sync,
     whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
-});
+}
 ```
 
 ### Awareness
@@ -122,7 +120,7 @@ const awareness = attachAwareness(ydoc, myAwarenessDefs);
 
 ### Per-row content documents
 
-Tables stay lean (ids, titles, metadata). Rich content lives in a separate `defineDocument` factory keyed on the row's content guid. The row holds the guid; the content factory opens a Y.Doc per row on demand. See `apps/fuji/src/lib/entry-content-doc.ts` for the canonical pattern.
+Tables stay lean (ids, titles, metadata). Rich content lives in a separate `openContent(guid)` factory keyed on the row's content guid. The row holds the guid; the factory opens a Y.Doc per row on demand. See `apps/fuji/src/lib/entry-content-doc.ts` for the canonical pattern.
 
 ## Design Decisions
 

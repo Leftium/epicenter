@@ -1,83 +1,115 @@
 /**
  * Workspace config loader.
  *
- * Loads `epicenter.config.ts` and collects every named export that quacks
- * like a workspace — an object with `whenReady` and `[Symbol.dispose]`.
- * Optional first-class fields (`actions`, `sync`, `awareness`) are read
- * directly off the export; the loader does no walking, no brand check, no
- * factory trickery.
+ * Contract:
+ *
+ *   A named export becomes a workspace if it implements [Symbol.dispose]
+ *   (called at exit; the discriminator). If it also has:
+ *
+ *     whenReady: Promise         awaited before action invocations
+ *     actions:   Actions          exposed to `run` and `list`
+ *     sync:      SyncAttachment   enables --peer + `peers`
+ *
+ *   …the CLI uses them. Anything else is the factory's business.
+ *
+ * The recommended config style is to export the result of an `openFoo()`
+ * factory directly — the same factory the app uses elsewhere — and let
+ * the factory's return shape be the contract.
  *
  * @example
- * ```typescript
- * // epicenter.config.ts:
- * //   const ydoc = new Y.Doc({ guid: 'notes' });
- * //   const idb = attachIndexedDb(ydoc);
- * //   const tables = attachTables(ydoc, schemas);
- * //   const actions = createNotesActions(tables);
- * //   const sync = attachSync(ydoc, { ... });
- * //   export const notes = {
- * //     whenReady: idb.whenLoaded,
- * //     actions,
- * //     sync,
- * //     [Symbol.dispose]() { ydoc.destroy(); },
- * //   };
+ * ```ts
+ * // epicenter.config.ts
+ * import { openFuji } from '@my/app/server';
+ * export const fuji = openFuji({ auth, device });
+ * ```
  *
- * const { entries, dispose } = await loadConfig('/path/to/project');
- * try {
- *   for (const { name, workspace } of entries) {
- *     await workspace.whenReady;
- *     // dispatch actions, read sync, ...
- *   }
- * } finally {
- *   await dispose();
+ * Then on the consumer side:
+ *
+ * ```ts
+ * await using config = await loadConfig('/path/to/project');
+ * for (const { name, workspace } of config.entries) {
+ *   if (workspace.whenReady) await workspace.whenReady;
+ *   // dispatch actions, read sync, ...
  * }
+ * // sockets flushed automatically on scope exit
  * ```
  */
 
-import type { Actions, SyncAttachment } from '@epicenter/workspace';
+import type {
+	Actions,
+	PeerAwarenessState,
+	SyncAttachment,
+} from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
 
 /**
- * Minimal awareness shape the CLI relies on. Users typically attach the
- * typed wrapper from `attachAwareness` (which exposes `.raw`) or the raw
- * y-protocols `Awareness`. Either shape works — `readPeers` does the
- * unwrapping.
+ * Fields the CLI looks at on each workspace export. Only `[Symbol.dispose]`
+ * is required (it's the discriminator); everything else is read when
+ * present. Extra fields the factory returns are ignored.
  */
-export type AwarenessLike = {
-	clientID: number;
-	getStates(): Map<number, unknown>;
+export type LoadedWorkspace = {
+	/**
+	 * Called by the CLI at exit. The discriminator — its presence is what
+	 * marks the export as a workspace.
+	 */
+	[Symbol.dispose](): void;
+
+	/** Awaited before any action invocation, if present. */
+	readonly whenReady?: Promise<unknown>;
+
+	/** Exposes runnable actions to `epicenter run` / `epicenter list`. */
+	readonly actions?: Actions;
+
+	/**
+	 * Enables `--peer` targeting and `epicenter peers`. `attachSync(doc, { device })`
+	 * carries presence inline — `peers()` / `find()` / `observe()` live on the
+	 * SyncAttachment when the workspace was constructed with a `device`.
+	 */
+	readonly sync?: SyncAttachment;
 };
 
 /**
- * The shape every loaded workspace export must satisfy. Extra fields are
- * ignored by the CLI; only these are addressed.
+ * Per-peer awareness state under the standard `device` schema. Re-exported
+ * from `@epicenter/workspace` for ergonomic consumption — `state.device` is
+ * set synchronously at attach time, so consumers read
+ * `state.device.{id,name,platform}` without `?.`.
  */
-export type LoadedWorkspace = {
-	readonly whenReady: Promise<unknown>;
-	readonly actions?: Actions;
-	readonly sync?: SyncAttachment;
-	readonly awareness?: AwarenessLike | { raw: AwarenessLike };
-	[Symbol.dispose](): void;
+export type AwarenessState = PeerAwarenessState;
+
+/** One named workspace export from `epicenter.config.ts`. */
+export type WorkspaceEntry = {
+	name: string;
+	workspace: LoadedWorkspace;
 };
 
 export type LoadConfigResult = {
-	entries: { name: string; workspace: LoadedWorkspace }[];
+	entries: WorkspaceEntry[];
 	/**
-	 * Release every workspace. Disposes each (synchronous) and awaits any
-	 * `sync.whenDisposed` barriers so the CLI exits cleanly after closing
-	 * sockets.
+	 * Release every workspace. Calls each `workspace[Symbol.dispose]()`
+	 * (synchronous) and awaits any `sync.whenDisposed` barriers so the CLI
+	 * exits cleanly after closing sockets.
+	 *
+	 * Implements `[Symbol.asyncDispose]` so callers can write
+	 * `await using config = await loadConfig(...)` per TC39 explicit
+	 * resource management.
 	 */
-	dispose(): Promise<void>;
+	[Symbol.asyncDispose](): Promise<void>;
 };
 
+/**
+ * A workspace is anything with `[Symbol.dispose]`. That's the whole
+ * contract — the factory's return shape is the source of truth for
+ * everything else.
+ */
 function isLoadedWorkspace(value: unknown): value is LoadedWorkspace {
-	if (value == null || typeof value !== 'object') return false;
-	const v = value as Record<PropertyKey, unknown>;
-	if (!('whenReady' in v)) return false;
-	const dispose = v[Symbol.dispose];
-	return typeof dispose === 'function';
+	return (
+		value != null &&
+		typeof value === 'object' &&
+		typeof (value as Record<PropertyKey, unknown>)[Symbol.dispose] ===
+			'function'
+	);
 }
 
 /**
@@ -85,8 +117,7 @@ function isLoadedWorkspace(value: unknown): value is LoadedWorkspace {
  * exports are skipped; use named exports so the CLI can address them by
  * name.
  *
- * @throws If no config file is found or no valid workspace exports are
- * detected.
+ * @throws If the config file is missing or no workspace exports are found.
  */
 export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	const configPath = join(resolve(targetDir), CONFIG_FILENAME);
@@ -97,7 +128,7 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 
 	const module = await import(Bun.pathToFileURL(configPath).href);
 
-	const entries: LoadConfigResult['entries'] = [];
+	const entries: WorkspaceEntry[] = [];
 	for (const [name, value] of Object.entries(module)) {
 		if (name === 'default') continue;
 		if (!isLoadedWorkspace(value)) continue;
@@ -107,18 +138,14 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	if (entries.length === 0) {
 		throw new Error(
 			`No workspaces found in ${CONFIG_FILENAME}.\n` +
-				`Export an object with whenReady and [Symbol.dispose]:\n` +
-				`  export const notes = {\n` +
-				`    whenReady: idb.whenLoaded,\n` +
-				`    actions, sync,\n` +
-				`    [Symbol.dispose]() { ydoc.destroy(); },\n` +
-				`  };`,
+				`Export at least one named value implementing [Symbol.dispose] — ` +
+				`typically the return of an openFoo() factory.`,
 		);
 	}
 
 	return {
 		entries,
-		dispose: async () => {
+		async [Symbol.asyncDispose]() {
 			const barriers: Promise<unknown>[] = [];
 			for (const { workspace } of entries) {
 				if (workspace.sync?.whenDisposed) barriers.push(workspace.sync.whenDisposed);

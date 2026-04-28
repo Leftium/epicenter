@@ -31,12 +31,13 @@ describe('createAwareness', () => {
 
 	test('setLocalField() updates single field', () => {
 		const { awareness } = setup();
-		awareness.setLocal({ name: 'alice' });
+		awareness.setLocal({ cursorX: 0, cursorY: 0, name: 'alice' });
 		awareness.setLocalField('cursorX', 1);
 
 		expect(awareness.getLocal()).toEqual({
 			name: 'alice',
 			cursorX: 1,
+			cursorY: 0,
 		});
 	});
 
@@ -45,45 +46,44 @@ describe('createAwareness', () => {
 		expect(awareness.getLocalField('cursorX')).toBeUndefined();
 	});
 
-	test('getAll() validates fields against schema', () => {
+	test('getAll() excludes peers missing any defined field', () => {
 		const { awareness, raw } = setup();
-		awareness.setLocal({ cursorX: 1 });
 		raw.getStates().set(202, { cursorX: 'bad', name: 'remote' });
 
-		const all = awareness.getAll();
-		expect(all.get(202)).toEqual({ name: 'remote' });
+		expect(awareness.getAll().has(202)).toBe(false);
 	});
 
-	test('getAll() skips clients with zero valid fields', () => {
+	test('getAll() includes peers with all fields valid', () => {
 		const { awareness, raw } = setup();
-		raw.getStates().set(333, { cursorX: 'bad' });
+		raw.getStates().set(303, { cursorX: 1, cursorY: 2, name: 'ok' });
 
-		expect(awareness.getAll().has(333)).toBe(false);
-	});
-
-	test('getAll() includes clients with partial valid fields', () => {
-		const { awareness, raw } = setup();
-		raw.getStates().set(444, { cursorX: 'bad', name: 'valid' });
-
-		expect(awareness.getAll().get(444)).toEqual({ name: 'valid' });
+		expect(awareness.getAll().get(303)).toEqual({
+			cursorX: 1,
+			cursorY: 2,
+			name: 'ok',
+		});
 	});
 
 	test('getAll() includes self', () => {
 		const { awareness, raw } = setup();
-		awareness.setLocal({ name: 'me' });
+		awareness.setLocal({ name: 'me', cursorX: 0, cursorY: 0 });
 
-		expect(awareness.getAll().get(raw.clientID)).toEqual({ name: 'me' });
+		expect(awareness.getAll().get(raw.clientID)).toEqual({
+			name: 'me',
+			cursorX: 0,
+			cursorY: 0,
+		});
 	});
 
 	describe('peers()', () => {
 		test('excludes self', () => {
 			const { awareness, raw } = setup();
-			awareness.setLocal({ name: 'self' });
+			awareness.setLocal({ name: 'self', cursorX: 0, cursorY: 0 });
 
 			expect(awareness.peers().has(raw.clientID)).toBe(false);
 		});
 
-		test('includes remote peers with valid fields', () => {
+		test('includes remote peers with all fields valid', () => {
 			const { awareness, raw } = setup();
 			raw.getStates().set(101, { name: 'remote', cursorX: 3, cursorY: 4 });
 
@@ -94,18 +94,18 @@ describe('createAwareness', () => {
 			});
 		});
 
-		test('includes remote peers with zero valid fields (bare clients)', () => {
+		test('excludes remote peers missing fields', () => {
 			const { awareness, raw } = setup();
 			raw.getStates().set(102, { bogus: true });
 
-			expect(awareness.peers().get(102)).toEqual({});
+			expect(awareness.peers().has(102)).toBe(false);
 		});
 
-		test('validates fields against schema (rejects invalid)', () => {
+		test('excludes remote peers with any invalid field', () => {
 			const { awareness, raw } = setup();
-			raw.getStates().set(103, { name: 123, cursorX: 'bad' });
+			raw.getStates().set(103, { name: 123, cursorX: 'bad', cursorY: 0 });
 
-			expect(awareness.peers().get(103)).toEqual({});
+			expect(awareness.peers().has(103)).toBe(false);
 		});
 
 		test('returns empty map when no remote peers', () => {
@@ -150,27 +150,43 @@ describe('createAwareness', () => {
 describe('attachAwareness', () => {
 	test('constructs a fresh y-protocols Awareness bound to the ydoc', () => {
 		const ydoc = new Y.Doc();
-		const { raw } = attachAwareness(ydoc, { name: type('string') });
+		const { raw } = attachAwareness(
+			ydoc,
+			{ name: type('string') },
+			{ name: 'alice' },
+		);
 
 		expect(raw).toBeInstanceOf(YAwareness);
 		expect(raw.doc).toBe(ydoc);
 	});
 
+	test('publishes initial state synchronously before returning', () => {
+		const ydoc = new Y.Doc();
+		const awareness = attachAwareness(
+			ydoc,
+			{ name: type('string'), score: type('number') },
+			{ name: 'alice', score: 7 },
+		);
+
+		expect(awareness.getLocal()).toEqual({ name: 'alice', score: 7 });
+	});
+
 	test('empty defs — works as a structural slot', () => {
 		const ydoc = new Y.Doc();
-		const awareness = attachAwareness(ydoc, {});
+		const awareness = attachAwareness(ydoc, {}, {});
 
 		// `.raw` is usable regardless of defs.
 		expect(awareness.raw).toBeInstanceOf(YAwareness);
 
-		// With no defs, `getAll()` of a remote state surfaces zero valid fields.
+		// With zero defined fields, every state vacuously validates and
+		// surfaces as `{}` — no fields to project.
 		awareness.raw.getStates().set(777, { anything: 'goes' });
-		expect(awareness.getAll().has(777)).toBe(false);
+		expect(awareness.getAll().get(777)).toEqual({});
 	});
 
 	test('ydoc.destroy() tears down the Awareness via its self-registered hook', () => {
 		const ydoc = new Y.Doc();
-		const { raw } = attachAwareness(ydoc, {});
+		const { raw } = attachAwareness(ydoc, {}, {});
 
 		let destroyed = 0;
 		raw.on('destroy', () => {

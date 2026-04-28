@@ -13,7 +13,7 @@ import {
 	createDisposableCache,
 	defineMutation,
 	defineQuery,
-	dispatchAction,
+	type DeviceDescriptor,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -21,7 +21,13 @@ import Type from 'typebox';
 import { Ok } from 'wellcrafted/result';
 import { openOpensidian as openOpensidianDoc } from './index';
 
-export function openOpensidian({ auth }: { auth: AuthClient }) {
+export function openOpensidian({
+	auth,
+	device,
+}: {
+	auth: AuthClient;
+	device: DeviceDescriptor;
+}) {
 	const doc = openOpensidianDoc();
 
 	const idb = attachIndexedDb(doc.ydoc);
@@ -173,12 +179,15 @@ export function openOpensidian({ auth }: { auth: AuthClient }) {
 		},
 	};
 
-	const sync = attachSync(doc.ydoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb.whenLoaded,
-		getToken: () => auth.getToken(),
-		dispatch: (action, input) => dispatchAction(actions, action, input),
-	});
+	const sync = attachSync(
+		{ ydoc: doc.ydoc, actions },
+		{
+			url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+			waitFor: idb,
+			device,
+			getToken: () => auth.getToken(),
+		},
+	);
 
 	return {
 		...doc,
@@ -189,6 +198,11 @@ export function openOpensidian({ auth }: { auth: AuthClient }) {
 		bash,
 		actions,
 		sync,
+		/**
+		 * Resolves when IndexedDB has hydrated the local snapshot — the UI can
+		 * render with persisted data. Does NOT gate sync (the WebSocket can
+		 * connect at any time, including never if the user is offline).
+		 */
 		whenReady: idb.whenLoaded,
 	};
 }

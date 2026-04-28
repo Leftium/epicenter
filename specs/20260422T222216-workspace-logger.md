@@ -1,7 +1,7 @@
 # Workspace Logger — JSONL, Local, DI
 
 **Date**: 2026-04-22
-**Status**: Phases 1–5 implemented. Addendum 2026-04-23 below — core extracted to `wellcrafted/logger`; workspace now owns only the Bun-specific `jsonlFileSink`.
+**Status**: shipped — Phases 1–5 implemented. Addendum 2026-04-23 below — core extracted to `wellcrafted/logger`; workspace now owns only the Bun-specific `jsonlFileSink`.
 **Author**: AI-assisted
 **Branch**: braden-w/document-primitive (or successor)
 

@@ -9,6 +9,17 @@
  * To wire awareness into a sync attachment, pass `awareness.raw` (the
  * underlying y-protocols `Awareness`) to
  * `attachSync(ydoc, { awareness: awareness.raw, ... })`.
+ *
+ * Awareness invariants (from y-protocols/awareness):
+ *
+ *   - **Ephemeral.** ~30s liveness window; peers that crashed silently
+ *     disappear after `outdatedTimeout`. Awareness is a liveness probe,
+ *     not a directory.
+ *   - **clientID is session-local.** Re-randomized on every `new Y.Doc()`,
+ *     so numeric clientIDs are stable within one presence session only.
+ *   - **No field-name convention.** Bundles that want stable addressing
+ *     across reconnects persist an identifier locally and publish it into
+ *     awareness under whatever name they choose.
  */
 
 import { Awareness as YAwareness } from 'y-protocols/awareness';
@@ -27,10 +38,14 @@ export type InferAwarenessValue<T> =
 	T extends CombinedStandardSchema<unknown, infer TOutput> ? TOutput : never;
 
 /**
- * The composed state type — all fields optional since peers may not have set every field.
+ * The composed state type. All fields are required: `attachAwareness` takes an
+ * `initial` value for every defined field and publishes it synchronously
+ * before returning, so any state on the wire (including the local one) is
+ * guaranteed to carry every defined field. If you define a field, you publish
+ * a value — there is no "field defined but not yet set" window.
  */
 export type AwarenessState<TDefs extends AwarenessDefinitions> = {
-	[K in keyof TDefs]?: InferAwarenessValue<TDefs[K]>;
+	[K in keyof TDefs]: InferAwarenessValue<TDefs[K]>;
 };
 
 /**
@@ -41,7 +56,7 @@ export type AwarenessState<TDefs extends AwarenessDefinitions> = {
  * import both should alias the y-protocols import similarly.
  */
 export type Awareness<TDefs extends AwarenessDefinitions> = {
-	setLocal(state: AwarenessState<TDefs>): void;
+	setLocal(state: Partial<AwarenessState<TDefs>>): void;
 
 	setLocalField<K extends keyof TDefs & string>(
 		key: K,
@@ -68,18 +83,29 @@ export type Awareness<TDefs extends AwarenessDefinitions> = {
 /**
  * Bind a record of awareness field definitions to a Y.Doc.
  *
+ * `initial` carries the starting value for every defined field. It is set
+ * synchronously before the function returns, so the local state on the wire
+ * is well-formed from the first frame — no consumer ever observes a peer
+ * with a field defined but unset.
+ *
+ * Fields can still be updated later via `setLocal` / `setLocalField`.
+ *
  * Each field is independently validated on read. The underlying
  * `Awareness` instance tears itself down on `ydoc.destroy()` via a handler
  * registered by `y-protocols` in its constructor.
  *
  * @param ydoc - The Y.Doc to attach awareness to
  * @param definitions - Map of field name to StandardSchema
+ * @param initial - Starting value for every defined field
  */
 export function attachAwareness<TDefs extends AwarenessDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TDefs,
+	initial: AwarenessState<TDefs>,
 ): Awareness<TDefs> {
-	return createAwareness(new YAwareness(ydoc), definitions);
+	const awareness = createAwareness(new YAwareness(ydoc), definitions);
+	awareness.setLocal(initial);
+	return awareness;
 }
 
 /**
@@ -94,16 +120,21 @@ export function createAwareness<TDefs extends AwarenessDefinitions>(
 ): Awareness<TDefs> {
 	const defEntries = Object.entries(definitions);
 
-	/** Validate awareness state fields against schemas. */
-	function validateState(state: unknown): Record<string, unknown> {
+	/**
+	 * Validate awareness state — every defined field must be present and
+	 * pass its schema. Returns `null` if any field is missing or invalid.
+	 * This matches the publish-time invariant from `attachAwareness`: a
+	 * peer that publishes any state publishes all defined fields.
+	 */
+	function validateState(state: unknown): Record<string, unknown> | null {
 		const validated: Record<string, unknown> = {};
 		for (const [fieldKey, fieldSchema] of defEntries) {
 			const fieldValue = (state as Record<string, unknown>)[fieldKey];
-			if (fieldValue === undefined) continue;
+			if (fieldValue === undefined) return null;
 
 			const fieldResult = fieldSchema['~standard'].validate(fieldValue);
-			if (fieldResult instanceof Promise) continue;
-			if (fieldResult.issues) continue;
+			if (fieldResult instanceof Promise) return null;
+			if (fieldResult.issues) return null;
 
 			validated[fieldKey] = fieldResult.value;
 		}
@@ -137,7 +168,7 @@ export function createAwareness<TDefs extends AwarenessDefinitions>(
 			for (const [clientId, state] of awareness.getStates()) {
 				if (state === null || typeof state !== 'object') continue;
 				const validated = validateState(state);
-				if (Object.keys(validated).length > 0) {
+				if (validated !== null) {
 					result.set(clientId, validated as AwarenessState<TDefs>);
 				}
 			}
@@ -150,7 +181,10 @@ export function createAwareness<TDefs extends AwarenessDefinitions>(
 			for (const [clientId, state] of awareness.getStates()) {
 				if (clientId === selfId) continue;
 				if (state === null || typeof state !== 'object') continue;
-				result.set(clientId, validateState(state) as AwarenessState<TDefs>);
+				const validated = validateState(state);
+				if (validated !== null) {
+					result.set(clientId, validated as AwarenessState<TDefs>);
+				}
 			}
 			return result;
 		},

@@ -13,7 +13,6 @@ export {
 	generateSavedTabId,
 	type SavedTab,
 	SavedTabId,
-	tabManagerAwarenessDefs,
 	tabManagerTables,
 	type ToolTrust,
 } from './definition';

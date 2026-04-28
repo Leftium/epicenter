@@ -1,10 +1,142 @@
 # Remote action dispatch — calling actions on a peer device
 
 **Date:** 2026-04-25
-**Status:** Proposed (revised after critical review)
-**Depends on:** `specs/20260425T200000-actions-passthrough-adr.md` landing first
+**Status:** shipped. Supersedes the `invoke()` shape in `specs/20260425T000000-device-actions-via-awareness.md`.
+**Depends on:** `specs/20260425T200000-actions-passthrough-adr.md` (shipped)
 **Supersedes:** the `invoke()` proposal in `specs/20260425T000000-device-actions-via-awareness.md`
-**Revision:** v2 — reshaped after design critique. Curried API; primitive promoted; invariants made explicit; per-call options as MVP.
+**Revisions:** v2 (curried API critique); v3 (post-collapse pass — see "Final design" below); v4 (further collapse: `dispatch:` removed entirely from `attachSync`; `RemoteCallOptions` aligned to `{ timeout? }` only).
+
+---
+
+## Final design (post-collapse pass, 2026-04-25)
+
+The body of this spec describes the v2 design (three layers: `createRemoteProxy`, `createRemoteCaller`, awareness convention). After working through the design with Braden, **the v2 layering was collapsed**. This section is the source of truth; the rest of the spec is preserved as historical context for the reasoning.
+
+### Public API — one function
+
+```ts
+import { peer } from '@epicenter/workspace';
+import type { TabManagerActions } from '@epicenter/tab-manager';
+
+const macbook = peer<TabManagerActions>(fuji, 'macbook-pro');
+const result = await macbook.tabs.close({ tabIds: [1] }, { timeout: 5_000 });
+// Promise<Result<{ closedCount }, BrowserApiFailed | RpcError.PeerNotFound | RpcError.PeerLeft | RpcError.Timeout | RpcError.ActionFailed>>
+
+if (result.error) toast.error(extractErrorMessage(result.error));
+else toast.success(`closed ${result.data.closedCount} tabs`);
+```
+
+`peer<T>(workspace, deviceId)` is the entire public surface. Returns a typed JavaScript Proxy. Every leaf is `(input?, options?) => Promise<Result<T, E | RpcError>>`. The proxy is stateless — each call resolves the deviceId against awareness and dispatches via `workspace.sync.rpc`.
+
+### What was collapsed from v2
+
+| v2 had | Final has | Why |
+|---|---|---|
+| 3 layers (`createRemoteProxy` / `createRemoteCaller` / awareness convention) | 1 function (`peer`) + awareness convention | The "primitive for custom transports" had zero real consumers; mocking `sync.rpc` directly works for tests; HTTP fallback is speculative |
+| `RemoteTarget = { deviceId } \| { deviceName } \| { clientId }` discriminator | `string` (deviceId only) | Fuzzy name matching and clientId addressing are speculative; one form, one resolver |
+| `--peer device.<field>=<value>` CLI query DSL | `--peer <deviceId>` plain string | DSL implied extensibility we won't ship; mirrors awareness shape and silently breaks on rename |
+| `prefer: 'unique' \| 'any'` option, `RpcError.AmbiguousPeer` variant | First-match-wins, no ambiguity error | Per-installation deviceId convention makes collisions cryptographically unreachable |
+| Dot-prefix CLI sugar (`epicenter run mac.tabs.close`) | Only `--peer` form | Two ways to do the same thing; dot-prefix has implicit fallback ambiguity (peer vs workspace export) |
+| Two awareness top-level keys (`device`, `offers`) | One key (`device.offers`) | Always written together at boot, never partially updated |
+| `createRemoteCaller(workspace).peer<T>(target)` two-step | `peer<T>(workspace, deviceId)` one-step | Intermediate `RemoteCaller` noun has no other callers; workspace always in scope |
+| `dispatch:` callback on `attachSync` | `actions:` data on `attachSync` | All apps had identical `(p, i) => dispatchAction(actions, p, i)` boilerplate; idiomatic precedent (tRPC, gRPC, Comlink) is data not callbacks; wrapping (auth/audit) becomes upstream tree composition |
+
+### The deviceId convention (load-bearing for first-match-wins)
+
+`deviceId` MUST be a per-installation nanoid stored in platform-appropriate persistent storage. Two browser tabs of the same SPA share storage → share deviceId → are interchangeable runtimes (first-match correct). Two physical devices have distinct nanoids (no collision). Hardcoded deviceIds are an anti-pattern that breaks the invariant.
+
+The framework ships `getOrCreateDeviceId(storage: SimpleStorage): string` for the common case:
+
+```ts
+import { getOrCreateDeviceId } from '@epicenter/workspace';
+
+// In each app's iso entry:
+const deviceId = getOrCreateDeviceId(localStorageAdapter);
+```
+
+`SimpleStorage` is a sync `{ getItem, setItem }` shape — same pattern as auth's `SessionStore`. Adapters land next to the storage they wrap (localStorage in svelte-utils, chrome.storage with `whenReady` in tab-manager, tauri-plugin-store wrapper in apps that need it).
+
+### Awareness publishing (PR-D side)
+
+```ts
+import {
+  attachAwareness, attachEncryption,
+  standardAwarenessDefs, actionManifest, getOrCreateDeviceId,
+} from '@epicenter/workspace';
+
+const awareness = attachAwareness(ydoc, { ...standardAwarenessDefs });
+const actions = createFujiActions(tables);
+awareness.setLocal({
+  device: {
+    id: getOrCreateDeviceId(storage),
+    name: 'Braden MacBook',
+    platform: 'tauri',
+    offers: actionManifest(actions),
+  },
+});
+```
+
+`actionManifest(actions)` walks the action tree and returns `Record<dotPath, { type, input?: JSONSchema, title?, description? }>`. JSON Schema is full (not path-only) so the discovery use case (mobile UI builds a form for a remote action) works without an additional fetch.
+
+### Discovery
+
+```ts
+// Snapshot
+const peers = fuji.awareness.peers();   // Map<clientId, { device }>
+for (const [clientId, state] of peers) {
+  if (!state.device) continue;
+  console.log(`${state.device.name} (${state.device.platform}): ${state.device.id}`);
+  for (const path of Object.keys(state.device.offers ?? {})) console.log(`  - ${path}`);
+}
+
+// Reactive (existing API)
+fuji.awareness.observe((changes) => { /* added / removed / updated */ });
+```
+
+CLI: `epicenter peers` (already shipped) lists devices with deviceId prominent for copy-paste.
+
+### Resolver
+
+```ts
+export function resolvePeer(
+  awareness: Awareness,
+  deviceId: string,
+): Result<number, RpcError.PeerNotFound>;
+```
+
+Walks `awareness.getStates()` in clientId-ascending order; returns the first match. Single function, used by both `peer()` proxy and the CLI's `--peer` flag.
+
+### Disconnect-aware short-circuit
+
+`peer()` keeps a `Map<clientId, Set<PendingCall>>` and subscribes to awareness `removed` events. When a clientId disappears with pending calls, those promises reject with `RpcError.PeerLeft` immediately — no waiting for the `timeout` to fire.
+
+### CLI surface
+
+```bash
+epicenter peers                                                    # discovery
+epicenter run --peer macbook-pro tabs.close --json '{...}'         # remote dispatch
+epicenter run tabs.close --json '{...}'                            # local
+```
+
+One form for remote (`--peer <deviceId>`), no dot-prefix sugar, no `device.<field>=<value>` query DSL.
+
+### Out of scope (deferred until a real consumer asks)
+
+- **Auth / per-action authorization gates** — the workspace room is the auth boundary in v1.
+- **Fan-out** (`peer.all<T>(workspace).action(...)`) — speculative.
+- **`{ clientId }` direct addressing** — no real use case identified.
+- **Per-action timeout in metadata** — caller passes `{ timeout }` per call.
+- **Lazy schema fetch on demand** — full schema in awareness for v1; revisit if payload is a problem.
+- **Custom transports / HTTP fallback** — speculative; reintroduce `createRemoteProxy(send)` as an unexported helper-promotable-to-public if a real case shows up.
+
+### Execution
+
+See `specs/20260426T000000-execution-prompt-device-actions-and-remote-dispatch.md` for the eight-commit execution plan.
+
+---
+
+## Historical: v2 design (preserved for reasoning trail)
+
 
 ## TL;DR
 

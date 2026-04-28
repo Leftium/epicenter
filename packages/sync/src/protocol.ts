@@ -71,7 +71,13 @@ export const MESSAGE_TYPE = {
 	 * `[varuint: 101] [varuint: 0] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: action] [varUint8Array: JSON input]`
 	 *
 	 * Wire format (RESPONSE):
-	 * `[varuint: 101] [varuint: 1] [varuint: requestId] [varuint: requesterClientId] [varUint8Array: JSON { data, error }]`
+	 * `[varuint: 101] [varuint: 1] [varuint: requestId] [varuint: requesterClientId] [varUint8Array: JSON Result<T, E>]`
+	 *
+	 * The JSON payload is a wellcrafted `Result<T, E>`: success is
+	 * `{ data, error: null }`, failure is `{ data: null, error: <serialized> }`.
+	 * The discriminator is `error === null`, not key presence, so a void
+	 * handler that produces `{ data: undefined, error: null }` round-trips
+	 * correctly even though `JSON.stringify` drops the `data` key.
 	 */
 	RPC: 101,
 } as const;
@@ -522,12 +528,22 @@ export function encodeRpcRequest({
 /**
  * Encode an RPC RESPONSE message.
  *
+ * The result envelope follows wellcrafted's `Result<T, E>` shape: success is
+ * `{ data, error: null }`, failure is `{ data: null, error: <err> }`. The
+ * discriminator is the **value** of `error` (`error === null` means success),
+ * never key presence — which means it doesn't matter that `JSON.stringify`
+ * silently drops keys whose value is `undefined`. A void handler producing
+ * `{ data: undefined, error: null }` round-trips as `{ error: null }`, still
+ * decodes as success, and `result.data` is correctly `undefined`.
+ *
+ * @see https://github.com/wellcrafted/wellcrafted — `isOk`/`isErr` use the same value-based discriminator.
+ *
  * Wire format:
- * `[varuint: 101] [varuint: 1=RESPONSE] [varuint: requestId] [varuint: requesterClientId] [varUint8Array: JSON { data, error }]`
+ * `[varuint: 101] [varuint: 1=RESPONSE] [varuint: requestId] [varuint: requesterClientId] [varUint8Array: JSON Result]`
  *
  * @param options.requestId - Echo of the request's requestId
  * @param options.requesterClientId - Awareness clientId of the original requester (for DO routing)
- * @param options.result - The result envelope: `{ data, error }`
+ * @param options.result - The wellcrafted Result envelope: `{ data, error }`
  * @returns Encoded RPC RESPONSE message
  */
 export function encodeRpcResponse({
@@ -609,7 +625,12 @@ export function decodeRpcPayload(decoder: decoding.Decoder): DecodedRpcMessage {
 			const requesterClientId = decoding.readVarUint(decoder);
 			const jsonBytes = decoding.readVarUint8Array(decoder);
 			const raw = JSON.parse(new TextDecoder().decode(jsonBytes));
-			if (typeof raw !== 'object' || raw === null || !('data' in raw)) {
+			// Validate on `error` — the discriminator key — not `data`.
+			// `data` may be absent on the wire when the handler returned
+			// `undefined` (JSON.stringify drops undefined keys); `error` is
+			// always set to `null` on success or a serialized error on failure,
+			// so it survives the round trip.
+			if (typeof raw !== 'object' || raw === null || !('error' in raw)) {
 				throw new Error('Malformed RPC response: expected { data, error }');
 			}
 			const result = raw as { data: unknown; error: unknown };

@@ -38,14 +38,14 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
-import {
-	renderDaemonResult,
-	resolveTarget,
-	tryGetDaemon,
-} from '../daemon/sibling-dispatch';
+import { tryGetDaemon } from '../daemon/client';
 import { loadConfig, type WorkspaceEntry } from '../load-config';
-import { dirOption, workspaceOption } from '../util/common-options';
-import { formatYargsOptions, output, outputError } from '../util/format-output';
+import { dirOption, resolveTarget, workspaceOption } from '../util/common-options';
+import {
+	formatYargsOptions,
+	output,
+	outputError,
+} from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { explainEmpty, waitForPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
@@ -187,8 +187,14 @@ export const runCommand: CommandModule = {
 		// running. Falls through to the standalone path otherwise.
 		const daemon = await tryGetDaemon(target);
 		if (daemon) {
-			const result = await daemon.call<RunResult>('run', ctx);
-			await renderDaemonResult(result, (data) => renderRunResult(data, format));
+			const transport = await daemon.run(ctx);
+			// Outer is transport, inner is the runCore Result (UsageError, RpcError, ...).
+			if (transport.error === null) {
+				renderRunResult(transport.data, format);
+			} else {
+				outputError(`error: ${transport.error.message}`);
+				process.exitCode = 1;
+			}
 			return;
 		}
 

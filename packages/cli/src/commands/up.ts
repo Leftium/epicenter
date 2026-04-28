@@ -29,19 +29,15 @@ import {
 	type LogEvent,
 	type LogLevel,
 	type LogSink,
-	type Logger,
 } from 'wellcrafted/logger';
 import type { Argv, CommandModule } from 'yargs';
 
+import { buildApp } from '../daemon/app.js';
 import {
-	type IpcFrame,
-	type IpcHandler,
-	type IpcRequest,
-	type IpcServerHandle,
-	type SerializedError,
-	startIpcServer,
+	bindUnixSocket,
+	type UnixSocketServer,
 	unlinkSocketFile,
-} from '../daemon/ipc-server.js';
+} from '../daemon/unix-socket.js';
 import {
 	type DaemonMetadata,
 	inspectExistingDaemon,
@@ -60,9 +56,6 @@ import {
 	loadConfig,
 } from '../load-config.js';
 import { dirFromArgv, dirOption } from '../util/common-options.js';
-import { resolveEntry } from '../util/resolve-entry.js';
-import { listCore, type ListCtx, type ListResult } from './list.js';
-import { runCore, type RunCtx, type RunResult } from './run.js';
 
 /**
  * Hardcoded ceiling on how long any single workspace's `whenConnected`
@@ -175,7 +168,7 @@ export type UpOptions = {
  *   metadata + socket. Idempotent.
  */
 export type UpHandle = {
-	server: IpcServerHandle;
+	server: UnixSocketServer;
 	entries: WorkspaceEntry[];
 	config: LoadConfigResult;
 	metadata: DaemonMetadata;
@@ -189,10 +182,10 @@ export type UpHandle = {
  */
 export type RunUpDeps = {
 	loadConfig?: (dir: string) => Promise<LoadConfigResult>;
-	startIpcServer?: (
+	bindUnixSocket?: (
 		socketPath: string,
-		handler: IpcHandler,
-	) => Promise<IpcServerHandle>;
+		app: ReturnType<typeof buildApp>,
+	) => Promise<UnixSocketServer>;
 	/**
 	 * Test-only override for {@link CONNECT_TIMEOUT_MS}. Production has no
 	 * way to tune this — it's a stopgap until the workspace package's
@@ -274,11 +267,11 @@ export async function runUp(
 	};
 	writeMetadata(absDir, metadata);
 
-	const handler = makeHandler(config.entries, log, () => void teardown());
-	const starter = deps.startIpcServer ?? startIpcServer;
-	let server: IpcServerHandle;
+	const app = buildApp(config.entries, () => void teardown());
+	const starter = deps.bindUnixSocket ?? bindUnixSocket;
+	let server: UnixSocketServer;
 	try {
-		server = await starter(socketPath, handler);
+		server = await starter(socketPath, app);
 	} catch (cause) {
 		unlinkMetadata(absDir);
 		await safeAsyncDispose(config);
@@ -368,129 +361,6 @@ export const upCommand: CommandModule = {
 		process.stdin.resume();
 	},
 };
-
-// ---------------------------------------------------------------------------
-// IPC handler
-// ---------------------------------------------------------------------------
-
-/**
- * Build the per-daemon IPC dispatcher. Each `cmd` maps to a thin wrapper
- * around either workspace state, a graceful-shutdown trigger, or one of
- * the refactored command cores (`listCore`, `runCore`).
- *
- * Workspace-scoped commands (`list`, `run`) read `args.workspace` /
- * `args.workspaceArg` and call `resolveEntry` to find the right entry,
- * the same lookup the cold path uses, so unknown-workspace errors come
- * out the identical phrasing in either path.
- *
- * `peers` returns rows tagged with their workspace, optionally narrowed
- * by an `args.workspace` filter. The shape matches what `peers.ts` cold
- * path emits, so the renderer doesn't branch.
- */
-function makeHandler(
-	entries: WorkspaceEntry[],
-	log: Logger,
-	triggerShutdown: () => void,
-): IpcHandler {
-	const ok = (id: string, data: unknown): IpcFrame => ({
-		id,
-		data,
-		error: null,
-	});
-	const err = (id: string, error: SerializedError): IpcFrame => ({
-		id,
-		data: null,
-		error,
-	});
-	const errFrom = (id: string, cause: unknown): IpcFrame =>
-		err(id, {
-			name: cause instanceof Error ? cause.name : 'Error',
-			message: cause instanceof Error ? cause.message : String(cause),
-		});
-
-	const lookup = (
-		name: string | undefined,
-		req: IpcRequest,
-		send: (frame: IpcFrame) => void,
-	): WorkspaceEntry | null => {
-		try {
-			return resolveEntry(entries, name);
-		} catch (cause) {
-			send(errFrom(req.id, cause));
-			return null;
-		}
-	};
-
-	return (req: IpcRequest, send: (frame: IpcFrame) => void) => {
-		log.debug('ipc cmd', { cmd: req.cmd, id: req.id });
-		switch (req.cmd) {
-			case 'ping':
-				send(ok(req.id, 'pong'));
-				return;
-			case 'peers': {
-				const filter =
-					(req.args as { workspace?: string } | undefined)?.workspace;
-				const rows: Array<{
-					workspace: string;
-					clientID: number;
-					device: unknown;
-				}> = [];
-				for (const entry of entries) {
-					if (filter && entry.name !== filter) continue;
-					const peers = entry.workspace.sync?.peers() ?? new Map();
-					for (const [clientID, state] of peers) {
-						rows.push({
-							workspace: entry.name,
-							clientID,
-							device: state.device,
-						});
-					}
-				}
-				send(ok(req.id, rows));
-				return;
-			}
-			case 'list': {
-				const ctx = req.args as ListCtx & { workspace?: string };
-				const entry = lookup(ctx.workspace, req, send);
-				if (!entry) return;
-				void (async () => {
-					try {
-						const data: ListResult = await listCore(entry, ctx);
-						send(ok(req.id, data));
-					} catch (cause) {
-						send(errFrom(req.id, cause));
-					}
-				})();
-				return;
-			}
-			case 'run': {
-				const ctx = req.args as RunCtx;
-				const entry = lookup(ctx.workspaceArg, req, send);
-				if (!entry) return;
-				void (async () => {
-					try {
-						const data: RunResult = await runCore(entry, ctx);
-						send(ok(req.id, data));
-					} catch (cause) {
-						send(errFrom(req.id, cause));
-					}
-				})();
-				return;
-			}
-			case 'shutdown':
-				send(ok(req.id, null));
-				triggerShutdown();
-				return;
-			default:
-				send(
-					err(req.id, {
-						name: 'UnknownCommand',
-						message: `unknown cmd: ${req.cmd}`,
-					}),
-				);
-		}
-	};
-}
 
 // ---------------------------------------------------------------------------
 // Helpers

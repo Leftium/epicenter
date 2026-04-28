@@ -16,7 +16,7 @@ import { join } from 'node:path';
 
 import type { CommandModule } from 'yargs';
 
-import { ipcPing } from '../daemon/ipc-client.js';
+import { pingDaemon } from '../daemon/client.js';
 import {
 	type DaemonMetadata,
 	enumerateDaemons,
@@ -40,9 +40,9 @@ export type PsRow = {
 	configChanged: boolean | '?';
 };
 
-/** Test seam; matches the production `ipcPing` signature. */
+/** Test seam; matches the production `pingDaemon` signature. */
 export type RunPsDeps = {
-	ipcPing?: (socketPath: string, timeoutMs?: number) => Promise<boolean>;
+	pingDaemon?: (socketPath: string, timeoutMs?: number) => Promise<boolean>;
 };
 
 /**
@@ -51,7 +51,7 @@ export type RunPsDeps = {
  * socket files) before the function returns.
  */
 export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
-	const ping = deps.ipcPing ?? ipcPing;
+	const ping = deps.pingDaemon ?? pingDaemon;
 	const rows: PsRow[] = [];
 	for (const meta of enumerateDaemons()) {
 		// Dead pid → orphan: unlink metadata + socket and skip.

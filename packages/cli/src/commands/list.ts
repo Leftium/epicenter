@@ -43,17 +43,17 @@ import Type, { type TSchema } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
-import {
-	renderDaemonResult,
-	resolveTarget,
-	tryGetDaemon,
-} from '../daemon/sibling-dispatch';
+import { tryGetDaemon } from '../daemon/client';
 import {
 	type AwarenessState,
 	loadConfig,
 	type WorkspaceEntry,
 } from '../load-config';
-import { dirOption, workspaceOption } from '../util/common-options';
+import {
+	dirOption,
+	resolveTarget,
+	workspaceOption,
+} from '../util/common-options';
 import {
 	formatYargsOptions,
 	output,
@@ -177,15 +177,21 @@ export const listCommand: CommandModule = {
 		// it. Falls through to the standalone path when no daemon answers.
 		const daemon = await tryGetDaemon(target);
 		if (daemon) {
-			const result = await daemon.call<ListResult>('list', {
+			const transport = await daemon.list({
 				path,
 				mode,
 				waitMs,
 				workspace: target.userWorkspace,
 			});
-			await renderDaemonResult(result, (data) =>
-				renderResult(data, path, format),
-			);
+			// Outer is transport, inner is the listCore Result (PeerMiss etc.).
+			// Unwrap one level so the renderer sees a ListResult, the same shape
+			// the cold path emits.
+			if (transport.error === null) {
+				await renderResult(transport.data, path, format);
+			} else {
+				outputError(`error: ${transport.error.message}`);
+				process.exitCode = 1;
+			}
 			return;
 		}
 

@@ -533,6 +533,9 @@
       },
       "dependencies": {
         "@epicenter/workspace": "workspace:*",
+        "@hono/standard-validator": "catalog:",
+        "arktype": "catalog:",
+        "hono": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yargs": "catalog:",
@@ -543,7 +546,6 @@
         "@epicenter/honeycrisp": "workspace:*",
         "@epicenter/tab-manager": "workspace:*",
         "@types/yargs": "catalog:",
-        "arktype": "catalog:",
         "typescript": "catalog:",
       },
     },

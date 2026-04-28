@@ -185,24 +185,30 @@ The cost is N processes for N active workspaces — fine, since the practical N 
 
 ## IPC wire protocol
 
-Newline-delimited JSON over the Unix socket. One request per line, one response per line. No framing complexity, trivial to debug with `nc -U`.
+HTTP over the Unix socket. The daemon is a `Bun.serve({ unix, routes })` instance; the CLI client is `fetch(url, { unix })`. One route per command, JSON body in and out, no framing layer of our own.
 
-```jsonc
-// request
-{ "id": "1", "cmd": "list",   "args": { "peer": "notes-repro-peer-a", "wait": 5000 } }
-{ "id": "2", "cmd": "run",    "args": { "peer": "...peer-a", "path": "notes.add", "input": { "body": "x" } } }
-{ "id": "3", "cmd": "peers",  "args": { "wait": 0 } }
-{ "id": "4", "cmd": "ping" }
-{ "id": "5", "cmd": "shutdown" } // graceful exit
+```http
+# request: POST /<cmd>; body is JSON-encoded args (or empty for void cmds)
+POST /list      { "path": "notes", "mode": { "kind": "local" }, "waitMs": 5000 }
+POST /run       { "actionPath": "notes.add", "input": { "body": "x" }, "waitMs": 0 }
+POST /peers     { "workspace": "demo" }
+POST /ping
+POST /shutdown
 ```
 
 ```jsonc
-// response (one line; for streaming we emit multiple frames before "end:true")
-{ "id": "1", "ok": true,  "data": { ... } }
-{ "id": "2", "ok": false, "error": { "name": "RpcError.PeerNotFound", "message": "..." } }
+// 200 response body: Result<T, SerializedError>
+{ "data": { /* T */ }, "error": null }                                 // success
+{ "data": null, "error": { "name": "PeerOffline", "message": "..." } } // domain failure (still 200)
+
+// non-200 (handler crashed, route unknown): error body is SerializedError
+// HTTP 500 -> { "name": "HandlerCrashed", "message": "..." }
+// HTTP 404 -> "not found" (unknown route)
 ```
 
-CLI commands (`list`, `run`, `peers`) translate their argv into a `cmd` + `args` object identical to what they'd compute locally. The daemon's IPC handler dispatches into the same code paths that the transient mode uses — the only difference is whose `SyncAttachment` is at the top of the call stack.
+Domain errors and successes share status 200 because callers narrow on `result.error.name` (`RunError`, `RpcError.PeerOffline`, etc.); HTTP status is reserved for transport-level failures, which the client maps to `IpcClientError.NoDaemon` / `Timeout` / `HandlerCrashed`.
+
+CLI commands (`list`, `run`, `peers`) translate their argv into the body of a `POST /<cmd>` and parse the `Result<T, E>` from the response — the same envelope the transient (in-process) path returns. The daemon's route handlers dispatch into the same code paths that transient mode uses; the only difference is whose `SyncAttachment` is at the top of the call stack.
 
 ## Process lifecycle
 

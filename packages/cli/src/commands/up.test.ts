@@ -6,7 +6,7 @@
  * cross-process e2e (real CLI binary, real relay) lands in Wave 8.
  *
  * Cases (per the brief):
- *   1. Happy path: startIpcServer is called, metadata is written, ping replies "pong".
+ *   1. Happy path: bindUnixSocket is called, metadata is written, ping replies "pong".
  *   2. Stale-auth fast-fail: whenReady never resolves; runUp throws "connect failed: ..."
  *      within the connect-timeout window.
  *   3. Already-running: pre-write metadata for `process.pid` + a real listening socket;
@@ -32,12 +32,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import {
-	type IpcFrame,
-	type IpcHandler,
-	type IpcRequest,
-	startIpcServer,
-} from '../daemon/ipc-server';
+import { bindUnixSocket } from '../daemon/unix-socket';
 import { writeMetadata } from '../daemon/metadata';
 import { metadataPathFor, socketPathFor } from '../daemon/paths';
 import type { LoadConfigResult, LoadedWorkspace } from '../load-config';
@@ -129,10 +124,10 @@ describe('runUp: happy path', () => {
 		expect(handle.entries[0]!.name).toBe('default');
 
 		// Socket is bound; ping it via a fresh connect using the real client.
-		const { ipcPing } = await import('../daemon/ipc-client');
+		const { pingDaemon } = await import('../daemon/client');
 		const sockPath = socketPathFor(workDir);
 		expect(existsSync(sockPath)).toBe(true);
-		const ok = await ipcPing(sockPath, 1000);
+		const ok = await pingDaemon(sockPath, 1000);
 		expect(ok).toBe(true);
 
 		await handle.teardown();
@@ -177,13 +172,11 @@ describe('runUp: already running', () => {
 		const sockPath = socketPathFor(workDir);
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
-		const pingHandler: IpcHandler = (req: IpcRequest, send) => {
-			if (req.cmd === 'ping') {
-				const r: IpcFrame = { id: req.id, data: 'pong', error: null };
-				send(r);
-			}
-		};
-		const server = await startIpcServer(sockPath, pingHandler);
+		const { Hono } = await import('hono');
+		const app = new Hono().post('/ping', (c) =>
+			c.json({ data: 'pong' as const, error: null }),
+		);
+		const server = await bindUnixSocket(sockPath, app);
 
 		writeMetadata(workDir, {
 			pid: process.pid,

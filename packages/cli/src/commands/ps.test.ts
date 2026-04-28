@@ -1,7 +1,7 @@
 /**
  * Wave 7 unit tests for `epicenter ps`.
  *
- * `runPs` is driven directly with a stubbed `ipcPing` so we can simulate
+ * `runPs` is driven directly with a stubbed `pingDaemon` so we can simulate
  * "alive and responsive" vs "alive but unresponsive" without standing up
  * a real socket server.
  */
@@ -47,7 +47,7 @@ afterEach(() => {
 
 describe('runPs', () => {
 	test('returns empty list when runtime dir has no metadata', async () => {
-		const rows = await runPs({ ipcPing: async () => true });
+		const rows = await runPs({ pingDaemon: async () => true });
 		expect(rows).toEqual([]);
 	});
 
@@ -72,7 +72,7 @@ describe('runPs', () => {
 
 			expect(existsSync(metadataPathFor(deadDir))).toBe(true);
 
-			const rows = await runPs({ ipcPing: async () => true });
+			const rows = await runPs({ pingDaemon: async () => true });
 
 			expect(rows).toHaveLength(1);
 			expect(rows[0]!.dir).toBe(aliveDir);
@@ -98,7 +98,7 @@ describe('runPs', () => {
 				cliVersion: '0.0.0',
 				configMtime: 0,
 			});
-			const rows = await runPs({ ipcPing: async () => false });
+			const rows = await runPs({ pingDaemon: async () => false });
 			expect(rows).toEqual([]);
 			expect(existsSync(metadataPathFor(dir))).toBe(false);
 			void socketPathFor;

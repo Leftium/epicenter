@@ -1,5 +1,3 @@
-import type { Result } from 'wellcrafted/result';
-
 export type FormatOptions = {
 	/** Override format (default: json, auto-pretty for TTY) */
 	format?: 'json' | 'jsonl';
@@ -34,29 +32,6 @@ export function output(value: unknown, options: FormatOptions = {}): void {
  */
 export function outputError(message: string): void {
 	console.error(message);
-}
-
-/**
- * Common end-of-IPC rendering for attached-mode commands. Success flows
- * to `onSuccess`; transport- and handler-level errors collapse to
- * `outputError` + `exitCode=1` here so handlers don't repeat that block
- * three times.
- *
- * Domain errors that callers want to render distinctly should be carried
- * inside the `T` payload (e.g. `ListResult`'s in-band `PeerMiss`), not
- * surfaced as IPC errors. That's why the success callback receives the
- * raw `data` rather than a `Result`.
- */
-export async function renderDaemonResult<T>(
-	result: Result<T, { message: string }>,
-	onSuccess: (data: T) => void | Promise<void>,
-): Promise<void> {
-	if (result.error === null) {
-		await onSuccess(result.data);
-		return;
-	}
-	outputError(`error: ${result.error.message}`);
-	process.exitCode = 1;
 }
 
 /**

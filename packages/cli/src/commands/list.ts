@@ -355,7 +355,7 @@ function printChildren(node: TreeNode, prefix: string): void {
 	});
 }
 
-export function printActionDetail(
+function printActionDetail(
 	path: string,
 	action: ActionManifest[string],
 ): void {

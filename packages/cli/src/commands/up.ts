@@ -17,17 +17,9 @@
  * § "Logging", § "Invariants".
  */
 
-import { appendFileSync, mkdirSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
-import {
-	composeSinks,
-	consoleSink,
-	createLogger,
-	type LogEvent,
-	type LogLevel,
-	type LogSink,
-} from 'wellcrafted/logger';
 import type { Argv, CommandModule } from 'yargs';
 
 import { buildApp } from '../daemon/app.js';
@@ -42,11 +34,7 @@ import {
 	unlinkMetadata,
 	writeMetadata,
 } from '../daemon/metadata.js';
-import { logPathFor, socketPathFor } from '../daemon/paths.js';
-import {
-	ROTATE_MAX_BYTES,
-	rotateIfNeeded,
-} from '../daemon/log-rotation.js';
+import { socketPathFor } from '../daemon/paths.js';
 import {
 	CONFIG_FILENAME,
 	type LoadConfigResult,
@@ -76,71 +64,11 @@ const CONNECT_TIMEOUT_MS = 10000;
 import packageJson from '../../package.json' with { type: 'json' };
 const CLI_VERSION = packageJson.version;
 
-const LEVEL_RANK: Record<LogLevel, number> = {
-	trace: 0,
-	debug: 1,
-	info: 2,
-	warn: 3,
-	error: 4,
-};
-
 /**
- * Build the file sink: structured JSONL, rotated at {@link ROTATE_MAX_BYTES}.
- * Synchronous `appendFileSync` keeps rotation correctness simple: the only
- * writer is this daemon, so no inter-process coordination is needed.
- *
- * One JSON object per line; native `Error` instances are normalized so
- * stack traces survive serialization.
- */
-function makeRotatingJsonlSink(filePath: string): LogSink {
-	mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
-	const normalize = (value: unknown): unknown =>
-		value instanceof Error
-			? { name: value.name, message: value.message, stack: value.stack }
-			: value;
-	const sink = (event: LogEvent) => {
-		// Always at info floor (file sink ignores --quiet).
-		const line = {
-			ts: new Date(event.ts).toISOString(),
-			level: event.level,
-			source: event.source,
-			message: event.message,
-			...(event.data === undefined ? {} : { data: event.data }),
-		};
-		try {
-			rotateIfNeeded(filePath, ROTATE_MAX_BYTES);
-			appendFileSync(
-				filePath,
-				`${JSON.stringify(line, (_k, v) => normalize(v))}\n`,
-				{ mode: 0o600 },
-			);
-		} catch {
-			// File-sink failures must not crash the daemon. The stderr sink
-			// remains as a fallback path for the operator.
-		}
-	};
-	return sink as LogSink;
-}
-
-/**
- * Build a stderr sink that filters by floor level. `--quiet` raises the floor
- * to `warn`, but sync state changes write directly to `process.stderr` through
- * a non-quietable channel (see {@link logSyncStatus}).
- */
-function makeStderrSink(floor: LogLevel): LogSink {
-	const min = LEVEL_RANK[floor];
-	const fn = (event: LogEvent) => {
-		if (LEVEL_RANK[event.level] < min) return;
-		consoleSink(event);
-	};
-	return fn as LogSink;
-}
-
-/**
- * Sync-status / awareness lines must always reach the operator (they're the
- * point of `up` in the foreground), so we route them through a non-quietable
- * stderr writer rather than the level-filtered logger. The brief calls these
- * out as "print regardless of --quiet".
+ * Sync-status / awareness lines write directly to stderr so they reach the
+ * operator regardless of `--quiet`; the brief calls these out as "print
+ * regardless of --quiet". `--quiet` only suppresses awareness join/leave
+ * lines (handled at their call sites), not these.
  */
 function logSyncStatus(message: string): void {
 	process.stderr.write(`${message}\n`);
@@ -217,15 +145,6 @@ export async function runUp(
 ): Promise<UpHandle> {
 	const absDir = resolve(options.dir);
 	const socketPath = socketPathFor(absDir);
-	const logPath = logPathFor(absDir);
-
-	const stderr = makeStderrSink(options.quiet ? 'warn' : 'info');
-	const fileSink = makeRotatingJsonlSink(logPath);
-	const sink = composeSinks(stderr, fileSink);
-	// Logger has no in-process consumers today (sync-status writes go
-	// straight to stderr via logSyncStatus); kept wired so future
-	// diagnostics land in the rotated log file.
-	void createLogger('cli/up', sink);
 
 	const loader = deps.loadConfig ?? loadConfig;
 	const config = await loader(absDir);

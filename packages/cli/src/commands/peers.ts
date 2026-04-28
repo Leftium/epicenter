@@ -20,8 +20,6 @@ import { getDaemon } from '../daemon/client';
 import { dirOption, resolveTarget, workspaceOption } from '../util/common-options';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 
-const DEFAULT_WAIT_MS = 500;
-
 export const peersCommand: CommandModule = {
 	command: 'peers',
 	describe:
@@ -30,11 +28,6 @@ export const peersCommand: CommandModule = {
 		yargs
 			.option('dir', dirOption)
 			.option('workspace', workspaceOption)
-			.option('wait', {
-				type: 'number',
-				default: DEFAULT_WAIT_MS,
-				description: `Ms to wait for awareness to populate (default ${DEFAULT_WAIT_MS}; pass 0 for a one-shot snapshot)`,
-			})
 			.options(formatYargsOptions()),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;

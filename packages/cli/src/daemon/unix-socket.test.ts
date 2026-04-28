@@ -6,18 +6,18 @@ import { join } from 'node:path';
 import { Hono } from 'hono';
 
 import {
-	type IpcServerHandle,
-	startIpcServer,
+	bindUnixSocket,
+	type UnixSocketServer,
 	unlinkSocketFile,
-} from './ipc-server';
+} from './unix-socket';
 
 let socketPath: string;
-let servers: IpcServerHandle[] = [];
+let servers: UnixSocketServer[] = [];
 
 beforeEach(() => {
 	socketPath = join(
 		tmpdir(),
-		`epicenter-ipc-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`,
+		`epicenter-unix-socket-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`,
 	);
 	servers = [];
 });
@@ -33,17 +33,17 @@ afterEach(() => {
 });
 
 /**
- * `startIpcServer` is now a thin wrapper around `Bun.serve({ unix, fetch:
+ * `bindUnixSocket` is now a thin wrapper around `Bun.serve({ unix, fetch:
  * app.fetch })` plus filesystem hardening. The route-level behavior lives
  * in `app.ts` (and is exercised through the typed client in
- * `ipc-client.test.ts`); this file covers only the binding/hardening
- * contract that survives no matter what app you hand it.
+ * `client.test.ts`); this file covers only the binding/hardening contract
+ * that survives no matter what app you hand it.
  */
-describe('startIpcServer', () => {
+describe('bindUnixSocket', () => {
 	test('binds the socket and routes through to the Hono app', async () => {
 		const app = new Hono().post('/ping', (c) => c.json({ ok: true }));
 
-		const server = await startIpcServer(socketPath, app);
+		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
 		const res = await fetch('http://daemon/ping', {
@@ -56,7 +56,7 @@ describe('startIpcServer', () => {
 
 	test('socket file is created with mode 0600', async () => {
 		const app = new Hono();
-		const server = await startIpcServer(socketPath, app);
+		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
 		const mode = statSync(socketPath).mode & 0o777;
@@ -65,7 +65,7 @@ describe('startIpcServer', () => {
 
 	test('server.stop() unlinks the socket file', async () => {
 		const app = new Hono();
-		const server = await startIpcServer(socketPath, app);
+		const server = await bindUnixSocket(socketPath, app);
 		expect(existsSync(socketPath)).toBe(true);
 
 		server.stop();
@@ -76,7 +76,7 @@ describe('startIpcServer', () => {
 
 	test('unknown route returns 404 (Hono default)', async () => {
 		const app = new Hono().post('/ping', (c) => c.text('ok'));
-		const server = await startIpcServer(socketPath, app);
+		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
 		const res = await fetch('http://daemon/nope', {

@@ -16,7 +16,7 @@ import { join } from 'node:path';
 
 import { createLogger } from 'wellcrafted/logger';
 
-import { ipcPing } from './ipc-client.js';
+import { pingDaemon } from './client.js';
 import { metadataPathFor, runtimeDir, socketPathFor } from './paths.js';
 
 const log = createLogger('cli/daemon/metadata');
@@ -153,7 +153,7 @@ export async function inspectExistingDaemon(
 	}
 
 	// Pid is alive, but only a real ping proves the daemon is actually serving.
-	const responsive = await ipcPing(sockPath);
+	const responsive = await pingDaemon(sockPath);
 	if (!responsive) {
 		sweepOrphan(dir);
 		return { state: 'orphan', pid: meta.pid };

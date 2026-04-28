@@ -1,11 +1,11 @@
 /**
  * Hono app for the `epicenter up` daemon. Single source of truth for the
- * IPC routes — both the server (`startIpcServer`) and the typed client
+ * routes — both the server (`bindUnixSocket`) and the typed client
  * (`daemonClient` via `hc<DaemonApp>`) derive from {@link DaemonApp}.
  *
  * Each route returns `Result<T, SerializedError>` as the JSON body. Domain
  * errors flow through with HTTP 200 (callers narrow on `result.error.name`);
- * transport-level failures fall through to the client's `IpcClientError`
+ * transport-level failures fall through to the client's `DaemonClientError`
  * synthesis. See `specs/20260426T235000-cli-up-long-lived-peer.md`
  * § "IPC wire protocol".
  */
@@ -16,7 +16,7 @@ import { extractErrorMessage } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
 import { listCore, type ListCtx, type ListResult } from '../commands/list.js';
-import { runCore, type RunCtx, type RunResult } from '../commands/run.js';
+import { runCore, type RunResult } from '../commands/run.js';
 import type { WorkspaceEntry } from '../load-config.js';
 import { resolveEntry } from '../util/resolve-entry.js';
 import {
@@ -24,13 +24,13 @@ import {
 	peersArgsSchema,
 	runCtxSchema,
 } from './schemas.js';
-import type { SerializedError } from './ipc-server.js';
+import type { SerializedError } from './unix-socket.js';
 
 /**
  * Row shape returned by `/peers`. One row per `(workspace, clientID)` pair,
  * tagged with its workspace name so a multi-workspace daemon can fan out.
  */
-export type PeerRow = {
+export type PeerSnapshot = {
 	workspace: string;
 	clientID: number;
 	device: unknown;
@@ -38,7 +38,7 @@ export type PeerRow = {
 
 /**
  * Build the daemon's Hono app. Tests import this directly; production wires
- * it into `Bun.serve({ unix, fetch: app.fetch })` via `startIpcServer`.
+ * it into `Bun.serve({ unix, fetch: app.fetch })` via `bindUnixSocket`.
  *
  * `triggerShutdown` is invoked from the `/shutdown` route after the response
  * is queued. We use `setTimeout(.., 0)` rather than `queueMicrotask` so the
@@ -74,7 +74,7 @@ export function buildApp(
 		)
 		.post('/peers', sValidator('json', peersArgsSchema), (c) => {
 			const { workspace } = c.req.valid('json');
-			const rows: PeerRow[] = [];
+			const rows: PeerSnapshot[] = [];
 			for (const entry of entries) {
 				if (workspace && entry.name !== workspace) continue;
 				const peers = entry.workspace.sync?.peers() ?? new Map();
@@ -87,7 +87,7 @@ export function buildApp(
 				}
 			}
 			return c.json({ data: rows, error: null } satisfies Result<
-				PeerRow[],
+				PeerSnapshot[],
 				never
 			>);
 		})
@@ -114,7 +114,10 @@ export function buildApp(
 			}
 		})
 		.post('/run', sValidator('json', runCtxSchema), async (c) => {
-			const ctx = c.req.valid('json') as RunCtx;
+			const validated = c.req.valid('json');
+			// runCore expects `input: unknown` (not optional); the schema makes it
+			// optional on the wire, so default to undefined here.
+			const ctx = { input: undefined, ...validated };
 			const found = lookup(ctx.workspaceArg);
 			if (!found.ok) {
 				return c.json({ data: null, error: found.error } satisfies Result<
@@ -147,7 +150,7 @@ export function buildApp(
 }
 
 /**
- * Static type of the daemon's Hono app. Imported by `ipc-client.ts` so
+ * Static type of the daemon's Hono app. Imported by `client.ts` so
  * `hc<DaemonApp>` infers each route's input/output without us redeclaring
  * the contracts.
  */

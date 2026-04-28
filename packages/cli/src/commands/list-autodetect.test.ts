@@ -32,8 +32,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { buildApp } from '../daemon/app';
-import { daemonClient } from '../daemon/ipc-client';
-import { startIpcServer } from '../daemon/ipc-server';
+import { daemonClient } from '../daemon/client';
+import { bindUnixSocket } from '../daemon/unix-socket';
 import { socketPathFor } from '../daemon/paths';
 import type { LoadedWorkspace, WorkspaceEntry } from '../load-config';
 import { listCore } from './list';
@@ -114,7 +114,7 @@ describe('listCore: IPC parity', () => {
 		// `daemonClient` and assert structural equality with the cold path.
 		const sockPath = socketPathFor(workDir);
 		const app = buildApp([entry], () => {});
-		const server = await startIpcServer(sockPath, app);
+		const server = await bindUnixSocket(sockPath, app);
 		try {
 			const reply = await daemonClient(sockPath).list({
 				path: '',

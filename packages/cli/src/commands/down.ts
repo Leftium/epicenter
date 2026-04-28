@@ -15,7 +15,12 @@ import { resolve } from 'node:path';
 
 import type { Argv, CommandModule } from 'yargs';
 
-import { daemonClient } from '../daemon/ipc-client.js';
+import {
+	daemonClient,
+	type DaemonClientError,
+} from '../daemon/client.js';
+import type { SerializedError } from '../daemon/unix-socket.js';
+import type { Result } from 'wellcrafted/result';
 import {
 	type DaemonMetadata,
 	enumerateDaemons,
@@ -37,15 +42,14 @@ export type DownOptions = {
  * Test seam for `runDown`. Tests stub `shutdown` to simulate a hung daemon
  * and `kill` to capture the SIGTERM fallback without actually signaling pids.
  *
- * `shutdown(socketPath, timeoutMs)` is the production wiring; tests pass an
- * inline async fn whose return shape mirrors `daemonClient(...).shutdown`
- * (a `Result` whose `error === null` means the daemon ack'd cleanly).
+ * `shutdown(socketPath, timeoutMs)` is the production wiring; the contract
+ * is "the daemon ack'd cleanly when `result.error === null`."
  */
-export type ShutdownReply = Awaited<
-	ReturnType<ReturnType<typeof daemonClient>['shutdown']>
->;
 export type RunDownDeps = {
-	shutdown?: (socketPath: string, timeoutMs: number) => Promise<ShutdownReply>;
+	shutdown?: (
+		socketPath: string,
+		timeoutMs: number,
+	) => Promise<Result<null, DaemonClientError | SerializedError>>;
 	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
 

@@ -10,7 +10,6 @@
 
 import {
 	type Action,
-	type ActionManifest,
 	describeActions,
 	describePeer,
 	invokeAction,
@@ -18,6 +17,7 @@ import {
 	type SyncAttachment,
 	walkActions,
 } from '@epicenter/workspace';
+import { extractErrorMessage } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
 
 import {
@@ -50,6 +50,16 @@ export async function executeList(
 
 	const deadline = Date.now() + waitMs;
 	if (mode.kind === 'peer') {
+		// `peerSection` needs the sync attachment for `describePeer`. If
+		// the workspace has no sync, no peers can match: short-circuit to
+		// PeerMiss with the standard empty-reason hint, no `!` needed.
+		const sync = workspace.sync;
+		if (!sync) {
+			return ListError.PeerMiss({
+				deviceId: mode.deviceId,
+				emptyReason: explainEmpty(workspace),
+			});
+		}
 		const { hit } = await waitForPeer(workspace, mode.deviceId, deadline);
 		if (!hit) {
 			return ListError.PeerMiss({
@@ -58,7 +68,7 @@ export async function executeList(
 			});
 		}
 		return Ok({
-			sections: [await peerSection(hit.state, workspace.sync!)],
+			sections: [await peerSection(hit.state, sync)],
 			mode,
 		});
 	}
@@ -172,18 +182,15 @@ export async function peerSection(
 	sync: SyncAttachment,
 ): Promise<Section> {
 	const { device } = state;
-	const result = await describePeer(sync, device.id);
-	if (result.error) {
-		const err = result.error as { name?: string; message?: string };
-		const reason = err.message ?? err.name ?? 'unknown error';
+	const { data: entries, error } = await describePeer(sync, device.id);
+	if (error) {
 		return {
 			label: `${device.name} (online, schema unavailable)`,
 			peer: device.id,
-			entries: {} as ActionManifest,
-			unavailableReason: reason,
+			entries: {},
+			unavailableReason: extractErrorMessage(error),
 		};
 	}
-	const entries = result.data;
 	const suffix =
 		Object.keys(entries).length === 0 ? ' (online, no actions)' : ' (online)';
 	return {

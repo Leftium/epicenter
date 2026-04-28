@@ -15,7 +15,7 @@ import { PeerDevice } from '@epicenter/workspace';
 import { type } from 'arktype';
 import { Hono } from 'hono';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
 import type { ListResult } from '../commands/list.js';
 import type { RunResult } from '../commands/run.js';
@@ -61,17 +61,11 @@ export function buildApp(
 		message: extractErrorMessage(cause),
 	});
 
-	const lookup = (
-		name: string | undefined,
-	):
-		| { ok: true; entry: WorkspaceEntry }
-		| { ok: false; error: SerializedError } => {
-		try {
-			return { ok: true, entry: resolveEntry(entries, name) };
-		} catch (cause) {
-			return { ok: false, error: errFrom(cause) };
-		}
-	};
+	const lookup = (name: string | undefined) =>
+		trySync({
+			try: () => resolveEntry(entries, name),
+			catch: (cause) => Err(errFrom(cause)),
+		});
 
 	return new Hono()
 		.post('/ping', (c) =>
@@ -95,41 +89,34 @@ export function buildApp(
 		})
 		.post('/list', sValidator('json', listCtxSchema), async (c) => {
 			const ctx = c.req.valid('json') satisfies ListCtx;
-			const found = lookup(ctx.workspace);
-			if (!found.ok) {
+			const { data: entry, error: lookupErr } = lookup(ctx.workspace);
+			if (lookupErr) {
 				return c.json(
-					Err(found.error) satisfies Result<ListResult, SerializedError>,
+					Err(lookupErr) satisfies Result<ListResult, SerializedError>,
 				);
 			}
-			// Domain errors must arrive as HTTP 200 with serialized Result;
-			// HandlerCrashed (HTTP 500) is reserved for unexpected exceptions.
-			try {
-				const data: ListResult = await executeList(found.entry, ctx);
-				return c.json(Ok(data) satisfies Result<ListResult, SerializedError>);
-			} catch (cause) {
-				return c.json(
-					Err(errFrom(cause)) satisfies Result<ListResult, SerializedError>,
-				);
-			}
+			// Domain errors arrive in-band as HTTP 200 with the inner Result;
+			// HandlerCrashed (envelope-level Err) is reserved for unexpected
+			// exceptions thrown out of executeList.
+			const result = await tryAsync({
+				try: () => executeList(entry, ctx),
+				catch: (cause) => Err(errFrom(cause)),
+			});
+			return c.json(result satisfies Result<ListResult, SerializedError>);
 		})
 		.post('/run', sValidator('json', runCtxSchema), async (c) => {
 			const ctx = c.req.valid('json') satisfies RunCtx;
-			const found = lookup(ctx.workspaceArg);
-			if (!found.ok) {
+			const { data: entry, error: lookupErr } = lookup(ctx.workspaceArg);
+			if (lookupErr) {
 				return c.json(
-					Err(found.error) satisfies Result<RunResult, SerializedError>,
+					Err(lookupErr) satisfies Result<RunResult, SerializedError>,
 				);
 			}
-			// Domain errors must arrive as HTTP 200 with serialized Result;
-			// HandlerCrashed (HTTP 500) is reserved for unexpected exceptions.
-			try {
-				const data: RunResult = await executeRun(found.entry, ctx);
-				return c.json(Ok(data) satisfies Result<RunResult, SerializedError>);
-			} catch (cause) {
-				return c.json(
-					Err(errFrom(cause)) satisfies Result<RunResult, SerializedError>,
-				);
-			}
+			const result = await tryAsync({
+				try: () => executeRun(entry, ctx),
+				catch: (cause) => Err(errFrom(cause)),
+			});
+			return c.json(result satisfies Result<RunResult, SerializedError>);
 		})
 		.post('/shutdown', (c) => {
 			// Defer past the current event-loop turn so the response is flushed

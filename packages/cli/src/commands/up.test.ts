@@ -173,9 +173,8 @@ describe('runUp: already running', () => {
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
 		const { Hono } = await import('hono');
-		const app = new Hono().post('/ping', (c) =>
-			c.json({ data: 'pong' as const, error: null }),
-		);
+		const { Ok } = await import('wellcrafted/result');
+		const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
 		const server = await bindUnixSocket(sockPath, app);
 
 		writeMetadata(workDir, {

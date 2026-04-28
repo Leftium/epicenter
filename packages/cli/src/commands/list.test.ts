@@ -8,7 +8,9 @@
 import { describe, expect, test } from 'bun:test';
 import { defineMutation, defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
-import { filterByPath, peerSection, selfSection } from './list';
+import { Err, Ok, type Result } from 'wellcrafted/result';
+import { peerSection, selfSection } from '../daemon/handlers';
+import { filterByPath } from './list';
 
 const fixtureActions = {
 	counter: {
@@ -66,7 +68,7 @@ describe('selfSection', () => {
 describe('peerSection', () => {
 	function fakeSync(opts: {
 		findClientId?: number;
-		describeResult?: { data?: unknown; error?: unknown };
+		describeResult?: Result<unknown, { name: string; message: string }>;
 	}) {
 		const clientId = opts.findClientId ?? 42;
 		return {
@@ -75,22 +77,19 @@ describe('peerSection', () => {
 					? undefined
 					: { clientId, state: { device: { id: 'mac', name: 'mac', platform: 'web' } } },
 			observe: () => () => {},
-			rpc: async () => opts.describeResult ?? { data: {}, error: null },
+			rpc: async () => opts.describeResult ?? Ok({}),
 		} as unknown as import('@epicenter/workspace').SyncAttachment;
 	}
 
 	test('fetches manifest via describePeer and renders "(online)" suffix when entries exist', async () => {
 		const sync = fakeSync({
 			findClientId: 42,
-			describeResult: {
-				data: {
-					'tabs.close': {
-						type: 'mutation',
-						input: { type: 'object', properties: { tabIds: { type: 'array' } } },
-					},
+			describeResult: Ok({
+				'tabs.close': {
+					type: 'mutation',
+					input: { type: 'object', properties: { tabIds: { type: 'array' } } },
 				},
-				error: null,
-			},
+			}),
 		});
 		const section = await peerSection(
 			{ device: { id: 'mac', name: 'mac', platform: 'tauri' } },
@@ -107,7 +106,7 @@ describe('peerSection', () => {
 	test('"(online, no actions)" suffix when manifest is empty', async () => {
 		const sync = fakeSync({
 			findClientId: 42,
-			describeResult: { data: {}, error: null },
+			describeResult: Ok({}),
 		});
 		const section = await peerSection(
 			{ device: { id: 'silent', name: 'silent', platform: 'web' } },
@@ -120,10 +119,7 @@ describe('peerSection', () => {
 	test('surfaces RPC error as unavailableReason without crashing', async () => {
 		const sync = fakeSync({
 			findClientId: 42,
-			describeResult: {
-				data: null,
-				error: { name: 'ActionFailed', message: 'boom' },
-			},
+			describeResult: Err({ name: 'ActionFailed', message: 'boom' }),
 		});
 		const section = await peerSection(
 			{ device: { id: 'mac', name: 'mac', platform: 'tauri' } },

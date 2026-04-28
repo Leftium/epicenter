@@ -10,46 +10,20 @@
  *   list --all <path>          who offers it?
  *
  * `--peer` and `--all` are mutually exclusive. The renderer takes a list
- * of `Section`s (one or many) and prints text or JSON; sources are pure
- * functions that produce sections, and that's the whole flow.
+ * of `Section`s (one or many) and prints text or JSON; the daemon's
+ * `/list` route produces the sections, and that's the whole flow.
  *
- * Peer manifests are fetched once per invocation via
- * `describePeer(sync, deviceId)`. Awareness no longer carries action
- * manifests, so detail-mode renders from the same fetched object as
- * tree-mode (no second RTT).
- *
- * ## Two execution modes
- *
- * - **Standalone** (default): the handler loads the workspace in-process,
- *   calls {@link listCore} directly, renders, and exits. Each invocation
- *   is independent: open, do, close.
- * - **Attached** (when an `epicenter up` daemon is running for the same
- *   `--dir`): the handler dispatches over IPC and the daemon runs
- *   {@link listCore} against its already-open workspace.
- *
- * Both paths produce a {@link ListResult} of the same shape, so the
- * renderer doesn't branch on which side built it. Use `epicenter up` to
- * keep the workspace warm across multiple commands; otherwise standalone
- * is the right default for one-offs and scripts.
+ * `epicenter list` requires a running daemon for the resolved `--dir`.
+ * Without `up`, the handler errors with a hint pointing at `epicenter up`.
  */
 
-import {
-	type ActionManifest,
-	describeActions,
-	describePeer,
-	type SyncAttachment,
-} from '@epicenter/workspace';
+import { type ActionManifest } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
-import { type DaemonError, tryGetDaemon } from '../daemon/client';
-import type { ListCtx } from '../daemon/schemas';
-import {
-	type AwarenessState,
-	loadConfig,
-	type WorkspaceEntry,
-} from '../load-config';
+
+import { type DaemonError, getDaemon } from '../daemon/client';
 import {
 	dirOption,
 	resolveTarget,
@@ -60,8 +34,6 @@ import {
 	output,
 	outputError,
 } from '../util/format-output';
-import { explainEmpty, waitForAnyPeer, waitForPeer } from '../util/peer-wait';
-import { resolveEntry } from '../util/resolve-entry';
 
 const DEFAULT_WAIT_MS = 500;
 
@@ -76,14 +48,12 @@ type Format = 'json' | 'jsonl' | undefined;
  * detail/tree renderer surfaces it as a "schema unavailable" footer
  * instead of crashing on a transient RPC failure.
  */
-type Section = {
+export type Section = {
 	label: string;
 	peer: string;
 	entries: ActionManifest;
 	unavailableReason?: string;
 };
-
-// ─── Mode ────────────────────────────────────────────────────────────────────
 
 export type ListMode =
 	| { kind: 'local' }
@@ -91,9 +61,9 @@ export type ListMode =
 	| { kind: 'all' };
 
 /**
- * Domain errors returned by {@link listCore}. `PeerMiss` is the only failure
- * path that survives across IPC: translated to stderr + exitCode=3 by the
- * renderer on either side of the wire.
+ * Domain errors returned by the `/list` route. `PeerMiss` is the only
+ * failure path that survives across IPC: translated to stderr +
+ * exitCode=3 by the renderer.
  */
 export const ListError = defineErrors({
 	PeerMiss: ({
@@ -110,14 +80,7 @@ export const ListError = defineErrors({
 });
 export type ListError = InferErrors<typeof ListError>;
 
-/**
- * Success payload for {@link listCore}. `sections` is the list the
- * text/JSON renderers consume; `mode` is preserved so the renderer can
- * tell single-source from `--all`.
- */
 export type ListSuccess = { sections: Section[]; mode: ListMode };
-
-/** {@link listCore}'s return type: `Result` with the {@link ListError} union. */
 export type ListResult = Result<ListSuccess, ListError>;
 
 const peerOption: Options = {
@@ -160,83 +123,23 @@ export const listCommand: CommandModule = {
 		const target = resolveTarget(args);
 
 		const mode = parseMode(args);
-		if (mode === null) return; // mutex error, exitCode already set
+		if (mode === null) return;
 
-		// Attached path: if an `up` daemon owns this dir, dispatch through
-		// it. Falls through to the standalone path when no daemon answers.
-		const daemon = await tryGetDaemon(target);
-		if (daemon) {
-			const result = await daemon.list({
-				path,
-				mode,
-				waitMs,
-				workspace: target.userWorkspace,
-			});
-			await renderResult(result, path, format);
+		const { data: daemon, error: daemonErr } = await getDaemon(target);
+		if (daemonErr) {
+			outputError(daemonErr.message);
+			process.exitCode = 1;
 			return;
 		}
-
-		// Standalone path: load config in-process and run listCore directly.
-		await using config = await loadConfig(target.absDir);
-		const entry = resolveEntry(config.entries, target.userWorkspace);
-		const result = await listCore(entry, { path, mode, waitMs });
+		const result = await daemon.list({
+			path,
+			mode,
+			waitMs,
+			workspace: target.userWorkspace,
+		});
 		await renderResult(result, path, format);
 	},
 };
-
-/**
- * Pure core: take a resolved {@link WorkspaceEntry} + parsed {@link ListCtx}
- * and produce the {@link ListResult} the renderer wants. No yargs, no
- * config loading, no rendering, so the daemon's IPC handler can call
- * this against its own already-warm `entry`.
- */
-export async function listCore(
-	entry: WorkspaceEntry,
-	ctx: ListCtx,
-): Promise<ListResult> {
-	const { workspace } = entry;
-	const { mode, waitMs } = ctx;
-
-	if (mode.kind === 'local') {
-		return {
-			data: { sections: [selfSection(entry, 'local')], mode },
-			error: null,
-		};
-	}
-
-	const deadline = Date.now() + waitMs;
-	if (mode.kind === 'peer') {
-		const { hit } = await waitForPeer(workspace, mode.deviceId, deadline);
-		if (!hit) {
-			return ListError.PeerMiss({
-				deviceId: mode.deviceId,
-				emptyReason: explainEmpty(workspace),
-			});
-		}
-		return {
-			data: {
-				sections: [await peerSection(hit.state, workspace.sync!)],
-				mode,
-			},
-			error: null,
-		};
-	}
-
-	// --all
-	await waitForAnyPeer(workspace, deadline);
-	if (!workspace.sync) {
-		return {
-			data: { sections: [selfSection(entry, 'all')], mode },
-			error: null,
-		};
-	}
-	const ordered = [...workspace.sync.peers().entries()].sort(([a], [b]) => a - b);
-	const sections: Section[] = [selfSection(entry, 'all')];
-	for (const [, state] of ordered) {
-		sections.push(await peerSection(state, workspace.sync));
-	}
-	return { data: { sections, mode }, error: null };
-}
 
 function parseMode(args: Record<string, unknown>): ListMode | null {
 	const peerTarget =
@@ -254,52 +157,6 @@ function parseMode(args: Record<string, unknown>): ListMode | null {
 	return { kind: 'local' };
 }
 
-export function selfSection(
-	entry: WorkspaceEntry,
-	mode: 'local' | 'all',
-): Section {
-	const localActions = entry.workspace.actions;
-	const entries = localActions ? describeActions(localActions) : {};
-	return {
-		label: mode === 'all' ? 'self (this device)' : entry.name,
-		peer: 'self',
-		entries,
-	};
-}
-
-export async function peerSection(
-	state: AwarenessState,
-	sync: SyncAttachment,
-): Promise<Section> {
-	const { device } = state;
-	const result = await describePeer(sync, device.id);
-	if (result.error) {
-		const err = result.error as { name?: string; message?: string };
-		const reason = err.message ?? err.name ?? 'unknown error';
-		return {
-			label: `${device.name} (online, schema unavailable)`,
-			peer: device.id,
-			entries: {},
-			unavailableReason: reason,
-		};
-	}
-	const entries = result.data;
-	const suffix =
-		Object.keys(entries).length === 0 ? ' (online, no actions)' : ' (online)';
-	return {
-		label: `${device.name}${suffix}`,
-		peer: device.id,
-		entries,
-	};
-}
-
-// ─── Rendering ───────────────────────────────────────────────────────────────
-
-/**
- * Surface either path's {@link ListResult} to the user. `peerMiss` sets
- * exitCode=3 + writes the same multi-line stderr block the in-process
- * path used to emit inline.
- */
 async function renderResult(
 	result: Result<ListSuccess, ListError | DaemonError>,
 	path: string,
@@ -316,11 +173,12 @@ async function renderResult(
 					outputError(`  reason: ${result.error.emptyReason}`);
 				process.exitCode = 3;
 				return;
+			case 'MissingConfig':
 			case 'Required':
 			case 'Timeout':
 			case 'Unreachable':
 			case 'HandlerCrashed':
-				outputError(`error: ${result.error.message}`);
+				outputError(result.error.message);
 				process.exitCode = 1;
 				return;
 		}
@@ -355,8 +213,6 @@ function renderJson(
 	format: Exclude<Format, undefined>,
 	multi: boolean,
 ): void {
-	// Single-section + leaf path = single object (preserves pre-existing
-	// `list <leaf> --format json` shape).
 	if (!multi && path && sections[0]!.entries[path]) {
 		output(toActionDescriptor(sections[0]!.entries[path]!, path), { format });
 		return;
@@ -390,9 +246,6 @@ async function renderText(
 		const matches = Object.keys(subset).length;
 		totalMatches += matches;
 
-		// Skip sections with no entries matching the requested path. In
-		// single-section mode the totalMatches==0 fail below speaks for
-		// itself, with no noisy "(no actions exposed)" preamble.
 		if (path && matches === 0 && !section.unavailableReason) continue;
 
 		if (printed > 0) console.log('');
@@ -406,10 +259,6 @@ async function renderText(
 	}
 }
 
-/**
- * Print one section's body. Three cases: empty, exact-leaf detail, tree.
- * The caller has already filtered to entries under `path` (if set).
- */
 async function printSection(
 	entries: ActionManifest,
 	path: string,
@@ -437,8 +286,6 @@ function fail(message: string): void {
 	process.exitCode = 1;
 }
 
-// ─── Pure helpers ────────────────────────────────────────────────────────────
-
 export function filterByPath(entries: ActionManifest, path: string): ActionManifest {
 	if (!path) return entries;
 	const pfx = path + '.';
@@ -462,8 +309,6 @@ function toActionDescriptor(action: ActionManifest[string], path: string): Actio
 	if (action.input) desc.input = action.input;
 	return desc;
 }
-
-// ─── Renderer primitives (text mode) ─────────────────────────────────────────
 
 type TreeNode = {
 	name: string;

@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Hono } from 'hono';
+import { Err, Ok } from 'wellcrafted/result';
 
 import { daemonClient, pingDaemon } from './client';
 import {
@@ -40,9 +41,7 @@ afterEach(() => {
 
 describe('pingDaemon', () => {
 	test('returns true against a live ping route, false after server stops', async () => {
-		const app = new Hono().post('/ping', (c) =>
-			c.json({ data: 'pong', error: null }),
-		);
+		const app = new Hono().post('/ping', (c) => c.json(Ok('pong')));
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
@@ -62,9 +61,7 @@ describe('pingDaemon', () => {
 
 describe('daemonClient', () => {
 	test('ping resolves to the bare value on success', async () => {
-		const app = new Hono().post('/ping', (c) =>
-			c.json({ data: 'pong' as const, error: null }),
-		);
+		const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
@@ -105,7 +102,7 @@ describe('daemonClient', () => {
 		// handler exceptions. That envelope path is HandlerCrashed; typed
 		// domain errors flow through the inner Result instead.
 		const app = new Hono().post('/shutdown', (c) =>
-			c.json({ data: null, error: { name: 'NotFound', message: 'gone' } }),
+			c.json(Err({ name: 'NotFound', message: 'gone' })),
 		);
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);

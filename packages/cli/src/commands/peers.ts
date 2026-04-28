@@ -6,70 +6,21 @@
  * session-local clientID. Action introspection lives in `list --peer` and
  * `list --all`; this command stays narrow.
  *
- * For each workspace entry (or a single entry narrowed by `-w`):
- *   1. await `workspace.sync.whenConnected` (presence rides the transport)
- *   2. snapshot `workspace.sync.peers()`, or poll up to `--wait <ms>`
- *      if the snapshot is empty
- *   3. emit a `console.table` (default) or JSON (`--format json`)
- *
- * This is a snapshot, not a registry. A peer that hasn't broadcast its
- * awareness state is invisible; pass `--wait 2000` to give slow peers a
- * chance before emitting. Awareness has a ~30s TTL and session-local
- * clientIDs; see `attachAwareness` in `@epicenter/workspace`.
+ * `epicenter peers` requires a running daemon for the resolved `--dir`.
+ * Without `up`, the handler errors with a hint pointing at `epicenter up`.
  *
  * Prints `no peers connected` to stderr when every workspace is empty (text
  * mode only; JSON mode always emits a valid array, even if empty).
- *
- * ## Two execution modes
- *
- * - **Standalone** (default): the handler attaches sync in-process,
- *   awaits awareness, snapshots, and exits.
- * - **Attached** (when an `epicenter up` daemon is running for the same
- *   `--dir`): the handler asks the daemon for its already-populated
- *   peers map over IPC.
  */
 
 import type { Argv, CommandModule } from 'yargs';
-import { tryGetDaemon } from '../daemon/client';
-import { outputError } from '../util/format-output';
-import { resolveTarget } from '../util/common-options';
-import {
-	type AwarenessState,
-	loadConfig,
-	type WorkspaceEntry,
-} from '../load-config';
-import { dirOption, workspaceOption } from '../util/common-options';
-import { formatYargsOptions, output } from '../util/format-output';
-import { explainEmpty, waitForAnyPeer } from '../util/peer-wait';
-import { resolveEntry } from '../util/resolve-entry';
+
+import type { PeerSnapshot } from '../daemon/app';
+import { getDaemon } from '../daemon/client';
+import { dirOption, resolveTarget, workspaceOption } from '../util/common-options';
+import { formatYargsOptions, output, outputError } from '../util/format-output';
 
 const DEFAULT_WAIT_MS = 500;
-
-/**
- * Invariant 6: `peers --wait` is a snapshot tool, not a daemon. Hard-cap at
- * 30 s and hint anyone reaching past 5 s toward `epicenter up`, the
- * purpose-built long-lived presence verb.
- */
-const HARD_CAP_MS = 30000;
-const HINT_THRESHOLD_MS = 5000;
-
-type PeerRow = {
-	clientID: number;
-	deviceId: string;
-	name: string;
-	platform: string;
-};
-
-type WorkspaceSnapshot = {
-	name: string;
-	peers: Map<number, AwarenessState>;
-	/**
-	 * Local entry the snapshot came from (used by `explainEmpty` to surface a
-	 * connect-status hint). Absent when the snapshot was sourced over IPC,
-	 * since the daemon already logs its own connect state.
-	 */
-	entry: WorkspaceEntry | undefined;
-};
 
 export const peersCommand: CommandModule = {
 	command: 'peers',
@@ -88,131 +39,69 @@ export const peersCommand: CommandModule = {
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
 		const target = resolveTarget(args);
-		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
 		const format = args.format as 'json' | 'jsonl' | undefined;
 
-		// Invariant 6: cap, hint, then proceed.
-		if (waitMs > HARD_CAP_MS) {
-			console.error(
-				`--wait capped at ${HARD_CAP_MS} ms; use \`epicenter up\` for long-lived presence`,
-			);
-			process.exit(1);
-		}
-		if (waitMs > HINT_THRESHOLD_MS) {
-			console.error('Tip: for long-lived presence, see `epicenter up`.');
-		}
-
-		// Attached path: ask the daemon for the peers snapshot when an `up`
-		// daemon is running. Falls through to the standalone path otherwise.
-		const daemon = await tryGetDaemon(target);
-		if (daemon) {
-			// `wait` is a cold-path concept (the cold path uses it to settle
-			// awareness before snapshotting); the daemon is already warm, so
-			// only `workspace` matters on the wire.
-			const { data: rows, error } = await daemon.peers({
-				workspace: target.userWorkspace,
-			});
-			if (error) {
-				outputError(`error: ${error.message}`);
-				process.exitCode = 1;
-				return;
-			}
-			const byWorkspace = new Map<string, Map<number, AwarenessState>>();
-			for (const row of rows) {
-				let peers = byWorkspace.get(row.workspace);
-				if (!peers) {
-					peers = new Map();
-					byWorkspace.set(row.workspace, peers);
-				}
-				peers.set(row.clientID, {
-					device: row.device as AwarenessState['device'],
-				});
-			}
-			const snapshots: WorkspaceSnapshot[] = [];
-			for (const [name, peers] of byWorkspace) {
-				snapshots.push({ name, peers, entry: undefined });
-			}
-			emit(snapshots, {
-				elideHeader: target.userWorkspace !== undefined,
-				format,
-			});
+		const { data: daemon, error: daemonErr } = await getDaemon(target);
+		if (daemonErr) {
+			outputError(daemonErr.message);
+			process.exitCode = 1;
 			return;
 		}
-
-		await using config = await loadConfig(target.absDir);
-		const selected: WorkspaceEntry[] = target.userWorkspace
-			? [resolveEntry(config.entries, target.userWorkspace)]
-			: config.entries;
-
-		const snapshots = await Promise.all(
-			selected.map((e) => snapshotEntry(e, waitMs)),
-		);
-		emit(snapshots, { elideHeader: target.userWorkspace !== undefined, format });
+		const { data: rows, error } = await daemon.peers({
+			workspace: target.userWorkspace,
+		});
+		if (error) {
+			outputError(`error: ${error.message}`);
+			process.exitCode = 1;
+			return;
+		}
+		emit(rows, {
+			elideHeader: target.userWorkspace !== undefined,
+			format,
+		});
 	},
 };
 
-async function snapshotEntry(
-	entry: WorkspaceEntry,
-	waitMs: number,
-): Promise<WorkspaceSnapshot> {
-	await waitForAnyPeer(entry.workspace, Date.now() + waitMs);
-	const peers =
-		entry.workspace.sync?.peers() ?? new Map<number, AwarenessState>();
-	return { name: entry.name, peers, entry };
-}
-
 function emit(
-	snapshots: WorkspaceSnapshot[],
+	rows: PeerSnapshot[],
 	{
 		elideHeader,
 		format,
 	}: { elideHeader: boolean; format: 'json' | 'jsonl' | undefined },
 ): void {
 	if (format === 'json' || format === 'jsonl') {
-		const flat = snapshots.flatMap(({ name, peers }) =>
-			buildPeerRows(peers).map((row) => ({ workspace: name, ...row })),
-		);
-		output(flat, { format });
+		output(rows, { format });
 		return;
 	}
 
-	const nonEmpty = snapshots.filter((s) => s.peers.size > 0);
-	if (nonEmpty.length === 0) {
+	if (rows.length === 0) {
 		console.error('no peers connected');
-		// Surface a connect-status hint per workspace if any are still trying:
-		// turns "silent timeout" into "oh, the server rejected us".
-		for (const { name, entry } of snapshots) {
-			if (!entry) continue;
-			const why = explainEmpty(entry.workspace);
-			if (why) console.error(`  ${name}: ${why}`);
-		}
 		return;
 	}
-	for (let i = 0; i < nonEmpty.length; i++) {
-		const { name, peers } = nonEmpty[i]!;
+
+	const byWorkspace = new Map<string, PeerSnapshot[]>();
+	for (const row of rows) {
+		const list = byWorkspace.get(row.workspace);
+		if (list) list.push(row);
+		else byWorkspace.set(row.workspace, [row]);
+	}
+
+	let i = 0;
+	for (const [name, group] of byWorkspace) {
 		if (!elideHeader) {
 			if (i > 0) console.log('');
 			console.log(name);
 		}
-		console.table(buildPeerRows(peers));
+		console.table(group.map(toRow).sort((a, b) => a.clientID - b.clientID));
+		i++;
 	}
 }
 
-/**
- * Project each awareness state to a presence row. Awareness carries
- * presence-only `device.{id, name, platform}`. Action manifests are
- * fetched on demand by `list --peer` / `list --all`.
- */
-export function buildPeerRows(peers: Map<number, AwarenessState>): PeerRow[] {
-	const rows: PeerRow[] = [];
-	for (const [clientID, { device }] of peers) {
-		rows.push({
-			clientID,
-			deviceId: device.id,
-			name: device.name,
-			platform: device.platform,
-		});
-	}
-	rows.sort((a, b) => a.clientID - b.clientID);
-	return rows;
+function toRow(snap: PeerSnapshot) {
+	return {
+		clientID: snap.clientID,
+		deviceId: snap.device.id,
+		name: snap.device.name,
+		platform: snap.device.platform,
+	};
 }

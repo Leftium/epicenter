@@ -22,6 +22,7 @@ import {
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Ok } from 'wellcrafted/result';
 
 import { writeMetadata } from '../daemon/metadata';
 import { runDown } from './down';
@@ -69,7 +70,7 @@ describe('runDown: graceful', () => {
 		const result = await runDown(
 			{ dir: workDir, all: false },
 			{
-				shutdown: async () => ({ data: null, error: null }),
+				shutdown: async () => Ok(null),
 				kill: () => {
 					throw new Error('kill should not be called on graceful path');
 				},
@@ -151,7 +152,7 @@ describe('runDown --all', () => {
 			const result = await runDown(
 				{ dir: '.', all: true },
 				{
-					shutdown: async () => ({ data: null, error: null }),
+					shutdown: async () => Ok(null),
 					kill: () => {},
 				},
 			);

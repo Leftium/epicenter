@@ -1,3 +1,5 @@
+import type { Result } from 'wellcrafted/result';
+
 export type FormatOptions = {
 	/** Override format (default: json, auto-pretty for TTY) */
 	format?: 'json' | 'jsonl';
@@ -46,9 +48,7 @@ export function outputError(message: string): void {
  * raw `data` rather than a `Result`.
  */
 export async function renderDaemonResult<T>(
-	result:
-		| { data: T; error: null }
-		| { data: null; error: { message: string } },
+	result: Result<T, { message: string }>,
 	onSuccess: (data: T) => void | Promise<void>,
 ): Promise<void> {
 	if (result.error === null) {

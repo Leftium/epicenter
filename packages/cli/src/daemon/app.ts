@@ -1,24 +1,27 @@
 /**
  * Hono app for the `epicenter up` daemon. Single source of truth for the
- * routes — both the server (`bindUnixSocket`) and the typed client
+ * routes; both the server (`bindUnixSocket`) and the typed client
  * (`daemonClient` via `hc<DaemonApp>`) derive from {@link DaemonApp}.
  *
  * Each route returns `Result<T, SerializedError>` as the JSON body. Domain
  * errors flow through with HTTP 200 (callers narrow on `result.error.name`);
- * transport-level failures fall through to the client's `DaemonClientError`
+ * transport-level failures fall through to the client's `DaemonError`
  * synthesis. See `specs/20260426T235000-cli-up-long-lived-peer.md`
  * § "IPC wire protocol".
  */
 
 import { sValidator } from '@hono/standard-validator';
+import { PeerDevice } from '@epicenter/workspace';
+import { type } from 'arktype';
 import { Hono } from 'hono';
 import { extractErrorMessage } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 
-import { listCore, type ListResult } from '../commands/list.js';
-import { runCore, type RunResult } from '../commands/run.js';
+import type { ListResult } from '../commands/list.js';
+import type { RunResult } from '../commands/run.js';
 import type { WorkspaceEntry } from '../load-config.js';
 import { resolveEntry } from '../util/resolve-entry.js';
+import { executeList, executeRun } from './handlers.js';
 import {
 	type ListCtx,
 	listCtxSchema,
@@ -31,12 +34,15 @@ import type { SerializedError } from './unix-socket.js';
 /**
  * Row shape returned by `/peers`. One row per `(workspace, clientID)` pair,
  * tagged with its workspace name so a multi-workspace daemon can fan out.
+ * `device` carries the canonical `PeerDevice` shape from
+ * `@epicenter/workspace`; renderers consume it directly without a cast.
  */
-export type PeerSnapshot = {
-	workspace: string;
-	clientID: number;
-	device: unknown;
-};
+export const PeerSnapshot = type({
+	workspace: 'string',
+	clientID: 'number',
+	device: PeerDevice,
+});
+export type PeerSnapshot = typeof PeerSnapshot.infer;
 
 /**
  * Build the daemon's Hono app. Tests import this directly; production wires
@@ -69,10 +75,7 @@ export function buildApp(
 
 	return new Hono()
 		.post('/ping', (c) =>
-			c.json({ data: 'pong' as const, error: null } satisfies Result<
-				'pong',
-				never
-			>),
+			c.json(Ok('pong' as const) satisfies Result<'pong', never>),
 		)
 		.post('/peers', sValidator('json', peersArgsSchema), (c) => {
 			const { workspace } = c.req.valid('json');
@@ -88,67 +91,51 @@ export function buildApp(
 					});
 				}
 			}
-			return c.json({ data: rows, error: null } satisfies Result<
-				PeerSnapshot[],
-				never
-			>);
+			return c.json(Ok(rows) satisfies Result<PeerSnapshot[], never>);
 		})
 		.post('/list', sValidator('json', listCtxSchema), async (c) => {
 			const ctx = c.req.valid('json') satisfies ListCtx;
 			const found = lookup(ctx.workspace);
 			if (!found.ok) {
-				return c.json({ data: null, error: found.error } satisfies Result<
-					ListResult,
-					SerializedError
-				>);
+				return c.json(
+					Err(found.error) satisfies Result<ListResult, SerializedError>,
+				);
 			}
 			// Domain errors must arrive as HTTP 200 with serialized Result;
 			// HandlerCrashed (HTTP 500) is reserved for unexpected exceptions.
 			try {
-				const data: ListResult = await listCore(found.entry, ctx);
-				return c.json({ data, error: null } satisfies Result<
-					ListResult,
-					SerializedError
-				>);
+				const data: ListResult = await executeList(found.entry, ctx);
+				return c.json(Ok(data) satisfies Result<ListResult, SerializedError>);
 			} catch (cause) {
-				return c.json({ data: null, error: errFrom(cause) } satisfies Result<
-					ListResult,
-					SerializedError
-				>);
+				return c.json(
+					Err(errFrom(cause)) satisfies Result<ListResult, SerializedError>,
+				);
 			}
 		})
 		.post('/run', sValidator('json', runCtxSchema), async (c) => {
 			const ctx = c.req.valid('json') satisfies RunCtx;
 			const found = lookup(ctx.workspaceArg);
 			if (!found.ok) {
-				return c.json({ data: null, error: found.error } satisfies Result<
-					RunResult,
-					SerializedError
-				>);
+				return c.json(
+					Err(found.error) satisfies Result<RunResult, SerializedError>,
+				);
 			}
 			// Domain errors must arrive as HTTP 200 with serialized Result;
 			// HandlerCrashed (HTTP 500) is reserved for unexpected exceptions.
 			try {
-				const data: RunResult = await runCore(found.entry, ctx);
-				return c.json({ data, error: null } satisfies Result<
-					RunResult,
-					SerializedError
-				>);
+				const data: RunResult = await executeRun(found.entry, ctx);
+				return c.json(Ok(data) satisfies Result<RunResult, SerializedError>);
 			} catch (cause) {
-				return c.json({ data: null, error: errFrom(cause) } satisfies Result<
-					RunResult,
-					SerializedError
-				>);
+				return c.json(
+					Err(errFrom(cause)) satisfies Result<RunResult, SerializedError>,
+				);
 			}
 		})
 		.post('/shutdown', (c) => {
 			// Defer past the current event-loop turn so the response is flushed
 			// to the kernel before `server.stop()` closes the listening socket.
 			setTimeout(triggerShutdown, 0);
-			return c.json({ data: null, error: null } satisfies Result<
-				null,
-				never
-			>);
+			return c.json(Ok(null) satisfies Result<null, never>);
 		});
 }
 

@@ -8,12 +8,15 @@
  *   per route. Each method returns `Promise<Result<T, DomainErr | DaemonError>>`,
  *   merging transport and domain failures into one tagged union the
  *   renderer narrows by `error.name`.
- * - {@link tryGetDaemon}: dispatch decision for sibling commands. Pings
- *   first; returns a typed client when a daemon answers, `null` otherwise.
+ * - {@link getDaemon}: dispatch decision for `run` / `list` / `peers`.
+ *   Returns a typed client on success, or `MissingConfig` /
+ *   `Required` when the workspace isn't configured / has no live daemon.
  *
  * Wire format and security model are deliberately internal; see
  * `specs/20260426T235000-cli-up-long-lived-peer.md` § "IPC wire protocol".
  */
+
+import { join } from 'node:path';
 
 import { hc } from 'hono/client';
 import {
@@ -21,8 +24,9 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
+import { CONFIG_FILENAME } from '../load-config.js';
 import type { ResolvedTarget } from '../util/common-options.js';
 import type { DaemonApp, PeerSnapshot } from './app.js';
 import { socketPathFor } from './paths.js';
@@ -43,6 +47,10 @@ import type { SerializedError } from './unix-socket.js';
  *   the inner Result instead.
  */
 export const DaemonError = defineErrors({
+	MissingConfig: ({ absDir }: { absDir: string }) => ({
+		message: `No ${CONFIG_FILENAME} found in ${absDir}`,
+		absDir,
+	}),
 	Required: ({ absDir }: { absDir: string }) => ({
 		message: `no daemon running for ${absDir}; start one with \`epicenter up\` first`,
 		absDir,
@@ -130,7 +138,7 @@ async function callRoute<T>(
 				cause: body || `HTTP ${res.status}`,
 			});
 		}
-		return { data: (await res.json()) as T, error: null };
+		return Ok((await res.json()) as T);
 	} catch (cause) {
 		if (cause instanceof Error && cause.name === 'TimeoutError') {
 			return DaemonError.Timeout({ socketPath, timeoutMs });
@@ -175,7 +183,7 @@ export function daemonClient(
 				socketPath,
 				cause: envelope.error.message,
 			});
-		return { data: envelope.data, error: null };
+		return Ok(envelope.data);
 	};
 
 	return {
@@ -252,15 +260,27 @@ export function daemonClient(
 export type DaemonClient = ReturnType<typeof daemonClient>;
 
 /**
- * Single dispatch decision for sibling commands. Pings the socket; if a
- * daemon answers, returns a typed {@link DaemonClient}. If no daemon is
- * alive, returns `null` and the caller falls through to its in-process
- * transient path.
+ * Resolve the daemon client for `target`, or surface why we can't.
+ *
+ *   - `MissingConfig`: no `epicenter.config.ts` in `absDir`. Surfaced
+ *     distinctly from `Required` so unconfigured users don't get pointed
+ *     at `epicenter up` (which would fail and mislead).
+ *   - `Required`: config exists but no daemon is running. Renderer
+ *     prints the start-with-`up` hint.
+ *
+ * `run`, `list`, and `peers` are mandatory-daemon commands; if they hit
+ * neither variant they have a typed client to dispatch against.
  */
-export async function tryGetDaemon(
+export async function getDaemon(
 	target: ResolvedTarget,
-): Promise<DaemonClient | null> {
+): Promise<Result<DaemonClient, DaemonError>> {
+	const configPath = join(target.absDir, CONFIG_FILENAME);
+	if (!(await Bun.file(configPath).exists())) {
+		return DaemonError.MissingConfig({ absDir: target.absDir });
+	}
 	const sock = socketPathFor(target.absDir);
-	if (!(await pingDaemon(sock))) return null;
-	return daemonClient(sock);
+	if (!(await pingDaemon(sock))) {
+		return DaemonError.Required({ absDir: target.absDir });
+	}
+	return Ok(daemonClient(sock));
 }

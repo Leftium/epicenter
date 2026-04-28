@@ -20,7 +20,7 @@ import {
 	defineErrors,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
 import { readMetadata, unlinkMetadata } from './metadata.js';
 
@@ -104,7 +104,7 @@ export async function bindOrRecover(
 		unlinkSocketFile(socketPath);
 		unlinkMetadata(dir);
 	}
-	return { data: await bindUnixSocket(socketPath, app), error: null };
+	return Ok(await bindUnixSocket(socketPath, app));
 }
 
 /**

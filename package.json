@@ -93,7 +93,6 @@
 			"@tauri-apps/plugin-fs": "^2.4.1",
 			"@tauri-apps/plugin-opener": "^2.4.0",
 			"@tauri-apps/cli": "^2.9.6",
-			"bun-types": "^1.3.0",
 			"marked": "^17.0.3",
 			"virtua": "^0.48.5"
 		}
@@ -117,8 +116,6 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",
-		"@types/bun": "^1.3.11",
-		"@types/node": "^24.12.0",
 		"turbo": "^2.8.19",
 		"jsrepo": "^3.6.2"
 	},

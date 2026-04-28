@@ -53,7 +53,7 @@
 		"@epicenter/workspace": "workspace:*",
 		"@emoji-mart/data": "^1.2.1",
 		"@internationalized/date": "^3.10.0",
-		"@types/node": "catalog:",
+		"@types/bun": "catalog:",
 		"jsrepo": "catalog:",
 		"layerchart": "2.0.0-next.48",
 		"mode-watcher": "catalog:",

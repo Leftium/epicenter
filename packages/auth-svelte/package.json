@@ -19,6 +19,7 @@
 		"svelte": "^5.0.0"
 	},
 	"devDependencies": {
+		"@types/bun": "catalog:",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"typescript": "catalog:"

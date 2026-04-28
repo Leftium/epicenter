@@ -21,11 +21,10 @@
  *   [✅] Two `up`s same `--dir` → second exits 1 with
  *        "daemon already running (pid=X)".
  *        → `second up against the same dir exits 1`
- *   [⚠️] Stale-auth fast-fail with literal "401 Unauthorized" message.
- *        Partial: `up.test.ts` covers the `connect failed:` prefix in-process,
- *        but the literal "401 Unauthorized" suffix requires structured auth
- *        errors flowing through `whenReady`/`whenConnected` — gap noted in
- *        `up.ts` § `connectFailedMessage`.
+ *   [⚠️] Stale-auth fast-fail rendering.
+ *        Partial: `up.test.ts` asserts `runUp` propagates a `SyncFailedError`
+ *        cause (the workspace sync layer rejects `whenConnected` on close
+ *        code 4401). End-to-end against a real relay still needs coverage.
  *   [⚠️] Workspace inheritance across IPC.
  *        Partial: `list-autodetect.test.ts` exercises `inheritWorkspace`
  *        directly. End-to-end through a spawned daemon is not asserted here

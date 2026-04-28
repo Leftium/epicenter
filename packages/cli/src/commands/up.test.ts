@@ -7,8 +7,8 @@
  *
  * Cases (per the brief):
  *   1. Happy path: bindUnixSocket is called, metadata is written, ping replies "pong".
- *   2. Stale-auth fast-fail: whenReady never resolves; runUp throws "connect failed: ..."
- *      within the connect-timeout window.
+ *   2. Stale-auth fast-fail: whenConnected rejects with a SyncFailedError-shaped
+ *      cause; runUp surfaces "auth failed: <code>".
  *   3. Already-running: pre-write metadata for `process.pid` + a real listening socket;
  *      runUp throws "daemon already running (pid=X)".
  *   4. Orphan: pre-write metadata for a dead pid + phantom socket; runUp proceeds
@@ -113,7 +113,6 @@ describe('runUp: happy path', () => {
 			},
 			{
 				loadConfig: async () => config,
-				connectTimeoutMs: 1000,
 			},
 		);
 
@@ -138,15 +137,22 @@ describe('runUp: happy path', () => {
 });
 
 describe('runUp: stale-auth fast-fail', () => {
-	test('throws "connect failed: ..." when whenReady exceeds the timeout', async () => {
-		// whenReady that never resolves; emulates a hung auth handshake.
-		const neverReady = new Promise<void>(() => {
-			/* never */
-		});
-		const workspace = makeFakeWorkspace({ readyPromise: neverReady });
+	test('propagates SyncFailedError when whenConnected rejects', async () => {
+		// Shape matches `SyncFailedError.AuthRejected({ code }).error` from
+		// `@epicenter/workspace`: an Error-like with `name: 'AuthRejected'`
+		// and a `code` string. The yargs handler renders this via
+		// `formatStartupError`; here we assert the cause flows through unchanged.
+		const authRejected = Object.assign(
+			new Error('[attachSync] server rejected auth: invalid_token'),
+			{ name: 'AuthRejected', code: 'invalid_token' },
+		);
+		const rejecting = Promise.reject(authRejected);
+		// Pre-attach a swallow so the rejection isn't reported as unhandled
+		// before runUp awaits it.
+		rejecting.catch(() => {});
+		const workspace = makeFakeWorkspace({ readyPromise: rejecting });
 		const config = makeFakeConfig(workspace);
 
-		const start = Date.now();
 		await expect(
 			runUp(
 				{
@@ -155,13 +161,9 @@ describe('runUp: stale-auth fast-fail', () => {
 				},
 				{
 					loadConfig: async () => config,
-					connectTimeoutMs: 50,
 				},
 			),
-		).rejects.toThrow(/^connect failed:/);
-		const elapsed = Date.now() - start;
-		// Sanity: we exited within a small multiple of the timeout, not "hung".
-		expect(elapsed).toBeLessThan(2000);
+		).rejects.toMatchObject({ name: 'AuthRejected', code: 'invalid_token' });
 	});
 });
 
@@ -196,7 +198,6 @@ describe('runUp: already running', () => {
 					{
 						loadConfig: async () =>
 							makeFakeConfig(makeFakeWorkspace()),
-						connectTimeoutMs: 1000,
 					},
 				),
 			).rejects.toThrow(/daemon already running \(pid=/);
@@ -231,7 +232,6 @@ describe('runUp: orphan path', () => {
 			},
 			{
 				loadConfig: async () => config,
-				connectTimeoutMs: 1000,
 			},
 		);
 

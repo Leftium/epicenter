@@ -1,6 +1,6 @@
 # Workspace sync: add `failed` phase, reject `whenConnected` on permanent failure
 
-**Status**: ready to implement
+**Status**: Implemented
 **Tracking**: replaces the CLI-side `--connect-timeout` stopgap
 
 ## One-line goal
@@ -256,12 +256,12 @@ Client states exist but nothing produces `failed` yet. Behavior change is invisi
 
 ### Phase 3 — CLI cleanup
 
-- [ ] Delete `CONNECT_TIMEOUT_MS` constant from `packages/cli/src/commands/up.ts`.
-- [ ] Delete `RunUpDeps.connectTimeoutMs`.
-- [ ] Delete `raceTimeout` and `connectFailedMessage` helpers.
-- [ ] Replace `await raceTimeout(...)` with `await entry.workspace.sync?.whenConnected`.
-- [ ] When `whenConnected` rejects with `SyncFailedError`, render `reason.code`.
-- [ ] Update `cli-up-long-lived-peer.md` spec: drop the "10 s ceiling" qualifier.
+- [x] Delete `CONNECT_TIMEOUT_MS` constant from `packages/cli/src/commands/up.ts`.
+- [x] Delete `RunUpDeps.connectTimeoutMs`.
+- [x] Delete `raceTimeout` and `connectFailedMessage` helpers.
+- [x] Replace `await raceTimeout(...)` with a plain `await` of `whenReady ?? whenConnected`.
+- [x] When `whenConnected` rejects with `SyncFailedError`, render `reason.code` via `formatStartupError`.
+- [x] Update `cli-up-long-lived-peer.md` spec: drop the "10 s ceiling" qualifier.
 
 ---
 
@@ -298,3 +298,28 @@ specs/20260426T235000-cli-up-long-lived-peer.md  # phase 3: drop 10s ceiling not
 ```
 
 Estimated total: ~150 LOC across 4 files.
+
+---
+
+## Review
+
+**Completed**: 2026-04-28
+**Branch**: `post-pr-1705-cleanup`
+
+### Summary
+
+Three waves landed cleanly. Wire format stayed at zero protocol additions: the server uses WebSocket close code 4401 with a JSON-encoded reason. The client gained a fourth `SyncStatus` phase (`failed`), a typed `SyncFailedError`, and a `permanentFailure` flag that lets the supervisor exit cleanly. The CLI deleted ~50 lines of timeout machinery (`CONNECT_TIMEOUT_MS`, `raceTimeout`, `connectFailedMessage`) in favor of a plain `await whenConnected`.
+
+### Deviations from spec
+
+- **`ensureSupervisor` self-restart guard**: spec didn't anticipate that the `.finally` hook (line 914) restarts the loop whenever `desired === 'online'`. Entering `failed` doesn't flip `desired`, so without an extra `&& !permanentFailure` clause the supervisor relaunched in a tight loop. One-line fix.
+- **`SyncFailedError` re-export**: Phase 1 added the error class but didn't plumb it through `packages/workspace/src/index.ts`. Wave 3 added the re-export so external consumers can do nominal discrimination.
+- **CLI error discrimination**: used a structural check (`name === 'AuthRejected'` + `typeof code === 'string'`) rather than importing `SyncFailedError` directly. `defineErrors` doesn't expose a predicate, so structural is the smaller path.
+- **Phase 2 tests**: deferred. No existing test file covers the authGuard upgrade path. End-to-end verification will happen against the deployed worker; adding Miniflare integration tests is its own project.
+
+### Follow-up work
+
+- **Acceptance-criteria validation against staging.** The five criteria in the spec require live testing (deliberately invalid token, network-blip retry, reconnect after `epicenter auth login`, multi-workspace independence, malformed reason). Worth running once Phase 2 is deployed.
+- **`epicenter reconnect` CLI verb.** `sync.reconnect()` is now meaningful from outside the workspace package. A future spec can add an IPC verb so users don't need to restart `up` after `auth login`.
+- **Mid-session token revocation.** Falls out for free via close 4401, but no server code path emits it yet. When token rotation lands server-side, the client already handles it.
+- **Phase 2 integration tests.** When Miniflare or similar test infra arrives in `apps/api`, add the deferred coverage.

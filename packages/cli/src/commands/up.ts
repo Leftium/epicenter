@@ -58,20 +58,6 @@ import {
 import { dirFromArgv, dirOption } from '../util/common-options.js';
 
 /**
- * Hardcoded ceiling on how long any single workspace's `whenConnected`
- * may hang before `up` gives up on startup. This exists *only* because
- * `@epicenter/workspace`'s sync layer doesn't reject `whenConnected` on
- * permanent auth failures (it just retries forever); without a clock, an
- * expired token would freeze the daemon's startup indefinitely.
- *
- * Tracked: `specs/20260427T120000-workspace-sync-failed-phase.md`. When
- * the workspace package surfaces a `failed` SyncStatus phase and rejects
- * `whenConnected` accordingly, this constant and the `raceTimeout` call
- * site go away.
- */
-const CONNECT_TIMEOUT_MS = 10000;
-
-/**
  * Read once at module load. Bun resolves the JSON import relative to this
  * file at build/run time, so no runtime fs work happens per `up` invocation.
  */
@@ -186,13 +172,6 @@ export type RunUpDeps = {
 		socketPath: string,
 		app: ReturnType<typeof buildApp>,
 	) => Promise<UnixSocketServer>;
-	/**
-	 * Test-only override for {@link CONNECT_TIMEOUT_MS}. Production has no
-	 * way to tune this — it's a stopgap until the workspace package's
-	 * sync layer rejects `whenConnected` on permanent auth failure (spec:
-	 * `20260427T120000-workspace-sync-failed-phase.md`).
-	 */
-	connectTimeoutMs?: number;
 };
 
 /**
@@ -202,10 +181,11 @@ export type RunUpDeps = {
  * SIGINT/SIGTERM, and parks the process; tests call it directly and
  * assert on the returned handle.
  *
- * If any workspace fails to connect within the timeout, the whole daemon
- * fails. Partial-up is muddy semantics ("which subset is online?") and we
- * already have a way to express "I want only this one online": split the
- * config.
+ * If any workspace fails to connect (the workspace's sync layer rejects
+ * `whenConnected` with a `SyncFailedError`, e.g. on permanent auth
+ * failure), the whole daemon fails. Partial-up is muddy semantics
+ * ("which subset is online?") and we already have a way to express
+ * "I want only this one online": split the config.
  */
 export async function runUp(
 	options: UpOptions,
@@ -240,16 +220,14 @@ export async function runUp(
 
 	// Wait for every workspace's "ready to accept RPC" gate concurrently.
 	// One bad workspace fails the whole daemon; see runUp's docstring.
+	// `whenConnected` rejects with `SyncFailedError` on permanent auth
+	// failure (close code 4401), so no wallclock timer is needed here.
 	try {
 		await Promise.all(
 			config.entries.map((entry) =>
-				raceTimeout(
-					entry.workspace.whenReady ??
-						entry.workspace.sync?.whenConnected ??
-						Promise.resolve(),
-					deps.connectTimeoutMs ?? CONNECT_TIMEOUT_MS,
-					() => connectFailedMessage(entry),
-				),
+				entry.workspace.whenReady ??
+					entry.workspace.sync?.whenConnected ??
+					Promise.resolve(),
 			),
 		);
 	} catch (cause) {
@@ -334,8 +312,7 @@ export const upCommand: CommandModule = {
 		try {
 			handle = await runUp(options);
 		} catch (cause) {
-			const msg = cause instanceof Error ? cause.message : String(cause);
-			process.stderr.write(`${msg}\n`);
+			process.stderr.write(`${formatStartupError(cause)}\n`);
 			process.exit(1);
 		}
 
@@ -366,47 +343,25 @@ export const upCommand: CommandModule = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function raceTimeout<T>(
-	promise: Promise<T>,
-	ms: number,
-	onTimeoutMessage: () => string,
-): Promise<T> {
-	return new Promise<T>((res, rej) => {
-		const t = setTimeout(() => {
-			rej(new Error(`connect failed: ${onTimeoutMessage()}`));
-		}, ms);
-		promise.then(
-			(v) => {
-				clearTimeout(t);
-				res(v);
-			},
-			(cause) => {
-				clearTimeout(t);
-				const msg = cause instanceof Error ? cause.message : String(cause);
-				rej(new Error(`connect failed: ${msg}`));
-			},
-		);
-	});
-}
-
 /**
- * Best-effort message synthesis when `whenReady` doesn't resolve. Today's
- * SyncAttachment exposes a `status` enum (`offline`/`connecting`/`connected`)
- * with a `lastError` tag (`auth` | `connection`); we promote `auth` to the
- * spec's `401 Unauthorized` phrasing so the acceptance criterion at least
- * matches the prefix. Once the workspace surfaces structured auth errors
- * through `whenReady` / `whenConnected`, this becomes precise.
+ * Render a startup-failure cause for stderr. Permanent auth rejections from
+ * the workspace sync layer (`SyncFailedError.AuthRejected`) carry a typed
+ * `code` string; surface that and point the operator at `epicenter auth
+ * login`. Everything else falls back to the cause's message.
  */
-function connectFailedMessage(entry: WorkspaceEntry): string {
-	const status = entry.workspace.sync?.status;
+function formatStartupError(cause: unknown): string {
 	if (
-		status &&
-		status.phase === 'connecting' &&
-		status.lastError?.type === 'auth'
+		cause &&
+		typeof cause === 'object' &&
+		'name' in cause &&
+		(cause as { name: unknown }).name === 'AuthRejected' &&
+		'code' in cause &&
+		typeof (cause as { code: unknown }).code === 'string'
 	) {
-		return `${entry.name}: 401 Unauthorized. Try \`epicenter auth login\`.`;
+		const code = (cause as { code: string }).code;
+		return `auth failed: ${code}. Try \`epicenter auth login\`.`;
 	}
-	return `${entry.name}: timed out waiting for workspace ready`;
+	return cause instanceof Error ? cause.message : String(cause);
 }
 
 function readConfigMtime(absDir: string): number {

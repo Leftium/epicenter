@@ -69,7 +69,7 @@ describe('runDown: graceful', () => {
 		const result = await runDown(
 			{ dir: workDir, all: false },
 			{
-				ipcCall: async () => ({ data: undefined, error: null }),
+				ipcCall: async () => ({ data: null as never, error: null }),
 				kill: () => {
 					throw new Error('kill should not be called on graceful path');
 				},
@@ -156,7 +156,7 @@ describe('runDown --all', () => {
 			const result = await runDown(
 				{ dir: '.', all: true },
 				{
-					ipcCall: async () => ({ data: undefined, error: null }),
+					ipcCall: async () => ({ data: null as never, error: null }),
 					kill: () => {},
 				},
 			);

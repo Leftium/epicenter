@@ -441,7 +441,7 @@ export function attachSync(
 		number,
 		{
 			action: string;
-			resolve: (result: { data: unknown; error: unknown }) => void;
+			resolve: (result: Result<unknown, unknown>) => void;
 			timer: ReturnType<typeof setTimeout>;
 		}
 	>();
@@ -449,10 +449,10 @@ export function attachSync(
 
 	/** Resolve all pending RPC requests with Disconnected and clear state. */
 	function clearPendingRequests() {
-		const { error } = RpcError.Disconnected();
+		const disconnected = RpcError.Disconnected();
 		for (const [, pending] of pendingRequests) {
 			clearTimeout(pending.timer);
-			pending.resolve(Err(error));
+			pending.resolve(disconnected);
 		}
 		pendingRequests.clear();
 		nextRequestId = 0;
@@ -471,7 +471,7 @@ export function attachSync(
 		action: string;
 		input: unknown;
 	}) {
-		const sendResponse = (result: { data: unknown; error: unknown }) =>
+		const sendResponse = (result: Result<unknown, unknown>) =>
 			send(
 				encodeRpcResponse({
 					requestId: rpc.requestId,
@@ -788,7 +788,9 @@ export function attachSync(
 						if (pending) {
 							clearTimeout(pending.timer);
 							pendingRequests.delete(rpc.requestId);
-							pending.resolve(rpc.result);
+							// Trust-the-wire cast: the JSON payload is structurally a
+							// Result, but decodeRpcPayload types it as the raw shape.
+							pending.resolve(rpc.result as Result<unknown, unknown>);
 						}
 					} else if (rpc.type === 'request') {
 						void handleRpcRequest(rpc);

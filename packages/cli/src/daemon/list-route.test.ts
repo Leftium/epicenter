@@ -52,22 +52,20 @@ describe('/list route', () => {
 					}),
 				},
 			}),
-			{ path: '' },
+			{},
 		);
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
-			expect(Object.keys(reply.data.entries).sort()).toEqual(['counter.get']);
-			expect(reply.data.entries['counter.get']?.description).toBe(
-				'Read the counter',
-			);
+			expect(Object.keys(reply.data).sort()).toEqual(['counter.get']);
+			expect(reply.data['counter.get']?.description).toBe('Read the counter');
 		}
 	});
 
-	test('returns an empty entries map when the workspace has no actions', async () => {
-		const reply = await postList(fakeEntry('demo'), { path: '' });
+	test('returns an empty manifest when the workspace has no actions', async () => {
+		const reply = await postList(fakeEntry('demo'), {});
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
-			expect(reply.data.entries).toEqual({});
+			expect(reply.data).toEqual({});
 		}
 	});
 });

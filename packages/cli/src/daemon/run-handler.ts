@@ -1,32 +1,29 @@
 /**
- * Daemon-side action dispatch. The Hono `/list` and `/run` route handlers
- * in `app.ts` call these against an already-warm `WorkspaceEntry`.
+ * Daemon-side dispatch for the `/run` route. The Hono handler in `app.ts`
+ * resolves the workspace entry and forwards to `executeRun` here.
  *
- * The CLI verbs are shell-friendly shortcuts for one workspace primitive:
+ * `epicenter run` is a shell shortcut for one workspace primitive:
  *
- *   /list  ->  describeActions(workspace.actions)
- *   /run   ->  invokeAction(...) locally, or sync.rpc(...) when peerTarget is set
+ *   ctx.peerTarget === undefined   ->  invokeAction(...)
+ *   ctx.peerTarget === <deviceId>  ->  sync.rpc(clientID, path, input)
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
  * directly. The CLI deliberately does not grow flags that shadow scripting.
  *
- * Each function returns a domain `Result` (`ListResult`, `RunResult`)
- * that the route serializes verbatim. Unexpected exceptions bubble out
- * to the route's blanket try/catch, which surfaces them as
- * `HandlerCrashed` on the client side.
+ * `executeRun` returns a domain `RunResult` that the route serializes
+ * verbatim. Unexpected exceptions bubble out to the route's blanket
+ * try/catch and surface as `HandlerCrashed` on the client side.
  */
 
 import {
 	type Action,
-	describeActions,
 	invokeAction,
 	resolveActionPath,
 	walkActions,
 } from '@epicenter/workspace';
 import { Ok } from 'wellcrafted/result';
 
-import type { ListResult } from '../commands/list.js';
 import {
 	RunError,
 	type RunCtx,
@@ -34,21 +31,6 @@ import {
 } from '../commands/run.js';
 import type { WorkspaceEntry } from '../load-config.js';
 import { explainEmpty, waitForPeer } from '../util/peer-wait.js';
-
-/**
- * `epicenter list` -> describe the actions exposed by *this* workspace.
- *
- * That is the entire job. Per-peer schema introspection lives on
- * `epicenter peers <deviceId>` (which calls `describePeer` over RPC),
- * and "dump every peer's schema" is a five-line vault script that walks
- * `workspace.sync.peers()`. Neither belongs as a flag on `list`.
- */
-export function executeList(
-	entry: WorkspaceEntry,
-	_ctx: unknown,
-): ListResult {
-	return Ok({ entries: describeActions(entry.workspace.actions ?? {}) });
-}
 
 export async function executeRun(
 	entry: WorkspaceEntry,
@@ -81,7 +63,7 @@ export async function executeRun(
 	if (result.error !== null) {
 		return RunError.RuntimeError({ cause: result.error });
 	}
-	return Ok({ data: result.data });
+	return Ok(result.data);
 }
 
 async function invokeRemote(
@@ -107,7 +89,7 @@ async function invokeRemote(
 		return RunError.PeerMiss({
 			peerTarget: ctx.peerTarget!,
 			sawPeers,
-			workspaceArg: ctx.workspaceArg,
+			workspace: ctx.workspace,
 			waitMs: ctx.waitMs,
 			emptyReason: explainEmpty(workspace),
 		});
@@ -126,7 +108,7 @@ async function invokeRemote(
 			peerState,
 		});
 	}
-	return Ok({ data: result.data });
+	return Ok(result.data);
 }
 
 function entriesUnder(

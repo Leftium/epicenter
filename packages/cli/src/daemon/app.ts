@@ -3,24 +3,27 @@
  * routes; both the server (`bindUnixSocket`) and the typed client
  * (`daemonClient` via `hc<DaemonApp>`) derive from {@link DaemonApp}.
  *
+ * Each verb is a one-line shell shortcut for one workspace primitive:
+ *
+ *   /peers  ->  workspace.sync.peers()
+ *   /list   ->  describeActions(workspace.actions)
+ *   /run    ->  invokeAction(...) | sync.rpc(...)         (executeRun branches)
+ *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
  * 500), which the client maps to `DaemonError.HandlerCrashed`. There is
  * no second on-the-wire envelope: `Result<Result<...>, ...>` is gone.
- *
- * See `specs/20260426T235000-cli-up-long-lived-peer.md` § "IPC wire
- * protocol".
  */
 
 import { sValidator } from '@hono/standard-validator';
-import { PeerDevice } from '@epicenter/workspace';
+import { describeActions, PeerDevice } from '@epicenter/workspace';
 import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Err, Ok } from 'wellcrafted/result';
 
 import { resolveEntry } from '../util/resolve-entry.js';
 import type { WorkspaceEntry } from '../load-config.js';
-import { executeList, executeRun } from './handlers.js';
+import { executeRun } from './run-handler.js';
 import {
 	type ListCtx,
 	listCtxSchema,
@@ -76,15 +79,15 @@ export function buildApp(
 			}
 			return c.json(Ok(rows));
 		})
-		.post('/list', sValidator('json', listCtxSchema), async (c) => {
+		.post('/list', sValidator('json', listCtxSchema), (c) => {
 			const ctx = c.req.valid('json') satisfies ListCtx;
 			const { data: entry, error } = resolveEntry(entries, ctx.workspace);
 			if (error) return c.json(Err(error));
-			return c.json(await executeList(entry, ctx));
+			return c.json(Ok(describeActions(entry.workspace.actions ?? {})));
 		})
 		.post('/run', sValidator('json', runCtxSchema), async (c) => {
 			const ctx = c.req.valid('json') satisfies RunCtx;
-			const { data: entry, error } = resolveEntry(entries, ctx.workspaceArg);
+			const { data: entry, error } = resolveEntry(entries, ctx.workspace);
 			if (error) return c.json(Err(error));
 			return c.json(await executeRun(entry, ctx));
 		})

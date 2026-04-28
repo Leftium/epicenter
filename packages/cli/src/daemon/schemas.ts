@@ -11,11 +11,10 @@
  *    derives the input type of each route from its validator, so call
  *    sites get checked against these shapes without redeclaring them.
  *
- * The schemas reflect the "CLI shortcut == one workspace primitive" model
- * (see `specs/20260428T160000-list-collapse-to-local-primitive.md`):
+ * The schemas reflect the "CLI shortcut == one workspace primitive" model:
  *
  *   /list   ->  describeActions(workspace.actions)             local only
- *   /peers  ->  workspace.sync.peers() (+ optional describePeer for one)
+ *   /peers  ->  workspace.sync.peers()
  *   /run    ->  invokeAction (local) or sync.rpc (remote, via peerTarget)
  */
 
@@ -23,12 +22,10 @@ import { type } from 'arktype';
 
 export const peersArgsSchema = type({
 	'workspace?': 'string',
-	'deviceId?': 'string',
 });
 export type PeersArgs = typeof peersArgsSchema.infer;
 
 export const listCtxSchema = type({
-	path: 'string',
 	'workspace?': 'string',
 });
 export type ListCtx = typeof listCtxSchema.infer;
@@ -38,6 +35,6 @@ export const runCtxSchema = type({
 	input: 'unknown',
 	'peerTarget?': 'string',
 	waitMs: 'number',
-	'workspaceArg?': 'string',
+	'workspace?': 'string',
 });
 export type RunCtx = typeof runCtxSchema.infer;

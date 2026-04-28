@@ -26,8 +26,9 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
-import type { ListSuccess } from '../commands/list.js';
-import type { RunError, RunSuccess } from '../commands/run.js';
+import type { ActionManifest } from '@epicenter/workspace';
+
+import type { RunError } from '../commands/run.js';
 import { CONFIG_FILENAME } from '../load-config.js';
 import type { ResolvedTarget } from '../util/common-options.js';
 import type { ResolveError } from '../util/resolve-entry.js';
@@ -182,14 +183,14 @@ export function daemonClient(
 			),
 
 		list: (args: Parameters<typeof client.list.$post>[0]['json']) =>
-			callRoute<ListSuccess, ResolveError>(
+			callRoute<ActionManifest, ResolveError>(
 				socketPath,
 				timeoutMs,
 				client.list.$post({ json: args }),
 			),
 
 		run: (args: Parameters<typeof client.run.$post>[0]['json']) =>
-			callRoute<RunSuccess, RunError | ResolveError>(
+			callRoute<unknown, RunError | ResolveError>(
 				socketPath,
 				timeoutMs,
 				client.run.$post({ json: args }),

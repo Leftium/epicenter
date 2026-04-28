@@ -36,8 +36,7 @@ import type { ResolveError } from '../util/resolve-entry';
 
 type Format = 'json' | 'jsonl' | undefined;
 
-export type ListSuccess = { entries: ActionManifest };
-export type ListResult = Result<ListSuccess, ResolveError>;
+export type ListResult = Result<ActionManifest, ResolveError>;
 
 export const listCommand: CommandModule = {
 	command: 'list [path]',
@@ -63,19 +62,16 @@ export const listCommand: CommandModule = {
 			process.exitCode = 1;
 			return;
 		}
-		const result = await daemon.list({
-			path,
-			workspace: target.userWorkspace,
-		});
-		await renderResult(result, path, format);
+		const result = await daemon.list({ workspace: target.userWorkspace });
+		renderResult(result, path, format);
 	},
 };
 
-async function renderResult(
-	result: Result<ListSuccess, ResolveError | DaemonError>,
+function renderResult(
+	result: Result<ActionManifest, ResolveError | DaemonError>,
 	path: string,
 	format: Format,
-): Promise<void> {
+): void {
 	if (result.error !== null) {
 		switch (result.error.name) {
 			case 'UnknownWorkspace':
@@ -91,19 +87,11 @@ async function renderResult(
 		}
 		return;
 	}
-	await renderEntries(result.data.entries, path, format);
-}
-
-async function renderEntries(
-	entries: ActionManifest,
-	path: string,
-	format: Format,
-): Promise<void> {
 	if (format) {
-		renderJson(entries, path, format);
+		renderJson(result.data, path, format);
 		return;
 	}
-	await renderText(entries, path);
+	renderText(result.data, path);
 }
 
 function renderJson(
@@ -127,10 +115,7 @@ function renderJson(
 	output(rows, { format });
 }
 
-async function renderText(
-	entries: ActionManifest,
-	path: string,
-): Promise<void> {
+function renderText(entries: ActionManifest, path: string): void {
 	const subset = filterByPath(entries, path);
 	const matches = Object.keys(subset).length;
 

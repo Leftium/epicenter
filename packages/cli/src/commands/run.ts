@@ -81,20 +81,20 @@ export const RunError = defineErrors({
 	PeerMiss: ({
 		peerTarget,
 		sawPeers,
-		workspaceArg,
+		workspace,
 		waitMs,
 		emptyReason,
 	}: {
 		peerTarget: string;
 		sawPeers: boolean;
-		workspaceArg?: string;
+		workspace?: string;
 		waitMs: number;
 		emptyReason: string | null;
 	}) => ({
 		message: `no peer matches deviceId "${peerTarget}"`,
 		peerTarget,
 		sawPeers,
-		workspaceArg,
+		workspace,
 		waitMs,
 		emptyReason,
 	}),
@@ -115,8 +115,7 @@ export const RunError = defineErrors({
 });
 export type RunError = InferErrors<typeof RunError>;
 
-export type RunSuccess = { data: unknown };
-export type RunResult = Result<RunSuccess, RunError | ResolveError>;
+export type RunResult = Result<unknown, RunError | ResolveError>;
 
 export const runCommand: CommandModule = {
 	command: 'run <action> [input]',
@@ -158,7 +157,7 @@ export const runCommand: CommandModule = {
 			input,
 			peerTarget,
 			waitMs,
-			workspaceArg: target.userWorkspace,
+			workspace: target.userWorkspace,
 		};
 
 		const { data: daemon, error: daemonErr } = await getDaemon(target);
@@ -173,11 +172,11 @@ export const runCommand: CommandModule = {
 };
 
 function renderRunResult(
-	result: Result<RunSuccess, RunError | ResolveError | DaemonError>,
+	result: Result<unknown, RunError | ResolveError | DaemonError>,
 	format: 'json' | 'jsonl' | undefined,
 ): void {
 	if (result.error === null) {
-		output(result.data.data, { format });
+		output(result.data, { format });
 		return;
 	}
 	switch (result.error.name) {
@@ -199,7 +198,7 @@ function renderRunResult(
 			emitMissError(
 				result.error.peerTarget,
 				result.error.sawPeers,
-				result.error.workspaceArg,
+				result.error.workspace,
 				result.error.waitMs,
 			);
 			if (result.error.emptyReason)

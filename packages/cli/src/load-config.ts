@@ -41,7 +41,11 @@ import type {
 	SyncAttachment,
 } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
@@ -137,7 +141,7 @@ export const LoadError = defineErrors({
 		configPath: string;
 		cause: unknown;
 	}) => ({
-		message: `failed to load ${configPath}: ${cause instanceof Error ? cause.message : String(cause)}`,
+		message: `failed to load ${configPath}: ${extractErrorMessage(cause)}`,
 		configPath,
 		cause,
 	}),

@@ -138,18 +138,8 @@ export type RunUpDeps = {
 		dir: string,
 	) => Promise<Result<LoadConfigResult, LoadError>>;
 	/**
-	 * Test seam for the bind. Defaults to {@link bindOrRecover} with the
-	 * production `pingDaemon`; tests inject a stub that mirrors the
-	 * Result-returning shape.
-	 */
-	bind?: (
-		socketPath: string,
-		dir: string,
-		app: ReturnType<typeof buildApp>,
-	) => ReturnType<typeof bindOrRecover>;
-	/**
 	 * Test-only override for {@link CONNECT_TIMEOUT_MS}. Production has no
-	 * way to tune this — it's a stopgap until the workspace package's
+	 * way to tune this; it's a stopgap until the workspace package's
 	 * sync layer rejects `whenConnected` on permanent auth failure (spec:
 	 * `20260427T120000-workspace-sync-failed-phase.md`).
 	 */
@@ -182,7 +172,7 @@ export async function runUp(
 
 	// Wait for every workspace's "ready to accept RPC" gate concurrently.
 	// One bad workspace fails the whole daemon; see runUp's docstring.
-	const { error: connectErr } = await tryAsync({
+	const connectResult = await tryAsync({
 		try: () =>
 			Promise.all(
 				config.entries.map((entry) =>
@@ -197,9 +187,9 @@ export async function runUp(
 			),
 		catch: (cause) => RunUpError.ConnectFailed({ cause }),
 	});
-	if (connectErr) {
+	if (connectResult.error) {
 		await safeAsyncDispose(config);
-		return RunUpError.ConnectFailed({ cause: connectErr.cause });
+		return connectResult;
 	}
 
 	// Bind before writing our metadata. On AlreadyRunning the live
@@ -207,10 +197,7 @@ export async function runUp(
 	// `bindOrRecover` unlinks the orphan metadata internally before our
 	// successful retry, so the writeMetadata below records *our* pid.
 	const app = buildApp(config.entries, () => void teardown());
-	const bind =
-		deps.bind ??
-		((sock, dir, hono) => bindOrRecover(sock, dir, hono, pingDaemon));
-	const bindResult = await bind(socketPath, absDir, app);
+	const bindResult = await bindOrRecover(socketPath, absDir, app, pingDaemon);
 	if (bindResult.error) {
 		await safeAsyncDispose(config);
 		return bindResult;

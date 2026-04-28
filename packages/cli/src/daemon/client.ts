@@ -127,7 +127,7 @@ export async function pingDaemon(
  * transport-plane failures (connect / timeout / non-2xx), we synthesize
  * the matching `DaemonError` variant and return it in the same union.
  */
-async function callRoute<T, E = never>(
+async function callRoute<T, E>(
 	socketPath: string,
 	timeoutMs: number,
 	pending: Promise<Response>,

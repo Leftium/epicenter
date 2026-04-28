@@ -10,7 +10,8 @@
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
  *
  * Exit codes:
- *   1: usage error (unknown action, workspace miss, missing sync for `--peer`),
+ *   1: usage error (unknown action, missing sync for `--peer`),
+ *      workspace miss (`UnknownWorkspace`, `AmbiguousWorkspace`),
  *      or no daemon / config (`MissingConfig`, `Required`, transport error)
  *   2: runtime error (local action returned Err, or remote RPC failed)
  *   3: peer-miss (`--peer <target>` didn't resolve within `--wait`)

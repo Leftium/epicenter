@@ -150,10 +150,12 @@ export {
 
 export {
 	attachSync,
+	SyncFailedError,
 	toWsUrl,
 	type AttachSyncDoc,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
+	type SyncFailedReason,
 	type SyncStatus,
 	type WaitForBarrier,
 } from './document/attach-sync.js';

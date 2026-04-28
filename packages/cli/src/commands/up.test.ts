@@ -1,0 +1,251 @@
+/**
+ * Wave 5 unit-level tests for `epicenter up`.
+ *
+ * These tests run `runUp` in-process with a fake `LoadedWorkspace` /
+ * `SyncAttachment` so we never spawn a child or call `process.exit`. The
+ * cross-process e2e (real CLI binary, real relay) lands in Wave 8.
+ *
+ * Cases (per the brief):
+ *   1. Happy path: startIpcServer is called, metadata is written, ping replies "pong".
+ *   2. Stale-auth fast-fail: whenReady never resolves; runUp throws "connect failed: ..."
+ *      within the connect-timeout window.
+ *   3. Already-running: pre-write metadata for `process.pid` + a real listening socket;
+ *      runUp throws "daemon already running (pid=X)".
+ *   4. Orphan: pre-write metadata for a dead pid + phantom socket; runUp proceeds
+ *      cleanly (no throw).
+ */
+
+import {
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	test,
+} from 'bun:test';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+	type IpcFrame,
+	type IpcHandler,
+	type IpcRequest,
+	startIpcServer,
+} from '../daemon/ipc-server';
+import { writeMetadata } from '../daemon/metadata';
+import { metadataPathFor, socketPathFor } from '../daemon/paths';
+import type { LoadConfigResult, LoadedWorkspace } from '../load-config';
+import { runUp } from './up';
+
+let originalXdg: string | undefined;
+let runtimeRoot: string;
+let workDir: string;
+let homeRoot: string;
+let originalHome: string | undefined;
+
+beforeEach(() => {
+	originalXdg = process.env.XDG_RUNTIME_DIR;
+	originalHome = process.env.HOME;
+
+	runtimeRoot = mkdtempSync(join(tmpdir(), 'ep-up-'));
+	process.env.XDG_RUNTIME_DIR = runtimeRoot;
+	mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
+
+	homeRoot = mkdtempSync(join(tmpdir(), 'ep-home-'));
+	process.env.HOME = homeRoot;
+
+	workDir = mkdtempSync(join(tmpdir(), 'ep-dir-'));
+	// Seed an empty config so readConfigMtime succeeds (the file exists path).
+	writeFileSync(join(workDir, 'epicenter.config.ts'), 'export {};\n');
+});
+
+afterEach(() => {
+	if (originalXdg === undefined) delete process.env.XDG_RUNTIME_DIR;
+	else process.env.XDG_RUNTIME_DIR = originalXdg;
+	if (originalHome === undefined) delete process.env.HOME;
+	else process.env.HOME = originalHome;
+
+	rmSync(runtimeRoot, { recursive: true, force: true });
+	rmSync(homeRoot, { recursive: true, force: true });
+	rmSync(workDir, { recursive: true, force: true });
+});
+
+type FakeOptions = {
+	readyPromise?: Promise<unknown>;
+};
+
+function makeFakeWorkspace(opts: FakeOptions = {}): LoadedWorkspace {
+	return {
+		[Symbol.dispose]() {
+			/* no-op */
+		},
+		whenReady: opts.readyPromise ?? Promise.resolve(),
+		sync: {
+			whenConnected: opts.readyPromise ?? Promise.resolve(),
+			status: { phase: 'connected', hasLocalChanges: false },
+			onStatusChange: () => () => {},
+			peers: () => new Map(),
+			observe: () => () => {},
+			// Unused fields; cast through unknown to keep the fake minimal.
+		} as unknown as LoadedWorkspace['sync'],
+	};
+}
+
+function makeFakeConfig(workspace: LoadedWorkspace): LoadConfigResult {
+	return {
+		entries: [{ name: 'default', workspace }],
+		async [Symbol.asyncDispose]() {
+			workspace[Symbol.dispose]();
+		},
+	};
+}
+
+describe('runUp: happy path', () => {
+	test('writes metadata, binds socket, replies to ping', async () => {
+		const workspace = makeFakeWorkspace();
+		const config = makeFakeConfig(workspace);
+
+		const handle = await runUp(
+			{
+				dir: workDir,
+				quiet: true,
+			},
+			{
+				loadConfig: async () => config,
+				connectTimeoutMs: 1000,
+			},
+		);
+
+		// Metadata was written.
+		expect(existsSync(metadataPathFor(workDir))).toBe(true);
+		expect(handle.metadata.pid).toBe(process.pid);
+		expect(handle.entries).toHaveLength(1);
+		expect(handle.entries[0]!.name).toBe('default');
+
+		// Socket is bound; ping it via a fresh connect using the real client.
+		const { ipcPing } = await import('../daemon/ipc-client');
+		const sockPath = socketPathFor(workDir);
+		expect(existsSync(sockPath)).toBe(true);
+		const ok = await ipcPing(sockPath, 1000);
+		expect(ok).toBe(true);
+
+		await handle.teardown();
+		// Cleanup: metadata and socket gone.
+		expect(existsSync(metadataPathFor(workDir))).toBe(false);
+		expect(existsSync(sockPath)).toBe(false);
+	});
+});
+
+describe('runUp: stale-auth fast-fail', () => {
+	test('throws "connect failed: ..." when whenReady exceeds the timeout', async () => {
+		// whenReady that never resolves; emulates a hung auth handshake.
+		const neverReady = new Promise<void>(() => {
+			/* never */
+		});
+		const workspace = makeFakeWorkspace({ readyPromise: neverReady });
+		const config = makeFakeConfig(workspace);
+
+		const start = Date.now();
+		await expect(
+			runUp(
+				{
+					dir: workDir,
+					quiet: true,
+				},
+				{
+					loadConfig: async () => config,
+					connectTimeoutMs: 50,
+				},
+			),
+		).rejects.toThrow(/^connect failed:/);
+		const elapsed = Date.now() - start;
+		// Sanity: we exited within a small multiple of the timeout, not "hung".
+		expect(elapsed).toBeLessThan(2000);
+	});
+});
+
+describe('runUp: already running', () => {
+	test('throws "daemon already running (pid=X)" when a live daemon is detected', async () => {
+		// Stand up a tiny real listening server at the expected socket path so
+		// `inspectExistingDaemon` sees a responsive ping for `process.pid`.
+		const sockPath = socketPathFor(workDir);
+		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
+
+		const pingHandler: IpcHandler = (req: IpcRequest, send) => {
+			if (req.cmd === 'ping') {
+				const r: IpcFrame = { id: req.id, data: 'pong', error: null };
+				send(r);
+			}
+		};
+		const server = await startIpcServer(sockPath, pingHandler);
+
+		writeMetadata(workDir, {
+			pid: process.pid,
+			dir: workDir,
+			startedAt: new Date().toISOString(),
+			cliVersion: '0.0.0',
+			configMtime: 0,
+		});
+
+		try {
+			await expect(
+				runUp(
+					{
+						dir: workDir,
+						quiet: true,
+					},
+					{
+						loadConfig: async () =>
+							makeFakeConfig(makeFakeWorkspace()),
+						connectTimeoutMs: 1000,
+					},
+				),
+			).rejects.toThrow(/daemon already running \(pid=/);
+		} finally {
+			server.stop();
+		}
+	});
+});
+
+describe('runUp: orphan path', () => {
+	test('proceeds cleanly when metadata pid is dead and socket is phantom', async () => {
+		const sockPath = socketPathFor(workDir);
+		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
+
+		// Phantom (regular file, not a real socket) + dead-pid metadata.
+		writeFileSync(sockPath, '');
+		writeMetadata(workDir, {
+			pid: 99999999,
+			dir: workDir,
+			startedAt: new Date().toISOString(),
+			cliVersion: '0.0.0',
+			configMtime: 0,
+		});
+
+		const workspace = makeFakeWorkspace();
+		const config = makeFakeConfig(workspace);
+
+		const handle = await runUp(
+			{
+				dir: workDir,
+				quiet: true,
+			},
+			{
+				loadConfig: async () => config,
+				connectTimeoutMs: 1000,
+			},
+		);
+
+		// Daemon came up; fresh metadata for *this* pid was written.
+		expect(handle.metadata.pid).toBe(process.pid);
+		expect(existsSync(socketPathFor(workDir))).toBe(true);
+
+		await handle.teardown();
+	});
+});

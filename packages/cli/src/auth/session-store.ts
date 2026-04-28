@@ -21,7 +21,7 @@ import { epicenterPaths } from './paths.js';
 /**
  * A persisted auth session for a single server.
  *
- * The server URL is not stored here—it's the map key in the session store.
+ * The server URL is not stored here; it's the map key in the session store.
  */
 export type AuthSession = {
 	/** Bearer token for API/WebSocket auth. */
@@ -52,7 +52,7 @@ function normalizeUrl(url: string): string {
 /**
  * Create a session store backed by `~/.epicenter/auth/sessions.json`.
  *
- * All methods normalize server URLs internally—callers never need
+ * All methods normalize server URLs internally; callers never need
  * to think about URL canonicalization.
  *
  * @example
@@ -97,7 +97,7 @@ export function createSessionStore() {
 		 *
 		 * Maps the raw API responses (token grant + session info) into the
 		 * persisted `AuthSession` format. Callers pass through the API types
-		 * directly—no manual field picking needed.
+		 * directly, no manual field picking needed.
 		 *
 		 * The server URL is normalized before storage so that `wss://host`,
 		 * `https://host`, and `https://host/` all map to the same entry.
@@ -170,7 +170,7 @@ export function createSessionStore() {
 }
 
 /**
- * The session store instance type — `ReturnType<typeof createSessionStore>`.
+ * The session store instance type, i.e. `ReturnType<typeof createSessionStore>`.
  * Useful for functions that accept a store without constructing their own.
  */
 export type SessionStore = ReturnType<typeof createSessionStore>;

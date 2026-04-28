@@ -1,5 +1,5 @@
 /**
- * `epicenter list [dot.path]` — render exposed actions, locally or on a peer.
+ * `epicenter list [dot.path]`: render exposed actions, locally or on a peer.
  *
  * Three sources, one shape, one renderer.
  *
@@ -11,12 +11,26 @@
  *
  * `--peer` and `--all` are mutually exclusive. The renderer takes a list
  * of `Section`s (one or many) and prints text or JSON; sources are pure
- * functions that produce sections — that's the whole flow.
+ * functions that produce sections, and that's the whole flow.
  *
  * Peer manifests are fetched once per invocation via
- * `describePeer(sync, deviceId)` — awareness no longer carries action
+ * `describePeer(sync, deviceId)`. Awareness no longer carries action
  * manifests, so detail-mode renders from the same fetched object as
  * tree-mode (no second RTT).
+ *
+ * ## Two execution modes
+ *
+ * - **Standalone** (default): the handler loads the workspace in-process,
+ *   calls {@link listCore} directly, renders, and exits. Each invocation
+ *   is independent: open, do, close.
+ * - **Attached** (when an `epicenter up` daemon is running for the same
+ *   `--dir`): the handler dispatches over IPC and the daemon runs
+ *   {@link listCore} against its already-open workspace.
+ *
+ * Both paths produce a {@link ListResult} of the same shape, so the
+ * renderer doesn't branch on which side built it. Use `epicenter up` to
+ * keep the workspace warm across multiple commands; otherwise standalone
+ * is the right default for one-offs and scripts.
  */
 
 import {
@@ -26,18 +40,20 @@ import {
 	type SyncAttachment,
 } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
+import {
+	renderDaemonResult,
+	resolveTarget,
+	tryGetDaemon,
+} from '../daemon/sibling-dispatch';
 import {
 	type AwarenessState,
 	loadConfig,
 	type WorkspaceEntry,
 } from '../load-config';
-import {
-	dirFromArgv,
-	dirOption,
-	workspaceFromArgv,
-	workspaceOption,
-} from '../util/common-options';
+import { dirOption, workspaceOption } from '../util/common-options';
 import {
 	formatYargsOptions,
 	output,
@@ -52,7 +68,7 @@ type Format = 'json' | 'jsonl' | undefined;
 
 /**
  * One section to render. `peer` is `'self'` for the local source or the
- * remote peer's deviceId — surfaced in JSON output so scripts can
+ * remote peer's deviceId, surfaced in JSON output so scripts can
  * attribute each action back to its source.
  *
  * `unavailableReason` is set when the peer's manifest fetch failed; the
@@ -65,6 +81,55 @@ type Section = {
 	entries: ActionManifest;
 	unavailableReason?: string;
 };
+
+// ─── Mode ────────────────────────────────────────────────────────────────────
+
+export type ListMode =
+	| { kind: 'local' }
+	| { kind: 'peer'; deviceId: string }
+	| { kind: 'all' };
+
+/**
+ * Parsed inputs for {@link listCore}. Built by the yargs handler from
+ * argv (local path) or by the IPC dispatcher from the wire `args`
+ * (daemon path). The shape is identical so both paths feed the same
+ * pure function.
+ */
+export type ListCtx = {
+	path: string;
+	mode: ListMode;
+	waitMs: number;
+};
+
+/**
+ * Domain errors returned by {@link listCore}. `PeerMiss` is the only failure
+ * path that survives across IPC: translated to stderr + exitCode=3 by the
+ * renderer on either side of the wire.
+ */
+export const ListError = defineErrors({
+	PeerMiss: ({
+		deviceId,
+		emptyReason,
+	}: {
+		deviceId: string;
+		emptyReason: string | null;
+	}) => ({
+		message: `no peer matches deviceId "${deviceId}"${emptyReason ? ` (${emptyReason})` : ''}`,
+		deviceId,
+		emptyReason,
+	}),
+});
+export type ListError = InferErrors<typeof ListError>;
+
+/**
+ * Success payload for {@link listCore}. `sections` is the list the
+ * text/JSON renderers consume; `mode` is preserved so the renderer can
+ * tell single-source from `--all`.
+ */
+export type ListSuccess = { sections: Section[]; mode: ListMode };
+
+/** {@link listCore}'s return type: `Result` with the {@link ListError} union. */
+export type ListResult = Result<ListSuccess, ListError>;
 
 const peerOption: Options = {
 	type: 'string',
@@ -103,24 +168,88 @@ export const listCommand: CommandModule = {
 		const path = typeof args.path === 'string' ? args.path : '';
 		const format = args.format as Format;
 		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
+		const target = resolveTarget(args);
 
 		const mode = parseMode(args);
 		if (mode === null) return; // mutex error, exitCode already set
 
-		await using config = await loadConfig(dirFromArgv(args));
-		const entry = resolveEntry(config.entries, workspaceFromArgv(args));
-		const sections = await selectSections(entry, mode, waitMs);
-		if (sections === null) return; // peer-not-found, exitCode already set
-		await renderSections(sections, path, format, mode);
+		// Attached path: if an `up` daemon owns this dir, dispatch through
+		// it. Falls through to the standalone path when no daemon answers.
+		const daemon = await tryGetDaemon(target);
+		if (daemon) {
+			const result = await daemon.call<ListResult>('list', {
+				path,
+				mode,
+				waitMs,
+				workspace: target.userWorkspace,
+			});
+			await renderDaemonResult(result, (data) =>
+				renderResult(data, path, format),
+			);
+			return;
+		}
+
+		// Standalone path: load config in-process and run listCore directly.
+		await using config = await loadConfig(target.absDir);
+		const entry = resolveEntry(config.entries, target.userWorkspace);
+		const result = await listCore(entry, { path, mode, waitMs });
+		await renderResult(result, path, format);
 	},
 };
 
-// ─── Mode ────────────────────────────────────────────────────────────────────
+/**
+ * Pure core: take a resolved {@link WorkspaceEntry} + parsed {@link ListCtx}
+ * and produce the {@link ListResult} the renderer wants. No yargs, no
+ * config loading, no rendering, so the daemon's IPC handler can call
+ * this against its own already-warm `entry`.
+ */
+export async function listCore(
+	entry: WorkspaceEntry,
+	ctx: ListCtx,
+): Promise<ListResult> {
+	const { workspace } = entry;
+	const { mode, waitMs } = ctx;
 
-type ListMode =
-	| { kind: 'local' }
-	| { kind: 'peer'; deviceId: string }
-	| { kind: 'all' };
+	if (mode.kind === 'local') {
+		return {
+			data: { sections: [selfSection(entry, 'local')], mode },
+			error: null,
+		};
+	}
+
+	const deadline = Date.now() + waitMs;
+	if (mode.kind === 'peer') {
+		const { hit } = await waitForPeer(workspace, mode.deviceId, deadline);
+		if (!hit) {
+			return ListError.PeerMiss({
+				deviceId: mode.deviceId,
+				emptyReason: explainEmpty(workspace),
+			});
+		}
+		return {
+			data: {
+				sections: [await peerSection(hit.state, workspace.sync!)],
+				mode,
+			},
+			error: null,
+		};
+	}
+
+	// --all
+	await waitForAnyPeer(workspace, deadline);
+	if (!workspace.sync) {
+		return {
+			data: { sections: [selfSection(entry, 'all')], mode },
+			error: null,
+		};
+	}
+	const ordered = [...workspace.sync.peers().entries()].sort(([a], [b]) => a - b);
+	const sections: Section[] = [selfSection(entry, 'all')];
+	for (const [, state] of ordered) {
+		sections.push(await peerSection(state, workspace.sync));
+	}
+	return { data: { sections, mode }, error: null };
+}
 
 function parseMode(args: Record<string, unknown>): ListMode | null {
 	const peerTarget =
@@ -136,48 +265,6 @@ function parseMode(args: Record<string, unknown>): ListMode | null {
 	if (peerTarget !== undefined) return { kind: 'peer', deviceId: peerTarget };
 	if (all) return { kind: 'all' };
 	return { kind: 'local' };
-}
-
-// ─── Source selection ────────────────────────────────────────────────────────
-
-/**
- * Pick the sections to render based on `mode`. Returns `null` when a
- * `--peer` lookup misses (the function emits the error and sets the exit
- * code; the caller just bails).
- */
-async function selectSections(
-	entry: WorkspaceEntry,
-	mode: ListMode,
-	waitMs: number,
-): Promise<Section[] | null> {
-	const { workspace } = entry;
-
-	if (mode.kind === 'local') return [selfSection(entry, 'local')];
-
-	const deadline = Date.now() + waitMs;
-	if (mode.kind === 'peer') {
-		const { hit } = await waitForPeer(workspace, mode.deviceId, deadline);
-		if (!hit) {
-			outputError(`error: no peer matches deviceId "${mode.deviceId}"`);
-			outputError('run `epicenter peers` to see connected peers');
-			const why = explainEmpty(workspace);
-			if (why) outputError(`  reason: ${why}`);
-			process.exitCode = 3;
-			return null;
-		}
-		// Hit implies sync existed (peers live on it).
-		return [await peerSection(hit.state, workspace.sync!)];
-	}
-
-	// --all: best-effort wait for awareness to populate, then snapshot.
-	await waitForAnyPeer(workspace, deadline);
-	if (!workspace.sync) return [selfSection(entry, 'all')];
-	const ordered = [...workspace.sync.peers().entries()].sort(([a], [b]) => a - b);
-	const sections: Section[] = [selfSection(entry, 'all')];
-	for (const [, state] of ordered) {
-		sections.push(await peerSection(state, workspace.sync));
-	}
-	return sections;
 }
 
 export function selfSection(
@@ -220,6 +307,33 @@ export async function peerSection(
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
+
+/**
+ * Surface either path's {@link ListResult} to the user. `peerMiss` sets
+ * exitCode=3 + writes the same multi-line stderr block the in-process
+ * path used to emit inline.
+ */
+async function renderResult(
+	result: ListResult,
+	path: string,
+	format: Format,
+): Promise<void> {
+	if (result.error !== null) {
+		switch (result.error.name) {
+			case 'PeerMiss':
+				outputError(
+					`error: no peer matches deviceId "${result.error.deviceId}"`,
+				);
+				outputError('run `epicenter peers` to see connected peers');
+				if (result.error.emptyReason)
+					outputError(`  reason: ${result.error.emptyReason}`);
+				process.exitCode = 3;
+				return;
+		}
+		return;
+	}
+	await renderSections(result.data.sections, path, format, result.data.mode);
+}
 
 /**
  * `--all` is the only mode that tags rows with `peer` and tolerates zero
@@ -431,4 +545,3 @@ function describeInput(schema: TSchema): string[] {
 	}
 	return lines;
 }
-

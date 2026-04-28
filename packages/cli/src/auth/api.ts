@@ -92,7 +92,7 @@ export function createAuthApi(serverUrl: string, token?: string) {
 		/**
 		 * Sign out the current session.
 		 *
-		 * Best-effort — the server may be unreachable. Does not parse
+		 * Best-effort: the server may be unreachable. Does not parse
 		 * the response body (sign-out returns no JSON).
 		 */
 		async signOut() {

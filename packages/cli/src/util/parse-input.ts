@@ -16,7 +16,7 @@ export type ParseInputOptions = {
  * on invalid JSON or missing `@file`.
  *
  * The error-shape discrimination that `wellcrafted`'s Result-types would
- * carry isn't useful here — the sole caller in `run.ts` rethrows
+ * carry isn't useful here; the sole caller in `run.ts` rethrows
  * `error.message` verbatim. Plain `throw` at a CLI boundary is the simpler
  * equivalent.
  */
@@ -61,7 +61,7 @@ function readJsonFile<T>(filePath: string): T {
 
 /**
  * Read piped stdin content (for CLI use). Returns undefined when stdin
- * is a TTY (interactive terminal — no pipe).
+ * is a TTY (interactive terminal, no pipe).
  *
  * Caveat: if stdin reports non-TTY but no writer is connected (pathological
  * CI/Docker TTY-allocation shapes), `Bun.stdin.text()` blocks until the OS

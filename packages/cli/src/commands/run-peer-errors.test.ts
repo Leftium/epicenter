@@ -9,7 +9,7 @@
 import { RpcError } from '@epicenter/workspace';
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import type { AwarenessState } from '../load-config';
-import { emitMissError, emitRpcError } from './run-peer-errors';
+import { emitMissError, emitRpcError } from './run';
 
 function mockState(device: Partial<AwarenessState['device']> = {}): AwarenessState {
 	return {

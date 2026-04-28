@@ -3,7 +3,7 @@
  *
  * Single source of truth for every file location under `~/.epicenter/`.
  * Auth and persistence are global (under `$EPICENTER_HOME`).
- * Materialization is always project-local—handled by each config, not here.
+ * Materialization is always project-local, handled by each config, not here.
  *
  * Override the home directory by setting `$EPICENTER_HOME`.
  *
@@ -25,7 +25,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-/** Resolve the Epicenter home directory. Not exported—use `epicenterPaths.home()`. */
+/** Resolve the Epicenter home directory. Not exported; use `epicenterPaths.home()`. */
 function resolveHome(): string {
 	return Bun.env.EPICENTER_HOME ?? join(homedir(), '.epicenter');
 }
@@ -33,7 +33,7 @@ function resolveHome(): string {
 /**
  * Grouped path resolution for all files under `~/.epicenter/`.
  *
- * Each method calls `resolveHome()` directly—no `this` references—so
+ * Each method calls `resolveHome()` directly (no `this` references), so
  * destructuring is safe: `const { persistence } = epicenterPaths`.
  */
 export const epicenterPaths = {
@@ -72,7 +72,7 @@ export const epicenterPaths = {
 	/**
 	 * Path to the persistence SQLite database for a workspace.
 	 *
-	 * Persistence is a cache of the Yjs workspace state—safe to delete,
+	 * Persistence is a cache of the Yjs workspace state; safe to delete,
 	 * rebuilds from server sync on next connect. Every consumer of the same
 	 * workspace ID shares the same cache file.
 	 *

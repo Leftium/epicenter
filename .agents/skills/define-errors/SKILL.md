@@ -264,6 +264,40 @@ const RecorderError = defineErrors({
 });
 ```
 
+## Anti-pattern: ad-hoc `{ ok, ... }` discriminated unions
+
+When a function (especially across an RPC/IPC/HTTP boundary) needs to signal success or failure, do **not** invent a parallel `{ ok: true, data } | { ok: false, error }` shape. This codebase already uses wellcrafted's `Result<T, E>` (`{ data: T, error: null } | { data: null, error: E }`) — a parallel `{ ok }` invention duplicates a stable shape that already has tooling around it.
+
+```ts
+// ❌ ad-hoc — parallel invention to Result<T, E>
+type CallResult<T> =
+  | { ok: true;  data: T }
+  | { ok: false; error: { name: string; message: string } };
+```
+
+```ts
+// ✅ Use Result + defineErrors
+import type { Result } from 'wellcrafted/result';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+
+export const CallError = defineErrors({
+  Timeout: ({ timeoutMs }: { timeoutMs: number }) => ({
+    message: `timed out after ${timeoutMs}ms`,
+    timeoutMs,
+  }),
+  // ...
+});
+export type CallError = InferErrors<typeof CallError>;
+
+type CallResult<T> = Result<T, CallError>;
+```
+
+**Why**: every wellcrafted helper (`isOk`/`isErr`, `tryAsync`/`trySync`, `unwrap`, `tapErr`, the logger's `"name" in err` discriminator) operates on `{ data, error }`. `{ ok }` returns can't compose with any of it. Each ad-hoc invention loses ecosystem leverage and forces every consumer to learn one more shape.
+
+**Wire-format corollary**: when a `Result` crosses a serialization boundary (RPC, IPC, HTTP), the `defineErrors` `{ name, message, ...fields }` shape **is** the wire form. The receiver reconstructs by reading `error.name` to dispatch — no `{ ok }` wrapper needed.
+
+**Note — state machines are not Results**: discriminated unions like `{ state: 'in-use' | 'orphan' | 'clean' }` for a startup gate, or `{ outcome: 'graceful' | 'sigterm' }` for a shutdown, are genuine state enums and should stay as discriminated unions. The smell is *errors* dressed as `{ ok }` flags, not state-enums.
+
 ## Reserved field name: `name`
 
 `name` is reserved at the type level — TypeScript errors if you return it from a factory, because the factory stamps it from the variant key.

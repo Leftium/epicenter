@@ -1,5 +1,5 @@
 /**
- * `epicenter auth` — manage authentication with Epicenter servers.
+ * `epicenter auth`: manage authentication with Epicenter servers.
  *
  * Uses the RFC 8628 device code flow: the CLI prints a URL and one-time code,
  * the user approves in a browser, and the CLI picks up the session automatically.
@@ -82,11 +82,11 @@ export const authCommand: CommandModule = {
 								continue;
 							case 'expired_token':
 								throw new Error(
-									'Device code expired — please run login again',
+									'Device code expired. Please run login again.',
 								);
 							case 'access_denied':
 								throw new Error(
-									'Authorization denied — you rejected the request',
+									'Authorization denied: you rejected the request',
 								);
 							default:
 								throw new Error(
@@ -94,7 +94,7 @@ export const authCommand: CommandModule = {
 								);
 						}
 					}
-					throw new Error('Device code expired — please run login again');
+					throw new Error('Device code expired. Please run login again.');
 				},
 			} satisfies CommandModule)
 			.command({

@@ -13,7 +13,7 @@
  *   …the CLI uses them. Anything else is the factory's business.
  *
  * The recommended config style is to export the result of an `openFoo()`
- * factory directly — the same factory the app uses elsewhere — and let
+ * factory directly (the same factory the app uses elsewhere), and let
  * the factory's return shape be the contract.
  *
  * @example
@@ -42,7 +42,7 @@ import type {
 } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
 
-const CONFIG_FILENAME = 'epicenter.config.ts';
+export const CONFIG_FILENAME = 'epicenter.config.ts';
 
 /**
  * Fields the CLI looks at on each workspace export. Only `[Symbol.dispose]`
@@ -51,7 +51,7 @@ const CONFIG_FILENAME = 'epicenter.config.ts';
  */
 export type LoadedWorkspace = {
 	/**
-	 * Called by the CLI at exit. The discriminator — its presence is what
+	 * Called by the CLI at exit. The discriminator: its presence is what
 	 * marks the export as a workspace.
 	 */
 	[Symbol.dispose](): void;
@@ -64,7 +64,7 @@ export type LoadedWorkspace = {
 
 	/**
 	 * Enables `--peer` targeting and `epicenter peers`. `attachSync(doc, { device })`
-	 * carries presence inline — `peers()` / `find()` / `observe()` live on the
+	 * carries presence inline; `peers()` / `find()` / `observe()` live on the
 	 * SyncAttachment when the workspace was constructed with a `device`.
 	 */
 	readonly sync?: SyncAttachment;
@@ -72,7 +72,7 @@ export type LoadedWorkspace = {
 
 /**
  * Per-peer awareness state under the standard `device` schema. Re-exported
- * from `@epicenter/workspace` for ergonomic consumption — `state.device` is
+ * from `@epicenter/workspace` for ergonomic consumption; `state.device` is
  * set synchronously at attach time, so consumers read
  * `state.device.{id,name,platform}` without `?.`.
  */
@@ -100,7 +100,7 @@ export type LoadConfigResult = {
 
 /**
  * A workspace is anything with `[Symbol.dispose]`. That's the whole
- * contract — the factory's return shape is the source of truth for
+ * contract; the factory's return shape is the source of truth for
  * everything else.
  */
 function isLoadedWorkspace(value: unknown): value is LoadedWorkspace {
@@ -138,7 +138,7 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	if (entries.length === 0) {
 		throw new Error(
 			`No workspaces found in ${CONFIG_FILENAME}.\n` +
-				`Export at least one named value implementing [Symbol.dispose] — ` +
+				`Export at least one named value implementing [Symbol.dispose], ` +
 				`typically the return of an openFoo() factory.`,
 		);
 	}

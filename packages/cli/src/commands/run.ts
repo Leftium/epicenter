@@ -1,5 +1,5 @@
 /**
- * `epicenter run <dot.path> [input]` — invoke a `defineQuery` /
+ * `epicenter run <dot.path> [input]`: invoke a `defineQuery` /
  * `defineMutation` by dot-path through a loaded workspace.
  *
  * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
@@ -7,31 +7,48 @@
  * room's RPC channel to a remote peer instead of running locally.
  *
  * Exit codes:
- *   1 — usage error (unknown action, workspace miss, missing sync for `--peer`)
- *   2 — runtime error (local action returned Err, or remote RPC failed)
- *   3 — peer-miss (`--peer <target>` didn't resolve within `--wait`)
+ *   1: usage error (unknown action, workspace miss, missing sync for `--peer`)
+ *   2: runtime error (local action returned Err, or remote RPC failed)
+ *   3: peer-miss (`--peer <target>` didn't resolve within `--wait`)
+ *
+ * ## Two execution modes
+ *
+ * - **Standalone** (default): the handler loads the workspace in-process,
+ *   calls {@link runCore}, renders, and exits.
+ * - **Attached** (when an `epicenter up` daemon is running for the same
+ *   `--dir`): the handler dispatches over IPC and the daemon runs
+ *   {@link runCore} against its already-open workspace.
+ *
+ * Both paths produce a {@link RunResult} of the same shape, so the
+ * renderer doesn't branch on which side built it.
  */
 
 import {
 	type Action,
 	invokeAction,
 	resolveActionPath,
+	type RpcError,
 	walkActions,
 } from '@epicenter/workspace';
-import { extractErrorMessage } from 'wellcrafted/error';
-import type { Argv, CommandModule, Options } from 'yargs';
-import { loadConfig, type WorkspaceEntry } from '../load-config';
+import type { AwarenessState } from '../load-config';
 import {
-	dirFromArgv,
-	dirOption,
-	workspaceFromArgv,
-	workspaceOption,
-} from '../util/common-options';
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
+import type { Argv, CommandModule, Options } from 'yargs';
+import {
+	renderDaemonResult,
+	resolveTarget,
+	tryGetDaemon,
+} from '../daemon/sibling-dispatch';
+import { loadConfig, type WorkspaceEntry } from '../load-config';
+import { dirOption, workspaceOption } from '../util/common-options';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { explainEmpty, waitForPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
-import { emitMissError, emitRpcError } from '../util/run-peer-errors';
 
 const DEFAULT_PEER_WAIT_MS = 5000;
 
@@ -44,6 +61,84 @@ const waitOption: Options = {
 	type: 'number',
 	description: `Total ms to wait for peer resolution + RPC; requires --peer (default ${DEFAULT_PEER_WAIT_MS})`,
 };
+
+/**
+ * Parsed inputs for {@link runCore}. Mirrors {@link ListCtx}: the daemon
+ * builds it from IPC `args`, the local handler builds it from argv. The
+ * shape is the wire format too.
+ */
+export type RunCtx = {
+	actionPath: string;
+	input: unknown;
+	peerTarget?: string;
+	waitMs: number;
+	workspaceArg?: string;
+};
+
+/**
+ * Domain errors returned by {@link runCore}. Carrying the failure mode
+ * in-band lets the renderer set `process.exitCode` exactly the way the
+ * in-process path does, even when the result arrived over IPC.
+ *
+ * - `UsageError`: bad action path / missing sync; renderer exitCode=1.
+ * - `RuntimeError`: action returned Err locally; renderer exitCode=2.
+ * - `PeerMiss`: `--peer` target didn't resolve within `waitMs`; exitCode=3.
+ * - `RpcError`: remote RPC returned an `RpcError`; exitCode=2.
+ */
+export const RunError = defineErrors({
+	UsageError: ({
+		message,
+		suggestions,
+	}: {
+		message: string;
+		suggestions?: string[];
+	}) => ({ message, suggestions }),
+	RuntimeError: ({ cause }: { cause: unknown }) => ({
+		message: extractErrorMessage(cause),
+		cause,
+	}),
+	PeerMiss: ({
+		peerTarget,
+		sawPeers,
+		workspaceArg,
+		waitMs,
+		emptyReason,
+	}: {
+		peerTarget: string;
+		sawPeers: boolean;
+		workspaceArg?: string;
+		waitMs: number;
+		emptyReason: string | null;
+	}) => ({
+		message: `no peer matches deviceId "${peerTarget}"`,
+		peerTarget,
+		sawPeers,
+		workspaceArg,
+		waitMs,
+		emptyReason,
+	}),
+	RpcError: ({
+		cause,
+		targetClientId,
+		peerState,
+	}: {
+		cause: RpcError;
+		targetClientId: number;
+		peerState: AwarenessState;
+	}) => ({
+		message: `RPC failed: ${cause.name}`,
+		cause,
+		targetClientId,
+		peerState,
+	}),
+});
+export type RunError = InferErrors<typeof RunError>;
+
+/** Success payload for {@link runCore}: the action's return value. */
+export type RunSuccess = { data: unknown };
+
+/** {@link runCore}'s return type: `Result` with the {@link RunError} union. */
+export type RunResult = Result<RunSuccess, RunError>;
 
 export const runCommand: CommandModule = {
 	command: 'run <action> [input]',
@@ -69,119 +164,172 @@ export const runCommand: CommandModule = {
 			.strict(),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
-		await using config = await loadConfig(dirFromArgv(args));
-		const entry = resolveEntry(config.entries, workspaceFromArgv(args));
-		await invoke(args, entry);
-	},
-};
-
-async function invoke(
-	argv: Record<string, unknown>,
-	entry: WorkspaceEntry,
-): Promise<void> {
-	const actionPath = String(argv.action);
-	const { workspace } = entry;
-
-	if (workspace.whenReady) await workspace.whenReady;
-
-	const action = resolveActionPath(workspace.actions ?? {}, actionPath);
-	if (!action) {
-		const entries = [...walkActions(workspace.actions ?? {})];
-		const descendants = entriesUnder(entries, actionPath);
-		if (descendants.length > 0) {
-			outputError(`"${actionPath}" is not a runnable action.`);
-			emitActionList(descendants);
-			throw new Error('Not an action');
-		}
-		outputError(`"${actionPath}" is not defined.`);
-		emitNearestSiblings(entries, actionPath);
-		throw new Error('Action not found');
-	}
-
-	const input = await resolveInput(argv);
-	const format = argv.format as 'json' | 'jsonl' | undefined;
-
-	const peerTarget =
-		typeof argv.peer === 'string' && argv.peer.length > 0 ? argv.peer : undefined;
-	if (peerTarget !== undefined) {
+		const actionPath = String(args.action);
+		const format = args.format as 'json' | 'jsonl' | undefined;
+		const peerTarget =
+			typeof args.peer === 'string' && args.peer.length > 0
+				? args.peer
+				: undefined;
 		const waitMs =
-			typeof argv.wait === 'number' ? argv.wait : DEFAULT_PEER_WAIT_MS;
-		await invokeRemote({
-			entry,
+			typeof args.wait === 'number' ? args.wait : DEFAULT_PEER_WAIT_MS;
+		const target = resolveTarget(args);
+		const input = await resolveInput(args);
+
+		const ctx: RunCtx = {
 			actionPath,
 			input,
 			peerTarget,
 			waitMs,
-			format,
-			workspaceArg: workspaceFromArgv(argv),
-		});
-		return;
-	}
+			workspaceArg: target.userWorkspace,
+		};
 
-	const result = await invokeAction(action, input, actionPath);
-	if (result.error !== null) {
-		outputError(extractErrorMessage(result.error));
-		process.exitCode = 2; // runtime error (local Err)
-		return;
-	}
-	output(result.data, { format });
-}
+		// Attached path: dispatch through the `up` daemon when one is
+		// running. Falls through to the standalone path otherwise.
+		const daemon = await tryGetDaemon(target);
+		if (daemon) {
+			const result = await daemon.call<RunResult>('run', ctx);
+			await renderDaemonResult(result, (data) => renderRunResult(data, format));
+			return;
+		}
 
-type InvokeRemoteOptions = {
-	entry: WorkspaceEntry;
-	actionPath: string;
-	input: unknown;
-	peerTarget: string;
-	waitMs: number;
-	format: 'json' | 'jsonl' | undefined;
-	workspaceArg: string | undefined;
+		// Standalone path: load config in-process.
+		await using config = await loadConfig(target.absDir);
+		const entry = resolveEntry(config.entries, target.userWorkspace);
+		const result = await runCore(entry, ctx);
+		renderRunResult(result, format);
+	},
 };
 
-async function invokeRemote({
-	entry,
-	actionPath,
-	input,
-	peerTarget,
-	waitMs,
-	format,
-	workspaceArg,
-}: InvokeRemoteOptions): Promise<void> {
+/**
+ * Pure core: dispatch an action either locally or via `sync.rpc`,
+ * returning a render-ready {@link RunResult}. No yargs, no config
+ * loading, no rendering, so it's usable from the daemon's IPC handler
+ * against its already-warm `entry`.
+ */
+export async function runCore(
+	entry: WorkspaceEntry,
+	ctx: RunCtx,
+): Promise<RunResult> {
+	const { workspace } = entry;
+	if (workspace.whenReady) await workspace.whenReady;
+
+	const action = resolveActionPath(workspace.actions ?? {}, ctx.actionPath);
+	if (!action) {
+		const entries = [...walkActions(workspace.actions ?? {})];
+		const descendants = entriesUnder(entries, ctx.actionPath);
+		if (descendants.length > 0) {
+			return RunError.UsageError({
+				message: `"${ctx.actionPath}" is not a runnable action.`,
+				suggestions: descendants.map(([p, a]) => `  ${p}  (${a.type})`),
+			});
+		}
+		return RunError.UsageError({
+			message: `"${ctx.actionPath}" is not defined.`,
+			suggestions: nearestSiblingLines(entries, ctx.actionPath),
+		});
+	}
+
+	if (ctx.peerTarget !== undefined) {
+		return invokeRemoteCore(entry, action, ctx);
+	}
+
+	const result = await invokeAction(action, ctx.input, ctx.actionPath);
+	if (result.error !== null) {
+		return RunError.RuntimeError({ cause: result.error });
+	}
+	return { data: { data: result.data }, error: null };
+}
+
+async function invokeRemoteCore(
+	entry: WorkspaceEntry,
+	_action: Action,
+	ctx: RunCtx,
+): Promise<RunResult> {
 	const { workspace } = entry;
 	const sync = workspace.sync;
 
 	if (!sync?.rpc) {
-		throw new Error(
-			`Workspace "${entry.name}" has no sync attachment; --peer requires sync.`,
-		);
+		return RunError.UsageError({
+			message: `Workspace "${entry.name}" has no sync attachment; --peer requires sync.`,
+		});
 	}
 
-	// `--wait` is the end-to-end budget: peer resolution + RPC share one
-	// deadline. If the peer is already in awareness, RPC gets the full
-	// budget; if peer resolution chews 4s of 5s, RPC gets 1s. Users care
-	// about total latency, not per-phase breakdown — see waitOption
-	// description.
-	const deadline = Date.now() + waitMs;
-	const { hit, sawPeers } = await waitForPeer(workspace, peerTarget, deadline);
+	const deadline = Date.now() + ctx.waitMs;
+	const { hit, sawPeers } = await waitForPeer(
+		workspace,
+		ctx.peerTarget!,
+		deadline,
+	);
 	if (!hit) {
-		emitMissError(peerTarget, sawPeers, workspaceArg, waitMs);
-		const why = explainEmpty(workspace);
-		if (why) outputError(`  reason: ${why}`);
-		process.exitCode = 3; // peer miss
-		return;
+		return RunError.PeerMiss({
+			peerTarget: ctx.peerTarget!,
+			sawPeers,
+			workspaceArg: ctx.workspaceArg,
+			waitMs: ctx.waitMs,
+			emptyReason: explainEmpty(workspace),
+		});
 	}
 
 	const { clientID: targetClientId, state: peerState } = hit;
 	const remaining = Math.max(1, deadline - Date.now());
-	const result = await sync.rpc(targetClientId, actionPath, input, {
+	const result = await sync.rpc(targetClientId, ctx.actionPath, ctx.input, {
 		timeout: remaining,
 	});
 
 	if (result.error !== null) {
-		emitRpcError(result.error, targetClientId, peerState);
-		process.exitCode = 2; // runtime error (remote RPC)
+		return RunError.RpcError({
+			cause: result.error,
+			targetClientId,
+			peerState,
+		});
+	}
+	return { data: { data: result.data }, error: null };
+}
+
+function renderRunResult(
+	result: RunResult,
+	format: 'json' | 'jsonl' | undefined,
+): void {
+	if (result.error === null) {
+		output(result.data.data, { format });
 		return;
 	}
-	output(result.data, { format });
+	switch (result.error.name) {
+		case 'UsageError': {
+			outputError(result.error.message);
+			if (result.error.suggestions && result.error.suggestions.length > 0) {
+				outputError('');
+				outputError('Exposed actions at this path:');
+				for (const line of result.error.suggestions) outputError(line);
+			}
+			process.exitCode = 1;
+			return;
+		}
+		case 'RuntimeError':
+			outputError(result.error.message);
+			process.exitCode = 2;
+			return;
+		case 'PeerMiss': {
+			emitMissError(
+				result.error.peerTarget,
+				result.error.sawPeers,
+				result.error.workspaceArg,
+				result.error.waitMs,
+			);
+			if (result.error.emptyReason)
+				outputError(`  reason: ${result.error.emptyReason}`);
+			process.exitCode = 3;
+			return;
+		}
+		case 'RpcError':
+			emitRpcError(
+				result.error.cause,
+				result.error.targetClientId,
+				result.error.peerState,
+			);
+			process.exitCode = 2;
+			return;
+	}
 }
 
 async function resolveInput(
@@ -204,30 +352,93 @@ function entriesUnder(
 	return entries.filter(([p]) => p === prefix || p.startsWith(pfx));
 }
 
-function emitActionList(descendants: Array<[string, Action]>): void {
-	outputError('');
-	outputError('Exposed actions at this path:');
-	for (const [path, action] of descendants) {
-		outputError(`  ${path}  (${action.type})`);
-	}
-}
-
 /**
- * After a miss, walk up the requested path looking for the longest prefix
- * that has any exposed actions and emit them as suggestions. If nothing
- * matches, stay silent — the top-level "not defined" error stands alone.
+ * Walk up the requested path looking for the longest prefix that has
+ * any exposed actions. Returns suggestion lines (already formatted) or
+ * an empty array (same UX as the prior emitter, just data-not-stderr).
  */
-function emitNearestSiblings(
+function nearestSiblingLines(
 	entries: Array<[string, Action]>,
 	missedPath: string,
-): void {
+): string[] {
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();
 		const prefix = parts.join('.');
 		const alts = entriesUnder(entries, prefix);
 		if (alts.length === 0) continue;
-		emitActionList(alts);
+		return alts.map(([p, a]) => `  ${p}  (${a.type})`);
+	}
+	return [];
+}
+
+// ─── Error formatters ────────────────────────────────────────────────────────
+
+/**
+ * Two miss shapes: nothing seen on the wire (probably a connect-status
+ * problem; caller should follow with `explainEmpty`) vs peers visible but
+ * none matched the requested deviceId (user typo / wrong workspace).
+ */
+export function emitMissError(
+	target: string,
+	sawPeers: boolean,
+	workspace: string | undefined,
+	waitMs: number,
+): void {
+	const scope = workspace ? ` in workspace ${workspace}` : '';
+	if (!sawPeers) {
+		outputError(
+			`error: no peers seen after waiting ${waitMs}ms for "${target}"`,
+		);
 		return;
+	}
+	outputError(`error: no peer matches deviceId "${target}"${scope}`);
+	const peersHint = workspace ? ` -w ${workspace}` : '';
+	outputError(`run \`epicenter peers${peersHint}\` to see connected peers`);
+}
+
+/**
+ * Format every `RpcError` variant labeled with the peer's presence info
+ * (`device.name`, `device.platform`) at resolution time. The exhaustive
+ * switch is enforced at compile time via the `never` check: adding a new
+ * variant to `@epicenter/workspace`'s `RpcError` breaks the build until a
+ * case is added here.
+ */
+export function emitRpcError(
+	error: RpcError,
+	targetClientId: number,
+	peerState: AwarenessState,
+): void {
+	const { device } = peerState;
+	const peerLabel = `${device.name} (${targetClientId}, ${device.platform})`;
+
+	switch (error.name) {
+		case 'ActionNotFound':
+			outputError(`error: ActionNotFound "${error.action}" on ${peerLabel}`);
+			return;
+		case 'Timeout':
+			outputError(`error: timeout after ${error.ms}ms on ${peerLabel}`);
+			return;
+		case 'PeerOffline':
+			outputError(`error: peer ${peerLabel} is offline`);
+			return;
+		case 'PeerNotFound':
+			outputError(`error: no peer with deviceId "${error.peer}"`);
+			return;
+		case 'PeerLeft':
+			outputError(
+				`error: peer "${error.peer}" disconnected before responding`,
+			);
+			return;
+		case 'ActionFailed':
+			outputError(
+				`error: "${error.action}" failed on ${peerLabel}: ${extractErrorMessage(error.cause)}`,
+			);
+			return;
+		case 'Disconnected':
+			outputError(`error: connection lost before ${peerLabel} responded`);
+			return;
+		default:
+			error satisfies never;
 	}
 }

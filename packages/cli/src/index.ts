@@ -1,4 +1,4 @@
-/** @module @epicenter/cli — Public API for the Epicenter CLI package. */
+/** @module @epicenter/cli. Public API for the Epicenter CLI package. */
 
 export { type AuthApi, createAuthApi } from './auth/api';
 export {

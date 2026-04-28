@@ -1,17 +1,16 @@
 /**
- * `epicenter list [dot.path]`: render exposed actions, locally or on a peer.
+ * `epicenter list [dot.path]`: render the actions exposed by this workspace.
  *
- * Three sources, one shape, one renderer.
+ * Conceptually this is a one-line shell shortcut for
+ * `describeActions(workspace.actions)` against the daemon's live workspace.
+ * Nothing more. The CLI is the shell-friendly surface for one-shot queries;
+ * orchestration (fan-out across peers, conditional dispatch, loops) belongs
+ * in vault-style TypeScript scripts that load the workspace library
+ * directly via `loadConfig` and call `describePeer` / `sync.rpc` themselves.
  *
- *   list                       local tree (default; no network)
- *   list <path>                local subtree or leaf detail
- *   list --peer <deviceId>     that peer's tree (or detail with <path>)
- *   list --all                 self + every connected peer
- *   list --all <path>          who offers it?
- *
- * `--peer` and `--all` are mutually exclusive. The renderer takes a list
- * of `Section`s (one or many) and prints text or JSON; the daemon's
- * `/list` route produces the sections, and that's the whole flow.
+ * Per-peer schema introspection used to live here as `list --peer <id>` /
+ * `list --all`. It moved to `epicenter peers <deviceId>`, which is the
+ * natural home: the peers verb already owns the awareness/RPC dimension.
  *
  * `epicenter list` requires a running daemon for the resolved `--dir`.
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
@@ -19,9 +18,8 @@
 
 import { type ActionManifest } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { Argv, CommandModule, Options } from 'yargs';
+import type { Argv, CommandModule } from 'yargs';
 
 import { type DaemonError, getDaemon } from '../daemon/client';
 import {
@@ -36,74 +34,14 @@ import {
 } from '../util/format-output';
 import type { ResolveError } from '../util/resolve-entry';
 
-const DEFAULT_WAIT_MS = 500;
-
 type Format = 'json' | 'jsonl' | undefined;
 
-/**
- * One section to render. `peer` is `'self'` for the local source or the
- * remote peer's deviceId, surfaced in JSON output so scripts can
- * attribute each action back to its source.
- *
- * `unavailableReason` is set when the peer's manifest fetch failed; the
- * detail/tree renderer surfaces it as a "schema unavailable" footer
- * instead of crashing on a transient RPC failure.
- */
-export type Section = {
-	label: string;
-	peer: string;
-	entries: ActionManifest;
-	unavailableReason?: string;
-};
-
-export type ListMode =
-	| { kind: 'local' }
-	| { kind: 'peer'; deviceId: string }
-	| { kind: 'all' };
-
-/**
- * Domain errors returned by the `/list` route. `PeerMiss` is the only
- * failure path that survives across IPC: translated to stderr +
- * exitCode=3 by the renderer.
- */
-export const ListError = defineErrors({
-	PeerMiss: ({
-		deviceId,
-		emptyReason,
-	}: {
-		deviceId: string;
-		emptyReason: string | null;
-	}) => ({
-		message: `no peer matches deviceId "${deviceId}"${emptyReason ? ` (${emptyReason})` : ''}`,
-		deviceId,
-		emptyReason,
-	}),
-});
-export type ListError = InferErrors<typeof ListError>;
-
-export type ListSuccess = { sections: Section[]; mode: ListMode };
-export type ListResult = Result<ListSuccess, ListError | ResolveError>;
-
-const peerOption: Options = {
-	type: 'string',
-	description: 'Read actions from a remote peer by deviceId',
-};
-
-const allOption: Options = {
-	type: 'boolean',
-	description: 'Read self plus every connected peer in one shot',
-};
-
-const waitOption: Options = {
-	type: 'number',
-	default: DEFAULT_WAIT_MS,
-	description: `Ms to wait for awareness to populate; only meaningful with --peer/--all (default ${DEFAULT_WAIT_MS})`,
-};
+export type ListSuccess = { entries: ActionManifest };
+export type ListResult = Result<ListSuccess, ResolveError>;
 
 export const listCommand: CommandModule = {
 	command: 'list [path]',
-	describe:
-		'Tree view of exposed queries and mutations (use --peer or --all to inspect remotely)',
+	describe: 'Tree view of exposed queries and mutations on this device',
 	builder: (yargs: Argv) =>
 		yargs
 			.positional('path', {
@@ -112,19 +50,12 @@ export const listCommand: CommandModule = {
 			})
 			.option('dir', dirOption)
 			.option('workspace', workspaceOption)
-			.option('peer', peerOption)
-			.option('all', allOption)
-			.option('wait', waitOption)
 			.options(formatYargsOptions()),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
 		const path = typeof args.path === 'string' ? args.path : '';
 		const format = args.format as Format;
-		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
 		const target = resolveTarget(args);
-
-		const mode = parseMode(args);
-		if (mode === null) return;
 
 		const { data: daemon, error: daemonErr } = await getDaemon(target);
 		if (daemonErr) {
@@ -134,46 +65,19 @@ export const listCommand: CommandModule = {
 		}
 		const result = await daemon.list({
 			path,
-			mode,
-			waitMs,
 			workspace: target.userWorkspace,
 		});
 		await renderResult(result, path, format);
 	},
 };
 
-function parseMode(args: Record<string, unknown>): ListMode | null {
-	const peerTarget =
-		typeof args.peer === 'string' && args.peer.length > 0 ? args.peer : undefined;
-	const all = args.all === true;
-	if (peerTarget !== undefined && all) {
-		outputError(
-			'error: --peer and --all are mutually exclusive (--all already includes every peer)',
-		);
-		process.exitCode = 1;
-		return null;
-	}
-	if (peerTarget !== undefined) return { kind: 'peer', deviceId: peerTarget };
-	if (all) return { kind: 'all' };
-	return { kind: 'local' };
-}
-
 async function renderResult(
-	result: Result<ListSuccess, ListError | ResolveError | DaemonError>,
+	result: Result<ListSuccess, ResolveError | DaemonError>,
 	path: string,
 	format: Format,
 ): Promise<void> {
 	if (result.error !== null) {
 		switch (result.error.name) {
-			case 'PeerMiss':
-				outputError(
-					`error: no peer matches deviceId "${result.error.deviceId}"`,
-				);
-				outputError('run `epicenter peers` to see connected peers');
-				if (result.error.emptyReason)
-					outputError(`  reason: ${result.error.emptyReason}`);
-				process.exitCode = 3;
-				return;
 			case 'UnknownWorkspace':
 			case 'AmbiguousWorkspace':
 			case 'MissingConfig':
@@ -187,101 +91,65 @@ async function renderResult(
 		}
 		return;
 	}
-	await renderSections(result.data.sections, path, format, result.data.mode);
+	await renderEntries(result.data.entries, path, format);
 }
 
-/**
- * `--all` is the only mode that tags rows with `peer` and tolerates zero
- * matches per-section (it can show a partial fan-out). Single-source modes
- * (local/--peer) treat a missing path as an error. We derive that
- * presentation bit from `mode` rather than threading a separate flag.
- */
-async function renderSections(
-	sections: Section[],
+async function renderEntries(
+	entries: ActionManifest,
 	path: string,
 	format: Format,
-	mode: ListMode,
 ): Promise<void> {
-	const multi = mode.kind === 'all';
 	if (format) {
-		renderJson(sections, path, format, multi);
+		renderJson(entries, path, format);
 		return;
 	}
-	await renderText(sections, path, multi);
+	await renderText(entries, path);
 }
 
 function renderJson(
-	sections: Section[],
+	entries: ActionManifest,
 	path: string,
 	format: Exclude<Format, undefined>,
-	multi: boolean,
 ): void {
-	if (!multi && path && sections[0]!.entries[path]) {
-		output(toActionDescriptor(sections[0]!.entries[path]!, path), { format });
+	if (path && entries[path]) {
+		output(toActionDescriptor(entries[path]!, path), { format });
 		return;
 	}
 
-	const rows: Array<{ peer?: string } & ReturnType<typeof toActionDescriptor>> = [];
-	for (const section of sections) {
-		const subset = filterByPath(section.entries, path);
-		for (const [p, meta] of Object.entries(subset)) {
-			const row = toActionDescriptor(meta, p);
-			rows.push(multi ? { peer: section.peer, ...row } : row);
-		}
-	}
+	const subset = filterByPath(entries, path);
+	const rows = Object.entries(subset).map(([p, meta]) =>
+		toActionDescriptor(meta, p),
+	);
 	if (path && rows.length === 0) {
-		fail(`"${path}" ${multi ? 'not found on any peer' : 'is not defined'}.`);
+		fail(`"${path}" is not defined.`);
 		return;
 	}
 	output(rows, { format });
 }
 
 async function renderText(
-	sections: Section[],
-	path: string,
-	multi: boolean,
-): Promise<void> {
-	let totalMatches = 0;
-	let printed = 0;
-
-	for (const section of sections) {
-		const subset = filterByPath(section.entries, path);
-		const matches = Object.keys(subset).length;
-		totalMatches += matches;
-
-		if (path && matches === 0 && !section.unavailableReason) continue;
-
-		if (printed > 0) console.log('');
-		console.log(section.label);
-		await printSection(subset, path, section.unavailableReason);
-		printed++;
-	}
-
-	if (path && totalMatches === 0) {
-		fail(`"${path}" ${multi ? 'not found on any peer' : 'is not defined'}.`);
-	}
-}
-
-async function printSection(
 	entries: ActionManifest,
 	path: string,
-	unavailableReason: string | undefined,
 ): Promise<void> {
-	const keys = Object.keys(entries);
-	if (keys.length === 0) {
-		if (unavailableReason) {
-			console.log(`  schema unavailable: ${unavailableReason}`);
-		} else {
-			console.log('  (no actions exposed)');
-		}
+	const subset = filterByPath(entries, path);
+	const matches = Object.keys(subset).length;
+
+	if (path && matches === 0) {
+		fail(`"${path}" is not defined.`);
 		return;
 	}
+
+	if (matches === 0) {
+		console.log('(no actions exposed)');
+		return;
+	}
+
 	const leaf = path ? entries[path] : undefined;
-	if (leaf && keys.length === 1) {
+	if (leaf && matches === 1) {
 		printActionDetail(path, leaf);
 		return;
 	}
-	printTree(entries, path);
+	printTree(subset, path);
 }
 
 function fail(message: string): void {

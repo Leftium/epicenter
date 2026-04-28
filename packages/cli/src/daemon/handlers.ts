@@ -2,6 +2,15 @@
  * Daemon-side action dispatch. The Hono `/list` and `/run` route handlers
  * in `app.ts` call these against an already-warm `WorkspaceEntry`.
  *
+ * The CLI verbs are shell-friendly shortcuts for one workspace primitive:
+ *
+ *   /list  ->  describeActions(workspace.actions)
+ *   /run   ->  invokeAction(...) locally, or sync.rpc(...) when peerTarget is set
+ *
+ * Power-user automation (loops, fan-out across peers, conditional dispatch)
+ * lives in vault-style TypeScript scripts that load the workspace library
+ * directly. The CLI deliberately does not grow flags that shadow scripting.
+ *
  * Each function returns a domain `Result` (`ListResult`, `RunResult`)
  * that the route serializes verbatim. Unexpected exceptions bubble out
  * to the route's blanket try/catch, which surfaces them as
@@ -11,81 +20,34 @@
 import {
 	type Action,
 	describeActions,
-	describePeer,
 	invokeAction,
 	resolveActionPath,
-	type SyncAttachment,
 	walkActions,
 } from '@epicenter/workspace';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
 
-import {
-	ListError,
-	type ListResult,
-	type Section,
-} from '../commands/list.js';
+import type { ListResult } from '../commands/list.js';
 import {
 	RunError,
 	type RunCtx,
 	type RunResult,
 } from '../commands/run.js';
-import type { ListCtx } from './schemas.js';
-import type {
-	AwarenessState,
-	WorkspaceEntry,
-} from '../load-config.js';
-import { explainEmpty, waitForAnyPeer, waitForPeer } from '../util/peer-wait.js';
+import type { WorkspaceEntry } from '../load-config.js';
+import { explainEmpty, waitForPeer } from '../util/peer-wait.js';
 
-export async function executeList(
+/**
+ * `epicenter list` -> describe the actions exposed by *this* workspace.
+ *
+ * That is the entire job. Per-peer schema introspection lives on
+ * `epicenter peers <deviceId>` (which calls `describePeer` over RPC),
+ * and "dump every peer's schema" is a five-line vault script that walks
+ * `workspace.sync.peers()`. Neither belongs as a flag on `list`.
+ */
+export function executeList(
 	entry: WorkspaceEntry,
-	ctx: ListCtx,
-): Promise<ListResult> {
-	const { workspace } = entry;
-	const { mode, waitMs } = ctx;
-
-	if (mode.kind === 'local') {
-		return Ok({ sections: [selfSection(entry, 'local')], mode });
-	}
-
-	const deadline = Date.now() + waitMs;
-	if (mode.kind === 'peer') {
-		// `peerSection` needs the sync attachment for `describePeer`. If
-		// the workspace has no sync, no peers can match: short-circuit to
-		// PeerMiss with the standard empty-reason hint, no `!` needed.
-		const sync = workspace.sync;
-		if (!sync) {
-			return ListError.PeerMiss({
-				deviceId: mode.deviceId,
-				emptyReason: explainEmpty(workspace),
-			});
-		}
-		const { hit } = await waitForPeer(workspace, mode.deviceId, deadline);
-		if (!hit) {
-			return ListError.PeerMiss({
-				deviceId: mode.deviceId,
-				emptyReason: explainEmpty(workspace),
-			});
-		}
-		return Ok({
-			sections: [await peerSection(hit.state, sync)],
-			mode,
-		});
-	}
-
-	// --all
-	await waitForAnyPeer(workspace, deadline);
-	if (!workspace.sync) {
-		return Ok({ sections: [selfSection(entry, 'all')], mode });
-	}
-	const ordered = [...workspace.sync.peers().entries()].sort(
-		([a], [b]) => a - b,
-	);
-	const sections: Section[] = [selfSection(entry, 'all')];
-	for (const [, state] of ordered) {
-		sections.push(await peerSection(state, workspace.sync));
-	}
-	return Ok({ sections, mode });
+	_ctx: unknown,
+): ListResult {
+	return Ok({ entries: describeActions(entry.workspace.actions ?? {}) });
 }
 
 export async function executeRun(
@@ -165,39 +127,6 @@ async function invokeRemote(
 		});
 	}
 	return Ok({ data: result.data });
-}
-
-export function selfSection(entry: WorkspaceEntry, mode: 'local' | 'all'): Section {
-	const localActions = entry.workspace.actions;
-	const entries = localActions ? describeActions(localActions) : {};
-	return {
-		label: mode === 'all' ? 'self (this device)' : entry.name,
-		peer: 'self',
-		entries,
-	};
-}
-
-export async function peerSection(
-	state: AwarenessState,
-	sync: SyncAttachment,
-): Promise<Section> {
-	const { device } = state;
-	const { data: entries, error } = await describePeer(sync, device.id);
-	if (error) {
-		return {
-			label: `${device.name} (online, schema unavailable)`,
-			peer: device.id,
-			entries: {},
-			unavailableReason: extractErrorMessage(error),
-		};
-	}
-	const suffix =
-		Object.keys(entries).length === 0 ? ' (online, no actions)' : ' (online)';
-	return {
-		label: `${device.name}${suffix}`,
-		peer: device.id,
-		entries,
-	};
 }
 
 function entriesUnder(

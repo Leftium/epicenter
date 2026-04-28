@@ -4,13 +4,13 @@
  * round-trips through serialization the same way the daemonClient sees
  * it, so this is the load-bearing test surface for list dispatch logic.
  *
- * Cases:
- *   1. local mode: returns a sections array labeled by entry name.
- *   2. peer mode against a workspace with no sync: returns PeerMiss
- *      (the renderer translates exitCode=3).
+ * `/list` is now a one-primitive route: `describeActions(workspace.actions)`.
+ * No modes, no peer waits, no fan-out. Per-peer schema introspection lives
+ * on `/peers` (and `peers <deviceId>` on the CLI).
  */
 
 import { describe, expect, test } from 'bun:test';
+import { defineQuery } from '@epicenter/workspace';
 
 import type { ListResult } from '../commands/list';
 import type { LoadedWorkspace, WorkspaceEntry } from '../load-config';
@@ -42,39 +42,32 @@ async function postList(
 }
 
 describe('/list route', () => {
-	test('local mode returns a single section labeled by entry name', async () => {
-		const reply = await postList(fakeEntry('demo'), {
-			path: '',
-			mode: { kind: 'local' },
-			waitMs: 0,
-		});
+	test('returns describeActions output for the resolved workspace', async () => {
+		const reply = await postList(
+			fakeEntry('demo', {
+				counter: {
+					get: defineQuery({
+						description: 'Read the counter',
+						handler: () => 0,
+					}),
+				},
+			}),
+			{ path: '' },
+		);
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
-			expect(reply.data.sections).toHaveLength(1);
-			expect(reply.data.sections[0]!.label).toBe('demo');
-			expect(reply.data.sections[0]!.peer).toBe('self');
+			expect(Object.keys(reply.data.entries).sort()).toEqual(['counter.get']);
+			expect(reply.data.entries['counter.get']?.description).toBe(
+				'Read the counter',
+			);
 		}
 	});
 
-	test('peer mode against a workspace without sync returns PeerMiss', async () => {
-		const reply = await postList(fakeEntry('demo'), {
-			path: '',
-			mode: { kind: 'peer', deviceId: 'nonexistent' },
-			waitMs: 0,
-		});
-		expect(reply.error?.name).toBe('PeerMiss');
-	});
-
-	test('all mode against a workspace without sync still emits a self section', async () => {
-		const reply = await postList(fakeEntry('demo'), {
-			path: '',
-			mode: { kind: 'all' },
-			waitMs: 0,
-		});
+	test('returns an empty entries map when the workspace has no actions', async () => {
+		const reply = await postList(fakeEntry('demo'), { path: '' });
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
-			expect(reply.data.sections).toHaveLength(1);
-			expect(reply.data.sections[0]!.peer).toBe('self');
+			expect(reply.data.entries).toEqual({});
 		}
 	});
 });

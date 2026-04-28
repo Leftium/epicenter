@@ -2,25 +2,29 @@
 
 > Introspect and invoke `defineQuery` / `defineMutation` actions in your `epicenter.config.ts`, either locally or on a peer that's online right now.
 
-The surface is two verbs × two scopes, plus a pre-workspace session command:
+Each verb is a one-line shell shortcut for one workspace primitive:
 
 ```
-               Local            Remote
-             ┌─────────┬─────────────────────────────┐
- Enumerate   │  list   │  list --peer / list --all   │
- Invoke      │  run    │  run --peer                 │
-             └─────────┴─────────────────────────────┘
+                 ┌──────────┬───────────────────────────────────┐
+                 │   Verb   │          Workspace primitive      │
+                 ├──────────┼───────────────────────────────────┤
+   Enumerate     │  list    │  describeActions(workspace.actions)
+   Invoke        │  run     │  invokeAction(...)  /  sync.rpc(...)
+   Presence      │  peers   │  workspace.sync.peers()
+                 │  peers <id>  + describePeer(sync, id)
+                 └──────────┴───────────────────────────────────┘
 
- Presence:    peers (who's online — separate from capability)
  Cross-cutting: auth (server session, pre-workspace)
 ```
 
-`list` is the single command for inspecting actions anywhere — local by
-default, remote with `--peer <deviceId>`, or self + every connected peer
-with `--all`. `peers` answers a different question: who's reachable right
-now, regardless of what they offer.
+`list` is the local view of what *this* device exposes. `peers` is the
+remote view: who is online, and (with a deviceId) what they expose.
+`run --peer <deviceId>` invokes one of those remote actions.
 
-Every command earns its place against that grid. Anything bigger — bulk operations, exports, ad-hoc transforms — is a user-authored `.ts` script that imports the config and runs under `bun run`. The config self-loads at import time, so there is nothing for the CLI to bootstrap.
+Anything that would need a flag to fan out across peers, loop, or
+compose is a user-authored `.ts` script that imports the config and
+runs under `bun run`. The CLI is the shell-friendly surface; scripts
+are the automation surface.
 
 ## Installation
 
@@ -50,14 +54,10 @@ epicenter auth logout                             # most recent session
 # up — bring the workspace online as a callable peer (run once per session)
 epicenter up &
 
-# list — what actions are exposed (local by default; --peer / --all for remote)
-epicenter list                                      # local: every export + full tree
-epicenter list tabManager.savedTabs                 # local subtree
-epicenter list tabManager.savedTabs.create          # local action detail with JSON input shape
-epicenter list --peer 0xabc                         # remote: that peer's full tree
-epicenter list --peer 0xabc tabManager.savedTabs    # remote subtree on that peer
-epicenter list --all                                # self + every connected peer
-epicenter list --all tabManager.savedTabs.create    # who offers this action?
+# list — what actions are exposed on this device
+epicenter list                                      # full tree
+epicenter list tabManager.savedTabs                 # subtree
+epicenter list tabManager.savedTabs.create          # action detail with JSON input shape
 
 # run — do one (locally, or on a remote peer with --peer)
 epicenter run tabManager.savedTabs.list
@@ -66,18 +66,28 @@ epicenter run tabManager.savedTabs.create @payload.json
 cat payload.json | epicenter run tabManager.savedTabs.create
 epicenter run tabManager.savedTabs.list --peer 0xabc
 
-# peers — who's online right now (presence snapshot; no offers)
+# peers — who's online right now (presence snapshot)
 epicenter peers
 epicenter peers -w tabManager
+epicenter peers 0xabc                               # presence + that peer's action tree
 ```
 
 `run` resolves the first path segment against the named exports of `epicenter.config.ts`; everything after walks into the underlying document handle until it hits a branded `defineQuery` / `defineMutation` node.
 
 ### Local vs. remote
 
-`list` defaults to the local config — the fast, deterministic view of what your code exposes. Add `--peer <deviceId>` to read another peer's published manifest, or `--all` to fan out across self plus every connected peer. `--peer` and `--all` are mutually exclusive (`--all` already includes everyone). `peers` is a separate, presence-only command: who's reachable right now, regardless of what (if anything) they offer. `run` is local by default and remote when `--peer <deviceId>` is set; the verb and schema are unchanged, only the dispatch target moves.
+`list` is local: it describes the actions exposed by this device's
+config. Per-peer schema introspection lives on `peers <deviceId>`,
+which calls `describePeer(sync, id)` over RPC and returns presence plus
+the peer's full action tree. `run` is local by default and remote when
+`--peer <deviceId>` is set; the verb and schema are unchanged, only the
+dispatch target moves.
 
-Peer presence has a ~30s liveness window (inherited from Yjs awareness): a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--wait <ms>` expires (default 5000). `list --peer` and `list --all` poll up to `--wait <ms>` (default 500 — the awareness burst usually lands in the same write window as the sync handshake; the small grace covers concurrent peer joins). `peers` defaults to `--wait 500` for the same reason; pass `--wait 0` for a true one-shot snapshot.
+Fan-out across peers (e.g. "who exposes action X?") is a five-line
+script that walks `workspace.sync.peers()` and calls `describePeer`
+on each. The CLI deliberately does not grow a flag for it.
+
+Peer presence has a ~30s liveness window (inherited from Yjs awareness): a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--wait <ms>` expires (default 5000). `peers <deviceId>` polls up to `--wait <ms>` (default 500). Without arguments, `peers` reads the current awareness snapshot one-shot.
 
 ### Common flags
 
@@ -85,9 +95,8 @@ Peer presence has a ~30s liveness window (inherited from Yjs awareness): a peer 
 | ---- | ----- | -------- | ------- |
 | `--dir` | `-C` | `list`, `run`, `peers` | Directory containing `epicenter.config.ts` (default `.`). Mirrors `git -C`. |
 | `--workspace` | `-w` | `list`, `run`, `peers` | Narrow to one export when the config has multiple workspaces. |
-| `--peer` | — | `list`, `run` | Address a remote peer by `deviceId`. On `list`, sources the action manifest from that peer's awareness; on `run`, dispatches the invocation over the sync room's RPC channel. |
-| `--all` | — | `list` | Source from self plus every connected peer in one invocation. Mutually exclusive with `--peer`. |
-| `--wait` | — | `list --peer` / `list --all` (default 500), `run --peer` (default 5000), `peers` (default 500) | Ms to wait for awareness to populate. `0` = one-shot snapshot. On `run --peer`, covers peer resolution *and* the RPC call. |
+| `--peer` | — | `run` | Address a remote peer by `deviceId`. Dispatches the invocation over the sync room's RPC channel. |
+| `--wait` | — | `run --peer` (default 5000), `peers <deviceId>` (default 500) | Ms to wait for awareness to populate. On `run --peer`, covers peer resolution *and* the RPC call. |
 | `--format` | — | `list`, `run`, `peers` | `json` or `jsonl`. Pretty-prints on TTY, compact when piped. Without it, commands emit their human-readable shape (tree / value / table). |
 
 `auth` intentionally takes no workspace flags — it manages server sessions, not workspace state. The server URL is a positional with a default of `https://api.epicenter.so`; self-hosters pass their own URL.

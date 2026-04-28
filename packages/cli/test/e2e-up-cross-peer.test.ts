@@ -32,7 +32,7 @@
  *        because it'd duplicate that coverage at higher cost.
  *   [✅] Invariant 6: `peers --wait` cap + hint.
  *        → `test/peers-cap.test.ts`.
- *   [❌] Cross-peer `run --peer`/`list --peer` against a real warm peer
+ *   [❌] Cross-peer `run --peer` / `peers <deviceId>` against a real warm peer
  *        (steps 5–7 of the brief's pseudocode). **Infra gap.** This requires
  *        a y-websocket-compatible fake relay; none exists in `packages/sync/`
  *        or `packages/cli/`, and writing one is a separate spec

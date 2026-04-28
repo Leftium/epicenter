@@ -11,27 +11,24 @@
  *    derives the input type of each route from its validator, so call
  *    sites get checked against these shapes without redeclaring them.
  *
- * The arktype types here are the *wire* shape. They're a strict subset of
- * the in-memory `ListCtx` / `RunCtx` types in `commands/list.ts` and
- * `commands/run.ts` (those types include cleanup we did inline in the
- * dispatcher). The cast back to the in-memory type is one line per route.
+ * The schemas reflect the "CLI shortcut == one workspace primitive" model
+ * (see `specs/20260428T160000-list-collapse-to-local-primitive.md`):
+ *
+ *   /list   ->  describeActions(workspace.actions)             local only
+ *   /peers  ->  workspace.sync.peers() (+ optional describePeer for one)
+ *   /run    ->  invokeAction (local) or sync.rpc (remote, via peerTarget)
  */
 
 import { type } from 'arktype';
 
-const listMode = type({ kind: '"local"' })
-	.or({ kind: '"all"' })
-	.or({ kind: '"peer"', deviceId: 'string' });
-
 export const peersArgsSchema = type({
 	'workspace?': 'string',
+	'deviceId?': 'string',
 });
 export type PeersArgs = typeof peersArgsSchema.infer;
 
 export const listCtxSchema = type({
 	path: 'string',
-	mode: listMode,
-	waitMs: 'number',
 	'workspace?': 'string',
 });
 export type ListCtx = typeof listCtxSchema.infer;

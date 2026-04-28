@@ -1,10 +1,8 @@
 /**
- * `epicenter peers`: presence-only view of who's connected right now.
+ * `epicenter peers`: presence view of who's connected right now.
  *
- * Shows just the identity fields needed to target a peer with
- * `run --peer` or `list --peer`: deviceId, friendly name, platform, and the
- * session-local clientID. Action introspection lives in `list --peer` and
- * `list --all`; this command stays narrow.
+ * Shows the identity fields needed to target a peer with `run --peer`:
+ * deviceId, friendly name, platform, and the session-local clientID.
  *
  * `epicenter peers` requires a running daemon for the resolved `--dir`.
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
@@ -22,8 +20,7 @@ import { formatYargsOptions, output, outputError } from '../util/format-output';
 
 export const peersCommand: CommandModule = {
 	command: 'peers',
-	describe:
-		'List connected peers (presence). Use `list --peer` or `list --all` for action introspection.',
+	describe: 'List connected peers (presence)',
 	builder: (yargs: Argv) =>
 		yargs
 			.option('dir', dirOption)

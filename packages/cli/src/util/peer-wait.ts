@@ -1,23 +1,22 @@
 /**
- * Find and wait for peers on the sync wire.
+ * Find and wait for peers on the sync wire. Used by `run --peer` to
+ * resolve a deviceId before dispatching RPC, and by `peers <deviceId>`
+ * to wait for the target before fetching its schemas.
  *
- * `findPeer` is a one-shot lookup; `waitForPeer` and `waitForAnyPeer`
- * subscribe to `sync.observe()` so they react to changes without polling
- * and bail when `deadline` expires. They deliberately do NOT block on
+ * `findPeer` is a one-shot lookup; `waitForPeer` subscribes to
+ * `sync.observe()` so it reacts to changes without polling and bails
+ * when `deadline` expires. It deliberately does NOT block on
  * `sync.whenConnected`. The observe loop already covers that path
  * (awareness can only arrive after the WS handshake completes), and
  * awaiting `whenConnected` would tie us to the workspace's full
- * connection lifetime instead of the caller's `--wait` budget. (Note:
- * `whenConnected` now rejects on dispose rather than hanging forever, but
- * for transient failures it still won't settle until the doc is gone, and
- * we want a deadline-bounded wait, not a doc-bounded wait.)
+ * connection lifetime instead of the caller's `--wait` budget.
  *
  * `findPeer` matches by exact `device.id`. The per-installation deviceId
  * convention (`getOrCreateDeviceId`) makes collisions cryptographically
  * improbable, so "first match by clientID-asc" is correct rather than
  * ambiguous. No fuzzy matching, no kv-pair query DSL, no numeric
- * clientID escape hatch: the discovery flow is `epicenter peers` →
- * copy the deviceId → `--peer <id>`.
+ * clientID escape hatch: the discovery flow is `epicenter peers` to
+ * copy the deviceId, then `--peer <id>` on the verb that needs it.
  */
 
 import type { AwarenessState, LoadedWorkspace } from '../load-config';
@@ -105,38 +104,3 @@ export async function waitForPeer(
 	});
 }
 
-/**
- * Wait for presence to show *any* peer, up to the deadline. Best-effort:
- * resolves when at least one peer is visible OR the deadline expires.
- *
- * Returns void deliberately. The caller decides freshness; call
- * `workspace.sync?.peers()` after this resolves to get the snapshot.
- * This keeps the contract honest: an in-flight peer might appear between
- * "wait satisfied" and "use the snapshot," and pretending otherwise
- * would cache a value that's already a hair stale at return.
- */
-export async function waitForAnyPeer(
-	workspace: LoadedWorkspace,
-	deadline: number,
-): Promise<void> {
-	const sync = workspace.sync;
-	if (!sync) return;
-	if (sync.peers().size > 0) return;
-
-	const remaining = deadline - Date.now();
-	if (remaining <= 0) return;
-
-	return new Promise((resolve) => {
-		const stop = sync.observe(() => {
-			if (sync.peers().size > 0) {
-				clearTimeout(timer);
-				stop();
-				resolve();
-			}
-		});
-		const timer = setTimeout(() => {
-			stop();
-			resolve();
-		}, remaining);
-	});
-}

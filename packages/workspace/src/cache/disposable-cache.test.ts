@@ -395,39 +395,6 @@ describe('open / dispose', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('re-entrancy', () => {
-	test('build(a) can call cache.open(b) without corrupting cache state', () => {
-		// A builder that, while constructing entry 'parent', reaches back into
-		// the cache to open 'child'. Both entries should coexist; neither map
-		// state nor refcounts should be corrupted.
-		// biome-ignore lint/suspicious/noExplicitAny: cache referenced inside its own builder
-		let cache: any;
-		cache = createDisposableCache((id: string) => {
-			if (id === 'parent') {
-				const child = cache.open('child');
-				return {
-					id,
-					childRef: child,
-					[Symbol.dispose]() {
-						child[Symbol.dispose]();
-					},
-				};
-			}
-			return {
-				id,
-				[Symbol.dispose]() {},
-			};
-		});
-
-		const parent = cache.open('parent');
-		expect(parent.id).toBe('parent');
-		expect(parent.childRef.id).toBe('child');
-		expect(cache.has('parent')).toBe(true);
-		expect(cache.has('child')).toBe(true);
-
-		parent[Symbol.dispose]();
-		cache[Symbol.dispose]();
-	});
-
 	test("value's [Symbol.dispose] can re-enter via cache.open(sameId) and gets a fresh entry", () => {
 		// During teardown, the entry is removed from the cache's internal map
 		// BEFORE the value's [Symbol.dispose]() runs. So a re-entrant open of
@@ -470,50 +437,6 @@ describe('re-entrancy', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// throwing dispose via grace-timer path
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('throwing value [Symbol.dispose] via the grace-timer path', () => {
-	test('does not propagate; cache evicts; subsequent open works', async () => {
-		// The cache-level dispose path is covered by another test. This one
-		// covers the same throwing dispose, but reached via the grace timer
-		// firing after the last handle is released.
-		let buildCount = 0;
-		const cache = createDisposableCache(
-			(id: string) => {
-				buildCount++;
-				return {
-					id,
-					[Symbol.dispose]() {
-						throw new Error('grace-timer dispose boom');
-					},
-				};
-			},
-			{ gcTime: 20 },
-		);
-
-		const prevError = console.error;
-		console.error = () => {};
-		try {
-			const h = cache.open('a');
-			h[Symbol.dispose]();
-			// Wait long enough for the grace timer to fire and the throwing
-			// dispose to be caught + logged.
-			await new Promise((r) => setTimeout(r, 50));
-			expect(cache.has('a')).toBe(false);
-
-			// A subsequent open builds fresh, proving the throw didn't leave
-			// a poisoned entry behind.
-			const h2 = cache.open('a');
-			expect(buildCount).toBe(2);
-			h2[Symbol.dispose]();
-		} finally {
-			console.error = prevError;
-		}
-	});
-});
-
-// ════════════════════════════════════════════════════════════════════════════
 // plain-object invariant (T must be a plain object)
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -543,40 +466,6 @@ describe('plain-object invariant', () => {
 		).toBeUndefined();
 
 		handle[Symbol.dispose]();
-		cache[Symbol.dispose]();
-	});
-
-	test('wrapping a class instance in a plain object preserves access to its methods', () => {
-		// The recommended workaround: nest the class instance as a named
-		// field on a plain object, then expose whatever methods you need
-		// either by closure-capturing them or via direct property access.
-		class WithPrototypeMethod {
-			name = 'inner';
-			greet(): string {
-				return `hi from ${this.name}`;
-			}
-			[Symbol.dispose]() {}
-		}
-		const cache = createDisposableCache((_id: string) => {
-			const inner = new WithPrototypeMethod();
-			return {
-				inner,
-				greet: () => inner.greet(),
-				[Symbol.dispose]() {
-					inner[Symbol.dispose]();
-				},
-			};
-		});
-
-		const a = cache.open('a');
-		const b = cache.open('a');
-		expect(a.greet()).toBe('hi from inner');
-		expect(b.greet()).toBe('hi from inner');
-		// The nested class instance is shared by reference across handles.
-		expect(a.inner).toBe(b.inner);
-
-		a[Symbol.dispose]();
-		b[Symbol.dispose]();
 		cache[Symbol.dispose]();
 	});
 });

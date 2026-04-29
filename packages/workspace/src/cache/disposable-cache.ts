@@ -22,9 +22,10 @@
  *    decoder and double the memory.
  *
  * 2. **Sequential mount/unmount shouldn't rebuild expensive resources.**
- *    Route swaps, HMR, conditional rendering, split-pane close-then-reopen
- *    all produce rapid open/close/open sequences within milliseconds.
- *    `gcTime` keeps the instance alive briefly so the next `open` reuses it.
+ *    Route swaps, hot module reload, conditional rendering, split-pane
+ *    close-then-reopen all produce rapid open/close/open sequences within
+ *    milliseconds. `gcTime` keeps the instance alive briefly so the next
+ *    `open` reuses it.
  *
  * 3. **Page exit / workspace teardown needs explicit disposal.** The cache
  *    itself is `Disposable`; `cache[Symbol.dispose]()` flushes every entry
@@ -33,46 +34,6 @@
  * Y.Docs are the most common case in this codebase. Audio decoders, worker
  * connections, MediaStreams, and native window handles fit the same shape
  * and should use this primitive rather than reinventing refcount + grace.
- *
- * ## How to use it from a UI framework
- *
- * The intended use case: open in your reactive effect, dispose in cleanup.
- * The cache handles deduplication, grace periods, and teardown for you.
- *
- * ```ts
- * // Svelte 5
- * $effect(() => {
- *   const handle = cache.open(documentId);
- *   return () => handle[Symbol.dispose]();
- * });
- *
- * // React
- * useEffect(() => {
- *   const handle = cache.open(documentId);
- *   return () => handle[Symbol.dispose]();
- * }, [documentId]);
- *
- * // Vue 3
- * watchEffect((onCleanup) => {
- *   const handle = cache.open(documentId);
- *   onCleanup(() => handle[Symbol.dispose]());
- * });
- * ```
- *
- * What you get for free:
- *
- * - **Two components mounting on the same id share one underlying value.**
- *   Mutations made through component A's handle are immediately visible
- *   through component B's handle, because nested fields (like `.ydoc`) are
- *   the same reference across all handles for that id.
- * - **Reactive id changes are O(1).** When the id changes, the old handle
- *   is disposed and the new one opened. The old document stays alive for
- *   `gcTime` in case the user navigates back; if not, it's torn down
- *   automatically.
- * - **HMR and remounts are free.** open / dispose / open within a few
- *   milliseconds cancels the grace timer mid-flight; no rebuild.
- * - **Workspace teardown is one call.** `cache[Symbol.dispose]()` flushes
- *   every entry synchronously.
  *
  * ## Quick mental model
  *
@@ -105,15 +66,59 @@
  * cache[Symbol.dispose]();           // force-flush everything
  * ```
  *
+ * Disposing the same handle twice is a no-op. If `build` throws, no entry
+ * is stored and the next `open(sameId)` retries cleanly.
+ *
+ * ## How to use it from a UI framework
+ *
+ * The intended pattern: instantiate the cache once at module level, then
+ * open in your reactive effect and dispose in cleanup. The cache handles
+ * deduplication, grace periods, and teardown for you. Two components
+ * mounting on the same id share one underlying value, so mutations made
+ * through one component's handle are immediately visible through the other.
+ *
+ * ```ts
+ * // Svelte 5
+ * $effect(() => {
+ *   const handle = cache.open(documentId);
+ *   return () => handle[Symbol.dispose]();
+ * });
+ *
+ * // React
+ * useEffect(() => {
+ *   const handle = cache.open(documentId);
+ *   return () => handle[Symbol.dispose]();
+ * }, [documentId]);
+ *
+ * // Vue 3
+ * watchEffect((onCleanup) => {
+ *   const handle = cache.open(documentId);
+ *   onCleanup(() => handle[Symbol.dispose]());
+ * });
+ * ```
+ *
+ * Outside reactive contexts, `using` syntax is the cleanest match for the
+ * `Disposable` shape:
+ *
+ * ```ts
+ * function readDoc(id: string) {
+ *   using handle = cache.open(id);
+ *   return handle.ydoc.getMap('root').toJSON();
+ * }
+ * // handle disposed at scope exit; grace timer armed
+ * ```
+ *
  * ## Constraint: `T` must be a plain object
  *
- * The handle returned by `open()` is a fresh object built by spreading the
- * value's own enumerable properties. **Class instances lose their prototype
- * methods.** Wrap class instances in a plain object instead:
+ * The handle is built by spreading the value's own enumerable properties:
+ * `{ ...value, [Symbol.dispose]: ... }`. Spread doesn't copy prototype
+ * methods, so a class instance returned directly will lose every method
+ * that lives on its prototype.
  *
  * ```ts
  * // BAD: methods on Y.Doc.prototype (transact, getMap, on, ...) are LOST
  * createDisposableCache((id) => new Y.Doc({ guid: id }));
+ * // handle.transact === undefined
  *
  * // GOOD: nest the class instance as a named field
  * createDisposableCache((id) => {
@@ -123,6 +128,7 @@
  *     [Symbol.dispose]() { ydoc.destroy(); },
  *   };
  * });
+ * // handle.ydoc.transact(() => { ... }) works
  * ```
  *
  * ## What this primitive does NOT do

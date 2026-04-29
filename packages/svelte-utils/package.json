@@ -35,9 +35,9 @@
 	},
 	"devDependencies": {
 		"@standard-schema/spec": "catalog:",
+		"@types/bun": "catalog:",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
-		"@types/node": "catalog:",
 		"typescript": "catalog:"
 	},
 	"scripts": {

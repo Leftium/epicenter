@@ -4,6 +4,9 @@
 		"target": "ESNext",
 		"lib": ["ESNext"],
 		"moduleDetection": "force",
+		// Disable auto-include of every package under node_modules/@types.
+		// Each package opts in explicitly via `"types": ["bun"]` or `["node"]`.
+		"types": [],
 
 		// Modules
 		"module": "preserve",

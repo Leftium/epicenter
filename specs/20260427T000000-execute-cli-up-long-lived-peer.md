@@ -1,6 +1,8 @@
 # Execution prompt — `epicenter up` long-lived peer + IPC
 
-**Status:** queued
+**Status:** superseded in part by `specs/20260428T140000-cli-mandatory-daemon-collapse.md`. Wave 6 (the `*Core` extraction) and the `tryGetDaemon`/cold-path dispatch in run/list/peers were reverted there; the rest of this spec (socket layout, lifecycle, ps/down/logs, security model, Invariants 1 to 7) still applies.
+
+**Originally:** queued
 **For an implementer with no prior conversation context.** Self-contained brief.
 
 **Read first (source of truth):**

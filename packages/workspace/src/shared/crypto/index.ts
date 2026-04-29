@@ -231,7 +231,7 @@ export function decryptValue(
  * @returns The key version number (1-255)
  */
 export function getKeyVersion(blob: EncryptedBlob): number {
-	return blob[1]!;
+	return blob[1] as number;
 }
 /**
  * Type guard to check if a value is a valid EncryptedBlob.
@@ -404,9 +404,7 @@ export function buildEncryptionKeys(
  */
 export function bytesToBase64(bytes: Uint8Array): string {
 	let binary = '';
-	for (let i = 0; i < bytes.length; i++) {
-		binary += String.fromCharCode(bytes[i]!);
-	}
+	for (const byte of bytes) binary += String.fromCharCode(byte);
 	return btoa(binary);
 }
 

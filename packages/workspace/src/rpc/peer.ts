@@ -28,7 +28,7 @@
  */
 
 import { RpcError } from '@epicenter/sync';
-import { type Result } from 'wellcrafted/result';
+import type { Result } from 'wellcrafted/result';
 import { Err, Ok, isResult } from 'wellcrafted/result';
 import type { SyncAttachment } from '../document/attach-sync.js';
 import type {
@@ -119,9 +119,9 @@ export function describePeer(
  * value is wrapped in a no-op function so `apply` works on any property path.
  */
 function buildProxy<T>(path: string[], send: Sender): T {
-	const target = function () {
+	const target = (() => {
 		// no-op runtime body; only `apply` is used
-	} as unknown as object;
+	}) as unknown as object;
 	return new Proxy(target, {
 		get(_t, prop) {
 			if (typeof prop !== 'string') return undefined;

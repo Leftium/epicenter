@@ -13,18 +13,13 @@
 
 import { resolve } from 'node:path';
 
+import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule } from 'yargs';
 
-import {
-	daemonClient,
-	type DaemonClientError,
-} from '../daemon/client.js';
-import type { SerializedError } from '../daemon/unix-socket.js';
-import type { Result } from 'wellcrafted/result';
+import { daemonClient } from '../daemon/client.js';
 import {
 	type DaemonMetadata,
 	enumerateDaemons,
-	isProcessAlive,
 	readMetadata,
 	unlinkMetadata,
 } from '../daemon/metadata.js';
@@ -32,6 +27,17 @@ import { socketPathFor } from '../daemon/paths.js';
 import { dirFromArgv, dirOption } from '../util/common-options.js';
 
 const SHUTDOWN_TIMEOUT_MS = 1000;
+
+// SIGTERM fallback only fires when the IPC shutdown didn't ack; we still
+// guard the kill on pid liveness to avoid signaling a recycled pid.
+function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (cause) {
+		return (cause as NodeJS.ErrnoException).code === 'EPERM';
+	}
+}
 
 export type DownOptions = {
 	dir: string;
@@ -42,14 +48,14 @@ export type DownOptions = {
  * Test seam for `runDown`. Tests stub `shutdown` to simulate a hung daemon
  * and `kill` to capture the SIGTERM fallback without actually signaling pids.
  *
- * `shutdown(socketPath, timeoutMs)` is the production wiring; the contract
- * is "the daemon ack'd cleanly when `result.error === null`."
+ * `shutdown` returns a Result: `Ok` is graceful ack, `Err` triggers the
+ * SIGTERM fallback.
  */
 export type RunDownDeps = {
 	shutdown?: (
 		socketPath: string,
 		timeoutMs: number,
-	) => Promise<Result<null, DaemonClientError | SerializedError>>;
+	) => Promise<Result<unknown, unknown>>;
 	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
 
@@ -80,9 +86,8 @@ async function shutdownOne(
 	deps: Required<RunDownDeps>,
 ): Promise<DownOutcome> {
 	const sock = socketPathFor(meta.dir);
-	const reply = await deps.shutdown(sock, SHUTDOWN_TIMEOUT_MS);
-
-	if (reply.error === null) {
+	const { error } = await deps.shutdown(sock, SHUTDOWN_TIMEOUT_MS);
+	if (!error) {
 		return { kind: 'graceful', pid: meta.pid, dir: meta.dir };
 	}
 

@@ -21,17 +21,18 @@
  *   [✅] Two `up`s same `--dir` → second exits 1 with
  *        "daemon already running (pid=X)".
  *        → `second up against the same dir exits 1`
- *   [⚠️] Stale-auth fast-fail rendering.
- *        Partial: `up.test.ts` asserts `runUp` propagates a `SyncFailedError`
- *        cause (the workspace sync layer rejects `whenConnected` on close
- *        code 4401). End-to-end against a real relay still needs coverage.
+ *   [⚠️] Stale-auth fast-fail with literal "401 Unauthorized" message.
+ *        Partial: `up.test.ts` covers the `connect failed:` prefix in-process,
+ *        but the literal "401 Unauthorized" suffix requires structured auth
+ *        errors flowing through `whenReady`/`whenConnected` — gap noted in
+ *        `up.ts` § `connectFailedMessage`.
  *   [⚠️] Workspace inheritance across IPC.
  *        Partial: `list-autodetect.test.ts` exercises `inheritWorkspace`
  *        directly. End-to-end through a spawned daemon is not asserted here
  *        because it'd duplicate that coverage at higher cost.
  *   [✅] Invariant 6: `peers --wait` cap + hint.
  *        → `test/peers-cap.test.ts`.
- *   [❌] Cross-peer `run --peer`/`list --peer` against a real warm peer
+ *   [❌] Cross-peer `run --peer` / `peers <deviceId>` against a real warm peer
  *        (steps 5–7 of the brief's pseudocode). **Infra gap.** This requires
  *        a y-websocket-compatible fake relay; none exists in `packages/sync/`
  *        or `packages/cli/`, and writing one is a separate spec

@@ -7,8 +7,8 @@
  *
  * Cases (per the brief):
  *   1. Happy path: bindUnixSocket is called, metadata is written, ping replies "pong".
- *   2. Stale-auth fast-fail: whenConnected rejects with a SyncFailedError-shaped
- *      cause; runUp surfaces "auth failed: <code>".
+ *   2. Stale-auth fast-fail: whenReady never resolves; runUp throws "connect failed: ..."
+ *      within the connect-timeout window.
  *   3. Already-running: pre-write metadata for `process.pid` + a real listening socket;
  *      runUp throws "daemon already running (pid=X)".
  *   4. Orphan: pre-write metadata for a dead pid + phantom socket; runUp proceeds
@@ -31,6 +31,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { Ok } from 'wellcrafted/result';
 
 import { bindUnixSocket } from '../daemon/unix-socket';
 import { writeMetadata } from '../daemon/metadata';
@@ -106,15 +108,18 @@ describe('runUp: happy path', () => {
 		const workspace = makeFakeWorkspace();
 		const config = makeFakeConfig(workspace);
 
-		const handle = await runUp(
+		const { data: handle, error } = await runUp(
 			{
 				dir: workDir,
 				quiet: true,
 			},
 			{
-				loadConfig: async () => config,
+				loadConfig: async () => Ok(config),
+				connectTimeoutMs: 1000,
 			},
 		);
+		expect(error).toBeNull();
+		if (error) throw new Error('runUp failed unexpectedly');
 
 		// Metadata was written.
 		expect(existsSync(metadataPathFor(workDir))).toBe(true);
@@ -137,47 +142,41 @@ describe('runUp: happy path', () => {
 });
 
 describe('runUp: stale-auth fast-fail', () => {
-	test('propagates SyncFailedError when whenConnected rejects', async () => {
-		// Shape matches `SyncFailedError.AuthRejected({ code }).error` from
-		// `@epicenter/workspace`: an Error-like with `name: 'AuthRejected'`
-		// and a `code` string. The yargs handler renders this via
-		// `formatStartupError`; here we assert the cause flows through unchanged.
-		const authRejected = Object.assign(
-			new Error('[attachSync] server rejected auth: invalid_token'),
-			{ name: 'AuthRejected', code: 'invalid_token' },
-		);
-		const rejecting = Promise.reject(authRejected);
-		// Pre-attach a swallow so the rejection isn't reported as unhandled
-		// before runUp awaits it.
-		rejecting.catch(() => {});
-		const workspace = makeFakeWorkspace({ readyPromise: rejecting });
+	test('returns ConnectFailed when whenReady exceeds the timeout', async () => {
+		// whenReady that never resolves; emulates a hung auth handshake.
+		const neverReady = new Promise<void>(() => {
+			/* never */
+		});
+		const workspace = makeFakeWorkspace({ readyPromise: neverReady });
 		const config = makeFakeConfig(workspace);
 
-		await expect(
-			runUp(
-				{
-					dir: workDir,
-					quiet: true,
-				},
-				{
-					loadConfig: async () => config,
-				},
-			),
-		).rejects.toMatchObject({ name: 'AuthRejected', code: 'invalid_token' });
+		const start = Date.now();
+		const { error } = await runUp(
+			{
+				dir: workDir,
+				quiet: true,
+			},
+			{
+				loadConfig: async () => Ok(config),
+				connectTimeoutMs: 50,
+			},
+		);
+		expect(error?.name).toBe('ConnectFailed');
+		expect(error?.message).toMatch(/^connect failed:/);
+		const elapsed = Date.now() - start;
+		// Sanity: we exited within a small multiple of the timeout, not "hung".
+		expect(elapsed).toBeLessThan(2000);
 	});
 });
 
 describe('runUp: already running', () => {
-	test('throws "daemon already running (pid=X)" when a live daemon is detected', async () => {
-		// Stand up a tiny real listening server at the expected socket path so
-		// `inspectExistingDaemon` sees a responsive ping for `process.pid`.
+	test('returns AlreadyRunning when a live daemon is detected', async () => {
 		const sockPath = socketPathFor(workDir);
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
 		const { Hono } = await import('hono');
-		const app = new Hono().post('/ping', (c) =>
-			c.json({ data: 'pong' as const, error: null }),
-		);
+		const { Ok } = await import('wellcrafted/result');
+		const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
 		const server = await bindUnixSocket(sockPath, app);
 
 		writeMetadata(workDir, {
@@ -189,18 +188,20 @@ describe('runUp: already running', () => {
 		});
 
 		try {
-			await expect(
-				runUp(
-					{
-						dir: workDir,
-						quiet: true,
-					},
-					{
-						loadConfig: async () =>
-							makeFakeConfig(makeFakeWorkspace()),
-					},
-				),
-			).rejects.toThrow(/daemon already running \(pid=/);
+			const { error } = await runUp(
+				{
+					dir: workDir,
+					quiet: true,
+				},
+				{
+					loadConfig: async () => Ok(makeFakeConfig(makeFakeWorkspace())),
+					connectTimeoutMs: 1000,
+				},
+			);
+			expect(error?.name).toBe('AlreadyRunning');
+			if (error?.name === 'AlreadyRunning') {
+				expect(error.pid).toBe(process.pid);
+			}
 		} finally {
 			server.stop();
 		}
@@ -225,15 +226,18 @@ describe('runUp: orphan path', () => {
 		const workspace = makeFakeWorkspace();
 		const config = makeFakeConfig(workspace);
 
-		const handle = await runUp(
+		const { data: handle, error } = await runUp(
 			{
 				dir: workDir,
 				quiet: true,
 			},
 			{
-				loadConfig: async () => config,
+				loadConfig: async () => Ok(config),
+				connectTimeoutMs: 1000,
 			},
 		);
+		expect(error).toBeNull();
+		if (error) throw new Error('runUp failed unexpectedly');
 
 		// Daemon came up; fresh metadata for *this* pid was written.
 		expect(handle.metadata.pid).toBe(process.pid);

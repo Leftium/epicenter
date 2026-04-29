@@ -159,7 +159,7 @@ describe('system.describe', () => {
 
 		const response = await waitFor<Uint8Array>(() => {
 			for (let i = seenBefore; i < ws.sent.length; i++) {
-				const frame = ws.sent[i]!;
+				const frame = ws.sent[i] as Uint8Array;
 				if (peekMessageType(frame) === MESSAGE_TYPE.RPC) return frame;
 			}
 			return undefined;
@@ -176,13 +176,13 @@ describe('system.describe', () => {
 			{ type: string; title?: string; description?: string; input?: unknown }
 		>;
 		expect(Object.keys(manifest).sort()).toEqual(['ping', 'tabs.close']);
-		expect(manifest['tabs.close']!.type).toBe('mutation');
-		expect(manifest['tabs.close']!.title).toBe('Close Tabs');
-		expect(manifest['tabs.close']!.input).toMatchObject({
+		expect(manifest['tabs.close']?.type).toBe('mutation');
+		expect(manifest['tabs.close']?.title).toBe('Close Tabs');
+		expect(manifest['tabs.close']?.input).toMatchObject({
 			type: 'object',
 			properties: { tabIds: { type: 'array' } },
 		});
-		expect(manifest['ping']!.type).toBe('query');
+		expect(manifest.ping?.type).toBe('query');
 
 		ydoc.destroy();
 		await sync.whenDisposed;
@@ -270,7 +270,7 @@ describe('describePeer(sync, deviceId)', () => {
 		const REMOTE_FAKE_CLIENT = 42;
 		// Inject a fake "remote" peer into local awareness so describePeer can
 		// find a clientId to dispatch against.
-		localSync.raw.awareness!.getStates().set(REMOTE_FAKE_CLIENT, {
+		localSync.raw.awareness?.getStates().set(REMOTE_FAKE_CLIENT, {
 			device: { id: 'remote', name: 'remote', platform: 'web' },
 		});
 
@@ -299,9 +299,9 @@ describe('describePeer(sync, deviceId)', () => {
 
 		const result = await describePeer(localSync, 'remote');
 		expect(result.error).toBeNull();
-		const manifest = result.data!;
+		const manifest = result.data as NonNullable<typeof result.data>;
 		expect(Object.keys(manifest).sort()).toEqual(['tabs.close']);
-		expect(manifest['tabs.close']!.input).toMatchObject({ type: 'object' });
+		expect(manifest['tabs.close']?.input).toMatchObject({ type: 'object' });
 
 		localDoc.destroy();
 		remoteDoc.destroy();

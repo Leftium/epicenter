@@ -21,22 +21,41 @@ bun x epicenter auth login        # one-time, https://api.epicenter.so
 bun x epicenter up --dir examples/notes-cross-peer/peer-a
 ```
 
-**Terminal 2** — peer-b auto-detects the daemon and reuses its warm connection:
+**Terminal 2** — bring peer-b online too, then dispatch via its daemon to peer-a:
 
 ```bash
-bun x epicenter list --dir examples/notes-cross-peer/peer-b --peer notes-repro-peer-a
-bun x epicenter list --dir examples/notes-cross-peer/peer-b --peer notes-repro-peer-a notes.add
-bun x epicenter run  --dir examples/notes-cross-peer/peer-b --peer notes-repro-peer-a notes.add '{"body":"from peer-b"}'
+bun x epicenter up --dir examples/notes-cross-peer/peer-b &
+bun x epicenter peers --dir examples/notes-cross-peer/peer-b
+bun x epicenter run notes.add --dir examples/notes-cross-peer/peer-b --peer notes-repro-peer-a '{"body":"from peer-b"}'
+```
+
+To inspect peer-a's full action manifest from peer-b, write a script
+(the CLI no longer offers a flag for this — see `packages/cli/README.md`
+under "Local vs. remote"):
+
+```ts
+// examples/notes-cross-peer/inspect-peer.ts
+import { describePeer } from '@epicenter/workspace';
+import { notes } from './peer-b/epicenter.config';
+
+await notes.whenReady;
+const result = await describePeer(notes.sync, 'notes-repro-peer-a');
+console.log(result.error ?? result.data);
+notes.dispose();
+```
+
+```bash
+bun run examples/notes-cross-peer/inspect-peer.ts
 ```
 
 ## What confirms it works
 
-- `list --peer` returns the action tree → `system.describe()` round-tripped
-- `list --peer X notes.add` shows `Input fields: body: string (required)` → manifest carries input schemas
-- `run --peer X notes.add` succeeds → cross-peer dispatch through the same channel
+- `peers` lists `notes-repro-peer-a` → awareness round-tripped through the API
+- `inspect-peer.ts` prints peer-a's manifest with `notes.add` and its input shape → `system.describe()` carries the schema
+- `run --peer notes-repro-peer-a notes.add` succeeds → cross-peer dispatch through the same RPC channel
 
 ## What confirms it broke
 
 - `ActionNotFound: system.describe` → injection didn't land
-- Tree renders but no input fields on detail → `system.describe()` dropped `input` from the response
-- `list --peer` hangs or times out → manifest fetch isn't completing
+- `inspect-peer.ts` returns `RpcError.PeerNotFound` → awareness never propagated
+- `inspect-peer.ts` hangs or times out → manifest fetch isn't completing

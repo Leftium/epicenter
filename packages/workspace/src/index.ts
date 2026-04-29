@@ -224,7 +224,7 @@ export {
 export { defineTable } from './document/define-table.js';
 export { defineKv } from './document/define-kv.js';
 export { docGuid } from './document/doc-guid.js';
-export { type DocPersistence } from './document/doc-persistence.js';
+export type { DocPersistence } from './document/doc-persistence.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 
 export {

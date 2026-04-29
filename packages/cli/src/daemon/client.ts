@@ -2,24 +2,21 @@
  * Typed client for the `epicenter up` daemon, derived from the Hono app's
  * static type via `hc<DaemonApp>`. Three surfaces:
  *
- * - {@link pingDaemon}: cheap liveness probe used by sibling attach and
- *   orphan inspection. Never throws; returns `false` on any connect /
- *   timeout / non-200 failure so callers can branch without try/catch noise.
+ * - {@link pingDaemon}: cheap liveness probe; never throws, never returns
+ *   Result. Boolean is the right shape for a fast-path predicate.
  * - {@link daemonClient}: factory returning a typed handle with one method
- *   per route (`ping`, `peers`, `list`, `run`, `shutdown`). Each method
- *   returns `Promise<Result<T, DaemonClientError | SerializedError>>`;
- *   `T` is inferred from the server's route definition, so passing the
- *   wrong shape is a compile error.
- * - {@link tryGetDaemon}: dispatch decision for sibling commands. Pings
- *   first; returns a typed client when a daemon answers, `null` otherwise.
- *
- * Connect failures (`fetch` reject on missing socket, `ECONNREFUSED`,
- * AbortSignal timeout) collapse into {@link DaemonClientError} variants so
- * "no daemon running" is just another `Err` outcome.
+ *   per route. Each method returns `Promise<Result<T, DomainErr | DaemonError>>`,
+ *   merging transport and domain failures into one tagged union the
+ *   renderer narrows by `error.name`.
+ * - {@link getDaemon}: dispatch decision for `run` / `list` / `peers`.
+ *   Returns a typed client on success, or `MissingConfig` /
+ *   `Required` when the workspace isn't configured / has no live daemon.
  *
  * Wire format and security model are deliberately internal; see
  * `specs/20260426T235000-cli-up-long-lived-peer.md` § "IPC wire protocol".
  */
+
+import { join } from 'node:path';
 
 import { hc } from 'hono/client';
 import {
@@ -27,31 +24,38 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
+import type { ActionManifest } from '@epicenter/workspace';
+
+import type { RunError } from '../commands/run.js';
+import { CONFIG_FILENAME } from '../load-config.js';
 import type { ResolvedTarget } from '../util/common-options.js';
+import type { ResolveError } from '../util/resolve-entry.js';
 import type { DaemonApp, PeerSnapshot } from './app.js';
 import { socketPathFor } from './paths.js';
-import type { SerializedError } from './unix-socket.js';
 
 /**
- * Tagged-error variants emitted by the daemon client itself (not by the
- * server). `NoDaemon` covers any connect-level failure (missing socket,
- * ECONNREFUSED, transport closed); `Timeout` is the local deadline
- * expiring; `HandlerCrashed` is a non-200 response (an unhandled
- * exception in a route or a 400 from the validator).
+ * Tagged-error variants returned by daemon client surfaces. Domain errors
+ * (UsageError, PeerMiss, etc.) live alongside these in a merged union so
+ * call sites narrow once on `result.error.name`. No class hierarchy, no
+ * throwing across the seam.
+ *
+ * - `Required`: no daemon is running for this directory; user must `up`.
+ * - `Timeout`: the per-call AbortSignal fired before the daemon answered.
+ * - `Unreachable`: socket missing, ECONNREFUSED, transport closed.
+ * - `HandlerCrashed`: the daemon answered with a non-2xx status. Reserved
+ *   for unexpected exceptions; typed domain errors flow through the body
+ *   `Result` instead.
  */
-export const DaemonClientError = defineErrors({
-	NoDaemon: ({
-		socketPath,
-		cause,
-	}: {
-		socketPath: string;
-		cause?: unknown;
-	}) => ({
-		message: `no daemon at ${socketPath}${cause ? `: ${extractErrorMessage(cause)}` : ''}`,
-		socketPath,
-		cause,
+export const DaemonError = defineErrors({
+	MissingConfig: ({ absDir }: { absDir: string }) => ({
+		message: `No ${CONFIG_FILENAME} found in ${absDir}`,
+		absDir,
+	}),
+	Required: ({ absDir }: { absDir: string }) => ({
+		message: `no daemon running for ${absDir}; start one with \`epicenter up\` first`,
+		absDir,
 	}),
 	Timeout: ({
 		socketPath,
@@ -64,13 +68,30 @@ export const DaemonClientError = defineErrors({
 		socketPath,
 		timeoutMs,
 	}),
-	HandlerCrashed: ({ status, cause }: { status: number; cause?: unknown }) => ({
-		message: `daemon returned ${status}${cause ? `: ${extractErrorMessage(cause)}` : ''}`,
-		status,
+	Unreachable: ({
+		socketPath,
+		cause,
+	}: {
+		socketPath: string;
+		cause: unknown;
+	}) => ({
+		message: `daemon connection failed at ${socketPath}: ${extractErrorMessage(cause)}`,
+		socketPath,
+		cause,
+	}),
+	HandlerCrashed: ({
+		socketPath,
+		cause,
+	}: {
+		socketPath: string;
+		cause: unknown;
+	}) => ({
+		message: `daemon handler error at ${socketPath}: ${extractErrorMessage(cause)}`,
+		socketPath,
 		cause,
 	}),
 });
-export type DaemonClientError = InferErrors<typeof DaemonClientError>;
+export type DaemonError = InferErrors<typeof DaemonError>;
 
 /** Default per-call timeout (ms). */
 const DEFAULT_CALL_TIMEOUT_MS = 5000;
@@ -99,40 +120,35 @@ export async function pingDaemon(
 }
 
 /**
- * Map one route call's `Promise<Response>` onto our `Result<T, ...>` envelope.
- * Transport failures become {@link DaemonClientError} variants; non-200
- * responses become `HandlerCrashed`; 200 responses unwrap to the body's
- * own `Result` (which is what the server built).
+ * Make one route call and merge transport + domain errors into one union.
+ *
+ * Every route's body is `Result<T, E>` (with `E = never` for routes that
+ * have no domain failures). On success, that body is the return value
+ * directly: success/Err narrowing happens once at the call site. On
+ * transport-plane failures (connect / timeout / non-2xx), we synthesize
+ * the matching `DaemonError` variant and return it in the same union.
  */
-async function callRoute<T>(
+async function callRoute<T, E>(
 	socketPath: string,
 	timeoutMs: number,
 	pending: Promise<Response>,
-): Promise<Result<T, DaemonClientError | SerializedError>> {
-	let res: Response;
+): Promise<Result<T, E | DaemonError>> {
 	try {
-		res = await pending;
+		const res = await pending;
+		if (!res.ok) {
+			const body = await res.text().catch(() => '');
+			return DaemonError.HandlerCrashed({
+				socketPath,
+				cause: body || `HTTP ${res.status}`,
+			});
+		}
+		return (await res.json()) as Result<T, E>;
 	} catch (cause) {
 		if (cause instanceof Error && cause.name === 'TimeoutError') {
-			return DaemonClientError.Timeout({ socketPath, timeoutMs }) as Result<
-				T,
-				DaemonClientError
-			>;
+			return DaemonError.Timeout({ socketPath, timeoutMs });
 		}
-		return DaemonClientError.NoDaemon({ socketPath, cause }) as Result<
-			T,
-			DaemonClientError
-		>;
+		return DaemonError.Unreachable({ socketPath, cause });
 	}
-
-	if (!res.ok) {
-		return DaemonClientError.HandlerCrashed({
-			status: res.status,
-			cause: await res.text().catch(() => undefined),
-		}) as Result<T, DaemonClientError>;
-	}
-
-	return (await res.json()) as Result<T, SerializedError>;
 }
 
 /**
@@ -141,9 +157,9 @@ async function callRoute<T>(
  * sites get input-shape checking and inferred return types without
  * redeclaring the contracts.
  *
- * Each method returns `Promise<Result<T, DaemonClientError | SerializedError>>`.
- * Domain errors arrive on the `error` side of the inner Result; transport
- * failures collapse into `DaemonClientError` variants.
+ * Each method returns `Promise<Result<Success, DomainErr | DaemonError>>`.
+ * The renderer narrows `error.name` across both unions; no second `if`
+ * needed at the call site.
  */
 export function daemonClient(
 	socketPath: string,
@@ -159,49 +175,60 @@ export function daemonClient(
 	});
 
 	return {
-		ping: () =>
-			callRoute<'pong'>(socketPath, timeoutMs, client.ping.$post()),
 		peers: (args: { workspace?: string }) =>
-			callRoute<PeerSnapshot[]>(socketPath, timeoutMs, client.peers.$post({ json: args })),
+			callRoute<PeerSnapshot[], never>(
+				socketPath,
+				timeoutMs,
+				client.peers.$post({ json: args }),
+			),
+
 		list: (args: Parameters<typeof client.list.$post>[0]['json']) =>
-			callRoute<
-				Result<
-					import('../commands/list.js').ListSuccess,
-					import('../commands/list.js').ListError
-				>
-			>(socketPath, timeoutMs, client.list.$post({ json: args })),
+			callRoute<ActionManifest, ResolveError>(
+				socketPath,
+				timeoutMs,
+				client.list.$post({ json: args }),
+			),
+
 		run: (args: Parameters<typeof client.run.$post>[0]['json']) =>
-			callRoute<
-				Result<
-					import('../commands/run.js').RunSuccess,
-					import('../commands/run.js').RunError
-				>
-			>(socketPath, timeoutMs, client.run.$post({ json: args })),
+			callRoute<unknown, RunError | ResolveError>(
+				socketPath,
+				timeoutMs,
+				client.run.$post({ json: args }),
+			),
+
 		shutdown: () =>
-			callRoute<null>(socketPath, timeoutMs, client.shutdown.$post()),
+			callRoute<null, never>(socketPath, timeoutMs, client.shutdown.$post()),
 	};
 }
 
 /**
  * Public type of the typed daemon handle. Equivalent to the return of
- * {@link daemonClient}. Consumers (run/list/peers/down) import this when
- * they need to type a `DaemonClient` parameter or test seam.
+ * {@link daemonClient}.
  */
 export type DaemonClient = ReturnType<typeof daemonClient>;
 
 /**
- * Single dispatch decision for sibling commands. Pings the socket; if a
- * daemon answers, returns a typed {@link DaemonClient}. If no daemon is
- * alive, returns `null` and the caller falls through to its in-process
- * transient path. There is no "mismatch" state: the daemon serves every
- * workspace its config exports (Invariant 7), and an unknown
- * `--workspace` surfaces from the daemon's own `resolveEntry` lookup as
- * a normal error (same phrasing the cold path would emit).
+ * Resolve the daemon client for `target`, or surface why we can't.
+ *
+ *   - `MissingConfig`: no `epicenter.config.ts` in `absDir`. Surfaced
+ *     distinctly from `Required` so unconfigured users don't get pointed
+ *     at `epicenter up` (which would fail and mislead).
+ *   - `Required`: config exists but no daemon is running. Renderer
+ *     prints the start-with-`up` hint.
+ *
+ * `run`, `list`, and `peers` are mandatory-daemon commands; if they hit
+ * neither variant they have a typed client to dispatch against.
  */
-export async function tryGetDaemon(
+export async function getDaemon(
 	target: ResolvedTarget,
-): Promise<DaemonClient | null> {
+): Promise<Result<DaemonClient, DaemonError>> {
+	const configPath = join(target.absDir, CONFIG_FILENAME);
+	if (!(await Bun.file(configPath).exists())) {
+		return DaemonError.MissingConfig({ absDir: target.absDir });
+	}
 	const sock = socketPathFor(target.absDir);
-	if (!(await pingDaemon(sock))) return null;
-	return daemonClient(sock);
+	if (!(await pingDaemon(sock))) {
+		return DaemonError.Required({ absDir: target.absDir });
+	}
+	return Ok(daemonClient(sock));
 }

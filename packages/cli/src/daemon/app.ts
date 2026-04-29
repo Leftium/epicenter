@@ -1,40 +1,49 @@
 /**
  * Hono app for the `epicenter up` daemon. Single source of truth for the
- * routes — both the server (`bindUnixSocket`) and the typed client
+ * routes; both the server (`bindUnixSocket`) and the typed client
  * (`daemonClient` via `hc<DaemonApp>`) derive from {@link DaemonApp}.
  *
- * Each route returns `Result<T, SerializedError>` as the JSON body. Domain
- * errors flow through with HTTP 200 (callers narrow on `result.error.name`);
- * transport-level failures fall through to the client's `DaemonClientError`
- * synthesis. See `specs/20260426T235000-cli-up-long-lived-peer.md`
- * § "IPC wire protocol".
+ * Each verb is a one-line shell shortcut for one workspace primitive:
+ *
+ *   /peers  ->  workspace.sync.peers()
+ *   /list   ->  describeActions(workspace.actions)
+ *   /run    ->  invokeAction(...) | sync.rpc(...)         (executeRun branches)
+ *
+ * Each route returns the handler's `Result<T, DomainErr>` body directly.
+ * Unexpected exceptions propagate to Hono's default error handler (HTTP
+ * 500), which the client maps to `DaemonError.HandlerCrashed`. There is
+ * no second on-the-wire envelope: `Result<Result<...>, ...>` is gone.
  */
 
 import { sValidator } from '@hono/standard-validator';
+import { describeActions, PeerDevice } from '@epicenter/workspace';
+import { type } from 'arktype';
 import { Hono } from 'hono';
-import { extractErrorMessage } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
+import { Err, Ok } from 'wellcrafted/result';
 
-import { listCore, type ListCtx, type ListResult } from '../commands/list.js';
-import { runCore, type RunResult } from '../commands/run.js';
-import type { WorkspaceEntry } from '../load-config.js';
 import { resolveEntry } from '../util/resolve-entry.js';
+import type { WorkspaceEntry } from '../load-config.js';
+import { executeRun } from './run-handler.js';
 import {
+	type ListCtx,
 	listCtxSchema,
 	peersArgsSchema,
+	type RunCtx,
 	runCtxSchema,
 } from './schemas.js';
-import type { SerializedError } from './unix-socket.js';
 
 /**
  * Row shape returned by `/peers`. One row per `(workspace, clientID)` pair,
  * tagged with its workspace name so a multi-workspace daemon can fan out.
+ * `device` carries the canonical `PeerDevice` shape from
+ * `@epicenter/workspace`; renderers consume it directly without a cast.
  */
-export type PeerSnapshot = {
-	workspace: string;
-	clientID: number;
-	device: unknown;
-};
+export const PeerSnapshot = type({
+	workspace: 'string',
+	clientID: 'number',
+	device: PeerDevice,
+});
+export type PeerSnapshot = typeof PeerSnapshot.infer;
 
 /**
  * Build the daemon's Hono app. Tests import this directly; production wires
@@ -43,35 +52,17 @@ export type PeerSnapshot = {
  * `triggerShutdown` is invoked from the `/shutdown` route after the response
  * is queued. We use `setTimeout(.., 0)` rather than `queueMicrotask` so the
  * response bytes hit the wire before the server begins teardown.
+ *
+ * `resolveEntry` returns a `ResolveError` for typo'd or missing `-w`; we
+ * fold that into the route's body `Result` so the user sees a clean
+ * error, not `DaemonError.HandlerCrashed`.
  */
 export function buildApp(
 	entries: WorkspaceEntry[],
 	triggerShutdown: () => void,
 ) {
-	const errFrom = (cause: unknown): SerializedError => ({
-		name: cause instanceof Error ? cause.name : 'Error',
-		message: extractErrorMessage(cause),
-	});
-
-	const lookup = (
-		name: string | undefined,
-	):
-		| { ok: true; entry: WorkspaceEntry }
-		| { ok: false; error: SerializedError } => {
-		try {
-			return { ok: true, entry: resolveEntry(entries, name) };
-		} catch (cause) {
-			return { ok: false, error: errFrom(cause) };
-		}
-	};
-
 	return new Hono()
-		.post('/ping', (c) =>
-			c.json({ data: 'pong' as const, error: null } satisfies Result<
-				'pong',
-				never
-			>),
-		)
+		.post('/ping', (c) => c.json(Ok('pong' as const)))
 		.post('/peers', sValidator('json', peersArgsSchema), (c) => {
 			const { workspace } = c.req.valid('json');
 			const rows: PeerSnapshot[] = [];
@@ -86,66 +77,25 @@ export function buildApp(
 					});
 				}
 			}
-			return c.json({ data: rows, error: null } satisfies Result<
-				PeerSnapshot[],
-				never
-			>);
+			return c.json(Ok(rows));
 		})
-		.post('/list', sValidator('json', listCtxSchema), async (c) => {
-			const ctx = c.req.valid('json') as ListCtx & { workspace?: string };
-			const found = lookup(ctx.workspace);
-			if (!found.ok) {
-				return c.json({ data: null, error: found.error } satisfies Result<
-					ListResult,
-					SerializedError
-				>);
-			}
-			try {
-				const data: ListResult = await listCore(found.entry, ctx);
-				return c.json({ data, error: null } satisfies Result<
-					ListResult,
-					SerializedError
-				>);
-			} catch (cause) {
-				return c.json({ data: null, error: errFrom(cause) } satisfies Result<
-					ListResult,
-					SerializedError
-				>);
-			}
+		.post('/list', sValidator('json', listCtxSchema), (c) => {
+			const ctx = c.req.valid('json') satisfies ListCtx;
+			const { data: entry, error } = resolveEntry(entries, ctx.workspace);
+			if (error) return c.json(Err(error));
+			return c.json(Ok(describeActions(entry.workspace.actions ?? {})));
 		})
 		.post('/run', sValidator('json', runCtxSchema), async (c) => {
-			const validated = c.req.valid('json');
-			// runCore expects `input: unknown` (not optional); the schema makes it
-			// optional on the wire, so default to undefined here.
-			const ctx = { input: undefined, ...validated };
-			const found = lookup(ctx.workspaceArg);
-			if (!found.ok) {
-				return c.json({ data: null, error: found.error } satisfies Result<
-					RunResult,
-					SerializedError
-				>);
-			}
-			try {
-				const data: RunResult = await runCore(found.entry, ctx);
-				return c.json({ data, error: null } satisfies Result<
-					RunResult,
-					SerializedError
-				>);
-			} catch (cause) {
-				return c.json({ data: null, error: errFrom(cause) } satisfies Result<
-					RunResult,
-					SerializedError
-				>);
-			}
+			const ctx = c.req.valid('json') satisfies RunCtx;
+			const { data: entry, error } = resolveEntry(entries, ctx.workspace);
+			if (error) return c.json(Err(error));
+			return c.json(await executeRun(entry, ctx));
 		})
 		.post('/shutdown', (c) => {
 			// Defer past the current event-loop turn so the response is flushed
 			// to the kernel before `server.stop()` closes the listening socket.
 			setTimeout(triggerShutdown, 0);
-			return c.json({ data: null, error: null } satisfies Result<
-				null,
-				never
-			>);
+			return c.json(Ok(null));
 		});
 }
 

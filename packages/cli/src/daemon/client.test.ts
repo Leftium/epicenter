@@ -10,12 +10,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Hono } from 'hono';
+import { Ok } from 'wellcrafted/result';
 
 import { daemonClient, pingDaemon } from './client';
-import {
-	bindUnixSocket,
-	type UnixSocketServer,
-} from './unix-socket';
+import { bindUnixSocket, type UnixSocketServer } from './unix-socket';
 
 let socketPath: string;
 let servers: UnixSocketServer[] = [];
@@ -40,9 +38,7 @@ afterEach(() => {
 
 describe('pingDaemon', () => {
 	test('returns true against a live ping route, false after server stops', async () => {
-		const app = new Hono().post('/ping', (c) =>
-			c.json({ data: 'pong', error: null }),
-		);
+		const app = new Hono().post('/ping', (c) => c.json(Ok('pong')));
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
@@ -60,57 +56,43 @@ describe('pingDaemon', () => {
 	});
 });
 
+// Transport-mapping coverage. We use `/peers` as the convenient probe route
+// because the actual `daemonClient` no longer exposes a `.ping()` method
+// (production callers use the boolean `pingDaemon` instead).
 describe('daemonClient', () => {
-	test('ping resolves to the route Result', async () => {
-		const app = new Hono().post('/ping', (c) =>
-			c.json({ data: 'pong' as const, error: null }),
-		);
+	test('peers resolves to the rows on success', async () => {
+		const app = new Hono().post('/peers', (c) => c.json(Ok([])));
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		const result = await daemonClient(socketPath).ping();
-		expect(result.error).toBeNull();
-		if (result.error === null) expect(result.data).toBe('pong');
+		const { data, error } = await daemonClient(socketPath).peers({});
+		expect(error).toBeNull();
+		expect(data).toEqual([]);
 	});
 
-	test('NoDaemon when socket is missing', async () => {
+	test('returns Unreachable when socket is missing', async () => {
 		const missing = join(tmpdir(), `definitely-not-here-${Date.now()}.sock`);
-		const result = await daemonClient(missing).ping();
-		expect(result.data).toBeNull();
-		if (result.error !== null) expect(result.error.name).toBe('NoDaemon');
+		const { error } = await daemonClient(missing).peers({});
+		expect(error?.name).toBe('Unreachable');
 	});
 
-	test('Timeout when route hangs past the deadline', async () => {
-		const app = new Hono().post('/ping', () => new Promise(() => {}));
+	test('returns Timeout when route hangs past the deadline', async () => {
+		const app = new Hono().post('/peers', () => new Promise(() => {}));
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		const result = await daemonClient(socketPath, 100).ping();
-		expect(result.data).toBeNull();
-		if (result.error !== null) expect(result.error.name).toBe('Timeout');
+		const { error } = await daemonClient(socketPath, 100).peers({});
+		expect(error?.name).toBe('Timeout');
 	});
 
-	test('HandlerCrashed on a 500 from the daemon', async () => {
-		const app = new Hono().post('/ping', () => {
+	test('returns HandlerCrashed on a 500 from the daemon', async () => {
+		const app = new Hono().post('/peers', () => {
 			throw new Error('kaboom');
 		});
 		const server = await bindUnixSocket(socketPath, app);
 		servers.push(server);
 
-		const result = await daemonClient(socketPath).ping();
-		expect(result.data).toBeNull();
-		if (result.error !== null) expect(result.error.name).toBe('HandlerCrashed');
-	});
-
-	test('domain Result.error flows through with status 200', async () => {
-		const app = new Hono().post('/shutdown', (c) =>
-			c.json({ data: null, error: { name: 'NotFound', message: 'gone' } }),
-		);
-		const server = await bindUnixSocket(socketPath, app);
-		servers.push(server);
-
-		const result = await daemonClient(socketPath).shutdown();
-		expect(result.data).toBeNull();
-		if (result.error !== null) expect(result.error.name).toBe('NotFound');
+		const { error } = await daemonClient(socketPath).peers({});
+		expect(error?.name).toBe('HandlerCrashed');
 	});
 });

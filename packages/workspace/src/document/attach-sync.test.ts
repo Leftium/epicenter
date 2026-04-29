@@ -22,6 +22,7 @@ import {
 	RpcError,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
+import { Err, Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import Type from 'typebox';
 import { defineMutation } from '../shared/actions.js';
@@ -371,10 +372,9 @@ describe('attachSync hasLocalChanges', () => {
 		expect(parsed.type).toBe('response');
 		if (parsed.type !== 'response') throw new Error('unreachable');
 		expect(parsed.requestId).toBe(7);
-		expect(parsed.result).toEqual({
-			data: { echo: { tabIds: [1, 2] }, action: 'tabs.close' },
-			error: null,
-		});
+		expect(parsed.result).toEqual(
+			Ok({ echo: { tabIds: [1, 2] }, action: 'tabs.close' }),
+		);
 
 		ydoc.destroy();
 		await sync.whenDisposed;
@@ -388,10 +388,8 @@ describe('attachSync hasLocalChanges', () => {
 				tabs: {
 					// Handler returns an Err directly; attachSync must not re-wrap it.
 					close: defineMutation({
-						handler: () => ({
-							data: null,
-							error: { name: 'BrowserApiFailed', message: 'no tab 999' },
-						}),
+						handler: () =>
+							Err({ name: 'BrowserApiFailed', message: 'no tab 999' }),
 					}),
 				},
 			},
@@ -528,7 +526,7 @@ describe('attachSync hasLocalChanges', () => {
 			encodeRpcResponse({
 				requestId: parsed.requestId,
 				requesterClientId: ydoc.clientID,
-				result: { data: { closedCount: 1 }, error: null },
+				result: Ok({ closedCount: 1 }),
 			}),
 		);
 
@@ -619,7 +617,7 @@ describe('attachSync hasLocalChanges', () => {
 			encodeRpcResponse({
 				requestId: parsed.requestId,
 				requesterClientId: ydoc.clientID,
-				result: { data: null, error: typedErr },
+				result: Err(typedErr),
 			}),
 		);
 

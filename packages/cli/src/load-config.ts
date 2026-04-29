@@ -41,6 +41,12 @@ import type {
 	SyncAttachment,
 } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
@@ -113,20 +119,62 @@ function isLoadedWorkspace(value: unknown): value is LoadedWorkspace {
 }
 
 /**
+ * Tagged-error variants returned by {@link loadConfig}. All three are
+ * user-facing (file missing, config crashed at module load, no workspace
+ * exports), not panics: callers render them and exit 1.
+ *
+ * - `MissingFile`: no `epicenter.config.ts` at the resolved path.
+ * - `ImportFailed`: the dynamic `import()` rejected. Typically a syntax
+ *   error or a top-level throw from a workspace factory (e.g. invalid
+ *   creds at construction time).
+ * - `EmptyConfig`: the file loaded but exposed no workspace exports.
+ */
+export const LoadError = defineErrors({
+	MissingFile: ({ configPath }: { configPath: string }) => ({
+		message: `No ${CONFIG_FILENAME} found in ${configPath}`,
+		configPath,
+	}),
+	ImportFailed: ({
+		configPath,
+		cause,
+	}: {
+		configPath: string;
+		cause: unknown;
+	}) => ({
+		message: `failed to load ${configPath}: ${extractErrorMessage(cause)}`,
+		configPath,
+		cause,
+	}),
+	EmptyConfig: ({ configPath }: { configPath: string }) => ({
+		message:
+			`No workspaces found in ${configPath}.\n` +
+			`Export at least one named value implementing [Symbol.dispose], ` +
+			`typically the return of an openFoo() factory.`,
+		configPath,
+	}),
+});
+export type LoadError = InferErrors<typeof LoadError>;
+
+/**
  * Load workspace exports from an `epicenter.config.ts` file. Default
  * exports are skipped; use named exports so the CLI can address them by
  * name.
- *
- * @throws If the config file is missing or no workspace exports are found.
  */
-export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
+export async function loadConfig(
+	targetDir: string,
+): Promise<Result<LoadConfigResult, LoadError>> {
 	const configPath = join(resolve(targetDir), CONFIG_FILENAME);
 
 	if (!(await Bun.file(configPath).exists())) {
-		throw new Error(`No ${CONFIG_FILENAME} found in ${resolve(targetDir)}`);
+		return LoadError.MissingFile({ configPath });
 	}
 
-	const module = await import(Bun.pathToFileURL(configPath).href);
+	const importResult = await tryAsync({
+		try: () => import(Bun.pathToFileURL(configPath).href),
+		catch: (cause) => LoadError.ImportFailed({ configPath, cause }),
+	});
+	if (importResult.error) return importResult;
+	const module = importResult.data;
 
 	const entries: WorkspaceEntry[] = [];
 	for (const [name, value] of Object.entries(module)) {
@@ -136,14 +184,10 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	}
 
 	if (entries.length === 0) {
-		throw new Error(
-			`No workspaces found in ${CONFIG_FILENAME}.\n` +
-				`Export at least one named value implementing [Symbol.dispose], ` +
-				`typically the return of an openFoo() factory.`,
-		);
+		return LoadError.EmptyConfig({ configPath });
 	}
 
-	return {
+	return Ok({
 		entries,
 		async [Symbol.asyncDispose]() {
 			const barriers: Promise<unknown>[] = [];
@@ -153,5 +197,5 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 			}
 			await Promise.all(barriers);
 		},
-	};
+	});
 }

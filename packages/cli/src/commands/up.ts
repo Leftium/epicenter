@@ -2,11 +2,9 @@
  * `epicenter up`: start the long-lived foreground daemon for one `--dir`.
  *
  * Loads every workspace exported by `epicenter.config.ts` and exposes a
- * Unix-socket IPC channel for that `--dir`. While `up` is running, sibling
- * commands (`peers`, `list`, `run`) **attach** to this daemon over IPC
- * instead of opening their own workspaces. Without `up`, those siblings
- * run **standalone**: each invocation opens the config itself, does its
- * work, and closes.
+ * Unix-socket IPC channel for that `--dir`. `peers`, `list`, and `run`
+ * dispatch to this daemon over IPC; without `up` they error with a hint
+ * pointing back here.
  *
  * One daemon per `--dir`; that daemon serves every workspace the config
  * exports (Invariant 7). Resource isolation between workspaces is
@@ -19,43 +17,53 @@
  * § "Logging", § "Invariants".
  */
 
-import { appendFileSync, mkdirSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import {
-	composeSinks,
-	consoleSink,
-	createLogger,
-	type LogEvent,
-	type LogLevel,
-	type LogSink,
-} from 'wellcrafted/logger';
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { Argv, CommandModule } from 'yargs';
 
 import { buildApp } from '../daemon/app.js';
+import { pingDaemon } from '../daemon/client.js';
 import {
-	bindUnixSocket,
+	bindOrRecover,
+	type StartupError,
 	type UnixSocketServer,
 	unlinkSocketFile,
 } from '../daemon/unix-socket.js';
 import {
 	type DaemonMetadata,
-	inspectExistingDaemon,
 	unlinkMetadata,
 	writeMetadata,
 } from '../daemon/metadata.js';
-import { logPathFor, socketPathFor } from '../daemon/paths.js';
-import {
-	ROTATE_MAX_BYTES,
-	rotateIfNeeded,
-} from '../daemon/log-rotation.js';
+import { socketPathFor } from '../daemon/paths.js';
 import {
 	CONFIG_FILENAME,
 	type LoadConfigResult,
+	type LoadError,
 	type WorkspaceEntry,
 	loadConfig,
 } from '../load-config.js';
 import { dirFromArgv, dirOption } from '../util/common-options.js';
+
+/**
+ * Hardcoded ceiling on how long any single workspace's `whenConnected`
+ * may hang before `up` gives up on startup. This exists *only* because
+ * `@epicenter/workspace`'s sync layer doesn't reject `whenConnected` on
+ * permanent auth failures (it just retries forever); without a clock, an
+ * expired token would freeze the daemon's startup indefinitely.
+ *
+ * Tracked: `specs/20260427T120000-workspace-sync-failed-phase.md`. When
+ * the workspace package surfaces a `failed` SyncStatus phase and rejects
+ * `whenConnected` accordingly, this constant and the `raceTimeout` call
+ * site go away.
+ */
+const CONNECT_TIMEOUT_MS = 10000;
 
 /**
  * Read once at module load. Bun resolves the JSON import relative to this
@@ -64,71 +72,11 @@ import { dirFromArgv, dirOption } from '../util/common-options.js';
 import packageJson from '../../package.json' with { type: 'json' };
 const CLI_VERSION = packageJson.version;
 
-const LEVEL_RANK: Record<LogLevel, number> = {
-	trace: 0,
-	debug: 1,
-	info: 2,
-	warn: 3,
-	error: 4,
-};
-
 /**
- * Build the file sink: structured JSONL, rotated at {@link ROTATE_MAX_BYTES}.
- * Synchronous `appendFileSync` keeps rotation correctness simple: the only
- * writer is this daemon, so no inter-process coordination is needed.
- *
- * One JSON object per line; native `Error` instances are normalized so
- * stack traces survive serialization.
- */
-function makeRotatingJsonlSink(filePath: string): LogSink {
-	mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
-	const normalize = (value: unknown): unknown =>
-		value instanceof Error
-			? { name: value.name, message: value.message, stack: value.stack }
-			: value;
-	const sink = (event: LogEvent) => {
-		// Always at info floor (file sink ignores --quiet).
-		const line = {
-			ts: new Date(event.ts).toISOString(),
-			level: event.level,
-			source: event.source,
-			message: event.message,
-			...(event.data === undefined ? {} : { data: event.data }),
-		};
-		try {
-			rotateIfNeeded(filePath, ROTATE_MAX_BYTES);
-			appendFileSync(
-				filePath,
-				`${JSON.stringify(line, (_k, v) => normalize(v))}\n`,
-				{ mode: 0o600 },
-			);
-		} catch {
-			// File-sink failures must not crash the daemon. The stderr sink
-			// remains as a fallback path for the operator.
-		}
-	};
-	return sink as LogSink;
-}
-
-/**
- * Build a stderr sink that filters by floor level. `--quiet` raises the floor
- * to `warn`, but sync state changes write directly to `process.stderr` through
- * a non-quietable channel (see {@link logSyncStatus}).
- */
-function makeStderrSink(floor: LogLevel): LogSink {
-	const min = LEVEL_RANK[floor];
-	const fn = (event: LogEvent) => {
-		if (LEVEL_RANK[event.level] < min) return;
-		consoleSink(event);
-	};
-	return fn as LogSink;
-}
-
-/**
- * Sync-status / awareness lines must always reach the operator (they're the
- * point of `up` in the foreground), so we route them through a non-quietable
- * stderr writer rather than the level-filtered logger. The brief calls these
- * out as "print regardless of --quiet".
+ * Sync-status / awareness lines write directly to stderr so they reach the
+ * operator regardless of `--quiet`; the brief calls these out as "print
+ * regardless of --quiet". `--quiet` only suppresses awareness join/leave
+ * lines (handled at their call sites), not these.
  */
 function logSyncStatus(message: string): void {
 	process.stderr.write(`${message}\n`);
@@ -139,6 +87,25 @@ export type UpOptions = {
 	quiet: boolean;
 	cliVersion?: string;
 };
+
+/**
+ * `runUp`'s own failure variant: a workspace's `whenReady` /
+ * `whenConnected` didn't resolve within the connect timeout. The cause
+ * from `raceTimeout` already carries the entry name + reason.
+ *
+ * Config-load failures come from {@link LoadError} (in `load-config.ts`)
+ * and bind failures from {@link StartupError} (in `unix-socket.ts`); both
+ * unioned into the return type rather than re-wrapped. The yargs handler
+ * doesn't care which union it came from: `error.message` and exit-1
+ * either way.
+ */
+export const RunUpError = defineErrors({
+	ConnectFailed: ({ cause }: { cause: unknown }) => ({
+		message: extractErrorMessage(cause),
+		cause,
+	}),
+});
+export type RunUpError = InferErrors<typeof RunUpError>;
 
 /**
  * Handle returned by {@link runUp}. The daemon body is exposed as a
@@ -167,11 +134,16 @@ export type UpHandle = {
  * handler passes the production defaults; `up.test.ts` passes fakes.
  */
 export type RunUpDeps = {
-	loadConfig?: (dir: string) => Promise<LoadConfigResult>;
-	bindUnixSocket?: (
-		socketPath: string,
-		app: ReturnType<typeof buildApp>,
-	) => Promise<UnixSocketServer>;
+	loadConfig?: (
+		dir: string,
+	) => Promise<Result<LoadConfigResult, LoadError>>;
+	/**
+	 * Test-only override for {@link CONNECT_TIMEOUT_MS}. Production has no
+	 * way to tune this; it's a stopgap until the workspace package's
+	 * sync layer rejects `whenConnected` on permanent auth failure (spec:
+	 * `20260427T120000-workspace-sync-failed-phase.md`).
+	 */
+	connectTimeoutMs?: number;
 };
 
 /**
@@ -181,59 +153,56 @@ export type RunUpDeps = {
  * SIGINT/SIGTERM, and parks the process; tests call it directly and
  * assert on the returned handle.
  *
- * If any workspace fails to connect (the workspace's sync layer rejects
- * `whenConnected` with a `SyncFailedError`, e.g. on permanent auth
- * failure), the whole daemon fails. Partial-up is muddy semantics
- * ("which subset is online?") and we already have a way to express
- * "I want only this one online": split the config.
+ * If any workspace fails to connect within the timeout, the whole daemon
+ * fails. Partial-up is muddy semantics ("which subset is online?") and we
+ * already have a way to express "I want only this one online": split the
+ * config.
  */
 export async function runUp(
 	options: UpOptions,
 	deps: RunUpDeps = {},
-): Promise<UpHandle> {
+): Promise<Result<UpHandle, RunUpError | LoadError | StartupError>> {
 	const absDir = resolve(options.dir);
 	const socketPath = socketPathFor(absDir);
-	const logPath = logPathFor(absDir);
-
-	const stderr = makeStderrSink(options.quiet ? 'warn' : 'info');
-	const fileSink = makeRotatingJsonlSink(logPath);
-	const sink = composeSinks(stderr, fileSink);
-	const log = createLogger('cli/up', sink);
-
-	const inspect = await inspectExistingDaemon(absDir);
-	if (inspect.state === 'in-use') {
-		throw new Error(`daemon already running (pid=${inspect.pid})`);
-	}
-	if (inspect.state === 'orphan') {
-		log.info('cleaned orphan socket', { dir: absDir, pid: inspect.pid });
-	}
 
 	const loader = deps.loadConfig ?? loadConfig;
-	const config = await loader(absDir);
-
-	if (config.entries.length === 0) {
-		await safeAsyncDispose(config);
-		throw new Error(
-			`no workspaces exported from ${join(absDir, CONFIG_FILENAME)}`,
-		);
-	}
+	const loadResult = await loader(absDir);
+	if (loadResult.error) return loadResult;
+	const config = loadResult.data;
 
 	// Wait for every workspace's "ready to accept RPC" gate concurrently.
 	// One bad workspace fails the whole daemon; see runUp's docstring.
-	// `whenConnected` rejects with `SyncFailedError` on permanent auth
-	// failure (close code 4401), so no wallclock timer is needed here.
-	try {
-		await Promise.all(
-			config.entries.map((entry) =>
-				entry.workspace.whenReady ??
-					entry.workspace.sync?.whenConnected ??
-					Promise.resolve(),
+	const connectResult = await tryAsync({
+		try: () =>
+			Promise.all(
+				config.entries.map((entry) =>
+					raceTimeout(
+						entry.workspace.whenReady ??
+							entry.workspace.sync?.whenConnected ??
+							Promise.resolve(),
+						deps.connectTimeoutMs ?? CONNECT_TIMEOUT_MS,
+						() => connectFailedMessage(entry),
+					),
+				),
 			),
-		);
-	} catch (cause) {
+		catch: (cause) => RunUpError.ConnectFailed({ cause }),
+	});
+	if (connectResult.error) {
 		await safeAsyncDispose(config);
-		throw cause;
+		return connectResult;
 	}
+
+	// Bind before writing our metadata. On AlreadyRunning the live
+	// daemon's sidecar must stay intact; on a stale-socket recovery
+	// `bindOrRecover` unlinks the orphan metadata internally before our
+	// successful retry, so the writeMetadata below records *our* pid.
+	const app = buildApp(config.entries, () => void teardown());
+	const bindResult = await bindOrRecover(socketPath, absDir, app, pingDaemon);
+	if (bindResult.error) {
+		await safeAsyncDispose(config);
+		return bindResult;
+	}
+	const server = bindResult.data;
 
 	const configMtime = readConfigMtime(absDir);
 	const metadata: DaemonMetadata = {
@@ -244,17 +213,6 @@ export async function runUp(
 		configMtime,
 	};
 	writeMetadata(absDir, metadata);
-
-	const app = buildApp(config.entries, () => void teardown());
-	const starter = deps.bindUnixSocket ?? bindUnixSocket;
-	let server: UnixSocketServer;
-	try {
-		server = await starter(socketPath, app);
-	} catch (cause) {
-		unlinkMetadata(absDir);
-		await safeAsyncDispose(config);
-		throw cause;
-	}
 
 	let teardownPromise: Promise<void> | null = null;
 	const teardown = (): Promise<void> => {
@@ -272,14 +230,14 @@ export async function runUp(
 		return teardownPromise;
 	};
 
-	return {
+	return Ok({
 		server,
 		entries: config.entries,
 		config,
 		metadata,
 		socketPath,
 		teardown,
-	};
+	});
 }
 
 /**
@@ -308,11 +266,9 @@ export const upCommand: CommandModule = {
 			quiet: args.quiet === true,
 		};
 
-		let handle: UpHandle;
-		try {
-			handle = await runUp(options);
-		} catch (cause) {
-			process.stderr.write(`${formatStartupError(cause)}\n`);
+		const { data: handle, error } = await runUp(options);
+		if (error) {
+			process.stderr.write(`${error.message}\n`);
 			process.exit(1);
 		}
 
@@ -343,25 +299,47 @@ export const upCommand: CommandModule = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function raceTimeout<T>(
+	promise: Promise<T>,
+	ms: number,
+	onTimeoutMessage: () => string,
+): Promise<T> {
+	return new Promise<T>((res, rej) => {
+		const t = setTimeout(() => {
+			rej(new Error(`connect failed: ${onTimeoutMessage()}`));
+		}, ms);
+		promise.then(
+			(v) => {
+				clearTimeout(t);
+				res(v);
+			},
+			(cause) => {
+				clearTimeout(t);
+				const msg = cause instanceof Error ? cause.message : String(cause);
+				rej(new Error(`connect failed: ${msg}`));
+			},
+		);
+	});
+}
+
 /**
- * Render a startup-failure cause for stderr. Permanent auth rejections from
- * the workspace sync layer (`SyncFailedError.AuthRejected`) carry a typed
- * `code` string; surface that and point the operator at `epicenter auth
- * login`. Everything else falls back to the cause's message.
+ * Best-effort message synthesis when `whenReady` doesn't resolve. Today's
+ * SyncAttachment exposes a `status` enum (`offline`/`connecting`/`connected`)
+ * with a `lastError` tag (`auth` | `connection`); we promote `auth` to the
+ * spec's `401 Unauthorized` phrasing so the acceptance criterion at least
+ * matches the prefix. Once the workspace surfaces structured auth errors
+ * through `whenReady` / `whenConnected`, this becomes precise.
  */
-function formatStartupError(cause: unknown): string {
+function connectFailedMessage(entry: WorkspaceEntry): string {
+	const status = entry.workspace.sync?.status;
 	if (
-		cause &&
-		typeof cause === 'object' &&
-		'name' in cause &&
-		(cause as { name: unknown }).name === 'AuthRejected' &&
-		'code' in cause &&
-		typeof (cause as { code: unknown }).code === 'string'
+		status &&
+		status.phase === 'connecting' &&
+		status.lastError?.type === 'auth'
 	) {
-		const code = (cause as { code: string }).code;
-		return `auth failed: ${code}. Try \`epicenter auth login\`.`;
+		return `${entry.name}: 401 Unauthorized. Try \`epicenter auth login\`.`;
 	}
-	return cause instanceof Error ? cause.message : String(cause);
+	return `${entry.name}: timed out waiting for workspace ready`;
 }
 
 function readConfigMtime(absDir: string): number {

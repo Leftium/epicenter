@@ -22,6 +22,7 @@ import {
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Err, Ok } from 'wellcrafted/result';
 
 import { writeMetadata } from '../daemon/metadata';
 import { runDown } from './down';
@@ -69,7 +70,7 @@ describe('runDown: graceful', () => {
 		const result = await runDown(
 			{ dir: workDir, all: false },
 			{
-				shutdown: async () => ({ data: null, error: null }),
+				shutdown: async () => Ok(null),
 				kill: () => {
 					throw new Error('kill should not be called on graceful path');
 				},
@@ -82,7 +83,7 @@ describe('runDown: graceful', () => {
 });
 
 describe('runDown: SIGTERM fallback', () => {
-	test('falls through to kill when shutdown returns NoDaemon', async () => {
+	test('falls through to kill when shutdown returns transport error', async () => {
 		writeMetadata(workDir, {
 			pid: process.pid,
 			dir: workDir,
@@ -95,15 +96,8 @@ describe('runDown: SIGTERM fallback', () => {
 		const result = await runDown(
 			{ dir: workDir, all: false },
 			{
-				shutdown: async () => ({
-					data: null,
-					error: {
-						name: 'NoDaemon',
-						message: 'timeout after 1000ms',
-						socketPath: '',
-						timeoutMs: 1000,
-					},
-				}),
+				shutdown: async () =>
+					Err({ name: 'Timeout', message: 'timeout after 1000ms' }),
 				kill: (pid, sig) => {
 					killed.push({ pid, sig });
 				},
@@ -156,7 +150,7 @@ describe('runDown --all', () => {
 			const result = await runDown(
 				{ dir: '.', all: true },
 				{
-					shutdown: async () => ({ data: null, error: null }),
+					shutdown: async () => Ok(null),
 					kill: () => {},
 				},
 			);

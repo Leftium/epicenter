@@ -147,7 +147,7 @@ describe('encryptValue / decryptValue', () => {
 		// Copy and reverse the ciphertext portion
 		const tampered = new Uint8Array(encrypted);
 		for (let i = 26; i < tampered.length; i++) {
-			tampered[i] = tampered[i]! ^ 0xff;
+			tampered[i] = (tampered[i] as number) ^ 0xff;
 		}
 
 		expect(() => {
@@ -161,7 +161,7 @@ describe('encryptValue / decryptValue', () => {
 
 		// Copy and flip the first nonce byte (byte 2)
 		const tampered = new Uint8Array(encrypted);
-		tampered[2] = tampered[2]! ^ 0xff;
+		tampered[2] = (tampered[2] as number) ^ 0xff;
 
 		expect(() => {
 			decryptValue(tampered as EncryptedBlob, key);
@@ -526,19 +526,19 @@ describe('buildEncryptionKeys', () => {
 	test('default version is 1', () => {
 		const userKey = randomBytes(32);
 		const keys = buildEncryptionKeys(userKey);
-		expect(keys[0]!.version).toBe(1);
+		expect(keys[0]?.version).toBe(1);
 	});
 
 	test('custom version is respected', () => {
 		const userKey = randomBytes(32);
 		const keys = buildEncryptionKeys(userKey, 3);
-		expect(keys[0]!.version).toBe(3);
+		expect(keys[0]?.version).toBe(3);
 	});
 
 	test('userKeyBase64 round-trips through base64ToBytes', () => {
 		const userKey = randomBytes(32);
 		const keys = buildEncryptionKeys(userKey);
-		const decoded = base64ToBytes(keys[0]!.userKeyBase64);
+		const decoded = base64ToBytes(keys[0]?.userKeyBase64);
 		expect(decoded).toEqual(userKey);
 	});
 
@@ -548,7 +548,7 @@ describe('buildEncryptionKeys', () => {
 		const keys = buildEncryptionKeys(userKey);
 
 		// Decode the base64 user key and derive a workspace key
-		const decodedUserKey = base64ToBytes(keys[0]!.userKeyBase64);
+		const decodedUserKey = base64ToBytes(keys[0]?.userKeyBase64);
 		const wsKey = deriveWorkspaceKey(decodedUserKey, 'epicenter.vault');
 
 		// Use the workspace key to encrypt and decrypt

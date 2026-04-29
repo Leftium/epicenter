@@ -230,7 +230,7 @@ describe('applyMessage — SYNC', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data).not.toBeNull();
-		expect(result.data!.action).toBe('reply');
+		expect(result.data?.action).toBe('reply');
 		if (result.data?.action === 'reply') {
 			const decoded = decodeSyncMessage(result.data.data);
 			expect(decoded.type).toBe('step2');
@@ -299,7 +299,7 @@ describe('applyMessage — AWARENESS', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data).not.toBeNull();
-		expect(result.data!.action).toBe('broadcast');
+		expect(result.data?.action).toBe('broadcast');
 		if (result.data?.action === 'broadcast') {
 			expect(decodeMessageType(result.data.data)).toBe(MESSAGE_TYPE.AWARENESS);
 			expect(result.data.shouldPersistAttachment).toBe(true);
@@ -340,7 +340,7 @@ describe('applyMessage — QUERY_AWARENESS', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data).not.toBeNull();
-		expect(result.data!.action).toBe('reply');
+		expect(result.data?.action).toBe('reply');
 		if (result.data?.action === 'reply') {
 			expect(decodeMessageType(result.data.data)).toBe(MESSAGE_TYPE.AWARENESS);
 		}
@@ -516,7 +516,7 @@ describe('multi-client broadcast', () => {
 
 		// The broadcast field should be set for the DO to distribute
 		expect(result.data).not.toBeNull();
-		expect(result.data!.action).toBe('broadcast');
+		expect(result.data?.action).toBe('broadcast');
 
 		// The awareness state should be applied to the shared instance
 		expect(awareness.getStates().has(clientAwareness.clientID)).toBe(true);
@@ -550,7 +550,7 @@ describe('full handshake convergence', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data).not.toBeNull();
-		expect(result.data!.action).toBe('reply');
+		expect(result.data?.action).toBe('reply');
 
 		// Step 3: Client applies server's SyncStep2 response
 		if (result.data?.action === 'reply') {
@@ -590,7 +590,7 @@ describe('full handshake convergence', () => {
 		const clientStep1 = encodeSyncStep1({ doc: clientDoc });
 		const result1 = applyMessage({ data: clientStep1, room, connection });
 		expect(result1.data).not.toBeNull();
-		expect(result1.data!.action).toBe('reply');
+		expect(result1.data?.action).toBe('reply');
 
 		// Client applies server's diff
 		if (result1.data?.action === 'reply') {

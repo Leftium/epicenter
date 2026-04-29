@@ -25,7 +25,7 @@ const mkTempPath = (suffix: string) => {
 
 afterEach(async () => {
 	while (tempPaths.length) {
-		const p = tempPaths.pop()!;
+		const p = tempPaths.pop() as string;
 		await rm(p, { force: true }).catch(() => {});
 	}
 });
@@ -42,13 +42,13 @@ describe('jsonlFileSink', () => {
 		const contents = await readFile(path, 'utf8');
 		const lines = contents.trimEnd().split('\n');
 		expect(lines).toHaveLength(2);
-		const first = JSON.parse(lines[0]!);
+		const first = JSON.parse(lines[0] as string);
 		expect(first.level).toBe('info');
 		expect(first.source).toBe('src');
 		expect(first.data).toEqual({ a: 1 });
 		expect(typeof first.ts).toBe('string');
 		expect(new Date(first.ts).toString()).not.toBe('Invalid Date');
-		const second = JSON.parse(lines[1]!);
+		const second = JSON.parse(lines[1] as string);
 		expect(second.level).toBe('warn');
 		expect(second.data.name).toBe('Boom');
 		expect(second.data.cause).toMatchObject({ name: 'Error', message: 'kaboom' });

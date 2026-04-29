@@ -13,15 +13,7 @@ import { type } from 'arktype';
 import { Hono } from 'hono';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
-import type {
-	AggregateResponse,
-	AttachResponse,
-	EventsListResponse,
-	ModelsResponse,
-	PlansListResponse,
-	PortalResponse,
-	PreviewResponse,
-} from './billing-contract';
+import type { ModelsResponse } from './billing-contract';
 import { ANNUAL_PLANS, FEATURE_IDS, PLAN_IDS, PLANS } from './billing-plans';
 import { MODEL_CREDITS } from './model-costs';
 

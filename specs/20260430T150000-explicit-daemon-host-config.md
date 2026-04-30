@@ -7,9 +7,9 @@
 
 ## Overview
 
-`epicenter.config.ts` should stop acting like a reusable client module. It should default-export an explicit list of hosted daemon workspaces.
+`epicenter.config.ts` should stop acting like a reusable client module. It should default-export an explicit record of hosted daemon workspaces.
 
-One sentence: config hosts processes, packages export APIs.
+One sentence: config names daemon hosts, packages export APIs.
 
 ## Motivation
 
@@ -42,38 +42,48 @@ This creates problems:
 `epicenter.config.ts` is a host declaration:
 
 ```ts
+import { createSessionStore } from '@epicenter/cli';
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { openFuji } from '@epicenter/fuji/daemon';
 import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { findEpicenterDir } from '@epicenter/workspace/node';
 
-export default defineEpicenterConfig([
-	openFuji({
+const projectDir = findEpicenterDir(import.meta.dir);
+const sessions = createSessionStore();
+
+const getToken = async () =>
+	(await sessions.load(EPICENTER_API_URL))?.accessToken ?? null;
+
+export default defineEpicenterConfig({
+	fuji: openFuji({
+		projectDir,
+		getToken,
 		peer: {
 			id: 'fuji-daemon',
 			name: 'Fuji Daemon',
 			platform: 'node',
 		},
 	}),
-]);
+});
 ```
 
-`openFuji()` returns a `HostedWorkspace` or `Promise<HostedWorkspace>`. It defaults to `id: 'fuji'`, so most projects do not pass an id.
+The record key becomes the daemon route prefix. `openFuji()` returns a `HostedWorkspace` or `Promise<HostedWorkspace>` without carrying a route id.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Config shape | `defineEpicenterConfig(HostedWorkspaceInput[])` | No export scanning, no fake single `workspaces` key |
-| Route id | `HostedWorkspace.id`, defaulted by host factory | Terse common case, override still possible |
+| Config shape | `defineEpicenterConfig(Record<string, HostedWorkspaceInput>)` | No export scanning, no fake single `workspaces` key, and route names live at the host boundary |
+| Route id | Config record key | The project names what it hosts. Package daemon factories do not own deployment names. |
 | Fuji daemon return | `HostedWorkspace` facade only | Persistence and materializers run privately |
 | Readiness | Async host construction | A hosted workspace is ready once the factory resolves. The daemon should not carry a separate `whenReady` field. |
 | Script typing | `ReturnType<typeof createFujiActions>` | Scripts depend on action factories, not config exports |
-| Token default | Open question | Best ergonomics imports CLI auth in daemon subpaths; cleanest boundary keeps `getToken` explicit |
+| Token default | Config closure passes `getToken` | Auth storage is host policy. App daemon subpaths should not depend on CLI auth conventions. |
 
 ## Target API
 
 ```ts
 export type HostedWorkspace = {
-	id: string;
 	actions: Record<string, unknown>;
 	sync?: SyncAttachment;
 	presence?: PeerPresenceAttachment;
@@ -85,26 +95,14 @@ export type HostedWorkspaceInput =
 	| HostedWorkspace
 	| Promise<HostedWorkspace>;
 
-export function defineEpicenterConfig(hosts: HostedWorkspaceInput[]) {
-	return Object.freeze({ hosts });
-}
+export type EpicenterConfig = {
+	hosts: Record<string, HostedWorkspaceInput>;
+};
 
-export function hostWorkspace(options: {
-	id: string;
-	actions?: Record<string, unknown>;
-	sync?: SyncAttachment;
-	presence?: PeerPresenceAttachment;
-	rpc?: SyncRpcAttachment;
-	dispose: () => void;
-}): HostedWorkspace {
-	return {
-		id: options.id,
-		actions: options.actions ?? {},
-		...(options.sync && { sync: options.sync }),
-		...(options.presence && { presence: options.presence }),
-		...(options.rpc && { rpc: options.rpc }),
-		[Symbol.dispose]: options.dispose,
-	};
+export function defineEpicenterConfig(
+	hosts: Record<string, HostedWorkspaceInput>,
+): EpicenterConfig {
+	return Object.freeze({ hosts: Object.freeze({ ...hosts }) });
 }
 ```
 
@@ -112,26 +110,23 @@ export function hostWorkspace(options: {
 
 ```ts
 export type OpenFujiDaemonOptions = {
-	id?: string;
 	peer: PeerDescriptor;
-	getToken?: () => Promise<string | null>;
-	projectDir?: ProjectDir;
+	getToken: () => Promise<string | null>;
+	projectDir: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
 };
 
 export async function openFuji({
-	id = 'fuji',
 	peer,
 	getToken,
-	projectDir = findEpicenterDir(),
+	projectDir,
 	clientID = hashClientId(projectDir),
 	apiUrl = EPICENTER_API_URL,
 	webSocketImpl,
 }: OpenFujiDaemonOptions): Promise<HostedWorkspace> {
 	const doc = openFujiDoc({ clientID });
-	const tokenGetter = getToken ?? defaultTokenGetter(apiUrl);
 
 	const yjsLog = attachYjsLog(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
@@ -139,7 +134,7 @@ export async function openFuji({
 
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		getToken: tokenGetter,
+		getToken,
 		webSocketImpl,
 	});
 
@@ -154,14 +149,15 @@ export async function openFuji({
 		dir: markdownPath(projectDir, doc.ydoc.guid),
 	}).table(doc.tables.entries, { filename: slugFilename('title') });
 
-	return hostWorkspace({
-		id,
+	return {
 		actions: doc.actions,
 		sync,
 		presence,
 		rpc,
-		dispose: () => doc[Symbol.dispose](),
-	});
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
+	} satisfies HostedWorkspace;
 }
 ```
 
@@ -169,54 +165,38 @@ The key collapse:
 
 ```diff
 - return { ...doc, yjsLog, sync, presence, rpc, sqlite, markdown };
-+ return hostWorkspace({
-+   id,
++ return {
 +   actions: doc.actions,
 +   sync,
 +   presence,
 +   rpc,
-+   dispose: () => doc[Symbol.dispose](),
-+ });
++   [Symbol.dispose]() {
++     doc[Symbol.dispose]();
++   },
++ } satisfies HostedWorkspace;
 ```
 
-## Token Default Question
+## Token Closure
 
-There are two viable choices.
-
-Option A: daemon subpaths own CLI token loading.
-
-```ts
-import { createSessionStore } from '@epicenter/cli';
-
-function defaultTokenGetter(apiUrl: string) {
-	const sessions = createSessionStore();
-	return async () => (await sessions.load(apiUrl))?.accessToken ?? null;
-}
-```
-
-This gives the best config:
-
-```ts
-export default defineEpicenterConfig([
-	openFuji({ peer }),
-]);
-```
-
-Option B: config passes a token getter.
+The daemon package should not own CLI token loading. The config owns the closure:
 
 ```ts
 const sessions = createSessionStore();
+const getToken = async () =>
+	(await sessions.load(EPICENTER_API_URL))?.accessToken ?? null;
 
-export default defineEpicenterConfig([
-	openFuji({
-		peer,
-		getToken: async () =>
-			(await sessions.load(EPICENTER_API_URL))?.accessToken ?? null,
-	}),
-]);
+export default defineEpicenterConfig({
+	fuji: openFuji({ projectDir, peer, getToken }),
+});
 ```
 
-Recommendation: start with Option A if `./daemon` subpaths are allowed to depend on CLI auth storage. Otherwise add `cliTokenGetter()` in `@epicenter/cli` and keep `getToken` explicit.
+If this becomes repetitive, add a small helper in `@epicenter/cli`:
+
+```ts
+const getToken = cliTokenGetter({ apiUrl: EPICENTER_API_URL });
+```
+
+That helper belongs to the host side. `@epicenter/fuji/daemon` should not import `@epicenter/cli`.
 
 ## Loader Migration
 
@@ -236,9 +216,11 @@ Target loader:
 import config module
 read default export
 validate defineEpicenterConfig result
-hosts = await Promise.all(config.hosts)
-entries = hosts.map(host => ({ name: host.id, workspace: host }))
-route id = host.id
+hosts = Object.entries(config.hosts)
+entries = await Promise.all(
+  hosts.map(async ([name, host]) => ({ name, workspace: await host }))
+)
+route id = record key
 ```
 
 Most daemon internals can stay stable because `loadConfig()` can still return `WorkspaceEntry[]`.
@@ -258,12 +240,23 @@ export async function openFuji(options): Promise<HostedWorkspace> {
 	const sync = attachSync(doc, { ... });
 
 	return hostWorkspace({
-		id: 'fuji',
 		actions: doc.actions,
 		sync,
 		dispose: () => doc[Symbol.dispose](),
 	});
 }
+```
+
+The example above can return a plain object instead of using `hostWorkspace()`:
+
+```ts
+return {
+	actions: doc.actions,
+	sync,
+	[Symbol.dispose]() {
+		doc[Symbol.dispose]();
+	},
+} satisfies HostedWorkspace;
 ```
 
 The daemon loader awaits host construction once, during config load. After that, local action dispatch does not need another generic readiness gate.
@@ -298,9 +291,9 @@ export async function connectDaemonActions<TActions>(options: {
 
 ### Phase 1: Host Types
 
-- [ ] **1.1** Add `HostedWorkspace`, `hostWorkspace`, and `defineEpicenterConfig`.
+- [ ] **1.1** Add `HostedWorkspace` and `defineEpicenterConfig`.
 - [ ] **1.2** Keep `WorkspaceEntry[]` as the internal daemon server input.
-- [ ] **1.3** Add tests for duplicate `host.id` detection.
+- [ ] **1.3** Add tests for invalid or duplicate route keys in the host record.
 - [ ] **1.4** Remove `whenReady` from hosted workspace types and daemon dispatch.
 
 ### Phase 2: Loader
@@ -313,28 +306,28 @@ export async function connectDaemonActions<TActions>(options: {
 ### Phase 3: Fuji
 
 - [ ] **3.1** Change `apps/fuji/src/lib/fuji/daemon.ts` to return `HostedWorkspace`.
-- [ ] **3.2** Default `id` to `'fuji'`.
+- [ ] **3.2** Remove `id` from `OpenFujiDaemonOptions`.
 - [ ] **3.3** Stop exposing `ydoc`, `tables`, `yjsLog`, `sqlite`, and `markdown` from the daemon return.
 - [ ] **3.4** Make daemon setup async if any local persistence or materializer setup needs to finish before actions run.
-- [ ] **3.5** Decide whether `getToken` defaults through CLI auth or remains explicit.
+- [ ] **3.5** Keep `getToken` and `projectDir` explicit in daemon options.
 
 ### Phase 4: Call Sites and Docs
 
-- [ ] **4.1** Migrate example configs to `export default defineEpicenterConfig([...])`.
+- [ ] **4.1** Migrate example configs to `export default defineEpicenterConfig({ ... })`.
 - [ ] **4.2** Replace docs that import from `epicenter.config.ts`.
 - [ ] **4.3** Add `connectDaemonActions<TActions>()`.
 - [ ] **4.4** Update script examples to type against `create*Actions`.
 
 ## Open Questions
 
-1. **Should daemon subpaths import `@epicenter/cli` for default token loading?**
-   - Options: import CLI auth in app daemon subpaths, require `getToken`, or add a small `cliTokenGetter()` helper.
-   - Recommendation: import CLI auth in daemon subpaths if it keeps config clean and does not create package cycles.
+1. **Should `@epicenter/cli` expose `cliTokenGetter()`?**
+   - Options: keep the session store closure inline in config, or add a helper that wraps `createSessionStore()`.
+   - Recommendation: defer until two or three configs repeat the same token closure.
 
 2. **Should named export scanning remain as a compatibility bridge?**
    - Options: remove immediately, support both temporarily, or keep permanently.
    - Recommendation: support both for one migration window, but mark named export scanning as legacy.
 
-3. **Should `HostedWorkspace.id` be overrideable?**
-   - Options: require every call to pass `id`, default by app factory, or derive from config.
-   - Recommendation: default by app factory. `openFuji()` should default to `'fuji'`.
+3. **Should `defineEpicenterConfig()` accept a raw record without a wrapper?**
+   - Options: require `defineEpicenterConfig({ ... })`, accept `export default { ... }`, or support both.
+   - Recommendation: require the helper first. It gives the loader a reliable shape and gives TypeScript a place to validate host values.

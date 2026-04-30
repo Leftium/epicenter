@@ -30,7 +30,7 @@ import {
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { ResolveError } from './resolve-entry.js';
-import type { ListInput, PeerSnapshot, RunInput } from './app.js';
+import type { ListInput, PeerSnapshot, RunInput, PeersInput } from './app.js';
 import { socketPathFor } from './paths.js';
 import type { RunError } from './run-errors.js';
 
@@ -186,7 +186,8 @@ export function daemonClient(
 	timeoutMs: number = DEFAULT_CALL_TIMEOUT_MS,
 ) {
 	return {
-		peers: () => call<PeerSnapshot[], never>(socketPath, timeoutMs, '/peers'),
+		peers: (input: PeersInput = {}) =>
+			call<PeerSnapshot[], never>(socketPath, timeoutMs, '/peers', input),
 		list: (input: ListInput) =>
 			call<ActionManifest, ResolveError>(socketPath, timeoutMs, '/list', input),
 		run: (input: RunInput) =>
@@ -196,6 +197,7 @@ export function daemonClient(
 				'/run',
 				input,
 			),
+		shutdown: () => call<null, never>(socketPath, timeoutMs, '/shutdown'),
 	};
 }
 

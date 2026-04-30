@@ -17,19 +17,21 @@
  *   3: peer-miss (`--peer <target>` didn't resolve within `--wait`)
  */
 
-import type { RpcError } from '@epicenter/workspace';
 import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+	type DaemonError,
+	getDaemon,
+	type PeerAwarenessState,
+	type PeerMiss,
+	type ResolveError,
+	type RpcError,
+	type RunError as DaemonRunError,
+	type RunInput,
+} from '@epicenter/workspace';
+export { RunError } from '@epicenter/workspace';
+import { extractErrorMessage } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
 
-import { type DaemonError, getDaemon } from '../daemon/client';
-import type { RunCtx } from '../daemon/schemas';
-import type { AwarenessState } from '../load-config';
-import type { ResolveError } from '../util/resolve-entry';
 import {
 	dirOption,
 	resolveTarget,
@@ -42,7 +44,7 @@ import {
 } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 
-export type { RunCtx };
+export type RunCtx = RunInput;
 
 const DEFAULT_PEER_WAIT_MS = 5000;
 
@@ -56,66 +58,7 @@ const waitOption: Options = {
 	description: `Total ms to wait for peer resolution + RPC; requires --peer (default ${DEFAULT_PEER_WAIT_MS})`,
 };
 
-/**
- * Domain errors returned by the `/run` route. Carrying the failure mode
- * in-band lets the renderer set `process.exitCode` from a single switch,
- * even when the result arrived over IPC.
- *
- * - `UsageError`: bad action path / missing sync; renderer exitCode=1.
- * - `RuntimeError`: action returned Err locally; renderer exitCode=2.
- * - `PeerMiss`: `--peer` target didn't resolve within `waitMs`; exitCode=3.
- * - `RpcError`: remote RPC returned an `RpcError`; exitCode=2.
- */
-export const RunError = defineErrors({
-	UsageError: ({
-		message,
-		suggestions,
-	}: {
-		message: string;
-		suggestions?: string[];
-	}) => ({ message, suggestions }),
-	RuntimeError: ({ cause }: { cause: unknown }) => ({
-		message: extractErrorMessage(cause),
-		cause,
-	}),
-	PeerMiss: ({
-		peerTarget,
-		sawPeers,
-		workspace,
-		waitMs,
-		emptyReason,
-	}: {
-		peerTarget: string;
-		sawPeers: boolean;
-		workspace?: string;
-		waitMs: number;
-		emptyReason: string | null;
-	}) => ({
-		message: `no peer matches deviceId "${peerTarget}"`,
-		peerTarget,
-		sawPeers,
-		workspace,
-		waitMs,
-		emptyReason,
-	}),
-	RpcError: ({
-		cause,
-		targetClientId,
-		peerState,
-	}: {
-		cause: RpcError;
-		targetClientId: number;
-		peerState: AwarenessState;
-	}) => ({
-		message: `RPC failed: ${cause.name}`,
-		cause,
-		targetClientId,
-		peerState,
-	}),
-});
-export type RunError = InferErrors<typeof RunError>;
-
-export type RunResult = Result<unknown, RunError | ResolveError>;
+export type RunResult = Result<unknown, DaemonRunError | PeerMiss | ResolveError>;
 
 export const runCommand: CommandModule = {
 	command: 'run <action> [input]',
@@ -160,7 +103,10 @@ export const runCommand: CommandModule = {
 			workspace: target.userWorkspace,
 		};
 
-		const { data: daemon, error: daemonErr } = await getDaemon(target);
+		const { data: daemon, error: daemonErr } = await getDaemon({
+			projectDir: target.absDir,
+			userWorkspace: target.userWorkspace,
+		});
 		if (daemonErr) {
 			outputError(daemonErr.message);
 			process.exitCode = 1;
@@ -172,7 +118,10 @@ export const runCommand: CommandModule = {
 };
 
 function renderRunResult(
-	result: Result<unknown, RunError | ResolveError | DaemonError>,
+	result: Result<
+		unknown,
+		DaemonRunError | PeerMiss | ResolveError | DaemonError
+	>,
 	format: 'json' | 'jsonl' | undefined,
 ): void {
 	if (result.error === null) {
@@ -198,7 +147,7 @@ function renderRunResult(
 			emitMissError(
 				result.error.peerTarget,
 				result.error.sawPeers,
-				result.error.workspace,
+				undefined,
 				result.error.waitMs,
 			);
 			if (result.error.emptyReason)
@@ -269,7 +218,7 @@ export function emitMissError(
 export function emitRpcError(
 	error: RpcError,
 	targetClientId: number,
-	peerState: AwarenessState,
+	peerState: PeerAwarenessState,
 ): void {
 	const { device } = peerState;
 	const peerLabel = `${device.name} (${targetClientId}, ${device.platform})`;

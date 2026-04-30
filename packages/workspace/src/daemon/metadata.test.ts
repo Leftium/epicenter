@@ -34,6 +34,9 @@ afterEach(() => {
 const sampleMeta = (overrides: Partial<DaemonMetadata> = {}): DaemonMetadata => ({
 	pid: process.pid,
 	dir: workDir,
+	startedAt: new Date(0).toISOString(),
+	cliVersion: '0.0.0-test',
+	configMtime: 0,
 	...overrides,
 });
 

@@ -71,6 +71,7 @@ export {
 	buildApp,
 	ListInput,
 	PeerSnapshot,
+	PeersInput,
 	RunInput,
 } from './daemon/app.js';
 export {
@@ -89,7 +90,9 @@ export {
 } from './daemon/paths.js';
 export {
 	type DaemonMetadata,
+	enumerateDaemons,
 	readMetadata,
+	readMetadataFromPath,
 	unlinkMetadata,
 	writeMetadata,
 } from './daemon/metadata.js';

@@ -27,21 +27,16 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { Argv, CommandModule } from 'yargs';
-
-import { buildApp } from '../daemon/app.js';
-import { pingDaemon } from '../daemon/client.js';
 import {
-	bindOrRecover,
+	createWorkspaceServer,
+	type DaemonMetadata,
+	socketPathFor,
 	type StartupError,
 	type UnixSocketServer,
 	unlinkSocketFile,
-} from '../daemon/unix-socket.js';
-import {
-	type DaemonMetadata,
 	unlinkMetadata,
 	writeMetadata,
-} from '../daemon/metadata.js';
-import { socketPathFor } from '../daemon/paths.js';
+} from '@epicenter/workspace';
 import {
 	CONFIG_FILENAME,
 	type LoadConfigResult,
@@ -196,8 +191,12 @@ export async function runUp(
 	// daemon's sidecar must stay intact; on a stale-socket recovery
 	// `bindOrRecover` unlinks the orphan metadata internally before our
 	// successful retry, so the writeMetadata below records *our* pid.
-	const app = buildApp(config.entries, () => void teardown());
-	const bindResult = await bindOrRecover(socketPath, absDir, app, pingDaemon);
+	const workspaceServer = createWorkspaceServer({
+		projectDir: absDir,
+		workspaces: config.entries,
+		triggerShutdown: () => void teardown(),
+	});
+	const bindResult = await workspaceServer.listen();
 	if (bindResult.error) {
 		await safeAsyncDispose(config);
 		return bindResult;

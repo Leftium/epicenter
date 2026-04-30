@@ -25,7 +25,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { writeMetadata } from '../daemon/metadata';
+import { writeMetadata } from '@epicenter/workspace';
 import { followLog, pickSoleDaemon, tailLines } from './logs';
 
 let originalXdg: string | undefined;

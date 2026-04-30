@@ -17,19 +17,22 @@
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
  */
 
-import { type ActionManifest } from '@epicenter/workspace';
+import {
+	type ActionManifest,
+	type DaemonError,
+	getDaemon,
+	type ResolveError,
+} from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule } from 'yargs';
 
-import { type DaemonError, getDaemon } from '../daemon/client';
 import {
 	dirOption,
 	resolveTarget,
 	workspaceOption,
 } from '../util/common-options';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
-import type { ResolveError } from '../util/resolve-entry';
 
 type Format = 'json' | 'jsonl' | undefined;
 
@@ -53,7 +56,10 @@ export const listCommand: CommandModule = {
 		const format = args.format as Format;
 		const target = resolveTarget(args);
 
-		const { data: daemon, error: daemonErr } = await getDaemon(target);
+		const { data: daemon, error: daemonErr } = await getDaemon({
+			projectDir: target.absDir,
+			userWorkspace: target.userWorkspace,
+		});
 		if (daemonErr) {
 			outputError(daemonErr.message);
 			process.exitCode = 1;

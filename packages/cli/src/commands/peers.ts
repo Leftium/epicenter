@@ -13,8 +13,7 @@
 
 import type { Argv, CommandModule } from 'yargs';
 
-import type { PeerSnapshot } from '../daemon/app';
-import { getDaemon } from '../daemon/client';
+import { getDaemon, type PeerSnapshot } from '@epicenter/workspace';
 import { dirOption, resolveTarget, workspaceOption } from '../util/common-options';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 
@@ -31,7 +30,10 @@ export const peersCommand: CommandModule = {
 		const target = resolveTarget(args);
 		const format = args.format as 'json' | 'jsonl' | undefined;
 
-		const { data: daemon, error: daemonErr } = await getDaemon(target);
+		const { data: daemon, error: daemonErr } = await getDaemon({
+			projectDir: target.absDir,
+			userWorkspace: target.userWorkspace,
+		});
 		if (daemonErr) {
 			outputError(daemonErr.message);
 			process.exitCode = 1;

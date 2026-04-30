@@ -26,6 +26,8 @@ function makeStubClient() {
 			calls.push({ method: 'run', arg: input });
 			return Promise.resolve(Ok(null)) as ReturnType<DaemonClient['run']>;
 		},
+		shutdown: () =>
+			Promise.resolve(Ok(null)) as ReturnType<DaemonClient['shutdown']>,
 	};
 	return { client, calls };
 }

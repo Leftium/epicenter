@@ -128,6 +128,9 @@ describe('bindOrRecover', () => {
 		writeMetadata(workDir, {
 			pid: 4242,
 			dir: workDir,
+			startedAt: new Date(0).toISOString(),
+			cliVersion: '0.0.0-test',
+			configMtime: 0,
 		});
 
 		const result = await bindOrRecover(
@@ -152,6 +155,9 @@ describe('bindOrRecover', () => {
 		writeMetadata(workDir, {
 			pid: 99999999,
 			dir: workDir,
+			startedAt: new Date(0).toISOString(),
+			cliVersion: '0.0.0-test',
+			configMtime: 0,
 		});
 
 		const result = await bindOrRecover(

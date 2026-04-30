@@ -34,9 +34,13 @@ import { join } from 'node:path';
 
 import { Ok } from 'wellcrafted/result';
 
-import { bindUnixSocket } from '../daemon/unix-socket';
-import { writeMetadata } from '../daemon/metadata';
-import { metadataPathFor, socketPathFor } from '../daemon/paths';
+import {
+	bindUnixSocket,
+	metadataPathFor,
+	pingDaemon,
+	socketPathFor,
+	writeMetadata,
+} from '@epicenter/workspace';
 import type { LoadConfigResult, LoadedWorkspace } from '../load-config';
 import { runUp } from './up';
 
@@ -128,7 +132,6 @@ describe('runUp: happy path', () => {
 		expect(handle.entries[0]!.name).toBe('default');
 
 		// Socket is bound; ping it via a fresh connect using the real client.
-		const { pingDaemon } = await import('../daemon/client');
 		const sockPath = socketPathFor(workDir);
 		expect(existsSync(sockPath)).toBe(true);
 		const ok = await pingDaemon(sockPath, 1000);

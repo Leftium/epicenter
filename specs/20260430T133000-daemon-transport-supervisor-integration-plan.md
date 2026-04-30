@@ -546,15 +546,15 @@ current `createRemoteActions` helper.
 
 ### Phase 4: CLI Integration While Keeping `up`
 
-- [ ] Keep `packages/cli/src/commands/up.ts`.
-- [ ] Keep `packages/cli/src/commands/down.ts`.
-- [ ] Keep `packages/cli/src/commands/ps.ts`.
-- [ ] Keep `packages/cli/src/commands/logs.ts`.
-- [ ] Port the daemon branch's useful startup loop from `serve.ts` into `up.ts`.
-- [ ] Route `list.ts`, `run.ts`, and `peers.ts` through workspace daemon primitives.
-- [ ] Preserve current main's remote-action naming in CLI output and tests.
-- [ ] Update `packages/cli/src/load-config.ts` to load daemon/script factories without reviving stale `serve` docs.
-- [ ] Commit as:
+- [x] Keep `packages/cli/src/commands/up.ts`.
+- [x] Keep `packages/cli/src/commands/down.ts`.
+- [x] Keep `packages/cli/src/commands/ps.ts`.
+- [x] Keep `packages/cli/src/commands/logs.ts`.
+- [x] Port the daemon branch's useful startup loop from `serve.ts` into `up.ts`.
+- [x] Route `list.ts`, `run.ts`, and `peers.ts` through workspace daemon primitives.
+- [x] Preserve current main's remote-action naming in CLI output and tests.
+- [x] Update `packages/cli/src/load-config.ts` to load daemon/script factories without reviving stale `serve` docs.
+- [x] Commit as:
   ```txt
   refactor(cli): route lifecycle commands through workspace daemon
   ```
@@ -564,6 +564,12 @@ Commit body should explicitly say:
 ```txt
 This keeps the user-facing up/down/ps/logs command family and ports the daemon branch's transport internals underneath it. The old serve command name is intentionally not carried forward.
 ```
+
+Implementation note: the CLI command files now import daemon transport,
+metadata, path, and client primitives from `@epicenter/workspace`. The old
+duplicate `packages/cli/src/daemon/*` implementation was removed so `up`,
+`down`, `ps`, `logs`, `list`, `run`, and `peers` share the workspace-owned
+transport.
 
 ### Phase 5: App Daemon and Script Factories
 

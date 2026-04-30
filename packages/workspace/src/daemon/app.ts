@@ -5,7 +5,7 @@
  *
  * Each verb is a one-line shell shortcut for one workspace primitive:
  *
- *   /peers  ->  workspace.sync.peers()                       cross-workspace, no body
+ *   /peers  ->  workspace.sync.peers()                       cross-workspace
  *   /list   ->  describeActions(workspace)                    single-workspace
  *   /run    ->  invokeAction(...) | sync.rpc(...)             single-workspace
  *
@@ -36,8 +36,13 @@ import { executeRun } from './run-handler.js';
  *      the exact same shape.
  *
  * Naming follows arktype's idiom (one PascalCase name declares both the
- * value and the type). `/peers` takes no body.
+ * value and the type).
  */
+
+export const PeersInput = type({
+	'workspace?': 'string',
+});
+export type PeersInput = typeof PeersInput.infer;
 
 export const ListInput = type({
 	'workspace?': 'string',
@@ -74,12 +79,17 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * fold that into the route's body `Result` so the user sees a clean
  * error, not `DaemonError.HandlerCrashed`.
  */
-export function buildApp(entries: WorkspaceEntry[]) {
+export function buildApp(
+	entries: WorkspaceEntry[],
+	triggerShutdown?: () => void,
+) {
 	return new Hono()
 		.post('/ping', (c) => c.json(Ok('pong' as const)))
-		.post('/peers', (c) => {
+		.post('/peers', sValidator('json', PeersInput), (c) => {
+			const input = c.req.valid('json');
 			const rows: PeerSnapshot[] = [];
 			for (const entry of entries) {
+				if (input.workspace && entry.name !== input.workspace) continue;
 				const peers = entry.workspace.sync?.peers() ?? new Map();
 				for (const [clientID, state] of peers) {
 					rows.push({
@@ -102,5 +112,9 @@ export function buildApp(entries: WorkspaceEntry[]) {
 			const { data: entry, error } = resolveEntry(entries, input.workspace);
 			if (error) return c.json(Err(error));
 			return c.json(await executeRun(entry, input));
+		})
+		.post('/shutdown', (c) => {
+			setTimeout(() => triggerShutdown?.(), 0);
+			return c.json(Ok(null));
 		});
 }

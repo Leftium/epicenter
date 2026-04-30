@@ -9,11 +9,18 @@
  * not the pid in this file; pid is for human-facing diagnostics only.
  */
 
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	readdirSync,
+	readFileSync,
+	unlinkSync,
+	writeFileSync,
+} from 'node:fs';
+import { join } from 'node:path';
 
 import { createLogger } from 'wellcrafted/logger';
 
-import { metadataPathFor } from './paths.js';
+import { metadataPathFor, runtimeDir } from './paths.js';
 
 const log = createLogger('workspace/daemon/metadata');
 
@@ -27,17 +34,25 @@ export type DaemonMetadata = {
 	pid: number;
 	/** Absolute, fs-resolved `--dir` path. */
 	dir: string;
+	/** ISO 8601 timestamp. */
+	startedAt: string;
+	cliVersion: string;
+	/** `epicenter.config.ts` mtime in ms at daemon start. */
+	configMtime: number;
 };
 
 /** Read metadata for `dir`, or `null` if the sidecar is absent or unreadable. */
 export function readMetadata(dir: string): DaemonMetadata | null {
-	const path = metadataPathFor(dir);
+	return readMetadataFromPath(metadataPathFor(dir));
+}
+
+export function readMetadataFromPath(path: string): DaemonMetadata | null {
 	if (!existsSync(path)) return null;
 	try {
 		const raw = readFileSync(path, 'utf8');
 		return JSON.parse(raw) as DaemonMetadata;
 	} catch (cause) {
-		log.debug('failed to read server metadata', { path, cause });
+		log.debug('failed to read daemon metadata', { path, cause });
 		return null;
 	}
 }
@@ -57,4 +72,16 @@ export function unlinkMetadata(dir: string): void {
 	} catch (cause) {
 		log.debug('failed to unlink server metadata', { path, cause });
 	}
+}
+
+export function enumerateDaemons(): DaemonMetadata[] {
+	const root = runtimeDir();
+	if (!existsSync(root)) return [];
+	const result: DaemonMetadata[] = [];
+	for (const name of readdirSync(root)) {
+		if (!name.endsWith('.meta.json')) continue;
+		const meta = readMetadataFromPath(join(root, name));
+		if (meta) result.push(meta);
+	}
+	return result;
 }

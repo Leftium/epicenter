@@ -16,14 +16,14 @@ import { resolve } from 'node:path';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule } from 'yargs';
 
-import { daemonClient } from '../daemon/client.js';
 import {
+	daemonClient,
 	type DaemonMetadata,
 	enumerateDaemons,
 	readMetadata,
 	unlinkMetadata,
-} from '../daemon/metadata.js';
-import { socketPathFor } from '../daemon/paths.js';
+	socketPathFor,
+} from '@epicenter/workspace';
 import { dirFromArgv, dirOption } from '../util/common-options.js';
 
 const SHUTDOWN_TIMEOUT_MS = 1000;

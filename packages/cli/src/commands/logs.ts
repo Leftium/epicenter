@@ -28,8 +28,8 @@ import {
 	type DaemonMetadata,
 	enumerateDaemons,
 	readMetadata,
-} from '../daemon/metadata.js';
-import { logPathFor } from '../daemon/paths.js';
+	logPathFor,
+} from '@epicenter/workspace';
 import { dirFromArgv, dirOption } from '../util/common-options.js';
 
 const DEFAULT_TAIL_LINES = 50;
@@ -45,7 +45,8 @@ export type LogsOptions = {
  * when the file is missing or empty.
  *
  * Implementation note: `readFileSync` is fine here. The log is bounded
- * to {@link import('../daemon/log-rotation.js').ROTATE_MAX_BYTES} (10 MB)
+ * to the daemon log rotation threshold before rotation, so worst-case memory
+ * is small and predictable.
  * before rotation, so worst-case memory is small and predictable.
  */
 export function tailLines(path: string, n: number): string {
@@ -79,8 +80,7 @@ export function pickSoleDaemon():
 /**
  * Stream new bytes appended to `path` to `process.stdout`. Reopens the
  * file when watch reports `'rename'` (the rotation event from
- * {@link import('../daemon/log-rotation.js').rotateIfNeeded}). The
- * returned function cancels the watcher.
+ * daemon log rotation). The returned function cancels the watcher.
  */
 export function followLog(path: string): () => void {
 	let fd = existsSync(path) ? openSync(path, 'r') : -1;

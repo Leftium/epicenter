@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Err, Ok } from 'wellcrafted/result';
 
-import { writeMetadata } from '../daemon/metadata';
+import { writeMetadata } from '@epicenter/workspace';
 import { runDown } from './down';
 
 let originalXdg: string | undefined;

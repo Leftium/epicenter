@@ -17,8 +17,11 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { writeMetadata } from '../daemon/metadata';
-import { metadataPathFor, socketPathFor } from '../daemon/paths';
+import {
+	metadataPathFor,
+	socketPathFor,
+	writeMetadata,
+} from '@epicenter/workspace';
 import { runPs } from './ps';
 
 let originalXdg: string | undefined;

@@ -16,14 +16,14 @@ import { join } from 'node:path';
 
 import type { CommandModule } from 'yargs';
 
-import { pingDaemon } from '../daemon/client.js';
 import {
+	pingDaemon,
 	type DaemonMetadata,
 	enumerateDaemons,
 	unlinkMetadata,
-} from '../daemon/metadata.js';
-import { socketPathFor } from '../daemon/paths.js';
-import { unlinkSocketFile } from '../daemon/unix-socket.js';
+	socketPathFor,
+	unlinkSocketFile,
+} from '@epicenter/workspace';
 import { CONFIG_FILENAME } from '../load-config.js';
 
 // `ps` shows a liveness column and sweeps obviously-dead entries it sees;

@@ -34,6 +34,8 @@ export type WorkspaceServerOptions = {
 	 * flag at the CLI, the `workspace` field on `/list` and `/run`).
 	 */
 	workspaces: WorkspaceEntry[];
+	/** Called by the optional `/shutdown` route after the response is queued. */
+	triggerShutdown?: () => void;
 };
 
 export type WorkspaceServer = {
@@ -62,6 +64,7 @@ export type WorkspaceServer = {
 export function createWorkspaceServer({
 	projectDir,
 	workspaces,
+	triggerShutdown,
 }: WorkspaceServerOptions): WorkspaceServer {
 	const seen = new Set<string>();
 	for (const entry of workspaces) {
@@ -74,7 +77,7 @@ export function createWorkspaceServer({
 	}
 
 	const socketPath = socketPathFor(projectDir);
-	const app = buildApp(workspaces);
+	const app = buildApp(workspaces, triggerShutdown);
 
 	let server: UnixSocketServer | undefined;
 

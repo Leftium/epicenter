@@ -1,31 +1,25 @@
 /**
- * `buildRemoteProxy`: typed proxy that turns a `DaemonClient` into a
- * workspace-shaped facade. Local call sites use the same dotted path they
- * would in-process (`tables.X.set(...)`, `savedTabs.create(...)`); each
- * call dispatches over the unix socket via `client.run`.
+ * `buildRemoteActions`: typed proxy that turns a `DaemonClient` into an
+ * action-registry-shaped facade. Local call sites use the same dotted path
+ * they would under `workspace.actions` (`savedTabs.create(...)`); each call
+ * dispatches over the unix socket via `client.run`.
  *
- * The proxy is a single recursive `Proxy` rooted at the workspace itself.
+ * The proxy is a single recursive `Proxy` rooted at the action registry.
  * Property access walks the chain and accumulates path segments; calling
  * the resulting proxy invokes `client.run` with the joined dotted path.
- * That same machinery powered the old `actions` proxy: it is prefix-
- * agnostic, so dropping the `actions` namespace is a no-op for runtime.
  *
- * `then` is masked at every level so an accidental `await ws.tables.x` does
+ * `then` is masked at every level so an accidental `await actions.tabs` does
  * not turn an intermediate namespace into a thenable and pollute the path
  * with a stray `.then` segment.
- *
- * The branded CRUD methods on `attachTable` mount on the in-process
- * workspace at the same paths (`tables.<name>.<verb>`), so the same routes
- * serve both directions.
  */
 
 import type { DaemonClient } from '../daemon/client.js';
-import type { Remote } from './remote-workspace-types.js';
+import type { RemoteActions } from './remote-action-types.js';
 
 const DEFAULT_RPC_TIMEOUT_MS = 5_000;
 
 /**
- * Recursive proxy rooted at the workspace. Property access produces another
+ * Recursive proxy rooted at the action registry. Property access produces another
  * proxy carrying the path-so-far; calling the proxy dispatches `client.run`
  * with the joined dotted path.
  *
@@ -33,7 +27,7 @@ const DEFAULT_RPC_TIMEOUT_MS = 5_000;
  * key is masked everywhere on the path (otherwise an `await` on an
  * intermediate namespace would turn it into a thenable).
  */
-function buildRemoteProxy(
+function buildRemoteActionProxy(
 	client: DaemonClient,
 	workspaceName: string,
 ): unknown {
@@ -59,13 +53,14 @@ function buildRemoteProxy(
 }
 
 /**
- * Compose the remote workspace facade. Generic `W` is the in-process
- * workspace shape; `Remote<W>` filters it to branded leaves only and
- * rewrites each leaf to `Promise<Result<_, _ | RpcError>>`.
+ * Compose the remote action registry facade. Generic `TActions` is the
+ * in-process `workspace.actions` shape; `RemoteActions<TActions>` filters it
+ * to branded leaves only and rewrites each leaf to
+ * `Promise<Result<_, _ | RpcError>>`.
  */
-export function buildRemoteWorkspace<W>(
+export function buildRemoteActions<TActions>(
 	client: DaemonClient,
 	workspaceName: string,
-): Remote<W> {
-	return buildRemoteProxy(client, workspaceName) as Remote<W>;
+): RemoteActions<TActions> {
+	return buildRemoteActionProxy(client, workspaceName) as RemoteActions<TActions>;
 }

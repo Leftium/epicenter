@@ -1,7 +1,7 @@
 /**
  * Unit tests for `connectDaemon`. We don't bind a real daemon; pinging a
  * non-existent socket is enough to exercise the failure path. The success
- * path is covered indirectly by `remote.test.ts` (which stubs the client
+ * path is covered indirectly by `remote-actions.test.ts` (which stubs the client
  * directly) and end-to-end by the daemon test suite.
  */
 

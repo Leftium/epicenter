@@ -23,7 +23,7 @@ import {
 	workspaceActionNearestSiblingLines,
 	workspaceActionSuggestionLines,
 } from './action-paths.js';
-import type { RunInput } from './app.js';
+import type { RunRequest } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
 import type { WorkspaceEntry } from './types.js';
 
@@ -34,7 +34,7 @@ export async function executeRun(
 		input: actionInput,
 		peerTarget,
 		waitMs,
-	}: RunInput,
+	}: RunRequest,
 ): Promise<RunResponse> {
 	const target = resolveWorkspaceActionTarget(entries, actionPath);
 	if (target.error !== null) {

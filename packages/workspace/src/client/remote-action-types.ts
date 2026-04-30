@@ -1,18 +1,16 @@
 /**
- * `Remote<T>`: derive the remote (RPC) call shape of an in-process workspace
- * by walking its type and keeping only branded `defineQuery` /
+ * `RemoteActions<T>`: derive the remote (RPC) call shape of an action
+ * registry by walking its type and keeping only branded `defineQuery` /
  * `defineMutation` leaves.
  *
- * The workspace is the action tree. There is no parallel contract. Pass the
- * full workspace type as `T` (typically `ReturnType<typeof openFuji>`) and
- * `Remote<T>` filters it to:
+ * Pass the `actions` registry type as `T` (typically
+ * `ReturnType<typeof openFuji>['actions']`) and `RemoteActions<T>` filters it
+ * to:
  *
  * - branded leaves at any depth become wire-callable and `Result`-wrapped
  *   via {@link WrapAction} (`Promise<Result<R, E | RpcError>>`)
  * - non-branded functions (plain methods, callbacks, class methods) drop
  * - objects containing no branded descendants drop
- * - `Y.Doc` and other class-instance properties drop because they bottom
- *   out before reaching a branded leaf: see the depth bound below
  *
  * ## The depth bound
  *
@@ -20,16 +18,16 @@
  * that send a naive recursive mapped type into TS2615 ("circularly references
  * itself"). The `Depth` parameter is a tuple-length counter: every recursion
  * appends a `1` and bails when it hits `MAX_DEPTH`. Eight levels is enough
- * for any realistic workspace tree (`tables.<name>.<verb>` is depth 3) and
- * short enough to keep tsc fast and forget about Y.Doc's internal graph.
+ * for any realistic action registry and short enough to keep tsc fast if a
+ * class instance accidentally lands in the registry.
  */
 
 import type { Action, WrapAction } from '../shared/actions.js';
 import type { Simplify } from '../shared/types.js';
 
 /**
- * Recursion depth bound for `Remote<T>` and its helpers. Counted as a
- * tuple length: 8 levels covers every realistic workspace nesting and
+ * Recursion depth bound for `RemoteActions<T>` and its helpers. Counted as a
+ * tuple length: 8 levels covers every realistic action registry nesting and
  * keeps the recursion bounded for class-instance properties.
  */
 type MaxDepth = [1, 1, 1, 1, 1, 1, 1, 1];
@@ -42,7 +40,7 @@ type AtLimit<D extends ReadonlyArray<1>> = D['length'] extends MaxDepth['length'
 /**
  * `true` if `T` is an object that contains at least one branded leaf at any
  * depth ≤ remaining `Depth` budget. Used as the cut-line for whether a
- * non-branded property survives `Remote<T>`.
+ * non-branded property survives `RemoteActions<T>`.
  */
 type HasBrandedLeaves<T, D extends ReadonlyArray<1>> = AtLimit<D> extends true
 	? false
@@ -76,14 +74,15 @@ type IsRemoteKey<V, D extends ReadonlyArray<1>> = V extends Action
  * Wrapped in {@link Simplify} so IDE hover output shows the flattened
  * call shape rather than a wall of conditional types.
  */
-export type Remote<T, D extends ReadonlyArray<1> = []> = AtLimit<D> extends true
-	? {}
-	: Simplify<{
-			[K in keyof T as IsRemoteKey<T[K], D> extends true
-				? K
-				: never]: T[K] extends Action
-				? WrapAction<T[K]>
-				: T[K] extends object
-					? Remote<T[K], Inc<D>>
-					: never;
-		}>;
+export type RemoteActions<T, D extends ReadonlyArray<1> = []> =
+	AtLimit<D> extends true
+		? {}
+		: Simplify<{
+				[K in keyof T as IsRemoteKey<T[K], D> extends true
+					? K
+					: never]: T[K] extends Action
+					? WrapAction<T[K]>
+					: T[K] extends object
+						? RemoteActions<T[K], Inc<D>>
+						: never;
+			}>;

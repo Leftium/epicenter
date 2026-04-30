@@ -67,12 +67,13 @@ export type { RemoteCallOptions } from './shared/actions.js';
 
 export { connectDaemon } from './client/connect-daemon.js';
 export { findEpicenterDir } from './client/find-epicenter-dir.js';
-export { buildRemoteWorkspace } from './client/remote.js';
-export type { Remote } from './client/remote-workspace-types.js';
+export { buildRemoteActions } from './client/remote-actions.js';
+export type { RemoteActions } from './client/remote-action-types.js';
 export {
 	buildApp,
 	PeerSnapshot,
 	RunInput,
+	RunRequest,
 } from './daemon/app.js';
 export {
 	type DaemonClient,

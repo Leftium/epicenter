@@ -37,13 +37,17 @@ import type { WorkspaceEntry } from './types.js';
  * value and the type).
  */
 
-export const RunInput = type({
+export const RunRequest = type({
 	actionPath: 'string',
 	input: 'unknown',
 	'peerTarget?': 'string',
 	waitMs: 'number',
 });
-export type RunInput = typeof RunInput.infer;
+export type RunRequest = typeof RunRequest.infer;
+/** @deprecated Use {@link RunRequest}. */
+export const RunInput = RunRequest;
+/** @deprecated Use {@link RunRequest}. */
+export type RunInput = RunRequest;
 
 /**
  * Row shape returned by `/peers`. One row per `(exportName, clientID)` pair,
@@ -87,7 +91,7 @@ export function buildApp(
 			return c.json(Ok(rows));
 		})
 		.post('/list', (c) => c.json(Ok(describeWorkspaceActions(entries))))
-		.post('/run', sValidator('json', RunInput), async (c) => {
+		.post('/run', sValidator('json', RunRequest), async (c) => {
 			const request = c.req.valid('json');
 			return c.json(await executeRun(entries, request));
 		})

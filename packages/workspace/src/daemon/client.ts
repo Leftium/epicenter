@@ -28,7 +28,7 @@ import {
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { ActionManifest } from '../shared/actions.js';
 
-import type { PeerSnapshot, RunInput } from './app.js';
+import type { PeerSnapshot, RunRequest } from './app.js';
 import { socketPathFor } from './paths.js';
 import type { RunError } from './run-errors.js';
 
@@ -172,8 +172,8 @@ export function daemonClient(
 	return {
 		peers: () => call<PeerSnapshot[], never>(socketPath, timeoutMs, '/peers'),
 		list: () => call<ActionManifest, never>(socketPath, timeoutMs, '/list'),
-		run: (input: RunInput) =>
-			call<unknown, RunError>(socketPath, timeoutMs, '/run', input),
+		run: (request: RunRequest) =>
+			call<unknown, RunError>(socketPath, timeoutMs, '/run', request),
 		shutdown: () => call<null, never>(socketPath, timeoutMs, '/shutdown'),
 	};
 }

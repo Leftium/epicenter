@@ -626,7 +626,7 @@ This phase can merge into earlier commits if docs are purely local to a code cha
 
 ## Implementation Result
 
-The integration compressed the old daemon branch into seven review commits:
+The integration compressed the old daemon branch into eight review commits:
 
 ```txt
 d36f12e5b feat(workspace): add daemon transport primitives
@@ -635,6 +635,7 @@ d36f12e5b feat(workspace): add daemon transport primitives
 8a3a9f9ad refactor(cli): route lifecycle commands through workspace daemon
 116fbf7a2 feat(apps): add daemon and script workspace factories
 221ab3de3 refactor(apps): name yjs log attachments explicitly
+94b5667c6 refactor(cli): normalize peer misses in run responses
 docs: record daemon transport integration history
 ```
 

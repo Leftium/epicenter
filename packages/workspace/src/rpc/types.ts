@@ -3,12 +3,13 @@ import type { Result } from 'wellcrafted/result';
 import type { Action } from '../shared/actions.js';
 
 /**
- * Low-level `rpc.rpc(...)` contract inferred from an action registry.
+ * Low-level `rpc.rpc(...)` contract inferred from an action source.
  *
  * The transport sends one dot-path string such as `'tabs.close'`, so this
  * type mirrors that wire shape as a flat action map. App code should usually
- * prefer `peer<T>({ presence, rpc }, peerId)` for nested calls; use this type
- * when calling the lower-level `rpc.rpc<TMap>(clientId, action, input)` API.
+ * prefer `createRemoteActions<T>({ presence, rpc }, peerId)` for nested
+ * calls; use this type when calling the lower-level
+ * `rpc.rpc<TMap>(clientId, action, input)` API.
  *
  * @example
  * ```typescript

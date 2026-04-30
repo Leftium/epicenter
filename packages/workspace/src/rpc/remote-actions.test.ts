@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'bun:test';
 import { isRpcError, RpcError } from '@epicenter/sync';
-import type { FoundPeer, SyncAttachment } from '@epicenter/workspace';
+import { PeerMiss, type FoundPeer, type SyncAttachment } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import { Err, isErr, Ok } from 'wellcrafted/result';
@@ -75,6 +75,16 @@ function mockSync(opts: {
 		observe(cb) {
 			observers.add(cb);
 			return () => observers.delete(cb);
+		},
+		async waitForPeer(deviceId, { timeoutMs }) {
+			const found = this.find(deviceId);
+			if (found) return Ok(found);
+			return PeerMiss.PeerMiss({
+				peerTarget: deviceId,
+				sawPeers: present.size > 0,
+				waitMs: timeoutMs,
+				emptyReason: null,
+			});
 		},
 		// rpc dispatch
 		async rpc(target, action, input, options) {

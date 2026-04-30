@@ -64,6 +64,59 @@ export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════
+// DAEMON TRANSPORT
+// ════════════════════════════════════════════════════════════════════════════
+
+export {
+	buildApp,
+	ListInput,
+	PeerSnapshot,
+	RunInput,
+} from './daemon/app.js';
+export {
+	DaemonError,
+	type DaemonClient,
+	daemonClient,
+	getDaemon,
+	pingDaemon,
+} from './daemon/client.js';
+export {
+	dirHash,
+	logPathFor,
+	metadataPathFor,
+	runtimeDir,
+	socketPathFor,
+} from './daemon/paths.js';
+export {
+	type DaemonMetadata,
+	readMetadata,
+	unlinkMetadata,
+	writeMetadata,
+} from './daemon/metadata.js';
+export { ResolveError } from './daemon/resolve-entry.js';
+export { RunError, type RunResponse } from './daemon/run-errors.js';
+export {
+	bindOrRecover,
+	bindUnixSocket,
+	StartupError,
+	type UnixSocketServer,
+	unlinkSocketFile,
+} from './daemon/unix-socket.js';
+export {
+	createWorkspaceServer,
+	type WorkspaceServer,
+	type WorkspaceServerOptions,
+} from './daemon/server.js';
+export type {
+	LoadedWorkspace,
+	WorkspaceEntry,
+} from './daemon/types.js';
+export { buildRemoteWorkspace } from './client/remote.js';
+export { connectDaemon } from './client/connect-daemon.js';
+export { findEpicenterDir } from './client/find-epicenter-dir.js';
+export type { Remote } from './client/remote-workspace-types.js';
+
+// ════════════════════════════════════════════════════════════════════════════
 // DEVICE IDENTITY
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -176,6 +229,7 @@ export {
 	attachSync,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
+	PeerMiss,
 	SyncFailedError,
 	type SyncFailedReason,
 	type SyncStatus,

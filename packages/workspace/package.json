@@ -1,7 +1,7 @@
 {
 	"name": "@epicenter/workspace",
 	"version": "0.2.0",
-	"description": "Local-first workspace library. CRDT-backed tables, key-value stores, and sync — built on Yjs.",
+	"description": "Local-first workspace library. CRDT-backed tables, key-value stores, and sync, built on Yjs.",
 	"keywords": [
 		"local-first",
 		"CRDT",
@@ -42,6 +42,7 @@
 	},
 	"dependencies": {
 		"@ark/json-schema": "^0.0.4",
+		"@hono/standard-validator": "catalog:",
 		"@tanstack/ai": "catalog:",
 		"@epicenter/sync": "workspace:*",
 		"@noble/ciphers": "^2.1.1",
@@ -57,6 +58,7 @@
 		"drizzle-orm": "catalog:",
 		"elysia": "^1.2.25",
 		"fflate": "catalog:",
+		"hono": "catalog:",
 		"lib0": "catalog:",
 		"mime": "catalog:",
 		"nanoid": "catalog:",

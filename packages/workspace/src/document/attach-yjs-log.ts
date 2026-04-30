@@ -73,8 +73,8 @@ function compactUpdateLog(db: Database, ydoc: Y.Doc): boolean {
 	if (compacted.byteLength > MAX_COMPACTED_BYTES) return false;
 
 	db.transaction(() => {
-		db.run('DELETE FROM updates');
-		db.run('INSERT INTO updates (data) VALUES (?)', [compacted]);
+		db.query('DELETE FROM updates').run();
+		db.query('INSERT INTO updates (data) VALUES (?)').run(compacted);
 	})();
 	return true;
 }
@@ -99,6 +99,12 @@ export function attachYjsLog(
 		'CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL)',
 	);
 
+	// `db.query()` caches the compiled prepared statement on the Database,
+	// which matters on the hot `updateV2` path where every local Yjs
+	// transaction appends one BLOB row.
+	const insertUpdate = db.query('INSERT INTO updates (data) VALUES (?)');
+	const deleteUpdates = db.query('DELETE FROM updates');
+
 	// bun:sqlite returns BLOB columns as Uint8Array; Y.applyUpdateV2
 	// accepts Uint8Array directly.
 	const rows = db.query('SELECT data FROM updates ORDER BY id').all() as {
@@ -121,7 +127,7 @@ export function attachYjsLog(
 	}
 
 	const updateHandler = (update: Uint8Array) => {
-		db.run('INSERT INTO updates (data) VALUES (?)', [update]);
+		insertUpdate.run(update);
 
 		bytesSinceCompaction += update.byteLength;
 		if (bytesSinceCompaction > COMPACTION_BYTE_THRESHOLD) {
@@ -171,7 +177,7 @@ export function attachYjsLog(
 
 	return {
 		clearLocal: () => {
-			db.run('DELETE FROM updates');
+			deleteUpdates.run();
 		},
 		whenDisposed,
 	};

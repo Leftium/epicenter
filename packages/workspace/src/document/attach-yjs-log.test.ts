@@ -38,6 +38,18 @@ function readJournalMode(filePath: string): string {
 	}
 }
 
+function countRows(filePath: string): number {
+	const db = new Database(filePath, { readonly: true });
+	try {
+		const row = db.query('SELECT COUNT(*) as count FROM updates').get() as {
+			count: number;
+		};
+		return row.count;
+	} finally {
+		db.close();
+	}
+}
+
 describe('attachYjsLog', () => {
 	test('writer enables WAL journal mode on the file', async () => {
 		const filePath = join(workdir, 'wal.sqlite');
@@ -68,6 +80,28 @@ describe('attachYjsLog', () => {
 		expect(reopened.size).toBe(100);
 		expect(reopened.get('k0')).toBe(0);
 		expect(reopened.get('k99')).toBe(99);
+		reopenDoc.destroy();
+		await reopen.whenDisposed;
+	});
+
+	test('destroy compacts multiple update rows into one snapshot row', async () => {
+		const filePath = join(workdir, 'compact-on-destroy.sqlite');
+		const writerDoc = new Y.Doc();
+		const writer = attachYjsLog(writerDoc, { filePath });
+		const map = writerDoc.getMap<number>('m');
+
+		for (let i = 0; i < 5; i++) map.set(`k${i}`, i);
+
+		expect(countRows(filePath)).toBeGreaterThan(1);
+
+		writerDoc.destroy();
+		await writer.whenDisposed;
+
+		expect(countRows(filePath)).toBe(1);
+
+		const reopenDoc = new Y.Doc();
+		const reopen = attachYjsLog(reopenDoc, { filePath });
+		expect(reopenDoc.getMap<number>('m').get('k4')).toBe(4);
 		reopenDoc.destroy();
 		await reopen.whenDisposed;
 	});

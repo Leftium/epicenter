@@ -1,6 +1,15 @@
+import type { Options } from 'yargs';
+
+export const outputFormats = ['json', 'jsonl'] as const;
+export type OutputFormat = (typeof outputFormats)[number];
+
+export type FormatArgs = {
+	format?: OutputFormat;
+};
+
 export type FormatOptions = {
 	/** Override format (default: json, auto-pretty for TTY) */
-	format?: 'json' | 'jsonl';
+	format?: OutputFormat;
 };
 
 /** Format a single value as JSON: pretty on TTY unless `format: 'jsonl'`. */
@@ -34,39 +43,11 @@ export function outputError(message: string): void {
 	console.error(message);
 }
 
-/**
- * Common end-of-IPC rendering for attached-mode commands. Success flows
- * to `onSuccess`; transport- and handler-level errors collapse to
- * `outputError` + `exitCode=1` here so handlers don't repeat that block
- * three times.
- *
- * Domain outcomes that callers want to render distinctly should be carried
- * inside the `T` payload, not surfaced as IPC errors. That's why the success
- * callback receives the raw `data` rather than a `Result`.
- */
-export async function renderDaemonResult<T>(
-	result:
-		| { data: T; error: null }
-		| { data: null; error: { message: string } },
-	onSuccess: (data: T) => void | Promise<void>,
-): Promise<void> {
-	if (result.error === null) {
-		await onSuccess(result.data);
-		return;
-	}
-	outputError(`error: ${result.error.message}`);
-	process.exitCode = 1;
-}
-
-/**
- * Create yargs options for format flag
- */
-export function formatYargsOptions() {
-	return {
-		format: {
-			type: 'string' as const,
-			choices: ['json', 'jsonl'] as const,
-			description: 'Output format (default: json, auto-pretty for TTY)',
-		},
-	};
-}
+/** Yargs options for the shared format flag. */
+export const formatOptions = {
+	format: {
+		type: 'string',
+		choices: outputFormats,
+		description: 'Output format (default: json, auto-pretty for TTY)',
+	},
+} satisfies Record<'format', Options>;

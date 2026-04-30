@@ -9,22 +9,15 @@
  *   1. Graceful shutdown when the daemon answers `shutdown` ok.
  *   2. SIGTERM fallback when ipcCall returns NoDaemon (timeout).
  *   3. `--all` enumerates every metadata file under runtimeDir.
- *   4. Missing metadata for `--dir` reports `'absent'` (no throw).
+ *   4. Missing project metadata reports `'absent'` (no throw).
  */
 
-import {
-	afterEach,
-	beforeEach,
-	describe,
-	expect,
-	test,
-} from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Err, Ok } from 'wellcrafted/result';
-
 import { writeMetadata } from '@epicenter/workspace';
+import { Err, Ok } from 'wellcrafted/result';
 import { runDown } from './down';
 
 let originalXdg: string | undefined;
@@ -68,7 +61,7 @@ describe('runDown: graceful', () => {
 		});
 
 		const result = await runDown(
-			{ dir: workDir, all: false },
+			{ projectDir: workDir, all: false },
 			{
 				shutdown: async () => Ok(null),
 				kill: () => {
@@ -94,7 +87,7 @@ describe('runDown: SIGTERM fallback', () => {
 
 		const killed: Array<{ pid: number; sig: string }> = [];
 		const result = await runDown(
-			{ dir: workDir, all: false },
+			{ projectDir: workDir, all: false },
 			{
 				shutdown: async () =>
 					Err({ name: 'Timeout', message: 'timeout after 1000ms' }),
@@ -110,12 +103,14 @@ describe('runDown: SIGTERM fallback', () => {
 });
 
 describe('runDown: absent', () => {
-	test('reports absent when no metadata file exists for --dir', async () => {
+	test('reports absent when no project metadata file exists', async () => {
 		const result = await runDown(
-			{ dir: workDir, all: false },
+			{ projectDir: workDir, all: false },
 			{
 				shutdown: async () => {
-					throw new Error('shutdown should not be called when metadata is absent');
+					throw new Error(
+						'shutdown should not be called when metadata is absent',
+					);
 				},
 				kill: () => {
 					throw new Error('kill should not be called when metadata is absent');
@@ -148,7 +143,7 @@ describe('runDown --all', () => {
 			});
 
 			const result = await runDown(
-				{ dir: '.', all: true },
+				{ projectDir: '.', all: true },
 				{
 					shutdown: async () => Ok(null),
 					kill: () => {},

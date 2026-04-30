@@ -3,39 +3,31 @@
  *
  * Default: print the last 50 lines and exit (mirrors `tail` defaults).
  * `--follow`: stream new bytes via `node:fs.watch`, reopening on rotation
- * (the watch event for `.log` → `.log.1` rename surfaces as `'rename'`).
+ * (the watch event for `.log` to `.log.1` rename surfaces as `'rename'`).
  *
- * Without `--dir` we error if more than one daemon is running; with exactly
- * one we tail it for free. With zero daemons we exit 1 with a hint.
+ * Uses the discovered project by default. `-C <dir>` changes the discovery
+ * start point.
  *
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Logging".
  */
 
 import {
+	closeSync,
 	existsSync,
 	openSync,
 	readFileSync,
 	readSync,
-	closeSync,
 	statSync,
 	watch,
 } from 'node:fs';
-import { basename, dirname, resolve } from 'node:path';
-
+import { basename, dirname } from 'node:path';
+import { logPathFor } from '@epicenter/workspace';
 import type { Argv, CommandModule } from 'yargs';
-
-import {
-	type DaemonMetadata,
-	enumerateDaemons,
-	readMetadata,
-	logPathFor,
-} from '@epicenter/workspace';
-import { dirFromArgv, dirOption } from '../util/common-options.js';
+import { type ProjectArgs, projectOption } from '../util/common-options.js';
 
 const DEFAULT_TAIL_LINES = 50;
 
-export type LogsOptions = {
-	dir?: string;
+type LogsArgs = ProjectArgs & {
 	follow: boolean;
 };
 
@@ -47,34 +39,15 @@ export type LogsOptions = {
  * Implementation note: `readFileSync` is fine here. The log is bounded
  * to the daemon log rotation threshold before rotation, so worst-case memory
  * is small and predictable.
- * before rotation, so worst-case memory is small and predictable.
  */
 export function tailLines(path: string, n: number): string {
 	if (!existsSync(path)) return '';
 	const buf = readFileSync(path, 'utf8');
 	if (buf.length === 0) return '';
 	const lines = buf.split('\n');
-	// `split` of "a\nb\n" → ['a','b',''], so drop the trailing empty if present.
+	// `split` of "a\nb\n" gives ['a','b',''], so drop the trailing empty if present.
 	if (lines[lines.length - 1] === '') lines.pop();
 	return `${lines.slice(-n).join('\n')}\n`;
-}
-
-/**
- * Resolve which daemon's log file to tail when `--dir` is omitted.
- *
- * Returns:
- *   - `{ kind: 'one', dir }`   when exactly one metadata file exists.
- *   - `{ kind: 'none' }`       when none.
- *   - `{ kind: 'many', dirs }` when more than one (caller must error).
- */
-export function pickSoleDaemon():
-	| { kind: 'one'; meta: DaemonMetadata }
-	| { kind: 'none' }
-	| { kind: 'many'; dirs: string[] } {
-	const metas = enumerateDaemons();
-	if (metas.length === 0) return { kind: 'none' };
-	if (metas.length > 1) return { kind: 'many', dirs: metas.map((m) => m.dir) };
-	return { kind: 'one', meta: metas[0]! };
 }
 
 /**
@@ -111,7 +84,7 @@ export function followLog(path: string): () => void {
 		}
 	};
 
-	// Watch the parent dir to catch rename → recreate.
+	// Watch the parent dir to catch rename and recreate.
 	const watcher = watch(dirname(path), (eventType, fn) => {
 		if (fn !== basename(path)) return;
 		if (eventType === 'rename') {
@@ -148,55 +121,27 @@ export function followLog(path: string): () => void {
 	};
 }
 
-export const logsCommand: CommandModule = {
+export const logsCommand: CommandModule<{}, LogsArgs> = {
 	command: 'logs',
 	describe: 'Tail the log file for a running daemon.',
 	builder: (yargs: Argv) =>
-		yargs
-			.option('dir', { ...dirOption, default: undefined })
-			.option('follow', {
-				type: 'boolean',
-				alias: 'f',
-				default: false,
-				description: 'Stream new lines as they are appended.',
-			}),
+		yargs.option('C', projectOption).option('follow', {
+			type: 'boolean',
+			alias: 'f',
+			default: false,
+			description: 'Stream new lines as they are appended.',
+		}),
 	handler: async (argv) => {
-		const args = argv as Record<string, unknown>;
-		const explicitDir = typeof args.dir === 'string' ? args.dir : undefined;
-		const follow = args.follow === true;
-
-		let logPath: string;
-		if (explicitDir !== undefined) {
-			const absDir = resolve(dirFromArgv(args));
-			// readMetadata is best-effort; if missing, the log file may still
-			// exist from a previous daemon. Fall through to logPathFor anyway.
-			void readMetadata(absDir);
-			logPath = logPathFor(absDir);
-		} else {
-			const sole = pickSoleDaemon();
-			if (sole.kind === 'none') {
-				process.stderr.write(
-					'no daemons running; pass --dir to tail a specific log\n',
-				);
-				process.exit(1);
-			}
-			if (sole.kind === 'many') {
-				process.stderr.write(
-					`multiple daemons running; pass --dir <path>:\n  ${sole.dirs.join('\n  ')}\n`,
-				);
-				process.exit(1);
-			}
-			logPath = logPathFor(sole.meta.dir);
-		}
+		const logPath = logPathFor(argv.C);
 
 		if (!existsSync(logPath) || statSync(logPath).size === 0) {
 			process.stderr.write(`(log file empty or missing: ${logPath})\n`);
-			if (!follow) return;
+			if (!argv.follow) return;
 		} else {
 			process.stdout.write(tailLines(logPath, DEFAULT_TAIL_LINES));
 		}
 
-		if (!follow) return;
+		if (!argv.follow) return;
 
 		const stop = followLog(logPath);
 		const stopAndExit = () => {

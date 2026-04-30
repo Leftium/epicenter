@@ -1,19 +1,13 @@
 /**
- * `epicenter list [dot.path]`: render the actions exposed by this workspace.
+ * `epicenter list [dot.path]`: render actions exposed by this project.
  *
- * Conceptually this is a one-line shell shortcut for
- * `describeActions(workspace)` against the daemon's live workspace.
- * Nothing more. The CLI is the shell-friendly surface for one-shot queries;
- * orchestration (fan-out across peers, conditional dispatch, loops) belongs
- * in vault-style TypeScript scripts that load the workspace library
- * directly via `loadConfig` and call `describeRemoteActions` / `sync.rpc`
- * themselves.
+ * The daemon returns export-prefixed action paths for every workspace in
+ * `epicenter.config.ts`. The CLI only filters and renders that manifest.
  *
- * Per-peer schema introspection used to live here as `list --peer <id>` /
- * `list --all`. It moved to `epicenter peers <deviceId>`, which is the
- * natural home: the peers verb already owns the awareness/RPC dimension.
+ * Per-peer schema introspection is a script concern. The CLI lists the local
+ * daemon's export-prefixed action surface only.
  *
- * `epicenter list` requires a running daemon for the resolved `--dir`.
+ * `epicenter list` requires a running daemon for the discovered project.
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
  */
 
@@ -21,24 +15,28 @@ import {
 	type ActionManifest,
 	type DaemonError,
 	getDaemon,
-	type ResolveError,
 } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule } from 'yargs';
 
+import { type ProjectArgs, projectOption } from '../util/common-options.js';
 import {
-	dirOption,
-	resolveTarget,
-	workspaceOption,
-} from '../util/common-options';
-import { formatYargsOptions, output, outputError } from '../util/format-output';
+	type FormatArgs,
+	formatOptions,
+	type OutputFormat,
+	output,
+	outputError,
+} from '../util/format-output.js';
 
-type Format = 'json' | 'jsonl' | undefined;
+type ListArgs = ProjectArgs &
+	FormatArgs & {
+		path?: string;
+	};
 
-export type ListResult = Result<ActionManifest, ResolveError>;
+export type ListResult = Result<ActionManifest, never>;
 
-export const listCommand: CommandModule = {
+export const listCommand: CommandModule<{}, ListArgs> = {
 	command: 'list [path]',
 	describe: 'Tree view of exposed queries and mutations on this device',
 	builder: (yargs: Argv) =>
@@ -47,38 +45,29 @@ export const listCommand: CommandModule = {
 				type: 'string',
 				describe: 'Optional dot-path to narrow the view',
 			})
-			.option('dir', dirOption)
-			.option('workspace', workspaceOption)
-			.options(formatYargsOptions()),
+			.option('C', projectOption)
+			.options(formatOptions),
 	handler: async (argv) => {
-		const args = argv as Record<string, unknown>;
-		const path = typeof args.path === 'string' ? args.path : '';
-		const format = args.format as Format;
-		const target = resolveTarget(args);
+		const path = argv.path ?? '';
 
-		const { data: daemon, error: daemonErr } = await getDaemon({
-			projectDir: target.absDir,
-			userWorkspace: target.userWorkspace,
-		});
+		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
 			outputError(daemonErr.message);
 			process.exitCode = 1;
 			return;
 		}
-		const result = await daemon.list({ workspace: target.userWorkspace });
-		renderResult(result, path, format);
+		const result = await daemon.list();
+		renderResult(result, path, argv.format);
 	},
 };
 
 function renderResult(
-	result: Result<ActionManifest, ResolveError | DaemonError>,
+	result: Result<ActionManifest, DaemonError>,
 	path: string,
-	format: Format,
+	format: OutputFormat | undefined,
 ): void {
 	if (result.error !== null) {
 		switch (result.error.name) {
-			case 'UnknownWorkspace':
-			case 'AmbiguousWorkspace':
 			case 'MissingConfig':
 			case 'Required':
 			case 'Timeout':
@@ -100,7 +89,7 @@ function renderResult(
 function renderJson(
 	entries: ActionManifest,
 	path: string,
-	format: Exclude<Format, undefined>,
+	format: OutputFormat,
 ): void {
 	if (path && entries[path]) {
 		output(toActionDescriptor(entries[path]!, path), { format });

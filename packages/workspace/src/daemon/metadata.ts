@@ -27,12 +27,12 @@ const log = createLogger('workspace/daemon/metadata');
 /**
  * On-disk shape of `<dirHash>.meta.json`.
  *
- * `dir` is stored as the absolute, fs-resolved path so two cwd-relative
- * `--dir` arguments resolving to the same workspace match.
+ * `dir` is stored as the absolute, fs-resolved path so different cwd-relative
+ * project discovery starts resolving to the same project match.
  */
 export type DaemonMetadata = {
 	pid: number;
-	/** Absolute, fs-resolved `--dir` path. */
+	/** Absolute, fs-resolved project directory path. */
 	dir: string;
 	/** ISO 8601 timestamp. */
 	startedAt: string;
@@ -57,7 +57,7 @@ export function readMetadataFromPath(path: string): DaemonMetadata | null {
 	}
 }
 
-/** Write metadata for `dir` atomically (single-writer; the server owns it). */
+/** Write metadata for `dir` atomically; the server owns the single writer. */
 export function writeMetadata(dir: string, meta: DaemonMetadata): void {
 	const path = metadataPathFor(dir);
 	writeFileSync(path, `${JSON.stringify(meta, null, 2)}\n`, { mode: 0o600 });

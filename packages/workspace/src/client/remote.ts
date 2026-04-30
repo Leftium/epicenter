@@ -33,7 +33,10 @@ const DEFAULT_RPC_TIMEOUT_MS = 5_000;
  * key is masked everywhere on the path (otherwise an `await` on an
  * intermediate namespace would turn it into a thenable).
  */
-function buildRemoteProxy(client: DaemonClient, workspaceName: string): unknown {
+function buildRemoteProxy(
+	client: DaemonClient,
+	workspaceName: string,
+): unknown {
 	const make = (path: string[]): unknown => {
 		const target = (() => {}) as unknown as object;
 		return new Proxy(target, {
@@ -45,8 +48,7 @@ function buildRemoteProxy(client: DaemonClient, workspaceName: string): unknown 
 			apply(_target, _thisArg, args) {
 				const input = args.length === 0 ? undefined : args[0];
 				return client.run({
-					workspace: workspaceName,
-					actionPath: path.join('.'),
+					actionPath: `${workspaceName}.${path.join('.')}`,
 					input,
 					waitMs: DEFAULT_RPC_TIMEOUT_MS,
 				});

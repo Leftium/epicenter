@@ -7,7 +7,9 @@
  *   (called at exit; the discriminator). If it also has:
  *
  *     whenReady: Promise         awaited before action invocations
- *     sync:      SyncAttachment  enables --peer + `peers`
+ *     sync:      SyncAttachment  awaited during startup and disposal
+ *     presence:  PeerPresence    enables `peers` and peer lookup
+ *     rpc:       SyncRpc         enables `run --peer`
  *
  *   Actions are read from the bundle ITSELF: no reserved key. `walkActions`
  *   filters to action leaves at runtime via `isAction`, so non-action keys
@@ -41,11 +43,13 @@
  * ```
  */
 
+import { join, resolve } from 'node:path';
 import type {
 	PeerAwarenessState,
+	PeerPresenceAttachment,
 	SyncAttachment,
+	SyncRpcAttachment,
 } from '@epicenter/workspace';
-import { join, resolve } from 'node:path';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -78,18 +82,17 @@ export type LoadedWorkspace = {
 	readonly whenReady?: Promise<unknown>;
 
 	/**
-	 * Enables `--peer` targeting and `epicenter peers`. `attachSync(doc, { device })`
-	 * carries presence inline; `peers()` / `find()` / `observe()` live on the
-	 * SyncAttachment when the workspace was constructed with a `device`.
+	 * Underlying sync transport. Presence and RPC are attached separately so
+	 * callers choose which peer surfaces they expose.
 	 */
 	readonly sync?: SyncAttachment;
+	readonly actions?: Record<string, unknown>;
+	readonly presence?: PeerPresenceAttachment;
+	readonly rpc?: SyncRpcAttachment;
 };
 
 /**
- * Per-peer awareness state under the standard `device` schema. Re-exported
- * from `@epicenter/workspace` for ergonomic consumption; `state.device` is
- * set synchronously at attach time, so consumers read
- * `state.device.{id,name,platform}` without `?.`.
+ * Per-peer awareness state under the standard peer schema.
  */
 export type AwarenessState = PeerAwarenessState;
 
@@ -201,7 +204,8 @@ export async function loadConfig(
 		async [Symbol.asyncDispose]() {
 			const barriers: Promise<unknown>[] = [];
 			for (const { workspace } of entries) {
-				if (workspace.sync?.whenDisposed) barriers.push(workspace.sync.whenDisposed);
+				if (workspace.sync?.whenDisposed)
+					barriers.push(workspace.sync.whenDisposed);
 				workspace[Symbol.dispose]();
 			}
 			await Promise.all(barriers);

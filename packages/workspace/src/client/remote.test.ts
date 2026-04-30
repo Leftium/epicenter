@@ -6,10 +6,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
-
-import { buildRemoteWorkspace } from './remote.js';
-import type { DaemonClient } from '../daemon/client.js';
 import type { RunInput } from '../daemon/app.js';
+import type { DaemonClient } from '../daemon/client.js';
+import { buildRemoteWorkspace } from './remote.js';
 
 function makeStubClient() {
 	const calls: { method: 'run' | 'peers' | 'list'; arg: unknown }[] = [];
@@ -18,8 +17,8 @@ function makeStubClient() {
 			calls.push({ method: 'peers', arg: undefined });
 			return Promise.resolve(Ok([])) as ReturnType<DaemonClient['peers']>;
 		},
-		list: (input) => {
-			calls.push({ method: 'list', arg: input });
+		list: () => {
+			calls.push({ method: 'list', arg: undefined });
 			return Promise.resolve(Ok({})) as ReturnType<DaemonClient['list']>;
 		},
 		run: (input: RunInput) => {
@@ -45,8 +44,7 @@ describe('buildRemoteWorkspace tables', () => {
 		expect(calls).toHaveLength(1);
 		expect(calls[0]!.method).toBe('run');
 		expect(calls[0]!.arg).toMatchObject({
-			workspace: WORKSPACE,
-			actionPath: 'tables.entries.get',
+			actionPath: 'demo.tables.entries.get',
 			input: 'xyz',
 		});
 	});
@@ -60,7 +58,7 @@ describe('buildRemoteWorkspace tables', () => {
 		await ws.tables.entries.set(row);
 
 		expect(calls[0]!.arg).toMatchObject({
-			actionPath: 'tables.entries.set',
+			actionPath: 'demo.tables.entries.set',
 			input: row,
 		});
 	});
@@ -73,7 +71,7 @@ describe('buildRemoteWorkspace tables', () => {
 		await ws.tables.entries.update({ id: 'a', title: 'changed' });
 
 		expect(calls[0]!.arg).toMatchObject({
-			actionPath: 'tables.entries.update',
+			actionPath: 'demo.tables.entries.update',
 			input: { id: 'a', title: 'changed' },
 		});
 	});
@@ -89,8 +87,7 @@ describe('buildRemoteWorkspace nested actions', () => {
 
 		expect(calls).toHaveLength(1);
 		expect(calls[0]!.arg).toMatchObject({
-			workspace: WORKSPACE,
-			actionPath: 'savedTabs.list',
+			actionPath: 'demo.savedTabs.list',
 			input: {},
 		});
 	});
@@ -103,7 +100,7 @@ describe('buildRemoteWorkspace nested actions', () => {
 		await ws.deeply.nested.action({ x: 1 });
 
 		expect(calls[0]!.arg).toMatchObject({
-			actionPath: 'deeply.nested.action',
+			actionPath: 'demo.deeply.nested.action',
 			input: { x: 1 },
 		});
 	});
@@ -116,7 +113,7 @@ describe('buildRemoteWorkspace nested actions', () => {
 		await ws.system.describe();
 
 		expect(calls[0]!.arg).toMatchObject({
-			actionPath: 'system.describe',
+			actionPath: 'demo.system.describe',
 			input: undefined,
 		});
 	});

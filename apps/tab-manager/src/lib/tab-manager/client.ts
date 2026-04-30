@@ -1,6 +1,6 @@
 import { createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { getOrCreateDeviceIdAsync } from '@epicenter/workspace';
+import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { storage } from '@wxt-dev/storage';
 import { getGoogleCredentials, session } from '$lib/auth';
@@ -20,15 +20,15 @@ export const auth = createAuth({
 });
 
 /**
- * Resolve the device descriptor before constructing the workspace. `id` and
+ * Resolve the peer descriptor before constructing the workspace. `id` and
  * `name` resolve in parallel — the chrome.storage read and the platform-info
  * lookup are independent.
  *
- * Awareness publishes this descriptor synchronously at attach time, so the
+ * Presence publishes this descriptor synchronously at attach time, so the
  * factory awaits it before returning.
  */
-const device = await Promise.all([
-	getOrCreateDeviceIdAsync<DeviceId>({
+const peer = await Promise.all([
+	getOrCreateInstallationIdAsync<DeviceId>({
 		getItem: (k) => storage.getItem<string>(`local:${k}`),
 		setItem: async (k, v) => {
 			await storage.setItem(`local:${k}`, v);
@@ -41,7 +41,7 @@ const device = await Promise.all([
 	platform: 'chrome-extension' as const,
 }));
 
-export const tabManager = await openTabManager({ auth, device });
+export const tabManager = await openTabManager({ auth, peer });
 
 /**
  * Register this browser installation as a device in the workspace.
@@ -53,7 +53,7 @@ export const tabManager = await openTabManager({ auth, device });
  */
 async function registerDevice(): Promise<void> {
 	await tabManager.whenReady;
-	const { id, name } = tabManager.device;
+	const { id, name } = tabManager.peer;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
 	tabManager.tables.devices.set({
@@ -83,7 +83,7 @@ if (import.meta.hot) {
 }
 
 /** AI tool representations for the tab-manager workspace. */
-export const workspaceAiTools = actionsToAiTools(tabManager);
+export const workspaceAiTools = actionsToAiTools(tabManager.actions);
 
 /** Tool array type for use in TanStack AI generics. */
 export type WorkspaceTools = typeof workspaceAiTools.tools;

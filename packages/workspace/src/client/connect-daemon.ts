@@ -65,7 +65,7 @@ export async function connectDaemon<W>({
 }): Promise<Remote<W>> {
 	const socketPath = socketPathFor(projectDir);
 	if (!(await pingDaemon(socketPath))) {
-		throw DaemonError.Required({ projectDir, id }).error;
+		throw DaemonError.Required({ projectDir }).error;
 	}
 	const client = daemonClient(socketPath);
 	return buildRemoteWorkspace<W>(client, id);

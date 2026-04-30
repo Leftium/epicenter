@@ -15,13 +15,7 @@
  *      cleanly (no throw).
  */
 
-import {
-	afterEach,
-	beforeEach,
-	describe,
-	expect,
-	test,
-} from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
 	existsSync,
 	mkdirSync,
@@ -31,9 +25,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
-import { Ok } from 'wellcrafted/result';
-
 import {
 	bindUnixSocket,
 	metadataPathFor,
@@ -41,6 +32,7 @@ import {
 	socketPathFor,
 	writeMetadata,
 } from '@epicenter/workspace';
+import { Ok } from 'wellcrafted/result';
 import type { LoadConfigResult, LoadedWorkspace } from '../load-config';
 import { runUp } from './up';
 
@@ -114,7 +106,7 @@ describe('runUp: happy path', () => {
 
 		const { data: handle, error } = await runUp(
 			{
-				dir: workDir,
+				projectDir: workDir,
 				quiet: true,
 			},
 			{
@@ -156,7 +148,7 @@ describe('runUp: stale-auth fast-fail', () => {
 		const start = Date.now();
 		const { error } = await runUp(
 			{
-				dir: workDir,
+				projectDir: workDir,
 				quiet: true,
 			},
 			{
@@ -193,7 +185,7 @@ describe('runUp: already running', () => {
 		try {
 			const { error } = await runUp(
 				{
-					dir: workDir,
+					projectDir: workDir,
 					quiet: true,
 				},
 				{
@@ -231,7 +223,7 @@ describe('runUp: orphan path', () => {
 
 		const { data: handle, error } = await runUp(
 			{
-				dir: workDir,
+				projectDir: workDir,
 				quiet: true,
 			},
 			{

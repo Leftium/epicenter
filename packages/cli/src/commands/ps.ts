@@ -13,17 +13,15 @@
 
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-
-import type { CommandModule } from 'yargs';
-
 import {
-	pingDaemon,
 	type DaemonMetadata,
 	enumerateDaemons,
-	unlinkMetadata,
+	pingDaemon,
 	socketPathFor,
+	unlinkMetadata,
 	unlinkSocketFile,
 } from '@epicenter/workspace';
+import type { CommandModule } from 'yargs';
 import { CONFIG_FILENAME } from '../load-config.js';
 
 // `ps` shows a liveness column and sweeps obviously-dead entries it sees;
@@ -96,7 +94,7 @@ export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
 }
 
 /**
- * `'?'` when the config file is missing (e.g. workspace dir was renamed),
+ * `'?'` when the config file is missing (e.g. project dir was renamed),
  * `true` when its mtime differs from the captured value, `false` otherwise.
  */
 function detectConfigChange(meta: DaemonMetadata): boolean | '?' {

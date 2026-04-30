@@ -1,5 +1,5 @@
 /**
- * Opensidian workspace playground — one-way materialization to markdown files
+ * Opensidian workspace playground: one-way materialization to markdown files
  * and a queryable SQLite mirror with FTS5 full-text search.
  *
  * Syncs the Opensidian workspace from the Epicenter API, persists the workspace
@@ -8,33 +8,32 @@
  * the files table into a queryable SQLite database with FTS5 indexing.
  *
  * Reads auth credentials from the CLI session store at
- * `~/.epicenter/auth/sessions.json` — run `epicenter auth login` first.
+ * `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
  *
  * Exports `opensidian`: an object satisfying `LoadedWorkspace` with
  * `whenReady`, `sync`, `[Symbol.dispose]`, and any action namespaces hoisted
  * to the top level. `loadConfig` picks up any named export with that shape.
  *
  * Usage:
- *   # Run the workspace — imports this config, which constructs the
+ *   # Run the workspace. Imports this config, which constructs the
  *   # workspace, starting persistence + sync + markdown + SQLite materialization.
  *   # Runs until Ctrl+C.
  *   bun run playground/opensidian-e2e/epicenter.config.ts
  *
  *   # Invoke the markdownActions.prepare mutation.
- *   epicenter run markdownActions.prepare '{"directory":"./some/dir"}' \
+ *   epicenter run opensidian.markdownActions.prepare '{"directory":"./some/dir"}' \
  *     -C playground/opensidian-e2e
  */
 
+import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { Database } from 'bun:sqlite';
 import {
 	attachSessionUnlock,
 	createSessionStore,
 	epicenterPaths,
 } from '@epicenter/cli';
 import { createFileContentDoc } from '@epicenter/filesystem';
-import { opensidianTables } from 'opensidian/workspace';
 import {
 	attachEncryption,
 	attachSqlite,
@@ -48,6 +47,7 @@ import {
 	toSlugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
+import { opensidianTables } from 'opensidian/workspace';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
@@ -85,7 +85,12 @@ const sync = attachSync(ydoc, {
  * its own `{guid}.db` under `~/.epicenter/persistence/{workspaceId}/content/`.
  * Survives restarts without relying on sync hydration.
  */
-const CONTENT_DIR = join(epicenterPaths.home(), 'persistence', WORKSPACE_ID, 'content');
+const CONTENT_DIR = join(
+	epicenterPaths.home(),
+	'persistence',
+	WORKSPACE_ID,
+	'content',
+);
 const fileContentDocs = createDisposableCache(
 	(fileId: string) =>
 		createFileContentDoc({

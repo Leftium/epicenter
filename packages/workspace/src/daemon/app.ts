@@ -5,9 +5,9 @@
  *
  * Each verb is a one-line shell shortcut for one workspace primitive:
  *
- *   /peers  ->  workspace.sync.peers()                       cross-workspace
- *   /list   ->  describeActions(workspace)                    single-workspace
- *   /run    ->  invokeAction(...) | sync.rpc(...)             single-workspace
+ *   /peers  ->  workspace.presence.peers()                    all exports
+ *   /list   ->  describeActions(workspace)                    all exports
+ *   /run    ->  invokeAction(...) | rpc.rpc(...)              export-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -16,18 +16,16 @@
  */
 
 import { sValidator } from '@hono/standard-validator';
-import { describeActions } from '../shared/actions.js';
-import { PeerDevice } from '../document/standard-awareness-defs.js';
 import { type } from 'arktype';
 import { Hono } from 'hono';
-import { Err, Ok } from 'wellcrafted/result';
-
-import { resolveEntry } from './resolve-entry.js';
-import type { WorkspaceEntry } from './types.js';
+import { Ok } from 'wellcrafted/result';
+import { Peer } from '../document/standard-awareness-defs.js';
+import { describeWorkspaceActions } from './action-paths.js';
 import { executeRun } from './run-handler.js';
+import type { WorkspaceEntry } from './types.js';
 
 /**
- * Wire bodies for `/list` and `/run`. Schemas serve two roles:
+ * Wire body for `/run`. The schema serves two roles:
  *
  *   1. Runtime validation at the daemon boundary via
  *      `@hono/standard-validator`. A stale CLI gets a typed 400 instead of a
@@ -39,35 +37,25 @@ import { executeRun } from './run-handler.js';
  * value and the type).
  */
 
-export const PeersInput = type({
-	'workspace?': 'string',
-});
-export type PeersInput = typeof PeersInput.infer;
-
-export const ListInput = type({
-	'workspace?': 'string',
-});
-export type ListInput = typeof ListInput.infer;
-
 export const RunInput = type({
+	'workspace?': 'string',
 	actionPath: 'string',
 	input: 'unknown',
 	'peerTarget?': 'string',
 	waitMs: 'number',
-	'workspace?': 'string',
 });
 export type RunInput = typeof RunInput.infer;
 
 /**
- * Row shape returned by `/peers`. One row per `(workspace, clientID)` pair,
- * tagged with its workspace name so a multi-workspace daemon can fan out.
- * `device` carries the canonical `PeerDevice` shape from
- * `@epicenter/workspace`; renderers consume it directly without a cast.
+ * Row shape returned by `/peers`. One row per `(exportName, clientID)` pair,
+ * tagged with its config export name so a multi-export daemon can fan out.
+ * `peer` carries the canonical peer descriptor from the standard awareness
+ * convention; renderers consume it directly without a cast.
  */
 export const PeerSnapshot = type({
-	workspace: 'string',
+	exportName: 'string',
 	clientID: 'number',
-	device: PeerDevice,
+	peer: Peer,
 });
 export type PeerSnapshot = typeof PeerSnapshot.infer;
 
@@ -75,9 +63,9 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * Build the daemon's Hono app. Tests import this directly; production wires
  * it into `Bun.serve({ unix, fetch: app.fetch })` via `bindUnixSocket`.
  *
- * `resolveEntry` returns a `ResolveError` for typo'd or missing `-w`; we
- * fold that into the route's body `Result` so the user sees a clean
- * error, not `DaemonError.HandlerCrashed`.
+ * `/list` exposes export-prefixed action paths. `/run` uses that same
+ * prefix to pick the workspace export before dispatching the inner action
+ * path locally or over RPC.
  */
 export function buildApp(
 	entries: WorkspaceEntry[],
@@ -85,33 +73,24 @@ export function buildApp(
 ) {
 	return new Hono()
 		.post('/ping', (c) => c.json(Ok('pong' as const)))
-		.post('/peers', sValidator('json', PeersInput), (c) => {
-			const input = c.req.valid('json');
+		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
 			for (const entry of entries) {
-				if (input.workspace && entry.name !== input.workspace) continue;
-				const peers = entry.workspace.sync?.peers() ?? new Map();
+				const peers = entry.workspace.presence?.peers() ?? new Map();
 				for (const [clientID, state] of peers) {
 					rows.push({
-						workspace: entry.name,
+						exportName: entry.name,
 						clientID,
-						device: state.device,
+						peer: state.peer,
 					});
 				}
 			}
 			return c.json(Ok(rows));
 		})
-		.post('/list', sValidator('json', ListInput), (c) => {
-			const input = c.req.valid('json');
-			const { data: entry, error } = resolveEntry(entries, input.workspace);
-			if (error) return c.json(Err(error));
-			return c.json(Ok(describeActions(entry.workspace)));
-		})
+		.post('/list', (c) => c.json(Ok(describeWorkspaceActions(entries))))
 		.post('/run', sValidator('json', RunInput), async (c) => {
 			const input = c.req.valid('json');
-			const { data: entry, error } = resolveEntry(entries, input.workspace);
-			if (error) return c.json(Err(error));
-			return c.json(await executeRun(entry, input));
+			return c.json(await executeRun(entries, input));
 		})
 		.post('/shutdown', (c) => {
 			setTimeout(() => triggerShutdown?.(), 0);

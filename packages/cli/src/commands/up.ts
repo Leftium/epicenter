@@ -1,12 +1,12 @@
 /**
- * `epicenter up`: start the long-lived foreground daemon for one `--dir`.
+ * `epicenter up`: start the long-lived foreground daemon for one project.
  *
  * Loads every workspace exported by `epicenter.config.ts` and exposes a
- * Unix-socket IPC channel for that `--dir`. `peers`, `list`, and `run`
+ * Unix-socket IPC channel for that project. `peers`, `list`, and `run`
  * dispatch to this daemon over IPC; without `up` they error with a hint
  * pointing back here.
  *
- * One daemon per `--dir`; that daemon serves every workspace the config
+ * One daemon per project; that daemon serves every workspace the config
  * exports (Invariant 7). Resource isolation between workspaces is
  * expressed by splitting them into different config dirs, not by a flag.
  *
@@ -19,7 +19,16 @@
 
 import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-
+import {
+	createWorkspaceServer,
+	type DaemonMetadata,
+	type StartupError,
+	socketPathFor,
+	type UnixSocketServer,
+	unlinkMetadata,
+	unlinkSocketFile,
+	writeMetadata,
+} from '@epicenter/workspace';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -28,23 +37,13 @@ import {
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { Argv, CommandModule } from 'yargs';
 import {
-	createWorkspaceServer,
-	type DaemonMetadata,
-	socketPathFor,
-	type StartupError,
-	type UnixSocketServer,
-	unlinkSocketFile,
-	unlinkMetadata,
-	writeMetadata,
-} from '@epicenter/workspace';
-import {
 	CONFIG_FILENAME,
 	type LoadConfigResult,
 	type LoadError,
-	type WorkspaceEntry,
 	loadConfig,
+	type WorkspaceEntry,
 } from '../load-config.js';
-import { dirFromArgv, dirOption } from '../util/common-options.js';
+import { type ProjectArgs, projectOption } from '../util/common-options.js';
 
 /**
  * Hardcoded ceiling on how long any single workspace's `whenConnected`
@@ -65,6 +64,7 @@ const CONNECT_TIMEOUT_MS = 10000;
  * file at build/run time, so no runtime fs work happens per `up` invocation.
  */
 import packageJson from '../../package.json' with { type: 'json' };
+
 const CLI_VERSION = packageJson.version;
 
 /**
@@ -78,7 +78,7 @@ function logSyncStatus(message: string): void {
 }
 
 export type UpOptions = {
-	dir: string;
+	projectDir: string;
 	quiet: boolean;
 	cliVersion?: string;
 };
@@ -129,9 +129,7 @@ export type UpHandle = {
  * handler passes the production defaults; `up.test.ts` passes fakes.
  */
 export type RunUpDeps = {
-	loadConfig?: (
-		dir: string,
-	) => Promise<Result<LoadConfigResult, LoadError>>;
+	loadConfig?: (dir: string) => Promise<Result<LoadConfigResult, LoadError>>;
 	/**
 	 * Test-only override for {@link CONNECT_TIMEOUT_MS}. Production has no
 	 * way to tune this; it's a stopgap until the workspace package's
@@ -157,11 +155,11 @@ export async function runUp(
 	options: UpOptions,
 	deps: RunUpDeps = {},
 ): Promise<Result<UpHandle, RunUpError | LoadError | StartupError>> {
-	const absDir = resolve(options.dir);
-	const socketPath = socketPathFor(absDir);
+	const projectDir = resolve(options.projectDir);
+	const socketPath = socketPathFor(projectDir);
 
 	const loader = deps.loadConfig ?? loadConfig;
-	const loadResult = await loader(absDir);
+	const loadResult = await loader(projectDir);
 	if (loadResult.error) return loadResult;
 	const config = loadResult.data;
 
@@ -192,7 +190,7 @@ export async function runUp(
 	// `bindOrRecover` unlinks the orphan metadata internally before our
 	// successful retry, so the writeMetadata below records *our* pid.
 	const workspaceServer = createWorkspaceServer({
-		projectDir: absDir,
+		projectDir,
 		workspaces: config.entries,
 		triggerShutdown: () => void teardown(),
 	});
@@ -203,15 +201,15 @@ export async function runUp(
 	}
 	const server = bindResult.data;
 
-	const configMtime = readConfigMtime(absDir);
+	const configMtime = readConfigMtime(projectDir);
 	const metadata: DaemonMetadata = {
 		pid: process.pid,
-		dir: absDir,
+		dir: projectDir,
 		startedAt: new Date().toISOString(),
 		cliVersion: options.cliVersion ?? CLI_VERSION,
 		configMtime,
 	};
-	writeMetadata(absDir, metadata);
+	writeMetadata(projectDir, metadata);
 
 	let teardownPromise: Promise<void> | null = null;
 	const teardown = (): Promise<void> => {
@@ -223,7 +221,7 @@ export async function runUp(
 				// best-effort
 			}
 			await safeAsyncDispose(config);
-			unlinkMetadata(absDir);
+			unlinkMetadata(projectDir);
 			unlinkSocketFile(socketPath);
 		})();
 		return teardownPromise;
@@ -245,24 +243,25 @@ export async function runUp(
  * subscribes to awareness/status across every loaded workspace, and parks
  * until a signal triggers teardown.
  */
-export const upCommand: CommandModule = {
+type UpArgs = ProjectArgs & {
+	quiet: boolean;
+};
+
+export const upCommand: CommandModule<{}, UpArgs> = {
 	command: 'up',
 	describe:
 		'Bring this config online as a long-lived peer for every workspace it exports (foreground).',
 	builder: (yargs: Argv) =>
-		yargs
-			.option('dir', dirOption)
-			.option('quiet', {
-				type: 'boolean',
-				default: false,
-				description:
-					'Suppress awareness join/leave lines (sync state changes still print)',
-			}),
+		yargs.option('C', projectOption).option('quiet', {
+			type: 'boolean',
+			default: false,
+			description:
+				'Suppress awareness join/leave lines (sync state changes still print)',
+		}),
 	handler: async (argv) => {
-		const args = argv as Record<string, unknown>;
 		const options: UpOptions = {
-			dir: dirFromArgv(args),
-			quiet: args.quiet === true,
+			projectDir: argv.C,
+			quiet: argv.quiet,
 		};
 
 		const { data: handle, error } = await runUp(options);
@@ -359,29 +358,29 @@ async function safeAsyncDispose(config: LoadConfigResult): Promise<void> {
 }
 
 function printPeersSnapshot(entry: WorkspaceEntry): void {
-	const peers = entry.workspace.sync?.peers();
+	const peers = entry.workspace.presence?.peers();
 	if (!peers || peers.size === 0) {
 		process.stderr.write(`${entry.name}: no peers connected\n`);
 		return;
 	}
 	for (const [clientID, state] of peers) {
 		process.stderr.write(
-			`${entry.name}: peer ${state.device.id} (clientID=${clientID}, name=${state.device.name})\n`,
+			`${entry.name}: peer ${state.peer.id} (clientID=${clientID}, name=${state.peer.name})\n`,
 		);
 	}
 }
 
 function subscribeAwareness(entry: WorkspaceEntry, quiet: boolean): void {
-	const sync = entry.workspace.sync;
-	if (!sync) return;
-	let prev = new Map(sync.peers());
-	sync.observe(() => {
-		const next = sync.peers();
+	const presence = entry.workspace.presence;
+	if (!presence) return;
+	let prev = new Map(presence.peers());
+	presence.observe(() => {
+		const next = presence.peers();
 		for (const [clientID, state] of next) {
 			if (!prev.has(clientID)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.name}: ${state.device.id} joined (clientID=${clientID})\n`,
+						`${entry.name}: ${state.peer.id} joined (clientID=${clientID})\n`,
 					);
 				}
 			}
@@ -390,7 +389,7 @@ function subscribeAwareness(entry: WorkspaceEntry, quiet: boolean): void {
 			if (!next.has(clientID)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.name}: ${state.device.id} left (clientID=${clientID})\n`,
+						`${entry.name}: ${state.peer.id} left (clientID=${clientID})\n`,
 					);
 				}
 			}

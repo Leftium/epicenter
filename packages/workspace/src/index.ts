@@ -40,6 +40,7 @@ export type {
 	RemoteActionProxy,
 } from './shared/actions';
 export {
+	defineActions,
 	defineMutation,
 	defineQuery,
 	describeActions,
@@ -55,11 +56,8 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export { isRpcError, RpcError } from '@epicenter/sync';
-// Cross-device action calling.
-export {
-	createRemoteActions,
-	describeRemoteActions,
-} from './rpc/remote-actions.js';
+// Cross-peer action calling.
+export { describePeer, type PeerTransport, peer } from './rpc/peer.js';
 export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
 
@@ -67,27 +65,22 @@ export type { RemoteCallOptions } from './shared/actions.js';
 // DAEMON TRANSPORT
 // ════════════════════════════════════════════════════════════════════════════
 
+export { connectDaemon } from './client/connect-daemon.js';
+export { findEpicenterDir } from './client/find-epicenter-dir.js';
+export { buildRemoteWorkspace } from './client/remote.js';
+export type { Remote } from './client/remote-workspace-types.js';
 export {
 	buildApp,
-	ListInput,
 	PeerSnapshot,
-	PeersInput,
 	RunInput,
 } from './daemon/app.js';
 export {
-	DaemonError,
 	type DaemonClient,
+	DaemonError,
 	daemonClient,
 	getDaemon,
 	pingDaemon,
 } from './daemon/client.js';
-export {
-	dirHash,
-	logPathFor,
-	metadataPathFor,
-	runtimeDir,
-	socketPathFor,
-} from './daemon/paths.js';
 export {
 	type DaemonMetadata,
 	enumerateDaemons,
@@ -96,15 +89,14 @@ export {
 	unlinkMetadata,
 	writeMetadata,
 } from './daemon/metadata.js';
-export { ResolveError } from './daemon/resolve-entry.js';
-export { RunError, type RunResponse } from './daemon/run-errors.js';
 export {
-	bindOrRecover,
-	bindUnixSocket,
-	StartupError,
-	type UnixSocketServer,
-	unlinkSocketFile,
-} from './daemon/unix-socket.js';
+	dirHash,
+	logPathFor,
+	metadataPathFor,
+	runtimeDir,
+	socketPathFor,
+} from './daemon/paths.js';
+export { RunError, type RunResponse } from './daemon/run-errors.js';
 export {
 	createWorkspaceServer,
 	type WorkspaceServer,
@@ -114,13 +106,16 @@ export type {
 	LoadedWorkspace,
 	WorkspaceEntry,
 } from './daemon/types.js';
-export { buildRemoteWorkspace } from './client/remote.js';
-export { connectDaemon } from './client/connect-daemon.js';
-export { findEpicenterDir } from './client/find-epicenter-dir.js';
-export type { Remote } from './client/remote-workspace-types.js';
 export {
-	attachSqliteReader,
+	bindOrRecover,
+	bindUnixSocket,
+	StartupError,
+	type UnixSocketServer,
+	unlinkSocketFile,
+} from './daemon/unix-socket.js';
+export {
 	type AttachSqliteReaderOptions,
+	attachSqliteReader,
 	type SqliteReaderAttachment,
 } from './document/attach-sqlite-reader.js';
 export {
@@ -133,13 +128,13 @@ export {
 // DEVICE IDENTITY
 // ════════════════════════════════════════════════════════════════════════════
 
+export { hashClientId } from './shared/client-id.js';
 export {
 	type AsyncStorage,
-	getOrCreateDeviceId,
-	getOrCreateDeviceIdAsync,
+	getOrCreateInstallationId,
+	getOrCreateInstallationIdAsync,
 	type SimpleStorage,
 } from './shared/device-id.js';
-export { hashClientId } from './shared/client-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SHARED TYPES
@@ -218,15 +213,6 @@ export {
 	type IndexedDbAttachment,
 } from './document/attach-indexed-db.js';
 export {
-	attachYjsLog,
-	type YjsLogAttachment,
-} from './document/attach-yjs-log.js';
-export {
-	attachYjsLogReader,
-	type YjsLogReaderAttachment,
-} from './document/attach-yjs-log-reader.js';
-export { SqliteWriterError } from './document/sqlite-writer.js';
-export {
 	attachKv,
 	type InferKvValue,
 	type Kv,
@@ -234,6 +220,10 @@ export {
 	type KvDefinition,
 	type KvDefinitions,
 } from './document/attach-kv.js';
+export {
+	attachMarkdown,
+	type MarkdownShape,
+} from './document/attach-markdown.js';
 export {
 	attachPlainText,
 	type PlainTextAttachment,
@@ -243,22 +233,22 @@ export {
 	type RichTextAttachment,
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
-export { attachMarkdown, type MarkdownShape } from './document/attach-markdown.js';
 export { attachSqlite } from './document/attach-sqlite.js';
 export {
+	type AttachRpcConfig,
 	type AttachSyncDoc,
 	attachSync,
+	PeerMiss,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
-	PeerMiss,
 	SyncFailedError,
 	type SyncFailedReason,
+	type SyncRpcAttachment,
 	type SyncStatus,
 	toWsUrl,
 	type WaitForBarrier,
 	type WebSocketImpl,
 } from './document/attach-sync.js';
-export { NoopWebSocket } from './document/noop-ws.js';
 export {
 	attachTable,
 	attachTables,
@@ -271,7 +261,6 @@ export {
 	TableParseError,
 	type Tables,
 } from './document/attach-table.js';
-
 export {
 	attachTimeline,
 	type ContentType,
@@ -287,6 +276,14 @@ export {
 	type Timeline,
 	type TimelineEntry,
 } from './document/attach-timeline/index.js';
+export {
+	attachYjsLog,
+	type YjsLogAttachment,
+} from './document/attach-yjs-log.js';
+export {
+	attachYjsLogReader,
+	type YjsLogReaderAttachment,
+} from './document/attach-yjs-log-reader.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
@@ -299,10 +296,15 @@ export {
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
-	type DeviceDescriptor,
+	type AttachPresenceConfig,
+	type PeerPresenceAttachment,
+} from './document/peer-presence.js';
+export { SqliteWriterError } from './document/sqlite-writer.js';
+export {
 	type FoundPeer,
+	Peer,
 	type PeerAwarenessState,
-	PeerDevice,
+	type PeerDescriptor,
 	Platform,
 } from './document/standard-awareness-defs.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';

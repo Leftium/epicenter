@@ -2,10 +2,10 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
 	attachYjsLog,
-	type DeviceDescriptor,
 	findEpicenterDir,
 	hashClientId,
 	markdownPath,
+	type PeerDescriptor,
 	type ProjectDir,
 	sqlitePath,
 	toWsUrl,
@@ -21,14 +21,14 @@ import { openFuji as openFujiDoc } from './index.js';
 
 export function openFuji({
 	getToken,
-	device,
+	peer,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(projectDir),
 	apiUrl = EPICENTER_API_URL,
 	webSocketImpl,
 }: {
 	getToken: () => Promise<string | null>;
-	device: DeviceDescriptor;
+	peer: PeerDescriptor;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
@@ -40,10 +40,11 @@ export function openFuji({
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		device,
 		getToken,
 		webSocketImpl,
 	});
+	const presence = sync.attachPresence({ peer });
+	const rpc = sync.attachRpc({ actions: { actions: doc.actions } });
 	const sqlite = attachSqlite(doc.ydoc, {
 		filePath: sqlitePath(projectDir, doc.ydoc.guid),
 	}).table(doc.tables.entries);
@@ -51,5 +52,5 @@ export function openFuji({
 		dir: markdownPath(projectDir, doc.ydoc.guid),
 	}).table(doc.tables.entries, { filename: slugFilename('title') });
 
-	return { ...doc, yjsLog, sync, sqlite, markdown };
+	return { ...doc, yjsLog, sync, presence, rpc, sqlite, markdown };
 }

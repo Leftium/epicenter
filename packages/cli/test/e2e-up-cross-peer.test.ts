@@ -7,40 +7,39 @@
  * § "Acceptance criteria". Each line below cites the criterion and the test
  * that exercises it (or the infra gap that blocks coverage).
  *
- *   [✅] `up` prints "online (workspaces=[...])" on stderr,
+ *   [ok] `up` prints "online (workspaces=[...])" on stderr,
  *        followed by the initial peers snapshot.
- *        → `up lifecycle: online banner + peers snapshot + clean exit`
- *   [✅] Ctrl-C / SIGTERM exits cleanly with no orphan socket / metadata.
- *        → same test (asserts files are gone post-shutdown).
- *   [✅] `epicenter ps` lists the running daemon (deviceId / pid / uptime).
- *        → `ps lists the running daemon while up is alive`
- *   [✅] `epicenter logs --dir <p>` tails the rotating log (default 50 lines).
- *        → `logs prints recent lines from the daemon's log file`
- *   [✅] `epicenter down --dir <p>` shuts down gracefully.
- *        → `down terminates the daemon gracefully via IPC`
- *   [✅] Two `up`s same `--dir` → second exits 1 with
+ *        Covered by `up lifecycle: online banner + peers snapshot + clean exit`.
+ *   [ok] Ctrl-C / SIGTERM exits cleanly with no orphan socket / metadata.
+ *        Covered by the same test, which asserts files are gone post-shutdown.
+ *   [ok] `epicenter ps` lists the running daemon (deviceId / pid / uptime).
+ *        Covered by `ps lists the running daemon while up is alive`.
+ *   [ok] `epicenter logs -C <p>` tails the rotating log (default 50 lines).
+ *        Covered by `logs prints recent lines from the daemon's log file`.
+ *   [ok] `epicenter down -C <p>` shuts down gracefully.
+ *        Covered by `down terminates the daemon gracefully via IPC`.
+ *   [ok] Two `up`s same project: second exits 1 with
  *        "daemon already running (pid=X)".
- *        → `second up against the same dir exits 1`
- *   [⚠️] Stale-auth fast-fail with literal "401 Unauthorized" message.
+ *        Covered by `second up against the same dir exits 1`.
+ *   [gap] Stale-auth fast-fail with literal "401 Unauthorized" message.
  *        Partial: `up.test.ts` covers the `connect failed:` prefix in-process,
  *        but the literal "401 Unauthorized" suffix requires structured auth
- *        errors flowing through `whenReady`/`whenConnected` — gap noted in
+ *        errors flowing through `whenReady`/`whenConnected`. Gap noted in
  *        `up.ts` § `connectFailedMessage`.
- *   [⚠️] Workspace inheritance across IPC.
- *        Partial: `list-autodetect.test.ts` exercises `inheritWorkspace`
- *        directly. End-to-end through a spawned daemon is not asserted here
- *        because it'd duplicate that coverage at higher cost.
- *   [✅] Invariant 6: `peers --wait` cap + hint.
- *        → `test/peers-cap.test.ts`.
- *   [❌] Cross-peer `run --peer` / `peers <deviceId>` against a real warm peer
- *        (steps 5–7 of the brief's pseudocode). **Infra gap.** This requires
+ *   [ok] Project selection through `-C <p>`.
+ *        Covered by the lifecycle tests that start, query, log, and stop the
+ *        fixture from a resolved project directory.
+ *   [ok] Invariant 6: `run --peer` wait cap + hint.
+ *        Covered by `run-peer-errors.test.ts`.
+ *   [gap] Cross-peer `run --peer` against a real warm peer
+ *        (steps 5-7 of the brief's pseudocode). Infra gap. This requires
  *        a y-websocket-compatible fake relay; none exists in `packages/sync/`
  *        or `packages/cli/`, and writing one is a separate spec
  *        (`specs/20260427T000000-execute-cli-up-long-lived-peer.md`
  *        § "Wave 8 isn't a commit"). The lifecycle tests below stand in for
  *        that coverage, exercising every CLI verb against a fixture whose
  *        workspace has no `sync` attachment and no `whenReady` barrier.
- *   [❌] DeviceId in the banner reflects the real device.
+ *   [gap] DeviceId in the banner reflects the real peer.
  *        Infra gap: `up.ts § pickDeviceId` returns `'<unknown>'` because
  *        `LoadedWorkspace.sync` doesn't expose self awareness post-connect.
  *        Reported in Wave 5; out of scope here.
@@ -93,21 +92,17 @@ function childEnv(env: EnvOverrides): NodeJS.ProcessEnv {
 }
 
 /**
- * Spawn `epicenter up --dir <fixture>` and wait until it prints the
+ * Spawn `epicenter up -C <fixture>` and wait until it prints the
  * "online" banner on stderr. Returns the child + a buffered stderr string
  * the caller can keep reading from. The caller is responsible for
  * sending SIGTERM and awaiting exit.
  */
 async function spawnUp(env: EnvOverrides, dir: string) {
-	const child = spawn(
-		'bun',
-		['run', BIN_PATH, 'up', '--dir', dir],
-		{
-			cwd: dir,
-			env: childEnv(env),
-			stdio: ['ignore', 'pipe', 'pipe'],
-		},
-	);
+	const child = spawn('bun', ['run', BIN_PATH, 'up', '-C', dir], {
+		cwd: dir,
+		env: childEnv(env),
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
 
 	let stderr = '';
 	child.stderr!.setEncoding('utf8');
@@ -162,14 +157,14 @@ async function awaitExit(child: ReturnType<typeof spawn>): Promise<number> {
 	});
 }
 
-describe('up lifecycle (scaled-down — no real cross-peer)', () => {
+describe('up lifecycle (scaled down, no real cross-peer)', () => {
 	test('online banner + peers snapshot + clean exit on SIGTERM', async () => {
 		const env = makeEnv();
 		try {
 			const { child, getStderr } = await spawnUp(env, FIXTURE_DIR);
 
 			expect(getStderr()).toContain('online (');
-			// Initial peers snapshot prints right after the banner. Poll —
+			// Initial peers snapshot prints right after the banner. Poll because
 			// stderr buffering means "online" can land before the snapshot
 			// flushes, so we wait briefly for the second line.
 			const snapshotDeadline = Date.now() + 2000;
@@ -185,7 +180,7 @@ describe('up lifecycle (scaled-down — no real cross-peer)', () => {
 			const code = await awaitExit(child);
 			expect(code).toBe(0);
 
-			// Runtime dir should be empty — no orphan .sock or .meta.json.
+			// Runtime dir should be empty: no orphan .sock or .meta.json.
 			const runtimeRoot = join(env.xdgRoot, 'epicenter');
 			const leftovers = readdirSync(runtimeRoot);
 			expect(leftovers).toEqual([]);
@@ -217,28 +212,26 @@ describe('up lifecycle (scaled-down — no real cross-peer)', () => {
 		const env = makeEnv();
 		try {
 			const { child } = await spawnUp(env, FIXTURE_DIR);
-			const result = await runCli(env, ['down', '--dir', FIXTURE_DIR]);
+			const result = await runCli(env, ['down', '-C', FIXTURE_DIR]);
 			expect(result.exitCode).toBe(0);
 			const code = await awaitExit(child);
 			expect(code).toBe(0);
 
 			// Socket and metadata should both be gone.
 			const runtimeRoot = join(env.xdgRoot, 'epicenter');
-			const leftovers = existsSync(runtimeRoot)
-				? readdirSync(runtimeRoot)
-				: [];
+			const leftovers = existsSync(runtimeRoot) ? readdirSync(runtimeRoot) : [];
 			expect(leftovers).toEqual([]);
 		} finally {
 			env.dispose();
 		}
 	}, 30000);
 
-	test('logs prints recent lines from the daemon\'s log file', async () => {
+	test("logs prints recent lines from the daemon's log file", async () => {
 		const env = makeEnv();
 		try {
 			const { child } = await spawnUp(env, FIXTURE_DIR);
 			try {
-				const result = await runCli(env, ['logs', '--dir', FIXTURE_DIR]);
+				const result = await runCli(env, ['logs', '-C', FIXTURE_DIR]);
 				// Log file is written under $HOME/.epicenter/log/<h>.log; if
 				// the daemon has emitted anything by now, `logs` succeeds with
 				// some output. A bare exitCode=0 is the load-bearing assertion.
@@ -257,11 +250,7 @@ describe('up lifecycle (scaled-down — no real cross-peer)', () => {
 		try {
 			const { child } = await spawnUp(env, FIXTURE_DIR);
 			try {
-				const result = await runCli(env, [
-					'up',
-					'--dir',
-					FIXTURE_DIR,
-				]);
+				const result = await runCli(env, ['up', '-C', FIXTURE_DIR]);
 				expect(result.exitCode).toBe(1);
 				expect(result.stderr).toContain('daemon already running (pid=');
 			} finally {

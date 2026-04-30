@@ -1,20 +1,10 @@
 /**
- * Per-installation deviceId: read from storage, or generate-and-persist.
+ * Per-installation id helpers.
  *
- * The remote action layer (`createRemoteActions<T>(sync, deviceId)`) addresses
- * peers by a single string. For first-match-wins resolution to be safe, that
- * string must be cryptographically unique per installation: two browser tabs
- * of the same SPA share localStorage and so share a deviceId (they're
- * interchangeable runtimes); two physical devices have distinct deviceIds
- * (no collision).
- *
- * Two adapter shapes. Pick the one matching your storage:
- *   - `SimpleStorage` (sync): localStorage, in-memory.
- *   - `AsyncStorage`         : chrome.storage, tauri-plugin-store, IDB-backed.
- *
- * Resolve once at boot (in your app's `client.ts`) and pass the id straight
- * into the workspace factory's `device` arg. Don't paper over async with a
- * sync facade.
+ * The peer action layer addresses peers by a single string. For
+ * first-match-wins resolution to be safe, that string must be unique per
+ * installation. Browser tabs in the same app share localStorage and therefore
+ * share an installation id. Separate machines get distinct installation ids.
  */
 
 import { generateGuid } from './id.js';
@@ -29,16 +19,9 @@ export type AsyncStorage = {
 	setItem(key: string, value: string): Promise<void>;
 };
 
-const KEY = 'epicenter:deviceId';
+const KEY = 'epicenter:installationId';
 
-/**
- * Read the persisted deviceId from a sync store, or generate-and-persist one
- * if absent. Idempotent: subsequent calls return the same value.
- *
- * Generic over the return type so apps with a branded ID alias can call
- * `getOrCreateDeviceId<DeviceId>(localStorage)` without an `as` cast.
- */
-export function getOrCreateDeviceId<T extends string = string>(
+export function getOrCreateInstallationId<T extends string = string>(
 	storage: SimpleStorage,
 ): T {
 	const existing = storage.getItem(KEY);
@@ -48,14 +31,9 @@ export function getOrCreateDeviceId<T extends string = string>(
 	return fresh as unknown as T;
 }
 
-/**
- * Async variant for stores that don't expose a sync read (chrome.storage,
- * tauri-plugin-store). Resolve once at boot and treat the result as a plain
- * string. Don't await it on every call.
- */
-export async function getOrCreateDeviceIdAsync<T extends string = string>(
-	storage: AsyncStorage,
-): Promise<T> {
+export async function getOrCreateInstallationIdAsync<
+	T extends string = string,
+>(storage: AsyncStorage): Promise<T> {
 	const existing = await storage.getItem(KEY);
 	if (existing) return existing as T;
 	const fresh = generateGuid();

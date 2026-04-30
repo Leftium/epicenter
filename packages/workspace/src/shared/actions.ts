@@ -26,7 +26,7 @@
  * preserves existing Results, and catches throws as `RpcError.ActionFailed`.
  * RPC uses `invokeActionForRpc`, which also converts custom non-RPC errors
  * into `RpcError.ActionFailed` before the result crosses the wire. Remote
- * callers use `createRemoteActions`, whose leaves expose
+ * callers use `peer`, whose leaves expose
  * `Promise<Result<T, RpcError>>`.
  *
  * @module
@@ -90,7 +90,7 @@ export type ActionMeta<
 /**
  * Flat dot-path to `ActionMeta` map describing a peer's full action surface.
  * Returned by the runtime-injected `system.describe` RPC and consumed via
- * `describeRemoteActions(sync, deviceId)`.
+ * `describePeer({ presence, rpc }, peerId)`.
  */
 export type ActionManifest = Record<string, ActionMeta>;
 
@@ -132,7 +132,7 @@ export type Action<
  * Shape suggestion for a "pure action tree" authoring style: nested objects
  * whose leaves are all `Action` definitions, no infrastructure mixed in.
  *
- * Not load-bearing on any public signature anymore. `createRemoteActions<T>`,
+ * Not load-bearing on any public signature anymore. `peer<T>`,
  * `RemoteActionProxy<T>`, `actionsToAiTools<T>`, and `InferSyncRpcMap<T>` accept
  * any source object; `walkActions` filters action leaves at runtime via
  * `isAction`, so action definitions can sit alongside `ydoc`, `tables`, and
@@ -151,10 +151,24 @@ export type Actions = {
 };
 
 /**
+ * Mark a plain action registry as the public action surface.
+ *
+ * This is intentionally an identity function: callers keep the exact inferred
+ * nested shape while making the registry root explicit. CLI, AI tools, RPC,
+ * manifests, and `InferSyncRpcMap` should receive this registry, not a whole
+ * workspace bundle.
+ */
+export function defineActions<TActions extends Actions>(
+	actions: TActions,
+): TActions {
+	return actions;
+}
+
+/**
  * The runtime-injected `system.*` action namespace. Single canonical type:
  * `attachSync` constructs `systemActions: SystemActions` (TypeScript checks
  * the construction shape against this) and `remote-actions.ts` derives the
- * proxy type `createRemoteActions<{ system: SystemActions }>` from the same
+ * proxy type `peer<{ system: SystemActions }>` from the same
  * source. Drift between the runtime handler return and the consumer's
  * expected return becomes a compile error.
  */
@@ -168,7 +182,7 @@ export type SystemActions = {
  * Returns the handler with metadata attached. The action callable IS the
  * handler. Local callers see whatever the handler returns (sync if sync,
  * raw if raw, `Result` if explicit). Remote/AI/CLI consumers see uniform
- * `Promise<Result>` via the boundary normalizers (`createRemoteActions()` for
+ * `Promise<Result>` via the boundary normalizers (`peer()` for
  * callers, `invokeActionForRpc()` for the inbound wire).
  */
 /** No input. `TInput` is explicitly `undefined`. */
@@ -323,7 +337,7 @@ export function* walkActions(
 /**
  * Walk a tree into its flat `ActionManifest`: the wire form returned by
  * `system.describe`. Live `input` schemas are retained; functions are
- * dropped. Pairs with `describeRemoteActions(sync, id)`, which returns the
+ * dropped. Pairs with `describePeer({ presence, rpc }, peerId)`, which returns the
  * same shape from a remote device.
  *
  * Built atop {@link walkActions}. Use that primitive directly if you want
@@ -428,7 +442,7 @@ export type ActionFailed = Extract<RpcError, { name: 'ActionFailed' }>;
 
 /**
  * Per-remote-call options, threaded through every wrapped leaf as a trailing
- * optional argument. The proxy passes these to `sync.rpc(...)` directly:
+ * optional argument. The proxy passes these to `rpc.rpc(...)` directly:
  * same shape, same name, single source of truth.
  *
  * Currently just `timeout`. Cancellation via `AbortSignal` is deliberately

@@ -1,7 +1,7 @@
 import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
-import { getOrCreateDeviceId } from '@epicenter/workspace';
+import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { openFuji } from './browser';
 
 const session = createPersistedState({
@@ -17,8 +17,8 @@ export const auth = createAuth({
 
 export const fuji = openFuji({
 	auth,
-	device: {
-		id: getOrCreateDeviceId(localStorage),
+	peer: {
+		id: getOrCreateInstallationId(localStorage),
 		name: 'Fuji',
 		platform: 'web',
 	},

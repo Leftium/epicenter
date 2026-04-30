@@ -33,6 +33,7 @@ export function openFuji({
 		getToken,
 		webSocketImpl,
 	});
+	const rpc = sync.attachRpc({ actions: { actions: doc.actions } });
 
-	return { ...doc, yjsLog, sync };
+	return { ...doc, yjsLog, sync, rpc };
 }

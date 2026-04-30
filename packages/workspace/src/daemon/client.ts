@@ -9,7 +9,7 @@
  *   renderer narrows by `error.name`.
  * - {@link getDaemon}: dispatch decision for `run` / `list` / `peers`.
  *   Returns a typed client on success, or `MissingConfig` /
- *   `Required` when the workspace isn't configured / has no live daemon.
+ *   `Required` when the project is not configured or has no live daemon.
  *
  * The wire protocol is dead simple: POST a JSON body to a path on the unix
  * socket, get back a `Result<T, DomainErr>` JSON envelope from the handler.
@@ -20,31 +20,19 @@
  */
 
 import { join } from 'node:path';
-
-import type { ActionManifest } from '../shared/actions.js';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
+import type { ActionManifest } from '../shared/actions.js';
 
-import type { ResolveError } from './resolve-entry.js';
-import type { ListInput, PeerSnapshot, RunInput, PeersInput } from './app.js';
+import type { PeerSnapshot, RunInput } from './app.js';
 import { socketPathFor } from './paths.js';
 import type { RunError } from './run-errors.js';
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
-
-/**
- * Resolved `--dir` + `--workspace` for a single command invocation. The CLI
- * builds this from yargs argv and passes it to `getDaemon`; consumers
- * outside the CLI (vault scripts) build it inline.
- */
-export type ResolvedTarget = {
-	projectDir: string;
-	userWorkspace: string | undefined;
-};
 
 /**
  * Tagged-error variants returned by daemon client surfaces. Domain errors
@@ -64,13 +52,9 @@ export const DaemonError = defineErrors({
 		message: `No ${CONFIG_FILENAME} found in ${projectDir}`,
 		projectDir,
 	}),
-	Required: ({ projectDir, id }: { projectDir: string; id?: string }) => ({
-		message:
-			id !== undefined
-				? `no daemon running for ${projectDir} (workspace ${id}); start one with \`epicenter up\` first`
-				: `no daemon running for ${projectDir}; start one with \`epicenter up\` first`,
+	Required: ({ projectDir }: { projectDir: string }) => ({
+		message: `no daemon running for ${projectDir}; start one with \`epicenter up\` first`,
 		projectDir,
-		id,
 	}),
 	Timeout: ({
 		socketPath,
@@ -140,7 +124,7 @@ export async function pingDaemon(
  * failures and unexpected non-2xx responses fold into `DaemonError`.
  *
  * Hostname is a placeholder; routing is done by the unix socket path.
- * Routes without a validator (ping, peers) get an empty `{}`
+ * Routes without a validator (ping, peers, list) get an empty `{}`
  * body, which Hono's body-parsing tolerates and validators ignore.
  */
 async function call<TOk, TErr>(
@@ -186,17 +170,10 @@ export function daemonClient(
 	timeoutMs: number = DEFAULT_CALL_TIMEOUT_MS,
 ) {
 	return {
-		peers: (input: PeersInput = {}) =>
-			call<PeerSnapshot[], never>(socketPath, timeoutMs, '/peers', input),
-		list: (input: ListInput) =>
-			call<ActionManifest, ResolveError>(socketPath, timeoutMs, '/list', input),
+		peers: () => call<PeerSnapshot[], never>(socketPath, timeoutMs, '/peers'),
+		list: () => call<ActionManifest, never>(socketPath, timeoutMs, '/list'),
 		run: (input: RunInput) =>
-			call<unknown, RunError | ResolveError>(
-				socketPath,
-				timeoutMs,
-				'/run',
-				input,
-			),
+			call<unknown, RunError>(socketPath, timeoutMs, '/run', input),
 		shutdown: () => call<null, never>(socketPath, timeoutMs, '/shutdown'),
 	};
 }
@@ -208,7 +185,7 @@ export function daemonClient(
 export type DaemonClient = ReturnType<typeof daemonClient>;
 
 /**
- * Resolve the daemon client for `target`, or surface why we can't.
+ * Resolve the daemon client for `projectDir`, or surface why we can't.
  *
  *   - `MissingConfig`: no `epicenter.config.ts` in `projectDir`. Surfaced
  *     distinctly from `Required` so unconfigured users don't get pointed
@@ -220,15 +197,15 @@ export type DaemonClient = ReturnType<typeof daemonClient>;
  * neither variant they have a typed client to dispatch against.
  */
 export async function getDaemon(
-	target: ResolvedTarget,
+	projectDir: string,
 ): Promise<Result<DaemonClient, DaemonError>> {
-	const configPath = join(target.projectDir, CONFIG_FILENAME);
+	const configPath = join(projectDir, CONFIG_FILENAME);
 	if (!(await Bun.file(configPath).exists())) {
-		return DaemonError.MissingConfig({ projectDir: target.projectDir });
+		return DaemonError.MissingConfig({ projectDir });
 	}
-	const sock = socketPathFor(target.projectDir);
+	const sock = socketPathFor(projectDir);
 	if (!(await pingDaemon(sock))) {
-		return DaemonError.Required({ projectDir: target.projectDir });
+		return DaemonError.Required({ projectDir });
 	}
 	return Ok(daemonClient(sock));
 }

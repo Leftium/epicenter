@@ -11,7 +11,7 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	type DeviceDescriptor,
+	type PeerDescriptor,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -20,10 +20,10 @@ import { openOpensidian as openOpensidianDoc } from './index';
 
 export function openOpensidian({
 	auth,
-	device,
+	peer,
 }: {
 	auth: AuthClient;
-	device: DeviceDescriptor;
+	peer: PeerDescriptor;
 }) {
 	const doc = openOpensidianDoc();
 
@@ -41,7 +41,9 @@ export function openOpensidian({
 		{ gcTime: 5_000 },
 	);
 
-	const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables: doc.tables }).exports;
+	const sqliteIndex = createSqliteIndex(fileContentDocs)({
+		tables: doc.tables,
+	}).exports;
 	const fs = attachYjsFileSystem(doc.tables.files, fileContentDocs);
 	const bash = new Bash({ fs, cwd: '/' });
 	const actions = createOpensidianActions({ fs, sqliteIndex, bash });
@@ -49,10 +51,10 @@ export function openOpensidian({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		device,
 		getToken: () => auth.getToken(),
-		actions,
 	});
+	const presence = sync.attachPresence({ peer });
+	const rpc = sync.attachRpc({ actions: { actions } });
 
 	return {
 		...doc,
@@ -63,6 +65,8 @@ export function openOpensidian({
 		bash,
 		actions,
 		sync,
+		presence,
+		rpc,
 		/**
 		 * Resolves when IndexedDB has hydrated the local snapshot: the UI can
 		 * render with persisted data. Does NOT gate sync (the WebSocket can

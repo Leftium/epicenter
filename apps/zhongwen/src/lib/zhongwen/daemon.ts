@@ -2,9 +2,9 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
 	attachYjsLog,
-	type DeviceDescriptor,
 	findEpicenterDir,
 	hashClientId,
+	type PeerDescriptor,
 	type ProjectDir,
 	toWsUrl,
 	type WebSocketImpl,
@@ -14,14 +14,14 @@ import { openZhongwen as openZhongwenDoc } from './index.js';
 
 export function openZhongwen({
 	getToken,
-	device,
+	peer,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(projectDir),
 	apiUrl = EPICENTER_API_URL,
 	webSocketImpl,
 }: {
 	getToken: () => Promise<string | null>;
-	device: DeviceDescriptor;
+	peer: PeerDescriptor;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
@@ -33,10 +33,10 @@ export function openZhongwen({
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		device,
 		getToken,
 		webSocketImpl,
 	});
+	const presence = sync.attachPresence({ peer });
 
-	return { ...doc, yjsLog, sync };
+	return { ...doc, yjsLog, sync, presence };
 }

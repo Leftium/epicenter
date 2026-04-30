@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { getOrCreateDeviceId, type SimpleStorage } from './device-id.js';
+import { getOrCreateInstallationId, type SimpleStorage } from './device-id.js';
 
 function makeMemoryStorage(initial: Record<string, string> = {}): SimpleStorage {
 	const store = new Map(Object.entries(initial));
@@ -11,29 +11,31 @@ function makeMemoryStorage(initial: Record<string, string> = {}): SimpleStorage 
 	};
 }
 
-describe('getOrCreateDeviceId', () => {
+describe('getOrCreateInstallationId', () => {
 	it('returns the existing value when storage already holds one', () => {
-		const storage = makeMemoryStorage({ 'epicenter:deviceId': 'preexisting-id' });
-		expect(getOrCreateDeviceId(storage)).toBe('preexisting-id');
+		const storage = makeMemoryStorage({
+			'epicenter:installationId': 'preexisting-id',
+		});
+		expect(getOrCreateInstallationId(storage)).toBe('preexisting-id');
 	});
 
 	it('generates and persists when storage is empty', () => {
 		const storage = makeMemoryStorage();
-		const fresh = getOrCreateDeviceId(storage);
+		const fresh = getOrCreateInstallationId(storage);
 		expect(fresh).toMatch(/^[a-z0-9]{15}$/);
-		expect(storage.getItem('epicenter:deviceId')).toBe(fresh);
+		expect(storage.getItem('epicenter:installationId')).toBe(fresh);
 	});
 
 	it('returns the same value on subsequent calls (idempotent)', () => {
 		const storage = makeMemoryStorage();
-		const first = getOrCreateDeviceId(storage);
-		const second = getOrCreateDeviceId(storage);
+		const first = getOrCreateInstallationId(storage);
+		const second = getOrCreateInstallationId(storage);
 		expect(second).toBe(first);
 	});
 
 	it('does not collide on independent storages', () => {
-		const a = getOrCreateDeviceId(makeMemoryStorage());
-		const b = getOrCreateDeviceId(makeMemoryStorage());
+		const a = getOrCreateInstallationId(makeMemoryStorage());
+		const b = getOrCreateInstallationId(makeMemoryStorage());
 		expect(a).not.toBe(b);
 	});
 });

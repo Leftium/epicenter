@@ -3,16 +3,20 @@
  *
  * `LoadedWorkspace` is the structural contract every workspace export has
  * to satisfy: the `[Symbol.dispose]` discriminator, plus the optional
- * `whenReady` and `sync` fields the daemon reads when present. The
- * workspace's branded actions live as named leaves on the bundle itself
- * (at any depth), not under a fixed `actions` slot: `walkActions(workspace)`
+ * `whenReady`, `sync`, `presence`, and `rpc` fields the daemon reads when
+ * present. The workspace's branded actions live as named leaves on the bundle
+ * itself (at any depth), not under a fixed `actions` slot: `walkActions(workspace)`
  * discovers them at runtime.
  *
  * `WorkspaceEntry` is one named entry the daemon hosts. The CLI's config
  * loader produces these from `epicenter.config.ts` exports.
  */
 
-import type { SyncAttachment } from '../document/attach-sync.js';
+import type {
+	SyncAttachment,
+	SyncRpcAttachment,
+} from '../document/attach-sync.js';
+import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 
 /**
  * Fields the daemon looks at on each workspace export. Only `[Symbol.dispose]`
@@ -31,11 +35,13 @@ export type LoadedWorkspace = {
 	readonly whenReady?: Promise<unknown>;
 
 	/**
-	 * Enables `--peer` targeting and `epicenter peers`. `attachSync(doc, { device })`
-	 * carries presence inline; `peers()` / `find()` / `observe()` live on the
-	 * SyncAttachment when the workspace was constructed with a `device`.
+	 * Underlying sync transport. Presence and RPC are attached separately so
+	 * callers choose which peer surfaces they expose.
 	 */
 	readonly sync?: SyncAttachment;
+	readonly actions?: Record<string, unknown>;
+	readonly presence?: PeerPresenceAttachment;
+	readonly rpc?: SyncRpcAttachment;
 };
 
 /** One named workspace export from `epicenter.config.ts`. */

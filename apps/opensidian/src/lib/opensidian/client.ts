@@ -1,7 +1,7 @@
 import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
-import { getOrCreateDeviceId } from '@epicenter/workspace';
+import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { openOpensidian } from './browser';
 
@@ -18,8 +18,8 @@ export const auth = createAuth({
 
 export const opensidian = openOpensidian({
 	auth,
-	device: {
-		id: getOrCreateDeviceId(localStorage),
+	peer: {
+		id: getOrCreateInstallationId(localStorage),
 		name: 'Opensidian',
 		platform: 'web',
 	},
@@ -42,7 +42,7 @@ if (import.meta.hot) {
 }
 
 /** AI tool representations for the opensidian workspace. */
-export const workspaceAiTools = actionsToAiTools(opensidian);
+export const workspaceAiTools = actionsToAiTools(opensidian.actions);
 
 /** Tool array type for use in TanStack AI generics. */
 export type WorkspaceTools = typeof workspaceAiTools.tools;

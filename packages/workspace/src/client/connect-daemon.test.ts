@@ -37,6 +37,5 @@ describe('connectDaemon', () => {
 		const e = caught as Extract<DaemonError, { name: 'Required' }>;
 		expect(e.name).toBe('Required');
 		expect(e.projectDir).toBe(root);
-		expect(e.id).toBe('demo');
 	});
 });

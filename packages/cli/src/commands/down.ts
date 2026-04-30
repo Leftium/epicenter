@@ -1,7 +1,8 @@
 /**
  * `epicenter down`: stop a running `up` daemon.
  *
- * Default: shut down the daemon for `--dir` via IPC `shutdown` (1 s budget).
+ * Default: shut down the daemon for the discovered project via IPC
+ * `shutdown` (1 s budget).
  * If the daemon doesn't reply in time (hung handler, unresponsive socket),
  * fall back to `SIGTERM` against the recorded pid. `--all` enumerates every
  * daemon for the current user and shuts them down in parallel.
@@ -12,19 +13,17 @@
  */
 
 import { resolve } from 'node:path';
-
-import type { Result } from 'wellcrafted/result';
-import type { Argv, CommandModule } from 'yargs';
-
 import {
-	daemonClient,
 	type DaemonMetadata,
+	daemonClient,
 	enumerateDaemons,
 	readMetadata,
-	unlinkMetadata,
 	socketPathFor,
+	unlinkMetadata,
 } from '@epicenter/workspace';
-import { dirFromArgv, dirOption } from '../util/common-options.js';
+import type { Result } from 'wellcrafted/result';
+import type { Argv, CommandModule } from 'yargs';
+import { type ProjectArgs, projectOption } from '../util/common-options.js';
 
 const SHUTDOWN_TIMEOUT_MS = 1000;
 
@@ -40,7 +39,7 @@ function isProcessAlive(pid: number): boolean {
 }
 
 export type DownOptions = {
-	dir: string;
+	projectDir: string;
 	all: boolean;
 };
 
@@ -113,8 +112,8 @@ async function shutdownOne(
  * Behavior:
  *   - `--all`: enumerate `<runtimeDir>/*.meta.json`, shut each down in
  *     parallel.
- *   - default: shut down the daemon for `--dir`, or report `'absent'` if
- *     no metadata exists.
+ *   - default: shut down the daemon for the project, or report `'absent'`
+ *     if no metadata exists.
  */
 export async function runDown(
 	options: DownOptions,
@@ -134,44 +133,49 @@ export async function runDown(
 		return { outcomes };
 	}
 
-	const absDir = resolve(options.dir);
-	const meta = readMetadata(absDir);
+	const projectDir = resolve(options.projectDir);
+	const meta = readMetadata(projectDir);
 	if (!meta) {
-		return { outcomes: [{ kind: 'absent', dir: absDir }] };
+		return { outcomes: [{ kind: 'absent', dir: projectDir }] };
 	}
 	const outcome = await shutdownOne(meta, resolved);
 	return { outcomes: [outcome] };
 }
 
-export const downCommand: CommandModule = {
+type DownArgs = ProjectArgs & {
+	all: boolean;
+};
+
+export const downCommand: CommandModule<{}, DownArgs> = {
 	command: 'down',
 	describe: 'Stop a running `epicenter up` daemon.',
 	builder: (yargs: Argv) =>
-		yargs
-			.option('dir', dirOption)
-			.option('all', {
-				type: 'boolean',
-				default: false,
-				description: 'Stop every running daemon for this user.',
-			}),
+		yargs.option('C', projectOption).option('all', {
+			type: 'boolean',
+			default: false,
+			description: 'Stop every running daemon for this user.',
+		}),
 	handler: async (argv) => {
-		const args = argv as Record<string, unknown>;
 		const options: DownOptions = {
-			dir: dirFromArgv(args),
-			all: args.all === true,
+			projectDir: argv.C,
+			all: argv.all,
 		};
 
 		const result = await runDown(options);
 
 		if (options.all) {
 			const stopped = result.outcomes.filter((o) => o.kind !== 'absent').length;
-			process.stdout.write(`stopped ${stopped} daemon${stopped === 1 ? '' : 's'}\n`);
+			process.stdout.write(
+				`stopped ${stopped} daemon${stopped === 1 ? '' : 's'}\n`,
+			);
 			return;
 		}
 
 		const [outcome] = result.outcomes;
 		if (!outcome || outcome.kind === 'absent') {
-			process.stderr.write(`no daemon running for ${outcome?.dir ?? options.dir}\n`);
+			process.stderr.write(
+				`no daemon running for ${outcome?.dir ?? options.projectDir}\n`,
+			);
 			return;
 		}
 		if (outcome.kind === 'graceful') {

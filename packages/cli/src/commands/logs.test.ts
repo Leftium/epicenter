@@ -3,17 +3,10 @@
  *
  * Covers:
  *   - `tailLines` returns the last N lines of a file (mirrors `tail`).
- *   - `pickSoleDaemon` resolves to `'one'`/`'none'`/`'many'` correctly.
  *   - `followLog` streams new bytes and reopens after rotation.
  */
 
-import {
-	afterEach,
-	beforeEach,
-	describe,
-	expect,
-	test,
-} from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
 	appendFileSync,
 	mkdirSync,
@@ -25,8 +18,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { writeMetadata } from '@epicenter/workspace';
-import { followLog, pickSoleDaemon, tailLines } from './logs';
+import { followLog, tailLines } from './logs';
 
 let originalXdg: string | undefined;
 let originalHome: string | undefined;
@@ -64,50 +56,6 @@ describe('tailLines', () => {
 	});
 });
 
-describe('pickSoleDaemon', () => {
-	test('none when runtime is empty', () => {
-		expect(pickSoleDaemon().kind).toBe('none');
-	});
-
-	test('one when exactly one metadata file exists', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'ep-logs-one-'));
-		try {
-			writeMetadata(dir, {
-				pid: process.pid,
-				dir,
-				startedAt: new Date().toISOString(),
-				cliVersion: '0.0.0',
-				configMtime: 0,
-			});
-			const r = pickSoleDaemon();
-			expect(r.kind).toBe('one');
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('many when more than one', () => {
-		const a = mkdtempSync(join(tmpdir(), 'ep-logs-a-'));
-		const b = mkdtempSync(join(tmpdir(), 'ep-logs-b-'));
-		try {
-			for (const d of [a, b]) {
-				writeMetadata(d, {
-					pid: process.pid,
-					dir: d,
-					startedAt: new Date().toISOString(),
-					cliVersion: '0.0.0',
-					configMtime: 0,
-				});
-			}
-			const r = pickSoleDaemon();
-			expect(r.kind).toBe('many');
-		} finally {
-			rmSync(a, { recursive: true, force: true });
-			rmSync(b, { recursive: true, force: true });
-		}
-	});
-});
-
 describe('followLog', () => {
 	test('streams appended bytes and reopens after rotate', async () => {
 		const p = join(runtimeRoot, 'follow.log');
@@ -115,9 +63,9 @@ describe('followLog', () => {
 
 		const captured: string[] = [];
 		const origWrite = process.stdout.write.bind(process.stdout);
-		(process.stdout as unknown as { write: (b: Buffer | string) => boolean }).write = (
-			b: Buffer | string,
-		) => {
+		(
+			process.stdout as unknown as { write: (b: Buffer | string) => boolean }
+		).write = (b: Buffer | string) => {
 			captured.push(typeof b === 'string' ? b : b.toString('utf8'));
 			return true;
 		};

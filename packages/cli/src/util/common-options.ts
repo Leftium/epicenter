@@ -1,57 +1,31 @@
 /**
- * Shared yargs option specs + argv readers for the flags every command
- * uses. `--dir` / `-C` mirrors `git -C`, `cargo --manifest-path`,
- * `pnpm --dir`, `bun --cwd`. `--workspace` / `-w` disambiguates when
- * `epicenter.config.ts` exports more than one opened handle.
+ * Shared project-root option for commands that address a local daemon.
  *
- * {@link resolveTarget} is the canonical way to consume both flags at
- * once. Every daemon-dispatching command (`list`, `run`, `peers`)
- * builds it at the top of its handler; the result feeds `getDaemon`,
- * which resolves the typed daemon client or surfaces `MissingConfig` /
- * `Required` for the renderer.
+ * By default commands discover the nearest Epicenter project from the
+ * current working directory. `-C <dir>` changes the discovery start point.
  */
 
 import { resolve } from 'node:path';
 
+import { findEpicenterDir } from '@epicenter/workspace';
 import type { Options } from 'yargs';
 
-export const dirOption: Options = {
+export type ProjectArgs = {
+	C: string;
+};
+
+export function resolveProjectDir(start: string): string {
+	try {
+		return findEpicenterDir(start);
+	} catch {
+		return resolve(start);
+	}
+}
+
+export const projectOption = {
 	type: 'string',
-	alias: 'C',
-	default: '.',
-	description: 'Directory containing epicenter.config.ts',
-};
-
-export function dirFromArgv(argv: Record<string, unknown>): string {
-	return typeof argv.dir === 'string' ? argv.dir : '.';
-}
-
-export const workspaceOption: Options = {
-	type: 'string',
-	alias: 'w',
-	description:
-		'Config entry name (required when epicenter.config.ts exports multiple workspaces)',
-};
-
-export function workspaceFromArgv(
-	argv: Record<string, unknown>,
-): string | undefined {
-	return typeof argv.workspace === 'string' ? argv.workspace : undefined;
-}
-
-/**
- * Resolved `--dir` + `--workspace` for a single command invocation. One
- * source of truth: every handler builds this once at the top, then
- * passes it to `getDaemon`.
- */
-export type ResolvedTarget = {
-	absDir: string;
-	userWorkspace: string | undefined;
-};
-
-export function resolveTarget(args: Record<string, unknown>): ResolvedTarget {
-	return {
-		absDir: resolve(dirFromArgv(args)),
-		userWorkspace: workspaceFromArgv(args),
-	};
-}
+	description: 'Start directory for Epicenter project discovery',
+	default: () => process.cwd(),
+	defaultDescription: 'current working directory',
+	coerce: resolveProjectDir,
+} satisfies Options;

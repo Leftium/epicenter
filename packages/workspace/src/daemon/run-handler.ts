@@ -1,11 +1,11 @@
 /**
  * Daemon-side dispatch for the `/run` route. The Hono handler in `app.ts`
- * resolves the workspace entry and forwards to `executeRun` here.
+ * forwards to `executeRun` here.
  *
  * `epicenter run` is a shell shortcut for one workspace primitive:
  *
  *   ctx.peerTarget === undefined   ->  invokeAction(...)
- *   ctx.peerTarget === <deviceId>  ->  sync.rpc(clientID, path, input)
+ *   ctx.peerTarget === <peerId>    ->  rpc.rpc(clientID, path, input)
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
@@ -16,46 +16,56 @@
  * try/catch and surface as `HandlerCrashed` on the client side.
  */
 
-import {
-	type Action,
-	invokeAction,
-	resolveActionPath,
-	walkActions,
-} from '../shared/actions.js';
 import { Ok } from 'wellcrafted/result';
-
-import type { WorkspaceEntry } from './types.js';
+import { invokeAction, resolveActionPath } from '../shared/actions.js';
+import {
+	resolveWorkspaceActionTarget,
+	workspaceActionNearestSiblingLines,
+	workspaceActionSuggestionLines,
+} from './action-paths.js';
 import type { RunInput } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
+import type { WorkspaceEntry } from './types.js';
 
 export async function executeRun(
-	entry: WorkspaceEntry,
+	entries: WorkspaceEntry[],
 	ctx: RunInput,
 ): Promise<RunResponse> {
+	const actionPath = ctx.workspace
+		? `${ctx.workspace}.${ctx.actionPath}`
+		: ctx.actionPath;
+	const target = resolveWorkspaceActionTarget(entries, actionPath);
+	if (target.error !== null) {
+		return RunError.UsageError({
+			message: `No config export "${target.error.exportName}". Available: ${target.error.available.join(', ')}`,
+			suggestions: target.error.available.map((name) => `  ${name}`),
+		});
+	}
+
+	const { entry, localPath } = target.data;
 	const { workspace } = entry;
 	if (workspace.whenReady) await workspace.whenReady;
 
-	const action = resolveActionPath(workspace, ctx.actionPath);
+	const action = resolveActionPath(workspace.actions ?? {}, localPath);
 	if (!action) {
-		const entries = [...walkActions(workspace)];
-		const descendants = entriesUnder(entries, ctx.actionPath);
+		const descendants = workspaceActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {
 			return RunError.UsageError({
-				message: `"${ctx.actionPath}" is not a runnable action.`,
-				suggestions: descendants.map(([p, a]) => `  ${p}  (${a.type})`),
+				message: `"${actionPath}" is not a runnable action.`,
+				suggestions: descendants,
 			});
 		}
 		return RunError.UsageError({
-			message: `"${ctx.actionPath}" is not defined.`,
-			suggestions: nearestSiblingLines(entries, ctx.actionPath),
+			message: `"${actionPath}" is not defined.`,
+			suggestions: workspaceActionNearestSiblingLines(entry, localPath),
 		});
 	}
 
 	if (ctx.peerTarget !== undefined) {
-		return invokeRemote(entry, ctx, ctx.peerTarget);
+		return invokeRemote(entry, ctx, localPath, ctx.peerTarget);
 	}
 
-	const result = await invokeAction(action, ctx.input, ctx.actionPath);
+	const result = await invokeAction(action, ctx.input, actionPath);
 	if (result.error !== null) {
 		return RunError.RuntimeError({ cause: result.error });
 	}
@@ -65,19 +75,23 @@ export async function executeRun(
 async function invokeRemote(
 	entry: WorkspaceEntry,
 	ctx: RunInput,
+	localPath: string,
 	peerTarget: string,
 ): Promise<RunResponse> {
 	const { workspace } = entry;
-	const sync = workspace.sync;
+	const presence = workspace.presence;
+	const rpc = workspace.rpc;
 
-	if (!sync) {
+	if (!presence || !rpc) {
 		return RunError.UsageError({
-			message: `Workspace "${entry.name}" has no sync attachment; --peer requires sync.`,
+			message: `Workspace "${entry.name}" has no peer RPC attachment; --peer requires presence and RPC.`,
 		});
 	}
 
 	const start = Date.now();
-	const found = await sync.waitForPeer(peerTarget, { timeoutMs: ctx.waitMs });
+	const found = await presence.waitForPeer(peerTarget, {
+		timeoutMs: ctx.waitMs,
+	});
 	if (found.error !== null) {
 		return RunError.PeerMiss({
 			peerTarget: found.error.peerTarget,
@@ -89,7 +103,7 @@ async function invokeRemote(
 
 	const { clientId: targetClientId, state: peerState } = found.data;
 	const remaining = Math.max(1, ctx.waitMs - (Date.now() - start));
-	const result = await sync.rpc(targetClientId, ctx.actionPath, ctx.input, {
+	const result = await rpc.rpc(targetClientId, localPath, ctx.input, {
 		timeout: remaining,
 	});
 
@@ -101,28 +115,4 @@ async function invokeRemote(
 		});
 	}
 	return Ok(result.data);
-}
-
-function entriesUnder(
-	entries: Array<[string, Action]>,
-	prefix: string,
-): Array<[string, Action]> {
-	if (!prefix) return entries;
-	const pfx = prefix + '.';
-	return entries.filter(([p]) => p === prefix || p.startsWith(pfx));
-}
-
-function nearestSiblingLines(
-	entries: Array<[string, Action]>,
-	missedPath: string,
-): string[] {
-	const parts = missedPath.split('.');
-	while (parts.length > 0) {
-		parts.pop();
-		const prefix = parts.join('.');
-		const alts = entriesUnder(entries, prefix);
-		if (alts.length === 0) continue;
-		return alts.map(([p, a]) => `  ${p}  (${a.type})`);
-	}
-	return [];
 }

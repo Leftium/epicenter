@@ -13,6 +13,7 @@
 
 import {
 	DateTimeString,
+	defineActions,
 	defineMutation,
 	defineTable,
 	type InferTableRow,
@@ -130,7 +131,7 @@ export type HoneycrispTables = Tables<typeof honeycrispTables>;
  * stays in the Svelte state files.
  */
 export function createHoneycrispActions(tables: HoneycrispTables) {
-	return {
+	return defineActions({
 		folders: {
 			/**
 			 * Delete a folder and move all its notes to unfiled.
@@ -154,5 +155,5 @@ export function createHoneycrispActions(tables: HoneycrispTables) {
 				},
 			}),
 		},
-	};
+	});
 }

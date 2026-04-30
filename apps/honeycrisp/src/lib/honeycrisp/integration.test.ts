@@ -2,10 +2,12 @@ import { rmSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
 	DateTimeString,
-	NoopWebSocket,
 	type ProjectDir,
 } from '@epicenter/workspace';
-import { mintTestProjectDir } from '@epicenter/workspace/test-utils';
+import {
+	mintTestProjectDir,
+	NoopWebSocket,
+} from '@epicenter/workspace/test-utils';
 import { type NoteId } from '../workspace.js';
 import { openHoneycrisp as openHoneycrispDaemon } from './daemon.js';
 import { openHoneycrisp as openHoneycrispScript } from './script.js';
@@ -25,7 +27,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 		{
 			using daemon = openHoneycrispDaemon({
 				getToken: async () => 'fake-token',
-				device: {
+				peer: {
 					id: 'test-daemon',
 					name: 'Honeycrisp Daemon',
 					platform: 'node',

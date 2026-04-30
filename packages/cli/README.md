@@ -8,7 +8,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
                  +--------+--------------------------------------+
                  | Verb   | Workspace primitive                  |
                  +--------+--------------------------------------+
-   Enumerate     | list   | describeActions(workspace)           |
+   Enumerate     | list   | describeActions(workspace.actions)   |
    Invoke        | run    | invokeAction(...) / rpc.rpc(...)     |
    Presence      | peers  | presence.peers()                     |
                  +--------+--------------------------------------+
@@ -57,22 +57,22 @@ epicenter up -C examples/notes-cross-peer/peer-b &
 
 # list: what actions are exposed on this device
 epicenter list                                      # full tree
-epicenter list tabManager.actions.savedTabs         # subtree
-epicenter list tabManager.actions.savedTabs.create  # action detail with JSON input shape
+epicenter list tabManager.savedTabs         # subtree
+epicenter list tabManager.savedTabs.create  # action detail with JSON input shape
 
 # run: do one (locally, or on a remote peer with --peer)
-epicenter run tabManager.actions.savedTabs.list
-epicenter run tabManager.actions.savedTabs.create '{"title":"Hi","url":"https://..."}'
-epicenter run tabManager.actions.savedTabs.create @payload.json
-cat payload.json | epicenter run tabManager.actions.savedTabs.create
-epicenter run tabManager.actions.savedTabs.list --peer 0xabc
+epicenter run tabManager.savedTabs.list
+epicenter run tabManager.savedTabs.create '{"title":"Hi","url":"https://..."}'
+epicenter run tabManager.savedTabs.create @payload.json
+cat payload.json | epicenter run tabManager.savedTabs.create
+epicenter run tabManager.savedTabs.list --peer 0xabc
 
 # peers: who is online right now (presence snapshot)
 epicenter peers
 epicenter peers -C examples/notes-cross-peer/peer-b
 ```
 
-`run` resolves the first path segment against the named exports of `epicenter.config.ts`; everything after walks into the underlying document handle until it hits a `defineQuery` / `defineMutation` action. With `--peer`, the export prefix selects the local RPC attachment, then the inner path is sent to the remote peer.
+`run` resolves the first path segment against the named exports of `epicenter.config.ts`; everything after walks into `workspace.actions` until it hits a `defineQuery` / `defineMutation` action. With `--peer`, the export prefix selects the local RPC attachment, then the inner path is sent to the remote peer.
 
 ### Local vs. remote
 
@@ -189,27 +189,22 @@ return {
 };
 ```
 
-CLI paths: `tabManager.actions.savedTabs.list`, `tabManager.actions.bookmarks.list`, `tabManager.actions.importBackup`.
+CLI paths: `tabManager.savedTabs.list`, `tabManager.bookmarks.list`, `tabManager.importBackup`.
 
-The framework does not mandate this shape. `walkActions` walks the whole bundle and finds any action leaf, no matter where it sits. Two other placements work if you prefer them:
-
-- Domain groups at the top: shorter paths (`tabManager.savedTabs.list`) with actions beside infrastructure.
-- Flat at the top: shortest paths (`tabManager.listSavedTabs`) but action names have to encode the domain, and the top level becomes a grab-bag.
-
-The `actions:` grouping is common in apps because autocomplete stays clean: `ydoc`, `tables`, `kv`, and `sync` remain separate from user-callable operations.
+The CLI walks `workspace.actions` only. The registry can still be nested by domain, but infrastructure such as `ydoc`, `tables`, `kv`, and `sync` stays outside the public action surface.
 
 ## Naming your exports
 
 Every workspace handle is a **named export**. The export name becomes the first segment of every CLI dot-path. A config with a single workspace can use any name (`tabManager`, `tm`, `w`), but once you add a second workspace, the prefix disambiguates them, so a readable name ages better than a one-letter one.
 
-There is no default-export shorthand. Even a config with one workspace uses a named export. This keeps paths stable when you later add a second workspace: `tabManager.actions.savedTabs.list` on day 1 is still `tabManager.actions.savedTabs.list` on day 180 after you add a second workspace. A default-export shortcut would silently invalidate every script, doc, and CI job using the old path the moment you grew past one workspace.
+There is no default-export shorthand. Even a config with one workspace uses a named export. This keeps paths stable when you later add a second workspace: `tabManager.savedTabs.list` on day 1 is still `tabManager.savedTabs.list` on day 180 after you add a second workspace. A default-export shortcut would silently invalidate every script, doc, and CI job using the old path the moment you grew past one workspace.
 
 ```ts
 // epicenter.config.ts
 export const tabManager = openTabManager();
 export const fuji       = openFuji();
-// epicenter run tabManager.actions.savedTabs.list
-// epicenter run fuji.actions.entries.list
+// epicenter run tabManager.savedTabs.list
+// epicenter run fuji.entries.list
 ```
 
 The Y.Doc GUID (set inside `openX()` via `new Y.Doc({ guid: ... })`) and the export name serve **different purposes**:

@@ -18,10 +18,12 @@ function fakeEntry(
 	rpc: Partial<SyncRpcAttachment> = {},
 ): WorkspaceEntry {
 	const workspace = {
-		tabs: {
-			list: defineQuery({
-				handler: () => [],
-			}),
+		actions: {
+			tabs: {
+				list: defineQuery({
+					handler: () => [],
+				}),
+			},
 		},
 		presence: presence as PeerPresenceAttachment,
 		rpc: rpc as SyncRpcAttachment,
@@ -125,7 +127,7 @@ describe('executeRun export-prefixed routing', () => {
 		};
 
 		const result = await executeRun([entry], {
-			actionPath: 'notes.actions.notes.add',
+			actionPath: 'notes.notes.add',
 			input: { body: 'hello' },
 			waitMs: 25,
 		});

@@ -4,8 +4,8 @@
  *
  * `epicenter run` is a shell shortcut for one workspace primitive:
  *
- *   ctx.peerTarget === undefined   ->  invokeAction(...)
- *   ctx.peerTarget === <peerId>    ->  rpc.rpc(clientID, path, input)
+ *   request.peerTarget === undefined   ->  invokeAction(...)
+ *   request.peerTarget === <peerId>    ->  rpc.rpc(clientID, path, input)
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
@@ -29,9 +29,14 @@ import type { WorkspaceEntry } from './types.js';
 
 export async function executeRun(
 	entries: WorkspaceEntry[],
-	ctx: RunInput,
+	{
+		actionPath,
+		input: actionInput,
+		peerTarget,
+		waitMs,
+	}: RunInput,
 ): Promise<RunResponse> {
-	const target = resolveWorkspaceActionTarget(entries, ctx.actionPath);
+	const target = resolveWorkspaceActionTarget(entries, actionPath);
 	if (target.error !== null) {
 		return RunError.UsageError({
 			message: `No config export "${target.error.exportName}". Available: ${target.error.available.join(', ')}`,
@@ -43,38 +48,51 @@ export async function executeRun(
 	const { workspace } = entry;
 	if (workspace.whenReady) await workspace.whenReady;
 
-	const action = resolveActionPath(workspace, localPath);
+	const action = resolveActionPath(workspace.actions ?? {}, localPath);
 	if (!action) {
 		const descendants = workspaceActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {
 			return RunError.UsageError({
-				message: `"${ctx.actionPath}" is not a runnable action.`,
+				message: `"${actionPath}" is not a runnable action.`,
 				suggestions: descendants,
 			});
 		}
 		return RunError.UsageError({
-			message: `"${ctx.actionPath}" is not defined.`,
+			message: `"${actionPath}" is not defined.`,
 			suggestions: workspaceActionNearestSiblingLines(entry, localPath),
 		});
 	}
 
-	if (ctx.peerTarget !== undefined) {
-		return invokeRemote(entry, ctx, localPath, ctx.peerTarget);
+	if (peerTarget !== undefined) {
+		return invokeRemote({
+			actionInput,
+			entry,
+			localPath,
+			peerTarget,
+			waitMs,
+		});
 	}
 
-	const result = await invokeAction(action, ctx.input, ctx.actionPath);
+	const result = await invokeAction(action, actionInput, actionPath);
 	if (result.error !== null) {
 		return RunError.RuntimeError({ cause: result.error });
 	}
 	return Ok(result.data);
 }
 
-async function invokeRemote(
-	entry: WorkspaceEntry,
-	ctx: RunInput,
-	localPath: string,
-	peerTarget: string,
-): Promise<RunResponse> {
+async function invokeRemote({
+	actionInput,
+	entry,
+	localPath,
+	peerTarget,
+	waitMs,
+}: {
+	actionInput: unknown;
+	entry: WorkspaceEntry;
+	localPath: string;
+	peerTarget: string;
+	waitMs: number;
+}): Promise<RunResponse> {
 	const { workspace } = entry;
 	const presence = workspace.presence;
 	const rpc = workspace.rpc;
@@ -87,7 +105,7 @@ async function invokeRemote(
 
 	const start = Date.now();
 	const found = await presence.waitForPeer(peerTarget, {
-		timeoutMs: ctx.waitMs,
+		timeoutMs: waitMs,
 	});
 	if (found.error !== null) {
 		return RunError.PeerMiss({
@@ -99,8 +117,8 @@ async function invokeRemote(
 	}
 
 	const { clientId: targetClientId, state: peerState } = found.data;
-	const remaining = Math.max(1, ctx.waitMs - (Date.now() - start));
-	const result = await rpc.rpc(targetClientId, localPath, ctx.input, {
+	const remaining = Math.max(1, waitMs - (Date.now() - start));
+	const result = await rpc.rpc(targetClientId, localPath, actionInput, {
 		timeout: remaining,
 	});
 

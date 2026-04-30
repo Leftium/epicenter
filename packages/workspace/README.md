@@ -1482,7 +1482,7 @@ import {
 } from '@epicenter/workspace';
 ```
 
-`walkActions(source)` flattens a nested action tree or full workspace bundle into `[path, action]` pairs. Combined with each action's `type`, `title`, `description`, and `input` schema, that's enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport.
+`walkActions(source)` flattens a nested action tree into `[path, action]` pairs. Pass an explicit action registry, usually `workspace.actions`. Combined with each action's `type`, `title`, `description`, and `input` schema, that's enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport.
 
 ### IDs and dates
 
@@ -1515,9 +1515,9 @@ These matter when you are writing low-level tooling against raw Yjs structures.
 The core package does not export an MCP server. What it does export is the metadata you need to build one:
 
 - actions with `type`, `title`, `description`, and `input`
-- `walkActions(...)` to flatten a nested action tree or full workspace bundle
+- `walkActions(...)` to flatten a nested action registry
 - `isAction` / `isQuery` / `isMutation` type guards
-- `@epicenter/workspace/ai` — `actionsToAiTools(...)` for TanStack AI tool bindings
+- `@epicenter/workspace/ai`: `actionsToAiTools(...)` for TanStack AI tool bindings
 
 That is enough to build adapters that expose workspace actions over HTTP, CLI, or MCP without coupling the core package to one transport.
 

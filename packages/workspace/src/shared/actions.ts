@@ -132,13 +132,10 @@ export type Action<
  * Shape suggestion for a "pure action tree" authoring style: nested objects
  * whose leaves are all `Action` definitions, no infrastructure mixed in.
  *
- * Not load-bearing on any public signature anymore. `peer<T>`,
- * `RemoteActionProxy<T>`, `actionsToAiTools<T>`, and `InferSyncRpcMap<T>` accept
- * any source object; `walkActions` filters action leaves at runtime via
- * `isAction`, so action definitions can sit alongside `ydoc`, `tables`, and
- * other bundle infrastructure. Use this type if you genuinely want to
- * annotate a return as "tree of actions only"; otherwise let the bundle's
- * inferred type do the talking.
+ * Public action surfaces should be explicit registries, normally created with
+ * {@link defineActions}. Use this type if you genuinely want to annotate a
+ * return as "tree of actions only"; otherwise let the registry's inferred
+ * type do the talking.
  *
  * Uses `any` for the action's input/output positions so specific
  * `Query<I, T>` / `Mutation<I, T>` instances assign cleanly through the
@@ -255,8 +252,7 @@ export function isMutation(value: unknown): value is Mutation {
  * `true` iff `v` is a plain object literal (constructor is `Object` or
  * prototype is `null`). Bounds {@link walkActions} so it doesn't recurse
  * into class instances like `Y.Doc`, arktype `Type`, or `SvelteMap`:
- * those carry methods on their prototype and have no business being
- * walked. Lets callers safely pass a full workspace bundle.
+ * those carry methods on their prototype and have no business being walked.
  */
 function isPlainObject(v: unknown): v is Record<string, unknown> {
 	if (typeof v !== 'object' || v === null) return false;
@@ -280,9 +276,8 @@ function assertValidActionKey(key: string, path: string) {
  * returning the leaf `Action` if the path lands on one. Returns `undefined`
  * for missing paths or paths that resolve to a namespace.
  *
- * Typed `Record<string, unknown>` so callers can pass a full workspace
- * bundle: actions may live anywhere in the tree, not only under a
- * dedicated `actions:` namespace.
+ * Typed `Record<string, unknown>` so callers can pass an explicit action
+ * registry without losing nested path support.
  */
 export function resolveActionPath(
 	actions: Record<string, unknown>,
@@ -306,13 +301,12 @@ export function resolveActionPath(
  * via {@link describeActions}.
  *
  * Recursion only descends into plain object literals. Class instances
- * (`Y.Doc`, arktype `Type`, etc.) and functions short-circuit, so passing
- * a full workspace bundle as the root is safe and bounded: actions can
- * live anywhere in the tree.
+ * (`Y.Doc`, arktype `Type`, etc.) and functions short-circuit, but callers
+ * should still pass an explicit action registry as the root.
  *
  * Pair with `Object.fromEntries`, `Array.from`, or a `for…of` loop:
  * ```ts
- * for (const [path, action] of walkActions(workspace)) {
+ * for (const [path, action] of walkActions(workspace.actions)) {
  *   if (action.type === 'mutation') console.log(path);
  * }
  * ```
@@ -492,10 +486,9 @@ type RemoteSuccessOutput<TOutput> =
  * Filter any object `T` down to its action-shaped leaves and wrap each leaf
  * via {@link WrapAction} so callers see uniform `Promise<Result<T, RpcError>>`.
  *
- * Pass a pure action tree OR a full workspace bundle: non-action keys
- * (`ydoc`, `tables`, class instances, plain functions) are removed at the
- * type level via key-remapping. Subtrees that contain zero actions are
- * also pruned, so consumers only see paths that lead somewhere callable.
+ * Pass a pure action tree: non-action keys are removed at the type level via
+ * key-remapping. Subtrees that contain zero actions are also pruned, so
+ * consumers only see paths that lead somewhere callable.
  *
  * Bracketed `[T[K]] extends [Action]` form is intentional: prevents
  * unwanted distribution if a key's type is a union (e.g., `Foo | undefined`).

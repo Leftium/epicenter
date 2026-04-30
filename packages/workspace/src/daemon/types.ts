@@ -3,10 +3,9 @@
  *
  * `LoadedWorkspace` is the structural contract every workspace export has
  * to satisfy: the `[Symbol.dispose]` discriminator, plus the optional
- * `whenReady`, `sync`, `presence`, and `rpc` fields the daemon reads when
- * present. The workspace's branded actions live as named leaves on the bundle
- * itself (at any depth), not under a fixed `actions` slot: `walkActions(workspace)`
- * discovers them at runtime.
+ * `whenReady`, `sync`, `presence`, `rpc`, and `actions` fields the daemon
+ * reads when present. The workspace's public actions live under the explicit
+ * `actions` registry.
  *
  * `WorkspaceEntry` is one named entry the daemon hosts. The CLI's config
  * loader produces these from `epicenter.config.ts` exports.
@@ -21,8 +20,7 @@ import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 /**
  * Fields the daemon looks at on each workspace export. Only `[Symbol.dispose]`
  * is required (it's the discriminator); everything else is read when
- * present. Extra fields the factory returns are ignored. `walkActions` and
- * `resolveActionPath` walk the bundle at runtime to find branded leaves.
+ * present. Extra fields the factory returns are ignored.
  */
 export type LoadedWorkspace = {
 	/**

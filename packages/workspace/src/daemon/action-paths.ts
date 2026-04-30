@@ -20,7 +20,7 @@ export function describeWorkspaceActions(
 ): ActionManifest {
 	const manifest: ActionManifest = {};
 	for (const entry of entries) {
-		const actions = describeActions(entry.workspace);
+		const actions = describeActions(entry.workspace.actions ?? {});
 		for (const [path, meta] of Object.entries(actions)) {
 			manifest[toWorkspaceActionPath(entry, path)] = meta;
 		}
@@ -65,7 +65,7 @@ export function workspaceActionSuggestionLines(
 	entry: WorkspaceEntry,
 	prefix: string,
 ): string[] {
-	const entries = [...walkActions(entry.workspace)];
+	const entries = [...walkActions(entry.workspace.actions ?? {})];
 	const descendants = entriesUnder(entries, prefix);
 	return descendants.map(
 		([path, action]) =>
@@ -77,7 +77,7 @@ export function workspaceActionNearestSiblingLines(
 	entry: WorkspaceEntry,
 	missedPath: string,
 ): string[] {
-	const entries = [...walkActions(entry.workspace)];
+	const entries = [...walkActions(entry.workspace.actions ?? {})];
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();

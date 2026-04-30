@@ -6,7 +6,7 @@
  * Each verb is a one-line shell shortcut for one workspace primitive:
  *
  *   /peers  ->  workspace.presence.peers()                    all exports
- *   /list   ->  describeActions(workspace)                    all exports
+ *   /list   ->  describeActions(workspace.actions)            all exports
  *   /run    ->  invokeAction(...) | rpc.rpc(...)              export-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
@@ -88,8 +88,8 @@ export function buildApp(
 		})
 		.post('/list', (c) => c.json(Ok(describeWorkspaceActions(entries))))
 		.post('/run', sValidator('json', RunInput), async (c) => {
-			const input = c.req.valid('json');
-			return c.json(await executeRun(entries, input));
+			const request = c.req.valid('json');
+			return c.json(await executeRun(entries, request));
 		})
 		.post('/shutdown', (c) => {
 			setTimeout(() => triggerShutdown?.(), 0);

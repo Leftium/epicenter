@@ -23,7 +23,7 @@ function fakeEntry(
 ): WorkspaceEntry {
 	const workspace = {
 		whenReady: Promise.resolve(),
-		...(actions ?? {}),
+		actions,
 		[Symbol.dispose]() {},
 	} satisfies LoadedWorkspace;
 	return { name, workspace } as WorkspaceEntry;

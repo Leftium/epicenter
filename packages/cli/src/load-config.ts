@@ -11,12 +11,8 @@
  *     presence:  PeerPresence    enables `peers` and peer lookup
  *     rpc:       SyncRpc         enables `run --peer`
  *
- *   Actions are read from the bundle itself. `walkActions` filters to action
- *   leaves at runtime via `isAction`, so non-action keys (`ydoc`, `tables`,
- *   etc.) are skipped. Apps often group their actions under an `actions:` key
- *   for visual separation from infrastructure, in which case dot-paths look
- *   like `actions.tabs.close`. Actions hoisted to the top level produce
- *   shorter paths (`tabs.close`); either is valid.
+ *   Actions are read from `workspace.actions`. Paths are relative to that
+ *   explicit registry and then prefixed with the config export name.
  *
  *   …the CLI uses them. Anything else is the factory's business.
  *
@@ -64,12 +60,8 @@ export const CONFIG_FILENAME = 'epicenter.config.ts';
  * is required (it's the discriminator); everything else is read when
  * present. Extra fields the factory returns are ignored.
  *
- * The CLI walks the workspace bundle itself via `walkActions(workspace)`,
- * which filters to action leaves at runtime (skipping `ydoc`, `tables`,
- * class instances, and other infrastructure). Apps often group their
- * actions under `actions:` for separation from infrastructure, so
- * dot-paths look like `actions.tabs.close`; hoisting actions to the top
- * level instead is also supported and produces shorter paths.
+ * The CLI walks `workspace.actions` only. Infrastructure keys like `ydoc`,
+ * `tables`, `presence`, and `rpc` are not part of the public action surface.
  */
 export type LoadedWorkspace = {
 	/**

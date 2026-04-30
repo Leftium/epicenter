@@ -145,16 +145,14 @@ describe('attachSync split surface', () => {
 		const calls: unknown[] = [];
 		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
 		const rpc = sync.attachRpc({
-			actions: {
-				tabs: {
-					close: defineMutation({
-						input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
-						handler: (input) => {
-							calls.push(input);
-							return { closedCount: input.tabIds.length };
-						},
-					}),
-				},
+			tabs: {
+				close: defineMutation({
+					input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
+					handler: (input) => {
+						calls.push(input);
+						return { closedCount: input.tabIds.length };
+					},
+				}),
 			},
 		});
 
@@ -222,9 +220,7 @@ describe('attachSync split surface', () => {
 
 		expect(() =>
 			sync.attachRpc({
-				actions: {
-					system: {},
-				},
+				system: {},
 			}),
 		).toThrow(/system/);
 

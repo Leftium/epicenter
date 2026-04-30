@@ -8,7 +8,8 @@ import { describe, expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
 import type { RunRequest } from '../daemon/app.js';
 import type { DaemonClient } from '../daemon/client.js';
-import { buildDaemonActions } from './daemon-actions.js';
+import { defineQuery } from '../shared/actions.js';
+import { buildDaemonActions, type DaemonActions } from './daemon-actions.js';
 
 function makeStubClient() {
 	const calls: { method: 'run' | 'peers' | 'list'; arg: unknown }[] = [];
@@ -33,18 +34,56 @@ function makeStubClient() {
 
 const WORKSPACE = 'demo';
 
+const typedActions = {
+	visible: defineQuery({
+		handler: () => 'visible',
+	}),
+	'bad.key': defineQuery({
+		handler: () => 'bad',
+	}),
+	nested: {
+		'bad.child': defineQuery({
+			handler: () => 'bad child',
+		}),
+	},
+};
+
+type TypedDaemonActions = DaemonActions<typeof typedActions>;
+
+type Expect<TValue extends true> = TValue;
+type Equal<TActual, TExpected> =
+	IsAssignable<TActual, TExpected> extends true
+		? IsAssignable<TExpected, TActual>
+		: false;
+type IsAssignable<TActual, TExpected> = [TActual] extends [TExpected]
+	? true
+	: false;
+type HasKey<TObject, TKey extends PropertyKey> = TKey extends keyof TObject
+	? true
+	: false;
+
+export type DaemonDotKeyExcluded = Expect<
+	Equal<HasKey<TypedDaemonActions, 'bad.key'>, false>
+>;
+export type DaemonBadOnlyBranchPruned = Expect<
+	Equal<HasKey<TypedDaemonActions, 'nested'>, false>
+>;
+export type DaemonValidKeyPreserved = Expect<
+	Equal<HasKey<TypedDaemonActions, 'visible'>, true>
+>;
+
 describe('buildDaemonActions workspace facade', () => {
 	test('domain action dispatches literal workspace path over /run', async () => {
 		const { client, calls } = makeStubClient();
 		// biome-ignore lint/suspicious/noExplicitAny: smoke test: shape is irrelevant
 		const workspace: any = buildDaemonActions(client, WORKSPACE);
 
-		await workspace.actions.entries.get('xyz');
+		await workspace.entries.get('xyz');
 
 		expect(calls).toHaveLength(1);
 		expect(calls[0]!.method).toBe('run');
 		expect(calls[0]!.arg).toMatchObject({
-			actionPath: 'demo.actions.entries.get',
+			actionPath: 'demo.entries.get',
 			input: 'xyz',
 		});
 	});
@@ -55,10 +94,10 @@ describe('buildDaemonActions workspace facade', () => {
 		const workspace: any = buildDaemonActions(client, WORKSPACE);
 		const row = { id: 'a', title: 'hi', _v: 1 };
 
-		await workspace.actions.entries.set(row);
+		await workspace.entries.set(row);
 
 		expect(calls[0]!.arg).toMatchObject({
-			actionPath: 'demo.actions.entries.set',
+			actionPath: 'demo.entries.set',
 			input: row,
 		});
 	});

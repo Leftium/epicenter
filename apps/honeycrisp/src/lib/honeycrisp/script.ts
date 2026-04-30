@@ -35,7 +35,7 @@ export function openHoneycrisp({
 		getToken,
 		webSocketImpl,
 	});
-	const rpc = sync.attachRpc({ actions: { actions: doc.actions } });
+	const rpc = sync.attachRpc(doc.actions);
 
 	return { ...doc, yjsLog, sync, rpc };
 }

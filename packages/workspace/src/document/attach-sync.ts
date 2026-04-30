@@ -52,7 +52,7 @@ import {
  * **Not included** (workspace-layer concerns):
  * - BroadcastChannel cross-tab sync (separate `attachBroadcastChannel` helper)
  * - Standard peer presence (`sync.attachPresence({ peer })`)
- * - Peer RPC (`sync.attachRpc({ actions })`)
+ * - Peer RPC (`sync.attachRpc(actions)`)
  *
  * Register `attachIndexedDb` first and pass its `whenLoaded`
  * as `waitFor` so the supervisor connects only after local state hydrates:
@@ -186,12 +186,10 @@ export type SyncAttachment = {
 	attachPresence<TPeerId extends string = string>(
 		config: AttachPresenceConfig<TPeerId>,
 	): PeerPresenceAttachment;
-	attachRpc(config: AttachRpcConfig): SyncRpcAttachment;
+	attachRpc(actions: RpcActionSource): SyncRpcAttachment;
 };
 
-export type AttachRpcConfig = {
-	actions: Record<string, unknown>;
-};
+export type RpcActionSource = Record<string, unknown>;
 
 export type SyncRpcAttachment = {
 	rpc<
@@ -475,8 +473,8 @@ export function attachSync(
 	}
 
 	/**
-	 * Handle an inbound RPC request: delegate action lookup to the caller
-	 * via `config.dispatch`, and send the response back to the requester.
+	 * Handle an inbound RPC request: resolve against the attached RPC action
+	 * tree and send the response back to the requester.
 	 *
 	 * When no dispatcher is configured, respond with `ActionNotFound` so the
 	 * caller sees a typed error instead of a timeout.
@@ -920,7 +918,7 @@ export function attachSync(
 			presenceController.sendLocalState();
 			return presence;
 		},
-		attachRpc({ actions: userActions }) {
+		attachRpc(userActions) {
 			if (rpcActions) throw new Error('[attachSync] RPC already attached');
 			if ('system' in userActions) {
 				throw new Error(

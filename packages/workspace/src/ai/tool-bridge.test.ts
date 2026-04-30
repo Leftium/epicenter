@@ -64,6 +64,18 @@ describe('actionsToAiTools', () => {
 	});
 
 	describe('definitions', () => {
+		test('rejects underscore action keys because tool names flatten with underscores', () => {
+			const actions = {
+				foo_bar: defineQuery({
+					handler: () => 'bad',
+				}),
+			};
+
+			expect(() => actionsToAiTools(actions)).toThrow(
+				'Action keys used as AI tools cannot contain "_" at "foo_bar"',
+			);
+		});
+
 		test('produces wire-safe definitions with title', () => {
 			const actions = {
 				search: defineQuery({

@@ -9,7 +9,6 @@
 
 import {
 	DateTimeString,
-	defineActions,
 	defineMutation,
 	defineTable,
 	generateId,
@@ -108,7 +107,7 @@ export type FujiTables = Tables<typeof fujiTables>;
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
 export function createFujiActions(tables: FujiTables) {
-	return defineActions({
+	return {
 		entries: {
 			/**
 			 * Create a new entry with sensible defaults.
@@ -281,5 +280,5 @@ export function createFujiActions(tables: FujiTables) {
 				},
 			}),
 		},
-	});
+	};
 }

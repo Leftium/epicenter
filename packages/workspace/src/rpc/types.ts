@@ -13,8 +13,8 @@ import type { Action } from '../shared/actions.js';
  *
  * @example
  * ```typescript
- * // Tab-manager exports its actions type:
- * export type TabManagerRpc = InferSyncRpcMap<typeof workspace>;
+ * // Tab-manager exports its action-root type:
+ * export type TabManagerRpc = InferSyncRpcMap<typeof workspace.actions>;
  * // Resolves to:
  * // {
  * //   'tabs.close': { input: { tabIds: number[] }; output: { closedCount: number } }

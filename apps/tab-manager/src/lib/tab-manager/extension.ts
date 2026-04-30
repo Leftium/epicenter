@@ -45,7 +45,7 @@ export async function openTabManager({
 		getToken: () => auth.getToken(),
 	});
 	const presence = sync.attachPresence({ peer: resolvedPeer });
-	const rpc = sync.attachRpc({ actions: { actions: doc.actions } });
+	const rpc = sync.attachRpc(doc.actions);
 
 	return {
 		...doc,

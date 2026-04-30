@@ -48,7 +48,7 @@ export function workspaceActionSuggestionLines(
 	entry: WorkspaceEntry,
 	prefix: string,
 ): string[] {
-	const entries = [...walkActions(entry.workspace)];
+	const entries = [...walkActions(entry.workspace.actions)];
 	const descendants = entriesUnder(entries, prefix);
 	return descendants.map(
 		([path, action]) =>
@@ -60,7 +60,7 @@ export function workspaceActionNearestSiblingLines(
 	entry: WorkspaceEntry,
 	missedPath: string,
 ): string[] {
-	const entries = [...walkActions(entry.workspace)];
+	const entries = [...walkActions(entry.workspace.actions)];
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();

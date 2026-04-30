@@ -1,15 +1,14 @@
 /**
  * `buildDaemonActions`: typed proxy that turns a `DaemonClient` into an
- * workspace-shaped action facade. Local call sites use the same dotted path
- * they would under the returned workspace object
- * (`actions.savedTabs.create(...)`); each call dispatches over the unix socket
- * via `client.run`.
+ * action-root facade. Local call sites use the same dotted path they would
+ * under `workspace.actions` (`tabs.open(...)`); each call dispatches
+ * over the unix socket via `client.run`.
  *
- * The proxy is a single recursive `Proxy` rooted at the workspace shape.
+ * The proxy is a single recursive `Proxy` rooted at the action shape.
  * Property access walks the chain and accumulates path segments; calling
  * the resulting proxy invokes `client.run` with the joined dotted path.
  *
- * `then` is masked at every level so an accidental `await workspace.actions.tabs`
+ * `then` is masked at every level so an accidental `await actions.tabs`
  * does not turn an intermediate namespace into a thenable and pollute the
  * path with a stray `.then` segment.
  */
@@ -27,8 +26,9 @@ const DEFAULT_RUN_WAIT_MS = 5_000;
  * source by walking its type and keeping only branded `defineQuery` /
  * `defineMutation` leaves.
  *
- * Pass the returned workspace type as `T` (typically
- * `ReturnType<typeof openFuji>`) and `DaemonActions<T>` filters it to:
+ * Pass the canonical action root type as `T` (typically
+ * `ReturnType<typeof openFuji>['actions']`) and `DaemonActions<T>` filters it
+ * to:
  *
  * - branded leaves at any depth become wire-callable and `Result`-wrapped
  *   via {@link WrapDaemonAction}
@@ -82,8 +82,10 @@ type HasBrandedLeaves<T, D extends ReadonlyArray<1>> = AtLimit<D> extends true
 		? false
 		: T extends object
 			? true extends {
-					[K in keyof T]-?: IsDaemonKey<T[K], Inc<D>>;
-				}[keyof T]
+					[K in keyof T & string]-?: ActionPathKey<K> extends never
+						? false
+						: IsDaemonKey<T[K], Inc<D>>;
+				}[keyof T & string]
 				? true
 				: false
 			: false;
@@ -115,19 +117,27 @@ export type DaemonActions<T, D extends ReadonlyArray<1> = []> =
 	AtLimit<D> extends true
 		? {}
 		: Simplify<{
-				[K in keyof T as IsDaemonKey<T[K], D> extends true
+				[K in keyof T & string as ActionPathKey<K> extends never
+					? never
+					: IsDaemonKey<T[K], D> extends true
 					? K
 					: never]: T[K] extends Action
 					? WrapDaemonAction<T[K]>
 					: T[K] extends readonly unknown[]
 						? never
 						: T[K] extends object
-							? DaemonActions<T[K], Inc<D>>
-							: never;
+						? DaemonActions<T[K], Inc<D>>
+						: never;
 			}>;
 
+type ActionPathKey<TKey extends string> = TKey extends ''
+	? never
+	: TKey extends `${string}.${string}`
+		? never
+		: TKey;
+
 /**
- * Recursive proxy rooted at the workspace shape. Property access produces another
+ * Recursive proxy rooted at the action shape. Property access produces another
  * proxy carrying the path-so-far; calling the proxy dispatches `client.run`
  * with the joined dotted path.
  *
@@ -162,16 +172,16 @@ function buildDaemonActionProxy(
 }
 
 /**
- * Compose the daemon action facade. Generic `TWorkspace` is the in-process
- * workspace shape; `DaemonActions<TWorkspace>` filters it to branded leaves
+ * Compose the daemon action facade. Generic `TActions` is the in-process
+ * action root shape; `DaemonActions<TActions>` filters it to branded leaves
  * only and rewrites each leaf to the daemon `/run` result.
  */
-export function buildDaemonActions<TWorkspace>(
+export function buildDaemonActions<TActions>(
 	client: DaemonClient,
 	workspaceExportName: string,
-): DaemonActions<TWorkspace> {
+): DaemonActions<TActions> {
 	return buildDaemonActionProxy(
 		client,
 		workspaceExportName,
-	) as DaemonActions<TWorkspace>;
+	) as DaemonActions<TActions>;
 }

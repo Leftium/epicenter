@@ -43,7 +43,7 @@ export function openOpensidian({
 	// Opensidian file and shell actions because they need browser services.
 	const actions = {};
 	const presence = sync.attachPresence({ peer });
-	const rpc = sync.attachRpc({ actions: { actions } });
+	const rpc = sync.attachRpc(actions);
 
 	return { ...doc, yjsLog, sync, actions, presence, rpc };
 }

@@ -75,6 +75,7 @@ type FakeOptions = {
 
 function makeFakeWorkspace(opts: FakeOptions = {}): LoadedWorkspace {
 	return {
+		actions: {},
 		[Symbol.dispose]() {
 			/* no-op */
 		},
@@ -83,8 +84,6 @@ function makeFakeWorkspace(opts: FakeOptions = {}): LoadedWorkspace {
 			whenConnected: opts.readyPromise ?? Promise.resolve(),
 			status: { phase: 'connected', hasLocalChanges: false },
 			onStatusChange: () => () => {},
-			peers: () => new Map(),
-			observe: () => () => {},
 			// Unused fields; cast through unknown to keep the fake minimal.
 		} as unknown as LoadedWorkspace['sync'],
 	};

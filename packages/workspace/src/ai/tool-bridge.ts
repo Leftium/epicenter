@@ -30,7 +30,7 @@ import { invokeAction, walkActions } from '../shared/actions';
 /**
  * Recursively extract all tool names from an action source as a string literal union.
  *
- * Leaf `Action` nodes produce their key directly. Nested `Actions` objects
+ * Leaf `Action` nodes produce their key directly. Nested action objects
  * produce `"parent_child"` paths joined with `_`.
  *
  * **Constraint**: Action keys must not contain underscores, or flattened names
@@ -39,8 +39,8 @@ import { invokeAction, walkActions } from '../shared/actions';
  *
  * @example
  * ```ts
- * type Names = ActionNames<typeof workspace>;
- * // "actions_tabs_search" | "actions_tabs_list" | ...
+ * type Names = ActionNames<typeof workspace.actions>;
+ * // "tabs_search" | "tabs_list" | ...
  * ```
  */
 export type ActionNames<T> = {
@@ -105,22 +105,20 @@ export type ToolDefinition = {
  *
  * ```
  * { tabs: { close: defineMutation(...) } }  →  tool named "tabs_close"
- * { actions: { tabs: { close: defineMutation(...) } } }  →  "actions_tabs_close"
+ * { tabs: { close: defineMutation(...) } }  →  "tabs_close"
  * { files: { read: defineQuery(...) } }      →  tool named "files_read"
  * ```
  *
  * Mutations automatically get `needsApproval: true` so the chat UI can show
  * a confirmation dialog before executing them. Queries run immediately.
  *
- * @param source - The workspace bundle (or any object containing actions).
- *   `walkActions` filters to action leaves at runtime, so passing the bundle
- *   directly is safe; non-action keys (`ydoc`, `tables`, etc.) are skipped.
+ * @param source - The action tree to expose as tools.
  *
  * @example
  * ```ts
  * import { actionsToAiTools } from '@epicenter/workspace/ai';
  *
- * export const workspaceAiTools = actionsToAiTools(workspace);
+ * export const workspaceAiTools = actionsToAiTools(workspace.actions);
  *
  * // Pass .tools to TanStack AI's ChatClient for local execution
  * const chat = createChat({
@@ -137,7 +135,7 @@ export type ToolDefinition = {
  *
  * // Show a friendly title in the UI when a tool call comes back
  * const title = workspaceAiTools.definitions
- *   .find(d => d.name === 'actions_tabs_close')?.title; // → 'Close Tabs'
+ *   .find(d => d.name === 'tabs_close')?.title; // → 'Close Tabs'
  * ```
  */
 export function actionsToAiTools<T>(
@@ -148,7 +146,11 @@ export function actionsToAiTools<T>(
 } {
 	const entries = Array.from(
 		walkActions(source as Record<string, unknown>),
-		([path, action]) => [action, path.split('.')] as const,
+		([path, action]) => {
+			const segments = path.split('.');
+			assertToolPathSegments(segments, path);
+			return [action, segments] as const;
+		},
 	);
 
 	const tools = entries.map(([action, path]) => ({
@@ -205,6 +207,16 @@ export function actionsToAiTools<T>(
  * `"foo_bar"`.
  */
 const ACTION_NAME_SEPARATOR = '_';
+
+function assertToolPathSegments(segments: string[], path: string) {
+	for (const segment of segments) {
+		if (segment.includes(ACTION_NAME_SEPARATOR)) {
+			throw new Error(
+				`Action keys used as AI tools cannot contain "_" at "${path}"`,
+			);
+		}
+	}
+}
 
 /** JSON Schema with `properties` and `required` guaranteed present. */
 type NormalizedJsonSchema = JSONSchema &

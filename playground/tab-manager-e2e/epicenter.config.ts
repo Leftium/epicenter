@@ -6,9 +6,8 @@
  * at `~/.epicenter/auth/sessions.json`—run `epicenter auth login` first.
  *
  * Exports `tabManager` — an object satisfying `LoadedWorkspace` with
- * `whenReady`, `sync`, and `[Symbol.dispose]`. No `actions` because no
- * defineQuery/defineMutation wrappers are attached at the playground layer
- * (the tab-manager extension defines actions, not this config).
+ * `whenReady`, `sync`, `actions`, and `[Symbol.dispose]`. `actions` is empty
+ * because the tab-manager extension defines action wrappers, not this config.
  *
  * Usage:
  *   # Run the workspace — imports this config, which constructs the
@@ -16,8 +15,7 @@
  *   # Runs until Ctrl+C.
  *   bun run playground/tab-manager-e2e/epicenter.config.ts
  *
- *   # `epicenter list` against this config shows an empty tree — no
- *   # actions exposed here.
+ *   # `epicenter list` against this config shows an empty tree.
  */
 
 import { join } from 'node:path';
@@ -91,6 +89,7 @@ const markdown = attachMarkdownMaterializer(
 
 export const tabManager = {
 	whenReady,
+	actions: {},
 	sync,
 	[Symbol.dispose]() {
 		ydoc.destroy();

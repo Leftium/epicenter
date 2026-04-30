@@ -40,11 +40,11 @@ function createToolTrustState() {
 		 * Get the trust level for a tool.
 		 *
 		 * Returns `'ask'` for tools not in the trust table (the safe default).
-		 * Query tools should not call this—they auto-execute always.
+		 * Query tools should not call this because they auto-execute always.
 		 *
 		 * @example
 		 * ```typescript
-		 * if (toolTrustState.get('actions_tabs_close') === 'always') {
+		 * if (toolTrustState.get('tabs_close') === 'always') {
 		 *   client.approve(toolCallId);
 		 * }
 		 * ```
@@ -63,7 +63,7 @@ function createToolTrustState() {
 		 * @example
 		 * ```typescript
 		 * // User clicks "Always Allow" on the approval UI
-		 * toolTrustState.set('actions_tabs_close', 'always');
+		 * toolTrustState.set('tabs_close', 'always');
 		 * client.approve(toolCallId);
 		 * ```
 		 */

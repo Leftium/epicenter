@@ -6,7 +6,7 @@
  * workspace — Chrome is the sole authority. See `browser-state.svelte.ts`.
  */
 
-import { defineActions, defineMutation, defineQuery } from '@epicenter/workspace';
+import { defineMutation, defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
 import {
 	defineErrors,
@@ -64,7 +64,7 @@ export function createTabManagerActions({
 	batch: (fn: () => void) => void;
 	deviceId: Promise<DeviceId>;
 }) {
-	return defineActions({
+	return {
 		devices: {
 			list: defineQuery({
 				title: 'List Devices',
@@ -446,5 +446,5 @@ export function createTabManagerActions({
 				},
 			}),
 		},
-	});
+	};
 }

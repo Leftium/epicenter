@@ -4,17 +4,17 @@
  * Contract:
  *
  *   A named export becomes a workspace if it implements [Symbol.dispose]
- *   (called at exit; the discriminator). If it also has:
+ *   (called at exit; the discriminator) and exposes an `actions` object.
+ *   If it also has:
  *
  *     whenReady: Promise         awaited before action invocations
  *     sync:      SyncAttachment  awaited during startup and disposal
  *     presence:  PeerPresence    enables `peers` and peer lookup
  *     rpc:       SyncRpc         enables `run --peer`
  *
- *   Actions are read from the workspace object. `walkActions` recurses only
- *   into plain objects, so class-backed infrastructure like `ydoc` and
- *   attachment objects is skipped. Any action leaf reachable through plain
- *   returned objects is public.
+ *   Actions are read from `workspace.actions`. The returned workspace may
+ *   include infrastructure like `ydoc`, `tables`, persistence, or sync
+ *   attachments without making them part of the daemon action surface.
  *
  *   …the CLI uses them. Anything else is the factory's business.
  *
@@ -77,11 +77,12 @@ export type LoadConfigResult = {
 };
 
 /**
- * A workspace is anything with `[Symbol.dispose]`. That's the whole
- * contract; the factory's return shape is the source of truth for
- * everything else.
+ * A workspace is anything with `[Symbol.dispose]` and a canonical `actions`
+ * root. Other fields are optional adapters over that root.
  */
-function isLoadedWorkspace(value: unknown): value is LoadedWorkspace {
+function hasWorkspaceDisposer(
+	value: unknown,
+): value is { [Symbol.dispose](): void } {
 	return (
 		value != null &&
 		typeof value === 'object' &&
@@ -90,8 +91,23 @@ function isLoadedWorkspace(value: unknown): value is LoadedWorkspace {
 	);
 }
 
+function hasActionRoot(
+	value: { [Symbol.dispose](): void },
+): value is LoadedWorkspace {
+	const actions = (value as Record<PropertyKey, unknown>).actions;
+	return (
+		typeof actions === 'object' &&
+		actions !== null &&
+		!Array.isArray(actions)
+	);
+}
+
+function isLoadedWorkspace(value: unknown): value is LoadedWorkspace {
+	return hasWorkspaceDisposer(value) && hasActionRoot(value);
+}
+
 /**
- * Tagged-error variants returned by {@link loadConfig}. All three are
+ * Tagged-error variants returned by {@link loadConfig}. All variants are
  * user-facing (file missing, config crashed at module load, no workspace
  * exports), not panics: callers render them and exit 1.
  *
@@ -121,8 +137,21 @@ export const LoadError = defineErrors({
 		message:
 			`No workspaces found in ${configPath}.\n` +
 			`Export at least one named value implementing [Symbol.dispose], ` +
-			`typically the return of an openFoo() factory.`,
+			`with an actions object, typically the return of an openFoo() factory.`,
 		configPath,
+	}),
+	InvalidWorkspace: ({
+		configPath,
+		exportName,
+	}: {
+		configPath: string;
+		exportName: string;
+	}) => ({
+		message:
+			`Invalid workspace export "${exportName}" in ${configPath}: ` +
+			`expected an actions object.`,
+		configPath,
+		exportName,
 	}),
 });
 export type LoadError = InferErrors<typeof LoadError>;
@@ -151,6 +180,9 @@ export async function loadConfig(
 	const entries: WorkspaceEntry[] = [];
 	for (const [name, value] of Object.entries(module)) {
 		if (name === 'default') continue;
+		if (hasWorkspaceDisposer(value) && !hasActionRoot(value)) {
+			return LoadError.InvalidWorkspace({ configPath, exportName: name });
+		}
 		if (!isLoadedWorkspace(value)) continue;
 		entries.push({ name, workspace: value });
 	}

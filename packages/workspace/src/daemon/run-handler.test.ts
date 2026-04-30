@@ -56,7 +56,7 @@ describe('executeRun peer dispatch', () => {
 		);
 
 		const result = await executeRun([entry], {
-			actionPath: 'demo.actions.tabs.list',
+			actionPath: 'demo.tabs.list',
 			input: undefined,
 			peerTarget: 'ghost',
 			waitMs: 25,
@@ -98,14 +98,14 @@ describe('executeRun peer dispatch', () => {
 		);
 
 		const result = await executeRun([entry], {
-			actionPath: 'demo.actions.tabs.list',
+			actionPath: 'demo.tabs.list',
 			input: undefined,
 			peerTarget: 'mac',
 			waitMs: 25,
 		});
 
 		expect(result.error).toBeNull();
-		expect(rpcAction).toBe('actions.tabs.list');
+		expect(rpcAction).toBe('tabs.list');
 	});
 });
 
@@ -127,7 +127,7 @@ describe('executeRun export-prefixed routing', () => {
 		};
 
 		const result = await executeRun([entry], {
-			actionPath: 'notes.actions.notes.add',
+			actionPath: 'notes.notes.add',
 			input: { body: 'hello' },
 			waitMs: 25,
 		});
@@ -136,8 +136,9 @@ describe('executeRun export-prefixed routing', () => {
 		expect(result.data).toEqual({ body: 'hello' });
 	});
 
-	test('invokes top-level action groups when the workspace exposes them', async () => {
+	test('ignores action leaves outside the canonical action root', async () => {
 		const workspace = {
+			actions: {},
 			notes: {
 				add: defineMutation({
 					handler: () => ({ body: 'hello' }),
@@ -156,11 +157,10 @@ describe('executeRun export-prefixed routing', () => {
 			waitMs: 25,
 		});
 
-		expect(result.error).toBeNull();
-		expect(result.data).toEqual({ body: 'hello' });
+		expect(result.error?.name).toBe('UsageError');
 	});
 
-	test('missing short path suggests literal actions path', async () => {
+	test('missing path suggests action-root-relative sibling', async () => {
 		const entry = {
 			name: 'notes',
 			workspace: {
@@ -176,7 +176,7 @@ describe('executeRun export-prefixed routing', () => {
 		};
 
 		const result = await executeRun([entry], {
-			actionPath: 'notes.notes.add',
+			actionPath: 'notes.add',
 			input: { body: 'hello' },
 			waitMs: 25,
 		});
@@ -185,9 +185,7 @@ describe('executeRun export-prefixed routing', () => {
 		if (result.error?.name !== 'UsageError') {
 			throw new Error('expected UsageError');
 		}
-		expect(result.error.suggestions).toEqual([
-			'  notes.actions.notes.add  (mutation)',
-		]);
+		expect(result.error.suggestions).toEqual(['  notes.notes.add  (mutation)']);
 	});
 
 	test('unknown export returns available export suggestions', async () => {
@@ -197,6 +195,7 @@ describe('executeRun export-prefixed routing', () => {
 				{
 					name: 'tasks',
 					workspace: {
+						actions: {},
 						[Symbol.dispose]() {},
 					} as WorkspaceEntry['workspace'],
 				},

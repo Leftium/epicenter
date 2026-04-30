@@ -35,13 +35,11 @@ export type {
 	Action,
 	ActionManifest,
 	ActionMeta,
-	Actions,
 	Mutation,
 	Query,
 	RemoteActionProxy,
 } from './shared/actions';
 export {
-	defineActions,
 	defineMutation,
 	defineQuery,
 	describeActions,
@@ -171,10 +169,10 @@ export {
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
 export {
-	type AttachRpcConfig,
 	type AttachSyncDoc,
 	attachSync,
 	PeerMiss,
+	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
 	SyncFailedError,

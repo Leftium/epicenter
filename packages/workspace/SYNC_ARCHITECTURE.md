@@ -368,39 +368,45 @@ The architecture scales from "just my devices on Tailscale" to "add a cloud serv
 
 ---
 
-# Inside `attachSync`: the supervisor loop
+# Inside `attachSync`: sync, presence, and RPC
 
-Everything above describes the *topology* — which devices talk to which sync nodes. This section describes what happens inside one `attachSync(doc, config)` call: the WebSocket lifecycle, the supervisor that owns it, the timers that keep it alive, and the RPC dispatch tree.
+Everything above describes the *topology*: which devices talk to which sync nodes. This section describes the current split runtime surface: `attachSync` owns the WebSocket lifecycle, then callers opt into presence and RPC through `sync.attachPresence({ peer })` and `sync.attachRpc(actions)`.
 
-`attachSync` is the entire network surface. One call wires sync, presence (awareness), and RPC dispatch. Understanding the supervisor is the difference between "WebSocket reconnection just works" and being able to debug "why is my CLI hanging."
+Understanding the supervisor is the difference between "WebSocket reconnection just works" and being able to debug "why is my CLI hanging." Presence and RPC ride on the same socket, but they are explicit sibling attachments so a sync-only workspace does not pretend to expose peer lookup or remote actions.
 
 ## What `attachSync` does at construction
 
-One call, four jobs (in `packages/workspace/src/document/attach-sync.ts`):
+The base sync attachment does four jobs (in `packages/workspace/src/document/attach-sync.ts`):
 
 ```
-attachSync(doc, { device, url, getToken, waitFor: idb })
+attachSync(doc, { url, getToken, waitFor: idb })
         │
-        ├── 1. Validate `'system' not in userActions`
-        │      └─ throws at attach time on collision
+        ├── 1. Pick the Y.Doc from a doc or doc bundle
         │
-        ├── 2. Build the dispatch tree:
-        │        actions = {
-        │          ...userActions,   ← yours
-        │          system: {         ← injected
-        │            describe: defineQuery({...}),
-        │          },
-        │        }
+        ├── 2. Wait for optional persistence hydration
         │
-        ├── 3. If `device` was passed, build awareness:
-        │        awareness.setLocal({ device })   ← presence-only, ~150B
+        ├── 3. Start the WebSocket supervisor loop
         │
-        └── 4. Start the supervisor loop
-               └─ owns the WebSocket; reconnects forever
-                  with exponential backoff
+        └── 4. Return attachment methods:
+               status, whenConnected, goOffline, reconnect,
+               attachPresence({ peer }), attachRpc(actions)
 ```
 
 The function returns synchronously. The first connect happens asynchronously after `waitFor` resolves (typically `idb.whenLoaded`).
+
+Presence attaches later:
+
+```ts
+const presence = sync.attachPresence({
+	peer: { id: 'macbook-pro', name: 'MacBook Pro', platform: 'node' },
+});
+```
+
+RPC attaches later:
+
+```ts
+const rpc = sync.attachRpc(workspace.actions);
+```
 
 ## Layer split: doc factory vs runtime wrapper
 
@@ -426,7 +432,7 @@ The function returns synchronously. The first connect happens asynchronously aft
 └─────────────────────────────────────────────────────────┘
 ```
 
-The wrapper takes the doc bundle (which carries `.actions`) and a `device` and hands them to `attachSync`. The doc factory has no awareness, no sync, no platform concerns.
+The wrapper takes the doc bundle and wires sync, presence, and RPC for that runtime. The doc factory has no awareness, no sync, no platform concerns.
 
 ## The dispatch tree
 
@@ -444,7 +450,7 @@ userActions = {
 }
 ```
 
-After `attachSync` runs:
+After `sync.attachRpc(userActions)` runs:
 
 ```
 actions = {
@@ -459,7 +465,7 @@ actions = {
 }
 ```
 
-User and system actions are **structurally identical** — both built with `defineQuery`/`defineMutation`, both reachable via `sync.rpc(target, '<path>', ...)`. The dispatcher (`resolveActionPath`) doesn't distinguish.
+User and system actions are **structurally identical**: both built with `defineQuery`/`defineMutation`, both reachable via `rpc.rpc(target, '<path>', ...)`. The dispatcher (`resolveActionPath`) doesn't distinguish.
 
 The only thing that separates them is the reservation: a top-level `system` key in *your* actions throws at construction. The reservation is shallow (only top-level), follows JSON-RPC's `rpc.*` precedent, and the snapshot is taken at attach time — post-attach mutations to `userActions` don't affect dispatch.
 
@@ -584,35 +590,38 @@ handshake.
 
 ## RPC: peer dispatch surface
 
-`SyncAttachment` is the single source of truth for "who else is here":
+Presence is the source of truth for "who else is here"; RPC is the dispatch surface:
 
 ```ts
-sync.peers()                           // Map<clientId, PeerAwarenessState>
-sync.find(deviceId)                    // FoundPeer | undefined
-sync.observe(callback)                 // unsubscribe fn
-sync.rpc(target, action, input, opts)  // typed remote call
+presence.peers()                       // Map<clientId, PeerAwarenessState>
+presence.find(peerId)                  // Resolved peer or undefined
+presence.observe(callback)             // unsubscribe fn
+rpc.rpc(target, action, input, opts)   // typed remote call
 ```
 
 Cross-device action call:
 
 ```ts
-const macbook = peer<TabManagerActions>(fuji.sync, 'macbook-pro');
+const macbook = createRemoteActions<TabManagerActions>(
+	{ presence: fuji.presence, rpc: fuji.rpc },
+	'macbook-pro',
+);
 const result = await macbook.tabs.close({ tabIds: [1, 2] });
 ```
 
-`peer<T>(sync, deviceId)` returns a typed Proxy. Walking `.tabs.close` builds nested proxies; calling `.tabs.close(input)` dispatches via `sync.rpc(clientId, 'tabs.close', input)`.
+`createRemoteActions<T>({ presence, rpc }, peerId)` returns a typed Proxy. Walking `.tabs.close` builds nested proxies; calling `.tabs.close(input)` resolves the peer through presence and dispatches via `rpc.rpc(clientId, 'tabs.close', input)`.
 
-`describePeer(sync, deviceId)` is a thin wrapper that calls `peer<SystemMeta>(sync, deviceId).system.describe()` to fetch the peer's full action manifest on demand.
+`describeRemoteActions({ presence, rpc }, peerId)` is a thin wrapper that calls the injected `system.describe` action to fetch the peer's full action manifest on demand.
 
 ### Peer-removed race semantics
 
-Both `peer<T>` and `describePeer` race the RPC against a peer-removed signal. If the matched peer disappears mid-call, the in-flight Promise rejects immediately with `RpcError.PeerLeft` rather than waiting the full RPC timeout:
+Both `createRemoteActions<T>` and `describeRemoteActions` race the RPC against a peer-removed signal. If the matched peer disappears mid-call, the in-flight Promise rejects immediately with `RpcError.PeerLeft` rather than waiting the full RPC timeout:
 
 ```
-peer<T>(sync, 'mac').foo()
+createRemoteActions<T>({ presence, rpc }, 'mac').foo()
   │
-  ├─ subscribe to sync.observe(callback)
-  ├─ fire: sync.rpc(...)
+  ├─ subscribe to presence.observe(callback)
+  ├─ fire: rpc.rpc(...)
   │
   ├─ if RPC resolves first:        → return its result
   ├─ if peer leaves awareness first → reject with PeerLeft
@@ -630,17 +639,17 @@ End-to-end. The CLI process is "Fuji"; the peer is "macbook-pro" (a tab-manager 
 └─────────┬──────────┘                     └─────────┬──────────┘
           │                                          │
           │ 1. CLI loads epicenter.config.ts         │
-          │    workspace.sync.peers() returns:       │
-          │    Map { 42 → {device:{id:'macbook-pro'}}}│
+          │    workspace.presence.peers() returns:   │
+          │    Map { 42 → {peer:{id:'macbook-pro'}}}│
           │                                          │
-          │ 2. describePeer(sync, 'macbook-pro')     │
-          │    → peer<SystemMeta>().system.describe()│
+          │ 2. describeRemoteActions(..., peerId)    │
+          │    → system.describe()                   │
           │                                          │
-          │ 3. internally: sync.find('macbook-pro')  │
+          │ 3. internally: presence.find(peerId)     │
           │    returns { clientId: 42, state }       │
           │                                          │
-          │ 4. sync.rpc(42, 'system.describe',       │
-          │             undefined)                   │
+          │ 4. rpc.rpc(42, 'system.describe',        │
+          │            undefined)                    │
           │                                          │
           │    ─── encodeRpcRequest ───────────►     │
           │                                          │
@@ -669,14 +678,18 @@ End-to-end. The CLI process is "Fuji"; the peer is "macbook-pro" (a tab-manager 
 ## Construction → first connect, in time
 
 ```
-t=0ms      attachSync(doc, { device, url, getToken, waitFor: idb })
-              ├─ validates `'system' not in userActions`
-              ├─ injects system.describe
-              ├─ builds awareness, sets {device} synchronously
-              ├─ wires ydoc.on('updateV2'), awareness.on('update')
+t=0ms      attachSync(doc, { url, getToken, waitFor: idb })
+              ├─ wires ydoc.on('updateV2')
               └─ kicks off async waitFor → ensureSupervisor()
 
               returns SyncAttachment immediately
+
+t=0ms      sync.attachPresence({ peer })
+              └─ publishes local peer state when the socket opens
+
+t=0ms      sync.attachRpc(actions)
+              ├─ validates `'system' not in userActions`
+              └─ injects system.describe
 
 t=~10ms    idb.whenLoaded resolves (typical hot start)
 
@@ -703,4 +716,4 @@ t=80ms+    [from here on, four loops run forever:]
 
 ## Mental model in one paragraph
 
-`attachSync(doc, { device })` is the wire. It owns presence (awareness), dispatch (RPC), and the supervisor (reconnect loop). One call, all of it. The dispatch tree is `{ ...userActions, system: { describe } }` with `system.*` reserved. Awareness is identity-only (~150B/peer, broadcast every 15s, 30s TTL). RPC is capability and dispatch (request/response, 5s timeout, racing against peer-removed). Two typed proxies (`peer<T>` for user actions, `describePeer` for system) walk the same wire. The whole thing is one supervisor loop, six timers, a single dispatch tree, and a `runId` cancellation thread.
+`attachSync(doc, config)` is the wire and the supervisor. Presence and RPC are explicit attachments riding on that wire: `sync.attachPresence({ peer })` publishes routable identity, and `sync.attachRpc(actions)` builds the dispatch tree `{ ...userActions, system: { describe } }` with `system.*` reserved. Awareness is identity-only (~150B/peer, broadcast every 15s, 30s TTL). RPC is capability and dispatch (request/response, timeout, racing against peer-removed). Remote proxies use `{ presence, rpc }`, not a monolithic sync object.

@@ -1171,7 +1171,6 @@ import {
 	isMutation,
 	isQuery,
 	walkActions,
-	type Actions,
 } from '@epicenter/workspace';
 
 const actions = {
@@ -1182,7 +1181,7 @@ const actions = {
 			handler: ({ title }) => ({ title }),
 		}),
 	},
-} satisfies Actions;
+};
 
 for (const [path, action] of walkActions(actions)) {
 	if (isAction(action)) {
@@ -1401,7 +1400,6 @@ import {
 	isQuery,
 	walkActions,
 	type Action,
-	type Actions,
 	type Mutation,
 	type Query,
 } from '@epicenter/workspace';
@@ -1489,7 +1487,7 @@ import {
 } from '@epicenter/workspace';
 ```
 
-`walkActions(source)` flattens action leaves reachable through plain object properties into `[path, action]` pairs. You can pass a narrow action tree or a full workspace bundle. Combined with each action's `type`, `title`, `description`, and `input` schema, that's enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport.
+`walkActions(source)` flattens action leaves reachable through plain object properties into `[path, action]` pairs. Pass the canonical action tree, usually `workspace.actions`. Combined with each action's `type`, `title`, `description`, and `input` schema, that is enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport.
 
 ### IDs and dates
 
@@ -1522,7 +1520,7 @@ These matter when you are writing low-level tooling against raw Yjs structures.
 The core package does not export an MCP server. What it does export is the metadata you need to build one:
 
 - actions with `type`, `title`, `description`, and `input`
-- `walkActions(...)` to flatten a nested action tree or workspace bundle
+- `walkActions(...)` to flatten a nested action tree
 - `isAction` / `isQuery` / `isMutation` type guards
 - `@epicenter/workspace/ai`: `actionsToAiTools(...)` for TanStack AI tool bindings
 
@@ -1536,10 +1534,9 @@ import {
 	defineMutation,
 	defineQuery,
 	walkActions,
-	type Actions,
 } from '@epicenter/workspace';
 
-const actions: Actions = {
+const actions = {
 	posts: {
 		list: defineQuery({
 			title: 'List Posts',

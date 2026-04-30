@@ -4,11 +4,12 @@
  * app-side automation that want to call a running daemon.
  *
  * Generic `TWorkspace` is the in-process workspace shape (typically
- * `ReturnType<typeof openFuji>`); the runtime returns a
- * `DaemonActions<TWorkspace>` proxy backed by a unix-socket `DaemonClient`.
+ * `ReturnType<typeof openFuji>`); the runtime returns an action-root proxy
+ * backed by a unix-socket `DaemonClient`.
  * `TWorkspace` is type-only: no workspace code runs in the caller process.
- * `DaemonActions<TWorkspace>` filters it to branded `defineQuery` /
- * `defineMutation` leaves and rewrites each into the daemon `/run` result.
+ * `DaemonActions<TWorkspace['actions']>` filters the canonical action root to
+ * branded `defineQuery` / `defineMutation` leaves and rewrites each into the
+ * daemon `/run` result.
  *
  * @example
  * ```ts
@@ -18,7 +19,7 @@
  * using fuji = await connectDaemon<ReturnType<typeof openFuji>>({
  *   id: 'fuji',
  * });
- * await fuji.actions.entries.update({ id, tags: ['untagged'] });
+ * await fuji.entries.update({ id, tags: ['untagged'] });
  * ```
  *
  * Daemon-scope calls (peers, list across workspaces) live on `DaemonClient`
@@ -50,7 +51,9 @@ import {
  * Start one with `epicenter up`. There is no auto-spawn: explicit lifecycle
  * is the contract.
  */
-export async function connectDaemon<TWorkspace>({
+export async function connectDaemon<
+	TWorkspace extends { actions: Record<string, unknown> },
+>({
 	id: workspaceExportName,
 	projectDir = findEpicenterDir(),
 }: {
@@ -62,8 +65,8 @@ export async function connectDaemon<TWorkspace>({
 	 * `projectDir` to opt out.
 	 */
 	projectDir?: ProjectDir;
-}): Promise<DaemonActions<TWorkspace>> {
+}): Promise<DaemonActions<TWorkspace['actions']>> {
 	const { data: client, error } = await getDaemon(projectDir);
 	if (error) throw error;
-	return buildDaemonActions<TWorkspace>(client, workspaceExportName);
+	return buildDaemonActions<TWorkspace['actions']>(client, workspaceExportName);
 }

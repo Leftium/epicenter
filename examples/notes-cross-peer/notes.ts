@@ -46,7 +46,7 @@ export function openNotes(peer: PeerDescriptor) {
 			(await sessions.load(SERVER_URL))?.accessToken ?? null,
 	});
 	const presence = sync.attachPresence({ peer });
-	const rpc = sync.attachRpc({ actions: { actions } });
+	const rpc = sync.attachRpc(actions);
 
 	return {
 		actions,

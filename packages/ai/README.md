@@ -9,13 +9,13 @@ This is the pattern from workspace clients:
 ```typescript
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 
-export const workspaceAiTools = actionsToAiTools(workspace);
+export const workspaceAiTools = actionsToAiTools(workspace.actions);
 ```
 
 Under the hood, that split is the whole point:
 
 ```text
-workspace
+workspace.actions
   └─ actionsToAiTools(...)
        ├─ tools        -> client tools with execute()
        └─ definitions  -> JSON payload for the server
@@ -31,13 +31,13 @@ Queries become ordinary client tools. Mutations automatically get `needsApproval
 
 The `definitions` array omits runtime-only fields like `execute` and `__toolSide`. What survives is the wire-safe shape the server needs: tool name, description, schema, approval flag, and title.
 
-One detail matters more than it looks. Input schemas are normalized so `properties` and `required` are always present. The source calls out Anthropic here—some providers reject schemas that omit those keys.
+One detail matters more than it looks. Input schemas are normalized so `properties` and `required` are always present. The source calls out Anthropic here because some providers reject schemas that omit those keys.
 
 ## API overview
 
 ### `actionsToAiTools(source)`
 
-Converts a workspace bundle or action tree into TanStack AI client tools and JSON definitions. Tool names come from the action path, so a nested action like `actions.tabs.close` becomes `actions_tabs_close`.
+Converts an action tree into TanStack AI client tools and JSON definitions. Tool names come from the action path, so a nested action like `tabs.close` becomes `tabs_close`.
 
 ### `ToolDefinition`
 
@@ -48,8 +48,8 @@ The wire-safe tool shape for the HTTP request body.
 Type-level helper that turns an action source into a string union of tool names.
 
 ```typescript
-type Names = ActionNames<typeof workspace>;
-// "actions_tabs_search" | "actions_tabs_close" | ...
+type Names = ActionNames<typeof workspace.actions>;
+// "tabs_search" | "tabs_close" | ...
 ```
 
 ## Relationship to the monorepo

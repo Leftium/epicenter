@@ -46,7 +46,7 @@ export function openFuji({
 		webSocketImpl,
 	});
 	const presence = sync.attachPresence({ peer });
-	const rpc = sync.attachRpc({ actions: { actions: doc.actions } });
+	const rpc = sync.attachRpc(doc.actions);
 	const sqlite = attachSqlite(doc.ydoc, {
 		filePath: sqlitePath(projectDir, doc.ydoc.guid),
 	}).table(doc.tables.entries);

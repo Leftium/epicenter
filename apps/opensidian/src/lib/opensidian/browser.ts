@@ -54,7 +54,7 @@ export function openOpensidian({
 		getToken: () => auth.getToken(),
 	});
 	const presence = sync.attachPresence({ peer });
-	const rpc = sync.attachRpc({ actions: { actions } });
+	const rpc = sync.attachRpc(actions);
 
 	return {
 		...doc,

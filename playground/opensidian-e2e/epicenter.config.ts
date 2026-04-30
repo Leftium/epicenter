@@ -11,8 +11,8 @@
  * `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
  *
  * Exports `opensidian`: an object satisfying `LoadedWorkspace` with
- * `whenReady`, `sync`, `[Symbol.dispose]`, and any action namespaces hoisted
- * to the top level. `loadConfig` picks up any named export with that shape.
+ * `whenReady`, `actions`, `sync`, and `[Symbol.dispose]`. Daemon action paths
+ * are relative to `actions`.
  *
  * Usage:
  *   # Run the workspace. Imports this config, which constructs the
@@ -20,8 +20,8 @@
  *   # Runs until Ctrl+C.
  *   bun run playground/opensidian-e2e/epicenter.config.ts
  *
- *   # Invoke the markdownActions.prepare mutation.
- *   epicenter run opensidian.markdownActions.prepare '{"directory":"./some/dir"}' \
+ *   # Invoke the markdown.prepare mutation.
+ *   epicenter run opensidian.markdown.prepare '{"directory":"./some/dir"}' \
  *     -C playground/opensidian-e2e
  */
 
@@ -164,19 +164,21 @@ const sqlite = attachSqliteMaterializer(ydoc, {
  * frontmatter of any file that doesn't already have one. Errors if duplicate
  * IDs are detected across files.
  */
-const markdownActions = {
-	prepare: defineMutation({
-		title: 'Prepare Markdown Files',
-		description:
-			'Add unique IDs to markdown files missing them in YAML frontmatter',
-		input: Type.Object({ directory: Type.String() }),
-		handler: async ({ directory }) => prepareMarkdownFiles(directory),
-	}),
+const actions = {
+	markdown: {
+		prepare: defineMutation({
+			title: 'Prepare Markdown Files',
+			description:
+				'Add unique IDs to markdown files missing them in YAML frontmatter',
+			input: Type.Object({ directory: Type.String() }),
+			handler: async ({ directory }) => prepareMarkdownFiles(directory),
+		}),
+	},
 };
 
 export const opensidian = {
 	whenReady,
-	markdownActions,
+	actions,
 	sync,
 	[Symbol.dispose]() {
 		ydoc.destroy();

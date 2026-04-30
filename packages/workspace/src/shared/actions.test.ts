@@ -279,4 +279,25 @@ describe('action path walking', () => {
 		);
 		expect(resolveActionPath(actions, 'bad.key')).toBeUndefined();
 	});
+
+	test('rejects dot-containing object keys on action-bearing branches', () => {
+		const workspace = {
+			settings: {
+				'bad.key': {
+					visible: defineQuery({
+						handler: () => 'visible',
+					}),
+				},
+			},
+			actions: {
+				visible: defineQuery({
+					handler: () => 'visible',
+				}),
+			},
+		};
+
+		expect(() => [...walkActions(workspace)]).toThrow(
+			'Action keys cannot contain "." at "settings.bad.key"',
+		);
+	});
 });

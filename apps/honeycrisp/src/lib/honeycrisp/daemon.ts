@@ -39,7 +39,7 @@ export function openHoneycrisp({
 		webSocketImpl,
 	});
 	const presence = sync.attachPresence({ peer });
-	const rpc = sync.attachRpc({ actions: { actions: doc.actions } });
+	const rpc = sync.attachRpc(doc.actions);
 
 	return { ...doc, yjsLog, sync, presence, rpc };
 }

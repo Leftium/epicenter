@@ -48,7 +48,7 @@ export async function executeRun(
 	const { workspace } = entry;
 	if (workspace.whenReady) await workspace.whenReady;
 
-	const action = resolveActionPath(workspace, localPath);
+	const action = resolveActionPath(workspace.actions, localPath);
 	if (!action) {
 		const descendants = workspaceActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {

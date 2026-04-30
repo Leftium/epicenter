@@ -1,5 +1,5 @@
 import type { SqliteIndex, YjsFileSystem } from '@epicenter/filesystem';
-import { defineActions, defineMutation, defineQuery } from '@epicenter/workspace';
+import { defineMutation, defineQuery } from '@epicenter/workspace';
 import type { Bash } from 'just-bash';
 import Type from 'typebox';
 import { Ok } from 'wellcrafted/result';
@@ -13,7 +13,7 @@ export function createOpensidianActions({
 	sqliteIndex: SqliteIndex['exports'];
 	bash: Bash;
 }) {
-	return defineActions({
+	return {
 		files: {
 			search: defineQuery({
 				title: 'Search Notes',
@@ -142,5 +142,5 @@ export function createOpensidianActions({
 				},
 			}),
 		},
-	});
+	};
 }

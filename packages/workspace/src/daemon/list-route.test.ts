@@ -23,6 +23,7 @@ function fakeEntry(
 ): WorkspaceEntry {
 	const workspace = {
 		whenReady: Promise.resolve(),
+		actions: {},
 		...workspaceShape,
 		[Symbol.dispose]() {},
 	} satisfies LoadedWorkspace;
@@ -40,7 +41,7 @@ async function postList(entries: WorkspaceEntry[]): Promise<ListResult> {
 }
 
 describe('/list route', () => {
-	test('returns literal export-prefixed paths under actions', async () => {
+	test('returns export-prefixed paths under the action root', async () => {
 		const reply = await postList([
 			fakeEntry('demo', {
 				actions: {
@@ -56,18 +57,19 @@ describe('/list route', () => {
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
 			expect(Object.keys(reply.data).sort()).toEqual([
-				'demo.actions.counter.get',
+				'demo.counter.get',
 			]);
-			expect(reply.data['demo.actions.counter.get']?.description).toBe(
+			expect(reply.data['demo.counter.get']?.description).toBe(
 				'Read the counter',
 			);
 		}
 	});
 
-	test('returns top-level action groups when the workspace exposes them', async () => {
+	test('ignores action leaves outside the canonical action root', async () => {
 		const reply = await postList([
 			fakeEntry('demo', {
-				counter: {
+				actions: {},
+				sqlite: {
 					get: defineQuery({
 						handler: () => 0,
 					}),
@@ -77,7 +79,7 @@ describe('/list route', () => {
 
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
-			expect(Object.keys(reply.data).sort()).toEqual(['demo.counter.get']);
+			expect(reply.data).toEqual({});
 		}
 	});
 
@@ -106,8 +108,8 @@ describe('/list route', () => {
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
 			expect(Object.keys(reply.data).sort()).toEqual([
-				'notes.actions.add',
-				'tasks.actions.list',
+				'notes.add',
+				'tasks.list',
 			]);
 		}
 	});

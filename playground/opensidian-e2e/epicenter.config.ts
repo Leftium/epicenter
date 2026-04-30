@@ -10,9 +10,8 @@
  * Reads auth credentials from the CLI session store at
  * `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
  *
- * Exports `opensidian`: an object satisfying `LoadedWorkspace` with
- * `whenReady`, `actions`, `sync`, and `[Symbol.dispose]`. Daemon action paths
- * are relative to `actions`.
+ * Exports `opensidian` as a hosted workspace route with `actions`, `sync`, and
+ * `[Symbol.dispose]`. Daemon action paths are relative to `actions`.
  *
  * Usage:
  *   # Run the workspace. Imports this config, which constructs the
@@ -41,6 +40,7 @@ import {
 	defineMutation,
 	toWsUrl,
 } from '@epicenter/workspace';
+import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
@@ -177,13 +177,14 @@ const actions = {
 };
 
 export const opensidian = {
+	route: 'opensidian',
 	whenReady,
 	actions,
 	sync,
 	[Symbol.dispose]() {
 		ydoc.destroy();
 	},
-	// extras (not part of LoadedWorkspace contract; useful for direct script use)
+	// Extras for direct script use, not part of the hosted workspace contract.
 	id: WORKSPACE_ID,
 	ydoc,
 	tables,
@@ -194,3 +195,5 @@ export const opensidian = {
 	markdown,
 	sqlite,
 };
+
+export default defineEpicenterConfig([opensidian]);

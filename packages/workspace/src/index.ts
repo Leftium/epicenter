@@ -33,6 +33,7 @@
 
 export type {
 	Action,
+	Actions,
 	ActionManifest,
 	ActionMeta,
 	Mutation,

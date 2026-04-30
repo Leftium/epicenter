@@ -1,11 +1,12 @@
 /**
- * Minimal fixture: one workspace export with inline `defineQuery` /
+ * Minimal fixture: one daemon host with inline `defineQuery` /
  * `defineMutation` nodes grouped under `actions:`. No sqlite, sync, or
  * encryption. The CLI walks `workspace.actions`, so CLI paths are
  * `demo.counter.{get,increment,set}`.
  */
 
 import { defineMutation, defineQuery } from '@epicenter/workspace';
+import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
@@ -14,6 +15,7 @@ const state = ydoc.getMap<number>('state');
 state.set('count', 0);
 
 export const demo = {
+	route: 'demo',
 	actions: {
 		counter: {
 			get: defineQuery({
@@ -41,6 +43,8 @@ export const demo = {
 	[Symbol.dispose]() {
 		ydoc.destroy();
 	},
-	// extras (not part of LoadedWorkspace contract)
+	// Extras for direct script use, not part of the hosted workspace contract.
 	ydoc,
 };
+
+export default defineEpicenterConfig([demo]);

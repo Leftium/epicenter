@@ -4,13 +4,13 @@
  * `.epicenter/` directory. That directory is the project root.
  *
  * This is the canonical way to mint a `ProjectDir`: every other consumer
- * (daemon path helpers, script factories, `connectDaemon`) accepts
+ * (daemon path helpers, script factories, `connectDaemonActions`) accepts
  * `ProjectDir` so the brand acts as proof that the path was discovered via
  * this function and points at a real vault root. Plain `string` paths
  * (e.g., `process.cwd()`) won't satisfy `ProjectDir` without an explicit
  * cast.
  *
- * Used by `connectDaemon` and per-app `script.ts` factories so vault
+ * Used by `connectDaemonActions` and per-app `script.ts` factories so vault
  * scripts don't have to pass `projectDir` explicitly: running a script from
  * anywhere inside the vault tree resolves the same daemon socket the
  * surrounding `epicenter up` is bound to.

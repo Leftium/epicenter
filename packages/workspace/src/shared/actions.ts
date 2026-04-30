@@ -129,6 +129,14 @@ export type Action<
 > = Query<TInput, R> | Mutation<TInput, R>;
 
 /**
+ * Recursive public action root. Each key is either an action leaf or another
+ * namespace containing action leaves.
+ */
+export type Actions = {
+	[key: string]: Action | Actions;
+};
+
+/**
  * The runtime-injected `system.*` action namespace. Single canonical type:
  * `attachRpc` constructs `systemActions: SystemActions` and `remote-actions.ts`
  * derives the proxy type `createRemoteActions<{ system: SystemActions }>` from

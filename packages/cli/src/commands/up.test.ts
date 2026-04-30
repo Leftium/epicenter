@@ -1,17 +1,15 @@
 /**
  * Wave 5 unit-level tests for `epicenter up`.
  *
- * These tests run `runUp` in-process with a fake `LoadedWorkspace` /
+ * These tests run `runUp` in-process with a fake `HostedWorkspace` /
  * `SyncAttachment` so we never spawn a child or call `process.exit`. The
  * cross-process e2e (real CLI binary, real relay) lands in Wave 8.
  *
  * Cases (per the brief):
  *   1. Happy path: bindUnixSocket is called, metadata is written, ping replies "pong".
- *   2. Stale-auth fast-fail: whenReady never resolves; runUp throws "connect failed: ..."
- *      within the connect-timeout window.
- *   3. Already-running: pre-write metadata for `process.pid` + a real listening socket;
+ *   2. Already-running: pre-write metadata for `process.pid` + a real listening socket;
  *      runUp throws "daemon already running (pid=X)".
- *   4. Orphan: pre-write metadata for a dead pid + phantom socket; runUp proceeds
+ *   3. Orphan: pre-write metadata for a dead pid + phantom socket; runUp proceeds
  *      cleanly (no throw).
  */
 
@@ -33,7 +31,7 @@ import {
 	writeMetadata,
 } from '@epicenter/workspace/node';
 import { Ok } from 'wellcrafted/result';
-import type { LoadConfigResult, LoadedWorkspace } from '../load-config';
+import type { HostedWorkspace, LoadConfigResult } from '../load-config';
 import { runUp } from './up';
 
 let originalXdg: string | undefined;
@@ -69,29 +67,27 @@ afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
 });
 
-type FakeOptions = {
-	readyPromise?: Promise<unknown>;
-};
-
-function makeFakeWorkspace(opts: FakeOptions = {}): LoadedWorkspace {
+function makeFakeWorkspace(): HostedWorkspace {
 	return {
+		route: 'default',
 		actions: {},
 		[Symbol.dispose]() {
 			/* no-op */
 		},
-		whenReady: opts.readyPromise ?? Promise.resolve(),
 		sync: {
-			whenConnected: opts.readyPromise ?? Promise.resolve(),
+			whenConnected: new Promise(() => {
+				/* sync connects in the background */
+			}),
 			status: { phase: 'connected', hasLocalChanges: false },
 			onStatusChange: () => () => {},
 			// Unused fields; cast through unknown to keep the fake minimal.
-		} as unknown as LoadedWorkspace['sync'],
+		} as unknown as HostedWorkspace['sync'],
 	};
 }
 
-function makeFakeConfig(workspace: LoadedWorkspace): LoadConfigResult {
+function makeFakeConfig(workspace: HostedWorkspace): LoadConfigResult {
 	return {
-		entries: [{ name: 'default', workspace }],
+		entries: [{ route: 'default', workspace }],
 		async [Symbol.asyncDispose]() {
 			workspace[Symbol.dispose]();
 		},
@@ -110,7 +106,6 @@ describe('runUp: happy path', () => {
 			},
 			{
 				loadConfig: async () => Ok(config),
-				connectTimeoutMs: 1000,
 			},
 		);
 		expect(error).toBeNull();
@@ -120,7 +115,7 @@ describe('runUp: happy path', () => {
 		expect(existsSync(metadataPathFor(workDir))).toBe(true);
 		expect(handle.metadata.pid).toBe(process.pid);
 		expect(handle.entries).toHaveLength(1);
-		expect(handle.entries[0]!.name).toBe('default');
+		expect(handle.entries[0]?.route).toBe('default');
 
 		// Socket is bound; ping it via a fresh connect using the real client.
 		const sockPath = socketPathFor(workDir);
@@ -132,34 +127,6 @@ describe('runUp: happy path', () => {
 		// Cleanup: metadata and socket gone.
 		expect(existsSync(metadataPathFor(workDir))).toBe(false);
 		expect(existsSync(sockPath)).toBe(false);
-	});
-});
-
-describe('runUp: stale-auth fast-fail', () => {
-	test('returns ConnectFailed when whenReady exceeds the timeout', async () => {
-		// whenReady that never resolves; emulates a hung auth handshake.
-		const neverReady = new Promise<void>(() => {
-			/* never */
-		});
-		const workspace = makeFakeWorkspace({ readyPromise: neverReady });
-		const config = makeFakeConfig(workspace);
-
-		const start = Date.now();
-		const { error } = await runUp(
-			{
-				projectDir: workDir,
-				quiet: true,
-			},
-			{
-				loadConfig: async () => Ok(config),
-				connectTimeoutMs: 50,
-			},
-		);
-		expect(error?.name).toBe('ConnectFailed');
-		expect(error?.message).toMatch(/^connect failed:/);
-		const elapsed = Date.now() - start;
-		// Sanity: we exited within a small multiple of the timeout, not "hung".
-		expect(elapsed).toBeLessThan(2000);
 	});
 });
 
@@ -189,7 +156,6 @@ describe('runUp: already running', () => {
 				},
 				{
 					loadConfig: async () => Ok(makeFakeConfig(makeFakeWorkspace())),
-					connectTimeoutMs: 1000,
 				},
 			);
 			expect(error?.name).toBe('AlreadyRunning');
@@ -227,7 +193,6 @@ describe('runUp: orphan path', () => {
 			},
 			{
 				loadConfig: async () => Ok(config),
-				connectTimeoutMs: 1000,
 			},
 		);
 		expect(error).toBeNull();

@@ -56,17 +56,17 @@ function emit(rows: PeerSnapshot[], format: OutputFormat | undefined): void {
 		return;
 	}
 
-	const byExport = new Map<string, PeerSnapshot[]>();
+	const byRoute = new Map<string, PeerSnapshot[]>();
 	for (const row of rows) {
-		const list = byExport.get(row.exportName);
+		const list = byRoute.get(row.route);
 		if (list) list.push(row);
-		else byExport.set(row.exportName, [row]);
+		else byRoute.set(row.route, [row]);
 	}
 
 	let i = 0;
-	for (const [name, group] of byExport) {
+	for (const [route, group] of byRoute) {
 		if (i > 0) console.log('');
-		console.log(name);
+		console.log(route);
 		console.table(group.map(toRow).sort((a, b) => a.clientID - b.clientID));
 		i++;
 	}

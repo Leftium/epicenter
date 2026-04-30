@@ -3,14 +3,14 @@
  * down to local persistence (SQLite) and materializes to markdown files.
  *
  * Reads auth credentials (token + encryption keys) from the CLI session store
- * at `~/.epicenter/auth/sessions.json`—run `epicenter auth login` first.
+ * at `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
  *
- * Exports `tabManager` — an object satisfying `LoadedWorkspace` with
- * `whenReady`, `sync`, `actions`, and `[Symbol.dispose]`. `actions` is empty
- * because the tab-manager extension defines action wrappers, not this config.
+ * Exports `tabManager` as a hosted workspace route with `sync`, `actions`, and
+ * `[Symbol.dispose]`. `actions` is empty because the tab-manager extension
+ * defines action wrappers, not this config.
  *
  * Usage:
- *   # Run the workspace — imports this config, which constructs the
+ *   # Run the workspace. Imports this config, which constructs the
  *   # workspace, starting persistence + sync + markdown materialization.
  *   # Runs until Ctrl+C.
  *   bun run playground/tab-manager-e2e/epicenter.config.ts
@@ -28,11 +28,8 @@ import {
 	tabManagerAwarenessDefs,
 	tabManagerTables,
 } from '@epicenter/tab-manager/workspace';
-import {
-	attachEncryption,
-	attachSync,
-	toWsUrl,
-} from '@epicenter/workspace';
+import { attachEncryption, attachSync, toWsUrl } from '@epicenter/workspace';
+import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
@@ -49,7 +46,7 @@ const sessions = createSessionStore();
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 const encryption = attachEncryption(ydoc);
 const tables = encryption.attachTables(ydoc, tabManagerTables);
-// Empty kv — tabManager has no KV definitions, but `.kv()` on the materializer
+// Empty kv: tabManager has no KV definitions, but `.kv()` on the materializer
 // serializes the shared kv store. Keep an empty encrypted kv attached so the
 // materializer's `.kv()` call has something to observe.
 const kv = encryption.attachKv(ydoc, {});
@@ -88,13 +85,14 @@ const markdown = attachMarkdownMaterializer(
 	.kv();
 
 export const tabManager = {
+	route: 'tabManager',
 	whenReady,
 	actions: {},
 	sync,
 	[Symbol.dispose]() {
 		ydoc.destroy();
 	},
-	// extras (not part of LoadedWorkspace contract)
+	// Extras for direct script use, not part of the hosted workspace contract.
 	id: WORKSPACE_ID,
 	ydoc,
 	tables,
@@ -104,3 +102,5 @@ export const tabManager = {
 	persistence,
 	markdown,
 };
+
+export default defineEpicenterConfig([tabManager]);

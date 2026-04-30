@@ -145,10 +145,7 @@ type ActionPathKey<TKey extends string> = TKey extends ''
  * key is masked everywhere on the path (otherwise an `await` on an
  * intermediate namespace would turn it into a thenable).
  */
-function buildDaemonActionProxy(
-	client: DaemonClient,
-	workspaceExportName: string,
-): unknown {
+function buildDaemonActionProxy(client: DaemonClient, route: string): unknown {
 	const make = (path: string[]): unknown => {
 		const target = (() => {}) as unknown as object;
 		return new Proxy(target, {
@@ -162,7 +159,7 @@ function buildDaemonActionProxy(
 				const { waitMs = DEFAULT_RUN_WAIT_MS } =
 					(args[1] as DaemonActionOptions | undefined) ?? {};
 				return client.run({
-					actionPath: `${workspaceExportName}.${path.join('.')}`,
+					actionPath: `${route}.${path.join('.')}`,
 					input,
 					waitMs,
 				});
@@ -179,10 +176,7 @@ function buildDaemonActionProxy(
  */
 export function buildDaemonActions<TActions>(
 	client: DaemonClient,
-	workspaceExportName: string,
+	route: string,
 ): DaemonActions<TActions> {
-	return buildDaemonActionProxy(
-		client,
-		workspaceExportName,
-	) as DaemonActions<TActions>;
+	return buildDaemonActionProxy(client, route) as DaemonActions<TActions>;
 }

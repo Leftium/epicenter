@@ -5,9 +5,9 @@
  *
  * Each verb is a one-line shell shortcut for one workspace primitive:
  *
- *   /peers  ->  workspace.presence.peers()                    all exports
- *   /list   ->  describeActions({ export: workspace.actions }) all exports
- *   /run    ->  invokeAction(...) | rpc.rpc(...)              export-routed
+ *   /peers  ->  workspace.presence.peers()                    all routes
+ *   /list   ->  describeActions({ route: workspace.actions }) all routes
+ *   /run    ->  invokeAction(...) | rpc.rpc(...)              route-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -46,13 +46,13 @@ export const RunRequest = type({
 export type RunRequest = typeof RunRequest.infer;
 
 /**
- * Row shape returned by `/peers`. One row per `(exportName, clientID)` pair,
- * tagged with its config export name so a multi-export daemon can fan out.
+ * Row shape returned by `/peers`. One row per `(route, clientID)` pair,
+ * tagged with its route name so a multi-route daemon can fan out.
  * `peer` carries the canonical peer descriptor from the standard awareness
  * convention; renderers consume it directly without a cast.
  */
 export const PeerSnapshot = type({
-	exportName: 'string',
+	route: 'string',
 	clientID: 'number',
 	peer: Peer,
 });
@@ -62,8 +62,8 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * Build the daemon's Hono app. Tests import this directly; production wires
  * it into `Bun.serve({ unix, fetch: app.fetch })` via `bindUnixSocket`.
  *
- * `/list` exposes export-prefixed action paths. `/run` uses that same
- * prefix to pick the workspace export before dispatching the inner action
+ * `/list` exposes route-prefixed action paths. `/run` uses that same
+ * prefix to pick the hosted workspace before dispatching the inner action
  * path locally or over RPC.
  */
 export function buildApp(
@@ -78,7 +78,7 @@ export function buildApp(
 				const peers = entry.workspace.presence?.peers() ?? new Map();
 				for (const [clientID, state] of peers) {
 					rows.push({
-						exportName: entry.name,
+						route: entry.route,
 						clientID,
 						peer: state.peer,
 					});
@@ -88,7 +88,7 @@ export function buildApp(
 		})
 		.post('/list', (c) => {
 			const actionRoots = Object.fromEntries(
-				entries.map((entry) => [entry.name, entry.workspace.actions]),
+				entries.map((entry) => [entry.route, entry.workspace.actions]),
 			);
 			return c.json(Ok(describeActions(actionRoots)));
 		})

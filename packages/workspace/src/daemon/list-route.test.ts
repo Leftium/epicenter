@@ -4,8 +4,8 @@
  * round-trips through serialization the same way the daemonClient sees
  * it, so this is the load-bearing test surface for list dispatch logic.
  *
- * `/list` is now a one-primitive route: describe every hosted export and
- * prefix each action path with the config export name.
+ * `/list` is now a one-primitive route: describe every hosted route and
+ * prefix each action path with the route name.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -13,7 +13,7 @@ import type { Result } from 'wellcrafted/result';
 
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
 import { buildApp } from './app.js';
-import type { LoadedWorkspace, WorkspaceEntry } from './types.js';
+import type { HostedWorkspace, WorkspaceEntry } from './types.js';
 
 type ListResult = Result<ActionManifest, never>;
 
@@ -22,12 +22,12 @@ function fakeEntry(
 	workspaceShape: Record<string, unknown> = {},
 ): WorkspaceEntry {
 	const workspace = {
-		whenReady: Promise.resolve(),
+		route: name,
 		actions: {},
 		...workspaceShape,
 		[Symbol.dispose]() {},
-	} satisfies LoadedWorkspace;
-	return { name, workspace } as WorkspaceEntry;
+	} satisfies HostedWorkspace;
+	return { route: name, workspace } as WorkspaceEntry;
 }
 
 async function postList(entries: WorkspaceEntry[]): Promise<ListResult> {
@@ -41,7 +41,7 @@ async function postList(entries: WorkspaceEntry[]): Promise<ListResult> {
 }
 
 describe('/list route', () => {
-	test('returns export-prefixed paths under the action root', async () => {
+	test('returns route-prefixed paths under the action root', async () => {
 		const reply = await postList([
 			fakeEntry('demo', {
 				actions: {
@@ -56,9 +56,7 @@ describe('/list route', () => {
 		]);
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
-			expect(Object.keys(reply.data).sort()).toEqual([
-				'demo.counter.get',
-			]);
+			expect(Object.keys(reply.data).sort()).toEqual(['demo.counter.get']);
 			expect(reply.data['demo.counter.get']?.description).toBe(
 				'Read the counter',
 			);
@@ -91,7 +89,7 @@ describe('/list route', () => {
 		}
 	});
 
-	test('prefixes actions from every config export', async () => {
+	test('prefixes actions from every daemon route', async () => {
 		const reply = await postList([
 			fakeEntry('notes', {
 				actions: {

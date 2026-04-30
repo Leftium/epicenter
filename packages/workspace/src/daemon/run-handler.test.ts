@@ -18,6 +18,7 @@ function fakeEntry(
 	rpc: Partial<SyncRpcAttachment> = {},
 ): WorkspaceEntry {
 	const workspace = {
+		route: 'demo',
 		actions: {
 			tabs: {
 				list: defineQuery({
@@ -30,7 +31,7 @@ function fakeEntry(
 		[Symbol.dispose]() {},
 	};
 
-	return { name: 'demo', workspace: workspace as WorkspaceEntry['workspace'] };
+	return { route: 'demo', workspace: workspace as WorkspaceEntry['workspace'] };
 }
 
 describe('executeRun peer dispatch', () => {
@@ -109,9 +110,10 @@ describe('executeRun peer dispatch', () => {
 	});
 });
 
-describe('executeRun export-prefixed routing', () => {
-	test('invokes action under the selected config export', async () => {
+describe('executeRun route-prefixed routing', () => {
+	test('invokes action under the selected daemon route', async () => {
 		const workspace = {
+			route: 'notes',
 			actions: {
 				notes: {
 					add: defineMutation({
@@ -122,7 +124,7 @@ describe('executeRun export-prefixed routing', () => {
 			[Symbol.dispose]() {},
 		};
 		const entry = {
-			name: 'notes',
+			route: 'notes',
 			workspace: workspace as WorkspaceEntry['workspace'],
 		};
 
@@ -138,6 +140,7 @@ describe('executeRun export-prefixed routing', () => {
 
 	test('ignores action leaves outside the canonical action root', async () => {
 		const workspace = {
+			route: 'notes',
 			actions: {},
 			notes: {
 				add: defineMutation({
@@ -147,7 +150,7 @@ describe('executeRun export-prefixed routing', () => {
 			[Symbol.dispose]() {},
 		};
 		const entry = {
-			name: 'notes',
+			route: 'notes',
 			workspace: workspace as WorkspaceEntry['workspace'],
 		};
 
@@ -162,8 +165,9 @@ describe('executeRun export-prefixed routing', () => {
 
 	test('missing path suggests action-root-relative sibling', async () => {
 		const entry = {
-			name: 'notes',
+			route: 'notes',
 			workspace: {
+				route: 'notes',
 				actions: {
 					notes: {
 						add: defineMutation({
@@ -193,8 +197,9 @@ describe('executeRun export-prefixed routing', () => {
 			[
 				fakeEntry({}),
 				{
-					name: 'tasks',
+					route: 'tasks',
 					workspace: {
+						route: 'tasks',
 						actions: {},
 						[Symbol.dispose]() {},
 					} as WorkspaceEntry['workspace'],
@@ -212,7 +217,7 @@ describe('executeRun export-prefixed routing', () => {
 			throw new Error('expected UsageError');
 		}
 		expect(result.error.message).toBe(
-			'No config export "missing". Available: demo, tasks',
+			'No daemon route "missing". Available: demo, tasks',
 		);
 		expect(result.error.suggestions).toEqual(['  demo', '  tasks']);
 	});

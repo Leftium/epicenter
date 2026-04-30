@@ -29,24 +29,18 @@ import type { WorkspaceEntry } from './types.js';
 
 export async function executeRun(
 	entries: WorkspaceEntry[],
-	{
-		actionPath,
-		input: actionInput,
-		peerTarget,
-		waitMs,
-	}: RunRequest,
+	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
 	const target = resolveWorkspaceActionTarget(entries, actionPath);
 	if (target.error !== null) {
 		return RunError.UsageError({
-			message: `No config export "${target.error.exportName}". Available: ${target.error.available.join(', ')}`,
+			message: `No daemon route "${target.error.routeName}". Available: ${target.error.available.join(', ')}`,
 			suggestions: target.error.available.map((name) => `  ${name}`),
 		});
 	}
 
 	const { entry, localPath } = target.data;
 	const { workspace } = entry;
-	if (workspace.whenReady) await workspace.whenReady;
 
 	const action = resolveActionPath(workspace.actions, localPath);
 	if (!action) {
@@ -99,7 +93,7 @@ async function invokeRemote({
 
 	if (!presence || !rpc) {
 		return RunError.UsageError({
-			message: `Workspace "${entry.name}" has no peer RPC attachment; --peer requires presence and RPC.`,
+			message: `Workspace "${entry.route}" has no peer RPC attachment; --peer requires presence and RPC.`,
 		});
 	}
 

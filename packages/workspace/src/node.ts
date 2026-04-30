@@ -5,13 +5,13 @@
  * bundles do not traverse modules that import `node:*` or `bun:*`.
  */
 
-export { connectDaemon } from './client/connect-daemon.js';
-export { findEpicenterDir } from './client/find-epicenter-dir.js';
+export { connectDaemonActions } from './client/connect-daemon-actions.js';
 export type {
 	DaemonActionOptions,
 	DaemonActions,
 } from './client/daemon-actions.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
+export { findEpicenterDir } from './client/find-epicenter-dir.js';
 export { buildApp, PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
 	type DaemonClient,
@@ -41,7 +41,13 @@ export {
 	type WorkspaceServer,
 	type WorkspaceServerOptions,
 } from './daemon/server.js';
-export type { LoadedWorkspace, WorkspaceEntry } from './daemon/types.js';
+export type {
+	EpicenterConfig,
+	HostedWorkspace,
+	HostedWorkspaceInput,
+	LoadedWorkspace,
+	WorkspaceEntry,
+} from './daemon/types.js';
 export {
 	bindOrRecover,
 	bindUnixSocket,
@@ -67,10 +73,10 @@ export {
 	attachYjsLogReader,
 	type YjsLogReaderAttachment,
 } from './document/attach-yjs-log-reader.js';
+export { SqliteWriterError } from './document/sqlite-writer.js';
 export {
 	markdownPath,
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';
-export { SqliteWriterError } from './document/sqlite-writer.js';
 export { hashClientId } from './shared/client-id.js';

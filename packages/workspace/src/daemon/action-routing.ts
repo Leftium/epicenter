@@ -7,7 +7,7 @@ type WorkspaceActionTarget = {
 };
 
 type WorkspaceActionPathError = {
-	exportName: string;
+	routeName: string;
 	available: string[];
 };
 
@@ -17,14 +17,14 @@ export function resolveWorkspaceActionTarget(
 ):
 	| { data: WorkspaceActionTarget; error: null }
 	| { data: null; error: WorkspaceActionPathError } {
-	const [exportName = '', ...rest] = actionPath.split('.');
-	const entry = entries.find((candidate) => candidate.name === exportName);
+	const [routeName = '', ...rest] = actionPath.split('.');
+	const entry = entries.find((candidate) => candidate.route === routeName);
 	if (!entry) {
 		return {
 			data: null,
 			error: {
-				exportName,
-				available: entries.map((candidate) => candidate.name),
+				routeName,
+				available: entries.map((candidate) => candidate.route),
 			},
 		};
 	}
@@ -41,7 +41,7 @@ function toWorkspaceActionPath(
 	entry: WorkspaceEntry,
 	localPath: string,
 ): string {
-	return localPath ? `${entry.name}.${localPath}` : entry.name;
+	return localPath ? `${entry.route}.${localPath}` : entry.route;
 }
 
 export function workspaceActionSuggestionLines(
@@ -80,6 +80,6 @@ function entriesUnder<TValue>(
 	prefix: string,
 ): Array<[string, TValue]> {
 	if (!prefix) return entries;
-	const pfx = prefix + '.';
+	const pfx = `${prefix}.`;
 	return entries.filter(([path]) => path === prefix || path.startsWith(pfx));
 }

@@ -1,5 +1,5 @@
 /**
- * Unit tests for `connectDaemon`. We don't bind a real daemon; pinging a
+ * Unit tests for `connectDaemonActions`. We don't bind a real daemon; pinging a
  * non-existent socket is enough to exercise the failure path. The success
  * path is covered indirectly by `daemon-actions.test.ts` (which stubs the client
  * directly) and end-to-end by the daemon test suite.
@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import type { DaemonError } from '../daemon/client.js';
 import type { ProjectDir } from '../shared/types.js';
-import { connectDaemon } from './connect-daemon.js';
+import { connectDaemonActions } from './connect-daemon-actions.js';
 
 let root: string;
 
@@ -25,13 +25,16 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-describe('connectDaemon', () => {
+describe('connectDaemonActions', () => {
 	test('throws DaemonError.MissingConfig when explicit project has no config', async () => {
 		rmSync(join(root, 'epicenter.config.ts'), { force: true });
 
 		let caught: unknown;
 		try {
-			await connectDaemon({ id: 'demo', projectDir: root as ProjectDir });
+			await connectDaemonActions({
+				route: 'demo',
+				projectDir: root as ProjectDir,
+			});
 		} catch (err) {
 			caught = err;
 		}
@@ -45,7 +48,10 @@ describe('connectDaemon', () => {
 	test('throws DaemonError.Required when no daemon is listening', async () => {
 		let caught: unknown;
 		try {
-			await connectDaemon({ id: 'demo', projectDir: root as ProjectDir });
+			await connectDaemonActions({
+				route: 'demo',
+				projectDir: root as ProjectDir,
+			});
 		} catch (err) {
 			caught = err;
 		}

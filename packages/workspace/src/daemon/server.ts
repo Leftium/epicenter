@@ -30,8 +30,8 @@ export type WorkspaceServerOptions = {
 	projectDir: string;
 	/**
 	 * Pre-constructed workspace entries the daemon hosts. Each entry's
-	 * `name` is the routing key the wire surface dispatches on. The CLI uses
-	 * this as the first segment in export-prefixed action paths.
+	 * `route` is the routing key the wire surface dispatches on. The CLI uses
+	 * this as the first segment in route-prefixed action paths.
 	 */
 	workspaces: WorkspaceEntry[];
 	/** Called by the optional `/shutdown` route after the response is queued. */
@@ -68,12 +68,12 @@ export function createWorkspaceServer({
 }: WorkspaceServerOptions): WorkspaceServer {
 	const seen = new Set<string>();
 	for (const entry of workspaces) {
-		if (seen.has(entry.name)) {
+		if (seen.has(entry.route)) {
 			throw new Error(
-				`createWorkspaceServer: duplicate config export '${entry.name}'`,
+				`createWorkspaceServer: duplicate daemon route '${entry.route}'`,
 			);
 		}
-		seen.add(entry.name);
+		seen.add(entry.route);
 	}
 
 	const socketPath = socketPathFor(projectDir);

@@ -1,11 +1,11 @@
 /**
  * `epicenter list [dot.path]`: render actions exposed by this project.
  *
- * The daemon returns export-prefixed action paths for every workspace in
+ * The daemon returns route-prefixed action paths for every workspace in
  * `epicenter.config.ts`. The CLI only filters and renders that manifest.
  *
  * Per-peer schema introspection is a script concern. The CLI lists the local
- * daemon's export-prefixed action surface only.
+ * daemon's route-prefixed action surface only.
  *
  * `epicenter list` requires a running daemon for the discovered project.
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.

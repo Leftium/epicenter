@@ -1,10 +1,6 @@
 import { rmSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-	DateTimeString,
-	generateId,
-	type ProjectDir,
-} from '@epicenter/workspace';
+import type { ProjectDir } from '@epicenter/workspace';
 import {
 	mintTestProjectDir,
 	NoopWebSocket,
@@ -27,27 +23,12 @@ describe('daemon to script handoff via Yjs log file', () => {
 		{
 			using daemon = openFujiDaemon({
 				getToken: async () => 'fake-token',
-				peer: { id: 'test-daemon', name: 'Fuji Daemon', platform: 'node' },
 				projectDir: workdir,
 				webSocketImpl: NoopWebSocket,
 			});
 
-			const now = DateTimeString.now();
 			for (const title of ['first', 'second', 'third']) {
-				daemon.tables.entries.set({
-					id: generateId(),
-					title,
-					subtitle: '',
-					type: [],
-					tags: [],
-					pinned: false,
-					rating: 0,
-					deletedAt: undefined,
-					date: now,
-					createdAt: now,
-					updatedAt: now,
-					_v: 2 as const,
-				});
+				daemon.actions.entries.create({ title });
 			}
 		}
 

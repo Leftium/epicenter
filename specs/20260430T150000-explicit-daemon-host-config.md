@@ -210,9 +210,11 @@ export default defineEpicenterConfig([
 ## Target API
 
 ```ts
+import type { Actions } from '@epicenter/workspace';
+
 export type HostedWorkspace = {
 	route: string;
-	actions: Record<string, unknown>;
+	actions: Actions;
 	sync?: SyncAttachment;
 	presence?: PeerPresenceAttachment;
 	rpc?: SyncRpcAttachment;

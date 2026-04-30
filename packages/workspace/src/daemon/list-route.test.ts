@@ -13,7 +13,7 @@ import type { Result } from 'wellcrafted/result';
 
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
 import { buildApp } from './app.js';
-import type { HostedWorkspace, WorkspaceEntry } from './types.js';
+import type { DaemonWorkspace, WorkspaceEntry } from './types.js';
 
 type ListResult = Result<ActionManifest, never>;
 
@@ -22,11 +22,10 @@ function fakeEntry(
 	workspaceShape: Record<string, unknown> = {},
 ): WorkspaceEntry {
 	const workspace = {
-		route: name,
 		actions: {},
 		...workspaceShape,
 		[Symbol.dispose]() {},
-	} satisfies HostedWorkspace;
+	} satisfies DaemonWorkspace;
 	return { route: name, workspace } as WorkspaceEntry;
 }
 

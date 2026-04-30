@@ -5,17 +5,17 @@
  * bundles do not traverse modules that import `node:*` or `bun:*`.
  */
 
-export { connectDaemonActions } from './client/connect-daemon-actions.js';
 export {
 	attachSessionUnlock,
 	type SessionUnlockAttachment,
 } from './client/attach-session-unlock.js';
+export { connectDaemonActions } from './client/connect-daemon-actions.js';
 export type {
 	DaemonActionOptions,
 	DaemonActions,
 } from './client/daemon-actions.js';
-export { epicenterPaths } from './client/epicenter-paths.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
+export { epicenterPaths } from './client/epicenter-paths.js';
 export { findEpicenterDir } from './client/find-epicenter-dir.js';
 export {
 	type AuthSession,
@@ -24,8 +24,8 @@ export {
 	type SessionStore,
 } from './client/session-store.js';
 export {
-	createSessionTokenGetter,
 	type CreateSessionTokenGetterOptions,
+	createSessionTokenGetter,
 } from './client/session-token.js';
 export { buildApp, PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
@@ -58,11 +58,11 @@ export {
 } from './daemon/server.js';
 export type {
 	DaemonHostDefinition,
+	DaemonWorkspace,
 	DefineDaemonOptions,
 	DefineEpicenterConfigOptions,
-	EpicenterConfigContext,
 	EpicenterConfig,
-	HostedWorkspace,
+	EpicenterConfigContext,
 	WorkspaceEntry,
 } from './daemon/types.js';
 export {

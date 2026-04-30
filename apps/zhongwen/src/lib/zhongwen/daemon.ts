@@ -2,14 +2,12 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
 	type PeerDescriptor,
-	type ProjectDir,
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
 import {
-	type DaemonHostDefinition,
+	type DaemonWorkspace,
 	defineDaemon,
-	type HostedWorkspace,
 } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
@@ -30,16 +28,6 @@ export type DefineZhongwenDaemonOptions = {
 	webSocketImpl?: WebSocketImpl;
 };
 
-export type OpenZhongwenDaemonOptions = {
-	projectDir: ProjectDir;
-	route?: string;
-	getToken: () => string | null | Promise<string | null>;
-	peer?: PeerDescriptor;
-	clientID?: number;
-	apiUrl?: string;
-	webSocketImpl?: WebSocketImpl;
-};
-
 function defaultZhongwenDaemonPeer(): PeerDescriptor {
 	return {
 		id: 'zhongwen-daemon',
@@ -54,50 +42,31 @@ export function defineZhongwenDaemon({
 	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
 	peer = defaultZhongwenDaemonPeer(),
 	webSocketImpl,
-}: DefineZhongwenDaemonOptions = {}): DaemonHostDefinition {
+}: DefineZhongwenDaemonOptions = {}) {
 	return defineDaemon({
 		route,
 		title: 'Zhongwen',
 		description: 'Zhongwen daemon workspace',
 		workspaceId: ZHONGWEN_WORKSPACE_ID,
-		open: ({ projectDir }) =>
-			openZhongwenDaemon({
-				route,
-				projectDir,
+		start: ({ projectDir }) => {
+			const doc = openZhongwenDoc({ clientID: hashClientId(projectDir) });
+			const yjsLog = attachYjsLog(doc.ydoc, {
+				filePath: yjsPath(projectDir, doc.ydoc.guid),
+			});
+			const sync = attachSync(doc, {
+				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
 				getToken,
-				peer,
-				apiUrl,
 				webSocketImpl,
-			}),
-	});
-}
+			});
+			const presence = sync.attachPresence({ peer });
 
-export function openZhongwenDaemon({
-	route = ZHONGWEN_DAEMON_ROUTE,
-	projectDir,
-	apiUrl = EPICENTER_API_URL,
-	getToken,
-	peer = defaultZhongwenDaemonPeer(),
-	clientID = hashClientId(projectDir),
-	webSocketImpl,
-}: OpenZhongwenDaemonOptions) {
-	const doc = openZhongwenDoc({ clientID });
-	const yjsLog = attachYjsLog(doc.ydoc, {
-		filePath: yjsPath(projectDir, doc.ydoc.guid),
+			return {
+				...doc,
+				yjsLog,
+				sync,
+				presence,
+				actions: {},
+			} satisfies DaemonWorkspace;
+		},
 	});
-	const sync = attachSync(doc, {
-		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		getToken,
-		webSocketImpl,
-	});
-	const presence = sync.attachPresence({ peer });
-
-	return {
-		...doc,
-		route,
-		yjsLog,
-		sync,
-		presence,
-		actions: {},
-	} satisfies HostedWorkspace;
 }

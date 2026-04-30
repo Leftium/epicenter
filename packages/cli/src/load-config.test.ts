@@ -34,8 +34,7 @@ describe('loadConfig', () => {
 				hosts: [
 					defineDaemon({
 						route: 'demo',
-						open: () => ({
-							route: 'demo',
+						start: () => ({
 							actions: {},
 							[Symbol.dispose]() {}
 						})
@@ -59,8 +58,7 @@ describe('loadConfig', () => {
 				hosts: [
 					defineDaemon({
 						route: 'demo',
-						open: ({ projectDir, configDir }) => ({
-							route: 'demo',
+						start: ({ projectDir, configDir }) => ({
 							actions: {
 								paths: {
 									projectDir: { handler: () => projectDir },
@@ -88,7 +86,7 @@ describe('loadConfig', () => {
 		await result.data?.[Symbol.asyncDispose]();
 	});
 
-	test('rejects duplicate definition routes before opening hosts', async () => {
+	test('rejects duplicate definition routes before starting hosts', async () => {
 		writeConfig(`
 			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
 
@@ -98,16 +96,16 @@ describe('loadConfig', () => {
 				hosts: [
 					defineDaemon({
 						route: 'demo',
-						open: () => {
-							globalThis.__loadConfigEvents.push('opened:first');
-							return { route: 'demo', actions: {}, [Symbol.dispose]() {} };
+						start: () => {
+							globalThis.__loadConfigEvents.push('started:first');
+							return { actions: {}, [Symbol.dispose]() {} };
 						}
 					}),
 					defineDaemon({
 						route: 'demo',
-						open: () => {
-							globalThis.__loadConfigEvents.push('opened:second');
-							return { route: 'demo', actions: {}, [Symbol.dispose]() {} };
+						start: () => {
+							globalThis.__loadConfigEvents.push('started:second');
+							return { actions: {}, [Symbol.dispose]() {} };
 						}
 					})
 				]
@@ -131,8 +129,7 @@ describe('loadConfig', () => {
 				hosts: [
 					defineDaemon({
 						route: 'demo',
-						open: () => Promise.resolve({
-							route: 'demo',
+						start: () => Promise.resolve({
 							actions: {},
 							[Symbol.dispose]() {}
 						})
@@ -156,8 +153,7 @@ describe('loadConfig', () => {
 				hosts: [
 					defineDaemon({
 						route: 'bad.route',
-						open: () => ({
-							route: 'bad.route',
+						start: () => ({
 							actions: {},
 							[Symbol.dispose]() {}
 						})
@@ -180,11 +176,11 @@ describe('loadConfig', () => {
 				hosts: [
 					defineDaemon({
 						route: 'demo',
-						open: () => ({ route: 'demo', actions: {}, [Symbol.dispose]() {} })
+						start: () => ({ actions: {}, [Symbol.dispose]() {} })
 					}),
 					defineDaemon({
 						route: 'demo',
-						open: () => ({ route: 'demo', actions: {}, [Symbol.dispose]() {} })
+						start: () => ({ actions: {}, [Symbol.dispose]() {} })
 					})
 				]
 			});
@@ -206,8 +202,7 @@ describe('loadConfig', () => {
 				hosts: [
 					defineDaemon({
 						route: 'first',
-						open: () => ({
-							route: 'first',
+						start: () => ({
 							actions: {},
 							[Symbol.dispose]() {
 								globalThis.__loadConfigEvents.push('disposed:first');
@@ -216,7 +211,7 @@ describe('loadConfig', () => {
 					}),
 					defineDaemon({
 						route: 'second',
-						open: () => Promise.reject(new Error('boom'))
+						start: () => Promise.reject(new Error('boom'))
 					})
 				]
 			});

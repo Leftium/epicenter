@@ -2,8 +2,8 @@
  * Daemon-side types describing the shape of a hosted workspace.
  *
  * `DaemonHostDefinition` is the config-time contract: route metadata plus a
- * delayed `open()` function. `HostedWorkspace` is the runtime contract every
- * opened daemon host has to satisfy: a local `route`, lifecycle hook, required
+ * delayed `start()` function. `DaemonWorkspace` is the runtime contract every
+ * started daemon host has to satisfy: lifecycle hook, required
  * `actions` root, plus optional `sync`, `presence`, and `rpc` attachments.
  *
  * `WorkspaceEntry` is one routed entry the daemon hosts internally. The CLI's
@@ -11,14 +11,17 @@
  * `defineEpicenterConfig({ hosts })` export in `epicenter.config.ts`.
  */
 
-import type { MaybePromise } from '../shared/types.js';
-import type { AbsolutePath, ProjectDir } from '../shared/types.js';
 import type {
 	SyncAttachment,
 	SyncRpcAttachment,
 } from '../document/attach-sync.js';
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import type { Actions } from '../shared/actions.js';
+import type {
+	AbsolutePath,
+	MaybePromise,
+	ProjectDir,
+} from '../shared/types.js';
 
 export const EPICENTER_CONFIG = Symbol.for('epicenter.daemon-config');
 export const EPICENTER_DAEMON_HOST = Symbol.for('epicenter.daemon-host');
@@ -29,17 +32,11 @@ export type EpicenterConfigContext = {
 };
 
 /**
- * Fields the daemon looks at on each hosted workspace. `route`, disposal, and
- * `actions` are required. Other fields are read when present. Extra fields are
+ * Fields the daemon looks at on each started workspace. Disposal and `actions`
+ * are required. Other fields are read when present. Extra fields are
  * direct-use infrastructure and do not affect daemon action discovery.
  */
-export type HostedWorkspace = {
-	/**
-	 * Local daemon route prefix. `fuji.entries.create` dispatches to the host
-	 * whose route is `fuji`, then invokes `entries.create` under `actions`.
-	 */
-	route: string;
-
+export type DaemonWorkspace = {
 	/** Called by the daemon at exit. */
 	[Symbol.dispose](): void;
 
@@ -59,37 +56,41 @@ export type HostedWorkspace = {
 	readonly [key: string]: unknown;
 };
 
-export type DaemonHostDefinition = {
+export type DaemonHostDefinition<
+	TWorkspace extends DaemonWorkspace = DaemonWorkspace,
+> = {
 	[EPICENTER_DAEMON_HOST]: true;
 	route: string;
 	title?: string;
 	description?: string;
 	workspaceId?: string;
-	open(options: EpicenterConfigContext): MaybePromise<HostedWorkspace>;
+	start(options: EpicenterConfigContext): MaybePromise<TWorkspace>;
 };
 
-export type DefineDaemonOptions = {
+export type DefineDaemonOptions<
+	TWorkspace extends DaemonWorkspace = DaemonWorkspace,
+> = {
 	route: string;
 	title?: string;
 	description?: string;
 	workspaceId?: string;
-	open(options: EpicenterConfigContext): MaybePromise<HostedWorkspace>;
+	start(options: EpicenterConfigContext): MaybePromise<TWorkspace>;
 };
 
-export function defineDaemon({
+export function defineDaemon<TWorkspace extends DaemonWorkspace>({
 	route,
 	title,
 	description,
 	workspaceId,
-	open,
-}: DefineDaemonOptions): DaemonHostDefinition {
+	start,
+}: DefineDaemonOptions<TWorkspace>): DaemonHostDefinition<TWorkspace> {
 	return Object.freeze({
 		[EPICENTER_DAEMON_HOST]: true as const,
 		route,
 		title,
 		description,
 		workspaceId,
-		open,
+		start,
 	});
 }
 
@@ -114,5 +115,5 @@ export function defineEpicenterConfig({
 /** One routed workspace hosted by the daemon. */
 export type WorkspaceEntry = {
 	route: string;
-	workspace: HostedWorkspace;
+	workspace: DaemonWorkspace;
 };

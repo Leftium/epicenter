@@ -6,7 +6,10 @@
  */
 
 import { defineMutation, defineQuery } from '@epicenter/workspace';
-import { defineDaemon, defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import {
+	defineDaemon,
+	defineEpicenterConfig,
+} from '@epicenter/workspace/daemon';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
@@ -15,7 +18,6 @@ const state = ydoc.getMap<number>('state');
 state.set('count', 0);
 
 export const demo = {
-	route: 'demo',
 	actions: {
 		counter: {
 			get: defineQuery({
@@ -50,10 +52,10 @@ export const demo = {
 export default defineEpicenterConfig({
 	hosts: [
 		defineDaemon({
-			route: demo.route,
+			route: 'demo',
 			title: 'Demo',
 			workspaceId: 'epicenter.demo',
-			open: () => demo,
+			start: () => demo,
 		}),
 	],
 });

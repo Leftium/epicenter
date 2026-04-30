@@ -38,7 +38,7 @@
  *        hosted workspace has no `sync` attachment.
  *   [gap] DeviceId in the banner reflects the real peer.
  *        Infra gap: `up.ts § pickDeviceId` returns `'<unknown>'` because
- *        `HostedWorkspace.sync` doesn't expose self awareness post-connect.
+ *        `DaemonWorkspace.sync` doesn't expose self awareness post-connect.
  *        Reported in Wave 5; out of scope here.
  */
 

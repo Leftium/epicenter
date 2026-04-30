@@ -7,25 +7,27 @@
 
 ## Overview
 
-`epicenter.config.ts` should declare daemon host definitions, and `loadConfig(projectDir)` should open those definitions with project context to produce live hosted workspaces.
+`epicenter.config.ts` should declare daemon host definitions, and `loadConfig(projectDir)` should start those definitions with project context to produce live daemon workspaces.
 
-One sentence: config declares daemon host definitions, the loader injects project context, and app packages open live daemon workspaces only after that context exists.
+One sentence: config declares daemon host definitions, the loader injects project context, and app packages start live daemon workspaces only after that context exists.
 
 ## Motivation
 
 ### Current State
 
-The previous explicit daemon config accepted already-open hosted workspaces or promises:
+The previous explicit daemon config accepted already-open daemon workspaces or promises:
 
 ```ts
 const projectDir = findEpicenterDir(import.meta.dir);
 
-export default defineEpicenterConfig([
-	openFuji({
-		projectDir,
-		getToken,
-	}),
-]);
+export default defineEpicenterConfig({
+	hosts: [
+		openFuji({
+			projectDir,
+			getToken,
+		}),
+	],
+});
 ```
 
 Some app daemon factories also default `projectDir` from `findEpicenterDir()`:
@@ -74,10 +76,10 @@ loadConfig('/vault')
   |
   +-- read hosts: DaemonHostDefinition[]
   |
-  +-- open each host with { projectDir: '/vault', configDir: '/vault' }
+  +-- start each host with { projectDir: '/vault', configDir: '/vault' }
       |
       v
-    HostedWorkspace[]
+    WorkspaceEntry[]
 ```
 
 ## Research Findings
@@ -111,7 +113,7 @@ Use `define` for delayed definitions. Use `open` for immediate runtime construct
 defineEpicenterConfig()  -> returns config object
 defineDaemon()           -> returns host definition
 defineFujiDaemon()       -> returns Fuji host definition
-openFujiDaemon()         -> opens live Fuji daemon workspace now
+definition.start()       -> starts live daemon workspace under project context
 ```
 
 This keeps currying approachable:
@@ -142,7 +144,7 @@ Avoid `options.route` style inside the body unless forwarding an opaque options 
 
 ### Static vs Runtime Surface
 
-Host definitions carry cheap, inspectable facts. Hosted workspaces carry live runtime resources.
+Host definitions carry cheap, inspectable facts. Daemon workspaces carry live runtime resources.
 
 ```txt
 DaemonHostDefinition
@@ -150,10 +152,9 @@ DaemonHostDefinition
   title
   description
   workspaceId
-  open()
+  start()
 
-HostedWorkspace
-  route
+DaemonWorkspace
   actions
   sync
   presence
@@ -184,8 +185,7 @@ export type EpicenterConfigContext = {
 	configDir: AbsolutePath;
 };
 
-export type HostedWorkspace = {
-	route: string;
+export type DaemonWorkspace = {
 	[Symbol.dispose](): void;
 	readonly actions: Actions;
 	readonly sync?: SyncAttachment;
@@ -200,7 +200,7 @@ export type DaemonHostDefinition = {
 	readonly title?: string;
 	readonly description?: string;
 	readonly workspaceId?: string;
-	open(options: EpicenterConfigContext): MaybePromise<HostedWorkspace>;
+	start(options: EpicenterConfigContext): MaybePromise<DaemonWorkspace>;
 };
 
 export type EpicenterConfig = {
@@ -219,7 +219,7 @@ export type DefineDaemonOptions = {
 	title?: string;
 	description?: string;
 	workspaceId?: string;
-	open(options: EpicenterConfigContext): MaybePromise<HostedWorkspace>;
+	start(options: EpicenterConfigContext): MaybePromise<DaemonWorkspace>;
 };
 
 export function defineDaemon({
@@ -227,7 +227,7 @@ export function defineDaemon({
 	title,
 	description,
 	workspaceId,
-	open,
+	start,
 }: DefineDaemonOptions): DaemonHostDefinition {
 	return Object.freeze({
 		[EPICENTER_DAEMON_HOST]: true,
@@ -235,7 +235,7 @@ export function defineDaemon({
 		title,
 		description,
 		workspaceId,
-		open,
+		start,
 	});
 }
 ```
@@ -304,21 +304,32 @@ export function defineFujiDaemon({
 	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
-}: DefineFujiDaemonOptions = {}): DaemonHostDefinition {
+}: DefineFujiDaemonOptions = {}) {
 	return defineDaemon({
 		route,
 		title: 'Fuji',
 		description: 'Fuji daemon workspace',
 		workspaceId: FUJI_WORKSPACE_ID,
-		open: ({ projectDir }) =>
-			openFujiDaemon({
-				route,
-				projectDir,
+		start: ({ projectDir }) => {
+			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
+			const sync = attachSync(doc, {
+				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
 				getToken,
-				peer,
-				apiUrl,
 				webSocketImpl,
-			}),
+			});
+			const presence = sync.attachPresence({ peer });
+			const rpc = sync.attachRpc(doc.actions);
+
+			return {
+				actions: doc.actions,
+				sync,
+				presence,
+				rpc,
+				[Symbol.dispose]() {
+					doc[Symbol.dispose]();
+				},
+			} satisfies DaemonWorkspace;
+		},
 	});
 }
 ```
@@ -327,65 +338,9 @@ The token default lives in `@epicenter/workspace/node`, not `@epicenter/cli`.
 That keeps machine-local session storage available to app daemon packages
 without making workspace configuration import the CLI package.
 
-### Fuji Runtime Opener
+### Fuji Runtime Start
 
-The runtime opener requires the project root and an explicit token source. It should not call `findEpicenterDir()` and should not use `import.meta.dir`.
-
-```ts
-export type OpenFujiDaemonOptions = {
-	projectDir: ProjectDir;
-	route?: string;
-	getToken: () => string | null | Promise<string | null>;
-	peer?: PeerDescriptor;
-	clientID?: number;
-	apiUrl?: string;
-	webSocketImpl?: WebSocketImpl;
-};
-
-export function openFujiDaemon({
-	route = FUJI_DAEMON_ROUTE,
-	projectDir,
-	getToken,
-	peer = defaultFujiDaemonPeer(),
-	clientID = hashClientId(projectDir),
-	apiUrl = EPICENTER_API_URL,
-	webSocketImpl,
-}: OpenFujiDaemonOptions): HostedWorkspace {
-	const doc = openFujiDoc({ clientID });
-
-	attachYjsLog(doc.ydoc, {
-		filePath: yjsPath(projectDir, doc.ydoc.guid),
-	});
-
-	const sync = attachSync(doc, {
-		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		getToken,
-		webSocketImpl,
-	});
-
-	const presence = sync.attachPresence({ peer });
-	const rpc = sync.attachRpc(doc.actions);
-
-	attachSqlite(doc.ydoc, {
-		filePath: sqlitePath(projectDir, doc.ydoc.guid),
-	}).table(doc.tables.entries);
-
-	attachMarkdown(doc.ydoc, {
-		dir: markdownPath(projectDir, doc.ydoc.guid),
-	}).table(doc.tables.entries, { filename: slugFilename('title') });
-
-	return {
-		route,
-		actions: doc.actions,
-		sync,
-		presence,
-		rpc,
-		[Symbol.dispose]() {
-			doc[Symbol.dispose]();
-		},
-	};
-}
-```
+The `start` callback requires the project root and an explicit token source. It should not call `findEpicenterDir()` and should not use `import.meta.dir`.
 
 `configDir` stays on `EpicenterConfigContext`, not on app-level openers. Custom `defineDaemon()` hosts can use it for config-relative assets, but app daemons should not forward it until they actually need it.
 
@@ -420,7 +375,7 @@ Scripts:
 
 ## Loader Behavior
 
-The loader should import `epicenter.config.ts`, validate the `defineEpicenterConfig({ hosts })` result, validate host definitions, and only then open hosts.
+The loader should import `epicenter.config.ts`, validate the `defineEpicenterConfig({ hosts })` result, validate host definitions, and only then start hosts.
 
 ```txt
 loadConfig(targetDir)
@@ -433,12 +388,12 @@ loadConfig(targetDir)
   +-- validate hosts[]
   +-- validate duplicate routes before opening
   +-- for each host:
-        workspace = await host.open({ projectDir, configDir })
-        validate HostedWorkspace
+        workspace = await host.start({ projectDir, configDir })
+        validate DaemonWorkspace
   +-- return LoadConfigResult
 ```
 
-Opening after duplicate route validation matters. If two definitions both declare `route: 'fuji'`, the loader should fail without opening either workspace.
+Starting after duplicate route validation matters. If two definitions both declare `route: 'fuji'`, the loader should fail without starting either workspace.
 
 ### Loader Error Model
 
@@ -448,11 +403,11 @@ Add or revise errors around the new split:
 | --- | --- |
 | `InvalidConfig` | Default export is not `defineEpicenterConfig({ hosts })` |
 | `EmptyConfig` | `hosts` is empty |
-| `InvalidHostDefinition` | A host definition is missing `route` or `open` |
+| `InvalidHostDefinition` | A host definition is missing `route` or `start` |
 | `InvalidRoute` | A definition route is invalid |
 | `DuplicateRoute` | Two definitions declare the same route |
-| `HostFailed` | `host.open()` rejects |
-| `InvalidHost` | `host.open()` resolves to something that is not a `HostedWorkspace` |
+| `HostFailed` | `host.start()` rejects |
+| `InvalidHost` | `host.start()` resolves to something that is not a `DaemonWorkspace` |
 
 ## Before and After
 
@@ -465,12 +420,14 @@ import { findEpicenterDir } from '@epicenter/workspace/node';
 
 const projectDir = findEpicenterDir(import.meta.dir);
 
-export default defineEpicenterConfig([
-	openFuji({
-		projectDir,
-		getToken,
-	}),
-]);
+export default defineEpicenterConfig({
+	hosts: [
+		openFuji({
+			projectDir,
+			getToken,
+		}),
+	],
+});
 ```
 
 ### After
@@ -520,8 +477,7 @@ test('up injects projectDir into daemon definitions instead of using cwd', async
 					defineDaemon({
 						route: 'demo',
 						title: 'Demo',
-						open: ({ projectDir }) => ({
-							route: 'demo',
+						start: ({ projectDir }) => ({
 							actions: {
 								paths: {
 									projectDir: defineQuery({
@@ -560,9 +516,9 @@ Add unit-level loader tests too:
 loadConfig
   - accepts defineEpicenterConfig({ hosts })
   - rejects old raw arrays once migration is over
-  - rejects duplicate definition routes before calling open()
-  - passes { projectDir, configDir } into open()
-  - disposes already-opened hosts when a later open rejects
+  - rejects duplicate definition routes before calling start()
+  - passes { projectDir, configDir } into start()
+  - disposes already-started hosts when a later start rejects
   - exposes host metadata in LoadConfigResult if needed by list or ps
 ```
 
@@ -572,13 +528,13 @@ loadConfig
 
 - [x] **1.1** Add `EPICENTER_DAEMON_HOST`, `DaemonHostDefinition`, `EpicenterConfigContext`, `DefineDaemonOptions`, and `defineDaemon()` under `packages/workspace/src/daemon/types.ts`.
 - [x] **1.2** Change `EpicenterConfig` to use object shape `{ hosts }`.
-- [x] **1.3** Keep `HostedWorkspace` as the opened runtime contract.
+- [x] **1.3** Keep `DaemonWorkspace` as the started runtime contract.
 - [x] **1.4** Export the new helpers from `@epicenter/workspace/daemon`.
 
 ### Phase 2: Config Loader
 
 - [x] **2.1** Update `packages/cli/src/load-config.ts` to read `defineEpicenterConfig({ hosts })`.
-- [x] **2.2** Validate all host definitions and routes before calling `open()`.
+- [x] **2.2** Validate all host definitions and routes before calling `start()`.
 - [x] **2.3** Pass `{ projectDir, configDir }` into each host definition.
 - [x] **2.4** Keep cleanup behavior: if host N fails after hosts 0 through N-1 opened, dispose the opened hosts.
 - [x] **2.5** Update loader errors and tests around definitions vs opened hosts.
@@ -595,13 +551,13 @@ loadConfig
 
 - [x] **4.1** Migrate playground configs to `defineEpicenterConfig({ hosts: [...] })`.
 - [x] **4.2** Migrate example configs to `defineDaemon()` or app-specific `define*Daemon()` helpers.
-- [x] **4.3** Update docs that show `defineEpicenterConfig([...])`.
+- [x] **4.3** Update docs that show `defineEpicenterConfig({ hosts: [...] })`.
 - [x] **4.4** Keep direct script imports away from `epicenter.config.ts`.
 
 ### Phase 5: E2E and Regression Coverage
 
 - [ ] **5.1** Add the `-C` from unrelated cwd regression test.
-- [x] **5.2** Add duplicate route test that proves `open()` is not called.
+- [x] **5.2** Add duplicate route test that proves `start()` is not called.
 - [ ] **5.3** Add host metadata test that proves route/title/workspaceId can be read before open.
 - [x] **5.4** Run the focused CLI, workspace daemon, and app integration tests.
 
@@ -616,7 +572,7 @@ loadConfig
 | Project context owner | `loadConfig(projectDir)` | The loader is the only layer that knows which project is being loaded |
 | Context fields | `{ projectDir, configDir }` | `projectDir` anchors `.epicenter`; `configDir` supports config-relative assets |
 | Static host metadata | On `DaemonHostDefinition` | Enables validation and introspection without opening runtime state |
-| Runtime attachments | On `HostedWorkspace` | Sync, presence, RPC, and actions exist only after opening |
+| Runtime attachments | On `DaemonWorkspace` | Sync, presence, RPC, and actions exist only after starting |
 | `findEpicenterDir()` in daemon openers | Remove | Daemon packages should not guess from cwd |
 | `findEpicenterDir()` in scripts | Keep indirectly | Scripts are user entrypoints, so cwd is legitimate user intent |
 
@@ -644,7 +600,7 @@ Some hosts may need files next to `epicenter.config.ts`.
 ```ts
 defineDaemon({
 	route: 'docs',
-	open: ({ configDir, projectDir }) =>
+	start: ({ configDir, projectDir }) =>
 		openDocsDaemon({
 			projectDir,
 			contentDir: join(configDir, 'content'),
@@ -682,7 +638,7 @@ export default defineEpicenterConfig({ hosts });
 
 ## Resolved Questions
 
-1. **Should `defineEpicenterConfig([...])` remain as a migration bridge?**
+1. **Should raw array configs remain as a migration bridge?**
    - Resolution: no. The implemented API is object-only: `defineEpicenterConfig({ hosts })`.
 
 2. **Should host metadata include `actions` manifest before open?**

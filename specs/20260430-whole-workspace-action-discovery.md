@@ -4,7 +4,7 @@ Status: superseded by explicit daemon host config.
 
 This spec proposed scanning the whole returned workspace object for action
 leaves. That direction was rejected. The daemon now exposes only the explicit
-`HostedWorkspace.actions` root.
+`DaemonWorkspace.actions` root.
 
 ## Current Rule
 
@@ -18,14 +18,13 @@ Given this host:
 
 ```ts
 return {
-	route: 'notes',
 	actions: {
 		entries: {
 			add: defineMutation({ ... }),
 		},
 	},
 	[Symbol.dispose]() {},
-} satisfies HostedWorkspace;
+} satisfies DaemonWorkspace;
 ```
 
 The runnable path is:
@@ -38,21 +37,20 @@ An action leaf outside `actions` is ignored:
 
 ```ts
 return {
-	route: 'notes',
 	actions: {},
 	debug: {
 		reset: defineMutation({ ... }),
 	},
 	[Symbol.dispose]() {},
-} satisfies HostedWorkspace;
+} satisfies DaemonWorkspace;
 ```
 
 `notes.debug.reset` is not public because `debug` is not under
-`HostedWorkspace.actions`.
+`DaemonWorkspace.actions`.
 
 ## Type Contract
 
-`HostedWorkspace.actions` uses the recursive `Actions` type:
+`DaemonWorkspace.actions` uses the recursive `Actions` type:
 
 ```ts
 export type Actions = {

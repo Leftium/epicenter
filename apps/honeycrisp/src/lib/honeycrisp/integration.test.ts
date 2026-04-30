@@ -1,15 +1,12 @@
-import { rmSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-	DateTimeString,
-	type ProjectDir,
-} from '@epicenter/workspace';
+import { rmSync } from 'node:fs';
+import { DateTimeString, type ProjectDir } from '@epicenter/workspace';
 import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
-import { type NoteId } from '../workspace.js';
-import { openHoneycrispDaemon } from './daemon.js';
+import type { NoteId } from '../workspace.js';
+import { defineHoneycrispDaemon } from './daemon.js';
 import { openHoneycrisp as openHoneycrispScript } from './script.js';
 
 let workdir: ProjectDir;
@@ -23,17 +20,20 @@ afterEach(() => {
 });
 
 describe('daemon to script handoff via Yjs log file', () => {
-	test('script warm hydrates notes the daemon wrote', () => {
+	test('script warm hydrates notes the daemon wrote', async () => {
 		{
-			using daemon = openHoneycrispDaemon({
+			const daemonDefinition = defineHoneycrispDaemon({
 				getToken: async () => 'fake-token',
 				peer: {
 					id: 'test-daemon',
 					name: 'Honeycrisp Daemon',
 					platform: 'node',
 				},
-				projectDir: workdir,
 				webSocketImpl: NoopWebSocket,
+			});
+			using daemon = await daemonDefinition.start({
+				projectDir: workdir,
+				configDir: workdir,
 			});
 
 			const now = DateTimeString.now();

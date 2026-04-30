@@ -7,24 +7,23 @@ import {
 	type WebSocketImpl,
 } from '@epicenter/workspace';
 import {
+	type DaemonWorkspace,
 	defineDaemon,
-	type DaemonHostDefinition,
-	type HostedWorkspace,
 } from '@epicenter/workspace/daemon';
 import {
-	connectDaemonActions,
+	attachMarkdown,
+	slugFilename,
+} from '@epicenter/workspace/document/attach-markdown';
+import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
+import {
 	attachYjsLog,
+	connectDaemonActions,
 	createSessionTokenGetter,
 	hashClientId,
 	markdownPath,
 	sqlitePath,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import {
-	attachMarkdown,
-	slugFilename,
-} from '@epicenter/workspace/document/attach-markdown';
-import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import type { createFujiActions } from '../workspace.js';
 import { openFuji as openFujiDoc } from './index.js';
 
@@ -35,16 +34,6 @@ export type DefineFujiDaemonOptions = {
 	route?: string;
 	getToken?: () => string | null | Promise<string | null>;
 	peer?: PeerDescriptor;
-	apiUrl?: string;
-	webSocketImpl?: WebSocketImpl;
-};
-
-export type OpenFujiDaemonOptions = {
-	projectDir: ProjectDir;
-	route?: string;
-	getToken: () => string | null | Promise<string | null>;
-	peer?: PeerDescriptor;
-	clientID?: number;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
 };
@@ -63,61 +52,42 @@ export function defineFujiDaemon({
 	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
-}: DefineFujiDaemonOptions = {}): DaemonHostDefinition {
+}: DefineFujiDaemonOptions = {}) {
 	return defineDaemon({
 		route,
 		title: 'Fuji',
 		description: 'Fuji daemon workspace',
 		workspaceId: FUJI_WORKSPACE_ID,
-		open: ({ projectDir }) =>
-			openFujiDaemon({
-				route,
-				projectDir,
+		start: ({ projectDir }) => {
+			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
+			attachYjsLog(doc.ydoc, {
+				filePath: yjsPath(projectDir, doc.ydoc.guid),
+			});
+			const sync = attachSync(doc, {
+				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
 				getToken,
-				peer,
-				apiUrl,
 				webSocketImpl,
-			}),
-	});
-}
+			});
+			const presence = sync.attachPresence({ peer });
+			const rpc = sync.attachRpc(doc.actions);
+			attachSqlite(doc.ydoc, {
+				filePath: sqlitePath(projectDir, doc.ydoc.guid),
+			}).table(doc.tables.entries);
+			attachMarkdown(doc.ydoc, {
+				dir: markdownPath(projectDir, doc.ydoc.guid),
+			}).table(doc.tables.entries, { filename: slugFilename('title') });
 
-export function openFujiDaemon({
-	route = FUJI_DAEMON_ROUTE,
-	projectDir,
-	apiUrl = EPICENTER_API_URL,
-	getToken,
-	peer = defaultFujiDaemonPeer(),
-	clientID = hashClientId(projectDir),
-	webSocketImpl,
-}: OpenFujiDaemonOptions) {
-	const doc = openFujiDoc({ clientID });
-	attachYjsLog(doc.ydoc, {
-		filePath: yjsPath(projectDir, doc.ydoc.guid),
-	});
-	const sync = attachSync(doc, {
-		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		getToken,
-		webSocketImpl,
-	});
-	const presence = sync.attachPresence({ peer });
-	const rpc = sync.attachRpc(doc.actions);
-	attachSqlite(doc.ydoc, {
-		filePath: sqlitePath(projectDir, doc.ydoc.guid),
-	}).table(doc.tables.entries);
-	attachMarkdown(doc.ydoc, {
-		dir: markdownPath(projectDir, doc.ydoc.guid),
-	}).table(doc.tables.entries, { filename: slugFilename('title') });
-
-	return {
-		route,
-		actions: doc.actions,
-		sync,
-		presence,
-		rpc,
-		[Symbol.dispose]() {
-			doc[Symbol.dispose]();
+			return {
+				actions: doc.actions,
+				sync,
+				presence,
+				rpc,
+				[Symbol.dispose]() {
+					doc[Symbol.dispose]();
+				},
+			} satisfies DaemonWorkspace;
 		},
-	} satisfies HostedWorkspace;
+	});
 }
 
 export function openFujiDaemonActions({

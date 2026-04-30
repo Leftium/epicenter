@@ -3,7 +3,7 @@
  *
  * `epicenter.config.ts` is a daemon host manifest. The loader reads the
  * default `defineEpicenterConfig({ hosts })` export, validates host definitions,
- * opens them with project context, and returns the internal `WorkspaceEntry[]`
+ * starts them with project context, and returns the internal `WorkspaceEntry[]`
  * used by the daemon server.
  */
 
@@ -15,9 +15,9 @@ import type {
 } from '@epicenter/workspace';
 import {
 	type DaemonHostDefinition,
-	EPICENTER_DAEMON_HOST,
+	type DaemonWorkspace,
 	EPICENTER_CONFIG,
-	type HostedWorkspace,
+	EPICENTER_DAEMON_HOST,
 	type WorkspaceEntry,
 } from '@epicenter/workspace/daemon';
 import {
@@ -29,7 +29,7 @@ import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
-export type { HostedWorkspace, WorkspaceEntry };
+export type { DaemonWorkspace, WorkspaceEntry };
 
 /** Per-peer awareness state under the standard peer schema. */
 export type AwarenessState = PeerAwarenessState;
@@ -87,7 +87,7 @@ export const LoadError = defineErrors({
 	}) => ({
 		message:
 			`Invalid daemon host definition ${index} in ${configPath}: ` +
-			`expected route and open().`,
+			`expected route and start().`,
 		configPath,
 		index,
 	}),
@@ -116,28 +116,9 @@ export const LoadError = defineErrors({
 	}) => ({
 		message:
 			`Invalid daemon host ${index} in ${configPath}: ` +
-			`expected route, actions, and [Symbol.dispose].`,
+			`expected actions and [Symbol.dispose].`,
 		configPath,
 		index,
-	}),
-	HostRouteMismatch: ({
-		configPath,
-		index,
-		expected,
-		actual,
-	}: {
-		configPath: string;
-		index: number;
-		expected: string;
-		actual: string;
-	}) => ({
-		message:
-			`Invalid daemon host ${index} in ${configPath}: ` +
-			`opened route "${actual}" does not match definition route "${expected}".`,
-		configPath,
-		index,
-		expected,
-		actual,
 	}),
 	InvalidRoute: ({
 		configPath,
@@ -185,15 +166,14 @@ function isDaemonHostDefinition(value: unknown): value is DaemonHostDefinition {
 	return (
 		record[EPICENTER_DAEMON_HOST] === true &&
 		typeof record.route === 'string' &&
-		typeof record.open === 'function'
+		typeof record.start === 'function'
 	);
 }
 
-function isHostedWorkspace(value: unknown): value is HostedWorkspace {
+function isDaemonWorkspace(value: unknown): value is DaemonWorkspace {
 	if (value == null || typeof value !== 'object') return false;
 	const record = value as Record<PropertyKey, unknown>;
 	return (
-		typeof record.route === 'string' &&
 		typeof record.actions === 'object' &&
 		record.actions !== null &&
 		!Array.isArray(record.actions) &&
@@ -205,7 +185,7 @@ function isValidRoute(route: string): boolean {
 	return ROUTE_PATTERN.test(route) && !OBJECT_DANGEROUS_ROUTE_KEYS.has(route);
 }
 
-async function disposeHosts(hosts: HostedWorkspace[]): Promise<void> {
+async function disposeHosts(hosts: DaemonWorkspace[]): Promise<void> {
 	const barriers: Promise<unknown>[] = [];
 	for (const host of hosts) {
 		if (host.sync?.whenDisposed) barriers.push(host.sync.whenDisposed);
@@ -255,39 +235,27 @@ export async function loadConfig(
 		definitions.push(definition);
 	}
 
-	const hosts: HostedWorkspace[] = [];
+	const entries: WorkspaceEntry[] = [];
 
 	for (const [index, definition] of definitions.entries()) {
-		let host: unknown;
+		let workspace: unknown;
 		try {
-			host = await definition.open({ projectDir, configDir });
+			workspace = await definition.start({ projectDir, configDir });
 		} catch (cause) {
-			await disposeHosts(hosts);
+			await disposeHosts(entries.map((entry) => entry.workspace));
 			return LoadError.HostFailed({ configPath, index, cause });
 		}
 
-		if (!isHostedWorkspace(host)) {
-			await disposeHosts(hosts);
+		if (!isDaemonWorkspace(workspace)) {
+			await disposeHosts(entries.map((entry) => entry.workspace));
 			return LoadError.InvalidHost({ configPath, index });
 		}
 
-		if (host.route !== definition.route) {
-			await disposeHosts([...hosts, host]);
-			return LoadError.HostRouteMismatch({
-				configPath,
-				index,
-				expected: definition.route,
-				actual: host.route,
-			});
-		}
-
-		hosts.push(host);
+		entries.push({
+			route: definition.route,
+			workspace,
+		});
 	}
-
-	const entries = hosts.map((host) => ({
-		route: host.route,
-		workspace: host,
-	}));
 
 	return Ok({
 		entries,

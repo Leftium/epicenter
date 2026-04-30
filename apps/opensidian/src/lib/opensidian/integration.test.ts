@@ -1,12 +1,12 @@
-import { rmSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { rmSync } from 'node:fs';
 import { type FileId, generateFileId } from '@epicenter/filesystem';
-import { type ProjectDir } from '@epicenter/workspace';
+import type { ProjectDir } from '@epicenter/workspace';
 import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
-import { openOpensidianDaemon } from './daemon.js';
+import { defineOpensidianDaemon } from './daemon.js';
 import { openOpensidian as openOpensidianScript } from './script.js';
 
 let workdir: ProjectDir;
@@ -20,17 +20,20 @@ afterEach(() => {
 });
 
 describe('daemon to script handoff via Yjs log file', () => {
-	test('script warm hydrates files the daemon wrote', () => {
+	test('script warm hydrates files the daemon wrote', async () => {
 		{
-			using daemon = openOpensidianDaemon({
+			const daemonDefinition = defineOpensidianDaemon({
 				getToken: async () => 'fake-token',
 				peer: {
 					id: 'test-daemon',
 					name: 'Opensidian Daemon',
 					platform: 'node',
 				},
-				projectDir: workdir,
 				webSocketImpl: NoopWebSocket,
+			});
+			using daemon = await daemonDefinition.start({
+				projectDir: workdir,
+				configDir: workdir,
 			});
 
 			const now = Date.now();

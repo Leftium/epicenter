@@ -27,11 +27,6 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-	attachSessionUnlock,
-	createSessionStore,
-	epicenterPaths,
-} from '@epicenter/workspace/node';
 import { createFileContentDoc } from '@epicenter/filesystem';
 import {
 	attachEncryption,
@@ -40,7 +35,10 @@ import {
 	defineMutation,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { defineDaemon, defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import {
+	defineDaemon,
+	defineEpicenterConfig,
+} from '@epicenter/workspace/daemon';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
@@ -48,6 +46,11 @@ import {
 	toSlugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
+import {
+	attachSessionUnlock,
+	createSessionStore,
+	epicenterPaths,
+} from '@epicenter/workspace/node';
 import { opensidianTables } from 'opensidian/workspace';
 import Type from 'typebox';
 import * as Y from 'yjs';
@@ -177,7 +180,6 @@ const actions = {
 };
 
 export const opensidian = {
-	route: 'opensidian',
 	whenReady,
 	actions,
 	sync,
@@ -199,10 +201,10 @@ export const opensidian = {
 export default defineEpicenterConfig({
 	hosts: [
 		defineDaemon({
-			route: opensidian.route,
+			route: 'opensidian',
 			title: 'Opensidian',
 			workspaceId: WORKSPACE_ID,
-			open: () => opensidian,
+			start: () => opensidian,
 		}),
 	],
 });

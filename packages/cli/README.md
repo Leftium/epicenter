@@ -116,8 +116,8 @@ Scripts can distinguish these cases without parsing stderr:
 
 An explicit daemon host config: default-export
 `defineEpicenterConfig({ hosts: [...] })` with one daemon definition per route.
-Definitions are cheap metadata plus a delayed `open()` function. The CLI loader
-injects the project context when it opens them, so configs do not need to call
+Definitions are cheap metadata plus a delayed `start()` function. The CLI loader
+injects the project context when it starts them, so configs do not need to call
 `findEpicenterDir(import.meta.dir)` or depend on the shell's current directory.
 
 ```ts
@@ -143,7 +143,6 @@ function openTabManager() {
 	const tables = attachTables(ydoc, { savedTabs: SavedTab });
 
 	return {
-		route: 'tabManager',
 		ydoc,
 		tables,
 
@@ -176,7 +175,7 @@ export default defineEpicenterConfig({
 			route: 'tabManager',
 			title: 'Tab Manager',
 			workspaceId: 'epicenter.tab-manager',
-			open: () => openTabManager(),
+			start: () => openTabManager(),
 		}),
 	],
 });
@@ -233,8 +232,8 @@ The CLI walks `workspace.actions`. Infrastructure such as `ydoc`, tables, persis
 
 ## Naming Routes
 
-Every hosted workspace has a `route`. The route becomes the first segment of
-every CLI dot-path. A config with a single route can use any name
+Every daemon host definition has a `route`. The route becomes the first segment
+of every CLI dot-path. A config with a single route can use any name
 (`tabManager`, `tm`, `w`), but once you add a second route, the prefix
 disambiguates them, so a readable name ages better than a one-letter one.
 
@@ -248,7 +247,7 @@ export default defineEpicenterConfig({
 	hosts: [
 		defineDaemon({
 			route: 'tabManager',
-			open: () => openTabManager(),
+			start: () => openTabManager(),
 		}),
 		defineFujiDaemon(),
 	],

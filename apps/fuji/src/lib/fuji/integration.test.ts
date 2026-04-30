@@ -1,11 +1,11 @@
-import { rmSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { rmSync } from 'node:fs';
 import type { ProjectDir } from '@epicenter/workspace';
 import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
-import { openFujiDaemon } from './daemon.js';
+import { defineFujiDaemon } from './daemon.js';
 import { openFuji as openFujiScript } from './script.js';
 
 let workdir: ProjectDir;
@@ -19,12 +19,15 @@ afterEach(() => {
 });
 
 describe('daemon to script handoff via Yjs log file', () => {
-	test('script warm hydrates entries the daemon wrote', () => {
+	test('script warm hydrates entries the daemon wrote', async () => {
 		{
-			using daemon = openFujiDaemon({
+			const daemonDefinition = defineFujiDaemon({
 				getToken: async () => 'fake-token',
-				projectDir: workdir,
 				webSocketImpl: NoopWebSocket,
+			});
+			using daemon = await daemonDefinition.start({
+				projectDir: workdir,
+				configDir: workdir,
 			});
 
 			for (const title of ['first', 'second', 'third']) {

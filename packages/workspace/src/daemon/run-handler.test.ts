@@ -18,7 +18,6 @@ function fakeEntry(
 	rpc: Partial<SyncRpcAttachment> = {},
 ): WorkspaceEntry {
 	const workspace = {
-		route: 'demo',
 		actions: {
 			tabs: {
 				list: defineQuery({
@@ -113,7 +112,6 @@ describe('executeRun peer dispatch', () => {
 describe('executeRun route-prefixed routing', () => {
 	test('invokes action under the selected daemon route', async () => {
 		const workspace = {
-			route: 'notes',
 			actions: {
 				notes: {
 					add: defineMutation({
@@ -140,7 +138,6 @@ describe('executeRun route-prefixed routing', () => {
 
 	test('ignores action leaves outside the canonical action root', async () => {
 		const workspace = {
-			route: 'notes',
 			actions: {},
 			notes: {
 				add: defineMutation({
@@ -167,7 +164,6 @@ describe('executeRun route-prefixed routing', () => {
 		const entry = {
 			route: 'notes',
 			workspace: {
-				route: 'notes',
 				actions: {
 					notes: {
 						add: defineMutation({
@@ -192,14 +188,13 @@ describe('executeRun route-prefixed routing', () => {
 		expect(result.error.suggestions).toEqual(['  notes.notes.add  (mutation)']);
 	});
 
-		test('unknown route returns available route suggestions', async () => {
+	test('unknown route returns available route suggestions', async () => {
 		const result = await executeRun(
 			[
 				fakeEntry({}),
 				{
 					route: 'tasks',
 					workspace: {
-						route: 'tasks',
 						actions: {},
 						[Symbol.dispose]() {},
 					} as WorkspaceEntry['workspace'],

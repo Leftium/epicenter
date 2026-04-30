@@ -6,7 +6,7 @@
  * Each verb is a one-line shell shortcut for one workspace primitive:
  *
  *   /peers  ->  workspace.presence.peers()                    all exports
- *   /list   ->  describeActions(workspace)                    all exports
+ *   /list   ->  describeActions({ export: workspace.actions }) all exports
  *   /run    ->  invokeAction(...) | rpc.rpc(...)              export-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
@@ -20,7 +20,7 @@ import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
 import { Peer } from '../document/standard-awareness-defs.js';
-import { describeWorkspaceActions } from './action-paths.js';
+import { describeActions } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
 import type { WorkspaceEntry } from './types.js';
 
@@ -86,7 +86,12 @@ export function buildApp(
 			}
 			return c.json(Ok(rows));
 		})
-		.post('/list', (c) => c.json(Ok(describeWorkspaceActions(entries))))
+		.post('/list', (c) => {
+			const actionRoots = Object.fromEntries(
+				entries.map((entry) => [entry.name, entry.workspace.actions]),
+			);
+			return c.json(Ok(describeActions(actionRoots)));
+		})
 		.post('/run', sValidator('json', RunRequest), async (c) => {
 			const request = c.req.valid('json');
 			return c.json(await executeRun(entries, request));

@@ -1,8 +1,4 @@
-import {
-	type ActionManifest,
-	describeActions,
-	walkActions,
-} from '../shared/actions.js';
+import { walkActions } from '../shared/actions.js';
 import type { WorkspaceEntry } from './types.js';
 
 type WorkspaceActionTarget = {
@@ -14,19 +10,6 @@ type WorkspaceActionPathError = {
 	exportName: string;
 	available: string[];
 };
-
-export function describeWorkspaceActions(
-	entries: WorkspaceEntry[],
-): ActionManifest {
-	const manifest: ActionManifest = {};
-	for (const entry of entries) {
-		const actions = describeActions(entry.workspace);
-		for (const [path, meta] of Object.entries(actions)) {
-			manifest[toWorkspaceActionPath(entry, path)] = meta;
-		}
-	}
-	return manifest;
-}
 
 export function resolveWorkspaceActionTarget(
 	entries: WorkspaceEntry[],
@@ -65,7 +48,7 @@ export function workspaceActionSuggestionLines(
 	entry: WorkspaceEntry,
 	prefix: string,
 ): string[] {
-	const entries = [...walkActions(entry.workspace)];
+	const entries = [...walkActions(entry.workspace.actions)];
 	const descendants = entriesUnder(entries, prefix);
 	return descendants.map(
 		([path, action]) =>
@@ -77,7 +60,7 @@ export function workspaceActionNearestSiblingLines(
 	entry: WorkspaceEntry,
 	missedPath: string,
 ): string[] {
-	const entries = [...walkActions(entry.workspace)];
+	const entries = [...walkActions(entry.workspace.actions)];
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();

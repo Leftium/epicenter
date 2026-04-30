@@ -483,21 +483,29 @@ export function attachSync(
 	 */
 	const requiresToken = typeof config.getToken === 'function';
 
-	/** User intent: should we be connected? */
-	let desired: 'online' | 'offline' = 'offline';
-
 	/**
-	 * Monotonic counter bumped by goOffline() and reconnect(). The supervisor
-	 * loop captures this at the top of each iteration and `continue`s when the
-	 * snapshot no longer matches — restarting with a fresh token.
+	 * Cancellation hierarchy:
+	 *
+	 *   masterController  ← aborts on doc.destroy(); kills everything
+	 *      └─ cycleController  ← aborts on goOffline() / reconnect();
+	 *                            kills the current supervisor iteration
+	 *
+	 * `cycleController` is replaced (not just re-aborted) by `reconnect()` so
+	 * the new connection cycle has a fresh signal unrelated to the old one.
+	 * Aborting an already-aborted controller is a no-op, which makes
+	 * goOffline-then-reconnect races structurally safe.
 	 */
-	let runId = 0;
+	const masterController = new AbortController();
+	let cycleController: AbortController = childOf(masterController.signal);
 
 	/** Current WebSocket instance, or null. */
 	let websocket: WebSocket | null = null;
 
-	/** Gate: flip to true once supervisor exits; prevents double-teardown. */
-	let torn = false;
+	/**
+	 * Promise of the currently-running supervisor loop, or null when no loop
+	 * is running. `ensureSupervisor` starts one if absent; teardown awaits it.
+	 */
+	let loopPromise: Promise<void> | null = null;
 
 	/**
 	 * SYNC_STATUS version tracking.
@@ -652,21 +660,10 @@ export function attachSync(
 
 	// ── Supervisor loop ──
 
-	async function runLoop() {
+	async function runLoop(signal: AbortSignal) {
 		let lastError: SyncError | undefined;
 
-		// Returns true when this iteration was superseded (reconnect/goOffline
-		// bumped runId during an await). Resets per-iteration state so the next
-		// iteration starts fresh.
-		const cancelled = (myRunId: number): boolean => {
-			if (runId === myRunId) return false;
-			lastError = undefined;
-			return true;
-		};
-
-		while (desired === 'online' && !permanentFailure) {
-			const myRunId = runId;
-
+		while (!signal.aborted && !permanentFailure) {
 			// Pending RPCs from the previous connection will never resolve —
 			// clear them before starting a new attempt.
 			clearPendingRequests();
@@ -681,7 +678,7 @@ export function attachSync(
 					token = null;
 					lastError = { type: 'auth', error: cause };
 				}
-				if (cancelled(myRunId)) continue;
+				if (signal.aborted) break;
 				// Recovered: a fresh token clears any prior auth error so the
 				// 'connecting' status doesn't display a stale one.
 				if (token && lastError?.type === 'auth') lastError = undefined;
@@ -692,14 +689,12 @@ export function attachSync(
 					error: new Error('No token available'),
 				};
 				status.set({ phase: 'connecting', retries: backoff.retries, lastError });
-				await backoff.sleep();
-				cancelled(myRunId);
+				await backoff.sleep(signal);
 				continue;
 			}
 
-			const result = await attemptConnection(token, myRunId);
-
-			if (cancelled(myRunId)) continue;
+			const result = await attemptConnection(token, signal);
+			if (signal.aborted) break;
 
 			if (result === 'connected') {
 				backoff.reset();
@@ -708,22 +703,21 @@ export function attachSync(
 				lastError = { type: 'connection' };
 			}
 
-			if (desired === 'online') {
-				await backoff.sleep();
-				cancelled(myRunId);
+			if (!signal.aborted) {
+				await backoff.sleep(signal);
 			}
 		}
 
-		if (permanentFailure) {
-			status.set({ phase: 'failed', reason: permanentFailure });
-		} else {
-			status.set({ phase: 'offline' });
-		}
+		status.set(
+			permanentFailure
+				? { phase: 'failed', reason: permanentFailure }
+				: { phase: 'offline' },
+		);
 	}
 
 	async function attemptConnection(
 		token: string | null,
-		myRunId: number,
+		signal: AbortSignal,
 	): Promise<'connected' | 'failed'> {
 		const wsUrl = config.url;
 
@@ -758,6 +752,26 @@ export function attachSync(
 			if (ws.readyState === WebSocket.CONNECTING) ws.close();
 		}, CONNECT_TIMEOUT_MS);
 
+		// Cycle abort closes the in-flight socket so `closePromise` resolves
+		// and the loop can iterate. Listener auto-detaches when this socket's
+		// own close fires (we wire ws.onclose to call cleanupAbortListener).
+		const onAbort = () => {
+			if (
+				ws.readyState !== WebSocket.CLOSED &&
+				ws.readyState !== WebSocket.CLOSING
+			) {
+				ws.close();
+			}
+		};
+		const cleanupAbortListener = () => {
+			signal.removeEventListener('abort', onAbort);
+		};
+		if (signal.aborted) {
+			onAbort();
+		} else {
+			signal.addEventListener('abort', onAbort, { once: true });
+		}
+
 		ws.onopen = () => {
 			clearTimeout(connectTimeout);
 			send(encodeSyncStep1({ doc: ydoc }));
@@ -777,6 +791,7 @@ export function attachSync(
 
 		ws.onclose = (event: CloseEvent) => {
 			clearTimeout(connectTimeout);
+			cleanupAbortListener();
 			liveness.stop();
 			if (awareness) {
 				removeAwarenessStates(
@@ -889,7 +904,7 @@ export function attachSync(
 		};
 
 		const opened = await openPromise;
-		if (!opened || runId !== myRunId) {
+		if (!opened || signal.aborted) {
 			if (
 				ws.readyState !== WebSocket.CLOSED &&
 				ws.readyState !== WebSocket.CLOSING
@@ -904,35 +919,33 @@ export function attachSync(
 		return handshakeComplete ? 'connected' : 'failed';
 	}
 
-	/**
-	 * Handle to the currently-running supervisor loop, or null when offline.
-	 * `ensureSupervisor` starts one if none is running; teardown awaits it.
-	 */
-	let currentSupervisorPromise: Promise<void> | null = null;
-
 	function ensureSupervisor() {
-		if (torn) return;
-		if (currentSupervisorPromise) return;
-		desired = 'online';
+		if (masterController.signal.aborted) return;
+		if (loopPromise) return;
 		manageWindowListeners('add');
-		currentSupervisorPromise = runLoop().finally(() => {
-			currentSupervisorPromise = null;
-			// If `desired` flipped back to 'online' during the loop's drain
-			// (e.g., a status subscriber called `reconnect()` from inside
-			// `status.set({phase:'offline'})` at the end of runLoop, before
-			// this `.finally` cleared the handle), restart. Without this, the
-			// reconnect's call to `ensureSupervisor` early-returned because
-			// the promise was still set, and the loop would silently die.
-			if (!torn && desired === 'online' && !permanentFailure) ensureSupervisor();
+		const signal = cycleController.signal;
+		loopPromise = runLoop(signal).finally(() => {
+			loopPromise = null;
+			// If `reconnect()` swapped in a fresh cycleController while we were
+			// draining (e.g., a status subscriber called `reconnect()` from
+			// inside `runLoop`'s synchronous tail), the new cycle won't have
+			// started yet. Detect this and chain a fresh loop. Without this,
+			// the reconnect's `ensureSupervisor` early-returned because
+			// loopPromise was still set, and the supervisor would silently die.
+			if (
+				!masterController.signal.aborted &&
+				!permanentFailure &&
+				cycleController.signal !== signal &&
+				!cycleController.signal.aborted
+			) {
+				ensureSupervisor();
+			}
 		});
 	}
 
 	function goOffline() {
-		desired = 'offline';
-		runId++;
-		backoff.wake();
+		cycleController.abort();
 		manageWindowListeners('remove');
-		websocket?.close();
 		status.set({ phase: 'offline' });
 	}
 
@@ -963,7 +976,9 @@ export function attachSync(
 	// The earlier implementation resolved synchronously in `finally`, which
 	// meant callers awaiting `whenDisposed` saw a socket still in CLOSING.
 	ydoc.once('destroy', async () => {
-		torn = true;
+		// Master abort cascades to cycleController (closes ws, wakes
+		// backoff sleep, fires attemptConnection's abort listener).
+		masterController.abort();
 		// Reject `whenConnected` if dispose lands before the first handshake
 		// (permanent failure: dead URL, denied auth). Callers awaiting it
 		// would otherwise hang forever — the doc is gone, the promise must
@@ -982,10 +997,9 @@ export function attachSync(
 			}
 			const ws = websocket;
 			clearPendingRequests();
-			const running = currentSupervisorPromise;
-			goOffline();
+			manageWindowListeners('remove');
 			status.clear();
-			if (running) await running;
+			if (loopPromise) await loopPromise;
 			await waitForWsClose(ws, 1000, log);
 		} finally {
 			resolveDisposed();
@@ -1000,16 +1014,11 @@ export function attachSync(
 		onStatusChange: status.subscribe,
 		goOffline,
 		reconnect() {
-			if (torn) return;
+			if (masterController.signal.aborted) return;
 			permanentFailure = null;
-			runId++;
+			cycleController.abort();
+			cycleController = childOf(masterController.signal);
 			backoff.reset();
-			backoff.wake();
-			websocket?.close();
-			// Flip `desired` back to 'online' BEFORE delegating: ensureSupervisor()
-			// early-returns if a loop is still draining from a recent goOffline(),
-			// which would otherwise leave us silently parked offline.
-			desired = 'online';
 			manageWindowListeners('add');
 			ensureSupervisor();
 		},
@@ -1053,7 +1062,7 @@ export function attachSync(
 			// rpc() would register a setTimeout(timeoutMs) entry in
 			// pendingRequests that nothing clears, leaking the timer until
 			// the default 5s timeout fires.
-			if (torn) return RpcError.Disconnected();
+			if (masterController.signal.aborted) return RpcError.Disconnected();
 
 			// Short-circuit when the socket is in CONNECTING/CLOSING/CLOSED.
 			// `send()` would silently no-op the request bytes, leaving the
@@ -1199,28 +1208,45 @@ function waitForWsClose(
 
 function createBackoff() {
 	let retries = 0;
-	let sleeper: { promise: Promise<void>; wake(): void } | null = null;
+	let externalWake: (() => void) | null = null;
 
 	return {
-		async sleep() {
+		/**
+		 * Sleep for exponentially-jittered backoff. Returns early on `signal`
+		 * abort or on an explicit `wake()` (e.g. window 'online' event). Never
+		 * throws — callers re-check `signal.aborted` after.
+		 */
+		async sleep(signal: AbortSignal): Promise<void> {
 			const exponential = Math.min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS);
 			const ms = exponential * (0.5 + Math.random() * 0.5);
 			retries += 1;
 
-			const { promise, resolve } = Promise.withResolvers<void>();
-			const handle = setTimeout(resolve, ms);
-			sleeper = {
-				promise,
-				wake() {
+			if (signal.aborted) return;
+
+			return new Promise<void>((resolve) => {
+				const cleanup = () => {
 					clearTimeout(handle);
+					signal.removeEventListener('abort', onAbort);
+					externalWake = null;
+				};
+				const handle = setTimeout(() => {
+					cleanup();
 					resolve();
-				},
-			};
-			await promise;
-			sleeper = null;
+				}, ms);
+				const onAbort = () => {
+					cleanup();
+					resolve();
+				};
+				signal.addEventListener('abort', onAbort, { once: true });
+				externalWake = () => {
+					cleanup();
+					resolve();
+				};
+			});
 		},
+		/** External wake (e.g. window 'online' event) — short-circuits the sleep without aborting the cycle. */
 		wake() {
-			sleeper?.wake();
+			externalWake?.();
 		},
 		reset() {
 			retries = 0;
@@ -1229,4 +1255,23 @@ function createBackoff() {
 			return retries;
 		},
 	};
+}
+
+/**
+ * Build an `AbortController` whose signal is aborted whenever `parent` is.
+ * Aborting the child does NOT abort the parent. The parent→child listener
+ * self-cleans when the child is aborted first via the `signal` option.
+ */
+function childOf(parent: AbortSignal): AbortController {
+	const child = new AbortController();
+	if (parent.aborted) {
+		child.abort(parent.reason);
+	} else {
+		parent.addEventListener(
+			'abort',
+			() => child.abort(parent.reason),
+			{ once: true, signal: child.signal },
+		);
+	}
+	return child;
 }

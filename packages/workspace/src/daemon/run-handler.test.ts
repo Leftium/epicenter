@@ -18,13 +18,13 @@ function fakeEntry(
 	rpc: Partial<SyncRpcAttachment> = {},
 ): WorkspaceEntry {
 	const workspace = {
-		presence: presence as PeerPresenceAttachment,
-		rpc: rpc as SyncRpcAttachment,
 		tabs: {
 			list: defineQuery({
 				handler: () => [],
 			}),
 		},
+		presence: presence as PeerPresenceAttachment,
+		rpc: rpc as SyncRpcAttachment,
 		[Symbol.dispose]() {},
 	};
 
@@ -36,9 +36,9 @@ describe('executeRun peer dispatch', () => {
 		let rpcCalls = 0;
 		const entry = fakeEntry(
 			{
-				async waitForPeer(deviceId, { timeoutMs }) {
+				async waitForPeer(peerId, { timeoutMs }) {
 					return PeerMiss.PeerMiss({
-						peerTarget: deviceId,
+						peerTarget: peerId,
 						sawPeers: true,
 						waitMs: timeoutMs,
 						emptyReason: null,

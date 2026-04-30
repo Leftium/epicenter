@@ -11,12 +11,12 @@
  *     presence:  PeerPresence    enables `peers` and peer lookup
  *     rpc:       SyncRpc         enables `run --peer`
  *
- *   Actions are read from the bundle ITSELF: no reserved key. `walkActions`
- *   filters to action leaves at runtime via `isAction`, so non-action keys
- *   (`ydoc`, `tables`, etc.) are skipped. Apps often group their actions
- *   under an `actions:` key for visual separation from infrastructure, in
- *   which case dot-paths look like `actions.tabs.close`. Actions hoisted to
- *   the top level produce shorter paths (`tabs.close`); either is valid.
+ *   Actions are read from the bundle itself. `walkActions` filters to action
+ *   leaves at runtime via `isAction`, so non-action keys (`ydoc`, `tables`,
+ *   etc.) are skipped. Apps often group their actions under an `actions:` key
+ *   for visual separation from infrastructure, in which case dot-paths look
+ *   like `actions.tabs.close`. Actions hoisted to the top level produce
+ *   shorter paths (`tabs.close`); either is valid.
  *
  *   …the CLI uses them. Anything else is the factory's business.
  *

@@ -180,7 +180,7 @@ export type SyncAttachment = {
 	reconnect: () => void;
 	/**
 	 * Resolves after the ydoc is destroyed and the websocket teardown completes.
-	 * Named symmetrically with `whenConnected` — both are promises.
+	 * Named symmetrically with `whenConnected`: both are promises.
 	 */
 	whenDisposed: Promise<unknown>;
 	attachPresence<TPeerId extends string = string>(
@@ -260,13 +260,13 @@ export type SyncAttachmentConfig = {
 	 * an `auth` error state until a subsequent `reconnect()` (or backoff
 	 * iteration) finds a non-null token.
 	 *
-	 * May be sync or async — the supervisor `await`s either way. Sync returns
+	 * May be sync or async. The supervisor `await`s either way. Sync returns
 	 * skip the microtask hop in the common case where the token is already in
 	 * memory.
 	 *
 	 * Providing this callback IS the declaration that the connection is
 	 * authenticated. Omit it for unauthenticated providers (tests, public
-	 * rooms) — `attachSync` then connects without a bearer subprotocol.
+	 * rooms). `attachSync` then connects without a bearer subprotocol.
 	 */
 	getToken?: () => string | null | Promise<string | null>;
 	/**
@@ -403,7 +403,7 @@ export function attachSync(
 
 	/**
 	 * Whether this connection is authenticated. Inferred from the presence of
-	 * `getToken` — supplying that callback IS the declaration that a token is
+	 * `getToken`; supplying that callback IS the declaration that a token is
 	 * required. Without it, the supervisor connects unauthenticated.
 	 */
 	const requiresToken = typeof config.getToken === 'function';
@@ -411,9 +411,9 @@ export function attachSync(
 	/**
 	 * Cancellation hierarchy:
 	 *
-	 *   masterController  ← aborts on doc.destroy(); kills everything
-	 *      └─ cycleController  ← aborts on goOffline() / reconnect();
-	 *                            kills the current supervisor iteration
+	 *   masterController: aborts on doc.destroy(); kills everything
+	 *      cycleController: aborts on goOffline() / reconnect();
+	 *                       kills the current supervisor iteration
 	 *
 	 * `cycleController` is replaced (not just re-aborted) by `reconnect()` so
 	 * the new connection cycle has a fresh signal unrelated to the old one.
@@ -438,7 +438,7 @@ export function attachSync(
 	 * `localVersion` increments on every local doc update. After a debounce
 	 * quiet period, the client sends `encodeSyncStatus(localVersion)`; the
 	 * server echoes the same payload back. The echoed value lands in
-	 * `ackedVersion` — when `localVersion > ackedVersion`, there's local work
+	 * `ackedVersion`; when `localVersion > ackedVersion`, there's local work
 	 * the server hasn't confirmed yet.
 	 *
 	 * Both counters reset to 0 on each fresh connection (the server has no
@@ -448,7 +448,7 @@ export function attachSync(
 	let ackedVersion = 0;
 	let syncStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// ── RPC state ──
+	// RPC state.
 	//
 	// `pendingRequests` tracks outbound RPCs awaiting a response. Cleared on
 	// disconnect (the next connection is a fresh server-side context, so any
@@ -546,7 +546,7 @@ export function attachSync(
 		// expected to echo any inbound message via `liveness.touch()`, so
 		// this also probes "is the wire actually responsive?" beyond what
 		// the 60s PING_INTERVAL_MS keepalive covers. If the server doesn't
-		// echo strings, focus events become a no-op for liveness — the
+		// echo strings, focus events become a no-op for liveness. The
 		// 90s LIVENESS_TIMEOUT_MS still catches a dead wire eventually.
 		if (websocket?.readyState === WebSocket.OPEN) {
 			websocket.send('ping');
@@ -565,13 +565,13 @@ export function attachSync(
 		}
 	}
 
-	// ── Supervisor loop ──
+	// Supervisor loop.
 
 	async function runLoop(signal: AbortSignal) {
 		let lastError: SyncError | undefined;
 
 		while (!signal.aborted && !permanentFailure) {
-			// Pending RPCs from the previous connection will never resolve —
+			// Pending RPCs from the previous connection will never resolve.
 			// clear them before starting a new attempt.
 			clearPendingRequests();
 
@@ -852,7 +852,7 @@ export function attachSync(
 		ensureSupervisor();
 	})();
 
-	// ── Teardown ──
+	// Teardown.
 
 	// `whenDisposed` must be a real barrier: it resolves only after the
 	// supervisor loop has fully exited (which itself awaits `ws.onclose`) and
@@ -865,7 +865,7 @@ export function attachSync(
 		masterController.abort();
 		// Reject `whenConnected` if dispose lands before the first handshake
 		// (permanent failure: dead URL, denied auth). Callers awaiting it
-		// would otherwise hang forever — the doc is gone, the promise must
+		// would otherwise hang forever. The doc is gone, so the promise must
 		// settle. Attach a no-op catch BEFORE rejecting so the rejection
 		// isn't unhandled when no consumer awaits.
 		whenConnected.catch(() => {});
@@ -1067,8 +1067,8 @@ function createLivenessMonitor(ws: SyncWebSocket) {
  * Await a WebSocket's `close` event, with a timeout safeguard.
  *
  * Resolves immediately if the socket is null or already CLOSED. Otherwise
- * attaches a one-shot `close` listener and races it against `timeoutMs` —
- * a misbehaving server that never sends a close frame shouldn't block
+ * attaches a one-shot `close` listener and races it against `timeoutMs`.
+ * A misbehaving server that never sends a close frame shouldn't block
  * teardown indefinitely.
  */
 function waitForWsClose(
@@ -1099,7 +1099,7 @@ function createBackoff() {
 		/**
 		 * Sleep for exponentially-jittered backoff. Returns early on `signal`
 		 * abort or on an explicit `wake()` (e.g. window 'online' event). Never
-		 * throws — callers re-check `signal.aborted` after.
+		 * throws. Callers re-check `signal.aborted` after.
 		 */
 		async sleep(signal: AbortSignal): Promise<void> {
 			const exponential = Math.min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS);
@@ -1129,7 +1129,7 @@ function createBackoff() {
 				};
 			});
 		},
-		/** External wake (e.g. window 'online' event) — short-circuits the sleep without aborting the cycle. */
+		/** External wake (e.g. window 'online' event): short-circuits the sleep without aborting the cycle. */
 		wake() {
 			externalWake?.();
 		},

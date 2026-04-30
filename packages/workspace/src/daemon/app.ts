@@ -38,7 +38,6 @@ import type { WorkspaceEntry } from './types.js';
  */
 
 export const RunInput = type({
-	'workspace?': 'string',
 	actionPath: 'string',
 	input: 'unknown',
 	'peerTarget?': 'string',

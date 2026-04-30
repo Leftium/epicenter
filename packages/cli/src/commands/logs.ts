@@ -26,6 +26,7 @@ import type { Argv, CommandModule } from 'yargs';
 import { type ProjectArgs, projectOption } from '../util/common-options.js';
 
 const DEFAULT_TAIL_LINES = 50;
+const FOLLOW_POLL_MS = 100;
 
 type LogsArgs = ProjectArgs & {
 	follow: boolean;
@@ -107,10 +108,12 @@ export function followLog(path: string): () => void {
 		// 'change': new bytes appended.
 		drain();
 	});
+	const poll = setInterval(drain, FOLLOW_POLL_MS);
 	// Best-effort initial drain (any bytes that arrived between open and watch).
 	drain();
 	return () => {
 		watcher.close();
+		clearInterval(poll);
 		if (fd >= 0) {
 			try {
 				closeSync(fd);

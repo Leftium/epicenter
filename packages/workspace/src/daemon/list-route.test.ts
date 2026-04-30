@@ -71,22 +71,18 @@ describe('/list route', () => {
 	test('prefixes actions from every config export', async () => {
 		const reply = await postList([
 			fakeEntry('notes', {
-				actions: {
-					add: defineQuery({ handler: () => null }),
-				},
+				add: defineQuery({ handler: () => null }),
 			}),
 			fakeEntry('tasks', {
-				actions: {
-					list: defineQuery({ handler: () => [] }),
-				},
+				list: defineQuery({ handler: () => [] }),
 			}),
 		]);
 
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
 			expect(Object.keys(reply.data).sort()).toEqual([
-				'notes.actions.add',
-				'tasks.actions.list',
+				'notes.add',
+				'tasks.list',
 			]);
 		}
 	});

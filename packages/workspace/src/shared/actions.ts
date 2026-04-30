@@ -166,11 +166,10 @@ export function defineActions<TActions extends Actions>(
 
 /**
  * The runtime-injected `system.*` action namespace. Single canonical type:
- * `attachSync` constructs `systemActions: SystemActions` (TypeScript checks
- * the construction shape against this) and `remote-actions.ts` derives the
- * proxy type `peer<{ system: SystemActions }>` from the same
- * source. Drift between the runtime handler return and the consumer's
- * expected return becomes a compile error.
+ * `attachRpc` constructs `systemActions: SystemActions` and `peer.ts` derives
+ * the proxy type `peer<{ system: SystemActions }>` from the same source. Drift
+ * between the runtime handler return and the consumer's expected return
+ * becomes a compile error.
  */
 export type SystemActions = {
 	describe: Query<undefined, ActionManifest>;

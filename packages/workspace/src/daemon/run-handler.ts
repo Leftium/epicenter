@@ -31,10 +31,7 @@ export async function executeRun(
 	entries: WorkspaceEntry[],
 	ctx: RunInput,
 ): Promise<RunResponse> {
-	const actionPath = ctx.workspace
-		? `${ctx.workspace}.${ctx.actionPath}`
-		: ctx.actionPath;
-	const target = resolveWorkspaceActionTarget(entries, actionPath);
+	const target = resolveWorkspaceActionTarget(entries, ctx.actionPath);
 	if (target.error !== null) {
 		return RunError.UsageError({
 			message: `No config export "${target.error.exportName}". Available: ${target.error.available.join(', ')}`,
@@ -46,17 +43,17 @@ export async function executeRun(
 	const { workspace } = entry;
 	if (workspace.whenReady) await workspace.whenReady;
 
-	const action = resolveActionPath(workspace.actions ?? {}, localPath);
+	const action = resolveActionPath(workspace, localPath);
 	if (!action) {
 		const descendants = workspaceActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {
 			return RunError.UsageError({
-				message: `"${actionPath}" is not a runnable action.`,
+				message: `"${ctx.actionPath}" is not a runnable action.`,
 				suggestions: descendants,
 			});
 		}
 		return RunError.UsageError({
-			message: `"${actionPath}" is not defined.`,
+			message: `"${ctx.actionPath}" is not defined.`,
 			suggestions: workspaceActionNearestSiblingLines(entry, localPath),
 		});
 	}
@@ -65,7 +62,7 @@ export async function executeRun(
 		return invokeRemote(entry, ctx, localPath, ctx.peerTarget);
 	}
 
-	const result = await invokeAction(action, ctx.input, actionPath);
+	const result = await invokeAction(action, ctx.input, ctx.actionPath);
 	if (result.error !== null) {
 		return RunError.RuntimeError({ cause: result.error });
 	}

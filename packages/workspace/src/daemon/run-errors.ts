@@ -6,13 +6,10 @@
  * envelope (`RunResponse`) is what the route serializes to JSON. The CLI
  * command imports both for renderer typing.
  *
- * `PeerMiss` is owned by `@epicenter/workspace` (returned by
- * `sync.waitForPeer`) and re-exported through `RunResponse` so the daemon
- * can ship it over the wire and the renderer can narrow on it like any
- * other variant.
+ * `PeerMiss` is normalized into `RunError` at the `/run` boundary so the
+ * daemon route owns every run-specific failure the CLI renders.
  */
 
-import type { PeerMiss } from '../document/attach-sync.js';
 import type { RpcError } from '@epicenter/sync';
 import {
 	defineErrors,
@@ -32,9 +29,8 @@ import type { ResolveError } from './resolve-entry.js';
  * - `UsageError`: bad action path / missing sync; renderer exitCode=1.
  * - `RuntimeError`: action returned Err locally; renderer exitCode=2.
  * - `RpcError`: remote RPC returned an `RpcError`; exitCode=2.
- *
- * Peer-resolution misses are surfaced as workspace's `PeerMiss` directly;
- * see `RunResponse` below.
+ * - `PeerMiss`: `--peer <target>` did not resolve within the wait budget;
+ *   renderer exitCode=3.
  */
 export const RunError = defineErrors({
 	UsageError: ({
@@ -62,6 +58,23 @@ export const RunError = defineErrors({
 		targetClientId,
 		peerState,
 	}),
+	PeerMiss: ({
+		peerTarget,
+		sawPeers,
+		waitMs,
+		emptyReason,
+	}: {
+		peerTarget: string;
+		sawPeers: boolean;
+		waitMs: number;
+		emptyReason: string | null;
+	}) => ({
+		message: `no peer matches deviceId "${peerTarget}"`,
+		peerTarget,
+		sawPeers,
+		waitMs,
+		emptyReason,
+	}),
 });
 export type RunError = InferErrors<typeof RunError>;
 
@@ -70,4 +83,4 @@ export type RunError = InferErrors<typeof RunError>;
  * return type because the route prepends `ResolveError` for `-w` misses
  * before dispatching. The renderer narrows on `error.name`.
  */
-export type RunResponse = Result<unknown, RunError | PeerMiss | ResolveError>;
+export type RunResponse = Result<unknown, RunError | ResolveError>;

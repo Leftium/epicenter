@@ -40,10 +40,9 @@ export function outputError(message: string): void {
  * `outputError` + `exitCode=1` here so handlers don't repeat that block
  * three times.
  *
- * Domain errors that callers want to render distinctly should be carried
- * inside the `T` payload (e.g. `ListResult`'s in-band `PeerMiss`), not
- * surfaced as IPC errors. That's why the success callback receives the
- * raw `data` rather than a `Result`.
+ * Domain outcomes that callers want to render distinctly should be carried
+ * inside the `T` payload, not surfaced as IPC errors. That's why the success
+ * callback receives the raw `data` rather than a `Result`.
  */
 export async function renderDaemonResult<T>(
 	result:

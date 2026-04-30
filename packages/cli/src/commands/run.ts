@@ -21,7 +21,6 @@ import {
 	type DaemonError,
 	getDaemon,
 	type PeerAwarenessState,
-	type PeerMiss,
 	type ResolveError,
 	type RpcError,
 	type RunError as DaemonRunError,
@@ -58,7 +57,7 @@ const waitOption: Options = {
 	description: `Total ms to wait for peer resolution + RPC; requires --peer (default ${DEFAULT_PEER_WAIT_MS})`,
 };
 
-export type RunResult = Result<unknown, DaemonRunError | PeerMiss | ResolveError>;
+export type RunResult = Result<unknown, DaemonRunError | ResolveError>;
 
 export const runCommand: CommandModule = {
 	command: 'run <action> [input]',
@@ -120,7 +119,7 @@ export const runCommand: CommandModule = {
 function renderRunResult(
 	result: Result<
 		unknown,
-		DaemonRunError | PeerMiss | ResolveError | DaemonError
+		DaemonRunError | ResolveError | DaemonError
 	>,
 	format: 'json' | 'jsonl' | undefined,
 ): void {

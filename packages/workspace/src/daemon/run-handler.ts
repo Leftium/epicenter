@@ -78,7 +78,14 @@ async function invokeRemote(
 
 	const start = Date.now();
 	const found = await sync.waitForPeer(peerTarget, { timeoutMs: ctx.waitMs });
-	if (found.error !== null) return found;
+	if (found.error !== null) {
+		return RunError.PeerMiss({
+			peerTarget: found.error.peerTarget,
+			sawPeers: found.error.sawPeers,
+			waitMs: found.error.waitMs,
+			emptyReason: found.error.emptyReason,
+		});
+	}
 
 	const { clientId: targetClientId, state: peerState } = found.data;
 	const remaining = Math.max(1, ctx.waitMs - (Date.now() - start));

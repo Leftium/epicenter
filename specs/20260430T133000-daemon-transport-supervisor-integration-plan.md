@@ -510,14 +510,14 @@ configs while new daemon factories can use the direct `attachMarkdown` and
 
 ### Phase 3: Remote Action and Sync Boundary
 
-- [ ] Keep `createRemoteActions(sync, deviceId)` as the public workspace API.
-- [ ] Keep `describeRemoteActions(sync, deviceId)` as the public workspace API.
-- [ ] Preserve current main's action walking behavior from workspace bundles.
-- [ ] Translate useful daemon branch peer-dispatch fixes to the current remote-action names.
-- [ ] Port `waitForPeer` and `PeerMiss` only if CLI bounded wait behavior still needs them.
-- [ ] If pure remote proxy helpers move to `@epicenter/sync`, keep workspace compatibility exports.
-- [ ] Do not restore `sync.peer()` as the main public API without a new decision.
-- [ ] Commit as:
+- [x] Keep `createRemoteActions(sync, deviceId)` as the public workspace API.
+- [x] Keep `describeRemoteActions(sync, deviceId)` as the public workspace API.
+- [x] Preserve current main's action walking behavior from workspace bundles.
+- [x] Translate useful daemon branch peer-dispatch fixes to the current remote-action names.
+- [x] Port `waitForPeer` and `PeerMiss` only if CLI bounded wait behavior still needs them.
+- [x] If pure remote proxy helpers move to `@epicenter/sync`, keep workspace compatibility exports.
+- [x] Do not restore `sync.peer()` as the main public API without a new decision.
+- [x] Commit as:
   ```txt
   refactor(sync): preserve remote action API for daemon transport
   ```
@@ -538,6 +538,11 @@ Commit body should explicitly say:
 ```txt
 This commit keeps current main's createRemoteActions and describeRemoteActions names. The daemon branch's sync.peer() and describePeer() shape is useful history, not the public API this integration restores.
 ```
+
+Implementation note: pure action helpers stayed in `@epicenter/workspace`
+for this integration. The only remote-action behavior change was the
+PeerLeft re-check after subscribing to awareness changes, translated to the
+current `createRemoteActions` helper.
 
 ### Phase 4: CLI Integration While Keeping `up`
 

@@ -71,6 +71,11 @@ export function createRemoteActions<T>(
 				}
 			});
 
+			if (!sync.find(deviceId)) {
+				settle(Err(RpcError.PeerLeft({ peer: deviceId }).error));
+				return;
+			}
+
 			sync
 				.rpc(found.clientId, path, input, options)
 				.then(settle)
@@ -126,6 +131,7 @@ function buildProxy<T>(path: string[], send: Sender): T {
 	return new Proxy(target, {
 		get(_t, prop) {
 			if (typeof prop !== 'string') return undefined;
+			if (prop === 'then') return undefined;
 			return buildProxy([...path, prop], send);
 		},
 		apply(_t, _this, args: unknown[]) {

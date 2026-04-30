@@ -51,9 +51,6 @@ export type HostedWorkspace = {
 	readonly [key: string]: unknown;
 };
 
-/** @deprecated Use `HostedWorkspace`. */
-export type LoadedWorkspace = HostedWorkspace;
-
 export type HostedWorkspaceInput = HostedWorkspace | Promise<HostedWorkspace>;
 
 export type EpicenterConfig = {

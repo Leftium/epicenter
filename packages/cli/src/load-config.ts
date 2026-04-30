@@ -12,7 +12,6 @@ import type { PeerAwarenessState } from '@epicenter/workspace';
 import {
 	EPICENTER_CONFIG,
 	type HostedWorkspace,
-	type LoadedWorkspace,
 	type WorkspaceEntry,
 } from '@epicenter/workspace/daemon';
 import {
@@ -24,7 +23,7 @@ import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
-export type { HostedWorkspace, LoadedWorkspace, WorkspaceEntry };
+export type { HostedWorkspace, WorkspaceEntry };
 
 /** Per-peer awareness state under the standard peer schema. */
 export type AwarenessState = PeerAwarenessState;

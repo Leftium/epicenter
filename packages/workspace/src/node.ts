@@ -45,7 +45,6 @@ export type {
 	EpicenterConfig,
 	HostedWorkspace,
 	HostedWorkspaceInput,
-	LoadedWorkspace,
 	WorkspaceEntry,
 } from './daemon/types.js';
 export {

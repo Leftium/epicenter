@@ -80,9 +80,9 @@ The route key and Y.Doc guid often look related, but they should not be the same
 
 This separation is still useful when Fuji is only mounted once. `openFuji()` owns the default route, and the package owns the document identity. The route is a local host address, not the durable sync or storage id.
 
-## Record-Key Alternative
+## Rejected: Record-Key Routes
 
-There is one coherent record-shaped alternative: make config keys own route names.
+Record-key routes were considered and rejected. In this shape, config keys own route names:
 
 ```ts
 export default defineEpicenterConfig({
@@ -102,7 +102,7 @@ export default defineEpicenterConfig({
 });
 ```
 
-This avoids putting a route on the hosted workspace, but it reintroduces config imports in scripts:
+That avoids putting a route on the hosted workspace, but it reintroduces config imports in scripts:
 
 ```ts
 import { routes } from '../epicenter.config';
@@ -112,7 +112,7 @@ const fuji = await connectDaemonActions<FujiActions>({
 });
 ```
 
-This spec chooses the array shape because app daemon subpaths can provide the default route and the typed connector:
+The array shape is the chosen direction because app daemon subpaths can provide the default route and the typed connector:
 
 ```ts
 export default defineEpicenterConfig([
@@ -122,7 +122,7 @@ export default defineEpicenterConfig([
 
 If a project intentionally mounts Fuji under a custom route, the app daemon factory can still accept a route override.
 
-The important consequence is that `epicenter.config.ts` no longer owns the normal route string. The app daemon subpath owns it:
+The important consequence is that `epicenter.config.ts` does not own the normal route string. The app daemon subpath owns it:
 
 ```txt
 @epicenter/fuji/daemon
@@ -657,7 +657,7 @@ const blog = await openFujiDaemonActions({
 - `openFuji()` now returns a host facade with `route`, `actions`, `sync`, `presence`, `rpc`, and disposal only. The internal document, tables, Yjs log, SQLite materializer, and markdown materializer stay private.
 - `openFujiDaemonActions()` destructures options in the signature and defaults to `FUJI_DAEMON_ROUTE`.
 
-## Open Questions
+## Settled Decisions And Remaining Question
 
 1. **Where should the default token getter live?**
    - Options: app daemon subpaths import a narrow CLI auth/session subpath, session storage moves to a smaller host-runtime package, or config passes `getToken`.

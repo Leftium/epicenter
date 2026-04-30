@@ -171,7 +171,7 @@ async function disposeConfig(config: LoadConfigResult): Promise<void> {
 }
 
 /**
- * Load daemon hosts from an explicit default config export.
+ * Load daemon hosts from the explicit default daemon host manifest.
  */
 export async function loadConfig(
 	targetDir: string,

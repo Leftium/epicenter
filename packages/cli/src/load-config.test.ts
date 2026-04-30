@@ -7,7 +7,7 @@ import { CONFIG_FILENAME, loadConfig } from './load-config';
 
 let workDir: string;
 const daemonModuleUrl = pathToFileURL(
-	join(process.cwd(), '../workspace/src/daemon/index.ts'),
+	join(import.meta.dir, '../../workspace/src/daemon/index.ts'),
 ).href;
 
 beforeEach(() => {

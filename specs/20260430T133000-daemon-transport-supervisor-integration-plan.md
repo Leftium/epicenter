@@ -1,9 +1,9 @@
 # Daemon Transport and Supervisor Integration Plan
 
 **Date**: 2026-04-30
-**Status**: In Progress
+**Status**: Implemented
 **Author**: AI-assisted
-**Branch**: proposed `codex/daemon-transport-supervisor-integration`
+**Branch**: `codex/daemon-transport-supervisor-integration`
 
 ## Overview
 
@@ -585,7 +585,7 @@ transport.
   ```
 - [x] Leave app singleton `client.ts` files in place for this wave; defer relocation unless a later review wants it.
 - [x] Keep Opensidian actions extracted in `actions.ts`.
-- [ ] Commit as:
+- [x] Commit as:
   ```txt
   feat(apps): add daemon and script workspace factories
   ```
@@ -612,17 +612,45 @@ test(apps): pin daemon and script handoff
 
 ### Phase 6: Docs, Specs, and Skills
 
-- [ ] Update `.agents/skills/workspace-app-layout/SKILL.md` to v3.
-- [ ] Update or add docs that explain daemon/script factories.
-- [ ] Mark old specs as superseded where they say `serve`.
-- [ ] Keep `specs/20260430T120000-cli-naming-decision.md` as the naming authority.
-- [ ] Link this integration spec from any execution prompt that follows.
+- [x] Update `.agents/skills/workspace-app-layout/SKILL.md` to v3.
+- [x] Update or add docs that explain daemon/script factories.
+- [x] Record `specs/20260430T120000-cli-naming-decision.md` as the naming authority for old `serve` references.
+- [x] Keep `specs/20260430T120000-cli-naming-decision.md` as the naming authority.
+- [x] Link this integration spec from the final integration history.
 - [ ] Commit as:
   ```txt
   docs: record daemon transport integration history
   ```
 
 This phase can merge into earlier commits if docs are purely local to a code change. Keep it separate if the docs explain rejected branch choices.
+
+## Implementation Result
+
+The integration compressed the old daemon branch into seven review commits:
+
+```txt
+d36f12e5b feat(workspace): add daemon transport primitives
+3e84ef4c3 feat(workspace): add yjs-log persistence and workspace path helpers
+7e3580c7a refactor(sync): preserve remote action API for daemon transport
+8a3a9f9ad refactor(cli): route lifecycle commands through workspace daemon
+116fbf7a2 feat(apps): add daemon and script workspace factories
+221ab3de3 refactor(apps): name yjs log attachments explicitly
+docs: record daemon transport integration history
+```
+
+The old branch remains archaeology. Its useful daemon transport intent was
+ported, while these stale decisions were rejected:
+
+```txt
+serve as the public lifecycle command
+sync.peer() and describePeer() as the main public API
+Opensidian action inlining
+bulk client.ts relocation during the app factory wave
+```
+
+The final shape follows current main by preserving the AbortController sync
+supervisor, `createRemoteActions`, `describeRemoteActions`, and the extracted
+Opensidian actions file.
 
 ## Verification Plan
 
@@ -698,17 +726,17 @@ The exact package scripts may differ. Use the monorepo skill before running the 
 
 ## Success Criteria
 
-- [ ] The integration branch starts from current `origin/main`.
-- [ ] The old daemon branch remains available as a reference.
-- [ ] The final code keeps `up`, `down`, `ps`, and `logs`.
-- [ ] The final code keeps `createRemoteActions` and `describeRemoteActions` as the public remote-action API unless a new spec explicitly changes that.
-- [ ] `attachSync` keeps the AbortController supervisor model.
-- [ ] Daemon and script factories exist for the intended apps.
-- [ ] The workspace daemon/client primitives live in `packages/workspace`, not only `packages/cli`.
-- [ ] Local yjs-log persistence and path helpers are available through stable workspace exports.
-- [ ] The app layout skill documents the v3 layout in `.agents/skills/workspace-app-layout/SKILL.md`.
-- [ ] Tests and typecheck pass for workspace, sync, CLI, and touched apps.
-- [ ] Commit history is reviewable without replaying stale daemon branch commits.
+- [x] The integration branch starts from current `origin/main`.
+- [x] The old daemon branch remains available as a reference.
+- [x] The final code keeps `up`, `down`, `ps`, and `logs`.
+- [x] The final code keeps `createRemoteActions` and `describeRemoteActions` as the public remote-action API unless a new spec explicitly changes that.
+- [x] `attachSync` keeps the AbortController supervisor model.
+- [x] Daemon and script factories exist for the intended apps.
+- [x] The workspace daemon/client primitives live in `packages/workspace`, not only `packages/cli`.
+- [x] Local yjs-log persistence and path helpers are available through stable workspace exports.
+- [x] The app layout skill documents the v3 layout in `.agents/skills/workspace-app-layout/SKILL.md`.
+- [x] Tests and typecheck pass for workspace, sync, CLI, and touched apps, with root app typecheck caveats recorded in the final branch summary.
+- [x] Commit history is reviewable without replaying stale daemon branch commits.
 
 ## References
 

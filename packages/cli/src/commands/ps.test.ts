@@ -21,7 +21,7 @@ import {
 	metadataPathFor,
 	socketPathFor,
 	writeMetadata,
-} from '@epicenter/workspace';
+} from '@epicenter/workspace/node';
 import { runPs } from './ps';
 
 let originalXdg: string | undefined;

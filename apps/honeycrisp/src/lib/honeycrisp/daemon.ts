@@ -1,15 +1,17 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
-	attachYjsLog,
-	findEpicenterDir,
-	hashClientId,
 	type PeerDescriptor,
 	type ProjectDir,
 	toWsUrl,
 	type WebSocketImpl,
-	yjsPath,
 } from '@epicenter/workspace';
+import {
+	attachYjsLog,
+	findEpicenterDir,
+	hashClientId,
+	yjsPath,
+} from '@epicenter/workspace/node';
 import { openHoneycrisp as openHoneycrispDoc } from './index.js';
 
 export function openHoneycrisp({

@@ -11,11 +11,8 @@
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
  */
 
-import {
-	type ActionManifest,
-	type DaemonError,
-	getDaemon,
-} from '@epicenter/workspace';
+import type { ActionManifest } from '@epicenter/workspace';
+import { type DaemonError, getDaemon } from '@epicenter/workspace/node';
 import Type, { type TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 

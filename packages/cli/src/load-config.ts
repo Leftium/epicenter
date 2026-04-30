@@ -43,10 +43,9 @@
 
 import { join, resolve } from 'node:path';
 import type {
-	LoadedWorkspace,
 	PeerAwarenessState,
-	WorkspaceEntry,
 } from '@epicenter/workspace';
+import type { LoadedWorkspace, WorkspaceEntry } from '@epicenter/workspace/node';
 import {
 	defineErrors,
 	extractErrorMessage,

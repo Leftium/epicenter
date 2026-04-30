@@ -549,17 +549,29 @@ Constants in plain English:
 | `BASE_DELAY_MS` / `MAX_DELAY_MS` | 500ms / 30s | Reconnect backoff bounds |
 | `syncStatusTimer` | 100ms | Debounce for batching SYNC_STATUS frames |
 
-## The cancellation thread (`runId`)
+## The cancellation thread (`AbortController`)
 
-The single load-bearing safety property in the loop. Every `await` in `runLoop` is followed by:
+The single load-bearing safety property in the loop is a pair of linked
+controllers:
 
-```ts
-if (cancelled(myRunId)) continue;
+```txt
+masterController
+  └─ cycleController
 ```
 
-`cancelled(myRunId)` returns true if `runId` advanced since this iteration captured it. `goOffline()` and `reconnect()` both bump `runId`, so an iteration that was mid-await when intent changed will `continue` to a fresh iteration with fresh state.
+`masterController` aborts when the Y.Doc is destroyed. That kills every current
+and future connection cycle.
 
-Without this thread, a stale token from an awaited `getToken()` could be used to open a new connection that the user already asked to close. Or two supervisor loops could run on top of each other after a reconnect-during-handshake.
+`cycleController` aborts when `goOffline()` or `reconnect()` changes the current
+connection intent. `reconnect()` replaces it with a fresh child controller before
+starting the supervisor again, so a stale await cannot open a socket for an old
+cycle.
+
+After awaited boundaries, the loop checks that the captured signal is still the
+current cycle signal. Without this thread, a stale token from an awaited
+`getToken()` could be used to open a connection after the user asked to close, or
+two supervisor loops could run at the same time after a reconnect during
+handshake.
 
 ## Lifecycle promises
 

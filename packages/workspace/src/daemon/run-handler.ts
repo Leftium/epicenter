@@ -22,7 +22,7 @@ import {
 	resolveWorkspaceActionTarget,
 	workspaceActionNearestSiblingLines,
 	workspaceActionSuggestionLines,
-} from './action-paths.js';
+} from './action-routing.js';
 import type { RunRequest } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
 import type { WorkspaceEntry } from './types.js';

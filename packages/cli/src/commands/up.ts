@@ -28,7 +28,7 @@ import {
 	unlinkMetadata,
 	unlinkSocketFile,
 	writeMetadata,
-} from '@epicenter/workspace';
+} from '@epicenter/workspace/node';
 import {
 	defineErrors,
 	extractErrorMessage,

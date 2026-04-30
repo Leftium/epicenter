@@ -21,7 +21,7 @@ import {
 	watch,
 } from 'node:fs';
 import { basename, dirname } from 'node:path';
-import { logPathFor } from '@epicenter/workspace';
+import { logPathFor } from '@epicenter/workspace/node';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
 

@@ -6,7 +6,7 @@
  * Each verb is a one-line shell shortcut for one workspace primitive:
  *
  *   /peers  ->  workspace.presence.peers()                    all exports
- *   /list   ->  describeActions({ export: workspace.actions }) all exports
+ *   /list   ->  describeActions({ export: workspace })         all exports
  *   /run    ->  invokeAction(...) | rpc.rpc(...)              export-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
@@ -88,7 +88,7 @@ export function buildApp(
 		})
 		.post('/list', (c) => {
 			const actionRoots = Object.fromEntries(
-				entries.map((entry) => [entry.name, entry.workspace.actions]),
+				entries.map((entry) => [entry.name, entry.workspace]),
 			);
 			return c.json(Ok(describeActions(actionRoots)));
 		})

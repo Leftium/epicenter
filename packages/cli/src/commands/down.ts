@@ -20,7 +20,7 @@ import {
 	readMetadata,
 	socketPathFor,
 	unlinkMetadata,
-} from '@epicenter/workspace';
+} from '@epicenter/workspace/node';
 import type { Result } from 'wellcrafted/result';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';

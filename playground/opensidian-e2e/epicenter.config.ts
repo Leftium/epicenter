@@ -36,11 +36,12 @@ import {
 import { createFileContentDoc } from '@epicenter/filesystem';
 import {
 	attachEncryption,
-	attachSqlite,
 	attachSync,
 	createDisposableCache,
 	defineMutation,
+	toWsUrl,
 } from '@epicenter/workspace';
+import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
 	prepareMarkdownFiles,
@@ -75,7 +76,7 @@ const unlock = attachSessionUnlock(encryption, {
 });
 
 const sync = attachSync(ydoc, {
-	url: (docId) => `${SERVER_URL}/workspaces/${docId}`,
+	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 	waitFor: Promise.all([persistence.whenLoaded, unlock.whenChecked]),
 	getToken: async () => (await sessions.load(SERVER_URL))?.accessToken ?? null,
 });

@@ -1,9 +1,10 @@
 /**
  * Epicenter: YJS-First Collaborative Workspace System
  *
- * This root export provides the full workspace API and shared utilities.
+ * This root export provides the browser-safe workspace API and shared
+ * utilities.
  *
- * - `@epicenter/workspace` - Full API (documents, tables, KV, attachments)
+ * - `@epicenter/workspace`: browser-safe API (documents, tables, KV, sync)
  *
  * @example
  * ```typescript
@@ -66,76 +67,9 @@ export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DAEMON TRANSPORT
-// ════════════════════════════════════════════════════════════════════════════
-
-export { connectDaemon } from './client/connect-daemon.js';
-export { findEpicenterDir } from './client/find-epicenter-dir.js';
-export type {
-	DaemonActionOptions,
-	DaemonActions,
-} from './client/daemon-actions.js';
-export { buildDaemonActions } from './client/daemon-actions.js';
-export {
-	buildApp,
-	PeerSnapshot,
-	RunRequest,
-} from './daemon/app.js';
-export {
-	type DaemonClient,
-	DaemonError,
-	daemonClient,
-	getDaemon,
-	pingDaemon,
-} from './daemon/client.js';
-export {
-	type DaemonMetadata,
-	enumerateDaemons,
-	readMetadata,
-	readMetadataFromPath,
-	unlinkMetadata,
-	writeMetadata,
-} from './daemon/metadata.js';
-export {
-	dirHash,
-	logPathFor,
-	metadataPathFor,
-	runtimeDir,
-	socketPathFor,
-} from './daemon/paths.js';
-export { RunError, type RunResponse } from './daemon/run-errors.js';
-export {
-	createWorkspaceServer,
-	type WorkspaceServer,
-	type WorkspaceServerOptions,
-} from './daemon/server.js';
-export type {
-	LoadedWorkspace,
-	WorkspaceEntry,
-} from './daemon/types.js';
-export {
-	bindOrRecover,
-	bindUnixSocket,
-	StartupError,
-	type UnixSocketServer,
-	unlinkSocketFile,
-} from './daemon/unix-socket.js';
-export {
-	type AttachSqliteReaderOptions,
-	attachSqliteReader,
-	type SqliteReaderAttachment,
-} from './document/attach-sqlite-reader.js';
-export {
-	markdownPath,
-	sqlitePath,
-	yjsPath,
-} from './document/workspace-paths.js';
-
-// ════════════════════════════════════════════════════════════════════════════
 // DEVICE IDENTITY
 // ════════════════════════════════════════════════════════════════════════════
 
-export { hashClientId } from './shared/client-id.js';
 export {
 	type AsyncStorage,
 	getOrCreateInstallationId,
@@ -158,7 +92,7 @@ export { ExtensionError } from './shared/errors';
 // JSONL file sink (Bun-only) lives at the `@epicenter/workspace/logger/jsonl-sink`
 // subpath. Keeping it out of this barrel matters: re-exporting it pulls
 // `node:fs`/`node:path` into every browser bundle that touches `@epicenter/workspace`,
-// which breaks SvelteKit/Vite ssr→client builds (see `__vite-browser-external`
+// which breaks SvelteKit/Vite SSR to client builds (see `__vite-browser-external`
 // "mkdirSync is not exported" errors). Import the sink directly from the subpath
 // in Bun/Node entry points; the logger core (`createLogger`, `consoleSink`, etc.)
 // still comes from `wellcrafted/logger`.
@@ -228,10 +162,6 @@ export {
 	type KvDefinitions,
 } from './document/attach-kv.js';
 export {
-	attachMarkdown,
-	type MarkdownShape,
-} from './document/attach-markdown.js';
-export {
 	attachPlainText,
 	type PlainTextAttachment,
 } from './document/attach-plain-text.js';
@@ -240,7 +170,6 @@ export {
 	type RichTextAttachment,
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
-export { attachSqlite } from './document/attach-sqlite.js';
 export {
 	type AttachRpcConfig,
 	type AttachSyncDoc,
@@ -283,14 +212,6 @@ export {
 	type Timeline,
 	type TimelineEntry,
 } from './document/attach-timeline/index.js';
-export {
-	attachYjsLog,
-	type YjsLogAttachment,
-} from './document/attach-yjs-log.js';
-export {
-	attachYjsLogReader,
-	type YjsLogReaderAttachment,
-} from './document/attach-yjs-log-reader.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
@@ -306,7 +227,6 @@ export {
 	type AttachPresenceConfig,
 	type PeerPresenceAttachment,
 } from './document/peer-presence.js';
-export { SqliteWriterError } from './document/sqlite-writer.js';
 export {
 	type FoundPeer,
 	Peer,

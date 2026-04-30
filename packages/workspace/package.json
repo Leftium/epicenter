@@ -32,6 +32,7 @@
 		"./document/attach-sqlite": "./src/document/attach-sqlite.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
 		"./ai": "./src/ai/index.ts",
+		"./node": "./src/node.ts",
 		"./document/materializer/sqlite": "./src/document/materializer/sqlite/index.ts",
 		"./encryption-key": "./src/document/encryption-key.ts",
 		"./logger/jsonl-sink": "./src/shared/logger/jsonl-sink.ts",

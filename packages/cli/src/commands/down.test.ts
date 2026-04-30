@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeMetadata } from '@epicenter/workspace';
+import { writeMetadata } from '@epicenter/workspace/node';
 import { Err, Ok } from 'wellcrafted/result';
 import { runDown } from './down';
 

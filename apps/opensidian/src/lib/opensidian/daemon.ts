@@ -1,15 +1,17 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
-	attachYjsLog,
-	findEpicenterDir,
-	hashClientId,
 	type PeerDescriptor,
 	type ProjectDir,
 	toWsUrl,
 	type WebSocketImpl,
-	yjsPath,
 } from '@epicenter/workspace';
+import {
+	attachYjsLog,
+	findEpicenterDir,
+	hashClientId,
+	yjsPath,
+} from '@epicenter/workspace/node';
 import { openOpensidian as openOpensidianDoc } from './index.js';
 
 export function openOpensidian({
@@ -37,6 +39,8 @@ export function openOpensidian({
 		webSocketImpl,
 	});
 
+	// Daemon runtime is materializer-only for now. Browser runtime owns
+	// Opensidian file and shell actions because they need browser services.
 	const actions = {};
 	const presence = sync.attachPresence({ peer });
 	const rpc = sync.attachRpc({ actions: { actions } });

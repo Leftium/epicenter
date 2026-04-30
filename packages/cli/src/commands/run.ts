@@ -18,13 +18,15 @@
  */
 
 import {
-	type DaemonError,
-	type RunError as DaemonRunError,
-	getDaemon,
 	type PeerAwarenessState,
 	type RpcError,
-	type RunRequest,
 } from '@epicenter/workspace';
+import {
+	type DaemonError,
+	getDaemon,
+	type RunError as DaemonRunError,
+	type RunRequest,
+} from '@epicenter/workspace/node';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 

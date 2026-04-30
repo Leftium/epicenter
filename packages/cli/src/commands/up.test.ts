@@ -31,7 +31,7 @@ import {
 	pingDaemon,
 	socketPathFor,
 	writeMetadata,
-} from '@epicenter/workspace';
+} from '@epicenter/workspace/node';
 import { Ok } from 'wellcrafted/result';
 import type { LoadConfigResult, LoadedWorkspace } from '../load-config';
 import { runUp } from './up';

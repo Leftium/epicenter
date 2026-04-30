@@ -11,7 +11,7 @@
  * mode only; JSON mode always emits a valid array, even if empty).
  */
 
-import { getDaemon, type PeerSnapshot } from '@epicenter/workspace';
+import { getDaemon, type PeerSnapshot } from '@epicenter/workspace/node';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
 import {

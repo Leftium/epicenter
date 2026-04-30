@@ -1,17 +1,19 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
+	type PeerDescriptor,
+	type ProjectDir,
+	toWsUrl,
+	type WebSocketImpl,
+} from '@epicenter/workspace';
+import {
 	attachYjsLog,
 	findEpicenterDir,
 	hashClientId,
 	markdownPath,
-	type PeerDescriptor,
-	type ProjectDir,
 	sqlitePath,
-	toWsUrl,
-	type WebSocketImpl,
 	yjsPath,
-} from '@epicenter/workspace';
+} from '@epicenter/workspace/node';
 import {
 	attachMarkdown,
 	slugFilename,

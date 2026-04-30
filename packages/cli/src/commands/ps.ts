@@ -20,7 +20,7 @@ import {
 	socketPathFor,
 	unlinkMetadata,
 	unlinkSocketFile,
-} from '@epicenter/workspace';
+} from '@epicenter/workspace/node';
 import { CONFIG_FILENAME } from '../load-config.js';
 import { cmd } from '../util/cmd.js';
 

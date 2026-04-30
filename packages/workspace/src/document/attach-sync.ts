@@ -38,7 +38,7 @@ import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
 import {
 	defineQuery,
 	describeActions,
-	invokeAction,
+	invokeActionForRpc,
 	type RemoteCallOptions,
 	resolveActionPath,
 	type SystemActions,
@@ -249,13 +249,13 @@ export type SyncAttachmentConfig = {
 	 * `find()` / `observe()` become meaningful.
 	 *
 	 * Workspace docs pass this; content docs (entries, notes, files) omit
-	 * it — they sync but don't publish identity.
+	 * it. They sync but don't publish identity.
 	 *
-	 * Mutually exclusive with `awareness` (an external instance) — pass one.
+	 * Mutually exclusive with `awareness` (an external instance). Pass one.
 	 *
-	 * Awareness carries presence only — no action manifest. Consumers that
+	 * Awareness carries presence only. There is no action manifest. Consumers that
 	 * need to enumerate a peer's actions call
-	 * `describePeer(sync, deviceId)` to fetch the full local
+	 * `describeRemoteActions(sync, deviceId)` to fetch the full local
 	 * `ActionManifest` on demand via the runtime-injected `system.describe`
 	 * RPC.
 	 */
@@ -273,15 +273,16 @@ export type SyncAttachmentConfig = {
 	/**
 	 * Inbound action tree. Incoming RPC requests are routed by dot-path
 	 * against this tree; raw returns get `Ok`-wrapped,
-	 * throws become `Err(ActionFailed)`, existing `Result`s pass through.
+	 * throws become `Err(ActionFailed)`, and existing `Result`s are normalized
+	 * to the RPC error envelope.
 	 *
 	 * Wrapping the dispatch path (auth gates, audit logs, rate limits) is
-	 * an upstream concern — compose the action tree itself before passing
+	 * an upstream concern. Compose the action tree itself before passing
 	 * it here. Userland helpers like `withAuthGate(actions, ...)` are the
 	 * right home for that, not a callback in this config.
 	 *
 	 * Defaults to the doc bundle itself (when first arg is a bundle), so
-	 * actions hoisted to top-level keys (`tabs`, `devices`, …) are routed
+	 * actions hoisted to top-level keys (`tabs`, `devices`, etc.) are routed
 	 * without a reserved `actions:` namespace. `walkActions` filters to
 	 * action leaves at runtime, so non-action bundle keys (`ydoc`, `tables`,
 	 * `kv`, …) are skipped. When neither this nor a bundle is passed,
@@ -387,13 +388,14 @@ export function attachSync(
 
 	// Inject `system.*` meta operations into the dispatch tree.
 	// `system.describe` is argless and returns the full local
-	// `ActionManifest` (dot-path → ActionMeta with live input schemas).
-	// Consumers fetch on demand via `describePeer(sync, deviceId)`
+	// `ActionManifest` (dot-path to ActionMeta with live input schemas).
+	// Consumers fetch on demand via `describeRemoteActions(sync, deviceId)`
 	// rather than receiving a manifest broadcast in awareness.
 	//
 	// Type-annotate against `SystemActions` (the canonical type in
 	// `shared/actions.ts`): TypeScript checks the runtime construction here
-	// matches the type the `peer<{ system: SystemActions }>` proxy expects.
+	// matches the type the `createRemoteActions<{ system: SystemActions }>`
+	// proxy expects.
 	// Drift between handler return and consumer expectation = compile error.
 	//
 	// Freeze the dispatch tree post-merge: the reservation check above
@@ -591,7 +593,7 @@ export function attachSync(
 			return;
 		}
 
-		sendResponse(await invokeAction(target, rpc.input, rpc.action));
+		sendResponse(await invokeActionForRpc(target, rpc.input, rpc.action));
 	}
 
 	// ── Message senders ──

@@ -6,9 +6,9 @@ import { Ok } from 'wellcrafted/result';
 import {
 	defineMutation,
 	defineQuery,
-	type RemoteActions,
+	type RemoteActionProxy,
 } from '../shared/actions.js';
-import type { InferRpcMap, InferSyncRpcMap } from './types.js';
+import type { InferSyncRpcMap } from './types.js';
 
 type CustomError = {
 	name: 'CustomError';
@@ -17,18 +17,19 @@ type CustomError = {
 
 const actions = {
 	raw: defineQuery({
-		handler: () => ({ kind: 'raw' as const }),
+		handler: () => ({ fixture: 'raw-output' as const }),
 	}),
 	asyncRaw: defineQuery({
-		handler: async () => ({ kind: 'asyncRaw' as const }),
+		handler: async () => ({ fixture: 'async-raw-output' as const }),
 	}),
 	result: defineMutation({
-		handler: (): Result<{ kind: 'result' }, CustomError> =>
-			Ok({ kind: 'result' }),
+		handler: (): Result<{ fixture: 'result-output' }, CustomError> =>
+			Ok({ fixture: 'result-output' }),
 	}),
 	asyncResult: defineMutation({
-		handler: async (): Promise<Result<{ kind: 'asyncResult' }, CustomError>> =>
-			Ok({ kind: 'asyncResult' }),
+		handler: async (): Promise<
+			Result<{ fixture: 'async-result-output' }, CustomError>
+		> => Ok({ fixture: 'async-result-output' }),
 	}),
 	withInput: defineMutation({
 		input: Type.Object({ count: Type.Number() }),
@@ -45,8 +46,7 @@ test('rpc type fixtures are valid action definitions', () => {
 });
 
 type RpcMap = InferSyncRpcMap<typeof actions>;
-type LegacyRpcMap = InferRpcMap<typeof actions>;
-type Remote = RemoteActions<typeof actions>;
+type Remote = RemoteActionProxy<typeof actions>;
 
 export type Expect<TValue extends true> = TValue;
 export type Equal<TActual, TExpected> =
@@ -66,32 +66,33 @@ export type RemoteReturn<TValue> = TValue extends (
 	? { data: TData; error: TError }
 	: never;
 
-export type RawOutput = Expect<Equal<RpcMap['raw']['output'], { kind: 'raw' }>>;
+export type RawOutput = Expect<
+	Equal<RpcMap['raw']['output'], { fixture: 'raw-output' }>
+>;
 export type AsyncRawOutput = Expect<
-	Equal<RpcMap['asyncRaw']['output'], { kind: 'asyncRaw' }>
+	Equal<RpcMap['asyncRaw']['output'], { fixture: 'async-raw-output' }>
 >;
 export type ResultOutput = Expect<
-	Equal<RpcMap['result']['output'], { kind: 'result' }>
+	Equal<RpcMap['result']['output'], { fixture: 'result-output' }>
 >;
 export type AsyncResultOutput = Expect<
-	Equal<RpcMap['asyncResult']['output'], { kind: 'asyncResult' }>
+	Equal<RpcMap['asyncResult']['output'], { fixture: 'async-result-output' }>
 >;
 export type InputShape = Expect<
 	Equal<RpcMap['withInput']['input'], { count: number }>
 >;
-export type LegacyAlias = Expect<Equal<LegacyRpcMap, RpcMap>>;
 export type DotKeyExcluded = Expect<Equal<HasKey<RpcMap, 'bad.key'>, false>>;
 
 export type RemoteResultShape = Expect<
 	Equal<
 		RemoteReturn<Remote['result']>,
-		{ data: { kind: 'result' }; error: RpcError }
+		{ data: { fixture: 'result-output' }; error: RpcError }
 	>
 >;
 export type RemoteAsyncResultShape = Expect<
 	Equal<
 		RemoteReturn<Remote['asyncResult']>,
-		{ data: { kind: 'asyncResult' }; error: RpcError }
+		{ data: { fixture: 'async-result-output' }; error: RpcError }
 	>
 >;
 export type RemoteDotKeyExcluded = Expect<

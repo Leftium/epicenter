@@ -1,24 +1,22 @@
 /**
- * `peer<T>()` unit tests — proxy mechanics + first-match resolution +
- * disconnect short-circuit. Tests use a mock `SyncAttachment` — no real
+ * `createRemoteActions<T>()` unit tests: proxy mechanics, first-match
+ * resolution, and disconnect short-circuit. Tests use a mock `SyncAttachment`,
+ * no real
  * Y.Doc, no real WebSocket, no real awareness. The peer-resolution logic
  * itself is covered in attach-sync.test.ts (presence section).
  */
 
 import { describe, expect, it } from 'bun:test';
+import { isRpcError, RpcError } from '@epicenter/sync';
+import type { FoundPeer, SyncAttachment } from '@epicenter/workspace';
 import Type from 'typebox';
-import { Err, Ok, isErr } from 'wellcrafted/result';
 import type { Result } from 'wellcrafted/result';
-import { RpcError, isRpcError } from '@epicenter/sync';
-import type {
-	FoundPeer,
-	SyncAttachment,
-} from '@epicenter/workspace';
+import { Err, isErr, Ok } from 'wellcrafted/result';
 import { defineMutation, defineQuery } from '../shared/actions.js';
-import { peer } from './peer.js';
+import { createRemoteActions } from './remote-actions.js';
 
 // Reference action shape used to type the test proxy. Handlers are never
-// invoked here — only the *type* flows through `peer<typeof TestActions>`.
+// invoked here. Only the type flows through `createRemoteActions<TestActions>`.
 const TestActions = {
 	tabs: {
 		close: defineMutation({
@@ -44,7 +42,7 @@ type RpcCall = {
 };
 
 /**
- * Mock SyncAttachment — keeps a mutable `present` map of deviceId→clientId
+ * Mock SyncAttachment: keeps a mutable `present` map of deviceId to clientId
  * so tests can drop a peer mid-call by mutating it and firing observers.
  * Only `find`, `observe`, and `rpc` are populated; tests never touch the
  * connection-lifecycle methods.
@@ -84,7 +82,7 @@ function mockSync(opts: {
 			calls.push(call);
 			return opts.respond(call);
 		},
-		// transport surface — irrelevant for these tests, but the type wants them
+		// transport surface: irrelevant for these tests, but the type wants them
 		whenConnected: Promise.resolve(),
 		whenDisposed: Promise.resolve(),
 		status: { phase: 'offline' as const },
@@ -101,7 +99,7 @@ function mockSync(opts: {
 	};
 }
 
-describe('peer<T>()', () => {
+describe('createRemoteActions<T>()', () => {
 	it('builds a proxy whose dot-path becomes the rpc action arg', async () => {
 		const calls: RpcCall[] = [];
 		const sync = mockSync({
@@ -110,7 +108,7 @@ describe('peer<T>()', () => {
 			respond: async () => Ok({ closedCount: 1 }),
 		});
 
-		const remote = peer<TestActions>(sync, 'mac');
+		const remote = createRemoteActions<TestActions>(sync, 'mac');
 		const result = await remote.tabs.close({ tabIds: [1] }, { timeout: 1000 });
 
 		expect(calls).toHaveLength(1);
@@ -132,7 +130,7 @@ describe('peer<T>()', () => {
 			},
 		});
 
-		const remote = peer<TestActions>(sync, 'ghost');
+		const remote = createRemoteActions<TestActions>(sync, 'ghost');
 		const result = await remote.foo.bar({});
 		expect(calls).toHaveLength(0);
 		expect(isErr(result)).toBe(true);
@@ -147,7 +145,7 @@ describe('peer<T>()', () => {
 			respond: async () => Err(RpcError.ActionNotFound({ action: 'x' }).error),
 		});
 
-		const remote = peer<TestActions>(sync, 'mac');
+		const remote = createRemoteActions<TestActions>(sync, 'mac');
 		const result = await remote.x();
 		expect(isErr(result)).toBe(true);
 		if (isErr(result) && isRpcError(result.error)) {
@@ -162,7 +160,7 @@ describe('peer<T>()', () => {
 			respond: () => new Promise<Result<unknown, RpcError>>(() => {}),
 		});
 
-		const remote = peer<TestActions>(sync, 'mac');
+		const remote = createRemoteActions<TestActions>(sync, 'mac');
 		const callPromise = remote.tabs.close({ tabIds: [1] });
 
 		sync.drop('mac');

@@ -6,7 +6,8 @@
  * Nothing more. The CLI is the shell-friendly surface for one-shot queries;
  * orchestration (fan-out across peers, conditional dispatch, loops) belongs
  * in vault-style TypeScript scripts that load the workspace library
- * directly via `loadConfig` and call `describePeer` / `sync.rpc` themselves.
+ * directly via `loadConfig` and call `describeRemoteActions` / `sync.rpc`
+ * themselves.
  *
  * Per-peer schema introspection used to live here as `list --peer <id>` /
  * `list --all`. It moved to `epicenter peers <deviceId>`, which is the
@@ -27,11 +28,7 @@ import {
 	resolveTarget,
 	workspaceOption,
 } from '../util/common-options';
-import {
-	formatYargsOptions,
-	output,
-	outputError,
-} from '../util/format-output';
+import { formatYargsOptions, output, outputError } from '../util/format-output';
 import type { ResolveError } from '../util/resolve-entry';
 
 type Format = 'json' | 'jsonl' | undefined;
@@ -142,7 +139,10 @@ function fail(message: string): void {
 	process.exitCode = 1;
 }
 
-export function filterByPath(entries: ActionManifest, path: string): ActionManifest {
+export function filterByPath(
+	entries: ActionManifest,
+	path: string,
+): ActionManifest {
 	if (!path) return entries;
 	const pfx = path + '.';
 	const out: ActionManifest = {};
@@ -159,7 +159,10 @@ type ActionDescriptor = {
 	input?: unknown;
 };
 
-function toActionDescriptor(action: ActionManifest[string], path: string): ActionDescriptor {
+function toActionDescriptor(
+	action: ActionManifest[string],
+	path: string,
+): ActionDescriptor {
 	const desc: ActionDescriptor = { path, type: action.type };
 	if (action.description) desc.description = action.description;
 	if (action.input) desc.input = action.input;
@@ -211,10 +214,7 @@ function printChildren(node: TreeNode, prefix: string): void {
 	});
 }
 
-function printActionDetail(
-	path: string,
-	action: ActionManifest[string],
-): void {
+function printActionDetail(path: string, action: ActionManifest[string]): void {
 	console.log(`${path}  (${action.type})`);
 	if (action.description) {
 		console.log('');

@@ -37,27 +37,30 @@ export type {
 	Actions,
 	Mutation,
 	Query,
-	RemoteActions,
+	RemoteActionProxy,
 } from './shared/actions';
 export {
 	defineMutation,
 	defineQuery,
 	describeActions,
 	invokeAction,
+	invokeActionForRpc,
 	isAction,
 	resolveActionPath,
 	walkActions,
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════
-// RPC + PEER DISPATCH
+// RPC + REMOTE ACTIONS
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { InferRpcMap, InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export { isRpcError, RpcError } from '@epicenter/sync';
-
-// Peer dispatch (cross-device action calling) — see `peer<T>(workspace, deviceId)`.
-export { peer, describePeer } from './rpc/peer.js';
+// Cross-device action calling.
+export {
+	createRemoteActions,
+	describeRemoteActions,
+} from './rpc/remote-actions.js';
+export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -122,44 +125,63 @@ export { DateTimeString } from './shared/datetime-string';
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
-	attachIndexedDb,
-	type IndexedDbAttachment,
-} from './document/attach-indexed-db.js';
-
+	createDisposableCache,
+	type DisposableCache,
+	DisposableCacheError,
+} from './cache/disposable-cache.js';
 export {
-	attachSqlite,
-	type SqliteAttachment,
-} from './document/attach-sqlite.js';
+	type Awareness,
+	type AwarenessDefinitions,
+	type AwarenessState,
+	attachAwareness,
+	type InferAwarenessValue,
+} from './document/attach-awareness.js';
 
 export {
 	attachBroadcastChannel,
 	BC_ORIGIN,
 	type BroadcastChannelAttachment,
 } from './document/attach-broadcast-channel.js';
-
 export {
-	attachRichText,
-	xmlFragmentToPlaintext,
-	type RichTextAttachment,
-} from './document/attach-rich-text.js';
-
+	attachEncryption,
+	type EncryptionAttachment,
+} from './document/attach-encryption.js';
+export {
+	attachIndexedDb,
+	type IndexedDbAttachment,
+} from './document/attach-indexed-db.js';
+export {
+	attachKv,
+	type InferKvValue,
+	type Kv,
+	type KvChange,
+	type KvDefinition,
+	type KvDefinitions,
+} from './document/attach-kv.js';
 export {
 	attachPlainText,
 	type PlainTextAttachment,
 } from './document/attach-plain-text.js';
-
 export {
-	attachSync,
-	SyncFailedError,
-	toWsUrl,
+	attachRichText,
+	type RichTextAttachment,
+	xmlFragmentToPlaintext,
+} from './document/attach-rich-text.js';
+export {
+	attachSqlite,
+	type SqliteAttachment,
+} from './document/attach-sqlite.js';
+export {
 	type AttachSyncDoc,
+	attachSync,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
+	SyncFailedError,
 	type SyncFailedReason,
 	type SyncStatus,
+	toWsUrl,
 	type WaitForBarrier,
 } from './document/attach-sync.js';
-
 export {
 	attachTable,
 	attachTables,
@@ -174,14 +196,31 @@ export {
 } from './document/attach-table.js';
 
 export {
-	attachKv,
-	type InferKvValue,
-	type Kv,
-	type KvChange,
-	type KvDefinition,
-	type KvDefinitions,
-} from './document/attach-kv.js';
-
+	attachTimeline,
+	type ContentType,
+	computeMidpoint,
+	generateInitialOrders,
+	parseSheetFromCsv,
+	populateFragmentFromText,
+	type RichTextEntry,
+	type SheetBinding,
+	type SheetEntry,
+	serializeSheetToCsv,
+	type TextEntry,
+	type Timeline,
+	type TimelineEntry,
+} from './document/attach-timeline/index.js';
+export { defineKv } from './document/define-kv.js';
+export { defineTable } from './document/define-table.js';
+export { docGuid } from './document/doc-guid.js';
+export type { DocPersistence } from './document/doc-persistence.js';
+export {
+	EncryptionKey,
+	EncryptionKeys,
+	encryptionKeysFingerprint,
+} from './document/encryption-key.js';
+export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
+export { onLocalUpdate } from './document/on-local-update.js';
 export {
 	type DeviceDescriptor,
 	type FoundPeer,
@@ -189,55 +228,7 @@ export {
 	PeerDevice,
 	Platform,
 } from './document/standard-awareness-defs.js';
-
-export {
-	attachAwareness,
-	type Awareness,
-	type AwarenessDefinitions,
-	type AwarenessState,
-	type InferAwarenessValue,
-} from './document/attach-awareness.js';
-
 export type { CombinedStandardSchema } from './document/standard-schema.js';
-
-export {
-	attachTimeline,
-	computeMidpoint,
-	generateInitialOrders,
-	parseSheetFromCsv,
-	populateFragmentFromText,
-	serializeSheetToCsv,
-	type ContentType,
-	type RichTextEntry,
-	type SheetBinding,
-	type SheetEntry,
-	type TextEntry,
-	type Timeline,
-	type TimelineEntry,
-} from './document/attach-timeline/index.js';
-
-export {
-	createDisposableCache,
-	type DisposableCache,
-	DisposableCacheError,
-} from './cache/disposable-cache.js';
-export { defineTable } from './document/define-table.js';
-export { defineKv } from './document/define-kv.js';
-export { docGuid } from './document/doc-guid.js';
-export type { DocPersistence } from './document/doc-persistence.js';
-export { onLocalUpdate } from './document/on-local-update.js';
-
-export {
-	attachEncryption,
-	type EncryptionAttachment,
-} from './document/attach-encryption.js';
-export {
-	EncryptionKey,
-	EncryptionKeys,
-	encryptionKeysFingerprint,
-} from './document/encryption-key.js';
-
-export { KV_KEY, TableKey, type KvKey } from './document/keys.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

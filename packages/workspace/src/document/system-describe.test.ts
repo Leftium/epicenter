@@ -8,7 +8,7 @@
  *     user actions and returns the live action manifest.
  *   - User code cannot publish a top-level `system` namespace — `attachSync`
  *     throws at bootstrap.
- *   - `describePeer(sync, deviceId)` round-trips between two attachments
+ *   - `describeRemoteActions(sync, deviceId)` round-trips between two attachments
  *     and returns the remote manifest.
  *   - Awareness carries no manifest — only the device descriptor.
  */
@@ -23,8 +23,8 @@ import {
 import * as decoding from 'lib0/decoding';
 import Type from 'typebox';
 import * as Y from 'yjs';
+import { describeRemoteActions } from '../rpc/remote-actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
-import { describePeer } from '../rpc/peer.js';
 import { attachSync } from './attach-sync.js';
 
 // ── Minimal WebSocket stub (mirrors attach-sync.test.ts) ─────────────────
@@ -42,14 +42,17 @@ class FakeWebSocket {
 	readyState = FakeWebSocket.CONNECTING;
 	binaryType: 'arraybuffer' | 'blob' = 'blob';
 	onopen: (() => void) | null = null;
-	onclose: (() => void) | null = null;
+	onclose: ((ev: { code: number; reason: string }) => void) | null = null;
 	onerror: (() => void) | null = null;
 	onmessage: Listener | null = null;
 
 	readonly sent: Uint8Array[] = [];
 	readonly protocols: string[];
 
-	constructor(public readonly url: string, protocols?: string | string[]) {
+	constructor(
+		public readonly url: string,
+		protocols?: string | string[],
+	) {
 		this.protocols = Array.isArray(protocols)
 			? protocols
 			: protocols
@@ -67,14 +70,14 @@ class FakeWebSocket {
 		this.sent.push(data instanceof Uint8Array ? data : new Uint8Array(data));
 	}
 
-	close() {
+	close(code?: number, reason?: string) {
 		if (
 			this.readyState === FakeWebSocket.CLOSED ||
 			this.readyState === FakeWebSocket.CLOSING
 		)
 			return;
 		this.readyState = FakeWebSocket.CLOSED;
-		this.onclose?.();
+		this.onclose?.({ code: code ?? 1005, reason: reason ?? '' });
 	}
 
 	addEventListener() {}
@@ -229,7 +232,7 @@ describe('system.describe', () => {
 	});
 });
 
-describe('describePeer(sync, deviceId)', () => {
+describe('describeRemoteActions(sync, deviceId)', () => {
 	test('round-trips between two attachments via system.describe', async () => {
 		// Two ydocs sharing one in-memory wire. The "remote" ydoc registers a
 		// peer awareness state on the "local" sync directly; for RPC we wire
@@ -268,7 +271,7 @@ describe('describePeer(sync, deviceId)', () => {
 		// (rewriting requesterClientId so the remote responds with a frame
 		// the local pipe can route back).
 		const REMOTE_FAKE_CLIENT = 42;
-		// Inject a fake "remote" peer into local awareness so describePeer can
+		// Inject a fake "remote" peer into local awareness so describeRemoteActions can
 		// find a clientId to dispatch against.
 		localSync.raw.awareness?.getStates().set(REMOTE_FAKE_CLIENT, {
 			device: { id: 'remote', name: 'remote', platform: 'web' },
@@ -297,7 +300,7 @@ describe('describePeer(sync, deviceId)', () => {
 			localWs.deliver(frame);
 		};
 
-		const result = await describePeer(localSync, 'remote');
+		const result = await describeRemoteActions(localSync, 'remote');
 		expect(result.error).toBeNull();
 		const manifest = result.data as NonNullable<typeof result.data>;
 		expect(Object.keys(manifest).sort()).toEqual(['tabs.close']);

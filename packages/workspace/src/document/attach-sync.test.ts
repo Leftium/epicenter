@@ -22,9 +22,9 @@ import {
 	RpcError,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
+import Type from 'typebox';
 import { Err, Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
-import Type from 'typebox';
 import { defineMutation } from '../shared/actions.js';
 import { attachSync } from './attach-sync.js';
 
@@ -50,7 +50,10 @@ class FakeWebSocket {
 	readonly sent: Uint8Array[] = [];
 	readonly protocols: string[];
 
-	constructor(public readonly url: string, protocols?: string | string[]) {
+	constructor(
+		public readonly url: string,
+		protocols?: string | string[],
+	) {
 		this.protocols = Array.isArray(protocols)
 			? protocols
 			: protocols
@@ -380,13 +383,14 @@ describe('attachSync hasLocalChanges', () => {
 		await sync.whenDisposed;
 	});
 
-	test('inbound RPC with action returning a Result passes the envelope through untouched', async () => {
+	test('inbound RPC wraps a custom action Err as RpcError.ActionFailed', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-result-passthrough' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
 			actions: {
 				tabs: {
-					// Handler returns an Err directly; attachSync must not re-wrap it.
+					// Handler returns an Err directly. The RPC boundary must expose
+					// only RpcError variants to the caller.
 					close: defineMutation({
 						handler: () =>
 							Err({ name: 'BrowserApiFailed', message: 'no tab 999' }),
@@ -424,10 +428,13 @@ describe('attachSync hasLocalChanges', () => {
 		const parsed = decodeRpcPayload(dec);
 		expect(parsed.type).toBe('response');
 		if (parsed.type !== 'response') throw new Error('unreachable');
-		// The typed error survives on the wire — the handler's own Err shape
-		// reaches the remote caller, not a wrapped RpcError.
 		expect(parsed.result.data).toBeNull();
-		expect(parsed.result.error).toEqual({
+		expect(isRpcError(parsed.result.error)).toBe(true);
+		const err = parsed.result.error as RpcError;
+		expect(err.name).toBe('ActionFailed');
+		if (err.name !== 'ActionFailed') throw new Error('unreachable');
+		expect(err.action).toBe('tabs.close');
+		expect(err.cause).toEqual({
 			name: 'BrowserApiFailed',
 			message: 'no tab 999',
 		});
@@ -584,8 +591,7 @@ describe('attachSync hasLocalChanges', () => {
 	test('outbound rpc() wraps an unknown (non-RpcError) error as RpcError.ActionFailed', async () => {
 		// This is the "type erasure" path: a peer returns a typed Err that
 		// isn't an RpcError variant. The client-side handler re-wraps it as
-		// ActionFailed with the original error as `cause`. This is a property
-		// of the legacy sync.rpc() API — createRemoteActions preserves E.
+		// ActionFailed with the original error as `cause`.
 		const ydoc = new Y.Doc({ guid: 'outbound-wrap' });
 		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
 
@@ -729,16 +735,12 @@ describe('attachSync hasLocalChanges', () => {
 		ydoc.getMap('m').set('k', 'v');
 		firstWs.close();
 
-		const secondWs = await waitFor(
-			() => FakeWebSocket.instances[1],
-			3000,
-		);
+		const secondWs = await waitFor(() => FakeWebSocket.instances[1], 3000);
 		await waitFor(() => secondWs.readyState === FakeWebSocket.OPEN);
 		secondWs.deliver(serverStep2Frame());
 
 		await waitFor(
-			() =>
-				sync.status.phase === 'connected' && !sync.status.hasLocalChanges,
+			() => sync.status.phase === 'connected' && !sync.status.hasLocalChanges,
 		);
 
 		ydoc.destroy();
@@ -865,8 +867,7 @@ describe('attachSync failed phase', () => {
 		expect(sync.status.phase).not.toBe('failed');
 		await waitFor(
 			() =>
-				sync.status.phase === 'connecting' ||
-				sync.status.phase === 'connected',
+				sync.status.phase === 'connecting' || sync.status.phase === 'connected',
 		);
 
 		ydoc.destroy();
@@ -977,4 +978,3 @@ describe('attachSync presence', () => {
 		ydoc.destroy();
 	});
 });
-

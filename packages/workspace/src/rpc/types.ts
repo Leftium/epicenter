@@ -7,8 +7,9 @@ import type { Action } from '../shared/actions.js';
  *
  * The transport sends one dot-path string such as `'tabs.close'`, so this
  * type mirrors that wire shape as a flat action map. App code should usually
- * prefer `peer<T>(sync, deviceId)` for nested calls; use this type when
- * calling the lower-level `sync.rpc<TMap>(clientId, action, input)` API.
+ * prefer `createRemoteActions<T>(sync, deviceId)` for nested calls; use this
+ * type when calling the lower-level `sync.rpc<TMap>(clientId, action, input)`
+ * API.
  *
  * @example
  * ```typescript
@@ -32,9 +33,6 @@ import type { Action } from '../shared/actions.js';
  * ```
  */
 export type InferSyncRpcMap<T> = FlattenToIntersection<FlattenActions<T>>;
-
-/** Compatibility alias for the low-level `sync.rpc(...)` type map. */
-export type InferRpcMap<T> = InferSyncRpcMap<T>;
 
 // ─── Internal helpers ───────────────────────────────────────────────────────
 
@@ -91,7 +89,7 @@ export type DefaultRpcMap = Record<string, { input: unknown; output: unknown }>;
  * Constraint for the TMap generic parameter on `rpc()`.
  *
  * Uses `any` (not `unknown`) for input/output because generic constraints
- * need covariant compatibility — `{ input: string }` must extend
+ * need covariant compatibility: `{ input: string }` must extend
  * `{ input: any }` but does NOT extend `{ input: unknown }`.
  */
 export type RpcActionMap = Record<string, { input: any; output: any }>;

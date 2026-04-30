@@ -4,13 +4,13 @@
  *
  * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
  * With `--peer <target>`, the invocation is dispatched over the selected
- * export's RPC channel to a remote peer instead of running locally.
+ * route's RPC channel to a remote peer instead of running locally.
  *
  * `epicenter run` requires a running daemon for the discovered project.
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
  *
  * Exit codes:
- *   1: usage error (unknown export, unknown action, missing peer RPC for
+ *   1: usage error (unknown route, unknown action, missing peer RPC for
  *      `--peer`), or no daemon / config (`MissingConfig`, `Required`,
  *      transport error)
  *   2: runtime error (local action returned Err, or remote RPC failed)

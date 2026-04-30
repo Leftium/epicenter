@@ -192,7 +192,7 @@ describe('executeRun route-prefixed routing', () => {
 		expect(result.error.suggestions).toEqual(['  notes.notes.add  (mutation)']);
 	});
 
-	test('unknown export returns available export suggestions', async () => {
+		test('unknown route returns available route suggestions', async () => {
 		const result = await executeRun(
 			[
 				fakeEntry({}),

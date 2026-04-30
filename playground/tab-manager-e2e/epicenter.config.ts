@@ -5,7 +5,7 @@
  * Reads auth credentials (token + encryption keys) from the CLI session store
  * at `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
  *
- * Exports `tabManager` as a hosted workspace route with `sync`, `actions`, and
+ * Hosts the `tabManager` route with `sync`, `actions`, and
  * `[Symbol.dispose]`. `actions` is empty because the tab-manager extension
  * defines action wrappers, not this config.
  *

@@ -5,7 +5,7 @@
  * works end-to-end with persistence and document content.
  *
  * Key behaviors:
- * - loadConfig() discovers the workspace client from a single export
+ * - loadConfig() discovers the hosted workspace from the default config
  * - Table CRUD works for the files table (folders + files)
  * - Document content round-trips through write → read
  * - Persistence survives restart (table data + document content)

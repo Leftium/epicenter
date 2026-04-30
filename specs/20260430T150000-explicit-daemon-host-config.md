@@ -32,7 +32,7 @@ fuji.entries.create
 
 This creates problems:
 
-1. **Config pretends to be an API module**: scripts are encouraged to import config exports, even though scripts can import package factories or use `connectDaemon`.
+1. **Config pretends to be an API module**: scripts are encouraged to import config exports, even though scripts can import package factories or daemon action helpers.
 2. **Daemon slots leak into app objects**: `actions`, `sync`, `presence`, `rpc`, and `whenReady` become reserved names on anything the loader sees.
 3. **Discovery is too implicit**: named export scanning makes the loader guess what the user meant to host.
 4. **Daemon factories expose too much**: Fuji daemon returns `{ ...doc, yjsLog, sync, presence, rpc, sqlite, markdown }`, even though only a few fields are daemon surface.
@@ -643,7 +643,7 @@ const blog = await openFujiDaemonActions({
 ### Phase 4: Call Sites and Docs
 
 - [x] **4.1** Migrate example configs to `export default defineEpicenterConfig([...])`.
-- [ ] **4.2** Replace docs that import from `epicenter.config.ts`.
+- [x] **4.2** Replace docs that import from `epicenter.config.ts`.
 - [x] **4.3** Add `connectDaemonActions<TActions>()`.
 - [x] **4.4** Add app-specific helpers such as `openFujiDaemonActions()`.
 - [x] **4.5** Update script examples to use app-specific daemon action helpers.

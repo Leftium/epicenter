@@ -10,8 +10,8 @@
  * Reads auth credentials from the CLI session store at
  * `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
  *
- * Exports `opensidian` as a hosted workspace route with `actions`, `sync`, and
- * `[Symbol.dispose]`. Daemon action paths are relative to `actions`.
+ * Hosts the `opensidian` route with `actions`, `sync`, and `[Symbol.dispose]`.
+ * Daemon action paths are relative to `actions`.
  *
  * Usage:
  *   # Run the workspace. Imports this config, which constructs the

@@ -16,15 +16,15 @@ Each verb is a one-line shell shortcut for one workspace primitive:
  Cross-cutting: auth (server session, pre-workspace)
 ```
 
-`list` is the local view of what *this* device exposes across all named
-config exports. `peers` shows who is online across those exports.
-`run --peer <deviceId>` invokes a remote action through the selected export's
-RPC attachment.
+`list` is the local view of what *this* device exposes across all hosted
+routes. `peers` shows who is online across those routes. `run --peer
+<deviceId>` invokes a remote action through the selected route's RPC
+attachment.
 
 Anything that would need a flag to fan out across peers, loop, or
-compose is a user-authored `.ts` script that imports the config and
-runs under `bun run`. The CLI is the shell-friendly surface; scripts
-are the automation surface.
+compose is a user-authored `.ts` script that imports app packages or
+daemon action helpers and runs under `bun run`. The CLI is the
+shell-friendly surface; scripts are the automation surface.
 
 ## Installation
 
@@ -51,7 +51,7 @@ epicenter auth login https://self-hosted.example  # self-hosted override
 epicenter auth status                             # most recent session
 epicenter auth logout                             # most recent session
 
-# up: bring every config export online as a callable peer (run once per session)
+# up: bring every hosted route online as a callable peer (run once per session)
 epicenter up &
 epicenter up -C examples/notes-cross-peer/peer-b &
 
@@ -72,14 +72,18 @@ epicenter peers
 epicenter peers -C examples/notes-cross-peer/peer-b
 ```
 
-`run` resolves the first path segment against the named exports of `epicenter.config.ts`; everything after walks through `workspace.actions` until it hits a `defineQuery` / `defineMutation` action. With `--peer`, the export prefix selects the local RPC attachment, then the inner path is sent to the remote peer.
+`run` resolves the first path segment against the hosted routes declared by
+`epicenter.config.ts`; everything after walks through `workspace.actions` until
+it hits a `defineQuery` / `defineMutation` action. With `--peer`, the route
+prefix selects the local RPC attachment, then the inner path is sent to the
+remote peer.
 
 ### Local vs. remote
 
-`list` is local: it describes the actions exposed by this device's
-config, prefixed by export name. `run` is local by default and remote when
-`--peer <deviceId>` is set; the verb and schema are unchanged, only the
-dispatch target moves.
+`list` is local: it describes the actions exposed by this device's config,
+prefixed by route. `run` is local by default and remote when `--peer
+<deviceId>` is set; the verb and schema are unchanged, only the dispatch
+target moves.
 
 Fan-out across peers (e.g. "who exposes action X?") is a five-line
 script that walks `workspace.presence.peers()` and calls `describeRemoteActions`
@@ -92,7 +96,7 @@ Peer presence has a ~30s liveness window (inherited from Yjs awareness): a peer 
 | Flag | Alias | Commands | Purpose |
 | ---- | ----- | -------- | ------- |
 | `-C` | none | `up`, `down`, `logs`, `list`, `run`, `peers` | Start directory for project discovery. Defaults to the current directory. |
-| `--peer` | none | `run` | Address a remote peer by `deviceId`. Dispatches the invocation over the selected export's RPC channel. |
+| `--peer` | none | `run` | Address a remote peer by `deviceId`. Dispatches the invocation over the selected route's RPC channel. |
 | `--wait` | none | `run --peer` (default 5000) | Ms to wait for peer resolution and the RPC call. |
 | `--format` | none | `list`, `run`, `peers` | `json` or `jsonl`. Pretty-prints on TTY, compact when piped. Without it, commands emit their human-readable shape (tree / value / table). |
 
@@ -104,13 +108,16 @@ Scripts can distinguish these cases without parsing stderr:
 
 | Code | Meaning |
 | ---- | ------- |
-| `1` | Usage or setup error: unknown command, bad flag, missing config, unknown export, or action path does not exist. |
+| `1` | Usage or setup error: unknown command, bad flag, missing config, unknown route, or action path does not exist. |
 | `2` | Runtime error: local action returned `Err`, or a remote RPC completed with a failure (ActionFailed, Timeout, PeerOffline, Disconnected). |
 | `3` | Peer miss: `--peer <target>` did not resolve within `--wait`. Distinct from `2` so scripts can retry or re-enumerate peers. |
 
 ## What your `epicenter.config.ts` must export
 
-An **opened workspace**: call your `openX()` factory at module top-level so the export is already constructed (Y.Doc made, attachments wired, sync ready to connect). No framework wrapper, no `.open()` step. Just a plain function the CLI consumes via the export.
+An explicit daemon host config: default-export `defineEpicenterConfig([...])`
+with one hosted workspace per route. A host is a plain object with `route`,
+`actions`, `[Symbol.dispose]`, and optional `sync`, `presence`, and `rpc`
+attachments.
 
 ```ts
 // epicenter.config.ts
@@ -121,6 +128,7 @@ import {
     defineQuery,
     defineMutation,
 } from '@epicenter/workspace';
+import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import Type from 'typebox';
 import { type } from 'arktype';
 
@@ -131,6 +139,7 @@ function openTabManager() {
     const tables = attachTables(ydoc, { savedTabs: SavedTab });
 
     return {
+        route: 'tabManager',
         ydoc,
         tables,
 
@@ -155,8 +164,7 @@ function openTabManager() {
     };
 }
 
-// The opened workspace is what the CLI and scripts consume.
-export const tabManager = openTabManager();
+export default defineEpicenterConfig([openTabManager()]);
 ```
 
 ## Exposing operations via CLI
@@ -193,26 +201,35 @@ CLI paths: `tabManager.tabs.list`, `tabManager.bookmarks.list`, `tabManager.impo
 
 The CLI walks `workspace.actions`. Infrastructure such as `ydoc`, tables, persistence, sync, and materializers is not public unless you deliberately mount action leaves under `actions`.
 
-## Naming your exports
+## Naming Routes
 
-Every workspace handle is a **named export**. The export name becomes the first segment of every CLI dot-path. A config with a single workspace can use any name (`tabManager`, `tm`, `w`), but once you add a second workspace, the prefix disambiguates them, so a readable name ages better than a one-letter one.
+Every hosted workspace has a `route`. The route becomes the first segment of
+every CLI dot-path. A config with a single route can use any name
+(`tabManager`, `tm`, `w`), but once you add a second route, the prefix
+disambiguates them, so a readable name ages better than a one-letter one.
 
-There is no default-export shorthand. Even a config with one workspace uses a named export. This keeps paths stable when you later add a second workspace: `tabManager.tabs.list` on day 1 is still `tabManager.tabs.list` on day 180 after you add a second workspace. A default-export shortcut would silently invalidate every script, doc, and CI job using the old path the moment you grew past one workspace.
+There is no named-export scanning. Even a config with one workspace uses
+`defineEpicenterConfig([host])`. This keeps the host manifest explicit and
+keeps route defaults close to app daemon factories.
 
 ```ts
 // epicenter.config.ts
-export const tabManager = openTabManager();
-export const fuji       = openFuji();
+export default defineEpicenterConfig([
+    openTabManager(),
+    openFuji(),
+]);
 // epicenter run tabManager.tabs.list
 // epicenter run fuji.entries.list
 ```
 
-The Y.Doc GUID (set inside `openX()` via `new Y.Doc({ guid: ... })`) and the export name serve **different purposes**:
+The Y.Doc GUID and the route serve different purposes:
 
 - `'epicenter.tab-manager'`: the Y.Doc's GUID. Controls persistence file, sync room, CRDT identity. Don't change this on a workspace with real data.
-- `tabManager`: the JS binding name. Controls the CLI path prefix. Safe to rename any time.
+- `tabManager`: the daemon route. Controls the CLI path prefix. Safe to rename if you update scripts that call that route.
 
-You can rename the export freely without touching any persistent data. If you decide the prefix is too verbose six months in, rename `tabManager` to `tm` and every sync/persistence artifact stays exactly where it is.
+You can rename the route without touching persistent data. If you decide the
+prefix is too verbose six months in, rename `tabManager` to `tm` and every
+sync/persistence artifact stays exactly where it is.
 
 ## Scripting
 
@@ -220,30 +237,31 @@ Skip the CLI entirely for anything non-trivial:
 
 ```ts
 // scripts/export-tabs.ts
-import { tabManager } from '../epicenter.config';
+import { openTabManagerDaemonActions } from '@example/tab-manager/daemon';
 import { writeFile } from 'node:fs/promises';
 
-try {
-    await tabManager.whenReady;
-    const tabs = tabManager.tables.savedTabs.getAllValid();
-    await writeFile('./tabs.json', JSON.stringify(tabs, null, 2));
-} finally {
-    tabManager.dispose();
-}
+const tabManager = await openTabManagerDaemonActions();
+const result = await tabManager.savedTabs.list();
+if (result.error) throw result.error;
+
+await writeFile('./tabs.json', JSON.stringify(result.data, null, 2));
 ```
 
 ```bash
 bun run scripts/export-tabs.ts
 ```
 
-Scripts are strictly more powerful than the CLI: you get the full Table/Kv APIs, arbitrary control flow, and any npm dependency. Reach for the CLI for one-shot invocations of things you've deliberately exposed; reach for scripts for everything else.
+Scripts are strictly more powerful than the CLI: you get arbitrary control
+flow, package imports, daemon action helpers, and any npm dependency. Reach for
+the CLI for one-shot invocations of things you've deliberately exposed; reach
+for scripts for everything else.
 
 ## Public API
 
 ```ts
 import {
     createCLI,              // binary entry (used by bin.ts)
-    loadConfig,             // { entries: [{ name, handle }], dispose() }
+    loadConfig,             // { entries: [{ route, workspace }], asyncDispose }
     createSessionStore,     // device-code session persistence
     createAuthApi,          // typed Better Auth client
     epicenterPaths,         // home, authSessions, persistence(id)

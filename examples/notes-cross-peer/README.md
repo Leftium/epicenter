@@ -37,7 +37,13 @@ under "Local vs. remote"):
 ```ts
 // examples/notes-cross-peer/inspect-peer.ts
 import { describeRemoteActions } from '@epicenter/workspace';
-import { notes } from './peer-b/epicenter.config';
+import { openNotes } from './notes';
+
+using notes = openNotes({
+	id: 'notes-repro-inspector',
+	name: 'Inspector',
+	platform: 'node',
+});
 
 await notes.whenReady;
 const result = await describeRemoteActions(
@@ -45,7 +51,6 @@ const result = await describeRemoteActions(
 	'notes-repro-peer-a',
 );
 console.log(result.error ?? result.data);
-notes[Symbol.dispose]();
 ```
 
 ```bash

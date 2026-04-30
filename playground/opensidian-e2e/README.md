@@ -39,17 +39,22 @@ epicenter run opensidian.markdown.prepare '{"directory":"./some/dir"}' \
   -C playground/opensidian-e2e
 ```
 
-Inspect workspace data from a script — scripts get the full Table API that's not exposed as defineQuery/defineMutation:
+Inspect workspace data from a script by importing the app workspace package or
+a script-specific helper. Do not import `epicenter.config.ts` as a reusable
+client module; the config is the daemon host manifest. If this playground needs
+table-level scripts, first extract the composition into a `script.ts` helper and
+let both the script and config call that helper.
 
 ```ts
 // scripts/list-files.ts
-import { opensidian } from '../playground/opensidian-e2e/epicenter.config';
+import { openOpensidianForScript } from '../playground/opensidian-e2e/script';
 
 try {
+  const opensidian = await openOpensidianForScript();
   await opensidian.whenReady;
   console.log(`files: ${opensidian.tables.files.count()}`);
   for (const row of opensidian.tables.files.getAllValid()) {
-    console.log(`  ${row.id} — ${row.name}`);
+    console.log(`  ${row.id}: ${row.name}`);
   }
 } finally {
   opensidian.dispose();
@@ -96,14 +101,14 @@ The actual document content from the editor.
 
 The config chains four extensions onto the Opensidian workspace:
 
-1. **Persistence** — workspace-only SQLite. Persists the files table so it survives daemon restarts without re-downloading everything from the server.
+1. **Persistence**: workspace-only SQLite. Persists the files table so it survives daemon restarts without re-downloading everything from the server.
 
-2. **Markdown materializer** — custom one-way projection (Y.Doc → files). Observes the files table; for each file, reads document content via `documents.files.content.open(id)` and writes a `.md` file with frontmatter + body. Document content changes trigger `updatedAt` on the row, which fires the observer and re-materializes.
+2. **Markdown materializer**: custom one-way projection (Y.Doc to files). Observes the files table; for each file, reads document content via `documents.files.content.open(id)` and writes a `.md` file with frontmatter + body. Document content changes trigger `updatedAt` on the row, which fires the observer and re-materializes.
 
-3. **Encryption unlock** — reads encryption keys from the CLI session store so encrypted fields can be decrypted locally.
+3. **Encryption unlock**: reads encryption keys from the CLI session store so encrypted fields can be decrypted locally.
 
-4. **Sync** — WebSocket connection to the Epicenter API for real-time data sync.
+4. **Sync**: WebSocket connection to the Epicenter API for real-time data sync.
 
 ## Running alongside Opensidian
 
-You can run the daemon while Opensidian is open in your browser. Both connect to the same Epicenter API via WebSocket sync, so changes in the app appear as materialized `.md` files within seconds. The daemon is read-only—it doesn't write back to the workspace from disk changes.
+You can run the daemon while Opensidian is open in your browser. Both connect to the same Epicenter API via WebSocket sync, so changes in the app appear as materialized `.md` files within seconds. The daemon is read-only: it doesn't write back to the workspace from disk changes.

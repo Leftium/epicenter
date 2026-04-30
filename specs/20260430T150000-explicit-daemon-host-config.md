@@ -69,6 +69,20 @@ export default defineEpicenterConfig({
 
 The record key becomes the daemon route prefix. `openFuji()` returns a `HostedWorkspace` or `Promise<HostedWorkspace>` without carrying a route id.
 
+## Naming Model
+
+Three identifiers stay separate:
+
+| Name | Example | Owner | Meaning |
+| --- | --- | --- | --- |
+| Route key | `fuji` | `epicenter.config.ts` | Local daemon address used by `epicenter run fuji.entries.create` |
+| Y.Doc guid | `epicenter.fuji` | Fuji document factory | Durable workspace identity used by storage and sync |
+| Yjs clientID | `hashClientId(projectDir)` | Fuji daemon factory | Writer identity for this process inside Yjs updates |
+
+The route key and Y.Doc guid often look related, but they should not be the same source of truth. The Y.Doc guid is a product-level document identity. The route key is a host-level address. Collapsing them would make local deployment naming change storage and sync identity, which is the wrong coupling.
+
+This separation is still useful when Fuji is only mounted once. It lets `openFuji()` delete `id?: string` entirely. The config owns the name, and the package owns the document.
+
 ## Design Decisions
 
 | Decision | Choice | Rationale |
@@ -239,24 +253,14 @@ export async function openFuji(options): Promise<HostedWorkspace> {
 
 	const sync = attachSync(doc, { ... });
 
-	return hostWorkspace({
+	return {
 		actions: doc.actions,
 		sync,
-		dispose: () => doc[Symbol.dispose](),
-	});
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
+	} satisfies HostedWorkspace;
 }
-```
-
-The example above can return a plain object instead of using `hostWorkspace()`:
-
-```ts
-return {
-	actions: doc.actions,
-	sync,
-	[Symbol.dispose]() {
-		doc[Symbol.dispose]();
-	},
-} satisfies HostedWorkspace;
 ```
 
 The daemon loader awaits host construction once, during config load. After that, local action dispatch does not need another generic readiness gate.
@@ -293,7 +297,7 @@ export async function connectDaemonActions<TActions>(options: {
 
 - [ ] **1.1** Add `HostedWorkspace` and `defineEpicenterConfig`.
 - [ ] **1.2** Keep `WorkspaceEntry[]` as the internal daemon server input.
-- [ ] **1.3** Add tests for invalid or duplicate route keys in the host record.
+- [ ] **1.3** Add tests for invalid route keys and non-workspace host values.
 - [ ] **1.4** Remove `whenReady` from hosted workspace types and daemon dispatch.
 
 ### Phase 2: Loader

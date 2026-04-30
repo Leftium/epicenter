@@ -28,8 +28,6 @@ import {
 	outputError,
 } from '../util/format-output.js';
 
-export type ListResult = Result<ActionManifest, never>;
-
 export const listCommand = cmd({
 	command: 'list [path]',
 	describe: 'Tree view of exposed queries and mutations on this device',
@@ -85,8 +83,9 @@ function renderJson(
 	path: string,
 	format: OutputFormat,
 ): void {
-	if (path && entries[path]) {
-		output(toActionDescriptor(entries[path]!, path), { format });
+	const action = path ? entries[path] : undefined;
+	if (action) {
+		output(toActionDescriptor(action, path), { format });
 		return;
 	}
 
@@ -133,7 +132,7 @@ export function filterByPath(
 	path: string,
 ): ActionManifest {
 	if (!path) return entries;
-	const pfx = path + '.';
+	const pfx = `${path}.`;
 	const out: ActionManifest = {};
 	for (const [p, meta] of Object.entries(entries)) {
 		if (p === path || p.startsWith(pfx)) out[p] = meta;
@@ -165,22 +164,21 @@ type TreeNode = {
 };
 
 function printTree(entries: ActionManifest, prefix: string): void {
-	const pfx = prefix ? prefix + '.' : '';
+	const pfx = prefix ? `${prefix}.` : '';
 	const root: TreeNode = { name: '', children: new Map() };
 	for (const [path, action] of Object.entries(entries)) {
 		const rest = prefix ? path.slice(pfx.length) : path;
 		if (!rest) continue;
 		const parts = rest.split('.');
 		let node = root;
-		for (let i = 0; i < parts.length; i++) {
-			const seg = parts[i]!;
+		for (const [idx, seg] of parts.entries()) {
 			let child = node.children.get(seg);
 			if (!child) {
 				child = { name: seg, children: new Map() };
 				node.children.set(seg, child);
 			}
 			node = child;
-			if (i === parts.length - 1) node.action = action;
+			if (idx === parts.length - 1) node.action = action;
 		}
 	}
 	printChildren(root, '');

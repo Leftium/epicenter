@@ -83,6 +83,81 @@ The route key and Y.Doc guid often look related, but they should not be the same
 
 This separation is still useful when Fuji is only mounted once. It lets `openFuji()` delete `id?: string` entirely. The config owns the name, and the package owns the document.
 
+## Self-Named Host Alternative
+
+There is one coherent array-shaped alternative: make each hosted workspace carry an `id`, and make that `id` the same durable id as the underlying Y.Doc.
+
+```ts
+export type HostedWorkspace = {
+	id: string;
+	actions: Record<string, unknown>;
+	sync?: SyncAttachment;
+	presence?: PeerPresenceAttachment;
+	rpc?: SyncRpcAttachment;
+	[Symbol.dispose](): void;
+};
+
+export default defineEpicenterConfig([
+	openFuji({
+		projectDir,
+		getToken,
+		peer,
+	}),
+]);
+```
+
+Fuji would return:
+
+```ts
+const WORKSPACE_ID = 'epicenter.fuji';
+
+export function openFuji(options): HostedWorkspace {
+	const doc = openFujiDoc(options);
+
+	return {
+		id: WORKSPACE_ID,
+		actions: doc.actions,
+		sync,
+		presence,
+		rpc,
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
+	};
+}
+```
+
+Then the loader can use the host id directly:
+
+```ts
+const entries = await Promise.all(
+	config.hosts.map(async (hostInput) => {
+		const host = await hostInput;
+		return { name: host.id, workspace: host };
+	}),
+);
+```
+
+This works, but it changes the thesis. The route name is no longer a host-level address. It becomes the package's durable workspace id:
+
+```txt
+epicenter run epicenter.fuji.entries.create
+```
+
+If that is the product decision, the array shape is clean. The package owns its canonical id, config lists hosted packages, and there is one fewer naming surface.
+
+The cost is coupling. Renaming the CLI route now touches the same value used for sync and local storage. If the loader maps `epicenter.fuji` back down to `fuji`, then the single source of truth is gone again. The system has an implicit route transform instead of an explicit config key.
+
+This spec currently chooses the record shape because it treats the route as deployment naming:
+
+```ts
+export default defineEpicenterConfig({
+	fuji: openFuji({ projectDir, getToken, peer }),
+});
+```
+
+That choice is not mainly about mounting Fuji twice. It is about keeping local addresses separate from durable document identity.
+
 ## Design Decisions
 
 | Decision | Choice | Rationale |
@@ -335,3 +410,7 @@ export async function connectDaemonActions<TActions>(options: {
 3. **Should `defineEpicenterConfig()` accept a raw record without a wrapper?**
    - Options: require `defineEpicenterConfig({ ... })`, accept `export default { ... }`, or support both.
    - Recommendation: require the helper first. It gives the loader a reliable shape and gives TypeScript a place to validate host values.
+
+4. **Should routes come from config keys or hosted workspace ids?**
+   - Options: record keys name routes, or hosted workspaces carry `id` and config is an array.
+   - Recommendation: keep record keys unless the product explicitly wants CLI routes to equal durable document ids.

@@ -137,7 +137,7 @@ export type DaemonActions<T, D extends ReadonlyArray<1> = []> =
  */
 function buildDaemonActionProxy(
 	client: DaemonClient,
-	workspaceName: string,
+	workspaceExportName: string,
 ): unknown {
 	const make = (path: string[]): unknown => {
 		const target = (() => {}) as unknown as object;
@@ -151,7 +151,7 @@ function buildDaemonActionProxy(
 				const input = args.length === 0 ? undefined : args[0];
 				const options = args[1] as DaemonActionOptions | undefined;
 				return client.run({
-					actionPath: `${workspaceName}.${path.join('.')}`,
+					actionPath: `${workspaceExportName}.${path.join('.')}`,
 					input,
 					waitMs: options?.waitMs ?? DEFAULT_RUN_WAIT_MS,
 				});
@@ -168,7 +168,10 @@ function buildDaemonActionProxy(
  */
 export function buildDaemonActions<TWorkspace>(
 	client: DaemonClient,
-	workspaceName: string,
+	workspaceExportName: string,
 ): DaemonActions<TWorkspace> {
-	return buildDaemonActionProxy(client, workspaceName) as DaemonActions<TWorkspace>;
+	return buildDaemonActionProxy(
+		client,
+		workspaceExportName,
+	) as DaemonActions<TWorkspace>;
 }

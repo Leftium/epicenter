@@ -1,7 +1,7 @@
 /**
  * `connectDaemon`: front door for talking to actions hosted by a running
- * daemon. The single entry point shared by vault scripts and every CLI
- * command that dispatches a workspace action.
+ * daemon. This is the typed workspace-action handle for vault scripts and
+ * app-side automation that want to call a running daemon.
  *
  * Generic `TWorkspace` is the in-process workspace shape (typically
  * `ReturnType<typeof openFuji>`); the runtime returns a
@@ -38,11 +38,9 @@ import {
 /**
  * Connect to a workspace's public actions hosted by a running daemon.
  *
- * `id` is the workspace selector. Today the wire dispatches by the
- * human-facing `name` exported in `epicenter.config.ts` (per Phase 2's
- * pragmatic deviation); long-term this collapses to `ydoc.guid`. Either
- * way, the value is opaque to this function and threads through to the remote
- * daemon action proxy.
+ * `id` is the config export name from `epicenter.config.ts`. The daemon uses
+ * it as the first segment of every action path, then dispatches the remaining
+ * path against that workspace export.
  *
  * `projectDir` defaults to walking up from `process.cwd()` for an
  * `epicenter.config.ts` file or a `.epicenter/` directory.
@@ -53,7 +51,7 @@ import {
  * is the contract.
  */
 export async function connectDaemon<TWorkspace>({
-	id,
+	id: workspaceExportName,
 	projectDir = findEpicenterDir(),
 }: {
 	id: string;
@@ -67,5 +65,5 @@ export async function connectDaemon<TWorkspace>({
 }): Promise<DaemonActions<TWorkspace>> {
 	const { data: client, error } = await getDaemon(projectDir);
 	if (error) throw error;
-	return buildDaemonActions<TWorkspace>(client, id);
+	return buildDaemonActions<TWorkspace>(client, workspaceExportName);
 }

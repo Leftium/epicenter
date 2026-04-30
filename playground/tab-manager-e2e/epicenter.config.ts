@@ -23,13 +23,13 @@ import {
 	attachSessionUnlock,
 	createSessionStore,
 	epicenterPaths,
-} from '@epicenter/cli';
+} from '@epicenter/workspace/node';
 import {
 	tabManagerAwarenessDefs,
 	tabManagerTables,
 } from '@epicenter/tab-manager/workspace';
 import { attachEncryption, attachSync, toWsUrl } from '@epicenter/workspace';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineDaemon, defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
@@ -103,4 +103,13 @@ export const tabManager = {
 	markdown,
 };
 
-export default defineEpicenterConfig([tabManager]);
+export default defineEpicenterConfig({
+	hosts: [
+		defineDaemon({
+			route: tabManager.route,
+			title: 'Tab Manager',
+			workspaceId: WORKSPACE_ID,
+			open: () => tabManager,
+		}),
+	],
+});

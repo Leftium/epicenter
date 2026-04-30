@@ -6,7 +6,7 @@
  */
 
 import { defineMutation, defineQuery } from '@epicenter/workspace';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineDaemon, defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
@@ -47,4 +47,13 @@ export const demo = {
 	ydoc,
 };
 
-export default defineEpicenterConfig([demo]);
+export default defineEpicenterConfig({
+	hosts: [
+		defineDaemon({
+			route: demo.route,
+			title: 'Demo',
+			workspaceId: 'epicenter.demo',
+			open: () => demo,
+		}),
+	],
+});

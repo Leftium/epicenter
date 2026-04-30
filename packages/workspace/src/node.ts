@@ -6,12 +6,27 @@
  */
 
 export { connectDaemonActions } from './client/connect-daemon-actions.js';
+export {
+	attachSessionUnlock,
+	type SessionUnlockAttachment,
+} from './client/attach-session-unlock.js';
 export type {
 	DaemonActionOptions,
 	DaemonActions,
 } from './client/daemon-actions.js';
+export { epicenterPaths } from './client/epicenter-paths.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
 export { findEpicenterDir } from './client/find-epicenter-dir.js';
+export {
+	type AuthSession,
+	createSessionStore,
+	type SaveSessionData,
+	type SessionStore,
+} from './client/session-store.js';
+export {
+	createSessionTokenGetter,
+	type CreateSessionTokenGetterOptions,
+} from './client/session-token.js';
 export { buildApp, PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
 	type DaemonClient,
@@ -42,9 +57,12 @@ export {
 	type WorkspaceServerOptions,
 } from './daemon/server.js';
 export type {
+	DaemonHostDefinition,
+	DefineDaemonOptions,
+	DefineEpicenterConfigOptions,
+	EpicenterConfigContext,
 	EpicenterConfig,
 	HostedWorkspace,
-	HostedWorkspaceInput,
 	WorkspaceEntry,
 } from './daemon/types.js';
 export {

@@ -114,58 +114,88 @@ Scripts can distinguish these cases without parsing stderr:
 
 ## What your `epicenter.config.ts` must export
 
-An explicit daemon host config: default-export `defineEpicenterConfig([...])`
-with one hosted workspace per route. A host is a plain object with `route`,
-`actions`, `[Symbol.dispose]`, and optional `sync`, `presence`, and `rpc`
-attachments.
+An explicit daemon host config: default-export
+`defineEpicenterConfig({ hosts: [...] })` with one daemon definition per route.
+Definitions are cheap metadata plus a delayed `open()` function. The CLI loader
+injects the project context when it opens them, so configs do not need to call
+`findEpicenterDir(import.meta.dir)` or depend on the shell's current directory.
 
 ```ts
 // epicenter.config.ts
 import * as Y from 'yjs';
 import {
-    defineTable,
-    attachTables,
-    defineQuery,
-    defineMutation,
+	defineTable,
+	attachTables,
+	defineQuery,
+	defineMutation,
 } from '@epicenter/workspace';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import {
+	defineDaemon,
+	defineEpicenterConfig,
+} from '@epicenter/workspace/daemon';
 import Type from 'typebox';
 import { type } from 'arktype';
 
 const SavedTab = defineTable(type({ id: 'string', title: 'string', url: 'string', _v: '1' }));
 
 function openTabManager() {
-    const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager' });
-    const tables = attachTables(ydoc, { savedTabs: SavedTab });
+	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager' });
+	const tables = attachTables(ydoc, { savedTabs: SavedTab });
 
-    return {
-        route: 'tabManager',
-        ydoc,
-        tables,
+	return {
+		route: 'tabManager',
+		ydoc,
+		tables,
 
-        // Actions are grouped away from infrastructure.
-        // Only the operations you wrap with defineQuery/defineMutation
-        // show up in `epicenter list`.
-        actions: {
-            savedTabs: {
-                list: defineQuery({
-                    description: 'List all saved tabs',
-                    handler: () => tables.savedTabs.getAllValid(),
-                }),
-                delete: defineMutation({
-                    input: Type.Object({ id: Type.String() }),
-                    description: 'Delete a saved tab by id',
-                    handler: ({ id }) => tables.savedTabs.delete(id),
-                }),
-            },
-        },
+		// Actions are grouped away from infrastructure.
+		// Only the operations you wrap with defineQuery/defineMutation
+		// show up in `epicenter list`.
+		actions: {
+			savedTabs: {
+				list: defineQuery({
+					description: 'List all saved tabs',
+					handler: () => tables.savedTabs.getAllValid(),
+				}),
+				delete: defineMutation({
+					input: Type.Object({ id: Type.String() }),
+					description: 'Delete a saved tab by id',
+					handler: ({ id }) => tables.savedTabs.delete(id),
+				}),
+			},
+		},
 
-        [Symbol.dispose]() { ydoc.destroy(); },
-    };
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 }
 
-export default defineEpicenterConfig([openTabManager()]);
+export default defineEpicenterConfig({
+	hosts: [
+		defineDaemon({
+			route: 'tabManager',
+			title: 'Tab Manager',
+			workspaceId: 'epicenter.tab-manager',
+			open: () => openTabManager(),
+		}),
+	],
+});
 ```
+
+App packages can expose narrower helpers. A Fuji config can be this small:
+
+```ts
+import { defineFujiDaemon } from '@epicenter/fuji/daemon';
+import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+
+export default defineEpicenterConfig({
+	hosts: [defineFujiDaemon()],
+});
+```
+
+`defineFujiDaemon()` defaults auth through
+`createSessionTokenGetter()` from `@epicenter/workspace/node`. Override
+`getToken` only when the deployment needs a custom auth source.
 
 ## Exposing operations via CLI
 
@@ -209,15 +239,20 @@ every CLI dot-path. A config with a single route can use any name
 disambiguates them, so a readable name ages better than a one-letter one.
 
 There is no named-export scanning. Even a config with one workspace uses
-`defineEpicenterConfig([host])`. This keeps the host manifest explicit and
-keeps route defaults close to app daemon factories.
+`defineEpicenterConfig({ hosts: [host] })`. This keeps the host manifest
+explicit and keeps route defaults close to app daemon factories.
 
 ```ts
 // epicenter.config.ts
-export default defineEpicenterConfig([
-    openTabManager(),
-    openFuji(),
-]);
+export default defineEpicenterConfig({
+	hosts: [
+		defineDaemon({
+			route: 'tabManager',
+			open: () => openTabManager(),
+		}),
+		defineFujiDaemon(),
+	],
+});
 // epicenter run tabManager.tabs.list
 // epicenter run fuji.entries.list
 ```
@@ -262,11 +297,19 @@ for scripts for everything else.
 import {
     createCLI,              // binary entry (used by bin.ts)
     loadConfig,             // { entries: [{ route, workspace }], asyncDispose }
-    createSessionStore,     // device-code session persistence
     createAuthApi,          // typed Better Auth client
-    epicenterPaths,         // home, authSessions, persistence(id)
-    attachSessionUnlock,    // apply stored encryption keys to an EncryptionAttachment
 } from '@epicenter/cli';
+```
+
+Node-side workspace helpers live in `@epicenter/workspace/node`:
+
+```ts
+import {
+	attachSessionUnlock,
+	createSessionStore,
+	createSessionTokenGetter,
+	epicenterPaths,
+} from '@epicenter/workspace/node';
 ```
 
 ## Design docs

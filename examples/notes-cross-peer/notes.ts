@@ -1,4 +1,4 @@
-import { createSessionStore } from '@epicenter/cli';
+import { createSessionStore } from '@epicenter/workspace/node';
 import {
 	attachSync,
 	attachTables,

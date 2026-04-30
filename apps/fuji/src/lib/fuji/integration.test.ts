@@ -5,7 +5,7 @@ import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
-import { openFuji as openFujiDaemon } from './daemon.js';
+import { openFujiDaemon } from './daemon.js';
 import { openFuji as openFujiScript } from './script.js';
 
 let workdir: ProjectDir;

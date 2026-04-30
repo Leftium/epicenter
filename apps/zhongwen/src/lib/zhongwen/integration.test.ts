@@ -9,7 +9,7 @@ import {
 	type ConversationId,
 	generateConversationId,
 } from '../workspace/definition.js';
-import { openZhongwen as openZhongwenDaemon } from './daemon.js';
+import { openZhongwenDaemon } from './daemon.js';
 import { openZhongwen as openZhongwenScript } from './script.js';
 
 let workdir: ProjectDir;

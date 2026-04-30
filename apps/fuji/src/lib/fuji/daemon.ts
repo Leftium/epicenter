@@ -6,11 +6,15 @@ import {
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import type { HostedWorkspace } from '@epicenter/workspace/daemon';
+import {
+	defineDaemon,
+	type DaemonHostDefinition,
+	type HostedWorkspace,
+} from '@epicenter/workspace/daemon';
 import {
 	connectDaemonActions,
 	attachYjsLog,
-	findEpicenterDir,
+	createSessionTokenGetter,
 	hashClientId,
 	markdownPath,
 	sqlitePath,
@@ -25,12 +29,21 @@ import type { createFujiActions } from '../workspace.js';
 import { openFuji as openFujiDoc } from './index.js';
 
 export const FUJI_DAEMON_ROUTE = 'fuji';
+export const FUJI_WORKSPACE_ID = 'epicenter.fuji';
+
+export type DefineFujiDaemonOptions = {
+	route?: string;
+	getToken?: () => string | null | Promise<string | null>;
+	peer?: PeerDescriptor;
+	apiUrl?: string;
+	webSocketImpl?: WebSocketImpl;
+};
 
 export type OpenFujiDaemonOptions = {
+	projectDir: ProjectDir;
 	route?: string;
-	getToken: () => Promise<string | null>;
+	getToken: () => string | null | Promise<string | null>;
 	peer?: PeerDescriptor;
-	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
@@ -44,13 +57,37 @@ function defaultFujiDaemonPeer(): PeerDescriptor {
 	};
 }
 
-export function openFuji({
+export function defineFujiDaemon({
 	route = FUJI_DAEMON_ROUTE,
+	apiUrl = EPICENTER_API_URL,
+	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
+	peer = defaultFujiDaemonPeer(),
+	webSocketImpl,
+}: DefineFujiDaemonOptions = {}): DaemonHostDefinition {
+	return defineDaemon({
+		route,
+		title: 'Fuji',
+		description: 'Fuji daemon workspace',
+		workspaceId: FUJI_WORKSPACE_ID,
+		open: ({ projectDir }) =>
+			openFujiDaemon({
+				route,
+				projectDir,
+				getToken,
+				peer,
+				apiUrl,
+				webSocketImpl,
+			}),
+	});
+}
+
+export function openFujiDaemon({
+	route = FUJI_DAEMON_ROUTE,
+	projectDir,
+	apiUrl = EPICENTER_API_URL,
 	getToken,
 	peer = defaultFujiDaemonPeer(),
-	projectDir = findEpicenterDir(),
 	clientID = hashClientId(projectDir),
-	apiUrl = EPICENTER_API_URL,
 	webSocketImpl,
 }: OpenFujiDaemonOptions) {
 	const doc = openFujiDoc({ clientID });

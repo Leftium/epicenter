@@ -688,6 +688,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@ark/json-schema": "^0.0.4",
+        "@epicenter/constants": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@noble/ciphers": "^2.1.1",
         "@noble/hashes": "^2.0.1",

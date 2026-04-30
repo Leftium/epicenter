@@ -2,14 +2,20 @@
  * Workspace config loader.
  *
  * `epicenter.config.ts` is a daemon host manifest. The loader reads the
- * default `defineEpicenterConfig([...])` export, awaits each hosted workspace,
- * validates route keys, and returns the internal `WorkspaceEntry[]` used by the
- * daemon server.
+ * default `defineEpicenterConfig({ hosts })` export, validates host definitions,
+ * opens them with project context, and returns the internal `WorkspaceEntry[]`
+ * used by the daemon server.
  */
 
-import { join, resolve } from 'node:path';
-import type { PeerAwarenessState } from '@epicenter/workspace';
+import { dirname, join, resolve } from 'node:path';
+import type {
+	AbsolutePath,
+	PeerAwarenessState,
+	ProjectDir,
+} from '@epicenter/workspace';
 import {
+	type DaemonHostDefinition,
+	EPICENTER_DAEMON_HOST,
 	EPICENTER_CONFIG,
 	type HostedWorkspace,
 	type WorkspaceEntry,
@@ -63,14 +69,27 @@ export const LoadError = defineErrors({
 	InvalidConfig: ({ configPath }: { configPath: string }) => ({
 		message:
 			`Invalid ${CONFIG_FILENAME} in ${configPath}: ` +
-			`default export must be defineEpicenterConfig([...]).`,
+			`default export must be defineEpicenterConfig({ hosts: [...] }).`,
 		configPath,
 	}),
 	EmptyConfig: ({ configPath }: { configPath: string }) => ({
 		message:
 			`No daemon hosts found in ${configPath}.\n` +
-			`Default-export defineEpicenterConfig([...]) with at least one host.`,
+			`Default-export defineEpicenterConfig({ hosts: [...] }) with at least one host.`,
 		configPath,
+	}),
+	InvalidHostDefinition: ({
+		configPath,
+		index,
+	}: {
+		configPath: string;
+		index: number;
+	}) => ({
+		message:
+			`Invalid daemon host definition ${index} in ${configPath}: ` +
+			`expected route and open().`,
+		configPath,
+		index,
 	}),
 	HostFailed: ({
 		configPath,
@@ -100,6 +119,25 @@ export const LoadError = defineErrors({
 			`expected route, actions, and [Symbol.dispose].`,
 		configPath,
 		index,
+	}),
+	HostRouteMismatch: ({
+		configPath,
+		index,
+		expected,
+		actual,
+	}: {
+		configPath: string;
+		index: number;
+		expected: string;
+		actual: string;
+	}) => ({
+		message:
+			`Invalid daemon host ${index} in ${configPath}: ` +
+			`opened route "${actual}" does not match definition route "${expected}".`,
+		configPath,
+		index,
+		expected,
+		actual,
 	}),
 	InvalidRoute: ({
 		configPath,
@@ -141,6 +179,16 @@ function isEpicenterConfig(value: unknown): value is ImportedEpicenterConfig {
 	);
 }
 
+function isDaemonHostDefinition(value: unknown): value is DaemonHostDefinition {
+	if (value == null || typeof value !== 'object') return false;
+	const record = value as Record<PropertyKey, unknown>;
+	return (
+		record[EPICENTER_DAEMON_HOST] === true &&
+		typeof record.route === 'string' &&
+		typeof record.open === 'function'
+	);
+}
+
 function isHostedWorkspace(value: unknown): value is HostedWorkspace {
 	if (value == null || typeof value !== 'object') return false;
 	const record = value as Record<PropertyKey, unknown>;
@@ -166,17 +214,15 @@ async function disposeHosts(hosts: HostedWorkspace[]): Promise<void> {
 	await Promise.all(barriers);
 }
 
-async function disposeConfig(config: LoadConfigResult): Promise<void> {
-	await disposeHosts(config.entries.map((entry) => entry.workspace));
-}
-
 /**
  * Load daemon hosts from the explicit default daemon host manifest.
  */
 export async function loadConfig(
 	targetDir: string,
 ): Promise<Result<LoadConfigResult, LoadError>> {
-	const configPath = join(resolve(targetDir), CONFIG_FILENAME);
+	const projectDir = resolve(targetDir) as ProjectDir;
+	const configPath = join(projectDir, CONFIG_FILENAME);
+	const configDir = dirname(configPath) as AbsolutePath;
 
 	if (!(await Bun.file(configPath).exists())) {
 		return LoadError.MissingFile({ configPath });
@@ -193,13 +239,28 @@ export async function loadConfig(
 		return LoadError.InvalidConfig({ configPath });
 	if (config.hosts.length === 0) return LoadError.EmptyConfig({ configPath });
 
-	const hosts: HostedWorkspace[] = [];
+	const definitions: DaemonHostDefinition[] = [];
 	const routes = new Set<string>();
+	for (const [index, definition] of config.hosts.entries()) {
+		if (!isDaemonHostDefinition(definition)) {
+			return LoadError.InvalidHostDefinition({ configPath, index });
+		}
+		if (!isValidRoute(definition.route)) {
+			return LoadError.InvalidRoute({ configPath, route: definition.route });
+		}
+		if (routes.has(definition.route)) {
+			return LoadError.DuplicateRoute({ configPath, route: definition.route });
+		}
+		routes.add(definition.route);
+		definitions.push(definition);
+	}
 
-	for (const [index, input] of config.hosts.entries()) {
+	const hosts: HostedWorkspace[] = [];
+
+	for (const [index, definition] of definitions.entries()) {
 		let host: unknown;
 		try {
-			host = await input;
+			host = await definition.open({ projectDir, configDir });
 		} catch (cause) {
 			await disposeHosts(hosts);
 			return LoadError.HostFailed({ configPath, index, cause });
@@ -210,17 +271,16 @@ export async function loadConfig(
 			return LoadError.InvalidHost({ configPath, index });
 		}
 
-		if (!isValidRoute(host.route)) {
+		if (host.route !== definition.route) {
 			await disposeHosts([...hosts, host]);
-			return LoadError.InvalidRoute({ configPath, route: host.route });
+			return LoadError.HostRouteMismatch({
+				configPath,
+				index,
+				expected: definition.route,
+				actual: host.route,
+			});
 		}
 
-		if (routes.has(host.route)) {
-			await disposeHosts([...hosts, host]);
-			return LoadError.DuplicateRoute({ configPath, route: host.route });
-		}
-
-		routes.add(host.route);
 		hosts.push(host);
 	}
 
@@ -232,7 +292,7 @@ export async function loadConfig(
 	return Ok({
 		entries,
 		[Symbol.asyncDispose]() {
-			return disposeConfig(this);
+			return disposeHosts(this.entries.map((entry) => entry.workspace));
 		},
 	});
 }

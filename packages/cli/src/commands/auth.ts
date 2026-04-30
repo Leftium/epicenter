@@ -10,8 +10,8 @@
  * Self-hosters pass their own URL; everyone else omits it.
  */
 
+import { createSessionStore } from '@epicenter/workspace/node';
 import { createAuthApi } from '../auth/api';
-import { createSessionStore } from '../auth/session-store';
 import { cmd } from '../util/cmd.js';
 
 const DEFAULT_SERVER = 'https://api.epicenter.so';

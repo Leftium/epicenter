@@ -31,7 +31,7 @@ import {
 	attachSessionUnlock,
 	createSessionStore,
 	epicenterPaths,
-} from '@epicenter/cli';
+} from '@epicenter/workspace/node';
 import { createFileContentDoc } from '@epicenter/filesystem';
 import {
 	attachEncryption,
@@ -40,7 +40,7 @@ import {
 	defineMutation,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineDaemon, defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
@@ -196,4 +196,13 @@ export const opensidian = {
 	sqlite,
 };
 
-export default defineEpicenterConfig([opensidian]);
+export default defineEpicenterConfig({
+	hosts: [
+		defineDaemon({
+			route: opensidian.route,
+			title: 'Opensidian',
+			workspaceId: WORKSPACE_ID,
+			open: () => opensidian,
+		}),
+	],
+});

@@ -7,28 +7,80 @@ import {
 	type WebSocketImpl,
 } from '@epicenter/workspace';
 import {
+	type DaemonHostDefinition,
+	defineDaemon,
+	type HostedWorkspace,
+} from '@epicenter/workspace/daemon';
+import {
 	attachYjsLog,
-	findEpicenterDir,
+	createSessionTokenGetter,
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
 import { openZhongwen as openZhongwenDoc } from './index.js';
 
-export function openZhongwen({
-	getToken,
-	peer,
-	projectDir = findEpicenterDir(),
-	clientID = hashClientId(projectDir),
-	apiUrl = EPICENTER_API_URL,
-	webSocketImpl,
-}: {
-	getToken: () => Promise<string | null>;
-	peer: PeerDescriptor;
-	projectDir?: ProjectDir;
+export const ZHONGWEN_DAEMON_ROUTE = 'zhongwen';
+export const ZHONGWEN_WORKSPACE_ID = 'epicenter.zhongwen';
+
+export type DefineZhongwenDaemonOptions = {
+	route?: string;
+	getToken?: () => string | null | Promise<string | null>;
+	peer?: PeerDescriptor;
+	apiUrl?: string;
+	webSocketImpl?: WebSocketImpl;
+};
+
+export type OpenZhongwenDaemonOptions = {
+	projectDir: ProjectDir;
+	route?: string;
+	getToken: () => string | null | Promise<string | null>;
+	peer?: PeerDescriptor;
 	clientID?: number;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
-}) {
+};
+
+function defaultZhongwenDaemonPeer(): PeerDescriptor {
+	return {
+		id: 'zhongwen-daemon',
+		name: 'Zhongwen Daemon',
+		platform: 'node',
+	};
+}
+
+export function defineZhongwenDaemon({
+	route = ZHONGWEN_DAEMON_ROUTE,
+	apiUrl = EPICENTER_API_URL,
+	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
+	peer = defaultZhongwenDaemonPeer(),
+	webSocketImpl,
+}: DefineZhongwenDaemonOptions = {}): DaemonHostDefinition {
+	return defineDaemon({
+		route,
+		title: 'Zhongwen',
+		description: 'Zhongwen daemon workspace',
+		workspaceId: ZHONGWEN_WORKSPACE_ID,
+		open: ({ projectDir }) =>
+			openZhongwenDaemon({
+				route,
+				projectDir,
+				getToken,
+				peer,
+				apiUrl,
+				webSocketImpl,
+			}),
+	});
+}
+
+export function openZhongwenDaemon({
+	route = ZHONGWEN_DAEMON_ROUTE,
+	projectDir,
+	apiUrl = EPICENTER_API_URL,
+	getToken,
+	peer = defaultZhongwenDaemonPeer(),
+	clientID = hashClientId(projectDir),
+	webSocketImpl,
+}: OpenZhongwenDaemonOptions) {
 	const doc = openZhongwenDoc({ clientID });
 	const yjsLog = attachYjsLog(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
@@ -40,5 +92,12 @@ export function openZhongwen({
 	});
 	const presence = sync.attachPresence({ peer });
 
-	return { ...doc, yjsLog, sync, presence };
+	return {
+		...doc,
+		route,
+		yjsLog,
+		sync,
+		presence,
+		actions: {},
+	} satisfies HostedWorkspace;
 }

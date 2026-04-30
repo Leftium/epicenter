@@ -6,7 +6,7 @@ import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
-import { openOpensidian as openOpensidianDaemon } from './daemon.js';
+import { openOpensidianDaemon } from './daemon.js';
 import { openOpensidian as openOpensidianScript } from './script.js';
 
 let workdir: ProjectDir;

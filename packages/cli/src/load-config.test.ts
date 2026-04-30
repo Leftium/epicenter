@@ -28,15 +28,20 @@ function writeConfig(source: string) {
 describe('loadConfig', () => {
 	test('loads default defineEpicenterConfig hosts by route', async () => {
 		writeConfig(`
-			import { defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
 
-			export default defineEpicenterConfig([
-				{
-					route: 'demo',
-					actions: {},
-					[Symbol.dispose]() {}
-				}
-			]);
+			export default defineEpicenterConfig({
+				hosts: [
+					defineDaemon({
+						route: 'demo',
+						open: () => ({
+							route: 'demo',
+							actions: {},
+							[Symbol.dispose]() {}
+						})
+					})
+				]
+			});
 		`);
 
 		const result = await loadConfig(workDir);
@@ -46,37 +51,119 @@ describe('loadConfig', () => {
 		await result.data?.[Symbol.asyncDispose]();
 	});
 
-	test('awaits async host inputs', async () => {
+	test('passes project context into host definitions', async () => {
 		writeConfig(`
-			import { defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
 
-			export default defineEpicenterConfig([
-				Promise.resolve({
-					route: 'asyncHost',
-					actions: {},
-					[Symbol.dispose]() {}
-				})
-			]);
+			export default defineEpicenterConfig({
+				hosts: [
+					defineDaemon({
+						route: 'demo',
+						open: ({ projectDir, configDir }) => ({
+							route: 'demo',
+							actions: {
+								paths: {
+									projectDir: { handler: () => projectDir },
+									configDir: { handler: () => configDir }
+								}
+							},
+							[Symbol.dispose]() {}
+						})
+					})
+				]
+			});
 		`);
 
 		const result = await loadConfig(workDir);
 
 		expect(result.error).toBeNull();
-		expect(result.data?.entries[0]?.route).toBe('asyncHost');
+		const paths = result.data?.entries[0]?.workspace.actions.paths as
+			| {
+					projectDir: { handler(): string };
+					configDir: { handler(): string };
+			  }
+			| undefined;
+		expect(paths?.projectDir.handler()).toBe(workDir);
+		expect(paths?.configDir.handler()).toBe(workDir);
+		await result.data?.[Symbol.asyncDispose]();
+	});
+
+	test('rejects duplicate definition routes before opening hosts', async () => {
+		writeConfig(`
+			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+
+			globalThis.__loadConfigEvents = [];
+
+			export default defineEpicenterConfig({
+				hosts: [
+					defineDaemon({
+						route: 'demo',
+						open: () => {
+							globalThis.__loadConfigEvents.push('opened:first');
+							return { route: 'demo', actions: {}, [Symbol.dispose]() {} };
+						}
+					}),
+					defineDaemon({
+						route: 'demo',
+						open: () => {
+							globalThis.__loadConfigEvents.push('opened:second');
+							return { route: 'demo', actions: {}, [Symbol.dispose]() {} };
+						}
+					})
+				]
+			});
+		`);
+
+		const result = await loadConfig(workDir);
+
+		expect(result.data).toBeNull();
+		expect(result.error?.name).toBe('DuplicateRoute');
+		expect(
+			(globalThis as { __loadConfigEvents?: string[] }).__loadConfigEvents,
+		).toEqual([]);
+	});
+
+	test('awaits async host definitions', async () => {
+		writeConfig(`
+			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+
+			export default defineEpicenterConfig({
+				hosts: [
+					defineDaemon({
+						route: 'demo',
+						open: () => Promise.resolve({
+							route: 'demo',
+							actions: {},
+							[Symbol.dispose]() {}
+						})
+					})
+				]
+			});
+		`);
+
+		const result = await loadConfig(workDir);
+
+		expect(result.error).toBeNull();
+		expect(result.data?.entries[0]?.route).toBe('demo');
 		await result.data?.[Symbol.asyncDispose]();
 	});
 
 	test('rejects invalid route keys', async () => {
 		writeConfig(`
-			import { defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
 
-			export default defineEpicenterConfig([
-				{
-					route: 'bad.route',
-					actions: {},
-					[Symbol.dispose]() {}
-				}
-			]);
+			export default defineEpicenterConfig({
+				hosts: [
+					defineDaemon({
+						route: 'bad.route',
+						open: () => ({
+							route: 'bad.route',
+							actions: {},
+							[Symbol.dispose]() {}
+						})
+					})
+				]
+			});
 		`);
 
 		const result = await loadConfig(workDir);
@@ -87,12 +174,20 @@ describe('loadConfig', () => {
 
 	test('rejects duplicate routes', async () => {
 		writeConfig(`
-			import { defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
 
-			export default defineEpicenterConfig([
-				{ route: 'demo', actions: {}, [Symbol.dispose]() {} },
-				{ route: 'demo', actions: {}, [Symbol.dispose]() {} }
-			]);
+			export default defineEpicenterConfig({
+				hosts: [
+					defineDaemon({
+						route: 'demo',
+						open: () => ({ route: 'demo', actions: {}, [Symbol.dispose]() {} })
+					}),
+					defineDaemon({
+						route: 'demo',
+						open: () => ({ route: 'demo', actions: {}, [Symbol.dispose]() {} })
+					})
+				]
+			});
 		`);
 
 		const result = await loadConfig(workDir);
@@ -103,20 +198,28 @@ describe('loadConfig', () => {
 
 	test('cleans up resolved hosts when a later host rejects', async () => {
 		writeConfig(`
-			import { defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
 
 			globalThis.__loadConfigEvents = [];
 
-			export default defineEpicenterConfig([
-				{
-					route: 'first',
-					actions: {},
-					[Symbol.dispose]() {
-						globalThis.__loadConfigEvents.push('disposed:first');
-					}
-				},
-				Promise.reject(new Error('boom'))
-			]);
+			export default defineEpicenterConfig({
+				hosts: [
+					defineDaemon({
+						route: 'first',
+						open: () => ({
+							route: 'first',
+							actions: {},
+							[Symbol.dispose]() {
+								globalThis.__loadConfigEvents.push('disposed:first');
+							}
+						})
+					}),
+					defineDaemon({
+						route: 'second',
+						open: () => Promise.reject(new Error('boom'))
+					})
+				]
+			});
 		`);
 
 		const result = await loadConfig(workDir);

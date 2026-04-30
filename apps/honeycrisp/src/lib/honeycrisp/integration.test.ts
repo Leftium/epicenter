@@ -9,7 +9,7 @@ import {
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
 import { type NoteId } from '../workspace.js';
-import { openHoneycrisp as openHoneycrispDaemon } from './daemon.js';
+import { openHoneycrispDaemon } from './daemon.js';
 import { openHoneycrisp as openHoneycrispScript } from './script.js';
 
 let workdir: ProjectDir;

@@ -54,7 +54,7 @@ export function resolveWorkspaceActionTarget(
 	};
 }
 
-export function toWorkspaceActionPath(
+function toWorkspaceActionPath(
 	entry: WorkspaceEntry,
 	localPath: string,
 ): string {

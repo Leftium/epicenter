@@ -30,8 +30,10 @@
 import type { ProjectDir } from '../shared/types.js';
 import { getDaemon } from '../daemon/client.js';
 import { findEpicenterDir } from './find-epicenter-dir.js';
-import { buildDaemonActions } from './daemon-actions.js';
-import type { DaemonActions } from './daemon-action-types.js';
+import {
+	buildDaemonActions,
+	type DaemonActions,
+} from './daemon-actions.js';
 
 /**
  * Connect to a workspace's public actions hosted by a running daemon.

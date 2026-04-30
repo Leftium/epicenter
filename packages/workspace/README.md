@@ -1515,7 +1515,7 @@ These matter when you are writing low-level tooling against raw Yjs structures.
 The core package does not export an MCP server. What it does export is the metadata you need to build one:
 
 - actions with `type`, `title`, `description`, and `input`
-- `walkActions(...)` to flatten a nested action registry
+- `walkActions(...)` to flatten a nested action tree or workspace bundle
 - `isAction` / `isQuery` / `isMutation` type guards
 - `@epicenter/workspace/ai`: `actionsToAiTools(...)` for TanStack AI tool bindings
 

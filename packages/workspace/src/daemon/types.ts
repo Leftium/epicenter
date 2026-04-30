@@ -38,8 +38,6 @@ export type LoadedWorkspace = {
 	 * callers choose which peer surfaces they expose.
 	 */
 	readonly sync?: SyncAttachment;
-	/** Conventional action grouping. Not a reserved daemon root. */
-	readonly actions?: Record<string, unknown>;
 	readonly presence?: PeerPresenceAttachment;
 	readonly rpc?: SyncRpcAttachment;
 	readonly [key: string]: unknown;

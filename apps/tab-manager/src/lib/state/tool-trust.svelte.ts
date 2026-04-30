@@ -44,7 +44,7 @@ function createToolTrustState() {
 		 *
 		 * @example
 		 * ```typescript
-		 * if (toolTrustState.get('tabs_close') === 'always') {
+		 * if (toolTrustState.get('actions_tabs_close') === 'always') {
 		 *   client.approve(toolCallId);
 		 * }
 		 * ```
@@ -63,7 +63,7 @@ function createToolTrustState() {
 		 * @example
 		 * ```typescript
 		 * // User clicks "Always Allow" on the approval UI
-		 * toolTrustState.set('tabs_close', 'always');
+		 * toolTrustState.set('actions_tabs_close', 'always');
 		 * client.approve(toolCallId);
 		 * ```
 		 */

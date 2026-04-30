@@ -25,28 +25,27 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Err, Ok, type Result } from 'wellcrafted/result';
 import { createLogger, type Logger } from 'wellcrafted/logger';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
-	Awareness as YAwareness,
 	applyAwarenessUpdate,
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
+	Awareness as YAwareness,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
 import {
-	type Actions,
-	type RemoteCallOptions,
-	type SystemActions,
 	defineQuery,
 	describeActions,
 	invokeAction,
+	type RemoteCallOptions,
 	resolveActionPath,
+	type SystemActions,
 } from '../shared/actions.js';
 import {
-	type Awareness as TypedAwareness,
 	createAwareness,
+	type Awareness as TypedAwareness,
 } from './attach-awareness.js';
 import {
 	type DeviceDescriptor,
@@ -170,7 +169,7 @@ export type SyncAttachment = {
 	/**
 	 * Invoke an action on a remote peer in this room.
 	 *
-	 * Pass a type map (e.g. from workspace's `InferRpcMap`) for full type
+	 * Pass a type map (e.g. from workspace's `InferSyncRpcMap`) for full type
 	 * safety, or omit it for untyped calls.
 	 *
 	 * @param target - Awareness clientId of the target peer
@@ -216,14 +215,18 @@ export type SyncAttachment = {
  * `attachSqlite` results). Lets `waitFor` accept the attachment directly
  * rather than reaching into `.whenLoaded`.
  */
-export type WaitForBarrier = Promise<unknown> | { whenLoaded: Promise<unknown> };
+export type WaitForBarrier =
+	| Promise<unknown>
+	| { whenLoaded: Promise<unknown> };
 
 /**
  * First arg of `attachSync`. Either a bare `Y.Doc` (content docs) or a
- * doc bundle (workspace docs); when a bundle is passed and no `actions`
- * is set in config, sync uses `doc.actions` for inbound RPC dispatch.
+ * doc bundle (workspace docs). When a bundle is passed and no `actions`
+ * override is set in config, sync uses the bundle ITSELF as the action
+ * source: `walkActions` filters to action leaves at runtime, so actions
+ * can live anywhere in the tree, not under a reserved `actions:` key.
  */
-export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc; actions?: Actions };
+export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc };
 
 export type SyncAttachmentConfig = {
 	/**
@@ -277,11 +280,15 @@ export type SyncAttachmentConfig = {
 	 * it here. Userland helpers like `withAuthGate(actions, ...)` are the
 	 * right home for that, not a callback in this config.
 	 *
-	 * Defaults to the doc bundle's `.actions` (when first arg is a bundle).
-	 * When neither this nor `doc.actions` is set, inbound RPCs receive
-	 * `RpcError.ActionNotFound`. Outbound RPC works regardless.
+	 * Defaults to the doc bundle itself (when first arg is a bundle), so
+	 * actions hoisted to top-level keys (`tabs`, `devices`, …) are routed
+	 * without a reserved `actions:` namespace. `walkActions` filters to
+	 * action leaves at runtime, so non-action bundle keys (`ydoc`, `tables`,
+	 * `kv`, …) are skipped. When neither this nor a bundle is passed,
+	 * inbound RPCs receive `RpcError.ActionNotFound`. Outbound RPC works
+	 * regardless.
 	 */
-	actions?: Actions;
+	actions?: Record<string, unknown>;
 	/**
 	 * Token sourcing callback. When provided, the supervisor calls `getToken()`
 	 * before each connect attempt to fetch a fresh bearer token (sent over the
@@ -363,10 +370,12 @@ export function attachSync(
 	doc: AttachSyncDoc,
 	config: SyncAttachmentConfig,
 ): SyncAttachment {
-	// Resolve doc bundle vs bare ydoc.
+	// Resolve doc bundle vs bare ydoc. When a bundle is passed and no
+	// explicit `actions` override is set, the bundle ITSELF is the action
+	// source: `walkActions` filters to action leaves at runtime.
 	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
-	const docActions = doc instanceof Y.Doc ? undefined : doc.actions;
-	const userActions = config.actions ?? docActions;
+	const userActions =
+		config.actions ?? (doc instanceof Y.Doc ? undefined : doc);
 
 	if (userActions && 'system' in userActions) {
 		throw new Error(
@@ -395,7 +404,7 @@ export function attachSync(
 			handler: () => describeActions(userActions ?? {}),
 		}),
 	});
-	const actions: Actions = Object.freeze({
+	const actions = Object.freeze({
 		...(userActions ?? {}),
 		system: systemActions,
 	});
@@ -411,7 +420,8 @@ export function attachSync(
 	// when `awareness` is provided; absent otherwise. Only the internal path
 	// gets a typed wrapper (we know the schema there).
 	let awareness: YAwareness | null = null;
-	let typedAwareness: TypedAwareness<typeof standardAwarenessDefs> | null = null;
+	let typedAwareness: TypedAwareness<typeof standardAwarenessDefs> | null =
+		null;
 	if (config.device) {
 		awareness = new YAwareness(ydoc);
 		typedAwareness = createAwareness(awareness, standardAwarenessDefs);
@@ -470,7 +480,9 @@ export function attachSync(
 			whenConnected.catch(() => {});
 			const reason = s.reason;
 			settleConnected(() => {
-				rejectConnected(SyncFailedError.AuthRejected({ code: reason.code }).error);
+				rejectConnected(
+					SyncFailedError.AuthRejected({ code: reason.code }).error,
+				);
 			});
 			unsubFirstSettle();
 		}
@@ -688,7 +700,11 @@ export function attachSync(
 					type: 'auth',
 					error: new Error('No token available'),
 				};
-				status.set({ phase: 'connecting', retries: backoff.retries, lastError });
+				status.set({
+					phase: 'connecting',
+					retries: backoff.retries,
+					lastError,
+				});
 				await backoff.sleep(signal);
 				continue;
 			}
@@ -1023,8 +1039,7 @@ export function attachSync(
 			ensureSupervisor();
 		},
 		whenDisposed,
-		peers: () =>
-			typedAwareness ? typedAwareness.peers() : new Map(),
+		peers: () => (typedAwareness ? typedAwareness.peers() : new Map()),
 		find(deviceId) {
 			if (!typedAwareness) return undefined;
 			const all = typedAwareness.peers();
@@ -1267,11 +1282,10 @@ function childOf(parent: AbortSignal): AbortController {
 	if (parent.aborted) {
 		child.abort(parent.reason);
 	} else {
-		parent.addEventListener(
-			'abort',
-			() => child.abort(parent.reason),
-			{ once: true, signal: child.signal },
-		);
+		parent.addEventListener('abort', () => child.abort(parent.reason), {
+			once: true,
+			signal: child.signal,
+		});
 	}
 	return child;
 }

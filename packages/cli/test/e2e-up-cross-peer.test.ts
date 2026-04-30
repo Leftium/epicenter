@@ -39,7 +39,7 @@
  *        (`specs/20260427T000000-execute-cli-up-long-lived-peer.md`
  *        § "Wave 8 isn't a commit"). The lifecycle tests below stand in for
  *        that coverage, exercising every CLI verb against a fixture whose
- *        workspace has `whenReady: Promise.resolve()` and no `sync`.
+ *        workspace has no `sync` attachment and no `whenReady` barrier.
  *   [❌] DeviceId in the banner reflects the real device.
  *        Infra gap: `up.ts § pickDeviceId` returns `'<unknown>'` because
  *        `LoadedWorkspace.sync` doesn't expose self awareness post-connect.

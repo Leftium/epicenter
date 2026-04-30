@@ -7,8 +7,14 @@
  *   (called at exit; the discriminator). If it also has:
  *
  *     whenReady: Promise         awaited before action invocations
- *     actions:   Actions          exposed to `run` and `list`
- *     sync:      SyncAttachment   enables --peer + `peers`
+ *     sync:      SyncAttachment  enables --peer + `peers`
+ *
+ *   Actions are read from the bundle ITSELF: no reserved key. `walkActions`
+ *   filters to action leaves at runtime via `isAction`, so non-action keys
+ *   (`ydoc`, `tables`, etc.) are skipped. Apps often group their actions
+ *   under an `actions:` key for visual separation from infrastructure, in
+ *   which case dot-paths look like `actions.tabs.close`. Actions hoisted to
+ *   the top level produce shorter paths (`tabs.close`); either is valid.
  *
  *   …the CLI uses them. Anything else is the factory's business.
  *
@@ -36,7 +42,6 @@
  */
 
 import type {
-	Actions,
 	PeerAwarenessState,
 	SyncAttachment,
 } from '@epicenter/workspace';
@@ -54,6 +59,13 @@ export const CONFIG_FILENAME = 'epicenter.config.ts';
  * Fields the CLI looks at on each workspace export. Only `[Symbol.dispose]`
  * is required (it's the discriminator); everything else is read when
  * present. Extra fields the factory returns are ignored.
+ *
+ * The CLI walks the workspace bundle itself via `walkActions(workspace)`,
+ * which filters to action leaves at runtime (skipping `ydoc`, `tables`,
+ * class instances, and other infrastructure). Apps often group their
+ * actions under `actions:` for separation from infrastructure, so
+ * dot-paths look like `actions.tabs.close`; hoisting actions to the top
+ * level instead is also supported and produces shorter paths.
  */
 export type LoadedWorkspace = {
 	/**
@@ -64,9 +76,6 @@ export type LoadedWorkspace = {
 
 	/** Awaited before any action invocation, if present. */
 	readonly whenReady?: Promise<unknown>;
-
-	/** Exposes runnable actions to `epicenter run` / `epicenter list`. */
-	readonly actions?: Actions;
 
 	/**
 	 * Enables `--peer` targeting and `epicenter peers`. `attachSync(doc, { device })`

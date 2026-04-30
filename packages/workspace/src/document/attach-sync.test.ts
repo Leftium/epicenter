@@ -888,13 +888,11 @@ describe('attachSync presence', () => {
 			},
 		};
 
-		const sync = attachSync(
-			{ ydoc, actions },
-			{
-				url: `ws://x/${ydoc.guid}`,
-				device: { id: 'mac-1', name: 'MacBook', platform: 'web' },
-			},
-		);
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			device: { id: 'mac-1', name: 'MacBook', platform: 'web' },
+			actions,
+		});
 
 		const localState = sync.raw.awareness?.getLocalState() as {
 			device: Record<string, unknown>;

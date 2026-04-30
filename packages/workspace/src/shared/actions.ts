@@ -24,9 +24,11 @@
  *
  * Transport boundaries (RPC server-side, CLI dispatch, AI bridge) normalize
  * any handler return into `Promise<Result<T, RpcError>>` via
- * `invokeAction`. The wire client (`RemoteActions`) re-types each leaf
- * to that uniform shape. Local UI code that wants `Result` either calls
- * `tryAsync` or defines the handler to return `Result` explicitly.
+ * `invokeAction`. The wire client (`RemoteActions`) types each leaf to the
+ * remote transport shape: success data is preserved, custom non-RPC errors
+ * arrive as `RpcError.ActionFailed`. Local UI code that wants the original
+ * typed error either calls the action directly or defines an in-process
+ * wrapper around it.
  *
  * @module
  */
@@ -34,7 +36,7 @@
 import { RpcError } from '@epicenter/sync';
 import type { Static, TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
-import { Ok, isResult } from 'wellcrafted/result';
+import { isResult, Ok } from 'wellcrafted/result';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ACTION DEFINITION TYPES
@@ -44,21 +46,19 @@ import { Ok, isResult } from 'wellcrafted/result';
  * The handler function type, conditional on whether input is provided.
  *
  * Uses variadic tuple args instead of conditional function signatures so that
- * when the type flows through `Action` (via the `Actions` constraint), `any`
- * distributes over both branches giving `[input: any] | []` — which correctly
- * allows calling with 0 arguments for no-input actions.
+ * `any` distributes over both branches giving `[input: any] | []`, which
+ * correctly allows calling with 0 arguments for no-input actions when the type
+ * flows through `Action` with wildcard parameters.
  *
  * Parameterized on `R` (the handler's actual return type) rather than splitting
- * `TOutput`/`TError` — keeps the action's callable signature exactly equal to
+ * `TOutput`/`TError`: keeps the action's callable signature exactly equal to
  * the handler's, so passthrough preserves precision (no widening to a
  * `T | Result<T, E> | Promise<...>` union).
  */
 type ActionHandler<
 	TInput extends TSchema | undefined = TSchema | undefined,
 	R = unknown,
-> = (
-	...args: TInput extends TSchema ? [input: Static<TInput>] : []
-) => R;
+> = (...args: TInput extends TSchema ? [input: Static<TInput>] : []) => R;
 
 /**
  * Configuration for defining an action (query or mutation).
@@ -78,7 +78,9 @@ type ActionConfig<TInput extends TSchema | undefined, R> = {
  * Action discovery returns this shape directly — there is no separate
  * wire form.
  */
-export type ActionMeta<TInput extends TSchema | undefined = TSchema | undefined> = {
+export type ActionMeta<
+	TInput extends TSchema | undefined = TSchema | undefined,
+> = {
 	type: 'query' | 'mutation';
 	/** Short, human-readable display name for UI surfaces (e.g. 'Close Tabs'). Falls back to path-derived name if omitted. */
 	title?: string;
@@ -99,7 +101,7 @@ export type ActionManifest = Record<string, ActionMeta>;
  * Queries are callable functions with metadata properties attached. They are
  * idempotent operations that read data without side effects. Local callable
  * shape IS the handler's signature (sync stays sync, raw stays raw); remote/
- * AI/CLI consumers see uniform `Promise<Result<T, E | RpcError>>` via the
+ * AI/CLI consumers see uniform `Promise<Result<T, RpcError>>` via the
  * boundary normalizers.
  */
 export type Query<
@@ -112,7 +114,7 @@ export type Query<
  *
  * Mutations are callable functions with metadata properties attached. Local
  * callable shape IS the handler's signature; remote/AI/CLI consumers see
- * uniform `Promise<Result<T, E | RpcError>>` via the boundary normalizers.
+ * uniform `Promise<Result<T, RpcError>>` via the boundary normalizers.
  */
 export type Mutation<
 	TInput extends TSchema | undefined = TSchema | undefined,
@@ -128,11 +130,20 @@ export type Action<
 > = Query<TInput, R> | Mutation<TInput, R>;
 
 /**
- * A tree of action definitions, supporting arbitrary nesting.
+ * Shape suggestion for a "pure action tree" authoring style: nested objects
+ * whose leaves are all `Action` definitions, no infrastructure mixed in.
  *
- * Uses `any` for the action's input/output/error positions in the constraint
- * so that specific `Query<I, T, E>` / `Mutation<I, T, E>` instances assign
- * cleanly through the variadic-args distribution trick.
+ * Not load-bearing on any public signature anymore. `peer<T>`,
+ * `RemoteActions<T>`, `actionsToAiTools<T>`, and `InferRpcMap<T>` accept any
+ * source object; `walkActions` filters action leaves at runtime via
+ * `isAction`, so action definitions can sit alongside `ydoc`, `tables`, and
+ * other bundle infrastructure. Use this type if you genuinely want to
+ * annotate a return as "tree of actions only"; otherwise let the bundle's
+ * inferred type do the talking.
+ *
+ * Uses `any` for the action's input/output positions so specific
+ * `Query<I, T>` / `Mutation<I, T>` instances assign cleanly through the
+ * variadic-args distribution trick.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Actions = {
@@ -229,18 +240,48 @@ export function isMutation(value: unknown): value is Mutation {
 }
 
 /**
- * Resolve a dotted path against an action tree, returning the leaf
- * `Action` if the path lands on one. Returns `undefined` for missing
- * paths or paths that resolve to a namespace.
+ * `true` iff `v` is a plain object literal (constructor is `Object` or
+ * prototype is `null`). Bounds {@link walkActions} so it doesn't recurse
+ * into class instances like `Y.Doc`, arktype `Type`, or `SvelteMap`:
+ * those carry methods on their prototype and have no business being
+ * walked. Lets callers safely pass a full workspace bundle.
+ */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+	if (typeof v !== 'object' || v === null) return false;
+	const proto = Object.getPrototypeOf(v);
+	return proto === null || proto === Object.prototype;
+}
+
+function isValidActionKey(key: string) {
+	return key !== '' && !key.includes('.');
+}
+
+function assertValidActionKey(key: string, path: string) {
+	if (key === '') throw new Error(`Action keys cannot be empty at "${path}"`);
+	if (key.includes('.')) {
+		throw new Error(`Action keys cannot contain "." at "${path}"`);
+	}
+}
+
+/**
+ * Resolve a dotted path against an action tree (or any string-keyed object),
+ * returning the leaf `Action` if the path lands on one. Returns `undefined`
+ * for missing paths or paths that resolve to a namespace.
+ *
+ * Typed `Record<string, unknown>` so callers can pass a full workspace
+ * bundle: actions may live anywhere in the tree, not only under a
+ * dedicated `actions:` namespace.
  */
 export function resolveActionPath(
-	actions: Actions,
+	actions: Record<string, unknown>,
 	path: string,
 ): Action | undefined {
 	const segments = path.split('.');
 	let target: unknown = actions;
 	for (const segment of segments) {
-		if (target == null || typeof target !== 'object') return undefined;
+		if (!isValidActionKey(segment)) return undefined;
+		if (!isPlainObject(target)) return undefined;
+		if (!Object.hasOwn(target, segment)) return undefined;
 		target = (target as Record<string, unknown>)[segment];
 	}
 	return isAction(target) ? target : undefined;
@@ -252,38 +293,51 @@ export function resolveActionPath(
  * Yields live callables — invoke them, inspect them, or strip to metadata
  * via {@link describeActions}.
  *
+ * Recursion only descends into plain object literals. Class instances
+ * (`Y.Doc`, arktype `Type`, etc.) and functions short-circuit, so passing
+ * a full workspace bundle as the root is safe and bounded: actions can
+ * live anywhere in the tree.
+ *
  * Pair with `Object.fromEntries`, `Array.from`, or a `for…of` loop:
  * ```ts
- * for (const [path, action] of walkActions(workspace.actions)) {
+ * for (const [path, action] of walkActions(workspace)) {
  *   if (action.type === 'mutation') console.log(path);
  * }
  * ```
  */
 export function* walkActions(
-	actions: Actions,
+	actions: Record<string, unknown>,
 	prefix = '',
 ): Generator<[string, Action]> {
 	for (const [key, value] of Object.entries(actions)) {
 		const path = prefix ? `${prefix}.${key}` : key;
-		if (isAction(value)) yield [path, value];
-		else if (value != null && typeof value === 'object') {
-			yield* walkActions(value as Actions, path);
+		if (isAction(value)) {
+			assertValidActionKey(key, path);
+			yield [path, value];
+		} else if (isPlainObject(value)) {
+			assertValidActionKey(key, path);
+			yield* walkActions(value, path);
 		}
 	}
 }
 
 /**
- * Walk an `Actions` tree into its flat `ActionManifest` — the wire form
- * returned by `system.describe`. Live `input` schemas are retained;
- * functions are dropped. Pairs with `describePeer(sync, id)`, which
- * returns the same shape from a remote peer.
+ * Walk a tree into its flat `ActionManifest`: the wire form returned by
+ * `system.describe`. Live `input` schemas are retained; functions are
+ * dropped. Pairs with `describePeer(sync, id)`, which returns the same
+ * shape from a remote peer.
  *
  * Built atop {@link walkActions}. Use that primitive directly if you want
  * to iterate live callables instead of metadata.
  */
-export function describeActions(actions: Actions): ActionManifest {
+export function describeActions(
+	actions: Record<string, unknown>,
+): ActionManifest {
 	return Object.fromEntries(
-		Array.from(walkActions(actions), ([path, action]) => [path, toMeta(action)]),
+		Array.from(walkActions(actions), ([path, action]) => [
+			path,
+			toMeta(action),
+		]),
 	);
 }
 
@@ -312,7 +366,7 @@ function toMeta({ type, input, title, description }: Action): ActionMeta {
  * @example
  * ```ts
  * const result = await invokeAction<{ closedCount: number }>(
- *   workspace.actions.tabs.close,
+ *   workspace.tabs.close,
  *   { tabIds: [1, 2] },
  *   'tabs.close',
  * );
@@ -381,34 +435,61 @@ type WithOptions<Args extends readonly unknown[]> = Args extends []
  * Compute the wrapped shape of a single action callable for remote/normalized
  * consumption. Four flat branches:
  *
- * - `(...) => Promise<Result<T, E>>` → `(...) => Promise<Result<T, E | RpcError>>`
- * - `(...) => Promise<R>`            → `(...) => Promise<Result<R, RpcError>>`
- * - `(...) => Result<T, E>`          → `(...) => Promise<Result<T, E | RpcError>>`
- * - `(...) => R`                     → `(...) => Promise<Result<R, RpcError>>`
+ * - `(...) => Promise<Result<T, E>>` -> `(...) => Promise<Result<T, RpcError>>`
+ * - `(...) => Promise<R>`            -> `(...) => Promise<Result<R, RpcError>>`
+ * - `(...) => Result<T, E>`          -> `(...) => Promise<Result<T, RpcError>>`
+ * - `(...) => R`                     -> `(...) => Promise<Result<R, RpcError>>`
  *
- * The data type is unchanged; the error union widens by `RpcError` (to cover
- * transport failures: `ActionFailed`, `Disconnected`, etc.). Every wrapped
- * leaf accepts a trailing `RemoteCallOptions` for per-call overrides.
+ * The success data type is unchanged. Custom non-RPC `Err(E)` values cross
+ * the wire as `RpcError.ActionFailed` with the original error under `cause`,
+ * so the remote type exposes only `RpcError`. Every wrapped leaf accepts a
+ * trailing `RemoteCallOptions` for per-call overrides.
  */
 export type WrapAction<F> = F extends (...args: infer Args) => infer R
-	? R extends Promise<infer Inner>
-		? Inner extends Result<infer T, infer E>
-			? (...args: WithOptions<Args>) => Promise<Result<T, E | RpcError>>
-			: (...args: WithOptions<Args>) => Promise<Result<Inner, RpcError>>
-		: R extends Result<infer T, infer E>
-			? (...args: WithOptions<Args>) => Promise<Result<T, E | RpcError>>
-			: (...args: WithOptions<Args>) => Promise<Result<R, RpcError>>
+	? (
+			...args: WithOptions<Args>
+		) => Promise<Result<RemoteSuccessOutput<R>, RpcError>>
 	: never;
 
+type RemoteSuccessOutput<TOutput> =
+	Awaited<TOutput> extends Result<infer TData, unknown>
+		? TData
+		: Awaited<TOutput>;
+
 /**
- * Mirror an action tree's shape for remote invocation. Each leaf is wrapped
- * via {@link WrapAction} so callers see uniform `Promise<Result<T, E | RpcError>>`
- * regardless of the underlying handler's shape.
+ * Filter any object `T` down to its action-shaped leaves and wrap each leaf
+ * via {@link WrapAction} so callers see uniform `Promise<Result<T, RpcError>>`.
+ *
+ * Pass a pure action tree OR a full workspace bundle: non-action keys
+ * (`ydoc`, `tables`, class instances, plain functions) are removed at the
+ * type level via key-remapping. Subtrees that contain zero actions are
+ * also pruned, so consumers only see paths that lead somewhere callable.
+ *
+ * Bracketed `[T[K]] extends [Action]` form is intentional: prevents
+ * unwanted distribution if a key's type is a union (e.g., `Foo | undefined`).
  */
-export type RemoteActions<A extends Actions> = {
-	[K in keyof A]: A[K] extends Action
-		? WrapAction<A[K]>
-		: A[K] extends Actions
-			? RemoteActions<A[K]>
-			: never;
+export type RemoteActions<T> = {
+	[K in keyof T & string as ActionPathKey<K> extends never
+		? never
+		: [T[K]] extends [Action]
+			? K
+			: T[K] extends readonly unknown[]
+				? never
+				: T[K] extends Record<string, unknown>
+					? keyof RemoteActions<T[K]> extends never
+						? never
+						: K
+					: never]: [T[K]] extends [Action]
+		? WrapAction<T[K]>
+		: T[K] extends readonly unknown[]
+			? never
+			: T[K] extends Record<string, unknown>
+				? RemoteActions<T[K]>
+				: never;
 };
+
+type ActionPathKey<TKey extends string> = TKey extends ''
+	? never
+	: TKey extends `${string}.${string}`
+		? never
+		: TKey;

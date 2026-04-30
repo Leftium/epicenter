@@ -111,7 +111,6 @@ describe('arbitrary fields flow through the handle', () => {
 			return {
 				ydoc,
 				body: { kind: 'rich-text' as const },
-				whenReady: Promise.resolve(),
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},

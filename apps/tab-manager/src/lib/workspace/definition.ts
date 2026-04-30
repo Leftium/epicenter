@@ -262,7 +262,7 @@ export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
  * Tools not in this table default to 'ask' (show approval UI). Users can
  * escalate to 'always' (auto-approve) via the inline approval buttons.
  *
- * The `id` is the tool name (e.g. 'tabs_close') — the same string used
+ * The `id` is the tool name (e.g. 'actions_tabs_close') - the same string used
  * in action paths and tool definitions.
  */
 const toolTrustTable = defineTable(
@@ -291,4 +291,3 @@ export const tabManagerTables = {
 	chatMessages: chatMessagesTable,
 	toolTrust: toolTrustTable,
 };
-

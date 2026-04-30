@@ -8,7 +8,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
                  ┌──────────┬───────────────────────────────────┐
                  │   Verb   │          Workspace primitive      │
                  ├──────────┼───────────────────────────────────┤
-   Enumerate     │  list    │  describeActions(workspace.actions)
+   Enumerate     │  list    │  describeActions(workspace)
    Invoke        │  run     │  invokeAction(...)  /  sync.rpc(...)
    Presence      │  peers   │  workspace.sync.peers()
                  │  peers <id>  + describePeer(sync, id)
@@ -56,15 +56,15 @@ epicenter up &
 
 # list — what actions are exposed on this device
 epicenter list                                      # full tree
-epicenter list tabManager.savedTabs                 # subtree
-epicenter list tabManager.savedTabs.create          # action detail with JSON input shape
+epicenter list tabManager.actions.savedTabs         # subtree
+epicenter list tabManager.actions.savedTabs.create  # action detail with JSON input shape
 
 # run — do one (locally, or on a remote peer with --peer)
-epicenter run tabManager.savedTabs.list
-epicenter run tabManager.savedTabs.create '{"title":"Hi","url":"https://..."}'
-epicenter run tabManager.savedTabs.create @payload.json
-cat payload.json | epicenter run tabManager.savedTabs.create
-epicenter run tabManager.savedTabs.list --peer 0xabc
+epicenter run tabManager.actions.savedTabs.list
+epicenter run tabManager.actions.savedTabs.create '{"title":"Hi","url":"https://..."}'
+epicenter run tabManager.actions.savedTabs.create @payload.json
+cat payload.json | epicenter run tabManager.actions.savedTabs.create
+epicenter run tabManager.actions.savedTabs.list --peer 0xabc
 
 # peers — who's online right now (presence snapshot)
 epicenter peers
@@ -72,7 +72,7 @@ epicenter peers -w tabManager
 epicenter peers 0xabc                               # presence + that peer's action tree
 ```
 
-`run` resolves the first path segment against the named exports of `epicenter.config.ts`; everything after walks into the underlying document handle until it hits a branded `defineQuery` / `defineMutation` node.
+`run` resolves the first path segment against the named exports of `epicenter.config.ts`; everything after walks into the underlying document handle until it hits a `defineQuery` / `defineMutation` action.
 
 ### Local vs. remote
 
@@ -137,19 +137,21 @@ function openTabManager() {
         ydoc,
         tables,
 
-        // Actions live beside the data they operate on.
+        // Actions are grouped away from infrastructure.
         // Only the operations you wrap with defineQuery/defineMutation
         // show up in `epicenter list`.
-        savedTabs: {
-            list: defineQuery({
-                description: 'List all saved tabs',
-                handler: () => tables.savedTabs.getAllValid(),
-            }),
-            delete: defineMutation({
-                input: Type.Object({ id: Type.String() }),
-                description: 'Delete a saved tab by id',
-                handler: ({ id }) => tables.savedTabs.delete(id),
-            }),
+        actions: {
+            savedTabs: {
+                list: defineQuery({
+                    description: 'List all saved tabs',
+                    handler: () => tables.savedTabs.getAllValid(),
+                }),
+                delete: defineMutation({
+                    input: Type.Object({ id: Type.String() }),
+                    description: 'Delete a saved tab by id',
+                    handler: ({ id }) => tables.savedTabs.delete(id),
+                }),
+            },
         },
 
         [Symbol.dispose]() { ydoc.destroy(); },
@@ -166,49 +168,51 @@ There is no auto-expose for `attachTable` / `attachKv` methods. If you want an o
 
 This is deliberate. Auto-exposing CRUD would put methods nobody asked for in your CLI tree, and the curated set would either be too narrow for some apps or too wide for others. Explicit wrapping keeps the CLI surface intentional and small.
 
-The convention is to group related actions into a nested object named after the domain they operate on:
+The common convention is to group actions under `actions:` first, then nest by the domain they operate on:
 
 ```ts
 return {
     ydoc,
     tables,
 
-    savedTabs: {                                       // domain
-        list: defineQuery({ ... }),                    // action
-        delete: defineMutation({ ... }),
-    },
-    bookmarks: {
-        list: defineQuery({ ... }),
-    },
+    actions: {
+        savedTabs: {                                   // domain
+            list: defineQuery({ ... }),                // action
+            delete: defineMutation({ ... }),
+        },
+        bookmarks: {
+            list: defineQuery({ ... }),
+        },
 
-    // Cross-cutting actions live at the top
-    importBackup: defineMutation({ ... }),
+        // Cross-cutting actions can sit beside domain groups
+        importBackup: defineMutation({ ... }),
+    },
 
     [Symbol.dispose]() { ydoc.destroy(); },
 };
 ```
 
-CLI paths: `tabManager.savedTabs.list`, `tabManager.bookmarks.list`, `tabManager.importBackup`.
+CLI paths: `tabManager.actions.savedTabs.list`, `tabManager.actions.bookmarks.list`, `tabManager.actions.importBackup`.
 
-The framework doesn't mandate this shape — `iterateActions` walks the whole bundle and finds anything branded, no matter where it sits. Two other placements work if you prefer them:
+The framework does not mandate this shape. `walkActions` walks the whole bundle and finds any action leaf, no matter where it sits. Two other placements work if you prefer them:
 
-- A dedicated `actions:` slot — adds one path segment (`tabManager.actions.savedTabs.list`) in exchange for visual separation between data and operations.
-- Flat at the top — shortest path (`tabManager.listSavedTabs`) but action names have to encode the domain, and the top level becomes a grab-bag.
+- Domain groups at the top: shorter paths (`tabManager.savedTabs.list`) with actions beside infrastructure.
+- Flat at the top: shortest paths (`tabManager.listSavedTabs`) but action names have to encode the domain, and the top level becomes a grab-bag.
 
-Domain-nested is the recommended convention because it reads naturally and co-locates each action with the data it uses.
+The `actions:` grouping is common in apps because autocomplete stays clean: `ydoc`, `tables`, `kv`, and `sync` remain separate from user-callable operations.
 
 ## Naming your exports
 
 Every workspace handle is a **named export**. The export name becomes the first segment of every CLI dot-path. A config with a single workspace can use any name — `tabManager`, `tm`, `w` — but once you add a second workspace, the prefix disambiguates them, so a readable name ages better than a one-letter one.
 
-There is no default-export shorthand. Even a config with one workspace uses a named export. This keeps paths stable when you later add a second workspace: `tabManager.savedTabs.list` on day 1 is still `tabManager.savedTabs.list` on day 180 after you add a second workspace. A default-export shortcut would silently invalidate every script, doc, and CI job using the old path the moment you grew past one workspace.
+There is no default-export shorthand. Even a config with one workspace uses a named export. This keeps paths stable when you later add a second workspace: `tabManager.actions.savedTabs.list` on day 1 is still `tabManager.actions.savedTabs.list` on day 180 after you add a second workspace. A default-export shortcut would silently invalidate every script, doc, and CI job using the old path the moment you grew past one workspace.
 
 ```ts
 // epicenter.config.ts
 export const tabManager = openTabManager();
 export const fuji       = openFuji();
-// epicenter run tabManager.savedTabs.list
-// epicenter run fuji.entries.list
+// epicenter run tabManager.actions.savedTabs.list
+// epicenter run fuji.actions.entries.list
 ```
 
 The Y.Doc GUID (set inside `openX()` via `new Y.Doc({ guid: ... })`) and the export name serve **different purposes**:

@@ -13,7 +13,7 @@
  *
  * The schemas reflect the "CLI shortcut == one workspace primitive" model:
  *
- *   /list   ->  describeActions(workspace.actions)             local only
+ *   /list   ->  describeActions(workspace)                     local only
  *   /peers  ->  workspace.sync.peers()
  *   /run    ->  invokeAction (local) or sync.rpc (remote, via peerTarget)
  */

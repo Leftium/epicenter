@@ -2,7 +2,7 @@
  * `epicenter list [dot.path]`: render the actions exposed by this workspace.
  *
  * Conceptually this is a one-line shell shortcut for
- * `describeActions(workspace.actions)` against the daemon's live workspace.
+ * `describeActions(workspace)` against the daemon's live workspace.
  * Nothing more. The CLI is the shell-friendly surface for one-shot queries;
  * orchestration (fan-out across peers, conditional dispatch, loops) belongs
  * in vault-style TypeScript scripts that load the workspace library

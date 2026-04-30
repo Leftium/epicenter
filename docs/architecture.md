@@ -21,7 +21,7 @@ The dependency shape runs bottom to top. Apps depend on middleware; middleware d
 │ @epicenter/svelte      (packages/svelte-utils)                               │
 │ @epicenter/filesystem                                                        │
 │ @epicenter/skills                                                            │
-│ @epicenter/ai                                                                │
+│ @epicenter/workspace/ai                                                      │
 └──────────────────────────────────────────────────────────────────────────────┘
                                       │
                                       ▼
@@ -35,7 +35,7 @@ The dependency shape runs bottom to top. Apps depend on middleware; middleware d
 `@epicenter/sync` is the wire format, not the app model. It exports protocol primitives like `encodeSyncStep1`, `encodeSyncUpdate`, `decodeSyncMessage`, and shared RPC error types so server and client can speak the same binary language without duplicating protocol logic.
 `@epicenter/constants` is the routing glue. It gives apps one source of truth for URLs, ports, and versioning so sync endpoints, auth URLs, and cross-app links do not drift.
 `@epicenter/ui` is the shared presentation layer. It knows Svelte components, not Yjs semantics.
-The middleware layer is where workspace data starts feeling like an application. `@epicenter/svelte` turns workspace helpers into reactive Svelte state, `@epicenter/filesystem` turns workspace rows and documents into a POSIX-style filesystem, `@epicenter/skills` proves that whole workspaces can be packaged and embedded as data products, and `@epicenter/ai` bridges workspace actions into LLM-callable tools.
+The middleware layer is where workspace data starts feeling like an application. `@epicenter/svelte` turns workspace helpers into reactive Svelte state, `@epicenter/filesystem` turns workspace rows and documents into a POSIX-style filesystem, `@epicenter/skills` proves that whole workspaces can be packaged and embedded as data products, and `@epicenter/workspace/ai` bridges workspace actions into LLM-callable tools.
 The apps are thin by comparison. Each app picks a definition, creates a client, installs the extensions it needs, and layers UI or transport concerns on top.
 
 ## The lifecycle: define → create → extend → sync
@@ -243,7 +243,7 @@ const opensidian = defineDocument((id: string) => {
 export const workspace = opensidian.open('opensidian');
 ```
 
-That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToClientTools(workspace.actions)` from `@epicenter/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createAuth()` from `@epicenter/svelte` coordinates auth with encryption and sync reconnects.
+That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createAuth()` from `@epicenter/svelte` coordinates auth with encryption and sync reconnects.
 
 ```text
 defineDocument(builder).open('opensidian')
@@ -255,8 +255,8 @@ defineDocument(builder).open('opensidian')
     └─ actions
     │
     ├─ attachYjsFileSystem(...)       -> editor + terminal + file tree
-    ├─ actionsToClientTools(...)      -> local AI tool execution
-    ├─ toToolDefinitions(...)         -> wire payload for chat requests
+    ├─ actionsToAiTools(...).tools    -> local AI tool execution
+    ├─ actionsToAiTools(...).definitions -> wire payload for chat requests
     ├─ defineDocument(skillsBuilder)  -> shared skills data source
     └─ fromTable / fromKv / auth      -> reactive Svelte app state
 ```

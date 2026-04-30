@@ -12,23 +12,23 @@
  *    server can forward them to the AI provider. Functions like `execute`
  *    can't travel over the wire.
  *
- * This module converts workspace `Actions` (your `defineQuery` /
- * `defineMutation` tree) into both representations at once, so you don't
+ * This module converts workspace action leaves (`defineQuery` /
+ * `defineMutation`) into both representations at once, so you don't
  * have to build them by hand.
  *
  * @module
  */
 
 import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
-import type { Action, Actions } from '../shared/actions';
-import { invokeAction, isAction } from '../shared/actions';
+import type { Action } from '../shared/actions';
+import { invokeAction, walkActions } from '../shared/actions';
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
 /**
- * Recursively extract all tool names from an `Actions` tree as a string literal union.
+ * Recursively extract all tool names from an action source as a string literal union.
  *
  * Leaf `Action` nodes produce their key directly. Nested `Actions` objects
  * produce `"parent_child"` paths joined with `_`.
@@ -39,14 +39,14 @@ import { invokeAction, isAction } from '../shared/actions';
  *
  * @example
  * ```ts
- * type Names = ActionNames<typeof workspace.actions>;
- * // "tabs_search" | "tabs_list" | "tabs_close" | "windows_list" | ...
+ * type Names = ActionNames<typeof workspace>;
+ * // "actions_tabs_search" | "actions_tabs_list" | ...
  * ```
  */
-type ActionNames<T extends Actions> = {
-	[K in keyof T & string]: T[K] extends Action
+export type ActionNames<T> = {
+	[K in keyof T & string]: [T[K]] extends [Action]
 		? K
-		: T[K] extends Actions
+		: T[K] extends Record<string, unknown>
 			? `${K}_${ActionNames<T[K]>}`
 			: never;
 }[keyof T & string];
@@ -80,7 +80,7 @@ export type ToolDefinition = {
 // ---------------------------------------------------------------------------
 
 /**
- * Convert a workspace action tree into the two representations TanStack AI
+ * Convert a workspace action source into the two representations TanStack AI
  * needs for AI-powered chat with tool calling.
  *
  * ### What you get
@@ -99,24 +99,28 @@ export type ToolDefinition = {
  *
  * ### How it works
  *
- * Your workspace actions (`defineQuery` / `defineMutation`) are a nested tree.
- * This function flattens them into a flat tool list with `_`-separated names:
+ * Your workspace actions (`defineQuery` / `defineMutation`) are leaves in a
+ * nested source object. This function flattens them into a flat tool list
+ * with `_`-separated names:
  *
  * ```
  * { tabs: { close: defineMutation(...) } }  →  tool named "tabs_close"
+ * { actions: { tabs: { close: defineMutation(...) } } }  →  "actions_tabs_close"
  * { files: { read: defineQuery(...) } }      →  tool named "files_read"
  * ```
  *
  * Mutations automatically get `needsApproval: true` so the chat UI can show
  * a confirmation dialog before executing them. Queries run immediately.
  *
- * @param actions - The workspace action tree from `workspace.actions`.
+ * @param source - The workspace bundle (or any object containing actions).
+ *   `walkActions` filters to action leaves at runtime, so passing the bundle
+ *   directly is safe; non-action keys (`ydoc`, `tables`, etc.) are skipped.
  *
  * @example
  * ```ts
  * import { actionsToAiTools } from '@epicenter/workspace/ai';
  *
- * export const workspaceAiTools = actionsToAiTools(workspace.actions);
+ * export const workspaceAiTools = actionsToAiTools(workspace);
  *
  * // Pass .tools to TanStack AI's ChatClient for local execution
  * const chat = createChat({
@@ -133,20 +137,23 @@ export type ToolDefinition = {
  *
  * // Show a friendly title in the UI when a tool call comes back
  * const title = workspaceAiTools.definitions
- *   .find(d => d.name === 'tabs_close')?.title; // → 'Close Tabs'
+ *   .find(d => d.name === 'actions_tabs_close')?.title; // → 'Close Tabs'
  * ```
  */
-export function actionsToAiTools<TActions extends Actions>(
-	actions: TActions,
+export function actionsToAiTools<T>(
+	source: T,
 ): {
-	tools: (AnyClientTool & { name: ActionNames<TActions> })[];
+	tools: (AnyClientTool & { name: ActionNames<T> })[];
 	definitions: ToolDefinition[];
 } {
-	const entries = [...walkActionTree(actions)];
+	const entries = Array.from(
+		walkActions(source as Record<string, unknown>),
+		([path, action]) => [action, path.split('.')] as const,
+	);
 
 	const tools = entries.map(([action, path]) => ({
 		__toolSide: 'client' as const,
-		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<TActions>,
+		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<T>,
 		description:
 			action.description ??
 			`${action.type}: ${path.join(ACTION_NAME_SEPARATOR)}`,
@@ -198,28 +205,6 @@ export function actionsToAiTools<TActions extends Actions>(
  * `"foo_bar"`.
  */
 const ACTION_NAME_SEPARATOR = '_';
-
-/**
- * Walk an `Actions` tree, yielding each leaf with its key path. Local helper —
- * the CLI has its own `walkActions` that yields the dotted-path form it wants;
- * this one yields path arrays so the AI bridge can join with its own
- * separator. The `Actions` type guarantees nodes are either `Action` callables
- * or nested `Actions` objects, so a plain `typeof === 'object'` recurse-guard
- * is sufficient.
- */
-function* walkActionTree(
-	actions: object,
-	path: string[] = [],
-): Generator<[Action, string[]]> {
-	for (const [key, value] of Object.entries(actions)) {
-		const currentPath = [...path, key];
-		if (isAction(value)) {
-			yield [value, currentPath];
-		} else if (typeof value === 'object' && value !== null) {
-			yield* walkActionTree(value, currentPath);
-		}
-	}
-}
 
 /** JSON Schema with `properties` and `required` guaranteed present. */
 type NormalizedJsonSchema = JSONSchema &

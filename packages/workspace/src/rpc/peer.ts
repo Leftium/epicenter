@@ -1,11 +1,12 @@
 /**
- * `peer<T>(workspace, deviceId)` — typed remote-action proxy for one peer.
+ * `peer<T>(sync, deviceId)`: typed remote-action proxy for one peer.
  *
  * The single public API for cross-device action dispatch. Returns a JavaScript
  * Proxy whose method calls dispatch over the workspace's existing
- * `sync.rpc(...)` channel. Each leaf is `(input?, options?) => Promise<Result<T, E | RpcError>>`.
+ * `sync.rpc(...)` channel. Each leaf is
+ * `(input?, options?) => Promise<Result<T, RpcError>>`.
  *
- * The proxy is stateless — every call resolves the deviceId against the
+ * The proxy is stateless: every call resolves the deviceId against the
  * workspace's `peers` (first-match in clientId-ascending order) and
  * dispatches via `sync.rpc`. If the matched peer disappears mid-call, the
  * in-flight Promise rejects immediately with `RpcError.PeerLeft` rather
@@ -15,12 +16,15 @@
  * first-match-wins safe: same deviceId means same logical device means
  * interchangeable runtimes.
  *
+ * `T` is the source object whose action leaves you want to expose remotely.
+ * Pass `typeof openTabManager` (full bundle), a pure action tree, or any
+ * object: `RemoteActions<T>` filters non-action keys at the type level.
+ *
  * @example
  * ```ts
  * import { peer } from '@epicenter/workspace';
- * import type { TabManagerActions } from '@epicenter/tab-manager';
  *
- * const macbook = peer<TabManagerActions>(fuji, 'macbook-pro');
+ * const macbook = peer<typeof tabManager>(fuji.sync, 'macbook-pro');
  * const result = await macbook.tabs.close({ tabIds: [1, 2] }, { timeout: 5_000 });
  * if (result.error) toast.error(extractErrorMessage(result.error));
  * else toast.success(`closed ${result.data.closedCount} tabs`);
@@ -29,11 +33,10 @@
 
 import { RpcError } from '@epicenter/sync';
 import type { Result } from 'wellcrafted/result';
-import { Err, Ok, isResult } from 'wellcrafted/result';
+import { Err } from 'wellcrafted/result';
 import type { SyncAttachment } from '../document/attach-sync.js';
 import type {
 	ActionManifest,
-	Actions,
 	RemoteActions,
 	RemoteCallOptions,
 	SystemActions,
@@ -41,16 +44,16 @@ import type {
 
 /**
  * Build a typed peer proxy for `deviceId`. Each leaf method dispatches via
- * `sync.rpc` and returns `Promise<Result<T, E | RpcError>>`.
+ * `sync.rpc` and returns `Promise<Result<T, RpcError>>`.
  *
- * Takes a `SyncAttachment` directly — sync owns peer discovery (`find`,
+ * Takes a `SyncAttachment` directly: sync owns peer discovery (`find`,
  * `observe`) since it's the source of truth for who's connected. Pass the
- * workspace bundle's `sync` field, e.g. `peer<TActions>(fuji.sync, 'mac')`.
+ * workspace bundle's `sync` field, e.g. `peer<typeof fuji>(fuji.sync, 'mac')`.
  */
-export function peer<TActions extends Actions>(
+export function peer<T>(
 	sync: SyncAttachment,
 	deviceId: string,
-): RemoteActions<TActions> {
+): RemoteActions<T> {
 	const send: Sender = async (path, input, options) => {
 		const found = sync.find(deviceId);
 		if (!found) return Err(RpcError.PeerNotFound({ peer: deviceId }).error);
@@ -73,14 +76,14 @@ export function peer<TActions extends Actions>(
 
 			sync
 				.rpc(found.clientId, path, input, options)
-				.then((res) => settle(isResult(res) ? res : Ok(res)))
+				.then(settle)
 				.catch((cause) =>
 					settle(Err(RpcError.ActionFailed({ action: path, cause }).error)),
 				);
 		});
 	};
 
-	return buildProxy<RemoteActions<TActions>>([], send);
+	return buildProxy<RemoteActions<T>>([], send);
 }
 
 type Sender = (
@@ -89,14 +92,12 @@ type Sender = (
 	options?: RemoteCallOptions,
 ) => Promise<Result<unknown, RpcError>>;
 
-type SystemMeta = { system: SystemActions };
-
 /**
  * Fetch a peer's full action manifest via the runtime-injected `system.describe`
  * RPC. Returns the same `ActionManifest` shape the local `describeActions` walker
  * produces, with live `input` schemas retained.
  *
- * Thin wrapper around {@link peer} — inherits its peer-resolution and
+ * Thin wrapper around {@link peer}: inherits its peer-resolution and
  * peer-removed race semantics.
  *
  * @example
@@ -110,7 +111,7 @@ export function describePeer(
 	sync: SyncAttachment,
 	deviceId: string,
 ): Promise<Result<ActionManifest, RpcError>> {
-	return peer<SystemMeta>(sync, deviceId).system.describe();
+	return peer<{ system: SystemActions }>(sync, deviceId).system.describe();
 }
 
 /**

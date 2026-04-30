@@ -42,7 +42,7 @@ if (import.meta.hot) {
 }
 
 /** AI tool representations for the opensidian workspace. */
-export const workspaceAiTools = actionsToAiTools(opensidian.actions);
+export const workspaceAiTools = actionsToAiTools(opensidian);
 
 /** Tool array type for use in TanStack AI generics. */
 export type WorkspaceTools = typeof workspaceAiTools.tools;

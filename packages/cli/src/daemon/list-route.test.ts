@@ -4,7 +4,7 @@
  * round-trips through serialization the same way the daemonClient sees
  * it, so this is the load-bearing test surface for list dispatch logic.
  *
- * `/list` is now a one-primitive route: `describeActions(workspace.actions)`.
+ * `/list` is now a one-primitive route: `describeActions(workspace)`.
  * No modes, no peer waits, no fan-out. Per-peer schema introspection lives
  * on `/peers` (and `peers <deviceId>` on the CLI).
  */
@@ -18,11 +18,10 @@ import { buildApp } from './app';
 
 function fakeEntry(
 	name: string,
-	actions?: Record<string, unknown>,
+	fields: Record<string, unknown> = {},
 ): WorkspaceEntry {
 	const workspace: LoadedWorkspace = {
-		whenReady: Promise.resolve(),
-		actions: actions as LoadedWorkspace['actions'],
+		...fields,
 		[Symbol.dispose]() {},
 	};
 	return { name, workspace } as WorkspaceEntry;
@@ -42,7 +41,7 @@ async function postList(
 }
 
 describe('/list route', () => {
-	test('returns describeActions output for the resolved workspace', async () => {
+	test('returns top-level action output for the resolved workspace', async () => {
 		const reply = await postList(
 			fakeEntry('demo', {
 				counter: {
@@ -58,6 +57,29 @@ describe('/list route', () => {
 		if (reply.error === null) {
 			expect(Object.keys(reply.data).sort()).toEqual(['counter.get']);
 			expect(reply.data['counter.get']?.description).toBe('Read the counter');
+		}
+	});
+
+	test('preserves an actions namespace when the bundle uses one', async () => {
+		const reply = await postList(
+			fakeEntry('demo', {
+				actions: {
+					counter: {
+						get: defineQuery({
+							description: 'Read the counter',
+							handler: () => 0,
+						}),
+					},
+				},
+			}),
+			{},
+		);
+		expect(reply.error).toBeNull();
+		if (reply.error === null) {
+			expect(Object.keys(reply.data).sort()).toEqual(['actions.counter.get']);
+			expect(reply.data['actions.counter.get']?.description).toBe(
+				'Read the counter',
+			);
 		}
 	});
 

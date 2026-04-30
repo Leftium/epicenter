@@ -8,13 +8,16 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { isRpcError } from '@epicenter/sync';
 import Type from 'typebox';
 import { Err, Ok } from 'wellcrafted/result';
-import { isRpcError } from '@epicenter/sync';
 import {
 	defineMutation,
 	defineQuery,
+	describeActions,
 	invokeAction,
+	resolveActionPath,
+	walkActions,
 } from './actions.js';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -53,8 +56,7 @@ describe('invokeAction', () => {
 		test('passes through an Err from a Result-returning handler unchanged', async () => {
 			const customError = { name: 'CustomFailure', message: 'bad' };
 			const action = defineMutation({
-				handler: () =>
-					Err(customError) as unknown as ReturnType<typeof Ok>,
+				handler: () => Err(customError) as unknown as ReturnType<typeof Ok>,
 			});
 			const result = await invokeAction(action);
 			expect(result.data).toBeNull();
@@ -162,11 +164,7 @@ describe('invokeAction', () => {
 					throw new Error('x');
 				},
 			});
-			const result = await invokeAction(
-				action,
-				undefined,
-				'tabs.close',
-			);
+			const result = await invokeAction(action, undefined, 'tabs.close');
 			expect(result.error?.name).toBe('ActionFailed');
 			if (result.error?.name === 'ActionFailed') {
 				expect(result.error.action).toBe('tabs.close');
@@ -208,11 +206,46 @@ describe('invokeAction', () => {
 				handler: () => ({ kind: 'mutation' as const }),
 			});
 			const queryResult = await invokeAction<{ kind: 'query' }>(query);
-			const mutationResult = await invokeAction<{ kind: 'mutation' }>(
-				mutation,
-			);
+			const mutationResult = await invokeAction<{ kind: 'mutation' }>(mutation);
 			expect(queryResult.data).toEqual({ kind: 'query' });
 			expect(mutationResult.data).toEqual({ kind: 'mutation' });
 		});
+	});
+});
+
+describe('action path walking', () => {
+	test('resolution only follows routes that discovery can expose', () => {
+		class HostedActions {
+			hidden = defineQuery({
+				handler: () => 'hidden',
+			});
+		}
+
+		const actions = {
+			visible: defineQuery({
+				handler: () => 'visible',
+			}),
+			hosted: new HostedActions(),
+		};
+
+		expect([...walkActions(actions)].map(([path]) => path)).toEqual([
+			'visible',
+		]);
+		expect(Object.keys(describeActions(actions))).toEqual(['visible']);
+		expect(resolveActionPath(actions, 'visible')).toBe(actions.visible);
+		expect(resolveActionPath(actions, 'hosted.hidden')).toBeUndefined();
+	});
+
+	test('rejects dot-containing keys because the wire path uses dots', () => {
+		const actions = {
+			'bad.key': defineQuery({
+				handler: () => 'hidden',
+			}),
+		};
+
+		expect(() => [...walkActions(actions)]).toThrow(
+			'Action keys cannot contain "." at "bad.key"',
+		);
+		expect(resolveActionPath(actions, 'bad.key')).toBeUndefined();
 	});
 });

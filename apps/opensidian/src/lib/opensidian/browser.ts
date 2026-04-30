@@ -179,15 +179,13 @@ export function openOpensidian({
 		},
 	};
 
-	const sync = attachSync(
-		{ ydoc: doc.ydoc, actions },
-		{
-			url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-			waitFor: idb,
-			device,
-			getToken: () => auth.getToken(),
-		},
-	);
+	const sync = attachSync(doc.ydoc, {
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+		waitFor: idb,
+		device,
+		getToken: () => auth.getToken(),
+		actions,
+	});
 
 	return {
 		...doc,

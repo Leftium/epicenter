@@ -291,7 +291,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 3. For singleton apps: call the builder once at module scope. For per-row / per-room fan-out: wrap it with `createDocumentFactory(build, { gcTime? })` and call `.open(rowId)` per instance.
 4. `await bundle.whenReady` (or `handle.whenReady`) before reading persisted state. `whenReady` is the platform's readiness convention, declared as an optional typed field on `Document`. The cache itself does not read it, but `WorkspaceGate`, the CLI's `run` command, migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and every editor's `{#await}` block all gate on it. Expose it when the bundle has async initialization the caller should wait on, and compose it from whatever attachment signals make sense: `idb.whenLoaded` for a single barrier, or `Promise.all([persistence.whenLoaded, unlock.whenChecked, sync.whenConnected])` for a multi-step cascade. Because the field is typed `Promise<unknown>`, `Promise.all([...])` is assignable directly (no `.then(() => undefined)` tail required).
 5. Read and write through `bundle.tables`, `bundle.kv`, `bundle.awareness`, and (for per-row content docs) whatever you exposed in the returned bundle.
-6. Use `iterateActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
+6. Use `walkActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
 7. Dispose with `bundle[Symbol.dispose]()` (singleton) or `handle.dispose()` / `factory.close(id)` (factory) when you're done.
 
 The architecture stays local-first: the workspace works offline, synchronizes opportunistically, and treats external systems as helpers around the document—not the other way around.
@@ -1163,7 +1163,7 @@ import {
 	isAction,
 	isMutation,
 	isQuery,
-	iterateActions,
+	walkActions,
 	type Actions,
 } from '@epicenter/workspace';
 
@@ -1177,9 +1177,9 @@ const actions = {
 	},
 } satisfies Actions;
 
-for (const [action, path] of iterateActions(actions)) {
+for (const [path, action] of walkActions(actions)) {
 	if (isAction(action)) {
-		console.log(path.join('.'), action.type);
+		console.log(path, action.type);
 	}
 }
 
@@ -1317,8 +1317,8 @@ await handle.idb.whenDisposed;
 
 What the package does give you is the raw material a server adapter needs:
 
-- `bundle.actions` (whatever your builder returned)
-- `iterateActions(...)`
+- `bundle.actions` (if your builder groups actions there)
+- `walkActions(...)`
 - action metadata (`type`, `title`, `input`, `description`)
 - direct access to `bundle.tables`, `bundle.kv`, `bundle.awareness`, and per-row content factories
 
@@ -1392,7 +1392,7 @@ import {
 	isAction,
 	isMutation,
 	isQuery,
-	iterateActions,
+	walkActions,
 	type Action,
 	type Actions,
 	type Mutation,
@@ -1475,14 +1475,14 @@ Public awareness methods:
 
 ```typescript
 import {
-	iterateActions,
+	walkActions,
 	isAction,
 	isMutation,
 	isQuery,
 } from '@epicenter/workspace';
 ```
 
-`iterateActions(actions)` flattens a nested action tree into `[action, path]` pairs. Combined with each action's `type`, `title`, `description`, and `input` schema, that's enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport.
+`walkActions(source)` flattens a nested action tree or full workspace bundle into `[path, action]` pairs. Combined with each action's `type`, `title`, `description`, and `input` schema, that's enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport.
 
 ### IDs and dates
 
@@ -1515,7 +1515,7 @@ These matter when you are writing low-level tooling against raw Yjs structures.
 The core package does not export an MCP server. What it does export is the metadata you need to build one:
 
 - actions with `type`, `title`, `description`, and `input`
-- `iterateActions(...)` to flatten a nested action tree
+- `walkActions(...)` to flatten a nested action tree or full workspace bundle
 - `isAction` / `isQuery` / `isMutation` type guards
 - `@epicenter/workspace/ai` — `actionsToAiTools(...)` for TanStack AI tool bindings
 
@@ -1528,7 +1528,7 @@ import Type from 'typebox';
 import {
 	defineMutation,
 	defineQuery,
-	iterateActions,
+	walkActions,
 	type Actions,
 } from '@epicenter/workspace';
 
@@ -1549,9 +1549,9 @@ const actions: Actions = {
 	},
 };
 
-for (const [action, path] of iterateActions(actions)) {
+for (const [path, action] of walkActions(actions)) {
 	console.log({
-		name: path.join('.'),
+		name: path,
 		type: action.type,
 		title: action.title,
 		description: action.description,

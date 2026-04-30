@@ -53,7 +53,7 @@ export {
 // RPC + PEER DISPATCH
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { InferRpcMap, RpcActionMap } from './rpc/types';
+export type { InferRpcMap, InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export { isRpcError, RpcError } from '@epicenter/sync';
 
 // Peer dispatch (cross-device action calling) — see `peer<T>(workspace, deviceId)`.

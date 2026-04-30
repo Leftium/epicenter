@@ -10,9 +10,9 @@
  * Reads auth credentials from the CLI session store at
  * `~/.epicenter/auth/sessions.json` — run `epicenter auth login` first.
  *
- * Exports `opensidian` — an object satisfying `LoadedWorkspace` with
- * `whenReady`, `actions`, `sync`, and `[Symbol.dispose]`. `loadConfig` picks
- * up any named export with that shape.
+ * Exports `opensidian`: an object satisfying `LoadedWorkspace` with
+ * `whenReady`, `sync`, `[Symbol.dispose]`, and any action namespaces hoisted
+ * to the top level. `loadConfig` picks up any named export with that shape.
  *
  * Usage:
  *   # Run the workspace — imports this config, which constructs the
@@ -158,21 +158,19 @@ const sqlite = attachSqliteMaterializer(ydoc, {
  * frontmatter of any file that doesn't already have one. Errors if duplicate
  * IDs are detected across files.
  */
-const actions = {
-	markdownActions: {
-		prepare: defineMutation({
-			title: 'Prepare Markdown Files',
-			description:
-				'Add unique IDs to markdown files missing them in YAML frontmatter',
-			input: Type.Object({ directory: Type.String() }),
-			handler: async ({ directory }) => prepareMarkdownFiles(directory),
-		}),
-	},
+const markdownActions = {
+	prepare: defineMutation({
+		title: 'Prepare Markdown Files',
+		description:
+			'Add unique IDs to markdown files missing them in YAML frontmatter',
+		input: Type.Object({ directory: Type.String() }),
+		handler: async ({ directory }) => prepareMarkdownFiles(directory),
+	}),
 };
 
 export const opensidian = {
 	whenReady,
-	actions,
+	markdownActions,
 	sync,
 	[Symbol.dispose]() {
 		ydoc.destroy();

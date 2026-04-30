@@ -83,7 +83,7 @@ if (import.meta.hot) {
 }
 
 /** AI tool representations for the tab-manager workspace. */
-export const workspaceAiTools = actionsToAiTools(tabManager.actions);
+export const workspaceAiTools = actionsToAiTools(tabManager);
 
 /** Tool array type for use in TanStack AI generics. */
 export type WorkspaceTools = typeof workspaceAiTools.tools;

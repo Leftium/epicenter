@@ -479,14 +479,14 @@ peer lookup without reviving `sync.peer()`.
 
 ### Phase 2: Local Persistence and Path Helpers
 
-- [ ] Port `attachYjsLog`.
-- [ ] Port `attachYjsLogReader`.
-- [ ] Port `sqlite-writer`.
-- [ ] Port `workspace-paths`.
-- [ ] Port `findEpicenterDir`, `ProjectDir`, `hashClientId`, and related path helpers.
-- [ ] Resolve naming against current main: prefer `ProjectDir`, `yjsPath`, `sqlitePath`, and `markdownPath` if still coherent.
-- [ ] Keep `attachSync` based on main and port only additive pieces.
-- [ ] Commit as:
+- [x] Port `attachYjsLog`.
+- [x] Port `attachYjsLogReader`.
+- [x] Port `sqlite-writer`.
+- [x] Port `workspace-paths`.
+- [x] Port `findEpicenterDir`, `ProjectDir`, `hashClientId`, and related path helpers.
+- [x] Resolve naming against current main: prefer `ProjectDir`, `yjsPath`, `sqlitePath`, and `markdownPath` if still coherent.
+- [x] Keep `attachSync` based on main and port only additive pieces.
+- [x] Commit as:
   ```txt
   feat(workspace): add yjs-log persistence primitives
   ```
@@ -500,6 +500,13 @@ b3a548fd8 refactor(workspace): rename persistence to yjs, split path helpers
 31e02681d refactor(workspace): make yjs-log attachments sync-constructed
 e34bde828 refactor(workspace): drop whenLoaded from yjs-log attachments
 ```
+
+Implementation note: this wave completes the old `attachSqlite` split by
+moving Yjs update-log durability to `attachYjsLog` and using `attachSqlite`
+for the queryable daemon-owned materializer. The older
+`document/materializer/*` subpaths remain exported for existing playground
+configs while new daemon factories can use the direct `attachMarkdown` and
+`attachSqlite` primitives.
 
 ### Phase 3: Remote Action and Sync Boundary
 

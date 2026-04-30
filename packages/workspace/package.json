@@ -28,11 +28,14 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./shared/crypto": "./src/shared/crypto/index.ts",
+		"./document/attach-markdown": "./src/document/attach-markdown.ts",
+		"./document/attach-sqlite": "./src/document/attach-sqlite.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
 		"./ai": "./src/ai/index.ts",
 		"./document/materializer/sqlite": "./src/document/materializer/sqlite/index.ts",
 		"./encryption-key": "./src/document/encryption-key.ts",
-		"./logger/jsonl-sink": "./src/shared/logger/jsonl-sink.ts"
+		"./logger/jsonl-sink": "./src/shared/logger/jsonl-sink.ts",
+		"./test-utils": "./src/shared/test-utils.ts"
 	},
 	"license": "MIT",
 	"scripts": {

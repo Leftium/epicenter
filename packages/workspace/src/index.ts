@@ -115,6 +115,16 @@ export { buildRemoteWorkspace } from './client/remote.js';
 export { connectDaemon } from './client/connect-daemon.js';
 export { findEpicenterDir } from './client/find-epicenter-dir.js';
 export type { Remote } from './client/remote-workspace-types.js';
+export {
+	attachSqliteReader,
+	type AttachSqliteReaderOptions,
+	type SqliteReaderAttachment,
+} from './document/attach-sqlite-reader.js';
+export {
+	markdownPath,
+	sqlitePath,
+	yjsPath,
+} from './document/workspace-paths.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DEVICE IDENTITY
@@ -126,6 +136,7 @@ export {
 	getOrCreateDeviceIdAsync,
 	type SimpleStorage,
 } from './shared/device-id.js';
+export { hashClientId } from './shared/client-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SHARED TYPES
@@ -204,6 +215,15 @@ export {
 	type IndexedDbAttachment,
 } from './document/attach-indexed-db.js';
 export {
+	attachYjsLog,
+	type YjsLogAttachment,
+} from './document/attach-yjs-log.js';
+export {
+	attachYjsLogReader,
+	type YjsLogReaderAttachment,
+} from './document/attach-yjs-log-reader.js';
+export { SqliteWriterError } from './document/sqlite-writer.js';
+export {
 	attachKv,
 	type InferKvValue,
 	type Kv,
@@ -220,10 +240,8 @@ export {
 	type RichTextAttachment,
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
-export {
-	attachSqlite,
-	type SqliteAttachment,
-} from './document/attach-sqlite.js';
+export { attachMarkdown, type MarkdownShape } from './document/attach-markdown.js';
+export { attachSqlite } from './document/attach-sqlite.js';
 export {
 	type AttachSyncDoc,
 	attachSync,

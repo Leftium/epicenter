@@ -35,7 +35,7 @@ export function openFuji({
 	webSocketImpl?: WebSocketImpl;
 }) {
 	const doc = openFujiDoc({ clientID });
-	const persistence = attachYjsLog(doc.ydoc, {
+	const yjsLog = attachYjsLog(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
@@ -51,5 +51,5 @@ export function openFuji({
 		dir: markdownPath(projectDir, doc.ydoc.guid),
 	}).table(doc.tables.entries, { filename: slugFilename('title') });
 
-	return { ...doc, persistence, sync, sqlite, markdown };
+	return { ...doc, yjsLog, sync, sqlite, markdown };
 }

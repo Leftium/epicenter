@@ -28,7 +28,7 @@ export function openZhongwen({
 	webSocketImpl?: WebSocketImpl;
 }) {
 	const doc = openZhongwenDoc({ clientID });
-	const persistence = attachYjsLog(doc.ydoc, {
+	const yjsLog = attachYjsLog(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
@@ -38,5 +38,5 @@ export function openZhongwen({
 		webSocketImpl,
 	});
 
-	return { ...doc, persistence, sync };
+	return { ...doc, yjsLog, sync };
 }

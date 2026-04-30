@@ -25,7 +25,7 @@ export function openHoneycrisp({
 	webSocketImpl?: WebSocketImpl;
 }) {
 	const doc = openHoneycrispDoc({ clientID });
-	const persistence = attachYjsLogReader(doc.ydoc, {
+	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
@@ -34,5 +34,5 @@ export function openHoneycrisp({
 		webSocketImpl,
 	});
 
-	return { ...doc, persistence, sync };
+	return { ...doc, yjsLog, sync };
 }

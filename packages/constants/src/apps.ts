@@ -24,3 +24,4 @@ export const APPS = {
 } as const;
 
 export type AppId = keyof typeof APPS;
+export const EPICENTER_API_URL = APPS.API.urls[0];

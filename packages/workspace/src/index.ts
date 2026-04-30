@@ -256,7 +256,9 @@ export {
 	type SyncStatus,
 	toWsUrl,
 	type WaitForBarrier,
+	type WebSocketImpl,
 } from './document/attach-sync.js';
+export { NoopWebSocket } from './document/noop-ws.js';
 export {
 	attachTable,
 	attachTables,

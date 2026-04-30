@@ -573,18 +573,18 @@ transport.
 
 ### Phase 5: App Daemon and Script Factories
 
-- [ ] Port `core.ts` renames for apps that now need multiple env factories.
-- [ ] Port `daemon.ts` and `script.ts` for Fuji, Honeycrisp, Opensidian, and Zhongwen.
-- [ ] Port integration tests that prove daemon plus script handoff.
-- [ ] Apply stable defaults:
+- [x] Keep current `index.ts` iso factories and add `clientID`; reject the old branch `core.ts` rename for this integration.
+- [x] Port `daemon.ts` and `script.ts` for Fuji, Honeycrisp, Opensidian, and Zhongwen.
+- [x] Port integration tests that prove daemon plus script handoff.
+- [x] Apply stable defaults:
   ```txt
   daemon projectDir = findEpicenterDir()
   daemon clientID = hashClientId(projectDir)
   script projectDir = findEpicenterDir()
   script clientID = hashClientId(Bun.main) or a deliberate equivalent
   ```
-- [ ] Lift app singleton `client.ts` files to `apps/<app>/src/lib/client.ts` if still desired.
-- [ ] Keep Opensidian actions extracted in `actions.ts`.
+- [x] Leave app singleton `client.ts` files in place for this wave; defer relocation unless a later review wants it.
+- [x] Keep Opensidian actions extracted in `actions.ts`.
 - [ ] Commit as:
   ```txt
   feat(apps): add daemon and script workspace factories

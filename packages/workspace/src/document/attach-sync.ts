@@ -267,6 +267,28 @@ export type WaitForBarrier =
  */
 export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc };
 
+export type SyncWebSocket = {
+	readyState: number;
+	binaryType: BinaryType;
+	onopen: ((ev: Event) => unknown) | null;
+	onclose: ((ev: CloseEvent) => unknown) | null;
+	onerror: ((ev: Event) => unknown) | null;
+	onmessage: ((ev: MessageEvent) => void) | null;
+	send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
+	close(code?: number, reason?: string): void;
+	addEventListener(
+		type: string,
+		listener: EventListener,
+		options?: AddEventListenerOptions,
+	): void;
+	removeEventListener(type: string, listener: EventListener): void;
+};
+
+export type WebSocketImpl = new (
+	url: string,
+	protocols?: string | string[],
+) => SyncWebSocket;
+
 export type SyncAttachmentConfig = {
 	/**
 	 * WebSocket URL for the room. Must use ws:/wss:. Use `toWsUrl()` to convert
@@ -345,6 +367,11 @@ export type SyncAttachmentConfig = {
 	 * rooms) — `attachSync` then connects without a bearer subprotocol.
 	 */
 	getToken?: () => string | null | Promise<string | null>;
+	/**
+	 * WebSocket constructor. Tests can pass a stub to avoid dialing a server;
+	 * production uses `globalThis.WebSocket`.
+	 */
+	webSocketImpl?: WebSocketImpl;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -552,7 +579,7 @@ export function attachSync(
 	let cycleController: AbortController = childOf(masterController.signal);
 
 	/** Current WebSocket instance, or null. */
-	let websocket: WebSocket | null = null;
+	let websocket: SyncWebSocket | null = null;
 
 	/**
 	 * Promise of the currently-running supervisor loop, or null when no loop
@@ -785,7 +812,9 @@ export function attachSync(
 		// carrier (which the server consumes and never echoes).
 		const subprotocols = [MAIN_SUBPROTOCOL];
 		if (token) subprotocols.push(`${BEARER_SUBPROTOCOL_PREFIX}${token}`);
-		const ws = new WebSocket(wsUrl, subprotocols);
+		const WebSocketConstructor =
+			config.webSocketImpl ?? (globalThis.WebSocket as WebSocketImpl);
+		const ws = new WebSocketConstructor(wsUrl, subprotocols);
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
@@ -1258,7 +1287,7 @@ function createStatusEmitter<T>(initial: T) {
 	};
 }
 
-function createLivenessMonitor(ws: WebSocket) {
+function createLivenessMonitor(ws: SyncWebSocket) {
 	let pingInterval: ReturnType<typeof setInterval> | null = null;
 	let livenessInterval: ReturnType<typeof setInterval> | null = null;
 	let lastMessageTime = 0;
@@ -1299,7 +1328,7 @@ function createLivenessMonitor(ws: WebSocket) {
  * teardown indefinitely.
  */
 function waitForWsClose(
-	ws: WebSocket | null,
+	ws: SyncWebSocket | null,
 	timeoutMs: number,
 	log: Logger,
 ): Promise<void> {

@@ -94,10 +94,10 @@ export const opensidian = openOpensidian();`;
 				'Binds the typed table schemas to the shared Y.Doc. Each table becomes a Y.Map of rows with a typed, reactive surface.',
 		},
 		{
-			id: 'persistence',
+			id: 'indexeddb',
 			line: 'attachIndexedDb(ydoc)',
 			explanation:
-				"Attaches IndexedDB persistence\u2014every Y.Doc update is written to the browser's local storage automatically.",
+				"Attaches IndexedDB. Every Y.Doc update is written to the browser's local storage automatically.",
 		},
 		{
 			id: 'sqlite-index',

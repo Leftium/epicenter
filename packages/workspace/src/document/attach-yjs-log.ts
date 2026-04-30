@@ -10,7 +10,7 @@
  *
  * Distinct from `attachSqlite`, which writes a different file with
  * derived per-table rows for SQL queries. This module is the Y.Doc-
- * update-log persistence layer; that one is the projection layer.
+ * update-log layer; that one is the projection layer.
  *
  * The on-disk format is shared with `attachYjsLogReader`. If you change
  * the schema or the replay invariants here, change them there too. WAL

@@ -1,11 +1,9 @@
 /**
- * Shared append-log compaction helper for SQLite-backed Y.Doc persistence.
+ * Shared append-log compaction helper for SQLite-backed Y.Doc update logs.
  *
- * Both `attachSqlite(ydoc, { filePath })` (per-doc, document-layer) and
- * `sqlitePersistence({ filePath })` (workspace-scope extension) use the
- * same append-log strategy: every `updateV2` becomes a tiny `INSERT INTO
- * updates (data) VALUES (?)`, and periodically the log is compacted into a
- * single row encoded via `Y.encodeStateAsUpdateV2`.
+ * Every `updateV2` becomes a tiny `INSERT INTO updates (data) VALUES (?)`,
+ * and periodically the log is compacted into a single row encoded via
+ * `Y.encodeStateAsUpdateV2`.
  *
  * The constants and the helper live here so both consumers share one source
  * of truth. Drift between the two previously caused silent behavior skew.
@@ -22,7 +20,7 @@ export const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
  *
  * Targets the real problem: large row replacements (e.g. 30 KB autosaves)
  * accumulating over long desktop sessions. At 2 MB the log is guaranteed to
- * be 10–50× larger than the compact doc for typical workloads. Low enough
+ * be 10-50x larger than the compact doc for typical workloads. Low enough
  * to prevent multi-MB logs; high enough to ignore thousands of tiny
  * keystroke updates that total only a few hundred KB.
  */
@@ -40,9 +38,9 @@ export const COMPACTION_DEBOUNCE_MS = 5_000;
 /**
  * Compact the SQLite update log into a single row.
  *
- * Encodes the current doc state via `Y.encodeStateAsUpdateV2` — produces
+ * Encodes the current doc state via `Y.encodeStateAsUpdateV2`, which produces
  * smaller output than merging individual updates. No-ops if the log
- * already has ≤ 1 row or the compacted blob exceeds 2 MB.
+ * already has <= 1 row or the compacted blob exceeds 2 MB.
  *
  * @returns `true` if compaction ran, `false` if it no-oped.
  */

@@ -6,7 +6,7 @@
  * listener, no compaction timer, no writes. The reader's Y.Doc can mutate
  * freely afterwards; mutations stay in memory and never flow back to disk.
  *
- * Use case: script-side mirror of a daemon's persistence file (the
+ * Use case: script-side mirror of a daemon's Yjs log file (the
  * daemon-as-materializer-worker design at
  * `specs/20260429T235500-daemon-as-materializer-worker.md`).
  *

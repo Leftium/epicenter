@@ -89,7 +89,7 @@ type RegisteredTable = {
  *
  * const sqlite = attachSqlite(ydoc, {
  *   filePath: sqlitePath(projectDir, ydoc.guid),
- *   waitFor: persistence.whenLoaded,
+ *   waitFor: idb.whenLoaded,
  * })
  *   .table(tables.posts, { fts: ['title', 'body'] })
  *   .table(tables.users);

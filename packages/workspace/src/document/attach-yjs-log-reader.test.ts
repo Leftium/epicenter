@@ -1,6 +1,6 @@
 /**
  * Tests for `attachYjsLogReader` (the reader side of the
- * SQLite persistence pair). Covers: round-trip from a writer file,
+ * SQLite Yjs log pair). Covers: round-trip from a writer file,
  * concurrent open against an active writer (WAL snapshot reads),
  * missing-file no-op via `fileExisted`, and the no-write-listener invariant.
  */

@@ -16,7 +16,7 @@ afterEach(() => {
 	rmSync(workdir, { recursive: true, force: true });
 });
 
-describe('daemon to script handoff via persistence file', () => {
+describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates files the daemon wrote', () => {
 		{
 			using daemon = openOpensidianDaemon({

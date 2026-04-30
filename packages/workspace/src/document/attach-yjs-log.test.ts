@@ -1,6 +1,6 @@
 /**
  * Tests for `attachYjsLog` (the writer side of the SQLite
- * persistence pair). Covers: WAL pragma is applied to the file so
+ * Yjs log pair). Covers: WAL pragma is applied to the file so
  * concurrent readers can open `{ readonly: true }` without `SQLITE_BUSY`,
  * and the basic load/replay/clear/dispose round-trip.
  *

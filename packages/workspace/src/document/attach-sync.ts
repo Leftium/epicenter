@@ -68,8 +68,8 @@ import {
  * Provide `rpc.dispatch(action, input)` to handle inbound requests; outbound
  * calls are made via the returned `rpc()` method.
  *
- * Register persistence (`attachIndexedDb`) first and pass its `whenLocalReady`
- * as `waitFor` so the supervisor connects only after local state hydrates —
+ * Register `attachIndexedDb` first and pass its `whenLoaded`
+ * as `waitFor` so the supervisor connects only after local state hydrates:
  * the handshake then exchanges only the delta, not the full document.
  *
  * `SYNC_ORIGIN` is imported from `@epicenter/sync` so every sync layer
@@ -117,7 +117,7 @@ export type SyncFailedError = InferErrors<typeof SyncFailedError>;
 export const SyncSupervisorError = defineErrors({
 	/**
 	 * The `waitFor` barrier (typically IndexedDB hydration) rejected before
-	 * the supervisor started. Sync proceeds anyway — better to try syncing
+	 * the supervisor started. Sync proceeds anyway: better to try syncing
 	 * than to stay silently offline because persistence failed.
 	 */
 	WaitForRejected: ({ cause }: { cause: unknown }) => ({
@@ -1042,8 +1042,8 @@ export function attachSync(
 		awareness.on('update', handleAwarenessUpdate);
 	}
 
-	// Gate the first connection on `waitFor` (typically idb.whenLocalReady).
-	// If `waitFor` rejects, log but still start — better to try syncing than
+	// Gate the first connection on `waitFor` (typically idb.whenLoaded).
+	// If `waitFor` rejects, log but still start: better to try syncing than
 	// silently stay offline because persistence failed.
 	void (async () => {
 		try {

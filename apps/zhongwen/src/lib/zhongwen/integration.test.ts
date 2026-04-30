@@ -1,7 +1,10 @@
-import { rmSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { NoopWebSocket, type ProjectDir } from '@epicenter/workspace';
-import { mintTestProjectDir } from '@epicenter/workspace/test-utils';
+import { rmSync } from 'node:fs';
+import { type ProjectDir } from '@epicenter/workspace';
+import {
+	mintTestProjectDir,
+	NoopWebSocket,
+} from '@epicenter/workspace/test-utils';
 import {
 	type ConversationId,
 	generateConversationId,
@@ -24,7 +27,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 		{
 			using daemon = openZhongwenDaemon({
 				getToken: async () => 'fake-token',
-				device: {
+				peer: {
 					id: 'test-daemon',
 					name: 'Zhongwen Daemon',
 					platform: 'node',

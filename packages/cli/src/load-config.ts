@@ -7,14 +7,14 @@
  *   (called at exit; the discriminator). If it also has:
  *
  *     whenReady: Promise         awaited before action invocations
- *     sync:      SyncAttachment  enables --peer + `peers`
+ *     sync:      SyncAttachment  awaited during startup and disposal
+ *     presence:  PeerPresence    enables `peers` and peer lookup
+ *     rpc:       SyncRpc         enables `run --peer`
  *
- *   Actions are read from the bundle ITSELF: no reserved key. `walkActions`
- *   filters to action leaves at runtime via `isAction`, so non-action keys
- *   (`ydoc`, `tables`, etc.) are skipped. Apps often group their actions
- *   under an `actions:` key for visual separation from infrastructure, in
- *   which case dot-paths look like `actions.tabs.close`. Actions hoisted to
- *   the top level produce shorter paths (`tabs.close`); either is valid.
+ *   Actions are read from the workspace object. `walkActions` recurses only
+ *   into plain objects, so class-backed infrastructure like `ydoc` and
+ *   attachment objects is skipped. Any action leaf reachable through plain
+ *   returned objects is public.
  *
  *   …the CLI uses them. Anything else is the factory's business.
  *
@@ -41,11 +41,11 @@
  * ```
  */
 
+import { join, resolve } from 'node:path';
 import type {
 	PeerAwarenessState,
-	SyncAttachment,
 } from '@epicenter/workspace';
-import { join, resolve } from 'node:path';
+import type { LoadedWorkspace, WorkspaceEntry } from '@epicenter/workspace/node';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -55,49 +55,12 @@ import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
-/**
- * Fields the CLI looks at on each workspace export. Only `[Symbol.dispose]`
- * is required (it's the discriminator); everything else is read when
- * present. Extra fields the factory returns are ignored.
- *
- * The CLI walks the workspace bundle itself via `walkActions(workspace)`,
- * which filters to action leaves at runtime (skipping `ydoc`, `tables`,
- * class instances, and other infrastructure). Apps often group their
- * actions under `actions:` for separation from infrastructure, so
- * dot-paths look like `actions.tabs.close`; hoisting actions to the top
- * level instead is also supported and produces shorter paths.
- */
-export type LoadedWorkspace = {
-	/**
-	 * Called by the CLI at exit. The discriminator: its presence is what
-	 * marks the export as a workspace.
-	 */
-	[Symbol.dispose](): void;
-
-	/** Awaited before any action invocation, if present. */
-	readonly whenReady?: Promise<unknown>;
-
-	/**
-	 * Enables `--peer` targeting and `epicenter peers`. `attachSync(doc, { device })`
-	 * carries presence inline; `peers()` / `find()` / `observe()` live on the
-	 * SyncAttachment when the workspace was constructed with a `device`.
-	 */
-	readonly sync?: SyncAttachment;
-};
+export type { LoadedWorkspace, WorkspaceEntry };
 
 /**
- * Per-peer awareness state under the standard `device` schema. Re-exported
- * from `@epicenter/workspace` for ergonomic consumption; `state.device` is
- * set synchronously at attach time, so consumers read
- * `state.device.{id,name,platform}` without `?.`.
+ * Per-peer awareness state under the standard peer schema.
  */
 export type AwarenessState = PeerAwarenessState;
-
-/** One named workspace export from `epicenter.config.ts`. */
-export type WorkspaceEntry = {
-	name: string;
-	workspace: LoadedWorkspace;
-};
 
 export type LoadConfigResult = {
 	entries: WorkspaceEntry[];
@@ -201,7 +164,8 @@ export async function loadConfig(
 		async [Symbol.asyncDispose]() {
 			const barriers: Promise<unknown>[] = [];
 			for (const { workspace } of entries) {
-				if (workspace.sync?.whenDisposed) barriers.push(workspace.sync.whenDisposed);
+				if (workspace.sync?.whenDisposed)
+					barriers.push(workspace.sync.whenDisposed);
 				workspace[Symbol.dispose]();
 			}
 			await Promise.all(barriers);

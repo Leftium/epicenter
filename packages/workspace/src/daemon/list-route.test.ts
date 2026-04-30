@@ -4,71 +4,111 @@
  * round-trips through serialization the same way the daemonClient sees
  * it, so this is the load-bearing test surface for list dispatch logic.
  *
- * `/list` is now a one-primitive route: `describeActions(workspace)`.
- * No modes, no peer waits, no fan-out. Per-peer schema introspection lives
- * on `/peers` (and `peers <deviceId>` on the CLI).
+ * `/list` is now a one-primitive route: describe every hosted export and
+ * prefix each action path with the config export name.
  */
 
 import { describe, expect, test } from 'bun:test';
 import type { Result } from 'wellcrafted/result';
 
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
-import { buildApp } from './app';
-import type { ResolveError } from './resolve-entry.js';
+import { buildApp } from './app.js';
 import type { LoadedWorkspace, WorkspaceEntry } from './types.js';
 
-type ListResult = Result<ActionManifest, ResolveError>;
+type ListResult = Result<ActionManifest, never>;
 
 function fakeEntry(
 	name: string,
-	actions?: Record<string, unknown>,
+	workspaceShape: Record<string, unknown> = {},
 ): WorkspaceEntry {
 	const workspace = {
 		whenReady: Promise.resolve(),
-		...(actions ?? {}),
+		...workspaceShape,
 		[Symbol.dispose]() {},
 	} satisfies LoadedWorkspace;
 	return { name, workspace } as WorkspaceEntry;
 }
 
-async function postList(
-	entry: WorkspaceEntry,
-	body: unknown,
-): Promise<ListResult> {
-	const app = buildApp([entry]);
+async function postList(entries: WorkspaceEntry[]): Promise<ListResult> {
+	const app = buildApp(entries);
 	const res = await app.request('/list', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(body),
+		body: JSON.stringify({}),
 	});
 	return res.json();
 }
 
 describe('/list route', () => {
-	test('returns describeActions output for the resolved workspace', async () => {
-		const reply = await postList(
+	test('returns literal export-prefixed paths under actions', async () => {
+		const reply = await postList([
+			fakeEntry('demo', {
+				actions: {
+					counter: {
+						get: defineQuery({
+							description: 'Read the counter',
+							handler: () => 0,
+						}),
+					},
+				},
+			}),
+		]);
+		expect(reply.error).toBeNull();
+		if (reply.error === null) {
+			expect(Object.keys(reply.data).sort()).toEqual([
+				'demo.actions.counter.get',
+			]);
+			expect(reply.data['demo.actions.counter.get']?.description).toBe(
+				'Read the counter',
+			);
+		}
+	});
+
+	test('returns top-level action groups when the workspace exposes them', async () => {
+		const reply = await postList([
 			fakeEntry('demo', {
 				counter: {
 					get: defineQuery({
-						description: 'Read the counter',
 						handler: () => 0,
 					}),
 				},
 			}),
-			{},
-		);
+		]);
+
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
-			expect(Object.keys(reply.data).sort()).toEqual(['counter.get']);
-			expect(reply.data['counter.get']?.description).toBe('Read the counter');
+			expect(Object.keys(reply.data).sort()).toEqual(['demo.counter.get']);
 		}
 	});
 
 	test('returns an empty manifest when the workspace has no actions', async () => {
-		const reply = await postList(fakeEntry('demo'), {});
+		const reply = await postList([fakeEntry('demo')]);
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
 			expect(reply.data).toEqual({});
+		}
+	});
+
+	test('prefixes actions from every config export', async () => {
+		const reply = await postList([
+			fakeEntry('notes', {
+				actions: {
+					add: defineQuery({ handler: () => null }),
+				},
+			}),
+			fakeEntry('tasks', {
+				actions: {
+					list: defineQuery({ handler: () => [] }),
+				},
+			}),
+		]);
+
+		expect(reply.error).toBeNull();
+		if (reply.error === null) {
+			expect(Object.keys(reply.data).sort()).toEqual([
+				'notes.actions.add',
+				'tasks.actions.list',
+			]);
 		}
 	});
 });

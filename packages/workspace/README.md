@@ -40,7 +40,7 @@ export function openBlog() {
 	const kv = attachKv(ydoc, {});
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachSync(ydoc, {
-		url: (docId) => toWsUrl(`http://localhost:3913/rooms/${docId}`),
+		url: toWsUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 	});
 
@@ -126,7 +126,11 @@ import {
 import * as Y from 'yjs';
 import { appTables } from '$lib/workspace/definition';
 
-export function openApp() {
+export function openApp({
+	getToken,
+}: {
+	getToken: () => Promise<string | null>;
+}) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
 
 	const encryption = attachEncryption(ydoc);
@@ -136,10 +140,12 @@ export function openApp() {
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
 	const sync = attachSync(ydoc, {
-		url: (docId) => toWsUrl(`https://api.epicenter.so/workspaces/${docId}`),
+		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		awareness: awareness.raw,
-		requiresToken: true,
+		getToken,
+	});
+	const presence = sync.attachPresence({
+		peer: { id: 'macbook', name: 'MacBook', platform: 'browser' },
 	});
 
 	return {
@@ -152,6 +158,7 @@ export function openApp() {
 		encryption,
 		idb,
 		sync,
+		presence,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
@@ -160,10 +167,10 @@ export function openApp() {
 	};
 }
 
-export const workspace = openApp();
+export const workspace = openApp({ getToken: async () => null });
 
-// On login:  workspace.encryption.applyKeys(session.encryptionKeys); workspace.sync.setToken(session.token); workspace.sync.reconnect();
-// On logout: workspace.sync.goOffline(); workspace.sync.setToken(null); await workspace.idb.clearLocal();
+// On login:  workspace.encryption.applyKeys(session.encryptionKeys); workspace.sync.reconnect();
+// On logout: workspace.sync.goOffline(); await workspace.idb.clearLocal();
 ```
 
 The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.
@@ -728,17 +735,17 @@ For the common case of "react only to local edits, not to sync/IDB replays," use
 
 ## Attachments
 
-Attachments are the opt-in capabilities you compose inside a builder. They all ship from the package root — there are no `@epicenter/workspace/extensions/*` subpaths.
+Attachments are the opt-in capabilities you compose inside a builder. Browser-safe attachments ship from the package root. Node and Bun-only attachments use explicit subpaths.
 
 ```typescript
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	attachSqlite,
 	attachSync,
 	attachTables,
 	toWsUrl,
 } from '@epicenter/workspace';
+import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 ```
 
 ### Persistence
@@ -748,10 +755,10 @@ import {
 ```typescript
 import * as Y from 'yjs';
 import {
-	attachSqlite,
 	attachTables,
 	defineTable,
 } from '@epicenter/workspace';
+import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import { type } from 'arktype';
 
 const notes = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
@@ -798,7 +805,7 @@ function openTabs() {
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
 	const sync = attachSync(ydoc, {
-		url: (docId) => toWsUrl(`https://sync.epicenter.so/rooms/${docId}`),
+		url: toWsUrl(`https://sync.epicenter.so/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 	});
 
@@ -826,10 +833,10 @@ The markdown materializer is exported from `@epicenter/workspace/document/materi
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
-	attachSqlite,
 	attachTables,
 	defineTable,
 } from '@epicenter/workspace';
+import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -872,10 +879,10 @@ The SQLite materializer is exported from `@epicenter/workspace/document/material
 import { Database } from 'bun:sqlite';
 import * as Y from 'yjs';
 import {
-	attachSqlite,
 	attachTables,
 	defineTable,
 } from '@epicenter/workspace';
+import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import { type } from 'arktype';
 
@@ -1482,7 +1489,7 @@ import {
 } from '@epicenter/workspace';
 ```
 
-`walkActions(source)` flattens a nested action tree or full workspace bundle into `[path, action]` pairs. Combined with each action's `type`, `title`, `description`, and `input` schema, that's enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport.
+`walkActions(source)` flattens action leaves reachable through plain object properties into `[path, action]` pairs. You can pass a narrow action tree or a full workspace bundle. Combined with each action's `type`, `title`, `description`, and `input` schema, that's enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport.
 
 ### IDs and dates
 
@@ -1515,9 +1522,9 @@ These matter when you are writing low-level tooling against raw Yjs structures.
 The core package does not export an MCP server. What it does export is the metadata you need to build one:
 
 - actions with `type`, `title`, `description`, and `input`
-- `walkActions(...)` to flatten a nested action tree or full workspace bundle
+- `walkActions(...)` to flatten a nested action tree or workspace bundle
 - `isAction` / `isQuery` / `isMutation` type guards
-- `@epicenter/workspace/ai` — `actionsToAiTools(...)` for TanStack AI tool bindings
+- `@epicenter/workspace/ai`: `actionsToAiTools(...)` for TanStack AI tool bindings
 
 That is enough to build adapters that expose workspace actions over HTTP, CLI, or MCP without coupling the core package to one transport.
 

@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
 	DateTimeString,
 	generateId,
-	NoopWebSocket,
 	type ProjectDir,
 } from '@epicenter/workspace';
-import { mintTestProjectDir } from '@epicenter/workspace/test-utils';
+import {
+	mintTestProjectDir,
+	NoopWebSocket,
+} from '@epicenter/workspace/test-utils';
 import { openFuji as openFujiDaemon } from './daemon.js';
 import { openFuji as openFujiScript } from './script.js';
 
@@ -25,7 +27,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 		{
 			using daemon = openFujiDaemon({
 				getToken: async () => 'fake-token',
-				device: { id: 'test-daemon', name: 'Fuji Daemon', platform: 'node' },
+				peer: { id: 'test-daemon', name: 'Fuji Daemon', platform: 'node' },
 				projectDir: workdir,
 				webSocketImpl: NoopWebSocket,
 			});

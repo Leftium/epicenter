@@ -3,13 +3,13 @@ import type { Result } from 'wellcrafted/result';
 import type { Action } from '../shared/actions.js';
 
 /**
- * Low-level `sync.rpc(...)` contract inferred from an action source.
+ * Low-level `rpc.rpc(...)` contract inferred from an action source.
  *
  * The transport sends one dot-path string such as `'tabs.close'`, so this
  * type mirrors that wire shape as a flat action map. App code should usually
- * prefer `createRemoteActions<T>(sync, deviceId)` for nested calls; use this
- * type when calling the lower-level `sync.rpc<TMap>(clientId, action, input)`
- * API.
+ * prefer `createRemoteActions<T>({ presence, rpc }, peerId)` for nested
+ * calls; use this type when calling the lower-level
+ * `rpc.rpc<TMap>(clientId, action, input)` API.
  *
  * @example
  * ```typescript
@@ -23,7 +23,7 @@ import type { Action } from '../shared/actions.js';
  *
  * // CLI imports it for typed RPC:
  * import type { TabManagerRpc } from '@epicenter/tab-manager/rpc';
- * const { data } = await workspace.sync.rpc<TabManagerRpc>(
+ * const { data } = await workspace.rpc.rpc<TabManagerRpc>(
  *   peer.clientId,
  *   'tabs.close',
  *   { tabIds: [1] },

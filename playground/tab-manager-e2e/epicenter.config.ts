@@ -32,9 +32,10 @@ import {
 } from '@epicenter/tab-manager/workspace';
 import {
 	attachEncryption,
-	attachSqlite,
 	attachSync,
+	toWsUrl,
 } from '@epicenter/workspace';
+import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -66,7 +67,7 @@ const unlock = attachSessionUnlock(encryption, {
 });
 
 const sync = attachSync(ydoc, {
-	url: (docId) => `${SERVER_URL}/workspaces/${docId}`,
+	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 	// Gate connection on local hydrate + unlock so the handshake only exchanges
 	// the delta, not the whole document.
 	waitFor: Promise.all([persistence.whenLoaded, unlock.whenChecked]),

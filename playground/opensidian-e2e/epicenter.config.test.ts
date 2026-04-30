@@ -17,10 +17,10 @@ import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	attachEncryption,
-	attachSqlite,
 	createDisposableCache,
 	generateId,
 } from '@epicenter/workspace';
+import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	createFileContentDoc,
 	type FileContentDocs,

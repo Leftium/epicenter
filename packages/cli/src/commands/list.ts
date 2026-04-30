@@ -1,84 +1,62 @@
 /**
- * `epicenter list [dot.path]`: render the actions exposed by this workspace.
+ * `epicenter list [dot.path]`: render actions exposed by this project.
  *
- * Conceptually this is a one-line shell shortcut for
- * `describeActions(workspace)` against the daemon's live workspace.
- * Nothing more. The CLI is the shell-friendly surface for one-shot queries;
- * orchestration (fan-out across peers, conditional dispatch, loops) belongs
- * in vault-style TypeScript scripts that load the workspace library
- * directly via `loadConfig` and call `describeRemoteActions` / `sync.rpc`
- * themselves.
+ * The daemon returns export-prefixed action paths for every workspace in
+ * `epicenter.config.ts`. The CLI only filters and renders that manifest.
  *
- * Per-peer schema introspection used to live here as `list --peer <id>` /
- * `list --all`. It moved to `epicenter peers <deviceId>`, which is the
- * natural home: the peers verb already owns the awareness/RPC dimension.
+ * Per-peer schema introspection is a script concern. The CLI lists the local
+ * daemon's export-prefixed action surface only.
  *
- * `epicenter list` requires a running daemon for the resolved `--dir`.
+ * `epicenter list` requires a running daemon for the discovered project.
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
  */
 
-import {
-	type ActionManifest,
-	type DaemonError,
-	getDaemon,
-	type ResolveError,
-} from '@epicenter/workspace';
+import type { ActionManifest } from '@epicenter/workspace';
+import { type DaemonError, getDaemon } from '@epicenter/workspace/node';
 import Type, { type TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
-import type { Argv, CommandModule } from 'yargs';
 
+import { cmd } from '../util/cmd.js';
+import { projectOption } from '../util/common-options.js';
 import {
-	dirOption,
-	resolveTarget,
-	workspaceOption,
-} from '../util/common-options';
-import { formatYargsOptions, output, outputError } from '../util/format-output';
+	formatOptions,
+	type OutputFormat,
+	output,
+	outputError,
+} from '../util/format-output.js';
 
-type Format = 'json' | 'jsonl' | undefined;
-
-export type ListResult = Result<ActionManifest, ResolveError>;
-
-export const listCommand: CommandModule = {
+export const listCommand = cmd({
 	command: 'list [path]',
 	describe: 'Tree view of exposed queries and mutations on this device',
-	builder: (yargs: Argv) =>
+	builder: (yargs) =>
 		yargs
 			.positional('path', {
 				type: 'string',
 				describe: 'Optional dot-path to narrow the view',
 			})
-			.option('dir', dirOption)
-			.option('workspace', workspaceOption)
-			.options(formatYargsOptions()),
+			.option('C', projectOption)
+			.options(formatOptions),
 	handler: async (argv) => {
-		const args = argv as Record<string, unknown>;
-		const path = typeof args.path === 'string' ? args.path : '';
-		const format = args.format as Format;
-		const target = resolveTarget(args);
+		const path = argv.path ?? '';
 
-		const { data: daemon, error: daemonErr } = await getDaemon({
-			projectDir: target.absDir,
-			userWorkspace: target.userWorkspace,
-		});
+		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
 			outputError(daemonErr.message);
 			process.exitCode = 1;
 			return;
 		}
-		const result = await daemon.list({ workspace: target.userWorkspace });
-		renderResult(result, path, format);
+		const result = await daemon.list();
+		renderResult(result, path, argv.format);
 	},
-};
+});
 
 function renderResult(
-	result: Result<ActionManifest, ResolveError | DaemonError>,
+	result: Result<ActionManifest, DaemonError>,
 	path: string,
-	format: Format,
+	format: OutputFormat | undefined,
 ): void {
 	if (result.error !== null) {
 		switch (result.error.name) {
-			case 'UnknownWorkspace':
-			case 'AmbiguousWorkspace':
 			case 'MissingConfig':
 			case 'Required':
 			case 'Timeout':
@@ -100,10 +78,11 @@ function renderResult(
 function renderJson(
 	entries: ActionManifest,
 	path: string,
-	format: Exclude<Format, undefined>,
+	format: OutputFormat,
 ): void {
-	if (path && entries[path]) {
-		output(toActionDescriptor(entries[path]!, path), { format });
+	const action = path ? entries[path] : undefined;
+	if (action) {
+		output(toActionDescriptor(action, path), { format });
 		return;
 	}
 
@@ -150,7 +129,7 @@ export function filterByPath(
 	path: string,
 ): ActionManifest {
 	if (!path) return entries;
-	const pfx = path + '.';
+	const pfx = `${path}.`;
 	const out: ActionManifest = {};
 	for (const [p, meta] of Object.entries(entries)) {
 		if (p === path || p.startsWith(pfx)) out[p] = meta;
@@ -182,22 +161,21 @@ type TreeNode = {
 };
 
 function printTree(entries: ActionManifest, prefix: string): void {
-	const pfx = prefix ? prefix + '.' : '';
+	const pfx = prefix ? `${prefix}.` : '';
 	const root: TreeNode = { name: '', children: new Map() };
 	for (const [path, action] of Object.entries(entries)) {
 		const rest = prefix ? path.slice(pfx.length) : path;
 		if (!rest) continue;
 		const parts = rest.split('.');
 		let node = root;
-		for (let i = 0; i < parts.length; i++) {
-			const seg = parts[i]!;
+		for (const [idx, seg] of parts.entries()) {
 			let child = node.children.get(seg);
 			if (!child) {
 				child = { name: seg, children: new Map() };
 				node.children.set(seg, child);
 			}
 			node = child;
-			if (i === parts.length - 1) node.action = action;
+			if (idx === parts.length - 1) node.action = action;
 		}
 	}
 	printChildren(root, '');

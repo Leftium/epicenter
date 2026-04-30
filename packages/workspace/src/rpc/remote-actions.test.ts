@@ -1,22 +1,17 @@
-/**
- * `createRemoteActions<T>()` unit tests: proxy mechanics, first-match
- * resolution, and disconnect short-circuit. Tests use a mock `SyncAttachment`,
- * no real
- * Y.Doc, no real WebSocket, no real awareness. The peer-resolution logic
- * itself is covered in attach-sync.test.ts (presence section).
- */
-
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { isRpcError, RpcError } from '@epicenter/sync';
-import { PeerMiss, type FoundPeer, type SyncAttachment } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import { Err, isErr, Ok } from 'wellcrafted/result';
+import type { PeerPresenceAttachment } from '../document/peer-presence.js';
+import type { FoundPeer } from '../document/standard-awareness-defs.js';
+import type { SyncRpcAttachment } from '../document/attach-sync.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
-import { createRemoteActions } from './remote-actions.js';
+import {
+	createRemoteActions,
+	type RemoteActionTransport,
+} from './remote-actions.js';
 
-// Reference action shape used to type the test proxy. Handlers are never
-// invoked here. Only the type flows through `createRemoteActions<TestActions>`.
 const TestActions = {
 	tabs: {
 		close: defineMutation({
@@ -41,84 +36,69 @@ type RpcCall = {
 	options?: { timeout?: number };
 };
 
-/**
- * Mock SyncAttachment: keeps a mutable `present` map of deviceId to clientId
- * so tests can drop a peer mid-call by mutating it and firing observers.
- * Only `find`, `observe`, and `rpc` are populated; tests never touch the
- * connection-lifecycle methods.
- */
-function mockSync(opts: {
+function mockTransport(opts: {
 	present: Record<string, number>;
 	respond: (call: RpcCall) => Promise<Result<unknown, RpcError>>;
 	calls?: RpcCall[];
-}): SyncAttachment & { drop(deviceId: string): void } {
+}): RemoteActionTransport & { drop(peerId: string): void } {
 	const present = new Map(Object.entries(opts.present));
 	const observers = new Set<() => void>();
 	const calls = opts.calls ?? [];
 
-	return {
-		// peer-discovery surface
-		find(deviceId): FoundPeer | undefined {
-			const clientId = present.get(deviceId);
+	const presence: PeerPresenceAttachment = {
+		peers: () => new Map(),
+		find(peerId): FoundPeer | undefined {
+			const clientId = present.get(peerId);
 			if (clientId === undefined) return undefined;
 			return {
 				clientId,
 				state: {
-					device: {
-						id: deviceId,
-						name: deviceId,
+					peer: {
+						id: peerId,
+						name: peerId,
 						platform: 'web',
 					},
 				},
 			};
 		},
-		observe(cb) {
-			observers.add(cb);
-			return () => observers.delete(cb);
+		waitForPeer: async () => {
+			throw new Error('waitForPeer should not be called');
 		},
-		async waitForPeer(deviceId, { timeoutMs }) {
-			const found = this.find(deviceId);
-			if (found) return Ok(found);
-			return PeerMiss.PeerMiss({
-				peerTarget: deviceId,
-				sawPeers: present.size > 0,
-				waitMs: timeoutMs,
-				emptyReason: null,
-			});
+		observe(callback) {
+			observers.add(callback);
+			return () => observers.delete(callback);
 		},
-		// rpc dispatch
+		raw: { awareness: null as never },
+	};
+
+	const rpc: SyncRpcAttachment = {
 		async rpc(target, action, input, options) {
 			const call = { target, action, input, options };
 			calls.push(call);
 			return opts.respond(call);
 		},
-		// transport surface: irrelevant for these tests, but the type wants them
-		whenConnected: Promise.resolve(),
-		whenDisposed: Promise.resolve(),
-		status: { phase: 'offline' as const },
-		onStatusChange: () => () => {},
-		goOffline: () => {},
-		reconnect: () => {},
-		peers: () => new Map(),
-		raw: { awareness: null },
-		// test helper
-		drop(deviceId: string) {
-			present.delete(deviceId);
-			for (const cb of observers) cb();
+	};
+
+	return {
+		presence,
+		rpc,
+		drop(peerId: string) {
+			present.delete(peerId);
+			for (const callback of observers) callback();
 		},
 	};
 }
 
-describe('createRemoteActions<T>()', () => {
-	it('builds a proxy whose dot-path becomes the rpc action arg', async () => {
+describe('createRemoteActions', () => {
+	test('builds a proxy whose dot-path becomes the rpc action arg', async () => {
 		const calls: RpcCall[] = [];
-		const sync = mockSync({
+		const transport = mockTransport({
 			present: { mac: 42 },
 			calls,
 			respond: async () => Ok({ closedCount: 1 }),
 		});
 
-		const remote = createRemoteActions<TestActions>(sync, 'mac');
+		const remote = createRemoteActions<TestActions>(transport, 'mac');
 		const result = await remote.tabs.close({ tabIds: [1] }, { timeout: 1000 });
 
 		expect(calls).toHaveLength(1);
@@ -130,9 +110,9 @@ describe('createRemoteActions<T>()', () => {
 		expect(result.data).toEqual({ closedCount: 1 });
 	});
 
-	it('returns Err(PeerNotFound) without sending when peer is absent', async () => {
+	test('returns Err(PeerNotFound) without sending when peer is absent', async () => {
 		const calls: RpcCall[] = [];
-		const sync = mockSync({
+		const transport = mockTransport({
 			present: {},
 			calls,
 			respond: async () => {
@@ -140,8 +120,9 @@ describe('createRemoteActions<T>()', () => {
 			},
 		});
 
-		const remote = createRemoteActions<TestActions>(sync, 'ghost');
+		const remote = createRemoteActions<TestActions>(transport, 'ghost');
 		const result = await remote.foo.bar({});
+
 		expect(calls).toHaveLength(0);
 		expect(isErr(result)).toBe(true);
 		if (isErr(result) && isRpcError(result.error)) {
@@ -149,31 +130,31 @@ describe('createRemoteActions<T>()', () => {
 		}
 	});
 
-	it('passes a Result through unchanged when the peer returns one', async () => {
-		const sync = mockSync({
+	test('passes a Result through unchanged when the peer returns one', async () => {
+		const transport = mockTransport({
 			present: { mac: 1 },
 			respond: async () => Err(RpcError.ActionNotFound({ action: 'x' }).error),
 		});
 
-		const remote = createRemoteActions<TestActions>(sync, 'mac');
+		const remote = createRemoteActions<TestActions>(transport, 'mac');
 		const result = await remote.x();
+
 		expect(isErr(result)).toBe(true);
 		if (isErr(result) && isRpcError(result.error)) {
 			expect(result.error.name).toBe('ActionNotFound');
 		}
 	});
 
-	it('rejects with PeerLeft when the peer drops mid-call', async () => {
-		// Hold the rpc response forever so the disconnect can race ahead.
-		const sync = mockSync({
+	test('resolves with PeerLeft when the peer drops mid-call', async () => {
+		const transport = mockTransport({
 			present: { mac: 7 },
 			respond: () => new Promise<Result<unknown, RpcError>>(() => {}),
 		});
 
-		const remote = createRemoteActions<TestActions>(sync, 'mac');
+		const remote = createRemoteActions<TestActions>(transport, 'mac');
 		const callPromise = remote.tabs.close({ tabIds: [1] });
 
-		sync.drop('mac');
+		transport.drop('mac');
 
 		const result = await callPromise;
 		expect(isErr(result)).toBe(true);

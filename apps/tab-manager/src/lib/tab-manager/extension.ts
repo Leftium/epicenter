@@ -1,5 +1,5 @@
 /**
- * Live browser state (tabs, windows, tab groups) is NOT stored here —
+ * Live browser state (tabs, windows, tab groups) is NOT stored here.
  * Chrome is the sole authority for ephemeral browser state. See
  * `browser-state.svelte.ts`.
  */
@@ -10,7 +10,7 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	type DeviceDescriptor,
+	type PeerDescriptor,
 	toWsUrl,
 } from '@epicenter/workspace';
 import type { DeviceId } from '$lib/workspace/definition';
@@ -20,21 +20,21 @@ import { openTabManager as openTabManagerDoc } from './index';
  * Construction is async because awareness publishes the device descriptor
  * synchronously at attach time (no two-step "online but no device yet"
  * window). Awaiting the descriptor up front means every peer sees a
- * well-formed `state.device` from the first frame.
+ * well-formed `state.peer` from the first frame.
  *
  * `whenReady` still gates UI render on idb hydration; sync (the WebSocket)
  * is independent and connects whenever the network allows.
  */
 export async function openTabManager({
 	auth,
-	device,
+	peer,
 }: {
 	auth: AuthClient;
-	device: DeviceDescriptor<DeviceId> | Promise<DeviceDescriptor<DeviceId>>;
+	peer: PeerDescriptor<DeviceId> | Promise<PeerDescriptor<DeviceId>>;
 }) {
-	const resolvedDevice = await Promise.resolve(device);
+	const resolvedPeer = await Promise.resolve(peer);
 
-	const doc = openTabManagerDoc({ deviceId: Promise.resolve(resolvedDevice.id) });
+	const doc = openTabManagerDoc({ deviceId: Promise.resolve(resolvedPeer.id) });
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
@@ -42,20 +42,23 @@ export async function openTabManager({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		device: resolvedDevice,
 		getToken: () => auth.getToken(),
 	});
+	const presence = sync.attachPresence({ peer: resolvedPeer });
+	const rpc = sync.attachRpc({ actions: { actions: doc.actions } });
 
 	return {
 		...doc,
 		idb,
 		sync,
+		presence,
+		rpc,
 		/**
-		 * Resolves when IndexedDB has hydrated the local snapshot — the UI
+		 * Resolves when IndexedDB has hydrated the local snapshot. The UI
 		 * can render with persisted data. Does NOT gate sync (the WebSocket
 		 * can connect at any time, including never if the extension is offline).
 		 */
 		whenReady: idb.whenLoaded,
-		device: resolvedDevice,
+		peer: resolvedPeer,
 	};
 }

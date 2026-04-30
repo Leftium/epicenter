@@ -2,8 +2,8 @@
  * Minimal fixture: one workspace export with inline `defineQuery` /
  * `defineMutation` nodes grouped under `actions:`. No sqlite, sync, or
  * encryption. The CLI walks the bundle itself; dot-paths reflect the
- * structure, so the counter actions live
- * at `actions.counter.{get,increment,set}`.
+ * structure, so CLI paths are
+ * `demo.actions.counter.{get,increment,set}`.
  */
 
 import { defineMutation, defineQuery } from '@epicenter/workspace';

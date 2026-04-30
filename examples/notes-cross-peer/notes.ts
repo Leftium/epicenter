@@ -5,7 +5,7 @@ import {
 	defineMutation,
 	defineQuery,
 	defineTable,
-	type DeviceDescriptor,
+	type PeerDescriptor,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
@@ -20,7 +20,7 @@ const WORKSPACE_ID = 'epicenter.notes-repro';
 // below passes `_v: 1` — same value, two different syntax conventions.
 const Note = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
-export function openNotes(device: DeviceDescriptor) {
+export function openNotes(peer: PeerDescriptor) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
 	const tables = attachTables(ydoc, { notes: Note });
 
@@ -42,14 +42,16 @@ export function openNotes(device: DeviceDescriptor) {
 	const sessions = createSessionStore();
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${SERVER_URL}/workspaces/${WORKSPACE_ID}`),
-		actions,
-		device,
 		getToken: async () =>
 			(await sessions.load(SERVER_URL))?.accessToken ?? null,
 	});
+	const presence = sync.attachPresence({ peer });
+	const rpc = sync.attachRpc({ actions: { actions } });
 
 	return {
 		actions,
+		presence,
+		rpc,
 		sync,
 		whenReady: sync.whenConnected,
 		[Symbol.dispose]() {

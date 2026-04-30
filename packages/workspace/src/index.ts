@@ -1,9 +1,10 @@
 /**
  * Epicenter: YJS-First Collaborative Workspace System
  *
- * This root export provides the full workspace API and shared utilities.
+ * This root export provides the browser-safe workspace API and shared
+ * utilities.
  *
- * - `@epicenter/workspace` - Full API (documents, tables, KV, attachments)
+ * - `@epicenter/workspace`: browser-safe API (documents, tables, KV, sync)
  *
  * @example
  * ```typescript
@@ -40,6 +41,7 @@ export type {
 	RemoteActionProxy,
 } from './shared/actions';
 export {
+	defineActions,
 	defineMutation,
 	defineQuery,
 	describeActions,
@@ -55,79 +57,14 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export { isRpcError, RpcError } from '@epicenter/sync';
-// Cross-device action calling.
+// Cross-peer action calling.
 export {
 	createRemoteActions,
 	describeRemoteActions,
+	type RemoteActionTransport,
 } from './rpc/remote-actions.js';
 export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// DAEMON TRANSPORT
-// ════════════════════════════════════════════════════════════════════════════
-
-export {
-	buildApp,
-	ListInput,
-	PeerSnapshot,
-	PeersInput,
-	RunInput,
-} from './daemon/app.js';
-export {
-	DaemonError,
-	type DaemonClient,
-	daemonClient,
-	getDaemon,
-	pingDaemon,
-} from './daemon/client.js';
-export {
-	dirHash,
-	logPathFor,
-	metadataPathFor,
-	runtimeDir,
-	socketPathFor,
-} from './daemon/paths.js';
-export {
-	type DaemonMetadata,
-	enumerateDaemons,
-	readMetadata,
-	readMetadataFromPath,
-	unlinkMetadata,
-	writeMetadata,
-} from './daemon/metadata.js';
-export { ResolveError } from './daemon/resolve-entry.js';
-export { RunError, type RunResponse } from './daemon/run-errors.js';
-export {
-	bindOrRecover,
-	bindUnixSocket,
-	StartupError,
-	type UnixSocketServer,
-	unlinkSocketFile,
-} from './daemon/unix-socket.js';
-export {
-	createWorkspaceServer,
-	type WorkspaceServer,
-	type WorkspaceServerOptions,
-} from './daemon/server.js';
-export type {
-	LoadedWorkspace,
-	WorkspaceEntry,
-} from './daemon/types.js';
-export { buildRemoteWorkspace } from './client/remote.js';
-export { connectDaemon } from './client/connect-daemon.js';
-export { findEpicenterDir } from './client/find-epicenter-dir.js';
-export type { Remote } from './client/remote-workspace-types.js';
-export {
-	attachSqliteReader,
-	type AttachSqliteReaderOptions,
-	type SqliteReaderAttachment,
-} from './document/attach-sqlite-reader.js';
-export {
-	markdownPath,
-	sqlitePath,
-	yjsPath,
-} from './document/workspace-paths.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DEVICE IDENTITY
@@ -135,11 +72,10 @@ export {
 
 export {
 	type AsyncStorage,
-	getOrCreateDeviceId,
-	getOrCreateDeviceIdAsync,
+	getOrCreateInstallationId,
+	getOrCreateInstallationIdAsync,
 	type SimpleStorage,
 } from './shared/device-id.js';
-export { hashClientId } from './shared/client-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SHARED TYPES
@@ -156,7 +92,7 @@ export { ExtensionError } from './shared/errors';
 // JSONL file sink (Bun-only) lives at the `@epicenter/workspace/logger/jsonl-sink`
 // subpath. Keeping it out of this barrel matters: re-exporting it pulls
 // `node:fs`/`node:path` into every browser bundle that touches `@epicenter/workspace`,
-// which breaks SvelteKit/Vite ssr→client builds (see `__vite-browser-external`
+// which breaks SvelteKit/Vite SSR to client builds (see `__vite-browser-external`
 // "mkdirSync is not exported" errors). Import the sink directly from the subpath
 // in Bun/Node entry points; the logger core (`createLogger`, `consoleSink`, etc.)
 // still comes from `wellcrafted/logger`.
@@ -186,8 +122,8 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT PRIMITIVES — attach*, define*, createDisposableCache, encryption,
-// timeline, storage keys, types — everything in src/document/ + src/cache/
+// DOCUMENT PRIMITIVES: attach*, define*, createDisposableCache, encryption,
+// timeline, storage keys, types: everything in src/document/ + src/cache/
 // flows through its barrel.
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -218,15 +154,6 @@ export {
 	type IndexedDbAttachment,
 } from './document/attach-indexed-db.js';
 export {
-	attachYjsLog,
-	type YjsLogAttachment,
-} from './document/attach-yjs-log.js';
-export {
-	attachYjsLogReader,
-	type YjsLogReaderAttachment,
-} from './document/attach-yjs-log-reader.js';
-export { SqliteWriterError } from './document/sqlite-writer.js';
-export {
 	attachKv,
 	type InferKvValue,
 	type Kv,
@@ -243,22 +170,21 @@ export {
 	type RichTextAttachment,
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
-export { attachMarkdown, type MarkdownShape } from './document/attach-markdown.js';
-export { attachSqlite } from './document/attach-sqlite.js';
 export {
+	type AttachRpcConfig,
 	type AttachSyncDoc,
 	attachSync,
+	PeerMiss,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
-	PeerMiss,
 	SyncFailedError,
 	type SyncFailedReason,
+	type SyncRpcAttachment,
 	type SyncStatus,
 	toWsUrl,
 	type WaitForBarrier,
 	type WebSocketImpl,
 } from './document/attach-sync.js';
-export { NoopWebSocket } from './document/noop-ws.js';
 export {
 	attachTable,
 	attachTables,
@@ -271,7 +197,6 @@ export {
 	TableParseError,
 	type Tables,
 } from './document/attach-table.js';
-
 export {
 	attachTimeline,
 	type ContentType,
@@ -299,10 +224,14 @@ export {
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
-	type DeviceDescriptor,
+	type AttachPresenceConfig,
+	type PeerPresenceAttachment,
+} from './document/peer-presence.js';
+export {
 	type FoundPeer,
+	Peer,
 	type PeerAwarenessState,
-	PeerDevice,
+	type PeerDescriptor,
 	Platform,
 } from './document/standard-awareness-defs.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';

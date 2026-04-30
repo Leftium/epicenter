@@ -1,8 +1,11 @@
 import { rmSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type FileId, generateFileId } from '@epicenter/filesystem';
-import { NoopWebSocket, type ProjectDir } from '@epicenter/workspace';
-import { mintTestProjectDir } from '@epicenter/workspace/test-utils';
+import { type ProjectDir } from '@epicenter/workspace';
+import {
+	mintTestProjectDir,
+	NoopWebSocket,
+} from '@epicenter/workspace/test-utils';
 import { openOpensidian as openOpensidianDaemon } from './daemon.js';
 import { openOpensidian as openOpensidianScript } from './script.js';
 
@@ -21,7 +24,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 		{
 			using daemon = openOpensidianDaemon({
 				getToken: async () => 'fake-token',
-				device: {
+				peer: {
 					id: 'test-daemon',
 					name: 'Opensidian Daemon',
 					platform: 'node',

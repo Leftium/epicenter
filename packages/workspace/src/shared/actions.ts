@@ -90,7 +90,7 @@ export type ActionMeta<
 /**
  * Flat dot-path to `ActionMeta` map describing a peer's full action surface.
  * Returned by the runtime-injected `system.describe` RPC and consumed via
- * `describeRemoteActions(sync, deviceId)`.
+ * `describeRemoteActions({ presence, rpc }, peerId)`.
  */
 export type ActionManifest = Record<string, ActionMeta>;
 
@@ -130,15 +130,13 @@ export type Action<
 
 /**
  * Shape suggestion for a "pure action tree" authoring style: nested objects
- * whose leaves are all `Action` definitions, no infrastructure mixed in.
+ * whose leaves are all `Action` definitions.
  *
- * Not load-bearing on any public signature anymore. `createRemoteActions<T>`,
- * `RemoteActionProxy<T>`, `actionsToAiTools<T>`, and `InferSyncRpcMap<T>` accept
- * any source object; `walkActions` filters action leaves at runtime via
- * `isAction`, so action definitions can sit alongside `ydoc`, `tables`, and
- * other bundle infrastructure. Use this type if you genuinely want to
- * annotate a return as "tree of actions only"; otherwise let the bundle's
- * inferred type do the talking.
+ * Not load-bearing on any public signature. `walkActions` filters action
+ * leaves at runtime via `isAction`, so action definitions can sit alongside
+ * workspace infrastructure. Use this type if you genuinely want to annotate a
+ * return as "tree of actions only"; otherwise let the inferred type do the
+ * talking.
  *
  * Uses `any` for the action's input/output positions so specific
  * `Query<I, T>` / `Mutation<I, T>` instances assign cleanly through the
@@ -151,11 +149,24 @@ export type Actions = {
 };
 
 /**
+ * Mark a plain action registry while preserving its exact inferred shape.
+ *
+ * This is intentionally an identity function. CLI and RPC adapters do not
+ * require this wrapper; they discover any `defineQuery` / `defineMutation`
+ * leaves reachable through plain objects. Use `defineActions` when you want
+ * to name a grouped set of actions and keep its type tidy.
+ */
+export function defineActions<TActions extends Actions>(
+	actions: TActions,
+): TActions {
+	return actions;
+}
+
+/**
  * The runtime-injected `system.*` action namespace. Single canonical type:
- * `attachSync` constructs `systemActions: SystemActions` (TypeScript checks
- * the construction shape against this) and `remote-actions.ts` derives the
- * proxy type `createRemoteActions<{ system: SystemActions }>` from the same
- * source. Drift between the runtime handler return and the consumer's
+ * `attachRpc` constructs `systemActions: SystemActions` and `remote-actions.ts`
+ * derives the proxy type `createRemoteActions<{ system: SystemActions }>` from
+ * the same source. Drift between the runtime handler return and the consumer's
  * expected return becomes a compile error.
  */
 export type SystemActions = {
@@ -242,8 +253,9 @@ export function isMutation(value: unknown): value is Mutation {
  * `true` iff `v` is a plain object literal (constructor is `Object` or
  * prototype is `null`). Bounds {@link walkActions} so it doesn't recurse
  * into class instances like `Y.Doc`, arktype `Type`, or `SvelteMap`:
- * those carry methods on their prototype and have no business being
- * walked. Lets callers safely pass a full workspace bundle.
+ * those carry methods on their prototype and have no business being walked.
+ * This makes passing a full workspace object safe: plain object branches are
+ * treated as public path segments, class-backed infrastructure is skipped.
  */
 function isPlainObject(v: unknown): v is Record<string, unknown> {
 	if (typeof v !== 'object' || v === null) return false;
@@ -267,9 +279,8 @@ function assertValidActionKey(key: string, path: string) {
  * returning the leaf `Action` if the path lands on one. Returns `undefined`
  * for missing paths or paths that resolve to a namespace.
  *
- * Typed `Record<string, unknown>` so callers can pass a full workspace
- * bundle: actions may live anywhere in the tree, not only under a
- * dedicated `actions:` namespace.
+ * Typed `Record<string, unknown>` so callers can pass a full workspace object
+ * or a narrower action tree without losing nested path support.
  */
 export function resolveActionPath(
 	actions: Record<string, unknown>,
@@ -293,9 +304,9 @@ export function resolveActionPath(
  * via {@link describeActions}.
  *
  * Recursion only descends into plain object literals. Class instances
- * (`Y.Doc`, arktype `Type`, etc.) and functions short-circuit, so passing
- * a full workspace bundle as the root is safe and bounded: actions can
- * live anywhere in the tree.
+ * (`Y.Doc`, arktype `Type`, etc.) and functions short-circuit, so a returned
+ * workspace bundle can be used directly. Any action leaf reachable through
+ * plain object properties is part of the public path surface.
  *
  * Pair with `Object.fromEntries`, `Array.from`, or a `for…of` loop:
  * ```ts
@@ -323,8 +334,8 @@ export function* walkActions(
 /**
  * Walk a tree into its flat `ActionManifest`: the wire form returned by
  * `system.describe`. Live `input` schemas are retained; functions are
- * dropped. Pairs with `describeRemoteActions(sync, id)`, which returns the
- * same shape from a remote device.
+ * dropped. Pairs with `describeRemoteActions({ presence, rpc }, peerId)`,
+ * which returns the same shape from a remote peer.
  *
  * Built atop {@link walkActions}. Use that primitive directly if you want
  * to iterate live callables instead of metadata.
@@ -428,7 +439,7 @@ export type ActionFailed = Extract<RpcError, { name: 'ActionFailed' }>;
 
 /**
  * Per-remote-call options, threaded through every wrapped leaf as a trailing
- * optional argument. The proxy passes these to `sync.rpc(...)` directly:
+ * optional argument. The proxy passes these to `rpc.rpc(...)` directly:
  * same shape, same name, single source of truth.
  *
  * Currently just `timeout`. Cancellation via `AbortSignal` is deliberately
@@ -479,9 +490,8 @@ type RemoteSuccessOutput<TOutput> =
  * Filter any object `T` down to its action-shaped leaves and wrap each leaf
  * via {@link WrapAction} so callers see uniform `Promise<Result<T, RpcError>>`.
  *
- * Pass a pure action tree OR a full workspace bundle: non-action keys
- * (`ydoc`, `tables`, class instances, plain functions) are removed at the
- * type level via key-remapping. Subtrees that contain zero actions are
+ * Pass a pure action tree or a workspace bundle: non-action keys are removed
+ * at the type level via key-remapping. Subtrees that contain zero actions are
  * also pruned, so consumers only see paths that lead somewhere callable.
  *
  * Bracketed `[T[K]] extends [Action]` form is intentional: prevents

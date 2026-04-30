@@ -1,75 +1,42 @@
 /**
- * Standard awareness convention for cross-device peer presence.
+ * Standard awareness convention for peer presence.
  *
- * Each connected peer publishes a small `device` descriptor (id, name,
- * platform). Other peers read awareness to enumerate who's online and
- * dispatch via `createRemoteActions<T>(sync, deviceId)`.
- *
- * Action discovery is NOT in awareness. It's an on-demand RPC. Use
- * `describeRemoteActions(sync, deviceId)` to fetch a peer's full action
- * tree when you need it.
- *
- * Apps opt in by spreading `standardAwarenessDefs` into their `attachAwareness`
- * call; app-specific fields can be added alongside:
- *
- * ```ts
- * const awareness = attachAwareness(ydoc, {
- *   ...standardAwarenessDefs,
- *   cursor: type({ x: 'number', y: 'number' }),  // app-specific field
- * });
- * awareness.setLocal({
- *   device: {
- *     id: getOrCreateDeviceId(localStorage),
- *     name: 'Braden MacBook',
- *     platform: 'web',
- *   },
- * });
- * ```
+ * Each connected peer publishes a small `peer` descriptor: id, name, and
+ * platform. Action discovery is not in awareness. It is fetched on demand via
+ * `describeRemoteActions({ presence, rpc }, peerId)`.
  */
 
 import { type } from 'arktype';
 
-/** Closed enum of supported platforms — extends as new app targets ship. */
+/** Closed enum of supported platforms. */
 export const Platform = type('"web" | "tauri" | "chrome-extension" | "node"');
 export type Platform = typeof Platform.infer;
 
-/**
- * The peer descriptor published by each connected peer. Presence-only —
- * carries identity, not capabilities. Action discovery happens on demand
- * via `describeRemoteActions(sync, deviceId)`.
- *
- * Named `PeerDevice` (not `Device`) so it doesn't collide with app-level
- * `Device` table-row types (e.g. tab-manager's devices table).
- */
-export const PeerDevice = type({
+/** Presence-only descriptor published by each connected peer. */
+export const Peer = type({
 	id: 'string',
 	name: 'string',
 	platform: Platform,
 });
-export type PeerDevice = typeof PeerDevice.infer;
+export type Peer = typeof Peer.infer;
 
 /**
- * Input shape for workspace factories. Identical to `PeerDevice` — kept as
- * a separate alias so apps with branded ID types (e.g. tab-manager's
- * `DeviceId`) can carry the brand through the factory without `as` casts.
- * Defaults to `string` — SPAs and untyped consumers see no difference.
+ * Input shape for workspace factories. Identical to `Peer`, kept separate so
+ * apps with branded id types can preserve the brand through construction.
  */
-export type DeviceDescriptor<TId extends string = string> = {
+export type PeerDescriptor<TId extends string = string> = {
 	id: TId;
 	name: string;
 	platform: Platform;
 };
 
-/**
- * Spread into `attachAwareness` defs to enable typed access to the
- * `state.device` field on peer awareness states.
- */
+/** Spread into `attachAwareness` defs to enable typed `state.peer` access. */
 export const standardAwarenessDefs = {
-	device: PeerDevice,
+	peer: Peer,
 };
 
-/** A peer's awareness state under the standard `device` schema. */
-export type PeerAwarenessState = { device: PeerDevice };
+/** A peer's awareness state under the standard `peer` schema. */
+export type PeerAwarenessState = { peer: Peer };
 
-/** Result of a `find(deviceId)` lookup — clientId plus full peer state. */
+/** Result of a `find(peerId)` lookup: clientId plus full peer state. */
 export type FoundPeer = { clientId: number; state: PeerAwarenessState };

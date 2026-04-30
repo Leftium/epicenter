@@ -19,7 +19,6 @@ import {
 import type { Result } from 'wellcrafted/result';
 
 import type { PeerAwarenessState as AwarenessState } from '../document/standard-awareness-defs.js';
-import type { ResolveError } from './resolve-entry.js';
 
 /**
  * CLI-specific failures of the `/run` route. Carrying the failure mode
@@ -69,7 +68,7 @@ export const RunError = defineErrors({
 		waitMs: number;
 		emptyReason: string | null;
 	}) => ({
-		message: `no peer matches deviceId "${peerTarget}"`,
+		message: `no peer matches peer id "${peerTarget}"`,
 		peerTarget,
 		sawPeers,
 		waitMs,
@@ -79,8 +78,7 @@ export const RunError = defineErrors({
 export type RunError = InferErrors<typeof RunError>;
 
 /**
- * Wire shape of `/run`'s response body. Wider than `executeRun`'s actual
- * return type because the route prepends `ResolveError` for `-w` misses
- * before dispatching. The renderer narrows on `error.name`.
+ * Wire shape of `/run`'s response body. The renderer narrows on
+ * `error.name`.
  */
-export type RunResponse = Result<unknown, RunError | ResolveError>;
+export type RunResponse = Result<unknown, RunError>;

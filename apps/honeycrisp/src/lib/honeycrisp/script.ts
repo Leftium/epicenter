@@ -1,14 +1,16 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
-	attachYjsLogReader,
-	findEpicenterDir,
-	hashClientId,
 	type ProjectDir,
 	toWsUrl,
 	type WebSocketImpl,
-	yjsPath,
 } from '@epicenter/workspace';
+import {
+	attachYjsLogReader,
+	findEpicenterDir,
+	hashClientId,
+	yjsPath,
+} from '@epicenter/workspace/node';
 import { openHoneycrisp as openHoneycrispDoc } from './index.js';
 
 export function openHoneycrisp({
@@ -33,6 +35,7 @@ export function openHoneycrisp({
 		getToken,
 		webSocketImpl,
 	});
+	const rpc = sync.attachRpc({ actions: { actions: doc.actions } });
 
-	return { ...doc, yjsLog, sync };
+	return { ...doc, yjsLog, sync, rpc };
 }

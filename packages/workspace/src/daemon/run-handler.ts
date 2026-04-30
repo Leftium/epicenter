@@ -1,83 +1,112 @@
 /**
  * Daemon-side dispatch for the `/run` route. The Hono handler in `app.ts`
- * resolves the workspace entry and forwards to `executeRun` here.
+ * forwards to `executeRun` here.
  *
  * `epicenter run` is a shell shortcut for one workspace primitive:
  *
- *   ctx.peerTarget === undefined   ->  invokeAction(...)
- *   ctx.peerTarget === <deviceId>  ->  sync.rpc(clientID, path, input)
+ *   request.peerTarget === undefined   ->  invokeAction(...)
+ *   request.peerTarget === <peerId>    ->  rpc.rpc(clientID, path, input)
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
  * directly. The CLI deliberately does not grow flags that shadow scripting.
  *
  * `executeRun` returns a domain `RunResponse` that the route serializes
- * verbatim. Unexpected exceptions bubble out to the route's blanket
- * try/catch and surface as `HandlerCrashed` on the client side.
+ * verbatim. Unexpected exceptions bubble to Hono's non-2xx response path
+ * and surface as `HandlerCrashed` on the client side.
  */
 
-import {
-	type Action,
-	invokeAction,
-	resolveActionPath,
-	walkActions,
-} from '../shared/actions.js';
 import { Ok } from 'wellcrafted/result';
-
-import type { WorkspaceEntry } from './types.js';
-import type { RunInput } from './app.js';
+import { invokeAction, resolveActionPath } from '../shared/actions.js';
+import {
+	resolveWorkspaceActionTarget,
+	workspaceActionNearestSiblingLines,
+	workspaceActionSuggestionLines,
+} from './action-routing.js';
+import type { RunRequest } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
+import type { WorkspaceEntry } from './types.js';
 
 export async function executeRun(
-	entry: WorkspaceEntry,
-	ctx: RunInput,
+	entries: WorkspaceEntry[],
+	{
+		actionPath,
+		input: actionInput,
+		peerTarget,
+		waitMs,
+	}: RunRequest,
 ): Promise<RunResponse> {
-	const { workspace } = entry;
-	if (workspace.whenReady) await workspace.whenReady;
-
-	const action = resolveActionPath(workspace, ctx.actionPath);
-	if (!action) {
-		const entries = [...walkActions(workspace)];
-		const descendants = entriesUnder(entries, ctx.actionPath);
-		if (descendants.length > 0) {
-			return RunError.UsageError({
-				message: `"${ctx.actionPath}" is not a runnable action.`,
-				suggestions: descendants.map(([p, a]) => `  ${p}  (${a.type})`),
-			});
-		}
+	const target = resolveWorkspaceActionTarget(entries, actionPath);
+	if (target.error !== null) {
 		return RunError.UsageError({
-			message: `"${ctx.actionPath}" is not defined.`,
-			suggestions: nearestSiblingLines(entries, ctx.actionPath),
+			message: `No config export "${target.error.exportName}". Available: ${target.error.available.join(', ')}`,
+			suggestions: target.error.available.map((name) => `  ${name}`),
 		});
 	}
 
-	if (ctx.peerTarget !== undefined) {
-		return invokeRemote(entry, ctx, ctx.peerTarget);
+	const { entry, localPath } = target.data;
+	const { workspace } = entry;
+	if (workspace.whenReady) await workspace.whenReady;
+
+	const action = resolveActionPath(workspace, localPath);
+	if (!action) {
+		const descendants = workspaceActionSuggestionLines(entry, localPath);
+		if (descendants.length > 0) {
+			return RunError.UsageError({
+				message: `"${actionPath}" is not a runnable action.`,
+				suggestions: descendants,
+			});
+		}
+		return RunError.UsageError({
+			message: `"${actionPath}" is not defined.`,
+			suggestions: workspaceActionNearestSiblingLines(entry, localPath),
+		});
 	}
 
-	const result = await invokeAction(action, ctx.input, ctx.actionPath);
+	if (peerTarget !== undefined) {
+		return invokeRemote({
+			actionInput,
+			entry,
+			localPath,
+			peerTarget,
+			waitMs,
+		});
+	}
+
+	const result = await invokeAction(action, actionInput, actionPath);
 	if (result.error !== null) {
 		return RunError.RuntimeError({ cause: result.error });
 	}
 	return Ok(result.data);
 }
 
-async function invokeRemote(
-	entry: WorkspaceEntry,
-	ctx: RunInput,
-	peerTarget: string,
-): Promise<RunResponse> {
+async function invokeRemote({
+	actionInput,
+	entry,
+	localPath,
+	peerTarget,
+	waitMs,
+}: {
+	actionInput: unknown;
+	entry: WorkspaceEntry;
+	localPath: string;
+	peerTarget: string;
+	waitMs: number;
+}): Promise<RunResponse> {
 	const { workspace } = entry;
-	const sync = workspace.sync;
+	const presence = workspace.presence;
+	const rpc = workspace.rpc;
 
-	if (!sync) {
+	if (!presence || !rpc) {
 		return RunError.UsageError({
-			message: `Workspace "${entry.name}" has no sync attachment; --peer requires sync.`,
+			message: `Workspace "${entry.name}" has no peer RPC attachment; --peer requires presence and RPC.`,
 		});
 	}
 
 	const start = Date.now();
-	const found = await sync.waitForPeer(peerTarget, { timeoutMs: ctx.waitMs });
+	const found = await presence.waitForPeer(peerTarget, {
+		timeoutMs: waitMs,
+	});
 	if (found.error !== null) {
 		return RunError.PeerMiss({
 			peerTarget: found.error.peerTarget,
@@ -88,8 +117,8 @@ async function invokeRemote(
 	}
 
 	const { clientId: targetClientId, state: peerState } = found.data;
-	const remaining = Math.max(1, ctx.waitMs - (Date.now() - start));
-	const result = await sync.rpc(targetClientId, ctx.actionPath, ctx.input, {
+	const remaining = Math.max(1, waitMs - (Date.now() - start));
+	const result = await rpc.rpc(targetClientId, localPath, actionInput, {
 		timeout: remaining,
 	});
 
@@ -101,28 +130,4 @@ async function invokeRemote(
 		});
 	}
 	return Ok(result.data);
-}
-
-function entriesUnder(
-	entries: Array<[string, Action]>,
-	prefix: string,
-): Array<[string, Action]> {
-	if (!prefix) return entries;
-	const pfx = prefix + '.';
-	return entries.filter(([p]) => p === prefix || p.startsWith(pfx));
-}
-
-function nearestSiblingLines(
-	entries: Array<[string, Action]>,
-	missedPath: string,
-): string[] {
-	const parts = missedPath.split('.');
-	while (parts.length > 0) {
-		parts.pop();
-		const prefix = parts.join('.');
-		const alts = entriesUnder(entries, prefix);
-		if (alts.length === 0) continue;
-		return alts.map(([p, a]) => `  ${p}  (${a.type})`);
-	}
-	return [];
 }

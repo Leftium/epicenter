@@ -13,18 +13,16 @@
 
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-
-import type { CommandModule } from 'yargs';
-
 import {
-	pingDaemon,
 	type DaemonMetadata,
 	enumerateDaemons,
-	unlinkMetadata,
+	pingDaemon,
 	socketPathFor,
+	unlinkMetadata,
 	unlinkSocketFile,
-} from '@epicenter/workspace';
+} from '@epicenter/workspace/node';
 import { CONFIG_FILENAME } from '../load-config.js';
+import { cmd } from '../util/cmd.js';
 
 // `ps` shows a liveness column and sweeps obviously-dead entries it sees;
 // the kernel-level `kill -0` predicate stays small and inline rather than
@@ -47,8 +45,8 @@ function sweepOrphan(dir: string): void {
  * A row of the `ps` table.
  *
  * Per Invariant 7 the daemon serves every workspace its config exports;
- * the row carries the dir + pid + uptime, and consumers who want the
- * loaded set ask the daemon directly via the `status` IPC command.
+ * the row carries the dir + pid + uptime. Detailed workspace/action state
+ * stays on `list` and `peers`.
  */
 export type PsRow = {
 	dir: string;
@@ -96,7 +94,7 @@ export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
 }
 
 /**
- * `'?'` when the config file is missing (e.g. workspace dir was renamed),
+ * `'?'` when the config file is missing (e.g. project dir was renamed),
  * `true` when its mtime differs from the captured value, `false` otherwise.
  */
 function detectConfigChange(meta: DaemonMetadata): boolean | '?' {
@@ -121,10 +119,9 @@ function humanUptime(startedAt: string): string {
 	return `${hr}h${restMin}m`;
 }
 
-export const psCommand: CommandModule = {
+export const psCommand = cmd({
 	command: 'ps',
 	describe: 'List running `epicenter up` daemons (this user, this machine).',
-	builder: (yargs) => yargs,
 	handler: async () => {
 		const rows = await runPs();
 		if (rows.length === 0) {
@@ -134,4 +131,4 @@ export const psCommand: CommandModule = {
 		// `console.table` is the spec-mentioned renderer; it writes to stdout.
 		console.table(rows);
 	},
-};
+});

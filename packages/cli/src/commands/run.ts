@@ -3,125 +3,99 @@
  * `defineMutation` by dot-path through the local `epicenter up` daemon.
  *
  * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
- * With `--peer <target>`, the invocation is dispatched over the sync
- * room's RPC channel to a remote peer instead of running locally.
+ * With `--peer <target>`, the invocation is dispatched over the selected
+ * export's RPC channel to a remote peer instead of running locally.
  *
- * `epicenter run` requires a running daemon for the resolved `--dir`.
+ * `epicenter run` requires a running daemon for the discovered project.
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
  *
  * Exit codes:
- *   1: usage error (unknown action, missing sync for `--peer`),
- *      workspace miss (`UnknownWorkspace`, `AmbiguousWorkspace`),
- *      or no daemon / config (`MissingConfig`, `Required`, transport error)
+ *   1: usage error (unknown export, unknown action, missing peer RPC for
+ *      `--peer`), or no daemon / config (`MissingConfig`, `Required`,
+ *      transport error)
  *   2: runtime error (local action returned Err, or remote RPC failed)
  *   3: peer-miss (`--peer <target>` didn't resolve within `--wait`)
  */
 
 import {
+	type PeerAwarenessState,
+	type RpcError,
+} from '@epicenter/workspace';
+import {
 	type DaemonError,
 	getDaemon,
-	type PeerAwarenessState,
-	type ResolveError,
-	type RpcError,
 	type RunError as DaemonRunError,
-	type RunInput,
-} from '@epicenter/workspace';
-export { RunError } from '@epicenter/workspace';
+	type RunRequest,
+} from '@epicenter/workspace/node';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { Argv, CommandModule, Options } from 'yargs';
 
+import { cmd } from '../util/cmd.js';
+import { projectOption } from '../util/common-options.js';
 import {
-	dirOption,
-	resolveTarget,
-	workspaceOption,
-} from '../util/common-options';
-import {
-	formatYargsOptions,
+	formatOptions,
+	type OutputFormat,
 	output,
 	outputError,
-} from '../util/format-output';
-import { parseJsonInput, readStdin } from '../util/parse-input';
-
-export type RunCtx = RunInput;
+} from '../util/format-output.js';
+import { parseJsonInput, readStdin } from '../util/parse-input.js';
 
 const DEFAULT_PEER_WAIT_MS = 5000;
 
-const peerOption: Options = {
-	type: 'string',
-	description: 'Invoke on a remote peer by deviceId',
-};
-
-const waitOption: Options = {
-	type: 'number',
-	description: `Total ms to wait for peer resolution + RPC; requires --peer (default ${DEFAULT_PEER_WAIT_MS})`,
-};
-
-export type RunResult = Result<unknown, DaemonRunError | ResolveError>;
-
-export const runCommand: CommandModule = {
+export const runCommand = cmd({
 	command: 'run <action> [input]',
 	describe:
 		'Invoke a defineQuery / defineMutation by dot-path, locally or on a remote peer (--peer)',
-	builder: (yargs: Argv) =>
+	builder: (yargs) =>
 		yargs
 			.positional('action', {
 				type: 'string',
 				demandOption: true,
-				describe: 'Action path, e.g. savedTabs.create',
+				describe: 'Export-prefixed action path, e.g. notes.actions.notes.add',
 			})
 			.positional('input', {
 				type: 'string',
 				describe: 'Inline JSON or @file.json',
 			})
-			.option('dir', dirOption)
-			.option('workspace', workspaceOption)
-			.option('peer', peerOption)
-			.option('wait', waitOption)
+			.option('C', projectOption)
+			.option('peer', {
+				type: 'string',
+				description: 'Invoke on a remote peer by peer id',
+			})
+			.option('wait', {
+				type: 'number',
+				description: `Total ms to wait for peer resolution + RPC; requires --peer (default ${DEFAULT_PEER_WAIT_MS})`,
+			})
 			.implies('wait', 'peer')
-			.options(formatYargsOptions())
+			.options(formatOptions)
 			.strict(),
 	handler: async (argv) => {
-		const args = argv as Record<string, unknown>;
-		const actionPath = String(args.action);
-		const format = args.format as 'json' | 'jsonl' | undefined;
 		const peerTarget =
-			typeof args.peer === 'string' && args.peer.length > 0
-				? args.peer
-				: undefined;
-		const waitMs =
-			typeof args.wait === 'number' ? args.wait : DEFAULT_PEER_WAIT_MS;
-		const target = resolveTarget(args);
-		const input = await resolveInput(args);
+			argv.peer && argv.peer.length > 0 ? argv.peer : undefined;
+		const waitMs = argv.wait ?? DEFAULT_PEER_WAIT_MS;
+		const actionInput = await resolveInput(argv.input);
 
-		const ctx: RunCtx = {
-			actionPath,
-			input,
+		const runRequest: RunRequest = {
+			actionPath: argv.action,
+			input: actionInput,
 			peerTarget,
 			waitMs,
-			workspace: target.userWorkspace,
 		};
 
-		const { data: daemon, error: daemonErr } = await getDaemon({
-			projectDir: target.absDir,
-			userWorkspace: target.userWorkspace,
-		});
+		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
 			outputError(daemonErr.message);
 			process.exitCode = 1;
 			return;
 		}
-		const result = await daemon.run(ctx);
-		renderRunResult(result, format);
+		const result = await daemon.run(runRequest);
+		renderRunResult(result, argv.format);
 	},
-};
+});
 
 function renderRunResult(
-	result: Result<
-		unknown,
-		DaemonRunError | ResolveError | DaemonError
-	>,
-	format: 'json' | 'jsonl' | undefined,
+	result: Result<unknown, DaemonRunError | DaemonError>,
+	format: OutputFormat | undefined,
 ): void {
 	if (result.error === null) {
 		output(result.data, { format });
@@ -146,7 +120,6 @@ function renderRunResult(
 			emitMissError(
 				result.error.peerTarget,
 				result.error.sawPeers,
-				undefined,
 				result.error.waitMs,
 			);
 			if (result.error.emptyReason)
@@ -162,8 +135,6 @@ function renderRunResult(
 			);
 			process.exitCode = 2;
 			return;
-		case 'UnknownWorkspace':
-		case 'AmbiguousWorkspace':
 		case 'MissingConfig':
 		case 'Required':
 		case 'Timeout':
@@ -175,41 +146,34 @@ function renderRunResult(
 	}
 }
 
-async function resolveInput(argv: Record<string, unknown>): Promise<unknown> {
-	const positional =
-		typeof argv.input === 'string' && argv.input.length > 0
-			? (argv.input as string)
-			: undefined;
+async function resolveInput(input: string | undefined): Promise<unknown> {
+	const positional = input && input.length > 0 ? input : undefined;
 	const stdinContent = await readStdin();
 	return parseJsonInput({ positional, stdinContent });
 }
 
 /**
  * Two miss shapes: nothing seen on the wire (probably a connect-status
- * problem) vs peers visible but none matched the requested deviceId
- * (user typo / wrong workspace).
+ * problem) vs peers visible but none matched the requested peer id.
  */
 export function emitMissError(
 	target: string,
 	sawPeers: boolean,
-	workspace: string | undefined,
 	waitMs: number,
 ): void {
-	const scope = workspace ? ` in workspace ${workspace}` : '';
 	if (!sawPeers) {
 		outputError(
 			`error: no peers seen after waiting ${waitMs}ms for "${target}"`,
 		);
 		return;
 	}
-	outputError(`error: no peer matches deviceId "${target}"${scope}`);
-	const peersHint = workspace ? ` -w ${workspace}` : '';
-	outputError(`run \`epicenter peers${peersHint}\` to see connected peers`);
+	outputError(`error: no peer matches peer id "${target}"`);
+	outputError('run `epicenter peers` to see connected peers');
 }
 
 /**
  * Format every `RpcError` variant labeled with the peer's presence info
- * (`device.name`, `device.platform`) at resolution time. The exhaustive
+ * (`peer.name`, `peer.platform`) at resolution time. The exhaustive
  * switch is enforced at compile time via the `never` check: adding a new
  * variant to `@epicenter/workspace`'s `RpcError` breaks the build until a
  * case is added here.
@@ -219,8 +183,8 @@ export function emitRpcError(
 	targetClientId: number,
 	peerState: PeerAwarenessState,
 ): void {
-	const { device } = peerState;
-	const peerLabel = `${device.name} (${targetClientId}, ${device.platform})`;
+	const { peer } = peerState;
+	const peerLabel = `${peer.name} (${targetClientId}, ${peer.platform})`;
 
 	switch (error.name) {
 		case 'ActionNotFound':
@@ -233,12 +197,10 @@ export function emitRpcError(
 			outputError(`error: peer ${peerLabel} is offline`);
 			return;
 		case 'PeerNotFound':
-			outputError(`error: no peer with deviceId "${error.peer}"`);
+			outputError(`error: no peer with peer id "${error.peer}"`);
 			return;
 		case 'PeerLeft':
-			outputError(
-				`error: peer "${error.peer}" disconnected before responding`,
-			);
+			outputError(`error: peer "${error.peer}" disconnected before responding`);
 			return;
 		case 'ActionFailed':
 			outputError(

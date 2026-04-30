@@ -34,25 +34,22 @@ export function openFuji() {
 
   const idb = attachIndexedDb(ydoc);
   attachBroadcastChannel(ydoc);
+  let previousSession: AuthSession | null = null;
   const sync = attachSync(ydoc, {
-    url: (docId) => toWsUrl(`${APP_URLS.API}/workspaces/${docId}`),
+    url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
-    awareness: awareness.raw,
-    requiresToken: true,
+    getToken: async () => previousSession?.token ?? null,
   });
 
-  let previousSession: AuthSession | null = null;
   async function applySession(next: AuthSession | null) {
     const wasAuthed = previousSession !== null;
     previousSession = next;
     if (next === null) {
       sync.goOffline();
-      sync.setToken(null);
       if (wasAuthed) await idb.clearLocal();
       return;
     }
     encryption.applyKeys(next.encryptionKeys);
-    sync.setToken(next.token);
     sync.reconnect();
   }
 

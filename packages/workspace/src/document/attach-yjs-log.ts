@@ -24,7 +24,6 @@
  * does carry `whenLoaded`; that asymmetry is real, not vestigial.
  */
 
-import type { Database } from 'bun:sqlite';
 import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
 import { openWriterSqlite } from './sqlite-writer.js';
@@ -54,31 +53,6 @@ const COMPACTION_BYTE_THRESHOLD = 2 * 1024 * 1024;
  */
 const COMPACTION_DEBOUNCE_MS = 5_000;
 
-/**
- * Compact the SQLite update log into a single row.
- *
- * Encodes the current doc state via `Y.encodeStateAsUpdateV2`, which
- * produces smaller output than merging individual updates. No-ops if
- * the log already has <= 1 row or the compacted blob exceeds 2 MB.
- *
- * @returns `true` if compaction ran, `false` if it no-oped.
- */
-function compactUpdateLog(db: Database, ydoc: Y.Doc): boolean {
-	const row = db.query('SELECT COUNT(*) as count FROM updates').get() as {
-		count: number;
-	};
-	if (row.count <= 1) return false;
-
-	const compacted = Y.encodeStateAsUpdateV2(ydoc);
-	if (compacted.byteLength > MAX_COMPACTED_BYTES) return false;
-
-	db.transaction(() => {
-		db.run('DELETE FROM updates');
-		db.run('INSERT INTO updates (data) VALUES (?)', [compacted]);
-	})();
-	return true;
-}
-
 export type YjsLogAttachment = {
 	/** `DELETE FROM updates`. Drops the durable log without destroying the Y.Doc. */
 	clearLocal: () => void;
@@ -99,16 +73,48 @@ export function attachYjsLog(
 		'CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL)',
 	);
 
+	// `db.query()` caches the compiled prepared statement on the Database,
+	// which matters on the hot `updateV2` path where every local Yjs
+	// transaction appends one BLOB row.
+	const countUpdates = db.query('SELECT COUNT(*) as count FROM updates');
+	const selectUpdates = db.query('SELECT data FROM updates ORDER BY id');
+	const insertUpdate = db.query('INSERT INTO updates (data) VALUES (?)');
+	const deleteUpdates = db.query('DELETE FROM updates');
+	const compactUpdateLogTx = db.transaction((compacted: Uint8Array) => {
+		deleteUpdates.run();
+		insertUpdate.run(compacted);
+	});
+
+	/**
+	 * Compact the SQLite update log into a single row.
+	 *
+	 * Encodes the current doc state via `Y.encodeStateAsUpdateV2`, which
+	 * produces smaller output than merging individual updates. No-ops if
+	 * the log already has <= 1 row or the compacted blob exceeds 2 MB.
+	 *
+	 * @returns `true` if compaction ran, `false` if it no-oped.
+	 */
+	function compactUpdateLog(): boolean {
+		const row = countUpdates.get() as { count: number };
+		if (row.count <= 1) return false;
+
+		const compacted = Y.encodeStateAsUpdateV2(ydoc);
+		if (compacted.byteLength > MAX_COMPACTED_BYTES) return false;
+
+		compactUpdateLogTx(compacted);
+		return true;
+	}
+
 	// bun:sqlite returns BLOB columns as Uint8Array; Y.applyUpdateV2
 	// accepts Uint8Array directly.
-	const rows = db.query('SELECT data FROM updates ORDER BY id').all() as {
+	const rows = selectUpdates.all() as {
 		data: Uint8Array;
 	}[];
 	for (const row of rows) {
 		Y.applyUpdateV2(ydoc, row.data);
 	}
 
-	compactUpdateLog(db, ydoc);
+	compactUpdateLog();
 
 	let bytesSinceCompaction = 0;
 	let compactionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -121,13 +127,13 @@ export function attachYjsLog(
 	}
 
 	const updateHandler = (update: Uint8Array) => {
-		db.run('INSERT INTO updates (data) VALUES (?)', [update]);
+		insertUpdate.run(update);
 
 		bytesSinceCompaction += update.byteLength;
 		if (bytesSinceCompaction > COMPACTION_BYTE_THRESHOLD) {
 			resetCompactionTimer();
 			compactionTimer = setTimeout(() => {
-				if (compactUpdateLog(db, ydoc)) bytesSinceCompaction = 0;
+				if (compactUpdateLog()) bytesSinceCompaction = 0;
 			}, COMPACTION_DEBOUNCE_MS);
 		}
 	};
@@ -148,7 +154,7 @@ export function attachYjsLog(
 			// Swallowing silently inside teardown leaves no trace for
 			// debugging; log instead so the failure surfaces.
 			try {
-				compactUpdateLog(db, ydoc);
+				compactUpdateLog();
 			} catch (cause) {
 				logger.warn(
 					new Error('Final compactUpdateLog failed during destroy', {
@@ -171,7 +177,7 @@ export function attachYjsLog(
 
 	return {
 		clearLocal: () => {
-			db.run('DELETE FROM updates');
+			deleteUpdates.run();
 		},
 		whenDisposed,
 	};

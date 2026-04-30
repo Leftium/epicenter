@@ -6,18 +6,19 @@
  * line-by-line. RPC errors are constructed via `RpcError.X({...}).error` so
  * they match the wire shape exactly.
  */
-import { RpcError } from '@epicenter/workspace';
+
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { RpcError } from '@epicenter/workspace';
 import type { AwarenessState } from '../load-config';
 import { emitMissError, emitRpcError } from './run';
 
-function mockState(device: Partial<AwarenessState['device']> = {}): AwarenessState {
+function mockState(peer: Partial<AwarenessState['peer']> = {}): AwarenessState {
 	return {
-		device: {
+		peer: {
 			id: 'mac-1',
 			name: 'MacBook',
 			platform: 'tauri',
-			...device,
+			...peer,
 		},
 	};
 }
@@ -39,27 +40,18 @@ describe('emitMissError', () => {
 	let cap: ReturnType<typeof captureErrors>;
 	afterEach(() => cap?.restore());
 
-	test('peers present but no match → points at `epicenter peers`', () => {
+	test('peers present but no match points at `epicenter peers`', () => {
 		cap = captureErrors();
-		emitMissError('ghost', true, undefined, 5000);
+		emitMissError('ghost', true, 5000);
 		expect(cap.lines).toEqual([
-			'error: no peer matches deviceId "ghost"',
+			'error: no peer matches peer id "ghost"',
 			'run `epicenter peers` to see connected peers',
 		]);
 	});
 
-	test('peers present + -w → scoped hint', () => {
+	test('no peers seen during wait reports wait duration', () => {
 		cap = captureErrors();
-		emitMissError('ghost', true, 'tabManager', 5000);
-		expect(cap.lines).toEqual([
-			'error: no peer matches deviceId "ghost" in workspace tabManager',
-			'run `epicenter peers -w tabManager` to see connected peers',
-		]);
-	});
-
-	test('no peers seen during wait → "no peers seen after waiting"', () => {
-		cap = captureErrors();
-		emitMissError('macbook-pro', false, undefined, 5000);
+		emitMissError('macbook-pro', false, 5000);
 		expect(cap.lines).toEqual([
 			'error: no peers seen after waiting 5000ms for "macbook-pro"',
 		]);
@@ -70,7 +62,7 @@ describe('emitRpcError', () => {
 	let cap: ReturnType<typeof captureErrors>;
 	afterEach(() => cap?.restore());
 
-	test('ActionNotFound labels with device.name + platform', () => {
+	test('ActionNotFound labels with peer name + platform', () => {
 		cap = captureErrors();
 		emitRpcError(
 			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
@@ -101,24 +93,20 @@ describe('emitRpcError', () => {
 			42,
 			mockState({ name: 'MacBook', platform: 'tauri' }),
 		);
-		expect(cap.lines).toEqual([
-			'error: peer MacBook (42, tauri) is offline',
-		]);
+		expect(cap.lines).toEqual(['error: peer MacBook (42, tauri) is offline']);
 	});
 
-	test('PeerNotFound surfaces the deviceId', () => {
+	test('PeerNotFound surfaces the peer id', () => {
 		cap = captureErrors();
 		emitRpcError(
 			RpcError.PeerNotFound({ peer: 'macbook-pro' }).error,
 			0,
 			mockState(),
 		);
-		expect(cap.lines).toEqual([
-			'error: no peer with deviceId "macbook-pro"',
-		]);
+		expect(cap.lines).toEqual(['error: no peer with peer id "macbook-pro"']);
 	});
 
-	test('PeerLeft surfaces the deviceId', () => {
+	test('PeerLeft surfaces the peer id', () => {
 		cap = captureErrors();
 		emitRpcError(
 			RpcError.PeerLeft({ peer: 'macbook-pro' }).error,

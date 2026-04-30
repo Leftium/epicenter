@@ -35,7 +35,6 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { Argv, CommandModule } from 'yargs';
 import {
 	CONFIG_FILENAME,
 	type LoadConfigResult,
@@ -43,7 +42,8 @@ import {
 	loadConfig,
 	type WorkspaceEntry,
 } from '../load-config.js';
-import { type ProjectArgs, projectOption } from '../util/common-options.js';
+import { cmd } from '../util/cmd.js';
+import { projectOption } from '../util/common-options.js';
 
 /**
  * Hardcoded ceiling on how long any single workspace's `whenConnected`
@@ -243,21 +243,19 @@ export async function runUp(
  * subscribes to awareness/status across every loaded workspace, and parks
  * until a signal triggers teardown.
  */
-type UpArgs = ProjectArgs & {
-	quiet: boolean;
-};
-
-export const upCommand: CommandModule<{}, UpArgs> = {
+export const upCommand = cmd({
 	command: 'up',
 	describe:
 		'Bring this config online as a long-lived peer for every workspace it exports (foreground).',
-	builder: (yargs: Argv) =>
-		yargs.option('C', projectOption).option('quiet', {
+	builder: {
+		C: projectOption,
+		quiet: {
 			type: 'boolean',
 			default: false,
 			description:
 				'Suppress awareness join/leave lines (sync state changes still print)',
-		}),
+		},
+	},
 	handler: async (argv) => {
 		const options: UpOptions = {
 			projectDir: argv.C,
@@ -291,7 +289,7 @@ export const upCommand: CommandModule<{}, UpArgs> = {
 		// Park: don't exit. SIGINT/SIGTERM handler clears stdin so node can drain.
 		process.stdin.resume();
 	},
-};
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

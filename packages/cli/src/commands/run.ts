@@ -23,15 +23,14 @@ import {
 	getDaemon,
 	type PeerAwarenessState,
 	type RpcError,
-	type RunInput,
+	type RunRequest,
 } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { Argv, CommandModule } from 'yargs';
 
-import { type ProjectArgs, projectOption } from '../util/common-options.js';
+import { cmd } from '../util/cmd.js';
+import { projectOption } from '../util/common-options.js';
 import {
-	type FormatArgs,
 	formatOptions,
 	type OutputFormat,
 	output,
@@ -41,19 +40,11 @@ import { parseJsonInput, readStdin } from '../util/parse-input.js';
 
 const DEFAULT_PEER_WAIT_MS = 5000;
 
-type RunArgs = ProjectArgs &
-	FormatArgs & {
-		action: string;
-		input?: string;
-		peer?: string;
-		wait?: number;
-	};
-
-export const runCommand: CommandModule<{}, RunArgs> = {
+export const runCommand = cmd({
 	command: 'run <action> [input]',
 	describe:
 		'Invoke a defineQuery / defineMutation by dot-path, locally or on a remote peer (--peer)',
-	builder: (yargs: Argv) =>
+	builder: (yargs) =>
 		yargs
 			.positional('action', {
 				type: 'string',
@@ -82,7 +73,7 @@ export const runCommand: CommandModule<{}, RunArgs> = {
 		const waitMs = argv.wait ?? DEFAULT_PEER_WAIT_MS;
 		const actionInput = await resolveInput(argv.input);
 
-		const runInput: RunInput = {
+		const runRequest: RunRequest = {
 			actionPath: argv.action,
 			input: actionInput,
 			peerTarget,
@@ -95,10 +86,10 @@ export const runCommand: CommandModule<{}, RunArgs> = {
 			process.exitCode = 1;
 			return;
 		}
-		const result = await daemon.run(runInput);
+		const result = await daemon.run(runRequest);
 		renderRunResult(result, argv.format);
 	},
-};
+});
 
 function renderRunResult(
 	result: Result<unknown, DaemonRunError | DaemonError>,

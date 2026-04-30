@@ -18,28 +18,22 @@ import {
 } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
-import type { Argv, CommandModule } from 'yargs';
 
-import { type ProjectArgs, projectOption } from '../util/common-options.js';
+import { cmd } from '../util/cmd.js';
+import { projectOption } from '../util/common-options.js';
 import {
-	type FormatArgs,
 	formatOptions,
 	type OutputFormat,
 	output,
 	outputError,
 } from '../util/format-output.js';
 
-type ListArgs = ProjectArgs &
-	FormatArgs & {
-		path?: string;
-	};
-
 export type ListResult = Result<ActionManifest, never>;
 
-export const listCommand: CommandModule<{}, ListArgs> = {
+export const listCommand = cmd({
 	command: 'list [path]',
 	describe: 'Tree view of exposed queries and mutations on this device',
-	builder: (yargs: Argv) =>
+	builder: (yargs) =>
 		yargs
 			.positional('path', {
 				type: 'string',
@@ -59,7 +53,7 @@ export const listCommand: CommandModule<{}, ListArgs> = {
 		const result = await daemon.list();
 		renderResult(result, path, argv.format);
 	},
-};
+});
 
 function renderResult(
 	result: Result<ActionManifest, DaemonError>,

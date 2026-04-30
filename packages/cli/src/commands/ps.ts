@@ -21,8 +21,8 @@ import {
 	unlinkMetadata,
 	unlinkSocketFile,
 } from '@epicenter/workspace';
-import type { CommandModule } from 'yargs';
 import { CONFIG_FILENAME } from '../load-config.js';
+import { cmd } from '../util/cmd.js';
 
 // `ps` shows a liveness column and sweeps obviously-dead entries it sees;
 // the kernel-level `kill -0` predicate stays small and inline rather than
@@ -119,10 +119,9 @@ function humanUptime(startedAt: string): string {
 	return `${hr}h${restMin}m`;
 }
 
-export const psCommand: CommandModule = {
+export const psCommand = cmd({
 	command: 'ps',
 	describe: 'List running `epicenter up` daemons (this user, this machine).',
-	builder: (yargs) => yargs,
 	handler: async () => {
 		const rows = await runPs();
 		if (rows.length === 0) {
@@ -132,4 +131,4 @@ export const psCommand: CommandModule = {
 		// `console.table` is the spec-mentioned renderer; it writes to stdout.
 		console.table(rows);
 	},
-};
+});

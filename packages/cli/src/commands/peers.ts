@@ -12,23 +12,22 @@
  */
 
 import { getDaemon, type PeerSnapshot } from '@epicenter/workspace';
-import type { Argv, CommandModule } from 'yargs';
-import { type ProjectArgs, projectOption } from '../util/common-options.js';
+import { cmd } from '../util/cmd.js';
+import { projectOption } from '../util/common-options.js';
 import {
-	type FormatArgs,
 	formatOptions,
 	type OutputFormat,
 	output,
 	outputError,
 } from '../util/format-output.js';
 
-type PeersArgs = ProjectArgs & FormatArgs;
-
-export const peersCommand: CommandModule<{}, PeersArgs> = {
+export const peersCommand = cmd({
 	command: 'peers',
 	describe: 'List connected peers (presence)',
-	builder: (yargs: Argv) =>
-		yargs.option('C', projectOption).options(formatOptions),
+	builder: {
+		C: projectOption,
+		...formatOptions,
+	},
 	handler: async (argv) => {
 		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
@@ -44,7 +43,7 @@ export const peersCommand: CommandModule<{}, PeersArgs> = {
 		}
 		emit(rows, argv.format);
 	},
-};
+});
 
 function emit(rows: PeerSnapshot[], format: OutputFormat | undefined): void {
 	if (format === 'json' || format === 'jsonl') {

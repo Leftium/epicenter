@@ -22,15 +22,11 @@ import {
 } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { logPathFor } from '@epicenter/workspace';
-import type { Argv, CommandModule } from 'yargs';
-import { type ProjectArgs, projectOption } from '../util/common-options.js';
+import { cmd } from '../util/cmd.js';
+import { projectOption } from '../util/common-options.js';
 
 const DEFAULT_TAIL_LINES = 50;
 const FOLLOW_POLL_MS = 100;
-
-type LogsArgs = ProjectArgs & {
-	follow: boolean;
-};
 
 /**
  * Read the last `n` lines of `path` and return them joined by `\n` with a
@@ -124,16 +120,18 @@ export function followLog(path: string): () => void {
 	};
 }
 
-export const logsCommand: CommandModule<{}, LogsArgs> = {
+export const logsCommand = cmd({
 	command: 'logs',
 	describe: 'Tail the log file for a running daemon.',
-	builder: (yargs: Argv) =>
-		yargs.option('C', projectOption).option('follow', {
+	builder: {
+		C: projectOption,
+		follow: {
 			type: 'boolean',
 			alias: 'f',
 			default: false,
 			description: 'Stream new lines as they are appended.',
-		}),
+		},
+	},
 	handler: async (argv) => {
 		const logPath = logPathFor(argv.C);
 
@@ -158,4 +156,4 @@ export const logsCommand: CommandModule<{}, LogsArgs> = {
 			/* never resolves */
 		});
 	},
-};
+});

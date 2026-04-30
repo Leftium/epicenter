@@ -22,8 +22,8 @@ import {
 	unlinkMetadata,
 } from '@epicenter/workspace';
 import type { Result } from 'wellcrafted/result';
-import type { Argv, CommandModule } from 'yargs';
-import { type ProjectArgs, projectOption } from '../util/common-options.js';
+import { cmd } from '../util/cmd.js';
+import { projectOption } from '../util/common-options.js';
 
 const SHUTDOWN_TIMEOUT_MS = 1000;
 
@@ -142,19 +142,17 @@ export async function runDown(
 	return { outcomes: [outcome] };
 }
 
-type DownArgs = ProjectArgs & {
-	all: boolean;
-};
-
-export const downCommand: CommandModule<{}, DownArgs> = {
+export const downCommand = cmd({
 	command: 'down',
 	describe: 'Stop a running `epicenter up` daemon.',
-	builder: (yargs: Argv) =>
-		yargs.option('C', projectOption).option('all', {
+	builder: {
+		C: projectOption,
+		all: {
 			type: 'boolean',
 			default: false,
 			description: 'Stop every running daemon for this user.',
-		}),
+		},
+	},
 	handler: async (argv) => {
 		const options: DownOptions = {
 			projectDir: argv.C,
@@ -186,4 +184,4 @@ export const downCommand: CommandModule<{}, DownArgs> = {
 			);
 		}
 	},
-};
+});

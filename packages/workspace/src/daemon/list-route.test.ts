@@ -19,11 +19,11 @@ type ListResult = Result<ActionManifest, never>;
 
 function fakeEntry(
 	name: string,
-	actions?: Record<string, unknown>,
+	workspaceShape: Record<string, unknown> = {},
 ): WorkspaceEntry {
 	const workspace = {
 		whenReady: Promise.resolve(),
-		actions,
+		...workspaceShape,
 		[Symbol.dispose]() {},
 	} satisfies LoadedWorkspace;
 	return { name, workspace } as WorkspaceEntry;
@@ -40,23 +40,44 @@ async function postList(entries: WorkspaceEntry[]): Promise<ListResult> {
 }
 
 describe('/list route', () => {
-	test('returns export-prefixed describeActions output', async () => {
+	test('returns literal export-prefixed paths under actions', async () => {
 		const reply = await postList([
 			fakeEntry('demo', {
-				counter: {
-					get: defineQuery({
-						description: 'Read the counter',
-						handler: () => 0,
-					}),
+				actions: {
+					counter: {
+						get: defineQuery({
+							description: 'Read the counter',
+							handler: () => 0,
+						}),
+					},
 				},
 			}),
 		]);
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
-			expect(Object.keys(reply.data).sort()).toEqual(['demo.counter.get']);
-			expect(reply.data['demo.counter.get']?.description).toBe(
+			expect(Object.keys(reply.data).sort()).toEqual([
+				'demo.actions.counter.get',
+			]);
+			expect(reply.data['demo.actions.counter.get']?.description).toBe(
 				'Read the counter',
 			);
+		}
+	});
+
+	test('returns top-level action groups when the workspace exposes them', async () => {
+		const reply = await postList([
+			fakeEntry('demo', {
+				counter: {
+					get: defineQuery({
+						handler: () => 0,
+					}),
+				},
+			}),
+		]);
+
+		expect(reply.error).toBeNull();
+		if (reply.error === null) {
+			expect(Object.keys(reply.data).sort()).toEqual(['demo.counter.get']);
 		}
 	});
 
@@ -71,18 +92,22 @@ describe('/list route', () => {
 	test('prefixes actions from every config export', async () => {
 		const reply = await postList([
 			fakeEntry('notes', {
-				add: defineQuery({ handler: () => null }),
+				actions: {
+					add: defineQuery({ handler: () => null }),
+				},
 			}),
 			fakeEntry('tasks', {
-				list: defineQuery({ handler: () => [] }),
+				actions: {
+					list: defineQuery({ handler: () => [] }),
+				},
 			}),
 		]);
 
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
 			expect(Object.keys(reply.data).sort()).toEqual([
-				'notes.add',
-				'tasks.list',
+				'notes.actions.add',
+				'tasks.actions.list',
 			]);
 		}
 	});

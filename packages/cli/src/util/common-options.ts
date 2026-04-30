@@ -10,10 +10,6 @@ import { resolve } from 'node:path';
 import { findEpicenterDir } from '@epicenter/workspace';
 import type { Options } from 'yargs';
 
-export type ProjectArgs = {
-	C: string;
-};
-
 export function resolveProjectDir(start: string): string {
 	try {
 		return findEpicenterDir(start);

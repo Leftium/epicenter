@@ -6,7 +6,7 @@
  * Each verb is a one-line shell shortcut for one workspace primitive:
  *
  *   /peers  ->  workspace.presence.peers()                    all exports
- *   /list   ->  describeActions(workspace.actions)            all exports
+ *   /list   ->  describeActions(workspace)                    all exports
  *   /run    ->  invokeAction(...) | rpc.rpc(...)              export-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
@@ -44,10 +44,6 @@ export const RunRequest = type({
 	waitMs: 'number',
 });
 export type RunRequest = typeof RunRequest.infer;
-/** @deprecated Use {@link RunRequest}. */
-export const RunInput = RunRequest;
-/** @deprecated Use {@link RunRequest}. */
-export type RunInput = RunRequest;
 
 /**
  * Row shape returned by `/peers`. One row per `(exportName, clientID)` pair,

@@ -12,8 +12,8 @@
  * directly. The CLI deliberately does not grow flags that shadow scripting.
  *
  * `executeRun` returns a domain `RunResponse` that the route serializes
- * verbatim. Unexpected exceptions bubble out to the route's blanket
- * try/catch and surface as `HandlerCrashed` on the client side.
+ * verbatim. Unexpected exceptions bubble to Hono's non-2xx response path
+ * and surface as `HandlerCrashed` on the client side.
  */
 
 import { Ok } from 'wellcrafted/result';
@@ -48,7 +48,7 @@ export async function executeRun(
 	const { workspace } = entry;
 	if (workspace.whenReady) await workspace.whenReady;
 
-	const action = resolveActionPath(workspace.actions ?? {}, localPath);
+	const action = resolveActionPath(workspace, localPath);
 	if (!action) {
 		const descendants = workspaceActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {

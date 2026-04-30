@@ -3,7 +3,7 @@
  *
  * Each connected peer publishes a small `peer` descriptor: id, name, and
  * platform. Action discovery is not in awareness. It is fetched on demand via
- * `describePeer({ presence, rpc }, peerId)`.
+ * `describeRemoteActions({ presence, rpc }, peerId)`.
  */
 
 import { type } from 'arktype';

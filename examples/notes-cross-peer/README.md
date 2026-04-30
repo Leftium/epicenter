@@ -4,7 +4,8 @@ Two-peer minimal repro for the `system.describe` cross-peer fetch.
 
 Both configs construct the same workspace (`epicenter.notes-repro`) with
 distinct peer ids, so each appears in the other's awareness. Exercises
-`describePeer({ presence, rpc }, peerId)` end-to-end against the deployed API.
+`describeRemoteActions({ presence, rpc }, peerId)` end-to-end against the
+deployed API.
 
 ## Setup
 
@@ -26,7 +27,7 @@ bun x epicenter up -C examples/notes-cross-peer/peer-a
 ```bash
 bun x epicenter up -C examples/notes-cross-peer/peer-b &
 bun x epicenter peers -C examples/notes-cross-peer/peer-b
-bun x epicenter run notes.notes.add --peer notes-repro-peer-a '{"body":"from peer-b"}' -C examples/notes-cross-peer/peer-b
+bun x epicenter run notes.actions.notes.add --peer notes-repro-peer-a '{"body":"from peer-b"}' -C examples/notes-cross-peer/peer-b
 ```
 
 To inspect peer-a's full action manifest from peer-b, write a script
@@ -35,11 +36,11 @@ under "Local vs. remote"):
 
 ```ts
 // examples/notes-cross-peer/inspect-peer.ts
-import { describePeer } from '@epicenter/workspace';
+import { describeRemoteActions } from '@epicenter/workspace';
 import { notes } from './peer-b/epicenter.config';
 
 await notes.whenReady;
-const result = await describePeer(
+const result = await describeRemoteActions(
 	{ presence: notes.presence, rpc: notes.rpc },
 	'notes-repro-peer-a',
 );
@@ -54,8 +55,8 @@ bun run examples/notes-cross-peer/inspect-peer.ts
 ## What confirms it works
 
 - `peers` lists `notes-repro-peer-a`, so awareness round-tripped through the API.
-- `inspect-peer.ts` prints peer-a's manifest with `notes.add` and its input shape, so `system.describe()` carries the schema.
-- `run notes.notes.add --peer notes-repro-peer-a` succeeds, so cross-peer dispatch uses the same RPC channel.
+- `inspect-peer.ts` prints peer-a's manifest with `actions.notes.add` and its input shape, so `system.describe()` carries the schema.
+- `run notes.actions.notes.add --peer notes-repro-peer-a` succeeds, so cross-peer dispatch uses the same RPC channel.
 
 ## What confirms it broke
 

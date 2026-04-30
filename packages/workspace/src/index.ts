@@ -57,7 +57,11 @@ export {
 
 export { isRpcError, RpcError } from '@epicenter/sync';
 // Cross-peer action calling.
-export { describePeer, type PeerTransport, peer } from './rpc/peer.js';
+export {
+	createRemoteActions,
+	describeRemoteActions,
+	type RemoteActionTransport,
+} from './rpc/remote-actions.js';
 export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
 
@@ -67,12 +71,14 @@ export type { RemoteCallOptions } from './shared/actions.js';
 
 export { connectDaemon } from './client/connect-daemon.js';
 export { findEpicenterDir } from './client/find-epicenter-dir.js';
-export { buildRemoteActions } from './client/remote-actions.js';
-export type { RemoteActions } from './client/remote-action-types.js';
+export { buildDaemonActions } from './client/daemon-actions.js';
+export type {
+	DaemonActionOptions,
+	DaemonActions,
+} from './client/daemon-action-types.js';
 export {
 	buildApp,
 	PeerSnapshot,
-	RunInput,
 	RunRequest,
 } from './daemon/app.js';
 export {
@@ -182,8 +188,8 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT PRIMITIVES — attach*, define*, createDisposableCache, encryption,
-// timeline, storage keys, types — everything in src/document/ + src/cache/
+// DOCUMENT PRIMITIVES: attach*, define*, createDisposableCache, encryption,
+// timeline, storage keys, types: everything in src/document/ + src/cache/
 // flows through its barrel.
 // ════════════════════════════════════════════════════════════════════════════
 

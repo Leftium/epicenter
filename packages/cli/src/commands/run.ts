@@ -49,7 +49,7 @@ export const runCommand = cmd({
 			.positional('action', {
 				type: 'string',
 				demandOption: true,
-				describe: 'Export-prefixed action path, e.g. notes.notes.add',
+				describe: 'Export-prefixed action path, e.g. notes.actions.notes.add',
 			})
 			.positional('input', {
 				type: 'string',

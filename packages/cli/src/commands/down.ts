@@ -106,8 +106,8 @@ async function shutdownOne(
 
 /**
  * Daemon-stop body. Pure function over disk + IPC; the yargs handler wraps
- * this with stderr formatting and `process.exit`. Tests inject `ipcCall`
- * and `kill` to stay unit-level.
+ * this with terminal formatting. Tests inject `shutdown` and `kill` to stay
+ * unit-level.
  *
  * Behavior:
  *   - `--all`: enumerate `<runtimeDir>/*.meta.json`, shut each down in

@@ -1,13 +1,13 @@
 /**
  * Wave 7 unit tests for `epicenter down`.
  *
- * Drives `runDown` directly with a stubbed `ipcCall` and `kill`, so we
+ * Drives `runDown` directly with a stubbed `shutdown` and `kill`, so we
  * never touch a real daemon process. The cross-process e2e for shutdown
  * lives in Wave 8.
  *
  * Cases:
  *   1. Graceful shutdown when the daemon answers `shutdown` ok.
- *   2. SIGTERM fallback when ipcCall returns NoDaemon (timeout).
+ *   2. SIGTERM fallback when shutdown returns a transport error.
  *   3. `--all` enumerates every metadata file under runtimeDir.
  *   4. Missing project metadata reports `'absent'` (no throw).
  */

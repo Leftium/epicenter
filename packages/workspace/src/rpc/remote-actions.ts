@@ -10,13 +10,13 @@ import type {
 	SystemActions,
 } from '../shared/actions.js';
 
-export type PeerTransport = {
+export type RemoteActionTransport = {
 	presence: PeerPresenceAttachment;
 	rpc: SyncRpcAttachment;
 };
 
-export function peer<T>(
-	transport: PeerTransport,
+export function createRemoteActions<T>(
+	transport: RemoteActionTransport,
 	peerId: string,
 ): RemoteActionProxy<T> {
 	const send: Sender = async (path, input, options) => {
@@ -60,11 +60,14 @@ type Sender = (
 	options?: RemoteCallOptions,
 ) => Promise<Result<unknown, RpcError>>;
 
-export function describePeer(
-	transport: PeerTransport,
+export function describeRemoteActions(
+	transport: RemoteActionTransport,
 	peerId: string,
 ): Promise<Result<ActionManifest, RpcError>> {
-	return peer<{ system: SystemActions }>(transport, peerId).system.describe();
+	return createRemoteActions<{ system: SystemActions }>(
+		transport,
+		peerId,
+	).system.describe();
 }
 
 function buildProxy<T>(path: string[], send: Sender): T {

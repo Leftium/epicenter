@@ -26,7 +26,7 @@
  * preserves existing Results, and catches throws as `RpcError.ActionFailed`.
  * RPC uses `invokeActionForRpc`, which also converts custom non-RPC errors
  * into `RpcError.ActionFailed` before the result crosses the wire. Remote
- * callers use `peer`, whose leaves expose
+ * callers use `createRemoteActions`, whose leaves expose
  * `Promise<Result<T, RpcError>>`.
  *
  * @module
@@ -90,7 +90,7 @@ export type ActionMeta<
 /**
  * Flat dot-path to `ActionMeta` map describing a peer's full action surface.
  * Returned by the runtime-injected `system.describe` RPC and consumed via
- * `describePeer({ presence, rpc }, peerId)`.
+ * `describeRemoteActions({ presence, rpc }, peerId)`.
  */
 export type ActionManifest = Record<string, ActionMeta>;
 
@@ -130,12 +130,13 @@ export type Action<
 
 /**
  * Shape suggestion for a "pure action tree" authoring style: nested objects
- * whose leaves are all `Action` definitions, no infrastructure mixed in.
+ * whose leaves are all `Action` definitions.
  *
- * Public action surfaces should be explicit registries, normally created with
- * {@link defineActions}. Use this type if you genuinely want to annotate a
- * return as "tree of actions only"; otherwise let the registry's inferred
- * type do the talking.
+ * Not load-bearing on any public signature. `walkActions` filters action
+ * leaves at runtime via `isAction`, so action definitions can sit alongside
+ * workspace infrastructure. Use this type if you genuinely want to annotate a
+ * return as "tree of actions only"; otherwise let the inferred type do the
+ * talking.
  *
  * Uses `any` for the action's input/output positions so specific
  * `Query<I, T>` / `Mutation<I, T>` instances assign cleanly through the
@@ -148,12 +149,12 @@ export type Actions = {
 };
 
 /**
- * Mark a plain action registry as the public action surface.
+ * Mark a plain action registry while preserving its exact inferred shape.
  *
- * This is intentionally an identity function: callers keep the exact inferred
- * nested shape while making the registry root explicit. CLI, AI tools, RPC,
- * manifests, and `InferSyncRpcMap` should receive this registry, not a whole
- * workspace bundle.
+ * This is intentionally an identity function. CLI and RPC adapters do not
+ * require this wrapper; they discover any `defineQuery` / `defineMutation`
+ * leaves reachable through plain objects. Use `defineActions` when you want
+ * to name a grouped set of actions and keep its type tidy.
  */
 export function defineActions<TActions extends Actions>(
 	actions: TActions,
@@ -163,10 +164,10 @@ export function defineActions<TActions extends Actions>(
 
 /**
  * The runtime-injected `system.*` action namespace. Single canonical type:
- * `attachRpc` constructs `systemActions: SystemActions` and `peer.ts` derives
- * the proxy type `peer<{ system: SystemActions }>` from the same source. Drift
- * between the runtime handler return and the consumer's expected return
- * becomes a compile error.
+ * `attachRpc` constructs `systemActions: SystemActions` and `remote-actions.ts`
+ * derives the proxy type `createRemoteActions<{ system: SystemActions }>` from
+ * the same source. Drift between the runtime handler return and the consumer's
+ * expected return becomes a compile error.
  */
 export type SystemActions = {
 	describe: Query<undefined, ActionManifest>;
@@ -178,7 +179,7 @@ export type SystemActions = {
  * Returns the handler with metadata attached. The action callable IS the
  * handler. Local callers see whatever the handler returns (sync if sync,
  * raw if raw, `Result` if explicit). Remote/AI/CLI consumers see uniform
- * `Promise<Result>` via the boundary normalizers (`peer()` for
+ * `Promise<Result>` via the boundary normalizers (`createRemoteActions()` for
  * callers, `invokeActionForRpc()` for the inbound wire).
  */
 /** No input. `TInput` is explicitly `undefined`. */
@@ -253,6 +254,8 @@ export function isMutation(value: unknown): value is Mutation {
  * prototype is `null`). Bounds {@link walkActions} so it doesn't recurse
  * into class instances like `Y.Doc`, arktype `Type`, or `SvelteMap`:
  * those carry methods on their prototype and have no business being walked.
+ * This makes passing a full workspace object safe: plain object branches are
+ * treated as public path segments, class-backed infrastructure is skipped.
  */
 function isPlainObject(v: unknown): v is Record<string, unknown> {
 	if (typeof v !== 'object' || v === null) return false;
@@ -276,8 +279,8 @@ function assertValidActionKey(key: string, path: string) {
  * returning the leaf `Action` if the path lands on one. Returns `undefined`
  * for missing paths or paths that resolve to a namespace.
  *
- * Typed `Record<string, unknown>` so callers can pass an explicit action
- * registry without losing nested path support.
+ * Typed `Record<string, unknown>` so callers can pass a full workspace object
+ * or a narrower action tree without losing nested path support.
  */
 export function resolveActionPath(
 	actions: Record<string, unknown>,
@@ -301,12 +304,13 @@ export function resolveActionPath(
  * via {@link describeActions}.
  *
  * Recursion only descends into plain object literals. Class instances
- * (`Y.Doc`, arktype `Type`, etc.) and functions short-circuit, but callers
- * should still pass an explicit action registry as the root.
+ * (`Y.Doc`, arktype `Type`, etc.) and functions short-circuit, so a returned
+ * workspace bundle can be used directly. Any action leaf reachable through
+ * plain object properties is part of the public path surface.
  *
  * Pair with `Object.fromEntries`, `Array.from`, or a `for…of` loop:
  * ```ts
- * for (const [path, action] of walkActions(workspace.actions)) {
+ * for (const [path, action] of walkActions(workspace)) {
  *   if (action.type === 'mutation') console.log(path);
  * }
  * ```
@@ -330,8 +334,8 @@ export function* walkActions(
 /**
  * Walk a tree into its flat `ActionManifest`: the wire form returned by
  * `system.describe`. Live `input` schemas are retained; functions are
- * dropped. Pairs with `describePeer({ presence, rpc }, peerId)`, which returns the
- * same shape from a remote device.
+ * dropped. Pairs with `describeRemoteActions({ presence, rpc }, peerId)`,
+ * which returns the same shape from a remote peer.
  *
  * Built atop {@link walkActions}. Use that primitive directly if you want
  * to iterate live callables instead of metadata.
@@ -486,9 +490,9 @@ type RemoteSuccessOutput<TOutput> =
  * Filter any object `T` down to its action-shaped leaves and wrap each leaf
  * via {@link WrapAction} so callers see uniform `Promise<Result<T, RpcError>>`.
  *
- * Pass a pure action tree: non-action keys are removed at the type level via
- * key-remapping. Subtrees that contain zero actions are also pruned, so
- * consumers only see paths that lead somewhere callable.
+ * Pass a pure action tree or a workspace bundle: non-action keys are removed
+ * at the type level via key-remapping. Subtrees that contain zero actions are
+ * also pruned, so consumers only see paths that lead somewhere callable.
  *
  * Bracketed `[T[K]] extends [Action]` form is intentional: prevents
  * unwanted distribution if a key's type is a union (e.g., `Foo | undefined`).

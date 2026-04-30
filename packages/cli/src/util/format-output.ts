@@ -3,10 +3,6 @@ import type { Options } from 'yargs';
 export const outputFormats = ['json', 'jsonl'] as const;
 export type OutputFormat = (typeof outputFormats)[number];
 
-export type FormatArgs = {
-	format?: OutputFormat;
-};
-
 export type FormatOptions = {
 	/** Override format (default: json, auto-pretty for TTY) */
 	format?: OutputFormat;

@@ -3,23 +3,22 @@
  * daemon. The single entry point shared by vault scripts and every CLI
  * command that dispatches a workspace action.
  *
- * Generic `TActions` is the in-process `workspace.actions` shape (typically
- * `ReturnType<typeof openFuji>['actions']`); the runtime returns a
- * `RemoteActions<TActions>` proxy backed by a unix-socket `DaemonClient`.
- * `TActions` is type-only: no workspace code runs in the caller process.
- * `RemoteActions<TActions>` filters it to branded `defineQuery` /
- * `defineMutation` leaves and rewrites each into `Promise<Result<_, _ |
- * RpcError>>`.
+ * Generic `TWorkspace` is the in-process workspace shape (typically
+ * `ReturnType<typeof openFuji>`); the runtime returns a
+ * `DaemonActions<TWorkspace>` proxy backed by a unix-socket `DaemonClient`.
+ * `TWorkspace` is type-only: no workspace code runs in the caller process.
+ * `DaemonActions<TWorkspace>` filters it to branded `defineQuery` /
+ * `defineMutation` leaves and rewrites each into the daemon `/run` result.
  *
  * @example
  * ```ts
  * import { connectDaemon } from '@epicenter/workspace';
  * import type { openFuji } from '@epicenter/fuji/workspace';
  *
- * using fujiActions = await connectDaemon<ReturnType<typeof openFuji>['actions']>({
+ * using fuji = await connectDaemon<ReturnType<typeof openFuji>>({
  *   id: 'fuji',
  * });
- * await fujiActions.entries.update({ id, tags: ['untagged'] });
+ * await fuji.actions.entries.update({ id, tags: ['untagged'] });
  * ```
  *
  * Daemon-scope calls (peers, list across workspaces) live on `DaemonClient`
@@ -29,29 +28,29 @@
  */
 
 import type { ProjectDir } from '../shared/types.js';
-import { DaemonError, daemonClient, pingDaemon } from '../daemon/client.js';
-import { socketPathFor } from '../daemon/paths.js';
+import { getDaemon } from '../daemon/client.js';
 import { findEpicenterDir } from './find-epicenter-dir.js';
-import { buildRemoteActions } from './remote-actions.js';
-import type { RemoteActions } from './remote-action-types.js';
+import { buildDaemonActions } from './daemon-actions.js';
+import type { DaemonActions } from './daemon-action-types.js';
 
 /**
- * Connect to a workspace's public action registry hosted by a running daemon.
+ * Connect to a workspace's public actions hosted by a running daemon.
  *
  * `id` is the workspace selector. Today the wire dispatches by the
  * human-facing `name` exported in `epicenter.config.ts` (per Phase 2's
  * pragmatic deviation); long-term this collapses to `ydoc.guid`. Either
  * way, the value is opaque to this function and threads through to the remote
- * action proxy.
+ * daemon action proxy.
  *
  * `projectDir` defaults to walking up from `process.cwd()` for an
  * `epicenter.config.ts` file or a `.epicenter/` directory.
  *
- * Throws `DaemonError.Required` if no daemon is listening on the
- * resolved socket. Start one with `epicenter up`. There is no
- * auto-spawn: explicit lifecycle is the contract.
+ * Throws `DaemonError.MissingConfig` when the project has no config, or
+ * `DaemonError.Required` when no daemon is listening on the resolved socket.
+ * Start one with `epicenter up`. There is no auto-spawn: explicit lifecycle
+ * is the contract.
  */
-export async function connectDaemon<TActions>({
+export async function connectDaemon<TWorkspace>({
 	id,
 	projectDir = findEpicenterDir(),
 }: {
@@ -63,11 +62,8 @@ export async function connectDaemon<TActions>({
 	 * `projectDir` to opt out.
 	 */
 	projectDir?: ProjectDir;
-}): Promise<RemoteActions<TActions>> {
-	const socketPath = socketPathFor(projectDir);
-	if (!(await pingDaemon(socketPath))) {
-		throw DaemonError.Required({ projectDir }).error;
-	}
-	const client = daemonClient(socketPath);
-	return buildRemoteActions<TActions>(client, id);
+}): Promise<DaemonActions<TWorkspace>> {
+	const { data: client, error } = await getDaemon(projectDir);
+	if (error) throw error;
+	return buildDaemonActions<TWorkspace>(client, id);
 }

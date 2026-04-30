@@ -56,7 +56,7 @@ describe('executeRun peer dispatch', () => {
 		);
 
 		const result = await executeRun([entry], {
-			actionPath: 'demo.tabs.list',
+			actionPath: 'demo.actions.tabs.list',
 			input: undefined,
 			peerTarget: 'ghost',
 			waitMs: 25,
@@ -98,14 +98,14 @@ describe('executeRun peer dispatch', () => {
 		);
 
 		const result = await executeRun([entry], {
-			actionPath: 'demo.tabs.list',
+			actionPath: 'demo.actions.tabs.list',
 			input: undefined,
 			peerTarget: 'mac',
 			waitMs: 25,
 		});
 
 		expect(result.error).toBeNull();
-		expect(rpcAction).toBe('tabs.list');
+		expect(rpcAction).toBe('actions.tabs.list');
 	});
 });
 
@@ -127,6 +127,30 @@ describe('executeRun export-prefixed routing', () => {
 		};
 
 		const result = await executeRun([entry], {
+			actionPath: 'notes.actions.notes.add',
+			input: { body: 'hello' },
+			waitMs: 25,
+		});
+
+		expect(result.error).toBeNull();
+		expect(result.data).toEqual({ body: 'hello' });
+	});
+
+	test('invokes top-level action groups when the workspace exposes them', async () => {
+		const workspace = {
+			notes: {
+				add: defineMutation({
+					handler: () => ({ body: 'hello' }),
+				}),
+			},
+			[Symbol.dispose]() {},
+		};
+		const entry = {
+			name: 'notes',
+			workspace: workspace as WorkspaceEntry['workspace'],
+		};
+
+		const result = await executeRun([entry], {
 			actionPath: 'notes.notes.add',
 			input: { body: 'hello' },
 			waitMs: 25,
@@ -134,6 +158,36 @@ describe('executeRun export-prefixed routing', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data).toEqual({ body: 'hello' });
+	});
+
+	test('missing short path suggests literal actions path', async () => {
+		const entry = {
+			name: 'notes',
+			workspace: {
+				actions: {
+					notes: {
+						add: defineMutation({
+							handler: () => ({ body: 'hello' }),
+						}),
+					},
+				},
+				[Symbol.dispose]() {},
+			} as WorkspaceEntry['workspace'],
+		};
+
+		const result = await executeRun([entry], {
+			actionPath: 'notes.notes.add',
+			input: { body: 'hello' },
+			waitMs: 25,
+		});
+
+		expect(result.error?.name).toBe('UsageError');
+		if (result.error?.name !== 'UsageError') {
+			throw new Error('expected UsageError');
+		}
+		expect(result.error.suggestions).toEqual([
+			'  notes.actions.notes.add  (mutation)',
+		]);
 	});
 
 	test('unknown export returns available export suggestions', async () => {

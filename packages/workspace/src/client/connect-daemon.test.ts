@@ -1,7 +1,7 @@
 /**
  * Unit tests for `connectDaemon`. We don't bind a real daemon; pinging a
  * non-existent socket is enough to exercise the failure path. The success
- * path is covered indirectly by `remote-actions.test.ts` (which stubs the client
+ * path is covered indirectly by `daemon-actions.test.ts` (which stubs the client
  * directly) and end-to-end by the daemon test suite.
  */
 
@@ -26,6 +26,22 @@ afterEach(() => {
 });
 
 describe('connectDaemon', () => {
+	test('throws DaemonError.MissingConfig when explicit project has no config', async () => {
+		rmSync(join(root, 'epicenter.config.ts'), { force: true });
+
+		let caught: unknown;
+		try {
+			await connectDaemon({ id: 'demo', projectDir: root as ProjectDir });
+		} catch (err) {
+			caught = err;
+		}
+
+		expect(caught).toBeDefined();
+		const e = caught as Extract<DaemonError, { name: 'MissingConfig' }>;
+		expect(e.name).toBe('MissingConfig');
+		expect(e.projectDir).toBe(root);
+	});
+
 	test('throws DaemonError.Required when no daemon is listening', async () => {
 		let caught: unknown;
 		try {

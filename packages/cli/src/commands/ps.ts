@@ -45,8 +45,8 @@ function sweepOrphan(dir: string): void {
  * A row of the `ps` table.
  *
  * Per Invariant 7 the daemon serves every workspace its config exports;
- * the row carries the dir + pid + uptime, and consumers who want the
- * loaded set ask the daemon directly via the `status` IPC command.
+ * the row carries the dir + pid + uptime. Detailed workspace/action state
+ * stays on `list` and `peers`.
  */
 export type PsRow = {
 	dir: string;

@@ -11,8 +11,10 @@
  *     presence:  PeerPresence    enables `peers` and peer lookup
  *     rpc:       SyncRpc         enables `run --peer`
  *
- *   Actions are read from `workspace.actions`. Paths are relative to that
- *   explicit registry and then prefixed with the config export name.
+ *   Actions are read from the workspace object. `walkActions` recurses only
+ *   into plain objects, so class-backed infrastructure like `ydoc` and
+ *   attachment objects is skipped. Any action leaf reachable through plain
+ *   returned objects is public.
  *
  *   …the CLI uses them. Anything else is the factory's business.
  *
@@ -41,10 +43,9 @@
 
 import { join, resolve } from 'node:path';
 import type {
+	LoadedWorkspace,
 	PeerAwarenessState,
-	PeerPresenceAttachment,
-	SyncAttachment,
-	SyncRpcAttachment,
+	WorkspaceEntry,
 } from '@epicenter/workspace';
 import {
 	defineErrors,
@@ -55,44 +56,12 @@ import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
-/**
- * Fields the CLI looks at on each workspace export. Only `[Symbol.dispose]`
- * is required (it's the discriminator); everything else is read when
- * present. Extra fields the factory returns are ignored.
- *
- * The CLI walks `workspace.actions` only. Infrastructure keys like `ydoc`,
- * `tables`, `presence`, and `rpc` are not part of the public action surface.
- */
-export type LoadedWorkspace = {
-	/**
-	 * Called by the CLI at exit. The discriminator: its presence is what
-	 * marks the export as a workspace.
-	 */
-	[Symbol.dispose](): void;
-
-	/** Awaited before any action invocation, if present. */
-	readonly whenReady?: Promise<unknown>;
-
-	/**
-	 * Underlying sync transport. Presence and RPC are attached separately so
-	 * callers choose which peer surfaces they expose.
-	 */
-	readonly sync?: SyncAttachment;
-	readonly actions?: Record<string, unknown>;
-	readonly presence?: PeerPresenceAttachment;
-	readonly rpc?: SyncRpcAttachment;
-};
+export type { LoadedWorkspace, WorkspaceEntry };
 
 /**
  * Per-peer awareness state under the standard peer schema.
  */
 export type AwarenessState = PeerAwarenessState;
-
-/** One named workspace export from `epicenter.config.ts`. */
-export type WorkspaceEntry = {
-	name: string;
-	workspace: LoadedWorkspace;
-};
 
 export type LoadConfigResult = {
 	entries: WorkspaceEntry[];

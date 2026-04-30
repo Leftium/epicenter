@@ -211,7 +211,9 @@ export function attachYjsFileSystem(
 			await using handle = contentDocuments.open(id);
 			await handle.whenReady;
 			handle.content.appendText(text);
-			const newSize = new TextEncoder().encode(handle.content.read()).byteLength;
+			const newSize = new TextEncoder().encode(
+				handle.content.read(),
+			).byteLength;
 			tree.touch(id, newSize);
 		},
 
@@ -219,7 +221,7 @@ export function attachYjsFileSystem(
 		// STRUCTURE — mkdir, rm, cp, mv
 		// ═══════════════════════════════════════════════════════════════════════
 
-		async mkdir(path, options?) {
+		async mkdir(path, { recursive = false } = {}) {
 			const abs = posixResolve(cwd, path);
 			if (tree.exists(abs)) {
 				const existingId = tree.lookupId(abs);
@@ -230,7 +232,7 @@ export function attachYjsFileSystem(
 				return;
 			}
 
-			if (options?.recursive) {
+			if (recursive) {
 				const parts = abs.split('/').filter(Boolean);
 				let currentPath = '';
 				for (const part of parts) {
@@ -258,16 +260,16 @@ export function attachYjsFileSystem(
 			}
 		},
 
-		async rm(path, options?) {
+		async rm(path, { force = false, recursive = false } = {}) {
 			const abs = posixResolve(cwd, path);
 			const id = tree.lookupId(abs);
 			if (!id) {
-				if (options?.force) return;
+				if (force) return;
 				throw FS_ERRORS.ENOENT(abs);
 			}
 			const row = tree.getRow(id, abs);
 
-			if (row.type === 'folder' && !options?.recursive) {
+			if (row.type === 'folder' && !recursive) {
 				if (tree.activeChildren(id).length > 0) throw FS_ERRORS.ENOTEMPTY(abs);
 			}
 
@@ -275,14 +277,14 @@ export function attachYjsFileSystem(
 			// automatically cleans up the associated content doc.
 			tree.softDelete(id);
 
-			if (row.type === 'folder' && options?.recursive) {
+			if (row.type === 'folder' && recursive) {
 				for (const did of tree.descendantIds(id)) {
 					tree.softDelete(did);
 				}
 			}
 		},
 
-		async cp(src, dest, options?) {
+		async cp(src, dest, { recursive = false } = {}) {
 			const resolvedSrc = posixResolve(cwd, src);
 			const resolvedDest = posixResolve(cwd, dest);
 			const srcId = tree.resolveId(resolvedSrc);
@@ -290,15 +292,13 @@ export function attachYjsFileSystem(
 			const srcRow = tree.getRow(srcId, resolvedSrc);
 
 			if (srcRow.type === 'folder') {
-				if (!options?.recursive) throw FS_ERRORS.EISDIR(resolvedSrc);
+				if (!recursive) throw FS_ERRORS.EISDIR(resolvedSrc);
 				await this.mkdir(resolvedDest, { recursive: true });
 				const children = await this.readdir(resolvedSrc);
 				for (const child of children) {
-					await this.cp(
-						`${resolvedSrc}/${child}`,
-						`${resolvedDest}/${child}`,
-						options,
-					);
+					await this.cp(`${resolvedSrc}/${child}`, `${resolvedDest}/${child}`, {
+						recursive,
+					});
 				}
 			} else {
 				await using handle = contentDocuments.open(srcId);

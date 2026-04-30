@@ -9,9 +9,8 @@ export type FormatOptions = {
 };
 
 /** Format a single value as JSON: pretty on TTY unless `format: 'jsonl'`. */
-function formatJson(value: unknown, options: FormatOptions = {}): string {
-	const shouldPretty =
-		options.format !== 'jsonl' && (process.stdout.isTTY ?? false);
+function formatJson(value: unknown, { format }: FormatOptions = {}): string {
+	const shouldPretty = format !== 'jsonl' && (process.stdout.isTTY ?? false);
 	return JSON.stringify(value, null, shouldPretty ? 2 : undefined);
 }
 
@@ -21,14 +20,14 @@ function formatJsonl(values: unknown[]): string {
 }
 
 /** Output data to stdout with appropriate formatting. */
-export function output(value: unknown, options: FormatOptions = {}): void {
-	if (options.format === 'jsonl') {
+export function output(value: unknown, { format }: FormatOptions = {}): void {
+	if (format === 'jsonl') {
 		if (!Array.isArray(value)) {
 			throw new Error('JSONL format requires an array value');
 		}
 		console.log(formatJsonl(value));
 	} else {
-		console.log(formatJson(value, options));
+		console.log(formatJson(value, { format }));
 	}
 }
 

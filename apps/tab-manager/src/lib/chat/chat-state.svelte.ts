@@ -64,8 +64,7 @@ function createAiChatState() {
 
 	const conversationsMap = fromTable(tabManager.tables.conversations);
 	const conversations = $derived(
-		[...conversationsMap.values()]
-			.sort((a, b) => b.updatedAt - a.updatedAt),
+		[...conversationsMap.values()].sort((a, b) => b.updatedAt - a.updatedAt),
 	);
 
 	/**
@@ -144,27 +143,24 @@ function createAiChatState() {
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
 			tools: workspaceAiTools.tools,
-			connection: fetchServerSentEvents(
-				`${APP_URLS.API}/ai/chat`,
-				async () => {
-					const { id: deviceId } = tabManager.device;
-					return {
-						fetchClient: createAiChatFetch(auth.fetch),
-						body: {
-							data: {
-								provider: metadata?.provider ?? DEFAULT_PROVIDER,
-								model: metadata?.model ?? DEFAULT_MODEL,
-								conversationId,
-								systemPrompts: [
-									buildDeviceConstraints(deviceId),
-									metadata?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
-								],
-								tools: workspaceAiTools.definitions,
-							},
+			connection: fetchServerSentEvents(`${APP_URLS.API}/ai/chat`, async () => {
+				const { id: deviceId } = tabManager.device;
+				return {
+					fetchClient: createAiChatFetch(auth.fetch),
+					body: {
+						data: {
+							provider: metadata?.provider ?? DEFAULT_PROVIDER,
+							model: metadata?.model ?? DEFAULT_MODEL,
+							conversationId,
+							systemPrompts: [
+								buildDeviceConstraints(deviceId),
+								metadata?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
+							],
+							tools: workspaceAiTools.definitions,
 						},
-					};
-				},
-			),
+					},
+				};
+			}),
 			onError: (err) => {
 				console.error(
 					'[ai-chat] stream error:',
@@ -359,7 +355,9 @@ function createAiChatState() {
 			reload() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					tabManager.tables.chatMessages.delete(lastMessage.id as ChatMessageId);
+					tabManager.tables.chatMessages.delete(
+						lastMessage.id as ChatMessageId,
+					);
 				}
 				void chat.reload();
 			},
@@ -424,9 +422,11 @@ function createAiChatState() {
 
 	// ── Observers ────────────────────────────────────────────────────────────
 
-	const _unobserveConversations = tabManager.tables.conversations.observe(() => {
-		reconcileHandles();
-	});
+	const _unobserveConversations = tabManager.tables.conversations.observe(
+		() => {
+			reconcileHandles();
+		},
+	);
 	const _unobserveChatMessages = tabManager.tables.chatMessages.observe(() => {
 		refreshFns.get(activeConversationId)?.();
 	});
@@ -444,22 +444,27 @@ function createAiChatState() {
 
 	// ── Conversation CRUD ────────────────────────────────────────────
 
-	function createConversation(opts?: {
+	function createConversation({
+		title = 'New Chat',
+		parentId,
+		sourceMessageId,
+		systemPrompt,
+	}: {
 		title?: string;
 		parentId?: ConversationId;
 		sourceMessageId?: ChatMessageId;
 		systemPrompt?: string;
-	}): ConversationId {
+	} = {}): ConversationId {
 		const id = generateConversationId();
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 
 		tabManager.tables.conversations.set({
 			id,
-			title: opts?.title ?? 'New Chat',
-			parentId: opts?.parentId,
-			sourceMessageId: opts?.sourceMessageId,
-			systemPrompt: opts?.systemPrompt,
+			title,
+			parentId,
+			sourceMessageId,
+			systemPrompt,
 			provider: current?.provider ?? DEFAULT_PROVIDER,
 			model: current?.model ?? DEFAULT_MODEL,
 			createdAt: now,

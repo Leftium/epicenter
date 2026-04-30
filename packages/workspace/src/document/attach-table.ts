@@ -22,7 +22,11 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type { JsonObject } from 'wellcrafted/json';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type * as Y from 'yjs';
@@ -115,7 +119,8 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
  */
 export type TableDefinition<
-	TVersions extends readonly CombinedStandardSchema<BaseRow>[] = readonly CombinedStandardSchema<BaseRow>[],
+	TVersions extends
+		readonly CombinedStandardSchema<BaseRow>[] = readonly CombinedStandardSchema<BaseRow>[],
 > = {
 	schema: CombinedStandardSchema<
 		unknown,
@@ -357,12 +362,14 @@ export function createTable<
 
 		async bulkSet(
 			rows: TRow[],
-			options?: {
+			{
+				chunkSize = 1000,
+				onProgress,
+			}: {
 				chunkSize?: number;
 				onProgress?: (percent: number) => void;
-			},
+			} = {},
 		): Promise<void> {
-			const { chunkSize = 1000, onProgress } = options ?? {};
 			const total = rows.length;
 
 			for (let i = 0; i < total; i += chunkSize) {
@@ -444,12 +451,14 @@ export function createTable<
 
 		async bulkDelete(
 			ids: string[],
-			options?: {
+			{
+				chunkSize = 2500,
+				onProgress,
+			}: {
 				chunkSize?: number;
 				onProgress?: (percent: number) => void;
-			},
+			} = {},
 		): Promise<void> {
-			const { chunkSize = 2500, onProgress } = options ?? {};
 			const total = ids.length;
 
 			for (let i = 0; i < total; i += chunkSize) {

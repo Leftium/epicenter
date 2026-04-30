@@ -102,7 +102,7 @@ export async function ftsSearch(
 	tableName: string,
 	ftsColumns: string[],
 	query: string,
-	options?: SearchOptions,
+	{ limit = 50, snippetColumn }: SearchOptions = {},
 	log?: Logger,
 ): Promise<SearchResult[]> {
 	const trimmed = query.trim();
@@ -111,9 +111,8 @@ export async function ftsSearch(
 	}
 
 	const ftsTableName = `${tableName}_fts`;
-	const limit = options?.limit ?? 50;
-	const snippetColumnIndex = options?.snippetColumn
-		? Math.max(ftsColumns.indexOf(options.snippetColumn), 0)
+	const snippetColumnIndex = snippetColumn
+		? Math.max(ftsColumns.indexOf(snippetColumn), 0)
 		: 0;
 
 	try {
@@ -140,7 +139,11 @@ export async function ftsSearch(
 		});
 	} catch (cause: unknown) {
 		log?.warn(
-			SqliteMaterializerError.FtsSearchFailed({ tableName, query: trimmed, cause }),
+			SqliteMaterializerError.FtsSearchFailed({
+				tableName,
+				query: trimmed,
+				cause,
+			}),
 		);
 		return [];
 	}

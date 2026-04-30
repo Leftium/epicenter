@@ -67,28 +67,28 @@ type WrapDaemonAction<F> = F extends (...args: infer Args) => infer R
 type MaxDepth = [1, 1, 1, 1, 1, 1, 1, 1];
 
 type Inc<D extends ReadonlyArray<1>> = [...D, 1];
-type AtLimit<D extends ReadonlyArray<1>> = D['length'] extends MaxDepth['length']
-	? true
-	: false;
+type AtLimit<D extends ReadonlyArray<1>> =
+	D['length'] extends MaxDepth['length'] ? true : false;
 
 /**
  * `true` if `T` is an object that contains at least one branded leaf at any
  * depth <= remaining `Depth` budget. Used as the boundary for whether a
  * non-branded property survives `DaemonActions<T>`.
  */
-type HasBrandedLeaves<T, D extends ReadonlyArray<1>> = AtLimit<D> extends true
-	? false
-	: T extends readonly unknown[]
+type HasBrandedLeaves<T, D extends ReadonlyArray<1>> =
+	AtLimit<D> extends true
 		? false
-		: T extends object
-			? true extends {
-					[K in keyof T & string]-?: ActionPathKey<K> extends never
-						? false
-						: IsDaemonKey<T[K], Inc<D>>;
-				}[keyof T & string]
-				? true
-				: false
-			: false;
+		: T extends readonly unknown[]
+			? false
+			: T extends object
+				? true extends {
+						[K in keyof T & string]-?: ActionPathKey<K> extends never
+							? false
+							: IsDaemonKey<T[K], Inc<D>>;
+					}[keyof T & string]
+					? true
+					: false
+				: false;
 
 /**
  * `true` if `V` should appear on the daemon facade. Branded actions are kept;
@@ -120,14 +120,14 @@ export type DaemonActions<T, D extends ReadonlyArray<1> = []> =
 				[K in keyof T & string as ActionPathKey<K> extends never
 					? never
 					: IsDaemonKey<T[K], D> extends true
-					? K
-					: never]: T[K] extends Action
+						? K
+						: never]: T[K] extends Action
 					? WrapDaemonAction<T[K]>
 					: T[K] extends readonly unknown[]
 						? never
 						: T[K] extends object
-						? DaemonActions<T[K], Inc<D>>
-						: never;
+							? DaemonActions<T[K], Inc<D>>
+							: never;
 			}>;
 
 type ActionPathKey<TKey extends string> = TKey extends ''
@@ -159,11 +159,12 @@ function buildDaemonActionProxy(
 			},
 			apply(_target, _thisArg, args) {
 				const input = args.length === 0 ? undefined : args[0];
-				const options = args[1] as DaemonActionOptions | undefined;
+				const { waitMs = DEFAULT_RUN_WAIT_MS } =
+					(args[1] as DaemonActionOptions | undefined) ?? {};
 				return client.run({
 					actionPath: `${workspaceExportName}.${path.join('.')}`,
 					input,
-					waitMs: options?.waitMs ?? DEFAULT_RUN_WAIT_MS,
+					waitMs,
 				});
 			},
 		});

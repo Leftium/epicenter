@@ -36,8 +36,8 @@ import {
 	type SystemActions,
 } from '../shared/actions.js';
 import {
-	createPeerPresence,
 	type AttachPresenceConfig,
+	createPeerPresence,
 	type PeerPresenceAttachment,
 	type PeerPresenceController,
 } from './peer-presence.js';
@@ -496,7 +496,9 @@ export function attachSync(
 
 		// Resolve the action up front so a missing path surfaces as
 		// ActionNotFound (typed) rather than ActionFailed wrapping a raw throw.
-		const target = rpcActions ? resolveActionPath(rpcActions, rpc.action) : null;
+		const target = rpcActions
+			? resolveActionPath(rpcActions, rpc.action)
+			: null;
 		if (!target) {
 			sendResponse(RpcError.ActionNotFound({ action: rpc.action }));
 			return;
@@ -942,7 +944,7 @@ export function attachSync(
 					target: number,
 					action: TAction,
 					input?: TMap[TAction]['input'],
-					options?: { timeout?: number },
+					{ timeout = DEFAULT_RPC_TIMEOUT_MS }: { timeout?: number } = {},
 				): Promise<Result<TMap[TAction]['output'], RpcError>> => {
 					if (target === ydoc.clientID) {
 						return RpcError.ActionFailed({
@@ -956,8 +958,6 @@ export function attachSync(
 					if (websocket?.readyState !== WebSocket.OPEN) {
 						return RpcError.Disconnected();
 					}
-
-					const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;
 
 					return new Promise((resolve) => {
 						const requestId = nextRequestId++;
@@ -973,8 +973,8 @@ export function attachSync(
 
 						const timer = setTimeout(() => {
 							pendingRequests.delete(requestId);
-							resolve(RpcError.Timeout({ ms: timeoutMs }));
-						}, timeoutMs);
+							resolve(RpcError.Timeout({ ms: timeout }));
+						}, timeout);
 
 						pendingRequests.set(requestId, {
 							action,

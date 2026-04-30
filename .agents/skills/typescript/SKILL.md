@@ -169,6 +169,32 @@ Load these on demand based on what you're working on:
   }
   ```
 
+  This includes the common half-fix where a function accepts `options`, then
+  immediately does `const { foo } = options` or `const { foo } = options ?? {}`.
+  Move that destructuring into the call signature instead:
+
+  ```typescript
+  // Good
+  export function createThing({
+    name,
+    value = defaultValue,
+  }: ThingOptions = {}) {
+    // ...
+  }
+
+  // Bad
+  export function createThing(options: ThingOptions = {}) {
+    const { name, value = defaultValue } = options;
+    // ...
+  }
+  ```
+
+  Use judgment for real payload objects. Keep a named `options` parameter when
+  the value is the domain object being transformed or forwarded as a whole,
+  when the object is intentionally stateful, or when destructuring would make
+  the signature harder to scan than the body. For configuration bags with
+  defaults or a few plucked fields, destructure in the signature.
+
 - **Don't annotate return types the compiler can infer**: Let TypeScript infer return types on inner/private functions. Only annotate return types on exported public API functions when the inferred type is too complex or when you need to break circular inference.
 
   ```typescript

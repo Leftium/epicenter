@@ -3,9 +3,9 @@ import { isRpcError, RpcError } from '@epicenter/sync';
 import Type from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import { Err, isErr, Ok } from 'wellcrafted/result';
+import type { SyncRpcAttachment } from '../document/attach-sync.js';
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import type { FoundPeer } from '../document/standard-awareness-defs.js';
-import type { SyncRpcAttachment } from '../document/attach-sync.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import {
 	createRemoteActions,
@@ -36,14 +36,17 @@ type RpcCall = {
 	options?: { timeout?: number };
 };
 
-function mockTransport(opts: {
+function mockTransport({
+	present: presentPeers,
+	respond,
+	calls = [],
+}: {
 	present: Record<string, number>;
 	respond: (call: RpcCall) => Promise<Result<unknown, RpcError>>;
 	calls?: RpcCall[];
 }): RemoteActionTransport & { drop(peerId: string): void } {
-	const present = new Map(Object.entries(opts.present));
+	const present = new Map(Object.entries(presentPeers));
 	const observers = new Set<() => void>();
-	const calls = opts.calls ?? [];
 
 	const presence: PeerPresenceAttachment = {
 		peers: () => new Map(),
@@ -75,7 +78,7 @@ function mockTransport(opts: {
 		async rpc(target, action, input, options) {
 			const call = { target, action, input, options };
 			calls.push(call);
-			return opts.respond(call);
+			return respond(call);
 		},
 	};
 

@@ -34,8 +34,13 @@ export function createNotificationServiceWeb(): NotificationService {
 		 *
 		 * @param options - Notification configuration including title, body, and actions
 		 */
-		async notify(options: UnifiedNotificationOptions) {
-			const notificationId = options.id ?? nanoid();
+		async notify({
+			action,
+			id,
+			title,
+			...notificationOptions
+		}: UnifiedNotificationOptions) {
+			const notificationId = id ?? nanoid();
 
 			// Try extension first if available
 			if (await detectExtension()) {
@@ -62,12 +67,17 @@ export function createNotificationServiceWeb(): NotificationService {
 					}
 
 					// Create notification
-					const browserOptions = toBrowserNotification(options);
-					const notification = new Notification(options.title, browserOptions);
+					const browserOptions = toBrowserNotification({
+						action,
+						id,
+						title,
+						...notificationOptions,
+					});
+					const notification = new Notification(title, browserOptions);
 
 					// Handle notification click if there's a link action
-					if (options.action?.type === 'link') {
-						const linkAction = options.action;
+					if (action?.type === 'link') {
+						const linkAction = action;
 						notification.onclick = () => {
 							window.location.href = linkAction.href;
 							notification.close();

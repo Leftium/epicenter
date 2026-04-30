@@ -20,18 +20,19 @@ export type ParseInputOptions = {
  * `error.message` verbatim. Plain `throw` at a CLI boundary is the simpler
  * equivalent.
  */
-export function parseJsonInput<T = unknown>(
-	options: ParseInputOptions,
-): T | undefined {
-	if (options.positional) {
-		if (options.positional.startsWith('@')) {
-			const filePath = options.positional.slice(1);
+export function parseJsonInput<T = unknown>({
+	positional,
+	stdinContent,
+}: ParseInputOptions): T | undefined {
+	if (positional) {
+		if (positional.startsWith('@')) {
+			const filePath = positional.slice(1);
 			return readJsonFile<T>(filePath);
 		}
-		return parseJson<T>(options.positional);
+		return parseJson<T>(positional);
 	}
-	if (options.stdinContent) {
-		return parseJson<T>(options.stdinContent);
+	if (stdinContent) {
+		return parseJson<T>(stdinContent);
 	}
 	return undefined;
 }

@@ -158,16 +158,21 @@ export type NotificationService = {
  * - actions: Not supported on desktop
  * - variant: Ignored (only for toasts)
  */
-export function toTauriNotification(
-	options: UnifiedNotificationOptions,
-): TauriNotificationOptions {
+export function toTauriNotification({
+	id,
+	title,
+	description,
+	icon,
+	silent,
+	requireInteraction,
+}: UnifiedNotificationOptions): TauriNotificationOptions {
 	return {
-		id: options.id ? hashNanoidToNumber(options.id) : undefined,
-		title: options.title,
-		body: options.description,
-		icon: options.icon,
-		silent: options.silent,
-		autoCancel: !options.requireInteraction,
+		id: id ? hashNanoidToNumber(id) : undefined,
+		title,
+		body: description,
+		icon,
+		silent,
+		autoCancel: !requireInteraction,
 	};
 }
 
@@ -181,15 +186,19 @@ export function toTauriNotification(
  * - actions: Only work in Service Workers (limited support)
  * - variant: Ignored (only for toasts)
  */
-export function toBrowserNotification(
-	options: UnifiedNotificationOptions,
-): NotificationOptions {
+export function toBrowserNotification({
+	description,
+	icon,
+	id,
+	requireInteraction,
+	silent,
+}: UnifiedNotificationOptions): NotificationOptions {
 	return {
-		body: options.description,
-		icon: options.icon,
-		tag: options.id,
-		requireInteraction: options.requireInteraction,
-		silent: options.silent,
+		body: description,
+		icon,
+		tag: id,
+		requireInteraction,
+		silent,
 	};
 }
 
@@ -205,19 +214,24 @@ export function toBrowserNotification(
  *
  * @future This will be implemented when extension support is added
  */
-export function toExtensionNotification(
-	options: UnifiedNotificationOptions,
-): ChromeNotificationOptions {
+export function toExtensionNotification({
+	action,
+	description,
+	icon,
+	requireInteraction,
+	silent,
+	title,
+}: UnifiedNotificationOptions): ChromeNotificationOptions {
 	return {
 		type: 'basic',
-		title: options.title,
-		message: options.description,
-		iconUrl: options.icon || '/icon-192.png',
-		requireInteraction: options.requireInteraction,
-		priority: options.silent ? -2 : 0,
+		title,
+		message: description,
+		iconUrl: icon || '/icon-192.png',
+		requireInteraction,
+		priority: silent ? -2 : 0,
 		buttons:
-			options.action && options.action.type !== 'more-details'
-				? [{ title: options.action.label }]
+			action && action.type !== 'more-details'
+				? [{ title: action.label }]
 				: undefined,
 	};
 }

@@ -5,8 +5,9 @@ import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
+import { createWorkspaceServer } from '@epicenter/workspace/node';
 import { defineFujiDaemon } from './daemon.js';
-import { openFuji as openFujiScript } from './script.js';
+import { openFujiScript, openFujiSnapshot } from './script.js';
 
 let workdir: ProjectDir;
 
@@ -35,15 +36,65 @@ describe('daemon to script handoff via Yjs log file', () => {
 			}
 		}
 
-		using script = openFujiScript({
-			getToken: async () => 'fake-token',
+		using script = openFujiSnapshot({
 			projectDir: workdir,
-			webSocketImpl: NoopWebSocket,
 		});
 		const titles = script.tables.entries
 			.getAllValid()
 			.map((row) => row.title)
 			.sort();
 		expect(titles).toEqual(['first', 'second', 'third']);
+	});
+
+	test('script tables read and write through the daemon', async () => {
+		await Bun.write(`${workdir}/epicenter.config.ts`, 'export default {};');
+
+		const daemonDefinition = defineFujiDaemon({
+			getToken: async () => 'fake-token',
+			webSocketImpl: NoopWebSocket,
+		});
+		const daemon = await daemonDefinition.start({
+			projectDir: workdir,
+			configDir: workdir,
+		});
+		const oldRuntimeDir = process.env.XDG_RUNTIME_DIR;
+		process.env.XDG_RUNTIME_DIR = '/tmp';
+		const server = createWorkspaceServer({
+			projectDir: workdir,
+			workspaces: [{ route: daemonDefinition.route, workspace: daemon }],
+		});
+		try {
+			const listening = await server.listen();
+			expect(listening.error).toBeNull();
+			if (listening.error !== null) return;
+
+			await using script = await openFujiScript({ projectDir: workdir });
+			const created = await script.tables.entries.create({
+				title: 'daemon backed',
+			});
+			await script.tables.entries.update(created.id, { tags: ['script'] });
+
+			const fresh = await script.tables.entries.getAllValid();
+			expect(fresh.map((row) => row.title)).toContain('daemon backed');
+			expect(fresh.find((row) => row.id === created.id)?.tags).toEqual([
+				'script',
+			]);
+
+			const snapshot = openFujiSnapshot({ projectDir: workdir });
+			using _snapshot = snapshot;
+			expect(
+				snapshot.tables.entries
+					.getAllValid()
+					.some((row) => row.id === created.id),
+			).toBe(true);
+		} finally {
+			await server.close();
+			daemon[Symbol.dispose]();
+			if (oldRuntimeDir === undefined) {
+				delete process.env.XDG_RUNTIME_DIR;
+			} else {
+				process.env.XDG_RUNTIME_DIR = oldRuntimeDir;
+			}
+		}
 	});
 });

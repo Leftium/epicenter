@@ -1,13 +1,14 @@
 /**
- * createTable — CRUD, query, observation, and migration over EncryptedYKeyValueLww.
+ * createTable: CRUD, query, observation, and migration over EncryptedYKeyValueLww.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { createTable } from './internal.js';
+import { createReadonlyTable, createTable } from './internal.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { defineTable } from './define-table.js';
+import { attachReadonlyTable, attachTable } from './attach-table.js';
 
 /** Creates Yjs infrastructure for testing */
 function setup() {
@@ -17,6 +18,45 @@ function setup() {
 }
 
 describe('createTable', () => {
+	describe('readonly helpers', () => {
+		test('createReadonlyTable reads rows without exposing write methods', () => {
+			const { ykv } = setup();
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
+			const helper = createReadonlyTable(ykv, definition, 'test');
+			ykv.set('1', { id: '1', name: 'Alice', _v: 1 });
+
+			expect(helper.getAllValid()).toEqual([
+				{ id: '1', name: 'Alice', _v: 1 },
+			]);
+			expect(helper.count()).toBe(1);
+			expect(helper.has('1')).toBe(true);
+			expect('set' in helper).toBe(false);
+			expect('update' in helper).toBe(false);
+			expect('delete' in helper).toBe(false);
+			expect('clear' in helper).toBe(false);
+		});
+
+		test('attachReadonlyTable reads the same Y.Doc slot without write methods', () => {
+			const ydoc = new Y.Doc();
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
+			const writer = attachTable(ydoc, 'people', definition);
+			const reader = attachReadonlyTable(ydoc, 'people', definition);
+
+			writer.set({ id: '1', name: 'Alice', _v: 1 });
+
+			expect(reader.get('1').data).toEqual({
+				id: '1',
+				name: 'Alice',
+				_v: 1,
+			});
+			expect('set' in reader).toBe(false);
+		});
+	});
+
 	describe('set operations', () => {
 		test('set stores a row that get returns as valid', () => {
 			const { ykv } = setup();

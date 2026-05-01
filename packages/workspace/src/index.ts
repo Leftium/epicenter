@@ -185,11 +185,15 @@ export {
 	type WebSocketImpl,
 } from './document/attach-sync.js';
 export {
+	attachReadonlyTable,
+	attachReadonlyTables,
 	attachTable,
 	attachTables,
 	type BaseRow,
 	type InferTableRow,
 	type LastSchema,
+	type ReadonlyTable,
+	type ReadonlyTables,
 	type Table,
 	type TableDefinition,
 	type TableDefinitions,

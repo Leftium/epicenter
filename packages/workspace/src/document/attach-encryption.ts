@@ -1,5 +1,5 @@
 /**
- * attachEncryption — per-ydoc encryption coordinator.
+ * attachEncryption: per-ydoc encryption coordinator.
  *
  * A workspace owns several `EncryptedYKeyValueLww` stores (one per table plus
  * the KV store). This attachment coordinates key application across all of
@@ -20,14 +20,14 @@
  *
  * The method names deliberately mirror the plaintext primitives
  * (`attachTable`, `attachTables`, `attachKv`) so the pattern reads
- * symmetrically — "encryption's attach-tables" vs "plain attach-tables."
+ * symmetrically: "encryption's attach-tables" vs "plain attach-tables."
  *
  * ## Registration model
  *
  * Each method creates the backing `EncryptedYKeyValueLww` store, registers it
  * with the coordinator, and returns the typed helper. The coordinator holds
  * the list and applies the current keyring (if any) to each new registrant
- * immediately — so registering after `applyKeys` has run does not leave the
+ * immediately: so registering after `applyKeys` has run does not leave the
  * store plaintext.
  *
  * ## Fingerprint dedup
@@ -35,23 +35,23 @@
  * Auth token refreshes fire `onLogin` repeatedly with identical key material.
  * The attachment holds a `lastKeysFingerprint` so subsequent calls with the
  * same keys short-circuit before HKDF and per-store activation run. The
- * fingerprint is order-independent — reversed key arrays produce the same
+ * fingerprint is order-independent: reversed key arrays produce the same
  * fingerprint (see `encryptionKeysFingerprint`).
  *
  * ## Disposal
  *
  * The attachment registers a single `ydoc.on('destroy')` listener that
  * disposes every registered store and resolves `whenDisposed`. Callers tear
- * down encryption by calling `ydoc.destroy()` — the attachment does not
+ * down encryption by calling `ydoc.destroy()`: the attachment does not
  * expose a standalone `dispose()` method.
  *
  * ## What this attachment does NOT do
  *
  * - It does not wipe CRDT state. Any future "wipe encrypted blobs" API needs
- *   to coordinate with persistence to be useful — design it alongside the
+ *   to coordinate with persistence to be useful: design it alongside the
  *   consumer migration.
  * - It does not validate that every encryption-capable slot on the Y.Doc
- *   got registered. The caller owns the composition — if you pair a
+ *   got registered. The caller owns the composition: if you pair a
  *   plaintext `attachTable` with `encryption.attachTable` targeting the
  *   *same slot name*, Yjs hands both calls the same underlying `Y.Array` and
  *   you get a silent plaintext-over-ciphertext race. The verb
@@ -63,7 +63,7 @@
  * By construction, the workspace Y.Doc's `guid` equals the workspace id
  * (`new Y.Doc({ guid: id })`). Taking a separate `workspaceId` parameter
  * would invite drift between the two. `deriveWorkspaceKey` uses the id as
- * an HKDF domain-separation label — it doesn't care whether the string is
+ * an HKDF domain-separation label: it doesn't care whether the string is
  * the guid or an explicit id, only that the two agree.
  *
  * @module
@@ -81,17 +81,19 @@ import {
 } from './encryption-key.js';
 import {
 	type InferTableRow,
+	type ReadonlyTable,
+	type ReadonlyTables,
 	type Table,
 	type TableDefinition,
 	type TableDefinitions,
 	type Tables,
 } from './attach-table.js';
 import { type Kv, type KvDefinitions } from './attach-kv.js';
-import { createKv, createTable } from './internal.js';
+import { createKv, createReadonlyTable, createTable } from './internal.js';
 import { KV_KEY, TableKey } from './keys.js';
 
 /**
- * The coordinator treats every registered store uniformly — it only calls
+ * The coordinator treats every registered store uniformly: it only calls
  * `activateEncryption(keyring)` and `dispose()`, neither of which depends on
  * the store's value type. `any` is the variance-friendly alias here.
  */
@@ -100,7 +102,7 @@ type AnyEncryptedStore = EncryptedYKeyValueLww<any>;
 
 export type EncryptionAttachment = {
 	/**
-	 * Apply encryption keys to every registered store. Synchronous — HKDF via
+	 * Apply encryption keys to every registered store. Synchronous: HKDF via
 	 * @noble/hashes and XChaCha20 via @noble/ciphers are both sync.
 	 *
 	 * On every call (including the first), every registered store walks its
@@ -137,11 +139,11 @@ export type EncryptionAttachment = {
 	register(store: AnyEncryptedStore): void;
 
 	/**
-	 * Attach an encrypted table — mirror of the plaintext `attachTable(ydoc,
+	 * Attach an encrypted table: mirror of the plaintext `attachTable(ydoc,
 	 * name, def)` but with the store registered for encryption coordination.
 	 */
 	attachTable<
-		// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
+		// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
 		TTableDefinition extends TableDefinition<any>,
 	>(
 		ydoc: Y.Doc,
@@ -149,14 +151,28 @@ export type EncryptionAttachment = {
 		definition: TTableDefinition,
 	): Table<InferTableRow<TTableDefinition>>;
 
+	attachReadonlyTable<
+		// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
+		TTableDefinition extends TableDefinition<any>,
+	>(
+		ydoc: Y.Doc,
+		name: string,
+		definition: TTableDefinition,
+	): ReadonlyTable<InferTableRow<TTableDefinition>>;
+
 	/**
-	 * Batch sugar over `attachTable` — one encrypted store per entry, keyed by
+	 * Batch sugar over `attachTable`: one encrypted store per entry, keyed by
 	 * name. Mirror of the plaintext `attachTables(ydoc, defs)`.
 	 */
 	attachTables<T extends TableDefinitions>(
 		ydoc: Y.Doc,
 		definitions: T,
 	): Tables<T>;
+
+	attachReadonlyTables<T extends TableDefinitions>(
+		ydoc: Y.Doc,
+		definitions: T,
+	): ReadonlyTables<T>;
 
 	/**
 	 * Attach the encrypted KV singleton. Mirror of the plaintext
@@ -172,7 +188,7 @@ export type EncryptionAttachment = {
  * Create an encryption coordinator bound to `ydoc`.
  *
  * The returned coordinator owns `attachTable` / `attachTables` / `attachKv`
- * methods — call them to register encrypted stores. Call `applyKeys(keys)`
+ * methods: call them to register encrypted stores. Call `applyKeys(keys)`
  * after login (or whenever the auth session produces keys) to activate
  * encryption across every registered store.
  */
@@ -218,6 +234,11 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 			attachment.register(store);
 			return createTable(store, definition, name);
 		},
+		attachReadonlyTable(ydoc, name, definition) {
+			const store = createEncryptedYkvLww(ydoc, TableKey(name));
+			attachment.register(store);
+			return createReadonlyTable(store, definition, name);
+		},
 		attachTables(ydoc, definitions) {
 			return Object.fromEntries(
 				Object.entries(definitions).map(([name, def]) => [
@@ -225,6 +246,14 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 					attachment.attachTable(ydoc, name, def),
 				]),
 			) as Tables<typeof definitions>;
+		},
+		attachReadonlyTables(ydoc, definitions) {
+			return Object.fromEntries(
+				Object.entries(definitions).map(([name, def]) => [
+					name,
+					attachment.attachReadonlyTable(ydoc, name, def),
+				]),
+			) as ReadonlyTables<typeof definitions>;
 		},
 		attachKv(ydoc, definitions) {
 			const store = createEncryptedYkvLww(ydoc, KV_KEY);

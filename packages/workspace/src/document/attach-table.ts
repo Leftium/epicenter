@@ -1,5 +1,5 @@
 /**
- * attachTable() — Bind a TableDefinition to a Y.Doc.
+ * attachTable(): Bind a TableDefinition to a Y.Doc.
  *
  * Constructs an unencrypted `YKeyValueLww` on `ydoc.getArray('table:<name>')`
  * and wraps it with a typed `Table`. Provides CRUD operations with
@@ -47,7 +47,7 @@ import {
  * Errors produced when parsing unknown input against a table's schema.
  *
  * Surfaced by `parse()`, `get()`, `getAll()`, and `update()`. "Not found" on
- * `get()` / `update()` is *not* an error — it's a legitimate absence and is
+ * `get()` / `update()` is *not* an error: it's a legitimate absence and is
  * returned as `data: null` instead.
  */
 export const TableParseError = defineErrors({
@@ -66,7 +66,7 @@ export const TableParseError = defineErrors({
 		issues,
 		row,
 	}),
-	/** The table's schema returned a `Promise` from `validate()` — not supported. */
+	/** The table's schema returned a `Promise` from `validate()`: not supported. */
 	AsyncSchemaNotSupported: ({ id }: { id: string }) => ({
 		message: `Row '${id}' could not be parsed: async Standard Schema validate() is not supported`,
 		id,
@@ -113,7 +113,7 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
  * For per-row content (rich text, long-form body), keep the row lean (ids,
  * metadata, a content-doc guid) and pair the table with a separate
  * `createDisposableCache(builder)` keyed on that content guid. Opening a row
- * then becomes `contentDocs.open(row.contentGuid)` — the list doesn't load
+ * then becomes `contentDocs.open(row.contentGuid)`: the list doesn't load
  * every content doc, and the editor doesn't contend with the table.
  *
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
@@ -156,16 +156,16 @@ export type TableDefinitions = Record<
  *
  * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
  */
-export type Table<TRow extends BaseRow> = {
+export type ReadonlyTable<TRow extends BaseRow> = {
 	/** The table name (the Y.Array key this table is bound to). */
 	name: string;
 
 	/**
 	 * The underlying `TableDefinition` (schema + migration) this Table was
-	 * attached with. Exposed for consumers that need the raw schema — e.g.,
+	 * attached with. Exposed for consumers that need the raw schema: e.g.,
 	 * the sqlite materializer generating DDL.
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
 	definition: TableDefinition<any>;
 
 	/**
@@ -180,24 +180,12 @@ export type Table<TRow extends BaseRow> = {
 	 */
 	parse(id: string, input: unknown): Result<TRow, TableParseError>;
 
-	/** Set a row (insert or replace). Always writes the full row. */
-	set(row: TRow): void;
-
-	/** Insert or replace many rows with chunked transactions and progress reporting. */
-	bulkSet(
-		rows: TRow[],
-		options?: {
-			chunkSize?: number;
-			onProgress?: (percent: number) => void;
-		},
-	): Promise<void>;
-
 	/**
 	 * Get a single row by ID.
 	 *
 	 * @returns `Result<TRow | null, TableParseError>`:
 	 *   - `data: TRow` when the row exists and validates
-	 *   - `data: null` when no row exists at that id (not an error — legitimate absence)
+	 *   - `data: null` when no row exists at that id (not an error: legitimate absence)
 	 *   - `error: TableParseError` when the stored row failed schema validation
 	 */
 	get(id: string): Result<TRow | null, TableParseError>;
@@ -216,6 +204,31 @@ export type Table<TRow extends BaseRow> = {
 
 	/** Find the first valid row matching a predicate. */
 	find(predicate: (row: TRow) => boolean): TRow | undefined;
+
+	/** Watch for row changes. */
+	observe(
+		callback: (changedIds: ReadonlySet<TRow['id']>, origin?: unknown) => void,
+	): () => void;
+
+	/** Get the total number of rows in the table. */
+	count(): number;
+
+	/** Check if a row exists by ID. */
+	has(id: string): boolean;
+};
+
+export type Table<TRow extends BaseRow> = ReadonlyTable<TRow> & {
+	/** Set a row (insert or replace). Always writes the full row. */
+	set(row: TRow): void;
+
+	/** Insert or replace many rows with chunked transactions and progress reporting. */
+	bulkSet(
+		rows: TRow[],
+		options?: {
+			chunkSize?: number;
+			onProgress?: (percent: number) => void;
+		},
+	): Promise<void>;
 
 	/**
 	 * Partial update a row by ID.
@@ -245,22 +258,17 @@ export type Table<TRow extends BaseRow> = {
 
 	/** Delete all rows from the table. */
 	clear(): void;
-
-	/** Watch for row changes. */
-	observe(
-		callback: (changedIds: ReadonlySet<TRow['id']>, origin?: unknown) => void,
-	): () => void;
-
-	/** Get the total number of rows in the table. */
-	count(): number;
-
-	/** Check if a row exists by ID. */
-	has(id: string): boolean;
 };
 
 /** Map keyed by table name to Table for that table's row type. */
 export type Tables<TTableDefinitions extends TableDefinitions> = {
 	[K in keyof TTableDefinitions]: Table<InferTableRow<TTableDefinitions[K]>>;
+};
+
+export type ReadonlyTables<TTableDefinitions extends TableDefinitions> = {
+	[K in keyof TTableDefinitions]: ReadonlyTable<
+		InferTableRow<TTableDefinitions[K]>
+	>;
 };
 
 /**
@@ -274,7 +282,7 @@ export type Tables<TTableDefinitions extends TableDefinitions> = {
  * @param definition - The table definition with schema and migration
  */
 export function attachTable<
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
 	TTableDefinition extends TableDefinition<any>,
 >(
 	ydoc: Y.Doc,
@@ -287,9 +295,23 @@ export function attachTable<
 	return createTable(ykv, definition, name);
 }
 
+export function attachReadonlyTable<
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
+	TTableDefinition extends TableDefinition<any>,
+>(
+	ydoc: Y.Doc,
+	name: string,
+	definition: TTableDefinition,
+): ReadonlyTable<InferTableRow<TTableDefinition>> {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
+	const ykv = new YKeyValueLww<unknown>(yarray);
+	ydoc.on('destroy', () => ykv.dispose());
+	return createReadonlyTable(ykv, definition, name);
+}
+
 /**
  * Bind a record of plaintext `TableDefinition`s to a Y.Doc. Sugar over
- * `attachTable` — calls it for each entry and returns the helpers keyed by
+ * `attachTable`: calls it for each entry and returns the helpers keyed by
  * table name.
  *
  * For encrypted storage, call `encryption.attachTables` on the coordinator
@@ -307,20 +329,32 @@ export function attachTables<T extends TableDefinitions>(
 	) as Tables<T>;
 }
 
+export function attachReadonlyTables<T extends TableDefinitions>(
+	ydoc: Y.Doc,
+	definitions: T,
+): ReadonlyTables<T> {
+	return Object.fromEntries(
+		Object.entries(definitions).map(([name, def]) => [
+			name,
+			attachReadonlyTable(ydoc, name, def),
+		]),
+	) as ReadonlyTables<T>;
+}
+
 /**
  * Construct a Table from any `ObservableKvStore` and a TableDefinition.
  *
  * Exported so `@epicenter/workspace` can reuse the exact same helper logic
  * over its encrypted store wrapper.
  */
-export function createTable<
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
+export function createReadonlyTable<
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
 	TTableDefinition extends TableDefinition<any>,
 >(
 	ykv: ObservableKvStore<unknown>,
 	definition: TTableDefinition,
 	name: string,
-): Table<InferTableRow<TTableDefinition>> {
+): ReadonlyTable<InferTableRow<TTableDefinition>> {
 	type TRow = InferTableRow<TTableDefinition>;
 
 	/**
@@ -354,46 +388,6 @@ export function createTable<
 
 		parse(id: string, input: unknown): Result<TRow, TableParseError> {
 			return parseRow(id, input);
-		},
-
-		set(row: TRow): void {
-			ykv.set(row.id, row);
-		},
-
-		async bulkSet(
-			rows: TRow[],
-			{
-				chunkSize = 1000,
-				onProgress,
-			}: {
-				chunkSize?: number;
-				onProgress?: (percent: number) => void;
-			} = {},
-		): Promise<void> {
-			const total = rows.length;
-
-			for (let i = 0; i < total; i += chunkSize) {
-				const chunk = rows.slice(i, i + chunkSize);
-				ykv.bulkSet(chunk.map((row) => ({ key: row.id, val: row })));
-				onProgress?.(Math.min((i + chunkSize) / total, 1));
-				await new Promise((resolve) => setTimeout(resolve, 0));
-			}
-		},
-
-		update(
-			id: string,
-			partial: Partial<Omit<TRow, 'id'>>,
-		): Result<TRow | null, TableParseError> {
-			const { data: current, error: currentError } = this.get(id);
-			if (currentError) return Err(currentError);
-			if (current === null) return Ok(null);
-
-			const merged = { ...current, ...partial, id };
-			const { data: validated, error: mergedError } = parseRow(id, merged);
-			if (mergedError) return Err(mergedError);
-
-			this.set(validated);
-			return Ok(validated);
 		},
 
 		get(id: string): Result<TRow | null, TableParseError> {
@@ -445,6 +439,81 @@ export function createTable<
 			return undefined;
 		},
 
+		observe(
+			callback: (changedIds: ReadonlySet<TRow['id']>, origin?: unknown) => void,
+		): () => void {
+			const handler: KvStoreChangeHandler<unknown> = (changes, origin) => {
+				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, origin);
+			};
+
+			ykv.observe(handler);
+			return () => ykv.unobserve(handler);
+		},
+
+		count(): number {
+			return ykv.size;
+		},
+
+		has(id: string): boolean {
+			return ykv.has(id);
+		},
+	};
+}
+
+export function createTable<
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
+	TTableDefinition extends TableDefinition<any>,
+>(
+	ykv: ObservableKvStore<unknown>,
+	definition: TTableDefinition,
+	name: string,
+): Table<InferTableRow<TTableDefinition>> {
+	type TRow = InferTableRow<TTableDefinition>;
+	const readonly = createReadonlyTable(ykv, definition, name);
+
+	return {
+		...readonly,
+
+		set(row: TRow): void {
+			ykv.set(row.id, row);
+		},
+
+		async bulkSet(
+			rows: TRow[],
+			{
+				chunkSize = 1000,
+				onProgress,
+			}: {
+				chunkSize?: number;
+				onProgress?: (percent: number) => void;
+			} = {},
+		): Promise<void> {
+			const total = rows.length;
+
+			for (let i = 0; i < total; i += chunkSize) {
+				const chunk = rows.slice(i, i + chunkSize);
+				ykv.bulkSet(chunk.map((row) => ({ key: row.id, val: row })));
+				onProgress?.(Math.min((i + chunkSize) / total, 1));
+				await new Promise((resolve) => setTimeout(resolve, 0));
+			}
+		},
+
+		update(
+			id: string,
+			partial: Partial<Omit<TRow, 'id'>>,
+		): Result<TRow | null, TableParseError> {
+			const { data: current, error: currentError } = readonly.get(id);
+			if (currentError) return Err(currentError);
+			if (current === null) return Ok(null);
+
+			const merged = { ...current, ...partial, id };
+			const { data: validated, error: mergedError } = readonly.parse(id, merged);
+			if (mergedError) return Err(mergedError);
+
+			this.set(validated);
+			return Ok(validated);
+		},
+
 		delete(id: string): void {
 			ykv.delete(id);
 		},
@@ -472,25 +541,6 @@ export function createTable<
 		clear(): void {
 			const keys = Array.from(ykv.entries()).map(([k]) => k);
 			ykv.bulkDelete(keys);
-		},
-
-		observe(
-			callback: (changedIds: ReadonlySet<TRow['id']>, origin?: unknown) => void,
-		): () => void {
-			const handler: KvStoreChangeHandler<unknown> = (changes, origin) => {
-				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, origin);
-			};
-
-			ykv.observe(handler);
-			return () => ykv.unobserve(handler);
-		},
-
-		count(): number {
-			return ykv.size;
-		},
-
-		has(id: string): boolean {
-			return ykv.has(id);
 		},
 	};
 }

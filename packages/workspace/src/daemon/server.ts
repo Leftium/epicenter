@@ -12,12 +12,13 @@
  * See spec: `20260429T004302-workspace-as-daemon-transport.md` § Phase 2.
  */
 
-import type { Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
-import { buildDaemonApp } from './app.js';
+import { buildDaemonApp, buildStartingDaemonApp } from './app.js';
 import { pingDaemon } from './client.js';
 import { socketPathFor } from './paths.js';
-import type { DaemonRouteRuntime } from './types.js';
+import { validateStartedDaemonRoutes } from './route-validation.js';
+import type { StartedDaemonRoute } from './types.js';
 import {
 	bindOrRecover,
 	type StartupError,
@@ -28,12 +29,6 @@ import {
 export type DaemonServerOptions = {
 	/** Filesystem-resolved absolute path that scopes this daemon. */
 	projectDir: string;
-	/**
-	 * Pre-constructed daemon runtimes the daemon serves. Each runtime's
-	 * `route` is the routing key the wire surface dispatches on. The CLI uses
-	 * this as the first segment in route-prefixed action paths.
-	 */
-	runtimes: DaemonRouteRuntime[];
 	/** Called by the optional `/shutdown` route after the response is queued. */
 	triggerShutdown?: () => void;
 };
@@ -48,6 +43,8 @@ export type DaemonServer = {
 	 * after a successful `listen()` are a no-op until `close()` runs.
 	 */
 	listen(): Promise<Result<UnixSocketServer, StartupError>>;
+	/** Mount started daemon routes after the socket has already been claimed. */
+	mountRoutes(routes: readonly StartedDaemonRoute[]): void;
 	/**
 	 * Stop the bound listener. `Bun.serve.stop()` unlinks the socket file
 	 * itself; this method also sweeps any leftover socket file as a guard
@@ -63,27 +60,24 @@ export type DaemonServer = {
  */
 export function createDaemonServer({
 	projectDir,
-	runtimes,
 	triggerShutdown,
 }: DaemonServerOptions): DaemonServer {
-	const seen = new Set<string>();
-	for (const entry of runtimes) {
-		if (seen.has(entry.route)) {
-			throw new Error(
-				`createDaemonServer: duplicate daemon route '${entry.route}'`,
-			);
-		}
-		seen.add(entry.route);
-	}
-
 	const socketPath = socketPathFor(projectDir);
-	const app = buildDaemonApp(runtimes, triggerShutdown);
+	const startingApp = buildStartingDaemonApp();
+	let currentFetch = startingApp.fetch;
+	const app = {
+		fetch(...args: Parameters<typeof currentFetch>) {
+			const [request, env, executionCtx] = args;
+			return currentFetch(request, env, executionCtx);
+		},
+	};
 
 	let server: UnixSocketServer | undefined;
 
 	return {
 		socketPath,
 		async listen() {
+			if (server !== undefined) return Ok(server);
 			const result = await bindOrRecover(
 				socketPath,
 				projectDir,
@@ -92,6 +86,17 @@ export function createDaemonServer({
 			);
 			if (result.error === null) server = result.data;
 			return result;
+		},
+		mountRoutes(routes) {
+			const validation = validateStartedDaemonRoutes(routes);
+			if (!validation.ok) {
+				throw new Error(
+					validation.reason === 'duplicate'
+						? `createDaemonServer: duplicate daemon route '${validation.route}'`
+						: `createDaemonServer: invalid daemon route '${validation.route}'`,
+				);
+			}
+			currentFetch = buildDaemonApp([...routes], triggerShutdown).fetch;
 		},
 		async close() {
 			if (server) {

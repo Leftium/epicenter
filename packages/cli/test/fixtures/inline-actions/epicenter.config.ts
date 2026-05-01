@@ -8,11 +8,11 @@
 import {
 	defineMutation,
 	defineQuery,
-	type PeerPresenceAttachment,
+	type PeerDirectory,
 	type SyncAttachment,
 	type SyncRpcAttachment,
 } from '@epicenter/workspace';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
@@ -27,11 +27,10 @@ const sync = {
 	goOffline() {},
 	reconnect() {},
 	whenDisposed: Promise.resolve(),
-	attachPresence: () => presence,
 	attachRpc: () => rpc,
 } as unknown as SyncAttachment;
 
-const presence = {
+const peerDirectory = {
 	peers: () => new Map(),
 	find: () => undefined,
 	waitForPeer: async () => ({
@@ -46,8 +45,7 @@ const presence = {
 		data: null,
 	}),
 	observe: () => () => {},
-	raw: {},
-} as unknown as PeerPresenceAttachment;
+} as unknown as PeerDirectory;
 
 const rpc = {
 	rpc: async () => ({
@@ -86,19 +84,17 @@ export const demo = {
 		},
 	},
 	sync,
-	presence,
+	peerDirectory,
 	rpc,
-	[Symbol.dispose]() {
+	async [Symbol.asyncDispose]() {
 		ydoc.destroy();
 	},
 	// Extras for direct script use, not part of the hosted daemon runtime contract.
 	ydoc,
 };
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	daemon: {
-		routes: {
-			demo: () => demo,
-		},
+		routes: [{ route: 'demo', start: () => demo }],
 	},
 });

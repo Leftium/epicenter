@@ -4,7 +4,7 @@ import Type from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import { Err, isErr, Ok } from 'wellcrafted/result';
 import type { SyncRpcAttachment } from '../document/attach-sync.js';
-import type { PeerPresenceAttachment } from '../document/peer-presence.js';
+import type { PeerDirectory } from '../document/peer-presence.js';
 import type { ResolvedPeer } from '../document/peer-presence-defs.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import {
@@ -48,7 +48,7 @@ function mockRemoteOptions({
 	const present = new Map(Object.entries(presentPeers));
 	const observers = new Set<() => void>();
 
-	const presence: PeerPresenceAttachment = {
+	const peerDirectory: PeerDirectory = {
 		peers: () => new Map(),
 		find(peerId): ResolvedPeer | undefined {
 			const clientId = present.get(peerId);
@@ -71,7 +71,6 @@ function mockRemoteOptions({
 			observers.add(callback);
 			return () => observers.delete(callback);
 		},
-		raw: { awareness: null as never },
 	};
 
 	const rpc: SyncRpcAttachment = {
@@ -83,7 +82,7 @@ function mockRemoteOptions({
 	};
 
 	return {
-		presence,
+		peerDirectory,
 		rpc,
 		drop(peerId: string) {
 			present.delete(peerId);
@@ -168,7 +167,7 @@ describe('createRemoteClient actions', () => {
 });
 
 describe('createRemoteClient', () => {
-	test('binds presence and rpc so callers only pass the peer target', async () => {
+	test('binds peer directory and rpc so callers only pass the peer target', async () => {
 		const calls: RpcCall[] = [];
 		const options = mockRemoteOptions({
 			present: { mac: 42 },

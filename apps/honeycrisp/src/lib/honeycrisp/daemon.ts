@@ -1,22 +1,23 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
+	attachAwareness,
 	attachSync,
-	type PeerIdentity,
+	createPeerDirectory,
+	PeerIdentity,
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import type { EpicenterConfigContext } from '@epicenter/workspace/daemon';
+import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import {
-	attachYjsLog,
-	createSessionTokenGetter,
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
 import { openHoneycrisp as openHoneycrispDoc } from './index.js';
 
-export const HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
+export const DEFAULT_HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
 
 export type HoneycrispDaemonOptions = {
+	route?: string;
 	getToken?: () => Promise<string | null>;
 	peer?: PeerIdentity;
 	apiUrl?: string;
@@ -31,31 +32,45 @@ function defaultHoneycrispDaemonPeer(): PeerIdentity {
 	};
 }
 
-export function honeycrispDaemon({
+export function defineHoneycrispDaemon({
+	route = DEFAULT_HONEYCRISP_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
 	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
 	peer = defaultHoneycrispDaemonPeer(),
 	webSocketImpl,
-}: HoneycrispDaemonOptions = {}) {
-	return ({ projectDir }: EpicenterConfigContext) => {
-		const doc = openHoneycrispDoc({ clientID: hashClientId(projectDir) });
-		const yjsLog = attachYjsLog(doc.ydoc, {
-			filePath: yjsPath(projectDir, doc.ydoc.guid),
-		});
-		const sync = attachSync(doc, {
-			url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-			getToken,
-			webSocketImpl,
-		});
-		const presence = sync.attachPresence({ peer });
-		const rpc = sync.attachRpc(doc.actions);
+}: HoneycrispDaemonOptions = {}): DaemonRouteDefinition {
+	return {
+		route,
+		start({ projectDir }) {
+			const doc = openHoneycrispDoc({ clientID: hashClientId(projectDir) });
+			const yjsLog = attachYjsLog(doc.ydoc, {
+				filePath: yjsPath(projectDir, doc.ydoc.guid),
+			});
+			const awareness = attachAwareness(doc.ydoc, {
+				schema: { peer: PeerIdentity },
+				initial: { peer },
+			});
+			const sync = attachSync(doc, {
+				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+				getToken,
+				webSocketImpl,
+				awareness,
+			});
+			const peerDirectory = createPeerDirectory({ awareness, sync });
+			const rpc = sync.attachRpc(doc.actions);
 
-		return {
-			...doc,
-			yjsLog,
-			sync,
-			presence,
-			rpc,
-		};
+			return {
+				...doc,
+				yjsLog,
+				awareness,
+				sync,
+				peerDirectory,
+				rpc,
+				async [Symbol.asyncDispose]() {
+					doc[Symbol.dispose]();
+					await sync.whenDisposed;
+				},
+			};
+		},
 	};
 }

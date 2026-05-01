@@ -1,23 +1,23 @@
 /**
  * executeRun peer dispatch tests.
  *
- * Verifies the daemon normalizes presence peer lookup misses into the
+ * Verifies the daemon normalizes peer lookup misses into the
  * `/run` error union before the response crosses the IPC boundary.
  */
 
 import { describe, expect, test } from 'bun:test';
 
 import { PeerMiss, type SyncRpcAttachment } from '../document/attach-sync.js';
-import type { PeerPresenceAttachment } from '../document/peer-presence.js';
+import type { PeerDirectory } from '../document/peer-presence.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { DaemonRouteRuntime } from './types.js';
+import type { StartedDaemonRoute } from './types.js';
 
-type Runtime = DaemonRouteRuntime['runtime'];
+type Runtime = StartedDaemonRoute['runtime'];
 
-function fakePresence(
-	overrides: Partial<PeerPresenceAttachment> = {},
-): PeerPresenceAttachment {
+function fakePeerDirectory(
+	overrides: Partial<PeerDirectory> = {},
+): PeerDirectory {
 	return {
 		peers: () => new Map(),
 		find: () => undefined,
@@ -29,12 +29,13 @@ function fakePresence(
 				emptyReason: null,
 			}),
 		observe: () => () => {},
-		raw: {},
 		...overrides,
-	} as PeerPresenceAttachment;
+	} as PeerDirectory;
 }
 
-function fakeRpc(overrides: Partial<SyncRpcAttachment> = {}): SyncRpcAttachment {
+function fakeRpc(
+	overrides: Partial<SyncRpcAttachment> = {},
+): SyncRpcAttachment {
 	return {
 		rpc: async () => ({ data: null, error: null }),
 		...overrides,
@@ -49,7 +50,6 @@ function fakeSync(): Runtime['sync'] {
 		goOffline() {},
 		reconnect() {},
 		whenDisposed: Promise.resolve(),
-		attachPresence: () => fakePresence(),
 		attachRpc: () => fakeRpc(),
 	} as Runtime['sync'];
 }
@@ -61,17 +61,17 @@ function fakeRuntime(
 	return {
 		actions,
 		sync: fakeSync(),
-		presence: fakePresence(),
+		peerDirectory: fakePeerDirectory(),
 		rpc: fakeRpc(),
-		[Symbol.dispose]() {},
+		async [Symbol.asyncDispose]() {},
 		...extra,
 	};
 }
 
 function fakeEntry(
-	presence: Partial<PeerPresenceAttachment> = {},
+	peerDirectory: Partial<PeerDirectory> = {},
 	rpc: Partial<SyncRpcAttachment> = {},
-): DaemonRouteRuntime {
+): StartedDaemonRoute {
 	const runtime = fakeRuntime(
 		{
 			tabs: {
@@ -81,7 +81,7 @@ function fakeEntry(
 			},
 		},
 		{
-			presence: fakePresence(presence),
+			peerDirectory: fakePeerDirectory(peerDirectory),
 			rpc: fakeRpc(rpc),
 		},
 	);
@@ -167,15 +167,13 @@ describe('executeRun peer dispatch', () => {
 
 describe('executeRun route-prefixed routing', () => {
 	test('invokes action under the selected daemon route', async () => {
-		const runtime = fakeRuntime(
-			{
-				notes: {
-					add: defineMutation({
-						handler: () => ({ body: 'hello' }),
-					}),
-				},
+		const runtime = fakeRuntime({
+			notes: {
+				add: defineMutation({
+					handler: () => ({ body: 'hello' }),
+				}),
 			},
-		);
+		});
 		const entry = {
 			route: 'notes',
 			runtime,
@@ -217,15 +215,13 @@ describe('executeRun route-prefixed routing', () => {
 	});
 
 	test('missing path suggests action-root-relative sibling', async () => {
-		const runtime = fakeRuntime(
-			{
-				notes: {
-					add: defineMutation({
-						handler: () => ({ body: 'hello' }),
-					}),
-				},
+		const runtime = fakeRuntime({
+			notes: {
+				add: defineMutation({
+					handler: () => ({ body: 'hello' }),
+				}),
 			},
-		);
+		});
 		const entry = {
 			route: 'notes',
 			runtime,

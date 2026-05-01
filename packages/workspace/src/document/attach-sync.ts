@@ -3,6 +3,8 @@
 import {
 	BEARER_SUBPROTOCOL_PREFIX,
 	decodeRpcPayload,
+	encodeAwareness,
+	encodeAwarenessStates,
 	encodeRpcRequest,
 	encodeRpcResponse,
 	encodeSyncStatus,
@@ -25,6 +27,11 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import {
+	applyAwarenessUpdate,
+	encodeAwarenessUpdate,
+	removeAwarenessStates,
+} from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
 import {
@@ -35,12 +42,10 @@ import {
 	resolveActionPath,
 	type SystemActions,
 } from '../shared/actions.js';
-import {
-	type AttachPresenceConfig,
-	createPeerPresence,
-	type PeerPresenceAttachment,
-	type PeerPresenceController,
-} from './peer-presence.js';
+import type {
+	AwarenessAttachment,
+	AwarenessSchema,
+} from './attach-awareness.js';
 
 /**
  * Minimal Y.Doc sync attachment: connects a Y.Doc to a WebSocket sync server.
@@ -51,7 +56,7 @@ import {
  *
  * **Not included** (workspace-layer concerns):
  * - BroadcastChannel cross-tab sync (separate `attachBroadcastChannel` helper)
- * - Standard peer presence (`sync.attachPresence({ peer })`)
+ * - Peer directory helpers over an attached awareness state
  * - Peer RPC (`sync.attachRpc(actions)`)
  *
  * Register `attachIndexedDb` first and pass its `whenLoaded`
@@ -142,16 +147,6 @@ export const PeerMiss = defineErrors({
 });
 export type PeerMiss = InferErrors<typeof PeerMiss>;
 
-function describeOfflineReason(status: SyncStatus): string | null {
-	if (status.phase === 'connected') return null;
-	if (status.phase === 'connecting' && status.lastError) {
-		const retries = status.retries;
-		const word = retries === 1 ? 'retry' : 'retries';
-		return `not connected (${status.lastError.type} error after ${retries} ${word})`;
-	}
-	return 'not connected';
-}
-
 export type SyncAttachment = {
 	/**
 	 * Resolves after the WebSocket handshake completes and the first sync
@@ -183,7 +178,6 @@ export type SyncAttachment = {
 	 * Named symmetrically with `whenConnected`: both are promises.
 	 */
 	whenDisposed: Promise<unknown>;
-	attachPresence(config: AttachPresenceConfig): PeerPresenceAttachment;
 	attachRpc(actions: RpcActionSource): SyncRpcAttachment;
 };
 
@@ -272,6 +266,11 @@ export type SyncAttachmentConfig = {
 	 * `attachSync`.
 	 */
 	log?: Logger;
+	/**
+	 * Optional awareness attachment to transport over the same WebSocket.
+	 * When omitted, document sync works without creating awareness state.
+	 */
+	awareness?: AwarenessAttachment<AwarenessSchema>;
 };
 
 // ============================================================================
@@ -332,8 +331,8 @@ export function attachSync(
 	config: SyncAttachmentConfig,
 ): SyncAttachment {
 	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
-	let presenceController: PeerPresenceController | null = null;
 	let rpcActions: Record<string, unknown> | null = null;
+	const awareness = config.awareness?.raw ?? null;
 
 	const waitForPromise =
 		config.waitFor && 'whenLoaded' in config.waitFor
@@ -524,6 +523,57 @@ export function attachSync(
 		}, 100);
 	}
 
+	function handleAwarenessUpdate(
+		{
+			added,
+			updated,
+			removed,
+		}: { added: number[]; updated: number[]; removed: number[] },
+		origin: unknown,
+	) {
+		if (!awareness || origin === SYNC_ORIGIN) return;
+		const changedClients = added.concat(updated).concat(removed);
+		send(
+			encodeAwareness({
+				update: encodeAwarenessUpdate(awareness, changedClients),
+			}),
+		);
+	}
+
+	function handleRemoteAwarenessUpdate(update: Uint8Array) {
+		if (!awareness) return;
+		applyAwarenessUpdate(awareness, update, SYNC_ORIGIN);
+	}
+
+	function sendLocalAwarenessState() {
+		if (!awareness || awareness.getLocalState() === null) return;
+		send(
+			encodeAwarenessStates({
+				awareness,
+				clients: [ydoc.clientID],
+			}),
+		);
+	}
+
+	function sendKnownAwarenessStates() {
+		if (!awareness) return;
+		send(
+			encodeAwarenessStates({
+				awareness,
+				clients: Array.from(awareness.getStates().keys()),
+			}),
+		);
+	}
+
+	function removeRemoteAwarenessStates() {
+		if (!awareness) return;
+		const remoteClientIds = Array.from(awareness.getStates().keys()).filter(
+			(clientId) => clientId !== ydoc.clientID,
+		);
+		if (remoteClientIds.length === 0) return;
+		removeAwarenessStates(awareness, remoteClientIds, SYNC_ORIGIN);
+	}
+
 	// ── Browser event handlers ──
 
 	function handleOnline() {
@@ -683,7 +733,7 @@ export function attachSync(
 			clearTimeout(connectTimeout);
 			send(encodeSyncStep1({ doc: ydoc }));
 
-			presenceController?.sendLocalState();
+			sendLocalAwarenessState();
 
 			liveness.start();
 			resolveOpen(true);
@@ -693,7 +743,7 @@ export function attachSync(
 			clearTimeout(connectTimeout);
 			cleanupAbortListener();
 			liveness.stop();
-			presenceController?.removeRemoteStates();
+			removeRemoteAwarenessStates();
 			const failure = parsePermanentFailure(event);
 			if (failure) permanentFailure = failure;
 			websocket = null;
@@ -740,14 +790,12 @@ export function attachSync(
 				}
 
 				case MESSAGE_TYPE.AWARENESS: {
-					presenceController?.handleRemoteUpdate(
-						decoding.readVarUint8Array(decoder),
-					);
+					handleRemoteAwarenessUpdate(decoding.readVarUint8Array(decoder));
 					break;
 				}
 
 				case MESSAGE_TYPE.QUERY_AWARENESS: {
-					presenceController?.sendKnownStates();
+					sendKnownAwarenessStates();
 					break;
 				}
 
@@ -833,6 +881,7 @@ export function attachSync(
 	// ── Attach listeners + start ──
 
 	ydoc.on('updateV2', handleDocUpdate);
+	awareness?.on('update', handleAwarenessUpdate);
 
 	// Gate the first connection on `waitFor` (typically idb.whenLoaded).
 	// If `waitFor` rejects, log but still start: better to try syncing than
@@ -870,7 +919,7 @@ export function attachSync(
 		});
 		try {
 			ydoc.off('updateV2', handleDocUpdate);
-			presenceController?.dispose();
+			awareness?.off('update', handleAwarenessUpdate);
 			const ws = websocket;
 			clearPendingRequests();
 			manageWindowListeners('remove');
@@ -899,21 +948,6 @@ export function attachSync(
 			ensureSupervisor();
 		},
 		whenDisposed,
-		attachPresence(config) {
-			if (presenceController) {
-				throw new Error('[attachSync] presence already attached');
-			}
-			const presence = createPeerPresence(config, {
-				ydoc,
-				send,
-				status: () => status.get(),
-				createPeerMiss: PeerMiss.PeerMiss,
-				describeOfflineReason,
-			});
-			presenceController = presence.controller;
-			presenceController.sendLocalState();
-			return presence;
-		},
 		attachRpc(userActions) {
 			if (rpcActions) throw new Error('[attachSync] RPC already attached');
 			if ('system' in userActions) {

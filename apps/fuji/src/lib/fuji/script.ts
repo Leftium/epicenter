@@ -1,22 +1,19 @@
-import {
-	attachEncryption,
-	type ProjectDir,
-} from '@epicenter/workspace';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { createDefaultCredentialStore } from '@epicenter/auth/node';
+import { attachEncryption, type ProjectDir } from '@epicenter/workspace';
 import {
 	attachYjsLogReader,
-	createSessionStore,
 	findEpicenterDir,
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
 import { fujiTables } from '../workspace.js';
-import { FUJI_WORKSPACE_ID } from './index.js';
 import {
-	FUJI_DAEMON_ROUTE,
-	openFujiDaemonActions,
+	connectFujiDaemonActions,
+	DEFAULT_FUJI_DAEMON_ROUTE,
 } from './daemon.js';
+import { FUJI_WORKSPACE_ID } from './index.js';
 
 export type OpenFujiSnapshotOptions = {
 	projectDir?: ProjectDir;
@@ -27,12 +24,15 @@ export async function openFujiSnapshot({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 }: OpenFujiSnapshotOptions = {}) {
-	const session = await createSessionStore().load(EPICENTER_API_URL);
+	const encryptionKeys =
+		await createDefaultCredentialStore().getOfflineEncryptionKeys(
+			EPICENTER_API_URL,
+		);
 	const ydoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
 	ydoc.clientID = clientID;
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachReadonlyTables(ydoc, fujiTables);
-	if (session !== null) encryption.applyKeys(session.encryptionKeys);
+	if (encryptionKeys !== null) encryption.applyKeys(encryptionKeys);
 	const yjsLog = attachYjsLogReader(ydoc, {
 		filePath: yjsPath(projectDir, ydoc.guid),
 	});
@@ -47,7 +47,7 @@ export async function openFujiSnapshot({
 }
 
 export async function openFujiScript({
-	route = FUJI_DAEMON_ROUTE,
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	projectDir = findEpicenterDir(),
 	clientID,
 }: OpenFujiSnapshotOptions & { route?: string } = {}) {
@@ -55,7 +55,7 @@ export async function openFujiScript({
 		projectDir,
 		clientID,
 	});
-	const actions = await openFujiDaemonActions({ route, projectDir });
+	const actions = await connectFujiDaemonActions({ route, projectDir });
 
 	return {
 		snapshot: snapshotAttachment.tables,

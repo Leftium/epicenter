@@ -26,7 +26,6 @@ import {
 	socketPathFor,
 	type UnixSocketServer,
 	unlinkMetadata,
-	unlinkSocketFile,
 	writeMetadata,
 } from '@epicenter/workspace/node';
 import { Ok, type Result } from 'wellcrafted/result';
@@ -37,10 +36,12 @@ import { Ok, type Result } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import {
 	CONFIG_FILENAME,
-	type DaemonRouteRuntime,
-	type LoadConfigResult,
-	type LoadError,
-	loadConfig,
+	DaemonConfigError,
+	disposeStartedDaemonRoutes,
+	type LoadedDaemonConfig,
+	loadDaemonConfig,
+	type StartedDaemonRoute,
+	startDaemonRoutes,
 } from '../load-config.js';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
@@ -78,8 +79,8 @@ export type UpOptions = {
  */
 export type UpHandle = {
 	server: UnixSocketServer;
-	runtimes: DaemonRouteRuntime[];
-	config: LoadConfigResult;
+	runtimes: StartedDaemonRoute[];
+	config: LoadedDaemonConfig;
 	metadata: DaemonMetadata;
 	socketPath: string;
 	teardown: () => Promise<void>;
@@ -90,7 +91,12 @@ export type UpHandle = {
  * handler passes the production defaults; `up.test.ts` passes fakes.
  */
 export type RunUpDeps = {
-	loadConfig?: (dir: string) => Promise<Result<LoadConfigResult, LoadError>>;
+	loadDaemonConfig?: (
+		dir: string,
+	) => Promise<Result<LoadedDaemonConfig, DaemonConfigError>>;
+	startDaemonRoutes?: (
+		config: LoadedDaemonConfig,
+	) => Promise<Result<StartedDaemonRoute[], DaemonConfigError>>;
 };
 
 /**
@@ -106,14 +112,16 @@ export type RunUpDeps = {
 export async function runUp(
 	options: UpOptions,
 	deps: RunUpDeps = {},
-): Promise<Result<UpHandle, LoadError | StartupError>> {
+): Promise<Result<UpHandle, DaemonConfigError | StartupError>> {
 	const projectDir = resolve(options.projectDir);
 	const socketPath = socketPathFor(projectDir);
+	const configPath = join(projectDir, CONFIG_FILENAME);
 
-	const loader = deps.loadConfig ?? loadConfig;
-	const loadResult = await loader(projectDir);
-	if (loadResult.error) return loadResult;
-	const config = loadResult.data;
+	if (!(await Bun.file(configPath).exists())) {
+		return DaemonConfigError.MissingFile({ configPath });
+	}
+
+	let teardown: () => Promise<void> = async () => {};
 
 	// Bind before writing our metadata. On AlreadyRunning the live
 	// daemon's sidecar must stay intact; on a stale-socket recovery
@@ -121,14 +129,10 @@ export async function runUp(
 	// successful retry, so the writeMetadata below records *our* pid.
 	const daemonServer = createDaemonServer({
 		projectDir,
-		runtimes: config.runtimes,
 		triggerShutdown: () => void teardown(),
 	});
 	const bindResult = await daemonServer.listen();
-	if (bindResult.error) {
-		await safeAsyncDispose(config);
-		return bindResult;
-	}
+	if (bindResult.error) return bindResult;
 	const server = bindResult.data;
 
 	const configMtime = readConfigMtime(projectDir);
@@ -141,25 +145,47 @@ export async function runUp(
 	};
 	writeMetadata(projectDir, metadata);
 
+	const loader = deps.loadDaemonConfig ?? loadDaemonConfig;
+	const starter = deps.startDaemonRoutes ?? startDaemonRoutes;
+	const loadResult = await loader(projectDir);
+	if (loadResult.error) {
+		await daemonServer.close();
+		unlinkMetadata(projectDir);
+		return loadResult;
+	}
+	const config = loadResult.data;
+
+	const startResult = await starter(config);
+	if (startResult.error) {
+		await daemonServer.close();
+		unlinkMetadata(projectDir);
+		return startResult;
+	}
+	const runtimes = startResult.data;
+
+	try {
+		daemonServer.mountRoutes(runtimes);
+	} catch (cause) {
+		await safeDisposeStartedRoutes(runtimes);
+		await daemonServer.close();
+		unlinkMetadata(projectDir);
+		throw cause;
+	}
+
 	let teardownPromise: Promise<void> | null = null;
-	const teardown = (): Promise<void> => {
+	teardown = (): Promise<void> => {
 		if (teardownPromise) return teardownPromise;
 		teardownPromise = (async () => {
-			try {
-				server.stop();
-			} catch {
-				// best-effort
-			}
-			await safeAsyncDispose(config);
+			await daemonServer.close();
+			await safeDisposeStartedRoutes(runtimes);
 			unlinkMetadata(projectDir);
-			unlinkSocketFile(socketPath);
 		})();
 		return teardownPromise;
 	};
 
 	return Ok({
 		server,
-		runtimes: config.runtimes,
+		runtimes,
 		config,
 		metadata,
 		socketPath,
@@ -234,16 +260,18 @@ function readConfigMtime(absDir: string): number {
 	}
 }
 
-async function safeAsyncDispose(config: LoadConfigResult): Promise<void> {
+async function safeDisposeStartedRoutes(
+	runtimes: readonly StartedDaemonRoute[],
+): Promise<void> {
 	try {
-		await config[Symbol.asyncDispose]();
+		await disposeStartedDaemonRoutes(runtimes);
 	} catch {
 		// Best-effort cleanup; the daemon is exiting anyway.
 	}
 }
 
-function printPeersSnapshot(entry: DaemonRouteRuntime): void {
-	const peers = entry.runtime.presence.peers();
+function printPeersSnapshot(entry: StartedDaemonRoute): void {
+	const peers = entry.runtime.peerDirectory.peers();
 	if (peers.size === 0) {
 		process.stderr.write(`${entry.route}: no peers connected\n`);
 		return;
@@ -255,11 +283,11 @@ function printPeersSnapshot(entry: DaemonRouteRuntime): void {
 	}
 }
 
-function subscribeAwareness(entry: DaemonRouteRuntime, quiet: boolean): void {
-	const presence = entry.runtime.presence;
-	let prev = new Map(presence.peers());
-	presence.observe(() => {
-		const next = presence.peers();
+function subscribeAwareness(entry: StartedDaemonRoute, quiet: boolean): void {
+	const peerDirectory = entry.runtime.peerDirectory;
+	let prev = new Map(peerDirectory.peers());
+	peerDirectory.observe(() => {
+		const next = peerDirectory.peers();
 		for (const [clientID, state] of next) {
 			if (!prev.has(clientID)) {
 				if (!quiet) {
@@ -282,7 +310,7 @@ function subscribeAwareness(entry: DaemonRouteRuntime, quiet: boolean): void {
 	});
 }
 
-function subscribeSyncStatus(entry: DaemonRouteRuntime): void {
+function subscribeSyncStatus(entry: StartedDaemonRoute): void {
 	const sync = entry.runtime.sync;
 	sync.onStatusChange((status) => {
 		if (status.phase === 'connecting') {

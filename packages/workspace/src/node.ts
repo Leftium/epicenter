@@ -5,10 +5,6 @@
  * bundles do not traverse modules that import `node:*` or `bun:*`.
  */
 
-export {
-	attachSessionUnlock,
-	type SessionUnlockAttachment,
-} from './client/attach-session-unlock.js';
 export { connectDaemonActions } from './client/connect-daemon-actions.js';
 export type {
 	DaemonActionOptions,
@@ -17,16 +13,6 @@ export type {
 export { buildDaemonActions } from './client/daemon-actions.js';
 export { epicenterPaths } from './client/epicenter-paths.js';
 export { findEpicenterDir } from './client/find-epicenter-dir.js';
-export {
-	type AuthSession,
-	createSessionStore,
-	type SaveSessionData,
-	type SessionStore,
-} from './client/session-store.js';
-export {
-	type CreateSessionTokenGetterOptions,
-	createSessionTokenGetter,
-} from './client/session-token.js';
 export { buildDaemonApp, PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
 	type DaemonClient,
@@ -50,6 +36,11 @@ export {
 	runtimeDir,
 	socketPathFor,
 } from './daemon/paths.js';
+export {
+	findDuplicateDaemonRoute,
+	isValidDaemonRoute,
+	validateStartedDaemonRoutes,
+} from './daemon/route-validation.js';
 export { RunError, type RunResponse } from './daemon/run-errors.js';
 export {
 	createDaemonServer,
@@ -57,11 +48,11 @@ export {
 	type DaemonServerOptions,
 } from './daemon/server.js';
 export type {
-	DaemonRouteModule,
+	DaemonRouteContext,
+	DaemonRouteDefinition,
 	DaemonRuntime,
-	DaemonRouteRuntime,
 	EpicenterConfig,
-	EpicenterConfigContext,
+	StartedDaemonRoute,
 } from './daemon/types.js';
 export {
 	bindOrRecover,

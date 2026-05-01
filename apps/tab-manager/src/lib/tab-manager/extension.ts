@@ -7,19 +7,22 @@
 import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	type PeerIdentity,
+	createPeerDirectory,
+	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import type { DeviceId } from '$lib/workspace/definition';
 
 type TabManagerPeer = PeerIdentity & { id: DeviceId };
+
 import { openTabManager as openTabManagerDoc } from './index';
 
 /**
- * Construction is async because presence publishes the peer identity
+ * Construction is async because awareness publishes the peer identity
  * synchronously at attach time (no two-step "online but no device yet"
  * window). Awaiting the identity up front means every peer sees a
  * well-formed `state.peer` from the first frame.
@@ -41,6 +44,10 @@ export async function openTabManager({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
+	const awareness = attachAwareness(doc.ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer: resolvedPeer },
+	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
@@ -50,15 +57,17 @@ export async function openTabManager({
 			const snapshot = auth.snapshot;
 			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
 		},
+		awareness,
 	});
-	const presence = sync.attachPresence({ peer: resolvedPeer });
+	const peerDirectory = createPeerDirectory({ awareness, sync });
 	const rpc = sync.attachRpc(doc.actions);
 
 	return {
 		...doc,
 		idb,
+		awareness,
 		sync,
-		presence,
+		peerDirectory,
 		rpc,
 		/**
 		 * Resolves when IndexedDB has hydrated the local snapshot. The UI

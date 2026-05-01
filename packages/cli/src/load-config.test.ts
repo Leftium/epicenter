@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CONFIG_FILENAME, loadConfig } from './load-config';
+import {
+	CONFIG_FILENAME,
+	loadDaemonConfig,
+	startDaemonRoutes,
+} from './load-config';
 
 let workDir: string;
 const daemonModuleUrl = pathToFileURL(
@@ -49,34 +53,48 @@ const daemonTransportFields = `
 	},
 `;
 
-describe('loadConfig', () => {
-	test('loads helper config and passes context into route modules', async () => {
+describe('loadDaemonConfig', () => {
+	test('loads helper config without starting route definitions', async () => {
 		writeConfig(`
-			import { defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineConfig } from '${daemonModuleUrl}';
+			globalThis.__loadConfigEvents = [];
 
-			export default defineEpicenterConfig({
+			export default defineConfig({
 				daemon: {
-					routes: {
-						demo: ({ projectDir, route }) => ({
-							actions: {
-								paths: {
-									projectDir: { handler: () => projectDir },
-									route: { handler: () => route }
-								}
-							},
-							${daemonTransportFields}
-							[Symbol.dispose]() {}
-						})
-					}
+					routes: [{
+						route: 'demo',
+						start: ({ projectDir, route }) => {
+							globalThis.__loadConfigEvents.push('started');
+							return {
+								actions: {
+									paths: {
+										projectDir: { handler: () => projectDir },
+										route: { handler: () => route }
+									}
+								},
+								${daemonTransportFields}
+								async [Symbol.asyncDispose]() {}
+							};
+						}
+					}]
 				}
 			});
 		`);
 
-		const result = await loadConfig(workDir);
+		const loaded = await loadDaemonConfig(workDir);
 
-		expect(result.error).toBeNull();
-		expect(result.data?.runtimes.map((entry) => entry.route)).toEqual(['demo']);
-		const paths = result.data?.runtimes[0]?.runtime.actions.paths as
+		expect(loaded.error).toBeNull();
+		expect(loaded.data?.routes.map((entry) => entry.route)).toEqual(['demo']);
+		expect(
+			(globalThis as { __loadConfigEvents?: string[] }).__loadConfigEvents,
+		).toEqual([]);
+
+		if (loaded.error !== null) return;
+		const started = await startDaemonRoutes(loaded.data);
+
+		expect(started.error).toBeNull();
+		expect(started.data?.map((entry) => entry.route)).toEqual(['demo']);
+		const paths = started.data?.[0]?.runtime.actions.paths as
 			| {
 					projectDir: { handler(): string };
 					route: { handler(): string };
@@ -84,26 +102,29 @@ describe('loadConfig', () => {
 			| undefined;
 		expect(paths?.projectDir.handler()).toBe(workDir);
 		expect(paths?.route.handler()).toBe('demo');
-		await result.data?.[Symbol.asyncDispose]();
+		expect(
+			(globalThis as { __loadConfigEvents?: string[] }).__loadConfigEvents,
+		).toEqual(['started']);
 	});
 
-	test('rejects invalid route keys before starting route modules', async () => {
+	test('rejects invalid route keys before starting route definitions', async () => {
 		writeConfig(`
 			globalThis.__loadConfigEvents = [];
 
 			export default {
 				daemon: {
-					routes: {
-						'bad.route': () => {
+					routes: [{
+						route: 'bad.route',
+						start: () => {
 							globalThis.__loadConfigEvents.push('started');
-							throw new Error('invalid route module started');
+							throw new Error('invalid route definition started');
 						}
-					}
+					}]
 				}
 			};
 		`);
 
-		const result = await loadConfig(workDir);
+		const result = await loadDaemonConfig(workDir);
 
 		expect(result.data).toBeNull();
 		expect(result.error?.name).toBe('InvalidRoute');
@@ -112,62 +133,85 @@ describe('loadConfig', () => {
 		).toEqual([]);
 	});
 
+	test('rejects duplicate route definitions', async () => {
+		writeConfig(`
+			export default {
+				daemon: {
+					routes: [
+						{ route: 'demo', start: () => ({}) },
+						{ route: 'demo', start: () => ({}) }
+					]
+				}
+			};
+		`);
+
+		const result = await loadDaemonConfig(workDir);
+
+		expect(result.data).toBeNull();
+		expect(result.error?.name).toBe('DuplicateRoute');
+	});
+
 	test('loads structural async daemon route config without helper', async () => {
 		writeConfig(`
 			export default {
 				daemon: {
-					routes: {
-						demo: () => Promise.resolve({
+					routes: [{
+						route: 'demo',
+						start: () => Promise.resolve({
 							actions: {},
 							${daemonTransportFields}
-							[Symbol.dispose]() {}
+							async [Symbol.asyncDispose]() {}
 						})
-					}
+					}]
 				}
 			};
 		`);
 
-		const result = await loadConfig(workDir);
+		const loaded = await loadDaemonConfig(workDir);
+		expect(loaded.error).toBeNull();
+		if (loaded.error !== null) return;
 
-		expect(result.error).toBeNull();
-		expect(result.data?.runtimes[0]?.route).toBe('demo');
-		await result.data?.[Symbol.asyncDispose]();
+		const started = await startDaemonRoutes(loaded.data);
+		expect(started.error).toBeNull();
+		expect(started.data?.[0]?.route).toBe('demo');
 	});
 
-	test('rejects non-function route modules', async () => {
+	test('rejects invalid route definitions', async () => {
 		writeConfig(`
 			export default {
 				daemon: {
-					routes: {
-						demo: {}
-					}
+					routes: [{ route: 'demo' }]
 				}
 			};
 		`);
 
-		const result = await loadConfig(workDir);
+		const result = await loadDaemonConfig(workDir);
 
 		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('InvalidRouteModule');
+		expect(result.error?.name).toBe('InvalidRouteDefinition');
 	});
 
 	test('rejects route runtimes missing daemon contract fields', async () => {
 		writeConfig(`
 			export default {
 				daemon: {
-					routes: {
-						demo: () => ({
+					routes: [{
+						route: 'demo',
+						start: () => ({
 							actions: {}
 						})
-					}
+					}]
 				}
 			};
 		`);
 
-		const result = await loadConfig(workDir);
+		const loaded = await loadDaemonConfig(workDir);
+		expect(loaded.error).toBeNull();
+		if (loaded.error !== null) return;
 
-		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('InvalidRouteRuntime');
+		const started = await startDaemonRoutes(loaded.data);
+		expect(started.data).toBeNull();
+		expect(started.error?.name).toBe('InvalidRouteRuntime');
 	});
 
 	test('cleans up resolved runtimes when a later route rejects', async () => {
@@ -176,24 +220,34 @@ describe('loadConfig', () => {
 
 			export default {
 				daemon: {
-					routes: {
-						first: () => ({
-							actions: {},
-							${daemonTransportFields}
-							[Symbol.dispose]() {
-								globalThis.__loadConfigEvents.push('disposed:first');
-							}
-						}),
-						second: () => Promise.reject(new Error('boom'))
-					}
+					routes: [
+						{
+							route: 'first',
+							start: () => ({
+								actions: {},
+								${daemonTransportFields}
+								async [Symbol.asyncDispose]() {
+									globalThis.__loadConfigEvents.push('disposed:first');
+								}
+							})
+						},
+						{
+							route: 'second',
+							start: () => Promise.reject(new Error('boom'))
+						}
+					]
 				}
 			};
 		`);
 
-		const result = await loadConfig(workDir);
+		const loaded = await loadDaemonConfig(workDir);
+		expect(loaded.error).toBeNull();
+		if (loaded.error !== null) return;
 
-		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('RouteFailed');
+		const started = await startDaemonRoutes(loaded.data);
+
+		expect(started.data).toBeNull();
+		expect(started.error?.name).toBe('RouteFailed');
 		expect(
 			(globalThis as { __loadConfigEvents?: string[] }).__loadConfigEvents,
 		).toEqual(['disposed:first']);
@@ -204,11 +258,11 @@ describe('loadConfig', () => {
 			export const demo = {
 				route: 'demo',
 				actions: {},
-				[Symbol.dispose]() {}
+				async [Symbol.asyncDispose]() {}
 			};
 		`);
 
-		const result = await loadConfig(workDir);
+		const result = await loadDaemonConfig(workDir);
 
 		expect(result.data).toBeNull();
 		expect(result.error?.name).toBe('InvalidConfig');

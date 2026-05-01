@@ -24,10 +24,10 @@ import {
 } from '../shared/actions.js';
 import type { RunRequest } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
-import type { DaemonRouteRuntime } from './types.js';
+import type { StartedDaemonRoute } from './types.js';
 
 type DaemonActionTarget = {
-	entry: DaemonRouteRuntime;
+	entry: StartedDaemonRoute;
 	localPath: string;
 };
 
@@ -37,7 +37,7 @@ type DaemonRouteError = {
 };
 
 export async function executeRun(
-	runtimes: DaemonRouteRuntime[],
+	runtimes: StartedDaemonRoute[],
 	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
 	const target = resolveDaemonActionTarget(runtimes, actionPath);
@@ -84,7 +84,7 @@ export async function executeRun(
 }
 
 function resolveDaemonActionTarget(
-	runtimes: DaemonRouteRuntime[],
+	runtimes: StartedDaemonRoute[],
 	actionPath: string,
 ):
 	| { data: DaemonActionTarget; error: null }
@@ -117,7 +117,7 @@ async function invokeRemote({
 	waitMs,
 }: {
 	actionInput: unknown;
-	entry: DaemonRouteRuntime;
+	entry: StartedDaemonRoute;
 	localPath: string;
 	peerTarget: string;
 	waitMs: number;
@@ -125,7 +125,7 @@ async function invokeRemote({
 	const { runtime } = entry;
 
 	const start = Date.now();
-	const found = await runtime.presence.waitForPeer(peerTarget, {
+	const found = await runtime.peerDirectory.waitForPeer(peerTarget, {
 		timeoutMs: waitMs,
 	});
 	if (found.error !== null) {
@@ -154,14 +154,14 @@ async function invokeRemote({
 }
 
 function toDaemonActionPath(
-	entry: DaemonRouteRuntime,
+	entry: StartedDaemonRoute,
 	localPath: string,
 ): string {
 	return localPath ? `${entry.route}.${localPath}` : entry.route;
 }
 
 function daemonActionSuggestionLines(
-	entry: DaemonRouteRuntime,
+	entry: StartedDaemonRoute,
 	prefix: string,
 ): string[] {
 	const entries = [...walkActions(entry.runtime.actions)];
@@ -173,7 +173,7 @@ function daemonActionSuggestionLines(
 }
 
 function daemonActionNearestSiblingLines(
-	entry: DaemonRouteRuntime,
+	entry: StartedDaemonRoute,
 	missedPath: string,
 ): string[] {
 	const entries = [...walkActions(entry.runtime.actions)];

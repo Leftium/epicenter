@@ -1,18 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
+import { createDefaultCredentialStore } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { EncryptionKeys, ProjectDir } from '@epicenter/workspace';
+import type { DaemonRuntime } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
 	createDaemonServer,
-	createSessionStore,
 	yjsPath,
 } from '@epicenter/workspace/node';
 import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
-import { FUJI_DAEMON_ROUTE, fujiDaemon } from './daemon.js';
+import { DEFAULT_FUJI_DAEMON_ROUTE, defineFujiDaemon } from './daemon.js';
 import { openFuji as openFujiDoc } from './index.js';
 import { openFujiScript, openFujiSnapshot } from './script.js';
 
@@ -44,17 +45,21 @@ afterEach(() => {
 describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates entries the daemon wrote', async () => {
 		{
-			const routeModule = fujiDaemon({
+			const routeDefinition = defineFujiDaemon({
 				getToken: async () => 'fake-token',
 				webSocketImpl: NoopWebSocket,
 			});
-			using daemon = await routeModule({
+			const daemon = (await routeDefinition.start({
 				projectDir: workdir,
-				route: FUJI_DAEMON_ROUTE,
-			});
+				route: DEFAULT_FUJI_DAEMON_ROUTE,
+			})) as ReturnType<typeof openFujiDoc> & DaemonRuntime;
 
-			for (const title of ['first', 'second', 'third']) {
-				daemon.actions.entries.create({ title });
+			try {
+				for (const title of ['first', 'second', 'third']) {
+					daemon.actions.entries.create({ title });
+				}
+			} finally {
+				await daemon[Symbol.asyncDispose]();
 			}
 		}
 
@@ -69,29 +74,29 @@ describe('daemon to script handoff via Yjs log file', () => {
 	test('script actions read and write through the daemon', async () => {
 		await Bun.write(`${workdir}/epicenter.config.ts`, 'export default {};');
 
-		const routeModule = fujiDaemon({
+		const routeDefinition = defineFujiDaemon({
 			getToken: async () => 'fake-token',
 			webSocketImpl: NoopWebSocket,
 		});
-		const daemon = await routeModule({
+		const daemon = await routeDefinition.start({
 			projectDir: workdir,
-			route: FUJI_DAEMON_ROUTE,
+			route: DEFAULT_FUJI_DAEMON_ROUTE,
 		});
 		const oldRuntimeDir = process.env.XDG_RUNTIME_DIR;
 		process.env.XDG_RUNTIME_DIR = '/tmp';
 		const server = createDaemonServer({
 			projectDir: workdir,
-			runtimes: [
-				{
-					route: FUJI_DAEMON_ROUTE,
-					runtime: daemon,
-				},
-			],
 		});
 		try {
 			const listening = await server.listen();
 			expect(listening.error).toBeNull();
 			if (listening.error !== null) return;
+			server.mountRoutes([
+				{
+					route: DEFAULT_FUJI_DAEMON_ROUTE,
+					runtime: daemon,
+				},
+			]);
 
 			await using script = await openFujiScript({ projectDir: workdir });
 			const created = await script.actions.entries.create({
@@ -123,7 +128,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 			).toBe(true);
 		} finally {
 			await server.close();
-			daemon[Symbol.dispose]();
+			await daemon[Symbol.asyncDispose]();
 			if (oldRuntimeDir === undefined) {
 				delete process.env.XDG_RUNTIME_DIR;
 			} else {
@@ -145,12 +150,33 @@ describe('daemon to script handoff via Yjs log file', () => {
 		using lockedSnapshot = await openFujiSnapshot({ projectDir: workdir });
 		expect(lockedSnapshot.tables.entries.getAllValid()).toEqual([]);
 
-		await createSessionStore().save(
+		const now = new Date();
+		await createDefaultCredentialStore({ storageMode: 'file' }).save(
 			EPICENTER_API_URL,
-			{ access_token: 'fake-token', expires_in: 3600 },
 			{
-				encryptionKeys: testEncryptionKeys,
-				user: { id: 'user-1', email: 'user@example.com' },
+				bearerToken: 'fake-token',
+				session: {
+					user: {
+						id: 'user-1',
+						name: 'User One',
+						email: 'user@example.com',
+						emailVerified: true,
+						image: null,
+						createdAt: now.toISOString(),
+						updatedAt: now.toISOString(),
+					},
+					session: {
+						id: 'session-1',
+						token: 'session-token',
+						userId: 'user-1',
+						expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
+						createdAt: now.toISOString(),
+						updatedAt: now.toISOString(),
+						ipAddress: null,
+						userAgent: null,
+					},
+					encryptionKeys: testEncryptionKeys,
+				},
 			},
 		);
 		using unlockedSnapshot = await openFujiSnapshot({ projectDir: workdir });

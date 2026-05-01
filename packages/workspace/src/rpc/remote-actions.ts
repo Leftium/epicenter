@@ -1,8 +1,8 @@
 import { RpcError } from '@epicenter/sync';
 import type { Result } from 'wellcrafted/result';
 import { Err } from 'wellcrafted/result';
-import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import type { SyncRpcAttachment } from '../document/attach-sync.js';
+import type { PeerDirectory } from '../document/peer-presence.js';
 import type {
 	ActionManifest,
 	RemoteActionProxy,
@@ -11,7 +11,7 @@ import type {
 } from '../shared/actions.js';
 
 export type RemoteClientOptions = {
-	presence: PeerPresenceAttachment;
+	peerDirectory: PeerDirectory;
 	rpc: SyncRpcAttachment;
 };
 
@@ -20,9 +20,7 @@ export type RemoteClient = {
 	describe(peerId: string): Promise<Result<ActionManifest, RpcError>>;
 };
 
-export function createRemoteClient(
-	options: RemoteClientOptions,
-): RemoteClient {
+export function createRemoteClient(options: RemoteClientOptions): RemoteClient {
 	return {
 		actions<T>(peerId: string) {
 			return createRemoteActionProxy<T>(options, peerId);
@@ -41,7 +39,7 @@ function createRemoteActionProxy<T>(
 	peerId: string,
 ): RemoteActionProxy<T> {
 	const send: Sender = async (path, input, callOptions) => {
-		const found = options.presence.find(peerId);
+		const found = options.peerDirectory.find(peerId);
 		if (!found) return Err(RpcError.PeerNotFound({ peer: peerId }).error);
 
 		return new Promise<Result<unknown, RpcError>>((resolveCall) => {
@@ -53,13 +51,13 @@ function createRemoteActionProxy<T>(
 				unsubscribe();
 				resolveCall(v);
 			};
-			unsubscribe = options.presence.observe(() => {
-				if (!options.presence.find(peerId)) {
+			unsubscribe = options.peerDirectory.observe(() => {
+				if (!options.peerDirectory.find(peerId)) {
 					settle(Err(RpcError.PeerLeft({ peer: peerId }).error));
 				}
 			});
 
-			if (!options.presence.find(peerId)) {
+			if (!options.peerDirectory.find(peerId)) {
 				settle(Err(RpcError.PeerLeft({ peer: peerId }).error));
 				return;
 			}

@@ -1,11 +1,13 @@
 import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	type PeerIdentity,
+	createPeerDirectory,
+	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createEntryContentDoc } from '$lib/entry-content-docs';
@@ -41,6 +43,10 @@ export function openFuji({
 		{ gcTime: 5_000 },
 	);
 
+	const awareness = attachAwareness(doc.ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
+	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
@@ -50,16 +56,18 @@ export function openFuji({
 			const snapshot = auth.snapshot;
 			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
 		},
+		awareness,
 	});
-	const presence = sync.attachPresence({ peer });
+	const peerDirectory = createPeerDirectory({ awareness, sync });
 	const rpc = sync.attachRpc(doc.actions);
 
 	return {
 		...doc,
 		idb,
 		entryContentDocs,
+		awareness,
 		sync,
-		presence,
+		peerDirectory,
 		rpc,
 		/**
 		 * Resolves when IndexedDB has hydrated the local snapshot. The UI can

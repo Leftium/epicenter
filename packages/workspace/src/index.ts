@@ -33,9 +33,9 @@
 
 export type {
 	Action,
-	Actions,
 	ActionManifest,
 	ActionMeta,
+	Actions,
 	Mutation,
 	Query,
 	RemoteActionProxy,
@@ -132,8 +132,8 @@ export {
 	DisposableCacheError,
 } from './cache/disposable-cache.js';
 export {
-	type Awareness,
-	type AwarenessDefinitions,
+	type AwarenessAttachment,
+	type AwarenessSchema,
 	type AwarenessState,
 	attachAwareness,
 	type InferAwarenessValue,
@@ -227,14 +227,14 @@ export {
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
-	type AttachPresenceConfig,
-	type PeerPresenceAttachment,
+	createPeerDirectory,
+	type PeerDirectory,
 } from './document/peer-presence.js';
 export {
-	type ResolvedPeer,
 	PeerIdentity,
 	type PeerPresenceState,
 	type PeerRuntime,
+	type ResolvedPeer,
 } from './document/peer-presence-defs.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 // ════════════════════════════════════════════════════════════════════════════

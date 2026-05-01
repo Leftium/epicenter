@@ -1,15 +1,18 @@
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 import { openNotes } from '../notes';
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	daemon: {
-		routes: {
-			notes: () =>
-				openNotes({
-					id: 'notes-repro-peer-b',
-					name: 'Peer B',
-					platform: 'node',
-				}),
-		},
+		routes: [
+			{
+				route: 'notes',
+				start: () =>
+					openNotes({
+						id: 'notes-repro-peer-b',
+						name: 'Peer B',
+						platform: 'node',
+					}),
+			},
+		],
 	},
 });

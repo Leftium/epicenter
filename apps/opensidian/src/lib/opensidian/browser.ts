@@ -7,11 +7,13 @@ import {
 	type FileId,
 } from '@epicenter/filesystem';
 import {
+	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	type PeerIdentity,
+	createPeerDirectory,
+	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -48,6 +50,10 @@ export function openOpensidian({
 	const bash = new Bash({ fs, cwd: '/' });
 	const actions = createOpensidianActions({ fs, sqliteIndex, bash });
 
+	const awareness = attachAwareness(doc.ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
+	});
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
@@ -57,8 +63,9 @@ export function openOpensidian({
 			const snapshot = auth.snapshot;
 			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
 		},
+		awareness,
 	});
-	const presence = sync.attachPresence({ peer });
+	const peerDirectory = createPeerDirectory({ awareness, sync });
 	const rpc = sync.attachRpc(actions);
 
 	return {
@@ -69,8 +76,9 @@ export function openOpensidian({
 		fs,
 		bash,
 		actions,
+		awareness,
 		sync,
-		presence,
+		peerDirectory,
 		rpc,
 		/**
 		 * Resolves when IndexedDB has hydrated the local snapshot: the UI can

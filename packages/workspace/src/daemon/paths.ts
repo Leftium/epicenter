@@ -46,7 +46,7 @@ export function runtimeDir(): string {
  * comfortably under the 104-char Unix-socket limit on macOS. Symlinks are
  * resolved via `realpathSync` so two equivalent paths always hash the same.
  * The dir must exist; every production caller hashes a project directory that
- * `loadConfig` has already accepted, so this contract is safe to enforce.
+ * `loadDaemonConfig` has already accepted, so this contract is safe to enforce.
  */
 export function dirHash(dir: string): string {
 	return createHash('sha256')

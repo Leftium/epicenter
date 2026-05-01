@@ -5,7 +5,7 @@
  *
  * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  runtime.presence.peers()                    all routes
+ *   /peers  ->  runtime.peerDirectory.peers()                   all routes
  *   /list   ->  describeActions({ route: runtime.actions }) all routes
  *   /run    ->  invokeAction(...) | rpc.rpc(...)              route-routed
  *
@@ -22,7 +22,7 @@ import { Ok } from 'wellcrafted/result';
 import { PeerIdentity } from '../document/peer-presence-defs.js';
 import { describeActions } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { DaemonRouteRuntime } from './types.js';
+import type { StartedDaemonRoute } from './types.js';
 
 /**
  * Wire body for `/run`. The schema serves two roles:
@@ -67,7 +67,7 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * path locally or over RPC.
  */
 export function buildDaemonApp(
-	runtimes: DaemonRouteRuntime[],
+	runtimes: StartedDaemonRoute[],
 	triggerShutdown?: () => void,
 ) {
 	return new Hono()
@@ -75,7 +75,7 @@ export function buildDaemonApp(
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
 			for (const entry of runtimes) {
-				const peers = entry.runtime.presence.peers();
+				const peers = entry.runtime.peerDirectory.peers();
 				for (const [clientID, state] of peers) {
 					rows.push({
 						route: entry.route,
@@ -100,4 +100,10 @@ export function buildDaemonApp(
 			setTimeout(() => triggerShutdown?.(), 0);
 			return c.json(Ok(null));
 		});
+}
+
+export function buildStartingDaemonApp() {
+	return new Hono()
+		.post('/ping', (c) => c.json(Ok('pong' as const)))
+		.all('*', (c) => c.text('daemon routes are starting', 503));
 }

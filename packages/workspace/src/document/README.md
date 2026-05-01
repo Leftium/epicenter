@@ -31,7 +31,7 @@ Three prefixes, each with a consistent meaning:
 
 - **`define*`** is pure: no Y.Doc, no side effects. Schemas, KV definitions, action factories.
 - **`attach*`** binds a capability to an existing `Y.Doc` (or, in one documented cross-package case, to a sibling attachment). Side-effectful: registers observers or destroy listeners at call time. Returns a typed handle.
-- **`create*`** is pure construction: no listeners, no subscriptions at call time. Two flavors: slot-definition builders (`createTable`, `createKv`, `createAwareness`) that pair with an `attach*` sibling, and factory-of-factories (`createFileContentDocs` in `@epicenter/filesystem`) where the returned handle attaches later.
+- **`create*`** is pure construction: no listeners, no subscriptions at call time. Factory-of-factories like `createFileContentDocs` in `@epicenter/filesystem` return handles that attach later.
 
 See `.agents/skills/attach-primitive/SKILL.md` for the full contract (shape, invariants, barrier naming).
 
@@ -119,7 +119,10 @@ function openBlog() {
 ```typescript
 import { attachAwareness } from '@epicenter/workspace';
 
-const awareness = attachAwareness(ydoc, myAwarenessDefs);
+const awareness = attachAwareness(ydoc, {
+  schema: myAwarenessSchema,
+  initial: myInitialAwarenessState,
+});
 // awareness.setLocal({...}), awareness.observe(...), awareness.raw for y-protocols
 ```
 

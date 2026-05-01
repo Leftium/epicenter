@@ -1,21 +1,21 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
+	attachAwareness,
 	attachSync,
-	type PeerIdentity,
+	createPeerDirectory,
+	PeerIdentity,
 	type ProjectDir,
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import type { EpicenterConfigContext } from '@epicenter/workspace/daemon';
+import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdown,
 	slugFilename,
 } from '@epicenter/workspace/document/attach-markdown';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
-	attachYjsLog,
 	connectDaemonActions,
-	createSessionTokenGetter,
 	hashClientId,
 	markdownPath,
 	sqlitePath,
@@ -24,9 +24,10 @@ import {
 import type { createFujiActions } from '../workspace.js';
 import { openFuji as openFujiDoc } from './index.js';
 
-export const FUJI_DAEMON_ROUTE = 'fuji';
+export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 
 export type FujiDaemonOptions = {
+	route?: string;
 	getToken?: () => Promise<string | null>;
 	peer?: PeerIdentity;
 	apiUrl?: string;
@@ -41,45 +42,56 @@ function defaultFujiDaemonPeer(): PeerIdentity {
 	};
 }
 
-export function fujiDaemon({
+export function defineFujiDaemon({
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
 	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
-}: FujiDaemonOptions = {}) {
-	return ({ projectDir }: EpicenterConfigContext) => {
-		const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
-		attachYjsLog(doc.ydoc, {
-			filePath: yjsPath(projectDir, doc.ydoc.guid),
-		});
-		const sync = attachSync(doc, {
-			url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-			getToken,
-			webSocketImpl,
-		});
-		const presence = sync.attachPresence({ peer });
-		const rpc = sync.attachRpc(doc.actions);
-		attachSqlite(doc.ydoc, {
-			filePath: sqlitePath(projectDir, doc.ydoc.guid),
-		}).table(doc.tables.entries);
-		attachMarkdown(doc.ydoc, {
-			dir: markdownPath(projectDir, doc.ydoc.guid),
-		}).table(doc.tables.entries, { filename: slugFilename('title') });
+}: FujiDaemonOptions = {}): DaemonRouteDefinition {
+	return {
+		route,
+		start({ projectDir }) {
+			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
+			attachYjsLog(doc.ydoc, {
+				filePath: yjsPath(projectDir, doc.ydoc.guid),
+			});
+			const awareness = attachAwareness(doc.ydoc, {
+				schema: { peer: PeerIdentity },
+				initial: { peer },
+			});
+			const sync = attachSync(doc, {
+				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+				getToken,
+				webSocketImpl,
+				awareness,
+			});
+			const peerDirectory = createPeerDirectory({ awareness, sync });
+			const rpc = sync.attachRpc(doc.actions);
+			attachSqlite(doc.ydoc, {
+				filePath: sqlitePath(projectDir, doc.ydoc.guid),
+			}).table(doc.tables.entries);
+			attachMarkdown(doc.ydoc, {
+				dir: markdownPath(projectDir, doc.ydoc.guid),
+			}).table(doc.tables.entries, { filename: slugFilename('title') });
 
-		return {
-			actions: doc.actions,
-			sync,
-			presence,
-			rpc,
-			[Symbol.dispose]() {
-				doc[Symbol.dispose]();
-			},
-		};
+			return {
+				actions: doc.actions,
+				awareness,
+				sync,
+				peerDirectory,
+				rpc,
+				async [Symbol.asyncDispose]() {
+					doc[Symbol.dispose]();
+					await sync.whenDisposed;
+				},
+			};
+		},
 	};
 }
 
-export function openFujiDaemonActions({
-	route = FUJI_DAEMON_ROUTE,
+export function connectFujiDaemonActions({
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	projectDir,
 }: {
 	route?: string;

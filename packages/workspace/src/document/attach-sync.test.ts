@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
 	decodeRpcPayload,
+	encodeAwarenessStates,
 	encodeRpcRequest,
 	encodeRpcResponse,
 	encodeSyncStep2,
@@ -13,7 +14,10 @@ import Type from 'typebox';
 import { Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { defineMutation } from '../shared/actions.js';
+import { attachAwareness } from './attach-awareness.js';
 import { attachSync } from './attach-sync.js';
+import { createPeerDirectory } from './peer-presence.js';
+import { PeerIdentity } from './peer-presence-defs.js';
 
 type Listener = (ev: { data: ArrayBuffer | string }) => void;
 
@@ -118,26 +122,51 @@ describe('attachSync split surface', () => {
 		await sync.whenDisposed;
 	});
 
-	test('attachPresence publishes peer state and exposes peer lookup', () => {
+	test('transports provided awareness and exposes peer lookup', async () => {
 		const ydoc = new Y.Doc({ guid: 'split-presence' });
-		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
-		const presence = sync.attachPresence({
+		const awareness = attachAwareness(ydoc, {
+			schema: { peer: PeerIdentity },
+			initial: { peer: { id: 'mac', name: 'Mac', platform: 'web' } },
+		});
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			awareness,
+		});
+		const peerDirectory = createPeerDirectory({ awareness, sync });
+
+		expect(awareness.raw.getLocalState()).toEqual({
 			peer: { id: 'mac', name: 'Mac', platform: 'web' },
 		});
 
-		expect(presence.raw.awareness.getLocalState()).toEqual({
-			peer: { id: 'mac', name: 'Mac', platform: 'web' },
-		});
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		await waitFor(() =>
+			ws.sent.some(
+				(frame) => peekMessageType(frame) === MESSAGE_TYPE.AWARENESS,
+			),
+		);
 
-		presence.raw.awareness.getStates().set(202, {
-			peer: { id: 'phone', name: 'Phone', platform: 'web' },
+		const remoteDoc = new Y.Doc();
+		const remoteAwareness = attachAwareness(remoteDoc, {
+			schema: { peer: PeerIdentity },
+			initial: { peer: { id: 'phone', name: 'Phone', platform: 'web' } },
 		});
+		ws.deliver(
+			encodeAwarenessStates({
+				awareness: remoteAwareness.raw,
+				clients: [remoteDoc.clientID],
+			}),
+		);
 
-		expect(presence.peers().get(202)?.peer.id).toBe('phone');
-		expect(presence.find('phone')?.clientId).toBe(202);
-		expect(presence.find('ghost')).toBeUndefined();
+		const found = peerDirectory.find('phone');
+		expect(found?.state.peer.id).toBe('phone');
+		expect(peerDirectory.find('ghost')).toBeUndefined();
+
+		ws.close();
+		await waitFor(() => peerDirectory.peers().size === 0);
 
 		ydoc.destroy();
+		remoteDoc.destroy();
 	});
 
 	test('attachRpc dispatches inbound actions and returns outbound responses', async () => {

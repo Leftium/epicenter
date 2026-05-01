@@ -1,13 +1,15 @@
-import { createSessionStore } from '@epicenter/workspace/node';
 import {
+	attachAwareness,
 	attachSync,
 	attachTables,
+	createPeerDirectory,
 	defineMutation,
 	defineQuery,
 	defineTable,
-	type PeerIdentity,
+	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
+import { createSessionStore } from '@epicenter/workspace/node';
 import { type } from 'arktype';
 import Type from 'typebox';
 import * as Y from 'yjs';
@@ -17,7 +19,7 @@ const WORKSPACE_ID = 'epicenter.notes-repro';
 
 // `_v: '1'` here is arktype syntax for the literal NUMBER 1 (numeric strings
 // in arktype's type position resolve to number literals). The `set()` call
-// below passes `_v: 1` — same value, two different syntax conventions.
+// below passes `_v: 1`: same value, two different syntax conventions.
 const Note = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
 export function openNotes(peer: PeerIdentity) {
@@ -40,23 +42,30 @@ export function openNotes(peer: PeerIdentity) {
 	};
 
 	const sessions = createSessionStore();
+	const awareness = attachAwareness(ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
+	});
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 		getToken: async () =>
 			(await sessions.load(SERVER_URL))?.accessToken ?? null,
+		awareness,
 	});
-	const presence = sync.attachPresence({ peer });
+	const peerDirectory = createPeerDirectory({ awareness, sync });
 	const rpc = sync.attachRpc(actions);
 
 	return {
 		workspaceId: ydoc.guid,
 		actions,
-		presence,
+		awareness,
+		peerDirectory,
 		rpc,
 		sync,
 		whenReady: sync.whenConnected,
-		[Symbol.dispose]() {
+		async [Symbol.asyncDispose]() {
 			ydoc.destroy();
+			await sync.whenDisposed;
 		},
 	};
 }

@@ -2,9 +2,9 @@
  * Workspace config loader.
  *
  * `epicenter.config.ts` is a project config with daemon routes. The loader
- * reads the default `defineEpicenterConfig({ daemon: { routes } })` export,
- * validates route names, starts route modules with project context, and returns
- * the internal `DaemonRuntimeEntry[]` used by the daemon server.
+ * reads the default `{ daemon: { routes } }` export, validates route names,
+ * starts route modules with project context, and returns the internal
+ * `DaemonRuntimeEntry[]` used by the daemon server.
  */
 
 import { join, resolve } from 'node:path';
@@ -13,7 +13,6 @@ import {
 	type DaemonRouteModule,
 	type DaemonRuntime,
 	type DaemonRuntimeEntry,
-	EPICENTER_CONFIG,
 } from '@epicenter/workspace/daemon';
 import {
 	defineErrors,
@@ -64,13 +63,13 @@ export const LoadError = defineErrors({
 	InvalidConfig: ({ configPath }: { configPath: string }) => ({
 		message:
 			`Invalid ${CONFIG_FILENAME} in ${configPath}: ` +
-			`default export must be defineEpicenterConfig({ daemon: { routes: {...} } }).`,
+			`default export must be { daemon: { routes: {...} } }.`,
 		configPath,
 	}),
 	EmptyConfig: ({ configPath }: { configPath: string }) => ({
 		message:
 			`No daemon routes found in ${configPath}.\n` +
-			`Default-export defineEpicenterConfig({ daemon: { routes: {...} } }) with at least one route.`,
+			`Default-export { daemon: { routes: {...} } } with at least one route.`,
 		configPath,
 	}),
 	InvalidRouteModule: ({
@@ -133,20 +132,17 @@ export const LoadError = defineErrors({
 export type LoadError = InferErrors<typeof LoadError>;
 
 type ImportedEpicenterConfig = {
-	readonly daemon: {
-		readonly routes: Record<string, unknown>;
+	daemon: {
+		routes: Record<string, unknown>;
 	};
 };
 
 function isEpicenterConfig(value: unknown): value is ImportedEpicenterConfig {
-	if (value == null || typeof value !== 'object') return false;
-	const record = value as Record<PropertyKey, unknown>;
-	const daemon = record.daemon;
-	if (!isPlainObject(daemon)) return false;
-	return (
-		record[EPICENTER_CONFIG] === true &&
-		isPlainObject((daemon as { routes?: unknown }).routes)
-	);
+	if (!isConfigRecord(value) || !Object.hasOwn(value, 'daemon')) return false;
+	const daemon = value.daemon;
+	if (!isConfigRecord(daemon) || !Object.hasOwn(daemon, 'routes'))
+		return false;
+	return isConfigRecord(daemon.routes);
 }
 
 function isDaemonRuntime(value: unknown): value is DaemonRuntime {
@@ -163,6 +159,13 @@ function isDaemonRuntime(value: unknown): value is DaemonRuntime {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isConfigRecord(value: unknown): value is Record<string, unknown> {
+	if (value == null || typeof value !== 'object' || Array.isArray(value))
+		return false;
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {

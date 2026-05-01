@@ -128,7 +128,7 @@ export function fujiDaemon(options = {}): DaemonRouteModule {
 ## Implementation Notes
 
 - `defineDaemon()` and host branding are removed from the public daemon config surface.
-- `defineEpicenterConfig()` still brands the default export so the loader can reject arbitrary objects.
+- `defineEpicenterConfig()` is a typed identity helper; the loader validates the imported object structurally.
 - `loadConfig()` validates route keys before starting any route module.
 - The route context includes `{ projectDir, route }`.
 - App-specific script helpers still use route constants, for example `openFujiDaemonActions({ route })`.

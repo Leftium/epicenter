@@ -60,7 +60,6 @@ export type {
 	DaemonRouteModule,
 	DaemonRuntime,
 	DaemonRuntimeEntry,
-	DefineEpicenterConfigOptions,
 	EpicenterConfig,
 	EpicenterConfigContext,
 } from './daemon/types.js';

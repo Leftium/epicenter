@@ -170,6 +170,49 @@ describe('loadConfig', () => {
 		await result.data?.[Symbol.asyncDispose]();
 	});
 
+	test('loads structural default daemon route config without helper', async () => {
+		writeConfig(`
+			export default {
+				daemon: {
+					routes: {
+						demo: () => ({
+							actions: {},
+							${daemonRuntimeFields}
+							[Symbol.dispose]() {}
+						})
+					}
+				}
+			};
+		`);
+
+		const result = await loadConfig(workDir);
+
+		expect(result.error).toBeNull();
+		expect(result.data?.entries[0]?.route).toBe('demo');
+		await result.data?.[Symbol.asyncDispose]();
+	});
+
+	test('rejects inherited daemon route config', async () => {
+		writeConfig(`
+			export default Object.create({
+				daemon: {
+					routes: {
+						demo: () => ({
+							actions: {},
+							${daemonRuntimeFields}
+							[Symbol.dispose]() {}
+						})
+					}
+				}
+			});
+		`);
+
+		const result = await loadConfig(workDir);
+
+		expect(result.data).toBeNull();
+		expect(result.error?.name).toBe('InvalidConfig');
+	});
+
 	test('rejects non-function route modules', async () => {
 		writeConfig(`
 			import { defineEpicenterConfig } from '${daemonModuleUrl}';
@@ -267,7 +310,7 @@ describe('loadConfig', () => {
 		expect(result.error?.name).toBe('InvalidRouteRuntime');
 	});
 
-	test('rejects missing default config helper', async () => {
+	test('rejects missing default config', async () => {
 		writeConfig(`
 			export const demo = {
 				route: 'demo',

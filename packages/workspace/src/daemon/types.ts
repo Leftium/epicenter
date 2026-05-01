@@ -7,8 +7,8 @@
  * transport, peer presence, and RPC attachments.
  *
  * `DaemonRuntimeEntry` is one routed runtime the daemon serves internally. The
- * CLI's config loader opens route modules from the default
- * `defineEpicenterConfig({ daemon: { routes } })` export in `epicenter.config.ts`.
+ * CLI's config loader opens route modules from the default `{ daemon: { routes } }`
+ * export in `epicenter.config.ts`.
  */
 
 import type {
@@ -18,8 +18,6 @@ import type {
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import type { Actions } from '../shared/actions.js';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
-
-export const EPICENTER_CONFIG = Symbol.for('epicenter.daemon-config');
 
 export type EpicenterConfigContext = {
 	projectDir: ProjectDir;
@@ -50,28 +48,21 @@ export type DaemonRuntime = {
 export type DaemonRouteModule<TRuntime extends DaemonRuntime = DaemonRuntime> =
 	(options: EpicenterConfigContext) => MaybePromise<TRuntime>;
 
-export type EpicenterConfig = {
-	[EPICENTER_CONFIG]: true;
+export type EpicenterConfig<
+	TRoutes extends Record<string, DaemonRouteModule> = Record<
+		string,
+		DaemonRouteModule
+	>,
+> = {
 	daemon: {
-		routes: Readonly<Record<string, DaemonRouteModule>>;
+		routes: TRoutes;
 	};
 };
 
-export type DefineEpicenterConfigOptions = {
-	daemon: {
-		routes: Record<string, DaemonRouteModule>;
-	};
-};
-
-export function defineEpicenterConfig({
-	daemon,
-}: DefineEpicenterConfigOptions): EpicenterConfig {
-	return Object.freeze({
-		[EPICENTER_CONFIG]: true as const,
-		daemon: Object.freeze({
-			routes: Object.freeze({ ...daemon.routes }),
-		}),
-	});
+export function defineEpicenterConfig<const TConfig extends EpicenterConfig>(
+	config: TConfig,
+): TConfig {
+	return config;
 }
 
 /** One routed daemon runtime hosted by the daemon. */

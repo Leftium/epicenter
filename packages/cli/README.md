@@ -112,13 +112,13 @@ Scripts can distinguish these cases without parsing stderr:
 | `2` | Runtime error: local action returned `Err`, or a remote RPC completed with a failure (ActionFailed, Timeout, PeerOffline, Disconnected). |
 | `3` | Peer miss: `--peer <target>` did not resolve within `--wait`. Distinct from `2` so scripts can retry or re-enumerate peers. |
 
-## What your `epicenter.config.ts` must export
+## What your `epicenter.config.ts` exports
 
-An explicit daemon route config: default-export
-`defineEpicenterConfig({ daemon: { routes: {...} } })`. Route values are
-delayed functions. The CLI loader injects the project context when it starts
-them, so configs do not need to call `findEpicenterDir(import.meta.dir)` or
-depend on the shell's current directory.
+An explicit daemon route config: default-export an object shaped like
+`{ daemon: { routes: {...} } }`. `defineEpicenterConfig()` is the typed helper
+for authoring that object. Route values are delayed functions. The CLI loader
+injects the project context when it starts them, so configs do not need to call
+`findEpicenterDir(import.meta.dir)` or depend on the shell's current directory.
 
 ```ts
 // epicenter.config.ts
@@ -259,8 +259,8 @@ A config with a single route can use any name (`tabManager`, `tm`, `w`), but onc
 you add a second route, the prefix disambiguates them, so a readable name ages
 better than a one-letter one.
 
-There is no named-export scanning. Even a config with one workspace uses
-`defineEpicenterConfig({ daemon: { routes } })`. This keeps the daemon route map
+There is no named-export scanning. Even a config with one workspace
+default-exports `{ daemon: { routes } }`. This keeps the daemon route map
 explicit and keeps local route names in the project config.
 
 ```ts

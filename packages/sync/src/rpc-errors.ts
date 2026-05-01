@@ -34,14 +34,6 @@ export const RpcError = defineErrors({
 	PeerOffline: () => ({
 		message: 'Target peer is not connected',
 	}),
-	PeerNotFound: ({ peer }: { peer: string }) => ({
-		message: `No peer with deviceId '${peer}' found in awareness`,
-		peer,
-	}),
-	PeerLeft: ({ peer }: { peer: string }) => ({
-		message: `Peer '${peer}' disconnected before RPC response arrived`,
-		peer,
-	}),
 	Timeout: ({ ms }: { ms: number }) => ({
 		message: `RPC call timed out after ${ms}ms`,
 		ms,
@@ -63,8 +55,6 @@ export type RpcError = InferErrors<typeof RpcError>;
 
 const RPC_ERROR_NAMES = new Set<string>([
 	'PeerOffline',
-	'PeerNotFound',
-	'PeerLeft',
 	'Timeout',
 	'ActionNotFound',
 	'ActionFailed',

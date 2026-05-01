@@ -4,7 +4,7 @@ Two-peer minimal repro for the `system.describe` cross-peer fetch.
 
 Both configs construct the same workspace (`epicenter.notes-repro`) with
 distinct peer ids, so each appears in the other's awareness. Exercises
-`createRemoteClient({ peerDirectory, rpc }).describe(peerId)` end-to-end against the
+`createRemoteClient({ awareness, rpc }).describe(peerId)` end-to-end against the
 deployed API.
 
 ## Setup
@@ -47,7 +47,7 @@ using notes = openNotes({
 
 await notes.whenReady;
 const remote = createRemoteClient({
-	peerDirectory: notes.peerDirectory,
+	awareness: notes.awareness,
 	rpc: notes.rpc,
 });
 const result = await remote.describe('notes-repro-peer-a');
@@ -67,5 +67,5 @@ bun run examples/notes-cross-peer/inspect-peer.ts
 ## What confirms it broke
 
 - `ActionNotFound: system.describe` means injection didn't land.
-- `inspect-peer.ts` returns `RpcError.PeerNotFound` means awareness never propagated.
+- `inspect-peer.ts` returns `PeerNotFound` means awareness never propagated.
 - `inspect-peer.ts` hangs or times out means manifest fetch isn't completing.

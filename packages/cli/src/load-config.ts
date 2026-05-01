@@ -7,7 +7,7 @@
  */
 
 import { join, resolve } from 'node:path';
-import type { PeerPresenceState, ProjectDir } from '@epicenter/workspace';
+import type { PeerAwarenessState, ProjectDir } from '@epicenter/workspace';
 import type {
 	DaemonRouteDefinition,
 	DaemonRuntime,
@@ -29,7 +29,7 @@ export const CONFIG_FILENAME = 'epicenter.config.ts';
 export type { DaemonRuntime, StartedDaemonRoute };
 
 /** Per-peer awareness state under the standard peer schema. */
-export type AwarenessState = PeerPresenceState;
+export type AwarenessState = PeerAwarenessState;
 
 export type LoadedDaemonConfig = {
 	projectDir: ProjectDir;
@@ -115,7 +115,7 @@ export const DaemonConfigError = defineErrors({
 		message:
 			`Invalid daemon route "${route}" in ${configPath}: ` +
 			`expected a daemon runtime with actions, sync teardown/status, ` +
-			`presence peers/observe/waitForPeer, rpc.rpc, and [Symbol.asyncDispose].`,
+			`awareness peers/observe, remote.invoke, and [Symbol.asyncDispose].`,
 		configPath,
 		route,
 	}),
@@ -137,22 +137,17 @@ export type DaemonConfigError = InferErrors<typeof DaemonConfigError>;
 
 function hasDaemonRuntimeShape(value: unknown): value is DaemonRuntime {
 	if (!isObjectRecord(value)) return false;
-	const { actions, sync, presence, rpc } = value;
-	if (
-		!isObjectRecord(sync) ||
-		!isObjectRecord(presence) ||
-		!isObjectRecord(rpc)
-	) {
+	const { actions, awareness, sync, remote } = value;
+	if (!isObjectRecord(awareness) || !isObjectRecord(sync) || !isObjectRecord(remote)) {
 		return false;
 	}
 	return (
 		isObjectRecord(actions) &&
 		isThenable(sync.whenDisposed) &&
 		typeof sync.onStatusChange === 'function' &&
-		typeof presence.peers === 'function' &&
-		typeof presence.observe === 'function' &&
-		typeof presence.waitForPeer === 'function' &&
-		typeof rpc.rpc === 'function' &&
+		typeof awareness.peers === 'function' &&
+		typeof awareness.observe === 'function' &&
+		typeof remote.invoke === 'function' &&
 		typeof value[Symbol.asyncDispose] === 'function'
 	);
 }

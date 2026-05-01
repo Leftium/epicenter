@@ -12,7 +12,7 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	createPeerDirectory,
+	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -65,8 +65,8 @@ export function openOpensidian({
 		},
 		awareness,
 	});
-	const peerDirectory = createPeerDirectory({ awareness, sync });
 	const rpc = sync.attachRpc(actions);
+	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		...doc,
@@ -78,7 +78,7 @@ export function openOpensidian({
 		actions,
 		awareness,
 		sync,
-		peerDirectory,
+		remote,
 		rpc,
 		/**
 		 * Resolves when IndexedDB has hydrated the local snapshot: the UI can

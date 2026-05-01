@@ -11,7 +11,7 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	createPeerDirectory,
+	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -59,15 +59,15 @@ export async function openTabManager({
 		},
 		awareness,
 	});
-	const peerDirectory = createPeerDirectory({ awareness, sync });
 	const rpc = sync.attachRpc(doc.actions);
+	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		...doc,
 		idb,
 		awareness,
 		sync,
-		peerDirectory,
+		remote,
 		rpc,
 		/**
 		 * Resolves when IndexedDB has hydrated the local snapshot. The UI

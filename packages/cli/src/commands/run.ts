@@ -18,7 +18,7 @@
  */
 
 import {
-	type PeerPresenceState,
+	type PeerAwarenessState,
 	type RpcError,
 } from '@epicenter/workspace';
 import {
@@ -128,8 +128,12 @@ function renderRunResult(
 			return;
 		}
 		case 'RpcError':
-			emitRpcError(
-				result.error.cause,
+			emitRpcError(result.error.cause, result.error.peerTarget);
+			process.exitCode = 2;
+			return;
+		case 'PeerLeft':
+			emitPeerLeftError(
+				result.error.peerTarget,
 				result.error.targetClientId,
 				result.error.peerState,
 			);
@@ -180,37 +184,38 @@ export function emitMissError(
  */
 export function emitRpcError(
 	error: RpcError,
-	targetClientId: number,
-	peerState: PeerPresenceState,
+	peerTarget: string,
 ): void {
-	const { peer } = peerState;
-	const peerLabel = `${peer.name} (${targetClientId}, ${peer.platform})`;
-
 	switch (error.name) {
 		case 'ActionNotFound':
-			outputError(`error: ActionNotFound "${error.action}" on ${peerLabel}`);
+			outputError(`error: ActionNotFound "${error.action}" on ${peerTarget}`);
 			return;
 		case 'Timeout':
-			outputError(`error: timeout after ${error.ms}ms on ${peerLabel}`);
+			outputError(`error: timeout after ${error.ms}ms on ${peerTarget}`);
 			return;
 		case 'PeerOffline':
-			outputError(`error: peer ${peerLabel} is offline`);
-			return;
-		case 'PeerNotFound':
-			outputError(`error: no peer with peer id "${error.peer}"`);
-			return;
-		case 'PeerLeft':
-			outputError(`error: peer "${error.peer}" disconnected before responding`);
+			outputError(`error: peer ${peerTarget} is offline`);
 			return;
 		case 'ActionFailed':
 			outputError(
-				`error: "${error.action}" failed on ${peerLabel}: ${extractErrorMessage(error.cause)}`,
+				`error: "${error.action}" failed on ${peerTarget}: ${extractErrorMessage(error.cause)}`,
 			);
 			return;
 		case 'Disconnected':
-			outputError(`error: connection lost before ${peerLabel} responded`);
+			outputError(`error: connection lost before ${peerTarget} responded`);
 			return;
 		default:
 			error satisfies never;
 	}
+}
+
+export function emitPeerLeftError(
+	peerTarget: string,
+	targetClientId: number,
+	peerState: PeerAwarenessState,
+): void {
+	const { peer } = peerState;
+	const peerLabel = `${peer.name} (${targetClientId}, ${peer.platform})`;
+	outputError(`error: peer "${peerTarget}" disconnected before responding`);
+	outputError(`  last seen as ${peerLabel}`);
 }

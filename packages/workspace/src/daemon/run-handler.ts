@@ -5,7 +5,7 @@
  * `epicenter run` is a shell shortcut for one daemon runtime primitive:
  *
  *   request.peerTarget === undefined   ->  invokeAction(...)
- *   request.peerTarget === <peerId>    ->  rpc.rpc(clientID, path, input)
+ *   request.peerTarget === <peerId>    ->  remote.invoke(peerId, path, input)
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
@@ -24,6 +24,7 @@ import {
 } from '../shared/actions.js';
 import type { RunRequest } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
+import type { SyncStatus } from '../document/attach-sync.js';
 import type { StartedDaemonRoute } from './types.js';
 
 type DaemonActionTarget = {
@@ -124,33 +125,43 @@ async function invokeRemote({
 }): Promise<RunResponse> {
 	const { runtime } = entry;
 
-	const start = Date.now();
-	const found = await runtime.peerDirectory.waitForPeer(peerTarget, {
-		timeoutMs: waitMs,
-	});
-	if (found.error !== null) {
-		return RunError.PeerMiss({
-			peerTarget: found.error.peerTarget,
-			sawPeers: found.error.sawPeers,
-			waitMs: found.error.waitMs,
-			emptyReason: found.error.emptyReason,
-		});
-	}
-
-	const { clientId: targetClientId, state: peerState } = found.data;
-	const remaining = Math.max(1, waitMs - (Date.now() - start));
-	const result = await runtime.rpc.rpc(targetClientId, localPath, actionInput, {
-		timeout: remaining,
+	const result = await runtime.remote.invoke(peerTarget, localPath, actionInput, {
+		waitForPeerMs: waitMs,
+		timeout: waitMs,
 	});
 
 	if (result.error !== null) {
+		if (result.error.name === 'PeerNotFound') {
+			return RunError.PeerMiss({
+				peerTarget: result.error.peerTarget,
+				sawPeers: result.error.sawPeers,
+				waitMs: result.error.waitMs,
+				emptyReason: describeOfflineReason(runtime.sync.status),
+			});
+		}
+		if (result.error.name === 'PeerLeft') {
+			return RunError.PeerLeft({
+				peerTarget: result.error.peerTarget,
+				targetClientId: result.error.targetClientId,
+				peerState: result.error.peerState,
+			});
+		}
 		return RunError.RpcError({
 			cause: result.error,
-			targetClientId,
-			peerState,
+			peerTarget,
 		});
 	}
 	return Ok(result.data);
+}
+
+function describeOfflineReason(status: SyncStatus): string | null {
+	if (status.phase === 'connected') return null;
+	if (status.phase === 'connecting' && status.lastError) {
+		const retries = status.retries;
+		const word = retries === 1 ? 'retry' : 'retries';
+		return `not connected (${status.lastError.type} error after ${retries} ${word})`;
+	}
+	return 'not connected';
 }
 
 function toDaemonActionPath(

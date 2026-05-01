@@ -5,7 +5,7 @@
  *
  * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  runtime.peerDirectory.peers()                   all routes
+ *   /peers  ->  runtime.awareness.peers()                   all routes
  *   /list   ->  describeActions({ route: runtime.actions }) all routes
  *   /run    ->  invokeAction(...) | rpc.rpc(...)              route-routed
  *
@@ -19,7 +19,7 @@ import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
-import { PeerIdentity } from '../document/peer-presence-defs.js';
+import { PeerIdentity } from '../document/peer-identity.js';
 import { describeActions } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
 import type { StartedDaemonRoute } from './types.js';
@@ -75,7 +75,7 @@ export function buildDaemonApp(
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
 			for (const entry of runtimes) {
-				const peers = entry.runtime.peerDirectory.peers();
+				const peers = entry.runtime.awareness.peers();
 				for (const [clientID, state] of peers) {
 					rows.push({
 						route: entry.route,

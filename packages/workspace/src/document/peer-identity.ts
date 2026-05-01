@@ -3,15 +3,16 @@
  *
  * Each connected peer publishes a small `peer` identity: id, name, and
  * platform. Action discovery is not in awareness. It is fetched on demand via
- * `createRemoteClient({ peerDirectory, rpc }).describe(peerId)`.
+ * `createRemoteClient({ awareness, rpc }).describe(peerId)`.
  *
  * `PeerIdentity` is the only arktype-validated shape here because it crosses
  * the wire (awareness state on read, daemon `/peers` response). The plain TS
- * types (`PeerPresenceState`, `ResolvedPeer`) are derived shapes consumed
+ * types (`PeerAwarenessState`, `ResolvedPeer`) are derived shapes consumed
  * locally and never deserialized from untrusted input.
  */
 
 import { type } from 'arktype';
+import type { AwarenessSchema } from './attach-awareness.js';
 
 /** Awareness identity published by each connected peer. */
 export const PeerIdentity = type({
@@ -24,8 +25,13 @@ export type PeerIdentity = typeof PeerIdentity.infer;
 /** Closed enum of supported peer runtimes. Derived from the schema above. */
 export type PeerRuntime = PeerIdentity['platform'];
 
+/** Awareness schema containing the standard `peer` field. */
+export type PeerAwarenessSchema = AwarenessSchema & {
+	peer: typeof PeerIdentity;
+};
+
 /** A peer's awareness state under the standard `peer` schema. */
-export type PeerPresenceState = { peer: PeerIdentity };
+export type PeerAwarenessState = { peer: PeerIdentity };
 
 /** Result of a `find(peerId)` lookup: clientId plus full peer state. */
-export type ResolvedPeer = { clientId: number; state: PeerPresenceState };
+export type ResolvedPeer = { clientId: number; state: PeerAwarenessState };

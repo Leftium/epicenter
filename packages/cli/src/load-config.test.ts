@@ -29,27 +29,16 @@ function writeConfig(source: string) {
 }
 
 const daemonTransportFields = `
+	awareness: {
+		peers: () => new Map(),
+		observe: () => () => {}
+	},
 	sync: {
 		whenDisposed: Promise.resolve(),
 		onStatusChange: () => () => {}
 	},
-	presence: {
-		peers: () => new Map(),
-		observe: () => () => {},
-		waitForPeer: async () => ({
-			data: null,
-			error: {
-				name: 'PeerMiss',
-				message: 'missing peer',
-				peerTarget: 'missing',
-				sawPeers: false,
-				waitMs: 1,
-				emptyReason: null
-			}
-		})
-	},
-	rpc: {
-		rpc: async () => ({ data: null, error: null })
+	remote: {
+		invoke: async () => ({ data: null, error: null })
 	},
 `;
 

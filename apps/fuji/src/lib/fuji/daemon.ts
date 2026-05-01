@@ -3,7 +3,7 @@ import { createCredentialTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
-	createPeerDirectory,
+	createRemoteClient,
 	PeerIdentity,
 	type ProjectDir,
 	toWsUrl,
@@ -68,8 +68,8 @@ export function defineFujiDaemon({
 				webSocketImpl,
 				awareness,
 			});
-			const peerDirectory = createPeerDirectory({ awareness, sync });
 			const rpc = sync.attachRpc(doc.actions);
+			const remote = createRemoteClient({ awareness, rpc });
 			attachSqlite(doc.ydoc, {
 				filePath: sqlitePath(projectDir, doc.ydoc.guid),
 			}).table(doc.tables.entries);
@@ -81,7 +81,7 @@ export function defineFujiDaemon({
 				actions: doc.actions,
 				awareness,
 				sync,
-				peerDirectory,
+				remote,
 				rpc,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();

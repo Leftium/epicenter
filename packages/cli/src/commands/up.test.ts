@@ -87,24 +87,13 @@ function makeFakeWorkspace(): DaemonRuntime {
 			onStatusChange: () => () => {},
 			// Unused fields; cast through unknown to keep the fake minimal.
 		} as unknown as DaemonRuntime['sync'],
-		presence: {
+		awareness: {
 			peers: () => new Map(),
 			observe: () => () => {},
-			waitForPeer: async () => ({
-				data: null,
-				error: {
-					name: 'PeerMiss',
-					message: 'missing peer',
-					peerTarget: 'missing',
-					sawPeers: false,
-					waitMs: 1,
-					emptyReason: null,
-				},
-			}),
-		} as unknown as DaemonRuntime['presence'],
-		rpc: {
-			rpc: async () => ({ data: null, error: null }),
-		} as unknown as DaemonRuntime['rpc'],
+		} as unknown as DaemonRuntime['awareness'],
+		remote: {
+			invoke: async () => ({ data: null, error: null }),
+		} as unknown as DaemonRuntime['remote'],
 	};
 }
 

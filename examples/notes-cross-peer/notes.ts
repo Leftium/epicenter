@@ -3,7 +3,7 @@ import {
 	attachAwareness,
 	attachSync,
 	attachTables,
-	createPeerDirectory,
+	createRemoteClient,
 	defineMutation,
 	defineQuery,
 	defineTable,
@@ -50,14 +50,14 @@ export function openNotes(peer: PeerIdentity) {
 		getToken: createCredentialTokenGetter({ serverOrigin: SERVER_URL }),
 		awareness,
 	});
-	const peerDirectory = createPeerDirectory({ awareness, sync });
 	const rpc = sync.attachRpc(actions);
+	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		workspaceId: ydoc.guid,
 		actions,
 		awareness,
-		peerDirectory,
+		remote,
 		rpc,
 		sync,
 		whenReady: sync.whenConnected,

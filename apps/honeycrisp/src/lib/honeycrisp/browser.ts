@@ -6,7 +6,7 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	createPeerDirectory,
+	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -58,8 +58,8 @@ export function openHoneycrisp({
 		},
 		awareness,
 	});
-	const peerDirectory = createPeerDirectory({ awareness, sync });
 	const rpc = sync.attachRpc(doc.actions);
+	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		...doc,
@@ -67,7 +67,7 @@ export function openHoneycrisp({
 		noteBodyDocs,
 		awareness,
 		sync,
-		peerDirectory,
+		remote,
 		rpc,
 		/**
 		 * Resolves when IndexedDB has hydrated the local snapshot. The UI can

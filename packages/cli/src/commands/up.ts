@@ -271,7 +271,7 @@ async function safeDisposeStartedRoutes(
 }
 
 function printPeersSnapshot(entry: StartedDaemonRoute): void {
-	const peers = entry.runtime.peerDirectory.peers();
+	const peers = entry.runtime.awareness.peers();
 	if (peers.size === 0) {
 		process.stderr.write(`${entry.route}: no peers connected\n`);
 		return;
@@ -284,10 +284,10 @@ function printPeersSnapshot(entry: StartedDaemonRoute): void {
 }
 
 function subscribeAwareness(entry: StartedDaemonRoute, quiet: boolean): void {
-	const peerDirectory = entry.runtime.peerDirectory;
-	let prev = new Map(peerDirectory.peers());
-	peerDirectory.observe(() => {
-		const next = peerDirectory.peers();
+	const awareness = entry.runtime.awareness;
+	let prev = new Map(awareness.peers());
+	awareness.observe(() => {
+		const next = awareness.peers();
 		for (const [clientID, state] of next) {
 			if (!prev.has(clientID)) {
 				if (!quiet) {

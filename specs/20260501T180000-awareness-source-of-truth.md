@@ -4,6 +4,7 @@
 **Status**: Draft
 **Author**: AI-assisted
 **Related**: `specs/20260430T114949-peer-presence-rename-and-sync-split.md`, `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md`
+**Superseded in part by**: `specs/20260501T150015-peer-addressed-remote-client-api.md`, which removes the transitional `PeerDirectory` target and makes `createRemoteClient({ awareness, rpc })` own peer-addressed RPC.
 
 ## Overview
 

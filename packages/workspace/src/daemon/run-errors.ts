@@ -18,7 +18,7 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
-import type { PeerPresenceState as AwarenessState } from '../document/peer-presence-defs.js';
+import type { PeerAwarenessState } from '../document/peer-identity.js';
 
 /**
  * CLI-specific failures of the `/run` route. Carrying the failure mode
@@ -45,15 +45,26 @@ export const RunError = defineErrors({
 	}),
 	RpcError: ({
 		cause,
-		targetClientId,
-		peerState,
+		peerTarget,
 	}: {
 		cause: RpcError;
-		targetClientId: number;
-		peerState: AwarenessState;
+		peerTarget: string;
 	}) => ({
 		message: `RPC failed: ${cause.name}`,
 		cause,
+		peerTarget,
+	}),
+	PeerLeft: ({
+		peerTarget,
+		targetClientId,
+		peerState,
+	}: {
+		peerTarget: string;
+		targetClientId: number;
+		peerState: PeerAwarenessState;
+	}) => ({
+		message: `peer "${peerTarget}" disconnected before RPC response arrived`,
+		peerTarget,
 		targetClientId,
 		peerState,
 	}),

@@ -121,7 +121,7 @@ import {
 	attachEncryption,
 	attachIndexedDb,
 	attachSync,
-	createPeerDirectory,
+	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -154,7 +154,9 @@ export function openApp({
 		getToken,
 		awareness,
 	});
-	const peerDirectory = createPeerDirectory({ awareness, sync });
+	const actions = {};
+	const rpc = sync.attachRpc(actions);
+	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		get id() {
@@ -166,7 +168,8 @@ export function openApp({
 		encryption,
 		idb,
 		sync,
-		peerDirectory,
+		rpc,
+		remote,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {

@@ -3,7 +3,7 @@ import { createCredentialTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
-	createPeerDirectory,
+	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
 	type WebSocketImpl,
@@ -58,15 +58,15 @@ export function defineHoneycrispDaemon({
 				webSocketImpl,
 				awareness,
 			});
-			const peerDirectory = createPeerDirectory({ awareness, sync });
 			const rpc = sync.attachRpc(doc.actions);
+			const remote = createRemoteClient({ awareness, rpc });
 
 			return {
 				...doc,
 				yjsLog,
 				awareness,
 				sync,
-				peerDirectory,
+				remote,
 				rpc,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();

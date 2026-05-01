@@ -4,18 +4,17 @@
  * `DaemonRouteDefinition` is the config-time contract: a delayed route starter
  * with its own route name. `DaemonRuntime` is the runtime contract every
  * started daemon route has to satisfy: lifecycle hook, required `actions` root,
- * sync transport, peer directory, and RPC attachments.
+ * awareness state, sync transport, and remote action client.
  *
  * `StartedDaemonRoute` is one routed runtime the daemon serves internally. The
  * CLI's config loader opens route definitions from the default
  * `{ daemon: { routes } }` export in `epicenter.config.ts`.
  */
 
-import type {
-	SyncAttachment,
-	SyncRpcAttachment,
-} from '../document/attach-sync.js';
-import type { PeerDirectory } from '../document/peer-presence.js';
+import type { AwarenessAttachment } from '../document/attach-awareness.js';
+import type { SyncAttachment } from '../document/attach-sync.js';
+import type { PeerAwarenessSchema } from '../document/peer-identity.js';
+import type { RemoteClient } from '../rpc/remote-actions.js';
 import type { Actions } from '../shared/actions.js';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
 
@@ -37,12 +36,12 @@ export type DaemonRuntime = {
 	 */
 	readonly actions: Actions;
 
+	/** Typed awareness state containing the standard peer identity field. */
+	readonly awareness: AwarenessAttachment<PeerAwarenessSchema>;
 	/** Underlying sync transport for bringing the route online. */
 	readonly sync: SyncAttachment;
-	/** Standard peer directory used by `epicenter peers` and `run --peer`. */
-	readonly peerDirectory: PeerDirectory;
-	/** Peer RPC transport used by `run --peer`. */
-	readonly rpc: SyncRpcAttachment;
+	/** Peer-addressed remote action client used by `run --peer`. */
+	readonly remote: RemoteClient;
 };
 
 export type DaemonRouteDefinition<

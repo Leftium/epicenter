@@ -3,7 +3,7 @@ import { createCredentialTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
-	createPeerDirectory,
+	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
 	type WebSocketImpl,
@@ -62,8 +62,8 @@ export function defineOpensidianDaemon({
 			// Daemon runtime is materializer-only for now. Browser runtime owns
 			// Opensidian file and shell actions because they need browser services.
 			const actions = {};
-			const peerDirectory = createPeerDirectory({ awareness, sync });
 			const rpc = sync.attachRpc(actions);
+			const remote = createRemoteClient({ awareness, rpc });
 
 			return {
 				...doc,
@@ -71,7 +71,7 @@ export function defineOpensidianDaemon({
 				awareness,
 				sync,
 				actions,
-				peerDirectory,
+				remote,
 				rpc,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();

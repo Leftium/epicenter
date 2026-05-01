@@ -126,10 +126,10 @@ injects the project context when it starts them, so configs do not need to call
 import * as Y from 'yjs';
 import {
 	attachAwareness,
+	createRemoteClient,
 	defineTable,
 	attachTables,
 	attachSync,
-	createPeerDirectory,
 	defineQuery,
 	defineMutation,
 	PeerIdentity,
@@ -174,16 +174,16 @@ function openTabManager() {
 		}),
 		awareness,
 	});
-	const peerDirectory = createPeerDirectory({ awareness, sync });
 	const rpc = sync.attachRpc(actions);
+	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		ydoc,
 		tables,
 		awareness,
 		sync,
-		peerDirectory,
 		rpc,
+		remote,
 
 		// Actions are grouped away from infrastructure.
 		// Only the operations you wrap with defineQuery/defineMutation

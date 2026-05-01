@@ -126,27 +126,6 @@ export const SyncSupervisorError = defineErrors({
 });
 export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
 
-export const PeerMiss = defineErrors({
-	PeerMiss: ({
-		peerTarget,
-		sawPeers,
-		waitMs,
-		emptyReason,
-	}: {
-		peerTarget: string;
-		sawPeers: boolean;
-		waitMs: number;
-		emptyReason: string | null;
-	}) => ({
-		message: `no peer matches peer id "${peerTarget}"`,
-		peerTarget,
-		sawPeers,
-		waitMs,
-		emptyReason,
-	}),
-});
-export type PeerMiss = InferErrors<typeof PeerMiss>;
-
 export type SyncAttachment = {
 	/**
 	 * Resolves after the WebSocket handshake completes and the first sync

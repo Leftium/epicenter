@@ -3,7 +3,7 @@ import { createCredentialTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
-	createPeerDirectory,
+	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
 	type WebSocketImpl,
@@ -58,16 +58,16 @@ export function defineZhongwenDaemon({
 				webSocketImpl,
 				awareness,
 			});
-			const peerDirectory = createPeerDirectory({ awareness, sync });
 			const actions = {};
 			const rpc = sync.attachRpc(actions);
+			const remote = createRemoteClient({ awareness, rpc });
 
 			return {
 				...doc,
 				yjsLog,
 				awareness,
 				sync,
-				peerDirectory,
+				remote,
 				rpc,
 				actions,
 				async [Symbol.asyncDispose]() {

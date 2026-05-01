@@ -402,7 +402,6 @@ const awareness = attachAwareness(ydoc, {
 	initial: { peer: { id: 'macbook-pro', name: 'MacBook Pro', platform: 'node' } },
 });
 const sync = attachSync(ydoc, { url, awareness });
-const peerDirectory = createPeerDirectory({ awareness, sync });
 ```
 
 RPC attaches later:
@@ -593,12 +592,10 @@ handshake.
 
 ## RPC: peer dispatch surface
 
-Awareness is the source of truth for "who else is here"; the peer directory reads `state.peer`, and RPC is the dispatch surface:
+Awareness is the source of truth for "who else is here"; the remote client reads `state.peer`, and RPC is the dispatch surface:
 
 ```ts
-peerDirectory.peers()                 // Map<clientId, PeerPresenceState>
-peerDirectory.find(peerId)            // Resolved peer or undefined
-peerDirectory.observe(callback)       // unsubscribe fn
+awareness.peers()                     // Map<clientId, PeerAwarenessState>
 rpc.rpc(target, action, input, opts)   // typed remote call
 ```
 
@@ -606,7 +603,7 @@ Cross-device action call:
 
 ```ts
 const remote = createRemoteClient({
-	peerDirectory: fuji.peerDirectory,
+	awareness: fuji.awareness,
 	rpc: fuji.rpc,
 });
 
@@ -614,18 +611,18 @@ const macbook = remote.actions<TabManagerActions>('macbook-pro');
 const result = await macbook.tabs.close({ tabIds: [1, 2] });
 ```
 
-`createRemoteClient({ peerDirectory, rpc })` binds the local peer-calling capability once. `remote.actions<T>(peerId)` returns a typed Proxy. Walking `.tabs.close` builds nested proxies; calling `.tabs.close(input)` resolves the peer through the peer directory and dispatches via `rpc.rpc(clientId, 'tabs.close', input)`.
+`createRemoteClient({ awareness, rpc })` binds the local peer-calling capability once. `remote.actions<T>(peerId)` returns a typed Proxy. Walking `.tabs.close` builds nested proxies; calling `.tabs.close(input)` resolves the peer from awareness and dispatches via `rpc.rpc(clientId, 'tabs.close', input)`.
 
 `remote.describe(peerId)` is a thin wrapper that calls the injected `system.describe` action to fetch the peer's full action manifest on demand.
 
 ### Peer-removed race semantics
 
-Both `remote.actions<T>(peerId)` and `remote.describe(peerId)` race the RPC against a peer-removed signal. If the matched peer disappears mid-call, the in-flight Promise rejects immediately with `RpcError.PeerLeft` rather than waiting the full RPC timeout:
+Both `remote.actions<T>(peerId)` and `remote.describe(peerId)` race the RPC against a peer-removed signal. If the matched peer disappears mid-call, the in-flight Promise resolves with `PeerAddressError.PeerLeft` rather than waiting the full RPC timeout:
 
 ```
-createRemoteClient({ peerDirectory, rpc }).actions<T>('mac').foo()
+createRemoteClient({ awareness, rpc }).actions<T>('mac').foo()
   │
-  ├─ subscribe to peerDirectory.observe(callback)
+  ├─ subscribe to awareness.observe(callback)
   ├─ fire: rpc.rpc(...)
   │
   ├─ if RPC resolves first:        → return its result
@@ -644,13 +641,13 @@ End-to-end. The CLI process is "Fuji"; the peer is "macbook-pro" (a tab-manager 
 └─────────┬──────────┘                     └─────────┬──────────┘
           │                                          │
           │ 1. CLI loads epicenter.config.ts         │
-          │    workspace.peerDirectory.peers() returns: │
+          │    workspace.awareness.peers() returns: │
           │    Map { 42 → {peer:{id:'macbook-pro'}}}│
           │                                          │
           │ 2. remote.describe(peerId)               │
           │    → system.describe()                   │
           │                                          │
-          │ 3. internally: peerDirectory.find(peerId)│
+          │ 3. internally: remote reads awareness    │
           │    returns { clientId: 42, state }       │
           │                                          │
           │ 4. rpc.rpc(42, 'system.describe',        │
@@ -721,4 +718,4 @@ t=80ms+    [from here on, four loops run forever:]
 
 ## Mental model in one paragraph
 
-`attachSync(doc, config)` is the wire and the supervisor. `attachAwareness(ydoc, { schema, initial })` publishes the local awareness object, `attachSync(..., { awareness })` transports it, and `createPeerDirectory({ awareness, sync })` reads `state.peer` for peer lookup. `sync.attachRpc(actions)` builds the dispatch tree `{ ...userActions, system: { describe } }` with `system.*` reserved. RPC is capability and dispatch (request/response, timeout, racing against peer-removed). Remote proxies use `{ peerDirectory, rpc }`, not a monolithic sync object.
+`attachSync(doc, config)` is the wire and the supervisor. `attachAwareness(ydoc, { schema, initial })` publishes the local awareness object, and `attachSync(..., { awareness })` transports it. `sync.attachRpc(actions)` builds the dispatch tree `{ ...userActions, system: { describe } }` with `system.*` reserved. RPC is capability and dispatch (request/response, timeout, racing against peer-removed). Remote proxies use `{ awareness, rpc }`, not a monolithic sync object or a peer directory.

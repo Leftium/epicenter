@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { RpcError } from '@epicenter/workspace';
 import type { AwarenessState } from '../load-config';
-import { emitMissError, emitRpcError } from './run';
+import { emitMissError, emitPeerLeftError, emitRpcError } from './run';
 
 function mockState(peer: Partial<AwarenessState['peer']> = {}): AwarenessState {
 	return {
@@ -62,59 +62,39 @@ describe('emitRpcError', () => {
 	let cap: ReturnType<typeof captureErrors>;
 	afterEach(() => cap?.restore());
 
-	test('ActionNotFound labels with peer name + platform', () => {
+	test('ActionNotFound labels with peer id', () => {
 		cap = captureErrors();
 		emitRpcError(
 			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
-			42,
-			mockState({ name: 'MacBook', platform: 'tauri' }),
+			'macbook-pro',
 		);
 		expect(cap.lines).toEqual([
-			'error: ActionNotFound "tabs.closeAll" on MacBook (42, tauri)',
+			'error: ActionNotFound "tabs.closeAll" on macbook-pro',
 		]);
 	});
 
 	test('Timeout reports ms and peer', () => {
 		cap = captureErrors();
-		emitRpcError(
-			RpcError.Timeout({ ms: 5000 }).error,
-			42,
-			mockState({ name: 'MacBook', platform: 'tauri' }),
-		);
-		expect(cap.lines).toEqual([
-			'error: timeout after 5000ms on MacBook (42, tauri)',
-		]);
+		emitRpcError(RpcError.Timeout({ ms: 5000 }).error, 'macbook-pro');
+		expect(cap.lines).toEqual(['error: timeout after 5000ms on macbook-pro']);
 	});
 
 	test('PeerOffline', () => {
 		cap = captureErrors();
-		emitRpcError(
-			RpcError.PeerOffline().error,
-			42,
-			mockState({ name: 'MacBook', platform: 'tauri' }),
-		);
-		expect(cap.lines).toEqual(['error: peer MacBook (42, tauri) is offline']);
-	});
-
-	test('PeerNotFound surfaces the peer id', () => {
-		cap = captureErrors();
-		emitRpcError(
-			RpcError.PeerNotFound({ peer: 'macbook-pro' }).error,
-			0,
-			mockState(),
-		);
-		expect(cap.lines).toEqual(['error: no peer with peer id "macbook-pro"']);
+		emitRpcError(RpcError.PeerOffline().error, 'macbook-pro');
+		expect(cap.lines).toEqual(['error: peer macbook-pro is offline']);
 	});
 
 	test('PeerLeft surfaces the peer id', () => {
 		cap = captureErrors();
-		emitRpcError(
-			RpcError.PeerLeft({ peer: 'macbook-pro' }).error,
-			0,
-			mockState(),
+		emitPeerLeftError(
+			'macbook-pro',
+			42,
+			mockState({ name: 'MacBook', platform: 'tauri' }),
 		);
 		expect(cap.lines).toEqual([
 			'error: peer "macbook-pro" disconnected before responding',
+			'  last seen as MacBook (42, tauri)',
 		]);
 	});
 
@@ -125,23 +105,18 @@ describe('emitRpcError', () => {
 				action: 'tabs.close',
 				cause: new Error('Tab 99 not found'),
 			}).error,
-			42,
-			mockState({ name: 'MacBook', platform: 'tauri' }),
+			'macbook-pro',
 		);
 		expect(cap.lines).toEqual([
-			'error: "tabs.close" failed on MacBook (42, tauri): Tab 99 not found',
+			'error: "tabs.close" failed on macbook-pro: Tab 99 not found',
 		]);
 	});
 
 	test('Disconnected', () => {
 		cap = captureErrors();
-		emitRpcError(
-			RpcError.Disconnected().error,
-			42,
-			mockState({ name: 'MacBook', platform: 'tauri' }),
-		);
+		emitRpcError(RpcError.Disconnected().error, 'macbook-pro');
 		expect(cap.lines).toEqual([
-			'error: connection lost before MacBook (42, tauri) responded',
+			'error: connection lost before macbook-pro responded',
 		]);
 	});
 });

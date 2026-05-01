@@ -16,8 +16,7 @@ import * as Y from 'yjs';
 import { defineMutation } from '../shared/actions.js';
 import { attachAwareness } from './attach-awareness.js';
 import { attachSync } from './attach-sync.js';
-import { createPeerDirectory } from './peer-presence.js';
-import { PeerIdentity } from './peer-presence-defs.js';
+import { PeerIdentity } from './peer-identity.js';
 
 type Listener = (ev: { data: ArrayBuffer | string }) => void;
 
@@ -122,17 +121,16 @@ describe('attachSync split surface', () => {
 		await sync.whenDisposed;
 	});
 
-	test('transports provided awareness and exposes peer lookup', async () => {
+	test('transports provided awareness', async () => {
 		const ydoc = new Y.Doc({ guid: 'split-presence' });
 		const awareness = attachAwareness(ydoc, {
 			schema: { peer: PeerIdentity },
 			initial: { peer: { id: 'mac', name: 'Mac', platform: 'web' } },
 		});
-		const sync = attachSync(ydoc, {
+		attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
 			awareness,
 		});
-		const peerDirectory = createPeerDirectory({ awareness, sync });
 
 		expect(awareness.raw.getLocalState()).toEqual({
 			peer: { id: 'mac', name: 'Mac', platform: 'web' },
@@ -158,12 +156,17 @@ describe('attachSync split surface', () => {
 			}),
 		);
 
-		const found = peerDirectory.find('phone');
-		expect(found?.state.peer.id).toBe('phone');
-		expect(peerDirectory.find('ghost')).toBeUndefined();
+		const peers = awareness.peers();
+		const found = [...peers.values()].find(
+			(state) => state.peer.id === 'phone',
+		);
+		expect(found?.peer.id).toBe('phone');
+		expect(
+			[...peers.values()].find((state) => state.peer.id === 'ghost'),
+		).toBeUndefined();
 
 		ws.close();
-		await waitFor(() => peerDirectory.peers().size === 0);
+		await waitFor(() => awareness.peers().size === 0);
 
 		ydoc.destroy();
 		remoteDoc.destroy();

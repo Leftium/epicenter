@@ -7,39 +7,29 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { PeerMiss, type SyncRpcAttachment } from '../document/attach-sync.js';
-import type { PeerDirectory } from '../document/peer-presence.js';
+import type { AwarenessAttachment } from '../document/attach-awareness.js';
+import type { PeerAwarenessSchema } from '../document/peer-identity.js';
+import type { RemoteClient } from '../rpc/remote-actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
 import type { StartedDaemonRoute } from './types.js';
 
 type Runtime = StartedDaemonRoute['runtime'];
 
-function fakePeerDirectory(
-	overrides: Partial<PeerDirectory> = {},
-): PeerDirectory {
+function fakeAwareness(): AwarenessAttachment<PeerAwarenessSchema> {
 	return {
 		peers: () => new Map(),
-		find: () => undefined,
-		waitForPeer: async (peerTarget, { timeoutMs }) =>
-			PeerMiss.PeerMiss({
-				peerTarget,
-				sawPeers: false,
-				waitMs: timeoutMs,
-				emptyReason: null,
-			}),
 		observe: () => () => {},
-		...overrides,
-	} as PeerDirectory;
+	} as unknown as AwarenessAttachment<PeerAwarenessSchema>;
 }
 
-function fakeRpc(
-	overrides: Partial<SyncRpcAttachment> = {},
-): SyncRpcAttachment {
+function fakeRemote(overrides: Partial<RemoteClient> = {}): RemoteClient {
 	return {
-		rpc: async () => ({ data: null, error: null }),
+		actions: () => ({}) as never,
+		describe: async () => ({ data: {}, error: null }),
+		invoke: async () => ({ data: null, error: null }),
 		...overrides,
-	} as SyncRpcAttachment;
+	} as RemoteClient;
 }
 
 function fakeSync(): Runtime['sync'] {
@@ -50,7 +40,7 @@ function fakeSync(): Runtime['sync'] {
 		goOffline() {},
 		reconnect() {},
 		whenDisposed: Promise.resolve(),
-		attachRpc: () => fakeRpc(),
+		attachRpc: () => ({ rpc: async () => ({ data: null, error: null }) }),
 	} as Runtime['sync'];
 }
 
@@ -60,17 +50,16 @@ function fakeRuntime(
 ): Runtime {
 	return {
 		actions,
+		awareness: fakeAwareness(),
 		sync: fakeSync(),
-		peerDirectory: fakePeerDirectory(),
-		rpc: fakeRpc(),
+		remote: fakeRemote(),
 		async [Symbol.asyncDispose]() {},
 		...extra,
 	};
 }
 
 function fakeEntry(
-	peerDirectory: Partial<PeerDirectory> = {},
-	rpc: Partial<SyncRpcAttachment> = {},
+	remote: Partial<RemoteClient> = {},
 ): StartedDaemonRoute {
 	const runtime = fakeRuntime(
 		{
@@ -81,8 +70,7 @@ function fakeEntry(
 			},
 		},
 		{
-			peerDirectory: fakePeerDirectory(peerDirectory),
-			rpc: fakeRpc(rpc),
+			remote: fakeRemote(remote),
 		},
 	);
 
@@ -90,26 +78,23 @@ function fakeEntry(
 }
 
 describe('executeRun peer dispatch', () => {
-	test('peer miss returns RunError.PeerMiss and skips rpc', async () => {
-		let rpcCalls = 0;
-		const entry = fakeEntry(
-			{
-				async waitForPeer(peerId, { timeoutMs }) {
-					return PeerMiss.PeerMiss({
-						peerTarget: peerId,
+	test('peer miss returns RunError.PeerMiss', async () => {
+		let invokeCalls = 0;
+		const entry = fakeEntry({
+			async invoke(peerTarget, _action, _input, options) {
+				invokeCalls++;
+				return {
+					data: null,
+					error: {
+						name: 'PeerNotFound',
+						message: `no peer matches peer id "${peerTarget}"`,
+						peerTarget,
 						sawPeers: true,
-						waitMs: timeoutMs,
-						emptyReason: null,
-					});
-				},
+						waitMs: options?.waitForPeerMs ?? 0,
+					},
+				};
 			},
-			{
-				async rpc() {
-					rpcCalls++;
-					throw new Error('rpc should not be called');
-				},
-			},
-		);
+		});
 
 		const result = await executeRun([entry], {
 			actionPath: 'demo.tabs.list',
@@ -118,7 +103,7 @@ describe('executeRun peer dispatch', () => {
 			waitMs: 25,
 		});
 
-		expect(rpcCalls).toBe(0);
+		expect(invokeCalls).toBe(1);
 		expect(result.error).not.toBeNull();
 		if (result.error === null) throw new Error('expected PeerMiss');
 		expect(result.error.name).toBe('PeerMiss');
@@ -133,25 +118,12 @@ describe('executeRun peer dispatch', () => {
 
 	test('remote dispatch sends only the inner action path', async () => {
 		let rpcAction = '';
-		const entry = fakeEntry(
-			{
-				async waitForPeer() {
-					return {
-						data: {
-							clientId: 42,
-							state: { peer: { id: 'mac', name: 'Mac', platform: 'node' } },
-						},
-						error: null,
-					};
-				},
+		const entry = fakeEntry({
+			async invoke(_peerId, action) {
+				rpcAction = action;
+				return { data: [], error: null };
 			},
-			{
-				async rpc(_clientId, action) {
-					rpcAction = action;
-					return { data: [], error: null };
-				},
-			},
-		);
+		});
 
 		const result = await executeRun([entry], {
 			actionPath: 'demo.tabs.list',

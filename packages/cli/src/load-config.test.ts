@@ -25,7 +25,7 @@ function writeConfig(source: string) {
 	writeFileSync(join(workDir, CONFIG_FILENAME), source);
 }
 
-const daemonRuntimeFields = `
+const daemonTransportFields = `
 	sync: {
 		whenDisposed: Promise.resolve(),
 		onStatusChange: () => () => {}
@@ -48,6 +48,11 @@ const daemonRuntimeFields = `
 	rpc: {
 		rpc: async () => ({ data: null, error: null })
 	},
+`;
+
+const daemonRuntimeFields = `
+	workspaceId: 'epicenter.demo',
+	${daemonTransportFields}
 `;
 
 describe('loadConfig', () => {
@@ -73,6 +78,9 @@ describe('loadConfig', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data?.entries.map((entry) => entry.route)).toEqual(['demo']);
+		expect(result.data?.entries.map((entry) => entry.workspaceId)).toEqual([
+			'epicenter.demo',
+		]);
 		await result.data?.[Symbol.asyncDispose]();
 	});
 
@@ -205,6 +213,30 @@ describe('loadConfig', () => {
 		expect(result.error?.name).toBe('InvalidRoute');
 	});
 
+	test('rejects host runtimes missing workspaceId', async () => {
+		writeConfig(`
+			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+
+			export default defineEpicenterConfig({
+				hosts: [
+					defineDaemon({
+						route: 'demo',
+						start: () => ({
+							actions: {},
+							${daemonTransportFields}
+							[Symbol.dispose]() {}
+						})
+					})
+				]
+			});
+		`);
+
+		const result = await loadConfig(workDir);
+
+		expect(result.data).toBeNull();
+		expect(result.error?.name).toBe('InvalidHost');
+	});
+
 	test('rejects duplicate routes', async () => {
 		writeConfig(`
 			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
@@ -281,6 +313,7 @@ describe('loadConfig', () => {
 					defineDaemon({
 						route: 'demo',
 						start: () => ({
+							workspaceId: 'epicenter.demo',
 							actions: {},
 							sync: { whenDisposed: Promise.resolve() },
 							presence: {},

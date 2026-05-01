@@ -17,7 +17,7 @@ import type { Result } from 'wellcrafted/result';
 import { buildDaemonApp } from './app.js';
 import { pingDaemon } from './client.js';
 import { socketPathFor } from './paths.js';
-import type { HostedDaemonWorkspace } from './types.js';
+import type { HostedDaemonRuntime } from './types.js';
 import {
 	bindOrRecover,
 	type StartupError,
@@ -29,11 +29,11 @@ export type DaemonServerOptions = {
 	/** Filesystem-resolved absolute path that scopes this daemon. */
 	projectDir: string;
 	/**
-	 * Pre-constructed workspace entries the daemon hosts. Each entry's
+	 * Pre-constructed daemon runtimes the daemon hosts. Each entry's
 	 * `route` is the routing key the wire surface dispatches on. The CLI uses
 	 * this as the first segment in route-prefixed action paths.
 	 */
-	workspaces: HostedDaemonWorkspace[];
+	workspaces: HostedDaemonRuntime[];
 	/** Called by the optional `/shutdown` route after the response is queued. */
 	triggerShutdown?: () => void;
 };

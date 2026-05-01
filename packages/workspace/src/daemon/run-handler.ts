@@ -17,21 +17,30 @@
  */
 
 import { Ok } from 'wellcrafted/result';
-import { invokeAction, resolveActionPath } from '../shared/actions.js';
 import {
-	resolveWorkspaceActionTarget,
-	workspaceActionNearestSiblingLines,
-	workspaceActionSuggestionLines,
-} from './action-routing.js';
+	invokeAction,
+	resolveActionPath,
+	walkActions,
+} from '../shared/actions.js';
 import type { RunRequest } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
-import type { HostedDaemonWorkspace } from './types.js';
+import type { HostedDaemonRuntime } from './types.js';
+
+type DaemonActionTarget = {
+	entry: HostedDaemonRuntime;
+	localPath: string;
+};
+
+type DaemonRouteError = {
+	routeName: string;
+	available: string[];
+};
 
 export async function executeRun(
-	entries: HostedDaemonWorkspace[],
+	entries: HostedDaemonRuntime[],
 	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
-	const target = resolveWorkspaceActionTarget(entries, actionPath);
+	const target = resolveDaemonActionTarget(entries, actionPath);
 	if (target.error !== null) {
 		return RunError.UsageError({
 			message: `No daemon route "${target.error.routeName}". Available: ${target.error.available.join(', ')}`,
@@ -44,7 +53,7 @@ export async function executeRun(
 
 	const action = resolveActionPath(workspace.actions, localPath);
 	if (!action) {
-		const descendants = workspaceActionSuggestionLines(entry, localPath);
+		const descendants = daemonActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {
 			return RunError.UsageError({
 				message: `"${actionPath}" is not a runnable action.`,
@@ -53,7 +62,7 @@ export async function executeRun(
 		}
 		return RunError.UsageError({
 			message: `"${actionPath}" is not defined.`,
-			suggestions: workspaceActionNearestSiblingLines(entry, localPath),
+			suggestions: daemonActionNearestSiblingLines(entry, localPath),
 		});
 	}
 
@@ -74,6 +83,32 @@ export async function executeRun(
 	return Ok(result.data);
 }
 
+function resolveDaemonActionTarget(
+	entries: HostedDaemonRuntime[],
+	actionPath: string,
+):
+	| { data: DaemonActionTarget; error: null }
+	| { data: null; error: DaemonRouteError } {
+	const [routeName = '', ...rest] = actionPath.split('.');
+	const entry = entries.find((candidate) => candidate.route === routeName);
+	if (!entry) {
+		return {
+			data: null,
+			error: {
+				routeName,
+				available: entries.map((candidate) => candidate.route),
+			},
+		};
+	}
+	return {
+		data: {
+			entry,
+			localPath: rest.join('.'),
+		},
+		error: null,
+	};
+}
+
 async function invokeRemote({
 	actionInput,
 	entry,
@@ -82,7 +117,7 @@ async function invokeRemote({
 	waitMs,
 }: {
 	actionInput: unknown;
-	entry: HostedDaemonWorkspace;
+	entry: HostedDaemonRuntime;
 	localPath: string;
 	peerTarget: string;
 	waitMs: number;
@@ -116,4 +151,51 @@ async function invokeRemote({
 		});
 	}
 	return Ok(result.data);
+}
+
+function toDaemonActionPath(
+	entry: HostedDaemonRuntime,
+	localPath: string,
+): string {
+	return localPath ? `${entry.route}.${localPath}` : entry.route;
+}
+
+function daemonActionSuggestionLines(
+	entry: HostedDaemonRuntime,
+	prefix: string,
+): string[] {
+	const entries = [...walkActions(entry.workspace.actions)];
+	const descendants = entriesUnder(entries, prefix);
+	return descendants.map(
+		([path, action]) =>
+			`  ${toDaemonActionPath(entry, path)}  (${action.type})`,
+	);
+}
+
+function daemonActionNearestSiblingLines(
+	entry: HostedDaemonRuntime,
+	missedPath: string,
+): string[] {
+	const entries = [...walkActions(entry.workspace.actions)];
+	const parts = missedPath.split('.');
+	while (parts.length > 0) {
+		parts.pop();
+		const prefix = parts.join('.');
+		const alts = entriesUnder(entries, prefix);
+		if (alts.length === 0) continue;
+		return alts.map(
+			([path, action]) =>
+				`  ${toDaemonActionPath(entry, path)}  (${action.type})`,
+		);
+	}
+	return [];
+}
+
+function entriesUnder<TValue>(
+	entries: Array<[string, TValue]>,
+	prefix: string,
+): Array<[string, TValue]> {
+	if (!prefix) return entries;
+	const pfx = `${prefix}.`;
+	return entries.filter(([path]) => path === prefix || path.startsWith(pfx));
 }

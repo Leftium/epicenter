@@ -98,6 +98,7 @@ const presence = sync.attachPresence({
 const rpc = sync.attachRpc(actions);
 
 export const tabManager = {
+	workspaceId: ydoc.guid,
 	whenReady,
 	actions,
 	sync,
@@ -121,8 +122,6 @@ export default defineEpicenterConfig({
 	hosts: [
 		defineDaemon({
 			route: 'tabManager',
-			title: 'Tab Manager',
-			workspaceId: WORKSPACE_ID,
 			start: () => tabManager,
 		}),
 	],

@@ -22,7 +22,7 @@ import { Ok } from 'wellcrafted/result';
 import { Peer } from '../document/standard-awareness-defs.js';
 import { describeActions } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { HostedDaemonWorkspace } from './types.js';
+import type { HostedDaemonRuntime } from './types.js';
 
 /**
  * Wire body for `/run`. The schema serves two roles:
@@ -63,11 +63,11 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * it into `Bun.serve({ unix, fetch: app.fetch })` via `bindUnixSocket`.
  *
  * `/list` exposes route-prefixed action paths. `/run` uses that same
- * prefix to pick the hosted workspace before dispatching the inner action
+ * prefix to pick the hosted daemon runtime before dispatching the inner action
  * path locally or over RPC.
  */
 export function buildDaemonApp(
-	entries: HostedDaemonWorkspace[],
+	entries: HostedDaemonRuntime[],
 	triggerShutdown?: () => void,
 ) {
 	return new Hono()

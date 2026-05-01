@@ -42,9 +42,6 @@ export function defineOpensidianDaemon({
 }: DefineOpensidianDaemonOptions = {}) {
 	return defineDaemon({
 		route,
-		title: 'Opensidian',
-		description: 'Opensidian daemon workspace',
-		workspaceId: OPENSIDIAN_WORKSPACE_ID,
 		start: ({ projectDir }) => {
 			const doc = openOpensidianDoc({ clientID: hashClientId(projectDir) });
 			const yjsLog = attachYjsLog(doc.ydoc, {
@@ -64,6 +61,7 @@ export function defineOpensidianDaemon({
 
 			return {
 				...doc,
+				workspaceId: doc.ydoc.guid,
 				yjsLog,
 				sync,
 				actions,

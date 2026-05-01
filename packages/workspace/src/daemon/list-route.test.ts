@@ -13,15 +13,16 @@ import type { Result } from 'wellcrafted/result';
 
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
 import { buildDaemonApp } from './app.js';
-import type { DaemonWorkspace, HostedDaemonWorkspace } from './types.js';
+import type { DaemonRuntime, HostedDaemonRuntime } from './types.js';
 
 type ListResult = Result<ActionManifest, never>;
 
 function fakeEntry(
 	name: string,
 	workspaceShape: Record<string, unknown> = {},
-): HostedDaemonWorkspace {
+): HostedDaemonRuntime {
 	const workspace = {
+		workspaceId: `epicenter.${name}`,
 		actions: {},
 		sync: {
 			whenConnected: Promise.resolve(),
@@ -30,7 +31,7 @@ function fakeEntry(
 			goOffline() {},
 			reconnect() {},
 			whenDisposed: Promise.resolve(),
-		} as unknown as DaemonWorkspace['sync'],
+		} as unknown as DaemonRuntime['sync'],
 		presence: {
 			peers: () => new Map(),
 			find: () => undefined,
@@ -46,17 +47,21 @@ function fakeEntry(
 				},
 			}),
 			observe: () => () => {},
-		} as unknown as DaemonWorkspace['presence'],
+		} as unknown as DaemonRuntime['presence'],
 		rpc: {
 			rpc: async () => ({ data: null, error: null }),
-		} as unknown as DaemonWorkspace['rpc'],
+		} as unknown as DaemonRuntime['rpc'],
 		...workspaceShape,
 		[Symbol.dispose]() {},
-	} satisfies DaemonWorkspace;
-	return { route: name, workspace } as HostedDaemonWorkspace;
+	} satisfies DaemonRuntime;
+	return {
+		route: name,
+		workspaceId: workspace.workspaceId,
+		workspace,
+	} as HostedDaemonRuntime;
 }
 
-async function postList(entries: HostedDaemonWorkspace[]): Promise<ListResult> {
+async function postList(entries: HostedDaemonRuntime[]): Promise<ListResult> {
 	const app = buildDaemonApp(entries);
 	const res = await app.request('/list', {
 		method: 'POST',

@@ -1,7 +1,7 @@
 /**
  * Wave 5 unit-level tests for `epicenter up`.
  *
- * These tests run `runUp` in-process with a fake `DaemonWorkspace` /
+ * These tests run `runUp` in-process with a fake `DaemonRuntime` /
  * `SyncAttachment` so we never spawn a child or call `process.exit`. The
  * cross-process e2e (real CLI binary, real relay) lands in Wave 8.
  *
@@ -23,7 +23,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { DaemonWorkspace } from '@epicenter/workspace/daemon';
+import type { DaemonRuntime } from '@epicenter/workspace/daemon';
 import {
 	bindUnixSocket,
 	metadataPathFor,
@@ -68,8 +68,9 @@ afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
 });
 
-function makeFakeWorkspace(): DaemonWorkspace {
+function makeFakeWorkspace(): DaemonRuntime {
 	return {
+		workspaceId: 'epicenter.default',
 		actions: {},
 		[Symbol.dispose]() {
 			/* no-op */
@@ -82,18 +83,20 @@ function makeFakeWorkspace(): DaemonWorkspace {
 			status: { phase: 'connected', hasLocalChanges: false },
 			onStatusChange: () => () => {},
 			// Unused fields; cast through unknown to keep the fake minimal.
-		} as unknown as DaemonWorkspace['sync'],
+		} as unknown as DaemonRuntime['sync'],
 		presence: {
 			peers: () => new Map(),
 			observe: () => () => {},
-		} as unknown as DaemonWorkspace['presence'],
-		rpc: {} as unknown as DaemonWorkspace['rpc'],
+		} as unknown as DaemonRuntime['presence'],
+		rpc: {} as unknown as DaemonRuntime['rpc'],
 	};
 }
 
-function makeFakeConfig(workspace: DaemonWorkspace): LoadConfigResult {
+function makeFakeConfig(workspace: DaemonRuntime): LoadConfigResult {
 	return {
-		entries: [{ route: 'default', workspace }],
+		entries: [
+			{ route: 'default', workspaceId: workspace.workspaceId, workspace },
+		],
 		async [Symbol.asyncDispose]() {
 			workspace[Symbol.dispose]();
 		},

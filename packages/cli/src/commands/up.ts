@@ -40,7 +40,7 @@ import {
 	type LoadConfigResult,
 	type LoadError,
 	loadConfig,
-	type HostedDaemonWorkspace,
+	type HostedDaemonRuntime,
 } from '../load-config.js';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
@@ -70,7 +70,7 @@ export type UpOptions = {
  * release resources without spawning a child.
  *
  * - `server` is the bound `net.Server` (handler dispatches IPC frames).
- * - `entries` is every hosted workspace the config declares; the daemon serves
+ * - `entries` is every hosted daemon runtime the config declares; the daemon serves
  *   them all and routes IPC requests by route.
  * - `metadata` is what was written to disk.
  * - `teardown()` closes the server, asyncDisposes the config, and unlinks
@@ -78,7 +78,7 @@ export type UpOptions = {
  */
 export type UpHandle = {
 	server: UnixSocketServer;
-	entries: HostedDaemonWorkspace[];
+	entries: HostedDaemonRuntime[];
 	config: LoadConfigResult;
 	metadata: DaemonMetadata;
 	socketPath: string;
@@ -94,7 +94,7 @@ export type RunUpDeps = {
 };
 
 /**
- * Daemon body. Idempotently sets up disk state, loads every hosted workspace,
+ * Daemon body. Idempotently sets up disk state, loads every hosted daemon runtime,
  * binds the IPC socket, and returns a handle. The
  * yargs `handler` calls this, prints the operator-facing banner, installs
  * SIGINT/SIGTERM, and parks the process; tests call it directly and
@@ -176,7 +176,7 @@ export async function runUp(
 export const upCommand = cmd({
 	command: 'up',
 	describe:
-		'Bring this config online as a long-lived peer for every hosted workspace (foreground).',
+		'Bring this config online as a long-lived peer for every hosted daemon route (foreground).',
 	builder: {
 		C: projectOption,
 		quiet: {
@@ -242,7 +242,7 @@ async function safeAsyncDispose(config: LoadConfigResult): Promise<void> {
 	}
 }
 
-function printPeersSnapshot(entry: HostedDaemonWorkspace): void {
+function printPeersSnapshot(entry: HostedDaemonRuntime): void {
 	const peers = entry.workspace.presence.peers();
 	if (peers.size === 0) {
 		process.stderr.write(`${entry.route}: no peers connected\n`);
@@ -255,7 +255,7 @@ function printPeersSnapshot(entry: HostedDaemonWorkspace): void {
 	}
 }
 
-function subscribeAwareness(entry: HostedDaemonWorkspace, quiet: boolean): void {
+function subscribeAwareness(entry: HostedDaemonRuntime, quiet: boolean): void {
 	const presence = entry.workspace.presence;
 	let prev = new Map(presence.peers());
 	presence.observe(() => {
@@ -282,7 +282,7 @@ function subscribeAwareness(entry: HostedDaemonWorkspace, quiet: boolean): void 
 	});
 }
 
-function subscribeSyncStatus(entry: HostedDaemonWorkspace): void {
+function subscribeSyncStatus(entry: HostedDaemonRuntime): void {
 	const sync = entry.workspace.sync;
 	sync.onStatusChange((status) => {
 		if (status.phase === 'connecting') {

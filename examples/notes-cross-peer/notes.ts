@@ -41,7 +41,7 @@ export function openNotes(peer: PeerDescriptor) {
 
 	const sessions = createSessionStore();
 	const sync = attachSync(ydoc, {
-		url: toWsUrl(`${SERVER_URL}/workspaces/${WORKSPACE_ID}`),
+		url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 		getToken: async () =>
 			(await sessions.load(SERVER_URL))?.accessToken ?? null,
 	});
@@ -49,6 +49,7 @@ export function openNotes(peer: PeerDescriptor) {
 	const rpc = sync.attachRpc(actions);
 
 	return {
+		workspaceId: ydoc.guid,
 		actions,
 		presence,
 		rpc,

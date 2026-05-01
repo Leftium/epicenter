@@ -52,9 +52,6 @@ export function defineFujiDaemon({
 }: DefineFujiDaemonOptions = {}) {
 	return defineDaemon({
 		route,
-		title: 'Fuji',
-		description: 'Fuji daemon workspace',
-		workspaceId: FUJI_WORKSPACE_ID,
 		start: ({ projectDir }) => {
 			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
 			attachYjsLog(doc.ydoc, {
@@ -75,6 +72,7 @@ export function defineFujiDaemon({
 			}).table(doc.tables.entries, { filename: slugFilename('title') });
 
 			return {
+				workspaceId: doc.ydoc.guid,
 				actions: doc.actions,
 				sync,
 				presence,

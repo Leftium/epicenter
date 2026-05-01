@@ -58,12 +58,12 @@ export {
 } from './daemon/server.js';
 export type {
 	DaemonHostDefinition,
-	DaemonWorkspace,
+	DaemonRuntime,
 	DefineDaemonOptions,
 	DefineEpicenterConfigOptions,
 	EpicenterConfig,
 	EpicenterConfigContext,
-	HostedDaemonWorkspace,
+	HostedDaemonRuntime,
 } from './daemon/types.js';
 export {
 	bindOrRecover,

@@ -1,6 +1,6 @@
 export {
 	type DaemonHostDefinition,
-	type DaemonWorkspace,
+	type DaemonRuntime,
 	type DefineDaemonOptions,
 	type DefineEpicenterConfigOptions,
 	defineDaemon,
@@ -9,5 +9,5 @@ export {
 	EPICENTER_DAEMON_HOST,
 	type EpicenterConfig,
 	type EpicenterConfigContext,
-	type HostedDaemonWorkspace,
+	type HostedDaemonRuntime,
 } from './types.js';

@@ -188,6 +188,7 @@ const presence = sync.attachPresence({
 const rpc = sync.attachRpc(actions);
 
 export const opensidian = {
+	workspaceId: ydoc.guid,
 	whenReady,
 	actions,
 	sync,
@@ -212,8 +213,6 @@ export default defineEpicenterConfig({
 	hosts: [
 		defineDaemon({
 			route: 'opensidian',
-			title: 'Opensidian',
-			workspaceId: WORKSPACE_ID,
 			start: () => opensidian,
 		}),
 	],

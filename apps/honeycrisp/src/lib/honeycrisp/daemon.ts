@@ -42,9 +42,6 @@ export function defineHoneycrispDaemon({
 }: DefineHoneycrispDaemonOptions = {}) {
 	return defineDaemon({
 		route,
-		title: 'Honeycrisp',
-		description: 'Honeycrisp daemon workspace',
-		workspaceId: HONEYCRISP_WORKSPACE_ID,
 		start: ({ projectDir }) => {
 			const doc = openHoneycrispDoc({ clientID: hashClientId(projectDir) });
 			const yjsLog = attachYjsLog(doc.ydoc, {
@@ -60,6 +57,7 @@ export function defineHoneycrispDaemon({
 
 			return {
 				...doc,
+				workspaceId: doc.ydoc.guid,
 				yjsLog,
 				sync,
 				presence,

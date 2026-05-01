@@ -11,9 +11,9 @@ import { PeerMiss, type SyncRpcAttachment } from '../document/attach-sync.js';
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { HostedDaemonWorkspace } from './types.js';
+import type { HostedDaemonRuntime } from './types.js';
 
-type Workspace = HostedDaemonWorkspace['workspace'];
+type Workspace = HostedDaemonRuntime['workspace'];
 
 function fakePresence(
 	overrides: Partial<PeerPresenceAttachment> = {},
@@ -59,6 +59,7 @@ function fakeWorkspace(
 	extra: Record<string, unknown> = {},
 ): Workspace {
 	return {
+		workspaceId: 'epicenter.demo',
 		actions,
 		sync: fakeSync(),
 		presence: fakePresence(),
@@ -71,7 +72,7 @@ function fakeWorkspace(
 function fakeEntry(
 	presence: Partial<PeerPresenceAttachment> = {},
 	rpc: Partial<SyncRpcAttachment> = {},
-): HostedDaemonWorkspace {
+): HostedDaemonRuntime {
 	const workspace = fakeWorkspace(
 		{
 			tabs: {
@@ -86,7 +87,7 @@ function fakeEntry(
 		},
 	);
 
-	return { route: 'demo', workspace };
+	return { route: 'demo', workspaceId: workspace.workspaceId, workspace };
 }
 
 describe('executeRun peer dispatch', () => {
@@ -167,15 +168,19 @@ describe('executeRun peer dispatch', () => {
 
 describe('executeRun route-prefixed routing', () => {
 	test('invokes action under the selected daemon route', async () => {
-		const workspace = fakeWorkspace({
-			notes: {
-				add: defineMutation({
-					handler: () => ({ body: 'hello' }),
-				}),
+		const workspace = fakeWorkspace(
+			{
+				notes: {
+					add: defineMutation({
+						handler: () => ({ body: 'hello' }),
+					}),
+				},
 			},
-		});
+			{ workspaceId: 'epicenter.notes' },
+		);
 		const entry = {
 			route: 'notes',
+			workspaceId: workspace.workspaceId,
 			workspace,
 		};
 
@@ -193,6 +198,7 @@ describe('executeRun route-prefixed routing', () => {
 		const workspace = fakeWorkspace(
 			{},
 			{
+				workspaceId: 'epicenter.notes',
 				notes: {
 					add: defineMutation({
 						handler: () => ({ body: 'hello' }),
@@ -202,6 +208,7 @@ describe('executeRun route-prefixed routing', () => {
 		);
 		const entry = {
 			route: 'notes',
+			workspaceId: workspace.workspaceId,
 			workspace,
 		};
 
@@ -215,15 +222,20 @@ describe('executeRun route-prefixed routing', () => {
 	});
 
 	test('missing path suggests action-root-relative sibling', async () => {
-		const entry = {
-			route: 'notes',
-			workspace: fakeWorkspace({
+		const workspace = fakeWorkspace(
+			{
 				notes: {
 					add: defineMutation({
 						handler: () => ({ body: 'hello' }),
 					}),
 				},
-			}),
+			},
+			{ workspaceId: 'epicenter.notes' },
+		);
+		const entry = {
+			route: 'notes',
+			workspaceId: workspace.workspaceId,
+			workspace,
 		};
 
 		const result = await executeRun([entry], {
@@ -245,7 +257,8 @@ describe('executeRun route-prefixed routing', () => {
 				fakeEntry({}),
 				{
 					route: 'tasks',
-					workspace: fakeWorkspace({}),
+					workspaceId: 'epicenter.tasks',
+					workspace: fakeWorkspace({}, { workspaceId: 'epicenter.tasks' }),
 				},
 			],
 			{

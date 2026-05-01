@@ -42,9 +42,6 @@ export function defineZhongwenDaemon({
 }: DefineZhongwenDaemonOptions = {}) {
 	return defineDaemon({
 		route,
-		title: 'Zhongwen',
-		description: 'Zhongwen daemon workspace',
-		workspaceId: ZHONGWEN_WORKSPACE_ID,
 		start: ({ projectDir }) => {
 			const doc = openZhongwenDoc({ clientID: hashClientId(projectDir) });
 			const yjsLog = attachYjsLog(doc.ydoc, {
@@ -61,6 +58,7 @@ export function defineZhongwenDaemon({
 
 			return {
 				...doc,
+				workspaceId: doc.ydoc.guid,
 				yjsLog,
 				sync,
 				presence,

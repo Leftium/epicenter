@@ -61,7 +61,13 @@ describe('daemon to script handoff via Yjs log file', () => {
 		process.env.XDG_RUNTIME_DIR = '/tmp';
 		const server = createDaemonServer({
 			projectDir: workdir,
-			workspaces: [{ route: daemonDefinition.route, workspace: daemon }],
+			workspaces: [
+				{
+					route: daemonDefinition.route,
+					workspaceId: daemon.workspaceId,
+					workspace: daemon,
+				},
+			],
 		});
 		try {
 			const listening = await server.listen();

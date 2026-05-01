@@ -35,7 +35,7 @@ import { findEpicenterDir } from './find-epicenter-dir.js';
 /**
  * Connect to a workspace's public actions hosted by a running daemon.
  *
- * `route` is the hosted workspace route from `epicenter.config.ts`. The daemon
+ * `route` is the hosted daemon route from `epicenter.config.ts`. The daemon
  * uses it as the first segment of every action path, then dispatches the
  * remaining path against that workspace.
  *

@@ -51,7 +51,7 @@ export const runCommand = cmd({
 			.positional('action', {
 				type: 'string',
 				demandOption: true,
-				describe: 'Export-prefixed action path, e.g. notes.notes.add',
+				describe: 'Route-prefixed action path, e.g. notes.notes.add',
 			})
 			.positional('input', {
 				type: 'string',

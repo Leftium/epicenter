@@ -63,6 +63,7 @@ const rpc = {
 } as unknown as SyncRpcAttachment;
 
 export const demo = {
+	workspaceId: ydoc.guid,
 	actions: {
 		counter: {
 			get: defineQuery({
@@ -101,8 +102,6 @@ export default defineEpicenterConfig({
 	hosts: [
 		defineDaemon({
 			route: 'demo',
-			title: 'Demo',
-			workspaceId: 'epicenter.demo',
 			start: () => demo,
 		}),
 	],

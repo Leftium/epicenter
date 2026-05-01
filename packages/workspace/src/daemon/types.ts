@@ -1,13 +1,13 @@
 /**
- * Daemon-side types describing the shape of a hosted workspace.
+ * Daemon-side types describing the shape of a hosted daemon runtime.
  *
- * `DaemonHostDefinition` is the config-time contract: route metadata plus a
- * delayed `start()` function. `DaemonWorkspace` is the runtime contract every
- * started daemon host has to satisfy: lifecycle hook, required
+ * `DaemonHostDefinition` is the config-time contract: route plus a delayed
+ * `start()` function. `DaemonRuntime` is the runtime contract every started
+ * daemon host has to satisfy: workspace identity, lifecycle hook, required
  * `actions` root, sync transport, peer presence, and RPC attachments.
  *
- * `HostedDaemonWorkspace` is one routed entry the daemon hosts internally. The CLI's
- * config loader opens definitions from the default
+ * `HostedDaemonRuntime` is one routed runtime the daemon hosts internally.
+ * The CLI's config loader opens definitions from the default
  * `defineEpicenterConfig({ hosts })` export in `epicenter.config.ts`.
  */
 
@@ -32,11 +32,14 @@ export type EpicenterConfigContext = {
 };
 
 /**
- * Fields the daemon looks at on each started workspace.
+ * Fields the daemon looks at on each started runtime.
  */
-export type DaemonWorkspace = {
+export type DaemonRuntime = {
 	/** Called by the daemon at exit. */
 	[Symbol.dispose](): void;
+
+	/** Stable workspace identity. Usually the hosted Y.Doc guid. */
+	readonly workspaceId: string;
 
 	/**
 	 * Canonical public action root. Daemon paths are relative to this object:
@@ -53,39 +56,27 @@ export type DaemonWorkspace = {
 };
 
 export type DaemonHostDefinition<
-	TWorkspace extends DaemonWorkspace = DaemonWorkspace,
+	TRuntime extends DaemonRuntime = DaemonRuntime,
 > = {
 	[EPICENTER_DAEMON_HOST]: true;
 	route: string;
-	title?: string;
-	description?: string;
-	workspaceId?: string;
-	start(options: EpicenterConfigContext): MaybePromise<TWorkspace>;
+	start(options: EpicenterConfigContext): MaybePromise<TRuntime>;
 };
 
 export type DefineDaemonOptions<
-	TWorkspace extends DaemonWorkspace = DaemonWorkspace,
+	TRuntime extends DaemonRuntime = DaemonRuntime,
 > = {
 	route: string;
-	title?: string;
-	description?: string;
-	workspaceId?: string;
-	start(options: EpicenterConfigContext): MaybePromise<TWorkspace>;
+	start(options: EpicenterConfigContext): MaybePromise<TRuntime>;
 };
 
-export function defineDaemon<TWorkspace extends DaemonWorkspace>({
+export function defineDaemon<TRuntime extends DaemonRuntime>({
 	route,
-	title,
-	description,
-	workspaceId,
 	start,
-}: DefineDaemonOptions<TWorkspace>): DaemonHostDefinition<TWorkspace> {
+}: DefineDaemonOptions<TRuntime>): DaemonHostDefinition<TRuntime> {
 	return Object.freeze({
 		[EPICENTER_DAEMON_HOST]: true as const,
 		route,
-		title,
-		description,
-		workspaceId,
 		start,
 	});
 }
@@ -108,8 +99,9 @@ export function defineEpicenterConfig({
 	});
 }
 
-/** One routed workspace hosted by the daemon. */
-export type HostedDaemonWorkspace = {
+/** One routed daemon runtime hosted by the daemon. */
+export type HostedDaemonRuntime = {
 	route: string;
-	workspace: DaemonWorkspace;
+	workspaceId: string;
+	workspace: DaemonRuntime;
 };

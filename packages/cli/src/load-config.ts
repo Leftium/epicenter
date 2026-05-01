@@ -3,7 +3,7 @@
  *
  * `epicenter.config.ts` is a daemon host manifest. The loader reads the
  * default `defineEpicenterConfig({ hosts })` export, validates host definitions,
- * starts them with project context, and returns the internal `HostedDaemonWorkspace[]`
+ * starts them with project context, and returns the internal `HostedDaemonRuntime[]`
  * used by the daemon server.
  */
 
@@ -15,10 +15,10 @@ import type {
 } from '@epicenter/workspace';
 import {
 	type DaemonHostDefinition,
-	type DaemonWorkspace,
+	type DaemonRuntime,
 	EPICENTER_CONFIG,
 	EPICENTER_DAEMON_HOST,
-	type HostedDaemonWorkspace,
+	type HostedDaemonRuntime,
 } from '@epicenter/workspace/daemon';
 import {
 	defineErrors,
@@ -29,15 +29,15 @@ import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
-export type { DaemonWorkspace, HostedDaemonWorkspace };
+export type { DaemonRuntime, HostedDaemonRuntime };
 
 /** Per-peer awareness state under the standard peer schema. */
 export type AwarenessState = PeerAwarenessState;
 
 export type LoadConfigResult = {
-	entries: HostedDaemonWorkspace[];
+	entries: HostedDaemonRuntime[];
 	/**
-	 * Release every hosted workspace. Host teardown starts by destroying the
+	 * Release every hosted daemon runtime. Host teardown starts by destroying the
 	 * Y.Doc, then the loader awaits sync teardown barriers exposed by hosts.
 	 */
 	[Symbol.asyncDispose](): Promise<void>;
@@ -116,7 +116,7 @@ export const LoadError = defineErrors({
 	}) => ({
 		message:
 			`Invalid daemon host ${index} in ${configPath}: ` +
-			`expected a daemon runtime with actions, sync teardown/status, ` +
+			`expected a daemon runtime with workspaceId, actions, sync teardown/status, ` +
 			`presence peers/observe/waitForPeer, rpc.rpc, and [Symbol.dispose].`,
 		configPath,
 		index,
@@ -171,10 +171,12 @@ function isDaemonHostDefinition(value: unknown): value is DaemonHostDefinition {
 	);
 }
 
-function isDaemonWorkspace(value: unknown): value is DaemonWorkspace {
+function isDaemonRuntime(value: unknown): value is DaemonRuntime {
 	if (value == null || typeof value !== 'object') return false;
 	const record = value as Record<PropertyKey, unknown>;
 	return (
+		typeof record.workspaceId === 'string' &&
+		record.workspaceId.length > 0 &&
 		isPlainObject(record.actions) &&
 		isSyncRuntime(record.sync) &&
 		isPresenceRuntime(record.presence) &&
@@ -220,7 +222,7 @@ function isValidRoute(route: string): boolean {
 	return ROUTE_PATTERN.test(route) && !OBJECT_DANGEROUS_ROUTE_KEYS.has(route);
 }
 
-async function disposeHosts(hosts: DaemonWorkspace[]): Promise<void> {
+async function disposeHosts(hosts: DaemonRuntime[]): Promise<void> {
 	const barriers: Promise<unknown>[] = [];
 	for (const host of hosts) {
 		barriers.push(host.sync.whenDisposed);
@@ -270,24 +272,28 @@ export async function loadConfig(
 		definitions.push(definition);
 	}
 
-	const entries: HostedDaemonWorkspace[] = [];
+	const entries: HostedDaemonRuntime[] = [];
 
 	for (const [index, definition] of definitions.entries()) {
 		let workspace: unknown;
 		try {
-			workspace = await definition.start({ projectDir, configDir });
+			workspace = await definition.start({
+				projectDir,
+				configDir,
+			});
 		} catch (cause) {
 			await disposeHosts(entries.map((entry) => entry.workspace));
 			return LoadError.HostFailed({ configPath, index, cause });
 		}
 
-		if (!isDaemonWorkspace(workspace)) {
+		if (!isDaemonRuntime(workspace)) {
 			await disposeHosts(entries.map((entry) => entry.workspace));
 			return LoadError.InvalidHost({ configPath, index });
 		}
 
 		entries.push({
 			route: definition.route,
+			workspaceId: workspace.workspaceId,
 			workspace,
 		});
 	}

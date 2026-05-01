@@ -341,7 +341,7 @@ connectDaemonActions()
 ```
 
 ```txt
-createRemoteActions()
+createRemoteClient().actions()
   local workspace peer
     │ presence.find(peerId)
     ▼
@@ -352,7 +352,7 @@ createRemoteActions()
 ```
 
 Use `connectDaemonActions()` when a script wants to call the project-local
-`epicenter up` process by route key. Use `createRemoteActions()` when an
+`epicenter up` process by route key. Use `createRemoteClient()` when an
 already-open workspace peer wants to call another peer by presence id over sync
 RPC.
 
@@ -566,13 +566,13 @@ export function openFujiDaemonActions({
 
 `connectDaemon<TWorkspace>()` should be removed in the clean break. It made callers pass a workspace shape even though the runtime returned only an action proxy. `connectDaemonActions<TActions>()` takes the action root type directly.
 
-`connectDaemonActions()` should not be confused with `createRemoteActions()`.
+`connectDaemonActions()` should not be confused with `createRemoteClient()`.
 They both return typed action proxies, but their address spaces are different:
 
 | API | Address | Transport | Caller has |
 | --- | --- | --- | --- |
 | `connectDaemonActions<TActions>({ route })` | config route key, e.g. `fuji` | local Unix socket | project directory |
-| `createRemoteActions<TActions>({ presence, rpc }, peerId)` | presence peer id, e.g. `macbook` | sync RPC | live workspace peer |
+| `createRemoteClient({ presence, rpc }).actions<TActions>(peerId)` | presence peer id, e.g. `macbook` | sync RPC | live workspace peer |
 
 If a project customizes the route, both the host and action helper take the same override:
 

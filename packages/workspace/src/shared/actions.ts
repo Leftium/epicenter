@@ -26,7 +26,7 @@
  * preserves existing Results, and catches throws as `RpcError.ActionFailed`.
  * RPC uses `invokeActionForRpc`, which also converts custom non-RPC errors
  * into `RpcError.ActionFailed` before the result crosses the wire. Remote
- * callers use `createRemoteActions`, whose leaves expose
+ * callers use `createRemoteClient().actions(peerId)`, whose leaves expose
  * `Promise<Result<T, RpcError>>`.
  *
  * @module
@@ -90,7 +90,7 @@ export type ActionMeta<
 /**
  * Flat dot-path to `ActionMeta` map describing a peer's full action surface.
  * Returned by the runtime-injected `system.describe` RPC and consumed via
- * `describeRemoteActions({ presence, rpc }, peerId)`.
+ * `createRemoteClient({ presence, rpc }).describe(peerId)`.
  */
 export type ActionManifest = Record<string, ActionMeta>;
 
@@ -153,7 +153,7 @@ export type SystemActions = {
  * Returns the handler with metadata attached. The action callable IS the
  * handler. Local callers see whatever the handler returns (sync if sync,
  * raw if raw, `Result` if explicit). Remote/AI/CLI consumers see uniform
- * `Promise<Result>` via the boundary normalizers (`createRemoteActions()` for
+ * `Promise<Result>` via the boundary normalizers (`createRemoteClient()` for
  * callers, `invokeActionForRpc()` for the inbound wire).
  */
 /** No input. `TInput` is explicitly `undefined`. */
@@ -308,7 +308,7 @@ export function* walkActions(
 /**
  * Walk a tree into its flat `ActionManifest`: the wire form returned by
  * `system.describe`. Live `input` schemas are retained; functions are
- * dropped. Pairs with `describeRemoteActions({ presence, rpc }, peerId)`,
+ * dropped. Pairs with `createRemoteClient({ presence, rpc }).describe(peerId)`,
  * which returns the same shape from a remote peer.
  *
  * Built atop {@link walkActions}. Use that primitive directly if you want

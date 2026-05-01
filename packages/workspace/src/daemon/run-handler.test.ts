@@ -11,9 +11,9 @@ import { PeerMiss, type SyncRpcAttachment } from '../document/attach-sync.js';
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { DaemonRuntimeEntry } from './types.js';
+import type { DaemonRouteRuntime } from './types.js';
 
-type Workspace = DaemonRuntimeEntry['workspace'];
+type Runtime = DaemonRouteRuntime['runtime'];
 
 function fakePresence(
 	overrides: Partial<PeerPresenceAttachment> = {},
@@ -41,7 +41,7 @@ function fakeRpc(overrides: Partial<SyncRpcAttachment> = {}): SyncRpcAttachment 
 	} as SyncRpcAttachment;
 }
 
-function fakeSync(): Workspace['sync'] {
+function fakeSync(): Runtime['sync'] {
 	return {
 		whenConnected: Promise.resolve(),
 		status: { phase: 'connected', hasLocalChanges: false },
@@ -51,13 +51,13 @@ function fakeSync(): Workspace['sync'] {
 		whenDisposed: Promise.resolve(),
 		attachPresence: () => fakePresence(),
 		attachRpc: () => fakeRpc(),
-	} as Workspace['sync'];
+	} as Runtime['sync'];
 }
 
-function fakeWorkspace(
-	actions: Workspace['actions'],
+function fakeRuntime(
+	actions: Runtime['actions'],
 	extra: Record<string, unknown> = {},
-): Workspace {
+): Runtime {
 	return {
 		actions,
 		sync: fakeSync(),
@@ -71,8 +71,8 @@ function fakeWorkspace(
 function fakeEntry(
 	presence: Partial<PeerPresenceAttachment> = {},
 	rpc: Partial<SyncRpcAttachment> = {},
-): DaemonRuntimeEntry {
-	const workspace = fakeWorkspace(
+): DaemonRouteRuntime {
+	const runtime = fakeRuntime(
 		{
 			tabs: {
 				list: defineQuery({
@@ -86,7 +86,7 @@ function fakeEntry(
 		},
 	);
 
-	return { route: 'demo', workspace };
+	return { route: 'demo', runtime };
 }
 
 describe('executeRun peer dispatch', () => {
@@ -167,7 +167,7 @@ describe('executeRun peer dispatch', () => {
 
 describe('executeRun route-prefixed routing', () => {
 	test('invokes action under the selected daemon route', async () => {
-		const workspace = fakeWorkspace(
+		const runtime = fakeRuntime(
 			{
 				notes: {
 					add: defineMutation({
@@ -178,7 +178,7 @@ describe('executeRun route-prefixed routing', () => {
 		);
 		const entry = {
 			route: 'notes',
-			workspace,
+			runtime,
 		};
 
 		const result = await executeRun([entry], {
@@ -192,7 +192,7 @@ describe('executeRun route-prefixed routing', () => {
 	});
 
 	test('ignores action leaves outside the canonical action root', async () => {
-		const workspace = fakeWorkspace(
+		const runtime = fakeRuntime(
 			{},
 			{
 				notes: {
@@ -204,7 +204,7 @@ describe('executeRun route-prefixed routing', () => {
 		);
 		const entry = {
 			route: 'notes',
-			workspace,
+			runtime,
 		};
 
 		const result = await executeRun([entry], {
@@ -217,7 +217,7 @@ describe('executeRun route-prefixed routing', () => {
 	});
 
 	test('missing path suggests action-root-relative sibling', async () => {
-		const workspace = fakeWorkspace(
+		const runtime = fakeRuntime(
 			{
 				notes: {
 					add: defineMutation({
@@ -228,7 +228,7 @@ describe('executeRun route-prefixed routing', () => {
 		);
 		const entry = {
 			route: 'notes',
-			workspace,
+			runtime,
 		};
 
 		const result = await executeRun([entry], {
@@ -250,7 +250,7 @@ describe('executeRun route-prefixed routing', () => {
 				fakeEntry({}),
 				{
 					route: 'tasks',
-					workspace: fakeWorkspace({}),
+					runtime: fakeRuntime({}),
 				},
 			],
 			{

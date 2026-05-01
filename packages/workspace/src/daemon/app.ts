@@ -5,8 +5,8 @@
  *
  * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  workspace.presence.peers()                    all routes
- *   /list   ->  describeActions({ route: workspace.actions }) all routes
+ *   /peers  ->  runtime.presence.peers()                    all routes
+ *   /list   ->  describeActions({ route: runtime.actions }) all routes
  *   /run    ->  invokeAction(...) | rpc.rpc(...)              route-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
@@ -22,7 +22,7 @@ import { Ok } from 'wellcrafted/result';
 import { Peer } from '../document/standard-awareness-defs.js';
 import { describeActions } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { DaemonRuntimeEntry } from './types.js';
+import type { DaemonRouteRuntime } from './types.js';
 
 /**
  * Wire body for `/run`. The schema serves two roles:
@@ -67,15 +67,15 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * path locally or over RPC.
  */
 export function buildDaemonApp(
-	entries: DaemonRuntimeEntry[],
+	runtimes: DaemonRouteRuntime[],
 	triggerShutdown?: () => void,
 ) {
 	return new Hono()
 		.post('/ping', (c) => c.json(Ok('pong' as const)))
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
-			for (const entry of entries) {
-				const peers = entry.workspace.presence.peers();
+			for (const entry of runtimes) {
+				const peers = entry.runtime.presence.peers();
 				for (const [clientID, state] of peers) {
 					rows.push({
 						route: entry.route,
@@ -88,13 +88,13 @@ export function buildDaemonApp(
 		})
 		.post('/list', (c) => {
 			const actionRoots = Object.fromEntries(
-				entries.map((entry) => [entry.route, entry.workspace.actions]),
+				runtimes.map((entry) => [entry.route, entry.runtime.actions]),
 			);
 			return c.json(Ok(describeActions(actionRoots)));
 		})
 		.post('/run', sValidator('json', RunRequest), async (c) => {
 			const request = c.req.valid('json');
-			return c.json(await executeRun(entries, request));
+			return c.json(await executeRun(runtimes, request));
 		})
 		.post('/shutdown', (c) => {
 			setTimeout(() => triggerShutdown?.(), 0);

@@ -3,8 +3,8 @@
  *
  * `epicenter.config.ts` is a project config with daemon routes. The loader
  * reads the default `{ daemon: { routes } }` export, validates route names,
- * starts route modules with project context, and returns the internal
- * `DaemonRuntimeEntry[]` used by the daemon server.
+ * starts route modules with project context, and returns the route runtimes
+ * used by the daemon server.
  */
 
 import { join, resolve } from 'node:path';
@@ -12,7 +12,7 @@ import type { PeerAwarenessState, ProjectDir } from '@epicenter/workspace';
 import {
 	type DaemonRouteModule,
 	type DaemonRuntime,
-	type DaemonRuntimeEntry,
+	type DaemonRouteRuntime,
 } from '@epicenter/workspace/daemon';
 import {
 	defineErrors,
@@ -23,13 +23,13 @@ import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
-export type { DaemonRuntime, DaemonRuntimeEntry };
+export type { DaemonRuntime, DaemonRouteRuntime };
 
 /** Per-peer awareness state under the standard peer schema. */
 export type AwarenessState = PeerAwarenessState;
 
 export type LoadConfigResult = {
-	entries: DaemonRuntimeEntry[];
+	runtimes: DaemonRouteRuntime[];
 	/**
 	 * Release every daemon runtime. Teardown starts by destroying the Y.Doc,
 	 * then the loader awaits sync teardown barriers exposed by each runtime.
@@ -215,17 +215,17 @@ export async function loadConfig(
 		definitions.push({ route, module: routeModule as DaemonRouteModule });
 	}
 
-	const entries: DaemonRuntimeEntry[] = [];
+	const runtimes: DaemonRouteRuntime[] = [];
 
 	for (const definition of definitions) {
-		let workspace: unknown;
+		let runtime: unknown;
 		try {
-			workspace = await definition.module({
+			runtime = await definition.module({
 				projectDir,
 				route: definition.route,
 			});
 		} catch (cause) {
-			await disposeRuntimes(entries.map((entry) => entry.workspace));
+			await disposeRuntimes(runtimes.map((entry) => entry.runtime));
 			return LoadError.RouteFailed({
 				configPath,
 				route: definition.route,
@@ -233,24 +233,24 @@ export async function loadConfig(
 			});
 		}
 
-		if (!hasDaemonRuntimeShape(workspace)) {
-			await disposeRuntimes(entries.map((entry) => entry.workspace));
+		if (!hasDaemonRuntimeShape(runtime)) {
+			await disposeRuntimes(runtimes.map((entry) => entry.runtime));
 			return LoadError.InvalidRouteRuntime({
 				configPath,
 				route: definition.route,
 			});
 		}
 
-		entries.push({
+		runtimes.push({
 			route: definition.route,
-			workspace,
+			runtime,
 		});
 	}
 
 	return Ok({
-		entries,
+		runtimes,
 		[Symbol.asyncDispose]() {
-			return disposeRuntimes(this.entries.map((entry) => entry.workspace));
+			return disposeRuntimes(this.runtimes.map((entry) => entry.runtime));
 		},
 	});
 }

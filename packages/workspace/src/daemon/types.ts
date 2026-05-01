@@ -6,7 +6,7 @@
  * route has to satisfy: lifecycle hook, required `actions` root, sync
  * transport, peer presence, and RPC attachments.
  *
- * `DaemonRuntimeEntry` is one routed runtime the daemon serves internally. The
+ * `DaemonRouteRuntime` is one routed runtime the daemon serves internally. The
  * CLI's config loader opens route modules from the default `{ daemon: { routes } }`
  * export in `epicenter.config.ts`.
  */
@@ -66,7 +66,7 @@ export function defineEpicenterConfig<
 }
 
 /** One routed daemon runtime hosted by the daemon. */
-export type DaemonRuntimeEntry = {
+export type DaemonRouteRuntime = {
 	route: string;
-	workspace: DaemonRuntime;
+	runtime: DaemonRuntime;
 };

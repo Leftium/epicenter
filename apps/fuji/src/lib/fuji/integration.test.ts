@@ -81,10 +81,10 @@ describe('daemon to script handoff via Yjs log file', () => {
 		process.env.XDG_RUNTIME_DIR = '/tmp';
 		const server = createDaemonServer({
 			projectDir: workdir,
-			entries: [
+			runtimes: [
 				{
 					route: FUJI_DAEMON_ROUTE,
-					workspace: daemon,
+					runtime: daemon,
 				},
 			],
 		});

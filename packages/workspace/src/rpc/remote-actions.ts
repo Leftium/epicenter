@@ -15,6 +15,24 @@ export type RemoteActionTransport = {
 	rpc: SyncRpcAttachment;
 };
 
+export type RemoteClient = {
+	actions<T>(peerId: string): RemoteActionProxy<T>;
+	describe(peerId: string): Promise<Result<ActionManifest, RpcError>>;
+};
+
+export function createRemoteClient(
+	transport: RemoteActionTransport,
+): RemoteClient {
+	return {
+		actions<T>(peerId: string) {
+			return createRemoteActions<T>(transport, peerId);
+		},
+		describe(peerId: string) {
+			return describeRemoteActions(transport, peerId);
+		},
+	};
+}
+
 export function createRemoteActions<T>(
 	transport: RemoteActionTransport,
 	peerId: string,

@@ -24,10 +24,10 @@ import {
 } from '../shared/actions.js';
 import type { RunRequest } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
-import type { DaemonRuntimeEntry } from './types.js';
+import type { DaemonRouteRuntime } from './types.js';
 
 type DaemonActionTarget = {
-	entry: DaemonRuntimeEntry;
+	entry: DaemonRouteRuntime;
 	localPath: string;
 };
 
@@ -37,10 +37,10 @@ type DaemonRouteError = {
 };
 
 export async function executeRun(
-	entries: DaemonRuntimeEntry[],
+	runtimes: DaemonRouteRuntime[],
 	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
-	const target = resolveDaemonActionTarget(entries, actionPath);
+	const target = resolveDaemonActionTarget(runtimes, actionPath);
 	if (target.error !== null) {
 		return RunError.UsageError({
 			message: `No daemon route "${target.error.routeName}". Available: ${target.error.available.join(', ')}`,
@@ -49,9 +49,9 @@ export async function executeRun(
 	}
 
 	const { entry, localPath } = target.data;
-	const { workspace } = entry;
+	const { runtime } = entry;
 
-	const action = resolveActionPath(workspace.actions, localPath);
+	const action = resolveActionPath(runtime.actions, localPath);
 	if (!action) {
 		const descendants = daemonActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {
@@ -84,19 +84,19 @@ export async function executeRun(
 }
 
 function resolveDaemonActionTarget(
-	entries: DaemonRuntimeEntry[],
+	runtimes: DaemonRouteRuntime[],
 	actionPath: string,
 ):
 	| { data: DaemonActionTarget; error: null }
 	| { data: null; error: DaemonRouteError } {
 	const [routeName = '', ...rest] = actionPath.split('.');
-	const entry = entries.find((candidate) => candidate.route === routeName);
+	const entry = runtimes.find((candidate) => candidate.route === routeName);
 	if (!entry) {
 		return {
 			data: null,
 			error: {
 				routeName,
-				available: entries.map((candidate) => candidate.route),
+				available: runtimes.map((candidate) => candidate.route),
 			},
 		};
 	}
@@ -117,15 +117,15 @@ async function invokeRemote({
 	waitMs,
 }: {
 	actionInput: unknown;
-	entry: DaemonRuntimeEntry;
+	entry: DaemonRouteRuntime;
 	localPath: string;
 	peerTarget: string;
 	waitMs: number;
 }): Promise<RunResponse> {
-	const { workspace } = entry;
+	const { runtime } = entry;
 
 	const start = Date.now();
-	const found = await workspace.presence.waitForPeer(peerTarget, {
+	const found = await runtime.presence.waitForPeer(peerTarget, {
 		timeoutMs: waitMs,
 	});
 	if (found.error !== null) {
@@ -139,7 +139,7 @@ async function invokeRemote({
 
 	const { clientId: targetClientId, state: peerState } = found.data;
 	const remaining = Math.max(1, waitMs - (Date.now() - start));
-	const result = await workspace.rpc.rpc(targetClientId, localPath, actionInput, {
+	const result = await runtime.rpc.rpc(targetClientId, localPath, actionInput, {
 		timeout: remaining,
 	});
 
@@ -154,17 +154,17 @@ async function invokeRemote({
 }
 
 function toDaemonActionPath(
-	entry: DaemonRuntimeEntry,
+	entry: DaemonRouteRuntime,
 	localPath: string,
 ): string {
 	return localPath ? `${entry.route}.${localPath}` : entry.route;
 }
 
 function daemonActionSuggestionLines(
-	entry: DaemonRuntimeEntry,
+	entry: DaemonRouteRuntime,
 	prefix: string,
 ): string[] {
-	const entries = [...walkActions(entry.workspace.actions)];
+	const entries = [...walkActions(entry.runtime.actions)];
 	const descendants = entriesUnder(entries, prefix);
 	return descendants.map(
 		([path, action]) =>
@@ -173,10 +173,10 @@ function daemonActionSuggestionLines(
 }
 
 function daemonActionNearestSiblingLines(
-	entry: DaemonRuntimeEntry,
+	entry: DaemonRouteRuntime,
 	missedPath: string,
 ): string[] {
-	const entries = [...walkActions(entry.workspace.actions)];
+	const entries = [...walkActions(entry.runtime.actions)];
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();

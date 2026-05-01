@@ -75,8 +75,8 @@ describe('loadConfig', () => {
 		const result = await loadConfig(workDir);
 
 		expect(result.error).toBeNull();
-		expect(result.data?.entries.map((entry) => entry.route)).toEqual(['demo']);
-		const paths = result.data?.entries[0]?.workspace.actions.paths as
+		expect(result.data?.runtimes.map((entry) => entry.route)).toEqual(['demo']);
+		const paths = result.data?.runtimes[0]?.runtime.actions.paths as
 			| {
 					projectDir: { handler(): string };
 					route: { handler(): string };
@@ -130,7 +130,7 @@ describe('loadConfig', () => {
 		const result = await loadConfig(workDir);
 
 		expect(result.error).toBeNull();
-		expect(result.data?.entries[0]?.route).toBe('demo');
+		expect(result.data?.runtimes[0]?.route).toBe('demo');
 		await result.data?.[Symbol.asyncDispose]();
 	});
 

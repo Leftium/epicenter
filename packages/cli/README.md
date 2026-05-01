@@ -86,8 +86,9 @@ prefixed by route. `run` is local by default and remote when `--peer
 target moves.
 
 Fan-out across peers (e.g. "who exposes action X?") is a five-line
-script that walks `workspace.presence.peers()` and calls `describeRemoteActions`
-on each. The CLI deliberately does not grow a flag for it.
+script that walks `workspace.presence.peers()` and calls
+`createRemoteClient({ presence, rpc }).describe(peerId)` on each. The CLI
+deliberately does not grow a flag for it.
 
 Peer presence has a ~30s liveness window (inherited from Yjs awareness): a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--wait <ms>` expires (default 5000). `peers` reads the current awareness snapshot one-shot.
 
@@ -316,7 +317,7 @@ for scripts for everything else.
 ```ts
 import {
     createCLI,              // binary entry (used by bin.ts)
-    loadConfig,             // { entries: [{ route, workspace }], asyncDispose }
+    loadConfig,             // { runtimes: [{ route, runtime }], asyncDispose }
     createAuthApi,          // typed Better Auth client
 } from '@epicenter/cli';
 ```

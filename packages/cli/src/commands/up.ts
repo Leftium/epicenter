@@ -37,7 +37,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import {
 	CONFIG_FILENAME,
-	type DaemonRuntimeEntry,
+	type DaemonRouteRuntime,
 	type LoadConfigResult,
 	type LoadError,
 	loadConfig,
@@ -70,15 +70,15 @@ export type UpOptions = {
  * release resources without spawning a child.
  *
  * - `server` is the bound `net.Server` (handler dispatches IPC frames).
- * - `entries` is every hosted daemon runtime the config declares; the daemon serves
- *   them all and routes IPC requests by route.
+ * - `runtimes` is every hosted daemon runtime the config declares; the daemon
+ *   serves them all and routes IPC requests by route.
  * - `metadata` is what was written to disk.
  * - `teardown()` closes the server, asyncDisposes the config, and unlinks
  *   metadata + socket. Idempotent.
  */
 export type UpHandle = {
 	server: UnixSocketServer;
-	entries: DaemonRuntimeEntry[];
+	runtimes: DaemonRouteRuntime[];
 	config: LoadConfigResult;
 	metadata: DaemonMetadata;
 	socketPath: string;
@@ -121,7 +121,7 @@ export async function runUp(
 	// successful retry, so the writeMetadata below records *our* pid.
 	const daemonServer = createDaemonServer({
 		projectDir,
-		entries: config.entries,
+		runtimes: config.runtimes,
 		triggerShutdown: () => void teardown(),
 	});
 	const bindResult = await daemonServer.listen();
@@ -159,7 +159,7 @@ export async function runUp(
 
 	return Ok({
 		server,
-		entries: config.entries,
+		runtimes: config.runtimes,
 		config,
 		metadata,
 		socketPath,
@@ -198,10 +198,10 @@ export const upCommand = cmd({
 			process.exit(1);
 		}
 
-		const routes = handle.entries.map((entry) => entry.route).join(', ');
+		const routes = handle.runtimes.map((entry) => entry.route).join(', ');
 		logSyncStatus(`online (routes=[${routes}])`);
 
-		for (const entry of handle.entries) {
+		for (const entry of handle.runtimes) {
 			printPeersSnapshot(entry);
 			subscribeAwareness(entry, options.quiet);
 			subscribeSyncStatus(entry);
@@ -242,8 +242,8 @@ async function safeAsyncDispose(config: LoadConfigResult): Promise<void> {
 	}
 }
 
-function printPeersSnapshot(entry: DaemonRuntimeEntry): void {
-	const peers = entry.workspace.presence.peers();
+function printPeersSnapshot(entry: DaemonRouteRuntime): void {
+	const peers = entry.runtime.presence.peers();
 	if (peers.size === 0) {
 		process.stderr.write(`${entry.route}: no peers connected\n`);
 		return;
@@ -255,8 +255,8 @@ function printPeersSnapshot(entry: DaemonRuntimeEntry): void {
 	}
 }
 
-function subscribeAwareness(entry: DaemonRuntimeEntry, quiet: boolean): void {
-	const presence = entry.workspace.presence;
+function subscribeAwareness(entry: DaemonRouteRuntime, quiet: boolean): void {
+	const presence = entry.runtime.presence;
 	let prev = new Map(presence.peers());
 	presence.observe(() => {
 		const next = presence.peers();
@@ -282,8 +282,8 @@ function subscribeAwareness(entry: DaemonRuntimeEntry, quiet: boolean): void {
 	});
 }
 
-function subscribeSyncStatus(entry: DaemonRuntimeEntry): void {
-	const sync = entry.workspace.sync;
+function subscribeSyncStatus(entry: DaemonRouteRuntime): void {
+	const sync = entry.runtime.sync;
 	sync.onStatusChange((status) => {
 		if (status.phase === 'connecting') {
 			logSyncStatus(`${entry.route}: connecting (retry ${status.retries})`);

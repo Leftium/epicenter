@@ -8,6 +8,7 @@ import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import type { FoundPeer } from '../document/standard-awareness-defs.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import {
+	createRemoteClient,
 	createRemoteActions,
 	type RemoteActionTransport,
 } from './remote-actions.js';
@@ -164,5 +165,51 @@ describe('createRemoteActions', () => {
 		if (isErr(result) && isRpcError(result.error)) {
 			expect(result.error.name).toBe('PeerLeft');
 		}
+	});
+});
+
+describe('createRemoteClient', () => {
+	test('binds presence and rpc so callers only pass the peer target', async () => {
+		const calls: RpcCall[] = [];
+		const transport = mockTransport({
+			present: { mac: 42 },
+			calls,
+			respond: async () => Ok({ closedCount: 1 }),
+		});
+
+		const remote = createRemoteClient(transport);
+		const result = await remote
+			.actions<TestActions>('mac')
+			.tabs.close({ tabIds: [1] });
+
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.target).toBe(42);
+		expect(calls[0]?.action).toBe('tabs.close');
+		expect(result.error).toBeNull();
+		expect(result.data).toEqual({ closedCount: 1 });
+	});
+
+	test('describes a peer through the bound system action', async () => {
+		const manifest = {
+			'tabs.close': {
+				type: 'mutation' as const,
+				input: TestActions.tabs.close.input,
+			},
+		};
+		const calls: RpcCall[] = [];
+		const transport = mockTransport({
+			present: { mac: 42 },
+			calls,
+			respond: async () => Ok(manifest),
+		});
+
+		const remote = createRemoteClient(transport);
+		const result = await remote.describe('mac');
+
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.target).toBe(42);
+		expect(calls[0]?.action).toBe('system.describe');
+		expect(result.error).toBeNull();
+		expect(result.data).toEqual(manifest);
 	});
 });

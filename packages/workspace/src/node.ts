@@ -59,7 +59,7 @@ export {
 export type {
 	DaemonRouteModule,
 	DaemonRuntime,
-	DaemonRuntimeEntry,
+	DaemonRouteRuntime,
 	EpicenterConfig,
 	EpicenterConfigContext,
 } from './daemon/types.js';

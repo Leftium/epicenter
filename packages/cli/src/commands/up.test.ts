@@ -91,11 +91,11 @@ function makeFakeWorkspace(): DaemonRuntime {
 	};
 }
 
-function makeFakeConfig(workspace: DaemonRuntime): LoadConfigResult {
+function makeFakeConfig(runtime: DaemonRuntime): LoadConfigResult {
 	return {
-		entries: [{ route: 'default', workspace }],
+		runtimes: [{ route: 'default', runtime }],
 		async [Symbol.asyncDispose]() {
-			workspace[Symbol.dispose]();
+			runtime[Symbol.dispose]();
 		},
 	};
 }
@@ -120,8 +120,8 @@ describe('runUp: happy path', () => {
 		// Metadata was written.
 		expect(existsSync(metadataPathFor(workDir))).toBe(true);
 		expect(handle.metadata.pid).toBe(process.pid);
-		expect(handle.entries).toHaveLength(1);
-		expect(handle.entries[0]?.route).toBe('default');
+		expect(handle.runtimes).toHaveLength(1);
+		expect(handle.runtimes[0]?.route).toBe('default');
 
 		// Socket is bound; ping it via a fresh connect using the real client.
 		const sockPath = socketPathFor(workDir);

@@ -293,11 +293,14 @@ packages/cli/src/commands/run.ts
 Current main owns this public shape:
 
 ```ts
-import { createRemoteActions, describeRemoteActions } from '@epicenter/workspace';
+import { createRemoteClient } from '@epicenter/workspace';
 
-const transport = { presence: workspace.presence, rpc: workspace.rpc };
-const remote = createRemoteActions<typeof actions>(transport, 'macbook');
-const manifest = await describeRemoteActions(transport, 'macbook');
+const remote = createRemoteClient({
+	presence: workspace.presence,
+	rpc: workspace.rpc,
+});
+const macbook = remote.actions<typeof actions>('macbook');
+const manifest = await remote.describe('macbook');
 ```
 
 The daemon branch has useful lower-level pieces, but its public shape should not win by accident:
@@ -366,8 +369,8 @@ Prefer this split:
 
 @epicenter/workspace
   attachSync
-  createRemoteActions({ presence, rpc }, peerId)
-  describeRemoteActions({ presence, rpc }, peerId)
+  createRemoteClient({ presence, rpc })
+  createRemoteActions({ presence, rpc }, peerId) as lower-level helper
   workspace-level exports and compatibility names
 ```
 
@@ -511,8 +514,8 @@ configs while new daemon factories can use the direct `attachMarkdown` and
 
 ### Phase 3: Remote Action and Sync Boundary
 
-- [x] Keep `createRemoteActions({ presence, rpc }, peerId)` as the public workspace API.
-- [x] Keep `describeRemoteActions({ presence, rpc }, peerId)` as the public workspace API.
+- [x] Add `createRemoteClient({ presence, rpc })` as the preferred workspace API.
+- [x] Keep `createRemoteActions({ presence, rpc }, peerId)` as the lower-level proxy helper.
 - [x] Preserve current main's action walking behavior from workspace bundles.
 - [x] Translate useful daemon branch peer-dispatch fixes to the current remote-action names.
 - [x] Port `waitForPeer` and `PeerMiss` only if CLI bounded wait behavior still needs them.
@@ -731,7 +734,7 @@ The exact package scripts may differ. Use the monorepo skill before running the 
 - [x] The integration branch starts from current `origin/main`.
 - [x] The old daemon branch remains available as a reference.
 - [x] The final code keeps `up`, `down`, `ps`, and `logs`.
-- [x] The final code keeps `createRemoteActions` and `describeRemoteActions` as the public remote-action API unless a new spec explicitly changes that.
+- [x] The final code keeps `createRemoteClient` as the preferred remote-action API and `createRemoteActions` as the lower-level helper.
 - [x] `attachSync` keeps the AbortController supervisor model.
 - [x] Daemon and script factories exist for the intended apps.
 - [x] The workspace daemon/client primitives live in `packages/workspace`, not only `packages/cli`.

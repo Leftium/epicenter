@@ -1,7 +1,7 @@
 export {
 	type DaemonRouteModule,
 	type DaemonRuntime,
-	type DaemonRuntimeEntry,
+	type DaemonRouteRuntime,
 	defineEpicenterConfig,
 	type EpicenterConfig,
 	type EpicenterConfigContext,

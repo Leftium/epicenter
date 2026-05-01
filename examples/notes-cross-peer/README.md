@@ -4,7 +4,7 @@ Two-peer minimal repro for the `system.describe` cross-peer fetch.
 
 Both configs construct the same workspace (`epicenter.notes-repro`) with
 distinct peer ids, so each appears in the other's awareness. Exercises
-`describeRemoteActions({ presence, rpc }, peerId)` end-to-end against the
+`createRemoteClient({ presence, rpc }).describe(peerId)` end-to-end against the
 deployed API.
 
 ## Setup
@@ -36,7 +36,7 @@ under "Local vs. remote"):
 
 ```ts
 // examples/notes-cross-peer/inspect-peer.ts
-import { describeRemoteActions } from '@epicenter/workspace';
+import { createRemoteClient } from '@epicenter/workspace';
 import { openNotes } from './notes';
 
 using notes = openNotes({
@@ -46,10 +46,8 @@ using notes = openNotes({
 });
 
 await notes.whenReady;
-const result = await describeRemoteActions(
-	{ presence: notes.presence, rpc: notes.rpc },
-	'notes-repro-peer-a',
-);
+const remote = createRemoteClient({ presence: notes.presence, rpc: notes.rpc });
+const result = await remote.describe('notes-repro-peer-a');
 console.log(result.error ?? result.data);
 ```
 

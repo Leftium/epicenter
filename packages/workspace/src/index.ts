@@ -58,8 +58,10 @@ export {
 export { isRpcError, RpcError } from '@epicenter/sync';
 // Cross-peer action calling.
 export {
+	createRemoteClient,
 	createRemoteActions,
 	describeRemoteActions,
+	type RemoteClient,
 	type RemoteActionTransport,
 } from './rpc/remote-actions.js';
 export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';

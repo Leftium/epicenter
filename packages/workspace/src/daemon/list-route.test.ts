@@ -13,15 +13,15 @@ import type { Result } from 'wellcrafted/result';
 
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
 import { buildDaemonApp } from './app.js';
-import type { DaemonRuntime, DaemonRuntimeEntry } from './types.js';
+import type { DaemonRuntime, DaemonRouteRuntime } from './types.js';
 
 type ListResult = Result<ActionManifest, never>;
 
 function fakeEntry(
 	name: string,
-	workspaceShape: Record<string, unknown> = {},
-): DaemonRuntimeEntry {
-	const workspace = {
+	runtimeShape: Record<string, unknown> = {},
+): DaemonRouteRuntime {
+	const runtime = {
 		actions: {},
 		sync: {
 			whenConnected: Promise.resolve(),
@@ -50,17 +50,17 @@ function fakeEntry(
 		rpc: {
 			rpc: async () => ({ data: null, error: null }),
 		} as unknown as DaemonRuntime['rpc'],
-		...workspaceShape,
+		...runtimeShape,
 		[Symbol.dispose]() {},
 	} satisfies DaemonRuntime;
 	return {
 		route: name,
-		workspace,
+		runtime,
 	};
 }
 
-async function postList(entries: DaemonRuntimeEntry[]): Promise<ListResult> {
-	const app = buildDaemonApp(entries);
+async function postList(runtimes: DaemonRouteRuntime[]): Promise<ListResult> {
+	const app = buildDaemonApp(runtimes);
 	const res = await app.request('/list', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },

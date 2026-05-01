@@ -1,4 +1,5 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { createCredentialTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
@@ -35,7 +36,7 @@ function defaultOpensidianDaemonPeer(): PeerIdentity {
 export function defineOpensidianDaemon({
 	route = DEFAULT_OPENSIDIAN_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
+	getToken = createCredentialTokenGetter({ serverOrigin: apiUrl }),
 	peer = defaultOpensidianDaemonPeer(),
 	webSocketImpl,
 }: OpensidianDaemonOptions = {}): DaemonRouteDefinition {

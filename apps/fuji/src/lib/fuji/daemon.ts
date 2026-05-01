@@ -1,4 +1,5 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { createCredentialTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
@@ -15,6 +16,7 @@ import {
 } from '@epicenter/workspace/document/attach-markdown';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
+	attachYjsLog,
 	connectDaemonActions,
 	hashClientId,
 	markdownPath,
@@ -45,7 +47,7 @@ function defaultFujiDaemonPeer(): PeerIdentity {
 export function defineFujiDaemon({
 	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
+	getToken = createCredentialTokenGetter({ serverOrigin: apiUrl }),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
 }: FujiDaemonOptions = {}): DaemonRouteDefinition {

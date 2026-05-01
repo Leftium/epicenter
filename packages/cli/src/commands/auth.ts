@@ -4,19 +4,42 @@
  * Uses the RFC 8628 device code flow: the CLI prints a URL and one-time code,
  * the user approves in a browser, and the CLI picks up the session automatically.
  *
- * All sessions stored in the unified auth store at `$EPICENTER_HOME/auth/sessions.json`.
+ * Credentials are stored in `$EPICENTER_HOME/auth/credentials.json`.
  *
  * Server URL is a positional with a default (`https://api.epicenter.so`).
  * Self-hosters pass their own URL; everyone else omits it.
  */
 
-import { createSessionStore } from '@epicenter/workspace/node';
-import { createAuthApi } from '../auth/api';
+import {
+	createAuthServerClient,
+	createCliAuth,
+	createDefaultCredentialStore,
+	type CredentialStore,
+	type CredentialStoreStorageMode,
+} from '@epicenter/auth/node';
 import { cmd } from '../util/cmd.js';
 
 const DEFAULT_SERVER = 'https://api.epicenter.so';
 
-const sessions = createSessionStore();
+function createAuthForServer(
+	serverOrigin: string,
+	storageMode: CredentialStoreStorageMode = 'osKeychain',
+	credentialStore: CredentialStore = createDefaultCredentialStore({ storageMode }),
+) {
+	return createCliAuth({
+		authServerClient: createAuthServerClient(
+			{ fetch },
+			{ serverOrigin },
+		),
+		credentialStore,
+	});
+}
+
+function displayName(credential: {
+	session: { user: { name?: string | null; email: string } };
+}) {
+	return credential.session.user.name ?? credential.session.user.email;
+}
 
 /**
  * `auth` command group.
@@ -33,55 +56,44 @@ const loginCommand = cmd({
 	command: 'login [server]',
 	describe: 'Log in to an Epicenter server (opens browser)',
 	builder: (yargs) =>
-		yargs.positional('server', {
-			type: 'string',
-			describe: `Server URL (default: ${DEFAULT_SERVER})`,
-		}),
+		yargs
+			.positional('server', {
+				type: 'string',
+				describe: `Server URL (default: ${DEFAULT_SERVER})`,
+			})
+			.option('secure-storage', {
+				type: 'boolean',
+				describe: 'Store credential secrets in the OS keychain',
+			})
+			.option('insecure-storage', {
+				type: 'boolean',
+				describe: 'Store credential secrets in a plaintext owner-only file',
+			})
+			.conflicts('secure-storage', 'insecure-storage'),
 	handler: async (argv) => {
 		const serverUrl =
 			typeof argv.server === 'string' && argv.server.length > 0
 				? argv.server
 				: DEFAULT_SERVER;
-		const api = createAuthApi(serverUrl);
-		const codeData = await api.requestDeviceCode();
+		const storageMode: CredentialStoreStorageMode = argv.insecureStorage
+			? 'file'
+			: 'osKeychain';
 
-		console.log(`\nVisit: ${codeData.verification_uri_complete}`);
-		console.log(`Enter code: ${codeData.user_code}\n`);
-
-		let interval = codeData.interval * 1000;
-		const deadline = Date.now() + codeData.expires_in * 1000;
-
-		while (Date.now() < deadline) {
-			await Bun.sleep(interval);
-			const tokenData = await api.pollDeviceToken(codeData.device_code);
-
-			if ('access_token' in tokenData) {
-				const authed = createAuthApi(serverUrl, tokenData.access_token);
-				const sessionData = await authed.getSession();
-
-				await sessions.save(serverUrl, tokenData, sessionData);
-
-				const displayName =
-					sessionData.user?.name ?? sessionData.user?.email ?? serverUrl;
-				console.log(`✓ Logged in as ${displayName}`);
-				return;
-			}
-
-			switch (tokenData.error) {
-				case 'authorization_pending':
-					continue;
-				case 'slow_down':
-					interval += 5_000;
-					continue;
-				case 'expired_token':
-					throw new Error('Device code expired. Please run login again.');
-				case 'access_denied':
-					throw new Error('Authorization denied: you rejected the request');
-				default:
-					throw new Error(tokenData.error_description ?? tokenData.error);
-			}
+		if (storageMode === 'file') {
+			console.warn(
+				'Warning: storing bearer tokens and encryption keys in a plaintext owner-only file.',
+			);
 		}
-		throw new Error('Device code expired. Please run login again.');
+
+		const cliAuth = createAuthForServer(serverUrl, storageMode);
+		const result = await cliAuth.loginWithDeviceCode({
+			onDeviceCode: ({ verificationUriComplete, userCode }) => {
+				console.log(`\nVisit: ${verificationUriComplete}`);
+				console.log(`Enter code: ${userCode}\n`);
+			},
+		});
+
+		console.log(`✓ Logged in as ${displayName(result.credential)}`);
 	},
 });
 
@@ -95,24 +107,20 @@ const logoutCommand = cmd({
 		}),
 	handler: async (argv) => {
 		const server = typeof argv.server === 'string' ? argv.server : undefined;
-		const session = server
-			? await sessions.load(server)
-			: await sessions.loadDefault();
+		const credentialStore = createDefaultCredentialStore();
+		const current = server ? null : await credentialStore.getCurrent();
+		const cliAuth = createAuthForServer(
+			server ?? current?.serverOrigin ?? DEFAULT_SERVER,
+			'osKeychain',
+			credentialStore,
+		);
+		const result = await cliAuth.logout(server);
 
-		if (!session) {
+		if (result.status === 'signedOut') {
 			console.log('No active session.');
 			return;
 		}
 
-		// Best-effort remote sign-out
-		try {
-			const api = createAuthApi(session.server, session.accessToken);
-			await api.signOut();
-		} catch {
-			// Remote may be unreachable
-		}
-
-		await sessions.clear(session.server);
 		console.log('✓ Logged out.');
 	},
 });
@@ -127,35 +135,49 @@ const statusCommand = cmd({
 		}),
 	handler: async (argv) => {
 		const server = typeof argv.server === 'string' ? argv.server : undefined;
-		const session = server
-			? await sessions.load(server)
-			: await sessions.loadDefault();
+		const credentialStore = createDefaultCredentialStore();
+		const current = server ? null : await credentialStore.getCurrent();
+		const cliAuth = createAuthForServer(
+			server ?? current?.serverOrigin ?? DEFAULT_SERVER,
+			'osKeychain',
+			credentialStore,
+		);
+		const result = await cliAuth.status(server);
 
-		if (!session) {
+		if (result.status === 'signedOut') {
 			console.log('Not logged in.');
 			return;
 		}
-
-		const api = createAuthApi(session.server, session.accessToken);
-
-		try {
-			const remote = await api.getSession();
-			const displayName = remote.user.name ?? remote.user.email;
-			console.log(`Logged in as: ${displayName} (${remote.user.email})`);
-			console.log(`Server:       ${session.server}`);
-			console.log(`Session:      valid`);
-			if (remote.session.expiresAt) {
-				console.log(
-					`Expires at:   ${new Date(remote.session.expiresAt).toLocaleString()}`,
-				);
+		if (result.status === 'missingSecrets') {
+			if (result.metadata === null) {
+				console.log('Not logged in.');
+				return;
 			}
-		} catch {
-			const displayName =
-				session.user?.name ?? session.user?.email ?? '(unknown)';
-			console.log(`Logged in as: ${displayName} [stored]`);
-			console.log(`Server:       ${session.server}`);
+			console.log(
+				`Logged in as: ${result.metadata.session.user.name} (${result.metadata.session.user.email})`,
+			);
+			console.log(`Server:       ${result.metadata.serverOrigin}`);
+			console.log('Session:      missing local secrets');
+			console.warn('Warning: Credential metadata exists, but keychain secrets are missing.');
+			return;
+		}
+
+		const { credential } = result;
+		console.log(
+			`Logged in as: ${displayName(credential)} (${credential.session.user.email})`,
+		);
+		console.log(`Server:       ${credential.serverOrigin}`);
+		if (result.status === 'valid') {
+			console.log('Session:      valid');
+		} else if (result.status === 'expired') {
+			console.log('Session:      expired');
+		} else {
+			console.log('Session:      stored');
 			console.warn('Warning: Could not verify session with remote server.');
 		}
+		console.log(
+			`Expires at:   ${new Date(credential.session.session.expiresAt).toLocaleString()}`,
+		);
 	},
 });
 

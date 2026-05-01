@@ -22,6 +22,7 @@
 		"deploy": "bun run build && wrangler deploy"
 	},
 	"dependencies": {
+		"@epicenter/auth": "workspace:*",
 		"@epicenter/auth-svelte": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/svelte": "workspace:*",

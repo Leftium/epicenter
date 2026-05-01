@@ -1,4 +1,4 @@
-import type { SessionResponse } from '@epicenter/api/types';
+import type { SessionResponse } from '@epicenter/auth/contracts';
 import { encryptionKeysFingerprint } from '@epicenter/workspace/encryption-key';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
@@ -84,7 +84,7 @@ export type AuthClient = {
 		callbackURL: string;
 	}): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<Result<undefined, AuthError>>;
-	fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
 
 	[Symbol.dispose](): void;
 };

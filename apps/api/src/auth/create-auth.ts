@@ -12,7 +12,7 @@ import { createAutumn } from '../autumn';
 import { FEATURE_IDS } from '../billing-plans';
 import * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
-import type { SessionResponse } from './contracts';
+import type { SessionResponse } from '@epicenter/auth/contracts';
 import { deriveUserEncryptionKeys } from './encryption';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -22,7 +22,7 @@ type Db = NodePgDatabase<typeof schema>;
  *
  * Cloudflare Workers doesn't expose `env` or database connections at module scope,
  * so this defers Better Auth initialization to request time. The returned object is
- * the raw Better Auth instance—no wrapper or additional abstraction.
+ * the raw Better Auth instance, with no wrapper or additional abstraction.
  *
  * Wires up:
  * - Drizzle adapter (Postgres via Hyperdrive)
@@ -55,7 +55,7 @@ export function createAuth({
 			//
 			// Layer 2 fails in our architecture. The sign-in POST is a cross-origin
 			// fetch (opensidian.com → api.epicenter.so), and modern browsers block
-			// third-party Set-Cookie from fetch responses—even with SameSite=None.
+			// third-party Set-Cookie from fetch responses, even with SameSite=None.
 			// Chrome Privacy Sandbox, Safari ITP, and Firefox ETP all enforce this.
 			// The cookie is never stored, so the callback can't read it back.
 			//
@@ -73,7 +73,7 @@ export function createAuth({
 			expiresIn: 60 * 60 * 24 * 7,
 			updateAge: 60 * 60 * 24,
 			// Write sessions to Postgres (source of truth), not just KV.
-			// Required when secondaryStorage is configured—see comment below.
+			// Required when secondaryStorage is configured. See comment below.
 			storeSessionInDatabase: true,
 			cookieCache: {
 				enabled: true,
@@ -93,7 +93,7 @@ export function createAuth({
 		// cross-origin fetches (e.g. opensidian.com → api.epicenter.so).
 		// This trades browser-level CSRF for app-level origin checking,
 		// which Better Auth enforces via trustedOrigins on every request.
-		// Standard practice for auth servers on a separate domain—same
+		// Standard practice for auth servers on a separate domain. Same
 		// model as Auth0, Clerk, and Supabase Auth.
 		//
 		// crossSubDomainCookies scopes cookies to .epicenter.so so any
@@ -183,7 +183,7 @@ export function createAuth({
 		//     cookieCache.maxAge (5 min). Standard Redis/KV cache tradeoff.
 		//   - Verification: a consumed OAuth state may linger in KV, but
 		//     replaying it requires a valid Google authorization code that
-		//     was already consumed—harmless.
+		//     was already consumed, which is harmless.
 		//
 		// IMPORTANT: When secondaryStorage is configured, Better Auth
 		// defaults to KV-only writes unless you opt back into Postgres
@@ -199,7 +199,7 @@ export function createAuth({
 			delete: (key: string) => env.SESSION_KV.delete(key),
 		},
 		// Write verification records to Postgres, not just KV. Required
-		// for OAuth state—KV eventual consistency means the callback edge
+		// for OAuth state. KV eventual consistency means the callback edge
 		// may not see a record written moments earlier at a different edge.
 		verification: {
 			storeInDatabase: true,
@@ -255,7 +255,7 @@ export function createAuth({
 	 * Enrich `/auth/get-session` responses with the full encryption keyring.
 	 *
 	 * Derives a per-user key for every version in `ENCRYPTION_SECRETS`.
-	 * HKDF derivation adds <0.1ms per key—negligible next to the network round-trip.
+	 * HKDF derivation adds <0.1ms per key, negligible next to the network round-trip.
 	 * Embedding all keys here eliminates separate key-fetch endpoints and
 	 * enables fresh clients to decrypt blobs from any key version.
 	 */

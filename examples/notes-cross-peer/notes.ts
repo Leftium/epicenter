@@ -1,3 +1,4 @@
+import { createCredentialTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
@@ -9,7 +10,6 @@ import {
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { createSessionStore } from '@epicenter/workspace/node';
 import { type } from 'arktype';
 import Type from 'typebox';
 import * as Y from 'yjs';
@@ -41,15 +41,13 @@ export function openNotes(peer: PeerIdentity) {
 		},
 	};
 
-	const sessions = createSessionStore();
 	const awareness = attachAwareness(ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
 	});
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
-		getToken: async () =>
-			(await sessions.load(SERVER_URL))?.accessToken ?? null,
+		getToken: createCredentialTokenGetter({ serverOrigin: SERVER_URL }),
 		awareness,
 	});
 	const peerDirectory = createPeerDirectory({ awareness, sync });

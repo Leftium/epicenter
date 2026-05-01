@@ -33,6 +33,7 @@
 	"dependencies": {
 		"@better-auth/drizzle-adapter": "catalog:",
 		"@better-auth/oauth-provider": "catalog:",
+		"@epicenter/auth": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/workspace": "workspace:*",

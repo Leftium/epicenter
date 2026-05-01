@@ -4,6 +4,7 @@
 	"private": true,
 	"type": "module",
 	"dependencies": {
+		"@epicenter/auth": "workspace:*",
 		"@epicenter/cli": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"arktype": "catalog:",

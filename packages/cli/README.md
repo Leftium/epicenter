@@ -136,7 +136,7 @@ import {
 	toWsUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
-import { createSessionTokenGetter } from '@epicenter/workspace/node';
+import { createCredentialTokenGetter } from '@epicenter/auth/node';
 import Type from 'typebox';
 import { type } from 'arktype';
 
@@ -169,8 +169,8 @@ function openTabManager() {
 	});
 	const sync = attachSync(ydoc, {
 		url: toWsUrl('https://api.epicenter.so/workspaces/epicenter.tab-manager'),
-		getToken: createSessionTokenGetter({
-			serverUrl: 'https://api.epicenter.so',
+		getToken: createCredentialTokenGetter({
+			serverOrigin: 'https://api.epicenter.so',
 		}),
 		awareness,
 	});

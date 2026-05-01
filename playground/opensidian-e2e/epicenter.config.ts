@@ -7,8 +7,8 @@
  * frontmatter (metadata) and markdown body (document content), and mirrors
  * the files table into a queryable SQLite database with FTS5 indexing.
  *
- * Reads auth credentials from the CLI session store at
- * `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
+ * Reads auth credentials from the CLI credential store at
+ * `~/.epicenter/auth/credentials.json`. Run `epicenter auth login` first.
  *
  * Hosts the `opensidian` route as a full daemon peer: actions, sync,
  * presence, RPC, and disposal. Daemon action paths are relative to `actions`.
@@ -27,6 +27,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { createDefaultCredentialStore } from '@epicenter/auth/node';
 import { createFileContentDoc } from '@epicenter/filesystem';
 import {
 	attachEncryption,
@@ -35,7 +36,7 @@ import {
 	defineMutation,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
@@ -43,11 +44,7 @@ import {
 	toSlugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
-import {
-	attachSessionUnlock,
-	createSessionStore,
-	epicenterPaths,
-} from '@epicenter/workspace/node';
+import { epicenterPaths } from '@epicenter/workspace/node';
 import { opensidianTables } from 'opensidian/workspace';
 import Type from 'typebox';
 import * as Y from 'yjs';
@@ -58,7 +55,7 @@ const MATERIALIZER_DIR = join(import.meta.dir, '.epicenter', 'materializer');
 mkdirSync(MATERIALIZER_DIR, { recursive: true });
 
 const WORKSPACE_ID = 'opensidian';
-const sessions = createSessionStore();
+const credentials = createDefaultCredentialStore();
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 const encryption = attachEncryption(ydoc);
@@ -69,16 +66,15 @@ const persistence = attachSqlite(ydoc, {
 	filePath: epicenterPaths.persistence(WORKSPACE_ID),
 });
 
-const unlock = attachSessionUnlock(encryption, {
-	sessions,
-	serverUrl: SERVER_URL,
-	waitFor: persistence.whenLoaded,
+const whenCredentialsApplied = persistence.whenLoaded.then(async () => {
+	const keys = await credentials.getEncryptionKeys(SERVER_URL);
+	if (keys) encryption.applyKeys(keys);
 });
 
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
-	waitFor: Promise.all([persistence.whenLoaded, unlock.whenChecked]),
-	getToken: async () => (await sessions.load(SERVER_URL))?.accessToken ?? null,
+	waitFor: Promise.all([persistence.whenLoaded, whenCredentialsApplied]),
+	getToken: () => credentials.getBearerToken(SERVER_URL),
 });
 
 /**
@@ -114,7 +110,7 @@ async function readContent(rowId: string): Promise<string | undefined> {
 
 const whenReady = Promise.all([
 	persistence.whenLoaded,
-	unlock.whenChecked,
+	whenCredentialsApplied,
 	sync.whenConnected,
 ]);
 
@@ -191,8 +187,9 @@ export const opensidian = {
 	sync,
 	presence,
 	rpc,
-	[Symbol.dispose]() {
+	async [Symbol.asyncDispose]() {
 		ydoc.destroy();
+		await sync.whenDisposed;
 	},
 	// Extras for direct script use, not part of the hosted daemon runtime contract.
 	id: WORKSPACE_ID,
@@ -206,10 +203,8 @@ export const opensidian = {
 	sqlite,
 };
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	daemon: {
-		routes: {
-			opensidian: () => opensidian,
-		},
+		routes: [{ route: 'opensidian', start: () => opensidian }],
 	},
 });

@@ -18,10 +18,6 @@ export const epicenterPaths = {
 		return resolveHome();
 	},
 
-	authSessions() {
-		return join(resolveHome(), 'auth', 'sessions.json');
-	},
-
 	persistence(workspaceId: string) {
 		return join(resolveHome(), 'persistence', `${workspaceId}.db`);
 	},

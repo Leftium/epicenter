@@ -19,7 +19,7 @@ import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
-import { Peer } from '../document/standard-awareness-defs.js';
+import { PeerIdentity } from '../document/peer-presence-defs.js';
 import { describeActions } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
 import type { DaemonRouteRuntime } from './types.js';
@@ -48,13 +48,13 @@ export type RunRequest = typeof RunRequest.infer;
 /**
  * Row shape returned by `/peers`. One row per `(route, clientID)` pair,
  * tagged with its route name so a multi-route daemon can fan out.
- * `peer` carries the canonical peer descriptor from the standard awareness
+ * `peer` carries the canonical peer identity from the standard presence
  * convention; renderers consume it directly without a cast.
  */
 export const PeerSnapshot = type({
 	route: 'string',
 	clientID: 'number',
-	peer: Peer,
+	peer: PeerIdentity,
 });
 export type PeerSnapshot = typeof PeerSnapshot.infer;
 

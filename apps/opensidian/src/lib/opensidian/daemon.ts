@@ -1,7 +1,7 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
-	type PeerDescriptor,
+	type PeerIdentityInput,
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
@@ -18,12 +18,12 @@ export const OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 
 export type OpensidianDaemonOptions = {
 	getToken?: () => Promise<string | null>;
-	peer?: PeerDescriptor;
+	peer?: PeerIdentityInput;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
 };
 
-function defaultOpensidianDaemonPeer(): PeerDescriptor {
+function defaultOpensidianDaemonPeer(): PeerIdentityInput {
 	return {
 		id: 'opensidian-daemon',
 		name: 'Opensidian Daemon',

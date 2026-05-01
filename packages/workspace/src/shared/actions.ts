@@ -139,7 +139,7 @@ export type Actions = {
 /**
  * The runtime-injected `system.*` action namespace. Single canonical type:
  * `attachRpc` constructs `systemActions: SystemActions` and `remote-actions.ts`
- * derives the proxy type `createRemoteActions<{ system: SystemActions }>` from
+ * derives `remote.describe(peerId)` from
  * the same source. Drift between the runtime handler return and the consumer's
  * expected return becomes a compile error.
  */

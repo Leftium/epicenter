@@ -1,7 +1,7 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
-	type PeerDescriptor,
+	type PeerIdentityInput,
 	type ProjectDir,
 	toWsUrl,
 	type WebSocketImpl,
@@ -28,12 +28,12 @@ export const FUJI_DAEMON_ROUTE = 'fuji';
 
 export type FujiDaemonOptions = {
 	getToken?: () => Promise<string | null>;
-	peer?: PeerDescriptor;
+	peer?: PeerIdentityInput;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
 };
 
-function defaultFujiDaemonPeer(): PeerDescriptor {
+function defaultFujiDaemonPeer(): PeerIdentityInput {
 	return {
 		id: 'fuji-daemon',
 		name: 'Fuji Daemon',

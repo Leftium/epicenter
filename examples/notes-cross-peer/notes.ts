@@ -5,7 +5,7 @@ import {
 	defineMutation,
 	defineQuery,
 	defineTable,
-	type PeerDescriptor,
+	type PeerIdentityInput,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
@@ -20,7 +20,7 @@ const WORKSPACE_ID = 'epicenter.notes-repro';
 // below passes `_v: 1` — same value, two different syntax conventions.
 const Note = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
-export function openNotes(peer: PeerDescriptor) {
+export function openNotes(peer: PeerIdentityInput) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
 	const tables = attachTables(ydoc, { notes: Note });
 

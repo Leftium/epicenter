@@ -10,16 +10,16 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	type PeerDescriptor,
+	type PeerIdentityInput,
 	toWsUrl,
 } from '@epicenter/workspace';
 import type { DeviceId } from '$lib/workspace/definition';
 import { openTabManager as openTabManagerDoc } from './index';
 
 /**
- * Construction is async because awareness publishes the device descriptor
+ * Construction is async because presence publishes the peer identity
  * synchronously at attach time (no two-step "online but no device yet"
- * window). Awaiting the descriptor up front means every peer sees a
+ * window). Awaiting the identity up front means every peer sees a
  * well-formed `state.peer` from the first frame.
  *
  * `whenReady` still gates UI render on idb hydration; sync (the WebSocket)
@@ -30,7 +30,7 @@ export async function openTabManager({
 	peer,
 }: {
 	auth: AuthClient;
-	peer: PeerDescriptor<DeviceId> | Promise<PeerDescriptor<DeviceId>>;
+	peer: PeerIdentityInput<DeviceId> | Promise<PeerIdentityInput<DeviceId>>;
 }) {
 	const resolvedPeer = await Promise.resolve(peer);
 

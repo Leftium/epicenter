@@ -413,7 +413,7 @@ const rpc = sync.attachRpc(workspace.actions);
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  client.ts          (singleton + lifecycle)             │
-│  ─ resolves device descriptor                           │
+│  ─ resolves peer identity                               │
 │  ─ wires auth, calls openXxx(...)                       │
 │  ─ exports the workspace binding                        │
 └────────────────────────┬────────────────────────────────┘
@@ -487,7 +487,7 @@ Presence only                      Capability + dispatch
                                    "Close these tabs" (user actions)
 ```
 
-Awareness carries `{id, name, platform}` only. The action manifest moved to `system.describe` — fetched on demand instead of broadcast every 15s. The trip-wire was N²·M wire traffic; the fix was on-demand RPC.
+Awareness carries `{id, name, platform}` only. The action manifest moved to `system.describe`, fetched on demand instead of broadcast every 15s. The trip-wire was N²·M wire traffic; the fix was on-demand RPC.
 
 ## The supervisor loop and its timers
 
@@ -593,7 +593,7 @@ handshake.
 Presence is the source of truth for "who else is here"; RPC is the dispatch surface:
 
 ```ts
-presence.peers()                       // Map<clientId, PeerAwarenessState>
+presence.peers()                       // Map<clientId, PeerPresenceState>
 presence.find(peerId)                  // Resolved peer or undefined
 presence.observe(callback)             // unsubscribe fn
 rpc.rpc(target, action, input, opts)   // typed remote call

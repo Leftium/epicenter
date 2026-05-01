@@ -5,7 +5,7 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	type PeerDescriptor,
+	type PeerIdentityInput,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createEntryContentDoc } from '$lib/entry-content-docs';
@@ -17,7 +17,7 @@ export function openFuji({
 	peer,
 }: {
 	auth: AuthClient;
-	peer: PeerDescriptor;
+	peer: PeerIdentityInput;
 }) {
 	const doc = openFujiDoc();
 

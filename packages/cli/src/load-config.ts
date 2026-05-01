@@ -8,7 +8,7 @@
  */
 
 import { join, resolve } from 'node:path';
-import type { PeerAwarenessState, ProjectDir } from '@epicenter/workspace';
+import type { PeerPresenceState, ProjectDir } from '@epicenter/workspace';
 import {
 	type DaemonRouteModule,
 	type DaemonRuntime,
@@ -26,7 +26,7 @@ export const CONFIG_FILENAME = 'epicenter.config.ts';
 export type { DaemonRuntime, DaemonRouteRuntime };
 
 /** Per-peer awareness state under the standard peer schema. */
-export type AwarenessState = PeerAwarenessState;
+export type AwarenessState = PeerPresenceState;
 
 export type LoadConfigResult = {
 	runtimes: DaemonRouteRuntime[];

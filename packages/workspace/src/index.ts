@@ -59,10 +59,8 @@ export { isRpcError, RpcError } from '@epicenter/sync';
 // Cross-peer action calling.
 export {
 	createRemoteClient,
-	createRemoteActions,
-	describeRemoteActions,
 	type RemoteClient,
-	type RemoteActionTransport,
+	type RemoteClientOptions,
 } from './rpc/remote-actions.js';
 export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
@@ -233,12 +231,12 @@ export {
 	type PeerPresenceAttachment,
 } from './document/peer-presence.js';
 export {
-	type FoundPeer,
-	Peer,
-	type PeerAwarenessState,
-	type PeerDescriptor,
-	Platform,
-} from './document/standard-awareness-defs.js';
+	type ResolvedPeer,
+	PeerIdentity,
+	type PeerPresenceState,
+	type PeerIdentityInput,
+	PeerRuntime,
+} from './document/peer-presence-defs.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS

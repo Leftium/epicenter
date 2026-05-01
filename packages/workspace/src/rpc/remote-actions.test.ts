@@ -5,12 +5,11 @@ import type { Result } from 'wellcrafted/result';
 import { Err, isErr, Ok } from 'wellcrafted/result';
 import type { SyncRpcAttachment } from '../document/attach-sync.js';
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
-import type { FoundPeer } from '../document/standard-awareness-defs.js';
+import type { ResolvedPeer } from '../document/peer-presence-defs.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import {
 	createRemoteClient,
-	createRemoteActions,
-	type RemoteActionTransport,
+	type RemoteClientOptions,
 } from './remote-actions.js';
 
 const TestActions = {
@@ -37,7 +36,7 @@ type RpcCall = {
 	options?: { timeout?: number };
 };
 
-function mockTransport({
+function mockRemoteOptions({
 	present: presentPeers,
 	respond,
 	calls = [],
@@ -45,13 +44,13 @@ function mockTransport({
 	present: Record<string, number>;
 	respond: (call: RpcCall) => Promise<Result<unknown, RpcError>>;
 	calls?: RpcCall[];
-}): RemoteActionTransport & { drop(peerId: string): void } {
+}): RemoteClientOptions & { drop(peerId: string): void } {
 	const present = new Map(Object.entries(presentPeers));
 	const observers = new Set<() => void>();
 
 	const presence: PeerPresenceAttachment = {
 		peers: () => new Map(),
-		find(peerId): FoundPeer | undefined {
+		find(peerId): ResolvedPeer | undefined {
 			const clientId = present.get(peerId);
 			if (clientId === undefined) return undefined;
 			return {
@@ -93,16 +92,16 @@ function mockTransport({
 	};
 }
 
-describe('createRemoteActions', () => {
+describe('createRemoteClient actions', () => {
 	test('builds a proxy whose dot-path becomes the rpc action arg', async () => {
 		const calls: RpcCall[] = [];
-		const transport = mockTransport({
+		const options = mockRemoteOptions({
 			present: { mac: 42 },
 			calls,
 			respond: async () => Ok({ closedCount: 1 }),
 		});
 
-		const remote = createRemoteActions<TestActions>(transport, 'mac');
+		const remote = createRemoteClient(options).actions<TestActions>('mac');
 		const result = await remote.tabs.close({ tabIds: [1] }, { timeout: 1000 });
 
 		expect(calls).toHaveLength(1);
@@ -116,7 +115,7 @@ describe('createRemoteActions', () => {
 
 	test('returns Err(PeerNotFound) without sending when peer is absent', async () => {
 		const calls: RpcCall[] = [];
-		const transport = mockTransport({
+		const options = mockRemoteOptions({
 			present: {},
 			calls,
 			respond: async () => {
@@ -124,7 +123,7 @@ describe('createRemoteActions', () => {
 			},
 		});
 
-		const remote = createRemoteActions<TestActions>(transport, 'ghost');
+		const remote = createRemoteClient(options).actions<TestActions>('ghost');
 		const result = await remote.foo.bar({});
 
 		expect(calls).toHaveLength(0);
@@ -135,12 +134,12 @@ describe('createRemoteActions', () => {
 	});
 
 	test('passes a Result through unchanged when the peer returns one', async () => {
-		const transport = mockTransport({
+		const options = mockRemoteOptions({
 			present: { mac: 1 },
 			respond: async () => Err(RpcError.ActionNotFound({ action: 'x' }).error),
 		});
 
-		const remote = createRemoteActions<TestActions>(transport, 'mac');
+		const remote = createRemoteClient(options).actions<TestActions>('mac');
 		const result = await remote.x();
 
 		expect(isErr(result)).toBe(true);
@@ -150,15 +149,15 @@ describe('createRemoteActions', () => {
 	});
 
 	test('resolves with PeerLeft when the peer drops mid-call', async () => {
-		const transport = mockTransport({
+		const options = mockRemoteOptions({
 			present: { mac: 7 },
 			respond: () => new Promise<Result<unknown, RpcError>>(() => {}),
 		});
 
-		const remote = createRemoteActions<TestActions>(transport, 'mac');
+		const remote = createRemoteClient(options).actions<TestActions>('mac');
 		const callPromise = remote.tabs.close({ tabIds: [1] });
 
-		transport.drop('mac');
+		options.drop('mac');
 
 		const result = await callPromise;
 		expect(isErr(result)).toBe(true);
@@ -171,13 +170,13 @@ describe('createRemoteActions', () => {
 describe('createRemoteClient', () => {
 	test('binds presence and rpc so callers only pass the peer target', async () => {
 		const calls: RpcCall[] = [];
-		const transport = mockTransport({
+		const options = mockRemoteOptions({
 			present: { mac: 42 },
 			calls,
 			respond: async () => Ok({ closedCount: 1 }),
 		});
 
-		const remote = createRemoteClient(transport);
+		const remote = createRemoteClient(options);
 		const result = await remote
 			.actions<TestActions>('mac')
 			.tabs.close({ tabIds: [1] });
@@ -197,13 +196,13 @@ describe('createRemoteClient', () => {
 			},
 		};
 		const calls: RpcCall[] = [];
-		const transport = mockTransport({
+		const options = mockRemoteOptions({
 			present: { mac: 42 },
 			calls,
 			respond: async () => Ok(manifest),
 		});
 
-		const remote = createRemoteClient(transport);
+		const remote = createRemoteClient(options);
 		const result = await remote.describe('mac');
 
 		expect(calls).toHaveLength(1);

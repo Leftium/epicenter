@@ -18,7 +18,7 @@
  */
 
 import {
-	type PeerAwarenessState,
+	type PeerPresenceState,
 	type RpcError,
 } from '@epicenter/workspace';
 import {
@@ -181,7 +181,7 @@ export function emitMissError(
 export function emitRpcError(
 	error: RpcError,
 	targetClientId: number,
-	peerState: PeerAwarenessState,
+	peerState: PeerPresenceState,
 ): void {
 	const { peer } = peerState;
 	const peerLabel = `${peer.name} (${targetClientId}, ${peer.platform})`;

@@ -18,7 +18,7 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
-import type { PeerAwarenessState as AwarenessState } from '../document/standard-awareness-defs.js';
+import type { PeerPresenceState as AwarenessState } from '../document/peer-presence-defs.js';
 
 /**
  * CLI-specific failures of the `/run` route. Carrying the failure mode

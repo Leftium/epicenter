@@ -159,7 +159,7 @@ The daemon factory should make the normal config short, but the defaults need to
 | Project dir | Explicit `findEpicenterDir(import.meta.dir)` in config | Yes | `epicenter up -C` means `process.cwd()` may not be the config directory |
 | API URL | `EPICENTER_API_URL` | Yes | Self-hosting and tests need an override |
 | WebSocket impl | Runtime default | Yes | Tests and non-standard runtimes need injection |
-| Peer | App daemon default, e.g. `{ id: 'fuji-daemon', name: 'Fuji Daemon', platform: 'node' }` | Yes | Presence identity has an obvious app default, but tests and custom hosts need stable names |
+| Peer identity | App daemon default, e.g. `{ id: 'fuji-daemon', name: 'Fuji Daemon', platform: 'node' }` | Yes | Presence identity has an obvious app default, but tests and custom hosts need stable names |
 | Token getter | Prefer default only if dependency boundary stays clean | Yes | The host normally runs on the same machine as `epicenter auth login`, but app daemon subpaths should not grow an accidental CLI package cycle |
 | Script route | App-specific connector default | Yes, by passing `route` to the connector | Avoids drift in the common case while preserving custom route support |
 
@@ -204,7 +204,7 @@ export default defineEpicenterConfig({
 | Readiness | Async host construction | A hosted workspace is ready once the factory resolves. The daemon should not carry a separate `whenReady` field. |
 | Script typing | `ReturnType<typeof createFujiActions>` | Scripts depend on action factories, not config exports |
 | Script route | App-specific connector default | `openFujiDaemonActions()` can use the same `FUJI_DAEMON_ROUTE` as `defineFujiDaemon()` |
-| Peer default | App daemon factory defaults `peer` | The normal daemon identity is obvious and overrideable |
+| Peer identity default | App daemon factory defaults `peer` | The normal daemon identity is obvious and overrideable |
 | Token default | Conditional default | Add it only if the token helper can live in a small host-runtime module without an app to CLI cycle |
 
 ## Target API
@@ -375,7 +375,7 @@ In this model, `epicenter.config.ts` is not a reusable client module. It is the 
 ```ts
 export type OpenFujiDaemonOptions = {
 	route?: string;
-	peer?: PeerDescriptor;
+	peer?: PeerIdentityInput;
 	getToken: () => Promise<string | null>;
 	projectDir?: ProjectDir;
 	clientID?: number;

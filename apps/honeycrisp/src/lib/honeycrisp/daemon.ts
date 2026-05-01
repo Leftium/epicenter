@@ -1,7 +1,7 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
-	type PeerDescriptor,
+	type PeerIdentityInput,
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
@@ -18,12 +18,12 @@ export const HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
 
 export type HoneycrispDaemonOptions = {
 	getToken?: () => Promise<string | null>;
-	peer?: PeerDescriptor;
+	peer?: PeerIdentityInput;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
 };
 
-function defaultHoneycrispDaemonPeer(): PeerDescriptor {
+function defaultHoneycrispDaemonPeer(): PeerIdentityInput {
 	return {
 		id: 'honeycrisp-daemon',
 		name: 'Honeycrisp Daemon',

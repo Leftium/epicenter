@@ -10,6 +10,7 @@ import {
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import {
+	attachYjsLog,
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';

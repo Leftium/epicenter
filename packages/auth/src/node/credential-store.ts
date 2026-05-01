@@ -19,6 +19,8 @@ import {
 } from './credential-secret-store.ts';
 import { normalizeServerOrigin } from './server-origin.ts';
 
+const CREDENTIAL_FILE_VERSION = 'epicenter.auth.credentialStore.v1';
+
 export const StoredBetterAuthSessionMetadata = type({
 	id: 'string',
 	userId: 'string',
@@ -152,13 +154,26 @@ function keychainRef(
 	};
 }
 
+function keychainRefs(secrets: CredentialSecrets): CredentialSecretRef[] {
+	if (secrets.storage === 'file') return [];
+	return [
+		secrets.bearerTokenRef,
+		secrets.sessionTokenRef,
+		secrets.encryptionKeysRef,
+	];
+}
+
+function secretRefKey(ref: CredentialSecretRef): string {
+	return `${ref.service}:${ref.account}`;
+}
+
 async function readJson(path: string): Promise<unknown | null> {
 	const file = Bun.file(path);
 	if (!(await file.exists())) return null;
 	try {
 		return await file.json();
-	} catch {
-		return null;
+	} catch (cause) {
+		throw new Error(`Invalid credential file JSON: ${path}`, { cause });
 	}
 }
 
@@ -171,14 +186,17 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 	await chmod(path, 0o600).catch(() => {});
 }
 
-function parseCredentialFile(value: unknown): CredentialFile {
-	try {
-		return CredentialFile.assert(value);
-	} catch {
+function parseCredentialFile(value: unknown, path: string): CredentialFile {
+	if (value === null) {
 		return {
-			version: 'epicenter.auth.credentialStore.v1',
+			version: CREDENTIAL_FILE_VERSION,
 			credentials: [],
 		};
+	}
+	try {
+		return CredentialFile.assert(value);
+	} catch (cause) {
+		throw new Error(`Invalid credential file schema: ${path}`, { cause });
 	}
 }
 
@@ -191,16 +209,16 @@ function latest(entries: Credential[]): Credential | null {
 export function createCredentialStore({
 	path = defaultCredentialPath(),
 	storageMode,
-	secrets,
+	secretStore: injectedSecretStore,
 	clock = { now: () => new Date() },
 }: {
 	path?: string;
 	storageMode: CredentialStoreStorageMode;
-	secrets?: CredentialSecretStore;
+	secretStore?: CredentialSecretStore;
 	clock?: Clock;
 }) {
 	const secretStore =
-		secrets ??
+		injectedSecretStore ??
 		(storageMode === 'osKeychain'
 			? createKeychainSecretStore()
 			: createFileSecretStore());
@@ -216,7 +234,7 @@ export function createCredentialStore({
 	}
 
 	async function readFile(): Promise<CredentialFile> {
-		return parseCredentialFile(await readJson(path));
+		return parseCredentialFile(await readJson(path), path);
 	}
 
 	async function resolveEntry(entry: CredentialFileEntry): Promise<Credential | null> {
@@ -275,12 +293,13 @@ export function createCredentialStore({
 		const serverOrigin = normalizeServerOrigin(serverOriginInput);
 		const now = isoNow(clock);
 		const file = await readFile();
+		const existing = file.credentials.find(
+			(entry) => entry.serverOrigin === serverOrigin,
+		);
 		const preserved = file.credentials.filter(
 			(entry) => entry.serverOrigin !== serverOrigin,
 		);
-		const savedAt =
-			file.credentials.find((entry) => entry.serverOrigin === serverOrigin)
-				?.savedAt ?? now;
+		const savedAt = existing?.savedAt ?? now;
 		const lastUsedAt = input.lastUsedAt ?? now;
 		let credentialSecrets: CredentialSecrets;
 
@@ -329,10 +348,18 @@ export function createCredentialStore({
 			lastUsedAt,
 		});
 		await writeFile({
-			version: 'epicenter.auth.credentialStore.v1',
+			version: CREDENTIAL_FILE_VERSION,
 			currentServerOrigin: serverOrigin,
 			credentials: [...preserved, entry],
 		});
+		if (existing?.secrets.storage === 'osKeychain') {
+			const nextRefs = new Set(keychainRefs(credentialSecrets).map(secretRefKey));
+			await Promise.all(
+				keychainRefs(existing.secrets)
+					.filter((ref) => !nextRefs.has(secretRefKey(ref)))
+					.map((ref) => secretStore.delete(ref)),
+			);
+		}
 		return Credential.assert({
 			serverOrigin,
 			bearerToken: input.bearerToken,
@@ -397,8 +424,6 @@ export function createCredentialStore({
 	}
 
 	return {
-		path,
-		storageMode,
 		save,
 		get,
 		getCurrent,
@@ -436,7 +461,7 @@ export function createCredentialStore({
 				]);
 			}
 			await writeFile({
-				version: 'epicenter.auth.credentialStore.v1',
+				version: CREDENTIAL_FILE_VERSION,
 				currentServerOrigin:
 					file.currentServerOrigin === serverOrigin
 						? null

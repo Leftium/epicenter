@@ -1,3 +1,16 @@
+/**
+ * Credential Store Tests
+ *
+ * Verifies the CLI credential store contract for plaintext test storage and
+ * OS keychain backed storage.
+ *
+ * Key behaviors:
+ * - Bearer-equivalent secrets stay out of JSON in keychain mode
+ * - Secure storage failures fail closed before writing credentials
+ * - Corrupt credential files are rejected rather than replaced
+ * - Expired credentials keep offline encryption keys available
+ */
+
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -18,21 +31,34 @@ const encryptionKeys = [
 	},
 ] as const;
 
-function makeSession(expiresAt: string): Session {
+function makeSession(
+	expiresAt: string,
+	{
+		userId = 'user-1',
+		name = 'User One',
+		email = 'user@example.com',
+		sessionToken = 'session-token',
+	}: {
+		userId?: string;
+		name?: string;
+		email?: string;
+		sessionToken?: string;
+	} = {},
+): Session {
 	return {
 		user: {
-			id: 'user-1',
-			name: 'User One',
-			email: 'user@example.com',
+			id: userId,
+			name,
+			email,
 			emailVerified: true,
 			image: null,
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
 		session: {
-			id: 'session-1',
-			token: 'session-token',
-			userId: 'user-1',
+			id: `${userId}-session`,
+			token: sessionToken,
+			userId,
 			expiresAt,
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
@@ -113,7 +139,7 @@ describe('createCredentialStore', () => {
 		const store = createCredentialStore({
 			path: storePath('credentials.json'),
 			storageMode: 'osKeychain',
-			secrets,
+			secretStore: secrets,
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -131,11 +157,43 @@ describe('createCredentialStore', () => {
 		);
 	});
 
+	test('removes stale keychain secrets when replacing a server credential', async () => {
+		const secrets = memorySecretStore();
+		const store = createCredentialStore({
+			path: storePath('credentials.json'),
+			storageMode: 'osKeychain',
+			secretStore: secrets,
+			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
+		});
+
+		await store.save('https://api.epicenter.so', {
+			bearerToken: 'old-bearer-token',
+			session: makeSession('2026-02-01T00:00:00.000Z', {
+				userId: 'old-user',
+				sessionToken: 'old-session-token',
+			}),
+		});
+		await store.save('https://api.epicenter.so', {
+			bearerToken: 'new-bearer-token',
+			session: makeSession('2026-02-01T00:00:00.000Z', {
+				userId: 'new-user',
+				sessionToken: 'new-session-token',
+			}),
+		});
+
+		const keys = [...secrets.values.keys()];
+		expect(keys.some((key) => key.includes('old-user'))).toBe(false);
+		expect(keys.some((key) => key.includes('new-user'))).toBe(true);
+		expect(await store.getBearerToken('https://api.epicenter.so')).toBe(
+			'new-bearer-token',
+		);
+	});
+
 	test('fails closed when secure storage is unavailable', async () => {
 		const store = createCredentialStore({
 			path: storePath('credentials.json'),
 			storageMode: 'osKeychain',
-			secrets: memorySecretStore({ available: false }),
+			secretStore: memorySecretStore({ available: false }),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -146,6 +204,41 @@ describe('createCredentialStore', () => {
 			}),
 		).rejects.toThrow('OS keychain storage is unavailable');
 		expect(await Bun.file(storePath('credentials.json')).exists()).toBe(false);
+	});
+
+	test('fails closed when secure storage self-test fails', async () => {
+		const store = createCredentialStore({
+			path: storePath('credentials.json'),
+			storageMode: 'osKeychain',
+			secretStore: memorySecretStore({ selfTestFails: true }),
+			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
+		});
+
+		await expect(
+			store.save('https://api.epicenter.so', {
+				bearerToken: 'bearer-token',
+				session: makeSession('2026-02-01T00:00:00.000Z'),
+			}),
+		).rejects.toThrow('keychain locked');
+		expect(await Bun.file(storePath('credentials.json')).exists()).toBe(false);
+	});
+
+	test('invalid credential files are rejected before save can replace them', async () => {
+		const path = storePath('credentials.json');
+		await Bun.write(path, '{not-json');
+		const store = createCredentialStore({
+			path,
+			storageMode: 'file',
+			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
+		});
+
+		await expect(
+			store.save('https://api.epicenter.so', {
+				bearerToken: 'bearer-token',
+				session: makeSession('2026-02-01T00:00:00.000Z'),
+			}),
+		).rejects.toThrow('Invalid credential file JSON');
+		expect(await Bun.file(path).text()).toBe('{not-json');
 	});
 
 	test('splits online and offline key read policies after expiry', async () => {

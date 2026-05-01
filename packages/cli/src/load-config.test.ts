@@ -56,21 +56,20 @@ const daemonRuntimeFields = `
 `;
 
 describe('loadConfig', () => {
-	test('loads default defineEpicenterConfig hosts by route', async () => {
+	test('loads default defineEpicenterConfig daemon routes by route key', async () => {
 		writeConfig(`
-			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineEpicenterConfig } from '${daemonModuleUrl}';
 
 			export default defineEpicenterConfig({
-				hosts: [
-					defineDaemon({
-						route: 'demo',
-						start: () => ({
+				daemon: {
+					routes: {
+						demo: () => ({
 							actions: {},
 							${daemonRuntimeFields}
 							[Symbol.dispose]() {}
 						})
-					})
-				]
+					}
+				}
 			});
 		`);
 
@@ -78,31 +77,31 @@ describe('loadConfig', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data?.entries.map((entry) => entry.route)).toEqual(['demo']);
-		expect(result.data?.entries.map((entry) => entry.workspace.workspaceId)).toEqual(
-			['epicenter.demo'],
-		);
+		expect(
+			result.data?.entries.map((entry) => entry.workspace.workspaceId),
+		).toEqual(['epicenter.demo']);
 		await result.data?.[Symbol.asyncDispose]();
 	});
 
-	test('passes project context into host definitions', async () => {
+	test('passes project context and route into route modules', async () => {
 		writeConfig(`
-			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineEpicenterConfig } from '${daemonModuleUrl}';
 
 			export default defineEpicenterConfig({
-				hosts: [
-					defineDaemon({
-						route: 'demo',
-						start: ({ projectDir }) => ({
+				daemon: {
+					routes: {
+						demo: ({ projectDir, route }) => ({
 							actions: {
 								paths: {
-									projectDir: { handler: () => projectDir }
+									projectDir: { handler: () => projectDir },
+									route: { handler: () => route }
 								}
 							},
 							${daemonRuntimeFields}
 							[Symbol.dispose]() {}
 						})
-					})
-				]
+					}
+				}
 			});
 		`);
 
@@ -112,70 +111,59 @@ describe('loadConfig', () => {
 		const paths = result.data?.entries[0]?.workspace.actions.paths as
 			| {
 					projectDir: { handler(): string };
+					route: { handler(): string };
 			  }
 			| undefined;
 		expect(paths?.projectDir.handler()).toBe(workDir);
+		expect(paths?.route.handler()).toBe('demo');
 		await result.data?.[Symbol.asyncDispose]();
 	});
 
-	test('rejects duplicate definition routes before starting hosts', async () => {
+	test('rejects invalid route keys before starting route modules', async () => {
 		writeConfig(`
-			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineEpicenterConfig } from '${daemonModuleUrl}';
 
 			globalThis.__loadConfigEvents = [];
 
 			export default defineEpicenterConfig({
-				hosts: [
-					defineDaemon({
-						route: 'demo',
-						start: () => {
-							globalThis.__loadConfigEvents.push('started:first');
+				daemon: {
+					routes: {
+						'bad.route': () => {
+							globalThis.__loadConfigEvents.push('started');
 							return {
 								actions: {},
 								${daemonRuntimeFields}
 								[Symbol.dispose]() {}
 							};
 						}
-					}),
-					defineDaemon({
-						route: 'demo',
-						start: () => {
-							globalThis.__loadConfigEvents.push('started:second');
-							return {
-								actions: {},
-								${daemonRuntimeFields}
-								[Symbol.dispose]() {}
-							};
-						}
-					})
-				]
+					}
+				}
 			});
 		`);
 
 		const result = await loadConfig(workDir);
 
 		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('DuplicateRoute');
+		expect(result.error?.name).toBe('InvalidRoute');
 		expect(
 			(globalThis as { __loadConfigEvents?: string[] }).__loadConfigEvents,
 		).toEqual([]);
 	});
 
-	test('awaits async host definitions', async () => {
+	test('awaits async route modules', async () => {
 		writeConfig(`
-			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineEpicenterConfig } from '${daemonModuleUrl}';
 
 			export default defineEpicenterConfig({
-				hosts: [
-					defineDaemon({
-						route: 'demo',
-						start: () => Promise.resolve({
+				daemon: {
+					routes: {
+						demo: () => Promise.resolve({
 							actions: {},
 							${daemonRuntimeFields}
 							[Symbol.dispose]() {}
 						})
-					})
-				]
+					}
+				}
 			});
 		`);
 
@@ -186,116 +174,74 @@ describe('loadConfig', () => {
 		await result.data?.[Symbol.asyncDispose]();
 	});
 
-	test('rejects invalid route keys', async () => {
+	test('rejects non-function route modules', async () => {
 		writeConfig(`
-			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineEpicenterConfig } from '${daemonModuleUrl}';
 
 			export default defineEpicenterConfig({
-				hosts: [
-					defineDaemon({
-						route: 'bad.route',
-						start: () => ({
-							actions: {},
-							${daemonRuntimeFields}
-							[Symbol.dispose]() {}
-						})
-					})
-				]
+				daemon: {
+					routes: {
+						demo: {}
+					}
+				}
 			});
 		`);
 
 		const result = await loadConfig(workDir);
 
 		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('InvalidRoute');
+		expect(result.error?.name).toBe('InvalidRouteModule');
 	});
 
 	test('rejects host runtimes missing workspaceId', async () => {
 		writeConfig(`
-			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineEpicenterConfig } from '${daemonModuleUrl}';
 
 			export default defineEpicenterConfig({
-				hosts: [
-					defineDaemon({
-						route: 'demo',
-						start: () => ({
+				daemon: {
+					routes: {
+						demo: () => ({
 							actions: {},
 							${daemonTransportFields}
 							[Symbol.dispose]() {}
 						})
-					})
-				]
+					}
+				}
 			});
 		`);
 
 		const result = await loadConfig(workDir);
 
 		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('InvalidHost');
+		expect(result.error?.name).toBe('InvalidRouteRuntime');
 	});
 
-	test('rejects duplicate routes', async () => {
+	test('cleans up resolved runtimes when a later route rejects', async () => {
 		writeConfig(`
-			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
-
-			export default defineEpicenterConfig({
-				hosts: [
-					defineDaemon({
-						route: 'demo',
-						start: () => ({
-							actions: {},
-							${daemonRuntimeFields}
-							[Symbol.dispose]() {}
-						})
-					}),
-					defineDaemon({
-						route: 'demo',
-						start: () => ({
-							actions: {},
-							${daemonRuntimeFields}
-							[Symbol.dispose]() {}
-						})
-					})
-				]
-			});
-		`);
-
-		const result = await loadConfig(workDir);
-
-		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('DuplicateRoute');
-	});
-
-	test('cleans up resolved hosts when a later host rejects', async () => {
-		writeConfig(`
-			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineEpicenterConfig } from '${daemonModuleUrl}';
 
 			globalThis.__loadConfigEvents = [];
 
 			export default defineEpicenterConfig({
-				hosts: [
-					defineDaemon({
-						route: 'first',
-						start: () => ({
+				daemon: {
+					routes: {
+						first: () => ({
 							actions: {},
 							${daemonRuntimeFields}
 							[Symbol.dispose]() {
 								globalThis.__loadConfigEvents.push('disposed:first');
 							}
-						})
-					}),
-					defineDaemon({
-						route: 'second',
-						start: () => Promise.reject(new Error('boom'))
-					})
-				]
+						}),
+						second: () => Promise.reject(new Error('boom'))
+					}
+				}
 			});
 		`);
 
 		const result = await loadConfig(workDir);
 
 		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('HostFailed');
+		expect(result.error?.name).toBe('RouteFailed');
 		expect(
 			(globalThis as { __loadConfigEvents?: string[] }).__loadConfigEvents,
 		).toEqual(['disposed:first']);
@@ -303,13 +249,12 @@ describe('loadConfig', () => {
 
 	test('rejects host runtimes missing daemon peer methods', async () => {
 		writeConfig(`
-			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+			import { defineEpicenterConfig } from '${daemonModuleUrl}';
 
 			export default defineEpicenterConfig({
-				hosts: [
-					defineDaemon({
-						route: 'demo',
-						start: () => ({
+				daemon: {
+					routes: {
+						demo: () => ({
 							workspaceId: 'epicenter.demo',
 							actions: {},
 							sync: { whenDisposed: Promise.resolve() },
@@ -317,15 +262,15 @@ describe('loadConfig', () => {
 							rpc: {},
 							[Symbol.dispose]() {}
 						})
-					})
-				]
+					}
+				}
 			});
 		`);
 
 		const result = await loadConfig(workDir);
 
 		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('InvalidHost');
+		expect(result.error?.name).toBe('InvalidRouteRuntime');
 	});
 
 	test('rejects missing default config helper', async () => {

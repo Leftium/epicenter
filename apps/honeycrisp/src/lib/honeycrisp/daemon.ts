@@ -5,7 +5,7 @@ import {
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import { defineDaemon } from '@epicenter/workspace/daemon';
+import type { EpicenterConfigContext } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
 	createSessionTokenGetter,
@@ -16,8 +16,7 @@ import { openHoneycrisp as openHoneycrispDoc } from './index.js';
 
 export const HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
 
-export type DefineHoneycrispDaemonOptions = {
-	route?: string;
+export type HoneycrispDaemonOptions = {
 	getToken?: () => string | null | Promise<string | null>;
 	peer?: PeerDescriptor;
 	apiUrl?: string;
@@ -32,36 +31,32 @@ function defaultHoneycrispDaemonPeer(): PeerDescriptor {
 	};
 }
 
-export function defineHoneycrispDaemon({
-	route = HONEYCRISP_DAEMON_ROUTE,
+export function honeycrispDaemon({
 	apiUrl = EPICENTER_API_URL,
 	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
 	peer = defaultHoneycrispDaemonPeer(),
 	webSocketImpl,
-}: DefineHoneycrispDaemonOptions = {}) {
-	return defineDaemon({
-		route,
-		start: ({ projectDir }) => {
-			const doc = openHoneycrispDoc({ clientID: hashClientId(projectDir) });
-			const yjsLog = attachYjsLog(doc.ydoc, {
-				filePath: yjsPath(projectDir, doc.ydoc.guid),
-			});
-			const sync = attachSync(doc, {
-				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-				getToken,
-				webSocketImpl,
-			});
-			const presence = sync.attachPresence({ peer });
-			const rpc = sync.attachRpc(doc.actions);
+}: HoneycrispDaemonOptions = {}) {
+	return ({ projectDir }: EpicenterConfigContext) => {
+		const doc = openHoneycrispDoc({ clientID: hashClientId(projectDir) });
+		const yjsLog = attachYjsLog(doc.ydoc, {
+			filePath: yjsPath(projectDir, doc.ydoc.guid),
+		});
+		const sync = attachSync(doc, {
+			url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+			getToken,
+			webSocketImpl,
+		});
+		const presence = sync.attachPresence({ peer });
+		const rpc = sync.attachRpc(doc.actions);
 
-			return {
-				...doc,
-				workspaceId: doc.ydoc.guid,
-				yjsLog,
-				sync,
-				presence,
-				rpc,
-			};
-		},
-	});
+		return {
+			...doc,
+			workspaceId: doc.ydoc.guid,
+			yjsLog,
+			sync,
+			presence,
+			rpc,
+		};
+	};
 }

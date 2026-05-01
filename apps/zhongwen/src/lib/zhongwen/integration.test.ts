@@ -9,7 +9,7 @@ import {
 	type ConversationId,
 	generateConversationId,
 } from '../workspace/definition.js';
-import { defineZhongwenDaemon } from './daemon.js';
+import { ZHONGWEN_DAEMON_ROUTE, zhongwenDaemon } from './daemon.js';
 import { openZhongwen as openZhongwenScript } from './script.js';
 
 let workdir: ProjectDir;
@@ -25,7 +25,7 @@ afterEach(() => {
 describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates conversations the daemon wrote', async () => {
 		{
-			const daemonDefinition = defineZhongwenDaemon({
+			const routeModule = zhongwenDaemon({
 				getToken: async () => 'fake-token',
 				peer: {
 					id: 'test-daemon',
@@ -34,8 +34,9 @@ describe('daemon to script handoff via Yjs log file', () => {
 				},
 				webSocketImpl: NoopWebSocket,
 			});
-			using daemon = await daemonDefinition.start({
+			using daemon = await routeModule({
 				projectDir: workdir,
+				route: ZHONGWEN_DAEMON_ROUTE,
 			});
 
 			const now = Date.now();

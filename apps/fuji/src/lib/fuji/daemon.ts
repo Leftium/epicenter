@@ -6,7 +6,7 @@ import {
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import { defineDaemon } from '@epicenter/workspace/daemon';
+import type { EpicenterConfigContext } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdown,
 	slugFilename,
@@ -26,8 +26,7 @@ import { openFuji as openFujiDoc } from './index.js';
 
 export const FUJI_DAEMON_ROUTE = 'fuji';
 
-export type DefineFujiDaemonOptions = {
-	route?: string;
+export type FujiDaemonOptions = {
 	getToken?: () => string | null | Promise<string | null>;
 	peer?: PeerDescriptor;
 	apiUrl?: string;
@@ -42,46 +41,42 @@ function defaultFujiDaemonPeer(): PeerDescriptor {
 	};
 }
 
-export function defineFujiDaemon({
-	route = FUJI_DAEMON_ROUTE,
+export function fujiDaemon({
 	apiUrl = EPICENTER_API_URL,
 	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
-}: DefineFujiDaemonOptions = {}) {
-	return defineDaemon({
-		route,
-		start: ({ projectDir }) => {
-			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
-			attachYjsLog(doc.ydoc, {
-				filePath: yjsPath(projectDir, doc.ydoc.guid),
-			});
-			const sync = attachSync(doc, {
-				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-				getToken,
-				webSocketImpl,
-			});
-			const presence = sync.attachPresence({ peer });
-			const rpc = sync.attachRpc(doc.actions);
-			attachSqlite(doc.ydoc, {
-				filePath: sqlitePath(projectDir, doc.ydoc.guid),
-			}).table(doc.tables.entries);
-			attachMarkdown(doc.ydoc, {
-				dir: markdownPath(projectDir, doc.ydoc.guid),
-			}).table(doc.tables.entries, { filename: slugFilename('title') });
+}: FujiDaemonOptions = {}) {
+	return ({ projectDir }: EpicenterConfigContext) => {
+		const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
+		attachYjsLog(doc.ydoc, {
+			filePath: yjsPath(projectDir, doc.ydoc.guid),
+		});
+		const sync = attachSync(doc, {
+			url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+			getToken,
+			webSocketImpl,
+		});
+		const presence = sync.attachPresence({ peer });
+		const rpc = sync.attachRpc(doc.actions);
+		attachSqlite(doc.ydoc, {
+			filePath: sqlitePath(projectDir, doc.ydoc.guid),
+		}).table(doc.tables.entries);
+		attachMarkdown(doc.ydoc, {
+			dir: markdownPath(projectDir, doc.ydoc.guid),
+		}).table(doc.tables.entries, { filename: slugFilename('title') });
 
-			return {
-				workspaceId: doc.ydoc.guid,
-				actions: doc.actions,
-				sync,
-				presence,
-				rpc,
-				[Symbol.dispose]() {
-					doc[Symbol.dispose]();
-				},
-			};
-		},
-	});
+		return {
+			workspaceId: doc.ydoc.guid,
+			actions: doc.actions,
+			sync,
+			presence,
+			rpc,
+			[Symbol.dispose]() {
+				doc[Symbol.dispose]();
+			},
+		};
+	};
 }
 
 export function openFujiDaemonActions({

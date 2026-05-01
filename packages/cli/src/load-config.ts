@@ -1,23 +1,19 @@
 /**
  * Workspace config loader.
  *
- * `epicenter.config.ts` is a daemon host manifest. The loader reads the
- * default `defineEpicenterConfig({ hosts })` export, validates host definitions,
- * starts them with project context, and returns the internal `DaemonRuntimeEntry[]`
- * used by the daemon server.
+ * `epicenter.config.ts` is a project config with daemon routes. The loader
+ * reads the default `defineEpicenterConfig({ daemon: { routes } })` export,
+ * validates route names, starts route modules with project context, and returns
+ * the internal `DaemonRuntimeEntry[]` used by the daemon server.
  */
 
 import { join, resolve } from 'node:path';
-import type {
-	PeerAwarenessState,
-	ProjectDir,
-} from '@epicenter/workspace';
+import type { PeerAwarenessState, ProjectDir } from '@epicenter/workspace';
 import {
-	type DaemonHostDefinition,
+	type DaemonRouteModule,
 	type DaemonRuntime,
-	EPICENTER_CONFIG,
-	EPICENTER_DAEMON_HOST,
 	type DaemonRuntimeEntry,
+	EPICENTER_CONFIG,
 } from '@epicenter/workspace/daemon';
 import {
 	defineErrors,
@@ -36,8 +32,8 @@ export type AwarenessState = PeerAwarenessState;
 export type LoadConfigResult = {
 	entries: DaemonRuntimeEntry[];
 	/**
-	 * Release every hosted daemon runtime. Host teardown starts by destroying the
-	 * Y.Doc, then the loader awaits sync teardown barriers exposed by hosts.
+	 * Release every daemon runtime. Teardown starts by destroying the Y.Doc,
+	 * then the loader awaits sync teardown barriers exposed by each runtime.
 	 */
 	[Symbol.asyncDispose](): Promise<void>;
 };
@@ -68,57 +64,57 @@ export const LoadError = defineErrors({
 	InvalidConfig: ({ configPath }: { configPath: string }) => ({
 		message:
 			`Invalid ${CONFIG_FILENAME} in ${configPath}: ` +
-			`default export must be defineEpicenterConfig({ hosts: [...] }).`,
+			`default export must be defineEpicenterConfig({ daemon: { routes: {...} } }).`,
 		configPath,
 	}),
 	EmptyConfig: ({ configPath }: { configPath: string }) => ({
 		message:
-			`No daemon hosts found in ${configPath}.\n` +
-			`Default-export defineEpicenterConfig({ hosts: [...] }) with at least one host.`,
+			`No daemon routes found in ${configPath}.\n` +
+			`Default-export defineEpicenterConfig({ daemon: { routes: {...} } }) with at least one route.`,
 		configPath,
 	}),
-	InvalidHostDefinition: ({
+	InvalidRouteModule: ({
 		configPath,
-		index,
+		route,
 	}: {
 		configPath: string;
-		index: number;
+		route: string;
 	}) => ({
 		message:
-			`Invalid daemon host definition ${index} in ${configPath}: ` +
-			`expected route and start().`,
+			`Invalid daemon route "${route}" in ${configPath}: ` +
+			`expected a route module function.`,
 		configPath,
-		index,
+		route,
 	}),
-	HostFailed: ({
+	RouteFailed: ({
 		configPath,
-		index,
+		route,
 		cause,
 	}: {
 		configPath: string;
-		index: number;
+		route: string;
 		cause: unknown;
 	}) => ({
 		message:
-			`Failed to initialize daemon host ${index} in ${configPath}: ` +
+			`Failed to initialize daemon route "${route}" in ${configPath}: ` +
 			extractErrorMessage(cause),
 		configPath,
-		index,
+		route,
 		cause,
 	}),
-	InvalidHost: ({
+	InvalidRouteRuntime: ({
 		configPath,
-		index,
+		route,
 	}: {
 		configPath: string;
-		index: number;
+		route: string;
 	}) => ({
 		message:
-			`Invalid daemon host ${index} in ${configPath}: ` +
+			`Invalid daemon route "${route}" in ${configPath}: ` +
 			`expected a daemon runtime with workspaceId, actions, sync teardown/status, ` +
 			`presence peers/observe/waitForPeer, rpc.rpc, and [Symbol.dispose].`,
 		configPath,
-		index,
+		route,
 	}),
 	InvalidRoute: ({
 		configPath,
@@ -133,40 +129,23 @@ export const LoadError = defineErrors({
 		configPath,
 		route,
 	}),
-	DuplicateRoute: ({
-		configPath,
-		route,
-	}: {
-		configPath: string;
-		route: string;
-	}) => ({
-		message: `Duplicate daemon route "${route}" in ${configPath}.`,
-		configPath,
-		route,
-	}),
 });
 export type LoadError = InferErrors<typeof LoadError>;
 
 type ImportedEpicenterConfig = {
-	readonly hosts: readonly unknown[];
+	readonly daemon: {
+		readonly routes: Record<string, unknown>;
+	};
 };
 
 function isEpicenterConfig(value: unknown): value is ImportedEpicenterConfig {
-	return (
-		value != null &&
-		typeof value === 'object' &&
-		(value as Record<PropertyKey, unknown>)[EPICENTER_CONFIG] === true &&
-		Array.isArray((value as { hosts?: unknown }).hosts)
-	);
-}
-
-function isDaemonHostDefinition(value: unknown): value is DaemonHostDefinition {
 	if (value == null || typeof value !== 'object') return false;
 	const record = value as Record<PropertyKey, unknown>;
+	const daemon = record.daemon;
+	if (!isPlainObject(daemon)) return false;
 	return (
-		record[EPICENTER_DAEMON_HOST] === true &&
-		typeof record.route === 'string' &&
-		typeof record.start === 'function'
+		record[EPICENTER_CONFIG] === true &&
+		isPlainObject((daemon as { routes?: unknown }).routes)
 	);
 }
 
@@ -221,17 +200,17 @@ function isValidRoute(route: string): boolean {
 	return ROUTE_PATTERN.test(route) && !OBJECT_DANGEROUS_ROUTE_KEYS.has(route);
 }
 
-async function disposeHosts(hosts: DaemonRuntime[]): Promise<void> {
+async function disposeRuntimes(runtimes: DaemonRuntime[]): Promise<void> {
 	const barriers: Promise<unknown>[] = [];
-	for (const host of hosts) {
-		barriers.push(host.sync.whenDisposed);
-		host[Symbol.dispose]();
+	for (const runtime of runtimes) {
+		barriers.push(runtime.sync.whenDisposed);
+		runtime[Symbol.dispose]();
 	}
 	await Promise.all(barriers);
 }
 
 /**
- * Load daemon hosts from the explicit default daemon host manifest.
+ * Load daemon route modules from the explicit default project config.
  */
 export async function loadConfig(
 	targetDir: string,
@@ -252,40 +231,44 @@ export async function loadConfig(
 	const config = (importResult.data as { default?: unknown }).default;
 	if (!isEpicenterConfig(config))
 		return LoadError.InvalidConfig({ configPath });
-	if (config.hosts.length === 0) return LoadError.EmptyConfig({ configPath });
+	const routeModules = Object.entries(config.daemon.routes);
+	if (routeModules.length === 0) return LoadError.EmptyConfig({ configPath });
 
-	const definitions: DaemonHostDefinition[] = [];
-	const routes = new Set<string>();
-	for (const [index, definition] of config.hosts.entries()) {
-		if (!isDaemonHostDefinition(definition)) {
-			return LoadError.InvalidHostDefinition({ configPath, index });
+	const definitions: { route: string; module: DaemonRouteModule }[] = [];
+	for (const [route, routeModule] of routeModules) {
+		if (!isValidRoute(route)) {
+			return LoadError.InvalidRoute({ configPath, route });
 		}
-		if (!isValidRoute(definition.route)) {
-			return LoadError.InvalidRoute({ configPath, route: definition.route });
+		if (typeof routeModule !== 'function') {
+			return LoadError.InvalidRouteModule({ configPath, route });
 		}
-		if (routes.has(definition.route)) {
-			return LoadError.DuplicateRoute({ configPath, route: definition.route });
-		}
-		routes.add(definition.route);
-		definitions.push(definition);
+		definitions.push({ route, module: routeModule as DaemonRouteModule });
 	}
 
 	const entries: DaemonRuntimeEntry[] = [];
 
-	for (const [index, definition] of definitions.entries()) {
+	for (const definition of definitions) {
 		let workspace: unknown;
 		try {
-			workspace = await definition.start({
+			workspace = await definition.module({
 				projectDir,
+				route: definition.route,
 			});
 		} catch (cause) {
-			await disposeHosts(entries.map((entry) => entry.workspace));
-			return LoadError.HostFailed({ configPath, index, cause });
+			await disposeRuntimes(entries.map((entry) => entry.workspace));
+			return LoadError.RouteFailed({
+				configPath,
+				route: definition.route,
+				cause,
+			});
 		}
 
 		if (!isDaemonRuntime(workspace)) {
-			await disposeHosts(entries.map((entry) => entry.workspace));
-			return LoadError.InvalidHost({ configPath, index });
+			await disposeRuntimes(entries.map((entry) => entry.workspace));
+			return LoadError.InvalidRouteRuntime({
+				configPath,
+				route: definition.route,
+			});
 		}
 
 		entries.push({
@@ -297,7 +280,7 @@ export async function loadConfig(
 	return Ok({
 		entries,
 		[Symbol.asyncDispose]() {
-			return disposeHosts(this.entries.map((entry) => entry.workspace));
+			return disposeRuntimes(this.entries.map((entry) => entry.workspace));
 		},
 	});
 }

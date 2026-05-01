@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { EncryptionKeys, ProjectDir } from '@epicenter/workspace';
-import {
-	mintTestProjectDir,
-	NoopWebSocket,
-} from '@epicenter/workspace/test-utils';
 import {
 	attachYjsLog,
 	createDaemonServer,
 	createSessionStore,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { defineFujiDaemon } from './daemon.js';
+import {
+	mintTestProjectDir,
+	NoopWebSocket,
+} from '@epicenter/workspace/test-utils';
+import { FUJI_DAEMON_ROUTE, fujiDaemon } from './daemon.js';
 import { openFuji as openFujiDoc } from './index.js';
 import { openFujiScript, openFujiSnapshot } from './script.js';
 
@@ -44,12 +44,13 @@ afterEach(() => {
 describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates entries the daemon wrote', async () => {
 		{
-			const daemonDefinition = defineFujiDaemon({
+			const routeModule = fujiDaemon({
 				getToken: async () => 'fake-token',
 				webSocketImpl: NoopWebSocket,
 			});
-			using daemon = await daemonDefinition.start({
+			using daemon = await routeModule({
 				projectDir: workdir,
+				route: FUJI_DAEMON_ROUTE,
 			});
 
 			for (const title of ['first', 'second', 'third']) {
@@ -68,12 +69,13 @@ describe('daemon to script handoff via Yjs log file', () => {
 	test('script actions read and write through the daemon', async () => {
 		await Bun.write(`${workdir}/epicenter.config.ts`, 'export default {};');
 
-		const daemonDefinition = defineFujiDaemon({
+		const routeModule = fujiDaemon({
 			getToken: async () => 'fake-token',
 			webSocketImpl: NoopWebSocket,
 		});
-		const daemon = await daemonDefinition.start({
+		const daemon = await routeModule({
 			projectDir: workdir,
+			route: FUJI_DAEMON_ROUTE,
 		});
 		const oldRuntimeDir = process.env.XDG_RUNTIME_DIR;
 		process.env.XDG_RUNTIME_DIR = '/tmp';
@@ -81,7 +83,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 			projectDir: workdir,
 			entries: [
 				{
-					route: daemonDefinition.route,
+					route: FUJI_DAEMON_ROUTE,
 					workspace: daemon,
 				},
 			],
@@ -108,9 +110,9 @@ describe('daemon to script handoff via Yjs log file', () => {
 			expect(fresh.error).toBeNull();
 			if (fresh.error !== null) return;
 			expect(fresh.data.map((row) => row.title)).toContain('daemon backed');
-			expect(fresh.data.find((row) => row.id === created.data.id)?.tags).toEqual([
-				'script',
-			]);
+			expect(
+				fresh.data.find((row) => row.id === created.data.id)?.tags,
+			).toEqual(['script']);
 
 			const snapshot = await openFujiSnapshot({ projectDir: workdir });
 			using _snapshot = snapshot;

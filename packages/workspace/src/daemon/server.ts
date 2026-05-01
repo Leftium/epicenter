@@ -29,7 +29,7 @@ export type DaemonServerOptions = {
 	/** Filesystem-resolved absolute path that scopes this daemon. */
 	projectDir: string;
 	/**
-	 * Pre-constructed daemon runtimes the daemon hosts. Each entry's
+	 * Pre-constructed daemon runtimes the daemon serves. Each entry's
 	 * `route` is the routing key the wire surface dispatches on. The CLI uses
 	 * this as the first segment in route-prefixed action paths.
 	 */

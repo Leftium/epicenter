@@ -114,11 +114,11 @@ Scripts can distinguish these cases without parsing stderr:
 
 ## What your `epicenter.config.ts` must export
 
-An explicit daemon host config: default-export
-`defineEpicenterConfig({ hosts: [...] })` with one daemon definition per route.
-Definitions are cheap metadata plus a delayed `start()` function. The CLI loader
-injects the project context when it starts them, so configs do not need to call
-`findEpicenterDir(import.meta.dir)` or depend on the shell's current directory.
+An explicit daemon route config: default-export
+`defineEpicenterConfig({ daemon: { routes: {...} } })`. Route values are
+delayed functions. The CLI loader injects the project context when it starts
+them, so configs do not need to call `findEpicenterDir(import.meta.dir)` or
+depend on the shell's current directory.
 
 ```ts
 // epicenter.config.ts
@@ -131,10 +131,7 @@ import {
 	defineMutation,
 	toWsUrl,
 } from '@epicenter/workspace';
-import {
-	defineDaemon,
-	defineEpicenterConfig,
-} from '@epicenter/workspace/daemon';
+import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import { createSessionTokenGetter } from '@epicenter/workspace/node';
 import Type from 'typebox';
 import { type } from 'arktype';
@@ -191,31 +188,32 @@ function openTabManager() {
 }
 
 export default defineEpicenterConfig({
-	hosts: [
-		defineDaemon({
-			route: 'tabManager',
-			title: 'Tab Manager',
-			workspaceId: 'epicenter.tab-manager',
-			start: () => openTabManager(),
-		}),
-	],
+	daemon: {
+		routes: {
+			tabManager: () => openTabManager(),
+		},
+	},
 });
 ```
 
 App packages can expose narrower helpers. A Fuji config can be this small:
 
 ```ts
-import { defineFujiDaemon } from '@epicenter/fuji/daemon';
+import { fujiDaemon } from '@epicenter/fuji/daemon';
 import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
 
 export default defineEpicenterConfig({
-	hosts: [defineFujiDaemon()],
+	daemon: {
+		routes: {
+			fuji: fujiDaemon(),
+		},
+	},
 });
 ```
 
-`defineFujiDaemon()` defaults auth through
-`createSessionTokenGetter()` from `@epicenter/workspace/node`. Override
-`getToken` only when the deployment needs a custom auth source.
+`fujiDaemon()` defaults auth through `createSessionTokenGetter()` from
+`@epicenter/workspace/node`. Override `getToken` only when the deployment needs
+a custom auth source.
 
 ## Exposing operations via CLI
 
@@ -256,25 +254,24 @@ The CLI walks `workspace.actions`. Infrastructure such as `ydoc`, tables, persis
 
 ## Naming Routes
 
-Every daemon host definition has a `route`. The route becomes the first segment
-of every CLI dot-path. A config with a single route can use any name
-(`tabManager`, `tm`, `w`), but once you add a second route, the prefix
-disambiguates them, so a readable name ages better than a one-letter one.
+Every key under `daemon.routes` becomes the first segment of every CLI dot-path.
+A config with a single route can use any name (`tabManager`, `tm`, `w`), but once
+you add a second route, the prefix disambiguates them, so a readable name ages
+better than a one-letter one.
 
 There is no named-export scanning. Even a config with one workspace uses
-`defineEpicenterConfig({ hosts: [host] })`. This keeps the host manifest
-explicit and keeps route defaults close to app daemon factories.
+`defineEpicenterConfig({ daemon: { routes } })`. This keeps the daemon route map
+explicit and keeps local route names in the project config.
 
 ```ts
 // epicenter.config.ts
 export default defineEpicenterConfig({
-	hosts: [
-		defineDaemon({
-			route: 'tabManager',
-			start: () => openTabManager(),
-		}),
-		defineFujiDaemon(),
-	],
+	daemon: {
+		routes: {
+			tabManager: () => openTabManager(),
+			fuji: fujiDaemon(),
+		},
+	},
 });
 // epicenter run tabManager.tabs.list
 // epicenter run fuji.entries.list

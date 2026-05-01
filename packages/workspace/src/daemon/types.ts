@@ -1,14 +1,14 @@
 /**
  * Daemon-side types describing the shape of a hosted daemon runtime.
  *
- * `DaemonHostDefinition` is the config-time contract: route plus a delayed
- * `start()` function. `DaemonRuntime` is the runtime contract every started
- * daemon host has to satisfy: workspace identity, lifecycle hook, required
- * `actions` root, sync transport, peer presence, and RPC attachments.
+ * `DaemonRouteModule` is the config-time contract: a delayed function keyed by
+ * route name. `DaemonRuntime` is the runtime contract every started daemon
+ * route has to satisfy: workspace identity, lifecycle hook, required `actions`
+ * root, sync transport, peer presence, and RPC attachments.
  *
- * `DaemonRuntimeEntry` is one routed runtime the daemon hosts internally.
- * The CLI's config loader opens definitions from the default
- * `defineEpicenterConfig({ hosts })` export in `epicenter.config.ts`.
+ * `DaemonRuntimeEntry` is one routed runtime the daemon serves internally. The
+ * CLI's config loader opens route modules from the default
+ * `defineEpicenterConfig({ daemon: { routes } })` export in `epicenter.config.ts`.
  */
 
 import type {
@@ -17,16 +17,13 @@ import type {
 } from '../document/attach-sync.js';
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import type { Actions } from '../shared/actions.js';
-import type {
-	MaybePromise,
-	ProjectDir,
-} from '../shared/types.js';
+import type { MaybePromise, ProjectDir } from '../shared/types.js';
 
 export const EPICENTER_CONFIG = Symbol.for('epicenter.daemon-config');
-export const EPICENTER_DAEMON_HOST = Symbol.for('epicenter.daemon-host');
 
 export type EpicenterConfigContext = {
 	projectDir: ProjectDir;
+	route: string;
 };
 
 /**
@@ -53,47 +50,30 @@ export type DaemonRuntime = {
 	readonly rpc: SyncRpcAttachment;
 };
 
-export type DaemonHostDefinition<
-	TRuntime extends DaemonRuntime = DaemonRuntime,
-> = {
-	[EPICENTER_DAEMON_HOST]: true;
-	route: string;
-	start(options: EpicenterConfigContext): MaybePromise<TRuntime>;
-};
-
-export type DefineDaemonOptions<
-	TRuntime extends DaemonRuntime = DaemonRuntime,
-> = {
-	route: string;
-	start(options: EpicenterConfigContext): MaybePromise<TRuntime>;
-};
-
-export function defineDaemon<TRuntime extends DaemonRuntime>({
-	route,
-	start,
-}: DefineDaemonOptions<TRuntime>): DaemonHostDefinition<TRuntime> {
-	return Object.freeze({
-		[EPICENTER_DAEMON_HOST]: true as const,
-		route,
-		start,
-	});
-}
+export type DaemonRouteModule<TRuntime extends DaemonRuntime = DaemonRuntime> =
+	(options: EpicenterConfigContext) => MaybePromise<TRuntime>;
 
 export type EpicenterConfig = {
 	[EPICENTER_CONFIG]: true;
-	hosts: readonly DaemonHostDefinition[];
+	daemon: {
+		routes: Readonly<Record<string, DaemonRouteModule>>;
+	};
 };
 
 export type DefineEpicenterConfigOptions = {
-	hosts: readonly DaemonHostDefinition[];
+	daemon: {
+		routes: Record<string, DaemonRouteModule>;
+	};
 };
 
 export function defineEpicenterConfig({
-	hosts,
+	daemon,
 }: DefineEpicenterConfigOptions): EpicenterConfig {
 	return Object.freeze({
 		[EPICENTER_CONFIG]: true as const,
-		hosts: Object.freeze([...hosts]),
+		daemon: Object.freeze({
+			routes: Object.freeze({ ...daemon.routes }),
+		}),
 	});
 }
 

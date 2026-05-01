@@ -5,7 +5,7 @@ import {
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import { defineDaemon } from '@epicenter/workspace/daemon';
+import type { EpicenterConfigContext } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
 	createSessionTokenGetter,
@@ -16,8 +16,7 @@ import { openOpensidian as openOpensidianDoc } from './index.js';
 
 export const OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 
-export type DefineOpensidianDaemonOptions = {
-	route?: string;
+export type OpensidianDaemonOptions = {
 	getToken?: () => string | null | Promise<string | null>;
 	peer?: PeerDescriptor;
 	apiUrl?: string;
@@ -32,41 +31,37 @@ function defaultOpensidianDaemonPeer(): PeerDescriptor {
 	};
 }
 
-export function defineOpensidianDaemon({
-	route = OPENSIDIAN_DAEMON_ROUTE,
+export function opensidianDaemon({
 	apiUrl = EPICENTER_API_URL,
 	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
 	peer = defaultOpensidianDaemonPeer(),
 	webSocketImpl,
-}: DefineOpensidianDaemonOptions = {}) {
-	return defineDaemon({
-		route,
-		start: ({ projectDir }) => {
-			const doc = openOpensidianDoc({ clientID: hashClientId(projectDir) });
-			const yjsLog = attachYjsLog(doc.ydoc, {
-				filePath: yjsPath(projectDir, doc.ydoc.guid),
-			});
-			const sync = attachSync(doc, {
-				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-				getToken,
-				webSocketImpl,
-			});
+}: OpensidianDaemonOptions = {}) {
+	return ({ projectDir }: EpicenterConfigContext) => {
+		const doc = openOpensidianDoc({ clientID: hashClientId(projectDir) });
+		const yjsLog = attachYjsLog(doc.ydoc, {
+			filePath: yjsPath(projectDir, doc.ydoc.guid),
+		});
+		const sync = attachSync(doc, {
+			url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+			getToken,
+			webSocketImpl,
+		});
 
-			// Daemon runtime is materializer-only for now. Browser runtime owns
-			// Opensidian file and shell actions because they need browser services.
-			const actions = {};
-			const presence = sync.attachPresence({ peer });
-			const rpc = sync.attachRpc(actions);
+		// Daemon runtime is materializer-only for now. Browser runtime owns
+		// Opensidian file and shell actions because they need browser services.
+		const actions = {};
+		const presence = sync.attachPresence({ peer });
+		const rpc = sync.attachRpc(actions);
 
-			return {
-				...doc,
-				workspaceId: doc.ydoc.guid,
-				yjsLog,
-				sync,
-				actions,
-				presence,
-				rpc,
-			};
-		},
-	});
+		return {
+			...doc,
+			workspaceId: doc.ydoc.guid,
+			yjsLog,
+			sync,
+			actions,
+			presence,
+			rpc,
+		};
+	};
 }

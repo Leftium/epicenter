@@ -1,13 +1,10 @@
 export {
-	type DaemonHostDefinition,
+	type DaemonRouteModule,
 	type DaemonRuntime,
-	type DefineDaemonOptions,
+	type DaemonRuntimeEntry,
 	type DefineEpicenterConfigOptions,
-	defineDaemon,
 	defineEpicenterConfig,
 	EPICENTER_CONFIG,
-	EPICENTER_DAEMON_HOST,
 	type EpicenterConfig,
 	type EpicenterConfigContext,
-	type DaemonRuntimeEntry,
 } from './types.js';

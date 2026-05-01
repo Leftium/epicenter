@@ -1,13 +1,13 @@
 /**
  * `epicenter up`: start the long-lived foreground daemon for one project.
  *
- * Loads every daemon host declared by `epicenter.config.ts` and exposes a
+ * Loads every daemon route declared by `epicenter.config.ts` and exposes a
  * Unix-socket IPC channel for that project. `peers`, `list`, and `run`
  * dispatch to this daemon over IPC; without `up` they error with a hint
  * pointing back here.
  *
- * One daemon per project; that daemon serves every host in the config.
- * Resource isolation between hosts is expressed by splitting them into
+ * One daemon per project; that daemon serves every route in the config.
+ * Resource isolation between routes is expressed by splitting them into
  * different config dirs, not by a flag.
  *
  * Foreground by design; backgrounding is the user's job (see Invariant 5
@@ -37,10 +37,10 @@ import { Ok, type Result } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import {
 	CONFIG_FILENAME,
+	type DaemonRuntimeEntry,
 	type LoadConfigResult,
 	type LoadError,
 	loadConfig,
-	type DaemonRuntimeEntry,
 } from '../load-config.js';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';

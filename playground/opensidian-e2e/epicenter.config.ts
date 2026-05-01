@@ -35,10 +35,7 @@ import {
 	defineMutation,
 	toWsUrl,
 } from '@epicenter/workspace';
-import {
-	defineDaemon,
-	defineEpicenterConfig,
-} from '@epicenter/workspace/daemon';
+import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
@@ -210,10 +207,9 @@ export const opensidian = {
 };
 
 export default defineEpicenterConfig({
-	hosts: [
-		defineDaemon({
-			route: 'opensidian',
-			start: () => opensidian,
-		}),
-	],
+	daemon: {
+		routes: {
+			opensidian: () => opensidian,
+		},
+	},
 });

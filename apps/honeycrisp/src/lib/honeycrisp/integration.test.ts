@@ -6,7 +6,7 @@ import {
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
 import type { NoteId } from '../workspace.js';
-import { defineHoneycrispDaemon } from './daemon.js';
+import { HONEYCRISP_DAEMON_ROUTE, honeycrispDaemon } from './daemon.js';
 import { openHoneycrisp as openHoneycrispScript } from './script.js';
 
 let workdir: ProjectDir;
@@ -22,7 +22,7 @@ afterEach(() => {
 describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates notes the daemon wrote', async () => {
 		{
-			const daemonDefinition = defineHoneycrispDaemon({
+			const routeModule = honeycrispDaemon({
 				getToken: async () => 'fake-token',
 				peer: {
 					id: 'test-daemon',
@@ -31,8 +31,9 @@ describe('daemon to script handoff via Yjs log file', () => {
 				},
 				webSocketImpl: NoopWebSocket,
 			});
-			using daemon = await daemonDefinition.start({
+			using daemon = await routeModule({
 				projectDir: workdir,
+				route: HONEYCRISP_DAEMON_ROUTE,
 			});
 
 			const now = DateTimeString.now();

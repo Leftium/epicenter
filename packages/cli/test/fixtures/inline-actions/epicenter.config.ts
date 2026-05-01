@@ -1,5 +1,5 @@
 /**
- * Minimal fixture: one daemon host with inline `defineQuery` /
+ * Minimal fixture: one daemon route with inline `defineQuery` /
  * `defineMutation` nodes grouped under `actions:`. No sqlite or encryption.
  * The CLI walks `workspace.actions`, so CLI paths are
  * `demo.counter.{get,increment,set}`.
@@ -12,10 +12,7 @@ import {
 	type SyncAttachment,
 	type SyncRpcAttachment,
 } from '@epicenter/workspace';
-import {
-	defineDaemon,
-	defineEpicenterConfig,
-} from '@epicenter/workspace/daemon';
+import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
@@ -99,10 +96,9 @@ export const demo = {
 };
 
 export default defineEpicenterConfig({
-	hosts: [
-		defineDaemon({
-			route: 'demo',
-			start: () => demo,
-		}),
-	],
+	daemon: {
+		routes: {
+			demo: () => demo,
+		},
+	},
 });

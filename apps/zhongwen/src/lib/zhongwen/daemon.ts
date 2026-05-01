@@ -5,7 +5,7 @@ import {
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import { defineDaemon } from '@epicenter/workspace/daemon';
+import type { EpicenterConfigContext } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
 	createSessionTokenGetter,
@@ -16,8 +16,7 @@ import { openZhongwen as openZhongwenDoc } from './index.js';
 
 export const ZHONGWEN_DAEMON_ROUTE = 'zhongwen';
 
-export type DefineZhongwenDaemonOptions = {
-	route?: string;
+export type ZhongwenDaemonOptions = {
 	getToken?: () => string | null | Promise<string | null>;
 	peer?: PeerDescriptor;
 	apiUrl?: string;
@@ -32,38 +31,34 @@ function defaultZhongwenDaemonPeer(): PeerDescriptor {
 	};
 }
 
-export function defineZhongwenDaemon({
-	route = ZHONGWEN_DAEMON_ROUTE,
+export function zhongwenDaemon({
 	apiUrl = EPICENTER_API_URL,
 	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
 	peer = defaultZhongwenDaemonPeer(),
 	webSocketImpl,
-}: DefineZhongwenDaemonOptions = {}) {
-	return defineDaemon({
-		route,
-		start: ({ projectDir }) => {
-			const doc = openZhongwenDoc({ clientID: hashClientId(projectDir) });
-			const yjsLog = attachYjsLog(doc.ydoc, {
-				filePath: yjsPath(projectDir, doc.ydoc.guid),
-			});
-			const sync = attachSync(doc, {
-				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-				getToken,
-				webSocketImpl,
-			});
-			const presence = sync.attachPresence({ peer });
-			const actions = {};
-			const rpc = sync.attachRpc(actions);
+}: ZhongwenDaemonOptions = {}) {
+	return ({ projectDir }: EpicenterConfigContext) => {
+		const doc = openZhongwenDoc({ clientID: hashClientId(projectDir) });
+		const yjsLog = attachYjsLog(doc.ydoc, {
+			filePath: yjsPath(projectDir, doc.ydoc.guid),
+		});
+		const sync = attachSync(doc, {
+			url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+			getToken,
+			webSocketImpl,
+		});
+		const presence = sync.attachPresence({ peer });
+		const actions = {};
+		const rpc = sync.attachRpc(actions);
 
-			return {
-				...doc,
-				workspaceId: doc.ydoc.guid,
-				yjsLog,
-				sync,
-				presence,
-				rpc,
-				actions,
-			};
-		},
-	});
+		return {
+			...doc,
+			workspaceId: doc.ydoc.guid,
+			yjsLog,
+			sync,
+			presence,
+			rpc,
+			actions,
+		};
+	};
 }

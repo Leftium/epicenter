@@ -57,13 +57,12 @@ export {
 	type DaemonServerOptions,
 } from './daemon/server.js';
 export type {
-	DaemonHostDefinition,
+	DaemonRouteModule,
 	DaemonRuntime,
-	DefineDaemonOptions,
+	DaemonRuntimeEntry,
 	DefineEpicenterConfigOptions,
 	EpicenterConfig,
 	EpicenterConfigContext,
-	DaemonRuntimeEntry,
 } from './daemon/types.js';
 export {
 	bindOrRecover,

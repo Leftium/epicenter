@@ -6,7 +6,7 @@ import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
-import { defineOpensidianDaemon } from './daemon.js';
+import { OPENSIDIAN_DAEMON_ROUTE, opensidianDaemon } from './daemon.js';
 import { openOpensidian as openOpensidianScript } from './script.js';
 
 let workdir: ProjectDir;
@@ -22,7 +22,7 @@ afterEach(() => {
 describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates files the daemon wrote', async () => {
 		{
-			const daemonDefinition = defineOpensidianDaemon({
+			const routeModule = opensidianDaemon({
 				getToken: async () => 'fake-token',
 				peer: {
 					id: 'test-daemon',
@@ -31,8 +31,9 @@ describe('daemon to script handoff via Yjs log file', () => {
 				},
 				webSocketImpl: NoopWebSocket,
 			});
-			using daemon = await daemonDefinition.start({
+			using daemon = await routeModule({
 				projectDir: workdir,
+				route: OPENSIDIAN_DAEMON_ROUTE,
 			});
 
 			const now = Date.now();

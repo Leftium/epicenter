@@ -1,7 +1,7 @@
 /**
  * Auth session store backed by `$EPICENTER_HOME/auth/sessions.json`.
  *
- * This is a Node/Bun runtime helper used by the CLI, daemon hosts, and scripts.
+ * This is a Node/Bun runtime helper used by the CLI, daemon routes, and scripts.
  * It lives outside `@epicenter/cli` because daemons need the same machine-local
  * session without depending on the yargs CLI package.
  */

@@ -149,7 +149,7 @@ function isDaemonRuntime(value: unknown): value is DaemonRuntime {
 	if (value == null || typeof value !== 'object') return false;
 	const record = value as Record<PropertyKey, unknown>;
 	return (
-		isPlainObject(record.actions) &&
+		isNonArrayObject(record.actions) &&
 		isSyncRuntime(record.sync) &&
 		isPresenceRuntime(record.presence) &&
 		isRpcRuntime(record.rpc) &&
@@ -157,7 +157,7 @@ function isDaemonRuntime(value: unknown): value is DaemonRuntime {
 	);
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+function isNonArrayObject(value: unknown): value is Record<string, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
@@ -177,7 +177,7 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 }
 
 function isSyncRuntime(value: unknown): boolean {
-	if (!isPlainObject(value)) return false;
+	if (!isNonArrayObject(value)) return false;
 	return (
 		isPromiseLike(value.whenDisposed) &&
 		typeof value.onStatusChange === 'function'
@@ -185,7 +185,7 @@ function isSyncRuntime(value: unknown): boolean {
 }
 
 function isPresenceRuntime(value: unknown): boolean {
-	if (!isPlainObject(value)) return false;
+	if (!isNonArrayObject(value)) return false;
 	return (
 		typeof value.peers === 'function' &&
 		typeof value.observe === 'function' &&
@@ -194,7 +194,7 @@ function isPresenceRuntime(value: unknown): boolean {
 }
 
 function isRpcRuntime(value: unknown): boolean {
-	return isPlainObject(value) && typeof value.rpc === 'function';
+	return isNonArrayObject(value) && typeof value.rpc === 'function';
 }
 
 function isValidRoute(route: string): boolean {

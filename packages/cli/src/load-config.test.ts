@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -21,7 +21,6 @@ afterEach(() => {
 });
 
 function writeConfig(source: string) {
-	mkdirSync(workDir, { recursive: true });
 	writeFileSync(join(workDir, CONFIG_FILENAME), source);
 }
 
@@ -50,10 +49,6 @@ const daemonTransportFields = `
 	},
 `;
 
-const daemonRuntimeFields = `
-	${daemonTransportFields}
-`;
-
 describe('loadConfig', () => {
 	test('loads default defineEpicenterConfig daemon routes by route key', async () => {
 		writeConfig(`
@@ -64,7 +59,7 @@ describe('loadConfig', () => {
 					routes: {
 						demo: () => ({
 							actions: {},
-							${daemonRuntimeFields}
+							${daemonTransportFields}
 							[Symbol.dispose]() {}
 						})
 					}
@@ -93,7 +88,7 @@ describe('loadConfig', () => {
 									route: { handler: () => route }
 								}
 							},
-							${daemonRuntimeFields}
+							${daemonTransportFields}
 							[Symbol.dispose]() {}
 						})
 					}
@@ -128,7 +123,7 @@ describe('loadConfig', () => {
 							globalThis.__loadConfigEvents.push('started');
 							return {
 								actions: {},
-								${daemonRuntimeFields}
+								${daemonTransportFields}
 								[Symbol.dispose]() {}
 							};
 						}
@@ -155,7 +150,7 @@ describe('loadConfig', () => {
 					routes: {
 						demo: () => Promise.resolve({
 							actions: {},
-							${daemonRuntimeFields}
+							${daemonTransportFields}
 							[Symbol.dispose]() {}
 						})
 					}
@@ -177,7 +172,7 @@ describe('loadConfig', () => {
 					routes: {
 						demo: () => ({
 							actions: {},
-							${daemonRuntimeFields}
+							${daemonTransportFields}
 							[Symbol.dispose]() {}
 						})
 					}
@@ -199,7 +194,7 @@ describe('loadConfig', () => {
 					routes: {
 						demo: () => ({
 							actions: {},
-							${daemonRuntimeFields}
+							${daemonTransportFields}
 							[Symbol.dispose]() {}
 						})
 					}
@@ -265,7 +260,7 @@ describe('loadConfig', () => {
 					routes: {
 						first: () => ({
 							actions: {},
-							${daemonRuntimeFields}
+							${daemonTransportFields}
 							[Symbol.dispose]() {
 								globalThis.__loadConfigEvents.push('disposed:first');
 							}
@@ -285,7 +280,7 @@ describe('loadConfig', () => {
 		).toEqual(['disposed:first']);
 	});
 
-	test('rejects host runtimes missing daemon peer methods', async () => {
+	test('rejects route runtimes missing presence and rpc methods', async () => {
 		writeConfig(`
 			import { defineEpicenterConfig } from '${daemonModuleUrl}';
 

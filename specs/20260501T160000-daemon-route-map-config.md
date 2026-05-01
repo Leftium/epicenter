@@ -1,17 +1,40 @@
 # Daemon Route Map Config
 
 **Date**: 2026-05-01
-**Status**: Implemented
+**Status**: Superseded
 **Author**: AI-assisted
 **Branch**: codex/explicit-daemon-host-config
 
-## One-Sentence Test
+**Superseded By**: `20260501T114356-daemon-startup-boundary-and-route-definition-cleanup.md`
+
+This spec records an intermediate route-map design. The active API does not use
+`daemon.routes` records. Project config now uses `daemon.routes:
+readonly DaemonRouteDefinition[]`, and each route definition owns `{ route,
+start }` so app packages can share default route names with their action
+connectors.
+
+**Do Not Implement This Shape**: Code examples below are historical context for
+the rejected route-map design. The active shape is:
+
+```ts
+export default defineConfig({
+	daemon: {
+		routes: [defineFujiDaemon()],
+	},
+});
+```
+
+Use the superseding startup-boundary spec for implementation details.
+
+## Historical One-Sentence Test
 
 `epicenter.config.ts` declares named daemon routes; `epicenter up` starts each route into a live workspace peer and exposes those peers through one local daemon socket.
 
-## Overview
+## Historical Overview
 
-The daemon config now uses a route map instead of a host array. Route names live in the project config, route values are delayed modules, and each started runtime derives `workspaceId` from its opened Y.Doc.
+This historical design proposed a route map instead of a host array. Route
+names lived in the project config, route values were delayed modules, and each
+started runtime derived `workspaceId` from its opened Y.Doc.
 
 ## Motivation
 
@@ -20,7 +43,7 @@ The daemon config now uses a route map instead of a host array. Route names live
 The previous API treated each daemon entry as a host definition:
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [
 		defineDaemon({
 			route: 'fuji',
@@ -36,15 +59,15 @@ This created three naming problems:
 2. **Route was nested inside the value**: Duplicate routes had to be detected after walking an array.
 3. **App helpers owned local names**: `defineFujiDaemon({ route })` made the package helper responsible for a project-local address.
 
-### Desired State
+### Rejected Desired State
 
 The config should show the daemon as one project-level concern with named routes:
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	daemon: {
 		routes: {
-			fuji: fujiDaemon(),
+			fuji: defineFujiDaemon(),
 			notes: notesDaemon(),
 		},
 	},
@@ -53,23 +76,23 @@ export default defineEpicenterConfig({
 
 The route key becomes the first CLI path segment. The route module starts the live runtime only after the loader supplies project context.
 
-## Design Decisions
+## Historical Design Decisions
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
 | Config file name | Keep `epicenter.config.ts` | The file remains the project entry point. `daemon.routes` is one section inside it, leaving room for future project-level config. |
 | Top-level daemon shape | `daemon.routes` record | A daemon is one process with many named routes. The record makes route identity visible and prevents duplicate routes by construction. |
-| App helper shape | `fujiDaemon() -> DaemonRouteModule` | App helpers return delayed callbacks. They do not own local route names. |
+| App helper shape | `defineFujiDaemon() -> DaemonRouteDefinition` | App helpers return delayed callbacks. They do not own local route names. |
 | Workspace identity | Runtime `workspaceId` derived from `doc.ydoc.guid` | The Y.Doc guid is the durable CRDT, sync, and persistence identity. Duplicating it on the route module creates drift. |
 | HTTP framework | Keep Hono internal | Hono serves the local socket API. Fuji and other apps are not HTTP route trees; they are workspace peers behind generic `/run`, `/list`, and `/peers` endpoints. |
 
-## Architecture
+## Historical Architecture
 
 ```txt
 epicenter.config.ts
 ┌────────────────────────────────────┐
 │ daemon.routes                      │
-│  ├─ fuji: fujiDaemon()             │
+│  ├─ fuji: defineFujiDaemon()             │
 │  └─ notes: notesDaemon()           │
 └────────────────────────────────────┘
                  │
@@ -101,10 +124,10 @@ one local daemon socket
 └────────────────────────────────────┘
 ```
 
-## Fuji Shape
+## Historical Fuji Shape
 
 ```ts
-export function fujiDaemon(options = {}): DaemonRouteModule {
+export function defineFujiDaemon(options = {}): DaemonRouteDefinition {
 	return ({ projectDir }) => {
 		const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
 		const sync = attachSync(doc, { ... });
@@ -128,7 +151,7 @@ export function fujiDaemon(options = {}): DaemonRouteModule {
 ## Implementation Notes
 
 - `defineDaemon()` and host branding are removed from the public daemon config surface.
-- `defineEpicenterConfig()` is a typed identity helper; the loader validates the imported object structurally.
+- `defineConfig()` is a typed identity helper; the loader validates the imported object structurally.
 - `loadConfig()` validates route keys before starting any route module.
 - The route context includes `{ projectDir, route }`.
-- App-specific script helpers still use route constants, for example `openFujiDaemonActions({ route })`.
+- App-specific script helpers still use route constants, for example `connectFujiDaemonActions({ route })`.

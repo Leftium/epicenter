@@ -1,19 +1,49 @@
 # Daemon Peer Runtime Contract
 
 **Date**: 2026-05-01
-**Status**: Implemented
+**Status**: Superseded
 **Author**: AI-assisted
 **Branch**: `codex/explicit-daemon-host-config`
 
-## One-Sentence Test
+**Superseded By**: `20260501T114356-daemon-startup-boundary-and-route-definition-cleanup.md` and `20260501T180000-awareness-source-of-truth.md`
+
+This spec records the invariant that daemon runtimes are real peer runtimes,
+not optional action bags. The active API keeps that invariant but uses the newer
+names: `DaemonRouteDefinition`, `DaemonRuntime`, `StartedDaemonRoute`,
+`peerDirectory`, and `[Symbol.asyncDispose]`.
+
+**Do Not Implement These Names Or Examples**: Code examples below are historical
+context for an older `hosts` and `defineDaemon` design. The active daemon
+runtime contract is:
+
+```ts
+export type DaemonRuntime = {
+	readonly actions: Actions;
+	readonly sync: SyncAttachment;
+	readonly peerDirectory: PeerDirectory;
+	readonly rpc: SyncRpcAttachment;
+	[Symbol.asyncDispose](): MaybePromise<void>;
+};
+```
+
+Use the superseding startup-boundary and awareness-source specs for active API
+shape.
+
+## Historical One-Sentence Test
 
 A daemon is a route-addressed workspace peer that the CLI can introspect, keep online, observe through presence, and invoke through actions locally or over RPC.
 
 That sentence is the line. If a surface helps with route addressing, introspection, online lifecycle, presence, local action invocation, or peer RPC, it belongs in the daemon contract. If a surface only opens a document, materializes files, or exposes local helper functions, it belongs below the daemon contract.
 
-## Overview
+## Historical Overview
 
-This spec proposes tightening `DaemonWorkspace` from "a disposable action host with optional peer attachments" into "a started workspace peer with required actions, sync, presence, and RPC." It also separates the words we have been using too loosely: a daemon definition is static manifest metadata plus a delayed start function; a daemon workspace is the live peer runtime returned after start; a plain action host is a smaller concept and should not pretend to be a daemon.
+This historical spec proposed tightening `DaemonWorkspace` from "a disposable
+action host with optional peer attachments" into "a started workspace peer with
+required actions, sync, presence, and RPC." It also separated words that were
+being used too loosely: a daemon definition was static manifest metadata plus a
+delayed start function; a daemon workspace was the live peer runtime returned
+after start; a plain action host was a smaller concept and should not pretend to
+be a daemon.
 
 The goal is not to add ceremony. The goal is to make the API say what the CLI already assumes.
 
@@ -24,7 +54,7 @@ The goal is not to add ceremony. The goal is to make the API say what the CLI al
 The public config shape now makes the route a single source of truth at definition time:
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [
 		defineDaemon({
 			route: 'notes',
@@ -93,7 +123,7 @@ This creates problems:
 4. **The word "daemon" gets diluted**: If a daemon can be a local action bag, a sync peer, or a document opener, then `defineDaemon` is carrying too many meanings.
 5. **Optional fields invite accidental product design**: Every caller has to decide what a missing `presence` or missing `rpc` means. That should be a type-level answer, not a local interpretation at every call site.
 
-### Desired State
+### Superseded Desired State
 
 `defineDaemon` should define a daemon host: static metadata plus a way to start a full peer runtime.
 
@@ -146,7 +176,7 @@ defineLocalActionHost({
 
 That API does not exist today. The spec does not propose adding it until a real caller needs it. The important design rule is that we should not use `defineDaemon` for that smaller thing.
 
-## Definitions
+## Historical Definitions
 
 ### Daemon Host Definition
 
@@ -158,7 +188,7 @@ type DaemonHostDefinition<TWorkspace extends DaemonWorkspace> = {
 	title?: string;
 	description?: string;
 	workspaceId?: string;
-	start(options: EpicenterConfigContext): MaybePromise<TWorkspace>;
+	start(options: DaemonRouteContext): MaybePromise<TWorkspace>;
 };
 ```
 
@@ -313,7 +343,7 @@ The intended shape has three layers:
 ```text
 epicenter.config.ts
   |
-  | defineEpicenterConfig({ hosts })
+  | defineConfig({ hosts })
   v
 DaemonHostDefinition
   route: string
@@ -378,7 +408,7 @@ export type DaemonHostDefinition<
 	title?: string;
 	description?: string;
 	workspaceId?: string;
-	start(options: EpicenterConfigContext): MaybePromise<TWorkspace>;
+	start(options: DaemonRouteContext): MaybePromise<TWorkspace>;
 };
 ```
 
@@ -388,9 +418,9 @@ App helpers should keep the public call site small:
 
 ```ts
 export function defineFujiDaemon({
-	route = FUJI_DAEMON_ROUTE,
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
+	getToken = createCredentialTokenGetter({ serverOrigin: apiUrl }),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
 }: DefineFujiDaemonOptions = {}) {
@@ -429,7 +459,7 @@ This keeps `defineDaemon` as the place for manifest metadata and keeps `start` a
 An inline daemon config should show the full contract:
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [
 		defineDaemon({
 			route: 'notes',
@@ -445,8 +475,8 @@ export default defineEpicenterConfig({
 				const actions = createNotesActions(notes);
 				const sync = attachSync(notes, {
 					url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${notes.ydoc.guid}`),
-					getToken: createSessionTokenGetter({
-						serverUrl: EPICENTER_API_URL,
+					getToken: createCredentialTokenGetter({
+						serverOrigin: EPICENTER_API_URL,
 					}),
 				});
 				const presence = sync.attachPresence({

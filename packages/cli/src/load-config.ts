@@ -131,15 +131,15 @@ export const LoadError = defineErrors({
 });
 export type LoadError = InferErrors<typeof LoadError>;
 
-function isDaemonRuntime(value: unknown): value is DaemonRuntime {
-	if (!isObject(value)) return false;
+function hasDaemonRuntimeShape(value: unknown): value is DaemonRuntime {
+	if (!isObjectRecord(value)) return false;
 	const { actions, sync, presence, rpc } = value;
-	if (!isObject(sync) || !isObject(presence) || !isObject(rpc)) {
+	if (!isObjectRecord(sync) || !isObjectRecord(presence) || !isObjectRecord(rpc)) {
 		return false;
 	}
 	return (
-		isObject(actions) &&
-		isPromiseLike(sync.whenDisposed) &&
+		isObjectRecord(actions) &&
+		isThenable(sync.whenDisposed) &&
 		typeof sync.onStatusChange === 'function' &&
 		typeof presence.peers === 'function' &&
 		typeof presence.observe === 'function' &&
@@ -149,11 +149,11 @@ function isDaemonRuntime(value: unknown): value is DaemonRuntime {
 	);
 }
 
-function isObject(value: unknown): value is Record<PropertyKey, unknown> {
+function isObjectRecord(value: unknown): value is Record<PropertyKey, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+function isThenable(value: unknown): value is PromiseLike<unknown> {
 	return (
 		value != null &&
 		(typeof value === 'object' || typeof value === 'function') &&
@@ -195,9 +195,9 @@ export async function loadConfig(
 
 	const config = (importResult.data as { default?: unknown }).default;
 	if (
-		!isObject(config) ||
-		!isObject(config.daemon) ||
-		!isObject(config.daemon.routes)
+		!isObjectRecord(config) ||
+		!isObjectRecord(config.daemon) ||
+		!isObjectRecord(config.daemon.routes)
 	) {
 		return LoadError.InvalidConfig({ configPath });
 	}
@@ -233,7 +233,7 @@ export async function loadConfig(
 			});
 		}
 
-		if (!isDaemonRuntime(workspace)) {
+		if (!hasDaemonRuntimeShape(workspace)) {
 			await disposeRuntimes(entries.map((entry) => entry.workspace));
 			return LoadError.InvalidRouteRuntime({
 				configPath,

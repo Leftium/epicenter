@@ -2,6 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
+	import { toastOnError } from '@epicenter/ui/sonner';
 	import type { SyncAttachment, SyncStatus } from '@epicenter/workspace';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
@@ -97,7 +98,11 @@
 		const doSignOut = async () => {
 			signingOut = true;
 			try {
-				await auth.signOut();
+				const result = await auth.signOut();
+				if (result.error) {
+					toastOnError(result, 'Failed to sign out');
+					return;
+				}
 				await clearLocalData();
 				window.location.reload();
 			} finally {

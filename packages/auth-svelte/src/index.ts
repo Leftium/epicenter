@@ -1,9 +1,6 @@
 export {
-	attachAuthSnapshotToWorkspace,
 	type AuthSnapshot,
 	type AuthSnapshotSubscriber,
-	type AuthWorkspaceSyncTarget,
-	type AuthWorkspaceTarget,
 	AuthError,
 	createSessionStorageAdapter,
 	Session,
@@ -13,3 +10,8 @@ export {
 	StoredUser,
 } from '@epicenter/auth';
 export { type AuthClient, createAuth } from './create-auth.svelte.ts';
+export {
+	attachAuthSnapshotToWorkspace,
+	type AuthWorkspaceSyncTarget,
+	type AuthWorkspaceTarget,
+} from './workspace.ts';

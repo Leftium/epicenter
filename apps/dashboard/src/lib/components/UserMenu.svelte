@@ -40,6 +40,12 @@
 		if (error) return toastOnError(error, 'Could not open billing portal');
 		if (data.url) window.location.href = data.url;
 	}
+
+	async function signOut() {
+		const result = await auth.signOut();
+		if (result.error) toastOnError(result, 'Failed to sign out');
+	}
+
 	const isDark = $derived(mode.current === 'dark');
 </script>
 
@@ -95,7 +101,7 @@
 
 		<DropdownMenu.Separator />
 
-		<DropdownMenu.Item onclick={() => auth.signOut()}>
+		<DropdownMenu.Item onclick={signOut}>
 			<LogOutIcon class="mr-2 size-4" />
 			Sign out
 		</DropdownMenu.Item>

@@ -69,7 +69,7 @@ async function registerDevice(): Promise<void> {
 attachAuthSnapshotToWorkspace({
 	auth,
 	workspace: tabManager,
-	onSignedIn: () => {
+	onSignedInSnapshot: () => {
 		void registerDevice();
 	},
 });

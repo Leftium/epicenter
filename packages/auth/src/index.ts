@@ -5,10 +5,7 @@ export {
 	StoredUser,
 } from './auth-types.ts';
 export {
-	attachAuthSnapshotToWorkspace,
 	type AuthClient,
-	type AuthWorkspaceSyncTarget,
-	type AuthWorkspaceTarget,
 	AuthError,
 	createAuth,
 	createSessionStorageAdapter,

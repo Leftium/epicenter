@@ -23,7 +23,6 @@ import type { Note, NoteId } from '$lib/workspace';
 export type NoteBodyDoc = {
 	ydoc: Y.Doc;
 	body: ReturnType<typeof attachRichText>;
-	sync: SyncAttachment;
 	whenReady: Promise<unknown>;
 	[Symbol.dispose](): void;
 };
@@ -41,7 +40,7 @@ export function createNoteBodyDoc({
 	notesTable: Table<Note>;
 	auth: Pick<AuthClient, 'snapshot' | 'whenSessionLoaded'>;
 	apiUrl: string;
-	registerSync?: (sync: SyncAttachment) => () => void;
+	registerSync: (sync: SyncAttachment) => () => void;
 }): NoteBodyDoc {
 	const ydoc = new Y.Doc({
 		guid: docGuid({
@@ -66,7 +65,7 @@ export function createNoteBodyDoc({
 			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
 		},
 	});
-	const unregisterSync = registerSync?.(sync);
+	const unregisterSync = registerSync(sync);
 
 	onLocalUpdate(ydoc, () => {
 		notesTable.update(noteId, {
@@ -77,10 +76,9 @@ export function createNoteBodyDoc({
 	return {
 		ydoc,
 		body,
-		sync,
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
-			unregisterSync?.();
+			unregisterSync();
 			ydoc.destroy();
 		},
 	};

@@ -438,7 +438,6 @@ Today's `auth.isBusy` is read in exactly four places, and every read is in the s
 | --- | --- | --- |
 | `auth-form.svelte` | disables submit + Google buttons, swaps button label | same form calls `signIn` / `signUp` |
 | `account-popover.svelte` | spins trigger icon during sign-out | same component calls `signOut` then reloads |
-| `sync-status-popover.svelte` | identical to above (deprecated copy) | same component |
 | `zhongwen/+page.svelte` | shows full-page "Signing in..." | dead branch: only call is `signInWithSocialRedirect`, intentionally not wrapped in `runBusy` |
 
 Cross-component publish gives nothing a local flag can't. The migration is one of two patterns at the call site.
@@ -877,7 +876,6 @@ Affected files:
 | --- | --- | --- |
 | `packages/svelte-utils/src/auth-form/auth-form.svelte` | `auth.isBusy` (covers both submit and Google) | one local `busy` flag wrapping both handlers |
 | `packages/svelte-utils/src/account-popover/account-popover.svelte` | `auth.isBusy`, `auth.isAuthenticated`, `auth.user` | local `signingOut` flag in `handleSignOut`; snapshot for identity |
-| `packages/svelte-utils/src/sync-status-popover/sync-status-popover.svelte` | same as above (deprecated) | same as above |
 | `apps/zhongwen/src/routes/+page.svelte` | `auth.isAuthenticated`, `auth.user`, `auth.isBusy` | the `auth.isBusy` branch is dead today (only `signInWithSocialRedirect` is called, and it is intentionally not wrapped in `runBusy`); delete the branch |
 | `apps/dashboard/src/routes/+layout.svelte` | `auth.isAuthenticated` | snapshot |
 | `apps/dashboard/src/lib/components/UserMenu.svelte` | `auth.user` | snapshot |
@@ -1350,7 +1348,6 @@ Known app and package call sites:
 - apps/dashboard/src/lib/components/UserMenu.svelte
 - packages/svelte-utils/src/auth-form/auth-form.svelte
 - packages/svelte-utils/src/account-popover/account-popover.svelte
-- packages/svelte-utils/src/sync-status-popover/sync-status-popover.svelte
 
 Docs to update:
 - docs/guides/consuming-epicenter-api.md
@@ -1381,4 +1378,3 @@ Stop and report if Better Auth types make the exact target shape impossible. Oth
 - `apps/fuji/src/lib/fuji/browser.ts`
 - `packages/svelte-utils/src/auth-form/auth-form.svelte`
 - `packages/svelte-utils/src/account-popover/account-popover.svelte`
-- `packages/svelte-utils/src/sync-status-popover/sync-status-popover.svelte`

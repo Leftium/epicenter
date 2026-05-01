@@ -23,7 +23,6 @@ import type { Entry, EntryId } from '$lib/workspace';
 export type EntryContentDoc = {
 	ydoc: Y.Doc;
 	body: ReturnType<typeof attachRichText>;
-	sync: SyncAttachment;
 	whenReady: Promise<unknown>;
 	[Symbol.dispose](): void;
 };
@@ -41,7 +40,7 @@ export function createEntryContentDoc({
 	entriesTable: Table<Entry>;
 	auth: Pick<AuthClient, 'snapshot' | 'whenSessionLoaded'>;
 	apiUrl: string;
-	registerSync?: (sync: SyncAttachment) => () => void;
+	registerSync: (sync: SyncAttachment) => () => void;
 }): EntryContentDoc {
 	const ydoc = new Y.Doc({
 		guid: docGuid({
@@ -66,7 +65,7 @@ export function createEntryContentDoc({
 			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
 		},
 	});
-	const unregisterSync = registerSync?.(sync);
+	const unregisterSync = registerSync(sync);
 
 	onLocalUpdate(ydoc, () => {
 		entriesTable.update(entryId, {
@@ -77,10 +76,9 @@ export function createEntryContentDoc({
 	return {
 		ydoc,
 		body,
-		sync,
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
-			unregisterSync?.();
+			unregisterSync();
 			ydoc.destroy();
 		},
 	};

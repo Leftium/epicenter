@@ -90,7 +90,7 @@ export type ActionMeta<
 /**
  * Flat dot-path to `ActionMeta` map describing a peer's full action surface.
  * Returned by the runtime-injected `system.describe` RPC and consumed via
- * `describeRemoteActions({ presence, rpc }, peerId)`.
+ * `describeRemoteActions({ presence, rpc, peerId })`.
  */
 export type ActionManifest = Record<string, ActionMeta>;
 
@@ -308,7 +308,7 @@ export function* walkActions(
 /**
  * Walk a tree into its flat `ActionManifest`: the wire form returned by
  * `system.describe`. Live `input` schemas are retained; functions are
- * dropped. Pairs with `describeRemoteActions({ presence, rpc }, peerId)`,
+ * dropped. Pairs with `describeRemoteActions({ presence, rpc, peerId })`,
  * which returns the same shape from a remote peer.
  *
  * Built atop {@link walkActions}. Use that primitive directly if you want

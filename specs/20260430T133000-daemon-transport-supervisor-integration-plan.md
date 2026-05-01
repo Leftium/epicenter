@@ -295,9 +295,16 @@ Current main owns this public shape:
 ```ts
 import { createRemoteActions, describeRemoteActions } from '@epicenter/workspace';
 
-const transport = { presence: workspace.presence, rpc: workspace.rpc };
-const remote = createRemoteActions<typeof actions>(transport, 'macbook');
-const manifest = await describeRemoteActions(transport, 'macbook');
+const remote = createRemoteActions<typeof actions>({
+	presence: workspace.presence,
+	rpc: workspace.rpc,
+	peerId: 'macbook',
+});
+const manifest = await describeRemoteActions({
+	presence: workspace.presence,
+	rpc: workspace.rpc,
+	peerId: 'macbook',
+});
 ```
 
 The daemon branch has useful lower-level pieces, but its public shape should not win by accident:
@@ -366,8 +373,8 @@ Prefer this split:
 
 @epicenter/workspace
   attachSync
-  createRemoteActions({ presence, rpc }, peerId)
-  describeRemoteActions({ presence, rpc }, peerId)
+  createRemoteActions({ presence, rpc, peerId })
+  describeRemoteActions({ presence, rpc, peerId })
   workspace-level exports and compatibility names
 ```
 
@@ -511,8 +518,8 @@ configs while new daemon factories can use the direct `attachMarkdown` and
 
 ### Phase 3: Remote Action and Sync Boundary
 
-- [x] Keep `createRemoteActions({ presence, rpc }, peerId)` as the public workspace API.
-- [x] Keep `describeRemoteActions({ presence, rpc }, peerId)` as the public workspace API.
+- [x] Keep `createRemoteActions({ presence, rpc, peerId })` as the public workspace API.
+- [x] Keep `describeRemoteActions({ presence, rpc, peerId })` as the public workspace API.
 - [x] Preserve current main's action walking behavior from workspace bundles.
 - [x] Translate useful daemon branch peer-dispatch fixes to the current remote-action names.
 - [x] Port `waitForPeer` and `PeerMiss` only if CLI bounded wait behavior still needs them.

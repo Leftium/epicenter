@@ -42,7 +42,7 @@ export async function openTabManager({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: () => auth.getToken(),
+		getToken: async () => auth.getToken(),
 	});
 	const presence = sync.attachPresence({ peer: resolvedPeer });
 	const rpc = sync.attachRpc(doc.actions);

@@ -17,7 +17,7 @@ import { openHoneycrisp as openHoneycrispDoc } from './index.js';
 export const HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
 
 export type HoneycrispDaemonOptions = {
-	getToken?: () => string | null | Promise<string | null>;
+	getToken?: () => Promise<string | null>;
 	peer?: PeerDescriptor;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;

@@ -258,15 +258,11 @@ export type SyncAttachmentConfig = {
 	 * an `auth` error state until a subsequent `reconnect()` (or backoff
 	 * iteration) finds a non-null token.
 	 *
-	 * May be sync or async. The supervisor `await`s either way. Sync returns
-	 * skip the microtask hop in the common case where the token is already in
-	 * memory.
-	 *
 	 * Providing this callback IS the declaration that the connection is
 	 * authenticated. Omit it for unauthenticated providers (tests, public
 	 * rooms). `attachSync` then connects without a bearer subprotocol.
 	 */
-	getToken?: () => string | null | Promise<string | null>;
+	getToken?: () => Promise<string | null>;
 	/**
 	 * WebSocket constructor. Tests can pass a stub to avoid dialing a server;
 	 * production uses `globalThis.WebSocket`.

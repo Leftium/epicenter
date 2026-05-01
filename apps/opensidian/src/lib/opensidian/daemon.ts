@@ -17,7 +17,7 @@ import { openOpensidian as openOpensidianDoc } from './index.js';
 export const OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 
 export type OpensidianDaemonOptions = {
-	getToken?: () => string | null | Promise<string | null>;
+	getToken?: () => Promise<string | null>;
 	peer?: PeerDescriptor;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;

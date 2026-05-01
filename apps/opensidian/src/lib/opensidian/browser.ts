@@ -51,7 +51,7 @@ export function openOpensidian({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: () => auth.getToken(),
+		getToken: async () => auth.getToken(),
 	});
 	const presence = sync.attachPresence({ peer });
 	const rpc = sync.attachRpc(actions);

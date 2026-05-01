@@ -27,7 +27,7 @@ import { openFuji as openFujiDoc } from './index.js';
 export const FUJI_DAEMON_ROUTE = 'fuji';
 
 export type FujiDaemonOptions = {
-	getToken?: () => string | null | Promise<string | null>;
+	getToken?: () => Promise<string | null>;
 	peer?: PeerDescriptor;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;

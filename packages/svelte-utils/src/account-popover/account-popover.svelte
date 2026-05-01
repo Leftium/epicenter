@@ -16,7 +16,7 @@
 	 *
 	 * Renders sync status from a `SyncAttachment` (the concrete `attachSync`
 	 * return type exposed as `workspace.sync`) alongside auth identity,
-	 * reconnect, and sign-out — gating sign-out with a confirmation when
+	 * reconnect, and sign-out. Sign-out asks for confirmation when
 	 * unsynced work exists.
 	 *
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
@@ -47,6 +47,9 @@
 
 	let syncStatus = $state<SyncStatus>(sync.status);
 	let popoverOpen = $state(false);
+	let signingOut = $state(false);
+	const snapshot = $derived(auth.snapshot);
+	const isSignedIn = $derived(snapshot.status === 'signedIn');
 
 	$effect(() => {
 		syncStatus = sync.status;
@@ -66,15 +69,17 @@
 				return 'Connected';
 			case 'connecting':
 				if (s.lastError?.type === 'auth')
-					return 'Authentication failed—click to reconnect';
+					return 'Authentication failed. Click to reconnect';
 				if (s.retries > 0) return `Reconnecting (retry ${s.retries})…`;
 				return 'Connecting…';
 			case 'offline':
-				return 'Offline—click to reconnect';
+				return 'Offline. Click to reconnect';
+			case 'failed':
+				return 'Sync failed';
 		}
 	}
 
-	const tooltip = $derived(getSyncTooltip(syncStatus, auth.isAuthenticated));
+	const tooltip = $derived(getSyncTooltip(syncStatus, isSignedIn));
 
 	/**
 	 * Safe sign-out gate. Connected + fully synced → sign out immediately.
@@ -82,7 +87,7 @@
 	 *
 	 * Sequence: `auth.signOut()` → `clearLocalData()` → `reload()`. The
 	 * reload atomically resets Y.Doc, encryption keys, Svelte stores, and
-	 * BroadcastChannel — simpler than teardown coordination.
+	 * BroadcastChannel. That is simpler than teardown coordination.
 	 */
 	function handleSignOut() {
 		const current = sync.status;
@@ -90,9 +95,14 @@
 			current.phase === 'connected' && !current.hasLocalChanges;
 
 		const doSignOut = async () => {
-			await auth.signOut();
-			await clearLocalData();
-			window.location.reload();
+			signingOut = true;
+			try {
+				await auth.signOut();
+				await clearLocalData();
+				window.location.reload();
+			} finally {
+				signingOut = false;
+			}
 		};
 
 		if (isSynced) {
@@ -122,9 +132,9 @@
 				{tooltip}
 			>
 				<div class="relative">
-					{#if auth.isBusy}
+					{#if signingOut}
 						<LoaderCircle class="size-4 animate-spin" />
-					{:else if !auth.isAuthenticated}
+					{:else if !isSignedIn}
 						<CloudOff class="size-4 text-muted-foreground" />
 					{:else if syncStatus.phase === 'connected'}
 						<Cloud class="size-4" />
@@ -133,7 +143,7 @@
 					{:else}
 						<CloudOff class="size-4 text-destructive" />
 					{/if}
-					{#if !auth.isAuthenticated}
+					{#if !isSignedIn}
 						<span
 							class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary"
 						></span>
@@ -143,11 +153,11 @@
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-80 p-0" align="end">
-		{#if auth.isAuthenticated}
+		{#if snapshot.status === 'signedIn'}
 			<div class="p-4 space-y-3">
 				<div class="space-y-1">
-					<p class="text-sm font-medium">{auth.user?.name}</p>
-					<p class="text-xs text-muted-foreground">{auth.user?.email}</p>
+					<p class="text-sm font-medium">{snapshot.session.user.name}</p>
+					<p class="text-xs text-muted-foreground">{snapshot.session.user.email}</p>
 				</div>
 				<div class="border-t pt-3 space-y-1">
 					<p class="text-xs text-muted-foreground">
@@ -156,6 +166,7 @@
 							connected: 'Connected',
 							connecting: 'Connecting…',
 							offline: 'Offline',
+							failed: 'Failed',
 						} satisfies Record<SyncStatus['phase'], string>)[syncStatus.phase]}
 					</p>
 				</div>
@@ -182,9 +193,13 @@
 					</Button>
 				</div>
 			</div>
-		{:else}
+		{:else if snapshot.status === 'signedOut'}
 			<div class="flex items-center justify-center p-4">
 				<AuthForm {auth} {syncNoun} {onSocialSignIn} />
+			</div>
+		{:else}
+			<div class="flex items-center justify-center p-4">
+				<LoaderCircle class="size-4 animate-spin text-muted-foreground" />
 			</div>
 		{/if}
 	</Popover.Content>

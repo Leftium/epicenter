@@ -12,13 +12,13 @@
 >
 > - **Quick Start**: [`packages/workspace/README.md`](../../packages/workspace/README.md)
 > - **Multi-device sync**: [`packages/workspace/SYNC_ARCHITECTURE.md`](../../packages/workspace/SYNC_ARCHITECTURE.md)
-> - **Production wiring**: `apps/tab-manager/src/lib/client.ts` (browser extension — encryption + IndexedDB + WebSocket + BroadcastChannel), `apps/fuji/src/lib/entry-content-doc.ts` (per-row content docs)
+> - **Production wiring**: `apps/tab-manager/src/lib/client.ts` (browser extension: encryption + IndexedDB + WebSocket + BroadcastChannel), `apps/fuji/src/lib/entry-content-doc.ts` (per-row content docs)
 
 ## Overview
 
-The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, AI inference, and encryption key derivation. It runs on Cloudflare Workers with Durable Objects; each user gets isolated DOs for their workspaces and documents — no shared state between accounts.
+The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, AI inference, and encryption key derivation. It runs on Cloudflare Workers with Durable Objects; each user gets isolated DOs for their workspaces and documents. There is no shared state between accounts.
 
-On the client, `@epicenter/workspace` provides the primitives: define your schema with `defineTable` / `defineKv`, compose a live document with `defineDocument(builder)` + `attach*`, authenticate with `@epicenter/svelte/auth`, and the SDK manages WebSocket connections, local persistence, cross-tab sync, and CRDT-level encryption.
+On the client, `@epicenter/workspace` provides the primitives: define your schema with `defineTable` / `defineKv`, compose a live document with `defineDocument(builder)` + `attach*`, authenticate with `@epicenter/auth-svelte`, and the SDK manages WebSocket connections, local persistence, cross-tab sync, and CRDT-level encryption.
 
 ## Minimal end-to-end shape
 
@@ -34,7 +34,13 @@ import {
 	defineDocument,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { createAuth } from '@epicenter/svelte/auth';
+import {
+	attachAuthSnapshotToWorkspace,
+	createAuth,
+	createSessionStorageAdapter,
+	Session,
+} from '@epicenter/auth-svelte';
+import { createPersistedState } from '@epicenter/svelte';
 import * as Y from 'yjs';
 import { appTables, appAwareness } from '$lib/workspace/definition';
 
@@ -50,7 +56,12 @@ const app = defineDocument((id: string) => {
 	attachBroadcastChannel(ydoc);
 	const sync = attachSync(ydoc, {
 		url: (docId) => toWsUrl(`https://api.epicenter.so/workspaces/${docId}`),
-		getToken: async () => auth.token,
+		getToken: async () => {
+			await auth.whenSessionLoaded;
+
+			const snapshot = auth.snapshot;
+			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+		},
 		waitFor: idb.whenLoaded,
 		awareness: awareness.raw,
 	});
@@ -73,17 +84,20 @@ const app = defineDocument((id: string) => {
 
 export const workspace = app.open('epicenter.my-app');
 
+const session = createPersistedState({
+	key: 'my-app:authSession',
+	schema: Session.or('null'),
+	defaultValue: null,
+});
+
 export const auth = createAuth({
-	baseURL: () => 'https://api.epicenter.so',
-	session: /* your session state */,
-	onLogin(session) {
-		workspace.encryption.applyKeys(session.encryptionKeys);
-		workspace.sync.reconnect();
-	},
-	async onLogout() {
-		await workspace.idb.clearLocal();
-		window.location.reload();
-	},
+	baseURL: 'https://api.epicenter.so',
+	sessionStorage: createSessionStorageAdapter(session),
+});
+
+attachAuthSnapshotToWorkspace({
+	auth,
+	workspace,
 });
 ```
 

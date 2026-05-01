@@ -55,15 +55,17 @@ The highest version becomes the current key for new writes.
 Keys come through the auth session.
 There is no separate key-fetch endpoint in the reviewed code.
 `apps/api/src/auth/create-auth.ts` attaches `encryptionKeys` to `/auth/get-session`.
-`packages/svelte-utils/src/auth/create-auth.svelte.ts` then pushes those keys through `onLogin`.
+`@epicenter/auth-svelte` exposes those keys through `auth.snapshot`.
 That happens in two places:
 - on boot from a cached session
 - on every authenticated session update from Better Auth
 The boot path exists so the workspace can unlock before the first auth roundtrip finishes.
-In app clients such as `apps/tab-manager/src/lib/client.ts`, `onLogin(session)` does this:
+In app clients such as `apps/tab-manager/src/lib/tab-manager/client.ts`, `attachAuthSnapshotToWorkspace` does this:
 ```ts
-workspace.applyEncryptionKeys(session.encryptionKeys);
-workspace.extensions.sync.reconnect();
+attachAuthSnapshotToWorkspace({
+	auth,
+	workspace,
+});
 ```
 The order matters.
 Keys are applied before sync reconnects.
@@ -75,18 +77,11 @@ Logout is less clean than the high-level comments suggest.
 The reviewed code clears the auth session and wipes persisted local data, but it does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`.
 The logout path in the app clients is:
 ```ts
-onLogout() {
-  workspace.clearLocalData();
-  workspace.extensions.sync.reconnect();
-}
+auth.subscribe((next, previous) => {
+	if (next.status !== 'signedOut') return;
+	if (previous.status === 'signedIn') void workspace.idb.clearLocal();
+});
 ```
-And the auth state transition in `create-auth.svelte.ts` is:
-```ts
-session.current = null;
-onLogout?.();
-```
-`workspace.clearLocalData()` runs extension `clearLocalData` hooks.
-For IndexedDB persistence, that hook is `idb.clearData()`.
 So these points are implemented and verifiable:
 - keys are loaded on login
 - the persisted IndexedDB copy is wiped on logout

@@ -25,8 +25,12 @@
 	);
 	const isOnTrial = $derived(subscription?.trialEndsAt != null);
 
-	const email = $derived(auth.user?.email ?? '');
-	const name = $derived(auth.user?.name ?? '');
+	const snapshot = $derived(auth.snapshot);
+	const user = $derived(
+		snapshot.status === 'signedIn' ? snapshot.session.user : null,
+	);
+	const email = $derived(user?.email ?? '');
+	const name = $derived(user?.name ?? '');
 
 	const initials = $derived(getInitials(name, email));
 

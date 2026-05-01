@@ -23,6 +23,7 @@ export function openHoneycrisp({
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
+	const bodySyncs = new Set<ReturnType<typeof attachSync>>();
 
 	const noteBodyDocs = createDisposableCache(
 		(noteId: NoteId) =>
@@ -32,6 +33,10 @@ export function openHoneycrisp({
 				notesTable: doc.tables.notes,
 				auth,
 				apiUrl: APP_URLS.API,
+				registerSync: (sync) => {
+					bodySyncs.add(sync);
+					return () => bodySyncs.delete(sync);
+				},
 			}),
 		{ gcTime: 5_000 },
 	);
@@ -39,7 +44,12 @@ export function openHoneycrisp({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: async () => auth.getToken(),
+		getToken: async () => {
+			await auth.whenSessionLoaded;
+
+			const snapshot = auth.snapshot;
+			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+		},
 	});
 	const presence = sync.attachPresence({ peer });
 	const rpc = sync.attachRpc(doc.actions);
@@ -57,5 +67,8 @@ export function openHoneycrisp({
 		 * connect at any time, including never if the user is offline).
 		 */
 		whenReady: idb.whenLoaded,
+		getAuthSyncTargets() {
+			return [sync, ...bodySyncs];
+		},
 	};
 }

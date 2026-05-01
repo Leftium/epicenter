@@ -1,4 +1,9 @@
-import { AuthSession, createAuth } from '@epicenter/auth-svelte';
+import {
+	attachAuthSnapshotToWorkspace,
+	createAuth,
+	createSessionStorageAdapter,
+	Session,
+} from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
@@ -6,13 +11,13 @@ import { openFuji } from './browser';
 
 const session = createPersistedState({
 	key: 'fuji:authSession',
-	schema: AuthSession.or('null'),
+	schema: Session.or('null'),
 	defaultValue: null,
 });
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
-	session,
+	sessionStorage: createSessionStorageAdapter(session),
 });
 
 export const fuji = openFuji({
@@ -24,14 +29,9 @@ export const fuji = openFuji({
 	},
 });
 
-auth.onSessionChange((next, previous) => {
-	if (next === null) {
-		fuji.sync.goOffline();
-		if (previous !== null) void fuji.idb.clearLocal();
-		return;
-	}
-	fuji.encryption.applyKeys(next.encryptionKeys);
-	if (previous?.token !== next.token) fuji.sync.reconnect();
+attachAuthSnapshotToWorkspace({
+	auth,
+	workspace: fuji,
 });
 
 if (import.meta.hot) {

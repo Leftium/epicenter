@@ -64,7 +64,7 @@ type PersistedStateOptions<TSchema extends StandardSchemaV1> = {
 	syncTabs?: boolean;
 	/**
 	 * Called when a value read from storage fails to parse or validate.
-	 * Fire-and-forget — `defaultValue` is used as the fallback regardless.
+	 * Fire-and-forget. `defaultValue` is used as the fallback regardless.
 	 */
 	onError?: (error: PersistedError) => void;
 	/**
@@ -94,7 +94,7 @@ type PersistedStateOptions<TSchema extends StandardSchemaV1> = {
  * theme.current;           // 'dark' (reactive)
  * theme.current = 'light';  // persists to localStorage
  *
- * // Imperative read (sync — localStorage is immediate):
+ * // Imperative read (sync: localStorage is immediate):
  * const value = theme.get();
  * ```
  */
@@ -194,7 +194,7 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		/**
 		 * Reactive value for Svelte template bindings and `$derived` blocks.
 		 *
-		 * For localStorage-backed stores this is always the real value—localStorage
+		 * For localStorage-backed stores this is always the real value. localStorage
 		 * is synchronous, so `.current` is accurate at import time. Use `.get()`
 		 * in imperative code (boot scripts, closures) for API parity with async stores.
 		 */
@@ -205,7 +205,7 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 			setAndPersist(newValue);
 		},
 		/**
-		 * Authoritative read—returns the current value synchronously.
+		 * Authoritative read: returns the current value synchronously.
 		 *
 		 * localStorage is synchronous, so this is always the real value.
 		 * Use this in imperative code (boot scripts, closures, event handlers)
@@ -224,7 +224,7 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		},
 		/**
 		 * Method-form setter for `{ get, set, watch }` consumers. Equivalent to
-		 * assigning `.current` — both set the reactive value and persist.
+		 * assigning `.current`: both set the reactive value and persist.
 		 */
 		set: setAndPersist,
 		watch(listener: (value: StandardSchemaV1.InferOutput<TSchema>) => void) {

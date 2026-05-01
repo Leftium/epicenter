@@ -1,204 +1,188 @@
 ---
 name: auth
-description: Epicenter auth packages — @epicenter/auth (framework-agnostic core) and @epicenter/auth-svelte (Svelte 5 reactive wrapper). Covers SessionStore contract, session/token subscription fan-out, and how consumer apps wire login/logout into sync and encryption.
+description: Epicenter auth packages, @epicenter/auth and @epicenter/auth-svelte. Covers SessionStorage, auth snapshots, token sourcing, and app wiring.
 metadata:
   author: epicenter
-  version: '1.0'
+  version: '2.0'
 ---
 
 # Epicenter Auth
 
 Two packages:
 
-- **`@epicenter/auth`** — framework-agnostic. Owns the Better Auth transport, session-rotation interceptor, and imperative subscription fan-out. Pure TypeScript, no Svelte.
-- **`@epicenter/auth-svelte`** — thin Svelte 5 wrapper. Subscribes once to the core's `on*` primitives and projects them onto `$state`-backed getters.
+- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, storage hydration, response-header token rotation, and snapshot subscriber fan-out.
+- **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors the core snapshot into `$state` and exposes a live `auth.snapshot` getter.
 
-Everything runtime lives in the core. The Svelte package only adds reactive reads.
-
-> **Related Skills**: `factory-function-composition` for the `SessionStore` structural-contract pattern. `error-handling` for the `AuthError` variants (`InvalidCredentials`, `SignInFailed`, `SignUpFailed`, `SocialSignInFailed`).
+Everything runtime lives in the core. The Svelte package only makes the snapshot reactive.
 
 ## When to Apply This Skill
 
 Use this skill when:
 
-- Wiring a new consumer app to `@epicenter/auth-svelte` (see any `apps/*/src/lib/client.svelte.ts` or `auth.ts`).
-- Reacting to login/logout/token rotation in sync, encryption, or storage layers.
-- Writing or reviewing a `SessionStore` adapter (chrome.storage, localStorage, a custom persisted state).
-- Deciding between reactive reads (`auth.session`) and imperative reads (`auth.getSession()`).
+- Wiring a consumer app to `@epicenter/auth-svelte`.
+- Reacting to auth transitions in sync, encryption, or storage layers.
+- Writing or reviewing a `SessionStorage` adapter.
+- Reading auth state in UI, fetch callbacks, or workspace sync callbacks.
 
-## The Package Split
+## Public Surface
 
-```
-@epicenter/auth          @epicenter/auth-svelte
-├── createAuth            ├── createAuth           (shadows, wraps core)
-├── AuthCore (type)       ├── AuthClient (type)    (= AuthCore + reactive getters)
-├── SessionStore (type)   └── re-exports the core's types
-├── AuthSession, StoredUser
-└── AuthError
-```
-
-Consumer apps import `createAuth` from **`@epicenter/auth-svelte`** — never from the core directly in Svelte apps. Non-Svelte contexts (CLI, workers, tests) import from `@epicenter/auth`.
-
-## The SessionStore Contract
-
-`createAuth` takes a `SessionStore`, not a storage backend. The store is where the persisted session lives — the core reads and writes it but never persists itself.
+Auth has one public read path and one readiness promise:
 
 ```ts
-export type SessionStore = {
-  get(): AuthSession | null;
-  set(value: AuthSession | null): void;
-  watch(fn: (next: AuthSession | null) => void): () => void;
+type AuthSnapshot =
+	| { status: 'loading' }
+	| { status: 'signedOut' }
+	| { status: 'signedIn'; session: Session };
+```
+
+Read `auth.snapshot` synchronously. Await `auth.whenSessionLoaded` only at async boundaries that must wait for persisted storage hydration, such as `auth.fetch` and sync token callbacks.
+
+Do not add projection helpers. There is no public token, user, session, authenticated, or busy getter beyond `auth.snapshot`.
+
+## SessionStorage Contract
+
+`createAuth` takes a `SessionStorage`. The storage object is the persistence boundary; auth owns the in-memory snapshot.
+
+```ts
+export type MaybePromise<T> = T | Promise<T>;
+
+export type SessionStorage = {
+	load(): MaybePromise<Session | null>;
+	save(value: Session | null): MaybePromise<void>;
+	watch(fn: (next: Session | null) => void): () => void;
 };
 ```
 
-**Invariants** (copy exactly when writing an adapter):
+Invariants:
 
-- All three methods are **synchronous**. Async backends (IndexedDB, chrome.storage) hydrate once at boot, cache in memory, and expose a sync read.
-- `watch` fires for **every** state change, including local writes via `set()`. Stores whose native event only fires on external change must fan out local writes themselves.
-- `set()` is fire-and-forget. It may persist asynchronously, but the next `get()` returns the new value immediately.
+- `load()` returns the persisted session or `null`.
+- Sync stores can leave `loading` before `createAuth()` returns.
+- Async stores start in `loading` and transition after `load()` settles.
+- `whenSessionLoaded` never rejects. Load failures are logged and normalize to `signedOut`.
+- Local writes update the snapshot first, then call `save()`.
+- `watch()` is inbound reconciliation. It may echo local writes, so auth dedupes structurally.
 
-### Prefer using `createPersistedState` / `createStorageState` directly
-
-Both factories in `@epicenter/svelte` and `apps/tab-manager/src/lib/state/storage-state.svelte.ts` are **structurally assignable** to `SessionStore`. Pass them directly:
-
-```ts
-// apps/dashboard/src/lib/auth.ts
-export const auth = createAuth({
-  baseURL: window.location.origin,
-  session: createPersistedState({
-    key: 'dashboard:authSession',
-    schema: AuthSession.or('null'),
-    defaultValue: null,
-  }),
-});
-```
-
-No adapter layer. The earlier `fromPersistedState` / `fromStorageState` adapters were folded into the factories — don't reintroduce them.
-
-## Wiring a consumer app
-
-The canonical shape (fuji, honeycrisp, opensidian, zhongwen all look like this):
+## Wiring a Consumer App
 
 ```ts
-import { AuthSession, createAuth } from '@epicenter/auth-svelte';
+import {
+	attachAuthSnapshotToWorkspace,
+	createAuth,
+	createSessionStorageAdapter,
+	Session,
+} from '@epicenter/auth-svelte';
+import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
 
-const session = createPersistedState({
-  key: 'fuji:authSession',
-  schema: AuthSession.or('null'),
-  defaultValue: null,
+const sessionStorage = createPersistedState({
+	key: 'fuji:authSession',
+	schema: Session.or('null'),
+	defaultValue: null,
 });
 
 export const auth = createAuth({
-  baseURL: APP_URLS.API,
-  session,
+	baseURL: APP_URLS.API,
+	sessionStorage: createSessionStorageAdapter(sessionStorage),
 });
 ```
 
-Validate the stored value with Arktype: `AuthSession.or('null')` — if storage ever holds a malformed session, the schema rejects it and the default (`null`) takes over.
+Tab-manager wraps the `createStorageState()` result the same way. Do not await `sessionStorage.whenReady` before constructing auth. Auth owns the load barrier.
 
-## Reacting to session transitions
+## Reacting to Session Transitions
 
-**One subscription drives everything.** In consumer apps (see `apps/fuji/src/lib/client.svelte.ts:64`), a single `auth.onSessionChange` call handles login, logout, and token rotation:
+Use `attachAuthSnapshotToWorkspace` at setup time when a workspace exposes `sync`, `idb`, and `encryption`:
 
 ```ts
-auth.onSessionChange((next, previous) => {
-  if (next === null) {
-    sync.goOffline();
-    sync.setToken(null);
-    if (previous !== null) void idb.clearLocal();  // logout, not cold-boot
-    return;
-  }
-  encryption.applyKeys(next.encryptionKeys);
-  sync.setToken(next.token);
-  sync.reconnect();
+attachAuthSnapshotToWorkspace({
+	auth,
+	workspace,
 });
 ```
 
-**Transition matrix:**
+For non-sync documents, use one `auth.subscribe` and preserve the same transition rules: ignore `loading`, clear local data only when `previous` was `signedIn`, and apply encryption keys before reconnecting any sync target.
 
-| `previous` | `next` | Meaning                 |
-| ---------- | ------ | ----------------------- |
-| `null`     | `null` | Anonymous replay (subscribe before hydration) — safe no-op |
-| `null`     | session | Login, OR cold-boot of a returning authenticated user |
-| session    | session (different token) | Token rotation |
-| session    | `null` | Logout — wipe local data |
+Replay rules:
 
-Use the `previous` argument to distinguish cold-boot from logout. Don't clear local data on every `null` branch.
+- If current is `loading`, subscribe replays `(loading, loading)`.
+- If current is settled, subscribe replays `(current, { status: 'loading' })`.
+- Future calls receive real `(next, previous)` pairs.
+- Subscriber failures are caught per subscriber.
 
-**Cold-boot note.** A subscriber attached *before* the store hydrates receives two calls: the initial replay with `(null, null)`, then the hydrated value via `watch` as `(session, null)`. A subscriber attached *after* hydration receives one call: `(session, null)` on replay. Both shapes look like login to handlers that key on `previous === null && next !== null` — which is the correct behavior (encryption keys and sync tokens must be re-applied on every cold boot), but it means `onLogin` fires on every page load for returning users, not only on fresh sign-in.
+## Token Sourcing
 
-## Session store write ownership
-
-Two code paths write to the session store, partitioned by **field**:
-
-| Writer | Fields owned | When |
-| ------ | ------------ | ---- |
-| `onSuccess` fetch interceptor | `token` only | Token rotation via `set-auth-token` response header. Writes `{ ...current, token: rotatedToken }`. |
-| `useSession.subscribe` | `user`, `encryptionKeys` (always); `token` (initial only) | Session establishment, profile updates, encryption key rotation, account switch. |
-| `useSession.subscribe` | `null` | Sign-out, server-side revocation. |
-
-**Token strategy:** `current?.token ?? state.data.session.token` — if we already have a session, preserve our token (onSuccess may have rotated it and BA's async refetch can emit a stale pre-rotation value). On initial establishment (current is null), use BA's token.
-
-**Why field-level, not null-partition.** An earlier design gated `useSession` data writes on `current === null`. This blocked encryption key rotation, account switching without sign-out, and user profile updates — all cases where `useSession` legitimately carries new data while a session already exists. The field-level partition solves the token race without blocking those flows.
-
-**Cross-tab sign-in/out** is handled by the persisted store's platform events (`StorageEvent` for `createPersistedState`, `chrome.storage.onChanged` for `createStorageState`), not by `useSession.subscribe`. Both stores propagate external writes to all `watch` subscribers automatically.
-
-## Firing order on any session transition
-
-1. `session.set(next)` is called; `getSession()` now returns `next`.
-2. The store's `watch` callback runs and notifies the core.
-3. `onSessionChange` subscribers fire with `(next, previous)`.
-4. `onLogin` fires if the transition was `null → session`.
-5. `onLogout` fires if the transition was `session → null`.
-6. `onTokenChange` fires if `previous?.token !== next?.token`.
-
-Every subscriber runs in its own try/catch — one throwing does not prevent others from firing.
-
-## Subscription primitives
-
-| Method | Fires on | Replays on subscribe? |
-| ------ | -------- | --------------------- |
-| `onSessionChange(fn)` | Any session transition | Yes — with `(current, null)` |
-| `onTokenChange(fn)` | Token changes (including rotation) | Yes — with current token |
-| `onLogin(fn)` | `null → session` | Only if a session already exists |
-| `onLogout(fn)` | `session → null` | No |
-| `onBusyChange(fn)` | In-flight op counter flips 0↔non-0 | Yes — with current busy state |
-
-`isBusy` is a counter, not a boolean — overlapping ops don't flip busy false prematurely.
-
-## Reactive vs imperative reads
-
-`AuthClient` (from `@epicenter/auth-svelte`) exposes both:
+Workspace sync should wait for storage hydration, then read the snapshot:
 
 ```ts
-// Reactive — use in templates, $derived, $effect
-auth.session       // AuthSession | null
-auth.token         // string | null
-auth.user          // StoredUser | null
-auth.isAuthenticated  // boolean
-auth.isBusy        // boolean
+getToken: async () => {
+	await auth.whenSessionLoaded;
 
-// Imperative — use in fetch interceptors, one-shot callbacks, non-reactive contexts
-auth.getSession()
-auth.getToken()
-auth.getUser()
-auth.onSessionChange((next, previous) => { ... })
+	const snapshot = auth.snapshot;
+	return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+},
 ```
 
-**Rule**: subscribe imperatively at setup time (one `onSessionChange` in the client builder). Read reactively in components. Don't mix — don't subscribe inside `$effect` when the reactive getter already exists.
+`auth.fetch` follows the same rule internally.
 
-## Social sign-in
+## Write Ownership
 
-`signInWithSocialRedirect` works anywhere (web default). `signInWithSocialPopup` requires a `socialTokenProvider` — native apps and extensions inject one at `createAuth` time. Web apps that only use redirect sign-in omit it entirely. If popup is called without a provider, it returns `AuthError.SocialSignInFailed`.
+Keep field ownership narrow:
+
+| Writer | Fields owned |
+| --- | --- |
+| Persisted load | Initial whole session |
+| Storage watch | External whole session |
+| Response header rotation | `session.token` only |
+| Better Auth session refetch | `user`, `encryptionKeys`, and initial token |
+
+Better Auth emissions during `loading` are buffered. Persisted storage owns the first transition out of `loading`.
+
+Preserve a rotated token across Better Auth refetch:
+
+```ts
+session: {
+	token: current?.token ?? state.data.session.token,
+	user: normalizeUser(state.data.user),
+	encryptionKeys: state.data.encryptionKeys,
+}
+```
+
+## Svelte UI Reads
+
+Read `auth.snapshot` in templates, `$derived`, or `$effect`:
+
+```svelte
+<script lang="ts">
+	const snapshot = $derived(auth.snapshot);
+</script>
+
+{#if snapshot.status === 'signedIn'}
+	<p>{snapshot.session.user.name}</p>
+{:else if snapshot.status === 'signedOut'}
+	<AuthForm {auth} />
+{/if}
+```
+
+In-flight command state belongs to the issuing component:
+
+```svelte
+<script lang="ts">
+	let busy = $state(false);
+
+	async function submit() {
+		busy = true;
+		try {
+			await auth.signIn({ email, password });
+		} finally {
+			busy = false;
+		}
+	}
+</script>
+```
 
 ## Common Pitfalls
 
-- **Subscribing inside an `$effect`** — the reactive getter already tracks. Subscribe once at setup, read reactively in components.
-- **Reading `{current}` on `auth`** — `auth` isn't a runed box. Read the reactive getters directly (`auth.session`, not `auth.session.current`).
-- **Clearing local data on cold-boot** — guard logout handlers with `if (previous !== null)`, or `null → null` at boot will wipe an anonymous user's in-progress state.
-- **Importing `createAuth` from `@epicenter/auth` in Svelte apps** — always use `@epicenter/auth-svelte` for the reactive wrapper. The core import is for framework-agnostic consumers (CLI, workers).
-- **Writing an adapter where none is needed** — if your store already exposes `{ get, set, watch }`, pass it directly; don't wrap it.
-- **Wrapping `signInWithSocialRedirect` in `runBusy`** — the page navigates away on success. `isBusy` is never read, and the promise never resolves on the happy path. The other auth ops (`signIn`, `signUp`, `signOut`, `signInWithSocialPopup`) genuinely use `runBusy` because the user waits for a result.
-- **Passing `baseURL` as a function** — `createAuthClient` only accepts a string. The value is read once at construction. If the origin can change at runtime (e.g. tab-manager's `serverUrl`), the consumer must recreate the auth client — a lazy thunk cannot be honored. Tab-manager uses a single `serverUrl` for all services (sync, auth, AI, billing). The earlier `remoteServerUrl` split was removed — all services share one origin.
-- **Adding a second data writer to the session store** — see "Session store write ownership" above. The partition on `current === null` eliminates the token rotation race. Adding another path that writes session data when `current !== null` reintroduces the race with `onSuccess`.
+- Do not spread the core auth object in the Svelte wrapper. Object spread invokes the `snapshot` getter and freezes the initial value.
+- Do not destructure `auth.snapshot` at module scope. That freezes the current value.
+- Do not clear local data on cold boot. Clear only when the previous snapshot was `signedIn` and the next snapshot is `signedOut`.
+- Do not import `createAuth` from `@epicenter/auth` in Svelte apps. Use `@epicenter/auth-svelte`.
+- Do not wrap redirect sign-in in global auth busy state. The page navigates away on success; local state is enough for commands that stay on the page.

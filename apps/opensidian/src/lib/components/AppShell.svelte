@@ -26,10 +26,11 @@
 
 	let paletteOpen = $state(false);
 	let chatOpen = $state(false);
+	const snapshot = $derived(auth.snapshot);
 
 	// ── First-visit onboarding ──────────────────────────────────────
 	// Only auto-seed for anonymous visitors. Authenticated users get
-	// their data from sync — seeding before sync finishes would create
+	// their data from sync. Seeding before sync finishes would create
 	// duplicates (new CRDT IDs locally + old IDs from the server).
 	let onboarded = false;
 	$effect(() => {
@@ -38,11 +39,12 @@
 			onboarded = true;
 			return;
 		}
-		if (auth.isAuthenticated) {
+		if (snapshot.status === 'loading') return;
+		if (snapshot.status === 'signedIn') {
 			onboarded = true;
 			return;
 		}
-		// Empty file tree + anonymous — seed demo data, open terminal, show welcome.
+		// Empty file tree plus anonymous: seed demo data, open terminal, show welcome.
 		onboarded = true;
 		sampleDataLoader.load().then(() => {
 			const readme = fsState.walkTree((id, row) => {

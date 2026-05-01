@@ -1,6 +1,6 @@
 # Fuji
 
-Fuji is a local-first CMS where every entry's body is its own CRDT. Write offline, sync later, and collaborate on a single entry without touching the rest of your content. Think of it as a structured journal, knowledge base, or portfolio—whatever you tag and type your entries as.
+Fuji is a local-first CMS where every entry's body is its own CRDT. Write offline, sync later, and collaborate on a single entry without touching the rest of your content. Think of it as a structured journal, knowledge base, or portfolio, whatever you tag and type your entries as.
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT licensed.
 
@@ -14,14 +14,14 @@ SvelteKit app (static adapter, SSR disabled) with three panels: a sidebar for fi
 
 ### Data model
 
-Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separate CRDTs. The entries table stays lean—just IDs, titles, tags, timestamps—while each entry's body lives in its own Y.Doc opened by a separate `createDocumentFactory` factory keyed on the row's content guid. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
+Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: just IDs, titles, tags, timestamps. Each entry's body lives in its own Y.Doc opened by a separate `createDocumentFactory` factory keyed on the row's content guid. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
 
-- `entries` table—`id` (EntryId), `title`, `subtitle`, `type` (string[]), `tags` (string[]), `createdAt`, `updatedAt`, `_v`. Each entry's body is opened on demand from a per-row content-doc factory and bound to ProseMirror via `y-prosemirror`.
-- KV keys—`selectedEntryId`, `viewMode` (`'table' | 'timeline'`), `sidebarCollapsed`.
+- `entries` table: `id` (EntryId), `title`, `subtitle`, `type` (string[]), `tags` (string[]), `createdAt`, `updatedAt`, `_v`. Each entry's body is opened on demand from a per-row content-doc factory and bound to ProseMirror via `y-prosemirror`.
+- KV keys: `selectedEntryId`, `viewMode` (`'table' | 'timeline'`), `sidebarCollapsed`.
 
 ### Client wiring
 
-Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The bundle exposes `applySession`, a single method that handles every auth transition (login, logout, token rotation) instead of a pair of callbacks reaching across the client/workspace boundary.
+Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `attachAuthSnapshotToWorkspace(...)`, so encryption keys, local cleanup, and sync reconnects follow one transition path.
 
 ```ts
 export function openFuji() {
@@ -34,38 +34,31 @@ export function openFuji() {
 
   const idb = attachIndexedDb(ydoc);
   attachBroadcastChannel(ydoc);
-  let previousSession: AuthSession | null = null;
   const sync = attachSync(ydoc, {
     url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
-    getToken: async () => previousSession?.token ?? null,
-  });
+    getToken: async () => {
+      await auth.whenSessionLoaded;
 
-  async function applySession(next: AuthSession | null) {
-    const wasAuthed = previousSession !== null;
-    previousSession = next;
-    if (next === null) {
-      sync.goOffline();
-      if (wasAuthed) await idb.clearLocal();
-      return;
-    }
-    encryption.applyKeys(next.encryptionKeys);
-    sync.reconnect();
-  }
+      const snapshot = auth.snapshot;
+      return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+    },
+  });
 
   return {
     get id() { return ydoc.guid; },
     ydoc, tables, kv, awareness, encryption, idb, sync,
-    applySession,
     whenReady: idb.whenLoaded,
-    [Symbol.dispose]() { ydoc.destroy(); },
+    [Symbol.dispose]() {
+      ydoc.destroy();
+    },
   };
 }
 
 export const workspace = openFuji();
 ```
 
-`bundle.id` is a getter over `ydoc.guid`, so there's only one source of truth. A Svelte `$effect.root` bridges the reactive `auth.session` rune to `workspace.applySession`; its disposer is wired into `import.meta.hot.dispose` so HMR tears down the effect cleanly.
+`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. Auth state flows through `auth.snapshot` and `auth.subscribe`; its disposer is wired into `import.meta.hot.dispose` so HMR tears down the subscription cleanly.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/client.ts`.
 
@@ -75,8 +68,8 @@ ProseMirror with `y-prosemirror` binds directly to the entry's `Y.Text`. Edits a
 
 ### Keyboard shortcuts
 
-- `Cmd+N`—new entry
-- `Escape`—deselect current entry
+- `Cmd+N`: new entry
+- `Escape`: deselect current entry
 
 ---
 
@@ -102,14 +95,15 @@ bun run dev:remote
 
 ## Tech stack
 
-- [SvelteKit](https://kit.svelte.dev)—UI framework (static adapter, SSR disabled)
-- [ProseMirror](https://prosemirror.net) + [y-prosemirror](https://github.com/yjs/y-prosemirror)—collaborative rich-text editing
-- [TanStack Svelte Table](https://tanstack.com/table)—entry list table view
-- [Yjs](https://yjs.dev)—CRDT engine
-- [Tailwind CSS](https://tailwindcss.com)—styling
-- `@epicenter/workspace`—CRDT-backed tables, versioning, documents
-- `@epicenter/svelte`—auth, workspace gate, reactive table/KV bindings
-- `@epicenter/ui`—shadcn-svelte component library
+- [SvelteKit](https://kit.svelte.dev): UI framework (static adapter, SSR disabled)
+- [ProseMirror](https://prosemirror.net) + [y-prosemirror](https://github.com/yjs/y-prosemirror): collaborative rich-text editing
+- [TanStack Svelte Table](https://tanstack.com/table): entry list table view
+- [Yjs](https://yjs.dev): CRDT engine
+- [Tailwind CSS](https://tailwindcss.com): styling
+- `@epicenter/workspace`: CRDT-backed tables, versioning, documents
+- `@epicenter/auth-svelte`: auth snapshot wrapper
+- `@epicenter/svelte`: workspace gate and reactive table/KV bindings
+- `@epicenter/ui`: shadcn-svelte component library
 
 ---
 

@@ -1,21 +1,19 @@
-import type { AuthSession } from './auth-types.ts';
+import type { Session } from './auth-types.ts';
 
 /**
- * Synchronous store contract that `createAuth` uses to read and write the
- * persisted session. Core auth stays sync-only; async concerns (IndexedDB,
- * chrome.storage) are the adapter's job — adapters hydrate once at boot,
- * cache the value in memory, and expose a sync read.
+ * Persistence boundary that `createAuth` uses to load, save, and observe the
+ * browser session. Core auth owns the in-memory snapshot; storage only moves
+ * data across the durable boundary.
  *
  * Invariants:
- * - All three methods are synchronous.
- * - `watch` fires for every state change, including local writes via `set()`.
- *   Stores that only fire on external change need an adapter that fans out
- *   local writes.
- * - `set()` is fire-and-forget. It may persist asynchronously, but the next
- *   `get()` returns the new value immediately.
+ * - `load()` may be synchronous or async.
+ * - `save()` may be synchronous or async.
+ * - `watch()` reports inbound storage changes and may echo local writes.
  */
-export type SessionStore = {
-	get(): AuthSession | null;
-	set(value: AuthSession | null): void;
-	watch(fn: (next: AuthSession | null) => void): () => void;
+export type MaybePromise<T> = T | Promise<T>;
+
+export type SessionStorage = {
+	load(): MaybePromise<Session | null>;
+	save(value: Session | null): MaybePromise<void>;
+	watch(fn: (next: Session | null) => void): () => void;
 };

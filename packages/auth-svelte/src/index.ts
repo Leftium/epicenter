@@ -1,8 +1,14 @@
 export {
-	AuthSession,
-	type AuthCore,
+	attachAuthSnapshotToWorkspace,
+	type AuthSnapshot,
+	type AuthSnapshotSubscriber,
+	type AuthWorkspaceSyncTarget,
+	type AuthWorkspaceTarget,
 	AuthError,
-	type SessionStore,
+	createSessionStorageAdapter,
+	Session,
+	type SessionStorage,
+	type SessionStateAdapter,
 	type SocialTokenPayload,
 	StoredUser,
 } from '@epicenter/auth';

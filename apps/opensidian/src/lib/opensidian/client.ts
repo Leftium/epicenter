@@ -1,4 +1,9 @@
-import { AuthSession, createAuth } from '@epicenter/auth-svelte';
+import {
+	attachAuthSnapshotToWorkspace,
+	createAuth,
+	createSessionStorageAdapter,
+	Session,
+} from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
@@ -7,13 +12,13 @@ import { openOpensidian } from './browser';
 
 const session = createPersistedState({
 	key: 'opensidian:authSession',
-	schema: AuthSession.or('null'),
+	schema: Session.or('null'),
 	defaultValue: null,
 });
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
-	session,
+	sessionStorage: createSessionStorageAdapter(session),
 });
 
 export const opensidian = openOpensidian({
@@ -25,14 +30,9 @@ export const opensidian = openOpensidian({
 	},
 });
 
-auth.onSessionChange((next, previous) => {
-	if (next === null) {
-		opensidian.sync.goOffline();
-		if (previous !== null) void opensidian.idb.clearLocal();
-		return;
-	}
-	opensidian.encryption.applyKeys(next.encryptionKeys);
-	if (previous?.token !== next.token) opensidian.sync.reconnect();
+attachAuthSnapshotToWorkspace({
+	auth,
+	workspace: opensidian,
 });
 
 if (import.meta.hot) {

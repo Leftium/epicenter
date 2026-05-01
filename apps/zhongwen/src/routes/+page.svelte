@@ -15,6 +15,7 @@
 	let submitError = $state<string | null>(null);
 
 	const handle = $derived(chatState.active);
+	const snapshot = $derived(auth.snapshot);
 
 	async function signInWithGoogle() {
 		const { error } = await auth.signInWithSocialRedirect({
@@ -50,20 +51,20 @@
 					{showPinyin.current ? 'Hide Pinyin' : 'Show Pinyin'}
 				</Button>
 
-				{#if auth.isAuthenticated}
-					<span class="text-sm text-muted-foreground">{auth.user?.name}</span>
-				{:else if !auth.isAuthenticated}
+				{#if snapshot.status === 'signedIn'}
+					<span class="text-sm text-muted-foreground">
+						{snapshot.session.user.name}
+					</span>
+				{:else if snapshot.status === 'signedOut'}
 					<Button size="sm" onclick={signInWithGoogle}> Sign In </Button>
 				{/if}
 			</div>
 		</header>
 
 		<!-- Messages -->
-		{#if auth.isBusy}
-			<div class="flex flex-1 items-center justify-center">
-				<p class="text-muted-foreground">Signing in…</p>
-			</div>
-		{:else if !auth.isAuthenticated}
+		{#if snapshot.status === 'loading'}
+			<div class="flex flex-1 items-center justify-center"></div>
+		{:else if snapshot.status === 'signedOut'}
 			<div class="flex flex-1 items-center justify-center">
 				<div class="text-center text-muted-foreground">
 					<p class="mb-4">Sign in to start chatting</p>

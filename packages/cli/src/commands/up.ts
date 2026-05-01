@@ -40,7 +40,7 @@ import {
 	type LoadConfigResult,
 	type LoadError,
 	loadConfig,
-	type HostedDaemonRuntime,
+	type DaemonRuntimeEntry,
 } from '../load-config.js';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
@@ -78,7 +78,7 @@ export type UpOptions = {
  */
 export type UpHandle = {
 	server: UnixSocketServer;
-	entries: HostedDaemonRuntime[];
+	entries: DaemonRuntimeEntry[];
 	config: LoadConfigResult;
 	metadata: DaemonMetadata;
 	socketPath: string;
@@ -121,7 +121,7 @@ export async function runUp(
 	// successful retry, so the writeMetadata below records *our* pid.
 	const daemonServer = createDaemonServer({
 		projectDir,
-		workspaces: config.entries,
+		entries: config.entries,
 		triggerShutdown: () => void teardown(),
 	});
 	const bindResult = await daemonServer.listen();
@@ -242,7 +242,7 @@ async function safeAsyncDispose(config: LoadConfigResult): Promise<void> {
 	}
 }
 
-function printPeersSnapshot(entry: HostedDaemonRuntime): void {
+function printPeersSnapshot(entry: DaemonRuntimeEntry): void {
 	const peers = entry.workspace.presence.peers();
 	if (peers.size === 0) {
 		process.stderr.write(`${entry.route}: no peers connected\n`);
@@ -255,7 +255,7 @@ function printPeersSnapshot(entry: HostedDaemonRuntime): void {
 	}
 }
 
-function subscribeAwareness(entry: HostedDaemonRuntime, quiet: boolean): void {
+function subscribeAwareness(entry: DaemonRuntimeEntry, quiet: boolean): void {
 	const presence = entry.workspace.presence;
 	let prev = new Map(presence.peers());
 	presence.observe(() => {
@@ -282,7 +282,7 @@ function subscribeAwareness(entry: HostedDaemonRuntime, quiet: boolean): void {
 	});
 }
 
-function subscribeSyncStatus(entry: HostedDaemonRuntime): void {
+function subscribeSyncStatus(entry: DaemonRuntimeEntry): void {
 	const sync = entry.workspace.sync;
 	sync.onStatusChange((status) => {
 		if (status.phase === 'connecting') {

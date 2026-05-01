@@ -21,7 +21,7 @@
  * await fuji.entries.update({ id, tags: ['untagged'] });
  * ```
  *
- * Daemon-scope calls (peers, list across workspaces) live on `DaemonClient`
+ * Daemon-scope calls (peers, list across routes) live on `DaemonClient`
  * directly: construct one with `daemonClient(socketPathFor(projectDir))` and
  * call `.peers()` / `.list()` against the same socket. They are not
  * reachable through this workspace handle.

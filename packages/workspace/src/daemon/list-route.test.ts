@@ -13,14 +13,14 @@ import type { Result } from 'wellcrafted/result';
 
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
 import { buildDaemonApp } from './app.js';
-import type { DaemonRuntime, HostedDaemonRuntime } from './types.js';
+import type { DaemonRuntime, DaemonRuntimeEntry } from './types.js';
 
 type ListResult = Result<ActionManifest, never>;
 
 function fakeEntry(
 	name: string,
 	workspaceShape: Record<string, unknown> = {},
-): HostedDaemonRuntime {
+): DaemonRuntimeEntry {
 	const workspace = {
 		workspaceId: `epicenter.${name}`,
 		actions: {},
@@ -56,12 +56,11 @@ function fakeEntry(
 	} satisfies DaemonRuntime;
 	return {
 		route: name,
-		workspaceId: workspace.workspaceId,
 		workspace,
-	} as HostedDaemonRuntime;
+	};
 }
 
-async function postList(entries: HostedDaemonRuntime[]): Promise<ListResult> {
+async function postList(entries: DaemonRuntimeEntry[]): Promise<ListResult> {
 	const app = buildDaemonApp(entries);
 	const res = await app.request('/list', {
 		method: 'POST',

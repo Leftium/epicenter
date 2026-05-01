@@ -94,9 +94,7 @@ function makeFakeWorkspace(): DaemonRuntime {
 
 function makeFakeConfig(workspace: DaemonRuntime): LoadConfigResult {
 	return {
-		entries: [
-			{ route: 'default', workspaceId: workspace.workspaceId, workspace },
-		],
+		entries: [{ route: 'default', workspace }],
 		async [Symbol.asyncDispose]() {
 			workspace[Symbol.dispose]();
 		},

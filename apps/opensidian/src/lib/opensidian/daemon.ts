@@ -15,7 +15,6 @@ import {
 import { openOpensidian as openOpensidianDoc } from './index.js';
 
 export const OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
-export const OPENSIDIAN_WORKSPACE_ID = 'epicenter.opensidian';
 
 export type DefineOpensidianDaemonOptions = {
 	route?: string;

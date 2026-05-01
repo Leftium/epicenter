@@ -28,7 +28,6 @@ describe('daemon to script handoff via Yjs log file', () => {
 			});
 			using daemon = await daemonDefinition.start({
 				projectDir: workdir,
-				configDir: workdir,
 			});
 
 			for (const title of ['first', 'second', 'third']) {
@@ -55,16 +54,14 @@ describe('daemon to script handoff via Yjs log file', () => {
 		});
 		const daemon = await daemonDefinition.start({
 			projectDir: workdir,
-			configDir: workdir,
 		});
 		const oldRuntimeDir = process.env.XDG_RUNTIME_DIR;
 		process.env.XDG_RUNTIME_DIR = '/tmp';
 		const server = createDaemonServer({
 			projectDir: workdir,
-			workspaces: [
+			entries: [
 				{
 					route: daemonDefinition.route,
-					workspaceId: daemon.workspaceId,
 					workspace: daemon,
 				},
 			],

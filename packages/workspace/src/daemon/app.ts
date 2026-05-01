@@ -3,7 +3,7 @@
  * routes; the server (`bindUnixSocket`) wires this into Bun's listener
  * and the hand-rolled `daemonClient` in `./client.ts` POSTs against it.
  *
- * Each verb is a one-line shell shortcut for one workspace primitive:
+ * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
  *   /peers  ->  workspace.presence.peers()                    all routes
  *   /list   ->  describeActions({ route: workspace.actions }) all routes
@@ -22,7 +22,7 @@ import { Ok } from 'wellcrafted/result';
 import { Peer } from '../document/standard-awareness-defs.js';
 import { describeActions } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { HostedDaemonRuntime } from './types.js';
+import type { DaemonRuntimeEntry } from './types.js';
 
 /**
  * Wire body for `/run`. The schema serves two roles:
@@ -67,7 +67,7 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * path locally or over RPC.
  */
 export function buildDaemonApp(
-	entries: HostedDaemonRuntime[],
+	entries: DaemonRuntimeEntry[],
 	triggerShutdown?: () => void,
 ) {
 	return new Hono()

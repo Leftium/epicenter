@@ -2,7 +2,7 @@
  * Daemon-side dispatch for the `/run` route. The Hono handler in `app.ts`
  * forwards to `executeRun` here.
  *
- * `epicenter run` is a shell shortcut for one workspace primitive:
+ * `epicenter run` is a shell shortcut for one daemon runtime primitive:
  *
  *   request.peerTarget === undefined   ->  invokeAction(...)
  *   request.peerTarget === <peerId>    ->  rpc.rpc(clientID, path, input)
@@ -24,10 +24,10 @@ import {
 } from '../shared/actions.js';
 import type { RunRequest } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
-import type { HostedDaemonRuntime } from './types.js';
+import type { DaemonRuntimeEntry } from './types.js';
 
 type DaemonActionTarget = {
-	entry: HostedDaemonRuntime;
+	entry: DaemonRuntimeEntry;
 	localPath: string;
 };
 
@@ -37,7 +37,7 @@ type DaemonRouteError = {
 };
 
 export async function executeRun(
-	entries: HostedDaemonRuntime[],
+	entries: DaemonRuntimeEntry[],
 	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
 	const target = resolveDaemonActionTarget(entries, actionPath);
@@ -84,7 +84,7 @@ export async function executeRun(
 }
 
 function resolveDaemonActionTarget(
-	entries: HostedDaemonRuntime[],
+	entries: DaemonRuntimeEntry[],
 	actionPath: string,
 ):
 	| { data: DaemonActionTarget; error: null }
@@ -117,7 +117,7 @@ async function invokeRemote({
 	waitMs,
 }: {
 	actionInput: unknown;
-	entry: HostedDaemonRuntime;
+	entry: DaemonRuntimeEntry;
 	localPath: string;
 	peerTarget: string;
 	waitMs: number;
@@ -154,14 +154,14 @@ async function invokeRemote({
 }
 
 function toDaemonActionPath(
-	entry: HostedDaemonRuntime,
+	entry: DaemonRuntimeEntry,
 	localPath: string,
 ): string {
 	return localPath ? `${entry.route}.${localPath}` : entry.route;
 }
 
 function daemonActionSuggestionLines(
-	entry: HostedDaemonRuntime,
+	entry: DaemonRuntimeEntry,
 	prefix: string,
 ): string[] {
 	const entries = [...walkActions(entry.workspace.actions)];
@@ -173,7 +173,7 @@ function daemonActionSuggestionLines(
 }
 
 function daemonActionNearestSiblingLines(
-	entry: HostedDaemonRuntime,
+	entry: DaemonRuntimeEntry,
 	missedPath: string,
 ): string[] {
 	const entries = [...walkActions(entry.workspace.actions)];

@@ -63,7 +63,7 @@ export type {
 	DefineEpicenterConfigOptions,
 	EpicenterConfig,
 	EpicenterConfigContext,
-	HostedDaemonRuntime,
+	DaemonRuntimeEntry,
 } from './daemon/types.js';
 export {
 	bindOrRecover,

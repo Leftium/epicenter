@@ -15,7 +15,6 @@ import {
 import { openHoneycrisp as openHoneycrispDoc } from './index.js';
 
 export const HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
-export const HONEYCRISP_WORKSPACE_ID = 'epicenter.honeycrisp';
 
 export type DefineHoneycrispDaemonOptions = {
 	route?: string;

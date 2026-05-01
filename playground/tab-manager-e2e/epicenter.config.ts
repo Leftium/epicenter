@@ -107,7 +107,7 @@ export const tabManager = {
 	[Symbol.dispose]() {
 		ydoc.destroy();
 	},
-	// Extras for direct script use, not part of the hosted workspace contract.
+	// Extras for direct script use, not part of the hosted daemon runtime contract.
 	id: WORKSPACE_ID,
 	ydoc,
 	tables,

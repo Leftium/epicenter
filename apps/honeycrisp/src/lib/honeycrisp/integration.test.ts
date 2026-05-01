@@ -33,7 +33,6 @@ describe('daemon to script handoff via Yjs log file', () => {
 			});
 			using daemon = await daemonDefinition.start({
 				projectDir: workdir,
-				configDir: workdir,
 			});
 
 			const now = DateTimeString.now();

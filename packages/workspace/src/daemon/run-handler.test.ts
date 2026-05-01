@@ -11,9 +11,9 @@ import { PeerMiss, type SyncRpcAttachment } from '../document/attach-sync.js';
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { HostedDaemonRuntime } from './types.js';
+import type { DaemonRuntimeEntry } from './types.js';
 
-type Workspace = HostedDaemonRuntime['workspace'];
+type Workspace = DaemonRuntimeEntry['workspace'];
 
 function fakePresence(
 	overrides: Partial<PeerPresenceAttachment> = {},
@@ -72,7 +72,7 @@ function fakeWorkspace(
 function fakeEntry(
 	presence: Partial<PeerPresenceAttachment> = {},
 	rpc: Partial<SyncRpcAttachment> = {},
-): HostedDaemonRuntime {
+): DaemonRuntimeEntry {
 	const workspace = fakeWorkspace(
 		{
 			tabs: {
@@ -87,7 +87,7 @@ function fakeEntry(
 		},
 	);
 
-	return { route: 'demo', workspaceId: workspace.workspaceId, workspace };
+	return { route: 'demo', workspace };
 }
 
 describe('executeRun peer dispatch', () => {
@@ -180,7 +180,6 @@ describe('executeRun route-prefixed routing', () => {
 		);
 		const entry = {
 			route: 'notes',
-			workspaceId: workspace.workspaceId,
 			workspace,
 		};
 
@@ -208,7 +207,6 @@ describe('executeRun route-prefixed routing', () => {
 		);
 		const entry = {
 			route: 'notes',
-			workspaceId: workspace.workspaceId,
 			workspace,
 		};
 
@@ -234,7 +232,6 @@ describe('executeRun route-prefixed routing', () => {
 		);
 		const entry = {
 			route: 'notes',
-			workspaceId: workspace.workspaceId,
 			workspace,
 		};
 
@@ -257,7 +254,6 @@ describe('executeRun route-prefixed routing', () => {
 				fakeEntry({}),
 				{
 					route: 'tasks',
-					workspaceId: 'epicenter.tasks',
 					workspace: fakeWorkspace({}, { workspaceId: 'epicenter.tasks' }),
 				},
 			],

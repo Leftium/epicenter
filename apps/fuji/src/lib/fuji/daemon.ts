@@ -25,7 +25,6 @@ import type { createFujiActions } from '../workspace.js';
 import { openFuji as openFujiDoc } from './index.js';
 
 export const FUJI_DAEMON_ROUTE = 'fuji';
-export const FUJI_WORKSPACE_ID = 'epicenter.fuji';
 
 export type DefineFujiDaemonOptions = {
 	route?: string;

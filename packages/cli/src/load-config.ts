@@ -3,13 +3,12 @@
  *
  * `epicenter.config.ts` is a daemon host manifest. The loader reads the
  * default `defineEpicenterConfig({ hosts })` export, validates host definitions,
- * starts them with project context, and returns the internal `HostedDaemonRuntime[]`
+ * starts them with project context, and returns the internal `DaemonRuntimeEntry[]`
  * used by the daemon server.
  */
 
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import type {
-	AbsolutePath,
 	PeerAwarenessState,
 	ProjectDir,
 } from '@epicenter/workspace';
@@ -18,7 +17,7 @@ import {
 	type DaemonRuntime,
 	EPICENTER_CONFIG,
 	EPICENTER_DAEMON_HOST,
-	type HostedDaemonRuntime,
+	type DaemonRuntimeEntry,
 } from '@epicenter/workspace/daemon';
 import {
 	defineErrors,
@@ -29,13 +28,13 @@ import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
-export type { DaemonRuntime, HostedDaemonRuntime };
+export type { DaemonRuntime, DaemonRuntimeEntry };
 
 /** Per-peer awareness state under the standard peer schema. */
 export type AwarenessState = PeerAwarenessState;
 
 export type LoadConfigResult = {
-	entries: HostedDaemonRuntime[];
+	entries: DaemonRuntimeEntry[];
 	/**
 	 * Release every hosted daemon runtime. Host teardown starts by destroying the
 	 * Y.Doc, then the loader awaits sync teardown barriers exposed by hosts.
@@ -239,7 +238,6 @@ export async function loadConfig(
 ): Promise<Result<LoadConfigResult, LoadError>> {
 	const projectDir = resolve(targetDir) as ProjectDir;
 	const configPath = join(projectDir, CONFIG_FILENAME);
-	const configDir = dirname(configPath) as AbsolutePath;
 
 	if (!(await Bun.file(configPath).exists())) {
 		return LoadError.MissingFile({ configPath });
@@ -272,14 +270,13 @@ export async function loadConfig(
 		definitions.push(definition);
 	}
 
-	const entries: HostedDaemonRuntime[] = [];
+	const entries: DaemonRuntimeEntry[] = [];
 
 	for (const [index, definition] of definitions.entries()) {
 		let workspace: unknown;
 		try {
 			workspace = await definition.start({
 				projectDir,
-				configDir,
 			});
 		} catch (cause) {
 			await disposeHosts(entries.map((entry) => entry.workspace));
@@ -293,7 +290,6 @@ export async function loadConfig(
 
 		entries.push({
 			route: definition.route,
-			workspaceId: workspace.workspaceId,
 			workspace,
 		});
 	}

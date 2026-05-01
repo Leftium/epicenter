@@ -18,9 +18,9 @@ import {
 	type createFujiActions,
 	fujiTables,
 } from '../workspace.js';
+import { FUJI_WORKSPACE_ID } from './index.js';
 import {
 	FUJI_DAEMON_ROUTE,
-	FUJI_WORKSPACE_ID,
 	openFujiDaemonActions,
 } from './daemon.js';
 

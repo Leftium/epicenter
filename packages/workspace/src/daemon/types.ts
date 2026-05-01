@@ -6,7 +6,7 @@
  * daemon host has to satisfy: workspace identity, lifecycle hook, required
  * `actions` root, sync transport, peer presence, and RPC attachments.
  *
- * `HostedDaemonRuntime` is one routed runtime the daemon hosts internally.
+ * `DaemonRuntimeEntry` is one routed runtime the daemon hosts internally.
  * The CLI's config loader opens definitions from the default
  * `defineEpicenterConfig({ hosts })` export in `epicenter.config.ts`.
  */
@@ -18,7 +18,6 @@ import type {
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import type { Actions } from '../shared/actions.js';
 import type {
-	AbsolutePath,
 	MaybePromise,
 	ProjectDir,
 } from '../shared/types.js';
@@ -28,7 +27,6 @@ export const EPICENTER_DAEMON_HOST = Symbol.for('epicenter.daemon-host');
 
 export type EpicenterConfigContext = {
 	projectDir: ProjectDir;
-	configDir: AbsolutePath;
 };
 
 /**
@@ -100,8 +98,7 @@ export function defineEpicenterConfig({
 }
 
 /** One routed daemon runtime hosted by the daemon. */
-export type HostedDaemonRuntime = {
+export type DaemonRuntimeEntry = {
 	route: string;
-	workspaceId: string;
 	workspace: DaemonRuntime;
 };

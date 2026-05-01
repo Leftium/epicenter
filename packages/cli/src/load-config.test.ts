@@ -78,9 +78,9 @@ describe('loadConfig', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data?.entries.map((entry) => entry.route)).toEqual(['demo']);
-		expect(result.data?.entries.map((entry) => entry.workspaceId)).toEqual([
-			'epicenter.demo',
-		]);
+		expect(result.data?.entries.map((entry) => entry.workspace.workspaceId)).toEqual(
+			['epicenter.demo'],
+		);
 		await result.data?.[Symbol.asyncDispose]();
 	});
 
@@ -92,11 +92,10 @@ describe('loadConfig', () => {
 				hosts: [
 					defineDaemon({
 						route: 'demo',
-						start: ({ projectDir, configDir }) => ({
+						start: ({ projectDir }) => ({
 							actions: {
 								paths: {
-									projectDir: { handler: () => projectDir },
-									configDir: { handler: () => configDir }
+									projectDir: { handler: () => projectDir }
 								}
 							},
 							${daemonRuntimeFields}
@@ -113,11 +112,9 @@ describe('loadConfig', () => {
 		const paths = result.data?.entries[0]?.workspace.actions.paths as
 			| {
 					projectDir: { handler(): string };
-					configDir: { handler(): string };
 			  }
 			| undefined;
 		expect(paths?.projectDir.handler()).toBe(workDir);
-		expect(paths?.configDir.handler()).toBe(workDir);
 		await result.data?.[Symbol.asyncDispose]();
 	});
 

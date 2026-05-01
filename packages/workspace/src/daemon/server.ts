@@ -17,7 +17,7 @@ import type { Result } from 'wellcrafted/result';
 import { buildDaemonApp } from './app.js';
 import { pingDaemon } from './client.js';
 import { socketPathFor } from './paths.js';
-import type { HostedDaemonRuntime } from './types.js';
+import type { DaemonRuntimeEntry } from './types.js';
 import {
 	bindOrRecover,
 	type StartupError,
@@ -33,7 +33,7 @@ export type DaemonServerOptions = {
 	 * `route` is the routing key the wire surface dispatches on. The CLI uses
 	 * this as the first segment in route-prefixed action paths.
 	 */
-	workspaces: HostedDaemonRuntime[];
+	entries: DaemonRuntimeEntry[];
 	/** Called by the optional `/shutdown` route after the response is queued. */
 	triggerShutdown?: () => void;
 };
@@ -57,17 +57,17 @@ export type DaemonServer = {
 };
 
 /**
- * Build a daemon route table from `opts.workspaces`, return a handle
+ * Build a daemon route table from `opts.entries`, return a handle
  * with a deferred `listen()`. The factory does not touch the filesystem
  * until `listen()` is called.
  */
 export function createDaemonServer({
 	projectDir,
-	workspaces,
+	entries,
 	triggerShutdown,
 }: DaemonServerOptions): DaemonServer {
 	const seen = new Set<string>();
-	for (const entry of workspaces) {
+	for (const entry of entries) {
 		if (seen.has(entry.route)) {
 			throw new Error(
 				`createDaemonServer: duplicate daemon route '${entry.route}'`,
@@ -77,7 +77,7 @@ export function createDaemonServer({
 	}
 
 	const socketPath = socketPathFor(projectDir);
-	const app = buildDaemonApp(workspaces, triggerShutdown);
+	const app = buildDaemonApp(entries, triggerShutdown);
 
 	let server: UnixSocketServer | undefined;
 

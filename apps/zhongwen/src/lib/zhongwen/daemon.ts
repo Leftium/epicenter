@@ -15,7 +15,6 @@ import {
 import { openZhongwen as openZhongwenDoc } from './index.js';
 
 export const ZHONGWEN_DAEMON_ROUTE = 'zhongwen';
-export const ZHONGWEN_WORKSPACE_ID = 'epicenter.zhongwen';
 
 export type DefineZhongwenDaemonOptions = {
 	route?: string;

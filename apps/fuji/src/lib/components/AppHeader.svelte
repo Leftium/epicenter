@@ -55,7 +55,6 @@
 		<AccountPopover
 			{auth}
 			sync={fuji.sync}
-			clearLocalData={() => fuji.idb.clearLocal()}
 			syncNoun="entries"
 			onSocialSignIn={() =>
 				auth.signInWithSocialRedirect({

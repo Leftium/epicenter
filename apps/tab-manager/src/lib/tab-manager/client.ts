@@ -69,6 +69,7 @@ async function registerDevice(): Promise<void> {
 attachAuthSnapshotToWorkspace({
 	auth,
 	workspace: tabManager,
+	onSignedOutLocalDataCleared: () => window.location.reload(),
 	onSignedInSnapshot: () => {
 		void registerDevice();
 	},

@@ -32,6 +32,7 @@ export const fuji = openFuji({
 attachAuthSnapshotToWorkspace({
 	auth,
 	workspace: fuji,
+	onSignedOutLocalDataCleared: () => window.location.reload(),
 });
 
 if (import.meta.hot) {

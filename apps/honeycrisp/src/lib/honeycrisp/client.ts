@@ -32,6 +32,7 @@ export const honeycrisp = openHoneycrisp({
 attachAuthSnapshotToWorkspace({
 	auth,
 	workspace: honeycrisp,
+	onSignedOutLocalDataCleared: () => window.location.reload(),
 });
 
 if (import.meta.hot) {

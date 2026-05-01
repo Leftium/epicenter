@@ -33,6 +33,7 @@ export const opensidian = openOpensidian({
 attachAuthSnapshotToWorkspace({
 	auth,
 	workspace: opensidian,
+	onSignedOutLocalDataCleared: () => window.location.reload(),
 });
 
 if (import.meta.hot) {

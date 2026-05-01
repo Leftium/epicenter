@@ -176,7 +176,6 @@
 				<AccountPopover
 					{auth}
 					sync={tabManager.sync}
-					clearLocalData={() => tabManager.idb.clearLocal()}
 					syncNoun="tabs"
 					onSocialSignIn={() => auth.signInWithSocialPopup()}
 				/>

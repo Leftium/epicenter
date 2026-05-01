@@ -18,7 +18,6 @@
 				<AccountPopover
 					{auth}
 					sync={honeycrisp.sync}
-					clearLocalData={() => honeycrisp.idb.clearLocal()}
 					syncNoun="notes"
 					onSocialSignIn={() =>
 						auth.signInWithSocialRedirect({

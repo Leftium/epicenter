@@ -224,7 +224,9 @@ auth.subscribe((next, previous) => {
 		previous.status === 'signedIn' ? previous.session : null;
 
 	if (next.status === 'signedOut') {
-		if (previousSession !== null) void clearLocalData();
+		if (previousSession !== null) {
+			void workspace.idb.clearLocal().then(onSignedOutLocalDataCleared);
+		}
 		return;
 	}
 

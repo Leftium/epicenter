@@ -27,11 +27,6 @@
 		auth: AuthClient;
 		/** The workspace's `attachSync` result, typically `workspace.sync`. */
 		sync: SyncAttachment;
-		/**
-		 * Wipe local persistence (IndexedDB). Called as part of sign-out;
-		 * typically `() => workspace.idb.clearLocal()`.
-		 */
-		clearLocalData: () => Promise<void>;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
 		/** Handler called when the user clicks "Continue with Google". */
@@ -41,7 +36,6 @@
 	let {
 		auth,
 		sync,
-		clearLocalData,
 		syncNoun,
 		onSocialSignIn,
 	}: AccountPopoverProps = $props();
@@ -86,9 +80,8 @@
 	 * Safe sign-out gate. Connected + fully synced → sign out immediately.
 	 * Otherwise warn about unsynced work first.
 	 *
-	 * Sequence: `auth.signOut()` → `clearLocalData()` → `reload()`. The
-	 * reload atomically resets Y.Doc, encryption keys, Svelte stores, and
-	 * BroadcastChannel. That is simpler than teardown coordination.
+	 * Sequence: `auth.signOut()`. Workspace cleanup and any hard reload belong
+	 * to the auth/workspace binding that observes the resulting snapshot.
 	 */
 	function handleSignOut() {
 		const current = sync.status;
@@ -103,8 +96,6 @@
 					toastOnError(result, 'Failed to sign out');
 					return;
 				}
-				await clearLocalData();
-				window.location.reload();
 			} finally {
 				signingOut = false;
 			}

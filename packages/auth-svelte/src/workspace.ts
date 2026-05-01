@@ -20,10 +20,14 @@ export function attachAuthSnapshotToWorkspace({
 	auth,
 	workspace,
 	onSignedInSnapshot,
+	onSignedOutLocalDataCleared,
+	onSignedOutLocalDataClearError,
 }: {
 	auth: Pick<AuthClient, 'subscribe'>;
 	workspace: AuthWorkspaceTarget;
 	onSignedInSnapshot?: () => void;
+	onSignedOutLocalDataCleared?: () => void;
+	onSignedOutLocalDataClearError?: (error: unknown) => void;
 }): () => void {
 	function getSyncTargets() {
 		return new Set(workspace.getAuthSyncTargets?.() ?? [workspace.sync]);
@@ -37,7 +41,14 @@ export function attachAuthSnapshotToWorkspace({
 
 		if (next.status === 'signedOut') {
 			for (const sync of getSyncTargets()) sync.goOffline();
-			if (previousSession !== null) void workspace.idb.clearLocal();
+			if (previousSession !== null) {
+				void workspace.idb
+					.clearLocal()
+					.then(() => onSignedOutLocalDataCleared?.())
+					.catch((error: unknown) => {
+						onSignedOutLocalDataClearError?.(error);
+					});
+			}
 			return;
 		}
 

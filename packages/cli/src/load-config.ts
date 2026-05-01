@@ -131,41 +131,26 @@ export const LoadError = defineErrors({
 });
 export type LoadError = InferErrors<typeof LoadError>;
 
-type ImportedEpicenterConfig = {
-	daemon: {
-		routes: Record<string, unknown>;
-	};
-};
-
-function isEpicenterConfig(value: unknown): value is ImportedEpicenterConfig {
-	if (!isConfigRecord(value) || !Object.hasOwn(value, 'daemon')) return false;
-	const daemon = value.daemon;
-	if (!isConfigRecord(daemon) || !Object.hasOwn(daemon, 'routes'))
-		return false;
-	return isConfigRecord(daemon.routes);
-}
-
 function isDaemonRuntime(value: unknown): value is DaemonRuntime {
-	if (value == null || typeof value !== 'object') return false;
-	const record = value as Record<PropertyKey, unknown>;
+	if (!isObject(value)) return false;
+	const { actions, sync, presence, rpc } = value;
+	if (!isObject(sync) || !isObject(presence) || !isObject(rpc)) {
+		return false;
+	}
 	return (
-		isNonArrayObject(record.actions) &&
-		isSyncRuntime(record.sync) &&
-		isPresenceRuntime(record.presence) &&
-		isRpcRuntime(record.rpc) &&
-		typeof record[Symbol.dispose] === 'function'
+		isObject(actions) &&
+		isPromiseLike(sync.whenDisposed) &&
+		typeof sync.onStatusChange === 'function' &&
+		typeof presence.peers === 'function' &&
+		typeof presence.observe === 'function' &&
+		typeof presence.waitForPeer === 'function' &&
+		typeof rpc.rpc === 'function' &&
+		typeof value[Symbol.dispose] === 'function'
 	);
 }
 
-function isNonArrayObject(value: unknown): value is Record<string, unknown> {
+function isObject(value: unknown): value is Record<PropertyKey, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isConfigRecord(value: unknown): value is Record<string, unknown> {
-	if (value == null || typeof value !== 'object' || Array.isArray(value))
-		return false;
-	const prototype = Object.getPrototypeOf(value);
-	return prototype === Object.prototype || prototype === null;
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -174,27 +159,6 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 		(typeof value === 'object' || typeof value === 'function') &&
 		typeof (value as { then?: unknown }).then === 'function'
 	);
-}
-
-function isSyncRuntime(value: unknown): boolean {
-	if (!isNonArrayObject(value)) return false;
-	return (
-		isPromiseLike(value.whenDisposed) &&
-		typeof value.onStatusChange === 'function'
-	);
-}
-
-function isPresenceRuntime(value: unknown): boolean {
-	if (!isNonArrayObject(value)) return false;
-	return (
-		typeof value.peers === 'function' &&
-		typeof value.observe === 'function' &&
-		typeof value.waitForPeer === 'function'
-	);
-}
-
-function isRpcRuntime(value: unknown): boolean {
-	return isNonArrayObject(value) && typeof value.rpc === 'function';
 }
 
 function isValidRoute(route: string): boolean {
@@ -230,8 +194,13 @@ export async function loadConfig(
 	if (importResult.error) return importResult;
 
 	const config = (importResult.data as { default?: unknown }).default;
-	if (!isEpicenterConfig(config))
+	if (
+		!isObject(config) ||
+		!isObject(config.daemon) ||
+		!isObject(config.daemon.routes)
+	) {
 		return LoadError.InvalidConfig({ configPath });
+	}
 	const routeModules = Object.entries(config.daemon.routes);
 	if (routeModules.length === 0) return LoadError.EmptyConfig({ configPath });
 

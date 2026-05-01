@@ -59,9 +59,9 @@ export type EpicenterConfig<
 	};
 };
 
-export function defineEpicenterConfig<const TConfig extends EpicenterConfig>(
-	config: TConfig,
-): TConfig {
+export function defineEpicenterConfig<
+	const TRoutes extends Record<string, DaemonRouteModule>,
+>(config: EpicenterConfig<TRoutes>): EpicenterConfig<TRoutes> {
 	return config;
 }
 

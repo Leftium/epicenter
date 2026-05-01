@@ -101,11 +101,7 @@ describe('createRemoteActions', () => {
 			respond: async () => Ok({ closedCount: 1 }),
 		});
 
-		const remote = createRemoteActions<TestActions>({
-			presence: transport.presence,
-			rpc: transport.rpc,
-			peerId: 'mac',
-		});
+		const remote = createRemoteActions<TestActions>(transport, 'mac');
 		const result = await remote.tabs.close({ tabIds: [1] }, { timeout: 1000 });
 
 		expect(calls).toHaveLength(1);
@@ -127,11 +123,7 @@ describe('createRemoteActions', () => {
 			},
 		});
 
-		const remote = createRemoteActions<TestActions>({
-			presence: transport.presence,
-			rpc: transport.rpc,
-			peerId: 'ghost',
-		});
+		const remote = createRemoteActions<TestActions>(transport, 'ghost');
 		const result = await remote.foo.bar({});
 
 		expect(calls).toHaveLength(0);
@@ -147,11 +139,7 @@ describe('createRemoteActions', () => {
 			respond: async () => Err(RpcError.ActionNotFound({ action: 'x' }).error),
 		});
 
-		const remote = createRemoteActions<TestActions>({
-			presence: transport.presence,
-			rpc: transport.rpc,
-			peerId: 'mac',
-		});
+		const remote = createRemoteActions<TestActions>(transport, 'mac');
 		const result = await remote.x();
 
 		expect(isErr(result)).toBe(true);
@@ -166,11 +154,7 @@ describe('createRemoteActions', () => {
 			respond: () => new Promise<Result<unknown, RpcError>>(() => {}),
 		});
 
-		const remote = createRemoteActions<TestActions>({
-			presence: transport.presence,
-			rpc: transport.rpc,
-			peerId: 'mac',
-		});
+		const remote = createRemoteActions<TestActions>(transport, 'mac');
 		const callPromise = remote.tabs.close({ tabIds: [1] });
 
 		transport.drop('mac');

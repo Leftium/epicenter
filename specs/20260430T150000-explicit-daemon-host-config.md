@@ -572,7 +572,7 @@ They both return typed action proxies, but their address spaces are different:
 | API | Address | Transport | Caller has |
 | --- | --- | --- | --- |
 | `connectDaemonActions<TActions>({ route })` | config route key, e.g. `fuji` | local Unix socket | project directory |
-| `createRemoteActions<TActions>({ presence, rpc, peerId })` | presence peer id, e.g. `macbook` | sync RPC | live workspace peer |
+| `createRemoteActions<TActions>({ presence, rpc }, peerId)` | presence peer id, e.g. `macbook` | sync RPC | live workspace peer |
 
 If a project customizes the route, both the host and action helper take the same override:
 

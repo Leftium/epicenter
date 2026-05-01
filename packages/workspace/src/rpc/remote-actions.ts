@@ -15,17 +15,12 @@ export type RemoteActionTransport = {
 	rpc: SyncRpcAttachment;
 };
 
-export type CreateRemoteActionsOptions = RemoteActionTransport & {
-	peerId: string;
-};
-
-export function createRemoteActions<T>({
-	presence,
-	rpc,
-	peerId,
-}: CreateRemoteActionsOptions): RemoteActionProxy<T> {
+export function createRemoteActions<T>(
+	transport: RemoteActionTransport,
+	peerId: string,
+): RemoteActionProxy<T> {
 	const send: Sender = async (path, input, options) => {
-		const found = presence.find(peerId);
+		const found = transport.presence.find(peerId);
 		if (!found) return Err(RpcError.PeerNotFound({ peer: peerId }).error);
 
 		return new Promise<Result<unknown, RpcError>>((resolveCall) => {
@@ -36,18 +31,18 @@ export function createRemoteActions<T>({
 				unsubscribe();
 				resolveCall(v);
 			};
-			const unsubscribe = presence.observe(() => {
-				if (!presence.find(peerId)) {
+			const unsubscribe = transport.presence.observe(() => {
+				if (!transport.presence.find(peerId)) {
 					settle(Err(RpcError.PeerLeft({ peer: peerId }).error));
 				}
 			});
 
-			if (!presence.find(peerId)) {
+			if (!transport.presence.find(peerId)) {
 				settle(Err(RpcError.PeerLeft({ peer: peerId }).error));
 				return;
 			}
 
-			rpc
+			transport.rpc
 				.rpc(found.clientId, path, input, options)
 				.then(settle)
 				.catch((cause) =>
@@ -65,16 +60,14 @@ type Sender = (
 	options?: RemoteCallOptions,
 ) => Promise<Result<unknown, RpcError>>;
 
-export function describeRemoteActions({
-	presence,
-	rpc,
-	peerId,
-}: CreateRemoteActionsOptions): Promise<Result<ActionManifest, RpcError>> {
-	return createRemoteActions<{ system: SystemActions }>({
-		presence,
-		rpc,
+export function describeRemoteActions(
+	transport: RemoteActionTransport,
+	peerId: string,
+): Promise<Result<ActionManifest, RpcError>> {
+	return createRemoteActions<{ system: SystemActions }>(
+		transport,
 		peerId,
-	}).system.describe();
+	).system.describe();
 }
 
 function buildProxy<T>(path: string[], send: Sender): T {

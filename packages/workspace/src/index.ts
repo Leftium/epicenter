@@ -60,7 +60,6 @@ export { isRpcError, RpcError } from '@epicenter/sync';
 export {
 	createRemoteActions,
 	describeRemoteActions,
-	type CreateRemoteActionsOptions,
 	type RemoteActionTransport,
 } from './rpc/remote-actions.js';
 export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';

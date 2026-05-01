@@ -96,16 +96,11 @@ const presence = sync.attachPresence({
 
 const rpc = sync.attachRpc(actions);
 
-const remote = createRemoteActions<typeof actions>({
-	presence,
-	rpc,
-	peerId: 'macbook-pro',
-});
-const manifest = await describeRemoteActions({
-	presence,
-	rpc,
-	peerId: 'macbook-pro',
-});
+const remote = createRemoteActions<typeof actions>(
+	{ presence, rpc },
+	'macbook-pro',
+);
+const manifest = await describeRemoteActions({ presence, rpc }, 'macbook-pro');
 ```
 
 The current recommended awareness state keeps the peer convention small:
@@ -226,7 +221,7 @@ Implemented:
 | CLI daemon run path | `packages/workspace/src/daemon/run-handler.ts` resolves against `workspace.actions` | The explicit action root is already the daemon execution boundary. |
 | Installation id helper | `getOrCreateInstallationId` and async variant exist | `getOrCreateDeviceId` is no longer the active helper. |
 | Peer presence attachment | `packages/workspace/src/document/peer-presence.ts` exists | It still uses old type names imported from `standard-awareness-defs.ts`. |
-| Remote actions transport | `createRemoteActions({ presence, rpc, peerId })` exists | The transport signature has moved to the split shape, but the public name has not been renamed to `peer`. |
+| Remote actions transport | `createRemoteActions({ presence, rpc }, peerId)` exists | The transport signature has moved to the split shape, but the public name has not been renamed to `peer`. |
 | Script snapshot surfaces | `apps/fuji/src/lib/fuji/script.ts` opens read-only snapshot tables plus daemon actions | Script helpers are not daemon runtimes. Do not require them to expose sync, presence, or RPC attachments. |
 
 Still not implemented:
@@ -302,7 +297,7 @@ The next implementation wave should start from this checkpoint, not from the ini
         +---------------+---------------+
                         |
                         v
-              createRemoteActions({ presence, rpc, peerId })
+              createRemoteActions({ presence, rpc }, peerId)
 ```
 
 ### Action Exposure Boundary
@@ -338,7 +333,7 @@ The next implementation wave should start from this checkpoint, not from the ini
    sync.attachPresence({ peer }) -> awareness local state
 
 3. Another runtime calls a peer
-   createRemoteActions({ presence, rpc, peerId })
+   createRemoteActions({ presence, rpc }, peerId)
      -> presence.find(peerId)
      -> ResolvedPeer { clientId, state }
      -> rpc.rpc(clientId, action, input)
@@ -450,10 +445,10 @@ type RpcAttachment = {
 ### Remote Peer Helpers
 
 ```ts
-const remote = createRemoteActions<TabManagerActions>({ presence, rpc, peerId });
+const remote = createRemoteActions<TabManagerActions>({ presence, rpc }, peerId);
 const result = await remote.tabs.close({ tabIds: [1] });
 
-const manifest = await describeRemoteActions({ presence, rpc, peerId });
+const manifest = await describeRemoteActions({ presence, rpc }, peerId);
 ```
 
 Normal app bundles can hide the pair:
@@ -464,8 +459,8 @@ return {
 	sync,
 	presence,
 	rpc,
-	remoteActions: <T>(peerId: string) => createRemoteActions<T>({ presence, rpc, peerId }),
-	describeRemoteActions: (peerId: string) => describeRemoteActions({ presence, rpc, peerId }),
+	remoteActions: <T>(peerId: string) => createRemoteActions<T>({ presence, rpc }, peerId),
+	describeRemoteActions: (peerId: string) => describeRemoteActions({ presence, rpc }, peerId),
 };
 ```
 
@@ -485,7 +480,7 @@ return {
 | `sync.peers()` | `presence.peers()` | No more no-op method on sync. |
 | `sync.find(deviceId)` | `presence.find(peerId)` | Keep current verb unless the vocabulary pass chooses `resolve`. |
 | `sync.observe()` | `presence.observe()` | Keep current verb unless the vocabulary pass chooses `subscribe`. |
-| `createRemoteActions` | `createRemoteActions` | Already uses `{ presence, rpc, peerId }`. Rename only as a focused follow-up. |
+| `createRemoteActions` | `createRemoteActions` | Already uses the split `{ presence, rpc }` transport. Rename only as a focused follow-up. |
 | `describeRemoteActions` | `describeRemoteActions` | Pair any future rename with `createRemoteActions`. |
 | `getOrCreateDeviceId` | `getOrCreateInstallationId` | Storage helper names the durable source. |
 | `deviceId` call-site names | `peerId` or `installationId` | Use `peerId` for routing, `installationId` for storage. |
@@ -534,7 +529,7 @@ This plan starts from `e3703ca74`. It only covers work that has not already land
 ### Phase 1: Choose The Remaining Public Names
 
 - [ ] **1.1** Decide whether `createRemoteActions` stays as the public helper or is renamed to `peer`.
-  - Current code already uses the split transport shape: `createRemoteActions({ presence, rpc, peerId })`.
+  - Current code already uses the split transport shape: `createRemoteActions({ presence, rpc }, peerId)`.
   - Recommendation: keep `createRemoteActions` for this branch unless the rename is the only public API change in a focused follow-up commit. The old `peer` name is short, but it overloaded presence, RPC, and runtime identity in earlier designs.
 - [ ] **1.2** Decide whether `describeRemoteActions` stays or becomes `describePeer`.
   - Recommendation: pair it with the decision above. Do not rename one without the other.
@@ -620,7 +615,7 @@ Expected behavior:
 
 ```ts
 await rpc.rpc(clientId, 'tabs.close', input);
-createRemoteActions({ presence, rpc, peerId });
+createRemoteActions({ presence, rpc }, peerId);
 ```
 
 ### Presence Without RPC
@@ -748,7 +743,7 @@ Expected behavior:
 - [ ] CLI list/run and AI tools use registry-relative paths.
 - [ ] Apps pass `peer` into `sync.attachPresence({ peer })`.
 - [ ] Apps pass explicit `actions` into `sync.attachRpc(actions)` when they expose RPC.
-- [ ] Remote calls use `createRemoteActions({ presence, rpc, peerId })` or a deliberately renamed helper chosen in Phase 1.
+- [ ] Remote calls use `createRemoteActions({ presence, rpc }, peerId)` or a deliberately renamed helper chosen in Phase 1.
 - [ ] CLI peer listing and peer targeting use peer vocabulary.
 - [ ] No public docs recommend full-bundle action walking for CLI, AI, or RPC exposure.
 - [ ] No old public names remain unless explicitly documented as temporary compatibility.

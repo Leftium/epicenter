@@ -234,8 +234,7 @@ export {
 	type ResolvedPeer,
 	PeerIdentity,
 	type PeerPresenceState,
-	type PeerIdentityInput,
-	PeerRuntime,
+	type PeerRuntime,
 } from './document/peer-presence-defs.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 // ════════════════════════════════════════════════════════════════════════════

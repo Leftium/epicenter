@@ -4,37 +4,25 @@
  * Each connected peer publishes a small `peer` identity: id, name, and
  * platform. Action discovery is not in awareness. It is fetched on demand via
  * `createRemoteClient({ presence, rpc }).describe(peerId)`.
+ *
+ * `PeerIdentity` is the only arktype-validated shape here because it crosses
+ * the wire (awareness state on read, daemon `/peers` response). The plain TS
+ * types (`PeerPresenceState`, `ResolvedPeer`) are derived shapes consumed
+ * locally and never deserialized from untrusted input.
  */
 
 import { type } from 'arktype';
-
-/** Closed enum of supported peer runtimes. */
-export const PeerRuntime = type('"web" | "tauri" | "chrome-extension" | "node"');
-export type PeerRuntime = typeof PeerRuntime.infer;
 
 /** Presence-only identity published by each connected peer. */
 export const PeerIdentity = type({
 	id: 'string',
 	name: 'string',
-	platform: PeerRuntime,
+	platform: '"web" | "tauri" | "chrome-extension" | "node"',
 });
 export type PeerIdentity = typeof PeerIdentity.infer;
 
-/**
- * Input shape for workspace factories. Identical to `PeerIdentity`, kept
- * separate so apps with branded id types can preserve the brand through
- * construction.
- */
-export type PeerIdentityInput<TId extends string = string> = {
-	id: TId;
-	name: string;
-	platform: PeerRuntime;
-};
-
-/** Spread into `attachAwareness` defs to enable typed `state.peer` access. */
-export const peerPresenceDefs = {
-	peer: PeerIdentity,
-};
+/** Closed enum of supported peer runtimes. Derived from the schema above. */
+export type PeerRuntime = PeerIdentity['platform'];
 
 /** A peer's presence state under the standard `peer` schema. */
 export type PeerPresenceState = { peer: PeerIdentity };

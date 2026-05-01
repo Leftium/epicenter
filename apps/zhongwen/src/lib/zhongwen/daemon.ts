@@ -1,7 +1,7 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
-	type PeerIdentityInput,
+	type PeerIdentity,
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
@@ -18,12 +18,12 @@ export const ZHONGWEN_DAEMON_ROUTE = 'zhongwen';
 
 export type ZhongwenDaemonOptions = {
 	getToken?: () => Promise<string | null>;
-	peer?: PeerIdentityInput;
+	peer?: PeerIdentity;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
 };
 
-function defaultZhongwenDaemonPeer(): PeerIdentityInput {
+function defaultZhongwenDaemonPeer(): PeerIdentity {
 	return {
 		id: 'zhongwen-daemon',
 		name: 'Zhongwen Daemon',

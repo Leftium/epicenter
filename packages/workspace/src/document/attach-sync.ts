@@ -183,9 +183,7 @@ export type SyncAttachment = {
 	 * Named symmetrically with `whenConnected`: both are promises.
 	 */
 	whenDisposed: Promise<unknown>;
-	attachPresence<TPeerId extends string = string>(
-		config: AttachPresenceConfig<TPeerId>,
-	): PeerPresenceAttachment;
+	attachPresence(config: AttachPresenceConfig): PeerPresenceAttachment;
 	attachRpc(actions: RpcActionSource): SyncRpcAttachment;
 };
 

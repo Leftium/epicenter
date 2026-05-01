@@ -5,7 +5,7 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	type PeerIdentityInput,
+	type PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createNoteBodyDoc } from '$lib/note-body-docs';
@@ -17,7 +17,7 @@ export function openHoneycrisp({
 	peer,
 }: {
 	auth: AuthClient;
-	peer: PeerIdentityInput;
+	peer: PeerIdentity;
 }) {
 	const doc = openHoneycrispDoc();
 

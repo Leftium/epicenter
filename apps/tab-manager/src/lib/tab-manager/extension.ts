@@ -10,10 +10,12 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	type PeerIdentityInput,
+	type PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import type { DeviceId } from '$lib/workspace/definition';
+
+type TabManagerPeer = PeerIdentity & { id: DeviceId };
 import { openTabManager as openTabManagerDoc } from './index';
 
 /**
@@ -30,7 +32,7 @@ export async function openTabManager({
 	peer,
 }: {
 	auth: AuthClient;
-	peer: PeerIdentityInput<DeviceId> | Promise<PeerIdentityInput<DeviceId>>;
+	peer: TabManagerPeer | Promise<TabManagerPeer>;
 }) {
 	const resolvedPeer = await Promise.resolve(peer);
 

@@ -11,7 +11,7 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	type PeerIdentityInput,
+	type PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -23,7 +23,7 @@ export function openOpensidian({
 	peer,
 }: {
 	auth: AuthClient;
-	peer: PeerIdentityInput;
+	peer: PeerIdentity;
 }) {
 	const doc = openOpensidianDoc();
 

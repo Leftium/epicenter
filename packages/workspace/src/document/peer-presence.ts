@@ -13,10 +13,9 @@ import {
 } from '@epicenter/sync';
 import { createAwareness, type Awareness } from './attach-awareness.js';
 import {
+	PeerIdentity,
 	type ResolvedPeer,
 	type PeerPresenceState,
-	type PeerIdentityInput,
-	peerPresenceDefs,
 } from './peer-presence-defs.js';
 import type { PeerMiss, SyncStatus } from './attach-sync.js';
 
@@ -31,8 +30,8 @@ export type PeerPresenceAttachment = {
 	raw: { awareness: YAwareness };
 };
 
-export type AttachPresenceConfig<TPeerId extends string = string> = {
-	peer: PeerIdentityInput<TPeerId>;
+export type AttachPresenceConfig = {
+	peer: PeerIdentity;
 };
 
 export type PeerPresenceController = {
@@ -57,8 +56,10 @@ type PeerPresenceInternals = {
 	describeOfflineReason(status: SyncStatus): string | null;
 };
 
-export function createPeerPresence<TPeerId extends string = string>(
-	config: AttachPresenceConfig<TPeerId>,
+const peerPresenceDefs = { peer: PeerIdentity };
+
+export function createPeerPresence(
+	config: AttachPresenceConfig,
 	internals: PeerPresenceInternals,
 ): PeerPresenceAttachment & { controller: PeerPresenceController } {
 	const awareness = new YAwareness(internals.ydoc);

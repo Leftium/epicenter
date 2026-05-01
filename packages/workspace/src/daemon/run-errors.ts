@@ -6,11 +6,10 @@
  * envelope (`RunResponse`) is what the route serializes to JSON. The CLI
  * command imports both for renderer typing.
  *
- * `PeerMiss` is normalized into `RunError` at the `/run` boundary so the
- * daemon route owns every run-specific failure the CLI renders.
+ * Remote call failures keep the remote client error intact so the CLI owns
+ * every presentation choice for peer misses, peer disconnects, and RPC errors.
  */
 
-import type { RpcError } from '@epicenter/sync';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -18,7 +17,21 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
-import type { PeerAwarenessState } from '../document/peer-identity.js';
+import type {
+	SyncError,
+	SyncFailedReason,
+} from '../document/attach-sync.js';
+import type { RemoteCallError } from '../rpc/remote-actions.js';
+
+export type RunSyncStatus =
+	| { phase: 'offline' }
+	| {
+			phase: 'connecting';
+			retries: number;
+			lastErrorType?: SyncError['type'];
+	  }
+	| { phase: 'connected'; hasLocalChanges: boolean }
+	| { phase: 'failed'; reason: SyncFailedReason };
 
 /**
  * CLI-specific failures of the `/run` route. Carrying the failure mode
@@ -27,9 +40,8 @@ import type { PeerAwarenessState } from '../document/peer-identity.js';
  *
  * - `UsageError`: bad action path / missing sync; renderer exitCode=1.
  * - `RuntimeError`: action returned Err locally; renderer exitCode=2.
- * - `RpcError`: remote RPC returned an `RpcError`; exitCode=2.
- * - `PeerMiss`: `--peer <target>` did not resolve within the wait budget;
- *   renderer exitCode=3.
+ * - `RemoteCallFailed`: `--peer <target>` failed in remote client dispatch;
+ *   renderer maps `PeerNotFound` to exitCode=3 and other causes to exitCode=2.
  */
 export const RunError = defineErrors({
 	UsageError: ({
@@ -43,47 +55,19 @@ export const RunError = defineErrors({
 		message: extractErrorMessage(cause),
 		cause,
 	}),
-	RpcError: ({
+	RemoteCallFailed: ({
 		cause,
 		peerTarget,
+		syncStatus,
 	}: {
-		cause: RpcError;
 		peerTarget: string;
+		cause: RemoteCallError;
+		syncStatus: RunSyncStatus;
 	}) => ({
-		message: `RPC failed: ${cause.name}`,
+		message: `remote call failed: ${cause.name}`,
 		cause,
 		peerTarget,
-	}),
-	PeerLeft: ({
-		peerTarget,
-		targetClientId,
-		peerState,
-	}: {
-		peerTarget: string;
-		targetClientId: number;
-		peerState: PeerAwarenessState;
-	}) => ({
-		message: `peer "${peerTarget}" disconnected before RPC response arrived`,
-		peerTarget,
-		targetClientId,
-		peerState,
-	}),
-	PeerMiss: ({
-		peerTarget,
-		sawPeers,
-		waitMs,
-		emptyReason,
-	}: {
-		peerTarget: string;
-		sawPeers: boolean;
-		waitMs: number;
-		emptyReason: string | null;
-	}) => ({
-		message: `no peer matches peer id "${peerTarget}"`,
-		peerTarget,
-		sawPeers,
-		waitMs,
-		emptyReason,
+		syncStatus,
 	}),
 });
 export type RunError = InferErrors<typeof RunError>;

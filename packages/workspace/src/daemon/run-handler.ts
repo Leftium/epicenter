@@ -23,8 +23,12 @@ import {
 	walkActions,
 } from '../shared/actions.js';
 import type { RunRequest } from './app.js';
-import { RunError, type RunResponse } from './run-errors.js';
 import type { SyncStatus } from '../document/attach-sync.js';
+import {
+	RunError,
+	type RunResponse,
+	type RunSyncStatus,
+} from './run-errors.js';
 import type { StartedDaemonRoute } from './types.js';
 
 type DaemonActionTarget = {
@@ -125,43 +129,49 @@ async function invokeRemote({
 }): Promise<RunResponse> {
 	const { runtime } = entry;
 
-	const result = await runtime.remote.invoke(peerTarget, localPath, actionInput, {
-		waitForPeerMs: waitMs,
-		timeout: waitMs,
-	});
+	const result = await runtime.remote.invoke(
+		peerTarget,
+		localPath,
+		actionInput,
+		{
+			waitForPeerMs: waitMs,
+			timeout: waitMs,
+		},
+	);
 
 	if (result.error !== null) {
-		if (result.error.name === 'PeerNotFound') {
-			return RunError.PeerMiss({
-				peerTarget: result.error.peerTarget,
-				sawPeers: result.error.sawPeers,
-				waitMs: result.error.waitMs,
-				emptyReason: describeOfflineReason(runtime.sync.status),
-			});
-		}
-		if (result.error.name === 'PeerLeft') {
-			return RunError.PeerLeft({
-				peerTarget: result.error.peerTarget,
-				targetClientId: result.error.targetClientId,
-				peerState: result.error.peerState,
-			});
-		}
-		return RunError.RpcError({
+		return RunError.RemoteCallFailed({
 			cause: result.error,
 			peerTarget,
+			syncStatus: toRunSyncStatus(runtime.sync.status),
 		});
 	}
 	return Ok(result.data);
 }
 
-function describeOfflineReason(status: SyncStatus): string | null {
-	if (status.phase === 'connected') return null;
-	if (status.phase === 'connecting' && status.lastError) {
-		const retries = status.retries;
-		const word = retries === 1 ? 'retry' : 'retries';
-		return `not connected (${status.lastError.type} error after ${retries} ${word})`;
+function toRunSyncStatus(status: SyncStatus): RunSyncStatus {
+	switch (status.phase) {
+		case 'offline':
+			return { phase: 'offline' };
+		case 'connected':
+			return {
+				phase: 'connected',
+				hasLocalChanges: status.hasLocalChanges,
+			};
+		case 'connecting':
+			return {
+				phase: 'connecting',
+				retries: status.retries,
+				lastErrorType: status.lastError?.type,
+			};
+		case 'failed':
+			return {
+				phase: 'failed',
+				reason: status.reason,
+			};
+		default:
+			return status satisfies never;
 	}
-	return 'not connected';
 }
 
 function toDaemonActionPath(

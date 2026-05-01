@@ -41,7 +41,11 @@ export {
 	isValidDaemonRoute,
 	validateStartedDaemonRoutes,
 } from './daemon/route-validation.js';
-export { RunError, type RunResponse } from './daemon/run-errors.js';
+export {
+	RunError,
+	type RunResponse,
+	type RunSyncStatus,
+} from './daemon/run-errors.js';
 export {
 	createDaemonServer,
 	type DaemonServer,

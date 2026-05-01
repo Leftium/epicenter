@@ -1,5 +1,5 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { createCredentialTokenGetter } from '@epicenter/auth/node';
+import { createMachineTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
@@ -47,7 +47,7 @@ function defaultFujiDaemonPeer(): PeerIdentity {
 export function defineFujiDaemon({
 	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createCredentialTokenGetter({ serverOrigin: apiUrl }),
+	getToken = createMachineTokenGetter({ serverOrigin: apiUrl }),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
 }: FujiDaemonOptions = {}): DaemonRouteDefinition {

@@ -14,15 +14,15 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Session } from '../contracts/session.ts';
+import type { Session } from '../contracts/session.js';
 import type {
 	CredentialSecretRef,
 	CredentialSecretStore,
-} from './credential-secret-store.ts';
+} from './credential-secret-store.js';
 import {
 	createCredentialStore,
 	type CredentialStoreStorageMode,
-} from './credential-store.ts';
+} from './credential-store.js';
 
 const encryptionKeys = [
 	{
@@ -152,7 +152,7 @@ describe('createCredentialStore', () => {
 		expect(text).not.toContain('bearer-token');
 		expect(text).not.toContain('session-token');
 		expect(text).not.toContain(encryptionKeys[0].userKeyBase64);
-		expect((await store.getBearerToken('https://api.epicenter.so'))).toBe(
+		expect(await store.getBearerToken('https://api.epicenter.so')).toBe(
 			'bearer-token',
 		);
 	});
@@ -249,7 +249,9 @@ describe('createCredentialStore', () => {
 		});
 
 		expect(await store.getBearerToken('https://api.epicenter.so')).toBeNull();
-		expect(await store.getEncryptionKeys('https://api.epicenter.so')).toBeNull();
+		expect(
+			await store.getActiveEncryptionKeys('https://api.epicenter.so'),
+		).toBeNull();
 		expect(
 			await store.getOfflineEncryptionKeys('https://api.epicenter.so'),
 		).toEqual([...encryptionKeys]);

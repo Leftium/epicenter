@@ -19,7 +19,10 @@
  */
 
 import { join } from 'node:path';
-import { createDefaultCredentialStore } from '@epicenter/auth/node';
+import {
+	createMachineAuth,
+	createMachineTokenGetter,
+} from '@epicenter/auth/node';
 import {
 	tabManagerAwarenessDefs,
 	tabManagerTables,
@@ -38,7 +41,7 @@ const SERVER_URL = 'https://api.epicenter.so';
 const MARKDOWN_DIR = join(import.meta.dir, 'data');
 const WORKSPACE_ID = 'epicenter.tab-manager';
 
-const credentials = createDefaultCredentialStore();
+const machineAuth = createMachineAuth();
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 const encryption = attachEncryption(ydoc);
@@ -53,7 +56,10 @@ const persistence = attachSqlite(ydoc, {
 });
 
 const whenCredentialsApplied = persistence.whenLoaded.then(async () => {
-	const keys = await credentials.getEncryptionKeys(SERVER_URL);
+	const { data: keys, error } = await machineAuth.getActiveEncryptionKeys({
+		serverOrigin: SERVER_URL,
+	});
+	if (error) throw error;
 	if (keys) encryption.applyKeys(keys);
 });
 
@@ -62,7 +68,10 @@ const sync = attachSync(ydoc, {
 	// Gate connection on local hydrate + unlock so the handshake only exchanges
 	// the delta, not the whole document.
 	waitFor: Promise.all([persistence.whenLoaded, whenCredentialsApplied]),
-	getToken: () => credentials.getBearerToken(SERVER_URL),
+	getToken: createMachineTokenGetter({
+		serverOrigin: SERVER_URL,
+		machineAuth,
+	}),
 });
 
 const whenReady = Promise.all([

@@ -10,14 +10,14 @@ import {
 	Session,
 	type Session as SessionData,
 	StoredBetterAuthUser,
-} from '../contracts/session.ts';
+} from '../contracts/session.js';
 import {
 	createFileSecretStore,
 	createKeychainSecretStore,
 	type CredentialSecretRef,
 	type CredentialSecretStore,
-} from './credential-secret-store.ts';
-import { normalizeServerOrigin } from './server-origin.ts';
+} from './credential-secret-store.js';
+import { normalizeServerOrigin } from './server-origin.js';
 
 const CREDENTIAL_FILE_VERSION = 'epicenter.auth.credentialStore.v1';
 
@@ -201,9 +201,11 @@ function parseCredentialFile(value: unknown, path: string): CredentialFile {
 }
 
 function latest(entries: Credential[]): Credential | null {
-	return entries.toSorted((left, right) =>
-		left.lastUsedAt.localeCompare(right.lastUsedAt),
-	)[entries.length - 1] ?? null;
+	return (
+		entries.toSorted((left, right) =>
+			left.lastUsedAt.localeCompare(right.lastUsedAt),
+		)[entries.length - 1] ?? null
+	);
 }
 
 export function createCredentialStore({
@@ -237,7 +239,9 @@ export function createCredentialStore({
 		return parseCredentialFile(await readJson(path), path);
 	}
 
-	async function resolveEntry(entry: CredentialFileEntry): Promise<Credential | null> {
+	async function resolveEntry(
+		entry: CredentialFileEntry,
+	): Promise<Credential | null> {
 		if (entry.secrets.storage === 'file') {
 			const session = sessionFromParts({
 				entry,
@@ -353,7 +357,9 @@ export function createCredentialStore({
 			credentials: [...preserved, entry],
 		});
 		if (existing?.secrets.storage === 'osKeychain') {
-			const nextRefs = new Set(keychainRefs(credentialSecrets).map(secretRefKey));
+			const nextRefs = new Set(
+				keychainRefs(credentialSecrets).map(secretRefKey),
+			);
 			await Promise.all(
 				keychainRefs(existing.secrets)
 					.filter((ref) => !nextRefs.has(secretRefKey(ref)))
@@ -369,7 +375,9 @@ export function createCredentialStore({
 		});
 	}
 
-	async function get(serverOriginInput: string | URL): Promise<Credential | null> {
+	async function get(
+		serverOriginInput: string | URL,
+	): Promise<Credential | null> {
 		const serverOrigin = normalizeServerOrigin(serverOriginInput);
 		const file = await readFile();
 		const entry = file.credentials.find(
@@ -430,14 +438,16 @@ export function createCredentialStore({
 		getMetadata,
 		async getBearerToken(serverOrigin?: string | URL): Promise<string | null> {
 			const credential = await getCredential(serverOrigin);
-			if (credential === null || isExpired(credential.session, clock)) return null;
+			if (credential === null || isExpired(credential.session, clock))
+				return null;
 			return credential.bearerToken;
 		},
-		async getEncryptionKeys(
+		async getActiveEncryptionKeys(
 			serverOrigin?: string | URL,
 		): Promise<EncryptionKeysData | null> {
 			const credential = await getCredential(serverOrigin);
-			if (credential === null || isExpired(credential.session, clock)) return null;
+			if (credential === null || isExpired(credential.session, clock))
+				return null;
 			return credential.session.encryptionKeys;
 		},
 		async getOfflineEncryptionKeys(
@@ -472,24 +482,4 @@ export function createCredentialStore({
 			});
 		},
 	};
-}
-
-export function createDefaultCredentialStore({
-	path,
-	storageMode = 'osKeychain',
-}: {
-	path?: string;
-	storageMode?: CredentialStoreStorageMode;
-} = {}) {
-	return createCredentialStore({ path, storageMode });
-}
-
-export function createCredentialTokenGetter({
-	serverOrigin,
-	store = createDefaultCredentialStore(),
-}: {
-	serverOrigin?: string | URL;
-	store?: CredentialStore;
-} = {}) {
-	return () => store.getBearerToken(serverOrigin);
 }

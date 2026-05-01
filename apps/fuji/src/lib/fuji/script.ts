@@ -1,5 +1,5 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { createDefaultCredentialStore } from '@epicenter/auth/node';
+import { createMachineAuth } from '@epicenter/auth/node';
 import { attachEncryption, type ProjectDir } from '@epicenter/workspace';
 import {
 	attachYjsLogReader,
@@ -24,10 +24,11 @@ export async function openFujiSnapshot({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 }: OpenFujiSnapshotOptions = {}) {
-	const encryptionKeys =
-		await createDefaultCredentialStore().getOfflineEncryptionKeys(
-			EPICENTER_API_URL,
-		);
+	const { data: encryptionKeys, error } =
+		await createMachineAuth().getOfflineEncryptionKeys({
+			serverOrigin: EPICENTER_API_URL,
+		});
+	if (error) throw error;
 	const ydoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
 	ydoc.clientID = clientID;
 	const encryption = attachEncryption(ydoc);

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
-import { createDefaultCredentialStore } from '@epicenter/auth/node';
+import { createCredentialStore } from '../../../../../packages/auth/src/node/credential-store.js';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { EncryptionKeys, ProjectDir } from '@epicenter/workspace';
 import type { DaemonRuntime } from '@epicenter/workspace/daemon';
@@ -151,34 +151,33 @@ describe('daemon to script handoff via Yjs log file', () => {
 		expect(lockedSnapshot.tables.entries.getAllValid()).toEqual([]);
 
 		const now = new Date();
-		await createDefaultCredentialStore({ storageMode: 'file' }).save(
-			EPICENTER_API_URL,
-			{
-				bearerToken: 'fake-token',
-				session: {
-					user: {
-						id: 'user-1',
-						name: 'User One',
-						email: 'user@example.com',
-						emailVerified: true,
-						image: null,
-						createdAt: now.toISOString(),
-						updatedAt: now.toISOString(),
-					},
-					session: {
-						id: 'session-1',
-						token: 'session-token',
-						userId: 'user-1',
-						expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
-						createdAt: now.toISOString(),
-						updatedAt: now.toISOString(),
-						ipAddress: null,
-						userAgent: null,
-					},
-					encryptionKeys: testEncryptionKeys,
+		await createCredentialStore({
+			storageMode: 'file',
+		}).save(EPICENTER_API_URL, {
+			bearerToken: 'fake-token',
+			session: {
+				user: {
+					id: 'user-1',
+					name: 'User One',
+					email: 'user@example.com',
+					emailVerified: true,
+					image: null,
+					createdAt: now.toISOString(),
+					updatedAt: now.toISOString(),
 				},
+				session: {
+					id: 'session-1',
+					token: 'session-token',
+					userId: 'user-1',
+					expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
+					createdAt: now.toISOString(),
+					updatedAt: now.toISOString(),
+					ipAddress: null,
+					userAgent: null,
+				},
+				encryptionKeys: testEncryptionKeys,
 			},
-		);
+		});
 		using unlockedSnapshot = await openFujiSnapshot({ projectDir: workdir });
 
 		expect(

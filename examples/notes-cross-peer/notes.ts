@@ -1,4 +1,4 @@
-import { createCredentialTokenGetter } from '@epicenter/auth/node';
+import { createMachineTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
@@ -47,7 +47,7 @@ export function openNotes(peer: PeerIdentity) {
 	});
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
-		getToken: createCredentialTokenGetter({ serverOrigin: SERVER_URL }),
+		getToken: createMachineTokenGetter({ serverOrigin: SERVER_URL }),
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);

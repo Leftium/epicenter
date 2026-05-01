@@ -8,7 +8,6 @@
 	"types": "./src/app.ts",
 	"exports": {
 		".": "./src/app.ts",
-		"./types": "./src/auth/contracts/index.ts",
 		"./billing-contract": "./src/billing-contract.ts",
 		"./billing-plans": "./src/billing-plans.ts"
 	},

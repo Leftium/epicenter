@@ -27,7 +27,10 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { createDefaultCredentialStore } from '@epicenter/auth/node';
+import {
+	createMachineAuth,
+	createMachineTokenGetter,
+} from '@epicenter/auth/node';
 import { createFileContentDoc } from '@epicenter/filesystem';
 import {
 	attachEncryption,
@@ -55,7 +58,7 @@ const MATERIALIZER_DIR = join(import.meta.dir, '.epicenter', 'materializer');
 mkdirSync(MATERIALIZER_DIR, { recursive: true });
 
 const WORKSPACE_ID = 'opensidian';
-const credentials = createDefaultCredentialStore();
+const machineAuth = createMachineAuth();
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 const encryption = attachEncryption(ydoc);
@@ -67,14 +70,20 @@ const persistence = attachSqlite(ydoc, {
 });
 
 const whenCredentialsApplied = persistence.whenLoaded.then(async () => {
-	const keys = await credentials.getEncryptionKeys(SERVER_URL);
+	const { data: keys, error } = await machineAuth.getActiveEncryptionKeys({
+		serverOrigin: SERVER_URL,
+	});
+	if (error) throw error;
 	if (keys) encryption.applyKeys(keys);
 });
 
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 	waitFor: Promise.all([persistence.whenLoaded, whenCredentialsApplied]),
-	getToken: () => credentials.getBearerToken(SERVER_URL),
+	getToken: createMachineTokenGetter({
+		serverOrigin: SERVER_URL,
+		machineAuth,
+	}),
 });
 
 /**

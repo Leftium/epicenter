@@ -11,34 +11,16 @@
  */
 
 import {
-	createAuthServerClient,
-	createCliAuth,
-	createDefaultCredentialStore,
-	type CredentialStore,
-	type CredentialStoreStorageMode,
+	createMachineAuth,
+	type MachineCredentialStoragePolicy,
+	type MachineCredentialSummary,
 } from '@epicenter/auth/node';
 import { cmd } from '../util/cmd.js';
 
 const DEFAULT_SERVER = 'https://api.epicenter.so';
 
-function createAuthForServer(
-	serverOrigin: string,
-	storageMode: CredentialStoreStorageMode = 'osKeychain',
-	credentialStore: CredentialStore = createDefaultCredentialStore({ storageMode }),
-) {
-	return createCliAuth({
-		authServerClient: createAuthServerClient(
-			{ fetch },
-			{ serverOrigin },
-		),
-		credentialStore,
-	});
-}
-
-function displayName(credential: {
-	session: { user: { name?: string | null; email: string } };
-}) {
-	return credential.session.user.name ?? credential.session.user.email;
+function displayName(credential: MachineCredentialSummary) {
+	return credential.user.name ?? credential.user.email;
 }
 
 /**
@@ -61,39 +43,38 @@ const loginCommand = cmd({
 				type: 'string',
 				describe: `Server URL (default: ${DEFAULT_SERVER})`,
 			})
-			.option('secure-storage', {
-				type: 'boolean',
-				describe: 'Store credential secrets in the OS keychain',
-			})
 			.option('insecure-storage', {
 				type: 'boolean',
 				describe: 'Store credential secrets in a plaintext owner-only file',
-			})
-			.conflicts('secure-storage', 'insecure-storage'),
+			}),
 	handler: async (argv) => {
 		const serverUrl =
 			typeof argv.server === 'string' && argv.server.length > 0
 				? argv.server
 				: DEFAULT_SERVER;
-		const storageMode: CredentialStoreStorageMode = argv.insecureStorage
-			? 'file'
-			: 'osKeychain';
+		const credentialStorage: MachineCredentialStoragePolicy =
+			argv.insecureStorage ? { kind: 'plaintextFile' } : { kind: 'keychain' };
 
-		if (storageMode === 'file') {
+		if (credentialStorage.kind === 'plaintextFile') {
 			console.warn(
 				'Warning: storing bearer tokens and encryption keys in a plaintext owner-only file.',
 			);
 		}
 
-		const cliAuth = createAuthForServer(serverUrl, storageMode);
-		const result = await cliAuth.loginWithDeviceCode({
+		const machineAuth = createMachineAuth({ fetch, credentialStorage });
+		const result = await machineAuth.loginWithDeviceCode({
+			serverOrigin: serverUrl,
 			onDeviceCode: ({ verificationUriComplete, userCode }) => {
 				console.log(`\nVisit: ${verificationUriComplete}`);
 				console.log(`Enter code: ${userCode}\n`);
 			},
 		});
+		if (result.error) {
+			console.error(result.error.message);
+			return;
+		}
 
-		console.log(`✓ Logged in as ${displayName(result.credential)}`);
+		console.log(`✓ Logged in as ${displayName(result.data.credential)}`);
 	},
 });
 
@@ -107,16 +88,14 @@ const logoutCommand = cmd({
 		}),
 	handler: async (argv) => {
 		const server = typeof argv.server === 'string' ? argv.server : undefined;
-		const credentialStore = createDefaultCredentialStore();
-		const current = server ? null : await credentialStore.getCurrent();
-		const cliAuth = createAuthForServer(
-			server ?? current?.serverOrigin ?? DEFAULT_SERVER,
-			'osKeychain',
-			credentialStore,
-		);
-		const result = await cliAuth.logout(server);
+		const machineAuth = createMachineAuth({ fetch });
+		const result = await machineAuth.logout({ serverOrigin: server });
+		if (result.error) {
+			console.error(result.error.message);
+			return;
+		}
 
-		if (result.status === 'signedOut') {
+		if (result.data.status === 'signedOut') {
 			console.log('No active session.');
 			return;
 		}
@@ -135,48 +114,44 @@ const statusCommand = cmd({
 		}),
 	handler: async (argv) => {
 		const server = typeof argv.server === 'string' ? argv.server : undefined;
-		const credentialStore = createDefaultCredentialStore();
-		const current = server ? null : await credentialStore.getCurrent();
-		const cliAuth = createAuthForServer(
-			server ?? current?.serverOrigin ?? DEFAULT_SERVER,
-			'osKeychain',
-			credentialStore,
-		);
-		const result = await cliAuth.status(server);
+		const machineAuth = createMachineAuth({ fetch });
+		const result = await machineAuth.status({ serverOrigin: server });
+		if (result.error) {
+			console.error(result.error.message);
+			return;
+		}
 
-		if (result.status === 'signedOut') {
+		if (result.data.status === 'signedOut') {
 			console.log('Not logged in.');
 			return;
 		}
-		if (result.status === 'missingSecrets') {
-			if (result.metadata === null) {
-				console.log('Not logged in.');
-				return;
-			}
+		if (result.data.status === 'missingSecrets') {
 			console.log(
-				`Logged in as: ${result.metadata.session.user.name} (${result.metadata.session.user.email})`,
+				`Logged in as: ${displayName(result.data.credential)} (${result.data.credential.user.email})`,
 			);
-			console.log(`Server:       ${result.metadata.serverOrigin}`);
+			console.log(`Server:       ${result.data.credential.serverOrigin}`);
 			console.log('Session:      missing local secrets');
-			console.warn('Warning: Credential metadata exists, but keychain secrets are missing.');
+			console.warn(
+				'Warning: Credential metadata exists, but keychain secrets are missing.',
+			);
 			return;
 		}
 
-		const { credential } = result;
+		const { credential } = result.data;
 		console.log(
-			`Logged in as: ${displayName(credential)} (${credential.session.user.email})`,
+			`Logged in as: ${displayName(credential)} (${credential.user.email})`,
 		);
 		console.log(`Server:       ${credential.serverOrigin}`);
-		if (result.status === 'valid') {
+		if (result.data.status === 'valid') {
 			console.log('Session:      valid');
-		} else if (result.status === 'expired') {
+		} else if (result.data.status === 'expired') {
 			console.log('Session:      expired');
 		} else {
 			console.log('Session:      stored');
 			console.warn('Warning: Could not verify session with remote server.');
 		}
 		console.log(
-			`Expires at:   ${new Date(credential.session.session.expiresAt).toLocaleString()}`,
+			`Expires at:   ${new Date(credential.session.expiresAt).toLocaleString()}`,
 		);
 	},
 });

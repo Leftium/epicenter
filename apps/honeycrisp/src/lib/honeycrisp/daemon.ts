@@ -1,5 +1,5 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { createCredentialTokenGetter } from '@epicenter/auth/node';
+import { createMachineTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
@@ -9,11 +9,7 @@ import {
 	type WebSocketImpl,
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
-import {
-	attachYjsLog,
-	hashClientId,
-	yjsPath,
-} from '@epicenter/workspace/node';
+import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import { openHoneycrisp as openHoneycrispDoc } from './index.js';
 
 export const DEFAULT_HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
@@ -37,7 +33,7 @@ function defaultHoneycrispDaemonPeer(): PeerIdentity {
 export function defineHoneycrispDaemon({
 	route = DEFAULT_HONEYCRISP_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createCredentialTokenGetter({ serverOrigin: apiUrl }),
+	getToken = createMachineTokenGetter({ serverOrigin: apiUrl }),
 	peer = defaultHoneycrispDaemonPeer(),
 	webSocketImpl,
 }: HoneycrispDaemonOptions = {}): DaemonRouteDefinition {

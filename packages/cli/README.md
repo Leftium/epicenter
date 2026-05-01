@@ -136,7 +136,7 @@ import {
 	toWsUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
-import { createCredentialTokenGetter } from '@epicenter/auth/node';
+import { createMachineTokenGetter } from '@epicenter/auth/node';
 import Type from 'typebox';
 import { type } from 'arktype';
 
@@ -169,7 +169,7 @@ function openTabManager() {
 	});
 	const sync = attachSync(ydoc, {
 		url: toWsUrl('https://api.epicenter.so/workspaces/epicenter.tab-manager'),
-		getToken: createCredentialTokenGetter({
+		getToken: createMachineTokenGetter({
 			serverOrigin: 'https://api.epicenter.so',
 		}),
 		awareness,
@@ -217,7 +217,7 @@ export default defineConfig({
 });
 ```
 
-`defineFujiDaemon()` defaults auth through `createCredentialTokenGetter()` from
+`defineFujiDaemon()` defaults auth through `createMachineTokenGetter()` from
 `@epicenter/auth/node`. Override `getToken` only when the deployment needs
 a custom auth source.
 
@@ -338,9 +338,8 @@ Node-side auth helpers live in `@epicenter/auth/node`:
 
 ```ts
 import {
-	createCliAuth,
-	createCredentialTokenGetter,
-	createDefaultCredentialStore,
+	createMachineAuth,
+	createMachineTokenGetter,
 } from '@epicenter/auth/node';
 ```
 

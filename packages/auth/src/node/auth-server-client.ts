@@ -1,8 +1,8 @@
 import {
 	normalizeSessionResponse,
 	type Session,
-} from '../contracts/session.ts';
-import { normalizeServerOrigin } from './server-origin.ts';
+} from '../contracts/session.js';
+import { normalizeServerOrigin } from './server-origin.js';
 
 export type DeviceCodeResponse = {
 	device_code: string;
@@ -22,9 +22,9 @@ export type DeviceTokenResponse =
 	  }
 	| { error: string; error_description?: string };
 
-export type AuthServerSessionResponse = {
+export type AuthServerCredentialSession = {
+	bearerToken: string;
 	session: Session;
-	setAuthToken: string | null;
 };
 
 export type AuthServerClient = ReturnType<typeof createAuthServerClient>;
@@ -139,19 +139,19 @@ export function createAuthServerClient(
 			);
 		},
 
-		async getSession({
-			token,
+		async fetchCredentialSession({
+			bearerToken,
 		}: {
-			token: string;
-		}): Promise<AuthServerSessionResponse> {
+			bearerToken: string;
+		}): Promise<AuthServerCredentialSession> {
 			const { data, response } = await requestJson<unknown>({
 				method: 'GET',
 				path: '/auth/get-session',
-				token,
+				token: bearerToken,
 			});
 			return {
+				bearerToken: response.headers.get('set-auth-token') ?? bearerToken,
 				session: normalizeSessionResponse(data),
-				setAuthToken: response.headers.get('set-auth-token'),
 			};
 		},
 

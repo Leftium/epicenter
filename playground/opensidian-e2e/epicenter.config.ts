@@ -10,8 +10,8 @@
  * Reads auth credentials from the CLI session store at
  * `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
  *
- * Hosts the `opensidian` route with `actions`, `sync`, and `[Symbol.dispose]`.
- * Daemon action paths are relative to `actions`.
+ * Hosts the `opensidian` route as a full daemon peer: actions, sync,
+ * presence, RPC, and disposal. Daemon action paths are relative to `actions`.
  *
  * Usage:
  *   # Run the workspace. Imports this config, which constructs the
@@ -178,11 +178,21 @@ const actions = {
 		}),
 	},
 };
+const presence = sync.attachPresence({
+	peer: {
+		id: 'opensidian-playground-daemon',
+		name: 'Opensidian Playground Daemon',
+		platform: 'node',
+	},
+});
+const rpc = sync.attachRpc(actions);
 
 export const opensidian = {
 	whenReady,
 	actions,
 	sync,
+	presence,
+	rpc,
 	[Symbol.dispose]() {
 		ydoc.destroy();
 	},

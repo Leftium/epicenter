@@ -243,8 +243,8 @@ async function safeAsyncDispose(config: LoadConfigResult): Promise<void> {
 }
 
 function printPeersSnapshot(entry: WorkspaceEntry): void {
-	const peers = entry.workspace.presence?.peers();
-	if (!peers || peers.size === 0) {
+	const peers = entry.workspace.presence.peers();
+	if (peers.size === 0) {
 		process.stderr.write(`${entry.route}: no peers connected\n`);
 		return;
 	}
@@ -257,7 +257,6 @@ function printPeersSnapshot(entry: WorkspaceEntry): void {
 
 function subscribeAwareness(entry: WorkspaceEntry, quiet: boolean): void {
 	const presence = entry.workspace.presence;
-	if (!presence) return;
 	let prev = new Map(presence.peers());
 	presence.observe(() => {
 		const next = presence.peers();
@@ -285,7 +284,6 @@ function subscribeAwareness(entry: WorkspaceEntry, quiet: boolean): void {
 
 function subscribeSyncStatus(entry: WorkspaceEntry): void {
 	const sync = entry.workspace.sync;
-	if (!sync) return;
 	sync.onStatusChange((status) => {
 		if (status.phase === 'connecting') {
 			logSyncStatus(`${entry.route}: connecting (retry ${status.retries})`);

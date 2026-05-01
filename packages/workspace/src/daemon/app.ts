@@ -75,7 +75,7 @@ export function buildApp(
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
 			for (const entry of entries) {
-				const peers = entry.workspace.presence?.peers() ?? new Map();
+				const peers = entry.workspace.presence.peers();
 				for (const [clientID, state] of peers) {
 					rows.push({
 						route: entry.route,

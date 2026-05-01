@@ -126,13 +126,16 @@ import * as Y from 'yjs';
 import {
 	defineTable,
 	attachTables,
+	attachSync,
 	defineQuery,
 	defineMutation,
+	toWsUrl,
 } from '@epicenter/workspace';
 import {
 	defineDaemon,
 	defineEpicenterConfig,
 } from '@epicenter/workspace/daemon';
+import { createSessionTokenGetter } from '@epicenter/workspace/node';
 import Type from 'typebox';
 import { type } from 'arktype';
 
@@ -141,27 +144,45 @@ const SavedTab = defineTable(type({ id: 'string', title: 'string', url: 'string'
 function openTabManager() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager' });
 	const tables = attachTables(ydoc, { savedTabs: SavedTab });
+	const actions = {
+		savedTabs: {
+			list: defineQuery({
+				description: 'List all saved tabs',
+				handler: () => tables.savedTabs.getAllValid(),
+			}),
+			delete: defineMutation({
+				input: Type.Object({ id: Type.String() }),
+				description: 'Delete a saved tab by id',
+				handler: ({ id }) => tables.savedTabs.delete(id),
+			}),
+		},
+	};
+	const sync = attachSync(ydoc, {
+		url: toWsUrl('https://api.epicenter.so/workspaces/epicenter.tab-manager'),
+		getToken: createSessionTokenGetter({
+			serverUrl: 'https://api.epicenter.so',
+		}),
+	});
+	const presence = sync.attachPresence({
+		peer: {
+			id: 'tab-manager-daemon',
+			name: 'Tab Manager Daemon',
+			platform: 'node',
+		},
+	});
+	const rpc = sync.attachRpc(actions);
 
 	return {
 		ydoc,
 		tables,
+		sync,
+		presence,
+		rpc,
 
 		// Actions are grouped away from infrastructure.
 		// Only the operations you wrap with defineQuery/defineMutation
 		// show up in `epicenter list`.
-		actions: {
-			savedTabs: {
-				list: defineQuery({
-					description: 'List all saved tabs',
-					handler: () => tables.savedTabs.getAllValid(),
-				}),
-				delete: defineMutation({
-					input: Type.Object({ id: Type.String() }),
-					description: 'Delete a saved tab by id',
-					handler: ({ id }) => tables.savedTabs.delete(id),
-				}),
-			},
-		},
+		actions,
 
 		[Symbol.dispose]() {
 			ydoc.destroy();
@@ -208,6 +229,9 @@ The common convention is to group actions under `actions:` first, then nest by t
 return {
     ydoc,
     tables,
+    sync,
+    presence,
+    rpc,
 
     actions: {
         tabs: {                                        // domain

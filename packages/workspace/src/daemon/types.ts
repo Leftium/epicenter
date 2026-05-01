@@ -4,7 +4,7 @@
  * `DaemonHostDefinition` is the config-time contract: route metadata plus a
  * delayed `start()` function. `DaemonWorkspace` is the runtime contract every
  * started daemon host has to satisfy: lifecycle hook, required
- * `actions` root, plus optional `sync`, `presence`, and `rpc` attachments.
+ * `actions` root, sync transport, peer presence, and RPC attachments.
  *
  * `WorkspaceEntry` is one routed entry the daemon hosts internally. The CLI's
  * config loader opens definitions from the default
@@ -32,9 +32,7 @@ export type EpicenterConfigContext = {
 };
 
 /**
- * Fields the daemon looks at on each started workspace. Disposal and `actions`
- * are required. Other fields are read when present. Extra fields are
- * direct-use infrastructure and do not affect daemon action discovery.
+ * Fields the daemon looks at on each started workspace.
  */
 export type DaemonWorkspace = {
 	/** Called by the daemon at exit. */
@@ -46,14 +44,12 @@ export type DaemonWorkspace = {
 	 */
 	readonly actions: Actions;
 
-	/**
-	 * Underlying sync transport. Presence and RPC are attached separately so
-	 * callers choose which peer surfaces they expose.
-	 */
-	readonly sync?: SyncAttachment;
-	readonly presence?: PeerPresenceAttachment;
-	readonly rpc?: SyncRpcAttachment;
-	readonly [key: string]: unknown;
+	/** Underlying sync transport for bringing the route online. */
+	readonly sync: SyncAttachment;
+	/** Standard peer presence used by `epicenter peers` and `run --peer`. */
+	readonly presence: PeerPresenceAttachment;
+	/** Peer RPC transport used by `run --peer`. */
+	readonly rpc: SyncRpcAttachment;
 };
 
 export type DaemonHostDefinition<

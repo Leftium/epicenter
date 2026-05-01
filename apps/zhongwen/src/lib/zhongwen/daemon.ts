@@ -5,10 +5,7 @@ import {
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import {
-	type DaemonWorkspace,
-	defineDaemon,
-} from '@epicenter/workspace/daemon';
+import { defineDaemon } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
 	createSessionTokenGetter,
@@ -59,14 +56,17 @@ export function defineZhongwenDaemon({
 				webSocketImpl,
 			});
 			const presence = sync.attachPresence({ peer });
+			const actions = {};
+			const rpc = sync.attachRpc(actions);
 
 			return {
 				...doc,
 				yjsLog,
 				sync,
 				presence,
-				actions: {},
-			} satisfies DaemonWorkspace;
+				rpc,
+				actions,
+			};
 		},
 	});
 }

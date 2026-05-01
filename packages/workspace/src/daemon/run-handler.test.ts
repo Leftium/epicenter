@@ -25,6 +25,9 @@ function fakeEntry(
 				}),
 			},
 		},
+		sync: {
+			whenDisposed: Promise.resolve(),
+		} as WorkspaceEntry['workspace']['sync'],
 		presence: presence as PeerPresenceAttachment,
 		rpc: rpc as SyncRpcAttachment,
 		[Symbol.dispose]() {},
@@ -119,6 +122,11 @@ describe('executeRun route-prefixed routing', () => {
 					}),
 				},
 			},
+			sync: {
+				whenDisposed: Promise.resolve(),
+			} as WorkspaceEntry['workspace']['sync'],
+			presence: {} as WorkspaceEntry['workspace']['presence'],
+			rpc: {} as WorkspaceEntry['workspace']['rpc'],
 			[Symbol.dispose]() {},
 		};
 		const entry = {
@@ -139,6 +147,11 @@ describe('executeRun route-prefixed routing', () => {
 	test('ignores action leaves outside the canonical action root', async () => {
 		const workspace = {
 			actions: {},
+			sync: {
+				whenDisposed: Promise.resolve(),
+			} as WorkspaceEntry['workspace']['sync'],
+			presence: {} as WorkspaceEntry['workspace']['presence'],
+			rpc: {} as WorkspaceEntry['workspace']['rpc'],
 			notes: {
 				add: defineMutation({
 					handler: () => ({ body: 'hello' }),
@@ -171,6 +184,11 @@ describe('executeRun route-prefixed routing', () => {
 						}),
 					},
 				},
+				sync: {
+					whenDisposed: Promise.resolve(),
+				} as WorkspaceEntry['workspace']['sync'],
+				presence: {} as WorkspaceEntry['workspace']['presence'],
+				rpc: {} as WorkspaceEntry['workspace']['rpc'],
 				[Symbol.dispose]() {},
 			} as WorkspaceEntry['workspace'],
 		};
@@ -196,6 +214,11 @@ describe('executeRun route-prefixed routing', () => {
 					route: 'tasks',
 					workspace: {
 						actions: {},
+						sync: {
+							whenDisposed: Promise.resolve(),
+						} as WorkspaceEntry['workspace']['sync'],
+						presence: {} as WorkspaceEntry['workspace']['presence'],
+						rpc: {} as WorkspaceEntry['workspace']['rpc'],
 						[Symbol.dispose]() {},
 					} as WorkspaceEntry['workspace'],
 				},

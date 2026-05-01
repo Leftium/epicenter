@@ -116,7 +116,7 @@ export const LoadError = defineErrors({
 	}) => ({
 		message:
 			`Invalid daemon host ${index} in ${configPath}: ` +
-			`expected actions and [Symbol.dispose].`,
+			`expected actions, sync, presence, rpc, and [Symbol.dispose].`,
 		configPath,
 		index,
 	}),
@@ -174,11 +174,16 @@ function isDaemonWorkspace(value: unknown): value is DaemonWorkspace {
 	if (value == null || typeof value !== 'object') return false;
 	const record = value as Record<PropertyKey, unknown>;
 	return (
-		typeof record.actions === 'object' &&
-		record.actions !== null &&
-		!Array.isArray(record.actions) &&
+		isPlainObject(record.actions) &&
+		isPlainObject(record.sync) &&
+		isPlainObject(record.presence) &&
+		isPlainObject(record.rpc) &&
 		typeof record[Symbol.dispose] === 'function'
 	);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isValidRoute(route: string): boolean {
@@ -188,7 +193,7 @@ function isValidRoute(route: string): boolean {
 async function disposeHosts(hosts: DaemonWorkspace[]): Promise<void> {
 	const barriers: Promise<unknown>[] = [];
 	for (const host of hosts) {
-		if (host.sync?.whenDisposed) barriers.push(host.sync.whenDisposed);
+		barriers.push(host.sync.whenDisposed);
 		host[Symbol.dispose]();
 	}
 	await Promise.all(barriers);

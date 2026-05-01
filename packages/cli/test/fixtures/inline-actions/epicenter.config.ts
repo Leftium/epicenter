@@ -1,11 +1,17 @@
 /**
  * Minimal fixture: one daemon host with inline `defineQuery` /
- * `defineMutation` nodes grouped under `actions:`. No sqlite, sync, or
- * encryption. The CLI walks `workspace.actions`, so CLI paths are
+ * `defineMutation` nodes grouped under `actions:`. No sqlite or encryption.
+ * The CLI walks `workspace.actions`, so CLI paths are
  * `demo.counter.{get,increment,set}`.
  */
 
-import { defineMutation, defineQuery } from '@epicenter/workspace';
+import {
+	defineMutation,
+	defineQuery,
+	type PeerPresenceAttachment,
+	type SyncAttachment,
+	type SyncRpcAttachment,
+} from '@epicenter/workspace';
 import {
 	defineDaemon,
 	defineEpicenterConfig,
@@ -16,6 +22,45 @@ import * as Y from 'yjs';
 const ydoc = new Y.Doc({ guid: 'epicenter.demo' });
 const state = ydoc.getMap<number>('state');
 state.set('count', 0);
+
+const sync = {
+	whenConnected: Promise.resolve(),
+	status: { phase: 'connected', hasLocalChanges: false },
+	onStatusChange: () => () => {},
+	goOffline() {},
+	reconnect() {},
+	whenDisposed: Promise.resolve(),
+	attachPresence: () => presence,
+	attachRpc: () => rpc,
+} as unknown as SyncAttachment;
+
+const presence = {
+	peers: () => new Map(),
+	find: () => undefined,
+	waitForPeer: async () => ({
+		error: {
+			name: 'PeerMiss',
+			message: 'no peer matches peer id "missing"',
+			peerTarget: 'missing',
+			sawPeers: false,
+			waitMs: 0,
+			emptyReason: 'not connected',
+		},
+		data: null,
+	}),
+	observe: () => () => {},
+	raw: {},
+} as unknown as PeerPresenceAttachment;
+
+const rpc = {
+	rpc: async () => ({
+		error: {
+			name: 'RpcError',
+			message: 'fixture RPC is not connected',
+		},
+		data: null,
+	}),
+} as unknown as SyncRpcAttachment;
 
 export const demo = {
 	actions: {
@@ -42,6 +87,9 @@ export const demo = {
 			}),
 		},
 	},
+	sync,
+	presence,
+	rpc,
 	[Symbol.dispose]() {
 		ydoc.destroy();
 	},

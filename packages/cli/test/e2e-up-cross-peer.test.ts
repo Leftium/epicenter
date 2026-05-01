@@ -34,8 +34,8 @@
  *        or `packages/cli/`, and writing one is a separate spec
  *        (`specs/20260427T000000-execute-cli-up-long-lived-peer.md`
  *        § "Wave 8 isn't a commit"). The lifecycle tests below stand in for
- *        that coverage, exercising every CLI verb against a fixture whose
- *        hosted workspace has no `sync` attachment.
+ *        that coverage, exercising every CLI verb against a fixture with fake
+ *        peer attachments.
  *   [gap] DeviceId in the banner reflects the real peer.
  *        Infra gap: `up.ts § pickDeviceId` returns `'<unknown>'` because
  *        `DaemonWorkspace.sync` doesn't expose self awareness post-connect.

@@ -88,17 +88,9 @@ async function invokeRemote({
 	waitMs: number;
 }): Promise<RunResponse> {
 	const { workspace } = entry;
-	const presence = workspace.presence;
-	const rpc = workspace.rpc;
-
-	if (!presence || !rpc) {
-		return RunError.UsageError({
-			message: `Workspace "${entry.route}" has no peer RPC attachment; --peer requires presence and RPC.`,
-		});
-	}
 
 	const start = Date.now();
-	const found = await presence.waitForPeer(peerTarget, {
+	const found = await workspace.presence.waitForPeer(peerTarget, {
 		timeoutMs: waitMs,
 	});
 	if (found.error !== null) {
@@ -112,7 +104,7 @@ async function invokeRemote({
 
 	const { clientId: targetClientId, state: peerState } = found.data;
 	const remaining = Math.max(1, waitMs - (Date.now() - start));
-	const result = await rpc.rpc(targetClientId, localPath, actionInput, {
+	const result = await workspace.rpc.rpc(targetClientId, localPath, actionInput, {
 		timeout: remaining,
 	});
 

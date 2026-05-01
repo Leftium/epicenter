@@ -25,6 +25,12 @@ function writeConfig(source: string) {
 	writeFileSync(join(workDir, CONFIG_FILENAME), source);
 }
 
+const daemonRuntimeFields = `
+	sync: { whenDisposed: Promise.resolve() },
+	presence: {},
+	rpc: {},
+`;
+
 describe('loadConfig', () => {
 	test('loads default defineEpicenterConfig hosts by route', async () => {
 		writeConfig(`
@@ -36,6 +42,7 @@ describe('loadConfig', () => {
 						route: 'demo',
 						start: () => ({
 							actions: {},
+							${daemonRuntimeFields}
 							[Symbol.dispose]() {}
 						})
 					})
@@ -65,6 +72,7 @@ describe('loadConfig', () => {
 									configDir: { handler: () => configDir }
 								}
 							},
+							${daemonRuntimeFields}
 							[Symbol.dispose]() {}
 						})
 					})
@@ -98,14 +106,22 @@ describe('loadConfig', () => {
 						route: 'demo',
 						start: () => {
 							globalThis.__loadConfigEvents.push('started:first');
-							return { actions: {}, [Symbol.dispose]() {} };
+							return {
+								actions: {},
+								${daemonRuntimeFields}
+								[Symbol.dispose]() {}
+							};
 						}
 					}),
 					defineDaemon({
 						route: 'demo',
 						start: () => {
 							globalThis.__loadConfigEvents.push('started:second');
-							return { actions: {}, [Symbol.dispose]() {} };
+							return {
+								actions: {},
+								${daemonRuntimeFields}
+								[Symbol.dispose]() {}
+							};
 						}
 					})
 				]
@@ -131,6 +147,7 @@ describe('loadConfig', () => {
 						route: 'demo',
 						start: () => Promise.resolve({
 							actions: {},
+							${daemonRuntimeFields}
 							[Symbol.dispose]() {}
 						})
 					})
@@ -155,6 +172,7 @@ describe('loadConfig', () => {
 						route: 'bad.route',
 						start: () => ({
 							actions: {},
+							${daemonRuntimeFields}
 							[Symbol.dispose]() {}
 						})
 					})
@@ -176,11 +194,19 @@ describe('loadConfig', () => {
 				hosts: [
 					defineDaemon({
 						route: 'demo',
-						start: () => ({ actions: {}, [Symbol.dispose]() {} })
+						start: () => ({
+							actions: {},
+							${daemonRuntimeFields}
+							[Symbol.dispose]() {}
+						})
 					}),
 					defineDaemon({
 						route: 'demo',
-						start: () => ({ actions: {}, [Symbol.dispose]() {} })
+						start: () => ({
+							actions: {},
+							${daemonRuntimeFields}
+							[Symbol.dispose]() {}
+						})
 					})
 				]
 			});
@@ -204,6 +230,7 @@ describe('loadConfig', () => {
 						route: 'first',
 						start: () => ({
 							actions: {},
+							${daemonRuntimeFields}
 							[Symbol.dispose]() {
 								globalThis.__loadConfigEvents.push('disposed:first');
 							}

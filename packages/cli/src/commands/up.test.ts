@@ -78,10 +78,16 @@ function makeFakeWorkspace(): DaemonWorkspace {
 			whenConnected: new Promise(() => {
 				/* sync connects in the background */
 			}),
+			whenDisposed: Promise.resolve(),
 			status: { phase: 'connected', hasLocalChanges: false },
 			onStatusChange: () => () => {},
 			// Unused fields; cast through unknown to keep the fake minimal.
 		} as unknown as DaemonWorkspace['sync'],
+		presence: {
+			peers: () => new Map(),
+			observe: () => () => {},
+		} as unknown as DaemonWorkspace['presence'],
+		rpc: {} as unknown as DaemonWorkspace['rpc'],
 	};
 }
 

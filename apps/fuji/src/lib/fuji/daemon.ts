@@ -6,10 +6,7 @@ import {
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import {
-	type DaemonWorkspace,
-	defineDaemon,
-} from '@epicenter/workspace/daemon';
+import { defineDaemon } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdown,
 	slugFilename,
@@ -85,7 +82,7 @@ export function defineFujiDaemon({
 				[Symbol.dispose]() {
 					doc[Symbol.dispose]();
 				},
-			} satisfies DaemonWorkspace;
+			};
 		},
 	});
 }

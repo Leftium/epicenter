@@ -5,10 +5,7 @@ import {
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import {
-	type DaemonWorkspace,
-	defineDaemon,
-} from '@epicenter/workspace/daemon';
+import { defineDaemon } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
 	createSessionTokenGetter,
@@ -67,7 +64,7 @@ export function defineHoneycrispDaemon({
 				sync,
 				presence,
 				rpc,
-			} satisfies DaemonWorkspace;
+			};
 		},
 	});
 }

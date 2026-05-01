@@ -23,6 +23,13 @@ function fakeEntry(
 ): WorkspaceEntry {
 	const workspace = {
 		actions: {},
+		sync: {
+			whenDisposed: Promise.resolve(),
+		} as unknown as DaemonWorkspace['sync'],
+		presence: {
+			peers: () => new Map(),
+		} as unknown as DaemonWorkspace['presence'],
+		rpc: {} as unknown as DaemonWorkspace['rpc'],
 		...workspaceShape,
 		[Symbol.dispose]() {},
 	} satisfies DaemonWorkspace;

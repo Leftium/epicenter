@@ -5,9 +5,9 @@
  * Reads auth credentials (token + encryption keys) from the CLI session store
  * at `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
  *
- * Hosts the `tabManager` route with `sync`, `actions`, and
- * `[Symbol.dispose]`. `actions` is empty because the tab-manager extension
- * defines action wrappers, not this config.
+ * Hosts the `tabManager` route as a full daemon peer: actions, sync,
+ * presence, RPC, and disposal. `actions` is empty because the tab-manager
+ * extension defines action wrappers, not this config.
  *
  * Usage:
  *   # Run the workspace. Imports this config, which constructs the
@@ -87,10 +87,22 @@ const markdown = attachMarkdownMaterializer(
 	.table('devices')
 	.kv();
 
+const actions = {};
+const presence = sync.attachPresence({
+	peer: {
+		id: 'tab-manager-playground-daemon',
+		name: 'Tab Manager Playground Daemon',
+		platform: 'node',
+	},
+});
+const rpc = sync.attachRpc(actions);
+
 export const tabManager = {
 	whenReady,
-	actions: {},
+	actions,
 	sync,
+	presence,
+	rpc,
 	[Symbol.dispose]() {
 		ydoc.destroy();
 	},

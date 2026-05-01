@@ -5,10 +5,7 @@ import {
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import {
-	type DaemonWorkspace,
-	defineDaemon,
-} from '@epicenter/workspace/daemon';
+import { defineDaemon } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
 	createSessionTokenGetter,
@@ -72,7 +69,7 @@ export function defineOpensidianDaemon({
 				actions,
 				presence,
 				rpc,
-			} satisfies DaemonWorkspace;
+			};
 		},
 	});
 }

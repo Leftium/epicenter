@@ -20,14 +20,14 @@ export function attachAuthSnapshotToWorkspace({
 	auth,
 	workspace,
 	onSignedInSnapshot,
-	onSignedOutLocalDataCleared,
-	onSignedOutLocalDataClearError,
+	afterSignedOutCleanup,
+	onSignedOutCleanupError,
 }: {
 	auth: Pick<AuthClient, 'subscribe'>;
 	workspace: AuthWorkspaceTarget;
 	onSignedInSnapshot?: () => void;
-	onSignedOutLocalDataCleared?: () => void;
-	onSignedOutLocalDataClearError?: (error: unknown) => void;
+	afterSignedOutCleanup?: () => void;
+	onSignedOutCleanupError: (error: unknown) => void;
 }): () => void {
 	function getSyncTargets() {
 		return new Set(workspace.getAuthSyncTargets?.() ?? [workspace.sync]);
@@ -44,9 +44,9 @@ export function attachAuthSnapshotToWorkspace({
 			if (previousSession !== null) {
 				void workspace.idb
 					.clearLocal()
-					.then(() => onSignedOutLocalDataCleared?.())
+					.then(() => afterSignedOutCleanup?.())
 					.catch((error: unknown) => {
-						onSignedOutLocalDataClearError?.(error);
+						onSignedOutCleanupError(error);
 					});
 			}
 			return;

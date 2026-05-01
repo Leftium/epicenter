@@ -25,7 +25,10 @@
 	type AccountPopoverProps = {
 		/** The auth client from `createAuth()`. */
 		auth: AuthClient;
-		/** The workspace's `attachSync` result, typically `workspace.sync`. */
+		/**
+		 * The workspace's `attachSync` result, typically `workspace.sync`.
+		 * Stable for this component's lifetime. Remount when switching workspaces.
+		 */
 		sync: SyncAttachment;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;

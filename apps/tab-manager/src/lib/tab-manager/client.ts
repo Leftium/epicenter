@@ -4,9 +4,11 @@ import {
 	createSessionStorageAdapter,
 } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
+import { toast } from '@epicenter/ui/sonner';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { storage } from '@wxt-dev/storage';
+import { extractErrorMessage } from 'wellcrafted/error';
 import { getGoogleCredentials, session } from '$lib/auth';
 import type { DeviceId } from '$lib/workspace/definition';
 import { openTabManager } from './extension';
@@ -69,7 +71,12 @@ async function registerDevice(): Promise<void> {
 attachAuthSnapshotToWorkspace({
 	auth,
 	workspace: tabManager,
-	onSignedOutLocalDataCleared: () => window.location.reload(),
+	afterSignedOutCleanup: () => window.location.reload(),
+	onSignedOutCleanupError: (error) => {
+		toast.error('Could not clear local data', {
+			description: extractErrorMessage(error),
+		});
+	},
 	onSignedInSnapshot: () => {
 		void registerDevice();
 	},

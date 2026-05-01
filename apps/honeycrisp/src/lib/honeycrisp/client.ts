@@ -6,7 +6,9 @@ import {
 } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
+import { toast } from '@epicenter/ui/sonner';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
+import { extractErrorMessage } from 'wellcrafted/error';
 import { openHoneycrisp } from './browser';
 
 const session = createPersistedState({
@@ -32,7 +34,12 @@ export const honeycrisp = openHoneycrisp({
 attachAuthSnapshotToWorkspace({
 	auth,
 	workspace: honeycrisp,
-	onSignedOutLocalDataCleared: () => window.location.reload(),
+	afterSignedOutCleanup: () => window.location.reload(),
+	onSignedOutCleanupError: (error) => {
+		toast.error('Could not clear local data', {
+			description: extractErrorMessage(error),
+		});
+	},
 });
 
 if (import.meta.hot) {

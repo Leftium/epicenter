@@ -65,6 +65,7 @@ In app clients such as `apps/tab-manager/src/lib/tab-manager/client.ts`, `attach
 attachAuthSnapshotToWorkspace({
 	auth,
 	workspace,
+	onSignedOutCleanupError: reportError,
 });
 ```
 The order matters.

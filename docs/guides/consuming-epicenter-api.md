@@ -98,6 +98,7 @@ export const auth = createAuth({
 attachAuthSnapshotToWorkspace({
 	auth,
 	workspace,
+	onSignedOutCleanupError: reportError,
 });
 ```
 

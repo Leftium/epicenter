@@ -225,7 +225,10 @@ auth.subscribe((next, previous) => {
 
 	if (next.status === 'signedOut') {
 		if (previousSession !== null) {
-			void workspace.idb.clearLocal().then(onSignedOutLocalDataCleared);
+			void workspace.idb
+				.clearLocal()
+				.then(afterSignedOutCleanup)
+				.catch(onSignedOutCleanupError);
 		}
 		return;
 	}

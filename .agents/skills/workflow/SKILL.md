@@ -1,6 +1,6 @@
 ---
 name: workflow
-description: Standard workflow for implementing features with specs and planning documents. Use when the user says "start a new feature", "how should I plan this", "what's the process", or when starting implementation, planning work, or working on any non-trivial task.
+description: Standard workflow for implementing features with specs and planning documents. Use when the user says "start a new feature", "how should I plan this", "what's the process", or when starting implementation, planning work, closing out planned work, or working on any non-trivial task.
 metadata:
   author: epicenter
   version: '1.0'
@@ -14,7 +14,8 @@ metadata:
 4. Then, begin working on the todo items, marking them as complete as you go.
 5. Please every step of the way just give me a high level explanation of what changes you made
 6. Make every task and code change you do as simple as possible. We want to avoid making any massive or complex changes. Every change should impact as little code as possible. Everything is about simplicity.
-7. Finally, add a review section to the .md file with a summary of the changes you made and any other relevant information.
+7. Before final handoff, run `post-implementation-review` against the touched files. Use it to catch stale abstractions, dead paths, invariant drift, naming issues, and missing verification.
+8. Finally, add a review section to the .md file with a summary of the changes you made, what the post-implementation review found, and any other relevant information.
 
 ## When to Apply This Skill
 
@@ -24,6 +25,7 @@ Use this pattern when you need to:
 - Build a checklist-driven implementation plan before writing code.
 - Get plan verification before execution begins.
 - Execute work in small, simple steps with high-level progress updates.
+- Run a post-implementation review before handing work back.
 - Close work by adding a review summary to the spec.
 
 # Spec Placement

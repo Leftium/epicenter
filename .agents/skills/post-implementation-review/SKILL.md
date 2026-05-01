@@ -18,6 +18,9 @@ through cleanup.
 
 ## Related Skills
 
+This skill is a hub for broad second reads. Focused requests can start from a
+focused skill first, then escalate here when the work needs a full final pass.
+
 Load only the skills that match the touched surface:
 
 ```txt

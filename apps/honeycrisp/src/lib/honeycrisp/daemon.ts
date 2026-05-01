@@ -52,7 +52,6 @@ export function honeycrispDaemon({
 
 		return {
 			...doc,
-			workspaceId: doc.ydoc.guid,
 			yjsLog,
 			sync,
 			presence,

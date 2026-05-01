@@ -22,7 +22,6 @@ function fakeEntry(
 	workspaceShape: Record<string, unknown> = {},
 ): DaemonRuntimeEntry {
 	const workspace = {
-		workspaceId: `epicenter.${name}`,
 		actions: {},
 		sync: {
 			whenConnected: Promise.resolve(),

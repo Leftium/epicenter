@@ -70,7 +70,6 @@ afterEach(() => {
 
 function makeFakeWorkspace(): DaemonRuntime {
 	return {
-		workspaceId: 'epicenter.default',
 		actions: {},
 		[Symbol.dispose]() {
 			/* no-op */

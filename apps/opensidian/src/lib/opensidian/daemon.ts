@@ -56,7 +56,6 @@ export function opensidianDaemon({
 
 		return {
 			...doc,
-			workspaceId: doc.ydoc.guid,
 			yjsLog,
 			sync,
 			actions,

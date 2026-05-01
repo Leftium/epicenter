@@ -67,7 +67,6 @@ export function fujiDaemon({
 		}).table(doc.tables.entries, { filename: slugFilename('title') });
 
 		return {
-			workspaceId: doc.ydoc.guid,
 			actions: doc.actions,
 			sync,
 			presence,

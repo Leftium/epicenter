@@ -59,7 +59,6 @@ function fakeWorkspace(
 	extra: Record<string, unknown> = {},
 ): Workspace {
 	return {
-		workspaceId: 'epicenter.demo',
 		actions,
 		sync: fakeSync(),
 		presence: fakePresence(),
@@ -176,7 +175,6 @@ describe('executeRun route-prefixed routing', () => {
 					}),
 				},
 			},
-			{ workspaceId: 'epicenter.notes' },
 		);
 		const entry = {
 			route: 'notes',
@@ -197,7 +195,6 @@ describe('executeRun route-prefixed routing', () => {
 		const workspace = fakeWorkspace(
 			{},
 			{
-				workspaceId: 'epicenter.notes',
 				notes: {
 					add: defineMutation({
 						handler: () => ({ body: 'hello' }),
@@ -228,7 +225,6 @@ describe('executeRun route-prefixed routing', () => {
 					}),
 				},
 			},
-			{ workspaceId: 'epicenter.notes' },
 		);
 		const entry = {
 			route: 'notes',
@@ -254,7 +250,7 @@ describe('executeRun route-prefixed routing', () => {
 				fakeEntry({}),
 				{
 					route: 'tasks',
-					workspace: fakeWorkspace({}, { workspaceId: 'epicenter.tasks' }),
+					workspace: fakeWorkspace({}),
 				},
 			],
 			{

@@ -51,7 +51,6 @@ const daemonTransportFields = `
 `;
 
 const daemonRuntimeFields = `
-	workspaceId: 'epicenter.demo',
 	${daemonTransportFields}
 `;
 
@@ -77,9 +76,6 @@ describe('loadConfig', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data?.entries.map((entry) => entry.route)).toEqual(['demo']);
-		expect(
-			result.data?.entries.map((entry) => entry.workspace.workspaceId),
-		).toEqual(['epicenter.demo']);
 		await result.data?.[Symbol.asyncDispose]();
 	});
 
@@ -193,7 +189,7 @@ describe('loadConfig', () => {
 		expect(result.error?.name).toBe('InvalidRouteModule');
 	});
 
-	test('rejects host runtimes missing workspaceId', async () => {
+	test('rejects route runtimes missing actions', async () => {
 		writeConfig(`
 			import { defineEpicenterConfig } from '${daemonModuleUrl}';
 
@@ -201,7 +197,6 @@ describe('loadConfig', () => {
 				daemon: {
 					routes: {
 						demo: () => ({
-							actions: {},
 							${daemonTransportFields}
 							[Symbol.dispose]() {}
 						})
@@ -255,7 +250,6 @@ describe('loadConfig', () => {
 				daemon: {
 					routes: {
 						demo: () => ({
-							workspaceId: 'epicenter.demo',
 							actions: {},
 							sync: { whenDisposed: Promise.resolve() },
 							presence: {},

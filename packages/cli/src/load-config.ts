@@ -111,7 +111,7 @@ export const LoadError = defineErrors({
 	}) => ({
 		message:
 			`Invalid daemon route "${route}" in ${configPath}: ` +
-			`expected a daemon runtime with workspaceId, actions, sync teardown/status, ` +
+			`expected a daemon runtime with actions, sync teardown/status, ` +
 			`presence peers/observe/waitForPeer, rpc.rpc, and [Symbol.dispose].`,
 		configPath,
 		route,
@@ -153,8 +153,6 @@ function isDaemonRuntime(value: unknown): value is DaemonRuntime {
 	if (value == null || typeof value !== 'object') return false;
 	const record = value as Record<PropertyKey, unknown>;
 	return (
-		typeof record.workspaceId === 'string' &&
-		record.workspaceId.length > 0 &&
 		isPlainObject(record.actions) &&
 		isSyncRuntime(record.sync) &&
 		isPresenceRuntime(record.presence) &&

@@ -3,8 +3,8 @@
  *
  * `DaemonRouteModule` is the config-time contract: a delayed function keyed by
  * route name. `DaemonRuntime` is the runtime contract every started daemon
- * route has to satisfy: workspace identity, lifecycle hook, required `actions`
- * root, sync transport, peer presence, and RPC attachments.
+ * route has to satisfy: lifecycle hook, required `actions` root, sync
+ * transport, peer presence, and RPC attachments.
  *
  * `DaemonRuntimeEntry` is one routed runtime the daemon serves internally. The
  * CLI's config loader opens route modules from the default
@@ -32,9 +32,6 @@ export type EpicenterConfigContext = {
 export type DaemonRuntime = {
 	/** Called by the daemon at exit. */
 	[Symbol.dispose](): void;
-
-	/** Stable workspace identity. Usually the hosted Y.Doc guid. */
-	readonly workspaceId: string;
 
 	/**
 	 * Canonical public action root. Daemon paths are relative to this object:

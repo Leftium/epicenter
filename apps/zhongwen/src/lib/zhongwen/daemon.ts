@@ -53,7 +53,6 @@ export function zhongwenDaemon({
 
 		return {
 			...doc,
-			workspaceId: doc.ydoc.guid,
 			yjsLog,
 			sync,
 			presence,

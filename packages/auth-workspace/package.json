@@ -1,27 +1,22 @@
 {
-	"name": "@epicenter/auth-svelte",
+	"name": "@epicenter/auth-workspace",
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
-	"description": "Svelte 5 reactive wrapper around @epicenter/auth.",
+	"description": "Framework-agnostic auth lifecycle binding for Epicenter workspaces.",
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts"
 	},
 	"scripts": {
-		"typecheck": "svelte-check --tsconfig ./tsconfig.json"
+		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*"
 	},
-	"peerDependencies": {
-		"svelte": "^5.0.0"
-	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
-		"svelte": "catalog:",
-		"svelte-check": "catalog:",
 		"typescript": "catalog:"
 	},
 	"license": "MIT"

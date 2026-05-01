@@ -8,10 +8,11 @@ metadata:
 
 # Epicenter Auth
 
-Two packages:
+Three packages:
 
-- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, storage hydration, response-header token rotation, and snapshot subscriber fan-out.
+- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, storage hydration, response-header token rotation, and future snapshot change fan-out.
 - **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors the core snapshot into `$state` and exposes a live `auth.snapshot` getter.
+- **`@epicenter/auth-workspace`**: framework-agnostic binding from auth snapshots to workspace lifecycle effects.
 
 Everything runtime lives in the core. The Svelte package only makes the snapshot reactive.
 
@@ -35,7 +36,9 @@ type AuthSnapshot =
 	| { status: 'signedIn'; session: Session };
 ```
 
-Read `auth.snapshot` synchronously. Await `auth.whenSessionLoaded` only at async boundaries that must wait for persisted storage hydration, such as `auth.fetch` and sync token callbacks.
+Read `auth.snapshot` synchronously. Await `auth.whenLoaded` only at async boundaries that must wait for persisted storage hydration, such as `auth.fetch` and sync token callbacks.
+
+Use `auth.onSnapshotChange(fn)` for future changes only. It does not replay. Consumers that need bootstrap behavior must read `auth.snapshot` once and then register the listener.
 
 Do not add projection helpers. There is no public token, user, session, authenticated, or busy getter beyond `auth.snapshot`.
 
@@ -58,7 +61,7 @@ Invariants:
 - `load()` returns the persisted session or `null`.
 - Sync stores can leave `loading` before `createAuth()` returns.
 - Async stores start in `loading` and transition after `load()` settles.
-- `whenSessionLoaded` never rejects. Load failures are logged and normalize to `signedOut`.
+- `whenLoaded` never rejects. Load failures are logged and normalize to `signedOut`.
 - Local writes update the snapshot first, then call `save()`.
 - `watch()` is inbound reconciliation. It may echo local writes, so auth dedupes structurally.
 
@@ -66,7 +69,6 @@ Invariants:
 
 ```ts
 import {
-	attachAuthSnapshotToWorkspace,
 	createAuth,
 	createSessionStorageAdapter,
 	Session,
@@ -90,23 +92,22 @@ Tab-manager wraps the `createStorageState()` result the same way. Do not await `
 
 ## Reacting to Session Transitions
 
-Use `attachAuthSnapshotToWorkspace` at setup time when a workspace exposes `sync`, `idb`, and `encryption`:
+Use `bindWorkspaceAuthLifecycle` at setup time when a workspace exposes `sync`, `idb`, and `encryption`:
 
 ```ts
-attachAuthSnapshotToWorkspace({
+import { bindWorkspaceAuthLifecycle } from '@epicenter/auth-workspace';
+
+bindWorkspaceAuthLifecycle({
 	auth,
 	workspace,
+	leavingUser: {
+		afterCleanup: () => window.location.reload(),
+		onCleanupError: reportCleanupError,
+	},
 });
 ```
 
-For non-sync documents, use one `auth.subscribe` and preserve the same transition rules: ignore `loading`, clear local data only when `previous` was `signedIn`, and apply encryption keys before reconnecting any sync target.
-
-Replay rules:
-
-- If current is `loading`, subscribe replays `(loading, loading)`.
-- If current is settled, subscribe replays `(current, { status: 'loading' })`.
-- Future calls receive real `(next, previous)` pairs.
-- Subscriber failures are caught per subscriber.
+For non-sync documents, read `auth.snapshot` once for bootstrap, then use `auth.onSnapshotChange` for future snapshots. Track the minimal local transition state needed by that document, usually whether a signed-in user has already been applied.
 
 ## Token Sourcing
 
@@ -114,7 +115,7 @@ Workspace sync should wait for storage hydration, then read the snapshot:
 
 ```ts
 getToken: async () => {
-	await auth.whenSessionLoaded;
+	await auth.whenLoaded;
 
 	const snapshot = auth.snapshot;
 	return snapshot.status === 'signedIn' ? snapshot.session.token : null;

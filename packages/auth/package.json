@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
-	"description": "Framework-agnostic auth core for Epicenter. Imperative subscription API over better-auth.",
+	"description": "Framework-agnostic auth core for Epicenter.",
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
 	"exports": {

@@ -38,7 +38,4 @@ export type AuthSnapshot =
 	| { status: 'signedOut' }
 	| { status: 'signedIn'; session: Session };
 
-export type AuthSnapshotSubscriber = (
-	next: AuthSnapshot,
-	previous: AuthSnapshot,
-) => void;
+export type AuthSnapshotChangeListener = (snapshot: AuthSnapshot) => void;

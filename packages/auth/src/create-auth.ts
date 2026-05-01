@@ -1,4 +1,3 @@
-import type { SessionResponse } from '@epicenter/auth/contracts';
 import { encryptionKeysFingerprint } from '@epicenter/workspace/encryption-key';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
@@ -11,10 +10,11 @@ import {
 import { Ok, type Result } from 'wellcrafted/result';
 import type {
 	AuthSnapshot,
-	AuthSnapshotSubscriber,
+	AuthSnapshotChangeListener,
 	Session,
 	StoredUser,
 } from './auth-types.ts';
+import type { SessionResponse } from './contracts/session.ts';
 import type { MaybePromise, SessionStorage } from './session-store.ts';
 
 export const AuthError = defineErrors({
@@ -67,8 +67,8 @@ export type CreateAuthConfig = {
 
 export type AuthClient = {
 	readonly snapshot: AuthSnapshot;
-	readonly whenSessionLoaded: Promise<void>;
-	subscribe(fn: AuthSnapshotSubscriber): () => void;
+	readonly whenLoaded: Promise<void>;
+	onSnapshotChange(fn: AuthSnapshotChangeListener): () => void;
 	signIn(input: {
 		email: string;
 		password: string;
@@ -136,12 +136,12 @@ export function createAuth({
 	let snapshot: AuthSnapshot = { status: 'loading' };
 	let storageLoaded = false;
 	let bufferedBetterAuthCandidate: Session | null | undefined;
-	let resolveWhenSessionLoaded: () => void = () => {};
-	const whenSessionLoaded = new Promise<void>((resolve) => {
-		resolveWhenSessionLoaded = resolve;
+	let resolveWhenLoaded: () => void = () => {};
+	const whenLoaded = new Promise<void>((resolve) => {
+		resolveWhenLoaded = resolve;
 	});
 
-	const snapshotSubs = new Set<AuthSnapshotSubscriber>();
+	const snapshotChangeListeners = new Set<AuthSnapshotChangeListener>();
 
 	const disposers: Array<() => void> = [];
 
@@ -181,10 +181,9 @@ export function createAuth({
 
 	function setSnapshot(next: AuthSnapshot) {
 		if (snapshotsEqual(snapshot, next)) return;
-		const previous = snapshot;
 		snapshot = next;
-		for (const subscriber of snapshotSubs) {
-			safeRun(() => subscriber(next, previous));
+		for (const listener of snapshotChangeListeners) {
+			safeRun(() => listener(next));
 		}
 	}
 
@@ -226,7 +225,7 @@ export function createAuth({
 		if (bufferedBetterAuthCandidate !== undefined) {
 			reconcileBetterAuthCandidate(bufferedBetterAuthCandidate);
 		}
-		resolveWhenSessionLoaded();
+		resolveWhenLoaded();
 	}
 
 	function loadPersistedSession() {
@@ -310,17 +309,11 @@ export function createAuth({
 		get snapshot() {
 			return snapshot;
 		},
-		whenSessionLoaded,
-		subscribe(fn) {
-			const current = snapshot;
-			const previous =
-				current.status === 'loading'
-					? current
-					: ({ status: 'loading' } as const);
-			safeRun(() => fn(current, previous));
-			snapshotSubs.add(fn);
+		whenLoaded,
+		onSnapshotChange(fn) {
+			snapshotChangeListeners.add(fn);
 			return () => {
-				snapshotSubs.delete(fn);
+				snapshotChangeListeners.delete(fn);
 			};
 		},
 
@@ -386,7 +379,7 @@ export function createAuth({
 		},
 
 		async fetch(input, init) {
-			await whenSessionLoaded;
+			await whenLoaded;
 			const headers = new Headers(init?.headers);
 			if (snapshot.status === 'signedIn') {
 				headers.set('Authorization', `Bearer ${snapshot.session.token}`);
@@ -402,7 +395,7 @@ export function createAuth({
 					console.error('[auth] dispose error:', error);
 				}
 			}
-			snapshotSubs.clear();
+			snapshotChangeListeners.clear();
 		},
 	};
 }

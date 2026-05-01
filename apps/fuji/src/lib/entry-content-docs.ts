@@ -38,7 +38,7 @@ export function createEntryContentDoc({
 	entryId: EntryId;
 	workspaceId: string;
 	entriesTable: Table<Entry>;
-	auth: Pick<AuthClient, 'snapshot' | 'whenSessionLoaded'>;
+	auth: Pick<AuthClient, 'snapshot' | 'whenLoaded'>;
 	apiUrl: string;
 	registerSync: (sync: SyncAttachment) => () => void;
 }): EntryContentDoc {
@@ -59,7 +59,7 @@ export function createEntryContentDoc({
 		url: toWsUrl(`${apiUrl}/docs/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		getToken: async () => {
-			await auth.whenSessionLoaded;
+			await auth.whenLoaded;
 
 			const snapshot = auth.snapshot;
 			return snapshot.status === 'signedIn' ? snapshot.session.token : null;

@@ -60,12 +60,14 @@ That happens in two places:
 - on boot from a cached session
 - on every authenticated session update from Better Auth
 The boot path exists so the workspace can unlock before the first auth roundtrip finishes.
-In app clients such as `apps/tab-manager/src/lib/tab-manager/client.ts`, `attachAuthSnapshotToWorkspace` does this:
+In app clients such as `apps/tab-manager/src/lib/tab-manager/client.ts`, `bindWorkspaceAuthLifecycle` does this:
 ```ts
-attachAuthSnapshotToWorkspace({
+bindWorkspaceAuthLifecycle({
 	auth,
 	workspace,
-	onSignedOutCleanupError: reportError,
+	leavingUser: {
+		onCleanupError: reportError,
+	},
 });
 ```
 The order matters.
@@ -78,9 +80,12 @@ Logout is less clean than the high-level comments suggest.
 The reviewed code clears the auth session and wipes persisted local data, but it does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`.
 The logout path in the app clients is:
 ```ts
-auth.subscribe((next, previous) => {
-	if (next.status !== 'signedOut') return;
-	if (previous.status === 'signedIn') void workspace.idb.clearLocal();
+bindWorkspaceAuthLifecycle({
+	auth,
+	workspace,
+	leavingUser: {
+		onCleanupError: reportError,
+	},
 });
 ```
 So these points are implemented and verifiable:

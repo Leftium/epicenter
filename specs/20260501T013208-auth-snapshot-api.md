@@ -1,8 +1,16 @@
 # Auth Snapshot API
 
 **Date**: 2026-05-01
-**Status**: Draft
+**Status**: Partially Implemented
 **Author**: AI-assisted
+
+> Superseded note, 2026-05-01: the follow-up clean-break spec
+> `20260501T145113-workspace-auth-lifecycle-api-clean-break.md` replaces the
+> public listener and load-barrier names from this implementation record.
+> The current API is `auth.snapshot`, `auth.whenLoaded`, and
+> `auth.onSnapshotChange(next)`. Historical references below to
+> `whenSessionLoaded`, `subscribe`, and previous-snapshot replay describe the
+> earlier intermediate design, not the live API.
 
 ## One Sentence
 
@@ -1146,10 +1154,27 @@ If a future flow needs strict mutual exclusion, that is an internal change that 
 - [x] Token rotation still persists and does not get overwritten by Better Auth refetch.
 - [x] Cross-tab sign-in and sign-out still update subscribers.
 - [ ] Targeted typechecks pass:
-  - [ ] `bun run --filter @epicenter/auth typecheck`
-  - [ ] `bun run --filter @epicenter/auth-svelte typecheck`
+  - [x] `bun run --filter @epicenter/auth typecheck`
+  - [x] `bun run --filter @epicenter/auth-svelte typecheck`
   - [ ] `bun run --filter @epicenter/svelte typecheck`
   - [ ] App typechecks for Fuji, Honeycrisp, Opensidian, Zhongwen, Dashboard, and Tab Manager where package scripts exist.
+
+## Review
+
+**Reviewed**: 2026-05-01
+
+The core API is implemented in the current codebase. `packages/auth/src/create-auth.ts` exposes `snapshot`, `whenSessionLoaded`, `subscribe`, and `fetch`; it buffers Better Auth emissions during storage load, preserves rotated bearer tokens, and stores updates through `sessionStorage`. `packages/auth-svelte/src/create-auth.svelte.ts` mirrors the snapshot into Svelte state, and app sync token callbacks read `auth.snapshot` after `auth.whenSessionLoaded`.
+
+The remaining unexecuted part is verification. Phase 5 still has no focused tests for `createAuth`: storage startup, subscribe replay, previous snapshot arguments, token rotation, Better Auth emissions during loading, storage watch echo dedupe, and `auth.fetch` bearer behavior are not covered by package tests. `packages/auth` has tests for contracts and Node credential storage, but not for this client state machine.
+
+Two targeted typechecks pass:
+
+```sh
+bun run --filter @epicenter/auth typecheck
+bun run --filter @epicenter/auth-svelte typecheck
+```
+
+The broader app and `@epicenter/svelte` typechecks are still unchecked in this review.
 
 ## Execution Prompt
 

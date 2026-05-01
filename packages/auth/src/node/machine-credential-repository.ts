@@ -9,8 +9,8 @@ import {
 	StoredBetterAuthUser,
 } from '../contracts/session.js';
 import {
-	MachineCredentialSecrets,
 	type MachineCredentialSecretStorage,
+	MachineCredentialSecrets,
 } from './machine-credential-secret-storage.js';
 import { normalizeServerOrigin } from './server-origin.js';
 
@@ -77,10 +77,6 @@ export function defaultCredentialPath(): string {
 
 function isoNow(clock: Clock): string {
 	return clock.now().toISOString();
-}
-
-function isExpired(session: SessionData, clock: Clock): boolean {
-	return Date.parse(session.session.expiresAt) <= clock.now().getTime();
 }
 
 function metadataFromSession(session: SessionData) {
@@ -291,38 +287,11 @@ export function createMachineCredentialRepository({
 		};
 	}
 
-	async function getCredential(
-		serverOrigin?: string | URL,
-	): Promise<MachineCredential | null> {
-		return serverOrigin ? await get(serverOrigin) : await getCurrent();
-	}
-
 	return {
 		save,
 		get,
 		getCurrent,
 		getMetadata,
-		async getBearerToken(serverOrigin?: string | URL): Promise<string | null> {
-			const credential = await getCredential(serverOrigin);
-			if (credential === null || isExpired(credential.session, clock))
-				return null;
-			return credential.bearerToken;
-		},
-		async getActiveEncryptionKeys(
-			serverOrigin?: string | URL,
-		): Promise<EncryptionKeysData | null> {
-			const credential = await getCredential(serverOrigin);
-			if (credential === null || isExpired(credential.session, clock))
-				return null;
-			return credential.session.encryptionKeys;
-		},
-		async getOfflineEncryptionKeys(
-			serverOrigin?: string | URL,
-		): Promise<EncryptionKeysData | null> {
-			const credential = await getCredential(serverOrigin);
-			if (credential === null) return null;
-			return credential.session.encryptionKeys;
-		},
 		async clear(serverOriginInput: string | URL): Promise<void> {
 			const serverOrigin = normalizeServerOrigin(serverOriginInput);
 			const file = await readFile();

@@ -222,13 +222,16 @@ describe('createMachineAuth', () => {
 		expect(result.error?.name).toBe('CredentialStorageFailed');
 	});
 
-	test('active key reads return Ok(null) after expiry while offline reads return keys', async () => {
+	test('bearer and active key reads return Ok(null) after expiry while offline reads return keys', async () => {
 		await createPlaintextRepository().save('https://api.epicenter.so', {
 			bearerToken: 'bearer-token',
 			session: makeSession({ expiresAt: '2025-01-01T00:00:00.000Z' }),
 		});
 		const machineAuth = createPlaintextMachineAuth(fetch);
 
+		const bearer = await machineAuth.getBearerToken({
+			serverOrigin: 'https://api.epicenter.so',
+		});
 		const active = await machineAuth.getActiveEncryptionKeys({
 			serverOrigin: 'https://api.epicenter.so',
 		});
@@ -236,6 +239,7 @@ describe('createMachineAuth', () => {
 			serverOrigin: 'https://api.epicenter.so',
 		});
 
+		expect(bearer).toEqual({ data: null, error: null });
 		expect(active).toEqual({ data: null, error: null });
 		expect(offline).toEqual({ data: encryptionKeys, error: null });
 	});
@@ -262,7 +266,7 @@ describe('createMachineAuth', () => {
 	test('token getter returns null for absent credentials', async () => {
 		const getToken = createMachineTokenGetter({
 			serverOrigin: 'https://api.epicenter.so',
-			machineAuth: createPlaintextMachineAuth(fetch),
+			getBearerToken: createPlaintextMachineAuth(fetch).getBearerToken,
 		});
 
 		await expect(getToken()).resolves.toBeNull();
@@ -272,7 +276,7 @@ describe('createMachineAuth', () => {
 		await Bun.write(credentialFilePath, '{not-json');
 		const getToken = createMachineTokenGetter({
 			serverOrigin: 'https://api.epicenter.so',
-			machineAuth: createPlaintextMachineAuth(fetch),
+			getBearerToken: createPlaintextMachineAuth(fetch).getBearerToken,
 		});
 
 		await expect(getToken()).rejects.toMatchObject({

@@ -436,10 +436,10 @@ export function createMachineAuth({
 
 export function createMachineTokenGetter({
 	serverOrigin,
-	machineAuth = createMachineAuth(),
+	getBearerToken = createMachineAuth().getBearerToken,
 }: {
 	serverOrigin: string | URL;
-	machineAuth?: Pick<MachineAuth, 'getBearerToken'>;
+	getBearerToken?: MachineAuth['getBearerToken'];
 }) {
 	if (serverOrigin === undefined) {
 		throw MachineAuthError.InvalidServerOrigin({
@@ -448,7 +448,7 @@ export function createMachineTokenGetter({
 		}).error;
 	}
 	return async () => {
-		const result = await machineAuth.getBearerToken({ serverOrigin });
+		const result = await getBearerToken({ serverOrigin });
 		if (result.error) throw result.error;
 		return result.data;
 	};

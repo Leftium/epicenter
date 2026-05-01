@@ -127,6 +127,13 @@ Do not use dependency injection as a dumping ground. Inject stable policies,
 clients, sinks, and factories. Do not inject a bag of callbacks that mirrors
 every internal step of an implementation.
 
+Treat single-method `Pick<Thing, 'method'>` dependencies as a smell worth
+checking. A single-method `Pick` often means the old object boundary leaked into
+a place that only needed one verb. Prefer a named capability function in the
+caller's language unless the caller genuinely participates in that object's
+life cycle or needs the rest of the capability family. See
+`docs/articles/single-method-pick-is-a-boundary-leak.md`.
+
 ## Boundary Movement
 
 If a smell appears at several call sites, do not start by extracting a helper.

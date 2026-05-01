@@ -116,6 +116,7 @@ Load these on demand based on what you're working on:
   // Bad — re-export at bottom of create-tables.ts
   export type { TablesHelper, TableDefinitions };
   ```
+- **Question single-method `Pick` dependencies**: `Pick<T, K>` is fine for data projection, but `Pick<Thing, 'method'>` in dependency injection is often a boundary smell. If the caller only needs one operation, prefer a named capability function in the caller's language. Keep the object shape only when the caller participates in that object's life cycle or needs the rest of the capability family. See `docs/articles/single-method-pick-is-a-boundary-leak.md`.
 - When functions are only used in the return statement of a factory/creator function, use object method shorthand syntax instead of defining them separately. For example, instead of:
   ```typescript
   function myFunction() {

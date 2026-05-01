@@ -189,6 +189,41 @@ describe('createCredentialStore', () => {
 		);
 	});
 
+	test('current credential with missing keychain secrets does not fall back to another server', async () => {
+		const secrets = memorySecretStore();
+		const store = createCredentialStore({
+			path: storePath('credentials.json'),
+			storageMode: 'osKeychain',
+			secretStore: secrets,
+			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
+		});
+
+		await store.save('https://first.example.com', {
+			bearerToken: 'first-bearer-token',
+			session: makeSession('2026-02-01T00:00:00.000Z', {
+				userId: 'first-user',
+			}),
+		});
+		await store.save('https://second.example.com', {
+			bearerToken: 'second-bearer-token',
+			session: makeSession('2026-02-01T00:00:00.000Z', {
+				userId: 'second-user',
+			}),
+		});
+		for (const key of [...secrets.values.keys()]) {
+			if (key.includes('second.example.com')) secrets.values.delete(key);
+		}
+
+		expect(await store.getCurrent()).toBeNull();
+		expect(await store.getBearerToken()).toBeNull();
+		expect(await store.getBearerToken('https://first.example.com')).toBe(
+			'first-bearer-token',
+		);
+		expect((await store.getMetadata())?.serverOrigin).toBe(
+			'https://second.example.com',
+		);
+	});
+
 	test('fails closed when secure storage is unavailable', async () => {
 		const store = createCredentialStore({
 			path: storePath('credentials.json'),

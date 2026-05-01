@@ -23,6 +23,11 @@ function displayName(credential: MachineCredentialSummary) {
 	return credential.user.name ?? credential.user.email;
 }
 
+function failAuthCommand(error: { message: string }) {
+	console.error(error.message);
+	process.exitCode = 1;
+}
+
 /**
  * `auth` command group.
  *
@@ -70,7 +75,7 @@ const loginCommand = cmd({
 			},
 		});
 		if (result.error) {
-			console.error(result.error.message);
+			failAuthCommand(result.error);
 			return;
 		}
 
@@ -91,7 +96,7 @@ const logoutCommand = cmd({
 		const machineAuth = createMachineAuth({ fetch });
 		const result = await machineAuth.logout({ serverOrigin: server });
 		if (result.error) {
-			console.error(result.error.message);
+			failAuthCommand(result.error);
 			return;
 		}
 
@@ -117,7 +122,7 @@ const statusCommand = cmd({
 		const machineAuth = createMachineAuth({ fetch });
 		const result = await machineAuth.status({ serverOrigin: server });
 		if (result.error) {
-			console.error(result.error.message);
+			failAuthCommand(result.error);
 			return;
 		}
 

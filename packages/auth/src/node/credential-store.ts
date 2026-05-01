@@ -390,8 +390,7 @@ export function createCredentialStore({
 	async function getCurrent(): Promise<Credential | null> {
 		const file = await readFile();
 		if (file.currentServerOrigin) {
-			const current = await get(file.currentServerOrigin);
-			if (current !== null) return current;
+			return await get(file.currentServerOrigin);
 		}
 		const resolved = (
 			await Promise.all(file.credentials.map((entry) => resolveEntry(entry)))

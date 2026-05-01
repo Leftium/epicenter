@@ -17,12 +17,13 @@ import { join } from 'node:path';
 import type { Session } from '../contracts/session.js';
 import {
 	createMachineCredentialRepository,
-	type MachineCredentialRepositoryStoragePolicy,
 } from './machine-credential-repository.js';
-import type {
-	MachineCredentialSecretRef,
-	MachineCredentialSecretVault,
-} from './machine-credential-secret-vault.js';
+import {
+	createKeychainMachineCredentialSecretStorage,
+	createPlaintextMachineCredentialSecretStorage,
+	type MachineCredentialSecretBackend,
+	type MachineCredentialSecretStorage,
+} from './machine-credential-secret-storage.js';
 
 const encryptionKeys = [
 	{
@@ -75,27 +76,28 @@ function memorySecretVault({
 }: {
 	available?: boolean;
 	selfTestFails?: boolean;
-} = {}): MachineCredentialSecretVault & { values: Map<string, string> } {
+} = {}): MachineCredentialSecretBackend & { values: Map<string, string> } {
 	const values = new Map<string, string>();
-	const key = (ref: MachineCredentialSecretRef) =>
-		`${ref.service}:${ref.account}`;
+	const key = (options: { service: string; name: string }) =>
+		`${options.service}:${options.name}`;
 	return {
-		kind: 'systemKeychain',
 		values,
-		async isAvailable() {
-			return available;
+		async get(options) {
+			return values.get(key(options)) ?? null;
 		},
-		async selfTest() {
-			if (selfTestFails) throw new Error('keychain locked');
+		async set(options, value) {
+			if (!available) {
+				throw new Error(
+					'OS keychain storage is unavailable. Rerun with --insecure-storage to use plaintext file storage.',
+				);
+			}
+			if (selfTestFails && options.service === 'epicenter.auth.selfTest') {
+				throw new Error('keychain locked');
+			}
+			values.set(key(options), value);
 		},
-		async save(ref, value) {
-			values.set(key(ref), value);
-		},
-		async load(ref) {
-			return values.get(key(ref)) ?? null;
-		},
-		async delete(ref) {
-			values.delete(key(ref));
+		async delete(options) {
+			values.delete(key(options));
 		},
 	};
 }
@@ -111,13 +113,11 @@ function storePath(name: string) {
 }
 
 function createRepository(
-	credentialStorage: MachineCredentialRepositoryStoragePolicy = {
-		kind: 'plaintextFile',
-	},
+	secretStorage: MachineCredentialSecretStorage = createPlaintextMachineCredentialSecretStorage(),
 ) {
 	return createMachineCredentialRepository({
 		path: storePath('credentials.json'),
-		credentialStorage,
+		secretStorage,
 		clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 	});
 }
@@ -143,7 +143,9 @@ describe('createMachineCredentialRepository', () => {
 		const secrets = memorySecretVault();
 		const repository = createMachineCredentialRepository({
 			path: storePath('credentials.json'),
-			credentialStorage: { kind: 'keychain', secretVault: secrets },
+			secretStorage: createKeychainMachineCredentialSecretStorage({
+				backend: secrets,
+			}),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -165,7 +167,9 @@ describe('createMachineCredentialRepository', () => {
 		const secrets = memorySecretVault();
 		const repository = createMachineCredentialRepository({
 			path: storePath('credentials.json'),
-			credentialStorage: { kind: 'keychain', secretVault: secrets },
+			secretStorage: createKeychainMachineCredentialSecretStorage({
+				backend: secrets,
+			}),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -196,7 +200,9 @@ describe('createMachineCredentialRepository', () => {
 		const secrets = memorySecretVault();
 		const repository = createMachineCredentialRepository({
 			path: storePath('credentials.json'),
-			credentialStorage: { kind: 'keychain', secretVault: secrets },
+			secretStorage: createKeychainMachineCredentialSecretStorage({
+				backend: secrets,
+			}),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -229,10 +235,9 @@ describe('createMachineCredentialRepository', () => {
 	test('fails closed when secure storage is unavailable', async () => {
 		const repository = createMachineCredentialRepository({
 			path: storePath('credentials.json'),
-			credentialStorage: {
-				kind: 'keychain',
-				secretVault: memorySecretVault({ available: false }),
-			},
+			secretStorage: createKeychainMachineCredentialSecretStorage({
+				backend: memorySecretVault({ available: false }),
+			}),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -248,10 +253,9 @@ describe('createMachineCredentialRepository', () => {
 	test('fails closed when secure storage self-test fails', async () => {
 		const repository = createMachineCredentialRepository({
 			path: storePath('credentials.json'),
-			credentialStorage: {
-				kind: 'keychain',
-				secretVault: memorySecretVault({ selfTestFails: true }),
-			},
+			secretStorage: createKeychainMachineCredentialSecretStorage({
+				backend: memorySecretVault({ selfTestFails: true }),
+			}),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -269,7 +273,7 @@ describe('createMachineCredentialRepository', () => {
 		await Bun.write(path, '{not-json');
 		const repository = createMachineCredentialRepository({
 			path,
-			credentialStorage: { kind: 'plaintextFile' },
+			secretStorage: createPlaintextMachineCredentialSecretStorage(),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 

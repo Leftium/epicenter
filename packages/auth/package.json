@@ -16,7 +16,6 @@
 	},
 	"dependencies": {
 		"@epicenter/workspace": "workspace:*",
-		"@napi-rs/keyring": "^1.3.0",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
 		"wellcrafted": "catalog:"

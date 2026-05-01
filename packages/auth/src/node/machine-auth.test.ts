@@ -18,6 +18,7 @@ import type { EncryptionKeys as EncryptionKeysData } from '@epicenter/workspace/
 import type { Session } from '../contracts/session.js';
 import { createMachineAuth, createMachineTokenGetter } from './machine-auth.js';
 import { createMachineCredentialRepository } from './machine-credential-repository.js';
+import { createPlaintextMachineCredentialSecretStorage } from './machine-credential-secret-storage.js';
 
 const encryptionKeys: EncryptionKeysData = [
 	{
@@ -80,7 +81,7 @@ function createPlaintextMachineAuth(fetchImpl: typeof fetch) {
 function createPlaintextRepository() {
 	return createMachineCredentialRepository({
 		path: credentialFilePath,
-		credentialStorage: { kind: 'plaintextFile' },
+		secretStorage: createPlaintextMachineCredentialSecretStorage(),
 		clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 	});
 }

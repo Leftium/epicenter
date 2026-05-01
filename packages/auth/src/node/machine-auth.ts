@@ -16,6 +16,10 @@ import {
 	type MachineCredential,
 	type MachineCredentialMetadata,
 } from './machine-credential-repository.js';
+import {
+	createKeychainMachineCredentialSecretStorage,
+	createPlaintextMachineCredentialSecretStorage,
+} from './machine-credential-secret-storage.js';
 import { normalizeServerOrigin } from './server-origin.js';
 
 type Clock = { now(): Date };
@@ -162,12 +166,13 @@ export function createMachineAuth({
 }: MachineAuthOptions = {}) {
 	const credentialFilePath =
 		credentialStorage.credentialFilePath ?? defaultCredentialPath();
+	const secretStorage =
+		credentialStorage.kind === 'plaintextFile'
+			? createPlaintextMachineCredentialSecretStorage()
+			: createKeychainMachineCredentialSecretStorage();
 	const credentialRepository = createMachineCredentialRepository({
 		path: credentialFilePath,
-		credentialStorage:
-			credentialStorage.kind === 'plaintextFile'
-				? { kind: 'plaintextFile' }
-				: { kind: 'keychain' },
+		secretStorage,
 		clock,
 	});
 

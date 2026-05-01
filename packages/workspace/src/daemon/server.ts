@@ -1,23 +1,23 @@
 /**
- * Daemon server factory: build the workspace map, build the Hono app, and
+ * Daemon server factory: build the route table, build the Hono app, and
  * bind a unix socket. The "build + bind" core extracted from the CLI's
  * `epicenter up` command so any bun process (CLI, vault, embedded) can
  * stand up the daemon transport without depending on `@epicenter/cli`.
  *
  * Lifecycle (metadata sidecar, signal handlers, log routing, dispose
  * orchestration) stays with the caller. This factory owns only the two
- * pieces that have to live in the workspace package: the workspace
- * dispatch table and the unix-socket listener.
+ * pieces that have to live in the workspace package: daemon route dispatch
+ * and the unix-socket listener.
  *
  * See spec: `20260429T004302-workspace-as-daemon-transport.md` § Phase 2.
  */
 
 import type { Result } from 'wellcrafted/result';
 
-import { buildApp } from './app.js';
+import { buildDaemonApp } from './app.js';
 import { pingDaemon } from './client.js';
 import { socketPathFor } from './paths.js';
-import type { WorkspaceEntry } from './types.js';
+import type { HostedDaemonWorkspace } from './types.js';
 import {
 	bindOrRecover,
 	type StartupError,
@@ -25,7 +25,7 @@ import {
 	unlinkSocketFile,
 } from './unix-socket.js';
 
-export type WorkspaceServerOptions = {
+export type DaemonServerOptions = {
 	/** Filesystem-resolved absolute path that scopes this daemon. */
 	projectDir: string;
 	/**
@@ -33,12 +33,12 @@ export type WorkspaceServerOptions = {
 	 * `route` is the routing key the wire surface dispatches on. The CLI uses
 	 * this as the first segment in route-prefixed action paths.
 	 */
-	workspaces: WorkspaceEntry[];
+	workspaces: HostedDaemonWorkspace[];
 	/** Called by the optional `/shutdown` route after the response is queued. */
 	triggerShutdown?: () => void;
 };
 
-export type WorkspaceServer = {
+export type DaemonServer = {
 	/** Filesystem path of the unix socket this server binds. */
 	readonly socketPath: string;
 	/**
@@ -57,27 +57,27 @@ export type WorkspaceServer = {
 };
 
 /**
- * Build a workspace dispatch table from `opts.workspaces`, return a handle
+ * Build a daemon route table from `opts.workspaces`, return a handle
  * with a deferred `listen()`. The factory does not touch the filesystem
  * until `listen()` is called.
  */
-export function createWorkspaceServer({
+export function createDaemonServer({
 	projectDir,
 	workspaces,
 	triggerShutdown,
-}: WorkspaceServerOptions): WorkspaceServer {
+}: DaemonServerOptions): DaemonServer {
 	const seen = new Set<string>();
 	for (const entry of workspaces) {
 		if (seen.has(entry.route)) {
 			throw new Error(
-				`createWorkspaceServer: duplicate daemon route '${entry.route}'`,
+				`createDaemonServer: duplicate daemon route '${entry.route}'`,
 			);
 		}
 		seen.add(entry.route);
 	}
 
 	const socketPath = socketPathFor(projectDir);
-	const app = buildApp(workspaces, triggerShutdown);
+	const app = buildDaemonApp(workspaces, triggerShutdown);
 
 	let server: UnixSocketServer | undefined;
 

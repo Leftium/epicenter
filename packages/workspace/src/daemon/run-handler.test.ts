@@ -11,29 +11,82 @@ import { PeerMiss, type SyncRpcAttachment } from '../document/attach-sync.js';
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { WorkspaceEntry } from './types.js';
+import type { HostedDaemonWorkspace } from './types.js';
+
+type Workspace = HostedDaemonWorkspace['workspace'];
+
+function fakePresence(
+	overrides: Partial<PeerPresenceAttachment> = {},
+): PeerPresenceAttachment {
+	return {
+		peers: () => new Map(),
+		find: () => undefined,
+		waitForPeer: async (peerTarget, { timeoutMs }) =>
+			PeerMiss.PeerMiss({
+				peerTarget,
+				sawPeers: false,
+				waitMs: timeoutMs,
+				emptyReason: null,
+			}),
+		observe: () => () => {},
+		raw: {},
+		...overrides,
+	} as PeerPresenceAttachment;
+}
+
+function fakeRpc(overrides: Partial<SyncRpcAttachment> = {}): SyncRpcAttachment {
+	return {
+		rpc: async () => ({ data: null, error: null }),
+		...overrides,
+	} as SyncRpcAttachment;
+}
+
+function fakeSync(): Workspace['sync'] {
+	return {
+		whenConnected: Promise.resolve(),
+		status: { phase: 'connected', hasLocalChanges: false },
+		onStatusChange: () => () => {},
+		goOffline() {},
+		reconnect() {},
+		whenDisposed: Promise.resolve(),
+		attachPresence: () => fakePresence(),
+		attachRpc: () => fakeRpc(),
+	} as Workspace['sync'];
+}
+
+function fakeWorkspace(
+	actions: Workspace['actions'],
+	extra: Record<string, unknown> = {},
+): Workspace {
+	return {
+		actions,
+		sync: fakeSync(),
+		presence: fakePresence(),
+		rpc: fakeRpc(),
+		[Symbol.dispose]() {},
+		...extra,
+	};
+}
 
 function fakeEntry(
 	presence: Partial<PeerPresenceAttachment> = {},
 	rpc: Partial<SyncRpcAttachment> = {},
-): WorkspaceEntry {
-	const workspace = {
-		actions: {
+): HostedDaemonWorkspace {
+	const workspace = fakeWorkspace(
+		{
 			tabs: {
 				list: defineQuery({
 					handler: () => [],
 				}),
 			},
 		},
-		sync: {
-			whenDisposed: Promise.resolve(),
-		} as WorkspaceEntry['workspace']['sync'],
-		presence: presence as PeerPresenceAttachment,
-		rpc: rpc as SyncRpcAttachment,
-		[Symbol.dispose]() {},
-	};
+		{
+			presence: fakePresence(presence),
+			rpc: fakeRpc(rpc),
+		},
+	);
 
-	return { route: 'demo', workspace: workspace as WorkspaceEntry['workspace'] };
+	return { route: 'demo', workspace };
 }
 
 describe('executeRun peer dispatch', () => {
@@ -114,24 +167,16 @@ describe('executeRun peer dispatch', () => {
 
 describe('executeRun route-prefixed routing', () => {
 	test('invokes action under the selected daemon route', async () => {
-		const workspace = {
-			actions: {
-				notes: {
-					add: defineMutation({
-						handler: () => ({ body: 'hello' }),
-					}),
-				},
+		const workspace = fakeWorkspace({
+			notes: {
+				add: defineMutation({
+					handler: () => ({ body: 'hello' }),
+				}),
 			},
-			sync: {
-				whenDisposed: Promise.resolve(),
-			} as WorkspaceEntry['workspace']['sync'],
-			presence: {} as WorkspaceEntry['workspace']['presence'],
-			rpc: {} as WorkspaceEntry['workspace']['rpc'],
-			[Symbol.dispose]() {},
-		};
+		});
 		const entry = {
 			route: 'notes',
-			workspace: workspace as WorkspaceEntry['workspace'],
+			workspace,
 		};
 
 		const result = await executeRun([entry], {
@@ -145,23 +190,19 @@ describe('executeRun route-prefixed routing', () => {
 	});
 
 	test('ignores action leaves outside the canonical action root', async () => {
-		const workspace = {
-			actions: {},
-			sync: {
-				whenDisposed: Promise.resolve(),
-			} as WorkspaceEntry['workspace']['sync'],
-			presence: {} as WorkspaceEntry['workspace']['presence'],
-			rpc: {} as WorkspaceEntry['workspace']['rpc'],
-			notes: {
-				add: defineMutation({
-					handler: () => ({ body: 'hello' }),
-				}),
+		const workspace = fakeWorkspace(
+			{},
+			{
+				notes: {
+					add: defineMutation({
+						handler: () => ({ body: 'hello' }),
+					}),
+				},
 			},
-			[Symbol.dispose]() {},
-		};
+		);
 		const entry = {
 			route: 'notes',
-			workspace: workspace as WorkspaceEntry['workspace'],
+			workspace,
 		};
 
 		const result = await executeRun([entry], {
@@ -176,21 +217,13 @@ describe('executeRun route-prefixed routing', () => {
 	test('missing path suggests action-root-relative sibling', async () => {
 		const entry = {
 			route: 'notes',
-			workspace: {
-				actions: {
-					notes: {
-						add: defineMutation({
-							handler: () => ({ body: 'hello' }),
-						}),
-					},
+			workspace: fakeWorkspace({
+				notes: {
+					add: defineMutation({
+						handler: () => ({ body: 'hello' }),
+					}),
 				},
-				sync: {
-					whenDisposed: Promise.resolve(),
-				} as WorkspaceEntry['workspace']['sync'],
-				presence: {} as WorkspaceEntry['workspace']['presence'],
-				rpc: {} as WorkspaceEntry['workspace']['rpc'],
-				[Symbol.dispose]() {},
-			} as WorkspaceEntry['workspace'],
+			}),
 		};
 
 		const result = await executeRun([entry], {
@@ -212,15 +245,7 @@ describe('executeRun route-prefixed routing', () => {
 				fakeEntry({}),
 				{
 					route: 'tasks',
-					workspace: {
-						actions: {},
-						sync: {
-							whenDisposed: Promise.resolve(),
-						} as WorkspaceEntry['workspace']['sync'],
-						presence: {} as WorkspaceEntry['workspace']['presence'],
-						rpc: {} as WorkspaceEntry['workspace']['rpc'],
-						[Symbol.dispose]() {},
-					} as WorkspaceEntry['workspace'],
+					workspace: fakeWorkspace({}),
 				},
 			],
 			{

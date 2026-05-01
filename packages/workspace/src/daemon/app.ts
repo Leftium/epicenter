@@ -22,7 +22,7 @@ import { Ok } from 'wellcrafted/result';
 import { Peer } from '../document/standard-awareness-defs.js';
 import { describeActions } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { WorkspaceEntry } from './types.js';
+import type { HostedDaemonWorkspace } from './types.js';
 
 /**
  * Wire body for `/run`. The schema serves two roles:
@@ -66,8 +66,8 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * prefix to pick the hosted workspace before dispatching the inner action
  * path locally or over RPC.
  */
-export function buildApp(
-	entries: WorkspaceEntry[],
+export function buildDaemonApp(
+	entries: HostedDaemonWorkspace[],
 	triggerShutdown?: () => void,
 ) {
 	return new Hono()

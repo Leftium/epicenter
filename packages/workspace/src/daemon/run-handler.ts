@@ -25,10 +25,10 @@ import {
 } from './action-routing.js';
 import type { RunRequest } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
-import type { WorkspaceEntry } from './types.js';
+import type { HostedDaemonWorkspace } from './types.js';
 
 export async function executeRun(
-	entries: WorkspaceEntry[],
+	entries: HostedDaemonWorkspace[],
 	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
 	const target = resolveWorkspaceActionTarget(entries, actionPath);
@@ -82,7 +82,7 @@ async function invokeRemote({
 	waitMs,
 }: {
 	actionInput: unknown;
-	entry: WorkspaceEntry;
+	entry: HostedDaemonWorkspace;
 	localPath: string;
 	peerTarget: string;
 	waitMs: number;

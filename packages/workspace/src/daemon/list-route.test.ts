@@ -12,32 +12,52 @@ import { describe, expect, test } from 'bun:test';
 import type { Result } from 'wellcrafted/result';
 
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
-import { buildApp } from './app.js';
-import type { DaemonWorkspace, WorkspaceEntry } from './types.js';
+import { buildDaemonApp } from './app.js';
+import type { DaemonWorkspace, HostedDaemonWorkspace } from './types.js';
 
 type ListResult = Result<ActionManifest, never>;
 
 function fakeEntry(
 	name: string,
 	workspaceShape: Record<string, unknown> = {},
-): WorkspaceEntry {
+): HostedDaemonWorkspace {
 	const workspace = {
 		actions: {},
 		sync: {
+			whenConnected: Promise.resolve(),
+			status: { phase: 'connected', hasLocalChanges: false },
+			onStatusChange: () => () => {},
+			goOffline() {},
+			reconnect() {},
 			whenDisposed: Promise.resolve(),
 		} as unknown as DaemonWorkspace['sync'],
 		presence: {
 			peers: () => new Map(),
+			find: () => undefined,
+			waitForPeer: async () => ({
+				data: null,
+				error: {
+					name: 'PeerMiss',
+					message: 'missing peer',
+					peerTarget: 'missing',
+					sawPeers: false,
+					waitMs: 1,
+					emptyReason: null,
+				},
+			}),
+			observe: () => () => {},
 		} as unknown as DaemonWorkspace['presence'],
-		rpc: {} as unknown as DaemonWorkspace['rpc'],
+		rpc: {
+			rpc: async () => ({ data: null, error: null }),
+		} as unknown as DaemonWorkspace['rpc'],
 		...workspaceShape,
 		[Symbol.dispose]() {},
 	} satisfies DaemonWorkspace;
-	return { route: name, workspace } as WorkspaceEntry;
+	return { route: name, workspace } as HostedDaemonWorkspace;
 }
 
-async function postList(entries: WorkspaceEntry[]): Promise<ListResult> {
-	const app = buildApp(entries);
+async function postList(entries: HostedDaemonWorkspace[]): Promise<ListResult> {
+	const app = buildDaemonApp(entries);
 	const res = await app.request('/list', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },

@@ -20,7 +20,7 @@
 import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
-	createWorkspaceServer,
+	createDaemonServer,
 	type DaemonMetadata,
 	type StartupError,
 	socketPathFor,
@@ -40,7 +40,7 @@ import {
 	type LoadConfigResult,
 	type LoadError,
 	loadConfig,
-	type WorkspaceEntry,
+	type HostedDaemonWorkspace,
 } from '../load-config.js';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
@@ -78,7 +78,7 @@ export type UpOptions = {
  */
 export type UpHandle = {
 	server: UnixSocketServer;
-	entries: WorkspaceEntry[];
+	entries: HostedDaemonWorkspace[];
 	config: LoadConfigResult;
 	metadata: DaemonMetadata;
 	socketPath: string;
@@ -119,12 +119,12 @@ export async function runUp(
 	// daemon's sidecar must stay intact; on a stale-socket recovery
 	// `bindOrRecover` unlinks the orphan metadata internally before our
 	// successful retry, so the writeMetadata below records *our* pid.
-	const workspaceServer = createWorkspaceServer({
+	const daemonServer = createDaemonServer({
 		projectDir,
 		workspaces: config.entries,
 		triggerShutdown: () => void teardown(),
 	});
-	const bindResult = await workspaceServer.listen();
+	const bindResult = await daemonServer.listen();
 	if (bindResult.error) {
 		await safeAsyncDispose(config);
 		return bindResult;
@@ -242,7 +242,7 @@ async function safeAsyncDispose(config: LoadConfigResult): Promise<void> {
 	}
 }
 
-function printPeersSnapshot(entry: WorkspaceEntry): void {
+function printPeersSnapshot(entry: HostedDaemonWorkspace): void {
 	const peers = entry.workspace.presence.peers();
 	if (peers.size === 0) {
 		process.stderr.write(`${entry.route}: no peers connected\n`);
@@ -255,7 +255,7 @@ function printPeersSnapshot(entry: WorkspaceEntry): void {
 	}
 }
 
-function subscribeAwareness(entry: WorkspaceEntry, quiet: boolean): void {
+function subscribeAwareness(entry: HostedDaemonWorkspace, quiet: boolean): void {
 	const presence = entry.workspace.presence;
 	let prev = new Map(presence.peers());
 	presence.observe(() => {
@@ -282,7 +282,7 @@ function subscribeAwareness(entry: WorkspaceEntry, quiet: boolean): void {
 	});
 }
 
-function subscribeSyncStatus(entry: WorkspaceEntry): void {
+function subscribeSyncStatus(entry: HostedDaemonWorkspace): void {
 	const sync = entry.workspace.sync;
 	sync.onStatusChange((status) => {
 		if (status.phase === 'connecting') {

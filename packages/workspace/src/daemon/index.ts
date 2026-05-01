@@ -9,5 +9,5 @@ export {
 	EPICENTER_DAEMON_HOST,
 	type EpicenterConfig,
 	type EpicenterConfigContext,
-	type WorkspaceEntry,
+	type HostedDaemonWorkspace,
 } from './types.js';

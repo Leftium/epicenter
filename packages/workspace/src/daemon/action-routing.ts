@@ -1,8 +1,8 @@
 import { walkActions } from '../shared/actions.js';
-import type { WorkspaceEntry } from './types.js';
+import type { HostedDaemonWorkspace } from './types.js';
 
 type WorkspaceActionTarget = {
-	entry: WorkspaceEntry;
+	entry: HostedDaemonWorkspace;
 	localPath: string;
 };
 
@@ -12,7 +12,7 @@ type WorkspaceActionPathError = {
 };
 
 export function resolveWorkspaceActionTarget(
-	entries: WorkspaceEntry[],
+	entries: HostedDaemonWorkspace[],
 	actionPath: string,
 ):
 	| { data: WorkspaceActionTarget; error: null }
@@ -38,14 +38,14 @@ export function resolveWorkspaceActionTarget(
 }
 
 function toWorkspaceActionPath(
-	entry: WorkspaceEntry,
+	entry: HostedDaemonWorkspace,
 	localPath: string,
 ): string {
 	return localPath ? `${entry.route}.${localPath}` : entry.route;
 }
 
 export function workspaceActionSuggestionLines(
-	entry: WorkspaceEntry,
+	entry: HostedDaemonWorkspace,
 	prefix: string,
 ): string[] {
 	const entries = [...walkActions(entry.workspace.actions)];
@@ -57,7 +57,7 @@ export function workspaceActionSuggestionLines(
 }
 
 export function workspaceActionNearestSiblingLines(
-	entry: WorkspaceEntry,
+	entry: HostedDaemonWorkspace,
 	missedPath: string,
 ): string[] {
 	const entries = [...walkActions(entry.workspace.actions)];

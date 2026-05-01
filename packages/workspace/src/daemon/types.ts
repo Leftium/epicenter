@@ -6,7 +6,7 @@
  * started daemon host has to satisfy: lifecycle hook, required
  * `actions` root, sync transport, peer presence, and RPC attachments.
  *
- * `WorkspaceEntry` is one routed entry the daemon hosts internally. The CLI's
+ * `HostedDaemonWorkspace` is one routed entry the daemon hosts internally. The CLI's
  * config loader opens definitions from the default
  * `defineEpicenterConfig({ hosts })` export in `epicenter.config.ts`.
  */
@@ -109,7 +109,7 @@ export function defineEpicenterConfig({
 }
 
 /** One routed workspace hosted by the daemon. */
-export type WorkspaceEntry = {
+export type HostedDaemonWorkspace = {
 	route: string;
 	workspace: DaemonWorkspace;
 };

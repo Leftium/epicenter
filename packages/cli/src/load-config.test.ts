@@ -26,9 +26,28 @@ function writeConfig(source: string) {
 }
 
 const daemonRuntimeFields = `
-	sync: { whenDisposed: Promise.resolve() },
-	presence: {},
-	rpc: {},
+	sync: {
+		whenDisposed: Promise.resolve(),
+		onStatusChange: () => () => {}
+	},
+	presence: {
+		peers: () => new Map(),
+		observe: () => () => {},
+		waitForPeer: async () => ({
+			data: null,
+			error: {
+				name: 'PeerMiss',
+				message: 'missing peer',
+				peerTarget: 'missing',
+				sawPeers: false,
+				waitMs: 1,
+				emptyReason: null
+			}
+		})
+	},
+	rpc: {
+		rpc: async () => ({ data: null, error: null })
+	},
 `;
 
 describe('loadConfig', () => {
@@ -251,6 +270,32 @@ describe('loadConfig', () => {
 		expect(
 			(globalThis as { __loadConfigEvents?: string[] }).__loadConfigEvents,
 		).toEqual(['disposed:first']);
+	});
+
+	test('rejects host runtimes missing daemon peer methods', async () => {
+		writeConfig(`
+			import { defineDaemon, defineEpicenterConfig } from '${daemonModuleUrl}';
+
+			export default defineEpicenterConfig({
+				hosts: [
+					defineDaemon({
+						route: 'demo',
+						start: () => ({
+							actions: {},
+							sync: { whenDisposed: Promise.resolve() },
+							presence: {},
+							rpc: {},
+							[Symbol.dispose]() {}
+						})
+					})
+				]
+			});
+		`);
+
+		const result = await loadConfig(workDir);
+
+		expect(result.data).toBeNull();
+		expect(result.error?.name).toBe('InvalidHost');
 	});
 
 	test('rejects missing default config helper', async () => {

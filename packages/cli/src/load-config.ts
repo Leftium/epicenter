@@ -3,7 +3,7 @@
  *
  * `epicenter.config.ts` is a daemon host manifest. The loader reads the
  * default `defineEpicenterConfig({ hosts })` export, validates host definitions,
- * starts them with project context, and returns the internal `WorkspaceEntry[]`
+ * starts them with project context, and returns the internal `HostedDaemonWorkspace[]`
  * used by the daemon server.
  */
 
@@ -18,7 +18,7 @@ import {
 	type DaemonWorkspace,
 	EPICENTER_CONFIG,
 	EPICENTER_DAEMON_HOST,
-	type WorkspaceEntry,
+	type HostedDaemonWorkspace,
 } from '@epicenter/workspace/daemon';
 import {
 	defineErrors,
@@ -29,13 +29,13 @@ import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
-export type { DaemonWorkspace, WorkspaceEntry };
+export type { DaemonWorkspace, HostedDaemonWorkspace };
 
 /** Per-peer awareness state under the standard peer schema. */
 export type AwarenessState = PeerAwarenessState;
 
 export type LoadConfigResult = {
-	entries: WorkspaceEntry[];
+	entries: HostedDaemonWorkspace[];
 	/**
 	 * Release every hosted workspace. Host teardown starts by destroying the
 	 * Y.Doc, then the loader awaits sync teardown barriers exposed by hosts.
@@ -116,7 +116,8 @@ export const LoadError = defineErrors({
 	}) => ({
 		message:
 			`Invalid daemon host ${index} in ${configPath}: ` +
-			`expected actions, sync, presence, rpc, and [Symbol.dispose].`,
+			`expected a daemon runtime with actions, sync teardown/status, ` +
+			`presence peers/observe/waitForPeer, rpc.rpc, and [Symbol.dispose].`,
 		configPath,
 		index,
 	}),
@@ -175,15 +176,44 @@ function isDaemonWorkspace(value: unknown): value is DaemonWorkspace {
 	const record = value as Record<PropertyKey, unknown>;
 	return (
 		isPlainObject(record.actions) &&
-		isPlainObject(record.sync) &&
-		isPlainObject(record.presence) &&
-		isPlainObject(record.rpc) &&
+		isSyncRuntime(record.sync) &&
+		isPresenceRuntime(record.presence) &&
+		isRpcRuntime(record.rpc) &&
 		typeof record[Symbol.dispose] === 'function'
 	);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+	return (
+		value != null &&
+		(typeof value === 'object' || typeof value === 'function') &&
+		typeof (value as { then?: unknown }).then === 'function'
+	);
+}
+
+function isSyncRuntime(value: unknown): boolean {
+	if (!isPlainObject(value)) return false;
+	return (
+		isPromiseLike(value.whenDisposed) &&
+		typeof value.onStatusChange === 'function'
+	);
+}
+
+function isPresenceRuntime(value: unknown): boolean {
+	if (!isPlainObject(value)) return false;
+	return (
+		typeof value.peers === 'function' &&
+		typeof value.observe === 'function' &&
+		typeof value.waitForPeer === 'function'
+	);
+}
+
+function isRpcRuntime(value: unknown): boolean {
+	return isPlainObject(value) && typeof value.rpc === 'function';
 }
 
 function isValidRoute(route: string): boolean {
@@ -240,7 +270,7 @@ export async function loadConfig(
 		definitions.push(definition);
 	}
 
-	const entries: WorkspaceEntry[] = [];
+	const entries: HostedDaemonWorkspace[] = [];
 
 	for (const [index, definition] of definitions.entries()) {
 		let workspace: unknown;

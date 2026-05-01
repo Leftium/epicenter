@@ -27,7 +27,7 @@ export {
 	type CreateSessionTokenGetterOptions,
 	createSessionTokenGetter,
 } from './client/session-token.js';
-export { buildApp, PeerSnapshot, RunRequest } from './daemon/app.js';
+export { buildDaemonApp, PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
 	type DaemonClient,
 	DaemonError,
@@ -52,9 +52,9 @@ export {
 } from './daemon/paths.js';
 export { RunError, type RunResponse } from './daemon/run-errors.js';
 export {
-	createWorkspaceServer,
-	type WorkspaceServer,
-	type WorkspaceServerOptions,
+	createDaemonServer,
+	type DaemonServer,
+	type DaemonServerOptions,
 } from './daemon/server.js';
 export type {
 	DaemonHostDefinition,
@@ -63,7 +63,7 @@ export type {
 	DefineEpicenterConfigOptions,
 	EpicenterConfig,
 	EpicenterConfigContext,
-	WorkspaceEntry,
+	HostedDaemonWorkspace,
 } from './daemon/types.js';
 export {
 	bindOrRecover,

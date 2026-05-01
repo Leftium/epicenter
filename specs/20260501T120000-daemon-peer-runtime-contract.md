@@ -220,12 +220,12 @@ workspace.sync; // daemon contract
 
 This is why the generic `DaemonHostDefinition<TWorkspace>` matters. We can keep app-specific return precision without adding an index signature to `DaemonWorkspace`.
 
-### Workspace Entry
+### Hosted Daemon Workspace
 
-A `WorkspaceEntry` is the daemon server's routed wrapper:
+A `HostedDaemonWorkspace` is the daemon server's routed wrapper:
 
 ```ts
-type WorkspaceEntry = {
+type HostedDaemonWorkspace = {
 	route: string;
 	workspace: DaemonWorkspace;
 };
@@ -296,7 +296,7 @@ Implication: decide whether each caller is a daemon or a local action host. Do n
 | Decision | Choice | Rationale |
 | --- | --- | --- |
 | What is a daemon? | A route-addressed workspace peer | The CLI command set is built around online lifecycle, peer discovery, and action invocation. |
-| Where does `route` live? | Only on `DaemonHostDefinition` and `WorkspaceEntry` | Route is routing metadata. The started workspace should not repeat it. |
+| Where does `route` live? | Only on `DaemonHostDefinition` and `HostedDaemonWorkspace` | Route is routing metadata. The started workspace should not repeat it. |
 | Are `actions` required? | Yes | `list` and local `run` are core daemon behaviors. Empty actions are allowed. |
 | Is `sync` required? | Yes | `up` means "bring this route online." A daemon without sync is just an action host. |
 | Is `presence` required? | Yes | Peer discovery is part of the daemon surface. Silent absence makes `peers` misleading. |
@@ -324,11 +324,11 @@ DaemonHostDefinition
   |
   | loadConfig starts host
   v
-WorkspaceEntry
+HostedDaemonWorkspace
   route: string
   workspace: DaemonWorkspace
   |
-  | buildApp routes IPC requests
+  | buildDaemonApp routes IPC requests
   v
 DaemonWorkspace
   actions: Actions
@@ -489,7 +489,7 @@ For the daemon CLI, these are not independent optional features. They form a pat
 run --peer bob notes.entries.create
   |
   v
-route "notes" selects WorkspaceEntry
+route "notes" selects HostedDaemonWorkspace
   |
   v
 presence.waitForPeer("bob") finds clientID
@@ -560,7 +560,7 @@ An empty action tree is a valid peer daemon. Missing RPC is not.
 
 ### Invariant 2: The Route Is Not Runtime State
 
-The route belongs to `DaemonHostDefinition` and `WorkspaceEntry`. It should not be returned from `start`.
+The route belongs to `DaemonHostDefinition` and `HostedDaemonWorkspace`. It should not be returned from `start`.
 
 Allowed:
 
@@ -860,7 +860,7 @@ The migration path is either:
 
 | File | Why |
 | --- | --- |
-| `packages/workspace/src/daemon/types.ts` | Defines `DaemonWorkspace`, `DaemonHostDefinition`, and `WorkspaceEntry`. |
+| `packages/workspace/src/daemon/types.ts` | Defines `DaemonWorkspace`, `DaemonHostDefinition`, and `HostedDaemonWorkspace`. |
 | `packages/workspace/src/daemon/app.ts` | Uses presence for `/peers` and actions for `/list`. |
 | `packages/workspace/src/daemon/run-handler.ts` | Uses actions locally and presence plus RPC for `--peer`. |
 | `packages/cli/src/load-config.ts` | Runtime validation and disposal behavior for started daemon hosts. |

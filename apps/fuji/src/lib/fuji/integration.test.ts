@@ -5,7 +5,7 @@ import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
-import { createWorkspaceServer } from '@epicenter/workspace/node';
+import { createDaemonServer } from '@epicenter/workspace/node';
 import { defineFujiDaemon } from './daemon.js';
 import { openFujiScript, openFujiSnapshot } from './script.js';
 
@@ -59,7 +59,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 		});
 		const oldRuntimeDir = process.env.XDG_RUNTIME_DIR;
 		process.env.XDG_RUNTIME_DIR = '/tmp';
-		const server = createWorkspaceServer({
+		const server = createDaemonServer({
 			projectDir: workdir,
 			workspaces: [{ route: daemonDefinition.route, workspace: daemon }],
 		});

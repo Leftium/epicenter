@@ -24,7 +24,7 @@
 					class="mx-auto max-w-5xl px-6 flex items-center justify-between h-14"
 				>
 					<span class="text-sm font-semibold tracking-tight">Epicenter</span>
-					<UserMenu />
+					<UserMenu user={snapshot.session.user} />
 				</div>
 			</header>
 			<div class="mx-auto max-w-5xl px-6 py-12">{@render children()}</div>

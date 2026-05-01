@@ -628,7 +628,7 @@ Only one helper mutates the in-memory snapshot:
 
 ```ts
 function setSnapshot(next: AuthSnapshot) {
-	if (authSnapshotEquals(snapshot, next)) return;
+	if (snapshotsEqual(snapshot, next)) return;
 	const previous = snapshot;
 	snapshot = next;
 	for (const subscriber of subscribers) {

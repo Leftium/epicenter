@@ -173,14 +173,14 @@ export function createAuth({
 		);
 	}
 
-	function authSnapshotEquals(left: AuthSnapshot, right: AuthSnapshot) {
+	function snapshotsEqual(left: AuthSnapshot, right: AuthSnapshot) {
 		if (left.status !== right.status) return false;
 		if (left.status !== 'signedIn' || right.status !== 'signedIn') return true;
 		return sessionsEqual(left.session, right.session);
 	}
 
 	function setSnapshot(next: AuthSnapshot) {
-		if (authSnapshotEquals(snapshot, next)) return;
+		if (snapshotsEqual(snapshot, next)) return;
 		const previous = snapshot;
 		snapshot = next;
 		for (const subscriber of snapshotSubs) {
@@ -204,7 +204,8 @@ export function createAuth({
 	function reconcileBetterAuthCandidate(next: Session | null | undefined) {
 		if (next === undefined) return;
 		if (next === null) {
-			if (snapshot.status !== 'loading') writeLocalSnapshot({ status: 'signedOut' });
+			if (snapshot.status !== 'loading')
+				writeLocalSnapshot({ status: 'signedOut' });
 			return;
 		}
 
@@ -313,7 +314,9 @@ export function createAuth({
 		subscribe(fn) {
 			const current = snapshot;
 			const previous =
-				current.status === 'loading' ? current : ({ status: 'loading' } as const);
+				current.status === 'loading'
+					? current
+					: ({ status: 'loading' } as const);
 			safeRun(() => fn(current, previous));
 			snapshotSubs.add(fn);
 			return () => {

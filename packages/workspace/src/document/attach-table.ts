@@ -150,9 +150,10 @@ export type TableDefinitions = Record<
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Type-safe runtime handle for a single workspace table.
+ * Type-safe read-only runtime handle for a single workspace table.
  *
- * Provides CRUD operations with schema validation and migration on read.
+ * Provides parsing, validated reads, queries, and observation. It intentionally
+ * has no write methods.
  *
  * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
  */
@@ -161,7 +162,7 @@ export type ReadonlyTable<TRow extends BaseRow> = {
 	name: string;
 
 	/**
-	 * The underlying `TableDefinition` (schema + migration) this Table was
+	 * The underlying `TableDefinition` (schema + migration) this table was
 	 * attached with. Exposed for consumers that need the raw schema: e.g.,
 	 * the sqlite materializer generating DDL.
 	 */
@@ -342,7 +343,7 @@ export function attachReadonlyTables<T extends TableDefinitions>(
 }
 
 /**
- * Construct a Table from any `ObservableKvStore` and a TableDefinition.
+ * Construct a ReadonlyTable from any `ObservableKvStore` and a TableDefinition.
  *
  * Exported so `@epicenter/workspace` can reuse the exact same helper logic
  * over its encrypted store wrapper.
@@ -510,7 +511,7 @@ export function createTable<
 			const { data: validated, error: mergedError } = readonly.parse(id, merged);
 			if (mergedError) return Err(mergedError);
 
-			this.set(validated);
+			ykv.set(validated.id, validated);
 			return Ok(validated);
 		},
 

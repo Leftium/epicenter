@@ -127,7 +127,11 @@ describe('attachEncryption', () => {
 			_v: 1,
 		});
 		expect('set' in reader).toBe(false);
+		expect('bulkSet' in reader).toBe(false);
+		expect('update' in reader).toBe(false);
 		expect('delete' in reader).toBe(false);
+		expect('bulkDelete' in reader).toBe(false);
+		expect('clear' in reader).toBe(false);
 	});
 
 	test('attachReadonlyTables returns readonly helpers keyed by definition', () => {
@@ -147,6 +151,11 @@ describe('attachEncryption', () => {
 			{ id: '1', title: 'Secret row', _v: 1 },
 		]);
 		expect('set' in readers.entries).toBe(false);
+		expect('bulkSet' in readers.entries).toBe(false);
+		expect('update' in readers.entries).toBe(false);
+		expect('delete' in readers.entries).toBe(false);
+		expect('bulkDelete' in readers.entries).toBe(false);
+		expect('clear' in readers.entries).toBe(false);
 	});
 
 	describe('at-rest upgrade on key rotation', () => {

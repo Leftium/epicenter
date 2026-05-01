@@ -6,9 +6,9 @@
 
 ## Overview
 
-Split table attachment into read-only and writable layers, then use that split to make Fuji script writes honest. This spec supports an authoritative daemon-backed `tables` API and a fast local `snapshot`. `fuji.tables` is async and goes through `/run` for reads and writes. `fuji.snapshot` is sync, local, read-only, and allowed to be stale. Sync-peer writes are valid Yjs, but they are deferred until the sync package has a named, tested save barrier.
+Split table attachment into read-only and writable layers, then use that split to make Fuji script reads honest. This spec supports a fast local `snapshot` and raw daemon `actions`. `fuji.snapshot` is local, read-only, and allowed to be stale. Durable writes go through daemon actions. Sync-peer writes and table-shaped daemon facades are deferred until they have named, tested contracts.
 
-One sentence: Fuji scripts use daemon-backed tables for source-of-truth reads and writes, and use snapshots for fast local inspection.
+One sentence: Fuji scripts use snapshots for fast local inspection and daemon actions for durable commands.
 
 ## Motivation
 
@@ -77,24 +77,22 @@ export function createTable(store, definition, name) {
 }
 ```
 
-Fuji scripts should expose a read-only snapshot, raw daemon actions, and an authoritative daemon-backed table API:
+Fuji scripts should expose a read-only snapshot and raw daemon actions:
 
 ```ts
-using snapshot = openFujiSnapshot({ projectDir });
+using snapshot = await openFujiSnapshot({ projectDir });
 const rows = snapshot.tables.entries.getAllValid();
 
 const actions = await openFujiDaemonActions({ projectDir });
-await actions.entries.create({ title: 'Draft' });
+const created = await actions.entries.create({ title: 'Draft' });
+if (created.error) throw created.error;
 
 await using fuji = await openFujiScript({ projectDir });
-const existing = await fuji.tables.entries.getAllValid();
-const first = existing[0];
-if (first) await fuji.tables.entries.update(first.id, { title: `Imported ${existing.length}` });
 const fastSnapshotRows = fuji.snapshot.entries.getAllValid();
 await fuji.actions.entries.create({ title: 'Raw action access stays available' });
 ```
 
-Do not add `openFujiPeer()` or `flush()` in this spec. If a future script needs direct peer writes, introduce that in a separate sync-save-barrier spec and name the guarantee precisely.
+Do not add `openFujiPeer()`, `flush()`, or a daemon-backed table facade in this spec. If a future script needs direct peer writes or table-shaped daemon calls, introduce that in a separate spec and name the guarantee precisely.
 
 ## Research Findings
 
@@ -109,7 +107,7 @@ Do not add `openFujiPeer()` or `flush()` in this spec. If a future script needs 
 | Observation | `observe` | No, but subscribes to changes |
 | Writes | `set`, `bulkSet`, `update`, `delete`, `bulkDelete`, `clear` | Yes |
 
-The current implementation defines local `parseRow()` and then returns one object containing both groups. `update()` already calls `this.get()` and `this.set()`, which means a writable table can be built by composing the read object and adding write methods.
+The original implementation defined local `parseRow()` and then returned one object containing both groups. The writable table can be built by composing the read object and adding write methods, with `update()` writing through the captured store instead of depending on a method receiver.
 
 ### Encryption Coordinator
 
@@ -171,16 +169,20 @@ Limits:
 2. SQLite and Markdown materializers are projections. `/run` can return before these projections finish.
 3. Fuji `bulkCreate` currently calls `tables.entries.bulkSet(rows)` without `await`. For more than one chunk, `/run` can return before all rows are written.
 
-### Daemon-Backed Table Facade
+### Deferred Daemon-Backed Table Facade
 
-A short-lived script can have a table-shaped API if the authoritative methods are daemon-backed and async:
+A short-lived script could have a table-shaped API if the authoritative methods are daemon-backed and async:
 
 ```ts
 await using fuji = await openFujiScript({ projectDir });
 
-const rows = await fuji.tables.entries.getAllValid();
-await fuji.tables.entries.update(rows[0].id, { title: 'Revised title' });
-await fuji.tables.entries.delete(rows[0].id);
+const rows = await fuji.actions.entries.getAllValid({});
+if (rows.error) throw rows.error;
+await fuji.actions.entries.update({
+	id: rows.data[0].id,
+	title: 'Revised title',
+});
+await fuji.actions.entries.delete({ id: rows.data[0].id });
 
 const fastRows = fuji.snapshot.entries.getAllValid();
 ```
@@ -189,7 +191,7 @@ This is not the same as exposing the script-local `Table` object. The local snap
 
 The facade should be app-specific, not a blind generic wrapper around `Table`. Generic read methods are fine when their inputs are serializable. Generic write methods such as raw `set`, hard `delete`, `bulkDelete`, or `clear` can bypass Fuji semantics such as generated IDs, `updatedAt`, soft delete, restore, and future side effects.
 
-Methods that accept functions need a named rule. A predicate cannot cross `/run`, so `fuji.tables.entries.filter(predicate)` should either call `getAllValid()` through the daemon and filter client-side, or stay only on `fuji.snapshot.entries`. The default should favor clarity: expose daemon queries for serializable reads, and use snapshots for local predicate-heavy work.
+Methods that accept functions need a named rule. A predicate cannot cross `/run`, so a future `fuji.tables.entries.filter(predicate)` should either call `getAllValid()` through the daemon and filter client-side, or stay only on `fuji.snapshot.entries`. The current default favors clarity: expose daemon actions for serializable reads, and use snapshots for local predicate-heavy work.
 
 The authoritative facade can still feel table-shaped, but the backing methods should map to Fuji actions:
 
@@ -206,7 +208,7 @@ The authoritative facade can still feel table-shaped, but the backing methods sh
 | `restore(id)` | `actions.entries.restore({ id })` | Existing action. |
 | `bulkCreate(input)` | `actions.entries.bulkCreate(input)` | Existing action, but handler must await `bulkSet`. |
 
-Do not expose hard delete, bulk hard delete, or clear on the default script facade unless there is a separate admin or repair API.
+Do not implement this facade in the current script surface. The previous `createFujiScriptEntryTable()` shape was a one-off adapter that made daemon actions look like a table without creating a reusable contract. If this comes back, it should be a generic table-action bridge or an app-level facade with its own spec, not Fuji-local glue.
 
 ## Option Matrix
 
@@ -229,12 +231,12 @@ Do not expose hard delete, bulk hard delete, or clear on the default script faca
 | Encrypted read-only tables | Add methods on the encryption coordinator | Mirrors existing `attachTable` and `attachTables` coordinator pattern. |
 | Fuji snapshot | Return read-only tables and no local actions | Snapshots are for inspection, export, and predicate-heavy local reads. They may be stale. |
 | Daemon actions | Keep `openFujiDaemonActions()` separate | This is the durable write surface for scripts. The daemon owns the source-of-truth Yjs log. |
-| Daemon-backed tables | Add async table-shaped reads and writes on `openFujiScript().tables` | Gives script authors source-of-truth table ergonomics without mutating the script-local Y.Doc. |
-| High-level script helper | Compose daemon-backed tables, flattened snapshot tables, and raw actions | Gives scripts a clear split: authoritative daemon tables, fast local snapshot, raw action escape hatch. |
-| Snapshot naming in `openFujiScript()` | Expose `fuji.snapshot.entries`, not `fuji.snapshot.tables.entries` | Keeps `fuji.tables.entries` and `fuji.snapshot.entries` at the same call-site depth. Standalone `openFujiSnapshot()` still returns `{ tables, yjsLog }` for lower-level metadata. |
+| Daemon-backed tables | Defer table-shaped reads and writes | A one-off Fuji adapter is misleading. Raw daemon actions are honest until a reusable table-action contract exists. |
+| High-level script helper | Compose flattened snapshot tables and raw actions | Gives scripts local reads plus durable daemon commands without a fake table API. |
+| Snapshot naming in `openFujiScript()` | Expose `fuji.snapshot.entries`, not `fuji.snapshot.tables.entries` | Keeps the common local-read path short. Standalone `openFujiSnapshot()` still returns `{ tables, yjsLog }` for lower-level metadata. |
 | Fuji peer | Defer `openFujiPeer()` | Peer writes are Yjs-valid, but this spec is about honest offline scripting. |
 | Sync flush | Defer `flush()` | The current ack can support a future server-save API, not a local daemon durability API. |
-| Async open functions | Only `openFujiScript()` must be async | `openFujiSnapshot()` can be synchronous when it only replays the local Yjs log. The daemon proxy remains async because it connects to the socket. |
+| Async open functions | Make both `openFujiSnapshot()` and `openFujiScript()` async | Snapshots may load saved session keys before replaying the local Yjs log. The daemon proxy remains async because it connects to the socket. |
 
 ## Architecture
 
@@ -270,7 +272,6 @@ openFujiDaemonActions()
   `-- connectDaemonActions({ route, projectDir })
 
 openFujiScript()
-  |-- tables: daemon-backed async table API
   |-- snapshot: openFujiSnapshot().tables
   |-- actions: openFujiDaemonActions()
   `-- dispose: closes the underlying snapshot attachment and daemon client resources
@@ -341,70 +342,43 @@ export type OpenFujiSnapshotOptions = {
 	clientID?: number;
 };
 
-export function openFujiSnapshot(options?: OpenFujiSnapshotOptions): {
+export async function openFujiSnapshot(options?: OpenFujiSnapshotOptions): Promise<{
 	tables: ReadonlyTables<typeof fujiTables>;
 	yjsLog: YjsLogReaderAttachment;
 	[Symbol.dispose](): void;
-};
+}>;
 
 export function openFujiDaemonActions(options?: {
 	route?: string;
 	projectDir?: ProjectDir;
 }): Promise<DaemonActions<ReturnType<typeof createFujiActions>>>;
 
-export type FujiScriptEntryTable = {
-	get(
-		id: InferTableRow<typeof fujiTables.entries>['id'],
-	): Promise<Result<InferTableRow<typeof fujiTables.entries> | null, TableParseError>>;
-	getAllValid(): Promise<Array<InferTableRow<typeof fujiTables.entries>>>;
-	filter(
-		predicate: (row: InferTableRow<typeof fujiTables.entries>) => boolean,
-	): Promise<Array<InferTableRow<typeof fujiTables.entries>>>;
-	find(
-		predicate: (row: InferTableRow<typeof fujiTables.entries>) => boolean,
-	): Promise<InferTableRow<typeof fujiTables.entries> | undefined>;
-	count(): Promise<number>;
-	has(id: InferTableRow<typeof fujiTables.entries>['id']): Promise<boolean>;
-	create(input: FujiEntryCreateInput): Promise<unknown>;
-	set(row: InferTableRow<typeof fujiTables.entries>): Promise<unknown>;
-	update(
-		id: InferTableRow<typeof fujiTables.entries>['id'],
-		partial: FujiEntryUpdatePatch,
-	): Promise<unknown>;
-	delete(id: InferTableRow<typeof fujiTables.entries>['id']): Promise<unknown>;
-	restore(id: InferTableRow<typeof fujiTables.entries>['id']): Promise<unknown>;
-	bulkCreate(input: FujiEntryBulkCreateInput): Promise<unknown>;
-};
-
 export async function openFujiScript(options?: {
 	route?: string;
 	projectDir?: ProjectDir;
 	clientID?: number;
 }): Promise<{
-	tables: {
-		entries: FujiScriptEntryTable;
-	};
 	snapshot: ReadonlyTables<typeof fujiTables>;
 	actions: DaemonActions<ReturnType<typeof createFujiActions>>;
 	[Symbol.asyncDispose](): Promise<void>;
 }>;
 ```
 
-The input helper types should be derived from action schemas where practical. The public behavior matters more than the exact type plumbing: authoritative reads and writes live on `tables`; fast local reads live on `snapshot`; raw actions remain on `actions`.
+The script surface intentionally keeps the two shapes separate: fast local reads live on `snapshot`; durable commands live on `actions`.
 
-`openFujiScript()` still owns the full snapshot attachment internally so it can dispose the Y.Doc and close the Yjs log reader. It only exposes the attachment's tables as `snapshot` because the high-level script API should keep these two paths symmetrical:
+`openFujiScript()` still owns the full snapshot attachment internally so it can dispose the Y.Doc and close the Yjs log reader. It only exposes the attachment's tables as `snapshot`:
 
 ```ts
-await fuji.tables.entries.getAllValid();
 fuji.snapshot.entries.getAllValid();
+await fuji.actions.entries.create({ title: 'Draft' });
 ```
 
-Do not add `openFujiPeer()` in this spec. Do not add `flush()` in this spec.
+Do not add `openFujiPeer()`, `flush()`, or a daemon-backed table facade in this spec.
 
 Call sites:
 
 ```ts
-using snapshot = openFujiSnapshot({ projectDir });
+using snapshot = await openFujiSnapshot({ projectDir });
 
 const drafts = snapshot.tables.entries.filter((entry) =>
 	entry.tags.includes('draft'),
@@ -420,10 +394,13 @@ await actions.entries.create({ title: 'Offline local draft' });
 ```ts
 await using fuji = await openFujiScript({ projectDir });
 
-const existing = await fuji.tables.entries.getAllValid();
-await fuji.tables.entries.create({ title: `Imported ${existing.length}` });
-const first = existing[0];
-if (first) await fuji.tables.entries.update(first.id, { tags: ['imported'] });
+const existing = await fuji.actions.entries.getAllValid({});
+if (existing.error) throw existing.error;
+await fuji.actions.entries.create({
+	title: `Imported ${existing.data.length}`,
+});
+const first = existing.data[0];
+if (first) await fuji.actions.entries.update({ id: first.id, tags: ['imported'] });
 const fastRows = fuji.snapshot.entries.getAllValid();
 ```
 
@@ -450,18 +427,18 @@ const fastRows = fuji.snapshot.entries.getAllValid();
 - [x] **3.2** `openFujiSnapshot()` returns read-only tables, `yjsLog`, and disposal. It does not return `actions`, `ydoc`, `batch`, `sync`, `rpc`, or writable tables.
 - [x] **3.3** Keep `openFujiDaemonActions()` in `daemon.ts` as the durable write surface.
 - [x] **3.4** Add daemon query actions for serializable reads such as `get`, `getAllValid`, `count`, and `has`.
-- [x] **3.5** Add a daemon-backed Fuji table facade for authoritative script reads and writes.
-- [x] **3.6** Add `entries.upsert` only if `fuji.tables.entries.set(row)` is part of the public script API.
-- [x] **3.7** Add `openFujiScript()` as `{ tables, snapshot, actions }`.
+- [x] **3.5** Defer the daemon-backed Fuji table facade until a reusable table-action contract exists.
+- [x] **3.6** Keep `entries.upsert` as a raw daemon action for import and repair scripts.
+- [x] **3.7** Add `openFujiScript()` as `{ snapshot, actions }`.
 - [x] **3.8** Make `openFujiScript().snapshot` expose readonly tables directly as `fuji.snapshot.entries`, while disposing the underlying snapshot attachment internally.
-- [x] **3.9** Update Fuji script and integration tests to use authoritative `tables` plus read-only `snapshot`.
+- [x] **3.9** Update Fuji script and integration tests to use raw daemon `actions` plus read-only `snapshot`.
 
 ### Phase 4: Daemon Action Return Guarantees
 
 - [x] **4.1** Fix Fuji `bulkCreate` so the handler awaits `tables.entries.bulkSet(rows)`.
 - [x] **4.2** Document that `/run` success means the daemon action handler returned, not that projections are flushed.
 - [x] **4.3** Decide whether a separate projection flush contract is needed for SQLite and Markdown materializers.
-  Decision: not for this script table API. `fuji.tables` promises daemon action completion and Yjs log ownership, not projection visibility.
+  Decision: not for this script API. Raw daemon actions promise action completion and Yjs log ownership, not projection visibility.
 - [x] **4.4** If projection visibility is required, add a named contract such as `workspace.projections.flush()` and have callers opt into it.
   Decision: deferred until a caller needs projection visibility rather than table/action visibility.
 
@@ -494,21 +471,21 @@ This is expected. Read-only means this handle does not expose local write method
 
 ```ts
 await using fuji = await openFujiScript(options);
-await fuji.tables.entries.create({ title: 'Fresh daemon row' });
+await fuji.actions.entries.create({ title: 'Fresh daemon row' });
 
-const fresh = await fuji.tables.entries.getAllValid();
+const fresh = await fuji.actions.entries.getAllValid({});
 const maybeStale = fuji.snapshot.entries.getAllValid();
 ```
 
-This is expected. `fuji.tables` is the source-of-truth API. `fuji.snapshot` is a fast local replay and can lag until the caller opens a new snapshot or a future live snapshot mode exists.
+This is expected. `fuji.actions` is the source-of-truth API. `fuji.snapshot` is a fast local replay and can lag until the caller opens a new snapshot or a future live snapshot mode exists.
 
 ### Caller Imports Raw `openFujiDoc`
 
 `openFujiDoc()` still returns writable tables because it is the isomorphic document factory. This is acceptable. The read-only guarantee applies to the snapshot surface, not to every possible internal import.
 
-### Encrypted Snapshot Without Keys
+### Encrypted Snapshot Keys
 
-If encrypted stores require keys to read meaningful data, `openFujiSnapshot()` must either apply keys before returning or expose a clear readiness or error state. This spec does not change encryption semantics.
+If the daemon log contains encrypted rows, `openFujiSnapshot()` and `openFujiScript()` read the saved Node session from `$EPICENTER_HOME/auth/sessions.json` and apply the saved encryption keys for the Epicenter API. Without a saved session, the snapshot can still read plaintext rows, but encrypted rows remain unreadable.
 
 ### Script Wants Direct Peer Writes
 
@@ -516,11 +493,11 @@ Deferred. Direct peer writes are not exposed by the Fuji script package yet. The
 
 ### Script Needs Local Durable Writes While Offline
 
-Use the daemon-backed table facade or raw daemon actions, not peer actions:
+Use raw daemon actions, not peer actions:
 
 ```ts
 await using fuji = await openFujiScript(options);
-await fuji.tables.entries.create({ title: 'Offline local draft' });
+await fuji.actions.entries.create({ title: 'Offline local draft' });
 ```
 
 This requires the local daemon to be running, but it does not require internet. The daemon owns `attachYjsLog`, SQLite, and Markdown materializers. The Yjs log is the source of truth; SQLite and Markdown are projections.
@@ -543,9 +520,9 @@ Daemon actions should fail clearly with the existing daemon-required error. Do n
    - Options: no sync in this spec, always connect, connect only when requested.
    - Recommendation: no sync in this spec. Start with a true local snapshot. Add sync-backed snapshots only when a real use case needs live read observation.
 
-4. **Should `openFujiScript()` expose raw actions as well as table-shaped writes?**
-   - Options: expose only the table facade, expose only raw actions, or expose both.
-   - Recommendation: expose both. The table facade gives common scripts a familiar write shape. Raw actions preserve app-specific commands that are not table-shaped.
+4. **Should `openFujiScript()` expose table-shaped writes?**
+   - Options: expose only raw actions now, or add a reusable table-action bridge later.
+   - Recommendation: expose only raw actions now. A Fuji-local table wrapper is too easy to confuse with a real table. Add table-shaped writes later only with a generic contract.
 
 5. **Should per-script local persistence exist later?**
    - Options: add per-script Yjs logs, add an action outbox, or require daemon actions.
@@ -562,7 +539,7 @@ Daemon actions should fail clearly with the existing daemon-required error. Do n
 - `bun run --cwd apps/fuji typecheck`
 - Type-level checks that `openFujiSnapshot().tables.entries.set` is not callable.
 - Runtime tests that `'set' in snapshot.tables.entries` is false.
-- Integration test proving `openFujiScript().tables.entries.create(...)` writes through the daemon and is visible to a fresh `openFujiSnapshot()`.
+- Integration test proving `openFujiScript().actions.entries.create(...)` writes through the daemon and is visible to a fresh `openFujiSnapshot()`.
 
 ## Review
 
@@ -570,9 +547,9 @@ Implemented the core split:
 
 - Workspace now has first-class read-only table primitives for plaintext and encrypted stores.
 - Writable tables compose from read-only tables, so runtime capabilities match the type surface.
-- Fuji scripts now expose `openFujiSnapshot()` for local read-only replay and `openFujiScript()` for daemon-backed async table reads and writes.
+- Fuji scripts now expose async `openFujiSnapshot()` for local read-only replay and `openFujiScript()` for raw daemon actions plus a local snapshot. Both auto-load saved session keys by default.
 - Fuji daemon actions now include serializable read queries plus `upsert`, and `bulkCreate` awaits the actual table write.
-- The daemon integration test proves a script table create call goes through the daemon and is visible from a fresh snapshot.
+- The daemon integration test proves a script action create call goes through the daemon and is visible from a fresh snapshot.
 
 Verification status:
 

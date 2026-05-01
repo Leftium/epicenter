@@ -33,8 +33,10 @@ describe('createTable', () => {
 			expect(helper.count()).toBe(1);
 			expect(helper.has('1')).toBe(true);
 			expect('set' in helper).toBe(false);
+			expect('bulkSet' in helper).toBe(false);
 			expect('update' in helper).toBe(false);
 			expect('delete' in helper).toBe(false);
+			expect('bulkDelete' in helper).toBe(false);
 			expect('clear' in helper).toBe(false);
 		});
 
@@ -54,6 +56,11 @@ describe('createTable', () => {
 				_v: 1,
 			});
 			expect('set' in reader).toBe(false);
+			expect('bulkSet' in reader).toBe(false);
+			expect('update' in reader).toBe(false);
+			expect('delete' in reader).toBe(false);
+			expect('bulkDelete' in reader).toBe(false);
+			expect('clear' in reader).toBe(false);
 		});
 	});
 
@@ -282,6 +289,22 @@ describe('createTable', () => {
 
 			expect(error).toBeNull();
 			expect(data).toBeNull();
+		});
+
+		test('update can be called after destructuring', () => {
+			const { ykv } = setup();
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
+			const helper = createTable(ykv, definition, 'test');
+			const update = helper.update;
+
+			helper.set({ id: '1', name: 'Alice', _v: 1 });
+			const { data, error } = update('1', { name: 'Bob' });
+
+			expect(error).toBeNull();
+			expect(data).toEqual({ id: '1', name: 'Bob', _v: 1 });
+			expect(helper.get('1').data).toEqual({ id: '1', name: 'Bob', _v: 1 });
 		});
 
 		test('update returns ValidationFailed for corrupted data', () => {

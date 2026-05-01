@@ -148,7 +148,7 @@ async function resolveInput(input: string | undefined): Promise<unknown> {
  * Two miss shapes: nothing seen on the wire (probably a connect-status
  * problem) vs peers visible but none matched the requested peer id.
  */
-export function emitMissError(
+function emitMissError(
 	target: string,
 	sawPeers: boolean,
 	waitMs: number,
@@ -212,7 +212,7 @@ function describePeerMissReason(status: RunSyncStatus): string {
  * variant to `@epicenter/workspace`'s `RpcError` breaks the build until a
  * case is added here.
  */
-export function emitRpcError(error: RpcError, peerTarget: string): void {
+function emitRpcError(error: RpcError, peerTarget: string): void {
 	switch (error.name) {
 		case 'ActionNotFound':
 			outputError(`error: ActionNotFound "${error.action}" on ${peerTarget}`);
@@ -236,7 +236,7 @@ export function emitRpcError(error: RpcError, peerTarget: string): void {
 	}
 }
 
-export function emitPeerLeftError(
+function emitPeerLeftError(
 	peerTarget: string,
 	targetClientId: number,
 	peerState: PeerAwarenessState,

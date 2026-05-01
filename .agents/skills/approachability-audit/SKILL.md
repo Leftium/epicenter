@@ -7,6 +7,11 @@ description: Review code from the perspective of a new TypeScript developer. Use
 
 Read the code like a smart but newly onboarded TypeScript developer.
 
+Related skills: use `post-implementation-review` for the full second-read
+ritual after implementation, `refactoring` for caller counting and inlining
+mechanics, and `cohesive-clean-breaks` when a readability issue points to the
+wrong public boundary.
+
 The goal is not "make it shorter" or "make it more abstract." The goal is:
 
 - make the first read cheaper

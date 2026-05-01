@@ -174,18 +174,12 @@ async function invokeRemoteAction<
 
 			options.rpc
 				.rpc<TMap, TAction>(targetClientId, action, input, { timeout })
-				.then((result) => settle(normalizeRpcResult(result)))
+				.then((result) => settle(result))
 				.catch((cause) =>
 					settle(Err(RpcError.ActionFailed({ action, cause }).error)),
 				);
 		},
 	);
-}
-
-function normalizeRpcResult<T>(
-	result: Result<T, RpcError>,
-): Result<T, WireRpcError> {
-	return result;
 }
 
 function peerStates<TSchema extends PeerAwareSchema>(

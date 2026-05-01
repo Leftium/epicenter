@@ -82,7 +82,6 @@ export function defineFujiDaemon({
 				awareness,
 				sync,
 				remote,
-				rpc,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();
 					await sync.whenDisposed;

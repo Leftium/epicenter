@@ -63,7 +63,6 @@ export function defineHoneycrispDaemon({
 				awareness,
 				sync,
 				remote,
-				rpc,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();
 					await sync.whenDisposed;

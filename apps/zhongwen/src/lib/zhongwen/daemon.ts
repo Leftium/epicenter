@@ -64,7 +64,6 @@ export function defineZhongwenDaemon({
 				awareness,
 				sync,
 				remote,
-				rpc,
 				actions,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();

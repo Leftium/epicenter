@@ -12,14 +12,14 @@ import {
  * - Application errors (ActionNotFound, ActionFailed) from the target peer
  *
  * Defined in `@epicenter/sync` because they describe wire-protocol failure
- * modes—both the server (Durable Object) and client construct these errors
+ * modes. Both the server (Durable Object) and client construct these errors
  * at the sync boundary.
  *
  * All errors include a `name` discriminant for switch-based handling:
  *
  * @example
  * ```typescript
- * const { data, error } = await workspace.extensions.sync.rpc(clientId, 'tabs.close', { tabIds: [1] });
+ * const { data, error } = await workspace.rpc.rpc(clientId, 'tabs.close', { tabIds: [1] });
  * if (error) {
  *   switch (error.name) {
  *     case 'PeerOffline': // target not connected

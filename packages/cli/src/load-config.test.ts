@@ -35,6 +35,7 @@ const daemonTransportFields = `
 	},
 	sync: {
 		whenDisposed: Promise.resolve(),
+		status: { phase: 'connected', hasLocalChanges: false },
 		onStatusChange: () => () => {}
 	},
 	remote: {
@@ -188,6 +189,41 @@ describe('loadDaemonConfig', () => {
 						route: 'demo',
 						start: () => ({
 							actions: {}
+						})
+					}]
+				}
+			};
+		`);
+
+		const loaded = await loadDaemonConfig(workDir);
+		expect(loaded.error).toBeNull();
+		if (loaded.error !== null) return;
+
+		const started = await startDaemonRoutes(loaded.data);
+		expect(started.data).toBeNull();
+		expect(started.error?.name).toBe('InvalidRouteRuntime');
+	});
+
+	test('rejects route runtimes missing sync status', async () => {
+		writeConfig(`
+			export default {
+				daemon: {
+					routes: [{
+						route: 'demo',
+						start: () => ({
+							actions: {},
+							awareness: {
+								peers: () => new Map(),
+								observe: () => () => {}
+							},
+							sync: {
+								whenDisposed: Promise.resolve(),
+								onStatusChange: () => () => {}
+							},
+							remote: {
+								invoke: async () => ({ data: null, error: null })
+							},
+							async [Symbol.asyncDispose]() {}
 						})
 					}]
 				}

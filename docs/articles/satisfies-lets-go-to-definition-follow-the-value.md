@@ -1,0 +1,155 @@
+# `satisfies` Lets Go to Definition Follow the Value
+
+One of the biggest advantages of using `satisfies` instead of annotated return types in TypeScript is what happens when you press Go to Definition. If I access `ws.idb`, I do not want the editor to send me to the abstract `BrowserWorkspace` shape first. I want it to show me the object that actually got returned.
+
+This keeps the trail from usage back to implementation.
+
+Here is the contract:
+
+```typescript
+type BrowserWorkspace = Workspace & {
+  idb: IndexedDbAttachment;
+  sync: SyncAttachment | null;
+
+  goOffline(): void;
+  reconnect(): void;
+  clearLocalData(): Promise<unknown>;
+};
+```
+
+Now compare two factories that both return a valid `BrowserWorkspace`.
+
+```typescript
+export function createAnnotatedWorkspace(): BrowserWorkspace {
+  const idb = createIndexedDbAttachment();
+
+  return {
+    ...createBaseWorkspace(),
+    idb,
+    sync: null,
+    goOffline() {},
+    reconnect() {},
+    async clearLocalData() {
+      return undefined;
+    },
+  };
+}
+
+const ws = createAnnotatedWorkspace();
+
+ws.idb;
+// ^ Go to Definition
+```
+
+With the explicit return annotation, `ws.idb` resolves to the contract:
+
+```txt
+ws.idb
+  |
+  | Go to Definition
+  v
+type BrowserWorkspace = Workspace & {
+	idb: IndexedDbAttachment;
+}
+```
+
+That is technically correct, but it is rarely the place I wanted to land. I already knew `idb` was part of `BrowserWorkspace`; I clicked because I wanted to see where this `idb` came from.
+
+The `satisfies` version changes that path:
+
+```typescript
+export function createSatisfiedWorkspace() {
+  const idb = createIndexedDbAttachment();
+
+  return {
+    ...createBaseWorkspace(),
+    idb,
+    sync: null,
+    goOffline() {},
+    reconnect() {},
+    async clearLocalData() {
+      return undefined;
+    },
+  } satisfies BrowserWorkspace;
+}
+
+const ws = createSatisfiedWorkspace();
+
+ws.idb;
+// ^ Go to Definition
+```
+
+Now `ws.idb` resolves to the returned object member:
+
+```txt
+ws.idb
+  |
+  | Go to Definition
+  v
+return {
+	idb,
+}
+```
+
+And from there, the next jump takes you to the local value:
+
+```txt
+return {
+	idb,
+}
+  |
+  | Go to Definition
+  v
+const idb = createIndexedDbAttachment();
+```
+
+That is the difference. The annotated return type says, "treat this value as the contract." The `satisfies` expression says, "check this value against the contract, but keep the value's own shape."
+
+```typescript
+// Erases the returned object to the named contract.
+function createAnnotatedWorkspace(): BrowserWorkspace {
+	return { ... };
+}
+
+// Checks the contract while preserving the returned object.
+function createSatisfiedWorkspace() {
+	return { ... } satisfies BrowserWorkspace;
+}
+```
+
+This matters most in factory-heavy code. Factories are already organized around the return object: state above, public API inside the returned shape. When Go to Definition lands inside that shape, the editor is following the same structure the code is written in.
+
+The type is still available. It just belongs to the command that asks for type information:
+
+| Cursor          | Go to Definition       | Go to Type Definition |
+| --------------- | ---------------------- | --------------------- |
+| `annotated.idb` | `BrowserWorkspace.idb` | `IndexedDbAttachment` |
+| `satisfied.idb` | returned `idb` member  | `IndexedDbAttachment` |
+
+So this is not "ignore the type." The type check still happens. The difference is that normal navigation follows the implementation first.
+
+There are two caveats worth saying out loud.
+
+First, `satisfies` preserves narrow inferred types. If your object says `sync: null`, the inferred return type contains `sync: null`, not `sync: SyncAttachment | null`. If the public value really needs the wider type, make the value wide before returning it:
+
+```typescript
+function createSatisfiedWorkspace() {
+  const idb = createIndexedDbAttachment();
+  const sync: SyncAttachment | null = null;
+
+  return {
+    ...createBaseWorkspace(),
+    idb,
+    sync,
+    goOffline() {},
+    reconnect() {},
+    async clearLocalData() {
+      return undefined;
+    },
+  } satisfies BrowserWorkspace;
+}
+```
+
+Second, explicit return types still have a place at package boundaries. If declaration output needs to expose a named type, or if you intentionally want to hide the concrete return shape from consumers, an annotation can be the right move.
+
+But inside the source tree, especially on factories, this is a real ergonomic win. `satisfies` gives you the contract check without cutting the editor's path back to the object that was actually returned.

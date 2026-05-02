@@ -20,7 +20,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { type Result, trySync } from 'wellcrafted/result';
+import { Ok, type Result, trySync } from 'wellcrafted/result';
 
 import { readMetadata, unlinkMetadata } from './metadata.js';
 
@@ -138,9 +138,8 @@ export async function bindOrRecover({
  * (the file may have been left behind by a crashed previous daemon).
  */
 export function unlinkSocketFile(socketPath: string): void {
-	try {
-		unlinkSync(socketPath);
-	} catch {
-		// Best-effort cleanup; another process may have raced us.
-	}
+	void trySync({
+		try: () => unlinkSync(socketPath),
+		catch: () => Ok(undefined),
+	});
 }

@@ -14,7 +14,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Ok, type Result, trySync } from 'wellcrafted/result';
 
 import { readMetadata } from './metadata.js';
 import { leasePathFor, socketPathFor } from './paths.js';
@@ -46,11 +46,7 @@ export function claimDaemonLease(
 		db.run('PRAGMA busy_timeout = 0');
 		db.run('BEGIN IMMEDIATE');
 	} catch (cause) {
-		try {
-			db?.close();
-		} catch {
-			// Best-effort cleanup after failed acquisition.
-		}
+		bestEffortSync(() => db?.close());
 		if (isSqliteBusy(cause)) {
 			return StartupError.AlreadyRunning({
 				pid: readMetadata(projectDir)?.pid,
@@ -63,16 +59,10 @@ export function claimDaemonLease(
 	const release = () => {
 		if (released) return;
 		released = true;
-		try {
+		bestEffortSync(() => {
 			if (db?.inTransaction) db.run('ROLLBACK');
-		} catch {
-			// Best-effort release; close still drops the OS lock.
-		}
-		try {
-			db?.close();
-		} catch {
-			// Best-effort release.
-		}
+		});
+		bestEffortSync(() => db?.close());
 	};
 
 	return Ok({
@@ -85,7 +75,13 @@ export function claimDaemonLease(
 
 function isSqliteBusy(cause: unknown): boolean {
 	return (
-		cause instanceof Error &&
-		(cause as Error & { code?: unknown }).code === 'SQLITE_BUSY'
+		cause instanceof Error && 'code' in cause && cause.code === 'SQLITE_BUSY'
 	);
+}
+
+function bestEffortSync(action: () => void): void {
+	void trySync({
+		try: action,
+		catch: () => Ok(undefined),
+	});
 }

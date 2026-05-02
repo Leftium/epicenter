@@ -1,5 +1,19 @@
+/**
+ * Daemon Server Tests
+ *
+ * Verifies that `startDaemonServer` validates route names, binds exactly one
+ * socket for an already-claimed daemon lease, and exposes an idempotent close
+ * operation.
+ *
+ * Key behaviors:
+ * - valid routes are served over the daemon client
+ * - invalid route declarations fail before binding a socket
+ * - responsive legacy sockets return AlreadyRunning instead of being clobbered
+ * - close stops the listener, removes the socket file, and can run twice
+ */
+
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { daemonClient } from './client.js';
@@ -31,6 +45,14 @@ function claimTestLease(): DaemonLease {
 	return lease.data;
 }
 
+function expectStartedServer(
+	result: Awaited<ReturnType<typeof startDaemonServer>>,
+) {
+	expect(result.error).toBeNull();
+	if (result.error !== null) throw result.error;
+	return result.data;
+}
+
 beforeEach(() => {
 	originalXdg = process.env.XDG_RUNTIME_DIR;
 	runtimeRoot = mkdtempSync(join(tmpdir(), 'ep-server-'));
@@ -49,20 +71,19 @@ afterEach(() => {
 describe('startDaemonServer', () => {
 	test('starts the configured daemon routes', async () => {
 		const lease = claimTestLease();
-		const server = await startDaemonServer({
+		const serverResult = await startDaemonServer({
 			lease,
 			routes: [{ route: 'demo', runtime: makeRuntime() }],
 		});
 
 		try {
-			expect(server.error).toBeNull();
-			if (server.error !== null) return;
+			const server = expectStartedServer(serverResult);
 
-			const result = await daemonClient(server.data.socketPath).peers();
+			const result = await daemonClient(server.socketPath).peers();
 			expect(result.error).toBeNull();
 			expect(result.data).toEqual([]);
 		} finally {
-			if (server.error === null) await server.data.close();
+			if (serverResult.error === null) await serverResult.data.close();
 			lease.release();
 		}
 	});
@@ -79,6 +100,7 @@ describe('startDaemonServer', () => {
 					],
 				}),
 			).rejects.toThrow("duplicate daemon route 'demo'");
+			expect(existsSync(lease.socketPath)).toBe(false);
 		} finally {
 			lease.release();
 		}
@@ -93,7 +115,28 @@ describe('startDaemonServer', () => {
 					routes: [{ route: 'bad.route', runtime: {} as never }],
 				}),
 			).rejects.toThrow("invalid daemon route 'bad.route'");
+			expect(existsSync(lease.socketPath)).toBe(false);
 		} finally {
+			lease.release();
+		}
+	});
+
+	test('close stops the listener, removes the socket, and is idempotent', async () => {
+		const lease = claimTestLease();
+		const serverResult = await startDaemonServer({
+			lease,
+			routes: [{ route: 'demo', runtime: makeRuntime() }],
+		});
+
+		try {
+			const server = expectStartedServer(serverResult);
+			expect(existsSync(server.socketPath)).toBe(true);
+
+			await server.close();
+			await server.close();
+			expect(existsSync(server.socketPath)).toBe(false);
+		} finally {
+			if (serverResult.error === null) await serverResult.data.close();
 			lease.release();
 		}
 	});

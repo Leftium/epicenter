@@ -1,3 +1,18 @@
+/**
+ * Unix Socket Binding Tests
+ *
+ * Verifies the filesystem and recovery contract around Bun unix-socket
+ * listeners. Route behavior lives in `app.ts`; this file pins the binding,
+ * hardening, orphan recovery, and best-effort cleanup behavior.
+ *
+ * Key behaviors:
+ * - bound sockets route requests and use mode 0600
+ * - graceful server stop removes the socket file
+ * - responsive existing sockets return AlreadyRunning with metadata pid
+ * - orphan socket files and stale metadata are swept before rebinding
+ * - manual socket unlink is best-effort when the file is already gone
+ */
+
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -29,13 +44,6 @@ afterEach(() => {
 	}
 });
 
-/**
- * `bindUnixSocket` is now a thin wrapper around `Bun.serve({ unix, fetch })`
- * plus filesystem hardening. The route-level behavior lives
- * in `app.ts` (and is exercised through the typed client in
- * `client.test.ts`); this file covers only the binding/hardening contract
- * that survives no matter what handler you hand it.
- */
 describe('bindUnixSocket', () => {
 	test('binds the socket and routes through to the Hono app', async () => {
 		const app = new Hono().post('/ping', (c) => c.json({ ok: true }));
@@ -91,6 +99,11 @@ describe('bindUnixSocket', () => {
 			method: 'POST',
 		});
 		expect(res.status).toBe(404);
+	});
+
+	test('unlinkSocketFile ignores an already-missing socket file', () => {
+		expect(existsSync(socketPath)).toBe(false);
+		expect(() => unlinkSocketFile(socketPath)).not.toThrow();
 	});
 });
 

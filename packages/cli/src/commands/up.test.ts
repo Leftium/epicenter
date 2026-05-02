@@ -5,12 +5,12 @@
  * `SyncAttachment` so we never spawn a child or call `process.exit`. The
  * cross-process e2e (real CLI binary, real relay) lands in Wave 8.
  *
- * Cases (per the brief):
- *   1. Happy path: daemon socket is bound, metadata is written, ping replies "pong".
- *   2. Already-running: pre-write metadata for `process.pid` + a real listening socket;
- *      runUp throws "daemon already running (pid=X)".
- *   3. Orphan: pre-write metadata for a dead pid + phantom socket; runUp proceeds
- *      cleanly (no throw).
+ * Key behaviors:
+ * - happy path writes metadata, binds the socket, and replies to ping
+ * - startup failures release the claimed daemon lease
+ * - responsive legacy sockets return AlreadyRunning and dispose started routes
+ * - held SQLite leases short-circuit before config import or route startup
+ * - orphan socket files are swept and replaced by a fresh daemon
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -37,7 +37,7 @@ import {
 } from '@epicenter/workspace/node';
 import { Hono } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { LoadedDaemonConfig } from '../load-config';
+import { DaemonConfigError, type LoadedDaemonConfig } from '../load-config';
 import { runUp } from './up';
 
 let originalXdg: string | undefined;
@@ -85,11 +85,11 @@ afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
 });
 
-function makeFakeWorkspace(): DaemonRuntime {
+function makeFakeWorkspace(onDispose?: () => void): DaemonRuntime {
 	return {
 		actions: {},
 		async [Symbol.asyncDispose]() {
-			/* no-op */
+			onDispose?.();
 		},
 		sync: {
 			whenConnected: new Promise(() => {
@@ -162,6 +162,51 @@ describe('runUp: happy path', () => {
 	});
 });
 
+describe('runUp: failure cleanup', () => {
+	test('releases the daemon lease when config loading fails', async () => {
+		const configPath = join(workDir, 'epicenter.config.ts');
+
+		const { error } = await runUp(
+			{
+				projectDir: workDir,
+				quiet: true,
+			},
+			{
+				loadDaemonConfig: async () =>
+					DaemonConfigError.InvalidConfig({ configPath }),
+			},
+		);
+
+		expect(error?.name).toBe('InvalidConfig');
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+
+	test('releases the daemon lease when route startup fails', async () => {
+		const config = makeFakeConfig(makeFakeWorkspace());
+
+		const { error } = await runUp(
+			{
+				projectDir: workDir,
+				quiet: true,
+			},
+			{
+				loadDaemonConfig: async () => Ok(config),
+				startDaemonRoutes: async () =>
+					DaemonConfigError.RouteFailed({
+						configPath: config.configPath,
+						route: 'default',
+						cause: new Error('route failed'),
+					}),
+			},
+		);
+
+		expect(error?.name).toBe('RouteFailed');
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+});
+
 describe('runUp: already running', () => {
 	test('returns AlreadyRunning when a responsive legacy socket is detected', async () => {
 		const sockPath = socketPathFor(workDir);
@@ -179,6 +224,7 @@ describe('runUp: already running', () => {
 
 		let loadCalls = 0;
 		let startCalls = 0;
+		let disposeCalls = 0;
 		try {
 			const { error } = await runUp(
 				{
@@ -192,7 +238,14 @@ describe('runUp: already running', () => {
 					},
 					startDaemonRoutes: async () => {
 						startCalls++;
-						return Ok([] satisfies StartedDaemonRoute[]);
+						return Ok([
+							{
+								route: 'default',
+								runtime: makeFakeWorkspace(() => {
+									disposeCalls++;
+								}),
+							},
+						] satisfies StartedDaemonRoute[]);
 					},
 				},
 			);
@@ -202,6 +255,7 @@ describe('runUp: already running', () => {
 			});
 			expect(loadCalls).toBe(1);
 			expect(startCalls).toBe(1);
+			expect(disposeCalls).toBe(1);
 		} finally {
 			await server.stop(true).catch(() => {
 				// best-effort

@@ -62,15 +62,9 @@ export function createDaemonServer({
 	triggerShutdown,
 }: DaemonServerOptions): DaemonServer {
 	const socketPath = socketPathFor(projectDir);
-	let mountedRoutes: StartedDaemonRoute[] | undefined;
+	const startingFetch = buildStartingDaemonApp().fetch;
 
 	let server: Bun.Server<undefined> | undefined;
-
-	function buildFetch() {
-		return mountedRoutes === undefined
-			? buildStartingDaemonApp().fetch
-			: buildDaemonApp(mountedRoutes, triggerShutdown).fetch;
-	}
 
 	return {
 		socketPath,
@@ -78,7 +72,7 @@ export function createDaemonServer({
 			if (server !== undefined) return Ok(undefined);
 			const result = await bindOrRecover({
 				socketPath,
-				fetch: buildFetch(),
+				fetch: startingFetch,
 				projectDir,
 				isSocketResponsive: pingDaemon,
 			});
@@ -94,8 +88,14 @@ export function createDaemonServer({
 						: `createDaemonServer: invalid daemon route '${validation.route}'`,
 				);
 			}
-			mountedRoutes = [...routes];
-			server?.reload({ fetch: buildFetch() });
+			if (server === undefined) {
+				throw new Error(
+					'createDaemonServer: listen before mounting daemon routes',
+				);
+			}
+			server.reload({
+				fetch: buildDaemonApp([...routes], triggerShutdown).fetch,
+			});
 		},
 		async close() {
 			if (server) {

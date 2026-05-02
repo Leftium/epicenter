@@ -87,4 +87,12 @@ describe('createDaemonServer', () => {
 			server.mountRoutes([{ route: 'bad.route', runtime: {} as never }]),
 		).toThrow("invalid daemon route 'bad.route'");
 	});
+
+	test('mountRoutes requires a bound socket', () => {
+		const server = createDaemonServer({ projectDir: workDir });
+
+		expect(() =>
+			server.mountRoutes([{ route: 'demo', runtime: {} as never }]),
+		).toThrow('listen before mounting daemon routes');
+	});
 });

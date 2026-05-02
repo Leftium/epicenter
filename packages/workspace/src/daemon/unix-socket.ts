@@ -44,7 +44,8 @@ export type BindOrRecoverOptions = BindUnixSocketOptions & {
  * these on failure; the `up` handler renders `error.message` to stderr and
  * exits 1.
  *
- * - `AlreadyRunning`: another daemon owns this dir's socket and answers ping.
+ * - `AlreadyRunning`: another daemon owns this project lease or answers ping.
+ * - `LeaseFailed`: the SQLite lease could not be opened or locked.
  * - `BindFailed`: `Bun.serve` raised on an unrecoverable bind error
  *   (filesystem permission, missing parent dir we couldn't `mkdir`, etc.).
  *   Reserved for genuinely-unexpected failures; the recovery branch
@@ -54,6 +55,10 @@ export const StartupError = defineErrors({
 	AlreadyRunning: ({ pid }: { pid?: number }) => ({
 		message: `daemon already running${pid !== undefined ? ` (pid=${pid})` : ''}`,
 		pid,
+	}),
+	LeaseFailed: ({ cause }: { cause: unknown }) => ({
+		message: `daemon lease failed: ${extractErrorMessage(cause)}`,
+		cause,
 	}),
 	BindFailed: ({ cause }: { cause: unknown }) => ({
 		message: `bind failed: ${extractErrorMessage(cause)}`,
@@ -83,9 +88,9 @@ export function bindUnixSocket({
 }
 
 /**
- * Bind, but recover from a stale socket left behind by a crashed
- * predecessor. The check is socket-first, not pid-first: a recycled pid
- * that isn't actually serving fails the ping, same as a dead pid.
+ * Bind after the caller has already claimed the project daemon lease. A
+ * responsive socket still wins to avoid clobbering a live daemon from an older
+ * build that did not participate in the lease protocol.
  *
  *   1. Socket file absent: bind clean.
  *   2. Socket file present, ping answers: live daemon owns the dir;
@@ -95,8 +100,7 @@ export function bindUnixSocket({
  *
  * `Bun.serve({ unix })` overwrites an existing socket file without
  * raising `EADDRINUSE`, so the "try-bind, recover on EADDRINUSE"
- * pattern from POSIX TCP doesn't apply here. The pre-ping is what
- * actually distinguishes a live daemon from an orphan.
+ * pattern from POSIX TCP doesn't apply here.
  *
  * `isSocketResponsive` is injected so this module doesn't depend on
  * `client.ts` (the import cycle would be ugly) and tests can stub the probe.

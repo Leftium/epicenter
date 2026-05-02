@@ -22,6 +22,10 @@ export {
 	pingDaemon,
 } from './daemon/client.js';
 export {
+	claimDaemonLease,
+	type DaemonLease,
+} from './daemon/lease.js';
+export {
 	type DaemonMetadata,
 	enumerateDaemons,
 	readMetadata,
@@ -31,6 +35,7 @@ export {
 } from './daemon/metadata.js';
 export {
 	dirHash,
+	leasePathFor,
 	logPathFor,
 	metadataPathFor,
 	runtimeDir,
@@ -47,9 +52,9 @@ export {
 	type RunSyncStatus,
 } from './daemon/run-errors.js';
 export {
-	createDaemonServer,
 	type DaemonServer,
 	type DaemonServerOptions,
+	startDaemonServer,
 } from './daemon/server.js';
 export type {
 	DaemonRouteContext,

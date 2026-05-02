@@ -17,16 +17,14 @@
  * § "Logging", § "Invariants".
  */
 
-import { statSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
-	createDaemonServer,
+	claimDaemonLease,
 	type DaemonMetadata,
-	pingDaemon,
-	readMetadata,
-	StartupError,
+	type DaemonServer,
 	type StartupError as StartupErrorType,
-	socketPathFor,
+	startDaemonServer,
 	unlinkMetadata,
 	writeMetadata,
 } from '@epicenter/workspace/node';
@@ -106,61 +104,28 @@ export type RunUpDeps = {
  * SIGINT/SIGTERM, and parks the process; tests call it directly and
  * assert on the returned handle.
  *
- * A cheap ping rejects an already-running daemon before user config import.
- * After that, host factories perform local setup, then the daemon binds the
- * final route app to the socket.
+ * A SQLite daemon lease claims ownership before user config import. After that,
+ * host factories perform local setup and `startDaemonServer` binds the route
+ * app to the socket.
  */
 export async function runUp(
 	options: UpOptions,
 	deps: RunUpDeps = {},
 ): Promise<Result<UpHandle, DaemonConfigError | StartupErrorType>> {
-	const projectDir = resolve(options.projectDir);
-	const socketPath = socketPathFor(projectDir);
-	const configPath = join(projectDir, CONFIG_FILENAME);
+	const requestedProjectDir = resolve(options.projectDir);
+	const configPath = join(requestedProjectDir, CONFIG_FILENAME);
 
 	if (!(await Bun.file(configPath).exists())) {
 		return DaemonConfigError.MissingFile({ configPath });
 	}
 
-	if (await pingDaemon(socketPath)) {
-		return StartupError.AlreadyRunning({
-			pid: readMetadata(projectDir)?.pid,
-		});
-	}
+	const projectDir = realpathSync(requestedProjectDir);
+	const leaseResult = claimDaemonLease(projectDir);
+	if (leaseResult.error !== null) return leaseResult;
+	const lease = leaseResult.data;
 
 	const loader = deps.loadDaemonConfig ?? loadDaemonConfig;
 	const starter = deps.startDaemonRoutes ?? startDaemonRoutes;
-	const loadResult = await loader(projectDir);
-	if (loadResult.error) {
-		return loadResult;
-	}
-	const config = loadResult.data;
-
-	const startResult = await starter(config);
-	if (startResult.error) {
-		return startResult;
-	}
-	const runtimes = startResult.data;
-
-	let teardown: () => Promise<void> = async () => {};
-	let daemonServer: ReturnType<typeof createDaemonServer>;
-	try {
-		daemonServer = createDaemonServer({
-			projectDir,
-			routes: runtimes,
-			triggerShutdown: () => void teardown(),
-		});
-	} catch (cause) {
-		await safeDisposeStartedRoutes(runtimes);
-		throw cause;
-	}
-
-	const bindResult = await daemonServer.listen();
-	if (bindResult.error) {
-		await safeDisposeStartedRoutes(runtimes);
-		return bindResult;
-	}
-
 	const configMtime = readConfigMtime(projectDir);
 	const metadata: DaemonMetadata = {
 		pid: process.pid,
@@ -169,24 +134,59 @@ export async function runUp(
 		cliVersion: options.cliVersion ?? CLI_VERSION,
 		configMtime,
 	};
-	writeMetadata(projectDir, metadata);
 
+	let metadataWritten = false;
+	let runtimes: StartedDaemonRoute[] = [];
+	let daemonServer: DaemonServer | null = null;
 	let teardownPromise: Promise<void> | null = null;
-	teardown = (): Promise<void> => {
+	const teardown = (): Promise<void> => {
 		if (teardownPromise) return teardownPromise;
 		teardownPromise = (async () => {
-			await daemonServer.close();
+			if (daemonServer) await daemonServer.close();
 			await safeDisposeStartedRoutes(runtimes);
-			unlinkMetadata(projectDir);
+			if (metadataWritten) unlinkMetadata(projectDir);
+			lease.release();
 		})();
 		return teardownPromise;
 	};
+
+	const loadResult = await loader(projectDir);
+	if (loadResult.error) {
+		await teardown();
+		return loadResult;
+	}
+	const config = loadResult.data;
+
+	const startResult = await starter(config);
+	if (startResult.error) {
+		await teardown();
+		return startResult;
+	}
+	runtimes = startResult.data;
+	try {
+		const serverResult = await startDaemonServer({
+			lease,
+			routes: runtimes,
+			triggerShutdown: () => void teardown(),
+		});
+		if (serverResult.error) {
+			await teardown();
+			return serverResult;
+		}
+		daemonServer = serverResult.data;
+	} catch (cause) {
+		await teardown();
+		throw cause;
+	}
+
+	writeMetadata(projectDir, metadata);
+	metadataWritten = true;
 
 	return Ok({
 		runtimes,
 		config,
 		metadata,
-		socketPath,
+		socketPath: lease.socketPath,
 		teardown,
 	});
 }

@@ -65,6 +65,11 @@ export function metadataPathFor(dir: string): string {
 	return join(runtimeDir(), `${dirHash(dir)}.meta.json`);
 }
 
+/** SQLite lease file for the daemon serving `dir`. */
+export function leasePathFor(dir: string): string {
+	return join(runtimeDir(), `${dirHash(dir)}.lease.sqlite`);
+}
+
 /**
  * Log file for the daemon serving `dir`.
  *

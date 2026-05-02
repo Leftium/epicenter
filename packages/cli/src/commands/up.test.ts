@@ -29,6 +29,7 @@ import type {
 	StartedDaemonRoute,
 } from '@epicenter/workspace/daemon';
 import {
+	claimDaemonLease,
 	metadataPathFor,
 	pingDaemon,
 	socketPathFor,
@@ -154,7 +155,7 @@ describe('runUp: happy path', () => {
 });
 
 describe('runUp: already running', () => {
-	test('returns AlreadyRunning when a live daemon is detected', async () => {
+	test('returns AlreadyRunning when a responsive legacy socket is detected', async () => {
 		const sockPath = socketPathFor(workDir);
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
@@ -191,40 +192,43 @@ describe('runUp: already running', () => {
 			if (error?.name === 'AlreadyRunning') {
 				expect(error.pid).toBe(process.pid);
 			}
-			expect(loadCalls).toBe(0);
-			expect(startCalls).toBe(0);
+			expect(loadCalls).toBe(1);
+			expect(startCalls).toBe(1);
 		} finally {
 			await server.stop(true);
 		}
 	});
 
-	test('does not import config when a live daemon is detected', async () => {
-		const sockPath = socketPathFor(workDir);
-		const server = servePingDaemon(sockPath);
+	test('does not import config when the daemon lease is held', async () => {
+		const lease = claimDaemonLease(workDir);
+		expect(lease.error).toBeNull();
+		if (lease.error !== null) throw new Error('expected daemon lease');
 
-		writeFileSync(
-			join(workDir, 'epicenter.config.ts'),
-			`globalThis.__upImportSideEffects = (globalThis.__upImportSideEffects ?? 0) + 1;
-			export default { daemon: { routes: [] } };`,
-		);
-		delete (globalThis as { __upImportSideEffects?: number })
-			.__upImportSideEffects;
-
+		let loadCalls = 0;
+		let startCalls = 0;
 		try {
-			const { error } = await runUp({
-				projectDir: workDir,
-				quiet: true,
-			});
+			const { error } = await runUp(
+				{
+					projectDir: workDir,
+					quiet: true,
+				},
+				{
+					loadDaemonConfig: async () => {
+						loadCalls++;
+						return Ok(makeFakeConfig(makeFakeWorkspace()));
+					},
+					startDaemonRoutes: async () => {
+						startCalls++;
+						return Ok([] satisfies StartedDaemonRoute[]);
+					},
+				},
+			);
 
 			expect(error?.name).toBe('AlreadyRunning');
-			expect(
-				(globalThis as { __upImportSideEffects?: number })
-					.__upImportSideEffects,
-			).toBeUndefined();
+			expect(loadCalls).toBe(0);
+			expect(startCalls).toBe(0);
 		} finally {
-			await server.stop(true);
-			delete (globalThis as { __upImportSideEffects?: number })
-				.__upImportSideEffects;
+			lease.data.release();
 		}
 	});
 });

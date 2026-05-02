@@ -6,7 +6,8 @@ import type { EncryptionKeys, ProjectDir } from '@epicenter/workspace';
 import type { DaemonRuntime } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
-	createDaemonServer,
+	claimDaemonLease,
+	startDaemonServer,
 	yjsPath,
 } from '@epicenter/workspace/node';
 import {
@@ -95,19 +96,21 @@ describe('daemon to script handoff via Yjs log file', () => {
 		});
 		const oldRuntimeDir = process.env.XDG_RUNTIME_DIR;
 		process.env.XDG_RUNTIME_DIR = '/tmp';
-		const server = createDaemonServer({
-			projectDir: workdir,
-		});
-		try {
-			const listening = await server.listen();
-			expect(listening.error).toBeNull();
-			if (listening.error !== null) return;
-			server.mountRoutes([
+		const lease = claimDaemonLease(workdir);
+		expect(lease.error).toBeNull();
+		if (lease.error !== null) throw new Error('expected daemon lease');
+		const server = await startDaemonServer({
+			lease: lease.data,
+			routes: [
 				{
 					route: DEFAULT_FUJI_DAEMON_ROUTE,
 					runtime: daemon,
 				},
-			]);
+			],
+		});
+		try {
+			expect(server.error).toBeNull();
+			if (server.error !== null) return;
 
 			await using script = await openFujiScript({ projectDir: workdir });
 			const created = await script.actions.entries.create({
@@ -138,7 +141,8 @@ describe('daemon to script handoff via Yjs log file', () => {
 					.some((row) => row.id === created.data.id),
 			).toBe(true);
 		} finally {
-			await server.close();
+			if (server.error === null) await server.data.close();
+			lease.data.release();
 			await daemon[Symbol.asyncDispose]();
 			if (oldRuntimeDir === undefined) {
 				delete process.env.XDG_RUNTIME_DIR;

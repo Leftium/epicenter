@@ -3,8 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { daemonClient } from './client.js';
-import { createDaemonServer } from './server.js';
+import { claimDaemonLease, type DaemonLease } from './lease.js';
+import { startDaemonServer } from './server.js';
 import type { DaemonRuntime } from './types.js';
+import { bindUnixSocket } from './unix-socket.js';
 
 let originalXdg: string | undefined;
 let runtimeRoot: string;
@@ -22,6 +24,13 @@ function makeRuntime(): DaemonRuntime {
 	} as unknown as DaemonRuntime;
 }
 
+function claimTestLease(): DaemonLease {
+	const lease = claimDaemonLease(workDir);
+	expect(lease.error).toBeNull();
+	if (lease.error !== null) throw new Error('expected daemon lease');
+	return lease.data;
+}
+
 beforeEach(() => {
 	originalXdg = process.env.XDG_RUNTIME_DIR;
 	runtimeRoot = mkdtempSync(join(tmpdir(), 'ep-server-'));
@@ -37,60 +46,88 @@ afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
 });
 
-describe('createDaemonServer', () => {
-	test('listen is idempotent after the socket is bound', async () => {
-		const server = createDaemonServer({
-			projectDir: workDir,
+describe('startDaemonServer', () => {
+	test('starts the configured daemon routes', async () => {
+		const lease = claimTestLease();
+		const server = await startDaemonServer({
+			lease,
 			routes: [{ route: 'demo', runtime: makeRuntime() }],
 		});
 
 		try {
-			const first = await server.listen();
-			const second = await server.listen();
+			expect(server.error).toBeNull();
+			if (server.error !== null) return;
 
-			expect(first.error).toBeNull();
-			expect(second.error).toBeNull();
-		} finally {
-			await server.close();
-		}
-	});
-
-	test('listen serves the configured daemon routes', async () => {
-		const server = createDaemonServer({
-			projectDir: workDir,
-			routes: [{ route: 'demo', runtime: makeRuntime() }],
-		});
-
-		try {
-			const listenResult = await server.listen();
-			expect(listenResult.error).toBeNull();
-
-			const result = await daemonClient(server.socketPath).peers();
+			const result = await daemonClient(server.data.socketPath).peers();
 			expect(result.error).toBeNull();
 			expect(result.data).toEqual([]);
 		} finally {
-			await server.close();
+			if (server.error === null) await server.data.close();
+			lease.release();
 		}
 	});
 
-	test('rejects duplicate routes from embedded callers', () => {
-		expect(() =>
-			createDaemonServer({
-				projectDir: workDir,
-				routes: [
-					{ route: 'demo', runtime: {} as never },
-					{ route: 'demo', runtime: {} as never },
-				],
-			}),
-		).toThrow("duplicate daemon route 'demo'");
+	test('rejects duplicate routes from embedded callers', async () => {
+		const lease = claimTestLease();
+		try {
+			let thrown: unknown;
+			try {
+				await startDaemonServer({
+					lease,
+					routes: [
+						{ route: 'demo', runtime: {} as never },
+						{ route: 'demo', runtime: {} as never },
+					],
+				});
+			} catch (cause) {
+				thrown = cause;
+			}
+			expect(thrown).toBeInstanceOf(Error);
+			expect((thrown as Error).message).toContain(
+				"duplicate daemon route 'demo'",
+			);
+		} finally {
+			lease.release();
+		}
 	});
 
-	test('rejects invalid routes from embedded callers', () => {
-		expect(() =>
-			createDaemonServer({
-				projectDir: workDir,
-				routes: [{ route: 'bad.route', runtime: {} as never }],
-			}),
-		).toThrow("invalid daemon route 'bad.route'");
+	test('rejects invalid routes from embedded callers', async () => {
+		const lease = claimTestLease();
+		try {
+			let thrown: unknown;
+			try {
+				await startDaemonServer({
+					lease,
+					routes: [{ route: 'bad.route', runtime: {} as never }],
+				});
+			} catch (cause) {
+				thrown = cause;
+			}
+			expect(thrown).toBeInstanceOf(Error);
+			expect((thrown as Error).message).toContain(
+				"invalid daemon route 'bad.route'",
+			);
+		} finally {
+			lease.release();
+		}
+	});
+
+	test('returns AlreadyRunning when a responsive legacy socket exists', async () => {
+		const lease = claimTestLease();
+		const occupant = bindUnixSocket({
+			socketPath: lease.socketPath,
+			fetch: () => new Response('ok'),
+		});
+		try {
+			const second = await startDaemonServer({
+				lease,
+				routes: [{ route: 'demo', runtime: makeRuntime() }],
+			});
+			expect(second.data).toBeNull();
+			expect(second.error?.name).toBe('AlreadyRunning');
+		} finally {
+			await occupant.stop(true);
+			lease.release();
+		}
 	});
 });

@@ -21,7 +21,7 @@ Use when:
 - After a major refactor, hunting for stale boundaries the new design exposes.
 - Reviewing a PR that touches a primitive: these patterns indicate where new contracts may be leaking into consumers.
 
-The five categories below were validated against the actual codebase by repeated agent audits. They're not generic style nits: each one signals a specific kind of contract problem in a TypeScript-heavy framework codebase.
+The categories below were validated against the actual codebase by repeated agent audits. They're not generic style nits: each one signals a specific kind of contract problem in a TypeScript-heavy framework codebase.
 
 ## 1. Duck-Typing at System Boundaries
 
@@ -114,6 +114,22 @@ grep -rn ": never\s*=" packages --include="*.ts" -B10
 
 **False positive**: type-narrowing on a result type at a boundary is healthy, even if there are several. Look for the pattern of "every consumer has to know about every variant" as the actual signal.
 
+## 6. Single-Method `Pick` Dependencies
+
+**Pattern**: dependency injection shaped as `Pick<Thing, 'method'>`.
+
+```bash
+rg "Pick<[^>]+,\s*['\"][^'\"|]+['\"]\s*>" packages apps
+```
+
+**Why it matters**: a single-method pick can keep an old object boundary alive after the caller only needs one operation. The type looks narrow, but the object name still tells readers to think about the whole capability family.
+
+**Example fix**: `packages/workspace/src/daemon/unix-socket.ts` used `Pick<Hono, 'fetch'>` for the socket binder. The binder's job is "bind one request handler to a unix socket and harden the socket file", so the dependency became a `UnixSocketRequestHandler` function instead of a Hono-shaped object.
+
+**Triage**: write the one-sentence job of the caller and mentally inline the picked method. Keep the object only when that sentence names the object or the caller coordinates the object's life cycle. If the sentence only names one verb, accept a named capability function in the caller's language and update tests to fake that function. Do not replace `Pick<Thing, 'method'>` with `Thing['method']` unless `Thing` is still the caller's real concept.
+
+**False positive**: `Pick` is fine for data projection, DTO trimming, and multi-field view models. A single non-method field like `Pick<Session['session'], 'expiresAt'>` is not this smell.
+
 ## What This Skill Doesn't Catch (Reject from the Hunt)
 
 Tested and rejected as not-actually-smells in this codebase:
@@ -130,7 +146,7 @@ If a future audit finds patterns consistent with these categories, they should b
 
 When kicking off a review pass:
 
-1. Run all five greps against the relevant scope (single package, full monorepo, or recently-changed files).
+1. Run the greps against the relevant scope (single package, full monorepo, or recently-changed files).
 2. For each hit, read the ±5 lines of context and decide: justified, refactor, or false-positive.
 3. Group findings by category and impact before fixing: refactoring scattered hits one-at-a-time loses the pattern.
 4. Document the fix in a single PR with the audit log. The pattern matters more than the individual instances.

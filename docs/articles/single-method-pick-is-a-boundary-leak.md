@@ -24,6 +24,11 @@ type OpenFujiSnapshotOptions = {
 
 Now the dependency says what the caller needs, not where the implementation happens to come from.
 
+Do not stop at `MachineAuth['getOfflineEncryptionKeys']`. That removes the
+object-shaped parameter, but it still derives the caller's dependency from the
+wrong concept. If the caller's sentence is about loading snapshot keys, name and
+type that capability directly.
+
 ## Why the Object Shape Leaks
 
 An object name carries a model with it. If a function accepts `MachineAuth`, even as `Pick<MachineAuth, 'getOfflineEncryptionKeys'>`, a reader has to ask why this layer knows about machine auth at all.
@@ -103,3 +108,13 @@ Does this caller need Thing, or does it need one verb?
 ```
 
 If it needs one verb, name the verb. If it needs the object life cycle, pass the object.
+
+The same rule catches indexed method aliases:
+
+```ts
+Thing['method']
+```
+
+That can be the same boundary leak in a smaller costume. If `Thing` is not in
+the caller's one-sentence job, the capability type should not come from
+`Thing`.

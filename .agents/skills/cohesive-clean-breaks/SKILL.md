@@ -134,6 +134,11 @@ caller's language unless the caller genuinely participates in that object's
 life cycle or needs the rest of the capability family. See
 `docs/articles/single-method-pick-is-a-boundary-leak.md`.
 
+Do not half-fix the smell by replacing `Pick<Thing, 'method'>` with
+`Thing['method']`. If the caller's sentence does not name `Thing`, the
+capability type should come from the caller's boundary or the runtime contract,
+not from the source object that happens to implement it today.
+
 ## Boundary Movement
 
 If a smell appears at several call sites, do not start by extracting a helper.

@@ -33,23 +33,13 @@ export const fuji = openFuji({
 
 bindAuthWorkspaceScope({
 	auth,
-	sync: {
-		pause() {
-			fuji.sync.pause();
-			fuji.entryContentDocs.pause();
-		},
-		reconnect() {
-			fuji.sync.reconnect();
-			fuji.entryContentDocs.reconnect();
-		},
-	},
+	syncControl: fuji.syncControl,
 	applyAuthSession(session) {
 		fuji.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
-			await fuji.entryContentDocs.clearLocalData();
-			await fuji.idb.clearLocal();
+			await fuji.clearLocalData();
 			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {

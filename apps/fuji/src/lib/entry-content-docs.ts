@@ -1,8 +1,8 @@
 /**
  * Per-entry content Y.Doc builder. Pure: takes an `entryId` plus all the
  * deps the construction needs and returns a Disposable bundle. Browser
- * clients open these through `createBrowserDocumentCollection` for caching,
- * active sync control, and local store cleanup.
+ * clients open these through `createBrowserDocumentFamily` for caching and
+ * active sync control.
  */
 
 import type { AuthClient } from '@epicenter/auth-svelte';
@@ -29,6 +29,21 @@ export type EntryContentDoc = {
 	[Symbol.dispose](): void;
 };
 
+export function entryContentDocGuid({
+	workspaceId,
+	entryId,
+}: {
+	workspaceId: string;
+	entryId: EntryId;
+}): string {
+	return docGuid({
+		workspaceId,
+		collection: 'entries',
+		rowId: entryId,
+		field: 'content',
+	});
+}
+
 export function createEntryContentDoc({
 	entryId,
 	workspaceId,
@@ -43,12 +58,7 @@ export function createEntryContentDoc({
 	apiUrl: string;
 }): EntryContentDoc {
 	const ydoc = new Y.Doc({
-		guid: docGuid({
-			workspaceId,
-			collection: 'entries',
-			rowId: entryId,
-			field: 'content',
-		}),
+		guid: entryContentDocGuid({ workspaceId, entryId }),
 		gc: false,
 	});
 	const body = attachRichText(ydoc);

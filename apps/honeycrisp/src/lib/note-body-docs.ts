@@ -1,8 +1,8 @@
 /**
  * Per-note body Y.Doc builder. Pure: takes a `noteId` plus all the deps the
  * construction needs and returns a Disposable bundle. Browser clients open
- * these through `createBrowserDocumentCollection` for caching, active sync
- * control, and local store cleanup.
+ * these through `createBrowserDocumentFamily` for caching and active sync
+ * control.
  */
 
 import type { AuthClient } from '@epicenter/auth-svelte';
@@ -29,6 +29,21 @@ export type NoteBodyDoc = {
 	[Symbol.dispose](): void;
 };
 
+export function noteBodyDocGuid({
+	workspaceId,
+	noteId,
+}: {
+	workspaceId: string;
+	noteId: NoteId;
+}): string {
+	return docGuid({
+		workspaceId,
+		collection: 'notes',
+		rowId: noteId,
+		field: 'body',
+	});
+}
+
 export function createNoteBodyDoc({
 	noteId,
 	workspaceId,
@@ -43,12 +58,7 @@ export function createNoteBodyDoc({
 	apiUrl: string;
 }): NoteBodyDoc {
 	const ydoc = new Y.Doc({
-		guid: docGuid({
-			workspaceId,
-			collection: 'notes',
-			rowId: noteId,
-			field: 'body',
-		}),
+		guid: noteBodyDocGuid({ workspaceId, noteId }),
 		gc: false,
 	});
 	const body = attachRichText(ydoc);

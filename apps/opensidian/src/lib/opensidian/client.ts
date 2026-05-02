@@ -34,23 +34,13 @@ export const opensidian = openOpensidian({
 
 bindAuthWorkspaceScope({
 	auth,
-	sync: {
-		pause() {
-			opensidian.sync.pause();
-			opensidian.fileContentDocs.pause();
-		},
-		reconnect() {
-			opensidian.sync.reconnect();
-			opensidian.fileContentDocs.reconnect();
-		},
-	},
+	syncControl: opensidian.syncControl,
 	applyAuthSession(session) {
 		opensidian.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
-			await opensidian.fileContentDocs.clearLocalData();
-			await opensidian.idb.clearLocal();
+			await opensidian.clearLocalData();
 			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {

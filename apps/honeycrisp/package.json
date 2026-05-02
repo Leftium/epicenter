@@ -61,6 +61,7 @@
 		"prosemirror-state": "^1.4.0",
 		"prosemirror-view": "^1.41.0",
 		"wellcrafted": "catalog:",
+		"y-indexeddb": "catalog:",
 		"y-prosemirror": "^1.3.7",
 		"yjs": "catalog:"
 	},

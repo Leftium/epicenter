@@ -1,25 +1,21 @@
 import type { AuthClient, AuthSnapshot } from '@epicenter/auth';
+import type { SyncControl } from '@epicenter/workspace';
 
 export type SignedInSession = Extract<
 	AuthSnapshot,
 	{ status: 'signedIn' }
 >['session'];
 
-export type AuthenticatedSyncLifecycle = {
-	pause(): void;
-	reconnect(): void;
-};
-
 export type AuthWorkspaceScopeOptions = {
 	auth: AuthClient;
-	sync: AuthenticatedSyncLifecycle | null;
+	syncControl: SyncControl | null;
 	applyAuthSession(session: SignedInSession): void;
 	resetLocalClient(): Promise<void>;
 };
 
 export function bindAuthWorkspaceScope({
 	auth,
-	sync,
+	syncControl,
 	applyAuthSession,
 	resetLocalClient,
 }: AuthWorkspaceScopeOptions): () => void {
@@ -30,7 +26,7 @@ export function bindAuthWorkspaceScope({
 	let isTerminal = false;
 
 	async function resetCurrentClient() {
-		sync?.pause();
+		syncControl?.pause();
 		isTerminal = true;
 		pendingSnapshot = null;
 
@@ -47,7 +43,7 @@ export function bindAuthWorkspaceScope({
 
 		if (snapshot.status === 'signedOut') {
 			if (appliedSession === null) {
-				sync?.pause();
+				syncControl?.pause();
 				return;
 			}
 
@@ -66,7 +62,9 @@ export function bindAuthWorkspaceScope({
 		const tokenChanged = appliedSession?.token !== session.token;
 		applyAuthSession(session);
 
-		if (tokenChanged) sync?.reconnect();
+		if (tokenChanged) {
+			syncControl?.reconnect();
+		}
 
 		appliedSession = { userId, token: session.token };
 	}

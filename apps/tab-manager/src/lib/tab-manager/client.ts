@@ -70,14 +70,14 @@ async function registerDevice(): Promise<void> {
 
 bindAuthWorkspaceScope({
 	auth,
-	sync: tabManager.sync,
+	syncControl: tabManager.syncControl,
 	applyAuthSession(session) {
 		tabManager.encryption.applyKeys(session.encryptionKeys);
 		void registerDevice();
 	},
 	async resetLocalClient() {
 		try {
-			await tabManager.idb.clearLocal();
+			await tabManager.clearLocalData();
 			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {

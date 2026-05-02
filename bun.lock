@@ -127,6 +127,7 @@
         "typebox": "catalog:",
         "virtua": "catalog:",
         "wellcrafted": "catalog:",
+        "y-indexeddb": "catalog:",
         "y-prosemirror": "^1.3.7",
         "yjs": "catalog:",
       },
@@ -174,6 +175,7 @@
         "prosemirror-view": "^1.41.0",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
+        "y-indexeddb": "catalog:",
         "y-prosemirror": "^1.3.7",
         "yjs": "catalog:",
       },
@@ -238,6 +240,7 @@
         "mode-watcher": "^1.1.0",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
+        "y-indexeddb": "catalog:",
       },
       "devDependencies": {
         "@codemirror/commands": "^6.10.3",
@@ -271,7 +274,6 @@
         "vite": "catalog:",
         "vite-plugin-node-polyfills": "^0.26.0",
         "y-codemirror.next": "^0.3.5",
-        "y-indexeddb": "catalog:",
         "yjs": "catalog:",
       },
     },
@@ -446,6 +448,7 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
+        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
@@ -539,6 +542,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@epicenter/auth": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "catalog:",

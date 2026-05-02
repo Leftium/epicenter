@@ -6,7 +6,7 @@
  *
  * Key behaviors:
  * - Cold signed-out and signed-in snapshots call the supplied lifecycle hooks.
- * - Same-user token changes reconnect sync while key refreshes do not.
+ * - Same-user token changes reconnect app sync while key refreshes do not.
  * - Leaving an applied user marks the client terminal and ignores later snapshots.
  */
 
@@ -102,11 +102,11 @@ function createFakeAuth(initial: AuthSnapshot) {
 
 function setup({
 	initial = { status: 'loading' },
-	sync = true,
+	syncControl = true,
 	resetLocalClient = async () => {},
 }: {
 	initial?: AuthSnapshot;
-	sync?: boolean;
+	syncControl?: boolean;
 	resetLocalClient?: () => Promise<void>;
 } = {}) {
 	const fakeAuth = createFakeAuth(initial);
@@ -114,7 +114,7 @@ function setup({
 	const appliedSessions: Session[] = [];
 	const unsubscribe = bindAuthWorkspaceScope({
 		auth: fakeAuth.auth,
-		sync: sync
+		syncControl: syncControl
 			? {
 					pause() {
 						calls.push('pause');
@@ -148,8 +148,11 @@ test('cold signedOut pauses sync', async () => {
 	expect(calls).toEqual(['pause']);
 });
 
-test('cold signedOut with sync null does not throw', async () => {
-	const { calls } = setup({ initial: { status: 'signedOut' }, sync: false });
+test('cold signedOut with null sync control does not throw', async () => {
+	const { calls } = setup({
+		initial: { status: 'signedOut' },
+		syncControl: false,
+	});
 	await tick();
 
 	expect(calls).toEqual([]);

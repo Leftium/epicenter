@@ -33,23 +33,13 @@ export const honeycrisp = openHoneycrisp({
 
 bindAuthWorkspaceScope({
 	auth,
-	sync: {
-		pause() {
-			honeycrisp.sync.pause();
-			honeycrisp.noteBodyDocs.pause();
-		},
-		reconnect() {
-			honeycrisp.sync.reconnect();
-			honeycrisp.noteBodyDocs.reconnect();
-		},
-	},
+	syncControl: honeycrisp.syncControl,
 	applyAuthSession(session) {
 		honeycrisp.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
-			await honeycrisp.noteBodyDocs.clearLocalData();
-			await honeycrisp.idb.clearLocal();
+			await honeycrisp.clearLocalData();
 			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {

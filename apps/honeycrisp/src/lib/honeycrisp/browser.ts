@@ -5,13 +5,14 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	createBrowserDocumentCollection,
+	composeSyncControls,
+	createBrowserDocumentFamily,
 	createRemoteClient,
-	docGuid,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { createNoteBodyDoc } from '$lib/note-body-docs';
+import { clearDocument } from 'y-indexeddb';
+import { createNoteBodyDoc, noteBodyDocGuid } from '$lib/note-body-docs';
 import type { NoteId } from '$lib/workspace';
 import { openHoneycrisp as openHoneycrispDoc } from './index';
 
@@ -27,24 +28,30 @@ export function openHoneycrisp({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const noteBodyDocs = createBrowserDocumentCollection({
-		ids: () => doc.tables.notes.getAllValid().map((note) => note.id),
-		guid: (noteId: NoteId) =>
-			docGuid({
-				workspaceId: doc.ydoc.guid,
-				collection: 'notes',
-				rowId: noteId,
-				field: 'body',
-			}),
-		build: (noteId: NoteId) =>
-			createNoteBodyDoc({
+	const noteBodyDocs = createBrowserDocumentFamily({
+		create(noteId: NoteId) {
+			const document = createNoteBodyDoc({
 				noteId,
 				workspaceId: doc.ydoc.guid,
 				notesTable: doc.tables.notes,
 				auth,
 				apiUrl: APP_URLS.API,
-			}),
-		sync: (noteDoc) => noteDoc.sync,
+			});
+
+			return { document, syncControl: document.sync };
+		},
+		async clearLocalData() {
+			await Promise.all(
+				doc.tables.notes.getAllValid().map((note) =>
+					clearDocument(
+						noteBodyDocGuid({
+							workspaceId: doc.ydoc.guid,
+							noteId: note.id,
+						}),
+					),
+				),
+			);
+		},
 		gcTime: 5_000,
 	});
 	const awareness = attachAwareness(doc.ydoc, {
@@ -71,6 +78,11 @@ export function openHoneycrisp({
 		noteBodyDocs,
 		awareness,
 		sync,
+		syncControl: composeSyncControls(sync, noteBodyDocs.syncControl),
+		async clearLocalData() {
+			await noteBodyDocs.clearLocalData();
+			await idb.clearLocal();
+		},
 		remote,
 		rpc,
 		whenLoaded: idb.whenLoaded,

@@ -5,13 +5,17 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	createBrowserDocumentCollection,
+	composeSyncControls,
+	createBrowserDocumentFamily,
 	createRemoteClient,
-	docGuid,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { createEntryContentDoc } from '$lib/entry-content-docs';
+import { clearDocument } from 'y-indexeddb';
+import {
+	createEntryContentDoc,
+	entryContentDocGuid,
+} from '$lib/entry-content-docs';
 import type { EntryId } from '$lib/workspace';
 import { openFuji as openFujiDoc } from './index';
 
@@ -27,24 +31,30 @@ export function openFuji({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const entryContentDocs = createBrowserDocumentCollection({
-		ids: () => doc.tables.entries.getAllValid().map((entry) => entry.id),
-		guid: (entryId: EntryId) =>
-			docGuid({
-				workspaceId: doc.ydoc.guid,
-				collection: 'entries',
-				rowId: entryId,
-				field: 'content',
-			}),
-		build: (entryId: EntryId) =>
-			createEntryContentDoc({
+	const entryContentDocs = createBrowserDocumentFamily({
+		create(entryId: EntryId) {
+			const document = createEntryContentDoc({
 				entryId,
 				workspaceId: doc.ydoc.guid,
 				entriesTable: doc.tables.entries,
 				auth,
 				apiUrl: APP_URLS.API,
-			}),
-		sync: (entryDoc) => entryDoc.sync,
+			});
+
+			return { document, syncControl: document.sync };
+		},
+		async clearLocalData() {
+			await Promise.all(
+				doc.tables.entries.getAllValid().map((entry) =>
+					clearDocument(
+						entryContentDocGuid({
+							workspaceId: doc.ydoc.guid,
+							entryId: entry.id,
+						}),
+					),
+				),
+			);
+		},
 		gcTime: 5_000,
 	});
 	const awareness = attachAwareness(doc.ydoc, {
@@ -71,6 +81,11 @@ export function openFuji({
 		entryContentDocs,
 		awareness,
 		sync,
+		syncControl: composeSyncControls(sync, entryContentDocs.syncControl),
+		async clearLocalData() {
+			await entryContentDocs.clearLocalData();
+			await idb.clearLocal();
+		},
 		remote,
 		rpc,
 		whenLoaded: idb.whenLoaded,

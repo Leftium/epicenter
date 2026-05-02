@@ -18,13 +18,13 @@ export const zhongwen = openZhongwen();
 
 bindAuthWorkspaceScope({
 	auth,
-	sync: null,
+	syncControl: null,
 	applyAuthSession(session) {
 		zhongwen.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
-			await zhongwen.idb.clearLocal();
+			await zhongwen.clearLocalData();
 			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {

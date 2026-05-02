@@ -8,6 +8,9 @@ export function openZhongwen() {
 	return {
 		...doc,
 		idb,
+		async clearLocalData() {
+			await idb.clearLocal();
+		},
 		whenLoaded: idb.whenLoaded,
 	};
 }

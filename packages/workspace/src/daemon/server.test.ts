@@ -10,6 +10,18 @@ let originalXdg: string | undefined;
 let runtimeRoot: string;
 let workDir: string;
 
+function makeRuntime(): DaemonRuntime {
+	return {
+		actions: {},
+		async [Symbol.asyncDispose]() {
+			/* no-op */
+		},
+		awareness: {
+			peers: () => new Map(),
+		},
+	} as unknown as DaemonRuntime;
+}
+
 beforeEach(() => {
 	originalXdg = process.env.XDG_RUNTIME_DIR;
 	runtimeRoot = mkdtempSync(join(tmpdir(), 'ep-server-'));
@@ -27,7 +39,10 @@ afterEach(() => {
 
 describe('createDaemonServer', () => {
 	test('listen is idempotent after the socket is bound', async () => {
-		const server = createDaemonServer({ projectDir: workDir });
+		const server = createDaemonServer({
+			projectDir: workDir,
+			routes: [{ route: 'demo', runtime: makeRuntime() }],
+		});
 
 		try {
 			const first = await server.listen();
@@ -40,59 +55,42 @@ describe('createDaemonServer', () => {
 		}
 	});
 
-	test('mountRoutes reloads the bound Bun server fetch handler', async () => {
-		const server = createDaemonServer({ projectDir: workDir });
-		const runtime = {
-			actions: {},
-			async [Symbol.asyncDispose]() {
-				/* no-op */
-			},
-			awareness: {
-				peers: () => new Map(),
-			},
-		} as unknown as DaemonRuntime;
+	test('listen serves the configured daemon routes', async () => {
+		const server = createDaemonServer({
+			projectDir: workDir,
+			routes: [{ route: 'demo', runtime: makeRuntime() }],
+		});
 
 		try {
 			const listenResult = await server.listen();
 			expect(listenResult.error).toBeNull();
 
-			const beforeMount = await daemonClient(server.socketPath).peers();
-			expect(beforeMount.error?.name).toBe('HandlerCrashed');
-
-			server.mountRoutes([{ route: 'demo', runtime }]);
-
-			const afterMount = await daemonClient(server.socketPath).peers();
-			expect(afterMount.error).toBeNull();
-			expect(afterMount.data).toEqual([]);
+			const result = await daemonClient(server.socketPath).peers();
+			expect(result.error).toBeNull();
+			expect(result.data).toEqual([]);
 		} finally {
 			await server.close();
 		}
 	});
 
-	test('mountRoutes rejects duplicate routes from embedded callers', () => {
-		const server = createDaemonServer({ projectDir: workDir });
-
+	test('rejects duplicate routes from embedded callers', () => {
 		expect(() =>
-			server.mountRoutes([
-				{ route: 'demo', runtime: {} as never },
-				{ route: 'demo', runtime: {} as never },
-			]),
+			createDaemonServer({
+				projectDir: workDir,
+				routes: [
+					{ route: 'demo', runtime: {} as never },
+					{ route: 'demo', runtime: {} as never },
+				],
+			}),
 		).toThrow("duplicate daemon route 'demo'");
 	});
 
-	test('mountRoutes rejects invalid routes from embedded callers', () => {
-		const server = createDaemonServer({ projectDir: workDir });
-
+	test('rejects invalid routes from embedded callers', () => {
 		expect(() =>
-			server.mountRoutes([{ route: 'bad.route', runtime: {} as never }]),
+			createDaemonServer({
+				projectDir: workDir,
+				routes: [{ route: 'bad.route', runtime: {} as never }],
+			}),
 		).toThrow("invalid daemon route 'bad.route'");
-	});
-
-	test('mountRoutes requires a bound socket', () => {
-		const server = createDaemonServer({ projectDir: workDir });
-
-		expect(() =>
-			server.mountRoutes([{ route: 'demo', runtime: {} as never }]),
-		).toThrow('listen before mounting daemon routes');
 	});
 });

@@ -22,7 +22,10 @@ import { join, resolve } from 'node:path';
 import {
 	createDaemonServer,
 	type DaemonMetadata,
-	type StartupError,
+	pingDaemon,
+	readMetadata,
+	StartupError,
+	type StartupError as StartupErrorType,
 	socketPathFor,
 	unlinkMetadata,
 	writeMetadata,
@@ -103,13 +106,14 @@ export type RunUpDeps = {
  * SIGINT/SIGTERM, and parks the process; tests call it directly and
  * assert on the returned handle.
  *
- * Host factories perform local setup before resolving. Network sync connects
- * in the background after the socket is bound.
+ * A cheap ping rejects an already-running daemon before user config import.
+ * After that, host factories perform local setup, then the daemon binds the
+ * final route app to the socket.
  */
 export async function runUp(
 	options: UpOptions,
 	deps: RunUpDeps = {},
-): Promise<Result<UpHandle, DaemonConfigError | StartupError>> {
+): Promise<Result<UpHandle, DaemonConfigError | StartupErrorType>> {
 	const projectDir = resolve(options.projectDir);
 	const socketPath = socketPathFor(projectDir);
 	const configPath = join(projectDir, CONFIG_FILENAME);
@@ -118,18 +122,44 @@ export async function runUp(
 		return DaemonConfigError.MissingFile({ configPath });
 	}
 
-	let teardown: () => Promise<void> = async () => {};
+	if (await pingDaemon(socketPath)) {
+		return StartupError.AlreadyRunning({
+			pid: readMetadata(projectDir)?.pid,
+		});
+	}
 
-	// Bind before writing our metadata. On AlreadyRunning the live
-	// daemon's sidecar must stay intact; on a stale-socket recovery
-	// `bindOrRecover` unlinks the orphan metadata internally before our
-	// successful retry, so the writeMetadata below records *our* pid.
-	const daemonServer = createDaemonServer({
-		projectDir,
-		triggerShutdown: () => void teardown(),
-	});
+	const loader = deps.loadDaemonConfig ?? loadDaemonConfig;
+	const starter = deps.startDaemonRoutes ?? startDaemonRoutes;
+	const loadResult = await loader(projectDir);
+	if (loadResult.error) {
+		return loadResult;
+	}
+	const config = loadResult.data;
+
+	const startResult = await starter(config);
+	if (startResult.error) {
+		return startResult;
+	}
+	const runtimes = startResult.data;
+
+	let teardown: () => Promise<void> = async () => {};
+	let daemonServer: ReturnType<typeof createDaemonServer>;
+	try {
+		daemonServer = createDaemonServer({
+			projectDir,
+			routes: runtimes,
+			triggerShutdown: () => void teardown(),
+		});
+	} catch (cause) {
+		await safeDisposeStartedRoutes(runtimes);
+		throw cause;
+	}
+
 	const bindResult = await daemonServer.listen();
-	if (bindResult.error) return bindResult;
+	if (bindResult.error) {
+		await safeDisposeStartedRoutes(runtimes);
+		return bindResult;
+	}
 
 	const configMtime = readConfigMtime(projectDir);
 	const metadata: DaemonMetadata = {
@@ -140,33 +170,6 @@ export async function runUp(
 		configMtime,
 	};
 	writeMetadata(projectDir, metadata);
-
-	const loader = deps.loadDaemonConfig ?? loadDaemonConfig;
-	const starter = deps.startDaemonRoutes ?? startDaemonRoutes;
-	const loadResult = await loader(projectDir);
-	if (loadResult.error) {
-		await daemonServer.close();
-		unlinkMetadata(projectDir);
-		return loadResult;
-	}
-	const config = loadResult.data;
-
-	const startResult = await starter(config);
-	if (startResult.error) {
-		await daemonServer.close();
-		unlinkMetadata(projectDir);
-		return startResult;
-	}
-	const runtimes = startResult.data;
-
-	try {
-		daemonServer.mountRoutes(runtimes);
-	} catch (cause) {
-		await safeDisposeStartedRoutes(runtimes);
-		await daemonServer.close();
-		unlinkMetadata(projectDir);
-		throw cause;
-	}
 
 	let teardownPromise: Promise<void> | null = null;
 	teardown = (): Promise<void> => {

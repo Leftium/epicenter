@@ -1,6 +1,6 @@
 /**
- * Daemon server factory: build the route table, build the Hono app, and
- * bind a unix socket. The "build + bind" core extracted from the CLI's
+ * Daemon server factory: build the Hono app for started routes and bind a
+ * unix socket. The "build + bind" core extracted from the CLI's
  * `epicenter up` command so any bun process (CLI, vault, embedded) can
  * stand up the daemon transport without depending on `@epicenter/cli`.
  *
@@ -14,7 +14,7 @@
 
 import { Ok, type Result } from 'wellcrafted/result';
 
-import { buildDaemonApp, buildStartingDaemonApp } from './app.js';
+import { buildDaemonApp } from './app.js';
 import { pingDaemon } from './client.js';
 import { socketPathFor } from './paths.js';
 import { validateStartedDaemonRoutes } from './route-validation.js';
@@ -28,6 +28,8 @@ import {
 export type DaemonServerOptions = {
 	/** Filesystem-resolved absolute path that scopes this daemon. */
 	projectDir: string;
+	/** Started daemon routes served by the unix-socket app. */
+	routes: readonly StartedDaemonRoute[];
 	/** Called by the optional `/shutdown` route after the response is queued. */
 	triggerShutdown?: () => void;
 };
@@ -42,8 +44,6 @@ export type DaemonServer = {
 	 * after a successful `listen()` are a no-op until `close()` runs.
 	 */
 	listen(): Promise<Result<void, StartupError>>;
-	/** Mount started daemon routes after the socket has already been claimed. */
-	mountRoutes(routes: readonly StartedDaemonRoute[]): void;
 	/**
 	 * Stop the bound listener. `Bun.serve.stop()` unlinks the socket file
 	 * itself; this method also sweeps any leftover socket file as a guard
@@ -53,16 +53,25 @@ export type DaemonServer = {
 };
 
 /**
- * Build a daemon route table from `opts.runtimes`, return a handle
+ * Build a daemon route table from already-started `routes`, return a handle
  * with a deferred `listen()`. The factory does not touch the filesystem
  * until `listen()` is called.
  */
 export function createDaemonServer({
 	projectDir,
+	routes,
 	triggerShutdown,
 }: DaemonServerOptions): DaemonServer {
 	const socketPath = socketPathFor(projectDir);
-	const startingFetch = buildStartingDaemonApp().fetch;
+	const validation = validateStartedDaemonRoutes(routes);
+	if (!validation.ok) {
+		throw new Error(
+			validation.reason === 'duplicate'
+				? `createDaemonServer: duplicate daemon route '${validation.route}'`
+				: `createDaemonServer: invalid daemon route '${validation.route}'`,
+		);
+	}
+	const fetch = buildDaemonApp([...routes], triggerShutdown).fetch;
 
 	let server: Bun.Server<undefined> | undefined;
 
@@ -72,30 +81,12 @@ export function createDaemonServer({
 			if (server !== undefined) return Ok(undefined);
 			const result = await bindOrRecover({
 				socketPath,
-				fetch: startingFetch,
+				fetch,
 				projectDir,
 				isSocketResponsive: pingDaemon,
 			});
 			if (result.error === null) server = result.data;
 			return result.error === null ? Ok(undefined) : result;
-		},
-		mountRoutes(routes) {
-			const validation = validateStartedDaemonRoutes(routes);
-			if (!validation.ok) {
-				throw new Error(
-					validation.reason === 'duplicate'
-						? `createDaemonServer: duplicate daemon route '${validation.route}'`
-						: `createDaemonServer: invalid daemon route '${validation.route}'`,
-				);
-			}
-			if (server === undefined) {
-				throw new Error(
-					'createDaemonServer: listen before mounting daemon routes',
-				);
-			}
-			server.reload({
-				fetch: buildDaemonApp([...routes], triggerShutdown).fetch,
-			});
 		},
 		async close() {
 			if (server) {

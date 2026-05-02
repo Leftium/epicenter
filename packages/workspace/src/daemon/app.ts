@@ -101,9 +101,3 @@ export function buildDaemonApp(
 			return c.json(Ok(null));
 		});
 }
-
-export function buildStartingDaemonApp() {
-	return new Hono()
-		.post('/ping', (c) => c.json(Ok('pong' as const)))
-		.all('*', (c) => c.text('daemon routes are starting', 503));
-}

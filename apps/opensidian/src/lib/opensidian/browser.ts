@@ -2,8 +2,10 @@ import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
-	createFileContentDocSource,
+	createFileContentDoc,
 	createSqliteIndex,
+	type FileId,
+	fileContentDocGuid,
 } from '@epicenter/filesystem';
 import {
 	attachAwareness,
@@ -34,12 +36,34 @@ export function openOpensidian({
 	attachBroadcastChannel(doc.ydoc);
 
 	const fileContentDocs = createBrowserDocCache(
-		createFileContentDocSource({
-			workspaceId: doc.ydoc.guid,
-			filesTable: doc.tables.files,
-			attachPersistence: attachIndexedDb,
-			clearLocalDataForGuid: clearDocument,
-		}),
+		{
+			ids() {
+				return doc.tables.files.getAllValid().map((file) => file.id);
+			},
+			create(fileId: FileId) {
+				const contentDoc = createFileContentDoc({
+					fileId,
+					workspaceId: doc.ydoc.guid,
+					filesTable: doc.tables.files,
+					attachPersistence: attachIndexedDb,
+				});
+				return {
+					...contentDoc,
+					persistence: contentDoc.persistence as ReturnType<
+						typeof attachIndexedDb
+					>,
+					sync: null,
+				};
+			},
+			clearLocalData(fileId: FileId) {
+				return clearDocument(
+					fileContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						fileId,
+					}),
+				);
+			},
+		},
 		{ gcTime: 5_000 },
 	);
 	const sqliteIndex = createSqliteIndex(fileContentDocs)({

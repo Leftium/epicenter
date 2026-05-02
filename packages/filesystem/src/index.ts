@@ -9,10 +9,7 @@ export {
 } from './extensions/sqlite-index/index.js';
 // File content documents
 export {
-	type BrowserFileContentDocInstance,
 	createFileContentDoc,
-	createFileContentDocSource,
-	type FileContentDoc,
 	type FileContentDocCache,
 	fileContentDocGuid,
 } from './file-content-docs.js';

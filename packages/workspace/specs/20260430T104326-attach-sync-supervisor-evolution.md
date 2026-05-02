@@ -7,7 +7,74 @@
 
 ## Overview
 
-Three product changes and one internal testing primitive for `attachSync` (`packages/workspace/src/document/attach-sync.ts`) that build on the recent `AbortController` refactor (commit `d170d7ba7`): replace the implicit state machine with an explicit reducer plus effects model (A1), make browser cross-tab sync automatic through Web Locks plus BroadcastChannel (A2), introduce a tiny `MESSAGE_TYPE.GOODBYE` wire frame for graceful disconnects (A4), and keep the async event bus internal until a real public consumer appears (A3). The recommended landing order is A4 -> A1 -> A2, with A3 implemented only as private test/debug infrastructure during A1.
+`attachSync` should own sync topology: callers ask it to sync a document to a URL, and it attaches the socket, cross-tab transport, leader election, presence wiring, lifecycle supervision, and teardown semantics needed to make that true. Three product changes and one internal testing primitive support that thesis: replace the implicit supervisor with an explicit reducer plus effects model (A1), make browser cross-tab sync automatic through Web Locks plus BroadcastChannel (A2), introduce a tiny `MESSAGE_TYPE.GOODBYE` wire frame for graceful disconnects (A4), and keep the async event bus internal until a real public consumer appears (A3). The recommended landing order is A4 -> A1 -> A2, with A3 implemented only as private test/debug infrastructure during A1.
+
+## Grand Vision
+
+The public contract should be boring:
+
+```typescript
+const sync = attachSync(doc, {
+  url,
+  waitFor: idb,
+  getToken,
+});
+```
+
+That line means: keep this document synced to that room. It should not mean "the app remembered to attach BroadcastChannel first," "the app knows whether this tab owns the WebSocket," or "the caller understands the difference between local document fanout and remote transport."
+
+`attachSync` owns the topology below that line:
+
+```
+caller intent
+  │
+  ▼
+attachSync(doc, { url, waitFor, getToken })
+  │
+  ├── waits for local persistence before first remote handshake
+  ├── supervises direct WebSocket transport when direct is the right topology
+  ├── elects one browser leader per document when cross-tab sharing is available
+  ├── fans document updates across tabs without caller wiring
+  ├── carries presence and RPC over the one active remote transport
+  └── exposes one lifecycle/status surface to the app
+```
+
+This is the source-of-truth rule: app code owns product intent; `attachSync` owns sync mechanics. If a proposed change makes app code pass another topology flag, wire another transport, or switch on internal wire events, it is probably moving in the wrong direction.
+
+## Worth-It Gates
+
+A1 and A2 are worth doing only if they pass these gates:
+
+| Gate | A1 State Machine | A2 Cross-Tab Sync |
+|---|---|---|
+| Deletes caller decisions | No, not directly | Yes, removes explicit browser `attachBroadcastChannel` for synced docs |
+| Creates a source of truth | Yes, lifecycle state moves into one reducer | Yes, one tab owns the remote transport for a doc |
+| Makes failure handling clearer | Yes, auth failure, reconnect, stop, and destroy become explicit transitions | Yes, followers mirror leader status instead of each tab inventing status |
+| Adds public surface area | No, if `SyncAttachment` stays stable | One escape hatch only: `crossTab: 'direct'` |
+| Reduces code overall | Maybe not immediately | Should reduce app wiring and duplicate sockets; internal code grows |
+| Worth doing alone | Maybe | Yes |
+| Worth doing before the other | Yes, if A2 follows | No, A2 without A1 risks adding lifecycle branches to the current closure |
+
+The hard standard: after A2, browser workspace setup should lose code. If the migration leaves callers with both `attachBroadcastChannel(doc.ydoc)` and `attachSync(..., { leaderElection: true })`, the design failed.
+
+Stop conditions:
+
+1. Stop A1 if the extracted reducer makes `attach-sync.ts` longer and does not remove the reconnect-tail race, permanent failure flag, or scattered lifecycle mutation.
+2. Stop A2 if browser callers still need to wire `attachBroadcastChannel` for synced docs.
+3. Stop A2 if followers expose a meaningfully different `SyncAttachment` contract than leaders.
+4. Stop A4 if it becomes an acknowledged shutdown protocol. GOODBYE is a small hint, not a correctness dependency.
+5. Stop A3 as a public API until a real app or CLI needs event streaming.
+
+## What To Hunt Down
+
+Before implementing A1 or A2, verify these spots:
+
+1. Browser workspace factories that call both `attachBroadcastChannel(doc.ydoc)` and `attachSync(...)`. These are the call sites A2 must simplify.
+2. Content-doc factories that call `attachSync(...)` without `attachBroadcastChannel(...)`. Decide whether automatic cross-tab sync applies there too.
+3. Node daemon factories that pass `webSocketImpl`. They should stay direct by default because Web Locks and BroadcastChannel are browser topology.
+4. Tests that stub `globalThis.WebSocket`. A1 should preserve that test strategy unless a transport injection point already exists.
+5. Presence and RPC methods. Followers must keep `peers()`, `find()`, `observe()`, and `rpc()` behavior compatible enough that callers cannot tell which tab owns the socket.
+6. Existing sync status UI. `connected`, `failed`, and `hasLocalChanges` should mean the same thing before and after cross-tab sharing.
 
 ## Motivation
 
@@ -41,7 +108,7 @@ This creates problems:
 
 1. **Implicit state machine, hard to reason about.** Six observable states (offline, connecting, handshaking, connected, backing_off, failed) and ~10 events (start, stop, token result, ws open/close/error, handshake complete, backoff done, status tick) are tangled into a single async loop. The "reconnect-during-supervisor-tail" race at `attach-sync.ts:944-955` is a comment-heavy patch over a structural gap. New contributors cannot easily answer "what happens if X arrives in state Y."
 2. **No internal event stream.** Tests and debug tooling that need ordered transitions, wire bytes, peer joins/leaves, or RPC observations get one callback per concern (`onStatusChange`, `observe`). An integration test that asserts a sequence ("connecting -> connected -> hasLocalChanges:true -> hasLocalChanges:false") needs a custom queue. That is a real internal smell, but it does not yet justify a public `sync.events()` API.
-3. **Server cannot tell graceful from network drop.** Both `goOffline()` and `doc.destroy()` call `ws.close()` which the server sees as code 1006 (abnormal close), indistinguishable from a TCP drop. The DO has to wait out the awareness 30s TTL and reply `RpcError.PeerOffline` to in-flight RPCs that could have been answered with "we know they intentionally left."
+3. **Server cannot tell graceful from network drop.** Both `pause()` and `doc.destroy()` call `ws.close()` which the server sees as code 1006 (abnormal close), indistinguishable from a TCP drop. The DO has to wait out the awareness 30s TTL and reply `RpcError.PeerOffline` to in-flight RPCs that could have been answered with "we know they intentionally left."
 4. **N tabs = N WebSockets to the same DO.** A user with 12 workspace tabs opens 12 sockets, runs 12 ping loops, and shows up in awareness 12 times under the same `deviceId`. Same is true on devices with multiple PWA windows. CRDTs make this *correct*, just wasteful.
 
 ### Code Smell Test
@@ -156,7 +223,7 @@ const events = createSyncEventBus();
 events.emit({ type: 'status', status: sync.status });
 
 // A4: graceful disconnect
-sync.goOffline();   // sends GOODBYE(reason: 'user_request') before ws.close()
+sync.pause();   // sends GOODBYE(reason: 'user_request') before ws.close()
 
 // A2: browser cross-tab sharing is automatic
 attachSync(doc, { url, waitFor: idb });
@@ -235,7 +302,7 @@ Three common patterns in the wild:
 | Goodbye frame: message type | `102` in the Epicenter range (100+) | 102 is next free after RPC=101 |
 | Goodbye frame: payload | `[varuint: 102] [varuint: reason_code]` | Symmetric with SYNC_STATUS; tiny on wire |
 | Goodbye reasons | `0=unknown, 1=user_request, 2=doc_destroyed` | Minimal vocabulary; extensible via reserved range |
-| Goodbye: where to send | Both `goOffline()` and dispose path, before `ws.close()` | Server uses the reason for telemetry + RPC PeerOffline routing |
+| Goodbye: where to send | Both `pause()` and dispose path, before `ws.close()` | Server uses the reason for telemetry + RPC PeerOffline routing |
 | Cross-tab mode | `crossTab?: 'auto' | 'direct'`, default `'auto'` | Browser callers get one socket per doc by default; escape hatch remains explicit |
 | Leader election: lock name | `epicenter:sync:${ydoc.guid}` | Per-doc; avoids cross-doc contention |
 | Leader election: follower writes | Routed to leader via internal BroadcastChannel | Reuses existing document update channel semantics without caller wiring |
@@ -297,7 +364,7 @@ export type MachineState =
 // Events (everything that can move the machine)
 export type MachineEvent =
   | { type: 'START' }
-  | { type: 'STOP'; reason: 'goOffline' | 'reconnect' | 'destroy' }
+  | { type: 'STOP'; reason: 'pause' | 'reconnect' | 'destroy' }
   | { type: 'CONNECT_ATTEMPT' }
   | { type: 'TOKEN_OBTAINED'; token: string | null }
   | { type: 'TOKEN_REJECTED'; error: unknown }
@@ -403,7 +470,7 @@ export const MESSAGE_TYPE = {
 
 export const GOODBYE_REASON = {
   UNKNOWN: 0,
-  USER_REQUEST: 1,        // goOffline()
+  USER_REQUEST: 1,        // pause()
   DOC_DESTROYED: 2,       // ydoc.destroy()
   TOKEN_REFRESH: 3,       // reserved for future use
 } as const;
@@ -423,7 +490,7 @@ export function decodeGoodbye(decoder: decoding.Decoder): GoodbyeReason;
 **Client wire flow:**
 
 ```
-goOffline() called
+pause() called
    │
    ├── send(encodeGoodbye(USER_REQUEST))
    ├── ws.close(1000)
@@ -536,16 +603,16 @@ export function runWithLeaderElection(
 
 - [ ] **1.1** Add `MESSAGE_TYPE.GOODBYE = 102`, `GOODBYE_REASON`, `encodeGoodbye`, `decodeGoodbye` to `packages/sync/src/protocol.ts`.
 - [ ] **1.2** Add `RpcError.PeerGone({ deviceId })` to `packages/sync/src/rpc-errors.ts`.
-- [ ] **1.3** Wire client send: `send(encodeGoodbye(USER_REQUEST))` in `goOffline()` before `cycleController.abort()` (`attach-sync.ts:958`); `send(encodeGoodbye(DOC_DESTROYED))` in destroy handler before `masterController.abort()` (`attach-sync.ts:990`).
+- [ ] **1.3** Wire client send: `send(encodeGoodbye(USER_REQUEST))` in `pause()` before `cycleController.abort()` (`attach-sync.ts:958`); `send(encodeGoodbye(DOC_DESTROYED))` in destroy handler before `masterController.abort()` (`attach-sync.ts:990`).
 - [ ] **1.4** Server: handle `MESSAGE_TYPE.GOODBYE` in `applyMessage` (`apps/api/src/sync-handlers.ts:243`), return new `{ action: 'goodbye', reason }`. `BaseSyncRoom.webSocketMessage` handles `'goodbye'` by reverse-iterating any in-flight forwarded RPCs whose `requesterClientId` is in this WS's `controlledClientIds`, replying `PeerGone`.
-- [ ] **1.5** Tests: client-side, assert `ws.sent` contains a GOODBYE frame before `ws.close` in goOffline/destroy paths. Server-side, drive a fake WS through GOODBYE then assert in-flight RPC replies switched from `PeerOffline` to `PeerGone`.
+- [ ] **1.5** Tests: client-side, assert `ws.sent` contains a GOODBYE frame before `ws.close` in pause/destroy paths. Server-side, drive a fake WS through GOODBYE then assert in-flight RPC replies switched from `PeerOffline` to `PeerGone`.
 
 ### Phase 2: A1 - State machine extraction
 
 - [ ] **2.1** Create `packages/workspace/src/document/sync-machine.ts` with `MachineState`, `MachineEvent`, `MachineEffect`, and `step(state, event): { state, effects }`. Pure module; no `Y.Doc`, no `WebSocket` imports.
 - [ ] **2.2** Exhaustive reducer test file `sync-machine.test.ts`: every `(state, event)` pair, asserting both next state and effects list. Target: 100% branch coverage.
 - [ ] **2.3** Create `packages/workspace/src/document/sync-runtime.ts`. Owns `AbortController` hierarchy, `setTimeout`/`setInterval`, WebSocket factory (or `globalThis.WebSocket` for testability), `getToken` invocation, `backoff` helper. Translates events from the wire/timers into `step()` calls; executes returned effects.
-- [ ] **2.4** Refactor `attach-sync.ts`: replace `runLoop`, `attemptConnection`, `ensureSupervisor`, `goOffline`, `reconnect` with calls into the runtime. Keep the public `SyncAttachment` surface byte-identical (`whenConnected`, `status`, `onStatusChange`, `goOffline`, `reconnect`, `whenDisposed`, `rpc`, `peers`, `find`, `observe`, `raw` unchanged).
+- [ ] **2.4** Refactor `attach-sync.ts`: replace `runLoop`, `attemptConnection`, `ensureSupervisor`, `pause`, `reconnect` with calls into the runtime. Keep the public `SyncAttachment` surface byte-identical (`whenConnected`, `status`, `onStatusChange`, `pause`, `reconnect`, `whenDisposed`, `rpc`, `peers`, `find`, `observe`, `raw` unchanged).
 - [ ] **2.5** Verify all existing `attach-sync.test.ts` tests pass without modification. If a test needed a code change to pass, the public API regressed.
 - [ ] **2.6** Delete `permanentFailure` flag (now `state.phase === 'failed'`); delete `currentSupervisorPromise` (now owned by runtime); delete the "reconnect-during-tail" race comment block (impossible by construction now).
 
@@ -618,7 +685,7 @@ export function runWithLeaderElection(
 3. **A4: should GOODBYE be ack'd by the server before `ws.close()`?**
    - Currently the design sends GOODBYE and immediately closes; server may or may not get it before the FIN.
    - Options: (a) fire-and-forget (proposed), (b) await a server `'goodbye-ack'` text frame before closing, with a 200ms timeout.
-   - **Recommendation**: (a). The GOODBYE is an optimization, not a correctness primitive. A 200ms delay on `goOffline()` is bad UX. If the server misses it, fallback (PeerOffline + 30s awareness TTL) is fine.
+   - **Recommendation**: (a). The GOODBYE is an optimization, not a correctness primitive. A 200ms delay on `pause()` is bad UX. If the server misses it, fallback (PeerOffline + 30s awareness TTL) is fine.
 
 4. **A2: should browser cross-tab sharing be the default?**
    - Options: (a) default `'auto'` in browsers with fallback to direct, (b) opt-in `leaderElection: true`, (c) direct sockets forever.

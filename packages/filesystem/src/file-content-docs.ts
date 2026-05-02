@@ -19,17 +19,12 @@
  * teardown barriers.
  *
  * The live document is browser-agnostic on purpose: it has no `sync`
- * field. Browser apps wrap it through `createFileContentDocSource` to
- * satisfy the `BrowserDocInstance` contract; non-browser callers (daemon,
- * CLI, e2e scripts) compose this directly with `createDisposableCache`.
+ * field. Browser apps add `sync: null` inline when adapting it to
+ * `createBrowserDocCache`; non-browser callers (daemon, CLI, e2e scripts)
+ * compose this directly with `createDisposableCache`.
  */
 
-import type {
-	BrowserDocPersistence,
-	BrowserDocSource,
-	DisposableCache,
-	Table,
-} from '@epicenter/workspace';
+import type { DisposableCache, Table } from '@epicenter/workspace';
 import {
 	attachTimeline,
 	type DocPersistence,
@@ -39,25 +34,6 @@ import {
 import * as Y from 'yjs';
 import type { FileId } from './ids.js';
 import type { FileRow } from './table.js';
-
-export type FileContentDoc = {
-	ydoc: Y.Doc;
-	content: ReturnType<typeof attachTimeline>;
-	persistence: DocPersistence | undefined;
-	whenReady: Promise<unknown>;
-	[Symbol.dispose](): void;
-};
-
-/**
- * Browser-context view of a `FileContentDoc`: adds the `sync: null`
- * field required by `BrowserDocInstance` (file content is local-only, no
- * remote sync) and narrows `persistence` to `BrowserDocPersistence` so
- * direct consumers can call `clearLocal()` on it.
- */
-export type BrowserFileContentDocInstance = FileContentDoc & {
-	persistence: BrowserDocPersistence | undefined;
-	sync: null;
-};
 
 export function fileContentDocGuid({
 	workspaceId,
@@ -74,14 +50,6 @@ export function fileContentDocGuid({
 	});
 }
 
-/**
- * Cross-package alias for the cache that holds opened FileContentDoc
- * handles. Exported so consumers (the filesystem ops layer, sqlite-index
- * extension, e2e configs) can declare a single shared type instead of
- * spelling out `DisposableCache<FileId, FileContentDoc>` at every site.
- */
-export type FileContentDocCache = DisposableCache<FileId, FileContentDoc>;
-
 export function createFileContentDoc({
 	fileId,
 	workspaceId,
@@ -92,7 +60,7 @@ export function createFileContentDoc({
 	workspaceId: string;
 	filesTable: Table<FileRow>;
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
-}): FileContentDoc {
+}) {
 	const ydoc = new Y.Doc({
 		guid: fileContentDocGuid({ workspaceId, fileId }),
 		gc: false,
@@ -113,45 +81,12 @@ export function createFileContentDoc({
 }
 
 /**
- * Browser-only document source that wraps `createFileContentDoc` to satisfy
- * the `BrowserDocInstance` contract. The source owns id enumeration, doc
- * construction, and by-guid storage cleanup; the cache consumes it
- * directly.
- *
- * `attachPersistence` and `clearLocalDataForGuid` are injected so this
- * package never imports `y-indexeddb`. Browser apps pass
- * `attachIndexedDb` and `clearDocument` (from `y-indexeddb`).
+ * Cross-package alias for the cache that holds opened file content doc
+ * handles. Exported so consumers (the filesystem ops layer, sqlite-index
+ * extension, e2e configs) can declare the shared cache contract without
+ * naming the builder's full return object.
  */
-export function createFileContentDocSource({
-	workspaceId,
-	filesTable,
-	attachPersistence,
-	clearLocalDataForGuid,
-}: {
-	workspaceId: string;
-	filesTable: Table<FileRow>;
-	attachPersistence: (ydoc: Y.Doc) => BrowserDocPersistence;
-	clearLocalDataForGuid: (guid: string) => Promise<void>;
-}): BrowserDocSource<FileId, BrowserFileContentDocInstance> {
-	return {
-		ids() {
-			return filesTable.getAllValid().map((file) => file.id);
-		},
-		create(fileId) {
-			const doc = createFileContentDoc({
-				fileId,
-				workspaceId,
-				filesTable,
-				attachPersistence,
-			});
-			return {
-				...doc,
-				persistence: doc.persistence as BrowserDocPersistence | undefined,
-				sync: null,
-			};
-		},
-		clearLocalData(fileId) {
-			return clearLocalDataForGuid(fileContentDocGuid({ workspaceId, fileId }));
-		},
-	};
-}
+export type FileContentDocCache = DisposableCache<
+	FileId,
+	ReturnType<typeof createFileContentDoc>
+>;

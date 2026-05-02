@@ -2,7 +2,7 @@
  * Per-skill instructions Y.Doc builder. Pure: takes a `skillId` plus all the
  * deps the construction needs and returns a Disposable bundle. Each skill's
  * markdown instruction body lives in its own Y.Doc with `attachPlainText`.
- * Persistence is caller-owned via the `attachPersistence` callback — see
+ * Persistence is caller-owned via the `attachPersistence` callback: see
  * `createFileContentDoc` for the shape.
  *
  * Wire into a `createDisposableCache` at the workspace module scope for
@@ -12,20 +12,12 @@
 import type { Table } from '@epicenter/workspace';
 import {
 	attachPlainText,
-	docGuid,
 	type DocPersistence,
+	docGuid,
 	onLocalUpdate,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { Skill } from './tables.js';
-
-export type SkillInstructionsDoc = {
-	ydoc: Y.Doc;
-	instructions: ReturnType<typeof attachPlainText>;
-	persistence: DocPersistence | undefined;
-	whenReady: Promise<unknown>;
-	[Symbol.dispose](): void;
-};
 
 export function createSkillInstructionsDoc({
 	skillId,
@@ -37,7 +29,7 @@ export function createSkillInstructionsDoc({
 	workspaceId: string;
 	skillsTable: Table<Skill>;
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
-}): SkillInstructionsDoc {
+}) {
 	const ydoc = new Y.Doc({
 		guid: docGuid({
 			workspaceId,

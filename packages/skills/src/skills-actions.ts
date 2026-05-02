@@ -8,10 +8,12 @@
  * @module
  */
 
-import { defineQuery, type DisposableCache, type Table } from '@epicenter/workspace';
+import {
+	type DisposableCache,
+	defineQuery,
+	type Table,
+} from '@epicenter/workspace';
 import Type from 'typebox';
-import type { ReferenceContentDoc } from './reference-content-docs.js';
-import type { SkillInstructionsDoc } from './skill-instructions-docs.js';
 import type { Reference, Skill } from './tables.js';
 
 export type SkillsTables = {
@@ -25,8 +27,20 @@ export function createSkillsActions({
 	referenceDocs,
 }: {
 	tables: SkillsTables;
-	instructionsDocs: DisposableCache<string, SkillInstructionsDoc>;
-	referenceDocs: DisposableCache<string, ReferenceContentDoc>;
+	instructionsDocs: DisposableCache<
+		string,
+		Disposable & {
+			instructions: { read(): string };
+			whenReady: Promise<unknown>;
+		}
+	>;
+	referenceDocs: DisposableCache<
+		string,
+		Disposable & {
+			content: { read(): string };
+			whenReady: Promise<unknown>;
+		}
+	>;
 }) {
 	async function readInstructions(id: string): Promise<string> {
 		await using h = instructionsDocs.open(id);
@@ -41,7 +55,7 @@ export function createSkillsActions({
 	}
 
 	return {
-		/** List all skills as lightweight catalog entries — no docs opened. */
+		/** List all skills as lightweight catalog entries: no docs opened. */
 		listSkills: defineQuery({
 			description: 'List all skills (id, name, description)',
 			handler: () =>

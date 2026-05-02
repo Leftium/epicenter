@@ -9,10 +9,12 @@ export {
 } from './extensions/sqlite-index/index.js';
 // File content documents
 export {
+	type BrowserFileContentDocInstance,
 	createFileContentDoc,
-	fileContentDocGuid,
+	createFileContentDocSource,
 	type FileContentDoc,
-	type FileContentDocs,
+	type FileContentDocCache,
+	fileContentDocGuid,
 } from './file-content-docs.js';
 // File system (orchestrator)
 export { attachYjsFileSystem, type YjsFileSystem } from './file-system.js';

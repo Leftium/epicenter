@@ -9,7 +9,7 @@
 
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { FileContentDocs, FileRow } from '@epicenter/filesystem';
+import type { FileContentDocCache, FileRow } from '@epicenter/filesystem';
 import {
 	convertWikilinksToEpicenterLinks,
 	makeEpicenterLink,
@@ -21,7 +21,7 @@ const MARKDOWN_DIR = join(import.meta.dir, 'data');
 
 export async function pushFromMarkdown(ctx: {
 	tables: (typeof opensidian)['tables'];
-	contentDocs: FileContentDocs;
+	contentDocs: FileContentDocCache;
 	filesDir?: string;
 }): Promise<{ imported: number; skipped: number; errors: string[] }> {
 	const dir = ctx.filesDir ?? join(MARKDOWN_DIR, 'files');

@@ -60,8 +60,8 @@ export { isRpcError, RpcError } from '@epicenter/sync';
 export {
 	createRemoteClient,
 	PeerAddressError,
-	type RemoteClient,
 	type RemoteCallError,
+	type RemoteClient,
 	type RemoteClientOptions,
 	type RemotePeerCallOptions,
 	type WireRpcError,
@@ -131,11 +131,12 @@ export { DateTimeString } from './shared/datetime-string';
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
-	type BrowserDocumentFamily,
-	type BrowserDocumentFamilyMember,
-	type BrowserDocumentFamilyOptions,
-	createBrowserDocumentFamily,
-} from './cache/browser-document-family.js';
+	type BrowserDocCache,
+	type BrowserDocCacheOptions,
+	type BrowserDocInstance,
+	type BrowserDocSource,
+	createBrowserDocCache,
+} from './cache/browser-doc-cache.js';
 export {
 	createDisposableCache,
 	type DisposableCache,
@@ -194,7 +195,6 @@ export {
 	type WaitForBarrier,
 	type WebSocketImpl,
 } from './document/attach-sync.js';
-export { composeSyncControls } from './document/sync-control.js';
 export {
 	attachReadonlyTable,
 	attachReadonlyTables,
@@ -229,7 +229,10 @@ export {
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
-export type { DocPersistence } from './document/doc-persistence.js';
+export type {
+	BrowserDocPersistence,
+	DocPersistence,
+} from './document/doc-persistence.js';
 export {
 	EncryptionKey,
 	EncryptionKeys,
@@ -238,13 +241,14 @@ export {
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
-	PeerIdentity,
 	type PeerAwarenessSchema,
 	type PeerAwarenessState,
+	PeerIdentity,
 	type PeerRuntime,
 	type ResolvedPeer,
 } from './document/peer-identity.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
+export { composeSyncControls } from './document/sync-control.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

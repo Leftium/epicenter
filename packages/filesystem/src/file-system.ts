@@ -1,7 +1,7 @@
 import type { Table } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import { FS_ERRORS } from './errors.js';
-import type { FileContentDocs } from './file-content-docs.js';
+import type { FileContentDocCache } from './file-content-docs.js';
 import type { FileId } from './ids.js';
 import { posixResolve } from './path.js';
 import type { FileRow } from './table.js';
@@ -17,18 +17,17 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  * Create a POSIX-like virtual filesystem backed by Yjs CRDTs.
  *
  * Thin orchestrator that delegates metadata operations to {@link FileTree}
- * and content I/O to a per-file content-doc factory (produced by
- * {@link createFileContentDocs}). Every method applies `cwd` via
+ * and content I/O to a per-file content-doc cache. Every method applies `cwd` via
  * {@link posixResolve}, then calls the appropriate sub-service.
  *
  * The returned object satisfies the `IFileSystem` interface from `just-bash`,
  * which allows this virtual filesystem to be used as a drop-in backend for
- * shell emulation — while also exposing extra members (`index`,
+ * shell emulation: while also exposing extra members (`index`,
  * `lookupId`, `dispose`) that aren't part of `IFileSystem`.
  *
- * **No symlinks** — `symlink`, `link`, and `readlink` always throw ENOSYS.
- * **Soft deletes** — `rm` sets `trashedAt` rather than destroying rows.
- * **No real permissions** — `chmod` is a validated no-op.
+ * **No symlinks**: `symlink`, `link`, and `readlink` always throw ENOSYS.
+ * **Soft deletes**: `rm` sets `trashedAt` rather than destroying rows.
+ * **No real permissions**: `chmod` is a validated no-op.
  *
  * @example
  * ```typescript
@@ -37,13 +36,15 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  *
  * const ydoc = new Y.Doc({ guid: 'app' });
  * const files = attachTable(ydoc, 'files', filesTable);
- * const contentDocs = createFileContentDocs({ ydoc });
+ * const contentDocs = createDisposableCache((fileId) =>
+ *   createFileContentDoc({ fileId, workspaceId: 'app', filesTable: files }),
+ * );
  * const fs = attachYjsFileSystem(files, contentDocs);
  * ```
  */
 export function attachYjsFileSystem(
 	filesTable: Table<FileRow>,
-	contentDocuments: FileContentDocs,
+	contentDocuments: FileContentDocCache,
 	cwd: string = '/',
 ) {
 	const tree = attachFileTree(filesTable);
@@ -78,14 +79,14 @@ export function attachYjsFileSystem(
 		 * Tear down reactive indexes.
 		 *
 		 * Content doc cleanup is handled by the workspace's documents manager
-		 * dispose cascade — no need to call `disposeAll()` here.
+		 * dispose cascade: no need to call `disposeAll()` here.
 		 */
 		dispose() {
 			tree.dispose();
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════
-		// READS — metadata only (fast, no content doc loaded)
+		// READS: metadata only (fast, no content doc loaded)
 		// ═══════════════════════════════════════════════════════════════════════
 
 		async readdir(path) {
@@ -150,7 +151,7 @@ export function attachYjsFileSystem(
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════
-		// READS — content (may load a per-file content doc)
+		// READS: content (may load a per-file content doc)
 		// ═══════════════════════════════════════════════════════════════════════
 
 		async readFile(path, _options?) {
@@ -218,7 +219,7 @@ export function attachYjsFileSystem(
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════
-		// STRUCTURE — mkdir, rm, cp, mv
+		// STRUCTURE: mkdir, rm, cp, mv
 		// ═══════════════════════════════════════════════════════════════════════
 
 		async mkdir(path, { recursive = false } = {}) {
@@ -338,7 +339,7 @@ export function attachYjsFileSystem(
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════
-		// PERMISSIONS / TIMESTAMPS — no-op in a collaborative system
+		// PERMISSIONS / TIMESTAMPS: no-op in a collaborative system
 		// ═══════════════════════════════════════════════════════════════════════
 
 		async chmod(path, _mode) {
@@ -354,7 +355,7 @@ export function attachYjsFileSystem(
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════
-		// SYMLINKS / LINKS — not supported (always throws ENOSYS)
+		// SYMLINKS / LINKS: not supported (always throws ENOSYS)
 		// ═══════════════════════════════════════════════════════════════════════
 
 		async symlink(_target, _linkPath) {

@@ -18,15 +18,22 @@
  * `whenReady`, `whenDisposed` is available on the persistence handle for
  * teardown barriers.
  *
- * Wire into a browser document family or `createDisposableCache` at the
- * workspace module scope for refcount + grace.
+ * The live document is browser-agnostic on purpose: it has no `sync`
+ * field. Browser apps wrap it through `createFileContentDocSource` to
+ * satisfy the `BrowserDocInstance` contract; non-browser callers (daemon,
+ * CLI, e2e scripts) compose this directly with `createDisposableCache`.
  */
 
-import type { DisposableCache, Table } from '@epicenter/workspace';
+import type {
+	BrowserDocPersistence,
+	BrowserDocSource,
+	DisposableCache,
+	Table,
+} from '@epicenter/workspace';
 import {
 	attachTimeline,
-	docGuid,
 	type DocPersistence,
+	docGuid,
 	onLocalUpdate,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -39,6 +46,17 @@ export type FileContentDoc = {
 	persistence: DocPersistence | undefined;
 	whenReady: Promise<unknown>;
 	[Symbol.dispose](): void;
+};
+
+/**
+ * Browser-context view of a `FileContentDoc`: adds the `sync: null`
+ * field required by `BrowserDocInstance` (file content is local-only, no
+ * remote sync) and narrows `persistence` to `BrowserDocPersistence` so
+ * direct consumers can call `clearLocal()` on it.
+ */
+export type BrowserFileContentDocInstance = FileContentDoc & {
+	persistence: BrowserDocPersistence | undefined;
+	sync: null;
 };
 
 export function fileContentDocGuid({
@@ -62,7 +80,7 @@ export function fileContentDocGuid({
  * extension, e2e configs) can declare a single shared type instead of
  * spelling out `DisposableCache<FileId, FileContentDoc>` at every site.
  */
-export type FileContentDocs = DisposableCache<FileId, FileContentDoc>;
+export type FileContentDocCache = DisposableCache<FileId, FileContentDoc>;
 
 export function createFileContentDoc({
 	fileId,
@@ -90,6 +108,50 @@ export function createFileContentDoc({
 		whenReady: persistence?.whenLoaded ?? Promise.resolve(),
 		[Symbol.dispose]() {
 			ydoc.destroy();
+		},
+	};
+}
+
+/**
+ * Browser-only document source that wraps `createFileContentDoc` to satisfy
+ * the `BrowserDocInstance` contract. The source owns id enumeration, doc
+ * construction, and by-guid storage cleanup; the cache consumes it
+ * directly.
+ *
+ * `attachPersistence` and `clearLocalDataForGuid` are injected so this
+ * package never imports `y-indexeddb`. Browser apps pass
+ * `attachIndexedDb` and `clearDocument` (from `y-indexeddb`).
+ */
+export function createFileContentDocSource({
+	workspaceId,
+	filesTable,
+	attachPersistence,
+	clearLocalDataForGuid,
+}: {
+	workspaceId: string;
+	filesTable: Table<FileRow>;
+	attachPersistence: (ydoc: Y.Doc) => BrowserDocPersistence;
+	clearLocalDataForGuid: (guid: string) => Promise<void>;
+}): BrowserDocSource<FileId, BrowserFileContentDocInstance> {
+	return {
+		ids() {
+			return filesTable.getAllValid().map((file) => file.id);
+		},
+		create(fileId) {
+			const doc = createFileContentDoc({
+				fileId,
+				workspaceId,
+				filesTable,
+				attachPersistence,
+			});
+			return {
+				...doc,
+				persistence: doc.persistence as BrowserDocPersistence | undefined,
+				sync: null,
+			};
+		},
+		clearLocalData(fileId) {
+			return clearLocalDataForGuid(fileContentDocGuid({ workspaceId, fileId }));
 		},
 	};
 }

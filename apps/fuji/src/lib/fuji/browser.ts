@@ -4,20 +4,36 @@ import {
 	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
+	attachRichText,
 	attachSync,
 	composeSyncControls,
-	createBrowserDocumentFamily,
+	createBrowserDocCache,
 	createRemoteClient,
+	DateTimeString,
+	docGuid,
+	onLocalUpdate,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { clearDocument } from 'y-indexeddb';
-import {
-	createEntryContentDoc,
-	entryContentDocGuid,
-} from '$lib/entry-content-docs';
+import * as Y from 'yjs';
 import type { EntryId } from '$lib/workspace';
 import { openFuji as openFujiDoc } from './index';
+
+function entryContentDocGuid({
+	workspaceId,
+	entryId,
+}: {
+	workspaceId: string;
+	entryId: EntryId;
+}): string {
+	return docGuid({
+		workspaceId,
+		collection: 'entries',
+		rowId: entryId,
+		field: 'content',
+	});
+}
 
 export function openFuji({
 	auth,
@@ -31,32 +47,62 @@ export function openFuji({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const entryContentDocs = createBrowserDocumentFamily({
-		create(entryId: EntryId) {
-			const document = createEntryContentDoc({
-				entryId,
-				workspaceId: doc.ydoc.guid,
-				entriesTable: doc.tables.entries,
-				auth,
-				apiUrl: APP_URLS.API,
-			});
+	const entryContentDocs = createBrowserDocCache(
+		{
+			ids() {
+				return doc.tables.entries.getAllValid().map((entry) => entry.id);
+			},
+			create(entryId: EntryId) {
+				const ydoc = new Y.Doc({
+					guid: entryContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						entryId,
+					}),
+					gc: false,
+				});
+				const body = attachRichText(ydoc);
+				const childIdb = attachIndexedDb(ydoc);
+				const childSync = attachSync(ydoc, {
+					url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+					waitFor: childIdb.whenLoaded,
+					getToken: async () => {
+						await auth.whenLoaded;
 
-			return { document, syncControl: document.sync };
+						const snapshot = auth.snapshot;
+						return snapshot.status === 'signedIn'
+							? snapshot.session.token
+							: null;
+					},
+				});
+
+				onLocalUpdate(ydoc, () => {
+					doc.tables.entries.update(entryId, {
+						updatedAt: DateTimeString.now(),
+					});
+				});
+
+				return {
+					ydoc,
+					body,
+					idb: childIdb,
+					sync: childSync,
+					whenLoaded: childIdb.whenLoaded,
+					[Symbol.dispose]() {
+						ydoc.destroy();
+					},
+				};
+			},
+			clearLocalData(entryId: EntryId) {
+				return clearDocument(
+					entryContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						entryId,
+					}),
+				);
+			},
 		},
-		async clearLocalData() {
-			await Promise.all(
-				doc.tables.entries.getAllValid().map((entry) =>
-					clearDocument(
-						entryContentDocGuid({
-							workspaceId: doc.ydoc.guid,
-							entryId: entry.id,
-						}),
-					),
-				),
-			);
-		},
-		gcTime: 5_000,
-	});
+		{ gcTime: 5_000 },
+	);
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },

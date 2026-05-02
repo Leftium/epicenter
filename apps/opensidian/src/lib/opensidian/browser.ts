@@ -2,10 +2,8 @@ import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
-	createFileContentDoc,
+	createFileContentDocSource,
 	createSqliteIndex,
-	fileContentDocGuid,
-	type FileId,
 } from '@epicenter/filesystem';
 import {
 	attachAwareness,
@@ -13,13 +11,13 @@ import {
 	attachIndexedDb,
 	attachSync,
 	composeSyncControls,
-	createBrowserDocumentFamily,
+	createBrowserDocCache,
 	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { clearDocument } from 'y-indexeddb';
 import { Bash } from 'just-bash';
+import { clearDocument } from 'y-indexeddb';
 import { createOpensidianActions } from './actions';
 import { openOpensidian as openOpensidianDoc } from './index';
 
@@ -35,31 +33,15 @@ export function openOpensidian({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const fileContentDocs = createBrowserDocumentFamily({
-		create(fileId: FileId) {
-			const document = createFileContentDoc({
-				fileId,
-				workspaceId: doc.ydoc.guid,
-				filesTable: doc.tables.files,
-				attachPersistence: (d) => attachIndexedDb(d),
-			});
-
-			return { document, syncControl: null };
-		},
-		async clearLocalData() {
-			await Promise.all(
-				doc.tables.files.getAllValid().map((file) =>
-					clearDocument(
-						fileContentDocGuid({
-							workspaceId: doc.ydoc.guid,
-							fileId: file.id,
-						}),
-					),
-				),
-			);
-		},
-		gcTime: 5_000,
-	});
+	const fileContentDocs = createBrowserDocCache(
+		createFileContentDocSource({
+			workspaceId: doc.ydoc.guid,
+			filesTable: doc.tables.files,
+			attachPersistence: attachIndexedDb,
+			clearLocalDataForGuid: clearDocument,
+		}),
+		{ gcTime: 5_000 },
+	);
 	const sqliteIndex = createSqliteIndex(fileContentDocs)({
 		tables: doc.tables,
 	}).exports;

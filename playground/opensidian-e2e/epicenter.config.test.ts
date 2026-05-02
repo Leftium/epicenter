@@ -5,7 +5,7 @@
  * works end-to-end with persistence and document content.
  *
  * Key behaviors:
- * - loadConfig() discovers the hosted workspace from the default config
+ * - loadDaemonConfig() discovers the hosted workspace from the default config
  * - Table CRUD works for the files table (folders + files)
  * - Document content round-trips through write → read
  * - Persistence survives restart (table data + document content)
@@ -16,16 +16,16 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+	createFileContentDoc,
+	type FileContentDocCache,
+	type FileId,
+} from '@epicenter/filesystem';
+import {
 	attachEncryption,
 	createDisposableCache,
 	generateId,
 } from '@epicenter/workspace';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
-import {
-	createFileContentDoc,
-	type FileContentDocs,
-	type FileId,
-} from '@epicenter/filesystem';
 import { assembleMarkdown } from '@epicenter/workspace/document/materializer/markdown';
 import { opensidianTables } from 'opensidian/workspace';
 import * as Y from 'yjs';
@@ -58,11 +58,7 @@ function createTestClient() {
 				filesTable: tables.files,
 				attachPersistence: (contentDoc) =>
 					attachSqlite(contentDoc, {
-						filePath: join(
-							PERSISTENCE_DIR,
-							'content',
-							`${contentDoc.guid}.db`,
-						),
+						filePath: join(PERSISTENCE_DIR, 'content', `${contentDoc.guid}.db`),
 					}),
 			}),
 		{ gcTime: 0 },
@@ -83,7 +79,7 @@ function createTestClient() {
 }
 
 async function writeContent(
-	contentDocs: FileContentDocs,
+	contentDocs: FileContentDocCache,
 	id: string,
 	text: string,
 ) {
@@ -92,7 +88,7 @@ async function writeContent(
 	handle.content.write(text);
 }
 
-async function readContent(contentDocs: FileContentDocs, id: string) {
+async function readContent(contentDocs: FileContentDocCache, id: string) {
 	await using handle = contentDocs.open(id as FileId);
 	await handle.whenReady;
 	return handle.content.read();

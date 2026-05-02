@@ -108,11 +108,11 @@ Every exported function in this package falls into one of three verbs. The prefi
 
 ### Plaintext vs encrypted
 
-Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted — the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc)` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) — additionally registers its backing store with that coordinator so keys applied via `encryption.applyKeys(...)` flow to every registered store atomically.
+Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc)` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`): additionally registers its backing store with that coordinator so keys applied via `encryption.applyKeys(...)` flow to every registered store atomically.
 
-Don't mix plaintext and encrypted wrappers on the same slot name — Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
+Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 
-Minimal encrypted workspace — encryption + IndexedDB + cross-tab + sync wired end-to-end:
+Minimal encrypted workspace: encryption + IndexedDB + cross-tab + sync wired end-to-end:
 
 ```typescript
 import {
@@ -195,7 +195,7 @@ That matters because conflict resolution only has to happen once. Yjs handles me
 
 ### Definitions are pure; builders are live
 
-`defineTable` and `defineKv` are pure. They do not create a `Y.Doc`, open a socket, or touch IndexedDB. The builder function you write — whether you call it directly for a singleton or hand it to `createDisposableCache` for a refcounted cache — is the boundary where the live bundle appears.
+`defineTable` and `defineKv` are pure. They do not create a `Y.Doc`, open a socket, or touch IndexedDB. The builder function you write: whether you call it directly for a singleton or hand it to `createDisposableCache` for a refcounted cache: is the boundary where the live bundle appears.
 
 That split is not cosmetic. It lets you share definitions across modules, infer types once, and instantiate different bundles in different runtimes without rewriting the schema layer.
 
@@ -217,17 +217,17 @@ function openBlog() {
 }
 ```
 
-Ordering is obvious (later `attach*` calls see earlier ones through plain lexical scope) and there is no magic `client.extensions` namespace — each attachment is whatever you named it in the returned bundle.
+Ordering is obvious (later `attach*` calls see earlier ones through plain lexical scope) and there is no magic `client.extensions` namespace: each attachment is whatever you named it in the returned bundle.
 
 ### Read-time validation beats write-time ceremony
 
 Tables validate and migrate on read, not on write. `set(...)` writes the row shape TypeScript already approved. `get(...)` is where invalid old data shows up as `{ status: 'invalid' }` and old versions are migrated to the latest schema.
 
-That trade-off is deliberate. It keeps the write path cheap and pushes schema evolution into one place—the table definition.
+That trade-off is deliberate. It keeps the write path cheap and pushes schema evolution into one place:the table definition.
 
 ### Storage scales with active data, not edit history
 
-With Yjs garbage collection enabled, storage tracks the live document much more closely than the number of operations that happened over time. Deleted rows, overwritten values, and old content states collapse down to compact metadata. The workspace grows because you keep more data—not because you clicked save a thousand times.
+With Yjs garbage collection enabled, storage tracks the live document much more closely than the number of operations that happened over time. Deleted rows, overwritten values, and old content states collapse down to compact metadata. The workspace grows because you keep more data:not because you clicked save a thousand times.
 
 ## Architecture Overview
 
@@ -309,7 +309,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 6. Use `walkActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
 7. Dispose with `bundle[Symbol.dispose]()` for singletons or `handle[Symbol.dispose]()` for cache handles when you're done. Use `cache[Symbol.dispose]()` to flush every cached entry.
 
-The architecture stays local-first: the workspace works offline, synchronizes opportunistically, and treats external systems as helpers around the document—not the other way around.
+The architecture stays local-first: the workspace works offline, synchronizes opportunistically, and treats external systems as helpers around the document:not the other way around.
 
 ## Shared Workspace ID Convention
 
@@ -358,10 +358,10 @@ KV entries are for settings and scalar preferences. They are keyed by string and
 
 ### Attachments (the extension system)
 
-"Extensions" in Epicenter are just `attach*` calls inside your builder function. There is no `.withExtension` chain, no extension registry, no priority flag — just lexical scope.
+"Extensions" in Epicenter are just `attach*` calls inside your builder function. There is no `.withExtension` chain, no extension registry, no priority flag: just lexical scope.
 
 - Call the relevant `attach*` function (e.g. `attachIndexedDb`, `attachSync`, `attachSqlite`, `attachEncryption`) inside the builder and include the handle in the returned bundle.
-- Order matters only through lexical scope — later `attach*` calls see earlier handles directly.
+- Order matters only through lexical scope: later `attach*` calls see earlier handles directly.
 - For per-row content docs, write a **separate** `createDisposableCache((rowId) => ...)` and `.open(rowId)` it from the main workspace's actions or components.
 
 ### Actions
@@ -378,7 +378,7 @@ Handlers close over `tables`, `kv`, and anything else the builder has in scope t
 
 For apps where each row has its own rich-text / plain-text / timeline content (files, notes, skills, entries), use `createDisposableCache((rowId) => ...)` keyed by the row id. The main workspace holds the metadata row; the content cache owns per-row content Y.Docs.
 
-Each `.open(rowId)` returns a refcounted handle. Multiple consumers (editor, actions, materializer) can share one underlying Y.Doc safely — the cache owns construction, refcounting, and `gcTime`-delayed teardown.
+Each `.open(rowId)` returns a refcounted handle. Multiple consumers (editor, actions, materializer) can share one underlying Y.Doc safely: the cache owns construction, refcounting, and `gcTime`-delayed teardown.
 
 ```svelte
 <script lang="ts">
@@ -395,7 +395,7 @@ Each `.open(rowId)` returns a refcounted handle. Multiple consumers (editor, act
 
 The `$derived` swaps handles when `fileId` changes; the `$effect` cleanup releases the old handle. Refcount 0 arms the cache's `gcTime` timer; a fresh open during the grace window cancels the pending teardown, so rapid navigation doesn't flap persistence or sync.
 
-Reference implementations: `packages/filesystem/src/file-content-docs.ts`, `packages/skills/src/skill-instructions-docs.ts`, `apps/fuji/src/lib/entry-content-docs.ts`, `apps/honeycrisp/src/lib/note-body-docs.ts`.
+Reference implementations: `packages/filesystem/src/file-content-docs.ts`, `packages/skills/src/skill-instructions-docs.ts`, `apps/fuji/src/lib/fuji/browser.ts`, `apps/honeycrisp/src/lib/honeycrisp/browser.ts`.
 
 ## Schema definition
 
@@ -731,7 +731,7 @@ workspace.tables.files.delete('file-1');
 unsubscribe();
 ```
 
-The `origin` argument is whatever the caller passed to `ydoc.transact(fn, origin)` — or `null` for a direct mutation. Treat it as an opt-in channel for callers that want to tag their own writes:
+The `origin` argument is whatever the caller passed to `ydoc.transact(fn, origin)`: or `null` for a direct mutation. Treat it as an opt-in channel for callers that want to tag their own writes:
 
 ```typescript
 const APP_ORIGIN = Symbol('my-app');
@@ -745,7 +745,7 @@ workspace.tables.posts.observe((_ids, origin) => {
 });
 ```
 
-For the common case of "react only to local edits, not to sync/IDB replays," use `onLocalUpdate(ydoc, fn)` — it filters on Yjs's own `transaction.local` invariant and doesn't depend on origin conventions.
+For the common case of "react only to local edits, not to sync/IDB replays," use `onLocalUpdate(ydoc, fn)`: it filters on Yjs's own `transaction.local` invariant and doesn't depend on origin conventions.
 
 ## Attachments
 
@@ -841,7 +841,7 @@ Ordering is just lexical: `sync` reads `idb.whenLoaded` as `waitFor` because `id
 
 ### Markdown materializer
 
-The markdown materializer is exported from `@epicenter/workspace/document/materializer/markdown`. Compose it inside your builder alongside the other attachments — it needs `tables` and `ydoc`, both of which are already in lexical scope.
+The markdown materializer is exported from `@epicenter/workspace/document/materializer/markdown`. Compose it inside your builder alongside the other attachments: it needs `tables` and `ydoc`, both of which are already in lexical scope.
 
 ```typescript
 import { type } from 'arktype';
@@ -937,7 +937,7 @@ function openBlog() {
 void openBlog;
 ```
 
-The `MirrorDatabase` interface is structurally compatible with `bun:sqlite`'s `Database` and `better-sqlite3`'s `Database` — no wrapper needed. Pass your driver directly.
+The `MirrorDatabase` interface is structurally compatible with `bun:sqlite`'s `Database` and `better-sqlite3`'s `Database`: no wrapper needed. Pass your driver directly.
 
 ## Workspace Dependencies
 
@@ -1167,10 +1167,10 @@ void clearCache;
 
 Every action exposes:
 
-- `action.type` — `'query'` or `'mutation'`
-- `action.title` — optional UI-facing label
-- `action.description` — optional adapter-facing description
-- `action.input` — optional TypeBox schema
+- `action.type`: `'query'` or `'mutation'`
+- `action.title`: optional UI-facing label
+- `action.description`: optional adapter-facing description
+- `action.input`: optional TypeBox schema
 
 And the action itself is callable. There is no separate `.handler` property on the returned object.
 
@@ -1274,7 +1274,7 @@ The builder shape is identical. The cache adds: `.open(id)` returns a refcounted
 
 ### `batch(fn)`
 
-A `batch(fn)` helper groups mutations into a single Yjs transaction. The framework doesn't inject it — include it in your bundle (`batch: (fn) => ydoc.transact(fn)`), which is what every app in this repo does.
+A `batch(fn)` helper groups mutations into a single Yjs transaction. The framework doesn't inject it: include it in your bundle (`batch: (fn) => ydoc.transact(fn)`), which is what every app in this repo does.
 
 ```typescript
 workspace.batch(() => {
@@ -1318,7 +1318,7 @@ Disposal preserves data: it releases the handle. To wipe persisted local state, 
 │ bundle[Symbol.dispose]() fires                             │
 │    • your builder's teardown (ydoc.destroy())              │
 │    • ydoc.destroy() cascades to every attachment via       │
-│      ydoc.on('destroy') — providers close, observers       │
+│      ydoc.on('destroy'): providers close, observers       │
 │      stop, sockets shut down                               │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -1367,7 +1367,7 @@ For singleton apps, skip the cache entirely and call your builder function once 
 
 ### Typical bundle properties
 
-Everything below is a *convention* — the builder is free to expose more or less. Most epicenter apps return at least:
+Everything below is a *convention*: the builder is free to expose more or less. Most epicenter apps return at least:
 
 - `id` (as `get id() { return ydoc.guid; }`)
 - `ydoc`
@@ -1386,15 +1386,15 @@ Everything below is a *convention* — the builder is free to expose more or les
 
 Per-row content is just another `attach*` call inside a `createDisposableCache` builder. Pick the attachment that matches the content shape:
 
-- `attachPlainText(ydoc, name)` — binds a `Y.Text`. Editor gets `bundle.content` as `Y.Text`.
-- `attachRichText(ydoc, name)` — binds a `Y.XmlFragment` for prosemirror / tiptap / yrs-xml editors.
-- `attachTimeline(ydoc)` — a polymorphic timeline that can project as text, rich text, or a sheet. Exposes `read() / write(text) / appendText(text) / asText() / asRichText() / asSheet() / currentType / observe(...) / restoreFromSnapshot(binary)`.
+- `attachPlainText(ydoc, name)`: binds a `Y.Text`. Editor gets `bundle.content` as `Y.Text`.
+- `attachRichText(ydoc, name)`: binds a `Y.XmlFragment` for prosemirror / tiptap / yrs-xml editors.
+- `attachTimeline(ydoc)`: a polymorphic timeline that can project as text, rich text, or a sheet. Exposes `read() / write(text) / appendText(text) / asText() / asRichText() / asSheet() / currentType / observe(...) / restoreFromSnapshot(binary)`.
 
 The cache stores these by `rowId`, so multiple consumers share one Y.Doc. Use `cache.open(id)` and `handle[Symbol.dispose]()` to manage lifecycle.
 
 ### Local-update filter
 
-`onLocalUpdate(ydoc, fn)` registers an `afterTransaction` listener filtered on Yjs's `transaction.local` invariant — `true` for direct mutations, `false` for updates applied via `Y.applyUpdate` (sync transports, IndexedDB replay, broadcast channel). Empty transactions are skipped. Use this to bump a parent row's `updatedAt` when its content doc is edited locally:
+`onLocalUpdate(ydoc, fn)` registers an `afterTransaction` listener filtered on Yjs's `transaction.local` invariant: `true` for direct mutations, `false` for updates applied via `Y.applyUpdate` (sync transports, IndexedDB replay, broadcast channel). Empty transactions are skipped. Use this to bump a parent row's `updatedAt` when its content doc is edited locally:
 
 ```typescript
 onLocalUpdate(ydoc, () => {
@@ -1605,7 +1605,7 @@ bun test packages/workspace
 
 ## Related Packages
 
-If your app's data model is inherently files and folders — a code editor, a note vault with nested directories, anything where users expect `mkdir` and path resolution — [`@epicenter/filesystem`](../filesystem) builds that abstraction on top of this package. It imports `defineTable` to create a `filesTable`, wraps workspace tables and documents into POSIX-style operations (`writeFile`, `mv`, `rm`, `stat`), and plugs into the same extension system.
+If your app's data model is inherently files and folders: a code editor, a note vault with nested directories, anything where users expect `mkdir` and path resolution: [`@epicenter/filesystem`](../filesystem) builds that abstraction on top of this package. It imports `defineTable` to create a `filesTable`, wraps workspace tables and documents into POSIX-style operations (`writeFile`, `mv`, `rm`, `stat`), and plugs into the same extension system.
 
 Most apps won't need it. If you know the shape of every record upfront, workspace tables are the right default. See [Your Data Is Probably a Table, Not a File](../../docs/articles/your-data-is-probably-a-table-not-a-file.md) for the full decision matrix.
 

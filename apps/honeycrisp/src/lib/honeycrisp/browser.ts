@@ -4,17 +4,36 @@ import {
 	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
+	attachRichText,
 	attachSync,
 	composeSyncControls,
-	createBrowserDocumentFamily,
+	createBrowserDocCache,
 	createRemoteClient,
+	DateTimeString,
+	docGuid,
+	onLocalUpdate,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { clearDocument } from 'y-indexeddb';
-import { createNoteBodyDoc, noteBodyDocGuid } from '$lib/note-body-docs';
+import * as Y from 'yjs';
 import type { NoteId } from '$lib/workspace';
 import { openHoneycrisp as openHoneycrispDoc } from './index';
+
+function noteBodyDocGuid({
+	workspaceId,
+	noteId,
+}: {
+	workspaceId: string;
+	noteId: NoteId;
+}): string {
+	return docGuid({
+		workspaceId,
+		collection: 'notes',
+		rowId: noteId,
+		field: 'body',
+	});
+}
 
 export function openHoneycrisp({
 	auth,
@@ -28,32 +47,62 @@ export function openHoneycrisp({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const noteBodyDocs = createBrowserDocumentFamily({
-		create(noteId: NoteId) {
-			const document = createNoteBodyDoc({
-				noteId,
-				workspaceId: doc.ydoc.guid,
-				notesTable: doc.tables.notes,
-				auth,
-				apiUrl: APP_URLS.API,
-			});
+	const noteBodyDocs = createBrowserDocCache(
+		{
+			ids() {
+				return doc.tables.notes.getAllValid().map((note) => note.id);
+			},
+			create(noteId: NoteId) {
+				const ydoc = new Y.Doc({
+					guid: noteBodyDocGuid({
+						workspaceId: doc.ydoc.guid,
+						noteId,
+					}),
+					gc: false,
+				});
+				const body = attachRichText(ydoc);
+				const childIdb = attachIndexedDb(ydoc);
+				const childSync = attachSync(ydoc, {
+					url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+					waitFor: childIdb.whenLoaded,
+					getToken: async () => {
+						await auth.whenLoaded;
 
-			return { document, syncControl: document.sync };
+						const snapshot = auth.snapshot;
+						return snapshot.status === 'signedIn'
+							? snapshot.session.token
+							: null;
+					},
+				});
+
+				onLocalUpdate(ydoc, () => {
+					doc.tables.notes.update(noteId, {
+						updatedAt: DateTimeString.now(),
+					});
+				});
+
+				return {
+					ydoc,
+					body,
+					idb: childIdb,
+					sync: childSync,
+					whenLoaded: childIdb.whenLoaded,
+					[Symbol.dispose]() {
+						ydoc.destroy();
+					},
+				};
+			},
+			clearLocalData(noteId: NoteId) {
+				return clearDocument(
+					noteBodyDocGuid({
+						workspaceId: doc.ydoc.guid,
+						noteId,
+					}),
+				);
+			},
 		},
-		async clearLocalData() {
-			await Promise.all(
-				doc.tables.notes.getAllValid().map((note) =>
-					clearDocument(
-						noteBodyDocGuid({
-							workspaceId: doc.ydoc.guid,
-							noteId: note.id,
-						}),
-					),
-				),
-			);
-		},
-		gcTime: 5_000,
-	});
+		{ gcTime: 5_000 },
+	);
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },

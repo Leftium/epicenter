@@ -15,7 +15,7 @@ import { Bash } from 'just-bash';
 import * as Y from 'yjs';
 import {
 	createFileContentDoc,
-	type FileContentDocs,
+	type FileContentDocCache,
 } from './file-content-docs.js';
 import { attachYjsFileSystem, type YjsFileSystem } from './file-system.js';
 import type { FileId } from './ids.js';
@@ -399,7 +399,7 @@ describe('mv preserves content (no conversion)', () => {
 
 function getTimelineLength(
 	fs: YjsFileSystem,
-	contentDocs: FileContentDocs,
+	contentDocs: FileContentDocCache,
 	path: string,
 ): number {
 	const id = fs.lookupId(path);
@@ -423,7 +423,7 @@ describe('timeline content storage', () => {
 		await fs.writeFile('/file.dat', 'text v1');
 		expect(getTimelineLength(fs, contentDocs, '/file.dat')).toBe(1);
 
-		// Uint8Array is decoded to text — same mode, overwrites in-place
+		// Uint8Array is decoded to text: same mode, overwrites in-place
 		await fs.writeFile('/file.dat', new Uint8Array([0x48, 0x69])); // "Hi"
 		expect(getTimelineLength(fs, contentDocs, '/file.dat')).toBe(1);
 		expect(await fs.readFile('/file.dat')).toBe('Hi');

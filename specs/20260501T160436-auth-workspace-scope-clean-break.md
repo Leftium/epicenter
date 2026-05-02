@@ -1,83 +1,105 @@
 # Auth Workspace Scope Clean Break
 
 **Date**: 2026-05-01
-**Status**: Draft
+**Status**: Superseded
 **Author**: AI-assisted
 **Branch**: `codex/explicit-daemon-host-config`
 
+> Superseded by `specs/20260501T221831-auth-workspace-lifecycle-inversion.md`.
+> This document describes the earlier `BrowserWorkspace` proposal and is kept
+> as historical context, not current implementation guidance.
+
 ## One Sentence
 
-One auth client drives auth side effects for a set of browser workspaces, and each browser workspace exposes predictable runtime attachments instead of auth-specific lifecycle adapters.
+One auth client drives lifecycle transitions for a set of browser workspaces, and each browser workspace owns the full browser resource graph behind a small lifecycle contract.
 
 ## Overview
 
-Replace the single-workspace lifecycle binding with an explicit auth workspace scope. `bindAuthWorkspaceScope(...)` binds one `AuthClient` to many browser workspaces, serializes auth snapshot application, applies auth sessions across the whole scope, and clears local browser data as one grouped operation when leaving an applied user.
+Replace the single-workspace auth binding with `bindAuthWorkspaceScope(...)`.
+The binding tracks one auth session state for one or more browser workspaces.
+It decides when to pause sync, apply encryption keys, reconnect sync, and clear
+local browser data.
 
-This is a clean break. Do not keep `bindWorkspaceAuthLifecycle` as a compatibility alias. Do not preserve `getAuthSyncTargets()`. Do not add `workspace.authLifecycle` or `workspace.authBinding`. Browser workspaces that participate in auth lifecycle must expose the standard top-level `BrowserWorkspace` shape.
+This is a clean break. Do not keep `bindWorkspaceAuthLifecycle` as a
+compatibility alias. Do not add `workspace.authLifecycle` or
+`workspace.authBinding`.
 
-Most of the clean break is settled. The remaining design question is the child document lifecycle surface: Fuji, Honeycrisp, and Opensidian open per-row or per-file browser documents with their own IndexedDB and sync attachments. The spec must not pretend a raw `syncAttachments` set solves that whole problem. Close the child document collection design before implementing the auth binding.
-
-## Motivation
-
-The current binding is shaped around one workspace:
-
-```ts
-bindWorkspaceAuthLifecycle({
-	auth,
-	workspace: fuji,
-	leavingUser: {
-		afterCleanup: () => window.location.reload(),
-		onCleanupError: reportCleanupError,
-	},
-});
-```
-
-That shape creates four problems:
-
-1. One auth client represents one user session, but each workspace binding keeps its own `activeUserId` and `activeToken`.
-2. Cleanup can split the app: workspace A clears while workspace B fails.
-3. The binding reaches through whatever structural fields happen to exist today: `sync`, `idb`, `encryption`, and `getAuthSyncTargets()`.
-4. Zhongwen has encrypted local persistence but no auth-backed sync target, so it has to duplicate auth cleanup logic manually.
-
-The clean break should standardize browser workspace bundles instead of adding an auth-specific adapter field.
+The important design move is separating single-document attachments from
+whole-workspace lifecycle. Raw attachments like `idb` and `sync` describe one
+Y.Doc. Browser workspace lifecycle methods describe the whole browser graph:
+the root workspace document plus any child document collections.
 
 ```txt
-Before
-  auth
-    | bindWorkspaceAuthLifecycle({ workspace: fuji })
-    | bindWorkspaceAuthLifecycle({ workspace: honeycrisp })
-    | bindWorkspaceAuthLifecycle({ workspace: tabManager })
-    v
-  three independent lifecycle memories
+Single root document only
 
-After
-  auth
-    | bindAuthWorkspaceScope({ workspaces: [fuji, honeycrisp, tabManager] })
-    v
-  one scope memory, one cleanup result, one policy path
+  root ydoc
+    idb
+    sync
+    encryption
+
+  auth can call sync.goOffline(), sync.reconnect(), idb.clearLocal()
+
+
+Workspace graph
+
+  root ydoc
+    idb
+    sync
+    encryption
+
+  child docs
+    entry A ydoc
+      idb
+      sync
+    entry B ydoc
+      idb
+      sync
+    unopened entry C ydoc
+      IndexedDB exists, but no live object exists
+
+  auth cannot safely compose this by reading root idb and root sync
 ```
 
-## Workspace Vocabulary
+So the final rule is:
 
-`Workspace` is the root Y.Doc domain bundle. It is not browser-specific and it is not auth-specific.
+```txt
+Raw attachments describe one Y.Doc.
+BrowserWorkspace lifecycle methods describe the whole browser workspace graph.
+```
 
-`BrowserWorkspace` is a `Workspace` with browser runtime attachments. It has required IndexedDB persistence, nullable root sync, and local data cleanup. It may also own browser document collections once the child document design is closed.
+## Vocabulary
 
-`FileBackedWorkspace` is a `Workspace` opened from a Bun, script, daemon, or other local file runtime. It should be returned from an async `open*()` function after local persistence is loaded. It is not part of this auth spec.
+`Y.Doc` is raw CRDT state and identity. It has no browser persistence policy,
+no auth policy, and no product tables by itself.
 
-`BrowserDocument` is a non-root browser Y.Doc bundle such as a Fuji entry content doc, Honeycrisp note body doc, or Opensidian file content doc. It is not automatically a `Workspace`.
+`Workspace` is the root domain bundle around one Y.Doc. It owns the root
+document identity, encryption coordinator, domain operations, batching, and
+root disposal.
 
-`BrowserDocumentCollection` is the likely missing concept: a workspace-owned collection of child browser documents with one standard surface for open, dispose, offline, reconnect, and local data clearing. The exact API is still open.
+`BrowserWorkspace` is a `Workspace` opened in a browser runtime. It exposes a
+root local-load promise and three aggregate lifecycle methods. It does not
+require callers to know which root and child attachments exist.
 
-`Auth` means the `@epicenter/auth` session snapshot: loading, signed out, or signed in with user id, session token, and encryption key package.
+`BrowserDocumentCollection` is a keyed child document collection such as Fuji
+entry content docs, Honeycrisp note body docs, or Opensidian file content docs.
+It owns child document caching, active child sync control, active child
+disposal, and local data clearing for unopened child docs.
 
-`Auth lifecycle` means the transition processor that reacts to those snapshots. It applies encryption keys, moves sync resources offline or online, clears local browser data, and runs app policy callbacks.
+`FileBackedWorkspace` is a possible future local file runtime concept. Do not
+introduce it in this auth clean break unless a generic file-backed consumer
+actually needs it.
 
-The auth binding accepts browser workspaces only.
+`DaemonRouteRuntime` is the long-running process surface returned by daemon
+route definitions. It is not a `BrowserWorkspace`, and it should not be forced
+through a file-backed workspace type just because it uses file persistence.
 
-## Proposed Workspace Shape
+`Auth lifecycle` is the transition processor that reacts to auth snapshots. It
+applies encryption keys, moves browser sync resources offline or online, clears
+local browser data, and runs app policy callbacks.
 
-The locked shape should live in `@epicenter/workspace`.
+## Public Runtime Shapes
+
+The shared workspace types should live in `@epicenter/workspace`.
 
 ```ts
 import type * as Y from 'yjs';
@@ -90,162 +112,350 @@ export type Workspace = {
 };
 
 export type BrowserWorkspace = Workspace & {
-	readonly idb: IndexedDbAttachment;
-	readonly sync: SyncAttachment | null;
-	clearLocalData(): Promise<unknown>;
+	/**
+	 * Resolves when root browser persistence has loaded into the root Y.Doc.
+	 *
+	 * This does not mean remote sync has converged. It also does not mean child
+	 * documents have loaded.
+	 */
+	readonly whenLoaded: Promise<unknown>;
+
+	/** Stop every live browser sync resource owned by this workspace graph. */
+	goOffline(): void;
+
+	/** Restart every live browser sync resource owned by this workspace graph. */
+	reconnect(): void;
+
+	/**
+	 * Clear every browser persistence store owned by this workspace graph.
+	 *
+	 * Implementations should call goOffline() first. For current browser apps,
+	 * app policy should reload or reopen fresh workspace objects after this
+	 * succeeds because the old Y.Doc state remains in memory.
+	 */
+	clearLocalData(): Promise<void>;
 };
+
+// Deferred. Add only when a generic file-backed consumer exists.
+// export type FileBackedWorkspace = Workspace;
 ```
 
-This is the root browser workspace shape. It is intentionally missing the unresolved child document field. The final type may add `documentCollections`, a workspace-level resource controller, or another explicit browser document lifecycle surface.
-
-### Why `encryption` Is On `Workspace`
-
-The app workspace roots are encrypted domain documents. Fuji, Honeycrisp, Opensidian, Tab Manager, and Zhongwen all construct `encryption` alongside the root `ydoc` and use it to attach tables and KV.
-
-If a future helper returns a raw unencrypted Y.Doc, it should not be called a `Workspace`. It should be a content doc or document bundle.
-
-### Why `batch` Stays
-
-Single table operations already transact internally, but product actions often write multiple tables, KVs, or rich text values together. `batch()` gives those actions one Yjs transaction, one observer flush, and one sync update burst without exposing `ydoc.transact(...)` everywhere.
-
-Keep the current repo name `batch`. It is less literal than `transact`, but it is already the local convention and reads well in action code.
-
-### Why `idb` Is Required On `BrowserWorkspace`
-
-Browser workspaces are local-first. IndexedDB is the browser persistence attachment in this repo, and Yjs expects browser persistence providers to compose with network providers. A browser workspace without local persistence should not satisfy `BrowserWorkspace`.
-
-`whenReady` should not be part of the shared type. Browser callers that need the local readiness gate should await the attachment directly:
-
-```ts
-await workspace.idb.whenLoaded;
-```
-
-That gate means local persisted state has loaded. It does not mean remote sync has converged.
-
-### Why `sync` Is Nullable
-
-Sync is a transport capability. A browser workspace can be encrypted and persisted locally without a network sync target. Zhongwen is the current example.
-
-## Decisions Locked In
-
-| Question | Decision | Rationale |
-| --- | --- | --- |
-| Auth binding name | `bindAuthWorkspaceScope` | One auth client owns a scope of workspaces. The name says the unit is the auth scope, not one workspace lifecycle. |
-| Workspace input | `workspaces: Iterable<BrowserWorkspace>` | The binding controls one or many browser workspaces with the same lifecycle. A singular convenience API would recreate drift. |
-| Adapter field | No `workspace.authLifecycle` or `workspace.authBinding` | The clean break standardizes the browser workspace shape instead of hiding runtime attachments behind an auth-specific adapter. |
-| Compatibility | No alias for `bindWorkspaceAuthLifecycle` | Compatibility is not a product requirement for this break. Keeping both names would make the old shape look supported. |
-| Root identity | `workspace.ydoc.guid` | The workspace guid names the document and sync room. Auth user id only decides session transitions. |
-| Context field name | Use `workspaceGuid`, not `workspaceId` | `workspaceGuid` makes the Y.Doc source explicit and avoids confusing it with auth, organization, or product ids. |
-| Policy callbacks | Required cleanup and apply callbacks | Call sites must acknowledge cleanup failure, successful clear, and signed-in apply. No-op policy is allowed but explicit. |
-| Policy names | Cleanup and apply names | `leavingUser` and `signedIn` describe auth states. `onClearLocalDataError`, `afterClearLocalData`, and `afterApplyAuthSession` describe the lifecycle moments. |
-| Readiness | No shared `whenReady` on `BrowserWorkspace` | Browser callers can await `workspace.idb.whenLoaded` directly. File-backed open functions can be async and resolve when persistence is ready. |
-| User switch | Do not apply user B to old live browser workspaces | Clearing IndexedDB does not clear the in-memory Y.Doc. Browser apps should reload or reopen fresh workspace objects after cleanup. |
-
-## Open Design: Child Document Collections
-
-The auth binding needs four resource operations across the whole browser scope:
-
-1. Apply encryption keys to every root workspace.
-2. Take every live sync resource offline before cleanup or token replacement.
-3. Reconnect every live sync resource after applying a signed-in session.
-4. Clear every local browser persistence store that belongs to the workspace scope.
-
-The root `sync` field only covers the root workspace room. It does not cover child documents:
+`BrowserWorkspace` deliberately does not require `idb` or `sync` fields.
+Concrete app workspaces may still return them. Generic lifecycle consumers do
+not need them.
 
 ```txt
-Fuji BrowserWorkspace
-  ydoc, encryption, idb, sync
+BrowserWorkspace contract
+  ydoc
+  encryption
+  batch()
+  whenLoaded
+  goOffline()
+  reconnect()
+  clearLocalData()
+  dispose
+
+Fuji concrete object
+  all BrowserWorkspace fields
+  idb
+  sync
+  awareness
+  rpc
+  remote
   entryContentDocs
-    entry A browser document: ydoc, idb, sync
-    entry B browser document: ydoc, idb, sync
-
-Honeycrisp BrowserWorkspace
-  ydoc, encryption, idb, sync
-  noteBodyDocs
-    note A browser document: ydoc, idb, sync
-    note B browser document: ydoc, idb, sync
-
-Opensidian BrowserWorkspace
-  ydoc, encryption, idb, sync
-  fileContentDocs
-    file A browser document: ydoc, idb, filesystem persistence
 ```
 
-The old `getAuthSyncTargets()` solved only part of this. It inventoried auth-backed sync targets, but it did not name child documents as a runtime concept and did not solve local data cleanup for child IndexedDB stores. A raw `syncAttachments: ReadonlySet<SyncAttachment>` has the same smell. It answers "what should reconnect?" but not "what local data belongs to this browser workspace?" or "what gets disposed when the workspace closes?"
-
-### What `createDisposableCache` Actually Buys
-
-One sentence: `createDisposableCache` shares one live disposable resource per id, refcounts handles, and disposes the underlying resource after a grace period or cache disposal.
-
-That primitive should stay generic. It should not learn auth, sync, IndexedDB prefixes, or workspace semantics. Those are higher-level browser workspace concerns.
-
-### Likely Direction
-
-Add a browser document collection layer that wraps or composes `createDisposableCache` inside each browser workspace open function.
-
-Candidate shape:
+Do not export app-specific intersection types like
+`FujiBrowserWorkspace = BrowserWorkspace & ...` unless a real external caller
+needs that named type. Let the return type of `openFuji(...)` carry the richer
+concrete shape.
 
 ```ts
-export type BrowserDocument = {
-	readonly ydoc: Y.Doc;
-	readonly idb: IndexedDbAttachment | null;
-	readonly sync: SyncAttachment | null;
-	[Symbol.dispose](): void;
-};
+export function openFuji(...) {
+	return {
+		...doc,
+		idb,
+		sync,
+		awareness,
+		rpc,
+		remote,
+		entryContentDocs,
+		whenLoaded: idb.whenLoaded,
+		goOffline() {
+			// root plus children
+		},
+		reconnect() {
+			// root plus children
+		},
+		async clearLocalData() {
+			// root plus children
+		},
+		[Symbol.dispose]() {
+			// children before root
+		},
+	} satisfies BrowserWorkspace;
+}
+```
 
+The `satisfies BrowserWorkspace` check gives the shared guarantee without
+erasing the concrete inferred return type.
+
+## Why Not Composite Attachments
+
+Composite `sync` looks attractive:
+
+```ts
+workspace.sync.goOffline();
+workspace.sync.reconnect();
+```
+
+But a root sync attachment also has root-specific semantics: status, awareness,
+RPC attachment, and `whenConnected`. Those do not compose cleanly across root
+and child documents.
+
+```txt
+Composite sync.status
+  Is it connected if root is connected but one child is offline?
+
+Composite sync.attachRpc()
+  Which document owns the RPC action surface?
+
+Composite sync.whenConnected
+  Root connected, every open child connected, or every possible child?
+```
+
+Composite `idb` has the same problem:
+
+```txt
+Composite idb.whenLoaded
+  Root loaded?
+  All currently open child docs loaded?
+  Every child doc listed in the root table loaded?
+
+Composite idb.clearLocal
+  This actually must include unopened child docs.
+```
+
+The result is an object that looks like an attachment but no longer behaves
+like one. Keep raw attachments single-document. Put graph-level behavior on
+the browser workspace lifecycle methods.
+
+## Browser Child Document Collections
+
+`createDisposableCache` should remain unchanged and generic. It shares one live
+disposable value per id, refcounts handles, and disposes the underlying value
+after the grace period or cache disposal.
+
+Browser document collection is the wrapper that earns a domain-specific name.
+It owns three browser graph facts that `createDisposableCache` should not know:
+
+1. Which active child sync resources exist.
+2. Which child document GUIDs exist even when the documents are not open.
+3. How to clear local browser persistence for those GUIDs.
+
+Recommended exported shape:
+
+```ts
 export type BrowserDocumentCollection<
 	Id extends string | number = string,
-	TDocument extends BrowserDocument = BrowserDocument,
+	TDocument extends Disposable = Disposable,
 > = Disposable & {
-	readonly name: string;
 	open(id: Id): TDocument & Disposable;
 	has(id: Id): boolean;
 	goOffline(): void;
 	reconnect(): void;
-	clearLocalData(): Promise<unknown>;
+	clearLocalData(): Promise<void>;
 };
 
-export type BrowserWorkspace = Workspace & {
+export type BrowserDocumentCollectionOptions<
+	Id extends string | number,
+	TDocument extends Disposable,
+> = {
+	ids(): Iterable<Id>;
+	guid(id: Id): string;
+	build(id: Id): TDocument;
+	sync?(document: TDocument): SyncAttachment | null;
+	clearLocalDataForGuid?(guid: string): Promise<void>;
+	gcTime?: number;
+};
+
+export function createBrowserDocumentCollection<
+	Id extends string | number,
+	TDocument extends Disposable,
+>(
+	options: BrowserDocumentCollectionOptions<Id, TDocument>,
+): BrowserDocumentCollection<Id, TDocument>;
+```
+
+Default `clearLocalDataForGuid` should clear the IndexedDB database for that
+document GUID. If a future collection uses a different browser persistence
+store, it can supply its own clear function.
+
+Child document builders may expose `idb` and `sync` as concrete fields, but
+they do not need to implement the full browser workspace contract.
+
+```ts
+export type EntryContentDoc = {
+	readonly ydoc: Y.Doc;
+	readonly body: RichTextAttachment;
 	readonly idb: IndexedDbAttachment;
-	readonly sync: SyncAttachment | null;
-	readonly documentCollections: readonly BrowserDocumentCollection[];
-	clearLocalData(): Promise<unknown>;
+	readonly sync: SyncAttachment;
+	readonly whenLoaded: Promise<unknown>;
+	[Symbol.dispose](): void;
 };
 ```
 
-This shape is not final. It is the current best candidate because it moves the dependency in the right direction:
+The collection handles active sync registration internally by calling
+`options.sync(document)` when a document is built and removing that sync when
+the underlying cached document is disposed.
 
-```txt
-auth-workspace
-  asks BrowserWorkspace to apply browser lifecycle operations
+## Fuji Shape
 
-BrowserWorkspace
-  owns root ydoc, idb, sync, child document collections
+Fuji should wire the graph once inside `openFuji(...)`.
 
-BrowserDocumentCollection
-  owns child document cache, active child syncs, child local cleanup
+```ts
+export function openFuji({
+	auth,
+	peer,
+}: {
+	auth: AuthClient;
+	peer: PeerIdentity;
+}) {
+	const doc = openFujiDoc();
 
-createDisposableCache
-  owns one live disposable value per id
+	const idb = attachIndexedDb(doc.ydoc);
+	attachBroadcastChannel(doc.ydoc);
+
+	const entryContentDocs = createBrowserDocumentCollection({
+		ids: () => doc.tables.entries.getAllValid().map((entry) => entry.id),
+		guid: (entryId: EntryId) =>
+			docGuid({
+				workspaceId: doc.ydoc.guid,
+				collection: 'entries',
+				rowId: entryId,
+				field: 'content',
+			}),
+		build: (entryId: EntryId) =>
+			createEntryContentDoc({
+				entryId,
+				workspaceGuid: doc.ydoc.guid,
+				entriesTable: doc.tables.entries,
+				auth,
+				apiUrl: APP_URLS.API,
+			}),
+		sync: (entryDoc) => entryDoc.sync,
+		gcTime: 5_000,
+	});
+
+	const childCollections = [entryContentDocs] as const;
+
+	const awareness = attachAwareness(doc.ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
+	});
+
+	const sync = attachSync(doc, {
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+		waitFor: idb,
+		getToken: async () => {
+			await auth.whenLoaded;
+			const snapshot = auth.snapshot;
+			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+		},
+		awareness,
+	});
+
+	const rpc = sync.attachRpc(doc.actions);
+	const remote = createRemoteClient({ awareness, rpc });
+
+	return {
+		...doc,
+		idb,
+		sync,
+		awareness,
+		rpc,
+		remote,
+		entryContentDocs,
+		whenLoaded: idb.whenLoaded,
+
+		goOffline() {
+			sync.goOffline();
+			for (const child of childCollections) child.goOffline();
+		},
+
+		reconnect() {
+			sync.reconnect();
+			for (const child of childCollections) child.reconnect();
+		},
+
+		async clearLocalData() {
+			this.goOffline();
+
+			for (const child of childCollections) {
+				await child.clearLocalData();
+			}
+
+			await idb.clearLocal();
+		},
+
+		[Symbol.dispose]() {
+			for (const child of childCollections) {
+				child[Symbol.dispose]();
+			}
+
+			doc[Symbol.dispose]();
+		},
+	} satisfies BrowserWorkspace;
+}
 ```
 
-This preserves the current explicit child document builders. It does not revive `.withDocument()`. The table row can still store the child document guid, and the app can still choose when to open a child document. The new layer only names the browser runtime collection so auth and workspace disposal have something predictable to operate on.
+`childCollections` is the single source of truth for graph-level child
+lifecycle in the Fuji browser runtime. Add another child collection once, and
+all three lifecycle methods plus disposal include it.
 
-### Questions Still Open
+Honeycrisp follows the same pattern with `noteBodyDocs`.
 
-1. Should `BrowserWorkspace` expose `documentCollections`, or should it expose higher-level methods such as `goOffline()`, `reconnect()`, and `clearLocalData()` that include root and child resources?
-2. Should `BrowserDocument.idb` be nullable, or should browser document collections be split by persistence kind?
-3. How should a collection clear child IndexedDB data for documents that are not currently open?
-4. Should collections discover clearable child ids from root tables, from an IndexedDB prefix, or from explicit collection metadata?
-5. Should `BrowserWorkspace[Symbol.dispose]()` always dispose every document collection before destroying the root Y.Doc?
-6. Does Opensidian's file content case fit `BrowserDocumentCollection`, or does it need a sibling `BrowserFileDocumentCollection`?
-7. Is `syncAttachments` still needed internally as an implementation detail, or should it disappear entirely from public types?
+Opensidian follows the same pattern with `fileContentDocs`. Its child documents
+currently have IndexedDB persistence and no child sync, so the collection can
+omit the `sync` option or return `null`.
 
-The recommendation is to close these questions before implementing `bindAuthWorkspaceScope`. The auth binding can be correct only if it has a complete browser resource surface, not just root workspaces.
+Tab Manager has no child collections:
 
-## Proposed Auth API
+```ts
+return {
+	...doc,
+	idb,
+	sync,
+	whenLoaded: idb.whenLoaded,
+	goOffline: () => sync.goOffline(),
+	reconnect: () => sync.reconnect(),
+	clearLocalData: async () => {
+		sync.goOffline();
+		await idb.clearLocal();
+	},
+	[Symbol.dispose]() {
+		doc[Symbol.dispose]();
+	},
+} satisfies BrowserWorkspace;
+```
 
-`@epicenter/auth-workspace` should depend on the `BrowserWorkspace` type from `@epicenter/workspace`.
+Zhongwen has no auth-backed sync target:
+
+```ts
+return {
+	...doc,
+	idb,
+	whenLoaded: idb.whenLoaded,
+	goOffline() {},
+	reconnect() {},
+	clearLocalData: () => idb.clearLocal(),
+} satisfies BrowserWorkspace;
+```
+
+## Auth API
+
+`@epicenter/auth-workspace` should depend on `BrowserWorkspace` from
+`@epicenter/workspace`.
 
 ```ts
 import type { AuthClient } from '@epicenter/auth';
@@ -289,7 +499,7 @@ export function bindAuthWorkspaceScope(
 ): () => void;
 ```
 
-All three policy callbacks are required. A caller with no signed-in policy can pass a no-op, but the call site should still acknowledge the lifecycle moment.
+Example app call site:
 
 ```ts
 bindAuthWorkspaceScope({
@@ -305,7 +515,7 @@ bindAuthWorkspaceScope({
 });
 ```
 
-Tab Manager uses the signed-in policy:
+Tab Manager uses the signed-in policy for device registration:
 
 ```ts
 bindAuthWorkspaceScope({
@@ -323,22 +533,16 @@ bindAuthWorkspaceScope({
 });
 ```
 
-## Identity
+## Auth State Machine
 
-Workspace identity is `workspace.ydoc.guid`. It is not auth identity.
-
-The auth binding uses `workspace.ydoc.guid` for duplicate detection, cleanup failure reporting, and callback context. Callback fields should say `workspaceGuid`, not `workspaceId`, so the source is explicit. Auth user identity is only used to decide whether the scope is staying on the same user or leaving an applied user.
-
-## State Machine
-
-The binding owns only two auth lifecycle facts:
+The binding owns two auth lifecycle facts:
 
 ```ts
 let activeUserId: string | null = null;
 let activeToken: string | null = null;
 ```
 
-It also owns execution bookkeeping for serialized async processing:
+It also owns serialized async processing:
 
 ```ts
 let latestSnapshot = auth.snapshot;
@@ -347,15 +551,16 @@ let processing = false;
 let disposed = false;
 ```
 
-Snapshots must be processed through one latest-snapshot drain loop. Cleanup and apply operations must not overlap.
-
-The important rule is this: after any awaited cleanup, check whether a newer snapshot arrived before applying a signed-in snapshot. A stale signed-in snapshot must not apply after cleanup if auth has already moved on.
+Snapshots must drain through one latest-snapshot loop. Cleanup and apply
+operations must not overlap. After any awaited cleanup, check whether a newer
+snapshot arrived before applying anything else.
 
 ### Loading
 
 ```txt
-loading
-  no side effects
+snapshot is loading
+
+no side effects
 ```
 
 ### Cold Signed-Out Boot
@@ -364,11 +569,15 @@ loading
 activeUserId is null
 snapshot is signedOut
 
-all browser sync resources go offline
-activeToken becomes null
-local data is not cleared
-policy does not run
+for each workspace:
+  workspace.goOffline()
+
+do not clear local data
+do not run cleanup policy
 ```
+
+Cold signed-out boot should not wipe old local data. The app has not left an
+applied user in this process.
 
 ### Cold Signed-In Boot
 
@@ -376,11 +585,15 @@ policy does not run
 activeUserId is null
 snapshot is signedIn user A
 
-apply user A encryption keys to every workspace
-reconnect every deduped browser sync resource
-activeUserId becomes A
-activeToken becomes token A
-afterApplyAuthSession runs once
+for each workspace:
+  workspace.encryption.applyKeys(A.keys)
+
+for each workspace:
+  workspace.reconnect()
+
+activeUserId = A
+activeToken = A.token
+afterApplyAuthSession()
 ```
 
 ### Same User Token Change
@@ -390,10 +603,14 @@ activeUserId is A
 activeToken is token 1
 snapshot is signedIn user A with token 2
 
-apply encryption keys to every workspace
-reconnect every deduped browser sync resource
-activeToken becomes token 2
-afterApplyAuthSession runs once
+for each workspace:
+  workspace.encryption.applyKeys(A.keys)
+
+for each workspace:
+  workspace.reconnect()
+
+activeToken = token 2
+afterApplyAuthSession()
 ```
 
 ### Same User Key Change Without Token Change
@@ -403,9 +620,11 @@ activeUserId is A
 activeToken is token 1
 snapshot is signedIn user A with token 1 and new keys
 
-apply encryption keys to every workspace
-do not reconnect sync
-afterApplyAuthSession runs once
+for each workspace:
+  workspace.encryption.applyKeys(A.keys)
+
+do not reconnect
+afterApplyAuthSession()
 ```
 
 ### Signed-In To Signed-Out
@@ -414,18 +633,20 @@ afterApplyAuthSession runs once
 activeUserId is A
 snapshot is signedOut
 
-all browser sync resources go offline
-activeToken becomes null
+for each workspace:
+  workspace.goOffline()
+
 clear local data for every workspace
 
 if every clear succeeds:
-  activeUserId becomes null
-  afterClearLocalData runs once
+  activeUserId = null
+  activeToken = null
+  afterClearLocalData()
 
 if any clear fails:
-  activeUserId remains A
-  onClearLocalDataError runs once with all failures
-  afterClearLocalData does not run
+  keep activeUserId = A
+  activeToken = null
+  onClearLocalDataError()
 ```
 
 ### Signed-In User A To Signed-In User B
@@ -434,159 +655,228 @@ if any clear fails:
 activeUserId is A
 snapshot is signedIn user B
 
-all browser sync resources go offline
-activeToken becomes null
+for each workspace:
+  workspace.goOffline()
+
 clear local data for every workspace
 
 if every clear succeeds:
-  activeUserId becomes null
-  afterClearLocalData runs once
-  B is not applied to the existing live workspace objects
+  activeUserId = null
+  activeToken = null
+  afterClearLocalData()
+  do not apply B to old live workspace objects
 
 if any clear fails:
-  activeUserId remains A
-  onClearLocalDataError runs once with all failures
-  B is not applied
+  keep activeUserId = A
+  activeToken = null
+  onClearLocalDataError()
+  do not apply B
 ```
 
-The current browser apps should reload in `afterClearLocalData`. Applying user B to the same live Y.Doc objects after clearing IndexedDB is unsafe because the old user's CRDT state is still in memory.
+Browser apps should reload or reopen fresh workspace objects after successful
+cleanup. Clearing IndexedDB does not clear old in-memory Y.Doc state.
+
+## File-Backed And Daemon Boundaries
+
+File-backed runtimes are not part of the browser auth contract. Do not add a
+shared `FileBackedWorkspace` type in this spec just to make the noun parallel
+with `BrowserWorkspace`.
+
+The useful distinction is lifecycle owner:
+
+```txt
+BrowserWorkspace
+  owner: browser auth client
+  local data: browser profile IndexedDB
+  auth transition: user can sign out or switch users inside the same process
+  required lifecycle: goOffline, reconnect, clearLocalData
+
+DaemonRouteRuntime
+  owner: daemon host
+  local data: project files and materialized projections
+  auth transition: machine credentials can disappear outside the route
+  required lifecycle: daemon host decides whether to reconnect, go offline, or stop
+
+Script or snapshot surface
+  owner: caller scope
+  local data: project files read during open
+  auth transition: no long-running listener
+  required lifecycle: dispose at the end of the script
+```
+
+A future file-backed workspace open can still be async:
+
+```ts
+export async function openFujiFileBacked(...) {
+	const doc = openFujiDoc();
+	const sqlite = attachSqlite(doc.ydoc, { filePath });
+	await sqlite.whenLoaded;
+	return {
+		...doc,
+		sqlite,
+	};
+}
+```
+
+That surface does not need `whenLoaded` because callers receive it after local
+replay. It also does not need `clearLocalData()` by default. Browser sign-out
+should clear browser profile data. Machine logout should not delete project
+files unless the product explicitly adds a destructive project-clean command.
+
+Daemon routes already have a different contract:
+
+```ts
+defineFujiDaemon().start({ projectDir })
+// returns actions, awareness, sync, remote, asyncDispose
+```
+
+If `epicenter auth logout` must immediately affect already-running daemons,
+that is daemon host behavior, not workspace shape:
+
+```txt
+epicenter auth logout
+  clear machine credentials
+  optionally notify local daemon host
+    for each route:
+      route.sync.goOffline()
+      maybe stop route or wait for explicit restart
+```
+
+Without daemon-host notification, the current sync behavior is still coherent:
+an existing websocket may remain open until the server closes it, and the next
+reconnect calls `getToken()`. If credentials are gone, `getToken()` returns
+null or fails and sync parks instead of authenticating.
 
 ## Implementation Plan
 
-### Phase 0: Close Browser Child Document Design
+### Phase 1: Workspace Types
 
-Implementation should not start until this phase is complete.
+- [x] Export `Workspace` and `BrowserWorkspace` from `@epicenter/workspace`.
+- [x] Keep `Workspace.ydoc`, `Workspace.encryption`, `Workspace.batch(fn)`, and `Workspace[Symbol.dispose]()`.
+- [x] Add `BrowserWorkspace.whenLoaded`.
+- [x] Add `BrowserWorkspace.goOffline()`.
+- [x] Add `BrowserWorkspace.reconnect()`.
+- [x] Add `BrowserWorkspace.clearLocalData()`.
+- [x] Do not export `FileBackedWorkspace` in this auth clean break.
+- [x] Do not require `BrowserWorkspace.idb`.
+- [x] Do not require `BrowserWorkspace.sync`.
+- [x] Do not add `BrowserWorkspace.documentCollections`.
+- [x] Do not add `workspace.authLifecycle` or `workspace.authBinding`.
 
-- [ ] **0.1** Decide whether the public browser workspace surface is `documentCollections` or higher-level workspace methods.
-- [ ] **0.2** Decide whether `BrowserDocument.idb` is nullable or whether different collection types are needed for IndexedDB-backed and file-backed child documents.
-- [ ] **0.3** Decide how child document local data clears when the child document is not currently open.
-- [ ] **0.4** Prove the design against Fuji entry content docs, Honeycrisp note body docs, and Opensidian file content docs.
-- [ ] **0.5** Keep `createDisposableCache` generic. Add a browser document collection wrapper only if it owns real browser lifecycle semantics.
-- [ ] **0.6** Update this spec with the final child document API and remove the candidate wording.
+### Phase 2: Browser Document Collections
 
-### Phase 1: Standardize Workspace Types
+- [x] Add `createBrowserDocumentCollection(...)`.
+- [x] Keep `createDisposableCache` generic and unchanged.
+- [x] Make the collection own active child sync registration.
+- [x] Make the collection clear unopened child IndexedDB stores from `ids()` and `guid(id)`.
+- [x] Make collection disposal dispose all active cached child docs.
+- [x] Prove the collection against Fuji, Honeycrisp, and Opensidian.
 
-- [ ] **1.1** Export `Workspace` and `BrowserWorkspace` from `@epicenter/workspace`.
-- [ ] **1.2** Keep `Workspace.ydoc` required.
-- [ ] **1.3** Keep `Workspace.encryption` required.
-- [ ] **1.4** Keep `Workspace.batch(fn)` required.
-- [ ] **1.5** Keep `Workspace[Symbol.dispose]()` required.
-- [ ] **1.6** Keep `BrowserWorkspace.idb` required.
-- [ ] **1.7** Keep `BrowserWorkspace.sync` nullable.
-- [ ] **1.8** Add the final child document lifecycle surface from Phase 0.
-- [ ] **1.9** Keep `BrowserWorkspace.clearLocalData()` or replace it with the final higher-level cleanup method from Phase 0.
-- [ ] **1.10** Do not add `whenReady` to the shared `BrowserWorkspace` type.
+### Phase 3: Auth Binding
 
-### Phase 2: Replace The Public Auth Binding API
+- [x] Rename `bindWorkspaceAuthLifecycle` to `bindAuthWorkspaceScope`.
+- [x] Replace the single `workspace` option with `workspaces`.
+- [x] Replace `WorkspaceAuthTarget` with `BrowserWorkspace`.
+- [x] Remove `WorkspaceAuthSyncTarget`.
+- [x] Remove support for `getAuthSyncTargets()`.
+- [x] Snapshot the workspace iterable once at bind time.
+- [x] Throw if the workspace list is empty.
+- [x] Throw if `workspace.ydoc.guid` values are duplicated.
+- [x] Process snapshots through a serialized latest-snapshot drain loop.
+- [x] Aggregate clear failures with `workspaceGuid`.
 
-- [ ] **2.1** Rename `bindWorkspaceAuthLifecycle` to `bindAuthWorkspaceScope`.
-- [ ] **2.2** Replace `WorkspaceAuthTarget` with `BrowserWorkspace`.
-- [ ] **2.3** Replace the `workspace` option with `workspaces`.
-- [ ] **2.4** Remove support for `getAuthSyncTargets()`.
-- [ ] **2.5** Remove support for `workspace.authLifecycle` or `workspace.authBinding`.
-- [ ] **2.6** Rename callback context fields from `workspaceIds` to `workspaceGuids`.
-- [ ] **2.7** Do not export compatibility aliases.
+### Phase 4: App Workspace Construction
 
-### Phase 3: Implement Scope State Machine
+- [x] Update Fuji to return `whenLoaded`, `goOffline`, `reconnect`, and `clearLocalData`.
+- [x] Update Honeycrisp the same way.
+- [x] Update Opensidian the same way.
+- [x] Update Tab Manager with no child collections.
+- [x] Update Zhongwen with no-op `goOffline` and `reconnect`.
+- [x] Keep raw `idb`, `sync`, `awareness`, `rpc`, `remote`, and app-specific child collections as concrete app fields where useful.
+- [x] Rename app-level `whenReady` exports to `whenLoaded`.
 
-- [ ] **3.1** Snapshot the `workspaces` iterable once at bind time and throw if it is empty.
-- [ ] **3.2** Throw if `workspace.ydoc.guid` values are duplicated.
-- [ ] **3.3** Apply encryption keys to every workspace before reconnecting sync resources.
-- [ ] **3.4** Move every root and child sync resource offline before cleanup or token replacement.
-- [ ] **3.5** Deduplicate sync resources across all workspaces for every offline or reconnect operation.
-- [ ] **3.6** Process auth snapshots through a serialized latest-snapshot drain loop.
-- [ ] **3.7** Keep `activeUserId` until all local data clears succeed.
-- [ ] **3.8** Set `activeToken` to null whenever sync resources are taken offline.
-- [ ] **3.9** After awaited cleanup, skip applying stale signed-in snapshots if a newer snapshot arrived.
-- [ ] **3.10** Do not apply a different signed-in user to the same live browser workspaces after cleanup.
-- [ ] **3.11** Report all workspace clear failures in one structured callback.
+### Phase 5: App Auth Bindings
 
-### Phase 4: Update Browser Workspace Construction
-
-- [ ] **4.1** Update Fuji browser workspace to satisfy `BrowserWorkspace`.
-- [ ] **4.2** Update Honeycrisp browser workspace to satisfy `BrowserWorkspace`.
-- [ ] **4.3** Update Opensidian browser workspace to satisfy `BrowserWorkspace`.
-- [ ] **4.4** Update Tab Manager browser workspace to satisfy `BrowserWorkspace`.
-- [ ] **4.5** Update Zhongwen browser workspace to satisfy `BrowserWorkspace` with `sync: null`.
-- [ ] **4.6** Replace `getAuthSyncTargets()` with the final Phase 0 child document lifecycle surface.
-- [ ] **4.7** Keep token sourcing in sync resources through `auth.whenLoaded` and `auth.snapshot`.
-- [ ] **4.8** Ensure `BrowserWorkspace[Symbol.dispose]()` disposes child document collections before destroying the root Y.Doc, if Phase 0 chooses collections.
-
-### Phase 5: Update App Bindings
-
-- [ ] **5.1** Update Fuji to call `bindAuthWorkspaceScope({ auth, workspaces: [fuji], ... })`.
-- [ ] **5.2** Update Honeycrisp to call `bindAuthWorkspaceScope({ auth, workspaces: [honeycrisp], ... })`.
-- [ ] **5.3** Update Opensidian to call `bindAuthWorkspaceScope({ auth, workspaces: [opensidian], ... })`.
-- [ ] **5.4** Update Tab Manager to call `bindAuthWorkspaceScope({ auth, workspaces: [tabManager], ... })` and move device registration to `afterApplyAuthSession`.
-- [ ] **5.5** Replace Zhongwen manual auth listener with `bindAuthWorkspaceScope`.
-- [ ] **5.6** Keep app-owned toast and reload policy inline at call sites.
+- [x] Update Fuji to call `bindAuthWorkspaceScope({ auth, workspaces: [fuji], ... })`.
+- [x] Update Honeycrisp to call `bindAuthWorkspaceScope({ auth, workspaces: [honeycrisp], ... })`.
+- [x] Update Opensidian to call `bindAuthWorkspaceScope({ auth, workspaces: [opensidian], ... })`.
+- [x] Update Tab Manager to call `bindAuthWorkspaceScope({ auth, workspaces: [tabManager], ... })`.
+- [x] Replace Zhongwen manual auth cleanup with `bindAuthWorkspaceScope`.
+- [x] Move Tab Manager device registration to `afterApplyAuthSession`.
+- [x] Keep toast and reload policy inline at app call sites.
 
 ### Phase 6: Tests
 
-- [ ] **6.1** Cover empty workspace list rejection.
-- [ ] **6.2** Cover duplicate `ydoc.guid` rejection.
-- [ ] **6.3** Cover duplicate sync resource dedupe across workspaces.
-- [ ] **6.4** Cover root and child sync resources both going offline before cleanup.
-- [ ] **6.5** Cover root and child local data clearing in one grouped operation.
-- [ ] **6.6** Cover child local data clearing for a document that is not currently open, once Phase 0 defines how that works.
-- [ ] **6.7** Cover cold signed-out boot across multiple workspaces.
-- [ ] **6.8** Cover cold signed-in boot across multiple workspaces.
-- [ ] **6.9** Cover same-user token change.
-- [ ] **6.10** Cover same-user key change without token change.
-- [ ] **6.11** Cover signed-in to signed-out with all clears succeeding.
-- [ ] **6.12** Cover signed-in to signed-out with one workspace clear failing.
-- [ ] **6.13** Cover signed-in user A to signed-in user B with all clears succeeding and no B apply.
-- [ ] **6.14** Cover signed-in user A to signed-in user B with one workspace clear failing and no B apply.
-- [ ] **6.15** Cover retry after failed cleanup preserves old active user memory.
-- [ ] **6.16** Cover same-user sign-in after failed sign-out cleanup reconnects because `activeToken` is null.
-- [ ] **6.17** Cover snapshots emitted while cleanup is in flight are serialized and latest snapshot wins.
-- [ ] **6.18** Cover stale signed-in snapshot skipped after cleanup when a newer snapshot arrived.
-- [ ] **6.19** Cover non-sync encrypted workspace with `sync: null`.
-- [ ] **6.20** Cover unsubscribe stops future queued work from new auth emissions.
-- [ ] **6.21** Cover `clearLocalData()` failure aggregation with multiple failed workspaces.
+- [x] Cover empty workspace list rejection.
+- [x] Cover duplicate `ydoc.guid` rejection.
+- [x] Cover cold signed-out boot calls `goOffline` but not `clearLocalData`.
+- [x] Cover cold signed-in boot applies keys and reconnects.
+- [x] Cover same-user token change reconnects.
+- [x] Cover same-user key change does not reconnect.
+- [x] Cover signed-in to signed-out clears all workspaces.
+- [x] Cover user switch clears all workspaces and does not apply user B to old objects.
+- [x] Cover cleanup failure aggregation.
+- [x] Cover snapshots emitted during cleanup use latest-snapshot semantics.
+- [x] Cover browser document collection clears unopened child docs.
+- [x] Cover collection disposal unregisters active child syncs.
+- [x] Cover non-sync BrowserWorkspace such as Zhongwen.
 
 ### Phase 7: Docs And Skills
 
-- [ ] **7.1** Update `docs/guides/consuming-epicenter-api.md`.
-- [ ] **7.2** Update `docs/encryption.md`.
-- [ ] **7.3** Update `.agents/skills/auth/SKILL.md`.
-- [ ] **7.4** Update `.agents/skills/cohesive-clean-breaks/SKILL.md`.
-- [ ] **7.5** Update `apps/fuji/README.md`.
-- [ ] **7.6** Update the previous lifecycle spec with a superseded note.
-- [ ] **7.7** Grep for old public names and old target fields in auth lifecycle docs.
-
-### Phase 8: Verification
-
-- [ ] **8.1** `bun test` in `packages/auth-workspace`.
-- [ ] **8.2** `bun run typecheck` in `packages/auth-workspace`.
-- [ ] **8.3** `bun run typecheck` in `packages/workspace`.
-- [ ] **8.4** `bun run typecheck` in `packages/auth-svelte`.
-- [ ] **8.5** Run one affected app typecheck and record unrelated baseline failures separately.
-- [ ] **8.6** Run targeted grep:
-
-```sh
-rg -n "bindWorkspaceAuthLifecycle|WorkspaceAuthTarget|WorkspaceAuthSyncTarget|getAuthSyncTargets|authLifecycle|authBinding|onCleanupError|afterCleanup|onSnapshot" apps packages docs .agents/skills
-```
-
-Expected result: no live references to the old workspace auth binding API. Historical specs may mention old names only while describing prior behavior.
+- [x] Update `docs/guides/consuming-epicenter-api.md`.
+- [x] Update `docs/encryption.md`.
+- [x] Update `.agents/skills/auth/SKILL.md`.
+- [x] Update app READMEs that mention `whenReady`.
+- [x] Grep for old names and stale fields.
 
 ## Non Goals
 
-- Do not redesign file-backed workspace runtime shapes in this spec.
+- Do not redesign file-backed workspace construction beyond naming the future direction.
+- Do not introduce a shared `FileBackedWorkspace` type without a generic file-backed consumer.
+- Do not force daemon route runtimes through a workspace type.
 - Do not move encryption key package ownership.
 - Do not make workspace core import `AuthClient`.
 - Do not extract app toast or reload policy into `@epicenter/auth-workspace`.
-- Do not add compatibility aliases for old names.
-- Do not introduce durable pending-cleanup retry state. That should be a separate product decision.
+- Do not add compatibility aliases for old auth binding names.
+- Do not introduce durable pending-cleanup retry state.
+- Do not make composite `idb` or composite `sync` attachments.
 
 ## Success Criteria
 
-- [ ] One auth lifecycle binding controls one or many browser workspaces.
-- [ ] Browser workspaces expose standard top-level runtime fields consumed by `@epicenter/auth-workspace`.
-- [ ] The final browser child document lifecycle surface covers active child syncs, child persistence cleanup, and workspace disposal.
-- [ ] No app owns manual auth transition cleanup logic for encrypted browser workspaces.
-- [ ] Failed cleanup cannot make a later signed-in snapshot look like cold boot.
-- [ ] A different signed-in user is not applied to old live Y.Doc objects after cleanup.
-- [ ] Multiple workspace cleanup failures are reported together with workspace guids.
-- [ ] Sync reconnect decisions still depend only on `activeToken`.
-- [ ] User switch, sign-out, token refresh, and key refresh tests pass for multi-workspace scopes.
+- [x] One auth binding controls one or many browser workspaces.
+- [x] `BrowserWorkspace` exposes only the shared browser lifecycle contract and root local-load gate.
+- [x] Concrete app workspaces can still expose raw root attachments and app-specific child collections by inference.
+- [x] Fuji, Honeycrisp, and Opensidian clear local data for unopened child documents.
+- [x] Tab Manager and Zhongwen satisfy the same auth binding without special adapters.
+- [x] Auth never inspects root `idb`, root `sync`, child collections, or sync inventories.
+- [x] Failed cleanup cannot make a later signed-in snapshot look like cold boot.
+- [x] A different signed-in user is not applied to old live Y.Doc objects after cleanup.
+- [x] No compatibility alias for `bindWorkspaceAuthLifecycle` exists.
+
+## Review
+
+**Completed**: 2026-05-01
+**Branch**: `codex/explicit-daemon-host-config`
+
+### Summary
+
+The browser auth binding now works over a snapshot of one or more `BrowserWorkspace` bundles. The shared binding validates non-empty and unique workspace lists, serializes auth snapshot handling, clears all workspace local data through the graph contract, and reports clear failures by workspace guid.
+
+Browser workspace construction now owns graph lifecycle in Fuji, Honeycrisp, Opensidian, Tab Manager, and Zhongwen. Fuji, Honeycrisp, and Opensidian use `createBrowserDocumentCollection(...)` so active child syncs, active child disposal, and unopened child IndexedDB clearing live with the child collection.
+
+### Verification
+
+- `bun test packages/auth-workspace/src/index.test.ts`: passed.
+- `bun test packages/workspace/src/cache/browser-document-collection.test.ts`: passed.
+- `bun run --cwd packages/auth-workspace typecheck`: passed.
+- `bun run --cwd packages/workspace typecheck`: passed.
+- `bun run --cwd apps/fuji typecheck`: failed on existing shared Svelte/UI diagnostics unrelated to this change. The new Fuji browser workspace error was fixed.
+- `bun run --cwd apps/honeycrisp typecheck`: failed on existing shared Svelte/UI diagnostics unrelated to this change. The new Honeycrisp browser workspace error was fixed.
+- `bun run --cwd apps/opensidian check`: failed on existing shared Svelte/UI diagnostics and unrelated app diagnostics. No remaining Opensidian browser workspace contract error was reported.
+- `bun run --cwd apps/tab-manager typecheck`: failed on existing shared UI diagnostics and unrelated chat typing. No remaining Tab Manager browser workspace contract error was reported.
+- `bun run --cwd apps/zhongwen typecheck`: failed on existing shared UI diagnostics and unrelated AI package typing. No remaining Zhongwen browser workspace contract error was reported.
+
+### Deviations
+
+- App typecheck commands could not be made green without fixing unrelated shared UI and app diagnostics outside this spec.
+- Existing unrelated `whenReady` conventions remain for non-workspace browser state, storage state, and content documents that are not root browser workspace bundles.

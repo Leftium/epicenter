@@ -119,6 +119,31 @@ function createSatisfiedWorkspace() {
 
 This matters most in factory-heavy code. Factories are already organized around the return object: state above, public API inside the returned shape. When Go to Definition lands inside that shape, the editor is following the same structure the code is written in.
 
+The same idea applies when the factory's own return type needs a public name. Do not annotate the factory with the named type and then duplicate the object shape somewhere else. Let the factory own the shape, then derive the name from it:
+
+```typescript
+export type BrowserDocumentFamily<
+  Id extends string | number,
+  TDocument extends BrowserDocumentInstance,
+> = ReturnType<typeof createBrowserDocumentFamily<Id, TDocument>>;
+
+export function createBrowserDocumentFamily<
+  Id extends string | number,
+  TDocument extends BrowserDocumentInstance,
+>(source: BrowserDocumentFamilySource<Id, TDocument>) {
+  return {
+    open(id: Id) {
+      return source.create(id);
+    },
+    has(id: Id) {
+      return cache.has(id);
+    },
+  };
+}
+```
+
+`satisfies` is for checking a value against an external contract while preserving the value. `ReturnType<typeof createX>` is for naming the factory's own value after the fact. Both patterns protect the same editor path: usage points back to the implementation first.
+
 The type is still available. It just belongs to the command that asks for type information:
 
 | Cursor          | Go to Definition       | Go to Type Definition |
@@ -153,3 +178,5 @@ function createSatisfiedWorkspace() {
 Second, explicit return types still have a place at package boundaries. If declaration output needs to expose a named type, or if you intentionally want to hide the concrete return shape from consumers, an annotation can be the right move.
 
 But inside the source tree, especially on factories, this is a real ergonomic win. `satisfies` gives you the contract check without cutting the editor's path back to the object that was actually returned.
+
+For the factory-return version of this pattern, see [Let Factory Return Types Point Back to the Factory](./factory-return-types-should-point-back-to-the-factory.md). For the broader rule, see [Types Should Be Computed, Not Declared](./types-should-be-computed-not-declared.md).

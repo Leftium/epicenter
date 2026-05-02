@@ -206,6 +206,29 @@ function createSomething({ db, cache }, options?) {
 
 Zones 1 and 2 can merge when there's little state. Zone 3 is empty for small factories. But the return object is always last—it's the complete public API.
 
+### Public Return Types Derive From Zone 4
+
+When the exported type is just the handle returned by one factory, derive the type from the factory instead of annotating the factory with the type.
+
+```typescript
+export type RemoteClient = ReturnType<typeof createRemoteClient>;
+
+export function createRemoteClient(options: RemoteClientOptions) {
+	return {
+		actions<T>(peerId: string): RemoteActionProxy<T> {
+			// ...
+		},
+		describe(peerId: string): Promise<ActionManifest> {
+			// ...
+		},
+	};
+}
+```
+
+Zone 4 is already the public API. Duplicating it in a manual return type creates a second source of truth and changes editor navigation: Go to Definition tends to jump to the alias instead of the returned member. Keep method parameter and return annotations inside zone 4 when they make the public surface clearer.
+
+Do not use this for shared service contracts that several factories implement. Those contracts are vocabulary. Use `satisfies` at the return object when a factory needs to prove it matches an external contract while preserving the concrete returned shape.
+
 ### The `this` Decision Rule
 
 Inside the return object, public methods sometimes need to call other public methods. Use `this.method()` for that—method shorthand gives proper `this` binding.

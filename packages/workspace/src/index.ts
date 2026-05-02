@@ -85,6 +85,7 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { MaybePromise } from './shared/types';
+export type { BrowserWorkspace, Workspace } from './shared/workspace.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES
@@ -131,12 +132,13 @@ export { DateTimeString } from './shared/datetime-string';
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
-	type BrowserDocCache,
-	type BrowserDocCacheOptions,
-	type BrowserDocInstance,
-	type BrowserDocSource,
-	createBrowserDocCache,
-} from './cache/browser-doc-cache.js';
+	type BrowserDocumentFamily,
+	type BrowserDocumentFamilyOptions,
+	type BrowserDocumentInstance,
+	type BrowserDocumentFamilySource,
+	type DocumentFamily,
+	createBrowserDocumentFamily,
+} from './cache/browser-document-family.js';
 export {
 	createDisposableCache,
 	type DisposableCache,

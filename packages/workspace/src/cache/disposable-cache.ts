@@ -168,23 +168,10 @@ export type DisposableCacheError = InferErrors<typeof DisposableCacheError>;
  * Refcounted cache returned by `createDisposableCache`. Itself `Disposable`:
  * `cache[Symbol.dispose]()` flushes every entry immediately.
  */
-export interface DisposableCache<Id, T> extends Disposable {
-	/**
-	 * Open a handle. Increments the refcount for `id`. The returned handle is
-	 * a fresh object built by spreading the underlying `T`'s own enumerable
-	 * properties, plus its own `[Symbol.dispose]` that decrements *this
-	 * handle's* refcount. It does NOT destroy the underlying `T` directly.
-	 * The underlying `T[Symbol.dispose]()` is called once, by the cache, when
-	 * the refcount reaches zero after `gcTime`.
-	 *
-	 * Each call returns a distinct handle (so `a !== b`), but their nested
-	 * fields share references (so `a.ydoc === b.ydoc`). N opens require N
-	 * disposes.
-	 */
-	open(id: Id): T & Disposable;
-	/** Whether an instance is currently held (refcounted or in grace window). */
-	has(id: Id): boolean;
-}
+export type DisposableCache<
+	Id extends string | number,
+	T extends Disposable,
+> = ReturnType<typeof createDisposableCache<Id, T>>;
 
 type CacheEntry<T extends Disposable> = {
 	value: T;
@@ -215,7 +202,7 @@ export function createDisposableCache<
 		gcTime = 5_000,
 		log = createLogger('createDisposableCache'),
 	}: { gcTime?: number; log?: Logger } = {},
-): DisposableCache<Id, T> {
+) {
 	const entries = new Map<Id, CacheEntry<T>>();
 
 	function disposeEntry(id: Id, entry: CacheEntry<T>): void {
@@ -236,8 +223,20 @@ export function createDisposableCache<
 		}
 	}
 
-	const cache: DisposableCache<Id, T> = {
-		open(id) {
+	const cache = {
+		/**
+		 * Open a handle. Increments the refcount for `id`. The returned handle is
+		 * a fresh object built by spreading the underlying `T`'s own enumerable
+		 * properties, plus its own `[Symbol.dispose]` that decrements *this
+		 * handle's* refcount. It does NOT destroy the underlying `T` directly.
+		 * The underlying `T[Symbol.dispose]()` is called once, by the cache, when
+		 * the refcount reaches zero after `gcTime`.
+		 *
+		 * Each call returns a distinct handle (so `a !== b`), but their nested
+		 * fields share references (so `a.ydoc === b.ydoc`). N opens require N
+		 * disposes.
+		 */
+		open(id: Id) {
 			let entry = entries.get(id);
 			if (entry === undefined) {
 				// User closure runs synchronously. If it throws, we DON'T insert
@@ -289,7 +288,8 @@ export function createDisposableCache<
 			} as T & Disposable;
 		},
 
-		has(id) {
+		/** Whether an instance is currently held (refcounted or in grace window). */
+		has(id: Id) {
 			return entries.has(id);
 		},
 

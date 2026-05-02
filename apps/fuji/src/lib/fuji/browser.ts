@@ -7,7 +7,7 @@ import {
 	attachRichText,
 	attachSync,
 	composeSyncControls,
-	createBrowserDocCache,
+	createBrowserDocumentFamily,
 	createRemoteClient,
 	DateTimeString,
 	docGuid,
@@ -47,7 +47,7 @@ export function openFuji({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const entryContentDocs = createBrowserDocCache(
+	const entryContentDocs = createBrowserDocumentFamily(
 		{
 			ids() {
 				return doc.tables.entries.getAllValid().map((entry) => entry.id);

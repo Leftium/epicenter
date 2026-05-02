@@ -20,7 +20,7 @@
  *
  * The live document is browser-agnostic on purpose: it has no `sync`
  * field. Browser apps add `sync: null` inline when adapting it to
- * `createBrowserDocCache`; non-browser callers (daemon, CLI, e2e scripts)
+ * `createBrowserDocumentFamily`; non-browser callers (daemon, CLI, e2e scripts)
  * compose this directly with `createDisposableCache`.
  */
 

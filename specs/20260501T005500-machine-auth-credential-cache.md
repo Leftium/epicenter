@@ -1,8 +1,16 @@
 # CLI Credential Store
 
 **Date**: 2026-05-01
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
+
+**Review 2026-05-01**: This is implemented in the current codebase. The
+portable session contract lives under `packages/auth/src/contracts`, the Node
+auth server client and credential store live under `packages/auth/src/node`,
+and `packages/cli/src/commands/auth.ts` is now a thin wrapper over
+`@epicenter/auth/node`. `createSessionStore()` is gone from workspace auth
+consumers, and Node peers use credential-backed token and encryption key
+helpers.
 
 ## Overview
 

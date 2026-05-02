@@ -1,9 +1,16 @@
 # Daemon Host Definitions
 
 **Date**: 2026-04-30
-**Status**: Draft
+**Status**: Superseded
 **Author**: AI-assisted
 **Branch**: codex/daemon-transport-supervisor-integration
+
+**Superseded By**: `20260501T114356-daemon-startup-boundary-and-route-definition-cleanup.md`
+
+This spec records the host-definition design before the daemon route definition
+cleanup. The current code uses `DaemonRouteDefinition`, `DaemonRuntime`,
+`StartedDaemonRoute`, `peerDirectory`, `[Symbol.asyncDispose]`, and
+`defineConfig({ daemon: { routes: [...] } })`.
 
 ## Overview
 
@@ -20,7 +27,7 @@ The previous explicit daemon config accepted already-open daemon workspaces or p
 ```ts
 const projectDir = findEpicenterDir(import.meta.dir);
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [
 		openFuji({
 			projectDir,
@@ -54,10 +61,10 @@ This creates problems:
 The normal config should be short and explicit about what it declares:
 
 ```ts
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 import { defineFujiDaemon } from '@epicenter/fuji/daemon';
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [
 		defineFujiDaemon(),
 	],
@@ -110,7 +117,7 @@ Sources:
 Use `define` for delayed definitions. Use `open` for immediate runtime construction.
 
 ```txt
-defineEpicenterConfig()  -> returns config object
+defineConfig()  -> returns config object
 defineDaemon()           -> returns host definition
 defineFujiDaemon()       -> returns Fuji host definition
 definition.start()       -> starts live daemon workspace under project context
@@ -122,7 +129,7 @@ This keeps currying approachable:
 defineFujiDaemon()
 ```
 
-The line above is safe in config because it only creates metadata and stores user options. It does not open the daemon. Passing `getToken` is still supported for custom deployments, but the default comes from `@epicenter/workspace/node`.
+The line above is safe in config because it only creates metadata and stores user options. It does not open the daemon. Passing `getToken` is still supported for custom deployments, but the default comes from `@epicenter/auth/node`.
 
 ### Options Destructuring
 
@@ -130,9 +137,9 @@ All public functions should take one options object and destructure it in the fu
 
 ```ts
 export function defineFujiDaemon({
-	route = FUJI_DAEMON_ROUTE,
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
+	getToken = createCredentialTokenGetter({ serverOrigin: apiUrl }),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
 }: DefineFujiDaemonOptions = {}): DaemonHostDefinition {
@@ -180,7 +187,7 @@ import type {
 export const EPICENTER_CONFIG = Symbol.for('epicenter.daemon-config');
 export const EPICENTER_DAEMON_HOST = Symbol.for('epicenter.daemon-host');
 
-export type EpicenterConfigContext = {
+export type DaemonRouteContext = {
 	projectDir: ProjectDir;
 	configDir: AbsolutePath;
 };
@@ -200,7 +207,7 @@ export type DaemonHostDefinition = {
 	readonly title?: string;
 	readonly description?: string;
 	readonly workspaceId?: string;
-	start(options: EpicenterConfigContext): MaybePromise<DaemonWorkspace>;
+	start(options: DaemonRouteContext): MaybePromise<DaemonWorkspace>;
 };
 
 export type EpicenterConfig = {
@@ -219,7 +226,7 @@ export type DefineDaemonOptions = {
 	title?: string;
 	description?: string;
 	workspaceId?: string;
-	start(options: EpicenterConfigContext): MaybePromise<DaemonWorkspace>;
+	start(options: DaemonRouteContext): MaybePromise<DaemonWorkspace>;
 };
 
 export function defineDaemon({
@@ -242,7 +249,7 @@ export function defineDaemon({
 
 Route validation can happen either in `defineDaemon()` or in `loadConfig()`. The loader must keep validation either way because configs can still import inline objects or old data during migration.
 
-### `defineEpicenterConfig`
+### `defineConfig`
 
 The top-level config helper should take an object with `hosts`.
 
@@ -251,7 +258,7 @@ export type DefineEpicenterConfigOptions = {
 	hosts: readonly DaemonHostDefinition[];
 };
 
-export function defineEpicenterConfig({
+export function defineConfig({
 	hosts,
 }: DefineEpicenterConfigOptions): EpicenterConfig {
 	return Object.freeze({
@@ -264,7 +271,7 @@ export function defineEpicenterConfig({
 The object shape is deliberate. It leaves room for future project-level keys without overloading an array.
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon()],
 });
 ```
@@ -287,7 +294,7 @@ Likely future keys:
 The app daemon subpath should expose a definition helper, a runtime opener, and action connector helpers.
 
 ```ts
-export const FUJI_DAEMON_ROUTE = 'fuji';
+export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 export const FUJI_WORKSPACE_ID = 'epicenter.fuji';
 
 export type DefineFujiDaemonOptions = {
@@ -299,9 +306,9 @@ export type DefineFujiDaemonOptions = {
 };
 
 export function defineFujiDaemon({
-	route = FUJI_DAEMON_ROUTE,
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
+	getToken = createCredentialTokenGetter({ serverOrigin: apiUrl }),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
 }: DefineFujiDaemonOptions = {}) {
@@ -342,15 +349,15 @@ without making workspace configuration import the CLI package.
 
 The `start` callback requires the project root and an explicit token source. It should not call `findEpicenterDir()` and should not use `import.meta.dir`.
 
-`configDir` stays on `EpicenterConfigContext`, not on app-level openers. Custom `defineDaemon()` hosts can use it for config-relative assets, but app daemons should not forward it until they actually need it.
+`configDir` stays on `DaemonRouteContext`, not on app-level openers. Custom `defineDaemon()` hosts can use it for config-relative assets, but app daemons should not forward it until they actually need it.
 
 ### Script Helper
 
 Script helpers are allowed to discover from cwd because they are user-invoked entrypoints.
 
 ```ts
-export function openFujiDaemonActions({
-	route = FUJI_DAEMON_ROUTE,
+export function connectFujiDaemonActions({
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	projectDir,
 }: {
 	route?: string;
@@ -375,7 +382,7 @@ Scripts:
 
 ## Loader Behavior
 
-The loader should import `epicenter.config.ts`, validate the `defineEpicenterConfig({ hosts })` result, validate host definitions, and only then start hosts.
+The loader should import `epicenter.config.ts`, validate the `defineConfig({ hosts })` result, validate host definitions, and only then start hosts.
 
 ```txt
 loadConfig(targetDir)
@@ -401,7 +408,7 @@ Add or revise errors around the new split:
 
 | Error | When |
 | --- | --- |
-| `InvalidConfig` | Default export is not `defineEpicenterConfig({ hosts })` |
+| `InvalidConfig` | Default export is not `defineConfig({ hosts })` |
 | `EmptyConfig` | `hosts` is empty |
 | `InvalidHostDefinition` | A host definition is missing `route` or `start` |
 | `InvalidRoute` | A definition route is invalid |
@@ -415,12 +422,12 @@ Add or revise errors around the new split:
 
 ```ts
 import { openFuji } from '@epicenter/fuji/daemon';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 import { findEpicenterDir } from '@epicenter/workspace/node';
 
 const projectDir = findEpicenterDir(import.meta.dir);
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [
 		openFuji({
 			projectDir,
@@ -434,9 +441,9 @@ export default defineEpicenterConfig({
 
 ```ts
 import { defineFujiDaemon } from '@epicenter/fuji/daemon';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon()],
 });
 ```
@@ -444,7 +451,7 @@ export default defineEpicenterConfig({
 ### Custom Route
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [
 		defineFujiDaemon({
 			route: 'blog',
@@ -456,7 +463,7 @@ export default defineEpicenterConfig({
 The matching script must also opt into the custom route:
 
 ```ts
-const blog = await openFujiDaemonActions({
+const blog = await connectFujiDaemonActions({
 	route: 'blog',
 });
 ```
@@ -469,10 +476,10 @@ The main end-to-end test should prove that `-C` works even when cwd is elsewhere
 test('up injects projectDir into daemon definitions instead of using cwd', async () => {
 	const projectDir = makeFixtureProject({
 		config: `
-			import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+			import { defineConfig } from '@epicenter/workspace/daemon';
 			import { defineDaemon } from '@epicenter/workspace/daemon';
 
-			export default defineEpicenterConfig({
+			export default defineConfig({
 				hosts: [
 					defineDaemon({
 						route: 'demo',
@@ -514,7 +521,7 @@ Add unit-level loader tests too:
 
 ```txt
 loadConfig
-  - accepts defineEpicenterConfig({ hosts })
+  - accepts defineConfig({ hosts })
   - rejects old raw arrays once migration is over
   - rejects duplicate definition routes before calling start()
   - passes { projectDir, configDir } into start()
@@ -526,14 +533,14 @@ loadConfig
 
 ### Phase 1: Workspace Daemon Types
 
-- [x] **1.1** Add `EPICENTER_DAEMON_HOST`, `DaemonHostDefinition`, `EpicenterConfigContext`, `DefineDaemonOptions`, and `defineDaemon()` under `packages/workspace/src/daemon/types.ts`.
+- [x] **1.1** Add `EPICENTER_DAEMON_HOST`, `DaemonHostDefinition`, `DaemonRouteContext`, `DefineDaemonOptions`, and `defineDaemon()` under `packages/workspace/src/daemon/types.ts`.
 - [x] **1.2** Change `EpicenterConfig` to use object shape `{ hosts }`.
 - [x] **1.3** Keep `DaemonWorkspace` as the started runtime contract.
 - [x] **1.4** Export the new helpers from `@epicenter/workspace/daemon`.
 
 ### Phase 2: Config Loader
 
-- [x] **2.1** Update `packages/cli/src/load-config.ts` to read `defineEpicenterConfig({ hosts })`.
+- [x] **2.1** Update `packages/cli/src/load-config.ts` to read `defineConfig({ hosts })`.
 - [x] **2.2** Validate all host definitions and routes before calling `start()`.
 - [x] **2.3** Pass `{ projectDir, configDir }` into each host definition.
 - [x] **2.4** Keep cleanup behavior: if host N fails after hosts 0 through N-1 opened, dispose the opened hosts.
@@ -543,15 +550,15 @@ loadConfig
 
 - [x] **3.1** Rename public app config helpers to `defineFujiDaemon`, `defineHoneycrispDaemon`, `defineOpensidianDaemon`, and `defineZhongwenDaemon`.
 - [x] **3.2** Rename or preserve low-level runtime openers as `openFujiDaemon`, `openHoneycrispDaemon`, `openOpensidianDaemon`, and `openZhongwenDaemon`.
-- [x] **3.3** Make low-level runtime openers require `EpicenterConfigContext`.
+- [x] **3.3** Make low-level runtime openers require `DaemonRouteContext`.
 - [x] **3.4** Remove `findEpicenterDir()` defaults from daemon openers.
 - [x] **3.5** Keep script helpers defaulting through `connectDaemonActions()`.
 
 ### Phase 4: Config Call Sites
 
-- [x] **4.1** Migrate playground configs to `defineEpicenterConfig({ hosts: [...] })`.
+- [x] **4.1** Migrate playground configs to `defineConfig({ hosts: [...] })`.
 - [x] **4.2** Migrate example configs to `defineDaemon()` or app-specific `define*Daemon()` helpers.
-- [x] **4.3** Update docs that show `defineEpicenterConfig({ hosts: [...] })`.
+- [x] **4.3** Update docs that show `defineConfig({ hosts: [...] })`.
 - [x] **4.4** Keep direct script imports away from `epicenter.config.ts`.
 
 ### Phase 5: E2E and Regression Coverage
@@ -565,7 +572,7 @@ loadConfig
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Top-level config shape | `defineEpicenterConfig({ hosts })` | Names the project-level concern and leaves room for future keys |
+| Top-level config shape | `defineConfig({ hosts })` | Names the project-level concern and leaves room for future keys |
 | App config helper verb | `define*Daemon()` | Definition is delayed and side-effect free |
 | Runtime opener verb | `open*Daemon()` | Opening constructs live resources now |
 | Shared helper | `defineDaemon()` | Centralizes branding and the host definition shape |
@@ -583,7 +590,7 @@ loadConfig
 Duplicate routes should fail before any host opens.
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [
 		defineFujiDaemon({ route: 'notes' }),
 		defineHoneycrispDaemon({ route: 'notes' }),
@@ -608,7 +615,7 @@ defineDaemon({
 });
 ```
 
-This is why `configDir` belongs in `EpicenterConfigContext` even if current app daemons only need `projectDir`.
+This is why `configDir` belongs in `DaemonRouteContext` even if current app daemons only need `projectDir`.
 
 ### Custom Routes
 
@@ -616,7 +623,7 @@ Custom routes remain a local deployment choice. App-specific action connectors s
 
 ```ts
 defineFujiDaemon({ route: 'blog' });
-openFujiDaemonActions({ route: 'blog' });
+connectFujiDaemonActions({ route: 'blog' });
 ```
 
 ### Conditional Hosts
@@ -633,13 +640,13 @@ const hosts = [
 		: undefined,
 ].filter((host): host is DaemonHostDefinition => host !== undefined);
 
-export default defineEpicenterConfig({ hosts });
+export default defineConfig({ hosts });
 ```
 
 ## Resolved Questions
 
 1. **Should raw array configs remain as a migration bridge?**
-   - Resolution: no. The implemented API is object-only: `defineEpicenterConfig({ hosts })`.
+   - Resolution: no. The implemented API is object-only: `defineConfig({ hosts })`.
 
 2. **Should host metadata include `actions` manifest before open?**
    - Context: route/title/workspaceId are cheap. Action manifests usually require constructed action objects.
@@ -651,7 +658,7 @@ export default defineEpicenterConfig({ hosts });
 
 ## Success Criteria
 
-- [x] Normal config uses `defineEpicenterConfig({ hosts: [defineFujiDaemon()] })`.
+- [x] Normal config uses `defineConfig({ hosts: [defineFujiDaemon()] })`.
 - [x] App daemon runtime openers require `projectDir` and do not call `findEpicenterDir()`.
 - [x] `loadConfig(projectDir)` passes `{ projectDir, configDir }` into every host definition.
 - [x] Duplicate routes are rejected before opening any host.

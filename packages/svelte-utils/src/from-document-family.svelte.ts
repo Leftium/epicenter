@@ -1,15 +1,14 @@
-import type { DisposableCache } from '@epicenter/workspace';
+import type { DocumentFamily } from '@epicenter/workspace';
 
 /**
- * Reactive binding to a `DisposableCache`. Opens a handle for the current id
- * and disposes it on unmount or id swap.
+ * Reactive binding to a document family. Opens a handle for the current id and
+ * disposes it on unmount or id swap.
  *
  * The id is read through `idFn` inside a `$derived`, so the handle tracks
- * prop/state changes. When the id changes, the cache opens a handle for the
- * new id and the effect's teardown disposes the handle for the old id; the
- * two operations may briefly overlap depending on Svelte's scheduling, which
- * the cache's refcount tolerates. Rapid flips back to a recent id cancel the
- * pending teardown (cache-level `gcTime` behavior).
+ * prop/state changes. When the id changes, the family opens a handle for the
+ * new id and the effect's teardown disposes the handle for the old id. The two
+ * operations may briefly overlap depending on Svelte's scheduling; document
+ * family implementations own the resulting lifetime behavior.
  *
  * Why a getter (`() => id`) and not the id directly: destructured props and
  * `$state` reads are not reactive when captured at module top — see Svelte's
@@ -19,24 +18,24 @@ import type { DisposableCache } from '@epicenter/workspace';
  * @example
  * ```svelte
  * <script lang="ts">
- *   import { fromDisposableCache } from '@epicenter/svelte';
+ *   import { fromDocumentFamily } from '@epicenter/svelte';
  *   import { referenceDocs } from '$lib/client';
  *
  *   let { id }: { id: string } = $props();
- *   const doc = fromDisposableCache(referenceDocs, () => id);
+ *   const doc = fromDocumentFamily(referenceDocs, () => id);
  * </script>
  *
  * <CodeMirrorEditor ytext={doc.current.content.binding} />
  * ```
  */
-export function fromDisposableCache<
+export function fromDocumentFamily<
 	Id extends string | number,
 	T extends Disposable,
 >(
-	cache: DisposableCache<Id, T>,
+	family: DocumentFamily<Id, T>,
 	idFn: () => Id,
 ): { readonly current: T & Disposable } {
-	const handle = $derived(cache.open(idFn()));
+	const handle = $derived(family.open(idFn()));
 	$effect(() => {
 		// Synchronous read tracks `handle` as a dependency AND snapshots the
 		// current value so the cleanup disposes the OLD handle on swap, not

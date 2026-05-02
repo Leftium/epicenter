@@ -199,18 +199,56 @@ Load these on demand based on what you're working on:
 - **Don't annotate return types the compiler can infer**: Let TypeScript infer return types on inner/private functions. Only annotate return types on exported public API functions when the inferred type is too complex or when you need to break circular inference.
 
   ```typescript
-  // Good — inner functions let TS infer
+  // Good: inner functions let TS infer
   function parseValue(raw: string | null) {
   	if (raw === null) return defaultValue;
   	return JSON.parse(raw);
   }
 
-  // Bad — unnecessary return type annotation
+  // Bad: unnecessary return type annotation
   function parseValue(raw: string | null): SomeType {
   	if (raw === null) return defaultValue;
   	return JSON.parse(raw);
   }
   ```
+
+- **Factory return types derive from the factory**: If a public type is exactly the return object from a `create*` function, export the type as `ReturnType<typeof createThing>` and let the function return its concrete object. Put needed annotations on the returned methods and properties instead of on the factory itself. This keeps one source of truth and makes Go to Definition land on the returned object shape.
+
+  ```typescript
+  // Good: the factory owns the shape
+  export type BrowserDocCache<
+    TId extends string,
+    TDocument extends BrowserDocInstance,
+  > = ReturnType<typeof createBrowserDocCache<TId, TDocument>>;
+
+  export function createBrowserDocCache<
+    TId extends string,
+    TDocument extends BrowserDocInstance,
+  >(source: BrowserDocSource<TId, TDocument>) {
+    return {
+      open(id: TId): TDocument & Disposable {
+        return source.create(id);
+      },
+    };
+  }
+
+  // Bad: the type and return object now describe the same shape twice
+  export type BrowserDocCache<TId extends string, TDocument> = {
+    open(id: TId): TDocument & Disposable;
+  };
+
+  export function createBrowserDocCache<TId extends string, TDocument>(
+    source: BrowserDocSource<TId, TDocument>,
+  ): BrowserDocCache<TId, TDocument> {
+    return {
+      open(id) {
+        return source.create(id);
+      },
+    };
+  }
+  ```
+
+  Keep explicit contract types when several implementations share the same surface, when the type is protocol vocabulary, or when you intentionally want to hide the concrete return shape. Use `satisfies` when the implementation should be checked against an external contract but the returned value should keep its own inferred shape.
 
 ## Identity Checks: Brand, Don't Probe
 

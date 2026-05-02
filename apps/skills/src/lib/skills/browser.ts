@@ -8,7 +8,7 @@ import {
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	createBrowserDocCache,
+	createBrowserDocumentFamily,
 } from '@epicenter/workspace';
 import { clearDocument } from 'y-indexeddb';
 import { openSkills as openSkillsDoc } from './index.js';
@@ -18,7 +18,7 @@ export function openSkillsBrowser() {
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const instructionsDocs = createBrowserDocCache(
+	const instructionsDocs = createBrowserDocumentFamily(
 		{
 			ids() {
 				return doc.tables.skills.getAllValid().map((skill) => skill.id);
@@ -51,7 +51,7 @@ export function openSkillsBrowser() {
 		{ gcTime: 5_000 },
 	);
 
-	const referenceDocs = createBrowserDocCache(
+	const referenceDocs = createBrowserDocumentFamily(
 		{
 			ids() {
 				return doc.tables.references

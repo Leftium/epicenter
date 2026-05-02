@@ -7,7 +7,7 @@ import {
 	attachRichText,
 	attachSync,
 	composeSyncControls,
-	createBrowserDocCache,
+	createBrowserDocumentFamily,
 	createRemoteClient,
 	DateTimeString,
 	docGuid,
@@ -47,7 +47,7 @@ export function openHoneycrisp({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const noteBodyDocs = createBrowserDocCache(
+	const noteBodyDocs = createBrowserDocumentFamily(
 		{
 			ids() {
 				return doc.tables.notes.getAllValid().map((note) => note.id);

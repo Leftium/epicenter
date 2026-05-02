@@ -3,7 +3,7 @@
 `@epicenter/skills` defines the shared skills data model: table schemas, row
 types, the pure skills workspace factory, per-row document builders, guid
 helpers, and read action factories. It does not own browser storage. Browser
-apps compose IndexedDB, BroadcastChannel, and `createBrowserDocCache` at the app
+apps compose IndexedDB, BroadcastChannel, and `createBrowserDocumentFamily` at the app
 boundary.
 
 ## Root Export
@@ -39,7 +39,7 @@ const doc = openSkills();
 const idb = attachIndexedDb(doc.ydoc);
 attachBroadcastChannel(doc.ydoc);
 
-const instructionsDocs = createBrowserDocCache({
+const instructionsDocs = createBrowserDocumentFamily({
 	ids() {
 		return doc.tables.skills.getAllValid().map((skill) => skill.id);
 	},

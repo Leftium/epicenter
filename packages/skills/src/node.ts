@@ -1,18 +1,18 @@
 /**
  * @fileoverview Server-side entry for the shared skills workspace.
  *
- * Exports `skillsDocument`: a `createDisposableCache` keyed by guid like the
- * browser entry, but with NO IndexedDB / BroadcastChannel attachments and WITH
- * `importFromDisk` / `exportToDisk` actions.
+ * Exports `openSkillsNodeWorkspace`: a direct Node/Bun workspace opener with
+ * NO IndexedDB / BroadcastChannel attachments and WITH `importFromDisk` /
+ * `exportToDisk` actions.
  *
  * Uses the same `SKILLS_WORKSPACE_ID` guid as the browser entry, so data
  * authored on either side targets the same logical Y.Doc.
  *
  * @example
  * ```typescript
- * import { skillsDocument } from '@epicenter/skills/node';
+ * import { openSkillsNodeWorkspace } from '@epicenter/skills/node';
  *
- * using workspace = skillsDocument.open('epicenter.skills');
+ * using workspace = openSkillsNodeWorkspace({ workspaceId: 'epicenter.skills' });
  * await workspace.actions.importFromDisk({ dir: '.agents/skills' });
  * await workspace.actions.exportToDisk({ dir: '.agents/skills' });
  * ```
@@ -23,11 +23,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-	createDisposableCache,
-	defineMutation,
-	generateId,
-} from '@epicenter/workspace';
+import { defineMutation, generateId } from '@epicenter/workspace';
 import Type from 'typebox';
 import {
 	defineErrors,
@@ -59,7 +55,7 @@ export const SkillsIoError = defineErrors({
 export type SkillsIoError = InferErrors<typeof SkillsIoError>;
 
 /**
- * Skills workspace factory for Node/Bun runtimes. No IndexedDB, no broadcast
+ * Open a skills workspace for Node/Bun runtimes. No IndexedDB, no broadcast
  * channel. Callers layer their own persistence if needed. The returned
  * bundle includes `importFromDisk` and `exportToDisk` actions alongside the
  * standard read actions.
@@ -67,40 +63,43 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * Uses `SKILLS_WORKSPACE_ID`, the same guid as the browser entry, so
  * data parity across environments is preserved at the CRDT level.
  *
- * Note: in a hybrid browser+node process (e.g. Tauri), importing this AND
- * `@epicenter/skills` in the same process would give you two separate
- * factories with two separate caches. That isn't a supported configuration
- * today. TODO if we ever need it.
+ * Child instruction and reference documents are opened per operation. Node
+ * scripts do not need the browser family's shared live identity, active sync
+ * fanout, or local IndexedDB reset behavior.
  */
-export const skillsDocument = createDisposableCache(
-	(id: string) => {
-		const doc = openSkills({ workspaceId: id });
-		const { tables } = doc;
+export function openSkillsNodeWorkspace({
+	workspaceId,
+}: {
+	workspaceId: string;
+}) {
+	const doc = openSkills({ workspaceId });
+	const { tables } = doc;
 
-		const instructionsDocs = createDisposableCache((skillId: string) =>
-			createSkillInstructionsDoc({
-				skillId,
-				workspaceId: id,
-				skillsTable: tables.skills,
-			}),
-		);
-		const referenceDocs = createDisposableCache((referenceId: string) =>
-			createReferenceContentDoc({
-				referenceId,
-				workspaceId: id,
-				referencesTable: tables.references,
-			}),
-		);
+	function openInstructionsDoc(skillId: string) {
+		return createSkillInstructionsDoc({
+			skillId,
+			workspaceId,
+			skillsTable: tables.skills,
+		});
+	}
+
+	function openReferenceDoc(referenceId: string) {
+		return createReferenceContentDoc({
+			referenceId,
+			workspaceId,
+			referencesTable: tables.references,
+		});
+	}
 
 		const readActions = createSkillsActions({
 			tables,
 			async readInstructions(skillId) {
-				await using handle = instructionsDocs.open(skillId);
+				await using handle = openInstructionsDoc(skillId);
 				await handle.whenReady;
 				return handle.instructions.read();
 			},
 			async readReference(referenceId) {
-				await using handle = referenceDocs.open(referenceId);
+				await using handle = openReferenceDoc(referenceId);
 				await handle.whenReady;
 				return handle.content.read();
 			},
@@ -174,7 +173,7 @@ export const skillsDocument = createDisposableCache(
 						}
 
 						{
-							await using h = instructionsDocs.open(skillId);
+							await using h = openInstructionsDoc(skillId);
 							await h.whenReady;
 							h.instructions.write(instructions);
 						}
@@ -204,7 +203,7 @@ export const skillsDocument = createDisposableCache(
 										_v: 1,
 									});
 
-									await using h = referenceDocs.open(refId);
+									await using h = openReferenceDoc(refId);
 									await h.whenReady;
 									h.content.write(refContent);
 								}),
@@ -234,7 +233,7 @@ export const skillsDocument = createDisposableCache(
 							const skillDir = join(dir, skill.name);
 							await mkdir(skillDir, { recursive: true });
 
-							await using h = instructionsDocs.open(skill.id);
+							await using h = openInstructionsDoc(skill.id);
 							await h.whenReady;
 							const skillMd = serializeSkillMd(skill, h.instructions.read());
 							await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
@@ -249,7 +248,7 @@ export const skillsDocument = createDisposableCache(
 
 								await Promise.all(
 									refs.map(async (ref) => {
-										await using h = referenceDocs.open(ref.id);
+										await using h = openReferenceDoc(ref.id);
 										await h.whenReady;
 										const text = h.content.read();
 										await writeFile(join(refsDir, ref.path), text, 'utf-8');
@@ -287,25 +286,21 @@ export const skillsDocument = createDisposableCache(
 
 		const actions = { ...readActions, ...nodeActions };
 
-		return {
-			get id() {
-				return doc.ydoc.guid;
-			},
-			ydoc: doc.ydoc,
-			tables,
-			kv: doc.kv,
-			encryption: doc.encryption,
-			instructionsDocs,
-			referenceDocs,
-			actions,
-			batch: doc.batch,
-			[Symbol.dispose]() {
-				doc[Symbol.dispose]();
-			},
-		};
-	},
-	{ gcTime: Number.POSITIVE_INFINITY },
-);
+	return {
+		get id() {
+			return doc.ydoc.guid;
+		},
+		ydoc: doc.ydoc,
+		tables,
+		kv: doc.kv,
+		encryption: doc.encryption,
+		actions,
+		batch: doc.batch,
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
+	};
+}
 
 const REFERENCE_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 

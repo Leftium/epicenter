@@ -6,7 +6,7 @@
  * `attachPersistence` callback: see `createFileContentDoc` for the shape.
  *
  * Wire into a cache at the runtime boundary. Browser apps use
- * `createBrowserDocCache`; Node callers use `createDisposableCache`.
+ * `createBrowserDocumentFamily`; Node callers use `createDisposableCache`.
  */
 
 import type { Table } from '@epicenter/workspace';

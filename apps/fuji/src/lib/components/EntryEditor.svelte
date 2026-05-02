@@ -11,7 +11,7 @@
 	import { toastOnError } from '@epicenter/ui/sonner';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { fromDisposableCache } from '@epicenter/svelte';
+	import { fromDocumentFamily } from '@epicenter/svelte';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -36,7 +36,7 @@
 		);
 	}
 
-	const contentDoc = fromDisposableCache(fuji.entryContentDocs, () => entry.id);
+	const contentDoc = fromDocumentFamily(fuji.entryContentDocs, () => entry.id);
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);

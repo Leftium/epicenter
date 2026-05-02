@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { fromDisposableCache } from '@epicenter/svelte';
+	import { fromDocumentFamily } from '@epicenter/svelte';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { honeycrisp } from '$lib/honeycrisp/client';
@@ -7,7 +7,7 @@
 
 	let { noteId }: { noteId: string } = $props();
 
-	const doc = fromDisposableCache(honeycrisp.noteBodyDocs, () => noteId);
+	const doc = fromDocumentFamily(honeycrisp.noteBodyDocs, () => noteId);
 </script>
 
 {#await doc.current.whenLoaded}

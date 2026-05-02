@@ -5,7 +5,7 @@
 **Author**: AI-assisted
 **Related**: `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md`, `specs/20260430T120000-cli-naming-decision.md`
 **Reconciled Against**: `87bf8e751 refactor(fuji): simplify script surface`
-**Also Reflects Working Tree**: daemon config route modules via `defineEpicenterConfig({ daemon: { routes } })`
+**Also Reflects Working Tree**: daemon config route modules via `defineConfig({ daemon: { routes } })`
 
 ## Overview
 
@@ -214,7 +214,7 @@ Implemented:
 | --- | --- | --- |
 | Explicit daemon action root | `DaemonRuntime.actions: Actions` in `packages/workspace/src/daemon/types.ts` | Daemon action paths are now relative to the hosted runtime's `actions` root. |
 | Daemon runtime attachments | `DaemonRuntime` requires `sync`, `presence`, and `rpc` | The daemon no longer treats peer and RPC methods as optional fields on sync. |
-| Daemon config shape | `defineEpicenterConfig({ daemon: { routes } })` with route modules | `defineDaemon({ route, start })` and host arrays are no longer the active config shape in the working tree. |
+| Daemon config shape | `defineConfig({ daemon: { routes } })` with route modules | `defineDaemon({ route, start })` and host arrays are no longer the active config shape in the working tree. |
 | Split sync API | `sync.attachPresence({ peer })` and `sync.attachRpc(actions)` exist | The implementation uses positional `attachRpc(actions)`, not `attachRpc({ actions })`. |
 | App daemon factories | Fuji, Honeycrisp, Opensidian, Tab Manager, and Zhongwen daemon factories attach presence and RPC explicitly | Open the app daemon files before planning more migration work. |
 | AI action root | App clients call `actionsToAiTools(workspace.actions)` | The whole-workspace discovery direction is already superseded. |

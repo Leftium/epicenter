@@ -1,7 +1,7 @@
 # Awareness Source Of Truth
 
 **Date**: 2026-05-01
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 **Related**: `specs/20260430T114949-peer-presence-rename-and-sync-split.md`, `specs/20260430T103959-split-attach-sync-into-transport-presence-rpc.md`
 **Superseded in part by**: `specs/20260501T150015-peer-addressed-remote-client-api.md`, which removes the transitional `PeerDirectory` target and makes `createRemoteClient({ awareness, rpc })` own peer-addressed RPC.
@@ -479,60 +479,60 @@ const awareness = attachAwareness(doc.ydoc, {
 
 ### Phase 1: Change `attachAwareness`
 
-- [ ] **1.1** Rename `AwarenessDefinitions` to `AwarenessSchema`.
-- [ ] **1.2** Rename `Awareness<TDefs>` to `AwarenessAttachment<TSchema>`.
-- [ ] **1.3** Change `attachAwareness(ydoc, defs, initial)` to `attachAwareness(ydoc, { schema, initial })`.
-- [ ] **1.4** Keep schema and initial state as separate object properties.
-- [ ] **1.5** Update `attach-awareness.test.ts` to cover the new signature.
-- [ ] **1.6** Decide whether `createAwareness` remains exported. Recommendation: make it private and name it `createAwarenessAttachment` internally.
+- [x] **1.1** Rename `AwarenessDefinitions` to `AwarenessSchema`.
+- [x] **1.2** Rename `Awareness<TDefs>` to `AwarenessAttachment<TSchema>`.
+- [x] **1.3** Change `attachAwareness(ydoc, defs, initial)` to `attachAwareness(ydoc, { schema, initial })`.
+- [x] **1.4** Keep schema and initial state as separate object properties.
+- [x] **1.5** Update `attach-awareness.test.ts` to cover the new signature.
+- [x] **1.6** Decide whether `createAwareness` remains exported. Recommendation: make it private and name it `createAwarenessAttachment` internally.
 
 ### Phase 2: Move Awareness Transport Into `attachSync`
 
-- [ ] **2.1** Add `awareness?: AwarenessAttachment<AwarenessSchema>` to `AttachSyncConfig`.
-- [ ] **2.2** Move `encodeAwarenessUpdate`, `applyAwarenessUpdate`, `encodeAwarenessStates`, and `removeAwarenessStates` wiring out of `peer-presence.ts` and into `attach-sync.ts`.
-- [ ] **2.3** Register one `awareness.raw.on('update')` handler inside `attachSync` when awareness is provided.
-- [ ] **2.4** Send local awareness state after sync attaches or connects, matching current behavior.
-- [ ] **2.5** Send known states on query awareness frames.
-- [ ] **2.6** Remove remote awareness states when the sync connection closes or goes offline.
-- [ ] **2.7** Make no-awareness sync explicit: sync still works, but awareness frames are ignored or dropped.
+- [x] **2.1** Add `awareness?: AwarenessAttachment<AwarenessSchema>` to `AttachSyncConfig`.
+- [x] **2.2** Move `encodeAwarenessUpdate`, `applyAwarenessUpdate`, `encodeAwarenessStates`, and `removeAwarenessStates` wiring out of `peer-presence.ts` and into `attach-sync.ts`.
+- [x] **2.3** Register one `awareness.raw.on('update')` handler inside `attachSync` when awareness is provided.
+- [x] **2.4** Send local awareness state after sync attaches or connects, matching current behavior.
+- [x] **2.5** Send known states on query awareness frames.
+- [x] **2.6** Remove remote awareness states when the sync connection closes or goes offline.
+- [x] **2.7** Make no-awareness sync explicit: sync still works, but awareness frames are ignored or dropped.
 
 ### Phase 3: Replace Peer Presence Attachment With Peer Directory
 
-- [ ] **3.1** Rename `createPeerPresence` to `createPeerDirectory`.
-- [ ] **3.2** Rename `PeerPresenceAttachment` to `PeerDirectory`.
-- [ ] **3.3** Delete `AttachPresenceConfig`.
-- [ ] **3.4** Delete `PeerPresenceController`.
-- [ ] **3.5** Remove all raw `YAwareness` construction from `peer-presence.ts`.
-- [ ] **3.6** Make `createPeerDirectory` accept `{ awareness, sync }` or `{ awareness, status }`.
-- [ ] **3.7** Keep `peers()`, `find()`, `waitForPeer()`, and `observe()` behavior.
-- [ ] **3.8** Keep malformed peer states invisible to peer lookup.
+- [x] **3.1** Rename `createPeerPresence` to `createPeerDirectory`.
+- [x] **3.2** Rename `PeerPresenceAttachment` to `PeerDirectory`.
+- [x] **3.3** Delete `AttachPresenceConfig`.
+- [x] **3.4** Delete `PeerPresenceController`.
+- [x] **3.5** Remove all raw `YAwareness` construction from `peer-presence.ts`.
+- [x] **3.6** Make `createPeerDirectory` accept `{ awareness, sync }` or `{ awareness, status }`.
+- [x] **3.7** Keep `peers()`, `find()`, `waitForPeer()`, and `observe()` behavior.
+- [x] **3.8** Keep malformed peer states invisible to peer lookup.
 
 ### Phase 4: Update Remote Client And Daemon Types
 
-- [ ] **4.1** Change `createRemoteClient({ presence, rpc })` to `createRemoteClient({ peerDirectory, rpc })`.
-- [ ] **4.2** Update daemon runtime types from `presence` to `peerDirectory`.
-- [ ] **4.3** Update `/peers` route consumers to read `entry.runtime.peerDirectory.peers()`.
-- [ ] **4.4** Update CLI peer wait and remote run handling to use `peerDirectory`.
-- [ ] **4.5** Remove public aliases for old `presence` names unless a rollout constraint appears.
+- [x] **4.1** Change `createRemoteClient({ presence, rpc })` to `createRemoteClient({ peerDirectory, rpc })`.
+- [x] **4.2** Update daemon runtime types from `presence` to `peerDirectory`.
+- [x] **4.3** Update `/peers` route consumers to read `entry.runtime.peerDirectory.peers()`.
+- [x] **4.4** Update CLI peer wait and remote run handling to use `peerDirectory`.
+- [x] **4.5** Remove public aliases for old `presence` names unless a rollout constraint appears.
 
 ### Phase 5: Update Apps And Examples
 
-- [ ] **5.1** Update Fuji browser and daemon factories.
-- [ ] **5.2** Update Honeycrisp browser and daemon factories.
-- [ ] **5.3** Update Opensidian browser and daemon factories.
-- [ ] **5.4** Update Tab Manager extension factory.
-- [ ] **5.5** Update Zhongwen daemon factory.
-- [ ] **5.6** Update `examples/notes-cross-peer`.
-- [ ] **5.7** Return `awareness` and `peerDirectory` from app bundles where callers need them.
+- [x] **5.1** Update Fuji browser and daemon factories.
+- [x] **5.2** Update Honeycrisp browser and daemon factories.
+- [x] **5.3** Update Opensidian browser and daemon factories.
+- [x] **5.4** Update Tab Manager extension factory.
+- [x] **5.5** Update Zhongwen daemon factory.
+- [x] **5.6** Update `examples/notes-cross-peer`.
+- [x] **5.7** Return `awareness` and `peerDirectory` from app bundles where callers need them.
 
 ### Phase 6: Documentation And Verification
 
-- [ ] **6.1** Update `packages/workspace/src/document/README.md` awareness examples.
-- [ ] **6.2** Update sync architecture docs and specs that still show `sync.attachPresence`.
-- [ ] **6.3** Run focused workspace tests.
-- [ ] **6.4** Run CLI tests that cover peers, run, and daemon routes.
-- [ ] **6.5** Run app typechecks for touched apps.
-- [ ] **6.6** Run root typecheck and record any unrelated failures.
+- [x] **6.1** Update `packages/workspace/src/document/README.md` awareness examples.
+- [x] **6.2** Update sync architecture docs and specs that still show `sync.attachPresence`.
+- [x] **6.3** Run focused workspace tests.
+- [x] **6.4** Run CLI tests that cover peers, run, and daemon routes.
+- [x] **6.5** Run app typechecks for touched apps.
+- [x] **6.6** Run root typecheck and record any unrelated failures.
 
 ## Edge Cases
 
@@ -620,6 +620,24 @@ Expected behavior:
 2. Docs should state one awareness attachment per synced `Y.Doc`.
 3. Tests should assert that app factories compose one awareness attachment and pass it to sync.
 
+## Review
+
+**Completed**: 2026-05-01
+**Branch**: current workspace branch
+
+### Summary
+
+Implemented the awareness ownership change so `attachAwareness(ydoc, { schema, initial })` creates the single raw Yjs awareness instance, and `attachSync(..., { awareness })` transports it. Peer lookup now lives in `createPeerDirectory({ awareness, sync })`, and RPC, daemon, CLI, app, example, and documentation surfaces use `peerDirectory` instead of the deleted `sync.attachPresence({ peer })` path.
+
+### Deviations from Spec
+
+- `PeerPresenceState` remains as the state type name for `{ peer: PeerIdentity }`. The spec did not require renaming that derived shape, and keeping it limits churn while removing the old ownership API.
+- App typechecks still hit pre-existing Svelte/UI and app errors outside this change. The workspace package typecheck and focused tests pass.
+
+### Follow-up Work
+
+- Clean up the existing Svelte/UI typecheck failures so app-level verification can distinguish awareness regressions from unrelated project errors.
+
 ## Open Questions
 
 1. **Should `createPeerDirectory` depend on the whole `sync` attachment or only a status reader?**
@@ -644,21 +662,21 @@ Expected behavior:
 
 ## Success Criteria
 
-- [ ] `attachAwareness` uses `attachAwareness(ydoc, { schema, initial })`.
-- [ ] Schema and initial data stay separate inside the options object.
-- [ ] Production app factories create one awareness attachment per synced document.
-- [ ] `attachSync` transports awareness updates for a provided awareness attachment.
-- [ ] `peer-presence.ts` no longer constructs `new YAwareness`.
-- [ ] `peer-presence.ts` no longer owns awareness wire encoding or update application.
-- [ ] `sync.attachPresence` is removed.
-- [ ] Peer lookup is exposed through `createPeerDirectory` and `PeerDirectory`.
-- [ ] Remote client construction uses `createRemoteClient({ peerDirectory, rpc })`.
-- [ ] No public `PeerIdentityInput` or dead peer id generics return.
-- [ ] `rg "new YAwareness|sync\\.attachPresence|createPeerPresence|PeerPresenceAttachment|AwarenessDefinitions|createAwareness\\(" packages apps examples` has no stale production matches except intentional tests or internals.
-- [ ] `bun test packages/workspace/src/document` passes.
-- [ ] `bun test packages/workspace/src/rpc` passes.
-- [ ] `bun test packages/cli` passes.
-- [ ] Relevant app typechecks pass or unrelated pre-existing failures are recorded.
+- [x] `attachAwareness` uses `attachAwareness(ydoc, { schema, initial })`.
+- [x] Schema and initial data stay separate inside the options object.
+- [x] Production app factories create one awareness attachment per synced document.
+- [x] `attachSync` transports awareness updates for a provided awareness attachment.
+- [x] `peer-presence.ts` no longer constructs `new YAwareness`.
+- [x] `peer-presence.ts` no longer owns awareness wire encoding or update application.
+- [x] `sync.attachPresence` is removed.
+- [x] Peer lookup is exposed through `createPeerDirectory` and `PeerDirectory`.
+- [x] Remote client construction uses `createRemoteClient({ peerDirectory, rpc })`.
+- [x] No public `PeerIdentityInput` or dead peer id generics return.
+- [x] `rg "new YAwareness|sync\\.attachPresence|createPeerPresence|PeerPresenceAttachment|AwarenessDefinitions|createAwareness\\(" packages apps examples` has no stale production matches except intentional tests or internals.
+- [x] `bun test packages/workspace/src/document` passes.
+- [x] `bun test packages/workspace/src/rpc` passes.
+- [x] `bun test packages/cli` passes.
+- [x] Relevant app typechecks pass or unrelated pre-existing failures are recorded.
 
 ## References
 

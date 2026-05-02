@@ -18,7 +18,7 @@ The app composes its browser workspace in `src/lib/skills/browser.ts`.
 `src/lib/skills/client.ts` exports the running `skills` singleton for Svelte
 components. `@epicenter/skills` provides the pure `openSkills()` factory,
 document builders, guid helpers, and action factory; the app owns IndexedDB,
-BroadcastChannel, and inline `createBrowserDocCache` sources for instructions
+BroadcastChannel, and inline `createBrowserDocumentFamily` sources for instructions
 and references. The workspace ID is `epicenter.skills`. No remote sync is wired
 in, so the editor works entirely offline.
 

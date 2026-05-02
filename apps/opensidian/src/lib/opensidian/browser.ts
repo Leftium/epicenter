@@ -13,7 +13,7 @@ import {
 	attachIndexedDb,
 	attachSync,
 	composeSyncControls,
-	createBrowserDocCache,
+	createBrowserDocumentFamily,
 	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
@@ -35,7 +35,7 @@ export function openOpensidian({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const fileContentDocs = createBrowserDocCache(
+	const fileContentDocs = createBrowserDocumentFamily(
 		{
 			ids() {
 				return doc.tables.files.getAllValid().map((file) => file.id);

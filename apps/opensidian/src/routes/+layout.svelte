@@ -12,6 +12,6 @@
 <ConfirmationDialog />
 <Toaster />
 <ModeWatcher />
-<WorkspaceGate whenReady={opensidian.whenReady}>
+<WorkspaceGate whenReady={opensidian.whenLoaded}>
 	{@render children()}
 </WorkspaceGate>

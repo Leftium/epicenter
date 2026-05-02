@@ -70,8 +70,8 @@ function createAiChatState() {
 	/**
 	 * Ensure at least one conversation exists.
 	 *
-	 * Called after persistence loads. Safe to call multiple times —
-	 * only creates if truly empty.
+	 * Called after persistence loads. Safe to call multiple times because
+	 * it only creates if truly empty.
 	 */
 	function ensureDefaultConversation(): ConversationId | undefined {
 		if (conversations.length > 0) return undefined;
@@ -112,13 +112,13 @@ function createAiChatState() {
 
 	// ── Handle Registry ──────────────────────────────────────────────
 
-	/** Per-conversation handle projections (reactive — read in templates). */
+	/** Per-conversation handle projections used reactively in templates. */
 	const handles = new SvelteMap<
 		ConversationId,
 		ReturnType<typeof createConversationHandle>
 	>();
 
-	/** Internal lifecycle closures — not exposed on ConversationHandle. */
+	/** Internal lifecycle closures, not exposed on ConversationHandle. */
 	const destroyFns = new Map<ConversationId, () => void>();
 	const refreshFns = new Map<ConversationId, () => void>();
 
@@ -398,7 +398,7 @@ function createAiChatState() {
 	 * Sync handles with the conversationsMap.
 	 *
 	 * Creates handles for new conversation IDs, destroys handles
-	 * for deleted IDs. Existing handles survive — their chat instance
+	 * for deleted IDs. Existing handles survive, so their chat instance
 	 * and ephemeral state persist.
 	 */
 	function reconcileHandles() {
@@ -432,7 +432,7 @@ function createAiChatState() {
 	});
 
 	// Initialize after persistence loads
-	void tabManager.whenReady.then(() => {
+	void tabManager.whenLoaded.then(() => {
 		reconcileHandles();
 		const newId = ensureDefaultConversation();
 		if (conversations.length > 0) {

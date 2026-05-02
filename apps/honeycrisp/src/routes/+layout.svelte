@@ -16,7 +16,7 @@
 <svelte:head><title>Honeycrisp</title></svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	<WorkspaceGate whenReady={honeycrisp.whenReady}>
+	<WorkspaceGate whenReady={honeycrisp.whenLoaded}>
 		<Tooltip.Provider>{@render children()}</Tooltip.Provider>
 	</WorkspaceGate>
 </QueryClientProvider>

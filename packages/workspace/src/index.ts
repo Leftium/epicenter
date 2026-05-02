@@ -136,6 +136,12 @@ export {
 	type BrowserDocumentCollectionOptions,
 } from './cache/browser-document-collection.js';
 export {
+	type BrowserDocumentFamily,
+	type BrowserDocumentFamilyMember,
+	type BrowserDocumentFamilyOptions,
+	createBrowserDocumentFamily,
+} from './cache/browser-document-family.js';
+export {
 	createDisposableCache,
 	type DisposableCache,
 	DisposableCacheError,
@@ -184,6 +190,7 @@ export {
 	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
+	type SyncControl,
 	SyncFailedError,
 	type SyncFailedReason,
 	type SyncRpcAttachment,
@@ -192,6 +199,7 @@ export {
 	type WaitForBarrier,
 	type WebSocketImpl,
 } from './document/attach-sync.js';
+export { composeSyncControls } from './document/sync-control.js';
 export {
 	attachReadonlyTable,
 	attachReadonlyTables,

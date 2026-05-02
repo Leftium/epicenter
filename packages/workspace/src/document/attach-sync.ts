@@ -126,7 +126,12 @@ export const SyncSupervisorError = defineErrors({
 });
 export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
 
-export type SyncAttachment = {
+export type SyncControl = {
+	pause(): void;
+	reconnect(): void;
+};
+
+export type SyncAttachment = SyncControl & {
 	/**
 	 * Resolves after the WebSocket handshake completes and the first sync
 	 * exchange finishes. Unlike `y-indexeddb`'s `whenSynced`, this is a
@@ -149,9 +154,9 @@ export type SyncAttachment = {
 	 * Close the websocket, stop the supervisor, and transition to offline.
 	 * A subsequent `reconnect()` restarts the supervisor.
 	 */
-	pause: () => void;
+	pause(): void;
 	/** Force a fresh connection with new credentials (supervisor restarts iteration). */
-	reconnect: () => void;
+	reconnect(): void;
 	/**
 	 * Resolves after the ydoc is destroyed and the websocket teardown completes.
 	 * Named symmetrically with `whenConnected`: both are promises.

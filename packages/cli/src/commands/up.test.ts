@@ -44,7 +44,7 @@ let runtimeRoot: string;
 let workDir: string;
 let homeRoot: string;
 
-function servePingDaemon(socketPath: string): Bun.Server<unknown> {
+function servePingDaemon(socketPath: string): Bun.Server<undefined> {
 	const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
 	return Bun.serve({ unix: socketPath, fetch: app.fetch });
 }
@@ -194,7 +194,7 @@ describe('runUp: already running', () => {
 			expect(loadCalls).toBe(0);
 			expect(startCalls).toBe(0);
 		} finally {
-			server.stop();
+			await server.stop(true);
 		}
 	});
 
@@ -222,7 +222,7 @@ describe('runUp: already running', () => {
 					.__upImportSideEffects,
 			).toBeUndefined();
 		} finally {
-			server.stop();
+			await server.stop(true);
 			delete (globalThis as { __upImportSideEffects?: number })
 				.__upImportSideEffects;
 		}

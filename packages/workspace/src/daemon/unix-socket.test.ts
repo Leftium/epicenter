@@ -7,17 +7,11 @@ import { Hono } from 'hono';
 
 import { writeMetadata } from './metadata';
 import { metadataPathFor, socketPathFor } from './paths';
-import {
-	bindOrRecover,
-	bindUnixSocket,
-	type UnixSocketFetch,
-	type UnixSocketServer,
-	unlinkSocketFile,
-} from './unix-socket';
+import { bindOrRecover, bindUnixSocket, unlinkSocketFile } from './unix-socket';
 
 let socketPath: string;
-let servers: UnixSocketServer[] = [];
-const fetchOk: UnixSocketFetch = () => new Response('ok');
+let servers: Bun.Server<undefined>[] = [];
+const fetchOk = () => new Response('ok');
 
 beforeEach(() => {
 	socketPath = join(
@@ -29,11 +23,9 @@ beforeEach(() => {
 
 afterEach(() => {
 	for (const server of servers) {
-		try {
-			server.stop();
-		} catch {
+		void server.stop(true).catch(() => {
 			// already stopped
-		}
+		});
 	}
 });
 
@@ -80,7 +72,7 @@ describe('bindUnixSocket', () => {
 		});
 		expect(existsSync(socketPath)).toBe(true);
 
-		server.stop();
+		await server.stop(true);
 		// Bun.serve auto-unlinks; sweep best-effort just in case.
 		unlinkSocketFile(socketPath);
 		expect(existsSync(socketPath)).toBe(false);

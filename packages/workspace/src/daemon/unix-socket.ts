@@ -24,15 +24,12 @@ import { type Result, trySync } from 'wellcrafted/result';
 
 import { readMetadata, unlinkMetadata } from './metadata.js';
 
-/** Internal handle returned by {@link bindUnixSocket}. */
-export type UnixSocketServer = { stop(): void };
-export type UnixSocketFetch = (
-	request: Request,
-	server: Bun.Server<unknown>,
-) => Response | Promise<Response>;
 export type BindUnixSocketOptions = {
 	socketPath: string;
-	fetch: UnixSocketFetch;
+	fetch: (
+		request: Request,
+		server: Bun.Server<undefined>,
+	) => Response | Promise<Response>;
 };
 export type BindOrRecoverOptions = BindUnixSocketOptions & {
 	projectDir: string;
@@ -67,12 +64,12 @@ export type StartupError = InferErrors<typeof StartupError>;
 
 /**
  * Bind `fetch` to a unix socket at `socketPath`. Returns the Bun
- * listener narrowed to `.stop()` so the daemon body owns lifecycle.
+ * listener so the daemon body owns lifecycle.
  */
 export function bindUnixSocket({
 	socketPath,
 	fetch,
-}: BindUnixSocketOptions): UnixSocketServer {
+}: BindUnixSocketOptions): Bun.Server<undefined> {
 	mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
 
 	const server = Bun.serve({
@@ -109,7 +106,7 @@ export async function bindOrRecover({
 	projectDir,
 	fetch,
 	isSocketResponsive,
-}: BindOrRecoverOptions): Promise<Result<UnixSocketServer, StartupError>> {
+}: BindOrRecoverOptions): Promise<Result<Bun.Server<undefined>, StartupError>> {
 	if (existsSync(socketPath)) {
 		if (await isSocketResponsive(socketPath, 250)) {
 			return StartupError.AlreadyRunning({

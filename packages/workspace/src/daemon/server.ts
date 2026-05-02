@@ -22,8 +22,6 @@ import type { StartedDaemonRoute } from './types.js';
 import {
 	bindOrRecover,
 	type StartupError,
-	type UnixSocketFetch,
-	type UnixSocketServer,
 	unlinkSocketFile,
 } from './unix-socket.js';
 
@@ -66,11 +64,11 @@ export function createDaemonServer({
 	const socketPath = socketPathFor(projectDir);
 	const startingApp = buildStartingDaemonApp();
 	let currentFetch = startingApp.fetch;
-	const fetch: UnixSocketFetch = (request) => {
+	const fetch = (request: Request) => {
 		return currentFetch(request);
 	};
 
-	let server: UnixSocketServer | undefined;
+	let server: Bun.Server<undefined> | undefined;
 
 	return {
 		socketPath,
@@ -98,11 +96,9 @@ export function createDaemonServer({
 		},
 		async close() {
 			if (server) {
-				try {
-					server.stop();
-				} catch {
+				void server.stop(true).catch(() => {
 					// best-effort
-				}
+				});
 				server = undefined;
 			}
 			unlinkSocketFile(socketPath);

@@ -13,10 +13,10 @@ import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
 
 import { daemonClient, pingDaemon } from './client';
-import { bindUnixSocket, type UnixSocketServer } from './unix-socket';
+import { bindUnixSocket } from './unix-socket';
 
 let socketPath: string;
-let servers: UnixSocketServer[] = [];
+let servers: Bun.Server<undefined>[] = [];
 
 beforeEach(() => {
 	socketPath = join(
@@ -28,11 +28,9 @@ beforeEach(() => {
 
 afterEach(() => {
 	for (const server of servers) {
-		try {
-			server.stop();
-		} catch {
+		void server.stop(true).catch(() => {
 			// already stopped
-		}
+		});
 	}
 });
 
@@ -47,7 +45,7 @@ describe('pingDaemon', () => {
 
 		expect(await pingDaemon(socketPath)).toBe(true);
 
-		server.stop();
+		await server.stop(true);
 		servers = [];
 
 		expect(await pingDaemon(socketPath)).toBe(false);

@@ -39,7 +39,7 @@ export {
 export {
 	findDuplicateDaemonRoute,
 	isValidDaemonRoute,
-	validateStartedDaemonRoutes,
+	validateDaemonRouteNames,
 } from './daemon/route-validation.js';
 export {
 	RunError,

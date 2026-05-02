@@ -1,7 +1,7 @@
 export {
 	findDuplicateDaemonRoute,
 	isValidDaemonRoute,
-	validateStartedDaemonRoutes,
+	validateDaemonRouteNames,
 } from './route-validation.js';
 export {
 	type DaemonRouteContext,

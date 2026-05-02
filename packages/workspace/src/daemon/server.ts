@@ -17,7 +17,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import { buildDaemonApp } from './app.js';
 import { pingDaemon } from './client.js';
 import { socketPathFor } from './paths.js';
-import { validateStartedDaemonRoutes } from './route-validation.js';
+import { validateDaemonRouteNames } from './route-validation.js';
 import type { StartedDaemonRoute } from './types.js';
 import {
 	bindOrRecover,
@@ -63,12 +63,14 @@ export function createDaemonServer({
 	triggerShutdown,
 }: DaemonServerOptions): DaemonServer {
 	const socketPath = socketPathFor(projectDir);
-	const validation = validateStartedDaemonRoutes(routes);
-	if (!validation.ok) {
+	const routeIssue = validateDaemonRouteNames(
+		routes.map((entry) => entry.route),
+	);
+	if (routeIssue !== null) {
 		throw new Error(
-			validation.reason === 'duplicate'
-				? `createDaemonServer: duplicate daemon route '${validation.route}'`
-				: `createDaemonServer: invalid daemon route '${validation.route}'`,
+			routeIssue.reason === 'duplicate'
+				? `createDaemonServer: duplicate daemon route '${routeIssue.route}'`
+				: `createDaemonServer: invalid daemon route '${routeIssue.route}'`,
 		);
 	}
 	const fetch = buildDaemonApp([...routes], triggerShutdown).fetch;

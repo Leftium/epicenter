@@ -1,6 +1,6 @@
 /**
- * Bind a Hono app to a unix socket via `Bun.serve`. Filesystem hardening
- * lives here; route definitions live in `app.ts`.
+ * Bind a request handler to a unix socket via `Bun.serve`. Filesystem
+ * hardening lives here; route definitions live in `app.ts`.
  *
  * - Parent directory `mkdirSync` (recursive) with mode `0700`.
  * - Socket file `chmod 0600` immediately after `Bun.serve` returns.
@@ -15,19 +15,32 @@
 import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import type { Hono } from 'hono';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { type Result, tryAsync } from 'wellcrafted/result';
+import { type Result, trySync } from 'wellcrafted/result';
 
 import { readMetadata, unlinkMetadata } from './metadata.js';
 
-/** Public handle returned by {@link bindUnixSocket}. */
+/** Internal handle returned by {@link bindUnixSocket}. */
 export type UnixSocketServer = { stop(): void };
-type UnixSocketApp = Pick<Hono, 'fetch'>;
+export type UnixSocketFetch = (
+	request: Request,
+	server: Bun.Server<unknown>,
+) => Response | Promise<Response>;
+export type BindUnixSocketOptions = {
+	socketPath: string;
+	fetch: UnixSocketFetch;
+};
+export type BindOrRecoverOptions = BindUnixSocketOptions & {
+	projectDir: string;
+	isSocketResponsive: (
+		socketPath: string,
+		timeoutMs?: number,
+	) => Promise<boolean>;
+};
 
 /**
  * Tagged-error variants for daemon startup. `bindOrRecover` returns one of
@@ -53,18 +66,18 @@ export const StartupError = defineErrors({
 export type StartupError = InferErrors<typeof StartupError>;
 
 /**
- * Bind `app.fetch` to a unix socket at `socketPath`. Returns the Bun
+ * Bind `fetch` to a unix socket at `socketPath`. Returns the Bun
  * listener narrowed to `.stop()` so the daemon body owns lifecycle.
  */
-export async function bindUnixSocket(
-	socketPath: string,
-	app: UnixSocketApp,
-): Promise<UnixSocketServer> {
+export function bindUnixSocket({
+	socketPath,
+	fetch,
+}: BindUnixSocketOptions): UnixSocketServer {
 	mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
 
 	const server = Bun.serve({
 		unix: socketPath,
-		fetch: app.fetch,
+		fetch,
 	});
 
 	chmodSync(socketPath, 0o600);
@@ -88,24 +101,26 @@ export async function bindUnixSocket(
  * pattern from POSIX TCP doesn't apply here. The pre-ping is what
  * actually distinguishes a live daemon from an orphan.
  *
- * `ping` is injected so this module doesn't depend on `client.ts` (the
- * import cycle would be ugly) and tests can stub the probe.
+ * `isSocketResponsive` is injected so this module doesn't depend on
+ * `client.ts` (the import cycle would be ugly) and tests can stub the probe.
  */
-export async function bindOrRecover(
-	socketPath: string,
-	dir: string,
-	app: UnixSocketApp,
-	ping: (sock: string, timeoutMs?: number) => Promise<boolean>,
-): Promise<Result<UnixSocketServer, StartupError>> {
+export async function bindOrRecover({
+	socketPath,
+	projectDir,
+	fetch,
+	isSocketResponsive,
+}: BindOrRecoverOptions): Promise<Result<UnixSocketServer, StartupError>> {
 	if (existsSync(socketPath)) {
-		if (await ping(socketPath, 250)) {
-			return StartupError.AlreadyRunning({ pid: readMetadata(dir)?.pid });
+		if (await isSocketResponsive(socketPath, 250)) {
+			return StartupError.AlreadyRunning({
+				pid: readMetadata(projectDir)?.pid,
+			});
 		}
 		unlinkSocketFile(socketPath);
-		unlinkMetadata(dir);
+		unlinkMetadata(projectDir);
 	}
-	return tryAsync({
-		try: () => bindUnixSocket(socketPath, app),
+	return trySync({
+		try: () => bindUnixSocket({ socketPath, fetch }),
 		catch: (cause) => StartupError.BindFailed({ cause }),
 	});
 }

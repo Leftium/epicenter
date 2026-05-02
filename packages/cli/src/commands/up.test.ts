@@ -6,7 +6,7 @@
  * cross-process e2e (real CLI binary, real relay) lands in Wave 8.
  *
  * Cases (per the brief):
- *   1. Happy path: bindUnixSocket is called, metadata is written, ping replies "pong".
+ *   1. Happy path: daemon socket is bound, metadata is written, ping replies "pong".
  *   2. Already-running: pre-write metadata for `process.pid` + a real listening socket;
  *      runUp throws "daemon already running (pid=X)".
  *   3. Orphan: pre-write metadata for a dead pid + phantom socket; runUp proceeds
@@ -29,12 +29,12 @@ import type {
 	StartedDaemonRoute,
 } from '@epicenter/workspace/daemon';
 import {
-	bindUnixSocket,
 	metadataPathFor,
 	pingDaemon,
 	socketPathFor,
 	writeMetadata,
 } from '@epicenter/workspace/node';
+import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
 import type { LoadedDaemonConfig } from '../load-config';
 import { runUp } from './up';
@@ -43,6 +43,12 @@ let originalXdg: string | undefined;
 let runtimeRoot: string;
 let workDir: string;
 let homeRoot: string;
+
+function servePingDaemon(socketPath: string): Bun.Server<unknown> {
+	const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
+	return Bun.serve({ unix: socketPath, fetch: app.fetch });
+}
+
 let originalHome: string | undefined;
 
 beforeEach(() => {
@@ -152,10 +158,7 @@ describe('runUp: already running', () => {
 		const sockPath = socketPathFor(workDir);
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
-		const { Hono } = await import('hono');
-		const { Ok } = await import('wellcrafted/result');
-		const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
-		const server = await bindUnixSocket(sockPath, app);
+		const server = servePingDaemon(sockPath);
 
 		writeMetadata(workDir, {
 			pid: process.pid,
@@ -197,10 +200,7 @@ describe('runUp: already running', () => {
 
 	test('does not import config when a live daemon is detected', async () => {
 		const sockPath = socketPathFor(workDir);
-		const { Hono } = await import('hono');
-		const { Ok } = await import('wellcrafted/result');
-		const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
-		const server = await bindUnixSocket(sockPath, app);
+		const server = servePingDaemon(sockPath);
 
 		writeFileSync(
 			join(workDir, 'epicenter.config.ts'),

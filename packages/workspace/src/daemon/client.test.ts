@@ -39,7 +39,10 @@ afterEach(() => {
 describe('pingDaemon', () => {
 	test('returns true against a live ping route, false after server stops', async () => {
 		const app = new Hono().post('/ping', (c) => c.json(Ok('pong')));
-		const server = await bindUnixSocket(socketPath, app);
+		const server = bindUnixSocket({
+			socketPath,
+			fetch: app.fetch,
+		});
 		servers.push(server);
 
 		expect(await pingDaemon(socketPath)).toBe(true);
@@ -62,7 +65,10 @@ describe('pingDaemon', () => {
 describe('daemonClient', () => {
 	test('peers resolves to the rows on success', async () => {
 		const app = new Hono().post('/peers', (c) => c.json(Ok([])));
-		const server = await bindUnixSocket(socketPath, app);
+		const server = bindUnixSocket({
+			socketPath,
+			fetch: app.fetch,
+		});
 		servers.push(server);
 
 		const { data, error } = await daemonClient(socketPath).peers();
@@ -78,7 +84,10 @@ describe('daemonClient', () => {
 
 	test('returns Timeout when route hangs past the deadline', async () => {
 		const app = new Hono().post('/peers', () => new Promise(() => {}));
-		const server = await bindUnixSocket(socketPath, app);
+		const server = bindUnixSocket({
+			socketPath,
+			fetch: app.fetch,
+		});
 		servers.push(server);
 
 		const { error } = await daemonClient(socketPath, 100).peers();
@@ -89,7 +98,10 @@ describe('daemonClient', () => {
 		const app = new Hono().post('/peers', () => {
 			throw new Error('kaboom');
 		});
-		const server = await bindUnixSocket(socketPath, app);
+		const server = bindUnixSocket({
+			socketPath,
+			fetch: app.fetch,
+		});
 		servers.push(server);
 
 		const { error } = await daemonClient(socketPath).peers();

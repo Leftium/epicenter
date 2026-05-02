@@ -24,7 +24,6 @@ import {
 	type DaemonMetadata,
 	type StartupError,
 	socketPathFor,
-	type UnixSocketServer,
 	unlinkMetadata,
 	writeMetadata,
 } from '@epicenter/workspace/node';
@@ -70,7 +69,6 @@ export type UpOptions = {
  * startup, exercise the IPC handler in-process, and call `teardown()` to
  * release resources without spawning a child.
  *
- * - `server` is the bound `net.Server` (handler dispatches IPC frames).
  * - `runtimes` is every hosted daemon runtime the config declares; the daemon
  *   serves them all and routes IPC requests by route.
  * - `metadata` is what was written to disk.
@@ -78,7 +76,6 @@ export type UpOptions = {
  *   metadata + socket. Idempotent.
  */
 export type UpHandle = {
-	server: UnixSocketServer;
 	runtimes: StartedDaemonRoute[];
 	config: LoadedDaemonConfig;
 	metadata: DaemonMetadata;
@@ -133,7 +130,6 @@ export async function runUp(
 	});
 	const bindResult = await daemonServer.listen();
 	if (bindResult.error) return bindResult;
-	const server = bindResult.data;
 
 	const configMtime = readConfigMtime(projectDir);
 	const metadata: DaemonMetadata = {
@@ -184,7 +180,6 @@ export async function runUp(
 	};
 
 	return Ok({
-		server,
 		runtimes,
 		config,
 		metadata,

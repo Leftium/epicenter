@@ -58,13 +58,7 @@ export type {
 	EpicenterConfig,
 	StartedDaemonRoute,
 } from './daemon/types.js';
-export {
-	bindOrRecover,
-	bindUnixSocket,
-	StartupError,
-	type UnixSocketServer,
-	unlinkSocketFile,
-} from './daemon/unix-socket.js';
+export { StartupError, unlinkSocketFile } from './daemon/unix-socket.js';
 export {
 	attachMarkdown,
 	type MarkdownShape,

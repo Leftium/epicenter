@@ -10,12 +10,14 @@ import { metadataPathFor, socketPathFor } from './paths';
 import {
 	bindOrRecover,
 	bindUnixSocket,
+	type UnixSocketFetch,
 	type UnixSocketServer,
 	unlinkSocketFile,
 } from './unix-socket';
 
 let socketPath: string;
 let servers: UnixSocketServer[] = [];
+const fetchOk: UnixSocketFetch = () => new Response('ok');
 
 beforeEach(() => {
 	socketPath = join(
@@ -36,17 +38,20 @@ afterEach(() => {
 });
 
 /**
- * `bindUnixSocket` is now a thin wrapper around `Bun.serve({ unix, fetch:
- * app.fetch })` plus filesystem hardening. The route-level behavior lives
+ * `bindUnixSocket` is now a thin wrapper around `Bun.serve({ unix, fetch })`
+ * plus filesystem hardening. The route-level behavior lives
  * in `app.ts` (and is exercised through the typed client in
  * `client.test.ts`); this file covers only the binding/hardening contract
- * that survives no matter what app you hand it.
+ * that survives no matter what handler you hand it.
  */
 describe('bindUnixSocket', () => {
 	test('binds the socket and routes through to the Hono app', async () => {
 		const app = new Hono().post('/ping', (c) => c.json({ ok: true }));
 
-		const server = await bindUnixSocket(socketPath, app);
+		const server = bindUnixSocket({
+			socketPath,
+			fetch: app.fetch,
+		});
 		servers.push(server);
 
 		const res = await fetch('http://daemon/ping', {
@@ -58,8 +63,10 @@ describe('bindUnixSocket', () => {
 	});
 
 	test('socket file is created with mode 0600', async () => {
-		const app = new Hono();
-		const server = await bindUnixSocket(socketPath, app);
+		const server = bindUnixSocket({
+			socketPath,
+			fetch: fetchOk,
+		});
 		servers.push(server);
 
 		const mode = statSync(socketPath).mode & 0o777;
@@ -67,8 +74,10 @@ describe('bindUnixSocket', () => {
 	});
 
 	test('server.stop() unlinks the socket file', async () => {
-		const app = new Hono();
-		const server = await bindUnixSocket(socketPath, app);
+		const server = bindUnixSocket({
+			socketPath,
+			fetch: fetchOk,
+		});
 		expect(existsSync(socketPath)).toBe(true);
 
 		server.stop();
@@ -79,7 +88,10 @@ describe('bindUnixSocket', () => {
 
 	test('unknown route returns 404 (Hono default)', async () => {
 		const app = new Hono().post('/ping', (c) => c.text('ok'));
-		const server = await bindUnixSocket(socketPath, app);
+		const server = bindUnixSocket({
+			socketPath,
+			fetch: app.fetch,
+		});
 		servers.push(server);
 
 		const res = await fetch('http://daemon/nope', {
@@ -112,8 +124,12 @@ describe('bindOrRecover', () => {
 
 	test('clean bind: succeeds and returns the server', async () => {
 		const sock = socketPathFor(workDir);
-		const app = new Hono();
-		const result = await bindOrRecover(sock, workDir, app, async () => false);
+		const result = await bindOrRecover({
+			socketPath: sock,
+			projectDir: workDir,
+			fetch: fetchOk,
+			isSocketResponsive: async () => false,
+		});
 		expect(result.error).toBeNull();
 		if (result.error === null) {
 			servers.push(result.data);
@@ -123,7 +139,10 @@ describe('bindOrRecover', () => {
 
 	test('ping-finds-occupant: returns AlreadyRunning with metadata pid', async () => {
 		const sock = socketPathFor(workDir);
-		const occupant = await bindUnixSocket(sock, new Hono());
+		const occupant = bindUnixSocket({
+			socketPath: sock,
+			fetch: fetchOk,
+		});
 		servers.push(occupant);
 		writeMetadata(workDir, {
 			pid: 4242,
@@ -133,12 +152,12 @@ describe('bindOrRecover', () => {
 			configMtime: 0,
 		});
 
-		const result = await bindOrRecover(
-			sock,
-			workDir,
-			new Hono(),
-			async () => true,
-		);
+		const result = await bindOrRecover({
+			socketPath: sock,
+			projectDir: workDir,
+			fetch: fetchOk,
+			isSocketResponsive: async () => true,
+		});
 		expect(result.data).toBeNull();
 		if (result.error?.name === 'AlreadyRunning') {
 			expect(result.error.pid).toBe(4242);
@@ -160,12 +179,12 @@ describe('bindOrRecover', () => {
 			configMtime: 0,
 		});
 
-		const result = await bindOrRecover(
-			sock,
-			workDir,
-			new Hono(),
-			async () => false,
-		);
+		const result = await bindOrRecover({
+			socketPath: sock,
+			projectDir: workDir,
+			fetch: fetchOk,
+			isSocketResponsive: async () => false,
+		});
 		expect(result.error).toBeNull();
 		if (result.error === null) {
 			servers.push(result.data);

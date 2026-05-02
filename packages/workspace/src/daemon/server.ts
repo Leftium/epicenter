@@ -22,6 +22,7 @@ import type { StartedDaemonRoute } from './types.js';
 import {
 	bindOrRecover,
 	type StartupError,
+	type UnixSocketFetch,
 	type UnixSocketServer,
 	unlinkSocketFile,
 } from './unix-socket.js';
@@ -42,7 +43,7 @@ export type DaemonServer = {
 	 * ping at the same path it returns `StartupError.AlreadyRunning`. Calls
 	 * after a successful `listen()` are a no-op until `close()` runs.
 	 */
-	listen(): Promise<Result<UnixSocketServer, StartupError>>;
+	listen(): Promise<Result<void, StartupError>>;
 	/** Mount started daemon routes after the socket has already been claimed. */
 	mountRoutes(routes: readonly StartedDaemonRoute[]): void;
 	/**
@@ -65,11 +66,8 @@ export function createDaemonServer({
 	const socketPath = socketPathFor(projectDir);
 	const startingApp = buildStartingDaemonApp();
 	let currentFetch = startingApp.fetch;
-	const app = {
-		fetch(...args: Parameters<typeof currentFetch>) {
-			const [request, env, executionCtx] = args;
-			return currentFetch(request, env, executionCtx);
-		},
+	const fetch: UnixSocketFetch = (request) => {
+		return currentFetch(request);
 	};
 
 	let server: UnixSocketServer | undefined;
@@ -77,15 +75,15 @@ export function createDaemonServer({
 	return {
 		socketPath,
 		async listen() {
-			if (server !== undefined) return Ok(server);
-			const result = await bindOrRecover(
+			if (server !== undefined) return Ok(undefined);
+			const result = await bindOrRecover({
 				socketPath,
+				fetch,
 				projectDir,
-				app,
-				pingDaemon,
-			);
+				isSocketResponsive: pingDaemon,
+			});
 			if (result.error === null) server = result.data;
-			return result;
+			return result.error === null ? Ok(undefined) : result;
 		},
 		mountRoutes(routes) {
 			const validation = validateStartedDaemonRoutes(routes);

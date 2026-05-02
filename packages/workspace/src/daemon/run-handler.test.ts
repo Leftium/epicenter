@@ -41,7 +41,7 @@ function fakeSync(
 		whenConnected: Promise.resolve(),
 		status,
 		onStatusChange: () => () => {},
-		goOffline() {},
+		pause() {},
 		reconnect() {},
 		whenDisposed: Promise.resolve(),
 		attachRpc: () => ({ rpc: async () => ({ data: null, error: null }) }),

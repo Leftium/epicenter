@@ -1,8 +1,8 @@
 /**
  * Per-note body Y.Doc builder. Pure: takes a `noteId` plus all the deps the
- * construction needs and returns a Disposable bundle. Wire into a
- * `createDisposableCache` at the workspace module scope (see
- * `client.svelte.ts`) for refcount + grace.
+ * construction needs and returns a Disposable bundle. Browser clients open
+ * these through `createBrowserDocumentCollection` for caching, active sync
+ * control, and local store cleanup.
  */
 
 import type { AuthClient } from '@epicenter/auth-svelte';
@@ -23,7 +23,9 @@ import type { Note, NoteId } from '$lib/workspace';
 export type NoteBodyDoc = {
 	ydoc: Y.Doc;
 	body: ReturnType<typeof attachRichText>;
-	whenReady: Promise<unknown>;
+	idb: ReturnType<typeof attachIndexedDb>;
+	sync: SyncAttachment;
+	whenLoaded: Promise<unknown>;
 	[Symbol.dispose](): void;
 };
 
@@ -33,14 +35,12 @@ export function createNoteBodyDoc({
 	notesTable,
 	auth,
 	apiUrl,
-	registerSync,
 }: {
 	noteId: NoteId;
 	workspaceId: string;
 	notesTable: Table<Note>;
 	auth: Pick<AuthClient, 'snapshot' | 'whenLoaded'>;
 	apiUrl: string;
-	registerSync: (sync: SyncAttachment) => () => void;
 }): NoteBodyDoc {
 	const ydoc = new Y.Doc({
 		guid: docGuid({
@@ -53,8 +53,6 @@ export function createNoteBodyDoc({
 	});
 	const body = attachRichText(ydoc);
 	const idb = attachIndexedDb(ydoc);
-	// Token sourced from the auth snapshot on each connect attempt. The parent
-	// workspace registers this handle so auth transitions reconnect open docs too.
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${apiUrl}/docs/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
@@ -65,7 +63,6 @@ export function createNoteBodyDoc({
 			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
 		},
 	});
-	const unregisterSync = registerSync(sync);
 
 	onLocalUpdate(ydoc, () => {
 		notesTable.update(noteId, {
@@ -76,9 +73,10 @@ export function createNoteBodyDoc({
 	return {
 		ydoc,
 		body,
-		whenReady: idb.whenLoaded,
+		idb,
+		sync,
+		whenLoaded: idb.whenLoaded,
 		[Symbol.dispose]() {
-			unregisterSync();
 			ydoc.destroy();
 		},
 	};

@@ -142,13 +142,12 @@ import {
 	attachIndexedDb,
 	attachSync,
 	attachTables,
-	defineDocument,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { SYNC_NODES } from './config/sync-nodes';
 import { blogTables } from './workspace/definition';
 
-const blog = defineDocument((id: string) => {
+function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
 	const idb = attachIndexedDb(ydoc);
@@ -157,9 +156,9 @@ const blog = defineDocument((id: string) => {
 	const syncLaptop = attachSync(ydoc, { url: SYNC_NODES.laptop, waitFor: idb.whenLoaded });
 	const syncCloud = attachSync(ydoc, { url: SYNC_NODES.cloud, waitFor: idb.whenLoaded });
 	return { id, ydoc, tables, idb, syncDesktop, syncLaptop, syncCloud, /* ... */ };
-});
+}
 
-export const blogWorkspace = blog.open('blog');
+export const blogWorkspace = openBlog('blog');
 ```
 
 ### Laptop/Desktop Browser Configuration
@@ -168,16 +167,16 @@ Browser connects only to its own local server (localhost). The server handles cr
 
 ```typescript
 // desktop/browser/src/client.ts
-const blog = defineDocument((id: string) => {
+function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
 	const idb = attachIndexedDb(ydoc);
 	// Browser only needs to connect to its local server
 	const sync = attachSync(ydoc, { url: SYNC_NODES.localhost, waitFor: idb.whenLoaded });
 	return { id, ydoc, tables, idb, sync, /* ... */ };
-});
+}
 
-export const blogWorkspace = blog.open('blog');
+export const blogWorkspace = openBlog('blog');
 ```
 
 ### Desktop Server Configuration (Server-to-Server Sync)
@@ -189,24 +188,24 @@ The server acts as BOTH:
 
 ```typescript
 // desktop/server/src/client.ts
-const blog = defineDocument((id: string) => {
+function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
 	const sqlite = attachSqlite(ydoc, { filePath: '...' });
-	// Connect to OTHER sync nodes (not itself!) — Desktop connects to laptop + cloud
+	// Connect to OTHER sync nodes (not itself). Desktop connects to laptop + cloud.
 	const syncToLaptop = attachSync(ydoc, { url: SYNC_NODES.laptop, waitFor: sqlite.whenLoaded });
 	const syncToCloud  = attachSync(ydoc, { url: SYNC_NODES.cloud,  waitFor: sqlite.whenLoaded });
 	return { id, ydoc, tables, sqlite, syncToLaptop, syncToCloud, /* ... */ };
-});
+}
 
-export const blogWorkspace = blog.open('blog');
+export const blogWorkspace = openBlog('blog');
 ```
 
 ### Laptop Server Configuration
 
 ```typescript
 // laptop/server/src/client.ts
-const blog = defineDocument((id: string) => {
+function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
 	const sqlite = attachSqlite(ydoc, { filePath: '...' });
@@ -214,25 +213,25 @@ const blog = defineDocument((id: string) => {
 	const syncToDesktop = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: sqlite.whenLoaded });
 	const syncToCloud   = attachSync(ydoc, { url: SYNC_NODES.cloud,   waitFor: sqlite.whenLoaded });
 	return { id, ydoc, tables, sqlite, syncToDesktop, syncToCloud, /* ... */ };
-});
+}
 
-export const blogWorkspace = blog.open('blog');
+export const blogWorkspace = openBlog('blog');
 ```
 
 ### Cloud Server Configuration
 
-Cloud server typically only accepts connections (doesn't initiate) — no `attachSync` calls at all, only `createSyncPlugin` on the Elysia side.
+Cloud server typically only accepts connections and does not initiate. It has no `attachSync` calls at all, only `createSyncPlugin` on the Elysia side.
 
 ```typescript
 // cloud/src/client.ts
-const blog = defineDocument((id: string) => {
+function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
 	const sqlite = attachSqlite(ydoc, { filePath: '...' });
 	return { id, ydoc, tables, sqlite, /* ... */ };
-});
+}
 
-export const blogWorkspace = blog.open('blog');
+export const blogWorkspace = openBlog('blog');
 ```
 
 ## Data Flow Examples
@@ -283,19 +282,18 @@ import {
 	attachIndexedDb,
 	attachSync,
 	attachTables,
-	defineDocument,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
-const blog = defineDocument((id: string) => {
+function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
 	// Local persistence (use attachSqlite on Node.js)
 	const idb = attachIndexedDb(ydoc);
-	// Network sync — waits for local replay so the first exchange is a delta
+	// Network sync waits for local replay so the first exchange is a delta.
 	const sync = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: idb.whenLoaded });
 	return { id, ydoc, tables, idb, sync, /* ... */ };
-});
+}
 ```
 
 When offline:
@@ -388,7 +386,7 @@ attachSync(doc, { url, getToken, waitFor: idb, awareness })
         ├── 3. Start the WebSocket supervisor loop
         │
         └── 4. Return attachment methods:
-               status, whenConnected, goOffline, reconnect,
+               status, whenConnected, pause, reconnect,
                attachRpc(actions)
 ```
 
@@ -570,7 +568,7 @@ masterController
 `masterController` aborts when the Y.Doc is destroyed. That kills every current
 and future connection cycle.
 
-`cycleController` aborts when `goOffline()` or `reconnect()` changes the current
+`cycleController` aborts when `pause()` or `reconnect()` changes the current
 connection intent. `reconnect()` replaces it with a fresh child controller before
 starting the supervisor again, so a stale await cannot open a socket for an old
 cycle.

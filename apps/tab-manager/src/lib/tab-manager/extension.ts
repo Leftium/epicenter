@@ -27,7 +27,7 @@ import { openTabManager as openTabManagerDoc } from './index';
  * window). Awaiting the identity up front means every peer sees a
  * well-formed `state.peer` from the first frame.
  *
- * `whenReady` still gates UI render on idb hydration; sync (the WebSocket)
+ * `whenLoaded` still gates UI render on idb hydration; sync (the WebSocket)
  * is independent and connects whenever the network allows.
  */
 export async function openTabManager({
@@ -69,12 +69,11 @@ export async function openTabManager({
 		sync,
 		remote,
 		rpc,
-		/**
-		 * Resolves when IndexedDB has hydrated the local snapshot. The UI
-		 * can render with persisted data. Does NOT gate sync (the WebSocket
-		 * can connect at any time, including never if the extension is offline).
-		 */
-		whenReady: idb.whenLoaded,
+		whenLoaded: idb.whenLoaded,
 		peer: resolvedPeer,
+		device: resolvedPeer,
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
 	};
 }

@@ -131,6 +131,11 @@ export { DateTimeString } from './shared/datetime-string';
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
+	createBrowserDocumentCollection,
+	type BrowserDocumentCollection,
+	type BrowserDocumentCollectionOptions,
+} from './cache/browser-document-collection.js';
+export {
 	createDisposableCache,
 	type DisposableCache,
 	DisposableCacheError,

@@ -5,8 +5,9 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	createDisposableCache,
+	createBrowserDocumentCollection,
 	createRemoteClient,
+	docGuid,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -25,24 +26,27 @@ export function openFuji({
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
-	const contentSyncs = new Set<ReturnType<typeof attachSync>>();
 
-	const entryContentDocs = createDisposableCache(
-		(entryId: EntryId) =>
+	const entryContentDocs = createBrowserDocumentCollection({
+		ids: () => doc.tables.entries.getAllValid().map((entry) => entry.id),
+		guid: (entryId: EntryId) =>
+			docGuid({
+				workspaceId: doc.ydoc.guid,
+				collection: 'entries',
+				rowId: entryId,
+				field: 'content',
+			}),
+		build: (entryId: EntryId) =>
 			createEntryContentDoc({
 				entryId,
 				workspaceId: doc.ydoc.guid,
 				entriesTable: doc.tables.entries,
 				auth,
 				apiUrl: APP_URLS.API,
-				registerSync: (sync) => {
-					contentSyncs.add(sync);
-					return () => contentSyncs.delete(sync);
-				},
 			}),
-		{ gcTime: 5_000 },
-	);
-
+		sync: (entryDoc) => entryDoc.sync,
+		gcTime: 5_000,
+	});
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
@@ -69,14 +73,10 @@ export function openFuji({
 		sync,
 		remote,
 		rpc,
-		/**
-		 * Resolves when IndexedDB has hydrated the local snapshot. The UI can
-		 * render with persisted data. Does NOT gate sync (the WebSocket can
-		 * connect at any time, including never if the user is offline).
-		 */
-		whenReady: idb.whenLoaded,
-		getAuthSyncTargets() {
-			return [sync, ...contentSyncs];
+		whenLoaded: idb.whenLoaded,
+		[Symbol.dispose]() {
+			entryContentDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
 		},
 	};
 }

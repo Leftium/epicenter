@@ -2,7 +2,7 @@ import {
 	createAuth,
 	createSessionStorageAdapter,
 } from '@epicenter/auth-svelte';
-import { bindWorkspaceAuthLifecycle } from '@epicenter/auth-workspace';
+import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { toast } from '@epicenter/ui/sonner';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
@@ -55,7 +55,7 @@ export const tabManager = await openTabManager({ auth, peer });
  * so `lastSeen` stays current.
  */
 async function registerDevice(): Promise<void> {
-	await tabManager.whenReady;
+	await tabManager.whenLoaded;
 	const { id, name } = tabManager.peer;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
@@ -68,21 +68,22 @@ async function registerDevice(): Promise<void> {
 	});
 }
 
-bindWorkspaceAuthLifecycle({
+bindAuthWorkspaceScope({
 	auth,
-	workspace: tabManager,
-	leavingUser: {
-		afterCleanup: () => window.location.reload(),
-		onCleanupError: (error) => {
+	sync: tabManager.sync,
+	applyAuthSession(session) {
+		tabManager.encryption.applyKeys(session.encryptionKeys);
+		void registerDevice();
+	},
+	async resetLocalClient() {
+		try {
+			await tabManager.idb.clearLocal();
+			window.location.reload();
+		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
-		},
-	},
-	signedIn: {
-		onSnapshot: () => {
-			void registerDevice();
-		},
+		}
 	},
 });
 

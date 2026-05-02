@@ -11,8 +11,9 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	createDisposableCache,
+	createBrowserDocumentCollection,
 	createRemoteClient,
+	docGuid,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -32,17 +33,24 @@ export function openOpensidian({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const fileContentDocs = createDisposableCache(
-		(fileId: FileId) =>
+	const fileContentDocs = createBrowserDocumentCollection({
+		ids: () => doc.tables.files.getAllValid().map((file) => file.id),
+		guid: (fileId: FileId) =>
+			docGuid({
+				workspaceId: doc.ydoc.guid,
+				collection: 'files',
+				rowId: fileId,
+				field: 'content',
+			}),
+		build: (fileId: FileId) =>
 			createFileContentDoc({
 				fileId,
 				workspaceId: doc.ydoc.guid,
 				filesTable: doc.tables.files,
 				attachPersistence: (d) => attachIndexedDb(d),
 			}),
-		{ gcTime: 5_000 },
-	);
-
+		gcTime: 5_000,
+	});
 	const sqliteIndex = createSqliteIndex(fileContentDocs)({
 		tables: doc.tables,
 	}).exports;
@@ -80,11 +88,10 @@ export function openOpensidian({
 		sync,
 		remote,
 		rpc,
-		/**
-		 * Resolves when IndexedDB has hydrated the local snapshot: the UI can
-		 * render with persisted data. Does NOT gate sync (the WebSocket can
-		 * connect at any time, including never if the user is offline).
-		 */
-		whenReady: idb.whenLoaded,
+		whenLoaded: idb.whenLoaded,
+		[Symbol.dispose]() {
+			fileContentDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
+		},
 	};
 }

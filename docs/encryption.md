@@ -60,38 +60,59 @@ That happens in two places:
 - on boot from a cached session
 - on every authenticated session update from Better Auth
 The boot path exists so the workspace can unlock before the first auth roundtrip finishes.
-In app clients such as `apps/tab-manager/src/lib/tab-manager/client.ts`, `bindWorkspaceAuthLifecycle` does this:
+In app clients such as `apps/tab-manager/src/lib/tab-manager/client.ts`, `bindAuthWorkspaceScope` receives the app-owned lifecycle hooks:
 ```ts
-bindWorkspaceAuthLifecycle({
+bindAuthWorkspaceScope({
 	auth,
-	workspace,
-	leavingUser: {
-		onCleanupError: reportError,
+	sync: tabManager.sync,
+	applyAuthSession(session) {
+		tabManager.encryption.applyKeys(session.encryptionKeys);
+		void registerDevice();
+	},
+	async resetLocalClient() {
+		try {
+			await tabManager.idb.clearLocal();
+			window.location.reload();
+		} catch (error) {
+			toast.error('Could not clear local data', {
+				description: extractErrorMessage(error),
+			});
+		}
 	},
 });
 ```
 The order matters.
-Keys are applied before sync reconnects.
+The binding calls `applyAuthSession(session)` before reconnecting sync.
 
 ## Key lifecycle in the current code
 Keys are definitely loaded on login.
 That part is explicit.
 Logout is less clean than the high-level comments suggest.
-The reviewed code clears the auth session and wipes persisted local data, but it does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`.
+The reviewed code clears the auth session and asks each app to reset its local browser client, but it does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`.
 The logout path in the app clients is:
 ```ts
-bindWorkspaceAuthLifecycle({
+bindAuthWorkspaceScope({
 	auth,
-	workspace,
-	leavingUser: {
-		onCleanupError: reportError,
+	sync: workspace.sync,
+	applyAuthSession(session) {
+		workspace.encryption.applyKeys(session.encryptionKeys);
+	},
+	async resetLocalClient() {
+		try {
+			await workspace.idb.clearLocal();
+			window.location.reload();
+		} catch (error) {
+			toast.error('Could not clear local data', {
+				description: extractErrorMessage(error),
+			});
+		}
 	},
 });
 ```
 So these points are implemented and verifiable:
 - keys are loaded on login
-- the persisted IndexedDB copy is wiped on logout
-- sync reconnects without an authenticated session token
+- app reset code wipes the configured local IndexedDB stores on logout or user switch
+- sync pauses before the reset path runs
 This point is not visible as an explicit step in the reviewed code:
 - clearing the in-memory encryption state after logout
 That gap matters because the encrypted wrapper exposes `activateEncryption()` but no `deactivateEncryption()`.
@@ -233,5 +254,5 @@ The trust model is also clear.
 This is not a zero-knowledge design.
 The auth server can derive per-user transport keys from `ENCRYPTION_SECRETS`, while the sync relay forwards ciphertext values rather than plaintext values.
 The sharp edge is logout behavior.
-Persisted local data is wiped on logout through the IndexedDB extension, but an explicit in-memory key deactivation path is not present in the reviewed code.
+App reset hooks wipe their configured local IndexedDB stores on logout or user switch, but an explicit in-memory key deactivation path is not present in the reviewed code.
 If you are deciding whether this architecture fits your threat model, focus on that line: the sync relay handles ciphertext values, but the deployment that owns `ENCRYPTION_SECRETS` remains inside the trust boundary.

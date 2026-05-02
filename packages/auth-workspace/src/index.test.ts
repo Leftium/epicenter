@@ -1,23 +1,18 @@
 /**
- * Workspace Auth Lifecycle Binding Tests
+ * Auth Workspace Scope Tests
  *
- * Verifies the framework-agnostic binding between auth snapshots and workspace
- * lifecycle effects.
+ * Verifies the auth binding that sequences one browser client scope through
+ * signed-out, signed-in, and terminal reset transitions.
  *
  * Key behaviors:
- * - Bootstrap reads the current auth snapshot without listener replay
- * - Leaving an applied user clears local persistence
- * - Token, key, and user changes apply distinct workspace side effects
- * - Duplicate sync targets are deduped before lifecycle calls
+ * - Cold signed-out and signed-in snapshots call the supplied lifecycle hooks.
+ * - Same-user token changes reconnect sync while key refreshes do not.
+ * - Leaving an applied user marks the client terminal and ignores later snapshots.
  */
 
 import { expect, test } from 'bun:test';
 import type { AuthClient, AuthSnapshot, Session } from '@epicenter/auth';
-import {
-	bindWorkspaceAuthLifecycle,
-	type WorkspaceAuthSyncTarget,
-	type WorkspaceAuthTarget,
-} from './index.ts';
+import { bindAuthWorkspaceScope } from './index.ts';
 
 const keysA = [
 	{
@@ -59,21 +54,6 @@ function session({
 
 function signedIn(input?: Parameters<typeof session>[0]): AuthSnapshot {
 	return { status: 'signedIn', session: session(input) };
-}
-
-function createSyncTarget(name: string) {
-	const calls: string[] = [];
-	return {
-		target: {
-			goOffline() {
-				calls.push(`${name}:offline`);
-			},
-			reconnect() {
-				calls.push(`${name}:reconnect`);
-			},
-		} satisfies WorkspaceAuthSyncTarget,
-		calls,
-	};
 }
 
 function createFakeAuth(initial: AuthSnapshot) {
@@ -120,287 +100,187 @@ function createFakeAuth(initial: AuthSnapshot) {
 	};
 }
 
-function createFakeWorkspace({
-	childTargets = [],
-	clearLocal = async () => {},
+function setup({
+	initial = { status: 'loading' },
+	sync = true,
+	resetLocalClient = async () => {},
 }: {
-	childTargets?: WorkspaceAuthSyncTarget[];
-	clearLocal?: () => Promise<unknown>;
+	initial?: AuthSnapshot;
+	sync?: boolean;
+	resetLocalClient?: () => Promise<void>;
 } = {}) {
-	const primary = createSyncTarget('primary');
-	const appliedKeys: Array<Session['encryptionKeys']> = [];
-	const workspace = {
-		sync: primary.target,
-		idb: {
-			clearLocal,
+	const fakeAuth = createFakeAuth(initial);
+	const calls: string[] = [];
+	const appliedSessions: Session[] = [];
+	const unsubscribe = bindAuthWorkspaceScope({
+		auth: fakeAuth.auth,
+		sync: sync
+			? {
+					pause() {
+						calls.push('pause');
+					},
+					reconnect() {
+						calls.push('reconnect');
+					},
+				}
+			: null,
+		applyAuthSession(session) {
+			calls.push(`apply:${session.user.id}:${session.token}`);
+			appliedSessions.push(session);
 		},
-		encryption: {
-			applyKeys(keys) {
-				appliedKeys.push(keys);
-			},
+		async resetLocalClient() {
+			calls.push('reset');
+			await resetLocalClient();
 		},
-		getAuthSyncTargets() {
-			return childTargets;
-		},
-	} satisfies WorkspaceAuthTarget;
+	});
 
-	return {
-		workspace,
-		primaryCalls: primary.calls,
-		appliedKeys,
-	};
+	return { fakeAuth, calls, appliedSessions, unsubscribe };
 }
 
 async function tick() {
-	await Promise.resolve();
-	await Promise.resolve();
+	for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
-test('loading bootstrap has no side effects', () => {
-	const { auth } = createFakeAuth({ status: 'loading' });
-	const { workspace, primaryCalls, appliedKeys } = createFakeWorkspace();
-	let cleanupErrors = 0;
-	let afterCleanup = 0;
-	let signedInSnapshots = 0;
-
-	bindWorkspaceAuthLifecycle({
-		auth,
-		workspace,
-		leavingUser: {
-			onCleanupError: () => cleanupErrors++,
-			afterCleanup: () => afterCleanup++,
-		},
-		signedIn: {
-			onSnapshot: () => signedInSnapshots++,
-		},
-	});
-
-	expect(primaryCalls).toEqual([]);
-	expect(appliedKeys).toEqual([]);
-	expect(cleanupErrors).toBe(0);
-	expect(afterCleanup).toBe(0);
-	expect(signedInSnapshots).toBe(0);
-});
-
-test('cold signed-out boot takes sync offline without clearing local persistence', () => {
-	const { auth } = createFakeAuth({ status: 'signedOut' });
-	let clearLocalCalls = 0;
-	const { workspace, primaryCalls } = createFakeWorkspace({
-		clearLocal: async () => {
-			clearLocalCalls++;
-		},
-	});
-	let cleanupErrors = 0;
-	let afterCleanup = 0;
-
-	bindWorkspaceAuthLifecycle({
-		auth,
-		workspace,
-		leavingUser: {
-			onCleanupError: () => cleanupErrors++,
-			afterCleanup: () => afterCleanup++,
-		},
-	});
-
-	expect(primaryCalls).toEqual(['primary:offline']);
-	expect(clearLocalCalls).toBe(0);
-	expect(cleanupErrors).toBe(0);
-	expect(afterCleanup).toBe(0);
-});
-
-test('cold signed-in boot applies keys, reconnects sync, and runs signed-in policy', () => {
-	const { auth } = createFakeAuth(signedIn());
-	const { workspace, primaryCalls, appliedKeys } = createFakeWorkspace();
-	let signedInSnapshots = 0;
-
-	bindWorkspaceAuthLifecycle({
-		auth,
-		workspace,
-		leavingUser: {
-			onCleanupError: () => {},
-		},
-		signedIn: {
-			onSnapshot: () => signedInSnapshots++,
-		},
-	});
-
-	expect(appliedKeys).toEqual([keysA]);
-	expect(primaryCalls).toEqual(['primary:reconnect']);
-	expect(signedInSnapshots).toBe(1);
-});
-
-test('signed-in to signed-out clears local persistence before after-cleanup policy', async () => {
-	const fakeAuth = createFakeAuth(signedIn());
-	const events: string[] = [];
-	const { workspace, primaryCalls } = createFakeWorkspace({
-		clearLocal: async () => {
-			events.push('clear');
-		},
-	});
-
-	bindWorkspaceAuthLifecycle({
-		auth: fakeAuth.auth,
-		workspace,
-		leavingUser: {
-			onCleanupError: () => events.push('error'),
-			afterCleanup: () => events.push('after'),
-		},
-	});
-
-	fakeAuth.emit({ status: 'signedOut' });
+test('cold signedOut pauses sync', async () => {
+	const { calls } = setup({ initial: { status: 'signedOut' } });
 	await tick();
 
-	expect(primaryCalls).toEqual(['primary:reconnect', 'primary:offline']);
-	expect(events).toEqual(['clear', 'after']);
+	expect(calls).toEqual(['pause']);
 });
 
-test('cleanup failure reports error and skips after-cleanup policy', async () => {
-	const cleanupError = new Error('clear failed');
-	const fakeAuth = createFakeAuth(signedIn());
-	const errors: unknown[] = [];
-	let afterCleanup = 0;
-	const { workspace } = createFakeWorkspace({
-		clearLocal: async () => {
-			throw cleanupError;
-		},
-	});
-
-	bindWorkspaceAuthLifecycle({
-		auth: fakeAuth.auth,
-		workspace,
-		leavingUser: {
-			onCleanupError: (error) => errors.push(error),
-			afterCleanup: () => afterCleanup++,
-		},
-	});
-
-	fakeAuth.emit({ status: 'signedOut' });
+test('cold signedOut with sync null does not throw', async () => {
+	const { calls } = setup({ initial: { status: 'signedOut' }, sync: false });
 	await tick();
 
-	expect(errors).toEqual([cleanupError]);
-	expect(afterCleanup).toBe(0);
+	expect(calls).toEqual([]);
 });
 
-test('token refresh for same user applies keys, reconnects sync, and runs signed-in policy', () => {
-	const fakeAuth = createFakeAuth(signedIn());
-	const { workspace, primaryCalls, appliedKeys } = createFakeWorkspace();
-	let signedInSnapshots = 0;
+test('cold signedIn applies session and reconnects sync', async () => {
+	const { calls, appliedSessions } = setup({ initial: signedIn() });
+	await tick();
 
-	bindWorkspaceAuthLifecycle({
-		auth: fakeAuth.auth,
-		workspace,
-		leavingUser: {
-			onCleanupError: () => {},
-		},
-		signedIn: {
-			onSnapshot: () => signedInSnapshots++,
-		},
-	});
+	expect(appliedSessions.map((applied) => applied.encryptionKeys)).toEqual([
+		keysA,
+	]);
+	expect(calls).toEqual(['apply:user-1:token-1', 'reconnect']);
+});
 
+test('token change reconnects', async () => {
+	const { fakeAuth, calls, appliedSessions } = setup({ initial: signedIn() });
+	await tick();
 	fakeAuth.emit(signedIn({ token: 'token-2', keys: keysB }));
+	await tick();
 
-	expect(appliedKeys).toEqual([keysA, keysB]);
-	expect(primaryCalls).toEqual(['primary:reconnect', 'primary:reconnect']);
-	expect(signedInSnapshots).toBe(2);
+	expect(appliedSessions.map((applied) => applied.encryptionKeys)).toEqual([
+		keysA,
+		keysB,
+	]);
+	expect(calls).toEqual([
+		'apply:user-1:token-1',
+		'reconnect',
+		'apply:user-1:token-2',
+		'reconnect',
+	]);
 });
 
-test('key refresh without token change applies keys without reconnecting sync', () => {
-	const fakeAuth = createFakeAuth(signedIn());
-	const { workspace, primaryCalls, appliedKeys } = createFakeWorkspace();
-	let signedInSnapshots = 0;
-
-	bindWorkspaceAuthLifecycle({
-		auth: fakeAuth.auth,
-		workspace,
-		leavingUser: {
-			onCleanupError: () => {},
-		},
-		signedIn: {
-			onSnapshot: () => signedInSnapshots++,
-		},
-	});
-
+test('key refresh without token change applies session but does not reconnect', async () => {
+	const { fakeAuth, calls, appliedSessions } = setup({ initial: signedIn() });
+	await tick();
 	fakeAuth.emit(signedIn({ keys: keysB }));
+	await tick();
 
-	expect(appliedKeys).toEqual([keysA, keysB]);
-	expect(primaryCalls).toEqual(['primary:reconnect']);
-	expect(signedInSnapshots).toBe(2);
+	expect(appliedSessions.map((applied) => applied.encryptionKeys)).toEqual([
+		keysA,
+		keysB,
+	]);
+	expect(calls).toEqual([
+		'apply:user-1:token-1',
+		'reconnect',
+		'apply:user-1:token-1',
+	]);
 });
 
-test('user switch clears local persistence before applying the new user', async () => {
-	const fakeAuth = createFakeAuth(signedIn({ userId: 'user-1' }));
-	const events: string[] = [];
-	const { workspace, primaryCalls, appliedKeys } = createFakeWorkspace({
-		clearLocal: async () => {
-			events.push('clear');
-		},
-	});
-	let signedInSnapshots = 0;
+test('signedOut after applied user pauses and resets', async () => {
+	const { fakeAuth, calls } = setup({ initial: signedIn() });
+	await tick();
+	fakeAuth.emit({ status: 'signedOut' });
+	await tick();
 
-	bindWorkspaceAuthLifecycle({
-		auth: fakeAuth.auth,
-		workspace,
-		leavingUser: {
-			onCleanupError: () => events.push('error'),
-			afterCleanup: () => events.push('after'),
-		},
-		signedIn: {
-			onSnapshot: () => {
-				events.push('signed-in');
-				signedInSnapshots++;
-			},
-		},
-	});
+	expect(calls).toEqual([
+		'apply:user-1:token-1',
+		'reconnect',
+		'pause',
+		'reset',
+	]);
+});
 
+test('user switch resets without applying the new user', async () => {
+	const { fakeAuth, calls, appliedSessions } = setup({ initial: signedIn() });
+	await tick();
 	fakeAuth.emit(signedIn({ userId: 'user-2', token: 'token-2', keys: keysB }));
 	await tick();
 
-	expect(primaryCalls).toEqual([
-		'primary:reconnect',
-		'primary:offline',
-		'primary:reconnect',
+	expect(appliedSessions.map((applied) => applied.user.id)).toEqual(['user-1']);
+	expect(calls).toEqual([
+		'apply:user-1:token-1',
+		'reconnect',
+		'pause',
+		'reset',
 	]);
-	expect(appliedKeys).toEqual([keysA, keysB]);
-	expect(events).toEqual(['signed-in', 'clear', 'signed-in', 'after']);
-	expect(signedInSnapshots).toBe(2);
 });
 
-test('duplicate sync targets are deduped before lifecycle calls', () => {
-	const child = createSyncTarget('child');
-	const { auth } = createFakeAuth(signedIn());
-	const { workspace, primaryCalls } = createFakeWorkspace();
-	workspace.getAuthSyncTargets = () => [
-		workspace.sync,
-		child.target,
-		child.target,
-	];
-
-	bindWorkspaceAuthLifecycle({
-		auth,
-		workspace,
-		leavingUser: {
-			onCleanupError: () => {},
+test('resetLocalClient rejection is caught and queued snapshots are ignored', async () => {
+	const { fakeAuth, calls, appliedSessions } = setup({
+		initial: signedIn(),
+		resetLocalClient: async () => {
+			throw new Error('reset failed');
 		},
 	});
+	await tick();
+	fakeAuth.emit({ status: 'signedOut' });
+	fakeAuth.emit(signedIn({ token: 'token-2', keys: keysB }));
+	await tick();
 
-	expect(primaryCalls).toEqual(['primary:reconnect']);
-	expect(child.calls).toEqual(['child:reconnect']);
+	expect(appliedSessions.map((applied) => applied.encryptionKeys)).toEqual([
+		keysA,
+	]);
+	expect(calls).toEqual([
+		'apply:user-1:token-1',
+		'reconnect',
+		'pause',
+		'reset',
+	]);
 });
 
-test('unsubscribe stops later auth emissions', () => {
-	const fakeAuth = createFakeAuth({ status: 'signedOut' });
-	const { workspace, primaryCalls } = createFakeWorkspace();
-
-	const unsubscribe = bindWorkspaceAuthLifecycle({
-		auth: fakeAuth.auth,
-		workspace,
-		leavingUser: {
-			onCleanupError: () => {},
-		},
+test('snapshots emitted during reset are ignored', async () => {
+	const { promise, resolve } = Promise.withResolvers<void>();
+	const { fakeAuth, calls, appliedSessions } = setup({
+		initial: signedIn(),
+		resetLocalClient: () => promise,
 	});
+	await tick();
+	fakeAuth.emit({ status: 'signedOut' });
+	fakeAuth.emit(signedIn({ userId: 'user-2', token: 'token-2', keys: keysB }));
+	resolve();
+	await tick();
+
+	expect(appliedSessions.map((applied) => applied.user.id)).toEqual(['user-1']);
+	expect(calls).toEqual([
+		'apply:user-1:token-1',
+		'reconnect',
+		'pause',
+		'reset',
+	]);
+});
+
+test('unsubscribe stops later auth emissions', async () => {
+	const { fakeAuth, calls, unsubscribe } = setup({
+		initial: { status: 'signedOut' },
+	});
+	await tick();
 	unsubscribe();
-
 	fakeAuth.emit(signedIn());
+	await tick();
 
-	expect(primaryCalls).toEqual(['primary:offline']);
+	expect(calls).toEqual(['pause']);
 });

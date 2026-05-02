@@ -3,22 +3,21 @@
 > **Historical note.** The long-form version of this guide described a
 > `createWorkspace(definition).withEncryption().withExtension('persistence', ...).withExtension('sync', ...)`
 > builder chain. That API is gone. There is one primitive today:
-> `defineDocument(builder)`, with every attachment (`attachTables`,
-> `attachIndexedDb`, `attachSync`, `attachEncryption`, etc.) composed inline in
-> the user-owned builder.
+> a user-owned document factory, with every attachment (`attachTables`,
+> `attachIndexedDb`, `attachSync`, `attachEncryption`, etc.) composed inline.
 >
 > Rather than maintain two versions of the same narrative, this guide now
 > points at the canonical sources:
 >
 > - **Quick Start**: [`packages/workspace/README.md`](../../packages/workspace/README.md)
 > - **Multi-device sync**: [`packages/workspace/SYNC_ARCHITECTURE.md`](../../packages/workspace/SYNC_ARCHITECTURE.md)
-> - **Production wiring**: `apps/tab-manager/src/lib/client.ts` (browser extension: encryption + IndexedDB + WebSocket + BroadcastChannel), `apps/fuji/src/lib/entry-content-doc.ts` (per-row content docs)
+> - **Production wiring**: `apps/tab-manager/src/lib/tab-manager/client.ts` (browser extension auth binding), `apps/tab-manager/src/lib/tab-manager/extension.ts` (encryption + IndexedDB + WebSocket + BroadcastChannel), `apps/fuji/src/lib/entry-content-docs.ts` (per-row content docs)
 
 ## Overview
 
 The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, AI inference, and encryption key derivation. It runs on Cloudflare Workers with Durable Objects; each user gets isolated DOs for their workspaces and documents. There is no shared state between accounts.
 
-On the client, `@epicenter/workspace` provides the primitives: define your schema with `defineTable` / `defineKv`, compose a live document with `defineDocument(builder)` + `attach*`, authenticate with `@epicenter/auth-svelte`, and the SDK manages WebSocket connections, local persistence, cross-tab sync, and CRDT-level encryption.
+On the client, `@epicenter/workspace` provides the primitives: define your schema with `defineTable` / `defineKv`, compose a live document by creating a `Y.Doc` and calling `attach*`, authenticate with `@epicenter/auth-svelte`, and wire auth transitions with `@epicenter/auth-workspace`.
 
 ## Minimal end-to-end shape
 
@@ -26,63 +25,35 @@ On the client, `@epicenter/workspace` provides the primitives: define your schem
 import {
 	attachAwareness,
 	attachBroadcastChannel,
-	attachEncryptedKv,
-	attachEncryptedTables,
 	attachEncryption,
 	attachIndexedDb,
 	attachSync,
-	defineDocument,
+	defineTable,
+	getOrCreateInstallationId,
+	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { bindWorkspaceAuthLifecycle } from '@epicenter/auth-workspace';
+import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import {
 	createAuth,
 	createSessionStorageAdapter,
 	Session,
+	type AuthClient,
 } from '@epicenter/auth-svelte';
 import { createPersistedState } from '@epicenter/svelte';
 import * as Y from 'yjs';
-import { appTables, appAwareness } from '$lib/workspace/definition';
+import { type } from 'arktype';
+import { extractErrorMessage } from 'wellcrafted/error';
 
-const app = defineDocument((id: string) => {
-	const ydoc = new Y.Doc({ guid: id, gc: false });
-
-	const encryption = attachEncryption(ydoc);
-	const tables = attachEncryptedTables(ydoc, encryption, appTables);
-	const kv = attachEncryptedKv(ydoc, encryption, {});
-	const awareness = attachAwareness(ydoc, appAwareness);
-
-	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
-	const sync = attachSync(ydoc, {
-		url: (docId) => toWsUrl(`https://api.epicenter.so/workspaces/${docId}`),
-		getToken: async () => {
-			await auth.whenLoaded;
-
-			const snapshot = auth.snapshot;
-			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		},
-		waitFor: idb.whenLoaded,
-		awareness: awareness.raw,
-	});
-
-	return {
-		id,
-		ydoc,
-		tables,
-		kv,
-		awareness,
-		encryption,
-		idb,
-		sync,
-		whenReady: idb.whenLoaded,
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	};
-});
-
-export const workspace = app.open('epicenter.my-app');
+const appTables = {
+	notes: defineTable(
+		type({
+			id: 'string',
+			title: 'string',
+			_v: '1',
+		}),
+	),
+};
 
 const session = createPersistedState({
 	key: 'my-app:authSession',
@@ -95,13 +66,76 @@ export const auth = createAuth({
 	sessionStorage: createSessionStorageAdapter(session),
 });
 
-bindWorkspaceAuthLifecycle({
+function openMyApp({
 	auth,
-	workspace,
-	leavingUser: {
-		onCleanupError: reportError,
+	peer,
+}: {
+	auth: AuthClient;
+	peer: PeerIdentity;
+}) {
+	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
+	const encryption = attachEncryption(ydoc);
+	const tables = encryption.attachTables(ydoc, appTables);
+	const kv = encryption.attachKv(ydoc, {});
+
+	const idb = attachIndexedDb(ydoc);
+	attachBroadcastChannel(ydoc);
+
+	const awareness = attachAwareness(ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
+	});
+	const sync = attachSync(ydoc, {
+		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
+		getToken: async () => {
+			await auth.whenLoaded;
+
+			const snapshot = auth.snapshot;
+			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+		},
+		waitFor: idb.whenLoaded,
+		awareness,
+	});
+
+	return {
+		ydoc,
+		tables,
+		kv,
+		awareness,
+		encryption,
+		idb,
+		sync,
+		whenLoaded: idb.whenLoaded,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+}
+
+export const workspace = openMyApp({
+	auth,
+	peer: {
+		id: getOrCreateInstallationId(localStorage),
+		name: 'My app',
+		platform: 'web',
+	},
+});
+
+bindAuthWorkspaceScope({
+	auth,
+	sync: workspace.sync,
+	applyAuthSession(session) {
+		workspace.encryption.applyKeys(session.encryptionKeys);
+	},
+	async resetLocalClient() {
+		try {
+			await workspace.idb.clearLocal();
+			window.location.reload();
+		} catch (error) {
+			console.error('Could not clear local data', extractErrorMessage(error));
+		}
 	},
 });
 ```
 
-The `id` you pass to `app.open(...)` becomes `ydoc.guid`, which in turn becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.
+The `ydoc.guid` becomes the sync room name. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin.

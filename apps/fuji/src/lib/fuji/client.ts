@@ -3,7 +3,7 @@ import {
 	createSessionStorageAdapter,
 	Session,
 } from '@epicenter/auth-svelte';
-import { bindWorkspaceAuthLifecycle } from '@epicenter/auth-workspace';
+import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
@@ -31,16 +31,31 @@ export const fuji = openFuji({
 	},
 });
 
-bindWorkspaceAuthLifecycle({
+bindAuthWorkspaceScope({
 	auth,
-	workspace: fuji,
-	leavingUser: {
-		afterCleanup: () => window.location.reload(),
-		onCleanupError: (error) => {
+	sync: {
+		pause() {
+			fuji.sync.pause();
+			fuji.entryContentDocs.pause();
+		},
+		reconnect() {
+			fuji.sync.reconnect();
+			fuji.entryContentDocs.reconnect();
+		},
+	},
+	applyAuthSession(session) {
+		fuji.encryption.applyKeys(session.encryptionKeys);
+	},
+	async resetLocalClient() {
+		try {
+			await fuji.entryContentDocs.clearLocalData();
+			await fuji.idb.clearLocal();
+			window.location.reload();
+		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
-		},
+		}
 	},
 });
 

@@ -149,7 +149,7 @@ export type SyncAttachment = {
 	 * Close the websocket, stop the supervisor, and transition to offline.
 	 * A subsequent `reconnect()` restarts the supervisor.
 	 */
-	goOffline: () => void;
+	pause: () => void;
 	/** Force a fresh connection with new credentials (supervisor restarts iteration). */
 	reconnect: () => void;
 	/**
@@ -382,13 +382,13 @@ export function attachSync(
 	 * Cancellation hierarchy:
 	 *
 	 *   masterController: aborts on doc.destroy(); kills everything
-	 *      cycleController: aborts on goOffline() / reconnect();
+	 *      cycleController: aborts on pause() / reconnect();
 	 *                       kills the current supervisor iteration
 	 *
 	 * `cycleController` is replaced (not just re-aborted) by `reconnect()` so
 	 * the new connection cycle has a fresh signal unrelated to the old one.
 	 * Aborting an already-aborted controller is a no-op, which makes
-	 * goOffline-then-reconnect races structurally safe.
+	 * pause-then-reconnect races structurally safe.
 	 */
 	const masterController = new AbortController();
 	let cycleController: AbortController = childOf(masterController.signal);
@@ -851,7 +851,7 @@ export function attachSync(
 		});
 	}
 
-	function goOffline() {
+	function pause() {
 		cycleController.abort();
 		manageWindowListeners('remove');
 		status.set({ phase: 'offline' });
@@ -916,7 +916,7 @@ export function attachSync(
 			return status.get();
 		},
 		onStatusChange: status.subscribe,
-		goOffline,
+		pause,
 		reconnect() {
 			if (masterController.signal.aborted) return;
 			permanentFailure = null;

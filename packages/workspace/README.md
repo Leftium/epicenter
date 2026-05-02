@@ -179,14 +179,11 @@ export function openApp({
 }
 
 export const workspace = openApp({ getToken: async () => null });
-
-// On login:  workspace.encryption.applyKeys(session.encryptionKeys); workspace.sync.reconnect();
-// On logout: workspace.sync.goOffline(); await workspace.idb.clearLocal();
 ```
 
 The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.
 
-For a production-shaped wiring (with auth integration, session transitions, etc.), see `apps/fuji/src/lib/client.svelte.ts`.
+For production-shaped browser wiring, see `apps/fuji/src/lib/fuji/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/fuji/client.ts`.
 
 ## Core Philosophy
 

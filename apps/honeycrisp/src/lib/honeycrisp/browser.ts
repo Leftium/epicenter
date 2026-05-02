@@ -5,8 +5,9 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	createDisposableCache,
+	createBrowserDocumentCollection,
 	createRemoteClient,
+	docGuid,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -25,24 +26,27 @@ export function openHoneycrisp({
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
-	const bodySyncs = new Set<ReturnType<typeof attachSync>>();
 
-	const noteBodyDocs = createDisposableCache(
-		(noteId: NoteId) =>
+	const noteBodyDocs = createBrowserDocumentCollection({
+		ids: () => doc.tables.notes.getAllValid().map((note) => note.id),
+		guid: (noteId: NoteId) =>
+			docGuid({
+				workspaceId: doc.ydoc.guid,
+				collection: 'notes',
+				rowId: noteId,
+				field: 'body',
+			}),
+		build: (noteId: NoteId) =>
 			createNoteBodyDoc({
 				noteId,
 				workspaceId: doc.ydoc.guid,
 				notesTable: doc.tables.notes,
 				auth,
 				apiUrl: APP_URLS.API,
-				registerSync: (sync) => {
-					bodySyncs.add(sync);
-					return () => bodySyncs.delete(sync);
-				},
 			}),
-		{ gcTime: 5_000 },
-	);
-
+		sync: (noteDoc) => noteDoc.sync,
+		gcTime: 5_000,
+	});
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
@@ -69,14 +73,10 @@ export function openHoneycrisp({
 		sync,
 		remote,
 		rpc,
-		/**
-		 * Resolves when IndexedDB has hydrated the local snapshot. The UI can
-		 * render with persisted data. Does NOT gate sync (the WebSocket can
-		 * connect at any time, including never if the user is offline).
-		 */
-		whenReady: idb.whenLoaded,
-		getAuthSyncTargets() {
-			return [sync, ...bodySyncs];
+		whenLoaded: idb.whenLoaded,
+		[Symbol.dispose]() {
+			noteBodyDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
 		},
 	};
 }

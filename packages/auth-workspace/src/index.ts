@@ -1,145 +1,104 @@
-import type { AuthClient, AuthSnapshot, Session } from '@epicenter/auth';
+import type { AuthClient, AuthSnapshot } from '@epicenter/auth';
 
-/**
- * Minimal sync handle controlled by auth lifecycle transitions.
- */
-export type WorkspaceAuthSyncTarget = {
-	goOffline(): void;
+export type SignedInSession = Extract<
+	AuthSnapshot,
+	{ status: 'signedIn' }
+>['session'];
+
+export type AuthenticatedSyncLifecycle = {
+	pause(): void;
 	reconnect(): void;
 };
 
-/**
- * Minimal workspace surface needed for auth-driven lifecycle effects.
- *
- * App workspace bundles satisfy this structurally by exposing their primary
- * sync handle, local persistence handle, encryption coordinator, and optional
- * child sync inventory.
- */
-export type WorkspaceAuthTarget = {
-	sync: WorkspaceAuthSyncTarget;
-	idb: {
-		clearLocal(): Promise<unknown>;
-	};
-	encryption: {
-		applyKeys(keys: Session['encryptionKeys']): void;
-	};
-	getAuthSyncTargets?(): Iterable<WorkspaceAuthSyncTarget>;
-};
-
-/**
- * App-owned policy for destructive cleanup and signed-in side effects.
- *
- * The binding owns transition mechanics. The app decides how cleanup errors
- * are reported, what happens after cleanup succeeds, and what idempotent work
- * runs after a signed-in snapshot is applied.
- */
-export type WorkspaceAuthLifecycleOptions = {
+export type AuthWorkspaceScopeOptions = {
 	auth: AuthClient;
-	workspace: WorkspaceAuthTarget;
-	leavingUser: {
-		onCleanupError(error: unknown): void;
-		afterCleanup?(): void;
-	};
-	signedIn?: {
-		onSnapshot?(): void;
-	};
+	sync: AuthenticatedSyncLifecycle | null;
+	applyAuthSession(session: SignedInSession): void;
+	resetLocalClient(): Promise<void>;
 };
 
-type SignedInSnapshot = Extract<AuthSnapshot, { status: 'signedIn' }>;
-
-/**
- * Bind auth snapshots to a workspace bundle.
- *
- * Use this once in an app client module after constructing the app's auth and
- * workspace singletons. The binding owns shared transition mechanics: ignore
- * loading, bootstrap from the current auth snapshot, take sync offline for
- * signed-out snapshots, avoid destructive cold signed-out cleanup, clear local
- * persistence when leaving an applied user, apply encryption keys before
- * reconnect, and reconnect every auth-backed sync target when the token
- * changes.
- *
- * App code supplies product policy only: how cleanup errors are reported, what
- * happens after cleanup succeeds, and any idempotent signed-in snapshot work.
- *
- * @returns Unsubscribe function from the auth snapshot change listener.
- *
- * @example
- * ```ts
- * bindWorkspaceAuthLifecycle({
- *   auth,
- *   workspace: fuji,
- *   leavingUser: {
- *     afterCleanup: () => window.location.reload(),
- *     onCleanupError: reportCleanupError,
- *   },
- * });
- * ```
- */
-export function bindWorkspaceAuthLifecycle({
+export function bindAuthWorkspaceScope({
 	auth,
-	workspace,
-	leavingUser,
-	signedIn,
-}: WorkspaceAuthLifecycleOptions): () => void {
-	let activeUserId: string | null = null;
-	let activeToken: string | null = null;
+	sync,
+	applyAuthSession,
+	resetLocalClient,
+}: AuthWorkspaceScopeOptions): () => void {
+	let appliedSession: { userId: string; token: string | null } | null = null;
+	let pendingSnapshot: AuthSnapshot | null = null;
+	let isDraining = false;
+	let isDisposed = false;
+	let isTerminal = false;
 
-	function getSyncTargets() {
-		return new Set([
-			workspace.sync,
-			...(workspace.getAuthSyncTargets?.() ?? []),
-		]);
-	}
+	async function resetCurrentClient() {
+		sync?.pause();
+		isTerminal = true;
+		pendingSnapshot = null;
 
-	function applySignedIn(snapshot: SignedInSnapshot) {
-		workspace.encryption.applyKeys(snapshot.session.encryptionKeys);
-
-		if (activeToken !== snapshot.session.token) {
-			for (const sync of getSyncTargets()) sync.reconnect();
+		try {
+			await resetLocalClient();
+		} catch {
+			// resetLocalClient owns expected recovery. This catch only prevents
+			// an unexpected rejection from escaping the background drain.
 		}
-
-		activeUserId = snapshot.session.user.id;
-		activeToken = snapshot.session.token;
-		signedIn?.onSnapshot?.();
 	}
 
-	function clearLeavingUser() {
-		activeUserId = null;
-		activeToken = null;
-		return workspace.idb.clearLocal();
-	}
-
-	function apply(snapshot: AuthSnapshot) {
+	async function processSnapshot(snapshot: AuthSnapshot) {
 		if (snapshot.status === 'loading') return;
 
 		if (snapshot.status === 'signedOut') {
-			for (const sync of getSyncTargets()) sync.goOffline();
-
-			if (activeUserId !== null) {
-				void clearLeavingUser()
-					.then(() => leavingUser.afterCleanup?.())
-					.catch(leavingUser.onCleanupError);
+			if (appliedSession === null) {
+				sync?.pause();
+				return;
 			}
 
+			await resetCurrentClient();
 			return;
 		}
 
-		const sameUser = activeUserId === snapshot.session.user.id;
+		const { session } = snapshot;
+		const userId = session.user.id;
 
-		if (!sameUser && activeUserId !== null) {
-			for (const sync of getSyncTargets()) sync.goOffline();
-			void clearLeavingUser()
-				.then(() => {
-					applySignedIn(snapshot);
-					leavingUser.afterCleanup?.();
-				})
-				.catch(leavingUser.onCleanupError);
+		if (appliedSession !== null && appliedSession.userId !== userId) {
+			await resetCurrentClient();
 			return;
 		}
 
-		applySignedIn(snapshot);
+		const tokenChanged = appliedSession?.token !== session.token;
+		applyAuthSession(session);
+
+		if (tokenChanged) sync?.reconnect();
+
+		appliedSession = { userId, token: session.token };
 	}
 
-	apply(auth.snapshot);
-	return auth.onSnapshotChange(apply);
+	async function drain() {
+		if (isDraining) return;
+		isDraining = true;
+
+		try {
+			while (!isDisposed && !isTerminal && pendingSnapshot !== null) {
+				const snapshot = pendingSnapshot;
+				pendingSnapshot = null;
+				await processSnapshot(snapshot);
+			}
+		} finally {
+			isDraining = false;
+			if (!isDisposed && !isTerminal && pendingSnapshot !== null) void drain();
+		}
+	}
+
+	function schedule(snapshot: AuthSnapshot) {
+		if (isDisposed || isTerminal) return;
+		pendingSnapshot = snapshot;
+		void drain();
+	}
+
+	schedule(auth.snapshot);
+	const unsubscribe = auth.onSnapshotChange(schedule);
+
+	return () => {
+		isDisposed = true;
+		pendingSnapshot = null;
+		unsubscribe();
+	};
 }

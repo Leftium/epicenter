@@ -14,14 +14,14 @@ SvelteKit app (static adapter, SSR disabled) with three panels: a sidebar for fi
 
 ### Data model
 
-Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: just IDs, titles, tags, timestamps. Each entry's body lives in its own Y.Doc opened by a `createDisposableCache` keyed on the row's content guid. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
+Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: just IDs, titles, tags, timestamps. Each entry's body lives in its own Y.Doc opened by a `createBrowserDocumentCollection` keyed on the row's content guid. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
 
 - `entries` table: `id` (EntryId), `title`, `subtitle`, `type` (string[]), `tags` (string[]), `createdAt`, `updatedAt`, `_v`. Each entry's body is opened on demand from a per-row content-doc cache and bound to ProseMirror via `y-prosemirror`.
 - KV keys: `selectedEntryId`, `viewMode` (`'table' | 'timeline'`), `sidebarCollapsed`.
 
 ### Client wiring
 
-Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `bindWorkspaceAuthLifecycle(...)`, so encryption keys, local cleanup, and sync reconnects follow one transition path.
+Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `bindAuthWorkspaceScope(...)`, so encryption keys, local cleanup, and sync reconnects follow one transition path.
 
 ```ts
 export function openFuji() {
@@ -48,7 +48,7 @@ export function openFuji() {
   return {
     get id() { return ydoc.guid; },
     ydoc, tables, kv, awareness, encryption, idb, sync,
-    whenReady: idb.whenLoaded,
+    whenLoaded: idb.whenLoaded,
     [Symbol.dispose]() {
       ydoc.destroy();
     },
@@ -58,7 +58,7 @@ export function openFuji() {
 export const workspace = openFuji();
 ```
 
-`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. Auth state flows through `auth.snapshot` and `bindWorkspaceAuthLifecycle`; auth disposal is wired into `import.meta.hot.dispose` so HMR tears down listeners cleanly.
+`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `auth.snapshot` and `bindAuthWorkspaceScope` in `apps/fuji/src/lib/fuji/client.ts`, where the app composes sync pause, key application, reconnect, and local reset policy.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/client.ts`.
 

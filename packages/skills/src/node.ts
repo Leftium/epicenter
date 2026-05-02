@@ -5,7 +5,7 @@
  * browser entry, but with NO IndexedDB / BroadcastChannel attachments and WITH
  * `importFromDisk` / `exportToDisk` actions.
  *
- * Uses the same `'epicenter.skills'` guid as the browser entry, so data
+ * Uses the same `SKILLS_WORKSPACE_ID` guid as the browser entry, so data
  * authored on either side targets the same logical Y.Doc.
  *
  * @example
@@ -24,7 +24,6 @@ import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-	attachEncryption,
 	createDisposableCache,
 	defineMutation,
 	generateId,
@@ -36,15 +35,16 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import * as Y from 'yjs';
 import { parseSkillMd } from './parse.js';
 import { createReferenceContentDoc } from './reference-content-docs.js';
 import { serializeSkillMd } from './serialize.js';
 import { createSkillInstructionsDoc } from './skill-instructions-docs.js';
 import { createSkillsActions } from './skills-actions.js';
-import { referencesTable, type Skill, skillsTable } from './tables.js';
+import type { Skill } from './tables.js';
+import { openSkills } from './workspace.js';
 
 export type { Reference, Skill } from './tables.js';
+export { SKILLS_WORKSPACE_ID } from './constants.js';
 export { referencesTable, skillsTable } from './tables.js';
 
 const DirInput = Type.Object({ dir: Type.String() });
@@ -64,7 +64,7 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * bundle includes `importFromDisk` and `exportToDisk` actions alongside the
  * standard read actions.
  *
- * Uses guid `'epicenter.skills'`, the same guid as the browser entry, so
+ * Uses `SKILLS_WORKSPACE_ID`, the same guid as the browser entry, so
  * data parity across environments is preserved at the CRDT level.
  *
  * Note: in a hybrid browser+node process (e.g. Tauri), importing this AND
@@ -74,14 +74,8 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  */
 export const skillsDocument = createDisposableCache(
 	(id: string) => {
-		const ydoc = new Y.Doc({ guid: id, gc: false });
-
-		const encryption = attachEncryption(ydoc);
-		const tables = encryption.attachTables(ydoc, {
-			skills: skillsTable,
-			references: referencesTable,
-		});
-		const kv = encryption.attachKv(ydoc, {});
+		const doc = openSkills({ workspaceId: id });
+		const { tables } = doc;
 
 		const instructionsDocs = createDisposableCache((skillId: string) =>
 			createSkillInstructionsDoc({
@@ -295,18 +289,18 @@ export const skillsDocument = createDisposableCache(
 
 		return {
 			get id() {
-				return ydoc.guid;
+				return doc.ydoc.guid;
 			},
-			ydoc,
+			ydoc: doc.ydoc,
 			tables,
-			kv,
-			encryption,
+			kv: doc.kv,
+			encryption: doc.encryption,
 			instructionsDocs,
 			referenceDocs,
 			actions,
-			batch: (fn: () => void) => ydoc.transact(fn),
+			batch: doc.batch,
 			[Symbol.dispose]() {
-				ydoc.destroy();
+				doc[Symbol.dispose]();
 			},
 		};
 	},

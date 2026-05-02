@@ -5,8 +5,8 @@
  * Persistence is caller-owned via the `attachPersistence` callback: see
  * `createFileContentDoc` for the shape.
  *
- * Wire into a `createDisposableCache` at the workspace module scope for
- * refcount + grace.
+ * Wire into a cache at the runtime boundary. Browser apps use
+ * `createBrowserDocCache`; Node callers use `createDisposableCache`.
  */
 
 import type { Table } from '@epicenter/workspace';
@@ -18,6 +18,21 @@ import {
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { Skill } from './tables.js';
+
+export function skillInstructionsDocGuid({
+	workspaceId,
+	skillId,
+}: {
+	workspaceId: string;
+	skillId: string;
+}): string {
+	return docGuid({
+		workspaceId,
+		collection: 'skills',
+		rowId: skillId,
+		field: 'instructions',
+	});
+}
 
 export function createSkillInstructionsDoc({
 	skillId,
@@ -31,12 +46,7 @@ export function createSkillInstructionsDoc({
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	const ydoc = new Y.Doc({
-		guid: docGuid({
-			workspaceId,
-			collection: 'skills',
-			rowId: skillId,
-			field: 'instructions',
-		}),
+		guid: skillInstructionsDocGuid({ workspaceId, skillId }),
 		gc: false,
 	});
 	onLocalUpdate(ydoc, () =>

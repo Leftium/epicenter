@@ -1,6 +1,7 @@
-import { batch, tables, type Skill } from '@epicenter/skills';
+import type { Skill } from '@epicenter/skills';
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
+import { skills as skillsWorkspace } from '$lib/skills/client';
 
 /**
  * Reactive skills state singleton.
@@ -21,8 +22,8 @@ import { generateId } from '@epicenter/workspace';
  * ```
  */
 function createSkillsState() {
-	const skillsMap = fromTable(tables.skills);
-	const referencesMap = fromTable(tables.references);
+	const skillsMap = fromTable(skillsWorkspace.tables.skills);
+	const referencesMap = fromTable(skillsWorkspace.tables.references);
 
 	const skills = $derived(
 		[...skillsMap.values()]
@@ -63,7 +64,7 @@ function createSkillsState() {
 		/**
 		 * Set the active skill for the editor panel.
 		 *
-		 * Prefer this over raw assignment—gives a single greppable call site
+		 * Prefer this over raw assignment: gives a single greppable call site
 		 * for selection and a stable extension point for future side effects
 		 * (analytics, scroll-into-view, etc.).
 		 */
@@ -90,10 +91,10 @@ function createSkillsState() {
 		 */
 		createSkill(name: string) {
 			const id = generateId();
-			tables.skills.set({
+			skillsWorkspace.tables.skills.set({
 				id,
 				name,
-				description: 'TODO—describe when and why to use this skill.',
+				description: 'TODO: describe when and why to use this skill.',
 				license: undefined,
 				compatibility: undefined,
 				metadata: undefined,
@@ -117,7 +118,10 @@ function createSkillsState() {
 				Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
 			>,
 		) {
-			tables.skills.update(id, { ...updates, updatedAt: Date.now() });
+			skillsWorkspace.tables.skills.update(id, {
+				...updates,
+				updatedAt: Date.now(),
+			});
 		},
 
 		/**
@@ -125,14 +129,16 @@ function createSkillsState() {
 		 *
 		 * Uses `batch()` to collapse observer notifications.
 		 * If the deleted skill was selected, selects the next skill
-		 * alphabetically—or clears the selection if none remain.
+		 * alphabetically, or clears the selection if none remain.
 		 */
 		deleteSkill(id: string) {
-			batch(() => {
+			skillsWorkspace.batch(() => {
 				for (const ref of referencesMap.values()) {
-					if (ref.skillId === id) tables.references.delete(ref.id);
+					if (ref.skillId === id) {
+						skillsWorkspace.tables.references.delete(ref.id);
+					}
 				}
-				tables.skills.delete(id);
+				skillsWorkspace.tables.skills.delete(id);
 			});
 
 			if (selectedSkillId === id) {
@@ -148,7 +154,7 @@ function createSkillsState() {
 		 */
 		createReference(skillId: string, path: string) {
 			const id = generateId();
-			tables.references.set({
+			skillsWorkspace.tables.references.set({
 				id,
 				skillId,
 				path,
@@ -160,7 +166,7 @@ function createSkillsState() {
 
 		/** Remove a file reference by ID. */
 		deleteReference(id: string) {
-			tables.references.delete(id);
+			skillsWorkspace.tables.references.delete(id);
 		},
 	};
 }

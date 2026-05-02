@@ -5,8 +5,8 @@
  * own Y.Doc with `attachPlainText`. Persistence is caller-owned via the
  * `attachPersistence` callback: see `createFileContentDoc` for the shape.
  *
- * Wire into a `createDisposableCache` at the workspace module scope for
- * refcount + grace.
+ * Wire into a cache at the runtime boundary. Browser apps use
+ * `createBrowserDocCache`; Node callers use `createDisposableCache`.
  */
 
 import type { Table } from '@epicenter/workspace';
@@ -18,6 +18,21 @@ import {
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { Reference } from './tables.js';
+
+export function referenceContentDocGuid({
+	workspaceId,
+	referenceId,
+}: {
+	workspaceId: string;
+	referenceId: string;
+}): string {
+	return docGuid({
+		workspaceId,
+		collection: 'references',
+		rowId: referenceId,
+		field: 'content',
+	});
+}
 
 export function createReferenceContentDoc({
 	referenceId,
@@ -31,12 +46,7 @@ export function createReferenceContentDoc({
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	const ydoc = new Y.Doc({
-		guid: docGuid({
-			workspaceId,
-			collection: 'references',
-			rowId: referenceId,
-			field: 'content',
-		}),
+		guid: referenceContentDocGuid({ workspaceId, referenceId }),
 		gc: false,
 	});
 	onLocalUpdate(ydoc, () =>

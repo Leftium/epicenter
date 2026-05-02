@@ -217,28 +217,28 @@ Load these on demand based on what you're working on:
 When `isFoo(x)` is asking "is this the specific thing my factory returned," use a `Symbol` brand stamped at the factory, not a coincidental-property probe. Shape probes collide with look-alikes and rot as the type grows; the brand is unforgeable and survives normal object spreads.
 
 ```typescript
-// Smell — three coincidental properties stand in for identity.
-// Any object that happens to have ydoc + dispose + Symbol.dispose passes.
-function isDocumentHandle(value: unknown): value is DocumentHandle<Document> {
+// Smell: three coincidental properties stand in for identity.
+// Any object that happens to have ydoc + id + Symbol.dispose passes.
+function isWorkspaceHandle(value: unknown): value is WorkspaceHandle {
 	if (value == null || typeof value !== 'object') return false;
 	const record = value as Record<string | symbol, unknown>;
 	return (
 		'ydoc' in record &&
-		typeof record.dispose === 'function' &&
+		'id' in record &&
 		typeof record[Symbol.dispose] === 'function'
 	);
 }
 
-// Better — brand stamped by the factory, one check carries the intent.
-// Use `Symbol.for('<namespace>.<thing>')` — not `Symbol(...)` — so the brand
+// Better: brand stamped by the factory, one check carries the intent.
+// Use `Symbol.for('<namespace>.<thing>')`, not `Symbol(...)`, so the brand
 // survives module duplication (see "Cross-package brands" below).
-export const DOCUMENT_HANDLE = Symbol.for('epicenter.document-handle');
+export const WORKSPACE_HANDLE = Symbol.for('epicenter.workspace-handle');
 
-function isDocumentHandle(value: unknown): value is DocumentHandle<Document> {
+function isWorkspaceHandle(value: unknown): value is WorkspaceHandle {
 	return (
 		value != null &&
 		typeof value === 'object' &&
-		DOCUMENT_HANDLE in value
+		WORKSPACE_HANDLE in value
 	);
 }
 ```

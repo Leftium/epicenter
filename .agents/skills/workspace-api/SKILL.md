@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), createDocumentFactory, attach* primitives, and action composition. Use when the user mentions workspace, defineTable, defineKv, createDocumentFactory, attachTables, attachSync, attachIndexedDb, attachSqlite, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), createDisposableCache, attach* primitives, and action composition. Use when the user mentions workspace, defineTable, defineKv, createDisposableCache, attachTables, attachSync, attachIndexedDb, attachSqlite, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
 metadata:
   author: epicenter
   version: '6.0'
@@ -14,7 +14,7 @@ metadata:
 
 Type-safe schema definitions for tables and KV stores.
 
-> **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types. See `svelte` for reactive wrappers (`fromTable`, `fromKv`) and the **commit-on-blur pattern** — the preferred way to wire Svelte text inputs to workspace string fields without writing N transactions per keystroke. See `attach-primitive` for the full contract and invariants every `attach*` function must follow.
+> **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types. See `svelte` for reactive wrappers (`fromTable`, `fromKv`) and the **commit-on-blur pattern**, the preferred way to wire Svelte text inputs to workspace string fields without writing N transactions per keystroke. See `attach-primitive` for the full contract and invariants every `attach*` function must follow.
 
 ## When to Apply This Skill
 
@@ -22,7 +22,8 @@ Type-safe schema definitions for tables and KV stores.
 - Adding a new version to an existing table definition
 - Writing table migration functions
 - Reading, writing, or observing table/KV data
-- Composing a live document with `createDocumentFactory(builder)` + `attach*` primitives
+- Composing a live document with a direct builder plus `attach*` primitives
+- Adding `createDisposableCache(builder)` for per-row or otherwise fan-out documents
 - Attaching persistence (`attachIndexedDb`, `attachSqlite`), sync (`attachSync`), or materializers inline
 - Writing server-side Bun scripts with `connectWorkspace()`
 ## Tables
@@ -164,7 +165,7 @@ const newId = generateConversationId();  // Good
 
 ## Actions
 
-Actions wrap table operations as `defineMutation` (writes) or `defineQuery` (reads). Build them in a small factory that closes over `tables` and `batch`, then attach the result to the bundle returned from your `createDocumentFactory` builder.
+Actions wrap table operations as `defineMutation` (writes) or `defineQuery` (reads). Build them in a small factory that closes over `tables` and `batch`, then attach the result to the bundle returned from your workspace builder.
 
 ```typescript
 import { defineMutation, defineQuery } from '@epicenter/workspace';
@@ -190,7 +191,7 @@ export function createBlogActions({ tables, batch }) {
 	};
 }
 
-// Inside createDocumentFactory(...):
+// Inside openBlog() or a createDisposableCache(...) builder:
 //   const actions = createBlogActions({ tables, batch });
 //   return { id, ydoc, tables, actions, batch, /* ... */ };
 ```
@@ -220,10 +221,10 @@ decision trees, and the normalization boundaries), read
 
 ### JSDoc on Action Methods
 
-Every action method inside the `actions` object returned from the `createDocumentFactory` builder should have a JSDoc comment. The JSDoc and the `description` field serve **different audiences**:
+Every action method inside the `actions` object returned from the workspace builder should have a JSDoc comment. The JSDoc and the `description` field serve **different audiences**:
 
-- **`description`** — consumed by MCP servers, CLI help text, and OpenAPI specs. Keep it short and declarative ("Import skills from disk").
-- **JSDoc** — consumed by developers hovering in an IDE. Explain *why* the action exists as a separate operation, what non-obvious behavior it has, or what assumptions it makes.
+- **`description`**: consumed by MCP servers, CLI help text, and OpenAPI specs. Keep it short and declarative ("Import skills from disk").
+- **JSDoc**: consumed by developers hovering in an IDE. Explain *why* the action exists as a separate operation, what non-obvious behavior it has, or what assumptions it makes.
 
 ```typescript
 // ❌ Parrots the description
@@ -253,7 +254,7 @@ src/lib/
 │   ├── actions.ts                      ← Isomorphic action factory: createXActions({ tables, batch })
 │   └── index.ts                        ← Barrel: re-exports definition + actions only
 │
-└── client.ts                           ← Runtime singleton: createDocumentFactory(builder) composing
+└── client.ts                           ← Runtime singleton: openX() builder composing
                                            attachTables, attachIndexedDb/Sqlite, attachSync,
                                            attachEncryption, and runtime-specific actions
 ```
@@ -287,7 +288,7 @@ src/lib/
 1. **`definition.ts`** — Pure schema. `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
 2. **`actions.ts`** — Factory that takes `{ tables, batch }` and returns an action tree of `defineQuery`/`defineMutation`. Isomorphic — no browser/Node APIs.
 3. **`index.ts`** — Barrel that re-exports from `definition.ts` and `actions.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
-4. **`client.ts`** — Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Wraps `createDocumentFactory(builder)` where the builder composes runtime-specific attachments (IndexedDB vs SQLite, browser vs Node APIs) and assembles the full bundle (including runtime-specific actions). Exports the singleton via `.open(id)` as a named export (`export const workspace = xDoc.open('epicenter.x')`).
+4. **`client.ts`**: Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Exposes an `openX()` builder where runtime-specific attachments are composed (IndexedDB vs SQLite, browser vs Node APIs) and the full bundle is assembled, including runtime-specific actions. Singleton apps export the opened bundle directly (`export const workspace = openX()`). Per-row document caches use `createDisposableCache(builder)` beside that singleton.
 
 ### Import Convention
 
@@ -319,10 +320,10 @@ The barrel is 100% isomorphic, so this single subpath is safe for any consumer (
 
 ### Isomorphic vs Runtime-Specific Actions
 
-Isomorphic actions (table reads/writes, portable logic) belong in the exported `actions.ts` factory. Runtime-specific actions—whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands—live in the `client.ts` builder where the relevant attachments and APIs are in scope.
+Isomorphic actions (table reads/writes, portable logic) belong in the exported `actions.ts` factory. Runtime-specific actions, whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands, live in the `client.ts` builder where the relevant attachments and APIs are in scope.
 
 ```typescript
-// workspace/actions.ts — isomorphic actions (exported via barrel)
+// workspace/actions.ts: isomorphic actions (exported via barrel)
 export function createMyAppActions({ tables, batch }) {
   return {
     devices: {
@@ -336,9 +337,9 @@ export function createMyAppActions({ tables, batch }) {
   };
 }
 
-// src/lib/client.ts — browser-specific attachments + runtime actions
-const myApp = createDocumentFactory((id: string) => {
-  const ydoc = new Y.Doc({ guid: id });
+// src/lib/client.ts: browser-specific attachments + runtime actions
+function openMyApp() {
+  const ydoc = new Y.Doc({ guid: 'epicenter.myapp' });
   const tables = attachTables(ydoc, myAppTables);
   const idb = attachIndexedDb(ydoc);
   const sync = attachSync(ydoc, { url, waitFor: idb.whenLoaded });
@@ -359,10 +360,10 @@ const myApp = createDocumentFactory((id: string) => {
     },
   };
 
-  return { id, ydoc, tables, idb, sync, actions, batch, /* whenReady, … */ };
-});
+  return { ydoc, tables, idb, sync, actions, batch, /* whenReady, ... */ };
+}
 
-export const workspace = myApp.open('epicenter.myapp');
+export const workspace = openMyApp();
 ```
 
 ## Attachment Ordering
@@ -387,8 +388,8 @@ attachSync({ waitFor: idb.whenLoaded }) ────→ WebSocket opens → sync
 This ordering matters because sync only exchanges the delta between local state and the server. Without persistence loading first, every cold start downloads the full document.
 
 ```typescript
-// ✅ Correct — persistence loads first, sync waits for idb, exchanges delta only
-createDocumentFactory((id) => {
+// ✅ Correct: persistence loads first, sync waits for idb, exchanges delta only
+createDisposableCache((id) => {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, myTables);
   const sqlite = attachSqlite(ydoc, { filePath: '...' });
@@ -400,8 +401,8 @@ createDocumentFactory((id) => {
   return { id, ydoc, tables, sqlite, sync, /* ... */ };
 });
 
-// ❌ Wrong — sync starts before local state is loaded, downloads full document
-createDocumentFactory((id) => {
+// ❌ Wrong: sync starts before local state is loaded, downloads full document
+createDisposableCache((id) => {
   const ydoc = new Y.Doc({ guid: id });
   const sync = attachSync(ydoc, { url, getToken }); // no waitFor
   const sqlite = attachSqlite(ydoc, { filePath: '...' });
@@ -411,7 +412,7 @@ createDocumentFactory((id) => {
 
 ### `connectWorkspace` (CLI/Script Shortcut)
 
-For server-side Bun scripts, `connectWorkspace` from `@epicenter/cli` handles the unlock → sync chain automatically. It is **ephemeral by design — no local persistence**, so a script can coexist with a long-running `epicenter start` daemon without fighting over the same SQLite file:
+For server-side Bun scripts, `connectWorkspace` from `@epicenter/cli` handles the unlock to sync chain automatically. It is **ephemeral by design: no local persistence**, so a script can coexist with a long-running `epicenter start` daemon without fighting over the same SQLite file:
 
 ```typescript
 import { connectWorkspace } from '@epicenter/cli';
@@ -451,7 +452,7 @@ Code references:
 
 - `packages/workspace/src/document/define-table.ts`
 - `packages/workspace/src/document/define-kv.ts`
-- `packages/workspace/src/document/create-document-factory.ts`
+- `packages/workspace/src/cache/disposable-cache.ts`
 - `packages/workspace/src/document/attach-table.ts`
 - `packages/workspace/src/document/attach-kv.ts`
 - `packages/workspace/src/document/attach-sync.ts`

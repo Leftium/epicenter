@@ -51,7 +51,7 @@ What to include depends on the handoff type:
 
 **For debugging handoffs** (fixing broken behavior): include the error output, reproduction steps, what was already tried and why it didn't work. The recipient needs to pick up where you left off, not re-diagnose from scratch.
 
-**For all types**: never paraphrase when you can paste. "The workspace uses Yjs" is useless. The actual `createDocumentFactory((id) => { ... }).open(id)` call is useful.
+**For all types**: never paraphrase when you can paste. "The workspace uses Yjs" is useless. The actual `createDisposableCache((id) => { ... }).open(id)` call is useful.
 
 ```
 ## Context
@@ -169,13 +169,13 @@ and `Badge` from `@epicenter/ui/badge`. The page has 4 sections...
 
 The workspace setup code is:
 \`\`\`typescript
-const factory = createDocumentFactory((id: string) => {
+const cache = createDisposableCache((id: string) => {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, { files: filesTable });
   const idb = attachIndexedDb(ydoc);
   return { ydoc, tables, idb, whenReady: idb.whenLoaded, [Symbol.dispose]() { ydoc.destroy(); } };
 });
-export const ws = factory.open('opensidian');
+export const ws = cache.open('opensidian');
 \`\`\`
 
 MUST NOT: suppress TypeScript errors, delete existing tests to pass build.

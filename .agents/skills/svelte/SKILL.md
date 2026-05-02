@@ -139,7 +139,7 @@ Svelte's deep proxy can break handles whose methods rely on `this` being the ori
 
 ## Project-specific application
 
-In this codebase, the rule applies to any component calling `*Docs.open()` (Yjs doc handles from `createDocumentFactory`). Search: `$state<ReturnType<typeof .*\.open>`. Every hit is a candidate for the rule above.
+In this codebase, the rule applies to any component calling `*Docs.open()` (Yjs doc handles from `createDisposableCache`). Search: `$state<ReturnType<typeof .*\.open>`. Every hit is a candidate for the rule above.
 
 ## Related
 

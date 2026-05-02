@@ -1,6 +1,6 @@
 ---
 name: attach-primitive
-description: Contract and invariants for `attach*` composition primitives — the side-effectful building blocks composed inside `createDocumentFactory`. Also covers when to use `create*` (pure construction).
+description: Contract and invariants for `attach*` composition primitives, the side-effectful building blocks composed inside workspace builders. Also covers when to use `create*` (pure construction).
 ---
 
 # Attach Primitives
@@ -11,10 +11,10 @@ Every persistence, sync, materializer, and binding in `packages/workspace` (plus
 
 | Prefix     | Meaning                                                                                                                      |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `attach*`  | Side-effectful. Registers observers, destroy listeners, or subscription state. Return shape is free — fixed surface *or* chainable builder, both are `attach*`. |
-| `create*`  | Pure construction. No listeners, no subscriptions, no destroy registration at call time. Factory-of-factories qualifies (e.g. `createFileContentDocs` — returns a `createDocumentFactory` result; nothing attaches until `.open(id)` is called). |
+| `attach*`  | Side-effectful. Registers observers, destroy listeners, or subscription state. Return shape is free: fixed surface *or* chainable builder, both are `attach*`. |
+| `create*`  | Pure construction. No listeners, no subscriptions, no destroy registration at call time. Cache constructors qualify, e.g. `createFileContentDocs` returns a `createDisposableCache` result; nothing attaches until `.open(id)` is called. |
 
-Both return plain objects. The distinction is **what happens at call time**, not what the return value looks like. A chainable builder with `.table()/.kv()` that registers `table.observe(...)` is still `attach*` — chainability is a return-shape concern, orthogonal to naming.
+Both return plain objects. The distinction is **what happens at call time**, not what the return value looks like. A chainable builder with `.table()/.kv()` that registers `table.observe(...)` is still `attach*`; chainability is a return-shape concern, orthogonal to naming.
 
 ## The shape
 
@@ -46,11 +46,12 @@ attachMarkdownMaterializer(ydoc, { dir, waitFor })
   .table(tables.files, {
     filename: slugFilename('title'),
     // Most real tables store body content in a separate Y.Doc (via
-    // createDocumentFactory), so toMarkdown / fromMarkdown are typically
-    // bespoke callbacks — no sugar helper can abstract the async
+    // createDisposableCache), so toMarkdown / fromMarkdown are typically
+    // bespoke callbacks; no sugar helper can abstract the async
     // open/await/dispose cycle usefully.
     toMarkdown: async (row) => {
-      await using doc = await fileContentDocs.load(row.id);
+      using doc = fileContentDocs.open(row.id);
+      await doc.whenReady;
       return { frontmatter: { id: row.id, name: row.name }, body: doc.content.read() };
     },
   })
@@ -110,12 +111,12 @@ The method form says "use the encryption's attach-tables" directly. Preferred wh
    - `whenDisposed` — teardown settled (any subject with async cleanup)
    - `whenReady` — bundle-level aggregate only; not on individual attachments
 
-## Composition inside `createDocumentFactory`
+## Composition inside a workspace builder
 
 Primitives compose inside a build closure:
 
 ```ts
-const factory = createDocumentFactory((id: string) => {
+const cache = createDisposableCache((id: string) => {
   const ydoc       = new Y.Doc({ guid: id, gc: false });
   const encryption = attachEncryption(ydoc);
   const tables     = encryption.attachTables(ydoc, schema);     // coordinator method
@@ -139,14 +140,14 @@ const factory = createDocumentFactory((id: string) => {
   };
 });
 
-export const workspace = factory.open('my-app');
+export const workspace = cache.open('my-app');
 ```
 
 The bundle aggregates child `whenLoaded` / `whenConnected` / `whenChecked` into one `whenReady`, and child `whenDisposed` into one `whenDisposed`. Consumers only await the bundle-level barriers.
 
 ## The `waitFor` convention
 
-Primitives that perform a gated startup (sync, session-unlock) accept `waitFor?: Promise<unknown>` in their options. The primitive awaits it before taking its first action. This replaces the old extension-chain "init pipeline" — sequencing is now explicit at the call site, visible in one file, no hidden ordering.
+Primitives that perform a gated startup (sync, session-unlock) accept `waitFor?: Promise<unknown>` in their options. The primitive awaits it before taking its first action. This replaces the old extension-chain "init pipeline": sequencing is now explicit at the call site, visible in one file, with no hidden ordering.
 
 Use it whenever a primitive's startup must follow another's. Examples:
 - `attachSync` after local hydrate: `waitFor: idb.whenLoaded`
@@ -170,4 +171,4 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - `packages/workspace/src/document/attach-encryption.ts` — state-owning coordinator; exposes `attachTable` / `attachTables` / `attachKv` as methods.
 - `packages/cli/src/primitives/attach-session-unlock.ts` — non-ydoc subject (cross-package exception).
 - `packages/workspace/src/document/materializer/markdown/materializer.ts` — chainable builder with `.table()/.kv()`.
-- `apps/whispering/src/lib/client.ts` — full composition inside `createDocumentFactory`.
+- `apps/whispering/src/lib/client.ts`: full singleton composition.

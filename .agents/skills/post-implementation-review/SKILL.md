@@ -105,7 +105,7 @@ Name the layer that owns each important rule.
 Invariant                         Owner
 config shape is valid              config loader
 route names are unique             defineConfig validation
-document id is parsed once          document factory
+document id is parsed once          document cache
 runtime socket opens once           daemon startup
 cleanup policy is app-owned         injected lifecycle callback
 ```

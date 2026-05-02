@@ -4,7 +4,7 @@ The hard problem with local-first apps is synchronization. If each device has it
 
 `@epicenter/workspace` solves that by making Yjs the source of truth. Tables, KV entries, document content, and awareness all live in a `Y.Doc`; persistence, sync, and materializers hang off that core as attachment primitives. Write to the workspace, and everything else reacts.
 
-The public path is a small set of `attach*` primitives that you compose inline around `new Y.Doc`. For apps with many ephemeral Y.Docs (per-row content docs, per-room docs), `createDocumentFactory(build, { gcTime? })` gives you a refcounted cache on top of that same builder shape.
+The public path is a small set of `attach*` primitives that you compose inline around `new Y.Doc`. For apps with many ephemeral Y.Docs (per-row content docs, per-room docs), `createDisposableCache(build, { gcTime? })` gives you a refcounted cache on top of that same builder shape.
 
 ## Quick Start
 
@@ -92,7 +92,7 @@ That example uses the current public API end to end:
 - direct property access via `blog.tables.posts`
 - `set`, `get`, `update`, `delete`, `getAllValid`, and `observe`
 
-Singleton apps (one workspace per app) call a builder like `openBlog()` once at module scope. Multi-document use cases (per-row content docs, per-room ephemeral docs) wrap the same builder shape with `createDocumentFactory(...)` — that's where ref-counting and `gcTime` grace periods earn their keep. See [Per-row content documents](#per-row-content-documents) below.
+Singleton apps (one workspace per app) call a builder like `openBlog()` once at module scope. Multi-document use cases (per-row content docs, per-room ephemeral docs) wrap the same builder shape with `createDisposableCache(...)`. That is where refcounting and `gcTime` grace periods earn their keep. See [Per-row content documents](#per-row-content-documents) below.
 
 ## Prefix vocabulary
 
@@ -100,11 +100,11 @@ Every exported function in this package falls into one of three verbs. The prefi
 
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
-| `define*` | **None** — pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
-| `attach*` | **Mutates a Y.Doc** — binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle (non-idempotent — hold the reference) | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods) |
-| `create*` | **Pure construction** — no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition / factory | `createDocumentFactory` |
+| `define*` | **None**: pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
+| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods) |
+| `create*` | **Pure construction**: no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition or cache | `createDisposableCache` |
 
-`createDocumentFactory(build, opts?)` is the one top-level composition primitive. The user owns `new Y.Doc` and every `attach*` call inside the builder; the cache owns identity (keyed by id), refcount, and the `gcTime` grace period between last-dispose and teardown. `.open(id)` returns a disposable handle.
+`createDisposableCache(build, opts?)` is the refcounted cache primitive. The user owns `new Y.Doc` and every `attach*` call inside the builder; the cache owns identity keyed by id, refcounting, and the `gcTime` grace period between last dispose and teardown. `.open(id)` returns a disposable handle.
 
 ### Plaintext vs encrypted
 
@@ -198,7 +198,7 @@ That matters because conflict resolution only has to happen once. Yjs handles me
 
 ### Definitions are pure; builders are live
 
-`defineTable` and `defineKv` are pure. They do not create a `Y.Doc`, open a socket, or touch IndexedDB. The builder function you write — whether you call it directly for a singleton or hand it to `createDocumentFactory` for a refcounted cache — is the boundary where the live bundle appears.
+`defineTable` and `defineKv` are pure. They do not create a `Y.Doc`, open a socket, or touch IndexedDB. The builder function you write — whether you call it directly for a singleton or hand it to `createDisposableCache` for a refcounted cache — is the boundary where the live bundle appears.
 
 That split is not cosmetic. It lets you share definitions across modules, infer types once, and instantiate different bundles in different runtimes without rewriting the schema layer.
 
@@ -306,11 +306,11 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 
 1. Define tables and KV entries with `defineTable` and `defineKv`.
 2. Write a builder function that constructs `new Y.Doc({ guid })` and composes `attachTables` / `attachKv` / `attachIndexedDb` / `attachSync` / etc. inline, returning the bundle.
-3. For singleton apps: call the builder once at module scope. For per-row / per-room fan-out: wrap it with `createDocumentFactory(build, { gcTime? })` and call `.open(rowId)` per instance.
-4. `await bundle.whenReady` (or `handle.whenReady`) before reading persisted state. `whenReady` is the platform's readiness convention, declared as an optional typed field on `Document`. The cache itself does not read it, but `WorkspaceGate`, the CLI's `run` command, migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and every editor's `{#await}` block all gate on it. Expose it when the bundle has async initialization the caller should wait on, and compose it from whatever attachment signals make sense: `idb.whenLoaded` for a single barrier, or `Promise.all([persistence.whenLoaded, unlock.whenChecked, sync.whenConnected])` for a multi-step cascade. Because the field is typed `Promise<unknown>`, `Promise.all([...])` is assignable directly (no `.then(() => undefined)` tail required).
+3. For singleton apps: call the builder once at module scope. For per-row / per-room fan-out: wrap it with `createDisposableCache(build, { gcTime? })` and call `.open(rowId)` per instance.
+4. `await bundle.whenReady` (or `handle.whenReady`) before reading persisted state. `whenReady` is the platform's readiness convention: an optional `Promise<unknown>` field on the bundle you return. The cache itself does not read it, but `WorkspaceGate`, the CLI's `run` command, migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and every editor's `{#await}` block all gate on it. Expose it when the bundle has async initialization the caller should wait on, and compose it from whatever attachment signals make sense: `idb.whenLoaded` for a single barrier, or `Promise.all([persistence.whenLoaded, unlock.whenChecked, sync.whenConnected])` for a multi-step cascade. Because the field is typed `Promise<unknown>`, `Promise.all([...])` is assignable directly (no `.then(() => undefined)` tail required).
 5. Read and write through `bundle.tables`, `bundle.kv`, `bundle.awareness`, and (for per-row content docs) whatever you exposed in the returned bundle.
 6. Use `walkActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
-7. Dispose with `bundle[Symbol.dispose]()` (singleton) or `handle.dispose()` / `factory.close(id)` (factory) when you're done.
+7. Dispose with `bundle[Symbol.dispose]()` for singletons or `handle[Symbol.dispose]()` for cache handles when you're done. Use `cache[Symbol.dispose]()` to flush every cached entry.
 
 The architecture stays local-first: the workspace works offline, synchronizes opportunistically, and treats external systems as helpers around the document—not the other way around.
 
@@ -329,7 +329,7 @@ The ID becomes `ydoc.guid` for the workspace doc, so it is not a throwaway strin
 
 ### Workspaces
 
-A workspace is a `Y.Doc` plus whatever `attach*` handles you bound to it, packaged as a bundle with `{ ydoc, [Symbol.dispose], ... }`. A singleton app returns that bundle from a top-level function like `openBlog()`. A factory-hosted workspace returns the same shape from a `createDocumentFactory((id) => ...)` builder, and `.open(id)` mints a refcounted handle over it.
+A workspace is a `Y.Doc` plus whatever `attach*` handles you bound to it, packaged as a bundle with `{ ydoc, [Symbol.dispose], ... }`. A singleton app returns that bundle from a top-level function like `openBlog()`. A cache-hosted workspace returns the same shape from a `createDisposableCache((id) => ...)` builder, and `.open(id)` mints a refcounted handle over it.
 
 ### Yjs document
 
@@ -365,7 +365,7 @@ KV entries are for settings and scalar preferences. They are keyed by string and
 
 - Call the relevant `attach*` function (e.g. `attachIndexedDb`, `attachSync`, `attachSqlite`, `attachEncryption`) inside the builder and include the handle in the returned bundle.
 - Order matters only through lexical scope — later `attach*` calls see earlier handles directly.
-- For per-row content docs, write a **separate** `createDocumentFactory((rowId) => ...)` and `.open(rowId)` it from the main workspace's actions or components.
+- For per-row content docs, write a **separate** `createDisposableCache((rowId) => ...)` and `.open(rowId)` it from the main workspace's actions or components.
 
 ### Actions
 
@@ -379,7 +379,7 @@ Handlers close over `tables`, `kv`, and anything else the builder has in scope t
 
 ### Per-row content documents
 
-For apps where each row has its own rich-text / plain-text / timeline content (files, notes, skills, entries), use `createDocumentFactory((rowId) => ...)` keyed by the row id. The main workspace holds the metadata row; the content factory owns per-row content Y.Docs.
+For apps where each row has its own rich-text / plain-text / timeline content (files, notes, skills, entries), use `createDisposableCache((rowId) => ...)` keyed by the row id. The main workspace holds the metadata row; the content cache owns per-row content Y.Docs.
 
 Each `.open(rowId)` returns a refcounted handle. Multiple consumers (editor, actions, materializer) can share one underlying Y.Doc safely — the cache owns construction, refcounting, and `gcTime`-delayed teardown.
 
@@ -390,13 +390,13 @@ Each `.open(rowId)` returns a refcounted handle. Multiple consumers (editor, act
   let { fileId }: { fileId: string } = $props();
 
   const handle = $derived(fileContentDocs.open(fileId));
-  $effect(() => () => handle.dispose());
+  $effect(() => () => handle[Symbol.dispose]());
 </script>
 
 <Editor ytext={handle.content} />
 ```
 
-The `$derived` swaps handles when `fileId` changes; the `$effect` cleanup releases the old handle. Refcount→0 arms the factory's `gcTime` timer; a fresh open during the grace window cancels the pending teardown, so rapid navigation doesn't flap persistence or sync.
+The `$derived` swaps handles when `fileId` changes; the `$effect` cleanup releases the old handle. Refcount 0 arms the cache's `gcTime` timer; a fresh open during the grace window cancels the pending teardown, so rapid navigation doesn't flap persistence or sync.
 
 Reference implementations: `packages/filesystem/src/file-content-docs.ts`, `packages/skills/src/skill-instructions-docs.ts`, `apps/fuji/src/lib/entry-content-docs.ts`, `apps/honeycrisp/src/lib/note-body-docs.ts`.
 
@@ -536,7 +536,7 @@ workspace.awareness.setLocalField('cursor', { line: 12, column: 3 });
 
 ### Document-backed tables
 
-Per-row content (one Y.Doc per file/note/entry) is a `createDocumentFactory` call keyed by the row id. The main workspace holds the metadata row; the content factory owns the content Y.Doc. This is how the filesystem, skills, and fuji apps do it.
+Per-row content (one Y.Doc per file/note/entry) is a `createDisposableCache` call keyed by the row id. The main workspace holds the metadata row; the content cache owns the content Y.Doc. This is how the filesystem, skills, and fuji apps do it.
 
 ```typescript
 import { type } from 'arktype';
@@ -545,7 +545,7 @@ import {
 	attachIndexedDb,
 	attachPlainText,
 	attachTables,
-	createDocumentFactory,
+	createDisposableCache,
 	defineTable,
 	docGuid,
 	onLocalUpdate,
@@ -576,8 +576,8 @@ function openFilesWorkspace() {
 
 export const workspace = openFilesWorkspace();
 
-// Per-row content factory — one Y.Doc per file, keyed by file id.
-export const fileContentDocs = createDocumentFactory((fileId: string) => {
+// Per-row content cache: one Y.Doc per file, keyed by file id.
+export const fileContentDocs = createDisposableCache((fileId: string) => {
 	const ydoc = new Y.Doc({
 		guid: docGuid({
 			workspaceId: workspace.id,
@@ -612,7 +612,7 @@ async function documentExample() {
 		_v: 1,
 	});
 
-	// Load a content handle for the row. Refcounted — dispose when done.
+	// Load a content handle for the row. Refcounted, dispose when done.
 	using handle = fileContentDocs.open('file-1');
 	await handle.whenReady;
 
@@ -623,7 +623,7 @@ async function documentExample() {
 void documentExample;
 ```
 
-Opens are refcounted: multiple callers (editor, filesystem actions, materializer) can `.open(fileId)` concurrently and share one Y.Doc. The cache tears the bundle down `gcTime` after the last handle disposes (default `Infinity` — opt into a finite grace window when your app actually churns through rows).
+Opens are refcounted: multiple callers (editor, filesystem actions, materializer) can `.open(fileId)` concurrently and share one Y.Doc. The cache tears the bundle down `gcTime` after the last handle disposes. The default is `5_000` ms.
 
 ## Table Operations
 
@@ -1219,11 +1219,11 @@ if (isMutation(createAction)) {
 
 ## Package entry points
 
-All attachments, schema definitions, and `createDocumentFactory` live at the package root. The only subpath exports today are the materializers (which pull in heavier dependencies) and a few utility surfaces.
+All attachments, schema definitions, and `createDisposableCache` live at the package root. The only subpath exports today are the materializers (which pull in heavier dependencies) and a few utility surfaces.
 
 | Import path | What it exports | Public today |
 | --- | --- | --- |
-| `@epicenter/workspace` | `createDocumentFactory`, `defineTable`, `defineKv`, every `attach*` (tables, kv, indexeddb, sqlite, sync, broadcast-channel, awareness, encryption, rich-text, plain-text, timeline), action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
+| `@epicenter/workspace` | `createDisposableCache`, `defineTable`, `defineKv`, every `attach*` (tables, kv, indexeddb, sqlite, sync, broadcast-channel, awareness, encryption, rich-text, plain-text, timeline), action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
 | `@epicenter/workspace/document/materializer/markdown` | `attachMarkdownMaterializer`, serializers | Yes |
 | `@epicenter/workspace/document/materializer/sqlite` | `attachSqliteMaterializer`, `generateDdl`, types | Yes |
 | `@epicenter/workspace/ai` | `actionsToAiTools` (TanStack AI bindings) | Yes |
@@ -1235,7 +1235,7 @@ All attachments, schema definitions, and `createDocumentFactory` live at the pac
 
 Two composition shapes, one builder contract.
 
-**Singleton** — one workspace per app, instantiated at module scope:
+**Singleton**: one workspace per app, instantiated at module scope:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -1252,11 +1252,11 @@ Two composition shapes, one builder contract.
 └──────────────────────────────────────────────────────────┘
 ```
 
-**Factory** — many workspaces, refcounted by id:
+**Cache**: many workspaces, refcounted by id:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ export const fileContentDocs = createDocumentFactory(    │
+│ export const fileContentDocs = createDisposableCache(    │
 │   (fileId: string) => {                                  │
 │     const ydoc = new Y.Doc({ guid: docGuid({ ... }) });  │
 │     const content = attachPlainText(ydoc, 'content');    │
@@ -1265,7 +1265,7 @@ Two composition shapes, one builder contract.
 │              whenReady: idb.whenLoaded,                   │
 │              [Symbol.dispose]() { ydoc.destroy(); } };   │
 │   },                                                      │
-│   { gcTime: 30_000 },                                    │
+│   { gcTime: 5_000 },                                     │
 │ );                                                        │
 │                                                           │
 │ using handle = fileContentDocs.open('file-1'); // refs++ │
@@ -1273,7 +1273,7 @@ Two composition shapes, one builder contract.
 └──────────────────────────────────────────────────────────┘
 ```
 
-The builder shape is identical. The factory adds: `.open(id)` returns a refcounted handle, `handle.dispose()` decrements, refcount→0 arms `gcTime`, and `factory.close(id)` / `factory.closeAll()` force teardown.
+The builder shape is identical. The cache adds: `.open(id)` returns a refcounted handle, `handle[Symbol.dispose]()` decrements, refcount 0 arms `gcTime`, and `cache[Symbol.dispose]()` flushes every cached entry.
 
 ### `batch(fn)`
 
@@ -1292,29 +1292,28 @@ Yjs transactions do not roll back on throw. They batch notifications; they are n
 
 | API | What it means |
 | --- | --- |
-| `bundle.whenReady` / `handle.whenReady` | Builder convention — typically `idb.whenLoaded` (or `Promise.all([...])`) |
+| `bundle.whenReady` / `handle.whenReady` | Builder convention, typically `idb.whenLoaded` (or `Promise.all([...])`) |
 | `bundle.idb.clearLocal()` (or `bundle.sqlite.clearLocal()`) | Wipes persisted local state for that attachment |
-| `bundle[Symbol.dispose]()` | Singleton teardown — your builder calls `ydoc.destroy()` |
-| `handle.dispose()` / `handle[Symbol.dispose]()` | Factory: decrements refcount; last dispose arms `gcTime` |
-| `factory.close(id)` | Force-closes the bundle **now**, even if handles are outstanding |
-| `factory.closeAll()` | Force-closes every open document in this factory |
+| `bundle[Symbol.dispose]()` | Singleton teardown: your builder calls `ydoc.destroy()` |
+| `handle[Symbol.dispose]()` | Cache handle: decrements refcount; last dispose arms `gcTime` |
+| `cache[Symbol.dispose]()` | Flushes every cached entry immediately |
 
-`dispose()` preserves data — it releases the handle. To wipe persisted local state, call `clearLocal()` on the persistence attachment (`bundle.idb` or `bundle.sqlite`) directly.
+Disposal preserves data: it releases the handle. To wipe persisted local state, call `clearLocal()` on the persistence attachment (`bundle.idb` or `bundle.sqlite`) directly.
 
-### Cleanup lifecycle (factory)
+### Cleanup lifecycle (cache)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ handle.dispose() called (or `using` block exits)           │
+│ handle[Symbol.dispose]() called (or `using` block exits)   │
 │    refcount--                                              │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ refcount === 0 → arm gcTime timer                          │
+│ refcount === 0: arm gcTime timer                           │
 │    • fresh open() during grace window cancels teardown     │
 │    • gcTime: 0 tears down immediately                      │
-│    • gcTime: Infinity (default) never auto-evicts          │
+│    • gcTime: Infinity never auto-evicts                    │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
@@ -1327,10 +1326,10 @@ Yjs transactions do not roll back on throw. They batch notifications; they are n
 └─────────────────────────────────────────────────────────────┘
 ```
 
-`factory.close(id)` / `factory.closeAll()` are synchronous and do **not** wait for async attachment cleanup (IDB `db.close()`, WebSocket onclose) to settle. If a caller needs a real teardown barrier (close-then-reopen in tests, process exit), await a specific attachment-level field:
+`cache[Symbol.dispose]()` is synchronous and does **not** wait for async attachment cleanup (IDB `db.close()`, WebSocket onclose) to settle. If a caller needs a real teardown barrier (close-then-reopen in tests, process exit), await a specific attachment-level field:
 
 ```ts
-factory.close('abc');
+cache[Symbol.dispose]();
 await handle.idb.whenDisposed;
 ```
 
@@ -1362,12 +1361,12 @@ import { defineKv, defineTable } from '@epicenter/workspace';
 ### Document creation
 
 ```typescript
-import { createDocumentFactory } from '@epicenter/workspace';
+import { createDisposableCache } from '@epicenter/workspace';
 ```
 
-`createDocumentFactory(build, { gcTime? })` returns a refcounted factory. `.open(id)` mints a live handle that prototype-chains to the bundle your builder returned — so `ydoc`, `tables`, `kv`, `awareness`, `sync`, `actions`, `batch`, etc. are all things you explicitly put in the bundle.
+`createDisposableCache(build, { gcTime? })` returns a refcounted cache. `.open(id)` mints a live handle by shallow-spreading the bundle your builder returned, so `ydoc`, `tables`, `kv`, `awareness`, `sync`, `actions`, `batch`, etc. are all things you explicitly put in the bundle.
 
-For singleton apps, skip the factory entirely and call your builder function once at module scope.
+For singleton apps, skip the cache entirely and call your builder function once at module scope.
 
 ### Typical bundle properties
 
@@ -1388,13 +1387,13 @@ Everything below is a *convention* — the builder is free to expose more or les
 
 ### Document content attachments
 
-Per-row content is just another `attach*` call inside a `createDocumentFactory` builder. Pick the attachment that matches the content shape:
+Per-row content is just another `attach*` call inside a `createDisposableCache` builder. Pick the attachment that matches the content shape:
 
 - `attachPlainText(ydoc, name)` — binds a `Y.Text`. Editor gets `bundle.content` as `Y.Text`.
 - `attachRichText(ydoc, name)` — binds a `Y.XmlFragment` for prosemirror / tiptap / yrs-xml editors.
 - `attachTimeline(ydoc)` — a polymorphic timeline that can project as text, rich text, or a sheet. Exposes `read() / write(text) / appendText(text) / asText() / asRichText() / asSheet() / currentType / observe(...) / restoreFromSnapshot(binary)`.
 
-The factory caches these by `rowId`, so multiple consumers share one Y.Doc. Use `factory.open(id) / .close(id) / .closeAll()` to manage lifecycle.
+The cache stores these by `rowId`, so multiple consumers share one Y.Doc. Use `cache.open(id)` and `handle[Symbol.dispose]()` to manage lifecycle.
 
 ### Local-update filter
 

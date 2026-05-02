@@ -2,12 +2,12 @@
  * Per-file content Y.Doc builder. Pure: takes a `fileId` plus all the deps
  * the construction needs and returns a Disposable bundle. The builder owns
  * Y.Doc construction + timeline attachment + `updatedAt` writeback;
- * persistence is caller-owned via the `attachPersistence` callback —
+ * persistence is caller-owned via the `attachPersistence` callback:
  *
  *   // browser
  *   attachPersistence: (ydoc) => attachIndexedDb(ydoc),
  *
- *   // desktop / CLI — caller closes over a directory
+ *   // desktop / CLI: caller closes over a directory
  *   attachPersistence: (ydoc) => attachSqlite(ydoc, {
  *     filePath: join(contentDir, `${ydoc.guid}.db`),
  *   }),
@@ -18,8 +18,8 @@
  * `whenReady`, `whenDisposed` is available on the persistence handle for
  * teardown barriers.
  *
- * Wire into a `createDisposableCache` at the workspace module scope (see
- * `apps/opensidian/src/lib/client.svelte.ts`) for refcount + grace.
+ * Wire into a browser document family or `createDisposableCache` at the
+ * workspace module scope for refcount + grace.
  */
 
 import type { DisposableCache, Table } from '@epicenter/workspace';
@@ -41,6 +41,21 @@ export type FileContentDoc = {
 	[Symbol.dispose](): void;
 };
 
+export function fileContentDocGuid({
+	workspaceId,
+	fileId,
+}: {
+	workspaceId: string;
+	fileId: FileId;
+}): string {
+	return docGuid({
+		workspaceId,
+		collection: 'files',
+		rowId: fileId,
+		field: 'content',
+	});
+}
+
 /**
  * Cross-package alias for the cache that holds opened FileContentDoc
  * handles. Exported so consumers (the filesystem ops layer, sqlite-index
@@ -61,12 +76,7 @@ export function createFileContentDoc({
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }): FileContentDoc {
 	const ydoc = new Y.Doc({
-		guid: docGuid({
-			workspaceId,
-			collection: 'files',
-			rowId: fileId,
-			field: 'content',
-		}),
+		guid: fileContentDocGuid({ workspaceId, fileId }),
 		gc: false,
 	});
 	onLocalUpdate(ydoc, () =>

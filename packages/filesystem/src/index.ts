@@ -10,6 +10,7 @@ export {
 // File content documents
 export {
 	createFileContentDoc,
+	fileContentDocGuid,
 	type FileContentDoc,
 	type FileContentDocs,
 } from './file-content-docs.js';

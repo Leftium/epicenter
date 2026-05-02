@@ -20,10 +20,7 @@ import { pingDaemon } from './client.js';
 import type { DaemonLease } from './lease.js';
 import { validateDaemonRouteNames } from './route-validation.js';
 import { unlinkSocketFile } from './runtime-files.js';
-import {
-	StartupError,
-	type StartupError as StartupErrorType,
-} from './startup-errors.js';
+import { StartupError } from './startup-errors.js';
 import type { StartedDaemonRoute } from './types.js';
 import { bindOrRecover } from './unix-socket.js';
 
@@ -56,15 +53,13 @@ export async function startDaemonServer({
 	lease,
 	routes,
 	triggerShutdown,
-}: DaemonServerOptions): Promise<Result<DaemonServer, StartupErrorType>> {
+}: DaemonServerOptions): Promise<Result<DaemonServer, StartupError>> {
 	const { projectDir, socketPath } = lease;
 	const routeIssue = validateDaemonRouteNames(
 		routes.map((entry) => entry.route),
 	);
 	if (routeIssue !== null) {
-		return routeIssue.reason === 'duplicate'
-			? StartupError.DuplicateRoute({ route: routeIssue.route })
-			: StartupError.InvalidRoute({ route: routeIssue.route });
+		return StartupError.RouteNameRejected(routeIssue);
 	}
 
 	const app = buildDaemonApp([...routes], triggerShutdown);

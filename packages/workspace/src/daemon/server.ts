@@ -15,15 +15,14 @@
 import { Ok, type Result } from 'wellcrafted/result';
 
 import { buildDaemonApp } from './app.js';
+import { bestEffortAsync } from './best-effort.js';
 import { pingDaemon } from './client.js';
 import type { DaemonLease } from './lease.js';
 import { validateDaemonRouteNames } from './route-validation.js';
+import { unlinkSocketFile } from './runtime-files.js';
+import type { StartupError } from './startup-errors.js';
 import type { StartedDaemonRoute } from './types.js';
-import {
-	bindOrRecover,
-	type StartupError,
-	unlinkSocketFile,
-} from './unix-socket.js';
+import { bindOrRecover } from './unix-socket.js';
 
 export type DaemonServerOptions = {
 	/** Already-claimed project daemon lease. */
@@ -84,9 +83,7 @@ export async function startDaemonServer({
 		async close() {
 			if (isClosed) return;
 			isClosed = true;
-			await server.stop(true).catch(() => {
-				// best-effort
-			});
+			await bestEffortAsync(() => server.stop(true));
 			unlinkSocketFile(socketPath);
 		},
 	});

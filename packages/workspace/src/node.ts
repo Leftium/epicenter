@@ -51,11 +51,13 @@ export {
 	type RunResponse,
 	type RunSyncStatus,
 } from './daemon/run-errors.js';
+export { sweepDaemonRuntimeFiles } from './daemon/runtime-files.js';
 export {
 	type DaemonServer,
 	type DaemonServerOptions,
 	startDaemonServer,
 } from './daemon/server.js';
+export { StartupError } from './daemon/startup-errors.js';
 export type {
 	DaemonRouteContext,
 	DaemonRouteDefinition,
@@ -63,7 +65,6 @@ export type {
 	EpicenterConfig,
 	StartedDaemonRoute,
 } from './daemon/types.js';
-export { StartupError, unlinkSocketFile } from './daemon/unix-socket.js';
 export {
 	attachMarkdown,
 	type MarkdownShape,

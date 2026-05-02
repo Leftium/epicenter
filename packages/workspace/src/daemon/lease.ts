@@ -14,14 +14,15 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { Ok, type Result, trySync } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
+import { bestEffortSync } from './best-effort.js';
 import { readMetadata } from './metadata.js';
 import { leasePathFor, socketPathFor } from './paths.js';
 import {
 	StartupError,
 	type StartupError as StartupErrorType,
-} from './unix-socket.js';
+} from './startup-errors.js';
 
 export type DaemonLease = {
 	/** Filesystem-resolved absolute path that scopes this daemon. */
@@ -77,11 +78,4 @@ function isSqliteBusy(cause: unknown): boolean {
 	return (
 		cause instanceof Error && 'code' in cause && cause.code === 'SQLITE_BUSY'
 	);
-}
-
-function bestEffortSync(action: () => void): void {
-	void trySync({
-		try: action,
-		catch: () => Ok(undefined),
-	});
 }

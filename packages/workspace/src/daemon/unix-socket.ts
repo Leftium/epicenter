@@ -4,25 +4,25 @@
  *
  * - Parent directory `mkdirSync` (recursive) with mode `0700`.
  * - Socket file `chmod 0600` immediately after `Bun.serve` returns.
- * - `Bun.serve.stop()` auto-unlinks the socket file on graceful shutdown.
- *   {@link unlinkSocketFile} is for orphan-sweep paths only.
+ * - `Bun.serve.stop()` auto-unlinks the socket file on graceful shutdown;
+ *   `runtime-files.ts` owns manual orphan-sweep helpers.
  *
  * Wire format and security model are deliberately internal; see
  * `specs/20260426T235000-cli-up-long-lived-peer.md` § "IPC wire protocol"
  * and § "Security model". The CLI is the only sanctioned client.
  */
 
-import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
-import { Ok, type Result, trySync } from 'wellcrafted/result';
+import { type Result, trySync } from 'wellcrafted/result';
 
-import { readMetadata, unlinkMetadata } from './metadata.js';
+import { readMetadata } from './metadata.js';
+import { sweepDaemonRuntimeFiles } from './runtime-files.js';
+import {
+	StartupError,
+	type StartupError as StartupErrorType,
+} from './startup-errors.js';
 
 export type BindUnixSocketOptions = {
 	socketPath: string;
@@ -38,34 +38,6 @@ export type BindOrRecoverOptions = BindUnixSocketOptions & {
 		timeoutMs?: number,
 	) => Promise<boolean>;
 };
-
-/**
- * Tagged-error variants for daemon startup. `bindOrRecover` returns one of
- * these on failure; the `up` handler renders `error.message` to stderr and
- * exits 1.
- *
- * - `AlreadyRunning`: another daemon owns this project lease or answers ping.
- * - `LeaseFailed`: the SQLite lease could not be opened or locked.
- * - `BindFailed`: `Bun.serve` raised on an unrecoverable bind error
- *   (filesystem permission, missing parent dir we couldn't `mkdir`, etc.).
- *   Reserved for genuinely-unexpected failures; the recovery branch
- *   (orphan sweep + retry) handles the common stale-socket case.
- */
-export const StartupError = defineErrors({
-	AlreadyRunning: ({ pid }: { pid?: number }) => ({
-		message: `daemon already running${pid !== undefined ? ` (pid=${pid})` : ''}`,
-		pid,
-	}),
-	LeaseFailed: ({ cause }: { cause: unknown }) => ({
-		message: `daemon lease failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	BindFailed: ({ cause }: { cause: unknown }) => ({
-		message: `bind failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-export type StartupError = InferErrors<typeof StartupError>;
 
 /**
  * Bind `fetch` to a unix socket at `socketPath`. Returns the Bun
@@ -110,7 +82,9 @@ export async function bindOrRecover({
 	projectDir,
 	fetch,
 	isSocketResponsive,
-}: BindOrRecoverOptions): Promise<Result<Bun.Server<undefined>, StartupError>> {
+}: BindOrRecoverOptions): Promise<
+	Result<Bun.Server<undefined>, StartupErrorType>
+> {
 	if (!existsSync(socketPath)) {
 		return trySync({
 			try: () => bindUnixSocket({ socketPath, fetch }),
@@ -124,22 +98,9 @@ export async function bindOrRecover({
 		});
 	}
 
-	unlinkSocketFile(socketPath);
-	unlinkMetadata(projectDir);
+	sweepDaemonRuntimeFiles(projectDir);
 	return trySync({
 		try: () => bindUnixSocket({ socketPath, fetch }),
 		catch: (cause) => StartupError.BindFailed({ cause }),
-	});
-}
-
-/**
- * Best-effort socket-file cleanup. `Bun.serve.stop()` already unlinks on
- * graceful shutdown; this is the manual sweep for orphan-detection paths
- * (the file may have been left behind by a crashed previous daemon).
- */
-export function unlinkSocketFile(socketPath: string): void {
-	void trySync({
-		try: () => unlinkSync(socketPath),
-		catch: () => Ok(undefined),
 	});
 }

@@ -6,14 +6,14 @@
  * a real socket server.
  */
 
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
-	afterEach,
-	beforeEach,
-	describe,
-	expect,
-	test,
-} from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -72,8 +72,10 @@ describe('runPs', () => {
 				cliVersion: '0.0.0',
 				configMtime: 0,
 			});
+			writeFileSync(socketPathFor(deadDir), '');
 
 			expect(existsSync(metadataPathFor(deadDir))).toBe(true);
+			expect(existsSync(socketPathFor(deadDir))).toBe(true);
 
 			const rows = await runPs({ pingDaemon: async () => true });
 
@@ -83,6 +85,7 @@ describe('runPs', () => {
 
 			// Orphan was swept.
 			expect(existsSync(metadataPathFor(deadDir))).toBe(false);
+			expect(existsSync(socketPathFor(deadDir))).toBe(false);
 			// Alive metadata still present.
 			expect(existsSync(metadataPathFor(aliveDir))).toBe(true);
 		} finally {
@@ -101,10 +104,11 @@ describe('runPs', () => {
 				cliVersion: '0.0.0',
 				configMtime: 0,
 			});
+			writeFileSync(socketPathFor(dir), '');
 			const rows = await runPs({ pingDaemon: async () => false });
 			expect(rows).toEqual([]);
 			expect(existsSync(metadataPathFor(dir))).toBe(false);
-			void socketPathFor;
+			expect(existsSync(socketPathFor(dir))).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

@@ -22,7 +22,8 @@ import { Hono } from 'hono';
 
 import { writeMetadata } from './metadata';
 import { metadataPathFor, socketPathFor } from './paths';
-import { bindOrRecover, bindUnixSocket, unlinkSocketFile } from './unix-socket';
+import { unlinkSocketFile } from './runtime-files';
+import { bindOrRecover, bindUnixSocket } from './unix-socket';
 
 let socketPath: string;
 let servers: Bun.Server<undefined>[] = [];

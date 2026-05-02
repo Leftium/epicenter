@@ -23,12 +23,13 @@ import {
 	claimDaemonLease,
 	type DaemonMetadata,
 	type DaemonServer,
+	StartupError,
 	type StartupError as StartupErrorType,
 	startDaemonServer,
 	unlinkMetadata,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Ok, type Result, trySync } from 'wellcrafted/result';
 /**
  * Read once at module load. Bun resolves the JSON import relative to this
  * file at build/run time, so no runtime fs work happens per `up` invocation.
@@ -169,29 +170,26 @@ export async function runUp(
 		return startResult;
 	}
 	runtimes = startResult.data;
-	try {
-		const serverResult = await startDaemonServer({
-			lease,
-			routes: runtimes,
-			triggerShutdown: () => void teardown(),
-		});
-		if (serverResult.error) {
-			await teardown();
-			return serverResult;
-		}
-		daemonServer = serverResult.data;
-	} catch (cause) {
+	const serverResult = await startDaemonServer({
+		lease,
+		routes: runtimes,
+		triggerShutdown: () => void teardown(),
+	});
+	if (serverResult.error) {
 		await teardown();
-		throw cause;
+		return serverResult;
 	}
+	daemonServer = serverResult.data;
 
-	try {
-		writeMetadata(projectDir, metadata);
-		metadataWritten = true;
-	} catch (cause) {
+	const metadataResult = trySync({
+		try: () => writeMetadata(projectDir, metadata),
+		catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
+	});
+	if (metadataResult.error) {
 		await teardown();
-		throw cause;
+		return metadataResult;
 	}
+	metadataWritten = true;
 
 	return Ok({
 		runtimes,

@@ -10,6 +10,8 @@ import {
  * - `AlreadyRunning`: another daemon owns this project lease or answers ping.
  * - `LeaseFailed`: the SQLite lease could not be opened or locked.
  * - `BindFailed`: `Bun.serve` raised on an unrecoverable bind error.
+ * - route validation errors: embedded callers passed invalid route names.
+ * - `MetadataWriteFailed`: startup could not publish its metadata sidecar.
  */
 export const StartupError = defineErrors({
 	AlreadyRunning: ({ pid }: { pid?: number }) => ({
@@ -22,6 +24,18 @@ export const StartupError = defineErrors({
 	}),
 	BindFailed: ({ cause }: { cause: unknown }) => ({
 		message: `bind failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	DuplicateRoute: ({ route }: { route: string }) => ({
+		message: `duplicate daemon route '${route}'`,
+		route,
+	}),
+	InvalidRoute: ({ route }: { route: string }) => ({
+		message: `invalid daemon route '${route}'`,
+		route,
+	}),
+	MetadataWriteFailed: ({ cause }: { cause: unknown }) => ({
+		message: `daemon metadata write failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });

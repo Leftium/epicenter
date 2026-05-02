@@ -205,6 +205,27 @@ describe('runUp: failure cleanup', () => {
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
 	});
+
+	test('returns MetadataWriteFailed and tears down when metadata path is blocked', async () => {
+		const workspace = makeFakeWorkspace();
+		const config = makeFakeConfig(workspace);
+		mkdirSync(metadataPathFor(workDir));
+
+		const { error } = await runUp(
+			{
+				projectDir: workDir,
+				quiet: true,
+			},
+			{
+				loadDaemonConfig: async () => Ok(config),
+			},
+		);
+
+		expect(error?.name).toBe('MetadataWriteFailed');
+		expect(existsSync(socketPathFor(workDir))).toBe(false);
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
 });
 
 describe('runUp: already running', () => {

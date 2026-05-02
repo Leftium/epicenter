@@ -88,33 +88,39 @@ describe('startDaemonServer', () => {
 		}
 	});
 
-	test('rejects duplicate routes from embedded callers', async () => {
+	test('returns DuplicateRoute before binding from embedded callers', async () => {
 		const lease = claimTestLease();
 		try {
-			await expect(
-				startDaemonServer({
-					lease,
-					routes: [
-						{ route: 'demo', runtime: {} as never },
-						{ route: 'demo', runtime: {} as never },
-					],
-				}),
-			).rejects.toThrow("duplicate daemon route 'demo'");
+			const result = await startDaemonServer({
+				lease,
+				routes: [
+					{ route: 'demo', runtime: {} as never },
+					{ route: 'demo', runtime: {} as never },
+				],
+			});
+			expect(result.data).toBeNull();
+			expect(result.error).toMatchObject({
+				name: 'DuplicateRoute',
+				route: 'demo',
+			});
 			expect(existsSync(lease.socketPath)).toBe(false);
 		} finally {
 			lease.release();
 		}
 	});
 
-	test('rejects invalid routes from embedded callers', async () => {
+	test('returns InvalidRoute before binding from embedded callers', async () => {
 		const lease = claimTestLease();
 		try {
-			await expect(
-				startDaemonServer({
-					lease,
-					routes: [{ route: 'bad.route', runtime: {} as never }],
-				}),
-			).rejects.toThrow("invalid daemon route 'bad.route'");
+			const result = await startDaemonServer({
+				lease,
+				routes: [{ route: 'bad.route', runtime: {} as never }],
+			});
+			expect(result.data).toBeNull();
+			expect(result.error).toMatchObject({
+				name: 'InvalidRoute',
+				route: 'bad.route',
+			});
 			expect(existsSync(lease.socketPath)).toBe(false);
 		} finally {
 			lease.release();

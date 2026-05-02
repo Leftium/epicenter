@@ -36,7 +36,7 @@ import {
 	writeMetadata,
 } from '@epicenter/workspace/node';
 import { Hono } from 'hono';
-import { Ok } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import type { LoadedDaemonConfig } from '../load-config';
 import { runUp } from './up';
 
@@ -48,6 +48,12 @@ let homeRoot: string;
 function servePingDaemon(socketPath: string): Bun.Server<undefined> {
 	const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
 	return Bun.serve({ unix: socketPath, fetch: app.fetch });
+}
+
+function expectOk<T>(result: Result<T, unknown>): T {
+	expect(result.error).toBeNull();
+	if (result.error !== null) throw result.error;
+	return result.data as T;
 }
 
 let originalHome: string | undefined;
@@ -123,32 +129,34 @@ describe('runUp: happy path', () => {
 		const workspace = makeFakeWorkspace();
 		const config = makeFakeConfig(workspace);
 
-		const { data: handle, error } = await runUp(
-			{
-				projectDir: workDir,
-				quiet: true,
-			},
-			{
-				loadDaemonConfig: async () => Ok(config),
-			},
+		const handle = expectOk(
+			await runUp(
+				{
+					projectDir: workDir,
+					quiet: true,
+				},
+				{
+					loadDaemonConfig: async () => Ok(config),
+				},
+			),
 		);
-		expect(error).toBeNull();
-		if (error) throw new Error('runUp failed unexpectedly');
+		try {
+			// Metadata was written.
+			expect(existsSync(metadataPathFor(workDir))).toBe(true);
+			expect(handle.metadata.pid).toBe(process.pid);
+			expect(handle.runtimes).toHaveLength(1);
+			expect(handle.runtimes[0]?.route).toBe('default');
 
-		// Metadata was written.
-		expect(existsSync(metadataPathFor(workDir))).toBe(true);
-		expect(handle.metadata.pid).toBe(process.pid);
-		expect(handle.runtimes).toHaveLength(1);
-		expect(handle.runtimes[0]?.route).toBe('default');
-
-		// Socket is bound; ping it via a fresh connect using the real client.
-		const sockPath = socketPathFor(workDir);
-		expect(existsSync(sockPath)).toBe(true);
-		const ok = await pingDaemon(sockPath, 1000);
-		expect(ok).toBe(true);
-
-		await handle.teardown();
+			// Socket is bound; ping it via a fresh connect using the real client.
+			const sockPath = socketPathFor(workDir);
+			expect(existsSync(sockPath)).toBe(true);
+			const ok = await pingDaemon(sockPath, 1000);
+			expect(ok).toBe(true);
+		} finally {
+			await handle.teardown();
+		}
 		// Cleanup: metadata and socket gone.
+		const sockPath = socketPathFor(workDir);
 		expect(existsSync(metadataPathFor(workDir))).toBe(false);
 		expect(existsSync(sockPath)).toBe(false);
 	});
@@ -188,21 +196,21 @@ describe('runUp: already running', () => {
 					},
 				},
 			);
-			expect(error?.name).toBe('AlreadyRunning');
-			if (error?.name === 'AlreadyRunning') {
-				expect(error.pid).toBe(process.pid);
-			}
+			expect(error).toMatchObject({
+				name: 'AlreadyRunning',
+				pid: process.pid,
+			});
 			expect(loadCalls).toBe(1);
 			expect(startCalls).toBe(1);
 		} finally {
-			await server.stop(true);
+			await server.stop(true).catch(() => {
+				// best-effort
+			});
 		}
 	});
 
 	test('does not import config when the daemon lease is held', async () => {
-		const lease = claimDaemonLease(workDir);
-		expect(lease.error).toBeNull();
-		if (lease.error !== null) throw new Error('expected daemon lease');
+		const lease = expectOk(claimDaemonLease(workDir));
 
 		let loadCalls = 0;
 		let startCalls = 0;
@@ -228,7 +236,7 @@ describe('runUp: already running', () => {
 			expect(loadCalls).toBe(0);
 			expect(startCalls).toBe(0);
 		} finally {
-			lease.data.release();
+			lease.release();
 		}
 	});
 });
@@ -251,22 +259,24 @@ describe('runUp: orphan path', () => {
 		const workspace = makeFakeWorkspace();
 		const config = makeFakeConfig(workspace);
 
-		const { data: handle, error } = await runUp(
-			{
-				projectDir: workDir,
-				quiet: true,
-			},
-			{
-				loadDaemonConfig: async () => Ok(config),
-			},
+		const handle = expectOk(
+			await runUp(
+				{
+					projectDir: workDir,
+					quiet: true,
+				},
+				{
+					loadDaemonConfig: async () => Ok(config),
+				},
+			),
 		);
-		expect(error).toBeNull();
-		if (error) throw new Error('runUp failed unexpectedly');
 
-		// Daemon came up; fresh metadata for *this* pid was written.
-		expect(handle.metadata.pid).toBe(process.pid);
-		expect(existsSync(socketPathFor(workDir))).toBe(true);
-
-		await handle.teardown();
+		try {
+			// Daemon came up; fresh metadata for *this* pid was written.
+			expect(handle.metadata.pid).toBe(process.pid);
+			expect(existsSync(socketPathFor(workDir))).toBe(true);
+		} finally {
+			await handle.teardown();
+		}
 	});
 });

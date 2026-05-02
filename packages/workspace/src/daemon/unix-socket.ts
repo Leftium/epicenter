@@ -111,15 +111,21 @@ export async function bindOrRecover({
 	fetch,
 	isSocketResponsive,
 }: BindOrRecoverOptions): Promise<Result<Bun.Server<undefined>, StartupError>> {
-	if (existsSync(socketPath)) {
-		if (await isSocketResponsive(socketPath, 250)) {
-			return StartupError.AlreadyRunning({
-				pid: readMetadata(projectDir)?.pid,
-			});
-		}
-		unlinkSocketFile(socketPath);
-		unlinkMetadata(projectDir);
+	if (!existsSync(socketPath)) {
+		return trySync({
+			try: () => bindUnixSocket({ socketPath, fetch }),
+			catch: (cause) => StartupError.BindFailed({ cause }),
+		});
 	}
+
+	if (await isSocketResponsive(socketPath, 250)) {
+		return StartupError.AlreadyRunning({
+			pid: readMetadata(projectDir)?.pid,
+		});
+	}
+
+	unlinkSocketFile(socketPath);
+	unlinkMetadata(projectDir);
 	return trySync({
 		try: () => bindUnixSocket({ socketPath, fetch }),
 		catch: (cause) => StartupError.BindFailed({ cause }),
@@ -132,11 +138,9 @@ export async function bindOrRecover({
  * (the file may have been left behind by a crashed previous daemon).
  */
 export function unlinkSocketFile(socketPath: string): void {
-	if (existsSync(socketPath)) {
-		try {
-			unlinkSync(socketPath);
-		} catch {
-			// Best-effort cleanup; another process may have raced us.
-		}
+	try {
+		unlinkSync(socketPath);
+	} catch {
+		// Best-effort cleanup; another process may have raced us.
 	}
 }

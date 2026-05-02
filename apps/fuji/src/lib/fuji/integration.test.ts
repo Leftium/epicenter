@@ -7,6 +7,8 @@ import type { DaemonRuntime } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
 	claimDaemonLease,
+	type DaemonLease,
+	type DaemonServer,
 	startDaemonServer,
 	yjsPath,
 } from '@epicenter/workspace/node';
@@ -95,22 +97,26 @@ describe('daemon to script handoff via Yjs log file', () => {
 			route: DEFAULT_FUJI_DAEMON_ROUTE,
 		});
 		const oldRuntimeDir = process.env.XDG_RUNTIME_DIR;
-		process.env.XDG_RUNTIME_DIR = '/tmp';
-		const lease = claimDaemonLease(workdir);
-		expect(lease.error).toBeNull();
-		if (lease.error !== null) throw new Error('expected daemon lease');
-		const server = await startDaemonServer({
-			lease: lease.data,
-			routes: [
-				{
-					route: DEFAULT_FUJI_DAEMON_ROUTE,
-					runtime: daemon,
-				},
-			],
-		});
+		let lease: DaemonLease | null = null;
+		let server: DaemonServer | null = null;
 		try {
-			expect(server.error).toBeNull();
-			if (server.error !== null) return;
+			process.env.XDG_RUNTIME_DIR = '/tmp';
+			const leaseResult = claimDaemonLease(workdir);
+			expect(leaseResult.error).toBeNull();
+			if (leaseResult.error !== null) throw new Error('expected daemon lease');
+			lease = leaseResult.data;
+			const serverResult = await startDaemonServer({
+				lease,
+				routes: [
+					{
+						route: DEFAULT_FUJI_DAEMON_ROUTE,
+						runtime: daemon,
+					},
+				],
+			});
+			expect(serverResult.error).toBeNull();
+			if (serverResult.error !== null) throw serverResult.error;
+			server = serverResult.data;
 
 			await using script = await openFujiScript({ projectDir: workdir });
 			const created = await script.actions.entries.create({
@@ -141,13 +147,20 @@ describe('daemon to script handoff via Yjs log file', () => {
 					.some((row) => row.id === created.data.id),
 			).toBe(true);
 		} finally {
-			if (server.error === null) await server.data.close();
-			lease.data.release();
-			await daemon[Symbol.asyncDispose]();
-			if (oldRuntimeDir === undefined) {
-				delete process.env.XDG_RUNTIME_DIR;
-			} else {
-				process.env.XDG_RUNTIME_DIR = oldRuntimeDir;
+			if (server) {
+				await server.close().catch(() => {
+					// best-effort
+				});
+			}
+			lease?.release();
+			try {
+				await daemon[Symbol.asyncDispose]();
+			} finally {
+				if (oldRuntimeDir === undefined) {
+					delete process.env.XDG_RUNTIME_DIR;
+				} else {
+					process.env.XDG_RUNTIME_DIR = oldRuntimeDir;
+				}
 			}
 		}
 	});

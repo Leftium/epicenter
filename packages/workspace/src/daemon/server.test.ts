@@ -70,22 +70,15 @@ describe('startDaemonServer', () => {
 	test('rejects duplicate routes from embedded callers', async () => {
 		const lease = claimTestLease();
 		try {
-			let thrown: unknown;
-			try {
-				await startDaemonServer({
+			await expect(
+				startDaemonServer({
 					lease,
 					routes: [
 						{ route: 'demo', runtime: {} as never },
 						{ route: 'demo', runtime: {} as never },
 					],
-				});
-			} catch (cause) {
-				thrown = cause;
-			}
-			expect(thrown).toBeInstanceOf(Error);
-			expect((thrown as Error).message).toContain(
-				"duplicate daemon route 'demo'",
-			);
+				}),
+			).rejects.toThrow("duplicate daemon route 'demo'");
 		} finally {
 			lease.release();
 		}
@@ -94,19 +87,12 @@ describe('startDaemonServer', () => {
 	test('rejects invalid routes from embedded callers', async () => {
 		const lease = claimTestLease();
 		try {
-			let thrown: unknown;
-			try {
-				await startDaemonServer({
+			await expect(
+				startDaemonServer({
 					lease,
 					routes: [{ route: 'bad.route', runtime: {} as never }],
-				});
-			} catch (cause) {
-				thrown = cause;
-			}
-			expect(thrown).toBeInstanceOf(Error);
-			expect((thrown as Error).message).toContain(
-				"invalid daemon route 'bad.route'",
-			);
+				}),
+			).rejects.toThrow("invalid daemon route 'bad.route'");
 		} finally {
 			lease.release();
 		}
@@ -126,7 +112,9 @@ describe('startDaemonServer', () => {
 			expect(second.data).toBeNull();
 			expect(second.error?.name).toBe('AlreadyRunning');
 		} finally {
-			await occupant.stop(true);
+			await occupant.stop(true).catch(() => {
+				// best-effort
+			});
 			lease.release();
 		}
 	});

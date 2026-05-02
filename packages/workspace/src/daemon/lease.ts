@@ -38,15 +38,19 @@ export function claimDaemonLease(
 	projectDir: string,
 ): Result<DaemonLease, StartupErrorType> {
 	const leasePath = leasePathFor(projectDir);
-	mkdirSync(dirname(leasePath), { recursive: true, mode: 0o700 });
 
 	let db: Database | undefined;
 	try {
+		mkdirSync(dirname(leasePath), { recursive: true, mode: 0o700 });
 		db = new Database(leasePath);
 		db.run('PRAGMA busy_timeout = 0');
 		db.run('BEGIN IMMEDIATE');
 	} catch (cause) {
-		db?.close();
+		try {
+			db?.close();
+		} catch {
+			// Best-effort cleanup after failed acquisition.
+		}
 		if (isSqliteBusy(cause)) {
 			return StartupError.AlreadyRunning({
 				pid: readMetadata(projectDir)?.pid,
@@ -64,7 +68,11 @@ export function claimDaemonLease(
 		} catch {
 			// Best-effort release; close still drops the OS lock.
 		}
-		db?.close();
+		try {
+			db?.close();
+		} catch {
+			// Best-effort release.
+		}
 	};
 
 	return Ok({

@@ -56,33 +56,6 @@ export async function startDaemonServer({
 	triggerShutdown,
 }: DaemonServerOptions): Promise<Result<DaemonServer, StartupError>> {
 	const { projectDir, socketPath } = lease;
-	validateRoutes(routes);
-	const app = buildDaemonApp([...routes], triggerShutdown);
-	const result = await bindOrRecover({
-		socketPath,
-		fetch: app.fetch,
-		projectDir,
-		isSocketResponsive: pingDaemon,
-	});
-	if (result.error !== null) return result;
-
-	let server: Bun.Server<undefined> | undefined = result.data;
-
-	return Ok({
-		socketPath,
-		async close() {
-			if (server) {
-				await server.stop(true).catch(() => {
-					// best-effort
-				});
-				server = undefined;
-				unlinkSocketFile(socketPath);
-			}
-		},
-	});
-}
-
-function validateRoutes(routes: readonly StartedDaemonRoute[]): void {
 	const routeIssue = validateDaemonRouteNames(
 		routes.map((entry) => entry.route),
 	);
@@ -93,4 +66,28 @@ function validateRoutes(routes: readonly StartedDaemonRoute[]): void {
 				: `startDaemonServer: invalid daemon route '${routeIssue.route}'`,
 		);
 	}
+
+	const app = buildDaemonApp([...routes], triggerShutdown);
+	const result = await bindOrRecover({
+		socketPath,
+		fetch: app.fetch,
+		projectDir,
+		isSocketResponsive: pingDaemon,
+	});
+	if (result.error !== null) return result;
+
+	const server = result.data;
+	let isClosed = false;
+
+	return Ok({
+		socketPath,
+		async close() {
+			if (isClosed) return;
+			isClosed = true;
+			await server.stop(true).catch(() => {
+				// best-effort
+			});
+			unlinkSocketFile(socketPath);
+		},
+	});
 }

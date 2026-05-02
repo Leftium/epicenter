@@ -142,10 +142,16 @@ export async function runUp(
 	const teardown = (): Promise<void> => {
 		if (teardownPromise) return teardownPromise;
 		teardownPromise = (async () => {
-			if (daemonServer) await daemonServer.close();
+			let closeError: unknown;
+			try {
+				if (daemonServer) await daemonServer.close();
+			} catch (cause) {
+				closeError = cause;
+			}
 			await safeDisposeStartedRoutes(runtimes);
 			if (metadataWritten) unlinkMetadata(projectDir);
 			lease.release();
+			if (closeError) throw closeError;
 		})();
 		return teardownPromise;
 	};
@@ -179,8 +185,13 @@ export async function runUp(
 		throw cause;
 	}
 
-	writeMetadata(projectDir, metadata);
-	metadataWritten = true;
+	try {
+		writeMetadata(projectDir, metadata);
+		metadataWritten = true;
+	} catch (cause) {
+		await teardown();
+		throw cause;
+	}
 
 	return Ok({
 		runtimes,

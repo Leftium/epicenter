@@ -37,6 +37,8 @@ type MachineAuthTransportSessionResult = {
 	session: AuthSession;
 };
 
+const MACHINE_AUTH_CLIENT_ID = 'epicenter-cli';
+
 export type MachineAuthTransport = ReturnType<
 	typeof createMachineAuthTransport
 >;
@@ -51,16 +53,14 @@ export type MachineAuthTransport = ReturnType<
  * `@epicenter/constants`; machine auth no longer accepts per-call server
  * origins.
  *
- * @example
- * ```ts
- * const transport = createMachineAuthTransport({ fetch });
- * ```
+ * `client_id` is the server-registered first-party CLI OAuth client, not a
+ * per-machine identifier.
  */
 export function createMachineAuthTransport({
-	fetch,
+	fetch: fetchImpl = fetch,
 }: {
-	fetch: typeof globalThis.fetch;
-}) {
+	fetch?: typeof globalThis.fetch;
+} = {}) {
 	async function requestJson({
 		method,
 		path,
@@ -76,7 +76,7 @@ export function createMachineAuthTransport({
 		if (token !== undefined) headers.authorization = `Bearer ${token}`;
 		if (body !== undefined) headers['content-type'] = 'application/json';
 
-		const response = await fetch(`${EPICENTER_API_URL}${path}`, {
+		const response = await fetchImpl(`${EPICENTER_API_URL}${path}`, {
 			method,
 			headers,
 			body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -100,35 +100,32 @@ export function createMachineAuthTransport({
 	}
 
 	return {
-		async requestDeviceCode({
-			clientId,
-		}: {
-			clientId: string;
-		}): Promise<MachineAuthTransportDeviceCodeResponse> {
+		async requestDeviceCode(): Promise<MachineAuthTransportDeviceCodeResponse> {
 			const { data } = await requestJson({
 				method: 'POST',
 				path: '/auth/device/code',
-				body: { client_id: clientId },
+				body: { client_id: MACHINE_AUTH_CLIENT_ID },
 			});
 			return MachineAuthTransportDeviceCodeResponse.assert(data);
 		},
 
 		async pollDeviceToken({
 			deviceCode,
-			clientId,
 		}: {
 			deviceCode: string;
-			clientId: string;
 		}): Promise<MachineAuthTransportDeviceTokenResponse> {
-			const response = await fetch(`${EPICENTER_API_URL}/auth/device/token`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-					device_code: deviceCode,
-					client_id: clientId,
-				}),
-			});
+			const response = await fetchImpl(
+				`${EPICENTER_API_URL}/auth/device/token`,
+				{
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({
+						grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+						device_code: deviceCode,
+						client_id: MACHINE_AUTH_CLIENT_ID,
+					}),
+				},
+			);
 			const text = await response.text();
 			let data: unknown;
 
@@ -171,7 +168,7 @@ export function createMachineAuthTransport({
 		},
 
 		async signOut({ token }: { token: string }): Promise<void> {
-			await fetch(`${EPICENTER_API_URL}/auth/sign-out`, {
+			await fetchImpl(`${EPICENTER_API_URL}/auth/sign-out`, {
 				method: 'POST',
 				headers: { authorization: `Bearer ${token}` },
 			});

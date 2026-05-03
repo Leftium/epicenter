@@ -31,9 +31,9 @@ function failAuthCommand(error: { message: string }) {
  */
 const loginCommand = cmd({
 	command: 'login',
-	describe: 'Log in to Epicenter (opens browser)',
+	describe: 'Log in to Epicenter',
 	handler: async () => {
-		const machineAuth = createMachineAuth({ fetch });
+		const machineAuth = createMachineAuth();
 		const result = await machineAuth.loginWithDeviceCode({
 			onDeviceCode: ({ verificationUriComplete, userCode }) => {
 				console.log(`\nVisit: ${verificationUriComplete}`);
@@ -53,7 +53,7 @@ const logoutCommand = cmd({
 	command: 'logout',
 	describe: 'Log out from Epicenter',
 	handler: async () => {
-		const machineAuth = createMachineAuth({ fetch });
+		const machineAuth = createMachineAuth();
 		const result = await machineAuth.logout();
 		if (result.error) {
 			failAuthCommand(result.error);
@@ -73,7 +73,7 @@ const statusCommand = cmd({
 	command: 'status',
 	describe: 'Show current authentication status',
 	handler: async () => {
-		const machineAuth = createMachineAuth({ fetch });
+		const machineAuth = createMachineAuth();
 		const result = await machineAuth.status();
 		if (result.error) {
 			failAuthCommand(result.error);

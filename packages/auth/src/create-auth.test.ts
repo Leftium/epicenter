@@ -238,7 +238,7 @@ test('session storage adapter delegates to wrapped state', async () => {
 
 	const next = session();
 	await adapter.save(next);
-	expect(current).toEqual(next);
+	await expect(adapter.load()).resolves.toEqual(next);
 
 	const unsubscribe = adapter.watch(() => {});
 	expect(watched).not.toBeNull();

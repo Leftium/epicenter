@@ -1,3 +1,14 @@
+/**
+ * Machine Auth Tests
+ *
+ * Verifies the Node-side device-code coordinator, session storage adapters,
+ * and keychain serialization used by CLI and machine processes.
+ *
+ * Key behaviors:
+ * - Device login stores the normalized `AuthSession`
+ * - Status refreshes rotated authorization tokens
+ * - Local session storage bridges into the shared auth client contract
+ */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { AuthSession } from '../auth-types.js';
@@ -5,10 +16,11 @@ import type { BetterAuthSessionResponse } from '../contracts/auth-session.js';
 import {
 	createKeychainMachineAuthSessionStorage,
 	createMachineAuth,
-	createMachineAuthClient,
+	createMachineAuthWithDependencies,
 	createMachineSessionStorage,
-	createMemoryMachineAuthSessionStorage,
+	createMemoryMachineAuthSessionStorageForTest,
 } from './machine-auth.js';
+import { createMachineAuthTransport } from './machine-auth-transport.js';
 
 const encryptionKeys = [
 	{
@@ -100,26 +112,39 @@ function memoryBackend(): TestMachineAuthSessionStorageBackend & {
 	};
 }
 
-let sessionStorage: ReturnType<typeof createMemoryMachineAuthSessionStorage>;
+let sessionStorage: ReturnType<
+	typeof createMemoryMachineAuthSessionStorageForTest
+>;
 
 beforeEach(() => {
-	sessionStorage = createMemoryMachineAuthSessionStorage();
+	sessionStorage = createMemoryMachineAuthSessionStorageForTest();
 });
 
 function createTestMachineAuth(fetchImpl: typeof fetch) {
-	return createMachineAuth({
-		fetch: fetchImpl,
+	return createMachineAuthWithDependencies({
+		authTransport: createMachineAuthTransport({ fetch: fetchImpl }),
 		sessionStorage,
 		sleep: async () => {},
 	});
 }
 
 describe('createMachineAuth', () => {
+	test('public machine auth hides test-only session helpers', () => {
+		const machineAuth = createMachineAuth();
+
+		expect('loadSession' in machineAuth).toBe(false);
+		expect('saveSession' in machineAuth).toBe(false);
+		expect('getToken' in machineAuth).toBe(false);
+	});
+
 	test('login stores one AuthSession using the authorization token', async () => {
-		const fetchImpl = (async (input) => {
+		const fetchImpl = (async (input, init) => {
 			const url = new URL(String(input));
 			expect(url.origin).toBe(EPICENTER_API_URL);
 			if (url.pathname === '/auth/device/code') {
+				expect(JSON.parse(String(init?.body))).toMatchObject({
+					client_id: 'epicenter-cli',
+				});
 				return jsonResponse({
 					device_code: 'device-code',
 					user_code: 'USER-CODE',
@@ -130,6 +155,10 @@ describe('createMachineAuth', () => {
 				});
 			}
 			if (url.pathname === '/auth/device/token') {
+				expect(JSON.parse(String(init?.body))).toMatchObject({
+					client_id: 'epicenter-cli',
+					device_code: 'device-code',
+				});
 				return jsonResponse({ access_token: 'device-token', expires_in: 3600 });
 			}
 			return jsonResponse(makeBetterAuthSessionResponse(), {
@@ -190,14 +219,10 @@ describe('createMachineAuth', () => {
 		expect(await sessionStorage.load()).toBeNull();
 	});
 
-	test('direct readers return the stored token and encryption keys', async () => {
+	test('direct readers return the stored encryption keys', async () => {
 		await sessionStorage.save(makeSession({ token: 'stored-token' }));
 		const machineAuth = createTestMachineAuth(fetch);
 
-		expect(await machineAuth.getToken()).toEqual({
-			data: 'stored-token',
-			error: null,
-		});
 		expect(await machineAuth.getEncryptionKeys()).toEqual({
 			data: encryptionKeys,
 			error: null,
@@ -205,7 +230,7 @@ describe('createMachineAuth', () => {
 	});
 
 	test('direct readers return Ok(null) for absent sessions', async () => {
-		const result = await createTestMachineAuth(fetch).getToken();
+		const result = await createTestMachineAuth(fetch).getEncryptionKeys();
 
 		expect(result).toEqual({ data: null, error: null });
 	});
@@ -223,28 +248,12 @@ describe('machine session storage', () => {
 		expect([...backend.values.values()][0]).not.toContain('serverSession');
 	});
 
-	test('createMachineSessionStorage bridges MachineAuth load and save', async () => {
-		const machineAuth = createTestMachineAuth(fetch);
-		const storage = createMachineSessionStorage({ machineAuth });
+	test('createMachineSessionStorage bridges storage load and save', async () => {
+		const storage = createMachineSessionStorage({ sessionStorage });
 
 		await expect(storage.load()).resolves.toBeNull();
 		await storage.save(makeSession({ token: 'saved-token' }));
 
-		expect((await machineAuth.loadSession()).data?.token).toBe('saved-token');
-	});
-
-	test('machine auth client hydrates from machine session storage', async () => {
-		await sessionStorage.save(makeSession({ token: 'authorization-token' }));
-
-		const auth = createMachineAuthClient({
-			machineAuth: createTestMachineAuth(fetch),
-		});
-		await auth.whenLoaded;
-
-		expect(auth.snapshot).toMatchObject({
-			status: 'signedIn',
-			session: { token: 'authorization-token' },
-		});
-		auth[Symbol.dispose]();
+		expect((await sessionStorage.load())?.token).toBe('saved-token');
 	});
 });

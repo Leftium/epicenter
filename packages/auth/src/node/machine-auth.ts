@@ -85,14 +85,6 @@ type MachineAuthLogoutResult =
 
 export type MachineAuth = ReturnType<typeof createMachineAuth>;
 
-type MachineAuthOptions = {
-	fetch?: typeof globalThis.fetch;
-	sessionStorage?: MachineAuthSessionStorage;
-	clientId?: string;
-	openBrowser?: (url: string) => Promise<void>;
-	sleep?: (ms: number) => Promise<void>;
-};
-
 const MACHINE_SESSION_SERVICE = 'epicenter.auth.session';
 const MACHINE_SESSION_ACCOUNT = 'current';
 
@@ -148,9 +140,9 @@ export function createKeychainMachineAuthSessionStorage({
 }
 
 /**
- * Create an in-memory machine auth store for tests and explicit embedding.
+ * Create an in-memory machine auth store for tests.
  */
-export function createMemoryMachineAuthSessionStorage(
+export function createMemoryMachineAuthSessionStorageForTest(
 	initial: AuthSessionType | null = null,
 ): MachineAuthSessionStorage {
 	let current = initial;
@@ -165,17 +157,31 @@ export function createMemoryMachineAuthSessionStorage(
 }
 
 /**
- * Create the Node-side auth coordinator for CLI and daemon processes.
+ * Create the Node-side auth coordinator for first-party CLI and daemon
+ * processes.
  */
-export function createMachineAuth({
-	fetch: fetchImpl = fetch,
-	sessionStorage = createKeychainMachineAuthSessionStorage(),
-	clientId = 'epicenter-cli',
-	openBrowser,
-	sleep = Bun.sleep,
-}: MachineAuthOptions = {}) {
-	const authTransport = createMachineAuthTransport({ fetch: fetchImpl });
+export function createMachineAuth() {
+	const machineAuth = createMachineAuthWithDependencies({
+		authTransport: createMachineAuthTransport(),
+		sessionStorage: createKeychainMachineAuthSessionStorage(),
+	});
+	return {
+		loginWithDeviceCode: machineAuth.loginWithDeviceCode,
+		status: machineAuth.status,
+		logout: machineAuth.logout,
+		getEncryptionKeys: machineAuth.getEncryptionKeys,
+	};
+}
 
+export function createMachineAuthWithDependencies({
+	authTransport,
+	sessionStorage,
+	sleep = Bun.sleep,
+}: {
+	authTransport: MachineAuthTransport;
+	sessionStorage: MachineAuthSessionStorage;
+	sleep?: (ms: number) => Promise<void>;
+}) {
 	async function loadStoredSession(): Promise<
 		Result<AuthSessionType | null, MachineAuthError>
 	> {
@@ -215,19 +221,17 @@ export function createMachineAuth({
 		 */
 		async loginWithDeviceCode({
 			onDeviceCode,
-			openBrowser: inputOpenBrowser,
 		}: {
 			onDeviceCode?: (device: {
 				userCode: string;
 				verificationUriComplete: string;
 			}) => void | Promise<void>;
-			openBrowser?: (url: string) => Promise<void>;
 		} = {}): Promise<Result<MachineAuthLoginResult, MachineAuthError>> {
 			let codeData: Awaited<
 				ReturnType<MachineAuthTransport['requestDeviceCode']>
 			>;
 			try {
-				codeData = await authTransport.requestDeviceCode({ clientId });
+				codeData = await authTransport.requestDeviceCode();
 			} catch (cause) {
 				return MachineAuthError.AuthTransportRequestFailed({ cause });
 			}
@@ -237,9 +241,6 @@ export function createMachineAuth({
 				verificationUriComplete: codeData.verification_uri_complete,
 			};
 			await onDeviceCode?.(device);
-			await (inputOpenBrowser ?? openBrowser)?.(
-				codeData.verification_uri_complete,
-			);
 
 			let interval = codeData.interval * 1000;
 			const deadline = Date.now() + codeData.expires_in * 1000;
@@ -252,7 +253,6 @@ export function createMachineAuth({
 				try {
 					tokenData = await authTransport.pollDeviceToken({
 						deviceCode: codeData.device_code,
-						clientId,
 					});
 				} catch (cause) {
 					return MachineAuthError.AuthTransportRequestFailed({ cause });
@@ -333,28 +333,12 @@ export function createMachineAuth({
 			return Ok({ status: 'loggedOut' });
 		},
 
-		async getToken(): Promise<Result<string | null, MachineAuthError>> {
-			const session = await loadStoredSession();
-			if (session.error) return session;
-			return Ok(session.data?.token ?? null);
-		},
-
 		async getEncryptionKeys(): Promise<
 			Result<EncryptionKeys | null, MachineAuthError>
 		> {
 			const session = await loadStoredSession();
 			if (session.error) return session;
 			return Ok(session.data?.encryptionKeys ?? null);
-		},
-
-		loadSession(): Promise<Result<AuthSessionType | null, MachineAuthError>> {
-			return loadStoredSession();
-		},
-
-		saveSession(
-			session: AuthSessionType | null,
-		): Promise<Result<undefined, MachineAuthError>> {
-			return saveStoredSession(session);
 		},
 	};
 }
@@ -363,19 +347,16 @@ export function createMachineAuth({
  * Adapt machine auth to the browser-shaped `SessionStorage` contract.
  */
 export function createMachineSessionStorage({
-	machineAuth = createMachineAuth(),
+	sessionStorage,
 }: {
-	machineAuth?: MachineAuth;
-} = {}): SessionStorage {
+	sessionStorage: MachineAuthSessionStorage;
+}): SessionStorage {
 	return {
 		async load() {
-			const result = await machineAuth.loadSession();
-			if (result.error) throw result.error;
-			return result.data;
+			return sessionStorage.load();
 		},
 		async save(session) {
-			const result = await machineAuth.saveSession(session);
-			if (result.error) throw result.error;
+			await sessionStorage.save(session);
 		},
 		watch() {
 			return () => {};
@@ -386,13 +367,10 @@ export function createMachineSessionStorage({
 /**
  * Create an auth client backed by saved machine auth.
  */
-export function createMachineAuthClient({
-	machineAuth = createMachineAuth(),
-}: {
-	machineAuth?: MachineAuth;
-} = {}): AuthClient {
+export function createMachineAuthClient(): AuthClient {
+	const sessionStorage = createKeychainMachineAuthSessionStorage();
 	return createAuth({
 		baseURL: EPICENTER_API_URL,
-		sessionStorage: createMachineSessionStorage({ machineAuth }),
+		sessionStorage: createMachineSessionStorage({ sessionStorage }),
 	});
 }

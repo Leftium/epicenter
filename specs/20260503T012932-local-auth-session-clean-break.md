@@ -309,37 +309,25 @@ const session = createPersistedState({
 Collapse the public machine auth API to one server:
 
 ```ts
-export function createMachineAuth(options?: {
-	fetch?: typeof globalThis.fetch;
-	sessionStorage?: MachineAuthSessionStorage;
-	openBrowser?: (url: string) => Promise<void>;
-	sleep?: (ms: number) => Promise<void>;
-}): MachineAuth;
+export function createMachineAuth(): MachineAuth;
 ```
 
-No per-method `serverOrigin`:
+No public storage, fetch, sleep, client-id, or per-method `serverOrigin`:
 
 ```ts
 machineAuth.loginWithDeviceCode({ onDeviceCode });
 machineAuth.status();
 machineAuth.logout();
-machineAuth.getToken();
 machineAuth.getEncryptionKeys();
-machineAuth.loadSession();
-machineAuth.saveSession(session);
 ```
 
-`createMachineAuthClient` should need no server-origin argument:
+`createMachineAuthClient` should need no argument:
 
 ```ts
-export function createMachineAuthClient({
-	machineAuth = createMachineAuth(),
-}: {
-	machineAuth?: MachineAuth;
-} = {}): AuthClient {
+export function createMachineAuthClient(): AuthClient {
 	return createAuth({
 		baseURL: EPICENTER_API_URL,
-		sessionStorage: createMachineSessionStorage({ machineAuth }),
+		sessionStorage: machineSessionStorage,
 	});
 }
 ```
@@ -457,7 +445,7 @@ apps/api/src/db/schema.ts
 - [x] **3.1** Remove `serverOrigin` from `MachineAuth` method inputs.
 - [x] **3.2** Source the API URL from `EPICENTER_API_URL`.
 - [x] **3.3** Replace `getActiveEncryptionKeys()` and `getOfflineEncryptionKeys()` with one `getEncryptionKeys()`.
-- [x] **3.4** Replace `loadActiveSession()` and `saveActiveSession()` with `loadSession()` and `saveSession()`.
+- [x] **3.4** Remove public session load/save helpers. The auth client owns the `SessionStorage` bridge internally.
 - [x] **3.5** Remove `expired`, `missingSecrets`, and multi-server status variants.
 
 ### Phase 4: Collapse CLI Auth
@@ -546,7 +534,7 @@ Use a clean-break approach. Do not preserve self-hosted CLI auth, multi-server c
 
 The target invariant is: browser and machine auth both persist `AuthSession | null`; the server owns session metadata, expiry, and auth provider details.
 
-Start by tracing current production callers of `createMachineAuth`, `createMachineAuthClient`, `createMachineSessionStorage`, and `AuthCredential`. Then implement in phases:
+Start by tracing current production callers of `createMachineAuth`, `createMachineAuthClient`, and `AuthCredential`. Then implement in phases:
 
 1. Make `AuthSession` the only local persisted auth contract.
 2. Replace machine credential storage with one `AuthSession` keychain value plus an injected test store.

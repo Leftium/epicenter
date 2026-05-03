@@ -1,11 +1,17 @@
+/**
+ * Fuji Node Integration Tests
+ *
+ * Verifies daemon and script handoff through the local Yjs log, including
+ * remote actions and offline decryption of encrypted snapshot rows.
+ *
+ * Key behaviors:
+ * - Script readers hydrate rows written by the daemon
+ * - Script actions call daemon actions through RPC
+ * - Offline keys unlock encrypted log rows
+ */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
 import type { AuthClient } from '@epicenter/auth';
-import {
-	createMachineAuth,
-	createMemoryMachineAuthSessionStorage,
-} from '@epicenter/auth/node';
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { ProjectDir } from '@epicenter/workspace';
 import type { DaemonRuntime } from '@epicenter/workspace/daemon';
@@ -74,17 +80,6 @@ function createTestAuth(): AuthClient {
 		fetch: globalThis.fetch.bind(globalThis),
 		[Symbol.dispose]() {},
 	};
-}
-
-function jsonResponse(value: unknown, init?: ResponseInit): Response {
-	return new Response(JSON.stringify(value), {
-		status: 200,
-		...init,
-		headers: {
-			'content-type': 'application/json',
-			...init?.headers,
-		},
-	});
 }
 
 beforeEach(() => {
@@ -211,7 +206,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 		}
 	});
 
-	test('script snapshot loads saved session keys for encrypted log rows', async () => {
+	test('script snapshot uses offline keys for encrypted log rows', async () => {
 		const writer = openFujiDoc();
 		const yjsLog = attachYjsLog(writer.ydoc, {
 			filePath: yjsPath(workdir, writer.ydoc.guid),
@@ -227,66 +222,9 @@ describe('daemon to script handoff via Yjs log file', () => {
 		});
 		expect(lockedSnapshot.tables.entries.getAllValid()).toEqual([]);
 
-		const now = new Date();
-		const machineAuth = createMachineAuth({
-			sessionStorage: createMemoryMachineAuthSessionStorage(),
-			sleep: async () => {},
-			fetch: (async (input) => {
-				const url = new URL(String(input));
-				if (url.pathname === '/auth/device/code') {
-					return jsonResponse({
-						device_code: 'device-code',
-						user_code: 'USER-CODE',
-						verification_uri: `${EPICENTER_API_URL}/device`,
-						verification_uri_complete: `${EPICENTER_API_URL}/device?code=USER`,
-						expires_in: 600,
-						interval: 0,
-					});
-				}
-				if (url.pathname === '/auth/device/token') {
-					return jsonResponse({
-						access_token: 'device-token',
-						expires_in: 3600,
-					});
-				}
-				return jsonResponse(
-					{
-						user: {
-							id: 'user-1',
-							name: 'User One',
-							email: 'user@example.com',
-							emailVerified: true,
-							image: null,
-							createdAt: now.toISOString(),
-							updatedAt: now.toISOString(),
-						},
-						session: {
-							id: 'session-1',
-							token: 'session-token',
-							userId: 'user-1',
-							expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
-							createdAt: now.toISOString(),
-							updatedAt: now.toISOString(),
-							ipAddress: null,
-							userAgent: null,
-						},
-						encryptionKeys: testEncryptionKeys,
-					},
-					{ headers: { 'set-auth-token': 'fake-token' } },
-				);
-			}) as typeof fetch,
-		});
-		const login = await machineAuth.loginWithDeviceCode();
-		expect(login.error).toBeNull();
-		if (login.error !== null) return;
-
 		using unlockedSnapshot = await openFujiSnapshot({
 			projectDir: workdir,
-			async loadOfflineEncryptionKeys() {
-				const result = await machineAuth.getEncryptionKeys();
-				if (result.error) throw result.error;
-				return result.data;
-			},
+			loadOfflineEncryptionKeys: async () => testEncryptionKeys,
 		});
 
 		expect(

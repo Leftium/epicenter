@@ -11,7 +11,6 @@ import {
 	type AuthSession as AuthSessionType,
 } from '../auth-types.js';
 import { type AuthClient, createAuth } from '../create-auth.js';
-import type { SessionStorage } from '../session-store.js';
 import {
 	createMachineAuthTransport,
 	type MachineAuthTransport,
@@ -353,6 +352,6 @@ export function createMachineAuthClient(): AuthClient {
 		sessionStorage: {
 			load: sessionStorage.load,
 			save: sessionStorage.save,
-		} satisfies SessionStorage,
+		},
 	});
 }

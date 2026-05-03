@@ -223,7 +223,6 @@ Implication: keep `BetterAuthSessionResponse` as a bridge type, then normalize i
 export type SessionStorage = {
 	load(): MaybePromise<AuthSession | null>;
 	save(value: AuthSession | null): MaybePromise<void>;
-	watch(fn: (next: AuthSession | null) => void): () => void;
 	[Symbol.dispose]?(): void;
 };
 ```
@@ -460,7 +459,7 @@ secrets:
 - [x] Updated machine credential repository tests to assert `authCredential.serverSession`.
 - [x] Collapsed machine secret storage from three keychain refs to one credential secret blob.
 - [x] Bumped the credential file version to `epicenter.auth.credentialStore.v2`.
-- [x] Added `[Symbol.dispose]` support to `SessionStateAdapter` and `SessionStorage`.
+- [x] Added `[Symbol.dispose]` support to the then-current auth storage bridge. Current `SessionStorage` is load/save only.
 - [x] Added disposed guards to persisted state updates.
 
 ### Deliberately Kept

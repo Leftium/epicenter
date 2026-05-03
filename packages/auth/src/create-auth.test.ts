@@ -5,15 +5,69 @@
  * the framework-agnostic auth client.
  *
  * Key behaviors:
- * - Snapshot change listeners are future-only and do not replay
- * - Subscriber failures do not block later listeners
+ * - Session storage is a boot cache that loads once and saves local updates
+ * - Better Auth session emissions drive live signed-in and signed-out state
  * - whenLoaded resolves after storage load settles, including null and errors
  */
 
-import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { createAuth, createSessionStorageAdapter } from './create-auth.ts';
+import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import type { AuthSession, AuthSnapshot } from './index.ts';
 import type { SessionStorage } from './session-store.ts';
+
+type BetterAuthSessionState = {
+	isPending: boolean;
+	data: unknown;
+};
+
+type BetterAuthClientOptions = {
+	fetchOptions?: {
+		onSuccess?: (context: { response: Response }) => void;
+	};
+};
+
+let betterAuthSessionListeners = new Set<
+	(state: BetterAuthSessionState) => void
+>();
+let betterAuthClientOptions: BetterAuthClientOptions | null = null;
+let signInResponseHeaders: Record<string, string> | undefined;
+
+mock.module('better-auth/client', () => ({
+	createAuthClient(options: BetterAuthClientOptions) {
+		betterAuthClientOptions = options;
+		return {
+			useSession: {
+				subscribe(listener: (state: BetterAuthSessionState) => void) {
+					betterAuthSessionListeners.add(listener);
+					return () => {
+						betterAuthSessionListeners.delete(listener);
+					};
+				},
+			},
+			signIn: {
+				email: async () => {
+					if (signInResponseHeaders) {
+						options.fetchOptions?.onSuccess?.({
+							response: new Response(null, {
+								headers: signInResponseHeaders,
+							}),
+						});
+					}
+					return { error: null };
+				},
+				social: async () => ({ error: null }),
+			},
+			signUp: {
+				email: async () => ({ error: null }),
+			},
+			signOut: async () => ({ error: null }),
+		};
+	},
+	InferPlugin: () => ({}),
+}));
+
+const { createAuth, createSessionStorageAdapter } = await import(
+	'./create-auth.ts'
+);
 
 const originalFetch = globalThis.fetch;
 const originalConsoleError = console.error;
@@ -25,6 +79,9 @@ beforeEach(() => {
 			headers: { 'content-type': 'application/json' },
 		})) as unknown as typeof fetch;
 	console.error = () => {};
+	betterAuthSessionListeners = new Set();
+	betterAuthClientOptions = null;
+	signInResponseHeaders = undefined;
 });
 
 afterEach(() => {
@@ -59,31 +116,42 @@ function session({
 	};
 }
 
-function createStorage({ load }: {
+function betterAuthSessionData(value: AuthSession) {
+	return {
+		user: value.user,
+		session: {
+			id: 'session-1',
+			token: value.token,
+			userId: value.user.id,
+			expiresAt: '2026-02-01T00:00:00.000Z',
+			createdAt: value.user.createdAt,
+			updatedAt: value.user.updatedAt,
+			ipAddress: null,
+			userAgent: null,
+		},
+		encryptionKeys: value.encryptionKeys,
+	};
+}
+
+function createStorage({
+	load,
+	save = () => {},
+}: {
 	load: () => AuthSession | null | Promise<AuthSession | null>;
+	save?: (value: AuthSession | null) => void | Promise<void>;
 }) {
-	let watchCallback: ((next: AuthSession | null) => void) | null = null;
-	let unwatchCount = 0;
+	const saved: Array<AuthSession | null> = [];
 	const storage = {
 		load,
-		save() {},
-		watch(fn) {
-			watchCallback = fn;
-			return () => {
-				watchCallback = null;
-				unwatchCount++;
-			};
+		save(value) {
+			saved.push(value);
+			return save(value);
 		},
 	} satisfies SessionStorage;
 
 	return {
 		storage,
-		emit(next: AuthSession | null) {
-			watchCallback?.(next);
-		},
-		get unwatchCount() {
-			return unwatchCount;
-		},
+		saved,
 	};
 }
 
@@ -95,6 +163,12 @@ function createDeferred<T>() {
 		reject = rej;
 	});
 	return { promise, resolve, reject };
+}
+
+function emitBetterAuthSession(data: unknown) {
+	for (const listener of betterAuthSessionListeners) {
+		listener({ isPending: false, data });
+	}
 }
 
 async function tick() {
@@ -115,7 +189,7 @@ test('onSnapshotChange does not replay and receives future changes only', async 
 
 	expect(snapshots).toEqual([]);
 
-	setup.emit(session());
+	emitBetterAuthSession(betterAuthSessionData(session()));
 
 	expect(snapshots).toEqual([{ status: 'signedIn', session: session() }]);
 	auth[Symbol.dispose]();
@@ -135,11 +209,26 @@ test('listener failures do not stop later listeners', async () => {
 	});
 	auth.onSnapshotChange((snapshot) => snapshots.push(snapshot));
 
-	setup.emit(session({ token: 'token-2' }));
+	emitBetterAuthSession(
+		betterAuthSessionData(session({ token: 'token-2' })),
+	);
 
 	expect(snapshots).toEqual([
 		{ status: 'signedIn', session: session({ token: 'token-2' }) },
 	]);
+	auth[Symbol.dispose]();
+});
+
+test('persisted storage load drives initial signed-in snapshot', async () => {
+	const setup = createStorage({ load: () => session() });
+	const auth = createAuth({
+		baseURL: 'http://localhost:8787',
+		sessionStorage: setup.storage,
+	});
+
+	await auth.whenLoaded;
+
+	expect(auth.snapshot).toEqual({ status: 'signedIn', session: session() });
 	auth[Symbol.dispose]();
 });
 
@@ -181,7 +270,7 @@ test('whenLoaded resolves after storage load failure and normalizes to signed ou
 	auth[Symbol.dispose]();
 });
 
-test('dispose is idempotent and unsubscribes from session storage once', async () => {
+test('dispose is idempotent and unsubscribes from Better Auth once', async () => {
 	const setup = createStorage({
 		load: () => null,
 	});
@@ -190,25 +279,12 @@ test('dispose is idempotent and unsubscribes from session storage once', async (
 		sessionStorage: setup.storage,
 	});
 	await auth.whenLoaded;
+	expect(betterAuthSessionListeners.size).toBe(1);
 
 	auth[Symbol.dispose]();
 	auth[Symbol.dispose]();
 
-	expect(setup.unwatchCount).toBe(1);
-});
-
-test('storage watch is optional for stores without external updates', async () => {
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: {
-			load: () => session(),
-			save() {},
-		},
-	});
-	await auth.whenLoaded;
-
-	expect(auth.snapshot).toEqual({ status: 'signedIn', session: session() });
-	auth[Symbol.dispose]();
+	expect(betterAuthSessionListeners.size).toBe(0);
 });
 
 test('dispose resolves whenLoaded and ignores late storage load', async () => {
@@ -227,20 +303,81 @@ test('dispose resolves whenLoaded and ignores late storage load', async () => {
 	expect(auth.snapshot).toEqual({ status: 'loading' });
 });
 
-test('session storage adapter delegates to wrapped state', async () => {
+test('Better Auth signed-in emission drives snapshot and storage save', async () => {
+	const setup = createStorage({ load: () => null });
+	const auth = createAuth({
+		baseURL: 'http://localhost:8787',
+		sessionStorage: setup.storage,
+	});
+	await auth.whenLoaded;
+
+	emitBetterAuthSession(betterAuthSessionData(session()));
+
+	expect(auth.snapshot).toEqual({ status: 'signedIn', session: session() });
+	expect(setup.saved).toEqual([session()]);
+	auth[Symbol.dispose]();
+});
+
+test('Better Auth signed-out emission drives snapshot and storage save', async () => {
+	const setup = createStorage({ load: () => session() });
+	const auth = createAuth({
+		baseURL: 'http://localhost:8787',
+		sessionStorage: setup.storage,
+	});
+	await auth.whenLoaded;
+
+	emitBetterAuthSession(null);
+
+	expect(auth.snapshot).toEqual({ status: 'signedOut' });
+	expect(setup.saved).toEqual([null]);
+	auth[Symbol.dispose]();
+});
+
+test('Better Auth emission during async load is applied after boot cache settles', async () => {
+	const deferred = createDeferred<AuthSession | null>();
+	const setup = createStorage({ load: () => deferred.promise });
+	const auth = createAuth({
+		baseURL: 'http://localhost:8787',
+		sessionStorage: setup.storage,
+	});
+
+	emitBetterAuthSession(
+		betterAuthSessionData(session({ token: 'better-auth-token' })),
+	);
+	deferred.resolve(null);
+	await auth.whenLoaded;
+
+	const expected = session({ token: 'better-auth-token' });
+	expect(auth.snapshot).toEqual({ status: 'signedIn', session: expected });
+	expect(setup.saved).toEqual([expected]);
+	auth[Symbol.dispose]();
+});
+
+test('response-header token rotation persists through session storage save', async () => {
+	const setup = createStorage({ load: () => session({ token: 'old-token' }) });
+	const auth = createAuth({
+		baseURL: 'http://localhost:8787',
+		sessionStorage: setup.storage,
+	});
+	await auth.whenLoaded;
+
+	signInResponseHeaders = { 'set-auth-token': 'new-token' };
+	await auth.signIn({ email: 'user@example.com', password: 'password' });
+
+	const expected = session({ token: 'new-token' });
+	expect(auth.snapshot).toEqual({ status: 'signedIn', session: expected });
+	expect(setup.saved).toEqual([expected]);
+	expect(betterAuthClientOptions).not.toBeNull();
+	auth[Symbol.dispose]();
+});
+
+test('session storage adapter delegates load and save to wrapped state', async () => {
 	let current: AuthSession | null = null;
-	let watched: ((next: AuthSession | null) => void) | null = null;
 	let ready = false;
 	const adapter = createSessionStorageAdapter({
 		get: () => current,
 		set: (value) => {
 			current = value;
-		},
-		watch: (fn) => {
-			watched = fn;
-			return () => {
-				watched = null;
-			};
 		},
 		whenReady: Promise.resolve().then(() => {
 			ready = true;
@@ -253,10 +390,5 @@ test('session storage adapter delegates to wrapped state', async () => {
 	const next = session();
 	await adapter.save(next);
 	await expect(adapter.load()).resolves.toEqual(next);
-
-	if (!adapter.watch) throw new Error('adapter should expose watch');
-	const unsubscribe = adapter.watch(() => {});
-	expect(watched).not.toBeNull();
-	unsubscribe();
-	expect(watched).toBeNull();
+	expect('watch' in adapter).toBe(false);
 });

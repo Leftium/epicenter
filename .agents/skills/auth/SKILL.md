@@ -10,7 +10,7 @@ metadata:
 
 Three packages:
 
-- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, storage hydration, response-header token rotation, and future snapshot change fan-out.
+- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, boot-cache storage hydration, response-header token rotation, and snapshot change fan-out.
 - **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors the core snapshot into `$state` and exposes a live `auth.snapshot` getter.
 - **`@epicenter/auth-workspace`**: framework-agnostic binding from auth snapshots to workspace lifecycle effects.
 
@@ -44,7 +44,7 @@ Do not add projection helpers. There is no public token, user, session, authenti
 
 ## SessionStorage Contract
 
-`createAuth` takes a `SessionStorage`. The storage object is the persistence boundary; auth owns the in-memory snapshot.
+`createAuth` takes a `SessionStorage`. The storage object is a boot cache for the last known local session; auth owns the in-memory snapshot and Better Auth owns live session state.
 
 ```ts
 export type MaybePromise<T> = T | Promise<T>;
@@ -52,7 +52,6 @@ export type MaybePromise<T> = T | Promise<T>;
 export type SessionStorage = {
 	load(): MaybePromise<Session | null>;
 	save(value: Session | null): MaybePromise<void>;
-	watch(fn: (next: Session | null) => void): () => void;
 };
 ```
 
@@ -63,7 +62,7 @@ Invariants:
 - Async stores start in `loading` and transition after `load()` settles.
 - `whenLoaded` never rejects. Load failures are logged and normalize to `signedOut`.
 - Local writes update the snapshot first, then call `save()`.
-- `watch()` is inbound reconciliation. It may echo local writes, so auth dedupes structurally.
+- Live auth changes flow through Better Auth session emissions, `auth.snapshot`, and `auth.onSnapshotChange()`.
 
 ## Wiring a Consumer App
 
@@ -140,7 +139,6 @@ Keep field ownership narrow:
 | Writer | Fields owned |
 | --- | --- |
 | Persisted load | Initial whole session |
-| Storage watch | External whole session |
 | Response header rotation | `session.token` only |
 | Better Auth session refetch | `user`, `encryptionKeys`, and initial token |
 

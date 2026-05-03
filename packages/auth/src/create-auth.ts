@@ -95,7 +95,6 @@ export type AuthClient = {
 export type SessionStateAdapter = {
 	get(): AuthSession | null;
 	set(value: AuthSession | null): MaybePromise<void>;
-	watch(fn: (next: AuthSession | null) => void): () => void;
 	whenReady?: Promise<unknown>;
 };
 
@@ -108,7 +107,6 @@ export function createSessionStorageAdapter(
 			return state.get();
 		},
 		save: (value) => state.set(value),
-		watch: state.watch,
 	};
 }
 
@@ -137,7 +135,7 @@ export function createAuth({
 	socialTokenProvider,
 }: CreateAuthConfig): AuthClient {
 	let snapshot: AuthSnapshot = { status: 'loading' };
-	let storageLoaded = false;
+	let bootCacheLoaded = false;
 	let disposed = false;
 	let bufferedBetterAuthCandidate: AuthSession | null | undefined;
 	let resolveWhenLoaded: () => void = () => {};
@@ -226,7 +224,7 @@ export function createAuth({
 
 	function settleLoadedSession(loaded: AuthSession | null) {
 		if (disposed) return;
-		storageLoaded = true;
+		bootCacheLoaded = true;
 		setSnapshot(snapshotFromSession(loaded));
 		if (bufferedBetterAuthCandidate !== undefined) {
 			reconcileBetterAuthCandidate(bufferedBetterAuthCandidate);
@@ -250,15 +248,6 @@ export function createAuth({
 			console.error('[auth] failed to load session:', error);
 			settleLoadedSession(null);
 		}
-	}
-
-	if (sessionStorage.watch) {
-		disposers.push(
-			sessionStorage.watch((next) => {
-				if (!storageLoaded) return;
-				setSnapshot(snapshotFromSession(next));
-			}),
-		);
 	}
 
 	const client = createAuthClient({
@@ -299,7 +288,7 @@ export function createAuth({
 				return;
 			}
 
-			if (!storageLoaded) {
+			if (!bootCacheLoaded) {
 				bufferedBetterAuthCandidate = next;
 				return;
 			}

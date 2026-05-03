@@ -11,7 +11,7 @@ import type { DocumentFamily } from '@epicenter/workspace';
  * family implementations own the resulting lifetime behavior.
  *
  * Why a getter (`() => id`) and not the id directly: destructured props and
- * `$state` reads are not reactive when captured at module top — see Svelte's
+ * `$state` reads are not reactive when captured at module top. See Svelte's
  * `state_referenced_locally` warning. Passing a function keeps the read
  * inside the derived's closure.
  *
@@ -44,7 +44,7 @@ export function fromDocumentFamily<
 		return () => h[Symbol.dispose]();
 	});
 	return {
-		// Getter, not a plain property — `handle` is a `$derived` local and
+		// Getter, not a plain property. `handle` is a `$derived` local and
 		// must be re-read on every access to stay reactive. Returning `handle`
 		// directly would snapshot the initial value and never update.
 		get current() {

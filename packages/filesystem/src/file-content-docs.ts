@@ -20,8 +20,9 @@
  *
  * The live document is browser-agnostic on purpose: it has no `sync`
  * field. Browser apps add `sync: null` inline when adapting it to
- * `createBrowserDocumentFamily`; non-browser callers (daemon, CLI, e2e scripts)
- * compose this directly with `createDisposableCache`.
+ * `createBrowserDocumentFamily`; one-shot non-browser callers can open this
+ * builder directly, while daemon and materializer workloads may wrap it in
+ * `createDisposableCache` when same-process reuse matters.
  */
 
 import type { Table } from '@epicenter/workspace';

@@ -4,7 +4,11 @@ The hard problem with local-first apps is synchronization. If each device has it
 
 `@epicenter/workspace` solves that by making Yjs the source of truth. Tables, KV entries, document content, and awareness all live in a `Y.Doc`; persistence, sync, and materializers hang off that core as attachment primitives. Write to the workspace, and everything else reacts.
 
-The public path is a small set of `attach*` primitives that you compose inline around `new Y.Doc`. For apps with many ephemeral Y.Docs (per-row content docs, per-room docs), `createDisposableCache(build, { gcTime? })` gives you a refcounted cache on top of that same builder shape.
+The public path is a small set of `attach*` primitives that you compose inline
+around `new Y.Doc`. Browser apps with many child Y.Docs use
+`createBrowserDocumentFamily(...)` to share live child documents, fan out active
+child sync controls, and clear local browser storage. `createDisposableCache`
+remains the lower-level refcounted lifetime primitive underneath that family.
 
 ## Quick Start
 
@@ -92,7 +96,12 @@ That example uses the current public API end to end:
 - direct property access via `blog.tables.posts`
 - `set`, `get`, `update`, `delete`, `getAllValid`, and `observe`
 
-Singleton apps (one workspace per app) call a builder like `openBlog()` once at module scope. Multi-document use cases (per-row content docs, per-room ephemeral docs) wrap the same builder shape with `createDisposableCache(...)`. That is where refcounting and `gcTime` grace periods earn their keep. See [Per-row content documents](#per-row-content-documents) below.
+Singleton apps (one workspace per app) call a builder like `openBlog()` once at
+module scope. Browser child documents use `createBrowserDocumentFamily(...)`.
+One-shot Node scripts can open a child document directly for one operation;
+daemon and materializer workloads can opt into `createDisposableCache(...)` when
+same-process reuse matters. See [Per-row content documents](#per-row-content-documents)
+below.
 
 ## Prefix vocabulary
 
@@ -102,9 +111,16 @@ Every exported function in this package falls into one of three verbs. The prefi
 |---|---|---|---|---|
 | `define*` | **None**: pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
 | `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods) |
-| `create*` | **Pure construction**: no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition or cache | `createDisposableCache` |
+| `create*` | **Pure construction**: no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition or family | `createBrowserDocumentFamily`, `createDisposableCache` |
 
-`createDisposableCache(build, opts?)` is the refcounted cache primitive. The user owns `new Y.Doc` and every `attach*` call inside the builder; the cache owns identity keyed by id, refcounting, and the `gcTime` grace period between last dispose and teardown. `.open(id)` returns a disposable handle.
+`createBrowserDocumentFamily(source, opts?)` is the browser child-document
+surface. The source lists ids, builds one live child document, and clears local
+storage for one id without constructing the document.
+
+`createDisposableCache(build, opts?)` is the lower-level refcounted cache
+primitive. The user owns construction; the cache owns identity keyed by id,
+refcounting, and the `gcTime` grace period between last dispose and teardown.
+`.open(id)` returns a disposable handle.
 
 ### Plaintext vs encrypted
 
@@ -195,7 +211,10 @@ That matters because conflict resolution only has to happen once. Yjs handles me
 
 ### Definitions are pure; builders are live
 
-`defineTable` and `defineKv` are pure. They do not create a `Y.Doc`, open a socket, or touch IndexedDB. The builder function you write: whether you call it directly for a singleton or hand it to `createDisposableCache` for a refcounted cache: is the boundary where the live bundle appears.
+`defineTable` and `defineKv` are pure. They do not create a `Y.Doc`, open a
+socket, or touch IndexedDB. The builder function you write, whether you call it
+directly for a singleton or from a browser document family, is the boundary
+where the live bundle appears.
 
 That split is not cosmetic. It lets you share definitions across modules, infer types once, and instantiate different bundles in different runtimes without rewriting the schema layer.
 
@@ -303,11 +322,14 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 
 1. Define tables and KV entries with `defineTable` and `defineKv`.
 2. Write a builder function that constructs `new Y.Doc({ guid })` and composes `attachTables` / `attachKv` / `attachIndexedDb` / `attachSync` / etc. inline, returning the bundle.
-3. For singleton apps: call the builder once at module scope. For per-row / per-room fan-out: wrap it with `createDisposableCache(build, { gcTime? })` and call `.open(rowId)` per instance.
-4. `await bundle.whenReady` (or `handle.whenReady`) before reading persisted state. `whenReady` is the platform's readiness convention: an optional `Promise<unknown>` field on the bundle you return. The cache itself does not read it, but `WorkspaceGate`, the CLI's `run` command, migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and every editor's `{#await}` block all gate on it. Expose it when the bundle has async initialization the caller should wait on, and compose it from whatever attachment signals make sense: `idb.whenLoaded` for a single barrier, or `Promise.all([persistence.whenLoaded, unlock.whenChecked, sync.whenConnected])` for a multi-step cascade. Because the field is typed `Promise<unknown>`, `Promise.all([...])` is assignable directly (no `.then(() => undefined)` tail required).
+3. For singleton apps: call the builder once at module scope. For browser
+   child-doc fan-out: use `createBrowserDocumentFamily(...)` and call
+   `.open(rowId)` per instance. For one-shot Node operations: call the child
+   builder directly inside `using`.
+4. `await bundle.whenReady` (or `handle.whenReady`) before reading persisted state. `whenReady` is the platform's readiness convention: an optional `Promise<unknown>` field on the bundle you return. The family or cache itself does not read it, but `WorkspaceGate`, the CLI's `run` command, migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and every editor's `{#await}` block all gate on it. Expose it when the bundle has async initialization the caller should wait on, and compose it from whatever attachment signals make sense: `idb.whenLoaded` for a single barrier, or `Promise.all([persistence.whenLoaded, unlock.whenChecked, sync.whenConnected])` for a multi-step cascade. Because the field is typed `Promise<unknown>`, `Promise.all([...])` is assignable directly (no `.then(() => undefined)` tail required).
 5. Read and write through `bundle.tables`, `bundle.kv`, `bundle.awareness`, and (for per-row content docs) whatever you exposed in the returned bundle.
 6. Use `walkActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
-7. Dispose with `bundle[Symbol.dispose]()` for singletons or `handle[Symbol.dispose]()` for cache handles when you're done. Use `cache[Symbol.dispose]()` to flush every cached entry.
+7. Dispose with `bundle[Symbol.dispose]()` for singletons or `handle[Symbol.dispose]()` for family/cache handles when you're done. Use `family[Symbol.dispose]()` or `cache[Symbol.dispose]()` to flush every live entry.
 
 The architecture stays local-first: the workspace works offline, synchronizes opportunistically, and treats external systems as helpers around the document:not the other way around.
 
@@ -326,7 +348,11 @@ The ID becomes `ydoc.guid` for the workspace doc, so it is not a throwaway strin
 
 ### Workspaces
 
-A workspace is a `Y.Doc` plus whatever `attach*` handles you bound to it, packaged as a bundle with `{ ydoc, [Symbol.dispose], ... }`. A singleton app returns that bundle from a top-level function like `openBlog()`. A cache-hosted workspace returns the same shape from a `createDisposableCache((id) => ...)` builder, and `.open(id)` mints a refcounted handle over it.
+A workspace is a `Y.Doc` plus whatever `attach*` handles you bound to it,
+packaged as a bundle with `{ id, ydoc, [Symbol.dispose], ... }`. A browser
+workspace also exposes `syncControl` and `clearLocalData()`. A singleton app
+returns the bundle from a top-level function like `openBlog()`. A document
+family returns disposable handles over child documents keyed by row id.
 
 ### Yjs document
 
@@ -362,7 +388,7 @@ KV entries are for settings and scalar preferences. They are keyed by string and
 
 - Call the relevant `attach*` function (e.g. `attachIndexedDb`, `attachSync`, `attachSqlite`, `attachEncryption`) inside the builder and include the handle in the returned bundle.
 - Order matters only through lexical scope: later `attach*` calls see earlier handles directly.
-- For per-row content docs, write a **separate** `createDisposableCache((rowId) => ...)` and `.open(rowId)` it from the main workspace's actions or components.
+- For browser per-row content docs, write a separate `createBrowserDocumentFamily(...)` and `.open(rowId)` it from the main workspace's actions or components.
 
 ### Actions
 
@@ -376,9 +402,16 @@ Handlers close over `tables`, `kv`, and anything else the builder has in scope t
 
 ### Per-row content documents
 
-For apps where each row has its own rich-text / plain-text / timeline content (files, notes, skills, entries), use `createDisposableCache((rowId) => ...)` keyed by the row id. The main workspace holds the metadata row; the content cache owns per-row content Y.Docs.
+For browser apps where each row has its own rich-text / plain-text / timeline
+content (files, notes, skills, entries), use
+`createBrowserDocumentFamily(...)` keyed by the row id. The main workspace holds
+the metadata row; the document family owns live per-row content Y.Docs, active
+child sync fanout, and local browser cleanup.
 
-Each `.open(rowId)` returns a refcounted handle. Multiple consumers (editor, actions, materializer) can share one underlying Y.Doc safely: the cache owns construction, refcounting, and `gcTime`-delayed teardown.
+Each `.open(rowId)` returns a handle. Multiple consumers (editor, actions,
+route transitions) can share one underlying Y.Doc safely; the family owns
+construction, active sync inventory, and `gcTime`-delayed teardown through the
+lower-level cache primitive.
 
 ```svelte
 <script lang="ts">
@@ -533,7 +566,10 @@ workspace.awareness.setLocalField('cursor', { line: 12, column: 3 });
 
 ### Document-backed tables
 
-Per-row content (one Y.Doc per file/note/entry) is a `createDisposableCache` call keyed by the row id. The main workspace holds the metadata row; the content cache owns the content Y.Doc. This is how the filesystem, skills, and fuji apps do it.
+Per-row content (one Y.Doc per file/note/entry) is a browser document family
+keyed by the row id in browser apps. The main workspace holds the metadata row;
+the family owns live content Y.Docs and browser cleanup. Node one-shot code can
+open the content document directly for one operation.
 
 ```typescript
 import { type } from 'arktype';
@@ -542,11 +578,12 @@ import {
 	attachIndexedDb,
 	attachPlainText,
 	attachTables,
-	createDisposableCache,
+	createBrowserDocumentFamily,
 	defineTable,
 	docGuid,
 	onLocalUpdate,
 } from '@epicenter/workspace';
+import { clearDocument } from 'y-indexeddb';
 
 const files = defineTable(
 	type({
@@ -573,32 +610,45 @@ function openFilesWorkspace() {
 
 export const workspace = openFilesWorkspace();
 
-// Per-row content cache: one Y.Doc per file, keyed by file id.
-export const fileContentDocs = createDisposableCache((fileId: string) => {
-	const ydoc = new Y.Doc({
-		guid: docGuid({
-			workspaceId: workspace.id,
-			collection: 'files',
-			rowId: fileId,
-			field: 'content',
-		}),
-		gc: false,
+function fileContentDocGuid(fileId: string) {
+	return docGuid({
+		workspaceId: workspace.id,
+		collection: 'files',
+		rowId: fileId,
+		field: 'content',
 	});
-	const content = attachPlainText(ydoc, 'content');
-	const idb = attachIndexedDb(ydoc);
+}
 
-	// Bump parent row's updatedAt on local edits only (tx.local invariant).
-	onLocalUpdate(ydoc, () => {
-		workspace.tables.files.update(fileId, { updatedAt: Date.now() });
-	});
+// Browser child-document family: one Y.Doc per file, keyed by file id.
+export const fileContentDocs = createBrowserDocumentFamily({
+	ids() {
+		return workspace.tables.files.getAllValid().map((file) => file.id);
+	},
+	create(fileId: string) {
+		const ydoc = new Y.Doc({
+			guid: fileContentDocGuid(fileId),
+			gc: false,
+		});
+		const content = attachPlainText(ydoc, 'content');
+		const idb = attachIndexedDb(ydoc);
 
-	return {
-		ydoc,
-		content,
-		idb,
-		whenReady: idb.whenLoaded,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
+		// Bump parent row's updatedAt on local edits only (tx.local invariant).
+		onLocalUpdate(ydoc, () => {
+			workspace.tables.files.update(fileId, { updatedAt: Date.now() });
+		});
+
+		return {
+			ydoc,
+			content,
+			idb,
+			sync: null,
+			whenReady: idb.whenLoaded,
+			[Symbol.dispose]() { ydoc.destroy(); },
+		};
+	},
+	clearLocalData(fileId: string) {
+		return clearDocument(fileContentDocGuid(fileId));
+	},
 });
 
 async function documentExample() {
@@ -609,7 +659,7 @@ async function documentExample() {
 		_v: 1,
 	});
 
-	// Load a content handle for the row. Refcounted, dispose when done.
+	// Load a content handle for the row. Dispose when done.
 	using handle = fileContentDocs.open('file-1');
 	await handle.whenReady;
 
@@ -1216,11 +1266,14 @@ if (isMutation(createAction)) {
 
 ## Package entry points
 
-All attachments, schema definitions, and `createDisposableCache` live at the package root. The only subpath exports today are the materializers (which pull in heavier dependencies) and a few utility surfaces.
+All attachments, schema definitions, browser document family helpers, and the
+lower-level `createDisposableCache` primitive live at the package root. The only
+subpath exports today are the materializers (which pull in heavier dependencies)
+and a few utility surfaces.
 
 | Import path | What it exports | Public today |
 | --- | --- | --- |
-| `@epicenter/workspace` | `createDisposableCache`, `defineTable`, `defineKv`, every `attach*` (tables, kv, indexeddb, sqlite, sync, broadcast-channel, awareness, encryption, rich-text, plain-text, timeline), action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
+| `@epicenter/workspace` | `createBrowserDocumentFamily`, `createDisposableCache`, `defineTable`, `defineKv`, every `attach*` (tables, kv, indexeddb, sqlite, sync, broadcast-channel, awareness, encryption, rich-text, plain-text, timeline), action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
 | `@epicenter/workspace/document/materializer/markdown` | `attachMarkdownMaterializer`, serializers | Yes |
 | `@epicenter/workspace/document/materializer/sqlite` | `attachSqliteMaterializer`, `generateDdl`, types | Yes |
 | `@epicenter/workspace/ai` | `actionsToAiTools` (TanStack AI bindings) | Yes |
@@ -1249,28 +1302,37 @@ Two composition shapes, one builder contract.
 └──────────────────────────────────────────────────────────┘
 ```
 
-**Cache**: many workspaces, refcounted by id:
+**Browser document family**: many child documents, keyed by id:
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ export const fileContentDocs = createDisposableCache(    │
-│   (fileId: string) => {                                  │
-│     const ydoc = new Y.Doc({ guid: docGuid({ ... }) });  │
-│     const content = attachPlainText(ydoc, 'content');    │
-│     const idb     = attachIndexedDb(ydoc);               │
-│     return { ydoc, content, idb,                          │
-│              whenReady: idb.whenLoaded,                   │
-│              [Symbol.dispose]() { ydoc.destroy(); } };   │
-│   },                                                      │
-│   { gcTime: 5_000 },                                     │
-│ );                                                        │
-│                                                           │
-│ using handle = fileContentDocs.open('file-1'); // refs++ │
-│ await handle.whenReady;                                   │
-└──────────────────────────────────────────────────────────┘
+```typescript
+export const fileContentDocs = createBrowserDocumentFamily({
+	ids: () => workspace.tables.files.getAllValid().map((row) => row.id),
+	create(fileId: string) {
+		const ydoc = new Y.Doc({ guid: fileContentDocGuid(fileId) });
+		const content = attachPlainText(ydoc, 'content');
+		const idb = attachIndexedDb(ydoc);
+		return {
+			ydoc,
+			content,
+			idb,
+			sync: null,
+			whenReady: idb.whenLoaded,
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
+	},
+	clearLocalData: (fileId) => clearDocument(guid(fileId)),
+});
+
+using handle = fileContentDocs.open('file-1');
+await handle.whenReady;
 ```
 
-The builder shape is identical. The cache adds: `.open(id)` returns a refcounted handle, `handle[Symbol.dispose]()` decrements, refcount 0 arms `gcTime`, and `cache[Symbol.dispose]()` flushes every cached entry.
+The family source names the browser lifecycle facts: which ids exist, how to
+build one live child document, and how to clear local browser storage for one
+id without constructing it. Internally, the family uses the refcounted cache
+primitive for same-runtime identity and `gcTime` teardown.
 
 ### `batch(fn)`
 
@@ -1358,12 +1420,18 @@ import { defineKv, defineTable } from '@epicenter/workspace';
 ### Document creation
 
 ```typescript
-import { createDisposableCache } from '@epicenter/workspace';
+import { createBrowserDocumentFamily } from '@epicenter/workspace';
 ```
 
-`createDisposableCache(build, { gcTime? })` returns a refcounted cache. `.open(id)` mints a live handle by shallow-spreading the bundle your builder returned, so `ydoc`, `tables`, `kv`, `awareness`, `sync`, `actions`, `batch`, etc. are all things you explicitly put in the bundle.
+`createBrowserDocumentFamily(source, { gcTime? })` returns a browser child
+document family. `.open(id)` mints a live handle by shallow-spreading the bundle
+your `source.create(id)` returned, so `ydoc`, `content`, `idb`, `sync`, and
+`whenReady` are all things you explicitly put in the bundle.
 
-For singleton apps, skip the cache entirely and call your builder function once at module scope.
+For singleton apps, skip the family entirely and call your builder function once
+at module scope. For Node one-shot operations, call the child builder directly
+inside `using`. Use `createDisposableCache(build, { gcTime? })` when a daemon or
+materializer has a real same-process reuse invariant.
 
 ### Typical bundle properties
 
@@ -1384,13 +1452,16 @@ Everything below is a *convention*: the builder is free to expose more or less. 
 
 ### Document content attachments
 
-Per-row content is just another `attach*` call inside a `createDisposableCache` builder. Pick the attachment that matches the content shape:
+Per-row content is just another `attach*` call inside a child document builder.
+Pick the attachment that matches the content shape:
 
 - `attachPlainText(ydoc, name)`: binds a `Y.Text`. Editor gets `bundle.content` as `Y.Text`.
 - `attachRichText(ydoc, name)`: binds a `Y.XmlFragment` for prosemirror / tiptap / yrs-xml editors.
 - `attachTimeline(ydoc)`: a polymorphic timeline that can project as text, rich text, or a sheet. Exposes `read() / write(text) / appendText(text) / asText() / asRichText() / asSheet() / currentType / observe(...) / restoreFromSnapshot(binary)`.
 
-The cache stores these by `rowId`, so multiple consumers share one Y.Doc. Use `cache.open(id)` and `handle[Symbol.dispose]()` to manage lifecycle.
+The browser document family stores these by `rowId`, so multiple browser
+consumers share one Y.Doc. Use `family.open(id)` and `handle[Symbol.dispose]()`
+to manage lifecycle.
 
 ### Local-update filter
 

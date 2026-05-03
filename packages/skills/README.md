@@ -3,8 +3,8 @@
 `@epicenter/skills` defines the shared skills data model: table schemas, row
 types, the pure skills workspace factory, per-row document builders, guid
 helpers, and read action factories. It does not own browser storage. Browser
-apps compose IndexedDB, BroadcastChannel, and `createBrowserDocumentFamily` at the app
-boundary.
+apps compose IndexedDB, BroadcastChannel, and `createBrowserDocumentFamily` at
+the app boundary.
 
 ## Root Export
 
@@ -27,8 +27,8 @@ browser apps, Node scripts, and package-level tests because it does not import
 IndexedDB or file-system APIs.
 
 `openSkills()` builds the shared encrypted Y.Doc, tables, KV, and batch helper.
-It does not create instruction or reference document caches, because those
-caches own runtime persistence.
+It does not create instruction or reference document families, because those
+families own runtime persistence and browser cleanup.
 
 ## Browser Composition
 
@@ -70,7 +70,7 @@ const instructionsDocs = createBrowserDocumentFamily({
 });
 ```
 
-That inline cache source is deliberate. The single source of truth is
+That inline family source is deliberate. The single source of truth is
 `openSkills()`, `createSkillInstructionsDoc()`, and `skillInstructionsDocGuid()`,
 not a browser wrapper inside the shared package.
 
@@ -79,15 +79,16 @@ not a browser wrapper inside the shared package.
 Use `@epicenter/skills/node` when disk import/export actions are needed:
 
 ```typescript
-import { skillsDocument } from '@epicenter/skills/node';
+import { openSkillsNodeWorkspace } from '@epicenter/skills/node';
 
-using workspace = skillsDocument.open('epicenter.skills');
+using workspace = openSkillsNodeWorkspace({ workspaceId: 'epicenter.skills' });
 await workspace.actions.importFromDisk({ dir: '.agents/skills' });
 await workspace.actions.exportToDisk({ dir: '.agents/skills' });
 ```
 
-Node uses `createDisposableCache` because it needs shared document identity and
-teardown, but not browser reset behavior for IndexedDB.
+Node opens instruction and reference docs per operation. The browser family
+exists for shared live identity, active child sync fanout, and IndexedDB reset;
+the Node import/export path does not need those lifecycle rules.
 
 ## Data Model
 

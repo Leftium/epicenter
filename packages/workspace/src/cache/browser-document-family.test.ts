@@ -1,7 +1,7 @@
 /**
- * Browser Doc Cache Tests
+ * Browser Document Family Tests
  *
- * Verifies the browser doc cache owns child document identity, active
+ * Verifies the browser document family owns child document identity, active
  * sync fanout, and local persistence cleanup.
  *
  * Key behaviors:
@@ -10,7 +10,7 @@
  * - clearLocalData pauses active sync and clears every id from source.ids().
  * - clearLocalData clears unopened ids through source.clearLocalData(id)
  *   without constructing those documents.
- * - Disposal unregisters child sync controls and cache disposal flushes docs.
+ * - Disposal unregisters child sync controls and family disposal flushes docs.
  */
 
 import { expect, test } from 'bun:test';
@@ -72,12 +72,12 @@ test('open deduplicates documents through createDisposableCache', () => {
 		},
 		clearLocalData: async () => {},
 	};
-	const cache = createBrowserDocumentFamily(source, {
+	const family = createBrowserDocumentFamily(source, {
 		gcTime: Number.POSITIVE_INFINITY,
 	});
 
-	const first = cache.open('a');
-	const second = cache.open('a');
+	const first = family.open('a');
+	const second = family.open('a');
 
 	expect(first).not.toBe(second);
 	expect(first.id).toBe(second.id);
@@ -97,13 +97,13 @@ test('pause calls only active child sync controls', () => {
 		create: (id) => makeTestDocument(id, { sync: controls[id] }),
 		clearLocalData: async () => {},
 	};
-	const cache = createBrowserDocumentFamily(source, { gcTime: 0 });
+	const family = createBrowserDocumentFamily(source, { gcTime: 0 });
 
-	const oneHandle = cache.open('one');
-	cache.syncControl.pause();
+	const oneHandle = family.open('one');
+	family.syncControl.pause();
 	oneHandle[Symbol.dispose]();
-	cache.open('two');
-	cache.syncControl.pause();
+	family.open('two');
+	family.syncControl.pause();
 
 	expect(one.calls).toEqual(['pause']);
 	expect(two.calls).toEqual(['pause']);
@@ -121,15 +121,15 @@ test('reconnect calls only active child sync controls', () => {
 		create: (id) => makeTestDocument(id, { sync: controls[id] }),
 		clearLocalData: async () => {},
 	};
-	const cache = createBrowserDocumentFamily(source, { gcTime: 0 });
+	const family = createBrowserDocumentFamily(source, { gcTime: 0 });
 
-	const oneHandle = cache.open('one');
-	const twoHandle = cache.open('two');
-	cache.syncControl.reconnect();
+	const oneHandle = family.open('one');
+	const twoHandle = family.open('two');
+	family.syncControl.reconnect();
 	oneHandle[Symbol.dispose]();
-	cache.syncControl.reconnect();
+	family.syncControl.reconnect();
 	twoHandle[Symbol.dispose]();
-	cache.syncControl.reconnect();
+	family.syncControl.reconnect();
 
 	expect(one.calls).toEqual(['reconnect']);
 	expect(two.calls).toEqual(['reconnect', 'reconnect']);
@@ -142,18 +142,18 @@ test('disposing a handle eventually unregisters that child sync control', async 
 		create: (id) => makeTestDocument(id, { sync: child.control }),
 		clearLocalData: async () => {},
 	};
-	const cache = createBrowserDocumentFamily(source, { gcTime: 1 });
+	const family = createBrowserDocumentFamily(source, { gcTime: 1 });
 
-	const handle = cache.open('a');
-	cache.syncControl.pause();
+	const handle = family.open('a');
+	family.syncControl.pause();
 	handle[Symbol.dispose]();
 	await wait(5);
-	cache.syncControl.pause();
+	family.syncControl.pause();
 
 	expect(child.calls).toEqual(['pause']);
 });
 
-test('cache disposal disposes active cached documents', () => {
+test('family disposal disposes active cached documents', () => {
 	const disposed: string[] = [];
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
 		ids: () => [],
@@ -161,29 +161,29 @@ test('cache disposal disposes active cached documents', () => {
 			makeTestDocument(id, { onDispose: () => disposed.push(id) }),
 		clearLocalData: async () => {},
 	};
-	const cache = createBrowserDocumentFamily(source, {
+	const family = createBrowserDocumentFamily(source, {
 		gcTime: Number.POSITIVE_INFINITY,
 	});
 
-	cache.open('a');
-	cache.open('b');
-	cache[Symbol.dispose]();
+	family.open('a');
+	family.open('b');
+	family[Symbol.dispose]();
 
 	expect(disposed.sort()).toEqual(['a', 'b']);
 });
 
-test('instance with null sync gives cache no-op pause and reconnect', () => {
+test('instance with null sync gives family no-op pause and reconnect', () => {
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
 		ids: () => [],
 		create: (id) => makeTestDocument(id, { sync: null }),
 		clearLocalData: async () => {},
 	};
-	const cache = createBrowserDocumentFamily(source);
+	const family = createBrowserDocumentFamily(source);
 
-	cache.open('a');
+	family.open('a');
 
-	expect(() => cache.syncControl.pause()).not.toThrow();
-	expect(() => cache.syncControl.reconnect()).not.toThrow();
+	expect(() => family.syncControl.pause()).not.toThrow();
+	expect(() => family.syncControl.reconnect()).not.toThrow();
 });
 
 test('clearLocalData calls source.clearLocalData(id) for every id from source.ids()', async () => {
@@ -195,9 +195,9 @@ test('clearLocalData calls source.clearLocalData(id) for every id from source.id
 			cleared.push(id);
 		},
 	};
-	const cache = createBrowserDocumentFamily(source);
+	const family = createBrowserDocumentFamily(source);
 
-	await cache.clearLocalData();
+	await family.clearLocalData();
 
 	expect(cleared.sort()).toEqual(['a', 'b', 'c']);
 });
@@ -219,10 +219,10 @@ test('clearLocalData pauses active child sync before clearing storage', async ()
 			calls.push(`clear:${id}`);
 		},
 	};
-	const cache = createBrowserDocumentFamily(source);
+	const family = createBrowserDocumentFamily(source);
 
-	cache.open('open');
-	await cache.clearLocalData();
+	family.open('open');
+	await family.clearLocalData();
 
 	expect(calls).toEqual(['pause', 'clear:open']);
 });
@@ -240,10 +240,10 @@ test('clearLocalData clears unopened ids without constructing them', async () =>
 			cleared.push(id);
 		},
 	};
-	const cache = createBrowserDocumentFamily(source);
+	const family = createBrowserDocumentFamily(source);
 
-	const handle = cache.open('open');
-	await cache.clearLocalData();
+	const handle = family.open('open');
+	await family.clearLocalData();
 	handle[Symbol.dispose]();
 
 	expect(created).toEqual(['open']);

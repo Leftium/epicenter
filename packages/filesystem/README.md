@@ -18,46 +18,51 @@ This package has a peer dependency on `yjs`.
 
 ## Quick usage
 
-The basic setup is short: attach the `files` table to a Y.Doc, create the per-file content cache at the app edge, then hand `attachYjsFileSystem` the content operations it needs.
+The basic setup is short: attach the `files` table to a Y.Doc, define how to
+open a file content document at the app edge, then hand `attachYjsFileSystem`
+the content operations it needs.
 
 ```typescript
-import { attachTables, createDisposableCache, defineDocument } from '@epicenter/workspace';
+import { attachTables } from '@epicenter/workspace';
 import { attachYjsFileSystem, createFileContentDoc, filesTable } from '@epicenter/filesystem';
 import * as Y from 'yjs';
 
-const factory = defineDocument((id: string) => {
-  const ydoc = new Y.Doc({ guid: id });
-  const tables = attachTables(ydoc, { files: filesTable });
-  const contentDocs = createDisposableCache((fileId) =>
-    createFileContentDoc({
-      fileId,
-      workspaceId: id,
-      filesTable: tables.files,
-    }),
-  );
-  const fileContent = {
-    async read(fileId) {
-      await using handle = contentDocs.open(fileId);
-      await handle.whenReady;
-      return handle.content.read();
-    },
-    async write(fileId, text) {
-      await using handle = contentDocs.open(fileId);
-      await handle.whenReady;
-      handle.content.write(text);
-    },
-    async append(fileId, text) {
-      await using handle = contentDocs.open(fileId);
-      await handle.whenReady;
-      handle.content.appendText(text);
-      return handle.content.read();
-    },
-  };
-  const fs = attachYjsFileSystem(tables.files, fileContent);
-  return { ydoc, tables, fs, [Symbol.dispose]() { ydoc.destroy(); } };
-});
+const ydoc = new Y.Doc({ guid: 'test' });
+const tables = attachTables(ydoc, { files: filesTable });
 
-const ws = factory.open('test');
+function openContentDoc(fileId) {
+	return createFileContentDoc({
+		fileId,
+		workspaceId: ydoc.guid,
+		filesTable: tables.files,
+	});
+}
+
+const fileContent = {
+	async read(fileId) {
+		await using handle = openContentDoc(fileId);
+		await handle.whenReady;
+		return handle.content.read();
+	},
+	async write(fileId, text) {
+		await using handle = openContentDoc(fileId);
+		await handle.whenReady;
+		handle.content.write(text);
+	},
+	async append(fileId, text) {
+		await using handle = openContentDoc(fileId);
+		await handle.whenReady;
+		handle.content.appendText(text);
+		return handle.content.read();
+	},
+};
+
+const ws = {
+	fs: attachYjsFileSystem(tables.files, fileContent),
+	[Symbol.dispose]() {
+		ydoc.destroy();
+	},
+};
 
 await ws.fs.mkdir('/docs');
 await ws.fs.writeFile('/docs/hello.txt', 'Hello World');

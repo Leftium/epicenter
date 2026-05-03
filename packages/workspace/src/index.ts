@@ -8,7 +8,7 @@
  *
  * @example
  * ```typescript
- * import { attachTables, createDisposableCache, defineTable } from '@epicenter/workspace';
+ * import { attachTables, createBrowserDocumentFamily, defineTable } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
@@ -17,11 +17,12 @@
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  *
- * // Per-row docs: createDisposableCache wraps a pure builder.
- * const noteBodyDocs = createDisposableCache(
- *   (noteId) => buildNoteBody({ noteId, notesTable: tables.posts }),
- *   { gcTime: 5_000 },
- * );
+ * // Browser child docs: the family owns shared identity and cleanup.
+ * const noteBodyDocs = createBrowserDocumentFamily({
+ *   ids: () => tables.posts.getAllValid().map((post) => post.id),
+ *   create: (noteId) => buildNoteBody({ noteId, notesTable: tables.posts }),
+ *   clearLocalData: (noteId) => clearStoredNoteBody(noteId),
+ * });
  * ```
  *
  * @packageDocumentation
@@ -126,9 +127,9 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT PRIMITIVES: attach*, define*, createDisposableCache, encryption,
-// timeline, storage keys, types: everything in src/document/ + src/cache/
-// flows through its barrel.
+// DOCUMENT PRIMITIVES: attach*, define*, document families, refcounted cache,
+// encryption, timeline, storage keys, types: everything in src/document/ +
+// src/cache/ flows through its barrel.
 // ════════════════════════════════════════════════════════════════════════════
 
 export {

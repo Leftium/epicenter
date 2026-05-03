@@ -146,6 +146,7 @@ export function createTabCompositeId(
 Here `TabCompositeId` (the type) and `TabCompositeId` (the const) handle the two-namespace pattern. The type brands your strings; the const validates them in schema definitions. `createTabCompositeId` is the constructor that does real work: it takes the component parts and joins them. The `create` prefix makes intent obvious at call sites.
 
 This three-part split arises when the validator and the constructor have different jobs. The validator says "this string is already a `TabCompositeId`" (deserialization from Y.Doc). The constructor says "build me a new one from these parts." They don't collapse into one function because they serve different callers.
+
 ### Shadowed type with a validator + generator
 
 The variant for IDs generated from scratch. The validator handles deserialization (Y.Doc reads), the generator wraps `generateId()` so the double-cast lives in exactly one place:

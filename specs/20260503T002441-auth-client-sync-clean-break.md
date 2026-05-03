@@ -725,27 +725,23 @@ apps/tab-manager/src/lib/tab-manager/extension.ts
 
 Remove `createMachineTokenGetter` after call sites migrate.
 
-Add a helper in `@epicenter/auth/node` that creates a normal `AuthClient` from stored machine credentials:
+Add a helper in `@epicenter/auth/node` that creates a normal `AuthClient` from the stored machine session:
 
 ```ts
-export function createMachineAuthClient({
-	serverOrigin,
-	machineAuth = createMachineAuth(),
-}: {
-	serverOrigin: string | URL;
-	machineAuth?: MachineAuth;
-}): AuthClient {
+export function createMachineAuthClient(): AuthClient {
+	const sessionStorage = createKeychainMachineAuthSessionStorage();
 	return createAuth({
-		baseURL: String(serverOrigin),
-		sessionStorage: createMachineSessionStorage({
-			serverOrigin,
-			machineAuth,
-		}),
+		baseURL: EPICENTER_API_URL,
+		sessionStorage: {
+			load: sessionStorage.load,
+			save: sessionStorage.save,
+			watch: () => () => {},
+		},
 	});
 }
 ```
 
-`createMachineSessionStorage()` should implement `SessionStorage`:
+The inline storage object implements the core `SessionStorage` shape:
 
 ```ts
 load(): Promise<Session | null>
@@ -757,27 +753,23 @@ Recommended behavior:
 
 ```txt
 load()
-  reads the current machine credential
-  returns null if missing or expired
-  returns credential.session with token set to credential.bearerToken when valid
+  reads the current machine AuthSession
+  returns null if absent
 
 save(null)
-  clears the credential for serverOrigin
+  clears the stored machine session
 
 save(session)
-  updates the stored session and bearer token for serverOrigin if the repository supports it
-  otherwise no-ops only if no current credential exists should be avoided
+  saves the same AuthSession shape used by browser clients
 
 watch()
   returns a no-op unsubscribe for now
 ```
 
-If save(session) cannot be implemented cleanly with the current repository surface, add a repository method that updates the active credential's bearer token and session. Do not silently drop rotated tokens.
-
 Script call sites should then use:
 
 ```ts
-const auth = createMachineAuthClient({ serverOrigin: EPICENTER_API_URL });
+const auth = createMachineAuthClient();
 
 const sync = attachSync(doc, {
 	url,

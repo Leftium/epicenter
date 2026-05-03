@@ -1,13 +1,13 @@
 /**
  * Machine Auth Tests
  *
- * Verifies the Node-side device-code coordinator, session storage adapters,
- * and keychain serialization used by CLI and machine processes.
+ * Verifies the Node-side device-code coordinator and keychain serialization
+ * used by CLI and machine processes.
  *
  * Key behaviors:
  * - Device login stores the normalized `AuthSession`
  * - Status refreshes rotated authorization tokens
- * - Local session storage bridges into the shared auth client contract
+ * - Keychain storage persists one AuthSession value
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
@@ -18,7 +18,6 @@ import {
 	createKeychainMachineAuthSessionStorage,
 	createMachineAuth,
 	createMachineAuthWithDependencies,
-	createMachineSessionStorage,
 	createMemoryMachineAuthSessionStorageForTest,
 } from './machine-auth.js';
 import { createMachineAuthTransport } from './machine-auth-transport.js';
@@ -237,7 +236,7 @@ describe('createMachineAuth', () => {
 	});
 });
 
-describe('machine session storage', () => {
+describe('keychain machine session storage', () => {
 	test('keychain storage writes one AuthSession item', async () => {
 		const backend = memoryBackend();
 		const storage = createKeychainMachineAuthSessionStorage({ backend });
@@ -247,14 +246,5 @@ describe('machine session storage', () => {
 		expect(backend.values.size).toBe(1);
 		expect(await storage.load()).toMatchObject({ token: 'stored-token' });
 		expect([...backend.values.values()][0]).not.toContain('serverSession');
-	});
-
-	test('createMachineSessionStorage bridges storage load and save', async () => {
-		const storage = createMachineSessionStorage({ sessionStorage });
-
-		await expect(storage.load()).resolves.toBeNull();
-		await storage.save(makeSession({ token: 'saved-token' }));
-
-		expect((await sessionStorage.load())?.token).toBe('saved-token');
 	});
 });

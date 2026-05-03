@@ -344,33 +344,16 @@ export function createMachineAuthWithDependencies({
 }
 
 /**
- * Adapt machine auth to the browser-shaped `SessionStorage` contract.
- */
-export function createMachineSessionStorage({
-	sessionStorage,
-}: {
-	sessionStorage: MachineAuthSessionStorage;
-}): SessionStorage {
-	return {
-		async load() {
-			return sessionStorage.load();
-		},
-		async save(session) {
-			await sessionStorage.save(session);
-		},
-		watch() {
-			return () => {};
-		},
-	};
-}
-
-/**
  * Create an auth client backed by saved machine auth.
  */
 export function createMachineAuthClient(): AuthClient {
 	const sessionStorage = createKeychainMachineAuthSessionStorage();
 	return createAuth({
 		baseURL: EPICENTER_API_URL,
-		sessionStorage: createMachineSessionStorage({ sessionStorage }),
+		sessionStorage: {
+			load: sessionStorage.load,
+			save: sessionStorage.save,
+			watch: () => () => {},
+		} satisfies SessionStorage,
 	});
 }

@@ -98,12 +98,12 @@ export function openSkillsBrowser() {
 	const actions = createSkillsActions({
 		tables: doc.tables,
 		async readInstructions(skillId) {
-			await using handle = instructionsDocs.open(skillId);
+			using handle = instructionsDocs.open(skillId);
 			await handle.whenReady;
 			return handle.instructions.read();
 		},
 		async readReference(referenceId) {
-			await using handle = referenceDocs.open(referenceId);
+			using handle = referenceDocs.open(referenceId);
 			await handle.whenReady;
 			return handle.content.read();
 		},

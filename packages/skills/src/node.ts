@@ -120,12 +120,12 @@ export function openSkillsNodeWorkspace({
 	const readActions = createSkillsActions({
 		tables,
 		async readInstructions(skillId) {
-			await using handle = openInstructionsDoc(skillId);
+			using handle = openInstructionsDoc(skillId);
 			await handle.whenReady;
 			return handle.instructions.read();
 		},
 		async readReference(referenceId) {
-			await using handle = openReferenceDoc(referenceId);
+			using handle = openReferenceDoc(referenceId);
 			await handle.whenReady;
 			return handle.content.read();
 		},

@@ -98,7 +98,7 @@
  * ```
  *
  * Outside reactive contexts, `using` syntax is the cleanest match for the
- * `Disposable` shape:
+ * `Disposable` shape. `open()` is synchronous:
  *
  * ```ts
  * function readDoc(id: string) {
@@ -107,6 +107,9 @@
  * }
  * // handle disposed at scope exit; grace timer armed
  * ```
+ *
+ * If the returned value exposes readiness, await that field after opening:
+ * `using handle = cache.open(id); await handle.whenReady;`.
  *
  * ## Constraint: `T` must be a plain object
  *

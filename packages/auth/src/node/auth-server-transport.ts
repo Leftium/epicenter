@@ -1,8 +1,8 @@
 import { type } from 'arktype';
 import {
-	normalizeSessionResponse,
-	type Session,
-} from '../contracts/session.js';
+	type AuthCredential,
+	normalizeAuthCredential,
+} from '../contracts/auth-credential.js';
 import { normalizeServerOrigin } from './server-origin.js';
 
 const AuthServerTransportDeviceCodeResponse = type({
@@ -35,13 +35,28 @@ const AuthServerTransportDeviceTokenResponse =
 type AuthServerTransportDeviceTokenResponse =
 	typeof AuthServerTransportDeviceTokenResponse.infer;
 
-type AuthServerTransportCredentialSession = {
-	bearerToken: string;
-	session: Session;
+type AuthServerTransportCredentialResult = {
+	authCredential: AuthCredential;
 };
 
 export type AuthServerTransport = ReturnType<typeof createAuthServerTransport>;
 
+/**
+ * Create the small HTTP transport used by machine auth.
+ *
+ * This layer owns raw server-response parsing and token header policy. It
+ * normalizes `/auth/get-session` into `AuthCredential` immediately so callers
+ * do not have to reason about Better Auth's `{ user, session }` response shape
+ * or the `set-auth-token` fallback.
+ *
+ * @example
+ * ```ts
+ * const transport = createAuthServerTransport(
+ * 	{ fetch },
+ * 	{ serverOrigin: 'https://api.epicenter.so' },
+ * );
+ * ```
+ */
 export function createAuthServerTransport(
 	{ fetch }: { fetch: typeof globalThis.fetch },
 	{ serverOrigin }: { serverOrigin: string },
@@ -143,18 +158,21 @@ export function createAuthServerTransport(
 		},
 
 		async fetchCredentialSession({
-			bearerToken,
+			authorizationToken,
 		}: {
-			bearerToken: string;
-		}): Promise<AuthServerTransportCredentialSession> {
+			authorizationToken: string;
+		}): Promise<AuthServerTransportCredentialResult> {
 			const { data, response } = await requestJson({
 				method: 'GET',
 				path: '/auth/get-session',
-				token: bearerToken,
+				token: authorizationToken,
 			});
 			return {
-				bearerToken: response.headers.get('set-auth-token') ?? bearerToken,
-				session: normalizeSessionResponse(data),
+				authCredential: normalizeAuthCredential(data, {
+					serverOrigin: origin,
+					authorizationToken:
+						response.headers.get('set-auth-token') ?? authorizationToken,
+				}),
 			};
 		},
 

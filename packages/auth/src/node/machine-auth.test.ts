@@ -6,7 +6,7 @@
  *
  * Key behaviors:
  * - Status and logout use the server origin from the resolved credential
- * - Bearer token rotation never mutates the Better Auth session token
+ * - Authorization token rotation never mutates the Better Auth session token
  * - Direct token and key readers distinguish absence from unsafe local state
  * - Machine session storage loads and persists AuthClient session tokens
  */
@@ -15,7 +15,10 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { EncryptionKeys } from '@epicenter/encryption';
-import type { Session } from '../contracts/session.js';
+import type {
+	AuthCredential,
+	BetterAuthSessionResponse,
+} from '../contracts/auth-credential.js';
 import {
 	createMachineAuth,
 	createMachineAuthClient,
@@ -31,14 +34,27 @@ const encryptionKeys: EncryptionKeys = [
 	},
 ];
 
-function makeSession({
+/**
+ * Build the persisted credential shape used by the repository.
+ *
+ * Tests start from the full `AuthCredential` because it names the two token
+ * channels separately: `authorizationToken` authorizes Epicenter requests,
+ * while `serverSession.token` remains Better Auth session metadata.
+ */
+function makeCredential({
+	serverOrigin = 'https://api.epicenter.so',
+	authorizationToken = 'authorization-token',
 	expiresAt = '2026-02-01T00:00:00.000Z',
 	sessionToken = 'session-token',
 }: {
+	serverOrigin?: string;
+	authorizationToken?: string;
 	expiresAt?: string;
 	sessionToken?: string;
-} = {}): Session {
+} = {}): AuthCredential {
 	return {
+		serverOrigin,
+		authorizationToken,
 		user: {
 			id: 'user-1',
 			name: 'User One',
@@ -48,7 +64,7 @@ function makeSession({
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
-		session: {
+		serverSession: {
 			id: 'session-1',
 			token: sessionToken,
 			userId: 'user-1',
@@ -59,6 +75,33 @@ function makeSession({
 			userAgent: null,
 		},
 		encryptionKeys,
+	};
+}
+
+/**
+ * Project the credential fixture into the raw `/auth/get-session` body.
+ *
+ * The server response does not include `serverOrigin` or `authorizationToken`.
+ * `createAuthServerTransport()` adds those from the request origin and
+ * authorization headers before returning an `AuthCredential`.
+ */
+function makeBetterAuthSessionResponse(
+	input?: Parameters<typeof makeCredential>[0],
+): BetterAuthSessionResponse {
+	const credential = makeCredential(input);
+	return {
+		user: {
+			...credential.user,
+			createdAt: new Date(credential.user.createdAt),
+			updatedAt: new Date(credential.user.updatedAt),
+		},
+		session: {
+			...credential.serverSession,
+			expiresAt: new Date(credential.serverSession.expiresAt),
+			createdAt: new Date(credential.serverSession.createdAt),
+			updatedAt: new Date(credential.serverSession.updatedAt),
+		},
+		encryptionKeys: credential.encryptionKeys,
 	};
 }
 
@@ -107,16 +150,20 @@ describe('createMachineAuth', () => {
 		const fetchImpl = (async (input) => {
 			const url = new URL(String(input));
 			origins.push(url.origin);
-			return jsonResponse(makeSession());
+			return jsonResponse(makeBetterAuthSessionResponse());
 		}) as typeof fetch;
 		const repository = createPlaintextRepository();
 		await repository.save('https://first.example.com', {
-			bearerToken: 'first-token',
-			session: makeSession(),
+			authCredential: makeCredential({
+				serverOrigin: 'https://first.example.com',
+				authorizationToken: 'first-token',
+			}),
 		});
 		await repository.save('https://second.example.com', {
-			bearerToken: 'second-token',
-			session: makeSession(),
+			authCredential: makeCredential({
+				serverOrigin: 'https://second.example.com',
+				authorizationToken: 'second-token',
+			}),
 		});
 
 		const result = await createPlaintextMachineAuth(fetchImpl).status();
@@ -134,8 +181,10 @@ describe('createMachineAuth', () => {
 			return new Response('', { status: 200 });
 		}) as typeof fetch;
 		await createPlaintextRepository().save('https://logout.example.com', {
-			bearerToken: 'bearer-token',
-			session: makeSession(),
+			authCredential: makeCredential({
+				serverOrigin: 'https://logout.example.com',
+				authorizationToken: 'authorization-token',
+			}),
 		});
 
 		const result = await createPlaintextMachineAuth(fetchImpl).logout();
@@ -148,7 +197,7 @@ describe('createMachineAuth', () => {
 		expect(origins).toEqual(['https://logout.example.com']);
 	});
 
-	test('login stores set-auth-token as bearerToken without mutating session token', async () => {
+	test('login stores set-auth-token as authorization token without mutating session token', async () => {
 		const fetchImpl = (async (input) => {
 			const url = new URL(String(input));
 			if (url.pathname === '/auth/device/code') {
@@ -165,9 +214,12 @@ describe('createMachineAuth', () => {
 			if (url.pathname === '/auth/device/token') {
 				return jsonResponse({ access_token: 'device-token', expires_in: 3600 });
 			}
-			return jsonResponse(makeSession({ sessionToken: 'session-token' }), {
-				headers: { 'set-auth-token': 'rotated-bearer-token' },
-			});
+			return jsonResponse(
+				makeBetterAuthSessionResponse({ sessionToken: 'session-token' }),
+				{
+					headers: { 'set-auth-token': 'rotated-authorization-token' },
+				},
+			);
 		}) as typeof fetch;
 
 		const result = await createPlaintextMachineAuth(
@@ -180,18 +232,27 @@ describe('createMachineAuth', () => {
 		);
 
 		expect(result.error).toBeNull();
-		expect(credential?.bearerToken).toBe('rotated-bearer-token');
-		expect(credential?.session.session.token).toBe('session-token');
+		expect(credential?.authCredential.authorizationToken).toBe(
+			'rotated-authorization-token',
+		);
+		expect(credential?.authCredential.serverSession.token).toBe(
+			'session-token',
+		);
 	});
 
-	test('status refresh stores set-auth-token as bearerToken without mutating session token', async () => {
+	test('status refresh stores set-auth-token as authorization token without mutating session token', async () => {
 		const fetchImpl = (async () =>
-			jsonResponse(makeSession({ sessionToken: 'session-token' }), {
-				headers: { 'set-auth-token': 'refreshed-bearer-token' },
-			})) as unknown as typeof fetch;
+			jsonResponse(
+				makeBetterAuthSessionResponse({ sessionToken: 'session-token' }),
+				{
+					headers: { 'set-auth-token': 'refreshed-authorization-token' },
+				},
+			)) as unknown as typeof fetch;
 		await createPlaintextRepository().save('https://api.epicenter.so', {
-			bearerToken: 'old-bearer-token',
-			session: makeSession({ sessionToken: 'session-token' }),
+			authCredential: makeCredential({
+				authorizationToken: 'old-authorization-token',
+				sessionToken: 'session-token',
+			}),
 		});
 
 		const result = await createPlaintextMachineAuth(fetchImpl).status({
@@ -202,20 +263,29 @@ describe('createMachineAuth', () => {
 		);
 
 		expect(result.error).toBeNull();
-		expect(credential?.bearerToken).toBe('refreshed-bearer-token');
-		expect(credential?.session.session.token).toBe('session-token');
+		expect(credential?.authCredential.authorizationToken).toBe(
+			'refreshed-authorization-token',
+		);
+		expect(credential?.authCredential.serverSession.token).toBe(
+			'session-token',
+		);
 	});
 
 	test('status returns Err when refresh cannot save the credential', async () => {
 		const fetchImpl = (async () => {
 			await Bun.write(credentialFilePath, '{not-json');
-			return jsonResponse(makeSession({ sessionToken: 'session-token' }), {
-				headers: { 'set-auth-token': 'refreshed-bearer-token' },
-			});
+			return jsonResponse(
+				makeBetterAuthSessionResponse({ sessionToken: 'session-token' }),
+				{
+					headers: { 'set-auth-token': 'refreshed-authorization-token' },
+				},
+			);
 		}) as unknown as typeof fetch;
 		await createPlaintextRepository().save('https://api.epicenter.so', {
-			bearerToken: 'old-bearer-token',
-			session: makeSession({ sessionToken: 'session-token' }),
+			authCredential: makeCredential({
+				authorizationToken: 'old-authorization-token',
+				sessionToken: 'session-token',
+			}),
 		});
 
 		const result = await createPlaintextMachineAuth(fetchImpl).status({
@@ -226,14 +296,16 @@ describe('createMachineAuth', () => {
 		expect(result.error?.name).toBe('CredentialStorageFailed');
 	});
 
-	test('bearer and active key reads return Ok(null) after expiry while offline reads return keys', async () => {
+	test('authorization token and active key reads return Ok(null) after expiry while offline reads return keys', async () => {
 		await createPlaintextRepository().save('https://api.epicenter.so', {
-			bearerToken: 'bearer-token',
-			session: makeSession({ expiresAt: '2025-01-01T00:00:00.000Z' }),
+			authCredential: makeCredential({
+				authorizationToken: 'authorization-token',
+				expiresAt: '2025-01-01T00:00:00.000Z',
+			}),
 		});
 		const machineAuth = createPlaintextMachineAuth(fetch);
 
-		const bearer = await machineAuth.getBearerToken({
+		const authorizationToken = await machineAuth.getAuthorizationToken({
 			serverOrigin: 'https://api.epicenter.so',
 		});
 		const active = await machineAuth.getActiveEncryptionKeys({
@@ -243,13 +315,15 @@ describe('createMachineAuth', () => {
 			serverOrigin: 'https://api.epicenter.so',
 		});
 
-		expect(bearer).toEqual({ data: null, error: null });
+		expect(authorizationToken).toEqual({ data: null, error: null });
 		expect(active).toEqual({ data: null, error: null });
 		expect(offline).toEqual({ data: encryptionKeys, error: null });
 	});
 
 	test('direct readers return Ok(null) for absent credentials', async () => {
-		const result = await createPlaintextMachineAuth(fetch).getBearerToken({
+		const result = await createPlaintextMachineAuth(
+			fetch,
+		).getAuthorizationToken({
 			serverOrigin: 'https://api.epicenter.so',
 		});
 
@@ -259,7 +333,9 @@ describe('createMachineAuth', () => {
 	test('direct readers return Err for invalid credential files', async () => {
 		await Bun.write(credentialFilePath, '{not-json');
 
-		const result = await createPlaintextMachineAuth(fetch).getBearerToken({
+		const result = await createPlaintextMachineAuth(
+			fetch,
+		).getAuthorizationToken({
 			serverOrigin: 'https://api.epicenter.so',
 		});
 
@@ -290,8 +366,10 @@ describe('createMachineAuth', () => {
 
 	test('machine session storage persists rotated tokens', async () => {
 		await createPlaintextRepository().save('https://api.epicenter.so', {
-			bearerToken: 'old-bearer-token',
-			session: makeSession({ sessionToken: 'old-session-token' }),
+			authCredential: makeCredential({
+				authorizationToken: 'old-authorization-token',
+				sessionToken: 'old-session-token',
+			}),
 		});
 		const storage = createMachineSessionStorage({
 			serverOrigin: 'https://api.epicenter.so',
@@ -299,23 +377,29 @@ describe('createMachineAuth', () => {
 		});
 
 		await storage.save({
-			token: 'rotated-bearer-token',
-			user: makeSession().user,
+			token: 'rotated-authorization-token',
+			user: makeCredential().user,
 			encryptionKeys,
 		});
 		const credential = await createPlaintextRepository().get(
 			'https://api.epicenter.so',
 		);
 
-		expect(credential?.bearerToken).toBe('rotated-bearer-token');
-		expect(credential?.session.session.token).toBe('rotated-bearer-token');
-		expect(credential?.session.encryptionKeys).toEqual(encryptionKeys);
+		expect(credential?.authCredential.authorizationToken).toBe(
+			'rotated-authorization-token',
+		);
+		expect(credential?.authCredential.serverSession.token).toBe(
+			'old-session-token',
+		);
+		expect(credential?.authCredential.encryptionKeys).toEqual(encryptionKeys);
 	});
 
 	test('machine auth client hydrates from machine session storage', async () => {
 		await createPlaintextRepository().save('https://api.epicenter.so', {
-			bearerToken: 'bearer-token',
-			session: makeSession({ sessionToken: 'session-token' }),
+			authCredential: makeCredential({
+				authorizationToken: 'authorization-token',
+				sessionToken: 'session-token',
+			}),
 		});
 
 		const auth = createMachineAuthClient({
@@ -326,7 +410,7 @@ describe('createMachineAuth', () => {
 
 		expect(auth.snapshot).toMatchObject({
 			status: 'signedIn',
-			session: { token: 'bearer-token' },
+			session: { token: 'authorization-token' },
 		});
 		auth[Symbol.dispose]();
 	});

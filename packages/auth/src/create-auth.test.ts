@@ -12,7 +12,7 @@
 
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { createAuth, createSessionStorageAdapter } from './create-auth.ts';
-import type { AuthSnapshot, Session } from './index.ts';
+import type { AuthSession, AuthSnapshot } from './index.ts';
 import type { SessionStorage } from './session-store.ts';
 
 const originalFetch = globalThis.fetch;
@@ -38,7 +38,7 @@ function session({
 }: {
 	userId?: string;
 	token?: string;
-} = {}): Session {
+} = {}): AuthSession {
 	return {
 		token,
 		user: {
@@ -63,10 +63,10 @@ function createStorage({
 	load,
 	onDispose,
 }: {
-	load: () => Session | null | Promise<Session | null>;
+	load: () => AuthSession | null | Promise<AuthSession | null>;
 	onDispose?: () => void;
 }) {
-	let watchCallback: ((next: Session | null) => void) | null = null;
+	let watchCallback: ((next: AuthSession | null) => void) | null = null;
 	const storage = {
 		load,
 		save: async () => {},
@@ -81,7 +81,7 @@ function createStorage({
 
 	return {
 		storage,
-		emit(next: Session | null) {
+		emit(next: AuthSession | null) {
 			watchCallback?.(next);
 		},
 	};
@@ -144,7 +144,7 @@ test('listener failures do not stop later listeners', async () => {
 });
 
 test('whenLoaded resolves after asynchronous signed-out storage load settles', async () => {
-	const deferred = createDeferred<Session | null>();
+	const deferred = createDeferred<AuthSession | null>();
 	const setup = createStorage({ load: () => deferred.promise });
 	const auth = createAuth({
 		baseURL: 'http://localhost:8787',
@@ -167,7 +167,7 @@ test('whenLoaded resolves after asynchronous signed-out storage load settles', a
 });
 
 test('whenLoaded resolves after storage load failure and normalizes to signed out', async () => {
-	const deferred = createDeferred<Session | null>();
+	const deferred = createDeferred<AuthSession | null>();
 	const setup = createStorage({ load: () => deferred.promise });
 	const auth = createAuth({
 		baseURL: 'http://localhost:8787',
@@ -202,7 +202,7 @@ test('dispose is idempotent and disposes session storage once', async () => {
 });
 
 test('dispose resolves whenLoaded and ignores late storage load', async () => {
-	const deferred = createDeferred<Session | null>();
+	const deferred = createDeferred<AuthSession | null>();
 	const setup = createStorage({ load: () => deferred.promise });
 	const auth = createAuth({
 		baseURL: 'http://localhost:8787',

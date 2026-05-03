@@ -3,39 +3,27 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import { type } from 'arktype';
+import { AuthUser } from '../auth-types.js';
 import {
-	Session,
-	type Session as SessionData,
-	StoredBetterAuthUser,
-} from '../contracts/session.js';
+	AuthCredential,
+	AuthServerSessionMetadata,
+} from '../contracts/auth-credential.js';
 import {
 	type MachineCredentialSecretStorage,
 	MachineCredentialSecrets,
 } from './machine-credential-secret-storage.js';
 import { normalizeServerOrigin } from './server-origin.js';
 
-const CREDENTIAL_FILE_VERSION = 'epicenter.auth.credentialStore.v1';
+const CREDENTIAL_FILE_VERSION = 'epicenter.auth.credentialStore.v2';
 
-const StoredBetterAuthSessionMetadata = type({
-	id: 'string',
-	userId: 'string',
-	expiresAt: 'string',
-	createdAt: 'string',
-	updatedAt: 'string',
-	'ipAddress?': 'string | null | undefined',
-	'userAgent?': 'string | null | undefined',
-});
-type StoredBetterAuthSessionMetadata =
-	typeof StoredBetterAuthSessionMetadata.infer;
-
-const TokenlessMachineSession = type({
-	user: StoredBetterAuthUser,
-	session: StoredBetterAuthSessionMetadata,
+const MachineCredentialMetadataRecord = type({
+	user: AuthUser,
+	serverSession: AuthServerSessionMetadata,
 });
 
 const MachineCredentialFileEntry = type({
 	serverOrigin: 'string',
-	session: TokenlessMachineSession,
+	authCredential: MachineCredentialMetadataRecord,
 	secrets: MachineCredentialSecrets,
 	savedAt: 'string',
 	lastUsedAt: 'string',
@@ -43,24 +31,22 @@ const MachineCredentialFileEntry = type({
 type MachineCredentialFileEntry = typeof MachineCredentialFileEntry.infer;
 
 const MachineCredentialFile = type({
-	version: "'epicenter.auth.credentialStore.v1'",
+	version: "'epicenter.auth.credentialStore.v2'",
 	'currentServerOrigin?': 'string | null | undefined',
 	credentials: MachineCredentialFileEntry.array(),
 });
 type MachineCredentialFile = typeof MachineCredentialFile.infer;
 
 const MachineCredential = type({
-	serverOrigin: 'string',
-	bearerToken: 'string',
-	session: Session,
+	authCredential: AuthCredential,
 	savedAt: 'string',
 	lastUsedAt: 'string',
 });
 export type MachineCredential = typeof MachineCredential.infer;
 
 export type MachineCredentialMetadata = {
-	serverOrigin: string;
-	session: typeof TokenlessMachineSession.infer;
+	authCredential: typeof MachineCredentialMetadataRecord.infer &
+		Pick<AuthCredential, 'serverOrigin'>;
 	savedAt: string;
 	lastUsedAt: string;
 };
@@ -79,27 +65,38 @@ function isoNow(clock: Clock): string {
 	return clock.now().toISOString();
 }
 
-function metadataFromSession(session: SessionData) {
-	const { token: _token, ...metadata } = session.session;
+/**
+ * Keep only non-secret credential fields in the JSON file.
+ *
+ * Machine status needs user and expiry data even when keychain secrets are
+ * missing. Authorization and server-session tokens stay behind the configured
+ * secret storage boundary.
+ */
+function metadataFromCredential(credential: AuthCredential) {
+	const { token: _token, ...metadata } = credential.serverSession;
 	return {
-		user: session.user,
-		session: StoredBetterAuthSessionMetadata.assert(metadata),
+		user: credential.user,
+		serverSession: AuthServerSessionMetadata.assert(metadata),
 	};
 }
 
-function sessionFromParts({
+function credentialFromParts({
 	entry,
 	sessionToken,
+	authorizationToken,
 	encryptionKeys,
 }: {
 	entry: MachineCredentialFileEntry;
 	sessionToken: string;
+	authorizationToken: string;
 	encryptionKeys: EncryptionKeys;
-}): SessionData {
-	return Session.assert({
-		user: entry.session.user,
-		session: {
-			...entry.session.session,
+}): AuthCredential {
+	return AuthCredential.assert({
+		serverOrigin: entry.serverOrigin,
+		authorizationToken,
+		user: entry.authCredential.user,
+		serverSession: {
+			...entry.authCredential.serverSession,
 			token: sessionToken,
 		},
 		encryptionKeys,
@@ -150,6 +147,21 @@ function latest(entries: MachineCredential[]): MachineCredential | null {
 	);
 }
 
+/**
+ * Create the file-backed machine credential repository.
+ *
+ * The JSON file keeps origin, user, session expiry, and save metadata readable
+ * for status commands. Sensitive credential values are delegated to the
+ * injected secret storage so keychain and plaintext modes share the same
+ * runtime `AuthCredential` contract.
+ *
+ * @example
+ * ```ts
+ * const repository = createMachineCredentialRepository({
+ * 	secretStorage: createKeychainMachineCredentialSecretStorage(),
+ * });
+ * ```
+ */
 export function createMachineCredentialRepository({
 	path = defaultCredentialPath(),
 	secretStorage,
@@ -168,15 +180,14 @@ export function createMachineCredentialRepository({
 	): Promise<MachineCredential | null> {
 		const secrets = await secretStorage.load(entry.secrets);
 		if (secrets === null) return null;
-		const session = sessionFromParts({
+		const authCredential = credentialFromParts({
 			entry,
-			sessionToken: secrets.sessionToken,
+			sessionToken: secrets.serverSessionToken,
+			authorizationToken: secrets.authorizationToken,
 			encryptionKeys: secrets.encryptionKeys,
 		});
 		return MachineCredential.assert({
-			serverOrigin: entry.serverOrigin,
-			bearerToken: secrets.bearerToken,
-			session,
+			authCredential,
 			savedAt: entry.savedAt,
 			lastUsedAt: entry.lastUsedAt,
 		});
@@ -188,10 +199,17 @@ export function createMachineCredentialRepository({
 
 	async function save(
 		serverOriginInput: string | URL,
-		input: { bearerToken: string; session: SessionData; lastUsedAt?: string },
+		input: {
+			authCredential: AuthCredential;
+			lastUsedAt?: string;
+		},
 	): Promise<MachineCredential> {
 		await secretStorage.assertAvailable();
 		const serverOrigin = normalizeServerOrigin(serverOriginInput);
+		const authCredential = AuthCredential.assert({
+			...input.authCredential,
+			serverOrigin,
+		});
 		const now = isoNow(clock);
 		const file = await readFile();
 		const existing = file.credentials.find(
@@ -204,17 +222,17 @@ export function createMachineCredentialRepository({
 		const lastUsedAt = input.lastUsedAt ?? now;
 		const credentialSecrets = await secretStorage.save({
 			serverOrigin,
-			userId: input.session.user.id,
+			userId: authCredential.user.id,
 			values: {
-				bearerToken: input.bearerToken,
-				sessionToken: input.session.session.token,
-				encryptionKeys: input.session.encryptionKeys,
+				authorizationToken: authCredential.authorizationToken,
+				serverSessionToken: authCredential.serverSession.token,
+				encryptionKeys: authCredential.encryptionKeys,
 			},
 		});
 
 		const entry = MachineCredentialFileEntry.assert({
 			serverOrigin,
-			session: metadataFromSession(input.session),
+			authCredential: metadataFromCredential(authCredential),
 			secrets: credentialSecrets,
 			savedAt,
 			lastUsedAt,
@@ -228,9 +246,7 @@ export function createMachineCredentialRepository({
 			await secretStorage.deleteStale(existing.secrets, credentialSecrets);
 		}
 		return MachineCredential.assert({
-			serverOrigin,
-			bearerToken: input.bearerToken,
-			session: input.session,
+			authCredential,
 			savedAt,
 			lastUsedAt,
 		});
@@ -280,8 +296,10 @@ export function createMachineCredentialRepository({
 					);
 		if (entry === undefined) return null;
 		return {
-			serverOrigin: entry.serverOrigin,
-			session: entry.session,
+			authCredential: {
+				serverOrigin: entry.serverOrigin,
+				...entry.authCredential,
+			},
 			savedAt: entry.savedAt,
 			lastUsedAt: entry.lastUsedAt,
 		};

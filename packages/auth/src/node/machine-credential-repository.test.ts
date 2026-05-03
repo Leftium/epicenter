@@ -5,7 +5,7 @@
  * storage and OS keychain backed storage.
  *
  * Key behaviors:
- * - Bearer-equivalent secrets stay out of JSON in keychain mode
+ * - Authorization secrets stay out of JSON in keychain mode
  * - Secure storage failures fail closed before writing credentials
  * - Corrupt credential files are rejected rather than replaced
  * - Expired credentials remain readable as persisted records
@@ -14,7 +14,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Session } from '../contracts/session.js';
+import type { AuthCredential } from '../contracts/auth-credential.js';
 import { createMachineCredentialRepository } from './machine-credential-repository.js';
 import {
 	createKeychainMachineCredentialSecretStorage,
@@ -30,21 +30,27 @@ const encryptionKeys = [
 	},
 ] as const;
 
-function makeSession(
+function makeCredential(
 	expiresAt: string,
 	{
+		serverOrigin = 'https://api.epicenter.so',
+		authorizationToken = 'authorization-token',
 		userId = 'user-1',
 		name = 'User One',
 		email = 'user@example.com',
 		sessionToken = 'session-token',
 	}: {
+		serverOrigin?: string;
+		authorizationToken?: string;
 		userId?: string;
 		name?: string;
 		email?: string;
 		sessionToken?: string;
 	} = {},
-): Session {
+): AuthCredential {
 	return {
+		serverOrigin,
+		authorizationToken,
 		user: {
 			id: userId,
 			name,
@@ -54,7 +60,7 @@ function makeSession(
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
-		session: {
+		serverSession: {
 			id: `${userId}-session`,
 			token: sessionToken,
 			userId,
@@ -124,16 +130,21 @@ describe('createMachineCredentialRepository', () => {
 	test('writes and reads the versioned credential file', async () => {
 		const repository = createRepository();
 		await repository.save('https://api.epicenter.so', {
-			bearerToken: 'bearer-token',
-			session: makeSession('2026-02-01T00:00:00.000Z'),
+			authCredential: makeCredential('2026-02-01T00:00:00.000Z', {
+				authorizationToken: 'authorization-token',
+			}),
 		});
 
 		const credential = await repository.get('https://api.epicenter.so');
-		expect(credential?.bearerToken).toBe('bearer-token');
-		expect(credential?.session.session.token).toBe('session-token');
+		expect(credential?.authCredential.authorizationToken).toBe(
+			'authorization-token',
+		);
+		expect(credential?.authCredential.serverSession.token).toBe(
+			'session-token',
+		);
 
 		const file = await Bun.file(storePath('credentials.json')).json();
-		expect(file.version).toBe('epicenter.auth.credentialStore.v1');
+		expect(file.version).toBe('epicenter.auth.credentialStore.v2');
 		expect(file.currentServerOrigin).toBe('https://api.epicenter.so');
 	});
 
@@ -148,16 +159,19 @@ describe('createMachineCredentialRepository', () => {
 		});
 
 		await repository.save('https://api.epicenter.so', {
-			bearerToken: 'bearer-token',
-			session: makeSession('2026-02-01T00:00:00.000Z'),
+			authCredential: makeCredential('2026-02-01T00:00:00.000Z', {
+				authorizationToken: 'authorization-token',
+			}),
 		});
 
 		const text = await Bun.file(storePath('credentials.json')).text();
-		expect(text).not.toContain('bearer-token');
+		expect(text).not.toContain('authorization-token');
 		expect(text).not.toContain('session-token');
 		expect(text).not.toContain(encryptionKeys[0].userKeyBase64);
 		const credential = await repository.get('https://api.epicenter.so');
-		expect(credential?.bearerToken).toBe('bearer-token');
+		expect(credential?.authCredential.authorizationToken).toBe(
+			'authorization-token',
+		);
 	});
 
 	test('removes stale keychain secrets when replacing a server credential', async () => {
@@ -171,15 +185,15 @@ describe('createMachineCredentialRepository', () => {
 		});
 
 		await repository.save('https://api.epicenter.so', {
-			bearerToken: 'old-bearer-token',
-			session: makeSession('2026-02-01T00:00:00.000Z', {
+			authCredential: makeCredential('2026-02-01T00:00:00.000Z', {
+				authorizationToken: 'old-authorization-token',
 				userId: 'old-user',
 				sessionToken: 'old-session-token',
 			}),
 		});
 		await repository.save('https://api.epicenter.so', {
-			bearerToken: 'new-bearer-token',
-			session: makeSession('2026-02-01T00:00:00.000Z', {
+			authCredential: makeCredential('2026-02-01T00:00:00.000Z', {
+				authorizationToken: 'new-authorization-token',
 				userId: 'new-user',
 				sessionToken: 'new-session-token',
 			}),
@@ -189,7 +203,9 @@ describe('createMachineCredentialRepository', () => {
 		expect(keys.some((key) => key.includes('old-user'))).toBe(false);
 		expect(keys.some((key) => key.includes('new-user'))).toBe(true);
 		const credential = await repository.get('https://api.epicenter.so');
-		expect(credential?.bearerToken).toBe('new-bearer-token');
+		expect(credential?.authCredential.authorizationToken).toBe(
+			'new-authorization-token',
+		);
 	});
 
 	test('current credential with missing keychain secrets does not fall back to another server', async () => {
@@ -203,14 +219,16 @@ describe('createMachineCredentialRepository', () => {
 		});
 
 		await repository.save('https://first.example.com', {
-			bearerToken: 'first-bearer-token',
-			session: makeSession('2026-02-01T00:00:00.000Z', {
+			authCredential: makeCredential('2026-02-01T00:00:00.000Z', {
+				serverOrigin: 'https://first.example.com',
+				authorizationToken: 'first-authorization-token',
 				userId: 'first-user',
 			}),
 		});
 		await repository.save('https://second.example.com', {
-			bearerToken: 'second-bearer-token',
-			session: makeSession('2026-02-01T00:00:00.000Z', {
+			authCredential: makeCredential('2026-02-01T00:00:00.000Z', {
+				serverOrigin: 'https://second.example.com',
+				authorizationToken: 'second-authorization-token',
 				userId: 'second-user',
 			}),
 		});
@@ -220,9 +238,10 @@ describe('createMachineCredentialRepository', () => {
 
 		expect(await repository.getCurrent()).toBeNull();
 		expect(
-			(await repository.get('https://first.example.com'))?.bearerToken,
-		).toBe('first-bearer-token');
-		expect((await repository.getMetadata())?.serverOrigin).toBe(
+			(await repository.get('https://first.example.com'))?.authCredential
+				.authorizationToken,
+		).toBe('first-authorization-token');
+		expect((await repository.getMetadata())?.authCredential.serverOrigin).toBe(
 			'https://second.example.com',
 		);
 	});
@@ -238,8 +257,9 @@ describe('createMachineCredentialRepository', () => {
 
 		await expect(
 			repository.save('https://api.epicenter.so', {
-				bearerToken: 'bearer-token',
-				session: makeSession('2026-02-01T00:00:00.000Z'),
+				authCredential: makeCredential('2026-02-01T00:00:00.000Z', {
+					authorizationToken: 'authorization-token',
+				}),
 			}),
 		).rejects.toThrow('OS keychain storage is unavailable');
 		expect(await Bun.file(storePath('credentials.json')).exists()).toBe(false);
@@ -256,8 +276,9 @@ describe('createMachineCredentialRepository', () => {
 
 		await expect(
 			repository.save('https://api.epicenter.so', {
-				bearerToken: 'bearer-token',
-				session: makeSession('2026-02-01T00:00:00.000Z'),
+				authCredential: makeCredential('2026-02-01T00:00:00.000Z', {
+					authorizationToken: 'authorization-token',
+				}),
 			}),
 		).rejects.toThrow('keychain locked');
 		expect(await Bun.file(storePath('credentials.json')).exists()).toBe(false);
@@ -274,8 +295,9 @@ describe('createMachineCredentialRepository', () => {
 
 		await expect(
 			repository.save('https://api.epicenter.so', {
-				bearerToken: 'bearer-token',
-				session: makeSession('2026-02-01T00:00:00.000Z'),
+				authCredential: makeCredential('2026-02-01T00:00:00.000Z', {
+					authorizationToken: 'authorization-token',
+				}),
 			}),
 		).rejects.toThrow('Invalid credential file JSON');
 		expect(await Bun.file(path).text()).toBe('{not-json');
@@ -284,16 +306,21 @@ describe('createMachineCredentialRepository', () => {
 	test('reads expired credentials without applying auth policy', async () => {
 		const repository = createRepository();
 		await repository.save('https://api.epicenter.so', {
-			bearerToken: 'bearer-token',
-			session: makeSession('2025-01-01T00:00:00.000Z'),
+			authCredential: makeCredential('2025-01-01T00:00:00.000Z', {
+				authorizationToken: 'authorization-token',
+			}),
 		});
 
 		const credential = await repository.get('https://api.epicenter.so');
 
-		expect(credential?.bearerToken).toBe('bearer-token');
-		expect(credential?.session.session.expiresAt).toBe(
+		expect(credential?.authCredential.authorizationToken).toBe(
+			'authorization-token',
+		);
+		expect(credential?.authCredential.serverSession.expiresAt).toBe(
 			'2025-01-01T00:00:00.000Z',
 		);
-		expect(credential?.session.encryptionKeys).toEqual([...encryptionKeys]);
+		expect(credential?.authCredential.encryptionKeys).toEqual([
+			...encryptionKeys,
+		]);
 	});
 });

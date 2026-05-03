@@ -1,13 +1,15 @@
 import { EncryptionKeys } from '@epicenter/encryption';
 import { type } from 'arktype';
+import type { AuthCredential } from './contracts/auth-credential.js';
 
 /**
- * Durable user snapshot stored inside an authenticated local session.
+ * JSON-safe user snapshot shared by auth sessions and credentials.
  *
- * The auth layer normalizes Better Auth's `Date` values to ISO strings so
- * session persistence stays JSON-friendly across browser storage backends.
+ * Better Auth can produce `Date` objects before serialization. The auth
+ * contract normalizes those dates to ISO strings once so every persisted store
+ * uses the same user shape.
  */
-export const StoredUser = type({
+export const AuthUser = type({
 	id: 'string',
 	createdAt: 'string',
 	updatedAt: 'string',
@@ -17,25 +19,30 @@ export const StoredUser = type({
 	'image?': 'string | null | undefined',
 });
 
-export type StoredUser = typeof StoredUser.infer;
+export type AuthUser = typeof AuthUser.infer;
 
 /**
- * Shape of an authenticated session.
+ * Auth state persisted by browser and extension clients.
  *
- * Persisted stores hold `Session | null`: null means not logged in.
- * The session itself is never null; absence is expressed at the store level.
+ * This is the app-facing projection of the server credential. Richer Better
+ * Auth session metadata is normalized at the credential boundary and projected
+ * down before it enters `createAuth`.
  */
-export const Session = type({
+export const AuthSession = type({
 	token: 'string',
-	user: StoredUser,
+	user: AuthUser,
 	encryptionKeys: EncryptionKeys,
 });
 
-export type Session = typeof Session.infer;
+export type AuthSession = {
+	token: AuthCredential['authorizationToken'];
+	user: AuthCredential['user'];
+	encryptionKeys: AuthCredential['encryptionKeys'];
+};
 
 export type AuthSnapshot =
 	| { status: 'loading' }
 	| { status: 'signedOut' }
-	| { status: 'signedIn'; session: Session };
+	| { status: 'signedIn'; session: AuthSession };
 
 export type AuthSnapshotChangeListener = (snapshot: AuthSnapshot) => void;

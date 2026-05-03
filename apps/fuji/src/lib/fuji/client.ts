@@ -1,7 +1,7 @@
 import {
+	AuthSession,
 	createAuth,
 	createSessionStorageAdapter,
-	Session,
 } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -13,7 +13,7 @@ import { openFuji } from './browser';
 
 const session = createPersistedState({
 	key: 'fuji:authSession',
-	schema: Session.or('null'),
+	schema: AuthSession.or('null'),
 	defaultValue: null,
 });
 

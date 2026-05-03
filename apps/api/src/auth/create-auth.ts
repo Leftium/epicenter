@@ -1,4 +1,5 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
+import type { BetterAuthSessionResponse } from '@epicenter/auth/contracts';
 import { APPS } from '@epicenter/constants/apps';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -12,7 +13,6 @@ import { createAutumn } from '../autumn';
 import { FEATURE_IDS } from '../billing-plans';
 import * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
-import type { SessionResponse } from '@epicenter/auth/contracts';
 import { deriveUserEncryptionKeys } from './encryption';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -29,7 +29,7 @@ type Db = NodePgDatabase<typeof schema>;
  * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
  * - Plugins: bearer tokens, JWT, device authorization, OAuth provider (PKCE)
  * - `customSession()` enrichment that appends the full encryption keyring
- *   to `/auth/get-session` responses (see {@link SessionResponse})
+ *   to `/auth/get-session` responses (see {@link BetterAuthSessionResponse})
  * - Autumn billing customer creation on user signup
  * - Cloudflare KV secondary storage for session caching
  */
@@ -266,7 +266,7 @@ export function createAuth({
 				user,
 				session,
 				encryptionKeys,
-			} satisfies SessionResponse;
+			} satisfies BetterAuthSessionResponse;
 		},
 		{
 			...authOptionsBase,

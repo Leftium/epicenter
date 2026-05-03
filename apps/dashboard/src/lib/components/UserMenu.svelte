@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { StoredUser } from '@epicenter/auth-svelte';
+	import type { AuthUser } from '@epicenter/auth-svelte';
 	import * as Avatar from '@epicenter/ui/avatar';
 	import { Badge } from '@epicenter/ui/badge';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
@@ -15,7 +15,7 @@
 	import { balanceQuery } from '$lib/query/billing';
 	import { capitalize, getInitials } from '$lib/utils';
 
-	let { user }: { user: StoredUser } = $props();
+	let { user }: { user: AuthUser } = $props();
 
 	const balance = createQuery(() => balanceQuery.options);
 

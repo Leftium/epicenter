@@ -35,9 +35,9 @@ import {
 } from '@epicenter/workspace';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import {
+	AuthSession,
 	createAuth,
 	createSessionStorageAdapter,
-	Session,
 	type AuthClient,
 } from '@epicenter/auth-svelte';
 import { createPersistedState } from '@epicenter/svelte';
@@ -57,7 +57,7 @@ const appTables = {
 
 const session = createPersistedState({
 	key: 'my-app:authSession',
-	schema: Session.or('null'),
+	schema: AuthSession.or('null'),
 	defaultValue: null,
 });
 

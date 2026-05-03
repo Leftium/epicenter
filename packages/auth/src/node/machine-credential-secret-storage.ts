@@ -6,6 +6,13 @@ type MachineCredentialSecretRef = {
 	account: string;
 };
 
+/**
+ * Minimal Bun.secrets-compatible surface used by keychain storage.
+ *
+ * Tests inject an in-memory backend through this contract. Production defaults
+ * to `Bun.secrets`, so the rest of the auth layer does not know whether secrets
+ * are stored in the OS keychain or a test vault.
+ */
 export type MachineCredentialSecretBackend = {
 	get(options: { service: string; name: string }): Promise<string | null>;
 	set(options: { service: string; name: string }, value: string): Promise<void>;
@@ -17,35 +24,66 @@ const MachineCredentialSecretRefSchema = type({
 	account: 'string',
 });
 
+/**
+ * Sensitive values removed from the machine credential JSON file.
+ *
+ * The repository stores these values together because they are loaded and
+ * deleted as one credential. Splitting them into separate keychain entries
+ * would create partial-failure states that the caller cannot use safely.
+ */
+export const MachineCredentialSecretValues = type({
+	authorizationToken: 'string',
+	serverSessionToken: 'string',
+	encryptionKeys: EncryptionKeys,
+});
+export type MachineCredentialSecretValues =
+	typeof MachineCredentialSecretValues.infer;
+
+/**
+ * Plaintext secret payload embedded directly in the credential file.
+ *
+ * This variant is for tests and explicit plaintext storage mode. It keeps the
+ * same `values` object as keychain storage so repository code handles both
+ * modes through one secret contract.
+ */
 export const PlaintextMachineCredentialSecrets = type({
 	storage: "'file'",
-	bearerToken: 'string',
-	sessionToken: 'string',
-	encryptionKeys: EncryptionKeys,
+	values: MachineCredentialSecretValues,
 });
 export type PlaintextMachineCredentialSecrets =
 	typeof PlaintextMachineCredentialSecrets.infer;
 
+/**
+ * Pointer to a keychain blob containing all sensitive credential values.
+ *
+ * The credential file keeps only this reference. Loading the full credential
+ * requires resolving the blob and validating it as `MachineCredentialSecretValues`.
+ */
 export const KeychainMachineCredentialSecrets = type({
 	storage: "'osKeychain'",
-	bearerTokenRef: MachineCredentialSecretRefSchema,
-	sessionTokenRef: MachineCredentialSecretRefSchema,
-	encryptionKeysRef: MachineCredentialSecretRefSchema,
+	credentialRef: MachineCredentialSecretRefSchema,
 });
 export type KeychainMachineCredentialSecrets =
 	typeof KeychainMachineCredentialSecrets.infer;
 
+/**
+ * Serialized secret location for one saved machine credential.
+ *
+ * `file` stores the secret values inline. `osKeychain` stores a reference that
+ * must be resolved before the repository can rebuild an `AuthCredential`.
+ */
 export const MachineCredentialSecrets = PlaintextMachineCredentialSecrets.or(
 	KeychainMachineCredentialSecrets,
 );
 export type MachineCredentialSecrets = typeof MachineCredentialSecrets.infer;
 
-export type MachineCredentialSecretValues = {
-	bearerToken: string;
-	sessionToken: string;
-	encryptionKeys: EncryptionKeys;
-};
-
+/**
+ * Persistence boundary for machine credential secrets.
+ *
+ * The repository owns credential-file structure. This storage owns only the
+ * sensitive values and returns a serializable `MachineCredentialSecrets` marker
+ * that can be written beside non-secret metadata.
+ */
 export type MachineCredentialSecretStorage = {
 	assertAvailable(): Promise<void>;
 	save(input: {
@@ -63,13 +101,19 @@ export type MachineCredentialSecretStorage = {
 	): Promise<void>;
 };
 
-function keychainRef(
-	kind: 'bearerToken' | 'sessionToken' | 'encryptionKeys',
+/**
+ * Store all sensitive credential values as one secret.
+ *
+ * The repository always saves, loads, and deletes authorization token, server
+ * session token, and encryption keys together. A single keychain blob keeps the
+ * storage shape aligned with that lifecycle and avoids stale partial refs.
+ */
+function credentialKeychainRef(
 	serverOrigin: string,
 	userId: string,
 ): MachineCredentialSecretRef {
 	return {
-		service: `epicenter.auth.${kind}`,
+		service: 'epicenter.auth.credential',
 		account: `${serverOrigin}:${userId}`,
 	};
 }
@@ -78,11 +122,7 @@ function keychainRefs(
 	secrets: MachineCredentialSecrets,
 ): MachineCredentialSecretRef[] {
 	if (secrets.storage === 'file') return [];
-	return [
-		secrets.bearerTokenRef,
-		secrets.sessionTokenRef,
-		secrets.encryptionKeysRef,
-	];
+	return [secrets.credentialRef];
 }
 
 function secretRefKey(ref: MachineCredentialSecretRef): string {
@@ -106,30 +146,51 @@ function staleKeychainRefs(
 	);
 }
 
+/**
+ * Keep credential secrets inline in the credential JSON file.
+ *
+ * Use this for tests, local debugging, or environments where the caller has
+ * explicitly chosen a plaintext credential store. The storage still validates
+ * the same one-blob secret shape as keychain mode, so repository behavior does
+ * not branch by secret layout.
+ *
+ * @example
+ * ```ts
+ * const secretStorage = createPlaintextMachineCredentialSecretStorage();
+ * ```
+ */
 export function createPlaintextMachineCredentialSecretStorage(): MachineCredentialSecretStorage {
 	return {
 		async assertAvailable() {},
 		async save({ values }) {
 			return PlaintextMachineCredentialSecrets.assert({
 				storage: 'file',
-				bearerToken: values.bearerToken,
-				sessionToken: values.sessionToken,
-				encryptionKeys: values.encryptionKeys,
+				values,
 			});
 		},
 		async load(secrets) {
 			if (secrets.storage !== 'file') return null;
-			return {
-				bearerToken: secrets.bearerToken,
-				sessionToken: secrets.sessionToken,
-				encryptionKeys: secrets.encryptionKeys,
-			};
+			return secrets.values;
 		},
 		async delete() {},
 		async deleteStale() {},
 	};
 }
 
+/**
+ * Store machine credential secrets in the operating system keychain.
+ *
+ * Use this for normal CLI and daemon auth. Authorization token, server session
+ * token, and encryption keys are serialized together because the repository
+ * saves and deletes them as one credential. A self-test runs before saving so
+ * callers fail before mutating the credential file when the keychain is not
+ * available.
+ *
+ * @example
+ * ```ts
+ * const secretStorage = createKeychainMachineCredentialSecretStorage();
+ * ```
+ */
 export function createKeychainMachineCredentialSecretStorage({
 	backend = Bun.secrets,
 }: {
@@ -150,50 +211,24 @@ export function createKeychainMachineCredentialSecretStorage({
 			}
 		},
 		async save({ serverOrigin, userId, values }) {
-			const bearerTokenRef = keychainRef('bearerToken', serverOrigin, userId);
-			const sessionTokenRef = keychainRef('sessionToken', serverOrigin, userId);
-			const encryptionKeysRef = keychainRef(
-				'encryptionKeys',
-				serverOrigin,
-				userId,
-			);
-			await backend.set(secretOptions(bearerTokenRef), values.bearerToken);
-			await backend.set(secretOptions(sessionTokenRef), values.sessionToken);
+			const credentialRef = credentialKeychainRef(serverOrigin, userId);
 			await backend.set(
-				secretOptions(encryptionKeysRef),
-				JSON.stringify(values.encryptionKeys),
+				secretOptions(credentialRef),
+				JSON.stringify(MachineCredentialSecretValues.assert(values)),
 			);
 			return KeychainMachineCredentialSecrets.assert({
 				storage: 'osKeychain',
-				bearerTokenRef,
-				sessionTokenRef,
-				encryptionKeysRef,
+				credentialRef,
 			});
 		},
 		async load(secrets) {
 			if (secrets.storage !== 'osKeychain') return null;
-			const bearerToken = await backend.get(
-				secretOptions(secrets.bearerTokenRef),
+			const rawCredential = await backend.get(
+				secretOptions(secrets.credentialRef),
 			);
-			const sessionToken = await backend.get(
-				secretOptions(secrets.sessionTokenRef),
-			);
-			const rawEncryptionKeys = await backend.get(
-				secretOptions(secrets.encryptionKeysRef),
-			);
-			if (
-				bearerToken === null ||
-				sessionToken === null ||
-				rawEncryptionKeys === null
-			) {
-				return null;
-			}
+			if (rawCredential === null) return null;
 			try {
-				return {
-					bearerToken,
-					sessionToken,
-					encryptionKeys: EncryptionKeys.assert(JSON.parse(rawEncryptionKeys)),
-				};
+				return MachineCredentialSecretValues.assert(JSON.parse(rawCredential));
 			} catch {
 				return null;
 			}

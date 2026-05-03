@@ -9,12 +9,15 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type {
+	AuthSession,
 	AuthSnapshot,
 	AuthSnapshotChangeListener,
-	Session,
-	StoredUser,
+	AuthUser,
 } from './auth-types.ts';
-import type { SessionResponse } from './contracts/session.ts';
+import {
+	type BetterAuthSessionResponse,
+	normalizeAuthUser,
+} from './contracts/auth-credential.ts';
 import type { MaybePromise, SessionStorage } from './session-store.ts';
 
 export const AuthError = defineErrors({
@@ -90,9 +93,9 @@ export type AuthClient = {
 };
 
 export type SessionStateAdapter = {
-	get(): Session | null;
-	set(value: Session | null): MaybePromise<void>;
-	watch(fn: (next: Session | null) => void): () => void;
+	get(): AuthSession | null;
+	set(value: AuthSession | null): MaybePromise<void>;
+	watch(fn: (next: AuthSession | null) => void): () => void;
 	whenReady?: Promise<unknown>;
 	[Symbol.dispose]?(): void;
 };
@@ -122,7 +125,7 @@ export function createSessionStorageAdapter(
  * requiring a fabricated auth shape.
  */
 type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<SessionResponse, BetterAuthOptions>
+	typeof customSession<BetterAuthSessionResponse, BetterAuthOptions>
 >;
 
 /**
@@ -140,7 +143,7 @@ export function createAuth({
 	let snapshot: AuthSnapshot = { status: 'loading' };
 	let storageLoaded = false;
 	let disposed = false;
-	let bufferedBetterAuthCandidate: Session | null | undefined;
+	let bufferedBetterAuthCandidate: AuthSession | null | undefined;
 	let resolveWhenLoaded: () => void = () => {};
 	const whenLoaded = new Promise<void>((resolve) => {
 		resolveWhenLoaded = resolve;
@@ -158,17 +161,17 @@ export function createAuth({
 		}
 	}
 
-	function sessionFromSnapshot(value: AuthSnapshot): Session | null {
+	function sessionFromSnapshot(value: AuthSnapshot): AuthSession | null {
 		return value.status === 'signedIn' ? value.session : null;
 	}
 
-	function snapshotFromSession(session: Session | null): AuthSnapshot {
+	function snapshotFromSession(session: AuthSession | null): AuthSnapshot {
 		return session === null
 			? { status: 'signedOut' }
 			: { status: 'signedIn', session };
 	}
 
-	function sessionsEqual(left: Session | null, right: Session | null) {
+	function sessionsEqual(left: AuthSession | null, right: AuthSession | null) {
 		if (left === null || right === null) return left === right;
 		return (
 			left.token === right.token &&
@@ -206,7 +209,7 @@ export function createAuth({
 		saveSnapshot(next);
 	}
 
-	function reconcileBetterAuthCandidate(next: Session | null | undefined) {
+	function reconcileBetterAuthCandidate(next: AuthSession | null | undefined) {
 		if (next === undefined) return;
 		if (next === null) {
 			if (snapshot.status !== 'loading')
@@ -225,7 +228,7 @@ export function createAuth({
 		});
 	}
 
-	function settleLoadedSession(loaded: Session | null) {
+	function settleLoadedSession(loaded: AuthSession | null) {
 		if (disposed) return;
 		storageLoaded = true;
 		setSnapshot(snapshotFromSession(loaded));
@@ -290,11 +293,11 @@ export function createAuth({
 		client.useSession.subscribe((state) => {
 			if (disposed) return;
 			if (state.isPending) return;
-			const data = state.data as SessionResponse | null;
+			const data = state.data as BetterAuthSessionResponse | null;
 			const next = data
 				? {
 						token: data.session.token,
-						user: normalizeUser(data.user),
+						user: normalizeAuthUser(data.user),
 						encryptionKeys: data.encryptionKeys,
 					}
 				: null;
@@ -415,34 +418,7 @@ export function createAuth({
 	};
 }
 
-/**
- * Convert BA's `Date` fields to ISO strings for JSON-safe persistence.
- *
- * BA returns `createdAt` and `updatedAt` as `Date` objects. Persisted session
- * stores (chrome.storage, localStorage) need plain JSON, so we normalize here
- * at the boundary rather than forcing every consumer to handle it.
- */
-function normalizeUser(user: {
-	id: string;
-	createdAt: Date;
-	updatedAt: Date;
-	email: string;
-	emailVerified: boolean;
-	name: string;
-	image?: string | null;
-}): StoredUser {
-	return {
-		id: user.id,
-		createdAt: user.createdAt.toISOString(),
-		updatedAt: user.updatedAt.toISOString(),
-		email: user.email,
-		emailVerified: user.emailVerified,
-		name: user.name,
-		image: user.image,
-	};
-}
-
-function usersEqual(left: StoredUser, right: StoredUser) {
+function usersEqual(left: AuthUser, right: AuthUser) {
 	return (
 		left.id === right.id &&
 		left.createdAt === right.createdAt &&

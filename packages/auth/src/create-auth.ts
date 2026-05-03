@@ -135,25 +135,14 @@ export function createAuth({
 	socialTokenProvider,
 }: CreateAuthConfig): AuthClient {
 	let snapshot: AuthSnapshot = { status: 'loading' };
-	let bootCacheLoaded = false;
 	let disposed = false;
-	let bufferedBetterAuthCandidate: AuthSession | null | undefined;
-	let resolveWhenLoaded: () => void = () => {};
-	const whenLoaded = new Promise<void>((resolve) => {
-		resolveWhenLoaded = resolve;
+	let unsubscribeBetterAuth: (() => void) | null = null;
+	let resolveDisposeSignal: () => void = () => {};
+	const disposeSignal = new Promise<void>((resolve) => {
+		resolveDisposeSignal = resolve;
 	});
 
 	const snapshotChangeListeners = new Set<AuthSnapshotChangeListener>();
-
-	const disposers: Array<() => void> = [];
-
-	function safeRun(fn: () => void) {
-		try {
-			fn();
-		} catch (error) {
-			console.error('[auth] subscriber threw:', error);
-		}
-	}
 
 	function sessionFromSnapshot(value: AuthSnapshot): AuthSession | null {
 		return value.status === 'signedIn' ? value.session : null;
@@ -185,7 +174,11 @@ export function createAuth({
 		if (snapshotsEqual(snapshot, next)) return;
 		snapshot = next;
 		for (const listener of snapshotChangeListeners) {
-			safeRun(() => listener(next));
+			try {
+				listener(next);
+			} catch (error) {
+				console.error('[auth] subscriber threw:', error);
+			}
 		}
 	}
 
@@ -201,53 +194,6 @@ export function createAuth({
 	function writeLocalSnapshot(next: AuthSnapshot) {
 		setSnapshot(next);
 		saveSnapshot(next);
-	}
-
-	function reconcileBetterAuthCandidate(next: AuthSession | null | undefined) {
-		if (next === undefined) return;
-		if (next === null) {
-			if (snapshot.status !== 'loading')
-				writeLocalSnapshot({ status: 'signedOut' });
-			return;
-		}
-
-		const current = sessionFromSnapshot(snapshot);
-		writeLocalSnapshot({
-			status: 'signedIn',
-			session: {
-				token: current?.token ?? next.token,
-				user: next.user,
-				encryptionKeys: next.encryptionKeys,
-			},
-		});
-	}
-
-	function settleLoadedSession(loaded: AuthSession | null) {
-		if (disposed) return;
-		bootCacheLoaded = true;
-		setSnapshot(snapshotFromSession(loaded));
-		if (bufferedBetterAuthCandidate !== undefined) {
-			reconcileBetterAuthCandidate(bufferedBetterAuthCandidate);
-		}
-		resolveWhenLoaded();
-	}
-
-	function loadPersistedSession() {
-		try {
-			const loaded = sessionStorage.load();
-			if (loaded instanceof Promise) {
-				loaded.then(settleLoadedSession, (error) => {
-					if (disposed) return;
-					console.error('[auth] failed to load session:', error);
-					settleLoadedSession(null);
-				});
-				return;
-			}
-			settleLoadedSession(loaded);
-		} catch (error) {
-			console.error('[auth] failed to load session:', error);
-			settleLoadedSession(null);
-		}
 	}
 
 	const client = createAuthClient({
@@ -276,31 +222,48 @@ export function createAuth({
 		},
 	});
 
-	disposers.push(
-		client.useSession.subscribe((state) => {
-			if (disposed) return;
-			if (state.isPending) return;
-			let next: AuthSession | null;
+	const whenLoaded: Promise<void> = Promise.race([
+		(async () => {
+			let loaded: AuthSession | null;
 			try {
-				next = authSessionFromBetterAuthSessionResponse(state.data);
+				loaded = await sessionStorage.load();
 			} catch (error) {
-				console.error('[auth] invalid Better Auth session response:', error);
-				return;
+				console.error('[auth] failed to load session:', error);
+				loaded = null;
 			}
+			if (disposed) return;
+			setSnapshot(snapshotFromSession(loaded));
 
-			if (!bootCacheLoaded) {
-				bufferedBetterAuthCandidate = next;
-				return;
-			}
-
-			if (next) {
-				reconcileBetterAuthCandidate(next);
-			} else if (snapshot.status === 'signedIn') {
-				writeLocalSnapshot({ status: 'signedOut' });
-			}
-		}),
-	);
-	loadPersistedSession();
+			unsubscribeBetterAuth = client.useSession.subscribe((state) => {
+				if (disposed || state.isPending) return;
+				let next: AuthSession | null;
+				try {
+					next = authSessionFromBetterAuthSessionResponse(state.data);
+				} catch (error) {
+					console.error(
+						'[auth] invalid Better Auth session response:',
+						error,
+					);
+					return;
+				}
+				if (next === null) {
+					if (snapshot.status === 'signedIn')
+						writeLocalSnapshot({ status: 'signedOut' });
+					return;
+				}
+				const current = sessionFromSnapshot(snapshot);
+				writeLocalSnapshot({
+					status: 'signedIn',
+					session: {
+						token: current?.token ?? next.token,
+						user: next.user,
+						encryptionKeys: next.encryptionKeys,
+					},
+				});
+			});
+		})(),
+		disposeSignal,
+	]);
 
 	return {
 		get snapshot() {
@@ -387,14 +350,9 @@ export function createAuth({
 		[Symbol.dispose]() {
 			if (disposed) return;
 			disposed = true;
-			resolveWhenLoaded();
-			for (const dispose of disposers) {
-				try {
-					dispose();
-				} catch (error) {
-					console.error('[auth] dispose error:', error);
-				}
-			}
+			// Awaiters of whenLoaded proceed after teardown but observe { status: 'loading' }.
+			resolveDisposeSignal();
+			unsubscribeBetterAuth?.();
 			snapshotChangeListeners.clear();
 		},
 	};

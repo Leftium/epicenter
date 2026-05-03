@@ -12,7 +12,7 @@
  *   attachIndexedDb,
  *   attachSync,
  *   attachTables,
- *   createBrowserDocumentFamily,
+ *   createDisposableCache,
  *   defineTable,
  *   type TokenSource,
  * } from '@epicenter/workspace';
@@ -31,16 +31,15 @@
  *   tokenSource,
  * });
  *
- * // Browser child docs: the family owns shared identity.
- * // The source owns its storage cleanup policy.
- * const noteBodyDocs = createBrowserDocumentFamily({
- *   create: (noteId) => buildNoteBody({ noteId, notesTable: tables.posts }),
- *   clearLocalData: async () => {
- *     await Promise.all(
- *       tables.posts.getAllValid().map((post) => clearStoredNoteBody(post.id)),
- *     );
- *   },
- * });
+ * const noteBodyDocs = createDisposableCache(
+ *   (noteId) => buildNoteBody({ noteId, notesTable: tables.posts }),
+ *   { gcTime: 5_000 },
+ * );
+ * async function clearNoteBodyLocalData() {
+ *   await Promise.all(
+ *     tables.posts.getAllValid().map((post) => clearStoredNoteBody(post.id)),
+ *   );
+ * }
  * ```
  *
  * @packageDocumentation
@@ -145,18 +144,11 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT PRIMITIVES: attach*, define*, document families, refcounted cache,
-// encryption, timeline, storage keys, types: everything in src/document/ +
-// src/cache/ flows through its barrel.
+// DOCUMENT PRIMITIVES: attach*, define*, refcounted cache, encryption,
+// timeline, storage keys, types: everything in src/document/ + src/cache/
+// flows through its barrel.
 // ════════════════════════════════════════════════════════════════════════════
 
-export {
-	type BrowserDocumentFamily,
-	type BrowserDocumentFamilyOptions,
-	type BrowserDocumentFamilySource,
-	createBrowserDocumentFamily,
-	type DocumentFamily,
-} from './cache/browser-document-family.js';
 export {
 	createDisposableCache,
 	type DisposableCache,

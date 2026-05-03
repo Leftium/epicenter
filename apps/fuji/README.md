@@ -14,9 +14,9 @@ SvelteKit app (static adapter, SSR disabled) with three panels: a sidebar for fi
 
 ### Data model
 
-Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: just IDs, titles, tags, timestamps. Each entry's body lives in its own Y.Doc opened by a `createBrowserDocumentFamily` keyed on the entry id; the child document builder owns the storage guid. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
+Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: just IDs, titles, tags, timestamps. Each entry's body lives in its own Y.Doc opened by a `createDisposableCache` keyed on the entry id; the child document builder owns the storage guid. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
 
-- `entries` table: `id` (EntryId), `title`, `subtitle`, `type` (string[]), `tags` (string[]), `createdAt`, `updatedAt`, `_v`. Each entry's body is opened on demand from a browser document family and bound to ProseMirror via `y-prosemirror`.
+- `entries` table: `id` (EntryId), `title`, `subtitle`, `type` (string[]), `tags` (string[]), `createdAt`, `updatedAt`, `_v`. Each entry's body is opened on demand from a disposable cache and bound to ProseMirror via `y-prosemirror`.
 - KV keys: `selectedEntryId`, `viewMode` (`'table' | 'timeline'`), `sidebarCollapsed`.
 
 ### Client wiring
@@ -34,15 +34,11 @@ export function openFuji() {
 
   const idb = attachIndexedDb(ydoc);
   attachBroadcastChannel(ydoc);
+  const tokenSource = createAuthTokenSource(auth);
   const sync = attachSync(ydoc, {
     url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
-    getToken: async () => {
-      await auth.whenLoaded;
-
-      const snapshot = auth.snapshot;
-      return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-    },
+    tokenSource,
   });
 
   return {
@@ -50,6 +46,7 @@ export function openFuji() {
     ydoc, tables, kv, awareness, encryption, idb, sync,
     whenLoaded: idb.whenLoaded,
     [Symbol.dispose]() {
+      tokenSource[Symbol.dispose]();
       ydoc.destroy();
     },
   };

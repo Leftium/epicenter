@@ -5,69 +5,57 @@ If a type is only the return shape of one `create*` function, the factory should
 The old pattern writes the same public API twice:
 
 ```typescript
-export type BrowserDocumentFamily<
+export type DisposableCache<
   Id extends string | number,
-  TDocument extends BrowserDocumentInstance,
+  TValue extends Disposable,
 > = Disposable & {
-  open(id: Id): TDocument & Disposable;
+  open(id: Id): TValue & Disposable;
   has(id: Id): boolean;
-  syncControl: SyncControl;
-  clearLocalData(): Promise<void>;
 };
 
-export function createBrowserDocumentFamily<
+export function createDisposableCache<
   Id extends string | number,
-  TDocument extends BrowserDocumentInstance,
+  TValue extends Disposable,
 >(
-  source: BrowserDocumentFamilySource<Id, TDocument>,
-): BrowserDocumentFamily<Id, TDocument> {
+  build: (id: Id) => TValue,
+): DisposableCache<Id, TValue> {
   return {
     open(id) {
-      return cache.open(id);
+      // ...
     },
     has(id) {
-      return cache.has(id);
-    },
-    syncControl,
-    async clearLocalData() {
       // ...
     },
   };
 }
 ```
 
-That looks clean until you navigate it. Click `cache.open`, and TypeScript has a reasonable reason to send you to `BrowserDocumentFamily.open`. But that is usually not what you wanted. You wanted to see the returned method, the closure it reads, and the helper it delegates to.
+That looks clean until you navigate it. Click `cache.open`, and TypeScript has a reasonable reason to send you to `DisposableCache.open`. But that is usually not what you wanted. You wanted to see the returned method, the closure it reads, and the helper it delegates to.
 
 Flip the direction:
 
 ```typescript
-export type BrowserDocumentFamily<
+export type DisposableCache<
   Id extends string | number,
-  TDocument extends BrowserDocumentInstance,
-> = ReturnType<typeof createBrowserDocumentFamily<Id, TDocument>>;
+  TValue extends Disposable,
+> = ReturnType<typeof createDisposableCache<Id, TValue>>;
 
-export function createBrowserDocumentFamily<
+export function createDisposableCache<
   Id extends string | number,
-  TDocument extends BrowserDocumentInstance,
->(source: BrowserDocumentFamilySource<Id, TDocument>) {
+  TValue extends Disposable,
+>(build: (id: Id) => TValue) {
   return {
     open(id: Id) {
-      return cache.open(id);
+      // ...
     },
     has(id: Id) {
-      return cache.has(id);
-    },
-    /**
-     * Reset every id known to the document source after pausing active sync.
-     */
-    async clearLocalData() {
       // ...
     },
   };
 }
 ```
 
-Now the type name still exists. Consumers can import `BrowserDocumentFamily`, documentation can refer to it, and package exports still have a stable public word. But the source of truth is the returned object.
+Now the type name still exists. Consumers can import `DisposableCache`, documentation can refer to it, and package exports still have a stable public word. But the source of truth is the returned object.
 
 This is the same instinct as `satisfies`, just pointed at a different problem.
 
@@ -80,7 +68,7 @@ return {
 } satisfies BrowserWorkspace;
 
 // Factory-owned type name, factory keeps its own shape.
-export type BrowserDocumentFamily = ReturnType<typeof createBrowserDocumentFamily>;
+export type DisposableCache = ReturnType<typeof createDisposableCache>;
 ```
 
 `satisfies` says: check this value against a contract without replacing the value. `ReturnType<typeof createX>` says: name the value after the factory defines it.

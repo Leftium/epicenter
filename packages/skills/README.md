@@ -3,8 +3,8 @@
 `@epicenter/skills` defines the shared skills data model: table schemas, row
 types, the pure skills workspace factory, per-row document builders, guid
 helpers, and read action factories. It does not own browser storage. Browser
-apps compose IndexedDB, BroadcastChannel, and `createBrowserDocumentFamily` at
-the app boundary.
+apps compose IndexedDB, BroadcastChannel, and `createDisposableCache` at the
+app boundary.
 
 ## Root Export
 
@@ -27,8 +27,8 @@ browser apps, Node scripts, and package-level tests because it does not import
 IndexedDB or file-system APIs.
 
 `openSkills()` builds the shared encrypted Y.Doc, tables, KV, and batch helper.
-It does not create instruction or reference document families, because those
-families own runtime persistence and browser cleanup.
+It does not create instruction or reference document caches, because those
+caches own runtime persistence and browser cleanup.
 
 ## Browser Composition
 
@@ -39,8 +39,8 @@ const doc = openSkills();
 const idb = attachIndexedDb(doc.ydoc);
 attachBroadcastChannel(doc.ydoc);
 
-const instructionsDocs = createBrowserDocumentFamily({
-	create(skillId: string) {
+const instructionsDocs = createDisposableCache(
+	(skillId: string) => {
 		const instructionsDoc = createSkillInstructionsDoc({
 			skillId,
 			workspaceId: doc.ydoc.guid,
@@ -55,22 +55,24 @@ const instructionsDocs = createBrowserDocumentFamily({
 			>,
 		};
 	},
-	async clearLocalData() {
-		await Promise.all(
-			doc.tables.skills.getAllValid().map((skill) =>
-				clearDocument(
-					skillInstructionsDocGuid({
-						workspaceId: doc.ydoc.guid,
-						skillId: skill.id,
-					}),
-				),
+	{ gcTime: 5_000 },
+);
+
+async function clearInstructionsLocalData() {
+	await Promise.all(
+		doc.tables.skills.getAllValid().map((skill) =>
+			clearDocument(
+				skillInstructionsDocGuid({
+					workspaceId: doc.ydoc.guid,
+					skillId: skill.id,
+				}),
 			),
-		);
-	},
-});
+		),
+	);
+}
 ```
 
-That inline family source is deliberate. The single source of truth is
+That inline cache source is deliberate. The single source of truth is
 `openSkills()`, `createSkillInstructionsDoc()`, and `skillInstructionsDocGuid()`,
 not a browser wrapper inside the shared package.
 
@@ -86,7 +88,7 @@ await workspace.actions.importFromDisk({ dir: '.agents/skills' });
 await workspace.actions.exportToDisk({ dir: '.agents/skills' });
 ```
 
-Node opens instruction and reference docs per operation. The browser family
+Node opens instruction and reference docs per operation. The browser cache
 exists for shared live identity, refcounting, and IndexedDB reset; the Node
 import/export path does not need those lifecycle rules.
 

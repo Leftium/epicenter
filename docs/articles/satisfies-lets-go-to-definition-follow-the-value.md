@@ -9,7 +9,7 @@ Here is the contract:
 ```typescript
 type BrowserWorkspace = Workspace & {
   idb: IndexedDbAttachment;
-  sync: SyncAttachment | null;
+  syncControl: SyncControl | null;
 
   goOffline(): void;
   reconnect(): void;
@@ -26,7 +26,7 @@ export function createAnnotatedWorkspace(): BrowserWorkspace {
   return {
     ...createBaseWorkspace(),
     idb,
-    sync: null,
+    syncControl: null,
     goOffline() {},
     reconnect() {},
     async clearLocalData() {
@@ -64,7 +64,7 @@ export function createSatisfiedWorkspace() {
   return {
     ...createBaseWorkspace(),
     idb,
-    sync: null,
+    syncControl: null,
     goOffline() {},
     reconnect() {},
     async clearLocalData() {
@@ -122,18 +122,18 @@ This matters most in factory-heavy code. Factories are already organized around 
 The same idea applies when the factory's own return type needs a public name. Do not annotate the factory with the named type and then duplicate the object shape somewhere else. Let the factory own the shape, then derive the name from it:
 
 ```typescript
-export type BrowserDocumentFamily<
+export type DisposableCache<
   Id extends string | number,
-  TDocument extends BrowserDocumentInstance,
-> = ReturnType<typeof createBrowserDocumentFamily<Id, TDocument>>;
+  TValue extends Disposable,
+> = ReturnType<typeof createDisposableCache<Id, TValue>>;
 
-export function createBrowserDocumentFamily<
+export function createDisposableCache<
   Id extends string | number,
-  TDocument extends BrowserDocumentInstance,
->(source: BrowserDocumentFamilySource<Id, TDocument>) {
+  TValue extends Disposable,
+>(build: (id: Id) => TValue) {
   return {
     open(id: Id) {
-      return source.create(id);
+      return build(id);
     },
     has(id: Id) {
       return cache.has(id);
@@ -155,17 +155,17 @@ So this is not "ignore the type." The type check still happens. The difference i
 
 There are two caveats worth saying out loud.
 
-First, `satisfies` preserves narrow inferred types. If your object says `sync: null`, the inferred return type contains `sync: null`, not `sync: SyncAttachment | null`. If the public value really needs the wider type, make the value wide before returning it:
+First, `satisfies` preserves narrow inferred types. If your object says `syncControl: null`, the inferred return type contains `syncControl: null`, not `syncControl: SyncControl | null`. If the public value really needs the wider type, make the value wide before returning it:
 
 ```typescript
 function createSatisfiedWorkspace() {
   const idb = createIndexedDbAttachment();
-  const sync: SyncAttachment | null = null;
+  const syncControl: SyncControl | null = null;
 
   return {
     ...createBaseWorkspace(),
     idb,
-    sync,
+    syncControl,
     goOffline() {},
     reconnect() {},
     async clearLocalData() {

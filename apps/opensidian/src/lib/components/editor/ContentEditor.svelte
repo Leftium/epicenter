@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
-	import { fromDocumentFamily } from '@epicenter/svelte';
+	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { opensidian } from '$lib/opensidian/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
@@ -19,7 +19,7 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	const doc = fromDocumentFamily(opensidian.fileContentDocs, () => fileId);
+	const doc = fromDisposableCache(opensidian.fileContentDocs, () => fileId);
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),

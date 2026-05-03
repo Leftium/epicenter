@@ -169,12 +169,12 @@ export type DisposableCacheError = InferErrors<typeof DisposableCacheError>;
  * `cache[Symbol.dispose]()` flushes every entry immediately.
  */
 export type DisposableCache<
-	Id extends string | number,
-	T extends Disposable,
-> = ReturnType<typeof createDisposableCache<Id, T>>;
+	TId extends string | number,
+	TValue extends Disposable,
+> = ReturnType<typeof createDisposableCache<TId, TValue>>;
 
-type CacheEntry<T extends Disposable> = {
-	value: T;
+type CacheEntry<TValue extends Disposable> = {
+	value: TValue;
 	openCount: number;
 	gcTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
@@ -183,7 +183,7 @@ type CacheEntry<T extends Disposable> = {
 /**
  * Create a refcounted cache for disposable resources.
  *
- * @param build - Closure invoked on cache miss. Returns a `T extends Disposable`.
+ * @param build - Closure invoked on cache miss. Returns a disposable value.
  *                Runs synchronously; if it throws, the cache is unchanged
  *                (next `open(sameId)` re-runs the closure; no poisoned entry).
  * @param opts  - `gcTime` (default `5_000`ms): milliseconds to wait after the
@@ -194,18 +194,18 @@ type CacheEntry<T extends Disposable> = {
  *                teardown.
  */
 export function createDisposableCache<
-	Id extends string | number,
-	T extends Disposable,
+	TId extends string | number,
+	TValue extends Disposable,
 >(
-	build: (id: Id) => T,
+	build: (id: TId) => TValue,
 	{
 		gcTime = 5_000,
 		log = createLogger('createDisposableCache'),
 	}: { gcTime?: number; log?: Logger } = {},
 ) {
-	const entries = new Map<Id, CacheEntry<T>>();
+	const entries = new Map<TId, CacheEntry<TValue>>();
 
-	function disposeEntry(id: Id, entry: CacheEntry<T>): void {
+	function disposeEntry(id: TId, entry: CacheEntry<TValue>): void {
 		entry.disposed = true;
 		if (entry.gcTimer !== null) {
 			clearTimeout(entry.gcTimer);
@@ -236,7 +236,7 @@ export function createDisposableCache<
 		 * fields share references (so `a.ydoc === b.ydoc`). N opens require N
 		 * disposes.
 		 */
-		open(id: Id) {
+		open(id: TId) {
 			let entry = entries.get(id);
 			if (entry === undefined) {
 				// User closure runs synchronously. If it throws, we DON'T insert
@@ -285,11 +285,11 @@ export function createDisposableCache<
 			return {
 				...entry.value,
 				[Symbol.dispose]: dispose,
-			} as T & Disposable;
+			} as TValue;
 		},
 
 		/** Whether an instance is currently held (refcounted or in grace window). */
-		has(id: Id) {
+		has(id: TId) {
 			return entries.has(id);
 		},
 

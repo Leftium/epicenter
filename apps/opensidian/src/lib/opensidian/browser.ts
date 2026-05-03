@@ -13,7 +13,7 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	createBrowserDocumentFamily,
+	createDisposableCache,
 	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
@@ -36,37 +36,35 @@ export function openOpensidian({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const fileContentDocs = createBrowserDocumentFamily(
-		{
-			create(fileId: FileId) {
-				const contentDoc = createFileContentDoc({
-					fileId,
-					workspaceId: doc.ydoc.guid,
-					filesTable: doc.tables.files,
-					attachPersistence: attachIndexedDb,
-				});
-				return {
-					...contentDoc,
-					persistence: contentDoc.persistence as ReturnType<
-						typeof attachIndexedDb
-					>,
-				};
-			},
-			async clearLocalData() {
-				await Promise.all(
-					doc.tables.files.getAllValid().map((file) =>
-						clearDocument(
-							fileContentDocGuid({
-								workspaceId: doc.ydoc.guid,
-								fileId: file.id,
-							}),
-						),
-					),
-				);
-			},
+	const fileContentDocs = createDisposableCache(
+		(fileId: FileId) => {
+			const contentDoc = createFileContentDoc({
+				fileId,
+				workspaceId: doc.ydoc.guid,
+				filesTable: doc.tables.files,
+				attachPersistence: attachIndexedDb,
+			});
+			return {
+				...contentDoc,
+				persistence: contentDoc.persistence as ReturnType<
+					typeof attachIndexedDb
+				>,
+			};
 		},
 		{ gcTime: 5_000 },
 	);
+	async function clearFileContentLocalData() {
+		await Promise.all(
+			doc.tables.files.getAllValid().map((file) =>
+				clearDocument(
+					fileContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						fileId: file.id,
+					}),
+				),
+			),
+		);
+	}
 	const fileContent = {
 		async read(fileId: FileId) {
 			await using handle = fileContentDocs.open(fileId);
@@ -119,7 +117,7 @@ export function openOpensidian({
 		sync,
 		syncControl: sync,
 		async clearLocalData() {
-			await fileContentDocs.clearLocalData();
+			await clearFileContentLocalData();
 			await idb.clearLocal();
 		},
 		remote,

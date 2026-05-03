@@ -7,7 +7,7 @@ import {
 	attachIndexedDb,
 	attachRichText,
 	attachSync,
-	createBrowserDocumentFamily,
+	createDisposableCache,
 	createRemoteClient,
 	DateTimeString,
 	docGuid,
@@ -48,56 +48,54 @@ export function openFuji({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const entryContentDocs = createBrowserDocumentFamily(
-		{
-			create(entryId: EntryId) {
-				const ydoc = new Y.Doc({
-					guid: entryContentDocGuid({
-						workspaceId: doc.ydoc.guid,
-						entryId,
-					}),
-					gc: false,
-				});
-				const body = attachRichText(ydoc);
-				const childIdb = attachIndexedDb(ydoc);
-				const childSync = attachSync(ydoc, {
-					url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
-					waitFor: childIdb.whenLoaded,
-					tokenSource,
-				});
+	const entryContentDocs = createDisposableCache(
+		(entryId: EntryId) => {
+			const ydoc = new Y.Doc({
+				guid: entryContentDocGuid({
+					workspaceId: doc.ydoc.guid,
+					entryId,
+				}),
+				gc: false,
+			});
+			const body = attachRichText(ydoc);
+			const childIdb = attachIndexedDb(ydoc);
+			const childSync = attachSync(ydoc, {
+				url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+				waitFor: childIdb.whenLoaded,
+				tokenSource,
+			});
 
-				onLocalUpdate(ydoc, () => {
-					doc.tables.entries.update(entryId, {
-						updatedAt: DateTimeString.now(),
-					});
+			onLocalUpdate(ydoc, () => {
+				doc.tables.entries.update(entryId, {
+					updatedAt: DateTimeString.now(),
 				});
+			});
 
-				return {
-					ydoc,
-					body,
-					idb: childIdb,
-					sync: childSync,
-					whenLoaded: childIdb.whenLoaded,
-					[Symbol.dispose]() {
-						ydoc.destroy();
-					},
-				};
-			},
-			async clearLocalData() {
-				await Promise.all(
-					doc.tables.entries.getAllValid().map((entry) =>
-						clearDocument(
-							entryContentDocGuid({
-								workspaceId: doc.ydoc.guid,
-								entryId: entry.id,
-							}),
-						),
-					),
-				);
-			},
+			return {
+				ydoc,
+				body,
+				idb: childIdb,
+				sync: childSync,
+				whenLoaded: childIdb.whenLoaded,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
 		},
 		{ gcTime: 5_000 },
 	);
+	async function clearEntryContentLocalData() {
+		await Promise.all(
+			doc.tables.entries.getAllValid().map((entry) =>
+				clearDocument(
+					entryContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						entryId: entry.id,
+					}),
+				),
+			),
+		);
+	}
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
@@ -119,7 +117,7 @@ export function openFuji({
 		sync,
 		syncControl: sync,
 		async clearLocalData() {
-			await entryContentDocs.clearLocalData();
+			await clearEntryContentLocalData();
 			await idb.clearLocal();
 		},
 		remote,

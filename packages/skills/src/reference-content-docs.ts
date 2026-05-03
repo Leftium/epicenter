@@ -5,9 +5,9 @@
  * own Y.Doc with `attachPlainText`. Persistence is caller-owned via the
  * `attachPersistence` callback: see `createFileContentDoc` for the shape.
  *
- * Wire into a runtime boundary at the caller. Browser apps use
- * `createBrowserDocumentFamily`; one-shot Node callers open this builder
- * directly and dispose it after the operation.
+ * Wire into a runtime boundary at the caller. Browser apps typically wrap
+ * this builder in `createDisposableCache`; one-shot Node callers open this
+ * builder directly and dispose it after the operation.
  */
 
 import type { Table } from '@epicenter/workspace';

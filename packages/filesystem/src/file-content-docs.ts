@@ -19,10 +19,10 @@
  * teardown barriers.
  *
  * The live document is browser-agnostic on purpose: it has no `sync` field.
- * Browser apps can pass it directly to `createBrowserDocumentFamily`; one-shot
+ * Browser apps typically wrap it in `createDisposableCache`; one-shot
  * non-browser callers can open this builder directly, while daemon and
- * materializer workloads may wrap it in `createDisposableCache` when
- * same-process reuse matters.
+ * materializer workloads can use the same cache when same-process reuse
+ * matters.
  */
 
 import type { Table } from '@epicenter/workspace';

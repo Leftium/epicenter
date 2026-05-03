@@ -131,8 +131,8 @@ export type SyncControl = {
 	reconnect(): void;
 };
 
-export type TokenSource = {
-	getToken(): Promise<string | null>;
+export type TokenSource<TToken extends string | null = string | null> = {
+	getToken(): Promise<TToken>;
 	onTokenChange(listener: () => void): () => void;
 };
 

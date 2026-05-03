@@ -8,7 +8,7 @@ import {
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	createBrowserDocumentFamily,
+	createDisposableCache,
 } from '@epicenter/workspace';
 import { clearDocument } from 'y-indexeddb';
 import { openSkills as openSkillsDoc } from './index.js';
@@ -18,71 +18,67 @@ export function openSkillsBrowser() {
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const instructionsDocs = createBrowserDocumentFamily(
-		{
-			create(skillId: string) {
-				const instructionsDoc = createSkillInstructionsDoc({
-					skillId,
-					workspaceId: doc.ydoc.guid,
-					skillsTable: doc.tables.skills,
-					attachPersistence: attachIndexedDb,
-				});
+	const instructionsDocs = createDisposableCache(
+		(skillId: string) => {
+			const instructionsDoc = createSkillInstructionsDoc({
+				skillId,
+				workspaceId: doc.ydoc.guid,
+				skillsTable: doc.tables.skills,
+				attachPersistence: attachIndexedDb,
+			});
 
-				return {
-					...instructionsDoc,
-					persistence: instructionsDoc.persistence as ReturnType<
-						typeof attachIndexedDb
-					>,
-				};
-			},
-			async clearLocalData() {
-				await Promise.all(
-					doc.tables.skills.getAllValid().map((skill) =>
-						clearDocument(
-							skillInstructionsDocGuid({
-								workspaceId: doc.ydoc.guid,
-								skillId: skill.id,
-							}),
-						),
-					),
-				);
-			},
+			return {
+				...instructionsDoc,
+				persistence: instructionsDoc.persistence as ReturnType<
+					typeof attachIndexedDb
+				>,
+			};
 		},
 		{ gcTime: 5_000 },
 	);
+	async function clearInstructionsLocalData() {
+		await Promise.all(
+			doc.tables.skills.getAllValid().map((skill) =>
+				clearDocument(
+					skillInstructionsDocGuid({
+						workspaceId: doc.ydoc.guid,
+						skillId: skill.id,
+					}),
+				),
+			),
+		);
+	}
 
-	const referenceDocs = createBrowserDocumentFamily(
-		{
-			create(referenceId: string) {
-				const referenceDoc = createReferenceContentDoc({
-					referenceId,
-					workspaceId: doc.ydoc.guid,
-					referencesTable: doc.tables.references,
-					attachPersistence: attachIndexedDb,
-				});
+	const referenceDocs = createDisposableCache(
+		(referenceId: string) => {
+			const referenceDoc = createReferenceContentDoc({
+				referenceId,
+				workspaceId: doc.ydoc.guid,
+				referencesTable: doc.tables.references,
+				attachPersistence: attachIndexedDb,
+			});
 
-				return {
-					...referenceDoc,
-					persistence: referenceDoc.persistence as ReturnType<
-						typeof attachIndexedDb
-					>,
-				};
-			},
-			async clearLocalData() {
-				await Promise.all(
-					doc.tables.references.getAllValid().map((reference) =>
-						clearDocument(
-							referenceContentDocGuid({
-								workspaceId: doc.ydoc.guid,
-								referenceId: reference.id,
-							}),
-						),
-					),
-				);
-			},
+			return {
+				...referenceDoc,
+				persistence: referenceDoc.persistence as ReturnType<
+					typeof attachIndexedDb
+				>,
+			};
 		},
 		{ gcTime: 5_000 },
 	);
+	async function clearReferenceLocalData() {
+		await Promise.all(
+			doc.tables.references.getAllValid().map((reference) =>
+				clearDocument(
+					referenceContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						referenceId: reference.id,
+					}),
+				),
+			),
+		);
+	}
 
 	const actions = createSkillsActions({
 		tables: doc.tables,
@@ -106,8 +102,8 @@ export function openSkillsBrowser() {
 		actions,
 		whenReady: idb.whenLoaded,
 		async clearLocalData() {
-			await instructionsDocs.clearLocalData();
-			await referenceDocs.clearLocalData();
+			await clearInstructionsLocalData();
+			await clearReferenceLocalData();
 			await idb.clearLocal();
 		},
 		[Symbol.dispose]() {

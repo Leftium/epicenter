@@ -7,7 +7,7 @@ import {
 	attachIndexedDb,
 	attachRichText,
 	attachSync,
-	createBrowserDocumentFamily,
+	createDisposableCache,
 	createRemoteClient,
 	DateTimeString,
 	docGuid,
@@ -48,56 +48,54 @@ export function openHoneycrisp({
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const noteBodyDocs = createBrowserDocumentFamily(
-		{
-			create(noteId: NoteId) {
-				const ydoc = new Y.Doc({
-					guid: noteBodyDocGuid({
-						workspaceId: doc.ydoc.guid,
-						noteId,
-					}),
-					gc: false,
-				});
-				const body = attachRichText(ydoc);
-				const childIdb = attachIndexedDb(ydoc);
-				const childSync = attachSync(ydoc, {
-					url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
-					waitFor: childIdb.whenLoaded,
-					tokenSource,
-				});
+	const noteBodyDocs = createDisposableCache(
+		(noteId: NoteId) => {
+			const ydoc = new Y.Doc({
+				guid: noteBodyDocGuid({
+					workspaceId: doc.ydoc.guid,
+					noteId,
+				}),
+				gc: false,
+			});
+			const body = attachRichText(ydoc);
+			const childIdb = attachIndexedDb(ydoc);
+			const childSync = attachSync(ydoc, {
+				url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+				waitFor: childIdb.whenLoaded,
+				tokenSource,
+			});
 
-				onLocalUpdate(ydoc, () => {
-					doc.tables.notes.update(noteId, {
-						updatedAt: DateTimeString.now(),
-					});
+			onLocalUpdate(ydoc, () => {
+				doc.tables.notes.update(noteId, {
+					updatedAt: DateTimeString.now(),
 				});
+			});
 
-				return {
-					ydoc,
-					body,
-					idb: childIdb,
-					sync: childSync,
-					whenLoaded: childIdb.whenLoaded,
-					[Symbol.dispose]() {
-						ydoc.destroy();
-					},
-				};
-			},
-			async clearLocalData() {
-				await Promise.all(
-					doc.tables.notes.getAllValid().map((note) =>
-						clearDocument(
-							noteBodyDocGuid({
-								workspaceId: doc.ydoc.guid,
-								noteId: note.id,
-							}),
-						),
-					),
-				);
-			},
+			return {
+				ydoc,
+				body,
+				idb: childIdb,
+				sync: childSync,
+				whenLoaded: childIdb.whenLoaded,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
 		},
 		{ gcTime: 5_000 },
 	);
+	async function clearNoteBodyLocalData() {
+		await Promise.all(
+			doc.tables.notes.getAllValid().map((note) =>
+				clearDocument(
+					noteBodyDocGuid({
+						workspaceId: doc.ydoc.guid,
+						noteId: note.id,
+					}),
+				),
+			),
+		);
+	}
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
@@ -119,7 +117,7 @@ export function openHoneycrisp({
 		sync,
 		syncControl: sync,
 		async clearLocalData() {
-			await noteBodyDocs.clearLocalData();
+			await clearNoteBodyLocalData();
 			await idb.clearLocal();
 		},
 		remote,

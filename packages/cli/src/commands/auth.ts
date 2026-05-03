@@ -62,7 +62,7 @@ const loginCommand = cmd({
 
 		if (credentialStorage.kind === 'plaintextFile') {
 			console.warn(
-				'Warning: storing bearer tokens and encryption keys in a plaintext owner-only file.',
+				'Warning: storing authorization tokens and encryption keys in a plaintext owner-only file.',
 			);
 		}
 
@@ -156,7 +156,7 @@ const statusCommand = cmd({
 			console.warn('Warning: Could not verify session with remote server.');
 		}
 		console.log(
-			`Expires at:   ${new Date(credential.session.expiresAt).toLocaleString()}`,
+			`Expires at:   ${new Date(credential.serverSession.expiresAt).toLocaleString()}`,
 		);
 	},
 });

@@ -88,7 +88,7 @@ The machine credential summary is another view:
 export type AuthCredentialSummary = {
 	serverOrigin: AuthCredential['serverOrigin'];
 	user: Pick<AuthCredential['user'], 'id' | 'name' | 'email'>;
-	session: Pick<AuthCredential['serverSession'], 'expiresAt'>;
+	serverSession: Pick<AuthCredential['serverSession'], 'expiresAt'>;
 	savedAt: string;
 	lastUsedAt: string;
 };

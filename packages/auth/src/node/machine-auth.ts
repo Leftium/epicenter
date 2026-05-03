@@ -82,7 +82,7 @@ export type MachineCredentialStoragePolicy =
 export type MachineCredentialSummary = {
 	serverOrigin: string;
 	user: Pick<AuthCredential['user'], 'id' | 'name' | 'email'>;
-	session: Pick<AuthCredential['serverSession'], 'expiresAt'>;
+	serverSession: Pick<AuthCredential['serverSession'], 'expiresAt'>;
 	savedAt: string;
 	lastUsedAt: string;
 };
@@ -152,7 +152,7 @@ function credentialSummary(
 			name: credential.authCredential.user.name,
 			email: credential.authCredential.user.email,
 		},
-		session: {
+		serverSession: {
 			expiresAt: credential.authCredential.serverSession.expiresAt,
 		},
 		savedAt: credential.savedAt,
@@ -236,14 +236,6 @@ export function createMachineAuth({
 		}
 	}
 
-	async function resolveMissingSecrets(input?: {
-		serverOrigin?: string | URL;
-	}): Promise<Result<MachineCredentialSummary | null, MachineAuthError>> {
-		const summary = await resolveSummary(input);
-		if (summary.error) return summary;
-		return summary;
-	}
-
 	async function readCredentialField<T>(
 		input: { serverOrigin?: string | URL } | undefined,
 		read: (credential: MachineCredential) => T | null,
@@ -251,7 +243,7 @@ export function createMachineAuth({
 		const credential = await resolveCredential(input);
 		if (credential.error) return credential;
 		if (credential.data === null) {
-			const summary = await resolveMissingSecrets(input);
+			const summary = await resolveSummary(input);
 			if (summary.error) return summary;
 			if (summary.data !== null) {
 				return MachineAuthError.MissingCredentialSecrets({
@@ -380,7 +372,7 @@ export function createMachineAuth({
 			const credential = await resolveCredential(input);
 			if (credential.error) return credential;
 			if (credential.data === null) {
-				const summary = await resolveMissingSecrets(input);
+				const summary = await resolveSummary(input);
 				if (summary.error) return summary;
 				return Ok(
 					summary.data === null

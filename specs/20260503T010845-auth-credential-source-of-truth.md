@@ -169,7 +169,7 @@ export type AuthSession = {
 export type MachineCredentialSummary = {
 	serverOrigin: AuthCredential['serverOrigin'];
 	user: Pick<AuthCredential['user'], 'id' | 'name' | 'email'>;
-	session: Pick<AuthCredential['serverSession'], 'expiresAt'>;
+	serverSession: Pick<AuthCredential['serverSession'], 'expiresAt'>;
 	savedAt: string;
 	lastUsedAt: string;
 };

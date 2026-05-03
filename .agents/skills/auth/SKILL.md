@@ -1,6 +1,6 @@
 ---
 name: auth
-description: Epicenter auth packages, @epicenter/auth and @epicenter/auth-svelte. Covers SessionStorage, auth snapshots, token sourcing, and app wiring.
+description: Epicenter auth packages, @epicenter/auth and @epicenter/auth-svelte. Covers SessionStorage, auth snapshots, sync authentication, and app wiring.
 metadata:
   author: epicenter
   version: '2.0'
@@ -36,7 +36,7 @@ type AuthSnapshot =
 	| { status: 'signedIn'; session: Session };
 ```
 
-Read `auth.snapshot` synchronously. Await `auth.whenLoaded` only at async boundaries that must wait for persisted storage hydration, such as `auth.fetch` and sync token callbacks.
+Read `auth.snapshot` synchronously. Await `auth.whenLoaded` only at async boundaries that must wait for persisted storage hydration, such as `auth.fetch` and authenticated sync setup.
 
 Use `auth.onSnapshotChange(fn)` for future changes only. It does not replay. Consumers that need bootstrap behavior must read `auth.snapshot` once and then register the listener.
 
@@ -99,7 +99,7 @@ import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 
 bindAuthWorkspaceScope({
 	auth,
-	sync: workspace.sync,
+	syncControl: workspace.sync,
 	applyAuthSession(session) {
 		workspace.encryption.applyKeys(session.encryptionKeys);
 	},
@@ -114,22 +114,24 @@ bindAuthWorkspaceScope({
 });
 ```
 
-The app owns concrete resource composition. Pass `sync: null` when there is no authenticated sync attachment. For root plus child documents, pass a small inline object whose `pause()` and `reconnect()` methods call every active sync surface. Keep destructive reset policy inside `resetLocalClient()`.
+The app owns concrete resource composition. Pass `syncControl: null` when there is no authenticated sync attachment. For root plus child documents, pass a small inline object whose `pause()` and `reconnect()` methods call every active sync surface. Keep destructive reset policy inside `resetLocalClient()`.
 
-## Token Sourcing
+## Sync Authentication
 
-Workspace sync should wait for storage hydration, then read the snapshot:
+Workspace sync takes the auth client directly:
 
 ```ts
-getToken: async () => {
-	await auth.whenLoaded;
-
-	const snapshot = auth.snapshot;
-	return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-},
+const sync = attachSync(ydoc, {
+	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+	waitFor: idb,
+	auth,
+	awareness,
+});
 ```
 
-`auth.fetch` follows the same rule internally.
+`attachSync` owns the token read. It waits for `auth.whenLoaded`, reads `auth.snapshot`, and reconnects when `auth.onSnapshotChange()` reports a token change. Do not add `getToken`, `tokenSource`, `onTokenChange`, or a token projection helper to auth.
+
+`auth.fetch` follows the same snapshot rule internally: wait for hydration, read the current signed-in token, then send the request.
 
 ## Write Ownership
 
@@ -189,7 +191,7 @@ In-flight command state belongs to the issuing component:
 
 ## Common Pitfalls
 
-- Do not spread the core auth object in the Svelte wrapper. Object spread invokes the `snapshot` getter and freezes the initial value.
+- In the Svelte wrapper, spread the core auth object only before overriding `snapshot`. Object spread invokes the base getter and copies the current value, so `get snapshot()` must appear after `...base`.
 - Do not destructure `auth.snapshot` at module scope. That freezes the current value.
 - Do not clear local data on cold boot. Clear only when the previous snapshot was `signedIn` and the next snapshot is `signedOut`.
 - Do not import `createAuth` from `@epicenter/auth` in Svelte apps. Use `@epicenter/auth-svelte`.

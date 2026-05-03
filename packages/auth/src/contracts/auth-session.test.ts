@@ -1,12 +1,12 @@
 /**
- * Auth Credential Contract Tests
+ * Auth Session Contract Tests
  *
  * Verifies normalization at the Better Auth boundary before auth state reaches
- * app session storage or machine credentials.
+ * local session storage.
  *
  * Key behaviors:
  * - Better Auth Date fields become portable ISO strings
- * - Custom session responses project into app sessions
+ * - Custom session responses normalize into app sessions
  * - Invalid key payloads fail at the auth contract boundary
  */
 
@@ -14,8 +14,8 @@ import { describe, expect, test } from 'bun:test';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import {
 	authSessionFromBetterAuthSessionResponse,
-	normalizeAuthCredential,
-} from './auth-credential.ts';
+	normalizeAuthSession,
+} from './auth-session.ts';
 
 const encryptionKeys: EncryptionKeys = [
 	{
@@ -53,23 +53,17 @@ function betterAuthSessionResponse() {
 	};
 }
 
-describe('normalizeAuthCredential', () => {
-	test('normalizes Better Auth Date fields into the portable credential', () => {
+describe('normalizeAuthSession', () => {
+	test('normalizes Better Auth Date fields into the local session', () => {
 		const response = betterAuthSessionResponse();
 
-		const credential = normalizeAuthCredential(response, {
-			serverOrigin: 'https://api.epicenter.so',
-			authorizationToken: 'authorization-token',
+		const session = normalizeAuthSession(response, {
+			token: 'authorization-token',
 		});
 
-		expect(credential.serverOrigin).toBe('https://api.epicenter.so');
-		expect(credential.authorizationToken).toBe('authorization-token');
-		expect(credential.user.createdAt).toBe(
-			response.user.createdAt.toISOString(),
-		);
-		expect(credential.serverSession.expiresAt).toBe(
-			response.session.expiresAt.toISOString(),
-		);
+		expect(session.token).toBe('authorization-token');
+		expect(session.user.createdAt).toBe(response.user.createdAt.toISOString());
+		expect(JSON.stringify(session)).not.toContain('expiresAt');
 	});
 });
 

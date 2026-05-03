@@ -5,44 +5,18 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { AuthSession } from '../auth-types.js';
 import {
-	type AuthCredential,
-	authCredentialFromSession,
-	authSessionFromCredential,
-} from '../contracts/auth-credential.js';
+	AuthSession,
+	type AuthSession as AuthSessionType,
+} from '../auth-types.js';
 import { type AuthClient, createAuth } from '../create-auth.js';
 import type { SessionStorage } from '../session-store.js';
 import {
 	type AuthServerTransport,
 	createAuthServerTransport,
 } from './auth-server-transport.js';
-import {
-	createMachineCredentialRepository,
-	defaultCredentialPath,
-	type MachineCredential,
-	type MachineCredentialMetadata,
-} from './machine-credential-repository.js';
-import {
-	createKeychainMachineCredentialSecretStorage,
-	createPlaintextMachineCredentialSecretStorage,
-} from './machine-credential-secret-storage.js';
-import { normalizeServerOrigin } from './server-origin.js';
-
-type Clock = { now(): Date };
 
 export const MachineAuthError = defineErrors({
-	InvalidServerOrigin: ({
-		input,
-		cause,
-	}: {
-		input: string;
-		cause: unknown;
-	}) => ({
-		message: `Expected a server origin like https://api.epicenter.so: ${input}`,
-		input,
-		cause,
-	}),
 	AuthTransportRequestFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Auth transport request failed: ${extractErrorMessage(cause)}`,
 		cause,
@@ -64,32 +38,31 @@ export const MachineAuthError = defineErrors({
 		code,
 		description,
 	}),
-	CredentialStorageFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Could not read saved machine credentials: ${extractErrorMessage(cause)}`,
+	SessionStorageFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Could not read saved machine session: ${extractErrorMessage(cause)}`,
 		cause,
-	}),
-	MissingCredentialSecrets: ({ serverOrigin }: { serverOrigin: string }) => ({
-		message: `Saved credential secrets are missing for ${serverOrigin}`,
-		serverOrigin,
 	}),
 });
 export type MachineAuthError = InferErrors<typeof MachineAuthError>;
 
-export type MachineCredentialStoragePolicy =
-	| { kind: 'keychain'; credentialFilePath?: string }
-	| { kind: 'plaintextFile'; credentialFilePath?: string };
+export type MachineAuthSessionStorage = {
+	load(): Promise<AuthSessionType | null>;
+	save(session: AuthSessionType | null): Promise<void>;
+};
 
-export type MachineCredentialSummary = {
-	serverOrigin: string;
-	user: Pick<AuthCredential['user'], 'id' | 'name' | 'email'>;
-	serverSession: Pick<AuthCredential['serverSession'], 'expiresAt'>;
-	savedAt: string;
-	lastUsedAt: string;
+export type MachineAuthSessionStorageBackend = {
+	get(options: { service: string; name: string }): Promise<string | null>;
+	set(options: { service: string; name: string }, value: string): Promise<void>;
+	delete(options: { service: string; name: string }): Promise<unknown>;
+};
+
+export type MachineSessionSummary = {
+	user: Pick<AuthSessionType['user'], 'id' | 'name' | 'email'>;
 };
 
 export type MachineAuthLoginResult = {
 	status: 'loggedIn';
-	credential: MachineCredentialSummary;
+	session: MachineSessionSummary;
 	device: {
 		userCode: string;
 		verificationUriComplete: string;
@@ -98,187 +71,167 @@ export type MachineAuthLoginResult = {
 
 export type MachineAuthStatus =
 	| { status: 'signedOut' }
-	| { status: 'valid'; credential: MachineCredentialSummary }
-	| { status: 'expired'; credential: MachineCredentialSummary }
+	| { status: 'valid'; session: MachineSessionSummary }
 	| {
 			status: 'unverified';
-			credential: MachineCredentialSummary;
+			session: MachineSessionSummary;
 			verificationError: MachineAuthError;
-	  }
-	| { status: 'missingSecrets'; credential: MachineCredentialSummary };
+	  };
 
 export type MachineAuthLogoutResult =
 	| { status: 'signedOut' }
-	| { status: 'loggedOut'; serverOrigin: string };
+	| { status: 'loggedOut' };
 
 export type MachineAuth = ReturnType<typeof createMachineAuth>;
 
 type MachineAuthOptions = {
 	fetch?: typeof globalThis.fetch;
-	credentialStorage?: MachineCredentialStoragePolicy;
+	sessionStorage?: MachineAuthSessionStorage;
 	clientId?: string;
 	openBrowser?: (url: string) => Promise<void>;
 	sleep?: (ms: number) => Promise<void>;
-	clock?: Clock;
 };
 
-function normalizeOriginResult(
-	input: string | URL,
-): Result<string, MachineAuthError> {
-	try {
-		return Ok(normalizeServerOrigin(input));
-	} catch (cause) {
-		return MachineAuthError.InvalidServerOrigin({
-			input: String(input),
-			cause,
-		});
-	}
-}
+const MACHINE_SESSION_SERVICE = 'epicenter.auth.session';
+const MACHINE_SESSION_ACCOUNT = 'current';
+const EPICENTER_API_URL = 'https://api.epicenter.so';
 
-function isExpired(credential: MachineCredential, clock: Clock): boolean {
-	return (
-		Date.parse(credential.authCredential.serverSession.expiresAt) <=
-		clock.now().getTime()
-	);
-}
-
-function credentialSummary(
-	credential: MachineCredential | MachineCredentialMetadata,
-): MachineCredentialSummary {
+function sessionSummary(session: AuthSessionType): MachineSessionSummary {
 	return {
-		serverOrigin: credential.authCredential.serverOrigin,
 		user: {
-			id: credential.authCredential.user.id,
-			name: credential.authCredential.user.name,
-			email: credential.authCredential.user.email,
+			id: session.user.id,
+			name: session.user.name,
+			email: session.user.email,
 		},
-		serverSession: {
-			expiresAt: credential.authCredential.serverSession.expiresAt,
-		},
-		savedAt: credential.savedAt,
-		lastUsedAt: credential.lastUsedAt,
 	};
 }
 
-function toAuthTransportError(cause: unknown): MachineAuthError {
-	return MachineAuthError.AuthTransportRequestFailed({ cause }).error;
+function parseStoredSession(raw: string): AuthSessionType | null {
+	try {
+		return AuthSession.assert(JSON.parse(raw));
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Store one machine auth session in the operating system keychain.
+ *
+ * Machine auth persists the same `AuthSession` shape as browser auth. The
+ * server remains the owner of expiry, provider details, and Better Auth session
+ * metadata.
+ */
+export function createKeychainMachineAuthSessionStorage({
+	backend = Bun.secrets,
+}: {
+	backend?: MachineAuthSessionStorageBackend;
+} = {}): MachineAuthSessionStorage {
+	const options = {
+		service: MACHINE_SESSION_SERVICE,
+		name: MACHINE_SESSION_ACCOUNT,
+	};
+
+	return {
+		async load() {
+			const raw = await backend.get(options);
+			if (raw === null) return null;
+			return parseStoredSession(raw);
+		},
+		async save(session) {
+			if (session === null) {
+				await backend.delete(options);
+				return;
+			}
+			await backend.set(options, JSON.stringify(AuthSession.assert(session)));
+		},
+	};
+}
+
+/**
+ * Create an in-memory machine auth store for tests and explicit embedding.
+ */
+export function createMemoryMachineAuthSessionStorage(
+	initial: AuthSessionType | null = null,
+): MachineAuthSessionStorage {
+	let current = initial;
+	return {
+		async load() {
+			return current;
+		},
+		async save(session) {
+			current = session;
+		},
+	};
 }
 
 /**
  * Create the Node-side auth coordinator for CLI and daemon processes.
- *
- * Use this when a non-browser process needs to log in with device code auth,
- * verify or refresh saved credentials, and expose the active authorization
- * token or encryption keys to lower-level services.
- *
- * The returned API owns the machine credential lifecycle. It talks to the auth
- * server for fresh credential data, stores the full `AuthCredential` through
- * the repository, and projects smaller values only at the call sites that need
- * them.
- *
- * @example
- * ```ts
- * const machineAuth = createMachineAuth();
- * const token = await machineAuth.getAuthorizationToken({
- * 	serverOrigin: 'https://api.epicenter.so',
- * });
- * ```
  */
 export function createMachineAuth({
 	fetch: fetchImpl = fetch,
-	credentialStorage = { kind: 'keychain' },
+	sessionStorage = createKeychainMachineAuthSessionStorage(),
 	clientId = 'epicenter-cli',
 	openBrowser,
 	sleep = Bun.sleep,
-	clock = { now: () => new Date() },
 }: MachineAuthOptions = {}) {
-	const credentialFilePath =
-		credentialStorage.credentialFilePath ?? defaultCredentialPath();
-	const secretStorage =
-		credentialStorage.kind === 'plaintextFile'
-			? createPlaintextMachineCredentialSecretStorage()
-			: createKeychainMachineCredentialSecretStorage();
-	const credentialRepository = createMachineCredentialRepository({
-		path: credentialFilePath,
-		secretStorage,
-		clock,
-	});
+	const authTransport = createAuthServerTransport(
+		{ fetch: fetchImpl },
+		{ serverOrigin: EPICENTER_API_URL },
+	);
 
-	function transport(serverOrigin: string): AuthServerTransport {
-		return createAuthServerTransport({ fetch: fetchImpl }, { serverOrigin });
-	}
-
-	async function resolveCredential(input?: {
-		serverOrigin?: string | URL;
-	}): Promise<Result<MachineCredential | null, MachineAuthError>> {
+	async function loadStoredSession(): Promise<
+		Result<AuthSessionType | null, MachineAuthError>
+	> {
 		try {
-			if (input?.serverOrigin === undefined) {
-				return Ok(await credentialRepository.getCurrent());
-			}
-			const origin = normalizeOriginResult(input.serverOrigin);
-			if (origin.error) return origin;
-			return Ok(await credentialRepository.get(origin.data));
+			return Ok(await sessionStorage.load());
 		} catch (cause) {
-			return MachineAuthError.CredentialStorageFailed({ cause });
+			return MachineAuthError.SessionStorageFailed({ cause });
 		}
 	}
 
-	async function resolveSummary(input?: {
-		serverOrigin?: string | URL;
-	}): Promise<Result<MachineCredentialSummary | null, MachineAuthError>> {
+	async function saveStoredSession(
+		session: AuthSessionType | null,
+	): Promise<Result<undefined, MachineAuthError>> {
 		try {
-			const metadata = await credentialRepository.getMetadata(
-				input?.serverOrigin,
+			await sessionStorage.save(session);
+			return Ok(undefined);
+		} catch (cause) {
+			return MachineAuthError.SessionStorageFailed({ cause });
+		}
+	}
+
+	async function fetchSession({
+		transport,
+		token,
+	}: {
+		transport: AuthServerTransport;
+		token: string;
+	}) {
+		try {
+			return Ok(
+				await transport.fetchSession({
+					authorizationToken: token,
+				}),
 			);
-			return Ok(metadata === null ? null : credentialSummary(metadata));
 		} catch (cause) {
-			return MachineAuthError.CredentialStorageFailed({ cause });
+			return MachineAuthError.AuthTransportRequestFailed({ cause });
 		}
-	}
-
-	async function readCredentialField<T>(
-		input: { serverOrigin?: string | URL } | undefined,
-		read: (credential: MachineCredential) => T | null,
-	): Promise<Result<T | null, MachineAuthError>> {
-		const credential = await resolveCredential(input);
-		if (credential.error) return credential;
-		if (credential.data === null) {
-			const summary = await resolveSummary(input);
-			if (summary.error) return summary;
-			if (summary.data !== null) {
-				return MachineAuthError.MissingCredentialSecrets({
-					serverOrigin: summary.data.serverOrigin,
-				});
-			}
-			return Ok(null);
-		}
-		return Ok(read(credential.data));
 	}
 
 	return {
 		/**
-		 * Start Better Auth device-code login and save the resulting credential.
-		 *
-		 * The saved credential uses the transport-resolved authorization token,
-		 * which may come from `set-auth-token`, and preserves the Better Auth
-		 * server session token from the response body.
+		 * Start Better Auth device-code login and save the resulting session.
 		 */
 		async loginWithDeviceCode({
-			serverOrigin,
 			onDeviceCode,
 			openBrowser: inputOpenBrowser,
 		}: {
-			serverOrigin: string | URL;
 			onDeviceCode?: (device: {
 				userCode: string;
 				verificationUriComplete: string;
 			}) => void | Promise<void>;
 			openBrowser?: (url: string) => Promise<void>;
-		}): Promise<Result<MachineAuthLoginResult, MachineAuthError>> {
-			const origin = normalizeOriginResult(serverOrigin);
-			if (origin.error) return origin;
-			const authTransport = transport(origin.data);
-
+		} = {}): Promise<Result<MachineAuthLoginResult, MachineAuthError>> {
 			let codeData: Awaited<
 				ReturnType<AuthServerTransport['requestDeviceCode']>
 			>;
@@ -298,9 +251,9 @@ export function createMachineAuth({
 			);
 
 			let interval = codeData.interval * 1000;
-			const deadline = clock.now().getTime() + codeData.expires_in * 1000;
+			const deadline = Date.now() + codeData.expires_in * 1000;
 
-			while (clock.now().getTime() < deadline) {
+			while (Date.now() < deadline) {
 				await sleep(interval);
 				let tokenData: Awaited<
 					ReturnType<AuthServerTransport['pollDeviceToken']>
@@ -315,28 +268,18 @@ export function createMachineAuth({
 				}
 
 				if ('access_token' in tokenData) {
-					let remote: Awaited<
-						ReturnType<AuthServerTransport['fetchCredentialSession']>
-					>;
-					try {
-						remote = await authTransport.fetchCredentialSession({
-							authorizationToken: tokenData.access_token,
-						});
-					} catch (cause) {
-						return MachineAuthError.AuthTransportRequestFailed({ cause });
-					}
-					try {
-						const credential = await credentialRepository.save(origin.data, {
-							authCredential: remote.authCredential,
-						});
-						return Ok({
-							status: 'loggedIn',
-							credential: credentialSummary(credential),
-							device,
-						});
-					} catch (cause) {
-						return MachineAuthError.CredentialStorageFailed({ cause });
-					}
+					const remote = await fetchSession({
+						transport: authTransport,
+						token: tokenData.access_token,
+					});
+					if (remote.error) return remote;
+					const saved = await saveStoredSession(remote.data.session);
+					if (saved.error) return saved;
+					return Ok({
+						status: 'loggedIn',
+						session: sessionSummary(remote.data.session),
+						device,
+					});
 				}
 
 				switch (tokenData.error) {
@@ -360,222 +303,91 @@ export function createMachineAuth({
 		},
 
 		/**
-		 * Read the saved credential, check local expiry, then verify it remotely
-		 * when it still appears active.
-		 *
-		 * Remote verification also refreshes the saved authorization token when
-		 * the server sends `set-auth-token`.
+		 * Read the saved session and verify it remotely when possible.
 		 */
-		async status(input?: {
-			serverOrigin?: string | URL;
-		}): Promise<Result<MachineAuthStatus, MachineAuthError>> {
-			const credential = await resolveCredential(input);
-			if (credential.error) return credential;
-			if (credential.data === null) {
-				const summary = await resolveSummary(input);
-				if (summary.error) return summary;
-				return Ok(
-					summary.data === null
-						? { status: 'signedOut' }
-						: { status: 'missingSecrets', credential: summary.data },
-				);
-			}
-			if (isExpired(credential.data, clock)) {
-				return Ok({
-					status: 'expired',
-					credential: credentialSummary(credential.data),
-				});
-			}
+		async status(): Promise<Result<MachineAuthStatus, MachineAuthError>> {
+			const session = await loadStoredSession();
+			if (session.error) return session;
+			if (session.data === null) return Ok({ status: 'signedOut' });
 
-			const serverOrigin = credential.data.authCredential.serverOrigin;
-			const authTransport = transport(serverOrigin);
-			let remote: Awaited<
-				ReturnType<AuthServerTransport['fetchCredentialSession']>
-			>;
-			try {
-				remote = await authTransport.fetchCredentialSession({
-					authorizationToken: credential.data.authCredential.authorizationToken,
-				});
-			} catch (cause) {
+			const remote = await fetchSession({
+				transport: authTransport,
+				token: session.data.token,
+			});
+			if (remote.error) {
 				return Ok({
 					status: 'unverified',
-					credential: credentialSummary(credential.data),
-					verificationError: toAuthTransportError(cause),
+					session: sessionSummary(session.data),
+					verificationError: remote.error,
 				});
 			}
 
-			try {
-				const next = await credentialRepository.save(serverOrigin, {
-					authCredential: remote.authCredential,
-				});
-				return Ok({ status: 'valid', credential: credentialSummary(next) });
-			} catch (cause) {
-				return MachineAuthError.CredentialStorageFailed({ cause });
-			}
-		},
-
-		async logout(input?: {
-			serverOrigin?: string | URL;
-		}): Promise<Result<MachineAuthLogoutResult, MachineAuthError>> {
-			const credential = await resolveCredential(input);
-			if (credential.error) return credential;
-			if (credential.data === null) return Ok({ status: 'signedOut' });
-
-			try {
-				const serverOrigin = credential.data.authCredential.serverOrigin;
-				const authTransport = transport(serverOrigin);
-				await authTransport.signOut({
-					token: credential.data.authCredential.authorizationToken,
-				});
-			} catch {}
-
-			try {
-				await credentialRepository.clear(
-					credential.data.authCredential.serverOrigin,
-				);
-			} catch (cause) {
-				return MachineAuthError.CredentialStorageFailed({ cause });
-			}
+			const saved = await saveStoredSession(remote.data.session);
+			if (saved.error) return saved;
 			return Ok({
-				status: 'loggedOut',
-				serverOrigin: credential.data.authCredential.serverOrigin,
+				status: 'valid',
+				session: sessionSummary(remote.data.session),
 			});
 		},
 
-		/**
-		 * Return the active authorization token for API requests.
-		 *
-		 * Expired and missing credentials return `Ok(null)`. Missing keychain
-		 * secrets return a typed error because a credential metadata record still
-		 * exists and the caller needs to surface that integrity problem.
-		 */
-		getAuthorizationToken(input?: {
-			serverOrigin?: string | URL;
-		}): Promise<Result<string | null, MachineAuthError>> {
-			return readCredentialField(input, (credential) =>
-				isExpired(credential, clock)
-					? null
-					: credential.authCredential.authorizationToken,
-			);
-		},
-
-		getActiveEncryptionKeys(input?: {
-			serverOrigin?: string | URL;
-		}): Promise<Result<EncryptionKeys | null, MachineAuthError>> {
-			return readCredentialField(input, (credential) =>
-				isExpired(credential, clock)
-					? null
-					: credential.authCredential.encryptionKeys,
-			);
-		},
-
-		getOfflineEncryptionKeys(input?: {
-			serverOrigin?: string | URL;
-		}): Promise<Result<EncryptionKeys | null, MachineAuthError>> {
-			return readCredentialField(
-				input,
-				(credential) => credential.authCredential.encryptionKeys,
-			);
-		},
-
-		/**
-		 * Project the active machine credential into app auth storage shape.
-		 *
-		 * This is the bridge used by `createMachineSessionStorage()`. It does
-		 * not expose Better Auth server session metadata to `createAuth()`.
-		 */
-		loadActiveSession(input: {
-			serverOrigin: string | URL;
-		}): Promise<Result<AuthSession | null, MachineAuthError>> {
-			return readCredentialField(input, (credential) =>
-				isExpired(credential, clock)
-					? null
-					: authSessionFromCredential(credential.authCredential),
-			);
-		},
-
-		/**
-		 * Persist an app auth session back into the machine credential.
-		 *
-		 * `AuthSession` does not contain the Better Auth server session token, so
-		 * this method reads the current credential first and preserves that token
-		 * while updating the authorization token, user, and encryption keys.
-		 */
-		async saveActiveSession(input: {
-			serverOrigin: string | URL;
-			session: AuthSession | null;
-		}): Promise<Result<undefined, MachineAuthError>> {
-			const origin = normalizeOriginResult(input.serverOrigin);
-			if (origin.error) return origin;
+		async logout(): Promise<Result<MachineAuthLogoutResult, MachineAuthError>> {
+			const session = await loadStoredSession();
+			if (session.error) return session;
+			if (session.data === null) return Ok({ status: 'signedOut' });
 
 			try {
-				if (input.session === null) {
-					await credentialRepository.clear(origin.data);
-					return Ok(undefined);
-				}
+				await authTransport.signOut({ token: session.data.token });
+			} catch {}
 
-				const current = await credentialRepository.get(origin.data);
-				if (current === null) {
-					throw new Error(
-						`No machine credential exists for ${origin.data}; cannot persist rotated session token.`,
-					);
-				}
-				await credentialRepository.save(origin.data, {
-					authCredential: authCredentialFromSession({
-						current: current.authCredential,
-						session: input.session,
-						updatedAt: clock.now().toISOString(),
-					}),
-				});
-				return Ok(undefined);
-			} catch (cause) {
-				return MachineAuthError.CredentialStorageFailed({ cause });
-			}
+			const saved = await saveStoredSession(null);
+			if (saved.error) return saved;
+			return Ok({ status: 'loggedOut' });
+		},
+
+		async getAuthorizationToken(): Promise<
+			Result<string | null, MachineAuthError>
+		> {
+			const session = await loadStoredSession();
+			if (session.error) return session;
+			return Ok(session.data?.token ?? null);
+		},
+
+		async getEncryptionKeys(): Promise<
+			Result<EncryptionKeys | null, MachineAuthError>
+		> {
+			const session = await loadStoredSession();
+			if (session.error) return session;
+			return Ok(session.data?.encryptionKeys ?? null);
+		},
+
+		loadSession(): Promise<Result<AuthSessionType | null, MachineAuthError>> {
+			return loadStoredSession();
+		},
+
+		saveSession(
+			session: AuthSessionType | null,
+		): Promise<Result<undefined, MachineAuthError>> {
+			return saveStoredSession(session);
 		},
 	};
 }
 
 /**
- * Adapt machine credentials to the browser-shaped `SessionStorage` contract.
- *
- * Use this when code already speaks `createAuth()` and needs to run in a Node
- * process. The adapter deliberately stores only the projected `AuthSession`
- * shape on the `createAuth()` side; the full credential remains owned by
- * `MachineAuth` so Better Auth session metadata and machine secrets stay in
- * one place.
- *
- * @example
- * ```ts
- * const sessionStorage = createMachineSessionStorage({
- * 	serverOrigin: 'https://api.epicenter.so',
- * });
- * ```
+ * Adapt machine auth to the browser-shaped `SessionStorage` contract.
  */
 export function createMachineSessionStorage({
-	serverOrigin,
 	machineAuth = createMachineAuth(),
 }: {
-	serverOrigin: string | URL;
 	machineAuth?: MachineAuth;
-}): SessionStorage {
-	if (serverOrigin === undefined) {
-		throw MachineAuthError.InvalidServerOrigin({
-			input: 'undefined',
-			cause: new Error('serverOrigin is required'),
-		}).error;
-	}
-
+} = {}): SessionStorage {
 	return {
 		async load() {
-			const result = await machineAuth.loadActiveSession({ serverOrigin });
+			const result = await machineAuth.loadSession();
 			if (result.error) throw result.error;
 			return result.data;
 		},
 		async save(session) {
-			const result = await machineAuth.saveActiveSession({
-				serverOrigin,
-				session,
-			});
+			const result = await machineAuth.saveSession(session);
 			if (result.error) throw result.error;
 		},
 		watch() {
@@ -585,32 +397,15 @@ export function createMachineSessionStorage({
 }
 
 /**
- * Create an auth client backed by saved machine credentials.
- *
- * This is the Node entry point for code that wants the same auth client surface
- * as browser apps without taking ownership of credential persistence. The
- * machine auth layer remains responsible for login, token rotation, and secret
- * storage.
- *
- * @example
- * ```ts
- * const auth = createMachineAuthClient({
- * 	serverOrigin: 'https://api.epicenter.so',
- * });
- * ```
+ * Create an auth client backed by saved machine auth.
  */
 export function createMachineAuthClient({
-	serverOrigin,
 	machineAuth = createMachineAuth(),
 }: {
-	serverOrigin: string | URL;
 	machineAuth?: MachineAuth;
-}): AuthClient {
+} = {}): AuthClient {
 	return createAuth({
-		baseURL: String(serverOrigin),
-		sessionStorage: createMachineSessionStorage({
-			serverOrigin,
-			machineAuth,
-		}),
+		baseURL: EPICENTER_API_URL,
+		sessionStorage: createMachineSessionStorage({ machineAuth }),
 	});
 }

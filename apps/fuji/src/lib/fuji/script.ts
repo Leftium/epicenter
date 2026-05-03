@@ -1,5 +1,4 @@
 import { createMachineAuth } from '@epicenter/auth/node';
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import { attachEncryption, type ProjectDir } from '@epicenter/workspace';
 import {
@@ -25,9 +24,7 @@ export type OpenFujiSnapshotOptions = {
 };
 
 async function loadMachineOfflineEncryptionKeys(): Promise<EncryptionKeys | null> {
-	const { data, error } = await createMachineAuth().getOfflineEncryptionKeys({
-		serverOrigin: EPICENTER_API_URL,
-	});
+	const { data, error } = await createMachineAuth().getEncryptionKeys();
 	if (error) throw error;
 	return data;
 }

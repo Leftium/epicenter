@@ -33,7 +33,6 @@ export type FujiDaemonOptions = {
 	route?: string;
 	auth?: AuthClient;
 	peer?: PeerIdentity;
-	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
 };
 
@@ -47,8 +46,7 @@ function defaultFujiDaemonPeer(): PeerIdentity {
 
 export function defineFujiDaemon({
 	route = DEFAULT_FUJI_DAEMON_ROUTE,
-	apiUrl = EPICENTER_API_URL,
-	auth = createMachineAuthClient({ serverOrigin: apiUrl }),
+	auth = createMachineAuthClient(),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
 }: FujiDaemonOptions = {}): DaemonRouteDefinition {
@@ -64,7 +62,7 @@ export function defineFujiDaemon({
 				initial: { peer },
 			});
 			const sync = attachSync(doc, {
-				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
 				auth,
 				webSocketImpl,
 				awareness,

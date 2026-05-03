@@ -1,12 +1,15 @@
 export {
+	createKeychainMachineAuthSessionStorage,
 	createMachineAuth,
 	createMachineAuthClient,
 	createMachineSessionStorage,
+	createMemoryMachineAuthSessionStorage,
 	type MachineAuth,
 	MachineAuthError,
 	type MachineAuthLoginResult,
 	type MachineAuthLogoutResult,
+	type MachineAuthSessionStorage,
+	type MachineAuthSessionStorageBackend,
 	type MachineAuthStatus,
-	type MachineCredentialStoragePolicy,
-	type MachineCredentialSummary,
+	type MachineSessionSummary,
 } from './node/machine-auth.js';

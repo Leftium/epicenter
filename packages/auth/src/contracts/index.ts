@@ -1,11 +1,1 @@
-export {
-	AuthCredential,
-	AuthServerSession,
-	authCredentialFromSession,
-	authSessionFromBetterAuthSessionResponse,
-	authSessionFromCredential,
-	type BetterAuthSessionResponse,
-	normalizeAuthCredential,
-	normalizeAuthServerSession,
-	normalizeAuthUser,
-} from './auth-credential.ts';
+export type { BetterAuthSessionResponse } from './auth-session.ts';

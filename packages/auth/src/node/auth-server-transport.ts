@@ -1,8 +1,6 @@
 import { type } from 'arktype';
-import {
-	type AuthCredential,
-	normalizeAuthCredential,
-} from '../contracts/auth-credential.js';
+import type { AuthSession } from '../auth-types.js';
+import { normalizeAuthSession } from '../contracts/auth-session.js';
 import { normalizeServerOrigin } from './server-origin.js';
 
 const AuthServerTransportDeviceCodeResponse = type({
@@ -35,8 +33,8 @@ const AuthServerTransportDeviceTokenResponse =
 type AuthServerTransportDeviceTokenResponse =
 	typeof AuthServerTransportDeviceTokenResponse.infer;
 
-type AuthServerTransportCredentialResult = {
-	authCredential: AuthCredential;
+type AuthServerTransportSessionResult = {
+	session: AuthSession;
 };
 
 export type AuthServerTransport = ReturnType<typeof createAuthServerTransport>;
@@ -45,9 +43,9 @@ export type AuthServerTransport = ReturnType<typeof createAuthServerTransport>;
  * Create the small HTTP transport used by machine auth.
  *
  * This layer owns raw server-response parsing and token header policy. It
- * normalizes `/auth/get-session` into `AuthCredential` immediately so callers
- * do not have to reason about Better Auth's `{ user, session }` response shape
- * or the `set-auth-token` fallback.
+ * normalizes `/auth/get-session` into `AuthSession` immediately so callers do
+ * not have to reason about Better Auth's `{ user, session }` response shape or
+ * the `set-auth-token` fallback.
  *
  * @example
  * ```ts
@@ -157,21 +155,19 @@ export function createAuthServerTransport(
 			);
 		},
 
-		async fetchCredentialSession({
+		async fetchSession({
 			authorizationToken,
 		}: {
 			authorizationToken: string;
-		}): Promise<AuthServerTransportCredentialResult> {
+		}): Promise<AuthServerTransportSessionResult> {
 			const { data, response } = await requestJson({
 				method: 'GET',
 				path: '/auth/get-session',
 				token: authorizationToken,
 			});
 			return {
-				authCredential: normalizeAuthCredential(data, {
-					serverOrigin: origin,
-					authorizationToken:
-						response.headers.get('set-auth-token') ?? authorizationToken,
+				session: normalizeAuthSession(data, {
+					token: response.headers.get('set-auth-token') ?? authorizationToken,
 				}),
 			};
 		},

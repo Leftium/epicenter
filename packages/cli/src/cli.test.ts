@@ -58,21 +58,18 @@ describe('createCLI', () => {
 		expect(help).toMatch(/\brun\b/);
 	});
 
-	test('auth command errors set a nonzero exit code', async () => {
-		const previousExitCode = process.exitCode;
-		process.exitCode = undefined;
+	test('auth status rejects extra positionals', async () => {
 		const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
 
 		try {
-			await createCLI().run(['auth', 'status', 'not-a-url']);
-
-			expect(process.exitCode === 1).toBe(true);
+			await expect(
+				createCLI().run(['auth', 'status', 'not-a-url']),
+			).rejects.toThrow('Unknown argument: not-a-url');
 			expect(errorSpy.mock.calls.flat().join(' ')).toContain(
-				'Expected a server origin',
+				'Unknown argument: not-a-url',
 			);
 		} finally {
 			errorSpy.mockRestore();
-			process.exitCode = previousExitCode ?? 0;
 		}
 	});
 });

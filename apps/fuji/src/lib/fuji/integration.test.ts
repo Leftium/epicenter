@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
 import type { AuthClient } from '@epicenter/auth';
-import { createMachineAuth } from '@epicenter/auth/node';
+import {
+	createMachineAuth,
+	createMemoryMachineAuthSessionStorage,
+} from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { ProjectDir } from '@epicenter/workspace';
@@ -226,7 +229,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 
 		const now = new Date();
 		const machineAuth = createMachineAuth({
-			credentialStorage: { kind: 'plaintextFile' },
+			sessionStorage: createMemoryMachineAuthSessionStorage(),
 			sleep: async () => {},
 			fetch: (async (input) => {
 				const url = new URL(String(input));
@@ -273,18 +276,14 @@ describe('daemon to script handoff via Yjs log file', () => {
 				);
 			}) as typeof fetch,
 		});
-		const login = await machineAuth.loginWithDeviceCode({
-			serverOrigin: EPICENTER_API_URL,
-		});
+		const login = await machineAuth.loginWithDeviceCode();
 		expect(login.error).toBeNull();
 		if (login.error !== null) return;
 
 		using unlockedSnapshot = await openFujiSnapshot({
 			projectDir: workdir,
 			async loadOfflineEncryptionKeys() {
-				const result = await machineAuth.getOfflineEncryptionKeys({
-					serverOrigin: EPICENTER_API_URL,
-				});
+				const result = await machineAuth.getEncryptionKeys();
 				if (result.error) throw result.error;
 				return result.data;
 			},

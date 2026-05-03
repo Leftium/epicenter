@@ -1,5 +1,10 @@
 # When Two Types Feel Wrong, Find the Owner
 
+Historical note, 2026-05-03: this article captures an earlier auth cleanup that
+made `AuthCredential` the local owner. The later local auth session clean break
+superseded that model. Current code uses `AuthSession` as the local persisted
+shape, while `BetterAuthSessionResponse` is only the server response boundary.
+
 When I sense this tension, I immediately think: okay, we could have two types, one derived from the other, the other derived from the first, or both extending a shared base type. That reflex is good. But the trick is not picking one of those patterns first. The trick is asking which concept owns the truth.
 
 Here was the smell:

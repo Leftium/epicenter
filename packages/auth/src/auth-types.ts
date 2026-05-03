@@ -1,9 +1,8 @@
 import { EncryptionKeys } from '@epicenter/encryption';
 import { type } from 'arktype';
-import type { AuthCredential } from './contracts/auth-credential.js';
 
 /**
- * JSON-safe user snapshot shared by auth sessions and credentials.
+ * JSON-safe user snapshot shared by auth sessions.
  *
  * Better Auth can produce `Date` objects before serialization. The auth
  * contract normalizes those dates to ISO strings once so every persisted store
@@ -21,24 +20,14 @@ export const AuthUser = type({
 
 export type AuthUser = typeof AuthUser.infer;
 
-/**
- * Auth state persisted by browser and extension clients.
- *
- * This is the app-facing projection of the server credential. Richer Better
- * Auth session metadata is normalized at the credential boundary and projected
- * down before it enters `createAuth`.
- */
+/** Auth state persisted by browser, extension, and machine clients. */
 export const AuthSession = type({
 	token: 'string',
 	user: AuthUser,
 	encryptionKeys: EncryptionKeys,
 });
 
-export type AuthSession = {
-	token: AuthCredential['authorizationToken'];
-	user: AuthCredential['user'];
-	encryptionKeys: AuthCredential['encryptionKeys'];
-};
+export type AuthSession = typeof AuthSession.infer;
 
 export type AuthSnapshot =
 	| { status: 'loading' }

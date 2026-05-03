@@ -19,7 +19,6 @@ export type OpensidianDaemonOptions = {
 	route?: string;
 	auth?: AuthClient;
 	peer?: PeerIdentity;
-	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
 };
 
@@ -33,8 +32,7 @@ function defaultOpensidianDaemonPeer(): PeerIdentity {
 
 export function defineOpensidianDaemon({
 	route = DEFAULT_OPENSIDIAN_DAEMON_ROUTE,
-	apiUrl = EPICENTER_API_URL,
-	auth = createMachineAuthClient({ serverOrigin: apiUrl }),
+	auth = createMachineAuthClient(),
 	peer = defaultOpensidianDaemonPeer(),
 	webSocketImpl,
 }: OpensidianDaemonOptions = {}): DaemonRouteDefinition {
@@ -50,7 +48,7 @@ export function defineOpensidianDaemon({
 				initial: { peer },
 			});
 			const sync = attachSync(doc, {
-				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
 				auth,
 				webSocketImpl,
 				awareness,

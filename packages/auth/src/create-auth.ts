@@ -17,7 +17,7 @@ import type {
 import {
 	authSessionFromBetterAuthSessionResponse,
 	type BetterAuthSessionResponse,
-} from './contracts/auth-credential.ts';
+} from './contracts/auth-session.ts';
 import type { MaybePromise, SessionStorage } from './session-store.ts';
 
 export const AuthError = defineErrors({

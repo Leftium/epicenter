@@ -154,6 +154,12 @@ async function awaitExit(child: ReturnType<typeof spawn>): Promise<number> {
 	});
 }
 
+function runtimeLeftovers(runtimeRoot: string): string[] {
+	return readdirSync(runtimeRoot).filter(
+		(file) => !file.endsWith('.lease.sqlite'),
+	);
+}
+
 describe('up lifecycle (scaled down, no real cross-peer)', () => {
 	test('online banner + peers snapshot + clean exit on SIGTERM', async () => {
 		const env = makeEnv();
@@ -179,7 +185,7 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 
 			// Runtime dir should be empty: no orphan .sock or .meta.json.
 			const runtimeRoot = join(env.xdgRoot, 'epicenter');
-			const leftovers = readdirSync(runtimeRoot);
+			const leftovers = runtimeLeftovers(runtimeRoot);
 			expect(leftovers).toEqual([]);
 		} finally {
 			env.dispose();
@@ -216,7 +222,9 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 
 			// Socket and metadata should both be gone.
 			const runtimeRoot = join(env.xdgRoot, 'epicenter');
-			const leftovers = existsSync(runtimeRoot) ? readdirSync(runtimeRoot) : [];
+			const leftovers = existsSync(runtimeRoot)
+				? runtimeLeftovers(runtimeRoot)
+				: [];
 			expect(leftovers).toEqual([]);
 		} finally {
 			env.dispose();

@@ -1,4 +1,5 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { type } from 'arktype';
 import type { AuthSession } from '../auth-types.js';
 import { normalizeAuthSession } from '../contracts/auth-session.js';
@@ -37,8 +38,6 @@ type MachineAuthTransportSessionResult = {
 	session: AuthSession;
 };
 
-const MACHINE_AUTH_CLIENT_ID = 'epicenter-cli';
-
 export type MachineAuthTransport = ReturnType<
 	typeof createMachineAuthTransport
 >;
@@ -53,8 +52,8 @@ export type MachineAuthTransport = ReturnType<
  * `@epicenter/constants`; machine auth no longer accepts per-call server
  * origins.
  *
- * `client_id` is the server-registered first-party CLI OAuth client, not a
- * per-machine identifier.
+ * The `client_id` value comes from `@epicenter/constants/oauth` so the CLI
+ * device flow and API trusted-client registration cannot drift.
  */
 export function createMachineAuthTransport({
 	fetch: fetchImpl = fetch,
@@ -104,7 +103,7 @@ export function createMachineAuthTransport({
 			const { data } = await requestJson({
 				method: 'POST',
 				path: '/auth/device/code',
-				body: { client_id: MACHINE_AUTH_CLIENT_ID },
+				body: { client_id: EPICENTER_CLI_OAUTH_CLIENT_ID },
 			});
 			return MachineAuthTransportDeviceCodeResponse.assert(data);
 		},
@@ -122,7 +121,7 @@ export function createMachineAuthTransport({
 					body: JSON.stringify({
 						grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
 						device_code: deviceCode,
-						client_id: MACHINE_AUTH_CLIENT_ID,
+						client_id: EPICENTER_CLI_OAUTH_CLIENT_ID,
 					}),
 				},
 			);

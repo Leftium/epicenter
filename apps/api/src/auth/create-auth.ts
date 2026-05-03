@@ -1,6 +1,11 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
 import type { BetterAuthSessionResponse } from '@epicenter/auth/contracts';
 import { APPS } from '@epicenter/constants/apps';
+import {
+	EPICENTER_CLI_OAUTH_CLIENT_ID,
+	EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
+	EPICENTER_MOBILE_OAUTH_CLIENT_ID,
+} from '@epicenter/constants/oauth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { customSession } from 'better-auth/plugins';
@@ -225,7 +230,7 @@ export function createAuth({
 			silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
 			trustedClients: [
 				{
-					clientId: 'epicenter-desktop',
+					clientId: EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
 					name: 'Epicenter Desktop',
 					type: 'native',
 					redirectUrls: ['tauri://localhost/auth/callback'],
@@ -233,7 +238,7 @@ export function createAuth({
 					metadata: {},
 				},
 				{
-					clientId: 'epicenter-mobile',
+					clientId: EPICENTER_MOBILE_OAUTH_CLIENT_ID,
 					name: 'Epicenter Mobile',
 					type: 'native',
 					redirectUrls: ['epicenter://auth/callback'],
@@ -241,7 +246,7 @@ export function createAuth({
 					metadata: {},
 				},
 				{
-					clientId: 'epicenter-cli',
+					clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
 					name: 'Epicenter CLI',
 					type: 'native',
 					redirectUrls: [],

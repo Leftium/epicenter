@@ -11,6 +11,7 @@
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import type { AuthSession } from '../auth-types.js';
 import type { BetterAuthSessionResponse } from '../contracts/auth-session.js';
 import {
@@ -143,7 +144,7 @@ describe('createMachineAuth', () => {
 			expect(url.origin).toBe(EPICENTER_API_URL);
 			if (url.pathname === '/auth/device/code') {
 				expect(JSON.parse(String(init?.body))).toMatchObject({
-					client_id: 'epicenter-cli',
+					client_id: EPICENTER_CLI_OAUTH_CLIENT_ID,
 				});
 				return jsonResponse({
 					device_code: 'device-code',
@@ -156,7 +157,7 @@ describe('createMachineAuth', () => {
 			}
 			if (url.pathname === '/auth/device/token') {
 				expect(JSON.parse(String(init?.body))).toMatchObject({
-					client_id: 'epicenter-cli',
+					client_id: EPICENTER_CLI_OAUTH_CLIENT_ID,
 					device_code: 'device-code',
 				});
 				return jsonResponse({ access_token: 'device-token', expires_in: 3600 });

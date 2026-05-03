@@ -2,6 +2,7 @@ export {
 	AuthCredential,
 	AuthServerSession,
 	authCredentialFromSession,
+	authSessionFromBetterAuthSessionResponse,
 	authSessionFromCredential,
 	type BetterAuthSessionResponse,
 	normalizeAuthCredential,

@@ -4,7 +4,8 @@ import type {
 	Session as BetterAuthSession,
 	User as BetterAuthUser,
 } from 'better-auth';
-import { AuthUser } from '../auth-types.js';
+import type { AuthSession as AuthSessionType } from '../auth-types.js';
+import { AuthSession, AuthUser } from '../auth-types.js';
 
 export type BetterAuthSessionResponse = {
 	user: BetterAuthUser;
@@ -135,6 +136,28 @@ export function normalizeAuthServerSession(value: unknown): AuthServerSession {
 		updatedAt: normalizeDate(record.updatedAt, 'updatedAt'),
 		ipAddress: normalizeOptionalString(record, 'ipAddress'),
 		userAgent: normalizeOptionalString(record, 'userAgent'),
+	});
+}
+
+/**
+ * Project Better Auth's custom session response into the app session shape.
+ *
+ * Better Auth's client plugin typing cannot carry this custom response through
+ * every package boundary in this monorepo, so this function owns the runtime
+ * check instead of letting `createAuth()` trust an inline cast.
+ */
+export function authSessionFromBetterAuthSessionResponse(
+	value: unknown,
+): AuthSessionType | null {
+	if (value === null || value === undefined) return null;
+
+	const record = readRecord(value, 'Better Auth session response');
+	const session = readRecord(record.session, 'session');
+
+	return AuthSession.assert({
+		token: readString(session, 'token'),
+		user: normalizeAuthUser(record.user),
+		encryptionKeys: EncryptionKeys.assert(record.encryptionKeys),
 	});
 }
 

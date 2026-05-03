@@ -15,8 +15,8 @@ import type {
 	AuthUser,
 } from './auth-types.ts';
 import {
+	authSessionFromBetterAuthSessionResponse,
 	type BetterAuthSessionResponse,
-	normalizeAuthUser,
 } from './contracts/auth-credential.ts';
 import type { MaybePromise, SessionStorage } from './session-store.ts';
 
@@ -293,21 +293,20 @@ export function createAuth({
 		client.useSession.subscribe((state) => {
 			if (disposed) return;
 			if (state.isPending) return;
-			const data = state.data as BetterAuthSessionResponse | null;
-			const next = data
-				? {
-						token: data.session.token,
-						user: normalizeAuthUser(data.user),
-						encryptionKeys: data.encryptionKeys,
-					}
-				: null;
+			let next: AuthSession | null;
+			try {
+				next = authSessionFromBetterAuthSessionResponse(state.data);
+			} catch (error) {
+				console.error('[auth] invalid Better Auth session response:', error);
+				return;
+			}
 
 			if (!storageLoaded) {
 				bufferedBetterAuthCandidate = next;
 				return;
 			}
 
-			if (data) {
+			if (next) {
 				reconcileBetterAuthCandidate(next);
 			} else if (snapshot.status === 'signedIn') {
 				writeLocalSnapshot({ status: 'signedOut' });

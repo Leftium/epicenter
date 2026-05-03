@@ -1,20 +1,20 @@
 ---
 name: auth
-description: Epicenter auth packages, @epicenter/auth and @epicenter/auth-svelte. Covers SessionStorage, auth snapshots, sync authentication, and app wiring.
+description: Epicenter auth packages, @epicenter/auth and @epicenter/auth-svelte. Covers initial session wiring, two-state auth snapshots, sync authentication, and app lifecycle binding.
 metadata:
   author: epicenter
-  version: '2.0'
+  version: '3.0'
 ---
 
 # Epicenter Auth
 
-Three packages:
+Three packages own the auth surface:
 
-- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, boot-cache storage hydration, response-header token rotation, and snapshot change fan-out.
+- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, response-header token rotation, save callbacks, and snapshot change fan-out.
 - **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors the core snapshot into `$state` and exposes a live `auth.snapshot` getter.
 - **`@epicenter/auth-workspace`**: framework-agnostic binding from auth snapshots to workspace lifecycle effects.
 
-Everything runtime lives in the core. The Svelte package only makes the snapshot reactive.
+The core factory is synchronous. Callers load persisted state first, then pass the loaded value into `createAuth`.
 
 ## When to Apply This Skill
 
@@ -22,72 +22,79 @@ Use this skill when:
 
 - Wiring a consumer app to `@epicenter/auth-svelte`.
 - Reacting to auth transitions in sync, encryption, or storage layers.
-- Writing or reviewing a `SessionStorage` adapter.
+- Loading a persisted session before constructing auth.
 - Reading auth state in UI, fetch callbacks, or workspace sync callbacks.
 
 ## Public Surface
 
-Auth has one public read path and one readiness promise:
+Auth has one public read path:
 
 ```ts
 type AuthSnapshot =
-	| { status: 'loading' }
 	| { status: 'signedOut' }
-	| { status: 'signedIn'; session: Session };
+	| { status: 'signedIn'; session: AuthSession };
 ```
 
-Read `auth.snapshot` synchronously. Await `auth.whenLoaded` only at async boundaries that must wait for persisted storage hydration, such as `auth.fetch` and authenticated sync setup.
+Read `auth.snapshot` synchronously. Auth has no readiness promise. If a caller has async storage, it must await that storage before constructing auth.
 
 Use `auth.onSnapshotChange(fn)` for future changes only. It does not replay. Consumers that need bootstrap behavior must read `auth.snapshot` once and then register the listener.
 
 Do not add projection helpers. There is no public token, user, session, authenticated, or busy getter beyond `auth.snapshot`.
 
-## SessionStorage Contract
+## createAuth Contract
 
-`createAuth` takes a `SessionStorage`. The storage object is a boot cache for the last known local session; auth owns the in-memory snapshot and Better Auth owns live session state.
+`createAuth` takes the already-loaded session and a save callback:
 
 ```ts
-export type MaybePromise<T> = T | Promise<T>;
-
-export type SessionStorage = {
-	load(): MaybePromise<Session | null>;
-	save(value: Session | null): MaybePromise<void>;
+export type CreateAuthConfig = {
+	baseURL: string;
+	initialSession: AuthSession | null;
+	saveSession(value: AuthSession | null): void | Promise<void>;
 };
 ```
 
 Invariants:
 
-- `load()` returns the persisted session or `null`.
-- Sync stores can leave `loading` before `createAuth()` returns.
-- Async stores start in `loading` and transition after `load()` settles.
-- `whenLoaded` never rejects. Load failures are logged and normalize to `signedOut`.
-- Local writes update the snapshot first, then call `save()`.
+- `initialSession` is the first snapshot. `null` means `signedOut`.
+- `createAuth()` returns with a definite `signedIn` or `signedOut` snapshot.
+- Local writes update the in-memory snapshot first, then call `saveSession()`.
+- Save failures are logged and do not roll back the in-memory snapshot.
 - Live auth changes flow through Better Auth session emissions, `auth.snapshot`, and `auth.onSnapshotChange()`.
+- Dispose is idempotent so HMR can safely call it more than once.
 
-## Wiring a Consumer App
+## Wiring a Browser App
+
+For synchronous persisted state, read the value directly:
 
 ```ts
-import {
-	createAuth,
-	createSessionStorageAdapter,
-	Session,
-} from '@epicenter/auth-svelte';
+import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
 
-const sessionStorage = createPersistedState({
+const session = createPersistedState({
 	key: 'fuji:authSession',
-	schema: Session.or('null'),
+	schema: AuthSession.or('null'),
 	defaultValue: null,
 });
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
-	sessionStorage: createSessionStorageAdapter(sessionStorage),
+	initialSession: session.get(),
+	saveSession: (next) => session.set(next),
 });
 ```
 
-Tab-manager wraps the `createStorageState()` result the same way. Do not await `sessionStorage.whenReady` before constructing auth. Auth owns the load barrier.
+For async storage, await the storage boundary before constructing auth:
+
+```ts
+await session.whenReady;
+
+export const auth = createAuth({
+	baseURL: APP_URLS.API,
+	initialSession: session.get(),
+	saveSession: (next) => session.set(next),
+});
+```
 
 ## Reacting to Session Transitions
 
@@ -98,13 +105,13 @@ import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: workspace.sync,
+	syncControl: workspace.syncControl,
 	applyAuthSession(session) {
 		workspace.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
-			await workspace.idb.clearLocal();
+			await workspace.clearLocalData();
 			window.location.reload();
 		} catch (error) {
 			reportCleanupError(error);
@@ -128,9 +135,9 @@ const sync = attachSync(ydoc, {
 });
 ```
 
-`attachSync` owns the token read. It waits for `auth.whenLoaded`, reads `auth.snapshot`, and reconnects when `auth.onSnapshotChange()` reports a token change. Do not add `getToken`, `tokenSource`, `onTokenChange`, or a token projection helper to auth.
+`attachSync` reads the current token from `auth.snapshot` and reconnects when `auth.onSnapshotChange()` reports a token change. Do not add `getToken`, `tokenSource`, `onTokenChange`, or a token projection helper to auth.
 
-`auth.fetch` follows the same snapshot rule internally: wait for hydration, read the current signed-in token, then send the request.
+`auth.fetch` follows the same snapshot rule internally: read the current signed-in token, then send the request.
 
 ## Write Ownership
 
@@ -138,11 +145,9 @@ Keep field ownership narrow:
 
 | Writer | Fields owned |
 | --- | --- |
-| Persisted load | Initial whole session |
+| Caller load | Initial whole session |
 | Response header rotation | `session.token` only |
 | Better Auth session refetch | `user`, `encryptionKeys`, and initial token |
-
-Persisted storage owns the first transition out of `loading`. The Better Auth session subscription opens only after the boot cache settles; nanostore's atom replays the current value to the late subscriber, so a Better Auth state present at construction time is reconciled into the cache-derived snapshot.
 
 Preserve a rotated token across Better Auth refetch:
 
@@ -165,7 +170,7 @@ Read `auth.snapshot` in templates, `$derived`, or `$effect`:
 
 {#if snapshot.status === 'signedIn'}
 	<p>{snapshot.session.user.name}</p>
-{:else if snapshot.status === 'signedOut'}
+{:else}
 	<AuthForm {auth} />
 {/if}
 ```
@@ -189,7 +194,7 @@ In-flight command state belongs to the issuing component:
 
 ## Common Pitfalls
 
-- In the Svelte wrapper, spread the core auth object only before overriding `snapshot`. Object spread invokes the base getter and copies the current value, so `get snapshot()` must appear after `...base`.
+- In the Svelte wrapper, spread the core auth object before overriding `snapshot`. Object spread invokes the base getter and copies the current value, so `get snapshot()` must appear after `...base`.
 - Do not destructure `auth.snapshot` at module scope. That freezes the current value.
 - Do not clear local data on cold boot. Clear only when the previous snapshot was `signedIn` and the next snapshot is `signedOut`.
 - Do not import `createAuth` from `@epicenter/auth` in Svelte apps. Use `@epicenter/auth-svelte`.

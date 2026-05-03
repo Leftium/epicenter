@@ -328,7 +328,7 @@ export const auth = createAuth({
 
 ### Phase 7: Update the auth skill
 
-- [ ] **7.1** `.agents/skills/auth/SKILL.md` references `whenLoaded`, the late-subscribe flow, and the three-state machine. Rewrite to describe the new caller-loads pattern and the two-state snapshot.
+- [x] **7.1** `.agents/skills/auth/SKILL.md` references `whenLoaded`, the late-subscribe flow, and the three-state machine. Rewrite to describe the new caller-loads pattern and the two-state snapshot.
 
 ## Edge Cases
 

@@ -233,6 +233,39 @@ const tabGroupColor =
 
 Both work when used as a value inside `type({...})` object literals (arktype coerces strings). But only the `type()`-wrapped version is a first-class `Type` that works in all positions.
 
+## Let Schema Values and Inferred Types Share a Name
+
+When an arktype schema exports both a runtime value and its inferred type with the same name, import that name once. TypeScript keeps value space and type space separate, so the same identifier can validate at runtime and annotate values at compile time.
+
+```typescript
+// Good: one import covers both namespaces
+import { EncryptionKeys } from '@epicenter/encryption';
+
+const Session = type({
+	encryptionKeys: EncryptionKeys,
+});
+
+type SessionResponse = {
+	encryptionKeys: EncryptionKeys;
+};
+```
+
+Avoid aliasing the runtime schema just to make room for the type import.
+
+```typescript
+// Bad: duplicates the name with an artificial Schema suffix
+import {
+	EncryptionKeys as EncryptionKeysSchema,
+	type EncryptionKeys,
+} from '@epicenter/encryption';
+
+const Session = type({
+	encryptionKeys: EncryptionKeysSchema,
+});
+```
+
+Reach for an alias only when two imported values genuinely collide in the same namespace. A runtime schema and its inferred type do not collide.
+
 ## `type.enumerated()` — Derive Unions from Const Arrays
 
 Use `type.enumerated()` to create string literal unions from existing `as const` arrays. This keeps the workspace schema in sync with app constants automatically.

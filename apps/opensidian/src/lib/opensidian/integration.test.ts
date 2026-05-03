@@ -107,7 +107,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 			}
 		}
 
-		using script = openOpensidianScript({
+		using script = await openOpensidianScript({
 			auth: createTestAuth(),
 			projectDir: workdir,
 			webSocketImpl: NoopWebSocket,

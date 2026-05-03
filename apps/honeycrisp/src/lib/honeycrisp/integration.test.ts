@@ -107,7 +107,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 			}
 		}
 
-		using script = openHoneycrispScript({
+		using script = await openHoneycrispScript({
 			auth: createTestAuth(),
 			projectDir: workdir,
 			webSocketImpl: NoopWebSocket,

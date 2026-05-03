@@ -1,7 +1,7 @@
 # Hoist Async Init Out of createAuth
 
 **Date**: 2026-05-03
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## One-Sentence Test
@@ -366,10 +366,10 @@ If new questions surface during implementation, file them here rather than choos
 ## Success Criteria
 
 - [ ] `createAuth` body has no `let` declarations for lifecycle (no `disposed`, no nullable handles, no deferred).
-- [ ] `unsubscribeBetterAuth` is `const`.
-- [ ] `whenLoaded` is removed from the public `AuthClient` type and from every consumer.
-- [ ] `AuthSnapshot` is a two-variant union: `signedOut | signedIn`. No `loading` variant in the type, no `'loading'` string literals checked anywhere in the codebase.
-- [ ] `bun test` passes for `packages/auth`, `packages/auth-svelte`, `packages/auth-workspace`.
+- [x] `unsubscribeBetterAuth` is `const`.
+- [x] `whenLoaded` is removed from the public `AuthClient` type and from every consumer.
+- [x] `AuthSnapshot` is a two-variant union: `signedOut | signedIn`. No `loading` variant in the type, no `'loading'` string literals checked anywhere in the codebase.
+- [x] `bun test` passes for `packages/auth`, `packages/auth-svelte`, `packages/auth-workspace`.
 - [ ] `bun run typecheck` passes for the six browser apps and the CLI.
 - [ ] Each browser app boots and signs in / out without regressions (manual smoke).
 
@@ -387,3 +387,79 @@ If new questions surface during implementation, file them here rather than choos
 - `specs/20260503T180000-auth-snapshot-three-state-clean-break.md` (precedent: same direction, one layer in)
 - `.agents/skills/auth/SKILL.md` (needs rewrite in Phase 7)
 - `docs/articles/20260503T220500-pass-the-loaded-value-not-the-loader.md` (companion article on the general pattern)
+
+## Review
+
+**Completed**: 2026-05-03
+**Branch**: `codex/explicit-daemon-host-config`
+
+### Summary
+
+`createAuth` now constructs synchronously from `initialSession` and persists through `saveSession`. The public auth snapshot is a two-state union, `whenLoaded` is gone from auth consumers, and the auth skill now describes the caller-loads pattern.
+
+### Files Read
+
+```txt
+apps/
+|-- dashboard/src/lib/auth.ts
+|-- fuji/src/lib/fuji/
+|   |-- client.ts
+|   |-- daemon.ts
+|   |-- integration.test.ts
+|   `-- script.ts
+|-- honeycrisp/src/lib/honeycrisp/
+|   |-- client.ts
+|   |-- daemon.ts
+|   |-- integration.test.ts
+|   `-- script.ts
+|-- opensidian/src/lib/
+|   |-- components/AppShell.svelte
+|   `-- opensidian/
+|       |-- client.ts
+|       |-- daemon.ts
+|       |-- integration.test.ts
+|       `-- script.ts
+|-- tab-manager/src/lib/tab-manager/client.ts
+`-- zhongwen/src/
+    |-- lib/zhongwen/
+    |   |-- client.ts
+    |   |-- daemon.ts
+    |   |-- integration.test.ts
+    |   `-- script.ts
+    `-- routes/+page.svelte
+packages/
+|-- auth/src/
+|   |-- auth-types.ts
+|   |-- create-auth.test.ts
+|   |-- create-auth.ts
+|   |-- index.ts
+|   `-- node/
+|       |-- machine-auth.test.ts
+|       `-- machine-auth.ts
+|-- auth-svelte/src/
+|   |-- create-auth.svelte.ts
+|   `-- index.ts
+|-- auth-workspace/src/
+|   |-- index.test.ts
+|   `-- index.ts
+`-- workspace/src/document/
+    |-- attach-sync.test.ts
+    `-- attach-sync.ts
+.agents/skills/auth/SKILL.md
+```
+
+### Deviations from Spec
+
+- `createMachineAuthWithDependencies` does not construct a core `AuthClient` on this branch, so the keychain load moved into `createMachineAuthClient()`. `createMachineAuth()` still became async so CLI and script call sites have one consistent machine-auth entry shape.
+- `packages/cli` has no `typecheck` script, so verification used `bun x tsc --noEmit` in `packages/cli`.
+- `packages/auth-svelte` has no test script. Its `bun run typecheck` passes with the existing no-input-files warning from `svelte-check`.
+
+### Verification
+
+- Passed: `bun test` in `packages/auth`.
+- Passed: `bun test` in `packages/auth-workspace`.
+- Passed: `bun run typecheck` in `packages/auth`, `packages/auth-workspace`, `packages/workspace`, and `packages/auth-svelte`.
+- Passed: `bun x tsc --noEmit` in `packages/cli`.
+- Passed: `rg -n "'loading'|\"loading\"|status === 'loading'|status: 'loading'" packages apps` found no auth-related matches. Remaining matches are notification and image-loading contexts in `apps/whispering` and `packages/ui`.
+- Blocked by existing unrelated errors: app typechecks for fuji, opensidian, honeycrisp, zhongwen, dashboard, and tab-manager still fail in shared UI, svelte-utils, app-specific chat/dashboard code, and API environment typing.
+- Not run: manual browser sign-in and sign-out smoke.

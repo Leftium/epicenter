@@ -108,7 +108,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 			}
 		}
 
-		using script = openZhongwenScript({
+		using script = await openZhongwenScript({
 			auth: createTestAuth(),
 			projectDir: workdir,
 			webSocketImpl: NoopWebSocket,

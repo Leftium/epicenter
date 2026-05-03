@@ -1,6 +1,5 @@
 import {
 	createAuth,
-	createSessionStorageAdapter,
 } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -13,9 +12,12 @@ import { session } from '$lib/auth';
 import type { DeviceId } from '$lib/workspace/definition';
 import { openTabManager } from './extension';
 
+await session.whenReady;
+
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
-	sessionStorage: createSessionStorageAdapter(session),
+	initialSession: session.get(),
+	saveSession: (next) => session.set(next),
 });
 
 /**

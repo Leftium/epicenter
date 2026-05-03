@@ -280,12 +280,12 @@ createAuth(config)
 
 For each of the six browser app client modules, replace the storage adapter with direct `get`/`set` access:
 
-- [ ] **2.1** `apps/fuji/src/lib/fuji/client.ts`
-- [ ] **2.2** `apps/opensidian/src/lib/opensidian/client.ts`
-- [ ] **2.3** `apps/honeycrisp/src/lib/honeycrisp/client.ts`
-- [ ] **2.4** `apps/zhongwen/src/lib/zhongwen/client.ts`
-- [ ] **2.5** `apps/dashboard/src/lib/auth.ts`
-- [ ] **2.6** `apps/tab-manager/src/lib/tab-manager/client.ts` (wxt-dev/storage; this one needs an async boot wrapper if `storage.getItem` returns a promise; see Edge Cases)
+- [x] **2.1** `apps/fuji/src/lib/fuji/client.ts`
+- [x] **2.2** `apps/opensidian/src/lib/opensidian/client.ts`
+- [x] **2.3** `apps/honeycrisp/src/lib/honeycrisp/client.ts`
+- [x] **2.4** `apps/zhongwen/src/lib/zhongwen/client.ts`
+- [x] **2.5** `apps/dashboard/src/lib/auth.ts`
+- [x] **2.6** `apps/tab-manager/src/lib/tab-manager/client.ts` (wxt-dev/storage; this one needs an async boot wrapper if `storage.getItem` returns a promise; see Edge Cases)
 
 Pattern:
 

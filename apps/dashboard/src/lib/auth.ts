@@ -1,7 +1,6 @@
 import {
 	AuthSession,
 	createAuth,
-	createSessionStorageAdapter,
 } from '@epicenter/auth-svelte';
 import { createPersistedState } from '@epicenter/svelte';
 
@@ -13,7 +12,8 @@ const session = createPersistedState({
 
 export const auth = createAuth({
 	baseURL: window.location.origin,
-	sessionStorage: createSessionStorageAdapter(session),
+	initialSession: session.get(),
+	saveSession: (next) => session.set(next),
 });
 
 if (import.meta.hot) {

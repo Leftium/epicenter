@@ -1,7 +1,6 @@
 import {
 	AuthSession,
 	createAuth,
-	createSessionStorageAdapter,
 } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -20,7 +19,8 @@ const session = createPersistedState({
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
-	sessionStorage: createSessionStorageAdapter(session),
+	initialSession: session.get(),
+	saveSession: (next) => session.set(next),
 });
 
 export const opensidian = openOpensidian({

@@ -353,7 +353,6 @@ export function createMachineAuthClient(): AuthClient {
 		sessionStorage: {
 			load: sessionStorage.load,
 			save: sessionStorage.save,
-			watch: () => () => {},
 		} satisfies SessionStorage,
 	});
 }

@@ -735,18 +735,17 @@ export function createMachineAuthClient(): AuthClient {
 		sessionStorage: {
 			load: sessionStorage.load,
 			save: sessionStorage.save,
-			watch: () => () => {},
 		},
 	});
 }
 ```
 
-The inline storage object implements the core `SessionStorage` shape:
+The inline storage object implements the durable part of the core `SessionStorage` shape:
 
 ```ts
 load(): Promise<Session | null>
 save(value: Session | null): Promise<void>
-watch(fn: (next: Session | null) => void): () => void
+watch?(fn: (next: Session | null) => void): () => void
 ```
 
 Recommended behavior:
@@ -761,9 +760,6 @@ save(null)
 
 save(session)
   saves the same AuthSession shape used by browser clients
-
-watch()
-  returns a no-op unsubscribe for now
 ```
 
 Script call sites should then use:

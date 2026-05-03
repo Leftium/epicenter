@@ -8,12 +8,13 @@ import type { AuthSession } from './auth-types.ts';
  * Invariants:
  * - `load()` may be synchronous or async.
  * - `save()` may be synchronous or async.
- * - `watch()` reports inbound storage changes and may echo local writes.
+ * - `watch()` is optional; stores that can observe external changes may report
+ *   inbound updates, including echoes of local writes.
  */
 export type MaybePromise<T> = T | Promise<T>;
 
 export type SessionStorage = {
 	load(): MaybePromise<AuthSession | null>;
 	save(value: AuthSession | null): MaybePromise<void>;
-	watch(fn: (next: AuthSession | null) => void): () => void;
+	watch?(fn: (next: AuthSession | null) => void): () => void;
 };

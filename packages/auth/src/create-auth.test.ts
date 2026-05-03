@@ -197,6 +197,20 @@ test('dispose is idempotent and unsubscribes from session storage once', async (
 	expect(setup.unwatchCount).toBe(1);
 });
 
+test('storage watch is optional for stores without external updates', async () => {
+	const auth = createAuth({
+		baseURL: 'http://localhost:8787',
+		sessionStorage: {
+			load: () => session(),
+			save() {},
+		},
+	});
+	await auth.whenLoaded;
+
+	expect(auth.snapshot).toEqual({ status: 'signedIn', session: session() });
+	auth[Symbol.dispose]();
+});
+
 test('dispose resolves whenLoaded and ignores late storage load', async () => {
 	const deferred = createDeferred<AuthSession | null>();
 	const setup = createStorage({ load: () => deferred.promise });
@@ -240,6 +254,7 @@ test('session storage adapter delegates to wrapped state', async () => {
 	await adapter.save(next);
 	await expect(adapter.load()).resolves.toEqual(next);
 
+	if (!adapter.watch) throw new Error('adapter should expose watch');
 	const unsubscribe = adapter.watch(() => {});
 	expect(watched).not.toBeNull();
 	unsubscribe();

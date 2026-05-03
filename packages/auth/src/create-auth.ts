@@ -252,12 +252,14 @@ export function createAuth({
 		}
 	}
 
-	disposers.push(
-		sessionStorage.watch((next) => {
-			if (!storageLoaded) return;
-			setSnapshot(snapshotFromSession(next));
-		}),
-	);
+	if (sessionStorage.watch) {
+		disposers.push(
+			sessionStorage.watch((next) => {
+				if (!storageLoaded) return;
+				setSnapshot(snapshotFromSession(next));
+			}),
+		);
+	}
 
 	const client = createAuthClient({
 		baseURL,

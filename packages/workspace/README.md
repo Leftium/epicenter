@@ -1273,7 +1273,6 @@ and a few utility surfaces.
 | `@epicenter/workspace/document/materializer/markdown` | `attachMarkdownMaterializer`, serializers | Yes |
 | `@epicenter/workspace/document/materializer/sqlite` | `attachSqliteMaterializer`, `generateDdl`, types | Yes |
 | `@epicenter/workspace/ai` | `actionsToAiTools` (TanStack AI bindings) | Yes |
-| `@epicenter/workspace/shared/crypto` | Lower-level crypto primitives for encryption attachments | Yes |
 
 ## Architecture & Lifecycle
 

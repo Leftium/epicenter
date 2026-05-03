@@ -1,4 +1,4 @@
-import { encryptionKeysFingerprint } from '@epicenter/encryption';
+import { encryptionKeysEqual } from '@epicenter/encryption';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
@@ -173,8 +173,7 @@ export function createAuth({
 		return (
 			left.token === right.token &&
 			usersEqual(left.user, right.user) &&
-			encryptionKeysFingerprint(left.encryptionKeys) ===
-				encryptionKeysFingerprint(right.encryptionKeys)
+			encryptionKeysEqual(left.encryptionKeys, right.encryptionKeys)
 		);
 	}
 

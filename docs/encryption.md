@@ -2,9 +2,8 @@
 Epicenter encrypts CRDT values before they enter the synced Yjs document.
 That keeps the sync path moving ciphertext instead of application JSON.
 This page only makes claims visible in the current code:
-- `packages/workspace/src/shared/crypto/index.ts`
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`
 - `packages/encryption/src/index.ts`
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`
 - `packages/workspace/src/document/attach-encryption.ts`
 - `packages/workspace/src/document/attach-encrypted.ts`
 - `apps/api/src/auth/encryption.ts`
@@ -46,7 +45,7 @@ workspace key
         v
 encrypted CRDT value
 ```
-On the server, `apps/api/src/auth/encryption.ts` hashes each configured secret with SHA-256, imports that digest into Web Crypto HKDF, and derives 256 bits with `info = user:{userId}`.
+On the server, `apps/api/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption` to parse the keyring and derive per-user keys.
 It returns one `{ version, userKeyBase64 }` entry per configured secret version.
 On the client, `workspace.encryption.applyKeys(...)` (the `EncryptionAttachment` exposed from the document bundle) decodes each `userKeyBase64`, runs `deriveWorkspaceKey(userKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
 The highest version becomes the current key for new writes.

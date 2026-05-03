@@ -10,13 +10,16 @@
  * ```typescript
  * import {
  *   attachIndexedDb,
+ *   attachRichText,
  *   attachSync,
  *   attachTables,
  *   createDisposableCache,
  *   defineTable,
+ *   docGuid,
  *   type TokenSource,
  * } from '@epicenter/workspace';
  * import { type } from 'arktype';
+ * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
  * declare const tokenSource: TokenSource;
@@ -32,7 +35,27 @@
  * });
  *
  * const noteBodyDocs = createDisposableCache(
- *   (noteId) => buildNoteBody({ noteId, notesTable: tables.posts }),
+ *   (noteId: string) => {
+ *     const bodyYdoc = new Y.Doc({
+ *       guid: docGuid({
+ *         workspaceId: ydoc.guid,
+ *         collection: 'posts',
+ *         rowId: noteId,
+ *         field: 'body',
+ *       }),
+ *       gc: false,
+ *     });
+ *     const bodyIdb = attachIndexedDb(bodyYdoc);
+ *     return {
+ *       ydoc: bodyYdoc,
+ *       body: attachRichText(bodyYdoc),
+ *       idb: bodyIdb,
+ *       whenReady: bodyIdb.whenLoaded,
+ *       [Symbol.dispose]() {
+ *         bodyYdoc.destroy();
+ *       },
+ *     };
+ *   },
  *   { gcTime: 5_000 },
  * );
  * async function clearNoteBodyLocalData() {

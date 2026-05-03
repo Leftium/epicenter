@@ -28,6 +28,10 @@ type BetterAuthClientOptions = {
 let betterAuthSessionListeners = new Set<
 	(state: BetterAuthSessionState) => void
 >();
+let currentBetterAuthState: BetterAuthSessionState = {
+	isPending: false,
+	data: null,
+};
 let betterAuthClientOptions: BetterAuthClientOptions | null = null;
 let signInResponseHeaders: Record<string, string> | undefined;
 
@@ -37,6 +41,10 @@ mock.module('better-auth/client', () => ({
 		return {
 			useSession: {
 				subscribe(listener: (state: BetterAuthSessionState) => void) {
+					// Match nanostore semantics: the atom replays the current
+					// value to a new subscriber synchronously before adding
+					// it to the listener set.
+					listener(currentBetterAuthState);
 					betterAuthSessionListeners.add(listener);
 					return () => {
 						betterAuthSessionListeners.delete(listener);
@@ -80,6 +88,7 @@ beforeEach(() => {
 		})) as unknown as typeof fetch;
 	console.error = () => {};
 	betterAuthSessionListeners = new Set();
+	currentBetterAuthState = { isPending: false, data: null };
 	betterAuthClientOptions = null;
 	signInResponseHeaders = undefined;
 });
@@ -166,8 +175,9 @@ function createDeferred<T>() {
 }
 
 function emitBetterAuthSession(data: unknown) {
+	currentBetterAuthState = { isPending: false, data };
 	for (const listener of betterAuthSessionListeners) {
-		listener({ isPending: false, data });
+		listener(currentBetterAuthState);
 	}
 }
 
@@ -220,6 +230,9 @@ test('listener failures do not stop later listeners', async () => {
 });
 
 test('persisted storage load drives initial signed-in snapshot', async () => {
+	// Seed the BA atom so the late subscribe replays the matching session
+	// instead of the default null (which would flip the snapshot to signedOut).
+	emitBetterAuthSession(betterAuthSessionData(session()));
 	const setup = createStorage({ load: () => session() });
 	const auth = createAuth({
 		baseURL: 'http://localhost:8787',
@@ -319,12 +332,19 @@ test('Better Auth signed-in emission drives snapshot and storage save', async ()
 });
 
 test('Better Auth signed-out emission drives snapshot and storage save', async () => {
+	// Seed the BA atom with the matching session so the late subscribe
+	// replays as a no-op transition; the explicit null emission below is
+	// then the only event that drives the signedIn -> signedOut switch.
+	emitBetterAuthSession(betterAuthSessionData(session()));
 	const setup = createStorage({ load: () => session() });
 	const auth = createAuth({
 		baseURL: 'http://localhost:8787',
 		sessionStorage: setup.storage,
 	});
 	await auth.whenLoaded;
+	// Drop the redundant save fired by writeLocalSnapshot during the
+	// subscribe replay so the assertion below isolates the explicit emit.
+	setup.saved.length = 0;
 
 	emitBetterAuthSession(null);
 
@@ -353,13 +373,51 @@ test('Better Auth emission during async load is applied after boot cache settles
 	auth[Symbol.dispose]();
 });
 
+test('BA emission before boot cache resolves does not write snapshot until cache settles', async () => {
+	const deferred = createDeferred<AuthSession | null>();
+	const setup = createStorage({ load: () => deferred.promise });
+	const auth = createAuth({
+		baseURL: 'http://localhost:8787',
+		sessionStorage: setup.storage,
+	});
+
+	// Better Auth emits before the boot cache resolves; the new flow must not
+	// observe this until subscribe runs after load settles.
+	emitBetterAuthSession(
+		betterAuthSessionData(session({ token: 'pre-load-token' })),
+	);
+
+	// Snapshot is still loading; storage has not been written; no listeners
+	// are attached because the IIFE has not reached subscribe yet.
+	expect(auth.snapshot).toEqual({ status: 'loading' });
+	expect(setup.saved).toEqual([]);
+	expect(betterAuthSessionListeners.size).toBe(0);
+
+	deferred.resolve(null);
+	await auth.whenLoaded;
+
+	const expected = session({ token: 'pre-load-token' });
+	expect(auth.snapshot).toEqual({ status: 'signedIn', session: expected });
+	expect(setup.saved).toEqual([expected]);
+	auth[Symbol.dispose]();
+});
+
 test('response-header token rotation persists through session storage save', async () => {
+	// Seed the BA atom so the late subscribe replays the same session as the
+	// boot cache; without this, the default null replay would flip the
+	// snapshot to signedOut and the rotation hook below would not fire.
+	emitBetterAuthSession(
+		betterAuthSessionData(session({ token: 'old-token' })),
+	);
 	const setup = createStorage({ load: () => session({ token: 'old-token' }) });
 	const auth = createAuth({
 		baseURL: 'http://localhost:8787',
 		sessionStorage: setup.storage,
 	});
 	await auth.whenLoaded;
+	// Drop the redundant save fired by writeLocalSnapshot during the
+	// subscribe replay so the assertion below isolates the rotation save.
+	setup.saved.length = 0;
 
 	signInResponseHeaders = { 'set-auth-token': 'new-token' };
 	await auth.signIn({ email: 'user@example.com', password: 'password' });

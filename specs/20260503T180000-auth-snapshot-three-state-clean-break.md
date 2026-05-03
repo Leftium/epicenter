@@ -263,7 +263,7 @@ There is no fourth state. There is no buffered emission. The arrows out of `load
 
 ### Phase 2: Update tests
 
-- [ ] **2.1** In `packages/auth/src/create-auth.test.ts`, update the `useSession.subscribe` mock to track the latest emitted state and replay it synchronously to new subscribers. Match nanostore semantics. Suggested shape:
+- [x] **2.1** In `packages/auth/src/create-auth.test.ts`, update the `useSession.subscribe` mock to track the latest emitted state and replay it synchronously to new subscribers. Match nanostore semantics. Suggested shape:
     ```ts
     let currentBetterAuthState: BetterAuthSessionState = { isPending: false, data: null };
     function emitBetterAuthSession(data: unknown) {
@@ -280,11 +280,14 @@ There is no fourth state. There is no buffered emission. The arrows out of `load
     },
     ```
     Reset `currentBetterAuthState` in `beforeEach`.
-- [ ] **2.2** Verify the existing test "Better Auth emission during async load is applied after boot cache settles" still passes. Under the new ordering, the assertion logic is the same, but the mechanism is "atom replays on late subscribe" instead of "buffer flush after load."
-- [ ] **2.3** Verify the "persisted storage load drives initial signed-in snapshot" test still passes (initial snapshot is set from cache before any BA emission).
-- [ ] **2.4** Verify "Better Auth signed-out emission drives snapshot and storage save" still passes (BA emits null after subscribe, snapshot transitions signedIn -> signedOut).
-- [ ] **2.5** Verify "dispose resolves whenLoaded and ignores late storage load" still passes.
-- [ ] **2.6** Add one new test: "BA emission before boot cache resolves does not write snapshot until cache settles." This was implicit in the previous tests; make it explicit so the invariant survives future refactors.
+- [x] **2.2** Verify the existing test "Better Auth emission during async load is applied after boot cache settles" still passes. Under the new ordering, the assertion logic is the same, but the mechanism is "atom replays on late subscribe" instead of "buffer flush after load."
+- [x] **2.3** Verify the "persisted storage load drives initial signed-in snapshot" test still passes (initial snapshot is set from cache before any BA emission).
+  > **Note**: With replay-on-subscribe semantics, this test now seeds `currentBetterAuthState` with the matching BA session before `createAuth`. Without seeding, the default null replay would flip the cache-hydrated `signedIn` snapshot to `signedOut`. Seeding models the realistic scenario where the BA atom already holds the user's session at construction time.
+- [x] **2.4** Verify "Better Auth signed-out emission drives snapshot and storage save" still passes (BA emits null after subscribe, snapshot transitions signedIn -> signedOut).
+  > **Note**: Same seeding pattern as 2.3, plus a `setup.saved.length = 0` reset after `await auth.whenLoaded` to drop the redundant save fired by the subscribe replay (see Open Question 1 about gating `saveSnapshot` on `snapshotsEqual`). Same applies to "response-header token rotation persists through session storage save".
+- [x] **2.5** Verify "dispose resolves whenLoaded and ignores late storage load" still passes.
+  > **Note**: Required `Promise.race(initIIFE, disposeSignal)` in Phase 1.1 to keep this passing.
+- [x] **2.6** Add one new test: "BA emission before boot cache resolves does not write snapshot until cache settles." This was implicit in the previous tests; make it explicit so the invariant survives future refactors.
 
 ### Phase 3: Verify consumers and documentation
 

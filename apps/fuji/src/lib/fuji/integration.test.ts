@@ -68,7 +68,7 @@ function createTestAuth(): AuthClient {
 		async signUp() {
 			throw new Error('unused');
 		},
-		async signInWithSocialPopup() {
+		async signInWithIdToken() {
 			throw new Error('unused');
 		},
 		async signInWithSocialRedirect() {

@@ -11,7 +11,6 @@ export {
 	createAuth,
 	createSessionStorageAdapter,
 	type SessionStateAdapter,
-	type SocialTokenPayload,
 } from './create-auth.ts';
 export type {
 	MaybePromise,

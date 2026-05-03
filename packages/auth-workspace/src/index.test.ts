@@ -74,7 +74,7 @@ function createFakeAuth(initial: AuthSnapshot) {
 		signUp: async () => {
 			throw new Error('unused');
 		},
-		signInWithSocialPopup: async () => {
+		signInWithIdToken: async () => {
 			throw new Error('unused');
 		},
 		signInWithSocialRedirect: async () => {

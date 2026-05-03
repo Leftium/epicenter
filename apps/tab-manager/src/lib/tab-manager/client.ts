@@ -9,17 +9,13 @@ import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { storage } from '@wxt-dev/storage';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { getGoogleCredentials, session } from '$lib/auth';
+import { session } from '$lib/auth';
 import type { DeviceId } from '$lib/workspace/definition';
 import { openTabManager } from './extension';
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	sessionStorage: createSessionStorageAdapter(session),
-	socialTokenProvider: async () => {
-		const { idToken, nonce } = await getGoogleCredentials();
-		return { provider: 'google', idToken, nonce };
-	},
 });
 
 /**

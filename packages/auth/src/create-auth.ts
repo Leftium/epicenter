@@ -43,29 +43,10 @@ export const AuthError = defineErrors({
 });
 export type AuthError = InferErrors<typeof AuthError>;
 
-/**
- * Payload returned by a native/extension `socialTokenProvider`. Identifies
- * which Better Auth social provider to verify the ID token against.
- */
-export type SocialTokenPayload = {
-	provider: string;
-	idToken: string;
-	nonce: string;
-};
-
 export type CreateAuthConfig = {
 	/** Resolved once at construction; recreate the client if the origin changes. */
 	baseURL: string;
 	sessionStorage: SessionStorage;
-	/**
-	 * Platform-specific credential provider for social ID token sign-in.
-	 *
-	 * Injected at creation time so the auth client can orchestrate the full
-	 * popup flow without pushing platform logic into UI components. Native
-	 * apps and extensions provide this; web apps that only use redirect
-	 * sign-in can omit it.
-	 */
-	socialTokenProvider?: () => Promise<SocialTokenPayload>;
 };
 
 export type AuthClient = {
@@ -81,7 +62,11 @@ export type AuthClient = {
 		password: string;
 		name: string;
 	}): Promise<Result<undefined, AuthError>>;
-	signInWithSocialPopup(): Promise<Result<undefined, AuthError>>;
+	signInWithIdToken(input: {
+		provider: string;
+		idToken: string;
+		nonce: string;
+	}): Promise<Result<undefined, AuthError>>;
 	signInWithSocialRedirect(input: {
 		provider: string;
 		callbackURL: string;
@@ -132,7 +117,6 @@ type EpicenterCustomSessionPlugin = ReturnType<
 export function createAuth({
 	baseURL,
 	sessionStorage,
-	socialTokenProvider,
 }: CreateAuthConfig): AuthClient {
 	let snapshot: AuthSnapshot = { status: 'loading' };
 	let disposed = false;
@@ -299,14 +283,8 @@ export function createAuth({
 			}
 		},
 
-		async signInWithSocialPopup() {
-			if (!socialTokenProvider) {
-				return AuthError.SocialSignInFailed({
-					cause: new Error('No socialTokenProvider configured.'),
-				});
-			}
+		async signInWithIdToken({ provider, idToken, nonce }) {
 			try {
-				const { provider, idToken, nonce } = await socialTokenProvider();
 				const { error } = await client.signIn.social({
 					provider,
 					idToken: { token: idToken, nonce },

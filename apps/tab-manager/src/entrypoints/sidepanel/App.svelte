@@ -20,6 +20,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import { ModeWatcher } from 'mode-watcher';
+	import { getGoogleCredentials } from '$lib/auth';
 	import { auth, tabManager } from '$lib/tab-manager/client';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { items } from '$lib/components/command-palette-items';
@@ -177,7 +178,10 @@
 					{auth}
 					sync={tabManager.sync}
 					syncNoun="tabs"
-					onSocialSignIn={() => auth.signInWithSocialPopup()}
+					onSocialSignIn={async () => {
+						const { idToken, nonce } = await getGoogleCredentials();
+						return auth.signInWithIdToken({ provider: 'google', idToken, nonce });
+					}}
 				/>
 			</div>
 		</header>

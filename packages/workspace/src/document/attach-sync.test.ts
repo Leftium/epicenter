@@ -142,7 +142,7 @@ function createAuthClient(initialSnapshot: AuthSnapshot) {
 		async signUp() {
 			return Ok(undefined);
 		},
-		async signInWithSocialPopup() {
+		async signInWithIdToken() {
 			return Ok(undefined);
 		},
 		async signInWithSocialRedirect() {

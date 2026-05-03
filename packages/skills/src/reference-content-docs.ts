@@ -35,7 +35,9 @@ export function referenceContentDocGuid({
 	});
 }
 
-export function createReferenceContentDoc({
+export function createReferenceContentDoc<
+	TPersistence extends DocPersistence = never,
+>({
 	referenceId,
 	workspaceId,
 	referencesTable,
@@ -44,7 +46,7 @@ export function createReferenceContentDoc({
 	referenceId: string;
 	workspaceId: string;
 	referencesTable: Table<Reference>;
-	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
+	attachPersistence?: (ydoc: Y.Doc) => TPersistence;
 }) {
 	const ydoc = new Y.Doc({
 		guid: referenceContentDocGuid({ workspaceId, referenceId }),

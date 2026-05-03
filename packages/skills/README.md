@@ -40,21 +40,13 @@ const idb = attachIndexedDb(doc.ydoc);
 attachBroadcastChannel(doc.ydoc);
 
 const instructionsDocs = createDisposableCache(
-	(skillId: string) => {
-		const instructionsDoc = createSkillInstructionsDoc({
+	(skillId: string) =>
+		createSkillInstructionsDoc({
 			skillId,
 			workspaceId: doc.ydoc.guid,
 			skillsTable: doc.tables.skills,
 			attachPersistence: attachIndexedDb,
-		});
-
-		return {
-			...instructionsDoc,
-			persistence: instructionsDoc.persistence as ReturnType<
-				typeof attachIndexedDb
-			>,
-		};
-	},
+		}),
 	{ gcTime: 5_000 },
 );
 

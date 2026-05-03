@@ -35,7 +35,9 @@ export function skillInstructionsDocGuid({
 	});
 }
 
-export function createSkillInstructionsDoc({
+export function createSkillInstructionsDoc<
+	TPersistence extends DocPersistence = never,
+>({
 	skillId,
 	workspaceId,
 	skillsTable,
@@ -44,7 +46,7 @@ export function createSkillInstructionsDoc({
 	skillId: string;
 	workspaceId: string;
 	skillsTable: Table<Skill>;
-	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
+	attachPersistence?: (ydoc: Y.Doc) => TPersistence;
 }) {
 	const ydoc = new Y.Doc({
 		guid: skillInstructionsDocGuid({ workspaceId, skillId }),

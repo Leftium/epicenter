@@ -51,7 +51,9 @@ export function fileContentDocGuid({
 	});
 }
 
-export function createFileContentDoc({
+export function createFileContentDoc<
+	TPersistence extends DocPersistence = never,
+>({
 	fileId,
 	workspaceId,
 	filesTable,
@@ -60,7 +62,7 @@ export function createFileContentDoc({
 	fileId: FileId;
 	workspaceId: string;
 	filesTable: Table<FileRow>;
-	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
+	attachPersistence?: (ydoc: Y.Doc) => TPersistence;
 }) {
 	const ydoc = new Y.Doc({
 		guid: fileContentDocGuid({ workspaceId, fileId }),

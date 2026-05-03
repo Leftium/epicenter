@@ -37,20 +37,13 @@ export function openOpensidian({
 	attachBroadcastChannel(doc.ydoc);
 
 	const fileContentDocs = createDisposableCache(
-		(fileId: FileId) => {
-			const contentDoc = createFileContentDoc({
+		(fileId: FileId) =>
+			createFileContentDoc({
 				fileId,
 				workspaceId: doc.ydoc.guid,
 				filesTable: doc.tables.files,
 				attachPersistence: attachIndexedDb,
-			});
-			return {
-				...contentDoc,
-				persistence: contentDoc.persistence as ReturnType<
-					typeof attachIndexedDb
-				>,
-			};
-		},
+			}),
 		{ gcTime: 5_000 },
 	);
 	async function clearFileContentLocalData() {

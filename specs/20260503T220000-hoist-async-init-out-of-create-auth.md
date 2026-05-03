@@ -312,10 +312,10 @@ export const auth = createAuth({
 
 ### Phase 5: Drop the `loading` variant from `AuthSnapshot`
 
-- [ ] **5.1** In `packages/auth/src/auth-types.ts`, remove `| { status: 'loading' }` from the `AuthSnapshot` union. The type becomes `{ status: 'signedOut' } | { status: 'signedIn'; session: AuthSession }`.
-- [ ] **5.2** In `packages/auth-workspace/src/index.ts:42`, remove the `if (snapshot.status === 'loading') return;` early-return from `processSnapshot`. With the variant gone, this branch becomes a TypeScript error before it becomes dead code.
-- [ ] **5.3** In `packages/auth/src/create-auth.ts`, remove the leftover comment on the dispose method that references `{ status: 'loading' }` (line ~331 in current source).
-- [ ] **5.4** `bun run typecheck` across `packages/auth`, `packages/auth-svelte`, `packages/auth-workspace`, `packages/workspace`, and the six apps. The compiler will flag any remaining `'loading'` checks; fix them in place (most likely zero, per the audit).
+- [x] **5.1** In `packages/auth/src/auth-types.ts`, remove `| { status: 'loading' }` from the `AuthSnapshot` union. The type becomes `{ status: 'signedOut' } | { status: 'signedIn'; session: AuthSession }`.
+- [x] **5.2** In `packages/auth-workspace/src/index.ts:42`, remove the `if (snapshot.status === 'loading') return;` early-return from `processSnapshot`. With the variant gone, this branch becomes a TypeScript error before it becomes dead code.
+- [x] **5.3** In `packages/auth/src/create-auth.ts`, remove the leftover comment on the dispose method that references `{ status: 'loading' }` (line ~331 in current source).
+- [x] **5.4** `bun run typecheck` across `packages/auth`, `packages/auth-svelte`, `packages/auth-workspace`, `packages/workspace`, and the six apps. The compiler will flag any remaining `'loading'` checks; fix them in place (most likely zero, per the audit).
 
 ### Phase 6: Tests
 

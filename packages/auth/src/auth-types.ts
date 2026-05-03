@@ -30,7 +30,6 @@ export const AuthSession = type({
 export type AuthSession = typeof AuthSession.infer;
 
 export type AuthSnapshot =
-	| { status: 'loading' }
 	| { status: 'signedOut' }
 	| { status: 'signedIn'; session: AuthSession };
 

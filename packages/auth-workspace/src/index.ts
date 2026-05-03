@@ -39,8 +39,6 @@ export function bindAuthWorkspaceScope({
 	}
 
 	async function processSnapshot(snapshot: AuthSnapshot) {
-		if (snapshot.status === 'loading') return;
-
 		if (snapshot.status === 'signedOut') {
 			if (appliedSession === null) {
 				syncControl?.pause();

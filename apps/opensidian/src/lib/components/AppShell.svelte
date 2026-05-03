@@ -39,7 +39,6 @@
 			onboarded = true;
 			return;
 		}
-		if (snapshot.status === 'loading') return;
 		if (snapshot.status === 'signedIn') {
 			onboarded = true;
 			return;

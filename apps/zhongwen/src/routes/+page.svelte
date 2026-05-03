@@ -29,31 +29,7 @@
 <Sidebar.Provider>
 	<ZhongwenSidebar />
 
-	{#if snapshot.status === 'loading'}
-		<main class="flex h-dvh flex-1 flex-col">
-			<header class="flex items-center justify-between border-b px-4 py-3">
-				<div class="flex items-center gap-3">
-					<Sidebar.Trigger />
-					<h1 class="text-lg font-semibold">中文 Zhongwen</h1>
-					{#if handle}
-						<ModelPicker {handle} />
-					{/if}
-				</div>
-
-				<Button
-					variant={showPinyin.current ? 'default' : 'outline'}
-					size="sm"
-					onclick={() => (showPinyin.current = !showPinyin.current)}
-					aria-pressed={showPinyin.current}
-					aria-label="Toggle pinyin annotations"
-				>
-					{showPinyin.current ? 'Hide Pinyin' : 'Show Pinyin'}
-				</Button>
-			</header>
-
-			<div class="flex flex-1 items-center justify-center"></div>
-		</main>
-	{:else if snapshot.status === 'signedOut'}
+	{#if snapshot.status === 'signedOut'}
 		<main class="flex h-dvh flex-1 flex-col">
 			<header class="flex items-center justify-between border-b px-4 py-3">
 				<div class="flex items-center gap-3">

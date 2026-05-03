@@ -82,7 +82,7 @@ type MachineAuthLogoutResult =
 	| { status: 'signedOut' }
 	| { status: 'loggedOut' };
 
-export type MachineAuth = ReturnType<typeof createMachineAuth>;
+export type MachineAuth = Awaited<ReturnType<typeof createMachineAuth>>;
 
 const MACHINE_SESSION_SERVICE = 'epicenter.auth.session';
 const MACHINE_SESSION_ACCOUNT = 'current';
@@ -159,7 +159,7 @@ export function createMemoryMachineAuthSessionStorageForTest(
  * Create the Node-side auth coordinator for first-party CLI and daemon
  * processes.
  */
-export function createMachineAuth() {
+export async function createMachineAuth() {
 	const machineAuth = createMachineAuthWithDependencies({
 		authTransport: createMachineAuthTransport(),
 		sessionStorage: createKeychainMachineAuthSessionStorage(),

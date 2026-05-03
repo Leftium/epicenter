@@ -32,13 +32,14 @@ function defaultOpensidianDaemonPeer(): PeerIdentity {
 
 export function defineOpensidianDaemon({
 	route = DEFAULT_OPENSIDIAN_DAEMON_ROUTE,
-	auth = createMachineAuthClient(),
+	auth,
 	peer = defaultOpensidianDaemonPeer(),
 	webSocketImpl,
 }: OpensidianDaemonOptions = {}): DaemonRouteDefinition {
 	return {
 		route,
-		start({ projectDir }) {
+		async start({ projectDir }) {
+			const syncAuth = auth ?? (await createMachineAuthClient());
 			const doc = openOpensidianDoc({ clientID: hashClientId(projectDir) });
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
@@ -49,7 +50,7 @@ export function defineOpensidianDaemon({
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				auth,
+				auth: syncAuth,
 				webSocketImpl,
 				awareness,
 			});

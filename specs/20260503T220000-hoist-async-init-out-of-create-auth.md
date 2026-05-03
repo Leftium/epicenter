@@ -301,8 +301,8 @@ export const auth = createAuth({
 
 ### Phase 3: Update machine auth
 
-- [ ] **3.1** In `packages/auth/src/node/machine-auth.ts`, change `createMachineAuthWithDependencies` to await `sessionStorage.load()` before calling `createAuth`. Pass the result as `initialSession`. Pass `sessionStorage.save` as `saveSession`.
-- [ ] **3.2** Decide whether `createMachineAuth` becomes async. If yes, callers need to await it; check downstream consumers (`packages/cli`).
+- [x] **3.1** In `packages/auth/src/node/machine-auth.ts`, change `createMachineAuthWithDependencies` to await `sessionStorage.load()` before calling `createAuth`. Pass the result as `initialSession`. Pass `sessionStorage.save` as `saveSession`.
+- [x] **3.2** Decide whether `createMachineAuth` becomes async. If yes, callers need to await it; check downstream consumers (`packages/cli`).
 
 ### Phase 4: Update non-call-site consumers
 

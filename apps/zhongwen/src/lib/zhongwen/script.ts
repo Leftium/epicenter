@@ -15,10 +15,10 @@ import {
 } from '@epicenter/workspace/node';
 import { openZhongwen as openZhongwenDoc } from './index.js';
 
-export function openZhongwen({
+export async function openZhongwen({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
-	auth = createMachineAuthClient(),
+	auth,
 	webSocketImpl,
 }: {
 	projectDir?: ProjectDir;
@@ -26,13 +26,14 @@ export function openZhongwen({
 	auth?: AuthClient;
 	webSocketImpl?: WebSocketImpl;
 }) {
+	const syncAuth = auth ?? (await createMachineAuthClient());
 	const doc = openZhongwenDoc({ clientID });
 	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-		auth,
+		auth: syncAuth,
 		webSocketImpl,
 	});
 

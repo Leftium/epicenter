@@ -129,8 +129,8 @@ function createTestMachineAuth(fetchImpl: typeof fetch) {
 }
 
 describe('createMachineAuth', () => {
-	test('public machine auth hides test-only session helpers', () => {
-		const machineAuth = createMachineAuth();
+	test('public machine auth hides test-only session helpers', async () => {
+		const machineAuth = await createMachineAuth();
 
 		expect('loadSession' in machineAuth).toBe(false);
 		expect('saveSession' in machineAuth).toBe(false);

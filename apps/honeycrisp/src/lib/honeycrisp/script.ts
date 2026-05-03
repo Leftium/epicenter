@@ -15,10 +15,10 @@ import {
 } from '@epicenter/workspace/node';
 import { openHoneycrisp as openHoneycrispDoc } from './index.js';
 
-export function openHoneycrisp({
+export async function openHoneycrisp({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
-	auth = createMachineAuthClient(),
+	auth,
 	webSocketImpl,
 }: {
 	projectDir?: ProjectDir;
@@ -26,13 +26,14 @@ export function openHoneycrisp({
 	auth?: AuthClient;
 	webSocketImpl?: WebSocketImpl;
 }) {
+	const syncAuth = auth ?? (await createMachineAuthClient());
 	const doc = openHoneycrispDoc({ clientID });
 	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-		auth,
+		auth: syncAuth,
 		webSocketImpl,
 	});
 	const rpc = sync.attachRpc(doc.actions);

@@ -32,13 +32,14 @@ function defaultHoneycrispDaemonPeer(): PeerIdentity {
 
 export function defineHoneycrispDaemon({
 	route = DEFAULT_HONEYCRISP_DAEMON_ROUTE,
-	auth = createMachineAuthClient(),
+	auth,
 	peer = defaultHoneycrispDaemonPeer(),
 	webSocketImpl,
 }: HoneycrispDaemonOptions = {}): DaemonRouteDefinition {
 	return {
 		route,
-		start({ projectDir }) {
+		async start({ projectDir }) {
+			const syncAuth = auth ?? (await createMachineAuthClient());
 			const doc = openHoneycrispDoc({ clientID: hashClientId(projectDir) });
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
@@ -49,7 +50,7 @@ export function defineHoneycrispDaemon({
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				auth,
+				auth: syncAuth,
 				webSocketImpl,
 				awareness,
 			});

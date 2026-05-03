@@ -15,10 +15,10 @@ import {
 } from '@epicenter/workspace/node';
 import { openOpensidian as openOpensidianDoc } from './index.js';
 
-export function openOpensidian({
+export async function openOpensidian({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
-	auth = createMachineAuthClient(),
+	auth,
 	webSocketImpl,
 }: {
 	projectDir?: ProjectDir;
@@ -26,13 +26,14 @@ export function openOpensidian({
 	auth?: AuthClient;
 	webSocketImpl?: WebSocketImpl;
 }) {
+	const syncAuth = auth ?? (await createMachineAuthClient());
 	const doc = openOpensidianDoc({ clientID });
 	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-		auth,
+		auth: syncAuth,
 		webSocketImpl,
 	});
 

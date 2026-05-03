@@ -32,13 +32,14 @@ function defaultZhongwenDaemonPeer(): PeerIdentity {
 
 export function defineZhongwenDaemon({
 	route = DEFAULT_ZHONGWEN_DAEMON_ROUTE,
-	auth = createMachineAuthClient(),
+	auth,
 	peer = defaultZhongwenDaemonPeer(),
 	webSocketImpl,
 }: ZhongwenDaemonOptions = {}): DaemonRouteDefinition {
 	return {
 		route,
-		start({ projectDir }) {
+		async start({ projectDir }) {
+			const syncAuth = auth ?? (await createMachineAuthClient());
 			const doc = openZhongwenDoc({ clientID: hashClientId(projectDir) });
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
@@ -49,7 +50,7 @@ export function defineZhongwenDaemon({
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				auth,
+				auth: syncAuth,
 				webSocketImpl,
 				awareness,
 			});

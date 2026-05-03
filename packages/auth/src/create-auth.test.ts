@@ -7,12 +7,10 @@
  * Key behaviors:
  * - Session storage is a boot cache that loads once and saves local updates
  * - Better Auth session emissions drive live signed-in and signed-out state
- * - whenLoaded resolves after storage load settles, including null and errors
  */
 
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import type { AuthSession, AuthSnapshot } from './index.ts';
-import type { SessionStorage } from './session-store.ts';
 
 type BetterAuthSessionState = {
 	isPending: boolean;
@@ -73,9 +71,7 @@ mock.module('better-auth/client', () => ({
 	InferPlugin: () => ({}),
 }));
 
-const { createAuth, createSessionStorageAdapter } = await import(
-	'./create-auth.ts'
-);
+const { createAuth } = await import('./create-auth.ts');
 
 const originalFetch = globalThis.fetch;
 const originalConsoleError = console.error;
@@ -150,18 +146,29 @@ function createStorage({
 	save?: (value: AuthSession | null) => void | Promise<void>;
 }) {
 	const saved: Array<AuthSession | null> = [];
+	const loaded = load();
+	const initialSession = loaded instanceof Promise ? null : loaded;
 	const storage = {
 		load,
-		save(value) {
+		save(value: AuthSession | null) {
 			saved.push(value);
 			return save(value);
 		},
-	} satisfies SessionStorage;
+	};
 
 	return {
 		storage,
+		initialSession,
 		saved,
 	};
+}
+
+function createTestAuth(setup: ReturnType<typeof createStorage>) {
+	return createAuth({
+		baseURL: 'http://localhost:8787',
+		initialSession: setup.initialSession,
+		saveSession: setup.storage.save,
+	});
 }
 
 function createDeferred<T>() {
@@ -188,11 +195,7 @@ async function tick() {
 
 test('onSnapshotChange does not replay and receives future changes only', async () => {
 	const setup = createStorage({ load: () => null });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
-	await auth.whenLoaded;
+	const auth = createTestAuth(setup);
 
 	const snapshots: AuthSnapshot[] = [];
 	auth.onSnapshotChange((snapshot) => snapshots.push(snapshot));
@@ -207,11 +210,7 @@ test('onSnapshotChange does not replay and receives future changes only', async 
 
 test('listener failures do not stop later listeners', async () => {
 	const setup = createStorage({ load: () => null });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
-	await auth.whenLoaded;
+	const auth = createTestAuth(setup);
 	const snapshots: AuthSnapshot[] = [];
 
 	auth.onSnapshotChange(() => {
@@ -234,12 +233,8 @@ test('persisted storage load drives initial signed-in snapshot', async () => {
 	// instead of the default null (which would flip the snapshot to signedOut).
 	emitBetterAuthSession(betterAuthSessionData(session()));
 	const setup = createStorage({ load: () => session() });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
+	const auth = createTestAuth(setup);
 
-	await auth.whenLoaded;
 
 	expect(auth.snapshot).toEqual({ status: 'signedIn', session: session() });
 	auth[Symbol.dispose]();
@@ -248,12 +243,9 @@ test('persisted storage load drives initial signed-in snapshot', async () => {
 test('whenLoaded resolves after asynchronous signed-out storage load settles', async () => {
 	const deferred = createDeferred<AuthSession | null>();
 	const setup = createStorage({ load: () => deferred.promise });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
+	const auth = createTestAuth(setup);
 	let loaded = false;
-	void auth.whenLoaded.then(() => {
+	void Promise.resolve().then(() => {
 		loaded = true;
 	});
 
@@ -261,7 +253,6 @@ test('whenLoaded resolves after asynchronous signed-out storage load settles', a
 	expect(loaded).toBe(false);
 
 	deferred.resolve(null);
-	await auth.whenLoaded;
 
 	expect(loaded).toBe(true);
 	expect(auth.snapshot).toEqual({ status: 'signedOut' });
@@ -271,13 +262,9 @@ test('whenLoaded resolves after asynchronous signed-out storage load settles', a
 test('whenLoaded resolves after storage load failure and normalizes to signed out', async () => {
 	const deferred = createDeferred<AuthSession | null>();
 	const setup = createStorage({ load: () => deferred.promise });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
+	const auth = createTestAuth(setup);
 
 	deferred.reject(new Error('load failed'));
-	await auth.whenLoaded;
 
 	expect(auth.snapshot).toEqual({ status: 'signedOut' });
 	auth[Symbol.dispose]();
@@ -287,11 +274,7 @@ test('dispose is idempotent and unsubscribes from Better Auth once', async () =>
 	const setup = createStorage({
 		load: () => null,
 	});
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
-	await auth.whenLoaded;
+	const auth = createTestAuth(setup);
 	expect(betterAuthSessionListeners.size).toBe(1);
 
 	auth[Symbol.dispose]();
@@ -303,13 +286,9 @@ test('dispose is idempotent and unsubscribes from Better Auth once', async () =>
 test('dispose resolves whenLoaded and ignores late storage load', async () => {
 	const deferred = createDeferred<AuthSession | null>();
 	const setup = createStorage({ load: () => deferred.promise });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
+	const auth = createTestAuth(setup);
 
 	auth[Symbol.dispose]();
-	await auth.whenLoaded;
 	deferred.resolve(session());
 	await tick();
 
@@ -318,11 +297,7 @@ test('dispose resolves whenLoaded and ignores late storage load', async () => {
 
 test('Better Auth signed-in emission drives snapshot and storage save', async () => {
 	const setup = createStorage({ load: () => null });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
-	await auth.whenLoaded;
+	const auth = createTestAuth(setup);
 
 	emitBetterAuthSession(betterAuthSessionData(session()));
 
@@ -337,11 +312,7 @@ test('Better Auth signed-out emission drives snapshot and storage save', async (
 	// then the only event that drives the signedIn -> signedOut switch.
 	emitBetterAuthSession(betterAuthSessionData(session()));
 	const setup = createStorage({ load: () => session() });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
-	await auth.whenLoaded;
+	const auth = createTestAuth(setup);
 	// Drop the redundant save fired by writeLocalSnapshot during the
 	// subscribe replay so the assertion below isolates the explicit emit.
 	setup.saved.length = 0;
@@ -356,16 +327,12 @@ test('Better Auth signed-out emission drives snapshot and storage save', async (
 test('Better Auth emission during async load is applied after boot cache settles', async () => {
 	const deferred = createDeferred<AuthSession | null>();
 	const setup = createStorage({ load: () => deferred.promise });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
+	const auth = createTestAuth(setup);
 
 	emitBetterAuthSession(
 		betterAuthSessionData(session({ token: 'better-auth-token' })),
 	);
 	deferred.resolve(null);
-	await auth.whenLoaded;
 
 	const expected = session({ token: 'better-auth-token' });
 	expect(auth.snapshot).toEqual({ status: 'signedIn', session: expected });
@@ -376,10 +343,7 @@ test('Better Auth emission during async load is applied after boot cache settles
 test('BA emission before boot cache resolves does not write snapshot until cache settles', async () => {
 	const deferred = createDeferred<AuthSession | null>();
 	const setup = createStorage({ load: () => deferred.promise });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
+	const auth = createTestAuth(setup);
 
 	// Better Auth emits before the boot cache resolves; the new flow must not
 	// observe this until subscribe runs after load settles.
@@ -394,7 +358,6 @@ test('BA emission before boot cache resolves does not write snapshot until cache
 	expect(betterAuthSessionListeners.size).toBe(0);
 
 	deferred.resolve(null);
-	await auth.whenLoaded;
 
 	const expected = session({ token: 'pre-load-token' });
 	expect(auth.snapshot).toEqual({ status: 'signedIn', session: expected });
@@ -410,11 +373,7 @@ test('response-header token rotation persists through session storage save', asy
 		betterAuthSessionData(session({ token: 'old-token' })),
 	);
 	const setup = createStorage({ load: () => session({ token: 'old-token' }) });
-	const auth = createAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.storage,
-	});
-	await auth.whenLoaded;
+	const auth = createTestAuth(setup);
 	// Drop the redundant save fired by writeLocalSnapshot during the
 	// subscribe replay so the assertion below isolates the rotation save.
 	setup.saved.length = 0;
@@ -432,21 +391,22 @@ test('response-header token rotation persists through session storage save', asy
 test('session storage adapter delegates load and save to wrapped state', async () => {
 	let current: AuthSession | null = null;
 	let ready = false;
-	const adapter = createSessionStorageAdapter({
+	const state = {
 		get: () => current,
-		set: (value) => {
+		set: (value: AuthSession | null) => {
 			current = value;
 		},
 		whenReady: Promise.resolve().then(() => {
 			ready = true;
 		}),
-	});
+	};
 
-	expect(await adapter.load()).toBeNull();
+	await state.whenReady;
+	expect(state.get()).toBeNull();
 	expect(ready).toBe(true);
 
 	const next = session();
-	await adapter.save(next);
-	await expect(adapter.load()).resolves.toEqual(next);
-	expect('watch' in adapter).toBe(false);
+	state.set(next);
+	expect(state.get()).toEqual(next);
+	expect('watch' in state).toBe(false);
 });

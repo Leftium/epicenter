@@ -345,13 +345,11 @@ export function createMachineAuthWithDependencies({
 /**
  * Create an auth client backed by saved machine auth.
  */
-export function createMachineAuthClient(): AuthClient {
+export async function createMachineAuthClient(): Promise<AuthClient> {
 	const sessionStorage = createKeychainMachineAuthSessionStorage();
 	return createAuth({
 		baseURL: EPICENTER_API_URL,
-		sessionStorage: {
-			load: sessionStorage.load,
-			save: sessionStorage.save,
-		},
+		initialSession: await sessionStorage.load(),
+		saveSession: sessionStorage.save,
 	});
 }

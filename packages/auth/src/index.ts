@@ -9,10 +9,4 @@ export {
 	AuthError,
 	type CreateAuthConfig,
 	createAuth,
-	createSessionStorageAdapter,
-	type SessionStateAdapter,
 } from './create-auth.ts';
-export type {
-	MaybePromise,
-	SessionStorage,
-} from './session-store.ts';

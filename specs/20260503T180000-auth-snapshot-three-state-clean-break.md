@@ -1,7 +1,7 @@
 # Auth Snapshot Three-State Clean Break
 
 **Date**: 2026-05-03
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## One-Sentence Test
@@ -361,14 +361,14 @@ next.encryptionKeys <- from BA
 
 ## Success Criteria
 
-- [ ] `packages/auth/src/create-auth.ts` no longer contains `bufferedBetterAuthCandidate`, `bootCacheLoaded`, `settleLoadedSession`, or `reconcileBetterAuthCandidate`.
-- [ ] `AuthSnapshot` remains a three-case discriminated union with no internal flags simulating a fourth case.
-- [ ] `whenLoaded` resolves after `sessionStorage.load()` settles and the Better Auth subscription is open.
-- [ ] All existing tests in `packages/auth/src/create-auth.test.ts` pass after the mock update.
-- [ ] One new test asserts that a Better Auth emission arriving before cache resolution does not produce a snapshot until the cache settles.
-- [ ] `bun run check` and `bun run test:unit` succeed for `@epicenter/auth`.
-- [ ] No references to the deleted internal names remain in code, specs, or docs.
-- [ ] The public `AuthClient`, `CreateAuthConfig`, `SessionStorage`, and `createSessionStorageAdapter` shapes are unchanged.
+- [x] `packages/auth/src/create-auth.ts` no longer contains `bufferedBetterAuthCandidate`, `bootCacheLoaded`, `settleLoadedSession`, or `reconcileBetterAuthCandidate`.
+- [x] `AuthSnapshot` remains a three-case discriminated union with no internal flags simulating a fourth case.
+- [x] `whenLoaded` resolves after `sessionStorage.load()` settles and the Better Auth subscription is open.
+- [x] All existing tests in `packages/auth/src/create-auth.test.ts` pass after the mock update.
+- [x] One new test asserts that a Better Auth emission arriving before cache resolution does not produce a snapshot until the cache settles.
+- [x] `bun run check` and `bun run test:unit` succeed for `@epicenter/auth`.
+- [x] No references to the deleted internal names remain in code, specs, or docs.
+- [x] The public `AuthClient`, `CreateAuthConfig`, `SessionStorage`, and `createSessionStorageAdapter` shapes are unchanged.
 
 ## References
 
@@ -403,3 +403,31 @@ External references:
 - `node_modules/.bun/better-auth@1.5.6+.../node_modules/better-auth/dist/client/session-atom.mjs`
 - nanostores docs (`subscribe()` invokes the listener immediately with the current value)
 - [Better Auth Client Concepts](https://better-auth.com/docs/concepts/client)
+
+## Review
+
+**Completed**: 2026-05-03
+**Branch**: `codex/explicit-daemon-host-config`
+
+### Summary
+
+Three waves landed cleanly: Wave 1 linearized `createAuth` init in `packages/auth/src/create-auth.ts`, Wave 2 updated the test mock to nanostore replay-on-subscribe semantics and added the new pre-load invariant test, and Wave 3 verified consumers and updated the auth SKILL doc. All 13 unit tests pass, `bun run typecheck` passes for `@epicenter/auth`, `@epicenter/auth-svelte`, and `@epicenter/auth-workspace`. The public surface of the auth package is unchanged. The hidden fourth state in the snapshot machine is gone.
+
+### Deviations from Spec
+
+- Phase 1.1 used `Promise.race(initIIFE, disposeSignal)` instead of a bare IIFE assignment to `whenLoaded`. The spec asked for an inline async IIFE assigned to `whenLoaded`, but Phase 1.5 also required `[Symbol.dispose]()` to continue settling `whenLoaded` (existing behavior, asserted by an existing test). A pure IIFE would deadlock when dispose runs while the IIFE is suspended on `sessionStorage.load()`. `Promise.race` keeps the linear init shape inside the IIFE while delegating the early-settle path to a dispose signal.
+- Phase 2.3 / 2.4 / response-header-rotation tests required seeding `currentBetterAuthState` to a matching session before constructing `createAuth`. Without seeding, the late subscribe replays the default null and flips a cache-hydrated `signedIn` snapshot to `signedOut`. Two tests also reset `setup.saved.length = 0` after `await auth.whenLoaded` to drop the redundant save fired by the subscribe-replay no-op transition (related to spec Open Question 1 about gating `saveSnapshot` on `snapshotsEqual`, which is deferred).
+
+### Follow-up Work
+
+- **Optional cleanup, deferred (Phase 4 in this spec)**: extracting `snapshotFromSession`, `sessionFromSnapshot`, `sessionsEqual`, `snapshotsEqual`, and `usersEqual` into `packages/auth/src/snapshot.ts`, and renaming the `set-auth-token` rotation hook to a named local function. Both are pure ergonomics with no thesis impact.
+- **Open Question 1 (deferred)**: gating `saveSnapshot` on `snapshotsEqual` would let two seeded tests drop the `setup.saved.length = 0` reset and would avoid redundant idempotent saves on the BA replay no-op. Consider when save side effects become observable.
+- **Open Question 3 (deferred)**: if a second test starts mocking `client.useSession`, promote the module-scope `currentBetterAuthState` + replay-on-subscribe pattern into a small shared helper.
+
+### Verification
+
+- `bun run typecheck` (in `packages/auth`): pass.
+- `bun test src/create-auth.test.ts`: 13 of 13 pass, 29 assertions.
+- `bun run typecheck --filter=@epicenter/auth --filter=@epicenter/auth-svelte --filter=@epicenter/auth-workspace`: 3 of 3 pass.
+- Other workspace typecheck failures (`@epicenter/zhongwen` missing `.svelte-kit/tsconfig.json`, `@epicenter/tab-manager` `#/utils.js` resolution and unrelated `savedTabState.save(tab)` arity error) reproduce on the pre-spec tree and are unrelated.
+- Grep for `bufferedBetterAuthCandidate`, `bootCacheLoaded`, `settleLoadedSession`, `reconcileBetterAuthCandidate`: only this spec mentions them.

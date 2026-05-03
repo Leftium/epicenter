@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { AuthSession } from '../auth-types.js';
 import type { BetterAuthSessionResponse } from '../contracts/auth-session.js';
 import {
@@ -7,10 +8,7 @@ import {
 	createMachineAuthClient,
 	createMachineSessionStorage,
 	createMemoryMachineAuthSessionStorage,
-	type MachineAuthSessionStorageBackend,
 } from './machine-auth.js';
-
-const EPICENTER_API_URL = 'https://api.epicenter.so';
 
 const encryptionKeys = [
 	{
@@ -76,7 +74,13 @@ function jsonResponse(value: unknown, init?: ResponseInit): Response {
 	});
 }
 
-function memoryBackend(): MachineAuthSessionStorageBackend & {
+type TestMachineAuthSessionStorageBackend = {
+	get(options: { service: string; name: string }): Promise<string | null>;
+	set(options: { service: string; name: string }, value: string): Promise<void>;
+	delete(options: { service: string; name: string }): Promise<unknown>;
+};
+
+function memoryBackend(): TestMachineAuthSessionStorageBackend & {
 	values: Map<string, string>;
 } {
 	const values = new Map<string, string>();
@@ -190,7 +194,7 @@ describe('createMachineAuth', () => {
 		await sessionStorage.save(makeSession({ token: 'stored-token' }));
 		const machineAuth = createTestMachineAuth(fetch);
 
-		expect(await machineAuth.getAuthorizationToken()).toEqual({
+		expect(await machineAuth.getToken()).toEqual({
 			data: 'stored-token',
 			error: null,
 		});
@@ -201,7 +205,7 @@ describe('createMachineAuth', () => {
 	});
 
 	test('direct readers return Ok(null) for absent sessions', async () => {
-		const result = await createTestMachineAuth(fetch).getAuthorizationToken();
+		const result = await createTestMachineAuth(fetch).getToken();
 
 		expect(result).toEqual({ data: null, error: null });
 	});

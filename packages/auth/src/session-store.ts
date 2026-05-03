@@ -16,5 +16,4 @@ export type SessionStorage = {
 	load(): MaybePromise<AuthSession | null>;
 	save(value: AuthSession | null): MaybePromise<void>;
 	watch(fn: (next: AuthSession | null) => void): () => void;
-	[Symbol.dispose]?(): void;
 };

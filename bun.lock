@@ -491,6 +491,7 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/cli": "workspace:*",
+        "@epicenter/constants": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "arktype": "catalog:",
         "typebox": "catalog:",
@@ -513,6 +514,7 @@
       "name": "@epicenter/auth",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",

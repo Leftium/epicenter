@@ -59,30 +59,30 @@ function session({
 	};
 }
 
-function createStorage({
-	load,
-	onDispose,
-}: {
+function createStorage({ load }: {
 	load: () => AuthSession | null | Promise<AuthSession | null>;
-	onDispose?: () => void;
 }) {
 	let watchCallback: ((next: AuthSession | null) => void) | null = null;
+	let unwatchCount = 0;
 	const storage = {
 		load,
-		save: async () => {},
+		save() {},
 		watch(fn) {
 			watchCallback = fn;
 			return () => {
 				watchCallback = null;
+				unwatchCount++;
 			};
 		},
-		[Symbol.dispose]: onDispose,
 	} satisfies SessionStorage;
 
 	return {
 		storage,
 		emit(next: AuthSession | null) {
 			watchCallback?.(next);
+		},
+		get unwatchCount() {
+			return unwatchCount;
 		},
 	};
 }
@@ -181,13 +181,9 @@ test('whenLoaded resolves after storage load failure and normalizes to signed ou
 	auth[Symbol.dispose]();
 });
 
-test('dispose is idempotent and disposes session storage once', async () => {
-	let disposeCount = 0;
+test('dispose is idempotent and unsubscribes from session storage once', async () => {
 	const setup = createStorage({
 		load: () => null,
-		onDispose: () => {
-			disposeCount++;
-		},
 	});
 	const auth = createAuth({
 		baseURL: 'http://localhost:8787',
@@ -198,7 +194,7 @@ test('dispose is idempotent and disposes session storage once', async () => {
 	auth[Symbol.dispose]();
 	auth[Symbol.dispose]();
 
-	expect(disposeCount).toBe(1);
+	expect(setup.unwatchCount).toBe(1);
 });
 
 test('dispose resolves whenLoaded and ignores late storage load', async () => {
@@ -217,18 +213,35 @@ test('dispose resolves whenLoaded and ignores late storage load', async () => {
 	expect(auth.snapshot).toEqual({ status: 'loading' });
 });
 
-test('session storage adapter disposes wrapped state when available', () => {
-	let disposeCount = 0;
+test('session storage adapter delegates to wrapped state', async () => {
+	let current: AuthSession | null = null;
+	let watched: ((next: AuthSession | null) => void) | null = null;
+	let ready = false;
 	const adapter = createSessionStorageAdapter({
-		get: () => null,
-		set: () => {},
-		watch: () => () => {},
-		[Symbol.dispose]() {
-			disposeCount++;
+		get: () => current,
+		set: (value) => {
+			current = value;
 		},
+		watch: (fn) => {
+			watched = fn;
+			return () => {
+				watched = null;
+			};
+		},
+		whenReady: Promise.resolve().then(() => {
+			ready = true;
+		}),
 	});
 
-	adapter[Symbol.dispose]?.();
+	expect(await adapter.load()).toBeNull();
+	expect(ready).toBe(true);
 
-	expect(disposeCount).toBe(1);
+	const next = session();
+	await adapter.save(next);
+	expect(current).toEqual(next);
+
+	const unsubscribe = adapter.watch(() => {});
+	expect(watched).not.toBeNull();
+	unsubscribe();
+	expect(watched).toBeNull();
 });

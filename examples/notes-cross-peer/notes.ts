@@ -1,4 +1,5 @@
 import { createMachineAuthClient } from '@epicenter/auth/node';
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachAwareness,
 	attachSync,
@@ -14,7 +15,6 @@ import { type } from 'arktype';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
-const SERVER_URL = 'https://api.epicenter.so';
 const WORKSPACE_ID = 'epicenter.notes-repro';
 
 // `_v: '1'` here is arktype syntax for the literal NUMBER 1 (numeric strings
@@ -45,9 +45,9 @@ export function openNotes(peer: PeerIdentity) {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
 	});
-	const auth = createMachineAuthClient({ serverOrigin: SERVER_URL });
+	const auth = createMachineAuthClient();
 	const sync = attachSync(ydoc, {
-		url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
+		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 		auth,
 		awareness,
 	});

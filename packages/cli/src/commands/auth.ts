@@ -7,13 +7,10 @@
  * The local machine session is stored in the OS keychain.
  */
 
-import {
-	createMachineAuth,
-	type MachineSessionSummary,
-} from '@epicenter/auth/node';
+import { createMachineAuth } from '@epicenter/auth/node';
 import { cmd } from '../util/cmd.js';
 
-function displayName(session: MachineSessionSummary) {
+function displayName(session: { user: { name: string; email: string } }) {
 	return session.user.name ?? session.user.email;
 }
 

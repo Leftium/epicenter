@@ -97,7 +97,6 @@ export type SessionStateAdapter = {
 	set(value: AuthSession | null): MaybePromise<void>;
 	watch(fn: (next: AuthSession | null) => void): () => void;
 	whenReady?: Promise<unknown>;
-	[Symbol.dispose]?(): void;
 };
 
 export function createSessionStorageAdapter(
@@ -110,9 +109,6 @@ export function createSessionStorageAdapter(
 		},
 		save: (value) => state.set(value),
 		watch: state.watch,
-		[Symbol.dispose]() {
-			state[Symbol.dispose]?.();
-		},
 	};
 }
 
@@ -313,10 +309,6 @@ export function createAuth({
 			}
 		}),
 	);
-	disposers.push(() => {
-		sessionStorage[Symbol.dispose]?.();
-	});
-
 	loadPersistedSession();
 
 	return {

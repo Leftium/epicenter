@@ -1,9 +1,9 @@
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { type } from 'arktype';
 import type { AuthSession } from '../auth-types.js';
 import { normalizeAuthSession } from '../contracts/auth-session.js';
-import { normalizeServerOrigin } from './server-origin.js';
 
-const AuthServerTransportDeviceCodeResponse = type({
+const MachineAuthTransportDeviceCodeResponse = type({
 	device_code: 'string',
 	user_code: 'string',
 	verification_uri: 'string',
@@ -11,56 +11,56 @@ const AuthServerTransportDeviceCodeResponse = type({
 	expires_in: 'number',
 	interval: 'number',
 });
-type AuthServerTransportDeviceCodeResponse =
-	typeof AuthServerTransportDeviceCodeResponse.infer;
+type MachineAuthTransportDeviceCodeResponse =
+	typeof MachineAuthTransportDeviceCodeResponse.infer;
 
-const AuthServerTransportDeviceTokenSuccessResponse = type({
+const MachineAuthTransportDeviceTokenSuccessResponse = type({
 	access_token: 'string',
 	expires_in: 'number',
 	'token_type?': 'string',
 	'error?': 'undefined',
 });
 
-const AuthServerTransportDeviceTokenErrorResponse = type({
+const MachineAuthTransportDeviceTokenErrorResponse = type({
 	error: 'string',
 	'error_description?': 'string',
 });
 
-const AuthServerTransportDeviceTokenResponse =
-	AuthServerTransportDeviceTokenSuccessResponse.or(
-		AuthServerTransportDeviceTokenErrorResponse,
+const MachineAuthTransportDeviceTokenResponse =
+	MachineAuthTransportDeviceTokenSuccessResponse.or(
+		MachineAuthTransportDeviceTokenErrorResponse,
 	);
-type AuthServerTransportDeviceTokenResponse =
-	typeof AuthServerTransportDeviceTokenResponse.infer;
+type MachineAuthTransportDeviceTokenResponse =
+	typeof MachineAuthTransportDeviceTokenResponse.infer;
 
-type AuthServerTransportSessionResult = {
+type MachineAuthTransportSessionResult = {
 	session: AuthSession;
 };
 
-export type AuthServerTransport = ReturnType<typeof createAuthServerTransport>;
+export type MachineAuthTransport = ReturnType<
+	typeof createMachineAuthTransport
+>;
 
 /**
- * Create the small HTTP transport used by machine auth.
+ * Create the small first-party HTTP transport used by machine auth.
  *
  * This layer owns raw server-response parsing and token header policy. It
  * normalizes `/auth/get-session` into `AuthSession` immediately so callers do
  * not have to reason about Better Auth's `{ user, session }` response shape or
- * the `set-auth-token` fallback.
+ * the `set-auth-token` fallback. The API origin comes from
+ * `@epicenter/constants`; machine auth no longer accepts per-call server
+ * origins.
  *
  * @example
  * ```ts
- * const transport = createAuthServerTransport(
- * 	{ fetch },
- * 	{ serverOrigin: 'https://api.epicenter.so' },
- * );
+ * const transport = createMachineAuthTransport({ fetch });
  * ```
  */
-export function createAuthServerTransport(
-	{ fetch }: { fetch: typeof globalThis.fetch },
-	{ serverOrigin }: { serverOrigin: string },
-) {
-	const origin = normalizeServerOrigin(serverOrigin);
-
+export function createMachineAuthTransport({
+	fetch,
+}: {
+	fetch: typeof globalThis.fetch;
+}) {
 	async function requestJson({
 		method,
 		path,
@@ -76,7 +76,7 @@ export function createAuthServerTransport(
 		if (token !== undefined) headers.authorization = `Bearer ${token}`;
 		if (body !== undefined) headers['content-type'] = 'application/json';
 
-		const response = await fetch(`${origin}${path}`, {
+		const response = await fetch(`${EPICENTER_API_URL}${path}`, {
 			method,
 			headers,
 			body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -100,19 +100,17 @@ export function createAuthServerTransport(
 	}
 
 	return {
-		serverOrigin: origin,
-
 		async requestDeviceCode({
 			clientId,
 		}: {
 			clientId: string;
-		}): Promise<AuthServerTransportDeviceCodeResponse> {
+		}): Promise<MachineAuthTransportDeviceCodeResponse> {
 			const { data } = await requestJson({
 				method: 'POST',
 				path: '/auth/device/code',
 				body: { client_id: clientId },
 			});
-			return AuthServerTransportDeviceCodeResponse.assert(data);
+			return MachineAuthTransportDeviceCodeResponse.assert(data);
 		},
 
 		async pollDeviceToken({
@@ -121,8 +119,8 @@ export function createAuthServerTransport(
 		}: {
 			deviceCode: string;
 			clientId: string;
-		}): Promise<AuthServerTransportDeviceTokenResponse> {
-			const response = await fetch(`${origin}/auth/device/token`, {
+		}): Promise<MachineAuthTransportDeviceTokenResponse> {
+			const response = await fetch(`${EPICENTER_API_URL}/auth/device/token`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
@@ -145,10 +143,10 @@ export function createAuthServerTransport(
 			}
 
 			if (response.ok && data !== undefined) {
-				return AuthServerTransportDeviceTokenResponse.assert(data);
+				return MachineAuthTransportDeviceTokenResponse.assert(data);
 			}
 			if (response.status === 400 && data !== undefined) {
-				return AuthServerTransportDeviceTokenErrorResponse.assert(data);
+				return MachineAuthTransportDeviceTokenErrorResponse.assert(data);
 			}
 			throw new Error(
 				`POST /auth/device/token failed (${response.status}): ${text.slice(0, 200)}`,
@@ -156,24 +154,24 @@ export function createAuthServerTransport(
 		},
 
 		async fetchSession({
-			authorizationToken,
+			token,
 		}: {
-			authorizationToken: string;
-		}): Promise<AuthServerTransportSessionResult> {
+			token: string;
+		}): Promise<MachineAuthTransportSessionResult> {
 			const { data, response } = await requestJson({
 				method: 'GET',
 				path: '/auth/get-session',
-				token: authorizationToken,
+				token,
 			});
 			return {
 				session: normalizeAuthSession(data, {
-					token: response.headers.get('set-auth-token') ?? authorizationToken,
+					token: response.headers.get('set-auth-token') ?? token,
 				}),
 			};
 		},
 
 		async signOut({ token }: { token: string }): Promise<void> {
-			await fetch(`${origin}/auth/sign-out`, {
+			await fetch(`${EPICENTER_API_URL}/auth/sign-out`, {
 				method: 'POST',
 				headers: { authorization: `Bearer ${token}` },
 			});

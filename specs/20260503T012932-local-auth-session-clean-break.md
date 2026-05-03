@@ -291,7 +291,6 @@ export type SessionStorage = {
 	load(): MaybePromise<AuthSession | null>;
 	save(value: AuthSession | null): MaybePromise<void>;
 	watch(fn: (next: AuthSession | null) => void): () => void;
-	[Symbol.dispose]?(): void;
 };
 ```
 
@@ -324,7 +323,7 @@ No per-method `serverOrigin`:
 machineAuth.loginWithDeviceCode({ onDeviceCode });
 machineAuth.status();
 machineAuth.logout();
-machineAuth.getAuthorizationToken();
+machineAuth.getToken();
 machineAuth.getEncryptionKeys();
 machineAuth.loadSession();
 machineAuth.saveSession(session);
@@ -397,15 +396,12 @@ packages/auth/src/node.ts
 Machine auth files:
 
 ```txt
-packages/auth/src/node/auth-server-transport.ts
+packages/auth/src/node/machine-auth-transport.ts
 packages/auth/src/node/machine-auth.ts
 packages/auth/src/node/machine-auth.test.ts
-packages/auth/src/node/machine-credential-repository.ts
-packages/auth/src/node/machine-credential-repository.test.ts
-packages/auth/src/node/machine-credential-secret-storage.ts
 ```
 
-The repository and secret-storage files should probably be deleted or replaced with one small `machine-session-storage.ts`.
+The old credential repository, secret storage, and server-origin normalizer are deleted. Machine storage now lives inside `machine-auth.ts` because it is one keychain value, not a repository model.
 
 CLI files:
 

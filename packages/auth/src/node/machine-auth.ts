@@ -1,3 +1,4 @@
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import {
 	defineErrors,
@@ -12,9 +13,9 @@ import {
 import { type AuthClient, createAuth } from '../create-auth.js';
 import type { SessionStorage } from '../session-store.js';
 import {
-	type AuthServerTransport,
-	createAuthServerTransport,
-} from './auth-server-transport.js';
+	createMachineAuthTransport,
+	type MachineAuthTransport,
+} from './machine-auth-transport.js';
 
 export const MachineAuthError = defineErrors({
 	AuthTransportRequestFailed: ({ cause }: { cause: unknown }) => ({
@@ -50,17 +51,17 @@ export type MachineAuthSessionStorage = {
 	save(session: AuthSessionType | null): Promise<void>;
 };
 
-export type MachineAuthSessionStorageBackend = {
+type MachineAuthSessionStorageBackend = {
 	get(options: { service: string; name: string }): Promise<string | null>;
 	set(options: { service: string; name: string }, value: string): Promise<void>;
 	delete(options: { service: string; name: string }): Promise<unknown>;
 };
 
-export type MachineSessionSummary = {
+type MachineSessionSummary = {
 	user: Pick<AuthSessionType['user'], 'id' | 'name' | 'email'>;
 };
 
-export type MachineAuthLoginResult = {
+type MachineAuthLoginResult = {
 	status: 'loggedIn';
 	session: MachineSessionSummary;
 	device: {
@@ -69,7 +70,7 @@ export type MachineAuthLoginResult = {
 	};
 };
 
-export type MachineAuthStatus =
+type MachineAuthStatus =
 	| { status: 'signedOut' }
 	| { status: 'valid'; session: MachineSessionSummary }
 	| {
@@ -78,7 +79,7 @@ export type MachineAuthStatus =
 			verificationError: MachineAuthError;
 	  };
 
-export type MachineAuthLogoutResult =
+type MachineAuthLogoutResult =
 	| { status: 'signedOut' }
 	| { status: 'loggedOut' };
 
@@ -94,7 +95,6 @@ type MachineAuthOptions = {
 
 const MACHINE_SESSION_SERVICE = 'epicenter.auth.session';
 const MACHINE_SESSION_ACCOUNT = 'current';
-const EPICENTER_API_URL = 'https://api.epicenter.so';
 
 function sessionSummary(session: AuthSessionType): MachineSessionSummary {
 	return {
@@ -174,10 +174,7 @@ export function createMachineAuth({
 	openBrowser,
 	sleep = Bun.sleep,
 }: MachineAuthOptions = {}) {
-	const authTransport = createAuthServerTransport(
-		{ fetch: fetchImpl },
-		{ serverOrigin: EPICENTER_API_URL },
-	);
+	const authTransport = createMachineAuthTransport({ fetch: fetchImpl });
 
 	async function loadStoredSession(): Promise<
 		Result<AuthSessionType | null, MachineAuthError>
@@ -200,17 +197,11 @@ export function createMachineAuth({
 		}
 	}
 
-	async function fetchSession({
-		transport,
-		token,
-	}: {
-		transport: AuthServerTransport;
-		token: string;
-	}) {
+	async function fetchSession({ token }: { token: string }) {
 		try {
 			return Ok(
-				await transport.fetchSession({
-					authorizationToken: token,
+				await authTransport.fetchSession({
+					token,
 				}),
 			);
 		} catch (cause) {
@@ -233,7 +224,7 @@ export function createMachineAuth({
 			openBrowser?: (url: string) => Promise<void>;
 		} = {}): Promise<Result<MachineAuthLoginResult, MachineAuthError>> {
 			let codeData: Awaited<
-				ReturnType<AuthServerTransport['requestDeviceCode']>
+				ReturnType<MachineAuthTransport['requestDeviceCode']>
 			>;
 			try {
 				codeData = await authTransport.requestDeviceCode({ clientId });
@@ -256,7 +247,7 @@ export function createMachineAuth({
 			while (Date.now() < deadline) {
 				await sleep(interval);
 				let tokenData: Awaited<
-					ReturnType<AuthServerTransport['pollDeviceToken']>
+					ReturnType<MachineAuthTransport['pollDeviceToken']>
 				>;
 				try {
 					tokenData = await authTransport.pollDeviceToken({
@@ -269,7 +260,6 @@ export function createMachineAuth({
 
 				if ('access_token' in tokenData) {
 					const remote = await fetchSession({
-						transport: authTransport,
 						token: tokenData.access_token,
 					});
 					if (remote.error) return remote;
@@ -311,7 +301,6 @@ export function createMachineAuth({
 			if (session.data === null) return Ok({ status: 'signedOut' });
 
 			const remote = await fetchSession({
-				transport: authTransport,
 				token: session.data.token,
 			});
 			if (remote.error) {
@@ -344,9 +333,7 @@ export function createMachineAuth({
 			return Ok({ status: 'loggedOut' });
 		},
 
-		async getAuthorizationToken(): Promise<
-			Result<string | null, MachineAuthError>
-		> {
+		async getToken(): Promise<Result<string | null, MachineAuthError>> {
 			const session = await loadStoredSession();
 			if (session.error) return session;
 			return Ok(session.data?.token ?? null);

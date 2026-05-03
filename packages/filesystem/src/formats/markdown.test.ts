@@ -11,10 +11,15 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { attachTables, createDisposableCache } from '@epicenter/workspace';
+import {
+	attachTables,
+	attachTimeline,
+	createDisposableCache,
+	onLocalUpdate,
+} from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import { createFileContentDoc } from '../file-content-docs.js';
+import { fileContentDocGuid } from '../file-content-docs.js';
 import { attachYjsFileSystem } from '../file-system.js';
 import type { FileId } from '../ids.js';
 import { filesTable } from '../table.js';
@@ -161,12 +166,23 @@ describe('markdown integration with YjsFileSystem', () => {
 		const tables = attachTables(ydoc, { files: filesTable });
 		const ws = { id, ydoc, tables };
 		const contentDocs = createDisposableCache(
-			(fileId: FileId) =>
-				createFileContentDoc({
-					fileId,
-					workspaceId: ws.id,
-					filesTable: ws.tables.files,
-				}),
+			(fileId: FileId) => {
+				const contentYdoc = new Y.Doc({
+					guid: fileContentDocGuid({ workspaceId: ws.id, fileId }),
+					gc: false,
+				});
+				onLocalUpdate(contentYdoc, () =>
+					ws.tables.files.update(fileId, { updatedAt: Date.now() }),
+				);
+				return {
+					ydoc: contentYdoc,
+					content: attachTimeline(contentYdoc),
+					whenReady: Promise.resolve(),
+					[Symbol.dispose]() {
+						contentYdoc.destroy();
+					},
+				};
+			},
 			{ gcTime: Number.POSITIVE_INFINITY },
 		);
 		return attachYjsFileSystem(ws.tables.files, {

@@ -3,7 +3,6 @@ import { createAuthTokenSource } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
-	createFileContentDoc,
 	createSqliteIndex,
 	type FileId,
 	fileContentDocGuid,
@@ -13,13 +12,16 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
+	attachTimeline,
 	createDisposableCache,
 	createRemoteClient,
+	onLocalUpdate,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import { clearDocument } from 'y-indexeddb';
+import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
 import { openOpensidian as openOpensidianDoc } from './index';
 
@@ -37,13 +39,28 @@ export function openOpensidian({
 	attachBroadcastChannel(doc.ydoc);
 
 	const fileContentDocs = createDisposableCache(
-		(fileId: FileId) =>
-			createFileContentDoc({
-				fileId,
-				workspaceId: doc.ydoc.guid,
-				filesTable: doc.tables.files,
-				attachPersistence: attachIndexedDb,
-			}),
+		(fileId: FileId) => {
+			const ydoc = new Y.Doc({
+				guid: fileContentDocGuid({
+					workspaceId: doc.ydoc.guid,
+					fileId,
+				}),
+				gc: false,
+			});
+			onLocalUpdate(ydoc, () =>
+				doc.tables.files.update(fileId, { updatedAt: Date.now() }),
+			);
+			const persistence = attachIndexedDb(ydoc);
+			return {
+				ydoc,
+				content: attachTimeline(ydoc),
+				persistence,
+				whenReady: persistence.whenLoaded,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		},
 		{ gcTime: 5_000 },
 	);
 	async function clearFileContentLocalData() {

@@ -1,6 +1,4 @@
 import {
-	createReferenceContentDoc,
-	createSkillInstructionsDoc,
 	createSkillsActions,
 	referenceContentDocGuid,
 	skillInstructionsDocGuid,
@@ -8,9 +6,12 @@ import {
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
+	attachPlainText,
 	createDisposableCache,
+	onLocalUpdate,
 } from '@epicenter/workspace';
 import { clearDocument } from 'y-indexeddb';
+import * as Y from 'yjs';
 import { openSkills as openSkillsDoc } from './index.js';
 
 export function openSkillsBrowser() {
@@ -19,13 +20,28 @@ export function openSkillsBrowser() {
 	attachBroadcastChannel(doc.ydoc);
 
 	const instructionsDocs = createDisposableCache(
-		(skillId: string) =>
-			createSkillInstructionsDoc({
-				skillId,
-				workspaceId: doc.ydoc.guid,
-				skillsTable: doc.tables.skills,
-				attachPersistence: attachIndexedDb,
-			}),
+		(skillId: string) => {
+			const ydoc = new Y.Doc({
+				guid: skillInstructionsDocGuid({
+					workspaceId: doc.ydoc.guid,
+					skillId,
+				}),
+				gc: false,
+			});
+			onLocalUpdate(ydoc, () =>
+				doc.tables.skills.update(skillId, { updatedAt: Date.now() }),
+			);
+			const persistence = attachIndexedDb(ydoc);
+			return {
+				ydoc,
+				instructions: attachPlainText(ydoc),
+				persistence,
+				whenReady: persistence.whenLoaded,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		},
 		{ gcTime: 5_000 },
 	);
 	async function clearInstructionsLocalData() {
@@ -42,13 +58,28 @@ export function openSkillsBrowser() {
 	}
 
 	const referenceDocs = createDisposableCache(
-		(referenceId: string) =>
-			createReferenceContentDoc({
-				referenceId,
-				workspaceId: doc.ydoc.guid,
-				referencesTable: doc.tables.references,
-				attachPersistence: attachIndexedDb,
-			}),
+		(referenceId: string) => {
+			const ydoc = new Y.Doc({
+				guid: referenceContentDocGuid({
+					workspaceId: doc.ydoc.guid,
+					referenceId,
+				}),
+				gc: false,
+			});
+			onLocalUpdate(ydoc, () =>
+				doc.tables.references.update(referenceId, { updatedAt: Date.now() }),
+			);
+			const persistence = attachIndexedDb(ydoc);
+			return {
+				ydoc,
+				content: attachPlainText(ydoc),
+				persistence,
+				whenReady: persistence.whenLoaded,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		},
 		{ gcTime: 5_000 },
 	);
 	async function clearReferenceLocalData() {

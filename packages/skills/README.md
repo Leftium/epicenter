@@ -1,18 +1,15 @@
 # @epicenter/skills
 
 `@epicenter/skills` defines the shared skills data model: table schemas, row
-types, the pure skills workspace factory, per-row document builders, guid
-helpers, and read action factories. It does not own browser storage. Browser
-apps compose IndexedDB, BroadcastChannel, and `createDisposableCache` at the
-app boundary.
+types, the pure skills workspace factory, per-row document guid helpers, and
+read action factories. It does not own browser storage. Browser apps compose
+IndexedDB, BroadcastChannel, and `createDisposableCache` at the app boundary.
 
 ## Root Export
 
 ```typescript
 import {
 	SKILLS_WORKSPACE_ID,
-	createReferenceContentDoc,
-	createSkillInstructionsDoc,
 	createSkillsActions,
 	openSkills,
 	referenceContentDocGuid,
@@ -40,13 +37,28 @@ const idb = attachIndexedDb(doc.ydoc);
 attachBroadcastChannel(doc.ydoc);
 
 const instructionsDocs = createDisposableCache(
-	(skillId: string) =>
-		createSkillInstructionsDoc({
-			skillId,
-			workspaceId: doc.ydoc.guid,
-			skillsTable: doc.tables.skills,
-			attachPersistence: attachIndexedDb,
-		}),
+	(skillId: string) => {
+		const ydoc = new Y.Doc({
+			guid: skillInstructionsDocGuid({
+				workspaceId: doc.ydoc.guid,
+				skillId,
+			}),
+			gc: false,
+		});
+		onLocalUpdate(ydoc, () =>
+			doc.tables.skills.update(skillId, { updatedAt: Date.now() }),
+		);
+		const persistence = attachIndexedDb(ydoc);
+		return {
+			ydoc,
+			instructions: attachPlainText(ydoc),
+			persistence,
+			whenReady: persistence.whenLoaded,
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
+	},
 	{ gcTime: 5_000 },
 );
 
@@ -64,9 +76,9 @@ async function clearInstructionsLocalData() {
 }
 ```
 
-That inline cache source is deliberate. The single source of truth is
-`openSkills()`, `createSkillInstructionsDoc()`, and `skillInstructionsDocGuid()`,
-not a browser wrapper inside the shared package.
+That inline cache source is deliberate. `openSkills()` owns the root document,
+the app owns child document construction, and `skillInstructionsDocGuid()` owns
+the stable storage address.
 
 ## Node Composition
 

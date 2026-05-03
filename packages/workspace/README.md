@@ -424,7 +424,7 @@ cache primitive.
 
 The `$derived` swaps handles when `fileId` changes; the `$effect` cleanup releases the old handle. Refcount 0 arms the cache's `gcTime` timer; a fresh open during the grace window cancels the pending teardown, so rapid navigation doesn't flap persistence or sync.
 
-Reference implementations: `packages/filesystem/src/file-content-docs.ts`, `packages/skills/src/skill-instructions-docs.ts`, `apps/fuji/src/lib/fuji/browser.ts`, `apps/honeycrisp/src/lib/honeycrisp/browser.ts`.
+Reference implementations: `apps/opensidian/src/lib/opensidian/browser.ts`, `apps/skills/src/lib/skills/browser.ts`, `apps/fuji/src/lib/fuji/browser.ts`, `apps/honeycrisp/src/lib/honeycrisp/browser.ts`.
 
 ## Schema definition
 

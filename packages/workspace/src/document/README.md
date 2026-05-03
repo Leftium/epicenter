@@ -31,7 +31,7 @@ Three prefixes, each with a consistent meaning:
 
 - **`define*`** is pure: no Y.Doc, no side effects. Schemas, KV definitions, action factories.
 - **`attach*`** binds a capability to an existing `Y.Doc` (or, in one documented cross-package case, to a sibling attachment). Side-effectful: registers observers or destroy listeners at call time. Returns a typed handle.
-- **`create*`** is pure construction: no listeners, no subscriptions at call time. Builders like `createFileContentDoc` in `@epicenter/filesystem` return handles that attach later.
+- **`create*`** is pure construction: no listeners, no subscriptions at call time. Primitives like `createDisposableCache` return handles that attach later.
 
 See `.agents/skills/attach-primitive/SKILL.md` for the full contract (shape, invariants, barrier naming).
 

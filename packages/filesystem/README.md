@@ -23,19 +23,37 @@ open a file content document at the app edge, then hand `attachYjsFileSystem`
 the content operations it needs.
 
 ```typescript
-import { attachTables } from '@epicenter/workspace';
-import { attachYjsFileSystem, createFileContentDoc, filesTable } from '@epicenter/filesystem';
+import {
+	attachTables,
+	attachTimeline,
+	onLocalUpdate,
+} from '@epicenter/workspace';
+import {
+	attachYjsFileSystem,
+	fileContentDocGuid,
+	filesTable,
+} from '@epicenter/filesystem';
 import * as Y from 'yjs';
 
 const ydoc = new Y.Doc({ guid: 'test' });
 const tables = attachTables(ydoc, { files: filesTable });
 
 function openContentDoc(fileId) {
-	return createFileContentDoc({
-		fileId,
-		workspaceId: ydoc.guid,
-		filesTable: tables.files,
+	const contentYdoc = new Y.Doc({
+		guid: fileContentDocGuid({ workspaceId: ydoc.guid, fileId }),
+		gc: false,
 	});
+	onLocalUpdate(contentYdoc, () =>
+		tables.files.update(fileId, { updatedAt: Date.now() }),
+	);
+	return {
+		ydoc: contentYdoc,
+		content: attachTimeline(contentYdoc),
+		whenReady: Promise.resolve(),
+		[Symbol.dispose]() {
+			contentYdoc.destroy();
+		},
+	};
 }
 
 const fileContent = {

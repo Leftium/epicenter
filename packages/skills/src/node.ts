@@ -23,8 +23,14 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { defineMutation, generateId } from '@epicenter/workspace';
+import {
+	attachPlainText,
+	defineMutation,
+	generateId,
+	onLocalUpdate,
+} from '@epicenter/workspace';
 import Type from 'typebox';
+import * as Y from 'yjs';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -32,9 +38,9 @@ import {
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { parseSkillMd } from './parse.js';
-import { createReferenceContentDoc } from './reference-content-docs.js';
+import { referenceContentDocGuid } from './reference-content-docs.js';
 import { serializeSkillMd } from './serialize.js';
-import { createSkillInstructionsDoc } from './skill-instructions-docs.js';
+import { skillInstructionsDocGuid } from './skill-instructions-docs.js';
 import { createSkillsActions } from './skills-actions.js';
 import type { Skill } from './tables.js';
 import { openSkills } from './workspace.js';
@@ -64,8 +70,8 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * data parity across environments is preserved at the CRDT level.
  *
  * Child instruction and reference documents are opened per operation. Node
- * scripts do not need the browser family's shared live identity, active sync
- * fanout, or local IndexedDB reset behavior.
+ * scripts do not need the browser cache's shared live identity or local
+ * IndexedDB reset behavior.
  */
 export function openSkillsNodeWorkspace({
 	workspaceId,
@@ -76,19 +82,39 @@ export function openSkillsNodeWorkspace({
 	const { tables } = doc;
 
 	function openInstructionsDoc(skillId: string) {
-		return createSkillInstructionsDoc({
-			skillId,
-			workspaceId,
-			skillsTable: tables.skills,
+		const ydoc = new Y.Doc({
+			guid: skillInstructionsDocGuid({ workspaceId, skillId }),
+			gc: false,
 		});
+		onLocalUpdate(ydoc, () =>
+			tables.skills.update(skillId, { updatedAt: Date.now() }),
+		);
+		return {
+			ydoc,
+			instructions: attachPlainText(ydoc),
+			whenReady: Promise.resolve(),
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
 	}
 
 	function openReferenceDoc(referenceId: string) {
-		return createReferenceContentDoc({
-			referenceId,
-			workspaceId,
-			referencesTable: tables.references,
+		const ydoc = new Y.Doc({
+			guid: referenceContentDocGuid({ workspaceId, referenceId }),
+			gc: false,
 		});
+		onLocalUpdate(ydoc, () =>
+			tables.references.update(referenceId, { updatedAt: Date.now() }),
+		);
+		return {
+			ydoc,
+			content: attachPlainText(ydoc),
+			whenReady: Promise.resolve(),
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
 	}
 
 	const readActions = createSkillsActions({

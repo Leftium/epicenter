@@ -242,10 +242,6 @@ export {
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
-export type {
-	BrowserDocPersistence,
-	DocPersistence,
-} from './document/doc-persistence.js';
 export {
 	EncryptionKey,
 	EncryptionKeys,

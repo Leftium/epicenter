@@ -17,7 +17,7 @@ The public contract should be boring:
 const sync = attachSync(doc, {
   url,
   waitFor: idb,
-  getToken,
+  loadToken,
 });
 ```
 
@@ -29,7 +29,7 @@ That line means: keep this document synced to that room. It should not mean "the
 caller intent
   │
   ▼
-attachSync(doc, { url, waitFor, getToken })
+attachSync(doc, { url, waitFor, loadToken })
   │
   ├── waits for local persistence before first remote handshake
   ├── supervises direct WebSocket transport when direct is the right topology
@@ -125,7 +125,7 @@ const sync = attachSync(doc, {
   url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
   waitFor: idb,
   device,
-  getToken: async () => auth.getToken(),
+  loadToken: async () => auth.loadToken(),
 });
 ```
 
@@ -139,7 +139,7 @@ const sync = attachSync(doc, {
   url,
   waitFor: idb,
   device,
-  getToken,
+  loadToken,
   leaderElection: true,
 });
 ```
@@ -155,7 +155,7 @@ const sync = attachSync(doc, {
   url,
   waitFor: idb,
   device,
-  getToken,
+  loadToken,
 });
 ```
 
@@ -215,7 +215,7 @@ runtime.onEvent((event) => events.emit(event));
 
 ```typescript
 // A1: explicit FSM, no hidden mutation
-const machine = createSupervisorMachine({ url, getToken, ... });
+const machine = createSupervisorMachine({ url, loadToken, ... });
 machine.send({ type: 'START' });
 
 // A3: internal event stream for tests and debug tooling
@@ -611,7 +611,7 @@ export function runWithLeaderElection(
 
 - [ ] **2.1** Create `packages/workspace/src/document/sync-machine.ts` with `MachineState`, `MachineEvent`, `MachineEffect`, and `step(state, event): { state, effects }`. Pure module; no `Y.Doc`, no `WebSocket` imports.
 - [ ] **2.2** Exhaustive reducer test file `sync-machine.test.ts`: every `(state, event)` pair, asserting both next state and effects list. Target: 100% branch coverage.
-- [ ] **2.3** Create `packages/workspace/src/document/sync-runtime.ts`. Owns `AbortController` hierarchy, `setTimeout`/`setInterval`, WebSocket factory (or `globalThis.WebSocket` for testability), `getToken` invocation, `backoff` helper. Translates events from the wire/timers into `step()` calls; executes returned effects.
+- [ ] **2.3** Create `packages/workspace/src/document/sync-runtime.ts`. Owns `AbortController` hierarchy, `setTimeout`/`setInterval`, WebSocket factory (or `globalThis.WebSocket` for testability), `loadToken` invocation, `backoff` helper. Translates events from the wire/timers into `step()` calls; executes returned effects.
 - [ ] **2.4** Refactor `attach-sync.ts`: replace `runLoop`, `attemptConnection`, `ensureSupervisor`, `pause`, `reconnect` with calls into the runtime. Keep the public `SyncAttachment` surface byte-identical (`whenConnected`, `status`, `onStatusChange`, `pause`, `reconnect`, `whenDisposed`, `rpc`, `peers`, `find`, `observe`, `raw` unchanged).
 - [ ] **2.5** Verify all existing `attach-sync.test.ts` tests pass without modification. If a test needed a code change to pass, the public API regressed.
 - [ ] **2.6** Delete `permanentFailure` flag (now `state.phase === 'failed'`); delete `currentSupervisorPromise` (now owned by runtime); delete the "reconnect-during-tail" race comment block (impossible by construction now).
@@ -640,7 +640,7 @@ export function runWithLeaderElection(
 
 **Reconnect during handshake.** The current code handles this via the `cycleController` swap + the post-finally `ensureSupervisor` chain (`attach-sync.ts:944-955`). In the FSM model: `STOP{reason:reconnect}` event in `handshaking` state transitions to `connecting`, with effects `[CLOSE_WS, OPEN_WS]`. The `WS_CLOSE` event from the old socket arrives in `connecting` state and is dropped (no-op transition). No race; one event at a time.
 
-**`getToken()` resolves after `STOP`.** The runtime's `GET_TOKEN` effect captures the cycle generation. When the Promise resolves, runtime checks if the generation matches; if not, the result is dropped before being fed back into `step()`.
+**`loadToken()` resolves after `STOP`.** The runtime's `GET_TOKEN` effect captures the cycle generation. When the Promise resolves, runtime checks if the generation matches; if not, the result is dropped before being fed back into `step()`.
 
 ### A3: internal event bus
 

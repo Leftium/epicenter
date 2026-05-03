@@ -69,16 +69,17 @@
  * @module
  */
 
+import {
+	type EncryptionKeys,
+	encryptionKeysFingerprint,
+} from '@epicenter/encryption';
 import type * as Y from 'yjs';
 import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
 import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import {
-	type EncryptionKeys,
-	encryptionKeysFingerprint,
-} from './encryption-key.js';
+import { type Kv, type KvDefinitions } from './attach-kv.js';
 import {
 	type InferTableRow,
 	type ReadonlyTable,
@@ -88,7 +89,6 @@ import {
 	type TableDefinitions,
 	type Tables,
 } from './attach-table.js';
-import { type Kv, type KvDefinitions } from './attach-kv.js';
 import { createKv, createReadonlyTable, createTable } from './internal.js';
 import { KV_KEY, TableKey } from './keys.js';
 

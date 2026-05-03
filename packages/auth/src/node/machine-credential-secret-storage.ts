@@ -1,7 +1,4 @@
-import {
-	EncryptionKeys,
-	type EncryptionKeys as EncryptionKeysData,
-} from '@epicenter/workspace/encryption-key';
+import { EncryptionKeys } from '@epicenter/encryption';
 import { type } from 'arktype';
 
 type MachineCredentialSecretRef = {
@@ -46,7 +43,7 @@ export type MachineCredentialSecrets = typeof MachineCredentialSecrets.infer;
 export type MachineCredentialSecretValues = {
 	bearerToken: string;
 	sessionToken: string;
-	encryptionKeys: EncryptionKeysData;
+	encryptionKeys: EncryptionKeys;
 };
 
 export type MachineCredentialSecretStorage = {
@@ -104,7 +101,9 @@ function staleKeychainRefs(
 	next: MachineCredentialSecrets,
 ): MachineCredentialSecretRef[] {
 	const nextRefs = new Set(keychainRefs(next).map(secretRefKey));
-	return keychainRefs(previous).filter((ref) => !nextRefs.has(secretRefKey(ref)));
+	return keychainRefs(previous).filter(
+		(ref) => !nextRefs.has(secretRefKey(ref)),
+	);
 }
 
 export function createPlaintextMachineCredentialSecretStorage(): MachineCredentialSecretStorage {

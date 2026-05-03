@@ -15,7 +15,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@epicenter/workspace": "workspace:*",
+		"@epicenter/encryption": "workspace:*",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
 		"wellcrafted": "catalog:"

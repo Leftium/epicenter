@@ -1,7 +1,7 @@
 import { chmod, mkdir, rename } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { EncryptionKeys as EncryptionKeysData } from '@epicenter/workspace/encryption-key';
+import type { EncryptionKeys } from '@epicenter/encryption';
 import { type } from 'arktype';
 import {
 	Session,
@@ -94,7 +94,7 @@ function sessionFromParts({
 }: {
 	entry: MachineCredentialFileEntry;
 	sessionToken: string;
-	encryptionKeys: EncryptionKeysData;
+	encryptionKeys: EncryptionKeys;
 }): SessionData {
 	return Session.assert({
 		user: entry.session.user,

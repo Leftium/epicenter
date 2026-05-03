@@ -34,11 +34,10 @@ export function openFuji() {
 
   const idb = attachIndexedDb(ydoc);
   attachBroadcastChannel(ydoc);
-  const tokenSource = createAuthTokenSource(auth);
   const sync = attachSync(ydoc, {
     url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
-    tokenSource,
+    auth,
   });
 
   return {
@@ -46,7 +45,6 @@ export function openFuji() {
     ydoc, tables, kv, awareness, encryption, idb, sync,
     whenLoaded: idb.whenLoaded,
     [Symbol.dispose]() {
-      tokenSource[Symbol.dispose]();
       ydoc.destroy();
     },
   };

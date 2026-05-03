@@ -16,13 +16,13 @@
  *   createDisposableCache,
  *   defineTable,
  *   docGuid,
- *   type TokenSource,
  * } from '@epicenter/workspace';
+ * import type { AuthClient } from '@epicenter/auth';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * declare const tokenSource: TokenSource;
+ * declare const auth: AuthClient;
  *
  * // Singleton workspace: inline at module scope, no factory wrapper.
  * const ydoc = new Y.Doc({ guid: 'notes' });
@@ -31,7 +31,7 @@
  * const sync = attachSync(ydoc, {
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
  *   waitFor: idb,
- *   tokenSource,
+ *   auth,
  * });
  *
  * const noteBodyDocs = createDisposableCache(
@@ -226,7 +226,6 @@ export {
 	type SyncFailedReason,
 	type SyncRpcAttachment,
 	type SyncStatus,
-	type TokenSource,
 	toWsUrl,
 	type WaitForBarrier,
 	type WebSocketImpl,
@@ -265,11 +264,6 @@ export {
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
-export {
-	EncryptionKey,
-	EncryptionKeys,
-	encryptionKeysFingerprint,
-} from './document/encryption-key.js';
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {

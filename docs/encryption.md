@@ -4,7 +4,7 @@ That keeps the sync path moving ciphertext instead of application JSON.
 This page only makes claims visible in the current code:
 - `packages/workspace/src/shared/crypto/index.ts`
 - `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`
-- `packages/workspace/src/document/encryption-key.ts`
+- `packages/encryption/src/index.ts`
 - `packages/workspace/src/document/attach-encryption.ts`
 - `packages/workspace/src/document/attach-encrypted.ts`
 - `apps/api/src/auth/encryption.ts`

@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 
 import { beforeEach, describe, expect, test } from 'bun:test';
+import type { AuthClient, AuthSnapshot } from '@epicenter/auth';
 import {
 	decodeRpcPayload,
 	encodeAwarenessStates,
@@ -15,7 +16,7 @@ import { Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { defineMutation } from '../shared/actions.js';
 import { attachAwareness } from './attach-awareness.js';
-import { attachSync, type TokenSource } from './attach-sync.js';
+import { attachSync } from './attach-sync.js';
 import { PeerIdentity } from './peer-identity.js';
 
 type Listener = (ev: { data: ArrayBuffer | string }) => void;
@@ -100,30 +101,66 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 	throw new Error('timeout waiting for predicate');
 }
 
-function createTokenSource(initialToken: string | null) {
-	let token = initialToken;
-	const listeners = new Set<() => void>();
-	const calls: string[] = [];
-	const source: TokenSource = {
-		async getToken() {
-			calls.push(`get:${token}`);
-			return token;
+function signedInSnapshot(token: string): AuthSnapshot {
+	return {
+		status: 'signedIn',
+		session: {
+			token,
+			user: {
+				id: 'user-1',
+				createdAt: '2026-05-03T00:00:00.000Z',
+				updatedAt: '2026-05-03T00:00:00.000Z',
+				email: 'test@example.com',
+				emailVerified: true,
+				name: 'Test User',
+			},
+			encryptionKeys: [{ version: 1, userKeyBase64: 'key' }],
 		},
-		onTokenChange(listener) {
+	};
+}
+
+function createAuthClient(initialSnapshot: AuthSnapshot) {
+	let snapshot = initialSnapshot;
+	const listeners = new Set<(snapshot: AuthSnapshot) => void>();
+	const calls: string[] = [];
+	const auth = {
+		get snapshot() {
+			calls.push(`snapshot:${snapshot.status}`);
+			return snapshot;
+		},
+		whenLoaded: Promise.resolve(),
+		onSnapshotChange(listener) {
 			listeners.add(listener);
 			return () => {
 				calls.push('unsubscribe');
 				listeners.delete(listener);
 			};
 		},
-	};
+		async signIn() {
+			return Ok(undefined);
+		},
+		async signUp() {
+			return Ok(undefined);
+		},
+		async signInWithSocialPopup() {
+			return Ok(undefined);
+		},
+		async signInWithSocialRedirect() {
+			return Ok(undefined);
+		},
+		async signOut() {
+			return Ok(undefined);
+		},
+		fetch: globalThis.fetch.bind(globalThis),
+		[Symbol.dispose]() {},
+	} satisfies AuthClient;
 
 	return {
-		source,
+		auth,
 		calls,
-		setToken(nextToken: string | null) {
-			token = nextToken;
-			for (const listener of listeners) listener();
+		setSnapshot(nextSnapshot: AuthSnapshot) {
+			snapshot = nextSnapshot;
+			for (const listener of listeners) listener(nextSnapshot);
 		},
 	};
 }
@@ -287,12 +324,12 @@ describe('attachSync split surface', () => {
 		ydoc.destroy();
 	});
 
-	test('token source changes reconnect the active socket', async () => {
-		const ydoc = new Y.Doc({ guid: 'token-source-reconnect' });
-		const tokenSource = createTokenSource('token-1');
+	test('auth token changes reconnect the active socket', async () => {
+		const ydoc = new Y.Doc({ guid: 'auth-reconnect' });
+		const auth = createAuthClient(signedInSnapshot('token-1'));
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			tokenSource: tokenSource.source,
+			auth: auth.auth,
 		});
 
 		const first = await waitFor(() => FakeWebSocket.instances[0]);
@@ -300,7 +337,7 @@ describe('attachSync split surface', () => {
 		first.deliver(serverStep2Frame());
 		await sync.whenConnected;
 
-		tokenSource.setToken('token-2');
+		auth.setSnapshot(signedInSnapshot('token-2'));
 		const second = await waitFor(() => FakeWebSocket.instances[1]);
 		await waitFor(() => second.readyState === FakeWebSocket.OPEN);
 
@@ -313,32 +350,32 @@ describe('attachSync split surface', () => {
 		await sync.whenDisposed;
 	});
 
-	test('token source subscription unsubscribes on destroy', async () => {
-		const ydoc = new Y.Doc({ guid: 'token-source-destroy' });
-		const tokenSource = createTokenSource('token-1');
+	test('auth snapshot subscription unsubscribes on destroy', async () => {
+		const ydoc = new Y.Doc({ guid: 'auth-destroy' });
+		const auth = createAuthClient(signedInSnapshot('token-1'));
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			tokenSource: tokenSource.source,
+			auth: auth.auth,
 		});
 
 		await waitFor(() => FakeWebSocket.instances[0]);
 		ydoc.destroy();
 		await sync.whenDisposed;
 
-		expect(tokenSource.calls).toContain('unsubscribe');
+		expect(auth.calls).toContain('unsubscribe');
 	});
 
-	test('token source changes before waitFor do not bypass startup gating', async () => {
+	test('auth token changes before waitFor do not bypass startup gating', async () => {
 		const { promise: whenLoaded, resolve } = Promise.withResolvers<void>();
-		const ydoc = new Y.Doc({ guid: 'token-source-wait-for' });
-		const tokenSource = createTokenSource('token-1');
+		const ydoc = new Y.Doc({ guid: 'auth-wait-for' });
+		const auth = createAuthClient(signedInSnapshot('token-1'));
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
 			waitFor: whenLoaded,
-			tokenSource: tokenSource.source,
+			auth: auth.auth,
 		});
 
-		tokenSource.setToken('token-2');
+		auth.setSnapshot(signedInSnapshot('token-2'));
 		await Promise.resolve();
 		expect(FakeWebSocket.instances).toHaveLength(0);
 
@@ -350,20 +387,5 @@ describe('attachSync split surface', () => {
 
 		ydoc.destroy();
 		await sync.whenDisposed;
-	});
-
-	test('passing getToken and tokenSource throws', () => {
-		const ydoc = new Y.Doc({ guid: 'token-source-exclusive' });
-		const tokenSource = createTokenSource('token-1');
-
-		expect(() =>
-			attachSync(ydoc, {
-				url: `ws://x/${ydoc.guid}`,
-				getToken: async () => 'token-1',
-				tokenSource: tokenSource.source,
-			}),
-		).toThrow(/getToken or tokenSource/);
-
-		ydoc.destroy();
 	});
 });

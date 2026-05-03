@@ -137,13 +137,14 @@ import {
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
+import type { AuthClient } from '@epicenter/auth';
 import * as Y from 'yjs';
 import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
-	getToken,
+	auth,
 }: {
-	getToken: () => Promise<string | null>;
+	auth: AuthClient;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
 
@@ -163,7 +164,7 @@ export function openApp({
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		getToken,
+		auth,
 		awareness,
 	});
 	const actions = {};
@@ -190,7 +191,7 @@ export function openApp({
 	};
 }
 
-export const workspace = openApp({ getToken: async () => null });
+export const workspace = openApp({ auth });
 ```
 
 The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.

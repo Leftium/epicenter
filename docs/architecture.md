@@ -226,7 +226,7 @@ const opensidian = defineDocument((id: string) => {
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachSync(ydoc, {
 		url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
-		getToken: async () => {
+		loadToken: async () => {
 			await auth.whenLoaded;
 
 			const snapshot = auth.snapshot;

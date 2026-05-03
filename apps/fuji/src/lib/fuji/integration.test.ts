@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
+import type { AuthClient } from '@epicenter/auth';
 import { createMachineAuth } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import type { EncryptionKeys, ProjectDir } from '@epicenter/workspace';
+import type { EncryptionKeys } from '@epicenter/encryption';
+import type { ProjectDir } from '@epicenter/workspace';
 import type { DaemonRuntime } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
@@ -29,6 +31,47 @@ const testEncryptionKeys: EncryptionKeys = [
 		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
 ];
+
+function createTestAuth(): AuthClient {
+	return {
+		snapshot: {
+			status: 'signedIn',
+			session: {
+				token: 'fake-token',
+				user: {
+					id: 'test-user',
+					createdAt: '2026-05-03T00:00:00.000Z',
+					updatedAt: '2026-05-03T00:00:00.000Z',
+					email: 'test@example.com',
+					emailVerified: true,
+					name: 'Test User',
+				},
+				encryptionKeys: testEncryptionKeys,
+			},
+		},
+		whenLoaded: Promise.resolve(),
+		onSnapshotChange() {
+			return () => {};
+		},
+		async signIn() {
+			throw new Error('unused');
+		},
+		async signUp() {
+			throw new Error('unused');
+		},
+		async signInWithSocialPopup() {
+			throw new Error('unused');
+		},
+		async signInWithSocialRedirect() {
+			throw new Error('unused');
+		},
+		async signOut() {
+			throw new Error('unused');
+		},
+		fetch: globalThis.fetch.bind(globalThis),
+		[Symbol.dispose]() {},
+	};
+}
 
 function jsonResponse(value: unknown, init?: ResponseInit): Response {
 	return new Response(JSON.stringify(value), {
@@ -60,7 +103,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates entries the daemon wrote', async () => {
 		{
 			const routeDefinition = defineFujiDaemon({
-				getToken: async () => 'fake-token',
+				auth: createTestAuth(),
 				webSocketImpl: NoopWebSocket,
 			});
 			const daemon = (await routeDefinition.start({
@@ -89,7 +132,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 		await Bun.write(`${workdir}/epicenter.config.ts`, 'export default {};');
 
 		const routeDefinition = defineFujiDaemon({
-			getToken: async () => 'fake-token',
+			auth: createTestAuth(),
 			webSocketImpl: NoopWebSocket,
 		});
 		const daemon = await routeDefinition.start({

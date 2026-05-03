@@ -7,13 +7,12 @@
  * Key behaviors:
  * - Cold signed-out and signed-in snapshots call the supplied lifecycle hooks.
  * - Same-user snapshot changes apply fresh session state without reconnecting.
- * - Auth token sources notify only when the signed-in token value changes.
  * - Leaving an applied user marks the client terminal and ignores later snapshots.
  */
 
 import { expect, test } from 'bun:test';
 import type { AuthClient, AuthSnapshot, Session } from '@epicenter/auth';
-import { bindAuthWorkspaceScope, createAuthTokenSource } from './index.ts';
+import { bindAuthWorkspaceScope } from './index.ts';
 
 const keysA = [
 	{
@@ -258,55 +257,4 @@ test('unsubscribe stops later auth emissions', async () => {
 	await tick();
 
 	expect(calls).toEqual(['pause']);
-});
-
-test('auth token source returns the loaded signed-in token', async () => {
-	const { auth } = createFakeAuth(signedIn({ token: 'token-1' }));
-	const tokenSource = createAuthTokenSource(auth);
-
-	await expect(tokenSource.getToken()).resolves.toBe('token-1');
-
-	tokenSource[Symbol.dispose]();
-});
-
-test('auth token source treats signed-out as null', async () => {
-	const { auth } = createFakeAuth({ status: 'signedOut' });
-	const tokenSource = createAuthTokenSource(auth);
-
-	await expect(tokenSource.getToken()).resolves.toBeNull();
-
-	tokenSource[Symbol.dispose]();
-});
-
-test('auth token source notifies only when token value changes', () => {
-	const { auth, emit } = createFakeAuth(signedIn({ token: 'token-1' }));
-	const tokenSource = createAuthTokenSource(auth);
-	const calls: string[] = [];
-	const unsubscribe = tokenSource.onTokenChange(() => {
-		calls.push('change');
-	});
-
-	emit(signedIn({ token: 'token-1', keys: keysB }));
-	emit(signedIn({ token: 'token-2', keys: keysB }));
-	emit(signedIn({ token: 'token-2' }));
-	emit({ status: 'signedOut' });
-
-	expect(calls).toEqual(['change', 'change']);
-
-	unsubscribe();
-	tokenSource[Symbol.dispose]();
-});
-
-test('auth token source disposal stops auth snapshot notifications', () => {
-	const { auth, emit } = createFakeAuth(signedIn({ token: 'token-1' }));
-	const tokenSource = createAuthTokenSource(auth);
-	const calls: string[] = [];
-	tokenSource.onTokenChange(() => {
-		calls.push('change');
-	});
-
-	tokenSource[Symbol.dispose]();
-	emit(signedIn({ token: 'token-2' }));
-
-	expect(calls).toEqual([]);
 });

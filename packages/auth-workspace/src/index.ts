@@ -1,45 +1,10 @@
 import type { AuthClient, AuthSnapshot } from '@epicenter/auth';
-import type { SyncControl, TokenSource } from '@epicenter/workspace';
+import type { SyncControl } from '@epicenter/workspace';
 
 export type SignedInSession = Extract<
 	AuthSnapshot,
 	{ status: 'signedIn' }
 >['session'];
-
-export function createAuthTokenSource(auth: AuthClient) {
-	let currentToken =
-		auth.snapshot.status === 'signedIn' ? auth.snapshot.session.token : null;
-	const listeners = new Set<() => void>();
-
-	const unsubscribe = auth.onSnapshotChange((snapshot) => {
-		const nextToken =
-			snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		if (nextToken === currentToken) return;
-
-		currentToken = nextToken;
-		for (const listener of listeners) listener();
-	});
-
-	return {
-		async getToken() {
-			await auth.whenLoaded;
-			const snapshot = auth.snapshot;
-			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		},
-		onTokenChange(listener) {
-			listeners.add(listener);
-			return () => {
-				listeners.delete(listener);
-			};
-		},
-		[Symbol.dispose]() {
-			unsubscribe();
-			listeners.clear();
-		},
-	} satisfies TokenSource & Disposable;
-}
-
-export type AuthTokenSource = ReturnType<typeof createAuthTokenSource>;
 
 export type AuthWorkspaceScopeOptions = {
 	auth: AuthClient;

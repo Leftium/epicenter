@@ -87,7 +87,7 @@ function openMyApp({
 	});
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
-		getToken: async () => {
+		loadToken: async () => {
 			await auth.whenLoaded;
 
 			const snapshot = auth.snapshot;

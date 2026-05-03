@@ -1,4 +1,4 @@
-import { encryptionKeysFingerprint } from '@epicenter/workspace/encryption-key';
+import { encryptionKeysFingerprint } from '@epicenter/encryption';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';

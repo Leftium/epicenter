@@ -1,5 +1,4 @@
-import type { AuthClient } from '@epicenter/auth-svelte';
-import { createAuthTokenSource } from '@epicenter/auth-workspace';
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
@@ -43,7 +42,6 @@ export function openHoneycrisp({
 	peer: PeerIdentity;
 }) {
 	const doc = openHoneycrispDoc();
-	const tokenSource = createAuthTokenSource(auth);
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
@@ -62,7 +60,7 @@ export function openHoneycrisp({
 			const childSync = attachSync(ydoc, {
 				url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 				waitFor: childIdb.whenLoaded,
-				tokenSource,
+				auth,
 			});
 
 			onLocalUpdate(ydoc, () => {
@@ -103,7 +101,7 @@ export function openHoneycrisp({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		tokenSource,
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);
@@ -124,7 +122,6 @@ export function openHoneycrisp({
 		rpc,
 		whenLoaded: idb.whenLoaded,
 		[Symbol.dispose]() {
-			tokenSource[Symbol.dispose]();
 			noteBodyDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 		},

@@ -108,6 +108,7 @@
         "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/encryption": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@tanstack/svelte-table": "catalog:",
@@ -511,7 +512,7 @@
       "name": "@epicenter/auth",
       "version": "0.1.0",
       "dependencies": {
-        "@epicenter/workspace": "workspace:*",
+        "@epicenter/encryption": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "wellcrafted": "catalog:",
@@ -585,6 +586,16 @@
         "@types/node": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",
+      },
+    },
+    "packages/encryption": {
+      "name": "@epicenter/encryption",
+      "version": "0.1.0",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "typescript": "catalog:",
       },
     },
     "packages/filesystem": {
@@ -713,7 +724,9 @@
       "version": "0.2.0",
       "dependencies": {
         "@ark/json-schema": "^0.0.4",
+        "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/encryption": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "@noble/ciphers": "^2.1.1",
@@ -1015,6 +1028,8 @@
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
 
     "@epicenter/dashboard": ["@epicenter/dashboard@workspace:apps/dashboard"],
+
+    "@epicenter/encryption": ["@epicenter/encryption@workspace:packages/encryption"],
 
     "@epicenter/filesystem": ["@epicenter/filesystem@workspace:packages/filesystem"],
 

@@ -82,12 +82,16 @@ function openBlog() {
 
 ### Persistence + sync
 
+Auth belongs to the app. The workspace factory receives the client and passes it
+to sync.
+
 ```typescript
 import {
   attachIndexedDb,
   attachBroadcastChannel,
   attachSync,
 } from '@epicenter/workspace';
+import { auth } from './auth';
 
 function openBlog() {
   const ydoc = new Y.Doc({ guid: 'blog' });
@@ -97,12 +101,7 @@ function openBlog() {
   attachBroadcastChannel(ydoc);
   const sync = attachSync(ydoc, {
     url: `wss://api.example.com/workspaces/${ydoc.guid}`,
-    getToken: async () => {
-      await auth.whenLoaded;
-
-      const snapshot = auth.snapshot;
-      return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-    },
+    auth,
     waitFor: idb.whenLoaded,
   });
 

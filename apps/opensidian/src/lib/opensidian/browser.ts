@@ -1,5 +1,4 @@
-import type { AuthClient } from '@epicenter/auth-svelte';
-import { createAuthTokenSource } from '@epicenter/auth-workspace';
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
@@ -33,7 +32,6 @@ export function openOpensidian({
 	peer: PeerIdentity;
 }) {
 	const doc = openOpensidianDoc();
-	const tokenSource = createAuthTokenSource(auth);
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
@@ -109,7 +107,7 @@ export function openOpensidian({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		tokenSource,
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);
@@ -134,7 +132,6 @@ export function openOpensidian({
 		rpc,
 		whenLoaded: idb.whenLoaded,
 		[Symbol.dispose]() {
-			tokenSource[Symbol.dispose]();
 			fileContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 		},

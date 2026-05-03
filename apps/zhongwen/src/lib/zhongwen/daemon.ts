@@ -1,5 +1,6 @@
+import type { AuthClient } from '@epicenter/auth';
+import { createMachineAuthClient } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { createMachineTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
@@ -16,7 +17,7 @@ export const DEFAULT_ZHONGWEN_DAEMON_ROUTE = 'zhongwen';
 
 export type ZhongwenDaemonOptions = {
 	route?: string;
-	getToken?: () => Promise<string | null>;
+	auth?: AuthClient;
 	peer?: PeerIdentity;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
@@ -33,7 +34,7 @@ function defaultZhongwenDaemonPeer(): PeerIdentity {
 export function defineZhongwenDaemon({
 	route = DEFAULT_ZHONGWEN_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createMachineTokenGetter({ serverOrigin: apiUrl }),
+	auth = createMachineAuthClient({ serverOrigin: apiUrl }),
 	peer = defaultZhongwenDaemonPeer(),
 	webSocketImpl,
 }: ZhongwenDaemonOptions = {}): DaemonRouteDefinition {
@@ -50,7 +51,7 @@ export function defineZhongwenDaemon({
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-				getToken,
+				auth,
 				webSocketImpl,
 				awareness,
 			});

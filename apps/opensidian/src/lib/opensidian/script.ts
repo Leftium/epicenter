@@ -1,3 +1,5 @@
+import type { AuthClient } from '@epicenter/auth';
+import { createMachineAuthClient } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachSync,
@@ -14,16 +16,16 @@ import {
 import { openOpensidian as openOpensidianDoc } from './index.js';
 
 export function openOpensidian({
-	getToken,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 	apiUrl = EPICENTER_API_URL,
+	auth = createMachineAuthClient({ serverOrigin: apiUrl }),
 	webSocketImpl,
 }: {
-	getToken: () => Promise<string | null>;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
+	auth?: AuthClient;
 	webSocketImpl?: WebSocketImpl;
 }) {
 	const doc = openOpensidianDoc({ clientID });
@@ -32,7 +34,7 @@ export function openOpensidian({
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		getToken,
+		auth,
 		webSocketImpl,
 	});
 

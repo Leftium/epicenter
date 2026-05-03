@@ -8,19 +8,23 @@
  * - Status and logout use the server origin from the resolved credential
  * - Bearer token rotation never mutates the Better Auth session token
  * - Direct token and key readers distinguish absence from unsafe local state
- * - The sync token getter unwraps Ok values and throws typed errors
+ * - Machine session storage loads and persists AuthClient session tokens
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { EncryptionKeys as EncryptionKeysData } from '@epicenter/workspace/encryption-key';
+import type { EncryptionKeys } from '@epicenter/encryption';
 import type { Session } from '../contracts/session.js';
-import { createMachineAuth, createMachineTokenGetter } from './machine-auth.js';
+import {
+	createMachineAuth,
+	createMachineAuthClient,
+	createMachineSessionStorage,
+} from './machine-auth.js';
 import { createMachineCredentialRepository } from './machine-credential-repository.js';
 import { createPlaintextMachineCredentialSecretStorage } from './machine-credential-secret-storage.js';
 
-const encryptionKeys: EncryptionKeysData = [
+const encryptionKeys: EncryptionKeys = [
 	{
 		version: 1,
 		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
@@ -263,32 +267,76 @@ describe('createMachineAuth', () => {
 		expect(result.error?.name).toBe('CredentialStorageFailed');
 	});
 
-	test('token getter returns null for absent credentials', async () => {
-		const getToken = createMachineTokenGetter({
+	test('machine session storage returns null for absent credentials', async () => {
+		const storage = createMachineSessionStorage({
 			serverOrigin: 'https://api.epicenter.so',
-			getBearerToken: createPlaintextMachineAuth(fetch).getBearerToken,
+			machineAuth: createPlaintextMachineAuth(fetch),
 		});
 
-		await expect(getToken()).resolves.toBeNull();
+		await expect(storage.load()).resolves.toBeNull();
 	});
 
-	test('token getter throws typed errors for integrity failures', async () => {
+	test('machine session storage throws typed errors for integrity failures', async () => {
 		await Bun.write(credentialFilePath, '{not-json');
-		const getToken = createMachineTokenGetter({
+		const storage = createMachineSessionStorage({
 			serverOrigin: 'https://api.epicenter.so',
-			getBearerToken: createPlaintextMachineAuth(fetch).getBearerToken,
+			machineAuth: createPlaintextMachineAuth(fetch),
 		});
 
-		await expect(getToken()).rejects.toMatchObject({
+		await expect(storage.load()).rejects.toMatchObject({
 			name: 'CredentialStorageFailed',
 		});
 	});
 
-	test('token getter requires serverOrigin', () => {
+	test('machine session storage persists rotated tokens', async () => {
+		await createPlaintextRepository().save('https://api.epicenter.so', {
+			bearerToken: 'old-bearer-token',
+			session: makeSession({ sessionToken: 'old-session-token' }),
+		});
+		const storage = createMachineSessionStorage({
+			serverOrigin: 'https://api.epicenter.so',
+			machineAuth: createPlaintextMachineAuth(fetch),
+		});
+
+		await storage.save({
+			token: 'rotated-bearer-token',
+			user: makeSession().user,
+			encryptionKeys,
+		});
+		const credential = await createPlaintextRepository().get(
+			'https://api.epicenter.so',
+		);
+
+		expect(credential?.bearerToken).toBe('rotated-bearer-token');
+		expect(credential?.session.session.token).toBe('rotated-bearer-token');
+		expect(credential?.session.encryptionKeys).toEqual(encryptionKeys);
+	});
+
+	test('machine auth client hydrates from machine session storage', async () => {
+		await createPlaintextRepository().save('https://api.epicenter.so', {
+			bearerToken: 'bearer-token',
+			session: makeSession({ sessionToken: 'session-token' }),
+		});
+
+		const auth = createMachineAuthClient({
+			serverOrigin: 'https://api.epicenter.so',
+			machineAuth: createPlaintextMachineAuth(fetch),
+		});
+		await auth.whenLoaded;
+
+		expect(auth.snapshot).toMatchObject({
+			status: 'signedIn',
+			session: { token: 'bearer-token' },
+		});
+		auth[Symbol.dispose]();
+	});
+
+	test('machine session storage requires serverOrigin', () => {
 		expect(() =>
-			createMachineTokenGetter(
-				{} as Parameters<typeof createMachineTokenGetter>[0],
-			),
+			createMachineSessionStorage({
+				serverOrigin: undefined as unknown as string,
+				machineAuth: createPlaintextMachineAuth(fetch),
+			}),
 		).toThrow('Expected a server origin');
 	});
 });

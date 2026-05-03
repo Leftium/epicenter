@@ -1,10 +1,7 @@
 import { createMachineAuth } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import {
-	attachEncryption,
-	type EncryptionKeys,
-	type ProjectDir,
-} from '@epicenter/workspace';
+import type { EncryptionKeys } from '@epicenter/encryption';
+import { attachEncryption, type ProjectDir } from '@epicenter/workspace';
 import {
 	attachYjsLogReader,
 	findEpicenterDir,

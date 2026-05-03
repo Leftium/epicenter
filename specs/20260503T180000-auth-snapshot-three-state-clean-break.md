@@ -291,12 +291,16 @@ There is no fourth state. There is no buffered emission. The arrows out of `load
 
 ### Phase 3: Verify consumers and documentation
 
-- [ ] **3.1** Run the package's tests (`bun run test:unit` per `monorepo` skill).
-- [ ] **3.2** Type-check all dependents of `@epicenter/auth` (`bun run check`).
-- [ ] **3.3** Skim `packages/auth-svelte/src/create-auth.svelte.ts` to confirm the wrapper still works (it relies only on the public surface, which is unchanged).
-- [ ] **3.4** Skim `packages/auth/src/node/machine-auth.ts` to confirm `createMachineAuthClient()` still works (sync/async storage, no buffer dependency).
-- [ ] **3.5** Search for `bufferedBetterAuthCandidate`, `bootCacheLoaded`, `settleLoadedSession`, `reconcileBetterAuthCandidate` across the repo to confirm no docs, specs, or comments still reference them.
-- [ ] **3.6** Update `.agents/skills/auth/SKILL.md` if it describes the buffered behavior.
+- [x] **3.1** Run the package's tests (`bun run test:unit` per `monorepo` skill).
+  > **Note**: 13 of 13 tests pass in `packages/auth/src/create-auth.test.ts` after the Phase 2 mock update.
+- [x] **3.2** Type-check all dependents of `@epicenter/auth` (`bun run check`).
+  > **Note**: `@epicenter/auth`, `@epicenter/auth-svelte`, and `@epicenter/auth-workspace` typecheck cleanly. `@epicenter/zhongwen` fails on a missing `apps/zhongwen/.svelte-kit/tsconfig.json` (svelte-kit bootstrap artifact, not generated in this workspace) and `@epicenter/tab-manager` fails on pre-existing `#/utils.js` resolution issues in shadcn-svelte components and an unrelated `savedTabState.save(tab)` arity error. Both failures reproduce on the pre-spec tree and are unrelated to the auth refactor.
+- [x] **3.3** Skim `packages/auth-svelte/src/create-auth.svelte.ts` to confirm the wrapper still works (it relies only on the public surface, which is unchanged).
+- [x] **3.4** Skim `packages/auth/src/node/machine-auth.ts` to confirm `createMachineAuthClient()` still works (sync/async storage, no buffer dependency).
+- [x] **3.5** Search for `bufferedBetterAuthCandidate`, `bootCacheLoaded`, `settleLoadedSession`, `reconcileBetterAuthCandidate` across the repo to confirm no docs, specs, or comments still reference them.
+  > **Note**: Only this spec mentions the deleted names (motivation and decision-table sections). No source, doc, or older spec references them.
+- [x] **3.6** Update `.agents/skills/auth/SKILL.md` if it describes the buffered behavior.
+  > **Note**: One sentence in the Write Ownership section described the buffered flow; rewrote to describe the late-subscribe + nanostore replay flow that replaces it.
 
 ### Phase 4: Optional cleanups (defer if scope grows)
 

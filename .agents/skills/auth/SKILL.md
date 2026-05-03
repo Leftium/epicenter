@@ -142,7 +142,7 @@ Keep field ownership narrow:
 | Response header rotation | `session.token` only |
 | Better Auth session refetch | `user`, `encryptionKeys`, and initial token |
 
-Better Auth emissions during `loading` are buffered. Persisted storage owns the first transition out of `loading`.
+Persisted storage owns the first transition out of `loading`. The Better Auth session subscription opens only after the boot cache settles; nanostore's atom replays the current value to the late subscriber, so a Better Auth state present at construction time is reconciled into the cache-derived snapshot.
 
 Preserve a rotated token across Better Auth refetch:
 

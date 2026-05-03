@@ -52,8 +52,8 @@ export type MachineAuthTransport = ReturnType<
  * `@epicenter/constants`; machine auth no longer accepts per-call server
  * origins.
  *
- * The `client_id` value comes from `@epicenter/constants/oauth` so the CLI
- * device flow and API trusted-client registration cannot drift.
+ * The `client_id` value comes from `@epicenter/constants/oauth` so CLI
+ * requests and API device-client validation cannot drift.
  */
 export function createMachineAuthTransport({
 	fetch: fetchImpl = fetch,

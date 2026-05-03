@@ -1,11 +1,7 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
 import type { BetterAuthSessionResponse } from '@epicenter/auth/contracts';
 import { APPS } from '@epicenter/constants/apps';
-import {
-	EPICENTER_CLI_OAUTH_CLIENT_ID,
-	EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
-	EPICENTER_MOBILE_OAUTH_CLIENT_ID,
-} from '@epicenter/constants/oauth';
+import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { customSession } from 'better-auth/plugins';
@@ -218,6 +214,7 @@ export function createAuth({
 			verificationUri: '/device',
 			expiresIn: '10m',
 			interval: '5s',
+			validateClient: (clientId) => clientId === EPICENTER_CLI_OAUTH_CLIENT_ID,
 		}),
 		oauthProvider({
 			loginPage: '/sign-in',
@@ -228,32 +225,6 @@ export function createAuth({
 			// because basePath is /auth (not /), so it can't auto-mount at the root.
 			// We already mount both discovery endpoints manually in app.ts.
 			silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
-			trustedClients: [
-				{
-					clientId: EPICENTER_DESKTOP_OAUTH_CLIENT_ID,
-					name: 'Epicenter Desktop',
-					type: 'native',
-					redirectUrls: ['tauri://localhost/auth/callback'],
-					skipConsent: true,
-					metadata: {},
-				},
-				{
-					clientId: EPICENTER_MOBILE_OAUTH_CLIENT_ID,
-					name: 'Epicenter Mobile',
-					type: 'native',
-					redirectUrls: ['epicenter://auth/callback'],
-					skipConsent: true,
-					metadata: {},
-				},
-				{
-					clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
-					name: 'Epicenter CLI',
-					type: 'native',
-					redirectUrls: [],
-					skipConsent: true,
-					metadata: {},
-				},
-			],
 		}),
 	];
 	/**

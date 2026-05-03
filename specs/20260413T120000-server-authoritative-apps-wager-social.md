@@ -228,22 +228,17 @@ oauthProvider({
   consentPage: '/consent',
   requirePKCE: true,
   allowDynamicClientRegistration: false,  // flip when ready for third-party devs
-  trustedClients: [
-    { clientId: 'epicenter-desktop', type: 'native', ... },
-    { clientId: 'epicenter-mobile', type: 'native', ... },
-    { clientId: 'epicenter-cli', type: 'native', ... },
-  ],
 })
 ```
 
 **Supported flows**: Authorization Code + PKCE, Client Credentials, Refresh Tokens, Device Code (separate plugin). **OIDC**: id_token + `/oauth2/userinfo` when `openid` scope requested. **Custom scopes**: Supported (e.g., `read:post`, `write:post`).
 
 **Third-party registration strategy**:
-- **Now**: Manual—add clients via `auth.api.createOAuthClient()` or `trustedClients` config
+- **Now**: Manual: add clients via `auth.api.createOAuthClient()`.
 - **Later (3-5 apps)**: PR-based registration to a config file
 - **Eventually (10+ apps)**: Developer portal at `developers.epicenter.so` backed by `/oauth2/register`
 
-No new tables needed—`oauth_client`, `oauth_access_token`, `oauth_refresh_token`, `oauth_consent` already exist.
+No new tables needed: `oauth_client`, `oauth_access_token`, `oauth_refresh_token`, `oauth_consent` already exist.
 
 ### Database Schema Layout
 

@@ -49,9 +49,6 @@ export function openFuji({
 
 	const entryContentDocs = createBrowserDocumentFamily(
 		{
-			ids() {
-				return doc.tables.entries.getAllValid().map((entry) => entry.id);
-			},
 			create(entryId: EntryId) {
 				const ydoc = new Y.Doc({
 					guid: entryContentDocGuid({
@@ -92,12 +89,16 @@ export function openFuji({
 					},
 				};
 			},
-			clearLocalData(entryId: EntryId) {
-				return clearDocument(
-					entryContentDocGuid({
-						workspaceId: doc.ydoc.guid,
-						entryId,
-					}),
+			async clearLocalData() {
+				await Promise.all(
+					doc.tables.entries.getAllValid().map((entry) =>
+						clearDocument(
+							entryContentDocGuid({
+								workspaceId: doc.ydoc.guid,
+								entryId: entry.id,
+							}),
+						),
+					),
 				);
 			},
 		},

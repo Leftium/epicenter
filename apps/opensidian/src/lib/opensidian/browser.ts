@@ -37,9 +37,6 @@ export function openOpensidian({
 
 	const fileContentDocs = createBrowserDocumentFamily(
 		{
-			ids() {
-				return doc.tables.files.getAllValid().map((file) => file.id);
-			},
 			create(fileId: FileId) {
 				const contentDoc = createFileContentDoc({
 					fileId,
@@ -55,12 +52,16 @@ export function openOpensidian({
 					sync: null,
 				};
 			},
-			clearLocalData(fileId: FileId) {
-				return clearDocument(
-					fileContentDocGuid({
-						workspaceId: doc.ydoc.guid,
-						fileId,
-					}),
+			async clearLocalData() {
+				await Promise.all(
+					doc.tables.files.getAllValid().map((file) =>
+						clearDocument(
+							fileContentDocGuid({
+								workspaceId: doc.ydoc.guid,
+								fileId: file.id,
+							}),
+						),
+					),
 				);
 			},
 		},

@@ -7,9 +7,9 @@
  * Key behaviors:
  * - Opening the same id deduplicates documents through createDisposableCache.
  * - Pause and reconnect fan out only to currently cached child sync controls.
- * - clearLocalData pauses active sync and clears every id from source.ids().
- * - clearLocalData clears unopened ids through source.clearLocalData(id)
- *   without constructing those documents.
+ * - clearLocalData pauses active sync before delegating storage cleanup.
+ * - clearLocalData can clear unopened ids through source-owned policy without
+ *   constructing those documents.
  * - Disposal unregisters child sync controls and family disposal flushes docs.
  */
 
@@ -17,8 +17,8 @@ import { expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import type { SyncControl } from '../document/attach-sync.js';
 import {
-	type BrowserDocumentInstance,
 	type BrowserDocumentFamilySource,
+	type BrowserDocumentInstance,
 	createBrowserDocumentFamily,
 } from './browser-document-family.js';
 
@@ -65,7 +65,6 @@ function wait(ms: number) {
 test('open deduplicates documents through createDisposableCache', () => {
 	let builds = 0;
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
-		ids: () => [],
 		create(id) {
 			builds++;
 			return makeTestDocument(id);
@@ -93,7 +92,6 @@ test('pause calls only active child sync controls', () => {
 		two: two.control,
 	};
 	const source: BrowserDocumentFamilySource<'one' | 'two', TestDocument> = {
-		ids: () => [],
 		create: (id) => makeTestDocument(id, { sync: controls[id] }),
 		clearLocalData: async () => {},
 	};
@@ -117,7 +115,6 @@ test('reconnect calls only active child sync controls', () => {
 		two: two.control,
 	};
 	const source: BrowserDocumentFamilySource<'one' | 'two', TestDocument> = {
-		ids: () => [],
 		create: (id) => makeTestDocument(id, { sync: controls[id] }),
 		clearLocalData: async () => {},
 	};
@@ -138,7 +135,6 @@ test('reconnect calls only active child sync controls', () => {
 test('disposing a handle eventually unregisters that child sync control', async () => {
 	const child = createSyncControl();
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
-		ids: () => [],
 		create: (id) => makeTestDocument(id, { sync: child.control }),
 		clearLocalData: async () => {},
 	};
@@ -156,7 +152,6 @@ test('disposing a handle eventually unregisters that child sync control', async 
 test('family disposal disposes active cached documents', () => {
 	const disposed: string[] = [];
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
-		ids: () => [],
 		create: (id) =>
 			makeTestDocument(id, { onDispose: () => disposed.push(id) }),
 		clearLocalData: async () => {},
@@ -174,7 +169,6 @@ test('family disposal disposes active cached documents', () => {
 
 test('instance with null sync gives family no-op pause and reconnect', () => {
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
-		ids: () => [],
 		create: (id) => makeTestDocument(id, { sync: null }),
 		clearLocalData: async () => {},
 	};
@@ -186,20 +180,19 @@ test('instance with null sync gives family no-op pause and reconnect', () => {
 	expect(() => family.syncControl.reconnect()).not.toThrow();
 });
 
-test('clearLocalData calls source.clearLocalData(id) for every id from source.ids()', async () => {
-	const cleared: string[] = [];
+test('clearLocalData delegates storage cleanup to source.clearLocalData()', async () => {
+	let cleared = false;
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
-		ids: () => ['a', 'b', 'c'],
 		create: (id) => makeTestDocument(id),
-		clearLocalData: async (id) => {
-			cleared.push(id);
+		clearLocalData: async () => {
+			cleared = true;
 		},
 	};
 	const family = createBrowserDocumentFamily(source);
 
 	await family.clearLocalData();
 
-	expect(cleared.sort()).toEqual(['a', 'b', 'c']);
+	expect(cleared).toBe(true);
 });
 
 test('clearLocalData pauses active child sync before clearing storage', async () => {
@@ -213,10 +206,9 @@ test('clearLocalData pauses active child sync before clearing storage', async ()
 		},
 	};
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
-		ids: () => ['open'],
 		create: (id) => makeTestDocument(id, { sync: control }),
-		clearLocalData: async (id) => {
-			calls.push(`clear:${id}`);
+		clearLocalData: async () => {
+			calls.push('clear');
 		},
 	};
 	const family = createBrowserDocumentFamily(source);
@@ -224,20 +216,19 @@ test('clearLocalData pauses active child sync before clearing storage', async ()
 	family.open('open');
 	await family.clearLocalData();
 
-	expect(calls).toEqual(['pause', 'clear:open']);
+	expect(calls).toEqual(['pause', 'clear']);
 });
 
-test('clearLocalData clears unopened ids without constructing them', async () => {
+test('source-owned clearLocalData can clear unopened ids without constructing them', async () => {
 	const created: string[] = [];
 	const cleared: string[] = [];
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
-		ids: () => ['open', 'unopened'],
 		create: (id) => {
 			created.push(id);
 			return makeTestDocument(id);
 		},
-		clearLocalData: async (id) => {
-			cleared.push(id);
+		clearLocalData: async () => {
+			cleared.push('open', 'unopened');
 		},
 	};
 	const family = createBrowserDocumentFamily(source);

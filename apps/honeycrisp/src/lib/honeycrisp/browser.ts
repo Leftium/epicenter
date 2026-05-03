@@ -49,9 +49,6 @@ export function openHoneycrisp({
 
 	const noteBodyDocs = createBrowserDocumentFamily(
 		{
-			ids() {
-				return doc.tables.notes.getAllValid().map((note) => note.id);
-			},
 			create(noteId: NoteId) {
 				const ydoc = new Y.Doc({
 					guid: noteBodyDocGuid({
@@ -92,12 +89,16 @@ export function openHoneycrisp({
 					},
 				};
 			},
-			clearLocalData(noteId: NoteId) {
-				return clearDocument(
-					noteBodyDocGuid({
-						workspaceId: doc.ydoc.guid,
-						noteId,
-					}),
+			async clearLocalData() {
+				await Promise.all(
+					doc.tables.notes.getAllValid().map((note) =>
+						clearDocument(
+							noteBodyDocGuid({
+								workspaceId: doc.ydoc.guid,
+								noteId: note.id,
+							}),
+						),
+					),
 				);
 			},
 		},

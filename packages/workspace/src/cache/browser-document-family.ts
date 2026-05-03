@@ -13,12 +13,11 @@ import {
  * this single field; there is no aliased `syncControl` field on a live
  * document.
  *
- * Storage cleanup is intentionally not on this contract: the family
- * resets through `BrowserDocumentFamilySource.clearLocalData(id)` for every id
- * (active and unopened) after pausing sync, so a per-instance method has
- * no caller. Direct one-off consumers can call `doc.idb.clearLocal()` or
- * `doc.persistence?.clearLocal()` on the attachment field they already
- * have.
+ * Storage cleanup is intentionally not on this contract: the family asks
+ * `BrowserDocumentFamilySource.clearLocalData()` to reset every child document
+ * after pausing sync, so a per-instance method has no caller. Direct one-off
+ * consumers can call `doc.idb.clearLocal()` or `doc.persistence?.clearLocal()`
+ * on the attachment field they already have.
  */
 export type BrowserDocumentInstance = Disposable & {
 	ydoc: Y.Doc;
@@ -26,22 +25,20 @@ export type BrowserDocumentInstance = Disposable & {
 };
 
 /**
- * Keyed source of possible browser documents. The source owns three
- * operations across all documents of one type: list every id that
- * reset should clear, build a live document for one id, and clear one
- * id's storage by deterministic guid without constructing the document.
+ * Keyed source of possible browser documents. The family owns live document
+ * identity and sync pausing. The source owns how to build one live document
+ * and how to clear every child document's local storage without constructing
+ * them.
  *
- * `clearLocalData(id)` is the single cleanup path: the family pauses
- * active child sync first, then calls this for every id. Active and
- * unopened ids are handled uniformly.
+ * `clearLocalData()` is the single cleanup path: the family pauses active
+ * child sync first, then delegates the storage policy back to the source.
  */
 export type BrowserDocumentFamilySource<
 	Id extends string | number,
 	TDocument extends BrowserDocumentInstance,
 > = {
-	ids(): Iterable<Id>;
 	create(id: Id): TDocument;
-	clearLocalData(id: Id): Promise<void>;
+	clearLocalData(): Promise<void>;
 };
 
 export type BrowserDocumentFamilyOptions = {
@@ -120,15 +117,12 @@ export function createBrowserDocumentFamily<
 			},
 		},
 		/**
-		 * Reset every id known to the document source. Pauses active child sync
-		 * first to prevent remote updates from repopulating storage mid-reset,
-		 * then clears each id's storage by deterministic guid.
+		 * Reset child storage through the source after pausing active child sync
+		 * to prevent remote updates from repopulating storage mid-reset.
 		 */
 		async clearLocalData() {
 			for (const control of activeSyncControls) control.pause();
-			await Promise.all(
-				Array.from(source.ids(), (id) => source.clearLocalData(id)),
-			);
+			await source.clearLocalData();
 		},
 		[Symbol.dispose]() {
 			cache[Symbol.dispose]();

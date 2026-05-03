@@ -17,11 +17,15 @@
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  *
- * // Browser child docs: the family owns shared identity and cleanup.
+ * // Browser child docs: the family owns shared identity and sync pausing.
+ * // The source owns its storage cleanup policy.
  * const noteBodyDocs = createBrowserDocumentFamily({
- *   ids: () => tables.posts.getAllValid().map((post) => post.id),
  *   create: (noteId) => buildNoteBody({ noteId, notesTable: tables.posts }),
- *   clearLocalData: (noteId) => clearStoredNoteBody(noteId),
+ *   clearLocalData: async () => {
+ *     await Promise.all(
+ *       tables.posts.getAllValid().map((post) => clearStoredNoteBody(post.id)),
+ *     );
+ *   },
  * });
  * ```
  *
@@ -135,10 +139,10 @@ export { DateTimeString } from './shared/datetime-string';
 export {
 	type BrowserDocumentFamily,
 	type BrowserDocumentFamilyOptions,
-	type BrowserDocumentInstance,
 	type BrowserDocumentFamilySource,
-	type DocumentFamily,
+	type BrowserDocumentInstance,
 	createBrowserDocumentFamily,
+	type DocumentFamily,
 } from './cache/browser-document-family.js';
 export {
 	createDisposableCache,

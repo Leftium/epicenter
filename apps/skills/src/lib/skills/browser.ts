@@ -20,9 +20,6 @@ export function openSkillsBrowser() {
 
 	const instructionsDocs = createBrowserDocumentFamily(
 		{
-			ids() {
-				return doc.tables.skills.getAllValid().map((skill) => skill.id);
-			},
 			create(skillId: string) {
 				const instructionsDoc = createSkillInstructionsDoc({
 					skillId,
@@ -39,12 +36,16 @@ export function openSkillsBrowser() {
 					sync: null,
 				};
 			},
-			clearLocalData(skillId: string) {
-				return clearDocument(
-					skillInstructionsDocGuid({
-						workspaceId: doc.ydoc.guid,
-						skillId,
-					}),
+			async clearLocalData() {
+				await Promise.all(
+					doc.tables.skills.getAllValid().map((skill) =>
+						clearDocument(
+							skillInstructionsDocGuid({
+								workspaceId: doc.ydoc.guid,
+								skillId: skill.id,
+							}),
+						),
+					),
 				);
 			},
 		},
@@ -53,11 +54,6 @@ export function openSkillsBrowser() {
 
 	const referenceDocs = createBrowserDocumentFamily(
 		{
-			ids() {
-				return doc.tables.references
-					.getAllValid()
-					.map((reference) => reference.id);
-			},
 			create(referenceId: string) {
 				const referenceDoc = createReferenceContentDoc({
 					referenceId,
@@ -74,12 +70,16 @@ export function openSkillsBrowser() {
 					sync: null,
 				};
 			},
-			clearLocalData(referenceId: string) {
-				return clearDocument(
-					referenceContentDocGuid({
-						workspaceId: doc.ydoc.guid,
-						referenceId,
-					}),
+			async clearLocalData() {
+				await Promise.all(
+					doc.tables.references.getAllValid().map((reference) =>
+						clearDocument(
+							referenceContentDocGuid({
+								workspaceId: doc.ydoc.guid,
+								referenceId: reference.id,
+							}),
+						),
+					),
 				);
 			},
 		},

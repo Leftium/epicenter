@@ -306,9 +306,9 @@ export const auth = createAuth({
 
 ### Phase 4: Update non-call-site consumers
 
-- [ ] **4.1** `packages/workspace/src/document/attach-sync.ts:446`: `readToken()` drops `await auth.whenLoaded` and reads `auth.snapshot` directly.
-- [ ] **4.2** `packages/auth-svelte/src/create-auth.svelte.ts`: re-export the new config type, drop the `whenLoaded` passthrough.
-- [ ] **4.3** `packages/auth-workspace/src/index.ts`: nothing to change (already snapshot-driven via `onSnapshotChange`).
+- [x] **4.1** `packages/workspace/src/document/attach-sync.ts:446`: `readToken()` drops `await auth.whenLoaded` and reads `auth.snapshot` directly.
+- [x] **4.2** `packages/auth-svelte/src/create-auth.svelte.ts`: re-export the new config type, drop the `whenLoaded` passthrough.
+- [x] **4.3** `packages/auth-workspace/src/index.ts`: nothing to change (already snapshot-driven via `onSnapshotChange`).
 
 ### Phase 5: Drop the `loading` variant from `AuthSnapshot`
 

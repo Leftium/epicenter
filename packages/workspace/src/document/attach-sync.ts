@@ -231,8 +231,8 @@ export type SyncAttachmentConfig = {
 	/**
 	 * Auth client for authenticated sync. Its presence declares that the
 	 * connection requires a signed-in Epicenter session. The supervisor waits
-	 * for auth hydration, reads the token from `auth.snapshot`, and reconnects
-	 * when future snapshots change the token value.
+	 * reads the token from `auth.snapshot`, and reconnects when future
+	 * snapshots change the token value.
 	 */
 	auth?: AuthClient;
 	/**
@@ -443,7 +443,6 @@ export function attachSync(
 
 	async function readToken(): Promise<string | null> {
 		if (!auth) return null;
-		await auth.whenLoaded;
 		return tokenFromSnapshot(auth.snapshot);
 	}
 

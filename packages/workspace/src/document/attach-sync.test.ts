@@ -123,12 +123,11 @@ function createAuthClient(initialSnapshot: AuthSnapshot) {
 	let snapshot = initialSnapshot;
 	const listeners = new Set<(snapshot: AuthSnapshot) => void>();
 	const calls: string[] = [];
-	const auth = {
+	const auth: AuthClient = {
 		get snapshot() {
 			calls.push(`snapshot:${snapshot.status}`);
 			return snapshot;
 		},
-		whenLoaded: Promise.resolve(),
 		onSnapshotChange(listener) {
 			listeners.add(listener);
 			return () => {

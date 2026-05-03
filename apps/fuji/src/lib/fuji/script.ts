@@ -24,7 +24,7 @@ export type OpenFujiSnapshotOptions = {
 };
 
 async function loadMachineOfflineEncryptionKeys(): Promise<EncryptionKeys | null> {
-	const machineAuth = await createMachineAuth();
+	const machineAuth = createMachineAuth();
 	const { data, error } = await machineAuth.getEncryptionKeys();
 	if (error) throw error;
 	return data;

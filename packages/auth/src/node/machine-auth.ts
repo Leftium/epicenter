@@ -5,7 +5,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import {
 	AuthSession,
 	type AuthSession as AuthSessionType,
@@ -14,45 +14,36 @@ import { type AuthClient, createAuth } from '../create-auth.js';
 import {
 	createMachineAuthTransport,
 	type MachineAuthTransport,
+	MachineAuthTransportError,
 } from './machine-auth-transport.js';
 
-export const MachineAuthError = defineErrors({
-	AuthTransportRequestFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Auth transport request failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	DeviceCodeExpired: () => ({
-		message: 'Device code expired. Run login again.',
-	}),
-	DeviceAccessDenied: () => ({
-		message: 'Authorization denied.',
-	}),
-	DeviceAuthorizationFailed: ({
-		code,
-		description,
-	}: {
-		code: string;
-		description?: string;
-	}) => ({
-		message: description ?? code,
-		code,
-		description,
-	}),
-	SessionStorageFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Could not read saved machine session: ${extractErrorMessage(cause)}`,
+export const MachineAuthStorageError = defineErrors({
+	StorageFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Could not access machine session storage: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
-export type MachineAuthError = InferErrors<typeof MachineAuthError>;
+export type MachineAuthStorageError = InferErrors<
+	typeof MachineAuthStorageError
+>;
 
-export type MachineAuthSessionStorage = {
-	load(): Promise<AuthSessionType | null>;
-	save(session: AuthSessionType | null): Promise<void>;
+export type MachineAuthError =
+	| MachineAuthTransportError
+	| MachineAuthStorageError;
+
+export type MachineAuthStorage = {
+	load(): Promise<Result<AuthSessionType | null, MachineAuthStorageError>>;
+	save(
+		session: AuthSessionType | null,
+	): Promise<Result<undefined, MachineAuthStorageError>>;
 };
 
-type MachineAuthSessionStorageBackend = {
+export type MachineAuthStorageBackend = {
 	get(options: { service: string; name: string }): Promise<string | null>;
-	set(options: { service: string; name: string }, value: string): Promise<void>;
+	set(
+		options: { service: string; name: string },
+		value: string,
+	): Promise<void>;
 	delete(options: { service: string; name: string }): Promise<unknown>;
 };
 
@@ -75,17 +66,12 @@ type MachineAuthStatus =
 	| {
 			status: 'unverified';
 			session: MachineSessionSummary;
-			verificationError: MachineAuthError;
+			verificationError: MachineAuthTransportError;
 	  };
 
 type MachineAuthLogoutResult =
 	| { status: 'signedOut' }
 	| { status: 'loggedOut' };
-
-export type MachineAuth = Awaited<ReturnType<typeof createMachineAuth>>;
-
-const MACHINE_SESSION_SERVICE = 'epicenter.auth.session';
-const MACHINE_SESSION_ACCOUNT = 'current';
 
 function sessionSummary(session: AuthSessionType): MachineSessionSummary {
 	return {
@@ -97,123 +83,78 @@ function sessionSummary(session: AuthSessionType): MachineSessionSummary {
 	};
 }
 
-function parseStoredSession(raw: string): AuthSessionType | null {
-	try {
-		return AuthSession.assert(JSON.parse(raw));
-	} catch {
-		return null;
-	}
-}
-
 /**
  * Store one machine auth session in the operating system keychain.
  *
  * Machine auth persists the same `AuthSession` shape as browser auth. The
  * server remains the owner of expiry, provider details, and Better Auth session
- * metadata.
+ * metadata. Corrupt blobs are logged and treated as signed-out so a schema
+ * change cannot brick the CLI.
  */
-export function createKeychainMachineAuthSessionStorage({
+export function createKeychainMachineAuthStorage({
 	backend = Bun.secrets,
 }: {
-	backend?: MachineAuthSessionStorageBackend;
-} = {}): MachineAuthSessionStorage {
-	const options = {
-		service: MACHINE_SESSION_SERVICE,
-		name: MACHINE_SESSION_ACCOUNT,
-	};
+	backend?: MachineAuthStorageBackend;
+} = {}): MachineAuthStorage {
+	const options = { service: 'epicenter.auth.session', name: 'current' };
 
 	return {
 		async load() {
-			const raw = await backend.get(options);
-			if (raw === null) return null;
-			return parseStoredSession(raw);
-		},
-		async save(session) {
-			if (session === null) {
-				await backend.delete(options);
-				return;
+			const { data: raw, error } = await tryAsync({
+				try: () => backend.get(options),
+				catch: (cause) => MachineAuthStorageError.StorageFailed({ cause }),
+			});
+			if (error) return Err(error);
+			if (raw === null) return Ok(null);
+
+			try {
+				return Ok(AuthSession.assert(JSON.parse(raw)));
+			} catch (cause) {
+				console.warn(
+					'[machine-auth] discarding corrupted machine session:',
+					extractErrorMessage(cause),
+				);
+				return Ok(null);
 			}
-			await backend.set(options, JSON.stringify(AuthSession.assert(session)));
+		},
+
+		async save(session) {
+			return tryAsync({
+				try: async (): Promise<undefined> => {
+					if (session === null) {
+						await backend.delete(options);
+					} else {
+						await backend.set(
+							options,
+							JSON.stringify(AuthSession.assert(session)),
+						);
+					}
+					return undefined;
+				},
+				catch: (cause) => MachineAuthStorageError.StorageFailed({ cause }),
+			});
 		},
 	};
 }
 
-/**
- * Create an in-memory machine auth store for tests.
- */
-export function createMemoryMachineAuthSessionStorageForTest(
-	initial: AuthSessionType | null = null,
-): MachineAuthSessionStorage {
-	let current = initial;
-	return {
-		async load() {
-			return current;
-		},
-		async save(session) {
-			current = session;
-		},
-	};
-}
+export type MachineAuth = ReturnType<typeof createMachineAuth>;
 
 /**
  * Create the Node-side auth coordinator for first-party CLI and daemon
  * processes.
+ *
+ * Sync construction. Defaults wire the keychain-backed storage and HTTP
+ * transport for prod; tests override `transport`, `storage`, and `sleep`.
  */
-export async function createMachineAuth() {
-	const machineAuth = createMachineAuthWithDependencies({
-		authTransport: createMachineAuthTransport(),
-		sessionStorage: createKeychainMachineAuthSessionStorage(),
-	});
-	return {
-		loginWithDeviceCode: machineAuth.loginWithDeviceCode,
-		status: machineAuth.status,
-		logout: machineAuth.logout,
-		getEncryptionKeys: machineAuth.getEncryptionKeys,
-	};
-}
-
-export function createMachineAuthWithDependencies({
-	authTransport,
-	sessionStorage,
+export function createMachineAuth({
+	transport = createMachineAuthTransport(),
+	storage = createKeychainMachineAuthStorage(),
 	sleep = Bun.sleep,
 }: {
-	authTransport: MachineAuthTransport;
-	sessionStorage: MachineAuthSessionStorage;
+	transport?: MachineAuthTransport;
+	storage?: MachineAuthStorage;
 	sleep?: (ms: number) => Promise<void>;
-}) {
-	async function loadStoredSession(): Promise<
-		Result<AuthSessionType | null, MachineAuthError>
-	> {
-		try {
-			return Ok(await sessionStorage.load());
-		} catch (cause) {
-			return MachineAuthError.SessionStorageFailed({ cause });
-		}
-	}
-
-	async function saveStoredSession(
-		session: AuthSessionType | null,
-	): Promise<Result<undefined, MachineAuthError>> {
-		try {
-			await sessionStorage.save(session);
-			return Ok(undefined);
-		} catch (cause) {
-			return MachineAuthError.SessionStorageFailed({ cause });
-		}
-	}
-
-	async function fetchSession({ token }: { token: string }) {
-		try {
-			return Ok(
-				await authTransport.fetchSession({
-					token,
-				}),
-			);
-		} catch (cause) {
-			return MachineAuthError.AuthTransportRequestFailed({ cause });
-		}
-	}
-
+} = {}) {
 	return {
 		/**
 		 * Start Better Auth device-code login and save the resulting session.
@@ -226,130 +167,129 @@ export function createMachineAuthWithDependencies({
 				verificationUriComplete: string;
 			}) => void | Promise<void>;
 		} = {}): Promise<Result<MachineAuthLoginResult, MachineAuthError>> {
-			let codeData: Awaited<
-				ReturnType<MachineAuthTransport['requestDeviceCode']>
-			>;
-			try {
-				codeData = await authTransport.requestDeviceCode();
-			} catch (cause) {
-				return MachineAuthError.AuthTransportRequestFailed({ cause });
-			}
+			const { data: code, error: codeError } =
+				await transport.requestDeviceCode();
+			if (codeError) return Err(codeError);
 
 			const device = {
-				userCode: codeData.user_code,
-				verificationUriComplete: codeData.verification_uri_complete,
+				userCode: code.user_code,
+				verificationUriComplete: code.verification_uri_complete,
 			};
 			await onDeviceCode?.(device);
 
-			let interval = codeData.interval * 1000;
-			const deadline = Date.now() + codeData.expires_in * 1000;
-
+			let interval = code.interval * 1000;
+			const deadline = Date.now() + code.expires_in * 1000;
+			let accessToken: string | null = null;
 			while (Date.now() < deadline) {
 				await sleep(interval);
-				let tokenData: Awaited<
-					ReturnType<MachineAuthTransport['pollDeviceToken']>
-				>;
-				try {
-					tokenData = await authTransport.pollDeviceToken({
-						deviceCode: codeData.device_code,
-					});
-				} catch (cause) {
-					return MachineAuthError.AuthTransportRequestFailed({ cause });
+				const { data: poll, error: pollError } = await transport.pollDeviceToken(
+					{ deviceCode: code.device_code },
+				);
+				if (pollError) return Err(pollError);
+				if (poll.status === 'success') {
+					accessToken = poll.accessToken;
+					break;
 				}
-
-				if ('access_token' in tokenData) {
-					const remote = await fetchSession({
-						token: tokenData.access_token,
-					});
-					if (remote.error) return remote;
-					const saved = await saveStoredSession(remote.data.session);
-					if (saved.error) return saved;
-					return Ok({
-						status: 'loggedIn',
-						session: sessionSummary(remote.data.session),
-						device,
-					});
-				}
-
-				switch (tokenData.error) {
-					case 'authorization_pending':
-						continue;
-					case 'slow_down':
-						interval += 5_000;
-						continue;
-					case 'expired_token':
-						return MachineAuthError.DeviceCodeExpired();
-					case 'access_denied':
-						return MachineAuthError.DeviceAccessDenied();
-					default:
-						return MachineAuthError.DeviceAuthorizationFailed({
-							code: tokenData.error,
-							description: tokenData.error_description,
-						});
-				}
+				if (poll.status === 'slowDown') interval += 5_000;
 			}
-			return MachineAuthError.DeviceCodeExpired();
+			if (accessToken === null) {
+				return MachineAuthTransportError.DeviceCodeExpired();
+			}
+
+			const { data: remote, error: fetchError } = await transport.fetchSession(
+				{ token: accessToken },
+			);
+			if (fetchError) return Err(fetchError);
+
+			const { error: saveError } = await storage.save(remote.session);
+			if (saveError) return Err(saveError);
+
+			return Ok({
+				status: 'loggedIn',
+				session: sessionSummary(remote.session),
+				device,
+			});
 		},
 
 		/**
-		 * Read the saved session and verify it remotely when possible.
+		 * Read the saved session and verify it remotely when possible. Network
+		 * failures surface as `unverified`, not `Err`, so the CLI can show the
+		 * cached identity even when offline.
 		 */
 		async status(): Promise<Result<MachineAuthStatus, MachineAuthError>> {
-			const session = await loadStoredSession();
-			if (session.error) return session;
-			if (session.data === null) return Ok({ status: 'signedOut' });
+			const { data: session, error: loadError } = await storage.load();
+			if (loadError) return Err(loadError);
+			if (session === null) return Ok({ status: 'signedOut' });
 
-			const remote = await fetchSession({
-				token: session.data.token,
-			});
-			if (remote.error) {
+			const { data: remote, error: fetchError } = await transport.fetchSession(
+				{ token: session.token },
+			);
+			if (fetchError) {
 				return Ok({
 					status: 'unverified',
-					session: sessionSummary(session.data),
-					verificationError: remote.error,
+					session: sessionSummary(session),
+					verificationError: fetchError,
 				});
 			}
 
-			const saved = await saveStoredSession(remote.data.session);
-			if (saved.error) return saved;
-			return Ok({
-				status: 'valid',
-				session: sessionSummary(remote.data.session),
-			});
+			const { error: saveError } = await storage.save(remote.session);
+			if (saveError) return Err(saveError);
+			return Ok({ status: 'valid', session: sessionSummary(remote.session) });
 		},
 
-		async logout(): Promise<Result<MachineAuthLogoutResult, MachineAuthError>> {
-			const session = await loadStoredSession();
-			if (session.error) return session;
-			if (session.data === null) return Ok({ status: 'signedOut' });
+		async logout(): Promise<
+			Result<MachineAuthLogoutResult, MachineAuthError>
+		> {
+			const { data: session, error: loadError } = await storage.load();
+			if (loadError) return Err(loadError);
+			if (session === null) return Ok({ status: 'signedOut' });
 
-			try {
-				await authTransport.signOut({ token: session.data.token });
-			} catch {}
+			const { error: signOutError } = await transport.signOut({
+				token: session.token,
+			});
+			if (signOutError) {
+				console.warn(
+					'[machine-auth] server sign-out failed; clearing local session anyway:',
+					signOutError.message,
+				);
+			}
 
-			const saved = await saveStoredSession(null);
-			if (saved.error) return saved;
+			const { error: saveError } = await storage.save(null);
+			if (saveError) return Err(saveError);
 			return Ok({ status: 'loggedOut' });
 		},
 
 		async getEncryptionKeys(): Promise<
-			Result<EncryptionKeys | null, MachineAuthError>
+			Result<EncryptionKeys | null, MachineAuthStorageError>
 		> {
-			const session = await loadStoredSession();
-			if (session.error) return session;
-			return Ok(session.data?.encryptionKeys ?? null);
+			const { data: session, error } = await storage.load();
+			if (error) return Err(error);
+			return Ok(session?.encryptionKeys ?? null);
 		},
 	};
 }
 
 /**
  * Create an auth client backed by saved machine auth.
+ *
+ * Storage failures are propagated; daemons should crash rather than silently
+ * boot signed-out when the keychain is unreadable.
  */
 export async function createMachineAuthClient(): Promise<AuthClient> {
-	const sessionStorage = createKeychainMachineAuthSessionStorage();
+	const storage = createKeychainMachineAuthStorage();
+	const { data: initialSession, error } = await storage.load();
+	if (error) throw error;
 	return createAuth({
 		baseURL: EPICENTER_API_URL,
-		initialSession: await sessionStorage.load(),
-		saveSession: sessionStorage.save,
+		initialSession,
+		saveSession: async (next) => {
+			const { error: saveError } = await storage.save(next);
+			if (saveError) {
+				console.error(
+					'[machine-auth] could not save session:',
+					saveError.message,
+				);
+			}
+		},
 	});
 }

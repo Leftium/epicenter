@@ -94,6 +94,7 @@ export type SessionStateAdapter = {
 	set(value: Session | null): MaybePromise<void>;
 	watch(fn: (next: Session | null) => void): () => void;
 	whenReady?: Promise<unknown>;
+	[Symbol.dispose]?(): void;
 };
 
 export function createSessionStorageAdapter(
@@ -106,6 +107,9 @@ export function createSessionStorageAdapter(
 		},
 		save: (value) => state.set(value),
 		watch: state.watch,
+		[Symbol.dispose]() {
+			state[Symbol.dispose]?.();
+		},
 	};
 }
 
@@ -135,6 +139,7 @@ export function createAuth({
 }: CreateAuthConfig): AuthClient {
 	let snapshot: AuthSnapshot = { status: 'loading' };
 	let storageLoaded = false;
+	let disposed = false;
 	let bufferedBetterAuthCandidate: Session | null | undefined;
 	let resolveWhenLoaded: () => void = () => {};
 	const whenLoaded = new Promise<void>((resolve) => {
@@ -180,6 +185,7 @@ export function createAuth({
 	}
 
 	function setSnapshot(next: AuthSnapshot) {
+		if (disposed) return;
 		if (snapshotsEqual(snapshot, next)) return;
 		snapshot = next;
 		for (const listener of snapshotChangeListeners) {
@@ -188,6 +194,7 @@ export function createAuth({
 	}
 
 	function saveSnapshot(next: AuthSnapshot) {
+		if (disposed) return;
 		void Promise.resolve(sessionStorage.save(sessionFromSnapshot(next))).catch(
 			(error) => {
 				console.error('[auth] failed to save session:', error);
@@ -220,6 +227,7 @@ export function createAuth({
 	}
 
 	function settleLoadedSession(loaded: Session | null) {
+		if (disposed) return;
 		storageLoaded = true;
 		setSnapshot(snapshotFromSession(loaded));
 		if (bufferedBetterAuthCandidate !== undefined) {
@@ -233,6 +241,7 @@ export function createAuth({
 			const loaded = sessionStorage.load();
 			if (loaded instanceof Promise) {
 				loaded.then(settleLoadedSession, (error) => {
+					if (disposed) return;
 					console.error('[auth] failed to load session:', error);
 					settleLoadedSession(null);
 				});
@@ -280,6 +289,7 @@ export function createAuth({
 
 	disposers.push(
 		client.useSession.subscribe((state) => {
+			if (disposed) return;
 			if (state.isPending) return;
 			const data = state.data as SessionResponse | null;
 			const next = data
@@ -302,6 +312,9 @@ export function createAuth({
 			}
 		}),
 	);
+	disposers.push(() => {
+		sessionStorage[Symbol.dispose]?.();
+	});
 
 	loadPersistedSession();
 
@@ -388,6 +401,9 @@ export function createAuth({
 		},
 
 		[Symbol.dispose]() {
+			if (disposed) return;
+			disposed = true;
+			resolveWhenLoaded();
 			for (const dispose of disposers) {
 				try {
 					dispose();

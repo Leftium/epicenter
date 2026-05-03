@@ -15,3 +15,9 @@ export const auth = createAuth({
 	baseURL: window.location.origin,
 	sessionStorage: createSessionStorageAdapter(session),
 });
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => {
+		auth[Symbol.dispose]();
+	});
+}

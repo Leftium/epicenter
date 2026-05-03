@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { createAuth } from './create-auth.ts';
+import { createAuth, createSessionStorageAdapter } from './create-auth.ts';
 import type { AuthSnapshot, Session } from './index.ts';
 import type { SessionStorage } from './session-store.ts';
 
@@ -61,8 +61,10 @@ function session({
 
 function createStorage({
 	load,
+	onDispose,
 }: {
 	load: () => Session | null | Promise<Session | null>;
+	onDispose?: () => void;
 }) {
 	let watchCallback: ((next: Session | null) => void) | null = null;
 	const storage = {
@@ -74,6 +76,7 @@ function createStorage({
 				watchCallback = null;
 			};
 		},
+		[Symbol.dispose]: onDispose,
 	} satisfies SessionStorage;
 
 	return {
@@ -176,4 +179,56 @@ test('whenLoaded resolves after storage load failure and normalizes to signed ou
 
 	expect(auth.snapshot).toEqual({ status: 'signedOut' });
 	auth[Symbol.dispose]();
+});
+
+test('dispose is idempotent and disposes session storage once', async () => {
+	let disposeCount = 0;
+	const setup = createStorage({
+		load: () => null,
+		onDispose: () => {
+			disposeCount++;
+		},
+	});
+	const auth = createAuth({
+		baseURL: 'http://localhost:8787',
+		sessionStorage: setup.storage,
+	});
+	await auth.whenLoaded;
+
+	auth[Symbol.dispose]();
+	auth[Symbol.dispose]();
+
+	expect(disposeCount).toBe(1);
+});
+
+test('dispose resolves whenLoaded and ignores late storage load', async () => {
+	const deferred = createDeferred<Session | null>();
+	const setup = createStorage({ load: () => deferred.promise });
+	const auth = createAuth({
+		baseURL: 'http://localhost:8787',
+		sessionStorage: setup.storage,
+	});
+
+	auth[Symbol.dispose]();
+	await auth.whenLoaded;
+	deferred.resolve(session());
+	await tick();
+
+	expect(auth.snapshot).toEqual({ status: 'loading' });
+});
+
+test('session storage adapter disposes wrapped state when available', () => {
+	let disposeCount = 0;
+	const adapter = createSessionStorageAdapter({
+		get: () => null,
+		set: () => {},
+		watch: () => () => {},
+		[Symbol.dispose]() {
+			disposeCount++;
+		},
+	});
+
+	adapter[Symbol.dispose]?.();
+
+	expect(disposeCount).toBe(1);
 });

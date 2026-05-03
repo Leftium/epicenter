@@ -5,7 +5,8 @@
  * the framework-agnostic auth client.
  *
  * Key behaviors:
- * - Session storage is a boot cache that loads once and saves local updates
+ * - Caller-provided initial sessions seed the first snapshot
+ * - Local updates are passed to the caller-provided save callback
  * - Better Auth session emissions drive live signed-in and signed-out state
  */
 
@@ -171,26 +172,11 @@ function createTestAuth(setup: ReturnType<typeof createStorage>) {
 	});
 }
 
-function createDeferred<T>() {
-	let resolve: (value: T) => void = () => {};
-	let reject: (error: unknown) => void = () => {};
-	const promise = new Promise<T>((res, rej) => {
-		resolve = res;
-		reject = rej;
-	});
-	return { promise, resolve, reject };
-}
-
 function emitBetterAuthSession(data: unknown) {
 	currentBetterAuthState = { isPending: false, data };
 	for (const listener of betterAuthSessionListeners) {
 		listener(currentBetterAuthState);
 	}
-}
-
-async function tick() {
-	await Promise.resolve();
-	await Promise.resolve();
 }
 
 test('onSnapshotChange does not replay and receives future changes only', async () => {
@@ -228,7 +214,7 @@ test('listener failures do not stop later listeners', async () => {
 	auth[Symbol.dispose]();
 });
 
-test('persisted storage load drives initial signed-in snapshot', async () => {
+test('initial session drives initial signed-in snapshot', async () => {
 	// Seed the BA atom so the late subscribe replays the matching session
 	// instead of the default null (which would flip the snapshot to signedOut).
 	emitBetterAuthSession(betterAuthSessionData(session()));
@@ -237,36 +223,6 @@ test('persisted storage load drives initial signed-in snapshot', async () => {
 
 
 	expect(auth.snapshot).toEqual({ status: 'signedIn', session: session() });
-	auth[Symbol.dispose]();
-});
-
-test('whenLoaded resolves after asynchronous signed-out storage load settles', async () => {
-	const deferred = createDeferred<AuthSession | null>();
-	const setup = createStorage({ load: () => deferred.promise });
-	const auth = createTestAuth(setup);
-	let loaded = false;
-	void Promise.resolve().then(() => {
-		loaded = true;
-	});
-
-	await tick();
-	expect(loaded).toBe(false);
-
-	deferred.resolve(null);
-
-	expect(loaded).toBe(true);
-	expect(auth.snapshot).toEqual({ status: 'signedOut' });
-	auth[Symbol.dispose]();
-});
-
-test('whenLoaded resolves after storage load failure and normalizes to signed out', async () => {
-	const deferred = createDeferred<AuthSession | null>();
-	const setup = createStorage({ load: () => deferred.promise });
-	const auth = createTestAuth(setup);
-
-	deferred.reject(new Error('load failed'));
-
-	expect(auth.snapshot).toEqual({ status: 'signedOut' });
 	auth[Symbol.dispose]();
 });
 
@@ -281,18 +237,6 @@ test('dispose is idempotent and unsubscribes from Better Auth once', async () =>
 	auth[Symbol.dispose]();
 
 	expect(betterAuthSessionListeners.size).toBe(0);
-});
-
-test('dispose resolves whenLoaded and ignores late storage load', async () => {
-	const deferred = createDeferred<AuthSession | null>();
-	const setup = createStorage({ load: () => deferred.promise });
-	const auth = createTestAuth(setup);
-
-	auth[Symbol.dispose]();
-	deferred.resolve(session());
-	await tick();
-
-	expect(auth.snapshot).toEqual({ status: 'loading' });
 });
 
 test('Better Auth signed-in emission drives snapshot and storage save', async () => {
@@ -324,50 +268,9 @@ test('Better Auth signed-out emission drives snapshot and storage save', async (
 	auth[Symbol.dispose]();
 });
 
-test('Better Auth emission during async load is applied after boot cache settles', async () => {
-	const deferred = createDeferred<AuthSession | null>();
-	const setup = createStorage({ load: () => deferred.promise });
-	const auth = createTestAuth(setup);
-
-	emitBetterAuthSession(
-		betterAuthSessionData(session({ token: 'better-auth-token' })),
-	);
-	deferred.resolve(null);
-
-	const expected = session({ token: 'better-auth-token' });
-	expect(auth.snapshot).toEqual({ status: 'signedIn', session: expected });
-	expect(setup.saved).toEqual([expected]);
-	auth[Symbol.dispose]();
-});
-
-test('BA emission before boot cache resolves does not write snapshot until cache settles', async () => {
-	const deferred = createDeferred<AuthSession | null>();
-	const setup = createStorage({ load: () => deferred.promise });
-	const auth = createTestAuth(setup);
-
-	// Better Auth emits before the boot cache resolves; the new flow must not
-	// observe this until subscribe runs after load settles.
-	emitBetterAuthSession(
-		betterAuthSessionData(session({ token: 'pre-load-token' })),
-	);
-
-	// Snapshot is still loading; storage has not been written; no listeners
-	// are attached because the IIFE has not reached subscribe yet.
-	expect(auth.snapshot).toEqual({ status: 'loading' });
-	expect(setup.saved).toEqual([]);
-	expect(betterAuthSessionListeners.size).toBe(0);
-
-	deferred.resolve(null);
-
-	const expected = session({ token: 'pre-load-token' });
-	expect(auth.snapshot).toEqual({ status: 'signedIn', session: expected });
-	expect(setup.saved).toEqual([expected]);
-	auth[Symbol.dispose]();
-});
-
 test('response-header token rotation persists through session storage save', async () => {
 	// Seed the BA atom so the late subscribe replays the same session as the
-	// boot cache; without this, the default null replay would flip the
+	// initial session; without this, the default null replay would flip the
 	// snapshot to signedOut and the rotation hook below would not fire.
 	emitBetterAuthSession(
 		betterAuthSessionData(session({ token: 'old-token' })),
@@ -386,27 +289,4 @@ test('response-header token rotation persists through session storage save', asy
 	expect(setup.saved).toEqual([expected]);
 	expect(betterAuthClientOptions).not.toBeNull();
 	auth[Symbol.dispose]();
-});
-
-test('session storage adapter delegates load and save to wrapped state', async () => {
-	let current: AuthSession | null = null;
-	let ready = false;
-	const state = {
-		get: () => current,
-		set: (value: AuthSession | null) => {
-			current = value;
-		},
-		whenReady: Promise.resolve().then(() => {
-			ready = true;
-		}),
-	};
-
-	await state.whenReady;
-	expect(state.get()).toBeNull();
-	expect(ready).toBe(true);
-
-	const next = session();
-	state.set(next);
-	expect(state.get()).toEqual(next);
-	expect('watch' in state).toBe(false);
 });

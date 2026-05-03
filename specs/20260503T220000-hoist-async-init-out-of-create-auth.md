@@ -319,12 +319,12 @@ export const auth = createAuth({
 
 ### Phase 6: Tests
 
-- [ ] **6.1** Delete tests that exist only to exercise async init / dispose-mid-load (see Research Findings table).
-- [ ] **6.2** Update remaining tests to construct `createAuth` with a synchronous `initialSession`.
-- [ ] **6.3** Replace the two `expect(auth.snapshot).toEqual({ status: 'loading' })` assertions in `packages/auth/src/create-auth.test.ts` with assertions matching the new initial state (`signedOut` or `signedIn` depending on what the test seeded).
-- [ ] **6.4** Update the `setup({ initial = { status: 'loading' } ... })` default in `packages/auth-workspace/src/index.test.ts:104` to a valid two-state value.
-- [ ] **6.5** Add one test: dispose is idempotent (this is the only lifecycle behavior worth retaining).
-- [ ] **6.6** `bun test` and `bun run typecheck` across the auth package, auth-svelte, auth-workspace, and each app.
+- [x] **6.1** Delete tests that exist only to exercise async init / dispose-mid-load (see Research Findings table).
+- [x] **6.2** Update remaining tests to construct `createAuth` with a synchronous `initialSession`.
+- [x] **6.3** Replace the two `expect(auth.snapshot).toEqual({ status: 'loading' })` assertions in `packages/auth/src/create-auth.test.ts` with assertions matching the new initial state (`signedOut` or `signedIn` depending on what the test seeded).
+- [x] **6.4** Update the `setup({ initial = { status: 'loading' } ... })` default in `packages/auth-workspace/src/index.test.ts:104` to a valid two-state value.
+- [x] **6.5** Add one test: dispose is idempotent (this is the only lifecycle behavior worth retaining).
+- [x] **6.6** `bun test` and `bun run typecheck` across the auth package, auth-svelte, auth-workspace, and each app.
 
 ### Phase 7: Update the auth skill
 

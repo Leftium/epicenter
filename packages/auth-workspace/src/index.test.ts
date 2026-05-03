@@ -63,7 +63,6 @@ function createFakeAuth(initial: AuthSnapshot) {
 		get snapshot() {
 			return snapshot;
 		},
-		whenLoaded: Promise.resolve(),
 		onSnapshotChange(fn) {
 			listeners.add(fn);
 			return () => listeners.delete(fn);
@@ -101,7 +100,7 @@ function createFakeAuth(initial: AuthSnapshot) {
 }
 
 function setup({
-	initial = { status: 'loading' },
+	initial = { status: 'signedOut' },
 	syncControl = true,
 	resetLocalClient = async () => {},
 }: {

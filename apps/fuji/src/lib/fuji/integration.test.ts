@@ -58,7 +58,6 @@ function createTestAuth(): AuthClient {
 				encryptionKeys: testEncryptionKeys,
 			},
 		},
-		whenLoaded: Promise.resolve(),
 		onSnapshotChange() {
 			return () => {};
 		},

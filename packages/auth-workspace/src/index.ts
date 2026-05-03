@@ -1,10 +1,45 @@
 import type { AuthClient, AuthSnapshot } from '@epicenter/auth';
-import type { SyncControl } from '@epicenter/workspace';
+import type { SyncControl, TokenSource } from '@epicenter/workspace';
 
 export type SignedInSession = Extract<
 	AuthSnapshot,
 	{ status: 'signedIn' }
 >['session'];
+
+export function createAuthTokenSource(auth: AuthClient) {
+	let currentToken =
+		auth.snapshot.status === 'signedIn' ? auth.snapshot.session.token : null;
+	const listeners = new Set<() => void>();
+
+	const unsubscribe = auth.onSnapshotChange((snapshot) => {
+		const nextToken =
+			snapshot.status === 'signedIn' ? snapshot.session.token : null;
+		if (nextToken === currentToken) return;
+
+		currentToken = nextToken;
+		for (const listener of listeners) listener();
+	});
+
+	return {
+		async getToken() {
+			await auth.whenLoaded;
+			const snapshot = auth.snapshot;
+			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+		},
+		onTokenChange(listener) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		[Symbol.dispose]() {
+			unsubscribe();
+			listeners.clear();
+		},
+	} satisfies TokenSource & Disposable;
+}
+
+export type AuthTokenSource = ReturnType<typeof createAuthTokenSource>;
 
 export type AuthWorkspaceScopeOptions = {
 	auth: AuthClient;
@@ -19,7 +54,7 @@ export function bindAuthWorkspaceScope({
 	applyAuthSession,
 	resetLocalClient,
 }: AuthWorkspaceScopeOptions): () => void {
-	let appliedSession: { userId: string; token: string | null } | null = null;
+	let appliedSession: { userId: string } | null = null;
 	let pendingSnapshot: AuthSnapshot | null = null;
 	let isDraining = false;
 	let isDisposed = false;
@@ -59,14 +94,8 @@ export function bindAuthWorkspaceScope({
 			return;
 		}
 
-		const tokenChanged = appliedSession?.token !== session.token;
 		applyAuthSession(session);
-
-		if (tokenChanged) {
-			syncControl?.reconnect();
-		}
-
-		appliedSession = { userId, token: session.token };
+		appliedSession = { userId };
 	}
 
 	async function drain() {

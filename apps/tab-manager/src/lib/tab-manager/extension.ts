@@ -5,6 +5,7 @@
  */
 
 import type { AuthClient } from '@epicenter/auth-svelte';
+import { createAuthTokenSource } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
@@ -40,6 +41,7 @@ export async function openTabManager({
 	const resolvedPeer = await Promise.resolve(peer);
 
 	const doc = openTabManagerDoc({ deviceId: Promise.resolve(resolvedPeer.id) });
+	const tokenSource = createAuthTokenSource(auth);
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
@@ -51,12 +53,7 @@ export async function openTabManager({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: async () => {
-			await auth.whenLoaded;
-
-			const snapshot = auth.snapshot;
-			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		},
+		tokenSource,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);
@@ -77,6 +74,7 @@ export async function openTabManager({
 		peer: resolvedPeer,
 		device: resolvedPeer,
 		[Symbol.dispose]() {
+			tokenSource[Symbol.dispose]();
 			doc[Symbol.dispose]();
 		},
 	};

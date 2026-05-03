@@ -18,11 +18,11 @@
  * `whenReady`, `whenDisposed` is available on the persistence handle for
  * teardown barriers.
  *
- * The live document is browser-agnostic on purpose: it has no `sync`
- * field. Browser apps add `sync: null` inline when adapting it to
- * `createBrowserDocumentFamily`; one-shot non-browser callers can open this
- * builder directly, while daemon and materializer workloads may wrap it in
- * `createDisposableCache` when same-process reuse matters.
+ * The live document is browser-agnostic on purpose: it has no `sync` field.
+ * Browser apps can pass it directly to `createBrowserDocumentFamily`; one-shot
+ * non-browser callers can open this builder directly, while daemon and
+ * materializer workloads may wrap it in `createDisposableCache` when
+ * same-process reuse matters.
  */
 
 import type { Table } from '@epicenter/workspace';

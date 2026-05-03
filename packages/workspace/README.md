@@ -6,9 +6,9 @@ The hard problem with local-first apps is synchronization. If each device has it
 
 The public path is a small set of `attach*` primitives that you compose inline
 around `new Y.Doc`. Browser apps with many child Y.Docs use
-`createBrowserDocumentFamily(...)` to share live child documents, fan out active
-child sync controls, and clear local browser storage. `createDisposableCache`
-remains the lower-level refcounted lifetime primitive underneath that family.
+`createBrowserDocumentFamily(...)` to share live child documents and delegate
+browser storage cleanup to the app-owned source. `createDisposableCache` remains
+the lower-level refcounted lifetime primitive underneath that family.
 
 ## Quick Start
 
@@ -114,8 +114,8 @@ Every exported function in this package falls into one of three verbs. The prefi
 | `create*` | **Pure construction**: no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition or family | `createBrowserDocumentFamily`, `createDisposableCache` |
 
 `createBrowserDocumentFamily(source, opts?)` is the browser child-document
-surface. The source lists ids, builds one live child document, and clears local
-storage for one id without constructing the document.
+surface. The source builds one live child document and clears local storage
+without constructing documents.
 
 `createDisposableCache(build, opts?)` is the lower-level refcounted cache
 primitive. The user owns construction; the cache owns identity keyed by id,
@@ -323,7 +323,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 1. Define tables and KV entries with `defineTable` and `defineKv`.
 2. Write a builder function that constructs `new Y.Doc({ guid })` and composes `attachTables` / `attachKv` / `attachIndexedDb` / `attachSync` / etc. inline, returning the bundle.
 3. For singleton apps: call the builder once at module scope. For browser
-   child-doc fan-out: use `createBrowserDocumentFamily(...)` and call
+   child documents: use `createBrowserDocumentFamily(...)` and call
    `.open(rowId)` per instance. For one-shot Node operations: call the child
    builder directly inside `using`.
 4. `await bundle.whenReady` (or `handle.whenReady`) before reading persisted state. `whenReady` is the platform's readiness convention: an optional `Promise<unknown>` field on the bundle you return. The family or cache itself does not read it, but `WorkspaceGate`, the CLI's `run` command, migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and every editor's `{#await}` block all gate on it. Expose it when the bundle has async initialization the caller should wait on, and compose it from whatever attachment signals make sense: `idb.whenLoaded` for a single barrier, or `Promise.all([persistence.whenLoaded, unlock.whenChecked, sync.whenConnected])` for a multi-step cascade. Because the field is typed `Promise<unknown>`, `Promise.all([...])` is assignable directly (no `.then(() => undefined)` tail required).
@@ -405,13 +405,13 @@ Handlers close over `tables`, `kv`, and anything else the builder has in scope t
 For browser apps where each row has its own rich-text / plain-text / timeline
 content (files, notes, skills, entries), use
 `createBrowserDocumentFamily(...)` keyed by the row id. The main workspace holds
-the metadata row; the document family owns live per-row content Y.Docs, active
-child sync fanout, and local browser cleanup.
+the metadata row; the document family owns live per-row content identity,
+refcounting, and local browser cleanup.
 
 Each `.open(rowId)` returns a handle. Multiple consumers (editor, actions,
 route transitions) can share one underlying Y.Doc safely; the family owns
-construction, active sync inventory, and `gcTime`-delayed teardown through the
-lower-level cache primitive.
+construction, refcounting, and `gcTime`-delayed teardown through the lower-level
+cache primitive.
 
 ```svelte
 <script lang="ts">
@@ -621,9 +621,6 @@ function fileContentDocGuid(fileId: string) {
 
 // Browser child-document family: one Y.Doc per file, keyed by file id.
 export const fileContentDocs = createBrowserDocumentFamily({
-	ids() {
-		return workspace.tables.files.getAllValid().map((file) => file.id);
-	},
 	create(fileId: string) {
 		const ydoc = new Y.Doc({
 			guid: fileContentDocGuid(fileId),
@@ -641,13 +638,16 @@ export const fileContentDocs = createBrowserDocumentFamily({
 			ydoc,
 			content,
 			idb,
-			sync: null,
 			whenReady: idb.whenLoaded,
 			[Symbol.dispose]() { ydoc.destroy(); },
 		};
 	},
-	clearLocalData(fileId: string) {
-		return clearDocument(fileContentDocGuid(fileId));
+	async clearLocalData() {
+		await Promise.all(
+			workspace.tables.files.getAllValid().map((file) =>
+				clearDocument(fileContentDocGuid(file.id)),
+			),
+		);
 	},
 });
 
@@ -1306,7 +1306,6 @@ Two composition shapes, one builder contract.
 
 ```typescript
 export const fileContentDocs = createBrowserDocumentFamily({
-	ids: () => workspace.tables.files.getAllValid().map((row) => row.id),
 	create(fileId: string) {
 		const ydoc = new Y.Doc({ guid: fileContentDocGuid(fileId) });
 		const content = attachPlainText(ydoc, 'content');
@@ -1315,14 +1314,19 @@ export const fileContentDocs = createBrowserDocumentFamily({
 			ydoc,
 			content,
 			idb,
-			sync: null,
 			whenReady: idb.whenLoaded,
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},
 		};
 	},
-	clearLocalData: (fileId) => clearDocument(guid(fileId)),
+	async clearLocalData() {
+		await Promise.all(
+			workspace.tables.files.getAllValid().map((file) =>
+				clearDocument(fileContentDocGuid(file.id)),
+			),
+		);
+	},
 });
 
 using handle = fileContentDocs.open('file-1');
@@ -1425,8 +1429,8 @@ import { createBrowserDocumentFamily } from '@epicenter/workspace';
 
 `createBrowserDocumentFamily(source, { gcTime? })` returns a browser child
 document family. `.open(id)` mints a live handle by shallow-spreading the bundle
-your `source.create(id)` returned, so `ydoc`, `content`, `idb`, `sync`, and
-`whenReady` are all things you explicitly put in the bundle.
+your `source.create(id)` returned, so `ydoc`, `content`, `idb`, and `whenReady`
+are all things you explicitly put in the bundle.
 
 For singleton apps, skip the family entirely and call your builder function once
 at module scope. For Node one-shot operations, call the child builder directly

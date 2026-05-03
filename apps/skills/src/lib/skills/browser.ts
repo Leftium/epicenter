@@ -33,7 +33,6 @@ export function openSkillsBrowser() {
 					persistence: instructionsDoc.persistence as ReturnType<
 						typeof attachIndexedDb
 					>,
-					sync: null,
 				};
 			},
 			async clearLocalData() {
@@ -67,7 +66,6 @@ export function openSkillsBrowser() {
 					persistence: referenceDoc.persistence as ReturnType<
 						typeof attachIndexedDb
 					>,
-					sync: null,
 				};
 			},
 			async clearLocalData() {

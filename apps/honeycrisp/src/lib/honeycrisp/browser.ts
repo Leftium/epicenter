@@ -1,4 +1,5 @@
 import type { AuthClient } from '@epicenter/auth-svelte';
+import { createAuthTokenSource } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
@@ -6,7 +7,6 @@ import {
 	attachIndexedDb,
 	attachRichText,
 	attachSync,
-	composeSyncControls,
 	createBrowserDocumentFamily,
 	createRemoteClient,
 	DateTimeString,
@@ -43,6 +43,7 @@ export function openHoneycrisp({
 	peer: PeerIdentity;
 }) {
 	const doc = openHoneycrispDoc();
+	const tokenSource = createAuthTokenSource(auth);
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
@@ -62,14 +63,7 @@ export function openHoneycrisp({
 				const childSync = attachSync(ydoc, {
 					url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 					waitFor: childIdb.whenLoaded,
-					getToken: async () => {
-						await auth.whenLoaded;
-
-						const snapshot = auth.snapshot;
-						return snapshot.status === 'signedIn'
-							? snapshot.session.token
-							: null;
-					},
+					tokenSource,
 				});
 
 				onLocalUpdate(ydoc, () => {
@@ -111,12 +105,7 @@ export function openHoneycrisp({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: async () => {
-			await auth.whenLoaded;
-
-			const snapshot = auth.snapshot;
-			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		},
+		tokenSource,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);
@@ -128,7 +117,7 @@ export function openHoneycrisp({
 		noteBodyDocs,
 		awareness,
 		sync,
-		syncControl: composeSyncControls(sync, noteBodyDocs.syncControl),
+		syncControl: sync,
 		async clearLocalData() {
 			await noteBodyDocs.clearLocalData();
 			await idb.clearLocal();
@@ -137,6 +126,7 @@ export function openHoneycrisp({
 		rpc,
 		whenLoaded: idb.whenLoaded,
 		[Symbol.dispose]() {
+			tokenSource[Symbol.dispose]();
 			noteBodyDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 		},

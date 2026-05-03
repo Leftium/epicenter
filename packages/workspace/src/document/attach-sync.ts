@@ -131,6 +131,11 @@ export type SyncControl = {
 	reconnect(): void;
 };
 
+export type TokenSource = {
+	getToken(): Promise<string | null>;
+	onTokenChange(listener: () => void): () => void;
+};
+
 export type SyncAttachment = SyncControl & {
 	/**
 	 * Resolves after the WebSocket handshake completes and the first sync
@@ -240,6 +245,12 @@ export type SyncAttachmentConfig = {
 	 */
 	getToken?: () => Promise<string | null>;
 	/**
+	 * Token source for authenticated sync. When the source emits a token
+	 * change, this attachment reconnects its own WebSocket so the next
+	 * upgrade carries fresh credentials.
+	 */
+	tokenSource?: TokenSource;
+	/**
 	 * WebSocket constructor. Tests can pass a stub to avoid dialing a server;
 	 * production uses `globalThis.WebSocket`.
 	 */
@@ -314,9 +325,15 @@ export function attachSync(
 	doc: AttachSyncDoc,
 	config: SyncAttachmentConfig,
 ): SyncAttachment {
+	if (config.getToken && config.tokenSource) {
+		throw new Error('[attachSync] pass getToken or tokenSource, not both');
+	}
+
 	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
 	let rpcActions: Record<string, unknown> | null = null;
 	const awareness = config.awareness?.raw ?? null;
+	const getToken =
+		config.tokenSource?.getToken.bind(config.tokenSource) ?? config.getToken;
 
 	const waitForPromise =
 		config.waitFor && 'whenLoaded' in config.waitFor
@@ -381,7 +398,7 @@ export function attachSync(
 	 * `getToken`; supplying that callback IS the declaration that a token is
 	 * required. Without it, the supervisor connects unauthenticated.
 	 */
-	const requiresToken = typeof config.getToken === 'function';
+	const requiresToken = typeof getToken === 'function';
 
 	/**
 	 * Cancellation hierarchy:
@@ -397,6 +414,7 @@ export function attachSync(
 	 */
 	const masterController = new AbortController();
 	let cycleController: AbortController = childOf(masterController.signal);
+	let waitForSettled = false;
 
 	/** Current WebSocket instance, or null. */
 	let websocket: SyncWebSocket | null = null;
@@ -606,9 +624,9 @@ export function attachSync(
 			status.set({ phase: 'connecting', retries: backoff.retries, lastError });
 
 			let token: string | null = null;
-			if (config.getToken) {
+			if (getToken) {
 				try {
-					token = await config.getToken();
+					token = await getToken();
 				} catch (cause) {
 					token = null;
 					lastError = { type: 'auth', error: cause };
@@ -834,6 +852,7 @@ export function attachSync(
 
 	function ensureSupervisor() {
 		if (masterController.signal.aborted) return;
+		if (!waitForSettled) return;
 		if (loopPromise) return;
 		manageWindowListeners('add');
 		const signal = cycleController.signal;
@@ -862,10 +881,21 @@ export function attachSync(
 		status.set({ phase: 'offline' });
 	}
 
+	function reconnect() {
+		if (masterController.signal.aborted) return;
+		permanentFailure = null;
+		cycleController.abort();
+		cycleController = childOf(masterController.signal);
+		backoff.reset();
+		if (waitForSettled) manageWindowListeners('add');
+		ensureSupervisor();
+	}
+
 	// ── Attach listeners + start ──
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
+	const unsubscribeTokenChange = config.tokenSource?.onTokenChange(reconnect);
 
 	// Gate the first connection on `waitFor` (typically idb.whenLoaded).
 	// If `waitFor` rejects, log but still start: better to try syncing than
@@ -876,6 +906,7 @@ export function attachSync(
 		} catch (cause) {
 			log.warn(SyncSupervisorError.WaitForRejected({ cause }));
 		}
+		waitForSettled = true;
 		ensureSupervisor();
 	})();
 
@@ -902,6 +933,7 @@ export function attachSync(
 			);
 		});
 		try {
+			unsubscribeTokenChange?.();
 			ydoc.off('updateV2', handleDocUpdate);
 			awareness?.off('update', handleAwarenessUpdate);
 			const ws = websocket;
@@ -922,15 +954,7 @@ export function attachSync(
 		},
 		onStatusChange: status.subscribe,
 		pause,
-		reconnect() {
-			if (masterController.signal.aborted) return;
-			permanentFailure = null;
-			cycleController.abort();
-			cycleController = childOf(masterController.signal);
-			backoff.reset();
-			manageWindowListeners('add');
-			ensureSupervisor();
-		},
+		reconnect,
 		whenDisposed,
 		attachRpc(userActions) {
 			if (rpcActions) throw new Error('[attachSync] RPC already attached');

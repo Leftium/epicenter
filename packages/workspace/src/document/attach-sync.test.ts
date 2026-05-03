@@ -15,7 +15,7 @@ import { Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { defineMutation } from '../shared/actions.js';
 import { attachAwareness } from './attach-awareness.js';
-import { attachSync } from './attach-sync.js';
+import { attachSync, type TokenSource } from './attach-sync.js';
 import { PeerIdentity } from './peer-identity.js';
 
 type Listener = (ev: { data: ArrayBuffer | string }) => void;
@@ -98,6 +98,34 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 		await new Promise((r) => setTimeout(r, 5));
 	}
 	throw new Error('timeout waiting for predicate');
+}
+
+function createTokenSource(initialToken: string | null) {
+	let token = initialToken;
+	const listeners = new Set<() => void>();
+	const calls: string[] = [];
+	const source: TokenSource = {
+		async getToken() {
+			calls.push(`get:${token}`);
+			return token;
+		},
+		onTokenChange(listener) {
+			listeners.add(listener);
+			return () => {
+				calls.push('unsubscribe');
+				listeners.delete(listener);
+			};
+		},
+	};
+
+	return {
+		source,
+		calls,
+		setToken(nextToken: string | null) {
+			token = nextToken;
+			for (const listener of listeners) listener();
+		},
+	};
 }
 
 describe('attachSync split surface', () => {
@@ -255,6 +283,86 @@ describe('attachSync split surface', () => {
 				system: {},
 			}),
 		).toThrow(/system/);
+
+		ydoc.destroy();
+	});
+
+	test('token source changes reconnect the active socket', async () => {
+		const ydoc = new Y.Doc({ guid: 'token-source-reconnect' });
+		const tokenSource = createTokenSource('token-1');
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			tokenSource: tokenSource.source,
+		});
+
+		const first = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => first.readyState === FakeWebSocket.OPEN);
+		first.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		tokenSource.setToken('token-2');
+		const second = await waitFor(() => FakeWebSocket.instances[1]);
+		await waitFor(() => second.readyState === FakeWebSocket.OPEN);
+
+		expect(first.readyState).toBe(FakeWebSocket.CLOSED);
+		expect(FakeWebSocket.instances).toHaveLength(2);
+		expect(first.protocols).toEqual(['epicenter', 'bearer.token-1']);
+		expect(second.protocols).toEqual(['epicenter', 'bearer.token-2']);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('token source subscription unsubscribes on destroy', async () => {
+		const ydoc = new Y.Doc({ guid: 'token-source-destroy' });
+		const tokenSource = createTokenSource('token-1');
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			tokenSource: tokenSource.source,
+		});
+
+		await waitFor(() => FakeWebSocket.instances[0]);
+		ydoc.destroy();
+		await sync.whenDisposed;
+
+		expect(tokenSource.calls).toContain('unsubscribe');
+	});
+
+	test('token source changes before waitFor do not bypass startup gating', async () => {
+		const { promise: whenLoaded, resolve } = Promise.withResolvers<void>();
+		const ydoc = new Y.Doc({ guid: 'token-source-wait-for' });
+		const tokenSource = createTokenSource('token-1');
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			waitFor: whenLoaded,
+			tokenSource: tokenSource.source,
+		});
+
+		tokenSource.setToken('token-2');
+		await Promise.resolve();
+		expect(FakeWebSocket.instances).toHaveLength(0);
+
+		resolve();
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+
+		expect(ws.protocols).toEqual(['epicenter', 'bearer.token-2']);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('passing getToken and tokenSource throws', () => {
+		const ydoc = new Y.Doc({ guid: 'token-source-exclusive' });
+		const tokenSource = createTokenSource('token-1');
+
+		expect(() =>
+			attachSync(ydoc, {
+				url: `ws://x/${ydoc.guid}`,
+				getToken: async () => 'token-1',
+				tokenSource: tokenSource.source,
+			}),
+		).toThrow(/getToken or tokenSource/);
 
 		ydoc.destroy();
 	});

@@ -1,4 +1,5 @@
 import type { AuthClient } from '@epicenter/auth-svelte';
+import { createAuthTokenSource } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
@@ -12,7 +13,6 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	composeSyncControls,
 	createBrowserDocumentFamily,
 	createRemoteClient,
 	PeerIdentity,
@@ -31,6 +31,7 @@ export function openOpensidian({
 	peer: PeerIdentity;
 }) {
 	const doc = openOpensidianDoc();
+	const tokenSource = createAuthTokenSource(auth);
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
@@ -49,7 +50,6 @@ export function openOpensidian({
 					persistence: contentDoc.persistence as ReturnType<
 						typeof attachIndexedDb
 					>,
-					sync: null,
 				};
 			},
 			async clearLocalData() {
@@ -101,12 +101,7 @@ export function openOpensidian({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: async () => {
-			await auth.whenLoaded;
-
-			const snapshot = auth.snapshot;
-			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		},
+		tokenSource,
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);
@@ -122,7 +117,7 @@ export function openOpensidian({
 		actions,
 		awareness,
 		sync,
-		syncControl: composeSyncControls(sync, fileContentDocs.syncControl),
+		syncControl: sync,
 		async clearLocalData() {
 			await fileContentDocs.clearLocalData();
 			await idb.clearLocal();
@@ -131,6 +126,7 @@ export function openOpensidian({
 		rpc,
 		whenLoaded: idb.whenLoaded,
 		[Symbol.dispose]() {
+			tokenSource[Symbol.dispose]();
 			fileContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 		},

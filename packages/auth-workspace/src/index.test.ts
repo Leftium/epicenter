@@ -6,13 +6,14 @@
  *
  * Key behaviors:
  * - Cold signed-out and signed-in snapshots call the supplied lifecycle hooks.
- * - Same-user token changes reconnect app sync while key refreshes do not.
+ * - Same-user snapshot changes apply fresh session state without reconnecting.
+ * - Auth token sources notify only when the signed-in token value changes.
  * - Leaving an applied user marks the client terminal and ignores later snapshots.
  */
 
 import { expect, test } from 'bun:test';
 import type { AuthClient, AuthSnapshot, Session } from '@epicenter/auth';
-import { bindAuthWorkspaceScope } from './index.ts';
+import { bindAuthWorkspaceScope, createAuthTokenSource } from './index.ts';
 
 const keysA = [
 	{
@@ -158,17 +159,17 @@ test('cold signedOut with null sync control does not throw', async () => {
 	expect(calls).toEqual([]);
 });
 
-test('cold signedIn applies session and reconnects sync', async () => {
+test('cold signedIn applies session without reconnecting sync', async () => {
 	const { calls, appliedSessions } = setup({ initial: signedIn() });
 	await tick();
 
 	expect(appliedSessions.map((applied) => applied.encryptionKeys)).toEqual([
 		keysA,
 	]);
-	expect(calls).toEqual(['apply:user-1:token-1', 'reconnect']);
+	expect(calls).toEqual(['apply:user-1:token-1']);
 });
 
-test('token change reconnects', async () => {
+test('token change applies session without reconnecting sync', async () => {
 	const { fakeAuth, calls, appliedSessions } = setup({ initial: signedIn() });
 	await tick();
 	fakeAuth.emit(signedIn({ token: 'token-2', keys: keysB }));
@@ -178,15 +179,10 @@ test('token change reconnects', async () => {
 		keysA,
 		keysB,
 	]);
-	expect(calls).toEqual([
-		'apply:user-1:token-1',
-		'reconnect',
-		'apply:user-1:token-2',
-		'reconnect',
-	]);
+	expect(calls).toEqual(['apply:user-1:token-1', 'apply:user-1:token-2']);
 });
 
-test('key refresh without token change applies session but does not reconnect', async () => {
+test('key refresh without token change applies session without reconnecting sync', async () => {
 	const { fakeAuth, calls, appliedSessions } = setup({ initial: signedIn() });
 	await tick();
 	fakeAuth.emit(signedIn({ keys: keysB }));
@@ -196,11 +192,7 @@ test('key refresh without token change applies session but does not reconnect', 
 		keysA,
 		keysB,
 	]);
-	expect(calls).toEqual([
-		'apply:user-1:token-1',
-		'reconnect',
-		'apply:user-1:token-1',
-	]);
+	expect(calls).toEqual(['apply:user-1:token-1', 'apply:user-1:token-1']);
 });
 
 test('signedOut after applied user pauses and resets', async () => {
@@ -209,12 +201,7 @@ test('signedOut after applied user pauses and resets', async () => {
 	fakeAuth.emit({ status: 'signedOut' });
 	await tick();
 
-	expect(calls).toEqual([
-		'apply:user-1:token-1',
-		'reconnect',
-		'pause',
-		'reset',
-	]);
+	expect(calls).toEqual(['apply:user-1:token-1', 'pause', 'reset']);
 });
 
 test('user switch resets without applying the new user', async () => {
@@ -224,12 +211,7 @@ test('user switch resets without applying the new user', async () => {
 	await tick();
 
 	expect(appliedSessions.map((applied) => applied.user.id)).toEqual(['user-1']);
-	expect(calls).toEqual([
-		'apply:user-1:token-1',
-		'reconnect',
-		'pause',
-		'reset',
-	]);
+	expect(calls).toEqual(['apply:user-1:token-1', 'pause', 'reset']);
 });
 
 test('resetLocalClient rejection is caught and queued snapshots are ignored', async () => {
@@ -247,12 +229,7 @@ test('resetLocalClient rejection is caught and queued snapshots are ignored', as
 	expect(appliedSessions.map((applied) => applied.encryptionKeys)).toEqual([
 		keysA,
 	]);
-	expect(calls).toEqual([
-		'apply:user-1:token-1',
-		'reconnect',
-		'pause',
-		'reset',
-	]);
+	expect(calls).toEqual(['apply:user-1:token-1', 'pause', 'reset']);
 });
 
 test('snapshots emitted during reset are ignored', async () => {
@@ -268,12 +245,7 @@ test('snapshots emitted during reset are ignored', async () => {
 	await tick();
 
 	expect(appliedSessions.map((applied) => applied.user.id)).toEqual(['user-1']);
-	expect(calls).toEqual([
-		'apply:user-1:token-1',
-		'reconnect',
-		'pause',
-		'reset',
-	]);
+	expect(calls).toEqual(['apply:user-1:token-1', 'pause', 'reset']);
 });
 
 test('unsubscribe stops later auth emissions', async () => {
@@ -286,4 +258,55 @@ test('unsubscribe stops later auth emissions', async () => {
 	await tick();
 
 	expect(calls).toEqual(['pause']);
+});
+
+test('auth token source returns the loaded signed-in token', async () => {
+	const { auth } = createFakeAuth(signedIn({ token: 'token-1' }));
+	const tokenSource = createAuthTokenSource(auth);
+
+	await expect(tokenSource.getToken()).resolves.toBe('token-1');
+
+	tokenSource[Symbol.dispose]();
+});
+
+test('auth token source treats signed-out as null', async () => {
+	const { auth } = createFakeAuth({ status: 'signedOut' });
+	const tokenSource = createAuthTokenSource(auth);
+
+	await expect(tokenSource.getToken()).resolves.toBeNull();
+
+	tokenSource[Symbol.dispose]();
+});
+
+test('auth token source notifies only when token value changes', () => {
+	const { auth, emit } = createFakeAuth(signedIn({ token: 'token-1' }));
+	const tokenSource = createAuthTokenSource(auth);
+	const calls: string[] = [];
+	const unsubscribe = tokenSource.onTokenChange(() => {
+		calls.push('change');
+	});
+
+	emit(signedIn({ token: 'token-1', keys: keysB }));
+	emit(signedIn({ token: 'token-2', keys: keysB }));
+	emit(signedIn({ token: 'token-2' }));
+	emit({ status: 'signedOut' });
+
+	expect(calls).toEqual(['change', 'change']);
+
+	unsubscribe();
+	tokenSource[Symbol.dispose]();
+});
+
+test('auth token source disposal stops auth snapshot notifications', () => {
+	const { auth, emit } = createFakeAuth(signedIn({ token: 'token-1' }));
+	const tokenSource = createAuthTokenSource(auth);
+	const calls: string[] = [];
+	tokenSource.onTokenChange(() => {
+		calls.push('change');
+	});
+
+	tokenSource[Symbol.dispose]();
+	emit(signedIn({ token: 'token-2' }));
+
+	expect(calls).toEqual([]);
 });

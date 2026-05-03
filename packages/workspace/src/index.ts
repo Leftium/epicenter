@@ -8,16 +8,30 @@
  *
  * @example
  * ```typescript
- * import { attachTables, createBrowserDocumentFamily, defineTable } from '@epicenter/workspace';
+ * import {
+ *   attachIndexedDb,
+ *   attachSync,
+ *   attachTables,
+ *   createBrowserDocumentFamily,
+ *   defineTable,
+ *   type TokenSource,
+ * } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+ * declare const tokenSource: TokenSource;
  *
  * // Singleton workspace: inline at module scope, no factory wrapper.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
+ * const idb = attachIndexedDb(ydoc);
+ * const sync = attachSync(ydoc, {
+ *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
+ *   waitFor: idb,
+ *   tokenSource,
+ * });
  *
- * // Browser child docs: the family owns shared identity and sync pausing.
+ * // Browser child docs: the family owns shared identity.
  * // The source owns its storage cleanup policy.
  * const noteBodyDocs = createBrowserDocumentFamily({
  *   create: (noteId) => buildNoteBody({ noteId, notesTable: tables.posts }),
@@ -140,7 +154,6 @@ export {
 	type BrowserDocumentFamily,
 	type BrowserDocumentFamilyOptions,
 	type BrowserDocumentFamilySource,
-	type BrowserDocumentInstance,
 	createBrowserDocumentFamily,
 	type DocumentFamily,
 } from './cache/browser-document-family.js';
@@ -198,6 +211,7 @@ export {
 	type SyncFailedReason,
 	type SyncRpcAttachment,
 	type SyncStatus,
+	type TokenSource,
 	toWsUrl,
 	type WaitForBarrier,
 	type WebSocketImpl,

@@ -40,9 +40,6 @@ const idb = attachIndexedDb(doc.ydoc);
 attachBroadcastChannel(doc.ydoc);
 
 const instructionsDocs = createBrowserDocumentFamily({
-	ids() {
-		return doc.tables.skills.getAllValid().map((skill) => skill.id);
-	},
 	create(skillId: string) {
 		const instructionsDoc = createSkillInstructionsDoc({
 			skillId,
@@ -56,15 +53,18 @@ const instructionsDocs = createBrowserDocumentFamily({
 			persistence: instructionsDoc.persistence as ReturnType<
 				typeof attachIndexedDb
 			>,
-			sync: null,
 		};
 	},
-	clearLocalData(skillId: string) {
-		return clearDocument(
-			skillInstructionsDocGuid({
-				workspaceId: doc.ydoc.guid,
-				skillId,
-			}),
+	async clearLocalData() {
+		await Promise.all(
+			doc.tables.skills.getAllValid().map((skill) =>
+				clearDocument(
+					skillInstructionsDocGuid({
+						workspaceId: doc.ydoc.guid,
+						skillId: skill.id,
+					}),
+				),
+			),
 		);
 	},
 });
@@ -87,8 +87,8 @@ await workspace.actions.exportToDisk({ dir: '.agents/skills' });
 ```
 
 Node opens instruction and reference docs per operation. The browser family
-exists for shared live identity, active child sync fanout, and IndexedDB reset;
-the Node import/export path does not need those lifecycle rules.
+exists for shared live identity, refcounting, and IndexedDB reset; the Node
+import/export path does not need those lifecycle rules.
 
 ## Data Model
 

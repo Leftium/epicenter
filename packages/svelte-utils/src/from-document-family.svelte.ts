@@ -31,10 +31,7 @@ import type { DocumentFamily } from '@epicenter/workspace';
 export function fromDocumentFamily<
 	Id extends string | number,
 	T extends Disposable,
->(
-	family: DocumentFamily<Id, T>,
-	idFn: () => Id,
-): { readonly current: T & Disposable } {
+>(family: DocumentFamily<Id, T>, idFn: () => Id): { readonly current: T } {
 	const handle = $derived(family.open(idFn()));
 	$effect(() => {
 		// Synchronous read tracks `handle` as a dependency AND snapshots the

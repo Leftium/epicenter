@@ -1,59 +1,36 @@
 /**
  * Browser Document Family Tests
  *
- * Verifies the browser document family owns child document identity, active
- * sync fanout, and local persistence cleanup.
+ * Verifies the browser document family owns child document identity, refcounted
+ * disposal, and source-owned local persistence cleanup.
  *
  * Key behaviors:
  * - Opening the same id deduplicates documents through createDisposableCache.
- * - Pause and reconnect fan out only to currently cached child sync controls.
- * - clearLocalData pauses active sync before delegating storage cleanup.
- * - clearLocalData can clear unopened ids through source-owned policy without
- *   constructing those documents.
- * - Disposal unregisters child sync controls and family disposal flushes docs.
+ * - The family exposes cache identity operations without knowing document sync.
+ * - clearLocalData delegates storage cleanup to the source.
+ * - Family disposal flushes cached documents.
  */
 
 import { expect, test } from 'bun:test';
-import * as Y from 'yjs';
-import type { SyncControl } from '../document/attach-sync.js';
 import {
 	type BrowserDocumentFamilySource,
-	type BrowserDocumentInstance,
 	createBrowserDocumentFamily,
 } from './browser-document-family.js';
 
-function createSyncControl() {
-	const calls: string[] = [];
-	const control: SyncControl = {
-		pause() {
-			calls.push('pause');
-		},
-		reconnect() {
-			calls.push('reconnect');
-		},
-	};
-	return { calls, control };
-}
-
-type TestDocument = BrowserDocumentInstance & {
+type TestDocument = Disposable & {
 	id: string;
+	value: { text: string };
 };
 
 function makeTestDocument(
 	id: string,
-	{
-		sync,
-		onDispose,
-	}: { sync?: SyncControl | null; onDispose?: () => void } = {},
+	onDispose: (id: string) => void = () => {},
 ): TestDocument {
-	const ydoc = new Y.Doc({ guid: `test-${id}`, gc: false });
 	return {
 		id,
-		ydoc,
-		sync: sync ?? null,
+		value: { text: id },
 		[Symbol.dispose]() {
-			onDispose?.();
-			ydoc.destroy();
+			onDispose(id);
 		},
 	};
 }
@@ -80,80 +57,50 @@ test('open deduplicates documents through createDisposableCache', () => {
 
 	expect(first).not.toBe(second);
 	expect(first.id).toBe(second.id);
-	expect(first.ydoc).toBe(second.ydoc);
+	expect(first.value).toBe(second.value);
 	expect(builds).toBe(1);
 });
 
-test('pause calls only active child sync controls', () => {
-	const one = createSyncControl();
-	const two = createSyncControl();
-	const controls: Record<'one' | 'two', SyncControl> = {
-		one: one.control,
-		two: two.control,
-	};
-	const source: BrowserDocumentFamilySource<'one' | 'two', TestDocument> = {
-		create: (id) => makeTestDocument(id, { sync: controls[id] }),
-		clearLocalData: async () => {},
-	};
-	const family = createBrowserDocumentFamily(source, { gcTime: 0 });
-
-	const oneHandle = family.open('one');
-	family.syncControl.pause();
-	oneHandle[Symbol.dispose]();
-	family.open('two');
-	family.syncControl.pause();
-
-	expect(one.calls).toEqual(['pause']);
-	expect(two.calls).toEqual(['pause']);
-});
-
-test('reconnect calls only active child sync controls', () => {
-	const one = createSyncControl();
-	const two = createSyncControl();
-	const controls: Record<'one' | 'two', SyncControl> = {
-		one: one.control,
-		two: two.control,
-	};
-	const source: BrowserDocumentFamilySource<'one' | 'two', TestDocument> = {
-		create: (id) => makeTestDocument(id, { sync: controls[id] }),
-		clearLocalData: async () => {},
-	};
-	const family = createBrowserDocumentFamily(source, { gcTime: 0 });
-
-	const oneHandle = family.open('one');
-	const twoHandle = family.open('two');
-	family.syncControl.reconnect();
-	oneHandle[Symbol.dispose]();
-	family.syncControl.reconnect();
-	twoHandle[Symbol.dispose]();
-	family.syncControl.reconnect();
-
-	expect(one.calls).toEqual(['reconnect']);
-	expect(two.calls).toEqual(['reconnect', 'reconnect']);
-});
-
-test('disposing a handle eventually unregisters that child sync control', async () => {
-	const child = createSyncControl();
+test('has returns true while a document is cached', async () => {
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
-		create: (id) => makeTestDocument(id, { sync: child.control }),
+		create: (id) => makeTestDocument(id),
 		clearLocalData: async () => {},
 	};
 	const family = createBrowserDocumentFamily(source, { gcTime: 1 });
 
 	const handle = family.open('a');
-	family.syncControl.pause();
+	expect(family.has('a')).toBe(true);
 	handle[Symbol.dispose]();
 	await wait(5);
-	family.syncControl.pause();
 
-	expect(child.calls).toEqual(['pause']);
+	expect(family.has('a')).toBe(false);
+});
+
+test('refcounted handles dispose the document after the last handle exits', async () => {
+	const disposed: string[] = [];
+	const source: BrowserDocumentFamilySource<string, TestDocument> = {
+		create: (id) =>
+			makeTestDocument(id, (disposedId) => disposed.push(disposedId)),
+		clearLocalData: async () => {},
+	};
+	const family = createBrowserDocumentFamily(source, { gcTime: 1 });
+
+	const first = family.open('a');
+	const second = family.open('a');
+	first[Symbol.dispose]();
+	await wait(5);
+	expect(disposed).toEqual([]);
+	second[Symbol.dispose]();
+	await wait(5);
+
+	expect(disposed).toEqual(['a']);
 });
 
 test('family disposal disposes active cached documents', () => {
 	const disposed: string[] = [];
 	const source: BrowserDocumentFamilySource<string, TestDocument> = {
 		create: (id) =>
-			makeTestDocument(id, { onDispose: () => disposed.push(id) }),
+			makeTestDocument(id, (disposedId) => disposed.push(disposedId)),
 		clearLocalData: async () => {},
 	};
 	const family = createBrowserDocumentFamily(source, {
@@ -165,19 +112,6 @@ test('family disposal disposes active cached documents', () => {
 	family[Symbol.dispose]();
 
 	expect(disposed.sort()).toEqual(['a', 'b']);
-});
-
-test('instance with null sync gives family no-op pause and reconnect', () => {
-	const source: BrowserDocumentFamilySource<string, TestDocument> = {
-		create: (id) => makeTestDocument(id, { sync: null }),
-		clearLocalData: async () => {},
-	};
-	const family = createBrowserDocumentFamily(source);
-
-	family.open('a');
-
-	expect(() => family.syncControl.pause()).not.toThrow();
-	expect(() => family.syncControl.reconnect()).not.toThrow();
 });
 
 test('clearLocalData delegates storage cleanup to source.clearLocalData()', async () => {
@@ -193,30 +127,6 @@ test('clearLocalData delegates storage cleanup to source.clearLocalData()', asyn
 	await family.clearLocalData();
 
 	expect(cleared).toBe(true);
-});
-
-test('clearLocalData pauses active child sync before clearing storage', async () => {
-	const calls: string[] = [];
-	const control: SyncControl = {
-		pause() {
-			calls.push('pause');
-		},
-		reconnect() {
-			calls.push('reconnect');
-		},
-	};
-	const source: BrowserDocumentFamilySource<string, TestDocument> = {
-		create: (id) => makeTestDocument(id, { sync: control }),
-		clearLocalData: async () => {
-			calls.push('clear');
-		},
-	};
-	const family = createBrowserDocumentFamily(source);
-
-	family.open('open');
-	await family.clearLocalData();
-
-	expect(calls).toEqual(['pause', 'clear']);
 });
 
 test('source-owned clearLocalData can clear unopened ids without constructing them', async () => {

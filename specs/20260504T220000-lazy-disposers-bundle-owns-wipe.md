@@ -2,6 +2,7 @@
 
 **Date**: 2026-05-04
 **Status**: Implemented
+**Superseded by**: `specs/20260504T230000-attach-whendisposed-honest-barriers.md` for the attach-level `[Symbol.asyncDispose]` direction. The cleanup work outside that barrier shape still stands.
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth (or successor)
 **Builds on**: `specs/20260504T020000-workspace-identity-reset-deterministic-teardown.md` — the implemented teardown moved ORDER into the call site (`resetLocalClient`); this spec moves the order INSIDE the bundle and replaces `whenDisposed` with `Symbol.asyncDispose` backed by `lazy()`.

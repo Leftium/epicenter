@@ -105,7 +105,7 @@ export function openSkillsBrowser() {
 			instructionsDocs[Symbol.dispose]();
 			referenceDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
-			await idb[Symbol.asyncDispose]();
+			await idb.whenDisposed;
 			await Promise.all([
 				// Skill instruction docs use their own IndexedDB document names.
 				...doc.tables.skills.getAllValid().map((skill) =>

@@ -191,7 +191,7 @@ function openTabManager() {
 
 		async [Symbol.asyncDispose]() {
 			ydoc.destroy();
-			await sync[Symbol.asyncDispose]();
+			await sync.whenDisposed;
 		},
 	};
 }
@@ -252,7 +252,7 @@ return {
 
     async [Symbol.asyncDispose]() {
         ydoc.destroy();
-        await sync[Symbol.asyncDispose]();
+        await sync.whenDisposed;
     },
 };
 ```

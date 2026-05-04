@@ -59,7 +59,7 @@ describe('attachYjsLogReader', () => {
 
 		readerDoc.destroy();
 		writerDoc.destroy();
-		await writer[Symbol.asyncDispose]();
+		await writer.whenDisposed;
 	});
 
 	test('opens concurrently with an active writer (WAL snapshot read)', async () => {
@@ -95,7 +95,7 @@ describe('attachYjsLogReader', () => {
 
 		readerDoc.destroy();
 		writerDoc.destroy();
-		await writer[Symbol.asyncDispose]();
+		await writer.whenDisposed;
 	});
 
 	test('missing file is a no-op: fileExisted is false, doc stays empty', async () => {
@@ -114,7 +114,7 @@ describe('attachYjsLogReader', () => {
 		const writer = attachYjsLog(writerDoc, { filePath });
 		writerDoc.getMap<number>('m').set('seed', 1);
 		writerDoc.destroy();
-		await writer[Symbol.asyncDispose]();
+		await writer.whenDisposed;
 
 		const baselineRows = countRows(filePath);
 

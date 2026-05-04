@@ -95,7 +95,7 @@ The method form says "use the encryption's attach-tables" directly. Preferred wh
 
 ## Invariants
 
-1. **Synchronous return.** Construction never awaits. Startup work goes into semantic `when*` promises on the returned object. Genuine async teardown uses `[Symbol.asyncDispose]()` backed by `lazy(async () => { ... })`.
+1. **Synchronous return.** Construction never awaits. Startup work goes into semantic `when*` promises on the returned object. Genuine async teardown exposes a `whenDisposed` promise field resolved from the `ydoc.destroy()` cascade.
 2. **Teardown hooked to the subject's lifecycle.**
    - Y.Doc subject: `ydoc.once('destroy', ...)`. Never expose a `.destroy()` method on the attachment.
    - Attachment subject: use the subject attachment's disposal signal; or no teardown if there are no listeners.
@@ -136,8 +136,8 @@ const cache = createDisposableCache((id: string) => {
     whenReady: Promise.all([idb.whenLoaded, unlock.whenChecked, sync.whenConnected]),
     async wipe() {
       ydoc.destroy();
-      await sync[Symbol.asyncDispose]();
-      await idb[Symbol.asyncDispose]();
+      await sync.whenDisposed;
+      await idb.whenDisposed;
       await idb.clearLocal();
     },
     [Symbol.dispose]() { ydoc.destroy(); },
@@ -147,7 +147,7 @@ const cache = createDisposableCache((id: string) => {
 export const workspace = cache.open('my-app');
 ```
 
-The bundle aggregates child `whenLoaded` / `whenConnected` / `whenChecked` into one `whenReady`. Browser bundles expose `wipe()` for reset flows that must dispose and delete local storage in the right order. Daemon bundles compose `[Symbol.asyncDispose]()` from the async attachments they need to await before process exit.
+The bundle aggregates child `whenLoaded` / `whenConnected` / `whenChecked` into one `whenReady`. Browser bundles expose `wipe()` for reset flows that must dispose and delete local storage in the right order. Daemon bundles expose `[Symbol.asyncDispose]()` as the trigger and await attachment `whenDisposed` barriers before process exit.
 
 ## The `waitFor` convention
 

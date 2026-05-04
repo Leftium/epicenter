@@ -56,7 +56,7 @@ export function defineZhongwenDaemon({
 				actions,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();
-					await sync[Symbol.asyncDispose]();
+					await Promise.all([sync.whenDisposed, yjsLog.whenDisposed]);
 				},
 			};
 		},

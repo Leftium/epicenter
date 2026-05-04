@@ -110,8 +110,8 @@ export function openHoneycrisp({
 			noteBodyDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 			await Promise.all([
-				idb[Symbol.asyncDispose](),
-				sync[Symbol.asyncDispose](),
+				idb.whenDisposed,
+				sync.whenDisposed,
 			]);
 			await Promise.all([
 				...doc.tables.notes.getAllValid().map((note) =>

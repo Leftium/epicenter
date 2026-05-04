@@ -41,7 +41,6 @@ import {
 	resolveActionPath,
 	type SystemActions,
 } from '../shared/actions.js';
-import { lazy } from '../shared/lazy.js';
 import type {
 	AwarenessAttachment,
 	AwarenessSchema,
@@ -117,10 +116,10 @@ export const SyncSupervisorError = defineErrors({
 	}),
 	/**
 	 * The socket didn't fire 'close' within the shutdown timeout, so
-	 * `[Symbol.asyncDispose]()` resolves anyway rather than hanging forever.
+	 * `whenDisposed` resolves anyway rather than hanging forever.
 	 */
 	CloseTimeout: ({ timeoutMs }: { timeoutMs: number }) => ({
-		message: `[attachSync] WebSocket did not fire onclose within ${timeoutMs}ms; resolving [Symbol.asyncDispose] anyway`,
+		message: `[attachSync] WebSocket did not fire onclose within ${timeoutMs}ms; resolving whenDisposed anyway`,
 		timeoutMs,
 	}),
 });
@@ -147,8 +146,11 @@ export type SyncAttachment = {
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
 	/** Force a fresh connection with new credentials (supervisor restarts iteration). */
 	reconnect(): void;
-	/** Destroys the sync supervisor and waits for websocket teardown. */
-	[Symbol.asyncDispose]: () => Promise<void>;
+	/**
+	 * Resolves after `ydoc.destroy()` fires the cascade, the supervisor loop exits,
+	 * and any open websocket closes or reaches the safety timeout.
+	 */
+	whenDisposed: Promise<unknown>;
 	attachRpc(actions: RpcActionSource): SyncRpcAttachment;
 };
 
@@ -843,36 +845,38 @@ export function attachSync(
 
 	// Teardown.
 
-	// `[Symbol.asyncDispose]()` must be a real barrier: it resolves only after
-	// the supervisor loop has fully exited (which itself awaits `ws.onclose`)
-	// and any still-open socket has hit CLOSED (or a 1s safety timeout elapses).
-	const dispose = lazy(async () => {
-		// Master abort cascades to cycleController (closes ws, wakes
-		// backoff sleep, fires attemptConnection's abort listener).
-		masterController.abort();
-		// Reject `whenConnected` if dispose lands before the first handshake
-		// (permanent failure: dead URL, denied auth). Callers awaiting it
-		// would otherwise hang forever. The doc is gone, so the promise must
-		// settle. Attach a no-op catch BEFORE rejecting so the rejection
-		// isn't unhandled when no consumer awaits.
-		whenConnected.catch(() => {});
-		settleConnected(() => {
-			rejectConnected(
-				new Error('[attachSync] doc destroyed before first handshake'),
-			);
-		});
-		unsubscribeAuthChange();
-		ydoc.off('updateV2', handleDocUpdate);
-		awareness?.off('update', handleAwarenessUpdate);
-		const ws = websocket;
-		clearPendingRequests();
-		manageWindowListeners('remove');
-		status.clear();
-		if (loopPromise) await loopPromise;
-		await waitForWsClose(ws, 1000, log);
-	});
-	ydoc.once('destroy', () => {
-		void dispose();
+	// `whenDisposed` resolves only after the supervisor loop has fully exited
+	// and any still-open socket has hit CLOSED, or the safety timeout elapses.
+	const { promise: whenDisposed, resolve: resolveDisposed } =
+		Promise.withResolvers<void>();
+	ydoc.once('destroy', async () => {
+		try {
+			// Master abort cascades to cycleController (closes ws, wakes
+			// backoff sleep, fires attemptConnection's abort listener).
+			masterController.abort();
+			// Reject `whenConnected` if dispose lands before the first handshake
+			// (permanent failure: dead URL, denied auth). Callers awaiting it
+			// would otherwise hang forever. The doc is gone, so the promise must
+			// settle. Attach a no-op catch BEFORE rejecting so the rejection
+			// isn't unhandled when no consumer awaits.
+			whenConnected.catch(() => {});
+			settleConnected(() => {
+				rejectConnected(
+					new Error('[attachSync] doc destroyed before first handshake'),
+				);
+			});
+			unsubscribeAuthChange();
+			ydoc.off('updateV2', handleDocUpdate);
+			awareness?.off('update', handleAwarenessUpdate);
+			const ws = websocket;
+			clearPendingRequests();
+			manageWindowListeners('remove');
+			status.clear();
+			if (loopPromise) await loopPromise;
+			await waitForWsClose(ws, 1000, log);
+		} finally {
+			resolveDisposed();
+		}
 	});
 
 	return {
@@ -882,7 +886,7 @@ export function attachSync(
 		},
 		onStatusChange: status.subscribe,
 		reconnect,
-		[Symbol.asyncDispose]: dispose,
+		whenDisposed,
 		attachRpc(userActions) {
 			if (rpcActions) throw new Error('[attachSync] RPC already attached');
 			if ('system' in userActions) {

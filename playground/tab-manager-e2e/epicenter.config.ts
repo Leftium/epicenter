@@ -108,7 +108,7 @@ export const tabManager = {
 	rpc,
 	async [Symbol.asyncDispose]() {
 		ydoc.destroy();
-		await sync[Symbol.asyncDispose]();
+		await sync.whenDisposed;
 	},
 	// Extras for direct script use, not part of the hosted daemon runtime contract.
 	id: WORKSPACE_ID,

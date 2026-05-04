@@ -108,8 +108,8 @@ function openMyApp({
 		whenLoaded: idb.whenLoaded,
 		async wipe() {
 			ydoc.destroy();
-			await sync[Symbol.asyncDispose]();
-			await idb[Symbol.asyncDispose]();
+			await sync.whenDisposed;
+			await idb.whenDisposed;
 			await idb.clearLocal();
 		},
 		[Symbol.dispose]() {

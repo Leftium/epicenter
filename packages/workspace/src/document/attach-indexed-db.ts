@@ -1,6 +1,5 @@
 import { clearDocument, IndexeddbPersistence } from 'y-indexeddb';
 import type * as Y from 'yjs';
-import { lazy } from '../shared/lazy.js';
 
 export type IndexedDbAttachment = {
 	/**
@@ -11,8 +10,12 @@ export type IndexedDbAttachment = {
 	 */
 	whenLoaded: Promise<unknown>;
 	clearLocal: () => Promise<void>;
-	/** Destroys the IndexedDB persistence handle. */
-	[Symbol.asyncDispose]: () => Promise<void>;
+	/**
+	 * Resolves after `ydoc.destroy()` fires the cascade and the IndexedDB
+	 * connection has actually closed. Bundle wipe methods await this before
+	 * deleting persisted data.
+	 */
+	whenDisposed: Promise<unknown>;
 };
 
 export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
@@ -20,20 +23,22 @@ export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 	// `IndexeddbPersistence`'s constructor binds `doc.on('destroy', this.destroy)`
 	// eagerly, and its `destroy()` has no top-level idempotency guard: two calls
 	// produce two independent `_db.then(db => db.close())` promises that resolve
-	// at different moments. Strip the upstream binding so our lazy()-wrapped
-	// disposer is the sole gateway. Cascade-triggered teardown and explicit
-	// `[Symbol.asyncDispose]()` calls then share the same memoized close promise,
-	// and consumers awaiting the symbol see a barrier that doesn't lie.
+	// at different moments. Strip the upstream binding so our wrapper is the
+	// sole gateway. Cascade-triggered teardown resolves `whenDisposed` only
+	// after the actual close completes, so wipe() can await an honest barrier.
 	ydoc.off('destroy', idb.destroy);
-	const dispose = lazy(async () => {
-		await idb.destroy();
-	});
-	ydoc.once('destroy', () => {
-		void dispose();
+	const { promise: whenDisposed, resolve: resolveDisposed } =
+		Promise.withResolvers<void>();
+	ydoc.once('destroy', async () => {
+		try {
+			await idb.destroy();
+		} finally {
+			resolveDisposed();
+		}
 	});
 	return {
 		whenLoaded: idb.whenSynced,
 		clearLocal: () => clearDocument(ydoc.guid),
-		[Symbol.asyncDispose]: dispose,
+		whenDisposed,
 	};
 }

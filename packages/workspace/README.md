@@ -814,7 +814,7 @@ import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 
 ### Persistence
 
-`attachIndexedDb(ydoc)` runs in the browser. `attachSqlite(ydoc, { filePath })` runs on Node/Bun. Both return a handle with `whenLoaded` and `clearLocal()`. IndexedDB also exposes `[Symbol.asyncDispose]()` for callers that need to await provider shutdown before deleting local storage.
+`attachIndexedDb(ydoc)` runs in the browser. `attachSqlite(ydoc, { filePath })` runs on Node/Bun. Both return a handle with `whenLoaded` and `clearLocal()`. IndexedDB also exposes `whenDisposed` for callers that need to await provider shutdown before deleting local storage.
 
 ```typescript
 import * as Y from 'yjs';
@@ -1390,7 +1390,7 @@ Disposal preserves data: it releases the handle. To wipe persisted local state, 
 
 ```ts
 cache[Symbol.dispose]();
-await handle.idb[Symbol.asyncDispose]();
+await handle.idb.whenDisposed;
 ```
 
 ## Client vs Server

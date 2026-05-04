@@ -143,12 +143,12 @@ const workspace = await app.load('example.app');
 That promise is the line between construction and full availability. Create now, await later, or use `load()` to do both at once.
 
 ## Disposal cascades from `ydoc.destroy()`
-Teardown runs through Yjs itself. Every async `attach*` function registers `ydoc.once('destroy')` internally, so when the builder's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment starts teardown in parallel. Attachments with genuine async cleanup expose `[Symbol.asyncDispose]()` for the callers that need a barrier:
+Teardown runs through Yjs itself. Every async `attach*` function registers `ydoc.once('destroy')` internally, so when the builder's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment starts teardown in parallel. Attachments with genuine async cleanup expose `whenDisposed` for the callers that need a barrier:
 
 ```ts
 workspace[Symbol.dispose]();
-await workspace.idb[Symbol.asyncDispose]();
-await workspace.sync[Symbol.asyncDispose]();
+await workspace.idb.whenDisposed;
+await workspace.sync.whenDisposed;
 ```
 
 Browser bundles expose `wipe()` for identity reset. It owns the full sequence: dispose the live bundle, await the async attachments needed to unblock storage deletion, then delete persisted local state. The refcounted cache still calls `[Symbol.dispose]()` on the last release after the `gcTime` grace period; it does not aggregate an async disposal barrier.

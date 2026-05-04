@@ -39,7 +39,7 @@ export function defineFujiDaemon({
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
 			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
-			attachYjsLog(doc.ydoc, {
+			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
 			});
 			const awareness = attachAwareness(doc.ydoc, {
@@ -68,12 +68,13 @@ export function defineFujiDaemon({
 
 			return {
 				actions: doc.actions,
+				yjsLog,
 				awareness,
 				sync,
 				remote,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();
-					await sync[Symbol.asyncDispose]();
+					await Promise.all([sync.whenDisposed, yjsLog.whenDisposed]);
 				},
 			};
 		},

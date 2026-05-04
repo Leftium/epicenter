@@ -55,8 +55,8 @@ Each helper takes a `Y.Doc` and registers cleanup on `ydoc.on('destroy')`. Each 
 
 | Helper | Returns |
 |---|---|
-| `attachIndexedDb(ydoc)` | `{ whenLoaded, clearLocal, [Symbol.asyncDispose] }` |
-| `attachSync(ydoc, { url, getToken?, waitFor?, awareness? })` | `{ whenConnected, status, onStatusChange, reconnect, [Symbol.asyncDispose] }` |
+| `attachIndexedDb(ydoc)` | `{ whenLoaded, clearLocal, whenDisposed }` |
+| `attachSync(ydoc, { url, getToken?, waitFor?, awareness? })` | `{ whenConnected, status, onStatusChange, reconnect, whenDisposed }` |
 | `attachRichText(ydoc)` | `RichTextAttachment`: `{ read, write, binding: Y.XmlFragment }` |
 | `attachPlainText(ydoc)` | `PlainTextAttachment`: `{ read, write, binding: Y.Text }` |
 | `attachTable(ydoc, name, def)` | Typed row helper over `Y.Map` |
@@ -220,15 +220,15 @@ await h.idb.whenLoaded;       // specific attachment readiness
 /* nothing: handle is already usable for this caller's purposes */
 ```
 
-If a test or daemon needs a teardown barrier after disposal, opt into the attachment-level async disposer:
+If a test or daemon needs a teardown barrier after disposal, opt into the attachment-level promise field:
 
 ```typescript
 const h = docs.open(id);
 h[Symbol.dispose]();
-await h.idb[Symbol.asyncDispose]();     // attachment-level, not bundle-level
+await h.idb.whenDisposed;     // attachment-level, not bundle-level
 ```
 
-`whenReady` is the bundle-level readiness convention. Disposal is fully attachment-driven: each attachment self-registers cleanup on `ydoc.on('destroy')`, and `[Symbol.dispose]()` is synchronous. There's no aggregated bundle-level disposal barrier. Callers needing one (tests that close-then-reopen, CLI exit) reach for a specific attachment disposer at the call site (`await h.idb[Symbol.asyncDispose]()`).
+`whenReady` is the bundle-level readiness convention. Disposal is fully attachment-driven: each attachment self-registers cleanup on `ydoc.on('destroy')`, and `[Symbol.dispose]()` is synchronous. There's no aggregated bundle-level disposal barrier. Callers needing one (tests that close-then-reopen, CLI exit) reach for a specific attachment barrier at the call site (`await h.idb.whenDisposed`).
 
 ## GUID Convention
 

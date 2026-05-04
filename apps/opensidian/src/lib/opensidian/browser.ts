@@ -120,8 +120,8 @@ export function openOpensidian({
 			fileContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 			await Promise.all([
-				idb[Symbol.asyncDispose](),
-				sync[Symbol.asyncDispose](),
+				idb.whenDisposed,
+				sync.whenDisposed,
 			]);
 			await Promise.all([
 				...doc.tables.files.getAllValid().map((file) =>

@@ -65,8 +65,8 @@ export async function openTabManager({
 		async wipe() {
 			doc[Symbol.dispose]();
 			await Promise.all([
-				idb[Symbol.asyncDispose](),
-				sync[Symbol.asyncDispose](),
+				idb.whenDisposed,
+				sync.whenDisposed,
 			]);
 			await idb.clearLocal();
 		},

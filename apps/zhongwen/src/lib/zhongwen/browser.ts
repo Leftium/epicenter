@@ -10,7 +10,7 @@ export function openZhongwen() {
 		idb,
 		async wipe() {
 			doc[Symbol.dispose]();
-			await idb[Symbol.asyncDispose]();
+			await idb.whenDisposed;
 			await idb.clearLocal();
 		},
 		whenLoaded: idb.whenLoaded,

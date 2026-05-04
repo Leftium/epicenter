@@ -11,11 +11,6 @@
  * If you create it inside a callback, it's scoped to that callback's lifetime and gets
  * garbage collected when the callback finishes.
  *
- * `lazy()` caches the value returned by `init`. For async disposal or other promise
- * work, prefer `lazy(async () => { ... })` so synchronous throws inside the body become
- * rejected promises and get cached with the rest of the async result. A non-async
- * initializer that throws before returning a promise will be retried on the next call.
- *
  * @example
  * ```typescript
  * // Inside an observer callback that fires per-transaction:

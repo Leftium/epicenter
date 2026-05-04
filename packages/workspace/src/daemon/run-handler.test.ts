@@ -39,10 +39,10 @@ function fakeSync(
 ): Runtime['sync'] {
 	return {
 		whenConnected: Promise.resolve(),
+		whenDisposed: Promise.resolve(),
 		status,
 		onStatusChange: () => () => {},
 		reconnect() {},
-		[Symbol.asyncDispose]: async () => {},
 		attachRpc: () => ({ rpc: async () => ({ data: null, error: null }) }),
 	} as Runtime['sync'];
 }

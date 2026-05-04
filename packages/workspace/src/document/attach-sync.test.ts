@@ -69,14 +69,8 @@ class FakeWebSocket {
 	}
 }
 
-const realWebSocket = globalThis.WebSocket;
-
 beforeEach(() => {
 	FakeWebSocket.instances = [];
-	(globalThis as { WebSocket: unknown }).WebSocket = FakeWebSocket;
-	return () => {
-		(globalThis as { WebSocket: unknown }).WebSocket = realWebSocket;
-	};
 });
 
 function peekMessageType(frame: Uint8Array): number {

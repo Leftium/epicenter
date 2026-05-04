@@ -4,7 +4,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { Ok, tryAsync, type Result } from 'wellcrafted/result';
+import { Err, Ok, tryAsync, type Result } from 'wellcrafted/result';
 import {
 	BearerSession,
 	type BearerSession as BearerSessionType,
@@ -42,7 +42,7 @@ export async function loadMachineSession({
 		try: () => backend.get(machineSessionOptions),
 		catch: (cause) => MachineAuthStorageError.StorageFailed({ cause }),
 	});
-	if (error) return { data: null, error };
+	if (error) return Err(error);
 	if (raw === null) return Ok(null);
 
 	try {

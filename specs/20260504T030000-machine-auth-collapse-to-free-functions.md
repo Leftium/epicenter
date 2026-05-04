@@ -1,7 +1,7 @@
 # Collapse Machine Auth to Free Functions
 
 **Date**: 2026-05-04
-**Status**: In Progress
+**Status**: Implemented with Verification Blockers
 **Author**: AI-assisted (Claude)
 **Branch**: TBD (single PR; depends on `codex/sync-create-auth` landing)
 
@@ -431,3 +431,51 @@ Single PR. Waves are sequential but small.
 - `specs/20260503T230000-auth-unified-client-two-factories.md` (the split that established the precedent)
 - `docs/articles/20260504T100000-extract-is-the-tell-you-composed-top-down.md` (rationale for bottom-up error composition)
 - Skills referenced: `cohesive-clean-breaks`, `logging`, `factory-function-composition`, `define-errors`, `error-handling`, `one-sentence-test`, `typescript`
+
+## Review
+
+**Completed**: 2026-05-04
+**Branch**: `codex/sync-create-auth`
+
+### Files Read
+
+```txt
+apps/fuji/src/lib/fuji/
+`-- script.ts
+packages/auth/
+|-- package.json
+`-- src/
+    |-- node.ts
+    `-- node/
+        |-- machine-auth-transport.ts
+        |-- machine-auth.test.ts
+        |-- machine-auth.ts
+        `-- machine-session-store.ts
+packages/cli/
+|-- README.md
+`-- src/commands/
+    `-- auth.ts
+```
+
+### Summary
+
+Machine auth now exports stateless OAuth ceremony as free functions, with keychain session persistence split into `loadMachineSession` and `saveMachineSession`. Transport errors are composed from `MachineAuthRequestError` and `DeviceTokenError`, with method return types inferred from the bodies and no wide aggregate transport error.
+
+### Deviations from Spec
+
+- Added a `./node/machine-auth` package export so `packages/cli/src/commands/auth.ts` can use the requested namespace import.
+- The logger is injectable for `status`, `logout`, and `loadMachineSession` so tests can use a memory sink. `createMachineAuthClient` keeps the required zero-argument signature and uses the default `machine-auth` logger.
+- Wave 3 through Wave 5 were committed together because the coordinator collapse and test migration are typecheck-coupled.
+
+### Verification
+
+- `bun run --filter @epicenter/auth typecheck`: passed.
+- `bun run --filter @epicenter/auth test`: passed, 27 tests.
+- `bun x tsc --noEmit` in `packages/cli`: passed.
+- Requested CLI and Fuji filter commands did not map cleanly in Bun. Fuji and workspace typechecks still fail on unrelated existing Svelte/UI errors documented in Wave 8.
+
+### Follow-Up Work
+
+- Add a `typecheck` script to `packages/cli/package.json` if the repo expects `bun run typecheck --filter=@epicenter/cli` to execute work.
+- Clean up the existing Fuji/workspace typecheck failures outside this auth migration before treating Wave 8.4 and Wave 8.5 as release gates.
+- Run the staging `epicenter auth login`, `status`, and `logout` smoke test in an environment with the device-code API configured.

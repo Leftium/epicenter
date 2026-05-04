@@ -20,6 +20,13 @@ current and proposed trees before editing, and
 [post-implementation-review](../post-implementation-review/SKILL.md) after
 implementation.
 
+## References
+
+Load these on demand based on the clean-break surface:
+
+- If working with **asymmetric wins or feature refusal examples**, read [references/asymmetric-wins.md](references/asymmetric-wins.md).
+- If planning a **multi-wave replacement, rollback point, or old-path deletion**, read [references/wave-ordering.md](references/wave-ordering.md).
+
 ## One Sentence First
 
 Start by writing the one sentence the new system must make true.
@@ -153,11 +160,6 @@ Decision:
 The rule is deliberately pushy: if the product sentence survives and the code
 family disappears, default to refusal. Keep the feature only when the user loss
 is load-bearing.
-
-For the auth social sign-in worked example, read
-[references/asymmetric-wins.md](references/asymmetric-wins.md). For narrative
-context, see
-`docs/articles/20260504T160541-asymmetric-wins-support-fewer-features-to-collapse-complexity.md`.
 
 ## Scratch Redesign Pass
 
@@ -343,7 +345,7 @@ smuggle it into the implementation.
 
 ## Wave Ordering: Build, Prove, Remove
 
-When a clean break replaces an old code path with a new one, structure the
+When a clean break replaces an old code path with a new one, order the
 implementation as four sequential phases:
 
 ```txt
@@ -353,31 +355,10 @@ Wave N+2       Verify (typecheck, tests, smoke against staging)
 Wave N+3       Delete the old path
 ```
 
-The "stop importing then verify before deleting" structure means rollback is a
-one-line import flip if verification fails. Do not collapse "verify" into "the
-new code looks good." Run it. Smoke it. Then delete.
-
-The wrong shape is:
-
-```txt
-Wave 1 to N    Build the new path
-Wave N+1       Delete the old path
-Wave N+2       Verify
-```
-
-If verification fails, you have already deleted the fallback. Rollback is more
-painful than it should be. You have skipped the load-bearing step because the
-design feels coherent; coherence is necessary, it is not sufficient.
-
-This is the same shape as Pattern B in
-[specification-writing](../specification-writing/SKILL.md) Decision Hygiene:
-treating an empirical question (does the new code work?) as if it were already
-answered by the design's coherence. Don't.
-
-See `specs/20260504T040000-machine-auth-adopt-better-auth-device-client.md` for
-a worked example: Wave 5 stops importing the old transport; Wave 8 verifies;
-Wave 9 deletes the transport file. If Wave 8 finds a behavior gap, the rollback
-is one revert.
+Verification is Class 1 evidence, not design coherence. Do not collapse "the
+new design is coherent" into "the replacement works." Stop importing the old
+path, verify, then delete. For the failure mode and worked example, read
+[references/wave-ordering.md](references/wave-ordering.md).
 
 ## Naming Rules
 

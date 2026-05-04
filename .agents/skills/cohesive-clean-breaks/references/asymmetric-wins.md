@@ -68,3 +68,6 @@ Refuse it. The UX loss is small; the second auth shape is permanent.
 That is not less product in the way that matters. The product still has social
 sign-in. It refuses one fast path so one invariant can own every provider and
 environment.
+
+For narrative context, see
+`docs/articles/20260504T160541-asymmetric-wins-support-fewer-features-to-collapse-complexity.md`.

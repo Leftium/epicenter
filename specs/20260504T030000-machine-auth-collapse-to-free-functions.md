@@ -1,7 +1,7 @@
 # Collapse Machine Auth to Free Functions
 
 **Date**: 2026-05-04
-**Status**: Draft
+**Status**: In Progress
 **Author**: AI-assisted (Claude)
 **Branch**: TBD (single PR; depends on `codex/sync-create-auth` landing)
 
@@ -336,8 +336,8 @@ Single PR. Waves are sequential but small.
 
 ### Wave 1: extract storage to free functions
 
-- [ ] **1.1** Create `packages/auth/src/node/machine-session-store.ts`. Move `MachineAuthStorageError` definition, the keychain key, the schema validation, and the corrupt-blob recovery into two free functions: `loadMachineSession({ backend })` and `saveMachineSession(session, { backend })`. Both return `Result`. Both default `backend` to `Bun.secrets`. Both type the parameter as `typeof Bun.secrets` (no parallel type).
-- [ ] **1.2** The corrupt-blob warning uses `wellcrafted/logger` (not `console.warn`).
+- [x] **1.1** Create `packages/auth/src/node/machine-session-store.ts`. Move `MachineAuthStorageError` definition, the keychain key, the schema validation, and the corrupt-blob recovery into two free functions: `loadMachineSession({ backend })` and `saveMachineSession(session, { backend })`. Both return `Result`. Both default `backend` to `Bun.secrets`. Both type the parameter as `typeof Bun.secrets` (no parallel type).
+- [x] **1.2** The corrupt-blob warning uses `wellcrafted/logger` (not `console.warn`).
 - [ ] **1.3** Delete `MachineAuthStorage`, `MachineAuthStorageBackend`, `createKeychainMachineAuthStorage` from `machine-auth.ts`. The `MachineAuthStorageError` definition lives in `machine-session-store.ts`.
 
 ### Wave 2: decompose transport errors

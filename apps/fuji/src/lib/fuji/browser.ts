@@ -82,18 +82,6 @@ export function openFuji({
 		},
 		{ gcTime: 5_000 },
 	);
-	async function clearEntryContentLocalData() {
-		await Promise.all(
-			doc.tables.entries.getAllValid().map((entry) =>
-				clearDocument(
-					entryContentDocGuid({
-						workspaceId: doc.ydoc.guid,
-						entryId: entry.id,
-					}),
-				),
-			),
-		);
-	}
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
@@ -114,8 +102,19 @@ export function openFuji({
 		awareness,
 		sync,
 		async clearLocalData() {
-			await clearEntryContentLocalData();
-			await idb.clearLocal();
+			await Promise.all([
+				// Entry content docs use their own IndexedDB document names.
+				...doc.tables.entries.getAllValid().map((entry) =>
+					clearDocument(
+						entryContentDocGuid({
+							workspaceId: doc.ydoc.guid,
+							entryId: entry.id,
+						}),
+					),
+				),
+				// The workspace IndexedDB helper only clears the root doc.
+				idb.clearLocal(),
+			]);
 		},
 		remote,
 		rpc,

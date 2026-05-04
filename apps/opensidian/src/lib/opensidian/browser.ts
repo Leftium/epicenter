@@ -61,18 +61,6 @@ export function openOpensidian({
 		},
 		{ gcTime: 5_000 },
 	);
-	async function clearFileContentLocalData() {
-		await Promise.all(
-			doc.tables.files.getAllValid().map((file) =>
-				clearDocument(
-					fileContentDocGuid({
-						workspaceId: doc.ydoc.guid,
-						fileId: file.id,
-					}),
-				),
-			),
-		);
-	}
 	const fileContent = {
 		async read(fileId: FileId) {
 			await using handle = fileContentDocs.open(fileId);
@@ -124,8 +112,19 @@ export function openOpensidian({
 		awareness,
 		sync,
 		async clearLocalData() {
-			await clearFileContentLocalData();
-			await idb.clearLocal();
+			await Promise.all([
+				// File content docs use their own IndexedDB document names.
+				...doc.tables.files.getAllValid().map((file) =>
+					clearDocument(
+						fileContentDocGuid({
+							workspaceId: doc.ydoc.guid,
+							fileId: file.id,
+						}),
+					),
+				),
+				// The workspace IndexedDB helper only clears the root doc.
+				idb.clearLocal(),
+			]);
 		},
 		remote,
 		rpc,

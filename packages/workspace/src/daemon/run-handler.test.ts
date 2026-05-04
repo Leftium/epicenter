@@ -11,26 +11,82 @@ import { PeerMiss, type SyncRpcAttachment } from '../document/attach-sync.js';
 import type { PeerPresenceAttachment } from '../document/peer-presence.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { WorkspaceEntry } from './types.js';
+import type { DaemonRouteRuntime } from './types.js';
+
+type Runtime = DaemonRouteRuntime['runtime'];
+
+function fakePresence(
+	overrides: Partial<PeerPresenceAttachment> = {},
+): PeerPresenceAttachment {
+	return {
+		peers: () => new Map(),
+		find: () => undefined,
+		waitForPeer: async (peerTarget, { timeoutMs }) =>
+			PeerMiss.PeerMiss({
+				peerTarget,
+				sawPeers: false,
+				waitMs: timeoutMs,
+				emptyReason: null,
+			}),
+		observe: () => () => {},
+		raw: {},
+		...overrides,
+	} as PeerPresenceAttachment;
+}
+
+function fakeRpc(overrides: Partial<SyncRpcAttachment> = {}): SyncRpcAttachment {
+	return {
+		rpc: async () => ({ data: null, error: null }),
+		...overrides,
+	} as SyncRpcAttachment;
+}
+
+function fakeSync(): Runtime['sync'] {
+	return {
+		whenConnected: Promise.resolve(),
+		status: { phase: 'connected', hasLocalChanges: false },
+		onStatusChange: () => () => {},
+		goOffline() {},
+		reconnect() {},
+		whenDisposed: Promise.resolve(),
+		attachPresence: () => fakePresence(),
+		attachRpc: () => fakeRpc(),
+	} as Runtime['sync'];
+}
+
+function fakeRuntime(
+	actions: Runtime['actions'],
+	extra: Record<string, unknown> = {},
+): Runtime {
+	return {
+		actions,
+		sync: fakeSync(),
+		presence: fakePresence(),
+		rpc: fakeRpc(),
+		[Symbol.dispose]() {},
+		...extra,
+	};
+}
 
 function fakeEntry(
 	presence: Partial<PeerPresenceAttachment> = {},
 	rpc: Partial<SyncRpcAttachment> = {},
-): WorkspaceEntry {
-	const workspace = {
-		actions: {
+): DaemonRouteRuntime {
+	const runtime = fakeRuntime(
+		{
 			tabs: {
 				list: defineQuery({
 					handler: () => [],
 				}),
 			},
 		},
-		presence: presence as PeerPresenceAttachment,
-		rpc: rpc as SyncRpcAttachment,
-		[Symbol.dispose]() {},
-	};
+		{
+			presence: fakePresence(presence),
+			rpc: fakeRpc(rpc),
+		},
+	);
 
-	return { name: 'demo', workspace: workspace as WorkspaceEntry['workspace'] };
+	return { route: 'demo', runtime };
 }
 
 describe('executeRun peer dispatch', () => {
@@ -109,21 +165,20 @@ describe('executeRun peer dispatch', () => {
 	});
 });
 
-describe('executeRun export-prefixed routing', () => {
-	test('invokes action under the selected config export', async () => {
-		const workspace = {
-			actions: {
+describe('executeRun route-prefixed routing', () => {
+	test('invokes action under the selected daemon route', async () => {
+		const runtime = fakeRuntime(
+			{
 				notes: {
 					add: defineMutation({
 						handler: () => ({ body: 'hello' }),
 					}),
 				},
 			},
-			[Symbol.dispose]() {},
-		};
+		);
 		const entry = {
-			name: 'notes',
-			workspace: workspace as WorkspaceEntry['workspace'],
+			route: 'notes',
+			runtime,
 		};
 
 		const result = await executeRun([entry], {
@@ -137,18 +192,19 @@ describe('executeRun export-prefixed routing', () => {
 	});
 
 	test('ignores action leaves outside the canonical action root', async () => {
-		const workspace = {
-			actions: {},
-			notes: {
-				add: defineMutation({
-					handler: () => ({ body: 'hello' }),
-				}),
+		const runtime = fakeRuntime(
+			{},
+			{
+				notes: {
+					add: defineMutation({
+						handler: () => ({ body: 'hello' }),
+					}),
+				},
 			},
-			[Symbol.dispose]() {},
-		};
+		);
 		const entry = {
-			name: 'notes',
-			workspace: workspace as WorkspaceEntry['workspace'],
+			route: 'notes',
+			runtime,
 		};
 
 		const result = await executeRun([entry], {
@@ -161,18 +217,18 @@ describe('executeRun export-prefixed routing', () => {
 	});
 
 	test('missing path suggests action-root-relative sibling', async () => {
-		const entry = {
-			name: 'notes',
-			workspace: {
-				actions: {
-					notes: {
-						add: defineMutation({
-							handler: () => ({ body: 'hello' }),
-						}),
-					},
+		const runtime = fakeRuntime(
+			{
+				notes: {
+					add: defineMutation({
+						handler: () => ({ body: 'hello' }),
+					}),
 				},
-				[Symbol.dispose]() {},
-			} as WorkspaceEntry['workspace'],
+			},
+		);
+		const entry = {
+			route: 'notes',
+			runtime,
 		};
 
 		const result = await executeRun([entry], {
@@ -188,16 +244,13 @@ describe('executeRun export-prefixed routing', () => {
 		expect(result.error.suggestions).toEqual(['  notes.notes.add  (mutation)']);
 	});
 
-	test('unknown export returns available export suggestions', async () => {
+	test('unknown route returns available route suggestions', async () => {
 		const result = await executeRun(
 			[
 				fakeEntry({}),
 				{
-					name: 'tasks',
-					workspace: {
-						actions: {},
-						[Symbol.dispose]() {},
-					} as WorkspaceEntry['workspace'],
+					route: 'tasks',
+					runtime: fakeRuntime({}),
 				},
 			],
 			{
@@ -212,7 +265,7 @@ describe('executeRun export-prefixed routing', () => {
 			throw new Error('expected UsageError');
 		}
 		expect(result.error.message).toBe(
-			'No config export "missing". Available: demo, tasks',
+			'No daemon route "missing". Available: demo, tasks',
 		);
 		expect(result.error.suggestions).toEqual(['  demo', '  tasks']);
 	});

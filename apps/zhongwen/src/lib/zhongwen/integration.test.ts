@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
-import { type ProjectDir } from '@epicenter/workspace';
+import type { ProjectDir } from '@epicenter/workspace';
 import {
 	mintTestProjectDir,
 	NoopWebSocket,
@@ -9,7 +9,7 @@ import {
 	type ConversationId,
 	generateConversationId,
 } from '../workspace/definition.js';
-import { openZhongwen as openZhongwenDaemon } from './daemon.js';
+import { ZHONGWEN_DAEMON_ROUTE, zhongwenDaemon } from './daemon.js';
 import { openZhongwen as openZhongwenScript } from './script.js';
 
 let workdir: ProjectDir;
@@ -23,17 +23,20 @@ afterEach(() => {
 });
 
 describe('daemon to script handoff via Yjs log file', () => {
-	test('script warm hydrates conversations the daemon wrote', () => {
+	test('script warm hydrates conversations the daemon wrote', async () => {
 		{
-			using daemon = openZhongwenDaemon({
+			const routeModule = zhongwenDaemon({
 				getToken: async () => 'fake-token',
 				peer: {
 					id: 'test-daemon',
 					name: 'Zhongwen Daemon',
 					platform: 'node',
 				},
-				projectDir: workdir,
 				webSocketImpl: NoopWebSocket,
+			});
+			using daemon = await routeModule({
+				projectDir: workdir,
+				route: ZHONGWEN_DAEMON_ROUTE,
 			});
 
 			const now = Date.now();

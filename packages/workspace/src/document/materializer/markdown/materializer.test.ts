@@ -17,7 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type } from 'arktype';
 import * as Y from 'yjs';
@@ -83,34 +83,42 @@ type TableRegistration = {
 	config?: Parameters<Materializer['table']>[1];
 };
 
-async function setup(options?: {
+async function setup({
+	tables: tableRegistrations,
+}: {
 	tables?: (t: AttachedTables) => TableRegistration[];
-}) {
-	const cache = createDisposableCache((id: string) => {
-		const ydoc = new Y.Doc({ guid: id });
-		const tables = attachTables(ydoc, tableDefinitions);
+} = {}) {
+	const cache = createDisposableCache(
+		(id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			const tables = attachTables(ydoc, tableDefinitions);
 
-		const materializer = attachMarkdownMaterializer(ydoc, {
-			dir: TEST_DIR,
-		});
+			const materializer = attachMarkdownMaterializer(ydoc, {
+				dir: TEST_DIR,
+			});
 
-		const registrations =
-			options?.tables?.(tables) ??
-			([{ table: tables.posts }, { table: tables.notes }] as TableRegistration[]);
-		for (const { table, config } of registrations) {
-			materializer.table(table, config);
-		}
+			const registrations =
+				tableRegistrations?.(tables) ??
+				([
+					{ table: tables.posts },
+					{ table: tables.notes },
+				] as TableRegistration[]);
+			for (const { table, config } of registrations) {
+				materializer.table(table, config);
+			}
 
-		return {
-			ydoc,
-			tables,
-			materializer,
-			whenReady: materializer.whenFlushed,
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	}, { gcTime: 0 });
+			return {
+				ydoc,
+				tables,
+				materializer,
+				whenReady: materializer.whenFlushed,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		},
+		{ gcTime: 0 },
+	);
 
 	const workspace = cache.open('test.materializer');
 	await workspace.whenReady;

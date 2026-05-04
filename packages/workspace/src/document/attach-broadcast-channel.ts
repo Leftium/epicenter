@@ -1,5 +1,5 @@
-import * as Y from 'yjs';
 import { BC_ORIGIN } from '@epicenter/sync';
+import * as Y from 'yjs';
 
 export { BC_ORIGIN };
 
@@ -35,13 +35,12 @@ export type BroadcastChannelAttachment = {
  */
 export function attachBroadcastChannel(
 	ydoc: Y.Doc,
-	opts: { transportOrigin?: symbol } = {},
+	{ transportOrigin }: { transportOrigin?: symbol } = {},
 ): BroadcastChannelAttachment {
 	if (typeof BroadcastChannel === 'undefined') {
 		return { whenDisposed: Promise.resolve() };
 	}
 
-	const { transportOrigin } = opts;
 	const channel = new BroadcastChannel(`yjs:${ydoc.guid}`);
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();

@@ -44,7 +44,7 @@ function sweepOrphan(dir: string): void {
 /**
  * A row of the `ps` table.
  *
- * Per Invariant 7 the daemon serves every workspace its config exports;
+ * Per Invariant 7 the daemon serves every workspace route in its config;
  * the row carries the dir + pid + uptime. Detailed workspace/action state
  * stays on `list` and `peers`.
  */

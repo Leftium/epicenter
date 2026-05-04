@@ -10,40 +10,62 @@ import type {
 	SystemActions,
 } from '../shared/actions.js';
 
-export type RemoteActionTransport = {
+export type RemoteClientOptions = {
 	presence: PeerPresenceAttachment;
 	rpc: SyncRpcAttachment;
 };
 
-export function createRemoteActions<T>(
-	transport: RemoteActionTransport,
+export type RemoteClient = {
+	actions<T>(peerId: string): RemoteActionProxy<T>;
+	describe(peerId: string): Promise<Result<ActionManifest, RpcError>>;
+};
+
+export function createRemoteClient(
+	options: RemoteClientOptions,
+): RemoteClient {
+	return {
+		actions<T>(peerId: string) {
+			return createRemoteActionProxy<T>(options, peerId);
+		},
+		describe(peerId: string) {
+			return createRemoteActionProxy<{ system: SystemActions }>(
+				options,
+				peerId,
+			).system.describe();
+		},
+	};
+}
+
+function createRemoteActionProxy<T>(
+	options: RemoteClientOptions,
 	peerId: string,
 ): RemoteActionProxy<T> {
-	const send: Sender = async (path, input, options) => {
-		const found = transport.presence.find(peerId);
+	const send: Sender = async (path, input, callOptions) => {
+		const found = options.presence.find(peerId);
 		if (!found) return Err(RpcError.PeerNotFound({ peer: peerId }).error);
 
 		return new Promise<Result<unknown, RpcError>>((resolveCall) => {
 			let settled = false;
+			let unsubscribe = () => {};
 			const settle = (v: Result<unknown, RpcError>) => {
 				if (settled) return;
 				settled = true;
 				unsubscribe();
 				resolveCall(v);
 			};
-			const unsubscribe = transport.presence.observe(() => {
-				if (!transport.presence.find(peerId)) {
+			unsubscribe = options.presence.observe(() => {
+				if (!options.presence.find(peerId)) {
 					settle(Err(RpcError.PeerLeft({ peer: peerId }).error));
 				}
 			});
 
-			if (!transport.presence.find(peerId)) {
+			if (!options.presence.find(peerId)) {
 				settle(Err(RpcError.PeerLeft({ peer: peerId }).error));
 				return;
 			}
 
-			transport.rpc
-				.rpc(found.clientId, path, input, options)
+			options.rpc
+				.rpc(found.clientId, path, input, callOptions)
 				.then(settle)
 				.catch((cause) =>
 					settle(Err(RpcError.ActionFailed({ action: path, cause }).error)),
@@ -59,16 +81,6 @@ type Sender = (
 	input: unknown,
 	options?: RemoteCallOptions,
 ) => Promise<Result<unknown, RpcError>>;
-
-export function describeRemoteActions(
-	transport: RemoteActionTransport,
-	peerId: string,
-): Promise<Result<ActionManifest, RpcError>> {
-	return createRemoteActions<{ system: SystemActions }>(
-		transport,
-		peerId,
-	).system.describe();
-}
 
 function buildProxy<T>(path: string[], send: Sender): T {
 	const target = (() => {}) as unknown as object;

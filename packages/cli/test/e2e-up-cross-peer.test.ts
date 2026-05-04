@@ -7,7 +7,7 @@
  * § "Acceptance criteria". Each line below cites the criterion and the test
  * that exercises it (or the infra gap that blocks coverage).
  *
- *   [ok] `up` prints "online (workspaces=[...])" on stderr,
+ *   [ok] `up` prints "online (routes=[...])" on stderr,
  *        followed by the initial peers snapshot.
  *        Covered by `up lifecycle: online banner + peers snapshot + clean exit`.
  *   [ok] Ctrl-C / SIGTERM exits cleanly with no orphan socket / metadata.
@@ -22,10 +22,7 @@
  *        "daemon already running (pid=X)".
  *        Covered by `second up against the same dir exits 1`.
  *   [gap] Stale-auth fast-fail with literal "401 Unauthorized" message.
- *        Partial: `up.test.ts` covers the `connect failed:` prefix in-process,
- *        but the literal "401 Unauthorized" suffix requires structured auth
- *        errors flowing through `whenReady`/`whenConnected`. Gap noted in
- *        `up.ts` § `connectFailedMessage`.
+ *        Requires structured auth errors flowing through sync status.
  *   [ok] Project selection through `-C <p>`.
  *        Covered by the lifecycle tests that start, query, log, and stop the
  *        fixture from a resolved project directory.
@@ -37,11 +34,11 @@
  *        or `packages/cli/`, and writing one is a separate spec
  *        (`specs/20260427T000000-execute-cli-up-long-lived-peer.md`
  *        § "Wave 8 isn't a commit"). The lifecycle tests below stand in for
- *        that coverage, exercising every CLI verb against a fixture whose
- *        workspace has no `sync` attachment and no `whenReady` barrier.
+ *        that coverage, exercising every CLI verb against a fixture with fake
+ *        peer attachments.
  *   [gap] DeviceId in the banner reflects the real peer.
  *        Infra gap: `up.ts § pickDeviceId` returns `'<unknown>'` because
- *        `LoadedWorkspace.sync` doesn't expose self awareness post-connect.
+ *        `DaemonWorkspace.sync` doesn't expose self awareness post-connect.
  *        Reported in Wave 5; out of scope here.
  */
 

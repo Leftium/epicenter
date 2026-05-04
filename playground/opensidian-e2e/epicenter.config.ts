@@ -10,9 +10,8 @@
  * Reads auth credentials from the CLI session store at
  * `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
  *
- * Exports `opensidian`: an object satisfying `LoadedWorkspace` with
- * `whenReady`, `actions`, `sync`, and `[Symbol.dispose]`. Daemon action paths
- * are relative to `actions`.
+ * Hosts the `opensidian` route as a full daemon peer: actions, sync,
+ * presence, RPC, and disposal. Daemon action paths are relative to `actions`.
  *
  * Usage:
  *   # Run the workspace. Imports this config, which constructs the
@@ -28,11 +27,6 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-	attachSessionUnlock,
-	createSessionStore,
-	epicenterPaths,
-} from '@epicenter/cli';
 import { createFileContentDoc } from '@epicenter/filesystem';
 import {
 	attachEncryption,
@@ -41,6 +35,7 @@ import {
 	defineMutation,
 	toWsUrl,
 } from '@epicenter/workspace';
+import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
@@ -48,6 +43,11 @@ import {
 	toSlugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
+import {
+	attachSessionUnlock,
+	createSessionStore,
+	epicenterPaths,
+} from '@epicenter/workspace/node';
 import { opensidianTables } from 'opensidian/workspace';
 import Type from 'typebox';
 import * as Y from 'yjs';
@@ -175,15 +175,26 @@ const actions = {
 		}),
 	},
 };
+const presence = sync.attachPresence({
+	peer: {
+		id: 'opensidian-playground-daemon',
+		name: 'Opensidian Playground Daemon',
+		platform: 'node',
+	},
+});
+const rpc = sync.attachRpc(actions);
 
 export const opensidian = {
+	workspaceId: ydoc.guid,
 	whenReady,
 	actions,
 	sync,
+	presence,
+	rpc,
 	[Symbol.dispose]() {
 		ydoc.destroy();
 	},
-	// extras (not part of LoadedWorkspace contract; useful for direct script use)
+	// Extras for direct script use, not part of the hosted daemon runtime contract.
 	id: WORKSPACE_ID,
 	ydoc,
 	tables,
@@ -194,3 +205,11 @@ export const opensidian = {
 	markdown,
 	sqlite,
 };
+
+export default defineEpicenterConfig({
+	daemon: {
+		routes: {
+			opensidian: () => opensidian,
+		},
+	},
+});

@@ -4,13 +4,13 @@
  *
  * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
  * With `--peer <target>`, the invocation is dispatched over the selected
- * export's RPC channel to a remote peer instead of running locally.
+ * route's RPC channel to a remote peer instead of running locally.
  *
  * `epicenter run` requires a running daemon for the discovered project.
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
  *
  * Exit codes:
- *   1: usage error (unknown export, unknown action, missing peer RPC for
+ *   1: usage error (unknown route, unknown action, missing peer RPC for
  *      `--peer`), or no daemon / config (`MissingConfig`, `Required`,
  *      transport error)
  *   2: runtime error (local action returned Err, or remote RPC failed)
@@ -18,7 +18,7 @@
  */
 
 import {
-	type PeerAwarenessState,
+	type PeerPresenceState,
 	type RpcError,
 } from '@epicenter/workspace';
 import {
@@ -51,7 +51,7 @@ export const runCommand = cmd({
 			.positional('action', {
 				type: 'string',
 				demandOption: true,
-				describe: 'Export-prefixed action path, e.g. notes.notes.add',
+				describe: 'Route-prefixed action path, e.g. notes.notes.add',
 			})
 			.positional('input', {
 				type: 'string',
@@ -181,7 +181,7 @@ export function emitMissError(
 export function emitRpcError(
 	error: RpcError,
 	targetClientId: number,
-	peerState: PeerAwarenessState,
+	peerState: PeerPresenceState,
 ): void {
 	const { peer } = peerState;
 	const peerLabel = `${peer.name} (${targetClientId}, ${peer.platform})`;

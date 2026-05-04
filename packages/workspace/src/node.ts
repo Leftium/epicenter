@@ -5,14 +5,29 @@
  * bundles do not traverse modules that import `node:*` or `bun:*`.
  */
 
-export { connectDaemon } from './client/connect-daemon.js';
-export { findEpicenterDir } from './client/find-epicenter-dir.js';
+export {
+	attachSessionUnlock,
+	type SessionUnlockAttachment,
+} from './client/attach-session-unlock.js';
+export { connectDaemonActions } from './client/connect-daemon-actions.js';
 export type {
 	DaemonActionOptions,
 	DaemonActions,
 } from './client/daemon-actions.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
-export { buildApp, PeerSnapshot, RunRequest } from './daemon/app.js';
+export { epicenterPaths } from './client/epicenter-paths.js';
+export { findEpicenterDir } from './client/find-epicenter-dir.js';
+export {
+	type AuthSession,
+	createSessionStore,
+	type SaveSessionData,
+	type SessionStore,
+} from './client/session-store.js';
+export {
+	type CreateSessionTokenGetterOptions,
+	createSessionTokenGetter,
+} from './client/session-token.js';
+export { buildDaemonApp, PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
 	type DaemonClient,
 	DaemonError,
@@ -37,11 +52,17 @@ export {
 } from './daemon/paths.js';
 export { RunError, type RunResponse } from './daemon/run-errors.js';
 export {
-	createWorkspaceServer,
-	type WorkspaceServer,
-	type WorkspaceServerOptions,
+	createDaemonServer,
+	type DaemonServer,
+	type DaemonServerOptions,
 } from './daemon/server.js';
-export type { LoadedWorkspace, WorkspaceEntry } from './daemon/types.js';
+export type {
+	DaemonRouteModule,
+	DaemonRuntime,
+	DaemonRouteRuntime,
+	EpicenterConfig,
+	EpicenterConfigContext,
+} from './daemon/types.js';
 export {
 	bindOrRecover,
 	bindUnixSocket,
@@ -67,10 +88,10 @@ export {
 	attachYjsLogReader,
 	type YjsLogReaderAttachment,
 } from './document/attach-yjs-log-reader.js';
+export { SqliteWriterError } from './document/sqlite-writer.js';
 export {
 	markdownPath,
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';
-export { SqliteWriterError } from './document/sqlite-writer.js';
 export { hashClientId } from './shared/client-id.js';

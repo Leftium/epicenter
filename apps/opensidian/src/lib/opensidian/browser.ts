@@ -11,7 +11,7 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	type PeerDescriptor,
+	type PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -23,7 +23,7 @@ export function openOpensidian({
 	peer,
 }: {
 	auth: AuthClient;
-	peer: PeerDescriptor;
+	peer: PeerIdentity;
 }) {
 	const doc = openOpensidianDoc();
 
@@ -51,7 +51,7 @@ export function openOpensidian({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: () => auth.getToken(),
+		getToken: async () => auth.getToken(),
 	});
 	const presence = sync.attachPresence({ peer });
 	const rpc = sync.attachRpc(actions);

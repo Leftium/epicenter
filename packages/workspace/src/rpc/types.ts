@@ -7,7 +7,7 @@ import type { Action } from '../shared/actions.js';
  *
  * The transport sends one dot-path string such as `'tabs.close'`, so this
  * type mirrors that wire shape as a flat action map. App code should usually
- * prefer `createRemoteActions<T>({ presence, rpc }, peerId)` for nested
+ * prefer `createRemoteClient({ presence, rpc }).actions<T>(peerId)` for nested
  * calls; use this type when calling the lower-level
  * `rpc.rpc<TMap>(clientId, action, input)` API.
  *

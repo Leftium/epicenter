@@ -24,9 +24,9 @@ import {
 	createDisposableCache,
 	defineTable,
 } from '../../../index.js';
+import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 import { attachSqliteMaterializer } from './sqlite.js';
 import type { MirrorDatabase } from './types.js';
-import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 
 const postsTable = defineTable(
 	type({ id: 'string', _v: '1', title: 'string', 'published?': 'boolean' }),
@@ -65,9 +65,7 @@ function createTestDb(): TestDb {
 	};
 }
 
-type AttachedTables = ReturnType<
-	typeof attachTables<typeof tableDefinitions>
->;
+type AttachedTables = ReturnType<typeof attachTables<typeof tableDefinitions>>;
 type Materializer = ReturnType<typeof attachSqliteMaterializer>;
 type TableRegistration = {
 	table: Parameters<Materializer['table']>[0];
@@ -79,34 +77,40 @@ type SetupOptions = {
 	debounceMs?: number;
 };
 
-function setup(options: SetupOptions = {}) {
+function setup({ tables: tableRegistrations, debounceMs }: SetupOptions = {}) {
 	const db = createTestDb();
 
-	const cache = createDisposableCache((id: string) => {
-		const ydoc = new Y.Doc({ guid: id });
-		const tables = attachTables(ydoc, tableDefinitions);
+	const cache = createDisposableCache(
+		(id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			const tables = attachTables(ydoc, tableDefinitions);
 
-		const materializer = attachSqliteMaterializer(ydoc, {
-			db,
-			debounceMs: options.debounceMs,
-		});
+			const materializer = attachSqliteMaterializer(ydoc, {
+				db,
+				debounceMs,
+			});
 
-		const registrations =
-			options.tables?.(tables) ??
-			([{ table: tables.posts }, { table: tables.notes }] as TableRegistration[]);
-		for (const { table, config } of registrations) {
-			materializer.table(table, config);
-		}
+			const registrations =
+				tableRegistrations?.(tables) ??
+				([
+					{ table: tables.posts },
+					{ table: tables.notes },
+				] as TableRegistration[]);
+			for (const { table, config } of registrations) {
+				materializer.table(table, config);
+			}
 
-		return {
-			ydoc,
-			tables,
-			sqlite: materializer,
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	}, { gcTime: 0 });
+			return {
+				ydoc,
+				tables,
+				sqlite: materializer,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		},
+		{ gcTime: 0 },
+	);
 
 	const workspace = cache.open('test');
 	return { db, workspace, cache };
@@ -166,26 +170,29 @@ describe('attachSqliteMaterializer', () => {
 			const db = createTestDb();
 			const gate = createDeferred();
 
-			const cache = createDisposableCache((id: string) => {
-				const ydoc = new Y.Doc({ guid: id });
-				const tables = attachTables(ydoc, tableDefinitions);
+			const cache = createDisposableCache(
+				(id: string) => {
+					const ydoc = new Y.Doc({ guid: id });
+					const tables = attachTables(ydoc, tableDefinitions);
 
-				const materializer = attachSqliteMaterializer(ydoc, {
-					db,
-					waitFor: gate.promise,
-				})
-					.table(tables.posts)
-					.table(tables.notes);
+					const materializer = attachSqliteMaterializer(ydoc, {
+						db,
+						waitFor: gate.promise,
+					})
+						.table(tables.posts)
+						.table(tables.notes);
 
-				return {
-					ydoc,
-					tables,
-					sqlite: materializer,
-					[Symbol.dispose]() {
-						ydoc.destroy();
-					},
-				};
-			}, { gcTime: 0 });
+					return {
+						ydoc,
+						tables,
+						sqlite: materializer,
+						[Symbol.dispose]() {
+							ydoc.destroy();
+						},
+					};
+				},
+				{ gcTime: 0 },
+			);
 
 			const workspace = cache.open('ready-gated');
 
@@ -440,12 +447,12 @@ describe('attachSqliteMaterializer', () => {
 
 				await testSetup.workspace.sqlite.whenFlushed;
 
-				expect(
-					await testSetup.workspace.sqlite.count({ table: 'posts' }),
-				).toBe(2);
-				expect(
-					await testSetup.workspace.sqlite.count({ table: 'notes' }),
-				).toBe(0);
+				expect(await testSetup.workspace.sqlite.count({ table: 'posts' })).toBe(
+					2,
+				);
+				expect(await testSetup.workspace.sqlite.count({ table: 'notes' })).toBe(
+					0,
+				);
 			} finally {
 				await cleanup(testSetup);
 			}

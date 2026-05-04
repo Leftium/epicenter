@@ -1,8 +1,8 @@
 /**
- * Fuji workspace — schema definition, branded IDs, and actions factory.
+ * Fuji workspace: schema definition, branded IDs, and actions factory.
  *
  * Fuji is a personal CMS with a 1:1 mapping to your blog. Entries are content
- * pieces—articles, thoughts, ideas—organized by tags and type, displayed in a
+ * pieces: articles, thoughts, ideas: organized by tags and type, displayed in a
  * data table with an editor panel. Each entry has a rich-text content document
  * for collaborative editing via ProseMirror + y-prosemirror.
  */
@@ -10,6 +10,7 @@
 import {
 	DateTimeString,
 	defineMutation,
+	defineQuery,
 	defineTable,
 	generateId,
 	type InferTableRow,
@@ -22,7 +23,7 @@ import type { Brand } from 'wellcrafted/brand';
 // ─── Branded IDs ──────────────────────────────────────────────────────────────
 
 /**
- * Branded entry ID — nanoid generated when an entry is created.
+ * Branded entry ID: nanoid generated when an entry is created.
  *
  * Prevents accidental mixing with other string IDs at compile time.
  */
@@ -32,20 +33,20 @@ export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
 /**
- * Entries table — content pieces in a personal CMS.
+ * Entries table: content pieces in a personal CMS.
  *
  * Each entry has a title, subtitle (editorial hook for blog listings and table
  * display), type classification, and freeform tags. Both `type` and `tags` are
- * always present—an unclassified entry has empty arrays, not missing fields.
+ * always present: an unclassified entry has empty arrays, not missing fields.
  *
- * `date` is the user-defined date associated with the entry—the "when" of the
+ * `date` is the user-defined date associated with the entry: the "when" of the
  * content itself. For a blog post it's the publish date, for a journal entry
  * it's when it happened, for research notes it's the reference date. Always
- * present—defaults to `createdAt` on creation, editable by the user afterward.
+ * present: defaults to `createdAt` on creation, editable by the user afterward.
  *
  * Entries support pinning (pinned entries sort to the top of lists) and soft
  * deletion via `deletedAt`. Soft-deleted entries move to "Recently Deleted"
- * rather than being permanently destroyed—critical for CRDT conflict safety
+ * rather than being permanently destroyed: critical for CRDT conflict safety
  * when two devices diverge.
  *
  * The rich-text content document is a separate Y.Doc per entry. Apps own
@@ -109,6 +110,42 @@ export type FujiTables = Tables<typeof fujiTables>;
 export function createFujiActions(tables: FujiTables) {
 	return {
 		entries: {
+			get: defineQuery({
+				title: 'Get Entry',
+				description: 'Read one entry by ID from the daemon workspace.',
+				input: Type.Object({
+					id: Type.String({ description: 'Entry ID to read' }),
+				}),
+				handler: ({ id }) => {
+					return tables.entries.get(id);
+				},
+			}),
+			getAllValid: defineQuery({
+				title: 'List Valid Entries',
+				description: 'Read all valid entries from the daemon workspace.',
+				input: Type.Object({}),
+				handler: () => {
+					return tables.entries.getAllValid();
+				},
+			}),
+			count: defineQuery({
+				title: 'Count Entries',
+				description: 'Count entries in the daemon workspace.',
+				input: Type.Object({}),
+				handler: () => {
+					return tables.entries.count();
+				},
+			}),
+			has: defineQuery({
+				title: 'Has Entry',
+				description: 'Check whether an entry exists in the daemon workspace.',
+				input: Type.Object({
+					id: Type.String({ description: 'Entry ID to check' }),
+				}),
+				handler: ({ id }) => {
+					return tables.entries.has(id);
+				},
+			}),
 			/**
 			 * Create a new entry with sensible defaults.
 			 *
@@ -134,7 +171,7 @@ export function createFujiActions(tables: FujiTables) {
 						Type.Array(Type.String(), { description: 'Freeform tags' }),
 					),
 					rating: Type.Optional(
-						Type.Number({ description: 'Rating from 0–5 (0 = unrated)' }),
+						Type.Number({ description: 'Rating from 0-5 (0 = unrated)' }),
 					),
 				}),
 				handler: ({ title, subtitle, type: entryType, tags, rating }) => {
@@ -157,10 +194,50 @@ export function createFujiActions(tables: FujiTables) {
 					return { id };
 				},
 			}),
+			upsert: defineMutation({
+				title: 'Upsert Entry',
+				description: 'Insert or replace a full entry row.',
+				input: Type.Object({
+					id: Type.String({ description: 'Entry ID' }),
+					title: Type.String({ description: 'Entry title' }),
+					subtitle: Type.String({ description: 'Subtitle for blog listings' }),
+					type: Type.Array(Type.String(), {
+						description: 'Type classifications',
+					}),
+					tags: Type.Array(Type.String(), { description: 'Freeform tags' }),
+					pinned: Type.Boolean({ description: 'Whether the entry is pinned' }),
+					rating: Type.Number({ description: 'Rating from 0 to 5' }),
+					deletedAt: Type.Optional(
+						Type.Unsafe<DateTimeString>({
+							type: 'string',
+							description: 'Soft deletion timestamp',
+						}),
+					),
+					date: Type.Unsafe<DateTimeString>({
+						type: 'string',
+						description: 'User-defined date for the entry',
+					}),
+					createdAt: Type.Unsafe<DateTimeString>({
+						type: 'string',
+						description: 'Creation timestamp',
+					}),
+					updatedAt: Type.Unsafe<DateTimeString>({
+						type: 'string',
+						description: 'Last update timestamp',
+					}),
+					_v: Type.Literal(2),
+				}),
+				handler: (row) => {
+					const parsed = tables.entries.parse(row.id, row);
+					if (parsed.error) throw parsed.error;
+					tables.entries.set(parsed.data);
+					return { id: parsed.data.id };
+				},
+			}),
 			/**
 			 * Update entry metadata fields and auto-bump `updatedAt`.
 			 *
-			 * Every field edit—title, subtitle, tags, type, date—routes through
+			 * Every field edit: title, subtitle, tags, type, date: routes through
 			 * this action so `updatedAt` stays consistent whether the change
 			 * comes from the UI, CLI, or AI.
 			 */
@@ -183,7 +260,7 @@ export function createFujiActions(tables: FujiTables) {
 						Type.Array(Type.String(), { description: 'Freeform tags' }),
 					),
 					rating: Type.Optional(
-						Type.Number({ description: 'Rating from 0–5 (0 = unrated)' }),
+						Type.Number({ description: 'Rating from 0-5 (0 = unrated)' }),
 					),
 					date: Type.Optional(
 						Type.Unsafe<DateTimeString>({
@@ -203,7 +280,7 @@ export function createFujiActions(tables: FujiTables) {
 			/**
 			 * Soft-delete an entry by setting `deletedAt` to now.
 			 *
-			 * The entry stays in the CRDT for conflict safety—two devices that
+			 * The entry stays in the CRDT for conflict safety: two devices that
 			 * diverge can merge without data loss. Filtered out of active views
 			 * by `deletedAt !== undefined`.
 			 */
@@ -259,7 +336,7 @@ export function createFujiActions(tables: FujiTables) {
 						}),
 					),
 				}),
-				handler: ({ entries: items }) => {
+				handler: async ({ entries: items }) => {
 					const now = DateTimeString.now();
 					const rows = items.map(({ title, date }) => ({
 						id: generateId<EntryId>(),
@@ -275,7 +352,7 @@ export function createFujiActions(tables: FujiTables) {
 						updatedAt: now,
 						_v: 2 as const,
 					}));
-					tables.entries.bulkSet(rows);
+					await tables.entries.bulkSet(rows);
 					return { count: rows.length };
 				},
 			}),

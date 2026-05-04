@@ -413,7 +413,7 @@ const rpc = sync.attachRpc(workspace.actions);
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  client.ts          (singleton + lifecycle)             │
-│  ─ resolves device descriptor                           │
+│  ─ resolves peer identity                               │
 │  ─ wires auth, calls openXxx(...)                       │
 │  ─ exports the workspace binding                        │
 └────────────────────────┬────────────────────────────────┘
@@ -487,7 +487,7 @@ Presence only                      Capability + dispatch
                                    "Close these tabs" (user actions)
 ```
 
-Awareness carries `{id, name, platform}` only. The action manifest moved to `system.describe` — fetched on demand instead of broadcast every 15s. The trip-wire was N²·M wire traffic; the fix was on-demand RPC.
+Awareness carries `{id, name, platform}` only. The action manifest moved to `system.describe`, fetched on demand instead of broadcast every 15s. The trip-wire was N²·M wire traffic; the fix was on-demand RPC.
 
 ## The supervisor loop and its timers
 
@@ -593,7 +593,7 @@ handshake.
 Presence is the source of truth for "who else is here"; RPC is the dispatch surface:
 
 ```ts
-presence.peers()                       // Map<clientId, PeerAwarenessState>
+presence.peers()                       // Map<clientId, PeerPresenceState>
 presence.find(peerId)                  // Resolved peer or undefined
 presence.observe(callback)             // unsubscribe fn
 rpc.rpc(target, action, input, opts)   // typed remote call
@@ -602,23 +602,25 @@ rpc.rpc(target, action, input, opts)   // typed remote call
 Cross-device action call:
 
 ```ts
-const macbook = createRemoteActions<TabManagerActions>(
-	{ presence: fuji.presence, rpc: fuji.rpc },
-	'macbook-pro',
-);
+const remote = createRemoteClient({
+	presence: fuji.presence,
+	rpc: fuji.rpc,
+});
+
+const macbook = remote.actions<TabManagerActions>('macbook-pro');
 const result = await macbook.tabs.close({ tabIds: [1, 2] });
 ```
 
-`createRemoteActions<T>({ presence, rpc }, peerId)` returns a typed Proxy. Walking `.tabs.close` builds nested proxies; calling `.tabs.close(input)` resolves the peer through presence and dispatches via `rpc.rpc(clientId, 'tabs.close', input)`.
+`createRemoteClient({ presence, rpc })` binds the local peer-calling capability once. `remote.actions<T>(peerId)` returns a typed Proxy. Walking `.tabs.close` builds nested proxies; calling `.tabs.close(input)` resolves the peer through presence and dispatches via `rpc.rpc(clientId, 'tabs.close', input)`.
 
-`describeRemoteActions({ presence, rpc }, peerId)` is a thin wrapper that calls the injected `system.describe` action to fetch the peer's full action manifest on demand.
+`remote.describe(peerId)` is a thin wrapper that calls the injected `system.describe` action to fetch the peer's full action manifest on demand.
 
 ### Peer-removed race semantics
 
-Both `createRemoteActions<T>` and `describeRemoteActions` race the RPC against a peer-removed signal. If the matched peer disappears mid-call, the in-flight Promise rejects immediately with `RpcError.PeerLeft` rather than waiting the full RPC timeout:
+Both `remote.actions<T>(peerId)` and `remote.describe(peerId)` race the RPC against a peer-removed signal. If the matched peer disappears mid-call, the in-flight Promise rejects immediately with `RpcError.PeerLeft` rather than waiting the full RPC timeout:
 
 ```
-createRemoteActions<T>({ presence, rpc }, 'mac').foo()
+createRemoteClient({ presence, rpc }).actions<T>('mac').foo()
   │
   ├─ subscribe to presence.observe(callback)
   ├─ fire: rpc.rpc(...)
@@ -642,7 +644,7 @@ End-to-end. The CLI process is "Fuji"; the peer is "macbook-pro" (a tab-manager 
           │    workspace.presence.peers() returns:   │
           │    Map { 42 → {peer:{id:'macbook-pro'}}}│
           │                                          │
-          │ 2. describeRemoteActions(..., peerId)    │
+          │ 2. remote.describe(peerId)               │
           │    → system.describe()                   │
           │                                          │
           │ 3. internally: presence.find(peerId)     │

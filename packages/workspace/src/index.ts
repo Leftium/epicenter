@@ -33,6 +33,7 @@
 
 export type {
 	Action,
+	Actions,
 	ActionManifest,
 	ActionMeta,
 	Mutation,
@@ -57,9 +58,9 @@ export {
 export { isRpcError, RpcError } from '@epicenter/sync';
 // Cross-peer action calling.
 export {
-	createRemoteActions,
-	describeRemoteActions,
-	type RemoteActionTransport,
+	createRemoteClient,
+	type RemoteClient,
+	type RemoteClientOptions,
 } from './rpc/remote-actions.js';
 export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
@@ -184,11 +185,15 @@ export {
 	type WebSocketImpl,
 } from './document/attach-sync.js';
 export {
+	attachReadonlyTable,
+	attachReadonlyTables,
 	attachTable,
 	attachTables,
 	type BaseRow,
 	type InferTableRow,
 	type LastSchema,
+	type ReadonlyTable,
+	type ReadonlyTables,
 	type Table,
 	type TableDefinition,
 	type TableDefinitions,
@@ -226,12 +231,11 @@ export {
 	type PeerPresenceAttachment,
 } from './document/peer-presence.js';
 export {
-	type FoundPeer,
-	Peer,
-	type PeerAwarenessState,
-	type PeerDescriptor,
-	Platform,
-} from './document/standard-awareness-defs.js';
+	type ResolvedPeer,
+	PeerIdentity,
+	type PeerPresenceState,
+	type PeerRuntime,
+} from './document/peer-presence-defs.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS

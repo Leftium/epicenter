@@ -1,51 +1,19 @@
 /**
  * Workspace config loader.
  *
- * Contract:
- *
- *   A named export becomes a workspace if it implements [Symbol.dispose]
- *   (called at exit; the discriminator) and exposes an `actions` object.
- *   If it also has:
- *
- *     whenReady: Promise         awaited before action invocations
- *     sync:      SyncAttachment  awaited during startup and disposal
- *     presence:  PeerPresence    enables `peers` and peer lookup
- *     rpc:       SyncRpc         enables `run --peer`
- *
- *   Actions are read from `workspace.actions`. The returned workspace may
- *   include infrastructure like `ydoc`, `tables`, persistence, or sync
- *   attachments without making them part of the daemon action surface.
- *
- *   …the CLI uses them. Anything else is the factory's business.
- *
- * The recommended config style is to export the result of an `openFoo()`
- * factory directly (the same factory the app uses elsewhere), and let
- * the factory's return shape be the contract.
- *
- * @example
- * ```ts
- * // epicenter.config.ts
- * import { openFuji } from '@my/app/server';
- * export const fuji = openFuji({ auth, device });
- * ```
- *
- * Then on the consumer side:
- *
- * ```ts
- * await using config = await loadConfig('/path/to/project');
- * for (const { name, workspace } of config.entries) {
- *   if (workspace.whenReady) await workspace.whenReady;
- *   // dispatch actions, read sync, ...
- * }
- * // sockets flushed automatically on scope exit
- * ```
+ * `epicenter.config.ts` is a project config with daemon routes. The loader
+ * reads the default `{ daemon: { routes } }` export, validates route names,
+ * starts route modules with project context, and returns the route runtimes
+ * used by the daemon server.
  */
 
 import { join, resolve } from 'node:path';
-import type {
-	PeerAwarenessState,
-} from '@epicenter/workspace';
-import type { LoadedWorkspace, WorkspaceEntry } from '@epicenter/workspace/node';
+import type { PeerPresenceState, ProjectDir } from '@epicenter/workspace';
+import {
+	type DaemonRouteModule,
+	type DaemonRuntime,
+	type DaemonRouteRuntime,
+} from '@epicenter/workspace/daemon';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -55,68 +23,27 @@ import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
-export type { LoadedWorkspace, WorkspaceEntry };
+export type { DaemonRuntime, DaemonRouteRuntime };
 
-/**
- * Per-peer awareness state under the standard peer schema.
- */
-export type AwarenessState = PeerAwarenessState;
+/** Per-peer awareness state under the standard peer schema. */
+export type AwarenessState = PeerPresenceState;
 
 export type LoadConfigResult = {
-	entries: WorkspaceEntry[];
+	runtimes: DaemonRouteRuntime[];
 	/**
-	 * Release every workspace. Calls each `workspace[Symbol.dispose]()`
-	 * (synchronous) and awaits any `sync.whenDisposed` barriers so the CLI
-	 * exits cleanly after closing sockets.
-	 *
-	 * Implements `[Symbol.asyncDispose]` so callers can write
-	 * `await using config = await loadConfig(...)` per TC39 explicit
-	 * resource management.
+	 * Release every daemon runtime. Teardown starts by destroying the Y.Doc,
+	 * then the loader awaits sync teardown barriers exposed by each runtime.
 	 */
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
-/**
- * A workspace is anything with `[Symbol.dispose]` and a canonical `actions`
- * root. Other fields are optional adapters over that root.
- */
-function hasWorkspaceDisposer(
-	value: unknown,
-): value is { [Symbol.dispose](): void } {
-	return (
-		value != null &&
-		typeof value === 'object' &&
-		typeof (value as Record<PropertyKey, unknown>)[Symbol.dispose] ===
-			'function'
-	);
-}
+const ROUTE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const OBJECT_DANGEROUS_ROUTE_KEYS = new Set([
+	'__proto__',
+	'prototype',
+	'constructor',
+]);
 
-function hasActionRoot(
-	value: { [Symbol.dispose](): void },
-): value is LoadedWorkspace {
-	const actions = (value as Record<PropertyKey, unknown>).actions;
-	return (
-		typeof actions === 'object' &&
-		actions !== null &&
-		!Array.isArray(actions)
-	);
-}
-
-function isLoadedWorkspace(value: unknown): value is LoadedWorkspace {
-	return hasWorkspaceDisposer(value) && hasActionRoot(value);
-}
-
-/**
- * Tagged-error variants returned by {@link loadConfig}. All variants are
- * user-facing (file missing, config crashed at module load, no workspace
- * exports), not panics: callers render them and exit 1.
- *
- * - `MissingFile`: no `epicenter.config.ts` at the resolved path.
- * - `ImportFailed`: the dynamic `import()` rejected. Typically a syntax
- *   error or a top-level throw from a workspace factory (e.g. invalid
- *   creds at construction time).
- * - `EmptyConfig`: the file loaded but exposed no workspace exports.
- */
 export const LoadError = defineErrors({
 	MissingFile: ({ configPath }: { configPath: string }) => ({
 		message: `No ${CONFIG_FILENAME} found in ${configPath}`,
@@ -133,38 +60,128 @@ export const LoadError = defineErrors({
 		configPath,
 		cause,
 	}),
-	EmptyConfig: ({ configPath }: { configPath: string }) => ({
+	InvalidConfig: ({ configPath }: { configPath: string }) => ({
 		message:
-			`No workspaces found in ${configPath}.\n` +
-			`Export at least one named value implementing [Symbol.dispose], ` +
-			`with an actions object, typically the return of an openFoo() factory.`,
+			`Invalid ${CONFIG_FILENAME} in ${configPath}: ` +
+			`default export must be { daemon: { routes: {...} } }.`,
 		configPath,
 	}),
-	InvalidWorkspace: ({
+	EmptyConfig: ({ configPath }: { configPath: string }) => ({
+		message:
+			`No daemon routes found in ${configPath}.\n` +
+			`Default-export { daemon: { routes: {...} } } with at least one route.`,
 		configPath,
-		exportName,
+	}),
+	InvalidRouteModule: ({
+		configPath,
+		route,
 	}: {
 		configPath: string;
-		exportName: string;
+		route: string;
 	}) => ({
 		message:
-			`Invalid workspace export "${exportName}" in ${configPath}: ` +
-			`expected an actions object.`,
+			`Invalid daemon route "${route}" in ${configPath}: ` +
+			`expected a route module function.`,
 		configPath,
-		exportName,
+		route,
+	}),
+	RouteFailed: ({
+		configPath,
+		route,
+		cause,
+	}: {
+		configPath: string;
+		route: string;
+		cause: unknown;
+	}) => ({
+		message:
+			`Failed to initialize daemon route "${route}" in ${configPath}: ` +
+			extractErrorMessage(cause),
+		configPath,
+		route,
+		cause,
+	}),
+	InvalidRouteRuntime: ({
+		configPath,
+		route,
+	}: {
+		configPath: string;
+		route: string;
+	}) => ({
+		message:
+			`Invalid daemon route "${route}" in ${configPath}: ` +
+			`expected a daemon runtime with actions, sync teardown/status, ` +
+			`presence peers/observe/waitForPeer, rpc.rpc, and [Symbol.dispose].`,
+		configPath,
+		route,
+	}),
+	InvalidRoute: ({
+		configPath,
+		route,
+	}: {
+		configPath: string;
+		route: string;
+	}) => ({
+		message:
+			`Invalid daemon route "${route}" in ${configPath}: ` +
+			`use letters, numbers, "_" or "-", and do not start with punctuation.`,
+		configPath,
+		route,
 	}),
 });
 export type LoadError = InferErrors<typeof LoadError>;
 
+function hasDaemonRuntimeShape(value: unknown): value is DaemonRuntime {
+	if (!isObjectRecord(value)) return false;
+	const { actions, sync, presence, rpc } = value;
+	if (!isObjectRecord(sync) || !isObjectRecord(presence) || !isObjectRecord(rpc)) {
+		return false;
+	}
+	return (
+		isObjectRecord(actions) &&
+		isThenable(sync.whenDisposed) &&
+		typeof sync.onStatusChange === 'function' &&
+		typeof presence.peers === 'function' &&
+		typeof presence.observe === 'function' &&
+		typeof presence.waitForPeer === 'function' &&
+		typeof rpc.rpc === 'function' &&
+		typeof value[Symbol.dispose] === 'function'
+	);
+}
+
+function isObjectRecord(value: unknown): value is Record<PropertyKey, unknown> {
+	return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+	return (
+		value != null &&
+		(typeof value === 'object' || typeof value === 'function') &&
+		typeof (value as { then?: unknown }).then === 'function'
+	);
+}
+
+function isValidRoute(route: string): boolean {
+	return ROUTE_PATTERN.test(route) && !OBJECT_DANGEROUS_ROUTE_KEYS.has(route);
+}
+
+async function disposeRuntimes(runtimes: DaemonRuntime[]): Promise<void> {
+	const barriers: Promise<unknown>[] = [];
+	for (const runtime of runtimes) {
+		barriers.push(runtime.sync.whenDisposed);
+		runtime[Symbol.dispose]();
+	}
+	await Promise.all(barriers);
+}
+
 /**
- * Load workspace exports from an `epicenter.config.ts` file. Default
- * exports are skipped; use named exports so the CLI can address them by
- * name.
+ * Load daemon route modules from the explicit default project config.
  */
 export async function loadConfig(
 	targetDir: string,
 ): Promise<Result<LoadConfigResult, LoadError>> {
-	const configPath = join(resolve(targetDir), CONFIG_FILENAME);
+	const projectDir = resolve(targetDir) as ProjectDir;
+	const configPath = join(projectDir, CONFIG_FILENAME);
 
 	if (!(await Bun.file(configPath).exists())) {
 		return LoadError.MissingFile({ configPath });
@@ -175,32 +192,65 @@ export async function loadConfig(
 		catch: (cause) => LoadError.ImportFailed({ configPath, cause }),
 	});
 	if (importResult.error) return importResult;
-	const module = importResult.data;
 
-	const entries: WorkspaceEntry[] = [];
-	for (const [name, value] of Object.entries(module)) {
-		if (name === 'default') continue;
-		if (hasWorkspaceDisposer(value) && !hasActionRoot(value)) {
-			return LoadError.InvalidWorkspace({ configPath, exportName: name });
+	const config = (importResult.data as { default?: unknown }).default;
+	if (
+		!isObjectRecord(config) ||
+		!isObjectRecord(config.daemon) ||
+		!isObjectRecord(config.daemon.routes)
+	) {
+		return LoadError.InvalidConfig({ configPath });
+	}
+	const routeModules = Object.entries(config.daemon.routes);
+	if (routeModules.length === 0) return LoadError.EmptyConfig({ configPath });
+
+	const definitions: { route: string; module: DaemonRouteModule }[] = [];
+	for (const [route, routeModule] of routeModules) {
+		if (!isValidRoute(route)) {
+			return LoadError.InvalidRoute({ configPath, route });
 		}
-		if (!isLoadedWorkspace(value)) continue;
-		entries.push({ name, workspace: value });
+		if (typeof routeModule !== 'function') {
+			return LoadError.InvalidRouteModule({ configPath, route });
+		}
+		definitions.push({ route, module: routeModule as DaemonRouteModule });
 	}
 
-	if (entries.length === 0) {
-		return LoadError.EmptyConfig({ configPath });
+	const runtimes: DaemonRouteRuntime[] = [];
+
+	for (const definition of definitions) {
+		let runtime: unknown;
+		try {
+			runtime = await definition.module({
+				projectDir,
+				route: definition.route,
+			});
+		} catch (cause) {
+			await disposeRuntimes(runtimes.map((entry) => entry.runtime));
+			return LoadError.RouteFailed({
+				configPath,
+				route: definition.route,
+				cause,
+			});
+		}
+
+		if (!hasDaemonRuntimeShape(runtime)) {
+			await disposeRuntimes(runtimes.map((entry) => entry.runtime));
+			return LoadError.InvalidRouteRuntime({
+				configPath,
+				route: definition.route,
+			});
+		}
+
+		runtimes.push({
+			route: definition.route,
+			runtime,
+		});
 	}
 
 	return Ok({
-		entries,
-		async [Symbol.asyncDispose]() {
-			const barriers: Promise<unknown>[] = [];
-			for (const { workspace } of entries) {
-				if (workspace.sync?.whenDisposed)
-					barriers.push(workspace.sync.whenDisposed);
-				workspace[Symbol.dispose]();
-			}
-			await Promise.all(barriers);
+		runtimes,
+		[Symbol.asyncDispose]() {
+			return disposeRuntimes(this.runtimes.map((entry) => entry.runtime));
 		},
 	});
 }

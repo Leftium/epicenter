@@ -1,19 +1,21 @@
 /**
- * attachEncryption tests — registration, fingerprint dedup, key application,
+ * attachEncryption tests: registration, fingerprint dedup, key application,
  * key rotation, re-encryption of plaintext, late-register auto-activation,
  * disposal cascade, reentrance guard.
  *
  * These tests exercise the attachment directly (without a workspace client)
  * to pin its contract independently of the workspace builder. Stores are
  * constructed with `createEncryptedYkvLww` and registered via
- * `encryption.register(store)` — the same pathway used by
+ * `encryption.register(store)`: the same pathway used by
  * `encryption.attachTable` / `encryption.attachKv`.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { randomBytes } from '@noble/ciphers/utils.js';
+import { type } from 'arktype';
 import * as Y from 'yjs';
 import { attachEncryption } from './attach-encryption.js';
+import { defineTable } from './define-table.js';
 import {
 	bytesToBase64,
 	type EncryptedBlob,
@@ -92,7 +94,7 @@ describe('attachEncryption', () => {
 		const encryption = attachEncryption(ydoc);
 		encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
 
-		// Register after applyKeys — the store must receive the cached keyring
+		// Register after applyKeys: the store must receive the cached keyring
 		// so subsequent writes are encrypted from the start.
 		const lateStore = createEncryptedYkvLww<{ title: string }>(ydoc, 'late');
 		encryption.register(lateStore);
@@ -105,6 +107,55 @@ describe('attachEncryption', () => {
 		const { ydoc, encryption } = setup();
 		ydoc.destroy();
 		await encryption.whenDisposed;
+	});
+
+	test('attachReadonlyTable reads encrypted rows without exposing writes', () => {
+		const ydoc = new Y.Doc({ guid: 'enc-readonly-table', gc: false });
+		const encryption = attachEncryption(ydoc);
+		const definition = defineTable(
+			type({ id: 'string', title: 'string', _v: '1' }),
+		);
+		const writer = encryption.attachTable(ydoc, 'entries', definition);
+		const reader = encryption.attachReadonlyTable(ydoc, 'entries', definition);
+
+		encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
+		writer.set({ id: '1', title: 'Secret row', _v: 1 });
+
+		expect(reader.get('1').data).toEqual({
+			id: '1',
+			title: 'Secret row',
+			_v: 1,
+		});
+		expect('set' in reader).toBe(false);
+		expect('bulkSet' in reader).toBe(false);
+		expect('update' in reader).toBe(false);
+		expect('delete' in reader).toBe(false);
+		expect('bulkDelete' in reader).toBe(false);
+		expect('clear' in reader).toBe(false);
+	});
+
+	test('attachReadonlyTables returns readonly helpers keyed by definition', () => {
+		const ydoc = new Y.Doc({ guid: 'enc-readonly-tables', gc: false });
+		const encryption = attachEncryption(ydoc);
+		const definition = defineTable(
+			type({ id: 'string', title: 'string', _v: '1' }),
+		);
+		const writers = encryption.attachTables(ydoc, { entries: definition });
+		const readers = encryption.attachReadonlyTables(ydoc, {
+			entries: definition,
+		});
+
+		writers.entries.set({ id: '1', title: 'Secret row', _v: 1 });
+
+		expect(readers.entries.getAllValid()).toEqual([
+			{ id: '1', title: 'Secret row', _v: 1 },
+		]);
+		expect('set' in readers.entries).toBe(false);
+		expect('bulkSet' in readers.entries).toBe(false);
+		expect('update' in readers.entries).toBe(false);
+		expect('delete' in readers.entries).toBe(false);
+		expect('bulkDelete' in readers.entries).toBe(false);
+		expect('clear' in readers.entries).toBe(false);
 	});
 
 	describe('at-rest upgrade on key rotation', () => {

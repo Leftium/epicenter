@@ -8,7 +8,7 @@ import { createDisposableCache } from './disposable-cache.js';
  * the cache through Y.Doc only because Y.Doc.isDestroyed gives an easy
  * "did dispose actually run?" assertion.
  */
-function makeYDocCache(opts?: { gcTime?: number }) {
+function makeYDocCache({ gcTime }: { gcTime?: number } = {}) {
 	return createDisposableCache(
 		(id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
@@ -19,7 +19,7 @@ function makeYDocCache(opts?: { gcTime?: number }) {
 				},
 			};
 		},
-		{ gcTime: opts?.gcTime },
+		{ gcTime },
 	);
 }
 
@@ -460,9 +460,7 @@ describe('plain-object invariant', () => {
 		// Own field is preserved by the spread.
 		expect(handle.name).toBe('underlying');
 		// Prototype method is NOT preserved by the spread.
-		expect(
-			(handle as unknown as { greet?: unknown }).greet,
-		).toBeUndefined();
+		expect((handle as unknown as { greet?: unknown }).greet).toBeUndefined();
 
 		handle[Symbol.dispose]();
 		cache[Symbol.dispose]();

@@ -1,7 +1,15 @@
+import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
 import { openNotes } from '../notes';
 
-export const notes = openNotes({
-	id: 'notes-repro-peer-b',
-	name: 'Peer B',
-	platform: 'node',
+export default defineEpicenterConfig({
+	daemon: {
+		routes: {
+			notes: () =>
+				openNotes({
+					id: 'notes-repro-peer-b',
+					name: 'Peer B',
+					platform: 'node',
+				}),
+		},
+	},
 });

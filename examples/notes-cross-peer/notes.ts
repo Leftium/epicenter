@@ -1,11 +1,11 @@
-import { createSessionStore } from '@epicenter/cli';
+import { createSessionStore } from '@epicenter/workspace/node';
 import {
 	attachSync,
 	attachTables,
 	defineMutation,
 	defineQuery,
 	defineTable,
-	type PeerDescriptor,
+	type PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
@@ -20,7 +20,7 @@ const WORKSPACE_ID = 'epicenter.notes-repro';
 // below passes `_v: 1` — same value, two different syntax conventions.
 const Note = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
-export function openNotes(peer: PeerDescriptor) {
+export function openNotes(peer: PeerIdentity) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
 	const tables = attachTables(ydoc, { notes: Note });
 
@@ -41,7 +41,7 @@ export function openNotes(peer: PeerDescriptor) {
 
 	const sessions = createSessionStore();
 	const sync = attachSync(ydoc, {
-		url: toWsUrl(`${SERVER_URL}/workspaces/${WORKSPACE_ID}`),
+		url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 		getToken: async () =>
 			(await sessions.load(SERVER_URL))?.accessToken ?? null,
 	});
@@ -49,6 +49,7 @@ export function openNotes(peer: PeerDescriptor) {
 	const rpc = sync.attachRpc(actions);
 
 	return {
+		workspaceId: ydoc.guid,
 		actions,
 		presence,
 		rpc,

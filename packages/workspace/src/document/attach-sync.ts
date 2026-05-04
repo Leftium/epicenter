@@ -36,8 +36,8 @@ import {
 	type SystemActions,
 } from '../shared/actions.js';
 import {
-	createPeerPresence,
 	type AttachPresenceConfig,
+	createPeerPresence,
 	type PeerPresenceAttachment,
 	type PeerPresenceController,
 } from './peer-presence.js';
@@ -183,9 +183,7 @@ export type SyncAttachment = {
 	 * Named symmetrically with `whenConnected`: both are promises.
 	 */
 	whenDisposed: Promise<unknown>;
-	attachPresence<TPeerId extends string = string>(
-		config: AttachPresenceConfig<TPeerId>,
-	): PeerPresenceAttachment;
+	attachPresence(config: AttachPresenceConfig): PeerPresenceAttachment;
 	attachRpc(actions: RpcActionSource): SyncRpcAttachment;
 };
 
@@ -258,15 +256,11 @@ export type SyncAttachmentConfig = {
 	 * an `auth` error state until a subsequent `reconnect()` (or backoff
 	 * iteration) finds a non-null token.
 	 *
-	 * May be sync or async. The supervisor `await`s either way. Sync returns
-	 * skip the microtask hop in the common case where the token is already in
-	 * memory.
-	 *
 	 * Providing this callback IS the declaration that the connection is
 	 * authenticated. Omit it for unauthenticated providers (tests, public
 	 * rooms). `attachSync` then connects without a bearer subprotocol.
 	 */
-	getToken?: () => string | null | Promise<string | null>;
+	getToken?: () => Promise<string | null>;
 	/**
 	 * WebSocket constructor. Tests can pass a stub to avoid dialing a server;
 	 * production uses `globalThis.WebSocket`.
@@ -496,7 +490,9 @@ export function attachSync(
 
 		// Resolve the action up front so a missing path surfaces as
 		// ActionNotFound (typed) rather than ActionFailed wrapping a raw throw.
-		const target = rpcActions ? resolveActionPath(rpcActions, rpc.action) : null;
+		const target = rpcActions
+			? resolveActionPath(rpcActions, rpc.action)
+			: null;
 		if (!target) {
 			sendResponse(RpcError.ActionNotFound({ action: rpc.action }));
 			return;
@@ -942,7 +938,7 @@ export function attachSync(
 					target: number,
 					action: TAction,
 					input?: TMap[TAction]['input'],
-					options?: { timeout?: number },
+					{ timeout = DEFAULT_RPC_TIMEOUT_MS }: { timeout?: number } = {},
 				): Promise<Result<TMap[TAction]['output'], RpcError>> => {
 					if (target === ydoc.clientID) {
 						return RpcError.ActionFailed({
@@ -956,8 +952,6 @@ export function attachSync(
 					if (websocket?.readyState !== WebSocket.OPEN) {
 						return RpcError.Disconnected();
 					}
-
-					const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;
 
 					return new Promise((resolve) => {
 						const requestId = nextRequestId++;
@@ -973,8 +967,8 @@ export function attachSync(
 
 						const timer = setTimeout(() => {
 							pendingRequests.delete(requestId);
-							resolve(RpcError.Timeout({ ms: timeoutMs }));
-						}, timeoutMs);
+							resolve(RpcError.Timeout({ ms: timeout }));
+						}, timeout);
 
 						pendingRequests.set(requestId, {
 							action,

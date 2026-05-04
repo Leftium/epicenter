@@ -3,11 +3,11 @@
  * routes; the server (`bindUnixSocket`) wires this into Bun's listener
  * and the hand-rolled `daemonClient` in `./client.ts` POSTs against it.
  *
- * Each verb is a one-line shell shortcut for one workspace primitive:
+ * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  workspace.presence.peers()                    all exports
- *   /list   ->  describeActions({ export: workspace.actions }) all exports
- *   /run    ->  invokeAction(...) | rpc.rpc(...)              export-routed
+ *   /peers  ->  runtime.presence.peers()                    all routes
+ *   /list   ->  describeActions({ route: runtime.actions }) all routes
+ *   /run    ->  invokeAction(...) | rpc.rpc(...)              route-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -19,10 +19,10 @@ import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
-import { Peer } from '../document/standard-awareness-defs.js';
+import { PeerIdentity } from '../document/peer-presence-defs.js';
 import { describeActions } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { WorkspaceEntry } from './types.js';
+import type { DaemonRouteRuntime } from './types.js';
 
 /**
  * Wire body for `/run`. The schema serves two roles:
@@ -46,15 +46,15 @@ export const RunRequest = type({
 export type RunRequest = typeof RunRequest.infer;
 
 /**
- * Row shape returned by `/peers`. One row per `(exportName, clientID)` pair,
- * tagged with its config export name so a multi-export daemon can fan out.
- * `peer` carries the canonical peer descriptor from the standard awareness
+ * Row shape returned by `/peers`. One row per `(route, clientID)` pair,
+ * tagged with its route name so a multi-route daemon can fan out.
+ * `peer` carries the canonical peer identity from the standard presence
  * convention; renderers consume it directly without a cast.
  */
 export const PeerSnapshot = type({
-	exportName: 'string',
+	route: 'string',
 	clientID: 'number',
-	peer: Peer,
+	peer: PeerIdentity,
 });
 export type PeerSnapshot = typeof PeerSnapshot.infer;
 
@@ -62,23 +62,23 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * Build the daemon's Hono app. Tests import this directly; production wires
  * it into `Bun.serve({ unix, fetch: app.fetch })` via `bindUnixSocket`.
  *
- * `/list` exposes export-prefixed action paths. `/run` uses that same
- * prefix to pick the workspace export before dispatching the inner action
+ * `/list` exposes route-prefixed action paths. `/run` uses that same
+ * prefix to pick the hosted daemon runtime before dispatching the inner action
  * path locally or over RPC.
  */
-export function buildApp(
-	entries: WorkspaceEntry[],
+export function buildDaemonApp(
+	runtimes: DaemonRouteRuntime[],
 	triggerShutdown?: () => void,
 ) {
 	return new Hono()
 		.post('/ping', (c) => c.json(Ok('pong' as const)))
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
-			for (const entry of entries) {
-				const peers = entry.workspace.presence?.peers() ?? new Map();
+			for (const entry of runtimes) {
+				const peers = entry.runtime.presence.peers();
 				for (const [clientID, state] of peers) {
 					rows.push({
-						exportName: entry.name,
+						route: entry.route,
 						clientID,
 						peer: state.peer,
 					});
@@ -88,13 +88,13 @@ export function buildApp(
 		})
 		.post('/list', (c) => {
 			const actionRoots = Object.fromEntries(
-				entries.map((entry) => [entry.name, entry.workspace.actions]),
+				runtimes.map((entry) => [entry.route, entry.runtime.actions]),
 			);
 			return c.json(Ok(describeActions(actionRoots)));
 		})
 		.post('/run', sValidator('json', RunRequest), async (c) => {
 			const request = c.req.valid('json');
-			return c.json(await executeRun(entries, request));
+			return c.json(await executeRun(runtimes, request));
 		})
 		.post('/shutdown', (c) => {
 			setTimeout(() => triggerShutdown?.(), 0);

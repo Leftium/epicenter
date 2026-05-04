@@ -1,41 +1,68 @@
+import {
+	attachEncryption,
+	type ProjectDir,
+} from '@epicenter/workspace';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
-	attachSync,
-	type ProjectDir,
-	toWsUrl,
-	type WebSocketImpl,
-} from '@epicenter/workspace';
-import {
 	attachYjsLogReader,
+	createSessionStore,
 	findEpicenterDir,
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import { openFuji as openFujiDoc } from './index.js';
+import * as Y from 'yjs';
+import { fujiTables } from '../workspace.js';
+import { FUJI_WORKSPACE_ID } from './index.js';
+import {
+	FUJI_DAEMON_ROUTE,
+	openFujiDaemonActions,
+} from './daemon.js';
 
-export function openFuji({
-	getToken,
-	projectDir = findEpicenterDir(),
-	clientID = hashClientId(Bun.main),
-	apiUrl = EPICENTER_API_URL,
-	webSocketImpl,
-}: {
-	getToken: () => Promise<string | null>;
+export type OpenFujiSnapshotOptions = {
 	projectDir?: ProjectDir;
 	clientID?: number;
-	apiUrl?: string;
-	webSocketImpl?: WebSocketImpl;
-}) {
-	const doc = openFujiDoc({ clientID });
-	const yjsLog = attachYjsLogReader(doc.ydoc, {
-		filePath: yjsPath(projectDir, doc.ydoc.guid),
-	});
-	const sync = attachSync(doc, {
-		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		getToken,
-		webSocketImpl,
-	});
-	const rpc = sync.attachRpc(doc.actions);
+};
 
-	return { ...doc, yjsLog, sync, rpc };
+export async function openFujiSnapshot({
+	projectDir = findEpicenterDir(),
+	clientID = hashClientId(Bun.main),
+}: OpenFujiSnapshotOptions = {}) {
+	const session = await createSessionStore().load(EPICENTER_API_URL);
+	const ydoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
+	ydoc.clientID = clientID;
+	const encryption = attachEncryption(ydoc);
+	const tables = encryption.attachReadonlyTables(ydoc, fujiTables);
+	if (session !== null) encryption.applyKeys(session.encryptionKeys);
+	const yjsLog = attachYjsLogReader(ydoc, {
+		filePath: yjsPath(projectDir, ydoc.guid),
+	});
+
+	return {
+		tables,
+		yjsLog,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+}
+
+export async function openFujiScript({
+	route = FUJI_DAEMON_ROUTE,
+	projectDir = findEpicenterDir(),
+	clientID,
+}: OpenFujiSnapshotOptions & { route?: string } = {}) {
+	const snapshotAttachment = await openFujiSnapshot({
+		projectDir,
+		clientID,
+	});
+	const actions = await openFujiDaemonActions({ route, projectDir });
+
+	return {
+		snapshot: snapshotAttachment.tables,
+		actions,
+		async [Symbol.asyncDispose]() {
+			snapshotAttachment[Symbol.dispose]();
+			await snapshotAttachment.yjsLog.whenDisposed;
+		},
+	};
 }

@@ -141,7 +141,7 @@ packages/workspace/src/cache/disposable-cache.ts
 packages/workspace/src/daemon/list-route.test.ts
 packages/workspace/src/document/attach-sync.test.ts
 packages/workspace/src/document/attach-sync.ts
-packages/workspace/src/document/standard-awareness-defs.ts
+packages/workspace/src/document/peer-presence-defs.ts
 packages/workspace/src/document/system-describe.test.ts
 packages/workspace/src/index.ts
 packages/workspace/src/shared/device-id.ts
@@ -211,7 +211,7 @@ Use it to inspect or stage a narrow old change, then adapt the result to current
 | Branch strategy | New branch from main | Avoids mutating the stale daemon branch while preserving it as a reference |
 | Commit strategy | Port by intent in 6 focused commits, with room for 7 or 8 if a layer gets noisy | Three to five commits compress too much of the 148-commit daemon history |
 | CLI naming | Keep `up`, `down`, `ps`, `logs` | `specs/20260430T120000-cli-naming-decision.md` settles this |
-| Remote action API | Keep `createRemoteActions` and `describeRemoteActions` public names | `1d8cf1eb3` is newer than the daemon branch and intentionally breaking |
+| Remote action API | Keep `createRemoteClient` as the public factory | The bound client shape is newer than the old direct helpers and removes an unnecessary public layer |
 | `attachSync` lifecycle | Keep the AbortController supervisor from main | It landed after the daemon branch diverged and fixes the runId/desired/torn model |
 | App layout | Adopt v3 package-folder plus sibling `client.ts` shape | This matches the daemon/script factory split |
 | Skill location | Prefer `.agents/skills/workspace-app-layout/SKILL.md` | Current repo uses `.agents`; the daemon branch updated `.claude`, which should not be the only copy |
@@ -293,11 +293,14 @@ packages/cli/src/commands/run.ts
 Current main owns this public shape:
 
 ```ts
-import { createRemoteActions, describeRemoteActions } from '@epicenter/workspace';
+import { createRemoteClient } from '@epicenter/workspace';
 
-const transport = { presence: workspace.presence, rpc: workspace.rpc };
-const remote = createRemoteActions<typeof actions>(transport, 'macbook');
-const manifest = await describeRemoteActions(transport, 'macbook');
+const remote = createRemoteClient({
+	presence: workspace.presence,
+	rpc: workspace.rpc,
+});
+const macbook = remote.actions<typeof actions>('macbook');
+const manifest = await remote.describe('macbook');
 ```
 
 The daemon branch has useful lower-level pieces, but its public shape should not win by accident:
@@ -349,7 +352,7 @@ Use current main as the base. Port only additive or clearly better daemon pieces
 - Keep the current public remote-action naming from `1d8cf1eb3`.
 - Consider porting `WebSocketImpl` injection and `NoopWebSocket`.
 - Consider porting `waitForPeer` and the `PeerMiss` error if CLI commands still need bounded peer waits.
-- Consider porting the PeerLeft TOCTOU fix, translated to `createRemoteActions`.
+- Consider porting the PeerLeft TOCTOU fix, translated to `createRemoteClient`.
 - Do not restore the old `torn` flag model.
 - Do not restore `sync.peer()` as the main public API without a fresh decision.
 
@@ -366,8 +369,8 @@ Prefer this split:
 
 @epicenter/workspace
   attachSync
-  createRemoteActions({ presence, rpc }, peerId)
-  describeRemoteActions({ presence, rpc }, peerId)
+  createRemoteClient({ presence, rpc })
+  private remote action proxy construction behind remote.actions(peerId)
   workspace-level exports and compatibility names
 ```
 
@@ -511,8 +514,8 @@ configs while new daemon factories can use the direct `attachMarkdown` and
 
 ### Phase 3: Remote Action and Sync Boundary
 
-- [x] Keep `createRemoteActions({ presence, rpc }, peerId)` as the public workspace API.
-- [x] Keep `describeRemoteActions({ presence, rpc }, peerId)` as the public workspace API.
+- [x] Add `createRemoteClient({ presence, rpc })` as the preferred workspace API.
+- [x] Collapse the lower-level proxy helper behind the public `createRemoteClient` facade.
 - [x] Preserve current main's action walking behavior from workspace bundles.
 - [x] Translate useful daemon branch peer-dispatch fixes to the current remote-action names.
 - [x] Port `waitForPeer` and `PeerMiss` only if CLI bounded wait behavior still needs them.
@@ -537,13 +540,13 @@ f74ca0953 refactor(sync): drop dead safety wrapper, rename peer.ts -> remote-pro
 Commit body should explicitly say:
 
 ```txt
-This commit keeps current main's createRemoteActions and describeRemoteActions names. The daemon branch's sync.peer() and describePeer() shape is useful history, not the public API this integration restores.
+This commit keeps current main's remote client shape. The daemon branch's sync.peer() and describePeer() shape is useful history, not the public API this integration restores.
 ```
 
 Implementation note: pure action helpers stayed in `@epicenter/workspace`
 for this integration. The only remote-action behavior change was the
 PeerLeft re-check after subscribing to awareness changes, translated to the
-current `createRemoteActions` helper.
+current remote client helper.
 
 ### Phase 4: CLI Integration While Keeping `up`
 
@@ -651,8 +654,7 @@ bulk client.ts relocation during the app factory wave
 ```
 
 The final shape follows current main by preserving the AbortController sync
-supervisor, `createRemoteActions`, `describeRemoteActions`, and the extracted
-Opensidian actions file.
+supervisor, `createRemoteClient`, and the extracted Opensidian actions file.
 
 ## Verification Plan
 
@@ -714,7 +716,7 @@ The exact package scripts may differ. Use the monorepo skill before running the 
 
 2. **Should `sync.waitForPeer` become public?**
    - The daemon branch used it for CLI wait behavior.
-   - Current main can also express peer lookup through `createRemoteActions`, but bounded wait is a separate primitive.
+   - Current main can also express peer lookup through `createRemoteClient`, but bounded wait is a separate primitive.
    - Recommendation: Keep `waitForPeer` if CLI needs it; document it as presence lookup, not remote action dispatch.
 
 3. **Should `client.ts` relocation land with app daemon factories?**
@@ -731,7 +733,7 @@ The exact package scripts may differ. Use the monorepo skill before running the 
 - [x] The integration branch starts from current `origin/main`.
 - [x] The old daemon branch remains available as a reference.
 - [x] The final code keeps `up`, `down`, `ps`, and `logs`.
-- [x] The final code keeps `createRemoteActions` and `describeRemoteActions` as the public remote-action API unless a new spec explicitly changes that.
+- [x] The final code keeps `createRemoteClient` as the remote-action API and hides the lower-level proxy helper.
 - [x] `attachSync` keeps the AbortController supervisor model.
 - [x] Daemon and script factories exist for the intended apps.
 - [x] The workspace daemon/client primitives live in `packages/workspace`, not only `packages/cli`.

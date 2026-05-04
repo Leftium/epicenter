@@ -1,83 +1,111 @@
 # Whole-Workspace Action Discovery
 
-## Summary
+Status: superseded by explicit daemon host config.
 
-Daemon action paths match the object path developers return from their workspace factory.
+This spec proposed scanning the whole returned workspace object for action
+leaves. That direction was rejected. The daemon now exposes only the explicit
+`DaemonWorkspace.actions` root.
+
+## Current Rule
+
+Daemon action paths use two pieces:
+
+```text
+<host.route>.<path inside host.actions>
+```
+
+Given this host:
 
 ```ts
 return {
 	actions: {
-		notes: {
+		entries: {
 			add: defineMutation({ ... }),
 		},
 	},
-};
+	[Symbol.dispose]() {},
+} satisfies DaemonWorkspace;
 ```
+
+The runnable path is:
 
 ```sh
-epicenter run notes.actions.notes.add
+epicenter run notes.entries.add
 ```
 
-`actions` is a convention, not a reserved daemon root. If a workspace returns a top-level action group, the CLI path follows that shape.
+An action leaf outside `actions` is ignored:
 
 ```ts
 return {
-	notes: {
-		add: defineMutation({ ... }),
+	actions: {},
+	debug: {
+		reset: defineMutation({ ... }),
 	},
+	[Symbol.dispose]() {},
+} satisfies DaemonWorkspace;
+```
+
+`notes.debug.reset` is not public because `debug` is not under
+`DaemonWorkspace.actions`.
+
+## Type Contract
+
+`DaemonWorkspace.actions` uses the recursive `Actions` type:
+
+```ts
+export type Actions = {
+	[key: string]: Action | Actions;
 };
 ```
 
-```sh
-epicenter run notes.notes.add
+That is the public authoring shape: each key is either a `defineQuery` or
+`defineMutation` leaf, or another object containing action leaves.
+
+## Why This Replaced Whole-Workspace Scanning
+
+Whole-workspace scanning made returned infrastructure part of the public API by
+accident. Any plain object containing an action leaf could become callable.
+That put pressure on every daemon host return shape to hide implementation
+details carefully.
+
+The explicit `actions` root makes the boundary visible:
+
+```txt
+host.route
+  selects the daemon host
+
+host.actions
+  defines the public runnable surface
+
+host.sync, host.presence, host.rpc, materializers, tables
+  remain infrastructure unless the host deliberately wraps them in actions
 ```
-
-## Rule
-
-The daemon exposes every `defineQuery` or `defineMutation` leaf reachable through plain object properties on the returned workspace object.
-
-The first CLI path segment selects the config export. The remaining path is resolved literally inside that export.
-
-```text
-<configExport>.<literal path through returned plain objects>
-```
-
-## Safety Boundary
-
-Discovery only recurses into plain object literals. It does not recurse into class instances, arrays, or ordinary functions. This keeps infrastructure such as `Y.Doc`, table attachments, sync attachments, presence, and RPC objects out of the public action surface unless an app deliberately returns action leaves through plain objects.
-
-Returning an action leaf through a plain object is a public API decision. Private actions should stay in local variables, class instances, or non-returned helpers.
 
 ## RPC Alignment
 
-Peer RPC uses the same inner path the CLI sees after removing the config export prefix.
+Peer RPC should receive the same action root the host wants peers to call:
+
+```ts
+const rpc = sync.attachRpc(doc.actions);
+```
+
+For a daemon peer call:
 
 ```sh
-epicenter run notes.actions.notes.add --peer notes-repro-peer-a
+epicenter run notes.entries.add --peer laptop
 ```
 
-sends:
+The daemon selects the `notes` host locally, then sends only the inner action
+path over RPC:
 
 ```text
-actions.notes.add
+entries.add
 ```
 
-Apps should pass the same public shape to RPC that they want peers to see:
+## Rejected Rules
 
-```ts
-const rpc = sync.attachRpc({ actions: { actions } });
-```
-
-or, for a top-level action group:
-
-```ts
-const rpc = sync.attachRpc({ actions: { notes } });
-```
-
-## Non-Goals
-
-- No hidden `workspace.actions` root.
+- No whole returned-workspace scan.
+- No hidden `workspace.actions` prefix in CLI paths.
 - No short-path aliasing.
 - No `attachActions` primitive.
 - No registry marker on `defineActions`.
-- No whole-source scan. Only the runtime object exported from `epicenter.config.ts` is inspected.

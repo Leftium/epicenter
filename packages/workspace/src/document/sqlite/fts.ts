@@ -17,8 +17,8 @@
 
 import type { Database } from 'bun:sqlite';
 import type { Logger } from 'wellcrafted/logger';
-import { quoteIdentifier } from './ddl.js';
 import { AttachSqliteError } from '../attach-sqlite.js';
+import { quoteIdentifier } from './ddl.js';
 import type { SearchOptions, SearchResult } from './types.js';
 
 /**
@@ -40,7 +40,7 @@ export function ftsSearch(
 	tableName: string,
 	ftsColumns: string[],
 	query: string,
-	options?: SearchOptions,
+	{ limit = 50, snippetColumn }: SearchOptions = {},
 	log?: Logger,
 ): SearchResult[] {
 	const trimmed = query.trim();
@@ -49,9 +49,8 @@ export function ftsSearch(
 	}
 
 	const ftsTableName = `${tableName}_fts`;
-	const limit = options?.limit ?? 50;
-	const snippetColumnIndex = options?.snippetColumn
-		? Math.max(ftsColumns.indexOf(options.snippetColumn), 0)
+	const snippetColumnIndex = snippetColumn
+		? Math.max(ftsColumns.indexOf(snippetColumn), 0)
 		: 0;
 
 	try {

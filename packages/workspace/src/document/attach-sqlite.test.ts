@@ -19,13 +19,9 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import {
-	attachTables,
-	createDisposableCache,
-	defineTable,
-} from '../index.js';
-import { attachSqlite } from './attach-sqlite.js';
+import { attachTables, createDisposableCache, defineTable } from '../index.js';
 import { isAction, isMutation, isQuery } from '../shared/actions.js';
+import { attachSqlite } from './attach-sqlite.js';
 
 const postsTable = defineTable(
 	type({ id: 'string', _v: '1', title: 'string', 'published?': 'boolean' }),
@@ -37,9 +33,7 @@ const tableDefinitions = { posts: postsTable, notes: notesTable };
 
 const hasFts5 = canUseFts5();
 
-type AttachedTables = ReturnType<
-	typeof attachTables<typeof tableDefinitions>
->;
+type AttachedTables = ReturnType<typeof attachTables<typeof tableDefinitions>>;
 type Materializer = ReturnType<typeof attachSqlite>;
 type TableRegistration = {
 	table: Parameters<Materializer['table']>[0];
@@ -51,32 +45,38 @@ type SetupOptions = {
 	waitFor?: Promise<unknown>;
 };
 
-function setup(options: SetupOptions = {}) {
-	const cache = createDisposableCache((id: string) => {
-		const ydoc = new Y.Doc({ guid: id });
-		const tables = attachTables(ydoc, tableDefinitions);
+function setup({ tables: tableRegistrations, waitFor }: SetupOptions = {}) {
+	const cache = createDisposableCache(
+		(id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			const tables = attachTables(ydoc, tableDefinitions);
 
-		const materializer = attachSqlite(ydoc, {
-			filePath: ':memory:',
-			waitFor: options.waitFor,
-		});
+			const materializer = attachSqlite(ydoc, {
+				filePath: ':memory:',
+				waitFor,
+			});
 
-		const registrations =
-			options.tables?.(tables) ??
-			([{ table: tables.posts }, { table: tables.notes }] as TableRegistration[]);
-		for (const { table, config } of registrations) {
-			materializer.table(table, config);
-		}
+			const registrations =
+				tableRegistrations?.(tables) ??
+				([
+					{ table: tables.posts },
+					{ table: tables.notes },
+				] as TableRegistration[]);
+			for (const { table, config } of registrations) {
+				materializer.table(table, config);
+			}
 
-		return {
-			ydoc,
-			tables,
-			sqlite: materializer,
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	}, { gcTime: 0 });
+			return {
+				ydoc,
+				tables,
+				sqlite: materializer,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		},
+		{ gcTime: 0 },
+	);
 
 	const workspace = cache.open('test');
 	return { workspace, cache };
@@ -336,18 +336,14 @@ describe('attachSqlite', () => {
 				testSetup.workspace.sqlite.db.run('DELETE FROM "posts"');
 
 				expect(getRows(testSetup.workspace.sqlite.db, 'posts')).toEqual([]);
-				expect(
-					getRows(testSetup.workspace.sqlite.db, 'notes'),
-				).toHaveLength(1);
+				expect(getRows(testSetup.workspace.sqlite.db, 'notes')).toHaveLength(1);
 
 				await testSetup.workspace.sqlite.rebuild({ table: 'posts' });
 
 				expect(getRows(testSetup.workspace.sqlite.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: null, title: 'Post row' },
 				]);
-				expect(
-					getRows(testSetup.workspace.sqlite.db, 'notes'),
-				).toHaveLength(1);
+				expect(getRows(testSetup.workspace.sqlite.db, 'notes')).toHaveLength(1);
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -388,12 +384,12 @@ describe('attachSqlite', () => {
 
 				await testSetup.workspace.sqlite.whenLoaded;
 
-				expect(
-					await testSetup.workspace.sqlite.count({ table: 'posts' }),
-				).toBe(2);
-				expect(
-					await testSetup.workspace.sqlite.count({ table: 'notes' }),
-				).toBe(0);
+				expect(await testSetup.workspace.sqlite.count({ table: 'posts' })).toBe(
+					2,
+				);
+				expect(await testSetup.workspace.sqlite.count({ table: 'notes' })).toBe(
+					0,
+				);
 			} finally {
 				await cleanup(testSetup);
 			}

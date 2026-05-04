@@ -13,26 +13,25 @@ import {
 } from '@epicenter/sync';
 import { createAwareness, type Awareness } from './attach-awareness.js';
 import {
-	type FoundPeer,
-	type PeerAwarenessState,
-	type PeerDescriptor,
-	standardAwarenessDefs,
-} from './standard-awareness-defs.js';
+	PeerIdentity,
+	type ResolvedPeer,
+	type PeerPresenceState,
+} from './peer-presence-defs.js';
 import type { PeerMiss, SyncStatus } from './attach-sync.js';
 
 export type PeerPresenceAttachment = {
-	peers(): Map<number, PeerAwarenessState>;
-	find(peerId: string): FoundPeer | undefined;
+	peers(): Map<number, PeerPresenceState>;
+	find(peerId: string): ResolvedPeer | undefined;
 	waitForPeer(
 		peerId: string,
 		options: { timeoutMs: number },
-	): Promise<Result<FoundPeer, PeerMiss>>;
+	): Promise<Result<ResolvedPeer, PeerMiss>>;
 	observe(callback: () => void): () => void;
 	raw: { awareness: YAwareness };
 };
 
-export type AttachPresenceConfig<TPeerId extends string = string> = {
-	peer: PeerDescriptor<TPeerId>;
+export type AttachPresenceConfig = {
+	peer: PeerIdentity;
 };
 
 export type PeerPresenceController = {
@@ -53,16 +52,18 @@ type PeerPresenceInternals = {
 		sawPeers: boolean;
 		waitMs: number;
 		emptyReason: string | null;
-	}): Result<FoundPeer, PeerMiss>;
+	}): Result<ResolvedPeer, PeerMiss>;
 	describeOfflineReason(status: SyncStatus): string | null;
 };
 
-export function createPeerPresence<TPeerId extends string = string>(
-	config: AttachPresenceConfig<TPeerId>,
+const peerPresenceDefs = { peer: PeerIdentity };
+
+export function createPeerPresence(
+	config: AttachPresenceConfig,
 	internals: PeerPresenceInternals,
 ): PeerPresenceAttachment & { controller: PeerPresenceController } {
 	const awareness = new YAwareness(internals.ydoc);
-	const typedAwareness = createAwareness(awareness, standardAwarenessDefs);
+	const typedAwareness = createAwareness(awareness, peerPresenceDefs);
 	typedAwareness.setLocal({ peer: config.peer });
 
 	function handleAwarenessUpdate(
@@ -134,7 +135,7 @@ export function createPeerPresence<TPeerId extends string = string>(
 		},
 		async waitForPeer(peerId, { timeoutMs }) {
 			let sawPeers = false;
-			const tryMatch = (): FoundPeer | undefined => {
+			const tryMatch = (): ResolvedPeer | undefined => {
 				const all = typedAwareness.peers();
 				if (all.size > 0) sawPeers = true;
 				const sorted = [...all.keys()].sort((a, b) => a - b);
@@ -180,7 +181,7 @@ export function createPeerPresence<TPeerId extends string = string>(
 			});
 		},
 		observe(callback) {
-			return (typedAwareness as Awareness<typeof standardAwarenessDefs>).observe(
+			return (typedAwareness as Awareness<typeof peerPresenceDefs>).observe(
 				callback,
 			);
 		},

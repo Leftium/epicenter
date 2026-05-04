@@ -2,7 +2,7 @@
  * Daemon-side dispatch for the `/run` route. The Hono handler in `app.ts`
  * forwards to `executeRun` here.
  *
- * `epicenter run` is a shell shortcut for one workspace primitive:
+ * `epicenter run` is a shell shortcut for one daemon runtime primitive:
  *
  *   request.peerTarget === undefined   ->  invokeAction(...)
  *   request.peerTarget === <peerId>    ->  rpc.rpc(clientID, path, input)
@@ -17,40 +17,43 @@
  */
 
 import { Ok } from 'wellcrafted/result';
-import { invokeAction, resolveActionPath } from '../shared/actions.js';
 import {
-	resolveWorkspaceActionTarget,
-	workspaceActionNearestSiblingLines,
-	workspaceActionSuggestionLines,
-} from './action-routing.js';
+	invokeAction,
+	resolveActionPath,
+	walkActions,
+} from '../shared/actions.js';
 import type { RunRequest } from './app.js';
 import { RunError, type RunResponse } from './run-errors.js';
-import type { WorkspaceEntry } from './types.js';
+import type { DaemonRouteRuntime } from './types.js';
+
+type DaemonActionTarget = {
+	entry: DaemonRouteRuntime;
+	localPath: string;
+};
+
+type DaemonRouteError = {
+	routeName: string;
+	available: string[];
+};
 
 export async function executeRun(
-	entries: WorkspaceEntry[],
-	{
-		actionPath,
-		input: actionInput,
-		peerTarget,
-		waitMs,
-	}: RunRequest,
+	runtimes: DaemonRouteRuntime[],
+	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
-	const target = resolveWorkspaceActionTarget(entries, actionPath);
+	const target = resolveDaemonActionTarget(runtimes, actionPath);
 	if (target.error !== null) {
 		return RunError.UsageError({
-			message: `No config export "${target.error.exportName}". Available: ${target.error.available.join(', ')}`,
+			message: `No daemon route "${target.error.routeName}". Available: ${target.error.available.join(', ')}`,
 			suggestions: target.error.available.map((name) => `  ${name}`),
 		});
 	}
 
 	const { entry, localPath } = target.data;
-	const { workspace } = entry;
-	if (workspace.whenReady) await workspace.whenReady;
+	const { runtime } = entry;
 
-	const action = resolveActionPath(workspace.actions, localPath);
+	const action = resolveActionPath(runtime.actions, localPath);
 	if (!action) {
-		const descendants = workspaceActionSuggestionLines(entry, localPath);
+		const descendants = daemonActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {
 			return RunError.UsageError({
 				message: `"${actionPath}" is not a runnable action.`,
@@ -59,7 +62,7 @@ export async function executeRun(
 		}
 		return RunError.UsageError({
 			message: `"${actionPath}" is not defined.`,
-			suggestions: workspaceActionNearestSiblingLines(entry, localPath),
+			suggestions: daemonActionNearestSiblingLines(entry, localPath),
 		});
 	}
 
@@ -80,6 +83,32 @@ export async function executeRun(
 	return Ok(result.data);
 }
 
+function resolveDaemonActionTarget(
+	runtimes: DaemonRouteRuntime[],
+	actionPath: string,
+):
+	| { data: DaemonActionTarget; error: null }
+	| { data: null; error: DaemonRouteError } {
+	const [routeName = '', ...rest] = actionPath.split('.');
+	const entry = runtimes.find((candidate) => candidate.route === routeName);
+	if (!entry) {
+		return {
+			data: null,
+			error: {
+				routeName,
+				available: runtimes.map((candidate) => candidate.route),
+			},
+		};
+	}
+	return {
+		data: {
+			entry,
+			localPath: rest.join('.'),
+		},
+		error: null,
+	};
+}
+
 async function invokeRemote({
 	actionInput,
 	entry,
@@ -88,23 +117,15 @@ async function invokeRemote({
 	waitMs,
 }: {
 	actionInput: unknown;
-	entry: WorkspaceEntry;
+	entry: DaemonRouteRuntime;
 	localPath: string;
 	peerTarget: string;
 	waitMs: number;
 }): Promise<RunResponse> {
-	const { workspace } = entry;
-	const presence = workspace.presence;
-	const rpc = workspace.rpc;
-
-	if (!presence || !rpc) {
-		return RunError.UsageError({
-			message: `Workspace "${entry.name}" has no peer RPC attachment; --peer requires presence and RPC.`,
-		});
-	}
+	const { runtime } = entry;
 
 	const start = Date.now();
-	const found = await presence.waitForPeer(peerTarget, {
+	const found = await runtime.presence.waitForPeer(peerTarget, {
 		timeoutMs: waitMs,
 	});
 	if (found.error !== null) {
@@ -118,7 +139,7 @@ async function invokeRemote({
 
 	const { clientId: targetClientId, state: peerState } = found.data;
 	const remaining = Math.max(1, waitMs - (Date.now() - start));
-	const result = await rpc.rpc(targetClientId, localPath, actionInput, {
+	const result = await runtime.rpc.rpc(targetClientId, localPath, actionInput, {
 		timeout: remaining,
 	});
 
@@ -130,4 +151,51 @@ async function invokeRemote({
 		});
 	}
 	return Ok(result.data);
+}
+
+function toDaemonActionPath(
+	entry: DaemonRouteRuntime,
+	localPath: string,
+): string {
+	return localPath ? `${entry.route}.${localPath}` : entry.route;
+}
+
+function daemonActionSuggestionLines(
+	entry: DaemonRouteRuntime,
+	prefix: string,
+): string[] {
+	const entries = [...walkActions(entry.runtime.actions)];
+	const descendants = entriesUnder(entries, prefix);
+	return descendants.map(
+		([path, action]) =>
+			`  ${toDaemonActionPath(entry, path)}  (${action.type})`,
+	);
+}
+
+function daemonActionNearestSiblingLines(
+	entry: DaemonRouteRuntime,
+	missedPath: string,
+): string[] {
+	const entries = [...walkActions(entry.runtime.actions)];
+	const parts = missedPath.split('.');
+	while (parts.length > 0) {
+		parts.pop();
+		const prefix = parts.join('.');
+		const alts = entriesUnder(entries, prefix);
+		if (alts.length === 0) continue;
+		return alts.map(
+			([path, action]) =>
+				`  ${toDaemonActionPath(entry, path)}  (${action.type})`,
+		);
+	}
+	return [];
+}
+
+function entriesUnder<TValue>(
+	entries: Array<[string, TValue]>,
+	prefix: string,
+): Array<[string, TValue]> {
+	if (!prefix) return entries;
+	const pfx = `${prefix}.`;
+	return entries.filter(([path]) => path === prefix || path.startsWith(pfx));
 }

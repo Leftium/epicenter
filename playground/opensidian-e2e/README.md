@@ -14,7 +14,7 @@ epicenter auth login
 bun epicenter auth login http://localhost:8787
 ```
 
-This stores your session (access token + encryption keys) at `~/.epicenter/auth/sessions.json`.
+This stores your credentials at `~/.epicenter/auth/credentials.json`.
 
 ## Usage
 

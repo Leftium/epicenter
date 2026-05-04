@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
 import type { ProjectDir } from '@epicenter/workspace';
+import type { DaemonRuntime } from '@epicenter/workspace/daemon';
 import {
 	mintTestProjectDir,
 	NoopWebSocket,
@@ -9,7 +10,11 @@ import {
 	type ConversationId,
 	generateConversationId,
 } from '../workspace/definition.js';
-import { ZHONGWEN_DAEMON_ROUTE, zhongwenDaemon } from './daemon.js';
+import {
+	DEFAULT_ZHONGWEN_DAEMON_ROUTE,
+	defineZhongwenDaemon,
+} from './daemon.js';
+import { openZhongwen as openZhongwenDoc } from './index.js';
 import { openZhongwen as openZhongwenScript } from './script.js';
 
 let workdir: ProjectDir;
@@ -25,7 +30,7 @@ afterEach(() => {
 describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates conversations the daemon wrote', async () => {
 		{
-			const routeModule = zhongwenDaemon({
+			const routeDefinition = defineZhongwenDaemon({
 				getToken: async () => 'fake-token',
 				peer: {
 					id: 'test-daemon',
@@ -34,27 +39,31 @@ describe('daemon to script handoff via Yjs log file', () => {
 				},
 				webSocketImpl: NoopWebSocket,
 			});
-			using daemon = await routeModule({
+			const daemon = (await routeDefinition.start({
 				projectDir: workdir,
-				route: ZHONGWEN_DAEMON_ROUTE,
-			});
+				route: DEFAULT_ZHONGWEN_DAEMON_ROUTE,
+			})) as ReturnType<typeof openZhongwenDoc> & DaemonRuntime;
 
-			const now = Date.now();
-			const seed: { id: ConversationId; title: string }[] = [
-				{ id: generateConversationId(), title: 'first' },
-				{ id: generateConversationId(), title: 'second' },
-				{ id: generateConversationId(), title: 'third' },
-			];
-			for (const { id, title } of seed) {
-				daemon.tables.conversations.set({
-					id,
-					title,
-					provider: 'openai',
-					model: 'gpt-4',
-					createdAt: now,
-					updatedAt: now,
-					_v: 1 as const,
-				});
+			try {
+				const now = Date.now();
+				const seed: { id: ConversationId; title: string }[] = [
+					{ id: generateConversationId(), title: 'first' },
+					{ id: generateConversationId(), title: 'second' },
+					{ id: generateConversationId(), title: 'third' },
+				];
+				for (const { id, title } of seed) {
+					daemon.tables.conversations.set({
+						id,
+						title,
+						provider: 'openai',
+						model: 'gpt-4',
+						createdAt: now,
+						updatedAt: now,
+						_v: 1 as const,
+					});
+				}
+			} finally {
+				await daemon[Symbol.asyncDispose]();
 			}
 		}
 

@@ -23,7 +23,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { DaemonRuntime } from '@epicenter/workspace/daemon';
+import type {
+	DaemonRouteDefinition,
+	DaemonRuntime,
+	StartedDaemonRoute,
+} from '@epicenter/workspace/daemon';
 import {
 	bindUnixSocket,
 	metadataPathFor,
@@ -32,7 +36,7 @@ import {
 	writeMetadata,
 } from '@epicenter/workspace/node';
 import { Ok } from 'wellcrafted/result';
-import type { LoadConfigResult } from '../load-config';
+import type { LoadedDaemonConfig } from '../load-config';
 import { runUp } from './up';
 
 let originalXdg: string | undefined;
@@ -71,7 +75,7 @@ afterEach(() => {
 function makeFakeWorkspace(): DaemonRuntime {
 	return {
 		actions: {},
-		[Symbol.dispose]() {
+		async [Symbol.asyncDispose]() {
 			/* no-op */
 		},
 		sync: {
@@ -83,20 +87,27 @@ function makeFakeWorkspace(): DaemonRuntime {
 			onStatusChange: () => () => {},
 			// Unused fields; cast through unknown to keep the fake minimal.
 		} as unknown as DaemonRuntime['sync'],
-		presence: {
+		awareness: {
 			peers: () => new Map(),
 			observe: () => () => {},
-		} as unknown as DaemonRuntime['presence'],
-		rpc: {} as unknown as DaemonRuntime['rpc'],
+		} as unknown as DaemonRuntime['awareness'],
+		remote: {
+			invoke: async () => ({ data: null, error: null }),
+		} as unknown as DaemonRuntime['remote'],
 	};
 }
 
-function makeFakeConfig(runtime: DaemonRuntime): LoadConfigResult {
-	return {
-		runtimes: [{ route: 'default', runtime }],
-		async [Symbol.asyncDispose]() {
-			runtime[Symbol.dispose]();
+function makeFakeConfig(runtime: DaemonRuntime): LoadedDaemonConfig {
+	const routes: DaemonRouteDefinition[] = [
+		{
+			route: 'default',
+			start: async () => runtime,
 		},
+	];
+	return {
+		projectDir: workDir as LoadedDaemonConfig['projectDir'],
+		configPath: join(workDir, 'epicenter.config.ts'),
+		routes,
 	};
 }
 
@@ -111,7 +122,7 @@ describe('runUp: happy path', () => {
 				quiet: true,
 			},
 			{
-				loadConfig: async () => Ok(config),
+				loadDaemonConfig: async () => Ok(config),
 			},
 		);
 		expect(error).toBeNull();
@@ -154,6 +165,8 @@ describe('runUp: already running', () => {
 			configMtime: 0,
 		});
 
+		let loadCalls = 0;
+		let startCalls = 0;
 		try {
 			const { error } = await runUp(
 				{
@@ -161,15 +174,57 @@ describe('runUp: already running', () => {
 					quiet: true,
 				},
 				{
-					loadConfig: async () => Ok(makeFakeConfig(makeFakeWorkspace())),
+					loadDaemonConfig: async () => {
+						loadCalls++;
+						return Ok(makeFakeConfig(makeFakeWorkspace()));
+					},
+					startDaemonRoutes: async () => {
+						startCalls++;
+						return Ok([] satisfies StartedDaemonRoute[]);
+					},
 				},
 			);
 			expect(error?.name).toBe('AlreadyRunning');
 			if (error?.name === 'AlreadyRunning') {
 				expect(error.pid).toBe(process.pid);
 			}
+			expect(loadCalls).toBe(0);
+			expect(startCalls).toBe(0);
 		} finally {
 			server.stop();
+		}
+	});
+
+	test('does not import config when a live daemon is detected', async () => {
+		const sockPath = socketPathFor(workDir);
+		const { Hono } = await import('hono');
+		const { Ok } = await import('wellcrafted/result');
+		const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
+		const server = await bindUnixSocket(sockPath, app);
+
+		writeFileSync(
+			join(workDir, 'epicenter.config.ts'),
+			`globalThis.__upImportSideEffects = (globalThis.__upImportSideEffects ?? 0) + 1;
+			export default { daemon: { routes: [] } };`,
+		);
+		delete (globalThis as { __upImportSideEffects?: number })
+			.__upImportSideEffects;
+
+		try {
+			const { error } = await runUp({
+				projectDir: workDir,
+				quiet: true,
+			});
+
+			expect(error?.name).toBe('AlreadyRunning');
+			expect(
+				(globalThis as { __upImportSideEffects?: number })
+					.__upImportSideEffects,
+			).toBeUndefined();
+		} finally {
+			server.stop();
+			delete (globalThis as { __upImportSideEffects?: number })
+				.__upImportSideEffects;
 		}
 	});
 });
@@ -198,7 +253,7 @@ describe('runUp: orphan path', () => {
 				quiet: true,
 			},
 			{
-				loadConfig: async () => Ok(config),
+				loadDaemonConfig: async () => Ok(config),
 			},
 		);
 		expect(error).toBeNull();

@@ -5,7 +5,7 @@
  * `client.svelte.ts`) for refcount + grace.
  */
 
-import type { AuthCore } from '@epicenter/auth-svelte';
+import type { AuthClient } from '@epicenter/auth-svelte';
 import {
 	attachIndexedDb,
 	attachRichText,
@@ -13,6 +13,7 @@ import {
 	DateTimeString,
 	docGuid,
 	onLocalUpdate,
+	type SyncAttachment,
 	type Table,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -32,12 +33,14 @@ export function createNoteBodyDoc({
 	notesTable,
 	auth,
 	apiUrl,
+	registerSync,
 }: {
 	noteId: NoteId;
 	workspaceId: string;
 	notesTable: Table<Note>;
-	auth: Pick<AuthCore, 'getToken'>;
+	auth: Pick<AuthClient, 'snapshot' | 'whenSessionLoaded'>;
 	apiUrl: string;
+	registerSync: (sync: SyncAttachment) => () => void;
 }): NoteBodyDoc {
 	const ydoc = new Y.Doc({
 		guid: docGuid({
@@ -50,15 +53,19 @@ export function createNoteBodyDoc({
 	});
 	const body = attachRichText(ydoc);
 	const idb = attachIndexedDb(ydoc);
-	// Token sourced via getToken on each connect attempt — token rotations are
-	// picked up on natural reconnects without disrupting an open note-body
-	// connection. The workspace-level client owns the "force reconnect on
-	// session change" decision.
-	attachSync(ydoc, {
+	// Token sourced from the auth snapshot on each connect attempt. The parent
+	// workspace registers this handle so auth transitions reconnect open docs too.
+	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${apiUrl}/docs/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		getToken: async () => auth.getToken(),
+		getToken: async () => {
+			await auth.whenSessionLoaded;
+
+			const snapshot = auth.snapshot;
+			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+		},
 	});
+	const unregisterSync = registerSync(sync);
 
 	onLocalUpdate(ydoc, () => {
 		notesTable.update(noteId, {
@@ -71,6 +78,7 @@ export function createNoteBodyDoc({
 		body,
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
+			unregisterSync();
 			ydoc.destroy();
 		},
 	};

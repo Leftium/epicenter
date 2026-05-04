@@ -1,4 +1,5 @@
-import type { SessionResponse } from '@epicenter/api/types';
+import type { SessionResponse } from '@epicenter/auth/contracts';
+import { encryptionKeysFingerprint } from '@epicenter/workspace/encryption-key';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
@@ -8,8 +9,13 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { AuthSession, StoredUser } from './auth-types.ts';
-import type { SessionStore } from './session-store.ts';
+import type {
+	AuthSnapshot,
+	AuthSnapshotSubscriber,
+	Session,
+	StoredUser,
+} from './auth-types.ts';
+import type { MaybePromise, SessionStorage } from './session-store.ts';
 
 export const AuthError = defineErrors({
 	InvalidCredentials: () => ({
@@ -47,7 +53,7 @@ export type SocialTokenPayload = {
 export type CreateAuthConfig = {
 	/** Resolved once at construction; recreate the client if the origin changes. */
 	baseURL: string;
-	session: SessionStore;
+	sessionStorage: SessionStorage;
 	/**
 	 * Platform-specific credential provider for social ID token sign-in.
 	 *
@@ -59,40 +65,10 @@ export type CreateAuthConfig = {
 	socialTokenProvider?: () => Promise<SocialTokenPayload>;
 };
 
-export type AuthCore = {
-	getToken(): string | null;
-	getSession(): AuthSession | null;
-	getUser(): StoredUser | null;
-	isAuthenticated(): boolean;
-	isBusy(): boolean;
-
-	/**
-	 * Called on every session transition with `(next, previous)`. Replays
-	 * synchronously on subscribe with `(current, null)`.
-	 */
-	onSessionChange(
-		fn: (next: AuthSession | null, previous: AuthSession | null) => void,
-	): () => void;
-	/**
-	 * Called when the session token changes (including rotation). Replays
-	 * synchronously on subscribe with the current token.
-	 */
-	onTokenChange(fn: (token: string | null) => void): () => void;
-	/**
-	 * Fires on the `null → session` transition. Replays synchronously on
-	 * subscribe only if a session already exists.
-	 */
-	onLogin(fn: (session: AuthSession) => void): () => void;
-	/**
-	 * Fires on the `session → null` transition. Does NOT replay on subscribe.
-	 */
-	onLogout(fn: () => void): () => void;
-	/**
-	 * Fires when the in-flight auth-op counter flips between zero and
-	 * non-zero. Replays synchronously on subscribe with the current state.
-	 */
-	onBusyChange(fn: (busy: boolean) => void): () => void;
-
+export type AuthClient = {
+	readonly snapshot: AuthSnapshot;
+	readonly whenSessionLoaded: Promise<void>;
+	subscribe(fn: AuthSnapshotSubscriber): () => void;
 	signIn(input: {
 		email: string;
 		password: string;
@@ -108,10 +84,30 @@ export type AuthCore = {
 		callbackURL: string;
 	}): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<Result<undefined, AuthError>>;
-	fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
 
 	[Symbol.dispose](): void;
 };
+
+export type SessionStateAdapter = {
+	get(): Session | null;
+	set(value: Session | null): MaybePromise<void>;
+	watch(fn: (next: Session | null) => void): () => void;
+	whenReady?: Promise<unknown>;
+};
+
+export function createSessionStorageAdapter(
+	state: SessionStateAdapter,
+): SessionStorage {
+	return {
+		async load() {
+			await state.whenReady;
+			return state.get();
+		},
+		save: (value) => state.set(value),
+		watch: state.watch,
+	};
+}
 
 /**
  * Compile-time bridge for Better Auth's custom session type inference.
@@ -128,36 +124,24 @@ type EpicenterCustomSessionPlugin = ReturnType<
 /**
  * Create a framework-agnostic auth client.
  *
- * Owns the Better Auth transport, the session-rotation interceptor, and the
- * imperative subscription fan-out. Consumers pass in a `SessionStore` — the
- * core reads and writes it, but never persists.
- *
- * Firing order on any session transition:
- * 1. `session.set(next)` is called; `getSession()` now returns `next`.
- * 2. The store's watch callback runs and triggers notification.
- * 3. `onSessionChange` subscribers fire with `(next, previous)`.
- * 4. `onLogin` fires if the transition was `null → session`.
- * 5. `onLogout` fires if the transition was `session → null`.
- * 6. `onTokenChange` fires if `previous?.token !== next?.token`.
- *
- * Every subscriber runs in its own try/catch — one throwing does not prevent
- * others from firing. `isBusy` is an in-flight counter, not a boolean, so
- * overlapping ops don't flip busy false prematurely.
+ * Owns the Better Auth transport, response-header token rotation, storage
+ * hydration, and snapshot subscription fan-out. The getter only reads the
+ * in-memory snapshot.
  */
 export function createAuth({
 	baseURL,
-	session,
+	sessionStorage,
 	socialTokenProvider,
-}: CreateAuthConfig): AuthCore {
-	let busyCount = 0;
+}: CreateAuthConfig): AuthClient {
+	let snapshot: AuthSnapshot = { status: 'loading' };
+	let storageLoaded = false;
+	let bufferedBetterAuthCandidate: Session | null | undefined;
+	let resolveWhenSessionLoaded: () => void = () => {};
+	const whenSessionLoaded = new Promise<void>((resolve) => {
+		resolveWhenSessionLoaded = resolve;
+	});
 
-	const sessionSubs = new Set<
-		(next: AuthSession | null, previous: AuthSession | null) => void
-	>();
-	const tokenSubs = new Set<(token: string | null) => void>();
-	const loginSubs = new Set<(s: AuthSession) => void>();
-	const logoutSubs = new Set<() => void>();
-	const busySubs = new Set<(busy: boolean) => void>();
+	const snapshotSubs = new Set<AuthSnapshotSubscriber>();
 
 	const disposers: Array<() => void> = [];
 
@@ -169,50 +153,103 @@ export function createAuth({
 		}
 	}
 
-	function notifySession(
-		next: AuthSession | null,
-		previous: AuthSession | null,
-	) {
-		for (const sub of sessionSubs) safeRun(() => sub(next, previous));
-		if (previous === null && next !== null) {
-			for (const sub of loginSubs) safeRun(() => sub(next));
-		} else if (previous !== null && next === null) {
-			for (const sub of logoutSubs) safeRun(() => sub());
-		}
-		const prevToken = previous?.token ?? null;
-		const nextToken = next?.token ?? null;
-		if (prevToken !== nextToken) {
-			for (const sub of tokenSubs) safeRun(() => sub(nextToken));
+	function sessionFromSnapshot(value: AuthSnapshot): Session | null {
+		return value.status === 'signedIn' ? value.session : null;
+	}
+
+	function snapshotFromSession(session: Session | null): AuthSnapshot {
+		return session === null
+			? { status: 'signedOut' }
+			: { status: 'signedIn', session };
+	}
+
+	function sessionsEqual(left: Session | null, right: Session | null) {
+		if (left === null || right === null) return left === right;
+		return (
+			left.token === right.token &&
+			usersEqual(left.user, right.user) &&
+			encryptionKeysFingerprint(left.encryptionKeys) ===
+				encryptionKeysFingerprint(right.encryptionKeys)
+		);
+	}
+
+	function snapshotsEqual(left: AuthSnapshot, right: AuthSnapshot) {
+		if (left.status !== right.status) return false;
+		if (left.status !== 'signedIn' || right.status !== 'signedIn') return true;
+		return sessionsEqual(left.session, right.session);
+	}
+
+	function setSnapshot(next: AuthSnapshot) {
+		if (snapshotsEqual(snapshot, next)) return;
+		const previous = snapshot;
+		snapshot = next;
+		for (const subscriber of snapshotSubs) {
+			safeRun(() => subscriber(next, previous));
 		}
 	}
 
-	function notifyBusyChange(busy: boolean) {
-		for (const sub of busySubs) safeRun(() => sub(busy));
+	function saveSnapshot(next: AuthSnapshot) {
+		void Promise.resolve(sessionStorage.save(sessionFromSnapshot(next))).catch(
+			(error) => {
+				console.error('[auth] failed to save session:', error);
+			},
+		);
 	}
 
-	async function runBusy<T>(fn: () => Promise<T>): Promise<T> {
-		const wasIdle = busyCount === 0;
-		busyCount++;
-		if (wasIdle) notifyBusyChange(true);
+	function writeLocalSnapshot(next: AuthSnapshot) {
+		setSnapshot(next);
+		saveSnapshot(next);
+	}
+
+	function reconcileBetterAuthCandidate(next: Session | null | undefined) {
+		if (next === undefined) return;
+		if (next === null) {
+			if (snapshot.status !== 'loading')
+				writeLocalSnapshot({ status: 'signedOut' });
+			return;
+		}
+
+		const current = sessionFromSnapshot(snapshot);
+		writeLocalSnapshot({
+			status: 'signedIn',
+			session: {
+				token: current?.token ?? next.token,
+				user: next.user,
+				encryptionKeys: next.encryptionKeys,
+			},
+		});
+	}
+
+	function settleLoadedSession(loaded: Session | null) {
+		storageLoaded = true;
+		setSnapshot(snapshotFromSession(loaded));
+		if (bufferedBetterAuthCandidate !== undefined) {
+			reconcileBetterAuthCandidate(bufferedBetterAuthCandidate);
+		}
+		resolveWhenSessionLoaded();
+	}
+
+	function loadPersistedSession() {
 		try {
-			return await fn();
-		} finally {
-			busyCount--;
-			if (busyCount === 0) notifyBusyChange(false);
+			const loaded = sessionStorage.load();
+			if (loaded instanceof Promise) {
+				loaded.then(settleLoadedSession, (error) => {
+					console.error('[auth] failed to load session:', error);
+					settleLoadedSession(null);
+				});
+				return;
+			}
+			settleLoadedSession(loaded);
+		} catch (error) {
+			console.error('[auth] failed to load session:', error);
+			settleLoadedSession(null);
 		}
 	}
 
-	// The store's watch callback is our single notification path. Every
-	// mutation (our own session.set, the BA onSuccess rotation, the
-	// useSession subscription) goes through session.set, which triggers
-	// this handler — so we never have to fire notifySession manually.
-	let lastSeen: AuthSession | null = session.get();
 	disposers.push(
-		session.watch((next) => {
-			const previous = lastSeen;
-			if (previous === next) return;
-			lastSeen = next;
-			notifySession(next, previous);
+		sessionStorage.watch((next) => {
+			if (!storageLoaded) return;
+			setSnapshot(snapshotFromSession(next));
 		}),
 	);
 
@@ -223,117 +260,90 @@ export function createAuth({
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
-				token: () => session.get()?.token,
+				token: () =>
+					snapshot.status === 'signedIn' ? snapshot.session.token : undefined,
 			},
-			// BA silently rotates tokens on authenticated requests. The new
-			// token arrives in a response header rather than through the
-			// useSession subscription, so we intercept it here and write it
-			// to the session store — otherwise the local copy goes stale
-			// and subsequent requests use an expired token.
 			onSuccess: (context) => {
 				const newToken = context.response.headers.get('set-auth-token');
-				const current = session.get();
-				if (newToken && current !== null && newToken !== current.token) {
-					session.set({ ...current, token: newToken });
+				if (
+					newToken &&
+					snapshot.status === 'signedIn' &&
+					newToken !== snapshot.session.token
+				) {
+					writeLocalSnapshot({
+						status: 'signedIn',
+						session: { ...snapshot.session, token: newToken },
+					});
 				}
 			},
 		},
 	});
 
-	// Field-level write ownership between the two session writers:
-	//
-	// - onSuccess: owns the TOKEN field (immediate rotation via
-	//   set-auth-token header — old token is revoked, can't wait).
-	// - useSession.subscribe: owns USER and ENCRYPTIONKEYS (initial
-	//   session, profile updates, key rotation, account switch).
-	//
-	// Token strategy: preserve current.token if we already have a session
-	// (onSuccess may have rotated it and BA's async refetch can emit a
-	// stale pre-rotation value). On initial establishment (current is
-	// null), use BA's token.
 	disposers.push(
 		client.useSession.subscribe((state) => {
 			if (state.isPending) return;
-			const current = session.get();
-			if (state.data) {
-				session.set({
-					token: current?.token ?? state.data.session.token,
-					user: normalizeUser(state.data.user),
-					encryptionKeys: state.data.encryptionKeys,
-				});
-			} else if (current !== null) {
-				session.set(null);
+			const data = state.data as SessionResponse | null;
+			const next = data
+				? {
+						token: data.session.token,
+						user: normalizeUser(data.user),
+						encryptionKeys: data.encryptionKeys,
+					}
+				: null;
+
+			if (!storageLoaded) {
+				bufferedBetterAuthCandidate = next;
+				return;
+			}
+
+			if (data) {
+				reconcileBetterAuthCandidate(next);
+			} else if (snapshot.status === 'signedIn') {
+				writeLocalSnapshot({ status: 'signedOut' });
 			}
 		}),
 	);
 
-	return {
-		getToken: () => session.get()?.token ?? null,
-		getSession: () => session.get(),
-		getUser: () => session.get()?.user ?? null,
-		isAuthenticated: () => session.get() !== null,
-		isBusy: () => busyCount > 0,
+	loadPersistedSession();
 
-		onSessionChange(fn) {
-			safeRun(() => fn(session.get(), null));
-			sessionSubs.add(fn);
-			return () => {
-				sessionSubs.delete(fn);
-			};
+	return {
+		get snapshot() {
+			return snapshot;
 		},
-		onTokenChange(fn) {
-			safeRun(() => fn(session.get()?.token ?? null));
-			tokenSubs.add(fn);
+		whenSessionLoaded,
+		subscribe(fn) {
+			const current = snapshot;
+			const previous =
+				current.status === 'loading'
+					? current
+					: ({ status: 'loading' } as const);
+			safeRun(() => fn(current, previous));
+			snapshotSubs.add(fn);
 			return () => {
-				tokenSubs.delete(fn);
-			};
-		},
-		onLogin(fn) {
-			const current = session.get();
-			if (current !== null) safeRun(() => fn(current));
-			loginSubs.add(fn);
-			return () => {
-				loginSubs.delete(fn);
-			};
-		},
-		onLogout(fn) {
-			logoutSubs.add(fn);
-			return () => {
-				logoutSubs.delete(fn);
-			};
-		},
-		onBusyChange(fn) {
-			safeRun(() => fn(busyCount > 0));
-			busySubs.add(fn);
-			return () => {
-				busySubs.delete(fn);
+				snapshotSubs.delete(fn);
 			};
 		},
 
 		async signIn(input) {
-			return runBusy(async () => {
-				try {
-					const { error } = await client.signIn.email(input);
-					if (!error) return Ok(undefined);
-					if (error.status === 401 || error.status === 403)
-						return AuthError.InvalidCredentials();
-					return AuthError.SignInFailed({ cause: error });
-				} catch (error) {
-					return AuthError.SignInFailed({ cause: error });
-				}
-			});
+			try {
+				const { error } = await client.signIn.email(input);
+				if (!error) return Ok(undefined);
+				if (error.status === 401 || error.status === 403)
+					return AuthError.InvalidCredentials();
+				return AuthError.SignInFailed({ cause: error });
+			} catch (error) {
+				return AuthError.SignInFailed({ cause: error });
+			}
 		},
 
 		async signUp(input) {
-			return runBusy(async () => {
-				try {
-					const { error } = await client.signUp.email(input);
-					if (error) return AuthError.SignUpFailed({ cause: error });
-					return Ok(undefined);
-				} catch (error) {
-					return AuthError.SignUpFailed({ cause: error });
-				}
-			});
+			try {
+				const { error } = await client.signUp.email(input);
+				if (error) return AuthError.SignUpFailed({ cause: error });
+				return Ok(undefined);
+			} catch (error) {
+				return AuthError.SignUpFailed({ cause: error });
+			}
 		},
 
 		async signInWithSocialPopup() {
@@ -342,23 +352,19 @@ export function createAuth({
 					cause: new Error('No socialTokenProvider configured.'),
 				});
 			}
-			return runBusy(async () => {
-				try {
-					const { provider, idToken, nonce } = await socialTokenProvider();
-					const { error } = await client.signIn.social({
-						provider,
-						idToken: { token: idToken, nonce },
-					});
-					if (error) return AuthError.SocialSignInFailed({ cause: error });
-					return Ok(undefined);
-				} catch (error) {
-					return AuthError.SocialSignInFailed({ cause: error });
-				}
-			});
+			try {
+				const { provider, idToken, nonce } = await socialTokenProvider();
+				const { error } = await client.signIn.social({
+					provider,
+					idToken: { token: idToken, nonce },
+				});
+				if (error) return AuthError.SocialSignInFailed({ cause: error });
+				return Ok(undefined);
+			} catch (error) {
+				return AuthError.SocialSignInFailed({ cause: error });
+			}
 		},
 
-		// Not wrapped in runBusy — the page navigates away on success, so
-		// isBusy is never read. The promise never resolves on the happy path.
 		async signInWithSocialRedirect({ provider, callbackURL }) {
 			try {
 				await client.signIn.social({ provider, callbackURL });
@@ -369,20 +375,22 @@ export function createAuth({
 		},
 
 		async signOut() {
-			return runBusy(async () => {
-				try {
-					await client.signOut();
-					return Ok(undefined);
-				} catch (error) {
-					return AuthError.SignOutFailed({ cause: error });
-				}
-			});
+			try {
+				const { error } = await client.signOut();
+				if (error) return AuthError.SignOutFailed({ cause: error });
+				writeLocalSnapshot({ status: 'signedOut' });
+				return Ok(undefined);
+			} catch (error) {
+				return AuthError.SignOutFailed({ cause: error });
+			}
 		},
 
-		fetch(input, init) {
+		async fetch(input, init) {
+			await whenSessionLoaded;
 			const headers = new Headers(init?.headers);
-			const token = session.get()?.token;
-			if (token) headers.set('Authorization', `Bearer ${token}`);
+			if (snapshot.status === 'signedIn') {
+				headers.set('Authorization', `Bearer ${snapshot.session.token}`);
+			}
 			return fetch(input, { ...init, headers, credentials: 'include' });
 		},
 
@@ -394,11 +402,7 @@ export function createAuth({
 					console.error('[auth] dispose error:', error);
 				}
 			}
-			sessionSubs.clear();
-			tokenSubs.clear();
-			loginSubs.clear();
-			logoutSubs.clear();
-			busySubs.clear();
+			snapshotSubs.clear();
 		},
 	};
 }
@@ -428,4 +432,16 @@ function normalizeUser(user: {
 		name: user.name,
 		image: user.image,
 	};
+}
+
+function usersEqual(left: StoredUser, right: StoredUser) {
+	return (
+		left.id === right.id &&
+		left.createdAt === right.createdAt &&
+		left.updatedAt === right.updatedAt &&
+		left.email === right.email &&
+		left.emailVerified === right.emailVerified &&
+		left.name === right.name &&
+		left.image === right.image
+	);
 }

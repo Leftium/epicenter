@@ -1,11 +1,13 @@
 import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	type PeerIdentity,
+	createRemoteClient,
+	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createNoteBodyDoc } from '$lib/note-body-docs';
@@ -23,6 +25,7 @@ export function openHoneycrisp({
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
+	const bodySyncs = new Set<ReturnType<typeof attachSync>>();
 
 	const noteBodyDocs = createDisposableCache(
 		(noteId: NoteId) =>
@@ -32,24 +35,39 @@ export function openHoneycrisp({
 				notesTable: doc.tables.notes,
 				auth,
 				apiUrl: APP_URLS.API,
+				registerSync: (sync) => {
+					bodySyncs.add(sync);
+					return () => bodySyncs.delete(sync);
+				},
 			}),
 		{ gcTime: 5_000 },
 	);
 
+	const awareness = attachAwareness(doc.ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
+	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: async () => auth.getToken(),
+		getToken: async () => {
+			await auth.whenSessionLoaded;
+
+			const snapshot = auth.snapshot;
+			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+		},
+		awareness,
 	});
-	const presence = sync.attachPresence({ peer });
 	const rpc = sync.attachRpc(doc.actions);
+	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		...doc,
 		idb,
 		noteBodyDocs,
+		awareness,
 		sync,
-		presence,
+		remote,
 		rpc,
 		/**
 		 * Resolves when IndexedDB has hydrated the local snapshot. The UI can
@@ -57,5 +75,8 @@ export function openHoneycrisp({
 		 * connect at any time, including never if the user is offline).
 		 */
 		whenReady: idb.whenLoaded,
+		getAuthSyncTargets() {
+			return [sync, ...bodySyncs];
+		},
 	};
 }

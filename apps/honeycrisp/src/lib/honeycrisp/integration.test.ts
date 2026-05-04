@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
 import { DateTimeString, type ProjectDir } from '@epicenter/workspace';
+import type { DaemonRuntime } from '@epicenter/workspace/daemon';
 import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
 import type { NoteId } from '../workspace.js';
-import { HONEYCRISP_DAEMON_ROUTE, honeycrispDaemon } from './daemon.js';
+import {
+	DEFAULT_HONEYCRISP_DAEMON_ROUTE,
+	defineHoneycrispDaemon,
+} from './daemon.js';
+import { openHoneycrisp as openHoneycrispDoc } from './index.js';
 import { openHoneycrisp as openHoneycrispScript } from './script.js';
 
 let workdir: ProjectDir;
@@ -22,7 +27,7 @@ afterEach(() => {
 describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates notes the daemon wrote', async () => {
 		{
-			const routeModule = honeycrispDaemon({
+			const routeDefinition = defineHoneycrispDaemon({
 				getToken: async () => 'fake-token',
 				peer: {
 					id: 'test-daemon',
@@ -31,29 +36,33 @@ describe('daemon to script handoff via Yjs log file', () => {
 				},
 				webSocketImpl: NoopWebSocket,
 			});
-			using daemon = await routeModule({
+			const daemon = (await routeDefinition.start({
 				projectDir: workdir,
-				route: HONEYCRISP_DAEMON_ROUTE,
-			});
+				route: DEFAULT_HONEYCRISP_DAEMON_ROUTE,
+			})) as ReturnType<typeof openHoneycrispDoc> & DaemonRuntime;
 
-			const now = DateTimeString.now();
-			const seed: { id: NoteId; title: string }[] = [
-				{ id: 'a' as NoteId, title: 'first' },
-				{ id: 'b' as NoteId, title: 'second' },
-				{ id: 'c' as NoteId, title: 'third' },
-			];
-			for (const { id, title } of seed) {
-				daemon.tables.notes.set({
-					id,
-					title,
-					preview: '',
-					pinned: false,
-					deletedAt: undefined,
-					wordCount: undefined,
-					createdAt: now,
-					updatedAt: now,
-					_v: 2 as const,
-				});
+			try {
+				const now = DateTimeString.now();
+				const seed: { id: NoteId; title: string }[] = [
+					{ id: 'a' as NoteId, title: 'first' },
+					{ id: 'b' as NoteId, title: 'second' },
+					{ id: 'c' as NoteId, title: 'third' },
+				];
+				for (const { id, title } of seed) {
+					daemon.tables.notes.set({
+						id,
+						title,
+						preview: '',
+						pinned: false,
+						deletedAt: undefined,
+						wordCount: undefined,
+						createdAt: now,
+						updatedAt: now,
+						_v: 2 as const,
+					});
+				}
+			} finally {
+				await daemon[Symbol.asyncDispose]();
 			}
 		}
 

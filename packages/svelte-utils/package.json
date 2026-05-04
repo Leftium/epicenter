@@ -17,7 +17,6 @@
 		".": "./src/index.ts",
 		"./auth-form": "./src/auth-form/index.ts",
 		"./workspace-gate": "./src/workspace-gate/index.ts",
-		"./sync-status-popover": "./src/sync-status-popover/index.ts",
 		"./account-popover": "./src/account-popover/index.ts"
 	},
 	"dependencies": {

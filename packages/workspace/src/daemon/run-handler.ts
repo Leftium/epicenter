@@ -5,7 +5,7 @@
  * `epicenter run` is a shell shortcut for one daemon runtime primitive:
  *
  *   request.peerTarget === undefined   ->  invokeAction(...)
- *   request.peerTarget === <peerId>    ->  rpc.rpc(clientID, path, input)
+ *   request.peerTarget === <peerId>    ->  remote.invoke(peerId, path, input)
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
@@ -23,11 +23,16 @@ import {
 	walkActions,
 } from '../shared/actions.js';
 import type { RunRequest } from './app.js';
-import { RunError, type RunResponse } from './run-errors.js';
-import type { DaemonRouteRuntime } from './types.js';
+import type { SyncStatus } from '../document/attach-sync.js';
+import {
+	RunError,
+	type RunResponse,
+	type RunSyncStatus,
+} from './run-errors.js';
+import type { StartedDaemonRoute } from './types.js';
 
 type DaemonActionTarget = {
-	entry: DaemonRouteRuntime;
+	entry: StartedDaemonRoute;
 	localPath: string;
 };
 
@@ -37,7 +42,7 @@ type DaemonRouteError = {
 };
 
 export async function executeRun(
-	runtimes: DaemonRouteRuntime[],
+	runtimes: StartedDaemonRoute[],
 	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
 	const target = resolveDaemonActionTarget(runtimes, actionPath);
@@ -84,7 +89,7 @@ export async function executeRun(
 }
 
 function resolveDaemonActionTarget(
-	runtimes: DaemonRouteRuntime[],
+	runtimes: StartedDaemonRoute[],
 	actionPath: string,
 ):
 	| { data: DaemonActionTarget; error: null }
@@ -117,51 +122,67 @@ async function invokeRemote({
 	waitMs,
 }: {
 	actionInput: unknown;
-	entry: DaemonRouteRuntime;
+	entry: StartedDaemonRoute;
 	localPath: string;
 	peerTarget: string;
 	waitMs: number;
 }): Promise<RunResponse> {
 	const { runtime } = entry;
 
-	const start = Date.now();
-	const found = await runtime.presence.waitForPeer(peerTarget, {
-		timeoutMs: waitMs,
-	});
-	if (found.error !== null) {
-		return RunError.PeerMiss({
-			peerTarget: found.error.peerTarget,
-			sawPeers: found.error.sawPeers,
-			waitMs: found.error.waitMs,
-			emptyReason: found.error.emptyReason,
-		});
-	}
-
-	const { clientId: targetClientId, state: peerState } = found.data;
-	const remaining = Math.max(1, waitMs - (Date.now() - start));
-	const result = await runtime.rpc.rpc(targetClientId, localPath, actionInput, {
-		timeout: remaining,
-	});
+	const result = await runtime.remote.invoke(
+		peerTarget,
+		localPath,
+		actionInput,
+		{
+			waitForPeerMs: waitMs,
+			timeout: waitMs,
+		},
+	);
 
 	if (result.error !== null) {
-		return RunError.RpcError({
+		return RunError.RemoteCallFailed({
 			cause: result.error,
-			targetClientId,
-			peerState,
+			peerTarget,
+			syncStatus: toRunSyncStatus(runtime.sync.status),
 		});
 	}
 	return Ok(result.data);
 }
 
+function toRunSyncStatus(status: SyncStatus): RunSyncStatus {
+	switch (status.phase) {
+		case 'offline':
+			return { phase: 'offline' };
+		case 'connected':
+			return {
+				phase: 'connected',
+				hasLocalChanges: status.hasLocalChanges,
+			};
+		case 'connecting':
+			return {
+				phase: 'connecting',
+				retries: status.retries,
+				lastErrorType: status.lastError?.type,
+			};
+		case 'failed':
+			return {
+				phase: 'failed',
+				reason: status.reason,
+			};
+		default:
+			return status satisfies never;
+	}
+}
+
 function toDaemonActionPath(
-	entry: DaemonRouteRuntime,
+	entry: StartedDaemonRoute,
 	localPath: string,
 ): string {
 	return localPath ? `${entry.route}.${localPath}` : entry.route;
 }
 
 function daemonActionSuggestionLines(
-	entry: DaemonRouteRuntime,
+	entry: StartedDaemonRoute,
 	prefix: string,
 ): string[] {
 	const entries = [...walkActions(entry.runtime.actions)];
@@ -173,7 +194,7 @@ function daemonActionSuggestionLines(
 }
 
 function daemonActionNearestSiblingLines(
-	entry: DaemonRouteRuntime,
+	entry: StartedDaemonRoute,
 	missedPath: string,
 ): string[] {
 	const entries = [...walkActions(entry.runtime.actions)];

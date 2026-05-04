@@ -1,22 +1,21 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { createMachineTokenGetter } from '@epicenter/auth/node';
 import {
+	attachAwareness,
 	attachSync,
-	type PeerIdentity,
+	createRemoteClient,
+	PeerIdentity,
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import type { EpicenterConfigContext } from '@epicenter/workspace/daemon';
-import {
-	attachYjsLog,
-	createSessionTokenGetter,
-	hashClientId,
-	yjsPath,
-} from '@epicenter/workspace/node';
+import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
+import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import { openOpensidian as openOpensidianDoc } from './index.js';
 
-export const OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
+export const DEFAULT_OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 
 export type OpensidianDaemonOptions = {
+	route?: string;
 	getToken?: () => Promise<string | null>;
 	peer?: PeerIdentity;
 	apiUrl?: string;
@@ -31,36 +30,50 @@ function defaultOpensidianDaemonPeer(): PeerIdentity {
 	};
 }
 
-export function opensidianDaemon({
+export function defineOpensidianDaemon({
+	route = DEFAULT_OPENSIDIAN_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
+	getToken = createMachineTokenGetter({ serverOrigin: apiUrl }),
 	peer = defaultOpensidianDaemonPeer(),
 	webSocketImpl,
-}: OpensidianDaemonOptions = {}) {
-	return ({ projectDir }: EpicenterConfigContext) => {
-		const doc = openOpensidianDoc({ clientID: hashClientId(projectDir) });
-		const yjsLog = attachYjsLog(doc.ydoc, {
-			filePath: yjsPath(projectDir, doc.ydoc.guid),
-		});
-		const sync = attachSync(doc, {
-			url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-			getToken,
-			webSocketImpl,
-		});
+}: OpensidianDaemonOptions = {}): DaemonRouteDefinition {
+	return {
+		route,
+		start({ projectDir }) {
+			const doc = openOpensidianDoc({ clientID: hashClientId(projectDir) });
+			const yjsLog = attachYjsLog(doc.ydoc, {
+				filePath: yjsPath(projectDir, doc.ydoc.guid),
+			});
+			const awareness = attachAwareness(doc.ydoc, {
+				schema: { peer: PeerIdentity },
+				initial: { peer },
+			});
+			const sync = attachSync(doc, {
+				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+				getToken,
+				webSocketImpl,
+				awareness,
+			});
 
-		// Daemon runtime is materializer-only for now. Browser runtime owns
-		// Opensidian file and shell actions because they need browser services.
-		const actions = {};
-		const presence = sync.attachPresence({ peer });
-		const rpc = sync.attachRpc(actions);
+			// Daemon runtime is materializer-only for now. Browser runtime owns
+			// Opensidian file and shell actions because they need browser services.
+			const actions = {};
+			const rpc = sync.attachRpc(actions);
+			const remote = createRemoteClient({ awareness, rpc });
 
-		return {
-			...doc,
-			yjsLog,
-			sync,
-			actions,
-			presence,
-			rpc,
-		};
+			return {
+				...doc,
+				yjsLog,
+				awareness,
+				sync,
+				actions,
+				remote,
+				rpc,
+				async [Symbol.asyncDispose]() {
+					doc[Symbol.dispose]();
+					await sync.whenDisposed;
+				},
+			};
+		},
 	};
 }

@@ -56,7 +56,6 @@
 		<AccountPopover
 			{auth}
 			sync={opensidian.sync}
-			clearLocalData={() => opensidian.idb.clearLocal()}
 			syncNoun="notes"
 			onSocialSignIn={() =>
 				auth.signInWithSocialRedirect({

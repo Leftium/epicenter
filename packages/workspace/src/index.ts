@@ -33,9 +33,9 @@
 
 export type {
 	Action,
-	Actions,
 	ActionManifest,
 	ActionMeta,
+	Actions,
 	Mutation,
 	Query,
 	RemoteActionProxy,
@@ -59,8 +59,12 @@ export { isRpcError, RpcError } from '@epicenter/sync';
 // Cross-peer action calling.
 export {
 	createRemoteClient,
+	PeerAddressError,
 	type RemoteClient,
+	type RemoteCallError,
 	type RemoteClientOptions,
+	type RemotePeerCallOptions,
+	type WireRpcError,
 } from './rpc/remote-actions.js';
 export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
@@ -132,8 +136,8 @@ export {
 	DisposableCacheError,
 } from './cache/disposable-cache.js';
 export {
-	type Awareness,
-	type AwarenessDefinitions,
+	type AwarenessAttachment,
+	type AwarenessSchema,
 	type AwarenessState,
 	attachAwareness,
 	type InferAwarenessValue,
@@ -172,7 +176,6 @@ export {
 export {
 	type AttachSyncDoc,
 	attachSync,
-	PeerMiss,
 	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
@@ -227,15 +230,12 @@ export {
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
-	type AttachPresenceConfig,
-	type PeerPresenceAttachment,
-} from './document/peer-presence.js';
-export {
-	type ResolvedPeer,
 	PeerIdentity,
-	type PeerPresenceState,
+	type PeerAwarenessSchema,
+	type PeerAwarenessState,
 	type PeerRuntime,
-} from './document/peer-presence-defs.js';
+	type ResolvedPeer,
+} from './document/peer-identity.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS

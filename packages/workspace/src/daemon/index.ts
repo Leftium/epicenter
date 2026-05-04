@@ -1,8 +1,13 @@
 export {
-	type DaemonRouteModule,
+	findDuplicateDaemonRoute,
+	isValidDaemonRoute,
+	validateStartedDaemonRoutes,
+} from './route-validation.js';
+export {
+	type DaemonRouteContext,
+	type DaemonRouteDefinition,
 	type DaemonRuntime,
-	type DaemonRouteRuntime,
-	defineEpicenterConfig,
+	defineConfig,
 	type EpicenterConfig,
-	type EpicenterConfigContext,
+	type StartedDaemonRoute,
 } from './types.js';

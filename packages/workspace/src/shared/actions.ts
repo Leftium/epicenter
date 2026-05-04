@@ -90,7 +90,7 @@ export type ActionMeta<
 /**
  * Flat dot-path to `ActionMeta` map describing a peer's full action surface.
  * Returned by the runtime-injected `system.describe` RPC and consumed via
- * `createRemoteClient({ presence, rpc }).describe(peerId)`.
+ * `createRemoteClient({ awareness, rpc }).describe(peerId)`.
  */
 export type ActionManifest = Record<string, ActionMeta>;
 
@@ -308,7 +308,7 @@ export function* walkActions(
 /**
  * Walk a tree into its flat `ActionManifest`: the wire form returned by
  * `system.describe`. Live `input` schemas are retained; functions are
- * dropped. Pairs with `createRemoteClient({ presence, rpc }).describe(peerId)`,
+ * dropped. Pairs with `createRemoteClient({ awareness, rpc }).describe(peerId)`,
  * which returns the same shape from a remote peer.
  *
  * Built atop {@link walkActions}. Use that primitive directly if you want
@@ -431,9 +431,12 @@ export type RemoteCallOptions = {
  * so callers can always pass options as the second arg, regardless of whether
  * the action has input.
  */
-type WithOptions<Args extends readonly unknown[]> = Args extends []
-	? [input?: undefined, options?: RemoteCallOptions]
-	: [...Args, options?: RemoteCallOptions];
+type WithOptions<
+	Args extends readonly unknown[],
+	TOptions extends RemoteCallOptions,
+> = Args extends []
+	? [input?: undefined, options?: TOptions]
+	: [...Args, options?: TOptions];
 
 /**
  * Compute the wrapped shape of a single action callable for remote/normalized
@@ -449,10 +452,14 @@ type WithOptions<Args extends readonly unknown[]> = Args extends []
  * so the remote type exposes only `RpcError`. Every wrapped leaf accepts a
  * trailing `RemoteCallOptions` for per-call overrides.
  */
-export type WrapAction<F> = F extends (...args: infer Args) => infer R
+export type WrapAction<
+	F,
+	TError = RpcError,
+	TOptions extends RemoteCallOptions = RemoteCallOptions,
+> = F extends (...args: infer Args) => infer R
 	? (
-			...args: WithOptions<Args>
-		) => Promise<Result<RemoteSuccessOutput<R>, RpcError>>
+			...args: WithOptions<Args, TOptions>
+		) => Promise<Result<RemoteSuccessOutput<R>, TError>>
 	: never;
 
 type RemoteSuccessOutput<TOutput> =
@@ -471,7 +478,11 @@ type RemoteSuccessOutput<TOutput> =
  * Bracketed `[T[K]] extends [Action]` form is intentional: prevents
  * unwanted distribution if a key's type is a union (e.g., `Foo | undefined`).
  */
-export type RemoteActionProxy<T> = {
+export type RemoteActionProxy<
+	T,
+	TError = RpcError,
+	TOptions extends RemoteCallOptions = RemoteCallOptions,
+> = {
 	[K in keyof T & string as ActionPathKey<K> extends never
 		? never
 		: [T[K]] extends [Action]
@@ -479,15 +490,15 @@ export type RemoteActionProxy<T> = {
 			: T[K] extends readonly unknown[]
 				? never
 				: T[K] extends Record<string, unknown>
-					? keyof RemoteActionProxy<T[K]> extends never
+					? keyof RemoteActionProxy<T[K], TError, TOptions> extends never
 						? never
 						: K
 					: never]: [T[K]] extends [Action]
-		? WrapAction<T[K]>
+		? WrapAction<T[K], TError, TOptions>
 		: T[K] extends readonly unknown[]
 			? never
 			: T[K] extends Record<string, unknown>
-				? RemoteActionProxy<T[K]>
+				? RemoteActionProxy<T[K], TError, TOptions>
 				: never;
 };
 

@@ -1,21 +1,26 @@
-import { createAuth } from '@epicenter/auth-svelte';
+import { createAuth, createSessionStorageAdapter } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { session } from '$lib/auth';
 import { openZhongwen } from './browser';
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
-	session,
+	sessionStorage: createSessionStorageAdapter(session),
 });
 
 export const zhongwen = openZhongwen();
 
-auth.onSessionChange((next, previous) => {
-	if (next === null) {
-		if (previous !== null) void zhongwen.idb.clearLocal();
+auth.subscribe((next, previous) => {
+	if (next.status === 'loading') return;
+
+	const previousSession =
+		previous.status === 'signedIn' ? previous.session : null;
+
+	if (next.status === 'signedOut') {
+		if (previousSession !== null) void zhongwen.idb.clearLocal();
 		return;
 	}
-	zhongwen.encryption.applyKeys(next.encryptionKeys);
+	zhongwen.encryption.applyKeys(next.session.encryptionKeys);
 });
 
 if (import.meta.hot) {

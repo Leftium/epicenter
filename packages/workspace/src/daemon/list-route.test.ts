@@ -13,15 +13,15 @@ import type { Result } from 'wellcrafted/result';
 
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
 import { buildDaemonApp } from './app.js';
-import type { DaemonRuntime, DaemonRouteRuntime } from './types.js';
+import type { DaemonRuntime, StartedDaemonRoute } from './types.js';
 
 type ListResult = Result<ActionManifest, never>;
 
 function fakeEntry(
 	name: string,
 	runtimeShape: Record<string, unknown> = {},
-): DaemonRouteRuntime {
-	const runtime = {
+): StartedDaemonRoute {
+	const runtime: DaemonRuntime = {
 		actions: {},
 		sync: {
 			whenConnected: Promise.resolve(),
@@ -31,27 +31,15 @@ function fakeEntry(
 			reconnect() {},
 			whenDisposed: Promise.resolve(),
 		} as unknown as DaemonRuntime['sync'],
-		presence: {
+		awareness: {
 			peers: () => new Map(),
-			find: () => undefined,
-			waitForPeer: async () => ({
-				data: null,
-				error: {
-					name: 'PeerMiss',
-					message: 'missing peer',
-					peerTarget: 'missing',
-					sawPeers: false,
-					waitMs: 1,
-					emptyReason: null,
-				},
-			}),
 			observe: () => () => {},
-		} as unknown as DaemonRuntime['presence'],
-		rpc: {
-			rpc: async () => ({ data: null, error: null }),
-		} as unknown as DaemonRuntime['rpc'],
+		} as unknown as DaemonRuntime['awareness'],
+		remote: {
+			invoke: async () => ({ data: null, error: null }),
+		} as unknown as DaemonRuntime['remote'],
 		...runtimeShape,
-		[Symbol.dispose]() {},
+		async [Symbol.asyncDispose]() {},
 	} satisfies DaemonRuntime;
 	return {
 		route: name,
@@ -59,7 +47,7 @@ function fakeEntry(
 	};
 }
 
-async function postList(runtimes: DaemonRouteRuntime[]): Promise<ListResult> {
+async function postList(runtimes: StartedDaemonRoute[]): Promise<ListResult> {
 	const app = buildDaemonApp(runtimes);
 	const res = await app.request('/list', {
 		method: 'POST',

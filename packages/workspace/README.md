@@ -121,6 +121,8 @@ import {
 	attachEncryption,
 	attachIndexedDb,
 	attachSync,
+	createRemoteClient,
+	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -135,7 +137,14 @@ export function openApp({
 
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(ydoc, appTables);
-	const awareness = attachAwareness(ydoc, {});
+	const awareness = attachAwareness(ydoc, {
+		schema: {
+			peer: PeerIdentity,
+		},
+		initial: {
+			peer: { id: 'macbook', name: 'MacBook', platform: 'node' },
+		},
+	});
 
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
@@ -143,10 +152,11 @@ export function openApp({
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		getToken,
+		awareness,
 	});
-	const presence = sync.attachPresence({
-		peer: { id: 'macbook', name: 'MacBook', platform: 'browser' },
-	});
+	const actions = {};
+	const rpc = sync.attachRpc(actions);
+	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		get id() {
@@ -158,7 +168,8 @@ export function openApp({
 		encryption,
 		idb,
 		sync,
-		presence,
+		rpc,
+		remote,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
@@ -474,7 +485,7 @@ void sidebarCollapsed;
 
 KV is validate-or-default. There is no migration function.
 
-### Awareness definitions
+### Awareness schema
 
 ```typescript
 import { type } from 'arktype';
@@ -497,9 +508,16 @@ function openNotes() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.notes' });
 	const tables = attachTables(ydoc, { notes });
 	const awareness = attachAwareness(ydoc, {
-		name: type('string'),
-		color: type('string'),
-		cursor: type({ line: 'number', column: 'number' }),
+		schema: {
+			name: type('string'),
+			color: type('string'),
+			cursor: type({ line: 'number', column: 'number' }),
+		},
+		initial: {
+			name: 'Braden',
+			color: '#ff4d4f',
+			cursor: { line: 0, column: 0 },
+		},
 	});
 
 	return {
@@ -513,7 +531,6 @@ function openNotes() {
 
 const workspace = openNotes();
 
-workspace.awareness.setLocal({ name: 'Braden', color: '#ff4d4f' });
 workspace.awareness.setLocalField('cursor', { line: 12, column: 3 });
 ```
 
@@ -1458,8 +1475,8 @@ Public KV methods:
 
 ```typescript
 import {
-	type Awareness,
-	type AwarenessDefinitions,
+	type AwarenessAttachment,
+	type AwarenessSchema,
 	type AwarenessState,
 	type InferAwarenessValue,
 } from '@epicenter/workspace';

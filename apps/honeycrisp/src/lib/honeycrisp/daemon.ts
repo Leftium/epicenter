@@ -1,22 +1,21 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { createMachineTokenGetter } from '@epicenter/auth/node';
 import {
+	attachAwareness,
 	attachSync,
-	type PeerIdentity,
+	createRemoteClient,
+	PeerIdentity,
 	toWsUrl,
 	type WebSocketImpl,
 } from '@epicenter/workspace';
-import type { EpicenterConfigContext } from '@epicenter/workspace/daemon';
-import {
-	attachYjsLog,
-	createSessionTokenGetter,
-	hashClientId,
-	yjsPath,
-} from '@epicenter/workspace/node';
+import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
+import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import { openHoneycrisp as openHoneycrispDoc } from './index.js';
 
-export const HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
+export const DEFAULT_HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
 
 export type HoneycrispDaemonOptions = {
+	route?: string;
 	getToken?: () => Promise<string | null>;
 	peer?: PeerIdentity;
 	apiUrl?: string;
@@ -31,31 +30,45 @@ function defaultHoneycrispDaemonPeer(): PeerIdentity {
 	};
 }
 
-export function honeycrispDaemon({
+export function defineHoneycrispDaemon({
+	route = DEFAULT_HONEYCRISP_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createSessionTokenGetter({ serverUrl: apiUrl }),
+	getToken = createMachineTokenGetter({ serverOrigin: apiUrl }),
 	peer = defaultHoneycrispDaemonPeer(),
 	webSocketImpl,
-}: HoneycrispDaemonOptions = {}) {
-	return ({ projectDir }: EpicenterConfigContext) => {
-		const doc = openHoneycrispDoc({ clientID: hashClientId(projectDir) });
-		const yjsLog = attachYjsLog(doc.ydoc, {
-			filePath: yjsPath(projectDir, doc.ydoc.guid),
-		});
-		const sync = attachSync(doc, {
-			url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-			getToken,
-			webSocketImpl,
-		});
-		const presence = sync.attachPresence({ peer });
-		const rpc = sync.attachRpc(doc.actions);
+}: HoneycrispDaemonOptions = {}): DaemonRouteDefinition {
+	return {
+		route,
+		start({ projectDir }) {
+			const doc = openHoneycrispDoc({ clientID: hashClientId(projectDir) });
+			const yjsLog = attachYjsLog(doc.ydoc, {
+				filePath: yjsPath(projectDir, doc.ydoc.guid),
+			});
+			const awareness = attachAwareness(doc.ydoc, {
+				schema: { peer: PeerIdentity },
+				initial: { peer },
+			});
+			const sync = attachSync(doc, {
+				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+				getToken,
+				webSocketImpl,
+				awareness,
+			});
+			const rpc = sync.attachRpc(doc.actions);
+			const remote = createRemoteClient({ awareness, rpc });
 
-		return {
-			...doc,
-			yjsLog,
-			sync,
-			presence,
-			rpc,
-		};
+			return {
+				...doc,
+				yjsLog,
+				awareness,
+				sync,
+				remote,
+				rpc,
+				async [Symbol.asyncDispose]() {
+					doc[Symbol.dispose]();
+					await sync.whenDisposed;
+				},
+			};
+		},
 	};
 }

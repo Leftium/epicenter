@@ -8,11 +8,12 @@
 import {
 	defineMutation,
 	defineQuery,
-	type PeerPresenceAttachment,
+	type AwarenessAttachment,
+	type PeerAwarenessSchema,
+	type RemoteClient,
 	type SyncAttachment,
-	type SyncRpcAttachment,
 } from '@epicenter/workspace';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
@@ -27,37 +28,28 @@ const sync = {
 	goOffline() {},
 	reconnect() {},
 	whenDisposed: Promise.resolve(),
-	attachPresence: () => presence,
-	attachRpc: () => rpc,
+	attachRpc: () => ({ rpc: async () => ({ data: null, error: null }) }),
 } as unknown as SyncAttachment;
 
-const presence = {
+const awareness = {
 	peers: () => new Map(),
-	find: () => undefined,
-	waitForPeer: async () => ({
+	observe: () => () => {},
+} as unknown as AwarenessAttachment<PeerAwarenessSchema>;
+
+const remote = {
+	actions: () => ({}),
+	describe: async () => ({ data: {}, error: null }),
+	invoke: async () => ({
 		error: {
-			name: 'PeerMiss',
+			name: 'PeerNotFound',
 			message: 'no peer matches peer id "missing"',
 			peerTarget: 'missing',
 			sawPeers: false,
 			waitMs: 0,
-			emptyReason: 'not connected',
 		},
 		data: null,
 	}),
-	observe: () => () => {},
-	raw: {},
-} as unknown as PeerPresenceAttachment;
-
-const rpc = {
-	rpc: async () => ({
-		error: {
-			name: 'RpcError',
-			message: 'fixture RPC is not connected',
-		},
-		data: null,
-	}),
-} as unknown as SyncRpcAttachment;
+} as unknown as RemoteClient;
 
 export const demo = {
 	workspaceId: ydoc.guid,
@@ -85,20 +77,18 @@ export const demo = {
 			}),
 		},
 	},
+	awareness,
 	sync,
-	presence,
-	rpc,
-	[Symbol.dispose]() {
+	remote,
+	async [Symbol.asyncDispose]() {
 		ydoc.destroy();
 	},
 	// Extras for direct script use, not part of the hosted daemon runtime contract.
 	ydoc,
 };
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	daemon: {
-		routes: {
-			demo: () => demo,
-		},
+		routes: [{ route: 'demo', start: () => demo }],
 	},
 });

@@ -67,7 +67,7 @@ epicenter run tabManager.tabs.open @payload.json
 cat payload.json | epicenter run tabManager.tabs.open
 epicenter run tabManager.tabs.list --peer 0xabc
 
-# peers: who is online right now (presence snapshot)
+# peers: who is online right now (awareness snapshot)
 epicenter peers
 epicenter peers -C examples/notes-cross-peer/peer-b
 ```
@@ -90,7 +90,7 @@ script that walks `workspace.presence.peers()` and calls
 `createRemoteClient({ presence, rpc }).describe(peerId)` on each. The CLI
 deliberately does not grow a flag for it.
 
-Peer presence has a ~30s liveness window (inherited from Yjs awareness): a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--wait <ms>` expires (default 5000). `peers` reads the current awareness snapshot one-shot.
+Peer awareness has a ~30s liveness window: a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--wait <ms>` expires (default 5000). `peers` reads the current awareness snapshot one-shot.
 
 ### Common flags
 
@@ -116,8 +116,8 @@ Scripts can distinguish these cases without parsing stderr:
 ## What your `epicenter.config.ts` exports
 
 An explicit daemon route config: default-export an object shaped like
-`{ daemon: { routes: {...} } }`. `defineEpicenterConfig()` is the typed helper
-for authoring that object. Route values are delayed functions. The CLI loader
+`{ daemon: { routes: [...] } }`. `defineConfig()` is the typed helper for
+authoring that object. Route definitions are delayed starters. The CLI loader
 injects the project context when it starts them, so configs do not need to call
 `findEpicenterDir(import.meta.dir)` or depend on the shell's current directory.
 
@@ -125,15 +125,18 @@ injects the project context when it starts them, so configs do not need to call
 // epicenter.config.ts
 import * as Y from 'yjs';
 import {
+	attachAwareness,
+	createRemoteClient,
 	defineTable,
 	attachTables,
 	attachSync,
 	defineQuery,
 	defineMutation,
+	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
-import { createSessionTokenGetter } from '@epicenter/workspace/node';
+import { defineConfig } from '@epicenter/workspace/daemon';
+import { createMachineTokenGetter } from '@epicenter/auth/node';
 import Type from 'typebox';
 import { type } from 'arktype';
 
@@ -155,44 +158,48 @@ function openTabManager() {
 			}),
 		},
 	};
+	const peer = {
+		id: 'tab-manager-daemon',
+		name: 'Tab Manager Daemon',
+		platform: 'node',
+	};
+	const awareness = attachAwareness(ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
+	});
 	const sync = attachSync(ydoc, {
 		url: toWsUrl('https://api.epicenter.so/workspaces/epicenter.tab-manager'),
-		getToken: createSessionTokenGetter({
-			serverUrl: 'https://api.epicenter.so',
+		getToken: createMachineTokenGetter({
+			serverOrigin: 'https://api.epicenter.so',
 		}),
-	});
-	const presence = sync.attachPresence({
-		peer: {
-			id: 'tab-manager-daemon',
-			name: 'Tab Manager Daemon',
-			platform: 'node',
-		},
+		awareness,
 	});
 	const rpc = sync.attachRpc(actions);
+	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		ydoc,
 		tables,
+		awareness,
 		sync,
-		presence,
 		rpc,
+		remote,
 
 		// Actions are grouped away from infrastructure.
 		// Only the operations you wrap with defineQuery/defineMutation
 		// show up in `epicenter list`.
 		actions,
 
-		[Symbol.dispose]() {
+		async [Symbol.asyncDispose]() {
 			ydoc.destroy();
+			await sync.whenDisposed;
 		},
 	};
 }
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	daemon: {
-		routes: {
-			tabManager: () => openTabManager(),
-		},
+		routes: [{ route: 'tabManager', start: () => openTabManager() }],
 	},
 });
 ```
@@ -200,20 +207,18 @@ export default defineEpicenterConfig({
 App packages can expose narrower helpers. A Fuji config can be this small:
 
 ```ts
-import { fujiDaemon } from '@epicenter/fuji/daemon';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineFujiDaemon } from '@epicenter/fuji/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	daemon: {
-		routes: {
-			fuji: fujiDaemon(),
-		},
+		routes: [defineFujiDaemon()],
 	},
 });
 ```
 
-`fujiDaemon()` defaults auth through `createSessionTokenGetter()` from
-`@epicenter/workspace/node`. Override `getToken` only when the deployment needs
+`defineFujiDaemon()` defaults auth through `createMachineTokenGetter()` from
+`@epicenter/auth/node`. Override `getToken` only when the deployment needs
 a custom auth source.
 
 ## Exposing operations via CLI
@@ -228,6 +233,7 @@ The common convention is to group actions under `actions:` first, then nest by t
 return {
     ydoc,
     tables,
+    awareness,
     sync,
     presence,
     rpc,
@@ -245,7 +251,10 @@ return {
         importBackup: defineMutation({ ... }),
     },
 
-    [Symbol.dispose]() { ydoc.destroy(); },
+    async [Symbol.asyncDispose]() {
+        ydoc.destroy();
+        await sync.whenDisposed;
+    },
 };
 ```
 
@@ -255,23 +264,26 @@ The CLI walks `workspace.actions`. Infrastructure such as `ydoc`, tables, persis
 
 ## Naming Routes
 
-Every key under `daemon.routes` becomes the first segment of every CLI dot-path.
-A config with a single route can use any name (`tabManager`, `tm`, `w`), but once
-you add a second route, the prefix disambiguates them, so a readable name ages
-better than a one-letter one.
+Every `route` on a daemon route definition becomes the first segment of every
+CLI dot-path. A config with a single route can use any name (`tabManager`, `tm`,
+`w`), but once you add a second route, the prefix disambiguates them, so a
+readable name ages better than a one-letter one.
 
 There is no named-export scanning. Even a config with one workspace
-default-exports `{ daemon: { routes } }`. This keeps the daemon route map
-explicit and keeps local route names in the project config.
+default-exports `{ daemon: { routes } }`. This keeps daemon route definitions
+explicit and lets app packages own their default route names.
 
 ```ts
 // epicenter.config.ts
-export default defineEpicenterConfig({
+import { defineFujiDaemon } from '@epicenter/fuji/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
+
+export default defineConfig({
 	daemon: {
-		routes: {
-			tabManager: () => openTabManager(),
-			fuji: fujiDaemon(),
-		},
+		routes: [
+			{ route: 'tabManager', start: () => openTabManager() },
+			defineFujiDaemon(),
+		],
 	},
 });
 // epicenter run tabManager.tabs.list
@@ -293,10 +305,10 @@ Skip the CLI entirely for anything non-trivial:
 
 ```ts
 // scripts/export-tabs.ts
-import { openTabManagerDaemonActions } from '@example/tab-manager/daemon';
+import { connectTabManagerDaemonActions } from '@example/tab-manager/daemon';
 import { writeFile } from 'node:fs/promises';
 
-const tabManager = await openTabManagerDaemonActions();
+const tabManager = await connectTabManagerDaemonActions();
 const result = await tabManager.savedTabs.list();
 if (result.error) throw result.error;
 
@@ -317,20 +329,18 @@ for scripts for everything else.
 ```ts
 import {
     createCLI,              // binary entry (used by bin.ts)
-    loadConfig,             // { runtimes: [{ route, runtime }], asyncDispose }
-    createAuthApi,          // typed Better Auth client
+    loadDaemonConfig,       // imports and validates epicenter.config.ts
+    startDaemonRoutes,      // starts validated route definitions
 } from '@epicenter/cli';
 ```
 
-Node-side workspace helpers live in `@epicenter/workspace/node`:
+Node-side auth helpers live in `@epicenter/auth/node`:
 
 ```ts
 import {
-	attachSessionUnlock,
-	createSessionStore,
-	createSessionTokenGetter,
-	epicenterPaths,
-} from '@epicenter/workspace/node';
+	createMachineAuth,
+	createMachineTokenGetter,
+} from '@epicenter/auth/node';
 ```
 
 ## Design docs

@@ -27,6 +27,7 @@ import { readMetadata, unlinkMetadata } from './metadata.js';
 
 /** Public handle returned by {@link bindUnixSocket}. */
 export type UnixSocketServer = { stop(): void };
+type UnixSocketApp = Pick<Hono, 'fetch'>;
 
 /**
  * Tagged-error variants for daemon startup. `bindOrRecover` returns one of
@@ -57,7 +58,7 @@ export type StartupError = InferErrors<typeof StartupError>;
  */
 export async function bindUnixSocket(
 	socketPath: string,
-	app: Hono,
+	app: UnixSocketApp,
 ): Promise<UnixSocketServer> {
 	mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
 
@@ -93,7 +94,7 @@ export async function bindUnixSocket(
 export async function bindOrRecover(
 	socketPath: string,
 	dir: string,
-	app: Hono,
+	app: UnixSocketApp,
 	ping: (sock: string, timeoutMs?: number) => Promise<boolean>,
 ): Promise<Result<UnixSocketServer, StartupError>> {
 	if (existsSync(socketPath)) {
@@ -123,4 +124,3 @@ export function unlinkSocketFile(socketPath: string): void {
 		}
 	}
 }
-

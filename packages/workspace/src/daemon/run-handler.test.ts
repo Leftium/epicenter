@@ -1,56 +1,50 @@
 /**
  * executeRun peer dispatch tests.
  *
- * Verifies the daemon normalizes presence peer lookup misses into the
- * `/run` error union before the response crosses the IPC boundary.
+ * Verifies the daemon preserves remote client errors in one `/run` envelope
+ * before the response crosses the IPC boundary.
  */
 
 import { describe, expect, test } from 'bun:test';
 
-import { PeerMiss, type SyncRpcAttachment } from '../document/attach-sync.js';
-import type { PeerPresenceAttachment } from '../document/peer-presence.js';
+import type { AwarenessAttachment } from '../document/attach-awareness.js';
+import type { SyncStatus } from '../document/attach-sync.js';
+import type { PeerAwarenessSchema } from '../document/peer-identity.js';
+import type { RemoteClient } from '../rpc/remote-actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
-import type { DaemonRouteRuntime } from './types.js';
+import type { RunSyncStatus } from './run-errors.js';
+import type { StartedDaemonRoute } from './types.js';
 
-type Runtime = DaemonRouteRuntime['runtime'];
+type Runtime = StartedDaemonRoute['runtime'];
 
-function fakePresence(
-	overrides: Partial<PeerPresenceAttachment> = {},
-): PeerPresenceAttachment {
+function fakeAwareness(): AwarenessAttachment<PeerAwarenessSchema> {
 	return {
 		peers: () => new Map(),
-		find: () => undefined,
-		waitForPeer: async (peerTarget, { timeoutMs }) =>
-			PeerMiss.PeerMiss({
-				peerTarget,
-				sawPeers: false,
-				waitMs: timeoutMs,
-				emptyReason: null,
-			}),
 		observe: () => () => {},
-		raw: {},
-		...overrides,
-	} as PeerPresenceAttachment;
+	} as unknown as AwarenessAttachment<PeerAwarenessSchema>;
 }
 
-function fakeRpc(overrides: Partial<SyncRpcAttachment> = {}): SyncRpcAttachment {
+function fakeRemote(overrides: Partial<RemoteClient> = {}): RemoteClient {
 	return {
-		rpc: async () => ({ data: null, error: null }),
+		actions: () => ({}) as never,
+		describe: async () => ({ data: {}, error: null }),
+		invoke: async () => ({ data: null, error: null }),
 		...overrides,
-	} as SyncRpcAttachment;
+	} as RemoteClient;
 }
 
-function fakeSync(): Runtime['sync'] {
+function fakeSync(
+	status: SyncStatus = { phase: 'connected', hasLocalChanges: false },
+): Runtime['sync'] {
 	return {
 		whenConnected: Promise.resolve(),
-		status: { phase: 'connected', hasLocalChanges: false },
+		status,
 		onStatusChange: () => () => {},
 		goOffline() {},
 		reconnect() {},
 		whenDisposed: Promise.resolve(),
-		attachPresence: () => fakePresence(),
-		attachRpc: () => fakeRpc(),
+		attachRpc: () => ({ rpc: async () => ({ data: null, error: null }) }),
 	} as Runtime['sync'];
 }
 
@@ -60,18 +54,21 @@ function fakeRuntime(
 ): Runtime {
 	return {
 		actions,
+		awareness: fakeAwareness(),
 		sync: fakeSync(),
-		presence: fakePresence(),
-		rpc: fakeRpc(),
-		[Symbol.dispose]() {},
+		remote: fakeRemote(),
+		async [Symbol.asyncDispose]() {},
 		...extra,
 	};
 }
 
-function fakeEntry(
-	presence: Partial<PeerPresenceAttachment> = {},
-	rpc: Partial<SyncRpcAttachment> = {},
-): DaemonRouteRuntime {
+function fakeEntry({
+	remote = {},
+	syncStatus,
+}: {
+	remote?: Partial<RemoteClient>;
+	syncStatus?: SyncStatus;
+} = {}): StartedDaemonRoute {
 	const runtime = fakeRuntime(
 		{
 			tabs: {
@@ -81,8 +78,8 @@ function fakeEntry(
 			},
 		},
 		{
-			presence: fakePresence(presence),
-			rpc: fakeRpc(rpc),
+			remote: fakeRemote(remote),
+			...(syncStatus ? { sync: fakeSync(syncStatus) } : {}),
 		},
 	);
 
@@ -90,26 +87,36 @@ function fakeEntry(
 }
 
 describe('executeRun peer dispatch', () => {
-	test('peer miss returns RunError.PeerMiss and skips rpc', async () => {
-		let rpcCalls = 0;
-		const entry = fakeEntry(
-			{
-				async waitForPeer(peerId, { timeoutMs }) {
-					return PeerMiss.PeerMiss({
-						peerTarget: peerId,
-						sawPeers: true,
-						waitMs: timeoutMs,
-						emptyReason: null,
-					});
+	test('peer miss returns RunError.RemoteCallFailed with sync status', async () => {
+		let invokeCalls = 0;
+		const syncStatus: SyncStatus = {
+			phase: 'connecting',
+			retries: 2,
+			lastError: { type: 'connection' },
+		};
+		const runSyncStatus = {
+			phase: 'connecting',
+			retries: 2,
+			lastErrorType: 'connection',
+		} satisfies RunSyncStatus;
+		const entry = fakeEntry({
+			syncStatus,
+			remote: {
+				async invoke(peerTarget, _action, _input, options) {
+					invokeCalls++;
+					return {
+						data: null,
+						error: {
+							name: 'PeerNotFound',
+							message: `no peer matches peer id "${peerTarget}"`,
+							peerTarget,
+							sawPeers: true,
+							waitMs: options?.waitForPeerMs ?? 0,
+						},
+					};
 				},
 			},
-			{
-				async rpc() {
-					rpcCalls++;
-					throw new Error('rpc should not be called');
-				},
-			},
-		);
+		});
 
 		const result = await executeRun([entry], {
 			actionPath: 'demo.tabs.list',
@@ -118,40 +125,33 @@ describe('executeRun peer dispatch', () => {
 			waitMs: 25,
 		});
 
-		expect(rpcCalls).toBe(0);
+		expect(invokeCalls).toBe(1);
 		expect(result.error).not.toBeNull();
-		if (result.error === null) throw new Error('expected PeerMiss');
-		expect(result.error.name).toBe('PeerMiss');
-		if (result.error.name !== 'PeerMiss') {
-			throw new Error(`expected PeerMiss, got ${result.error.name}`);
+		if (result.error === null) throw new Error('expected RemoteCallFailed');
+		expect(result.error.name).toBe('RemoteCallFailed');
+		if (result.error.name !== 'RemoteCallFailed') {
+			throw new Error(`expected RemoteCallFailed, got ${result.error.name}`);
 		}
 		expect(result.error.peerTarget).toBe('ghost');
-		expect(result.error.sawPeers).toBe(true);
-		expect(result.error.waitMs).toBe(25);
-		expect(result.error.emptyReason).toBeNull();
+		expect(result.error.syncStatus).toEqual(runSyncStatus);
+		expect(result.error.cause).toMatchObject({
+			name: 'PeerNotFound',
+			peerTarget: 'ghost',
+			sawPeers: true,
+			waitMs: 25,
+		});
 	});
 
 	test('remote dispatch sends only the inner action path', async () => {
 		let rpcAction = '';
-		const entry = fakeEntry(
-			{
-				async waitForPeer() {
-					return {
-						data: {
-							clientId: 42,
-							state: { peer: { id: 'mac', name: 'Mac', platform: 'node' } },
-						},
-						error: null,
-					};
-				},
-			},
-			{
-				async rpc(_clientId, action) {
+		const entry = fakeEntry({
+			remote: {
+				async invoke(_peerId, action) {
 					rpcAction = action;
 					return { data: [], error: null };
 				},
 			},
-		);
+		});
 
 		const result = await executeRun([entry], {
 			actionPath: 'demo.tabs.list',
@@ -167,15 +167,13 @@ describe('executeRun peer dispatch', () => {
 
 describe('executeRun route-prefixed routing', () => {
 	test('invokes action under the selected daemon route', async () => {
-		const runtime = fakeRuntime(
-			{
-				notes: {
-					add: defineMutation({
-						handler: () => ({ body: 'hello' }),
-					}),
-				},
+		const runtime = fakeRuntime({
+			notes: {
+				add: defineMutation({
+					handler: () => ({ body: 'hello' }),
+				}),
 			},
-		);
+		});
 		const entry = {
 			route: 'notes',
 			runtime,
@@ -217,15 +215,13 @@ describe('executeRun route-prefixed routing', () => {
 	});
 
 	test('missing path suggests action-root-relative sibling', async () => {
-		const runtime = fakeRuntime(
-			{
-				notes: {
-					add: defineMutation({
-						handler: () => ({ body: 'hello' }),
-					}),
-				},
+		const runtime = fakeRuntime({
+			notes: {
+				add: defineMutation({
+					handler: () => ({ body: 'hello' }),
+				}),
 			},
-		);
+		});
 		const entry = {
 			route: 'notes',
 			runtime,

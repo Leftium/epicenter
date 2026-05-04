@@ -2,8 +2,8 @@
  * E2E playground config: syncs the tab-manager workspace from the Epicenter API
  * down to local persistence (SQLite) and materializes to markdown files.
  *
- * Reads auth credentials (token + encryption keys) from the CLI session store
- * at `~/.epicenter/auth/sessions.json`. Run `epicenter auth login` first.
+ * Reads auth credentials from the CLI credential store at
+ * `~/.epicenter/auth/credentials.json`. Run `epicenter auth login` first.
  *
  * Hosts the `tabManager` route as a full daemon peer: actions, sync,
  * presence, RPC, and disposal. `actions` is empty because the tab-manager
@@ -20,28 +20,28 @@
 
 import { join } from 'node:path';
 import {
+	createMachineAuth,
+	createMachineTokenGetter,
+} from '@epicenter/auth/node';
+import {
 	tabManagerAwarenessDefs,
 	tabManagerTables,
 } from '@epicenter/tab-manager/workspace';
 import { attachEncryption, attachSync, toWsUrl } from '@epicenter/workspace';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
-import {
-	attachSessionUnlock,
-	createSessionStore,
-	epicenterPaths,
-} from '@epicenter/workspace/node';
+import { epicenterPaths } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
 
 const SERVER_URL = 'https://api.epicenter.so';
 const MARKDOWN_DIR = join(import.meta.dir, 'data');
 const WORKSPACE_ID = 'epicenter.tab-manager';
 
-const sessions = createSessionStore();
+const machineAuth = createMachineAuth();
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 const encryption = attachEncryption(ydoc);
@@ -55,23 +55,28 @@ const persistence = attachSqlite(ydoc, {
 	filePath: epicenterPaths.persistence(WORKSPACE_ID),
 });
 
-const unlock = attachSessionUnlock(encryption, {
-	sessions,
-	serverUrl: SERVER_URL,
-	waitFor: persistence.whenLoaded,
+const whenCredentialsApplied = persistence.whenLoaded.then(async () => {
+	const { data: keys, error } = await machineAuth.getActiveEncryptionKeys({
+		serverOrigin: SERVER_URL,
+	});
+	if (error) throw error;
+	if (keys) encryption.applyKeys(keys);
 });
 
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 	// Gate connection on local hydrate + unlock so the handshake only exchanges
 	// the delta, not the whole document.
-	waitFor: Promise.all([persistence.whenLoaded, unlock.whenChecked]),
-	getToken: async () => (await sessions.load(SERVER_URL))?.accessToken ?? null,
+	waitFor: Promise.all([persistence.whenLoaded, whenCredentialsApplied]),
+	getToken: createMachineTokenGetter({
+		serverOrigin: SERVER_URL,
+		machineAuth,
+	}),
 });
 
 const whenReady = Promise.all([
 	persistence.whenLoaded,
-	unlock.whenChecked,
+	whenCredentialsApplied,
 	sync.whenConnected,
 ]);
 
@@ -101,8 +106,9 @@ export const tabManager = {
 	sync,
 	presence,
 	rpc,
-	[Symbol.dispose]() {
+	async [Symbol.asyncDispose]() {
 		ydoc.destroy();
+		await sync.whenDisposed;
 	},
 	// Extras for direct script use, not part of the hosted daemon runtime contract.
 	id: WORKSPACE_ID,
@@ -115,10 +121,8 @@ export const tabManager = {
 	markdown,
 };
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	daemon: {
-		routes: {
-			tabManager: () => tabManager,
-		},
+		routes: [{ route: 'tabManager', start: () => tabManager }],
 	},
 });

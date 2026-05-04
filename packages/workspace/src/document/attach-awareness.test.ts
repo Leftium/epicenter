@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { Awareness as YAwareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { attachAwareness, createAwareness } from './attach-awareness.js';
+import { attachAwareness } from './attach-awareness.js';
 
 const awarenessDefs = {
 	cursorX: type('number'),
@@ -12,12 +12,15 @@ const awarenessDefs = {
 
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'awareness-test' });
-	const raw = new YAwareness(ydoc);
-	const awareness = createAwareness(raw, awarenessDefs);
+	const awareness = attachAwareness(ydoc, {
+		schema: awarenessDefs,
+		initial: { cursorX: 0, cursorY: 0, name: 'local' },
+	});
+	const raw = awareness.raw;
 	return { ydoc, raw, awareness };
 }
 
-describe('createAwareness', () => {
+describe('AwarenessAttachment', () => {
 	test('setLocal() and getLocal() round-trip', () => {
 		const { awareness } = setup();
 		awareness.setLocal({ cursorX: 10, cursorY: 20, name: 'alice' });
@@ -42,7 +45,8 @@ describe('createAwareness', () => {
 	});
 
 	test('getLocalField() returns undefined when not set', () => {
-		const { awareness } = setup();
+		const { awareness, raw } = setup();
+		raw.setLocalState(null);
 		expect(awareness.getLocalField('cursorX')).toBeUndefined();
 	});
 
@@ -66,10 +70,8 @@ describe('createAwareness', () => {
 
 	test('getAll() includes self', () => {
 		const { awareness, raw } = setup();
-		awareness.setLocal({ name: 'me', cursorX: 0, cursorY: 0 });
-
 		expect(awareness.getAll().get(raw.clientID)).toEqual({
-			name: 'me',
+			name: 'local',
 			cursorX: 0,
 			cursorY: 0,
 		});
@@ -78,8 +80,6 @@ describe('createAwareness', () => {
 	describe('peers()', () => {
 		test('excludes self', () => {
 			const { awareness, raw } = setup();
-			awareness.setLocal({ name: 'self', cursorX: 0, cursorY: 0 });
-
 			expect(awareness.peers().has(raw.clientID)).toBe(false);
 		});
 
@@ -122,7 +122,7 @@ describe('createAwareness', () => {
 			calls++;
 		});
 
-		awareness.setLocal({ name: 'alice' });
+		awareness.setLocal({ name: 'alice', cursorX: 1 });
 		expect(calls).toBe(1);
 
 		unobserve();
@@ -137,7 +137,7 @@ describe('createAwareness', () => {
 		});
 
 		unobserve();
-		awareness.setLocal({ name: 'alice' });
+		awareness.setLocal({ name: 'alice', cursorX: 1 });
 
 		expect(calls).toBe(0);
 	});
@@ -150,11 +150,10 @@ describe('createAwareness', () => {
 describe('attachAwareness', () => {
 	test('constructs a fresh y-protocols Awareness bound to the ydoc', () => {
 		const ydoc = new Y.Doc();
-		const { raw } = attachAwareness(
-			ydoc,
-			{ name: type('string') },
-			{ name: 'alice' },
-		);
+		const { raw } = attachAwareness(ydoc, {
+			schema: { name: type('string') },
+			initial: { name: 'alice' },
+		});
 
 		expect(raw).toBeInstanceOf(YAwareness);
 		expect(raw.doc).toBe(ydoc);
@@ -162,31 +161,30 @@ describe('attachAwareness', () => {
 
 	test('publishes initial state synchronously before returning', () => {
 		const ydoc = new Y.Doc();
-		const awareness = attachAwareness(
-			ydoc,
-			{ name: type('string'), score: type('number') },
-			{ name: 'alice', score: 7 },
-		);
+		const awareness = attachAwareness(ydoc, {
+			schema: { name: type('string'), score: type('number') },
+			initial: { name: 'alice', score: 7 },
+		});
 
 		expect(awareness.getLocal()).toEqual({ name: 'alice', score: 7 });
 	});
 
 	test('empty defs — works as a structural slot', () => {
 		const ydoc = new Y.Doc();
-		const awareness = attachAwareness(ydoc, {}, {});
+		const awareness = attachAwareness(ydoc, { schema: {}, initial: {} });
 
 		// `.raw` is usable regardless of defs.
 		expect(awareness.raw).toBeInstanceOf(YAwareness);
 
 		// With zero defined fields, every state vacuously validates and
-		// surfaces as `{}` — no fields to project.
+		// surfaces as `{}`: no fields to project.
 		awareness.raw.getStates().set(777, { anything: 'goes' });
 		expect(awareness.getAll().get(777)).toEqual({});
 	});
 
 	test('ydoc.destroy() tears down the Awareness via its self-registered hook', () => {
 		const ydoc = new Y.Doc();
-		const { raw } = attachAwareness(ydoc, {}, {});
+		const { raw } = attachAwareness(ydoc, { schema: {}, initial: {} });
 
 		let destroyed = 0;
 		raw.on('destroy', () => {

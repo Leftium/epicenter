@@ -1,35 +1,35 @@
 # Epicenter architecture
 Epicenter is one composition story. The core packages define the local-first model, the middle layer turns that model into app-shaped tools, and the apps decide which pieces to compose.
-The lifecycle is define→create→extend→sync. That order matters because Epicenter keeps schema definition pure, pushes side effects to the edge, and lets each app choose how much runtime machinery it needs.
+The lifecycle is define, create, extend, sync. That order matters because Epicenter keeps schema definition pure, pushes side effects to the edge, and lets each app choose how much runtime machinery it needs.
 This is the five-minute map. It explains how the packages interlock without redoing the full `@epicenter/workspace` README.
 
 ## The stack in one picture
 The dependency shape runs bottom to top. Apps depend on middleware; middleware depends on the core; the core stays small and reusable.
 
 ```text
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ APPS                                                                         │
-│                                                                              │
-│ opensidian   whispering   tab-manager   fuji   zhongwen                      │
-│ honeycrisp   dashboard    api           landing                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ MIDDLEWARE                                                                   │
-│                                                                              │
-│ @epicenter/svelte      (packages/svelte-utils)                               │
-│ @epicenter/filesystem                                                        │
-│ @epicenter/skills                                                            │
-│ @epicenter/workspace/ai                                                      │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ CORE                                                                         │
-│                                                                              │
-│ @epicenter/workspace   @epicenter/sync   @epicenter/constants   @epicenter/ui│
-└──────────────────────────────────────────────────────────────────────────────┘
++----------------------------------------------------------------------------+
+| APPS                                                                       |
+|                                                                            |
+| opensidian   whispering   tab-manager   fuji   zhongwen                    |
+| honeycrisp   dashboard    api           landing                            |
++----------------------------------------------------------------------------+
+                                      |
+                                      v
++----------------------------------------------------------------------------+
+| MIDDLEWARE                                                                 |
+|                                                                            |
+| @epicenter/svelte      (packages/svelte-utils)                             |
+| @epicenter/filesystem                                                      |
+| @epicenter/skills                                                          |
+| @epicenter/workspace/ai                                                    |
++----------------------------------------------------------------------------+
+                                      |
+                                      v
++----------------------------------------------------------------------------+
+| CORE                                                                       |
+|                                                                            |
+| @epicenter/workspace   @epicenter/sync   @epicenter/constants   @epicenter/ui |
++----------------------------------------------------------------------------+
 ```
 `@epicenter/workspace` is the center of gravity. It defines the schema layer, creates the live Yjs-backed client, owns the extension lifecycle, and exposes tables, KV, documents, awareness, and actions.
 `@epicenter/sync` is the wire format, not the app model. It exports protocol primitives like `encodeSyncStep1`, `encodeSyncUpdate`, `decodeSyncMessage`, and shared RPC error types so server and client can speak the same binary language without duplicating protocol logic.
@@ -38,7 +38,7 @@ The dependency shape runs bottom to top. Apps depend on middleware; middleware d
 The middleware layer is where workspace data starts feeling like an application. `@epicenter/svelte` turns workspace helpers into reactive Svelte state, `@epicenter/filesystem` turns workspace rows and documents into a POSIX-style filesystem, `@epicenter/skills` proves that whole workspaces can be packaged and embedded as data products, and `@epicenter/workspace/ai` bridges workspace actions into LLM-callable tools.
 The apps are thin by comparison. Each app picks a definition, creates a client, installs the extensions it needs, and layers UI or transport concerns on top.
 
-## The lifecycle: define → create → extend → sync
+## The lifecycle: define, create, extend, sync
 The four verbs are the architecture. If you remember nothing else, remember that Epicenter keeps those stages separate on purpose.
 
 ### 1. Define is pure
@@ -92,7 +92,7 @@ workspace.tables.files.set({ id: 'readme.md', name: 'README.md', _v: 1 });
 The split is conceptual, not cosmetic. Definitions describe what data means; the builder is the runtime that can actually hold and mutate that data.
 
 ### 3. Extend means adding more `attach*` calls
-There is no plugin chain. Persistence, sync, indexing, and materializers all mount through `attach*` functions — you add them to the builder alongside tables and KV:
+There is no plugin chain. Persistence, sync, indexing, and materializers all mount through `attach*` functions. You add them to the builder alongside tables and KV:
 
 ```ts
 import * as Y from 'yjs';
@@ -118,7 +118,7 @@ const app = defineDocument((id: string) => {
 });
 ```
 
-Ordering is lexical. `attachSync` reads `idb.whenLoaded` as `waitFor` because `idb` is already in scope. Later attachments see earlier ones directly — there's no context object to route through.
+Ordering is lexical. `attachSync` reads `idb.whenLoaded` as `waitFor` because `idb` is already in scope. Later attachments see earlier ones directly. There is no context object to route through.
 
 For extensions that need their own Y.Doc per row (file content, note bodies), define a *second* `defineDocument` keyed on the row's content guid. The main workspace doc and per-row docs are the same primitive, just different ids.
 
@@ -128,19 +128,19 @@ Sync does not own the document. It attaches to a Y.Doc that already exists and s
 Local state exists first, then optional durability, then optional network coordination.
 
 ## The async boundary is `whenReady`
-The builder runs synchronously, but attachments load asynchronously. Conventionally the bundle exposes a `whenReady` promise — usually `idb.whenLoaded` — so callers can await full local availability:
+The builder runs synchronously, but attachments load asynchronously. Conventionally the bundle exposes a `whenReady` promise, usually `idb.whenLoaded`, so callers can await full local availability:
 
 ```ts
 // Reactive callers (Svelte $effect, {#await}) use sync open() and gate on whenReady.
 const workspace = app.open('example.app');
 await workspace.whenReady;
 
-// Imperative callers collapse the two steps into one — load() bakes the await in
+// Imperative callers collapse the two steps into one. load() bakes the await in
 // and releases the refcount correctly if whenReady rejects.
 const workspace = await app.load('example.app');
 ```
 
-That promise is the line between construction and full availability. Create now, await later — or use `load()` to do both at once.
+That promise is the line between construction and full availability. Create now, await later, or use `load()` to do both at once.
 
 ## Disposal cascades from `ydoc.destroy()`
 Teardown runs through Yjs itself. Every `attach*` function registers `ydoc.once('destroy')` internally, so when the builder's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment tears down in parallel. Each attachment exposes a `whenDisposed` promise that resolves after its real cleanup completes (IDB awaits `db.close()`, sync awaits the supervisor + `onclose`), and the bundle aggregates them:
@@ -162,15 +162,15 @@ Writes always hit Yjs first. Everything else reacts to that state instead of bec
 WRITE FLOW
 
 app code / action / UI event
-            │
-            ▼
+            |
+            v
    workspace.tables / kv / documents
-            │
-            ▼
+            |
+            v
           Y.Doc
-            │
-   ┌────────┼───────────────┬───────────────┐
-   ▼        ▼               ▼               ▼
+            |
+   +--------+---------------+---------------+
+   v        v               v               v
 persistence sync       sqlite index   markdown/file views
 IndexedDB   WebSocket  or search      or other materializers
 SQLite      relay      extensions     built from workspace data
@@ -182,15 +182,15 @@ Reads split by purpose. Simple reads stay in the workspace client, while derived
 READ FLOW
 
           Y.Doc
-            │
-   ┌────────┼───────────────────┬────────────────────────┐
-   ▼        ▼                   ▼                        ▼
+            |
+   +--------+---------------+-------------------------+
+   v        v               v                         v
 tables      kv             documents                 extensions
 typed rows  settings       per-row content docs      indexes/materializers
-   │         │                   │                        │
-   └─────────┴───────────────────┴────────────────────────┘
-                             │
-                             ▼
+   |         |               |                         |
+   +---------+---------------+-------------------------+
+                             |
+                             v
                           app UI
 ```
 
@@ -226,7 +226,12 @@ const opensidian = defineDocument((id: string) => {
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachSync(ydoc, {
 		url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
-		getToken: async () => auth.token,
+		getToken: async () => {
+			await auth.whenSessionLoaded;
+
+			const snapshot = auth.snapshot;
+			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+		},
 		waitFor: idb.whenLoaded,
 	});
 	const sqliteIndex = createSqliteIndex({ ydoc, tables });
@@ -243,22 +248,22 @@ const opensidian = defineDocument((id: string) => {
 export const workspace = opensidian.open('opensidian');
 ```
 
-That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createAuth()` from `@epicenter/svelte` coordinates auth with encryption and sync reconnects.
+That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createAuth()` from `@epicenter/auth-svelte` coordinates auth with encryption and sync reconnects.
 
 ```text
 defineDocument(builder).open('opensidian')
-    │
-    ├─ attachTables(ydoc, {...})
-    ├─ attachIndexedDb(ydoc)
-    ├─ attachSync(ydoc, { waitFor: idb.whenLoaded })
-    ├─ createSqliteIndex(...)
-    └─ actions
-    │
-    ├─ attachYjsFileSystem(...)       -> editor + terminal + file tree
-    ├─ actionsToAiTools(...).tools    -> local AI tool execution
-    ├─ actionsToAiTools(...).definitions -> wire payload for chat requests
-    ├─ defineDocument(skillsBuilder)  -> shared skills data source
-    └─ fromTable / fromKv / auth      -> reactive Svelte app state
+    |
+    +-- attachTables(ydoc, {...})
+    +-- attachIndexedDb(ydoc)
+    +-- attachSync(ydoc, { waitFor: idb.whenLoaded })
+    +-- createSqliteIndex(...)
+    +-- actions
+    |
+    +-- attachYjsFileSystem(...)              -> editor + terminal + file tree
+    +-- actionsToAiTools(...).tools           -> local AI tool execution
+    +-- actionsToAiTools(...).definitions     -> wire payload for chat requests
+    +-- defineDocument(skillsBuilder)         -> shared skills data source
+    +-- fromTable / fromKv / auth             -> reactive Svelte app state
 ```
 
 That is the whole monorepo in miniature. The app is mostly composition code because the packages under it already agree on the same runtime shape.
@@ -270,9 +275,9 @@ The server is a relay, not the authority. Clients own schema meaning, table help
 
 That means the server does not need to understand your tables. It forwards Yjs sync messages, awareness updates, and RPC payloads, but it does not become the canonical interpreter of the workspace schema.
 
-This is what “smart client” means here. The client can boot locally, read persisted state, apply encryption keys, expose actions, open document timelines, and keep working offline before the network helps at all.
+This is what "smart client" means here. The client can boot locally, read persisted state, apply encryption keys, expose actions, open document timelines, and keep working offline before the network helps at all.
 
-This is what “dumb server” means here. The server helps peers find each other and exchange updates, but it is not where the data model becomes valid or meaningful.
+This is what "dumb server" means here. The server helps peers find each other and exchange updates, but it is not where the data model becomes valid or meaningful.
 
 ## The shortest accurate mental model
 Epicenter defines data first. `@epicenter/workspace` gives that data a live Yjs document via `defineDocument(builder)`, `attach*` primitives add durability and transport, middleware packages reinterpret the same client for files, skills, Svelte state, and AI tools, and the apps compose those layers into actual products.

@@ -17,7 +17,7 @@
 		/**
 		 * Social sign-in handler called when the user clicks "Continue with Google".
 		 * Return shape must include an `error` property with a `message` string,
-		 * or `null` on success—matches the `Result` type returned by all auth methods.
+		 * or `null` on success. Matches the `Result` type returned by all auth methods.
 		 */
 		onSocialSignIn: () => Promise<{ error: { message: string } | null }>;
 	} = $props();
@@ -27,6 +27,7 @@
 	let name = $state('');
 	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
 	let submitError = $state<string | null>(null);
+	let busy = $state(false);
 
 	const isSignUp = $derived(mode === 'sign-up');
 </script>
@@ -35,10 +36,15 @@
 	onsubmit={async (e) => {
 		e.preventDefault();
 		submitError = null;
-		const { error } = isSignUp
-			? await auth.signUp({ email, password, name })
-			: await auth.signIn({ email, password });
-		if (error) submitError = error.message;
+		busy = true;
+		try {
+			const { error } = isSignUp
+				? await auth.signUp({ email, password, name })
+				: await auth.signIn({ email, password });
+			if (error) submitError = error.message;
+		} finally {
+			busy = false;
+		}
 	}}
 	class="w-full max-w-xs"
 >
@@ -58,11 +64,16 @@
 			type="button"
 			variant="outline"
 			class="w-full"
-			disabled={auth.isBusy}
+			disabled={busy}
 			onclick={async () => {
 				submitError = null;
-				const { error } = await onSocialSignIn();
-				if (error) submitError = error.message;
+				busy = true;
+				try {
+					const { error } = await onSocialSignIn();
+					if (error) submitError = error.message;
+				} finally {
+					busy = false;
+				}
 			}}
 		>
 			<svg class="size-4" viewBox="0 0 24 24" aria-hidden="true">
@@ -126,8 +137,8 @@
 			</Field.Field>
 		</Field.Group>
 
-		<Button type="submit" class="w-full" disabled={auth.isBusy}>
-			{#if auth.isBusy}
+		<Button type="submit" class="w-full" disabled={busy}>
+			{#if busy}
 				<Spinner class="size-4" />
 				{isSignUp ? 'Creating account…' : 'Signing in…'}
 			{:else}

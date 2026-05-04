@@ -1,16 +1,25 @@
 /**
  * Error-emission tests for the `run --peer` path.
  *
- * Covers the simplified miss shapes (no peers seen, peers seen but no match)
- * and every `RpcError` variant. Capture `console.error` and assert
- * line-by-line. RPC errors are constructed via `RpcError.X({...}).error` so
- * they match the wire shape exactly.
+ * Covers the remote-call failure shapes (peer miss, peer left, and every
+ * `RpcError` variant). Capture `console.error` and assert line-by-line. RPC
+ * errors are constructed via `RpcError.X({...}).error` so they match the wire
+ * shape exactly.
  */
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { RpcError } from '@epicenter/workspace';
+import {
+	PeerAddressError,
+	RpcError,
+} from '@epicenter/workspace';
+import type { RunSyncStatus } from '@epicenter/workspace/node';
 import type { AwarenessState } from '../load-config';
-import { emitMissError, emitRpcError } from './run';
+import { emitRemoteCallError } from './run';
+
+const connected: RunSyncStatus = {
+	phase: 'connected',
+	hasLocalChanges: false,
+};
 
 function mockState(peer: Partial<AwarenessState['peer']> = {}): AwarenessState {
 	return {
@@ -36,112 +45,135 @@ function captureErrors() {
 	};
 }
 
-describe('emitMissError', () => {
+describe('emitRemoteCallError', () => {
 	let cap: ReturnType<typeof captureErrors>;
 	afterEach(() => cap?.restore());
 
 	test('peers present but no match points at `epicenter peers`', () => {
 		cap = captureErrors();
-		emitMissError('ghost', true, 5000);
+		emitRemoteCallError(
+			'ghost',
+			PeerAddressError.PeerNotFound({
+				peerTarget: 'ghost',
+				sawPeers: true,
+				waitMs: 5000,
+			}).error,
+			connected,
+		);
 		expect(cap.lines).toEqual([
 			'error: no peer matches peer id "ghost"',
+			'  reason: connected, but no matching peer was visible',
 			'run `epicenter peers` to see connected peers',
 		]);
 	});
 
 	test('no peers seen during wait reports wait duration', () => {
 		cap = captureErrors();
-		emitMissError('macbook-pro', false, 5000);
-		expect(cap.lines).toEqual([
-			'error: no peers seen after waiting 5000ms for "macbook-pro"',
-		]);
-	});
-});
-
-describe('emitRpcError', () => {
-	let cap: ReturnType<typeof captureErrors>;
-	afterEach(() => cap?.restore());
-
-	test('ActionNotFound labels with peer name + platform', () => {
-		cap = captureErrors();
-		emitRpcError(
-			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
-			42,
-			mockState({ name: 'MacBook', platform: 'tauri' }),
+		emitRemoteCallError(
+			'macbook-pro',
+			PeerAddressError.PeerNotFound({
+				peerTarget: 'macbook-pro',
+				sawPeers: false,
+				waitMs: 5000,
+			}).error,
+			{
+				phase: 'connecting',
+				retries: 1,
+				lastErrorType: 'connection',
+			},
 		);
 		expect(cap.lines).toEqual([
-			'error: ActionNotFound "tabs.closeAll" on MacBook (42, tauri)',
+			'error: no peers seen after waiting 5000ms for "macbook-pro"',
+			'  reason: not connected (connection error after 1 retry)',
+		]);
+	});
+
+	test('RemoteCallFailed PeerNotFound uses cause details and sync status', () => {
+		cap = captureErrors();
+		emitRemoteCallError(
+			'macbook-pro',
+			PeerAddressError.PeerNotFound({
+				peerTarget: 'macbook-pro',
+				sawPeers: false,
+				waitMs: 250,
+			}).error,
+			{ phase: 'offline' },
+		);
+		expect(cap.lines).toEqual([
+			'error: no peers seen after waiting 250ms for "macbook-pro"',
+			'  reason: not connected',
+		]);
+	});
+
+	test('ActionNotFound labels with peer id', () => {
+		cap = captureErrors();
+		emitRemoteCallError(
+			'macbook-pro',
+			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
+			connected,
+		);
+		expect(cap.lines).toEqual([
+			'error: ActionNotFound "tabs.closeAll" on macbook-pro',
 		]);
 	});
 
 	test('Timeout reports ms and peer', () => {
 		cap = captureErrors();
-		emitRpcError(
+		emitRemoteCallError(
+			'macbook-pro',
 			RpcError.Timeout({ ms: 5000 }).error,
-			42,
-			mockState({ name: 'MacBook', platform: 'tauri' }),
+			connected,
 		);
-		expect(cap.lines).toEqual([
-			'error: timeout after 5000ms on MacBook (42, tauri)',
-		]);
+		expect(cap.lines).toEqual(['error: timeout after 5000ms on macbook-pro']);
 	});
 
 	test('PeerOffline', () => {
 		cap = captureErrors();
-		emitRpcError(
-			RpcError.PeerOffline().error,
-			42,
-			mockState({ name: 'MacBook', platform: 'tauri' }),
-		);
-		expect(cap.lines).toEqual(['error: peer MacBook (42, tauri) is offline']);
-	});
-
-	test('PeerNotFound surfaces the peer id', () => {
-		cap = captureErrors();
-		emitRpcError(
-			RpcError.PeerNotFound({ peer: 'macbook-pro' }).error,
-			0,
-			mockState(),
-		);
-		expect(cap.lines).toEqual(['error: no peer with peer id "macbook-pro"']);
+		emitRemoteCallError('macbook-pro', RpcError.PeerOffline().error, connected);
+		expect(cap.lines).toEqual(['error: peer macbook-pro is offline']);
 	});
 
 	test('PeerLeft surfaces the peer id', () => {
 		cap = captureErrors();
-		emitRpcError(
-			RpcError.PeerLeft({ peer: 'macbook-pro' }).error,
-			0,
-			mockState(),
+		emitRemoteCallError(
+			'macbook-pro',
+			PeerAddressError.PeerLeft({
+				peerTarget: 'macbook-pro',
+				targetClientId: 42,
+				peerState: mockState({ name: 'MacBook', platform: 'tauri' }),
+			}).error,
+			connected,
 		);
 		expect(cap.lines).toEqual([
 			'error: peer "macbook-pro" disconnected before responding',
+			'  last seen as MacBook (42, tauri)',
 		]);
 	});
 
 	test('ActionFailed surfaces underlying cause', () => {
 		cap = captureErrors();
-		emitRpcError(
+		emitRemoteCallError(
+			'macbook-pro',
 			RpcError.ActionFailed({
 				action: 'tabs.close',
 				cause: new Error('Tab 99 not found'),
 			}).error,
-			42,
-			mockState({ name: 'MacBook', platform: 'tauri' }),
+			connected,
 		);
 		expect(cap.lines).toEqual([
-			'error: "tabs.close" failed on MacBook (42, tauri): Tab 99 not found',
+			'error: "tabs.close" failed on macbook-pro: Tab 99 not found',
 		]);
 	});
 
 	test('Disconnected', () => {
 		cap = captureErrors();
-		emitRpcError(
+		emitRemoteCallError(
+			'macbook-pro',
 			RpcError.Disconnected().error,
-			42,
-			mockState({ name: 'MacBook', platform: 'tauri' }),
+			connected,
 		);
 		expect(cap.lines).toEqual([
-			'error: connection lost before MacBook (42, tauri) responded',
+			'error: connection lost before macbook-pro responded',
 		]);
 	});
 });

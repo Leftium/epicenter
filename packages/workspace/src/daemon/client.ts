@@ -36,7 +36,7 @@ const CONFIG_FILENAME = 'epicenter.config.ts';
 
 /**
  * Tagged-error variants returned by daemon client surfaces. Domain errors
- * (UsageError, PeerMiss, etc.) live alongside these in a merged union so
+ * (UsageError, RemoteCallFailed, etc.) live alongside these in a merged union so
  * call sites narrow once on `result.error.name`. No class hierarchy, no
  * throwing across the seam.
  *

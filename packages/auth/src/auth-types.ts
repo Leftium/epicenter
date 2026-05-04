@@ -22,14 +22,23 @@ export type StoredUser = typeof StoredUser.infer;
 /**
  * Shape of an authenticated session.
  *
- * Persisted stores hold `AuthSession | null`—null means not logged in.
+ * Persisted stores hold `Session | null`: null means not logged in.
  * The session itself is never null; absence is expressed at the store level.
  */
-export const AuthSession = type({
+export const Session = type({
 	token: 'string',
 	user: StoredUser,
 	encryptionKeys: EncryptionKeys,
 });
 
-export type AuthSession = typeof AuthSession.infer;
+export type Session = typeof Session.infer;
 
+export type AuthSnapshot =
+	| { status: 'loading' }
+	| { status: 'signedOut' }
+	| { status: 'signedIn'; session: Session };
+
+export type AuthSnapshotSubscriber = (
+	next: AuthSnapshot,
+	previous: AuthSnapshot,
+) => void;

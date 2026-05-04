@@ -7,6 +7,7 @@
 	import TrustSettings from '$lib/components/chat/TrustSettings.svelte';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
+	const snapshot = $derived(auth.snapshot);
 </script>
 
 <Drawer.Root bind:open direction="bottom" shouldScaleBackground={false}>
@@ -20,9 +21,9 @@
 				Chat with AI about your tabs
 			</Drawer.Description>
 		</Drawer.Header>
-		{#if auth.isAuthenticated}
+		{#if snapshot.status === 'signedIn'}
 			<div class="h-[clamp(300px,50vh,600px)] px-4 pb-4"><AiChat /></div>
-		{:else}
+		{:else if snapshot.status === 'signedOut'}
 			<div
 				class="flex flex-col items-center justify-center gap-3 h-[200px] px-4 pb-4"
 			>

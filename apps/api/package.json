@@ -8,7 +8,6 @@
 	"types": "./src/app.ts",
 	"exports": {
 		".": "./src/app.ts",
-		"./types": "./src/auth/contracts/index.ts",
 		"./billing-contract": "./src/billing-contract.ts",
 		"./billing-plans": "./src/billing-plans.ts"
 	},
@@ -33,6 +32,7 @@
 	"dependencies": {
 		"@better-auth/drizzle-adapter": "catalog:",
 		"@better-auth/oauth-provider": "catalog:",
+		"@epicenter/auth": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/workspace": "workspace:*",

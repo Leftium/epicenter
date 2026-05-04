@@ -346,10 +346,10 @@ This wave is purely additive. `AuthClient` gains two new members, `attachSync` m
 
 - [x] **1.1** Add `openWebSocket(url, protocols?): WebSocket | null` as a method on the existing `AuthClient`. Internals: read the existing internal token (currently `snapshot.session.token`); return a `WebSocket` with `[MAIN_SUBPROTOCOL, bearer.<token>]` when signed in; return `null` when signed out so callers know to wait for a credential change.
 - [x] **1.2** Add `whenReady: Promise<void>` as an alias for the existing `whenLoaded`. Same instance, two names; Wave 2 drops `whenLoaded`.
-- [ ] **1.3** Replace `attachSync`'s `auth: AuthClient` parameter with two flat capabilities: `openWebSocket: (url, protocols?) => WebSocket | null` and `onCredentialChange: (handler) => () => void`. The `onCredentialChange` parameter binds to today's `auth.onSnapshotChange` (Wave 2 renames it). No structural type alias is exposed; `attachSync` lists the two parameters individually in its config.
-- [ ] **1.4** In `packages/workspace/src/document/attach-sync.ts`: delete `tokenFromSnapshot`, `currentToken`, `readToken`, `requiresToken`, and the bearer subprotocol assembly. Delete the `@epicenter/auth` import. Update the supervisor: when `openWebSocket` returns `null`, stay in `offline` and re-trigger when `onCredentialChange` fires.
+- [x] **1.3** Replace `attachSync`'s `auth: AuthClient` parameter with two flat capabilities: `openWebSocket: (url, protocols?) => WebSocket | null` and `onCredentialChange: (handler) => () => void`. The `onCredentialChange` parameter binds to today's `auth.onSnapshotChange` (Wave 2 renames it). No structural type alias is exposed; `attachSync` lists the two parameters individually in its config.
+- [x] **1.4** In `packages/workspace/src/document/attach-sync.ts`: delete `tokenFromSnapshot`, `currentToken`, `readToken`, `requiresToken`, and the bearer subprotocol assembly. Delete the `@epicenter/auth` import. Update the supervisor: when `openWebSocket` returns `null`, stay in `offline` and re-trigger when `onCredentialChange` fires.
 - [ ] **1.5** Update sync wiring in each app's client/browser/daemon files: pass `openWebSocket: auth.openWebSocket` and `onCredentialChange: auth.onSnapshotChange` instead of `auth: AuthClient`.
-- [ ] **1.6** `attach-sync` tests use a fake `openWebSocket` (returns mock WS when "signed in", `null` otherwise) and a fake `onCredentialChange`.
+- [x] **1.6** `attach-sync` tests use a fake `openWebSocket` (returns mock WS when "signed in", `null` otherwise) and a fake `onCredentialChange`.
 
 **Per-wave verification (Wave 1)**:
 

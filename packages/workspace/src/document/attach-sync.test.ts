@@ -1,7 +1,6 @@
 /// <reference lib="dom" />
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import type { AuthClient, AuthSnapshot } from '@epicenter/auth';
 import {
 	decodeRpcPayload,
 	encodeAwarenessStates,
@@ -101,65 +100,31 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 	throw new Error('timeout waiting for predicate');
 }
 
-function signedInSnapshot(token: string): AuthSnapshot {
-	return {
-		status: 'signedIn',
-		session: {
-			token,
-			user: {
-				id: 'user-1',
-				createdAt: '2026-05-03T00:00:00.000Z',
-				updatedAt: '2026-05-03T00:00:00.000Z',
-				email: 'test@example.com',
-				emailVerified: true,
-				name: 'Test User',
-			},
-			encryptionKeys: [{ version: 1, userKeyBase64: 'key' }],
-		},
-	};
-}
-
-function createAuthClient(initialSnapshot: AuthSnapshot) {
-	let snapshot = initialSnapshot;
-	const listeners = new Set<(snapshot: AuthSnapshot) => void>();
+function createCredentialSource(initiallySignedIn: boolean) {
+	let signedIn = initiallySignedIn;
+	const listeners = new Set<() => void>();
 	const calls: string[] = [];
-	const auth: AuthClient = {
-		get snapshot() {
-			calls.push(`snapshot:${snapshot.status}`);
-			return snapshot;
+	const source = {
+		openWebSocket(url: string, protocols?: string | string[]) {
+			calls.push(`open:${signedIn ? 'signedIn' : 'signedOut'}`);
+			if (!signedIn) return null;
+			return new FakeWebSocket(url, protocols);
 		},
-		onSnapshotChange(listener) {
+		onCredentialChange(listener: () => void) {
 			listeners.add(listener);
 			return () => {
 				calls.push('unsubscribe');
 				listeners.delete(listener);
 			};
 		},
-		async signIn() {
-			return Ok(undefined);
-		},
-		async signUp() {
-			return Ok(undefined);
-		},
-		async signInWithIdToken() {
-			return Ok(undefined);
-		},
-		async signInWithSocialRedirect() {
-			return Ok(undefined);
-		},
-		async signOut() {
-			return Ok(undefined);
-		},
-		fetch: globalThis.fetch.bind(globalThis),
-		[Symbol.dispose]() {},
-	} satisfies AuthClient;
+	};
 
 	return {
-		auth,
+		source,
 		calls,
-		setSnapshot(nextSnapshot: AuthSnapshot) {
-			snapshot = nextSnapshot;
-			for (const listener of listeners) listener(nextSnapshot);
+		setSignedIn(next: boolean) {
+			signedIn = next;
+			for (const listener of listeners) listener();
 		},
 	};
 }
@@ -323,12 +288,13 @@ describe('attachSync split surface', () => {
 		ydoc.destroy();
 	});
 
-	test('auth token changes reconnect the active socket', async () => {
-		const ydoc = new Y.Doc({ guid: 'auth-reconnect' });
-		const auth = createAuthClient(signedInSnapshot('token-1'));
+	test('credential changes reconnect the active socket', async () => {
+		const ydoc = new Y.Doc({ guid: 'credential-reconnect' });
+		const credentials = createCredentialSource(true);
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			auth: auth.auth,
+			openWebSocket: credentials.source.openWebSocket,
+			onCredentialChange: credentials.source.onCredentialChange,
 		});
 
 		const first = await waitFor(() => FakeWebSocket.instances[0]);
@@ -336,45 +302,47 @@ describe('attachSync split surface', () => {
 		first.deliver(serverStep2Frame());
 		await sync.whenConnected;
 
-		auth.setSnapshot(signedInSnapshot('token-2'));
+		credentials.setSignedIn(true);
 		const second = await waitFor(() => FakeWebSocket.instances[1]);
 		await waitFor(() => second.readyState === FakeWebSocket.OPEN);
 
 		expect(first.readyState).toBe(FakeWebSocket.CLOSED);
 		expect(FakeWebSocket.instances).toHaveLength(2);
-		expect(first.protocols).toEqual(['epicenter', 'bearer.token-1']);
-		expect(second.protocols).toEqual(['epicenter', 'bearer.token-2']);
+		expect(first.protocols).toEqual(['epicenter']);
+		expect(second.protocols).toEqual(['epicenter']);
 
 		ydoc.destroy();
 		await sync.whenDisposed;
 	});
 
-	test('auth snapshot subscription unsubscribes on destroy', async () => {
-		const ydoc = new Y.Doc({ guid: 'auth-destroy' });
-		const auth = createAuthClient(signedInSnapshot('token-1'));
+	test('credential subscription unsubscribes on destroy', async () => {
+		const ydoc = new Y.Doc({ guid: 'credential-destroy' });
+		const credentials = createCredentialSource(true);
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			auth: auth.auth,
+			openWebSocket: credentials.source.openWebSocket,
+			onCredentialChange: credentials.source.onCredentialChange,
 		});
 
 		await waitFor(() => FakeWebSocket.instances[0]);
 		ydoc.destroy();
 		await sync.whenDisposed;
 
-		expect(auth.calls).toContain('unsubscribe');
+		expect(credentials.calls).toContain('unsubscribe');
 	});
 
-	test('auth token changes before waitFor do not bypass startup gating', async () => {
+	test('credential changes before waitFor do not bypass startup gating', async () => {
 		const { promise: whenLoaded, resolve } = Promise.withResolvers<void>();
-		const ydoc = new Y.Doc({ guid: 'auth-wait-for' });
-		const auth = createAuthClient(signedInSnapshot('token-1'));
+		const ydoc = new Y.Doc({ guid: 'credential-wait-for' });
+		const credentials = createCredentialSource(true);
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
 			waitFor: whenLoaded,
-			auth: auth.auth,
+			openWebSocket: credentials.source.openWebSocket,
+			onCredentialChange: credentials.source.onCredentialChange,
 		});
 
-		auth.setSnapshot(signedInSnapshot('token-2'));
+		credentials.setSignedIn(true);
 		await Promise.resolve();
 		expect(FakeWebSocket.instances).toHaveLength(0);
 
@@ -382,7 +350,30 @@ describe('attachSync split surface', () => {
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
 
-		expect(ws.protocols).toEqual(['epicenter', 'bearer.token-2']);
+		expect(ws.protocols).toEqual(['epicenter']);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('missing credentials keep sync offline until credentials change', async () => {
+		const ydoc = new Y.Doc({ guid: 'credential-wait' });
+		const credentials = createCredentialSource(false);
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			openWebSocket: credentials.source.openWebSocket,
+			onCredentialChange: credentials.source.onCredentialChange,
+		});
+
+		await waitFor(() => credentials.calls.includes('open:signedOut'));
+		expect(sync.status).toEqual({ phase: 'offline' });
+		expect(FakeWebSocket.instances).toHaveLength(0);
+
+		credentials.setSignedIn(true);
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+
+		expect(ws.protocols).toEqual(['epicenter']);
 
 		ydoc.destroy();
 		await sync.whenDisposed;

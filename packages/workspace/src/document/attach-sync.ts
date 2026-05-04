@@ -1,8 +1,6 @@
 /// <reference lib="dom" />
 
-import type { AuthClient, AuthSnapshot } from '@epicenter/auth';
 import {
-	BEARER_SUBPROTOCOL_PREFIX,
 	decodeRpcPayload,
 	encodeAwareness,
 	encodeAwarenessStates,
@@ -229,12 +227,17 @@ export type SyncAttachmentConfig = {
 	 */
 	waitFor?: WaitForBarrier;
 	/**
-	 * Auth client for authenticated sync. Its presence declares that the
-	 * connection requires a signed-in Epicenter session. The supervisor waits
-	 * reads the token from `auth.snapshot`, and reconnects when future
-	 * snapshots change the token value.
+	 * Opens an authenticated WebSocket. Returning null means no credential is
+	 * available yet, so the supervisor remains offline until credentials change.
 	 */
-	auth?: AuthClient;
+	openWebSocket?: (
+		url: string,
+		protocols?: string | string[],
+	) => SyncWebSocket | null;
+	/**
+	 * Subscribe to credential changes that should restart authenticated sync.
+	 */
+	onCredentialChange?: (handler: () => void) => () => void;
 	/**
 	 * WebSocket constructor. Tests can pass a stub to avoid dialing a server;
 	 * production uses `globalThis.WebSocket`.
@@ -298,10 +301,6 @@ function parsePermanentFailure(event: {
 	return { type: 'auth', code: 'unknown' };
 }
 
-function tokenFromSnapshot(snapshot: AuthSnapshot): string | null {
-	return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-}
-
 // ============================================================================
 // Public API
 // ============================================================================
@@ -317,7 +316,7 @@ export function attachSync(
 	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
 	let rpcActions: Record<string, unknown> | null = null;
 	const awareness = config.awareness?.raw ?? null;
-	const auth = config.auth;
+	const openWebSocket = config.openWebSocket;
 
 	const waitForPromise =
 		config.waitFor && 'whenLoaded' in config.waitFor
@@ -379,10 +378,10 @@ export function attachSync(
 
 	/**
 	 * Whether this connection is authenticated. Inferred from the presence of
-	 * `auth`; supplying that client is the declaration that a signed-in session
-	 * is required. Without it, the supervisor connects unauthenticated.
+	 * `openWebSocket`; supplying that capability declares that a signed-in
+	 * session is required. Without it, the supervisor connects unauthenticated.
 	 */
-	const requiresToken = auth !== undefined;
+	const requiresCredential = openWebSocket !== undefined;
 
 	/**
 	 * Cancellation hierarchy:
@@ -402,7 +401,6 @@ export function attachSync(
 
 	/** Current WebSocket instance, or null. */
 	let websocket: SyncWebSocket | null = null;
-	let currentToken = auth ? tokenFromSnapshot(auth.snapshot) : null;
 
 	/**
 	 * Promise of the currently-running supervisor loop, or null when no loop
@@ -440,11 +438,6 @@ export function attachSync(
 		}
 	>();
 	let nextRequestId = 0;
-
-	async function readToken(): Promise<string | null> {
-		if (!auth) return null;
-		return tokenFromSnapshot(auth.snapshot);
-	}
 
 	/** Resolve all pending RPC requests with Disconnected and clear state. */
 	function clearPendingRequests() {
@@ -613,34 +606,12 @@ export function attachSync(
 
 			status.set({ phase: 'connecting', retries: backoff.retries, lastError });
 
-			let token: string | null = null;
-			if (auth) {
-				try {
-					token = await readToken();
-				} catch (cause) {
-					token = null;
-					lastError = { type: 'auth', error: cause };
-				}
-				if (signal.aborted) break;
-				// Recovered: a fresh token clears any prior auth error so the
-				// 'connecting' status doesn't display a stale one.
-				if (token && lastError?.type === 'auth') lastError = undefined;
-			}
-			if (requiresToken && !token) {
-				lastError = lastError ?? {
-					type: 'auth',
-					error: new Error('No token available'),
-				};
-				status.set({
-					phase: 'connecting',
-					retries: backoff.retries,
-					lastError,
-				});
-				await backoff.sleep(signal);
+			const result = await attemptConnection(signal);
+			if (result === 'no-credential') {
+				status.set({ phase: 'offline' });
+				await waitForAbort(signal);
 				continue;
 			}
-
-			const result = await attemptConnection(token, signal);
 			if (signal.aborted) break;
 
 			if (result === 'connected') {
@@ -663,21 +634,17 @@ export function attachSync(
 	}
 
 	async function attemptConnection(
-		token: string | null,
 		signal: AbortSignal,
-	): Promise<'connected' | 'failed'> {
+	): Promise<'connected' | 'failed' | 'no-credential'> {
 		const wsUrl = config.url;
-
-		// Auth via WebSocket subprotocol, not `?token=`. Query strings land in
-		// access logs, referrers, and browser history; the subprotocol header
-		// does not. We offer two protocols: the main one (which the server
-		// echoes back to complete the handshake) and a `bearer.<token>`
-		// carrier (which the server consumes and never echoes).
 		const subprotocols = [MAIN_SUBPROTOCOL];
-		if (token) subprotocols.push(`${BEARER_SUBPROTOCOL_PREFIX}${token}`);
-		const WebSocketConstructor =
-			config.webSocketImpl ?? (globalThis.WebSocket as WebSocketImpl);
-		const ws = new WebSocketConstructor(wsUrl, subprotocols);
+		const ws =
+			openWebSocket?.(wsUrl, subprotocols) ??
+			(requiresCredential
+				? null
+				: new (config.webSocketImpl ??
+						(globalThis.WebSocket as WebSocketImpl))(wsUrl, subprotocols));
+		if (ws === null) return 'no-credential';
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
@@ -885,11 +852,7 @@ export function attachSync(
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
-	const unsubscribeAuthChange = auth?.onSnapshotChange((snapshot) => {
-		const nextToken = tokenFromSnapshot(snapshot);
-		if (nextToken === currentToken) return;
-
-		currentToken = nextToken;
+	const unsubscribeCredentialChange = config.onCredentialChange?.(() => {
 		queueMicrotask(reconnect);
 	});
 
@@ -929,7 +892,7 @@ export function attachSync(
 			);
 		});
 		try {
-			unsubscribeAuthChange?.();
+			unsubscribeCredentialChange?.();
 			ydoc.off('updateV2', handleDocUpdate);
 			awareness?.off('update', handleAwarenessUpdate);
 			const ws = websocket;
@@ -1118,6 +1081,13 @@ function waitForWsClose(
 			log.warn(SyncSupervisorError.CloseTimeout({ timeoutMs }));
 			resolve();
 		}, timeoutMs);
+	});
+}
+
+function waitForAbort(signal: AbortSignal): Promise<void> {
+	if (signal.aborted) return Promise.resolve();
+	return new Promise<void>((resolve) => {
+		signal.addEventListener('abort', () => resolve(), { once: true });
 	});
 }
 

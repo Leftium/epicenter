@@ -1,13 +1,11 @@
 /**
- * attachEncryption tests: registration, keyring dedup, key application,
- * key rotation, re-encryption of plaintext, late-register auto-activation,
- * disposal cascade, reentrance guard.
+ * attachEncryption tests: keyring dedup, key application, key rotation,
+ * re-encryption of plaintext, late-store auto-activation, disposal cascade,
+ * reentrance guard.
  *
- * These tests exercise the attachment directly (without a workspace client)
- * to pin its contract independently of the workspace builder. Stores are
- * constructed with `createEncryptedYkvLww` and registered via
- * `encryption.register(store)`: the same pathway used by
- * `encryption.attachTable` / `encryption.attachKv`.
+ * These tests exercise the attachment directly without a workspace client.
+ * Stores are constructed through `encryption.attachTable`: the same pathway
+ * used by application code.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -21,52 +19,70 @@ import {
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { attachEncryption } from './attach-encryption.js';
 import { defineTable } from './define-table.js';
+import { TableKey } from './keys.js';
 
 function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
 	return [{ version: 1, userKeyBase64: bytesToBase64(key) }];
 }
 
+const encryptedRowDefinition = defineTable(
+	type({ id: 'string', title: 'string', _v: '1' }),
+);
+
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'enc-test', gc: false });
 	const encryption = attachEncryption(ydoc);
-	const storeA = createEncryptedYkvLww<{ title: string }>(ydoc, 'a');
-	const storeB = createEncryptedYkvLww<{ title: string }>(ydoc, 'b');
-	encryption.register(storeA);
-	encryption.register(storeB);
-	return { ydoc, storeA, storeB, encryption };
+	const tableA = encryption.attachTable(ydoc, 'a', encryptedRowDefinition);
+	const tableB = encryption.attachTable(ydoc, 'b', encryptedRowDefinition);
+	return { ydoc, tableA, tableB, encryption };
 }
 
 describe('attachEncryption', () => {
 	test('applyKeys enables encrypted writes on every registered store', () => {
-		const { storeA, storeB, encryption } = setup();
+		const { tableA, tableB, encryption } = setup();
 		encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
-		storeA.set('1', { title: 'Secret A' });
-		storeB.set('1', { title: 'Secret B' });
-		expect(storeA.get('1')).toEqual({ title: 'Secret A' });
-		expect(storeB.get('1')).toEqual({ title: 'Secret B' });
+		tableA.set({ id: '1', title: 'Secret A', _v: 1 });
+		tableB.set({ id: '1', title: 'Secret B', _v: 1 });
+		expect(tableA.get('1').data).toEqual({
+			id: '1',
+			title: 'Secret A',
+			_v: 1,
+		});
+		expect(tableB.get('1').data).toEqual({
+			id: '1',
+			title: 'Secret B',
+			_v: 1,
+		});
 	});
 
 	test('applyKeys re-encrypts existing plaintext entries', () => {
-		const { storeA, encryption } = setup();
-		storeA.set('1', { title: 'Was plaintext' });
+		const { tableA, encryption } = setup();
+		tableA.set({ id: '1', title: 'Was plaintext', _v: 1 });
 		encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
-		expect(storeA.get('1')).toEqual({ title: 'Was plaintext' });
+		expect(tableA.get('1').data).toEqual({
+			id: '1',
+			title: 'Was plaintext',
+			_v: 1,
+		});
 	});
 
 	test('keyring dedup: identical keys short-circuit the second call', () => {
-		const { storeA, encryption } = setup();
+		const { tableA, encryption } = setup();
 		const key = randomBytes(32);
 		encryption.applyKeys(toEncryptionKeys(key));
-		storeA.set('1', { title: 'Before second apply' });
+		tableA.set({ id: '1', title: 'Before second apply', _v: 1 });
 		encryption.applyKeys(toEncryptionKeys(key));
-		expect(storeA.get('1')).toEqual({ title: 'Before second apply' });
+		expect(tableA.get('1').data).toEqual({
+			id: '1',
+			title: 'Before second apply',
+			_v: 1,
+		});
 	});
 
 	test('keyring dedup: reversed key order is treated as the same keyring', () => {
-		const { storeA, encryption } = setup();
+		const { tableA, encryption } = setup();
 		const keyV1 = randomBytes(32);
 		const keyV2 = randomBytes(32);
 		const asc: EncryptionKeys = [
@@ -78,15 +94,23 @@ describe('attachEncryption', () => {
 			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
 		];
 		encryption.applyKeys(asc);
-		storeA.set('1', { title: 'Order test' });
+		tableA.set({ id: '1', title: 'Order test', _v: 1 });
 		encryption.applyKeys(desc);
-		expect(storeA.get('1')).toEqual({ title: 'Order test' });
+		expect(tableA.get('1').data).toEqual({
+			id: '1',
+			title: 'Order test',
+			_v: 1,
+		});
 	});
 
 	test('plaintext writes are readable before applyKeys is called', () => {
-		const { storeA } = setup();
-		storeA.set('1', { title: 'Plaintext' });
-		expect(storeA.get('1')).toEqual({ title: 'Plaintext' });
+		const { tableA } = setup();
+		tableA.set({ id: '1', title: 'Plaintext', _v: 1 });
+		expect(tableA.get('1').data).toEqual({
+			id: '1',
+			title: 'Plaintext',
+			_v: 1,
+		});
 	});
 
 	test('late-registered store auto-activates with cached keyring', () => {
@@ -94,14 +118,15 @@ describe('attachEncryption', () => {
 		const encryption = attachEncryption(ydoc);
 		encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
 
-		// Register after applyKeys: the store must receive the cached keyring
-		// so subsequent writes are encrypted from the start.
-		const lateStore = createEncryptedYkvLww<{ title: string }>(ydoc, 'late');
-		encryption.register(lateStore);
+		// Attach after applyKeys: the store must receive the cached keyring so
+		// subsequent writes are encrypted from the start.
+		const lateTable = encryption.attachTable(ydoc, 'late', encryptedRowDefinition);
 
-		lateStore.set('1', { title: 'Written after late register' });
-		expect(lateStore.get('1')).toEqual({
+		lateTable.set({ id: '1', title: 'Written after late register', _v: 1 });
+		expect(lateTable.get('1').data).toEqual({
+			id: '1',
 			title: 'Written after late register',
+			_v: 1,
 		});
 	});
 
@@ -156,17 +181,18 @@ describe('attachEncryption', () => {
 
 	describe('at-rest upgrade on key rotation', () => {
 		test('v1 ciphertext gets re-encrypted to v2 when v2 becomes current', () => {
-			const { storeA, encryption } = setup();
+			const { ydoc, tableA, encryption } = setup();
 			const keyV1 = randomBytes(32);
 			const keyV2 = randomBytes(32);
 
 			encryption.applyKeys([
 				{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
 			]);
-			storeA.set('1', { title: 'Written with v1' });
+			tableA.set({ id: '1', title: 'Written with v1', _v: 1 });
 
 			// Sanity: the at-rest blob is a v1 ciphertext.
-			const beforeEntry = storeA.yarray.toArray().find((e) => e.key === '1');
+			const yarray = ydoc.getArray<{ key: string; val: unknown }>(TableKey('a'));
+			const beforeEntry = yarray.toArray().find((entry) => entry.key === '1');
 			expect(beforeEntry).toBeDefined();
 			expect(isEncryptedBlob(beforeEntry?.val)).toBe(true);
 			expect(getKeyVersion(beforeEntry?.val as EncryptedBlob)).toBe(1);
@@ -179,17 +205,26 @@ describe('attachEncryption', () => {
 			]);
 
 			// At-rest blob should now be v2, not v1.
-			const afterEntry = storeA.yarray.toArray().find((e) => e.key === '1');
+			const afterEntry = yarray.toArray().find((entry) => entry.key === '1');
 			expect(afterEntry).toBeDefined();
 			expect(isEncryptedBlob(afterEntry?.val)).toBe(true);
 			expect(getKeyVersion(afterEntry?.val as EncryptedBlob)).toBe(2);
-			// And the decrypted value is unchanged.
-			expect(storeA.get('1')).toEqual({ title: 'Written with v1' });
+			expect(tableA.get('1').data).toEqual({
+				id: '1',
+				title: 'Written with v1',
+				_v: 1,
+			});
 
 			// New writes after rotation use v2 and are readable.
-			storeA.set('new', { title: 'Written with v2' });
-			expect(storeA.get('new')).toEqual({ title: 'Written with v2' });
-			const newEntry = storeA.yarray.toArray().find((e) => e.key === 'new');
+			tableA.set({ id: 'new', title: 'Written with v2', _v: 1 });
+			expect(tableA.get('new').data).toEqual({
+				id: 'new',
+				title: 'Written with v2',
+				_v: 1,
+			});
+			const newEntry = yarray
+				.toArray()
+				.find((entry) => entry.key === 'new');
 			expect(getKeyVersion(newEntry?.val as EncryptedBlob)).toBe(2);
 		});
 	});

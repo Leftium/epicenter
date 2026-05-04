@@ -127,18 +127,6 @@ export type EncryptionAttachment = {
 	applyKeys(keys: EncryptionKeys): void;
 
 	/**
-	 * Register a store for encryption coordination.
-	 *
-	 * If keys have already been applied, the store is activated immediately
-	 * with the cached keyring. Otherwise it is queued for the next
-	 * `applyKeys` call.
-	 *
-	 * @internal Called by the coordinator's own `attachTable` / `attachKv`
-	 * methods and by test setup, not by application code.
-	 */
-	register(store: AnyEncryptedStore): void;
-
-	/**
 	 * Attach an encrypted table: mirror of the plaintext `attachTable(ydoc,
 	 * name, def)` but with the store registered for encryption coordination.
 	 */
@@ -203,6 +191,11 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 		for (const store of stores) store.dispose();
 	});
 
+	function register(store: AnyEncryptedStore): void {
+		stores.push(store);
+		if (cachedKeyring !== undefined) store.activateEncryption(cachedKeyring);
+	}
+
 	const attachment: EncryptionAttachment = {
 		applyKeys(keys) {
 			if (lastKeys !== undefined && encryptionKeysEqual(keys, lastKeys)) return;
@@ -216,18 +209,14 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 			cachedKeyring = keyring;
 			for (const store of stores) store.activateEncryption(keyring);
 		},
-		register(store) {
-			stores.push(store);
-			if (cachedKeyring !== undefined) store.activateEncryption(cachedKeyring);
-		},
 		attachTable(ydoc, name, definition) {
 			const store = createEncryptedYkvLww(ydoc, TableKey(name));
-			attachment.register(store);
+			register(store);
 			return createTable(store, definition, name);
 		},
 		attachReadonlyTable(ydoc, name, definition) {
 			const store = createEncryptedYkvLww(ydoc, TableKey(name));
-			attachment.register(store);
+			register(store);
 			return createReadonlyTable(store, definition, name);
 		},
 		attachTables(ydoc, definitions) {
@@ -248,7 +237,7 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 		},
 		attachKv(ydoc, definitions) {
 			const store = createEncryptedYkvLww(ydoc, KV_KEY);
-			attachment.register(store);
+			register(store);
 			return createKv(store, definitions);
 		},
 	};

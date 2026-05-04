@@ -784,7 +784,7 @@ Independent of the `whenDisposed`/`wipe` work but folded in to keep the migratio
   - Drop the `Promise.withResolvers` setup and the `resolveDisposed()` call.
   - Drop the test line at `attach-encryption.test.ts:111`.
 
-- [ ] **G.4** Remove `register` from the public `EncryptionAttachment` type at `packages/workspace/src/document/attach-encryption.ts:139`. The JSDoc already says `@internal Called by the coordinator's own ... methods and by test setup, not by application code.` Move it off the type but keep the implementation in the closure (still called by `attachTable`/`attachTables`/`attachKv`).
+- [x] **G.4** Remove `register` from the public `EncryptionAttachment` type at `packages/workspace/src/document/attach-encryption.ts:139`. The JSDoc already says `@internal Called by the coordinator's own ... methods and by test setup, not by application code.` Move it off the type but keep the implementation in the closure (still called by `attachTable`/`attachTables`/`attachKv`).
   - Migration: 3 test sites at `attach-encryption.test.ts:37,38,100` need to construct via `encryption.attachTable(...)` instead of `encryption.register(...)` directly.
 
 - [ ] **G.5** Verify by grep that the dropped surfaces have no remaining production readers:

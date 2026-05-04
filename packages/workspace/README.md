@@ -347,7 +347,7 @@ The ID becomes `ydoc.guid` for the workspace doc, so it is not a throwaway strin
 
 A workspace is a `Y.Doc` plus whatever `attach*` handles you bound to it,
 packaged as a bundle with `{ id, ydoc, [Symbol.dispose], ... }`. A browser
-workspace also exposes `clearLocalData()`. A singleton app returns the bundle
+workspace also exposes `wipe()`. A singleton app returns the bundle
 from a top-level function like `openBlog()`. A document cache returns disposable
 handles over child documents keyed by row id.
 
@@ -558,7 +558,11 @@ function openNotes() {
 
 const workspace = openNotes();
 
-workspace.awareness.setLocalField('cursor', { line: 12, column: 3 });
+workspace.awareness.setLocal({
+	name: 'Braden',
+	color: '#ff4d4f',
+	cursor: { line: 12, column: 3 },
+});
 ```
 
 ### Document-backed tables
@@ -810,7 +814,7 @@ import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 
 ### Persistence
 
-`attachIndexedDb(ydoc)` runs in the browser. `attachSqlite(ydoc, { filePath })` runs on Node/Bun. Both return a handle with `whenLoaded`, `whenDisposed`, and `clearLocal()`.
+`attachIndexedDb(ydoc)` runs in the browser. `attachSqlite(ydoc, { filePath })` runs on Node/Bun. Both return a handle with `whenLoaded` and `clearLocal()`. IndexedDB also exposes `[Symbol.asyncDispose]()` for callers that need to await provider shutdown before deleting local storage.
 
 ```typescript
 import * as Y from 'yjs';
@@ -1386,7 +1390,7 @@ Disposal preserves data: it releases the handle. To wipe persisted local state, 
 
 ```ts
 cache[Symbol.dispose]();
-await handle.idb.whenDisposed;
+await handle.idb[Symbol.asyncDispose]();
 ```
 
 ## Client vs Server
@@ -1549,10 +1553,6 @@ import {
 Public awareness methods:
 
 - `setLocal(state)`
-- `setLocalField(key, value)`
-- `getLocal()`
-- `getLocalField(key)`
-- `getAll()`
 - `peers()`
 - `observe(callback)`
 - `raw`

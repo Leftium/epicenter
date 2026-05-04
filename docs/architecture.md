@@ -143,17 +143,15 @@ const workspace = await app.load('example.app');
 That promise is the line between construction and full availability. Create now, await later, or use `load()` to do both at once.
 
 ## Disposal cascades from `ydoc.destroy()`
-Teardown runs through Yjs itself. Every `attach*` function registers `ydoc.once('destroy')` internally, so when the builder's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment tears down in parallel. Each attachment exposes a `whenDisposed` promise that resolves after its real cleanup completes (IDB awaits `db.close()`, sync awaits the supervisor + `onclose`), and the bundle aggregates them:
+Teardown runs through Yjs itself. Every async `attach*` function registers `ydoc.once('destroy')` internally, so when the builder's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment starts teardown in parallel. Attachments with genuine async cleanup expose `[Symbol.asyncDispose]()` for the callers that need a barrier:
 
 ```ts
-whenDisposed: Promise.all([
-  idb.whenDisposed,
-  sync.whenDisposed,
-  encryption.whenDisposed,
-]).then(() => {}),
+workspace[Symbol.dispose]();
+await workspace.idb[Symbol.asyncDispose]();
+await workspace.sync[Symbol.asyncDispose]();
 ```
 
-The refcounted cache calls `[Symbol.dispose]()` on the last release (after the `gcTime` grace period) and awaits `bundle.whenDisposed` in its `close()` / `closeAll()` methods.
+Browser bundles expose `wipe()` for identity reset. It owns the full sequence: dispose the live bundle, await the async attachments needed to unblock storage deletion, then delete persisted local state. The refcounted cache still calls `[Symbol.dispose]()` on the last release after the `gcTime` grace period; it does not aggregate an async disposal barrier.
 
 ## Write and read flow
 Writes always hit Yjs first. Everything else reacts to that state instead of becoming a competing source of truth.

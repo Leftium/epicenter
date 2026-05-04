@@ -95,7 +95,7 @@ The method form says "use the encryption's attach-tables" directly. Preferred wh
 
 ## Invariants
 
-1. **Synchronous return.** Construction never awaits. Async work goes into `when*` promises on the returned object.
+1. **Synchronous return.** Construction never awaits. Startup work goes into semantic `when*` promises on the returned object. Genuine async teardown uses `[Symbol.asyncDispose]()` backed by `lazy(async () => { ... })`.
 2. **Teardown hooked to the subject's lifecycle.**
    - Y.Doc subject: `ydoc.once('destroy', ...)`. Never expose a `.destroy()` method on the attachment.
    - Attachment subject: use the subject attachment's disposal signal; or no teardown if there are no listeners.
@@ -108,7 +108,6 @@ The method form says "use the encryption's attach-tables" directly. Preferred wh
    - `whenConnected` — remote transport up + first exchange done (sync)
    - `whenChecked` — configuration action settled (session-unlock — resolves even if nothing was applied)
    - `whenFlushed` — initial side-effect pass done (materializer)
-   - `whenDisposed` — teardown settled (any subject with async cleanup)
    - `whenReady` — bundle-level aggregate only; not on individual attachments
 
 ## Composition inside a workspace builder
@@ -134,8 +133,13 @@ const cache = createDisposableCache((id: string) => {
 
   return {
     ydoc, tables, encryption, idb, sync, markdown,
-    whenReady:    Promise.all([idb.whenLoaded, unlock.whenChecked, sync.whenConnected]).then(() => {}),
-    whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed, encryption.whenDisposed]).then(() => {}),
+    whenReady: Promise.all([idb.whenLoaded, unlock.whenChecked, sync.whenConnected]).then(() => {}),
+    async wipe() {
+      ydoc.destroy();
+      await sync[Symbol.asyncDispose]();
+      await idb[Symbol.asyncDispose]();
+      await idb.clearLocal();
+    },
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 });
@@ -143,7 +147,7 @@ const cache = createDisposableCache((id: string) => {
 export const workspace = cache.open('my-app');
 ```
 
-The bundle aggregates child `whenLoaded` / `whenConnected` / `whenChecked` into one `whenReady`, and child `whenDisposed` into one `whenDisposed`. Consumers only await the bundle-level barriers.
+The bundle aggregates child `whenLoaded` / `whenConnected` / `whenChecked` into one `whenReady`. Browser bundles expose `wipe()` for reset flows that must dispose and delete local storage in the right order. Daemon bundles compose `[Symbol.asyncDispose]()` from the async attachments they need to await before process exit.
 
 ## The `waitFor` convention
 

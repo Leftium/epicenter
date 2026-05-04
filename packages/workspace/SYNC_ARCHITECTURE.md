@@ -387,7 +387,7 @@ attachSync(doc, { url, getToken, waitFor: idb, awareness })
         │
         └── 4. Return attachment methods:
                status, whenConnected, reconnect,
-               whenDisposed, attachRpc(actions)
+               [Symbol.asyncDispose](), attachRpc(actions)
 ```
 
 The function returns synchronously. The first connect happens asynchronously after `waitFor` resolves (typically `idb.whenLoaded`).
@@ -583,7 +583,7 @@ handshake.
 | Promise | Resolves when | Rejects when |
 |---|---|---|
 | `whenConnected` | First successful handshake (STEP2 or UPDATE arrives) | Doc destroyed before first handshake (permanent failure) |
-| `whenDisposed` | Supervisor exits AND WebSocket reaches CLOSED (or 1s safety timeout fires) | Never |
+| `[Symbol.asyncDispose]()` | Supervisor exits and WebSocket reaches CLOSED, or the 1s safety timeout fires | Never |
 
 `whenConnected` was previously "may hang forever": fixed to reject on dispose so CLIs that `await sync.whenConnected` get a useful failure instead of a wedge.
 

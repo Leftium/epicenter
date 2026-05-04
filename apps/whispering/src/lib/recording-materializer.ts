@@ -16,8 +16,6 @@ import type { Recording } from './workspace';
 type RecordingMarkdownFilesAttachment = {
 	/** Resolves after the initial flush of existing rows completes. */
 	whenFlushed: Promise<void>;
-	/** Resolves after the Y.Doc is destroyed and the write queue drains. */
-	whenDisposed: Promise<void>;
 };
 
 /**
@@ -46,7 +44,6 @@ export function attachRecordingMarkdownFiles(
 	if (!isTauri()) {
 		return {
 			whenFlushed: Promise.resolve(),
-			whenDisposed: Promise.resolve(),
 		};
 	}
 
@@ -99,13 +96,9 @@ export function attachRecordingMarkdownFiles(
 		await syncQueue;
 	})();
 
-	const { promise: whenDisposed, resolve: resolveDisposed } =
-		Promise.withResolvers<void>();
-
 	ydoc.once('destroy', () => {
 		unsubscribe();
-		void syncQueue.finally(() => resolveDisposed());
 	});
 
-	return { whenFlushed, whenDisposed };
+	return { whenFlushed };
 }

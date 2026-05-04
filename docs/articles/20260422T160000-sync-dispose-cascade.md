@@ -126,6 +126,30 @@ It isn't. Our wrappers *satisfy* yjs's contract (we do call `provider.destroy()`
 
 Why this layering: a workspace framework has a lot of attachments per doc. Forcing every caller to track every attachment and dispose each one is the exact kind of ceremony frameworks exist to eliminate. Centralizing on `ydoc.destroy()` as the teardown trigger gives us one call site for the common case and preserves idempotent explicit-dispose for the uncommon one.
 
+## 2026 follow-up: async disposers without losing the cascade
+
+The current attachment shape keeps the cascade and adds per-attachment `[Symbol.asyncDispose]()` for callers that need an explicit barrier. The trick is that the real cleanup lives behind `lazy(async () => { ... })`.
+
+That means the cascade path and the explicit path share one memoized Promise:
+
+```ts
+const dispose = lazy(async () => {
+  await provider.destroy();
+});
+
+ydoc.once('destroy', () => {
+  void dispose();
+});
+
+return {
+  [Symbol.asyncDispose]: dispose,
+};
+```
+
+If `ydoc.destroy()` fires first, cleanup starts in the background. If a daemon or test later calls `await attachment[Symbol.asyncDispose]()`, it awaits the same Promise. If the explicit disposer fires first, the later Y.Doc cascade becomes a no-op over the same Promise.
+
+So the rejection in the original article was too broad. Per-attachment async disposal is coherent as long as it is backed by the same lazy cleanup reference that the Y.Doc cascade uses. What stays rejected is a bundle-level teardown barrier that every close path has to await.
+
 ## Cost accounting
 
 What did we actually buy by making the framework barrier-free?

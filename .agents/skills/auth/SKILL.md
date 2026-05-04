@@ -105,16 +105,7 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
-			// The workspace bundle owns teardown order. Its disposer closes app
-			// resources and destroys the root Y.Doc, which tells attachments like
-			// sync, broadcast channel, and y-indexeddb to stop before local
-			// IndexedDB data is deleted.
-			workspace[Symbol.dispose]();
-			// This is safe after disposal. y-indexeddb deletes by database name,
-			// and any row data needed to compute child document names remains
-			// readable from memory after Y.Doc.destroy(); disposal has already
-			// stopped observers and providers.
-			await workspace.clearLocalData();
+			await workspace.wipe();
 		} catch (error) {
 			reportCleanupError(error);
 		} finally {

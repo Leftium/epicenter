@@ -54,19 +54,6 @@ export type AwarenessState<TSchema extends AwarenessSchema> = {
 export type AwarenessAttachment<TSchema extends AwarenessSchema> = {
 	setLocal(state: Partial<AwarenessState<TSchema>>): void;
 
-	setLocalField<K extends keyof TSchema & string>(
-		key: K,
-		value: InferAwarenessValue<TSchema[K]>,
-	): void;
-
-	getLocal(): AwarenessState<TSchema> | null;
-
-	getLocalField<K extends keyof TSchema & string>(
-		key: K,
-	): InferAwarenessValue<TSchema[K]> | undefined;
-
-	getAll(): Map<number, AwarenessState<TSchema>>;
-
 	peers(): Map<number, AwarenessState<TSchema>>;
 
 	observe(
@@ -84,7 +71,7 @@ export type AwarenessAttachment<TSchema extends AwarenessSchema> = {
  * is well-formed from the first frame. No consumer ever observes a peer
  * with a field defined but unset.
  *
- * Fields can still be updated later via `setLocal` / `setLocalField`.
+ * Fields can still be updated later via `setLocal`.
  *
  * Each field is independently validated on read. The underlying
  * `Awareness` instance tears itself down on `ydoc.destroy()` via a handler
@@ -142,34 +129,6 @@ function createAwarenessAttachment<TSchema extends AwarenessSchema>(
 		setLocal(state) {
 			const current = awareness.getLocalState() ?? {};
 			awareness.setLocalState({ ...current, ...state });
-		},
-
-		setLocalField(key, value) {
-			awareness.setLocalStateField(key, value);
-		},
-
-		getLocal() {
-			return awareness.getLocalState() as AwarenessState<TSchema> | null;
-		},
-
-		getLocalField(key) {
-			const state = awareness.getLocalState();
-			if (state === null) return undefined;
-			return (state as Record<string, unknown>)[key] as ReturnType<
-				AwarenessAttachment<TSchema>['getLocalField']
-			>;
-		},
-
-		getAll() {
-			const result = new Map<number, AwarenessState<TSchema>>();
-			for (const [clientId, state] of awareness.getStates()) {
-				if (state === null || typeof state !== 'object') continue;
-				const validated = validateState(state);
-				if (validated !== null) {
-					result.set(clientId, validated as AwarenessState<TSchema>);
-				}
-			}
-			return result;
 		},
 
 		peers() {

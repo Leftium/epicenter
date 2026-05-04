@@ -767,7 +767,7 @@ After Phase D lands, no source file (apps, packages, examples, playground, tests
 
 Independent of the `whenDisposed`/`wipe` work but folded in to keep the migration cohesive. Each is a small, isolated cleanup.
 
-- [ ] **G.1** Trim `AwarenessAttachment` (`packages/workspace/src/document/attach-awareness.ts:54-77`). Drop these methods (zero production readers; only `attach-awareness.test.ts` uses them):
+- [x] **G.1** Trim `AwarenessAttachment` (`packages/workspace/src/document/attach-awareness.ts:54-77`). Drop these methods (zero production readers; only `attach-awareness.test.ts` uses them):
   - `setLocalField`
   - `getLocalField`
   - `getLocal`

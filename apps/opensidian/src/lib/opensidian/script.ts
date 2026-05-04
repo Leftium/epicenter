@@ -23,7 +23,8 @@ export async function openOpensidian({
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-		auth,
+		openWebSocket: auth.openWebSocket,
+		onCredentialChange: auth.onSnapshotChange,
 	});
 
 	return { ...doc, yjsLog, sync };

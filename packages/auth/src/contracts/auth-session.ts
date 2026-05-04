@@ -81,7 +81,7 @@ export function normalizeAuthUser(value: unknown): AuthUser {
  *
  * Better Auth's client plugin typing cannot carry this custom response through
  * every package boundary in this monorepo, so this function owns the runtime
- * check instead of letting `createAuth()` trust an inline cast.
+ * check instead of letting `createBearerAuth()` trust an inline cast.
  */
 export function normalizeBearerSession(
 	value: unknown,

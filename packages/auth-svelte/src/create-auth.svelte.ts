@@ -1,7 +1,9 @@
 import {
 	type AuthClient as BaseAuthClient,
-	type CreateAuthConfig,
-	createAuth as createCoreAuth,
+	type CreateBearerAuthConfig,
+	type CreateBrowserAuthConfig,
+	createBearerAuth as createCoreBearerAuth,
+	createBrowserAuth as createCoreBrowserAuth,
 } from '@epicenter/auth';
 
 export type AuthClient = BaseAuthClient;
@@ -13,8 +15,7 @@ export type AuthClient = BaseAuthClient;
  * read `auth.identity` reactively. The spread copies core methods, and the
  * later getter overrides the copied identity value.
  */
-export function createAuth(config: CreateAuthConfig): AuthClient {
-	const base = createCoreAuth(config);
+function createReactiveAuth(base: BaseAuthClient): AuthClient {
 	let identity = $state(base.identity);
 
 	const unsubscribe = base.onChange((next) => {
@@ -31,4 +32,12 @@ export function createAuth(config: CreateAuthConfig): AuthClient {
 			base[Symbol.dispose]();
 		},
 	} satisfies AuthClient;
+}
+
+export function createBearerAuth(config: CreateBearerAuthConfig): AuthClient {
+	return createReactiveAuth(createCoreBearerAuth(config));
+}
+
+export function createBrowserAuth(config: CreateBrowserAuthConfig): AuthClient {
+	return createReactiveAuth(createCoreBrowserAuth(config));
 }

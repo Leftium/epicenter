@@ -1,3 +1,4 @@
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { encryptionKeysEqual } from '@epicenter/encryption';
 import { BEARER_SUBPROTOCOL_PREFIX, MAIN_SUBPROTOCOL } from '@epicenter/sync';
 import type { BetterAuthOptions } from 'better-auth';
@@ -43,11 +44,18 @@ export const AuthError = defineErrors({
 });
 export type AuthError = InferErrors<typeof AuthError>;
 
-export type CreateAuthConfig = {
+export type CreateBearerAuthConfig = {
 	/** Resolved once at construction; recreate the client if the origin changes. */
-	baseURL: string;
+	baseURL?: string;
 	initialSession: BearerSession | null;
 	saveSession: (value: BearerSession | null) => MaybePromise<void>;
+};
+
+export type CreateBrowserAuthConfig = {
+	/** Resolved once at construction; recreate the client if the origin changes. */
+	baseURL?: string;
+	initialIdentity?: AuthIdentity | null;
+	saveIdentity?: (value: AuthIdentity | null) => MaybePromise<void>;
 };
 
 type MaybePromise<T> = T | Promise<T>;
@@ -97,57 +105,15 @@ type EpicenterCustomSessionPlugin = ReturnType<
 >;
 
 /**
- * Create a framework-agnostic auth client.
- *
- * Owns the Better Auth transport, response-header token rotation, storage
- * persistence, and identity subscription fan-out. The getter only reads the
- * in-memory identity created from the caller-provided initial session.
+ * Create an auth client for runtimes that must carry their own bearer token.
  */
-export function createAuth({
+export function createBearerAuth({
 	baseURL,
 	initialSession,
 	saveSession,
-}: CreateAuthConfig): AuthClient {
+}: CreateBearerAuthConfig): AuthClient {
 	let session: BearerSession | null = initialSession;
-	let identity: AuthIdentity | null = identityFromSession(initialSession);
-	let hasDisposed = false;
-	const { promise: whenReady, resolve: resolveReady } =
-		Promise.withResolvers<void>();
-
-	const changeListeners = new Set<AuthChangeListener>();
-
-	function identityFromSession(
-		value: BearerSession | null,
-	): AuthIdentity | null {
-		if (value === null) return null;
-		return {
-			user: value.user,
-			encryptionKeys: value.encryptionKeys,
-		};
-	}
-
-	function identitiesEqual(
-		left: AuthIdentity | null,
-		right: AuthIdentity | null,
-	) {
-		if (left === null || right === null) return left === right;
-		return (
-			usersEqual(left.user, right.user) &&
-			encryptionKeysEqual(left.encryptionKeys, right.encryptionKeys)
-		);
-	}
-
-	function setIdentity(next: AuthIdentity | null) {
-		if (identitiesEqual(identity, next)) return;
-		identity = next;
-		for (const listener of changeListeners) {
-			try {
-				listener(next);
-			} catch (error) {
-				console.error('[auth] subscriber threw:', error);
-			}
-		}
-	}
+	let setCoreIdentity: (next: AuthIdentity | null) => boolean = () => false;
 
 	function saveBearerSession(next: BearerSession | null) {
 		void Promise.resolve(saveSession(next)).catch((error) => {
@@ -155,33 +121,18 @@ export function createAuth({
 		});
 	}
 
-	function writeLocalSession(next: BearerSession | null) {
+	function writeLocalSession(
+		next: BearerSession | null,
+		setIdentity: (next: AuthIdentity | null) => boolean,
+	) {
 		session = next;
 		setIdentity(identityFromSession(next));
 		saveBearerSession(next);
 	}
 
-	function websocketProtocolsWithBearer(
-		token: string,
-		protocols?: string | string[],
-	): string[] {
-		const offered =
-			protocols === undefined
-				? [MAIN_SUBPROTOCOL]
-				: Array.isArray(protocols)
-					? [...protocols]
-					: [protocols];
-		if (!offered.includes(MAIN_SUBPROTOCOL)) {
-			offered.unshift(MAIN_SUBPROTOCOL);
-		}
-		offered.push(`${BEARER_SUBPROTOCOL_PREFIX}${token}`);
-		return offered;
-	}
-
-	const client = createAuthClient({
+	const auth = createAuthCore({
 		baseURL,
-		basePath: '/auth',
-		plugins: [InferPlugin<EpicenterCustomSessionPlugin>()],
+		initialIdentity: identityFromSession(initialSession),
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
@@ -190,34 +141,165 @@ export function createAuth({
 			onSuccess: (context) => {
 				const newToken = context.response.headers.get('set-auth-token');
 				if (newToken && session !== null && newToken !== session.token) {
-					writeLocalSession({ ...session, token: newToken });
+					writeLocalSession({ ...session, token: newToken }, setCoreIdentity);
 				}
 			},
 		},
+		handleBetterAuthSession(data, setIdentity) {
+			let next: BearerSession | null;
+			try {
+				next = bearerSessionFromBetterAuthSessionResponse(data);
+			} catch (error) {
+				console.error('[auth] invalid Better Auth session response:', error);
+				return;
+			}
+			if (next === null) {
+				if (session !== null) writeLocalSession(null, setIdentity);
+				return;
+			}
+			writeLocalSession(
+				{
+					token: session?.token ?? next.token,
+					user: next.user,
+					encryptionKeys: next.encryptionKeys,
+				},
+				setIdentity,
+			);
+		},
+		clearCredential(setIdentity) {
+			writeLocalSession(null, setIdentity);
+		},
+		fetch(input, init) {
+			const headers = headersFromRequest(input, init);
+			if (session !== null) {
+				headers.set('Authorization', `Bearer ${session.token}`);
+			} else {
+				headers.delete('Authorization');
+			}
+			return fetch(input, { ...init, headers, credentials: 'omit' });
+		},
+		openWebSocket(url, protocols) {
+			if (session === null) return null;
+			return new WebSocket(
+				url,
+				websocketProtocolsWithBearer(session.token, protocols),
+			);
+		},
 	});
+	setCoreIdentity = auth.setIdentity;
 
-	const unsubscribeBetterAuth = client.useSession.subscribe((state) => {
-		if (state.isPending) return;
-		resolveReady();
-		let next: BearerSession | null;
-		try {
-			next = bearerSessionFromBetterAuthSessionResponse(state.data);
-		} catch (error) {
-			console.error('[auth] invalid Better Auth session response:', error);
-			return;
-		}
-		if (next === null) {
-			if (session !== null) writeLocalSession(null);
-			return;
-		}
-		writeLocalSession({
-			token: session?.token ?? next.token,
-			user: next.user,
-			encryptionKeys: next.encryptionKeys,
+	return auth.client;
+}
+
+/**
+ * Create an auth client for browser apps that use the first-party cookie jar.
+ */
+export function createBrowserAuth({
+	baseURL,
+	initialIdentity = null,
+	saveIdentity,
+}: CreateBrowserAuthConfig): AuthClient {
+	function saveBrowserIdentity(next: AuthIdentity | null) {
+		void Promise.resolve(saveIdentity?.(next)).catch((error) => {
+			console.error('[auth] failed to save identity:', error);
 		});
+	}
+
+	const auth = createAuthCore({
+		baseURL,
+		initialIdentity,
+		handleBetterAuthSession(data, setIdentity) {
+			let next: BearerSession | null;
+			try {
+				next = bearerSessionFromBetterAuthSessionResponse(data);
+			} catch (error) {
+				console.error('[auth] invalid Better Auth session response:', error);
+				return;
+			}
+			const nextIdentity = identityFromSession(next);
+			if (setIdentity(nextIdentity)) saveBrowserIdentity(nextIdentity);
+		},
+		clearCredential(setIdentity) {
+			if (setIdentity(null)) saveBrowserIdentity(null);
+		},
+		fetch(input, init) {
+			const headers = headersFromRequest(input, init);
+			headers.delete('Authorization');
+			return fetch(input, { ...init, headers, credentials: 'include' });
+		},
+		openWebSocket(url, protocols, identity) {
+			if (identity() === null) return null;
+			return new WebSocket(url, protocols);
+		},
 	});
 
-	return {
+	return auth.client;
+}
+
+type AuthCoreConfig = {
+	baseURL?: string;
+	initialIdentity: AuthIdentity | null;
+	fetchOptions?: NonNullable<
+		Parameters<typeof createAuthClient>[0]
+	>['fetchOptions'];
+	handleBetterAuthSession(
+		data: unknown,
+		setIdentity: (next: AuthIdentity | null) => boolean,
+	): void;
+	clearCredential(setIdentity: (next: AuthIdentity | null) => boolean): void;
+	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
+	openWebSocket(
+		url: string | URL,
+		protocols: string | string[] | undefined,
+		identity: () => AuthIdentity | null,
+	): WebSocket | null;
+};
+
+function createAuthCore({
+	baseURL = EPICENTER_API_URL,
+	initialIdentity,
+	fetchOptions,
+	handleBetterAuthSession,
+	clearCredential,
+	fetch,
+	openWebSocket,
+}: AuthCoreConfig) {
+	let identity: AuthIdentity | null = initialIdentity;
+	let hasDisposed = false;
+	const { promise: whenReady, resolve: resolveReady } =
+		Promise.withResolvers<void>();
+
+	const changeListeners = new Set<AuthChangeListener>();
+
+	function setIdentity(next: AuthIdentity | null) {
+		if (identitiesEqual(identity, next)) return false;
+		identity = next;
+		for (const listener of changeListeners) {
+			try {
+				listener(next);
+			} catch (error) {
+				console.error('[auth] subscriber threw:', error);
+			}
+		}
+		return true;
+	}
+
+	const betterAuthClient = createAuthClient({
+		baseURL,
+		basePath: '/auth',
+		plugins: [InferPlugin<EpicenterCustomSessionPlugin>()],
+		fetchOptions,
+	});
+
+	const unsubscribeBetterAuth = betterAuthClient.useSession.subscribe(
+		(state) => {
+			if (state.isPending) return;
+			resolveReady();
+			handleBetterAuthSession(state.data, setIdentity);
+		},
+	);
+
+	const client: AuthClient = {
 		get identity() {
 			return identity;
 		},
@@ -228,10 +310,9 @@ export function createAuth({
 				changeListeners.delete(fn);
 			};
 		},
-
 		async signIn(input) {
 			try {
-				const { error } = await client.signIn.email(input);
+				const { error } = await betterAuthClient.signIn.email(input);
 				if (!error) return Ok(undefined);
 				if (error.status === 401 || error.status === 403)
 					return AuthError.InvalidCredentials();
@@ -243,7 +324,7 @@ export function createAuth({
 
 		async signUp(input) {
 			try {
-				const { error } = await client.signUp.email(input);
+				const { error } = await betterAuthClient.signUp.email(input);
 				if (error) return AuthError.SignUpFailed({ cause: error });
 				return Ok(undefined);
 			} catch (error) {
@@ -253,7 +334,7 @@ export function createAuth({
 
 		async signInWithIdToken({ provider, idToken, nonce }) {
 			try {
-				const { error } = await client.signIn.social({
+				const { error } = await betterAuthClient.signIn.social({
 					provider,
 					idToken: { token: idToken, nonce },
 				});
@@ -266,7 +347,7 @@ export function createAuth({
 
 		async signInWithSocialRedirect({ provider, callbackURL }) {
 			try {
-				await client.signIn.social({ provider, callbackURL });
+				await betterAuthClient.signIn.social({ provider, callbackURL });
 				return Ok(undefined);
 			} catch (error) {
 				return AuthError.SocialSignInFailed({ cause: error });
@@ -275,29 +356,18 @@ export function createAuth({
 
 		async signOut() {
 			try {
-				const { error } = await client.signOut();
+				const { error } = await betterAuthClient.signOut();
 				if (error) return AuthError.SignOutFailed({ cause: error });
-				writeLocalSession(null);
+				clearCredential(setIdentity);
 				return Ok(undefined);
 			} catch (error) {
 				return AuthError.SignOutFailed({ cause: error });
 			}
 		},
 
-		fetch(input, init) {
-			const headers = new Headers(init?.headers);
-			if (session !== null) {
-				headers.set('Authorization', `Bearer ${session.token}`);
-			}
-			return fetch(input, { ...init, headers, credentials: 'include' });
-		},
-
+		fetch,
 		openWebSocket(url, protocols) {
-			if (session === null) return null;
-			return new WebSocket(
-				url,
-				websocketProtocolsWithBearer(session.token, protocols),
-			);
+			return openWebSocket(url, protocols, () => identity);
 		},
 
 		[Symbol.dispose]() {
@@ -307,6 +377,57 @@ export function createAuth({
 			changeListeners.clear();
 		},
 	};
+
+	return {
+		client,
+		setIdentity,
+	};
+}
+
+function identityFromSession(value: BearerSession | null): AuthIdentity | null {
+	if (value === null) return null;
+	return {
+		user: value.user,
+		encryptionKeys: value.encryptionKeys,
+	};
+}
+
+function identitiesEqual(
+	left: AuthIdentity | null,
+	right: AuthIdentity | null,
+) {
+	if (left === null || right === null) return left === right;
+	return (
+		usersEqual(left.user, right.user) &&
+		encryptionKeysEqual(left.encryptionKeys, right.encryptionKeys)
+	);
+}
+
+function headersFromRequest(input: Request | string | URL, init?: RequestInit) {
+	const headers = new Headers(
+		input instanceof Request ? input.headers : undefined,
+	);
+	for (const [key, value] of new Headers(init?.headers)) {
+		headers.set(key, value);
+	}
+	return headers;
+}
+
+function websocketProtocolsWithBearer(
+	token: string,
+	protocols?: string | string[],
+): string[] {
+	const offered =
+		protocols === undefined
+			? [MAIN_SUBPROTOCOL]
+			: Array.isArray(protocols)
+				? [...protocols]
+				: [protocols];
+	if (!offered.includes(MAIN_SUBPROTOCOL)) {
+		offered.unshift(MAIN_SUBPROTOCOL);
+	}
+	offered.push(`${BEARER_SUBPROTOCOL_PREFIX}${token}`);
+	return offered;
 }
 
 function usersEqual(left: AuthUser, right: AuthUser) {

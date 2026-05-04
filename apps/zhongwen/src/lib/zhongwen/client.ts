@@ -1,15 +1,12 @@
-import { createAuth } from '@epicenter/auth-svelte';
+import { createBrowserAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { toast } from '@epicenter/ui/sonner';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { session } from '$lib/auth';
 import { openZhongwen } from './browser';
 
-export const auth = createAuth({
+export const auth = createBrowserAuth({
 	baseURL: APP_URLS.API,
-	initialSession: session.get(),
-	saveSession: (next) => session.set(next),
 });
 
 export const zhongwen = openZhongwen();

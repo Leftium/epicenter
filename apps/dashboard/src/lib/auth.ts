@@ -1,16 +1,7 @@
-import { BearerSession, createAuth } from '@epicenter/auth-svelte';
-import { createPersistedState } from '@epicenter/svelte';
+import { createBrowserAuth } from '@epicenter/auth-svelte';
 
-const session = createPersistedState({
-	key: 'dashboard:authSession',
-	schema: BearerSession.or('null'),
-	defaultValue: null,
-});
-
-export const auth = createAuth({
+export const auth = createBrowserAuth({
 	baseURL: window.location.origin,
-	initialSession: session.get(),
-	saveSession: (next) => session.set(next),
 });
 
 if (import.meta.hot) {

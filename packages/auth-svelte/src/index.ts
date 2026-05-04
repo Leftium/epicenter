@@ -5,4 +5,8 @@ export {
 	AuthUser,
 	BearerSession,
 } from '@epicenter/auth';
-export { type AuthClient, createAuth } from './create-auth.svelte.ts';
+export {
+	type AuthClient,
+	createBearerAuth,
+	createBrowserAuth,
+} from './create-auth.svelte.ts';

@@ -20,6 +20,10 @@ type BetterAuthSessionState = {
 
 type BetterAuthClientOptions = {
 	fetchOptions?: {
+		auth?: {
+			type: 'Bearer';
+			token: () => string | undefined;
+		};
 		onSuccess?: (context: { response: Response }) => void;
 	};
 };
@@ -34,6 +38,10 @@ let currentBetterAuthState: BetterAuthSessionState = {
 let betterAuthClientOptions: BetterAuthClientOptions | null = null;
 let signInResponseHeaders: Record<string, string> | undefined;
 let capturedWebSockets: FakeWebSocket[] = [];
+let capturedFetches: Array<{
+	input: Request | string | URL;
+	init: RequestInit | undefined;
+}> = [];
 
 mock.module('better-auth/client', () => ({
 	createAuthClient(options: BetterAuthClientOptions) {
@@ -73,7 +81,9 @@ mock.module('better-auth/client', () => ({
 	InferPlugin: () => ({}),
 }));
 
-const { createAuth } = await import('./create-auth.ts');
+const { createBearerAuth, createBrowserAuth } = await import(
+	'./create-auth.ts'
+);
 
 const originalFetch = globalThis.fetch;
 const originalWebSocket = globalThis.WebSocket;
@@ -105,6 +115,7 @@ beforeEach(() => {
 	betterAuthClientOptions = null;
 	signInResponseHeaders = undefined;
 	capturedWebSockets = [];
+	capturedFetches = [];
 });
 
 afterEach(() => {
@@ -190,11 +201,24 @@ function createStorage({
 }
 
 function createTestAuth(setup: ReturnType<typeof createStorage>) {
-	return createAuth({
+	return createBearerAuth({
 		baseURL: 'http://localhost:8787',
 		initialSession: setup.initialSession,
 		saveSession: setup.storage.save,
 	});
+}
+
+function captureFetch() {
+	globalThis.fetch = (async (
+		input: Request | string | URL,
+		init?: RequestInit,
+	) => {
+		capturedFetches.push({ input, init });
+		return new Response(JSON.stringify(null), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		});
+	}) as unknown as typeof fetch;
 }
 
 function emitBetterSession(data: unknown) {
@@ -280,6 +304,63 @@ test('openWebSocket returns null signed out and adds bearer subprotocol signed i
 	expect(capturedWebSockets[0]).toMatchObject({
 		url: 'ws://localhost/sync',
 		protocols: ['epicenter', 'bearer.token-2'],
+	});
+	auth[Symbol.dispose]();
+});
+
+test('bearer fetch sends Authorization and omits cookies', async () => {
+	captureFetch();
+	emitBetterSession(betterAuthSessionData(session()));
+	const setup = createStorage({ load: () => session() });
+	const auth = createTestAuth(setup);
+
+	await auth.fetch('http://localhost/api');
+
+	const init = capturedFetches[0]?.init;
+	expect(init?.credentials).toBe('omit');
+	expect(new Headers(init?.headers).get('Authorization')).toBe(
+		'Bearer token-1',
+	);
+	auth[Symbol.dispose]();
+});
+
+test('browser fetch uses cookies and strips Authorization', async () => {
+	captureFetch();
+	currentBetterAuthState = { isPending: true, data: null };
+	const saved: Array<AuthIdentity | null> = [];
+	const auth = createBrowserAuth({
+		baseURL: 'http://localhost:8787',
+		initialIdentity: identityFromSession(session()),
+		saveIdentity: (next) => {
+			saved.push(next);
+		},
+	});
+
+	await auth.fetch('http://localhost/api', {
+		headers: { Authorization: 'Bearer should-not-send' },
+		credentials: 'omit',
+	});
+
+	const init = capturedFetches[0]?.init;
+	expect(init?.credentials).toBe('include');
+	expect(new Headers(init?.headers).has('Authorization')).toBe(false);
+	expect(saved).toEqual([]);
+	auth[Symbol.dispose]();
+});
+
+test('browser openWebSocket returns plain protocols when identity exists', async () => {
+	currentBetterAuthState = { isPending: true, data: null };
+	const auth = createBrowserAuth({
+		baseURL: 'http://localhost:8787',
+		initialIdentity: identityFromSession(session()),
+	});
+
+	const ws = auth.openWebSocket('ws://localhost/sync', ['epicenter']);
+
+	expect(ws).toBe(capturedWebSockets[0] as unknown as WebSocket);
+	expect(capturedWebSockets[0]).toMatchObject({
+		url: 'ws://localhost/sync',
+		protocols: ['epicenter'],
 	});
 	auth[Symbol.dispose]();
 });

@@ -1,4 +1,4 @@
-import { createAuth } from '@epicenter/auth-svelte';
+import { createBearerAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { toast } from '@epicenter/ui/sonner';
@@ -12,7 +12,7 @@ import { openTabManager } from './extension';
 
 await session.whenReady;
 
-export const auth = createAuth({
+export const auth = createBearerAuth({
 	baseURL: APP_URLS.API,
 	initialSession: session.get(),
 	saveSession: (next) => session.set(next),
@@ -47,8 +47,8 @@ export const tabManager = await openTabManager({ auth, peer });
  *
  * Upserts the device row. Preserves existing name if present, otherwise
  * uses the resolved default. Awaits idb hydration before writing.
- * Idempotent: fires on every applied session (login + token rotation),
- * so `lastSeen` stays current.
+ * Idempotent: fires on every applied identity, so `lastSeen` refreshes when
+ * auth changes reconnect the workspace.
  */
 async function registerDevice(): Promise<void> {
 	await tabManager.whenLoaded;

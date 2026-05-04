@@ -10,7 +10,7 @@ import {
 	BearerSession,
 	type BearerSession as BearerSessionType,
 } from '../auth-types.js';
-import { type AuthClient, createAuth } from '../create-auth.js';
+import { type AuthClient, createBearerAuth } from '../create-auth.js';
 import {
 	createMachineAuthTransport,
 	type MachineAuthTransport,
@@ -273,7 +273,7 @@ export async function createMachineAuthClient(): Promise<AuthClient> {
 	const storage = createKeychainMachineAuthStorage();
 	const { data: initialSession, error } = await storage.load();
 	if (error) throw error;
-	return createAuth({
+	return createBearerAuth({
 		baseURL: EPICENTER_API_URL,
 		initialSession,
 		saveSession: async (next) => {

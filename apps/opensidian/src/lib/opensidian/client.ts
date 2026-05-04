@@ -1,4 +1,4 @@
-import { BearerSession, createAuth } from '@epicenter/auth-svelte';
+import { BearerSession, createBearerAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
@@ -14,7 +14,7 @@ const session = createPersistedState({
 	defaultValue: null,
 });
 
-export const auth = createAuth({
+export const auth = createBearerAuth({
 	baseURL: APP_URLS.API,
 	initialSession: session.get(),
 	saveSession: (next) => session.set(next),

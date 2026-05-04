@@ -5,7 +5,7 @@
  * Google credentials helper. The `auth` instance itself lives in
  * `./tab-manager/client` alongside the workspace.
  *
- * @see {@link ./tab-manager/client} auth, workspace, and snapshot wiring
+ * @see {@link ./tab-manager/client} auth, workspace, and identity wiring
  * @see {@link ./state/storage-state.svelte} chrome.storage reactive wrapper
  */
 
@@ -16,8 +16,7 @@ const GOOGLE_CLIENT_ID =
 	'702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 
 /**
- * Persisted auth snapshot in `chrome.storage.local`. Structurally satisfies
- * the session state adapter shape. Auth wraps it with `createSessionStorageAdapter`.
+ * Persisted bearer session in `chrome.storage.local`.
  */
 export const session = createStorageState('local:authSession', {
 	fallback: null,

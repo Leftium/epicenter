@@ -382,14 +382,16 @@ This wave removes the legacy state shape and renames the listener API. `attachSy
 
 ### Wave 3: Two factories and client migration
 
-- [ ] **3.1** Rename `createAuth` → `createBearerAuth`. Contract is `{ baseURL?, initialSession: BearerSession | null, saveSession: (next) => MaybePromise<void> }`. Internals: `auth: { type: 'Bearer' }` config on Better Auth client; `fetch` uses `credentials: 'omit'` and sets `Authorization` from the in-memory token; `openWebSocket` adds `bearer.<token>` to subprotocols; `onSuccess` hook reads `set-auth-token` and writes through.
-- [ ] **3.2** Add `createBrowserAuth({ baseURL?, initialIdentity?, saveIdentity? })`. Internals: no `auth: { type: 'Bearer' }` on the underlying Better Auth client; `fetch` uses `credentials: 'include'`, never sets `Authorization`; `openWebSocket` returns plain `new WebSocket(url, protocols)` when `identity` is non-null and `null` otherwise. If `initialIdentity` is provided, `auth.identity` returns that value until `useSession` first fires. `saveIdentity` is called on identity changes.
-- [ ] **3.3** Migrate `apps/{dashboard,fuji,honeycrisp,zhongwen}` to `createBrowserAuth`. Optional offline UX: hydrate `initialIdentity` from `localStorage` and wire `saveIdentity` to write back. Sign-in still uses `signInWithSocialRedirect` (GIS migration is Wave 7).
-- [ ] **3.4** Migrate `apps/opensidian` to `createBearerAuth({ initialSession, saveSession })` with a `localStorage` adapter (validate the read with the exported `BearerSession` schema; treat parse failure as `null`). Document the reverse-proxy upgrade path in the app's README.
-- [ ] **3.5** Migrate `apps/tab-manager` to `createBearerAuth({ initialSession, saveSession })` with a `chrome.storage.local` adapter. Caller awaits the storage read before construction; pre-existing pattern.
-- [ ] **3.6** Migrate `apps/*/daemon.ts` to `createBearerAuth`. `packages/cli` likewise. Caller awaits OS keychain read first.
+- [x] **3.1** Rename `createAuth` → `createBearerAuth`. Contract is `{ baseURL?, initialSession: BearerSession | null, saveSession: (next) => MaybePromise<void> }`. Internals: `auth: { type: 'Bearer' }` config on Better Auth client; `fetch` uses `credentials: 'omit'` and sets `Authorization` from the in-memory token; `openWebSocket` adds `bearer.<token>` to subprotocols; `onSuccess` hook reads `set-auth-token` and writes through.
+- [x] **3.2** Add `createBrowserAuth({ baseURL?, initialIdentity?, saveIdentity? })`. Internals: no `auth: { type: 'Bearer' }` on the underlying Better Auth client; `fetch` uses `credentials: 'include'`, never sets `Authorization`; `openWebSocket` returns plain `new WebSocket(url, protocols)` when `identity` is non-null and `null` otherwise. If `initialIdentity` is provided, `auth.identity` returns that value until `useSession` first fires. `saveIdentity` is called on identity changes.
+- [x] **3.3** Migrate `apps/{dashboard,fuji,honeycrisp,zhongwen}` to `createBrowserAuth`. Optional offline UX: hydrate `initialIdentity` from `localStorage` and wire `saveIdentity` to write back. Sign-in still uses `signInWithSocialRedirect` (GIS migration is Wave 7).
+- [x] **3.4** Migrate `apps/opensidian` to `createBearerAuth({ initialSession, saveSession })` with a `localStorage` adapter (validate the read with the exported `BearerSession` schema; treat parse failure as `null`). Document the reverse-proxy upgrade path in the app's README.
+- [x] **3.5** Migrate `apps/tab-manager` to `createBearerAuth({ initialSession, saveSession })` with a `chrome.storage.local` adapter. Caller awaits the storage read before construction; pre-existing pattern.
+- [x] **3.6** Migrate `apps/*/daemon.ts` to `createBearerAuth`. `packages/cli` likewise. Caller awaits OS keychain read first.
 
 After Wave 3, no client double-sends credentials. The server still tolerates mixed (because `authGuard` hasn't tightened yet); browsers and bearer clients each send exactly one. This is the safe ordering.
+
+> **Wave 3 note**: Browser-cookie apps now call `createBrowserAuth` without bearer session persistence. Opensidian and tab-manager still validate and persist `BearerSession` through their existing storage adapters. `createMachineAuthClient` now builds daemons and CLI clients through `createBearerAuth`. Auth package verification passes; app typechecks still fail on pre-existing shared UI, result-shape, and app-local errors unrelated to this wave.
 
 ### Wave 4: Server credential normalization
 

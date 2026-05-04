@@ -126,7 +126,6 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { MaybePromise } from './shared/types';
-export type { BrowserWorkspace, Workspace } from './shared/workspace.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES

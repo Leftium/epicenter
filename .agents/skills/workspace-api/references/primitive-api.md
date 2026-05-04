@@ -55,8 +55,8 @@ Each helper takes a `Y.Doc` and registers cleanup on `ydoc.on('destroy')`. Each 
 
 | Helper | Returns |
 |---|---|
-| `attachIndexedDb(ydoc)` | `{ whenLoaded, clearLocal, disposed }` |
-| `attachSync(ydoc, { url, getToken?, waitFor?, awareness? })` | `{ whenConnected, status, onStatusChange, reconnect, disposed }` |
+| `attachIndexedDb(ydoc)` | `{ whenLoaded, clearLocal, [Symbol.asyncDispose] }` |
+| `attachSync(ydoc, { url, getToken?, waitFor?, awareness? })` | `{ whenConnected, status, onStatusChange, reconnect, [Symbol.asyncDispose] }` |
 | `attachRichText(ydoc)` | `RichTextAttachment`: `{ read, write, binding: Y.XmlFragment }` |
 | `attachPlainText(ydoc)` | `PlainTextAttachment`: `{ read, write, binding: Y.Text }` |
 | `attachTable(ydoc, name, def)` | Typed row helper over `Y.Map` |
@@ -74,25 +74,25 @@ For workspaces that need at-rest encryption, the coordinator owns the sibling at
 | Helper | Purpose |
 |---|---|
 | `attachEncryption(ydoc)` | Per-ydoc encryption coordinator. Returns `{ applyKeys, attachTable, attachTables, attachKv }`. Teardown is synchronous and cascades from `ydoc.destroy()`. |
-| `encryption.attachTable(ydoc, name, def)` | Singular encrypted table; self-registers with the coordinator. |
-| `encryption.attachTables(ydoc, defs)` | Batch sugar over `encryption.attachTable`. |
-| `encryption.attachKv(ydoc, defs)` | Encrypted KV singleton. |
+| `encryption.attachTable(name, def)` | Singular encrypted table; self-registers with the coordinator. |
+| `encryption.attachTables(defs)` | Batch sugar over `encryption.attachTable`. |
+| `encryption.attachKv(defs)` | Encrypted KV singleton. |
 
 Standard composition:
 
 ```ts
 const ydoc       = new Y.Doc({ guid: id, gc: false });
 const encryption = attachEncryption(ydoc);
-const tables     = encryption.attachTables(ydoc, myTables);
-const kv         = encryption.attachKv(ydoc, myKv);
+const tables     = encryption.attachTables(myTables);
+const kv         = encryption.attachKv(myKv);
 
 // Later, after login:
 encryption.applyKeys(session.encryptionKeys);
 ```
 
-Encryption is opt-in per slot; the coordinator carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted `encryption.attachTable(ydoc, name, def)` (method) are both available; pick one per slot.
+Encryption is opt-in per slot; the coordinator carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted `encryption.attachTable(name, def)` (method) are both available; pick one per slot.
 
-> **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `encryption.attachTable(ydoc, 'posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns, a silent data-at-rest leak. The framework does not catch this; the grep-able call-site shape (`encryption.attach*` vs top-level `attach*`) is the defense. One slot name, one variant, one intent.
+> **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `encryption.attachTable('posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns, a silent data-at-rest leak. The framework does not catch this; the grep-able call-site shape (`encryption.attach*` vs top-level `attach*`) is the defense. One slot name, one variant, one intent.
 
 IDB / broadcast / sync / sqlite transitively see already-encrypted bytes after `applyKeys` runs. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
 

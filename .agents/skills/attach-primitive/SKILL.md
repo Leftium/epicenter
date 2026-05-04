@@ -81,8 +81,8 @@ When one attachment registers additional sibling attachments into itself, it own
 
 ```ts
 const encryption = attachEncryption(ydoc);
-const tables = encryption.attachTables(ydoc, defs);      // method on coordinator
-const kv = encryption.attachKv(ydoc, defs);
+const tables = encryption.attachTables(defs);      // method on coordinator
+const kv = encryption.attachKv(defs);
 ```
 
 vs. the top-level form that would read:
@@ -118,7 +118,7 @@ Primitives compose inside a build closure:
 const cache = createDisposableCache((id: string) => {
   const ydoc       = new Y.Doc({ guid: id, gc: false });
   const encryption = attachEncryption(ydoc);
-  const tables     = encryption.attachTables(ydoc, schema);     // coordinator method
+  const tables     = encryption.attachTables(schema);     // coordinator method
   const idb        = attachIndexedDb(ydoc);
   const unlock     = attachSessionUnlock(encryption, {          // non-ydoc subject
     sessions, serverUrl, waitFor: idb.whenLoaded,
@@ -133,7 +133,7 @@ const cache = createDisposableCache((id: string) => {
 
   return {
     ydoc, tables, encryption, idb, sync, markdown,
-    whenReady: Promise.all([idb.whenLoaded, unlock.whenChecked, sync.whenConnected]).then(() => {}),
+    whenReady: Promise.all([idb.whenLoaded, unlock.whenChecked, sync.whenConnected]),
     async wipe() {
       ydoc.destroy();
       await sync[Symbol.asyncDispose]();
@@ -166,7 +166,7 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - **Don't duck-type an attachment.** If you need to brand it, use a `Symbol.for` marker. See `skills/typescript` — runtime shape-checking is a code smell.
 - **Don't take an `id` on a ydoc-bound primitive.** Use `ydoc.guid`.
 - **Don't use `createX` for a side-effectful primitive.** If it registers listeners, it's `attach*`.
-- **Don't introduce `attachEncryptedX(ydoc, encryption, ...)` top-level exports.** Use `encryption.attachX(ydoc, ...)` — the coordinator owns its siblings.
+- **Don't introduce `attachEncryptedX(ydoc, encryption, ...)` top-level exports.** Use `encryption.attachX(...)`: the coordinator owns its siblings.
 
 ## Reference implementations
 

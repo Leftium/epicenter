@@ -14,8 +14,8 @@
  *
  * ```ts
  * const encryption = attachEncryption(ydoc);
- * const tables = encryption.attachTables(ydoc, defs);
- * const kv = encryption.attachKv(ydoc, defs);
+ * const tables = encryption.attachTables(defs);
+ * const kv = encryption.attachKv(defs);
  * ```
  *
  * The method names deliberately mirror the plaintext primitives
@@ -127,14 +127,13 @@ export type EncryptionAttachment = {
 	applyKeys(keys: EncryptionKeys): void;
 
 	/**
-	 * Attach an encrypted table: mirror of the plaintext `attachTable(ydoc,
-	 * name, def)` but with the store registered for encryption coordination.
+	 * Attach an encrypted table to the coordinator's Y.Doc, with the store
+	 * registered for encryption coordination.
 	 */
 	attachTable<
 		// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
 		TTableDefinition extends TableDefinition<any>,
 	>(
-		ydoc: Y.Doc,
 		name: string,
 		definition: TTableDefinition,
 	): Table<InferTableRow<TTableDefinition>>;
@@ -143,31 +142,24 @@ export type EncryptionAttachment = {
 		// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
 		TTableDefinition extends TableDefinition<any>,
 	>(
-		ydoc: Y.Doc,
 		name: string,
 		definition: TTableDefinition,
 	): ReadonlyTable<InferTableRow<TTableDefinition>>;
 
 	/**
 	 * Batch sugar over `attachTable`: one encrypted store per entry, keyed by
-	 * name. Mirror of the plaintext `attachTables(ydoc, defs)`.
+	 * name.
 	 */
-	attachTables<T extends TableDefinitions>(
-		ydoc: Y.Doc,
-		definitions: T,
-	): Tables<T>;
+	attachTables<T extends TableDefinitions>(definitions: T): Tables<T>;
 
 	attachReadonlyTables<T extends TableDefinitions>(
-		ydoc: Y.Doc,
 		definitions: T,
 	): ReadonlyTables<T>;
 
 	/**
-	 * Attach the encrypted KV singleton. Mirror of the plaintext
-	 * `attachKv(ydoc, defs)`.
+	 * Attach the encrypted KV singleton to the coordinator's Y.Doc.
 	 */
-	attachKv<T extends KvDefinitions>(ydoc: Y.Doc, definitions: T): Kv<T>;
-
+	attachKv<T extends KvDefinitions>(definitions: T): Kv<T>;
 };
 
 /**
@@ -209,33 +201,33 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 			cachedKeyring = keyring;
 			for (const store of stores) store.activateEncryption(keyring);
 		},
-		attachTable(ydoc, name, definition) {
+		attachTable(name, definition) {
 			const store = createEncryptedYkvLww(ydoc, TableKey(name));
 			register(store);
 			return createTable(store, definition, name);
 		},
-		attachReadonlyTable(ydoc, name, definition) {
+		attachReadonlyTable(name, definition) {
 			const store = createEncryptedYkvLww(ydoc, TableKey(name));
 			register(store);
 			return createReadonlyTable(store, definition, name);
 		},
-		attachTables(ydoc, definitions) {
+		attachTables(definitions) {
 			return Object.fromEntries(
 				Object.entries(definitions).map(([name, def]) => [
 					name,
-					attachment.attachTable(ydoc, name, def),
+					attachment.attachTable(name, def),
 				]),
 			) as Tables<typeof definitions>;
 		},
-		attachReadonlyTables(ydoc, definitions) {
+		attachReadonlyTables(definitions) {
 			return Object.fromEntries(
 				Object.entries(definitions).map(([name, def]) => [
 					name,
-					attachment.attachReadonlyTable(ydoc, name, def),
+					attachment.attachReadonlyTable(name, def),
 				]),
 			) as ReadonlyTables<typeof definitions>;
 		},
-		attachKv(ydoc, definitions) {
+		attachKv(definitions) {
 			const store = createEncryptedYkvLww(ydoc, KV_KEY);
 			register(store);
 			return createKv(store, definitions);

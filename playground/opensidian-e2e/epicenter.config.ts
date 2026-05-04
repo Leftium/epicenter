@@ -62,8 +62,8 @@ const machineAuth = createMachineAuth();
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 const encryption = attachEncryption(ydoc);
-const tables = encryption.attachTables(ydoc, opensidianTables);
-const kv = encryption.attachKv(ydoc, {});
+const tables = encryption.attachTables(opensidianTables);
+const kv = encryption.attachKv({});
 
 const persistence = attachSqlite(ydoc, {
 	filePath: epicenterPaths.persistence(WORKSPACE_ID),

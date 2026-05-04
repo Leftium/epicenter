@@ -34,8 +34,8 @@ const encryptedRowDefinition = defineTable(
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'enc-test', gc: false });
 	const encryption = attachEncryption(ydoc);
-	const tableA = encryption.attachTable(ydoc, 'a', encryptedRowDefinition);
-	const tableB = encryption.attachTable(ydoc, 'b', encryptedRowDefinition);
+	const tableA = encryption.attachTable('a', encryptedRowDefinition);
+	const tableB = encryption.attachTable('b', encryptedRowDefinition);
 	return { ydoc, tableA, tableB, encryption };
 }
 
@@ -120,7 +120,7 @@ describe('attachEncryption', () => {
 
 		// Attach after applyKeys: the store must receive the cached keyring so
 		// subsequent writes are encrypted from the start.
-		const lateTable = encryption.attachTable(ydoc, 'late', encryptedRowDefinition);
+		const lateTable = encryption.attachTable('late', encryptedRowDefinition);
 
 		lateTable.set({ id: '1', title: 'Written after late register', _v: 1 });
 		expect(lateTable.get('1').data).toEqual({
@@ -136,8 +136,8 @@ describe('attachEncryption', () => {
 		const definition = defineTable(
 			type({ id: 'string', title: 'string', _v: '1' }),
 		);
-		const writer = encryption.attachTable(ydoc, 'entries', definition);
-		const reader = encryption.attachReadonlyTable(ydoc, 'entries', definition);
+		const writer = encryption.attachTable('entries', definition);
+		const reader = encryption.attachReadonlyTable('entries', definition);
 
 		encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
 		writer.set({ id: '1', title: 'Secret row', _v: 1 });
@@ -161,8 +161,8 @@ describe('attachEncryption', () => {
 		const definition = defineTable(
 			type({ id: 'string', title: 'string', _v: '1' }),
 		);
-		const writers = encryption.attachTables(ydoc, { entries: definition });
-		const readers = encryption.attachReadonlyTables(ydoc, {
+		const writers = encryption.attachTables({ entries: definition });
+		const readers = encryption.attachReadonlyTables({
 			entries: definition,
 		});
 
@@ -191,7 +191,9 @@ describe('attachEncryption', () => {
 			tableA.set({ id: '1', title: 'Written with v1', _v: 1 });
 
 			// Sanity: the at-rest blob is a v1 ciphertext.
-			const yarray = ydoc.getArray<{ key: string; val: unknown }>(TableKey('a'));
+			const yarray = ydoc.getArray<{ key: string; val: unknown }>(
+				TableKey('a'),
+			);
 			const beforeEntry = yarray.toArray().find((entry) => entry.key === '1');
 			expect(beforeEntry).toBeDefined();
 			expect(isEncryptedBlob(beforeEntry?.val)).toBe(true);
@@ -222,9 +224,7 @@ describe('attachEncryption', () => {
 				title: 'Written with v2',
 				_v: 1,
 			});
-			const newEntry = yarray
-				.toArray()
-				.find((entry) => entry.key === 'new');
+			const newEntry = yarray.toArray().find((entry) => entry.key === 'new');
 			expect(getKeyVersion(newEntry?.val as EncryptedBlob)).toBe(2);
 		});
 	});

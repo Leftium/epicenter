@@ -6,8 +6,8 @@ export function openHoneycrisp({ clientID }: { clientID?: number } = {}) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.honeycrisp', gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
 	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, honeycrispTables);
-	const kv = encryption.attachKv(ydoc, {});
+	const tables = encryption.attachTables(honeycrispTables);
+	const kv = encryption.attachKv({});
 	const actions = createHoneycrispActions(tables);
 	return {
 		ydoc,

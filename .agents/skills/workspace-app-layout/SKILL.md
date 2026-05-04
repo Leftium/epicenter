@@ -51,8 +51,8 @@ export function openFuji({ clientID }: { clientID?: number } = {}) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
 	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, fujiTables);
-	const kv = encryption.attachKv(ydoc, {});
+	const tables = encryption.attachTables(fujiTables);
+	const kv = encryption.attachKv({});
 	const actions = createFujiActions(tables);
 	return {
 		ydoc,

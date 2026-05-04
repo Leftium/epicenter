@@ -40,5 +40,6 @@ bindAuthWorkspaceScope({
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
 		auth[Symbol.dispose]();
+		fuji[Symbol.dispose]();
 	});
 }

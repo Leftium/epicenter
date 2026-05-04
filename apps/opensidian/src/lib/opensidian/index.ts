@@ -6,8 +6,8 @@ export function openOpensidian({ clientID }: { clientID?: number } = {}) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
 	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, opensidianTables);
-	const kv = encryption.attachKv(ydoc, {});
+	const tables = encryption.attachTables(opensidianTables);
+	const kv = encryption.attachKv({});
 	return {
 		ydoc,
 		tables,

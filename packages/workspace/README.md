@@ -149,7 +149,7 @@ export function openApp({
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
 
 	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, appTables);
+	const tables = encryption.attachTables(appTables);
 	const awareness = attachAwareness(ydoc, {
 		schema: {
 			peer: PeerIdentity,

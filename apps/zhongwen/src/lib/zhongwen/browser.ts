@@ -14,5 +14,8 @@ export function openZhongwen() {
 			await idb.clearLocal();
 		},
 		whenLoaded: idb.whenLoaded,
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
 	};
 }

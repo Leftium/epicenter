@@ -42,8 +42,8 @@ function dbPath(id: string) {
 function createTestClient() {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, opensidianTables);
-	const kv = encryption.attachKv(ydoc, {});
+	const tables = encryption.attachTables(opensidianTables);
+	const kv = encryption.attachKv({});
 	const persistence = attachSqlite(ydoc, { filePath: dbPath(WORKSPACE_ID) });
 
 	const contentDocs = createDisposableCache(
@@ -202,8 +202,8 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	function createImportClient() {
 		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 		const encryption = attachEncryption(ydoc);
-		const tables = encryption.attachTables(ydoc, opensidianTables);
-		const kv = encryption.attachKv(ydoc, {});
+		const tables = encryption.attachTables(opensidianTables);
+		const kv = encryption.attachKv({});
 		const persistence = attachSqlite(ydoc, {
 			filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
 		});

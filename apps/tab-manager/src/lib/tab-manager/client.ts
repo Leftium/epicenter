@@ -86,6 +86,7 @@ bindAuthWorkspaceScope({
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
 		auth[Symbol.dispose]();
+		tabManager[Symbol.dispose]();
 	});
 }
 

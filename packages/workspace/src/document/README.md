@@ -74,8 +74,8 @@ import { attachEncryption } from '@epicenter/workspace';
 function openBlog() {
   const ydoc = new Y.Doc({ guid: 'blog' });
   const encryption = attachEncryption(ydoc);
-  const tables = encryption.attachTables(ydoc, myTables);
-  const kv = encryption.attachKv(ydoc, myKv);
+  const tables = encryption.attachTables(myTables);
+  const kv = encryption.attachKv(myKv);
   return { ydoc, tables, kv, encryption, [Symbol.dispose]() { ydoc.destroy(); } };
 }
 ```

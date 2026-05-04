@@ -80,8 +80,8 @@ function openMyApp({
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
 	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, appTables);
-	const kv = encryption.attachKv(ydoc, {});
+	const tables = encryption.attachTables(appTables);
+	const kv = encryption.attachKv({});
 
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);

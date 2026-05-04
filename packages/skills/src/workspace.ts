@@ -16,11 +16,11 @@ export function openSkills({
 	if (clientID !== undefined) ydoc.clientID = clientID;
 
 	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, {
+	const tables = encryption.attachTables({
 		skills: skillsTable,
 		references: referencesTable,
 	});
-	const kv = encryption.attachKv(ydoc, {});
+	const kv = encryption.attachKv({});
 
 	return {
 		get id() {

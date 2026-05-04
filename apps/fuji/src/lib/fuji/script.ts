@@ -38,7 +38,7 @@ export async function openFujiSnapshot({
 	const ydoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
 	ydoc.clientID = clientID;
 	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachReadonlyTables(ydoc, fujiTables);
+	const tables = encryption.attachReadonlyTables(fujiTables);
 	if (encryptionKeys !== null) encryption.applyKeys(encryptionKeys);
 	const yjsLog = attachYjsLogReader(ydoc, {
 		filePath: yjsPath(projectDir, ydoc.guid),

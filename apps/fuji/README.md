@@ -28,8 +28,8 @@ export function openFuji() {
   const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
 
   const encryption = attachEncryption(ydoc);
-  const tables = encryption.attachTables(ydoc, fujiTables);
-  const kv = encryption.attachKv(ydoc, {});
+  const tables = encryption.attachTables(fujiTables);
+  const kv = encryption.attachKv({});
   const awareness = attachAwareness(ydoc, {});
 
   const idb = attachIndexedDb(ydoc);

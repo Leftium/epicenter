@@ -5,8 +5,8 @@ import { whisperingKv, whisperingTables } from '$lib/workspace';
 export function openWhispering() {
 	const ydoc = new Y.Doc({ guid: 'whispering', gc: false });
 	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, whisperingTables);
-	const kv = encryption.attachKv(ydoc, whisperingKv);
+	const tables = encryption.attachTables(whisperingTables);
+	const kv = encryption.attachKv(whisperingKv);
 	return {
 		ydoc,
 		tables,

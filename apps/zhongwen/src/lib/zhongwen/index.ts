@@ -6,8 +6,8 @@ export function openZhongwen({ clientID }: { clientID?: number } = {}) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
 	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, zhongwenTables);
-	const kv = encryption.attachKv(ydoc, zhongwenKv);
+	const tables = encryption.attachTables(zhongwenTables);
+	const kv = encryption.attachKv(zhongwenKv);
 	return {
 		ydoc,
 		tables,

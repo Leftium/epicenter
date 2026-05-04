@@ -45,11 +45,11 @@ const machineAuth = createMachineAuth();
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 const encryption = attachEncryption(ydoc);
-const tables = encryption.attachTables(ydoc, tabManagerTables);
+const tables = encryption.attachTables(tabManagerTables);
 // Empty kv: tabManager has no KV definitions, but `.kv()` on the materializer
 // serializes the shared kv store. Keep an empty encrypted kv attached so the
 // materializer's `.kv()` call has something to observe.
-const kv = encryption.attachKv(ydoc, {});
+const kv = encryption.attachKv({});
 
 const persistence = attachSqlite(ydoc, {
 	filePath: epicenterPaths.persistence(WORKSPACE_ID),

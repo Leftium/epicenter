@@ -1,7 +1,7 @@
 # Workspace Identity Reset: Deterministic Teardown
 
 **Date**: 2026-05-04
-**Status**: Implemented with verification blockers
+**Status**: Implemented; Round 5 follow-ups applied (see Review > Round 5)
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth (or successor)
 **Sibling spec**: `specs/20260504T010000-drop-redirect-sign-in-gis-migration.md` (per-app GIS migration; ships independently)
@@ -794,3 +794,33 @@ Manual smoke is also blocked. Fuji opened in the in-app browser, but the session
 
 - Fix the existing app and shared UI typecheck failures so app-level verification can run as a reliable gate.
 - Run Fuji and Honeycrisp sign-out smoke tests with a throwaway account or isolated browser profile after credentials are available.
+
+### Round 5: post-implementation findings
+
+The original spec ran four rounds of grilling before implementation. A fifth round, run against the merged code by sub-agent audits, found three loose ends. Two are real cleanups; one is a verification result that closes a previously-open question.
+
+**Lesson named**: cleanup that drops every caller of an API should drop the API in the same pass. The cleaner the deletion looks at the call site, the easier it is to forget the now-orphaned definition. Round 5 is the "smell won't die, go up a level" article's pattern applied to itself.
+
+#### 5.1: `SyncAttachment.pause()` was provably dead
+
+After Phase B dropped the cold-null pause and the reset-path pause, no source caller of `pause()` remained anywhere in the repo. The method declaration, body, and returned property survived the cleanup as orphaned API. Statements in earlier sections of this spec (e.g., the original line in "App-admin Click to reconnect button" edge case that said *"After Phase B.4, `pause()` and `reconnect()` are still declared on `SyncAttachment`"*) are accurate as a record of what was planned, but no longer accurate as a description of the code. Round 5 dropped `pause()` entirely:
+
+- `packages/workspace/src/document/attach-sync.ts`: removed the JSDoc + type declaration, the function body (`cycleController.abort(); manageWindowListeners('remove'); status.set({ phase: 'offline' });`), and the `pause,` line in the returned `SyncAttachment` object.
+
+`reconnect()` stays — `packages/svelte-utils/src/account-popover/account-popover.svelte` calls it from the "Reconnect" button, and `attach-sync.ts` itself queues it via `onCredentialChange`.
+
+#### 5.2: `isTerminal` renamed to `isResetting`
+
+Internal flag in `packages/auth-workspace/src/index.ts`. The state-machine metaphor "terminal" required readers to understand the reset-then-reload lifecycle to parse. `isResetting` directly names what the flag gates: a reset has begun, and nothing else should run until the page reloads. Five-line rename + one test docstring update. Behavior unchanged. References to `isTerminal` elsewhere in this spec body (in code blocks and prose) reflect the as-planned shape; the as-implemented shape uses `isResetting`.
+
+#### 5.3: tab-manager service-worker reload semantics — verified safe
+
+Open question from the original review: `window.location.reload()` from a Chrome extension popup reloads the popup, not the service worker. If the workspace lived (even partially) in the background script, the previous user's state would persist across reset.
+
+Verified: `apps/tab-manager/src/entrypoints/background.ts` is minimal — its only job is `browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`. The header comment confirms the architecture: *"All Y.Doc, browser event listeners, sync, and command consumer logic has been consolidated into the side panel context."*
+
+Tab-manager's workspace lives entirely in the side panel. `window.location.reload()` reloads the side panel, which is exactly where the workspace lives. No service-worker state to flush. The canonical reset shape is correct as-is.
+
+#### Status of stale references in this spec
+
+Lines that read "isTerminal" or describe `pause()` as still declared on `SyncAttachment` are now stale relative to merged code. Left in place because they're accurate to the as-planned design and the spec itself is the historical record. Round 5 above is the canonical description of the as-implemented shape.

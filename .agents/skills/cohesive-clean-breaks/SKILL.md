@@ -372,6 +372,44 @@ When making a clean break:
 Compatibility is a feature. If nobody explicitly asked for that feature, do not
 smuggle it into the implementation.
 
+## Wave Ordering: Build, Prove, Remove
+
+When a clean break replaces an old code path with a new one, structure the
+implementation as four sequential phases:
+
+```txt
+Wave 1 to N    Build the new path
+Wave N+1       Stop importing the old path (it stays on disk, unused)
+Wave N+2       Verify (typecheck, tests, smoke against staging)
+Wave N+3       Delete the old path
+```
+
+The "stop importing then verify before deleting" structure means rollback is a
+one-line import flip if verification fails. Do not collapse "verify" into "the
+new code looks good." Run it. Smoke it. Then delete.
+
+The wrong shape is:
+
+```txt
+Wave 1 to N    Build the new path
+Wave N+1       Delete the old path
+Wave N+2       Verify
+```
+
+If verification fails, you have already deleted the fallback. Rollback is more
+painful than it should be. You have skipped the load-bearing step because the
+design feels coherent; coherence is necessary, it is not sufficient.
+
+This is the same shape as Pattern B in
+[specification-writing](../specification-writing/SKILL.md) Decision Hygiene:
+treating an empirical question (does the new code work?) as if it were already
+answered by the design's coherence. Don't.
+
+See `specs/20260504T040000-machine-auth-adopt-better-auth-device-client.md` for
+a worked example: Wave 5 stops importing the old transport; Wave 8 verifies;
+Wave 9 deletes the transport file. If Wave 8 finds a behavior gap, the rollback
+is one revert.
+
 ## Naming Rules
 
 Names should describe lifecycle and ownership.

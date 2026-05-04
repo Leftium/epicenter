@@ -39,6 +39,58 @@ A good spec is a launching pad, not a script to follow.
 
 ---
 
+## Decision Hygiene
+
+Every decision in a spec falls into one of three classes. Mixing them up is the single biggest source of spec drift, and the most common reason an otherwise-good spec calcifies around invisible inertia.
+
+**Class 1: Resolved by evidence.** The question has an empirical answer. Don't argue; check.
+> "Does Better Auth's `signOut` accept custom headers?" → read the source, write a test, verify the version.
+
+**Class 2: Resolved by design coherence.** The thesis already settled this; the sub-decision just confirms.
+> "Should pending polling states be exposed to callers?" → if the thesis says polling is private, no.
+
+**Class 3: Resolved by taste under constraints.** No single right answer. Multiple defensible choices. **Pick deliberately and write the constraint.**
+> "Keep this typed wrapper for codebase pattern consistency, or drop it for cleaner pass-through?" → choose; name why.
+
+### Two failure modes
+
+- **Pattern A**: Class 3 disguised as Class 2. "Keep for consistency" sounds principled but is really "I haven't decided." Inertia. Future readers assume the choice was load-bearing.
+- **Pattern B**: Class 1 disguised as Class 2. "The new code is in place, delete the old" skips verification. The spec ships with broken assumptions.
+
+The fix for both: name which class each decision is. For Class 3, write the trade-off, not just the choice.
+
+### Active Justification Test
+
+Before locking any "keep" decision in the Design Decisions table, ask:
+
+> "Would I add this if it didn't already exist?"
+
+- **Yes, here's the use case** → Class 2 keep, lock it.
+- **No, but removing it is churn** → Class 3 keep by inertia. Name it in the Decisions Log.
+- **No, and removing it isn't that hard** → drop it now.
+
+Most "keep for consistency" rationales fail this test.
+
+### Decisions Log
+
+Near the end of the spec, add a small section listing every Class 3 keep with its constraint and a "Revisit when:" trigger.
+
+```markdown
+## Decisions log
+
+- Keep `MachineAuthRequestError`: codebase typed-error pattern consistency.
+  Revisit when: any caller branches on the discriminator.
+- Module-level singleton auth client: ~1-2 ms saved per CLI invocation.
+  Revisit when: per-call construction profiles become a real concern.
+- Narrow capability types per function: prevents accidental device-plugin
+  coupling for status/logout tests.
+  Revisit when: type-level overhead exceeds value during maintenance.
+```
+
+This makes future reviewers see what's load-bearing vs deferred at a glance. Without it, Class 3 keeps become invisible inertia.
+
+---
+
 ## Document Structure
 
 ### Header (Required)
@@ -185,6 +237,19 @@ Break into phases. Use checkboxes for tracking. Phase 1 should be detailed; late
 - [ ] **2.1** [Higher-level task—implementer will break down]
 - [ ] **2.2** [Higher-level task]
 ```
+
+#### Wave ordering for clean breaks: Build, Prove, Remove
+
+If the spec replaces an old code path with a new one, structure the waves as four phases:
+
+```txt
+1. Build the new path                     (waves 1 to N)
+2. Stop importing the old path             (one wave; old code stays on disk, unused)
+3. Verify (typecheck, tests, smoke)        (one wave; rollback is one revert)
+4. Delete the old path                     (final cleanup wave)
+```
+
+If verification fails, rollback is a one-line import flip. Do not collapse step 2 and 3 into "delete the old path before verifying"; that's Pattern B from Decision Hygiene above. See [cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md) Wave Ordering for the full rationale.
 
 ### Edge Cases
 

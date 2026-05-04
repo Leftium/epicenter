@@ -3,7 +3,7 @@ import {
 	createSessionStorageAdapter,
 	Session,
 } from '@epicenter/auth-svelte';
-import { bindWorkspaceAuthLifecycle } from '@epicenter/auth-workspace';
+import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
@@ -31,16 +31,21 @@ export const honeycrisp = openHoneycrisp({
 	},
 });
 
-bindWorkspaceAuthLifecycle({
+bindAuthWorkspaceScope({
 	auth,
-	workspace: honeycrisp,
-	leavingUser: {
-		afterCleanup: () => window.location.reload(),
-		onCleanupError: (error) => {
+	syncControl: honeycrisp.syncControl,
+	applyAuthSession(session) {
+		honeycrisp.encryption.applyKeys(session.encryptionKeys);
+	},
+	async resetLocalClient() {
+		try {
+			await honeycrisp.clearLocalData();
+			window.location.reload();
+		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
-		},
+		}
 	},
 });
 

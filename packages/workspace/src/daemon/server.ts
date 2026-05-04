@@ -1,11 +1,11 @@
 /**
- * Daemon server factory: build the route table, build the Hono app, and
- * bind a unix socket. The "build + bind" core extracted from the CLI's
+ * Daemon server starter: build the app for started routes and bind a unix
+ * socket. The "build + bind" core extracted from the CLI's
  * `epicenter up` command so any bun process (CLI, vault, embedded) can
  * stand up the daemon transport without depending on `@epicenter/cli`.
  *
  * Lifecycle (metadata sidecar, signal handlers, log routing, dispose
- * orchestration) stays with the caller. This factory owns only the two
+ * orchestration) stays with the caller. This starter owns only the two
  * pieces that have to live in the workspace package: daemon route dispatch
  * and the unix-socket listener.
  *
@@ -14,21 +14,21 @@
 
 import { Ok, type Result } from 'wellcrafted/result';
 
-import { buildDaemonApp, buildStartingDaemonApp } from './app.js';
+import { buildDaemonApp } from './app.js';
+import { bestEffortAsync } from './best-effort.js';
 import { pingDaemon } from './client.js';
-import { socketPathFor } from './paths.js';
-import { validateStartedDaemonRoutes } from './route-validation.js';
+import type { DaemonLease } from './lease.js';
+import { validateDaemonRouteNames } from './route-validation.js';
+import { unlinkSocketFile } from './runtime-files.js';
+import { StartupError } from './startup-errors.js';
 import type { StartedDaemonRoute } from './types.js';
-import {
-	bindOrRecover,
-	type StartupError,
-	type UnixSocketServer,
-	unlinkSocketFile,
-} from './unix-socket.js';
+import { bindOrRecover } from './unix-socket.js';
 
 export type DaemonServerOptions = {
-	/** Filesystem-resolved absolute path that scopes this daemon. */
-	projectDir: string;
+	/** Already-claimed project daemon lease. */
+	lease: DaemonLease;
+	/** Started daemon routes served by the unix-socket app. */
+	routes: readonly StartedDaemonRoute[];
 	/** Called by the optional `/shutdown` route after the response is queued. */
 	triggerShutdown?: () => void;
 };
@@ -36,15 +36,6 @@ export type DaemonServerOptions = {
 export type DaemonServer = {
 	/** Filesystem path of the unix socket this server binds. */
 	readonly socketPath: string;
-	/**
-	 * Bind the unix socket. On a stale socket left by a crashed predecessor
-	 * the bind sweeps the orphan and retries; on a live daemon answering
-	 * ping at the same path it returns `StartupError.AlreadyRunning`. Calls
-	 * after a successful `listen()` are a no-op until `close()` runs.
-	 */
-	listen(): Promise<Result<UnixSocketServer, StartupError>>;
-	/** Mount started daemon routes after the socket has already been claimed. */
-	mountRoutes(routes: readonly StartedDaemonRoute[]): void;
 	/**
 	 * Stop the bound listener. `Bun.serve.stop()` unlinks the socket file
 	 * itself; this method also sweeps any leftover socket file as a guard
@@ -54,60 +45,42 @@ export type DaemonServer = {
 };
 
 /**
- * Build a daemon route table from `opts.runtimes`, return a handle
- * with a deferred `listen()`. The factory does not touch the filesystem
- * until `listen()` is called.
+ * Start a daemon server for already-started routes. The caller must claim the
+ * daemon lease before route startup; this function owns only route validation
+ * and socket binding.
  */
-export function createDaemonServer({
-	projectDir,
+export async function startDaemonServer({
+	lease,
+	routes,
 	triggerShutdown,
-}: DaemonServerOptions): DaemonServer {
-	const socketPath = socketPathFor(projectDir);
-	const startingApp = buildStartingDaemonApp();
-	let currentFetch = startingApp.fetch;
-	const app = {
-		fetch(...args: Parameters<typeof currentFetch>) {
-			const [request, env, executionCtx] = args;
-			return currentFetch(request, env, executionCtx);
-		},
-	};
+}: DaemonServerOptions): Promise<Result<DaemonServer, StartupError>> {
+	const { projectDir, socketPath } = lease;
+	const routeIssue = validateDaemonRouteNames(
+		routes.map((entry) => entry.route),
+	);
+	if (routeIssue !== null) {
+		return StartupError.RouteNameRejected(routeIssue);
+	}
 
-	let server: UnixSocketServer | undefined;
-
-	return {
+	const app = buildDaemonApp([...routes], triggerShutdown);
+	const result = await bindOrRecover({
 		socketPath,
-		async listen() {
-			if (server !== undefined) return Ok(server);
-			const result = await bindOrRecover(
-				socketPath,
-				projectDir,
-				app,
-				pingDaemon,
-			);
-			if (result.error === null) server = result.data;
-			return result;
-		},
-		mountRoutes(routes) {
-			const validation = validateStartedDaemonRoutes(routes);
-			if (!validation.ok) {
-				throw new Error(
-					validation.reason === 'duplicate'
-						? `createDaemonServer: duplicate daemon route '${validation.route}'`
-						: `createDaemonServer: invalid daemon route '${validation.route}'`,
-				);
-			}
-			currentFetch = buildDaemonApp([...routes], triggerShutdown).fetch;
-		},
+		fetch: app.fetch,
+		projectDir,
+		isSocketResponsive: pingDaemon,
+	});
+	if (result.error !== null) return result;
+
+	const server = result.data;
+	let isClosed = false;
+
+	return Ok({
+		socketPath,
 		async close() {
-			if (server) {
-				try {
-					server.stop();
-				} catch {
-					// best-effort
-				}
-				server = undefined;
-			}
+			if (isClosed) return;
+			isClosed = true;
+			await bestEffortAsync(() => server.stop(true));
 			unlinkSocketFile(socketPath);
 		},
-	};
+	});
 }

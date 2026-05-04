@@ -1,8 +1,9 @@
 export {
 	createMachineAuth,
-	MachineAuthError,
-	createMachineTokenGetter,
+	createMachineAuthClient,
+	createMachineSessionStorage,
 	type MachineAuth,
+	MachineAuthError,
 	type MachineAuthLoginResult,
 	type MachineAuthLogoutResult,
 	type MachineAuthStatus,

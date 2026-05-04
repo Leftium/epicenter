@@ -1,5 +1,6 @@
+import type { AuthClient } from '@epicenter/auth';
+import { createMachineAuthClient } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { createMachineTokenGetter } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
@@ -30,7 +31,7 @@ export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 
 export type FujiDaemonOptions = {
 	route?: string;
-	getToken?: () => Promise<string | null>;
+	auth?: AuthClient;
 	peer?: PeerIdentity;
 	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
@@ -47,7 +48,7 @@ function defaultFujiDaemonPeer(): PeerIdentity {
 export function defineFujiDaemon({
 	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	apiUrl = EPICENTER_API_URL,
-	getToken = createMachineTokenGetter({ serverOrigin: apiUrl }),
+	auth = createMachineAuthClient({ serverOrigin: apiUrl }),
 	peer = defaultFujiDaemonPeer(),
 	webSocketImpl,
 }: FujiDaemonOptions = {}): DaemonRouteDefinition {
@@ -64,7 +65,7 @@ export function defineFujiDaemon({
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-				getToken,
+				auth,
 				webSocketImpl,
 				awareness,
 			});

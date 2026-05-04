@@ -91,9 +91,9 @@ Three reductions in order. Don't skip.
 
 3. **Caller-need check.** Does the caller's use case actually need the default-config version? If not, you've found a mismatch: wrong tool, wrong defaults, or a wrapper adding zero value.
 
-### Worked example: createDocumentFactory
+### Worked example: createDisposableCache
 
-`createDocumentFactory` has a page of JSDoc about refcounted Y.Doc lifecycles, cache eviction, idle timeouts, deterministic cleanup.
+`createDisposableCache` has a page of JSDoc about refcounted Y.Doc lifecycles, cache eviction, idle timeouts, deterministic cleanup.
 
 ```
 Strip-docs reduction:

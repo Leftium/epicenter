@@ -1,4 +1,4 @@
-import { createMachineTokenGetter } from '@epicenter/auth/node';
+import { createMachineAuthClient } from '@epicenter/auth/node';
 import {
 	attachAwareness,
 	attachSync,
@@ -45,9 +45,10 @@ export function openNotes(peer: PeerIdentity) {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
 	});
+	const auth = createMachineAuthClient({ serverOrigin: SERVER_URL });
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
-		getToken: createMachineTokenGetter({ serverOrigin: SERVER_URL }),
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);

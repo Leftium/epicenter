@@ -137,7 +137,7 @@ import {
 	toWsUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
-import { createMachineTokenGetter } from '@epicenter/auth/node';
+import { createMachineAuthClient } from '@epicenter/auth/node';
 import Type from 'typebox';
 import { type } from 'arktype';
 
@@ -168,11 +168,12 @@ function openTabManager() {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
 	});
+	const auth = createMachineAuthClient({
+		serverOrigin: 'https://api.epicenter.so',
+	});
 	const sync = attachSync(ydoc, {
 		url: toWsUrl('https://api.epicenter.so/workspaces/epicenter.tab-manager'),
-		getToken: createMachineTokenGetter({
-			serverOrigin: 'https://api.epicenter.so',
-		}),
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);
@@ -218,9 +219,9 @@ export default defineConfig({
 });
 ```
 
-`defineFujiDaemon()` defaults auth through `createMachineTokenGetter()` from
-`@epicenter/auth/node`. Override `getToken` only when the deployment needs
-a custom auth source.
+`defineFujiDaemon()` defaults auth through `createMachineAuthClient()` from
+`@epicenter/auth/node`. Override `auth` only when the deployment needs a custom
+auth client.
 
 ## Exposing operations via CLI
 
@@ -340,7 +341,7 @@ Node-side auth helpers live in `@epicenter/auth/node`:
 ```ts
 import {
 	createMachineAuth,
-	createMachineTokenGetter,
+	createMachineAuthClient,
 } from '@epicenter/auth/node';
 ```
 

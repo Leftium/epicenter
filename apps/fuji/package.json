@@ -42,6 +42,7 @@
 		"@epicenter/auth-svelte": "workspace:*",
 		"@epicenter/auth-workspace": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/encryption": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@tanstack/svelte-table": "catalog:",
@@ -60,6 +61,7 @@
 		"prosemirror-view": "^1.41.0",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
+		"y-indexeddb": "catalog:",
 		"y-prosemirror": "^1.3.7",
 		"yjs": "catalog:",
 		"virtua": "catalog:"

@@ -1,8 +1,15 @@
 # Workspace sync: add `failed` phase, reject `whenConnected` on permanent failure
 
-**Status**: ready to design
+**Status**: Partially implemented; frame design superseded
 **Owner**: TBD
 **Tracking**: replaces the CLI-side `--connect-timeout` stopgap
+
+**Review 2026-05-01**: The workspace-layer behavior exists: `SyncStatus`
+includes `failed`, `SyncFailedError` exists, `whenConnected` rejects on failed
+status, permanent auth failure stops retrying, and `reconnect()` clears that
+failure. The proposed `MESSAGE_TYPE.AUTH = 41` frame did not land. Current code
+uses WebSocket close code `4401` with a JSON reason. The remaining useful
+follow-up is small: make CLI `up` render failed sync status clearly if needed.
 
 ## One-line goal
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
+import type { AuthClient } from '@epicenter/auth';
 import { type FileId, generateFileId } from '@epicenter/filesystem';
 import type { ProjectDir } from '@epicenter/workspace';
 import type { DaemonRuntime } from '@epicenter/workspace/daemon';
@@ -24,11 +25,52 @@ afterEach(() => {
 	rmSync(workdir, { recursive: true, force: true });
 });
 
+function createTestAuth(): AuthClient {
+	return {
+		snapshot: {
+			status: 'signedIn',
+			session: {
+				token: 'fake-token',
+				user: {
+					id: 'test-user',
+					createdAt: '2026-05-03T00:00:00.000Z',
+					updatedAt: '2026-05-03T00:00:00.000Z',
+					email: 'test@example.com',
+					emailVerified: true,
+					name: 'Test User',
+				},
+				encryptionKeys: [{ version: 1, userKeyBase64: 'key' }],
+			},
+		},
+		whenLoaded: Promise.resolve(),
+		onSnapshotChange() {
+			return () => {};
+		},
+		async signIn() {
+			throw new Error('unused');
+		},
+		async signUp() {
+			throw new Error('unused');
+		},
+		async signInWithSocialPopup() {
+			throw new Error('unused');
+		},
+		async signInWithSocialRedirect() {
+			throw new Error('unused');
+		},
+		async signOut() {
+			throw new Error('unused');
+		},
+		fetch: globalThis.fetch.bind(globalThis),
+		[Symbol.dispose]() {},
+	};
+}
+
 describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates files the daemon wrote', async () => {
 		{
 			const routeDefinition = defineOpensidianDaemon({
-				getToken: async () => 'fake-token',
+				auth: createTestAuth(),
 				peer: {
 					id: 'test-daemon',
 					name: 'Opensidian Daemon',
@@ -67,7 +109,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 		}
 
 		using script = openOpensidianScript({
-			getToken: async () => 'fake-token',
+			auth: createTestAuth(),
 			projectDir: workdir,
 			webSocketImpl: NoopWebSocket,
 		});

@@ -35,7 +35,6 @@
 		"./ai": "./src/ai/index.ts",
 		"./node": "./src/node.ts",
 		"./document/materializer/sqlite": "./src/document/materializer/sqlite/index.ts",
-		"./encryption-key": "./src/document/encryption-key.ts",
 		"./logger/jsonl-sink": "./src/shared/logger/jsonl-sink.ts",
 		"./test-utils": "./src/shared/test-utils.ts"
 	},
@@ -47,7 +46,9 @@
 	},
 	"dependencies": {
 		"@ark/json-schema": "^0.0.4",
+		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/encryption": "workspace:*",
 		"@hono/standard-validator": "catalog:",
 		"@tanstack/ai": "catalog:",
 		"@epicenter/sync": "workspace:*",

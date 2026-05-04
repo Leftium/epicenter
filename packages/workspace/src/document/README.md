@@ -31,7 +31,7 @@ Three prefixes, each with a consistent meaning:
 
 - **`define*`** is pure: no Y.Doc, no side effects. Schemas, KV definitions, action factories.
 - **`attach*`** binds a capability to an existing `Y.Doc` (or, in one documented cross-package case, to a sibling attachment). Side-effectful: registers observers or destroy listeners at call time. Returns a typed handle.
-- **`create*`** is pure construction: no listeners, no subscriptions at call time. Factory-of-factories like `createFileContentDocs` in `@epicenter/filesystem` return handles that attach later.
+- **`create*`** is pure construction: no listeners, no subscriptions at call time. Primitives like `createDisposableCache` return handles that attach later.
 
 See `.agents/skills/attach-primitive/SKILL.md` for the full contract (shape, invariants, barrier naming).
 
@@ -82,12 +82,16 @@ function openBlog() {
 
 ### Persistence + sync
 
+Auth belongs to the app. The workspace factory receives the client and passes it
+to sync.
+
 ```typescript
 import {
   attachIndexedDb,
   attachBroadcastChannel,
   attachSync,
 } from '@epicenter/workspace';
+import { auth } from './auth';
 
 function openBlog() {
   const ydoc = new Y.Doc({ guid: 'blog' });
@@ -97,12 +101,7 @@ function openBlog() {
   attachBroadcastChannel(ydoc);
   const sync = attachSync(ydoc, {
     url: `wss://api.example.com/workspaces/${ydoc.guid}`,
-    getToken: async () => {
-      await auth.whenLoaded;
-
-      const snapshot = auth.snapshot;
-      return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-    },
+    auth,
     waitFor: idb.whenLoaded,
   });
 

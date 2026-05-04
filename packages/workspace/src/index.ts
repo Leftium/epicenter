@@ -8,20 +8,61 @@
  *
  * @example
  * ```typescript
- * import { attachTables, createDisposableCache, defineTable } from '@epicenter/workspace';
+ * import {
+ *   attachIndexedDb,
+ *   attachRichText,
+ *   attachSync,
+ *   attachTables,
+ *   createDisposableCache,
+ *   defineTable,
+ *   docGuid,
+ * } from '@epicenter/workspace';
+ * import type { AuthClient } from '@epicenter/auth';
  * import { type } from 'arktype';
+ * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+ * declare const auth: AuthClient;
  *
  * // Singleton workspace: inline at module scope, no factory wrapper.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
+ * const idb = attachIndexedDb(ydoc);
+ * const sync = attachSync(ydoc, {
+ *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
+ *   waitFor: idb,
+ *   auth,
+ * });
  *
- * // Per-row docs: createDisposableCache wraps a pure builder.
  * const noteBodyDocs = createDisposableCache(
- *   (noteId) => buildNoteBody({ noteId, notesTable: tables.posts }),
+ *   (noteId: string) => {
+ *     const bodyYdoc = new Y.Doc({
+ *       guid: docGuid({
+ *         workspaceId: ydoc.guid,
+ *         collection: 'posts',
+ *         rowId: noteId,
+ *         field: 'body',
+ *       }),
+ *       gc: false,
+ *     });
+ *     const bodyIdb = attachIndexedDb(bodyYdoc);
+ *     return {
+ *       ydoc: bodyYdoc,
+ *       body: attachRichText(bodyYdoc),
+ *       idb: bodyIdb,
+ *       whenReady: bodyIdb.whenLoaded,
+ *       [Symbol.dispose]() {
+ *         bodyYdoc.destroy();
+ *       },
+ *     };
+ *   },
  *   { gcTime: 5_000 },
  * );
+ * async function clearNoteBodyLocalData() {
+ *   await Promise.all(
+ *     tables.posts.getAllValid().map((post) => clearStoredNoteBody(post.id)),
+ *   );
+ * }
  * ```
  *
  * @packageDocumentation
@@ -60,8 +101,8 @@ export { isRpcError, RpcError } from '@epicenter/sync';
 export {
 	createRemoteClient,
 	PeerAddressError,
-	type RemoteClient,
 	type RemoteCallError,
+	type RemoteClient,
 	type RemoteClientOptions,
 	type RemotePeerCallOptions,
 	type WireRpcError,
@@ -85,6 +126,7 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { MaybePromise } from './shared/types';
+export type { BrowserWorkspace, Workspace } from './shared/workspace.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES
@@ -125,7 +167,7 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT PRIMITIVES: attach*, define*, createDisposableCache, encryption,
+// DOCUMENT PRIMITIVES: attach*, define*, refcounted cache, encryption,
 // timeline, storage keys, types: everything in src/document/ + src/cache/
 // flows through its barrel.
 // ════════════════════════════════════════════════════════════════════════════
@@ -179,6 +221,7 @@ export {
 	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
+	type SyncControl,
 	SyncFailedError,
 	type SyncFailedReason,
 	type SyncRpcAttachment,
@@ -221,22 +264,17 @@ export {
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
-export type { DocPersistence } from './document/doc-persistence.js';
-export {
-	EncryptionKey,
-	EncryptionKeys,
-	encryptionKeysFingerprint,
-} from './document/encryption-key.js';
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
-	PeerIdentity,
 	type PeerAwarenessSchema,
 	type PeerAwarenessState,
+	PeerIdentity,
 	type PeerRuntime,
 	type ResolvedPeer,
 } from './document/peer-identity.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
+export { composeSyncControls } from './document/sync-control.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

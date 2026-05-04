@@ -2,7 +2,7 @@
  * Reactive AI chat state for Zhongwen with workspace persistence.
  *
  * Conversations and messages persist to IndexedDB via the workspace API.
- * Modeled after tab-manager's chat-state but simplified — no tool calls,
+ * Modeled after tab-manager's chat-state, but simplified with no tool calls,
  * no encryption, no WebSocket sync.
  */
 
@@ -41,7 +41,7 @@ function createChatState() {
 			.sort((a, b) => b.updatedAt - a.updatedAt),
 	);
 
-	/** Returns the ID to activate — either the first existing conversation or a newly created default. */
+	/** Returns the ID to activate, either the first existing conversation or a newly created default. */
 	function ensureDefaultConversation(): ConversationId {
 		const first = conversations[0];
 		if (first) return first.id;
@@ -256,7 +256,7 @@ function createChatState() {
 	});
 
 	// Initialize after persistence loads
-	void zhongwen.whenReady.then(() => {
+	void zhongwen.whenLoaded.then(() => {
 		reconcileHandles();
 		activeConversationId = ensureDefaultConversation();
 	});

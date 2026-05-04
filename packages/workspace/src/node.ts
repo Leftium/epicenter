@@ -22,6 +22,10 @@ export {
 	pingDaemon,
 } from './daemon/client.js';
 export {
+	claimDaemonLease,
+	type DaemonLease,
+} from './daemon/lease.js';
+export {
 	type DaemonMetadata,
 	enumerateDaemons,
 	readMetadata,
@@ -31,6 +35,7 @@ export {
 } from './daemon/metadata.js';
 export {
 	dirHash,
+	leasePathFor,
 	logPathFor,
 	metadataPathFor,
 	runtimeDir,
@@ -39,18 +44,20 @@ export {
 export {
 	findDuplicateDaemonRoute,
 	isValidDaemonRoute,
-	validateStartedDaemonRoutes,
+	validateDaemonRouteNames,
 } from './daemon/route-validation.js';
 export {
 	RunError,
 	type RunResponse,
 	type RunSyncStatus,
 } from './daemon/run-errors.js';
+export { sweepDaemonRuntimeFiles } from './daemon/runtime-files.js';
 export {
-	createDaemonServer,
 	type DaemonServer,
 	type DaemonServerOptions,
+	startDaemonServer,
 } from './daemon/server.js';
+export { StartupError } from './daemon/startup-errors.js';
 export type {
 	DaemonRouteContext,
 	DaemonRouteDefinition,
@@ -58,13 +65,6 @@ export type {
 	EpicenterConfig,
 	StartedDaemonRoute,
 } from './daemon/types.js';
-export {
-	bindOrRecover,
-	bindUnixSocket,
-	StartupError,
-	type UnixSocketServer,
-	unlinkSocketFile,
-} from './daemon/unix-socket.js';
 export {
 	attachMarkdown,
 	type MarkdownShape,

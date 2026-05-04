@@ -92,22 +92,29 @@ Tab-manager wraps the `createStorageState()` result the same way. Do not await `
 
 ## Reacting to Session Transitions
 
-Use `bindWorkspaceAuthLifecycle` at setup time when a workspace exposes `sync`, `idb`, and `encryption`:
+Use `bindAuthWorkspaceScope` at setup time for browser app clients:
 
 ```ts
-import { bindWorkspaceAuthLifecycle } from '@epicenter/auth-workspace';
+import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 
-bindWorkspaceAuthLifecycle({
+bindAuthWorkspaceScope({
 	auth,
-	workspace,
-	leavingUser: {
-		afterCleanup: () => window.location.reload(),
-		onCleanupError: reportCleanupError,
+	sync: workspace.sync,
+	applyAuthSession(session) {
+		workspace.encryption.applyKeys(session.encryptionKeys);
+	},
+	async resetLocalClient() {
+		try {
+			await workspace.idb.clearLocal();
+			window.location.reload();
+		} catch (error) {
+			reportCleanupError(error);
+		}
 	},
 });
 ```
 
-For non-sync documents, read `auth.snapshot` once for bootstrap, then use `auth.onSnapshotChange` for future snapshots. Track the minimal local transition state needed by that document, usually whether a signed-in user has already been applied.
+The app owns concrete resource composition. Pass `sync: null` when there is no authenticated sync attachment. For root plus child documents, pass a small inline object whose `pause()` and `reconnect()` methods call every active sync surface. Keep destructive reset policy inside `resetLocalClient()`.
 
 ## Token Sourcing
 

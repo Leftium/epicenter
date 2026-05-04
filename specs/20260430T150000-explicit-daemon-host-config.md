@@ -1,9 +1,16 @@
 # Explicit Daemon Host Config
 
 **Date**: 2026-04-30
-**Status**: Draft
+**Status**: Superseded
 **Author**: AI-assisted
 **Branch**: codex/daemon-transport-supervisor-integration
+
+**Superseded By**: `20260501T114356-daemon-startup-boundary-and-route-definition-cleanup.md`
+
+This spec records the host-definition step that led to the current daemon route
+definition API. The active code no longer uses top-level `hosts`; project config
+uses `defineConfig({ daemon: { routes: [defineFujiDaemon()] } })`, and app
+helpers return `DaemonRouteDefinition` objects with `{ route, start }`.
 
 ## Overview
 
@@ -43,14 +50,14 @@ This creates problems:
 
 ```ts
 import { defineFujiDaemon } from '@epicenter/fuji/daemon';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 import { findEpicenterDir } from '@epicenter/workspace/node';
 
 const projectDir = findEpicenterDir(import.meta.dir);
 const getToken = async () =>
 	(await sessions.load(EPICENTER_API_URL))?.accessToken ?? null;
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon({ getToken })],
 });
 ```
@@ -61,9 +68,9 @@ Scripts import app-specific daemon action helpers instead of importing config ro
 
 ```ts
 // scripts/create-entry.ts
-import { openFujiDaemonActions } from '@epicenter/fuji/daemon';
+import { connectFujiDaemonActions } from '@epicenter/fuji/daemon';
 
-const fuji = await openFujiDaemonActions();
+const fuji = await connectFujiDaemonActions();
 ```
 
 ## Naming Model
@@ -85,7 +92,7 @@ This separation is still useful when Fuji is only mounted once. `defineFujiDaemo
 Record-key routes were considered and rejected. In this shape, config keys own route names:
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	fuji: openFuji({ projectDir, getToken }),
 });
 ```
@@ -97,7 +104,7 @@ export const routes = {
 	fuji: 'fuji',
 } as const;
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	[routes.fuji]: openFuji({ projectDir, getToken }),
 });
 ```
@@ -115,7 +122,7 @@ const fuji = await connectDaemonActions<FujiActions>({
 The array shape is the chosen direction because app daemon subpaths can provide the default route and the typed connector:
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon({ getToken })],
 });
 ```
@@ -126,9 +133,9 @@ The important consequence is that `epicenter.config.ts` does not own the normal 
 
 ```txt
 @epicenter/fuji/daemon
-  FUJI_DAEMON_ROUTE = "fuji"
+  DEFAULT_FUJI_DAEMON_ROUTE = "fuji"
   defineFujiDaemon()      -> DaemonHostDefinition { route: "fuji", start }
-  openFujiDaemonActions() -> connectDaemonActions({ route: "fuji" })
+  connectFujiDaemonActions() -> connectDaemonActions({ route: "fuji" })
 ```
 
 That removes the common drift case. The host and the script helper share one package-level default. `epicenter.config.ts` only composes hosts.
@@ -136,11 +143,11 @@ That removes the common drift case. The host and the script helper share one pac
 Custom routes stay possible, but they become an explicit local deployment choice:
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon({ route: 'blog' })],
 });
 
-const blog = await openFujiDaemonActions({
+const blog = await connectFujiDaemonActions({
 	route: 'blog',
 });
 ```
@@ -153,7 +160,7 @@ The daemon factory should make the normal config short, but the defaults need to
 
 | Value | Default | Override? | Rationale |
 | --- | --- | --- | --- |
-| Route key | App daemon constant, e.g. `FUJI_DAEMON_ROUTE = 'fuji'` | Yes, through `defineFujiDaemon({ route })` | Normal route is app-owned and shared by config and app-specific script helpers |
+| Route key | App daemon constant, e.g. `DEFAULT_FUJI_DAEMON_ROUTE = 'fuji'` | Yes, through `defineFujiDaemon({ route })` | Normal route is app-owned and shared by config and app-specific script helpers |
 | Y.Doc guid | Hard-coded in the app doc factory, e.g. `epicenter.fuji` | No, unless the app adds a separate product feature | Changing storage and sync identity should be deliberate |
 | Yjs clientID | `hashClientId(projectDir)` | Yes, mainly tests | Stable per-project writer identity is the right default |
 | Project dir | Explicit `findEpicenterDir(import.meta.dir)` in config | Yes | `epicenter up -C` means `process.cwd()` may not be the config directory |
@@ -170,7 +177,7 @@ const projectDir = findEpicenterDir(import.meta.dir);
 const getToken = async () =>
 	(await sessions.load(EPICENTER_API_URL))?.accessToken ?? null;
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon({ getToken })],
 });
 ```
@@ -178,7 +185,7 @@ export default defineEpicenterConfig({
 And the fully explicit form remains available:
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon({
 		route: 'blog',
 		getToken,
@@ -198,12 +205,12 @@ export default defineEpicenterConfig({
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Config shape | `defineEpicenterConfig({ hosts: DaemonHostDefinition[] })` | No export scanning, no fake single `workspaces` key, and default routes live with app daemon factories |
+| Config shape | `defineConfig({ hosts: DaemonHostDefinition[] })` | No export scanning, no fake single `workspaces` key, and default routes live with app daemon factories |
 | Route id | `DaemonHostDefinition.route` | App daemon subpaths own the normal route and can export matching script helpers |
 | Fuji daemon start result | `DaemonWorkspace` facade only | Persistence and materializers run privately |
 | Readiness | Async host construction | A hosted workspace is ready once the factory resolves. The daemon should not carry a separate `whenReady` field. |
 | Script typing | `ReturnType<typeof createFujiActions>` | Scripts depend on action factories, not config exports |
-| Script route | App-specific connector default | `openFujiDaemonActions()` can use the same `FUJI_DAEMON_ROUTE` as `defineFujiDaemon()` |
+| Script route | App-specific connector default | `connectFujiDaemonActions()` can use the same `DEFAULT_FUJI_DAEMON_ROUTE` as `defineFujiDaemon()` |
 | Peer identity default | App daemon factory defaults `peer` | The normal daemon identity is obvious and overrideable |
 | Token default | Conditional default | Add it only if the token helper can live in a small host-runtime module without an app to CLI cycle |
 
@@ -222,7 +229,7 @@ export type DaemonWorkspace = {
 
 export type DaemonHostDefinition = {
 	route: string;
-	start(options: EpicenterConfigContext): DaemonWorkspace | Promise<DaemonWorkspace>;
+	start(options: DaemonRouteContext): DaemonWorkspace | Promise<DaemonWorkspace>;
 };
 
 export type EpicenterConfig = {
@@ -230,7 +237,7 @@ export type EpicenterConfig = {
 	hosts: DaemonHostDefinition[];
 };
 
-export function defineEpicenterConfig({
+export function defineConfig({
 	hosts,
 }: {
 	hosts: DaemonHostDefinition[];
@@ -260,9 +267,9 @@ Project config hosts daemon workspaces:
 ```ts
 // epicenter.config.ts
 import { defineFujiDaemon } from '@epicenter/fuji/daemon';
-import { defineEpicenterConfig } from '@epicenter/workspace/daemon';
+import { defineConfig } from '@epicenter/workspace/daemon';
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon()],
 });
 ```
@@ -271,10 +278,10 @@ Fuji's daemon subpath returns a daemon definition. Its `start()` result exposes 
 
 ```ts
 // @epicenter/fuji/daemon
-export const FUJI_DAEMON_ROUTE = 'fuji';
+export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 
 export function defineFujiDaemon({
-	route = FUJI_DAEMON_ROUTE,
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	peer = defaultFujiDaemonPeer(),
 	getToken,
 	apiUrl = EPICENTER_API_URL,
@@ -303,8 +310,8 @@ export function defineFujiDaemon({
 	});
 }
 
-export function openFujiDaemonActions({
-	route = FUJI_DAEMON_ROUTE,
+export function connectFujiDaemonActions({
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	projectDir,
 }: {
 	route?: string;
@@ -320,9 +327,9 @@ export function openFujiDaemonActions({
 Scripts type against action factories, not config exports:
 
 ```ts
-import { openFujiDaemonActions } from '@epicenter/fuji/daemon';
+import { connectFujiDaemonActions } from '@epicenter/fuji/daemon';
 
-const fuji = await openFujiDaemonActions();
+const fuji = await connectFujiDaemonActions();
 
 await fuji.entries.create({ title: 'Hello' });
 ```
@@ -384,7 +391,7 @@ export type OpenFujiDaemonOptions = {
 };
 
 export function defineFujiDaemon({
-	route = FUJI_DAEMON_ROUTE,
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	peer = defaultFujiDaemonPeer(),
 	getToken,
 	apiUrl = EPICENTER_API_URL,
@@ -434,7 +441,7 @@ The key collapse:
 The host normally runs on the same machine as `epicenter auth login`, so a default token getter is attractive:
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon()],
 });
 ```
@@ -445,18 +452,17 @@ store.
 
 The default should not make app daemon subpaths import the whole CLI package if that creates a package cycle. Prefer one of these shapes:
 
-1. Move the session token reader into a small host-runtime module that app daemon subpaths can depend on.
-2. Add a narrow `@epicenter/cli/auth` or `@epicenter/cli/session` subpath that has no command or loader imports.
+1. Read credentials through `@epicenter/auth/node`, which already owns the Node auth store.
+2. Add a narrower auth runtime package only if app packages cannot depend on `@epicenter/auth/node`.
 3. Keep `getToken` explicit until the repeated boilerplate is painful enough to justify the extraction.
 
 The fallback explicit form is:
 
 ```ts
-const sessions = createSessionStore();
-const getToken = async () =>
-	(await sessions.load(EPICENTER_API_URL))?.accessToken ?? null;
+const credentials = createDefaultCredentialStore();
+const getToken = () => credentials.getBearerToken(EPICENTER_API_URL);
 
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon({ getToken })],
 });
 ```
@@ -480,7 +486,7 @@ Target loader:
 ```txt
 import config module
 read default export
-validate defineEpicenterConfig result
+validate defineConfig result
 hosts = config.hosts
 entries = await Promise.all(
   hosts.map(async (definition) => {
@@ -531,9 +537,9 @@ Network readiness is separate. A normal local action should not wait for `sync.w
 Scripts should not import hosted clients from `epicenter.config.ts`. In the normal case they should import app-specific daemon action helpers from the app package:
 
 ```ts
-import { openFujiDaemonActions } from '@epicenter/fuji/daemon';
+import { connectFujiDaemonActions } from '@epicenter/fuji/daemon';
 
-const fuji = await openFujiDaemonActions();
+const fuji = await connectFujiDaemonActions();
 ```
 
 The generic primitive still exists for custom routes:
@@ -548,10 +554,10 @@ export async function connectDaemonActions<TActions>(options: {
 App daemon subpaths can build on it:
 
 ```ts
-export const FUJI_DAEMON_ROUTE = 'fuji';
+export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 
-export function openFujiDaemonActions({
-	route = FUJI_DAEMON_ROUTE,
+export function connectFujiDaemonActions({
+	route = DEFAULT_FUJI_DAEMON_ROUTE,
 	projectDir,
 }: {
 	route?: string;
@@ -577,11 +583,11 @@ They both return typed action proxies, but their address spaces are different:
 If a project customizes the route, both the host and action helper take the same override:
 
 ```ts
-export default defineEpicenterConfig({
+export default defineConfig({
 	hosts: [defineFujiDaemon({ route: 'blog' })],
 });
 
-const blog = await openFujiDaemonActions({
+const blog = await connectFujiDaemonActions({
 	route: 'blog',
 });
 ```
@@ -590,7 +596,7 @@ const blog = await openFujiDaemonActions({
 
 ### Phase 1: Host Types
 
-- [x] **1.1** Add `DaemonWorkspace`, `DaemonHostDefinition`, and `defineEpicenterConfig`.
+- [x] **1.1** Add `DaemonWorkspace`, `DaemonHostDefinition`, and `defineConfig`.
 - [x] **1.2** Keep `WorkspaceEntry[]` as the internal daemon server input.
 - [x] **1.3** Add tests for invalid route keys and non-workspace host values.
 - [x] **1.4** Remove `whenReady` from hosted workspace types and daemon dispatch.
@@ -614,20 +620,20 @@ const blog = await openFujiDaemonActions({
 
 ### Phase 4: Call Sites and Docs
 
-- [x] **4.1** Migrate example configs to `export default defineEpicenterConfig({ hosts: [...] })`.
+- [x] **4.1** Migrate example configs to `export default defineConfig({ hosts: [...] })`.
 - [x] **4.2** Replace docs that import from `epicenter.config.ts`.
 - [x] **4.3** Add `connectDaemonActions<TActions>()`.
-- [x] **4.4** Add app-specific helpers such as `openFujiDaemonActions()`.
+- [x] **4.4** Add app-specific helpers such as `connectFujiDaemonActions()`.
 - [x] **4.5** Update script examples to use app-specific daemon action helpers.
 
 ## Implementation Notes
 
-- `@epicenter/workspace/daemon` now exports `defineEpicenterConfig`, `DaemonWorkspace`, and related host types.
-- `loadConfig()` now accepts only the default `defineEpicenterConfig({ hosts: [...] })` shape. Named export scanning is removed.
+- `@epicenter/workspace/daemon` now exports `defineConfig`, `DaemonWorkspace`, and related host types.
+- `loadConfig()` now accepts only the default `defineConfig({ hosts: [...] })` shape. Named export scanning is removed.
 - Duplicate routes are rejected by `loadConfig()` with `DuplicateRoute` before the daemon server binds.
 - `connectDaemon<TWorkspace>()` was removed in favor of `connectDaemonActions<TActions>()`.
 - `defineFujiDaemon()` now returns a host definition with route metadata. Its `start()` result exposes `actions`, `sync`, `presence`, `rpc`, and disposal only. The internal document, tables, Yjs log, SQLite materializer, and markdown materializer stay private.
-- `openFujiDaemonActions()` destructures options in the signature and defaults to `FUJI_DAEMON_ROUTE`.
+- `connectFujiDaemonActions()` destructures options in the signature and defaults to `DEFAULT_FUJI_DAEMON_ROUTE`.
 
 ## Settled Decisions And Remaining Question
 
@@ -639,8 +645,8 @@ const blog = await openFujiDaemonActions({
    - Decision: remove it immediately.
    - Rationale: keeping both shapes would preserve the old "config as API module" ambiguity and weaken the route ownership model.
 
-3. **Should `defineEpicenterConfig()` accept a raw array without a wrapper?**
-   - Options: require `defineEpicenterConfig({ hosts: [...] })`, accept `export default [...]`, or support both.
+3. **Should `defineConfig()` accept a raw array without a wrapper?**
+   - Options: require `defineConfig({ hosts: [...] })`, accept `export default [...]`, or support both.
    - Decision: require the helper first. It gives the loader a reliable shape and gives TypeScript a place to validate host values.
 
 4. **Should routes be overrideable?**
@@ -648,5 +654,5 @@ const blog = await openFujiDaemonActions({
    - Decision: allow `route` overrides. Defaults should be strong, but custom host names should not require rebuilding the daemon factory.
 
 5. **What should the local daemon action helper be called?**
-   - Options: app-specific `openFujiDaemonActions()`, generic `connectDaemonActions<TActions>({ route })`, or generic `openDaemonActions<TActions>({ route })`.
+   - Options: app-specific `connectFujiDaemonActions()`, generic `connectDaemonActions<TActions>({ route })`, or generic `openDaemonActions<TActions>({ route })`.
    - Decision: expose app-specific helpers for common scripts and keep `connectDaemonActions` as the generic primitive.

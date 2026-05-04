@@ -123,6 +123,32 @@ describe('loadDaemonConfig', () => {
 		).toEqual([]);
 	});
 
+	test('rejects reserved object route keys before starting route definitions', async () => {
+		writeConfig(`
+			globalThis.__loadConfigEvents = [];
+
+			export default {
+				daemon: {
+					routes: [{
+						route: 'constructor',
+						start: () => {
+							globalThis.__loadConfigEvents.push('started');
+							throw new Error('reserved route definition started');
+						}
+					}]
+				}
+			};
+		`);
+
+		const result = await loadDaemonConfig(workDir);
+
+		expect(result.data).toBeNull();
+		expect(result.error?.name).toBe('InvalidRoute');
+		expect(
+			(globalThis as { __loadConfigEvents?: string[] }).__loadConfigEvents,
+		).toEqual([]);
+	});
+
 	test('rejects duplicate route definitions', async () => {
 		writeConfig(`
 			export default {

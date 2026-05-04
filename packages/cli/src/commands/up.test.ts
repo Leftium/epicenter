@@ -5,12 +5,12 @@
  * `SyncAttachment` so we never spawn a child or call `process.exit`. The
  * cross-process e2e (real CLI binary, real relay) lands in Wave 8.
  *
- * Cases (per the brief):
- *   1. Happy path: bindUnixSocket is called, metadata is written, ping replies "pong".
- *   2. Already-running: pre-write metadata for `process.pid` + a real listening socket;
- *      runUp throws "daemon already running (pid=X)".
- *   3. Orphan: pre-write metadata for a dead pid + phantom socket; runUp proceeds
- *      cleanly (no throw).
+ * Key behaviors:
+ * - happy path writes metadata, binds the socket, and replies to ping
+ * - startup failures release the claimed daemon lease
+ * - responsive legacy sockets return AlreadyRunning and dispose started routes
+ * - held SQLite leases short-circuit before config import or route startup
+ * - orphan socket files are swept and replaced by a fresh daemon
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -29,20 +29,33 @@ import type {
 	StartedDaemonRoute,
 } from '@epicenter/workspace/daemon';
 import {
-	bindUnixSocket,
+	claimDaemonLease,
 	metadataPathFor,
 	pingDaemon,
 	socketPathFor,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Ok } from 'wellcrafted/result';
-import type { LoadedDaemonConfig } from '../load-config';
+import { Hono } from 'hono';
+import { Ok, type Result } from 'wellcrafted/result';
+import { DaemonConfigError, type LoadedDaemonConfig } from '../load-config';
 import { runUp } from './up';
 
 let originalXdg: string | undefined;
 let runtimeRoot: string;
 let workDir: string;
 let homeRoot: string;
+
+function servePingDaemon(socketPath: string): Bun.Server<undefined> {
+	const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
+	return Bun.serve({ unix: socketPath, fetch: app.fetch });
+}
+
+function expectOk<T>(result: Result<T, unknown>): T {
+	expect(result.error).toBeNull();
+	if (result.error !== null) throw result.error;
+	return result.data as T;
+}
+
 let originalHome: string | undefined;
 
 beforeEach(() => {
@@ -72,11 +85,11 @@ afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
 });
 
-function makeFakeWorkspace(): DaemonRuntime {
+function makeFakeWorkspace(onDispose?: () => void): DaemonRuntime {
 	return {
 		actions: {},
 		async [Symbol.asyncDispose]() {
-			/* no-op */
+			onDispose?.();
 		},
 		sync: {
 			whenConnected: new Promise(() => {
@@ -116,7 +129,89 @@ describe('runUp: happy path', () => {
 		const workspace = makeFakeWorkspace();
 		const config = makeFakeConfig(workspace);
 
-		const { data: handle, error } = await runUp(
+		const handle = expectOk(
+			await runUp(
+				{
+					projectDir: workDir,
+					quiet: true,
+				},
+				{
+					loadDaemonConfig: async () => Ok(config),
+				},
+			),
+		);
+		try {
+			// Metadata was written.
+			expect(existsSync(metadataPathFor(workDir))).toBe(true);
+			expect(handle.metadata.pid).toBe(process.pid);
+			expect(handle.runtimes).toHaveLength(1);
+			expect(handle.runtimes[0]?.route).toBe('default');
+
+			// Socket is bound; ping it via a fresh connect using the real client.
+			const sockPath = socketPathFor(workDir);
+			expect(existsSync(sockPath)).toBe(true);
+			const ok = await pingDaemon(sockPath, 1000);
+			expect(ok).toBe(true);
+		} finally {
+			await handle.teardown();
+		}
+		// Cleanup: metadata and socket gone.
+		const sockPath = socketPathFor(workDir);
+		expect(existsSync(metadataPathFor(workDir))).toBe(false);
+		expect(existsSync(sockPath)).toBe(false);
+	});
+});
+
+describe('runUp: failure cleanup', () => {
+	test('releases the daemon lease when config loading fails', async () => {
+		const configPath = join(workDir, 'epicenter.config.ts');
+
+		const { error } = await runUp(
+			{
+				projectDir: workDir,
+				quiet: true,
+			},
+			{
+				loadDaemonConfig: async () =>
+					DaemonConfigError.InvalidConfig({ configPath }),
+			},
+		);
+
+		expect(error?.name).toBe('InvalidConfig');
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+
+	test('releases the daemon lease when route startup fails', async () => {
+		const config = makeFakeConfig(makeFakeWorkspace());
+
+		const { error } = await runUp(
+			{
+				projectDir: workDir,
+				quiet: true,
+			},
+			{
+				loadDaemonConfig: async () => Ok(config),
+				startDaemonRoutes: async () =>
+					DaemonConfigError.RouteFailed({
+						configPath: config.configPath,
+						route: 'default',
+						cause: new Error('route failed'),
+					}),
+			},
+		);
+
+		expect(error?.name).toBe('RouteFailed');
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+
+	test('returns MetadataWriteFailed and tears down when metadata path is blocked', async () => {
+		const workspace = makeFakeWorkspace();
+		const config = makeFakeConfig(workspace);
+		mkdirSync(metadataPathFor(workDir));
+
+		const { error } = await runUp(
 			{
 				projectDir: workDir,
 				quiet: true,
@@ -125,37 +220,20 @@ describe('runUp: happy path', () => {
 				loadDaemonConfig: async () => Ok(config),
 			},
 		);
-		expect(error).toBeNull();
-		if (error) throw new Error('runUp failed unexpectedly');
 
-		// Metadata was written.
-		expect(existsSync(metadataPathFor(workDir))).toBe(true);
-		expect(handle.metadata.pid).toBe(process.pid);
-		expect(handle.runtimes).toHaveLength(1);
-		expect(handle.runtimes[0]?.route).toBe('default');
-
-		// Socket is bound; ping it via a fresh connect using the real client.
-		const sockPath = socketPathFor(workDir);
-		expect(existsSync(sockPath)).toBe(true);
-		const ok = await pingDaemon(sockPath, 1000);
-		expect(ok).toBe(true);
-
-		await handle.teardown();
-		// Cleanup: metadata and socket gone.
-		expect(existsSync(metadataPathFor(workDir))).toBe(false);
-		expect(existsSync(sockPath)).toBe(false);
+		expect(error?.name).toBe('MetadataWriteFailed');
+		expect(existsSync(socketPathFor(workDir))).toBe(false);
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
 	});
 });
 
 describe('runUp: already running', () => {
-	test('returns AlreadyRunning when a live daemon is detected', async () => {
+	test('returns AlreadyRunning when a responsive legacy socket is detected', async () => {
 		const sockPath = socketPathFor(workDir);
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
-		const { Hono } = await import('hono');
-		const { Ok } = await import('wellcrafted/result');
-		const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
-		const server = await bindUnixSocket(sockPath, app);
+		const server = servePingDaemon(sockPath);
 
 		writeMetadata(workDir, {
 			pid: process.pid,
@@ -164,6 +242,50 @@ describe('runUp: already running', () => {
 			cliVersion: '0.0.0',
 			configMtime: 0,
 		});
+
+		let loadCalls = 0;
+		let startCalls = 0;
+		let disposeCalls = 0;
+		try {
+			const { error } = await runUp(
+				{
+					projectDir: workDir,
+					quiet: true,
+				},
+				{
+					loadDaemonConfig: async () => {
+						loadCalls++;
+						return Ok(makeFakeConfig(makeFakeWorkspace()));
+					},
+					startDaemonRoutes: async () => {
+						startCalls++;
+						return Ok([
+							{
+								route: 'default',
+								runtime: makeFakeWorkspace(() => {
+									disposeCalls++;
+								}),
+							},
+						] satisfies StartedDaemonRoute[]);
+					},
+				},
+			);
+			expect(error).toMatchObject({
+				name: 'AlreadyRunning',
+				pid: process.pid,
+			});
+			expect(loadCalls).toBe(1);
+			expect(startCalls).toBe(1);
+			expect(disposeCalls).toBe(1);
+		} finally {
+			await server.stop(true).catch(() => {
+				// best-effort
+			});
+		}
+	});
+
+	test('does not import config when the daemon lease is held', async () => {
+		const lease = expectOk(claimDaemonLease(workDir));
 
 		let loadCalls = 0;
 		let startCalls = 0;
@@ -184,47 +306,12 @@ describe('runUp: already running', () => {
 					},
 				},
 			);
+
 			expect(error?.name).toBe('AlreadyRunning');
-			if (error?.name === 'AlreadyRunning') {
-				expect(error.pid).toBe(process.pid);
-			}
 			expect(loadCalls).toBe(0);
 			expect(startCalls).toBe(0);
 		} finally {
-			server.stop();
-		}
-	});
-
-	test('does not import config when a live daemon is detected', async () => {
-		const sockPath = socketPathFor(workDir);
-		const { Hono } = await import('hono');
-		const { Ok } = await import('wellcrafted/result');
-		const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
-		const server = await bindUnixSocket(sockPath, app);
-
-		writeFileSync(
-			join(workDir, 'epicenter.config.ts'),
-			`globalThis.__upImportSideEffects = (globalThis.__upImportSideEffects ?? 0) + 1;
-			export default { daemon: { routes: [] } };`,
-		);
-		delete (globalThis as { __upImportSideEffects?: number })
-			.__upImportSideEffects;
-
-		try {
-			const { error } = await runUp({
-				projectDir: workDir,
-				quiet: true,
-			});
-
-			expect(error?.name).toBe('AlreadyRunning');
-			expect(
-				(globalThis as { __upImportSideEffects?: number })
-					.__upImportSideEffects,
-			).toBeUndefined();
-		} finally {
-			server.stop();
-			delete (globalThis as { __upImportSideEffects?: number })
-				.__upImportSideEffects;
+			lease.release();
 		}
 	});
 });
@@ -247,22 +334,24 @@ describe('runUp: orphan path', () => {
 		const workspace = makeFakeWorkspace();
 		const config = makeFakeConfig(workspace);
 
-		const { data: handle, error } = await runUp(
-			{
-				projectDir: workDir,
-				quiet: true,
-			},
-			{
-				loadDaemonConfig: async () => Ok(config),
-			},
+		const handle = expectOk(
+			await runUp(
+				{
+					projectDir: workDir,
+					quiet: true,
+				},
+				{
+					loadDaemonConfig: async () => Ok(config),
+				},
+			),
 		);
-		expect(error).toBeNull();
-		if (error) throw new Error('runUp failed unexpectedly');
 
-		// Daemon came up; fresh metadata for *this* pid was written.
-		expect(handle.metadata.pid).toBe(process.pid);
-		expect(existsSync(socketPathFor(workDir))).toBe(true);
-
-		await handle.teardown();
+		try {
+			// Daemon came up; fresh metadata for *this* pid was written.
+			expect(handle.metadata.pid).toBe(process.pid);
+			expect(existsSync(socketPathFor(workDir))).toBe(true);
+		} finally {
+			await handle.teardown();
+		}
 	});
 });

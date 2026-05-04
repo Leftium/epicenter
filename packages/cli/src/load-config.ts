@@ -13,10 +13,7 @@ import type {
 	DaemonRuntime,
 	StartedDaemonRoute,
 } from '@epicenter/workspace/daemon';
-import {
-	findDuplicateDaemonRoute,
-	isValidDaemonRoute,
-} from '@epicenter/workspace/node';
+import { validateDaemonRouteNames } from '@epicenter/workspace/node';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -128,7 +125,7 @@ export const DaemonConfigError = defineErrors({
 	}) => ({
 		message:
 			`Invalid daemon route "${route}" in ${configPath}: ` +
-			`use letters, numbers, "_" or "-", and do not start with punctuation.`,
+			`use letters, numbers, "_" or "-", and avoid reserved object keys.`,
 		configPath,
 		route,
 	}),
@@ -260,20 +257,23 @@ export async function loadDaemonConfig(
 		if (!hasRouteDefinitionShape(routeDefinition)) {
 			return DaemonConfigError.InvalidRouteDefinition({ configPath, route });
 		}
-		if (!isValidDaemonRoute(routeDefinition.route)) {
-			return DaemonConfigError.InvalidRoute({
-				configPath,
-				route: routeDefinition.route,
-			});
-		}
 		routes.push(routeDefinition);
 	}
 
-	const duplicate = findDuplicateDaemonRoute(
+	const routeIssue = validateDaemonRouteNames(
 		routes.map((entry) => entry.route),
 	);
-	if (duplicate !== null) {
-		return DaemonConfigError.DuplicateRoute({ configPath, route: duplicate });
+	if (routeIssue?.reason === 'invalid') {
+		return DaemonConfigError.InvalidRoute({
+			configPath,
+			route: routeIssue.route,
+		});
+	}
+	if (routeIssue?.reason === 'duplicate') {
+		return DaemonConfigError.DuplicateRoute({
+			configPath,
+			route: routeIssue.route,
+		});
 	}
 
 	return Ok({

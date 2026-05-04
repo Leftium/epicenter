@@ -1,11 +1,14 @@
-import type { EncryptionKeys as EncryptionKeysData } from '@epicenter/workspace/encryption-key';
+import type { EncryptionKeys } from '@epicenter/encryption';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { Session } from '../contracts/session.js';
+import type { Session as AuthSession } from '../auth-types.js';
+import type { Session as StoredSession } from '../contracts/session.js';
+import { type AuthClient, createAuth } from '../create-auth.js';
+import type { SessionStorage } from '../session-store.js';
 import {
 	type AuthServerTransport,
 	createAuthServerTransport,
@@ -16,6 +19,10 @@ import {
 	type MachineCredential,
 	type MachineCredentialMetadata,
 } from './machine-credential-repository.js';
+import {
+	createKeychainMachineCredentialSecretStorage,
+	createPlaintextMachineCredentialSecretStorage,
+} from './machine-credential-secret-storage.js';
 import { normalizeServerOrigin } from './server-origin.js';
 
 type Clock = { now(): Date };
@@ -70,8 +77,8 @@ export type MachineCredentialStoragePolicy =
 
 export type MachineCredentialSummary = {
 	serverOrigin: string;
-	user: Pick<Session['user'], 'id' | 'name' | 'email'>;
-	session: Pick<Session['session'], 'expiresAt'>;
+	user: Pick<StoredSession['user'], 'id' | 'name' | 'email'>;
+	session: Pick<StoredSession['session'], 'expiresAt'>;
 	savedAt: string;
 	lastUsedAt: string;
 };
@@ -130,6 +137,31 @@ function isExpired(credential: MachineCredential, clock: Clock): boolean {
 	);
 }
 
+function toAuthSession(credential: MachineCredential): AuthSession {
+	return {
+		token: credential.bearerToken,
+		user: credential.session.user,
+		encryptionKeys: credential.session.encryptionKeys,
+	};
+}
+
+function toStoredSession(
+	current: MachineCredential,
+	session: AuthSession,
+	updatedAt: string,
+): StoredSession {
+	return {
+		user: session.user,
+		session: {
+			...current.session.session,
+			token: session.token,
+			userId: session.user.id,
+			updatedAt,
+		},
+		encryptionKeys: session.encryptionKeys,
+	};
+}
+
 function credentialSummary(
 	credential: MachineCredential | MachineCredentialMetadata,
 ): MachineCredentialSummary {
@@ -162,12 +194,13 @@ export function createMachineAuth({
 }: MachineAuthOptions = {}) {
 	const credentialFilePath =
 		credentialStorage.credentialFilePath ?? defaultCredentialPath();
+	const secretStorage =
+		credentialStorage.kind === 'plaintextFile'
+			? createPlaintextMachineCredentialSecretStorage()
+			: createKeychainMachineCredentialSecretStorage();
 	const credentialRepository = createMachineCredentialRepository({
 		path: credentialFilePath,
-		credentialStorage:
-			credentialStorage.kind === 'plaintextFile'
-				? { kind: 'plaintextFile' }
-				: { kind: 'keychain' },
+		secretStorage,
 		clock,
 	});
 
@@ -412,7 +445,7 @@ export function createMachineAuth({
 
 		getActiveEncryptionKeys(input?: {
 			serverOrigin?: string | URL;
-		}): Promise<Result<EncryptionKeysData | null, MachineAuthError>> {
+		}): Promise<Result<EncryptionKeys | null, MachineAuthError>> {
 			return readCredentialField(input, (credential) =>
 				isExpired(credential, clock) ? null : credential.session.encryptionKeys,
 			);
@@ -420,31 +453,101 @@ export function createMachineAuth({
 
 		getOfflineEncryptionKeys(input?: {
 			serverOrigin?: string | URL;
-		}): Promise<Result<EncryptionKeysData | null, MachineAuthError>> {
+		}): Promise<Result<EncryptionKeys | null, MachineAuthError>> {
 			return readCredentialField(
 				input,
 				(credential) => credential.session.encryptionKeys,
 			);
 		},
+
+		loadActiveSession(input: {
+			serverOrigin: string | URL;
+		}): Promise<Result<AuthSession | null, MachineAuthError>> {
+			return readCredentialField(input, (credential) =>
+				isExpired(credential, clock) ? null : toAuthSession(credential),
+			);
+		},
+
+		async saveActiveSession(input: {
+			serverOrigin: string | URL;
+			session: AuthSession | null;
+		}): Promise<Result<undefined, MachineAuthError>> {
+			const origin = normalizeOriginResult(input.serverOrigin);
+			if (origin.error) return origin;
+
+			try {
+				if (input.session === null) {
+					await credentialRepository.clear(origin.data);
+					return Ok(undefined);
+				}
+
+				const current = await credentialRepository.get(origin.data);
+				if (current === null) {
+					throw new Error(
+						`No machine credential exists for ${origin.data}; cannot persist rotated session token.`,
+					);
+				}
+				await credentialRepository.save(origin.data, {
+					bearerToken: input.session.token,
+					session: toStoredSession(
+						current,
+						input.session,
+						clock.now().toISOString(),
+					),
+				});
+				return Ok(undefined);
+			} catch (cause) {
+				return MachineAuthError.CredentialStorageFailed({ cause });
+			}
+		},
 	};
 }
 
-export function createMachineTokenGetter({
+export function createMachineSessionStorage({
 	serverOrigin,
 	machineAuth = createMachineAuth(),
 }: {
 	serverOrigin: string | URL;
-	machineAuth?: Pick<MachineAuth, 'getBearerToken'>;
-}) {
+	machineAuth?: MachineAuth;
+}): SessionStorage {
 	if (serverOrigin === undefined) {
 		throw MachineAuthError.InvalidServerOrigin({
 			input: 'undefined',
 			cause: new Error('serverOrigin is required'),
 		}).error;
 	}
-	return async () => {
-		const result = await machineAuth.getBearerToken({ serverOrigin });
-		if (result.error) throw result.error;
-		return result.data;
+
+	return {
+		async load() {
+			const result = await machineAuth.loadActiveSession({ serverOrigin });
+			if (result.error) throw result.error;
+			return result.data;
+		},
+		async save(session) {
+			const result = await machineAuth.saveActiveSession({
+				serverOrigin,
+				session,
+			});
+			if (result.error) throw result.error;
+		},
+		watch() {
+			return () => {};
+		},
 	};
+}
+
+export function createMachineAuthClient({
+	serverOrigin,
+	machineAuth = createMachineAuth(),
+}: {
+	serverOrigin: string | URL;
+	machineAuth?: MachineAuth;
+}): AuthClient {
+	return createAuth({
+		baseURL: String(serverOrigin),
+		sessionStorage: createMachineSessionStorage({
+			serverOrigin,
+			machineAuth,
+		}),
+	});
 }

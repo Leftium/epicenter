@@ -1,7 +1,7 @@
 /**
  * Hono app for the `epicenter up` daemon. Single source of truth for the
- * routes; the server (`bindUnixSocket`) wires this into Bun's listener
- * and the hand-rolled `daemonClient` in `./client.ts` POSTs against it.
+ * routes; the daemon server wires its fetch handler into Bun's listener and
+ * the hand-rolled `daemonClient` in `./client.ts` POSTs against it.
  *
  * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
@@ -59,8 +59,8 @@ export const PeerSnapshot = type({
 export type PeerSnapshot = typeof PeerSnapshot.infer;
 
 /**
- * Build the daemon's Hono app. Tests import this directly; production wires
- * it into `Bun.serve({ unix, fetch: app.fetch })` via `bindUnixSocket`.
+ * Build the daemon's Hono app. Tests import this directly; production serves
+ * the app through the daemon server factory.
  *
  * `/list` exposes route-prefixed action paths. `/run` uses that same
  * prefix to pick the hosted daemon runtime before dispatching the inner action
@@ -100,10 +100,4 @@ export function buildDaemonApp(
 			setTimeout(() => triggerShutdown?.(), 0);
 			return c.json(Ok(null));
 		});
-}
-
-export function buildStartingDaemonApp() {
-	return new Hono()
-		.post('/ping', (c) => c.json(Ok('pong' as const)))
-		.all('*', (c) => c.text('daemon routes are starting', 503));
 }

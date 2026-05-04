@@ -55,6 +55,41 @@ export type Tab = { id: string; deviceId: string /* ... */ };
 
 If every type in a `types.ts` can be derived with `typeof`, `z.infer`, `InferTableRow`, `ReturnType`, etc., the file is redundant. Put each type next to the runtime value it's computed from.
 
+## Factory Return Types Should Follow the Factory
+
+When an exported type is the public handle returned by one `create*` factory, the factory return object is the source of truth.
+
+```typescript
+export type DisposableCache<
+	TId extends string | number,
+	TValue extends Disposable,
+> = ReturnType<typeof createDisposableCache<TId, TValue>>;
+
+export function createDisposableCache<
+	TId extends string | number,
+	TValue extends Disposable,
+>(build: (id: TId) => TValue) {
+	return {
+		open(id: TId): TValue & Disposable {
+			// ...
+		},
+		has(id: TId): boolean {
+			// ...
+		},
+	};
+}
+```
+
+This is different from annotating the factory as `: DisposableCache<TId, TValue>`. The annotation checks the shape, but it also makes editor navigation prefer the named type. The derived alias keeps the public name while letting Go to Definition walk into the actual returned member.
+
+Use this pattern when:
+
+- The type is exactly the return shape of one factory.
+- The factory and type live together.
+- The returned object is the easiest place to understand the API.
+
+Do not use it when the type is a shared contract implemented by multiple factories, a protocol shape, or a deliberate abstraction boundary. In those cases, keep the contract as the source of truth and make implementations `satisfies` it when you want conformance without losing implementation navigation.
+
 ## Inline vs Extract: The Hop Test
 
 The classic question — "is this used in multiple places?" — only answers *whether* you could extract. It doesn't answer *whether you should*. The better question:

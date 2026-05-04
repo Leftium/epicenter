@@ -1,7 +1,4 @@
-import {
-	EncryptionKeys,
-	type EncryptionKeys as EncryptionKeysData,
-} from '@epicenter/workspace/encryption-key';
+import { EncryptionKeys } from '@epicenter/encryption';
 import { type } from 'arktype';
 import type {
 	Session as BetterAuthSession,
@@ -11,7 +8,7 @@ import type {
 export type SessionResponse = {
 	user: BetterAuthUser;
 	session: BetterAuthSession;
-	encryptionKeys: EncryptionKeysData;
+	encryptionKeys: EncryptionKeys;
 };
 
 export const StoredBetterAuthUser = type({
@@ -89,9 +86,7 @@ function normalizeOptionalString(
 	return value;
 }
 
-export function normalizeUserForStorage(
-	value: unknown,
-): StoredBetterAuthUser {
+export function normalizeUserForStorage(value: unknown): StoredBetterAuthUser {
 	const record = readRecord(value, 'user');
 	return StoredBetterAuthUser.assert({
 		id: readString(record, 'id'),

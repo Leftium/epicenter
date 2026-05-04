@@ -1,18 +1,23 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
+import type { AuthClient } from '@epicenter/auth';
+import { createMachineAuth } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import type { EncryptionKeys, ProjectDir } from '@epicenter/workspace';
+import type { EncryptionKeys } from '@epicenter/encryption';
+import type { ProjectDir } from '@epicenter/workspace';
 import type { DaemonRuntime } from '@epicenter/workspace/daemon';
 import {
 	attachYjsLog,
-	createDaemonServer,
+	claimDaemonLease,
+	type DaemonLease,
+	type DaemonServer,
+	startDaemonServer,
 	yjsPath,
 } from '@epicenter/workspace/node';
 import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
-import { createMachineCredentialRepository } from '../../../../../packages/auth/src/node/machine-credential-repository.js';
 import { DEFAULT_FUJI_DAEMON_ROUTE, defineFujiDaemon } from './daemon.js';
 import { openFuji as openFujiDoc } from './index.js';
 import { openFujiScript, openFujiSnapshot } from './script.js';
@@ -26,6 +31,58 @@ const testEncryptionKeys: EncryptionKeys = [
 		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
 ];
+
+function createTestAuth(): AuthClient {
+	return {
+		snapshot: {
+			status: 'signedIn',
+			session: {
+				token: 'fake-token',
+				user: {
+					id: 'test-user',
+					createdAt: '2026-05-03T00:00:00.000Z',
+					updatedAt: '2026-05-03T00:00:00.000Z',
+					email: 'test@example.com',
+					emailVerified: true,
+					name: 'Test User',
+				},
+				encryptionKeys: testEncryptionKeys,
+			},
+		},
+		whenLoaded: Promise.resolve(),
+		onSnapshotChange() {
+			return () => {};
+		},
+		async signIn() {
+			throw new Error('unused');
+		},
+		async signUp() {
+			throw new Error('unused');
+		},
+		async signInWithSocialPopup() {
+			throw new Error('unused');
+		},
+		async signInWithSocialRedirect() {
+			throw new Error('unused');
+		},
+		async signOut() {
+			throw new Error('unused');
+		},
+		fetch: globalThis.fetch.bind(globalThis),
+		[Symbol.dispose]() {},
+	};
+}
+
+function jsonResponse(value: unknown, init?: ResponseInit): Response {
+	return new Response(JSON.stringify(value), {
+		status: 200,
+		...init,
+		headers: {
+			'content-type': 'application/json',
+			...init?.headers,
+		},
+	});
+}
 
 beforeEach(() => {
 	workdir = mintTestProjectDir('fuji-integration-');
@@ -46,7 +103,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 	test('script warm hydrates entries the daemon wrote', async () => {
 		{
 			const routeDefinition = defineFujiDaemon({
-				getToken: async () => 'fake-token',
+				auth: createTestAuth(),
 				webSocketImpl: NoopWebSocket,
 			});
 			const daemon = (await routeDefinition.start({
@@ -75,7 +132,7 @@ describe('daemon to script handoff via Yjs log file', () => {
 		await Bun.write(`${workdir}/epicenter.config.ts`, 'export default {};');
 
 		const routeDefinition = defineFujiDaemon({
-			getToken: async () => 'fake-token',
+			auth: createTestAuth(),
 			webSocketImpl: NoopWebSocket,
 		});
 		const daemon = await routeDefinition.start({
@@ -83,20 +140,26 @@ describe('daemon to script handoff via Yjs log file', () => {
 			route: DEFAULT_FUJI_DAEMON_ROUTE,
 		});
 		const oldRuntimeDir = process.env.XDG_RUNTIME_DIR;
-		process.env.XDG_RUNTIME_DIR = '/tmp';
-		const server = createDaemonServer({
-			projectDir: workdir,
-		});
+		let lease: DaemonLease | null = null;
+		let server: DaemonServer | null = null;
 		try {
-			const listening = await server.listen();
-			expect(listening.error).toBeNull();
-			if (listening.error !== null) return;
-			server.mountRoutes([
-				{
-					route: DEFAULT_FUJI_DAEMON_ROUTE,
-					runtime: daemon,
-				},
-			]);
+			process.env.XDG_RUNTIME_DIR = '/tmp';
+			const leaseResult = claimDaemonLease(workdir);
+			expect(leaseResult.error).toBeNull();
+			if (leaseResult.error !== null) throw new Error('expected daemon lease');
+			lease = leaseResult.data;
+			const serverResult = await startDaemonServer({
+				lease,
+				routes: [
+					{
+						route: DEFAULT_FUJI_DAEMON_ROUTE,
+						runtime: daemon,
+					},
+				],
+			});
+			expect(serverResult.error).toBeNull();
+			if (serverResult.error !== null) throw serverResult.error;
+			server = serverResult.data;
 
 			await using script = await openFujiScript({ projectDir: workdir });
 			const created = await script.actions.entries.create({
@@ -127,12 +190,20 @@ describe('daemon to script handoff via Yjs log file', () => {
 					.some((row) => row.id === created.data.id),
 			).toBe(true);
 		} finally {
-			await server.close();
-			await daemon[Symbol.asyncDispose]();
-			if (oldRuntimeDir === undefined) {
-				delete process.env.XDG_RUNTIME_DIR;
-			} else {
-				process.env.XDG_RUNTIME_DIR = oldRuntimeDir;
+			if (server) {
+				await server.close().catch(() => {
+					// best-effort
+				});
+			}
+			lease?.release();
+			try {
+				await daemon[Symbol.asyncDispose]();
+			} finally {
+				if (oldRuntimeDir === undefined) {
+					delete process.env.XDG_RUNTIME_DIR;
+				} else {
+					process.env.XDG_RUNTIME_DIR = oldRuntimeDir;
+				}
 			}
 		}
 	});
@@ -147,38 +218,77 @@ describe('daemon to script handoff via Yjs log file', () => {
 		writer[Symbol.dispose]();
 		await yjsLog.whenDisposed;
 
-		using lockedSnapshot = await openFujiSnapshot({ projectDir: workdir });
+		using lockedSnapshot = await openFujiSnapshot({
+			projectDir: workdir,
+			loadOfflineEncryptionKeys: async () => null,
+		});
 		expect(lockedSnapshot.tables.entries.getAllValid()).toEqual([]);
 
 		const now = new Date();
-		await createMachineCredentialRepository({
+		const machineAuth = createMachineAuth({
 			credentialStorage: { kind: 'plaintextFile' },
-		}).save(EPICENTER_API_URL, {
-			bearerToken: 'fake-token',
-			session: {
-				user: {
-					id: 'user-1',
-					name: 'User One',
-					email: 'user@example.com',
-					emailVerified: true,
-					image: null,
-					createdAt: now.toISOString(),
-					updatedAt: now.toISOString(),
-				},
-				session: {
-					id: 'session-1',
-					token: 'session-token',
-					userId: 'user-1',
-					expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
-					createdAt: now.toISOString(),
-					updatedAt: now.toISOString(),
-					ipAddress: null,
-					userAgent: null,
-				},
-				encryptionKeys: testEncryptionKeys,
+			sleep: async () => {},
+			fetch: (async (input) => {
+				const url = new URL(String(input));
+				if (url.pathname === '/auth/device/code') {
+					return jsonResponse({
+						device_code: 'device-code',
+						user_code: 'USER-CODE',
+						verification_uri: `${EPICENTER_API_URL}/device`,
+						verification_uri_complete: `${EPICENTER_API_URL}/device?code=USER`,
+						expires_in: 600,
+						interval: 0,
+					});
+				}
+				if (url.pathname === '/auth/device/token') {
+					return jsonResponse({
+						access_token: 'device-token',
+						expires_in: 3600,
+					});
+				}
+				return jsonResponse(
+					{
+						user: {
+							id: 'user-1',
+							name: 'User One',
+							email: 'user@example.com',
+							emailVerified: true,
+							image: null,
+							createdAt: now.toISOString(),
+							updatedAt: now.toISOString(),
+						},
+						session: {
+							id: 'session-1',
+							token: 'session-token',
+							userId: 'user-1',
+							expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
+							createdAt: now.toISOString(),
+							updatedAt: now.toISOString(),
+							ipAddress: null,
+							userAgent: null,
+						},
+						encryptionKeys: testEncryptionKeys,
+					},
+					{ headers: { 'set-auth-token': 'fake-token' } },
+				);
+			}) as typeof fetch,
+		});
+		const login = await machineAuth.loginWithDeviceCode({
+			serverOrigin: EPICENTER_API_URL,
+		});
+		expect(login.error).toBeNull();
+		if (login.error !== null) return;
+
+		using unlockedSnapshot = await openFujiSnapshot({
+			projectDir: workdir,
+			async loadOfflineEncryptionKeys() {
+				const result = await machineAuth.getOfflineEncryptionKeys({
+					serverOrigin: EPICENTER_API_URL,
+				});
+				if (result.error) throw result.error;
+				return result.data;
 			},
 		});
-		using unlockedSnapshot = await openFujiSnapshot({ projectDir: workdir });
 
 		expect(
 			unlockedSnapshot.tables.entries.getAllValid().map((row) => row.title),

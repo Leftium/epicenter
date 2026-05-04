@@ -98,7 +98,7 @@
  * ```
  *
  * Outside reactive contexts, `using` syntax is the cleanest match for the
- * `Disposable` shape:
+ * `Disposable` shape. `open()` is synchronous:
  *
  * ```ts
  * function readDoc(id: string) {
@@ -107,6 +107,9 @@
  * }
  * // handle disposed at scope exit; grace timer armed
  * ```
+ *
+ * If the returned value exposes readiness, await that field after opening:
+ * `using handle = cache.open(id); await handle.whenReady;`.
  *
  * ## Constraint: `T` must be a plain object
  *
@@ -168,26 +171,13 @@ export type DisposableCacheError = InferErrors<typeof DisposableCacheError>;
  * Refcounted cache returned by `createDisposableCache`. Itself `Disposable`:
  * `cache[Symbol.dispose]()` flushes every entry immediately.
  */
-export interface DisposableCache<Id, T> extends Disposable {
-	/**
-	 * Open a handle. Increments the refcount for `id`. The returned handle is
-	 * a fresh object built by spreading the underlying `T`'s own enumerable
-	 * properties, plus its own `[Symbol.dispose]` that decrements *this
-	 * handle's* refcount. It does NOT destroy the underlying `T` directly.
-	 * The underlying `T[Symbol.dispose]()` is called once, by the cache, when
-	 * the refcount reaches zero after `gcTime`.
-	 *
-	 * Each call returns a distinct handle (so `a !== b`), but their nested
-	 * fields share references (so `a.ydoc === b.ydoc`). N opens require N
-	 * disposes.
-	 */
-	open(id: Id): T & Disposable;
-	/** Whether an instance is currently held (refcounted or in grace window). */
-	has(id: Id): boolean;
-}
+export type DisposableCache<
+	TId extends string | number,
+	TValue extends Disposable,
+> = ReturnType<typeof createDisposableCache<TId, TValue>>;
 
-type CacheEntry<T extends Disposable> = {
-	value: T;
+type CacheEntry<TValue extends Disposable> = {
+	value: TValue;
 	openCount: number;
 	gcTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
@@ -196,7 +186,7 @@ type CacheEntry<T extends Disposable> = {
 /**
  * Create a refcounted cache for disposable resources.
  *
- * @param build - Closure invoked on cache miss. Returns a `T extends Disposable`.
+ * @param build - Closure invoked on cache miss. Returns a disposable value.
  *                Runs synchronously; if it throws, the cache is unchanged
  *                (next `open(sameId)` re-runs the closure; no poisoned entry).
  * @param opts  - `gcTime` (default `5_000`ms): milliseconds to wait after the
@@ -207,18 +197,18 @@ type CacheEntry<T extends Disposable> = {
  *                teardown.
  */
 export function createDisposableCache<
-	Id extends string | number,
-	T extends Disposable,
+	TId extends string | number,
+	TValue extends Disposable,
 >(
-	build: (id: Id) => T,
+	build: (id: TId) => TValue,
 	{
 		gcTime = 5_000,
 		log = createLogger('createDisposableCache'),
 	}: { gcTime?: number; log?: Logger } = {},
-): DisposableCache<Id, T> {
-	const entries = new Map<Id, CacheEntry<T>>();
+) {
+	const entries = new Map<TId, CacheEntry<TValue>>();
 
-	function disposeEntry(id: Id, entry: CacheEntry<T>): void {
+	function disposeEntry(id: TId, entry: CacheEntry<TValue>): void {
 		entry.disposed = true;
 		if (entry.gcTimer !== null) {
 			clearTimeout(entry.gcTimer);
@@ -236,8 +226,20 @@ export function createDisposableCache<
 		}
 	}
 
-	const cache: DisposableCache<Id, T> = {
-		open(id) {
+	const cache = {
+		/**
+		 * Open a handle. Increments the refcount for `id`. The returned handle is
+		 * a fresh object built by spreading the underlying `T`'s own enumerable
+		 * properties, plus its own `[Symbol.dispose]` that decrements *this
+		 * handle's* refcount. It does NOT destroy the underlying `T` directly.
+		 * The underlying `T[Symbol.dispose]()` is called once, by the cache, when
+		 * the refcount reaches zero after `gcTime`.
+		 *
+		 * Each call returns a distinct handle (so `a !== b`), but their nested
+		 * fields share references (so `a.ydoc === b.ydoc`). N opens require N
+		 * disposes.
+		 */
+		open(id: TId) {
 			let entry = entries.get(id);
 			if (entry === undefined) {
 				// User closure runs synchronously. If it throws, we DON'T insert
@@ -286,10 +288,11 @@ export function createDisposableCache<
 			return {
 				...entry.value,
 				[Symbol.dispose]: dispose,
-			} as T & Disposable;
+			} as TValue;
 		},
 
-		has(id) {
+		/** Whether an instance is currently held (refcounted or in grace window). */
+		has(id: TId) {
 			return entries.has(id);
 		},
 

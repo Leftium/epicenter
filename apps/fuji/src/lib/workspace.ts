@@ -49,10 +49,9 @@ export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
  * rather than being permanently destroyed: critical for CRDT conflict safety
  * when two devices diverge.
  *
- * The rich-text content document is a separate Y.Doc per entry. Apps own
- * content-doc construction via `buildEntryContentDoc` in `entry-content-docs.ts`,
- * which wires IndexedDB persistence and bumps `updatedAt` via
- * `onLocalUpdate`. Editor components bind through
+ * The rich-text content document is a separate Y.Doc per entry. The browser
+ * workspace setup owns content-doc construction, wires IndexedDB persistence,
+ * and bumps `updatedAt` via `onLocalUpdate`. Editor components bind through
  * `entryContentDocs.open(id)`.
  */
 const entriesTable = defineTable(
@@ -83,15 +82,14 @@ const entriesTable = defineTable(
 		updatedAt: DateTimeString,
 		_v: '2',
 	}),
-)
-	.migrate((row) => {
-		switch (row._v) {
-			case 1:
-				return { ...row, rating: 0, _v: 2 };
-			case 2:
-				return row;
-		}
-	});
+).migrate((row) => {
+	switch (row._v) {
+		case 1:
+			return { ...row, rating: 0, _v: 2 };
+		case 2:
+			return row;
+	}
+});
 
 export type Entry = InferTableRow<typeof entriesTable>;
 

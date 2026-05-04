@@ -45,7 +45,7 @@
 </script>
 
 <!--
-	Gate on whenReady — `asText()` on Timeline mutates when the doc is empty
+	Gate on whenReady: `asText()` on Timeline mutates when the doc is empty
 	(it pushes an entry). Calling it before persistence hydrates races the
 	IDB replay and can corrupt the timeline (phantom text entry alongside
 	the real stored entries).

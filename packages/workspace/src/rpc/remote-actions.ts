@@ -7,10 +7,10 @@ import type {
 	AwarenessSchema,
 } from '../document/attach-awareness.js';
 import type { SyncRpcAttachment } from '../document/attach-sync.js';
-import {
+import type {
+	PeerAwarenessState,
 	PeerIdentity,
-	type PeerAwarenessState,
-	type ResolvedPeer,
+	ResolvedPeer,
 } from '../document/peer-identity.js';
 import type {
 	ActionManifest,
@@ -70,38 +70,32 @@ export type RemoteClientOptions<
 	rpc: SyncRpcAttachment;
 };
 
-export type RemoteClient = {
-	actions<T>(peerId: string): RemoteActionProxy<
-		T,
-		RemoteCallError,
-		RemotePeerCallOptions
-	>;
-	describe(
-		peerId: string,
-		options?: RemotePeerCallOptions,
-	): Promise<Result<ActionManifest, RemoteCallError>>;
-	invoke<
-		TMap extends RpcActionMap = DefaultRpcMap,
-		TAction extends string & keyof TMap = string & keyof TMap,
-	>(
-		peerId: string,
-		action: TAction,
-		input?: TMap[TAction]['input'],
-		options?: RemotePeerCallOptions,
-	): Promise<Result<TMap[TAction]['output'], RemoteCallError>>;
-};
+export type RemoteClient = ReturnType<typeof createRemoteClient>;
 
-export function createRemoteClient(options: RemoteClientOptions): RemoteClient {
+export function createRemoteClient(options: RemoteClientOptions) {
 	return {
-		actions<T>(peerId: string) {
+		actions<T>(
+			peerId: string,
+		): RemoteActionProxy<T, RemoteCallError, RemotePeerCallOptions> {
 			return createRemoteActionProxy<T>(options, peerId);
 		},
-		describe(peerId, callOptions) {
+		describe(
+			peerId: string,
+			callOptions?: RemotePeerCallOptions,
+		): Promise<Result<ActionManifest, RemoteCallError>> {
 			return invokeRemoteAction<{
 				'system.describe': { input: undefined; output: ActionManifest };
 			}>(options, peerId, 'system.describe', undefined, callOptions);
 		},
-		invoke(peerId, action, input, callOptions) {
+		invoke<
+			TMap extends RpcActionMap = DefaultRpcMap,
+			TAction extends string & keyof TMap = string & keyof TMap,
+		>(
+			peerId: string,
+			action: TAction,
+			input?: TMap[TAction]['input'],
+			callOptions?: RemotePeerCallOptions,
+		): Promise<Result<TMap[TAction]['output'], RemoteCallError>> {
 			return invokeRemoteAction(options, peerId, action, input, callOptions);
 		},
 	};
@@ -114,10 +108,9 @@ function createRemoteActionProxy<T>(
 	const send: Sender = (path, input, callOptions) =>
 		invokeRemoteAction(options, peerId, path, input, callOptions);
 
-	return buildProxy<RemoteActionProxy<T, RemoteCallError, RemotePeerCallOptions>>(
-		[],
-		send,
-	);
+	return buildProxy<
+		RemoteActionProxy<T, RemoteCallError, RemotePeerCallOptions>
+	>([], send);
 }
 
 async function invokeRemoteAction<
@@ -142,7 +135,9 @@ async function invokeRemoteAction<
 		(resolveCall) => {
 			let settled = false;
 			let unsubscribe = () => {};
-			const settle = (value: Result<TMap[TAction]['output'], RemoteCallError>) => {
+			const settle = (
+				value: Result<TMap[TAction]['output'], RemoteCallError>,
+			) => {
 				if (settled) return;
 				settled = true;
 				unsubscribe();

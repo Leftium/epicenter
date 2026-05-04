@@ -87,6 +87,14 @@ function createHeadDoc(options: { workspaceId: string }) {
 
 Now hovering over `head.getEpoch()` shows the full JSDoc.
 
+This matters even more when the public type derives from the factory:
+
+```typescript
+export type HeadDoc = ReturnType<typeof createHeadDoc>;
+```
+
+With `ReturnType`, the returned object is the public type source. Put consumer-facing JSDoc directly on the returned method or getter so hover, completion, and Go to Definition all land on the same member.
+
 ## Why This Works
 
 1. **JSDoc attaches to the method definition site** - when methods are inline in the return object, the JSDoc is directly on the property TypeScript sees

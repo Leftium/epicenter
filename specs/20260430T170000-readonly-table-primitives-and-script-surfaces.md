@@ -83,7 +83,7 @@ Fuji scripts should expose a read-only snapshot and raw daemon actions:
 using snapshot = await openFujiSnapshot({ projectDir });
 const rows = snapshot.tables.entries.getAllValid();
 
-const actions = await openFujiDaemonActions({ projectDir });
+const actions = await connectFujiDaemonActions({ projectDir });
 const created = await actions.entries.create({ title: 'Draft' });
 if (created.error) throw created.error;
 
@@ -230,7 +230,7 @@ Do not implement this facade in the current script surface. The previous `create
 | Writable table composition | `createTable()` spreads `createReadonlyTable()` and adds writes | Keeps one parse and read implementation. Writable tables are a superset. |
 | Encrypted read-only tables | Add methods on the encryption coordinator | Mirrors existing `attachTable` and `attachTables` coordinator pattern. |
 | Fuji snapshot | Return read-only tables and no local actions | Snapshots are for inspection, export, and predicate-heavy local reads. They may be stale. |
-| Daemon actions | Keep `openFujiDaemonActions()` separate | This is the durable write surface for scripts. The daemon owns the source-of-truth Yjs log. |
+| Daemon actions | Keep `connectFujiDaemonActions()` separate | This is the durable write surface for scripts. The daemon owns the source-of-truth Yjs log. |
 | Daemon-backed tables | Defer table-shaped reads and writes | A one-off Fuji adapter is misleading. Raw daemon actions are honest until a reusable table-action contract exists. |
 | High-level script helper | Compose flattened snapshot tables and raw actions | Gives scripts local reads plus durable daemon commands without a fake table API. |
 | Snapshot naming in `openFujiScript()` | Expose `fuji.snapshot.entries`, not `fuji.snapshot.tables.entries` | Keeps the common local-read path short. Standalone `openFujiSnapshot()` still returns `{ tables, yjsLog }` for lower-level metadata. |
@@ -268,12 +268,12 @@ openFujiSnapshot()
   |-- attachReadonlyTables
   `-- returns read-only tables, yjsLog, dispose
 
-openFujiDaemonActions()
+connectFujiDaemonActions()
   `-- connectDaemonActions({ route, projectDir })
 
 openFujiScript()
   |-- snapshot: openFujiSnapshot().tables
-  |-- actions: openFujiDaemonActions()
+  |-- actions: connectFujiDaemonActions()
   `-- dispose: closes the underlying snapshot attachment and daemon client resources
 ```
 
@@ -348,7 +348,7 @@ export async function openFujiSnapshot(options?: OpenFujiSnapshotOptions): Promi
 	[Symbol.dispose](): void;
 }>;
 
-export function openFujiDaemonActions(options?: {
+export function connectFujiDaemonActions(options?: {
 	route?: string;
 	projectDir?: ProjectDir;
 }): Promise<DaemonActions<ReturnType<typeof createFujiActions>>>;
@@ -386,7 +386,7 @@ const drafts = snapshot.tables.entries.filter((entry) =>
 ```
 
 ```ts
-const actions = await openFujiDaemonActions({ projectDir });
+const actions = await connectFujiDaemonActions({ projectDir });
 
 await actions.entries.create({ title: 'Offline local draft' });
 ```
@@ -425,7 +425,7 @@ const fastRows = fuji.snapshot.entries.getAllValid();
 
 - [x] **3.1** Replace the ambiguous script `openFuji()` with `openFujiSnapshot()`.
 - [x] **3.2** `openFujiSnapshot()` returns read-only tables, `yjsLog`, and disposal. It does not return `actions`, `ydoc`, `batch`, `sync`, `rpc`, or writable tables.
-- [x] **3.3** Keep `openFujiDaemonActions()` in `daemon.ts` as the durable write surface.
+- [x] **3.3** Keep `connectFujiDaemonActions()` in `daemon.ts` as the durable write surface.
 - [x] **3.4** Add daemon query actions for serializable reads such as `get`, `getAllValid`, `count`, and `has`.
 - [x] **3.5** Defer the daemon-backed Fuji table facade until a reusable table-action contract exists.
 - [x] **3.6** Keep `entries.upsert` as a raw daemon action for import and repair scripts.
@@ -485,7 +485,7 @@ This is expected. `fuji.actions` is the source-of-truth API. `fuji.snapshot` is 
 
 ### Encrypted Snapshot Keys
 
-If the daemon log contains encrypted rows, `openFujiSnapshot()` and `openFujiScript()` read the saved Node session from `$EPICENTER_HOME/auth/sessions.json` and apply the saved encryption keys for the Epicenter API. Without a saved session, the snapshot can still read plaintext rows, but encrypted rows remain unreadable.
+If the daemon log contains encrypted rows, `openFujiSnapshot()` and `openFujiScript()` read the saved Node credentials from `$EPICENTER_HOME/auth/credentials.json` and apply the saved encryption keys for the Epicenter API. Without saved credentials, the snapshot can still read plaintext rows, but encrypted rows remain unreadable.
 
 ### Script Wants Direct Peer Writes
 

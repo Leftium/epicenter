@@ -2,8 +2,8 @@
  * `epicenter ps`: list running `up` daemons (this user, this machine).
  *
  * Enumerates `<runtimeDir>/*.meta.json`, pings each socket to confirm
- * liveness, and renders a compact table. Dead-pid metadata files are
- * opportunistically swept (same orphan path as `inspectExistingDaemon`).
+ * liveness, and renders a compact table. Dead-pid metadata and socket files
+ * are opportunistically swept through the shared daemon runtime-file cleanup.
  *
  * No `--json` flag in v1; the spec defers it until a tooling consumer
  * (Conductor panel, shell prompt) asks.
@@ -18,8 +18,7 @@ import {
 	enumerateDaemons,
 	pingDaemon,
 	socketPathFor,
-	unlinkMetadata,
-	unlinkSocketFile,
+	sweepDaemonRuntimeFiles,
 } from '@epicenter/workspace/node';
 import { CONFIG_FILENAME } from '../load-config.js';
 import { cmd } from '../util/cmd.js';
@@ -34,11 +33,6 @@ function isProcessAlive(pid: number): boolean {
 	} catch (cause) {
 		return (cause as NodeJS.ErrnoException).code === 'EPERM';
 	}
-}
-
-function sweepOrphan(dir: string): void {
-	unlinkMetadata(dir);
-	unlinkSocketFile(socketPathFor(dir));
 }
 
 /**
@@ -69,17 +63,17 @@ export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
 	const ping = deps.pingDaemon ?? pingDaemon;
 	const rows: PsRow[] = [];
 	for (const meta of enumerateDaemons()) {
-		// Dead pid → orphan: unlink metadata + socket and skip.
+		// Dead pid: orphan, unlink metadata + socket and skip.
 		if (!isProcessAlive(meta.pid)) {
-			sweepOrphan(meta.dir);
+			sweepDaemonRuntimeFiles(meta.dir);
 			continue;
 		}
 
-		// Pid alive but socket unresponsive → also orphan.
+		// Pid alive but socket unresponsive: also orphan.
 		const sockPath = socketPathFor(meta.dir);
 		const responsive = await ping(sockPath, 250);
 		if (!responsive) {
-			sweepOrphan(meta.dir);
+			sweepDaemonRuntimeFiles(meta.dir);
 			continue;
 		}
 

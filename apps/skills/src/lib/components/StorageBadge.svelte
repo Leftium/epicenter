@@ -3,7 +3,7 @@
 	import { createSubscriber } from 'svelte/reactivity';
 	import type * as Y from 'yjs';
 	import { encodeStateAsUpdate } from 'yjs';
-	import { ydoc } from '@epicenter/skills';
+	import { skills } from '$lib/skills/client';
 	import { skillsState } from '$lib/state/skills-state.svelte';
 
 	/**
@@ -13,7 +13,7 @@
 	 * reactivity system. Reading `.bytes` inside a reactive context (template,
 	 * `$derived`, `$effect`) re-evaluates whenever the document changes.
 	 *
-	 * Follows the canonical Svelte 5 `MediaQuery` getter pattern—`subscribe()`
+	 * Follows the canonical Svelte 5 `MediaQuery` getter pattern: `subscribe()`
 	 * inside a getter links the reactive context to the external event source.
 	 */
 	function createYdocSize(ydoc: Y.Doc) {
@@ -31,7 +31,7 @@
 	}
 
 	const skillCount = $derived(skillsState.skills.length);
-	const storageSize = createYdocSize(ydoc);
+	const storageSize = createYdocSize(skills.ydoc);
 
 	function formatBytes(bytes: number): string {
 		if (bytes === 0) return '0 B';

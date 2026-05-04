@@ -89,7 +89,7 @@
 		<input
 			type="text"
 			class="w-full bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/60"
-			placeholder="Subtitle — a one-liner for your blog listing"
+			placeholder="One-line subtitle for your blog listing"
 			value={entry.subtitle}
 			onblur={(e) => {
 				const next = e.currentTarget.value;
@@ -167,7 +167,7 @@
 	</div>
 
 	<!-- Editor body -->
-	{#await contentDoc.current.whenReady}
+	{#await contentDoc.current.whenLoaded}
 		<div class="flex flex-1 items-center justify-center">
 			<Spinner class="size-5 text-muted-foreground" />
 		</div>

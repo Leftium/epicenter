@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import type { EncryptionKeys } from '@epicenter/workspace';
+import type { EncryptionKeys } from '@epicenter/encryption';
 import { type } from 'arktype';
 
 /**
@@ -16,7 +16,7 @@ const EncryptionEntry = type({
 /**
  * Parse a single `"version:secret"` string into a validated `EncryptionEntry`.
  *
- * Finds the first colon—everything before it is the version, everything after
+ * Finds the first colon:everything before it is the version, everything after
  * is the secret (which may itself contain colons). Uses `ctx.error()` for
  * arktype-native error reporting when the colon delimiter is missing.
  */
@@ -36,12 +36,12 @@ const EncryptionEntryParser = type('string')
  *
  * Input format: `"2:base64Secret2,1:base64Secret1"` (comma-separated entries).
  * Output: a non-empty array of `{ version, secret }` sorted by version descending
- * (highest version first—the current key for new encryptions).
+ * (highest version first:the current key for new encryptions).
  *
  * `.pipe.try()` catches any `TraversalError` thrown by `EncryptionEntryParser.assert()`
  * and wraps it as `ArkErrors`. The non-empty tuple `.to()` guarantees `keyring[0]`
  * is always defined. `.assert()` at module load throws a `TraversalError` if the
- * env var is missing or malformed—the worker will not serve requests until fixed.
+ * env var is missing or malformed:the worker will not serve requests until fixed.
  */
 const EncryptionKeyring = type('string')
 	.pipe.try((value) =>
@@ -53,7 +53,7 @@ const EncryptionKeyring = type('string')
 	.to([EncryptionEntry, '...', EncryptionEntry.array()]);
 
 /**
- * Module-scope keyring—parsed once when the worker loads.
+ * Module-scope keyring:parsed once when the worker loads.
  *
  * `cloudflare:workers` exposes `env` at module scope. Parsing here means a
  * malformed ENCRYPTION_SECRETS prevents the worker from loading at all rather
@@ -84,11 +84,11 @@ const keyring = keyringResult as Array<typeof EncryptionEntry.infer>;
  * 1. SHA-256 the secret to get high-entropy root key material.
  * 2. Import as HKDF key and derive 256 bits with info="user:{userId}".
  *
- * Same inputs always produce the same key—deterministic, no storage needed.
+ * Same inputs always produce the same key:deterministic, no storage needed.
  *
  * The info string is a domain-separation label for HKDF (RFC 5869 §3.2),
  * not a version identifier. If the derivation scheme ever changes, the blob
- * format version handles migration—not the info string.
+ * format version handles migration:not the info string.
  */
 async function deriveUserKey(
 	secret: string,
@@ -127,7 +127,7 @@ function bytesToBase64(bytes: Uint8Array): string {
  * Called by `customSession()` on every `/auth/get-session` response.
  * Returns one `{ version, userKeyBase64 }` per keyring entry, sorted
  * highest-version-first (matching keyring order). HKDF derivation adds
- * <0.1ms per key—negligible next to the network round-trip.
+ * <0.1ms per key:negligible next to the network round-trip.
  */
 export async function deriveUserEncryptionKeys(
 	userId: string,

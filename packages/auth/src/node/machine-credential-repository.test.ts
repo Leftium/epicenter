@@ -8,21 +8,20 @@
  * - Bearer-equivalent secrets stay out of JSON in keychain mode
  * - Secure storage failures fail closed before writing credentials
  * - Corrupt credential files are rejected rather than replaced
- * - Expired credentials keep offline encryption keys available
+ * - Expired credentials remain readable as persisted records
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Session } from '../contracts/session.js';
+import { createMachineCredentialRepository } from './machine-credential-repository.js';
 import {
-	createMachineCredentialRepository,
-	type MachineCredentialRepositoryStoragePolicy,
-} from './machine-credential-repository.js';
-import type {
-	MachineCredentialSecretRef,
-	MachineCredentialSecretVault,
-} from './machine-credential-secret-vault.js';
+	createKeychainMachineCredentialSecretStorage,
+	createPlaintextMachineCredentialSecretStorage,
+	type MachineCredentialSecretBackend,
+	type MachineCredentialSecretStorage,
+} from './machine-credential-secret-storage.js';
 
 const encryptionKeys = [
 	{
@@ -75,27 +74,28 @@ function memorySecretVault({
 }: {
 	available?: boolean;
 	selfTestFails?: boolean;
-} = {}): MachineCredentialSecretVault & { values: Map<string, string> } {
+} = {}): MachineCredentialSecretBackend & { values: Map<string, string> } {
 	const values = new Map<string, string>();
-	const key = (ref: MachineCredentialSecretRef) =>
-		`${ref.service}:${ref.account}`;
+	const key = (options: { service: string; name: string }) =>
+		`${options.service}:${options.name}`;
 	return {
-		kind: 'systemKeychain',
 		values,
-		async isAvailable() {
-			return available;
+		async get(options) {
+			return values.get(key(options)) ?? null;
 		},
-		async selfTest() {
-			if (selfTestFails) throw new Error('keychain locked');
+		async set(options, value) {
+			if (!available) {
+				throw new Error(
+					'OS keychain storage is unavailable. Rerun with --insecure-storage to use plaintext file storage.',
+				);
+			}
+			if (selfTestFails && options.service === 'epicenter.auth.selfTest') {
+				throw new Error('keychain locked');
+			}
+			values.set(key(options), value);
 		},
-		async save(ref, value) {
-			values.set(key(ref), value);
-		},
-		async load(ref) {
-			return values.get(key(ref)) ?? null;
-		},
-		async delete(ref) {
-			values.delete(key(ref));
+		async delete(options) {
+			values.delete(key(options));
 		},
 	};
 }
@@ -111,13 +111,11 @@ function storePath(name: string) {
 }
 
 function createRepository(
-	credentialStorage: MachineCredentialRepositoryStoragePolicy = {
-		kind: 'plaintextFile',
-	},
+	secretStorage: MachineCredentialSecretStorage = createPlaintextMachineCredentialSecretStorage(),
 ) {
 	return createMachineCredentialRepository({
 		path: storePath('credentials.json'),
-		credentialStorage,
+		secretStorage,
 		clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 	});
 }
@@ -143,7 +141,9 @@ describe('createMachineCredentialRepository', () => {
 		const secrets = memorySecretVault();
 		const repository = createMachineCredentialRepository({
 			path: storePath('credentials.json'),
-			credentialStorage: { kind: 'keychain', secretVault: secrets },
+			secretStorage: createKeychainMachineCredentialSecretStorage({
+				backend: secrets,
+			}),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -156,16 +156,17 @@ describe('createMachineCredentialRepository', () => {
 		expect(text).not.toContain('bearer-token');
 		expect(text).not.toContain('session-token');
 		expect(text).not.toContain(encryptionKeys[0].userKeyBase64);
-		expect(await repository.getBearerToken('https://api.epicenter.so')).toBe(
-			'bearer-token',
-		);
+		const credential = await repository.get('https://api.epicenter.so');
+		expect(credential?.bearerToken).toBe('bearer-token');
 	});
 
 	test('removes stale keychain secrets when replacing a server credential', async () => {
 		const secrets = memorySecretVault();
 		const repository = createMachineCredentialRepository({
 			path: storePath('credentials.json'),
-			credentialStorage: { kind: 'keychain', secretVault: secrets },
+			secretStorage: createKeychainMachineCredentialSecretStorage({
+				backend: secrets,
+			}),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -187,16 +188,17 @@ describe('createMachineCredentialRepository', () => {
 		const keys = [...secrets.values.keys()];
 		expect(keys.some((key) => key.includes('old-user'))).toBe(false);
 		expect(keys.some((key) => key.includes('new-user'))).toBe(true);
-		expect(await repository.getBearerToken('https://api.epicenter.so')).toBe(
-			'new-bearer-token',
-		);
+		const credential = await repository.get('https://api.epicenter.so');
+		expect(credential?.bearerToken).toBe('new-bearer-token');
 	});
 
 	test('current credential with missing keychain secrets does not fall back to another server', async () => {
 		const secrets = memorySecretVault();
 		const repository = createMachineCredentialRepository({
 			path: storePath('credentials.json'),
-			credentialStorage: { kind: 'keychain', secretVault: secrets },
+			secretStorage: createKeychainMachineCredentialSecretStorage({
+				backend: secrets,
+			}),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -217,10 +219,9 @@ describe('createMachineCredentialRepository', () => {
 		}
 
 		expect(await repository.getCurrent()).toBeNull();
-		expect(await repository.getBearerToken()).toBeNull();
-		expect(await repository.getBearerToken('https://first.example.com')).toBe(
-			'first-bearer-token',
-		);
+		expect(
+			(await repository.get('https://first.example.com'))?.bearerToken,
+		).toBe('first-bearer-token');
 		expect((await repository.getMetadata())?.serverOrigin).toBe(
 			'https://second.example.com',
 		);
@@ -229,10 +230,9 @@ describe('createMachineCredentialRepository', () => {
 	test('fails closed when secure storage is unavailable', async () => {
 		const repository = createMachineCredentialRepository({
 			path: storePath('credentials.json'),
-			credentialStorage: {
-				kind: 'keychain',
-				secretVault: memorySecretVault({ available: false }),
-			},
+			secretStorage: createKeychainMachineCredentialSecretStorage({
+				backend: memorySecretVault({ available: false }),
+			}),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -248,10 +248,9 @@ describe('createMachineCredentialRepository', () => {
 	test('fails closed when secure storage self-test fails', async () => {
 		const repository = createMachineCredentialRepository({
 			path: storePath('credentials.json'),
-			credentialStorage: {
-				kind: 'keychain',
-				secretVault: memorySecretVault({ selfTestFails: true }),
-			},
+			secretStorage: createKeychainMachineCredentialSecretStorage({
+				backend: memorySecretVault({ selfTestFails: true }),
+			}),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -269,7 +268,7 @@ describe('createMachineCredentialRepository', () => {
 		await Bun.write(path, '{not-json');
 		const repository = createMachineCredentialRepository({
 			path,
-			credentialStorage: { kind: 'plaintextFile' },
+			secretStorage: createPlaintextMachineCredentialSecretStorage(),
 			clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 		});
 
@@ -282,21 +281,19 @@ describe('createMachineCredentialRepository', () => {
 		expect(await Bun.file(path).text()).toBe('{not-json');
 	});
 
-	test('splits online and offline key read policies after expiry', async () => {
+	test('reads expired credentials without applying auth policy', async () => {
 		const repository = createRepository();
 		await repository.save('https://api.epicenter.so', {
 			bearerToken: 'bearer-token',
 			session: makeSession('2025-01-01T00:00:00.000Z'),
 		});
 
-		expect(
-			await repository.getBearerToken('https://api.epicenter.so'),
-		).toBeNull();
-		expect(
-			await repository.getActiveEncryptionKeys('https://api.epicenter.so'),
-		).toBeNull();
-		expect(
-			await repository.getOfflineEncryptionKeys('https://api.epicenter.so'),
-		).toEqual([...encryptionKeys]);
+		const credential = await repository.get('https://api.epicenter.so');
+
+		expect(credential?.bearerToken).toBe('bearer-token');
+		expect(credential?.session.session.expiresAt).toBe(
+			'2025-01-01T00:00:00.000Z',
+		);
+		expect(credential?.session.encryptionKeys).toEqual([...encryptionKeys]);
 	});
 });

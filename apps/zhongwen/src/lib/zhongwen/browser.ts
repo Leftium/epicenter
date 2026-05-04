@@ -1,7 +1,4 @@
-import {
-	attachBroadcastChannel,
-	attachIndexedDb,
-} from '@epicenter/workspace';
+import { attachBroadcastChannel, attachIndexedDb } from '@epicenter/workspace';
 import { openZhongwen as openZhongwenDoc } from './index';
 
 export function openZhongwen() {
@@ -11,6 +8,9 @@ export function openZhongwen() {
 	return {
 		...doc,
 		idb,
-		whenReady: idb.whenLoaded,
+		async clearLocalData() {
+			await idb.clearLocal();
+		},
+		whenLoaded: idb.whenLoaded,
 	};
 }

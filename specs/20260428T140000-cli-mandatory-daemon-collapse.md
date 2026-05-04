@@ -1,12 +1,19 @@
 # CLI: mandatory daemon, drop cold-path, collapse the impedance
 
-**Status**: ready to execute (revised after critical review on 2026-04-28)
+**Status**: Implemented
 **Date**: 2026-04-28
 **Supersedes (in part)**: `20260426T235000-cli-up-long-lived-peer.md` § "Discovery from sibling commands" (the auto-detect-with-fallback behavior). The rest of that spec (socket layout, lifecycle, ps/down/logs, security model, Invariants 1 to 7) stays load-bearing. Also supersedes `20260427T000000-execute-cli-up-long-lived-peer.md` § Wave 6 (the `*Core` extraction pattern); that pattern is reverted here.
 **Related**:
 - `20260427T010000-supervisor-redesign.md` § Step 3 (the rpc/presence rename touches the same dispatch sites).
 - `20260427T120000-workspace-sync-failed-phase.md` (deletes the 10 s connect ceiling that lives in `up`).
 - `20260425T230000-result-handling-conventions.md` (the nested-Result flattening here is an instance of those conventions).
+
+**Review 2026-05-01**: The core collapse is implemented. `run`, `list`, and
+`peers` call `getDaemon()` and no longer cold-load config. `tryGetDaemon`,
+`runCore`, and `listCore` are gone from `packages/cli/src`. The daemon client
+and route handlers moved into `packages/workspace/src/daemon`, so some file
+paths in this spec are historical. The startup recovery design was adapted to
+Bun's Unix socket behavior through `bindOrRecover()`.
 
 ## Why this exists
 

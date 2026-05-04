@@ -4,7 +4,7 @@
  * `browser-state.svelte.ts`.
  */
 
-import type { AuthClient } from '@epicenter/auth-svelte';
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
@@ -27,7 +27,7 @@ import { openTabManager as openTabManagerDoc } from './index';
  * window). Awaiting the identity up front means every peer sees a
  * well-formed `state.peer` from the first frame.
  *
- * `whenReady` still gates UI render on idb hydration; sync (the WebSocket)
+ * `whenLoaded` still gates UI render on idb hydration; sync (the WebSocket)
  * is independent and connects whenever the network allows.
  */
 export async function openTabManager({
@@ -51,12 +51,7 @@ export async function openTabManager({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: async () => {
-			await auth.whenLoaded;
-
-			const snapshot = auth.snapshot;
-			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		},
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);
@@ -67,14 +62,17 @@ export async function openTabManager({
 		idb,
 		awareness,
 		sync,
+		syncControl: sync,
+		async clearLocalData() {
+			await idb.clearLocal();
+		},
 		remote,
 		rpc,
-		/**
-		 * Resolves when IndexedDB has hydrated the local snapshot. The UI
-		 * can render with persisted data. Does NOT gate sync (the WebSocket
-		 * can connect at any time, including never if the extension is offline).
-		 */
-		whenReady: idb.whenLoaded,
+		whenLoaded: idb.whenLoaded,
 		peer: resolvedPeer,
+		device: resolvedPeer,
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
 	};
 }

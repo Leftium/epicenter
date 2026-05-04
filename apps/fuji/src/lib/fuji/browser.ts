@@ -1,18 +1,38 @@
-import type { AuthClient } from '@epicenter/auth-svelte';
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
+	attachRichText,
 	attachSync,
 	createDisposableCache,
 	createRemoteClient,
+	DateTimeString,
+	docGuid,
+	onLocalUpdate,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { createEntryContentDoc } from '$lib/entry-content-docs';
+import { clearDocument } from 'y-indexeddb';
+import * as Y from 'yjs';
 import type { EntryId } from '$lib/workspace';
 import { openFuji as openFujiDoc } from './index';
+
+function entryContentDocGuid({
+	workspaceId,
+	entryId,
+}: {
+	workspaceId: string;
+	entryId: EntryId;
+}): string {
+	return docGuid({
+		workspaceId,
+		collection: 'entries',
+		rowId: entryId,
+		field: 'content',
+	});
+}
 
 export function openFuji({
 	auth,
@@ -25,24 +45,55 @@ export function openFuji({
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
-	const contentSyncs = new Set<ReturnType<typeof attachSync>>();
 
 	const entryContentDocs = createDisposableCache(
-		(entryId: EntryId) =>
-			createEntryContentDoc({
-				entryId,
-				workspaceId: doc.ydoc.guid,
-				entriesTable: doc.tables.entries,
+		(entryId: EntryId) => {
+			const ydoc = new Y.Doc({
+				guid: entryContentDocGuid({
+					workspaceId: doc.ydoc.guid,
+					entryId,
+				}),
+				gc: false,
+			});
+			const body = attachRichText(ydoc);
+			const childIdb = attachIndexedDb(ydoc);
+			const childSync = attachSync(ydoc, {
+				url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+				waitFor: childIdb.whenLoaded,
 				auth,
-				apiUrl: APP_URLS.API,
-				registerSync: (sync) => {
-					contentSyncs.add(sync);
-					return () => contentSyncs.delete(sync);
+			});
+
+			onLocalUpdate(ydoc, () => {
+				doc.tables.entries.update(entryId, {
+					updatedAt: DateTimeString.now(),
+				});
+			});
+
+			return {
+				ydoc,
+				body,
+				idb: childIdb,
+				sync: childSync,
+				whenLoaded: childIdb.whenLoaded,
+				[Symbol.dispose]() {
+					ydoc.destroy();
 				},
-			}),
+			};
+		},
 		{ gcTime: 5_000 },
 	);
-
+	async function clearEntryContentLocalData() {
+		await Promise.all(
+			doc.tables.entries.getAllValid().map((entry) =>
+				clearDocument(
+					entryContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						entryId: entry.id,
+					}),
+				),
+			),
+		);
+	}
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
@@ -50,12 +101,7 @@ export function openFuji({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: async () => {
-			await auth.whenLoaded;
-
-			const snapshot = auth.snapshot;
-			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		},
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);
@@ -67,16 +113,17 @@ export function openFuji({
 		entryContentDocs,
 		awareness,
 		sync,
+		syncControl: sync,
+		async clearLocalData() {
+			await clearEntryContentLocalData();
+			await idb.clearLocal();
+		},
 		remote,
 		rpc,
-		/**
-		 * Resolves when IndexedDB has hydrated the local snapshot. The UI can
-		 * render with persisted data. Does NOT gate sync (the WebSocket can
-		 * connect at any time, including never if the user is offline).
-		 */
-		whenReady: idb.whenLoaded,
-		getAuthSyncTargets() {
-			return [sync, ...contentSyncs];
+		whenLoaded: idb.whenLoaded,
+		[Symbol.dispose]() {
+			entryContentDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
 		},
 	};
 }

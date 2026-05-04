@@ -11,11 +11,10 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import type { EncryptionKeys } from '@epicenter/encryption';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { attachEncryption } from './attach-encryption.js';
-import { defineTable } from './define-table.js';
 import {
 	bytesToBase64,
 	type EncryptedBlob,
@@ -23,7 +22,8 @@ import {
 	isEncryptedBlob,
 } from '../shared/crypto/index.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import type { EncryptionKeys } from './encryption-key.js';
+import { attachEncryption } from './attach-encryption.js';
+import { defineTable } from './define-table.js';
 
 function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
 	return [{ version: 1, userKeyBase64: bytesToBase64(key) }];
@@ -100,7 +100,9 @@ describe('attachEncryption', () => {
 		encryption.register(lateStore);
 
 		lateStore.set('1', { title: 'Written after late register' });
-		expect(lateStore.get('1')).toEqual({ title: 'Written after late register' });
+		expect(lateStore.get('1')).toEqual({
+			title: 'Written after late register',
+		});
 	});
 
 	test('whenDisposed resolves once ydoc.destroy() fires', async () => {
@@ -196,6 +198,5 @@ describe('attachEncryption', () => {
 			const newEntry = storeA.yarray.toArray().find((e) => e.key === 'new');
 			expect(getKeyVersion(newEntry?.val as EncryptedBlob)).toBe(2);
 		});
-
 	});
 });

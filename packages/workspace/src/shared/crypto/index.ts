@@ -46,19 +46,19 @@
  *
  * ## Related Modules
  *
- * - {@link ../y-keyvalue/y-keyvalue-lww-encrypted.ts} — Composition wrapper that wires these primitives into the CRDT
- * - {@link ../y-keyvalue/y-keyvalue-lww.ts} — Underlying CRDT (unaware of encryption)
+ * - {@link ../y-keyvalue/y-keyvalue-lww-encrypted.ts} : Composition wrapper that wires these primitives into the CRDT
+ * - {@link ../y-keyvalue/y-keyvalue-lww.ts} : Underlying CRDT (unaware of encryption)
  *
  * @module
  */
 
+import type { EncryptionKeys } from '@epicenter/encryption';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
-import { sha256 } from '@noble/hashes/sha2.js';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import type { Brand } from 'wellcrafted/brand';
-import type { EncryptionKeys } from '../../document/encryption-key';
 
 const NONCE_LENGTH = 24;
 const TAG_LENGTH = 16;
@@ -124,7 +124,7 @@ type EncryptedBlob = Uint8Array & Brand<'EncryptedBlob'>;
  * @param plaintext - The string to encrypt
  * @param aad - Optional additional authenticated data bound to ciphertext integrity
  * @param keyVersion - Key version embedded as byte 1. Currently written but not read
- *   during decryption—reserved for future keyring rotation. The caller is responsible
+ *   during decryption:reserved for future keyring rotation. The caller is responsible
  *   for passing the correct version from the ENCRYPTION_SECRETS keyring.
  * @returns A bare Uint8Array: `[formatVersion, keyVersion, ...nonce(24), ...ciphertext, ...tag(16)]`
  *
@@ -172,7 +172,7 @@ export function encryptValue(
  * will throw a clear error instead of silently misinterpreting the binary layout.
  * Future format versions would add dispatch logic here.
  *
- * Key version (`blob[1]`) is NOT validated here—the caller is responsible for
+ * Key version (`blob[1]`) is NOT validated here:the caller is responsible for
  * selecting the correct key from the keyring via `getKeyVersion()`.
  *
  * @param blob - A branded EncryptedBlob (bare Uint8Array with format header)
@@ -196,7 +196,7 @@ export function decryptValue(
 ): string {
 	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
 
-	// Validate format version — today only v1 exists. Future versions would
+	// Validate format version : today only v1 exists. Future versions would
 	// dispatch to different decryption logic here instead of falling through.
 	const formatVersion = blob[0];
 	if (formatVersion !== 1) {
@@ -225,7 +225,7 @@ export function decryptValue(
  * Used by the encrypted KV wrapper for version-directed key lookup during
  * decryption. When the current key fails to decrypt a blob, the wrapper reads
  * the blob's key version via this function and looks up the matching key from
- * the active keyring—avoiding brute-force trial of every key.
+ * the active keyring:avoiding brute-force trial of every key.
  *
  * @param blob - An EncryptedBlob to read the key version from
  * @returns The key version number (1-255)
@@ -245,7 +245,7 @@ export function getKeyVersion(blob: EncryptedBlob): number {
  * check so that future format versions (v2, v3, etc.) are recognized as encrypted
  * blobs without updating this guard. Truncated or corrupted blobs that pass this
  * check will fail during `decryptValue()` and get quarantined by the encrypted
- * wrapper's error containment—they are not silently misinterpreted.
+ * wrapper's error containment:they are not silently misinterpreted.
  *
  * @param value - The value to check
  * @returns True if value is a valid EncryptedBlob, false otherwise
@@ -266,8 +266,8 @@ export function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  * Derive a per-workspace 256-bit encryption key from a user key via HKDF-SHA256.
  *
  * This is the second level of a two-level key hierarchy:
- * 1. **User key** (input)—from any source (server HKDF, PBKDF2 password, cache)
- * 2. **Workspace key** (output)—`HKDF(userKey, "workspace:{workspaceId}")`
+ * 1. **User key** (input):from any source (server HKDF, PBKDF2 password, cache)
+ * 2. **Workspace key** (output):`HKDF(userKey, "workspace:{workspaceId}")`
  *
  * The separation ensures each workspace gets an independent key even from the same
  * user key. Compromising one workspace key reveals nothing about other workspaces.
@@ -276,13 +276,13 @@ export function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  * The workspace client decodes transport keys, calls `deriveWorkspaceKey()` for each,
  * and passes the resulting keyring to `activateEncryption()`. Exported for testing.
  *
- * Deterministic—same inputs always produce the same key. No storage needed.
+ * Deterministic:same inputs always produce the same key. No storage needed.
  * Uses synchronous HKDF-SHA256 from `@noble/hashes`, so workspace runtime unlock
  * can derive and apply the key immediately before any cache persistence is awaited.
  *
  * The info string is a domain-separation label for HKDF (RFC 5869 §3.2),
  * not a version identifier. If the derivation scheme ever changes (hash
- * algorithm, salt policy), the blob format version handles migration—not
+ * algorithm, salt policy), the blob format version handles migration:not
  * the info string. Vault Transit, Signal Protocol, libsodium, and AWS KMS
  * all use unversioned derivation context strings.
  *
@@ -317,11 +317,11 @@ export function deriveWorkspaceKey(
 /**
  * Derive a 32-byte key from a password and salt using PBKDF2-HMAC-SHA256.
  *
- * Uses `@noble/hashes`—same Cure53-audited library as `hkdf`, `sha256`,
+ * Uses `@noble/hashes`:same Cure53-audited library as `hkdf`, `sha256`,
  * and `xchacha20poly1305` in this module. Synchronous, matching the
  * existing crypto pattern.
  *
- * The derived key is a user key—pass it to `deriveWorkspaceKey()` or
+ * The derived key is a user key:pass it to `deriveWorkspaceKey()` or
  * `buildEncryptionKeys()` to get a workspace-scoped encryption key.
  *
  * @param password - The user's password
@@ -341,13 +341,16 @@ export function deriveKeyFromPassword(
 	salt: Uint8Array,
 	iterations: number = PBKDF2_ITERATIONS_DEFAULT,
 ): Uint8Array {
-	return pbkdf2(sha256, textEncoder.encode(password), salt, { c: iterations, dkLen: 32 });
+	return pbkdf2(sha256, textEncoder.encode(password), salt, {
+		c: iterations,
+		dkLen: 32,
+	});
 }
 
 /**
  * Generate a random 32-byte salt for PBKDF2 key derivation.
  *
- * Uses `randomBytes` from `@noble/ciphers`—same CSPRNG used for
+ * Uses `randomBytes` from `@noble/ciphers`:same CSPRNG used for
  * encryption nonces in `encryptValue()`.
  *
  * @returns A 32-byte random Uint8Array
@@ -433,5 +436,5 @@ export function base64ToBytes(base64: string): Uint8Array {
 	return bytes;
 }
 
-export { PBKDF2_ITERATIONS_DEFAULT };
 export type { EncryptedBlob, EncryptionKeys };
+export { PBKDF2_ITERATIONS_DEFAULT };

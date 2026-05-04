@@ -25,7 +25,7 @@ const sync = {
 	whenConnected: Promise.resolve(),
 	status: { phase: 'connected', hasLocalChanges: false },
 	onStatusChange: () => () => {},
-	goOffline() {},
+	pause() {},
 	reconnect() {},
 	whenDisposed: Promise.resolve(),
 	attachRpc: () => ({ rpc: async () => ({ data: null, error: null }) }),

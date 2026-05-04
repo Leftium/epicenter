@@ -27,7 +27,7 @@ function fakeEntry(
 			whenConnected: Promise.resolve(),
 			status: { phase: 'connected', hasLocalChanges: false },
 			onStatusChange: () => () => {},
-			goOffline() {},
+			pause() {},
 			reconnect() {},
 			whenDisposed: Promise.resolve(),
 		} as unknown as DaemonRuntime['sync'],

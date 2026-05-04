@@ -1,5 +1,5 @@
 /**
- * Honeycrisp workspace — schema definition, branded IDs, and actions factory.
+ * Honeycrisp workspace: schema definition, branded IDs, and actions factory.
  *
  * Honeycrisp is an Apple Notes clone with three-column layout: sidebar folders,
  * note list, and rich-text editor. Folders organize notes; notes have Y.XmlFragment
@@ -25,7 +25,7 @@ import type { Brand } from 'wellcrafted/brand';
 // ─── Branded IDs ──────────────────────────────────────────────────────────────
 
 /**
- * Branded note ID — nanoid generated when a note is created.
+ * Branded note ID: nanoid generated when a note is created.
  *
  * Prevents accidental mixing with other string IDs at compile time.
  */
@@ -33,7 +33,7 @@ export type NoteId = string & Brand<'NoteId'>;
 export const NoteId = type('string').pipe((s): NoteId => s as NoteId);
 
 /**
- * Branded folder ID — nanoid generated when a folder is created.
+ * Branded folder ID: nanoid generated when a folder is created.
  *
  * Prevents accidental mixing with other string IDs at compile time.
  */
@@ -43,7 +43,7 @@ export const FolderId = type('string').pipe((s): FolderId => s as FolderId);
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
 /**
- * Folders table — organizational containers for notes.
+ * Folders table: organizational containers for notes.
  *
  * Each folder has a name, optional emoji icon, and sort order for manual
  * reordering in the sidebar. Notes reference folders via `folderId`.
@@ -60,20 +60,20 @@ const foldersTable = defineTable(
 export type Folder = InferTableRow<typeof foldersTable>;
 
 /**
- * Notes table — individual notes with rich-text bodies.
+ * Notes table: individual notes with rich-text bodies.
  *
  * Each note belongs to an optional folder (unfiled if `folderId` is undefined),
  * has a title auto-populated from the first line of content, a preview for the
  * list view, and can be pinned to appear at the top of the note list.
  *
- * v2 adds `deletedAt` for soft delete — notes move to "Recently Deleted"
+ * v2 adds `deletedAt` for soft delete: notes move to "Recently Deleted"
  * instead of being permanently destroyed. The field is `undefined` for active
  * notes and a `DateTimeString` for deleted ones. Also adds optional `wordCount`
  * (computed on each editor update, `undefined` for legacy notes).
  *
- * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note,
- * constructed by `buildNoteBodyDoc` in `note-body-docs.ts`. Local edits bump
- * `updatedAt` via `onLocalUpdate`.
+ * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note.
+ * The browser workspace setup constructs it and bumps `updatedAt` via
+ * `onLocalUpdate`.
  */
 const notesTable = defineTable(
 	type({
@@ -98,15 +98,14 @@ const notesTable = defineTable(
 		updatedAt: DateTimeString,
 		_v: '2',
 	}),
-)
-	.migrate((row) => {
-		switch (row._v) {
-			case 1:
-				return { ...row, deletedAt: undefined, _v: 2 };
-			case 2:
-				return row;
-		}
-	});
+).migrate((row) => {
+	switch (row._v) {
+		case 1:
+			return { ...row, deletedAt: undefined, _v: 2 };
+		case 2:
+			return row;
+	}
+});
 export type Note = InferTableRow<typeof notesTable>;
 
 // ─── Table map ─────────────────────────────────────────────────────────────────

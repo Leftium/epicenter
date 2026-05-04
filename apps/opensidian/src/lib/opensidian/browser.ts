@@ -1,22 +1,26 @@
-import type { AuthClient } from '@epicenter/auth-svelte';
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
-	createFileContentDoc,
 	createSqliteIndex,
 	type FileId,
+	fileContentDocGuid,
 } from '@epicenter/filesystem';
 import {
 	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
+	attachTimeline,
 	createDisposableCache,
 	createRemoteClient,
+	onLocalUpdate,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
+import { clearDocument } from 'y-indexeddb';
+import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
 import { openOpensidian as openOpensidianDoc } from './index';
 
@@ -33,20 +37,66 @@ export function openOpensidian({
 	attachBroadcastChannel(doc.ydoc);
 
 	const fileContentDocs = createDisposableCache(
-		(fileId: FileId) =>
-			createFileContentDoc({
-				fileId,
-				workspaceId: doc.ydoc.guid,
-				filesTable: doc.tables.files,
-				attachPersistence: (d) => attachIndexedDb(d),
-			}),
+		(fileId: FileId) => {
+			const ydoc = new Y.Doc({
+				guid: fileContentDocGuid({
+					workspaceId: doc.ydoc.guid,
+					fileId,
+				}),
+				gc: false,
+			});
+			onLocalUpdate(ydoc, () =>
+				doc.tables.files.update(fileId, { updatedAt: Date.now() }),
+			);
+			const persistence = attachIndexedDb(ydoc);
+			return {
+				ydoc,
+				content: attachTimeline(ydoc),
+				persistence,
+				whenReady: persistence.whenLoaded,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		},
 		{ gcTime: 5_000 },
 	);
-
-	const sqliteIndex = createSqliteIndex(fileContentDocs)({
+	async function clearFileContentLocalData() {
+		await Promise.all(
+			doc.tables.files.getAllValid().map((file) =>
+				clearDocument(
+					fileContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						fileId: file.id,
+					}),
+				),
+			),
+		);
+	}
+	const fileContent = {
+		async read(fileId: FileId) {
+			await using handle = fileContentDocs.open(fileId);
+			await handle.whenReady;
+			return handle.content.read();
+		},
+		async write(fileId: FileId, text: string) {
+			await using handle = fileContentDocs.open(fileId);
+			await handle.whenReady;
+			handle.content.write(text);
+		},
+		async append(fileId: FileId, text: string) {
+			await using handle = fileContentDocs.open(fileId);
+			await handle.whenReady;
+			handle.content.appendText(text);
+			return handle.content.read();
+		},
+	};
+	const sqliteIndex = createSqliteIndex({
+		readContent: fileContent.read,
+	})({
 		tables: doc.tables,
 	}).exports;
-	const fs = attachYjsFileSystem(doc.tables.files, fileContentDocs);
+	const fs = attachYjsFileSystem(doc.tables.files, fileContent);
 	const bash = new Bash({ fs, cwd: '/' });
 	const actions = createOpensidianActions({ fs, sqliteIndex, bash });
 
@@ -57,12 +107,7 @@ export function openOpensidian({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		getToken: async () => {
-			await auth.whenLoaded;
-
-			const snapshot = auth.snapshot;
-			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		},
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);
@@ -78,13 +123,17 @@ export function openOpensidian({
 		actions,
 		awareness,
 		sync,
+		syncControl: sync,
+		async clearLocalData() {
+			await clearFileContentLocalData();
+			await idb.clearLocal();
+		},
 		remote,
 		rpc,
-		/**
-		 * Resolves when IndexedDB has hydrated the local snapshot: the UI can
-		 * render with persisted data. Does NOT gate sync (the WebSocket can
-		 * connect at any time, including never if the user is offline).
-		 */
-		whenReady: idb.whenLoaded,
+		whenLoaded: idb.whenLoaded,
+		[Symbol.dispose]() {
+			fileContentDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
+		},
 	};
 }

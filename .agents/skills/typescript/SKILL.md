@@ -116,6 +116,7 @@ Load these on demand based on what you're working on:
   // Bad — re-export at bottom of create-tables.ts
   export type { TablesHelper, TableDefinitions };
   ```
+- **Question single-method `Pick` dependencies**: `Pick<T, K>` is fine for data projection, but `Pick<Thing, 'method'>` in dependency injection is often a boundary smell. If the caller only needs one operation, prefer a named capability function in the caller's language. Keep the object shape only when the caller participates in that object's life cycle or needs the rest of the capability family. See `docs/articles/single-method-pick-is-a-boundary-leak.md`.
 - When functions are only used in the return statement of a factory/creator function, use object method shorthand syntax instead of defining them separately. For example, instead of:
   ```typescript
   function myFunction() {
@@ -198,46 +199,84 @@ Load these on demand based on what you're working on:
 - **Don't annotate return types the compiler can infer**: Let TypeScript infer return types on inner/private functions. Only annotate return types on exported public API functions when the inferred type is too complex or when you need to break circular inference.
 
   ```typescript
-  // Good — inner functions let TS infer
+  // Good: inner functions let TS infer
   function parseValue(raw: string | null) {
   	if (raw === null) return defaultValue;
   	return JSON.parse(raw);
   }
 
-  // Bad — unnecessary return type annotation
+  // Bad: unnecessary return type annotation
   function parseValue(raw: string | null): SomeType {
   	if (raw === null) return defaultValue;
   	return JSON.parse(raw);
   }
   ```
 
+- **Factory return types derive from the factory**: If a public type is exactly the return object from a `create*` function, export the type as `ReturnType<typeof createThing>` and let the function return its concrete object. Put needed annotations on the returned methods and properties instead of on the factory itself. This keeps one source of truth and makes Go to Definition land on the returned object shape.
+
+  ```typescript
+  // Good: the factory owns the shape
+  export type BrowserDocCache<
+    TId extends string,
+    TDocument extends BrowserDocInstance,
+  > = ReturnType<typeof createBrowserDocCache<TId, TDocument>>;
+
+  export function createBrowserDocCache<
+    TId extends string,
+    TDocument extends BrowserDocInstance,
+  >(source: BrowserDocSource<TId, TDocument>) {
+    return {
+      open(id: TId): TDocument & Disposable {
+        return source.create(id);
+      },
+    };
+  }
+
+  // Bad: the type and return object now describe the same shape twice
+  export type BrowserDocCache<TId extends string, TDocument> = {
+    open(id: TId): TDocument & Disposable;
+  };
+
+  export function createBrowserDocCache<TId extends string, TDocument>(
+    source: BrowserDocSource<TId, TDocument>,
+  ): BrowserDocCache<TId, TDocument> {
+    return {
+      open(id) {
+        return source.create(id);
+      },
+    };
+  }
+  ```
+
+  Keep explicit contract types when several implementations share the same surface, when the type is protocol vocabulary, or when you intentionally want to hide the concrete return shape. Use `satisfies` when the implementation should be checked against an external contract but the returned value should keep its own inferred shape.
+
 ## Identity Checks: Brand, Don't Probe
 
 When `isFoo(x)` is asking "is this the specific thing my factory returned," use a `Symbol` brand stamped at the factory, not a coincidental-property probe. Shape probes collide with look-alikes and rot as the type grows; the brand is unforgeable and survives normal object spreads.
 
 ```typescript
-// Smell — three coincidental properties stand in for identity.
-// Any object that happens to have ydoc + dispose + Symbol.dispose passes.
-function isDocumentHandle(value: unknown): value is DocumentHandle<Document> {
+// Smell: three coincidental properties stand in for identity.
+// Any object that happens to have ydoc + id + Symbol.dispose passes.
+function isWorkspaceHandle(value: unknown): value is WorkspaceHandle {
 	if (value == null || typeof value !== 'object') return false;
 	const record = value as Record<string | symbol, unknown>;
 	return (
 		'ydoc' in record &&
-		typeof record.dispose === 'function' &&
+		'id' in record &&
 		typeof record[Symbol.dispose] === 'function'
 	);
 }
 
-// Better — brand stamped by the factory, one check carries the intent.
-// Use `Symbol.for('<namespace>.<thing>')` — not `Symbol(...)` — so the brand
+// Better: brand stamped by the factory, one check carries the intent.
+// Use `Symbol.for('<namespace>.<thing>')`, not `Symbol(...)`, so the brand
 // survives module duplication (see "Cross-package brands" below).
-export const DOCUMENT_HANDLE = Symbol.for('epicenter.document-handle');
+export const WORKSPACE_HANDLE = Symbol.for('epicenter.workspace-handle');
 
-function isDocumentHandle(value: unknown): value is DocumentHandle<Document> {
+function isWorkspaceHandle(value: unknown): value is WorkspaceHandle {
 	return (
 		value != null &&
 		typeof value === 'object' &&
-		DOCUMENT_HANDLE in value
+		WORKSPACE_HANDLE in value
 	);
 }
 ```

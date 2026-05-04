@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 
+import type { AuthClient, AuthSnapshot } from '@epicenter/auth';
 import {
 	BEARER_SUBPROTOCOL_PREFIX,
 	decodeRpcPayload,
@@ -126,7 +127,12 @@ export const SyncSupervisorError = defineErrors({
 });
 export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
 
-export type SyncAttachment = {
+export type SyncControl = {
+	pause(): void;
+	reconnect(): void;
+};
+
+export type SyncAttachment = SyncControl & {
 	/**
 	 * Resolves after the WebSocket handshake completes and the first sync
 	 * exchange finishes. Unlike `y-indexeddb`'s `whenSynced`, this is a
@@ -149,9 +155,9 @@ export type SyncAttachment = {
 	 * Close the websocket, stop the supervisor, and transition to offline.
 	 * A subsequent `reconnect()` restarts the supervisor.
 	 */
-	goOffline: () => void;
+	pause(): void;
 	/** Force a fresh connection with new credentials (supervisor restarts iteration). */
-	reconnect: () => void;
+	reconnect(): void;
 	/**
 	 * Resolves after the ydoc is destroyed and the websocket teardown completes.
 	 * Named symmetrically with `whenConnected`: both are promises.
@@ -223,17 +229,12 @@ export type SyncAttachmentConfig = {
 	 */
 	waitFor?: WaitForBarrier;
 	/**
-	 * Token sourcing callback. When provided, the supervisor calls `getToken()`
-	 * before each connect attempt to fetch a fresh bearer token (sent over the
-	 * WebSocket subprotocol). Returning `null` keeps the supervisor parked in
-	 * an `auth` error state until a subsequent `reconnect()` (or backoff
-	 * iteration) finds a non-null token.
-	 *
-	 * Providing this callback IS the declaration that the connection is
-	 * authenticated. Omit it for unauthenticated providers (tests, public
-	 * rooms). `attachSync` then connects without a bearer subprotocol.
+	 * Auth client for authenticated sync. Its presence declares that the
+	 * connection requires a signed-in Epicenter session. The supervisor waits
+	 * for auth hydration, reads the token from `auth.snapshot`, and reconnects
+	 * when future snapshots change the token value.
 	 */
-	getToken?: () => Promise<string | null>;
+	auth?: AuthClient;
 	/**
 	 * WebSocket constructor. Tests can pass a stub to avoid dialing a server;
 	 * production uses `globalThis.WebSocket`.
@@ -297,6 +298,10 @@ function parsePermanentFailure(event: {
 	return { type: 'auth', code: 'unknown' };
 }
 
+function tokenFromSnapshot(snapshot: AuthSnapshot): string | null {
+	return snapshot.status === 'signedIn' ? snapshot.session.token : null;
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
@@ -312,6 +317,7 @@ export function attachSync(
 	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
 	let rpcActions: Record<string, unknown> | null = null;
 	const awareness = config.awareness?.raw ?? null;
+	const auth = config.auth;
 
 	const waitForPromise =
 		config.waitFor && 'whenLoaded' in config.waitFor
@@ -373,28 +379,30 @@ export function attachSync(
 
 	/**
 	 * Whether this connection is authenticated. Inferred from the presence of
-	 * `getToken`; supplying that callback IS the declaration that a token is
-	 * required. Without it, the supervisor connects unauthenticated.
+	 * `auth`; supplying that client is the declaration that a signed-in session
+	 * is required. Without it, the supervisor connects unauthenticated.
 	 */
-	const requiresToken = typeof config.getToken === 'function';
+	const requiresToken = auth !== undefined;
 
 	/**
 	 * Cancellation hierarchy:
 	 *
 	 *   masterController: aborts on doc.destroy(); kills everything
-	 *      cycleController: aborts on goOffline() / reconnect();
+	 *      cycleController: aborts on pause() / reconnect();
 	 *                       kills the current supervisor iteration
 	 *
 	 * `cycleController` is replaced (not just re-aborted) by `reconnect()` so
 	 * the new connection cycle has a fresh signal unrelated to the old one.
 	 * Aborting an already-aborted controller is a no-op, which makes
-	 * goOffline-then-reconnect races structurally safe.
+	 * pause-then-reconnect races structurally safe.
 	 */
 	const masterController = new AbortController();
 	let cycleController: AbortController = childOf(masterController.signal);
+	let waitForSettled = false;
 
 	/** Current WebSocket instance, or null. */
 	let websocket: SyncWebSocket | null = null;
+	let currentToken = auth ? tokenFromSnapshot(auth.snapshot) : null;
 
 	/**
 	 * Promise of the currently-running supervisor loop, or null when no loop
@@ -432,6 +440,12 @@ export function attachSync(
 		}
 	>();
 	let nextRequestId = 0;
+
+	async function readToken(): Promise<string | null> {
+		if (!auth) return null;
+		await auth.whenLoaded;
+		return tokenFromSnapshot(auth.snapshot);
+	}
 
 	/** Resolve all pending RPC requests with Disconnected and clear state. */
 	function clearPendingRequests() {
@@ -601,9 +615,9 @@ export function attachSync(
 			status.set({ phase: 'connecting', retries: backoff.retries, lastError });
 
 			let token: string | null = null;
-			if (config.getToken) {
+			if (auth) {
 				try {
-					token = await config.getToken();
+					token = await readToken();
 				} catch (cause) {
 					token = null;
 					lastError = { type: 'auth', error: cause };
@@ -829,6 +843,7 @@ export function attachSync(
 
 	function ensureSupervisor() {
 		if (masterController.signal.aborted) return;
+		if (!waitForSettled) return;
 		if (loopPromise) return;
 		manageWindowListeners('add');
 		const signal = cycleController.signal;
@@ -851,16 +866,33 @@ export function attachSync(
 		});
 	}
 
-	function goOffline() {
+	function pause() {
 		cycleController.abort();
 		manageWindowListeners('remove');
 		status.set({ phase: 'offline' });
+	}
+
+	function reconnect() {
+		if (masterController.signal.aborted) return;
+		permanentFailure = null;
+		cycleController.abort();
+		cycleController = childOf(masterController.signal);
+		backoff.reset();
+		if (waitForSettled) manageWindowListeners('add');
+		ensureSupervisor();
 	}
 
 	// ── Attach listeners + start ──
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
+	const unsubscribeAuthChange = auth?.onSnapshotChange((snapshot) => {
+		const nextToken = tokenFromSnapshot(snapshot);
+		if (nextToken === currentToken) return;
+
+		currentToken = nextToken;
+		queueMicrotask(reconnect);
+	});
 
 	// Gate the first connection on `waitFor` (typically idb.whenLoaded).
 	// If `waitFor` rejects, log but still start: better to try syncing than
@@ -871,6 +903,7 @@ export function attachSync(
 		} catch (cause) {
 			log.warn(SyncSupervisorError.WaitForRejected({ cause }));
 		}
+		waitForSettled = true;
 		ensureSupervisor();
 	})();
 
@@ -897,6 +930,7 @@ export function attachSync(
 			);
 		});
 		try {
+			unsubscribeAuthChange?.();
 			ydoc.off('updateV2', handleDocUpdate);
 			awareness?.off('update', handleAwarenessUpdate);
 			const ws = websocket;
@@ -916,16 +950,8 @@ export function attachSync(
 			return status.get();
 		},
 		onStatusChange: status.subscribe,
-		goOffline,
-		reconnect() {
-			if (masterController.signal.aborted) return;
-			permanentFailure = null;
-			cycleController.abort();
-			cycleController = childOf(masterController.signal);
-			backoff.reset();
-			manageWindowListeners('add');
-			ensureSupervisor();
-		},
+		pause,
+		reconnect,
 		whenDisposed,
 		attachRpc(userActions) {
 			if (rpcActions) throw new Error('[attachSync] RPC already attached');

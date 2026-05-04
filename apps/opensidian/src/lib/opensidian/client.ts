@@ -3,7 +3,7 @@ import {
 	createSessionStorageAdapter,
 	Session,
 } from '@epicenter/auth-svelte';
-import { bindWorkspaceAuthLifecycle } from '@epicenter/auth-workspace';
+import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
@@ -32,16 +32,21 @@ export const opensidian = openOpensidian({
 	},
 });
 
-bindWorkspaceAuthLifecycle({
+bindAuthWorkspaceScope({
 	auth,
-	workspace: opensidian,
-	leavingUser: {
-		afterCleanup: () => window.location.reload(),
-		onCleanupError: (error) => {
+	syncControl: opensidian.syncControl,
+	applyAuthSession(session) {
+		opensidian.encryption.applyKeys(session.encryptionKeys);
+	},
+	async resetLocalClient() {
+		try {
+			await opensidian.clearLocalData();
+			window.location.reload();
+		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
-		},
+		}
 	},
 });
 

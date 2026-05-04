@@ -17,18 +17,19 @@
  * § "Logging", § "Invariants".
  */
 
-import { statSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
-	createDaemonServer,
+	claimDaemonLease,
 	type DaemonMetadata,
-	type StartupError,
-	socketPathFor,
-	type UnixSocketServer,
+	type DaemonServer,
+	StartupError,
+	type StartupError as StartupErrorType,
+	startDaemonServer,
 	unlinkMetadata,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Ok, type Result, trySync } from 'wellcrafted/result';
 /**
  * Read once at module load. Bun resolves the JSON import relative to this
  * file at build/run time, so no runtime fs work happens per `up` invocation.
@@ -70,7 +71,6 @@ export type UpOptions = {
  * startup, exercise the IPC handler in-process, and call `teardown()` to
  * release resources without spawning a child.
  *
- * - `server` is the bound `net.Server` (handler dispatches IPC frames).
  * - `runtimes` is every hosted daemon runtime the config declares; the daemon
  *   serves them all and routes IPC requests by route.
  * - `metadata` is what was written to disk.
@@ -78,7 +78,6 @@ export type UpOptions = {
  *   metadata + socket. Idempotent.
  */
 export type UpHandle = {
-	server: UnixSocketServer;
 	runtimes: StartedDaemonRoute[];
 	config: LoadedDaemonConfig;
 	metadata: DaemonMetadata;
@@ -106,35 +105,28 @@ export type RunUpDeps = {
  * SIGINT/SIGTERM, and parks the process; tests call it directly and
  * assert on the returned handle.
  *
- * Host factories perform local setup before resolving. Network sync connects
- * in the background after the socket is bound.
+ * A SQLite daemon lease claims ownership before user config import. After that,
+ * host factories perform local setup and `startDaemonServer` binds the route
+ * app to the socket.
  */
 export async function runUp(
 	options: UpOptions,
 	deps: RunUpDeps = {},
-): Promise<Result<UpHandle, DaemonConfigError | StartupError>> {
-	const projectDir = resolve(options.projectDir);
-	const socketPath = socketPathFor(projectDir);
-	const configPath = join(projectDir, CONFIG_FILENAME);
+): Promise<Result<UpHandle, DaemonConfigError | StartupErrorType>> {
+	const requestedProjectDir = resolve(options.projectDir);
+	const configPath = join(requestedProjectDir, CONFIG_FILENAME);
 
 	if (!(await Bun.file(configPath).exists())) {
 		return DaemonConfigError.MissingFile({ configPath });
 	}
 
-	let teardown: () => Promise<void> = async () => {};
+	const projectDir = realpathSync(requestedProjectDir);
+	const leaseResult = claimDaemonLease(projectDir);
+	if (leaseResult.error !== null) return leaseResult;
+	const lease = leaseResult.data;
 
-	// Bind before writing our metadata. On AlreadyRunning the live
-	// daemon's sidecar must stay intact; on a stale-socket recovery
-	// `bindOrRecover` unlinks the orphan metadata internally before our
-	// successful retry, so the writeMetadata below records *our* pid.
-	const daemonServer = createDaemonServer({
-		projectDir,
-		triggerShutdown: () => void teardown(),
-	});
-	const bindResult = await daemonServer.listen();
-	if (bindResult.error) return bindResult;
-	const server = bindResult.data;
-
+	const loader = deps.loadDaemonConfig ?? loadDaemonConfig;
+	const starter = deps.startDaemonRoutes ?? startDaemonRoutes;
 	const configMtime = readConfigMtime(projectDir);
 	const metadata: DaemonMetadata = {
 		pid: process.pid,
@@ -143,52 +135,67 @@ export async function runUp(
 		cliVersion: options.cliVersion ?? CLI_VERSION,
 		configMtime,
 	};
-	writeMetadata(projectDir, metadata);
 
-	const loader = deps.loadDaemonConfig ?? loadDaemonConfig;
-	const starter = deps.startDaemonRoutes ?? startDaemonRoutes;
+	let metadataWritten = false;
+	let runtimes: StartedDaemonRoute[] = [];
+	let daemonServer: DaemonServer | null = null;
+	let teardownPromise: Promise<void> | null = null;
+	const teardown = (): Promise<void> => {
+		if (teardownPromise) return teardownPromise;
+		teardownPromise = (async () => {
+			let closeError: unknown;
+			try {
+				if (daemonServer) await daemonServer.close();
+			} catch (cause) {
+				closeError = cause;
+			}
+			await safeDisposeStartedRoutes(runtimes);
+			if (metadataWritten) unlinkMetadata(projectDir);
+			lease.release();
+			if (closeError) throw closeError;
+		})();
+		return teardownPromise;
+	};
+
 	const loadResult = await loader(projectDir);
 	if (loadResult.error) {
-		await daemonServer.close();
-		unlinkMetadata(projectDir);
+		await teardown();
 		return loadResult;
 	}
 	const config = loadResult.data;
 
 	const startResult = await starter(config);
 	if (startResult.error) {
-		await daemonServer.close();
-		unlinkMetadata(projectDir);
+		await teardown();
 		return startResult;
 	}
-	const runtimes = startResult.data;
-
-	try {
-		daemonServer.mountRoutes(runtimes);
-	} catch (cause) {
-		await safeDisposeStartedRoutes(runtimes);
-		await daemonServer.close();
-		unlinkMetadata(projectDir);
-		throw cause;
+	runtimes = startResult.data;
+	const serverResult = await startDaemonServer({
+		lease,
+		routes: runtimes,
+		triggerShutdown: () => void teardown(),
+	});
+	if (serverResult.error) {
+		await teardown();
+		return serverResult;
 	}
+	daemonServer = serverResult.data;
 
-	let teardownPromise: Promise<void> | null = null;
-	teardown = (): Promise<void> => {
-		if (teardownPromise) return teardownPromise;
-		teardownPromise = (async () => {
-			await daemonServer.close();
-			await safeDisposeStartedRoutes(runtimes);
-			unlinkMetadata(projectDir);
-		})();
-		return teardownPromise;
-	};
+	const metadataResult = trySync({
+		try: () => writeMetadata(projectDir, metadata),
+		catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
+	});
+	if (metadataResult.error) {
+		await teardown();
+		return metadataResult;
+	}
+	metadataWritten = true;
 
 	return Ok({
-		server,
 		runtimes,
 		config,
 		metadata,
-		socketPath,
+		socketPath: lease.socketPath,
 		teardown,
 	});
 }

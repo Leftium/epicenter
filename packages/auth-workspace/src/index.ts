@@ -15,10 +15,10 @@ export function bindAuthWorkspaceScope({
 	let pendingIdentity: AuthIdentity | null | undefined;
 	let isDraining = false;
 	let isDisposed = false;
-	let isTerminal = false;
+	let isResetting = false;
 
 	async function reset() {
-		isTerminal = true;
+		isResetting = true;
 		pendingIdentity = undefined;
 
 		try {
@@ -55,20 +55,20 @@ export function bindAuthWorkspaceScope({
 		isDraining = true;
 
 		try {
-			while (!isDisposed && !isTerminal && pendingIdentity !== undefined) {
+			while (!isDisposed && !isResetting && pendingIdentity !== undefined) {
 				const identity = pendingIdentity;
 				pendingIdentity = undefined;
 				await processIdentity(identity);
 			}
 		} finally {
 			isDraining = false;
-			if (!isDisposed && !isTerminal && pendingIdentity !== undefined)
+			if (!isDisposed && !isResetting && pendingIdentity !== undefined)
 				void drain();
 		}
 	}
 
 	function schedule(identity: AuthIdentity | null) {
-		if (isDisposed || isTerminal) return;
+		if (isDisposed || isResetting) return;
 		pendingIdentity = identity;
 		void drain();
 	}

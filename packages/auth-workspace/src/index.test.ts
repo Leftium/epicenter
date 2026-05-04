@@ -7,7 +7,7 @@
  * Key behaviors:
  * - Cold signed-out and signed-in identities call the supplied lifecycle hooks.
  * - Same-user identity changes apply fresh key state without reconnecting.
- * - Leaving an applied user marks the client terminal and ignores later identities.
+ * - Leaving an applied user puts the client into a resetting state and ignores later identities.
  */
 
 import { expect, test } from 'bun:test';

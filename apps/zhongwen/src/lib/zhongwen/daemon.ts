@@ -19,7 +19,6 @@ export type ZhongwenDaemonOptions = {
 	route?: string;
 	auth?: AuthClient;
 	peer?: PeerIdentity;
-	apiUrl?: string;
 	webSocketImpl?: WebSocketImpl;
 };
 
@@ -33,8 +32,7 @@ function defaultZhongwenDaemonPeer(): PeerIdentity {
 
 export function defineZhongwenDaemon({
 	route = DEFAULT_ZHONGWEN_DAEMON_ROUTE,
-	apiUrl = EPICENTER_API_URL,
-	auth = createMachineAuthClient({ serverOrigin: apiUrl }),
+	auth = createMachineAuthClient(),
 	peer = defaultZhongwenDaemonPeer(),
 	webSocketImpl,
 }: ZhongwenDaemonOptions = {}): DaemonRouteDefinition {
@@ -50,7 +48,7 @@ export function defineZhongwenDaemon({
 				initial: { peer },
 			});
 			const sync = attachSync(doc, {
-				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
 				auth,
 				webSocketImpl,
 				awareness,

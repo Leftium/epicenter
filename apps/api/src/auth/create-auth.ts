@@ -1,5 +1,7 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
+import type { BetterAuthSessionResponse } from '@epicenter/auth/contracts';
 import { APPS } from '@epicenter/constants/apps';
+import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { customSession } from 'better-auth/plugins';
@@ -12,7 +14,6 @@ import { createAutumn } from '../autumn';
 import { FEATURE_IDS } from '../billing-plans';
 import * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
-import type { SessionResponse } from '@epicenter/auth/contracts';
 import { deriveUserEncryptionKeys } from './encryption';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -29,7 +30,7 @@ type Db = NodePgDatabase<typeof schema>;
  * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
  * - Plugins: bearer tokens, JWT, device authorization, OAuth provider (PKCE)
  * - `customSession()` enrichment that appends the full encryption keyring
- *   to `/auth/get-session` responses (see {@link SessionResponse})
+ *   to `/auth/get-session` responses (see {@link BetterAuthSessionResponse})
  * - Autumn billing customer creation on user signup
  * - Cloudflare KV secondary storage for session caching
  */
@@ -213,6 +214,7 @@ export function createAuth({
 			verificationUri: '/device',
 			expiresIn: '10m',
 			interval: '5s',
+			validateClient: (clientId) => clientId === EPICENTER_CLI_OAUTH_CLIENT_ID,
 		}),
 		oauthProvider({
 			loginPage: '/sign-in',
@@ -223,32 +225,6 @@ export function createAuth({
 			// because basePath is /auth (not /), so it can't auto-mount at the root.
 			// We already mount both discovery endpoints manually in app.ts.
 			silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
-			trustedClients: [
-				{
-					clientId: 'epicenter-desktop',
-					name: 'Epicenter Desktop',
-					type: 'native',
-					redirectUrls: ['tauri://localhost/auth/callback'],
-					skipConsent: true,
-					metadata: {},
-				},
-				{
-					clientId: 'epicenter-mobile',
-					name: 'Epicenter Mobile',
-					type: 'native',
-					redirectUrls: ['epicenter://auth/callback'],
-					skipConsent: true,
-					metadata: {},
-				},
-				{
-					clientId: 'epicenter-cli',
-					name: 'Epicenter CLI',
-					type: 'native',
-					redirectUrls: [],
-					skipConsent: true,
-					metadata: {},
-				},
-			],
 		}),
 	];
 	/**
@@ -266,7 +242,7 @@ export function createAuth({
 				user,
 				session,
 				encryptionKeys,
-			} satisfies SessionResponse;
+			} satisfies BetterAuthSessionResponse;
 		},
 		{
 			...authOptionsBase,

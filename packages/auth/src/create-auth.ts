@@ -1,4 +1,4 @@
-import { encryptionKeysFingerprint } from '@epicenter/encryption';
+import { encryptionKeysEqual } from '@epicenter/encryption';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
@@ -9,12 +9,15 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type {
+	AuthSession,
 	AuthSnapshot,
 	AuthSnapshotChangeListener,
-	Session,
-	StoredUser,
+	AuthUser,
 } from './auth-types.ts';
-import type { SessionResponse } from './contracts/session.ts';
+import {
+	authSessionFromBetterAuthSessionResponse,
+	type BetterAuthSessionResponse,
+} from './contracts/auth-session.ts';
 import type { MaybePromise, SessionStorage } from './session-store.ts';
 
 export const AuthError = defineErrors({
@@ -90,9 +93,8 @@ export type AuthClient = {
 };
 
 export type SessionStateAdapter = {
-	get(): Session | null;
-	set(value: Session | null): MaybePromise<void>;
-	watch(fn: (next: Session | null) => void): () => void;
+	get(): AuthSession | null;
+	set(value: AuthSession | null): MaybePromise<void>;
 	whenReady?: Promise<unknown>;
 };
 
@@ -105,7 +107,6 @@ export function createSessionStorageAdapter(
 			return state.get();
 		},
 		save: (value) => state.set(value),
-		watch: state.watch,
 	};
 }
 
@@ -118,7 +119,7 @@ export function createSessionStorageAdapter(
  * requiring a fabricated auth shape.
  */
 type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<SessionResponse, BetterAuthOptions>
+	typeof customSession<BetterAuthSessionResponse, BetterAuthOptions>
 >;
 
 /**
@@ -134,8 +135,9 @@ export function createAuth({
 	socialTokenProvider,
 }: CreateAuthConfig): AuthClient {
 	let snapshot: AuthSnapshot = { status: 'loading' };
-	let storageLoaded = false;
-	let bufferedBetterAuthCandidate: Session | null | undefined;
+	let bootCacheLoaded = false;
+	let disposed = false;
+	let bufferedBetterAuthCandidate: AuthSession | null | undefined;
 	let resolveWhenLoaded: () => void = () => {};
 	const whenLoaded = new Promise<void>((resolve) => {
 		resolveWhenLoaded = resolve;
@@ -153,23 +155,22 @@ export function createAuth({
 		}
 	}
 
-	function sessionFromSnapshot(value: AuthSnapshot): Session | null {
+	function sessionFromSnapshot(value: AuthSnapshot): AuthSession | null {
 		return value.status === 'signedIn' ? value.session : null;
 	}
 
-	function snapshotFromSession(session: Session | null): AuthSnapshot {
+	function snapshotFromSession(session: AuthSession | null): AuthSnapshot {
 		return session === null
 			? { status: 'signedOut' }
 			: { status: 'signedIn', session };
 	}
 
-	function sessionsEqual(left: Session | null, right: Session | null) {
+	function sessionsEqual(left: AuthSession | null, right: AuthSession | null) {
 		if (left === null || right === null) return left === right;
 		return (
 			left.token === right.token &&
 			usersEqual(left.user, right.user) &&
-			encryptionKeysFingerprint(left.encryptionKeys) ===
-				encryptionKeysFingerprint(right.encryptionKeys)
+			encryptionKeysEqual(left.encryptionKeys, right.encryptionKeys)
 		);
 	}
 
@@ -180,6 +181,7 @@ export function createAuth({
 	}
 
 	function setSnapshot(next: AuthSnapshot) {
+		if (disposed) return;
 		if (snapshotsEqual(snapshot, next)) return;
 		snapshot = next;
 		for (const listener of snapshotChangeListeners) {
@@ -188,6 +190,7 @@ export function createAuth({
 	}
 
 	function saveSnapshot(next: AuthSnapshot) {
+		if (disposed) return;
 		void Promise.resolve(sessionStorage.save(sessionFromSnapshot(next))).catch(
 			(error) => {
 				console.error('[auth] failed to save session:', error);
@@ -200,7 +203,7 @@ export function createAuth({
 		saveSnapshot(next);
 	}
 
-	function reconcileBetterAuthCandidate(next: Session | null | undefined) {
+	function reconcileBetterAuthCandidate(next: AuthSession | null | undefined) {
 		if (next === undefined) return;
 		if (next === null) {
 			if (snapshot.status !== 'loading')
@@ -219,8 +222,9 @@ export function createAuth({
 		});
 	}
 
-	function settleLoadedSession(loaded: Session | null) {
-		storageLoaded = true;
+	function settleLoadedSession(loaded: AuthSession | null) {
+		if (disposed) return;
+		bootCacheLoaded = true;
 		setSnapshot(snapshotFromSession(loaded));
 		if (bufferedBetterAuthCandidate !== undefined) {
 			reconcileBetterAuthCandidate(bufferedBetterAuthCandidate);
@@ -233,6 +237,7 @@ export function createAuth({
 			const loaded = sessionStorage.load();
 			if (loaded instanceof Promise) {
 				loaded.then(settleLoadedSession, (error) => {
+					if (disposed) return;
 					console.error('[auth] failed to load session:', error);
 					settleLoadedSession(null);
 				});
@@ -244,13 +249,6 @@ export function createAuth({
 			settleLoadedSession(null);
 		}
 	}
-
-	disposers.push(
-		sessionStorage.watch((next) => {
-			if (!storageLoaded) return;
-			setSnapshot(snapshotFromSession(next));
-		}),
-	);
 
 	const client = createAuthClient({
 		baseURL,
@@ -280,29 +278,28 @@ export function createAuth({
 
 	disposers.push(
 		client.useSession.subscribe((state) => {
+			if (disposed) return;
 			if (state.isPending) return;
-			const data = state.data as SessionResponse | null;
-			const next = data
-				? {
-						token: data.session.token,
-						user: normalizeUser(data.user),
-						encryptionKeys: data.encryptionKeys,
-					}
-				: null;
+			let next: AuthSession | null;
+			try {
+				next = authSessionFromBetterAuthSessionResponse(state.data);
+			} catch (error) {
+				console.error('[auth] invalid Better Auth session response:', error);
+				return;
+			}
 
-			if (!storageLoaded) {
+			if (!bootCacheLoaded) {
 				bufferedBetterAuthCandidate = next;
 				return;
 			}
 
-			if (data) {
+			if (next) {
 				reconcileBetterAuthCandidate(next);
 			} else if (snapshot.status === 'signedIn') {
 				writeLocalSnapshot({ status: 'signedOut' });
 			}
 		}),
 	);
-
 	loadPersistedSession();
 
 	return {
@@ -388,6 +385,9 @@ export function createAuth({
 		},
 
 		[Symbol.dispose]() {
+			if (disposed) return;
+			disposed = true;
+			resolveWhenLoaded();
 			for (const dispose of disposers) {
 				try {
 					dispose();
@@ -400,34 +400,7 @@ export function createAuth({
 	};
 }
 
-/**
- * Convert BA's `Date` fields to ISO strings for JSON-safe persistence.
- *
- * BA returns `createdAt` and `updatedAt` as `Date` objects. Persisted session
- * stores (chrome.storage, localStorage) need plain JSON, so we normalize here
- * at the boundary rather than forcing every consumer to handle it.
- */
-function normalizeUser(user: {
-	id: string;
-	createdAt: Date;
-	updatedAt: Date;
-	email: string;
-	emailVerified: boolean;
-	name: string;
-	image?: string | null;
-}): StoredUser {
-	return {
-		id: user.id,
-		createdAt: user.createdAt.toISOString(),
-		updatedAt: user.updatedAt.toISOString(),
-		email: user.email,
-		emailVerified: user.emailVerified,
-		name: user.name,
-		image: user.image,
-	};
-}
-
-function usersEqual(left: StoredUser, right: StoredUser) {
+function usersEqual(left: AuthUser, right: AuthUser) {
 	return (
 		left.id === right.id &&
 		left.createdAt === right.createdAt &&

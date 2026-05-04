@@ -1,7 +1,7 @@
 import {
 	type AuthClient as BaseAuthClient,
 	type CreateAuthConfig,
-	createAuth as createBaseAuthClient,
+	createAuth as createCoreAuth,
 } from '@epicenter/auth';
 
 export type AuthClient = BaseAuthClient;
@@ -14,7 +14,7 @@ export type AuthClient = BaseAuthClient;
  * later getter overrides the copied snapshot value.
  */
 export function createAuth(config: CreateAuthConfig): AuthClient {
-	const base = createBaseAuthClient(config);
+	const base = createCoreAuth(config);
 	let snapshot = $state(base.snapshot);
 
 	const unsubscribe = base.onSnapshotChange((next) => {

@@ -18,13 +18,11 @@ import { openZhongwen as openZhongwenDoc } from './index.js';
 export function openZhongwen({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
-	apiUrl = EPICENTER_API_URL,
-	auth = createMachineAuthClient({ serverOrigin: apiUrl }),
+	auth = createMachineAuthClient(),
 	webSocketImpl,
 }: {
 	projectDir?: ProjectDir;
 	clientID?: number;
-	apiUrl?: string;
 	auth?: AuthClient;
 	webSocketImpl?: WebSocketImpl;
 }) {
@@ -33,7 +31,7 @@ export function openZhongwen({
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
-		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
 		auth,
 		webSocketImpl,
 	});

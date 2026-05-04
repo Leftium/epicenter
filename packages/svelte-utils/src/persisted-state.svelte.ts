@@ -155,11 +155,13 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 	}
 
 	let value = $state(readFromStorage());
+	let disposed = false;
 	const listeners = new Set<
 		(value: StandardSchemaV1.InferOutput<TSchema>) => void
 	>();
 
 	function setValue(nextValue: StandardSchemaV1.InferOutput<TSchema>) {
+		if (disposed) return;
 		if (Object.is(value, nextValue)) return;
 		value = nextValue;
 		for (const listener of listeners) {
@@ -168,6 +170,7 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 	}
 
 	function setAndPersist(nextValue: StandardSchemaV1.InferOutput<TSchema>) {
+		if (disposed) return;
 		setValue(nextValue);
 		try {
 			storageApi.setItem(key, JSON.stringify(nextValue));
@@ -178,17 +181,23 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 
 	// Cross-tab sync: `storage` event fires when ANOTHER tab writes to localStorage.
 	// sessionStorage doesn't fire cross-tab events, so enabling this is harmless.
+	const handleStorage = (e: StorageEvent) => {
+		if (disposed) return;
+		if (e.key !== key) return;
+		setValue(parseRawValue(e.newValue));
+	};
+
+	const handleFocus = () => {
+		if (disposed) return;
+		setValue(readFromStorage());
+	};
+
 	if (syncTabs) {
-		window.addEventListener('storage', (e) => {
-			if (e.key !== key) return;
-			setValue(parseRawValue(e.newValue));
-		});
+		window.addEventListener('storage', handleStorage);
 	}
 
 	// Same-tab sync: catches DevTools edits and writes from other libraries.
-	window.addEventListener('focus', () => {
-		setValue(readFromStorage());
-	});
+	window.addEventListener('focus', handleFocus);
 
 	return {
 		/**
@@ -228,10 +237,20 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		 */
 		set: setAndPersist,
 		watch(listener: (value: StandardSchemaV1.InferOutput<TSchema>) => void) {
+			if (disposed) return () => {};
 			listeners.add(listener);
 			return () => {
 				listeners.delete(listener);
 			};
+		},
+		[Symbol.dispose]() {
+			if (disposed) return;
+			disposed = true;
+			if (syncTabs) {
+				window.removeEventListener('storage', handleStorage);
+			}
+			window.removeEventListener('focus', handleFocus);
+			listeners.clear();
 		},
 	};
 }

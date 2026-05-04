@@ -1,19 +1,17 @@
-import type { Session } from './auth-types.ts';
+import type { AuthSession } from './auth-types.ts';
 
 /**
- * Persistence boundary that `createAuth` uses to load, save, and observe the
- * browser session. Core auth owns the in-memory snapshot; storage only moves
- * data across the durable boundary.
+ * Persistence boundary that `createAuth` uses to load and save the last known
+ * local session. Core auth owns the in-memory snapshot; storage only moves data
+ * across the durable boundary.
  *
  * Invariants:
  * - `load()` may be synchronous or async.
  * - `save()` may be synchronous or async.
- * - `watch()` reports inbound storage changes and may echo local writes.
  */
 export type MaybePromise<T> = T | Promise<T>;
 
 export type SessionStorage = {
-	load(): MaybePromise<Session | null>;
-	save(value: Session | null): MaybePromise<void>;
-	watch(fn: (next: Session | null) => void): () => void;
+	load(): MaybePromise<AuthSession | null>;
+	save(value: AuthSession | null): MaybePromise<void>;
 };

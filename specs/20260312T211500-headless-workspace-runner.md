@@ -276,7 +276,7 @@ plugins: [
 ```
 
 - [x] **6.1.1** Add `deviceAuthorization` plugin to `createAuth` in `apps/api/src/app.ts`
-- [x] **6.1.2** Register `epicenter-runner` as a trusted client (similar to `epicenter-desktop` and `epicenter-mobile`)
+- [x] **6.1.2** Validate the device-flow client ID in `deviceAuthorization`
 
 #### 6.2 — Server: Build `/device` verification page
 
@@ -354,7 +354,7 @@ async function login(serverUrl: string) {
 
 What's IN scope for Phase 6:
 - `deviceAuthorization` plugin on server
-- `epicenter-runner` trusted client registration
+- Device-flow client ID validation
 - Verification page (minimal)
 - Runner `login`/`logout` commands
 - Token storage + auto-loading
@@ -440,7 +440,7 @@ What's OUT of scope:
 - Better Auth Device Authorization plugin — `better-auth/plugins/deviceAuthorization`
 - Better Auth Bearer plugin — `better-auth/plugins/bearer` (already active in `apps/api/src/app.ts`)
 - RFC 8628: OAuth 2.0 Device Authorization Grant
-- `apps/api/src/app.ts` lines 73–100 — existing plugin config and trusted clients
+- `apps/api/src/app.ts` lines 73-100: existing plugin config and device-client validation
 
 ## Review
 

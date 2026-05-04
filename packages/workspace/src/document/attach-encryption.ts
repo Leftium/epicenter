@@ -30,13 +30,12 @@
  * immediately: so registering after `applyKeys` has run does not leave the
  * store plaintext.
  *
- * ## Fingerprint dedup
+ * ## Keyring dedup
  *
  * Auth token refreshes fire `onLogin` repeatedly with identical key material.
- * The attachment holds a `lastKeysFingerprint` so subsequent calls with the
- * same keys short-circuit before HKDF and per-store activation run. The
- * fingerprint is order-independent: reversed key arrays produce the same
- * fingerprint (see `encryptionKeysFingerprint`).
+ * The attachment keeps the last applied keyring so subsequent calls with the
+ * same keys short-circuit before HKDF and per-store activation run. Equality is
+ * order-independent: reversed key arrays are treated as the same keyring.
  *
  * ## Disposal
  *
@@ -70,24 +69,25 @@
  */
 
 import {
+	base64ToBytes,
+	deriveWorkspaceKey,
 	type EncryptionKeys,
-	encryptionKeysFingerprint,
+	encryptionKeysEqual,
 } from '@epicenter/encryption';
 import type * as Y from 'yjs';
-import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
 import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { type Kv, type KvDefinitions } from './attach-kv.js';
-import {
-	type InferTableRow,
-	type ReadonlyTable,
-	type ReadonlyTables,
-	type Table,
-	type TableDefinition,
-	type TableDefinitions,
-	type Tables,
+import type { Kv, KvDefinitions } from './attach-kv.js';
+import type {
+	InferTableRow,
+	ReadonlyTable,
+	ReadonlyTables,
+	Table,
+	TableDefinition,
+	TableDefinitions,
+	Tables,
 } from './attach-table.js';
 import { createKv, createReadonlyTable, createTable } from './internal.js';
 import { KV_KEY, TableKey } from './keys.js';
@@ -118,8 +118,8 @@ export type EncryptionAttachment = {
 	 * propagate to peers via normal CRDT sync; eventually every device's live
 	 * view contains only current-version ciphertext.
 	 *
-	 * Dedup: a second call with a fingerprint-identical keyring is a no-op.
-	 * Order of the input array does not affect the fingerprint.
+	 * Dedup: a second call with an identical keyring is a no-op.
+	 * Order of the input array does not affect equality.
 	 *
 	 * Stores registered after this call will be auto-activated with the cached
 	 * keyring at registration time.
@@ -198,8 +198,8 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 
 	/** Cache the last-applied keyring so late-registered stores can activate. */
 	let cachedKeyring: Map<number, Uint8Array> | undefined;
-	/** Fingerprint of the last-applied encryption keys for same-key dedup. */
-	let lastKeysFingerprint: string | undefined;
+	/** Last-applied encryption keys for same-key dedup. */
+	let lastKeys: EncryptionKeys | undefined;
 
 	let resolveDisposed!: () => void;
 	const whenDisposed = new Promise<void>((resolve) => {
@@ -213,9 +213,8 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 
 	const attachment: EncryptionAttachment = {
 		applyKeys(keys) {
-			const fingerprint = encryptionKeysFingerprint(keys);
-			if (fingerprint === lastKeysFingerprint) return;
-			lastKeysFingerprint = fingerprint;
+			if (lastKeys !== undefined && encryptionKeysEqual(keys, lastKeys)) return;
+			lastKeys = [...keys] as EncryptionKeys;
 
 			const keyring = new Map<number, Uint8Array>();
 			for (const { version, userKeyBase64 } of keys) {

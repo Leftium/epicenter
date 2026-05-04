@@ -27,7 +27,6 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
-		"./shared/crypto": "./src/shared/crypto/index.ts",
 		"./document/attach-markdown": "./src/document/attach-markdown.ts",
 		"./document/attach-sqlite": "./src/document/attach-sqlite.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
@@ -52,8 +51,6 @@
 		"@hono/standard-validator": "catalog:",
 		"@tanstack/ai": "catalog:",
 		"@epicenter/sync": "workspace:*",
-		"@noble/ciphers": "^2.1.1",
-		"@noble/hashes": "^2.0.1",
 		"@sindresorhus/slugify": "catalog:",
 		"@standard-schema/spec": "catalog:",
 		"@tursodatabase/database": "^0.3.2",
@@ -80,6 +77,8 @@
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
+		"@noble/ciphers": "^2.1.1",
+		"@noble/hashes": "^2.0.1",
 		"@types/diff": "^8.0.0",
 		"@types/node": "catalog:",
 		"better-sqlite3": "^12.4.1",

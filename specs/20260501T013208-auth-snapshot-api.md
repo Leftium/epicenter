@@ -65,7 +65,6 @@ The legacy session persistence contract is synchronous:
 export type LegacySessionPersistence = {
 	get(): Session | null;
 	set(value: Session | null): void;
-	watch(fn: (next: Session | null) => void): () => void;
 };
 ```
 
@@ -321,7 +320,6 @@ export type MaybePromise<T> = T | Promise<T>;
 export type SessionStorage = {
 	load(): MaybePromise<Session | null>;
 	save(value: Session | null): MaybePromise<void>;
-	watch(fn: (next: Session | null) => void): () => void;
 };
 ```
 
@@ -334,9 +332,8 @@ Invariants:
 3. If `load()` returns a promise, `createAuthClient()` starts in `loading` and resolves `whenSessionLoaded` after applying the loaded value.
 4. `whenSessionLoaded` never rejects. If `load()` throws or rejects, the adapter reports the error through its existing error hook or logger, auth treats the loaded value as `null`, and the snapshot becomes `signedOut`.
 5. `save()` persists the session but does not drive the local snapshot. Auth updates its in-memory snapshot before it calls `save()`.
-6. `watch()` reports storage changes from other tabs or extension contexts. It may also echo local writes. Auth must handle duplicate values idempotently.
-7. Storage watch is an inbound reconciliation path. Local auth writes call `setSnapshot(next)` first, then `save(sessionFromSnapshot(next))`. If storage later echoes the same value, auth dedupes it and does not notify subscribers again.
-8. Snapshot equality is structural for auth purposes: same status, same token, same user fields, same encryption keys. Do not rely on object identity, because stores may echo fresh objects.
+6. Live auth state flows through Better Auth session emissions and auth snapshot listeners, not through storage callbacks.
+7. Snapshot equality is structural for auth purposes: same status, same token, same user fields, same encryption keys. Do not rely on object identity.
 
 The existing generic storage helpers can either grow `load()` and `save()` aliases or be wrapped by small adapters:
 
@@ -345,13 +342,11 @@ function persistedStateSessionStorage(
 	state: {
 		get(): Session | null;
 		set(value: Session | null): void | Promise<void>;
-		watch(fn: (next: Session | null) => void): () => void;
 	},
 ): SessionStorage {
 	return {
 		load: () => state.get(),
 		save: (value) => state.set(value),
-		watch: state.watch,
 	};
 }
 ```
@@ -364,7 +359,6 @@ function chromeSessionStorage(
 		whenReady: Promise<unknown>;
 		get(): Session | null;
 		set(value: Session | null): Promise<void>;
-		watch(fn: (next: Session | null) => void): () => void;
 	},
 ): SessionStorage {
 	return {
@@ -373,7 +367,6 @@ function chromeSessionStorage(
 			return state.get();
 		},
 		save: (value) => state.set(value),
-		watch: state.watch,
 	};
 }
 ```
@@ -432,13 +425,13 @@ signIn() promise
   |
   +--> pending state belongs to the caller
   |
-  +--> Better Auth and the storage watch later move the snapshot to signedIn
+  +--> Better Auth session state later moves the snapshot to signedIn
 
 signOut() promise
   |
   +--> pending state belongs to the caller
   |
-  +--> Better Auth and the storage watch later move the snapshot to signedOut
+  +--> Better Auth session state later moves the snapshot to signedOut
 ```
 
 Conflating the two means the snapshot starts answering two unrelated questions. The state graph stays clean by keeping commands on a separate plane.
@@ -518,7 +511,7 @@ AuthClient
   |
   | reads and writes
   v
-SessionStorage { load, save, watch }
+SessionStorage { load, save }
   |
   +--> getToken()
   +--> getSession()
@@ -549,7 +542,6 @@ SessionStorage
   |
   +--> load persisted session
   +--> save durable session
-  +--> watch external storage changes
 
 Svelte wrapper mirrors one field:
   snapshot
@@ -631,11 +623,10 @@ Keep the existing field-level ownership:
 | Writer | Fields owned | Notes |
 | --- | --- | --- |
 | Persisted load | initial whole session | Moves `loading` to `signedIn` or `signedOut`. |
-| Storage watch | external whole session | Handles cross-tab sign-in, sign-out, and token rotation. Dedupe echoes. |
 | Better Auth `onSuccess` | `session.token` only | Applies `set-auth-token` response header immediately. |
 | Better Auth `useSession.subscribe` | `user`, `encryptionKeys`, initial token | Preserve current token when already signed in. |
 | `signOut()` local completion | no direct final state if BA subscription clears | Prefer BA/store updates as source, but ensure local token is cleared promptly if BA does not. |
-| Auth commands | nothing on the snapshot | Settled session state always flows from the BA subscription or storage watch. Commands return their own `Result`. |
+| Auth commands | nothing on the snapshot | Settled session state flows from the BA subscription. Commands return their own `Result`. |
 
 Only one helper mutates the in-memory snapshot:
 
@@ -659,10 +650,7 @@ setSnapshot(next)
 sessionStorage.save(sessionFromSnapshot(next))
   |
   v
-storage watch may echo the same value
-  |
-  v
-dedupe, no second notification
+durable boot cache is updated
 ```
 
 External storage writes use the same `setSnapshot()` path after converting `Session | null` into `signedIn | signedOut`.
@@ -1015,7 +1003,7 @@ Target wrapper shape:
 - [ ] **5.3** Add tests for `subscribe` replay and previous snapshot arguments.
 - [ ] **5.4** Add tests for token rotation: header token replaces current token and Better Auth refetch does not overwrite it with a stale token.
 - [ ] **5.5** Add tests for Better Auth emissions during `loading`: null and non-null data must not publish a signed-out or signed-in snapshot before storage load.
-- [ ] **5.6** Add tests for storage watch echo dedupe using fresh object references.
+- [x] **5.6** Removed storage callback echo tests; storage is now a boot cache only.
 - [ ] **5.7** Add tests for `auth.fetch`: it waits for `whenSessionLoaded` before attaching a bearer token.
 - [ ] **5.8** Add a package test script if needed. `packages/auth` currently only has `typecheck`, so do not add tests without making them runnable.
 - [ ] **5.9** Add or update Svelte wrapper tests if the package has test infrastructure. If not, rely on `svelte-check`.
@@ -1126,7 +1114,7 @@ Expected: the stale token is ignored.
 
 ### External Tab Signs Out
 
-1. Storage watch reports `null`.
+1. Better Auth session state reports `null`.
 2. Snapshot becomes `signedOut`.
 3. Workspace goes offline.
 4. If previous snapshot was `signedIn`, local IndexedDB is cleared.
@@ -1135,7 +1123,7 @@ Expected: cold boot signed-out state does not clear local data.
 
 ### Auth Command Overlap
 
-The internal in-flight counter from the earlier auth client has been removed. There is no public operation field and no `AuthBusy` rejection. Overlapping commands continue to interleave the way they do today: the Better Auth subscription and storage watch are the writers that settle final session state, so the only race risk is a stale token write (already covered by the rotated-token preservation rule above).
+The internal in-flight counter from the earlier auth client has been removed. There is no public operation field and no `AuthBusy` rejection. Overlapping commands continue to interleave the way they do today: the Better Auth subscription settles final session state, so the only race risk is a stale token write (already covered by the rotated-token preservation rule above).
 
 If a future flow needs strict mutual exclusion, that is an internal change that does not affect the public API.
 
@@ -1165,7 +1153,7 @@ If a future flow needs strict mutual exclusion, that is an internal change that 
 
 The core API is implemented in the current codebase. `packages/auth/src/create-auth.ts` exposes `snapshot`, `whenSessionLoaded`, `subscribe`, and `fetch`; it buffers Better Auth emissions during storage load, preserves rotated bearer tokens, and stores updates through `sessionStorage`. `packages/auth-svelte/src/create-auth.svelte.ts` mirrors the snapshot into Svelte state, and app sync token callbacks read `auth.snapshot` after `auth.whenSessionLoaded`.
 
-The remaining unexecuted part is verification. Phase 5 still has no focused tests for `createAuth`: storage startup, subscribe replay, previous snapshot arguments, token rotation, Better Auth emissions during loading, storage watch echo dedupe, and `auth.fetch` bearer behavior are not covered by package tests. `packages/auth` has tests for contracts and Node credential storage, but not for this client state machine.
+The remaining unexecuted part is verification. Phase 5 now has focused tests for storage startup, token rotation, Better Auth emissions during loading, and signed-in or signed-out Better Auth emissions. Subscribe replay with previous snapshot arguments and `auth.fetch` bearer behavior are still follow-up coverage candidates.
 
 Two targeted typechecks pass:
 
@@ -1233,7 +1221,6 @@ export type MaybePromise<T> = T | Promise<T>;
 export type SessionStorage = {
 	load(): MaybePromise<Session | null>;
 	save(value: Session | null): MaybePromise<void>;
-	watch(fn: (next: Session | null) => void): () => void;
 };
 ```
 
@@ -1246,7 +1233,7 @@ Implementation requirements:
 6. Better Auth `useSession.subscribe` must not turn `loading` into `signedOut` or `signedIn` before persisted storage loads. Buffer non-pending Better Auth state during loading and reconcile after load.
 7. Better Auth response header token rotation still owns `session.token`, but only when snapshot is `signedIn`.
 8. Better Auth session refetch still owns `user` and `encryptionKeys`, while preserving an already rotated token.
-9. Only one helper mutates the in-memory snapshot. Local writes update snapshot first, then save. Storage watch is inbound reconciliation and must dedupe local echoes structurally.
+9. Only one helper mutates the in-memory snapshot. Local writes update snapshot first, then save the durable boot cache.
 10. `auth.fetch` waits for `whenSessionLoaded`, then reads the bearer token from `auth.snapshot`.
 11. Do not add `auth.accessToken()`, `auth.getToken()`, or other projection helpers. The snapshot is the single read source.
 12. Do not add a public `operation` field, `AuthOperation` type, or `AuthError.AuthBusy`. Keep today's `busyCount` internal counter as a private serialization aid; overlapping commands continue to interleave the way they do today.

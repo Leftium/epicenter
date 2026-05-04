@@ -1,5 +1,5 @@
 /**
- * attachEncryption tests: registration, fingerprint dedup, key application,
+ * attachEncryption tests: registration, keyring dedup, key application,
  * key rotation, re-encryption of plaintext, late-register auto-activation,
  * disposal cascade, reentrance guard.
  *
@@ -12,15 +12,15 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { EncryptionKeys } from '@epicenter/encryption';
-import { randomBytes } from '@noble/ciphers/utils.js';
-import { type } from 'arktype';
-import * as Y from 'yjs';
 import {
 	bytesToBase64,
 	type EncryptedBlob,
 	getKeyVersion,
 	isEncryptedBlob,
-} from '../shared/crypto/index.js';
+} from '@epicenter/encryption';
+import { randomBytes } from '@noble/ciphers/utils.js';
+import { type } from 'arktype';
+import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { attachEncryption } from './attach-encryption.js';
 import { defineTable } from './define-table.js';
@@ -56,7 +56,7 @@ describe('attachEncryption', () => {
 		expect(storeA.get('1')).toEqual({ title: 'Was plaintext' });
 	});
 
-	test('fingerprint dedup: identical keys short-circuit the second call', () => {
+	test('keyring dedup: identical keys short-circuit the second call', () => {
 		const { storeA, encryption } = setup();
 		const key = randomBytes(32);
 		encryption.applyKeys(toEncryptionKeys(key));
@@ -65,7 +65,7 @@ describe('attachEncryption', () => {
 		expect(storeA.get('1')).toEqual({ title: 'Before second apply' });
 	});
 
-	test('fingerprint dedup: reversed key order is treated as the same keyring', () => {
+	test('keyring dedup: reversed key order is treated as the same keyring', () => {
 		const { storeA, encryption } = setup();
 		const keyV1 = randomBytes(32);
 		const keyV2 = randomBytes(32);

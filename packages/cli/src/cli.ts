@@ -14,7 +14,7 @@ import { upCommand } from './commands/up';
  * Introspect and invoke `defineQuery` / `defineMutation` actions in
  * `epicenter.config.ts`, either locally or on a peer that's online right now.
  *
- *   - `auth`:  manage Epicenter server sessions (pre-workspace)
+ *   - `auth`:  manage the local machine auth session (pre-workspace)
  *   - `list`:  tree view of runnable actions (local schema is authoritative)
  *   - `run`:   invoke one by dot-path; `--peer` dispatches over RPC
  *   - `peers`: enumerate other clients currently online via Yjs awareness

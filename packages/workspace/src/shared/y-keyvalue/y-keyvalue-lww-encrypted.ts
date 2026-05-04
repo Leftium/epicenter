@@ -55,11 +55,19 @@
  *
  * ## Related Modules
  *
- * - {@link ../crypto/index.ts}: Encryption primitives (encryptValue, decryptValue, isEncryptedBlob)
+ * - `@epicenter/encryption`: Encryption primitives (encryptValue, decryptValue, isEncryptedBlob)
  * - {@link ./y-keyvalue-lww.ts}: Inner CRDT that handles conflict resolution (unaware of encryption)
  *
  * @module
  */
+
+import {
+	decryptValue,
+	type EncryptedBlob,
+	encryptValue,
+	getKeyVersion,
+	isEncryptedBlob,
+} from '@epicenter/encryption';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
@@ -70,13 +78,6 @@ import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
 } from '../../document/y-keyvalue/index.js';
-import {
-	decryptValue,
-	type EncryptedBlob,
-	encryptValue,
-	getKeyVersion,
-	isEncryptedBlob,
-} from '../crypto/index.js';
 
 /**
  * Errors emitted when the encrypted observer fails to decrypt an entry.

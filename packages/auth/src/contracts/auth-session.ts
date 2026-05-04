@@ -1,45 +1,15 @@
 import { EncryptionKeys } from '@epicenter/encryption';
-import { type } from 'arktype';
 import type {
 	Session as BetterAuthSession,
 	User as BetterAuthUser,
 } from 'better-auth';
+import { AuthSession, AuthUser } from '../auth-types.js';
 
-export type SessionResponse = {
+export type BetterAuthSessionResponse = {
 	user: BetterAuthUser;
 	session: BetterAuthSession;
 	encryptionKeys: EncryptionKeys;
 };
-
-export const StoredBetterAuthUser = type({
-	id: 'string',
-	name: 'string',
-	email: 'string',
-	emailVerified: 'boolean',
-	'image?': 'string | null | undefined',
-	createdAt: 'string',
-	updatedAt: 'string',
-});
-export type StoredBetterAuthUser = typeof StoredBetterAuthUser.infer;
-
-export const StoredBetterAuthSession = type({
-	id: 'string',
-	token: 'string',
-	userId: 'string',
-	expiresAt: 'string',
-	createdAt: 'string',
-	updatedAt: 'string',
-	'ipAddress?': 'string | null | undefined',
-	'userAgent?': 'string | null | undefined',
-});
-export type StoredBetterAuthSession = typeof StoredBetterAuthSession.infer;
-
-export const Session = type({
-	user: StoredBetterAuthUser,
-	session: StoredBetterAuthSession,
-	encryptionKeys: EncryptionKeys,
-});
-export type Session = typeof Session.infer;
 
 function readRecord(value: unknown, label: string): Record<string, unknown> {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -86,9 +56,16 @@ function normalizeOptionalString(
 	return value;
 }
 
-export function normalizeUserForStorage(value: unknown): StoredBetterAuthUser {
+/**
+ * Normalize Better Auth user values into the JSON-safe user shape.
+ *
+ * Better Auth can hand client plugins live `Date` objects before the payload is
+ * serialized. Persisted app and machine stores need ISO strings, so this parser
+ * owns that conversion at the auth boundary.
+ */
+export function normalizeAuthUser(value: unknown): AuthUser {
 	const record = readRecord(value, 'user');
-	return StoredBetterAuthUser.assert({
+	return AuthUser.assert({
 		id: readString(record, 'id'),
 		name: readString(record, 'name'),
 		email: readString(record, 'email'),
@@ -99,27 +76,38 @@ export function normalizeUserForStorage(value: unknown): StoredBetterAuthUser {
 	});
 }
 
-export function normalizeBetterAuthSessionForStorage(
+/**
+ * Normalize Better Auth's custom session response into local auth state.
+ *
+ * Better Auth's client plugin typing cannot carry this custom response through
+ * every package boundary in this monorepo, so this function owns the runtime
+ * check instead of letting `createAuth()` trust an inline cast.
+ */
+export function normalizeAuthSession(
 	value: unknown,
-): StoredBetterAuthSession {
-	const record = readRecord(value, 'session');
-	return StoredBetterAuthSession.assert({
-		id: readString(record, 'id'),
-		token: readString(record, 'token'),
-		userId: readString(record, 'userId'),
-		expiresAt: normalizeDate(record.expiresAt, 'expiresAt'),
-		createdAt: normalizeDate(record.createdAt, 'createdAt'),
-		updatedAt: normalizeDate(record.updatedAt, 'updatedAt'),
-		ipAddress: normalizeOptionalString(record, 'ipAddress'),
-		userAgent: normalizeOptionalString(record, 'userAgent'),
+	{ token }: { token: string },
+): AuthSession {
+	const record = readRecord(value, 'Better Auth session response');
+	return AuthSession.assert({
+		token,
+		user: normalizeAuthUser(record.user),
+		encryptionKeys: EncryptionKeys.assert(record.encryptionKeys),
 	});
 }
 
-export function normalizeSessionResponse(response: unknown): Session {
-	const record = readRecord(response, 'session response');
-	return Session.assert({
-		user: normalizeUserForStorage(record.user),
-		session: normalizeBetterAuthSessionForStorage(record.session),
-		encryptionKeys: EncryptionKeys.assert(record.encryptionKeys),
-	});
+/**
+ * Project Better Auth's client subscription value into local auth state.
+ *
+ * The client subscription already carries the active request token under
+ * `session.token`; server-owned session metadata is intentionally ignored.
+ */
+export function authSessionFromBetterAuthSessionResponse(
+	value: unknown,
+): AuthSession | null {
+	if (value === null || value === undefined) return null;
+
+	const record = readRecord(value, 'Better Auth session response');
+	const session = readRecord(record.session, 'session');
+
+	return normalizeAuthSession(record, { token: readString(session, 'token') });
 }

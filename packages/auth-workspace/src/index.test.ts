@@ -11,7 +11,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import type { AuthClient, AuthSnapshot, Session } from '@epicenter/auth';
+import type { AuthClient, AuthSession, AuthSnapshot } from '@epicenter/auth';
 import { bindAuthWorkspaceScope } from './index.ts';
 
 const keysA = [
@@ -19,14 +19,14 @@ const keysA = [
 		version: 1,
 		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
-] satisfies Session['encryptionKeys'];
+] satisfies AuthSession['encryptionKeys'];
 
 const keysB = [
 	{
 		version: 2,
 		userKeyBase64: 'ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=',
 	},
-] satisfies Session['encryptionKeys'];
+] satisfies AuthSession['encryptionKeys'];
 
 function session({
 	userId = 'user-1',
@@ -35,8 +35,8 @@ function session({
 }: {
 	userId?: string;
 	token?: string;
-	keys?: Session['encryptionKeys'];
-} = {}): Session {
+	keys?: AuthSession['encryptionKeys'];
+} = {}): AuthSession {
 	return {
 		token,
 		user: {
@@ -111,7 +111,7 @@ function setup({
 } = {}) {
 	const fakeAuth = createFakeAuth(initial);
 	const calls: string[] = [];
-	const appliedSessions: Session[] = [];
+	const appliedSessions: AuthSession[] = [];
 	const unsubscribe = bindAuthWorkspaceScope({
 		auth: fakeAuth.auth,
 		syncControl: syncControl

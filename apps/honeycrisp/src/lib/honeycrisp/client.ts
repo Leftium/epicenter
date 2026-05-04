@@ -1,7 +1,7 @@
 import {
+	AuthSession,
 	createAuth,
 	createSessionStorageAdapter,
-	Session,
 } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -13,7 +13,7 @@ import { openHoneycrisp } from './browser';
 
 const session = createPersistedState({
 	key: 'honeycrisp:authSession',
-	schema: Session.or('null'),
+	schema: AuthSession.or('null'),
 	defaultValue: null,
 });
 

@@ -13,7 +13,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
    Presence      | peers  | presence.peers()                     |
                  +--------+--------------------------------------+
 
- Cross-cutting: auth (server session, pre-workspace)
+ Cross-cutting: auth (machine session, pre-workspace)
 ```
 
 `list` is the local view of what *this* device exposes across all hosted
@@ -45,11 +45,10 @@ The package exposes the `epicenter` binary via `src/bin.ts`.
 `run`, `list`, and `peers` dispatch to the local `epicenter up` daemon for the discovered project. Start it once at the top of your session (`epicenter up &`), then run as many shell-shortcut commands as you want. Without `up`, those three verbs error with a hint pointing back here. `up`, `down`, `ps`, `logs`, and `auth` work without a daemon.
 
 ```bash
-# auth: server session (pre-workspace; no project flag)
-epicenter auth login                              # defaults to https://api.epicenter.so
-epicenter auth login https://self-hosted.example  # self-hosted override
-epicenter auth status                             # most recent session
-epicenter auth logout                             # most recent session
+# auth: machine session (pre-workspace; no project flag)
+epicenter auth login
+epicenter auth status
+epicenter auth logout
 
 # up: bring every hosted route online as a callable peer (run once per session)
 epicenter up &
@@ -102,7 +101,7 @@ Peer awareness has a ~30s liveness window: a peer that crashed recently may stil
 | `--wait` | none | `run --peer` (default 5000) | Ms to wait for peer resolution and the RPC call. |
 | `--format` | none | `list`, `run`, `peers` | `json` or `jsonl`. Pretty-prints on TTY, compact when piped. Without it, commands emit their human-readable shape (tree / value / table). |
 
-`auth` intentionally takes no project flag: it manages server sessions, not workspace state. The server URL is a positional with a default of `https://api.epicenter.so`; self-hosters pass their own URL.
+`auth` intentionally takes no project flag: it manages the local machine auth session, not workspace state. The auth server is the compiled Epicenter API URL.
 
 ### Exit codes
 
@@ -168,9 +167,7 @@ function openTabManager() {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
 	});
-	const auth = createMachineAuthClient({
-		serverOrigin: 'https://api.epicenter.so',
-	});
+	const auth = createMachineAuthClient();
 	const sync = attachSync(ydoc, {
 		url: toWsUrl('https://api.epicenter.so/workspaces/epicenter.tab-manager'),
 		auth,

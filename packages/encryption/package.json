@@ -9,12 +9,17 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
-		"arktype": "catalog:"
+		"@noble/ciphers": "^2.1.1",
+		"@noble/hashes": "^2.0.1",
+		"arktype": "catalog:",
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
+		"@types/bun": "catalog:",
 		"typescript": "catalog:"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
 	}
 }

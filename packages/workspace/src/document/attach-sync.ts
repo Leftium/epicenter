@@ -125,12 +125,7 @@ export const SyncSupervisorError = defineErrors({
 });
 export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
 
-export type SyncControl = {
-	pause(): void;
-	reconnect(): void;
-};
-
-export type SyncAttachment = SyncControl & {
+export type SyncAttachment = {
 	/**
 	 * Resolves after the WebSocket handshake completes and the first sync
 	 * exchange finishes. Unlike `y-indexeddb`'s `whenSynced`, this is a

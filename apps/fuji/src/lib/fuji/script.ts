@@ -71,7 +71,6 @@ export async function openFujiScript({
 		actions,
 		async [Symbol.asyncDispose]() {
 			snapshotAttachment[Symbol.dispose]();
-			await snapshotAttachment.yjsLog.whenDisposed;
 		},
 	};
 }

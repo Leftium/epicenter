@@ -125,21 +125,6 @@ export function openFuji({
 				idb.clearLocal(),
 			]);
 		},
-		async clearLocalData() {
-			await Promise.all([
-				// Entry content docs use their own IndexedDB document names.
-				...doc.tables.entries.getAllValid().map((entry) =>
-					clearDocument(
-						entryContentDocGuid({
-							workspaceId: doc.ydoc.guid,
-							entryId: entry.id,
-						}),
-					),
-				),
-				// The workspace IndexedDB helper only clears the root doc.
-				idb.clearLocal(),
-			]);
-		},
 		remote,
 		rpc,
 		whenLoaded: idb.whenLoaded,

@@ -58,9 +58,8 @@ describe('attachYjsLogReader', () => {
 		expect(readerMap.get('k999')).toBe(999);
 
 		readerDoc.destroy();
-		await reader.whenDisposed;
 		writerDoc.destroy();
-		await writer.whenDisposed;
+		await writer[Symbol.asyncDispose]();
 	});
 
 	test('opens concurrently with an active writer (WAL snapshot read)', async () => {
@@ -85,7 +84,7 @@ describe('attachYjsLogReader', () => {
 		})();
 
 		const readerDoc = new Y.Doc();
-		const reader = attachYjsLogReader(readerDoc, { filePath });
+		attachYjsLogReader(readerDoc, { filePath });
 
 		const readerMap = readerDoc.getMap<number>('m');
 		expect(readerMap.get('seed0')).toBe(0);
@@ -95,9 +94,8 @@ describe('attachYjsLogReader', () => {
 		await writes;
 
 		readerDoc.destroy();
-		await reader.whenDisposed;
 		writerDoc.destroy();
-		await writer.whenDisposed;
+		await writer[Symbol.asyncDispose]();
 	});
 
 	test('missing file is a no-op: fileExisted is false, doc stays empty', async () => {
@@ -107,7 +105,6 @@ describe('attachYjsLogReader', () => {
 		expect(att.fileExisted).toBe(false);
 		expect(ydoc.getMap('m').size).toBe(0);
 		ydoc.destroy();
-		await att.whenDisposed;
 	});
 
 	test('does not write back to the file', async () => {
@@ -117,12 +114,12 @@ describe('attachYjsLogReader', () => {
 		const writer = attachYjsLog(writerDoc, { filePath });
 		writerDoc.getMap<number>('m').set('seed', 1);
 		writerDoc.destroy();
-		await writer.whenDisposed;
+		await writer[Symbol.asyncDispose]();
 
 		const baselineRows = countRows(filePath);
 
 		const readerDoc = new Y.Doc();
-		const reader = attachYjsLogReader(readerDoc, { filePath });
+		attachYjsLogReader(readerDoc, { filePath });
 
 		// Mutate the readonly-attached doc. No write listener means no INSERT.
 		readerDoc.getMap<number>('m').set('mutation', 999);
@@ -131,6 +128,5 @@ describe('attachYjsLogReader', () => {
 		expect(countRows(filePath)).toBe(baselineRows);
 
 		readerDoc.destroy();
-		await reader.whenDisposed;
 	});
 });

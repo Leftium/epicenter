@@ -70,9 +70,6 @@ export async function openTabManager({
 			]);
 			await idb.clearLocal();
 		},
-		async clearLocalData() {
-			await idb.clearLocal();
-		},
 		remote,
 		rpc,
 		whenLoaded: idb.whenLoaded,

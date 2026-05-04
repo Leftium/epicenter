@@ -59,7 +59,7 @@ export function defineOpensidianDaemon({
 				remote,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();
-					await sync.whenDisposed;
+					await sync[Symbol.asyncDispose]();
 				},
 			};
 		},

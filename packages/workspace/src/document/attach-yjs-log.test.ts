@@ -59,7 +59,7 @@ describe('attachYjsLog', () => {
 		expect(readJournalMode(filePath).toLowerCase()).toBe('wal');
 
 		ydoc.destroy();
-		await att.whenDisposed;
+		await att[Symbol.asyncDispose]();
 	});
 
 	test('round-trip: writer state survives close and reopen', async () => {
@@ -72,7 +72,7 @@ describe('attachYjsLog', () => {
 			for (let i = 0; i < 100; i++) m.set(`k${i}`, i);
 		});
 		writerDoc.destroy();
-		await writer.whenDisposed;
+		await writer[Symbol.asyncDispose]();
 
 		const reopenDoc = new Y.Doc();
 		const reopen = attachYjsLog(reopenDoc, { filePath });
@@ -81,7 +81,7 @@ describe('attachYjsLog', () => {
 		expect(reopened.get('k0')).toBe(0);
 		expect(reopened.get('k99')).toBe(99);
 		reopenDoc.destroy();
-		await reopen.whenDisposed;
+		await reopen[Symbol.asyncDispose]();
 	});
 
 	test('destroy compacts multiple update rows into one snapshot row', async () => {
@@ -95,7 +95,7 @@ describe('attachYjsLog', () => {
 		expect(countRows(filePath)).toBeGreaterThan(1);
 
 		writerDoc.destroy();
-		await writer.whenDisposed;
+		await writer[Symbol.asyncDispose]();
 
 		expect(countRows(filePath)).toBe(1);
 
@@ -103,7 +103,7 @@ describe('attachYjsLog', () => {
 		const reopen = attachYjsLog(reopenDoc, { filePath });
 		expect(reopenDoc.getMap<number>('m').get('k4')).toBe(4);
 		reopenDoc.destroy();
-		await reopen.whenDisposed;
+		await reopen[Symbol.asyncDispose]();
 	});
 
 	test('clearLocal drops all updates from the file', async () => {
@@ -113,13 +113,13 @@ describe('attachYjsLog', () => {
 		writerDoc.getMap<number>('m').set('k', 1);
 		writer.clearLocal();
 		writerDoc.destroy();
-		await writer.whenDisposed;
+		await writer[Symbol.asyncDispose]();
 
 		// Reopening should see no rehydrated state.
 		const reopenDoc = new Y.Doc();
 		const reopen = attachYjsLog(reopenDoc, { filePath });
 		expect(reopenDoc.getMap<number>('m').size).toBe(0);
 		reopenDoc.destroy();
-		await reopen.whenDisposed;
+		await reopen[Symbol.asyncDispose]();
 	});
 });

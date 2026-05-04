@@ -26,18 +26,9 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
-			// The workspace bundle owns teardown order. Its disposer closes child
-			// document caches and destroys the root Y.Doc, which tells attachments
-			// like sync, broadcast channel, and y-indexeddb to stop before local
-			// IndexedDB data is deleted.
-			fuji[Symbol.dispose]();
-			// This is safe after disposal. y-indexeddb deletes by database name,
-			// and any row data needed to compute child document names remains
-			// readable from memory after Y.Doc.destroy(); disposal has already
-			// stopped observers and providers.
-			await fuji.clearLocalData();
+			await fuji.wipe();
 		} catch (error) {
-			toast.error('Could not clear local data', {
+			toast.error('Could not wipe local data', {
 				description: extractErrorMessage(error),
 			});
 		} finally {

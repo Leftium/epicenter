@@ -68,7 +68,6 @@ function createTestClient() {
 		whenReady: persistence.whenLoaded,
 		async dispose() {
 			ydoc.destroy();
-			await persistence.whenDisposed;
 		},
 	};
 	return { client, contentDocs };
@@ -235,7 +234,6 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 			whenReady: persistence.whenLoaded,
 			async dispose() {
 				ydoc.destroy();
-				await persistence.whenDisposed;
 			},
 		};
 		return { client, contentDocs };

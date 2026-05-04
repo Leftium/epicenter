@@ -156,7 +156,7 @@ describe('attachSync split surface', () => {
 		expect('peers' in sync).toBe(false);
 
 		ydoc.destroy();
-		await sync.whenDisposed;
+		await sync[Symbol.asyncDispose]();
 	});
 
 	test('transports provided awareness', async () => {
@@ -285,7 +285,7 @@ describe('attachSync split surface', () => {
 		expect(result).toEqual(Ok({ closedCount: 1 }));
 
 		ydoc.destroy();
-		await sync.whenDisposed;
+		await sync[Symbol.asyncDispose]();
 	});
 
 	test('attachRpc reserves system namespace', () => {
@@ -327,7 +327,7 @@ describe('attachSync split surface', () => {
 		expect(second.protocols).toEqual(['epicenter']);
 
 		ydoc.destroy();
-		await sync.whenDisposed;
+		await sync[Symbol.asyncDispose]();
 	});
 
 	test('credential subscription unsubscribes on destroy', async () => {
@@ -340,7 +340,7 @@ describe('attachSync split surface', () => {
 
 		await waitFor(() => FakeWebSocket.instances[0]);
 		ydoc.destroy();
-		await sync.whenDisposed;
+		await sync[Symbol.asyncDispose]();
 
 		expect(credentials.calls).toContain('unsubscribe');
 	});
@@ -366,7 +366,7 @@ describe('attachSync split surface', () => {
 		expect(ws.protocols).toEqual(['epicenter']);
 
 		ydoc.destroy();
-		await sync.whenDisposed;
+		await sync[Symbol.asyncDispose]();
 	});
 
 	test('missing credentials keep sync offline until credentials change', async () => {
@@ -388,6 +388,6 @@ describe('attachSync split surface', () => {
 		expect(ws.protocols).toEqual(['epicenter']);
 
 		ydoc.destroy();
-		await sync.whenDisposed;
+		await sync[Symbol.asyncDispose]();
 	});
 });

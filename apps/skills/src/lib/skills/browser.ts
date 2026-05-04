@@ -37,6 +37,11 @@ export function openSkillsBrowser() {
 				instructions: attachPlainText(ydoc),
 				persistence,
 				whenReady: persistence.whenLoaded,
+				/**
+				 * child disposer rejections do not propagate; bundle.wipe() relies on
+				 * IDB's deleteDatabase native blocking as belt-and-suspenders for
+				 * storage deletion.
+				 */
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},
@@ -62,6 +67,11 @@ export function openSkillsBrowser() {
 				content: attachPlainText(ydoc),
 				persistence,
 				whenReady: persistence.whenLoaded,
+				/**
+				 * child disposer rejections do not propagate; bundle.wipe() relies on
+				 * IDB's deleteDatabase native blocking as belt-and-suspenders for
+				 * storage deletion.
+				 */
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},
@@ -91,7 +101,11 @@ export function openSkillsBrowser() {
 		referenceDocs,
 		actions,
 		whenReady: idb.whenLoaded,
-		async clearLocalData() {
+		async wipe() {
+			instructionsDocs[Symbol.dispose]();
+			referenceDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
+			await idb[Symbol.asyncDispose]();
 			await Promise.all([
 				// Skill instruction docs use their own IndexedDB document names.
 				...doc.tables.skills.getAllValid().map((skill) =>

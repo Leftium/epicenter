@@ -31,12 +31,6 @@ export type YjsLogReaderAttachment = {
 	 * taken once at construction; the file is not re-checked later.
 	 */
 	fileExisted: boolean;
-	/**
-	 * Resolves after `ydoc.destroy()` AND `db.close()`. No final compaction
-	 * (the reader never wrote). Opt-in: tests and CLIs flushing before
-	 * exit await this.
-	 */
-	whenDisposed: Promise<unknown>;
 };
 
 /**
@@ -69,19 +63,11 @@ export function attachYjsLogReader(
 	const fileExisted = existsSync(filePath);
 	const db = fileExisted ? openAndReplay(filePath, ydoc) : undefined;
 
-	const { promise: whenDisposed, resolve: resolveDisposed } =
-		Promise.withResolvers<void>();
-
 	ydoc.once('destroy', () => {
-		try {
-			db?.close();
-		} finally {
-			resolveDisposed();
-		}
+		db?.close();
 	});
 
 	return {
 		fileExisted,
-		whenDisposed,
 	};
 }

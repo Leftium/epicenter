@@ -13,9 +13,6 @@ export function openZhongwen() {
 			await idb[Symbol.asyncDispose]();
 			await idb.clearLocal();
 		},
-		async clearLocalData() {
-			await idb.clearLocal();
-		},
 		whenLoaded: idb.whenLoaded,
 	};
 }

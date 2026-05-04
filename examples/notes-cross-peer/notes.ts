@@ -64,7 +64,7 @@ export function openNotes(peer: PeerIdentity) {
 		whenReady: sync.whenConnected,
 		async [Symbol.asyncDispose]() {
 			ydoc.destroy();
-			await sync.whenDisposed;
+			await sync[Symbol.asyncDispose]();
 		},
 	};
 }

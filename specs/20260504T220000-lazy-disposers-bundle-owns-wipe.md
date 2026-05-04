@@ -660,14 +660,14 @@ After Phase A, every async attachment exposes BOTH `whenDisposed` (deprecated al
 
 ### Phase C: consumer migration
 
-- [ ] **C.1** Migrate every browser app's `client.ts` `resetLocalClient` to call `await <bundle>.wipe()`. Delete the comment block.
+- [x] **C.1** Migrate every browser app's `client.ts` `resetLocalClient` to call `await <bundle>.wipe()`. Delete the comment block.
   - `apps/fuji/src/lib/fuji/client.ts`
   - `apps/honeycrisp/src/lib/honeycrisp/client.ts`
   - `apps/opensidian/src/lib/opensidian/client.ts`
   - `apps/zhongwen/src/lib/zhongwen/client.ts`
   - `apps/tab-manager/src/lib/tab-manager/client.ts`
 
-- [ ] **C.2** Migrate every daemon's `Symbol.asyncDispose`: replace `await sync.whenDisposed` with `await sync[Symbol.asyncDispose]()`.
+- [x] **C.2** Migrate every daemon's `Symbol.asyncDispose`: replace `await sync.whenDisposed` with `await sync[Symbol.asyncDispose]()`.
   - `apps/fuji/src/lib/fuji/daemon.ts`
   - `apps/honeycrisp/src/lib/honeycrisp/daemon.ts`
   - `apps/opensidian/src/lib/opensidian/daemon.ts`
@@ -677,7 +677,7 @@ After Phase A, every async attachment exposes BOTH `whenDisposed` (deprecated al
   - `playground/opensidian-e2e/epicenter.config.ts`
   - `playground/tab-manager-e2e/epicenter.config.ts`
 
-- [ ] **C.3** Migrate tests:
+- [x] **C.3** Migrate tests:
   - `packages/workspace/src/document/attach-sync.test.ts` (~6 sites)
   - `packages/workspace/src/document/attach-yjs-log.test.ts` (~5 sites)
   - `packages/workspace/src/document/attach-yjs-log-reader.test.ts` (~6 sites)
@@ -685,7 +685,7 @@ After Phase A, every async attachment exposes BOTH `whenDisposed` (deprecated al
 
   Replace `await att.whenDisposed` with `await att[Symbol.asyncDispose]()`.
 
-- [ ] **C.4** Drop `clearLocalData()` from every bundle and the `BrowserWorkspace` type. (Now safe; all consumers migrated.)
+- [x] **C.4** Drop `clearLocalData()` from every bundle and the `BrowserWorkspace` type. (Now safe; all consumers migrated.)
 
 (Phase F drops the `whenDisposed` alias from each attachment. See below.)
 

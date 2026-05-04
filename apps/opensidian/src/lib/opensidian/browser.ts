@@ -135,21 +135,6 @@ export function openOpensidian({
 				idb.clearLocal(),
 			]);
 		},
-		async clearLocalData() {
-			await Promise.all([
-				// File content docs use their own IndexedDB document names.
-				...doc.tables.files.getAllValid().map((file) =>
-					clearDocument(
-						fileContentDocGuid({
-							workspaceId: doc.ydoc.guid,
-							fileId: file.id,
-						}),
-					),
-				),
-				// The workspace IndexedDB helper only clears the root doc.
-				idb.clearLocal(),
-			]);
-		},
 		remote,
 		rpc,
 		whenLoaded: idb.whenLoaded,

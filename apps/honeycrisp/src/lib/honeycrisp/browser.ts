@@ -125,21 +125,6 @@ export function openHoneycrisp({
 				idb.clearLocal(),
 			]);
 		},
-		async clearLocalData() {
-			await Promise.all([
-				// Note body docs use their own IndexedDB document names.
-				...doc.tables.notes.getAllValid().map((note) =>
-					clearDocument(
-						noteBodyDocGuid({
-							workspaceId: doc.ydoc.guid,
-							noteId: note.id,
-						}),
-					),
-				),
-				// The workspace IndexedDB helper only clears the root doc.
-				idb.clearLocal(),
-			]);
-		},
 		remote,
 		rpc,
 		whenLoaded: idb.whenLoaded,

@@ -8,5 +8,4 @@ export type Workspace = Disposable & {
 
 export type BrowserWorkspace = Workspace & {
 	wipe(): Promise<void>;
-	clearLocalData(): Promise<void>;
 };

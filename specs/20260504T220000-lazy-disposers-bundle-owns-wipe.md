@@ -649,14 +649,14 @@ After Phase A, every async attachment exposes BOTH `whenDisposed` (deprecated al
 
 ### Phase B: bundle surface
 
-- [ ] **B.1** Add `wipe()` to every browser bundle. Keep `clearLocalData()` temporarily so callers compile during migration.
+- [x] **B.1** Add `wipe()` to every browser bundle. Keep `clearLocalData()` temporarily so callers compile during migration.
   - `apps/fuji/src/lib/fuji/browser.ts`
   - `apps/honeycrisp/src/lib/honeycrisp/browser.ts`
   - `apps/opensidian/src/lib/opensidian/browser.ts`
   - `apps/zhongwen/src/lib/zhongwen/browser.ts`
   - `apps/tab-manager/src/lib/tab-manager/extension.ts`
 
-- [ ] **B.2** Update `BrowserWorkspace` type in `packages/workspace/src/shared/workspace.ts` to include `wipe(): Promise<void>` (alongside `clearLocalData` for the migration).
+- [x] **B.2** Update `BrowserWorkspace` type in `packages/workspace/src/shared/workspace.ts` to include `wipe(): Promise<void>` (alongside `clearLocalData` for the migration).
 
 ### Phase C: consumer migration
 

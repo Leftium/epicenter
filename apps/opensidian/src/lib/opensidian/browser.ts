@@ -54,6 +54,11 @@ export function openOpensidian({
 				content: attachTimeline(ydoc),
 				persistence,
 				whenReady: persistence.whenLoaded,
+				/**
+				 * child disposer rejections do not propagate; bundle.wipe() relies on
+				 * IDB's deleteDatabase native blocking as belt-and-suspenders for
+				 * storage deletion.
+				 */
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},
@@ -111,6 +116,25 @@ export function openOpensidian({
 		actions,
 		awareness,
 		sync,
+		async wipe() {
+			fileContentDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
+			await Promise.all([
+				idb[Symbol.asyncDispose](),
+				sync[Symbol.asyncDispose](),
+			]);
+			await Promise.all([
+				...doc.tables.files.getAllValid().map((file) =>
+					clearDocument(
+						fileContentDocGuid({
+							workspaceId: doc.ydoc.guid,
+							fileId: file.id,
+						}),
+					),
+				),
+				idb.clearLocal(),
+			]);
+		},
 		async clearLocalData() {
 			await Promise.all([
 				// File content docs use their own IndexedDB document names.

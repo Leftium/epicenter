@@ -75,6 +75,11 @@ export function openFuji({
 				idb: childIdb,
 				sync: childSync,
 				whenLoaded: childIdb.whenLoaded,
+				/**
+				 * child disposer rejections do not propagate; bundle.wipe() relies on
+				 * IDB's deleteDatabase native blocking as belt-and-suspenders for
+				 * storage deletion.
+				 */
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},
@@ -101,6 +106,25 @@ export function openFuji({
 		entryContentDocs,
 		awareness,
 		sync,
+		async wipe() {
+			entryContentDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
+			await Promise.all([
+				idb[Symbol.asyncDispose](),
+				sync[Symbol.asyncDispose](),
+			]);
+			await Promise.all([
+				...doc.tables.entries.getAllValid().map((entry) =>
+					clearDocument(
+						entryContentDocGuid({
+							workspaceId: doc.ydoc.guid,
+							entryId: entry.id,
+						}),
+					),
+				),
+				idb.clearLocal(),
+			]);
+		},
 		async clearLocalData() {
 			await Promise.all([
 				// Entry content docs use their own IndexedDB document names.

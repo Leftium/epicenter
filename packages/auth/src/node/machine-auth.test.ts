@@ -12,16 +12,64 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import { Ok } from 'wellcrafted/result';
+import {
+	createLogger,
+	memorySink,
+	type Logger,
+} from 'wellcrafted/logger';
 import type { BearerSession } from '../auth-types.js';
 import type { BetterAuthSessionResponse } from '../contracts/auth-session.js';
 import {
-	createKeychainMachineAuthStorage,
-	createMachineAuth,
-	type MachineAuthStorage,
-	type MachineAuthStorageBackend,
+	loginWithDeviceCode,
+	logout,
+	status,
 } from './machine-auth.js';
-import { createMachineAuthTransport } from './machine-auth-transport.js';
+import {
+	createMachineAuthTransport,
+	type DeviceTokenError,
+	type MachineAuthRequestError,
+} from './machine-auth-transport.js';
+import {
+	loadMachineSession,
+	saveMachineSession,
+	type MachineAuthStorageError,
+} from './machine-session-store.js';
+
+type Expect<TValue extends true> = TValue;
+type Equal<TActual, TExpected> =
+	(<TValue>() => TValue extends TActual ? 1 : 2) extends <
+		TValue,
+	>() => TValue extends TExpected ? 1 : 2
+		? true
+		: false;
+type ResultError<TValue extends { data: unknown; error: unknown }> = Extract<
+	TValue,
+	{ data: null }
+>['error'];
+
+export type LoginWithDeviceCodeError = Expect<
+	Equal<
+		ResultError<Awaited<ReturnType<typeof loginWithDeviceCode>>>,
+		MachineAuthRequestError | DeviceTokenError | MachineAuthStorageError
+	>
+>;
+export type StatusError = Expect<
+	Equal<
+		ResultError<Awaited<ReturnType<typeof status>>>,
+		MachineAuthStorageError
+	>
+>;
+export type LogoutError = Expect<
+	Equal<
+		ResultError<Awaited<ReturnType<typeof logout>>>,
+		MachineAuthStorageError
+	>
+>;
+
+type MachineSessionOptions = NonNullable<
+	Parameters<typeof loadMachineSession>[0]
+>;
+type MachineSessionBackend = NonNullable<MachineSessionOptions['backend']>;
 
 const encryptionKeys = [
 	{
@@ -87,29 +135,7 @@ function jsonResponse(value: unknown, init?: ResponseInit): Response {
 	});
 }
 
-/**
- * In-memory storage for coordinator tests. Plain `load` / `save` over a single
- * cell; production callers use `createKeychainMachineAuthStorage`.
- */
-function makeMemoryStorage(
-	initial: BearerSession | null = null,
-): MachineAuthStorage & { peek(): BearerSession | null } {
-	let current = initial;
-	return {
-		async load() {
-			return Ok(current);
-		},
-		async save(session) {
-			current = session;
-			return Ok(undefined);
-		},
-		peek() {
-			return current;
-		},
-	};
-}
-
-function makeMemoryKeychainBackend(): MachineAuthStorageBackend & {
+function makeMemoryKeychainBackend(): MachineSessionBackend & {
 	values: Map<string, string>;
 } {
 	const values = new Map<string, string>();
@@ -120,30 +146,35 @@ function makeMemoryKeychainBackend(): MachineAuthStorageBackend & {
 		async get(options) {
 			return values.get(key(options)) ?? null;
 		},
-		async set(options, value) {
-			values.set(key(options), value);
+		async set(options) {
+			values.set(key(options), options.value);
 		},
 		async delete(options) {
-			values.delete(key(options));
+			return values.delete(key(options));
 		},
 	};
 }
 
-let storage: ReturnType<typeof makeMemoryStorage>;
+let backend: ReturnType<typeof makeMemoryKeychainBackend>;
+let log: Logger;
 
 beforeEach(() => {
-	storage = makeMemoryStorage();
+	backend = makeMemoryKeychainBackend();
+	const { sink } = memorySink();
+	log = createLogger('machine-auth-test', sink);
 });
 
-function createTestMachineAuth(fetchImpl: typeof fetch) {
-	return createMachineAuth({
-		transport: createMachineAuthTransport({ fetch: fetchImpl }),
-		storage,
-		sleep: async () => {},
-	});
+function makeTestTransport(fetchImpl: typeof fetch) {
+	return createMachineAuthTransport({ fetch: fetchImpl });
 }
 
-describe('createMachineAuth', () => {
+async function peekMachineSession() {
+	const { data, error } = await loadMachineSession({ backend, log });
+	if (error) throw error;
+	return data;
+}
+
+describe('machine auth free functions', () => {
 	test('login stores one BearerSession using the authorization token', async () => {
 		const fetchImpl = (async (input, init) => {
 			const url = new URL(String(input));
@@ -173,18 +204,21 @@ describe('createMachineAuth', () => {
 			});
 		}) as typeof fetch;
 
-		const result = await createTestMachineAuth(fetchImpl).loginWithDeviceCode();
+		const result = await loginWithDeviceCode({
+			transport: makeTestTransport(fetchImpl),
+			backend,
+			sleep: async () => {},
+		});
 
+		const savedSession = await peekMachineSession();
 		expect(result.error).toBeNull();
 		expect(result.data?.session.user.email).toBe('user@example.com');
-		expect(storage.peek()?.token).toBe('rotated-authorization-token');
-		expect(JSON.stringify(storage.peek())).not.toContain(
-			'server-session-token',
-		);
+		expect(savedSession?.token).toBe('rotated-authorization-token');
+		expect(JSON.stringify(savedSession)).not.toContain('server-session-token');
 	});
 
 	test('status verifies and refreshes the stored session token', async () => {
-		await storage.save(makeSession({ token: 'old-token' }));
+		await saveMachineSession(makeSession({ token: 'old-token' }), { backend });
 		const seenTokens: string[] = [];
 		const fetchImpl = (async (_input, init) => {
 			seenTokens.push(new Headers(init?.headers).get('authorization') ?? '');
@@ -193,20 +227,28 @@ describe('createMachineAuth', () => {
 			});
 		}) as typeof fetch;
 
-		const result = await createTestMachineAuth(fetchImpl).status();
+		const result = await status({
+			transport: makeTestTransport(fetchImpl),
+			backend,
+			log,
+		});
 
 		expect(result.error).toBeNull();
 		expect(result.data?.status).toBe('valid');
 		expect(seenTokens).toEqual(['Bearer old-token']);
-		expect(storage.peek()?.token).toBe('new-token');
+		expect((await peekMachineSession())?.token).toBe('new-token');
 	});
 
 	test('status reports stored session when remote verification fails', async () => {
-		await storage.save(makeSession());
+		await saveMachineSession(makeSession(), { backend });
 		const fetchImpl = (async () =>
 			new Response('nope', { status: 503 })) as unknown as typeof fetch;
 
-		const result = await createTestMachineAuth(fetchImpl).status();
+		const result = await status({
+			transport: makeTestTransport(fetchImpl),
+			backend,
+			log,
+		});
 
 		expect(result.error).toBeNull();
 		expect(result.data?.status).toBe('unverified');
@@ -231,53 +273,44 @@ describe('createMachineAuth', () => {
 			});
 		}) as typeof fetch;
 
-		const result = await createTestMachineAuth(fetchImpl).loginWithDeviceCode();
+		const result = await loginWithDeviceCode({
+			transport: makeTestTransport(fetchImpl),
+			backend,
+			sleep: async () => {},
+		});
 
 		expect(result.data).toBeNull();
 		expect(result.error?.name).toBe('DeviceCodeExpired');
 	});
 
 	test('logout signs out and clears the stored session', async () => {
-		await storage.save(makeSession({ token: 'logout-token' }));
+		await saveMachineSession(makeSession({ token: 'logout-token' }), { backend });
 		const seenTokens: string[] = [];
 		const fetchImpl = (async (_input, init) => {
 			seenTokens.push(new Headers(init?.headers).get('authorization') ?? '');
 			return new Response('', { status: 200 });
 		}) as typeof fetch;
 
-		const result = await createTestMachineAuth(fetchImpl).logout();
+		const result = await logout({
+			transport: makeTestTransport(fetchImpl),
+			backend,
+			log,
+		});
 
 		expect(result).toEqual({ data: { status: 'loggedOut' }, error: null });
 		expect(seenTokens).toEqual(['Bearer logout-token']);
-		expect(storage.peek()).toBeNull();
-	});
-
-	test('getEncryptionKeys returns the stored keys', async () => {
-		await storage.save(makeSession({ token: 'stored-token' }));
-		const machineAuth = createTestMachineAuth(fetch);
-
-		expect(await machineAuth.getEncryptionKeys()).toEqual({
-			data: encryptionKeys,
-			error: null,
-		});
-	});
-
-	test('getEncryptionKeys returns Ok(null) for absent sessions', async () => {
-		const result = await createTestMachineAuth(fetch).getEncryptionKeys();
-
-		expect(result).toEqual({ data: null, error: null });
+		expect(await peekMachineSession()).toBeNull();
 	});
 });
 
-describe('keychain machine session storage', () => {
+describe('machine session storage', () => {
 	test('keychain storage writes one BearerSession item', async () => {
-		const backend = makeMemoryKeychainBackend();
-		const keychain = createKeychainMachineAuthStorage({ backend });
-
-		await keychain.save(makeSession({ token: 'stored-token' }));
+		await saveMachineSession(makeSession({ token: 'stored-token' }), {
+			backend,
+		});
 
 		expect(backend.values.size).toBe(1);
-		const { data: loaded } = await keychain.load();
+		const { data: loaded } = await loadMachineSession({ backend, log });
 		expect(loaded).toMatchObject({ token: 'stored-token' });
 		expect([...backend.values.values()][0]).not.toContain(
 			'server-session-token',
@@ -285,11 +318,9 @@ describe('keychain machine session storage', () => {
 	});
 
 	test('keychain storage discards a corrupt blob and returns Ok(null)', async () => {
-		const backend = makeMemoryKeychainBackend();
 		backend.values.set('epicenter.auth.session:current', '{not valid json');
-		const keychain = createKeychainMachineAuthStorage({ backend });
 
-		const { data, error } = await keychain.load();
+		const { data, error } = await loadMachineSession({ backend, log });
 
 		expect(error).toBeNull();
 		expect(data).toBeNull();

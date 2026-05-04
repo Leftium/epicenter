@@ -338,7 +338,7 @@ Single PR. Waves are sequential but small.
 
 - [x] **1.1** Create `packages/auth/src/node/machine-session-store.ts`. Move `MachineAuthStorageError` definition, the keychain key, the schema validation, and the corrupt-blob recovery into two free functions: `loadMachineSession({ backend })` and `saveMachineSession(session, { backend })`. Both return `Result`. Both default `backend` to `Bun.secrets`. Both type the parameter as `typeof Bun.secrets` (no parallel type).
 - [x] **1.2** The corrupt-blob warning uses `wellcrafted/logger` (not `console.warn`).
-- [ ] **1.3** Delete `MachineAuthStorage`, `MachineAuthStorageBackend`, `createKeychainMachineAuthStorage` from `machine-auth.ts`. The `MachineAuthStorageError` definition lives in `machine-session-store.ts`.
+- [x] **1.3** Delete `MachineAuthStorage`, `MachineAuthStorageBackend`, `createKeychainMachineAuthStorage` from `machine-auth.ts`. The `MachineAuthStorageError` definition lives in `machine-session-store.ts`.
 
 ### Wave 2: decompose transport errors
 
@@ -348,24 +348,24 @@ Single PR. Waves are sequential but small.
 
 ### Wave 3: collapse coordinator to free functions
 
-- [ ] **3.1** In `machine-auth.ts`, rewrite `createMachineAuth` body's three remaining methods as three exported free functions: `loginWithDeviceCode`, `status`, `logout`. Each takes `{ transport?, sleep?, backend?, onDeviceCode? }` (only the params it uses).
-- [ ] **3.2** Replace `storage.load()`/`storage.save()` calls with `loadMachineSession({ backend })` / `saveMachineSession(session, { backend })`.
-- [ ] **3.3** Delete `createMachineAuth`, `MachineAuth` (`ReturnType<typeof createMachineAuth>` alias), `MachineAuthError` union, and `getEncryptionKeys`.
-- [ ] **3.4** Drop explicit return-type annotations on the three free functions. TypeScript infers `Result<_, MachineAuthRequestError | DeviceTokenError | MachineAuthStorageError>` for `loginWithDeviceCode` and `Result<_, MachineAuthStorageError>` for `status` and `logout` from the bodies.
-- [ ] **3.5** The `signOutError` warning uses `wellcrafted/logger`.
+- [x] **3.1** In `machine-auth.ts`, rewrite `createMachineAuth` body's three remaining methods as three exported free functions: `loginWithDeviceCode`, `status`, `logout`. Each takes `{ transport?, sleep?, backend?, onDeviceCode? }` (only the params it uses).
+- [x] **3.2** Replace `storage.load()`/`storage.save()` calls with `loadMachineSession({ backend })` / `saveMachineSession(session, { backend })`.
+- [x] **3.3** Delete `createMachineAuth`, `MachineAuth` (`ReturnType<typeof createMachineAuth>` alias), `MachineAuthError` union, and `getEncryptionKeys`.
+- [x] **3.4** Drop explicit return-type annotations on the three free functions. TypeScript infers `Result<_, MachineAuthRequestError | DeviceTokenError | MachineAuthStorageError>` for `loginWithDeviceCode` and `Result<_, MachineAuthStorageError>` for `status` and `logout` from the bodies.
+- [x] **3.5** The `signOutError` warning uses `wellcrafted/logger`.
 
 ### Wave 4: trim `createMachineAuthClient`
 
-- [ ] **4.1** Trim `createMachineAuthClient` to use `loadMachineSession` and `saveMachineSession` directly. Signature unchanged (no `{ backend }` parameter added).
-- [ ] **4.2** The `saveSession` callback's failure log uses `wellcrafted/logger`.
+- [x] **4.1** Trim `createMachineAuthClient` to use `loadMachineSession` and `saveMachineSession` directly. Signature unchanged (no `{ backend }` parameter added).
+- [x] **4.2** The `saveSession` callback's failure log uses `wellcrafted/logger`.
 
 ### Wave 5: update tests
 
-- [ ] **5.1** `packages/auth/src/node/machine-auth.test.ts`: drop `makeMemoryStorage` (no longer needed) and `MachineAuthStorage`/`MachineAuthStorageBackend` imports. Use only `makeMemoryKeychainBackend` for storage in all tests.
-- [ ] **5.2** Replace `createTestMachineAuth(fetch)` factory with direct calls: `await loginWithDeviceCode({ transport, backend, sleep })`, etc. Hoist a `makeTestDeps(fetch)` helper if multiple tests share construction.
-- [ ] **5.3** `keychain machine session storage` describe block tests `loadMachineSession`/`saveMachineSession` directly.
-- [ ] **5.4** Inject a no-op logger sink in `beforeEach` so library log output does not leak into test reports. Use the `wellcrafted/logger` test-sink pattern (capturing collector if a test wants to assert on a log).
-- [ ] **5.5** Test that `status` and `logout` inferred return types are `Result<_, MachineAuthStorageError>` (use a type-level `expectTypeOf` or equivalent assertion). Test that `loginWithDeviceCode` is `Result<_, MachineAuthRequestError | DeviceTokenError | MachineAuthStorageError>`.
+- [x] **5.1** `packages/auth/src/node/machine-auth.test.ts`: drop `makeMemoryStorage` (no longer needed) and `MachineAuthStorage`/`MachineAuthStorageBackend` imports. Use only `makeMemoryKeychainBackend` for storage in all tests.
+- [x] **5.2** Replace `createTestMachineAuth(fetch)` factory with direct calls: `await loginWithDeviceCode({ transport, backend, sleep })`, etc. Hoist a `makeTestDeps(fetch)` helper if multiple tests share construction.
+- [x] **5.3** `keychain machine session storage` describe block tests `loadMachineSession`/`saveMachineSession` directly.
+- [x] **5.4** Inject a no-op logger sink in `beforeEach` so library log output does not leak into test reports. Use the `wellcrafted/logger` test-sink pattern (capturing collector if a test wants to assert on a log).
+- [x] **5.5** Test that `status` and `logout` inferred return types are `Result<_, MachineAuthStorageError>` (use a type-level `expectTypeOf` or equivalent assertion). Test that `loginWithDeviceCode` is `Result<_, MachineAuthRequestError | DeviceTokenError | MachineAuthStorageError>`.
 
 ### Wave 6: update consumers
 
@@ -375,7 +375,7 @@ Single PR. Waves are sequential but small.
 
 ### Wave 7: public exports
 
-- [ ] **7.1** Update `packages/auth/src/node.ts` per the diff above.
+- [x] **7.1** Update `packages/auth/src/node.ts` per the diff above.
 - [ ] **7.2** `packages/cli/README.md` examples updated (line 340-341 import block).
 
 ### Wave 8: verification

@@ -144,11 +144,6 @@ export type SyncAttachment = {
 	readonly status: SyncStatus;
 	/** Subscribe to status changes. Returns unsubscribe function. */
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
-	/**
-	 * Close the websocket, stop the supervisor, and transition to offline.
-	 * A subsequent `reconnect()` restarts the supervisor.
-	 */
-	pause(): void;
 	/** Force a fresh connection with new credentials (supervisor restarts iteration). */
 	reconnect(): void;
 	/**
@@ -827,12 +822,6 @@ export function attachSync(
 		});
 	}
 
-	function pause() {
-		cycleController.abort();
-		manageWindowListeners('remove');
-		status.set({ phase: 'offline' });
-	}
-
 	function reconnect() {
 		if (masterController.signal.aborted) return;
 		permanentFailure = null;
@@ -907,7 +896,6 @@ export function attachSync(
 			return status.get();
 		},
 		onStatusChange: status.subscribe,
-		pause,
 		reconnect,
 		whenDisposed,
 		attachRpc(userActions) {

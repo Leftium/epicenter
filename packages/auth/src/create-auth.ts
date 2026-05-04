@@ -4,23 +4,45 @@ import { BEARER_SUBPROTOCOL_PREFIX, MAIN_SUBPROTOCOL } from '@epicenter/sync';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
 	type BetterAuthSessionResponse,
 	bearerSessionFromBetterAuthSessionResponse,
 } from './contracts/auth-session.ts';
-import {
-	AuthError,
-	type AuthError as AuthErrorType,
-} from './shared/auth-error.ts';
 import type {
-	AuthChangeListener,
 	AuthIdentity,
 	AuthUser,
 	BearerSession,
-} from './shared/auth-types.ts';
+} from './auth-types.ts';
 
-export * from './shared/auth-error.ts';
+export const AuthError = defineErrors({
+	InvalidCredentials: () => ({
+		message: 'Invalid email or password.',
+	}),
+	SignInFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to sign in: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	SignUpFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to create account: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	SocialSignInFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Social sign-in failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	SignOutFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to sign out: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+
+export type AuthError = InferErrors<typeof AuthError>;
 
 export type CreateBearerAuthConfig = {
 	/** Resolved once at construction; recreate the client if the origin changes. */
@@ -38,6 +60,8 @@ export type CreateCookieAuthConfig = {
 
 type MaybePromise<T> = T | Promise<T>;
 
+export type AuthChangeListener = (identity: AuthIdentity | null) => void;
+
 type SetIdentity = (next: AuthIdentity | null) => boolean;
 
 export type AuthClient = {
@@ -47,22 +71,22 @@ export type AuthClient = {
 	signIn(input: {
 		email: string;
 		password: string;
-	}): Promise<Result<undefined, AuthErrorType>>;
+	}): Promise<Result<undefined, AuthError>>;
 	signUp(input: {
 		email: string;
 		password: string;
 		name: string;
-	}): Promise<Result<undefined, AuthErrorType>>;
+	}): Promise<Result<undefined, AuthError>>;
 	signInWithIdToken(input: {
 		provider: string;
 		idToken: string;
 		nonce: string;
-	}): Promise<Result<undefined, AuthErrorType>>;
+	}): Promise<Result<undefined, AuthError>>;
 	signInWithSocialRedirect(input: {
 		provider: string;
 		callbackURL: string;
-	}): Promise<Result<undefined, AuthErrorType>>;
-	signOut(): Promise<Result<undefined, AuthErrorType>>;
+	}): Promise<Result<undefined, AuthError>>;
+	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
 	openWebSocket(
 		url: string | URL,

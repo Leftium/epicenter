@@ -1,10 +1,10 @@
 export {
-	type AuthChangeListener,
 	type AuthIdentity,
 	AuthUser,
 	BearerSession,
 } from './auth-types.ts';
 export {
+	type AuthChangeListener,
 	type AuthClient,
 	AuthError,
 	type CreateBearerAuthConfig,

@@ -163,6 +163,10 @@ const factory = createFactory<Env>({
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
 			await next();
 		});
+
+		// Layer 3: Single credential. Reject ambiguous auth and lift WS bearer
+		// subprotocols into Authorization. See {@link singleCredential} JSDoc.
+		app.use('*', singleCredential);
 	},
 });
 
@@ -180,11 +184,9 @@ app.get(
 
 // Auth pages — server-rendered Hono JSX
 app.get('/sign-in', async (c) => {
-	const credential = singleCredential(c.req.raw.headers);
-	const session =
-		credential.status === 'mixed'
-			? null
-			: await c.var.auth.api.getSession({ headers: credential.headers });
+	const session = await c.var.auth.api.getSession({
+		headers: c.req.raw.headers,
+	});
 	if (session) {
 		const url = new URL(c.req.url);
 		// OAuth re-entry: signed params present → continue the authorize flow
@@ -208,12 +210,8 @@ app.get(
 	'/consent',
 	sValidator('query', type({ 'client_id?': 'string', 'scope?': 'string' })),
 	async (c) => {
-		const credential = singleCredential(c.req.raw.headers);
-		if (credential.status === 'mixed') {
-			return c.json({ error: 'mixed_credentials' }, 400);
-		}
 		const session = await c.var.auth.api.getSession({
-			headers: credential.headers,
+			headers: c.req.raw.headers,
 		});
 		if (!session) {
 			const consentUrl = `/consent${new URL(c.req.url).search}`;
@@ -230,12 +228,8 @@ app.get(
 	sValidator('query', type({ 'user_code?': 'string' })),
 	async (c) => {
 		const { user_code: userCode } = c.req.valid('query');
-		const credential = singleCredential(c.req.raw.headers);
-		if (credential.status === 'mixed') {
-			return c.json({ error: 'mixed_credentials' }, 400);
-		}
 		const session = await c.var.auth.api.getSession({
-			headers: credential.headers,
+			headers: c.req.raw.headers,
 		});
 		if (!session) {
 			const callbackURL = userCode
@@ -279,30 +273,26 @@ app.get(
 );
 
 // Asset reads — unauthenticated (unguessable URL is the credential).
-// Must be mounted BEFORE authGuard so GET requests aren't blocked.
+// Must be mounted BEFORE requireSession so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
 
-// Auth guard for protected routes.
-const authGuard = factory.createMiddleware(async (c, next) => {
-	const credential = singleCredential(c.req.raw.headers);
-	if (credential.status === 'mixed') {
-		if (c.req.header('upgrade') === 'websocket') {
-			return closeWebSocket(4400, { error: 'mixed_credentials' });
-		}
-		return c.json({ error: 'mixed_credentials' }, 400);
-	}
-	if (credential.status === 'none') {
-		if (c.req.header('upgrade') === 'websocket') {
-			return closeWebSocket(4401, { code: 'invalid_token' });
-		}
-		return c.json(AiChatError.Unauthorized(), 401);
-	}
+// Require an authenticated session for protected routes. Assumes
+// {@link singleCredential} has already validated and normalized credentials,
+// so headers are guaranteed to carry at most one credential.
+const requireSession = factory.createMiddleware(async (c, next) => {
 	const result = await c.var.auth.api.getSession({
-		headers: credential.headers,
+		headers: c.req.raw.headers,
 	});
 	if (!result) {
+		// WebSocket clients need a structured close code so they can decide
+		// whether to refresh their token or surface a sign-in prompt. HTTP
+		// clients get the standard 401 JSON body.
 		if (c.req.header('upgrade') === 'websocket') {
-			return closeWebSocket(4401, { code: 'invalid_token' });
+			const pair = new WebSocketPair();
+			const [client, server] = [pair[0], pair[1]];
+			server.accept();
+			server.close(4401, JSON.stringify({ code: 'invalid_token' }));
+			return new Response(null, { status: 101, webSocket: client });
 		}
 		return c.json(AiChatError.Unauthorized(), 401);
 	}
@@ -312,22 +302,14 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 	await next();
 });
 
-function closeWebSocket(code: number, body: unknown) {
-	const pair = new WebSocketPair();
-	const [client, server] = [pair[0], pair[1]];
-	server.accept();
-	server.close(code, JSON.stringify(body));
-	return new Response(null, { status: 101, webSocket: client });
-}
-
-app.use('/ai/*', authGuard);
-app.use('/workspaces/*', authGuard);
-app.use('/documents/*', authGuard);
-app.use('/api/billing/*', authGuard);
-app.use('/api/assets/*', authGuard);
+app.use('/ai/*', requireSession);
+app.use('/workspaces/*', requireSession);
+app.use('/documents/*', requireSession);
+app.use('/api/billing/*', requireSession);
+app.use('/api/assets/*', requireSession);
 
 // Ensure Autumn customer exists and stash planId for model gating.
-// Runs after authGuard for AI routes so c.var.user is available.
+// Runs after requireSession for AI routes so c.var.user is available.
 app.use('/ai/*', async (c, next) => {
 	const autumn = createAutumn(c.env);
 	const customer = await autumn.customers.getOrCreate({
@@ -365,7 +347,7 @@ app.get('/dashboard', async (c) => {
 // Billing API routes — typed JSON routes consumed by the dashboard SPA via hc<AppType>
 app.route('/api/billing', billingRoutes);
 
-// Asset routes — upload + delete (authed, mounted after authGuard)
+// Asset routes — upload + delete (authed, mounted after requireSession)
 app.route('/api/assets', assetAuthedRoutes);
 
 // AI chat

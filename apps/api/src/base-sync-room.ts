@@ -87,10 +87,10 @@ type SyncRoomConfig = {
  *
  * ## Auth & data isolation
  *
- * Handled upstream by `authGuard` middleware in app.ts. The Worker validates
+ * Handled upstream by `requireSession` middleware in app.ts. The Worker validates
  * the session (cookie, or `bearer.<token>` subprotocol for WebSocket) via Better Auth
  * before calling RPC methods or forwarding fetch. The DO itself does not
- * re-validate — it trusts the Worker boundary.
+ * re-validate (it trusts the Worker boundary).
  *
  * DO names are user-scoped: the Worker constructs
  * `user:{userId}:{type}:{name}` before calling `idFromName()`, where
@@ -212,7 +212,7 @@ export class BaseSyncRoom extends DurableObject {
 	 *
 	 * The client offers `sec-websocket-protocol: <MAIN_SUBPROTOCOL>, bearer.<token>`;
 	 * we echo only the main subprotocol to complete the handshake. The bearer
-	 * entry is consumed by `authGuard` earlier in the chain and must not
+	 * entry is consumed by `singleCredential` earlier in the chain and must not
 	 * round-trip.
 	 */
 	private upgrade(request: Request): Response {

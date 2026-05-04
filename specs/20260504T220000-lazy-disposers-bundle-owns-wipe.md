@@ -779,7 +779,7 @@ Independent of the `whenDisposed`/`wipe` work but folded in to keep the migratio
   - `packages/workspace/src/document/attach-broadcast-channel.ts`: change function signature to return `void`. Drop the named `BroadcastChannelAttachment` type.
   - `packages/workspace/src/index.ts:191`: drop the `BroadcastChannelAttachment` export.
 
-- [ ] **G.3** Drop `whenDisposed` from `EncryptionAttachment` (`packages/workspace/src/document/attach-encryption.ts:184`). The attachment's teardown is fully synchronous (`for (const store of stores) store.dispose()` in the destroy handler at line 209-212). There is no async work to await. Only `attach-encryption.test.ts:111` reads it.
+- [x] **G.3** Drop `whenDisposed` from `EncryptionAttachment` (`packages/workspace/src/document/attach-encryption.ts:184`). The attachment's teardown is fully synchronous (`for (const store of stores) store.dispose()` in the destroy handler at line 209-212). There is no async work to await. Only `attach-encryption.test.ts:111` reads it.
   - Drop the `whenDisposed` field from the type.
   - Drop the `Promise.withResolvers` setup and the `resolveDisposed()` call.
   - Drop the test line at `attach-encryption.test.ts:111`.

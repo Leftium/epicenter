@@ -40,9 +40,9 @@
  * ## Disposal
  *
  * The attachment registers a single `ydoc.on('destroy')` listener that
- * disposes every registered store and resolves `whenDisposed`. Callers tear
- * down encryption by calling `ydoc.destroy()`: the attachment does not
- * expose a standalone `dispose()` method.
+ * disposes every registered store. Callers tear down encryption by calling
+ * `ydoc.destroy()`: the attachment does not expose a standalone `dispose()`
+ * method.
  *
  * ## What this attachment does NOT do
  *
@@ -180,8 +180,6 @@ export type EncryptionAttachment = {
 	 */
 	attachKv<T extends KvDefinitions>(ydoc: Y.Doc, definitions: T): Kv<T>;
 
-	/** Resolves when the Y.Doc is destroyed and every store has been disposed. */
-	readonly whenDisposed: Promise<unknown>;
 };
 
 /**
@@ -201,14 +199,8 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 	/** Last-applied encryption keys for same-key dedup. */
 	let lastKeys: EncryptionKeys | undefined;
 
-	let resolveDisposed!: () => void;
-	const whenDisposed = new Promise<void>((resolve) => {
-		resolveDisposed = resolve;
-	});
-
 	ydoc.on('destroy', () => {
 		for (const store of stores) store.dispose();
-		resolveDisposed();
 	});
 
 	const attachment: EncryptionAttachment = {
@@ -259,7 +251,6 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 			attachment.register(store);
 			return createKv(store, definitions);
 		},
-		whenDisposed,
 	};
 
 	return attachment;

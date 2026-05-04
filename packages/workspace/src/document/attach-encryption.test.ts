@@ -105,12 +105,6 @@ describe('attachEncryption', () => {
 		});
 	});
 
-	test('whenDisposed resolves once ydoc.destroy() fires', async () => {
-		const { ydoc, encryption } = setup();
-		ydoc.destroy();
-		await encryption.whenDisposed;
-	});
-
 	test('attachReadonlyTable reads encrypted rows without exposing writes', () => {
 		const ydoc = new Y.Doc({ guid: 'enc-readonly-table', gc: false });
 		const encryption = attachEncryption(ydoc);

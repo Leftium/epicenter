@@ -12,5 +12,8 @@ export type {
 	DeviceCodeResponse,
 	DevicePollOutcome,
 	MachineAuthTransport,
-	MachineAuthTransportError,
+} from './node/machine-auth-transport.js';
+export {
+	MachineAuthRequestError,
+	DeviceTokenError,
 } from './node/machine-auth-transport.js';

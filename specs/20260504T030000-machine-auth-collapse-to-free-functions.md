@@ -342,9 +342,9 @@ Single PR. Waves are sequential but small.
 
 ### Wave 2: decompose transport errors
 
-- [ ] **2.1** In `machine-auth-transport.ts`, replace the single `MachineAuthTransportError` `defineErrors` with two: `MachineAuthRequestError` (one variant: `RequestFailed`) and `DeviceTokenError` (three variants: `DeviceCodeExpired`, `DeviceAccessDenied`, `DeviceAuthorizationFailed`).
-- [ ] **2.2** Drop the explicit `Promise<Result<_, MachineAuthTransportError>>` return-type annotations on all four transport methods. TypeScript infers per-method return types from the bodies.
-- [ ] **2.3** Delete the `MachineAuthTransportError` aggregate type alias. Callers that need the union spell `MachineAuthRequestError | DeviceTokenError` at the use site (only `pollDeviceToken`'s inferred return type and the coordinator's `loginWithDeviceCode` need it).
+- [x] **2.1** In `machine-auth-transport.ts`, replace the single `MachineAuthTransportError` `defineErrors` with two: `MachineAuthRequestError` (one variant: `RequestFailed`) and `DeviceTokenError` (three variants: `DeviceCodeExpired`, `DeviceAccessDenied`, `DeviceAuthorizationFailed`).
+- [x] **2.2** Drop the explicit `Promise<Result<_, MachineAuthTransportError>>` return-type annotations on all four transport methods. TypeScript infers per-method return types from the bodies.
+- [x] **2.3** Delete the `MachineAuthTransportError` aggregate type alias. Callers that need the union spell `MachineAuthRequestError | DeviceTokenError` at the use site (only `pollDeviceToken`'s inferred return type and the coordinator's `loginWithDeviceCode` need it).
 
 ### Wave 3: collapse coordinator to free functions
 

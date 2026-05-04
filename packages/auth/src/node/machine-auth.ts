@@ -13,8 +13,10 @@ import {
 import { type AuthClient, createBearerAuth } from '../create-auth.js';
 import {
 	createMachineAuthTransport,
+	type DeviceTokenError,
+	type MachineAuthRequestError,
 	type MachineAuthTransport,
-	MachineAuthTransportError,
+	DeviceTokenError as DeviceTokenErrors,
 } from './machine-auth-transport.js';
 
 export const MachineAuthStorageError = defineErrors({
@@ -28,7 +30,8 @@ export type MachineAuthStorageError = InferErrors<
 >;
 
 export type MachineAuthError =
-	| MachineAuthTransportError
+	| MachineAuthRequestError
+	| DeviceTokenError
 	| MachineAuthStorageError;
 
 export type MachineAuthStorage = {
@@ -63,7 +66,7 @@ type MachineAuthStatus =
 	| {
 			status: 'unverified';
 			session: MachineSessionSummary;
-			verificationError: MachineAuthTransportError;
+			verificationError: MachineAuthRequestError;
 	  };
 
 type MachineAuthLogoutResult =
@@ -189,7 +192,7 @@ export function createMachineAuth({
 				if (poll.status === 'slowDown') interval += 5_000;
 			}
 			if (accessToken === null) {
-				return MachineAuthTransportError.DeviceCodeExpired();
+				return DeviceTokenErrors.DeviceCodeExpired();
 			}
 
 			const { data: remote, error: fetchError } = await transport.fetchSession({

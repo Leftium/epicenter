@@ -98,6 +98,7 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
+			// Apps with child document caches dispose those caches first.
 			workspace.ydoc.destroy();
 			await workspace.clearLocalData();
 		} catch (error) {
@@ -113,7 +114,7 @@ bindAuthWorkspaceScope({
 So these points are implemented and verifiable:
 - keys are loaded on login
 - app reset code wipes the configured local IndexedDB stores on logout or user switch
-- sync pauses before the reset path runs
+- reset destroys the workspace document before local storage is cleared, which shuts down attached sync paths
 This point is not visible as an explicit step in the reviewed code:
 - clearing the in-memory encryption state after logout
 That gap matters because the encrypted wrapper exposes `activateEncryption()` but no `deactivateEncryption()`.

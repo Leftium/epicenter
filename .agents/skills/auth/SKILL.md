@@ -105,6 +105,7 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
+			// Apps with child document caches dispose those caches first.
 			workspace.ydoc.destroy();
 			await workspace.clearLocalData();
 		} catch (error) {

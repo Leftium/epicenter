@@ -21,7 +21,7 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
-Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `bindAuthWorkspaceScope(...)`, so encryption keys, local cleanup, and sync reconnects follow one transition path.
+Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `bindAuthWorkspaceScope(...)`, so encryption keys and deterministic local cleanup follow one transition path while sync reacts to auth changes through `attachSync`.
 
 ```ts
 export function openFuji() {
@@ -37,7 +37,8 @@ export function openFuji() {
   const sync = attachSync(ydoc, {
     url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
-    auth,
+    openWebSocket: auth.openWebSocket,
+    onCredentialChange: auth.onChange,
   });
 
   return {

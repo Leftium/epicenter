@@ -1,22 +1,22 @@
 # `satisfies` Lets Go to Definition Follow the Value
 
-One of the biggest advantages of using `satisfies` instead of annotated return types in TypeScript is what happens when you press Go to Definition. If I access `ws.idb`, I do not want the editor to send me to the abstract `BrowserWorkspace` shape first. I want it to show me the object that actually got returned.
+One of the biggest advantages of using `satisfies` instead of annotated return types in TypeScript is what happens when you press Go to Definition. If I access `ws.idb`, I do not want the editor to send me to the abstract `PersistedWorkspace` shape first. I want it to show me the object that actually got returned.
 
 This keeps the trail from usage back to implementation.
 
 Here is the contract:
 
 ```typescript
-type BrowserWorkspace = Workspace & {
+type PersistedWorkspace = Workspace & {
   idb: IndexedDbAttachment;
   clearLocalData(): Promise<unknown>;
 };
 ```
 
-Now compare two factories that both return a valid `BrowserWorkspace`.
+Now compare two factories that both return a valid `PersistedWorkspace`.
 
 ```typescript
-export function createAnnotatedWorkspace(): BrowserWorkspace {
+export function createAnnotatedWorkspace(): PersistedWorkspace {
   const idb = createIndexedDbAttachment();
 
   return {
@@ -41,12 +41,12 @@ ws.idb
   |
   | Go to Definition
   v
-type BrowserWorkspace = Workspace & {
+type PersistedWorkspace = Workspace & {
 	idb: IndexedDbAttachment;
 }
 ```
 
-That is technically correct, but it is rarely the place I wanted to land. I already knew `idb` was part of `BrowserWorkspace`; I clicked because I wanted to see where this `idb` came from.
+That is technically correct, but it is rarely the place I wanted to land. I already knew `idb` was part of `PersistedWorkspace`; I clicked because I wanted to see where this `idb` came from.
 
 The `satisfies` version changes that path:
 
@@ -60,7 +60,7 @@ export function createSatisfiedWorkspace() {
     async clearLocalData() {
       return undefined;
     },
-  } satisfies BrowserWorkspace;
+  } satisfies PersistedWorkspace;
 }
 
 const ws = createSatisfiedWorkspace();
@@ -97,13 +97,13 @@ That is the difference. The annotated return type says, "treat this value as the
 
 ```typescript
 // Erases the returned object to the named contract.
-function createAnnotatedWorkspace(): BrowserWorkspace {
+function createAnnotatedWorkspace(): PersistedWorkspace {
 	return { ... };
 }
 
 // Checks the contract while preserving the returned object.
 function createSatisfiedWorkspace() {
-	return { ... } satisfies BrowserWorkspace;
+	return { ... } satisfies PersistedWorkspace;
 }
 ```
 
@@ -138,7 +138,7 @@ The type is still available. It just belongs to the command that asks for type i
 
 | Cursor          | Go to Definition       | Go to Type Definition |
 | --------------- | ---------------------- | --------------------- |
-| `annotated.idb` | `BrowserWorkspace.idb` | `IndexedDbAttachment` |
+| `annotated.idb` | `PersistedWorkspace.idb` | `IndexedDbAttachment` |
 | `satisfied.idb` | returned `idb` member  | `IndexedDbAttachment` |
 
 So this is not "ignore the type." The type check still happens. The difference is that normal navigation follows the implementation first.
@@ -159,7 +159,7 @@ function createSatisfiedWorkspace() {
     async clearLocalData() {
       return undefined;
     },
-  } satisfies BrowserWorkspace;
+  } satisfies PersistedWorkspace;
 }
 ```
 

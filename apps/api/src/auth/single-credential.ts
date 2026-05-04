@@ -1,9 +1,7 @@
 import { BEARER_SUBPROTOCOL_PREFIX, parseSubprotocols } from '@epicenter/sync';
-import type { BetterAuthOptions } from 'better-auth';
 import { getSessionCookie } from 'better-auth/cookies';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
-import type { createAuth } from './create-auth';
 
 /**
  * Reject requests that carry more than one authentication credential and lift
@@ -31,11 +29,13 @@ import type { createAuth } from './create-auth';
  * ## What it does
  *
  * 1. Checks for the Better Auth session cookie via `getSessionCookie` from
- *    `better-auth/cookies`, threading `cookiePrefix` and the
- *    `cookies.session_token.name` override straight from `c.var.auth.options`
- *    so any future auth config change propagates with zero edits here.
+ *    `better-auth/cookies` with no options. The library defaults
+ *    (`cookiePrefix: 'better-auth'`, `cookieName: 'session_token'`) match the
+ *    names Better Auth itself uses internally as long as `BASE_AUTH_CONFIG`
+ *    does not set `advanced.cookiePrefix` or `advanced.cookies.session_token.name`.
  *    `getSessionCookie` itself handles the `__Secure-` prefix and the legacy
- *    dash-form fallback internally.
+ *    dash-form fallback. If you ever override either of those auth options,
+ *    pass the same value here so the lookup stays in sync.
  * 2. Parses HTTP `Authorization: Bearer <token>` and the WebSocket bearer
  *    subprotocol `sec-websocket-protocol: epicenter, bearer.<token>`. Browsers
  *    cannot set `Authorization` on `new WebSocket(url)` upgrades, so the
@@ -46,20 +46,11 @@ import type { createAuth } from './create-auth';
  *    same in-place rewrite pattern Hono's own `bodyLimit` middleware uses
  *    (`hono/src/middleware/body-limit/index.ts`).
  *
- * Mount globally so the well-formedness check runs on every route, after the
- * middleware that sets `c.var.auth`.
+ * Mount globally so the well-formedness check runs on every route.
  */
-export const singleCredential = createMiddleware<{
-	Variables: { auth: ReturnType<typeof createAuth> };
-}>(async (c, next) => {
+export const singleCredential = createMiddleware(async (c, next) => {
 	const headers = c.req.raw.headers;
-	// Cast widens the `satisfies`-narrowed type from create-auth.ts so we can
-	// read `cookies.session_token.name` even though our config doesn't set it.
-	const advanced = (c.var.auth.options as BetterAuthOptions).advanced;
-	const cookie = getSessionCookie(c.req.raw, {
-		cookiePrefix: advanced?.cookiePrefix,
-		cookieName: advanced?.cookies?.session_token?.name,
-	});
+	const cookie = getSessionCookie(c.req.raw);
 	const httpBearer = parseHttpBearer(headers.get('authorization'));
 	const wsBearer = parseWsBearer(headers.get('sec-websocket-protocol'));
 

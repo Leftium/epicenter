@@ -10,20 +10,8 @@ import { expect, test } from 'bun:test';
 import { Hono } from 'hono';
 import { singleCredential } from './single-credential.js';
 
-/**
- * Minimal auth stand-in for the middleware. The middleware reads only
- * `options.advanced.cookiePrefix` and `options.advanced.cookies.session_token.name`;
- * leaving both undefined exercises the same code path our production config does
- * (defaults: `better-auth` / `session_token`).
- */
-type TestEnv = { Variables: { auth: { options: { advanced: unknown } } } };
-
-function createTestApp(advanced: Record<string, unknown> = {}) {
-	const app = new Hono<TestEnv>();
-	app.use('*', async (c, next) => {
-		c.set('auth', { options: { advanced } });
-		await next();
-	});
+function createTestApp() {
+	const app = new Hono();
 	app.use('*', singleCredential);
 	app.get('/', (c) =>
 		c.json({
@@ -122,30 +110,4 @@ test('no credentials passes through cleanly', async () => {
 	const body = (await res.json()) as Record<string, string | null>;
 	expect(body.authorization).toBeNull();
 	expect(body.cookie).toBeNull();
-});
-
-test('honors a custom cookiePrefix from auth options', async () => {
-	const app = createTestApp({ cookiePrefix: 'my-app' });
-	const res = await app.request('/', {
-		headers: {
-			authorization: 'Bearer token-1',
-			cookie: 'my-app.session_token=session-1',
-		},
-	});
-
-	expect(res.status).toBe(400);
-});
-
-test('ignores a session cookie under a different prefix', async () => {
-	const app = createTestApp({ cookiePrefix: 'my-app' });
-	const res = await app.request('/', {
-		headers: {
-			authorization: 'Bearer token-1',
-			cookie: 'better-auth.session_token=session-1',
-		},
-	});
-
-	expect(res.status).toBe(200);
-	const body = (await res.json()) as Record<string, string | null>;
-	expect(body.authorization).toBe('Bearer token-1');
 });

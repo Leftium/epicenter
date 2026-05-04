@@ -10,14 +10,14 @@ metadata:
 
 Three packages own the auth surface:
 
-- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, token rotation for bearer clients, cookie fetch policy for browser clients, identity fan-out, `fetch`, and `openWebSocket`.
+- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, token rotation for bearer clients, cookie fetch policy for cookie clients, identity fan-out, `fetch`, and `openWebSocket`.
 - **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors the core identity into `$state` and exposes a live `auth.identity` getter.
 - **`@epicenter/auth-workspace`**: framework-agnostic binding from auth identity changes to workspace lifecycle effects.
 
 The core model is two factories, one client interface:
 
 ```ts
-const browserAuth = createBrowserAuth({ baseURL, initialIdentity, saveIdentity });
+const cookieAuth = createCookieAuth({ baseURL, initialIdentity, saveIdentity });
 const bearerAuth = createBearerAuth({ baseURL, initialSession, saveSession });
 ```
 
@@ -61,13 +61,13 @@ Do not add projection helpers. There is no public token, user, session, authenti
 
 ## Factory Choice
 
-Use `createBrowserAuth` when the browser can use the API cookie jar:
+Use `createCookieAuth` when the browser can use the API cookie jar:
 
 ```ts
-import { createBrowserAuth } from '@epicenter/auth-svelte';
+import { createCookieAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 
-export const auth = createBrowserAuth({
+export const auth = createCookieAuth({
 	baseURL: APP_URLS.API,
 	initialIdentity: cachedIdentity.get(),
 	saveIdentity: (next) => cachedIdentity.set(next),
@@ -93,7 +93,7 @@ export const auth = createBearerAuth({
 
 ## Workspace Binding
 
-Use `bindAuthWorkspaceScope` at setup time for browser app clients:
+Use `bindAuthWorkspaceScope` at setup time for cookie auth clients:
 
 ```ts
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
@@ -131,11 +131,11 @@ const sync = attachSync(ydoc, {
 });
 ```
 
-`createBrowserAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. `attachSync` never imports from `@epicenter/auth`, never reads a token, and reconnects when `onCredentialChange` fires.
+`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. `attachSync` never imports from `@epicenter/auth`, never reads a token, and reconnects when `onCredentialChange` fires.
 
 `auth.fetch` follows the same transport rule internally:
 
-- Browser auth uses `credentials: 'include'` and removes `Authorization`.
+- Cookie auth uses `credentials: 'include'` and removes `Authorization`.
 - Bearer auth uses `credentials: 'omit'` and sets `Authorization` from the private in-memory session.
 
 ## Svelte UI Reads
@@ -176,6 +176,6 @@ In-flight command state belongs to the issuing component:
 - In the Svelte wrapper, spread the core auth object before overriding `identity`. Object spread invokes the base getter and copies the current value, so `get identity()` must appear after `...base`.
 - Do not destructure `auth.identity` at module scope. That freezes the current value.
 - Do not clear local data on cold boot. Clear only when the previous identity was non-null and the next identity is null.
-- Do not import a generic `createAuth`. It no longer exists. Choose `createBrowserAuth` or `createBearerAuth` at construction.
+- Do not import a generic `createAuth`. It no longer exists. Choose `createCookieAuth` or `createBearerAuth` at construction.
 - Do not expose bearer tokens above storage adapters. UI, workspace binding, and sync consume `AuthClient` capabilities.
 - Do not wrap redirect sign-in in global auth busy state. The page navigates away on success; local state is enough for commands that stay on the page.

@@ -8,7 +8,7 @@ export {
 	type AuthClient,
 	AuthError,
 	type CreateBearerAuthConfig,
-	type CreateBrowserAuthConfig,
+	type CreateCookieAuthConfig,
 	createBearerAuth,
-	createBrowserAuth,
+	createCookieAuth,
 } from './create-auth.ts';

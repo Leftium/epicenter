@@ -93,7 +93,7 @@ The public `opensidian.com` app uses bearer auth because it runs on its own
 domain and cannot rely on the API server's first-party cookies. If the app moves
 behind a reverse proxy, configure `/auth/*` to proxy to
 `https://api.epicenter.so/auth/*`, then switch the app client to
-`createBrowserAuth`. With that proxy in place, the browser sees auth as
+`createCookieAuth`. With that proxy in place, the browser sees auth as
 same-origin and the cookie-backed client can replace local bearer storage.
 
 ---

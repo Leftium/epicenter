@@ -81,7 +81,7 @@ mock.module('better-auth/client', () => ({
 	InferPlugin: () => ({}),
 }));
 
-const { createBearerAuth, createBrowserAuth } = await import(
+const { createBearerAuth, createCookieAuth } = await import(
 	'./create-auth.ts'
 );
 
@@ -324,11 +324,11 @@ test('bearer fetch sends Authorization and omits cookies', async () => {
 	auth[Symbol.dispose]();
 });
 
-test('browser fetch uses cookies and strips Authorization', async () => {
+test('cookie fetch uses cookies and strips Authorization', async () => {
 	captureFetch();
 	currentBetterAuthState = { isPending: true, data: null };
 	const saved: Array<AuthIdentity | null> = [];
-	const auth = createBrowserAuth({
+	const auth = createCookieAuth({
 		baseURL: 'http://localhost:8787',
 		initialIdentity: identityFromSession(session()),
 		saveIdentity: (next) => {
@@ -348,9 +348,9 @@ test('browser fetch uses cookies and strips Authorization', async () => {
 	auth[Symbol.dispose]();
 });
 
-test('browser openWebSocket returns plain protocols when identity exists', async () => {
+test('cookie openWebSocket returns plain protocols when identity exists', async () => {
 	currentBetterAuthState = { isPending: true, data: null };
-	const auth = createBrowserAuth({
+	const auth = createCookieAuth({
 		baseURL: 'http://localhost:8787',
 		initialIdentity: identityFromSession(session()),
 	});

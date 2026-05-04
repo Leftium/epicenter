@@ -1,6 +1,6 @@
-import { createBrowserAuth } from '@epicenter/auth-svelte';
+import { createCookieAuth } from '@epicenter/auth-svelte';
 
-export const auth = createBrowserAuth({
+export const auth = createCookieAuth({
 	baseURL: window.location.origin,
 });
 

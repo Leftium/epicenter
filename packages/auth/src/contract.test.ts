@@ -1,7 +1,7 @@
 /**
  * Auth Client Contract Tests
  *
- * Verifies that `createBrowserAuth` and `createBearerAuth` expose the same
+ * Verifies that `createCookieAuth` and `createBearerAuth` expose the same
  * public `AuthClient` behavior while keeping transport differences internal.
  *
  * Key behaviors:
@@ -77,7 +77,7 @@ mock.module('better-auth/client', () => ({
 	InferPlugin: () => ({}),
 }));
 
-const { createBearerAuth, createBrowserAuth } = await import('./index.ts');
+const { createBearerAuth, createCookieAuth } = await import('./index.ts');
 
 const originalFetch = globalThis.fetch;
 const originalWebSocket = globalThis.WebSocket;
@@ -185,9 +185,9 @@ type ContractCase = {
 
 const contractCases: ContractCase[] = [
 	{
-		name: 'browser',
+		name: 'cookie',
 		create() {
-			return createBrowserAuth({
+			return createCookieAuth({
 				baseURL: 'http://localhost:8787',
 				initialIdentity: identityFromSession(session()),
 			});

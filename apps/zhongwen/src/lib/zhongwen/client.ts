@@ -1,11 +1,11 @@
-import { createBrowserAuth } from '@epicenter/auth-svelte';
+import { createCookieAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { toast } from '@epicenter/ui/sonner';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { openZhongwen } from './browser';
 
-export const auth = createBrowserAuth({
+export const auth = createCookieAuth({
 	baseURL: APP_URLS.API,
 });
 

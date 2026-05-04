@@ -8,7 +8,7 @@
 
 ## One-Sentence Test
 
-`AuthClient` is the credential's lifecycle handle on this runtime; `createBrowserAuth` and `createBearerAuth` produce the same interface, differing only in how they acquire, persist, and present the credential.
+`AuthClient` is the credential's lifecycle handle on this runtime; `createCookieAuth` and `createBearerAuth` produce the same interface, differing only in how they acquire, persist, and present the credential.
 
 If the design exposes the bearer token outside the auth client, splits the consumer interface by transport, or asks consumers to branch on which factory was used, it is not clean yet.
 
@@ -138,7 +138,7 @@ type AuthClient = {
   [Symbol.dispose](): void;
 };
 
-createBrowserAuth({
+createCookieAuth({
   baseURL?,
   initialIdentity?: AuthIdentity | null,
   saveIdentity?: (next: AuthIdentity | null) => MaybePromise<void>,
@@ -160,7 +160,7 @@ Both factories return a sync `AuthClient`. The caller awaits any storage read be
 | `AuthClient` | Unified credential lifecycle handle. Same shape regardless of transport. | `@epicenter/auth` |
 | `AuthIdentity` | `{ user, encryptionKeys }`. Transport-agnostic; no token. | `@epicenter/auth` |
 | `BearerSession` | `{ token, user, encryptionKeys }`. Exported arktype schema for caller-side storage validation. The token never appears on `AuthClient`, but the persistence payload is necessarily visible to apps wiring `initialSession` and `saveSession`. | `@epicenter/auth` |
-| `createBrowserAuth` | Factory for browser SPAs that share an origin (or subdomain) with the auth server. Uses cookie jar; optional cached identity hydration. | `@epicenter/auth` |
+| `createCookieAuth` | Factory for browser SPAs that share an origin (or subdomain) with the auth server. Uses cookie jar; optional cached identity hydration. | `@epicenter/auth` |
 | `createBearerAuth` | Factory for runtimes without a usable cookie jar (extension, CLI, daemon, cross-domain SPA). Owns its token via caller-resolved `initialSession`. | `@epicenter/auth` |
 | `singleCredential` | API-side header normalizer. Returns `ok | mixed | none`. | `apps/api` |
 
@@ -176,11 +176,11 @@ Four runtimes, two transports, three deployment shapes:
 
 ```
 Browser tab, same-origin or *.epicenter.so subdomain
-   cookie jar via crossSubDomainCookies; createBrowserAuth.
+   cookie jar via crossSubDomainCookies; createCookieAuth.
 
 Browser tab, standalone domain (e.g. opensidian.com)
    third-party cookies blocked by browser; createBearerAuth (default)
-   or createBrowserAuth + reverse proxy (deferred upgrade).
+   or createCookieAuth + reverse proxy (deferred upgrade).
 
 Browser extension, Node CLI, Tauri webview, daemon
    no first-party cookie jar; createBearerAuth.
@@ -220,7 +220,7 @@ Better Auth's `expoClient` plugin uses the same caller-resolved pattern. The fac
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Number of factories | Two: `createBrowserAuth`, `createBearerAuth` | Two transports, two construction methods. |
+| Number of factories | Two: `createCookieAuth`, `createBearerAuth` | Two transports, two construction methods. |
 | Number of interfaces | One: `AuthClient` | Consumers do not need to distinguish at runtime. |
 | Token visibility | Private to factory implementation | Enables single interface. Removes leaks to sync. |
 | State encoding | `identity: AuthIdentity \| null` | Collapse isomorphic `AuthSnapshot`. |
@@ -265,7 +265,7 @@ Better Auth's `expoClient` plugin uses the same caller-resolved pattern. The fac
 ### Target
 
 ```
-   packages/auth/createBrowserAuth      packages/auth/createBearerAuth
+   packages/auth/createCookieAuth      packages/auth/createBearerAuth
    (sync; optional cached identity)     (sync; required initialSession)
               │                                      │
               ▼                                      ▼
@@ -304,12 +304,12 @@ Better Auth's `expoClient` plugin uses the same caller-resolved pattern. The fac
 ### Per-app surface map
 
 ```
-apps/dashboard       createBrowserAuth   (same-origin; cookie via crossSubDomainCookies)
-apps/fuji            createBrowserAuth   (subdomain *.epicenter.so; cookie)
-apps/honeycrisp      createBrowserAuth   (subdomain; cookie)
-apps/zhongwen        createBrowserAuth   (subdomain; cookie)
+apps/dashboard       createCookieAuth   (same-origin; cookie via crossSubDomainCookies)
+apps/fuji            createCookieAuth   (subdomain *.epicenter.so; cookie)
+apps/honeycrisp      createCookieAuth   (subdomain; cookie)
+apps/zhongwen        createCookieAuth   (subdomain; cookie)
 apps/opensidian      createBearerAuth    (own domain opensidian.com; localStorage)
-                                         (upgrade path: reverse proxy → createBrowserAuth)
+                                         (upgrade path: reverse proxy → createCookieAuth)
 apps/tab-manager     createBearerAuth    (Chrome extension; chrome.storage.local)
 apps/*/daemon.ts     createBearerAuth    (Node; OS keychain)
 packages/cli         createBearerAuth    (Node; same machine-auth wrapper)
@@ -383,15 +383,15 @@ This wave removes the legacy state shape and renames the listener API. `attachSy
 ### Wave 3: Two factories and client migration
 
 - [x] **3.1** Rename `createAuth` → `createBearerAuth`. Contract is `{ baseURL?, initialSession: BearerSession | null, saveSession: (next) => MaybePromise<void> }`. Internals: `auth: { type: 'Bearer' }` config on Better Auth client; `fetch` uses `credentials: 'omit'` and sets `Authorization` from the in-memory token; `openWebSocket` adds `bearer.<token>` to subprotocols; `onSuccess` hook reads `set-auth-token` and writes through.
-- [x] **3.2** Add `createBrowserAuth({ baseURL?, initialIdentity?, saveIdentity? })`. Internals: no `auth: { type: 'Bearer' }` on the underlying Better Auth client; `fetch` uses `credentials: 'include'`, never sets `Authorization`; `openWebSocket` returns plain `new WebSocket(url, protocols)` when `identity` is non-null and `null` otherwise. If `initialIdentity` is provided, `auth.identity` returns that value until `useSession` first fires. `saveIdentity` is called on identity changes.
-- [x] **3.3** Migrate `apps/{dashboard,fuji,honeycrisp,zhongwen}` to `createBrowserAuth`. Optional offline UX: hydrate `initialIdentity` from `localStorage` and wire `saveIdentity` to write back. Sign-in still uses `signInWithSocialRedirect` (GIS migration is Wave 7).
+- [x] **3.2** Add `createCookieAuth({ baseURL?, initialIdentity?, saveIdentity? })`. Internals: no `auth: { type: 'Bearer' }` on the underlying Better Auth client; `fetch` uses `credentials: 'include'`, never sets `Authorization`; `openWebSocket` returns plain `new WebSocket(url, protocols)` when `identity` is non-null and `null` otherwise. If `initialIdentity` is provided, `auth.identity` returns that value until `useSession` first fires. `saveIdentity` is called on identity changes.
+- [x] **3.3** Migrate `apps/{dashboard,fuji,honeycrisp,zhongwen}` to `createCookieAuth`. Optional offline UX: hydrate `initialIdentity` from `localStorage` and wire `saveIdentity` to write back. Sign-in still uses `signInWithSocialRedirect` (GIS migration is Wave 7).
 - [x] **3.4** Migrate `apps/opensidian` to `createBearerAuth({ initialSession, saveSession })` with a `localStorage` adapter (validate the read with the exported `BearerSession` schema; treat parse failure as `null`). Document the reverse-proxy upgrade path in the app's README.
 - [x] **3.5** Migrate `apps/tab-manager` to `createBearerAuth({ initialSession, saveSession })` with a `chrome.storage.local` adapter. Caller awaits the storage read before construction; pre-existing pattern.
 - [x] **3.6** Migrate `apps/*/daemon.ts` to `createBearerAuth`. `packages/cli` likewise. Caller awaits OS keychain read first.
 
 After Wave 3, no client double-sends credentials. The server still tolerates mixed (because `authGuard` hasn't tightened yet); browsers and bearer clients each send exactly one. This is the safe ordering.
 
-> **Wave 3 note**: Browser-cookie apps now call `createBrowserAuth` without bearer session persistence. Opensidian and tab-manager still validate and persist `BearerSession` through their existing storage adapters. `createMachineAuthClient` now builds daemons and CLI clients through `createBearerAuth`. Auth package verification passes; app typechecks still fail on pre-existing shared UI, result-shape, and app-local errors unrelated to this wave.
+> **Wave 3 note**: Browser-cookie apps now call `createCookieAuth` without bearer session persistence. Opensidian and tab-manager still validate and persist `BearerSession` through their existing storage adapters. `createMachineAuthClient` now builds daemons and CLI clients through `createBearerAuth`. Auth package verification passes; app typechecks still fail on pre-existing shared UI, result-shape, and app-local errors unrelated to this wave.
 
 ### Wave 4: Server credential normalization
 
@@ -410,7 +410,7 @@ After Wave 3, no client double-sends credentials. The server still tolerates mix
 - [x] **4.4** Update `apps/api/src/app.ts` (`/sign-in`, `/consent`, `/device`) to call `singleCredential` before `getSession`. Sign-in tolerates `'mixed'` (renders form as if signed-out); consent/device treat `'mixed'` as 400.
 - [x] **4.5** Add unit tests for `singleCredential`: only-cookie, only-bearer, only-WS-bearer (lifted), mixed cookie+bearer, mixed cookie+WS-bearer, neither.
 
-> **Wave 4 note**: `singleCredential` now detects Better Auth session-token cookies, HTTP bearer headers, and WebSocket bearer subprotocols. WebSocket bearer credentials are lifted into `Authorization` before session lookup. The API guard rejects mixed credentials before calling `getSession`; sign-in treats mixed credentials as signed out, while consent and device pages return 400. This wave also fixed the Wave 3 carryovers: `headersFromRequest` now uses `Headers.forEach`, and shared Svelte auth component JSDoc references mention `createBrowserAuth()` and `createBearerAuth()`.
+> **Wave 4 note**: `singleCredential` now detects Better Auth session-token cookies, HTTP bearer headers, and WebSocket bearer subprotocols. WebSocket bearer credentials are lifted into `Authorization` before session lookup. The API guard rejects mixed credentials before calling `getSession`; sign-in treats mixed credentials as signed out, while consent and device pages return 400. This wave also fixed the Wave 3 carryovers: `headersFromRequest` now uses `Headers.forEach`, and shared Svelte auth component JSDoc references mention `createCookieAuth()` and `createBearerAuth()`.
 
 ### Wave 5: Cleanup
 
@@ -468,7 +468,7 @@ Document UI never awaits `whenReady`. It just consumes `auth.identity`. `whenRea
 
 ### Cookie auth: first-render flicker
 
-UI renders before `/auth/get-session` resolves. If `initialIdentity` is provided to `createBrowserAuth`, identity is the cached value immediately. If not, identity is `null` until first `useSession` event arrives.
+UI renders before `/auth/get-session` resolves. If `initialIdentity` is provided to `createCookieAuth`, identity is the cached value immediately. If not, identity is `null` until first `useSession` event arrives.
 
 Apps that want offline UX wire `initialIdentity` (about three lines via `localStorage`); apps that don't accept the brief skeleton.
 
@@ -524,7 +524,7 @@ The caller is responsible for parse validation before calling the factory. If th
 ## Open Questions
 
 1. **Cross-domain reverse proxy upgrade path**
-   opensidian.com defaults to bearer with localStorage. If XSS exposure becomes a real concern, deploy with a reverse proxy (`/api/auth/* → api.epicenter.so/auth/*`) and switch to `createBrowserAuth`. Vercel/Netlify/Cloudflare all support a single-rule rewrite.
+   opensidian.com defaults to bearer with localStorage. If XSS exposure becomes a real concern, deploy with a reverse proxy (`/api/auth/* → api.epicenter.so/auth/*`) and switch to `createCookieAuth`. Vercel/Netlify/Cloudflare all support a single-rule rewrite.
    **Recommendation**: defer. Bearer is fine until evidence demands the upgrade. Document the path so it stays available.
 
 2. **OAuth provider for third-party SPAs**

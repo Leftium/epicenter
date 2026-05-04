@@ -83,7 +83,7 @@ function sessionSummary(session: BearerSessionType): MachineSessionSummary {
 /**
  * Store one machine auth session in the operating system keychain.
  *
- * Machine auth persists the same `BearerSession` shape as browser auth. The
+ * Machine auth persists the same `BearerSession` shape as bearer auth clients. The
  * server remains the owner of expiry, provider details, and Better Auth session
  * metadata. Corrupt blobs are logged and treated as signed-out so a schema
  * change cannot brick the CLI.

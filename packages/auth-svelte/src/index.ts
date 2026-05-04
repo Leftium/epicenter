@@ -8,5 +8,5 @@ export {
 export {
 	type AuthClient,
 	createBearerAuth,
-	createBrowserAuth,
+	createCookieAuth,
 } from './create-auth.svelte.ts';

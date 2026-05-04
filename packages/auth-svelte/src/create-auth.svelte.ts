@@ -1,9 +1,9 @@
 import {
 	type AuthClient as BaseAuthClient,
 	type CreateBearerAuthConfig,
-	type CreateBrowserAuthConfig,
+	type CreateCookieAuthConfig,
 	createBearerAuth as createCoreBearerAuth,
-	createBrowserAuth as createCoreBrowserAuth,
+	createCookieAuth as createCoreCookieAuth,
 } from '@epicenter/auth';
 
 export type AuthClient = BaseAuthClient;
@@ -38,6 +38,6 @@ export function createBearerAuth(config: CreateBearerAuthConfig): AuthClient {
 	return createReactiveAuth(createCoreBearerAuth(config));
 }
 
-export function createBrowserAuth(config: CreateBrowserAuthConfig): AuthClient {
-	return createReactiveAuth(createCoreBrowserAuth(config));
+export function createCookieAuth(config: CreateCookieAuthConfig): AuthClient {
+	return createReactiveAuth(createCoreCookieAuth(config));
 }

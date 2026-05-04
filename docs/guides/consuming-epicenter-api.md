@@ -36,7 +36,7 @@ import {
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import {
 	AuthUser,
-	createBrowserAuth,
+	createCookieAuth,
 	type AuthClient,
 	type AuthIdentity,
 } from '@epicenter/auth-svelte';
@@ -65,7 +65,7 @@ const identity = createPersistedState({
 	defaultValue: null,
 }) satisfies { get(): AuthIdentity | null; set(next: AuthIdentity | null): void };
 
-export const auth = createBrowserAuth({
+export const auth = createCookieAuth({
 	baseURL: 'https://api.epicenter.so',
 	initialIdentity: identity.get(),
 	saveIdentity: (next) => identity.set(next),

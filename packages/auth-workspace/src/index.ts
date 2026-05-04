@@ -11,13 +11,13 @@ export function bindAuthWorkspaceScope({
 	applyAuthIdentity,
 	resetLocalClient,
 }: AuthWorkspaceScopeOptions): () => void {
-	let appliedIdentity: { userId: string } | null = null;
+	let appliedUserId: string | null = null;
 	let pendingIdentity: AuthIdentity | null | undefined;
 	let isDraining = false;
 	let isDisposed = false;
 	let isTerminal = false;
 
-	async function resetCurrentClient() {
+	async function reset() {
 		isTerminal = true;
 		pendingIdentity = undefined;
 
@@ -31,23 +31,23 @@ export function bindAuthWorkspaceScope({
 
 	async function processIdentity(identity: AuthIdentity | null) {
 		if (identity === null) {
-			if (appliedIdentity === null) {
+			if (appliedUserId === null) {
 				return;
 			}
 
-			await resetCurrentClient();
+			await reset();
 			return;
 		}
 
 		const userId = identity.user.id;
 
-		if (appliedIdentity !== null && appliedIdentity.userId !== userId) {
-			await resetCurrentClient();
+		if (appliedUserId !== null && appliedUserId !== userId) {
+			await reset();
 			return;
 		}
 
 		applyAuthIdentity(identity);
-		appliedIdentity = { userId };
+		appliedUserId = userId;
 	}
 
 	async function drain() {

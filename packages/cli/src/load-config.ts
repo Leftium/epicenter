@@ -111,8 +111,8 @@ export const DaemonConfigError = defineErrors({
 	}) => ({
 		message:
 			`Invalid daemon route "${route}" in ${configPath}: ` +
-			`expected a daemon runtime with actions, sync teardown/status, ` +
-			`awareness peers/observe, remote.invoke, and [Symbol.asyncDispose].`,
+			`expected a daemon runtime with awareness peers/observe, ` +
+			`sync.onStatusChange, and [Symbol.asyncDispose].`,
 		configPath,
 		route,
 	}),
@@ -134,70 +134,18 @@ export type DaemonConfigError = InferErrors<typeof DaemonConfigError>;
 
 function hasDaemonRuntimeShape(value: unknown): value is DaemonRuntime {
 	if (!isObjectRecord(value)) return false;
-	const { actions, awareness, sync, remote } = value;
-	if (
-		!isObjectRecord(awareness) ||
-		!isObjectRecord(sync) ||
-		!isObjectRecord(remote)
-	) {
-		return false;
-	}
+	const { awareness, sync } = value;
+	if (!isObjectRecord(awareness) || !isObjectRecord(sync)) return false;
 	return (
-		isObjectRecord(actions) &&
-		isThenable(sync.whenDisposed) &&
-		hasSyncStatusShape(sync.status) &&
-		typeof sync.onStatusChange === 'function' &&
 		typeof awareness.peers === 'function' &&
 		typeof awareness.observe === 'function' &&
-		typeof remote.invoke === 'function' &&
+		typeof sync.onStatusChange === 'function' &&
 		typeof value[Symbol.asyncDispose] === 'function'
-	);
-}
-
-function hasSyncStatusShape(value: unknown): boolean {
-	if (!isObjectRecord(value) || typeof value.phase !== 'string') return false;
-	switch (value.phase) {
-		case 'offline':
-			return true;
-		case 'connected':
-			return typeof value.hasLocalChanges === 'boolean';
-		case 'connecting':
-			return (
-				typeof value.retries === 'number' &&
-				(value.lastError === undefined || hasSyncErrorShape(value.lastError))
-			);
-		case 'failed':
-			return hasSyncFailedReasonShape(value.reason);
-		default:
-			return false;
-	}
-}
-
-function hasSyncErrorShape(value: unknown): boolean {
-	return (
-		isObjectRecord(value) &&
-		(value.type === 'auth' || value.type === 'connection')
-	);
-}
-
-function hasSyncFailedReasonShape(value: unknown): boolean {
-	return (
-		isObjectRecord(value) &&
-		value.type === 'auth' &&
-		typeof value.code === 'string'
 	);
 }
 
 function isObjectRecord(value: unknown): value is Record<PropertyKey, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isThenable(value: unknown): value is PromiseLike<unknown> {
-	return (
-		value != null &&
-		(typeof value === 'object' || typeof value === 'function') &&
-		typeof (value as { then?: unknown }).then === 'function'
-	);
 }
 
 function hasRouteDefinitionShape(

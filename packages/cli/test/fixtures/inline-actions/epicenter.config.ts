@@ -26,7 +26,7 @@ const sync = {
 	status: { phase: 'connected', hasLocalChanges: false },
 	onStatusChange: () => () => {},
 	reconnect() {},
-	whenDisposed: Promise.resolve(),
+	[Symbol.asyncDispose]: async () => {},
 	attachRpc: () => ({ rpc: async () => ({ data: null, error: null }) }),
 } as unknown as SyncAttachment;
 

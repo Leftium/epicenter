@@ -95,7 +95,6 @@ function makeFakeWorkspace(onDispose?: () => void): DaemonRuntime {
 			whenConnected: new Promise(() => {
 				/* sync connects in the background */
 			}),
-			whenDisposed: Promise.resolve(),
 			status: { phase: 'connected', hasLocalChanges: false },
 			onStatusChange: () => () => {},
 			// Unused fields; cast through unknown to keep the fake minimal.

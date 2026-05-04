@@ -693,7 +693,7 @@ After Phase A, every async attachment exposes BOTH `whenDisposed` (deprecated al
 
 The audit (sub-agent, recorded above under "CLI `hasDaemonRuntimeShape`") established exactly what `up.ts` reads. Phase D applies those findings; no per-task verification needed.
 
-- [ ] **D.1** Slim `hasDaemonRuntimeShape` in `packages/cli/src/load-config.ts:135-155` to validate ONLY the fields `up.ts` invokes:
+- [x] **D.1** Slim `hasDaemonRuntimeShape` in `packages/cli/src/load-config.ts:135-155` to validate ONLY the fields `up.ts` invokes:
 
   ```ts
   function hasDaemonRuntimeShape(value: unknown): value is DaemonRuntime {
@@ -711,16 +711,16 @@ The audit (sub-agent, recorded above under "CLI `hasDaemonRuntimeShape`") establ
 
   Drops: `actions`, `sync.whenDisposed`, `sync.status` (and the `hasSyncStatusShape` call), `remote.invoke`.
 
-- [ ] **D.2** Delete orphaned helpers from `packages/cli/src/load-config.ts:157-189`:
+- [x] **D.2** Delete orphaned helpers from `packages/cli/src/load-config.ts:157-189`:
   - `hasSyncStatusShape`
   - `hasSyncErrorShape`
   - `hasSyncFailedReasonShape`
 
   Confirmed orphaned by audit (only callers were each other and the umbrella).
 
-- [ ] **D.3** Drop the `isThenable` import from `packages/cli/src/load-config.ts`. Verify with grep that no other reference to `isThenable` remains in `packages/cli/src/`.
+- [x] **D.3** Drop the `isThenable` import from `packages/cli/src/load-config.ts`. Verify with grep that no other reference to `isThenable` remains in `packages/cli/src/`.
 
-- [ ] **D.4** Update `InvalidRouteRuntime` error message at `packages/cli/src/load-config.ts:112-117`:
+- [x] **D.4** Update `InvalidRouteRuntime` error message at `packages/cli/src/load-config.ts:112-117`:
 
   Before:
   ```ts
@@ -738,7 +738,7 @@ The audit (sub-agent, recorded above under "CLI `hasDaemonRuntimeShape`") establ
     `sync.onStatusChange, and [Symbol.asyncDispose].`,
   ```
 
-- [ ] **D.5** Verify `DaemonRuntime` at `packages/workspace/src/daemon/types.ts:29-45` does not directly declare `whenDisposed` (it doesn't today; `whenDisposed` lives on `SyncAttachment` and is reached via `runtime.sync.whenDisposed`). Confirm no separate type-level cleanup is needed here. Phase F removes `whenDisposed` from `SyncAttachment`, which propagates to `runtime.sync` automatically.
+- [x] **D.5** Verify `DaemonRuntime` at `packages/workspace/src/daemon/types.ts:29-45` does not directly declare `whenDisposed` (it doesn't today; `whenDisposed` lives on `SyncAttachment` and is reached via `runtime.sync.whenDisposed`). Confirm no separate type-level cleanup is needed here. Phase F removes `whenDisposed` from `SyncAttachment`, which propagates to `runtime.sync` automatically.
 
   Audit verified `DaemonRuntime` fields (`actions`, `awareness`, `sync`, `remote`, `[Symbol.asyncDispose]`) are all load-bearing in `packages/workspace/src/daemon/app.ts` and `run-handler.ts`. Do NOT drop fields from `DaemonRuntime` itself; the CLI duck-type shrink in D.1 is correct precisely BECAUSE the CLI doesn't invoke them, but the workspace's IPC server does.
 

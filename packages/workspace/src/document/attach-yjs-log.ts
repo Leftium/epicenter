@@ -26,6 +26,7 @@
 
 import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
+import { lazy } from '../shared/lazy.js';
 import { openWriterSqlite } from './sqlite-writer.js';
 
 const logger = createLogger('attachYjsLog');
@@ -59,8 +60,11 @@ export type YjsLogAttachment = {
 	/**
 	 * Resolves after `ydoc.destroy()` AND a final compaction + DB close.
 	 * Opt-in: tests and CLIs flushing before exit await this.
+	 *
+	 * @deprecated Use `[Symbol.asyncDispose]()` instead.
 	 */
 	whenDisposed: Promise<unknown>;
+	[Symbol.asyncDispose]: () => Promise<void>;
 };
 
 export function attachYjsLog(
@@ -146,7 +150,7 @@ export function attachYjsLog(
 	// On destroy: timer is cleared and the updateV2 listener is detached
 	// before db.close(), so neither the timer callback nor the listener
 	// can fire after the handle is gone. No `isClosed` guard needed.
-	ydoc.once('destroy', () => {
+	const dispose = lazy(async () => {
 		try {
 			resetCompactionTimer();
 			ydoc.off('updateV2', updateHandler);
@@ -174,11 +178,15 @@ export function attachYjsLog(
 			resolveDisposed();
 		}
 	});
+	ydoc.once('destroy', () => {
+		void dispose();
+	});
 
 	return {
 		clearLocal: () => {
 			deleteUpdates.run();
 		},
 		whenDisposed,
+		[Symbol.asyncDispose]: dispose,
 	};
 }

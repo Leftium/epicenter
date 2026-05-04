@@ -1,5 +1,6 @@
-import { IndexeddbPersistence } from 'y-indexeddb';
+import { IndexeddbPersistence, clearDocument } from 'y-indexeddb';
 import type * as Y from 'yjs';
+import { lazy } from '../shared/lazy.js';
 
 export type IndexedDbAttachment = {
 	/**
@@ -14,28 +15,32 @@ export type IndexedDbAttachment = {
 	 * Resolves after the Y.Doc is destroyed AND IndexedDB's async teardown
 	 * completes. Opt-in — tests and CLIs flushing before exit await this.
 	 * Named symmetrically with `whenLoaded` — both are promises.
+	 *
+	 * @deprecated Use `[Symbol.asyncDispose]()` instead.
 	 */
 	whenDisposed: Promise<unknown>;
+	[Symbol.asyncDispose]: () => Promise<void>;
 };
 
 export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 	const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
+	ydoc.off('destroy', idb.destroy);
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
-	// `IndexeddbPersistence` already registers its own `doc.on('destroy')` to
-	// tear itself down. We still register here to surface an *awaitable* signal
-	// for the async IDB close — calling `idb.destroy()` a second time is safe
-	// (idempotent after `_destroyed = true`) and returns the same close promise.
-	ydoc.once('destroy', async () => {
+	const dispose = lazy(async () => {
 		try {
 			await idb.destroy();
 		} finally {
 			resolveDisposed();
 		}
 	});
+	ydoc.once('destroy', () => {
+		void dispose();
+	});
 	return {
-		whenLoaded: idb.whenSynced,
-		clearLocal: () => idb.clearData(),
+		whenLoaded: idb.whenSynced.then(() => {}),
+		clearLocal: () => clearDocument(ydoc.guid),
 		whenDisposed,
+		[Symbol.asyncDispose]: dispose,
 	};
 }

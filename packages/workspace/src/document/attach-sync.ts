@@ -41,6 +41,7 @@ import {
 	resolveActionPath,
 	type SystemActions,
 } from '../shared/actions.js';
+import { lazy } from '../shared/lazy.js';
 import type {
 	AwarenessAttachment,
 	AwarenessSchema,
@@ -149,8 +150,11 @@ export type SyncAttachment = {
 	/**
 	 * Resolves after the ydoc is destroyed and the websocket teardown completes.
 	 * Named symmetrically with `whenConnected`: both are promises.
+	 *
+	 * @deprecated Use `[Symbol.asyncDispose]()` instead.
 	 */
 	whenDisposed: Promise<unknown>;
+	[Symbol.asyncDispose]: () => Promise<void>;
 	attachRpc(actions: RpcActionSource): SyncRpcAttachment;
 };
 
@@ -852,7 +856,7 @@ export function attachSync(
 	// any still-open socket has hit CLOSED (or a 1s safety timeout elapses).
 	// The earlier implementation resolved synchronously in `finally`, which
 	// meant callers awaiting `whenDisposed` saw a socket still in CLOSING.
-	ydoc.once('destroy', async () => {
+	const dispose = lazy(async () => {
 		// Master abort cascades to cycleController (closes ws, wakes
 		// backoff sleep, fires attemptConnection's abort listener).
 		masterController.abort();
@@ -881,6 +885,9 @@ export function attachSync(
 			resolveDisposed();
 		}
 	});
+	ydoc.once('destroy', () => {
+		void dispose();
+	});
 
 	return {
 		whenConnected,
@@ -890,6 +897,7 @@ export function attachSync(
 		onStatusChange: status.subscribe,
 		reconnect,
 		whenDisposed,
+		[Symbol.asyncDispose]: dispose,
 		attachRpc(userActions) {
 			if (rpcActions) throw new Error('[attachSync] RPC already attached');
 			if ('system' in userActions) {

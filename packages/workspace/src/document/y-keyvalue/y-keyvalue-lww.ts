@@ -149,7 +149,7 @@
  * ```
  */
 import type * as Y from 'yjs';
-import { lazy } from './lazy.js';
+import { lazy } from '../../shared/lazy.js';
 import type {
 	KvStoreChange,
 	KvStoreChangeHandler,

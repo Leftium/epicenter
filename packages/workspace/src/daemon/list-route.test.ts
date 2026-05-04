@@ -28,7 +28,7 @@ function fakeEntry(
 			status: { phase: 'connected', hasLocalChanges: false },
 			onStatusChange: () => () => {},
 			reconnect() {},
-			whenDisposed: Promise.resolve(),
+			[Symbol.asyncDispose]: async () => {},
 		} as unknown as DaemonRuntime['sync'],
 		awareness: {
 			peers: () => new Map(),

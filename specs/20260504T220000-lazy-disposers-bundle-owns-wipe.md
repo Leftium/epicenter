@@ -746,7 +746,7 @@ The audit (sub-agent, recorded above under "CLI `hasDaemonRuntimeShape`") establ
 
 After Phase D lands, no source file (apps, packages, examples, playground, tests, CLI) reads `whenDisposed` on `IndexedDbAttachment`, `SyncAttachment`, or `YjsLogAttachment`. The alias is now safe to delete.
 
-- [ ] **F.1** Remove `whenDisposed` from `IndexedDbAttachment` type and return value in `packages/workspace/src/document/attach-indexed-db.ts`. Drop the `Promise.withResolvers`/`resolveDisposed` plumbing — the lazy disposer is now the only path. Body simplifies to:
+- [x] **F.1** Remove `whenDisposed` from `IndexedDbAttachment` type and return value in `packages/workspace/src/document/attach-indexed-db.ts`. Drop the `Promise.withResolvers`/`resolveDisposed` plumbing — the lazy disposer is now the only path. Body simplifies to:
 
   ```ts
   const dispose = lazy(async () => {
@@ -757,9 +757,9 @@ After Phase D lands, no source file (apps, packages, examples, playground, tests
 
   Update JSDoc on the file: any reference to `whenDisposed` (the deprecated comment, the type doc) becomes a reference to `[Symbol.asyncDispose]`.
 
-- [ ] **F.2** Same drop in `packages/workspace/src/document/attach-sync.ts`. Also update internal JSDoc references (around line 119-124 and 854 mention `whenDisposed`; rephrase to `[Symbol.asyncDispose]`). The `SyncSupervisorError.CloseTimeout` comment ("resolves whenDisposed anyway rather than hanging forever") becomes "resolves `[Symbol.asyncDispose]` anyway."
+- [x] **F.2** Same drop in `packages/workspace/src/document/attach-sync.ts`. Also update internal JSDoc references (around line 119-124 and 854 mention `whenDisposed`; rephrase to `[Symbol.asyncDispose]`). The `SyncSupervisorError.CloseTimeout` comment ("resolves whenDisposed anyway rather than hanging forever") becomes "resolves `[Symbol.asyncDispose]` anyway."
 
-- [ ] **F.3** Same drop in `packages/workspace/src/document/attach-yjs-log.ts`. Same JSDoc rephrasing.
+- [x] **F.3** Same drop in `packages/workspace/src/document/attach-yjs-log.ts`. Same JSDoc rephrasing.
 
 - [ ] **F.4** Verify with grep: `rg -n "whenDisposed" apps packages docs examples playground -S` should match only historical specs and articles.
 

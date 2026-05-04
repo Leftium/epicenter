@@ -57,13 +57,7 @@ const COMPACTION_DEBOUNCE_MS = 5_000;
 export type YjsLogAttachment = {
 	/** `DELETE FROM updates`. Drops the durable log without destroying the Y.Doc. */
 	clearLocal: () => void;
-	/**
-	 * Resolves after `ydoc.destroy()` AND a final compaction + DB close.
-	 * Opt-in: tests and CLIs flushing before exit await this.
-	 *
-	 * @deprecated Use `[Symbol.asyncDispose]()` instead.
-	 */
-	whenDisposed: Promise<unknown>;
+	/** Runs final compaction and closes the SQLite handle. */
 	[Symbol.asyncDispose]: () => Promise<void>;
 };
 
@@ -144,38 +138,31 @@ export function attachYjsLog(
 
 	ydoc.on('updateV2', updateHandler);
 
-	const { promise: whenDisposed, resolve: resolveDisposed } =
-		Promise.withResolvers<void>();
-
 	// On destroy: timer is cleared and the updateV2 listener is detached
 	// before db.close(), so neither the timer callback nor the listener
 	// can fire after the handle is gone. No `isClosed` guard needed.
 	const dispose = lazy(async () => {
+		resetCompactionTimer();
+		ydoc.off('updateV2', updateHandler);
+		// Final compaction can throw on a corrupt write or a closed db.
+		// Swallowing silently inside teardown leaves no trace for
+		// debugging; log instead so the failure surfaces.
 		try {
-			resetCompactionTimer();
-			ydoc.off('updateV2', updateHandler);
-			// Final compaction can throw on a corrupt write or a closed db.
-			// Swallowing silently inside teardown leaves no trace for
-			// debugging; log instead so the failure surfaces.
-			try {
-				compactUpdateLog();
-			} catch (cause) {
-				logger.warn(
-					new Error('Final compactUpdateLog failed during destroy', {
-						cause,
-					}),
-				);
-			}
-			// `db.close()` can throw if the handle was already closed or
-			// if SQLite refuses (e.g. unfinalized statements). Same
-			// rationale: log, don't let it escape the destroy listener.
-			try {
-				db.close();
-			} catch (cause) {
-				logger.warn(new Error('db.close() failed during destroy', { cause }));
-			}
-		} finally {
-			resolveDisposed();
+			compactUpdateLog();
+		} catch (cause) {
+			logger.warn(
+				new Error('Final compactUpdateLog failed during destroy', {
+					cause,
+				}),
+			);
+		}
+		// `db.close()` can throw if the handle was already closed or if SQLite
+		// refuses (e.g. unfinalized statements). Same rationale: log, don't let
+		// it escape the destroy listener.
+		try {
+			db.close();
+		} catch (cause) {
+			logger.warn(new Error('db.close() failed during destroy', { cause }));
 		}
 	});
 	ydoc.once('destroy', () => {
@@ -186,7 +173,6 @@ export function attachYjsLog(
 		clearLocal: () => {
 			deleteUpdates.run();
 		},
-		whenDisposed,
 		[Symbol.asyncDispose]: dispose,
 	};
 }

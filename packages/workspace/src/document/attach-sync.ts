@@ -117,10 +117,10 @@ export const SyncSupervisorError = defineErrors({
 	}),
 	/**
 	 * The socket didn't fire 'close' within the shutdown timeout, so
-	 * `whenDisposed` resolves anyway rather than hanging forever.
+	 * `[Symbol.asyncDispose]()` resolves anyway rather than hanging forever.
 	 */
 	CloseTimeout: ({ timeoutMs }: { timeoutMs: number }) => ({
-		message: `[attachSync] WebSocket did not fire onclose within ${timeoutMs}ms; resolving whenDisposed anyway`,
+		message: `[attachSync] WebSocket did not fire onclose within ${timeoutMs}ms; resolving [Symbol.asyncDispose] anyway`,
 		timeoutMs,
 	}),
 });
@@ -147,13 +147,7 @@ export type SyncAttachment = {
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
 	/** Force a fresh connection with new credentials (supervisor restarts iteration). */
 	reconnect(): void;
-	/**
-	 * Resolves after the ydoc is destroyed and the websocket teardown completes.
-	 * Named symmetrically with `whenConnected`: both are promises.
-	 *
-	 * @deprecated Use `[Symbol.asyncDispose]()` instead.
-	 */
-	whenDisposed: Promise<unknown>;
+	/** Destroys the sync supervisor and waits for websocket teardown. */
 	[Symbol.asyncDispose]: () => Promise<void>;
 	attachRpc(actions: RpcActionSource): SyncRpcAttachment;
 };
@@ -340,8 +334,6 @@ export function attachSync(
 		connectedSettled = true;
 		op();
 	};
-	const { promise: whenDisposed, resolve: resolveDisposed } =
-		Promise.withResolvers<void>();
 	const backoff = createBackoff();
 
 	/**
@@ -851,11 +843,9 @@ export function attachSync(
 
 	// Teardown.
 
-	// `whenDisposed` must be a real barrier: it resolves only after the
-	// supervisor loop has fully exited (which itself awaits `ws.onclose`) and
-	// any still-open socket has hit CLOSED (or a 1s safety timeout elapses).
-	// The earlier implementation resolved synchronously in `finally`, which
-	// meant callers awaiting `whenDisposed` saw a socket still in CLOSING.
+	// `[Symbol.asyncDispose]()` must be a real barrier: it resolves only after
+	// the supervisor loop has fully exited (which itself awaits `ws.onclose`)
+	// and any still-open socket has hit CLOSED (or a 1s safety timeout elapses).
 	const dispose = lazy(async () => {
 		// Master abort cascades to cycleController (closes ws, wakes
 		// backoff sleep, fires attemptConnection's abort listener).
@@ -871,19 +861,15 @@ export function attachSync(
 				new Error('[attachSync] doc destroyed before first handshake'),
 			);
 		});
-		try {
-			unsubscribeAuthChange();
-			ydoc.off('updateV2', handleDocUpdate);
-			awareness?.off('update', handleAwarenessUpdate);
-			const ws = websocket;
-			clearPendingRequests();
-			manageWindowListeners('remove');
-			status.clear();
-			if (loopPromise) await loopPromise;
-			await waitForWsClose(ws, 1000, log);
-		} finally {
-			resolveDisposed();
-		}
+		unsubscribeAuthChange();
+		ydoc.off('updateV2', handleDocUpdate);
+		awareness?.off('update', handleAwarenessUpdate);
+		const ws = websocket;
+		clearPendingRequests();
+		manageWindowListeners('remove');
+		status.clear();
+		if (loopPromise) await loopPromise;
+		await waitForWsClose(ws, 1000, log);
 	});
 	ydoc.once('destroy', () => {
 		void dispose();
@@ -896,7 +882,6 @@ export function attachSync(
 		},
 		onStatusChange: status.subscribe,
 		reconnect,
-		whenDisposed,
 		[Symbol.asyncDispose]: dispose,
 		attachRpc(userActions) {
 			if (rpcActions) throw new Error('[attachSync] RPC already attached');

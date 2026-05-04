@@ -222,7 +222,6 @@ export {
 	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
-	type SyncControl,
 	SyncFailedError,
 	type SyncFailedReason,
 	type SyncRpcAttachment,
@@ -275,7 +274,6 @@ export {
 	type ResolvedPeer,
 } from './document/peer-identity.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
-export { composeSyncControls } from './document/sync-control.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

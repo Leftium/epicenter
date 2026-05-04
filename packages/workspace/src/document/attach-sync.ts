@@ -197,15 +197,9 @@ export type SyncWebSocket = {
 	removeEventListener(type: string, listener: EventListener): void;
 };
 
-export type WebSocketImpl = new (
-	url: string,
-	protocols?: string | string[],
-) => SyncWebSocket;
-
 /**
- * Capability bundle for authenticated sync. Supplying `auth` declares that
- * the connection requires credentials; absence means the supervisor opens an
- * unauthenticated WebSocket with `webSocketImpl`.
+ * Capability bundle for authenticated sync. Every `attachSync` connection
+ * goes through this surface.
  */
 export type SyncAuth = {
 	/**
@@ -243,12 +237,7 @@ export type SyncAttachmentConfig = {
 	 * `auth.openWebSocket` means no credential is available yet, so the
 	 * supervisor remains offline until credentials change.
 	 */
-	auth?: SyncAuth;
-	/**
-	 * WebSocket constructor. Tests can pass a stub to avoid dialing a server;
-	 * production uses `globalThis.WebSocket`.
-	 */
-	webSocketImpl?: WebSocketImpl;
+	auth: SyncAuth;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -636,12 +625,7 @@ export function attachSync(
 	): Promise<'connected' | 'failed' | 'no-credential'> {
 		const wsUrl = config.url;
 		const subprotocols = [MAIN_SUBPROTOCOL];
-		const ws = config.auth
-			? config.auth.openWebSocket(wsUrl, subprotocols)
-			: new (config.webSocketImpl ?? (globalThis.WebSocket as WebSocketImpl))(
-					wsUrl,
-					subprotocols,
-				);
+		const ws = config.auth.openWebSocket(wsUrl, subprotocols);
 		if (ws === null) return 'no-credential';
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
@@ -844,7 +828,7 @@ export function attachSync(
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
-	const unsubscribeAuthChange = config.auth?.onChange(() => {
+	const unsubscribeAuthChange = config.auth.onChange(() => {
 		queueMicrotask(reconnect);
 	});
 
@@ -884,7 +868,7 @@ export function attachSync(
 			);
 		});
 		try {
-			unsubscribeAuthChange?.();
+			unsubscribeAuthChange();
 			ydoc.off('updateV2', handleDocUpdate);
 			awareness?.off('update', handleAwarenessUpdate);
 			const ws = websocket;

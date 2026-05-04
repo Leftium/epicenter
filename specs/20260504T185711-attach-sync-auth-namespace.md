@@ -1,25 +1,29 @@
 # Collapse `attachSync` auth fields into a single `auth` namespace
 
 **Date**: 2026-05-04
-**Status**: Implemented, verification blocked
+**Status**: Wave 1-6 implemented; Wave 7 in progress
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth
 
 ## One-Sentence Test
 
-`attachSync`'s config has one optional `auth` namespace bundling `openWebSocket` + `onChange`; the duck-typed `requiresCredential` flag and the nullish-coalescing-ternary in `attemptConnection` no longer exist.
+`attachSync` requires an `auth: SyncAuth` capability and constructs sockets via a single property access; `webSocketImpl`, `WebSocketImpl`, `NoopWebSocket`, the duck-typed `requiresCredential` flag, the nullish-coalescing-ternary, and the unauthed-fallback branch no longer exist.
 
 If `requiresCredential` still appears in `attach-sync.ts`, the work is not done.
-If the bad ternary at `attach-sync.ts:631-637` is still there, the work is not done.
+If `webSocketImpl` or `WebSocketImpl` still appears anywhere outside historical specs, the work is not done.
+If `NoopWebSocket` still exists, the work is not done.
+If `attemptConnection` still has a ternary on `config.auth`, the work is not done.
 If any consumer still passes `openWebSocket` and `onCredentialChange` as separate top-level config fields, the work is not done.
 
 ## Overview
 
 `SyncAttachmentConfig` currently exposes two unrelated optional callbacks (`openWebSocket`, `onCredentialChange`) that conceptually form a single capability: "this is an authenticated transport." The two-field shape forces the supervisor to *infer* the capability via `requiresCredential = openWebSocket !== undefined`, which then has to feed a five-line nullish-coalescing-ternary inside `attemptConnection` to disambiguate "callback not provided" from "callback returned null."
 
-This spec replaces the two top-level fields with one optional `auth: { openWebSocket, onChange }` namespace. The capability becomes a literal presence check (`config.auth !== undefined`). The bad ternary collapses to a clean two-branch expression. Every consumer call site collapses from two lines to one. `AuthClient` is structurally assignable to `SyncAuth`, so callers pass `auth` directly with no adapter object.
+This spec replaces the two top-level fields with one `auth: { openWebSocket, onChange }` namespace. The capability becomes a literal presence check. Every consumer call site collapses from two lines to one. `AuthClient` is structurally assignable to `SyncAuth`, so callers pass `auth` directly with no adapter object.
 
 The `WebSocket | null` return on `openWebSocket` itself is **not** changing. It's the right shape (atomic credential check, no race, ecosystem-canonical) and is documented as "not an error condition." This spec is exclusively about the surrounding plumbing.
+
+**Wave 7 addendum (2026-05-04)**: After wave 1 landed, audit found that the `auth?` optionality, the `webSocketImpl?` field, the `WebSocketImpl` exported type, and the `NoopWebSocket` test class are all paying for a flexibility no consumer uses. All 13 production callers pass `auth`; zero callers pass `webSocketImpl`; zero callers reference `NoopWebSocket`. Wave 7 makes `auth` required and deletes the unauthed branch end-to-end.
 
 ## Why this is its own spec
 
@@ -189,7 +193,10 @@ attachSync(doc, {
 | Bundle shape | Single optional `auth` namespace | The two callbacks always travel together; presence of the namespace = "authenticated transport." |
 | Sub-field name for the unsubscribe-style sub | `onChange` (not `onCredentialChange`) | `AuthClient.onChange` already exists with the right signature shape. Renaming inside `SyncAuth` would force every consumer to write `{ openWebSocket: auth.openWebSocket, onChange: auth.onChange }` instead of just `auth`. The semantic ("auth state changed, restart sync") is unchanged. |
 | Return type of `openWebSocket` | Keep `SyncWebSocket \| null` | Documented as "not an error condition." Atomic — no race against `auth.identity`. Canonical in browser API (`querySelector`, `Map.get`). Hono docs literally describe "no credentials → don't initiate" as the recommended pattern. |
-| `webSocketImpl` placement | Stays at top level | Test-only constructor injection used on the **unauthed** path. For the authed path, `auth.openWebSocket` is itself the injection point. Folding it into `auth` would conflate test seam with auth capability. |
+| `webSocketImpl` placement (wave 1) | ~~Stays at top level~~ → **deleted in wave 7** | Wave 1 kept it on the assumption the unauthed branch was real. Audit showed zero callers in `apps/`, `packages/`, `examples/`, or `playground/`. Tests use `globalThis.WebSocket` swap instead. The injection point that survives is `auth.openWebSocket`. |
+| `auth` optionality (wave 7) | **Required** | All 13 production callers pass `auth`. The 4 internal tests that pass `{ url }` only do so to test sync mechanics, not to exercise an unauthed feature. Optionality misrepresents the configuration space. |
+| `WebSocketImpl` exported type (wave 7) | **Deleted** | Sole consumers were `webSocketImpl` (deleted) and `NoopWebSocket` (deleted). No external consumer. |
+| `NoopWebSocket` (wave 7) | **Deleted** | Zero callers. Only documentation reference was an aspirational SKILL note. |
 | Migration shape for callers | Pass `AuthClient` directly as `auth` | Structural compatibility eliminates adapter ceremony. Consumers go from 4 fields to 3 with no new imports. |
 | `AuthClient` interface change | None | This spec touches only `attachSync` config. The auth package's public surface is unchanged. |
 | Backwards compatibility shim | None | Per CLAUDE.md ("avoid backwards-compatibility hacks"). All consumers live in this monorepo; migrate atomically in one PR. |
@@ -323,6 +330,19 @@ Single PR. Waves are sequential; each wave leaves the workspace in a typecheckab
 
 > **Verification note**: `bun typecheck` is still blocked by existing diagnostics outside this spec, including `packages/svelte-utils/src/from-table.svelte.ts`, `packages/ui/src/sonner/toast-on-error.ts`, multiple `#/utils` alias errors in `packages/ui`, and app-local Svelte errors. The touched workspace package and auth package typechecks pass, and `@epicenter/workspace` tests pass.
 
+### Wave 7: make `auth` required, delete the unauthed branch
+
+- [ ] **7.1** In `attach-sync.ts`, change `auth?: SyncAuth` to `auth: SyncAuth` on `SyncAttachmentConfig`.
+- [ ] **7.2** Delete the `webSocketImpl?: WebSocketImpl` field on `SyncAttachmentConfig` and its JSDoc.
+- [ ] **7.3** Delete the `WebSocketImpl` exported type definition (lines 200-203).
+- [ ] **7.4** Replace the ternary in `attemptConnection` with a single property access: `const ws = config.auth.openWebSocket(wsUrl, subprotocols);` followed by the existing `if (ws === null) return 'no-credential';` line.
+- [ ] **7.5** Update the `SyncAuth` JSDoc to drop the "absence means the supervisor opens an unauthenticated WebSocket" wording.
+- [ ] **7.6** Remove `type WebSocketImpl` from `packages/workspace/src/index.ts` re-exports.
+- [ ] **7.7** Delete the `NoopWebSocket` class from `packages/workspace/src/shared/test-utils.ts` (keep `mintTestProjectDir`).
+- [ ] **7.8** Update `attach-sync.test.ts`: add a `fakeAuth()` helper that returns `{ openWebSocket: (url, protocols) => new FakeWebSocket(url, protocols), onChange: () => () => {} }`. Migrate the 4 `attachSync(ydoc, { url: ... })` invocations (around lines 135, 159, 207, 280) to pass `auth: fakeAuth()`.
+- [ ] **7.9** Update `.agents/skills/workspace-app-layout/SKILL.md`: drop the `webSocketImpl?: WebSocketImpl` parameter from daemon and script factory examples, drop the "is injectable for tests" bullets, drop the "Pass `NoopWebSocket` through `webSocketImpl`" line at the end of the Tests section.
+- [ ] **7.10** Verify: `bun run --filter @epicenter/workspace typecheck` and `test` pass. Workspace-wide grep confirms zero remaining `webSocketImpl`, `WebSocketImpl`, or `NoopWebSocket` references in non-spec, non-historical-doc files.
+
 ## Acceptance criteria
 
 - [x] `requiresCredential` does not exist anywhere in `attach-sync.ts`.
@@ -333,6 +353,11 @@ Single PR. Waves are sequential; each wave leaves the workspace in a typecheckab
 - [x] Every test consumer passes `auth: ...` — never the two flat fields.
 - [x] All documentation examples use the new shape.
 - [ ] `bun run typecheck` and workspace tests pass.
+- [ ] (wave 7) `auth` is required on `SyncAttachmentConfig` (no `?`).
+- [ ] (wave 7) `webSocketImpl` and `WebSocketImpl` do not exist anywhere outside historical specs.
+- [ ] (wave 7) `NoopWebSocket` does not exist.
+- [ ] (wave 7) `attemptConnection` opens the socket via a single `config.auth.openWebSocket(...)` call (no ternary).
+- [ ] (wave 7) `workspace-app-layout/SKILL.md` no longer references `webSocketImpl` or `NoopWebSocket`.
 
 ## Open questions
 
@@ -348,9 +373,8 @@ Single PR. Waves are sequential; each wave leaves the workspace in a typecheckab
    - `AuthClient.openWebSocket` takes `string | URL`. `attachSync` passes `string`. Narrowing in `SyncAuth` doesn't break assignability (function param is contravariant).
    - **Recommendation**: keep `SyncAuth.openWebSocket` typed with `string` (matching what `attachSync` actually passes). Wider input type on the implementation is fine and keeps the spec's surface honest.
 
-4. **Should `webSocketImpl` move under `auth` for symmetry?**
-   - No. It's only consulted on the *unauthed* path. Keeping it under `auth` would imply it's part of the auth surface; it isn't.
-   - **Recommendation**: leave at top level.
+4. **Should `webSocketImpl` move under `auth` for symmetry?** _(resolved in wave 7)_
+   - **Resolution**: delete `webSocketImpl` outright. Zero callers; tests use `globalThis.WebSocket` swap; the only "production" injection point is `auth.openWebSocket`. The unauthed branch the field served was paying for nothing.
 
 5. **Anything to do about `AuthClient.openWebSocket` returning `WebSocket` vs `SyncWebSocket`?**
    - `WebSocket` is a strict superset of `SyncWebSocket` (workspace's structural minimum). Assignment works. No change.

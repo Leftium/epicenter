@@ -119,14 +119,12 @@ export function openFuji({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(projectDir),
 	apiUrl = EPICENTER_API_URL,
-	webSocketImpl,
 }: {
 	getToken: () => Promise<string | null>;
 	device: DeviceDescriptor;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
-	webSocketImpl?: WebSocketImpl;
 }) {
 	const doc = openFujiDoc({ clientID });
 	const persistence = attachYjsLog(doc.ydoc, {
@@ -136,7 +134,6 @@ export function openFuji({
 		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
 		device,
 		getToken,
-		webSocketImpl,
 	});
 	return { ...doc, persistence, sync };
 }
@@ -147,7 +144,6 @@ Defaults:
 - `projectDir = findEpicenterDir()`
 - `clientID = hashClientId(projectDir)`
 - `apiUrl = EPICENTER_API_URL`
-- `webSocketImpl` is injectable for tests
 
 The public lifecycle command is `epicenter up`. Do not document daemon
 factories as `epicenter serve` consumers.
@@ -162,13 +158,11 @@ export function openFuji({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 	apiUrl = EPICENTER_API_URL,
-	webSocketImpl,
 }: {
 	getToken: () => Promise<string | null>;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
-	webSocketImpl?: WebSocketImpl;
 }) {
 	const doc = openFujiDoc({ clientID });
 	const persistence = attachYjsLogReader(doc.ydoc, {
@@ -177,7 +171,6 @@ export function openFuji({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
 		getToken,
-		webSocketImpl,
 	});
 	return { ...doc, persistence, sync };
 }
@@ -188,7 +181,6 @@ Defaults:
 - `projectDir = findEpicenterDir()`
 - `clientID = hashClientId(Bun.main)`
 - `apiUrl = EPICENTER_API_URL`
-- `webSocketImpl` is injectable for tests
 
 ## Package Exports
 
@@ -219,9 +211,6 @@ daemon disposes and closes writer persistence
 script opens the same projectDir
 script observes rows from attachYjsLogReader replay
 ```
-
-Pass `NoopWebSocket` through `webSocketImpl` so the test never dials a real
-relay.
 
 ## Anti-Patterns
 

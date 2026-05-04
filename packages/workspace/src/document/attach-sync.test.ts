@@ -100,6 +100,18 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 	throw new Error('timeout waiting for predicate');
 }
 
+/** Trivial auth for tests that don't care about credentials, only sync mechanics. */
+function fakeAuth() {
+	return {
+		openWebSocket(url: string, protocols?: string | string[]) {
+			return new FakeWebSocket(url, protocols);
+		},
+		onChange() {
+			return () => {};
+		},
+	};
+}
+
 function createCredentialSource(initiallySignedIn: boolean) {
 	let signedIn = initiallySignedIn;
 	const listeners = new Set<() => void>();
@@ -132,7 +144,10 @@ function createCredentialSource(initiallySignedIn: boolean) {
 describe('attachSync split surface', () => {
 	test('sync owns lifecycle and connected status', async () => {
 		const ydoc = new Y.Doc({ guid: 'split-sync' });
-		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			auth: fakeAuth(),
+		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
@@ -158,6 +173,7 @@ describe('attachSync split surface', () => {
 		});
 		attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
+			auth: fakeAuth(),
 			awareness,
 		});
 
@@ -204,7 +220,10 @@ describe('attachSync split surface', () => {
 	test('attachRpc dispatches inbound actions and returns outbound responses', async () => {
 		const ydoc = new Y.Doc({ guid: 'split-rpc' });
 		const calls: unknown[] = [];
-		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			auth: fakeAuth(),
+		});
 		const rpc = sync.attachRpc({
 			tabs: {
 				close: defineMutation({
@@ -277,7 +296,10 @@ describe('attachSync split surface', () => {
 
 	test('attachRpc reserves system namespace', () => {
 		const ydoc = new Y.Doc({ guid: 'split-system-reserved' });
-		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			auth: fakeAuth(),
+		});
 
 		expect(() =>
 			sync.attachRpc({

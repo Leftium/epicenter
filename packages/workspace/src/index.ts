@@ -228,7 +228,6 @@ export {
 	type SyncStatus,
 	toWsUrl,
 	type WaitForBarrier,
-	type WebSocketImpl,
 } from './document/attach-sync.js';
 export {
 	attachReadonlyTable,

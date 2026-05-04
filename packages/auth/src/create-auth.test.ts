@@ -33,6 +33,7 @@ let currentBetterAuthState: BetterAuthSessionState = {
 };
 let betterAuthClientOptions: BetterAuthClientOptions | null = null;
 let signInResponseHeaders: Record<string, string> | undefined;
+let capturedWebSockets: FakeWebSocket[] = [];
 
 mock.module('better-auth/client', () => ({
 	createAuthClient(options: BetterAuthClientOptions) {
@@ -75,7 +76,21 @@ mock.module('better-auth/client', () => ({
 const { createAuth } = await import('./create-auth.ts');
 
 const originalFetch = globalThis.fetch;
+const originalWebSocket = globalThis.WebSocket;
 const originalConsoleError = console.error;
+
+class FakeWebSocket {
+	readonly readyState = 0;
+
+	constructor(
+		readonly url: string | URL,
+		readonly protocols?: string | string[],
+	) {
+		capturedWebSockets.push(this);
+	}
+
+	close() {}
+}
 
 beforeEach(() => {
 	globalThis.fetch = (async () =>
@@ -83,15 +98,18 @@ beforeEach(() => {
 			status: 200,
 			headers: { 'content-type': 'application/json' },
 		})) as unknown as typeof fetch;
+	globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 	console.error = () => {};
 	betterAuthSessionListeners = new Set();
 	currentBetterAuthState = { isPending: false, data: null };
 	betterAuthClientOptions = null;
 	signInResponseHeaders = undefined;
+	capturedWebSockets = [];
 });
 
 afterEach(() => {
 	globalThis.fetch = originalFetch;
+	globalThis.WebSocket = originalWebSocket;
 	console.error = originalConsoleError;
 });
 
@@ -223,6 +241,43 @@ test('initial session drives initial signed-in snapshot', async () => {
 
 
 	expect(auth.snapshot).toEqual({ status: 'signedIn', session: session() });
+	auth[Symbol.dispose]();
+});
+
+test('whenReady and whenLoaded share the first settled session barrier', async () => {
+	currentBetterAuthState = { isPending: true, data: null };
+	const setup = createStorage({ load: () => null });
+	const auth = createTestAuth(setup);
+	let ready = false;
+
+	expect(auth.whenReady).toBe(auth.whenLoaded);
+	void auth.whenReady.then(() => {
+		ready = true;
+	});
+	await Promise.resolve();
+	expect(ready).toBe(false);
+
+	emitBetterAuthSession(null);
+	await auth.whenReady;
+
+	expect(ready).toBe(true);
+	auth[Symbol.dispose]();
+});
+
+test('openWebSocket returns null signed out and adds bearer subprotocol signed in', async () => {
+	const setup = createStorage({ load: () => null });
+	const auth = createTestAuth(setup);
+
+	expect(auth.openWebSocket('ws://localhost/sync')).toBeNull();
+
+	emitBetterAuthSession(betterAuthSessionData(session({ token: 'token-2' })));
+	const ws = auth.openWebSocket('ws://localhost/sync');
+
+	expect(ws).toBe(capturedWebSockets[0] as unknown as WebSocket);
+	expect(capturedWebSockets[0]).toMatchObject({
+		url: 'ws://localhost/sync',
+		protocols: ['epicenter', 'bearer.token-2'],
+	});
 	auth[Symbol.dispose]();
 });
 

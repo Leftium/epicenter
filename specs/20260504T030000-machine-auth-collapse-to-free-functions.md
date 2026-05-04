@@ -381,28 +381,32 @@ Single PR. Waves are sequential but small.
 
 ### Wave 8: verification
 
-- [ ] **8.1** `bun run --filter @epicenter/auth typecheck` passes.
-- [ ] **8.2** `bun run --filter @epicenter/auth test` passes.
+- [x] **8.1** `bun run --filter @epicenter/auth typecheck` passes.
+- [x] **8.2** `bun run --filter @epicenter/auth test` passes.
 - [ ] **8.3** `bun run --filter @epicenter/cli typecheck` passes.
+  > **Blocked**: Bun reports `error: No packages matched the filter`. `bun run typecheck --filter=@epicenter/cli` finds the package but executes no task because `packages/cli/package.json` has no `typecheck` script. `bun x tsc --noEmit` in `packages/cli` passes.
 - [ ] **8.4** `bun run --filter fuji typecheck` passes.
+  > **Blocked**: Bun reports `error: No packages matched the filter`. `bun run typecheck --filter=@epicenter/fuji` reaches Fuji but fails on pre-existing Svelte/UI errors outside this spec: `from-table.svelte.ts`, `toast-on-error.ts`, `button.svelte`, `sidebar-menu-button.svelte`, `EntriesTable.svelte`, and `workspace-gate.svelte`.
 - [ ] **8.5** Workspace-wide `bun run typecheck` passes (every consumer migrated).
+  > **Blocked**: Workspace-wide typecheck fails before this auth migration is implicated. The first failing package is `@epicenter/tab-manager`, mostly unresolved `#/...` UI imports and unrelated Svelte/type errors.
 - [ ] **8.6** `epicenter auth login` / `status` / `logout` smoke test against staging API.
+  > **Not run**: Requires staging API/device-code auth environment.
 
 ## Acceptance criteria
 
-- [ ] `MachineAuthError` does not exist in the codebase.
-- [ ] `MachineAuthStorage` and `MachineAuthStorageBackend` do not exist in the codebase.
-- [ ] `createMachineAuth` does not exist in the codebase.
-- [ ] `createKeychainMachineAuthStorage` does not exist in the codebase.
-- [ ] `MachineAuth` type alias does not exist.
-- [ ] `getEncryptionKeys` does not exist as an exported function.
-- [ ] The aggregate `MachineAuthTransportError` type alias does not exist.
-- [ ] `MachineAuthRequestError` and `DeviceTokenError` exist as separate `defineErrors`.
-- [ ] No `Extract<MachineAuthTransportError, ...>` or `Extract<MachineAuthError, ...>` anywhere in the codebase.
-- [ ] No explicit return-type annotation on `loginWithDeviceCode`, `status`, `logout`, or any `createMachineAuthTransport` method (TypeScript infers).
-- [ ] No `console.warn`, `console.error`, or `console.log` in `machine-auth.ts`, `machine-session-store.ts`, or `machine-auth-transport.ts`.
-- [ ] `loadMachineSession`, `saveMachineSession` exist as free functions in `machine-session-store.ts`.
-- [ ] All 5 consumer files migrated (`apps/fuji/src/lib/fuji/script.ts` inlines, three CLI handlers use namespace import).
+- [x] `MachineAuthError` does not exist in the codebase.
+- [x] `MachineAuthStorage` and `MachineAuthStorageBackend` do not exist in the codebase.
+- [x] `createMachineAuth` does not exist in the codebase.
+- [x] `createKeychainMachineAuthStorage` does not exist in the codebase.
+- [x] `MachineAuth` type alias does not exist.
+- [x] `getEncryptionKeys` does not exist as an exported function.
+- [x] The aggregate `MachineAuthTransportError` type alias does not exist.
+- [x] `MachineAuthRequestError` and `DeviceTokenError` exist as separate `defineErrors`.
+- [x] No `Extract<MachineAuthTransportError, ...>` or `Extract<MachineAuthError, ...>` anywhere in the codebase.
+- [x] No explicit return-type annotation on `loginWithDeviceCode`, `status`, `logout`, or any `createMachineAuthTransport` method (TypeScript infers).
+- [x] No `console.warn`, `console.error`, or `console.log` in `machine-auth.ts`, `machine-session-store.ts`, or `machine-auth-transport.ts`.
+- [x] `loadMachineSession`, `saveMachineSession` exist as free functions in `machine-session-store.ts`.
+- [x] All 5 consumer files migrated (`apps/fuji/src/lib/fuji/script.ts` inlines, three CLI handlers use namespace import).
 - [ ] Workspace-wide typecheck passes.
 
 ## Open questions

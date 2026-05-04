@@ -9,10 +9,6 @@ Here is the contract:
 ```typescript
 type BrowserWorkspace = Workspace & {
   idb: IndexedDbAttachment;
-  syncControl: SyncControl | null;
-
-  goOffline(): void;
-  reconnect(): void;
   clearLocalData(): Promise<unknown>;
 };
 ```
@@ -26,9 +22,6 @@ export function createAnnotatedWorkspace(): BrowserWorkspace {
   return {
     ...createBaseWorkspace(),
     idb,
-    syncControl: null,
-    goOffline() {},
-    reconnect() {},
     async clearLocalData() {
       return undefined;
     },
@@ -64,9 +57,6 @@ export function createSatisfiedWorkspace() {
   return {
     ...createBaseWorkspace(),
     idb,
-    syncControl: null,
-    goOffline() {},
-    reconnect() {},
     async clearLocalData() {
       return undefined;
     },
@@ -155,19 +145,17 @@ So this is not "ignore the type." The type check still happens. The difference i
 
 There are two caveats worth saying out loud.
 
-First, `satisfies` preserves narrow inferred types. If your object says `syncControl: null`, the inferred return type contains `syncControl: null`, not `syncControl: SyncControl | null`. If the public value really needs the wider type, make the value wide before returning it:
+First, `satisfies` preserves narrow inferred types. If your object says `transport: null`, the inferred return type contains `transport: null`, not `Transport | null`. If the public value really needs the wider type, make the value wide before returning it:
 
 ```typescript
 function createSatisfiedWorkspace() {
   const idb = createIndexedDbAttachment();
-  const syncControl: SyncControl | null = null;
+  const transport: Transport | null = null;
 
   return {
     ...createBaseWorkspace(),
     idb,
-    syncControl,
-    goOffline() {},
-    reconnect() {},
+    transport,
     async clearLocalData() {
       return undefined;
     },

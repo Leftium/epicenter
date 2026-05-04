@@ -2,7 +2,7 @@
 
 When a code-smell removal still feels wrong, but the deeper violation feels even deeper, that off-feel is the signal. The local fix is going to leave the deeper thing alive. Go up a level. Ask what the surface code is compensating for, find the missing invariant, install it, and watch the surface evaporate.
 
-The workspace identity reset spec went through three rounds of this. Each round added cleanups that the prior round left standing.
+The workspace identity reset spec went through four rounds of this. Each round added cleanups that the prior round left standing.
 
 ```
 Round 1   drop the cold-null pause                        (1 smell)
@@ -11,11 +11,15 @@ Round 3   also drop the syncControl parameter,
           the SyncControl named base type,
           the BrowserWorkspace.syncControl field,
           and composeSyncControls                         (6 smells)
+Round 4   dispose child document caches before parent
+          teardown and drop the whenDisposed wait          (8 smells)
 ```
 
-Round 1 was wrong scope. The cold-null `syncControl?.pause()` was a no-op, but the reset-path `syncControl?.pause()` was doing real work: synchronously closing the WebSocket before `await clearLocalData()` yielded, narrowing a microtask race. They looked the same and they weren't. "Delete both" was not yet a sound move. Round 3 found the actual missing invariant: there is no deterministic teardown. Once `ydoc.destroy()` followed by `await sync.whenDisposed` becomes the canonical reset, the race the pause was narrowing does not exist. The pause has nothing to compensate for. Neither does the parameter that threaded it. Neither does the named type that aliased it. Neither does the field that exposed it. Neither does the fan-out helper that nobody had ever called.
+Round 1 was wrong scope. The cold-null `syncControl?.pause()` was a no-op, but the reset-path `syncControl?.pause()` was doing real work: synchronously closing the WebSocket before `await clearLocalData()` yielded, narrowing a microtask race. They looked the same and they weren't. "Delete both" was not yet a sound move. Round 3 found the actual missing invariant: there is no deterministic teardown. Round 4 found the missing first line inside that teardown: apps with cached child documents must dispose those caches before destroying the parent `ydoc`, otherwise IndexedDB deletion can block on open child connections and the reload never runs.
 
-That collapse, six surfaces gone for one invariant installed, is the pattern worth naming.
+Once cache disposal, `ydoc.destroy()`, `clearLocalData()`, and reload in `finally` become the canonical reset, the race the pause was narrowing does not exist. The pause has nothing to compensate for. Neither does the parameter that threaded it. Neither does the named type that aliased it. Neither does the field that exposed it. Neither does the fan-out helper that nobody had ever called. The explicit `await sync.whenDisposed` also drops out: the page is about to reload, and `ydoc.destroy()` has already detached listeners and started WebSocket teardown.
+
+That collapse, eight surfaces gone for one invariant installed, is the pattern worth naming.
 
 ## The audit questions
 

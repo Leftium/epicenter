@@ -53,7 +53,7 @@ export function openFuji() {
 export const workspace = openFuji();
 ```
 
-`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `auth.identity` and `bindAuthWorkspaceScope` in `apps/fuji/src/lib/fuji/client.ts`, where the app composes sync pause, key application, reconnect, and local reset policy.
+`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `auth.identity` and `bindAuthWorkspaceScope` in `apps/fuji/src/lib/fuji/client.ts`, where the app composes key application and deterministic reset: child document cache disposal, `ydoc.destroy()`, `clearLocalData()`, and reload.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/client.ts`.
 

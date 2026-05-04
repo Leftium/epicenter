@@ -63,25 +63,26 @@ In app clients such as `apps/tab-manager/src/lib/tab-manager/client.ts`, `bindAu
 ```ts
 bindAuthWorkspaceScope({
 	auth,
-	sync: tabManager.sync,
-	applyAuthSession(session) {
-		tabManager.encryption.applyKeys(session.encryptionKeys);
+	applyAuthIdentity(identity) {
+		tabManager.encryption.applyKeys(identity.encryptionKeys);
 		void registerDevice();
 	},
 	async resetLocalClient() {
 		try {
-			await tabManager.idb.clearLocal();
-			window.location.reload();
+			tabManager.ydoc.destroy();
+			await tabManager.clearLocalData();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });
 ```
 The order matters.
-The binding calls `applyAuthSession(session)` before reconnecting sync.
+The binding calls `applyAuthIdentity(identity)` when a signed-in identity is active.
 
 ## Key lifecycle in the current code
 Keys are definitely loaded on login.
@@ -92,18 +93,19 @@ The logout path in the app clients is:
 ```ts
 bindAuthWorkspaceScope({
 	auth,
-	sync: workspace.sync,
-	applyAuthSession(session) {
-		workspace.encryption.applyKeys(session.encryptionKeys);
+	applyAuthIdentity(identity) {
+		workspace.encryption.applyKeys(identity.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
-			await workspace.idb.clearLocal();
-			window.location.reload();
+			workspace.ydoc.destroy();
+			await workspace.clearLocalData();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });

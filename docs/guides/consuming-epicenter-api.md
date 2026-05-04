@@ -107,6 +107,9 @@ function openMyApp({
 		idb,
 		sync,
 		whenLoaded: idb.whenLoaded,
+		async clearLocalData() {
+			await idb.clearLocal();
+		},
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
@@ -124,16 +127,17 @@ export const workspace = openMyApp({
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: workspace.sync,
 	applyAuthIdentity(identity) {
 		workspace.encryption.applyKeys(identity.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
-			await workspace.idb.clearLocal();
-			window.location.reload();
+			workspace.ydoc.destroy();
+			await workspace.clearLocalData();
 		} catch (error) {
 			console.error('Could not clear local data', extractErrorMessage(error));
+		} finally {
+			window.location.reload();
 		}
 	},
 });

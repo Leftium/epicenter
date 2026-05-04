@@ -100,22 +100,23 @@ import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: workspace.syncControl,
 	applyAuthIdentity(identity) {
 		workspace.encryption.applyKeys(identity.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
+			workspace.ydoc.destroy();
 			await workspace.clearLocalData();
-			window.location.reload();
 		} catch (error) {
 			reportCleanupError(error);
+		} finally {
+			window.location.reload();
 		}
 	},
 });
 ```
 
-The app owns concrete resource composition. Pass `syncControl: null` when there is no authenticated sync attachment. For root plus child documents, pass a small inline object whose `pause()` and `reconnect()` methods call every active sync surface. Keep destructive reset policy inside `resetLocalClient()`.
+Each `attachSync` is independently auth-aware through `openWebSocket` and `onCredentialChange`; no sync fan-out is needed. Keep destructive reset policy inside `resetLocalClient()`.
 
 ## Sync Authentication
 

@@ -88,6 +88,15 @@ export type AuthClient = {
 	}): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
+	/**
+	 * Open a WebSocket against the auth server with this transport's
+	 * credentials applied.
+	 *
+	 * Returns `null` when no credentials are currently available (signed out,
+	 * or bearer session not yet hydrated). Consumers like `attachSync` treat
+	 * `null` as "pause and wait for the next `onCredentialChange`." It is not
+	 * an error condition.
+	 */
 	openWebSocket(
 		url: string | URL,
 		protocols?: string | string[],

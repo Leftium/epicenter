@@ -131,7 +131,7 @@ const sync = attachSync(ydoc, {
 });
 ```
 
-`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. `attachSync` never imports from `@epicenter/auth`, never reads a token, and reconnects when `onCredentialChange` fires.
+`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. Both factories return `null` from `openWebSocket` when no credentials are available; `attachSync` treats `null` as "pause and reconnect on the next `onCredentialChange`." `attachSync` never imports from `@epicenter/auth`, never reads a token, and reconnects when `onCredentialChange` fires.
 
 `auth.fetch` follows the same transport rule internally:
 

@@ -1,6 +1,6 @@
 ---
 name: cohesive-clean-breaks
-description: Use when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Also use when a code smell or defensive mechanism feels wrong and the local fix keeps growing: ask what the code is compensating for, go up a level, find the missing invariant, eliminate behaviors instead of patching them. Triggers on phrases like "deeper violation", "go up a level", "what is this compensating for", "eliminate this behavior", "move the boundary", "this smell wont die", "the local fix is growing". Guides agents to preserve a clear product and code vision, reject hybrid compromise APIs, mentally inline abstractions, remove stale names, use dependency injection and inversion of control deliberately, move abstraction boundaries, and keep invariants owned by one layer.
+description: Use this skill when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Also use when a smell keeps growing, a defensive mechanism compensates for a missing invariant, or a small feature promise forces a large implementation graph. Ask what behavior should be refused, move invariants to the owning boundary, reject hybrid APIs, delete stale names, and leave one obvious product sentence.
 ---
 
 # Cohesive Clean Breaks
@@ -12,10 +12,13 @@ strategy.
 The goal is not to minimize diff size. The goal is to make the final system
 easy to explain, hard to misuse, and free of half-old, half-new behavior.
 
-Related skills: use `one-sentence-test` to state the thesis, `refactoring` for
-caller counting and straggler sweeps, `approachability-audit` for first-read
-clarity, `change-proposal` when showing current and proposed trees before
-editing, and `post-implementation-review` after implementation.
+Related skills: use [one-sentence-test](../one-sentence-test/SKILL.md) to state
+the thesis, [refactoring](../refactoring/SKILL.md) for caller counting and
+straggler sweeps, [approachability-audit](../approachability-audit/SKILL.md) for
+first-read clarity, [change-proposal](../change-proposal/SKILL.md) when showing
+current and proposed trees before editing, and
+[post-implementation-review](../post-implementation-review/SKILL.md) after
+implementation.
 
 ## One Sentence First
 
@@ -93,6 +96,99 @@ into one."
 See `docs/articles/20260504T030000-when-the-smell-wont-die-go-up-a-level.md`
 for the worked example (workspace identity reset, six surfaces collapsed
 into one deterministic teardown).
+
+## Feature Refusal Pass
+
+Before installing a new invariant, ask whether the feature that forced the
+invariant should exist at all.
+
+AI makes greenfield implementation feel cheap. Robust feature support is not
+cheap. Every behavior you support becomes an invariant, an error path, a test
+case, a docs branch, and a future compatibility promise. Sometimes supporting
+10 percent fewer features removes 80 percent of the code.
+
+Do not run this as arithmetic. The move is not "remove any 10 percent of the
+feature list." The move is to find the small promise that owns a disproportionate
+amount of machinery, then decide whether refusing that exact promise leaves the
+product sentence intact.
+
+Run this pass when the design adds:
+
+- a fast path beside the canonical path
+- a provider-specific SDK wrapper beside a standard protocol
+- a fallback parser for an old shape
+- a second transport for one environment's nicer UX
+- a compatibility alias nobody explicitly asked for
+- an option that only preserves an old mental model
+- a partial reflection API that makes callers ask which surfaces are real
+
+Follow this procedure:
+
+```txt
+1. Name the product sentence that must remain true.
+2. List candidate refusal points: fast paths, old shapes, rare modes, provider
+   exceptions, compatibility aliases, fallback parsers, partial reflection.
+3. For each candidate, list the code family it forces: methods, adapters,
+   unions, error variants, tests, docs branches, UI states, migrations.
+4. Pick the candidate with the largest code family, not the most visible name.
+5. Ask who loses what if that behavior is refused.
+6. If the loss is a small convenience and the deletion removes a second shape,
+   refuse the behavior and write that refusal into the spec.
+```
+
+Use this output shape in specs and design notes:
+
+```txt
+Product sentence:
+  ...
+
+Candidate refusal:
+  ...
+
+Code family it deletes:
+  ...
+
+User loss:
+  ...
+
+Decision:
+  Refuse it / keep it because ...
+```
+
+The rule is deliberately pushy: if the product sentence survives and the code
+family disappears, default to refusal. Keep the feature only when the user loss
+is load-bearing.
+
+The auth fast-path decision is the model:
+
+```txt
+Product sentence:
+  all social sign-in routes through the API-hosted page via OAuth 2.1 PKCE.
+
+Candidate refusal:
+  browser SPAs can use Google GIS for a roughly 1-second sign-in.
+
+Code family it deletes:
+  signInWithIdToken
+  OIDCProvider narrowing
+  per-app GIS helpers
+  GIS browser failure UI
+  provider-specific SDK scaling for Apple and Microsoft
+  two social sign-in stories in docs and tests
+
+User loss:
+  Google sign-in is a few seconds slower in browser SPAs.
+
+Decision:
+  Refuse it. The UX loss is small; the second auth shape is permanent.
+```
+
+That is not "less product" in the way that matters. It is one fewer special
+case, traded for one stronger invariant.
+
+See `docs/articles/20260504T160541-support-fewer-features-when-a-feature-forces-a-second-shape.md`
+for the worked example (auth social sign-in, one small fast path refused so one
+OAuth 2.1 path can own every provider and environment).
 
 ## Scratch Redesign Pass
 
@@ -270,6 +366,8 @@ When making a clean break:
    the explicit product goal.
 7. Move invariants to construction time or type signatures when possible.
 8. Prefer lifecycle-shaped names over implementation-shaped names.
+9. Refuse small convenience features when they force a second shape that will
+   live forever.
 
 Compatibility is a feature. If nobody explicitly asked for that feature, do not
 smuggle it into the implementation.
@@ -358,6 +456,7 @@ Did I delete dead paths instead of leaving them unreachable?
 Did the file tree change to match the new ownership?
 Did every validation move to the earliest layer that can know the truth?
 Would mentally inlining each new helper make the code clearer?
+Did I ask whether supporting fewer features would collapse most of the code?
 ```
 
 If any answer is no, keep simplifying.

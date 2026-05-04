@@ -10,12 +10,14 @@
  * - invalid route declarations fail before binding a socket
  * - responsive legacy sockets return AlreadyRunning instead of being clobbered
  * - close stops the listener, removes the socket file, and can run twice
+ * - /run dispatches a real action handler over the Unix socket
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { defineQuery } from '../shared/actions.js';
 import { daemonClient } from './client.js';
 import { claimDaemonLease, type DaemonLease } from './lease.js';
 import { startDaemonServer } from './server.js';
@@ -26,9 +28,11 @@ let originalXdg: string | undefined;
 let runtimeRoot: string;
 let workDir: string;
 
-function makeRuntime(): DaemonRuntime {
+function makeRuntime(
+	actions: DaemonRuntime['actions'] = {},
+): DaemonRuntime {
 	return {
-		actions: {},
+		actions,
 		async [Symbol.asyncDispose]() {
 			/* no-op */
 		},
@@ -143,6 +147,32 @@ describe('startDaemonServer', () => {
 			await server.close();
 			await server.close();
 			expect(existsSync(server.socketPath)).toBe(false);
+		} finally {
+			if (serverResult.error === null) await serverResult.data.close();
+			lease.release();
+		}
+	});
+
+	test('run dispatches to a real action handler over the socket', async () => {
+		const lease = claimTestLease();
+		const runtime = makeRuntime({
+			echo: defineQuery({ handler: () => 'hello' }),
+		});
+		const serverResult = await startDaemonServer({
+			lease,
+			routes: [{ route: 'demo', runtime }],
+		});
+
+		try {
+			const server = expectStartedServer(serverResult);
+			const result = await daemonClient(server.socketPath).run({
+				actionPath: 'demo.echo',
+				input: null,
+				waitMs: 25,
+			});
+
+			expect(result.error).toBeNull();
+			expect(result.data).toBe('hello');
 		} finally {
 			if (serverResult.error === null) await serverResult.data.close();
 			lease.release();

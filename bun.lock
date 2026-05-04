@@ -516,6 +516,7 @@
       "dependencies": {
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/sync": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "wellcrafted": "catalog:",

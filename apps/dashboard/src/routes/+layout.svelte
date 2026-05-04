@@ -11,24 +11,24 @@
 	import '../app.css';
 
 	let { children } = $props();
-	const snapshot = $derived(auth.snapshot);
+	const identity = $derived(auth.identity);
 </script>
 
 <svelte:head><title>Billing: Epicenter</title></svelte:head>
 
 <QueryClientProvider client={queryClient}>
 	<div class="min-h-screen bg-background text-foreground">
-		{#if snapshot.status === 'signedIn'}
+		{#if identity}
 			<header class="border-b bg-background/95 backdrop-blur">
 				<div
 					class="mx-auto max-w-5xl px-6 flex items-center justify-between h-14"
 				>
 					<span class="text-sm font-semibold tracking-tight">Epicenter</span>
-					<UserMenu user={snapshot.session.user} />
+					<UserMenu user={identity.user} />
 				</div>
 			</header>
 			<div class="mx-auto max-w-5xl px-6 py-12">{@render children()}</div>
-		{:else if snapshot.status === 'signedOut'}
+		{:else}
 			<div class="flex min-h-screen items-center justify-center">
 				<Card.Root class="w-full max-w-sm p-6">
 					<AuthForm

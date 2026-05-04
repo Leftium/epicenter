@@ -20,18 +20,16 @@ export const AuthUser = type({
 
 export type AuthUser = typeof AuthUser.infer;
 
-/** Auth state persisted by browser, extension, and machine clients. */
-export const AuthSession = type({
+export type AuthIdentity = {
+	user: AuthUser;
+	encryptionKeys: EncryptionKeys;
+};
+
+/** Bearer auth state persisted by browser, extension, and machine clients. */
+export const BearerSession = type({
 	token: 'string',
 	user: AuthUser,
 	encryptionKeys: EncryptionKeys,
 });
 
-export type AuthSession = typeof AuthSession.infer;
-
-export type AuthSnapshot =
-	| { status: 'loading' }
-	| { status: 'signedOut' }
-	| { status: 'signedIn'; session: AuthSession };
-
-export type AuthSnapshotChangeListener = (snapshot: AuthSnapshot) => void;
+export type BearerSession = typeof BearerSession.infer;

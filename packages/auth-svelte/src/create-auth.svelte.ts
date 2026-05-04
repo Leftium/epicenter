@@ -1,7 +1,9 @@
 import {
 	type AuthClient as BaseAuthClient,
-	type CreateAuthConfig,
-	createAuth as createCoreAuth,
+	type CreateBearerAuthConfig,
+	type CreateCookieAuthConfig,
+	createBearerAuth as createCoreBearerAuth,
+	createCookieAuth as createCoreCookieAuth,
 } from '@epicenter/auth';
 
 export type AuthClient = BaseAuthClient;
@@ -9,26 +11,33 @@ export type AuthClient = BaseAuthClient;
 /**
  * Svelte 5 wrapper around `@epicenter/auth`.
  *
- * Mirrors the core snapshot into `$state` so templates and derived values can
- * read `auth.snapshot` reactively. The spread copies core methods, and the
- * later getter overrides the copied snapshot value.
+ * Mirrors the core identity into `$state` so templates and derived values can
+ * read `auth.identity` reactively. The spread copies core methods, and the
+ * later getter overrides the copied identity value.
  */
-export function createAuth(config: CreateAuthConfig): AuthClient {
-	const base = createCoreAuth(config);
-	let snapshot = $state(base.snapshot);
+function createReactiveAuth(base: BaseAuthClient): AuthClient {
+	let identity = $state(base.identity);
 
-	const unsubscribe = base.onSnapshotChange((next) => {
-		snapshot = next;
+	const unsubscribe = base.onChange((next) => {
+		identity = next;
 	});
 
 	return {
 		...base,
-		get snapshot() {
-			return snapshot;
+		get identity() {
+			return identity;
 		},
 		[Symbol.dispose]() {
 			unsubscribe();
 			base[Symbol.dispose]();
 		},
 	} satisfies AuthClient;
+}
+
+export function createBearerAuth(config: CreateBearerAuthConfig): AuthClient {
+	return createReactiveAuth(createCoreBearerAuth(config));
+}
+
+export function createCookieAuth(config: CreateCookieAuthConfig): AuthClient {
+	return createReactiveAuth(createCoreCookieAuth(config));
 }

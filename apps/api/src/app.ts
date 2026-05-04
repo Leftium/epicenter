@@ -4,7 +4,6 @@ import {
 } from '@better-auth/oauth-provider';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { APPS } from '@epicenter/constants/apps';
-import { extractBearerToken } from '@epicenter/sync';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -16,6 +15,7 @@ import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
+import { singleCredential } from './auth/single-credential';
 import {
 	renderConsentPage,
 	renderDevicePage,
@@ -163,6 +163,10 @@ const factory = createFactory<Env>({
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
 			await next();
 		});
+
+		// Layer 3: Single credential. Reject ambiguous auth and lift WS bearer
+		// subprotocols into Authorization. See {@link singleCredential} JSDoc.
+		app.use('*', singleCredential);
 	},
 });
 
@@ -269,25 +273,20 @@ app.get(
 );
 
 // Asset reads — unauthenticated (unguessable URL is the credential).
-// Must be mounted BEFORE authGuard so GET requests aren't blocked.
+// Must be mounted BEFORE requireSession so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
 
-// Auth guard for protected routes.
-//
-// Browsers can't set `Authorization` on WebSocket upgrades, so clients
-// smuggle the token as `sec-websocket-protocol: epicenter, bearer.<token>`.
-// When a bearer entry is present, synthesize an `Authorization` header for
-// Better Auth; otherwise pass the original headers through (cookie auth
-// still works for same-origin browser requests).
-const authGuard = factory.createMiddleware(async (c, next) => {
-	const token = extractBearerToken(c.req.raw.headers);
-	let headers = c.req.raw.headers;
-	if (token) {
-		headers = new Headers(headers);
-		headers.set('authorization', `Bearer ${token}`);
-	}
-	const result = await c.var.auth.api.getSession({ headers });
+// Require an authenticated session for protected routes. Assumes
+// {@link singleCredential} has already validated and normalized credentials,
+// so headers are guaranteed to carry at most one credential.
+const requireSession = factory.createMiddleware(async (c, next) => {
+	const result = await c.var.auth.api.getSession({
+		headers: c.req.raw.headers,
+	});
 	if (!result) {
+		// WebSocket clients need a structured close code so they can decide
+		// whether to refresh their token or surface a sign-in prompt. HTTP
+		// clients get the standard 401 JSON body.
 		if (c.req.header('upgrade') === 'websocket') {
 			const pair = new WebSocketPair();
 			const [client, server] = [pair[0], pair[1]];
@@ -302,14 +301,15 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 	c.set('session', result.session);
 	await next();
 });
-app.use('/ai/*', authGuard);
-app.use('/workspaces/*', authGuard);
-app.use('/documents/*', authGuard);
-app.use('/api/billing/*', authGuard);
-app.use('/api/assets/*', authGuard);
+
+app.use('/ai/*', requireSession);
+app.use('/workspaces/*', requireSession);
+app.use('/documents/*', requireSession);
+app.use('/api/billing/*', requireSession);
+app.use('/api/assets/*', requireSession);
 
 // Ensure Autumn customer exists and stash planId for model gating.
-// Runs after authGuard for AI routes so c.var.user is available.
+// Runs after requireSession for AI routes so c.var.user is available.
 app.use('/ai/*', async (c, next) => {
 	const autumn = createAutumn(c.env);
 	const customer = await autumn.customers.getOrCreate({
@@ -347,7 +347,7 @@ app.get('/dashboard', async (c) => {
 // Billing API routes — typed JSON routes consumed by the dashboard SPA via hc<AppType>
 app.route('/api/billing', billingRoutes);
 
-// Asset routes — upload + delete (authed, mounted after authGuard)
+// Asset routes — upload + delete (authed, mounted after requireSession)
 app.route('/api/assets', assetAuthedRoutes);
 
 // AI chat

@@ -1,6 +1,16 @@
 export {
+	createKeychainMachineAuthStorage,
 	createMachineAuth,
 	createMachineAuthClient,
 	type MachineAuth,
-	MachineAuthError,
+	type MachineAuthError,
+	type MachineAuthStorage,
+	type MachineAuthStorageBackend,
+	type MachineAuthStorageError,
 } from './node/machine-auth.js';
+export type {
+	DeviceCodeResponse,
+	DevicePollOutcome,
+	MachineAuthTransport,
+	MachineAuthTransportError,
+} from './node/machine-auth-transport.js';

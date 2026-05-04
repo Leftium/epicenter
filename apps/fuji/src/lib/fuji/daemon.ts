@@ -1,4 +1,3 @@
-import type { AuthClient } from '@epicenter/auth';
 import { createMachineAuthClient } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
@@ -8,7 +7,6 @@ import {
 	PeerIdentity,
 	type ProjectDir,
 	toWsUrl,
-	type WebSocketImpl,
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import {
@@ -31,40 +29,33 @@ export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 
 export type FujiDaemonOptions = {
 	route?: string;
-	auth?: AuthClient;
-	peer?: PeerIdentity;
-	webSocketImpl?: WebSocketImpl;
 };
-
-function defaultFujiDaemonPeer(): PeerIdentity {
-	return {
-		id: 'fuji-daemon',
-		name: 'Fuji Daemon',
-		platform: 'node',
-	};
-}
 
 export function defineFujiDaemon({
 	route = DEFAULT_FUJI_DAEMON_ROUTE,
-	auth = createMachineAuthClient(),
-	peer = defaultFujiDaemonPeer(),
-	webSocketImpl,
 }: FujiDaemonOptions = {}): DaemonRouteDefinition {
 	return {
 		route,
-		start({ projectDir }) {
+		async start({ projectDir }) {
+			const auth = await createMachineAuthClient();
 			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
 			attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
 			});
 			const awareness = attachAwareness(doc.ydoc, {
 				schema: { peer: PeerIdentity },
-				initial: { peer },
+				initial: {
+					peer: {
+						id: 'fuji-daemon',
+						name: 'Fuji Daemon',
+						platform: 'node',
+					},
+				},
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				auth,
-				webSocketImpl,
+				openWebSocket: auth.openWebSocket,
+				onCredentialChange: auth.onChange,
 				awareness,
 			});
 			const rpc = sync.attachRpc(doc.actions);

@@ -10,7 +10,7 @@
 		syncNoun,
 		onSocialSignIn,
 	}: {
-		/** The auth client instance from `createAuth()`. */
+		/** The auth client instance from `createCookieAuth()` or `createBearerAuth()`. */
 		auth: AuthClient;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;

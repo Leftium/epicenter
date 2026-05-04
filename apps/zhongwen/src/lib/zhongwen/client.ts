@@ -1,17 +1,12 @@
-import {
-	createAuth,
-	createSessionStorageAdapter,
-} from '@epicenter/auth-svelte';
+import { createCookieAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { toast } from '@epicenter/ui/sonner';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { session } from '$lib/auth';
 import { openZhongwen } from './browser';
 
-export const auth = createAuth({
+export const auth = createCookieAuth({
 	baseURL: APP_URLS.API,
-	sessionStorage: createSessionStorageAdapter(session),
 });
 
 export const zhongwen = openZhongwen();
@@ -19,7 +14,7 @@ export const zhongwen = openZhongwen();
 bindAuthWorkspaceScope({
 	auth,
 	syncControl: null,
-	applyAuthSession(session) {
+	applyAuthIdentity(session) {
 		zhongwen.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {

@@ -13,8 +13,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import {
-	authSessionFromBetterAuthSessionResponse,
-	normalizeAuthSession,
+	bearerSessionFromBetterAuthSessionResponse,
+	normalizeBearerSession,
 } from './auth-session.ts';
 
 const encryptionKeys: EncryptionKeys = [
@@ -53,11 +53,11 @@ function betterAuthSessionResponse() {
 	};
 }
 
-describe('normalizeAuthSession', () => {
+describe('normalizeBearerSession', () => {
 	test('normalizes Better Auth Date fields into the local session', () => {
 		const response = betterAuthSessionResponse();
 
-		const session = normalizeAuthSession(response, {
+		const session = normalizeBearerSession(response, {
 			token: 'authorization-token',
 		});
 
@@ -67,11 +67,11 @@ describe('normalizeAuthSession', () => {
 	});
 });
 
-describe('authSessionFromBetterAuthSessionResponse', () => {
+describe('bearerSessionFromBetterAuthSessionResponse', () => {
 	test('projects Better Auth custom session response into app session', () => {
 		const response = betterAuthSessionResponse();
 
-		const session = authSessionFromBetterAuthSessionResponse(response);
+		const session = bearerSessionFromBetterAuthSessionResponse(response);
 
 		expect(session).toEqual({
 			token: 'session-token',
@@ -89,15 +89,15 @@ describe('authSessionFromBetterAuthSessionResponse', () => {
 	});
 
 	test('returns null for signed-out Better Auth session response', () => {
-		expect(authSessionFromBetterAuthSessionResponse(null)).toBeNull();
-		expect(authSessionFromBetterAuthSessionResponse(undefined)).toBeNull();
+		expect(bearerSessionFromBetterAuthSessionResponse(null)).toBeNull();
+		expect(bearerSessionFromBetterAuthSessionResponse(undefined)).toBeNull();
 	});
 
 	test('throws when custom session response omits encryption keys', () => {
 		const response = betterAuthSessionResponse();
 
 		expect(() =>
-			authSessionFromBetterAuthSessionResponse({
+			bearerSessionFromBetterAuthSessionResponse({
 				user: response.user,
 				session: response.session,
 			}),

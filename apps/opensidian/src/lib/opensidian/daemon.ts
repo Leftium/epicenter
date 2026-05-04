@@ -1,4 +1,3 @@
-import type { AuthClient } from '@epicenter/auth';
 import { createMachineAuthClient } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
@@ -7,7 +6,6 @@ import {
 	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
-	type WebSocketImpl,
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
@@ -17,40 +15,33 @@ export const DEFAULT_OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 
 export type OpensidianDaemonOptions = {
 	route?: string;
-	auth?: AuthClient;
-	peer?: PeerIdentity;
-	webSocketImpl?: WebSocketImpl;
 };
-
-function defaultOpensidianDaemonPeer(): PeerIdentity {
-	return {
-		id: 'opensidian-daemon',
-		name: 'Opensidian Daemon',
-		platform: 'node',
-	};
-}
 
 export function defineOpensidianDaemon({
 	route = DEFAULT_OPENSIDIAN_DAEMON_ROUTE,
-	auth = createMachineAuthClient(),
-	peer = defaultOpensidianDaemonPeer(),
-	webSocketImpl,
 }: OpensidianDaemonOptions = {}): DaemonRouteDefinition {
 	return {
 		route,
-		start({ projectDir }) {
+		async start({ projectDir }) {
+			const auth = await createMachineAuthClient();
 			const doc = openOpensidianDoc({ clientID: hashClientId(projectDir) });
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
 			});
 			const awareness = attachAwareness(doc.ydoc, {
 				schema: { peer: PeerIdentity },
-				initial: { peer },
+				initial: {
+					peer: {
+						id: 'opensidian-daemon',
+						name: 'Opensidian Daemon',
+						platform: 'node',
+					},
+				},
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				auth,
-				webSocketImpl,
+				openWebSocket: auth.openWebSocket,
+				onCredentialChange: auth.onChange,
 				awareness,
 			});
 

@@ -1,19 +1,14 @@
 export {
-	AuthSession,
-	type AuthSnapshot,
-	type AuthSnapshotChangeListener,
+	type AuthIdentity,
 	AuthUser,
+	BearerSession,
 } from './auth-types.ts';
 export {
+	type AuthChangeListener,
 	type AuthClient,
 	AuthError,
-	type CreateAuthConfig,
-	createAuth,
-	createSessionStorageAdapter,
-	type SessionStateAdapter,
-	type SocialTokenPayload,
+	type CreateBearerAuthConfig,
+	type CreateCookieAuthConfig,
+	createBearerAuth,
+	createCookieAuth,
 } from './create-auth.ts';
-export type {
-	MaybePromise,
-	SessionStorage,
-} from './session-store.ts';

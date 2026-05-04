@@ -1,25 +1,13 @@
-import {
-	AuthSession,
-	createAuth,
-	createSessionStorageAdapter,
-} from '@epicenter/auth-svelte';
+import { createCookieAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createPersistedState } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { openFuji } from './browser';
 
-const session = createPersistedState({
-	key: 'fuji:authSession',
-	schema: AuthSession.or('null'),
-	defaultValue: null,
-});
-
-export const auth = createAuth({
+export const auth = createCookieAuth({
 	baseURL: APP_URLS.API,
-	sessionStorage: createSessionStorageAdapter(session),
 });
 
 export const fuji = openFuji({
@@ -34,7 +22,7 @@ export const fuji = openFuji({
 bindAuthWorkspaceScope({
 	auth,
 	syncControl: fuji.syncControl,
-	applyAuthSession(session) {
+	applyAuthIdentity(session) {
 		fuji.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {

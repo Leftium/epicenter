@@ -87,19 +87,28 @@ By default this runs against a local dev server. To run against the production s
 bun run dev:remote
 ```
 
+### Auth deployment
+
+The public `opensidian.com` app uses bearer auth because it runs on its own
+domain and cannot rely on the API server's first-party cookies. If the app moves
+behind a reverse proxy, configure `/auth/*` to proxy to
+`https://api.epicenter.so/auth/*`, then switch the app client to
+`createCookieAuth`. With that proxy in place, the browser sees auth as
+same-origin and the cookie-backed client can replace local bearer storage.
+
 ---
 
 ## Tech stack
 
-- [SvelteKit](https://kit.svelte.dev) — UI framework
-- [Yjs](https://yjs.dev) — CRDT engine (Y.Doc, Y.Array, Y.Map, Y.Text)
-- [CodeMirror 6](https://codemirror.net) — editor, with `y-codemirror.next` for Yjs binding
-- [just-bash](https://github.com/nicolo-ribaudo/just-bash) — bash interpreter in TypeScript
-- [Better Auth](https://better-auth.com) — authentication
-- [Tailwind CSS](https://tailwindcss.com) — styling
-- [Cloudflare Workers + Durable Objects](https://developers.cloudflare.com/durable-objects/) — sync server
-- `@epicenter/workspace` — CRDT-backed tables, versioning, E2E encryption
-- `@epicenter/filesystem` — POSIX filesystem layer over Yjs
+- [SvelteKit](https://kit.svelte.dev): UI framework
+- [Yjs](https://yjs.dev): CRDT engine (Y.Doc, Y.Array, Y.Map, Y.Text)
+- [CodeMirror 6](https://codemirror.net): editor, with `y-codemirror.next` for Yjs binding
+- [just-bash](https://github.com/nicolo-ribaudo/just-bash): bash interpreter in TypeScript
+- [Better Auth](https://better-auth.com): authentication
+- [Tailwind CSS](https://tailwindcss.com): styling
+- [Cloudflare Workers + Durable Objects](https://developers.cloudflare.com/durable-objects/): sync server
+- `@epicenter/workspace`: CRDT-backed tables, versioning, E2E encryption
+- `@epicenter/filesystem`: POSIX filesystem layer over Yjs
 
 ---
 

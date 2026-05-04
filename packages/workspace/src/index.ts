@@ -31,7 +31,8 @@
  * const sync = attachSync(ydoc, {
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
  *   waitFor: idb,
- *   auth,
+ *   openWebSocket: auth.openWebSocket,
+ *   onCredentialChange: auth.onChange,
  * });
  *
  * const noteBodyDocs = createDisposableCache(

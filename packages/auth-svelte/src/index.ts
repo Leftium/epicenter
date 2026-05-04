@@ -1,12 +1,14 @@
 export {
+	type AuthChangeListener,
 	AuthError,
-	AuthSession,
-	type AuthSnapshot,
-	type AuthSnapshotChangeListener,
+	type AuthIdentity,
 	AuthUser,
-	createSessionStorageAdapter,
-	type SessionStateAdapter,
-	type SessionStorage,
-	type SocialTokenPayload,
+	BearerSession,
+	type CreateBearerAuthConfig,
+	type CreateCookieAuthConfig,
 } from '@epicenter/auth';
-export { type AuthClient, createAuth } from './create-auth.svelte.ts';
+export {
+	type AuthClient,
+	createBearerAuth,
+	createCookieAuth,
+} from './create-auth.svelte.ts';

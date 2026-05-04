@@ -164,8 +164,7 @@ export function openApp({
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		openWebSocket: auth.openWebSocket,
-		onCredentialChange: auth.onChange,
+		auth,
 		awareness,
 	});
 	const actions = {};

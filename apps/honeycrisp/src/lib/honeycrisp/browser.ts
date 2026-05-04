@@ -60,8 +60,7 @@ export function openHoneycrisp({
 			const childSync = attachSync(ydoc, {
 				url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 				waitFor: childIdb.whenLoaded,
-				openWebSocket: auth.openWebSocket,
-				onCredentialChange: auth.onChange,
+				auth,
 			});
 
 			onLocalUpdate(ydoc, () => {
@@ -102,8 +101,7 @@ export function openHoneycrisp({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		openWebSocket: auth.openWebSocket,
-		onCredentialChange: auth.onChange,
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);

@@ -40,8 +40,7 @@ export function defineHoneycrispDaemon({
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				openWebSocket: auth.openWebSocket,
-				onCredentialChange: auth.onChange,
+				auth,
 				awareness,
 			});
 			const rpc = sync.attachRpc(doc.actions);

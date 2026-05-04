@@ -92,8 +92,7 @@ function openMyApp({
 	});
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
-		openWebSocket: auth.openWebSocket,
-		onCredentialChange: auth.onChange,
+		auth,
 		waitFor: idb.whenLoaded,
 		awareness,
 	});
@@ -132,7 +131,11 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
-			workspace.ydoc.destroy();
+			// The workspace bundle owns teardown order. Its disposer closes app
+			// resources and destroys the root Y.Doc, which tells attachments like
+			// sync, broadcast channel, and y-indexeddb to stop before local
+			// IndexedDB data is deleted.
+			workspace[Symbol.dispose]();
 			await workspace.clearLocalData();
 		} catch (error) {
 			console.error('Could not clear local data', extractErrorMessage(error));

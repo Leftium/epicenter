@@ -94,7 +94,7 @@ export type AuthClient = {
 	 *
 	 * Returns `null` when no credentials are currently available (signed out,
 	 * or bearer session not yet hydrated). Consumers like `attachSync` treat
-	 * `null` as "stay offline until the next `onCredentialChange`." It is not
+	 * `null` as "stay offline until the next auth change." It is not
 	 * an error condition.
 	 */
 	openWebSocket(

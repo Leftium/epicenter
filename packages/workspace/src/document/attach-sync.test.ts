@@ -110,7 +110,7 @@ function createCredentialSource(initiallySignedIn: boolean) {
 			if (!signedIn) return null;
 			return new FakeWebSocket(url, protocols);
 		},
-		onCredentialChange(listener: () => void) {
+		onChange(listener: () => void) {
 			listeners.add(listener);
 			return () => {
 				calls.push('unsubscribe');
@@ -293,8 +293,7 @@ describe('attachSync split surface', () => {
 		const credentials = createCredentialSource(true);
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			openWebSocket: credentials.source.openWebSocket,
-			onCredentialChange: credentials.source.onCredentialChange,
+			auth: credentials.source,
 		});
 
 		const first = await waitFor(() => FakeWebSocket.instances[0]);
@@ -320,8 +319,7 @@ describe('attachSync split surface', () => {
 		const credentials = createCredentialSource(true);
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			openWebSocket: credentials.source.openWebSocket,
-			onCredentialChange: credentials.source.onCredentialChange,
+			auth: credentials.source,
 		});
 
 		await waitFor(() => FakeWebSocket.instances[0]);
@@ -338,8 +336,7 @@ describe('attachSync split surface', () => {
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
 			waitFor: whenLoaded,
-			openWebSocket: credentials.source.openWebSocket,
-			onCredentialChange: credentials.source.onCredentialChange,
+			auth: credentials.source,
 		});
 
 		credentials.setSignedIn(true);
@@ -361,8 +358,7 @@ describe('attachSync split surface', () => {
 		const credentials = createCredentialSource(false);
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			openWebSocket: credentials.source.openWebSocket,
-			onCredentialChange: credentials.source.onCredentialChange,
+			auth: credentials.source,
 		});
 
 		await waitFor(() => credentials.calls.includes('open:signedOut'));

@@ -107,8 +107,7 @@ export function openOpensidian({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		openWebSocket: auth.openWebSocket,
-		onCredentialChange: auth.onChange,
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);

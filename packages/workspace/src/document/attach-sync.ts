@@ -202,6 +202,28 @@ export type WebSocketImpl = new (
 	protocols?: string | string[],
 ) => SyncWebSocket;
 
+/**
+ * Capability bundle for authenticated sync. Supplying `auth` declares that
+ * the connection requires credentials; absence means the supervisor opens an
+ * unauthenticated WebSocket with `webSocketImpl`.
+ */
+export type SyncAuth = {
+	/**
+	 * Open a WebSocket with this transport's credentials applied. Returns null
+	 * when no credentials are currently available; the supervisor stays offline
+	 * until `onChange` fires.
+	 */
+	openWebSocket(
+		url: string,
+		protocols?: string | string[],
+	): SyncWebSocket | null;
+	/**
+	 * Subscribe to credential-state changes that should trigger a reconnect.
+	 * Returns an unsubscribe function.
+	 */
+	onChange(handler: () => void): () => void;
+};
+
 export type SyncAttachmentConfig = {
 	/**
 	 * WebSocket URL for the room. Must use ws:/wss:. Use `toWsUrl()` to convert
@@ -217,17 +239,11 @@ export type SyncAttachmentConfig = {
 	 */
 	waitFor?: WaitForBarrier;
 	/**
-	 * Opens an authenticated WebSocket. Returning null means no credential is
-	 * available yet, so the supervisor remains offline until credentials change.
+	 * Authenticated transport capability. Returning null from
+	 * `auth.openWebSocket` means no credential is available yet, so the
+	 * supervisor remains offline until credentials change.
 	 */
-	openWebSocket?: (
-		url: string,
-		protocols?: string | string[],
-	) => SyncWebSocket | null;
-	/**
-	 * Subscribe to credential changes that should restart authenticated sync.
-	 */
-	onCredentialChange?: (handler: () => void) => () => void;
+	auth?: SyncAuth;
 	/**
 	 * WebSocket constructor. Tests can pass a stub to avoid dialing a server;
 	 * production uses `globalThis.WebSocket`.
@@ -306,7 +322,6 @@ export function attachSync(
 	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
 	let rpcActions: Record<string, unknown> | null = null;
 	const awareness = config.awareness?.raw ?? null;
-	const openWebSocket = config.openWebSocket;
 
 	const waitForPromise =
 		config.waitFor && 'whenLoaded' in config.waitFor
@@ -365,13 +380,6 @@ export function attachSync(
 			unsubFirstSettle();
 		}
 	});
-
-	/**
-	 * Whether this connection is authenticated. Inferred from the presence of
-	 * `openWebSocket`; supplying that capability declares that a signed-in
-	 * session is required. Without it, the supervisor connects unauthenticated.
-	 */
-	const requiresCredential = openWebSocket !== undefined;
 
 	/**
 	 * Cancellation hierarchy:
@@ -628,12 +636,12 @@ export function attachSync(
 	): Promise<'connected' | 'failed' | 'no-credential'> {
 		const wsUrl = config.url;
 		const subprotocols = [MAIN_SUBPROTOCOL];
-		const ws =
-			openWebSocket?.(wsUrl, subprotocols) ??
-			(requiresCredential
-				? null
-				: new (config.webSocketImpl ??
-						(globalThis.WebSocket as WebSocketImpl))(wsUrl, subprotocols));
+		const ws = config.auth
+			? config.auth.openWebSocket(wsUrl, subprotocols)
+			: new (config.webSocketImpl ?? (globalThis.WebSocket as WebSocketImpl))(
+					wsUrl,
+					subprotocols,
+				);
 		if (ws === null) return 'no-credential';
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
@@ -836,7 +844,7 @@ export function attachSync(
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
-	const unsubscribeCredentialChange = config.onCredentialChange?.(() => {
+	const unsubscribeAuthChange = config.auth?.onChange(() => {
 		queueMicrotask(reconnect);
 	});
 
@@ -876,7 +884,7 @@ export function attachSync(
 			);
 		});
 		try {
-			unsubscribeCredentialChange?.();
+			unsubscribeAuthChange?.();
 			ydoc.off('updateV2', handleDocUpdate);
 			awareness?.off('update', handleAwarenessUpdate);
 			const ws = websocket;

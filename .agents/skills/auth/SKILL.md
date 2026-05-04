@@ -105,8 +105,11 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
-			// Apps with child document caches dispose those caches first.
-			workspace.ydoc.destroy();
+			// The workspace bundle owns teardown order. Its disposer closes app
+			// resources and destroys the root Y.Doc, which tells attachments like
+			// sync, broadcast channel, and y-indexeddb to stop before local
+			// IndexedDB data is deleted.
+			workspace[Symbol.dispose]();
 			await workspace.clearLocalData();
 		} catch (error) {
 			reportCleanupError(error);
@@ -117,7 +120,7 @@ bindAuthWorkspaceScope({
 });
 ```
 
-Each `attachSync` is independently auth-aware through `openWebSocket` and `onCredentialChange`; no sync fan-out is needed. Keep destructive reset policy inside `resetLocalClient()`.
+Each `attachSync` is independently auth-aware through its `auth` namespace; no sync fan-out is needed. Keep destructive reset policy inside `resetLocalClient()`.
 
 ## Sync Authentication
 
@@ -127,13 +130,12 @@ Workspace sync takes auth capabilities, not tokens:
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 	waitFor: idb.whenLoaded,
-	openWebSocket: auth.openWebSocket,
-	onCredentialChange: auth.onChange,
+	auth,
 	awareness,
 });
 ```
 
-`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. Both factories return `null` from `openWebSocket` when no credentials are available; `attachSync` stays offline until the next `onCredentialChange`. `attachSync` never imports from `@epicenter/auth`, never reads a token, and reconnects when `onCredentialChange` fires.
+`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. Both factories return `null` from `openWebSocket` when no credentials are available; `attachSync` stays offline until the next `auth.onChange` event. `attachSync` never imports from `@epicenter/auth`, never reads a token, and reconnects when `auth.onChange` fires.
 
 `auth.fetch` follows the same transport rule internally:
 

@@ -1,7 +1,7 @@
 # Lazy Disposers, Bundle Owns Wipe
 
 **Date**: 2026-05-04
-**Status**: Proposed
+**Status**: Implemented
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth (or successor)
 **Builds on**: `specs/20260504T020000-workspace-identity-reset-deterministic-teardown.md` — the implemented teardown moved ORDER into the call site (`resetLocalClient`); this spec moves the order INSIDE the bundle and replaces `whenDisposed` with `Symbol.asyncDispose` backed by `lazy()`.
@@ -761,7 +761,7 @@ After Phase D lands, no source file (apps, packages, examples, playground, tests
 
 - [x] **F.3** Same drop in `packages/workspace/src/document/attach-yjs-log.ts`. Same JSDoc rephrasing.
 
-- [ ] **F.4** Verify with grep: `rg -n "whenDisposed" apps packages docs examples playground -S` should match only historical specs and articles.
+- [x] **F.4** Verify with grep: `rg -n "whenDisposed" apps packages docs examples playground -S` should match only historical specs and articles.
 
 ### Phase G: additional dead-surface trims (audit findings)
 
@@ -787,7 +787,7 @@ Independent of the `whenDisposed`/`wipe` work but folded in to keep the migratio
 - [x] **G.4** Remove `register` from the public `EncryptionAttachment` type at `packages/workspace/src/document/attach-encryption.ts:139`. The JSDoc already says `@internal Called by the coordinator's own ... methods and by test setup, not by application code.` Move it off the type but keep the implementation in the closure (still called by `attachTable`/`attachTables`/`attachKv`).
   - Migration: 3 test sites at `attach-encryption.test.ts:37,38,100` need to construct via `encryption.attachTable(...)` instead of `encryption.register(...)` directly.
 
-- [ ] **G.5** Verify by grep that the dropped surfaces have no remaining production readers:
+- [x] **G.5** Verify by grep that the dropped surfaces have no remaining production readers:
 
   ```sh
   rg -n "setLocalField|getLocalField|\.getLocal\(|\.getAll\(" apps packages -S | rg -v test
@@ -795,7 +795,7 @@ Independent of the `whenDisposed`/`wipe` work but folded in to keep the migratio
   rg -n "encryption\.whenDisposed|encryption\.register\(" apps packages -S | rg -v test
   ```
 
-  Expected: zero matches outside test files.
+  Result: `BroadcastChannelAttachment` and `encryption.whenDisposed` / `encryption.register(` are empty. `setLocalField` / `getLocalField` are empty. The broad `.getLocal(` / `.getAll(` pattern still matches unrelated table, KV, browser, benchmark, and historical spec uses; no remaining matches are AwarenessAttachment production readers.
 
 ### Out of scope (filed as follow-up)
 
@@ -804,15 +804,15 @@ Independent of the `whenDisposed`/`wipe` work but folded in to keep the migratio
 
 ### Phase E: docs and stragglers
 
-- [ ] **E.1** Update `docs/articles/20260422T160000-sync-dispose-cascade.md` — the article rejected per-attachment async dispose for safety-net reasons. Add a follow-up section (or new article) documenting that `lazy()` makes the cascade-vs-explicit overlap free, so per-attachment `Symbol.asyncDispose` is now coherent with the cascade safety net.
+- [x] **E.1** Update `docs/articles/20260422T160000-sync-dispose-cascade.md` — the article rejected per-attachment async dispose for safety-net reasons. Add a follow-up section (or new article) documenting that `lazy()` makes the cascade-vs-explicit overlap free, so per-attachment `Symbol.asyncDispose` is now coherent with the cascade safety net.
 
-- [ ] **E.2** Update `docs/architecture.md` line 146-156 (the `whenDisposed` documented contract).
+- [x] **E.2** Update `docs/architecture.md` line 146-156 (the `whenDisposed` documented contract).
 
-- [ ] **E.3** Update `packages/workspace/README.md` if it mentions `whenDisposed`.
+- [x] **E.3** Update `packages/workspace/README.md` if it mentions `whenDisposed`.
 
-- [ ] **E.4** Update `.agents/skills/attach-primitive/SKILL.md` and `.agents/skills/workspace-api/references/primitive-api.md` to document the new pattern (`Symbol.asyncDispose` for genuine async work, cascade only for sync).
+- [x] **E.4** Update `.agents/skills/attach-primitive/SKILL.md` and `.agents/skills/workspace-api/references/primitive-api.md` to document the new pattern (`Symbol.asyncDispose` for genuine async work, cascade only for sync).
 
-- [ ] **E.5** Run straggler greps:
+- [x] **E.5** Run straggler greps:
 
   ```sh
   rg -n "whenDisposed" apps packages docs examples playground -S
@@ -867,24 +867,24 @@ After Phase D, the CLI accepts any object whose shape matches the new umbrella. 
 
 ## Success criteria
 
-- [ ] `lazy()` lives at `packages/workspace/src/shared/lazy.ts`. No imports reference the old `y-keyvalue/lazy.ts` path.
-- [ ] No source file (apps, packages, examples, playground, tests) reads `attachment.whenDisposed`.
-- [ ] No source file declares `whenDisposed` on an attachment type.
-- [ ] No builder contains `let destroyPromise: Promise<void> | null = null` or equivalent.
-- [ ] `attachIndexedDb`, `attachSync`, `attachYjsLog` expose `[Symbol.asyncDispose]` instead of `whenDisposed`.
-- [ ] `ydoc.off('destroy', idb.destroy)` appears in `attachIndexedDb`.
-- [ ] Every browser bundle has `wipe()`. None has `clearLocalData()`.
-- [ ] Every browser `client.ts` `resetLocalClient` body is `try { await <bundle>.wipe() } catch ... finally { window.location.reload() }`. No comment block explaining ordering.
-- [ ] Every daemon's `Symbol.asyncDispose` reads `await sync[Symbol.asyncDispose]()`.
-- [ ] `hasDaemonRuntimeShape` in `packages/cli/src/load-config.ts` checks only `awareness.peers`, `awareness.observe`, `sync.onStatusChange`, `[Symbol.asyncDispose]`. Helpers `hasSyncStatusShape`, `hasSyncErrorShape`, `hasSyncFailedReasonShape` deleted. `isThenable` import dropped. `InvalidRouteRuntime.message` updated to match.
-- [ ] `DaemonRuntime` type at `packages/workspace/src/daemon/types.ts` UNCHANGED — fields stay because `daemon/app.ts` and `daemon/run-handler.ts` read them. Only the CLI's validator shrinks.
-- [ ] `AwarenessAttachment` no longer exposes `setLocalField`, `getLocalField`, `getLocal`, `getAll`.
-- [ ] `attachBroadcastChannel` returns `void`; `BroadcastChannelAttachment` type no longer exported.
-- [ ] `EncryptionAttachment` no longer exposes `whenDisposed` or `register` (register stays in the closure, off the public type).
-- [ ] `bun test packages/workspace` passes.
-- [ ] `bun test packages/auth-workspace` passes.
-- [ ] `bun run --filter @epicenter/workspace typecheck` passes.
-- [ ] `bun run --filter @epicenter/auth-workspace typecheck` passes.
+- [x] `lazy()` lives at `packages/workspace/src/shared/lazy.ts`. No imports reference the old `y-keyvalue/lazy.ts` path.
+- [x] No source file (apps, packages, examples, playground, tests) reads `attachment.whenDisposed`.
+- [x] No source file declares `whenDisposed` on an attachment type.
+- [x] No builder contains `let destroyPromise: Promise<void> | null = null` or equivalent.
+- [x] `attachIndexedDb`, `attachSync`, `attachYjsLog` expose `[Symbol.asyncDispose]` instead of `whenDisposed`.
+- [x] `ydoc.off('destroy', idb.destroy)` appears in `attachIndexedDb`.
+- [x] Every browser bundle has `wipe()`. None has `clearLocalData()`.
+- [x] Every browser `client.ts` `resetLocalClient` body is `try { await <bundle>.wipe() } catch ... finally { window.location.reload() }`. No comment block explaining ordering.
+- [x] Every daemon's `Symbol.asyncDispose` reads `await sync[Symbol.asyncDispose]()`.
+- [x] `hasDaemonRuntimeShape` in `packages/cli/src/load-config.ts` checks only `awareness.peers`, `awareness.observe`, `sync.onStatusChange`, `[Symbol.asyncDispose]`. Helpers `hasSyncStatusShape`, `hasSyncErrorShape`, `hasSyncFailedReasonShape` deleted. `isThenable` import dropped. `InvalidRouteRuntime.message` updated to match.
+- [x] `DaemonRuntime` type at `packages/workspace/src/daemon/types.ts` UNCHANGED — fields stay because `daemon/app.ts` and `daemon/run-handler.ts` read them. Only the CLI's validator shrinks.
+- [x] `AwarenessAttachment` no longer exposes `setLocalField`, `getLocalField`, `getLocal`, `getAll`.
+- [x] `attachBroadcastChannel` returns `void`; `BroadcastChannelAttachment` type no longer exported.
+- [x] `EncryptionAttachment` no longer exposes `whenDisposed` or `register` (register stays in the closure, off the public type).
+- [x] `bun test packages/workspace` passes.
+- [x] `bun test packages/auth-workspace` passes.
+- [x] `bun run --filter @epicenter/workspace typecheck` passes.
+- [x] `bun run --filter @epicenter/auth-workspace typecheck` passes.
 - [ ] Per-app typechecks pass.
 - [ ] Manual sign-out smoke on Fuji and Honeycrisp: open at least one entry/note (populating the cache), then sign out, verify clean reload, no `onblocked` warnings, no console errors.
 
@@ -973,13 +973,94 @@ bun run --filter @epicenter/tab-manager typecheck
 #    - fresh state shows (signed-out UI)
 ```
 
-## Open question for the author
+## Review
 
-The verb `wipe()` is my recommendation. Alternatives considered: `clearLocal()`, `purge()`, `destroy()`, `forgetMe()`, `decommission()`. If you prefer one of those, the rename is mechanical and confined to:
+**Completed**: 2026-05-04
+**Branch**: `feat/lazy-disposers-bundle-owns-wipe`
 
-- `BrowserWorkspace` type
-- One method per browser bundle (5 files)
-- One call site per browser app's `client.ts` (5 files)
-- Spec straggler greps
+### Summary
 
-Confirm `wipe()` before Phase B starts.
+The implementation moved `lazy()` to the shared package surface, put async attachment teardown behind `[Symbol.asyncDispose]()` backed by the same lazy cleanup path as the Y.Doc cascade, and moved identity reset ordering into browser bundle `wipe()` methods. Browser callers now use `await bundle.wipe()`; daemon callers await `sync[Symbol.asyncDispose]()`; the transitional `whenDisposed` alias is gone from live source.
+
+The cleanup also trimmed the CLI daemon-runtime validator to fields it invokes, removed the dead awareness helper methods, collapsed broadcast-channel attachment return type to `void`, and removed `whenDisposed` plus public `register` from encryption.
+
+### Commits
+
+- `3b40969e5` `refactor(workspace): add lazy async disposers`
+- `cba899c70` `refactor(workspace): add bundle wipe surface`
+- `a0d056f67` `refactor(workspace): migrate bundles to wipe`
+- `731256796` `refactor(cli): slim daemon runtime validation`
+- `ebe3c7d51` `refactor(workspace): remove whenDisposed aliases`
+- `09ad8197a` `refactor(workspace): trim awareness attachment surface`
+- `8d8f9eba3` `refactor(workspace): collapse broadcast channel attachment`
+- `9e016073b` `refactor(workspace): drop encryption disposal barrier`
+- `a9914b6f0` `refactor(workspace): hide encryption register`
+- `4f32f3f5c` `docs(workspace): refresh disposal guidance for wipe`
+
+### Verification
+
+Passed:
+
+```sh
+bun test packages/workspace
+bun test packages/workspace/src/document/attach-sync.test.ts
+bun test packages/workspace/src/document/attach-yjs-log.test.ts
+bun test packages/workspace/src/document/attach-yjs-log-reader.test.ts
+bun test packages/workspace/src/document/attach-encryption.test.ts
+bun test packages/auth-workspace
+bun test packages/auth-workspace/src/index.test.ts
+bun run --filter @epicenter/workspace typecheck
+bun run --filter @epicenter/auth-workspace typecheck
+```
+
+The workspace suite result was 664 pass, 2 todo, 0 fail.
+
+No matching test file exists for:
+
+```sh
+bun test packages/workspace/src/shared/lazy.ts
+bun test packages/workspace/src/document/attach-indexed-db.test.ts
+```
+
+Straggler greps:
+
+```sh
+rg -n "whenDisposed" apps packages docs examples playground -S
+rg -n "clearLocalData" apps packages docs -S
+```
+
+Both now match only historical specs and articles. Targeted source greps over `apps`, `packages/*/src`, `examples`, and `playground` are empty for `whenDisposed` and `clearLocalData`.
+
+Empty:
+
+```sh
+rg -n "isThenable" packages -S
+rg -n "let destroyPromise" packages -S
+rg -n "hasSyncStatusShape|hasSyncErrorShape|hasSyncFailedReasonShape" packages -S
+rg -n "idb\.clearData" packages -S
+rg -n "BroadcastChannelAttachment" apps packages -S
+rg -n "encryption\.whenDisposed|encryption\.register\(" apps packages -S | rg -v test
+```
+
+Awareness-surface grep:
+
+```sh
+rg -n "setLocalField|getLocalField|\.getLocal\(|\.getAll\(" apps packages -S | rg -v test
+```
+
+This pattern still reports unrelated `.getAll(` uses: table/KV APIs, browser window APIs, markdown materializers, benchmarks, README snippets, and historical specs. There are no remaining `setLocalField` / `getLocalField` matches and no AwarenessAttachment production readers.
+
+Blocked:
+
+```sh
+bun run --filter @epicenter/fuji typecheck
+bun run --filter @epicenter/honeycrisp typecheck
+bun run --filter opensidian check
+bun run --filter @epicenter/zhongwen typecheck
+bun run --filter @epicenter/tab-manager typecheck
+bun run --filter @epicenter/whispering typecheck
+```
+
+The app checks fail on existing shared Svelte/UI and app diagnostics outside this spec, including `packages/svelte-utils/src/from-table.svelte.ts`, `packages/ui/src/sonner/toast-on-error.ts`, `packages/ui` `#/utils.js` resolution, `Record` generic issues in UI components, and unrelated app-specific component errors.
+
+Manual smoke was not run because no authenticated browser session or throwaway credentials were available in this execution context.

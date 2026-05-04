@@ -3,15 +3,6 @@ import * as Y from 'yjs';
 
 export { BC_ORIGIN };
 
-export type BroadcastChannelAttachment = {
-	/**
-	 * Resolves after the Y.Doc is destroyed AND the BroadcastChannel is closed.
-	 * Named symmetrically with `attachIndexedDb`'s `whenDisposed` — opt-in signal
-	 * for tests and CLIs flushing before exit.
-	 */
-	whenDisposed: Promise<unknown>;
-};
-
 /**
  * BroadcastChannel cross-tab sync for a Yjs document.
  *
@@ -36,14 +27,12 @@ export type BroadcastChannelAttachment = {
 export function attachBroadcastChannel(
 	ydoc: Y.Doc,
 	{ transportOrigin }: { transportOrigin?: symbol } = {},
-): BroadcastChannelAttachment {
+): void {
 	if (typeof BroadcastChannel === 'undefined') {
-		return { whenDisposed: Promise.resolve() };
+		return;
 	}
 
 	const channel = new BroadcastChannel(`yjs:${ydoc.guid}`);
-	const { promise: whenDisposed, resolve: resolveDisposed } =
-		Promise.withResolvers<void>();
 
 	/** Broadcast local changes to other tabs.
 	 *  Skips updates from BroadcastChannel itself (echo prevention) and from
@@ -61,13 +50,7 @@ export function attachBroadcastChannel(
 	};
 
 	ydoc.once('destroy', () => {
-		try {
-			ydoc.off('updateV2', handleUpdate);
-			channel.close();
-		} finally {
-			resolveDisposed();
-		}
+		ydoc.off('updateV2', handleUpdate);
+		channel.close();
 	});
-
-	return { whenDisposed };
 }

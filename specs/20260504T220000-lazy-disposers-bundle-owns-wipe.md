@@ -775,7 +775,7 @@ Independent of the `whenDisposed`/`wipe` work but folded in to keep the migratio
 
   Migration cost: ~9 test sites in `packages/workspace/src/document/attach-awareness.test.ts`. The tests are testing capabilities no production caller exercises; either delete those tests or rewrite them to exercise `setLocal`/`peers`/`observe` (the surviving methods).
 
-- [ ] **G.2** Collapse `BroadcastChannelAttachment` return type to `void`. Every call site (`apps/*/browser.ts`) does `attachBroadcastChannel(ydoc)` and discards the return value. The type is dead surface.
+- [x] **G.2** Collapse `BroadcastChannelAttachment` return type to `void`. Every call site (`apps/*/browser.ts`) does `attachBroadcastChannel(ydoc)` and discards the return value. The type is dead surface.
   - `packages/workspace/src/document/attach-broadcast-channel.ts`: change function signature to return `void`. Drop the named `BroadcastChannelAttachment` type.
   - `packages/workspace/src/index.ts:191`: drop the `BroadcastChannelAttachment` export.
 

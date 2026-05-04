@@ -188,7 +188,6 @@ export {
 export {
 	attachBroadcastChannel,
 	BC_ORIGIN,
-	type BroadcastChannelAttachment,
 } from './document/attach-broadcast-channel.js';
 export {
 	attachEncryption,

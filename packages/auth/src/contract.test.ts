@@ -20,13 +20,20 @@ type BetterAuthSessionState = {
 };
 
 type BetterAuthClientOptions = {
+	baseURL?: string;
+	basePath?: string;
 	fetchOptions?: {
 		auth?: {
 			type: 'Bearer';
 			token: () => string | undefined;
 		};
 		onSuccess?: (context: { response: Response }) => void;
+		customFetchImpl?: typeof fetch;
 	};
+};
+type PerCallFetchOptions = {
+	headers?: RequestInit['headers'];
+	onSuccess?: (context: { response: Response }) => void;
 };
 
 let listeners = new Set<(state: BetterAuthSessionState) => void>();
@@ -68,10 +75,24 @@ mock.module('better-auth/client', () => ({
 					return { error: null };
 				},
 			},
-			signOut: async () => {
+			signOut: async (input?: { fetchOptions?: PerCallFetchOptions }) => {
 				calls.push({ method: 'signOut' });
-				return { error: null };
+				if (!options.fetchOptions?.customFetchImpl) return { error: null };
+				return callCustomFetch(options, '/sign-out', {
+					method: 'POST',
+					body: {},
+					fetchOptions: input?.fetchOptions,
+				});
 			},
+			deviceCode: (body: unknown) =>
+				callCustomFetch(options, '/device/code', { method: 'POST', body }),
+			deviceToken: (body: unknown) =>
+				callCustomFetch(options, '/device/token', { method: 'POST', body }),
+			getSession: (input?: { fetchOptions?: PerCallFetchOptions }) =>
+				callCustomFetch(options, '/get-session', {
+					method: 'GET',
+					fetchOptions: input?.fetchOptions,
+				}),
 		};
 	},
 	InferPlugin: () => ({}),
@@ -116,7 +137,48 @@ afterEach(() => {
 	globalThis.fetch = originalFetch;
 	globalThis.WebSocket = originalWebSocket;
 	console.error = originalConsoleError;
+	mock.restore();
 });
+
+async function callCustomFetch(
+	options: BetterAuthClientOptions,
+	path: string,
+	{
+		method,
+		body,
+		fetchOptions,
+	}: {
+		method: string;
+		body?: unknown;
+		fetchOptions?: PerCallFetchOptions;
+	},
+) {
+	const fetchImpl = options.fetchOptions?.customFetchImpl;
+	if (!fetchImpl) return { data: null, error: null };
+
+	const headers = new Headers(fetchOptions?.headers);
+	let requestBody: string | undefined;
+	if (body !== undefined) {
+		headers.set('content-type', 'application/json');
+		requestBody = JSON.stringify(body);
+	}
+
+	const response = await fetchImpl(
+		new URL(`${options.baseURL ?? ''}${options.basePath ?? ''}${path}`),
+		{ method, headers, body: requestBody },
+	);
+	if (response.ok) fetchOptions?.onSuccess?.({ response });
+
+	const text = await response.text();
+	let parsed: unknown = {};
+	try {
+		parsed = text ? JSON.parse(text) : {};
+	} catch {
+		parsed = { error: text };
+	}
+	if (response.ok) return { data: parsed, error: null };
+	return { data: null, error: parsed };
+}
 
 function session({
 	userId = 'user-1',

@@ -377,13 +377,13 @@ export function attachSync(
 	 * Cancellation hierarchy:
 	 *
 	 *   masterController: aborts on doc.destroy(); kills everything
-	 *      cycleController: aborts on pause() / reconnect();
+	 *      cycleController: aborts on reconnect();
 	 *                       kills the current supervisor iteration
 	 *
 	 * `cycleController` is replaced (not just re-aborted) by `reconnect()` so
 	 * the new connection cycle has a fresh signal unrelated to the old one.
-	 * Aborting an already-aborted controller is a no-op, which makes
-	 * pause-then-reconnect races structurally safe.
+	 * Aborting an already-aborted controller is a no-op, which makes repeated
+	 * reconnects structurally safe.
 	 */
 	const masterController = new AbortController();
 	let cycleController: AbortController = childOf(masterController.signal);

@@ -386,8 +386,8 @@ attachSync(doc, { url, getToken, waitFor: idb, awareness })
         ├── 3. Start the WebSocket supervisor loop
         │
         └── 4. Return attachment methods:
-               status, whenConnected, pause, reconnect,
-               attachRpc(actions)
+               status, whenConnected, reconnect,
+               whenDisposed, attachRpc(actions)
 ```
 
 The function returns synchronously. The first connect happens asynchronously after `waitFor` resolves (typically `idb.whenLoaded`).
@@ -426,7 +426,7 @@ const rpc = sync.attachRpc(workspace.actions);
 └────────────────────────┬────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────┐
-│  index.ts           (doc factory — pure)                │
+│  index.ts           (doc factory: pure)                 │
 │  ─ ydoc, encryption, tables, kv, actions                │
 │  ─ no network, no auth, no platform                     │
 └─────────────────────────────────────────────────────────┘
@@ -467,7 +467,7 @@ actions = {
 
 User and system actions are **structurally identical**: both built with `defineQuery`/`defineMutation`, both reachable via `rpc.rpc(target, '<path>', ...)`. The dispatcher (`resolveActionPath`) doesn't distinguish.
 
-The only thing that separates them is the reservation: a top-level `system` key in *your* actions throws at construction. The reservation is shallow (only top-level), follows JSON-RPC's `rpc.*` precedent, and the snapshot is taken at attach time — post-attach mutations to `userActions` don't affect dispatch.
+The only thing that separates them is the reservation: a top-level `system` key in *your* actions throws at construction. The reservation is shallow (only top-level), follows JSON-RPC's `rpc.*` precedent, and the snapshot is taken at attach time. Post-attach mutations to `userActions` don't affect dispatch.
 
 ## Awareness vs RPC: what's where
 
@@ -511,7 +511,7 @@ Awareness carries `{id, name, platform}` only. The action manifest moved to `sys
                        └───────────┬───────────┘
                                    │
         ┌──────────────────────────▼──────────────────────────┐
-        │  CONNECTED — four timers run in parallel             │
+        │  CONNECTED: four timers run in parallel              │
         ├──────────────────────────────────────────────────────┤
         │                                                      │
         │  PING_INTERVAL_MS = 60_000                           │
@@ -537,7 +537,7 @@ Awareness carries `{id, name, platform}` only. The action manifest moved to `sys
                        │  base 500ms           │
                        │  × 2^retries          │
                        │  capped at 30_000     │
-                       │  jittered 0.5–1.0     │
+                       │  jittered 0.5-1.0     │
                        └───────────┬───────────┘
                                    │
                                    └──→ back to top
@@ -568,10 +568,9 @@ masterController
 `masterController` aborts when the Y.Doc is destroyed. That kills every current
 and future connection cycle.
 
-`cycleController` aborts when `pause()` or `reconnect()` changes the current
-connection intent. `reconnect()` replaces it with a fresh child controller before
-starting the supervisor again, so a stale await cannot open a socket for an old
-cycle.
+`cycleController` aborts when `reconnect()` changes the current connection
+intent. `reconnect()` replaces it with a fresh child controller before starting
+the supervisor again, so a stale await cannot open a socket for an old cycle.
 
 After awaited boundaries, the loop checks that the captured signal is still the
 current cycle signal. Without this thread, a stale token from an awaited
@@ -586,7 +585,7 @@ handshake.
 | `whenConnected` | First successful handshake (STEP2 or UPDATE arrives) | Doc destroyed before first handshake (permanent failure) |
 | `whenDisposed` | Supervisor exits AND WebSocket reaches CLOSED (or 1s safety timeout fires) | Never |
 
-`whenConnected` was previously "may hang forever" — fixed to reject on dispose so CLIs that `await sync.whenConnected` get a useful failure instead of a wedge.
+`whenConnected` was previously "may hang forever": fixed to reject on dispose so CLIs that `await sync.whenConnected` get a useful failure instead of a wedge.
 
 ## RPC: peer dispatch surface
 

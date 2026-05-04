@@ -197,7 +197,7 @@ export type AuthWorkspaceScopeOptions = {
 };
 ```
 
-`composeSyncControls`, `SyncControl` (the named base type), the `syncControl` field on every `BrowserWorkspace`, and the inline `pause`/`reconnect` shadowing in `SyncAttachment` are all deleted.
+`composeSyncControls`, `SyncControl` (the named base type), the `syncControl` field on every `BrowserWorkspace`, and the orphaned `pause()` method on `SyncAttachment` are all deleted.
 
 ## Architecture: the new teardown sequence
 
@@ -300,7 +300,8 @@ After `ydoc.destroy()`, every later operation is operating on a dead workspace. 
 | `auth-workspace` parameter | Drop `syncControl` | Wave 1 invariant: sync owns its own offline state. After deterministic reset, the pause is provably redundant. |
 | Both `pause()` calls | Delete | Cold null was always a no-op; reset-path pause was narrowing a race that no longer exists once `ydoc.destroy()` is the synchronous teardown. |
 | `composeSyncControls` | Delete | No source caller. Was a pre-emptive helper that no app adopted. |
-| `SyncControl` named base type | Inline `pause`/`reconnect` into `SyncAttachment` and delete | Earned nothing once `composeSyncControls` is gone. The methods stay; the named alias goes. |
+| `SyncControl` named base type | Inline `reconnect` into `SyncAttachment` and delete | Earned nothing once `composeSyncControls` is gone. |
+| `SyncAttachment.pause()` | Delete | No source caller remained after deterministic reset. A future manual offline mode should be designed as a real feature, not preserved as an orphaned method. |
 | `BrowserWorkspace.syncControl` | Strip the field | No source consumer after the parameter goes. |
 | Conditional `reload()` | Move to `finally` | Reload is the real teardown; making it conditional broke the load-bearing invariant. |
 | `appliedIdentity: { userId } \| null` | Collapse to `appliedUserId: string \| null` | Wrapping object stored only the userId. |
@@ -397,8 +398,6 @@ export type SyncAttachment = {
   whenConnected: Promise<unknown>;
   readonly status: SyncStatus;
   onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
-  /** Close the websocket, stop the supervisor, and transition to offline. */
-  pause(): void;
   /** Force a fresh connection with new credentials (supervisor restarts iteration). */
   reconnect(): void;
   whenDisposed: Promise<unknown>;
@@ -559,10 +558,10 @@ After Phase A, every app reset is deterministic. The pauses still exist but are 
   - Same commit: delete `packages/workspace/src/document/sync-control.ts`.
   - Same commit: delete `packages/workspace/src/document/sync-control.test.ts`.
 
-- [x] **B.4 (one commit)** Inline `pause`/`reconnect` into `SyncAttachment`; delete `SyncControl`:
+- [x] **B.4 (one commit)** Inline `reconnect` into `SyncAttachment`; delete `SyncControl`:
   - `packages/workspace/src/document/attach-sync.ts:128-131`: delete `export type SyncControl = { pause; reconnect };`.
   - `:133`: change `export type SyncAttachment = SyncControl & { ... }` to `export type SyncAttachment = { ... }`.
-  - The shadowing `pause()` and `reconnect()` declarations inside `SyncAttachment` (with their JSDoc) remain as the canonical declarations.
+  - `reconnect()` remains on `SyncAttachment`; `pause()` is dropped in Round 5 because no source caller remains.
 
 ### Phase C: Internal renames
 
@@ -592,7 +591,7 @@ After Phase A, every app reset is deterministic. The pauses still exist but are 
 
 ### App-admin "Click to reconnect" button
 
-`packages/svelte-utils/src/account-popover/account-popover.svelte` reads `sync.status` and calls `sync.reconnect()` directly off the `SyncAttachment`. After Phase B.4, `pause()` and `reconnect()` are still declared on `SyncAttachment` (they were always there; this spec only removes the named base type alias `SyncControl`). The popover is unchanged.
+`packages/svelte-utils/src/account-popover/account-popover.svelte` reads `sync.status` and calls `sync.reconnect()` directly off the `SyncAttachment`. The popover is unchanged because it never called `pause()`.
 
 ### CLI and daemon
 
@@ -754,7 +753,7 @@ After implementation:
 
 The implementation installed the deterministic reset sequence in every auth-bound browser app. Fuji, Honeycrisp, and Opensidian dispose cached child documents before destroying the parent `ydoc`; Zhongwen and Tab Manager destroy only the parent document before clearing local data. Every reset path reloads in `finally` and does not await `sync.whenDisposed` or `idb.whenDisposed`.
 
-The cleanup phases removed the `syncControl` binding parameter, app call sites, bundle fields, `BrowserWorkspace.syncControl`, the `composeSyncControls` helper, and the named `SyncControl` alias. `pause()` and `reconnect()` remain part of `SyncAttachment` for direct sync UI, daemon, CLI, and test use.
+The cleanup phases removed the `syncControl` binding parameter, app call sites, bundle fields, `BrowserWorkspace.syncControl`, the `composeSyncControls` helper, the named `SyncControl` alias, and the unused `SyncAttachment.pause()` method. `reconnect()` remains part of `SyncAttachment` for direct sync UI, daemon, CLI, and test use.
 
 ### Commits
 
@@ -803,24 +802,24 @@ The original spec ran four rounds of grilling before implementation. A fifth rou
 
 #### 5.1: `SyncAttachment.pause()` was provably dead
 
-After Phase B dropped the cold-null pause and the reset-path pause, no source caller of `pause()` remained anywhere in the repo. The method declaration, body, and returned property survived the cleanup as orphaned API. Statements in earlier sections of this spec (e.g., the original line in "App-admin Click to reconnect button" edge case that said *"After Phase B.4, `pause()` and `reconnect()` are still declared on `SyncAttachment`"*) are accurate as a record of what was planned, but no longer accurate as a description of the code. Round 5 dropped `pause()` entirely:
+After Phase B dropped the cold-null pause and the reset-path pause, no source caller of `pause()` remained anywhere in the repo. The method declaration, body, and returned property survived the cleanup as orphaned API. Round 5 dropped `pause()` entirely:
 
 - `packages/workspace/src/document/attach-sync.ts`: removed the JSDoc + type declaration, the function body (`cycleController.abort(); manageWindowListeners('remove'); status.set({ phase: 'offline' });`), and the `pause,` line in the returned `SyncAttachment` object.
 
-`reconnect()` stays — `packages/svelte-utils/src/account-popover/account-popover.svelte` calls it from the "Reconnect" button, and `attach-sync.ts` itself queues it via `onCredentialChange`.
+`reconnect()` stays: `packages/svelte-utils/src/account-popover/account-popover.svelte` calls it from the "Reconnect" button, and `attach-sync.ts` itself queues it via `onCredentialChange`.
 
 #### 5.2: `isTerminal` renamed to `isResetting`
 
 Internal flag in `packages/auth-workspace/src/index.ts`. The state-machine metaphor "terminal" required readers to understand the reset-then-reload lifecycle to parse. `isResetting` directly names what the flag gates: a reset has begun, and nothing else should run until the page reloads. Five-line rename + one test docstring update. Behavior unchanged. References to `isTerminal` elsewhere in this spec body (in code blocks and prose) reflect the as-planned shape; the as-implemented shape uses `isResetting`.
 
-#### 5.3: tab-manager service-worker reload semantics — verified safe
+#### 5.3: tab-manager service-worker reload semantics: verified safe
 
 Open question from the original review: `window.location.reload()` from a Chrome extension popup reloads the popup, not the service worker. If the workspace lived (even partially) in the background script, the previous user's state would persist across reset.
 
-Verified: `apps/tab-manager/src/entrypoints/background.ts` is minimal — its only job is `browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`. The header comment confirms the architecture: *"All Y.Doc, browser event listeners, sync, and command consumer logic has been consolidated into the side panel context."*
+Verified: `apps/tab-manager/src/entrypoints/background.ts` is minimal: its only job is `browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`. The header comment confirms the architecture: *"All Y.Doc, browser event listeners, sync, and command consumer logic has been consolidated into the side panel context."*
 
 Tab-manager's workspace lives entirely in the side panel. `window.location.reload()` reloads the side panel, which is exactly where the workspace lives. No service-worker state to flush. The canonical reset shape is correct as-is.
 
 #### Status of stale references in this spec
 
-Lines that read "isTerminal" or describe `pause()` as still declared on `SyncAttachment` are now stale relative to merged code. Left in place because they're accurate to the as-planned design and the spec itself is the historical record. Round 5 above is the canonical description of the as-implemented shape.
+Lines that read "isTerminal" are historical notes from the as-planned design. The as-implemented shape uses `isResetting`. References that described `pause()` as still declared on `SyncAttachment` were updated in the main body because they described the current surface, not historical motivation.

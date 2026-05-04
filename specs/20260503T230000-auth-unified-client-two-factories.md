@@ -1,10 +1,11 @@
 # Auth Unified Client, Two Transport Factories
 
 **Date**: 2026-05-03
-**Status**: Draft (revised after Better Auth research)
+**Status**: Implemented (Waves 1-6; app/manual verification blocked)
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth
 **Supersedes**: `specs/20260503T213238-auth-cookie-bearer-two-products-clean-break.md`
+**Sibling specs**: `specs/20260504T010000-drop-redirect-sign-in-gis-migration.md` (per-app GIS migration), `specs/20260504T020000-workspace-identity-reset-deterministic-teardown.md` (Wave-5 carryover; replaces the partial reset path with a deterministic teardown sequence)
 
 ## One-Sentence Test
 
@@ -164,7 +165,7 @@ Both factories return a sync `AuthClient`. The caller awaits any storage read be
 | `createBearerAuth` | Factory for runtimes without a usable cookie jar (extension, CLI, daemon, cross-domain SPA). Owns its token via caller-resolved `initialSession`. | `@epicenter/auth` |
 | `singleCredential` | API-side header normalizer. Returns `ok | mixed | none`. | `apps/api` |
 
-`AuthSession`, `AuthSnapshot`, `createAuth` cease to exist. `signInWithSocialRedirect` stays on the surface for now; removal is a follow-up wave after the factory split lands, so each browser app's Google Identity Services migration can ship independently. There is no exported `TokenStorage` or generic storage abstraction; persistence is the caller's concern, expressed as two callbacks. `BearerSession` is exported as an arktype schema so callers can validate persisted blobs.
+`AuthSession`, `AuthSnapshot`, `createAuth` cease to exist. `signInWithSocialRedirect` stays on the surface for the duration of this spec; its removal is tracked in `specs/20260504T010000-drop-redirect-sign-in-gis-migration.md` (per-app GIS migration ships independently). There is no exported `TokenStorage` or generic storage abstraction; persistence is the caller's concern, expressed as two callbacks. `BearerSession` is exported as an arktype schema so callers can validate persisted blobs.
 
 **The boundary is at construction.** Two factories, two construction shapes, two effects (cookie vs bearer). After construction, `AuthClient` is uniform and consumers cannot distinguish which factory produced it. The bearer token, the cookie jar, and the storage adapter all live below this boundary. `AuthClient` carries identity and capabilities; nothing transport-shaped leaks above the construction line.
 
@@ -318,7 +319,7 @@ apps/whispering      none for now        (Tauri; out of scope)
 
 ## Implementation Plan
 
-End state is one design. Seven waves; each one compiles and tests pass at the end of the wave. The wave order is **load-bearing**:
+End state is one design. Six waves; each one compiles and tests pass at the end of the wave. The wave order is **load-bearing**:
 
 ```
 Wave 1   Capabilities (additive)         introduces openWebSocket, whenReady; migrates
@@ -330,8 +331,9 @@ Wave 4   Server enforcement              singleCredential + reject mixed.
                                          Safe ONLY because clients migrated in Wave 3.
 Wave 5   Cleanup                         delete legacy files, move shared types.
 Wave 6   Verify                          full typecheck, contract test, smoke.
-Wave 7   Drop redirect (follow-up)       per-app GIS migration; ships independently.
 ```
+
+The redirect-sign-in removal that previously rode here as "Wave 7" is now `specs/20260504T010000-drop-redirect-sign-in-gis-migration.md`. It ships independently per app and finishes with one auth-package deletion commit.
 
 Two ordering invariants:
 
@@ -362,16 +364,16 @@ This wave is purely additive. `AuthClient` gains two new members, `attachSync` m
 
 This wave removes the legacy state shape and renames the listener API. `attachSync` was decoupled in Wave 1, so nothing in `packages/workspace` blocks this; the affected files are auth-svelte, auth-workspace, app UI components, and app storage code (about ten files in lockstep).
 
-- [ ] **2.1** Replace `AuthSnapshot` with `identity: AuthIdentity | null` on `AuthClient`. Drop the `signedOut`/`signedIn` discriminator. The bearer token, tracked internally, is no longer reachable via the public surface.
-- [ ] **2.2** Replace `AuthSession` (the public type) with `AuthIdentity` (`{ user, encryptionKeys }`). Add `BearerSession` (`{ token, user, encryptionKeys }`) as an exported arktype schema for caller-side storage validation. The factory keeps using `BearerSession` internally.
-- [ ] **2.3** Rename `onSnapshotChange` → `onChange`. Internal `setSnapshot` becomes `setIdentity`. The equality check compares `user` and `encryptionKeys` only; token rotation no longer fires the listener.
-- [ ] **2.4** Drop `whenLoaded`. Only `whenReady` remains. (Wave 1 added it as an alias; this commit removes the old name.)
-- [ ] **2.5** Update `packages/auth-svelte/src/create-auth.svelte.ts`: expose `identity` instead of `snapshot`; bind the Svelte `$state` mirror to `onChange`.
-- [ ] **2.6** Update `packages/auth-workspace/src/index.ts`: consume `identity` (its bindings read `identity.user.id` and `identity.encryptionKeys` instead of `session.user.id` and `session.encryptionKeys`).
-- [ ] **2.7** Update each app's sync wiring: `onCredentialChange: auth.onSnapshotChange` becomes `onCredentialChange: auth.onChange`.
-- [ ] **2.8** Update apps' storage code: `AuthSession.or('null')` becomes `BearerSession.or('null')`. The schema is identical; only the name changes.
-- [ ] **2.9** Update apps' UI components that read `auth.snapshot`: switch to `auth.identity`. Affected files include `apps/zhongwen/src/routes/+page.svelte`, `apps/opensidian/src/lib/components/AppShell.svelte`, `apps/tab-manager/src/lib/components/AiDrawer.svelte`, `apps/dashboard/src/routes/+layout.svelte`, and `packages/svelte-utils/src/account-popover/account-popover.svelte`.
-- [ ] **2.10** Adapt tests in `packages/auth/src/create-auth.test.ts` and `packages/auth-workspace/src/index.test.ts`.
+- [x] **2.1** Replace `AuthSnapshot` with `identity: AuthIdentity | null` on `AuthClient`. Drop the `signedOut`/`signedIn` discriminator. The bearer token, tracked internally, is no longer reachable via the public surface.
+- [x] **2.2** Replace `AuthSession` (the public type) with `AuthIdentity` (`{ user, encryptionKeys }`). Add `BearerSession` (`{ token, user, encryptionKeys }`) as an exported arktype schema for caller-side storage validation. The factory keeps using `BearerSession` internally.
+- [x] **2.3** Rename `onSnapshotChange` → `onChange`. Internal `setSnapshot` becomes `setIdentity`. The equality check compares `user` and `encryptionKeys` only; token rotation no longer fires the listener.
+- [x] **2.4** Drop `whenLoaded`. Only `whenReady` remains. (Wave 1 added it as an alias; this commit removes the old name.)
+- [x] **2.5** Update `packages/auth-svelte/src/create-auth.svelte.ts`: expose `identity` instead of `snapshot`; bind the Svelte `$state` mirror to `onChange`.
+- [x] **2.6** Update `packages/auth-workspace/src/index.ts`: consume `identity` (its bindings read `identity.user.id` and `identity.encryptionKeys` instead of `session.user.id` and `session.encryptionKeys`).
+- [x] **2.7** Update each app's sync wiring: `onCredentialChange: auth.onSnapshotChange` becomes `onCredentialChange: auth.onChange`.
+- [x] **2.8** Update apps' storage code: `AuthSession.or('null')` becomes `BearerSession.or('null')`. The schema is identical; only the name changes.
+- [x] **2.9** Update apps' UI components that read `auth.snapshot`: switch to `auth.identity`. Affected files include `apps/zhongwen/src/routes/+page.svelte`, `apps/opensidian/src/lib/components/AppShell.svelte`, `apps/tab-manager/src/lib/components/AiDrawer.svelte`, `apps/dashboard/src/routes/+layout.svelte`, and `packages/svelte-utils/src/account-popover/account-popover.svelte`.
+- [x] **2.10** Adapt tests in `packages/auth/src/create-auth.test.ts` and `packages/auth-workspace/src/index.test.ts`.
 
 **Per-wave verification (Wave 2)**:
 
@@ -384,7 +386,7 @@ This wave removes the legacy state shape and renames the listener API. `attachSy
 
 - [x] **3.1** Rename `createAuth` → `createBearerAuth`. Contract is `{ baseURL?, initialSession: BearerSession | null, saveSession: (next) => MaybePromise<void> }`. Internals: `auth: { type: 'Bearer' }` config on Better Auth client; `fetch` uses `credentials: 'omit'` and sets `Authorization` from the in-memory token; `openWebSocket` adds `bearer.<token>` to subprotocols; `onSuccess` hook reads `set-auth-token` and writes through.
 - [x] **3.2** Add `createCookieAuth({ baseURL?, initialIdentity?, saveIdentity? })`. Internals: no `auth: { type: 'Bearer' }` on the underlying Better Auth client; `fetch` uses `credentials: 'include'`, never sets `Authorization`; `openWebSocket` returns plain `new WebSocket(url, protocols)` when `identity` is non-null and `null` otherwise. If `initialIdentity` is provided, `auth.identity` returns that value until `useSession` first fires. `saveIdentity` is called on identity changes.
-- [x] **3.3** Migrate `apps/{dashboard,fuji,honeycrisp,zhongwen}` to `createCookieAuth`. Optional offline UX: hydrate `initialIdentity` from `localStorage` and wire `saveIdentity` to write back. Sign-in still uses `signInWithSocialRedirect` (GIS migration is Wave 7).
+- [x] **3.3** Migrate `apps/{dashboard,fuji,honeycrisp,zhongwen}` to `createCookieAuth`. Optional offline UX: hydrate `initialIdentity` from `localStorage` and wire `saveIdentity` to write back. Sign-in still uses `signInWithSocialRedirect` (redirect removal tracked separately in the GIS-migration spec).
 - [x] **3.4** Migrate `apps/opensidian` to `createBearerAuth({ initialSession, saveSession })` with a `localStorage` adapter (validate the read with the exported `BearerSession` schema; treat parse failure as `null`). Document the reverse-proxy upgrade path in the app's README.
 - [x] **3.5** Migrate `apps/tab-manager` to `createBearerAuth({ initialSession, saveSession })` with a `chrome.storage.local` adapter. Caller awaits the storage read before construction; pre-existing pattern.
 - [x] **3.6** Migrate `apps/*/daemon.ts` to `createBearerAuth`. `packages/cli` likewise. Caller awaits OS keychain read first.
@@ -414,31 +416,21 @@ After Wave 3, no client double-sends credentials. The server still tolerates mix
 
 ### Wave 5: Cleanup
 
-- [ ] **5.1** Delete `packages/auth/src/auth-types.ts` (`AuthSession`, `AuthSnapshot` no longer exist).
-- [ ] **5.2** Move shared types to `packages/auth/src/shared/` (`AuthUser`, `AuthError`, `BetterAuthSessionResponse`).
-- [ ] **5.3** Update `.agents/skills/auth/SKILL.md` to describe the two-factory model and the Better Auth grounding section above.
-- [ ] **5.4** Grep for `from '@epicenter/auth'` and confirm no consumer imports `createAuth`, `AuthSnapshot`, `AuthSession`.
-- [ ] **5.5** Update `docs/architecture.md` and `docs/guides/consuming-epicenter-api.md`.
+- [x] **5.1** Delete `packages/auth/src/auth-types.ts` (`AuthSession`, `AuthSnapshot` no longer exist).
+- [x] **5.2** Move shared types to `packages/auth/src/contracts/` (`AuthUser`, `AuthError`, `BetterAuthSessionResponse`).
+- [x] **5.3** Update `.agents/skills/auth/SKILL.md` to describe the two-factory model and the Better Auth grounding section above.
+- [x] **5.4** Grep for `from '@epicenter/auth'` and confirm no consumer imports `createAuth`, `AuthSnapshot`, `AuthSession`.
+- [x] **5.5** Update `docs/architecture.md` and `docs/guides/consuming-epicenter-api.md`.
 
 ### Wave 6: Verify
 
-- [ ] **6.1** `bun run --filter @epicenter/auth typecheck`
-- [ ] **6.2** `bun run --filter @epicenter/auth-svelte typecheck`
-- [ ] **6.3** `bun run --filter @epicenter/auth-workspace typecheck`
-- [ ] **6.4** `bun run --filter @epicenter/workspace typecheck`
-- [ ] **6.5** Per-app typechecks for dashboard, fuji, honeycrisp, opensidian, zhongwen, tab-manager.
-- [ ] **6.6** Add a shared contract test (`packages/auth/src/contract.test.ts`) parameterized over both factories, exercising every public method against a mocked Better Auth client. Drift prevention.
+- [x] **6.1** `bun run --filter @epicenter/auth typecheck`
+- [x] **6.2** `bun run --filter @epicenter/auth-svelte typecheck`
+- [x] **6.3** `bun run --filter @epicenter/auth-workspace typecheck`
+- [x] **6.4** `bun run --filter @epicenter/workspace typecheck`
+- [ ] **6.5** Per-app typechecks for dashboard, fuji, honeycrisp, opensidian, zhongwen, tab-manager. Blocked by pre-existing shared UI, Svelte, result-shape, and app-local diagnostics unrelated to this spec.
+- [x] **6.6** Add a shared contract test (`packages/auth/src/contract.test.ts`) parameterized over both factories, exercising every public method against a mocked Better Auth client. Drift prevention.
 - [ ] **6.7** Manual smoke: dashboard signs in via cookies; opensidian signs in via bearer; tab-manager signs in via bearer; CLI device flow signs in via bearer. Each WS sync establishes against the new server normalizer.
-
-### Wave 7: Drop redirect sign-in (follow-up; can ship later)
-
-- [ ] **7.1** Add a Google Identity Services helper to each browser app: `apps/{dashboard,fuji,honeycrisp,opensidian,zhongwen}/src/lib/auth/get-google-id-token.ts`. Returns `{ provider: 'google', idToken, nonce }` via GIS popup or one-tap.
-- [ ] **7.2** Replace each app's `signInWithSocialRedirect` call with `signInWithIdToken(await getGoogleIdToken())`.
-- [ ] **7.3** Drop `signInWithSocialRedirect` from `AuthClient`.
-- [ ] **7.4** Drop `SocialSignInFailed`'s redirect-flow producer.
-- [ ] **7.5** Update tests, mocks, and the auth skill.
-
-This wave ships independently. Doing it in the same branch as Waves 1-6 is fine if convenient, but the factory split is the load-bearing change and should not be gated on per-app GIS work.
 
 ## Edge Cases
 
@@ -554,11 +546,11 @@ The caller is responsible for parse validation before calling the factory. If th
 
 ## Success Criteria
 
-- [ ] No source file imports `createAuth`, `AuthSession`, or `AuthSnapshot` from `@epicenter/auth` or `@epicenter/auth-svelte`.
-- [ ] No source file imports anything from `@epicenter/auth` inside `packages/workspace/`.
-- [ ] `AuthClient` interface has zero methods or properties that expose the bearer token.
-- [ ] `apps/api/src/app.ts` `authGuard` calls `singleCredential` and rejects mixed credentials.
-- [ ] `bun run --filter @epicenter/auth test` passes, including the shared contract test.
+- [x] No source file imports `createAuth`, `AuthSession`, or `AuthSnapshot` from `@epicenter/auth` or `@epicenter/auth-svelte`.
+- [x] No runtime source file imports anything from `@epicenter/auth` inside `packages/workspace/`.
+- [x] `AuthClient` interface has zero methods or properties that expose the bearer token.
+- [x] `apps/api/src/app.ts` `authGuard` calls `singleCredential` and rejects mixed credentials.
+- [x] `bun run --filter @epicenter/auth test` passes, including the shared contract test.
 - [ ] Each migrated app typechecks (modulo pre-existing unrelated failures).
 - [ ] Manual smoke: dashboard cookie sign-in; opensidian bearer sign-in; tab-manager bearer sign-in; CLI device flow; each WS sync establishes against the new server normalizer.
 

@@ -63,25 +63,33 @@ In app clients such as `apps/tab-manager/src/lib/tab-manager/client.ts`, `bindAu
 ```ts
 bindAuthWorkspaceScope({
 	auth,
-	sync: tabManager.sync,
-	applyAuthSession(session) {
-		tabManager.encryption.applyKeys(session.encryptionKeys);
+	applyAuthIdentity(identity) {
+		tabManager.encryption.applyKeys(identity.encryptionKeys);
 		void registerDevice();
 	},
 	async resetLocalClient() {
 		try {
-			await tabManager.idb.clearLocal();
-			window.location.reload();
+			// The workspace bundle owns teardown order. Its disposer destroys the
+			// root Y.Doc, which tells attachments like sync, broadcast channel, and
+			// y-indexeddb to stop before local IndexedDB data is deleted.
+			tabManager[Symbol.dispose]();
+			// This is safe after disposal. y-indexeddb deletes by database name,
+			// and any row data needed to compute child document names remains
+			// readable from memory after Y.Doc.destroy(); disposal has already
+			// stopped observers and providers.
+			await tabManager.clearLocalData();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });
 ```
 The order matters.
-The binding calls `applyAuthSession(session)` before reconnecting sync.
+The binding calls `applyAuthIdentity(identity)` when a signed-in identity is active.
 
 ## Key lifecycle in the current code
 Keys are definitely loaded on login.
@@ -92,18 +100,27 @@ The logout path in the app clients is:
 ```ts
 bindAuthWorkspaceScope({
 	auth,
-	sync: workspace.sync,
-	applyAuthSession(session) {
-		workspace.encryption.applyKeys(session.encryptionKeys);
+	applyAuthIdentity(identity) {
+		workspace.encryption.applyKeys(identity.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
-			await workspace.idb.clearLocal();
-			window.location.reload();
+			// The workspace bundle owns teardown order. Its disposer closes app
+			// resources and destroys the root Y.Doc, which tells attachments like
+			// sync, broadcast channel, and y-indexeddb to stop before local
+			// IndexedDB data is deleted.
+			workspace[Symbol.dispose]();
+			// This is safe after disposal. y-indexeddb deletes by database name,
+			// and any row data needed to compute child document names remains
+			// readable from memory after Y.Doc.destroy(); disposal has already
+			// stopped observers and providers.
+			await workspace.clearLocalData();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });
@@ -111,7 +128,7 @@ bindAuthWorkspaceScope({
 So these points are implemented and verifiable:
 - keys are loaded on login
 - app reset code wipes the configured local IndexedDB stores on logout or user switch
-- sync pauses before the reset path runs
+- reset destroys the workspace document before local storage is cleared, which shuts down attached sync paths
 This point is not visible as an explicit step in the reviewed code:
 - clearing the in-memory encryption state after logout
 That gap matters because the encrypted wrapper exposes `activateEncryption()` but no `deactivateEncryption()`.

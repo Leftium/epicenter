@@ -31,8 +31,7 @@
  * const sync = attachSync(ydoc, {
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
  *   waitFor: idb,
- *   openWebSocket: auth.openWebSocket,
- *   onCredentialChange: auth.onChange,
+ *   auth,
  * });
  *
  * const noteBodyDocs = createDisposableCache(
@@ -222,14 +221,13 @@ export {
 	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
-	type SyncControl,
+	type SyncAuth,
 	SyncFailedError,
 	type SyncFailedReason,
 	type SyncRpcAttachment,
 	type SyncStatus,
 	toWsUrl,
 	type WaitForBarrier,
-	type WebSocketImpl,
 } from './document/attach-sync.js';
 export {
 	attachReadonlyTable,
@@ -275,7 +273,6 @@ export {
 	type ResolvedPeer,
 } from './document/peer-identity.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
-export { composeSyncControls } from './document/sync-control.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

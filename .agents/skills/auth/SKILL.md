@@ -100,22 +100,31 @@ import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: workspace.syncControl,
 	applyAuthIdentity(identity) {
 		workspace.encryption.applyKeys(identity.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
+			// The workspace bundle owns teardown order. Its disposer closes app
+			// resources and destroys the root Y.Doc, which tells attachments like
+			// sync, broadcast channel, and y-indexeddb to stop before local
+			// IndexedDB data is deleted.
+			workspace[Symbol.dispose]();
+			// This is safe after disposal. y-indexeddb deletes by database name,
+			// and any row data needed to compute child document names remains
+			// readable from memory after Y.Doc.destroy(); disposal has already
+			// stopped observers and providers.
 			await workspace.clearLocalData();
-			window.location.reload();
 		} catch (error) {
 			reportCleanupError(error);
+		} finally {
+			window.location.reload();
 		}
 	},
 });
 ```
 
-The app owns concrete resource composition. Pass `syncControl: null` when there is no authenticated sync attachment. For root plus child documents, pass a small inline object whose `pause()` and `reconnect()` methods call every active sync surface. Keep destructive reset policy inside `resetLocalClient()`.
+Each `attachSync` is independently auth-aware through its `auth` namespace; no sync fan-out is needed. Keep destructive reset policy inside `resetLocalClient()`.
 
 ## Sync Authentication
 
@@ -125,13 +134,12 @@ Workspace sync takes auth capabilities, not tokens:
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 	waitFor: idb.whenLoaded,
-	openWebSocket: auth.openWebSocket,
-	onCredentialChange: auth.onChange,
+	auth,
 	awareness,
 });
 ```
 
-`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. Both factories return `null` from `openWebSocket` when no credentials are available; `attachSync` treats `null` as "pause and reconnect on the next `onCredentialChange`." `attachSync` never imports from `@epicenter/auth`, never reads a token, and reconnects when `onCredentialChange` fires.
+`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. Both factories return `null` from `openWebSocket` when no credentials are available; `attachSync` stays offline until the next `auth.onChange` event. `attachSync` never imports from `@epicenter/auth`, never reads a token, and reconnects when `auth.onChange` fires.
 
 `auth.fetch` follows the same transport rule internally:
 

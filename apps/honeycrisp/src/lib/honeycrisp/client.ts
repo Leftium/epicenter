@@ -21,18 +21,27 @@ export const honeycrisp = openHoneycrisp({
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: honeycrisp.syncControl,
 	applyAuthIdentity(session) {
 		honeycrisp.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {
+			// The workspace bundle owns teardown order. Its disposer closes child
+			// document caches and destroys the root Y.Doc, which tells attachments
+			// like sync, broadcast channel, and y-indexeddb to stop before local
+			// IndexedDB data is deleted.
+			honeycrisp[Symbol.dispose]();
+			// This is safe after disposal. y-indexeddb deletes by database name,
+			// and any row data needed to compute child document names remains
+			// readable from memory after Y.Doc.destroy(); disposal has already
+			// stopped observers and providers.
 			await honeycrisp.clearLocalData();
-			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });

@@ -1,4 +1,4 @@
-import { createMachineAuth } from '@epicenter/auth/node';
+import { loadMachineSession } from '@epicenter/auth/node';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import { attachEncryption, type ProjectDir } from '@epicenter/workspace';
 import {
@@ -24,10 +24,9 @@ export type OpenFujiSnapshotOptions = {
 };
 
 async function loadMachineOfflineEncryptionKeys(): Promise<EncryptionKeys | null> {
-	const machineAuth = createMachineAuth();
-	const { data, error } = await machineAuth.getEncryptionKeys();
+	const { data: session, error } = await loadMachineSession();
 	if (error) throw error;
-	return data;
+	return session?.encryptionKeys ?? null;
 }
 
 export async function openFujiSnapshot({

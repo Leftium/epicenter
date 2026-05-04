@@ -539,6 +539,59 @@ When the record is used once, inline it. When it's shared or has 5+ entries, ext
 
 See `docs/articles/record-lookup-over-nested-ternaries.md` for rationale.
 
+## Compose Errors Bottom-Up, Don't Filter Top-Down
+
+`Extract<MyUnion, { name: 'X' }>` on a union you defined is a code smell. It says the union was composed too wide; the method that needs the narrow type is patching the over-typing at its signature instead of fixing the source.
+
+```typescript
+// Smell — one wide union, methods filter it back down
+export const TransportError = defineErrors({
+	RequestFailed:             ({ cause }) => ({...}),
+	DeviceCodeExpired:         () => ({...}),
+	DeviceAccessDenied:        () => ({...}),
+	DeviceAuthorizationFailed: ({ code, description }) => ({...}),
+});
+
+return {
+	async requestDeviceCode(): Promise<
+		Result<DeviceCodeResponse, Extract<TransportError, { name: 'RequestFailed' }>>
+	> { ... },
+};
+```
+
+The fix is bottom-up: define error types per fault domain, infer per-method return types from the bodies, let the union appear at the boundary that actually needs it.
+
+```typescript
+// Better — fault domains as their own unions, no extract anywhere
+export const RequestError = defineErrors({
+	RequestFailed: ({ cause }) => ({...}),
+});
+export const DeviceTokenError = defineErrors({
+	DeviceCodeExpired:         () => ({...}),
+	DeviceAccessDenied:        () => ({...}),
+	DeviceAuthorizationFailed: ({ code, description }) => ({...}),
+});
+
+return {
+	async requestDeviceCode() {
+		// body only constructs RequestError.RequestFailed
+		// → infers Result<DeviceCodeResponse, RequestError>
+	},
+	async pollDeviceToken() {
+		// body constructs RequestError AND DeviceTokenError variants
+		// → infers Result<DevicePollOutcome, RequestError | DeviceTokenError>
+	},
+};
+```
+
+The narrow types weren't extracted from a wide one. They were composed bottom-up; the wide one stopped existing. Callers that need the wide union get it where the pieces meet (e.g., a coordinator that calls all four methods naturally lands on the union of every error its callees can produce).
+
+`Extract<>` is the right tool when the union is upstream and you can't redefine it: `Extract<keyof JSX.IntrinsicElements, 'div' | 'section'>`, `Extract<NodeJS.ErrnoException['code'], 'ENOENT' | 'EACCES'>`. The smell is when *you* defined the union and *you* are filtering it back down — that's a sign you owned the composition and composed it wrong.
+
+The test: do I own this union? If yes, split it. If no, `Extract<>` is fine.
+
+See `docs/articles/20260504T100000-extract-is-the-tell-you-composed-top-down.md` for rationale.
+
 ## Silent Fallback Smell
 
 Not all `??` expressions are safe defaults. When the fallback creates **state that other systems depend on**, the nullish coalescing hides a broken invariant.

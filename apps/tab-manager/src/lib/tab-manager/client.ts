@@ -66,19 +66,27 @@ async function registerDevice(): Promise<void> {
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: tabManager.syncControl,
 	applyAuthIdentity(session) {
 		tabManager.encryption.applyKeys(session.encryptionKeys);
 		void registerDevice();
 	},
 	async resetLocalClient() {
 		try {
+			// The workspace bundle owns teardown order. Its disposer destroys the
+			// root Y.Doc, which tells attachments like sync, broadcast channel, and
+			// y-indexeddb to stop before local IndexedDB data is deleted.
+			tabManager[Symbol.dispose]();
+			// This is safe after disposal. y-indexeddb deletes by database name,
+			// and any row data needed to compute child document names remains
+			// readable from memory after Y.Doc.destroy(); disposal has already
+			// stopped observers and providers.
 			await tabManager.clearLocalData();
-			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });

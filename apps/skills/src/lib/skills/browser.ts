@@ -44,19 +44,6 @@ export function openSkillsBrowser() {
 		},
 		{ gcTime: 5_000 },
 	);
-	async function clearInstructionsLocalData() {
-		await Promise.all(
-			doc.tables.skills.getAllValid().map((skill) =>
-				clearDocument(
-					skillInstructionsDocGuid({
-						workspaceId: doc.ydoc.guid,
-						skillId: skill.id,
-					}),
-				),
-			),
-		);
-	}
-
 	const referenceDocs = createDisposableCache(
 		(referenceId: string) => {
 			const ydoc = new Y.Doc({
@@ -82,18 +69,6 @@ export function openSkillsBrowser() {
 		},
 		{ gcTime: 5_000 },
 	);
-	async function clearReferenceLocalData() {
-		await Promise.all(
-			doc.tables.references.getAllValid().map((reference) =>
-				clearDocument(
-					referenceContentDocGuid({
-						workspaceId: doc.ydoc.guid,
-						referenceId: reference.id,
-					}),
-				),
-			),
-		);
-	}
 
 	const actions = createSkillsActions({
 		tables: doc.tables,
@@ -117,9 +92,28 @@ export function openSkillsBrowser() {
 		actions,
 		whenReady: idb.whenLoaded,
 		async clearLocalData() {
-			await clearInstructionsLocalData();
-			await clearReferenceLocalData();
-			await idb.clearLocal();
+			await Promise.all([
+				// Skill instruction docs use their own IndexedDB document names.
+				...doc.tables.skills.getAllValid().map((skill) =>
+					clearDocument(
+						skillInstructionsDocGuid({
+							workspaceId: doc.ydoc.guid,
+							skillId: skill.id,
+						}),
+					),
+				),
+				// Reference content docs use their own IndexedDB document names.
+				...doc.tables.references.getAllValid().map((reference) =>
+					clearDocument(
+						referenceContentDocGuid({
+							workspaceId: doc.ydoc.guid,
+							referenceId: reference.id,
+						}),
+					),
+				),
+				// The workspace IndexedDB helper only clears the root doc.
+				idb.clearLocal(),
+			]);
 		},
 		[Symbol.dispose]() {
 			instructionsDocs[Symbol.dispose]();

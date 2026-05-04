@@ -1,5 +1,4 @@
 import type * as Y from 'yjs';
-import type { SyncControl } from '../document/attach-sync.js';
 
 export type Workspace = Disposable & {
 	readonly id: string;
@@ -8,6 +7,5 @@ export type Workspace = Disposable & {
 };
 
 export type BrowserWorkspace = Workspace & {
-	readonly syncControl: SyncControl;
 	clearLocalData(): Promise<void>;
 };

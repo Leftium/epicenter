@@ -336,10 +336,8 @@ import {
 Node-side auth helpers live in `@epicenter/auth/node`:
 
 ```ts
-import {
-	createMachineAuth,
-	createMachineAuthClient,
-} from '@epicenter/auth/node';
+import { createMachineAuthClient } from '@epicenter/auth/node';
+import * as machineAuth from '@epicenter/auth/node/machine-auth';
 ```
 
 ## Design docs

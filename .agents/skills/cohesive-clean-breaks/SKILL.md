@@ -1,6 +1,6 @@
 ---
 name: cohesive-clean-breaks
-description: Use when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Guides agents to preserve a clear product and code vision, reject hybrid compromise APIs, mentally inline abstractions, remove stale names, use dependency injection and inversion of control deliberately, move abstraction boundaries, and keep invariants owned by one layer.
+description: Use when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Also use when a code smell or defensive mechanism feels wrong and the local fix keeps growing: ask what the code is compensating for, go up a level, find the missing invariant, eliminate behaviors instead of patching them. Triggers on phrases like "deeper violation", "go up a level", "what is this compensating for", "eliminate this behavior", "move the boundary", "this smell wont die", "the local fix is growing". Guides agents to preserve a clear product and code vision, reject hybrid compromise APIs, mentally inline abstractions, remove stale names, use dependency injection and inversion of control deliberately, move abstraction boundaries, and keep invariants owned by one layer.
 ---
 
 # Cohesive Clean Breaks
@@ -55,6 +55,44 @@ ownership usually becomes drift.
 If the same invariant is checked in several downstream files, move it to
 construction time, validation, or the type signature. Repeated defensive checks
 usually mean the boundary is too late.
+
+## Deeper Violation Pass
+
+Before patching a smell locally, ask what it is compensating for. Defensive
+code is a receipt for a missing invariant one layer up. A microtask-window
+pause, a try/catch that toasts and keeps running, a `Pick<Thing, 'method'>`
+parameter, a "did we finish loading" boolean: each one is paying off something
+the layer above does not enforce. Name the invariant before deleting the code.
+
+Ask in this order:
+
+```txt
+What is this code compensating for?
+Why is this violation a problem? Go up one more level.
+What if we eliminate this behavior entirely?
+Where could the boundary that owns this invariant move?
+What would Better Auth, Yjs, Hono, or Rust do here?
+```
+
+Two heuristics for when this pass is required, not optional:
+
+```txt
+A small clean-up keeps growing as you implement it.
+A "drop one option" needs a parameter threaded through five files.
+```
+
+That growth is the signal that the smell was not local. Stop, restate the
+one-sentence description, and re-scope before continuing.
+
+The corollary keeps the pass pragmatic: when the deep fix is the same size
+as the surface fix, the surface fix is correct. The audit's value is not
+bigger diffs. The audit's value is the difference between "the surface fix
+would have left two of these alive" and "the deep fix collapses six surfaces
+into one."
+
+See `docs/articles/20260504T030000-when-the-smell-wont-die-go-up-a-level.md`
+for the worked example (workspace identity reset, six surfaces collapsed
+into one deterministic teardown).
 
 ## Scratch Redesign Pass
 

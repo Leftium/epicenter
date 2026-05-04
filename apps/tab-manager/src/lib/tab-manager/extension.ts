@@ -51,8 +51,7 @@ export async function openTabManager({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		openWebSocket: auth.openWebSocket,
-		onCredentialChange: auth.onChange,
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);
@@ -63,7 +62,6 @@ export async function openTabManager({
 		idb,
 		awareness,
 		sync,
-		syncControl: sync,
 		async clearLocalData() {
 			await idb.clearLocal();
 		},

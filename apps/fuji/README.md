@@ -21,7 +21,7 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
-Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `bindAuthWorkspaceScope(...)`, so encryption keys, local cleanup, and sync reconnects follow one transition path.
+Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `bindAuthWorkspaceScope(...)`, so encryption keys and deterministic local cleanup follow one transition path while sync reacts to auth changes through `attachSync`.
 
 ```ts
 export function openFuji() {
@@ -53,7 +53,7 @@ export function openFuji() {
 export const workspace = openFuji();
 ```
 
-`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `auth.identity` and `bindAuthWorkspaceScope` in `apps/fuji/src/lib/fuji/client.ts`, where the app composes sync pause, key application, reconnect, and local reset policy.
+`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `auth.identity` and `bindAuthWorkspaceScope` in `apps/fuji/src/lib/fuji/client.ts`, where the app composes key application and deterministic reset: bundle disposal, `clearLocalData()`, and reload.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/client.ts`.
 

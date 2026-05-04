@@ -60,8 +60,7 @@ export function openHoneycrisp({
 			const childSync = attachSync(ydoc, {
 				url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 				waitFor: childIdb.whenLoaded,
-				openWebSocket: auth.openWebSocket,
-				onCredentialChange: auth.onChange,
+				auth,
 			});
 
 			onLocalUpdate(ydoc, () => {
@@ -83,18 +82,6 @@ export function openHoneycrisp({
 		},
 		{ gcTime: 5_000 },
 	);
-	async function clearNoteBodyLocalData() {
-		await Promise.all(
-			doc.tables.notes.getAllValid().map((note) =>
-				clearDocument(
-					noteBodyDocGuid({
-						workspaceId: doc.ydoc.guid,
-						noteId: note.id,
-					}),
-				),
-			),
-		);
-	}
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
@@ -102,8 +89,7 @@ export function openHoneycrisp({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		openWebSocket: auth.openWebSocket,
-		onCredentialChange: auth.onChange,
+		auth,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);
@@ -115,10 +101,20 @@ export function openHoneycrisp({
 		noteBodyDocs,
 		awareness,
 		sync,
-		syncControl: sync,
 		async clearLocalData() {
-			await clearNoteBodyLocalData();
-			await idb.clearLocal();
+			await Promise.all([
+				// Note body docs use their own IndexedDB document names.
+				...doc.tables.notes.getAllValid().map((note) =>
+					clearDocument(
+						noteBodyDocGuid({
+							workspaceId: doc.ydoc.guid,
+							noteId: note.id,
+						}),
+					),
+				),
+				// The workspace IndexedDB helper only clears the root doc.
+				idb.clearLocal(),
+			]);
 		},
 		remote,
 		rpc,

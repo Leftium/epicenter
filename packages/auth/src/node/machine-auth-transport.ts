@@ -7,14 +7,19 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
-import type { BearerSession } from '../auth-types.js';
 import { normalizeBearerSession } from '../contracts/auth-session.js';
 
-export const MachineAuthTransportError = defineErrors({
+export const MachineAuthRequestError = defineErrors({
 	RequestFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Auth transport request failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
+});
+export type MachineAuthRequestError = InferErrors<
+	typeof MachineAuthRequestError
+>;
+
+export const DeviceTokenError = defineErrors({
 	DeviceCodeExpired: () => ({
 		message: 'Device code expired. Run login again.',
 	}),
@@ -33,9 +38,7 @@ export const MachineAuthTransportError = defineErrors({
 		description,
 	}),
 });
-export type MachineAuthTransportError = InferErrors<
-	typeof MachineAuthTransportError
->;
+export type DeviceTokenError = InferErrors<typeof DeviceTokenError>;
 
 const DeviceCodeResponse = type({
 	device_code: 'string',
@@ -53,7 +56,7 @@ const DeviceTokenSuccess = type({
 	'token_type?': 'string',
 });
 
-const DeviceTokenError = type({
+const DeviceTokenErrorResponse = type({
 	error: 'string',
 	'error_description?': 'string',
 });
@@ -96,7 +99,7 @@ export function createMachineAuthTransport({
 		body?: unknown;
 		token?: string;
 	}): Promise<
-		Result<{ data: unknown; response: Response }, MachineAuthTransportError>
+		Result<{ data: unknown; response: Response }, MachineAuthRequestError>
 	> {
 		const { data: fetched, error: fetchError } = await tryAsync({
 			try: async () => {
@@ -110,27 +113,27 @@ export function createMachineAuthTransport({
 				});
 				return { response, text: await response.text() };
 			},
-			catch: (cause) => MachineAuthTransportError.RequestFailed({ cause }),
+			catch: (cause) => MachineAuthRequestError.RequestFailed({ cause }),
 		});
 		if (fetchError) return Err(fetchError);
 		const { response, text } = fetched;
 
 		if (!response.ok) {
-			return MachineAuthTransportError.RequestFailed({
+			return MachineAuthRequestError.RequestFailed({
 				cause: new Error(
 					`${method} ${path} failed (${response.status}): ${text.slice(0, 200)}`,
 				),
 			});
 		}
 		if (!text) {
-			return MachineAuthTransportError.RequestFailed({
+			return MachineAuthRequestError.RequestFailed({
 				cause: new Error(`${method} ${path}: empty response body`),
 			});
 		}
 		return trySync({
 			try: () => ({ data: JSON.parse(text) as unknown, response }),
 			catch: (cause) =>
-				MachineAuthTransportError.RequestFailed({
+				MachineAuthRequestError.RequestFailed({
 					cause: new Error(
 						`${method} ${path}: invalid JSON response: ${text.slice(0, 200)}`,
 						{ cause },
@@ -140,9 +143,7 @@ export function createMachineAuthTransport({
 	}
 
 	return {
-		async requestDeviceCode(): Promise<
-			Result<DeviceCodeResponse, MachineAuthTransportError>
-		> {
+		async requestDeviceCode() {
 			const { data: response, error } = await requestJson({
 				method: 'POST',
 				path: '/auth/device/code',
@@ -151,7 +152,7 @@ export function createMachineAuthTransport({
 			if (error) return Err(error);
 			return trySync({
 				try: () => DeviceCodeResponse.assert(response.data),
-				catch: (cause) => MachineAuthTransportError.RequestFailed({ cause }),
+				catch: (cause) => MachineAuthRequestError.RequestFailed({ cause }),
 			});
 		},
 
@@ -164,7 +165,7 @@ export function createMachineAuthTransport({
 			deviceCode,
 		}: {
 			deviceCode: string;
-		}): Promise<Result<DevicePollOutcome, MachineAuthTransportError>> {
+		}) {
 			const { data: fetched, error: fetchError } = await tryAsync({
 				try: async () => {
 					const response = await fetchImpl(
@@ -181,7 +182,7 @@ export function createMachineAuthTransport({
 					);
 					return { response, text: await response.text() };
 				},
-				catch: (cause) => MachineAuthTransportError.RequestFailed({ cause }),
+				catch: (cause) => MachineAuthRequestError.RequestFailed({ cause }),
 			});
 			if (fetchError) return Err(fetchError);
 			const { response, text } = fetched;
@@ -189,36 +190,39 @@ export function createMachineAuthTransport({
 			if (response.ok) {
 				const { data: success, error: parseError } = trySync({
 					try: () => DeviceTokenSuccess.assert(JSON.parse(text)),
-					catch: (cause) => MachineAuthTransportError.RequestFailed({ cause }),
+					catch: (cause) => MachineAuthRequestError.RequestFailed({ cause }),
 				});
 				if (parseError) return Err(parseError);
-				return Ok({ status: 'success', accessToken: success.access_token });
+				return Ok({
+					status: 'success' as const,
+					accessToken: success.access_token,
+				});
 			}
 
 			if (response.status === 400 && text) {
 				const { data: parsed, error: parseError } = trySync({
-					try: () => DeviceTokenError.assert(JSON.parse(text)),
-					catch: (cause) => MachineAuthTransportError.RequestFailed({ cause }),
+					try: () => DeviceTokenErrorResponse.assert(JSON.parse(text)),
+					catch: (cause) => MachineAuthRequestError.RequestFailed({ cause }),
 				});
 				if (parseError) return Err(parseError);
 				switch (parsed.error) {
 					case 'authorization_pending':
-						return Ok({ status: 'pending' });
+						return Ok({ status: 'pending' as const });
 					case 'slow_down':
-						return Ok({ status: 'slowDown' });
+						return Ok({ status: 'slowDown' as const });
 					case 'expired_token':
-						return MachineAuthTransportError.DeviceCodeExpired();
+						return DeviceTokenError.DeviceCodeExpired();
 					case 'access_denied':
-						return MachineAuthTransportError.DeviceAccessDenied();
+						return DeviceTokenError.DeviceAccessDenied();
 					default:
-						return MachineAuthTransportError.DeviceAuthorizationFailed({
+						return DeviceTokenError.DeviceAuthorizationFailed({
 							code: parsed.error,
 							description: parsed.error_description,
 						});
 				}
 			}
 
-			return MachineAuthTransportError.RequestFailed({
+			return MachineAuthRequestError.RequestFailed({
 				cause: new Error(`POST /auth/device/token failed (${response.status})`),
 			});
 		},
@@ -227,7 +231,7 @@ export function createMachineAuthTransport({
 			token,
 		}: {
 			token: string;
-		}): Promise<Result<{ session: BearerSession }, MachineAuthTransportError>> {
+		}) {
 			const { data: response, error } = await requestJson({
 				method: 'GET',
 				path: '/auth/get-session',
@@ -240,7 +244,7 @@ export function createMachineAuthTransport({
 						token: response.response.headers.get('set-auth-token') ?? token,
 					}),
 				}),
-				catch: (cause) => MachineAuthTransportError.RequestFailed({ cause }),
+				catch: (cause) => MachineAuthRequestError.RequestFailed({ cause }),
 			});
 		},
 
@@ -248,7 +252,7 @@ export function createMachineAuthTransport({
 			token,
 		}: {
 			token: string;
-		}): Promise<Result<undefined, MachineAuthTransportError>> {
+		}) {
 			return tryAsync({
 				try: async (): Promise<undefined> => {
 					await fetchImpl(`${EPICENTER_API_URL}/auth/sign-out`, {
@@ -257,7 +261,7 @@ export function createMachineAuthTransport({
 					});
 					return undefined;
 				},
-				catch: (cause) => MachineAuthTransportError.RequestFailed({ cause }),
+				catch: (cause) => MachineAuthRequestError.RequestFailed({ cause }),
 			});
 		},
 	};

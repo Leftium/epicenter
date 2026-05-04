@@ -164,8 +164,7 @@ export function openApp({
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		openWebSocket: auth.openWebSocket,
-		onCredentialChange: auth.onChange,
+		auth,
 		awareness,
 	});
 	const actions = {};
@@ -348,9 +347,9 @@ The ID becomes `ydoc.guid` for the workspace doc, so it is not a throwaway strin
 
 A workspace is a `Y.Doc` plus whatever `attach*` handles you bound to it,
 packaged as a bundle with `{ id, ydoc, [Symbol.dispose], ... }`. A browser
-workspace also exposes `syncControl` and `clearLocalData()`. A singleton app
-returns the bundle from a top-level function like `openBlog()`. A document
-cache returns disposable handles over child documents keyed by row id.
+workspace also exposes `clearLocalData()`. A singleton app returns the bundle
+from a top-level function like `openBlog()`. A document cache returns disposable
+handles over child documents keyed by row id.
 
 ### Yjs document
 

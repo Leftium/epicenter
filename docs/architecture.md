@@ -226,8 +226,7 @@ const opensidian = defineDocument((id: string) => {
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
-		openWebSocket: auth.openWebSocket,
-		onCredentialChange: auth.onChange,
+		auth,
 		waitFor: idb.whenLoaded,
 	});
 	const sqliteIndex = createSqliteIndex({ ydoc, tables });

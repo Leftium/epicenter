@@ -1,28 +1,24 @@
 import type { AuthClient, AuthIdentity } from '@epicenter/auth';
-import type { SyncControl } from '@epicenter/workspace';
 
 export type AuthWorkspaceScopeOptions = {
 	auth: AuthClient;
-	syncControl: SyncControl | null;
 	applyAuthIdentity(identity: AuthIdentity): void;
 	resetLocalClient(): Promise<void>;
 };
 
 export function bindAuthWorkspaceScope({
 	auth,
-	syncControl,
 	applyAuthIdentity,
 	resetLocalClient,
 }: AuthWorkspaceScopeOptions): () => void {
-	let appliedIdentity: { userId: string } | null = null;
+	let appliedUserId: string | null = null;
 	let pendingIdentity: AuthIdentity | null | undefined;
 	let isDraining = false;
 	let isDisposed = false;
-	let isTerminal = false;
+	let isResetting = false;
 
-	async function resetCurrentClient() {
-		syncControl?.pause();
-		isTerminal = true;
+	async function reset() {
+		isResetting = true;
 		pendingIdentity = undefined;
 
 		try {
@@ -35,24 +31,23 @@ export function bindAuthWorkspaceScope({
 
 	async function processIdentity(identity: AuthIdentity | null) {
 		if (identity === null) {
-			if (appliedIdentity === null) {
-				syncControl?.pause();
+			if (appliedUserId === null) {
 				return;
 			}
 
-			await resetCurrentClient();
+			await reset();
 			return;
 		}
 
 		const userId = identity.user.id;
 
-		if (appliedIdentity !== null && appliedIdentity.userId !== userId) {
-			await resetCurrentClient();
+		if (appliedUserId !== null && appliedUserId !== userId) {
+			await reset();
 			return;
 		}
 
 		applyAuthIdentity(identity);
-		appliedIdentity = { userId };
+		appliedUserId = userId;
 	}
 
 	async function drain() {
@@ -60,20 +55,20 @@ export function bindAuthWorkspaceScope({
 		isDraining = true;
 
 		try {
-			while (!isDisposed && !isTerminal && pendingIdentity !== undefined) {
+			while (!isDisposed && !isResetting && pendingIdentity !== undefined) {
 				const identity = pendingIdentity;
 				pendingIdentity = undefined;
 				await processIdentity(identity);
 			}
 		} finally {
 			isDraining = false;
-			if (!isDisposed && !isTerminal && pendingIdentity !== undefined)
+			if (!isDisposed && !isResetting && pendingIdentity !== undefined)
 				void drain();
 		}
 	}
 
 	function schedule(identity: AuthIdentity | null) {
-		if (isDisposed || isTerminal) return;
+		if (isDisposed || isResetting) return;
 		pendingIdentity = identity;
 		void drain();
 	}

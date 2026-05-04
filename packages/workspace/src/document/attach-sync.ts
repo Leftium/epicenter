@@ -125,12 +125,7 @@ export const SyncSupervisorError = defineErrors({
 });
 export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
 
-export type SyncControl = {
-	pause(): void;
-	reconnect(): void;
-};
-
-export type SyncAttachment = SyncControl & {
+export type SyncAttachment = {
 	/**
 	 * Resolves after the WebSocket handshake completes and the first sync
 	 * exchange finishes. Unlike `y-indexeddb`'s `whenSynced`, this is a
@@ -149,11 +144,6 @@ export type SyncAttachment = SyncControl & {
 	readonly status: SyncStatus;
 	/** Subscribe to status changes. Returns unsubscribe function. */
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
-	/**
-	 * Close the websocket, stop the supervisor, and transition to offline.
-	 * A subsequent `reconnect()` restarts the supervisor.
-	 */
-	pause(): void;
 	/** Force a fresh connection with new credentials (supervisor restarts iteration). */
 	reconnect(): void;
 	/**
@@ -207,10 +197,26 @@ export type SyncWebSocket = {
 	removeEventListener(type: string, listener: EventListener): void;
 };
 
-export type WebSocketImpl = new (
-	url: string,
-	protocols?: string | string[],
-) => SyncWebSocket;
+/**
+ * Capability bundle for authenticated sync. Every `attachSync` connection
+ * goes through this surface.
+ */
+export type SyncAuth = {
+	/**
+	 * Open a WebSocket with this transport's credentials applied. Returns null
+	 * when no credentials are currently available; the supervisor stays offline
+	 * until `onChange` fires.
+	 */
+	openWebSocket(
+		url: string,
+		protocols?: string | string[],
+	): SyncWebSocket | null;
+	/**
+	 * Subscribe to credential-state changes that should trigger a reconnect.
+	 * Returns an unsubscribe function.
+	 */
+	onChange(handler: () => void): () => void;
+};
 
 export type SyncAttachmentConfig = {
 	/**
@@ -227,22 +233,11 @@ export type SyncAttachmentConfig = {
 	 */
 	waitFor?: WaitForBarrier;
 	/**
-	 * Opens an authenticated WebSocket. Returning null means no credential is
-	 * available yet, so the supervisor remains offline until credentials change.
+	 * Authenticated transport capability. Returning null from
+	 * `auth.openWebSocket` means no credential is available yet, so the
+	 * supervisor remains offline until credentials change.
 	 */
-	openWebSocket?: (
-		url: string,
-		protocols?: string | string[],
-	) => SyncWebSocket | null;
-	/**
-	 * Subscribe to credential changes that should restart authenticated sync.
-	 */
-	onCredentialChange?: (handler: () => void) => () => void;
-	/**
-	 * WebSocket constructor. Tests can pass a stub to avoid dialing a server;
-	 * production uses `globalThis.WebSocket`.
-	 */
-	webSocketImpl?: WebSocketImpl;
+	auth: SyncAuth;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -316,7 +311,6 @@ export function attachSync(
 	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
 	let rpcActions: Record<string, unknown> | null = null;
 	const awareness = config.awareness?.raw ?? null;
-	const openWebSocket = config.openWebSocket;
 
 	const waitForPromise =
 		config.waitFor && 'whenLoaded' in config.waitFor
@@ -377,23 +371,16 @@ export function attachSync(
 	});
 
 	/**
-	 * Whether this connection is authenticated. Inferred from the presence of
-	 * `openWebSocket`; supplying that capability declares that a signed-in
-	 * session is required. Without it, the supervisor connects unauthenticated.
-	 */
-	const requiresCredential = openWebSocket !== undefined;
-
-	/**
 	 * Cancellation hierarchy:
 	 *
 	 *   masterController: aborts on doc.destroy(); kills everything
-	 *      cycleController: aborts on pause() / reconnect();
+	 *      cycleController: aborts on reconnect();
 	 *                       kills the current supervisor iteration
 	 *
 	 * `cycleController` is replaced (not just re-aborted) by `reconnect()` so
 	 * the new connection cycle has a fresh signal unrelated to the old one.
-	 * Aborting an already-aborted controller is a no-op, which makes
-	 * pause-then-reconnect races structurally safe.
+	 * Aborting an already-aborted controller is a no-op, which makes repeated
+	 * reconnects structurally safe.
 	 */
 	const masterController = new AbortController();
 	let cycleController: AbortController = childOf(masterController.signal);
@@ -638,12 +625,7 @@ export function attachSync(
 	): Promise<'connected' | 'failed' | 'no-credential'> {
 		const wsUrl = config.url;
 		const subprotocols = [MAIN_SUBPROTOCOL];
-		const ws =
-			openWebSocket?.(wsUrl, subprotocols) ??
-			(requiresCredential
-				? null
-				: new (config.webSocketImpl ??
-						(globalThis.WebSocket as WebSocketImpl))(wsUrl, subprotocols));
+		const ws = config.auth.openWebSocket(wsUrl, subprotocols);
 		if (ws === null) return 'no-credential';
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
@@ -832,12 +814,6 @@ export function attachSync(
 		});
 	}
 
-	function pause() {
-		cycleController.abort();
-		manageWindowListeners('remove');
-		status.set({ phase: 'offline' });
-	}
-
 	function reconnect() {
 		if (masterController.signal.aborted) return;
 		permanentFailure = null;
@@ -852,7 +828,7 @@ export function attachSync(
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
-	const unsubscribeCredentialChange = config.onCredentialChange?.(() => {
+	const unsubscribeAuthChange = config.auth.onChange(() => {
 		queueMicrotask(reconnect);
 	});
 
@@ -892,7 +868,7 @@ export function attachSync(
 			);
 		});
 		try {
-			unsubscribeCredentialChange?.();
+			unsubscribeAuthChange();
 			ydoc.off('updateV2', handleDocUpdate);
 			awareness?.off('update', handleAwarenessUpdate);
 			const ws = websocket;
@@ -912,7 +888,6 @@ export function attachSync(
 			return status.get();
 		},
 		onStatusChange: status.subscribe,
-		pause,
 		reconnect,
 		whenDisposed,
 		attachRpc(userActions) {

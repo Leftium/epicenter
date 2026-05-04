@@ -225,13 +225,9 @@ const opensidian = defineDocument((id: string) => {
 	});
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachSync(ydoc, {
-		url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
-		loadToken: async () => {
-			await auth.whenLoaded;
-
-			const snapshot = auth.snapshot;
-			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		},
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+		openWebSocket: auth.openWebSocket,
+		onCredentialChange: auth.onChange,
 		waitFor: idb.whenLoaded,
 	});
 	const sqliteIndex = createSqliteIndex({ ydoc, tables });
@@ -248,7 +244,7 @@ const opensidian = defineDocument((id: string) => {
 export const workspace = opensidian.open('opensidian');
 ```
 
-That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createAuth()` from `@epicenter/auth-svelte` coordinates auth with encryption and sync reconnects.
+That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createBrowserAuth()` or `createBearerAuth()` from `@epicenter/auth-svelte` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth-workspace` applies encryption keys and reset policy.
 
 ```text
 defineDocument(builder).open('opensidian')

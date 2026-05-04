@@ -1,15 +1,7 @@
 import { EncryptionKeys } from '@epicenter/encryption';
-import type {
-	User as BetterAuthUser,
-	Session as BetterSession,
-} from 'better-auth';
 import { AuthUser, BearerSession } from '../auth-types.js';
 
-export type BetterAuthSessionResponse = {
-	user: BetterAuthUser;
-	session: BetterSession;
-	encryptionKeys: EncryptionKeys;
-};
+export type { BetterAuthSessionResponse } from '../shared/better-auth-session.ts';
 
 function readRecord(value: unknown, label: string): Record<string, unknown> {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {

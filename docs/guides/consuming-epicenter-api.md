@@ -35,11 +35,12 @@ import {
 } from '@epicenter/workspace';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import {
-	AuthSession,
-	createAuth,
-	createSessionStorageAdapter,
+	AuthUser,
+	createBrowserAuth,
 	type AuthClient,
+	type AuthIdentity,
 } from '@epicenter/auth-svelte';
+import { EncryptionKeys } from '@epicenter/encryption';
 import { createPersistedState } from '@epicenter/svelte';
 import * as Y from 'yjs';
 import { type } from 'arktype';
@@ -55,15 +56,19 @@ const appTables = {
 	),
 };
 
-const session = createPersistedState({
-	key: 'my-app:authSession',
-	schema: AuthSession.or('null'),
+const identity = createPersistedState({
+	key: 'my-app:authIdentity',
+	schema: type({
+		user: AuthUser,
+		encryptionKeys: EncryptionKeys,
+	}).or('null'),
 	defaultValue: null,
-});
+}) satisfies { get(): AuthIdentity | null; set(next: AuthIdentity | null): void };
 
-export const auth = createAuth({
+export const auth = createBrowserAuth({
 	baseURL: 'https://api.epicenter.so',
-	sessionStorage: createSessionStorageAdapter(session),
+	initialIdentity: identity.get(),
+	saveIdentity: (next) => identity.set(next),
 });
 
 function openMyApp({
@@ -87,12 +92,8 @@ function openMyApp({
 	});
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
-		loadToken: async () => {
-			await auth.whenLoaded;
-
-			const snapshot = auth.snapshot;
-			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
-		},
+		openWebSocket: auth.openWebSocket,
+		onCredentialChange: auth.onChange,
 		waitFor: idb.whenLoaded,
 		awareness,
 	});
@@ -123,9 +124,9 @@ export const workspace = openMyApp({
 
 bindAuthWorkspaceScope({
 	auth,
-	sync: workspace.sync,
-	applyAuthSession(session) {
-		workspace.encryption.applyKeys(session.encryptionKeys);
+	syncControl: workspace.sync,
+	applyAuthIdentity(identity) {
+		workspace.encryption.applyKeys(identity.encryptionKeys);
 	},
 	async resetLocalClient() {
 		try {

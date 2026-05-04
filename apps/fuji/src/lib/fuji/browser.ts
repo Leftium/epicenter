@@ -115,7 +115,6 @@ export function openFuji({
 		entryContentDocs,
 		awareness,
 		sync,
-		syncControl: sync,
 		async clearLocalData() {
 			await clearEntryContentLocalData();
 			await idb.clearLocal();

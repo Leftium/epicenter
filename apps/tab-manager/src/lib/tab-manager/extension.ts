@@ -63,7 +63,6 @@ export async function openTabManager({
 		idb,
 		awareness,
 		sync,
-		syncControl: sync,
 		async clearLocalData() {
 			await idb.clearLocal();
 		},

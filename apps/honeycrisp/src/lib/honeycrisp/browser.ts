@@ -115,7 +115,6 @@ export function openHoneycrisp({
 		noteBodyDocs,
 		awareness,
 		sync,
-		syncControl: sync,
 		async clearLocalData() {
 			await clearNoteBodyLocalData();
 			await idb.clearLocal();

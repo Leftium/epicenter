@@ -124,7 +124,6 @@ export function openOpensidian({
 		actions,
 		awareness,
 		sync,
-		syncControl: sync,
 		async clearLocalData() {
 			await clearFileContentLocalData();
 			await idb.clearLocal();

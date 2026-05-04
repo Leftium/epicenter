@@ -369,14 +369,15 @@ Single PR. Waves are sequential but small.
 
 ### Wave 6: update consumers
 
-- [ ] **6.1** `packages/cli/src/commands/auth.ts` x3 handlers: replace `const machineAuth = createMachineAuth(); await machineAuth.X()` with `import * as machineAuth from '@epicenter/auth/node/machine-auth'`; `await machineAuth.loginWithDeviceCode(...)`, `machineAuth.status()`, `machineAuth.logout()`.
-- [ ] **6.2** `apps/fuji/src/lib/fuji/script.ts:26-31`: inline `getEncryptionKeys`. Direct `await loadMachineSession()`; `return session?.encryptionKeys ?? null`.
-- [ ] **6.3** `createMachineAuthClient` consumers: no signature change.
+- [x] **6.1** `packages/cli/src/commands/auth.ts` x3 handlers: replace `const machineAuth = createMachineAuth(); await machineAuth.X()` with `import * as machineAuth from '@epicenter/auth/node/machine-auth'`; `await machineAuth.loginWithDeviceCode(...)`, `machineAuth.status()`, `machineAuth.logout()`.
+- [x] **6.2** `apps/fuji/src/lib/fuji/script.ts:26-31`: inline `getEncryptionKeys`. Direct `await loadMachineSession()`; `return session?.encryptionKeys ?? null`.
+- [x] **6.3** `createMachineAuthClient` consumers: no signature change.
 
 ### Wave 7: public exports
 
 - [x] **7.1** Update `packages/auth/src/node.ts` per the diff above.
-- [ ] **7.2** `packages/cli/README.md` examples updated (line 340-341 import block).
+  > **Note**: Added the `./node/machine-auth` package export so the CLI can use the requested consumer-side namespace import.
+- [x] **7.2** `packages/cli/README.md` examples updated (line 340-341 import block).
 
 ### Wave 8: verification
 

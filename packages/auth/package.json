@@ -9,7 +9,8 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./contracts": "./src/contracts/index.ts",
-		"./node": "./src/node.ts"
+		"./node": "./src/node.ts",
+		"./node/machine-auth": "./src/node/machine-auth.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",

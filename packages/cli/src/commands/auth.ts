@@ -7,7 +7,7 @@
  * The local machine session is stored in the OS keychain.
  */
 
-import { createMachineAuth } from '@epicenter/auth/node';
+import * as machineAuth from '@epicenter/auth/node/machine-auth';
 import { cmd } from '../util/cmd.js';
 
 function displayName(session: { user: { name: string; email: string } }) {
@@ -33,7 +33,6 @@ const loginCommand = cmd({
 	command: 'login',
 	describe: 'Log in to Epicenter',
 	handler: async () => {
-		const machineAuth = createMachineAuth();
 		const result = await machineAuth.loginWithDeviceCode({
 			onDeviceCode: ({ verificationUriComplete, userCode }) => {
 				console.log(`\nVisit: ${verificationUriComplete}`);
@@ -53,7 +52,6 @@ const logoutCommand = cmd({
 	command: 'logout',
 	describe: 'Log out from Epicenter',
 	handler: async () => {
-		const machineAuth = createMachineAuth();
 		const result = await machineAuth.logout();
 		if (result.error) {
 			failAuthCommand(result.error);
@@ -73,7 +71,6 @@ const statusCommand = cmd({
 	command: 'status',
 	describe: 'Show current authentication status',
 	handler: async () => {
-		const machineAuth = createMachineAuth();
 		const result = await machineAuth.status();
 		if (result.error) {
 			failAuthCommand(result.error);

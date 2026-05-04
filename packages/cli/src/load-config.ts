@@ -19,7 +19,10 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
+
+const log = createLogger('loadDaemonConfig');
 
 export const CONFIG_FILENAME = 'epicenter.config.ts';
 
@@ -161,9 +164,19 @@ function hasRouteDefinitionShape(
 export async function disposeStartedDaemonRoutes(
 	runtimes: readonly StartedDaemonRoute[],
 ): Promise<void> {
-	await Promise.allSettled(
+	const results = await Promise.allSettled(
 		runtimes.map((entry) => entry.runtime[Symbol.asyncDispose]()),
 	);
+	for (const [index, result] of results.entries()) {
+		if (result.status === 'rejected') {
+			const route = runtimes[index]?.route ?? '<unknown>';
+			log.warn(
+				new Error(`Daemon route "${route}" disposer rejected`, {
+					cause: result.reason,
+				}),
+			);
+		}
+	}
 }
 
 /**

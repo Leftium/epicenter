@@ -13,7 +13,6 @@ export const zhongwen = openZhongwen();
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: null,
 	applyAuthIdentity(session) {
 		zhongwen.encryption.applyKeys(session.encryptionKeys);
 	},

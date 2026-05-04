@@ -66,7 +66,6 @@ async function registerDevice(): Promise<void> {
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: tabManager.syncControl,
 	applyAuthIdentity(session) {
 		tabManager.encryption.applyKeys(session.encryptionKeys);
 		void registerDevice();

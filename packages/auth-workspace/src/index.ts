@@ -1,16 +1,13 @@
 import type { AuthClient, AuthIdentity } from '@epicenter/auth';
-import type { SyncControl } from '@epicenter/workspace';
 
 export type AuthWorkspaceScopeOptions = {
 	auth: AuthClient;
-	syncControl: SyncControl | null;
 	applyAuthIdentity(identity: AuthIdentity): void;
 	resetLocalClient(): Promise<void>;
 };
 
 export function bindAuthWorkspaceScope({
 	auth,
-	syncControl,
 	applyAuthIdentity,
 	resetLocalClient,
 }: AuthWorkspaceScopeOptions): () => void {
@@ -21,7 +18,6 @@ export function bindAuthWorkspaceScope({
 	let isTerminal = false;
 
 	async function resetCurrentClient() {
-		syncControl?.pause();
 		isTerminal = true;
 		pendingIdentity = undefined;
 
@@ -36,7 +32,6 @@ export function bindAuthWorkspaceScope({
 	async function processIdentity(identity: AuthIdentity | null) {
 		if (identity === null) {
 			if (appliedIdentity === null) {
-				syncControl?.pause();
 				return;
 			}
 

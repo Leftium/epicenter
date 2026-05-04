@@ -21,7 +21,6 @@ export const honeycrisp = openHoneycrisp({
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: honeycrisp.syncControl,
 	applyAuthIdentity(session) {
 		honeycrisp.encryption.applyKeys(session.encryptionKeys);
 	},

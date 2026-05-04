@@ -31,7 +31,6 @@ export const opensidian = openOpensidian({
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: opensidian.syncControl,
 	applyAuthIdentity(session) {
 		opensidian.encryption.applyKeys(session.encryptionKeys);
 	},

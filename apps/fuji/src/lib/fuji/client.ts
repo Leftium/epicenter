@@ -21,7 +21,6 @@ export const fuji = openFuji({
 
 bindAuthWorkspaceScope({
 	auth,
-	syncControl: fuji.syncControl,
 	applyAuthIdentity(session) {
 		fuji.encryption.applyKeys(session.encryptionKeys);
 	},

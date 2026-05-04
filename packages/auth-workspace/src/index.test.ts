@@ -106,11 +106,9 @@ function createFakeAuth(initial: AuthIdentity | null) {
 
 function setup({
 	initial = null,
-	syncControl = true,
 	resetLocalClient = async () => {},
 }: {
 	initial?: AuthIdentity | null;
-	syncControl?: boolean;
 	resetLocalClient?: () => Promise<void>;
 } = {}) {
 	const fakeAuth = createFakeAuth(initial);
@@ -118,16 +116,6 @@ function setup({
 	const appliedIdentities: AuthIdentity[] = [];
 	const unsubscribe = bindAuthWorkspaceScope({
 		auth: fakeAuth.auth,
-		syncControl: syncControl
-			? {
-					pause() {
-						calls.push('pause');
-					},
-					reconnect() {
-						calls.push('reconnect');
-					},
-				}
-			: null,
 		applyAuthIdentity(identity) {
 			calls.push(`apply:${identity.user.id}`);
 			appliedIdentities.push(identity);
@@ -145,18 +133,8 @@ async function tick() {
 	for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
-test('cold signedOut pauses sync', async () => {
+test('cold signedOut is a no-op', async () => {
 	const { calls } = setup({ initial: null });
-	await tick();
-
-	expect(calls).toEqual(['pause']);
-});
-
-test('cold signedOut with null sync control does not throw', async () => {
-	const { calls } = setup({
-		initial: null,
-		syncControl: false,
-	});
 	await tick();
 
 	expect(calls).toEqual([]);
@@ -185,13 +163,13 @@ test('key refresh applies identity without reconnecting sync', async () => {
 	expect(calls).toEqual(['apply:user-1', 'apply:user-1']);
 });
 
-test('signedOut after applied user pauses and resets', async () => {
+test('signedOut after applied user resets', async () => {
 	const { fakeAuth, calls } = setup({ initial: identity() });
 	await tick();
 	fakeAuth.emit(null);
 	await tick();
 
-	expect(calls).toEqual(['apply:user-1', 'pause', 'reset']);
+	expect(calls).toEqual(['apply:user-1', 'reset']);
 });
 
 test('user switch resets without applying the new user', async () => {
@@ -203,7 +181,7 @@ test('user switch resets without applying the new user', async () => {
 	expect(appliedIdentities.map((applied) => applied.user.id)).toEqual([
 		'user-1',
 	]);
-	expect(calls).toEqual(['apply:user-1', 'pause', 'reset']);
+	expect(calls).toEqual(['apply:user-1', 'reset']);
 });
 
 test('resetLocalClient rejection is caught and queued identities are ignored', async () => {
@@ -221,7 +199,7 @@ test('resetLocalClient rejection is caught and queued identities are ignored', a
 	expect(appliedIdentities.map((applied) => applied.encryptionKeys)).toEqual([
 		keysA,
 	]);
-	expect(calls).toEqual(['apply:user-1', 'pause', 'reset']);
+	expect(calls).toEqual(['apply:user-1', 'reset']);
 });
 
 test('identities emitted during reset are ignored', async () => {
@@ -239,7 +217,7 @@ test('identities emitted during reset are ignored', async () => {
 	expect(appliedIdentities.map((applied) => applied.user.id)).toEqual([
 		'user-1',
 	]);
-	expect(calls).toEqual(['apply:user-1', 'pause', 'reset']);
+	expect(calls).toEqual(['apply:user-1', 'reset']);
 });
 
 test('unsubscribe stops later auth emissions', async () => {
@@ -251,5 +229,5 @@ test('unsubscribe stops later auth emissions', async () => {
 	fakeAuth.emit(identity());
 	await tick();
 
-	expect(calls).toEqual(['pause']);
+	expect(calls).toEqual([]);
 });

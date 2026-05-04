@@ -27,12 +27,15 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
+			fuji.entryContentDocs[Symbol.dispose]();
+			fuji.ydoc.destroy();
 			await fuji.clearLocalData();
-			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });

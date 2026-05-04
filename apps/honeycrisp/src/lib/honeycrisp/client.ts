@@ -27,12 +27,15 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
+			honeycrisp.noteBodyDocs[Symbol.dispose]();
+			honeycrisp.ydoc.destroy();
 			await honeycrisp.clearLocalData();
-			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });

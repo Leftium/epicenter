@@ -73,12 +73,14 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
+			tabManager.ydoc.destroy();
 			await tabManager.clearLocalData();
-			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });

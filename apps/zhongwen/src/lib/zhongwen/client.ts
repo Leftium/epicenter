@@ -19,12 +19,14 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
+			zhongwen.ydoc.destroy();
 			await zhongwen.clearLocalData();
-			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });

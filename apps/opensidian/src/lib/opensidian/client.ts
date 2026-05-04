@@ -37,12 +37,15 @@ bindAuthWorkspaceScope({
 	},
 	async resetLocalClient() {
 		try {
+			opensidian.fileContentDocs[Symbol.dispose]();
+			opensidian.ydoc.destroy();
 			await opensidian.clearLocalData();
-			window.location.reload();
 		} catch (error) {
 			toast.error('Could not clear local data', {
 				description: extractErrorMessage(error),
 			});
+		} finally {
+			window.location.reload();
 		}
 	},
 });

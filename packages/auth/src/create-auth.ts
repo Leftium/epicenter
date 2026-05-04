@@ -407,9 +407,9 @@ function headersFromRequest(input: Request | string | URL, init?: RequestInit) {
 	const headers = new Headers(
 		input instanceof Request ? input.headers : undefined,
 	);
-	for (const [key, value] of new Headers(init?.headers)) {
+	new Headers(init?.headers).forEach((value, key) => {
 		headers.set(key, value);
-	}
+	});
 	return headers;
 }
 

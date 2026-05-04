@@ -23,7 +23,7 @@
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
 	 */
 	type AccountPopoverProps = {
-		/** The auth client from `createAuth()`. */
+		/** The auth client from `createBrowserAuth()` or `createBearerAuth()`. */
 		auth: AuthClient;
 		/**
 		 * The workspace's `attachSync` result, typically `workspace.sync`.

@@ -4,7 +4,6 @@ import {
 } from '@better-auth/oauth-provider';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { APPS } from '@epicenter/constants/apps';
-import { extractBearerToken } from '@epicenter/sync';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -16,6 +15,7 @@ import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
+import { singleCredential } from './auth/single-credential';
 import {
 	renderConsentPage,
 	renderDevicePage,
@@ -180,9 +180,11 @@ app.get(
 
 // Auth pages — server-rendered Hono JSX
 app.get('/sign-in', async (c) => {
-	const session = await c.var.auth.api.getSession({
-		headers: c.req.raw.headers,
-	});
+	const credential = singleCredential(c.req.raw.headers);
+	const session =
+		credential.status === 'mixed'
+			? null
+			: await c.var.auth.api.getSession({ headers: credential.headers });
 	if (session) {
 		const url = new URL(c.req.url);
 		// OAuth re-entry: signed params present → continue the authorize flow
@@ -206,8 +208,12 @@ app.get(
 	'/consent',
 	sValidator('query', type({ 'client_id?': 'string', 'scope?': 'string' })),
 	async (c) => {
+		const credential = singleCredential(c.req.raw.headers);
+		if (credential.status === 'mixed') {
+			return c.json({ error: 'mixed_credentials' }, 400);
+		}
 		const session = await c.var.auth.api.getSession({
-			headers: c.req.raw.headers,
+			headers: credential.headers,
 		});
 		if (!session) {
 			const consentUrl = `/consent${new URL(c.req.url).search}`;
@@ -224,8 +230,12 @@ app.get(
 	sValidator('query', type({ 'user_code?': 'string' })),
 	async (c) => {
 		const { user_code: userCode } = c.req.valid('query');
+		const credential = singleCredential(c.req.raw.headers);
+		if (credential.status === 'mixed') {
+			return c.json({ error: 'mixed_credentials' }, 400);
+		}
 		const session = await c.var.auth.api.getSession({
-			headers: c.req.raw.headers,
+			headers: credential.headers,
 		});
 		if (!session) {
 			const callbackURL = userCode
@@ -273,27 +283,26 @@ app.get(
 app.route('/api/assets', assetPublicRoutes);
 
 // Auth guard for protected routes.
-//
-// Browsers can't set `Authorization` on WebSocket upgrades, so clients
-// smuggle the token as `sec-websocket-protocol: epicenter, bearer.<token>`.
-// When a bearer entry is present, synthesize an `Authorization` header for
-// Better Auth; otherwise pass the original headers through (cookie auth
-// still works for same-origin browser requests).
 const authGuard = factory.createMiddleware(async (c, next) => {
-	const token = extractBearerToken(c.req.raw.headers);
-	let headers = c.req.raw.headers;
-	if (token) {
-		headers = new Headers(headers);
-		headers.set('authorization', `Bearer ${token}`);
+	const credential = singleCredential(c.req.raw.headers);
+	if (credential.status === 'mixed') {
+		if (c.req.header('upgrade') === 'websocket') {
+			return closeWebSocket(4400, { error: 'mixed_credentials' });
+		}
+		return c.json({ error: 'mixed_credentials' }, 400);
 	}
-	const result = await c.var.auth.api.getSession({ headers });
+	if (credential.status === 'none') {
+		if (c.req.header('upgrade') === 'websocket') {
+			return closeWebSocket(4401, { code: 'invalid_token' });
+		}
+		return c.json(AiChatError.Unauthorized(), 401);
+	}
+	const result = await c.var.auth.api.getSession({
+		headers: credential.headers,
+	});
 	if (!result) {
 		if (c.req.header('upgrade') === 'websocket') {
-			const pair = new WebSocketPair();
-			const [client, server] = [pair[0], pair[1]];
-			server.accept();
-			server.close(4401, JSON.stringify({ code: 'invalid_token' }));
-			return new Response(null, { status: 101, webSocket: client });
+			return closeWebSocket(4401, { code: 'invalid_token' });
 		}
 		return c.json(AiChatError.Unauthorized(), 401);
 	}
@@ -302,6 +311,15 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 	c.set('session', result.session);
 	await next();
 });
+
+function closeWebSocket(code: number, body: unknown) {
+	const pair = new WebSocketPair();
+	const [client, server] = [pair[0], pair[1]];
+	server.accept();
+	server.close(code, JSON.stringify(body));
+	return new Response(null, { status: 101, webSocket: client });
+}
+
 app.use('/ai/*', authGuard);
 app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);

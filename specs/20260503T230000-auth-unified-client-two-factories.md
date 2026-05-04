@@ -395,7 +395,7 @@ After Wave 3, no client double-sends credentials. The server still tolerates mix
 
 ### Wave 4: Server credential normalization
 
-- [ ] **4.1** Add `apps/api/src/auth/single-credential.ts` exporting `singleCredential(headers)`. Return type:
+- [x] **4.1** Add `apps/api/src/auth/single-credential.ts` exporting `singleCredential(headers)`. Return type:
 
     ```ts
     type SingleCredentialResult =
@@ -405,10 +405,12 @@ After Wave 3, no client double-sends credentials. The server still tolerates mix
     ```
 
     Implementation reads HTTP `Authorization: Bearer`, WS subprotocol bearer, and Better Auth session cookies. The `'ok'` and `'none'` cases return normalized `headers` so the caller passes them directly to `auth.api.getSession({ headers })`. WS bearer is lifted into `Authorization` in the `headers` field. The `'mixed'` case has no headers because the caller rejects the request.
-- [ ] **4.2** Replace `authGuard` in `apps/api/src/app.ts` with the normalized version. `'mixed'` returns HTTP 400 with `{ error: 'mixed_credentials' }`; WebSocket upgrades close with code 4400. `'none'` returns HTTP 401 / WS 4401. `'ok'` calls `getSession` with the normalized headers and proceeds.
-- [ ] **4.3** Delete the bearer-lifting hack (`extractBearerToken` + manual `Authorization` header set) from `app.ts`. `singleCredential` subsumes it.
-- [ ] **4.4** Update `apps/api/src/app.ts` (`/sign-in`, `/consent`, `/device`) to call `singleCredential` before `getSession`. Sign-in tolerates `'mixed'` (renders form as if signed-out); consent/device treat `'mixed'` as 400.
-- [ ] **4.5** Add unit tests for `singleCredential`: only-cookie, only-bearer, only-WS-bearer (lifted), mixed cookie+bearer, mixed cookie+WS-bearer, neither.
+- [x] **4.2** Replace `authGuard` in `apps/api/src/app.ts` with the normalized version. `'mixed'` returns HTTP 400 with `{ error: 'mixed_credentials' }`; WebSocket upgrades close with code 4400. `'none'` returns HTTP 401 / WS 4401. `'ok'` calls `getSession` with the normalized headers and proceeds.
+- [x] **4.3** Delete the bearer-lifting hack (`extractBearerToken` + manual `Authorization` header set) from `app.ts`. `singleCredential` subsumes it.
+- [x] **4.4** Update `apps/api/src/app.ts` (`/sign-in`, `/consent`, `/device`) to call `singleCredential` before `getSession`. Sign-in tolerates `'mixed'` (renders form as if signed-out); consent/device treat `'mixed'` as 400.
+- [x] **4.5** Add unit tests for `singleCredential`: only-cookie, only-bearer, only-WS-bearer (lifted), mixed cookie+bearer, mixed cookie+WS-bearer, neither.
+
+> **Wave 4 note**: `singleCredential` now detects Better Auth session-token cookies, HTTP bearer headers, and WebSocket bearer subprotocols. WebSocket bearer credentials are lifted into `Authorization` before session lookup. The API guard rejects mixed credentials before calling `getSession`; sign-in treats mixed credentials as signed out, while consent and device pages return 400. This wave also fixed the Wave 3 carryovers: `headersFromRequest` now uses `Headers.forEach`, and shared Svelte auth component JSDoc references mention `createBrowserAuth()` and `createBearerAuth()`.
 
 ### Wave 5: Cleanup
 

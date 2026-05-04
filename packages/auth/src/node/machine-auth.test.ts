@@ -42,10 +42,9 @@ type Equal<TActual, TExpected> =
 	>() => TValue extends TExpected ? 1 : 2
 		? true
 		: false;
-type ResultError<TValue extends { data: unknown; error: unknown }> = Extract<
-	TValue,
-	{ data: null }
->['error'];
+type ResultError<TValue extends { error: unknown }> = NonNullable<
+	TValue['error']
+>;
 
 export type LoginWithDeviceCodeError = Expect<
 	Equal<
@@ -65,11 +64,6 @@ export type LogoutError = Expect<
 		MachineAuthStorageError
 	>
 >;
-
-type MachineSessionOptions = NonNullable<
-	Parameters<typeof loadMachineSession>[0]
->;
-type MachineSessionBackend = NonNullable<MachineSessionOptions['backend']>;
 
 const encryptionKeys = [
 	{
@@ -135,7 +129,7 @@ function jsonResponse(value: unknown, init?: ResponseInit): Response {
 	});
 }
 
-function makeMemoryKeychainBackend(): MachineSessionBackend & {
+function makeMemoryKeychainBackend(): typeof Bun.secrets & {
 	values: Map<string, string>;
 } {
 	const values = new Map<string, string>();
@@ -155,27 +149,16 @@ function makeMemoryKeychainBackend(): MachineSessionBackend & {
 	};
 }
 
-let backend: ReturnType<typeof makeMemoryKeychainBackend>;
 let log: Logger;
 
 beforeEach(() => {
-	backend = makeMemoryKeychainBackend();
 	const { sink } = memorySink();
 	log = createLogger('machine-auth-test', sink);
 });
 
-function makeTestTransport(fetchImpl: typeof fetch) {
-	return createMachineAuthTransport({ fetch: fetchImpl });
-}
-
-async function peekMachineSession() {
-	const { data, error } = await loadMachineSession({ backend, log });
-	if (error) throw error;
-	return data;
-}
-
 describe('machine auth free functions', () => {
 	test('login stores one BearerSession using the authorization token', async () => {
+		const backend = makeMemoryKeychainBackend();
 		const fetchImpl = (async (input, init) => {
 			const url = new URL(String(input));
 			expect(url.origin).toBe(EPICENTER_API_URL);
@@ -205,19 +188,24 @@ describe('machine auth free functions', () => {
 		}) as typeof fetch;
 
 		const result = await loginWithDeviceCode({
-			transport: makeTestTransport(fetchImpl),
+			transport: createMachineAuthTransport({ fetch: fetchImpl }),
 			backend,
 			sleep: async () => {},
 		});
 
-		const savedSession = await peekMachineSession();
+		const { data: savedSession, error: loadError } = await loadMachineSession({
+			backend,
+			log,
+		});
 		expect(result.error).toBeNull();
+		expect(loadError).toBeNull();
 		expect(result.data?.session.user.email).toBe('user@example.com');
 		expect(savedSession?.token).toBe('rotated-authorization-token');
 		expect(JSON.stringify(savedSession)).not.toContain('server-session-token');
 	});
 
 	test('status verifies and refreshes the stored session token', async () => {
+		const backend = makeMemoryKeychainBackend();
 		await saveMachineSession(makeSession({ token: 'old-token' }), { backend });
 		const seenTokens: string[] = [];
 		const fetchImpl = (async (_input, init) => {
@@ -228,24 +216,30 @@ describe('machine auth free functions', () => {
 		}) as typeof fetch;
 
 		const result = await status({
-			transport: makeTestTransport(fetchImpl),
+			transport: createMachineAuthTransport({ fetch: fetchImpl }),
 			backend,
 			log,
 		});
 
+		const { data: savedSession, error: loadError } = await loadMachineSession({
+			backend,
+			log,
+		});
 		expect(result.error).toBeNull();
+		expect(loadError).toBeNull();
 		expect(result.data?.status).toBe('valid');
 		expect(seenTokens).toEqual(['Bearer old-token']);
-		expect((await peekMachineSession())?.token).toBe('new-token');
+		expect(savedSession?.token).toBe('new-token');
 	});
 
 	test('status reports stored session when remote verification fails', async () => {
+		const backend = makeMemoryKeychainBackend();
 		await saveMachineSession(makeSession(), { backend });
 		const fetchImpl = (async () =>
 			new Response('nope', { status: 503 })) as unknown as typeof fetch;
 
 		const result = await status({
-			transport: makeTestTransport(fetchImpl),
+			transport: createMachineAuthTransport({ fetch: fetchImpl }),
 			backend,
 			log,
 		});
@@ -255,6 +249,7 @@ describe('machine auth free functions', () => {
 	});
 
 	test('login returns DeviceCodeExpired when the server reports expired_token', async () => {
+		const backend = makeMemoryKeychainBackend();
 		const fetchImpl = (async (input) => {
 			const url = new URL(String(input));
 			if (url.pathname === '/auth/device/code') {
@@ -274,7 +269,7 @@ describe('machine auth free functions', () => {
 		}) as typeof fetch;
 
 		const result = await loginWithDeviceCode({
-			transport: makeTestTransport(fetchImpl),
+			transport: createMachineAuthTransport({ fetch: fetchImpl }),
 			backend,
 			sleep: async () => {},
 		});
@@ -284,6 +279,7 @@ describe('machine auth free functions', () => {
 	});
 
 	test('logout signs out and clears the stored session', async () => {
+		const backend = makeMemoryKeychainBackend();
 		await saveMachineSession(makeSession({ token: 'logout-token' }), { backend });
 		const seenTokens: string[] = [];
 		const fetchImpl = (async (_input, init) => {
@@ -292,19 +288,25 @@ describe('machine auth free functions', () => {
 		}) as typeof fetch;
 
 		const result = await logout({
-			transport: makeTestTransport(fetchImpl),
+			transport: createMachineAuthTransport({ fetch: fetchImpl }),
 			backend,
 			log,
 		});
 
+		const { data: savedSession, error: loadError } = await loadMachineSession({
+			backend,
+			log,
+		});
 		expect(result).toEqual({ data: { status: 'loggedOut' }, error: null });
+		expect(loadError).toBeNull();
 		expect(seenTokens).toEqual(['Bearer logout-token']);
-		expect(await peekMachineSession()).toBeNull();
+		expect(savedSession).toBeNull();
 	});
 });
 
 describe('machine session storage', () => {
 	test('keychain storage writes one BearerSession item', async () => {
+		const backend = makeMemoryKeychainBackend();
 		await saveMachineSession(makeSession({ token: 'stored-token' }), {
 			backend,
 		});
@@ -318,6 +320,7 @@ describe('machine session storage', () => {
 	});
 
 	test('keychain storage discards a corrupt blob and returns Ok(null)', async () => {
+		const backend = makeMemoryKeychainBackend();
 		backend.values.set('epicenter.auth.session:current', '{not valid json');
 
 		const { data, error } = await loadMachineSession({ backend, log });

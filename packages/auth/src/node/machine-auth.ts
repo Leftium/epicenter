@@ -6,7 +6,6 @@ import { type AuthClient, createBearerAuth } from '../create-auth.js';
 import {
 	createMachineAuthTransport,
 	DeviceTokenError,
-	type MachineAuthRequestError,
 	type MachineAuthTransport,
 } from './machine-auth-transport.js';
 import {
@@ -17,30 +16,6 @@ import {
 type MachineSessionSummary = {
 	user: Pick<BearerSession['user'], 'id' | 'name' | 'email'>;
 };
-
-type MachineAuthLoginResult = {
-	status: 'loggedIn';
-	session: MachineSessionSummary;
-	device: {
-		userCode: string;
-		verificationUriComplete: string;
-	};
-};
-
-type MachineAuthStatus =
-	| { status: 'signedOut' }
-	| { status: 'valid'; session: MachineSessionSummary }
-	| {
-			status: 'unverified';
-			session: MachineSessionSummary;
-			verificationError: MachineAuthRequestError;
-	  };
-
-type MachineAuthLogoutResult =
-	| { status: 'signedOut' }
-	| { status: 'loggedOut' };
-
-const log = createLogger('machine-auth');
 
 function sessionSummary(session: BearerSession): MachineSessionSummary {
 	return {
@@ -111,7 +86,7 @@ export async function loginWithDeviceCode({
 		status: 'loggedIn' as const,
 		session: sessionSummary(remote.session),
 		device,
-	} satisfies MachineAuthLoginResult);
+	});
 }
 
 /**
@@ -122,7 +97,7 @@ export async function loginWithDeviceCode({
 export async function status({
 	transport = createMachineAuthTransport(),
 	backend = Bun.secrets,
-	log: sessionLog = createLogger('machine-auth'),
+	log = createLogger('machine-auth'),
 }: {
 	transport?: MachineAuthTransport;
 	backend?: typeof Bun.secrets;
@@ -130,7 +105,7 @@ export async function status({
 } = {}) {
 	const { data: session, error: loadError } = await loadMachineSession({
 		backend,
-		log: sessionLog,
+		log,
 	});
 	if (loadError) return Err(loadError);
 	if (session === null) return Ok({ status: 'signedOut' as const });
@@ -143,7 +118,7 @@ export async function status({
 			status: 'unverified' as const,
 			session: sessionSummary(session),
 			verificationError: fetchError,
-		} satisfies MachineAuthStatus);
+		});
 	}
 
 	const { error: saveError } = await saveMachineSession(remote.session, {
@@ -153,13 +128,13 @@ export async function status({
 	return Ok({
 		status: 'valid' as const,
 		session: sessionSummary(remote.session),
-	} satisfies MachineAuthStatus);
+	});
 }
 
 export async function logout({
 	transport = createMachineAuthTransport(),
 	backend = Bun.secrets,
-	log: logoutLog = createLogger('machine-auth'),
+	log = createLogger('machine-auth'),
 }: {
 	transport?: MachineAuthTransport;
 	backend?: typeof Bun.secrets;
@@ -167,7 +142,7 @@ export async function logout({
 } = {}) {
 	const { data: session, error: loadError } = await loadMachineSession({
 		backend,
-		log: logoutLog,
+		log,
 	});
 	if (loadError) return Err(loadError);
 	if (session === null) return Ok({ status: 'signedOut' as const });
@@ -176,12 +151,12 @@ export async function logout({
 		token: session.token,
 	});
 	if (signOutError) {
-		logoutLog.warn(signOutError);
+		log.warn(signOutError);
 	}
 
 	const { error: saveError } = await saveMachineSession(null, { backend });
 	if (saveError) return Err(saveError);
-	return Ok({ status: 'loggedOut' as const } satisfies MachineAuthLogoutResult);
+	return Ok({ status: 'loggedOut' as const });
 }
 
 /**
@@ -191,6 +166,7 @@ export async function logout({
  * boot signed-out when the keychain is unreadable.
  */
 export async function createMachineAuthClient(): Promise<AuthClient> {
+	const log = createLogger('machine-auth');
 	const { data: initialSession, error } = await loadMachineSession();
 	if (error) throw error;
 	return createBearerAuth({

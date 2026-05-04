@@ -1,41 +1,54 @@
+import { type } from 'arktype';
 import {
 	normalizeSessionResponse,
 	type Session,
 } from '../contracts/session.js';
 import { normalizeServerOrigin } from './server-origin.js';
 
-export type DeviceCodeResponse = {
-	device_code: string;
-	user_code: string;
-	verification_uri: string;
-	verification_uri_complete: string;
-	expires_in: number;
-	interval: number;
-};
+const AuthServerTransportDeviceCodeResponse = type({
+	device_code: 'string',
+	user_code: 'string',
+	verification_uri: 'string',
+	verification_uri_complete: 'string',
+	expires_in: 'number',
+	interval: 'number',
+});
+type AuthServerTransportDeviceCodeResponse =
+	typeof AuthServerTransportDeviceCodeResponse.infer;
 
-export type DeviceTokenResponse =
-	| {
-			access_token: string;
-			expires_in: number;
-			token_type?: string;
-			error?: undefined;
-	  }
-	| { error: string; error_description?: string };
+const AuthServerTransportDeviceTokenSuccessResponse = type({
+	access_token: 'string',
+	expires_in: 'number',
+	'token_type?': 'string',
+	'error?': 'undefined',
+});
 
-export type AuthServerCredentialSession = {
+const AuthServerTransportDeviceTokenErrorResponse = type({
+	error: 'string',
+	'error_description?': 'string',
+});
+
+const AuthServerTransportDeviceTokenResponse =
+	AuthServerTransportDeviceTokenSuccessResponse.or(
+		AuthServerTransportDeviceTokenErrorResponse,
+	);
+type AuthServerTransportDeviceTokenResponse =
+	typeof AuthServerTransportDeviceTokenResponse.infer;
+
+type AuthServerTransportCredentialSession = {
 	bearerToken: string;
 	session: Session;
 };
 
-export type AuthServerClient = ReturnType<typeof createAuthServerClient>;
+export type AuthServerTransport = ReturnType<typeof createAuthServerTransport>;
 
-export function createAuthServerClient(
+export function createAuthServerTransport(
 	{ fetch }: { fetch: typeof globalThis.fetch },
 	{ serverOrigin }: { serverOrigin: string },
 ) {
 	const origin = normalizeServerOrigin(serverOrigin);
 
-	async function requestJson<T>({
+	async function requestJson({
 		method,
 		path,
 		body,
@@ -45,7 +58,7 @@ export function createAuthServerClient(
 		path: string;
 		body?: unknown;
 		token?: string;
-	}): Promise<{ data: T; response: Response }> {
+	}): Promise<{ data: unknown; response: Response }> {
 		const headers: Record<string, string> = {};
 		if (token !== undefined) headers.authorization = `Bearer ${token}`;
 		if (body !== undefined) headers['content-type'] = 'application/json';
@@ -65,7 +78,7 @@ export function createAuthServerClient(
 		if (!text) throw new Error(`${method} ${path}: empty response body`);
 
 		try {
-			return { data: JSON.parse(text) as T, response };
+			return { data: JSON.parse(text), response };
 		} catch {
 			throw new Error(
 				`${method} ${path}: invalid JSON response: ${text.slice(0, 200)}`,
@@ -80,20 +93,13 @@ export function createAuthServerClient(
 			clientId,
 		}: {
 			clientId: string;
-		}): Promise<DeviceCodeResponse> {
-			const { data } = await requestJson<
-				DeviceCodeResponse & { error?: string; error_description?: string }
-			>({
+		}): Promise<AuthServerTransportDeviceCodeResponse> {
+			const { data } = await requestJson({
 				method: 'POST',
 				path: '/auth/device/code',
 				body: { client_id: clientId },
 			});
-			if (typeof data.error === 'string' && data.error.length > 0) {
-				throw new Error(
-					data.error_description ?? `Device code request failed: ${data.error}`,
-				);
-			}
-			return data;
+			return AuthServerTransportDeviceCodeResponse.assert(data);
 		},
 
 		async pollDeviceToken({
@@ -102,7 +108,7 @@ export function createAuthServerClient(
 		}: {
 			deviceCode: string;
 			clientId: string;
-		}): Promise<DeviceTokenResponse> {
+		}): Promise<AuthServerTransportDeviceTokenResponse> {
 			const response = await fetch(`${origin}/auth/device/token`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
@@ -113,11 +119,11 @@ export function createAuthServerClient(
 				}),
 			});
 			const text = await response.text();
-			let data: DeviceTokenResponse | undefined;
+			let data: unknown;
 
 			if (text) {
 				try {
-					data = JSON.parse(text) as DeviceTokenResponse;
+					data = JSON.parse(text);
 				} catch {
 					throw new Error(
 						`POST /auth/device/token: invalid JSON response: ${text.slice(0, 200)}`,
@@ -125,14 +131,11 @@ export function createAuthServerClient(
 				}
 			}
 
-			if (response.ok && data) return data;
-			if (
-				response.status === 400 &&
-				data &&
-				'error' in data &&
-				typeof data.error === 'string'
-			) {
-				return data;
+			if (response.ok && data !== undefined) {
+				return AuthServerTransportDeviceTokenResponse.assert(data);
+			}
+			if (response.status === 400 && data !== undefined) {
+				return AuthServerTransportDeviceTokenErrorResponse.assert(data);
 			}
 			throw new Error(
 				`POST /auth/device/token failed (${response.status}): ${text.slice(0, 200)}`,
@@ -143,8 +146,8 @@ export function createAuthServerClient(
 			bearerToken,
 		}: {
 			bearerToken: string;
-		}): Promise<AuthServerCredentialSession> {
-			const { data, response } = await requestJson<unknown>({
+		}): Promise<AuthServerTransportCredentialSession> {
+			const { data, response } = await requestJson({
 				method: 'GET',
 				path: '/auth/get-session',
 				token: bearerToken,

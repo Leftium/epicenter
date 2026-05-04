@@ -10,12 +10,16 @@ import { createCLI } from './cli';
 
 function captureHelp(): Promise<string> {
 	const chunks: string[] = [];
-	const logSpy = spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
-		chunks.push(args.map((a) => String(a)).join(' '));
-	});
-	const errSpy = spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-		chunks.push(args.map((a) => String(a)).join(' '));
-	});
+	const logSpy = spyOn(console, 'log').mockImplementation(
+		(...args: unknown[]) => {
+			chunks.push(args.map((a) => String(a)).join(' '));
+		},
+	);
+	const errSpy = spyOn(console, 'error').mockImplementation(
+		(...args: unknown[]) => {
+			chunks.push(args.map((a) => String(a)).join(' '));
+		},
+	);
 	return createCLI()
 		.run(['--help'])
 		.catch(() => {})
@@ -52,5 +56,23 @@ describe('createCLI', () => {
 		expect(help).toMatch(/\blist\b/);
 		expect(help).toMatch(/\bpeers\b/);
 		expect(help).toMatch(/\brun\b/);
+	});
+
+	test('auth command errors set a nonzero exit code', async () => {
+		const previousExitCode = process.exitCode;
+		process.exitCode = undefined;
+		const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+
+		try {
+			await createCLI().run(['auth', 'status', 'not-a-url']);
+
+			expect(process.exitCode === 1).toBe(true);
+			expect(errorSpy.mock.calls.flat().join(' ')).toContain(
+				'Expected a server origin',
+			);
+		} finally {
+			errorSpy.mockRestore();
+			process.exitCode = previousExitCode ?? 0;
+		}
 	});
 });

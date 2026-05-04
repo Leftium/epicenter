@@ -98,7 +98,7 @@ function openBlog() {
   const sync = attachSync(ydoc, {
     url: `wss://api.example.com/workspaces/${ydoc.guid}`,
     getToken: async () => {
-      await auth.whenSessionLoaded;
+      await auth.whenLoaded;
 
       const snapshot = auth.snapshot;
       return snapshot.status === 'signedIn' ? snapshot.session.token : null;

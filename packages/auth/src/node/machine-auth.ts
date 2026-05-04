@@ -7,15 +7,15 @@ import {
 import { Ok, type Result } from 'wellcrafted/result';
 import type { Session } from '../contracts/session.js';
 import {
-	createAuthServerClient,
-	type AuthServerClient,
-} from './auth-server-client.js';
+	type AuthServerTransport,
+	createAuthServerTransport,
+} from './auth-server-transport.js';
 import {
-	createCredentialStore,
+	createMachineCredentialRepository,
 	defaultCredentialPath,
-	type Credential,
-	type CredentialMetadata,
-} from './credential-store.js';
+	type MachineCredential,
+	type MachineCredentialMetadata,
+} from './machine-credential-repository.js';
 import { normalizeServerOrigin } from './server-origin.js';
 
 type Clock = { now(): Date };
@@ -32,8 +32,8 @@ export const MachineAuthError = defineErrors({
 		input,
 		cause,
 	}),
-	AuthServerRequestFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Auth server request failed: ${extractErrorMessage(cause)}`,
+	AuthTransportRequestFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Auth transport request failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 	DeviceCodeExpired: () => ({
@@ -111,12 +111,6 @@ type MachineAuthOptions = {
 	clock?: Clock;
 };
 
-function storageMode(
-	policy: MachineCredentialStoragePolicy,
-): 'file' | 'osKeychain' {
-	return policy.kind === 'plaintextFile' ? 'file' : 'osKeychain';
-}
-
 function normalizeOriginResult(
 	input: string | URL,
 ): Result<string, MachineAuthError> {
@@ -130,14 +124,14 @@ function normalizeOriginResult(
 	}
 }
 
-function isExpired(credential: Credential, clock: Clock): boolean {
+function isExpired(credential: MachineCredential, clock: Clock): boolean {
 	return (
 		Date.parse(credential.session.session.expiresAt) <= clock.now().getTime()
 	);
 }
 
 function credentialSummary(
-	credential: Credential | CredentialMetadata,
+	credential: MachineCredential | MachineCredentialMetadata,
 ): MachineCredentialSummary {
 	return {
 		serverOrigin: credential.serverOrigin,
@@ -154,8 +148,8 @@ function credentialSummary(
 	};
 }
 
-function toAuthServerError(cause: unknown): MachineAuthError {
-	return MachineAuthError.AuthServerRequestFailed({ cause }).error;
+function toAuthTransportError(cause: unknown): MachineAuthError {
+	return MachineAuthError.AuthTransportRequestFailed({ cause }).error;
 }
 
 export function createMachineAuth({
@@ -168,26 +162,29 @@ export function createMachineAuth({
 }: MachineAuthOptions = {}) {
 	const credentialFilePath =
 		credentialStorage.credentialFilePath ?? defaultCredentialPath();
-	const credentialStore = createCredentialStore({
+	const credentialRepository = createMachineCredentialRepository({
 		path: credentialFilePath,
-		storageMode: storageMode(credentialStorage),
+		credentialStorage:
+			credentialStorage.kind === 'plaintextFile'
+				? { kind: 'plaintextFile' }
+				: { kind: 'keychain' },
 		clock,
 	});
 
-	function client(serverOrigin: string): AuthServerClient {
-		return createAuthServerClient({ fetch: fetchImpl }, { serverOrigin });
+	function transport(serverOrigin: string): AuthServerTransport {
+		return createAuthServerTransport({ fetch: fetchImpl }, { serverOrigin });
 	}
 
 	async function resolveCredential(input?: {
 		serverOrigin?: string | URL;
-	}): Promise<Result<Credential | null, MachineAuthError>> {
+	}): Promise<Result<MachineCredential | null, MachineAuthError>> {
 		try {
 			if (input?.serverOrigin === undefined) {
-				return Ok(await credentialStore.getCurrent());
+				return Ok(await credentialRepository.getCurrent());
 			}
 			const origin = normalizeOriginResult(input.serverOrigin);
 			if (origin.error) return origin;
-			return Ok(await credentialStore.get(origin.data));
+			return Ok(await credentialRepository.get(origin.data));
 		} catch (cause) {
 			return MachineAuthError.CredentialStorageFailed({ cause });
 		}
@@ -197,7 +194,9 @@ export function createMachineAuth({
 		serverOrigin?: string | URL;
 	}): Promise<Result<MachineCredentialSummary | null, MachineAuthError>> {
 		try {
-			const metadata = await credentialStore.getMetadata(input?.serverOrigin);
+			const metadata = await credentialRepository.getMetadata(
+				input?.serverOrigin,
+			);
 			return Ok(metadata === null ? null : credentialSummary(metadata));
 		} catch (cause) {
 			return MachineAuthError.CredentialStorageFailed({ cause });
@@ -214,7 +213,7 @@ export function createMachineAuth({
 
 	async function readCredentialField<T>(
 		input: { serverOrigin?: string | URL } | undefined,
-		read: (credential: Credential) => T | null,
+		read: (credential: MachineCredential) => T | null,
 	): Promise<Result<T | null, MachineAuthError>> {
 		const credential = await resolveCredential(input);
 		if (credential.error) return credential;
@@ -246,13 +245,15 @@ export function createMachineAuth({
 		}): Promise<Result<MachineAuthLoginResult, MachineAuthError>> {
 			const origin = normalizeOriginResult(serverOrigin);
 			if (origin.error) return origin;
-			const authServer = client(origin.data);
+			const authTransport = transport(origin.data);
 
-			let codeData: Awaited<ReturnType<AuthServerClient['requestDeviceCode']>>;
+			let codeData: Awaited<
+				ReturnType<AuthServerTransport['requestDeviceCode']>
+			>;
 			try {
-				codeData = await authServer.requestDeviceCode({ clientId });
+				codeData = await authTransport.requestDeviceCode({ clientId });
 			} catch (cause) {
-				return MachineAuthError.AuthServerRequestFailed({ cause });
+				return MachineAuthError.AuthTransportRequestFailed({ cause });
 			}
 
 			const device = {
@@ -269,29 +270,31 @@ export function createMachineAuth({
 
 			while (clock.now().getTime() < deadline) {
 				await sleep(interval);
-				let tokenData: Awaited<ReturnType<AuthServerClient['pollDeviceToken']>>;
+				let tokenData: Awaited<
+					ReturnType<AuthServerTransport['pollDeviceToken']>
+				>;
 				try {
-					tokenData = await authServer.pollDeviceToken({
+					tokenData = await authTransport.pollDeviceToken({
 						deviceCode: codeData.device_code,
 						clientId,
 					});
 				} catch (cause) {
-					return MachineAuthError.AuthServerRequestFailed({ cause });
+					return MachineAuthError.AuthTransportRequestFailed({ cause });
 				}
 
 				if ('access_token' in tokenData) {
 					let remote: Awaited<
-						ReturnType<AuthServerClient['fetchCredentialSession']>
+						ReturnType<AuthServerTransport['fetchCredentialSession']>
 					>;
 					try {
-						remote = await authServer.fetchCredentialSession({
+						remote = await authTransport.fetchCredentialSession({
 							bearerToken: tokenData.access_token,
 						});
 					} catch (cause) {
-						return MachineAuthError.AuthServerRequestFailed({ cause });
+						return MachineAuthError.AuthTransportRequestFailed({ cause });
 					}
 					try {
-						const credential = await credentialStore.save(origin.data, {
+						const credential = await credentialRepository.save(origin.data, {
 							bearerToken: remote.bearerToken,
 							session: remote.session,
 						});
@@ -346,27 +349,30 @@ export function createMachineAuth({
 				});
 			}
 
-			const authServer = client(credential.data.serverOrigin);
+			const authTransport = transport(credential.data.serverOrigin);
 			let remote: Awaited<
-				ReturnType<AuthServerClient['fetchCredentialSession']>
+				ReturnType<AuthServerTransport['fetchCredentialSession']>
 			>;
 			try {
-				remote = await authServer.fetchCredentialSession({
+				remote = await authTransport.fetchCredentialSession({
 					bearerToken: credential.data.bearerToken,
 				});
 			} catch (cause) {
 				return Ok({
 					status: 'unverified',
 					credential: credentialSummary(credential.data),
-					verificationError: toAuthServerError(cause),
+					verificationError: toAuthTransportError(cause),
 				});
 			}
 
 			try {
-				const next = await credentialStore.save(credential.data.serverOrigin, {
-					bearerToken: remote.bearerToken,
-					session: remote.session,
-				});
+				const next = await credentialRepository.save(
+					credential.data.serverOrigin,
+					{
+						bearerToken: remote.bearerToken,
+						session: remote.session,
+					},
+				);
 				return Ok({ status: 'valid', credential: credentialSummary(next) });
 			} catch (cause) {
 				return MachineAuthError.CredentialStorageFailed({ cause });
@@ -381,12 +387,12 @@ export function createMachineAuth({
 			if (credential.data === null) return Ok({ status: 'signedOut' });
 
 			try {
-				const authServer = client(credential.data.serverOrigin);
-				await authServer.signOut({ token: credential.data.bearerToken });
+				const authTransport = transport(credential.data.serverOrigin);
+				await authTransport.signOut({ token: credential.data.bearerToken });
 			} catch {}
 
 			try {
-				await credentialStore.clear(credential.data.serverOrigin);
+				await credentialRepository.clear(credential.data.serverOrigin);
 			} catch (cause) {
 				return MachineAuthError.CredentialStorageFailed({ cause });
 			}

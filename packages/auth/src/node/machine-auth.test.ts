@@ -16,8 +16,8 @@ import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { EncryptionKeys as EncryptionKeysData } from '@epicenter/workspace/encryption-key';
 import type { Session } from '../contracts/session.js';
-import { createCredentialStore } from './credential-store.js';
 import { createMachineAuth, createMachineTokenGetter } from './machine-auth.js';
+import { createMachineCredentialRepository } from './machine-credential-repository.js';
 
 const encryptionKeys: EncryptionKeysData = [
 	{
@@ -77,10 +77,10 @@ function createPlaintextMachineAuth(fetchImpl: typeof fetch) {
 	});
 }
 
-function createPlaintextStore() {
-	return createCredentialStore({
+function createPlaintextRepository() {
+	return createMachineCredentialRepository({
 		path: credentialFilePath,
-		storageMode: 'file',
+		credentialStorage: { kind: 'plaintextFile' },
 		clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
 	});
 }
@@ -104,12 +104,12 @@ describe('createMachineAuth', () => {
 			origins.push(url.origin);
 			return jsonResponse(makeSession());
 		}) as typeof fetch;
-		const store = createPlaintextStore();
-		await store.save('https://first.example.com', {
+		const repository = createPlaintextRepository();
+		await repository.save('https://first.example.com', {
 			bearerToken: 'first-token',
 			session: makeSession(),
 		});
-		await store.save('https://second.example.com', {
+		await repository.save('https://second.example.com', {
 			bearerToken: 'second-token',
 			session: makeSession(),
 		});
@@ -128,7 +128,7 @@ describe('createMachineAuth', () => {
 			origins.push(url.origin);
 			return new Response('', { status: 200 });
 		}) as typeof fetch;
-		await createPlaintextStore().save('https://logout.example.com', {
+		await createPlaintextRepository().save('https://logout.example.com', {
 			bearerToken: 'bearer-token',
 			session: makeSession(),
 		});
@@ -170,7 +170,7 @@ describe('createMachineAuth', () => {
 		).loginWithDeviceCode({
 			serverOrigin: 'https://api.epicenter.so',
 		});
-		const credential = await createPlaintextStore().get(
+		const credential = await createPlaintextRepository().get(
 			'https://api.epicenter.so',
 		);
 
@@ -184,7 +184,7 @@ describe('createMachineAuth', () => {
 			jsonResponse(makeSession({ sessionToken: 'session-token' }), {
 				headers: { 'set-auth-token': 'refreshed-bearer-token' },
 			})) as unknown as typeof fetch;
-		await createPlaintextStore().save('https://api.epicenter.so', {
+		await createPlaintextRepository().save('https://api.epicenter.so', {
 			bearerToken: 'old-bearer-token',
 			session: makeSession({ sessionToken: 'session-token' }),
 		});
@@ -192,7 +192,7 @@ describe('createMachineAuth', () => {
 		const result = await createPlaintextMachineAuth(fetchImpl).status({
 			serverOrigin: 'https://api.epicenter.so',
 		});
-		const credential = await createPlaintextStore().get(
+		const credential = await createPlaintextRepository().get(
 			'https://api.epicenter.so',
 		);
 
@@ -208,7 +208,7 @@ describe('createMachineAuth', () => {
 				headers: { 'set-auth-token': 'refreshed-bearer-token' },
 			});
 		}) as unknown as typeof fetch;
-		await createPlaintextStore().save('https://api.epicenter.so', {
+		await createPlaintextRepository().save('https://api.epicenter.so', {
 			bearerToken: 'old-bearer-token',
 			session: makeSession({ sessionToken: 'session-token' }),
 		});
@@ -222,7 +222,7 @@ describe('createMachineAuth', () => {
 	});
 
 	test('active key reads return Ok(null) after expiry while offline reads return keys', async () => {
-		await createPlaintextStore().save('https://api.epicenter.so', {
+		await createPlaintextRepository().save('https://api.epicenter.so', {
 			bearerToken: 'bearer-token',
 			session: makeSession({ expiresAt: '2025-01-01T00:00:00.000Z' }),
 		});

@@ -68,7 +68,6 @@ export function defineOpensidianDaemon({
 				sync,
 				actions,
 				remote,
-				rpc,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();
 					await sync.whenDisposed;

@@ -34,8 +34,8 @@ import {
 	defineDocument,
 	toWsUrl,
 } from '@epicenter/workspace';
+import { bindWorkspaceAuthLifecycle } from '@epicenter/auth-workspace';
 import {
-	attachAuthSnapshotToWorkspace,
 	createAuth,
 	createSessionStorageAdapter,
 	Session,
@@ -57,7 +57,7 @@ const app = defineDocument((id: string) => {
 	const sync = attachSync(ydoc, {
 		url: (docId) => toWsUrl(`https://api.epicenter.so/workspaces/${docId}`),
 		getToken: async () => {
-			await auth.whenSessionLoaded;
+			await auth.whenLoaded;
 
 			const snapshot = auth.snapshot;
 			return snapshot.status === 'signedIn' ? snapshot.session.token : null;
@@ -95,10 +95,12 @@ export const auth = createAuth({
 	sessionStorage: createSessionStorageAdapter(session),
 });
 
-attachAuthSnapshotToWorkspace({
+bindWorkspaceAuthLifecycle({
 	auth,
 	workspace,
-	onSignedOutCleanupError: reportError,
+	leavingUser: {
+		onCleanupError: reportError,
+	},
 });
 ```
 

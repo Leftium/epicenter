@@ -1,8 +1,8 @@
 import {
-	attachAuthSnapshotToWorkspace,
 	createAuth,
 	createSessionStorageAdapter,
 } from '@epicenter/auth-svelte';
+import { bindWorkspaceAuthLifecycle } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { toast } from '@epicenter/ui/sonner';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
@@ -68,17 +68,21 @@ async function registerDevice(): Promise<void> {
 	});
 }
 
-attachAuthSnapshotToWorkspace({
+bindWorkspaceAuthLifecycle({
 	auth,
 	workspace: tabManager,
-	afterSignedOutCleanup: () => window.location.reload(),
-	onSignedOutCleanupError: (error) => {
-		toast.error('Could not clear local data', {
-			description: extractErrorMessage(error),
-		});
+	leavingUser: {
+		afterCleanup: () => window.location.reload(),
+		onCleanupError: (error) => {
+			toast.error('Could not clear local data', {
+				description: extractErrorMessage(error),
+			});
+		},
 	},
-	onSignedInSnapshot: () => {
-		void registerDevice();
+	signedIn: {
+		onSnapshot: () => {
+			void registerDevice();
+		},
 	},
 });
 
@@ -98,8 +102,7 @@ export type WorkspaceTools = typeof workspaceAiTools.tools;
 // Device naming
 // ─────────────────────────────────────────────────────────────────────────────
 
-const capitalize = (str: string) =>
-	str.charAt(0).toUpperCase() + str.slice(1);
+const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
 
 /** Default device label like "Chrome on macOS". */
 async function generateDefaultDeviceName(): Promise<string> {

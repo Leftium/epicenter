@@ -1,20 +1,20 @@
-export type CredentialSecretRef = {
+export type MachineCredentialSecretRef = {
 	service: string;
 	account: string;
 };
 
-export type CredentialSecretStore = {
-	kind: 'file' | 'osKeychain';
+export type MachineCredentialSecretVault = {
+	kind: 'plaintextFile' | 'systemKeychain';
 	isAvailable(): Promise<boolean>;
 	selfTest(): Promise<void>;
-	save(ref: CredentialSecretRef, value: string): Promise<void>;
-	load(ref: CredentialSecretRef): Promise<string | null>;
-	delete(ref: CredentialSecretRef): Promise<void>;
+	save(ref: MachineCredentialSecretRef, value: string): Promise<void>;
+	load(ref: MachineCredentialSecretRef): Promise<string | null>;
+	delete(ref: MachineCredentialSecretRef): Promise<void>;
 };
 
-export function createFileSecretStore(): CredentialSecretStore {
+export function createPlaintextMachineCredentialSecretVault(): MachineCredentialSecretVault {
 	return {
-		kind: 'file',
+		kind: 'plaintextFile',
 		async isAvailable() {
 			return true;
 		},
@@ -31,9 +31,9 @@ async function loadKeyring() {
 	return await import('@napi-rs/keyring');
 }
 
-export function createKeychainSecretStore(): CredentialSecretStore {
+export function createSystemKeychainMachineCredentialSecretVault(): MachineCredentialSecretVault {
 	return {
-		kind: 'osKeychain',
+		kind: 'systemKeychain',
 		async isAvailable() {
 			try {
 				const { Entry } = await loadKeyring();

@@ -1,6 +1,6 @@
 ---
 name: spec-execution
-description: Execute a specification document through planned waves of parallel and sequential changes, updating the spec and committing after each wave. Use when the user says "execute this spec", "implement this plan", "run the spec", or when given a specs/*.md file to implement.
+description: Execute a specification document through planned waves of parallel and sequential changes, updating the spec and committing after each wave, then running a final post-implementation review. Use when the user says "execute this spec", "implement this plan", "run the spec", or when given a specs/*.md file to implement.
 metadata:
   author: epicenter
   version: '1.0'
@@ -18,7 +18,7 @@ Use this pattern when you need to:
 - Decide which spec tasks run in parallel vs sequentially.
 - Update spec checkboxes and implementation notes after each wave.
 - Commit code changes together with spec progress for every wave.
-- Finish execution by setting spec status and adding a review section.
+- Finish execution by running `post-implementation-review`, setting spec status, and adding a review section.
 
 ## The Execution Loop
 
@@ -36,17 +36,17 @@ PLAN WAVES (which tasks are parallel vs sequential?)
     ↓
 REPEAT until spec is complete
     ↓
-FINAL REVIEW (update spec status, add review section)
+FINAL REVIEW (run post-implementation-review, update spec status, add review section)
 ```
 
 ## Phase 1: Read and Understand
 
 Before touching any code:
 
-1. **Read the entire spec** — understand the full scope before planning
+1. **Read the entire spec**: understand the full scope before planning
 2. **Identify the implementation phases** from the spec's Implementation Plan section
-3. **Map dependencies** — which tasks block others? Which are independent?
-4. **Check the spec's Open Questions** — resolve what you can, flag what needs human input
+3. **Map dependencies**: which tasks block others? Which are independent?
+4. **Check the spec's Open Questions**: resolve what you can, flag what needs human input
 
 If the spec has unresolved Open Questions that block implementation, surface them immediately. Don't guess on architectural decisions.
 
@@ -71,15 +71,15 @@ Every task runs in a sub-agent regardless. The question is only whether sub-agen
 Before executing, write out your wave plan:
 
 ```
-Wave 1: [Foundation — types and interfaces]
+Wave 1: [Foundation, types and interfaces]
   - Task 1.1 (parallel with 1.2)
   - Task 1.2 (parallel with 1.1)
 
-Wave 2: [Core logic — depends on Wave 1 types]
-  - Task 2.1 (sequential — modifies shared module)
-  - Task 2.2 (after 2.1 — uses its exports)
+Wave 2: [Core logic, depends on Wave 1 types]
+  - Task 2.1 (sequential, modifies shared module)
+  - Task 2.2 (after 2.1, uses its exports)
 
-Wave 3: [Integration — consumers of Wave 2]
+Wave 3: [Integration, consumers of Wave 2]
   - Task 3.1 (parallel with 3.2)
   - Task 3.2 (parallel with 3.1)
 ```
@@ -92,9 +92,9 @@ For each wave:
 
 ### 1. Execute Tasks
 
-**Every task gets its own sub-agent.** This is non-negotiable. Sub-agents exist to scope context — each one sees only what it needs for its task, which produces better results than a single agent juggling everything. Parallelism is a bonus, not the reason for sub-agents.
+**Every task gets its own sub-agent.** This is non-negotiable. Sub-agents exist to scope context. Each one sees only what it needs for its task, which produces better results than a single agent juggling everything. Parallelism is a bonus, not the reason for sub-agents.
 
-- **Independent tasks**: Launch sub-agents in parallel. Each gets a focused prompt with only the context it needs — the relevant spec section, the files to modify, and the patterns to follow.
+- **Independent tasks**: Launch sub-agents in parallel. Each gets a focused prompt with only the context it needs: the relevant spec section, the files to modify, and the patterns to follow.
 - **Dependent tasks**: Launch sub-agents sequentially. Wait for one to complete before launching the next. The second agent gets the output/context from the first.
 - **Keep changes minimal**: Each task should do exactly what the spec says. No bonus refactors, no "while I'm here" improvements.
 
@@ -136,20 +136,23 @@ Each commit includes BOTH the code changes AND the spec updates. This means ever
 Follow `git` and `incremental-commits` skill conventions:
 
 ```
-feat(scope): wave description — what this wave accomplishes
+feat(scope): wave description, what this wave accomplishes
 
 - Completed spec items 1.1, 1.2
 - [Any notable deviations or discoveries]
 ```
 
-Stage specific files — never `git add .` or `git add -A`.
+Stage specific files. Never `git add .` or `git add -A`.
 
 ## Phase 4: Final Review
 
 After all waves complete:
 
-1. **Update spec status** from "In Progress" to "Implemented"
-2. **Add a Review section** at the bottom of the spec:
+1. **Run `post-implementation-review`** against the files touched by the spec.
+   Use the findings to clean up stale abstractions, dead paths, invariant drift,
+   naming issues, and missing verification before handoff.
+2. **Update spec status** from "In Progress" to "Implemented"
+3. **Add a Review section** at the bottom of the spec:
 
 ```markdown
 ## Review
@@ -170,11 +173,11 @@ After all waves complete:
 - [Anything discovered during implementation that should be a future spec]
 ```
 
-3. **Final commit** with the review section added
+4. **Final commit** with the review section added
 
 ## Sub-Agent Prompts
 
-Every task — parallel or sequential — runs in a sub-agent. The primary agent orchestrates: it plans waves, launches sub-agents, verifies results, updates the spec, and commits. It does not implement code directly.
+Every task, parallel or sequential, runs in a sub-agent. The primary agent orchestrates: it plans waves, launches sub-agents, verifies results, updates the spec, and commits. It does not implement code directly.
 
 When spinning up sub-agents, each agent needs:
 
@@ -182,7 +185,7 @@ When spinning up sub-agents, each agent needs:
 - **The files it should read** before making changes
 - **The files it should modify** (and only those files)
 - **The patterns to follow** (reference relevant skills)
-- **What NOT to do** — stay in lane, don't touch other files
+- **What NOT to do**: stay in lane, don't touch other files
 
 Keep sub-agent prompts focused. A sub-agent that knows too much will try to do too much.
 
@@ -248,6 +251,7 @@ For each wave:
 
 After all waves:
 
+- [ ] Run `post-implementation-review` on touched files
 - [ ] Update spec status to Implemented
 - [ ] Add Review section
 - [ ] Final commit

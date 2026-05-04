@@ -1,9 +1,9 @@
 import {
-	attachAuthSnapshotToWorkspace,
 	createAuth,
 	createSessionStorageAdapter,
 	Session,
 } from '@epicenter/auth-svelte';
+import { bindWorkspaceAuthLifecycle } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
@@ -31,14 +31,16 @@ export const fuji = openFuji({
 	},
 });
 
-attachAuthSnapshotToWorkspace({
+bindWorkspaceAuthLifecycle({
 	auth,
 	workspace: fuji,
-	afterSignedOutCleanup: () => window.location.reload(),
-	onSignedOutCleanupError: (error) => {
-		toast.error('Could not clear local data', {
-			description: extractErrorMessage(error),
-		});
+	leavingUser: {
+		afterCleanup: () => window.location.reload(),
+		onCleanupError: (error) => {
+			toast.error('Could not clear local data', {
+				description: extractErrorMessage(error),
+			});
+		},
 	},
 });
 

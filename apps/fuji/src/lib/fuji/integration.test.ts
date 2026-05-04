@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
-import { createCredentialStore } from '../../../../../packages/auth/src/node/credential-store.js';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { EncryptionKeys, ProjectDir } from '@epicenter/workspace';
 import type { DaemonRuntime } from '@epicenter/workspace/daemon';
@@ -13,6 +12,7 @@ import {
 	mintTestProjectDir,
 	NoopWebSocket,
 } from '@epicenter/workspace/test-utils';
+import { createMachineCredentialRepository } from '../../../../../packages/auth/src/node/machine-credential-repository.js';
 import { DEFAULT_FUJI_DAEMON_ROUTE, defineFujiDaemon } from './daemon.js';
 import { openFuji as openFujiDoc } from './index.js';
 import { openFujiScript, openFujiSnapshot } from './script.js';
@@ -151,8 +151,8 @@ describe('daemon to script handoff via Yjs log file', () => {
 		expect(lockedSnapshot.tables.entries.getAllValid()).toEqual([]);
 
 		const now = new Date();
-		await createCredentialStore({
-			storageMode: 'file',
+		await createMachineCredentialRepository({
+			credentialStorage: { kind: 'plaintextFile' },
 		}).save(EPICENTER_API_URL, {
 			bearerToken: 'fake-token',
 			session: {

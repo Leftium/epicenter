@@ -86,8 +86,9 @@ prefixed by route. `run` is local by default and remote when `--peer
 target moves.
 
 Fan-out across peers (e.g. "who exposes action X?") is a five-line
-script that walks `workspace.presence.peers()` and calls
-`createRemoteClient({ presence, rpc }).describe(peerId)` on each. The CLI
+script that walks `workspace.awareness.peers()` and calls
+`workspace.remote.describe(peerId)` or
+`createRemoteClient({ awareness, rpc }).describe(peerId)` on each. The CLI
 deliberately does not grow a flag for it.
 
 Peer awareness has a ~30s liveness window: a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--wait <ms>` expires (default 5000). `peers` reads the current awareness snapshot one-shot.

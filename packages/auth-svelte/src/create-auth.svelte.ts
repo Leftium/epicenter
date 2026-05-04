@@ -1,7 +1,7 @@
 import {
 	type AuthClient as BaseAuthClient,
-	createAuth as createBaseAuthClient,
 	type CreateAuthConfig,
+	createAuth as createBaseAuthClient,
 } from '@epicenter/auth';
 
 export type AuthClient = BaseAuthClient;
@@ -17,7 +17,7 @@ export function createAuth(config: CreateAuthConfig): AuthClient {
 	const base = createBaseAuthClient(config);
 	let snapshot = $state(base.snapshot);
 
-	const unsubscribe = base.subscribe((next) => {
+	const unsubscribe = base.onSnapshotChange((next) => {
 		snapshot = next;
 	});
 
@@ -25,10 +25,10 @@ export function createAuth(config: CreateAuthConfig): AuthClient {
 		get snapshot() {
 			return snapshot;
 		},
-		get whenSessionLoaded() {
-			return base.whenSessionLoaded;
+		get whenLoaded() {
+			return base.whenLoaded;
 		},
-		subscribe: base.subscribe,
+		onSnapshotChange: base.onSnapshotChange,
 		signIn: base.signIn,
 		signUp: base.signUp,
 		signInWithSocialPopup: base.signInWithSocialPopup,

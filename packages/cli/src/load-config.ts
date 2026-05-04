@@ -138,17 +138,56 @@ export type DaemonConfigError = InferErrors<typeof DaemonConfigError>;
 function hasDaemonRuntimeShape(value: unknown): value is DaemonRuntime {
 	if (!isObjectRecord(value)) return false;
 	const { actions, awareness, sync, remote } = value;
-	if (!isObjectRecord(awareness) || !isObjectRecord(sync) || !isObjectRecord(remote)) {
+	if (
+		!isObjectRecord(awareness) ||
+		!isObjectRecord(sync) ||
+		!isObjectRecord(remote)
+	) {
 		return false;
 	}
 	return (
 		isObjectRecord(actions) &&
 		isThenable(sync.whenDisposed) &&
+		hasSyncStatusShape(sync.status) &&
 		typeof sync.onStatusChange === 'function' &&
 		typeof awareness.peers === 'function' &&
 		typeof awareness.observe === 'function' &&
 		typeof remote.invoke === 'function' &&
 		typeof value[Symbol.asyncDispose] === 'function'
+	);
+}
+
+function hasSyncStatusShape(value: unknown): boolean {
+	if (!isObjectRecord(value) || typeof value.phase !== 'string') return false;
+	switch (value.phase) {
+		case 'offline':
+			return true;
+		case 'connected':
+			return typeof value.hasLocalChanges === 'boolean';
+		case 'connecting':
+			return (
+				typeof value.retries === 'number' &&
+				(value.lastError === undefined || hasSyncErrorShape(value.lastError))
+			);
+		case 'failed':
+			return hasSyncFailedReasonShape(value.reason);
+		default:
+			return false;
+	}
+}
+
+function hasSyncErrorShape(value: unknown): boolean {
+	return (
+		isObjectRecord(value) &&
+		(value.type === 'auth' || value.type === 'connection')
+	);
+}
+
+function hasSyncFailedReasonShape(value: unknown): boolean {
+	return (
+		isObjectRecord(value) &&
+		value.type === 'auth' &&
+		typeof value.code === 'string'
 	);
 }
 

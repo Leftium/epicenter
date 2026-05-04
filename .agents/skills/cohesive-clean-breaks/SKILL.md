@@ -1,6 +1,6 @@
 ---
 name: cohesive-clean-breaks
-description: Use when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Guides agents to preserve a clear product and code vision, reject hybrid compromise APIs, remove stale names, use dependency injection and inversion of control deliberately, move abstraction boundaries, and keep invariants owned by one layer.
+description: Use when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Guides agents to preserve a clear product and code vision, reject hybrid compromise APIs, mentally inline abstractions, remove stale names, use dependency injection and inversion of control deliberately, move abstraction boundaries, and keep invariants owned by one layer.
 ---
 
 # Cohesive Clean Breaks
@@ -11,6 +11,11 @@ strategy.
 
 The goal is not to minimize diff size. The goal is to make the final system
 easy to explain, hard to misuse, and free of half-old, half-new behavior.
+
+Related skills: use `one-sentence-test` to state the thesis, `refactoring` for
+caller counting and straggler sweeps, `approachability-audit` for first-read
+clarity, `change-proposal` when showing current and proposed trees before
+editing, and `post-implementation-review` after implementation.
 
 ## One Sentence First
 
@@ -33,7 +38,7 @@ true, the design is probably not clean yet.
 
 ## Ownership Test
 
-For every important value, name the owner.
+For every important value and invariant, name the owner.
 
 ```txt
 route name        app daemon package
@@ -47,6 +52,10 @@ remote call       rpc attachment
 If two layers own the same value, collapse the design before coding. Shared
 ownership usually becomes drift.
 
+If the same invariant is checked in several downstream files, move it to
+construction time, validation, or the type signature. Repeated defensive checks
+usually mean the boundary is too late.
+
 ## Scratch Redesign Pass
 
 Before patching the current shape, ask what the API would look like if it were
@@ -55,17 +64,38 @@ designed today with no compatibility burden.
 Write the ideal consumer call site first:
 
 ```ts
-attachWorkspaceAuthLifecycle({
+bindWorkspaceAuthLifecycle({
 	auth,
 	workspace,
-	afterSignedOutCleanup: reload,
-	onSignedOutCleanupError: reportError,
+	leavingUser: {
+		afterCleanup: reload,
+		onCleanupError: reportError,
+	},
 });
 ```
 
 Then work backward into implementation. If the ideal call site needs the
 consumer to pass unrelated things, the boundary is probably wrong. If it hides
 important policy, the abstraction is too soft.
+
+## Mental Inlining Pass
+
+Before preserving a helper, layer, file, option, adapter, or component boundary,
+mentally inline it into its caller.
+
+Ask:
+
+```txt
+What does this layer actually add?
+Would the caller be easier to understand if this code lived inline?
+Is the name hiding simple control flow?
+Is the abstraction preserving a stale boundary from an old design?
+Does it exist because the current file tree made it convenient?
+```
+
+Keep the layer only when it owns a real invariant, names non-obvious domain
+behavior, isolates unsafe input, or has enough callers to earn a stable
+contract.
 
 ## Dependency Injection and Inversion of Control
 
@@ -127,6 +157,24 @@ Can the caller ignore details it does not own?
 
 Ergonomics does not mean hiding failure. A clean API makes required policy
 obvious and optional policy genuinely optional.
+
+## API Shape Pressure
+
+Prefer APIs with one obvious shape and one obvious lifecycle moment.
+
+Smells:
+
+```txt
+boolean flags that choose unrelated modes
+options named after implementation steps
+parallel old and new properties
+callbacks for every internal phase
+types that expose storage details to UI callers
+```
+
+Fix by moving policy to the caller, moving invariants to the callee, or
+splitting two products into two APIs. Do not make one surface accept every
+historical shape.
 
 ## Reject Hybrid APIs
 
@@ -218,9 +266,32 @@ makes startup side effects harder to reason about.
 Do not introduce a second config file shape just because it looks cleaner in
 isolation. A new config filename is a product decision, not a local refactor.
 
+## File Organization Check
+
+When the design changes ownership, sketch the current and proposed trees before
+editing.
+
+```txt
+Current
+packages/foo/
+|-- lifecycle.ts
+|-- lifecycle-options.ts
+|-- cleanup.ts
+`-- index.ts
+
+Proposed
+packages/foo/
+`-- lifecycle.ts
+```
+
+Flatten stale directories when they only preserve an old concept. Rename files
+when their owner changed. Keep a file split only when each file has a distinct
+reason to exist for a new reader.
+
 ## Final Check
 
-Before finishing, grep for the old vocabulary and old shape. If old names still
+Before finishing, grep for old vocabulary, old shapes, old filenames, removed
+exports, fallback parsers, stale comments, and examples. If old names still
 appear outside historical specs or migration notes, the break is incomplete.
 
 Ask:
@@ -233,6 +304,10 @@ Are examples free of compatibility shapes?
 Are side effects injected as policy instead of imported as hidden globals?
 Did I move the boundary that caused the smell, or only wrap it?
 Did I delete stale names instead of leaving aliases?
+Did I delete dead paths instead of leaving them unreachable?
+Did the file tree change to match the new ownership?
+Did every validation move to the earliest layer that can know the truth?
+Would mentally inlining each new helper make the code clearer?
 ```
 
 If any answer is no, keep simplifying.

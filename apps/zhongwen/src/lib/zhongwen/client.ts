@@ -1,4 +1,7 @@
-import { createAuth, createSessionStorageAdapter } from '@epicenter/auth-svelte';
+import {
+	createAuth,
+	createSessionStorageAdapter,
+} from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { session } from '$lib/auth';
 import { openZhongwen } from './browser';
@@ -10,18 +13,33 @@ export const auth = createAuth({
 
 export const zhongwen = openZhongwen();
 
-auth.subscribe((next, previous) => {
-	if (next.status === 'loading') return;
+let activeUserId: string | null = null;
 
-	const previousSession =
-		previous.status === 'signedIn' ? previous.session : null;
+function applyAuthSnapshot(snapshot: typeof auth.snapshot) {
+	if (snapshot.status === 'loading') return;
 
-	if (next.status === 'signedOut') {
-		if (previousSession !== null) void zhongwen.idb.clearLocal();
+	if (snapshot.status === 'signedOut') {
+		if (activeUserId !== null) {
+			activeUserId = null;
+			void zhongwen.idb.clearLocal();
+		}
 		return;
 	}
-	zhongwen.encryption.applyKeys(next.session.encryptionKeys);
-});
+
+	if (activeUserId !== snapshot.session.user.id && activeUserId !== null) {
+		activeUserId = null;
+		void zhongwen.idb.clearLocal().then(() => applyAuthSnapshot(snapshot));
+		return;
+	}
+
+	zhongwen.encryption.applyKeys(snapshot.session.encryptionKeys);
+	activeUserId = snapshot.session.user.id;
+}
+
+// Zhongwen has encrypted local persistence but no auth-backed sync target, so
+// it keeps a small local listener instead of using bindWorkspaceAuthLifecycle.
+applyAuthSnapshot(auth.snapshot);
+auth.onSnapshotChange(applyAuthSnapshot);
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {

@@ -1,6 +1,6 @@
 ---
 name: code-audit
-description: Recurring smell categories in this codebase, with grep patterns to find them. Use when doing periodic code review, scoping a cleanup pass, or hunting for the kind of subtle smells that accumulate session-over-session — duck-typing leaks, untyped boundaries, ceremony tails, library logging discipline, union-churn signals.
+description: "Recurring smell categories in this codebase, with grep patterns to find them. Use when doing periodic code review, scoping a cleanup pass, or hunting for the kind of subtle smells that accumulate session-over-session: duck-typing leaks, untyped boundaries, ceremony tails, library logging discipline, union-churn signals."
 metadata:
   author: epicenter
   version: '1.0'
@@ -10,7 +10,7 @@ metadata:
 
 Recurring smell categories worth hunting periodically. Each category has a grep pattern, a real example from the repo (if one exists), and a "why it matters" so you know whether a hit is a real smell or expected.
 
-> **Related skills**: See `refactoring` for the methodology of fixing what you find. See `one-sentence-test` for the cohesion audit that frames whether an abstraction earns its keep.
+> **Related skills**: See `post-implementation-review` for the full second-read ritual after implementation. See `refactoring` for the methodology of fixing what you find. See `one-sentence-test` for the cohesion audit that frames whether an abstraction earns its keep.
 
 ## When to Apply This Skill
 
@@ -19,9 +19,9 @@ Use when:
 - Doing a periodic code-quality review pass.
 - Scoping a cleanup PR.
 - After a major refactor, hunting for stale boundaries the new design exposes.
-- Reviewing a PR that touches a primitive — these patterns indicate where new contracts may be leaking into consumers.
+- Reviewing a PR that touches a primitive: these patterns indicate where new contracts may be leaking into consumers.
 
-The five categories below were validated against the actual codebase by repeated agent audits. They're not generic style nits — each one signals a specific kind of contract problem in a TypeScript-heavy framework codebase.
+The five categories below were validated against the actual codebase by repeated agent audits. They're not generic style nits: each one signals a specific kind of contract problem in a TypeScript-heavy framework codebase.
 
 ## 1. Duck-Typing at System Boundaries
 
@@ -33,7 +33,7 @@ grep -rn "as\s*{" packages/cli packages/workspace --include="*.ts" -B2 -A2
 
 **Why it matters**: Each duck-type is a contract gap. The receiver doesn't know what it's getting; the producer doesn't know what's expected. Often justified at literal system boundaries (e.g., parsing user-provided configs, reading from third-party APIs), but unjustified inside the framework's own code.
 
-**Example (justified)**: `packages/cli/src/util/handle-attachments.ts:41-45` — duck-types `sync` and `awareness` because the CLI bundles are user-defined and arbitrary. The 30-line comment block above the helper documents exactly why.
+**Example (justified)**: `packages/cli/src/util/handle-attachments.ts:41-45`: duck-types `sync` and `awareness` because the CLI bundles are user-defined and arbitrary. The 30-line comment block above the helper documents exactly why.
 
 **Example (unjustified)**: `if (entry.handle.whenReady)` was duck-typing `whenReady` until it became a typed optional on `Document`. The diagnostic told us the contract was incomplete; the fix was to declare the field.
 
@@ -47,9 +47,9 @@ grep -rn "as\s*{" packages/cli packages/workspace --include="*.ts" -B2 -A2
 grep -rn "argv\s*as\s*Record<string, unknown>" packages/cli --include="*.ts"
 ```
 
-**Why it matters**: yargs types `argv` as loosely as it can. Every CLI command handler does `const args = argv as Record<string, unknown>` and then keys into it three or four times. Each access is a type-system escape — `argv.foo as string`, `argv.bar as number`. The type system isn't catching missing flags or typos at the source.
+**Why it matters**: yargs types `argv` as loosely as it can. Every CLI command handler does `const args = argv as Record<string, unknown>` and then keys into it three or four times. Each access is a type-system escape: `argv.foo as string`, `argv.bar as number`. The type system isn't catching missing flags or typos at the source.
 
-**Why it persists**: yargs's typed builder API is verbose and authors trade off ergonomics for safety. The trade is real, but worth periodically auditing — especially when adding a new flag, check whether the access pattern crosses the threshold where a typed argv extraction helper would pay off.
+**Why it persists**: yargs's typed builder API is verbose and authors trade off ergonomics for safety. The trade is real, but worth periodically auditing: especially when adding a new flag, check whether the access pattern crosses the threshold where a typed argv extraction helper would pay off.
 
 **Triage**: a single command with two flag accesses isn't worth a typed wrapper. Five flags or three commands sharing the same accessor pattern is. Look for **repeated** key access to the same field across command files; that's the signal to extract.
 
@@ -92,7 +92,7 @@ function createX({ log = createLogger('x') }: { log?: Logger } = {}) { ... }
 const log = config.log ?? createLogger('attachSync');
 ```
 
-**Triage**: this category is verified periodically — the codebase has historically been clean. Treat any hit as a regression and route through `wellcrafted/logger` before merging. New `console.*` in library code should be refused at PR review unless the call site is explicitly a CLI command, test, or benchmark.
+**Triage**: this category is verified periodically: the codebase has historically been clean. Treat any hit as a regression and route through `wellcrafted/logger` before merging. New `console.*` in library code should be refused at PR review unless the call site is explicitly a CLI command, test, or benchmark.
 
 ## 5. Exhaustive `never` Checks as Union-Churn Signals
 
@@ -102,11 +102,11 @@ const log = config.log ?? createLogger('attachSync');
 grep -rn ": never\s*=" packages --include="*.ts" -B10
 ```
 
-**Why it matters**: each `never` check is a contract promise — "if this union grows a variant, every consumer with this check will break." That's *good* — it's the type system catching missed cases. But if adding a single variant breaks five different switches, the variants are probably overlapping, the union is too broad, or the same logic is being implemented in too many places.
+**Why it matters**: each `never` check is a contract promise: "if this union grows a variant, every consumer with this check will break." That's *good*: it's the type system catching missed cases. But if adding a single variant breaks five different switches, the variants are probably overlapping, the union is too broad, or the same logic is being implemented in too many places.
 
 **Example (justified)**: `packages/cli/src/util/emit-peer-errors.ts:89` exhaustively switches over `RpcError` variants. `RpcError` has well-bounded variants (well under five), the switch is the canonical formatter, and other code routes through it rather than re-implementing. Single point of enforcement, healthy use of the pattern.
 
-**Triage**: count call sites on the discriminated type. If 1-2 switches enforce exhaustiveness, fine. 5+ is a smell — consider:
+**Triage**: count call sites on the discriminated type. If 1-2 switches enforce exhaustiveness, fine. 5+ is a smell: consider:
 
 - Moving the switch into a method on the union members themselves (each variant exports its own behavior).
 - Splitting the union if some switches only care about a subset of variants.
@@ -118,11 +118,11 @@ grep -rn ": never\s*=" packages --include="*.ts" -B10
 
 Tested and rejected as not-actually-smells in this codebase:
 
-- **Dead `kind:` branches** — exhaustiveness via `never` enforces this aggressively. No dead branches survive.
-- **Dead exported types** — many exports across `packages/workspace`; spot-checks always hit consumers. Would need deeper dependency analysis to find real dead ones.
-- **Stale file names** (`*-manager.ts`, `*-handler.ts`) — none found. Naming matches responsibility.
-- **Async wrappers doing no work** — Yjs is sync-friendly; the codebase doesn't fake async.
-- **Casual `@ts-expect-error` / `@ts-ignore`** — ~234 of them, but all justified (test doubles, duck-typing at system boundaries with comments).
+- **Dead `kind:` branches**: exhaustiveness via `never` enforces this aggressively. No dead branches survive.
+- **Dead exported types**: many exports across `packages/workspace`; spot-checks always hit consumers. Would need deeper dependency analysis to find real dead ones.
+- **Stale file names** (`*-manager.ts`, `*-handler.ts`): none found. Naming matches responsibility.
+- **Async wrappers doing no work**: Yjs is sync-friendly; the codebase doesn't fake async.
+- **Casual `@ts-expect-error` / `@ts-ignore`**: ~234 of them, but all justified (test doubles, duck-typing at system boundaries with comments).
 
 If a future audit finds patterns consistent with these categories, they should be added here. If a category proves false (zero hits across multiple sweeps), demote it.
 
@@ -132,7 +132,7 @@ When kicking off a review pass:
 
 1. Run all five greps against the relevant scope (single package, full monorepo, or recently-changed files).
 2. For each hit, read the ±5 lines of context and decide: justified, refactor, or false-positive.
-3. Group findings by category and impact before fixing — refactoring scattered hits one-at-a-time loses the pattern.
+3. Group findings by category and impact before fixing: refactoring scattered hits one-at-a-time loses the pattern.
 4. Document the fix in a single PR with the audit log. The pattern matters more than the individual instances.
 
 The goal is **systematic detection**, not ad-hoc cleanup. These patterns repeat; codifying them here means future review passes don't re-derive them.

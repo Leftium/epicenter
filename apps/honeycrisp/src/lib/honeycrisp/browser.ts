@@ -51,7 +51,7 @@ export function openHoneycrisp({
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
 		getToken: async () => {
-			await auth.whenSessionLoaded;
+			await auth.whenLoaded;
 
 			const snapshot = auth.snapshot;
 			return snapshot.status === 'signedIn' ? snapshot.session.token : null;

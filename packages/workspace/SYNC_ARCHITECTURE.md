@@ -626,21 +626,22 @@ createRemoteClient({ awareness, rpc }).actions<T>('mac').foo()
   ├─ fire: rpc.rpc(...)
   │
   ├─ if RPC resolves first:        → return its result
-  ├─ if peer leaves awareness first → reject with PeerLeft
+  ├─ if peer leaves awareness first → return PeerLeft
   └─ either way: unsubscribe
 ```
 
-## A full call: `epicenter list --peer macbook-pro`
+## A full call: `remote.describe('macbook-pro')`
 
-End-to-end. The CLI process is "Fuji"; the peer is "macbook-pro" (a tab-manager instance).
+End to end. A script running in the Fuji process asks for the action manifest
+published by peer "macbook-pro" (a tab-manager instance).
 
 ```
 ┌────────────────────┐                     ┌────────────────────┐
-│  Fuji (CLI)        │                     │  macbook-pro       │
+│  Fuji script       │                     │  macbook-pro       │
 │  workspace.sync    │                     │  (tab-manager)     │
 └─────────┬──────────┘                     └─────────┬──────────┘
           │                                          │
-          │ 1. CLI loads epicenter.config.ts         │
+          │ 1. Script opens the workspace            │
           │    workspace.awareness.peers() returns: │
           │    Map { 42 → {peer:{id:'macbook-pro'}}}│
           │                                          │
@@ -673,23 +674,24 @@ End-to-end. The CLI process is "Fuji"; the peer is "macbook-pro" (a tab-manager 
           │    pendingRequests, resolves the         │
           │    Promise with Ok(manifest)             │
           │                                          │
-          │ 9. CLI renders the manifest as a tree    │
+          │ 9. Script receives the manifest          │
           │                                          │
 ```
 
 ## Construction → first connect, in time
 
 ```
-t=0ms      attachSync(doc, { url, getToken, waitFor: idb })
+t=0ms      attachAwareness(ydoc, { schema, initial })
+              └─ publishes local peer state on the awareness attachment
+
+t=1ms      attachSync(doc, { url, getToken, waitFor: idb, awareness })
               ├─ wires ydoc.on('updateV2')
+              ├─ wires awareness.raw.on('update')
               └─ kicks off async waitFor → ensureSupervisor()
 
               returns SyncAttachment immediately
 
-t=0ms      attachAwareness(ydoc, { schema, initial })
-              └─ publishes local peer state when sync opens
-
-t=0ms      sync.attachRpc(actions)
+t=2ms      sync.attachRpc(actions)
               ├─ validates `'system' not in userActions`
               └─ injects system.describe
 

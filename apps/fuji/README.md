@@ -21,7 +21,7 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
-Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `attachAuthSnapshotToWorkspace(...)`, so encryption keys, local cleanup, and sync reconnects follow one transition path.
+Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `bindWorkspaceAuthLifecycle(...)`, so encryption keys, local cleanup, and sync reconnects follow one transition path.
 
 ```ts
 export function openFuji() {
@@ -38,7 +38,7 @@ export function openFuji() {
     url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
     getToken: async () => {
-      await auth.whenSessionLoaded;
+      await auth.whenLoaded;
 
       const snapshot = auth.snapshot;
       return snapshot.status === 'signedIn' ? snapshot.session.token : null;
@@ -58,7 +58,7 @@ export function openFuji() {
 export const workspace = openFuji();
 ```
 
-`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. Auth state flows through `auth.snapshot` and `auth.subscribe`; its disposer is wired into `import.meta.hot.dispose` so HMR tears down the subscription cleanly.
+`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. Auth state flows through `auth.snapshot` and `bindWorkspaceAuthLifecycle`; auth disposal is wired into `import.meta.hot.dispose` so HMR tears down listeners cleanly.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/client.ts`.
 

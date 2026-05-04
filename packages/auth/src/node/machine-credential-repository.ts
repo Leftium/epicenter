@@ -1,4 +1,4 @@
-import { mkdir, rename, chmod } from 'node:fs/promises';
+import { chmod, mkdir, rename } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -12,16 +12,16 @@ import {
 	StoredBetterAuthUser,
 } from '../contracts/session.js';
 import {
-	createFileSecretStore,
-	createKeychainSecretStore,
-	type CredentialSecretRef,
-	type CredentialSecretStore,
-} from './credential-secret-store.js';
+	createPlaintextMachineCredentialSecretVault,
+	createSystemKeychainMachineCredentialSecretVault,
+	type MachineCredentialSecretRef,
+	type MachineCredentialSecretVault,
+} from './machine-credential-secret-vault.js';
 import { normalizeServerOrigin } from './server-origin.js';
 
 const CREDENTIAL_FILE_VERSION = 'epicenter.auth.credentialStore.v1';
 
-export const StoredBetterAuthSessionMetadata = type({
+const StoredBetterAuthSessionMetadata = type({
 	id: 'string',
 	userId: 'string',
 	expiresAt: 'string',
@@ -30,70 +30,73 @@ export const StoredBetterAuthSessionMetadata = type({
 	'ipAddress?': 'string | null | undefined',
 	'userAgent?': 'string | null | undefined',
 });
-export type StoredBetterAuthSessionMetadata =
+type StoredBetterAuthSessionMetadata =
 	typeof StoredBetterAuthSessionMetadata.infer;
 
-export const InlineCredentialSecrets = type({
+const PlaintextMachineCredentialSecrets = type({
 	storage: "'file'",
 	bearerToken: 'string',
 	sessionToken: 'string',
 	encryptionKeys: EncryptionKeys,
 });
-export type InlineCredentialSecrets = typeof InlineCredentialSecrets.infer;
+type PlaintextMachineCredentialSecrets =
+	typeof PlaintextMachineCredentialSecrets.infer;
 
-export const CredentialSecretRefSchema = type({
+const MachineCredentialSecretRefSchema = type({
 	service: 'string',
 	account: 'string',
 });
 
-export const KeychainCredentialSecrets = type({
+const KeychainMachineCredentialSecrets = type({
 	storage: "'osKeychain'",
-	bearerTokenRef: CredentialSecretRefSchema,
-	sessionTokenRef: CredentialSecretRefSchema,
-	encryptionKeysRef: CredentialSecretRefSchema,
+	bearerTokenRef: MachineCredentialSecretRefSchema,
+	sessionTokenRef: MachineCredentialSecretRefSchema,
+	encryptionKeysRef: MachineCredentialSecretRefSchema,
 });
-export type KeychainCredentialSecrets = typeof KeychainCredentialSecrets.infer;
+type KeychainMachineCredentialSecrets =
+	typeof KeychainMachineCredentialSecrets.infer;
 
-export const CredentialSecrets = InlineCredentialSecrets.or(
-	KeychainCredentialSecrets,
+const MachineCredentialSecrets = PlaintextMachineCredentialSecrets.or(
+	KeychainMachineCredentialSecrets,
 );
-export type CredentialSecrets = typeof CredentialSecrets.infer;
+type MachineCredentialSecrets = typeof MachineCredentialSecrets.infer;
 
-export const CredentialSession = type({
+const TokenlessMachineSession = type({
 	user: StoredBetterAuthUser,
 	session: StoredBetterAuthSessionMetadata,
 });
 
-export const CredentialFileEntry = type({
+const MachineCredentialFileEntry = type({
 	serverOrigin: 'string',
-	session: CredentialSession,
-	secrets: CredentialSecrets,
+	session: TokenlessMachineSession,
+	secrets: MachineCredentialSecrets,
 	savedAt: 'string',
 	lastUsedAt: 'string',
 });
-export type CredentialFileEntry = typeof CredentialFileEntry.infer;
+type MachineCredentialFileEntry = typeof MachineCredentialFileEntry.infer;
 
-export const CredentialFile = type({
+const MachineCredentialFile = type({
 	version: "'epicenter.auth.credentialStore.v1'",
 	'currentServerOrigin?': 'string | null | undefined',
-	credentials: CredentialFileEntry.array(),
+	credentials: MachineCredentialFileEntry.array(),
 });
-export type CredentialFile = typeof CredentialFile.infer;
+type MachineCredentialFile = typeof MachineCredentialFile.infer;
 
-export const Credential = type({
+const MachineCredential = type({
 	serverOrigin: 'string',
 	bearerToken: 'string',
 	session: Session,
 	savedAt: 'string',
 	lastUsedAt: 'string',
 });
-export type Credential = typeof Credential.infer;
+export type MachineCredential = typeof MachineCredential.infer;
 
-export type CredentialStore = ReturnType<typeof createCredentialStore>;
-export type CredentialStoreStorageMode = 'file' | 'osKeychain';
-export type CredentialMetadata = {
+export type MachineCredentialRepositoryStoragePolicy =
+	| { kind: 'keychain'; secretVault?: MachineCredentialSecretVault }
+	| { kind: 'plaintextFile' };
+export type MachineCredentialMetadata = {
 	serverOrigin: string;
-	session: typeof CredentialSession.infer;
+	session: typeof TokenlessMachineSession.infer;
 	savedAt: string;
 	lastUsedAt: string;
 };
@@ -129,7 +132,7 @@ function sessionFromParts({
 	sessionToken,
 	encryptionKeys,
 }: {
-	entry: CredentialFileEntry;
+	entry: MachineCredentialFileEntry;
 	sessionToken: string;
 	encryptionKeys: EncryptionKeysData;
 }): SessionData {
@@ -147,14 +150,16 @@ function keychainRef(
 	kind: 'bearerToken' | 'sessionToken' | 'encryptionKeys',
 	serverOrigin: string,
 	userId: string,
-): CredentialSecretRef {
+): MachineCredentialSecretRef {
 	return {
 		service: `epicenter.auth.${kind}`,
 		account: `${serverOrigin}:${userId}`,
 	};
 }
 
-function keychainRefs(secrets: CredentialSecrets): CredentialSecretRef[] {
+function keychainRefs(
+	secrets: MachineCredentialSecrets,
+): MachineCredentialSecretRef[] {
 	if (secrets.storage === 'file') return [];
 	return [
 		secrets.bearerTokenRef,
@@ -163,7 +168,7 @@ function keychainRefs(secrets: CredentialSecrets): CredentialSecretRef[] {
 	];
 }
 
-function secretRefKey(ref: CredentialSecretRef): string {
+function secretRefKey(ref: MachineCredentialSecretRef): string {
 	return `${ref.service}:${ref.account}`;
 }
 
@@ -186,7 +191,10 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 	await chmod(path, 0o600).catch(() => {});
 }
 
-function parseCredentialFile(value: unknown, path: string): CredentialFile {
+function parseCredentialFile(
+	value: unknown,
+	path: string,
+): MachineCredentialFile {
 	if (value === null) {
 		return {
 			version: CREDENTIAL_FILE_VERSION,
@@ -194,13 +202,13 @@ function parseCredentialFile(value: unknown, path: string): CredentialFile {
 		};
 	}
 	try {
-		return CredentialFile.assert(value);
+		return MachineCredentialFile.assert(value);
 	} catch (cause) {
 		throw new Error(`Invalid credential file schema: ${path}`, { cause });
 	}
 }
 
-function latest(entries: Credential[]): Credential | null {
+function latest(entries: MachineCredential[]): MachineCredential | null {
 	return (
 		entries.toSorted((left, right) =>
 			left.lastUsedAt.localeCompare(right.lastUsedAt),
@@ -208,47 +216,45 @@ function latest(entries: Credential[]): Credential | null {
 	);
 }
 
-export function createCredentialStore({
+export function createMachineCredentialRepository({
 	path = defaultCredentialPath(),
-	storageMode,
-	secretStore: injectedSecretStore,
+	credentialStorage,
 	clock = { now: () => new Date() },
 }: {
 	path?: string;
-	storageMode: CredentialStoreStorageMode;
-	secretStore?: CredentialSecretStore;
+	credentialStorage: MachineCredentialRepositoryStoragePolicy;
 	clock?: Clock;
 }) {
-	const secretStore =
-		injectedSecretStore ??
-		(storageMode === 'osKeychain'
-			? createKeychainSecretStore()
-			: createFileSecretStore());
+	const secretVault =
+		credentialStorage.kind === 'keychain'
+			? (credentialStorage.secretVault ??
+				createSystemKeychainMachineCredentialSecretVault())
+			: createPlaintextMachineCredentialSecretVault();
 
 	async function assertStorageAvailable() {
-		if (storageMode === 'file') return;
-		if (!(await secretStore.isAvailable())) {
+		if (credentialStorage.kind === 'plaintextFile') return;
+		if (!(await secretVault.isAvailable())) {
 			throw new Error(
 				'OS keychain storage is unavailable. Rerun with --insecure-storage to use plaintext file storage.',
 			);
 		}
-		await secretStore.selfTest();
+		await secretVault.selfTest();
 	}
 
-	async function readFile(): Promise<CredentialFile> {
+	async function readFile(): Promise<MachineCredentialFile> {
 		return parseCredentialFile(await readJson(path), path);
 	}
 
 	async function resolveEntry(
-		entry: CredentialFileEntry,
-	): Promise<Credential | null> {
+		entry: MachineCredentialFileEntry,
+	): Promise<MachineCredential | null> {
 		if (entry.secrets.storage === 'file') {
 			const session = sessionFromParts({
 				entry,
 				sessionToken: entry.secrets.sessionToken,
 				encryptionKeys: entry.secrets.encryptionKeys,
 			});
-			return Credential.assert({
+			return MachineCredential.assert({
 				serverOrigin: entry.serverOrigin,
 				bearerToken: entry.secrets.bearerToken,
 				session,
@@ -257,9 +263,9 @@ export function createCredentialStore({
 			});
 		}
 
-		const bearerToken = await secretStore.load(entry.secrets.bearerTokenRef);
-		const sessionToken = await secretStore.load(entry.secrets.sessionTokenRef);
-		const rawEncryptionKeys = await secretStore.load(
+		const bearerToken = await secretVault.load(entry.secrets.bearerTokenRef);
+		const sessionToken = await secretVault.load(entry.secrets.sessionTokenRef);
+		const rawEncryptionKeys = await secretVault.load(
 			entry.secrets.encryptionKeysRef,
 		);
 		if (
@@ -276,7 +282,7 @@ export function createCredentialStore({
 			return null;
 		}
 		const session = sessionFromParts({ entry, sessionToken, encryptionKeys });
-		return Credential.assert({
+		return MachineCredential.assert({
 			serverOrigin: entry.serverOrigin,
 			bearerToken,
 			session,
@@ -285,14 +291,14 @@ export function createCredentialStore({
 		});
 	}
 
-	async function writeFile(file: CredentialFile): Promise<void> {
-		await writeJson(path, CredentialFile.assert(file));
+	async function writeFile(file: MachineCredentialFile): Promise<void> {
+		await writeJson(path, MachineCredentialFile.assert(file));
 	}
 
 	async function save(
 		serverOriginInput: string | URL,
 		input: { bearerToken: string; session: SessionData; lastUsedAt?: string },
-	): Promise<Credential> {
+	): Promise<MachineCredential> {
 		await assertStorageAvailable();
 		const serverOrigin = normalizeServerOrigin(serverOriginInput);
 		const now = isoNow(clock);
@@ -305,10 +311,10 @@ export function createCredentialStore({
 		);
 		const savedAt = existing?.savedAt ?? now;
 		const lastUsedAt = input.lastUsedAt ?? now;
-		let credentialSecrets: CredentialSecrets;
+		let credentialSecrets: MachineCredentialSecrets;
 
-		if (storageMode === 'file') {
-			credentialSecrets = InlineCredentialSecrets.assert({
+		if (credentialStorage.kind === 'plaintextFile') {
+			credentialSecrets = PlaintextMachineCredentialSecrets.assert({
 				storage: 'file',
 				bearerToken: input.bearerToken,
 				sessionToken: input.session.session.token,
@@ -330,13 +336,13 @@ export function createCredentialStore({
 				serverOrigin,
 				input.session.user.id,
 			);
-			await secretStore.save(bearerTokenRef, input.bearerToken);
-			await secretStore.save(sessionTokenRef, input.session.session.token);
-			await secretStore.save(
+			await secretVault.save(bearerTokenRef, input.bearerToken);
+			await secretVault.save(sessionTokenRef, input.session.session.token);
+			await secretVault.save(
 				encryptionKeysRef,
 				JSON.stringify(input.session.encryptionKeys),
 			);
-			credentialSecrets = KeychainCredentialSecrets.assert({
+			credentialSecrets = KeychainMachineCredentialSecrets.assert({
 				storage: 'osKeychain',
 				bearerTokenRef,
 				sessionTokenRef,
@@ -344,7 +350,7 @@ export function createCredentialStore({
 			});
 		}
 
-		const entry = CredentialFileEntry.assert({
+		const entry = MachineCredentialFileEntry.assert({
 			serverOrigin,
 			session: metadataFromSession(input.session),
 			secrets: credentialSecrets,
@@ -363,10 +369,10 @@ export function createCredentialStore({
 			await Promise.all(
 				keychainRefs(existing.secrets)
 					.filter((ref) => !nextRefs.has(secretRefKey(ref)))
-					.map((ref) => secretStore.delete(ref)),
+					.map((ref) => secretVault.delete(ref)),
 			);
 		}
-		return Credential.assert({
+		return MachineCredential.assert({
 			serverOrigin,
 			bearerToken: input.bearerToken,
 			session: input.session,
@@ -377,7 +383,7 @@ export function createCredentialStore({
 
 	async function get(
 		serverOriginInput: string | URL,
-	): Promise<Credential | null> {
+	): Promise<MachineCredential | null> {
 		const serverOrigin = normalizeServerOrigin(serverOriginInput);
 		const file = await readFile();
 		const entry = file.credentials.find(
@@ -387,22 +393,23 @@ export function createCredentialStore({
 		return null;
 	}
 
-	async function getCurrent(): Promise<Credential | null> {
+	async function getCurrent(): Promise<MachineCredential | null> {
 		const file = await readFile();
 		if (file.currentServerOrigin) {
-			const current = await get(file.currentServerOrigin);
-			if (current !== null) return current;
+			return await get(file.currentServerOrigin);
 		}
 		const resolved = (
 			await Promise.all(file.credentials.map((entry) => resolveEntry(entry)))
-		).filter((credential): credential is Credential => credential !== null);
+		).filter(
+			(credential): credential is MachineCredential => credential !== null,
+		);
 		if (resolved.length > 0) return latest(resolved);
 		return null;
 	}
 
 	async function getMetadata(
 		serverOriginInput?: string | URL,
-	): Promise<CredentialMetadata | null> {
+	): Promise<MachineCredentialMetadata | null> {
 		const file = await readFile();
 		const serverOrigin =
 			serverOriginInput === undefined
@@ -427,7 +434,7 @@ export function createCredentialStore({
 
 	async function getCredential(
 		serverOrigin?: string | URL,
-	): Promise<Credential | null> {
+	): Promise<MachineCredential | null> {
 		return serverOrigin ? await get(serverOrigin) : await getCurrent();
 	}
 
@@ -465,9 +472,9 @@ export function createCredentialStore({
 			);
 			if (removed?.secrets.storage === 'osKeychain') {
 				await Promise.all([
-					secretStore.delete(removed.secrets.bearerTokenRef),
-					secretStore.delete(removed.secrets.sessionTokenRef),
-					secretStore.delete(removed.secrets.encryptionKeysRef),
+					secretVault.delete(removed.secrets.bearerTokenRef),
+					secretVault.delete(removed.secrets.sessionTokenRef),
+					secretVault.delete(removed.secrets.encryptionKeysRef),
 				]);
 			}
 			await writeFile({

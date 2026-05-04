@@ -1,17 +1,17 @@
 /**
- * Core Auth Snapshot API Tests
+ * Core Auth Identity API Tests
  *
- * Verifies the public snapshot listener and initial load barrier exposed by
+ * Verifies the public identity listener and initial load barrier exposed by
  * the framework-agnostic auth client.
  *
  * Key behaviors:
- * - Caller-provided initial sessions seed the first snapshot
+ * - Caller-provided initial sessions seed the first identity
  * - Local updates are passed to the caller-provided save callback
  * - Better Auth session emissions drive live signed-in and signed-out state
  */
 
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
-import type { AuthSession, AuthSnapshot } from './index.ts';
+import type { AuthIdentity, BearerSession } from './index.ts';
 
 type BetterAuthSessionState = {
 	isPending: boolean;
@@ -119,7 +119,7 @@ function session({
 }: {
 	userId?: string;
 	token?: string;
-} = {}): AuthSession {
+} = {}): BearerSession {
 	return {
 		token,
 		user: {
@@ -140,7 +140,7 @@ function session({
 	};
 }
 
-function betterAuthSessionData(value: AuthSession) {
+function betterAuthSessionData(value: BearerSession) {
 	return {
 		user: value.user,
 		session: {
@@ -157,19 +157,26 @@ function betterAuthSessionData(value: AuthSession) {
 	};
 }
 
+function identityFromSession(value: BearerSession): AuthIdentity {
+	return {
+		user: value.user,
+		encryptionKeys: value.encryptionKeys,
+	};
+}
+
 function createStorage({
 	load,
 	save = () => {},
 }: {
-	load: () => AuthSession | null | Promise<AuthSession | null>;
-	save?: (value: AuthSession | null) => void | Promise<void>;
+	load: () => BearerSession | null | Promise<BearerSession | null>;
+	save?: (value: BearerSession | null) => void | Promise<void>;
 }) {
-	const saved: Array<AuthSession | null> = [];
+	const saved: Array<BearerSession | null> = [];
 	const loaded = load();
 	const initialSession = loaded instanceof Promise ? null : loaded;
 	const storage = {
 		load,
-		save(value: AuthSession | null) {
+		save(value: BearerSession | null) {
 			saved.push(value);
 			return save(value);
 		},
@@ -190,74 +197,70 @@ function createTestAuth(setup: ReturnType<typeof createStorage>) {
 	});
 }
 
-function emitBetterAuthSession(data: unknown) {
+function emitBetterSession(data: unknown) {
 	currentBetterAuthState = { isPending: false, data };
 	for (const listener of betterAuthSessionListeners) {
 		listener(currentBetterAuthState);
 	}
 }
 
-test('onSnapshotChange does not replay and receives future changes only', async () => {
+test('onChange does not replay and receives future changes only', async () => {
 	const setup = createStorage({ load: () => null });
 	const auth = createTestAuth(setup);
 
-	const snapshots: AuthSnapshot[] = [];
-	auth.onSnapshotChange((snapshot) => snapshots.push(snapshot));
+	const identities: Array<AuthIdentity | null> = [];
+	auth.onChange((identity) => identities.push(identity));
 
-	expect(snapshots).toEqual([]);
+	expect(identities).toEqual([]);
 
-	emitBetterAuthSession(betterAuthSessionData(session()));
+	emitBetterSession(betterAuthSessionData(session()));
 
-	expect(snapshots).toEqual([{ status: 'signedIn', session: session() }]);
+	expect(identities).toEqual([identityFromSession(session())]);
 	auth[Symbol.dispose]();
 });
 
 test('listener failures do not stop later listeners', async () => {
 	const setup = createStorage({ load: () => null });
 	const auth = createTestAuth(setup);
-	const snapshots: AuthSnapshot[] = [];
+	const identities: Array<AuthIdentity | null> = [];
 
-	auth.onSnapshotChange(() => {
+	auth.onChange(() => {
 		throw new Error('listener failed');
 	});
-	auth.onSnapshotChange((snapshot) => snapshots.push(snapshot));
+	auth.onChange((identity) => identities.push(identity));
 
-	emitBetterAuthSession(
-		betterAuthSessionData(session({ token: 'token-2' })),
-	);
+	emitBetterSession(betterAuthSessionData(session({ token: 'token-2' })));
 
-	expect(snapshots).toEqual([
-		{ status: 'signedIn', session: session({ token: 'token-2' }) },
+	expect(identities).toEqual([
+		identityFromSession(session({ token: 'token-2' })),
 	]);
 	auth[Symbol.dispose]();
 });
 
-test('initial session drives initial signed-in snapshot', async () => {
+test('initial session drives initial signed-in identity', async () => {
 	// Seed the BA atom so the late subscribe replays the matching session
-	// instead of the default null (which would flip the snapshot to signedOut).
-	emitBetterAuthSession(betterAuthSessionData(session()));
+	// instead of the default null (which would flip the identity to null).
+	emitBetterSession(betterAuthSessionData(session()));
 	const setup = createStorage({ load: () => session() });
 	const auth = createTestAuth(setup);
 
-
-	expect(auth.snapshot).toEqual({ status: 'signedIn', session: session() });
+	expect(auth.identity).toEqual(identityFromSession(session()));
 	auth[Symbol.dispose]();
 });
 
-test('whenReady and whenLoaded share the first settled session barrier', async () => {
+test('whenReady resolves after the first settled session event', async () => {
 	currentBetterAuthState = { isPending: true, data: null };
 	const setup = createStorage({ load: () => null });
 	const auth = createTestAuth(setup);
 	let ready = false;
 
-	expect(auth.whenReady).toBe(auth.whenLoaded);
 	void auth.whenReady.then(() => {
 		ready = true;
 	});
 	await Promise.resolve();
 	expect(ready).toBe(false);
 
-	emitBetterAuthSession(null);
+	emitBetterSession(null);
 	await auth.whenReady;
 
 	expect(ready).toBe(true);
@@ -270,7 +273,7 @@ test('openWebSocket returns null signed out and adds bearer subprotocol signed i
 
 	expect(auth.openWebSocket('ws://localhost/sync')).toBeNull();
 
-	emitBetterAuthSession(betterAuthSessionData(session({ token: 'token-2' })));
+	emitBetterSession(betterAuthSessionData(session({ token: 'token-2' })));
 	const ws = auth.openWebSocket('ws://localhost/sync');
 
 	expect(ws).toBe(capturedWebSockets[0] as unknown as WebSocket);
@@ -294,31 +297,31 @@ test('dispose is idempotent and unsubscribes from Better Auth once', async () =>
 	expect(betterAuthSessionListeners.size).toBe(0);
 });
 
-test('Better Auth signed-in emission drives snapshot and storage save', async () => {
+test('Better Auth signed-in emission drives identity and storage save', async () => {
 	const setup = createStorage({ load: () => null });
 	const auth = createTestAuth(setup);
 
-	emitBetterAuthSession(betterAuthSessionData(session()));
+	emitBetterSession(betterAuthSessionData(session()));
 
-	expect(auth.snapshot).toEqual({ status: 'signedIn', session: session() });
+	expect(auth.identity).toEqual(identityFromSession(session()));
 	expect(setup.saved).toEqual([session()]);
 	auth[Symbol.dispose]();
 });
 
-test('Better Auth signed-out emission drives snapshot and storage save', async () => {
+test('Better Auth signed-out emission drives identity and storage save', async () => {
 	// Seed the BA atom with the matching session so the late subscribe
 	// replays as a no-op transition; the explicit null emission below is
 	// then the only event that drives the signedIn -> signedOut switch.
-	emitBetterAuthSession(betterAuthSessionData(session()));
+	emitBetterSession(betterAuthSessionData(session()));
 	const setup = createStorage({ load: () => session() });
 	const auth = createTestAuth(setup);
-	// Drop the redundant save fired by writeLocalSnapshot during the
+	// Drop the redundant save fired by writeLocalSession during the
 	// subscribe replay so the assertion below isolates the explicit emit.
 	setup.saved.length = 0;
 
-	emitBetterAuthSession(null);
+	emitBetterSession(null);
 
-	expect(auth.snapshot).toEqual({ status: 'signedOut' });
+	expect(auth.identity).toBeNull();
 	expect(setup.saved).toEqual([null]);
 	auth[Symbol.dispose]();
 });
@@ -326,13 +329,11 @@ test('Better Auth signed-out emission drives snapshot and storage save', async (
 test('response-header token rotation persists through session storage save', async () => {
 	// Seed the BA atom so the late subscribe replays the same session as the
 	// initial session; without this, the default null replay would flip the
-	// snapshot to signedOut and the rotation hook below would not fire.
-	emitBetterAuthSession(
-		betterAuthSessionData(session({ token: 'old-token' })),
-	);
+	// identity to null and the rotation hook below would not fire.
+	emitBetterSession(betterAuthSessionData(session({ token: 'old-token' })));
 	const setup = createStorage({ load: () => session({ token: 'old-token' }) });
 	const auth = createTestAuth(setup);
-	// Drop the redundant save fired by writeLocalSnapshot during the
+	// Drop the redundant save fired by writeLocalSession during the
 	// subscribe replay so the assertion below isolates the rotation save.
 	setup.saved.length = 0;
 
@@ -340,8 +341,22 @@ test('response-header token rotation persists through session storage save', asy
 	await auth.signIn({ email: 'user@example.com', password: 'password' });
 
 	const expected = session({ token: 'new-token' });
-	expect(auth.snapshot).toEqual({ status: 'signedIn', session: expected });
+	expect(auth.identity).toEqual(identityFromSession(expected));
 	expect(setup.saved).toEqual([expected]);
 	expect(betterAuthClientOptions).not.toBeNull();
+	auth[Symbol.dispose]();
+});
+
+test('response-header token rotation does not emit an identity change', async () => {
+	emitBetterSession(betterAuthSessionData(session({ token: 'old-token' })));
+	const setup = createStorage({ load: () => session({ token: 'old-token' }) });
+	const auth = createTestAuth(setup);
+	const identities: Array<AuthIdentity | null> = [];
+	auth.onChange((identity) => identities.push(identity));
+
+	signInResponseHeaders = { 'set-auth-token': 'new-token' };
+	await auth.signIn({ email: 'user@example.com', password: 'password' });
+
+	expect(identities).toEqual([]);
 	auth[Symbol.dispose]();
 });

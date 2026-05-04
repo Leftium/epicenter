@@ -52,7 +52,7 @@ export async function openTabManager({
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
 		openWebSocket: auth.openWebSocket,
-		onCredentialChange: auth.onSnapshotChange,
+		onCredentialChange: auth.onChange,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);

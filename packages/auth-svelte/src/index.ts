@@ -1,8 +1,8 @@
 export {
+	type AuthChangeListener,
 	AuthError,
-	AuthSession,
-	type AuthSnapshot,
-	type AuthSnapshotChangeListener,
+	type AuthIdentity,
 	AuthUser,
+	BearerSession,
 } from '@epicenter/auth';
 export { type AuthClient, createAuth } from './create-auth.svelte.ts';

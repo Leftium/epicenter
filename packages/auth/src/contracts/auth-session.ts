@@ -1,13 +1,13 @@
 import { EncryptionKeys } from '@epicenter/encryption';
 import type {
-	Session as BetterAuthSession,
 	User as BetterAuthUser,
+	Session as BetterSession,
 } from 'better-auth';
-import { AuthSession, AuthUser } from '../auth-types.js';
+import { AuthUser, BearerSession } from '../auth-types.js';
 
 export type BetterAuthSessionResponse = {
 	user: BetterAuthUser;
-	session: BetterAuthSession;
+	session: BetterSession;
 	encryptionKeys: EncryptionKeys;
 };
 
@@ -83,12 +83,12 @@ export function normalizeAuthUser(value: unknown): AuthUser {
  * every package boundary in this monorepo, so this function owns the runtime
  * check instead of letting `createAuth()` trust an inline cast.
  */
-export function normalizeAuthSession(
+export function normalizeBearerSession(
 	value: unknown,
 	{ token }: { token: string },
-): AuthSession {
+): BearerSession {
 	const record = readRecord(value, 'Better Auth session response');
-	return AuthSession.assert({
+	return BearerSession.assert({
 		token,
 		user: normalizeAuthUser(record.user),
 		encryptionKeys: EncryptionKeys.assert(record.encryptionKeys),
@@ -101,13 +101,15 @@ export function normalizeAuthSession(
  * The client subscription already carries the active request token under
  * `session.token`; server-owned session metadata is intentionally ignored.
  */
-export function authSessionFromBetterAuthSessionResponse(
+export function bearerSessionFromBetterAuthSessionResponse(
 	value: unknown,
-): AuthSession | null {
+): BearerSession | null {
 	if (value === null || value === undefined) return null;
 
 	const record = readRecord(value, 'Better Auth session response');
 	const session = readRecord(record.session, 'session');
 
-	return normalizeAuthSession(record, { token: readString(session, 'token') });
+	return normalizeBearerSession(record, {
+		token: readString(session, 'token'),
+	});
 }

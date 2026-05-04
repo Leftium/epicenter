@@ -1,26 +1,21 @@
-import type { AuthClient, AuthSnapshot } from '@epicenter/auth';
+import type { AuthClient, AuthIdentity } from '@epicenter/auth';
 import type { SyncControl } from '@epicenter/workspace';
-
-export type SignedInSession = Extract<
-	AuthSnapshot,
-	{ status: 'signedIn' }
->['session'];
 
 export type AuthWorkspaceScopeOptions = {
 	auth: AuthClient;
 	syncControl: SyncControl | null;
-	applyAuthSession(session: SignedInSession): void;
+	applyAuthIdentity(identity: AuthIdentity): void;
 	resetLocalClient(): Promise<void>;
 };
 
 export function bindAuthWorkspaceScope({
 	auth,
 	syncControl,
-	applyAuthSession,
+	applyAuthIdentity,
 	resetLocalClient,
 }: AuthWorkspaceScopeOptions): () => void {
-	let appliedSession: { userId: string } | null = null;
-	let pendingSnapshot: AuthSnapshot | null = null;
+	let appliedIdentity: { userId: string } | null = null;
+	let pendingIdentity: AuthIdentity | null | undefined;
 	let isDraining = false;
 	let isDisposed = false;
 	let isTerminal = false;
@@ -28,7 +23,7 @@ export function bindAuthWorkspaceScope({
 	async function resetCurrentClient() {
 		syncControl?.pause();
 		isTerminal = true;
-		pendingSnapshot = null;
+		pendingIdentity = undefined;
 
 		try {
 			await resetLocalClient();
@@ -38,9 +33,9 @@ export function bindAuthWorkspaceScope({
 		}
 	}
 
-	async function processSnapshot(snapshot: AuthSnapshot) {
-		if (snapshot.status === 'signedOut') {
-			if (appliedSession === null) {
+	async function processIdentity(identity: AuthIdentity | null) {
+		if (identity === null) {
+			if (appliedIdentity === null) {
 				syncControl?.pause();
 				return;
 			}
@@ -49,16 +44,15 @@ export function bindAuthWorkspaceScope({
 			return;
 		}
 
-		const { session } = snapshot;
-		const userId = session.user.id;
+		const userId = identity.user.id;
 
-		if (appliedSession !== null && appliedSession.userId !== userId) {
+		if (appliedIdentity !== null && appliedIdentity.userId !== userId) {
 			await resetCurrentClient();
 			return;
 		}
 
-		applyAuthSession(session);
-		appliedSession = { userId };
+		applyAuthIdentity(identity);
+		appliedIdentity = { userId };
 	}
 
 	async function drain() {
@@ -66,29 +60,30 @@ export function bindAuthWorkspaceScope({
 		isDraining = true;
 
 		try {
-			while (!isDisposed && !isTerminal && pendingSnapshot !== null) {
-				const snapshot = pendingSnapshot;
-				pendingSnapshot = null;
-				await processSnapshot(snapshot);
+			while (!isDisposed && !isTerminal && pendingIdentity !== undefined) {
+				const identity = pendingIdentity;
+				pendingIdentity = undefined;
+				await processIdentity(identity);
 			}
 		} finally {
 			isDraining = false;
-			if (!isDisposed && !isTerminal && pendingSnapshot !== null) void drain();
+			if (!isDisposed && !isTerminal && pendingIdentity !== undefined)
+				void drain();
 		}
 	}
 
-	function schedule(snapshot: AuthSnapshot) {
+	function schedule(identity: AuthIdentity | null) {
 		if (isDisposed || isTerminal) return;
-		pendingSnapshot = snapshot;
+		pendingIdentity = identity;
 		void drain();
 	}
 
-	schedule(auth.snapshot);
-	const unsubscribe = auth.onSnapshotChange(schedule);
+	schedule(auth.identity);
+	const unsubscribe = auth.onChange(schedule);
 
 	return () => {
 		isDisposed = true;
-		pendingSnapshot = null;
+		pendingIdentity = undefined;
 		unsubscribe();
 	};
 }

@@ -9,22 +9,22 @@ export type AuthClient = BaseAuthClient;
 /**
  * Svelte 5 wrapper around `@epicenter/auth`.
  *
- * Mirrors the core snapshot into `$state` so templates and derived values can
- * read `auth.snapshot` reactively. The spread copies core methods, and the
- * later getter overrides the copied snapshot value.
+ * Mirrors the core identity into `$state` so templates and derived values can
+ * read `auth.identity` reactively. The spread copies core methods, and the
+ * later getter overrides the copied identity value.
  */
 export function createAuth(config: CreateAuthConfig): AuthClient {
 	const base = createCoreAuth(config);
-	let snapshot = $state(base.snapshot);
+	let identity = $state(base.identity);
 
-	const unsubscribe = base.onSnapshotChange((next) => {
-		snapshot = next;
+	const unsubscribe = base.onChange((next) => {
+		identity = next;
 	});
 
 	return {
 		...base,
-		get snapshot() {
-			return snapshot;
+		get identity() {
+			return identity;
 		},
 		[Symbol.dispose]() {
 			unsubscribe();

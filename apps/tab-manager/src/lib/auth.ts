@@ -9,7 +9,7 @@
  * @see {@link ./state/storage-state.svelte} chrome.storage reactive wrapper
  */
 
-import { AuthSession } from '@epicenter/auth-svelte';
+import { BearerSession } from '@epicenter/auth-svelte';
 import { createStorageState } from './state/storage-state.svelte';
 
 const GOOGLE_CLIENT_ID =
@@ -21,7 +21,7 @@ const GOOGLE_CLIENT_ID =
  */
 export const session = createStorageState('local:authSession', {
 	fallback: null,
-	schema: AuthSession.or('null'),
+	schema: BearerSession.or('null'),
 });
 
 export async function getGoogleCredentials(): Promise<{

@@ -1,6 +1,4 @@
-import {
-	createAuth,
-} from '@epicenter/auth-svelte';
+import { createAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { toast } from '@epicenter/ui/sonner';
@@ -19,7 +17,7 @@ export const zhongwen = openZhongwen();
 bindAuthWorkspaceScope({
 	auth,
 	syncControl: null,
-	applyAuthSession(session) {
+	applyAuthIdentity(session) {
 		zhongwen.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {

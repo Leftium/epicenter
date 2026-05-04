@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { AuthClient } from '@epicenter/auth-svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
@@ -9,7 +10,6 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import type { AuthClient } from '@epicenter/auth-svelte';
 	import { AuthForm } from '../auth-form/index.js';
 
 	/**
@@ -36,18 +36,13 @@
 		onSocialSignIn: () => Promise<{ error: { message: string } | null }>;
 	};
 
-	let {
-		auth,
-		sync,
-		syncNoun,
-		onSocialSignIn,
-	}: AccountPopoverProps = $props();
+	let { auth, sync, syncNoun, onSocialSignIn }: AccountPopoverProps = $props();
 
 	let syncStatus = $state<SyncStatus>(sync.status);
 	let popoverOpen = $state(false);
 	let signingOut = $state(false);
-	const snapshot = $derived(auth.snapshot);
-	const isSignedIn = $derived(snapshot.status === 'signedIn');
+	const identity = $derived(auth.identity);
+	const isSignedIn = $derived(identity !== null);
 
 	$effect(() => {
 		syncStatus = sync.status;
@@ -84,12 +79,11 @@
 	 * Otherwise warn about unsynced work first.
 	 *
 	 * Sequence: `auth.signOut()`. Workspace cleanup and any hard reload belong
-	 * to the auth/workspace binding that observes the resulting snapshot.
+	 * to the auth/workspace binding that observes the resulting identity.
 	 */
 	function handleSignOut() {
 		const current = sync.status;
-		const isSynced =
-			current.phase === 'connected' && !current.hasLocalChanges;
+		const isSynced = current.phase === 'connected' && !current.hasLocalChanges;
 
 		const doSignOut = async () => {
 			signingOut = true;
@@ -124,12 +118,7 @@
 <Popover.Root bind:open={popoverOpen}>
 	<Popover.Trigger>
 		{#snippet child({ props })}
-			<Button
-				{...props}
-				variant="ghost"
-				size="icon-sm"
-				{tooltip}
-			>
+			<Button {...props} variant="ghost" size="icon-sm" {tooltip}>
 				<div class="relative">
 					{#if signingOut}
 						<LoaderCircle class="size-4 animate-spin" />
@@ -152,11 +141,11 @@
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-80 p-0" align="end">
-		{#if snapshot.status === 'signedIn'}
+		{#if identity}
 			<div class="p-4 space-y-3">
 				<div class="space-y-1">
-					<p class="text-sm font-medium">{snapshot.session.user.name}</p>
-					<p class="text-xs text-muted-foreground">{snapshot.session.user.email}</p>
+					<p class="text-sm font-medium">{identity.user.name}</p>
+					<p class="text-xs text-muted-foreground">{identity.user.email}</p>
 				</div>
 				<div class="border-t pt-3 space-y-1">
 					<p class="text-xs text-muted-foreground">
@@ -192,13 +181,9 @@
 					</Button>
 				</div>
 			</div>
-		{:else if snapshot.status === 'signedOut'}
-			<div class="flex items-center justify-center p-4">
-				<AuthForm {auth} {syncNoun} {onSocialSignIn} />
-			</div>
 		{:else}
 			<div class="flex items-center justify-center p-4">
-				<LoaderCircle class="size-4 animate-spin text-muted-foreground" />
+				<AuthForm {auth} {syncNoun} {onSocialSignIn} />
 			</div>
 		{/if}
 	</Popover.Content>

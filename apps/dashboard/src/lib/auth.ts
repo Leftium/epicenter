@@ -1,12 +1,9 @@
-import {
-	AuthSession,
-	createAuth,
-} from '@epicenter/auth-svelte';
+import { BearerSession, createAuth } from '@epicenter/auth-svelte';
 import { createPersistedState } from '@epicenter/svelte';
 
 const session = createPersistedState({
 	key: 'dashboard:authSession',
-	schema: AuthSession.or('null'),
+	schema: BearerSession.or('null'),
 	defaultValue: null,
 });
 

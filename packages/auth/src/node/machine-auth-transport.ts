@@ -7,8 +7,8 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
-import type { AuthSession } from '../auth-types.js';
-import { normalizeAuthSession } from '../contracts/auth-session.js';
+import type { BearerSession } from '../auth-types.js';
+import { normalizeBearerSession } from '../contracts/auth-session.js';
 
 export const MachineAuthTransportError = defineErrors({
 	RequestFailed: ({ cause }: { cause: unknown }) => ({
@@ -68,13 +68,15 @@ export type DevicePollOutcome =
 	| { status: 'slowDown' }
 	| { status: 'success'; accessToken: string };
 
-export type MachineAuthTransport = ReturnType<typeof createMachineAuthTransport>;
+export type MachineAuthTransport = ReturnType<
+	typeof createMachineAuthTransport
+>;
 
 /**
  * First-party HTTP transport for machine auth.
  *
  * Owns raw server-response parsing, token header policy, and OAuth-level error
- * classification. `/auth/get-session` is normalized into `AuthSession` before
+ * classification. `/auth/get-session` is normalized into `BearerSession` before
  * returning so callers do not have to reason about Better Auth's
  * `{ user, session }` response shape or the `set-auth-token` fallback.
  */
@@ -217,9 +219,7 @@ export function createMachineAuthTransport({
 			}
 
 			return MachineAuthTransportError.RequestFailed({
-				cause: new Error(
-					`POST /auth/device/token failed (${response.status})`,
-				),
+				cause: new Error(`POST /auth/device/token failed (${response.status})`),
 			});
 		},
 
@@ -227,7 +227,7 @@ export function createMachineAuthTransport({
 			token,
 		}: {
 			token: string;
-		}): Promise<Result<{ session: AuthSession }, MachineAuthTransportError>> {
+		}): Promise<Result<{ session: BearerSession }, MachineAuthTransportError>> {
 			const { data: response, error } = await requestJson({
 				method: 'GET',
 				path: '/auth/get-session',
@@ -236,7 +236,7 @@ export function createMachineAuthTransport({
 			if (error) return Err(error);
 			return trySync({
 				try: () => ({
-					session: normalizeAuthSession(response.data, {
+					session: normalizeBearerSession(response.data, {
 						token: response.response.headers.get('set-auth-token') ?? token,
 					}),
 				}),

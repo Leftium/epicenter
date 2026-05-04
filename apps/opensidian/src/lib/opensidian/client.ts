@@ -1,7 +1,4 @@
-import {
-	AuthSession,
-	createAuth,
-} from '@epicenter/auth-svelte';
+import { BearerSession, createAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
@@ -13,7 +10,7 @@ import { openOpensidian } from './browser';
 
 const session = createPersistedState({
 	key: 'opensidian:authSession',
-	schema: AuthSession.or('null'),
+	schema: BearerSession.or('null'),
 	defaultValue: null,
 });
 
@@ -35,7 +32,7 @@ export const opensidian = openOpensidian({
 bindAuthWorkspaceScope({
 	auth,
 	syncControl: opensidian.syncControl,
-	applyAuthSession(session) {
+	applyAuthIdentity(session) {
 		opensidian.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {

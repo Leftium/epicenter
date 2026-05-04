@@ -55,7 +55,7 @@ export function defineFujiDaemon({
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
-				onCredentialChange: auth.onSnapshotChange,
+				onCredentialChange: auth.onChange,
 				awareness,
 			});
 			const rpc = sync.attachRpc(doc.actions);

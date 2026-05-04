@@ -1,8 +1,5 @@
 import { encryptionKeysEqual } from '@epicenter/encryption';
-import {
-	BEARER_SUBPROTOCOL_PREFIX,
-	MAIN_SUBPROTOCOL,
-} from '@epicenter/sync';
+import { BEARER_SUBPROTOCOL_PREFIX, MAIN_SUBPROTOCOL } from '@epicenter/sync';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
@@ -13,14 +10,14 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type {
-	AuthSession,
-	AuthSnapshot,
-	AuthSnapshotChangeListener,
+	AuthChangeListener,
+	AuthIdentity,
 	AuthUser,
+	BearerSession,
 } from './auth-types.ts';
 import {
-	authSessionFromBetterAuthSessionResponse,
 	type BetterAuthSessionResponse,
+	bearerSessionFromBetterAuthSessionResponse,
 } from './contracts/auth-session.ts';
 
 export const AuthError = defineErrors({
@@ -49,17 +46,16 @@ export type AuthError = InferErrors<typeof AuthError>;
 export type CreateAuthConfig = {
 	/** Resolved once at construction; recreate the client if the origin changes. */
 	baseURL: string;
-	initialSession: AuthSession | null;
-	saveSession: (value: AuthSession | null) => MaybePromise<void>;
+	initialSession: BearerSession | null;
+	saveSession: (value: BearerSession | null) => MaybePromise<void>;
 };
 
 type MaybePromise<T> = T | Promise<T>;
 
 export type AuthClient = {
-	readonly snapshot: AuthSnapshot;
-	readonly whenLoaded: Promise<void>;
+	readonly identity: AuthIdentity | null;
 	readonly whenReady: Promise<void>;
-	onSnapshotChange(fn: AuthSnapshotChangeListener): () => void;
+	onChange(fn: AuthChangeListener): () => void;
 	signIn(input: {
 		email: string;
 		password: string;
@@ -80,7 +76,10 @@ export type AuthClient = {
 	}): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
-	openWebSocket(url: string | URL, protocols?: string | string[]): WebSocket | null;
+	openWebSocket(
+		url: string | URL,
+		protocols?: string | string[],
+	): WebSocket | null;
 
 	[Symbol.dispose](): void;
 };
@@ -101,50 +100,47 @@ type EpicenterCustomSessionPlugin = ReturnType<
  * Create a framework-agnostic auth client.
  *
  * Owns the Better Auth transport, response-header token rotation, storage
- * persistence, and snapshot subscription fan-out. The getter only reads the
- * in-memory snapshot created from the caller-provided initial session.
+ * persistence, and identity subscription fan-out. The getter only reads the
+ * in-memory identity created from the caller-provided initial session.
  */
 export function createAuth({
 	baseURL,
 	initialSession,
 	saveSession,
 }: CreateAuthConfig): AuthClient {
-	let snapshot: AuthSnapshot = snapshotFromSession(initialSession);
+	let session: BearerSession | null = initialSession;
+	let identity: AuthIdentity | null = identityFromSession(initialSession);
 	let hasDisposed = false;
 	const { promise: whenReady, resolve: resolveReady } =
 		Promise.withResolvers<void>();
 
-	const snapshotChangeListeners = new Set<AuthSnapshotChangeListener>();
+	const changeListeners = new Set<AuthChangeListener>();
 
-	function sessionFromSnapshot(value: AuthSnapshot): AuthSession | null {
-		return value.status === 'signedIn' ? value.session : null;
+	function identityFromSession(
+		value: BearerSession | null,
+	): AuthIdentity | null {
+		if (value === null) return null;
+		return {
+			user: value.user,
+			encryptionKeys: value.encryptionKeys,
+		};
 	}
 
-	function snapshotFromSession(session: AuthSession | null): AuthSnapshot {
-		return session === null
-			? { status: 'signedOut' }
-			: { status: 'signedIn', session };
-	}
-
-	function sessionsEqual(left: AuthSession | null, right: AuthSession | null) {
+	function identitiesEqual(
+		left: AuthIdentity | null,
+		right: AuthIdentity | null,
+	) {
 		if (left === null || right === null) return left === right;
 		return (
-			left.token === right.token &&
 			usersEqual(left.user, right.user) &&
 			encryptionKeysEqual(left.encryptionKeys, right.encryptionKeys)
 		);
 	}
 
-	function snapshotsEqual(left: AuthSnapshot, right: AuthSnapshot) {
-		if (left.status !== right.status) return false;
-		if (left.status !== 'signedIn' || right.status !== 'signedIn') return true;
-		return sessionsEqual(left.session, right.session);
-	}
-
-	function setSnapshot(next: AuthSnapshot) {
-		if (snapshotsEqual(snapshot, next)) return;
-		snapshot = next;
-		for (const listener of snapshotChangeListeners) {
+	function setIdentity(next: AuthIdentity | null) {
+		if (identitiesEqual(identity, next)) return;
+		identity = next;
+		for (const listener of changeListeners) {
 			try {
 				listener(next);
 			} catch (error) {
@@ -153,15 +149,16 @@ export function createAuth({
 		}
 	}
 
-	function saveSnapshot(next: AuthSnapshot) {
-		void Promise.resolve(saveSession(sessionFromSnapshot(next))).catch((error) => {
+	function saveBearerSession(next: BearerSession | null) {
+		void Promise.resolve(saveSession(next)).catch((error) => {
 			console.error('[auth] failed to save session:', error);
 		});
 	}
 
-	function writeLocalSnapshot(next: AuthSnapshot) {
-		setSnapshot(next);
-		saveSnapshot(next);
+	function writeLocalSession(next: BearerSession | null) {
+		session = next;
+		setIdentity(identityFromSession(next));
+		saveBearerSession(next);
 	}
 
 	function websocketProtocolsWithBearer(
@@ -188,20 +185,12 @@ export function createAuth({
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
-				token: () =>
-					snapshot.status === 'signedIn' ? snapshot.session.token : undefined,
+				token: () => session?.token,
 			},
 			onSuccess: (context) => {
 				const newToken = context.response.headers.get('set-auth-token');
-				if (
-					newToken &&
-					snapshot.status === 'signedIn' &&
-					newToken !== snapshot.session.token
-				) {
-					writeLocalSnapshot({
-						status: 'signedIn',
-						session: { ...snapshot.session, token: newToken },
-					});
+				if (newToken && session !== null && newToken !== session.token) {
+					writeLocalSession({ ...session, token: newToken });
 				}
 			},
 		},
@@ -210,39 +199,33 @@ export function createAuth({
 	const unsubscribeBetterAuth = client.useSession.subscribe((state) => {
 		if (state.isPending) return;
 		resolveReady();
-		let next: AuthSession | null;
+		let next: BearerSession | null;
 		try {
-			next = authSessionFromBetterAuthSessionResponse(state.data);
+			next = bearerSessionFromBetterAuthSessionResponse(state.data);
 		} catch (error) {
 			console.error('[auth] invalid Better Auth session response:', error);
 			return;
 		}
 		if (next === null) {
-			if (snapshot.status === 'signedIn')
-				writeLocalSnapshot({ status: 'signedOut' });
+			if (session !== null) writeLocalSession(null);
 			return;
 		}
-		const current = sessionFromSnapshot(snapshot);
-		writeLocalSnapshot({
-			status: 'signedIn',
-			session: {
-				token: current?.token ?? next.token,
-				user: next.user,
-				encryptionKeys: next.encryptionKeys,
-			},
+		writeLocalSession({
+			token: session?.token ?? next.token,
+			user: next.user,
+			encryptionKeys: next.encryptionKeys,
 		});
 	});
 
 	return {
-		get snapshot() {
-			return snapshot;
+		get identity() {
+			return identity;
 		},
-		whenLoaded: whenReady,
 		whenReady,
-		onSnapshotChange(fn) {
-			snapshotChangeListeners.add(fn);
+		onChange(fn) {
+			changeListeners.add(fn);
 			return () => {
-				snapshotChangeListeners.delete(fn);
+				changeListeners.delete(fn);
 			};
 		},
 
@@ -294,7 +277,7 @@ export function createAuth({
 			try {
 				const { error } = await client.signOut();
 				if (error) return AuthError.SignOutFailed({ cause: error });
-				writeLocalSnapshot({ status: 'signedOut' });
+				writeLocalSession(null);
 				return Ok(undefined);
 			} catch (error) {
 				return AuthError.SignOutFailed({ cause: error });
@@ -303,17 +286,17 @@ export function createAuth({
 
 		fetch(input, init) {
 			const headers = new Headers(init?.headers);
-			if (snapshot.status === 'signedIn') {
-				headers.set('Authorization', `Bearer ${snapshot.session.token}`);
+			if (session !== null) {
+				headers.set('Authorization', `Bearer ${session.token}`);
 			}
 			return fetch(input, { ...init, headers, credentials: 'include' });
 		},
 
 		openWebSocket(url, protocols) {
-			if (snapshot.status !== 'signedIn') return null;
+			if (session === null) return null;
 			return new WebSocket(
 				url,
-				websocketProtocolsWithBearer(snapshot.session.token, protocols),
+				websocketProtocolsWithBearer(session.token, protocols),
 			);
 		},
 
@@ -321,7 +304,7 @@ export function createAuth({
 			if (hasDisposed) return;
 			hasDisposed = true;
 			unsubscribeBetterAuth();
-			snapshotChangeListeners.clear();
+			changeListeners.clear();
 		},
 	};
 }

@@ -1,6 +1,4 @@
-import {
-	createAuth,
-} from '@epicenter/auth-svelte';
+import { createAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { toast } from '@epicenter/ui/sonner';
@@ -69,7 +67,7 @@ async function registerDevice(): Promise<void> {
 bindAuthWorkspaceScope({
 	auth,
 	syncControl: tabManager.syncControl,
-	applyAuthSession(session) {
+	applyAuthIdentity(session) {
 		tabManager.encryption.applyKeys(session.encryptionKeys);
 		void registerDevice();
 	},

@@ -15,7 +15,7 @@
 	let submitError = $state<string | null>(null);
 
 	const handle = $derived(chatState.active);
-	const snapshot = $derived(auth.snapshot);
+	const identity = $derived(auth.identity);
 
 	async function signInWithGoogle() {
 		const { error } = await auth.signInWithSocialRedirect({
@@ -29,7 +29,7 @@
 <Sidebar.Provider>
 	<ZhongwenSidebar />
 
-	{#if snapshot.status === 'signedOut'}
+	{#if !identity}
 		<main class="flex h-dvh flex-1 flex-col">
 			<header class="flex items-center justify-between border-b px-4 py-3">
 				<div class="flex items-center gap-3">
@@ -88,7 +88,7 @@
 					</Button>
 
 					<span class="text-sm text-muted-foreground">
-						{snapshot.session.user.name}
+						{identity.user.name}
 					</span>
 				</div>
 			</header>

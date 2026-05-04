@@ -61,7 +61,7 @@ export function openFuji({
 				url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 				waitFor: childIdb.whenLoaded,
 				openWebSocket: auth.openWebSocket,
-				onCredentialChange: auth.onSnapshotChange,
+				onCredentialChange: auth.onChange,
 			});
 
 			onLocalUpdate(ydoc, () => {
@@ -103,7 +103,7 @@ export function openFuji({
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
 		openWebSocket: auth.openWebSocket,
-		onCredentialChange: auth.onSnapshotChange,
+		onCredentialChange: auth.onChange,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);

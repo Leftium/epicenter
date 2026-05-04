@@ -1,7 +1,4 @@
-import {
-	AuthSession,
-	createAuth,
-} from '@epicenter/auth-svelte';
+import { BearerSession, createAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
@@ -12,7 +9,7 @@ import { openFuji } from './browser';
 
 const session = createPersistedState({
 	key: 'fuji:authSession',
-	schema: AuthSession.or('null'),
+	schema: BearerSession.or('null'),
 	defaultValue: null,
 });
 
@@ -34,7 +31,7 @@ export const fuji = openFuji({
 bindAuthWorkspaceScope({
 	auth,
 	syncControl: fuji.syncControl,
-	applyAuthSession(session) {
+	applyAuthIdentity(session) {
 		fuji.encryption.applyKeys(session.encryptionKeys);
 	},
 	async resetLocalClient() {

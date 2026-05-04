@@ -7,8 +7,8 @@ import {
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import {
-	AuthSession,
-	type AuthSession as AuthSessionType,
+	BearerSession,
+	type BearerSession as BearerSessionType,
 } from '../auth-types.js';
 import { type AuthClient, createAuth } from '../create-auth.js';
 import {
@@ -32,23 +32,20 @@ export type MachineAuthError =
 	| MachineAuthStorageError;
 
 export type MachineAuthStorage = {
-	load(): Promise<Result<AuthSessionType | null, MachineAuthStorageError>>;
+	load(): Promise<Result<BearerSessionType | null, MachineAuthStorageError>>;
 	save(
-		session: AuthSessionType | null,
+		session: BearerSessionType | null,
 	): Promise<Result<undefined, MachineAuthStorageError>>;
 };
 
 export type MachineAuthStorageBackend = {
 	get(options: { service: string; name: string }): Promise<string | null>;
-	set(
-		options: { service: string; name: string },
-		value: string,
-	): Promise<void>;
+	set(options: { service: string; name: string }, value: string): Promise<void>;
 	delete(options: { service: string; name: string }): Promise<unknown>;
 };
 
 type MachineSessionSummary = {
-	user: Pick<AuthSessionType['user'], 'id' | 'name' | 'email'>;
+	user: Pick<BearerSessionType['user'], 'id' | 'name' | 'email'>;
 };
 
 type MachineAuthLoginResult = {
@@ -73,7 +70,7 @@ type MachineAuthLogoutResult =
 	| { status: 'signedOut' }
 	| { status: 'loggedOut' };
 
-function sessionSummary(session: AuthSessionType): MachineSessionSummary {
+function sessionSummary(session: BearerSessionType): MachineSessionSummary {
 	return {
 		user: {
 			id: session.user.id,
@@ -86,7 +83,7 @@ function sessionSummary(session: AuthSessionType): MachineSessionSummary {
 /**
  * Store one machine auth session in the operating system keychain.
  *
- * Machine auth persists the same `AuthSession` shape as browser auth. The
+ * Machine auth persists the same `BearerSession` shape as browser auth. The
  * server remains the owner of expiry, provider details, and Better Auth session
  * metadata. Corrupt blobs are logged and treated as signed-out so a schema
  * change cannot brick the CLI.
@@ -108,7 +105,7 @@ export function createKeychainMachineAuthStorage({
 			if (raw === null) return Ok(null);
 
 			try {
-				return Ok(AuthSession.assert(JSON.parse(raw)));
+				return Ok(BearerSession.assert(JSON.parse(raw)));
 			} catch (cause) {
 				console.warn(
 					'[machine-auth] discarding corrupted machine session:',
@@ -126,7 +123,7 @@ export function createKeychainMachineAuthStorage({
 					} else {
 						await backend.set(
 							options,
-							JSON.stringify(AuthSession.assert(session)),
+							JSON.stringify(BearerSession.assert(session)),
 						);
 					}
 					return undefined;
@@ -182,9 +179,8 @@ export function createMachineAuth({
 			let accessToken: string | null = null;
 			while (Date.now() < deadline) {
 				await sleep(interval);
-				const { data: poll, error: pollError } = await transport.pollDeviceToken(
-					{ deviceCode: code.device_code },
-				);
+				const { data: poll, error: pollError } =
+					await transport.pollDeviceToken({ deviceCode: code.device_code });
 				if (pollError) return Err(pollError);
 				if (poll.status === 'success') {
 					accessToken = poll.accessToken;
@@ -196,9 +192,9 @@ export function createMachineAuth({
 				return MachineAuthTransportError.DeviceCodeExpired();
 			}
 
-			const { data: remote, error: fetchError } = await transport.fetchSession(
-				{ token: accessToken },
-			);
+			const { data: remote, error: fetchError } = await transport.fetchSession({
+				token: accessToken,
+			});
 			if (fetchError) return Err(fetchError);
 
 			const { error: saveError } = await storage.save(remote.session);
@@ -221,9 +217,9 @@ export function createMachineAuth({
 			if (loadError) return Err(loadError);
 			if (session === null) return Ok({ status: 'signedOut' });
 
-			const { data: remote, error: fetchError } = await transport.fetchSession(
-				{ token: session.token },
-			);
+			const { data: remote, error: fetchError } = await transport.fetchSession({
+				token: session.token,
+			});
 			if (fetchError) {
 				return Ok({
 					status: 'unverified',
@@ -237,9 +233,7 @@ export function createMachineAuth({
 			return Ok({ status: 'valid', session: sessionSummary(remote.session) });
 		},
 
-		async logout(): Promise<
-			Result<MachineAuthLogoutResult, MachineAuthError>
-		> {
+		async logout(): Promise<Result<MachineAuthLogoutResult, MachineAuthError>> {
 			const { data: session, error: loadError } = await storage.load();
 			if (loadError) return Err(loadError);
 			if (session === null) return Ok({ status: 'signedOut' });

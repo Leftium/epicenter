@@ -5,15 +5,15 @@
  * used by CLI and machine processes.
  *
  * Key behaviors:
- * - Device login stores the normalized `AuthSession`
+ * - Device login stores the normalized `BearerSession`
  * - Status refreshes rotated authorization tokens
- * - Keychain storage persists one AuthSession value
+ * - Keychain storage persists one BearerSession value
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { Ok } from 'wellcrafted/result';
-import type { AuthSession } from '../auth-types.js';
+import type { BearerSession } from '../auth-types.js';
 import type { BetterAuthSessionResponse } from '../contracts/auth-session.js';
 import {
 	createKeychainMachineAuthStorage,
@@ -28,13 +28,13 @@ const encryptionKeys = [
 		version: 1,
 		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
-] satisfies AuthSession['encryptionKeys'];
+] satisfies BearerSession['encryptionKeys'];
 
 function makeSession({
 	token = 'authorization-token',
 }: {
 	token?: string;
-} = {}): AuthSession {
+} = {}): BearerSession {
 	return {
 		token,
 		user: {
@@ -92,8 +92,8 @@ function jsonResponse(value: unknown, init?: ResponseInit): Response {
  * cell; production callers use `createKeychainMachineAuthStorage`.
  */
 function makeMemoryStorage(
-	initial: AuthSession | null = null,
-): MachineAuthStorage & { peek(): AuthSession | null } {
+	initial: BearerSession | null = null,
+): MachineAuthStorage & { peek(): BearerSession | null } {
 	let current = initial;
 	return {
 		async load() {
@@ -144,7 +144,7 @@ function createTestMachineAuth(fetchImpl: typeof fetch) {
 }
 
 describe('createMachineAuth', () => {
-	test('login stores one AuthSession using the authorization token', async () => {
+	test('login stores one BearerSession using the authorization token', async () => {
 		const fetchImpl = (async (input, init) => {
 			const url = new URL(String(input));
 			expect(url.origin).toBe(EPICENTER_API_URL);
@@ -178,7 +178,9 @@ describe('createMachineAuth', () => {
 		expect(result.error).toBeNull();
 		expect(result.data?.session.user.email).toBe('user@example.com');
 		expect(storage.peek()?.token).toBe('rotated-authorization-token');
-		expect(JSON.stringify(storage.peek())).not.toContain('server-session-token');
+		expect(JSON.stringify(storage.peek())).not.toContain(
+			'server-session-token',
+		);
 	});
 
 	test('status verifies and refreshes the stored session token', async () => {
@@ -268,7 +270,7 @@ describe('createMachineAuth', () => {
 });
 
 describe('keychain machine session storage', () => {
-	test('keychain storage writes one AuthSession item', async () => {
+	test('keychain storage writes one BearerSession item', async () => {
 		const backend = makeMemoryKeychainBackend();
 		const keychain = createKeychainMachineAuthStorage({ backend });
 

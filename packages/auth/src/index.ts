@@ -1,8 +1,8 @@
 export {
-	AuthSession,
-	type AuthSnapshot,
-	type AuthSnapshotChangeListener,
+	type AuthChangeListener,
+	type AuthIdentity,
 	AuthUser,
+	BearerSession,
 } from './auth-types.ts';
 export {
 	type AuthClient,

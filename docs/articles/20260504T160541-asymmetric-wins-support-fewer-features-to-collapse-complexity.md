@@ -1,6 +1,6 @@
-# Support Fewer Features When a Feature Forces a Second Shape
+# Asymmetric Wins: Support Fewer Features to Collapse Complexity
 
-Whenever I am creating a new feature, especially greenfield with AI making robust code feel easy, I want to pause and ask: can we support 10 percent less features and get rid of 80 or 90 percent of the code complexity? Sometimes the cleanest invariant is not a better abstraction. It is refusing to support the feature that made the invariant necessary.
+Whenever I am creating a new feature, especially greenfield with AI making robust code feel easy, I want to pause and ask: is there an asymmetric win here? Can we refuse 10 to 20 percent of functionality and get rid of 80 or 90 percent of the code complexity? Sometimes the cleanest invariant is not a better abstraction. It is refusing to support the feature that made the invariant necessary.
 
 The auth spec made this visible immediately:
 
@@ -15,9 +15,9 @@ auth.signInWithSocial({ provider });
 
 The removed feature was not nonsense. A Google OIDC fast path would have made browser SPA sign-in faster. The question was whether that small feature earned the second shape it forced into the whole auth system.
 
-The "10 percent fewer features" number is not a quota. You do not remove features at random and hope complexity falls out. You look for the one small promise that owns a whole implementation family, then ask whether refusing that promise leaves the product sentence intact.
+That is what I mean by an asymmetric win. The "10 percent fewer features" number is not a quota. You do not remove features at random and hope complexity falls out. You look for the one small promise that owns a whole implementation family, then ask whether refusing that promise leaves the product sentence intact.
 
-## The 10 percent feature was doing 90 percent of the damage
+## One small promise can own most of the graph
 
 The earlier spec had a split social sign-in model:
 
@@ -68,7 +68,7 @@ For Epicenter, the answer was weak. Users sign in once and stay signed in for mo
 
 So the strongest move was not "abstract GIS better." It was "do not ship GIS."
 
-## The optimization has a specific shape
+## An asymmetric win has a specific shape
 
 This is the pattern I want to keep catching:
 

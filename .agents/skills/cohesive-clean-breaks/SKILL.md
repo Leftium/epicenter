@@ -1,6 +1,6 @@
 ---
 name: cohesive-clean-breaks
-description: Use this skill when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Also use when a smell keeps growing, a defensive mechanism compensates for a missing invariant, or a small feature promise forces a large implementation graph. Ask what behavior should be refused, move invariants to the owning boundary, reject hybrid APIs, delete stale names, and leave one obvious product sentence.
+description: "Use this skill when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Also use when a smell keeps growing, a defensive mechanism compensates for a missing invariant, or a small feature promise forces a large implementation graph. Run the asymmetric wins pass: refuse 10-20 percent of functionality when it collapses 80-90 percent of complexity. Move invariants to the owning boundary, reject hybrid APIs, delete stale names, and leave one obvious product sentence."
 ---
 
 # Cohesive Clean Breaks
@@ -97,20 +97,15 @@ See `docs/articles/20260504T030000-when-the-smell-wont-die-go-up-a-level.md`
 for the worked example (workspace identity reset, six surfaces collapsed
 into one deterministic teardown).
 
-## Feature Refusal Pass
+## Asymmetric Wins Pass
 
-Before installing a new invariant, ask whether the feature that forced the
-invariant should exist at all.
+Before installing a new invariant, ask whether an asymmetric win is available:
+can you refuse 10-20 percent of functionality and collapse 80-90 percent of
+the implementation complexity?
 
-AI makes greenfield implementation feel cheap. Robust feature support is not
-cheap. Every behavior you support becomes an invariant, an error path, a test
-case, a docs branch, and a future compatibility promise. Sometimes supporting
-10 percent fewer features removes 80 percent of the code.
-
-Do not run this as arithmetic. The move is not "remove any 10 percent of the
-feature list." The move is to find the small promise that owns a disproportionate
-amount of machinery, then decide whether refusing that exact promise leaves the
-product sentence intact.
+This is not a quota. Do not remove arbitrary features. Find the small promise
+that owns a disproportionate implementation graph, then decide whether refusing
+that exact promise leaves the product sentence intact.
 
 Run this pass when the design adds:
 
@@ -159,36 +154,10 @@ The rule is deliberately pushy: if the product sentence survives and the code
 family disappears, default to refusal. Keep the feature only when the user loss
 is load-bearing.
 
-The auth fast-path decision is the model:
-
-```txt
-Product sentence:
-  all social sign-in routes through the API-hosted page via OAuth 2.1 PKCE.
-
-Candidate refusal:
-  browser SPAs can use Google GIS for a roughly 1-second sign-in.
-
-Code family it deletes:
-  signInWithIdToken
-  OIDCProvider narrowing
-  per-app GIS helpers
-  GIS browser failure UI
-  provider-specific SDK scaling for Apple and Microsoft
-  two social sign-in stories in docs and tests
-
-User loss:
-  Google sign-in is a few seconds slower in browser SPAs.
-
-Decision:
-  Refuse it. The UX loss is small; the second auth shape is permanent.
-```
-
-That is not "less product" in the way that matters. It is one fewer special
-case, traded for one stronger invariant.
-
-See `docs/articles/20260504T160541-support-fewer-features-when-a-feature-forces-a-second-shape.md`
-for the worked example (auth social sign-in, one small fast path refused so one
-OAuth 2.1 path can own every provider and environment).
+For the auth social sign-in worked example, read
+[references/asymmetric-wins.md](references/asymmetric-wins.md). For narrative
+context, see
+`docs/articles/20260504T160541-asymmetric-wins-support-fewer-features-to-collapse-complexity.md`.
 
 ## Scratch Redesign Pass
 
@@ -494,7 +463,7 @@ Did I delete dead paths instead of leaving them unreachable?
 Did the file tree change to match the new ownership?
 Did every validation move to the earliest layer that can know the truth?
 Would mentally inlining each new helper make the code clearer?
-Did I ask whether supporting fewer features would collapse most of the code?
+Did I run the asymmetric wins pass before adding another invariant?
 ```
 
 If any answer is no, keep simplifying.

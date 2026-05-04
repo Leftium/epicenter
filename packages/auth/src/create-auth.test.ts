@@ -390,15 +390,12 @@ test('Better Auth signed-in emission drives identity and storage save', async ()
 });
 
 test('Better Auth signed-out emission drives identity and storage save', async () => {
-	// Seed the BA atom with the matching session so the late subscribe
-	// replays as a no-op transition; the explicit null emission below is
-	// then the only event that drives the signedIn -> signedOut switch.
+	// Seed the BA atom with the matching session so the late subscribe is
+	// a no-op (sessionsEqual short-circuits); the explicit null emission
+	// below is the only event that drives the signedIn -> signedOut switch.
 	emitBetterSession(betterAuthSessionData(session()));
 	const setup = createStorage({ load: () => session() });
 	const auth = createTestAuth(setup);
-	// Drop the redundant save fired by writeLocalSession during the
-	// subscribe replay so the assertion below isolates the explicit emit.
-	setup.saved.length = 0;
 
 	emitBetterSession(null);
 
@@ -407,16 +404,22 @@ test('Better Auth signed-out emission drives identity and storage save', async (
 	auth[Symbol.dispose]();
 });
 
+test('subscribe replay matching the initial session does not write storage', async () => {
+	emitBetterSession(betterAuthSessionData(session()));
+	const setup = createStorage({ load: () => session() });
+	const auth = createTestAuth(setup);
+
+	expect(setup.saved).toEqual([]);
+	auth[Symbol.dispose]();
+});
+
 test('response-header token rotation persists through session storage save', async () => {
-	// Seed the BA atom so the late subscribe replays the same session as the
-	// initial session; without this, the default null replay would flip the
-	// identity to null and the rotation hook below would not fire.
+	// Seed the BA atom so the late subscribe is a no-op; without this, the
+	// default null replay would flip the identity to null and the rotation
+	// hook below would not fire.
 	emitBetterSession(betterAuthSessionData(session({ token: 'old-token' })));
 	const setup = createStorage({ load: () => session({ token: 'old-token' }) });
 	const auth = createTestAuth(setup);
-	// Drop the redundant save fired by writeLocalSession during the
-	// subscribe replay so the assertion below isolates the rotation save.
-	setup.saved.length = 0;
 
 	signInResponseHeaders = { 'set-auth-token': 'new-token' };
 	await auth.signIn({ email: 'user@example.com', password: 'password' });

@@ -4,6 +4,8 @@ export {
 	type AuthIdentity,
 	AuthUser,
 	BearerSession,
+	type CreateBearerAuthConfig,
+	type CreateCookieAuthConfig,
 } from '@epicenter/auth';
 export {
 	type AuthClient,

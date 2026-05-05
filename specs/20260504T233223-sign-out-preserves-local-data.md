@@ -720,8 +720,10 @@ apps/zhongwen/src/lib/zhongwen/client.ts
 - [x] **3.7** Use plain `attachIndexedDb` only for authless or explicitly non-sensitive browser packages.
   > **Note**: Skills and Zhongwen remain on direct `attachIndexedDb`. Skills is still authless; Zhongwen's browser package is local-only.
 - [x] **3.8** Keep `ydoc.guid` unchanged for sync URLs and encryption. Root sync still points to `/workspaces/${doc.ydoc.guid}`. Child sync should use `/documents/${ydoc.guid}`.
-- [ ] **3.9** On sign-out, destroy the current workspace runtime and reload. Do not call `clearLocal()` or `clearDocument()`.
-- [ ] **3.10** Keep destructive local deletion only for explicit "Forget this device" or legacy wipe paths.
+- [x] **3.9** On sign-out, destroy the current workspace runtime and reload. Do not call `clearLocal()` or `clearDocument()`.
+  > **Note**: Terminal auth callbacks now reload without calling any local deletion path.
+- [x] **3.10** Keep destructive local deletion only for explicit "Forget this device" or legacy wipe paths.
+  > **Note**: Destructive deletion moved behind the confirmed "Forget this device" action.
 
 ### Phase 4: Close the plaintext child-doc gap (depends on `attach-encrypted-indexeddb`)
 
@@ -825,11 +827,11 @@ Sign-out no longer deletes local data. That is correct, but users still need an 
 
 ### Phase 9: Supersede old specs and docs
 
-- [ ] **9.1** Mark `specs/20260414T143000-safe-sign-out-flow.md` as superseded by this spec.
-- [ ] **9.2** Mark `specs/20260310T235239-sync-status-102.md` as superseded by this spec.
-- [ ] **9.3** Mark `specs/20260504T185711-attach-sync-auth-namespace.md` as superseded (Cut F collapses `SyncWebSocket` into `WebSocket`).
-- [ ] **9.4** Update docs that say sign-out wipes local data, but only after encrypted local persistence is in place.
-- [ ] **9.5** Replace Bitwarden logout claims with the more precise lock analogy and link to official Bitwarden unlock vs login docs.
+- [x] **9.1** Mark `specs/20260414T143000-safe-sign-out-flow.md` as superseded by this spec.
+- [x] **9.2** Mark `specs/20260310T235239-sync-status-102.md` as superseded by this spec.
+- [x] **9.3** Mark `specs/20260504T185711-attach-sync-auth-namespace.md` as superseded (Cut F collapses `SyncWebSocket` into `WebSocket`).
+- [x] **9.4** Update docs that say sign-out wipes local data, but only after encrypted local persistence is in place.
+- [x] **9.5** Replace Bitwarden logout claims with the more precise lock analogy and link to official Bitwarden unlock vs login docs.
 
 ### Phase 10: Verify
 

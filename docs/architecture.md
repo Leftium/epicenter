@@ -151,7 +151,7 @@ await workspace.idb.whenDisposed;
 await workspace.sync.whenDisposed;
 ```
 
-Browser bundles expose `wipe()` for identity reset. It owns the full sequence: dispose the live bundle, await the async attachments needed to unblock storage deletion, then delete persisted local state. The refcounted cache still calls `[Symbol.dispose]()` on the last release after the `gcTime` grace period; it does not aggregate an async disposal barrier.
+Browser bundles expose `wipe()` for explicit local cleanup such as "Forget this device." Sign-out does not call it. The wipe sequence disposes the live bundle, awaits the async attachments needed to unblock storage deletion, then deletes persisted local state. The refcounted cache still calls `[Symbol.dispose]()` on the last release after the `gcTime` grace period; it does not aggregate an async disposal barrier.
 
 ## Write and read flow
 Writes always hit Yjs first. Everything else reacts to that state instead of becoming a competing source of truth.

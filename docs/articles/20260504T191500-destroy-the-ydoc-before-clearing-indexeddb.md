@@ -61,7 +61,7 @@ destroy () {
 }
 ```
 
-Then `clearData()` does exactly what you want for logout or user switch cleanup:
+Then `clearData()` does exactly what you want for explicit local cleanup:
 
 ```js
 clearData () {
@@ -106,7 +106,7 @@ That gives the reset path the property we actually need:
 ```txt
 stop every live writer first
 then delete durable data
-then reload no matter what
+then reload if the product action needs a fresh runtime
 ```
 
 ## The Bundle Disposer Should Be The Only Teardown Entry Point
@@ -120,7 +120,7 @@ workspace[Symbol.dispose]();
 await workspace.clearLocalData();
 ```
 
-It leaves one source of truth. If Fuji adds another child cache, its bundle disposer changes. The logout path does not need to learn a new internal resource name.
+It leaves one source of truth. If Fuji adds another child cache, its bundle disposer changes. The explicit local cleanup path does not need to learn a new internal resource name.
 
 The distinction is clean:
 

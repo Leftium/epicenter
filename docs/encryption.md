@@ -85,6 +85,7 @@ That part is explicit.
 Logout reloads the browser client after the auth session changes.
 It does not wipe local IndexedDB data.
 The reviewed code still does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`; the page reload is the current key-drop boundary.
+The closest Bitwarden analogy is lock, not logout: Bitwarden documents unlock as using encrypted data already stored on disk and lock as deleting decrypted vault data and the account encryption key from memory. Bitwarden separately documents that logout wipes PIN settings. See [Understand Log In vs. Unlock](https://bitwarden.com/help/understand-log-in-vs-unlock/) and [Unlock With PIN](https://bitwarden.com/help/unlock-with-pin/).
 The logout path in the app clients is:
 ```ts
 bindAuthWorkspaceScope({

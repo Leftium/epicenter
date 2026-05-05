@@ -57,7 +57,7 @@ Internal links use `[[` autocomplete: typing `[[` opens a file picker, and selec
 
 Sync uses the Yjs protocol (STEP1/STEP2/UPDATE messages) over WebSocket, with exponential backoff and jitter on reconnect. A BroadcastChannel handles tab-to-tab sync within the same browser without going through the server. The server side runs on Cloudflare Durable Objects with a SQLite update log and auto-compaction.
 
-Encryption is XChaCha20-Poly1305. Keys are derived with HKDF-SHA256 in a two-level hierarchy: a user key derives a workspace key, and the workspace key encrypts the data. The sync server receives only ciphertext—it can relay updates without being able to read them. Keys are loaded on login and cleared from memory on logout; IndexedDB is wiped on logout too.
+Encryption is XChaCha20-Poly1305. Keys are derived with HKDF-SHA256 in a two-level hierarchy: a user key derives a workspace key, and the workspace key encrypts the data. The sync server receives only ciphertext, so it can relay updates without being able to read them. Keys are loaded on login and cleared from memory by the sign-out reload. IndexedDB is owner-scoped and is only deleted by the explicit "Forget this device" action.
 
 ### Search
 

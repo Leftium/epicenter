@@ -16,13 +16,13 @@
  *   createDisposableCache,
  *   defineTable,
  *   docGuid,
+ *   type SyncTransport,
  * } from '@epicenter/workspace';
- * import type { AuthClient } from '@epicenter/auth';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * declare const auth: AuthClient;
+ * declare const transport: SyncTransport;
  *
  * // Singleton workspace: inline at module scope, no factory wrapper.
  * const ydoc = new Y.Doc({ guid: 'notes' });
@@ -31,7 +31,7 @@
  * const sync = attachSync(ydoc, {
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
  *   waitFor: idb,
- *   auth,
+ *   transport,
  * });
  *
  * const noteBodyDocs = createDisposableCache(

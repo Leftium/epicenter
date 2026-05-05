@@ -31,11 +31,12 @@ import {
 	type EncryptionKeys,
 	getOrCreateInstallationId,
 	PeerIdentity,
+	type SyncTransport,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
-import type { AuthClient } from '@epicenter/auth';
+import { waitForAuthSettled, type AuthIdentity } from '@epicenter/auth';
 import { createCookieAuth } from '@epicenter/auth-svelte';
 import * as Y from 'yjs';
 import { type } from 'arktype';
@@ -68,19 +69,14 @@ function openMyAppDoc({
 }
 
 function openMyApp({
-	auth,
+	identity,
 	peer,
 	transport,
 }: {
-	auth: AuthClient;
+	identity: AuthIdentity;
 	peer: PeerIdentity;
 	transport: SyncTransport;
 }) {
-	const identity = auth.identity;
-	if (identity === null) {
-		throw new Error('openMyApp requires signed-in auth.identity. Await auth.whenReady first.');
-	}
-
 	const userId = identity.user.id;
 	const doc = openMyAppDoc({ encryptionKeys: identity.encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
@@ -118,13 +114,13 @@ function openMyApp({
 	};
 }
 
-await auth.whenReady;
-if (auth.identity === null) {
+await waitForAuthSettled(auth);
+if (auth.state.status !== 'signed-in') {
 	throw new Error('Cannot open My app workspace: auth identity is required.');
 }
 
 export const workspace = openMyApp({
-	auth,
+	identity: auth.state.identity,
 	transport: auth.openWebSocket,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),

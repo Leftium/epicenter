@@ -19,8 +19,6 @@ import { attachAwareness } from './attach-awareness.js';
 import { attachSync, type SyncTransport } from './attach-sync.js';
 import { PeerIdentity } from './peer-identity.js';
 
-type Listener = (ev: { data: ArrayBuffer | string }) => void;
-
 class FakeWebSocket {
 	static CONNECTING = 0;
 	static OPEN = 1;
@@ -28,22 +26,34 @@ class FakeWebSocket {
 	static CLOSED = 3;
 	static instances: FakeWebSocket[] = [];
 
+	readonly CONNECTING = 0;
+	readonly OPEN = 1;
+	readonly CLOSING = 2;
+	readonly CLOSED = 3;
+	readonly bufferedAmount = 0;
+	readonly extensions = '';
+	readonly protocol: string;
+	readonly url: string;
 	readyState = FakeWebSocket.CONNECTING;
 	binaryType: 'arraybuffer' | 'blob' = 'blob';
-	onopen: (() => void) | null = null;
-	onclose: ((ev: { code: number; reason: string }) => void) | null = null;
-	onerror: (() => void) | null = null;
-	onmessage: Listener | null = null;
+	onopen: ((this: WebSocket, ev: Event) => unknown) | null = null;
+	onclose: ((this: WebSocket, ev: CloseEvent) => unknown) | null = null;
+	onerror: ((this: WebSocket, ev: Event) => unknown) | null = null;
+	onmessage: ((this: WebSocket, ev: MessageEvent) => unknown) | null = null;
 	readonly sent: Uint8Array[] = [];
 
 	constructor(
-		public readonly url: string,
+		url: string,
 		public readonly protocols?: string | string[],
 	) {
+		this.url = url;
+		this.protocol = Array.isArray(protocols)
+			? (protocols[0] ?? '')
+			: (protocols ?? '');
 		FakeWebSocket.instances.push(this);
 		queueMicrotask(() => {
 			this.readyState = FakeWebSocket.OPEN;
-			this.onopen?.();
+			this.onopen?.call(this, new Event('open'));
 		});
 	}
 
@@ -54,19 +64,25 @@ class FakeWebSocket {
 	close(code?: number, reason?: string) {
 		if (this.readyState === FakeWebSocket.CLOSED) return;
 		this.readyState = FakeWebSocket.CLOSED;
-		this.onclose?.({ code: code ?? 1005, reason: reason ?? '' });
+		this.onclose?.call(this, {
+			code: code ?? 1005,
+			reason: reason ?? '',
+		} as CloseEvent);
 	}
 
 	addEventListener() {}
 	removeEventListener() {}
+	dispatchEvent() {
+		return true;
+	}
 
 	deliver(frame: Uint8Array) {
-		this.onmessage?.({
+		this.onmessage?.call(this, {
 			data: frame.buffer.slice(
 				frame.byteOffset,
 				frame.byteOffset + frame.byteLength,
 			) as ArrayBuffer,
-		});
+		} as MessageEvent);
 	}
 }
 
@@ -96,7 +112,7 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 }
 
 const fakeTransport: SyncTransport = (url, protocols) =>
-	new FakeWebSocket(url, protocols) as unknown as WebSocket;
+	new FakeWebSocket(url, protocols);
 
 describe('attachSync split surface', () => {
 	test('sync owns lifecycle and connected status', async () => {

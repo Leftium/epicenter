@@ -1,7 +1,7 @@
 # Collapse `SyncAuth` to a single `SyncTransport` function
 
 **Date**: 2026-05-05
-**Status**: Draft
+**Status**: Implemented with verification caveats
 **Author**: AI-assisted (Claude)
 **Branch**: feat/encrypted-local-workspace-storage
 
@@ -411,7 +411,7 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 ### Wave 5: Migrate `attachSync` tests
 
 - [x] **5.1** In `packages/workspace/src/document/attach-sync.test.ts`:
-  - Replace `fakeAuth()` (lines 99-108) with `fakeTransport: SyncTransport = (url, p) => new FakeWebSocket(url, p) as unknown as WebSocket`.
+  - Replace `fakeAuth()` (lines 99-108) with a `fakeTransport: SyncTransport` backed by the test `FakeWebSocket`.
   - Update every `attachSync(ydoc, { url, auth: fakeAuth() })` to `attachSync(ydoc, { url, transport: fakeTransport })`.
   - Delete the `createCredentialSource` helper (lines 110-137) and the tests that depend on it (the four around lines 334, 360, 376, 399). These tests exercise the `null → setSignedIn → reconnect` flow that we are removing. The behavior they test no longer exists.
 - [x] **5.2** Verify: `bun run --filter @epicenter/workspace test` passes.
@@ -443,19 +443,22 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 8: Final verification
 
-- [ ] **8.1** Workspace-wide grep : all of these must return zero hits in non-spec, non-historical-doc files:
+- [x] **8.1** Workspace-wide grep : all of these returned zero hits in non-spec, non-historical-doc files:
   - `SyncAuth`
   - `'no-credential'`
   - `unsubscribeAuthChange`
   - `openWebSocket.*null` (function signatures)
   - `auth\.onStateChange` inside `attach-sync.ts`
 - [ ] **8.2** `bun run typecheck` (workspace-wide) passes.
-- [ ] **8.3** `bun run test` for `@epicenter/workspace`, `@epicenter/auth`, `@epicenter/auth-workspace` all pass.
+  > Final run failed on unrelated existing errors in `packages/ui`, `packages/svelte-utils`, and `apps/landing`. Package-level checks for the touched packages passed.
+- [x] **8.3** `bun run test` for `@epicenter/workspace`, `@epicenter/auth`, `@epicenter/auth-workspace` all pass.
+  > `@epicenter/auth-workspace` has no package `test` script, so final verification used `bun test packages/auth-workspace/src`.
 - [ ] **8.4** Smoke test in browser:
   - Open Fuji while signed in. Sync connects.
   - Sign out from another tab. Confirm the page reloads (existing provider behavior) and a fresh sign-in prompt appears.
   - Sign in. Open Fuji again. Sync reconnects.
   - Open and edit an entry to trigger a child sync. Confirm child sync connects.
+  > Skipped in this run because no signed-in browser session was available.
 
 ## Edge Cases
 
@@ -524,20 +527,21 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 - Keep `auth.onStateChange` at the layout level (`auth-svelte`, `auth-workspace`, providers): the provider's reaction to auth state changes is the workspace lifecycle policy. Constraint: if we ever stop tearing down on sign-out (e.g., to support multi-account hot-swap), we revisit whether sync needs its own subscription.
   Revisit when: a product requirement appears that says "workspace must stay attached across credential gaps."
 
-- Keep the `WebSocket | null` shape on the *consumer* side of `auth.openWebSocket` everywhere except sync's `transport`: any future consumer that does NOT have a render gate proving signed-in can choose to handle null itself. We are narrowing the `AuthClient` return type, which removes the option. Constraint: every current consumer either has a gate or can get one cheaply.
-  Revisit when: a non-gated consumer of `openWebSocket` appears that needs the null-as-deferred-credential pattern.
+- Narrow `auth.openWebSocket` for every `AuthClient` consumer: future non-gated consumers must add their own signed-in gate before calling it instead of depending on `null` as deferred credentials.
+  Revisit when: a non-gated consumer of `openWebSocket` appears that genuinely needs a deferred-credential transport.
 
 ## Success Criteria
 
-- [ ] `SyncAuth` does not exist anywhere in `packages/workspace/`.
-- [ ] `SyncTransport` is exported from `@epicenter/workspace` and is the only transport-shaped type used by `attachSync`.
-- [ ] `attemptConnection` returns `'connected' | 'failed'` only.
-- [ ] `attach-sync.ts` contains zero references to `auth.onStateChange`, `unsubscribeAuthChange`, or `'no-credential'`.
-- [ ] `AuthClient.openWebSocket` returns `WebSocket` (non-null) and throws when called without credentials.
-- [ ] Every `openFuji`-style workspace factory takes `transport: SyncTransport` (not `auth: AuthClient`).
-- [ ] Every `*WorkspaceProvider.svelte` passes `transport: auth.openWebSocket` (and continues to subscribe to `auth.onStateChange` for layout-level orchestration).
+- [x] `SyncAuth` does not exist anywhere in `packages/workspace/`.
+- [x] `SyncTransport` is exported from `@epicenter/workspace` and is the only transport-shaped type used by `attachSync`.
+- [x] `attemptConnection` returns `'connected' | 'failed'` only.
+- [x] `attach-sync.ts` contains zero references to `auth.onStateChange`, `unsubscribeAuthChange`, or `'no-credential'`.
+- [x] `AuthClient.openWebSocket` returns `WebSocket` (non-null) and throws when called without credentials.
+- [x] Every `openFuji`-style workspace factory takes `transport: SyncTransport` (not `auth: AuthClient`).
+- [x] Every `*WorkspaceProvider.svelte` passes `transport: auth.openWebSocket` (and continues to subscribe to `auth.onStateChange` for layout-level orchestration).
 - [ ] `bun run typecheck` passes workspace-wide.
-- [ ] `bun run test` passes for `@epicenter/workspace`, `@epicenter/auth`, `@epicenter/auth-workspace`.
+- [x] `bun run test` passes for `@epicenter/workspace`, `@epicenter/auth`, `@epicenter/auth-workspace`.
+  > `@epicenter/auth-workspace` was verified with `bun test packages/auth-workspace/src` because the package has no `test` script.
 - [ ] Smoke test: sign-in → workspace opens → sync connects → sign-out → page reloads → sign-in → workspace re-opens → sync reconnects.
 
 ## References

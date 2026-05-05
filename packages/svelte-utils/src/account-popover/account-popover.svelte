@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { AuthClient } from '@epicenter/auth-svelte';
 	import { Button } from '@epicenter/ui/button';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
 	import { toastOnError } from '@epicenter/ui/sonner';
 	import type { SyncAttachment, SyncStatus } from '@epicenter/workspace';
@@ -17,8 +16,7 @@
 	 *
 	 * Renders sync status from a `SyncAttachment` (the concrete `attachSync`
 	 * return type exposed as `workspace.sync`) alongside auth identity,
-	 * reconnect, and sign-out. Sign-out asks for confirmation when
-	 * unsynced work exists.
+	 * reconnect, and sign-out.
 	 *
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
 	 */
@@ -74,44 +72,15 @@
 
 	const tooltip = $derived(getSyncTooltip(syncStatus, isSignedIn));
 
-	/**
-	 * Safe sign-out gate. Connected + fully synced → sign out immediately.
-	 * Otherwise warn about unsynced work first.
-	 *
-	 * Sequence: `auth.signOut()`. Workspace cleanup and any hard reload belong
-	 * to the auth/workspace binding that observes the resulting identity.
-	 */
-	function handleSignOut() {
-		const current = sync.status;
-		const isSynced = current.phase === 'connected' && !current.hasLocalChanges;
-
-		const doSignOut = async () => {
-			signingOut = true;
-			try {
-				const result = await auth.signOut();
-				if (result.error) {
-					toastOnError(result, 'Failed to sign out');
-					return;
-				}
-			} finally {
-				signingOut = false;
-			}
-		};
-
-		if (isSynced) {
-			doSignOut();
-		} else {
-			confirmationDialog.open({
-				title: 'Sign out with unsynced changes?',
-				description:
-					"Some changes haven't synced to the cloud yet. Signing out will lose them.",
-				confirm: { text: 'Sign out anyway', variant: 'destructive' },
-				cancel: { text: 'Stay signed in' },
-				onConfirm: doSignOut,
-			});
-		}
-
+	async function signOut() {
 		popoverOpen = false;
+		signingOut = true;
+		try {
+			const result = await auth.signOut();
+			if (result.error) toastOnError(result, 'Failed to sign out');
+		} finally {
+			signingOut = false;
+		}
 	}
 </script>
 
@@ -170,12 +139,7 @@
 							Reconnect
 						</Button>
 					{/if}
-					<Button
-						variant="ghost"
-						size="sm"
-						class="flex-1"
-						onclick={handleSignOut}
-					>
+					<Button variant="ghost" size="sm" class="flex-1" onclick={signOut}>
 						<LogOut class="size-3.5" />
 						Sign out
 					</Button>

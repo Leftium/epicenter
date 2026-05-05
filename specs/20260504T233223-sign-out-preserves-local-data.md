@@ -741,11 +741,12 @@ Do not add an app-level `preserveLocalOnSignOut` flag to bypass this. That creat
 
 ### Phase 5: Collapse the popover
 
-- [ ] **5.1** Edit `packages/svelte-utils/src/account-popover/account-popover.svelte`. Replace `handleSignOut` with a direct `auth.signOut()` call and normal error toast.
-- [ ] **5.2** Remove the `confirmationDialog` import from the account popover.
-- [ ] **5.3** Remove "safe sign-out" wording from the component JSDoc.
-- [ ] **5.4** Do not remove root `<ConfirmationDialog />` mounts blindly. Fuji, Whispering, Skills, Tab-manager, Opensidian, and others use confirmation dialogs for unrelated destructive actions.
-- [ ] **5.5** Remove "Sign out with unsynced changes?", "Sign out anyway", and "Stay signed in" strings.
+- [x] **5.1** Edit `packages/svelte-utils/src/account-popover/account-popover.svelte`. Replace `handleSignOut` with a direct `auth.signOut()` call and normal error toast.
+- [x] **5.2** Remove the `confirmationDialog` import from the account popover.
+- [x] **5.3** Remove "safe sign-out" wording from the component JSDoc.
+- [x] **5.4** Do not remove root `<ConfirmationDialog />` mounts blindly. Fuji, Whispering, Skills, Tab-manager, Opensidian, and others use confirmation dialogs for unrelated destructive actions.
+  > **Note**: Root mounts were left alone.
+- [x] **5.5** Remove "Sign out with unsynced changes?", "Sign out anyway", and "Stay signed in" strings.
 
 ### Phase 6: Delete SYNC_STATUS and `hasLocalChanges`, clean up `attach-sync.ts`
 

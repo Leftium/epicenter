@@ -375,3 +375,24 @@ export const [getZhongwen, setZhongwen] = createContext<Zhongwen>();
 
 {@render children()}
 ```
+
+## Review
+
+**Completed**: 2026-05-04
+**Branch**: `feat/encrypted-local-workspace-storage`
+**Commit**: `ef64f70af`
+
+### Summary
+
+Zhongwen now uses singleton auth in `$lib/auth.ts`, a gate-only `(protected)/+layout.ts` that returns `{ identity }` only, script-body workspace construction in `(protected)/+layout.svelte` published through `createContext`, and a single `auth.onChange` listener handling sign-out (`goto`), user-switch (`reload`), and same-user key refresh (`applyKeys`) in three branches. The workspace bundle no longer takes `auth`, has no `hasDisposed` flag, and no explicit `[Symbol.dispose]` override.
+
+### Verification
+
+Targeted typechecks pass for `@epicenter/auth`, `@epicenter/auth-svelte`, and `@epicenter/zhongwen` itself. Workspace-wide `bun run typecheck` remains blocked by pre-existing diagnostics in `packages/ui`, `packages/svelte-utils/src/from-table.svelte.ts`, and unrelated app surfaces. Manual smokes from the success-criteria list are pending and stack with T035000 / T040000 / T233223 manual smokes into one QA pass.
+
+### Follow-ups
+
+- Roll out this shape to `apps/fuji`, `apps/honeycrisp`, `apps/opensidian` (new rollout spec).
+- Migrate `apps/tab-manager` to a WXT-shaped equivalent: reactive `{#if auth.identity}` gate at the sidepanel root, `SignedIn` component owns construction + listener + dispose. Different gate trigger, identical lifecycle code (new WXT bootstrap spec).
+- Delete `packages/auth-workspace` once the rollout and the WXT migration land.
+- Implement T233223's residual cleanups (delete SYNC_STATUS protocol, `hasLocalChanges`, safe-sign-out branch in `account-popover.svelte`) once no caller depends on the pre-sign-out sync gate.

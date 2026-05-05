@@ -1,7 +1,7 @@
 # Browser workspace bootstrap via SvelteKit route loaders
 
 **Date**: 2026-05-05
-**Status**: Implemented zhongwen pilot, revised by 20260505T040000
+**Status**: Implemented zhongwen pilot, revised by 20260505T040000 then 20260505T060000
 **Author**: AI-assisted, grounded against live code, DeepWiki, and SvelteKit docs
 **Branch**: not started
 **Depends on**: `specs/20260505T020000-collapse-owner-scoping-onto-coordinator.md`
@@ -302,10 +302,12 @@ The route-level auth handler owns the redirect. The method owns only local devic
 
 ### Phase 4: Roll out to SvelteKit apps
 
-- [ ] Apply the same pattern to `apps/fuji`.
-- [ ] Apply the same pattern to `apps/honeycrisp`.
-- [ ] Apply the same pattern to `apps/opensidian`.
-- [ ] Keep app-specific peer construction inline. Do not add a generic loader helper unless the final four loaders are visibly identical.
+> **Note**: this phase's pilot shape is superseded. See `20260505T060000-zhongwen-context-and-listener-collapse.md` for the canonical shape (singleton auth, gate-only loader, script-body workspace construction, `createContext` for the handle, single `auth.onChange` listener with three branches in `(protected)/+layout.svelte`, `onDestroy` for both unsubscribe and dispose). The fuji / honeycrisp / opensidian rollout will use that shape, tracked in a follow-up rollout spec.
+
+- [ ] Apply the canonical T060000 shape to `apps/fuji`.
+- [ ] Apply the canonical T060000 shape to `apps/honeycrisp`.
+- [ ] Apply the canonical T060000 shape to `apps/opensidian`.
+- [ ] Keep app-specific peer construction, sync attachment, and child-doc cache wiring inline. Do not add a generic loader helper unless the final four loaders are visibly identical.
 
 ### Phase 5: Stop imports and remove old files
 

@@ -445,15 +445,17 @@ Wave-ordered (Build, Stop, Verify, Remove). Spec branch may break during the mid
 - [x] **4.2** Grep `packages/auth` for callers of `SignedInAuth` and `isSignedIn`. If zero, delete from `packages/auth/src/create-auth.ts`, the export in `packages/auth/src/index.ts`, the re-export in `packages/auth-svelte/src/index.ts`, and the test in `packages/auth/src/contract.test.ts`. (See Open Questions.)
 - [x] **4.3** Update `specs/20260505T030000-browser-workspace-route-loaders.md` Status to `Implemented (zhongwen pilot) revised by 20260505T040000` so the predecessor spec doesn't read as the canonical pattern for fuji/honeycrisp/opensidian rollout.
 
-### Wave 5: Roll out to other SvelteKit apps (deferred to follow-up specs)
+### Wave 5: Roll out to other SvelteKit apps (deferred to follow-up spec)
 
-The predecessor spec's Phase 4 (rolling out to fuji/honeycrisp/opensidian) should adopt **this** spec's shape, not the predecessor's. Track in a separate spec. The pilot's complexity was the signal; do not propagate it.
+> **Note**: this wave's shape was further refined by `20260505T060000-zhongwen-context-and-listener-collapse.md`. The fuji / honeycrisp / opensidian rollout adopts T060000's shape, not this spec's: workspace handle published through Svelte 5 `createContext` (not the SvelteKit `data` prop), workspace constructed in `(protected)/+layout.svelte` script body (not `load()`), single `auth.onChange` listener with three branches (sign-out goto, user-switch reload, same-user `applyKeys`), `onDestroy` for both unsubscribe and workspace dispose, no `hasDisposed` flag, no `SignedInAuth` intersection type, no `forgetDevice` bundle method.
 
-- [ ] **5.1** Apply the singleton-auth + gate-loader shape to `apps/fuji`.
-- [ ] **5.2** Apply to `apps/honeycrisp`.
-- [ ] **5.3** Apply to `apps/opensidian`.
+Track in a separate rollout spec.
 
-Each rollout has app-specific concerns (sync, peer identity, child-doc caches) that are out of scope here.
+- [ ] **5.1** Apply the T060000 shape to `apps/fuji`.
+- [ ] **5.2** Apply the T060000 shape to `apps/honeycrisp`.
+- [ ] **5.3** Apply the T060000 shape to `apps/opensidian`.
+
+Each rollout has app-specific concerns (sync, peer identity, child-doc caches) that the follow-up spec owns.
 
 ## Edge cases
 

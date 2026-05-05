@@ -1,7 +1,7 @@
 # Trim `attachSync` back to the supervisor it claims to be
 
 **Date**: 2026-05-04
-**Status**: Draft
+**Status**: Superseded by `specs/20260504T233223-sign-out-preserves-local-data.md`
 **Author**: AI-assisted (Claude)
 **Branch**: not started
 **Related**:

@@ -835,11 +835,12 @@ Sign-out no longer deletes local data. That is correct, but users still need an 
 
 ### Phase 10: Verify
 
-- [ ] **10.1** Run `bun test packages/auth-workspace/src/index.test.ts`.
-- [ ] **10.2** Run `bun test packages/sync/src/protocol.test.ts`.
-- [ ] **10.3** Run `bun test packages/workspace/src/document/attach-sync.test.ts`.
-- [ ] **10.4** Run daemon and CLI tests touched by `SyncStatus` shape changes.
+- [x] **10.1** Run `bun test packages/auth-workspace/src/index.test.ts`.
+- [x] **10.2** Run `bun test packages/sync/src/protocol.test.ts`.
+- [x] **10.3** Run `bun test packages/workspace/src/document/attach-sync.test.ts`.
+- [x] **10.4** Run daemon and CLI tests touched by `SyncStatus` shape changes.
 - [ ] **10.5** Run `bun run typecheck`.
+  > **Blocked by existing repo diagnostics**: `bun run typecheck` still fails in `@epicenter/svelte` and `@epicenter/landing` on pre-existing diagnostics such as unresolved `#/utils.js`, `from-table.svelte.ts` using the old table result shape, and `WorkspaceGate` children props. Focused `packages/workspace`, `packages/sync`, and `packages/auth-workspace` typechecks passed.
 - [ ] **10.6** Manual smoke per participating app: sign in, edit, sign out, confirm runtime reloads (via `onSignOut`) and local persistence remains under the same owner-scoped key.
 - [ ] **10.7** Manual smoke per participating app: sign in as a different user after sign-out and reload, confirm a different local cache opens and the prior user's cache is not mounted.
 - [ ] **10.8** Manual smoke for local disk: persisted user content that survives sign-out is encrypted or deliberately non-sensitive.
@@ -907,25 +908,27 @@ Same-owner sign-in with a rotated keyring still works for root encrypted stores 
 
 ## Success criteria
 
-- [ ] Participating apps construct browser-local workspaces only after auth identity is known.
-- [ ] Local IndexedDB keys are owner-scoped with owner-first hierarchy.
-- [ ] Local BroadcastChannel keys are owner-scoped with the same local hierarchy.
-- [ ] Authenticated apps use `encryption.attachEncryptedIndexedDb(..., { persistenceKey })` for root and user-content child docs before preserve-on-sign-out ships.
-- [ ] Sign-out destroys runtime and reloads, not a storage wipe and not a no-op.
+- [x] Participating apps construct browser-local workspaces only after auth identity is known.
+  > **Note**: Fuji, Honeycrisp, Opensidian, and Tab-manager do. Zhongwen remains local-only per Phase 0 classification.
+- [x] Local IndexedDB keys are owner-scoped with owner-first hierarchy.
+- [x] Local BroadcastChannel keys are owner-scoped with the same local hierarchy.
+- [x] Authenticated apps use `encryption.attachEncryptedIndexedDb(..., { persistenceKey })` for root and user-content child docs before preserve-on-sign-out ships.
+- [x] Sign-out destroys runtime and reloads, not a storage wipe and not a no-op.
 - [ ] A signed-out app reload has no live Y.Doc, encryption keyring, decrypted table projection, child document cache, or sync socket from the prior user.
 - [ ] Different-owner sign-in opens a different local cache before applying keys.
-- [ ] `ydoc.guid` remains the sync room, child GUID namespace, and encryption workspace id.
-- [ ] No app hides reload inside `resetLocalClient`; the lifecycle binding owns when terminal transitions reload.
-- [ ] No `MESSAGE_TYPE.SYNC_STATUS`, `encodeSyncStatus`, `decodeSyncStatus`, `localVersion`, `ackedVersion`, `syncStatusTimer`, or `hasLocalChanges` remains in live source, docs, daemon payloads, or CLI fixtures.
-- [ ] No `SyncWebSocket` type alias remains. `auth.openWebSocket` returns `WebSocket | null`.
-- [ ] `attach-sync.ts` emits `log.info` on each terminal status transition and `log.warn` on permanent-failure parse.
-- [ ] `bindAuthWorkspaceScope` accepts two required callbacks: `onSignOut` and `onIdentityChanged`. The old `resetLocalClient` parameter is gone everywhere.
-- [ ] All 5 app callers pass `window.location.reload()` for both callbacks (or a documented platform-specific override).
-- [ ] Sign-out does not call any local wipe path.
-- [ ] An explicit "Forget this device" path exists, or the low-level clear helpers it will need remain and a tracked follow-up spec exists.
-- [ ] `account-popover.svelte` has no confirmation dialog branch for sign-out.
-- [ ] Apps with plaintext child docs have encrypted child persistence before preserve-on-sign-out ships.
-- [ ] `specs/20260414T143000-safe-sign-out-flow.md` and `specs/20260310T235239-sync-status-102.md` are marked superseded.
+- [x] `ydoc.guid` remains the sync room, child GUID namespace, and encryption workspace id.
+- [x] No app hides reload inside `resetLocalClient`; the lifecycle binding owns when terminal transitions reload.
+- [x] No `MESSAGE_TYPE.SYNC_STATUS`, `encodeSyncStatus`, `decodeSyncStatus`, `localVersion`, `ackedVersion`, `syncStatusTimer`, or `hasLocalChanges` remains in live source, docs, daemon payloads, or CLI fixtures.
+- [x] No `SyncWebSocket` type alias remains. `auth.openWebSocket` returns `WebSocket | null`.
+- [x] `attach-sync.ts` emits `log.info` on each terminal status transition and `log.warn` on permanent-failure parse.
+- [x] `bindAuthWorkspaceScope` accepts two required callbacks: `onSignOut` and `onIdentityChanged`. The old `resetLocalClient` parameter is gone everywhere.
+- [x] All 5 app callers pass `window.location.reload()` for both callbacks (or a documented platform-specific override).
+- [x] Sign-out does not call any local wipe path.
+- [x] An explicit "Forget this device" path exists, or the low-level clear helpers it will need remain and a tracked follow-up spec exists.
+- [x] `account-popover.svelte` has no confirmation dialog branch for sign-out.
+- [x] Apps with plaintext child docs have encrypted child persistence before preserve-on-sign-out ships.
+  > **Note**: Skills remains authless, so it stays outside the authenticated preserve-on-sign-out path.
+- [x] `specs/20260414T143000-safe-sign-out-flow.md` and `specs/20260310T235239-sync-status-102.md` are marked superseded.
 
 ## References
 
@@ -981,3 +984,54 @@ After implementation, this must be true:
 > **Sign-out destroys the live workspace and reloads; sign-in opens only the local cache scoped to that authenticated owner.**
 
 If any surviving code path keeps a live signed-out workspace, uses unscoped local IndexedDB or BroadcastChannel names for authenticated workspaces, deletes local persistence on same-owner sign-out, or keeps SYNC_STATUS alive only for the old sign-out warning, the implementation is incomplete.
+
+## Post-implementation review
+
+Files reread:
+
+```txt
+packages/workspace/src/document/
+  attach-sync.ts
+  clear-local-yjs-data.ts
+packages/auth-workspace/src/
+  index.ts
+packages/svelte-utils/src/account-popover/
+  account-popover.svelte
+apps/fuji/src/lib/fuji/
+  browser.ts
+apps/honeycrisp/src/lib/honeycrisp/
+  browser.ts
+apps/opensidian/src/lib/opensidian/
+  browser.ts
+apps/tab-manager/src/lib/tab-manager/
+  extension.ts
+specs/
+  20260504T233223-sign-out-preserves-local-data.md
+```
+
+Review notes:
+
+- No sign-out path calls `wipe()`, `clearLocal()`, or `clearDocument()`. Terminal auth transitions call app-owned reload callbacks.
+- Authenticated local storage names use `createLocalYjsKey(userId, ydoc.guid)` for root docs and child docs. Sync room GUIDs remain unchanged.
+- The explicit cleanup path uses `clearLocalYjsDataForUser`, which enumerates `indexedDB.databases()` by owner prefix when available and falls back to known root and child GUIDs.
+- `SYNC_STATUS`, `hasLocalChanges`, and `SyncWebSocket` remain only in historical specs, not live source or live docs.
+- Manual browser smokes remain open because they require interactive authenticated app sessions and IndexedDB inspection.
+
+Verification:
+
+```txt
+bun test packages/auth-workspace/src/index.test.ts packages/sync/src/protocol.test.ts packages/workspace/src/document/attach-sync.test.ts packages/workspace/src/document/clear-local-yjs-data.test.ts packages/workspace/src/daemon/run-handler.test.ts packages/workspace/src/daemon/list-route.test.ts packages/cli/src/commands/run-peer-errors.test.ts packages/cli/src/commands/up.test.ts apps/api/src/sync-handlers.test.ts
+  pass, 112 tests
+
+bun run --cwd packages/workspace typecheck
+  pass
+
+bun run --cwd packages/sync typecheck
+  pass
+
+bun run --cwd packages/auth-workspace typecheck
+  pass
+
+bun run typecheck
+  fails before this change's app surface on existing @epicenter/svelte and @epicenter/landing diagnostics.
+```

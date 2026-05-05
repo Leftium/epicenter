@@ -1,7 +1,7 @@
 # `attachEncryptedIndexedDb`: storage-level encryption on the encryption coordinator
 
 **Date**: 2026-05-05
-**Status**: Ready for review
+**Status**: Implemented
 **Author**: AI-assisted (Claude), grilled by Braden
 **Branch**: not started
 **Depends on**: `specs/20260504T233223-sign-out-preserves-local-data.md`: the local IDB key shape (`epicenter:v1:user:{userId}:yjs:{ydocGuid}`) and the encryption coordinator pattern this spec extends
@@ -223,6 +223,8 @@ The storage attachment changes and the explicit default `gcTime` argument disapp
 
 ### Phase 3: Migrate participating apps
 
+> **Implementation note**: Deferred to `specs/20260504T233223-sign-out-preserves-local-data.md` Phases 3 and 4. The original wording here treated the app call-site migration as a one-line replacement, but the same spec later documents the blocker: current authenticated browser workspaces are constructed before auth identity and `applyKeys()`. Because this primitive intentionally throws before keys are applied, migrating app call sites before the sign-out spec's construction-order change would create a startup failure or require a plaintext fallback. The primitive is landed here; app migration happens after auth-scoped construction.
+
 For each authenticated app with local Yjs persistence:
 
 - [ ] **3.1** `apps/fuji/src/lib/fuji/browser.ts`: root and child entry content docs use `doc.encryption.attachEncryptedIndexedDb(..., { persistenceKey })` instead of `attachIndexedDb(...)`.
@@ -230,21 +232,27 @@ For each authenticated app with local Yjs persistence:
 - [ ] **3.3** `apps/opensidian/src/lib/opensidian/browser.ts`: same for root and file content.
 - [ ] **3.4** `apps/tab-manager/src/lib/tab-manager/extension.ts`: same for root workspace storage.
 - [ ] **3.5** `apps/skills/src/lib/skills/browser.ts`: only migrate if Skills becomes authenticated and has keys at construction. If it remains authless, keep direct `attachIndexedDb` and classify that persistence in the sign-out spec.
-- [ ] **3.6** Do not migrate authless packages just to standardize the call site. The coordinator method requires keys by design.
+- [x] **3.6** Do not migrate authless packages just to standardize the call site. The coordinator method requires keys by design.
+  > **Note**: Authless packages remain on direct `attachIndexedDb`.
 
 ### Phase 4: Unblock the sign-out spec's Phase 4
 
-- [ ] **4.1** Update `specs/20260504T233223-sign-out-preserves-local-data.md` Phase 4 ("Close the plaintext child-doc gap"): the resolution is "use `encryption.attachEncryptedIndexedDb` for child docs in fuji/honeycrisp/opensidian, and in Skills only if Skills becomes authenticated." The blocker disappears.
+- [x] **4.1** Update `specs/20260504T233223-sign-out-preserves-local-data.md` Phase 4 ("Close the plaintext child-doc gap"): the resolution is "use `encryption.attachEncryptedIndexedDb` for child docs in fuji/honeycrisp/opensidian, and in Skills only if Skills becomes authenticated." The blocker disappears.
+  > **Note**: The sign-out spec already names this primitive as the Phase 4 resolution. The remaining app call-site work is intentionally executed there after auth-scoped construction.
 - [ ] **4.2** Manual smoke for the local-disk verification in the sign-out spec's Phase 10.8: with this spec landed, persisted child content survives sign-out as ciphertext.
 
 ### Phase 5: Verify
 
-- [ ] **5.1** Run `bun test packages/encryption` (new primitive tests).
-- [ ] **5.2** Run `bun test packages/workspace/src/document/attach-encryption.test.ts` (extended tests).
+- [x] **5.1** Run `bun test packages/encryption` (new primitive tests).
+- [x] **5.2** Run `bun test packages/workspace/src/document/attach-encryption.test.ts` (extended tests).
 - [ ] **5.3** Run `bun run typecheck`.
+  > **Note**: Ran `bun run --cwd packages/workspace typecheck` successfully. Full `bun run typecheck` was attempted and failed in pre-existing `@epicenter/svelte` and `@epicenter/landing` diagnostics unrelated to this primitive, including unresolved `#/utils.js` aliases in `packages/ui` Svelte files and existing `from-table.svelte.ts` result-shape errors.
 - [ ] **5.4** Manual smoke: open a child doc in fuji, edit it, inspect IDB devtools, confirm content is opaque ciphertext.
+  > **Note**: Deferred to the sign-out spec after app call sites move to auth-scoped construction.
 - [ ] **5.5** Manual smoke: sign out, inspect IDB devtools, confirm child doc content is still opaque.
+  > **Note**: Deferred to the sign-out spec after app call sites move to auth-scoped construction.
 - [ ] **5.6** Manual smoke: sign back in as same user, confirm child doc decrypts and content reappears.
+  > **Note**: Deferred to the sign-out spec after app call sites move to auth-scoped construction.
 
 ## Edge cases
 
@@ -309,14 +317,17 @@ Solution: the sign-out spec restructures authenticated browser construction so i
 
 ## Success criteria
 
-- [ ] `attachEncryption(...).attachEncryptedIndexedDb(targetYdoc, { persistenceKey })` exists and returns an `IndexedDbAttachment`-shaped result.
-- [ ] Throws clearly if `applyKeys` has not been called.
-- [ ] Per-target key derived via `deriveWorkspaceKey(userKey, targetYdoc.guid)`.
-- [ ] Wire format on disk is `[format=1][keyVersion][24-byte nonce][ciphertext+tag]`. Verified by reading raw IDB.
+- [x] `attachEncryption(...).attachEncryptedIndexedDb(targetYdoc, { persistenceKey })` exists and returns an `IndexedDbAttachment`-shaped result.
+- [x] Throws clearly if `applyKeys` has not been called.
+- [x] Per-target key derived via `deriveWorkspaceKey(userKey, targetYdoc.guid)`.
+- [x] Wire format on disk is `[format=1][keyVersion][24-byte nonce][ciphertext+tag]`. Verified by reading raw IDB.
 - [ ] Authenticated affected apps (fuji, honeycrisp, opensidian, tab-manager) use the encrypted variant for root docs; apps with user-content child docs use it for those child docs too.
-- [ ] Sign-out spec's Phase 4 blocker is resolved; the spec ships preserve-on-sign-out uniformly.
+  > **Note**: Deferred to the sign-out spec after auth-scoped workspace construction is in place.
+- [x] Sign-out spec's Phase 4 blocker is resolved; the spec ships preserve-on-sign-out uniformly.
 - [ ] Manual smoke confirms child-doc IDB content is opaque after sign-out.
+  > **Note**: Deferred to the sign-out spec after app call sites are migrated.
 - [ ] Manual smoke confirms same-user sign-in restores child docs cleanly.
+  > **Note**: Deferred to the sign-out spec after app call sites are migrated.
 
 ## References
 
@@ -337,3 +348,49 @@ After implementation, this must be true:
 > **Calling `encryption.attachEncryptedIndexedDb(targetYdoc, { persistenceKey })` returns an IndexedDB attachment that AEAD-encrypts every Yjs update with a per-target key derived from the coordinator's user key, throws if no key has been applied, and preserves the `attachIndexedDb` readiness and cleanup contract.**
 
 If any code path lets plaintext Yjs updates reach IDB through this primitive, or accepts a per-attach key parameter that bypasses the coordinator, or writes a wire format other than `[format=1][keyVersion][24-byte nonce][ciphertext+tag]`, the implementation is incomplete.
+
+## Review
+
+**Completed**: 2026-05-05
+**Branch**: `feat/lazy-disposers-bundle-owns-wipe`
+
+### Files read
+
+```txt
+packages/
+|-- encryption/
+|   |-- package.json
+|   `-- src/
+|       |-- blob.ts
+|       `-- crypto.test.ts
+`-- workspace/
+    |-- package.json
+    `-- src/document/
+        |-- attach-encryption.ts
+        |-- attach-encryption.test.ts
+        `-- attach-indexed-db.ts
+specs/
+`-- 20260505T004755-attach-encrypted-indexeddb.md
+```
+
+### Summary
+
+The storage-level primitive is implemented on the encryption coordinator. The encrypted provider is a sibling to `attachIndexedDb`, stores encrypted Yjs V2 updates in the `updates` object store, derives per-target keyrings from the coordinator's user keys, and keeps the `whenLoaded`, `clearLocal`, and `whenDisposed` contract.
+
+### Deviations from Spec
+
+- Binary helpers landed in `packages/encryption/src/blob.ts`, not `crypto.ts`, because that file already owns the encrypted blob format.
+- App migrations were deferred to `specs/20260504T233223-sign-out-preserves-local-data.md`. The original Phase 3 conflicted with the edge-case section: current app construction happens before `applyKeys()`, and this primitive intentionally throws before keys exist.
+- `attachIndexedDb` gained an optional `persistenceKey` while preserving `ydoc.guid` as the default. This is needed by the sign-out spec's owner-scoped local key work.
+
+### Verification
+
+- `bun test packages/encryption`: passed.
+- `bun test packages/workspace/src/document/attach-encryption.test.ts`: passed.
+- `bun run --cwd packages/workspace typecheck`: passed.
+- `bun run typecheck`: attempted, blocked by existing `@epicenter/svelte` and `@epicenter/landing` diagnostics unrelated to this primitive.
+
+### Follow-up Work
+
+- Execute the sign-out spec's construction-order and app migration phases so authenticated apps attach encrypted root and child IndexedDB after auth identity and keys are available.
+- Run the browser manual smokes from the sign-out spec after those call sites move.

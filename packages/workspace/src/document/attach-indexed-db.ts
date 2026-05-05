@@ -147,11 +147,11 @@ export function attachEncryptedIndexedDbProvider(
 		updatesStore: IDBObjectStore,
 		update: Uint8Array,
 	): Promise<void> {
+		dbsize += 1;
 		await idb.addAutoKey(
 			updatesStore,
 			encryptUpdate(update) as unknown as string,
 		);
-		dbsize += 1;
 	}
 
 	async function fetchUpdates(

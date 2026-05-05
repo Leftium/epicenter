@@ -1,4 +1,4 @@
-import type { AuthClient } from '@epicenter/auth';
+import type { AuthClient, AuthIdentity } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
@@ -9,13 +9,14 @@ import {
 import {
 	attachAwareness,
 	attachBroadcastChannel,
-	attachIndexedDb,
 	attachSync,
 	attachTimeline,
 	createDisposableCache,
+	createLocalYjsKey,
 	createRemoteClient,
 	onLocalUpdate,
 	PeerIdentity,
+	SYNC_ORIGIN,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -26,46 +27,59 @@ import { openOpensidian as openOpensidianDoc } from './index';
 
 export function openOpensidian({
 	auth,
+	identity,
 	peer,
 }: {
 	auth: AuthClient;
+	identity: AuthIdentity;
 	peer: PeerIdentity;
 }) {
 	const doc = openOpensidianDoc();
+	doc.encryption.applyKeys(identity.encryptionKeys);
 
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
+	const localKey = createLocalYjsKey(identity.user.id, doc.ydoc.guid);
+	const idb = doc.encryption.attachEncryptedIndexedDb(doc.ydoc, {
+		persistenceKey: localKey,
+	});
+	attachBroadcastChannel(doc.ydoc, {
+		channelKey: localKey,
+		transportOrigin: SYNC_ORIGIN,
+	});
 
-	const fileContentDocs = createDisposableCache(
-		(fileId: FileId) => {
-			const ydoc = new Y.Doc({
-				guid: fileContentDocGuid({
-					workspaceId: doc.ydoc.guid,
-					fileId,
-				}),
-				gc: false,
-			});
-			onLocalUpdate(ydoc, () =>
-				doc.tables.files.update(fileId, { updatedAt: Date.now() }),
-			);
-			const persistence = attachIndexedDb(ydoc);
-			return {
-				ydoc,
-				content: attachTimeline(ydoc),
-				persistence,
-				whenReady: persistence.whenLoaded,
-				/**
-				 * child disposer rejections do not propagate; bundle.wipe() relies on
-				 * IDB's deleteDatabase native blocking as belt-and-suspenders for
-				 * storage deletion.
-				 */
-				[Symbol.dispose]() {
-					ydoc.destroy();
-				},
-			};
-		},
-		{ gcTime: 5_000 },
-	);
+	const fileContentDocs = createDisposableCache((fileId: FileId) => {
+		const ydoc = new Y.Doc({
+			guid: fileContentDocGuid({
+				workspaceId: doc.ydoc.guid,
+				fileId,
+			}),
+			gc: false,
+		});
+		onLocalUpdate(ydoc, () =>
+			doc.tables.files.update(fileId, { updatedAt: Date.now() }),
+		);
+		const childLocalKey = createLocalYjsKey(identity.user.id, ydoc.guid);
+		const persistence = doc.encryption.attachEncryptedIndexedDb(ydoc, {
+			persistenceKey: childLocalKey,
+		});
+		attachBroadcastChannel(ydoc, {
+			channelKey: childLocalKey,
+			transportOrigin: SYNC_ORIGIN,
+		});
+		return {
+			ydoc,
+			content: attachTimeline(ydoc),
+			persistence,
+			whenReady: persistence.whenLoaded,
+			/**
+			 * child disposer rejections do not propagate; bundle.wipe() relies on
+			 * IDB's deleteDatabase native blocking as belt-and-suspenders for
+			 * storage deletion.
+			 */
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
+	});
 	const fileContent = {
 		async read(fileId: FileId) {
 			await using handle = fileContentDocs.open(fileId);
@@ -119,17 +133,17 @@ export function openOpensidian({
 		async wipe() {
 			fileContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
-			await Promise.all([
-				idb.whenDisposed,
-				sync.whenDisposed,
-			]);
+			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
 			await Promise.all([
 				...doc.tables.files.getAllValid().map((file) =>
 					clearDocument(
-						fileContentDocGuid({
-							workspaceId: doc.ydoc.guid,
-							fileId: file.id,
-						}),
+						createLocalYjsKey(
+							identity.user.id,
+							fileContentDocGuid({
+								workspaceId: doc.ydoc.guid,
+								fileId: file.id,
+							}),
+						),
 					),
 				),
 				idb.clearLocal(),

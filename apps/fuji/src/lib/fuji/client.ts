@@ -10,8 +10,14 @@ export const auth = createCookieAuth({
 	baseURL: APP_URLS.API,
 });
 
+await auth.whenReady;
+if (auth.identity === null) {
+	throw new Error('Cannot open Fuji workspace: auth identity is required.');
+}
+
 export const fuji = openFuji({
 	auth,
+	identity: auth.identity,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'Fuji',

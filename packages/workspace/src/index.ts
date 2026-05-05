@@ -96,7 +96,7 @@ export {
 // RPC + REMOTE ACTIONS
 // ════════════════════════════════════════════════════════════════════════════
 
-export { isRpcError, RpcError } from '@epicenter/sync';
+export { isRpcError, RpcError, SYNC_ORIGIN } from '@epicenter/sync';
 // Cross-peer action calling.
 export {
 	createRemoteClient,

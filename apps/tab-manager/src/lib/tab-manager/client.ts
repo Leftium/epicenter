@@ -18,6 +18,13 @@ export const auth = createBearerAuth({
 	saveSession: (next) => session.set(next),
 });
 
+await auth.whenReady;
+if (auth.identity === null) {
+	throw new Error(
+		'Cannot open Tab Manager workspace: auth identity is required.',
+	);
+}
+
 /**
  * Resolve the peer descriptor before constructing the workspace. `id` and
  * `name` resolve in parallel. The chrome.storage read and the platform-info
@@ -40,7 +47,11 @@ const peer = await Promise.all([
 	platform: 'chrome-extension' as const,
 }));
 
-export const tabManager = await openTabManager({ auth, peer });
+export const tabManager = await openTabManager({
+	auth,
+	identity: auth.identity,
+	peer,
+});
 
 /**
  * Register this browser installation as a device in the workspace.

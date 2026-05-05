@@ -710,14 +710,16 @@ apps/tab-manager/src/lib/tab-manager/client.ts
 apps/zhongwen/src/lib/zhongwen/client.ts
 ```
 
-- [ ] **3.1** Stop constructing browser-local workspaces before auth identity is known for participating apps.
-- [ ] **3.2** On signed-in auth, pass `identity.user.id` and `identity.encryptionKeys` into browser workspace construction.
-- [ ] **3.3** Apply keys before attaching encrypted local persistence: `doc.encryption.applyKeys(identity.encryptionKeys)`.
-- [ ] **3.4** Use `doc.encryption.attachEncryptedIndexedDb(doc.ydoc, { persistenceKey: createLocalYjsKey(identity.user.id, doc.ydoc.guid) })` for authenticated root local persistence.
-- [ ] **3.5** Use `attachBroadcastChannel(doc.ydoc, { channelKey: createLocalYjsKey(identity.user.id, doc.ydoc.guid), transportOrigin })` for authenticated root local broadcast.
-- [ ] **3.6** Use `doc.encryption.attachEncryptedIndexedDb(childYdoc, { persistenceKey: createLocalYjsKey(identity.user.id, childYdoc.guid) })` for every persisted authenticated child document that contains user content.
-- [ ] **3.7** Use plain `attachIndexedDb` only for authless or explicitly non-sensitive browser packages.
-- [ ] **3.8** Keep `ydoc.guid` unchanged for sync URLs and encryption. Root sync still points to `/workspaces/${doc.ydoc.guid}`. Child sync should use `/documents/${ydoc.guid}`.
+- [x] **3.1** Stop constructing browser-local workspaces before auth identity is known for participating apps.
+  > **Note**: Fuji, Honeycrisp, Opensidian, and Tab-manager now wait for auth readiness and require an identity before construction. Zhongwen remains on its authless browser-local factory per Phase 0 classification.
+- [x] **3.2** On signed-in auth, pass `identity.user.id` and `identity.encryptionKeys` into browser workspace construction.
+- [x] **3.3** Apply keys before attaching encrypted local persistence: `doc.encryption.applyKeys(identity.encryptionKeys)`.
+- [x] **3.4** Use `doc.encryption.attachEncryptedIndexedDb(doc.ydoc, { persistenceKey: createLocalYjsKey(identity.user.id, doc.ydoc.guid) })` for authenticated root local persistence.
+- [x] **3.5** Use `attachBroadcastChannel(doc.ydoc, { channelKey: createLocalYjsKey(identity.user.id, doc.ydoc.guid), transportOrigin })` for authenticated root local broadcast.
+- [x] **3.6** Use `doc.encryption.attachEncryptedIndexedDb(childYdoc, { persistenceKey: createLocalYjsKey(identity.user.id, childYdoc.guid) })` for every persisted authenticated child document that contains user content.
+- [x] **3.7** Use plain `attachIndexedDb` only for authless or explicitly non-sensitive browser packages.
+  > **Note**: Skills and Zhongwen remain on direct `attachIndexedDb`. Skills is still authless; Zhongwen's browser package is local-only.
+- [x] **3.8** Keep `ydoc.guid` unchanged for sync URLs and encryption. Root sync still points to `/workspaces/${doc.ydoc.guid}`. Child sync should use `/documents/${ydoc.guid}`.
 - [ ] **3.9** On sign-out, destroy the current workspace runtime and reload. Do not call `clearLocal()` or `clearDocument()`.
 - [ ] **3.10** Keep destructive local deletion only for explicit "Forget this device" or legacy wipe paths.
 
@@ -725,13 +727,14 @@ apps/zhongwen/src/lib/zhongwen/client.ts
 
 Resolved by the follow-up spec at `specs/20260505T004755-attach-encrypted-indexeddb.md`. That spec adds `encryption.attachEncryptedIndexedDb(targetYdoc, { persistenceKey })` as a method on the existing encryption coordinator. The migration here is a construction-order change plus one storage-call change per root and child doc.
 
-- [ ] **4.1** Land the `attach-encrypted-indexeddb` spec first. This sign-out spec depends on it before preserve-on-sign-out can ship.
-- [ ] **4.2** `apps/fuji/src/lib/fuji/browser.ts`: replace root `attachIndexedDb(doc.ydoc)` with `doc.encryption.attachEncryptedIndexedDb(doc.ydoc, { persistenceKey })`, and replace child entry-content `attachIndexedDb(ydoc)` the same way.
-- [ ] **4.3** `apps/honeycrisp/src/lib/honeycrisp/browser.ts`: same replacement for root and note-body docs.
-- [ ] **4.4** `apps/opensidian/src/lib/opensidian/browser.ts`: same replacement for root and file-content docs.
-- [ ] **4.5** `apps/tab-manager/src/lib/tab-manager/extension.ts`: same replacement for the root workspace doc.
-- [ ] **4.6** `apps/skills/src/lib/skills/browser.ts`: use encrypted storage only if Skills becomes authenticated. If it stays authless, classify its local persistence separately and do not force this coordinator method into it.
-- [ ] **4.7** Delete explicit `{ gcTime: 5_000 }` arguments from touched child-doc caches. That is the default.
+- [x] **4.1** Land the `attach-encrypted-indexeddb` spec first. This sign-out spec depends on it before preserve-on-sign-out can ship.
+- [x] **4.2** `apps/fuji/src/lib/fuji/browser.ts`: replace root `attachIndexedDb(doc.ydoc)` with `doc.encryption.attachEncryptedIndexedDb(doc.ydoc, { persistenceKey })`, and replace child entry-content `attachIndexedDb(ydoc)` the same way.
+- [x] **4.3** `apps/honeycrisp/src/lib/honeycrisp/browser.ts`: same replacement for root and note-body docs.
+- [x] **4.4** `apps/opensidian/src/lib/opensidian/browser.ts`: same replacement for root and file-content docs.
+- [x] **4.5** `apps/tab-manager/src/lib/tab-manager/extension.ts`: same replacement for the root workspace doc.
+- [x] **4.6** `apps/skills/src/lib/skills/browser.ts`: use encrypted storage only if Skills becomes authenticated. If it stays authless, classify its local persistence separately and do not force this coordinator method into it.
+  > **Note**: Skills remains authless and stays on direct `attachIndexedDb`.
+- [x] **4.7** Delete explicit `{ gcTime: 5_000 }` arguments from touched child-doc caches. That is the default.
 - [ ] **4.8** Add manual smoke for local disk inspection: after sign-out, open IDB devtools and confirm root and child-doc blobs are opaque ciphertext (start with `0x01` version byte).
 
 Do not add an app-level `preserveLocalOnSignOut` flag to bypass this. That creates two privacy products behind one shared UI.

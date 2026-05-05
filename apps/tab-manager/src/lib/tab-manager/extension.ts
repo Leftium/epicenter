@@ -4,15 +4,16 @@
  * `browser-state.svelte.ts`.
  */
 
-import type { AuthClient } from '@epicenter/auth';
+import type { AuthClient, AuthIdentity } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
 	attachBroadcastChannel,
-	attachIndexedDb,
 	attachSync,
+	createLocalYjsKey,
 	createRemoteClient,
 	PeerIdentity,
+	SYNC_ORIGIN,
 	toWsUrl,
 } from '@epicenter/workspace';
 import type { DeviceId } from '$lib/workspace/definition';
@@ -32,17 +33,26 @@ import { openTabManager as openTabManagerDoc } from './index';
  */
 export async function openTabManager({
 	auth,
+	identity,
 	peer,
 }: {
 	auth: AuthClient;
+	identity: AuthIdentity;
 	peer: TabManagerPeer | Promise<TabManagerPeer>;
 }) {
 	const resolvedPeer = await Promise.resolve(peer);
 
 	const doc = openTabManagerDoc({ deviceId: Promise.resolve(resolvedPeer.id) });
+	doc.encryption.applyKeys(identity.encryptionKeys);
 
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
+	const localKey = createLocalYjsKey(identity.user.id, doc.ydoc.guid);
+	const idb = doc.encryption.attachEncryptedIndexedDb(doc.ydoc, {
+		persistenceKey: localKey,
+	});
+	attachBroadcastChannel(doc.ydoc, {
+		channelKey: localKey,
+		transportOrigin: SYNC_ORIGIN,
+	});
 
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
@@ -64,10 +74,7 @@ export async function openTabManager({
 		sync,
 		async wipe() {
 			doc[Symbol.dispose]();
-			await Promise.all([
-				idb.whenDisposed,
-				sync.whenDisposed,
-			]);
+			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
 			await idb.clearLocal();
 		},
 		remote,

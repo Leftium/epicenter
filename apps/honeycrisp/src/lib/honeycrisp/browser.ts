@@ -1,17 +1,18 @@
-import type { AuthClient } from '@epicenter/auth';
+import type { AuthClient, AuthIdentity } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
 	attachBroadcastChannel,
-	attachIndexedDb,
 	attachRichText,
 	attachSync,
 	createDisposableCache,
+	createLocalYjsKey,
 	createRemoteClient,
 	DateTimeString,
 	docGuid,
 	onLocalUpdate,
 	PeerIdentity,
+	SYNC_ORIGIN,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { clearDocument } from 'y-indexeddb';
@@ -36,57 +37,70 @@ function noteBodyDocGuid({
 
 export function openHoneycrisp({
 	auth,
+	identity,
 	peer,
 }: {
 	auth: AuthClient;
+	identity: AuthIdentity;
 	peer: PeerIdentity;
 }) {
 	const doc = openHoneycrispDoc();
+	doc.encryption.applyKeys(identity.encryptionKeys);
 
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
+	const localKey = createLocalYjsKey(identity.user.id, doc.ydoc.guid);
+	const idb = doc.encryption.attachEncryptedIndexedDb(doc.ydoc, {
+		persistenceKey: localKey,
+	});
+	attachBroadcastChannel(doc.ydoc, {
+		channelKey: localKey,
+		transportOrigin: SYNC_ORIGIN,
+	});
 
-	const noteBodyDocs = createDisposableCache(
-		(noteId: NoteId) => {
-			const ydoc = new Y.Doc({
-				guid: noteBodyDocGuid({
-					workspaceId: doc.ydoc.guid,
-					noteId,
-				}),
-				gc: false,
+	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
+		const ydoc = new Y.Doc({
+			guid: noteBodyDocGuid({
+				workspaceId: doc.ydoc.guid,
+				noteId,
+			}),
+			gc: false,
+		});
+		const body = attachRichText(ydoc);
+		const childLocalKey = createLocalYjsKey(identity.user.id, ydoc.guid);
+		const childIdb = doc.encryption.attachEncryptedIndexedDb(ydoc, {
+			persistenceKey: childLocalKey,
+		});
+		attachBroadcastChannel(ydoc, {
+			channelKey: childLocalKey,
+			transportOrigin: SYNC_ORIGIN,
+		});
+		const childSync = attachSync(ydoc, {
+			url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+			waitFor: childIdb.whenLoaded,
+			auth,
+		});
+
+		onLocalUpdate(ydoc, () => {
+			doc.tables.notes.update(noteId, {
+				updatedAt: DateTimeString.now(),
 			});
-			const body = attachRichText(ydoc);
-			const childIdb = attachIndexedDb(ydoc);
-			const childSync = attachSync(ydoc, {
-				url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
-				waitFor: childIdb.whenLoaded,
-				auth,
-			});
+		});
 
-			onLocalUpdate(ydoc, () => {
-				doc.tables.notes.update(noteId, {
-					updatedAt: DateTimeString.now(),
-				});
-			});
-
-			return {
-				ydoc,
-				body,
-				idb: childIdb,
-				sync: childSync,
-				whenLoaded: childIdb.whenLoaded,
-				/**
-				 * child disposer rejections do not propagate; bundle.wipe() relies on
-				 * IDB's deleteDatabase native blocking as belt-and-suspenders for
-				 * storage deletion.
-				 */
-				[Symbol.dispose]() {
-					ydoc.destroy();
-				},
-			};
-		},
-		{ gcTime: 5_000 },
-	);
+		return {
+			ydoc,
+			body,
+			idb: childIdb,
+			sync: childSync,
+			whenLoaded: childIdb.whenLoaded,
+			/**
+			 * child disposer rejections do not propagate; bundle.wipe() relies on
+			 * IDB's deleteDatabase native blocking as belt-and-suspenders for
+			 * storage deletion.
+			 */
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
+	});
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
@@ -109,17 +123,17 @@ export function openHoneycrisp({
 		async wipe() {
 			noteBodyDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
-			await Promise.all([
-				idb.whenDisposed,
-				sync.whenDisposed,
-			]);
+			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
 			await Promise.all([
 				...doc.tables.notes.getAllValid().map((note) =>
 					clearDocument(
-						noteBodyDocGuid({
-							workspaceId: doc.ydoc.guid,
-							noteId: note.id,
-						}),
+						createLocalYjsKey(
+							identity.user.id,
+							noteBodyDocGuid({
+								workspaceId: doc.ydoc.guid,
+								noteId: note.id,
+							}),
+						),
 					),
 				),
 				idb.clearLocal(),

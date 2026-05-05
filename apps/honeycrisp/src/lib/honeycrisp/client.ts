@@ -10,8 +10,16 @@ export const auth = createCookieAuth({
 	baseURL: APP_URLS.API,
 });
 
+await auth.whenReady;
+if (auth.identity === null) {
+	throw new Error(
+		'Cannot open Honeycrisp workspace: auth identity is required.',
+	);
+}
+
 export const honeycrisp = openHoneycrisp({
 	auth,
+	identity: auth.identity,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'Honeycrisp',

@@ -20,8 +20,16 @@ export const auth = createBearerAuth({
 	saveSession: (next) => session.set(next),
 });
 
+await auth.whenReady;
+if (auth.identity === null) {
+	throw new Error(
+		'Cannot open Opensidian workspace: auth identity is required.',
+	);
+}
+
 export const opensidian = openOpensidian({
 	auth,
+	identity: auth.identity,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'Opensidian',

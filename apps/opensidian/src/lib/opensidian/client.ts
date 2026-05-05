@@ -1,4 +1,8 @@
-import { BearerSession, createBearerAuth } from '@epicenter/auth-svelte';
+import {
+	BearerSession,
+	createBearerAuth,
+	waitForAuthState,
+} from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
@@ -18,20 +22,22 @@ export const auth = createBearerAuth({
 	saveSession: (next) => session.set(next),
 });
 
-await auth.whenReady;
-if (auth.identity === null) {
-	throw new Error(
-		'Cannot open Opensidian workspace: auth identity is required.',
-	);
+const signedInState = await waitForAuthState(
+	auth,
+	(state) => state.status === 'signed-in',
+);
+if (signedInState.status !== 'signed-in') {
+	throw new Error('Cannot open Opensidian workspace: signed-in auth required.');
 }
 
 export const opensidian = openOpensidian({
-	auth,
+	identity: signedInState.identity,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'Opensidian',
 		platform: 'web',
 	},
+	transport: auth.openWebSocket,
 });
 
 bindAuthWorkspaceScope({

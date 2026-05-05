@@ -22,8 +22,8 @@ import {
 	sqlitePath,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import type { createFujiActions } from '../workspace.js';
 import { openFuji as openFujiDoc } from './index.js';
+import type { createFujiActions } from './workspace.js';
 
 export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 
@@ -54,7 +54,7 @@ export function defineFujiDaemon({
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				auth,
+				transport: auth.openWebSocket,
 				awareness,
 			});
 			const rpc = sync.attachRpc(doc.actions);

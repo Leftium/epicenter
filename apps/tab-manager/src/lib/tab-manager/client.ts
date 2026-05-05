@@ -1,4 +1,4 @@
-import { createBearerAuth } from '@epicenter/auth-svelte';
+import { createBearerAuth, waitForAuthState } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
@@ -16,10 +16,13 @@ export const auth = createBearerAuth({
 	saveSession: (next) => session.set(next),
 });
 
-await auth.whenReady;
-if (auth.identity === null) {
+const signedInState = await waitForAuthState(
+	auth,
+	(state) => state.status === 'signed-in',
+);
+if (signedInState.status !== 'signed-in') {
 	throw new Error(
-		'Cannot open Tab Manager workspace: auth identity is required.',
+		'Cannot open Tab Manager workspace: signed-in auth required.',
 	);
 }
 
@@ -46,8 +49,9 @@ const peer = await Promise.all([
 }));
 
 export const tabManager = await openTabManager({
-	auth,
+	identity: signedInState.identity,
 	peer,
+	transport: auth.openWebSocket,
 });
 
 /**

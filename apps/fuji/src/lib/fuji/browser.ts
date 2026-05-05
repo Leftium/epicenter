@@ -1,4 +1,4 @@
-import type { AuthClient } from '@epicenter/auth';
+import type { AuthIdentity } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
@@ -11,12 +11,13 @@ import {
 	docGuid,
 	onLocalUpdate,
 	PeerIdentity,
+	type SyncTransport,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import type { EntryId } from '$lib/workspace';
 import { openFuji as openFujiDoc } from './index';
+import type { EntryId } from './workspace';
 
 function entryContentDocGuid({
 	workspaceId,
@@ -34,18 +35,14 @@ function entryContentDocGuid({
 }
 
 export function openFuji({
-	auth,
+	identity,
 	peer,
+	transport,
 }: {
-	auth: AuthClient;
+	identity: AuthIdentity;
 	peer: PeerIdentity;
+	transport: SyncTransport;
 }) {
-	const identity = auth.identity;
-	if (identity === null) {
-		throw new Error(
-			'openFuji requires signed-in auth.identity. Await auth.whenReady first.',
-		);
-	}
 	const userId = identity.user.id;
 	const doc = openFujiDoc({ encryptionKeys: identity.encryptionKeys });
 
@@ -66,7 +63,7 @@ export function openFuji({
 		const childSync = attachSync(ydoc, {
 			url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
-			auth,
+			transport,
 		});
 
 		onLocalUpdate(ydoc, () => {
@@ -98,7 +95,7 @@ export function openFuji({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		auth,
+		transport,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);
@@ -137,3 +134,5 @@ export function openFuji({
 		},
 	};
 }
+
+export type Fuji = ReturnType<typeof openFuji>;

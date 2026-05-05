@@ -4,7 +4,7 @@
  * `browser-state.svelte.ts`.
  */
 
-import type { AuthClient } from '@epicenter/auth';
+import type { AuthIdentity } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
@@ -12,6 +12,7 @@ import {
 	attachSync,
 	createRemoteClient,
 	PeerIdentity,
+	type SyncTransport,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -31,19 +32,15 @@ import { openTabManager as openTabManagerDoc } from './index';
  * is independent and connects whenever the network allows.
  */
 export async function openTabManager({
-	auth,
+	identity,
 	peer,
+	transport,
 }: {
-	auth: AuthClient;
+	identity: AuthIdentity;
 	peer: TabManagerPeer | Promise<TabManagerPeer>;
+	transport: SyncTransport;
 }) {
 	const resolvedPeer = await Promise.resolve(peer);
-	const identity = auth.identity;
-	if (identity === null) {
-		throw new Error(
-			'openTabManager requires signed-in auth.identity. Await auth.whenReady first.',
-		);
-	}
 	const userId = identity.user.id;
 
 	const doc = openTabManagerDoc({
@@ -61,7 +58,7 @@ export async function openTabManager({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		auth,
+		transport,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);

@@ -378,13 +378,13 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 3: Migrate consumers
 
-- [ ] **3.1** Migrate `apps/fuji/src/lib/fuji/browser.ts`:
+- [x] **3.1** Migrate `apps/fuji/src/lib/fuji/browser.ts`:
   - Change `openFuji`'s parameter from `{ auth: AuthClient, identity, peer }` to `{ transport: SyncTransport, identity, peer }`.
   - Replace the two `attachSync(..., { auth, ... })` calls with `attachSync(..., { transport, ... })`.
-- [ ] **3.2** Update `apps/fuji/src/lib/components/FujiWorkspaceProvider.svelte`:
+- [x] **3.2** Update `apps/fuji/src/lib/components/FujiWorkspaceProvider.svelte`:
   - Change the `openFuji({...})` call to pass `transport: auth.openWebSocket` instead of `auth`.
   - Leave the `auth.onStateChange` block intact (it owns layout-level orchestration).
-- [ ] **3.3** Repeat the same migration for the other workspace factories that consume `attachSync`:
+- [x] **3.3** Repeat the same migration for the other workspace factories that consume `attachSync`:
   - `apps/honeycrisp/src/lib/honeycrisp/browser.ts` + `HoneycrispWorkspaceProvider.svelte`
   - `apps/opensidian/src/lib/opensidian/browser.ts` + provider
   - `apps/zhongwen/src/lib/zhongwen/browser.ts` + `ZhongwenWorkspaceProvider.svelte`
@@ -393,8 +393,9 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
   - `apps/opensidian/src/lib/opensidian/script.ts`, `daemon.ts`
   - `apps/fuji/src/lib/fuji/daemon.ts`
   - `apps/tab-manager/src/lib/tab-manager/extension.ts`
-- [ ] **3.4** Workspace-wide grep: `grep -rn "auth: SyncAuth" --include='*.ts'` and `grep -rn "auth: AuthClient" apps/` should turn up zero hits except the provider components themselves (which legitimately consume `AuthClient` for `onStateChange`).
-- [ ] **3.5** Verify: every app typechecks. Workspace tests pass.
+- [x] **3.4** Workspace-wide grep: `grep -rn "auth: SyncAuth" --include='*.ts'` and `grep -rn "auth: AuthClient" apps/` should turn up zero hits except the provider components themselves (which legitimately consume `AuthClient` for `onStateChange`).
+- [x] **3.5** Verify: every app typechecks. Workspace tests pass.
+  > Note: app typechecks were run for Fuji, Honeycrisp, Opensidian, Zhongwen, and Tab Manager. The transport-related errors were eliminated, but the app checks still fail on unrelated existing errors in shared UI aliases, `packages/svelte-utils`, and app state/component files. `@epicenter/workspace` typecheck and tests passed.
 
 ### Wave 4: Make `transport` required, remove the legacy path
 

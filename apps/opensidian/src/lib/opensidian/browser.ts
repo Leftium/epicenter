@@ -1,4 +1,4 @@
-import type { AuthClient } from '@epicenter/auth';
+import type { AuthIdentity } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
@@ -15,6 +15,7 @@ import {
 	createRemoteClient,
 	onLocalUpdate,
 	PeerIdentity,
+	type SyncTransport,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -24,18 +25,14 @@ import { createOpensidianActions } from './actions';
 import { openOpensidian as openOpensidianDoc } from './index';
 
 export function openOpensidian({
-	auth,
+	identity,
 	peer,
+	transport,
 }: {
-	auth: AuthClient;
+	identity: AuthIdentity;
 	peer: PeerIdentity;
+	transport: SyncTransport;
 }) {
-	const identity = auth.identity;
-	if (identity === null) {
-		throw new Error(
-			'openOpensidian requires signed-in auth.identity. Await auth.whenReady first.',
-		);
-	}
 	const userId = identity.user.id;
 	const doc = openOpensidianDoc({ encryptionKeys: identity.encryptionKeys });
 
@@ -104,7 +101,7 @@ export function openOpensidian({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		auth,
+		transport,
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);

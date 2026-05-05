@@ -40,7 +40,7 @@ export function defineOpensidianDaemon({
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				auth,
+				transport: auth.openWebSocket,
 				awareness,
 			});
 

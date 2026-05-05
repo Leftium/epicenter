@@ -198,7 +198,7 @@ export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc };
 export type SyncTransport = (
 	url: string,
 	protocols?: string | string[],
-) => WebSocket;
+) => WebSocket | null;
 
 /**
  * Capability bundle for authenticated sync. Every `attachSync` connection

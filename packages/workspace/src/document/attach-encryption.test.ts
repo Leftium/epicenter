@@ -270,20 +270,21 @@ describe('attachEncryption', () => {
 		});
 	});
 
-	describe('attachEncryptedIndexedDb', () => {
+	describe('attachIndexedDb', () => {
 		test('throws if called before applyKeys', () => {
 			const ydoc = new Y.Doc({ guid: 'encrypted-idb-no-keys', gc: false });
 			const encryption = attachEncryption(ydoc);
 
 			expect(() =>
-				encryption.attachEncryptedIndexedDb(ydoc, {
-					persistenceKey: 'encrypted-idb-no-keys',
+				encryption.attachIndexedDb(ydoc, {
+					userId: 'user-no-keys',
 				}),
 			).toThrow('encryption coordinator has no keys');
 		});
 
 		test('round trips encrypted Yjs updates through IndexedDB', async () => {
-			const persistenceKey = `encrypted-idb-roundtrip-${crypto.randomUUID()}`;
+			const userId = `user-${crypto.randomUUID()}`;
+			const databaseName = `epicenter:v1:user:${userId}:yjs:encrypted-idb-roundtrip`;
 			const keys = toEncryptionKeys(randomBytes(32));
 			const firstDoc = new Y.Doc({
 				guid: 'encrypted-idb-roundtrip',
@@ -291,8 +292,8 @@ describe('attachEncryption', () => {
 			});
 			const firstEncryption = attachEncryption(firstDoc);
 			firstEncryption.applyKeys(keys);
-			const firstIdb = firstEncryption.attachEncryptedIndexedDb(firstDoc, {
-				persistenceKey,
+			const firstIdb = firstEncryption.attachIndexedDb(firstDoc, {
+				userId,
 			});
 			await firstIdb.whenLoaded;
 			firstDoc.getText('body').insert(0, 'stored ciphertext');
@@ -300,7 +301,7 @@ describe('attachEncryption', () => {
 			firstDoc.destroy();
 			await firstIdb.whenDisposed;
 
-			const rawUpdates = await readEncryptedUpdates(persistenceKey);
+			const rawUpdates = await readEncryptedUpdates(databaseName);
 			expect(rawUpdates.length).toBeGreaterThan(0);
 			expect(rawUpdates.every((update) => update[0] === 1)).toBe(true);
 
@@ -310,8 +311,8 @@ describe('attachEncryption', () => {
 			});
 			const secondEncryption = attachEncryption(secondDoc);
 			secondEncryption.applyKeys(keys);
-			const secondIdb = secondEncryption.attachEncryptedIndexedDb(secondDoc, {
-				persistenceKey,
+			const secondIdb = secondEncryption.attachIndexedDb(secondDoc, {
+				userId,
 			});
 			await secondIdb.whenLoaded;
 
@@ -322,19 +323,20 @@ describe('attachEncryption', () => {
 		});
 
 		test('target guid changes the derived storage key', async () => {
-			const persistenceKey = `encrypted-idb-guid-${crypto.randomUUID()}`;
+			const userId = `user-${crypto.randomUUID()}`;
+			const databaseName = `epicenter:v1:user:${userId}:yjs:encrypted-idb-guid-a`;
 			const keys = toEncryptionKeys(randomBytes(32));
 			const ydoc = new Y.Doc({ guid: 'encrypted-idb-guid-a', gc: false });
 			const encryption = attachEncryption(ydoc);
 			encryption.applyKeys(keys);
-			const idb = encryption.attachEncryptedIndexedDb(ydoc, { persistenceKey });
+			const idb = encryption.attachIndexedDb(ydoc, { userId });
 			await idb.whenLoaded;
 			ydoc.getText('body').insert(0, 'guid bound');
 			await tick();
 			ydoc.destroy();
 			await idb.whenDisposed;
 
-			const rawUpdates = await readEncryptedUpdates(persistenceKey);
+			const rawUpdates = await readEncryptedUpdates(databaseName);
 			const updateWithContent = rawUpdates.at(-1);
 			expect(updateWithContent).toBeDefined();
 			expect(() =>
@@ -348,7 +350,8 @@ describe('attachEncryption', () => {
 		});
 
 		test('key rotation changes future write version and keeps old rows readable', async () => {
-			const persistenceKey = `encrypted-idb-rotation-${crypto.randomUUID()}`;
+			const userId = `user-${crypto.randomUUID()}`;
+			const databaseName = `epicenter:v1:user:${userId}:yjs:encrypted-idb-rotation`;
 			const keyV1 = randomBytes(32);
 			const keyV2 = randomBytes(32);
 			const keysV1: EncryptionKeys = [
@@ -361,8 +364,8 @@ describe('attachEncryption', () => {
 			const firstDoc = new Y.Doc({ guid: 'encrypted-idb-rotation', gc: false });
 			const firstEncryption = attachEncryption(firstDoc);
 			firstEncryption.applyKeys(keysV1);
-			const firstIdb = firstEncryption.attachEncryptedIndexedDb(firstDoc, {
-				persistenceKey,
+			const firstIdb = firstEncryption.attachIndexedDb(firstDoc, {
+				userId,
 			});
 			await firstIdb.whenLoaded;
 			firstDoc.getText('body').insert(0, 'v1');
@@ -373,7 +376,7 @@ describe('attachEncryption', () => {
 			firstDoc.destroy();
 			await firstIdb.whenDisposed;
 
-			const rawUpdates = await readEncryptedUpdates(persistenceKey);
+			const rawUpdates = await readEncryptedUpdates(databaseName);
 			expect(rawUpdates.some((update) => getKeyVersion(update) === 1)).toBe(
 				true,
 			);
@@ -387,8 +390,8 @@ describe('attachEncryption', () => {
 			});
 			const secondEncryption = attachEncryption(secondDoc);
 			secondEncryption.applyKeys(rotatedKeys);
-			const secondIdb = secondEncryption.attachEncryptedIndexedDb(secondDoc, {
-				persistenceKey,
+			const secondIdb = secondEncryption.attachIndexedDb(secondDoc, {
+				userId,
 			});
 			await secondIdb.whenLoaded;
 
@@ -399,13 +402,13 @@ describe('attachEncryption', () => {
 		});
 
 		test('clearLocal clears the encrypted IndexedDB database', async () => {
-			const persistenceKey = `encrypted-idb-clear-${crypto.randomUUID()}`;
+			const userId = `user-${crypto.randomUUID()}`;
 			const keys = toEncryptionKeys(randomBytes(32));
 			const firstDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: false });
 			const firstEncryption = attachEncryption(firstDoc);
 			firstEncryption.applyKeys(keys);
-			const firstIdb = firstEncryption.attachEncryptedIndexedDb(firstDoc, {
-				persistenceKey,
+			const firstIdb = firstEncryption.attachIndexedDb(firstDoc, {
+				userId,
 			});
 			await firstIdb.whenLoaded;
 			firstDoc.getText('body').insert(0, 'clear me');
@@ -417,8 +420,8 @@ describe('attachEncryption', () => {
 			const secondDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: false });
 			const secondEncryption = attachEncryption(secondDoc);
 			secondEncryption.applyKeys(keys);
-			const secondIdb = secondEncryption.attachEncryptedIndexedDb(secondDoc, {
-				persistenceKey,
+			const secondIdb = secondEncryption.attachIndexedDb(secondDoc, {
+				userId,
 			});
 			await secondIdb.whenLoaded;
 

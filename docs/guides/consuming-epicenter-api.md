@@ -26,22 +26,17 @@ import {
 	attachAwareness,
 	attachBroadcastChannel,
 	attachEncryption,
-	attachIndexedDb,
+	clearOwnedDocuments,
 	attachSync,
 	defineTable,
+	type EncryptionKeys,
 	getOrCreateInstallationId,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
-import {
-	AuthUser,
-	createCookieAuth,
-	type AuthClient,
-	type AuthIdentity,
-} from '@epicenter/auth-svelte';
-import { EncryptionKeys } from '@epicenter/encryption';
-import { createPersistedState } from '@epicenter/svelte';
+import type { AuthClient } from '@epicenter/auth';
+import { createCookieAuth } from '@epicenter/auth-svelte';
 import * as Y from 'yjs';
 import { type } from 'arktype';
 
@@ -55,66 +50,69 @@ const appTables = {
 	),
 };
 
-const identity = createPersistedState({
-	key: 'my-app:authIdentity',
-	schema: type({
-		user: AuthUser,
-		encryptionKeys: EncryptionKeys,
-	}).or('null'),
-	defaultValue: null,
-}) satisfies { get(): AuthIdentity | null; set(next: AuthIdentity | null): void };
-
 export const auth = createCookieAuth({
 	baseURL: 'https://api.epicenter.so',
-	initialIdentity: identity.get(),
-	saveIdentity: (next) => identity.set(next),
 });
 
-function openMyApp({
-	auth,
-	peer,
-}: {
-	auth: AuthClient;
-	peer: PeerIdentity;
-}) {
+function openMyAppDoc({
+	encryptionKeys,
+}: { encryptionKeys?: EncryptionKeys } = {}) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(appTables);
 	const kv = encryption.attachKv({});
+	if (encryptionKeys !== undefined) {
+		encryption.applyKeys(encryptionKeys);
+	}
+	return { ydoc, encryption, tables, kv };
+}
 
-	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
+function openMyApp({ auth, peer }: { auth: AuthClient; peer: PeerIdentity }) {
+	const identity = auth.identity;
+	if (identity === null) {
+		throw new Error('openMyApp requires signed-in auth.identity. Await auth.whenReady first.');
+	}
 
-	const awareness = attachAwareness(ydoc, {
+	const userId = identity.user.id;
+	const doc = openMyAppDoc({ encryptionKeys: identity.encryptionKeys });
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachBroadcastChannel(doc.ydoc, { userId });
+
+	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
 	});
-	const sync = attachSync(ydoc, {
-		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
+	const sync = attachSync(doc.ydoc, {
+		url: toWsUrl(`https://api.epicenter.so/workspaces/${doc.ydoc.guid}`),
 		auth,
 		waitFor: idb.whenLoaded,
 		awareness,
 	});
 
 	return {
-		ydoc,
-		tables,
-		kv,
+		...doc,
 		awareness,
-		encryption,
 		idb,
 		sync,
 		whenLoaded: idb.whenLoaded,
 		async wipe() {
-			ydoc.destroy();
+			doc.ydoc.destroy();
 			await sync.whenDisposed;
 			await idb.whenDisposed;
-			await idb.clearLocal();
+			await clearOwnedDocuments({
+				userId,
+				ydocGuids: [doc.ydoc.guid],
+			});
 		},
 		[Symbol.dispose]() {
-			ydoc.destroy();
+			doc.ydoc.destroy();
 		},
 	};
+}
+
+await auth.whenReady;
+if (auth.identity === null) {
+	throw new Error('Cannot open My app workspace: auth identity is required.');
 }
 
 export const workspace = openMyApp({
@@ -141,4 +139,5 @@ bindAuthWorkspaceScope({
 ```
 
 The `ydoc.guid` becomes the sync room name. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin.
+For authenticated browser workspaces, local IndexedDB and BroadcastChannel names are scoped inside the primitives from `identity.user.id`. App code passes `{ userId }`, not a prebuilt storage key.
 In browser apps, both terminal auth callbacks usually reload the page. The separate names make the sign-out and account-switch cases testable, observable, and overridable on platforms that do not use `window.location.reload()`.

@@ -15,7 +15,6 @@ if (auth.identity === null) {
 
 export const fuji = openFuji({
 	auth,
-	identity: auth.identity,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'Fuji',

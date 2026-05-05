@@ -80,7 +80,7 @@ import {
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import {
-	attachEncryptedIndexedDbProvider,
+	attachEncryptedProvider,
 	type EncryptedIndexedDbAttachment,
 	type IndexedDbAttachment,
 } from './attach-indexed-db.js';
@@ -96,6 +96,7 @@ import type {
 } from './attach-table.js';
 import { createKv, createReadonlyTable, createTable } from './internal.js';
 import { KV_KEY, TableKey } from './keys.js';
+import { createOwnedYjsKey } from './local-yjs-key.js';
 
 /**
  * The coordinator treats every registered store uniformly: it only calls
@@ -178,9 +179,9 @@ export type EncryptionAttachment = {
 	 * before attaching encrypted storage so the provider can hydrate from local
 	 * ciphertext without a plaintext fallback.
 	 */
-	attachEncryptedIndexedDb(
+	attachIndexedDb(
 		targetYdoc: Y.Doc,
-		opts: { persistenceKey: string },
+		opts: { userId: string },
 	): IndexedDbAttachment;
 };
 
@@ -277,10 +278,10 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 			register(store);
 			return createKv(store, definitions);
 		},
-		attachEncryptedIndexedDb(targetYdoc, { persistenceKey }) {
+		attachIndexedDb(targetYdoc, { userId }) {
 			const keys = requireKeys();
-			const attachment = attachEncryptedIndexedDbProvider(targetYdoc, {
-				persistenceKey,
+			const attachment = attachEncryptedProvider(targetYdoc, {
+				databaseName: createOwnedYjsKey(userId, targetYdoc.guid),
 				keyring: deriveKeyring(keys, targetYdoc.guid),
 			});
 			encryptedIndexedDbAttachments.push({ targetYdoc, attachment });

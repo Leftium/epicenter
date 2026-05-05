@@ -9,6 +9,7 @@ import * as idb from 'lib0/indexeddb';
 import { clearDocument, IndexeddbPersistence } from 'y-indexeddb';
 import type * as Y from 'yjs';
 import { applyUpdateV2, encodeStateAsUpdateV2, transact } from 'yjs';
+import { createOwnedYjsKey, createOwnedYjsKeyPrefix } from './local-yjs-key.js';
 
 const UPDATES_STORE_NAME = 'updates';
 const CUSTOM_STORE_NAME = 'custom';
@@ -32,28 +33,39 @@ export type IndexedDbAttachment = {
 	whenDisposed: Promise<unknown>;
 };
 
-export type AttachIndexedDbOptions = {
-	/**
-	 * Local IndexedDB database name. Defaults to `ydoc.guid`, which preserves
-	 * the historical behavior for authless and unscoped local persistence.
-	 */
-	persistenceKey?: string;
-};
-
 export type EncryptedIndexedDbAttachment = IndexedDbAttachment & {
 	activateEncryption(keyring: ReadonlyMap<number, Uint8Array>): void;
 };
 
-export type AttachEncryptedIndexedDbProviderOptions = {
-	persistenceKey: string;
+export type EncryptedProviderOptions = {
+	databaseName: string;
 	keyring: ReadonlyMap<number, Uint8Array>;
 };
 
-export function attachIndexedDb(
+type IndexedDbDatabaseInfo = {
+	name?: string | null;
+};
+
+type IndexedDbFactoryWithDatabases = IDBFactory & {
+	databases?: () => Promise<IndexedDbDatabaseInfo[]>;
+};
+
+export type ClearOwnedDocumentsOptions = {
+	userId: string;
+	ydocGuids?: Iterable<string>;
+	indexedDB?: IndexedDbFactoryWithDatabases;
+	clearDocument?: (name: string) => Promise<void>;
+};
+
+export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
+	return attachPlainIndexedDb(ydoc, ydoc.guid);
+}
+
+function attachPlainIndexedDb(
 	ydoc: Y.Doc,
-	{ persistenceKey = ydoc.guid }: AttachIndexedDbOptions = {},
+	databaseName: string,
 ): IndexedDbAttachment {
-	const idb = new IndexeddbPersistence(persistenceKey, ydoc);
+	const idb = new IndexeddbPersistence(databaseName, ydoc);
 	// `IndexeddbPersistence`'s constructor binds `doc.on('destroy', this.destroy)`
 	// eagerly, and its `destroy()` has no top-level idempotency guard: two calls
 	// produce two independent `_db.then(db => db.close())` promises that resolve
@@ -72,14 +84,39 @@ export function attachIndexedDb(
 	});
 	return {
 		whenLoaded: idb.whenSynced,
-		clearLocal: () => clearDocument(persistenceKey),
+		clearLocal: () => clearDocument(databaseName),
 		whenDisposed,
 	};
 }
 
-export function attachEncryptedIndexedDbProvider(
+export async function clearOwnedDocuments({
+	userId,
+	ydocGuids = [],
+	indexedDB = globalThis.indexedDB as IndexedDbFactoryWithDatabases | undefined,
+	clearDocument: clear = clearDocument,
+}: ClearOwnedDocumentsOptions): Promise<void> {
+	const prefix = createOwnedYjsKeyPrefix(userId);
+	const names = new Set<string>();
+
+	for (const guid of ydocGuids) {
+		names.add(createOwnedYjsKey(userId, guid));
+	}
+
+	if (indexedDB?.databases) {
+		const databases = await indexedDB.databases().catch(() => []);
+		for (const database of databases) {
+			if (typeof database.name !== 'string') continue;
+			if (!database.name.startsWith(prefix)) continue;
+			names.add(database.name);
+		}
+	}
+
+	await Promise.all([...names].map((name) => clear(name)));
+}
+
+export function attachEncryptedProvider(
 	ydoc: Y.Doc,
-	{ persistenceKey, keyring }: AttachEncryptedIndexedDbProviderOptions,
+	{ databaseName, keyring }: EncryptedProviderOptions,
 ): EncryptedIndexedDbAttachment {
 	let currentKeyring = keyring;
 	let db: IDBDatabase | undefined;
@@ -97,7 +134,7 @@ export function attachEncryptedIndexedDbProvider(
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
 
-	const dbPromise = idb.openDB(persistenceKey, (database) => {
+	const dbPromise = idb.openDB(databaseName, (database) => {
 		idb.createStores(database, [
 			[UPDATES_STORE_NAME, { autoIncrement: true }],
 			[CUSTOM_STORE_NAME],
@@ -106,7 +143,7 @@ export function attachEncryptedIndexedDbProvider(
 
 	const attachment: EncryptedIndexedDbAttachment = {
 		whenLoaded,
-		clearLocal: () => clearDocument(persistenceKey),
+		clearLocal: () => clearDocument(databaseName),
 		whenDisposed,
 		activateEncryption(nextKeyring) {
 			currentKeyring = nextKeyring;

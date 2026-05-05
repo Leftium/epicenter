@@ -1,5 +1,6 @@
-import { BC_ORIGIN } from '@epicenter/sync';
+import { BC_ORIGIN, SYNC_ORIGIN } from '@epicenter/sync';
 import * as Y from 'yjs';
+import { createOwnedYjsKey } from './local-yjs-key.js';
 
 export { BC_ORIGIN };
 
@@ -11,32 +12,26 @@ export { BC_ORIGIN };
  * docs for the same workspace communicate.
  *
  * Skips re-broadcasting updates that arrived from BroadcastChannel itself
- * (via `BC_ORIGIN`) and, when paired with another transport, updates that
- * arrived from that transport (via `transportOrigin`). Without the second
- * guard, transport-delivered updates would be re-broadcast to other tabs,
- * and those tabs would re-send them — creating an echo loop.
+ * (via `BC_ORIGIN`) and updates that arrived from WebSocket sync. Without
+ * those guards, delivered updates would be re-broadcast to other tabs, and
+ * those tabs would re-send them.
  *
  * No-ops gracefully when `BroadcastChannel` is unavailable (Node.js, SSR,
  * older browsers).
  *
  * @param ydoc - The Y.Doc to sync across tabs
- * @param opts.channelKey - Optional local BroadcastChannel key. This is a local
- *   runtime name only and does not change `ydoc.guid` or sync room names.
- * @param opts.transportOrigin - Optional origin Symbol from another transport
- *   (e.g., `SYNC_ORIGIN` from `attachSync`). Updates with this origin are not
- *   re-broadcast, preventing cross-transport echo loops.
+ * @param opts.userId - Optional owner id for authenticated local channels.
  */
 export function attachBroadcastChannel(
 	ydoc: Y.Doc,
-	{
-		channelKey = ydoc.guid,
-		transportOrigin,
-	}: { channelKey?: string; transportOrigin?: symbol } = {},
+	{ userId }: { userId?: string } = {},
 ): void {
 	if (typeof BroadcastChannel === 'undefined') {
 		return;
 	}
 
+	const channelKey =
+		userId === undefined ? ydoc.guid : createOwnedYjsKey(userId, ydoc.guid);
 	const channel = new BroadcastChannel(`yjs:${channelKey}`);
 
 	/** Broadcast local changes to other tabs.
@@ -44,7 +39,7 @@ export function attachBroadcastChannel(
 	 *  the paired transport (e.g., WebSocket) to avoid cross-transport echo. */
 	const handleUpdate = (update: Uint8Array, origin: unknown) => {
 		if (origin === BC_ORIGIN) return;
-		if (transportOrigin && origin === transportOrigin) return;
+		if (origin === SYNC_ORIGIN) return;
 		channel.postMessage(update);
 	};
 	ydoc.on('updateV2', handleUpdate);

@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { clearLocalYjsDataForUser } from './clear-local-yjs-data.js';
+import { clearOwnedDocuments } from './attach-indexed-db.js';
 
-describe('clearLocalYjsDataForUser', () => {
+describe('clearOwnedDocuments', () => {
 	test('clears known scoped document keys when database enumeration is unavailable', async () => {
 		const cleared: string[] = [];
 
-		await clearLocalYjsDataForUser({
+		await clearOwnedDocuments({
 			userId: 'user-1',
 			ydocGuids: ['doc-a', 'doc-b'],
 			indexedDB: undefined,
@@ -23,7 +23,7 @@ describe('clearLocalYjsDataForUser', () => {
 	test('also clears enumerated scoped database names', async () => {
 		const cleared: string[] = [];
 
-		await clearLocalYjsDataForUser({
+		await clearOwnedDocuments({
 			userId: 'user-1',
 			ydocGuids: ['doc-a'],
 			indexedDB: {

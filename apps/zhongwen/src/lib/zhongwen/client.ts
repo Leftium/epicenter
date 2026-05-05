@@ -7,7 +7,12 @@ export const auth = createCookieAuth({
 	baseURL: APP_URLS.API,
 });
 
-export const zhongwen = openZhongwen();
+await auth.whenReady;
+if (auth.identity === null) {
+	throw new Error('Cannot open Zhongwen workspace: auth identity is required.');
+}
+
+export const zhongwen = openZhongwen({ auth });
 
 bindAuthWorkspaceScope({
 	auth,

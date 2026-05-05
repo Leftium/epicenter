@@ -4,17 +4,15 @@
  * `browser-state.svelte.ts`.
  */
 
-import type { AuthClient, AuthIdentity } from '@epicenter/auth';
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
 	attachBroadcastChannel,
 	attachSync,
-	clearLocalYjsDataForUser,
-	createLocalYjsKey,
+	clearOwnedDocuments,
 	createRemoteClient,
 	PeerIdentity,
-	SYNC_ORIGIN,
 	toWsUrl,
 } from '@epicenter/workspace';
 import type { DeviceId } from '$lib/workspace/definition';
@@ -34,26 +32,27 @@ import { openTabManager as openTabManagerDoc } from './index';
  */
 export async function openTabManager({
 	auth,
-	identity,
 	peer,
 }: {
 	auth: AuthClient;
-	identity: AuthIdentity;
 	peer: TabManagerPeer | Promise<TabManagerPeer>;
 }) {
 	const resolvedPeer = await Promise.resolve(peer);
+	const identity = auth.identity;
+	if (identity === null) {
+		throw new Error(
+			'openTabManager requires signed-in auth.identity. Await auth.whenReady first.',
+		);
+	}
+	const userId = identity.user.id;
 
-	const doc = openTabManagerDoc({ deviceId: Promise.resolve(resolvedPeer.id) });
-	doc.encryption.applyKeys(identity.encryptionKeys);
+	const doc = openTabManagerDoc({
+		deviceId: Promise.resolve(resolvedPeer.id),
+		encryptionKeys: identity.encryptionKeys,
+	});
 
-	const localKey = createLocalYjsKey(identity.user.id, doc.ydoc.guid);
-	const idb = doc.encryption.attachEncryptedIndexedDb(doc.ydoc, {
-		persistenceKey: localKey,
-	});
-	attachBroadcastChannel(doc.ydoc, {
-		channelKey: localKey,
-		transportOrigin: SYNC_ORIGIN,
-	});
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachBroadcastChannel(doc.ydoc, { userId });
 
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
@@ -76,8 +75,8 @@ export async function openTabManager({
 		async wipe() {
 			doc[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
-			await clearLocalYjsDataForUser({
-				userId: identity.user.id,
+			await clearOwnedDocuments({
+				userId,
 				ydocGuids: [doc.ydoc.guid],
 			});
 		},

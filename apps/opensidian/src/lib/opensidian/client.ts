@@ -27,7 +27,6 @@ if (auth.identity === null) {
 
 export const opensidian = openOpensidian({
 	auth,
-	identity: auth.identity,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'Opensidian',

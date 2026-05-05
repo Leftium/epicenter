@@ -6,13 +6,16 @@ const originalBroadcastChannel = globalThis.BroadcastChannel;
 
 class FakeBroadcastChannel {
 	static names: string[] = [];
+	static posted: unknown[] = [];
 	onmessage: ((event: MessageEvent) => void) | null = null;
 
 	constructor(public name: string) {
 		FakeBroadcastChannel.names.push(name);
 	}
 
-	postMessage(): void {}
+	postMessage(message: unknown): void {
+		FakeBroadcastChannel.posted.push(message);
+	}
 
 	close(): void {}
 }
@@ -20,6 +23,7 @@ class FakeBroadcastChannel {
 describe('attachBroadcastChannel', () => {
 	beforeEach(() => {
 		FakeBroadcastChannel.names = [];
+		FakeBroadcastChannel.posted = [];
 		Object.assign(globalThis, {
 			BroadcastChannel:
 				FakeBroadcastChannel as unknown as typeof BroadcastChannel,
@@ -39,17 +43,30 @@ describe('attachBroadcastChannel', () => {
 		ydoc.destroy();
 	});
 
-	test('uses channelKey without changing ydoc.guid', () => {
+	test('uses userId without changing ydoc.guid', () => {
 		const ydoc = new Y.Doc({ guid: 'epicenter.fuji' });
 
 		attachBroadcastChannel(ydoc, {
-			channelKey: 'epicenter:v1:user:user-123:yjs:epicenter.fuji',
+			userId: 'user-123',
 		});
 
 		expect(FakeBroadcastChannel.names).toEqual([
 			'yjs:epicenter:v1:user:user-123:yjs:epicenter.fuji',
 		]);
 		expect(ydoc.guid).toBe('epicenter.fuji');
+		ydoc.destroy();
+	});
+
+	test('does not rebroadcast sync-origin updates', async () => {
+		const { SYNC_ORIGIN } = await import('@epicenter/sync');
+		const ydoc = new Y.Doc({ guid: 'epicenter.fuji' });
+
+		attachBroadcastChannel(ydoc);
+		ydoc.transact(() => {
+			ydoc.getText('body').insert(0, 'remote sync');
+		}, SYNC_ORIGIN);
+
+		expect(FakeBroadcastChannel.posted).toEqual([]);
 		ydoc.destroy();
 	});
 });

@@ -47,7 +47,6 @@ const peer = await Promise.all([
 
 export const tabManager = await openTabManager({
 	auth,
-	identity: auth.identity,
 	peer,
 });
 

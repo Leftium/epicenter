@@ -77,9 +77,11 @@ The encryption coordinator already owns the keyring (per `packages/workspace/src
 
 A top-level `attachEncryptedIndexedDb(ydoc, { keys })` primitive would force apps to plumb keys separately and would invent a second key-passing pattern alongside the existing coordinator. Refused.
 
-### Why apps without auth keep using `attachIndexedDb`
+### Why authless data keeps using `attachIndexedDb`
 
-`attachEncryption` requires an auth-derived user key (applied via `applyKeys`). Authless apps (`apps/zhongwen`, `apps/whispering`) have no key source and no encryption attachment. They keep calling `attachIndexedDb(ydoc)` directly. The new primitive is opt-in for apps that have an encryption coordinator.
+`attachEncryption` requires an auth-derived user key (applied via `applyKeys`). Authless data has no key source and no encryption attachment. It keeps calling `attachIndexedDb(ydoc)` directly. The new primitive is opt-in for account-owned persistence that has an encryption coordinator.
+
+Zhongwen chat history no longer belongs in the authless bucket. Its current browser builder is local-only, but the product decision after review is that chat history belongs to the signed-in account. Zhongwen should migrate to the authenticated encrypted path with the other account-owned browser apps.
 
 ### Why storage-level is needed on top of cell-level
 
@@ -132,7 +134,7 @@ Both are real gaps. Storage-level encryption closes them.
 ```
 
 The four attachments are independent. An app picks any subset:
-- Authless local-only (`zhongwen`): `attachIndexedDb` + `attachBroadcastChannel`
+- Authless local-only data: `attachIndexedDb` + `attachBroadcastChannel`
 - Authenticated, no at-rest privacy: `attachIndexedDb` + `attachBroadcastChannel` + `attachSync` + `attachEncryption.attachTables`
 - Authenticated, full at-rest privacy: same as above but `attachEncryption.attachEncryptedIndexedDb` instead of plain `attachIndexedDb`
 
@@ -231,9 +233,10 @@ For each authenticated app with local Yjs persistence:
 - [ ] **3.2** `apps/honeycrisp/src/lib/honeycrisp/browser.ts`: same for root and note bodies.
 - [ ] **3.3** `apps/opensidian/src/lib/opensidian/browser.ts`: same for root and file content.
 - [ ] **3.4** `apps/tab-manager/src/lib/tab-manager/extension.ts`: same for root workspace storage.
-- [ ] **3.5** `apps/skills/src/lib/skills/browser.ts`: only migrate if Skills becomes authenticated and has keys at construction. If it remains authless, keep direct `attachIndexedDb` and classify that persistence in the sign-out spec.
-- [x] **3.6** Do not migrate authless packages just to standardize the call site. The coordinator method requires keys by design.
-  > **Note**: Authless packages remain on direct `attachIndexedDb`.
+- [ ] **3.5** `apps/zhongwen/src/lib/zhongwen/browser.ts`: migrate chat history to authenticated encrypted local persistence. Require auth identity before construction and apply keys before attaching IndexedDB.
+- [ ] **3.6** `apps/skills/src/lib/skills/browser.ts`: only migrate if Skills becomes authenticated and has keys at construction. If it remains authless, keep direct `attachIndexedDb` and classify that persistence in the sign-out spec.
+- [x] **3.7** Do not migrate authless packages just to standardize the call site. The coordinator method requires keys by design.
+  > **Update**: Authless packages remain on direct `attachIndexedDb`; Zhongwen chat history is not authless.
 
 ### Phase 4: Unblock the sign-out spec's Phase 4
 
@@ -394,3 +397,9 @@ The storage-level primitive is implemented on the encryption coordinator. The en
 
 - Execute the sign-out spec's construction-order and app migration phases so authenticated apps attach encrypted root and child IndexedDB after auth identity and keys are available.
 - Run the browser manual smokes from the sign-out spec after those call sites move.
+
+## Follow-up Collapse
+
+Implemented by `specs/20260505T020000-collapse-owner-scoping-onto-coordinator.md`.
+The public coordinator method is now `encryption.attachIndexedDb(ydoc, { userId })`.
+Apps no longer pass `persistenceKey` or call `attachEncryptedIndexedDb`; owner-scoped storage names are derived inside `@epicenter/workspace`.

@@ -1,4 +1,4 @@
-import type { AuthClient, AuthIdentity } from '@epicenter/auth';
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
@@ -11,13 +11,11 @@ import {
 	attachBroadcastChannel,
 	attachSync,
 	attachTimeline,
-	clearLocalYjsDataForUser,
+	clearOwnedDocuments,
 	createDisposableCache,
-	createLocalYjsKey,
 	createRemoteClient,
 	onLocalUpdate,
 	PeerIdentity,
-	SYNC_ORIGIN,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -27,24 +25,22 @@ import { openOpensidian as openOpensidianDoc } from './index';
 
 export function openOpensidian({
 	auth,
-	identity,
 	peer,
 }: {
 	auth: AuthClient;
-	identity: AuthIdentity;
 	peer: PeerIdentity;
 }) {
-	const doc = openOpensidianDoc();
-	doc.encryption.applyKeys(identity.encryptionKeys);
+	const identity = auth.identity;
+	if (identity === null) {
+		throw new Error(
+			'openOpensidian requires signed-in auth.identity. Await auth.whenReady first.',
+		);
+	}
+	const userId = identity.user.id;
+	const doc = openOpensidianDoc({ encryptionKeys: identity.encryptionKeys });
 
-	const localKey = createLocalYjsKey(identity.user.id, doc.ydoc.guid);
-	const idb = doc.encryption.attachEncryptedIndexedDb(doc.ydoc, {
-		persistenceKey: localKey,
-	});
-	attachBroadcastChannel(doc.ydoc, {
-		channelKey: localKey,
-		transportOrigin: SYNC_ORIGIN,
-	});
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachBroadcastChannel(doc.ydoc, { userId });
 
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
 		const ydoc = new Y.Doc({
@@ -57,14 +53,8 @@ export function openOpensidian({
 		onLocalUpdate(ydoc, () =>
 			doc.tables.files.update(fileId, { updatedAt: Date.now() }),
 		);
-		const childLocalKey = createLocalYjsKey(identity.user.id, ydoc.guid);
-		const persistence = doc.encryption.attachEncryptedIndexedDb(ydoc, {
-			persistenceKey: childLocalKey,
-		});
-		attachBroadcastChannel(ydoc, {
-			channelKey: childLocalKey,
-			transportOrigin: SYNC_ORIGIN,
-		});
+		const persistence = doc.encryption.attachIndexedDb(ydoc, { userId });
+		attachBroadcastChannel(ydoc, { userId });
 		return {
 			ydoc,
 			content: attachTimeline(ydoc),
@@ -143,8 +133,8 @@ export function openOpensidian({
 			fileContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
-			await clearLocalYjsDataForUser({
-				userId: identity.user.id,
+			await clearOwnedDocuments({
+				userId,
 				ydocGuids: fallbackGuids,
 			});
 		},

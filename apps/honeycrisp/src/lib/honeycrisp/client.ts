@@ -17,7 +17,6 @@ if (auth.identity === null) {
 
 export const honeycrisp = openHoneycrisp({
 	auth,
-	identity: auth.identity,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'Honeycrisp',

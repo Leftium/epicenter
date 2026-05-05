@@ -96,6 +96,7 @@ export {
 // RPC + REMOTE ACTIONS
 // ════════════════════════════════════════════════════════════════════════════
 
+export type { EncryptionKeys } from '@epicenter/encryption';
 export { isRpcError, RpcError, SYNC_ORIGIN } from '@epicenter/sync';
 // Cross-peer action calling.
 export {
@@ -194,6 +195,7 @@ export {
 } from './document/attach-encryption.js';
 export {
 	attachIndexedDb,
+	clearOwnedDocuments,
 	type IndexedDbAttachment,
 } from './document/attach-indexed-db.js';
 export {
@@ -262,8 +264,6 @@ export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
-export { createLocalYjsKey } from './document/local-yjs-key.js';
-export { clearLocalYjsDataForUser } from './document/clear-local-yjs-data.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
 	type PeerAwarenessSchema,

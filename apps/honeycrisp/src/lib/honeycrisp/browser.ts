@@ -1,19 +1,17 @@
-import type { AuthClient, AuthIdentity } from '@epicenter/auth';
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
 	attachBroadcastChannel,
 	attachRichText,
 	attachSync,
-	clearLocalYjsDataForUser,
+	clearOwnedDocuments,
 	createDisposableCache,
-	createLocalYjsKey,
 	createRemoteClient,
 	DateTimeString,
 	docGuid,
 	onLocalUpdate,
 	PeerIdentity,
-	SYNC_ORIGIN,
 	toWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -37,24 +35,22 @@ function noteBodyDocGuid({
 
 export function openHoneycrisp({
 	auth,
-	identity,
 	peer,
 }: {
 	auth: AuthClient;
-	identity: AuthIdentity;
 	peer: PeerIdentity;
 }) {
-	const doc = openHoneycrispDoc();
-	doc.encryption.applyKeys(identity.encryptionKeys);
+	const identity = auth.identity;
+	if (identity === null) {
+		throw new Error(
+			'openHoneycrisp requires signed-in auth.identity. Await auth.whenReady first.',
+		);
+	}
+	const userId = identity.user.id;
+	const doc = openHoneycrispDoc({ encryptionKeys: identity.encryptionKeys });
 
-	const localKey = createLocalYjsKey(identity.user.id, doc.ydoc.guid);
-	const idb = doc.encryption.attachEncryptedIndexedDb(doc.ydoc, {
-		persistenceKey: localKey,
-	});
-	attachBroadcastChannel(doc.ydoc, {
-		channelKey: localKey,
-		transportOrigin: SYNC_ORIGIN,
-	});
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachBroadcastChannel(doc.ydoc, { userId });
 
 	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
 		const ydoc = new Y.Doc({
@@ -65,14 +61,8 @@ export function openHoneycrisp({
 			gc: false,
 		});
 		const body = attachRichText(ydoc);
-		const childLocalKey = createLocalYjsKey(identity.user.id, ydoc.guid);
-		const childIdb = doc.encryption.attachEncryptedIndexedDb(ydoc, {
-			persistenceKey: childLocalKey,
-		});
-		attachBroadcastChannel(ydoc, {
-			channelKey: childLocalKey,
-			transportOrigin: SYNC_ORIGIN,
-		});
+		const childIdb = doc.encryption.attachIndexedDb(ydoc, { userId });
+		attachBroadcastChannel(ydoc, { userId });
 		const childSync = attachSync(ydoc, {
 			url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
@@ -133,8 +123,8 @@ export function openHoneycrisp({
 			noteBodyDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
-			await clearLocalYjsDataForUser({
-				userId: identity.user.id,
+			await clearOwnedDocuments({
+				userId,
 				ydocGuids: fallbackGuids,
 			});
 		},

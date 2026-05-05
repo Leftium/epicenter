@@ -558,7 +558,7 @@ attachBroadcastChannel(ydoc, {
 
 `attachEncryptedIndexedDb` is not a wrapper around upstream `y-indexeddb`. The upstream provider writes raw Yjs updates to an `updates` object store before callers can transform them. The encrypted variant should be a sibling provider with the same attachment contract (`whenLoaded`, `clearLocal`, `whenDisposed`) and an encrypted update log. It may use Yjs V2 updates internally because this is a clean break, not a compatibility shim for old unencrypted databases.
 
-Apps without auth or without sensitive local data keep using `attachIndexedDb` directly. `apps/zhongwen/src/lib/zhongwen/browser.ts` is the proof that "always encrypt all browser persistence" is the wrong invariant: that browser package composes local persistence without sync or auth inputs. Encryption belongs to the coordinator for authenticated encrypted workspaces, not to every IndexedDB attachment in the codebase.
+Apps without auth or without sensitive local data keep using `attachIndexedDb` directly. Zhongwen is no longer that example for chat history. Its browser package currently composes local persistence before auth, but the product decision is now that Zhongwen chat history belongs to the signed-in account. That makes Zhongwen a participating authenticated app for this storage path. Encryption still does not belong to every IndexedDB attachment in the codebase; it belongs to authenticated account-owned persistence.
 
 `@epicenter/auth-workspace` should become smaller in this model. It no longer needs to compare durable owners. Its job is to sequence "auth became null, destroy and reload", "auth changed to a different user, reload", and "auth became present, apply keys to an already owner-scoped workspace."
 
@@ -670,8 +670,8 @@ The new boundary is simple: sign-out destroys memory, and local persistence is o
 
 ### Phase 0: Verify blockers
 
-- [x] **0.1** Carry forward the current persistence classification: Fuji, Honeycrisp, and Opensidian have authenticated plaintext child docs; tab-manager has root Yjs persistence only; Zhongwen's browser package is authless and syncless local persistence; Skills has plaintext child docs but only migrates if it becomes authenticated.
-  > **Note**: Verified by audit. Skills remains authless; Zhongwen's browser builder is local-only even though its app client has auth binding.
+- [x] **0.1** Carry forward the current persistence classification from the original audit: Fuji, Honeycrisp, and Opensidian have authenticated plaintext child docs; tab-manager has root Yjs persistence only; Zhongwen's browser package was authless and syncless local persistence; Skills has plaintext child docs but only migrates if it becomes authenticated.
+  > **Update**: The Zhongwen classification changed after review. Zhongwen chat history is account-owned and should move to the authenticated encrypted path. Skills remains authless.
 - [x] **0.2** Land or update `specs/20260505T004755-attach-encrypted-indexeddb.md` first. Preserve-on-sign-out cannot ship while authenticated apps still write plaintext user-content updates to local child-doc IDBs.
   > **Note**: The primitive is landed. App call sites still move in this spec after construction order is fixed.
 - [x] **0.3** Confirm every current app `wipe()` clears all child databases, not only the root document. Fuji, Honeycrisp, and Opensidian manually clear child docs today.
@@ -711,14 +711,14 @@ apps/zhongwen/src/lib/zhongwen/client.ts
 ```
 
 - [x] **3.1** Stop constructing browser-local workspaces before auth identity is known for participating apps.
-  > **Note**: Fuji, Honeycrisp, Opensidian, and Tab-manager now wait for auth readiness and require an identity before construction. Zhongwen remains on its authless browser-local factory per Phase 0 classification.
+  > **Update**: Fuji, Honeycrisp, Opensidian, and Tab-manager now wait for auth readiness and require an identity before construction. Zhongwen must be moved into this set because its chat history is now account-owned.
 - [x] **3.2** On signed-in auth, pass `identity.user.id` and `identity.encryptionKeys` into browser workspace construction.
 - [x] **3.3** Apply keys before attaching encrypted local persistence: `doc.encryption.applyKeys(identity.encryptionKeys)`.
 - [x] **3.4** Use `doc.encryption.attachEncryptedIndexedDb(doc.ydoc, { persistenceKey: createLocalYjsKey(identity.user.id, doc.ydoc.guid) })` for authenticated root local persistence.
 - [x] **3.5** Use `attachBroadcastChannel(doc.ydoc, { channelKey: createLocalYjsKey(identity.user.id, doc.ydoc.guid), transportOrigin })` for authenticated root local broadcast.
 - [x] **3.6** Use `doc.encryption.attachEncryptedIndexedDb(childYdoc, { persistenceKey: createLocalYjsKey(identity.user.id, childYdoc.guid) })` for every persisted authenticated child document that contains user content.
 - [x] **3.7** Use plain `attachIndexedDb` only for authless or explicitly non-sensitive browser packages.
-  > **Note**: Skills and Zhongwen remain on direct `attachIndexedDb`. Skills is still authless; Zhongwen's browser package is local-only.
+  > **Update**: Skills remains direct `attachIndexedDb`. Zhongwen no longer qualifies for this exception for chat history.
 - [x] **3.8** Keep `ydoc.guid` unchanged for sync URLs and encryption. Root sync still points to `/workspaces/${doc.ydoc.guid}`. Child sync should use `/documents/${ydoc.guid}`.
 - [x] **3.9** On sign-out, destroy the current workspace runtime and reload. Do not call `clearLocal()` or `clearDocument()`.
   > **Note**: Terminal auth callbacks now reload without calling any local deletion path.
@@ -734,10 +734,11 @@ Resolved by the follow-up spec at `specs/20260505T004755-attach-encrypted-indexe
 - [x] **4.3** `apps/honeycrisp/src/lib/honeycrisp/browser.ts`: same replacement for root and note-body docs.
 - [x] **4.4** `apps/opensidian/src/lib/opensidian/browser.ts`: same replacement for root and file-content docs.
 - [x] **4.5** `apps/tab-manager/src/lib/tab-manager/extension.ts`: same replacement for the root workspace doc.
-- [x] **4.6** `apps/skills/src/lib/skills/browser.ts`: use encrypted storage only if Skills becomes authenticated. If it stays authless, classify its local persistence separately and do not force this coordinator method into it.
+- [x] **4.6** `apps/zhongwen/src/lib/zhongwen/browser.ts`: move chat history to authenticated encrypted local persistence. Require auth identity before construction and apply keys before attaching IndexedDB.
+- [x] **4.7** `apps/skills/src/lib/skills/browser.ts`: use encrypted storage only if Skills becomes authenticated. If it stays authless, classify its local persistence separately and do not force this coordinator method into it.
   > **Note**: Skills remains authless and stays on direct `attachIndexedDb`.
-- [x] **4.7** Delete explicit `{ gcTime: 5_000 }` arguments from touched child-doc caches. That is the default.
-- [ ] **4.8** Add manual smoke for local disk inspection: after sign-out, open IDB devtools and confirm root and child-doc blobs are opaque ciphertext (start with `0x01` version byte).
+- [x] **4.8** Delete explicit `{ gcTime: 5_000 }` arguments from touched child-doc caches. That is the default.
+- [ ] **4.9** Add manual smoke for local disk inspection: after sign-out, open IDB devtools and confirm root and child-doc blobs are opaque ciphertext (start with `0x01` version byte).
 
 Do not add an app-level `preserveLocalOnSignOut` flag to bypass this. That creates two privacy products behind one shared UI.
 
@@ -819,7 +820,7 @@ Sign-out no longer deletes local data. That is correct, but users still need an 
 
 - [x] **8.1** Add a "Forget this device" action for signed-in authenticated apps. It deletes the current owner's local Yjs caches and then reloads.
 - [x] **8.2** Implement cleanup against owner-scoped local keys. Do not call the old workspace-bundle `wipe()` method from sign-out.
-  > **Note**: Fuji, Honeycrisp, Opensidian, and Tab-manager now use `clearLocalYjsDataForUser`. Zhongwen still uses its existing unscoped local-only `wipe()` because Phase 0 classified that browser factory as authless and syncless.
+  > **Update**: Fuji, Honeycrisp, Opensidian, Tab-manager, and Zhongwen should all use owner-scoped cleanup. The follow-up collapse spec renames `clearLocalYjsDataForUser` to `clearOwnedDocuments` while preserving owner-prefix sweeping.
 - [x] **8.3** Use the `epicenter:v1:user:{userId}:yjs:` prefix when enumerating local databases where the runtime supports `indexedDB.databases()`.
 - [x] **8.4** Keep a fallback path that clears known root and child document keys for the current workspace when full database enumeration is unavailable.
 - [x] **8.5** Put the destructive confirmation on "Forget this device", not on sign-out.
@@ -909,7 +910,7 @@ Same-owner sign-in with a rotated keyring still works for root encrypted stores 
 ## Success criteria
 
 - [x] Participating apps construct browser-local workspaces only after auth identity is known.
-  > **Note**: Fuji, Honeycrisp, Opensidian, and Tab-manager do. Zhongwen remains local-only per Phase 0 classification.
+  > **Update**: Fuji, Honeycrisp, Opensidian, and Tab-manager do. Zhongwen is now a participating app for chat history and should be migrated accordingly.
 - [x] Local IndexedDB keys are owner-scoped with owner-first hierarchy.
 - [x] Local BroadcastChannel keys are owner-scoped with the same local hierarchy.
 - [x] Authenticated apps use `encryption.attachEncryptedIndexedDb(..., { persistenceKey })` for root and user-content child docs before preserve-on-sign-out ships.
@@ -1013,9 +1014,15 @@ Review notes:
 
 - No sign-out path calls `wipe()`, `clearLocal()`, or `clearDocument()`. Terminal auth transitions call app-owned reload callbacks.
 - Authenticated local storage names use `createLocalYjsKey(userId, ydoc.guid)` for root docs and child docs. Sync room GUIDs remain unchanged.
-- The explicit cleanup path uses `clearLocalYjsDataForUser`, which enumerates `indexedDB.databases()` by owner prefix when available and falls back to known root and child GUIDs.
+- The explicit cleanup path uses owner-scoped cleanup, currently named `clearLocalYjsDataForUser` in live code and renamed to `clearOwnedDocuments` by `specs/20260505T020000-collapse-owner-scoping-onto-coordinator.md`. The behavior enumerates `indexedDB.databases()` by owner prefix when available and falls back to known root and child GUIDs.
 - `SYNC_STATUS`, `hasLocalChanges`, and `SyncWebSocket` remain only in historical specs, not live source or live docs.
 - Manual browser smokes remain open because they require interactive authenticated app sessions and IndexedDB inspection.
+
+Follow-up collapse:
+
+- Implemented by `specs/20260505T020000-collapse-owner-scoping-onto-coordinator.md`.
+- Authenticated browser factories now pass `identity.encryptionKeys` into the isomorphic `open*Doc({ encryptionKeys })` factory, then call `encryption.attachIndexedDb(ydoc, { userId })` and `attachBroadcastChannel(ydoc, { userId })`.
+- The old public `createLocalYjsKey`, `clearLocalYjsDataForUser`, `persistenceKey`, `channelKey`, `transportOrigin`, and `attachEncryptedIndexedDb` surfaces are gone from live app code.
 
 Verification:
 

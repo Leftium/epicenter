@@ -79,6 +79,33 @@ The order matters.
 The binding calls `applyAuthIdentity(identity)` when a signed-in identity is active.
 The terminal callbacks are intentionally named separately even when both bodies reload today. That gives tests, telemetry, and non-browser platforms a precise hook without coupling sign-out to local data deletion.
 
+## Browser local persistence
+Authenticated browser workspaces open local IndexedDB only after `auth.identity` exists.
+The identity carries two separate inputs:
+- `identity.user.id` scopes local IndexedDB and BroadcastChannel names to the owner.
+- `identity.encryptionKeys` unlocks encrypted tables, KV, and local IndexedDB updates.
+
+The browser factory shape is:
+```ts
+const identity = auth.identity;
+if (identity === null) {
+	throw new Error('openMyApp requires signed-in auth.identity. Await auth.whenReady first.');
+}
+
+const userId = identity.user.id;
+const doc = openMyAppDoc({ encryptionKeys: identity.encryptionKeys });
+
+const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+attachBroadcastChannel(doc.ydoc, { userId });
+```
+
+The storage name is derived inside `@epicenter/workspace` as:
+```text
+epicenter:v1:user:{userId}:yjs:{ydocGuid}
+```
+
+App code should not build that string. Device cleanup uses `clearOwnedDocuments({ userId, ydocGuids })`, which deletes known document databases and also sweeps enumerable IndexedDB names with the same owner prefix when the browser exposes `indexedDB.databases()`.
+
 ## Key lifecycle in the current code
 Keys are definitely loaded on login.
 That part is explicit.

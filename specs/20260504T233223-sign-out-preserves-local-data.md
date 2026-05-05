@@ -1,7 +1,7 @@
 # Sign-out preserves owner-scoped local data
 
 **Date**: 2026-05-04
-**Status**: Draft, revised after grill
+**Status**: Ready for review
 **Author**: AI-assisted, grilled by Braden
 **Branch**: not started
 **Supersedes**: `specs/20260504T231540-attach-sync-trim-to-supervisor-superseded.md`
@@ -234,6 +234,77 @@ Decision:
 Refuse fixed local persistence keys. Scope local persistence and local broadcast by authenticated owner before constructing the workspace.
 ```
 
+### Refuse generic storage mode flags
+
+Product sentence:
+
+```txt
+The owner that has encryption keys owns encrypted local storage.
+```
+
+Candidate refusal:
+
+```txt
+Expose one `attachStorage(ydoc, { encrypted: true | false })` helper for all browser persistence.
+```
+
+Code family it deletes:
+
+```txt
+boolean-mode branching
+keyless encrypted-storage failure states
+docs explaining when encrypted means "requires coordinator"
+tests for plaintext fallback after missing keys
+future call sites that pass encrypted: false just to keep old construction order
+```
+
+User loss:
+
+```txt
+Authenticated apps write two explicit lines: encrypted IndexedDB from the coordinator, BroadcastChannel from the owner-scoped local key.
+```
+
+Decision:
+
+```txt
+Refuse it. The generic helper saves one call line and creates a second ownership model. `encryption.attachEncryptedIndexedDb(...)` is the cohesive boundary.
+```
+
+### Refuse auth-client-owned workspace lifecycle
+
+Product sentence:
+
+```txt
+Auth clients expose identity; workspace scope decides how that identity affects Yjs construction and teardown.
+```
+
+Candidate refusal:
+
+```txt
+Fold `bindAuthWorkspaceScope` into `createCookieAuth()` and `createBearerAuth()` as a method.
+```
+
+Code family it deletes:
+
+```txt
+auth package imports of workspace lifecycle policy
+duplicate cookie/bearer lifecycle methods
+auth-client tests that need fake Yjs workspace behavior
+runtime-specific reload policy hidden inside auth construction
+```
+
+User loss:
+
+```txt
+Apps keep one explicit binding call after constructing auth.
+```
+
+Decision:
+
+```txt
+Refuse the fold. The extra call is useful ceremony: it names the boundary where auth identity starts controlling encrypted workspace lifetime.
+```
+
 ## Current state
 
 ### Sign-out path today
@@ -366,13 +437,13 @@ SIGNED_OUT:
 
 SIGNED_IN_USER_A:
   auth identity = user A
-  local scope = user:<ownerHash>
+  local scope = user:<userIdA>
   ydoc.guid = epicenter.fuji
-  IndexedDB key = epicenter:v1:user:<ownerHash>:yjs:epicenter.fuji
-  BroadcastChannel key = epicenter:v1:user:<ownerHash>:yjs:epicenter.fuji
+  apply user A keys before encrypted local persistence attaches
+  IndexedDB key = epicenter:v1:user:<userIdA>:yjs:epicenter.fuji
+  BroadcastChannel key = epicenter:v1:user:<userIdA>:yjs:epicenter.fuji
   sync URL = /workspaces/epicenter.fuji
   encryption info = workspace:epicenter.fuji
-  apply user A keys
 
 SIGN_OUT:
   auth identity -> null
@@ -382,10 +453,10 @@ SIGN_OUT:
 
 SIGNED_IN_USER_B:
   auth identity = user B
-  local scope = user:<otherOwnerHash>
+  local scope = user:<userIdB>
+  apply user B keys before encrypted local persistence attaches
   open a different IndexedDB key
   open a different BroadcastChannel key
-  apply user B keys
 ```
 
 Different-user sign-in does not need to wipe user A's cache because user A's cache is never opened. Wipe becomes an explicit cleanup feature: "Forget this device" deletes owner-scoped local Yjs caches.
@@ -405,7 +476,7 @@ Do not copy that shape into browser persistence. Durable Objects route product r
 authenticated owner + ydoc.guid -> local Yjs provider name
 ```
 
-Use a deterministic local owner id derived from the auth user id, then combine it with the Y.Doc guid.
+Use the auth user id directly, then combine it with the Y.Doc guid.
 
 Recommended local key shape:
 
@@ -420,9 +491,17 @@ userId   = identity.user.id, the auth identity's stable opaque user id
 ydocGuid = ydoc.guid, for example epicenter.fuji or epicenter.fuji.entries.<entryId>.content
 ```
 
-This keeps the natural owner → Yjs document hierarchy. The user id is already an opaque random string assigned by Better Auth and IndexedDB names are per-origin (no cross-site visibility), so hashing the id buys nothing functional. The local key is a stable namespace label, not a cryptographic access boundary. Security still comes from not mounting the wrong cache, clearing memory on sign-out, and encrypting persisted values.
+This keeps the natural owner -> Yjs document hierarchy. The user id is already the stable auth owner identifier used to partition server-side workspace resources, and IndexedDB names are per-origin (no cross-site visibility), so hashing the id buys nothing functional. The local key is a stable namespace label, not a cryptographic access boundary. Security still comes from not mounting the wrong cache, clearing memory on sign-out, and encrypting persisted values.
 
 If a future deployment wants opaque local labels (e.g., to defend against a malicious extension snooping IDB names within the same origin), wrap `userId` in a one-line hash at the helper boundary; today nothing requires it.
+
+The `v1` earns its keep. It is not a crypto domain-separation label and it is not a schema registry. It is a short storage-era prefix that gives future cleanup code one exact namespace to enumerate when local persistence needs a breaking migration. Without it, the first local-storage rewrite has to infer old database names from app-specific workspace ids. With it, the migration boundary is obvious:
+
+```txt
+epicenter:v1:user:*:yjs:*
+```
+
+Do not add another version segment unless the local key grammar itself changes. Encryption key versions already live inside encrypted blobs; Yjs document versions live in the CRDT data model.
 
 Do not change `ydoc.guid`. It remains the CRDT identity, sync room name, child document namespace, and HKDF workspace label. The new local keys are storage and local-broadcast names only.
 
@@ -444,30 +523,44 @@ attachBroadcastChannel(ydoc, {
 });
 ```
 
-That is the low-level shape. The preferred call site should be even smaller so apps cannot scope IndexedDB and forget BroadcastChannel:
+That is the low-level shape. Authenticated apps then choose the storage primitive from the owner that already knows whether keys exist.
 
 ```ts
-attachBrowserLocalYjs(ydoc, {
-	userId: identity.user.id,
+const localKey = createLocalYjsKey(identity.user.id, doc.ydoc.guid);
+const idb = doc.encryption.attachEncryptedIndexedDb(doc.ydoc, {
+	persistenceKey: localKey,
+});
+attachBroadcastChannel(doc.ydoc, {
+	channelKey: localKey,
 	transportOrigin: SYNC_ORIGIN,
 });
 ```
 
-`attachBrowserLocalYjs` owns one invariant: browser-local Yjs persistence and browser-local Yjs broadcast use the same owner-scoped local key. It can return the IndexedDB attachment because callers still need `whenLoaded`, `clearLocal`, and `whenDisposed`.
+Do not add `attachStorage(ydoc, { encrypted: true | false })`. That turns encryption into a runtime option on a generic storage helper, which is exactly the hybrid API this spec is trying to avoid. The coordinator already owns key application. Its storage method should be just as explicit as `encryption.attachTables()` and `encryption.attachKv()`.
 
-Child documents use the same rule. There is no separate child-doc persistence API:
+Child documents use the same rule, but the coordinator method receives the child Y.Doc:
 
 ```ts
 const documentGuid = entryContentDocGuid({ workspaceId: doc.ydoc.guid, entryId });
 const ydoc = new Y.Doc({ guid: documentGuid, gc: false });
 
-const childIdb = attachBrowserLocalYjs(ydoc, {
-	userId: identity.user.id,
+const childLocalKey = createLocalYjsKey(identity.user.id, ydoc.guid);
+const childIdb = doc.encryption.attachEncryptedIndexedDb(ydoc, {
+	persistenceKey: childLocalKey,
+});
+attachBroadcastChannel(ydoc, {
+	channelKey: childLocalKey,
 	transportOrigin: SYNC_ORIGIN,
 });
 ```
 
-`@epicenter/auth-workspace` should become smaller in this model. It no longer needs to compare durable owners. Its job is to sequence "auth became null, destroy and reload" and "auth became present, apply keys to an already owner-scoped workspace."
+`encryption.attachEncryptedIndexedDb(ydoc)` throws if `applyKeys()` has not fired yet. That is intentional. Encrypted storage cannot hydrate before keys exist, and silent plaintext fallback would be worse than a hard failure. Authenticated browser factories must apply identity keys before attaching encrypted local persistence.
+
+`attachEncryptedIndexedDb` is not a wrapper around upstream `y-indexeddb`. The upstream provider writes raw Yjs updates to an `updates` object store before callers can transform them. The encrypted variant should be a sibling provider with the same attachment contract (`whenLoaded`, `clearLocal`, `whenDisposed`) and an encrypted update log. It may use Yjs V2 updates internally because this is a clean break, not a compatibility shim for old unencrypted databases.
+
+Apps without auth or without sensitive local data keep using `attachIndexedDb` directly. `apps/zhongwen/src/lib/zhongwen/browser.ts` is the proof that "always encrypt all browser persistence" is the wrong invariant: that browser package composes local persistence without sync or auth inputs. Encryption belongs to the coordinator for authenticated encrypted workspaces, not to every IndexedDB attachment in the codebase.
+
+`@epicenter/auth-workspace` should become smaller in this model. It no longer needs to compare durable owners. Its job is to sequence "auth became null, destroy and reload", "auth changed to a different user, reload", and "auth became present, apply keys to an already owner-scoped workspace."
 
 ## Design decisions
 
@@ -477,19 +570,26 @@ const childIdb = attachBrowserLocalYjs(ydoc, {
 | Sign-out runtime behavior | Evidence | Destroy runtime and reload | Encryption wrappers have no key-clearing API. Destroying the Y.Doc and reloading is the existing hard boundary. |
 | Different-user behavior | Evidence | Open a different local cache | Root metadata and child docs can expose prior-user structure or plaintext. The clean boundary is not opening another owner's cache. |
 | Owner tracking | Clean break | Avoid owner marker as security boundary | Durable markers patch fixed cache names. Owner-scoped persistence removes the mismatch branch. |
-| Owner hash | Asymmetric win | Refuse — use raw user id | Better Auth user ids are already opaque random strings; IndexedDB names are per-origin. Hashing adds a helper, tests, and a "is the hash stable across versions?" worry without functional benefit. If a future threat model needs opacity (malicious extension snooping IDB names), wrap at the helper boundary then. |
+| Owner hash | Asymmetric win | Refuse: use raw user id | The raw user id is already the stable owner identifier used by auth and by server Durable Object partitioning. IndexedDB names are per-origin. Hashing adds a helper, tests, and a "is the hash stable across versions?" worry without functional benefit. If a future threat model needs opacity (malicious extension snooping IDB names), wrap at the helper boundary then. |
+| Local key `v1` | Clean break | Keep it | The version segment is a storage-era prefix, not a security label. It gives future cleanup and migration code one exact namespace to enumerate: `epicenter:v1:user:*:yjs:*`. |
 | Local BroadcastChannel | Evidence | Scope it with the same local key | IndexedDB isolation alone is incomplete if cross-tab Yjs updates still share `ydoc.guid`. |
+| Encrypted local storage surface | Clean break | Add `encryption.attachEncryptedIndexedDb(ydoc, opts)` | The encryption coordinator already owns key application. Storage encryption should hang from that owner and throw when keys have not been applied. |
+| Generic storage helper | Asymmetric win | Refuse `attachStorage(ydoc, { encrypted })` | A boolean option would create one method with two ownership models. Authenticated encrypted workspaces use the encryption coordinator; authless or non-sensitive apps use `attachIndexedDb`. |
+| Encrypted IndexedDB implementation | Evidence | Build a sibling provider, not a y-indexeddb wrapper | Upstream `y-indexeddb` writes raw updates directly to the `updates` object store. There is no transform hook that can make it encrypted after the fact. |
 | SYNC_STATUS | Asymmetric win | Delete it | With sign-out no longer deleting local edits, the only UI consumer disappears. |
 | `hasLocalChanges` | Asymmetric win | Delete it from `SyncStatus` and daemon shapes | No current product surface needs it after the gate dies. Reintroduce an explicit save-barrier API later if needed. |
-| Plaintext child docs | Evidence | Block preserve-on-sign-out until solved | The privacy claim is false for Fuji, Honeycrisp, Opensidian, and Skills child docs today. |
+| Plaintext child docs | Evidence | Solve before this spec ships with encrypted local persistence | Fuji, Honeycrisp, Opensidian, and Skills currently persist plaintext child docs. The greenfield fix is storage-level encryption via `encryption.attachEncryptedIndexedDb(childYdoc, { persistenceKey })`, not per-app preserve flags. |
 | Reload after sign-out | Clean boundary | Required | Optional reload keeps live signed-out workspace mode alive. Refuse it. |
-| "Forget this device" | Deferred | Out of scope | It is a real future destructive action, but it is not required to delete SYNC_STATUS or fix sign-out semantics. |
+| "Forget this device" | Product control | Same feature line, not same primitive | Preserve-on-sign-out should not be the only local-data behavior users get. Ship an explicit cleanup path before presenting the new behavior as finished, but keep it as a separate destructive command over owner-scoped caches, not hidden inside sign-out. |
 | Bitwarden comparison | Evidence | Use lock as analogy, not logout | Official docs describe lock as deleting decrypted data from memory while keeping local encrypted vault data. |
-| `SyncWebSocket` structural type | Asymmetric win | Refuse — use `WebSocket` directly | The implementation reads `WebSocket.OPEN`/`CLOSED`/`CLOSING`/`CONNECTING` as DOM globals plus `/// <reference lib="dom" />`. The structural type is a fiction that pretends portability the impl never delivered. Collapsing it removes ~15 LOC and one mental model. |
+| `SyncWebSocket` structural type | Asymmetric win | Refuse: use `WebSocket` directly | The implementation reads `WebSocket.OPEN`/`CLOSED`/`CLOSING`/`CONNECTING` as DOM globals plus `/// <reference lib="dom" />`. The structural type is a fiction that pretends portability the impl never delivered. Collapsing it removes ~15 LOC and one mental model. |
 | Structured logging on attach-sync | Quality | Add `log.info` on terminal status transitions, `log.warn` on permanent close-code parse | 2 `log.warn` calls in 1130 LOC means production debugging has no breadcrumbs. The `Logger` is already plumbed through; the cost is 4-5 lines. |
-| `bindAuthWorkspaceScope` callback shape | Clean break | Two explicit callbacks: `onSignOut`, `onIdentityChanged`. Both required. No defaults. | The two events are semantically different (user-initiated vs different-user-detected). Today both bodies will be `window.location.reload()` because there is no `deactivateEncryption()` API and the bundle-level dispose isn't audited for completeness — reload is the only verifiable cleanup boundary. The callbacks exist as seams for: lifecycle naming at the call site, test injection, platform-specific overrides (Tauri window close, Chrome extension sidepanel), and per-event telemetry. They are NOT about "different reset strategies" today; they are about giving apps a place to express the truth (`reload` for both) without hiding it behind a default. |
+| `bindAuthWorkspaceScope` callback shape | Clean break | Two explicit callbacks: `onSignOut`, `onIdentityChanged`. Both required. No defaults. | The two events are semantically different (user-initiated vs different-user-detected). Today both bodies will be `window.location.reload()` because there is no `deactivateEncryption()` API and the bundle-level dispose isn't audited for completeness: reload is the only verifiable cleanup boundary. The callbacks exist as seams for: lifecycle naming at the call site, test injection, platform-specific overrides (Tauri window close, Chrome extension sidepanel), and per-event telemetry. They are NOT about "different reset strategies" today; they are about giving apps a place to express the truth (`reload` for both) without hiding it behind a default. |
 | `resetLocalClient` callback name | Clean break | Delete the name. | After this spec, no destructive reset happens on identity transitions. The local IDB is preserved on sign-out and a different IDB opens on identity change. The callback name was honest when it wiped; it lies now. Lifecycle-shaped names (`onSignOut`, `onIdentityChanged`) replace it. |
-| Reload-as-cleanup-boundary | Evidence | Document explicitly | Bitwarden, 1Password, Notion, and Linear all use page navigation on logout for the same reason: apps with non-trivial in-memory state cannot reliably enumerate every store, listener, observer, and cache that holds decrypted data. Reload moves the cleanup boundary up to the OS process layer, where verification is automatic. A future spec can build `attachEncryption(...).deactivate()` + audited `bundle.dispose()` and let apps opt into in-process teardown; this spec does not. |
+| Reload-as-cleanup-boundary | Evidence | Document explicitly | This app has table stores, KV projections, child-doc caches, observers, WebSocket providers, and encryption keyrings. Without a dedicated deactivation protocol, in-process sign-out cannot prove every decrypted reference is gone. Reload moves the cleanup boundary above application state enumeration. A future spec can build `attachEncryption(...).deactivate()` plus audited `bundle.dispose()` and let apps opt into in-process teardown; this spec does not. |
+| `bindAuthWorkspaceScope` package boundary | Cohesion | Keep it separate from `createCookieAuth` and `createBearerAuth` | Auth clients own credentials and identity observation. Workspace scope owns how identity affects Yjs construction, encryption, and reload. Folding workspace lifecycle into auth factories would make auth clients import app/runtime policy and would duplicate the same lifecycle method across cookie and bearer auth. |
+| `createDisposableCache` `gcTime` | Value-add | Keep the option on the primitive, remove explicit default call-site config | The primitive has real non-default callers (`0`, `Infinity`, and test-controlled timers). The app child-doc factories passing `{ gcTime: 5_000 }` are just restating the default. Delete those arguments when touching the factories. |
+| `SyncStatus` shape | Type coherence | Keep the discriminated object union | `connected` has no payload after this spec, but `connecting` still carries retries/lastError and `failed` carries reason. A pure string union would delete useful diagnostics or split status into two surfaces. |
 
 ## Architecture
 
@@ -544,24 +644,24 @@ destroy owner-scoped workspace runtime
 same owner signs in later
   |
   v
-attachBrowserLocalYjs(ydoc, { userId: identity.user.id })
+createLocalYjsKey(identity.user.id, ydoc.guid)
   |
   v
-open scoped IndexedDB and BroadcastChannel
+apply encryption keys
   |
   v
-applyAuthIdentity(identity)
+open scoped encrypted IndexedDB and scoped BroadcastChannel
 
 different owner signs in later
   |
   v
-attachBrowserLocalYjs(ydoc, { userId: newIdentity.user.id })
+createLocalYjsKey(newIdentity.user.id, ydoc.guid)
   |
   v
-open a different IndexedDB and BroadcastChannel key
+apply encryption keys
   |
   v
-applyAuthIdentity(identity)
+open a different encrypted IndexedDB and BroadcastChannel key
 ```
 
 The new boundary is simple: sign-out destroys memory, and local persistence is owner-scoped before anything mounts.
@@ -570,27 +670,33 @@ The new boundary is simple: sign-out destroys memory, and local persistence is o
 
 ### Phase 0: Verify blockers
 
-- [ ] **0.1** Confirm which current `bindAuthWorkspaceScope` apps have only encrypted persisted data and which have plaintext child docs. Current finding: Fuji, Honeycrisp, Opensidian, and Skills have plaintext child docs; tab-manager and Zhongwen need final confirmation.
-- [ ] **0.2** Decide whether this PR encrypts child docs or keeps preserve-on-sign-out blocked until a child-doc encryption spec lands. Recommendation: do not ship preserve-on-sign-out for plaintext child-doc apps.
-- [ ] **0.3** Confirm every current app `wipe()` clears all child databases, not only the root document. Fuji, Honeycrisp, and Opensidian manually clear child docs today.
-- [ ] **0.4** Confirm no app outside `bindAuthWorkspaceScope` wipes local persistence on identity-null transitions.
-- [ ] **0.5** Confirm `attachSync` already drops offline when credentials disappear. Current finding: auth change triggers reconnect, active cycle aborts, and `openWebSocket()` returning null leaves status offline.
+- [x] **0.1** Carry forward the current persistence classification: Fuji, Honeycrisp, and Opensidian have authenticated plaintext child docs; tab-manager has root Yjs persistence only; Zhongwen's browser package is authless and syncless local persistence; Skills has plaintext child docs but only migrates if it becomes authenticated.
+  > **Note**: Verified by audit. Skills remains authless; Zhongwen's browser builder is local-only even though its app client has auth binding.
+- [x] **0.2** Land or update `specs/20260505T004755-attach-encrypted-indexeddb.md` first. Preserve-on-sign-out cannot ship while authenticated apps still write plaintext user-content updates to local child-doc IDBs.
+  > **Note**: The primitive is landed. App call sites still move in this spec after construction order is fixed.
+- [x] **0.3** Confirm every current app `wipe()` clears all child databases, not only the root document. Fuji, Honeycrisp, and Opensidian manually clear child docs today.
+  > **Note**: Fuji, Honeycrisp, Opensidian, and Skills clear child DBs. Tab-manager and Zhongwen have root-only local persistence.
+- [x] **0.4** Confirm no app outside `bindAuthWorkspaceScope` wipes local persistence on identity-null transitions.
+  > **Note**: The only `resetLocalClient` registrations are Fuji, Honeycrisp, Opensidian, Tab-manager, and Zhongwen. Skills has wipe helpers but no auth binding.
+- [x] **0.5** Confirm `attachSync` already drops offline when credentials disappear. Current finding: auth change triggers reconnect, active cycle aborts, and `openWebSocket()` returning null leaves status offline.
 
 ### Phase 1: Add scoped local Yjs identity helpers
 
-- [ ] **1.1** Add a small key helper in `packages/workspace` or `packages/auth-workspace`: `createLocalYjsKey(userId, ydocGuid)`.
-- [ ] **1.2** Use one owner-scoped Yjs key shape: `epicenter:v1:user:{userId}:yjs:{ydocGuid}`.
-- [ ] **1.3** Use the raw `identity.user.id` directly. No hashing, no domain-separation label. User ids are already opaque random strings assigned by Better Auth and IndexedDB names are per-origin.
-- [ ] **1.4** Add tests proving different users produce different keys and the key shape matches `epicenter:v1:user:<userId>:yjs:<ydocGuid>` exactly.
+- [x] **1.1** Add a small key helper in `packages/workspace` or `packages/auth-workspace`: `createLocalYjsKey(userId, ydocGuid)`.
+- [x] **1.2** Use one owner-scoped Yjs key shape: `epicenter:v1:user:{userId}:yjs:{ydocGuid}`.
+- [x] **1.3** Use the raw `identity.user.id` directly. No hashing, no domain-separation label. The same stable owner id already partitions server-side workspace resources, and IndexedDB names are per-origin.
+- [x] **1.4** Add tests proving different users produce different keys and the key shape matches `epicenter:v1:user:<userId>:yjs:<ydocGuid>` exactly.
 
 ### Phase 2: Separate Y.Doc identity from local browser keys
 
-- [ ] **2.1** Change `attachIndexedDb(ydoc)` to accept optional `{ persistenceKey }`, defaulting to `ydoc.guid`.
-- [ ] **2.2** Ensure both `new IndexeddbPersistence(...)` and `clearLocal()` use the same `persistenceKey`.
-- [ ] **2.3** Change `attachBroadcastChannel(ydoc)` to accept optional `{ channelKey }`, defaulting to the current `ydoc.guid` behavior.
-- [ ] **2.4** Document that `persistenceKey` and `channelKey` are local runtime names only. They do not change sync room names, `ydoc.guid`, child document GUIDs, or HKDF workspace labels.
-- [ ] **2.5** Add `attachBrowserLocalYjs(ydoc, { userId, transportOrigin })` as the preferred browser attach primitive. It computes one local key and passes it to both `attachIndexedDb` and `attachBroadcastChannel`.
-- [ ] **2.6** Add focused tests for the key plumbing where practical. If y-indexeddb is hard to test directly, test returned `clearLocal()` behavior with a small browser-compatible harness or document the manual verification.
+- [x] **2.1** Change `attachIndexedDb(ydoc)` to accept optional `{ persistenceKey }`, defaulting to `ydoc.guid`.
+  > **Note**: Completed with the encrypted IndexedDB primitive wave because both providers share the same attachment contract.
+- [x] **2.2** Ensure both `new IndexeddbPersistence(...)` and `clearLocal()` use the same `persistenceKey`.
+- [x] **2.3** Change `attachBroadcastChannel(ydoc)` to accept optional `{ channelKey }`, defaulting to the current `ydoc.guid` behavior.
+- [x] **2.4** Document that `persistenceKey` and `channelKey` are local runtime names only. They do not change sync room names, `ydoc.guid`, child document GUIDs, or HKDF workspace labels.
+- [x] **2.5** Do not add `attachStorage(ydoc, { encrypted })` or `attachBrowserLocalYjs(ydoc, { encrypted })`. The shared surface is `createLocalYjsKey`; encrypted storage hangs from the encryption coordinator.
+- [x] **2.6** Add focused tests for the key plumbing where practical. If y-indexeddb is hard to test directly, test returned `clearLocal()` behavior with a small browser-compatible harness or document the manual verification.
+  > **Note**: Added direct tests for `createLocalYjsKey`, `attachBroadcastChannel({ channelKey })`, and encrypted IndexedDB clear/read behavior. Plain `attachIndexedDb({ persistenceKey })` is covered structurally through the shared implementation and will be exercised by app migrations.
 
 ### Phase 3: Auth-scope workspace construction
 
@@ -605,23 +711,30 @@ apps/zhongwen/src/lib/zhongwen/client.ts
 ```
 
 - [ ] **3.1** Stop constructing browser-local workspaces before auth identity is known for participating apps.
-- [ ] **3.2** On signed-in auth, pass `identity.user.id` into browser workspace construction.
-- [ ] **3.3** Use `attachBrowserLocalYjs(doc.ydoc, { userId: identity.user.id, transportOrigin })` for root local persistence and local broadcast.
-- [ ] **3.4** Use `attachBrowserLocalYjs(childYdoc, { userId: identity.user.id, transportOrigin })` for every persisted child document.
-- [ ] **3.5** Keep `ydoc.guid` unchanged for sync URLs and encryption. Root sync still points to `/workspaces/${doc.ydoc.guid}`. Child sync should use `/documents/${ydoc.guid}`.
-- [ ] **3.6** On sign-out, destroy the current workspace runtime and reload. Do not call `clearLocal()` or `clearDocument()`.
-- [ ] **3.7** Keep destructive local deletion only for explicit "Forget this device" or legacy wipe paths.
+- [ ] **3.2** On signed-in auth, pass `identity.user.id` and `identity.encryptionKeys` into browser workspace construction.
+- [ ] **3.3** Apply keys before attaching encrypted local persistence: `doc.encryption.applyKeys(identity.encryptionKeys)`.
+- [ ] **3.4** Use `doc.encryption.attachEncryptedIndexedDb(doc.ydoc, { persistenceKey: createLocalYjsKey(identity.user.id, doc.ydoc.guid) })` for authenticated root local persistence.
+- [ ] **3.5** Use `attachBroadcastChannel(doc.ydoc, { channelKey: createLocalYjsKey(identity.user.id, doc.ydoc.guid), transportOrigin })` for authenticated root local broadcast.
+- [ ] **3.6** Use `doc.encryption.attachEncryptedIndexedDb(childYdoc, { persistenceKey: createLocalYjsKey(identity.user.id, childYdoc.guid) })` for every persisted authenticated child document that contains user content.
+- [ ] **3.7** Use plain `attachIndexedDb` only for authless or explicitly non-sensitive browser packages.
+- [ ] **3.8** Keep `ydoc.guid` unchanged for sync URLs and encryption. Root sync still points to `/workspaces/${doc.ydoc.guid}`. Child sync should use `/documents/${ydoc.guid}`.
+- [ ] **3.9** On sign-out, destroy the current workspace runtime and reload. Do not call `clearLocal()` or `clearDocument()`.
+- [ ] **3.10** Keep destructive local deletion only for explicit "Forget this device" or legacy wipe paths.
 
-### Phase 4: Close the plaintext child-doc gap
+### Phase 4: Close the plaintext child-doc gap (depends on `attach-encrypted-indexeddb`)
 
-This phase is required before the shared popover can preserve local data in Fuji, Honeycrisp, Opensidian, or any app with persisted plaintext child docs.
+Resolved by the follow-up spec at `specs/20260505T004755-attach-encrypted-indexeddb.md`. That spec adds `encryption.attachEncryptedIndexedDb(targetYdoc, { persistenceKey })` as a method on the existing encryption coordinator. The migration here is a construction-order change plus one storage-call change per root and child doc.
 
-- [ ] **4.1** Choose one child-doc encryption strategy in a separate focused spec if it is not obvious during implementation.
-- [ ] **4.2** Audit every persisted child document factory that calls `attachIndexedDb`.
-- [ ] **4.3** Either encrypt the persisted child content or explicitly classify it as non-sensitive with product sign-off.
-- [ ] **4.4** Add manual smoke for local disk inspection: after sign-out, root and child persisted user content must not be readable without keys.
+- [ ] **4.1** Land the `attach-encrypted-indexeddb` spec first. This sign-out spec depends on it before preserve-on-sign-out can ship.
+- [ ] **4.2** `apps/fuji/src/lib/fuji/browser.ts`: replace root `attachIndexedDb(doc.ydoc)` with `doc.encryption.attachEncryptedIndexedDb(doc.ydoc, { persistenceKey })`, and replace child entry-content `attachIndexedDb(ydoc)` the same way.
+- [ ] **4.3** `apps/honeycrisp/src/lib/honeycrisp/browser.ts`: same replacement for root and note-body docs.
+- [ ] **4.4** `apps/opensidian/src/lib/opensidian/browser.ts`: same replacement for root and file-content docs.
+- [ ] **4.5** `apps/tab-manager/src/lib/tab-manager/extension.ts`: same replacement for the root workspace doc.
+- [ ] **4.6** `apps/skills/src/lib/skills/browser.ts`: use encrypted storage only if Skills becomes authenticated. If it stays authless, classify its local persistence separately and do not force this coordinator method into it.
+- [ ] **4.7** Delete explicit `{ gcTime: 5_000 }` arguments from touched child-doc caches. That is the default.
+- [ ] **4.8** Add manual smoke for local disk inspection: after sign-out, open IDB devtools and confirm root and child-doc blobs are opaque ciphertext (start with `0x01` version byte).
 
-Recommendation: do not add an app-level `preserveLocalOnSignOut` flag to bypass this. That creates two privacy products behind one shared UI.
+Do not add an app-level `preserveLocalOnSignOut` flag to bypass this. That creates two privacy products behind one shared UI.
 
 ### Phase 5: Collapse the popover
 
@@ -683,33 +796,44 @@ bindAuthWorkspaceScope({
 
 - [ ] **7.1** `packages/auth-workspace/src/index.ts`: change `AuthWorkspaceScopeOptions` type. Replace `resetLocalClient: () => Promise<void>` with two required fields: `onSignOut: () => void | Promise<void>` and `onIdentityChanged: () => void | Promise<void>`.
 - [ ] **7.2** `packages/auth-workspace/src/index.ts`: in `processIdentity`:
-  - When `identity === null && appliedUserId !== null` → `await onSignOut()`. Do NOT call any local-data wipe. The IDB stays.
-  - When `identity !== null && appliedUserId !== null && appliedUserId !== userId` → `await onIdentityChanged()`. Do NOT call any local-data wipe. The new user's scoped IDB will open after reload.
-- [ ] **7.3** Drain semantics: callbacks fire on terminal transitions and the binding stops processing further identity changes for the current page lifetime (a reload is expected, but the binding shouldn't depend on it actually happening — fields like `isResetting` keep the existing single-shot drain behavior, just renamed).
+  - When `identity === null && appliedUserId !== null` -> `await onSignOut()`. Do NOT call any local-data wipe. The IDB stays.
+  - When `identity !== null && appliedUserId !== null && appliedUserId !== userId` -> `await onIdentityChanged()`. Do NOT call any local-data wipe. The new user's scoped IDB will open after reload.
+- [ ] **7.3** Drain semantics: callbacks fire on terminal transitions and the binding stops processing further identity changes for the current page lifetime (a reload is expected, but the binding shouldn't depend on it actually happening: fields like `isResetting` keep the existing single-shot drain behavior, just renamed).
 - [ ] **7.4** `packages/auth-workspace/src/index.test.ts`: rewrite tests around the new callbacks. Add a test asserting that NEITHER callback's body is invoked by the binding itself (the binding only fires the callback; the callback decides whether to reload).
 - [ ] **7.5** Update the 5 callers (`apps/fuji/src/lib/fuji/client.ts`, `apps/honeycrisp/src/lib/honeycrisp/client.ts`, `apps/opensidian/src/lib/opensidian/client.ts`, `apps/tab-manager/src/lib/tab-manager/client.ts`, `apps/zhongwen/src/lib/zhongwen/client.ts`). Body for each callback is `window.location.reload()` for now. Apps may diverge later; today they don't need to.
-- [ ] **7.6** Delete each app's `wipe()` method on the workspace bundle if no consumer remains (grep first). The wipe was load-bearing for the old `resetLocalClient`; with sign-out and identity-change both reloading without a wipe, `wipe()` is destructive cleanup that only "Forget this device" would call — defer until that ships.
+- [ ] **7.6** Delete each app's sign-out-only `wipe()` path if no consumer remains (grep first). Keep or replace low-level local-clear helpers needed by Phase 8's explicit "Forget this device" action.
 - [ ] **7.7** Update `docs/encryption.md` and `docs/guides/consuming-epicenter-api.md` examples to show the two-callback shape. Explain in prose: both bodies will usually be `window.location.reload()`; the seams exist for naming, tests, platform overrides, and telemetry.
 
-### Phase 8: Supersede old specs and docs
+### Phase 8: Add explicit local cleanup
 
-- [ ] **8.1** Mark `specs/20260414T143000-safe-sign-out-flow.md` as superseded by this spec.
-- [ ] **8.2** Mark `specs/20260310T235239-sync-status-102.md` as superseded by this spec.
-- [ ] **8.3** Mark `specs/20260504T185711-attach-sync-auth-namespace.md` as superseded (Cut F collapses `SyncWebSocket` into `WebSocket`).
-- [ ] **8.4** Update docs that say sign-out wipes local data, but only after the child-doc encryption blocker is resolved.
-- [ ] **8.5** Replace Bitwarden logout claims with the more precise lock analogy and link to official Bitwarden unlock vs login docs.
+Sign-out no longer deletes local data. That is correct, but users still need an intentional cleanup path.
 
-### Phase 9: Verify
+- [ ] **8.1** Add a "Forget this device" action for signed-in authenticated apps. It deletes the current owner's local Yjs caches and then reloads.
+- [ ] **8.2** Implement cleanup against owner-scoped local keys. Do not call the old workspace-bundle `wipe()` method from sign-out.
+- [ ] **8.3** Use the `epicenter:v1:user:{userId}:yjs:` prefix when enumerating local databases where the runtime supports `indexedDB.databases()`.
+- [ ] **8.4** Keep a fallback path that clears known root and child document keys for the current workspace when full database enumeration is unavailable.
+- [ ] **8.5** Put the destructive confirmation on "Forget this device", not on sign-out.
+- [ ] **8.6** If this action does not land in the same PR, leave a tracked follow-up spec and do not delete the low-level clear helpers it will need.
 
-- [ ] **9.1** Run `bun test packages/auth-workspace/src/index.test.ts`.
-- [ ] **9.2** Run `bun test packages/sync/src/protocol.test.ts`.
-- [ ] **9.3** Run `bun test packages/workspace/src/document/attach-sync.test.ts`.
-- [ ] **9.4** Run daemon and CLI tests touched by `SyncStatus` shape changes.
-- [ ] **9.5** Run `bun run typecheck`.
-- [ ] **9.6** Manual smoke per participating app: sign in, edit, sign out, confirm runtime reloads (via `onSignOut`) and local persistence remains under the same owner-scoped key.
-- [ ] **9.7** Manual smoke per participating app: sign in as a different user after sign-out and reload, confirm a different local cache opens and the prior user's cache is not mounted.
-- [ ] **9.8** Manual smoke for local disk: persisted user content that survives sign-out is encrypted or deliberately non-sensitive.
-- [ ] **9.9** Manual smoke: confirm `onSignOut` fires once per user-initiated sign-out and `onIdentityChanged` fires once per different-user transition (not both for the same event).
+### Phase 9: Supersede old specs and docs
+
+- [ ] **9.1** Mark `specs/20260414T143000-safe-sign-out-flow.md` as superseded by this spec.
+- [ ] **9.2** Mark `specs/20260310T235239-sync-status-102.md` as superseded by this spec.
+- [ ] **9.3** Mark `specs/20260504T185711-attach-sync-auth-namespace.md` as superseded (Cut F collapses `SyncWebSocket` into `WebSocket`).
+- [ ] **9.4** Update docs that say sign-out wipes local data, but only after encrypted local persistence is in place.
+- [ ] **9.5** Replace Bitwarden logout claims with the more precise lock analogy and link to official Bitwarden unlock vs login docs.
+
+### Phase 10: Verify
+
+- [ ] **10.1** Run `bun test packages/auth-workspace/src/index.test.ts`.
+- [ ] **10.2** Run `bun test packages/sync/src/protocol.test.ts`.
+- [ ] **10.3** Run `bun test packages/workspace/src/document/attach-sync.test.ts`.
+- [ ] **10.4** Run daemon and CLI tests touched by `SyncStatus` shape changes.
+- [ ] **10.5** Run `bun run typecheck`.
+- [ ] **10.6** Manual smoke per participating app: sign in, edit, sign out, confirm runtime reloads (via `onSignOut`) and local persistence remains under the same owner-scoped key.
+- [ ] **10.7** Manual smoke per participating app: sign in as a different user after sign-out and reload, confirm a different local cache opens and the prior user's cache is not mounted.
+- [ ] **10.8** Manual smoke for local disk: persisted user content that survives sign-out is encrypted or deliberately non-sensitive.
+- [ ] **10.9** Manual smoke: confirm `onSignOut` fires once per user-initiated sign-out and `onIdentityChanged` fires once per different-user transition (not both for the same event).
 
 ## Edge cases
 
@@ -718,22 +842,22 @@ bindAuthWorkspaceScope({
 ```txt
 auth identity = null
 workspace runtime = destroyed by reload
-local cache = epicenter:v1:user:<hashA>:workspace:epicenter.fuji
+local cache = epicenter:v1:user:<userIdA>:yjs:epicenter.fuji
 
 later:
 auth identity = user A
-local cache = epicenter:v1:user:<hashA>:workspace:epicenter.fuji
 apply keys
+local cache = epicenter:v1:user:<userIdA>:yjs:epicenter.fuji
 same owner-scoped local cache resumes
 ```
 
 ### Different user signs in after a signed-out reload
 
 ```txt
-prior local cache = epicenter:v1:user:<hashA>:workspace:epicenter.fuji
+prior local cache = epicenter:v1:user:<userIdA>:yjs:epicenter.fuji
 auth identity = user B
-new local cache = epicenter:v1:user:<hashB>:workspace:epicenter.fuji
 apply user B keys
+new local cache = epicenter:v1:user:<userIdB>:yjs:epicenter.fuji
 ```
 
 User A's cache remains on disk but is not opened. It can be removed later by "Forget this device."
@@ -754,19 +878,19 @@ Offline edits are local Yjs updates. Sign-out preserves owner-scoped local persi
 
 Same-owner sign-in with a rotated keyring still works for root encrypted stores if the keyring includes the old version. `applyKeys` converges old-version ciphertext to the current version. If old keys are revoked, old local data is undecryptable. That is a key-management outcome, not a sign-out outcome.
 
-## Open questions
+## Closed decisions from the grill
 
 1. **What is the child-doc encryption strategy?**
-   - Recommendation: block preserve-on-sign-out for apps with plaintext child docs until this has its own design. The current spec should not launder plaintext persistence through an "encrypted local data" claim.
+   - Use `encryption.attachEncryptedIndexedDb(targetYdoc, { persistenceKey })` from `specs/20260505T004755-attach-encrypted-indexeddb.md`. Preserve-on-sign-out does not ship for authenticated apps until plaintext local child docs are gone.
 
 2. **How long should orphaned owner caches survive?**
-   - Recommendation: defer automatic pruning. Add explicit "Forget this device" first. Browser storage pressure can handle old caches until users ask for cleanup.
+   - Until browser storage pressure or the explicit "Forget this device" action removes them. Automatic pruning is refused for v1 because it creates a silent destructive policy beside a feature whose whole point is preservation.
 
 3. **Should failed runtime teardown block sign-out completion?**
-   - Recommendation: sign-out already happened at the auth layer. If teardown fails, show an error and reload anyway. The goal is to clear memory. A reload is the recovery path.
+   - **No.** Sign-out already happened at the auth layer. If teardown fails, show an error and reload anyway. The goal is to clear memory. A reload is the recovery path.
 
 4. **Should raw user id ever appear in local keys?**
-   - **Yes.** User ids are already opaque random strings (Better Auth assigns them); IndexedDB names are per-origin and not exposed cross-site. The asymmetric-win pass refused the hash: it added a helper, tests, and a stability worry without functional benefit. Reopen this only if a future threat model (e.g., a malicious browser extension reading IDB names within the same origin) makes opacity load-bearing.
+   - **Yes.** The raw user id is already the stable owner identifier used by auth and server-side workspace partitioning. IndexedDB names are per-origin and not exposed cross-site. The asymmetric-win pass refused the hash: it added a helper, tests, and a stability worry without functional benefit. Reopen this only if a future threat model (e.g., a malicious browser extension reading IDB names within the same origin) makes opacity load-bearing.
 
 5. **Should `hasLocalChanges` come back later as save status?**
    - **Refused permanently.** Yjs is a continuous-sync CRDT; there is no "saved" event in the data model. Apple Notes, Apple Keychain, Bitwarden, Signal, and Obsidian all ship without a "saved/saving…" indicator. A future SYNC_STATUS revival would re-introduce the same wire/UI/state machine cost for a UX surface no peer product considers necessary. If a future product surface genuinely needs an atomic save barrier (rare; usually a sign that the product wants Yjs's eventual semantics replaced with transactional semantics, which is a different system), design that as an explicit invariant with its own primitive. Do not bring back a "I think the server has it" heuristic.
@@ -776,6 +900,7 @@ Same-owner sign-in with a rotated keyring still works for root encrypted stores 
 - [ ] Participating apps construct browser-local workspaces only after auth identity is known.
 - [ ] Local IndexedDB keys are owner-scoped with owner-first hierarchy.
 - [ ] Local BroadcastChannel keys are owner-scoped with the same local hierarchy.
+- [ ] Authenticated apps use `encryption.attachEncryptedIndexedDb(..., { persistenceKey })` for root and user-content child docs before preserve-on-sign-out ships.
 - [ ] Sign-out destroys runtime and reloads, not a storage wipe and not a no-op.
 - [ ] A signed-out app reload has no live Y.Doc, encryption keyring, decrypted table projection, child document cache, or sync socket from the prior user.
 - [ ] Different-owner sign-in opens a different local cache before applying keys.
@@ -786,9 +911,10 @@ Same-owner sign-in with a rotated keyring still works for root encrypted stores 
 - [ ] `attach-sync.ts` emits `log.info` on each terminal status transition and `log.warn` on permanent-failure parse.
 - [ ] `bindAuthWorkspaceScope` accepts two required callbacks: `onSignOut` and `onIdentityChanged`. The old `resetLocalClient` parameter is gone everywhere.
 - [ ] All 5 app callers pass `window.location.reload()` for both callbacks (or a documented platform-specific override).
-- [ ] No app's workspace bundle exposes `wipe()` unless a "Forget this device" consumer exists in the same PR.
+- [ ] Sign-out does not call any local wipe path.
+- [ ] An explicit "Forget this device" path exists, or the low-level clear helpers it will need remain and a tracked follow-up spec exists.
 - [ ] `account-popover.svelte` has no confirmation dialog branch for sign-out.
-- [ ] Apps with plaintext child docs either keep wipe-on-sign-out or have encrypted child persistence before preserve-on-sign-out ships.
+- [ ] Apps with plaintext child docs have encrypted child persistence before preserve-on-sign-out ships.
 - [ ] `specs/20260414T143000-safe-sign-out-flow.md` and `specs/20260310T235239-sync-status-102.md` are marked superseded.
 
 ## References
@@ -803,22 +929,40 @@ packages/workspace/src/document/attach-sync.ts
 packages/workspace/src/document/attach-encryption.ts
 packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts
 packages/workspace/src/document/attach-indexed-db.ts
+packages/workspace/src/document/attach-broadcast-channel.ts
+packages/workspace/node_modules/y-indexeddb/src/y-indexeddb.js
+packages/workspace/src/cache/disposable-cache.ts
 packages/sync/src/protocol.ts
+apps/api/src/app.ts
+apps/api/src/base-sync-room.ts:141
 apps/api/src/sync-handlers.ts
+apps/fuji/src/lib/fuji/index.ts
+apps/fuji/src/lib/fuji/browser.ts
 apps/fuji/src/lib/fuji/client.ts
+apps/honeycrisp/src/lib/honeycrisp/browser.ts
+apps/tab-manager/src/lib/tab-manager/extension.ts
 apps/honeycrisp/src/lib/honeycrisp/client.ts
+apps/opensidian/src/lib/opensidian/browser.ts
 apps/opensidian/src/lib/opensidian/client.ts
+apps/skills/src/lib/skills/browser.ts
 apps/tab-manager/src/lib/tab-manager/client.ts
+apps/zhongwen/src/lib/zhongwen/browser.ts
 apps/zhongwen/src/lib/zhongwen/client.ts
 packages/workspace/src/daemon/run-errors.ts
 packages/workspace/src/daemon/run-handler.ts
+specs/20260505T004755-attach-encrypted-indexeddb.md
 ```
+
+Requested path note: `apps/epicenter` is not present in this checkout.
 
 External grounding:
 
 - Official Bitwarden docs: `https://bitwarden.com/help/understand-log-in-vs-unlock/`
 - Official Bitwarden docs: `https://bitwarden.com/help/unlock-with-pin/`
 - DeepWiki on `yjs/y-protocols`: standard protocol families are sync, awareness, and auth. SYNC_STATUS is not standard.
+- DeepWiki on Cloudflare Durable Objects: `setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"))` answers matching text messages without waking the Durable Object.
+- DeepWiki on Better Auth: `session.user.id` is the stable user identifier; `signOut()` clears the active client session state.
+- DeepWiki on WXT: `browser.runtime.reload()` is available for full extension reset, but the current tab-manager sidepanel already uses `window.location.reload()`, so Cut G does not need a special extension reset policy.
 
 ## Final one-sentence test
 

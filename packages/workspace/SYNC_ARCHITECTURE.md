@@ -511,7 +511,7 @@ Awareness carries `{id, name, platform}` only. The action manifest moved to `sys
                        └───────────┬───────────┘
                                    │
         ┌──────────────────────────▼──────────────────────────┐
-        │  CONNECTED: four timers run in parallel              │
+        │  CONNECTED: three timer families run in parallel     │
         ├──────────────────────────────────────────────────────┤
         │                                                      │
         │  PING_INTERVAL_MS = 60_000                           │
@@ -521,10 +521,6 @@ Awareness carries `{id, name, platform}` only. The action manifest moved to `sys
         │  LIVENESS_CHECK_INTERVAL_MS = 10_000                 │
         │   every 10s: if Date.now() - lastMsg > 90_000        │
         │              ws.close()  ← server is dead            │
-        │                                                      │
-        │  syncStatusTimer = 100ms (debounce)                  │
-        │   after a doc-update burst, send SYNC_STATUS once    │
-        │   instead of per-keystroke                           │
         │                                                      │
         │  RPC timers (per outbound call)                      │
         │   default DEFAULT_RPC_TIMEOUT_MS = 5_000             │
@@ -553,7 +549,6 @@ Constants in plain English:
 | `LIVENESS_CHECK_INTERVAL_MS` | 10s | How often we evaluate the 90s rule |
 | `DEFAULT_RPC_TIMEOUT_MS` | 5s | Per-call timeout for an outbound RPC |
 | `BASE_DELAY_MS` / `MAX_DELAY_MS` | 500ms / 30s | Reconnect backoff bounds |
-| `syncStatusTimer` | 100ms | Debounce for batching SYNC_STATUS frames |
 
 ## The cancellation thread (`AbortController`)
 
@@ -705,14 +700,13 @@ t=~50ms    ws.onopen
 
 t=~80ms    ws.onmessage: STEP2 from server
            handshakeComplete = true
-           status: { phase: 'connected', hasLocalChanges }
+           status: { phase: 'connected' }
            resolveConnected()
 
-t=80ms+    [from here on, four loops run forever:]
+t=80ms+    [from here on, three loops run forever:]
             • PING every 60s
             • LIVENESS check every 10s (90s threshold)
             • per-RPC 5s timers as calls happen
-            • per-doc-update-burst SYNC_STATUS at 100ms quiet
 ```
 
 ## Mental model in one paragraph

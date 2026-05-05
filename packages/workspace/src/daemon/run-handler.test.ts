@@ -35,7 +35,7 @@ function fakeRemote(overrides: Partial<RemoteClient> = {}): RemoteClient {
 }
 
 function fakeSync(
-	status: SyncStatus = { phase: 'connected', hasLocalChanges: false },
+	status: SyncStatus = { phase: 'connected' },
 ): Runtime['sync'] {
 	return {
 		whenConnected: Promise.resolve(),

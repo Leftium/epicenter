@@ -1,11 +1,15 @@
 # Collapse `attachSync` auth fields into a single `auth` namespace
 
 **Date**: 2026-05-04
-**Status**: Wave 1-6 implemented; Wave 7 in progress
+**Status**: Superseded by `specs/20260504T233223-sign-out-preserves-local-data.md` Phase 6.A
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth
 
 ## One-Sentence Test
+
+Superseded note, 2026-05-05: Phase 6.A of the sign-out preservation spec
+collapsed the old structural `SyncWebSocket` type into the DOM `WebSocket`
+contract directly. Keep this file as historical context only.
 
 `attachSync` requires an `auth: SyncAuth` capability and constructs sockets via a single property access; `webSocketImpl`, `WebSocketImpl`, `NoopWebSocket`, the duck-typed `requiresCredential` flag, the nullish-coalescing-ternary, and the unauthed-fallback branch no longer exist.
 

@@ -98,7 +98,7 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 function fakeAuth() {
 	return {
 		openWebSocket(url: string, protocols?: string | string[]) {
-			return new FakeWebSocket(url, protocols);
+			return new FakeWebSocket(url, protocols) as unknown as WebSocket;
 		},
 		onChange() {
 			return () => {};
@@ -114,7 +114,7 @@ function createCredentialSource(initiallySignedIn: boolean) {
 		openWebSocket(url: string, protocols?: string | string[]) {
 			calls.push(`open:${signedIn ? 'signedIn' : 'signedOut'}`);
 			if (!signedIn) return null;
-			return new FakeWebSocket(url, protocols);
+			return new FakeWebSocket(url, protocols) as unknown as WebSocket;
 		},
 		onChange(listener: () => void) {
 			listeners.add(listener);
@@ -148,10 +148,7 @@ describe('attachSync split surface', () => {
 		ws.deliver(serverStep2Frame());
 		await sync.whenConnected;
 
-		expect(sync.status).toEqual({
-			phase: 'connected',
-			hasLocalChanges: false,
-		});
+		expect(sync.status).toEqual({ phase: 'connected' });
 		expect('rpc' in sync).toBe(false);
 		expect('peers' in sync).toBe(false);
 

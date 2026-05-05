@@ -276,12 +276,6 @@ export function applyMessage({
 					return null;
 				}
 
-				case MESSAGE_TYPE.SYNC_STATUS: {
-					// Echo the raw message back unchanged — zero parsing cost.
-					// Client uses this for version tracking ("Saving…" → "Saved").
-					return { action: 'reply', data };
-				}
-
 				case MESSAGE_TYPE.RPC: {
 					const rpc = decodeRpcMessage(data);
 					switch (rpc.type) {

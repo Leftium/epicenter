@@ -154,10 +154,7 @@ function toRunSyncStatus(status: SyncStatus): RunSyncStatus {
 		case 'offline':
 			return { phase: 'offline' };
 		case 'connected':
-			return {
-				phase: 'connected',
-				hasLocalChanges: status.hasLocalChanges,
-			};
+			return { phase: 'connected' };
 		case 'connecting':
 			return {
 				phase: 'connecting',

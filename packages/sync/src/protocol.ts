@@ -42,28 +42,6 @@ export const MESSAGE_TYPE = {
 	/** Request current awareness states from server */
 	QUERY_AWARENESS: 3,
 	/**
-	 * Version tracking for “Saving…”/“Saved” UX.
-	 *
-	 * NOT a heartbeat—liveness uses text ping/pong.
-	 *
-	 * ## How it works
-	 *
-	 * 1. Client increments a monotonic `localVersion` on every doc update.
-	 * 2. Client sends `[100, varuint(localVersion)]` to the server.
-	 * 3. Server echoes the raw payload back unchanged (zero parsing cost).
-	 * 4. Client compares `ackedVersion` (from echo) to `localVersion`:
-	 *    - `ackedVersion < localVersion` → `hasLocalChanges = true` (“Saving…”)
-	 *    - `ackedVersion >= localVersion` → `hasLocalChanges = false` (“Saved”)
-	 *
-	 * ## Design (inspired by y-sweet)
-	 *
-	 * The server is intentionally dumb—it never parses the payload. This means
-	 * the version semantics can evolve client-side without server changes.
-	 *
-	 * Wire format: `[varuint: 100] [varuint: localVersion]`
-	 */
-	SYNC_STATUS: 100,
-	/**
 	 * Remote procedure call between peers, routed through the DO.
 	 * Uses REQUEST/RESPONSE sub-types.
 	 *
@@ -234,8 +212,7 @@ export function decodeSyncMessage(data: Uint8Array): DecodedSyncMessage {
  *
  * Pre-decoded alternative to y-protocols' `readSyncMessage` — accepts already-
  * decoded `syncType` and `payload` instead of a mutable lib0 decoder. The
- * caller reads these two fields from the decoder inline (consistent with how
- * AWARENESS and SYNC_STATUS cases are already handled at every call site).
+ * caller reads these two fields from the decoder inline.
  *
  * Dispatches on the three sync sub-types (all V2 encoded):
  * - STEP1: `payload` is a state vector → responds with a V2 diff (STEP2)
@@ -407,48 +384,6 @@ export function stateVectorsEqual(a: Uint8Array, b: Uint8Array): boolean {
 		if (a[i] !== b[i]) return false;
 	}
 	return true;
-}
-
-// ============================================================================
-// SYNC_STATUS Protocol (100)
-// ============================================================================
-
-/**
- * Encode a SYNC_STATUS message with the given local version.
- *
- * Wire format: `[varuint: 100] [varuint: localVersion]`
- *
- * The server echoes this back unchanged. The client compares the echoed
- * version to its local counter to determine save state.
- *
- * @param localVersion - Monotonic counter incremented on each doc update
- * @returns Encoded SYNC_STATUS message ready to send
- */
-export function encodeSyncStatus(localVersion: number): Uint8Array {
-	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC_STATUS);
-		encoding.writeVarUint(encoder, localVersion);
-	});
-}
-
-/**
- * Decode a SYNC_STATUS message, returning the local version.
- *
- * Reads past the message type varuint (100) and returns the localVersion
- * varuint. Expects the full message bytes (including the type prefix).
- *
- * @param data - Raw SYNC_STATUS message bytes
- * @returns The localVersion number from the message
- */
-export function decodeSyncStatus(data: Uint8Array): number {
-	const decoder = decoding.createDecoder(data);
-	const messageType = decoding.readVarUint(decoder);
-	if (messageType !== MESSAGE_TYPE.SYNC_STATUS) {
-		throw new Error(
-			`Expected SYNC_STATUS message (${MESSAGE_TYPE.SYNC_STATUS}), got ${messageType}`,
-		);
-	}
-	return decoding.readVarUint(decoder);
 }
 
 // ============================================================================

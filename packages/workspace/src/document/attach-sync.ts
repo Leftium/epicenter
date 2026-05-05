@@ -6,7 +6,6 @@ import {
 	encodeAwarenessStates,
 	encodeRpcRequest,
 	encodeRpcResponse,
-	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncPayload,
@@ -87,7 +86,7 @@ export type SyncFailedReason = { type: 'auth'; code: string };
 export type SyncStatus =
 	| { phase: 'offline' }
 	| { phase: 'connecting'; retries: number; lastError?: SyncError }
-	| { phase: 'connected'; hasLocalChanges: boolean }
+	| { phase: 'connected' }
 	| { phase: 'failed'; reason: SyncFailedReason };
 
 /**
@@ -121,6 +120,17 @@ export const SyncSupervisorError = defineErrors({
 	CloseTimeout: ({ timeoutMs }: { timeoutMs: number }) => ({
 		message: `[attachSync] WebSocket did not fire onclose within ${timeoutMs}ms; resolving whenDisposed anyway`,
 		timeoutMs,
+	}),
+	PermanentClose: ({
+		closeCode,
+		reason,
+	}: {
+		closeCode: number;
+		reason: SyncFailedReason;
+	}) => ({
+		message: `[attachSync] server sent permanent close ${closeCode}: ${reason.code}`,
+		closeCode,
+		reason,
 	}),
 });
 export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
@@ -180,23 +190,6 @@ export type WaitForBarrier =
 /** First arg of `attachSync`: either a bare `Y.Doc` or a doc bundle. */
 export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc };
 
-export type SyncWebSocket = {
-	readyState: number;
-	binaryType: BinaryType;
-	onopen: ((ev: Event) => unknown) | null;
-	onclose: ((ev: CloseEvent) => unknown) | null;
-	onerror: ((ev: Event) => unknown) | null;
-	onmessage: ((ev: MessageEvent) => void) | null;
-	send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
-	close(code?: number, reason?: string): void;
-	addEventListener(
-		type: string,
-		listener: EventListener,
-		options?: AddEventListenerOptions,
-	): void;
-	removeEventListener(type: string, listener: EventListener): void;
-};
-
 /**
  * Capability bundle for authenticated sync. Every `attachSync` connection
  * goes through this surface.
@@ -210,7 +203,7 @@ export type SyncAuth = {
 	openWebSocket(
 		url: string,
 		protocols?: string | string[],
-	): SyncWebSocket | null;
+	): WebSocket | null;
 	/**
 	 * Subscribe to credential-state changes that should trigger a reconnect.
 	 * Returns an unsubscribe function.
@@ -320,6 +313,26 @@ export function attachSync(
 	const log = config.log ?? createLogger('attachSync');
 
 	const status = createStatusEmitter<SyncStatus>({ phase: 'offline' });
+	function setStatus(next: SyncStatus) {
+		const previous = status.get();
+		status.set(next);
+		if (previous.phase === next.phase) return;
+		switch (next.phase) {
+			case 'connected':
+				log.info('sync connected', { phase: next.phase, docGuid: ydoc.guid });
+				break;
+			case 'failed':
+				log.info('sync failed', {
+					phase: next.phase,
+					docGuid: ydoc.guid,
+					reason: next.reason,
+				});
+				break;
+			case 'offline':
+				log.info('sync offline', { phase: next.phase, docGuid: ydoc.guid });
+				break;
+		}
+	}
 	// `whenConnected` settles in one of two ways: resolved when the first
 	// successful handshake lands (STEP2/UPDATE), rejected when the doc is
 	// destroyed before that happens. Without the destroy-side rejection,
@@ -383,31 +396,16 @@ export function attachSync(
 	const masterController = new AbortController();
 	let cycleController: AbortController = childOf(masterController.signal);
 	let waitForSettled = false;
+	let destroyStarted = false;
 
 	/** Current WebSocket instance, or null. */
-	let websocket: SyncWebSocket | null = null;
+	let websocket: WebSocket | null = null;
 
 	/**
 	 * Promise of the currently-running supervisor loop, or null when no loop
 	 * is running. `ensureSupervisor` starts one if absent; teardown awaits it.
 	 */
 	let loopPromise: Promise<void> | null = null;
-
-	/**
-	 * SYNC_STATUS version tracking.
-	 *
-	 * `localVersion` increments on every local doc update. After a debounce
-	 * quiet period, the client sends `encodeSyncStatus(localVersion)`; the
-	 * server echoes the same payload back. The echoed value lands in
-	 * `ackedVersion`; when `localVersion > ackedVersion`, there's local work
-	 * the server hasn't confirmed yet.
-	 *
-	 * Both counters reset to 0 on each fresh connection (the server has no
-	 * memory of our prior counters).
-	 */
-	let localVersion = 0;
-	let ackedVersion = 0;
-	let syncStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// RPC state.
 	//
@@ -483,14 +481,6 @@ export function attachSync(
 	function handleDocUpdate(update: Uint8Array, origin: unknown) {
 		if (origin === SYNC_ORIGIN) return;
 		send(encodeSyncUpdate({ update }));
-		localVersion++;
-		// Debounce: probe after a 100ms quiet period rather than per-update, so
-		// a burst of edits costs one SYNC_STATUS round-trip, not N.
-		if (syncStatusTimer) clearTimeout(syncStatusTimer);
-		syncStatusTimer = setTimeout(() => {
-			send(encodeSyncStatus(localVersion));
-			syncStatusTimer = null;
-		}, 100);
 	}
 
 	function handleAwarenessUpdate(
@@ -589,11 +579,11 @@ export function attachSync(
 			// clear them before starting a new attempt.
 			clearPendingRequests();
 
-			status.set({ phase: 'connecting', retries: backoff.retries, lastError });
+			setStatus({ phase: 'connecting', retries: backoff.retries, lastError });
 
 			const result = await attemptConnection(signal);
 			if (result === 'no-credential') {
-				status.set({ phase: 'offline' });
+				setStatus({ phase: 'offline' });
 				await waitForAbort(signal);
 				continue;
 			}
@@ -611,11 +601,21 @@ export function attachSync(
 			}
 		}
 
-		status.set(
+		setStatus(
 			permanentFailure
 				? { phase: 'failed', reason: permanentFailure }
 				: { phase: 'offline' },
 		);
+		log.info('sync supervisor exited', {
+			cause: permanentFailure
+				? 'permanent-failure'
+				: signal.aborted && destroyStarted
+					? 'doc-destroyed'
+					: signal.aborted
+						? 'dispose'
+						: 'offline',
+			docGuid: ydoc.guid,
+		});
 	}
 
 	async function attemptConnection(
@@ -627,14 +627,6 @@ export function attachSync(
 		if (ws === null) return 'no-credential';
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
-
-		// Fresh connection → server has no memory of our prior counters.
-		localVersion = 0;
-		ackedVersion = 0;
-		if (syncStatusTimer) {
-			clearTimeout(syncStatusTimer);
-			syncStatusTimer = null;
-		}
 
 		const { promise: openPromise, resolve: resolveOpen } =
 			Promise.withResolvers<boolean>();
@@ -684,7 +676,15 @@ export function attachSync(
 			liveness.stop();
 			removeRemoteAwarenessStates();
 			const failure = parsePermanentFailure(event);
-			if (failure) permanentFailure = failure;
+			if (failure) {
+				permanentFailure = failure;
+				log.warn(
+					SyncSupervisorError.PermanentClose({
+						closeCode: event.code,
+						reason: failure,
+					}),
+				);
+			}
 			websocket = null;
 			resolveOpen(false);
 			resolveClose();
@@ -720,10 +720,7 @@ export function attachSync(
 							syncType === SYNC_MESSAGE_TYPE.UPDATE)
 					) {
 						handshakeComplete = true;
-						status.set({
-							phase: 'connected',
-							hasLocalChanges: localVersion > ackedVersion,
-						});
+						setStatus({ phase: 'connected' });
 					}
 					break;
 				}
@@ -735,20 +732,6 @@ export function attachSync(
 
 				case MESSAGE_TYPE.QUERY_AWARENESS: {
 					sendKnownAwarenessStates();
-					break;
-				}
-
-				case MESSAGE_TYPE.SYNC_STATUS: {
-					const version = decoding.readVarUint(decoder);
-					const prevHasChanges = localVersion > ackedVersion;
-					ackedVersion = Math.max(ackedVersion, version);
-					const nowHasChanges = localVersion > ackedVersion;
-					if (prevHasChanges !== nowHasChanges && handshakeComplete) {
-						status.set({
-							phase: 'connected',
-							hasLocalChanges: nowHasChanges,
-						});
-					}
 					break;
 				}
 
@@ -850,6 +833,7 @@ export function attachSync(
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
 	ydoc.once('destroy', async () => {
+		destroyStarted = true;
 		try {
 			// Master abort cascades to cycleController (closes ws, wakes
 			// backoff sleep, fires attemptConnection's abort listener).
@@ -996,7 +980,7 @@ function createStatusEmitter<T>(initial: T) {
 	};
 }
 
-function createLivenessMonitor(ws: SyncWebSocket) {
+function createLivenessMonitor(ws: WebSocket) {
 	let pingInterval: ReturnType<typeof setInterval> | null = null;
 	let livenessInterval: ReturnType<typeof setInterval> | null = null;
 	let lastMessageTime = 0;
@@ -1037,7 +1021,7 @@ function createLivenessMonitor(ws: SyncWebSocket) {
  * teardown indefinitely.
  */
 function waitForWsClose(
-	ws: SyncWebSocket | null,
+	ws: WebSocket | null,
 	timeoutMs: number,
 	log: Logger,
 ): Promise<void> {

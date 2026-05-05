@@ -18,7 +18,6 @@ import { emitRemoteCallError } from './run';
 
 const connected: RunSyncStatus = {
 	phase: 'connected',
-	hasLocalChanges: false,
 };
 
 function mockState(peer: Partial<AwarenessState['peer']> = {}): AwarenessState {

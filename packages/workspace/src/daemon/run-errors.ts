@@ -30,7 +30,7 @@ export type RunSyncStatus =
 			retries: number;
 			lastErrorType?: SyncError['type'];
 	  }
-	| { phase: 'connected'; hasLocalChanges: boolean }
+	| { phase: 'connected' }
 	| { phase: 'failed'; reason: SyncFailedReason };
 
 /**

@@ -25,7 +25,7 @@ function fakeEntry(
 		actions: {},
 		sync: {
 			whenConnected: Promise.resolve(),
-			status: { phase: 'connected', hasLocalChanges: false },
+			status: { phase: 'connected' },
 			onStatusChange: () => () => {},
 			reconnect() {},
 			[Symbol.asyncDispose]: async () => {},

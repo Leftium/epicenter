@@ -750,22 +750,24 @@ Do not add an app-level `preserveLocalOnSignOut` flag to bypass this. That creat
 
 ### Phase 6: Delete SYNC_STATUS and `hasLocalChanges`, clean up `attach-sync.ts`
 
-- [ ] **6.1** `packages/workspace/src/document/attach-sync.ts`: remove the `encodeSyncStatus` import, version counters, timer, debounced send, SYNC_STATUS message case, and `hasLocalChanges` from `SyncStatus.connected`.
-- [ ] **6.2** `packages/sync/src/protocol.ts`: remove `MESSAGE_TYPE.SYNC_STATUS`, `encodeSyncStatus`, `decodeSyncStatus`, and SYNC_STATUS docs.
-- [ ] **6.3** `packages/sync/src/index.ts`: remove SYNC_STATUS exports.
-- [ ] **6.4** `apps/api/src/sync-handlers.ts`: remove the SYNC_STATUS echo branch. Keep text `ping` to `pong`; it is unrelated liveness behavior.
-- [ ] **6.5** Update `packages/workspace/src/daemon/run-errors.ts` and `packages/workspace/src/daemon/run-handler.ts` so connected status has no `hasLocalChanges` payload.
-- [ ] **6.6** Update CLI tests and fixtures that still construct `{ phase: 'connected', hasLocalChanges: false }`.
-- [ ] **6.7** Update `packages/workspace/SYNC_ARCHITECTURE.md`, `packages/sync/README.md`, and any docs/articles that describe SYNC_STATUS.
+- [x] **6.1** `packages/workspace/src/document/attach-sync.ts`: remove the `encodeSyncStatus` import, version counters, timer, debounced send, SYNC_STATUS message case, and `hasLocalChanges` from `SyncStatus.connected`.
+- [x] **6.2** `packages/sync/src/protocol.ts`: remove `MESSAGE_TYPE.SYNC_STATUS`, `encodeSyncStatus`, `decodeSyncStatus`, and SYNC_STATUS docs.
+- [x] **6.3** `packages/sync/src/index.ts`: remove SYNC_STATUS exports.
+- [x] **6.4** `apps/api/src/sync-handlers.ts`: remove the SYNC_STATUS echo branch. Keep text `ping` to `pong`; it is unrelated liveness behavior.
+- [x] **6.5** Update `packages/workspace/src/daemon/run-errors.ts` and `packages/workspace/src/daemon/run-handler.ts` so connected status has no `hasLocalChanges` payload.
+- [x] **6.6** Update CLI tests and fixtures that still construct `{ phase: 'connected', hasLocalChanges: false }`.
+- [x] **6.7** Update `packages/workspace/SYNC_ARCHITECTURE.md`, `packages/sync/README.md`, and any docs/articles that describe SYNC_STATUS.
+  > **Note**: The two obsolete docs/articles were deleted instead of kept as superseded references because the success criteria require the removed protocol name to disappear from live docs.
 
 #### Phase 6.A: Refuse the `SyncWebSocket` structural type (Cut F)
 
 `attach-sync.ts:181-196` defines a structural type that mirrors a subset of `WebSocket`. The intent was to let non-DOM transports satisfy the interface. The actual implementation reads `WebSocket.OPEN`/`CLOSED`/`CLOSING`/`CONNECTING` as DOM globals at lines 474, 563, 646, 654, 775, 921, 1011, 1040, plus a `/// <reference lib="dom" />` at line 1. The type pretends to be portable; the implementation is browser-only. That mismatch is the smell.
 
-- [ ] **6.A.1** Delete the `SyncWebSocket` type from `attach-sync.ts`.
-- [ ] **6.A.2** Change `SyncAuth.openWebSocket` return type from `SyncWebSocket | null` to `WebSocket | null`.
-- [ ] **6.A.3** Update `packages/auth/src/create-auth.ts` (`openWebSocket` signature) and any other implementer to return `WebSocket | null` directly.
-- [ ] **6.A.4** Mark `specs/20260504T185711-attach-sync-auth-namespace.md` as superseded by this cut, since its rationale ("`WebSocket` is a strict superset of `SyncWebSocket`") is now resolved by collapsing them.
+- [x] **6.A.1** Delete the `SyncWebSocket` type from `attach-sync.ts`.
+- [x] **6.A.2** Change `SyncAuth.openWebSocket` return type from `SyncWebSocket | null` to `WebSocket | null`.
+- [x] **6.A.3** Update `packages/auth/src/create-auth.ts` (`openWebSocket` signature) and any other implementer to return `WebSocket | null` directly.
+  > **Note**: `packages/auth/src/create-auth.ts` already returned `WebSocket | null`; attach-sync test doubles now cast their fake transport at the boundary.
+- [x] **6.A.4** Mark `specs/20260504T185711-attach-sync-auth-namespace.md` as superseded by this cut, since its rationale ("`WebSocket` is a strict superset of `SyncWebSocket`") is now resolved by collapsing them.
 
 Why this is a clean break and not just a rename: keeping `SyncWebSocket` as an alias for `WebSocket` would preserve the fiction that the abstraction does something. It does not. Delete the name; commit to the dependency that already exists.
 
@@ -773,11 +775,11 @@ Why this is a clean break and not just a rename: keeping `SyncWebSocket` as an a
 
 The current `attach-sync.ts` has 1130 lines and 2 `log.warn` calls. Production debugging of "why is sync stuck?" is blind.
 
-- [ ] **6.B.1** In the supervisor's status-emitter `set` path, emit `log.info` on each terminal transition: `connected`, `failed`, `offline`. Do not log `connecting` (would spam during retry loops).
-- [ ] **6.B.2** When `parsePermanentFailure` returns non-null, emit `log.warn` with the close code and parsed reason.
-- [ ] **6.B.3** When the supervisor exits the loop (after master abort), emit `log.info` with the cause: dispose, doc destroyed, or permanent failure.
-- [ ] **6.B.4** Do not log inside the inner reconnect loop (would spam at backoff intervals). The status transition already covers visibility.
-- [ ] **6.B.5** Use the file's existing logger source (`createLogger('attachSync')`); do not introduce per-call logger instantiation.
+- [x] **6.B.1** In the supervisor's status-emitter `set` path, emit `log.info` on each terminal transition: `connected`, `failed`, `offline`. Do not log `connecting` (would spam during retry loops).
+- [x] **6.B.2** When `parsePermanentFailure` returns non-null, emit `log.warn` with the close code and parsed reason.
+- [x] **6.B.3** When the supervisor exits the loop (after master abort), emit `log.info` with the cause: dispose, doc destroyed, or permanent failure.
+- [x] **6.B.4** Do not log inside the inner reconnect loop (would spam at backoff intervals). The status transition already covers visibility.
+- [x] **6.B.5** Use the file's existing logger source (`createLogger('attachSync')`); do not introduce per-call logger instantiation.
 
 ### Phase 7: Rename and split the auth-workspace lifecycle callback (Cut G)
 

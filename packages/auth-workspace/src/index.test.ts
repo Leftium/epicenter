@@ -2,12 +2,12 @@
  * Auth Workspace Scope Tests
  *
  * Verifies the auth binding that sequences one browser client scope through
- * signed-out, signed-in, and terminal reset transitions.
+ * signed-out, signed-in, and terminal transitions.
  *
  * Key behaviors:
  * - Cold signed-out and signed-in identities call the supplied lifecycle hooks.
  * - Same-user identity changes apply fresh key state without reconnecting.
- * - Leaving an applied user puts the client into a resetting state and ignores later identities.
+ * - Leaving an applied user puts the client into a terminal state and ignores later identities.
  */
 
 import { expect, test } from 'bun:test';
@@ -106,10 +106,12 @@ function createFakeAuth(initial: AuthIdentity | null) {
 
 function setup({
 	initial = null,
-	resetLocalClient = async () => {},
+	onSignOut = async () => {},
+	onIdentityChanged = async () => {},
 }: {
 	initial?: AuthIdentity | null;
-	resetLocalClient?: () => Promise<void>;
+	onSignOut?: () => void | Promise<void>;
+	onIdentityChanged?: () => void | Promise<void>;
 } = {}) {
 	const fakeAuth = createFakeAuth(initial);
 	const calls: string[] = [];
@@ -120,9 +122,13 @@ function setup({
 			calls.push(`apply:${identity.user.id}`);
 			appliedIdentities.push(identity);
 		},
-		async resetLocalClient() {
-			calls.push('reset');
-			await resetLocalClient();
+		async onSignOut() {
+			calls.push('signOut');
+			await onSignOut();
+		},
+		async onIdentityChanged() {
+			calls.push('identityChanged');
+			await onIdentityChanged();
 		},
 	});
 
@@ -140,7 +146,7 @@ test('cold signedOut is a no-op', async () => {
 	expect(calls).toEqual([]);
 });
 
-test('cold signedIn applies session without reconnecting sync', async () => {
+test('cold signedIn applies session', async () => {
 	const { calls, appliedIdentities } = setup({ initial: identity() });
 	await tick();
 
@@ -150,7 +156,7 @@ test('cold signedIn applies session without reconnecting sync', async () => {
 	expect(calls).toEqual(['apply:user-1']);
 });
 
-test('key refresh applies identity without reconnecting sync', async () => {
+test('key refresh applies identity', async () => {
 	const { fakeAuth, calls, appliedIdentities } = setup({ initial: identity() });
 	await tick();
 	fakeAuth.emit(identity({ keys: keysB }));
@@ -163,16 +169,16 @@ test('key refresh applies identity without reconnecting sync', async () => {
 	expect(calls).toEqual(['apply:user-1', 'apply:user-1']);
 });
 
-test('signedOut after applied user resets', async () => {
+test('signedOut after applied user calls onSignOut', async () => {
 	const { fakeAuth, calls } = setup({ initial: identity() });
 	await tick();
 	fakeAuth.emit(null);
 	await tick();
 
-	expect(calls).toEqual(['apply:user-1', 'reset']);
+	expect(calls).toEqual(['apply:user-1', 'signOut']);
 });
 
-test('user switch resets without applying the new user', async () => {
+test('user switch calls onIdentityChanged without applying the new user', async () => {
 	const { fakeAuth, calls, appliedIdentities } = setup({ initial: identity() });
 	await tick();
 	fakeAuth.emit(identity({ userId: 'user-2', token: 'token-2', keys: keysB }));
@@ -181,14 +187,14 @@ test('user switch resets without applying the new user', async () => {
 	expect(appliedIdentities.map((applied) => applied.user.id)).toEqual([
 		'user-1',
 	]);
-	expect(calls).toEqual(['apply:user-1', 'reset']);
+	expect(calls).toEqual(['apply:user-1', 'identityChanged']);
 });
 
-test('resetLocalClient rejection is caught and queued identities are ignored', async () => {
+test('terminal callback rejection is caught and queued identities are ignored', async () => {
 	const { fakeAuth, calls, appliedIdentities } = setup({
 		initial: identity(),
-		resetLocalClient: async () => {
-			throw new Error('reset failed');
+		onSignOut: async () => {
+			throw new Error('sign-out failed');
 		},
 	});
 	await tick();
@@ -199,14 +205,14 @@ test('resetLocalClient rejection is caught and queued identities are ignored', a
 	expect(appliedIdentities.map((applied) => applied.encryptionKeys)).toEqual([
 		keysA,
 	]);
-	expect(calls).toEqual(['apply:user-1', 'reset']);
+	expect(calls).toEqual(['apply:user-1', 'signOut']);
 });
 
-test('identities emitted during reset are ignored', async () => {
+test('identities emitted during terminal callback are ignored', async () => {
 	const { promise, resolve } = Promise.withResolvers<void>();
 	const { fakeAuth, calls, appliedIdentities } = setup({
 		initial: identity(),
-		resetLocalClient: () => promise,
+		onSignOut: () => promise,
 	});
 	await tick();
 	fakeAuth.emit(null);
@@ -217,7 +223,26 @@ test('identities emitted during reset are ignored', async () => {
 	expect(appliedIdentities.map((applied) => applied.user.id)).toEqual([
 		'user-1',
 	]);
-	expect(calls).toEqual(['apply:user-1', 'reset']);
+	expect(calls).toEqual(['apply:user-1', 'signOut']);
+});
+
+test('binding invokes callback only; callback owns reload or cleanup', async () => {
+	let reloads = 0;
+	const { fakeAuth, calls } = setup({
+		initial: identity(),
+		onSignOut: () => {
+			calls.push('callback-body');
+		},
+		onIdentityChanged: () => {
+			reloads += 1;
+		},
+	});
+	await tick();
+	fakeAuth.emit(null);
+	await tick();
+
+	expect(reloads).toBe(0);
+	expect(calls).toEqual(['apply:user-1', 'signOut', 'callback-body']);
 });
 
 test('unsubscribe stops later auth emissions', async () => {

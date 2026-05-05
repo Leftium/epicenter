@@ -2,10 +2,8 @@ import { BearerSession, createBearerAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
-import { toast } from '@epicenter/ui/sonner';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { openOpensidian } from './browser';
 
 const session = createPersistedState({
@@ -42,16 +40,11 @@ bindAuthWorkspaceScope({
 	applyAuthIdentity(session) {
 		opensidian.encryption.applyKeys(session.encryptionKeys);
 	},
-	async resetLocalClient() {
-		try {
-			await opensidian.wipe();
-		} catch (error) {
-			toast.error('Could not wipe local data', {
-				description: extractErrorMessage(error),
-			});
-		} finally {
-			window.location.reload();
-		}
+	onSignOut() {
+		window.location.reload();
+	},
+	onIdentityChanged() {
+		window.location.reload();
 	},
 });
 

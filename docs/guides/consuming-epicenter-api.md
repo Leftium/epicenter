@@ -44,7 +44,6 @@ import { EncryptionKeys } from '@epicenter/encryption';
 import { createPersistedState } from '@epicenter/svelte';
 import * as Y from 'yjs';
 import { type } from 'arktype';
-import { extractErrorMessage } from 'wellcrafted/error';
 
 const appTables = {
 	notes: defineTable(
@@ -132,16 +131,14 @@ bindAuthWorkspaceScope({
 	applyAuthIdentity(identity) {
 		workspace.encryption.applyKeys(identity.encryptionKeys);
 	},
-	async resetLocalClient() {
-		try {
-			await workspace.wipe();
-		} catch (error) {
-			console.error('Could not wipe local data', extractErrorMessage(error));
-		} finally {
-			window.location.reload();
-		}
+	onSignOut() {
+		window.location.reload();
+	},
+	onIdentityChanged() {
+		window.location.reload();
 	},
 });
 ```
 
 The `ydoc.guid` becomes the sync room name. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin.
+In browser apps, both terminal auth callbacks usually reload the page. The separate names make the sign-out and account-switch cases testable, observable, and overridable on platforms that do not use `window.location.reload()`.

@@ -67,27 +67,24 @@ bindAuthWorkspaceScope({
 		tabManager.encryption.applyKeys(identity.encryptionKeys);
 		void registerDevice();
 	},
-	async resetLocalClient() {
-		try {
-			await tabManager.wipe();
-		} catch (error) {
-			toast.error('Could not wipe local data', {
-				description: extractErrorMessage(error),
-			});
-		} finally {
-			window.location.reload();
-		}
+	onSignOut() {
+		window.location.reload();
+	},
+	onIdentityChanged() {
+		window.location.reload();
 	},
 });
 ```
 The order matters.
 The binding calls `applyAuthIdentity(identity)` when a signed-in identity is active.
+The terminal callbacks are intentionally named separately even when both bodies reload today. That gives tests, telemetry, and non-browser platforms a precise hook without coupling sign-out to local data deletion.
 
 ## Key lifecycle in the current code
 Keys are definitely loaded on login.
 That part is explicit.
-Logout is less clean than the high-level comments suggest.
-The reviewed code clears the auth session and asks each app to reset its local browser client, but it does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`.
+Logout reloads the browser client after the auth session changes.
+It does not wipe local IndexedDB data.
+The reviewed code still does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`; the page reload is the current key-drop boundary.
 The logout path in the app clients is:
 ```ts
 bindAuthWorkspaceScope({
@@ -95,23 +92,18 @@ bindAuthWorkspaceScope({
 	applyAuthIdentity(identity) {
 		workspace.encryption.applyKeys(identity.encryptionKeys);
 	},
-	async resetLocalClient() {
-		try {
-			await workspace.wipe();
-		} catch (error) {
-			toast.error('Could not wipe local data', {
-				description: extractErrorMessage(error),
-			});
-		} finally {
-			window.location.reload();
-		}
+	onSignOut() {
+		window.location.reload();
+	},
+	onIdentityChanged() {
+		window.location.reload();
 	},
 });
 ```
 So these points are implemented and verifiable:
 - keys are loaded on login
-- app reset code wipes the configured local IndexedDB stores on logout or user switch
-- reset destroys the workspace document before local storage is cleared, which shuts down attached sync paths
+- sign-out and identity switch reload the browser client
+- owner-scoped IndexedDB data remains available for the same authenticated owner after reload
 This point is not visible as an explicit step in the reviewed code:
 - clearing the in-memory encryption state after logout
 That gap matters because the encrypted wrapper exposes `activateEncryption()` but no `deactivateEncryption()`.
@@ -253,5 +245,5 @@ The trust model is also clear.
 This is not a zero-knowledge design.
 The auth server can derive per-user transport keys from `ENCRYPTION_SECRETS`, while the sync relay forwards ciphertext values rather than plaintext values.
 The sharp edge is logout behavior.
-App reset hooks wipe their configured local IndexedDB stores on logout or user switch, but an explicit in-memory key deactivation path is not present in the reviewed code.
+App auth-transition hooks reload the browser client on logout or user switch, but an explicit in-memory key deactivation path is not present in the reviewed code.
 If you are deciding whether this architecture fits your threat model, focus on that line: the sync relay handles ciphertext values, but the deployment that owns `ENCRYPTION_SECRETS` remains inside the trust boundary.

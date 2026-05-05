@@ -800,15 +800,16 @@ bindAuthWorkspaceScope({
 });
 ```
 
-- [ ] **7.1** `packages/auth-workspace/src/index.ts`: change `AuthWorkspaceScopeOptions` type. Replace `resetLocalClient: () => Promise<void>` with two required fields: `onSignOut: () => void | Promise<void>` and `onIdentityChanged: () => void | Promise<void>`.
-- [ ] **7.2** `packages/auth-workspace/src/index.ts`: in `processIdentity`:
+- [x] **7.1** `packages/auth-workspace/src/index.ts`: change `AuthWorkspaceScopeOptions` type. Replace `resetLocalClient: () => Promise<void>` with two required fields: `onSignOut: () => void | Promise<void>` and `onIdentityChanged: () => void | Promise<void>`.
+- [x] **7.2** `packages/auth-workspace/src/index.ts`: in `processIdentity`:
   - When `identity === null && appliedUserId !== null` -> `await onSignOut()`. Do NOT call any local-data wipe. The IDB stays.
   - When `identity !== null && appliedUserId !== null && appliedUserId !== userId` -> `await onIdentityChanged()`. Do NOT call any local-data wipe. The new user's scoped IDB will open after reload.
-- [ ] **7.3** Drain semantics: callbacks fire on terminal transitions and the binding stops processing further identity changes for the current page lifetime (a reload is expected, but the binding shouldn't depend on it actually happening: fields like `isResetting` keep the existing single-shot drain behavior, just renamed).
-- [ ] **7.4** `packages/auth-workspace/src/index.test.ts`: rewrite tests around the new callbacks. Add a test asserting that NEITHER callback's body is invoked by the binding itself (the binding only fires the callback; the callback decides whether to reload).
-- [ ] **7.5** Update the 5 callers (`apps/fuji/src/lib/fuji/client.ts`, `apps/honeycrisp/src/lib/honeycrisp/client.ts`, `apps/opensidian/src/lib/opensidian/client.ts`, `apps/tab-manager/src/lib/tab-manager/client.ts`, `apps/zhongwen/src/lib/zhongwen/client.ts`). Body for each callback is `window.location.reload()` for now. Apps may diverge later; today they don't need to.
-- [ ] **7.6** Delete each app's sign-out-only `wipe()` path if no consumer remains (grep first). Keep or replace low-level local-clear helpers needed by Phase 8's explicit "Forget this device" action.
-- [ ] **7.7** Update `docs/encryption.md` and `docs/guides/consuming-epicenter-api.md` examples to show the two-callback shape. Explain in prose: both bodies will usually be `window.location.reload()`; the seams exist for naming, tests, platform overrides, and telemetry.
+- [x] **7.3** Drain semantics: callbacks fire on terminal transitions and the binding stops processing further identity changes for the current page lifetime (a reload is expected, but the binding shouldn't depend on it actually happening: fields like `isResetting` keep the existing single-shot drain behavior, just renamed).
+- [x] **7.4** `packages/auth-workspace/src/index.test.ts`: rewrite tests around the new callbacks. Add a test asserting that NEITHER callback's body is invoked by the binding itself (the binding only fires the callback; the callback decides whether to reload).
+- [x] **7.5** Update the 5 callers (`apps/fuji/src/lib/fuji/client.ts`, `apps/honeycrisp/src/lib/honeycrisp/client.ts`, `apps/opensidian/src/lib/opensidian/client.ts`, `apps/tab-manager/src/lib/tab-manager/client.ts`, `apps/zhongwen/src/lib/zhongwen/client.ts`). Body for each callback is `window.location.reload()` for now. Apps may diverge later; today they don't need to.
+- [x] **7.6** Delete each app's sign-out-only `wipe()` path if no consumer remains (grep first). Keep or replace low-level local-clear helpers needed by Phase 8's explicit "Forget this device" action.
+  > **Note**: Client sign-out paths no longer call `wipe()`. Low-level bundle `wipe()` helpers remain because Phase 8 needs explicit local cleanup.
+- [x] **7.7** Update `docs/encryption.md` and `docs/guides/consuming-epicenter-api.md` examples to show the two-callback shape. Explain in prose: both bodies will usually be `window.location.reload()`; the seams exist for naming, tests, platform overrides, and telemetry.
 
 ### Phase 8: Add explicit local cleanup
 

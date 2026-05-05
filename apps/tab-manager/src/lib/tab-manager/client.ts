@@ -1,11 +1,9 @@
 import { createBearerAuth } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { toast } from '@epicenter/ui/sonner';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { storage } from '@wxt-dev/storage';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { session } from '$lib/auth';
 import type { DeviceId } from '$lib/workspace/definition';
 import { openTabManager } from './extension';
@@ -81,16 +79,11 @@ bindAuthWorkspaceScope({
 		tabManager.encryption.applyKeys(session.encryptionKeys);
 		void registerDevice();
 	},
-	async resetLocalClient() {
-		try {
-			await tabManager.wipe();
-		} catch (error) {
-			toast.error('Could not wipe local data', {
-				description: extractErrorMessage(error),
-			});
-		} finally {
-			window.location.reload();
-		}
+	onSignOut() {
+		window.location.reload();
+	},
+	onIdentityChanged() {
+		window.location.reload();
 	},
 });
 

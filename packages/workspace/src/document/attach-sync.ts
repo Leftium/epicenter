@@ -198,7 +198,7 @@ export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc };
 export type SyncTransport = (
 	url: string,
 	protocols?: string | string[],
-) => WebSocket | null;
+) => WebSocket;
 
 export type SyncAttachmentConfig = {
 	/**
@@ -603,9 +603,7 @@ export function attachSync(
 	): Promise<'connected' | 'failed'> {
 		let ws: WebSocket;
 		try {
-			const opened = config.transport(config.url, [MAIN_SUBPROTOCOL]);
-			if (opened === null) return 'failed';
-			ws = opened;
+			ws = config.transport(config.url, [MAIN_SUBPROTOCOL]);
 		} catch {
 			return 'failed';
 		}

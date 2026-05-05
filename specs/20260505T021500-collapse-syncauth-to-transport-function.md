@@ -418,18 +418,19 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 6: Narrow `AuthClient.openWebSocket` to non-null
 
-- [ ] **6.1** In `packages/auth/src/create-auth.ts`:
+- [x] **6.1** In `packages/auth/src/create-auth.ts`:
   - Change the `AuthClient.openWebSocket` signature (lines 100-103) to return `WebSocket` (drop `| null`).
   - Update the bearer impl (line 203): `if (session === null) throw new Error('[auth] openWebSocket called with no session — provider gate failed')` instead of returning null.
   - Update the cookie impl (line 262): same throw on `currentIdentity === null`.
   - Update the `AuthCoreConfig.openWebSocket` type (lines 278-281).
-- [ ] **6.2** Update the JSDoc on `AuthClient.openWebSocket` to drop the "Returns null when no credentials" wording. State the new contract: "Caller must have proven signed-in; throws otherwise."
-- [ ] **6.3** Update `packages/auth/src/create-auth.test.ts`:
+- [x] **6.2** Update the JSDoc on `AuthClient.openWebSocket` to drop the "Returns null when no credentials" wording. State the new contract: "Caller must have proven signed-in; throws otherwise."
+- [x] **6.3** Update `packages/auth/src/create-auth.test.ts`:
   - Drop the `'openWebSocket returns null signed out'` assertion (line 358-362). Replace with an assertion that calling without a session throws.
   - Update the `'cookie openWebSocket'` test (line 429) similarly.
-- [ ] **6.4** Update `packages/auth/src/contract.test.ts` (line 344) where it checks the cookie return value.
-- [ ] **6.5** Update `packages/auth-workspace/src/index.test.ts` (line 94): the mock `openWebSocket` no longer needs to model null returns.
-- [ ] **6.6** Verify: `bun run --filter @epicenter/auth typecheck` and `test` pass. `bun run --filter @epicenter/auth-workspace typecheck` and `test` pass.
+- [x] **6.4** Update `packages/auth/src/contract.test.ts` (line 344) where it checks the cookie return value.
+- [x] **6.5** Update `packages/auth-workspace/src/index.test.ts` (line 94): the mock `openWebSocket` no longer needs to model null returns.
+- [x] **6.6** Verify: `bun run --filter @epicenter/auth typecheck` and `test` pass. `bun run --filter @epicenter/auth-workspace typecheck` and `test` pass.
+  > Note: `@epicenter/auth-workspace` has no package `test` script, so verification used `bun test packages/auth-workspace/src`.
 
 ### Wave 7: Documentation
 

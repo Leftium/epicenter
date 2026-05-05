@@ -227,6 +227,7 @@ export {
 	type SyncFailedReason,
 	type SyncRpcAttachment,
 	type SyncStatus,
+	type SyncTransport,
 	toWsUrl,
 	type WaitForBarrier,
 } from './document/attach-sync.js';

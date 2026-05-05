@@ -192,6 +192,15 @@ export type WaitForBarrier =
 export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc };
 
 /**
+ * Open an authenticated WebSocket for sync. Callers should only construct
+ * workspace sync after proving the user is signed in.
+ */
+export type SyncTransport = (
+	url: string,
+	protocols?: string | string[],
+) => WebSocket;
+
+/**
  * Capability bundle for authenticated sync. Every `attachSync` connection
  * goes through this surface.
  */
@@ -199,17 +208,14 @@ export type SyncAuth = {
 	/**
 	 * Open a WebSocket with this transport's credentials applied. Returns null
 	 * when no credentials are currently available; the supervisor stays offline
-	 * until `onChange` fires.
+	 * until `onStateChange` fires.
 	 */
-	openWebSocket(
-		url: string,
-		protocols?: string | string[],
-	): WebSocket | null;
+	openWebSocket(url: string, protocols?: string | string[]): WebSocket | null;
 	/**
 	 * Subscribe to credential-state changes that should trigger a reconnect.
 	 * Returns an unsubscribe function.
 	 */
-	onChange(handler: () => void): () => void;
+	onStateChange(handler: () => void): () => void;
 };
 
 export type SyncAttachmentConfig = {
@@ -232,6 +238,8 @@ export type SyncAttachmentConfig = {
 	 * supervisor remains offline until credentials change.
 	 */
 	auth: SyncAuth;
+	/** Authenticated WebSocket transport. Preferred over legacy `auth`. */
+	transport?: SyncTransport;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -810,7 +818,7 @@ export function attachSync(
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
-	const unsubscribeAuthChange = config.auth.onChange(() => {
+	const unsubscribeAuthChange = config.auth.onStateChange(() => {
 		queueMicrotask(reconnect);
 	});
 

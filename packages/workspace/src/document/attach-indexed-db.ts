@@ -37,7 +37,7 @@ export type EncryptedIndexedDbAttachment = IndexedDbAttachment & {
 	activateEncryption(keyring: ReadonlyMap<number, Uint8Array>): void;
 };
 
-export type EncryptedProviderOptions = {
+type EncryptedProviderOptions = {
 	databaseName: string;
 	keyring: ReadonlyMap<number, Uint8Array>;
 };

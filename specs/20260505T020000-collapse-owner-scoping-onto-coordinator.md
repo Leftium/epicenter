@@ -477,7 +477,8 @@ If any of those references survive in live source outside historical specs, the 
 ## Review
 
 **Completed**: 2026-05-05
-**Branch**: not committed in this session
+**Branch**: `feat/encrypted-local-workspace-storage`
+**Commit**: `2645a11a1`
 
 ### Summary
 

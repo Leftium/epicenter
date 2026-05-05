@@ -368,13 +368,13 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 - [x] **1.1** In `packages/workspace/src/document/attach-sync.ts`, add the `SyncTransport` type definition above the existing `SyncAuth` type. Export it from the file.
 - [x] **1.2** Add `transport?: SyncTransport` to `SyncAttachmentConfig` (optional during the migration; required in wave 4). Keep `auth?: SyncAuth` for now so existing consumers compile.
 - [x] **1.3** Re-export `SyncTransport` from `packages/workspace/src/index.ts`.
-- [ ] **1.4** Verify: `bun run --filter @epicenter/workspace typecheck` passes. No behavior change yet.
+- [x] **1.4** Verify: `bun run --filter @epicenter/workspace typecheck` passes. No behavior change yet.
 
 ### Wave 2: Migrate `attachSync` internals to prefer `transport`
 
-- [ ] **2.1** In `attemptConnection` (around line 619), change the WebSocket construction to: prefer `config.transport` if present, fall back to `config.auth.openWebSocket`. The `'no-credential'` branch still applies only to the legacy path.
-- [ ] **2.2** In the `unsubscribeAuthChange` block (around line 810), make it conditional: only subscribe if `config.auth` is provided (the new `transport`-only path skips it).
-- [ ] **2.3** Verify: workspace tests still pass. Provider tests still pass.
+- [x] **2.1** In `attemptConnection` (around line 619), change the WebSocket construction to: prefer `config.transport` if present, fall back to `config.auth.openWebSocket`. The `'no-credential'` branch still applies only to the legacy path.
+- [x] **2.2** In the `unsubscribeAuthChange` block (around line 810), make it conditional: only subscribe if `config.auth` is provided (the new `transport`-only path skips it).
+- [x] **2.3** Verify: workspace tests still pass. Provider tests still pass.
 
 ### Wave 3: Migrate consumers
 

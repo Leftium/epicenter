@@ -237,7 +237,7 @@ export type SyncAttachmentConfig = {
 	 * `auth.openWebSocket` means no credential is available yet, so the
 	 * supervisor remains offline until credentials change.
 	 */
-	auth: SyncAuth;
+	auth?: SyncAuth;
 	/** Authenticated WebSocket transport. Preferred over legacy `auth`. */
 	transport?: SyncTransport;
 	/**
@@ -632,8 +632,11 @@ export function attachSync(
 	): Promise<'connected' | 'failed' | 'no-credential'> {
 		const wsUrl = config.url;
 		const subprotocols = [MAIN_SUBPROTOCOL];
-		const ws = config.auth.openWebSocket(wsUrl, subprotocols);
+		const ws = config.transport
+			? config.transport(wsUrl, subprotocols)
+			: config.auth?.openWebSocket(wsUrl, subprotocols);
 		if (ws === null) return 'no-credential';
+		if (ws === undefined) throw new Error('[attachSync] missing transport');
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
@@ -818,9 +821,11 @@ export function attachSync(
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
-	const unsubscribeAuthChange = config.auth.onStateChange(() => {
-		queueMicrotask(reconnect);
-	});
+	const unsubscribeAuthChange = config.auth
+		? config.auth.onStateChange(() => {
+				queueMicrotask(reconnect);
+			})
+		: () => {};
 
 	// Gate the first connection on `waitFor` (typically idb.whenLoaded).
 	// If `waitFor` rejects, log but still start: better to try syncing than

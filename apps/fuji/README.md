@@ -21,14 +21,16 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
-Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `bindAuthWorkspaceScope(...)`, so encryption keys are applied in one place and terminal auth changes reload the page while sync reacts to auth changes through `attachSync`.
+Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the provider, so encryption keys are applied in one place and terminal auth changes reload the page. Sync only receives the authenticated WebSocket transport.
 
 ```ts
-export function openFuji({ auth }: { auth: AuthClient }) {
-  const identity = auth.identity;
-  if (identity === null) {
-    throw new Error('openFuji requires signed-in auth.identity.');
-  }
+export function openFuji({
+  identity,
+  transport,
+}: {
+  identity: AuthIdentity;
+  transport: SyncTransport;
+}) {
   const userId = identity.user.id;
   const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
 
@@ -42,7 +44,7 @@ export function openFuji({ auth }: { auth: AuthClient }) {
   const sync = attachSync(ydoc, {
     url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
-    auth,
+    transport,
   });
 
   return {
@@ -58,7 +60,7 @@ export function openFuji({ auth }: { auth: AuthClient }) {
 export const workspace = openFuji();
 ```
 
-`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `auth.identity` and `bindAuthWorkspaceScope` in `apps/fuji/src/lib/fuji/client.ts`, where the app composes key application and page reload for sign-out or identity switch. Local cleanup is a separate explicit action, not part of sign-out.
+`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `auth.state` and `bindAuthWorkspaceScope` in `apps/fuji/src/lib/fuji/client.ts`, where the app composes key application and page reload for sign-out or identity switch. Local cleanup is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/client.ts`.
 

@@ -43,9 +43,12 @@ export function openBlog() {
 	const tables = attachTables(ydoc, { posts });
 	const kv = attachKv(ydoc, {});
 	const idb = attachIndexedDb(ydoc);
+	const transport = (url: string, protocols?: string | string[]) =>
+		new WebSocket(url, protocols);
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
+		transport,
 	});
 
 	return {
@@ -137,20 +140,20 @@ import {
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
-import type { AuthClient } from '@epicenter/auth';
+import type { AuthClient, AuthIdentity } from '@epicenter/auth';
+import type { SyncTransport } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
-	auth,
+	identity,
+	transport,
 }: {
-	auth: AuthClient;
+	identity: AuthIdentity;
+	transport: SyncTransport;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
-	const userId = auth.identity?.user.id;
-	if (userId === undefined) {
-		throw new Error('openApp requires signed-in auth.identity.');
-	}
+	const userId = identity.user.id;
 
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(appTables);
@@ -168,7 +171,7 @@ export function openApp({
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		auth,
+		transport,
 		awareness,
 	});
 	const actions = {};
@@ -195,7 +198,10 @@ export function openApp({
 	};
 }
 
-export const workspace = openApp({ auth });
+export const workspace = openApp({
+	identity,
+	transport: auth.openWebSocket,
+});
 ```
 
 The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.
@@ -873,9 +879,12 @@ function openTabs() {
 	const tables = attachTables(ydoc, { tabs });
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
+	const transport = (url: string, protocols?: string | string[]) =>
+		new WebSocket(url, protocols);
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://sync.epicenter.so/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
+		transport,
 	});
 
 	return {

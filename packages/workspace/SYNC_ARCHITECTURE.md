@@ -151,10 +151,12 @@ function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
 	const idb = attachIndexedDb(ydoc);
+	const transport = (url: string, protocols?: string | string[]) =>
+		new WebSocket(url, protocols);
 	// Connect to ALL sync nodes for maximum resilience
-	const syncDesktop = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: idb.whenLoaded });
-	const syncLaptop = attachSync(ydoc, { url: SYNC_NODES.laptop, waitFor: idb.whenLoaded });
-	const syncCloud = attachSync(ydoc, { url: SYNC_NODES.cloud, waitFor: idb.whenLoaded });
+	const syncDesktop = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: idb.whenLoaded, transport });
+	const syncLaptop = attachSync(ydoc, { url: SYNC_NODES.laptop, waitFor: idb.whenLoaded, transport });
+	const syncCloud = attachSync(ydoc, { url: SYNC_NODES.cloud, waitFor: idb.whenLoaded, transport });
 	return { id, ydoc, tables, idb, syncDesktop, syncLaptop, syncCloud, /* ... */ };
 }
 
@@ -171,8 +173,10 @@ function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
 	const idb = attachIndexedDb(ydoc);
+	const transport = (url: string, protocols?: string | string[]) =>
+		new WebSocket(url, protocols);
 	// Browser only needs to connect to its local server
-	const sync = attachSync(ydoc, { url: SYNC_NODES.localhost, waitFor: idb.whenLoaded });
+	const sync = attachSync(ydoc, { url: SYNC_NODES.localhost, waitFor: idb.whenLoaded, transport });
 	return { id, ydoc, tables, idb, sync, /* ... */ };
 }
 
@@ -377,7 +381,7 @@ Understanding the supervisor is the difference between "WebSocket reconnection j
 The base sync attachment does four jobs (in `packages/workspace/src/document/attach-sync.ts`):
 
 ```
-attachSync(doc, { url, getToken, waitFor: idb, awareness })
+attachSync(doc, { url, transport, waitFor: idb, awareness })
         │
         ├── 1. Pick the Y.Doc from a doc or doc bundle
         │
@@ -399,7 +403,7 @@ const awareness = attachAwareness(ydoc, {
 	schema: { peer: PeerIdentity },
 	initial: { peer: { id: 'macbook-pro', name: 'MacBook Pro', platform: 'node' } },
 });
-const sync = attachSync(ydoc, { url, awareness });
+const sync = attachSync(ydoc, { url, transport, awareness });
 ```
 
 RPC attaches later:
@@ -568,10 +572,9 @@ intent. `reconnect()` replaces it with a fresh child controller before starting
 the supervisor again, so a stale await cannot open a socket for an old cycle.
 
 After awaited boundaries, the loop checks that the captured signal is still the
-current cycle signal. Without this thread, a stale token from an awaited
-`getToken()` could be used to open a connection after the user asked to close, or
-two supervisor loops could run at the same time after a reconnect during
-handshake.
+current cycle signal. Without this thread, a stale connection attempt could open
+a socket after the user asked to close, or two supervisor loops could run at the
+same time after a reconnect during handshake.
 
 ## Lifecycle promises
 
@@ -676,7 +679,7 @@ published by peer "macbook-pro" (a tab-manager instance).
 t=0ms      attachAwareness(ydoc, { schema, initial })
               └─ publishes local peer state on the awareness attachment
 
-t=1ms      attachSync(doc, { url, getToken, waitFor: idb, awareness })
+t=1ms      attachSync(doc, { url, transport, waitFor: idb, awareness })
               ├─ wires ydoc.on('updateV2')
               ├─ wires awareness.raw.on('update')
               └─ kicks off async waitFor → ensureSupervisor()
@@ -689,8 +692,8 @@ t=2ms      sync.attachRpc(actions)
 
 t=~10ms    idb.whenLoaded resolves (typical hot start)
 
-t=~10ms    supervisor: getToken() → token
-           supervisor: new WebSocket(url, [main, bearer.<token>])
+t=~10ms    supervisor: transport(url, [main])
+           supervisor: new WebSocket(...)
 
            [CONNECT_TIMEOUT_MS = 15s timer running]
 

@@ -420,7 +420,7 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 - [x] **6.1** In `packages/auth/src/create-auth.ts`:
   - Change the `AuthClient.openWebSocket` signature (lines 100-103) to return `WebSocket` (drop `| null`).
-  - Update the bearer impl (line 203): `if (session === null) throw new Error('[auth] openWebSocket called with no session — provider gate failed')` instead of returning null.
+  - Update the bearer impl (line 203): `if (session === null) throw new Error('[auth] openWebSocket called with no session : provider gate failed')` instead of returning null.
   - Update the cookie impl (line 262): same throw on `currentIdentity === null`.
   - Update the `AuthCoreConfig.openWebSocket` type (lines 278-281).
 - [x] **6.2** Update the JSDoc on `AuthClient.openWebSocket` to drop the "Returns null when no credentials" wording. State the new contract: "Caller must have proven signed-in; throws otherwise."
@@ -434,16 +434,16 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 7: Documentation
 
-- [ ] **7.1** Update `packages/workspace/SYNC_ARCHITECTURE.md` (if it documents the `SyncAuth` shape).
-- [ ] **7.2** Update `packages/workspace/README.md` and `packages/workspace/src/document/README.md` with new `attachSync` examples.
-- [ ] **7.3** Update `apps/fuji/README.md` with the new `openFuji` signature.
-- [ ] **7.4** Update `docs/architecture.md` and `docs/guides/consuming-epicenter-api.md`.
-- [ ] **7.5** Update `.agents/skills/auth/SKILL.md` and `.agents/skills/workspace-app-layout/SKILL.md`.
-- [ ] **7.6** Mark the prior spec `specs/20260504T185711-attach-sync-auth-namespace.md` as superseded by this one (add a note pointing here).
+- [x] **7.1** Update `packages/workspace/SYNC_ARCHITECTURE.md` (if it documents the `SyncAuth` shape).
+- [x] **7.2** Update `packages/workspace/README.md` and `packages/workspace/src/document/README.md` with new `attachSync` examples.
+- [x] **7.3** Update `apps/fuji/README.md` with the new `openFuji` signature.
+- [x] **7.4** Update `docs/architecture.md` and `docs/guides/consuming-epicenter-api.md`.
+- [x] **7.5** Update `.agents/skills/auth/SKILL.md` and `.agents/skills/workspace-app-layout/SKILL.md`.
+- [x] **7.6** Mark the prior spec `specs/20260504T185711-attach-sync-auth-namespace.md` as superseded by this one (add a note pointing here).
 
 ### Wave 8: Final verification
 
-- [ ] **8.1** Workspace-wide grep — all of these must return zero hits in non-spec, non-historical-doc files:
+- [ ] **8.1** Workspace-wide grep : all of these must return zero hits in non-spec, non-historical-doc files:
   - `SyncAuth`
   - `'no-credential'`
   - `unsubscribeAuthChange`
@@ -542,14 +542,14 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ## References
 
-- `packages/workspace/src/document/attach-sync.ts` — primary file under refactor (lines 194-231, 572-625, 808-815)
-- `packages/auth/src/create-auth.ts` — `AuthClient` definition + impls (lines 68-106, 173-211, 257-267, 327-403)
-- `packages/auth/src/create-auth.test.ts` — auth client tests to migrate (lines 358, 429)
-- `packages/auth/src/contract.test.ts` — cross-factory contract tests (line 344)
-- `packages/auth-workspace/src/index.ts` + `index.test.ts` — layout-level orchestrator (continues to use `onStateChange`; not in scope to change)
-- `apps/fuji/src/lib/fuji/browser.ts` — primary consumer (`openFuji`)
-- `apps/fuji/src/lib/components/FujiWorkspaceProvider.svelte` — provider that gates on signed-in identity
-- `apps/api/src/auth/create-auth.ts` — Better Auth server config (session lifetime / roll cadence)
-- `specs/20260504T185711-attach-sync-auth-namespace.md` — predecessor spec that introduced `SyncAuth`; will be marked superseded
-- `specs/20260505T100000-auth-state-machine-cleanup-and-provider-migration.md` — companion spec on provider-level auth gating
+- `packages/workspace/src/document/attach-sync.ts` : primary file under refactor (lines 194-231, 572-625, 808-815)
+- `packages/auth/src/create-auth.ts` : `AuthClient` definition + impls (lines 68-106, 173-211, 257-267, 327-403)
+- `packages/auth/src/create-auth.test.ts` : auth client tests to migrate (lines 358, 429)
+- `packages/auth/src/contract.test.ts` : cross-factory contract tests (line 344)
+- `packages/auth-workspace/src/index.ts` + `index.test.ts` : layout-level orchestrator (continues to use `onStateChange`; not in scope to change)
+- `apps/fuji/src/lib/fuji/browser.ts` : primary consumer (`openFuji`)
+- `apps/fuji/src/lib/components/FujiWorkspaceProvider.svelte` : provider that gates on signed-in identity
+- `apps/api/src/auth/create-auth.ts` : Better Auth server config (session lifetime / roll cadence)
+- `specs/20260504T185711-attach-sync-auth-namespace.md` : predecessor spec that introduced `SyncAuth`; will be marked superseded
+- `specs/20260505T100000-auth-state-machine-cleanup-and-provider-migration.md` : companion spec on provider-level auth gating
 - Skills: `cohesive-clean-breaks`, `one-sentence-test`, `factory-function-composition`, `specification-writing`

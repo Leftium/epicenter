@@ -97,16 +97,14 @@ import { auth } from './auth';
 function openBlog() {
   const ydoc = new Y.Doc({ guid: 'blog' });
   const tables = attachTables(ydoc, myTables);
-  const userId = auth.identity?.user.id;
-  if (userId === undefined) {
-    throw new Error('openBlog requires signed-in auth.identity.');
-  }
+  if (auth.state.status !== 'signed-in') return null;
+  const userId = auth.state.identity.user.id;
 
   const idb = attachIndexedDb(ydoc);
   attachOwnedBroadcastChannel(ydoc, { userId });
   const sync = attachSync(ydoc, {
     url: `wss://api.example.com/workspaces/${ydoc.guid}`,
-    auth,
+    transport: auth.openWebSocket,
     waitFor: idb.whenLoaded,
   });
 

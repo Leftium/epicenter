@@ -49,7 +49,7 @@ type AuthClient = {
 	readonly whenReady: Promise<void>;
 	onChange(fn: (identity: AuthIdentity | null) => void): () => void;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
-	openWebSocket(url: string | URL, protocols?: string | string[]): WebSocket | null;
+	openWebSocket(url: string | URL, protocols?: string | string[]): WebSocket;
 };
 ```
 
@@ -115,7 +115,7 @@ bindAuthWorkspaceScope({
 });
 ```
 
-Each `attachSync` is independently auth-aware through its `auth` namespace; no sync fan-out is needed. Keep destructive reset policy inside `resetLocalClient()`.
+Each `attachSync` receives a transport function. Keep destructive reset policy inside `resetLocalClient()`.
 
 ## Sync Authentication
 
@@ -125,12 +125,12 @@ Workspace sync takes auth capabilities, not tokens:
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 	waitFor: idb.whenLoaded,
-	auth,
+	transport: auth.openWebSocket,
 	awareness,
 });
 ```
 
-`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. Both factories return `null` from `openWebSocket` when no credentials are available; `attachSync` stays offline until the next `auth.onChange` event. `attachSync` never imports from `@epicenter/auth`, never reads a token, and reconnects when `auth.onChange` fires.
+`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. Both factories throw from `openWebSocket` when no credentials are available. Callers must prove signed-in before constructing a workspace. `attachSync` never imports from `@epicenter/auth`, never reads a token, and never subscribes to auth state.
 
 `auth.fetch` follows the same transport rule internally:
 

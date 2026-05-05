@@ -110,9 +110,12 @@ const app = defineDocument((id: string) => {
 	const tables = attachTables(ydoc, { files });
 	const kv = attachKv(ydoc, { themeMode });
 	const idb = attachIndexedDb(ydoc);
+	const transport = (url: string, protocols?: string | string[]) =>
+		new WebSocket(url, protocols);
 	const sync = attachSync(ydoc, {
-		url: (docId) => toWsUrl(`https://sync.example.com/workspaces/${docId}`),
+		url: toWsUrl(`https://sync.example.com/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
+		transport,
 	});
 	return { id, ydoc, tables, kv, idb, sync, /* ... */ };
 });
@@ -224,7 +227,7 @@ const opensidian = defineDocument((id: string) => {
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
-		auth,
+		transport: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
 	});
 	const sqliteIndex = createSqliteIndex({ ydoc, tables });

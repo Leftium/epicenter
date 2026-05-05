@@ -67,7 +67,15 @@ function openMyAppDoc({
 	return { ydoc, encryption, tables, kv };
 }
 
-function openMyApp({ auth, peer }: { auth: AuthClient; peer: PeerIdentity }) {
+function openMyApp({
+	auth,
+	peer,
+	transport,
+}: {
+	auth: AuthClient;
+	peer: PeerIdentity;
+	transport: SyncTransport;
+}) {
 	const identity = auth.identity;
 	if (identity === null) {
 		throw new Error('openMyApp requires signed-in auth.identity. Await auth.whenReady first.');
@@ -84,7 +92,7 @@ function openMyApp({ auth, peer }: { auth: AuthClient; peer: PeerIdentity }) {
 	});
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${doc.ydoc.guid}`),
-		auth,
+		transport,
 		waitFor: idb.whenLoaded,
 		awareness,
 	});
@@ -117,6 +125,7 @@ if (auth.identity === null) {
 
 export const workspace = openMyApp({
 	auth,
+	transport: auth.openWebSocket,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'My app',

@@ -18,11 +18,13 @@ import {
 	base64ToBytes,
 	buildEncryptionKeys,
 	bytesToBase64,
+	decryptBytes,
 	decryptValue,
 	deriveKeyFromPassword,
 	deriveUserEncryptionKeys,
 	deriveWorkspaceKey,
 	type EncryptedBlob,
+	encryptBytes,
 	encryptionKeysEqual,
 	encryptValue,
 	formatEncryptionSecrets,
@@ -122,6 +124,108 @@ describe('encryptValue and decryptValue', () => {
 		expect(() =>
 			decryptValue(encrypted, key, new TextEncoder().encode('entry:b')),
 		).toThrow();
+	});
+});
+
+describe('encryptBytes and decryptBytes', () => {
+	test('encrypt then decrypt returns original bytes', () => {
+		const key = randomBytes(32);
+		const plaintext = new Uint8Array([0, 1, 2, 3, 254, 255]);
+		const encrypted = encryptBytes({ key, keyVersion: 4, plaintext });
+
+		expect(
+			decryptBytes({
+				keyring: new Map([[4, key]]),
+				blob: encrypted,
+			}),
+		).toEqual(plaintext);
+		expect(encrypted[0]).toBe(1);
+		expect(encrypted[1]).toBe(4);
+		expect(encrypted.length).toBeGreaterThanOrEqual(42);
+	});
+
+	test('each encryption uses a fresh nonce', () => {
+		const key = randomBytes(32);
+		const plaintext = new Uint8Array([1, 2, 3]);
+		const encrypted1 = encryptBytes({ key, keyVersion: 1, plaintext });
+		const encrypted2 = encryptBytes({ key, keyVersion: 1, plaintext });
+
+		expect(encrypted1).not.toEqual(encrypted2);
+		expect(
+			decryptBytes({ keyring: new Map([[1, key]]), blob: encrypted1 }),
+		).toEqual(plaintext);
+		expect(
+			decryptBytes({ keyring: new Map([[1, key]]), blob: encrypted2 }),
+		).toEqual(plaintext);
+	});
+
+	test('decryption fails with the wrong key', () => {
+		const encrypted = encryptBytes({
+			key: randomBytes(32),
+			keyVersion: 1,
+			plaintext: new Uint8Array([1, 2, 3]),
+		});
+
+		expect(() =>
+			decryptBytes({
+				keyring: new Map([[1, randomBytes(32)]]),
+				blob: encrypted,
+			}),
+		).toThrow();
+	});
+
+	test('decryption fails when the key version is missing', () => {
+		const encrypted = encryptBytes({
+			key: randomBytes(32),
+			keyVersion: 7,
+			plaintext: new Uint8Array([1, 2, 3]),
+		});
+
+		expect(() =>
+			decryptBytes({
+				keyring: new Map([[1, randomBytes(32)]]),
+				blob: encrypted,
+			}),
+		).toThrow('key version 7 is not in the keyring');
+	});
+
+	test('tampered ciphertext throws', () => {
+		const key = randomBytes(32);
+		const encrypted = encryptBytes({
+			key,
+			keyVersion: 1,
+			plaintext: new Uint8Array([1, 2, 3]),
+		});
+		const tampered = new Uint8Array(encrypted);
+		tampered[26] = (tampered[26] as number) ^ 0xff;
+
+		expect(() =>
+			decryptBytes({
+				keyring: new Map([[1, key]]),
+				blob: tampered as EncryptedBlob,
+			}),
+		).toThrow();
+	});
+
+	test('old-key blob decrypts when the keyring includes the old version', () => {
+		const oldKey = randomBytes(32);
+		const newKey = randomBytes(32);
+		const plaintext = new Uint8Array([9, 8, 7]);
+		const encrypted = encryptBytes({
+			key: oldKey,
+			keyVersion: 1,
+			plaintext,
+		});
+
+		expect(
+			decryptBytes({
+				keyring: new Map([
+					[2, newKey],
+					[1, oldKey],
+				]),
+				blob: encrypted,
+			}),
+		).toEqual(plaintext);
 	});
 });
 

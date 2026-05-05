@@ -222,7 +222,6 @@ export {
 	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
-	type SyncAuth,
 	SyncFailedError,
 	type SyncFailedReason,
 	type SyncRpcAttachment,

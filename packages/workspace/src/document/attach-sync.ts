@@ -200,24 +200,6 @@ export type SyncTransport = (
 	protocols?: string | string[],
 ) => WebSocket | null;
 
-/**
- * Capability bundle for authenticated sync. Every `attachSync` connection
- * goes through this surface.
- */
-export type SyncAuth = {
-	/**
-	 * Open a WebSocket with this transport's credentials applied. Returns null
-	 * when no credentials are currently available; the supervisor stays offline
-	 * until `onStateChange` fires.
-	 */
-	openWebSocket(url: string, protocols?: string | string[]): WebSocket | null;
-	/**
-	 * Subscribe to credential-state changes that should trigger a reconnect.
-	 * Returns an unsubscribe function.
-	 */
-	onStateChange(handler: () => void): () => void;
-};
-
 export type SyncAttachmentConfig = {
 	/**
 	 * WebSocket URL for the room. Must use ws:/wss:. Use `toWsUrl()` to convert
@@ -232,14 +214,8 @@ export type SyncAttachmentConfig = {
 	 * full document instead of just the delta.
 	 */
 	waitFor?: WaitForBarrier;
-	/**
-	 * Authenticated transport capability. Returning null from
-	 * `auth.openWebSocket` means no credential is available yet, so the
-	 * supervisor remains offline until credentials change.
-	 */
-	auth?: SyncAuth;
-	/** Authenticated WebSocket transport. Preferred over legacy `auth`. */
-	transport?: SyncTransport;
+	/** Authenticated WebSocket transport. */
+	transport: SyncTransport;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -591,11 +567,6 @@ export function attachSync(
 			setStatus({ phase: 'connecting', retries: backoff.retries, lastError });
 
 			const result = await attemptConnection(signal);
-			if (result === 'no-credential') {
-				setStatus({ phase: 'offline' });
-				await waitForAbort(signal);
-				continue;
-			}
 			if (signal.aborted) break;
 
 			if (result === 'connected') {
@@ -629,14 +600,15 @@ export function attachSync(
 
 	async function attemptConnection(
 		signal: AbortSignal,
-	): Promise<'connected' | 'failed' | 'no-credential'> {
-		const wsUrl = config.url;
-		const subprotocols = [MAIN_SUBPROTOCOL];
-		const ws = config.transport
-			? config.transport(wsUrl, subprotocols)
-			: config.auth?.openWebSocket(wsUrl, subprotocols);
-		if (ws === null) return 'no-credential';
-		if (ws === undefined) throw new Error('[attachSync] missing transport');
+	): Promise<'connected' | 'failed'> {
+		let ws: WebSocket;
+		try {
+			const opened = config.transport(config.url, [MAIN_SUBPROTOCOL]);
+			if (opened === null) return 'failed';
+			ws = opened;
+		} catch {
+			return 'failed';
+		}
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
@@ -821,11 +793,6 @@ export function attachSync(
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
-	const unsubscribeAuthChange = config.auth
-		? config.auth.onStateChange(() => {
-				queueMicrotask(reconnect);
-			})
-		: () => {};
 
 	// Gate the first connection on `waitFor` (typically idb.whenLoaded).
 	// If `waitFor` rejects, log but still start: better to try syncing than
@@ -863,7 +830,6 @@ export function attachSync(
 					new Error('[attachSync] doc destroyed before first handshake'),
 				);
 			});
-			unsubscribeAuthChange();
 			ydoc.off('updateV2', handleDocUpdate);
 			awareness?.off('update', handleAwarenessUpdate);
 			const ws = websocket;
@@ -1051,13 +1017,6 @@ function waitForWsClose(
 			log.warn(SyncSupervisorError.CloseTimeout({ timeoutMs }));
 			resolve();
 		}, timeoutMs);
-	});
-}
-
-function waitForAbort(signal: AbortSignal): Promise<void> {
-	if (signal.aborted) return Promise.resolve();
-	return new Promise<void>((resolve) => {
-		signal.addEventListener('abort', () => resolve(), { once: true });
 	});
 }
 

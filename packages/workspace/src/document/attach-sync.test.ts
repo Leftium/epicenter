@@ -16,7 +16,7 @@ import { Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { defineMutation } from '../shared/actions.js';
 import { attachAwareness } from './attach-awareness.js';
-import { attachSync } from './attach-sync.js';
+import { attachSync, type SyncTransport } from './attach-sync.js';
 import { PeerIdentity } from './peer-identity.js';
 
 type Listener = (ev: { data: ArrayBuffer | string }) => void;
@@ -95,53 +95,15 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 	throw new Error('timeout waiting for predicate');
 }
 
-/** Trivial auth for tests that don't care about credentials, only sync mechanics. */
-function fakeAuth() {
-	return {
-		openWebSocket(url: string, protocols?: string | string[]) {
-			return new FakeWebSocket(url, protocols) as unknown as WebSocket;
-		},
-		onChange() {
-			return () => {};
-		},
-	};
-}
-
-function createCredentialSource(initiallySignedIn: boolean) {
-	let signedIn = initiallySignedIn;
-	const listeners = new Set<() => void>();
-	const calls: string[] = [];
-	const source = {
-		openWebSocket(url: string, protocols?: string | string[]) {
-			calls.push(`open:${signedIn ? 'signedIn' : 'signedOut'}`);
-			if (!signedIn) return null;
-			return new FakeWebSocket(url, protocols) as unknown as WebSocket;
-		},
-		onChange(listener: () => void) {
-			listeners.add(listener);
-			return () => {
-				calls.push('unsubscribe');
-				listeners.delete(listener);
-			};
-		},
-	};
-
-	return {
-		source,
-		calls,
-		setSignedIn(next: boolean) {
-			signedIn = next;
-			for (const listener of listeners) listener();
-		},
-	};
-}
+const fakeTransport: SyncTransport = (url, protocols) =>
+	new FakeWebSocket(url, protocols) as unknown as WebSocket;
 
 describe('attachSync split surface', () => {
 	test('sync owns lifecycle and connected status', async () => {
 		const ydoc = new Y.Doc({ guid: 'split-sync' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			auth: fakeAuth(),
+			transport: fakeTransport,
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
@@ -161,7 +123,7 @@ describe('attachSync split surface', () => {
 		const ydoc = new Y.Doc({ guid: 'split-bc-origin' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			auth: fakeAuth(),
+			transport: fakeTransport,
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
@@ -192,7 +154,7 @@ describe('attachSync split surface', () => {
 		});
 		attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			auth: fakeAuth(),
+			transport: fakeTransport,
 			awareness,
 		});
 
@@ -241,7 +203,7 @@ describe('attachSync split surface', () => {
 		const calls: unknown[] = [];
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			auth: fakeAuth(),
+			transport: fakeTransport,
 		});
 		const rpc = sync.attachRpc({
 			tabs: {
@@ -317,7 +279,7 @@ describe('attachSync split surface', () => {
 		const ydoc = new Y.Doc({ guid: 'split-system-reserved' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			auth: fakeAuth(),
+			transport: fakeTransport,
 		});
 
 		expect(() =>
@@ -329,90 +291,4 @@ describe('attachSync split surface', () => {
 		ydoc.destroy();
 	});
 
-	test('credential changes reconnect the active socket', async () => {
-		const ydoc = new Y.Doc({ guid: 'credential-reconnect' });
-		const credentials = createCredentialSource(true);
-		const sync = attachSync(ydoc, {
-			url: `ws://x/${ydoc.guid}`,
-			auth: credentials.source,
-		});
-
-		const first = await waitFor(() => FakeWebSocket.instances[0]);
-		await waitFor(() => first.readyState === FakeWebSocket.OPEN);
-		first.deliver(serverStep2Frame());
-		await sync.whenConnected;
-
-		credentials.setSignedIn(true);
-		const second = await waitFor(() => FakeWebSocket.instances[1]);
-		await waitFor(() => second.readyState === FakeWebSocket.OPEN);
-
-		expect(first.readyState).toBe(FakeWebSocket.CLOSED);
-		expect(FakeWebSocket.instances).toHaveLength(2);
-		expect(first.protocols).toEqual(['epicenter']);
-		expect(second.protocols).toEqual(['epicenter']);
-
-		ydoc.destroy();
-		await sync.whenDisposed;
-	});
-
-	test('credential subscription unsubscribes on destroy', async () => {
-		const ydoc = new Y.Doc({ guid: 'credential-destroy' });
-		const credentials = createCredentialSource(true);
-		const sync = attachSync(ydoc, {
-			url: `ws://x/${ydoc.guid}`,
-			auth: credentials.source,
-		});
-
-		await waitFor(() => FakeWebSocket.instances[0]);
-		ydoc.destroy();
-		await sync.whenDisposed;
-
-		expect(credentials.calls).toContain('unsubscribe');
-	});
-
-	test('credential changes before waitFor do not bypass startup gating', async () => {
-		const { promise: whenLoaded, resolve } = Promise.withResolvers<void>();
-		const ydoc = new Y.Doc({ guid: 'credential-wait-for' });
-		const credentials = createCredentialSource(true);
-		const sync = attachSync(ydoc, {
-			url: `ws://x/${ydoc.guid}`,
-			waitFor: whenLoaded,
-			auth: credentials.source,
-		});
-
-		credentials.setSignedIn(true);
-		await Promise.resolve();
-		expect(FakeWebSocket.instances).toHaveLength(0);
-
-		resolve();
-		const ws = await waitFor(() => FakeWebSocket.instances[0]);
-		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
-
-		expect(ws.protocols).toEqual(['epicenter']);
-
-		ydoc.destroy();
-		await sync.whenDisposed;
-	});
-
-	test('missing credentials keep sync offline until credentials change', async () => {
-		const ydoc = new Y.Doc({ guid: 'credential-wait' });
-		const credentials = createCredentialSource(false);
-		const sync = attachSync(ydoc, {
-			url: `ws://x/${ydoc.guid}`,
-			auth: credentials.source,
-		});
-
-		await waitFor(() => credentials.calls.includes('open:signedOut'));
-		expect(sync.status).toEqual({ phase: 'offline' });
-		expect(FakeWebSocket.instances).toHaveLength(0);
-
-		credentials.setSignedIn(true);
-		const ws = await waitFor(() => FakeWebSocket.instances[0]);
-		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
-
-		expect(ws.protocols).toEqual(['epicenter']);
-
-		ydoc.destroy();
-		await sync.whenDisposed;
-	});
 });

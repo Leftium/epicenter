@@ -399,22 +399,22 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 4: Make `transport` required, remove the legacy path
 
-- [ ] **4.1** In `attach-sync.ts`, change `transport?: SyncTransport` to `transport: SyncTransport`. Delete `auth?: SyncAuth` entirely.
-- [ ] **4.2** In `attemptConnection`, replace the conditional with a single line: `const ws = config.transport(config.url, [MAIN_SUBPROTOCOL]);`. Remove the `'no-credential'` return value from the function's return type. Delete the `if (ws === null) return 'no-credential';` line.
-- [ ] **4.3** In the supervisor `runLoop` (around line 583), delete the `if (result === 'no-credential')` branch. Update the `setStatus({ phase: 'offline' })` exit path so the supervisor only enters offline on `signal.aborted`.
-- [ ] **4.4** Delete the `unsubscribeAuthChange = config.auth.onStateChange(...)` block at line 810. Find and delete the matching `unsubscribeAuthChange()` call in the dispose path.
-- [ ] **4.5** Delete the `SyncAuth` type definition.
-- [ ] **4.6** Update `packages/workspace/src/index.ts`: remove `SyncAuth` from the re-exports.
-- [ ] **4.7** Update `attemptConnection`'s return type annotation: `Promise<'connected' | 'failed'>`.
-- [ ] **4.8** Verify: `bun run --filter @epicenter/workspace typecheck` passes. `attach-sync.test.ts` likely needs migration in wave 5.
+- [x] **4.1** In `attach-sync.ts`, change `transport?: SyncTransport` to `transport: SyncTransport`. Delete `auth?: SyncAuth` entirely.
+- [x] **4.2** In `attemptConnection`, replace the conditional with a single line: `const ws = config.transport(config.url, [MAIN_SUBPROTOCOL]);`. Remove the `'no-credential'` return value from the function's return type. Delete the `if (ws === null) return 'no-credential';` line.
+- [x] **4.3** In the supervisor `runLoop` (around line 583), delete the `if (result === 'no-credential')` branch. Update the `setStatus({ phase: 'offline' })` exit path so the supervisor only enters offline on `signal.aborted`.
+- [x] **4.4** Delete the `unsubscribeAuthChange = config.auth.onStateChange(...)` block at line 810. Find and delete the matching `unsubscribeAuthChange()` call in the dispose path.
+- [x] **4.5** Delete the `SyncAuth` type definition.
+- [x] **4.6** Update `packages/workspace/src/index.ts`: remove `SyncAuth` from the re-exports.
+- [x] **4.7** Update `attemptConnection`'s return type annotation: `Promise<'connected' | 'failed'>`.
+- [x] **4.8** Verify: `bun run --filter @epicenter/workspace typecheck` passes. `attach-sync.test.ts` likely needs migration in wave 5.
 
 ### Wave 5: Migrate `attachSync` tests
 
-- [ ] **5.1** In `packages/workspace/src/document/attach-sync.test.ts`:
+- [x] **5.1** In `packages/workspace/src/document/attach-sync.test.ts`:
   - Replace `fakeAuth()` (lines 99-108) with `fakeTransport: SyncTransport = (url, p) => new FakeWebSocket(url, p) as unknown as WebSocket`.
   - Update every `attachSync(ydoc, { url, auth: fakeAuth() })` to `attachSync(ydoc, { url, transport: fakeTransport })`.
   - Delete the `createCredentialSource` helper (lines 110-137) and the tests that depend on it (the four around lines 334, 360, 376, 399). These tests exercise the `null → setSignedIn → reconnect` flow that we are removing. The behavior they test no longer exists.
-- [ ] **5.2** Verify: `bun run --filter @epicenter/workspace test` passes.
+- [x] **5.2** Verify: `bun run --filter @epicenter/workspace test` passes.
 
 ### Wave 6: Narrow `AuthClient.openWebSocket` to non-null
 

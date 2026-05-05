@@ -48,8 +48,11 @@ type FetchFn = (
 	init?: RequestInit,
 ) => Promise<Response>;
 
-export function createAiChatFetch(authFetch: FetchFn): FetchFn {
-	return async (input, init) => {
+export function createAiChatFetch(authFetch: FetchFn): typeof fetch {
+	const fetchClient = async (
+		input: Parameters<typeof fetch>[0],
+		init?: Parameters<typeof fetch>[1],
+	) => {
 		const response = await authFetch(input, init);
 		if (response.ok) return response;
 
@@ -77,4 +80,8 @@ export function createAiChatFetch(authFetch: FetchFn): FetchFn {
 			`HTTP error! status: ${response.status} ${response.statusText}`,
 		);
 	};
+
+	return Object.assign(fetchClient, {
+		preconnect: fetch.preconnect?.bind(fetch) ?? (() => {}),
+	});
 }

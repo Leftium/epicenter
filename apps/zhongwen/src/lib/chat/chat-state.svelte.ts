@@ -7,10 +7,11 @@
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
-import { fromTable } from '@epicenter/svelte';
+import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
+import { auth } from '$lib/auth';
 import {
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,
@@ -19,7 +20,6 @@ import {
 } from '$lib/chat/providers';
 import { ZHONGWEN_SYSTEM_PROMPT } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { auth, zhongwen } from '$lib/zhongwen/client';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -27,18 +27,20 @@ import {
 	generateChatMessageId,
 	generateConversationId,
 } from '$lib/workspace';
+import { getZhongwen } from '$lib/zhongwen/browser';
 
 const asChatMessageId = (id: string) => id as ChatMessageId;
 
 // ─── State Factory ───────────────────────────────────────────────────────────
 
-function createChatState() {
+export function createChatState() {
+	const zhongwen = getZhongwen();
+
 	// ── Conversation List (Y.Doc-backed) ──
 
 	const conversationsMap = fromTable(zhongwen.tables.conversations);
 	const conversations = $derived(
-		[...conversationsMap.values()]
-			.sort((a, b) => b.updatedAt - a.updatedAt),
+		[...conversationsMap.values()].sort((a, b) => b.updatedAt - a.updatedAt),
 	);
 
 	/** Returns the ID to activate, either the first existing conversation or a newly created default. */
@@ -97,19 +99,16 @@ function createChatState() {
 
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
-			connection: fetchServerSentEvents(
-				`${APP_URLS.API}/ai/chat`,
-				() => ({
-					fetchClient: auth.fetch,
-					body: {
-						data: {
-							provider: metadata?.provider ?? DEFAULT_PROVIDER,
-							model: metadata?.model ?? DEFAULT_MODEL,
-							systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
-						},
+			connection: fetchServerSentEvents(`${APP_URLS.API}/ai/chat`, () => ({
+				fetchClient: createAiChatFetch(auth.fetch),
+				body: {
+					data: {
+						provider: metadata?.provider ?? DEFAULT_PROVIDER,
+						model: metadata?.model ?? DEFAULT_MODEL,
+						systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
 					},
-				}),
-			),
+				},
+			})),
 			onError: (err) => {
 				console.error(
 					'[zhongwen] stream error:',
@@ -248,10 +247,10 @@ function createChatState() {
 
 	// fromTable owns the reactive data; this observer only handles
 	// imperative handle lifecycle (creating/destroying chat instances).
-	zhongwen.tables.conversations.observe(() => {
+	const unobserveConversations = zhongwen.tables.conversations.observe(() => {
 		reconcileHandles();
 	});
-	zhongwen.tables.chatMessages.observe(() => {
+	const unobserveChatMessages = zhongwen.tables.chatMessages.observe(() => {
 		handles.get(activeConversationId)?.syncMessages();
 	});
 
@@ -334,9 +333,17 @@ function createChatState() {
 		switchTo: switchConversation,
 
 		deleteConversation,
+
+		destroy() {
+			unobserveConversations();
+			unobserveChatMessages();
+			conversationsMap.destroy();
+			for (const id of handles.keys()) {
+				destroyConversation(id);
+			}
+		},
 	};
 }
 
-export const chatState = createChatState();
-
-export type ConversationHandle = NonNullable<(typeof chatState)['active']>;
+export type ChatState = ReturnType<typeof createChatState>;
+export type ConversationHandle = NonNullable<ChatState['active']>;

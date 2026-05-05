@@ -180,11 +180,10 @@ const defaultAuthClient = createAuthClient({
 });
 
 type MachineAuthClient = typeof defaultAuthClient;
-// Narrow capability types so status/logout don't require the device plugin in tests.
-type DeviceCapableClient  = Pick<MachineAuthClient, 'device'>;
-type SessionCapableClient = Pick<MachineAuthClient, 'getSession' | 'signOut'>;
-// loginWithDeviceCode parameter:  DeviceCapableClient & SessionCapableClient
-// status / logout parameters:     SessionCapableClient
+// Use one client type throughout. Narrow Pick aliases looked tidy during
+// review, but tests construct the same Better Auth client either way, and the
+// extra types obscure the simple contract: these functions accept the machine
+// auth client.
 
 export async function loginWithDeviceCode({
   authClient = defaultAuthClient,
@@ -285,7 +284,7 @@ async function fetchBearerSession({
   authClient,
   accessToken,
 }: {
-  authClient: SessionCapableClient;
+  authClient: MachineAuthClient;
   accessToken: string;
 }): Promise<Result<BearerSession, MachineAuthRequestError>> {
   let rotatedToken: string | null = null;
@@ -387,7 +386,7 @@ async function fetchBearerSession({
 | Storage arktype (`BearerSession.assert` in `loadMachineSession`/`saveMachineSession`) | Keep | Untyped JSON blob from disk; nothing else owns this contract. |
 | `set-auth-token` rotation | Capture via `fetchOptions.onSuccess` callback | Better Auth client does not auto-rotate. Documented and supported pattern. |
 | Auth-client construction site | Module-level singleton | Measured ~1.5 ms first-create, ~0.06 ms subsequent (Better Auth 1.5.6 + better-fetch 1.1.21). Per-CLI-invocation cost is ~1-2 ms after Better Auth's already-paid ~81 ms import cost. Tests build their own and pass via `{ authClient }`. |
-| Client capability types | Narrow per function | `loginWithDeviceCode` requires device + session capability; `status` and `logout` require only session capability. Tests of `status` should not have to register `deviceAuthorizationClient()`. |
+| Client capability types | Single `MachineAuthClient` type | The narrow `Pick<MachineAuthClient, ...>` aliases were decorative. Tests construct one Better Auth client with `customFetchImpl` either way; keeping one type makes the contract easier to read. |
 | Per-request `Authorization: Bearer` header | Pass via `fetchOptions.headers` per call | Matches Better Auth's official Node CLI example. Avoids global token state inside the auth client. |
 | `EPICENTER_API_URL` | Auth client's `baseURL` | Single source of truth. |
 | Test strategy | Build a Better Auth client with `customFetchImpl: stubFetch` per test | Same control as today, expressed at the right layer. Optional: integration tests via `customFetchImpl: app.request` against a real Hono app. |
@@ -627,7 +626,7 @@ The error decomposition (`MachineAuthRequestError`, `DeviceTokenError`) is what 
    - **Recommendation**: `EPICENTER_API_URL` only, until a real consumer needs the override. Adding env knobs without a caller is feature creep.
 
 5. **Does `authClient.signOut()` accept `fetchOptions: { headers: { Authorization } }` cleanly, or do we need a different shape?**
-   - **Recommendation**: Verify in Wave 4.3 against the installed Better Auth version. If not, fall back to `authClient.$fetch('/sign-out', { method: 'POST', headers: { Authorization } })`.
+   - **Resolved**: Better Auth 1.5.6 supports this call shape. The dynamic client proxy merges `arg.fetchOptions` into the request, `/sign-out` is registered as `POST`, and `@better-fetch/fetch` applies the headers. Use `authClient.signOut({ fetchOptions: { headers: { Authorization: \`Bearer ${session.token}\` } } })` in Wave 4.3. Keep `$fetch('/sign-out', ...)` only as a fallback if local typecheck contradicts the installed package.
 
 6. **Should `loginWithDeviceCode` accept an `onPoll({ attempt, elapsedMs, nextIntervalMs })` callback for CLI progress UI?**
    - Distinct from the deleted `DevicePollOutcome` union. That was transport vocabulary; this would be UI policy.

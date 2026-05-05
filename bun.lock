@@ -450,7 +450,6 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
@@ -462,6 +461,7 @@
         "@tanstack/ai-gemini": "catalog:",
         "@tanstack/ai-grok": "catalog:",
         "@tanstack/ai-openai": "catalog:",
+        "@tanstack/ai-svelte": "^0.6.7",
         "arktype": "catalog:",
         "dompurify": "^3.3.3",
         "marked": "^17.0.5",

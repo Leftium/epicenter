@@ -1,24 +1,20 @@
-import type { AuthClient } from '@epicenter/auth';
+import type { AuthIdentity } from '@epicenter/auth';
 import {
 	attachOwnedBroadcastChannel,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
+import { createContext } from 'svelte';
 import { openZhongwen as openZhongwenDoc } from './index';
 
-export function openZhongwen({ auth }: { auth: AuthClient }) {
-	const identity = auth.identity;
-	if (identity === null) {
-		throw new Error(
-			'openZhongwen requires signed-in auth.identity. Await auth.whenReady first.',
-		);
-	}
+export function openZhongwen({ identity }: { identity: AuthIdentity }) {
 	const userId = identity.user.id;
 	const doc = openZhongwenDoc({ encryptionKeys: identity.encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+
 	return {
 		...doc,
-		idb,
+		whenLoaded: idb.whenLoaded,
 		async wipe() {
 			doc[Symbol.dispose]();
 			await idb.whenDisposed;
@@ -27,9 +23,8 @@ export function openZhongwen({ auth }: { auth: AuthClient }) {
 				ydocGuids: [doc.ydoc.guid],
 			});
 		},
-		whenLoaded: idb.whenLoaded,
-		[Symbol.dispose]() {
-			doc[Symbol.dispose]();
-		},
 	};
 }
+
+export type Zhongwen = ReturnType<typeof openZhongwen>;
+export const [getZhongwen, setZhongwen] = createContext<Zhongwen>();

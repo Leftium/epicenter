@@ -5,7 +5,9 @@
 		MessageSquareTextIcon,
 		TrashIcon,
 	} from '@lucide/svelte';
-	import { chatState } from '$lib/chat/chat-state.svelte';
+	import type { ChatState } from '$lib/chat/chat-state.svelte';
+
+	let { chatState }: { chatState: ChatState } = $props();
 </script>
 
 <Sidebar.Root collapsible="icon">

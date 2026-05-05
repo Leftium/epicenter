@@ -578,3 +578,48 @@ dropped types/surfaces, etc.
 
 See specs/20260504T230000-attach-whendisposed-honest-barriers.md.
 ```
+
+## Review
+
+**Completed**: 2026-05-04
+**Branch**: `feat/lazy-disposers-bundle-owns-wipe`
+
+### Summary
+
+The implementation restored `whenDisposed` barriers on `attachIndexedDb`, `attachSync`, and `attachYjsLog`, then migrated browser bundle `wipe()` methods, daemon bundle `Symbol.asyncDispose` bodies, tests, examples, playground configs, docs, and skill references to property awaits. `lazy()` moved back under `document/y-keyvalue`, with `y-keyvalue-lww.ts` as its only live caller.
+
+The previous spec is marked superseded. The earlier cleanups outside the attach-level barrier shape stayed in place: y-indexeddb double-binding fix, bundle-owned wipe ordering, daemon bundle async disposal, CLI duck-type slim, dropped types and surfaces, and the IndexedDB `whenSynced` ceremony fix.
+
+### Commits
+
+- `9f9a76bb5` `refactor(workspace): restore whenDisposed barriers on async attachments`
+
+### Verification
+
+Passed:
+
+```sh
+bun test packages/workspace
+bun run --filter @epicenter/workspace typecheck
+bun run --filter @epicenter/auth-workspace typecheck
+```
+
+Straggler greps were run. The targeted attachment disposer call grep is empty:
+
+```sh
+rg -n "(idb|sync|yjsLog|writer|reopen|att)\[Symbol\.asyncDispose\]\(\)" apps packages examples playground -S
+```
+
+`lazy()` imports are confined to `packages/workspace/src/document/y-keyvalue/y-keyvalue-lww.ts`, and `rg -n "shared/lazy" apps packages -S` is empty. The broad `rg -n "\[Symbol\.asyncDispose\]" apps packages -S | rg -v daemon` still reports legitimate non-attachment uses in CLI daemon runtime disposal, logger sink disposal, tests, README examples, Fuji script bundle disposal, and historical package specs.
+
+Blocked:
+
+```sh
+bun run --filter @epicenter/fuji typecheck
+bun run --filter @epicenter/honeycrisp typecheck
+bun run --filter opensidian check
+bun run --filter @epicenter/zhongwen typecheck
+bun run --filter @epicenter/tab-manager typecheck
+```
+
+The app checks fail on diagnostics outside this diff, including shared `packages/svelte-utils/src/from-table.svelte.ts`, `packages/ui/src/sonner/toast-on-error.ts`, `packages/ui` `#/utils.js` resolution, Svelte `children` prop diagnostics, and unrelated app component errors.

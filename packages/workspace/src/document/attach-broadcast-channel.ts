@@ -1,4 +1,4 @@
-import { BC_ORIGIN, SYNC_ORIGIN } from '@epicenter/sync';
+import { BC_ORIGIN, isTransportOrigin } from '@epicenter/sync';
 import * as Y from 'yjs';
 import { createOwnedYjsKey } from './local-yjs-key.js';
 
@@ -52,8 +52,7 @@ function attachBroadcastChannelWithKey(ydoc: Y.Doc, channelKey: string): void {
 	const channel = new BroadcastChannel(`yjs:${channelKey}`);
 
 	const handleUpdate = (update: Uint8Array, origin: unknown) => {
-		if (origin === BC_ORIGIN) return;
-		if (origin === SYNC_ORIGIN) return;
+		if (isTransportOrigin(origin)) return;
 		channel.postMessage(update);
 	};
 	ydoc.on('updateV2', handleUpdate);

@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
+	BC_ORIGIN,
 	decodeRpcPayload,
 	encodeAwarenessStates,
 	encodeRpcRequest,
@@ -151,6 +152,33 @@ describe('attachSync split surface', () => {
 		expect(sync.status).toEqual({ phase: 'connected' });
 		expect('rpc' in sync).toBe(false);
 		expect('peers' in sync).toBe(false);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('does not forward broadcast-channel-origin updates to the server', async () => {
+		const ydoc = new Y.Doc({ guid: 'split-bc-origin' });
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			auth: fakeAuth(),
+		});
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		const sentBeforeBroadcastOrigin = ws.sent.length;
+		ydoc.transact(() => {
+			ydoc.getText('body').insert(0, 'from bc');
+		}, BC_ORIGIN);
+		expect(ws.sent).toHaveLength(sentBeforeBroadcastOrigin);
+
+		ydoc.transact(() => {
+			ydoc.getText('body').insert(0, 'local ');
+		});
+		expect(ws.sent).toHaveLength(sentBeforeBroadcastOrigin + 1);
 
 		ydoc.destroy();
 		await sync.whenDisposed;

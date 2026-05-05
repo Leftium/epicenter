@@ -15,6 +15,7 @@ import {
 	RpcError,
 	SYNC_MESSAGE_TYPE,
 	SYNC_ORIGIN,
+	isTransportOrigin,
 	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
@@ -479,7 +480,7 @@ export function attachSync(
 	// ── Doc handlers ──
 
 	function handleDocUpdate(update: Uint8Array, origin: unknown) {
-		if (origin === SYNC_ORIGIN) return;
+		if (isTransportOrigin(origin)) return;
 		send(encodeSyncUpdate({ update }));
 	}
 

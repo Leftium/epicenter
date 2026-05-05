@@ -24,15 +24,15 @@ On the client, `@epicenter/workspace` provides the primitives: define your schem
 ```typescript
 import {
 	attachAwareness,
-	attachBroadcastChannel,
 	attachEncryption,
-	clearOwnedDocuments,
+	attachOwnedBroadcastChannel,
 	attachSync,
 	defineTable,
 	type EncryptionKeys,
 	getOrCreateInstallationId,
 	PeerIdentity,
 	toWsUrl,
+	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import type { AuthClient } from '@epicenter/auth';
@@ -76,7 +76,7 @@ function openMyApp({ auth, peer }: { auth: AuthClient; peer: PeerIdentity }) {
 	const userId = identity.user.id;
 	const doc = openMyAppDoc({ encryptionKeys: identity.encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-	attachBroadcastChannel(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
@@ -99,7 +99,7 @@ function openMyApp({ auth, peer }: { auth: AuthClient; peer: PeerIdentity }) {
 			doc.ydoc.destroy();
 			await sync.whenDisposed;
 			await idb.whenDisposed;
-			await clearOwnedDocuments({
+			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: [doc.ydoc.guid],
 			});

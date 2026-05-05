@@ -97,7 +97,7 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { EncryptionKeys } from '@epicenter/encryption';
-export { isRpcError, RpcError, SYNC_ORIGIN } from '@epicenter/sync';
+export { isRpcError, RpcError } from '@epicenter/sync';
 // Cross-peer action calling.
 export {
 	createRemoteClient,
@@ -187,6 +187,7 @@ export {
 
 export {
 	attachBroadcastChannel,
+	attachOwnedBroadcastChannel,
 	BC_ORIGIN,
 } from './document/attach-broadcast-channel.js';
 export {
@@ -195,8 +196,8 @@ export {
 } from './document/attach-encryption.js';
 export {
 	attachIndexedDb,
-	clearOwnedDocuments,
 	type IndexedDbAttachment,
+	wipeOwnerLocalYjsData,
 } from './document/attach-indexed-db.js';
 export {
 	attachKv,

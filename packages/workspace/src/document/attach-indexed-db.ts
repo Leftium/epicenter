@@ -9,6 +9,7 @@ import * as idb from 'lib0/indexeddb';
 import { clearDocument, IndexeddbPersistence } from 'y-indexeddb';
 import type * as Y from 'yjs';
 import { applyUpdateV2, encodeStateAsUpdateV2, transact } from 'yjs';
+import type { InternalEncryptedIndexedDbAttachment } from './internal.js';
 import { createOwnedYjsKey, createOwnedYjsKeyPrefix } from './local-yjs-key.js';
 
 const UPDATES_STORE_NAME = 'updates';
@@ -33,10 +34,6 @@ export type IndexedDbAttachment = {
 	whenDisposed: Promise<unknown>;
 };
 
-export type EncryptedIndexedDbAttachment = IndexedDbAttachment & {
-	activateEncryption(keyring: ReadonlyMap<number, Uint8Array>): void;
-};
-
 type EncryptedProviderOptions = {
 	databaseName: string;
 	keyring: ReadonlyMap<number, Uint8Array>;
@@ -48,13 +45,6 @@ type IndexedDbDatabaseInfo = {
 
 type IndexedDbFactoryWithDatabases = IDBFactory & {
 	databases?: () => Promise<IndexedDbDatabaseInfo[]>;
-};
-
-export type ClearOwnedDocumentsOptions = {
-	userId: string;
-	ydocGuids?: Iterable<string>;
-	indexedDB?: IndexedDbFactoryWithDatabases;
-	clearDocument?: (name: string) => Promise<void>;
 };
 
 export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
@@ -89,12 +79,40 @@ function attachPlainIndexedDb(
 	};
 }
 
-export async function clearOwnedDocuments({
+export async function wipeOwnerLocalYjsData({
 	userId,
 	ydocGuids = [],
-	indexedDB = globalThis.indexedDB as IndexedDbFactoryWithDatabases | undefined,
-	clearDocument: clear = clearDocument,
-}: ClearOwnedDocumentsOptions): Promise<void> {
+}: {
+	userId: string;
+	ydocGuids?: Iterable<string>;
+}): Promise<void> {
+	await wipeOwnerLocalYjsDataWithDependencies(
+		{ userId, ydocGuids },
+		{
+			indexedDB: globalThis.indexedDB as
+				| IndexedDbFactoryWithDatabases
+				| undefined,
+			clearDocument,
+		},
+	);
+}
+
+async function wipeOwnerLocalYjsDataWithDependencies(
+	{
+		userId,
+		ydocGuids = [],
+	}: {
+		userId: string;
+		ydocGuids?: Iterable<string>;
+	},
+	{
+		indexedDB,
+		clearDocument: clear,
+	}: {
+		indexedDB?: IndexedDbFactoryWithDatabases;
+		clearDocument: (name: string) => Promise<void>;
+	},
+): Promise<void> {
 	const prefix = createOwnedYjsKeyPrefix(userId);
 	const names = new Set<string>();
 
@@ -117,7 +135,7 @@ export async function clearOwnedDocuments({
 export function attachEncryptedProvider(
 	ydoc: Y.Doc,
 	{ databaseName, keyring }: EncryptedProviderOptions,
-): EncryptedIndexedDbAttachment {
+): InternalEncryptedIndexedDbAttachment {
 	let currentKeyring = keyring;
 	let db: IDBDatabase | undefined;
 	let dbref = 0;
@@ -141,7 +159,7 @@ export function attachEncryptedProvider(
 		]);
 	});
 
-	const attachment: EncryptedIndexedDbAttachment = {
+	const attachment: InternalEncryptedIndexedDbAttachment = {
 		whenLoaded,
 		clearLocal: () => clearDocument(databaseName),
 		whenDisposed,

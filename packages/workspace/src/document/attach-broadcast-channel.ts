@@ -5,11 +5,13 @@ import { createOwnedYjsKey } from './local-yjs-key.js';
 export { BC_ORIGIN };
 
 /**
- * BroadcastChannel cross-tab sync for a Yjs document.
+ * Local-only BroadcastChannel cross-tab sync for a Yjs document.
  *
  * Broadcasts every local `updateV2` to same-origin tabs and applies incoming
  * updates from other tabs. Uses `ydoc.guid` as the default channel key so only
- * docs for the same workspace communicate.
+ * docs for the same local workspace communicate. Do not use this for
+ * authenticated browser workspaces where multiple signed-in users can share a
+ * browser profile. Use `attachOwnedBroadcastChannel` for those documents.
  *
  * Skips re-broadcasting updates that arrived from BroadcastChannel itself
  * (via `BC_ORIGIN`) and updates that arrived from WebSocket sync. Without
@@ -20,23 +22,35 @@ export { BC_ORIGIN };
  * older browsers).
  *
  * @param ydoc - The Y.Doc to sync across tabs
- * @param opts.userId - Optional owner id for authenticated local channels.
  */
-export function attachBroadcastChannel(
+export function attachBroadcastChannel(ydoc: Y.Doc): void {
+	attachBroadcastChannelWithKey(ydoc, ydoc.guid);
+}
+
+/**
+ * Owner-scoped BroadcastChannel cross-tab sync for authenticated documents.
+ *
+ * Authenticated workspaces include the owner id in the channel key so two
+ * signed-in users in the same browser profile cannot exchange plaintext Yjs
+ * updates through BroadcastChannel.
+ *
+ * @param ydoc - The Y.Doc to sync across tabs
+ * @param opts.userId - Owner id for the authenticated local channel.
+ */
+export function attachOwnedBroadcastChannel(
 	ydoc: Y.Doc,
-	{ userId }: { userId?: string } = {},
+	{ userId }: { userId: string },
 ): void {
+	attachBroadcastChannelWithKey(ydoc, createOwnedYjsKey(userId, ydoc.guid));
+}
+
+function attachBroadcastChannelWithKey(ydoc: Y.Doc, channelKey: string): void {
 	if (typeof BroadcastChannel === 'undefined') {
 		return;
 	}
 
-	const channelKey =
-		userId === undefined ? ydoc.guid : createOwnedYjsKey(userId, ydoc.guid);
 	const channel = new BroadcastChannel(`yjs:${channelKey}`);
 
-	/** Broadcast local changes to other tabs.
-	 *  Skips updates from BroadcastChannel itself (echo prevention) and from
-	 *  the paired transport (e.g., WebSocket) to avoid cross-transport echo. */
 	const handleUpdate = (update: Uint8Array, origin: unknown) => {
 		if (origin === BC_ORIGIN) return;
 		if (origin === SYNC_ORIGIN) return;
@@ -44,7 +58,6 @@ export function attachBroadcastChannel(
 	};
 	ydoc.on('updateV2', handleUpdate);
 
-	/** Apply incoming changes from other tabs. */
 	channel.onmessage = (event: MessageEvent) => {
 		Y.applyUpdateV2(ydoc, new Uint8Array(event.data), BC_ORIGIN);
 	};

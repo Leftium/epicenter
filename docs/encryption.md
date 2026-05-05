@@ -96,7 +96,7 @@ const userId = identity.user.id;
 const doc = openMyAppDoc({ encryptionKeys: identity.encryptionKeys });
 
 const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-attachBroadcastChannel(doc.ydoc, { userId });
+attachOwnedBroadcastChannel(doc.ydoc, { userId });
 ```
 
 The storage name is derived inside `@epicenter/workspace` as:
@@ -104,7 +104,7 @@ The storage name is derived inside `@epicenter/workspace` as:
 epicenter:v1:user:{userId}:yjs:{ydocGuid}
 ```
 
-App code should not build that string. Device cleanup uses `clearOwnedDocuments({ userId, ydocGuids })`, which deletes known document databases and also sweeps enumerable IndexedDB names with the same owner prefix when the browser exposes `indexedDB.databases()`.
+App code should not build that string. Device cleanup uses `wipeOwnerLocalYjsData({ userId, ydocGuids })`, which deletes known document databases and also sweeps enumerable IndexedDB names with the same owner prefix when the browser exposes `indexedDB.databases()`.
 
 ## Key lifecycle in the current code
 Keys are definitely loaded on login.

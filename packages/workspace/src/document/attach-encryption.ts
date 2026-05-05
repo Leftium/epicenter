@@ -81,7 +81,6 @@ import {
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import {
 	attachEncryptedProvider,
-	type EncryptedIndexedDbAttachment,
 	type IndexedDbAttachment,
 } from './attach-indexed-db.js';
 import type { Kv, KvDefinitions } from './attach-kv.js';
@@ -94,7 +93,12 @@ import type {
 	TableDefinitions,
 	Tables,
 } from './attach-table.js';
-import { createKv, createReadonlyTable, createTable } from './internal.js';
+import {
+	createKv,
+	createReadonlyTable,
+	createTable,
+	type InternalEncryptedIndexedDbAttachment,
+} from './internal.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createOwnedYjsKey } from './local-yjs-key.js';
 
@@ -108,7 +112,7 @@ type AnyEncryptedStore = EncryptedYKeyValueLww<any>;
 
 type EncryptedIndexedDbRegistrant = {
 	targetYdoc: Y.Doc;
-	attachment: EncryptedIndexedDbAttachment;
+	attachment: InternalEncryptedIndexedDbAttachment;
 };
 
 export type EncryptionAttachment = {

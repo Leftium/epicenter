@@ -2,10 +2,9 @@ import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
-	attachBroadcastChannel,
+	attachOwnedBroadcastChannel,
 	attachRichText,
 	attachSync,
-	clearOwnedDocuments,
 	createDisposableCache,
 	createRemoteClient,
 	DateTimeString,
@@ -13,6 +12,7 @@ import {
 	onLocalUpdate,
 	PeerIdentity,
 	toWsUrl,
+	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { EntryId } from '$lib/workspace';
@@ -50,7 +50,7 @@ export function openFuji({
 	const doc = openFujiDoc({ encryptionKeys: identity.encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-	attachBroadcastChannel(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
 	const entryContentDocs = createDisposableCache((entryId: EntryId) => {
 		const ydoc = new Y.Doc({
@@ -62,7 +62,7 @@ export function openFuji({
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = doc.encryption.attachIndexedDb(ydoc, { userId });
-		attachBroadcastChannel(ydoc, { userId });
+		attachOwnedBroadcastChannel(ydoc, { userId });
 		const childSync = attachSync(ydoc, {
 			url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
@@ -123,7 +123,7 @@ export function openFuji({
 			entryContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
-			await clearOwnedDocuments({
+			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: fallbackGuids,
 			});

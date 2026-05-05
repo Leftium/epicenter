@@ -24,7 +24,12 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the client singleton with `bindAuthWorkspaceScope(...)`, so encryption keys are applied in one place and terminal auth changes reload the page while sync reacts to auth changes through `attachSync`.
 
 ```ts
-export function openFuji() {
+export function openFuji({ auth }: { auth: AuthClient }) {
+  const identity = auth.identity;
+  if (identity === null) {
+    throw new Error('openFuji requires signed-in auth.identity.');
+  }
+  const userId = identity.user.id;
   const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
 
   const encryption = attachEncryption(ydoc);
@@ -33,7 +38,7 @@ export function openFuji() {
   const awareness = attachAwareness(ydoc, {});
 
   const idb = attachIndexedDb(ydoc);
-  attachBroadcastChannel(ydoc);
+  attachOwnedBroadcastChannel(ydoc, { userId });
   const sync = attachSync(ydoc, {
     url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
     waitFor: idb.whenLoaded,

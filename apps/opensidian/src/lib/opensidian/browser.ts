@@ -8,15 +8,15 @@ import {
 } from '@epicenter/filesystem';
 import {
 	attachAwareness,
-	attachBroadcastChannel,
+	attachOwnedBroadcastChannel,
 	attachSync,
 	attachTimeline,
-	clearOwnedDocuments,
 	createDisposableCache,
 	createRemoteClient,
 	onLocalUpdate,
 	PeerIdentity,
 	toWsUrl,
+	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
@@ -40,7 +40,7 @@ export function openOpensidian({
 	const doc = openOpensidianDoc({ encryptionKeys: identity.encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-	attachBroadcastChannel(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
 		const ydoc = new Y.Doc({
@@ -54,7 +54,7 @@ export function openOpensidian({
 			doc.tables.files.update(fileId, { updatedAt: Date.now() }),
 		);
 		const persistence = doc.encryption.attachIndexedDb(ydoc, { userId });
-		attachBroadcastChannel(ydoc, { userId });
+		attachOwnedBroadcastChannel(ydoc, { userId });
 		return {
 			ydoc,
 			content: attachTimeline(ydoc),
@@ -133,7 +133,7 @@ export function openOpensidian({
 			fileContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
-			await clearOwnedDocuments({
+			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: fallbackGuids,
 			});

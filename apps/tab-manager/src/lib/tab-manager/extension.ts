@@ -8,12 +8,12 @@ import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
-	attachBroadcastChannel,
+	attachOwnedBroadcastChannel,
 	attachSync,
-	clearOwnedDocuments,
 	createRemoteClient,
 	PeerIdentity,
 	toWsUrl,
+	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import type { DeviceId } from '$lib/workspace/definition';
 
@@ -52,7 +52,7 @@ export async function openTabManager({
 	});
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-	attachBroadcastChannel(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
@@ -75,7 +75,7 @@ export async function openTabManager({
 		async wipe() {
 			doc[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
-			await clearOwnedDocuments({
+			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: [doc.ydoc.guid],
 			});

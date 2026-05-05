@@ -110,7 +110,7 @@ Every exported function in this package falls into one of three verbs. The prefi
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
 | `define*` | **None**: pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
-| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods) |
+| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachOwnedBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods) |
 | `create*` | **Pure construction**: no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition or cache | `createDisposableCache` |
 
 `createDisposableCache(build, opts?)` is the refcounted cache primitive. The
@@ -129,9 +129,9 @@ Minimal encrypted workspace: encryption + IndexedDB + cross-tab + sync wired end
 ```typescript
 import {
 	attachAwareness,
-	attachBroadcastChannel,
 	attachEncryption,
 	attachIndexedDb,
+	attachOwnedBroadcastChannel,
 	attachSync,
 	createRemoteClient,
 	PeerIdentity,
@@ -147,6 +147,10 @@ export function openApp({
 	auth: AuthClient;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
+	const userId = auth.identity?.user.id;
+	if (userId === undefined) {
+		throw new Error('openApp requires signed-in auth.identity.');
+	}
 
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(appTables);
@@ -160,7 +164,7 @@ export function openApp({
 	});
 
 	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
+	attachOwnedBroadcastChannel(ydoc, { userId });
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
@@ -804,6 +808,7 @@ Attachments are the opt-in capabilities you compose inside a builder. Browser-sa
 ```typescript
 import {
 	attachBroadcastChannel,
+	attachOwnedBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
 	attachTables,
@@ -814,7 +819,7 @@ import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 
 ### Persistence
 
-`attachIndexedDb(ydoc)` runs in the browser. `attachSqlite(ydoc, { filePath })` runs on Node/Bun. Both return a handle with `whenLoaded` and `clearLocal()`. IndexedDB also exposes `whenDisposed` for callers that need to await provider shutdown before deleting local storage.
+`attachIndexedDb(ydoc)` runs in the browser. `attachSqlite(ydoc, { filePath })` runs on Node/Bun. Both return a handle with `whenLoaded` and `clearLocal()`. IndexedDB also exposes `whenDisposed` for callers that need to await provider shutdown before deleting local storage. Authenticated browser workspaces can call `wipeOwnerLocalYjsData({ userId, ydocGuids })` after disposal to delete owner-scoped local Yjs databases.
 
 ```typescript
 import * as Y from 'yjs';
@@ -847,7 +852,7 @@ void openNotes;
 
 ### Sync
 
-`attachSync(ydoc, config)` is the websocket transport; compose it with `attachBroadcastChannel(ydoc)` for cross-tab sync.
+`attachSync(ydoc, config)` is the websocket transport. Compose it with `attachBroadcastChannel(ydoc)` for local-only documents, or `attachOwnedBroadcastChannel(ydoc, { userId })` for authenticated browser workspaces.
 
 ```typescript
 import * as Y from 'yjs';

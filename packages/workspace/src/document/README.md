@@ -18,6 +18,7 @@ The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, co
 | attachEncryption -> .attachTable / .attachTables / .attachKv    |
 | attachAwareness                                                |
 | attachIndexedDb / attachSqlite / attachBroadcastChannel        |
+| attachOwnedBroadcastChannel                                    |
 | attachSync                                                     |
 | attachSqliteMaterializer                                       |
 +----------------------------------------------------------------+
@@ -88,7 +89,7 @@ to sync.
 ```typescript
 import {
   attachIndexedDb,
-  attachBroadcastChannel,
+  attachOwnedBroadcastChannel,
   attachSync,
 } from '@epicenter/workspace';
 import { auth } from './auth';
@@ -96,9 +97,13 @@ import { auth } from './auth';
 function openBlog() {
   const ydoc = new Y.Doc({ guid: 'blog' });
   const tables = attachTables(ydoc, myTables);
+  const userId = auth.identity?.user.id;
+  if (userId === undefined) {
+    throw new Error('openBlog requires signed-in auth.identity.');
+  }
 
   const idb = attachIndexedDb(ydoc);
-  attachBroadcastChannel(ydoc);
+  attachOwnedBroadcastChannel(ydoc, { userId });
   const sync = attachSync(ydoc, {
     url: `wss://api.example.com/workspaces/${ydoc.guid}`,
     auth,

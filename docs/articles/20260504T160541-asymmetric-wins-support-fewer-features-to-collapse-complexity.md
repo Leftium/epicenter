@@ -1,6 +1,8 @@
 # Asymmetric Wins: Support Fewer Features to Collapse Complexity
 
-Whenever I am creating a new feature, especially greenfield with AI making robust code feel easy, I want to pause and ask: is there an asymmetric win here? Can we refuse 10 to 20 percent of functionality and get rid of 80 or 90 percent of the code complexity? Sometimes the cleanest invariant is not a better abstraction. It is refusing to support the feature that made the invariant necessary.
+One of the most useful questions I ask when coding, especially greenfield work, is: is there an asymmetric win here?
+
+Can we refuse 10 to 20 percent of functionality and delete 80 or 90 percent of the complexity? Sometimes the strongest invariant does not come from a better abstraction. It comes from refusing the feature that would have broken the rule.
 
 The auth spec made this visible immediately:
 
@@ -15,7 +17,7 @@ auth.signInWithSocial({ provider });
 
 The removed feature was not nonsense. A Google OIDC fast path would have made browser SPA sign-in faster. The question was whether that small feature earned the second shape it forced into the whole auth system.
 
-That is what I mean by an asymmetric win. The "10 percent fewer features" number is not a quota. You do not remove features at random and hope complexity falls out. You look for the one small promise that owns a whole implementation family, then ask whether refusing that promise leaves the product sentence intact.
+That is the important part: the number is not a quota. You do not remove features at random and hope complexity falls out. You look for the one small promise that owns a whole implementation family, then ask whether refusing that promise leaves the product sentence intact.
 
 ## One small promise can own most of the graph
 

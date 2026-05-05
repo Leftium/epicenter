@@ -87,6 +87,11 @@ bindAuthWorkspaceScope({
 	},
 });
 
+export async function forgetTabManagerDevice(): Promise<void> {
+	await tabManager.wipe();
+	window.location.reload();
+}
+
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
 		auth[Symbol.dispose]();

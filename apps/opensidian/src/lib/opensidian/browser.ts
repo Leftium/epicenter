@@ -11,6 +11,7 @@ import {
 	attachBroadcastChannel,
 	attachSync,
 	attachTimeline,
+	clearLocalYjsDataForUser,
 	createDisposableCache,
 	createLocalYjsKey,
 	createRemoteClient,
@@ -20,7 +21,6 @@ import {
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import { clearDocument } from 'y-indexeddb';
 import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
 import { openOpensidian as openOpensidianDoc } from './index';
@@ -131,23 +131,22 @@ export function openOpensidian({
 		awareness,
 		sync,
 		async wipe() {
+			const fallbackGuids = [
+				doc.ydoc.guid,
+				...doc.tables.files.getAllValid().map((file) =>
+					fileContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						fileId: file.id,
+					}),
+				),
+			];
 			fileContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
-			await Promise.all([
-				...doc.tables.files.getAllValid().map((file) =>
-					clearDocument(
-						createLocalYjsKey(
-							identity.user.id,
-							fileContentDocGuid({
-								workspaceId: doc.ydoc.guid,
-								fileId: file.id,
-							}),
-						),
-					),
-				),
-				idb.clearLocal(),
-			]);
+			await clearLocalYjsDataForUser({
+				userId: identity.user.id,
+				ydocGuids: fallbackGuids,
+			});
 		},
 		remote,
 		rpc,

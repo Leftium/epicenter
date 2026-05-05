@@ -815,12 +815,13 @@ bindAuthWorkspaceScope({
 
 Sign-out no longer deletes local data. That is correct, but users still need an intentional cleanup path.
 
-- [ ] **8.1** Add a "Forget this device" action for signed-in authenticated apps. It deletes the current owner's local Yjs caches and then reloads.
-- [ ] **8.2** Implement cleanup against owner-scoped local keys. Do not call the old workspace-bundle `wipe()` method from sign-out.
-- [ ] **8.3** Use the `epicenter:v1:user:{userId}:yjs:` prefix when enumerating local databases where the runtime supports `indexedDB.databases()`.
-- [ ] **8.4** Keep a fallback path that clears known root and child document keys for the current workspace when full database enumeration is unavailable.
-- [ ] **8.5** Put the destructive confirmation on "Forget this device", not on sign-out.
-- [ ] **8.6** If this action does not land in the same PR, leave a tracked follow-up spec and do not delete the low-level clear helpers it will need.
+- [x] **8.1** Add a "Forget this device" action for signed-in authenticated apps. It deletes the current owner's local Yjs caches and then reloads.
+- [x] **8.2** Implement cleanup against owner-scoped local keys. Do not call the old workspace-bundle `wipe()` method from sign-out.
+  > **Note**: Fuji, Honeycrisp, Opensidian, and Tab-manager now use `clearLocalYjsDataForUser`. Zhongwen still uses its existing unscoped local-only `wipe()` because Phase 0 classified that browser factory as authless and syncless.
+- [x] **8.3** Use the `epicenter:v1:user:{userId}:yjs:` prefix when enumerating local databases where the runtime supports `indexedDB.databases()`.
+- [x] **8.4** Keep a fallback path that clears known root and child document keys for the current workspace when full database enumeration is unavailable.
+- [x] **8.5** Put the destructive confirmation on "Forget this device", not on sign-out.
+- [x] **8.6** If this action does not land in the same PR, leave a tracked follow-up spec and do not delete the low-level clear helpers it will need.
 
 ### Phase 9: Supersede old specs and docs
 

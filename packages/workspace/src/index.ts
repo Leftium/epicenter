@@ -263,6 +263,7 @@ export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { createLocalYjsKey } from './document/local-yjs-key.js';
+export { clearLocalYjsDataForUser } from './document/clear-local-yjs-data.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
 	type PeerAwarenessSchema,

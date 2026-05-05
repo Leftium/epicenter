@@ -36,6 +36,11 @@ bindAuthWorkspaceScope({
 	},
 });
 
+export async function forgetFujiDevice(): Promise<void> {
+	await fuji.wipe();
+	window.location.reload();
+}
+
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
 		auth[Symbol.dispose]();

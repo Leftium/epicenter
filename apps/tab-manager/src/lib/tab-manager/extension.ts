@@ -10,6 +10,7 @@ import {
 	attachAwareness,
 	attachBroadcastChannel,
 	attachSync,
+	clearLocalYjsDataForUser,
 	createLocalYjsKey,
 	createRemoteClient,
 	PeerIdentity,
@@ -75,7 +76,10 @@ export async function openTabManager({
 		async wipe() {
 			doc[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
-			await idb.clearLocal();
+			await clearLocalYjsDataForUser({
+				userId: identity.user.id,
+				ydocGuids: [doc.ydoc.guid],
+			});
 		},
 		remote,
 		rpc,

@@ -1,14 +1,17 @@
 <script lang="ts">
 	import type { AuthClient } from '@epicenter/auth-svelte';
 	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
-	import { toastOnError } from '@epicenter/ui/sonner';
+	import { toast, toastOnError } from '@epicenter/ui/sonner';
 	import type { SyncAttachment, SyncStatus } from '@epicenter/workspace';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
+	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import { extractErrorMessage } from 'wellcrafted/error';
 	import { AuthForm } from '../auth-form/index.js';
 
 	/**
@@ -32,13 +35,22 @@
 		syncNoun: string;
 		/** Handler called when the user clicks "Continue with Google". */
 		onSocialSignIn: () => Promise<{ error: { message: string } | null }>;
+		/** Optional destructive cleanup for this account's local device cache. */
+		onForgetDevice?: () => void | Promise<void>;
 	};
 
-	let { auth, sync, syncNoun, onSocialSignIn }: AccountPopoverProps = $props();
+	let {
+		auth,
+		sync,
+		syncNoun,
+		onSocialSignIn,
+		onForgetDevice,
+	}: AccountPopoverProps = $props();
 
-	let syncStatus = $state<SyncStatus>(sync.status);
+	let syncStatus = $state<SyncStatus>({ phase: 'offline' });
 	let popoverOpen = $state(false);
 	let signingOut = $state(false);
+	let forgettingDevice = $state(false);
 	const identity = $derived(auth.identity);
 	const isSignedIn = $derived(identity !== null);
 
@@ -81,6 +93,29 @@
 		} finally {
 			signingOut = false;
 		}
+	}
+
+	function forgetDevice() {
+		if (!onForgetDevice) return;
+		popoverOpen = false;
+		confirmationDialog.open({
+			title: 'Forget this device?',
+			description:
+				'This deletes local data for this account on this device. Synced data stays in your account.',
+			confirm: { text: 'Forget device', variant: 'destructive' },
+			onConfirm: async () => {
+				forgettingDevice = true;
+				try {
+					await onForgetDevice();
+				} catch (error) {
+					toast.error('Failed to forget this device', {
+						description: extractErrorMessage(error),
+					});
+				} finally {
+					forgettingDevice = false;
+				}
+			},
+		});
 	}
 </script>
 
@@ -144,6 +179,24 @@
 						Sign out
 					</Button>
 				</div>
+				{#if onForgetDevice}
+					<div class="border-t pt-3">
+						<Button
+							variant="ghost"
+							size="sm"
+							class="w-full justify-start text-destructive hover:text-destructive"
+							onclick={forgetDevice}
+							disabled={forgettingDevice}
+						>
+							{#if forgettingDevice}
+								<LoaderCircle class="size-3.5 animate-spin" />
+							{:else}
+								<DatabaseZap class="size-3.5" />
+							{/if}
+							Forget this device
+						</Button>
+					</div>
+				{/if}
 			</div>
 		{:else}
 			<div class="flex items-center justify-center p-4">

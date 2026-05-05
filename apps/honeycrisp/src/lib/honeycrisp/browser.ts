@@ -5,6 +5,7 @@ import {
 	attachBroadcastChannel,
 	attachRichText,
 	attachSync,
+	clearLocalYjsDataForUser,
 	createDisposableCache,
 	createLocalYjsKey,
 	createRemoteClient,
@@ -15,7 +16,6 @@ import {
 	SYNC_ORIGIN,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { clearDocument } from 'y-indexeddb';
 import * as Y from 'yjs';
 import type { NoteId } from '$lib/workspace';
 import { openHoneycrisp as openHoneycrispDoc } from './index';
@@ -121,23 +121,22 @@ export function openHoneycrisp({
 		awareness,
 		sync,
 		async wipe() {
+			const fallbackGuids = [
+				doc.ydoc.guid,
+				...doc.tables.notes.getAllValid().map((note) =>
+					noteBodyDocGuid({
+						workspaceId: doc.ydoc.guid,
+						noteId: note.id,
+					}),
+				),
+			];
 			noteBodyDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
-			await Promise.all([
-				...doc.tables.notes.getAllValid().map((note) =>
-					clearDocument(
-						createLocalYjsKey(
-							identity.user.id,
-							noteBodyDocGuid({
-								workspaceId: doc.ydoc.guid,
-								noteId: note.id,
-							}),
-						),
-					),
-				),
-				idb.clearLocal(),
-			]);
+			await clearLocalYjsDataForUser({
+				userId: identity.user.id,
+				ydocGuids: fallbackGuids,
+			});
 		},
 		remote,
 		rpc,

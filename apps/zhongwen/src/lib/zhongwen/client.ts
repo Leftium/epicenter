@@ -22,6 +22,11 @@ bindAuthWorkspaceScope({
 	},
 });
 
+export async function forgetZhongwenDevice(): Promise<void> {
+	await zhongwen.wipe();
+	window.location.reload();
+}
+
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
 		auth[Symbol.dispose]();

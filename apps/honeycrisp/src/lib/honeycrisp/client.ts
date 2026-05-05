@@ -38,6 +38,11 @@ bindAuthWorkspaceScope({
 	},
 });
 
+export async function forgetHoneycrispDevice(): Promise<void> {
+	await honeycrisp.wipe();
+	window.location.reload();
+}
+
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
 		auth[Symbol.dispose]();

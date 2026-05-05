@@ -5,6 +5,7 @@ import {
 	attachBroadcastChannel,
 	attachRichText,
 	attachSync,
+	clearLocalYjsDataForUser,
 	createDisposableCache,
 	createLocalYjsKey,
 	createRemoteClient,
@@ -15,7 +16,6 @@ import {
 	SYNC_ORIGIN,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { clearDocument } from 'y-indexeddb';
 import * as Y from 'yjs';
 import type { EntryId } from '$lib/workspace';
 import { openFuji as openFujiDoc } from './index';
@@ -121,23 +121,22 @@ export function openFuji({
 		awareness,
 		sync,
 		async wipe() {
+			const fallbackGuids = [
+				doc.ydoc.guid,
+				...doc.tables.entries.getAllValid().map((entry) =>
+					entryContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						entryId: entry.id,
+					}),
+				),
+			];
 			entryContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
-			await Promise.all([
-				...doc.tables.entries.getAllValid().map((entry) =>
-					clearDocument(
-						createLocalYjsKey(
-							identity.user.id,
-							entryContentDocGuid({
-								workspaceId: doc.ydoc.guid,
-								entryId: entry.id,
-							}),
-						),
-					),
-				),
-				idb.clearLocal(),
-			]);
+			await clearLocalYjsDataForUser({
+				userId: identity.user.id,
+				ydocGuids: fallbackGuids,
+			});
 		},
 		remote,
 		rpc,

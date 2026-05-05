@@ -2,13 +2,16 @@
 	import { fromKv } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Sidebar from '@epicenter/ui/sidebar';
+	import { toast } from '@epicenter/ui/sonner';
+	import { extractErrorMessage } from 'wellcrafted/error';
 	import { chatState } from '$lib/chat/chat-state.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import ZhongwenSidebar from '$lib/components/ZhongwenSidebar.svelte';
-	import { auth, zhongwen } from '$lib/zhongwen/client';
+	import { auth, forgetZhongwenDevice, zhongwen } from '$lib/zhongwen/client';
 
 	const showPinyin = fromKv(zhongwen.kv, 'showPinyin');
 	let dismissedError = $state(false);
@@ -23,6 +26,24 @@
 			callbackURL: window.location.origin,
 		});
 		if (error) submitError = error.message;
+	}
+
+	function forgetDevice() {
+		confirmationDialog.open({
+			title: 'Forget this device?',
+			description:
+				'This deletes local Zhongwen data on this device. Account data on the server stays in your account.',
+			confirm: { text: 'Forget device', variant: 'destructive' },
+			onConfirm: async () => {
+				try {
+					await forgetZhongwenDevice();
+				} catch (error) {
+					toast.error('Failed to forget this device', {
+						description: extractErrorMessage(error),
+					});
+				}
+			},
+		});
 	}
 </script>
 
@@ -90,6 +111,9 @@
 					<span class="text-sm text-muted-foreground">
 						{identity.user.name}
 					</span>
+					<Button variant="ghost" size="sm" onclick={forgetDevice}>
+						Forget device
+					</Button>
 				</div>
 			</header>
 

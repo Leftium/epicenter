@@ -201,24 +201,25 @@ The storage attachment changes and the explicit default `gcTime` argument disapp
 
 ### Phase 2: Add `attachEncryptedIndexedDb` to the encryption coordinator
 
-- [ ] **2.1** In `packages/workspace/src/document/attach-encryption.ts`, add a method on the returned attachment:
+- [x] **2.1** In `packages/workspace/src/document/attach-encryption.ts`, add a method on the returned attachment:
   ```ts
   attachEncryptedIndexedDb(targetYdoc: Y.Doc, opts: { persistenceKey: string }): IndexedDbAttachment
   ```
-- [ ] **2.2** The method derives a per-target keyring on demand: `deriveWorkspaceKey(userKey, targetYdoc.guid)`. Throw if `applyKeys` has not been called yet on the coordinator.
-- [ ] **2.3** Register encrypted IDB attachments with the same coordinator machinery used by encrypted table/KV stores so future `applyKeys` calls update the write key.
-- [ ] **2.4** Implement a sibling provider to `attachIndexedDb`:
+- [x] **2.2** The method derives a per-target keyring on demand: `deriveWorkspaceKey(userKey, targetYdoc.guid)`. Throw if `applyKeys` has not been called yet on the coordinator.
+- [x] **2.3** Register encrypted IDB attachments with the same coordinator machinery used by encrypted table/KV stores so future `applyKeys` calls update the write key.
+- [x] **2.4** Implement a sibling provider to `attachIndexedDb`:
   - Open an IndexedDB database named by `opts.persistenceKey`.
   - Read encrypted rows from an `updates` object store, decrypt them, and apply with `Y.applyUpdateV2(targetYdoc, update)`.
   - Listen to `targetYdoc.on('updateV2', ...)` and write encrypted bytes instead of raw updates.
   - Preserve the existing `whenLoaded`, `clearLocal`, `whenDisposed` shape from `attachIndexedDb`.
-- [ ] **2.5** Do not import or subclass upstream `IndexeddbPersistence` for the encrypted provider. Its raw-write listener is the thing this primitive replaces.
-- [ ] **2.6** Unit tests:
+- [x] **2.5** Do not import or subclass upstream `IndexeddbPersistence` for the encrypted provider. Its raw-write listener is the thing this primitive replaces.
+- [x] **2.6** Unit tests:
   - Round-trip: write update, read back, Y.Doc state matches.
   - Throws if called before `applyKeys`.
   - Different `targetYdoc.guid` -> different derived key for the same plaintext.
   - Key rotation changes the key version for future writes while old rows remain readable.
   - `clearLocal()` clears the encrypted IDB.
+  > **Note**: `attachIndexedDb` also gained an optional `persistenceKey`, preserving the default `ydoc.guid` behavior while sharing the owner-scoped key plumbing needed by the sign-out spec.
 
 ### Phase 3: Migrate participating apps
 

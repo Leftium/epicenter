@@ -79,6 +79,11 @@ import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import {
+	attachEncryptedIndexedDbProvider,
+	type EncryptedIndexedDbAttachment,
+	type IndexedDbAttachment,
+} from './attach-indexed-db.js';
 import type { Kv, KvDefinitions } from './attach-kv.js';
 import type {
 	InferTableRow,
@@ -99,6 +104,11 @@ import { KV_KEY, TableKey } from './keys.js';
  */
 // biome-ignore lint/suspicious/noExplicitAny: variance
 type AnyEncryptedStore = EncryptedYKeyValueLww<any>;
+
+type EncryptedIndexedDbRegistrant = {
+	targetYdoc: Y.Doc;
+	attachment: EncryptedIndexedDbAttachment;
+};
 
 export type EncryptionAttachment = {
 	/**
@@ -160,6 +170,18 @@ export type EncryptionAttachment = {
 	 * Attach the encrypted KV singleton to the coordinator's Y.Doc.
 	 */
 	attachKv<T extends KvDefinitions>(definitions: T): Kv<T>;
+
+	/**
+	 * Attach encrypted local IndexedDB persistence for a root or child Y.Doc.
+	 *
+	 * The encryption coordinator owns the user key source. Call `applyKeys`
+	 * before attaching encrypted storage so the provider can hydrate from local
+	 * ciphertext without a plaintext fallback.
+	 */
+	attachEncryptedIndexedDb(
+		targetYdoc: Y.Doc,
+		opts: { persistenceKey: string },
+	): IndexedDbAttachment;
 };
 
 /**
@@ -172,6 +194,7 @@ export type EncryptionAttachment = {
  */
 export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 	const stores: AnyEncryptedStore[] = [];
+	const encryptedIndexedDbAttachments: EncryptedIndexedDbRegistrant[] = [];
 	const workspaceId = ydoc.guid;
 
 	/** Cache the last-applied keyring so late-registered stores can activate. */
@@ -188,18 +211,40 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 		if (cachedKeyring !== undefined) store.activateEncryption(cachedKeyring);
 	}
 
+	function deriveKeyring(
+		keys: EncryptionKeys,
+		targetWorkspaceId: string,
+	): Map<number, Uint8Array> {
+		const keyring = new Map<number, Uint8Array>();
+		for (const { version, userKeyBase64 } of keys) {
+			const userKey = base64ToBytes(userKeyBase64);
+			keyring.set(version, deriveWorkspaceKey(userKey, targetWorkspaceId));
+		}
+		return keyring;
+	}
+
+	function requireKeys(): EncryptionKeys {
+		if (lastKeys === undefined) {
+			throw new Error(
+				'Cannot attach encrypted IndexedDB: encryption coordinator has no keys. Call encryption.applyKeys(...) before attaching encrypted storage.',
+			);
+		}
+		return lastKeys;
+	}
+
 	const attachment: EncryptionAttachment = {
 		applyKeys(keys) {
 			if (lastKeys !== undefined && encryptionKeysEqual(keys, lastKeys)) return;
 			lastKeys = [...keys] as EncryptionKeys;
 
-			const keyring = new Map<number, Uint8Array>();
-			for (const { version, userKeyBase64 } of keys) {
-				const userKey = base64ToBytes(userKeyBase64);
-				keyring.set(version, deriveWorkspaceKey(userKey, workspaceId));
-			}
+			const keyring = deriveKeyring(keys, workspaceId);
 			cachedKeyring = keyring;
 			for (const store of stores) store.activateEncryption(keyring);
+			for (const registrant of encryptedIndexedDbAttachments) {
+				registrant.attachment.activateEncryption(
+					deriveKeyring(keys, registrant.targetYdoc.guid),
+				);
+			}
 		},
 		attachTable(name, definition) {
 			const store = createEncryptedYkvLww(ydoc, TableKey(name));
@@ -231,6 +276,15 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 			const store = createEncryptedYkvLww(ydoc, KV_KEY);
 			register(store);
 			return createKv(store, definitions);
+		},
+		attachEncryptedIndexedDb(targetYdoc, { persistenceKey }) {
+			const keys = requireKeys();
+			const attachment = attachEncryptedIndexedDbProvider(targetYdoc, {
+				persistenceKey,
+				keyring: deriveKeyring(keys, targetYdoc.guid),
+			});
+			encryptedIndexedDbAttachments.push({ targetYdoc, attachment });
+			return attachment;
 		},
 	};
 

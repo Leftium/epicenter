@@ -1,5 +1,19 @@
+/// <reference lib="dom" />
+
+import {
+	decryptBytes,
+	type EncryptedBlob,
+	encryptBytes,
+} from '@epicenter/encryption';
+import * as idb from 'lib0/indexeddb';
 import { clearDocument, IndexeddbPersistence } from 'y-indexeddb';
 import type * as Y from 'yjs';
+import { applyUpdateV2, encodeStateAsUpdateV2, transact } from 'yjs';
+
+const UPDATES_STORE_NAME = 'updates';
+const CUSTOM_STORE_NAME = 'custom';
+const PREFERRED_TRIM_SIZE = 500;
+const textEncoder = new TextEncoder();
 
 export type IndexedDbAttachment = {
 	/**
@@ -18,8 +32,28 @@ export type IndexedDbAttachment = {
 	whenDisposed: Promise<unknown>;
 };
 
-export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
-	const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
+export type AttachIndexedDbOptions = {
+	/**
+	 * Local IndexedDB database name. Defaults to `ydoc.guid`, which preserves
+	 * the historical behavior for authless and unscoped local persistence.
+	 */
+	persistenceKey?: string;
+};
+
+export type EncryptedIndexedDbAttachment = IndexedDbAttachment & {
+	activateEncryption(keyring: ReadonlyMap<number, Uint8Array>): void;
+};
+
+export type AttachEncryptedIndexedDbProviderOptions = {
+	persistenceKey: string;
+	keyring: ReadonlyMap<number, Uint8Array>;
+};
+
+export function attachIndexedDb(
+	ydoc: Y.Doc,
+	{ persistenceKey = ydoc.guid }: AttachIndexedDbOptions = {},
+): IndexedDbAttachment {
+	const idb = new IndexeddbPersistence(persistenceKey, ydoc);
 	// `IndexeddbPersistence`'s constructor binds `doc.on('destroy', this.destroy)`
 	// eagerly, and its `destroy()` has no top-level idempotency guard: two calls
 	// produce two independent `_db.then(db => db.close())` promises that resolve
@@ -38,7 +72,178 @@ export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 	});
 	return {
 		whenLoaded: idb.whenSynced,
-		clearLocal: () => clearDocument(ydoc.guid),
+		clearLocal: () => clearDocument(persistenceKey),
 		whenDisposed,
 	};
+}
+
+export function attachEncryptedIndexedDbProvider(
+	ydoc: Y.Doc,
+	{ persistenceKey, keyring }: AttachEncryptedIndexedDbProviderOptions,
+): EncryptedIndexedDbAttachment {
+	let currentKeyring = keyring;
+	let db: IDBDatabase | undefined;
+	let dbref = 0;
+	let dbsize = 0;
+	let destroyed = false;
+	let storeTimeoutId: ReturnType<typeof setTimeout> | undefined;
+
+	const aad = textEncoder.encode(`yjs-update-v2:${ydoc.guid}`);
+	const {
+		promise: whenLoaded,
+		resolve: resolveLoaded,
+		reject: rejectLoaded,
+	} = Promise.withResolvers<void>();
+	const { promise: whenDisposed, resolve: resolveDisposed } =
+		Promise.withResolvers<void>();
+
+	const dbPromise = idb.openDB(persistenceKey, (database) => {
+		idb.createStores(database, [
+			[UPDATES_STORE_NAME, { autoIncrement: true }],
+			[CUSTOM_STORE_NAME],
+		]);
+	});
+
+	const attachment: EncryptedIndexedDbAttachment = {
+		whenLoaded,
+		clearLocal: () => clearDocument(persistenceKey),
+		whenDisposed,
+		activateEncryption(nextKeyring) {
+			currentKeyring = nextKeyring;
+		},
+	};
+
+	function currentKey(): { version: number; key: Uint8Array } {
+		if (currentKeyring.size === 0) {
+			throw new Error(
+				'Cannot write encrypted IndexedDB update: keyring is empty.',
+			);
+		}
+		const version = Math.max(...currentKeyring.keys());
+		const key = currentKeyring.get(version);
+		if (key === undefined) {
+			throw new Error(
+				`Cannot write encrypted IndexedDB update: key version ${version} is not in the keyring.`,
+			);
+		}
+		return { version, key };
+	}
+
+	function encryptUpdate(update: Uint8Array): EncryptedBlob {
+		const { version, key } = currentKey();
+		return encryptBytes({
+			key,
+			keyVersion: version,
+			plaintext: update,
+			aad,
+		});
+	}
+
+	function decryptUpdate(blob: EncryptedBlob): Uint8Array {
+		return decryptBytes({ keyring: currentKeyring, blob, aad });
+	}
+
+	async function addEncryptedUpdate(
+		updatesStore: IDBObjectStore,
+		update: Uint8Array,
+	): Promise<void> {
+		await idb.addAutoKey(
+			updatesStore,
+			encryptUpdate(update) as unknown as string,
+		);
+		dbsize += 1;
+	}
+
+	async function fetchUpdates(
+		beforeApplyUpdates: (
+			updatesStore: IDBObjectStore,
+		) => void | Promise<void> = () => {},
+		afterApplyUpdates: (
+			updatesStore: IDBObjectStore,
+		) => void | Promise<void> = () => {},
+	): Promise<IDBObjectStore> {
+		if (db === undefined) {
+			throw new Error(
+				'Cannot fetch encrypted IndexedDB updates before DB open.',
+			);
+		}
+		const [updatesStore] = idb.transact(db, [UPDATES_STORE_NAME]);
+		if (updatesStore === undefined) {
+			throw new Error('Encrypted IndexedDB updates store is missing.');
+		}
+		const encryptedUpdates = (await idb.getAll(
+			updatesStore,
+			IDBKeyRange.lowerBound(dbref, false),
+		)) as EncryptedBlob[];
+		if (!destroyed) {
+			await beforeApplyUpdates(updatesStore);
+			transact(
+				ydoc,
+				() => {
+					for (const encryptedUpdate of encryptedUpdates) {
+						applyUpdateV2(ydoc, decryptUpdate(encryptedUpdate), attachment);
+					}
+				},
+				attachment,
+				false,
+			);
+			await afterApplyUpdates(updatesStore);
+		}
+		const lastKey = (await idb.getLastKey(updatesStore)) as number | null;
+		dbref = lastKey === null ? 0 : lastKey + 1;
+		dbsize = await idb.count(updatesStore);
+		return updatesStore;
+	}
+
+	async function storeState(forceStore = true): Promise<void> {
+		const updatesStore = await fetchUpdates();
+		if (forceStore || dbsize >= PREFERRED_TRIM_SIZE) {
+			await addEncryptedUpdate(updatesStore, encodeStateAsUpdateV2(ydoc));
+			await idb.del(updatesStore, IDBKeyRange.upperBound(dbref, true));
+			dbsize = await idb.count(updatesStore);
+		}
+	}
+
+	const handleUpdate = (update: Uint8Array, origin: unknown) => {
+		if (db === undefined || origin === attachment) return;
+		const [updatesStore] = idb.transact(db, [UPDATES_STORE_NAME]);
+		if (updatesStore === undefined) return;
+		void addEncryptedUpdate(updatesStore, update);
+		if (dbsize >= PREFERRED_TRIM_SIZE) {
+			if (storeTimeoutId !== undefined) clearTimeout(storeTimeoutId);
+			storeTimeoutId = setTimeout(() => {
+				void storeState(false);
+				storeTimeoutId = undefined;
+			}, 1000);
+		}
+	};
+
+	dbPromise
+		.then(async (openedDb) => {
+			db = openedDb;
+			await fetchUpdates(
+				(updatesStore) =>
+					addEncryptedUpdate(updatesStore, encodeStateAsUpdateV2(ydoc)),
+				() => {
+					if (!destroyed) resolveLoaded();
+				},
+			);
+		})
+		.catch((error: unknown) => {
+			rejectLoaded(error);
+		});
+
+	ydoc.on('updateV2', handleUpdate);
+	ydoc.once('destroy', async () => {
+		if (storeTimeoutId !== undefined) clearTimeout(storeTimeoutId);
+		ydoc.off('updateV2', handleUpdate);
+		destroyed = true;
+		try {
+			(await dbPromise).close();
+		} finally {
+			resolveDisposed();
+		}
+	});
+
+	return attachment;
 }

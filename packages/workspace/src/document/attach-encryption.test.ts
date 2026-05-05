@@ -11,17 +11,23 @@
 import { describe, expect, test } from 'bun:test';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import {
+	base64ToBytes,
 	bytesToBase64,
+	decryptBytes,
+	deriveWorkspaceKey,
 	type EncryptedBlob,
 	getKeyVersion,
 	isEncryptedBlob,
 } from '@epicenter/encryption';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { type } from 'arktype';
+import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import * as Y from 'yjs';
 import { attachEncryption } from './attach-encryption.js';
 import { defineTable } from './define-table.js';
 import { TableKey } from './keys.js';
+
+Object.assign(globalThis, { indexedDB, IDBKeyRange });
 
 function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
 	return [{ version: 1, userKeyBase64: bytesToBase64(key) }];
@@ -37,6 +43,41 @@ function setup() {
 	const tableA = encryption.attachTable('a', encryptedRowDefinition);
 	const tableB = encryption.attachTable('b', encryptedRowDefinition);
 	return { ydoc, tableA, tableB, encryption };
+}
+
+function tick(): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function readEncryptedUpdates(dbName: string): Promise<EncryptedBlob[]> {
+	const db = await new Promise<IDBDatabase>((resolve, reject) => {
+		const request = indexedDB.open(dbName);
+		request.onerror = () => reject(request.error);
+		request.onsuccess = () => resolve(request.result);
+	});
+	try {
+		const transaction = db.transaction(['updates'], 'readonly');
+		const store = transaction.objectStore('updates');
+		return await new Promise<EncryptedBlob[]>((resolve, reject) => {
+			const request = store.getAll();
+			request.onerror = () => reject(request.error);
+			request.onsuccess = () => resolve(request.result as EncryptedBlob[]);
+		});
+	} finally {
+		db.close();
+	}
+}
+
+function keyringForGuid(
+	keys: EncryptionKeys,
+	guid: string,
+): Map<number, Uint8Array> {
+	return new Map(
+		keys.map(({ version, userKeyBase64 }) => [
+			version,
+			deriveWorkspaceKey(base64ToBytes(userKeyBase64), guid),
+		]),
+	);
 }
 
 describe('attachEncryption', () => {
@@ -226,6 +267,165 @@ describe('attachEncryption', () => {
 			});
 			const newEntry = yarray.toArray().find((entry) => entry.key === 'new');
 			expect(getKeyVersion(newEntry?.val as EncryptedBlob)).toBe(2);
+		});
+	});
+
+	describe('attachEncryptedIndexedDb', () => {
+		test('throws if called before applyKeys', () => {
+			const ydoc = new Y.Doc({ guid: 'encrypted-idb-no-keys', gc: false });
+			const encryption = attachEncryption(ydoc);
+
+			expect(() =>
+				encryption.attachEncryptedIndexedDb(ydoc, {
+					persistenceKey: 'encrypted-idb-no-keys',
+				}),
+			).toThrow('encryption coordinator has no keys');
+		});
+
+		test('round trips encrypted Yjs updates through IndexedDB', async () => {
+			const persistenceKey = `encrypted-idb-roundtrip-${crypto.randomUUID()}`;
+			const keys = toEncryptionKeys(randomBytes(32));
+			const firstDoc = new Y.Doc({
+				guid: 'encrypted-idb-roundtrip',
+				gc: false,
+			});
+			const firstEncryption = attachEncryption(firstDoc);
+			firstEncryption.applyKeys(keys);
+			const firstIdb = firstEncryption.attachEncryptedIndexedDb(firstDoc, {
+				persistenceKey,
+			});
+			await firstIdb.whenLoaded;
+			firstDoc.getText('body').insert(0, 'stored ciphertext');
+			await tick();
+			firstDoc.destroy();
+			await firstIdb.whenDisposed;
+
+			const rawUpdates = await readEncryptedUpdates(persistenceKey);
+			expect(rawUpdates.length).toBeGreaterThan(0);
+			expect(rawUpdates.every((update) => update[0] === 1)).toBe(true);
+
+			const secondDoc = new Y.Doc({
+				guid: 'encrypted-idb-roundtrip',
+				gc: false,
+			});
+			const secondEncryption = attachEncryption(secondDoc);
+			secondEncryption.applyKeys(keys);
+			const secondIdb = secondEncryption.attachEncryptedIndexedDb(secondDoc, {
+				persistenceKey,
+			});
+			await secondIdb.whenLoaded;
+
+			expect(secondDoc.getText('body').toString()).toBe('stored ciphertext');
+			secondDoc.destroy();
+			await secondIdb.whenDisposed;
+			await secondIdb.clearLocal();
+		});
+
+		test('target guid changes the derived storage key', async () => {
+			const persistenceKey = `encrypted-idb-guid-${crypto.randomUUID()}`;
+			const keys = toEncryptionKeys(randomBytes(32));
+			const ydoc = new Y.Doc({ guid: 'encrypted-idb-guid-a', gc: false });
+			const encryption = attachEncryption(ydoc);
+			encryption.applyKeys(keys);
+			const idb = encryption.attachEncryptedIndexedDb(ydoc, { persistenceKey });
+			await idb.whenLoaded;
+			ydoc.getText('body').insert(0, 'guid bound');
+			await tick();
+			ydoc.destroy();
+			await idb.whenDisposed;
+
+			const rawUpdates = await readEncryptedUpdates(persistenceKey);
+			const updateWithContent = rawUpdates.at(-1);
+			expect(updateWithContent).toBeDefined();
+			expect(() =>
+				decryptBytes({
+					keyring: keyringForGuid(keys, 'encrypted-idb-guid-b'),
+					blob: updateWithContent as EncryptedBlob,
+					aad: new TextEncoder().encode('yjs-update-v2:encrypted-idb-guid-a'),
+				}),
+			).toThrow();
+			await idb.clearLocal();
+		});
+
+		test('key rotation changes future write version and keeps old rows readable', async () => {
+			const persistenceKey = `encrypted-idb-rotation-${crypto.randomUUID()}`;
+			const keyV1 = randomBytes(32);
+			const keyV2 = randomBytes(32);
+			const keysV1: EncryptionKeys = [
+				{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
+			];
+			const rotatedKeys: EncryptionKeys = [
+				{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
+				{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
+			];
+			const firstDoc = new Y.Doc({ guid: 'encrypted-idb-rotation', gc: false });
+			const firstEncryption = attachEncryption(firstDoc);
+			firstEncryption.applyKeys(keysV1);
+			const firstIdb = firstEncryption.attachEncryptedIndexedDb(firstDoc, {
+				persistenceKey,
+			});
+			await firstIdb.whenLoaded;
+			firstDoc.getText('body').insert(0, 'v1');
+			await tick();
+			firstEncryption.applyKeys(rotatedKeys);
+			firstDoc.getText('body').insert(2, 'v2');
+			await tick();
+			firstDoc.destroy();
+			await firstIdb.whenDisposed;
+
+			const rawUpdates = await readEncryptedUpdates(persistenceKey);
+			expect(rawUpdates.some((update) => getKeyVersion(update) === 1)).toBe(
+				true,
+			);
+			expect(rawUpdates.some((update) => getKeyVersion(update) === 2)).toBe(
+				true,
+			);
+
+			const secondDoc = new Y.Doc({
+				guid: 'encrypted-idb-rotation',
+				gc: false,
+			});
+			const secondEncryption = attachEncryption(secondDoc);
+			secondEncryption.applyKeys(rotatedKeys);
+			const secondIdb = secondEncryption.attachEncryptedIndexedDb(secondDoc, {
+				persistenceKey,
+			});
+			await secondIdb.whenLoaded;
+
+			expect(secondDoc.getText('body').toString()).toBe('v1v2');
+			secondDoc.destroy();
+			await secondIdb.whenDisposed;
+			await secondIdb.clearLocal();
+		});
+
+		test('clearLocal clears the encrypted IndexedDB database', async () => {
+			const persistenceKey = `encrypted-idb-clear-${crypto.randomUUID()}`;
+			const keys = toEncryptionKeys(randomBytes(32));
+			const firstDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: false });
+			const firstEncryption = attachEncryption(firstDoc);
+			firstEncryption.applyKeys(keys);
+			const firstIdb = firstEncryption.attachEncryptedIndexedDb(firstDoc, {
+				persistenceKey,
+			});
+			await firstIdb.whenLoaded;
+			firstDoc.getText('body').insert(0, 'clear me');
+			await tick();
+			firstDoc.destroy();
+			await firstIdb.whenDisposed;
+			await firstIdb.clearLocal();
+
+			const secondDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: false });
+			const secondEncryption = attachEncryption(secondDoc);
+			secondEncryption.applyKeys(keys);
+			const secondIdb = secondEncryption.attachEncryptedIndexedDb(secondDoc, {
+				persistenceKey,
+			});
+			await secondIdb.whenLoaded;
+
+			expect(secondDoc.getText('body').toString()).toBe('');
+			secondDoc.destroy();
+			await secondIdb.whenDisposed;
+			await secondIdb.clearLocal();
 		});
 	});
 });

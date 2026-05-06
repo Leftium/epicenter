@@ -10,7 +10,7 @@
 	import { auth } from '$lib/auth';
 	import { createChatState } from './chat/chat-state.svelte';
 	import ChatInput from './components/ChatInput.svelte';
-	import ChatMessage from '$lib/components/ChatMessage.svelte';
+	import ChatMessage from './components/ChatMessage.svelte';
 	import ModelPicker from './components/ModelPicker.svelte';
 	import ZhongwenSidebar from './components/ZhongwenSidebar.svelte';
 	import { getSignedIn } from './signed-in';

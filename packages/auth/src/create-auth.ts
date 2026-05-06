@@ -1,6 +1,5 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { encryptionKeysEqual } from '@epicenter/encryption';
-import { BEARER_SUBPROTOCOL_PREFIX, MAIN_SUBPROTOCOL } from '@epicenter/sync';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
@@ -89,15 +88,6 @@ export type AuthClient = {
 	}): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
-	/**
-	 * Open a WebSocket against the auth server with this transport's
-	 * credentials applied.
-	 *
-	 * Caller must have proven signed-in before calling this method. Throws
-	 * when no credentials are available.
-	 */
-	openWebSocket(url: string | URL, protocols?: string | string[]): WebSocket;
-
 	[Symbol.dispose](): void;
 };
 
@@ -197,17 +187,6 @@ export function createBearerAuth({
 			return fetch(input, { ...init, headers, credentials: 'omit' });
 		},
 		bearerToken: () => session?.token ?? null,
-		openWebSocket(url, protocols) {
-			if (session === null) {
-				throw new Error(
-					'[auth] openWebSocket called with no session: provider gate failed',
-				);
-			}
-			return new WebSocket(
-				url,
-				websocketProtocolsWithBearer(session.token, protocols),
-			);
-		},
 	});
 }
 
@@ -219,7 +198,6 @@ export function createCookieAuth({
 	initialIdentity = null,
 	saveIdentity,
 }: CreateCookieAuthConfig): AuthClient {
-	let currentIdentity: AuthIdentity | null = initialIdentity;
 	let lastPersisted: AuthIdentity | null = initialIdentity;
 
 	function maybePersistIdentity(next: AuthIdentity | null) {
@@ -242,7 +220,6 @@ export function createCookieAuth({
 				return;
 			}
 			const nextIdentity = identityFromSession(next);
-			currentIdentity = nextIdentity;
 			setState(
 				nextIdentity === null
 					? { status: 'signed-out' }
@@ -251,7 +228,6 @@ export function createCookieAuth({
 			maybePersistIdentity(nextIdentity);
 		},
 		clearCredential(setState) {
-			currentIdentity = null;
 			setState({ status: 'signed-out' });
 			maybePersistIdentity(null);
 		},
@@ -261,14 +237,6 @@ export function createCookieAuth({
 			return fetch(input, { ...init, headers, credentials: 'include' });
 		},
 		bearerToken: () => null,
-		openWebSocket(url, protocols) {
-			if (currentIdentity === null) {
-				throw new Error(
-					'[auth] openWebSocket called with no session: provider gate failed',
-				);
-			}
-			return new WebSocket(url, protocols);
-		},
 	});
 }
 
@@ -282,10 +250,6 @@ type AuthCoreConfig = {
 	clearCredential(setState: SetAuthState): void;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
 	bearerToken(): string | null;
-	openWebSocket(
-		url: string | URL,
-		protocols: string | string[] | undefined,
-	): WebSocket;
 };
 
 function createAuthCore({
@@ -296,7 +260,6 @@ function createAuthCore({
 	clearCredential,
 	fetch,
 	bearerToken,
-	openWebSocket,
 }: AuthCoreConfig): AuthClient {
 	let state: AuthState =
 		initialIdentity === null
@@ -401,9 +364,6 @@ function createAuthCore({
 		},
 
 		fetch,
-		openWebSocket(url, protocols) {
-			return openWebSocket(url, protocols);
-		},
 
 		[Symbol.dispose]() {
 			if (hasDisposed) return;
@@ -477,23 +437,6 @@ function headersFromRequest(input: Request | string | URL, init?: RequestInit) {
 		headers.set(key, value);
 	});
 	return headers;
-}
-
-function websocketProtocolsWithBearer(
-	token: string,
-	protocols?: string | string[],
-): string[] {
-	const offered =
-		protocols === undefined
-			? [MAIN_SUBPROTOCOL]
-			: Array.isArray(protocols)
-				? [...protocols]
-				: [protocols];
-	if (!offered.includes(MAIN_SUBPROTOCOL)) {
-		offered.unshift(MAIN_SUBPROTOCOL);
-	}
-	offered.push(`${BEARER_SUBPROTOCOL_PREFIX}${token}`);
-	return offered;
 }
 
 function usersEqual(left: AuthUser, right: AuthUser) {

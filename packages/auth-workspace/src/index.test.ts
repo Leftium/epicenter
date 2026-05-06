@@ -94,9 +94,6 @@ function createFakeAuth(initial: AuthIdentity | null) {
 		fetch: async () => {
 			throw new Error('unused');
 		},
-		openWebSocket: () => {
-			throw new Error('unused');
-		},
 		[Symbol.dispose]() {
 			listeners.clear();
 		},

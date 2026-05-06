@@ -372,7 +372,7 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 5: Remove `openWebSocket` from `AuthClient`
 
-- [ ] **5.1** In `packages/auth/src/create-auth.ts`:
+- [x] **5.1** In `packages/auth/src/create-auth.ts`:
   - Delete `openWebSocket(...)` from the `AuthClient` type.
   - Delete the bearer impl's `openWebSocket(...)` block.
   - Delete the cookie impl's `openWebSocket(...)` block.
@@ -380,13 +380,14 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
   - Delete the `openWebSocket(url, protocols) { return openWebSocket(url, protocols); }` re-binding in `createAuthCore`.
   - Delete the `websocketProtocolsWithBearer` helper function.
   - Delete the `import { BEARER_SUBPROTOCOL_PREFIX, MAIN_SUBPROTOCOL } from '@epicenter/sync';` line.
-- [ ] **5.2** Migrate `packages/auth/src/create-auth.test.ts`:
+- [x] **5.2** Migrate `packages/auth/src/create-auth.test.ts`:
   - Replace the bearer-subprotocol assertion with `expect(auth.bearerToken).toBe(token)`.
   - Replace the "throws when no session" test with `expect(auth.bearerToken).toBeNull()`.
   - Replace the cookie test with `expect(auth.bearerToken).toBeNull()`.
-- [ ] **5.3** Migrate `packages/auth/src/contract.test.ts:344` similarly.
-- [ ] **5.4** Migrate `packages/auth-workspace/src/index.test.ts:94`: remove the `openWebSocket` mock; ensure the test mock satisfies `AuthClient` with `bearerToken` instead.
-- [ ] **5.5** Verify: `bun run --filter @epicenter/auth typecheck` and `test` pass. Same for `@epicenter/auth-workspace`.
+- [x] **5.3** Migrate `packages/auth/src/contract.test.ts:344` similarly.
+- [x] **5.4** Migrate `packages/auth-workspace/src/index.test.ts:94`: remove the `openWebSocket` mock; ensure the test mock satisfies `AuthClient` with `bearerToken` instead.
+- [x] **5.5** Verify: `bun run --filter @epicenter/auth typecheck` and `test` pass. Same for `@epicenter/auth-workspace`.
+  > Note: `@epicenter/auth-workspace` has no package `test` script, so verification used `bun test packages/auth-workspace/src`.
 
 ### Wave 6: Documentation
 

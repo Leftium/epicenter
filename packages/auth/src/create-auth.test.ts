@@ -44,7 +44,6 @@ let currentBetterAuthState: BetterAuthSessionState = {
 };
 let betterAuthClientOptions: BetterAuthClientOptions | null = null;
 let signInResponseHeaders: Record<string, string> | undefined;
-let capturedWebSockets: FakeWebSocket[] = [];
 let capturedFetches: Array<{
 	input: Request | string | URL;
 	init: RequestInit | undefined;
@@ -107,21 +106,7 @@ const { createBearerAuth, createCookieAuth, waitForAuthSettled } = await import(
 );
 
 const originalFetch = globalThis.fetch;
-const originalWebSocket = globalThis.WebSocket;
 const originalConsoleError = console.error;
-
-class FakeWebSocket {
-	readonly readyState = 0;
-
-	constructor(
-		readonly url: string | URL,
-		readonly protocols?: string | string[],
-	) {
-		capturedWebSockets.push(this);
-	}
-
-	close() {}
-}
 
 beforeEach(() => {
 	globalThis.fetch = (async () =>
@@ -129,19 +114,16 @@ beforeEach(() => {
 			status: 200,
 			headers: { 'content-type': 'application/json' },
 		})) as unknown as typeof fetch;
-	globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 	console.error = () => {};
 	betterAuthSessionListeners = new Set();
 	currentBetterAuthState = { isPending: false, data: null };
 	betterAuthClientOptions = null;
 	signInResponseHeaders = undefined;
-	capturedWebSockets = [];
 	capturedFetches = [];
 });
 
 afterEach(() => {
 	globalThis.fetch = originalFetch;
-	globalThis.WebSocket = originalWebSocket;
 	console.error = originalConsoleError;
 	mock.restore();
 });
@@ -355,22 +337,15 @@ test('waitForAuthSettled resolves after the first settled session event', async 
 	auth[Symbol.dispose]();
 });
 
-test('openWebSocket throws signed out and adds bearer subprotocol signed in', async () => {
+test('bearerToken returns null signed out and current token signed in', async () => {
 	const setup = createStorage({ load: () => null });
 	const auth = createTestAuth(setup);
 
-	expect(() => auth.openWebSocket('ws://localhost/sync')).toThrow(
-		/provider gate failed/,
-	);
+	expect(auth.bearerToken).toBeNull();
 
 	emitBetterSession(betterAuthSessionData(session({ token: 'token-2' })));
-	const ws = auth.openWebSocket('ws://localhost/sync');
 
-	expect(ws).toBe(capturedWebSockets[0] as unknown as WebSocket);
-	expect(capturedWebSockets[0]).toMatchObject({
-		url: 'ws://localhost/sync',
-		protocols: ['epicenter', 'bearer.token-2'],
-	});
+	expect(auth.bearerToken).toBe('token-2');
 	auth[Symbol.dispose]();
 });
 
@@ -428,15 +403,13 @@ test('cookie signed-out settlement without cached identity does not write storag
 	auth[Symbol.dispose]();
 });
 
-test('cookie openWebSocket throws without identity and returns plain protocols when identity exists', async () => {
+test('cookie bearerToken always returns null', async () => {
 	currentBetterAuthState = { isPending: true, data: null };
 	const signedOutAuth = createCookieAuth({
 		baseURL: 'http://localhost:8787',
 		initialIdentity: null,
 	});
-	expect(() =>
-		signedOutAuth.openWebSocket('ws://localhost/sync', ['epicenter']),
-	).toThrow(/provider gate failed/);
+	expect(signedOutAuth.bearerToken).toBeNull();
 	signedOutAuth[Symbol.dispose]();
 
 	const auth = createCookieAuth({
@@ -444,13 +417,7 @@ test('cookie openWebSocket throws without identity and returns plain protocols w
 		initialIdentity: identityFromSession(session()),
 	});
 
-	const ws = auth.openWebSocket('ws://localhost/sync', ['epicenter']);
-
-	expect(ws).toBe(capturedWebSockets[0] as unknown as WebSocket);
-	expect(capturedWebSockets[0]).toMatchObject({
-		url: 'ws://localhost/sync',
-		protocols: ['epicenter'],
-	});
+	expect(auth.bearerToken).toBeNull();
 	auth[Symbol.dispose]();
 });
 

@@ -393,9 +393,11 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 
 ### Phase 5: Remove old Fuji gating
 
-- [ ] **5.1** Delete or strip `FujiWorkspaceProvider.svelte` (or whatever the previous gate was)
-- [ ] **5.2** Remove any leftover `+layout.ts`/`+page.ts` redirect logic that has been replaced by the `$effect`
+- [x] **5.1** Delete or strip `FujiWorkspaceProvider.svelte` (or whatever the previous gate was)
+- [x] **5.2** Remove any leftover `+layout.ts`/`+page.ts` redirect logic that has been replaced by the `$effect`
+  > **Note**: Fuji had no load-based redirect file to remove. The old `$lib/workspace` proxy was removed with the provider because all Fuji consumers now read the workspace from `getSignedIn().fuji` or from state bound by `<SignedIn>`.
 - [ ] **5.3** Re-run typecheck and smoke tests; commit
+  > **Note**: Deferred to the final cross-app verification pass by request.
 
 ### Phase 6: Replicate for Honeycrisp
 

@@ -63,7 +63,7 @@ export const tabManager = await openTabManager({
  * auth changes reconnect the workspace.
  */
 async function registerDevice(): Promise<void> {
-	await tabManager.whenLoaded;
+	await tabManager.idb.whenLoaded;
 	const { id, name } = tabManager.peer;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;

@@ -432,7 +432,7 @@ function createAiChatState() {
 	});
 
 	// Initialize after persistence loads
-	void tabManager.whenLoaded.then(() => {
+	void tabManager.idb.whenLoaded.then(() => {
 		reconcileHandles();
 		const newId = ensureDefaultConversation();
 		if (conversations.length > 0) {

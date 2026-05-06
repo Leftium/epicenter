@@ -14,7 +14,7 @@
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>
-{:then}
+{:then _}
 	<HoneycripEditor
 		yxmlfragment={doc.current.body.binding}
 		onContentChange={(change) => notesState.updateNoteContent(change)}

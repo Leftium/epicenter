@@ -171,7 +171,7 @@
 		<div class="flex flex-1 items-center justify-center">
 			<Spinner class="size-5 text-muted-foreground" />
 		</div>
-	{:then}
+	{:then _}
 		<ProseMirrorEditor
 			yxmlfragment={contentDoc.current.body.binding}
 			onWordCountChange={(count) => (wordCount = count)}

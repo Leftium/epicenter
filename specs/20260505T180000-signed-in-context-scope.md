@@ -401,10 +401,14 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 
 ### Phase 6: Replicate for Honeycrisp
 
-- [ ] **6.1** Repeat Phase 2 (1-5) for Honeycrisp; type is `SignedIn = { identity, honeycrisp }`
-- [ ] **6.2** Repeat Phase 3 (route migration)
+- [x] **6.1** Repeat Phase 2 (1-5) for Honeycrisp; type is `SignedIn = { identity, honeycrisp }`
+  > **Note**: `openHoneycrisp` was already synchronous and now exposes `whenReady` and `dispose()` alongside the existing `whenLoaded` and `[Symbol.dispose]()` names.
+- [x] **6.2** Repeat Phase 3 (route migration)
+  > **Note**: Honeycrisp has only the root signed-in page today; it moved to `(signed-in)/+page.svelte`.
 - [ ] **6.3** Repeat Phase 4 (verification)
-- [ ] **6.4** Repeat Phase 5 (cleanup)
+  > **Note**: Deferred to the final cross-app verification pass by request.
+- [x] **6.4** Repeat Phase 5 (cleanup)
+  > **Note**: Removed `HoneycrispWorkspaceProvider` and the old workspace-only context. Consumers that need the workspace now use `getSignedIn().honeycrisp`.
 
 ### Phase 7: Replicate for Zhongwen, rename `(protected)/` → `(signed-in)/`
 

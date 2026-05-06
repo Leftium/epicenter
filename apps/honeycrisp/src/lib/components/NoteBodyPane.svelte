@@ -2,12 +2,15 @@
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
-	import { honeycrisp } from '$lib/honeycrisp/client';
-	import { notesState } from '$lib/state';
+	import { getHoneycrispState } from '$lib/state';
+	import { getSignedIn } from '$lib/signed-in';
+
+	const signedIn = getSignedIn();
+	const { notesState } = getHoneycrispState();
 
 	let { noteId }: { noteId: string } = $props();
 
-	const doc = fromDisposableCache(honeycrisp.noteBodyDocs, () => noteId);
+	const doc = fromDisposableCache(signedIn.honeycrisp.noteBodyDocs, () => noteId);
 </script>
 
 {#await doc.current.whenLoaded}

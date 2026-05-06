@@ -5,13 +5,18 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import { auth } from '$lib/auth';
 	import FolderMenuItem from '$lib/components/FolderMenuItem.svelte';
-	import {
-		auth,
-		forgetHoneycrispDevice,
-		honeycrisp,
-	} from '$lib/honeycrisp/client';
-	import { foldersState, notesState, viewState } from '$lib/state';
+	import { getHoneycrispState } from '$lib/state';
+	import { getSignedIn } from '$lib/signed-in';
+
+	const signedIn = getSignedIn();
+	const { foldersState, notesState, viewState } = getHoneycrispState();
+
+	async function forgetHoneycrispDevice(): Promise<void> {
+		await signedIn.honeycrisp.wipe();
+		window.location.reload();
+	}
 </script>
 
 <Sidebar.Root>
@@ -21,7 +26,7 @@
 			<div class="flex items-center gap-1">
 				<AccountPopover
 					{auth}
-					sync={honeycrisp.sync}
+					sync={signedIn.honeycrisp.sync}
 					syncNoun="notes"
 					onForgetDevice={forgetHoneycrispDevice}
 					onSocialSignIn={() =>

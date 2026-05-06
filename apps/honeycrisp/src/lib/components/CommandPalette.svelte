@@ -4,7 +4,9 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { foldersState, notesState, viewState } from '$lib/state';
+	import { getHoneycrispState } from '$lib/state';
+
+	const { foldersState, notesState, viewState } = getHoneycrispState();
 
 	let open = $state(false);
 </script>

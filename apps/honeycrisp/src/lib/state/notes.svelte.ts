@@ -20,12 +20,18 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { DateTimeString, generateId } from '@epicenter/workspace';
-import { honeycrisp } from '$lib/honeycrisp/client';
+import type { Honeycrisp } from '$lib/honeycrisp/browser';
 import type { FolderId, NoteId } from '$lib/workspace';
 import { searchParams } from '$lib/search-params.svelte';
-import { foldersState } from './folders.svelte';
+import type { createFoldersState } from './folders.svelte';
 
-function createNotesState() {
+export function createNotesState({
+	foldersState,
+	honeycrisp,
+}: {
+	foldersState: ReturnType<typeof createFoldersState>;
+	honeycrisp: Honeycrisp;
+}) {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
 	const allNotesMap = fromTable(honeycrisp.tables.notes);
@@ -57,6 +63,10 @@ function createNotesState() {
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
+		destroy() {
+			allNotesMap[Symbol.dispose]();
+		},
+
 		/**
 		 * Look up a note by ID. Returns `undefined` if not found.
 		 */
@@ -244,5 +254,3 @@ function createNotesState() {
 		},
 	};
 }
-
-export const notesState = createNotesState();

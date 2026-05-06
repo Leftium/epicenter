@@ -20,11 +20,11 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
-import { honeycrisp } from '$lib/honeycrisp/client';
+import type { Honeycrisp } from '$lib/honeycrisp/browser';
 import type { FolderId } from '$lib/workspace';
 import { searchParams } from '$lib/search-params.svelte';
 
-function createFoldersState() {
+export function createFoldersState(honeycrisp: Honeycrisp) {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
 	const foldersMap = fromTable(honeycrisp.tables.folders);
@@ -34,6 +34,10 @@ function createFoldersState() {
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
+		destroy() {
+			foldersMap[Symbol.dispose]();
+		},
+
 		/**
 		 * Look up a folder by ID. Returns `undefined` if not found.
 		 */
@@ -103,5 +107,3 @@ function createFoldersState() {
 		},
 	};
 }
-
-export const foldersState = createFoldersState();

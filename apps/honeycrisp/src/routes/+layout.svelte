@@ -1,14 +1,13 @@
 <script lang="ts">
-	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
-	import { honeycrisp } from '$lib/honeycrisp/client';
+	import { auth } from '$lib/auth';
+	import Loading from '$lib/components/Loading.svelte';
 	import { queryClient } from '$lib/query/client';
 	import '@epicenter/ui/app.css';
-	import * as Tooltip from '@epicenter/ui/tooltip';
 
 	let { children } = $props();
 </script>
@@ -16,9 +15,11 @@
 <svelte:head><title>Honeycrisp</title></svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	<WorkspaceGate whenReady={honeycrisp.whenLoaded}>
-		<Tooltip.Provider>{@render children()}</Tooltip.Provider>
-	</WorkspaceGate>
+	{#if auth.state.status === 'pending'}
+		<Loading />
+	{:else}
+		{@render children?.()}
+	{/if}
 </QueryClientProvider>
 
 <Toaster offset={16} closeButton />

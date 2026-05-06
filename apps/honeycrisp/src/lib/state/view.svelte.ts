@@ -24,11 +24,16 @@
 
 import { searchParams, type SortBy } from '$lib/search-params.svelte';
 import type { FolderId, NoteId } from '$lib/workspace';
-import { foldersState } from './folders.svelte';
-import { notesState } from './notes.svelte';
+import type { createFoldersState } from './folders.svelte';
+import type { createNotesState } from './notes.svelte';
 
-
-function createViewState() {
+export function createViewState({
+	foldersState,
+	notesState,
+}: {
+	foldersState: ReturnType<typeof createFoldersState>;
+	notesState: ReturnType<typeof createNotesState>;
+}) {
 	// ─── Derived State ───────────────────────────────────────────────────
 
 	/** Notes filtered by selected folder and search query, then sorted. */
@@ -175,5 +180,3 @@ function createViewState() {
 		},
 	};
 }
-
-export const viewState = createViewState();

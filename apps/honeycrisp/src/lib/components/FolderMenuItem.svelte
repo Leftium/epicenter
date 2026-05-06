@@ -6,8 +6,10 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { foldersState, notesState, viewState } from '$lib/state';
+	import { getHoneycrispState } from '$lib/state';
 	import type { Folder } from '$lib/workspace';
+
+	const { foldersState, notesState, viewState } = getHoneycrispState();
 
 	let { folder }: { folder: Folder } = $props();
 

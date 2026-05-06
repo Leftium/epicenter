@@ -8,9 +8,11 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import { foldersState, notesState } from '$lib/state';
 	import { DateTimeString } from '@epicenter/workspace';
+	import { getHoneycrispState } from '$lib/state';
 	import type { Note } from '$lib/workspace';
+
+	const { foldersState, notesState } = getHoneycrispState();
 
 	let {
 		note,

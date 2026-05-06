@@ -50,7 +50,6 @@ export function openFuji({
   return {
     get id() { return ydoc.guid; },
     ydoc, tables, kv, awareness, encryption, idb, sync,
-    whenLoaded: idb.whenLoaded,
     [Symbol.dispose]() {
       ydoc.destroy();
     },

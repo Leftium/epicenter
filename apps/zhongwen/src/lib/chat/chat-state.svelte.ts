@@ -255,7 +255,7 @@ export function createChatState() {
 	});
 
 	// Initialize after persistence loads
-	void signedIn.zhongwen.whenLoaded.then(() => {
+	void signedIn.zhongwen.idb.whenLoaded.then(() => {
 		reconcileHandles();
 		activeConversationId = ensureDefaultConversation();
 	});

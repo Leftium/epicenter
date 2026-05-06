@@ -76,7 +76,6 @@ export function openHoneycrisp({
 			body,
 			idb: childIdb,
 			sync: childSync,
-			whenLoaded: childIdb.whenLoaded,
 			/**
 			 * child disposer rejections do not propagate; bundle.wipe() relies on
 			 * IDB's deleteDatabase native blocking as belt-and-suspenders for
@@ -130,8 +129,6 @@ export function openHoneycrisp({
 		},
 		remote,
 		rpc,
-		whenLoaded: idb.whenLoaded,
-		whenReady: idb.whenLoaded,
 		dispose,
 		[Symbol.dispose]: dispose,
 	};

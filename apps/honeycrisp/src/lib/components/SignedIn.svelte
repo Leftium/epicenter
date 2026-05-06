@@ -1,12 +1,14 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import { getOrCreateInstallationId } from '@epicenter/workspace';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { onDestroy } from 'svelte';
 	import { auth } from '$lib/auth';
 	import { openHoneycrisp } from '$lib/honeycrisp/browser';
-	import { createHoneycrispState, setHoneycrispState } from '$lib/state';
 	import { setSignedIn } from '$lib/signed-in';
-	import ErrorState from './ErrorState.svelte';
-	import Loading from './Loading.svelte';
+	import { createHoneycrispState, setHoneycrispState } from '$lib/state';
 
 	let { children } = $props();
 
@@ -38,7 +40,7 @@
 	});
 
 	onDestroy(() => {
-		state.destroy();
+		state[Symbol.dispose]();
 		honeycrisp.dispose();
 	});
 
@@ -52,10 +54,28 @@
 	});
 </script>
 
-{#await honeycrisp.whenReady}
-	<Loading />
+{#await honeycrisp.idb.whenLoaded}
+	<div class="flex h-dvh items-center justify-center">
+		<Spinner class="size-5 text-muted-foreground" />
+	</div>
 {:then}
 	{@render children?.()}
 {:catch error}
-	<ErrorState {error} />
+	<Empty.Root class="h-dvh">
+		<Empty.Media>
+			<TriangleAlertIcon class="size-8 text-muted-foreground" />
+		</Empty.Media>
+		<Empty.Title>Failed to load workspace</Empty.Title>
+		<Empty.Description>
+			{error instanceof Error
+				? error.message
+				: 'The workspace could not be opened.'}
+		</Empty.Description>
+		<div class="flex items-center gap-2">
+			<Button variant="outline" onclick={() => window.location.reload()}>
+				Reload
+			</Button>
+			<Button onclick={() => auth.signOut()}>Sign out</Button>
+		</div>
+	</Empty.Root>
 {/await}

@@ -13,7 +13,7 @@
 	const doc = fromDisposableCache(signedIn.honeycrisp.noteBodyDocs, () => noteId);
 </script>
 
-{#await doc.current.whenLoaded}
+{#await doc.current.idb.whenLoaded}
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>

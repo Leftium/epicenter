@@ -86,7 +86,7 @@ It's easy to write a double-dispose or leak here. The version above can't — th
 
 ## Async-gate variant
 
-When the resource exposes a readiness promise (`whenReady`, `whenLoaded`), gate rendering in the **template** with `{#await}`. Do NOT introduce a `$state(false)` flag + `$effect` that flips it inside `.then()` — Svelte already owns promise lifecycles, cancellation, and error branching. Rebuilding that in userland is pure ceremony.
+When the resource exposes a readiness promise (`whenReady`, `whenLoaded`), gate rendering in the **template** with `{#await}`. Do NOT introduce a `$state(false)` flag + `$effect` that flips it inside `.then()`: Svelte already owns promise lifecycles, cancellation, and error branching. Rebuilding that in userland is pure ceremony.
 
 ```svelte
 <script lang="ts">
@@ -98,14 +98,16 @@ When the resource exposes a readiness promise (`whenReady`, `whenLoaded`), gate 
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>
-{:then}
+{:then _}
 	<Editor binding={resource.body.binding} />
 {:catch error}
 	<ErrorState {error} />
 {/await}
 ```
 
-### Anti-pattern — don't do this
+Bare `{:then}` is valid Svelte when the resolved promise value is unused. In this repo, use `{:then _}` for readiness gates because Biome 2.4.x currently parses bare `{:then}` as `Expected an expression, instead none was found`. Treat `_` as a temporary compatibility placeholder, not a semantic value. Use `{:then value}` only when the resolved value is actually read.
+
+### Anti-pattern: don't do this
 
 ```svelte
 <!-- ❌ Re-implements {#await} with extra state and a cancellation flag -->
@@ -1067,7 +1069,8 @@ Use the `Empty.*` compound component for empty states (no results, no items):
 ### Key Rules
 
 - **Never** show plain text ("Loading...", "Loading tabs…") without a `Spinner`
-- **Always** include `{:catch}` on `{#await}` blocks — prevents infinite spinner on failure
+- **Always** include `{:catch}` on `{#await}` blocks. This prevents infinite spinners on failure
+- Use `{:then _}` for readiness gates when the resolved value is unused. Bare `{:then}` is valid Svelte, but Biome 2.4.x rejects it in `.svelte` files
 - Use `text-muted-foreground` for loading text and spinner color
 - Use `size-5` for full-page spinners, `size-3.5` for inline/button spinners
 - Match the `Empty.*` compound component pattern for both error and empty states

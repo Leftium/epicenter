@@ -67,6 +67,7 @@ type SetAuthState = (next: AuthState) => void;
 
 export type AuthClient = {
 	readonly state: AuthState;
+	readonly bearerToken: string | null;
 	onStateChange(fn: AuthStateChangeListener): () => void;
 	signIn(input: {
 		email: string;
@@ -195,6 +196,7 @@ export function createBearerAuth({
 			}
 			return fetch(input, { ...init, headers, credentials: 'omit' });
 		},
+		bearerToken: () => session?.token ?? null,
 		openWebSocket(url, protocols) {
 			if (session === null) {
 				throw new Error(
@@ -258,6 +260,7 @@ export function createCookieAuth({
 			headers.delete('Authorization');
 			return fetch(input, { ...init, headers, credentials: 'include' });
 		},
+		bearerToken: () => null,
 		openWebSocket(url, protocols) {
 			if (currentIdentity === null) {
 				throw new Error(
@@ -278,6 +281,7 @@ type AuthCoreConfig = {
 	handleBetterAuthSession(data: unknown, setState: SetAuthState): void;
 	clearCredential(setState: SetAuthState): void;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
+	bearerToken(): string | null;
 	openWebSocket(
 		url: string | URL,
 		protocols: string | string[] | undefined,
@@ -291,6 +295,7 @@ function createAuthCore({
 	handleBetterAuthSession,
 	clearCredential,
 	fetch,
+	bearerToken,
 	openWebSocket,
 }: AuthCoreConfig): AuthClient {
 	let state: AuthState =
@@ -330,6 +335,9 @@ function createAuthCore({
 	return {
 		get state() {
 			return state;
+		},
+		get bearerToken() {
+			return bearerToken();
 		},
 		onStateChange(fn) {
 			stateChangeListeners.add(fn);

@@ -12,7 +12,7 @@
 <svelte:head><title>Fuji</title></svelte:head>
 
 {#if auth.state.status === 'pending'}
-	<PageSpinner />
+	<PageSpinner class="h-dvh" />
 {:else}
 	{@render children?.()}
 {/if}

@@ -55,7 +55,7 @@
 	{#if loading}
 		{@render loading()}
 	{:else}
-		<PageSpinner />
+		<PageSpinner class="h-dvh" />
 	{/if}
 {:then _}
 	{@render children()}

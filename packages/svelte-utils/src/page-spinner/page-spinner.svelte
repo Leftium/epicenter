@@ -1,9 +1,15 @@
 <!--
-	Full-viewport centered spinner, used at boot moments where the page is
-	intentionally blocked on a single async resource (auth bootstrap,
-	workspace hydration). Owns the viewport via `h-dvh`.
+	Centered spinner panel with optional label. Layout-agnostic: callers
+	pass the height via `class` so the same primitive serves boot screens,
+	flex panes, and block panes without an `!important` escape hatch.
 
-	For region-level loading inside a layout, use <PaneSpinner> instead.
+	@example
+	```svelte
+	<PageSpinner class="h-dvh" />                    full viewport (boot)
+	<PageSpinner class="flex-1" />                   fills a flex parent
+	<PageSpinner class="h-full" />                   fills a block parent
+	<PageSpinner class="h-dvh" label="Loading…" />   with caption
+	```
 -->
 <script lang="ts">
 	import { Spinner } from '@epicenter/ui/spinner';
@@ -15,16 +21,13 @@
 	}: {
 		/** Optional caption rendered below the spinner. */
 		label?: string;
-		/** Extra classes merged onto the wrapper. */
+		/** Sizing + any extra classes merged onto the wrapper. */
 		class?: string;
 	} = $props();
 </script>
 
 <div
-	class={cn(
-		'flex h-dvh flex-col items-center justify-center gap-3',
-		className,
-	)}
+	class={cn('flex flex-col items-center justify-center gap-3', className)}
 	aria-live="polite"
 >
 	<Spinner class="size-5 text-muted-foreground" />

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { fromDisposableCache } from '@epicenter/svelte';
-	import { PaneSpinner } from '@epicenter/svelte/pane-spinner';
+	import { PageSpinner } from '@epicenter/svelte/page-spinner';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import {
@@ -172,7 +172,7 @@
 
 	<!-- Editor body -->
 	{#await contentDoc.current.idb.whenLoaded}
-		<PaneSpinner />
+		<PageSpinner class="flex-1" />
 	{:then _}
 		<ProseMirrorEditor
 			yxmlfragment={contentDoc.current.body.binding}

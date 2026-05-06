@@ -16,7 +16,7 @@
 
 <QueryClientProvider client={queryClient}>
 	{#if auth.state.status === 'pending'}
-		<PageSpinner />
+		<PageSpinner class="h-dvh" />
 	{:else}
 		{@render children?.()}
 	{/if}

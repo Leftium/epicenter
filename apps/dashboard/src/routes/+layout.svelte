@@ -19,7 +19,7 @@
 <QueryClientProvider client={queryClient}>
 	<div class="min-h-screen bg-background text-foreground">
 		{#if auth.state.status === 'pending'}
-			<PageSpinner />
+			<PageSpinner class="h-dvh" />
 		{:else if auth.state.status === 'signed-in'}
 			<header class="border-b bg-background/95 backdrop-blur">
 				<div

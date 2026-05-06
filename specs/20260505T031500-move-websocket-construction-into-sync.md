@@ -1,7 +1,7 @@
 # Move WebSocket construction into sync; auth exposes only `bearerToken`
 
 **Date**: 2026-05-05
-**Status**: In Progress
+**Status**: Implemented with verification caveats
 **Author**: AI-assisted (Claude)
 **Branch**: feat/encrypted-local-workspace-storage
 **Supersedes parts of**: `specs/20260505T021500-collapse-syncauth-to-transport-function.md` (the `SyncTransport` callable shape)
@@ -400,7 +400,7 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 7: Final verification
 
-- [ ] **7.1** Workspace-wide grep : all of these must return zero hits in non-spec, non-historical-doc files:
+- [x] **7.1** Workspace-wide grep : all of these must return zero hits in non-spec, non-historical-doc files:
   - `auth\.openWebSocket`
   - `openWebSocket` (in `packages/auth/`)
   - `SyncTransport`
@@ -409,8 +409,11 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
   - `transport: auth\.` (in `apps/`)
   - `transport: SyncTransport` (in `apps/`)
 - [ ] **7.2** `bun run typecheck` passes workspace-wide.
-- [ ] **7.3** `bun run test` for `@epicenter/workspace`, `@epicenter/auth`, `@epicenter/auth-workspace` all pass.
-- [ ] **7.4** Browser smoke test: open Fuji while signed in, sync connects (cookie path); for a Tauri-style app, confirm bearer subprotocol is sent (DevTools → Network → WS → Frames).
+  > Caveat: workspace-wide typecheck fails in `@epicenter/landing` because `svelte-check` is not available on PATH for that package. The touched packages pass targeted typecheck: `@epicenter/workspace`, `@epicenter/auth`, and `@epicenter/auth-workspace`.
+- [x] **7.3** `bun run test` for `@epicenter/workspace`, `@epicenter/auth`, `@epicenter/auth-workspace` all pass.
+  > Note: `@epicenter/workspace` tests require Unix socket permissions outside the sandbox. The sandboxed run fails with `EPERM` on socket bind; the escalated run passes. `@epicenter/auth-workspace` has no package `test` script, so verification used `bun test packages/auth-workspace/src`.
+- [ ] **7.4** Browser smoke test: open Fuji while signed in, sync connects (cookie path); for a Tauri-style app, confirm bearer subprotocol is sent (DevTools -> Network -> WS -> Frames).
+  > Skipped: no signed-in browser or Tauri session was available in this execution environment.
 
 ## Edge Cases
 
@@ -460,18 +463,77 @@ If a third strategy emerges (signed URLs with rotating signatures, mTLS via sess
 
 ## Success Criteria
 
-- [ ] `AuthClient.bearerToken` is a getter returning `string | null`.
-- [ ] `AuthClient.openWebSocket` does not exist.
-- [ ] `websocketProtocolsWithBearer` does not exist.
-- [ ] `@epicenter/auth` does not import from `@epicenter/sync`.
-- [ ] `SyncAttachmentConfig.bearerToken` is `(() => string | null) | undefined`.
-- [ ] `SyncTransport` does not exist.
-- [ ] `attemptConnection` constructs WebSockets via `new WebSocket(url, protocols)` directly.
-- [ ] Every workspace factory accepts `bearerToken?: () => string | null` (not `transport`).
-- [ ] Every `*WorkspaceProvider.svelte` passes `bearerToken: () => auth.bearerToken` (uniform across cookie and bearer apps).
+- [x] `AuthClient.bearerToken` is a getter returning `string | null`.
+- [x] `AuthClient.openWebSocket` does not exist.
+- [x] `websocketProtocolsWithBearer` does not exist.
+- [x] `@epicenter/auth` does not import from `@epicenter/sync`.
+- [x] `SyncAttachmentConfig.bearerToken` is `(() => string | null) | undefined`.
+- [x] `SyncTransport` does not exist.
+- [x] `attemptConnection` constructs WebSockets via `new WebSocket(url, protocols)` directly.
+- [x] Every workspace factory accepts `bearerToken?: () => string | null` (not `transport`).
+- [x] Every `*WorkspaceProvider.svelte` passes `bearerToken: () => auth.bearerToken` (uniform across cookie and bearer apps).
 - [ ] `bun run typecheck` passes workspace-wide.
-- [ ] `bun run test` passes for `@epicenter/workspace`, `@epicenter/auth`, `@epicenter/auth-workspace`.
+  > Caveat: blocked by `@epicenter/landing` missing `svelte-check` on PATH. Targeted typechecks for the touched packages pass.
+- [x] `bun run test` passes for `@epicenter/workspace`, `@epicenter/auth`, `@epicenter/auth-workspace`.
 - [ ] Browser smoke confirms web Fuji syncs (cookie path) and Tauri Fuji or extension syncs (bearer path).
+  > Skipped: no signed-in browser or Tauri session was available.
+
+## Implementation Review
+
+Completed: 2026-05-06
+
+Files read:
+
+```txt
+.agents/skills/
+|-- auth/SKILL.md
+`-- workspace-app-layout/SKILL.md
+apps/
+|-- fuji/
+|   |-- README.md
+|   `-- src/lib/
+|       |-- components/FujiWorkspaceProvider.svelte
+|       `-- fuji/{browser.ts,daemon.ts}
+|-- honeycrisp/src/lib/
+|   |-- components/HoneycrispWorkspaceProvider.svelte
+|   `-- honeycrisp/{browser.ts,daemon.ts,script.ts}
+|-- opensidian/src/lib/opensidian/{browser.ts,client.ts,daemon.ts,script.ts}
+|-- tab-manager/src/lib/tab-manager/{client.ts,extension.ts}
+`-- zhongwen/src/lib/zhongwen/{daemon.ts,script.ts}
+docs/
+|-- architecture.md
+`-- guides/consuming-epicenter-api.md
+packages/
+|-- auth/
+|   |-- package.json
+|   `-- src/{contract.test.ts,create-auth.test.ts,create-auth.ts}
+|-- auth-workspace/src/index.test.ts
+`-- workspace/
+    |-- README.md
+    |-- SYNC_ARCHITECTURE.md
+    `-- src/
+        |-- document/{README.md,attach-sync.test.ts,attach-sync.ts}
+        `-- index.ts
+specs/
+|-- 20260505T021500-collapse-syncauth-to-transport-function.md
+`-- 20260505T031500-move-websocket-construction-into-sync.md
+```
+
+Findings:
+
+1. No implementation issues found in the second read. The final API shape is cohesive: auth owns identity and token access; sync owns WebSocket construction and subprotocol assembly.
+
+Verification:
+
+- `rg` checks for `auth.openWebSocket`, `openWebSocket` in auth, `SyncTransport`, `websocketProtocolsWithBearer`, auth imports from `@epicenter/sync`, and app `transport` call sites: zero hits in non-spec, non-historical files.
+- `bun run --filter @epicenter/workspace typecheck`: pass.
+- `bun run --filter @epicenter/auth typecheck`: pass.
+- `bun run --filter @epicenter/auth-workspace typecheck`: pass.
+- `bun run --filter @epicenter/workspace test`: pass with socket-permission escalation.
+- `bun run --filter @epicenter/auth test`: pass.
+- `bun test packages/auth-workspace/src`: pass.
+- `bun run typecheck`: fails in `@epicenter/landing` because `svelte-check` is not available on PATH.
+- Browser smoke: skipped because no signed-in browser or Tauri session was available.
 
 ## References
 

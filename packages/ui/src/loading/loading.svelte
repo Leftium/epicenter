@@ -13,6 +13,7 @@
 	```
 -->
 <script lang="ts">
+	import * as Empty from '#/empty';
 	import { Spinner } from '#/spinner';
 	import { cn } from '#/utils.js';
 
@@ -27,12 +28,13 @@
 	} = $props();
 </script>
 
-<div
-	class={cn('flex flex-col items-center justify-center gap-3', className)}
-	aria-live="polite"
->
-	<Spinner class="size-5 text-muted-foreground" />
-	{#if label}
-		<p class="text-sm text-muted-foreground">{label}</p>
-	{/if}
-</div>
+<Empty.Root class={cn('border-0', className)} aria-live="polite">
+	<Empty.Header>
+		<Empty.Media>
+			<Spinner class="size-5 text-muted-foreground" />
+		</Empty.Media>
+		{#if label}
+			<Empty.Description>{label}</Empty.Description>
+		{/if}
+	</Empty.Header>
+</Empty.Root>

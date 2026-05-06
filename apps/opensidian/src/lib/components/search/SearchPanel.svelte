@@ -146,12 +146,13 @@
 				{#if sidebarSearchState.hasMore}
 					<button
 						type="button"
-						class="w-full rounded-sm px-3 py-2 text-center text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+						class="flex w-full items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-center text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
 						onclick={() => sidebarSearchState.loadMore()}
 						disabled={sidebarSearchState.isSearching}
 					>
 						{#if sidebarSearchState.isSearching}
-							Loading...
+							<Spinner class="size-3" />
+							<span>Loading</span>
 						{:else}
 							Load more results
 						{/if}

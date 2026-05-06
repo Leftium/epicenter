@@ -59,7 +59,7 @@ export function openFuji({
 export const workspace = openFuji();
 ```
 
-`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `auth.state`; the signed-in route group opens the browser workspace inside `<SignedIn>` and exposes it through `getSignedIn().fuji`. Local cleanup is a separate explicit action, not part of sign-out.
+`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `session.current`; the signed-in variant owns the browser workspace and the root layout exposes it through `getSignedInSession()`. Local cleanup is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/client.ts`.
 

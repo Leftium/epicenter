@@ -49,13 +49,12 @@ export function openOpensidian({
 		onLocalUpdate(ydoc, () =>
 			doc.tables.files.update(fileId, { updatedAt: Date.now() }),
 		);
-		const persistence = doc.encryption.attachIndexedDb(ydoc, { userId });
+		const childIdb = doc.encryption.attachIndexedDb(ydoc, { userId });
 		attachOwnedBroadcastChannel(ydoc, { userId });
 		return {
 			ydoc,
 			content: attachTimeline(ydoc),
-			persistence,
-			whenReady: persistence.whenLoaded,
+			idb: childIdb,
 			/**
 			 * child disposer rejections do not propagate; bundle.wipe() relies on
 			 * IDB's deleteDatabase native blocking as belt-and-suspenders for
@@ -69,17 +68,17 @@ export function openOpensidian({
 	const fileContent = {
 		async read(fileId: FileId) {
 			await using handle = fileContentDocs.open(fileId);
-			await handle.whenReady;
+			await handle.idb.whenLoaded;
 			return handle.content.read();
 		},
 		async write(fileId: FileId, text: string) {
 			await using handle = fileContentDocs.open(fileId);
-			await handle.whenReady;
+			await handle.idb.whenLoaded;
 			handle.content.write(text);
 		},
 		async append(fileId: FileId, text: string) {
 			await using handle = fileContentDocs.open(fileId);
-			await handle.whenReady;
+			await handle.idb.whenLoaded;
 			handle.content.appendText(text);
 			return handle.content.read();
 		},
@@ -136,7 +135,6 @@ export function openOpensidian({
 		},
 		remote,
 		rpc,
-		whenLoaded: idb.whenLoaded,
 		[Symbol.dispose]() {
 			fileContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();

@@ -12,6 +12,6 @@
 <ConfirmationDialog />
 <Toaster />
 <ModeWatcher />
-<WorkspaceGate whenReady={opensidian.whenLoaded}>
+<WorkspaceGate pending={opensidian.idb.whenLoaded}>
 	{@render children()}
 </WorkspaceGate>

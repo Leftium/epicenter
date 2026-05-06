@@ -1,5 +1,5 @@
 <!--
-	Render gate that blocks children until a workspace `whenReady` promise resolves.
+	Render gate that blocks children until a `pending` promise resolves.
 
 	Uses `Empty.*` for both loading and error states to keep the structure symmetric.
 	Both states are overridable via optional snippets.
@@ -11,7 +11,7 @@
 		import workspace from '$lib/workspace';
 	</script>
 
-	<WorkspaceGate whenReady={workspace.whenReady}>
+	<WorkspaceGate pending={workspace.idb.whenLoaded}>
 		<AppShell />
 	</WorkspaceGate>
 	```
@@ -23,13 +23,13 @@
 	import type { Snippet } from 'svelte';
 
 	let {
-		whenReady,
+		pending,
 		children,
 		loading,
 		error,
 	}: {
-		/** Promise that resolves when the workspace is ready to read. */
-		whenReady: Promise<unknown>;
+		/** Promise the gate awaits before rendering children. */
+		pending: Promise<unknown>;
 		/** Optional override for the loading state. Defaults to Empty with a centered spinner. */
 		loading?: Snippet;
 		/** Optional override for the error state. Defaults to Empty with a warning icon. */
@@ -37,7 +37,7 @@
 	} = $props();
 </script>
 
-{#await whenReady}
+{#await pending}
 	{#if loading}
 		{@render loading()}
 	{:else}

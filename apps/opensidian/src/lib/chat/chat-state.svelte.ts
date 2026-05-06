@@ -314,7 +314,7 @@ function createAiChatState() {
 		refreshFns.get(activeConversationId)?.();
 	});
 
-	void opensidian.whenLoaded.then(() => {
+	void opensidian.idb.whenLoaded.then(() => {
 		void skillState.loadAllSkills();
 		reconcileHandles();
 

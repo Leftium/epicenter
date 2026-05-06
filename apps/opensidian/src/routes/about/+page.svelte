@@ -78,7 +78,6 @@ export function openOpensidian() {
 
   return {
     ydoc, tables, idb, sqliteIndex, fs,
-    whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 }

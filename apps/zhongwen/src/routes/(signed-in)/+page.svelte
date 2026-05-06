@@ -23,8 +23,7 @@
 	const handle = $derived(chatState.active);
 
 	onDestroy(() => {
-		showPinyin.destroy();
-		chatState.destroy();
+		chatState[Symbol.dispose]();
 	});
 
 	function openForgetDeviceDialog() {

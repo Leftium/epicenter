@@ -27,6 +27,10 @@ function createTransformationSteps() {
 	const map = fromTable(whispering.tables.transformationSteps);
 
 	return {
+		[Symbol.dispose]() {
+			map[Symbol.dispose]();
+		},
+
 		/**
 		 * All transformation steps as a reactive SvelteMap.
 		 */
@@ -101,6 +105,10 @@ function createTransformationSteps() {
 }
 
 export const transformationSteps = createTransformationSteps();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => transformationSteps[Symbol.dispose]());
+}
 
 /**
  * Generate a default transformation step with sensible defaults.

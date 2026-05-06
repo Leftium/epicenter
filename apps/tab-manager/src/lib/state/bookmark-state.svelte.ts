@@ -51,6 +51,10 @@ function createBookmarkState() {
 	);
 
 	return {
+		[Symbol.dispose]() {
+			bookmarksMap[Symbol.dispose]();
+		},
+
 		get bookmarks() {
 			return bookmarks;
 		},
@@ -97,3 +101,7 @@ function createBookmarkState() {
 }
 
 export const bookmarkState = createBookmarkState();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => bookmarkState[Symbol.dispose]());
+}

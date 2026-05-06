@@ -36,6 +36,10 @@ function createToolTrustState() {
 			.map((t): [string, TrustLevel] => [t.id, t.trust]),
 	);
 	return {
+		[Symbol.dispose]() {
+			trustMap[Symbol.dispose]();
+		},
+
 		/**
 		 * Get the trust level for a tool.
 		 *
@@ -113,3 +117,7 @@ function createToolTrustState() {
 }
 
 export const toolTrustState = createToolTrustState();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => toolTrustState[Symbol.dispose]());
+}

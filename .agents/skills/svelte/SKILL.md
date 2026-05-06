@@ -303,6 +303,9 @@ function createBookmarkState() {
 	const bookmarks = $derived(bookmarksMap.values().toArray());
 
 	return {
+		[Symbol.dispose]() {
+			bookmarksMap[Symbol.dispose]();
+		},
 		get bookmarks() { return bookmarks; },
 		async add(tab: Tab) { /* ... */ },
 		remove(id: BookmarkId) { /* ... */ },
@@ -311,6 +314,51 @@ function createBookmarkState() {
 
 export const bookmarkState = createBookmarkState();
 ```
+
+If a module-level singleton creates a persistent side effect, make the singleton
+disposable and register HMR teardown in that same module. The side effect might
+be a Yjs observer, browser listener, storage watcher, socket, interval, or any
+other subscription that survives outside Svelte's component tree.
+
+In a production SPA, a true module singleton can usually live until the page
+reloads. Vite HMR is different: the page does not reload, so the old module copy
+needs a chance to close what it opened. Use `import.meta.hot.dispose()` for that
+development-only teardown.
+
+```typescript
+function createWorkspaceState() {
+	const bookmarksMap = fromTable(workspaceClient.tables.bookmarks);
+	let sidebarWidth = $state(280);
+	const unwatchStorage = watchStorage('sidebar-width', (width) => {
+		sidebarWidth = width;
+	});
+	const bookmarks = $derived(bookmarksMap.values().toArray());
+
+	return {
+		[Symbol.dispose]() {
+			unwatchStorage();
+			bookmarksMap[Symbol.dispose]();
+		},
+		get bookmarks() { return bookmarks; },
+		get sidebarWidth() { return sidebarWidth; },
+	};
+}
+
+export const workspaceState = createWorkspaceState();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => workspaceState[Symbol.dispose]());
+}
+```
+
+Do not scatter module cleanup through component code. Put teardown beside the
+code that created the side effect. If a provider owns the resource lifetime
+instead, dispose from the provider's teardown and skip module-level HMR in the
+state factory.
+
+See `docs/articles/your-spa-singleton-doesnt-need-effect-cleanup.md` for the
+SPA singleton lifetime explanation, and
+`docs/articles/vite-hmr-is-not-a-page-reload.md` for the focused Vite HMR rule.
 
 ## Naming
 

@@ -519,6 +519,15 @@ function createAiChatState() {
 	);
 
 	return {
+		[Symbol.dispose]() {
+			_unobserveConversations();
+			_unobserveChatMessages();
+			conversationsMap[Symbol.dispose]();
+			for (const id of handles.keys()) {
+				destroyConversation(id);
+			}
+		},
+
 		get active() {
 			return handles.get(activeConversationId);
 		},
@@ -553,6 +562,10 @@ function createAiChatState() {
 }
 
 export const aiChatState = createAiChatState();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => aiChatState[Symbol.dispose]());
+}
 
 /** A reactive handle for a single conversation backed by `createChat`. */
 export type ConversationHandle = NonNullable<

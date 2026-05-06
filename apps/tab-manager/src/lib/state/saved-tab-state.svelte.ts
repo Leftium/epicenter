@@ -39,6 +39,10 @@ function createSavedTabState() {
 	);
 
 	return {
+		[Symbol.dispose]() {
+			tabsMap[Symbol.dispose]();
+		},
+
 		get tabs() {
 			return tabs;
 		},
@@ -96,3 +100,7 @@ function createSavedTabState() {
 }
 
 export const savedTabState = createSavedTabState();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => savedTabState[Symbol.dispose]());
+}

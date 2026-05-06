@@ -417,11 +417,15 @@ function createFsState() {
 			}, 'Failed to rename');
 		},
 
-		/** Cleanup: call from +layout.svelte onDestroy if needed. */
-		async dispose() {
+		[Symbol.dispose]() {
 			filesMap[Symbol.dispose]();
 			opensidian.fs.index.dispose();
 			opensidian.fs.dispose();
+		},
+
+		/** Cleanup: call from +layout.svelte onDestroy if needed. */
+		async dispose() {
+			state[Symbol.dispose]();
 		},
 	};
 
@@ -429,3 +433,7 @@ function createFsState() {
 }
 
 export const fsState = createFsState();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => fsState[Symbol.dispose]());
+}

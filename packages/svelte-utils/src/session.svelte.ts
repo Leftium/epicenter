@@ -3,10 +3,11 @@
  * plus an app-defined payload (typically a workspace handle).
  *
  * Status comes directly from `auth.state`; this factory only owns the payload
- * lifecycle (build, applyKeys, dispose) and the live-user-switch refusal.
- * `current` projects `auth.state` and decorates the signed-in variant with the
- * built payload, so apps consume one read API and TypeScript narrows in one
- * step.
+ * lifecycle (build, dispose) and the identity-mutation refusal (any change to
+ * identity after open disposes the payload and reloads the page; see
+ * "Why we don't apply keys in place" in the spec). `current` projects
+ * `auth.state` and decorates the signed-in variant with the built payload, so
+ * apps consume one read API and TypeScript narrows in one step.
  *
  * Requires an `AuthClient` whose `state` is Svelte-reactive (use
  * `@epicenter/auth-svelte`, not `@epicenter/auth` directly).
@@ -17,12 +18,16 @@
  * export const session = createSession<FujiSignedIn>({
  *   auth,
  *   build: (identity) => buildFujiSignedIn(identity),
- *   applyKeys: (s, i) => s.fuji.encryption.applyKeys(i.encryptionKeys),
  * });
  * ```
  */
 
-import type { AuthClient, AuthIdentity, AuthState } from '@epicenter/auth';
+import {
+	type AuthClient,
+	type AuthIdentity,
+	type AuthState,
+	identitiesEqual,
+} from '@epicenter/auth';
 
 export type Session<TSignedIn> =
 	| Exclude<AuthState, { status: 'signed-in' }>
@@ -35,11 +40,9 @@ export type SignedInBase = {
 export function createSession<TSignedIn extends SignedInBase>({
 	auth,
 	build,
-	applyKeys,
 }: {
 	auth: AuthClient;
 	build: (identity: AuthIdentity) => TSignedIn;
-	applyKeys: (signedIn: TSignedIn, identity: AuthIdentity) => void;
 }) {
 	let signedIn = $state<TSignedIn | undefined>(undefined);
 
@@ -55,11 +58,10 @@ export function createSession<TSignedIn extends SignedInBase>({
 			signedIn = build(a.identity);
 			return;
 		}
-		if (signedIn.identity.user.id === a.identity.user.id) {
-			applyKeys(signedIn, a.identity);
-			signedIn = { ...signedIn, identity: a.identity };
-			return;
-		}
+		// Benign re-emit (auth refetched, identity unchanged): no-op.
+		if (identitiesEqual(signedIn.identity, a.identity)) return;
+		// Anything else (different user, rotated keys, profile edit): dispose
+		// and reload. See "Why we don't apply keys in place" in the spec.
 		signedIn[Symbol.dispose]();
 		location.reload();
 		throw new Error('unreachable: reload pending');

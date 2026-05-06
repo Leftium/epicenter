@@ -407,7 +407,7 @@ function authStatesEqual(left: AuthState, right: AuthState) {
 	return identitiesEqual(left.identity, right.identity);
 }
 
-function identitiesEqual(
+export function identitiesEqual(
 	left: AuthIdentity | null,
 	right: AuthIdentity | null,
 ) {

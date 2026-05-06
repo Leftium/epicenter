@@ -37,7 +37,6 @@ export const session = createSession<FujiSignedIn>({
 			},
 		};
 	},
-	applyKeys: (s, i) => s.fuji.encryption.applyKeys(i.encryptionKeys),
 });
 
 if (import.meta.hot) {

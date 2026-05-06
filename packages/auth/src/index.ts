@@ -12,6 +12,7 @@ export {
 	type CreateCookieAuthConfig,
 	createBearerAuth,
 	createCookieAuth,
+	identitiesEqual,
 	waitForAuthSettled,
 	waitForAuthState,
 } from './create-auth.ts';

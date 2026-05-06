@@ -1,7 +1,7 @@
 # Signed-In Context Scope
 
 **Date**: 2026-05-05
-**Status**: In Progress
+**Status**: Implemented, Verification Pending
 **Author**: AI-assisted (design conversation with @bradenwong)
 **Branch**: feat/encrypted-local-workspace-storage
 
@@ -421,9 +421,12 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 ### Phase 8: Cross-app verification
 
 - [ ] **8.1** Run repo-wide `bun run check`
+  > **Note**: Started during final verification, then interrupted by request. Verification remains pending.
 - [ ] **8.2** Run `bun run lint` if configured
-- [ ] **8.3** Confirm no app references the old `client.ts` files (already deleted in working tree)
-- [ ] **8.4** Update any monorepo docs referencing the old gate pattern
+- [x] **8.3** Confirm no app references the old `client.ts` files (already deleted in working tree)
+  > **Note**: Final grep found no references to the old Fuji or Honeycrisp client files from the three migrated app source trees.
+- [x] **8.4** Update any monorepo docs referencing the old gate pattern
+  > **Note**: Updated the Fuji README reference from the legacy auth workspace binding to the route-scoped `<SignedIn>` pattern.
 
 ## Edge Cases
 
@@ -512,14 +515,38 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 
 ## Success Criteria
 
-- [ ] All three apps (`fuji`, `honeycrisp`, `zhongwen`) have a `(signed-in)/` route group as the home for signed-in routes
-- [ ] Fuji and Honeycrisp expose a `getSignedIn()` returning `{ identity, fuji|honeycrisp }`
+- [x] All three apps (`fuji`, `honeycrisp`, `zhongwen`) have a `(signed-in)/` route group as the home for signed-in routes
+- [x] Fuji and Honeycrisp expose a `getSignedIn()` returning `{ identity, fuji|honeycrisp }`
 - [ ] Cold-boot signed-in flows render the workspace without flicker beyond the `pending` loader
 - [ ] Profile edits propagate to UI within one render frame, no navigation required
 - [ ] Account switch fully tears down and remounts the workspace; no state leaks across users
 - [ ] Sign-out from any tab redirects all tabs to `/sign-in`
-- [ ] No remaining references to the old `*WorkspaceProvider` / `client.ts` patterns
+- [x] No remaining references to the old `*WorkspaceProvider` / `client.ts` patterns
 - [ ] `bun run check` passes across the monorepo
+
+## Review
+
+**Completed**: 2026-05-06
+**Branch**: `feat/encrypted-local-workspace-storage`
+**Status**: Implementation complete; verification pending.
+
+### Summary
+
+Fuji, Honeycrisp, and Zhongwen now use a route-scoped signed-in context pattern. Each app has a `(signed-in)/` route group, a reactive redirect from signed-out state to `/sign-in`, and a `<SignedIn>` component that owns the signed-in workspace lifecycle.
+
+Fuji was implemented first as the reference shape. Honeycrisp mirrors Fuji with `SignedIn = { identity, honeycrisp }`. Zhongwen originally looked like a candidate for the route-only fallback, but implementation showed it has a local workspace (`openZhongwen`, chat tables, and `showPinyin` KV), so it uses the full bundle with `SignedIn = { identity, zhongwen }`.
+
+### Deviations from Spec
+
+- Zhongwen uses the full `<SignedIn>` bundle rather than the route-only fallback. The evidence was concrete: Zhongwen opens a per-user local workspace and route code reads its tables and KV.
+- Workspace factories keep legacy readiness names (`whenLoaded`) alongside the new contract (`whenReady`, `dispose`) so existing child document code and package consumers are not broken mid-refactor.
+- Verification was intentionally paused. Typecheck and smoke-test checkboxes remain open.
+
+### Follow-up Work
+
+- Run app-level and repo-wide checks: Fuji, Honeycrisp, Zhongwen, then root `bun run typecheck` and configured lint.
+- Smoke-test signed-out redirect, signed-in mount, sign-out teardown, and account-switch remount in each app.
+- Review the duplicated `<SignedIn>`, `Loading`, and `ErrorState` files after verification. The spec deliberately deferred shared extraction; revisit only if duplication starts hiding a real invariant.
 
 ## References
 

@@ -356,7 +356,7 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
     {/key}
   {/if}
   ```
-- [ ] **2.5** Modify `apps/fuji/src/routes/+layout.svelte` to handle only the pending state and pass through:
+- [x] **2.5** Modify `apps/fuji/src/routes/+layout.svelte` to handle only the pending state and pass through:
   ```svelte
   <script lang="ts">
     import { auth } from '$lib/auth';
@@ -372,9 +372,12 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 
 ### Phase 3: Migrate Fuji routes into the route group
 
-- [ ] **3.1** Move all signed-in routes from `apps/fuji/src/routes/` into `apps/fuji/src/routes/(signed-in)/`. At minimum: `+page.svelte`, `entries/`, `trash/`, `stress-test/`. Leave `sign-in/` (and any other unauthenticated routes) at the root.
-- [ ] **3.2** Update any internal navigation or imports that referenced moved paths. Route group parens do not change URLs, so external links are unaffected.
-- [ ] **3.3** Replace any direct `auth.state.identity` reads in pages with `getSignedIn().identity` where appropriate. Direct `auth` reads remain valid for session-mechanic concerns (token, expiry).
+- [x] **3.1** Move all signed-in routes from `apps/fuji/src/routes/` into `apps/fuji/src/routes/(signed-in)/`. At minimum: `+page.svelte`, `entries/`, `trash/`, `stress-test/`. Leave `sign-in/` (and any other unauthenticated routes) at the root.
+  > **Note**: Also moved `tag/[tag]` and `type/[type]`, which are signed-in filtered entry routes.
+- [x] **3.2** Update any internal navigation or imports that referenced moved paths. Route group parens do not change URLs, so external links are unaffected.
+  > **Note**: No `page.route.id` usage exists in Fuji, Honeycrisp, or Zhongwen, so the route group move does not affect route-id consumers.
+- [x] **3.3** Replace any direct `auth.state.identity` reads in pages with `getSignedIn().identity` where appropriate. Direct `auth` reads remain valid for session-mechanic concerns (token, expiry).
+  > **Note**: Fuji pages did not directly read `auth.state.identity`. Components and pages that read the Fuji workspace now use `getSignedIn().fuji`; `entriesState` is bound by `<SignedIn>` to the same Fuji handle.
 
 ### Phase 4: Prove Fuji works
 

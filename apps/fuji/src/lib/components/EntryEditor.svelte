@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import {
@@ -7,36 +8,39 @@
 		toDateTimeString,
 	} from '@epicenter/ui/natural-language-date-input';
 	import * as Popover from '@epicenter/ui/popover';
-	import * as StarRating from '@epicenter/ui/star-rating';
 	import { toastOnError } from '@epicenter/ui/sonner';
-	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { fromDisposableCache } from '@epicenter/svelte';
+	import * as StarRating from '@epicenter/ui/star-rating';
+	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { goto } from '$app/navigation';
-	import { fuji } from '$lib/fuji/client';
-	import type { Entry } from '$lib/workspace';
+	import type { Entry } from '$lib/fuji/workspace';
+	import { getSignedIn } from '$lib/signed-in';
 	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
 	import TagInput from './TagInput.svelte';
 
 	let { entry }: { entry: Entry } = $props();
+	const signedIn = getSignedIn();
 
 	type EntryUpdate = Omit<
-		Parameters<typeof fuji.actions.entries.update>[0],
+		Parameters<typeof signedIn.fuji.actions.entries.update>[0],
 		'id'
 	>;
 
 	function updateEntry(updates: EntryUpdate) {
 		toastOnError(
-			fuji.actions.entries.update({ id: entry.id, ...updates }),
-			'Couldn\'t save changes',
+			signedIn.fuji.actions.entries.update({ id: entry.id, ...updates }),
+			"Couldn't save changes",
 		);
 	}
 
-	const contentDoc = fromDisposableCache(fuji.entryContentDocs, () => entry.id);
+	const contentDoc = fromDisposableCache(
+		signedIn.fuji.entryContentDocs,
+		() => entry.id,
+	);
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);
@@ -62,7 +66,7 @@
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
 						toastOnError(
-							fuji.actions.entries.delete({ id: entry.id }),
+							signedIn.fuji.actions.entries.delete({ id: entry.id }),
 							'Couldn\'t delete entry',
 						);
 						goto('/');

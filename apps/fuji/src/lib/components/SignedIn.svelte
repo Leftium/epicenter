@@ -27,6 +27,8 @@
 		bearerToken: () => auth.bearerToken,
 	});
 
+	entriesState.bind(fuji);
+
 	$effect(() => {
 		if (auth.state.status === 'signed-in') {
 			identity = auth.state.identity;

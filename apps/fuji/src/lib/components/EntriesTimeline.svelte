@@ -17,7 +17,7 @@
 	import { goto } from '$app/navigation';
 	import { entriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
 	import { viewState } from '$lib/view-state.svelte';
-	import type { Entry } from '$lib/workspace';
+	import type { Entry } from '$lib/fuji/workspace';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();
 

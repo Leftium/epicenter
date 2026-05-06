@@ -20,9 +20,9 @@
 	} from '@tanstack/table-core';
 	import { goto } from '$app/navigation';
 	import { entriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
-	import { viewState } from '$lib/view-state.svelte';
 	import { relativeTime } from '$lib/format';
-	import type { Entry } from '$lib/workspace';
+	import { viewState } from '$lib/view-state.svelte';
+	import type { Entry } from '$lib/fuji/workspace';
 	import BadgeList from './BadgeList.svelte';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();
@@ -218,13 +218,13 @@
 			<Table.Body>
 				{#if table.getRowModel().rows?.length}
 					{#each table.getRowModel().rows as row (row.id)}
-					<Table.Row
-						role="button"
-						tabindex="0"
-						class="cursor-pointer transition-colors hover:bg-accent/50"
-						onclick={() => goto(`/entries/${row.original.id}`)}
-						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goto(`/entries/${row.original.id}`); } }}
-					>
+						<Table.Row
+							role="button"
+							tabindex="0"
+							class="cursor-pointer transition-colors hover:bg-accent/50"
+							onclick={() => goto(`/entries/${row.original.id}`)}
+							onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goto(`/entries/${row.original.id}`); } }}
+						>
 							{#each row.getVisibleCells() as cell}
 								<Table.Cell
 									class={cell.column.id === 'title' ? 'max-w-[400px] truncate' : ''}

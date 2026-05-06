@@ -14,10 +14,10 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { goto } from '$app/navigation';
-import { fuji } from '$lib/fuji/client';
-import type { Entry, EntryId } from '$lib/workspace';
+import type { Fuji } from '$lib/fuji/browser';
+import type { Entry, EntryId } from '$lib/fuji/workspace';
 
-// ─── Search ──────────────────────────────────────────────────────────────────
+// Search
 
 /**
  * Test whether an entry matches a search query.
@@ -44,26 +44,30 @@ export function matchesEntrySearch(
 	);
 }
 
-// ─── Entries State ───────────────────────────────────────────────────────────
+// Entries state
 
-function createEntriesState() {
+function createEntriesStateForFuji(fuji: Fuji) {
 	const map = fromTable(fuji.tables.entries);
 	const all = $derived([...map.values()]);
 	const active = $derived(all.filter((e) => e.deletedAt === undefined));
 	const deleted = $derived(all.filter((e) => e.deletedAt !== undefined));
 
 	return {
+		destroy() {
+			map[Symbol.dispose]();
+		},
+
 		/** Look up an entry by ID. Returns `undefined` if not found. */
 		get(id: EntryId) {
 			return map.get(id);
 		},
 
-		/** Active entries—not soft-deleted. Computed once per change cycle. */
+		/** Active entries, not soft-deleted. Computed once per change cycle. */
 		get active() {
 			return active;
 		},
 
-		/** Soft-deleted entries—has `deletedAt` set. Computed once per change cycle. */
+		/** Soft-deleted entries, has `deletedAt` set. Computed once per change cycle. */
 		get deleted() {
 			return deleted;
 		},
@@ -81,4 +85,53 @@ function createEntriesState() {
 	};
 }
 
+type EntriesStateDelegate = ReturnType<typeof createEntriesStateForFuji>;
+
+let delegate: EntriesStateDelegate | undefined;
+
+function getDelegate(): EntriesStateDelegate {
+	if (!delegate) {
+		throw new Error('entriesState read before Fuji workspace was bound');
+	}
+	return delegate;
+}
+
+export function createEntriesState() {
+	return {
+		bind(fuji: Fuji) {
+			delegate?.destroy();
+			delegate = createEntriesStateForFuji(fuji);
+		},
+
+		destroy() {
+			delegate?.destroy();
+			delegate = undefined;
+		},
+
+		/** Look up an entry by ID. Returns `undefined` if not found. */
+		get(id: EntryId) {
+			return getDelegate().get(id);
+		},
+
+		/** Active entries, not soft-deleted. Computed once per change cycle. */
+		get active() {
+			return getDelegate().active;
+		},
+
+		/** Soft-deleted entries, has `deletedAt` set. Computed once per change cycle. */
+		get deleted() {
+			return getDelegate().deleted;
+		},
+
+		createEntry() {
+			getDelegate().createEntry();
+		},
+	};
+}
+
+export type EntriesState = ReturnType<typeof createEntriesState>;
 export const entriesState = createEntriesState();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => entriesState.destroy());
+}

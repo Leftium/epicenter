@@ -7,11 +7,18 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
+	import { auth } from '$lib/auth';
 	import { entriesState } from '$lib/entries-state.svelte';
-	import { auth, forgetFujiDevice, fuji } from '$lib/fuji/client';
+	import { getSignedIn } from '$lib/signed-in';
 	import BulkAddModal from './BulkAddModal.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
+	const signedIn = getSignedIn();
+
+	async function forgetFujiDevice(): Promise<void> {
+		await signedIn.fuji.wipe();
+		window.location.reload();
+	}
 </script>
 
 <div class="flex h-10 shrink-0 items-center justify-between border-b px-3">
@@ -54,7 +61,7 @@
 	<div class="flex items-center gap-1">
 		<AccountPopover
 			{auth}
-			sync={fuji.sync}
+			sync={signedIn.fuji.sync}
 			syncNoun="entries"
 			onForgetDevice={forgetFujiDevice}
 			onSocialSignIn={() =>

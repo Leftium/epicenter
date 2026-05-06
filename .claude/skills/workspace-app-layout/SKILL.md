@@ -117,7 +117,7 @@ export function openFuji({
 	doc.awareness.setLocal({
 		device: { ...device, offers: actionManifest(doc.actions) },
 	});
-	return { ...doc, idb, sync, whenReady: idb.whenLoaded };
+	return { ...doc, idb, sync };
 }
 ```
 
@@ -129,7 +129,7 @@ export function openZhongwen() {
 	const doc = openZhongwenDoc();
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
-	return { ...doc, idb, whenReady: idb.whenLoaded };
+	return { ...doc, idb };
 }
 ```
 

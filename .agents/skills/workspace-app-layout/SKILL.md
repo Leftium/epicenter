@@ -100,7 +100,7 @@ export function openFuji({
 		waitFor: idb,
 		bearerToken,
 	});
-	return { ...doc, idb, sync, whenReady: idb.whenLoaded };
+	return { ...doc, idb, sync };
 }
 ```
 

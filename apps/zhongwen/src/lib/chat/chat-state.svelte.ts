@@ -337,7 +337,7 @@ export function createChatState() {
 		destroy() {
 			unobserveConversations();
 			unobserveChatMessages();
-			conversationsMap.destroy();
+			conversationsMap[Symbol.dispose]();
 			for (const id of handles.keys()) {
 				destroyConversation(id);
 			}

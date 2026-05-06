@@ -1,6 +1,9 @@
 import type { BaseRow, Table } from '@epicenter/workspace';
 import { SvelteMap } from 'svelte/reactivity';
 
+export type ReactiveTableMap<TRow extends BaseRow> = SvelteMap<string, TRow> &
+	Disposable;
+
 /**
  * Create a reactive SvelteMap binding to a workspace table.
  *
@@ -10,6 +13,10 @@ import { SvelteMap } from 'svelte/reactivity';
  *
  * Read-only: mutations go through `table.set()`, `table.update()`, etc.
  * The observer picks up changes from both local writes and remote CRDT sync.
+ *
+ * The returned map is disposable. Call `[Symbol.dispose]()` when the binding
+ * has a shorter lifetime than the workspace, such as component teardown,
+ * workspace switching, HMR, or tests.
  *
  * @example
  * ```typescript
@@ -26,11 +33,14 @@ import { SvelteMap } from 'svelte/reactivity';
  *
  * // Derived state:
  * const filtered = $derived([...entries.values()].filter(e => !e.deletedAt));
+ *
+ * // Teardown:
+ * entries[Symbol.dispose]();
  * ```
  */
 export function fromTable<TRow extends BaseRow>(
 	table: Table<TRow>,
-): SvelteMap<string, TRow> & { destroy: () => void } {
+): ReactiveTableMap<TRow> {
 	const map = new SvelteMap<string, TRow>();
 
 	// Seed with current valid rows
@@ -52,6 +62,16 @@ export function fromTable<TRow extends BaseRow>(
 			map.set(id, row);
 		}
 	});
+	let disposed = false;
 
-	return Object.assign(map, { destroy: unobserve });
+	Object.defineProperty(map, Symbol.dispose, {
+		value() {
+			if (disposed) return;
+			disposed = true;
+			unobserve();
+		},
+		enumerable: false,
+	});
+
+	return map as ReactiveTableMap<TRow>;
 }

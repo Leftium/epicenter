@@ -417,9 +417,9 @@ function createFsState() {
 			}, 'Failed to rename');
 		},
 
-		/** Cleanup — call from +layout.svelte onDestroy if needed. */
+		/** Cleanup: call from +layout.svelte onDestroy if needed. */
 		async dispose() {
-			filesMap.destroy();
+			filesMap[Symbol.dispose]();
 			opensidian.fs.index.dispose();
 			opensidian.fs.dispose();
 		},

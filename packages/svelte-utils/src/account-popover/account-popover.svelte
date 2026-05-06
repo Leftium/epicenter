@@ -70,14 +70,12 @@
 			case 'connected':
 				return 'Connected';
 			case 'connecting':
-				if (s.lastError?.type === 'auth')
-					return 'Authentication failed. Click to reconnect';
 				if (s.retries > 0) return `Reconnecting (retry ${s.retries})…`;
 				return 'Connecting…';
 			case 'offline':
 				return 'Offline. Click to reconnect';
 			case 'failed':
-				return 'Sync failed';
+				return 'Authentication failed. Click to reconnect';
 		}
 	}
 

@@ -16,7 +16,9 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./auth-form": "./src/auth-form/index.ts",
-		"./account-popover": "./src/account-popover/index.ts"
+		"./account-popover": "./src/account-popover/index.ts",
+		"./workspace-loading": "./src/workspace-loading/index.ts",
+		"./workspace-gate": "./src/workspace-gate/index.ts"
 	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",

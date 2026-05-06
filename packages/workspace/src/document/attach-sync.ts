@@ -205,11 +205,18 @@ export type SyncAttachmentConfig = {
 	 */
 	waitFor?: WaitForBarrier;
 	/**
-	 * Returns the current bearer token for sync WebSocket authentication, or
-	 * null when this app uses cookie or no auth. Called on each reconnect so
-	 * token rotation is observed.
+	 * Optional bearer-token augmentation for the WebSocket handshake.
+	 *
+	 * When omitted, `attachSync` opens a normal sync WebSocket with only the
+	 * main Epicenter subprotocol. Browser cookie auth can still authenticate
+	 * that upgrade if the API origin has a valid session cookie.
+	 *
+	 * When provided, the getter is called on every reconnect so token rotation
+	 * is observed. A string return adds `bearer.<token>` to the subprotocol
+	 * list. A null return sends no bearer subprotocol for this attempt. Browser
+	 * cookie auth can still authenticate that upgrade through the cookie jar.
 	 */
-	bearerToken: () => string | null;
+	bearerToken?: () => string | null;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -597,7 +604,7 @@ export function attachSync(
 	): Promise<'connected' | 'failed'> {
 		let ws: WebSocket;
 		try {
-			const token = config.bearerToken();
+			const token = config.bearerToken?.() ?? null;
 			const protocols = token
 				? [MAIN_SUBPROTOCOL, `${BEARER_SUBPROTOCOL_PREFIX}${token}`]
 				: [MAIN_SUBPROTOCOL];

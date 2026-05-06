@@ -152,6 +152,19 @@ describe('attachSync split surface', () => {
 		await sync.whenDisposed;
 	});
 
+	test('constructs websocket with only main protocol when bearer token is omitted', async () => {
+		const ydoc = new Y.Doc({ guid: 'split-no-bearer-protocol' });
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+		});
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		expect(ws.protocols).toEqual([MAIN_SUBPROTOCOL]);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
 	test('sync owns lifecycle and connected status', async () => {
 		const ydoc = new Y.Doc({ guid: 'split-sync' });
 		const sync = attachSync(ydoc, {

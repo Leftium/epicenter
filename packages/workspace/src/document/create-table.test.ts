@@ -107,7 +107,7 @@ describe('createTable', () => {
 	});
 
 	describe('get operations', () => {
-		test('get returns not_found for missing row', () => {
+		test('get returns null for missing row', () => {
 			const { ykv } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),

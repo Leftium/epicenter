@@ -6,9 +6,9 @@ import { SvelteMap } from 'svelte/reactivity';
  *
  * Returns a `SvelteMap<id, Row>` that stays in sync with the underlying
  * Yjs table via granular per-row updates. Only changed rows trigger
- * re-renders—not the entire collection.
+ * re-renders, not the entire collection.
  *
- * Read-only—mutations go through `table.set()`, `table.update()`, etc.
+ * Read-only: mutations go through `table.set()`, `table.update()`, etc.
  * The observer picks up changes from both local writes and remote CRDT sync.
  *
  * @example
@@ -38,19 +38,18 @@ export function fromTable<TRow extends BaseRow>(
 		map.set(row.id, row);
 	}
 
-	// Granular updates — only touch changed rows
+	// Granular updates: only touch changed rows
 	const unobserve = table.observe((changedIds) => {
 		for (const id of changedIds) {
-			const result = table.get(id);
-			switch (result.status) {
-				case 'valid':
-					map.set(id, result.row);
-					break;
-				case 'not_found':
-				case 'invalid':
-					map.delete(id);
-					break;
+			const { data: row, error } = table.get(id);
+			if (error || row === null) {
+				// This map only exposes valid rows. Invalid stored data and missing
+				// rows both leave the reactive view.
+				map.delete(id);
+				continue;
 			}
+
+			map.set(id, row);
 		}
 	});
 

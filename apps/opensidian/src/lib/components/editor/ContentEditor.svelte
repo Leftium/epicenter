@@ -45,16 +45,16 @@
 </script>
 
 <!--
-	Gate on whenReady: `asText()` on Timeline mutates when the doc is empty
+	Gate on idb hydration: `asText()` on Timeline mutates when the doc is empty
 	(it pushes an entry). Calling it before persistence hydrates races the
 	IDB replay and can corrupt the timeline (phantom text entry alongside
 	the real stored entries).
 -->
-{#await doc.current.whenReady}
+{#await doc.current.idb.whenLoaded}
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>
-{:then}
+{:then _}
 	<CodeMirrorEditor
 		ytext={doc.current.content.asText()}
 		{extensions}

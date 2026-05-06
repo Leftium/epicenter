@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
 	BC_ORIGIN,
 	decodeRpcPayload,
@@ -16,7 +16,7 @@ import { Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { defineMutation } from '../shared/actions.js';
 import { attachAwareness } from './attach-awareness.js';
-import { attachSync, type SyncTransport } from './attach-sync.js';
+import { attachSync } from './attach-sync.js';
 import { PeerIdentity } from './peer-identity.js';
 
 class FakeWebSocket {
@@ -86,8 +86,15 @@ class FakeWebSocket {
 	}
 }
 
+const originalWebSocket = globalThis.WebSocket;
+
 beforeEach(() => {
 	FakeWebSocket.instances = [];
+	globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+});
+
+afterEach(() => {
+	globalThis.WebSocket = originalWebSocket;
 });
 
 function peekMessageType(frame: Uint8Array): number {
@@ -111,15 +118,12 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 	throw new Error('timeout waiting for predicate');
 }
 
-const fakeTransport: SyncTransport = (url, protocols) =>
-	new FakeWebSocket(url, protocols);
-
 describe('attachSync split surface', () => {
 	test('sync owns lifecycle and connected status', async () => {
 		const ydoc = new Y.Doc({ guid: 'split-sync' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			transport: fakeTransport,
+			bearerToken: () => 'test-token',
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
@@ -139,7 +143,7 @@ describe('attachSync split surface', () => {
 		const ydoc = new Y.Doc({ guid: 'split-bc-origin' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			transport: fakeTransport,
+			bearerToken: () => 'test-token',
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
@@ -170,7 +174,7 @@ describe('attachSync split surface', () => {
 		});
 		attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			transport: fakeTransport,
+			bearerToken: () => 'test-token',
 			awareness,
 		});
 
@@ -219,7 +223,7 @@ describe('attachSync split surface', () => {
 		const calls: unknown[] = [];
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			transport: fakeTransport,
+			bearerToken: () => 'test-token',
 		});
 		const rpc = sync.attachRpc({
 			tabs: {
@@ -295,7 +299,7 @@ describe('attachSync split surface', () => {
 		const ydoc = new Y.Doc({ guid: 'split-system-reserved' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			transport: fakeTransport,
+			bearerToken: () => 'test-token',
 		});
 
 		expect(() =>

@@ -192,15 +192,6 @@ export type WaitForBarrier =
 /** First arg of `attachSync`: either a bare `Y.Doc` or a doc bundle. */
 export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc };
 
-/**
- * Open an authenticated WebSocket for sync. Callers should only construct
- * workspace sync after proving the user is signed in.
- */
-export type SyncTransport = (
-	url: string,
-	protocols?: string | string[],
-) => WebSocket;
-
 export type SyncAttachmentConfig = {
 	/**
 	 * WebSocket URL for the room. Must use ws:/wss:. Use `toWsUrl()` to convert
@@ -220,8 +211,6 @@ export type SyncAttachmentConfig = {
 	 * Called on each reconnect so token rotation is observed.
 	 */
 	bearerToken?: () => string | null;
-	/** Authenticated WebSocket transport. */
-	transport?: SyncTransport;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -609,17 +598,11 @@ export function attachSync(
 	): Promise<'connected' | 'failed'> {
 		let ws: WebSocket;
 		try {
-			if (config.bearerToken) {
-				const token = config.bearerToken();
-				const protocols = token
-					? [MAIN_SUBPROTOCOL, `${BEARER_SUBPROTOCOL_PREFIX}${token}`]
-					: [MAIN_SUBPROTOCOL];
-				ws = new WebSocket(config.url, protocols);
-			} else if (config.transport) {
-				ws = config.transport(config.url, [MAIN_SUBPROTOCOL]);
-			} else {
-				ws = new WebSocket(config.url, [MAIN_SUBPROTOCOL]);
-			}
+			const token = config.bearerToken?.();
+			const protocols = token
+				? [MAIN_SUBPROTOCOL, `${BEARER_SUBPROTOCOL_PREFIX}${token}`]
+				: [MAIN_SUBPROTOCOL];
+			ws = new WebSocket(config.url, protocols);
 		} catch {
 			return 'failed';
 		}

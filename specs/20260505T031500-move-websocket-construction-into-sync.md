@@ -362,13 +362,13 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 4: Make `transport` removable; migrate sync tests
 
-- [ ] **4.1** In `packages/workspace/src/document/attach-sync.ts`, remove the `transport` field from `SyncAttachmentConfig`. Remove the `transport`-fallback branch from `attemptConnection`. Make `bearerToken?` stay optional (cookie apps omit it).
-- [ ] **4.2** Delete the `SyncTransport` type definition.
-- [ ] **4.3** Remove `SyncTransport` from `packages/workspace/src/index.ts` re-exports.
-- [ ] **4.4** Migrate `attach-sync.test.ts`:
+- [x] **4.1** In `packages/workspace/src/document/attach-sync.ts`, remove the `transport` field from `SyncAttachmentConfig`. Remove the `transport`-fallback branch from `attemptConnection`. Make `bearerToken?` stay optional (cookie apps omit it).
+- [x] **4.2** Delete the `SyncTransport` type definition.
+- [x] **4.3** Remove `SyncTransport` from `packages/workspace/src/index.ts` re-exports.
+- [x] **4.4** Migrate `attach-sync.test.ts`:
   - Add `beforeEach` that swaps `globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket` and `afterEach` that restores it.
   - Replace every `transport: fakeTransport` with `bearerToken: () => 'test-token'` (or omit entirely for cookie-style tests that just need a working WebSocket).
-- [ ] **4.5** Verify: `bun run --filter @epicenter/workspace typecheck` and `test` pass.
+- [x] **4.5** Verify: `bun run --filter @epicenter/workspace typecheck` and `test` pass.
 
 ### Wave 5: Remove `openWebSocket` from `AuthClient`
 

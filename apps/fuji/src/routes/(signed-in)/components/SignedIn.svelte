@@ -12,6 +12,9 @@
 
 	let { children } = $props();
 
+	// Type-narrowing assertion. The (signed-in)/+layout.svelte parent already
+	// gates on `status === 'signed-in'`, so this throw is unreachable in
+	// practice; it exists so TypeScript narrows auth.state.identity below.
 	if (auth.state.status !== 'signed-in') {
 		throw new Error('<SignedIn> mounted outside signed-in scope');
 	}
@@ -66,6 +69,13 @@
 {:then _}
 	{@render children?.()}
 {:catch error}
+	<!--
+		Inlined per app on purpose. Honeycrisp and Zhongwen carry the same
+		Empty.Root + Reload + Sign out markup verbatim. The duplication is
+		acknowledged: each app keeps freedom to evolve loading/error chrome
+		(brand mark, spinner, additional actions) without negotiating with a
+		shared component. See specs/20260506T020000-expose-attachments-not-aliases.md.
+	-->
 	<Empty.Root class="h-dvh flex-none border-0">
 		<Empty.Media>
 			<TriangleAlertIcon class="size-8 text-muted-foreground" />

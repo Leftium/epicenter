@@ -12,6 +12,9 @@
 
 	let { children } = $props();
 
+	// Type-narrowing assertion. The (signed-in)/+layout.svelte parent already
+	// gates on `status === 'signed-in'`, so this throw is unreachable in
+	// practice; it exists so TypeScript narrows auth.state.identity below.
 	if (auth.state.status !== 'signed-in') {
 		throw new Error('<SignedIn> mounted outside signed-in scope');
 	}

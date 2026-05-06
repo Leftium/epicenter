@@ -61,7 +61,6 @@ export function openBlog() {
 		idb,
 		sync,
 		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
@@ -72,7 +71,7 @@ export function openBlog() {
 export const blog = openBlog();
 
 async function quickStart() {
-	await blog.whenReady;
+	await blog.idb.whenLoaded;
 
 	blog.tables.posts.set({
 		id: 'welcome',
@@ -190,7 +189,6 @@ export function openApp({
 		rpc,
 		remote,
 		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
@@ -617,7 +615,6 @@ function openFilesWorkspace() {
 		ydoc,
 		tables,
 		idb,
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
@@ -651,7 +648,6 @@ export const fileContentDocs = createDisposableCache((fileId: string) => {
 		ydoc,
 		content,
 		idb,
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 });
@@ -674,7 +670,7 @@ async function documentExample() {
 
 	// Load a content handle for the row. Dispose when done.
 	using handle = fileContentDocs.open('file-1');
-	await handle.whenReady;
+	await handle.idb.whenLoaded;
 
 	handle.content.insert(0, '# Hello from a document');
 	console.log(handle.content.toString());
@@ -851,7 +847,6 @@ function openNotes() {
 		ydoc,
 		tables,
 		sqlite,
-		whenReady: sqlite.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
@@ -896,7 +891,6 @@ function openTabs() {
 		tables,
 		idb,
 		sync,
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
@@ -944,7 +938,6 @@ function openNotes() {
 		tables,
 		sqlite,
 		markdown,
-		whenReady: sqlite.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
@@ -992,12 +985,11 @@ function openBlog() {
 		tables,
 		sqlite,
 		mirror,
-		whenReady: sqlite.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
 
-// After whenReady:
+// After sqlite.whenLoaded:
 // blog.mirror.search('posts', 'hello');
 // blog.mirror.count('posts');
 // blog.mirror.rebuild('posts');
@@ -1311,7 +1303,6 @@ Two composition shapes, one builder contract.
 │   const idb    = attachIndexedDb(ydoc);                   │
 │   const sync   = attachSync(ydoc, { waitFor: ... });     │
 │   return { ydoc, tables, idb, sync,                       │
-│            whenReady: idb.whenLoaded,                     │
 │            [Symbol.dispose]() { ydoc.destroy(); } };     │
 │ }                                                         │
 │ export const workspace = openApp();                       │
@@ -1329,7 +1320,6 @@ export const fileContentDocs = createDisposableCache((fileId: string) => {
 		ydoc,
 		content,
 		idb,
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
@@ -1345,7 +1335,7 @@ export async function clearFileContentLocalData() {
 }
 
 using handle = fileContentDocs.open('file-1');
-await handle.whenReady;
+await handle.idb.whenLoaded;
 ```
 
 The cache builder names how to build one live child document. The app-local
@@ -1365,11 +1355,12 @@ workspace.batch(() => {
 
 Yjs transactions do not roll back on throw. They batch notifications; they are not SQL transactions.
 
-### `whenReady`, `clearLocal`, and teardown
+### Readiness, `clearLocal`, and teardown
 
 | API | What it means |
 | --- | --- |
-| `bundle.whenReady` / `handle.whenReady` | Builder convention, typically `idb.whenLoaded` (or `Promise.all([...])`) |
+| `bundle.idb.whenLoaded` (or `bundle.sqlite.whenLoaded`) | Direct subsystem readiness; the default form |
+| `bundle.whenReady` | Optional aggregate: only when the bundle composes 2+ subsystem signals into `Promise.all([...])` |
 | `bundle.idb.clearLocal()` (or `bundle.sqlite.clearLocal()`) | Wipes persisted local state for that attachment |
 | `bundle[Symbol.dispose]()` | Singleton teardown: your builder calls `ydoc.destroy()` |
 | `handle[Symbol.dispose]()` | Cache handle: decrements refcount; last dispose arms `gcTime` |
@@ -1443,8 +1434,8 @@ import { createDisposableCache } from '@epicenter/workspace';
 
 `createDisposableCache(build, { gcTime? })` returns a refcounted id cache.
 `.open(id)` mints a live handle by shallow-spreading the bundle your builder
-returned, so `ydoc`, `content`, `idb`, and `whenReady` are all things you
-explicitly put in the bundle.
+returned, so `ydoc`, `content`, `idb`, and any composed `whenReady` are all
+things you explicitly put in the bundle.
 
 For singleton apps, call your builder function once at module scope. For Node
 one-shot operations, call the child builder directly inside `using`. Use the
@@ -1465,7 +1456,7 @@ Everything below is a *convention*: the builder is free to expose more or less. 
 - `encryption` (when encrypted)
 - `actions`
 - `batch(fn)`
-- `whenReady`
+- `whenReady` (only when composed from 2+ subsystem signals; otherwise consumers await `idb.whenLoaded` directly)
 - `[Symbol.dispose]()`
 
 ### Document content attachments

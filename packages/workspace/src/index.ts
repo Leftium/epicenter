@@ -49,7 +49,6 @@
  *       ydoc: bodyYdoc,
  *       body: attachRichText(bodyYdoc),
  *       idb: bodyIdb,
- *       whenReady: bodyIdb.whenLoaded,
  *       [Symbol.dispose]() {
  *         bodyYdoc.destroy();
  *       },

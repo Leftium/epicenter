@@ -110,7 +110,6 @@ function openBlog() {
 
   return {
     ydoc, tables, idb, sync,
-    whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 }

@@ -2,7 +2,7 @@
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
-	import { WorkspaceLoading } from '@epicenter/svelte/workspace-loading';
+	import { PageSpinner } from '@epicenter/svelte/page-spinner';
 	import { auth } from '$lib/auth';
 	import '@epicenter/ui/app.css';
 
@@ -12,7 +12,7 @@
 <svelte:head><title>Fuji</title></svelte:head>
 
 {#if auth.state.status === 'pending'}
-	<WorkspaceLoading />
+	<PageSpinner />
 {:else}
 	{@render children?.()}
 {/if}

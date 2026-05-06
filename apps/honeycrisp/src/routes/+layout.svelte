@@ -4,7 +4,7 @@
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
-	import { WorkspaceLoading } from '@epicenter/svelte/workspace-loading';
+	import { PageSpinner } from '@epicenter/svelte/page-spinner';
 	import { auth } from '$lib/auth';
 	import { queryClient } from '$lib/query/client';
 	import '@epicenter/ui/app.css';
@@ -16,7 +16,7 @@
 
 <QueryClientProvider client={queryClient}>
 	{#if auth.state.status === 'pending'}
-		<WorkspaceLoading />
+		<PageSpinner />
 	{:else}
 		{@render children?.()}
 	{/if}

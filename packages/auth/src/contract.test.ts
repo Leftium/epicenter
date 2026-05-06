@@ -7,7 +7,7 @@
  * Key behaviors:
  * - Both factories expose and exercise every public AuthClient member
  * - Better Auth command methods receive the expected input shapes
- * - Fetch and WebSocket credentials stay transport-specific below the client
+ * - HTTP credentials stay auth-specific; sync credentials stay token-only
  */
 
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';

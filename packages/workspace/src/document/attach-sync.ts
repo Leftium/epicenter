@@ -72,9 +72,7 @@ import type {
 // Types
 // ============================================================================
 
-export type SyncError =
-	| { type: 'auth'; error: unknown }
-	| { type: 'connection' };
+export type SyncError = { type: 'connection' };
 
 /**
  * Reason a sync entered the terminal `failed` phase.

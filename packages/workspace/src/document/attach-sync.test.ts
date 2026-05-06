@@ -8,6 +8,8 @@ import {
 	encodeRpcRequest,
 	encodeRpcResponse,
 	encodeSyncStep2,
+	BEARER_SUBPROTOCOL_PREFIX,
+	MAIN_SUBPROTOCOL,
 	MESSAGE_TYPE,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
@@ -119,6 +121,37 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 }
 
 describe('attachSync split surface', () => {
+	test('constructs websocket with main protocol and bearer subprotocol when token exists', async () => {
+		const ydoc = new Y.Doc({ guid: 'split-bearer-protocol' });
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			bearerToken: () => 'test-token',
+		});
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		expect(ws.protocols).toEqual([
+			MAIN_SUBPROTOCOL,
+			`${BEARER_SUBPROTOCOL_PREFIX}test-token`,
+		]);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('constructs websocket with only main protocol when bearer token is null', async () => {
+		const ydoc = new Y.Doc({ guid: 'split-cookie-protocol' });
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			bearerToken: () => null,
+		});
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		expect(ws.protocols).toEqual([MAIN_SUBPROTOCOL]);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
 	test('sync owns lifecycle and connected status', async () => {
 		const ydoc = new Y.Doc({ guid: 'split-sync' });
 		const sync = attachSync(ydoc, {

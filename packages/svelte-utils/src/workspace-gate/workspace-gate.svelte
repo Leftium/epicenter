@@ -30,6 +30,8 @@
 	}: {
 		/** Promise the gate awaits before rendering children. */
 		pending: Promise<unknown>;
+		/** Children snippet rendered after `pending` resolves. */
+		children: Snippet;
 		/** Optional override for the loading state. Defaults to Empty with a centered spinner. */
 		loading?: Snippet;
 		/** Optional override for the error state. Defaults to Empty with a warning icon. */

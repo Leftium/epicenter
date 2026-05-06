@@ -1,7 +1,7 @@
-import type { AuthClient, AuthIdentity } from '@epicenter/auth';
+import type { AuthClient, AuthIdentity, AuthState } from '@epicenter/auth';
 
 export type AuthWorkspaceScopeOptions = {
-	auth: AuthClient;
+	auth: Pick<AuthClient, 'state' | 'onStateChange'>;
 	applyAuthIdentity(identity: AuthIdentity): void;
 	onSignOut(): void | Promise<void>;
 	onIdentityChanged(): void | Promise<void>;
@@ -31,8 +31,10 @@ export function bindAuthWorkspaceScope({
 		}
 	}
 
-	async function processIdentity(identity: AuthIdentity | null) {
-		if (identity === null) {
+	async function processState(state: AuthState) {
+		if (state.status === 'pending') return;
+
+		if (state.status === 'signed-out') {
 			if (appliedUserId === null) {
 				return;
 			}
@@ -41,6 +43,7 @@ export function bindAuthWorkspaceScope({
 			return;
 		}
 
+		const { identity } = state;
 		const userId = identity.user.id;
 
 		if (appliedUserId !== null && appliedUserId !== userId) {
@@ -60,7 +63,11 @@ export function bindAuthWorkspaceScope({
 			while (!isDisposed && !isTerminal && pendingIdentity !== undefined) {
 				const identity = pendingIdentity;
 				pendingIdentity = undefined;
-				await processIdentity(identity);
+				await processState(
+					identity === null
+						? { status: 'signed-out' }
+						: { status: 'signed-in', identity },
+				);
 			}
 		} finally {
 			isDraining = false;
@@ -75,8 +82,13 @@ export function bindAuthWorkspaceScope({
 		void drain();
 	}
 
-	schedule(auth.identity);
-	const unsubscribe = auth.onChange(schedule);
+	function scheduleState(state: AuthState) {
+		if (state.status === 'pending') return;
+		schedule(state.status === 'signed-in' ? state.identity : null);
+	}
+
+	scheduleState(auth.state);
+	const unsubscribe = auth.onStateChange(scheduleState);
 
 	return () => {
 		isDisposed = true;

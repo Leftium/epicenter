@@ -11,7 +11,12 @@
  */
 
 import { expect, test } from 'bun:test';
-import type { AuthClient, AuthIdentity, BearerSession } from '@epicenter/auth';
+import type {
+	AuthClient,
+	AuthIdentity,
+	AuthState,
+	BearerSession,
+} from '@epicenter/auth';
 import { bindAuthWorkspaceScope } from './index.ts';
 
 const keysA = [
@@ -59,45 +64,17 @@ function identity(input?: Parameters<typeof session>[0]): AuthIdentity {
 
 function createFakeAuth(initial: AuthIdentity | null) {
 	let currentIdentity = initial;
-	const listeners = new Set<
-		NonNullable<AuthClient['onStateChange']> extends (fn: infer Fn) => unknown
-			? Fn
-			: never
-	>();
-	const auth: AuthClient = {
+	const listeners = new Set<(state: AuthState) => void>();
+	const auth: Pick<AuthClient, 'state' | 'onStateChange'> = {
 		get state() {
 			if (currentIdentity === null) return { status: 'signed-out' } as const;
 			return { status: 'signed-in', identity: currentIdentity } as const;
-		},
-		get bearerToken() {
-			return null;
 		},
 		onStateChange(fn) {
 			listeners.add(fn);
 			return () => listeners.delete(fn);
 		},
-		signIn: async () => {
-			throw new Error('unused');
-		},
-		signUp: async () => {
-			throw new Error('unused');
-		},
-		signInWithIdToken: async () => {
-			throw new Error('unused');
-		},
-		signInWithSocialRedirect: async () => {
-			throw new Error('unused');
-		},
-		signOut: async () => {
-			throw new Error('unused');
-		},
-		fetch: async () => {
-			throw new Error('unused');
-		},
-		[Symbol.dispose]() {
-			listeners.clear();
-		},
-	} satisfies AuthClient;
+	};
 
 	return {
 		auth,

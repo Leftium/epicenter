@@ -171,7 +171,7 @@
 	</div>
 
 	<!-- Editor body -->
-	{#await contentDoc.current.whenLoaded}
+	{#await contentDoc.current.idb.whenLoaded}
 		<div class="flex flex-1 items-center justify-center">
 			<Spinner class="size-5 text-muted-foreground" />
 		</div>

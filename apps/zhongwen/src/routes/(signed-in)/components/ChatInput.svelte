@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import type { ConversationHandle } from '$lib/chat/chat-state.svelte';
+	import type { ConversationHandle } from '../chat/chat-state.svelte';
 
 	type Props = {
 		handle: ConversationHandle;

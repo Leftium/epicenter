@@ -17,17 +17,17 @@ import {
 	DEFAULT_PROVIDER,
 	PROVIDER_MODELS,
 	type Provider,
-} from '$lib/chat/providers';
-import { ZHONGWEN_SYSTEM_PROMPT } from '$lib/chat/system-prompt';
-import { toUiMessage } from '$lib/chat/ui-message';
+} from './providers';
+import { ZHONGWEN_SYSTEM_PROMPT } from './system-prompt';
+import { toUiMessage } from './ui-message';
 import {
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
 	generateChatMessageId,
 	generateConversationId,
-} from '$lib/workspace';
-import { getSignedIn } from '$lib/signed-in';
+} from '../zhongwen/workspace';
+import { getSignedIn } from '../signed-in';
 
 const asChatMessageId = (id: string) => id as ChatMessageId;
 

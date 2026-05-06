@@ -14,7 +14,6 @@ export function openZhongwen({ identity }: { identity: AuthIdentity }) {
 	return {
 		...doc,
 		idb,
-		whenReady: idb.whenLoaded,
 		async wipe() {
 			doc[Symbol.dispose]();
 			await idb.whenDisposed;
@@ -22,9 +21,6 @@ export function openZhongwen({ identity }: { identity: AuthIdentity }) {
 				userId,
 				ydocGuids: [doc.ydoc.guid],
 			});
-		},
-		dispose() {
-			doc[Symbol.dispose]();
 		},
 		[Symbol.dispose]() {
 			doc[Symbol.dispose]();

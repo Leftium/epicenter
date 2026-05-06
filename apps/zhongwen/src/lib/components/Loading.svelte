@@ -7,5 +7,4 @@
 	<Empty.Media>
 		<Spinner class="size-5 text-muted-foreground" />
 	</Empty.Media>
-	<Empty.Title>Checking session</Empty.Title>
 </Empty.Root>

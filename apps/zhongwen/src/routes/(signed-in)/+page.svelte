@@ -8,12 +8,12 @@
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '$lib/auth';
-	import { createChatState } from '$lib/chat/chat-state.svelte';
-	import ChatInput from '$lib/components/ChatInput.svelte';
+	import { createChatState } from './chat/chat-state.svelte';
+	import ChatInput from './components/ChatInput.svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
-	import ModelPicker from '$lib/components/ModelPicker.svelte';
-	import ZhongwenSidebar from '$lib/components/ZhongwenSidebar.svelte';
-	import { getSignedIn } from '$lib/signed-in';
+	import ModelPicker from './components/ModelPicker.svelte';
+	import ZhongwenSidebar from './components/ZhongwenSidebar.svelte';
+	import { getSignedIn } from './signed-in';
 
 	const signedIn = getSignedIn();
 	const showPinyin = fromKv(signedIn.zhongwen.kv, 'showPinyin');

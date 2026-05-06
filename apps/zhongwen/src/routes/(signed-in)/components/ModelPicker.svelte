@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Select from '@epicenter/ui/select';
-	import type { ConversationHandle } from '$lib/chat/chat-state.svelte';
-	import { PROVIDER_MODELS, type Provider } from '$lib/chat/providers';
+	import type { ConversationHandle } from '../chat/chat-state.svelte';
+	import { PROVIDER_MODELS, type Provider } from '../chat/providers';
 
 	let { handle }: { handle: ConversationHandle } = $props();
 

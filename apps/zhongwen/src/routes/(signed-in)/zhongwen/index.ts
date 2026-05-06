@@ -1,6 +1,6 @@
 import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { zhongwenKv, zhongwenTables } from '../workspace/index.js';
+import { zhongwenKv, zhongwenTables } from './workspace/index.js';
 
 export function openZhongwen({
 	encryptionKeys,

@@ -1,6 +1,6 @@
 import { createContext } from 'svelte';
 import type { AuthIdentity } from '$lib/auth';
-import type { Zhongwen } from '$lib/zhongwen/browser';
+import type { Zhongwen } from './zhongwen/browser';
 
 export type SignedIn = {
 	readonly identity: AuthIdentity;

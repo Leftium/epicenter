@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth';
-	import SignedIn from '$lib/components/SignedIn.svelte';
+	import SignedIn from './components/SignedIn.svelte';
 
 	let { children } = $props();
 

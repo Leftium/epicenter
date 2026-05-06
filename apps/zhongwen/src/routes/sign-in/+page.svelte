@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PageSpinner } from '@epicenter/svelte/page-spinner';
 	import { Button } from '@epicenter/ui/button';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth';
@@ -21,9 +22,7 @@
 </script>
 
 {#if auth.state.status === 'pending'}
-	<div class="flex h-dvh items-center justify-center text-sm text-muted-foreground">
-		Loading...
-	</div>
+	<PageSpinner />
 {:else if auth.state.status === 'signed-out'}
 	<main class="flex h-dvh flex-col">
 		<header class="flex items-center justify-between border-b px-4 py-3">

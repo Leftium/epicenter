@@ -15,6 +15,9 @@
 	}
 
 	const initialIdentity = auth.state.identity;
+	// Snapshot identity into $state so the gate keeps serving the last-known
+	// identity to children during the sign-out tear-down frame, rather than
+	// reading auth.state.identity live (which would crash once status flips).
 	let identity = $state(initialIdentity);
 
 	const fuji = openFuji({

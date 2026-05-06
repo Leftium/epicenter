@@ -1,9 +1,7 @@
 <script lang="ts">
+	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { Button } from '@epicenter/ui/button';
-	import * as Empty from '@epicenter/ui/empty';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import { getOrCreateInstallationId } from '@epicenter/workspace';
-	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { onDestroy } from 'svelte';
 	import { auth } from '$lib/auth';
 	import { openHoneycrisp } from '$lib/honeycrisp/browser';
@@ -17,6 +15,9 @@
 	}
 
 	const initialIdentity = auth.state.identity;
+	// Snapshot identity into $state so the gate keeps serving the last-known
+	// identity to children during the sign-out tear-down frame, rather than
+	// reading auth.state.identity live (which would crash once status flips).
 	let identity = $state(initialIdentity);
 
 	const honeycrisp = openHoneycrisp({
@@ -54,28 +55,15 @@
 	});
 </script>
 
-{#await honeycrisp.whenReady}
-	<div class="flex h-dvh items-center justify-center">
-		<Spinner class="size-5 text-muted-foreground" />
-	</div>
-{:then _}
+<WorkspaceGate pending={honeycrisp.whenReady}>
 	{@render children?.()}
-{:catch error}
-	<Empty.Root class="h-dvh">
-		<Empty.Media>
-			<TriangleAlertIcon class="size-8 text-muted-foreground" />
-		</Empty.Media>
-		<Empty.Title>Failed to load workspace</Empty.Title>
-		<Empty.Description>
-			{error instanceof Error
-				? error.message
-				: 'The workspace could not be opened.'}
-		</Empty.Description>
+
+	{#snippet errorActions()}
 		<div class="flex items-center gap-2">
 			<Button variant="outline" onclick={() => window.location.reload()}>
 				Reload
 			</Button>
 			<Button onclick={() => auth.signOut()}>Sign out</Button>
 		</div>
-	</Empty.Root>
-{/await}
+	{/snippet}
+</WorkspaceGate>

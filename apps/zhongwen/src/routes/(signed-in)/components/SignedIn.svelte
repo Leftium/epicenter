@@ -1,8 +1,5 @@
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
-	import * as Empty from '@epicenter/ui/empty';
-	import { Spinner } from '@epicenter/ui/spinner';
-	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { onDestroy } from 'svelte';
 	import { auth } from '$lib/auth';
 	import { setSignedIn } from '../signed-in';
@@ -44,32 +41,9 @@
 	});
 </script>
 
-{#await zhongwen.idb.whenLoaded}
-	<Empty.Root class="h-dvh flex-none border-0" aria-live="polite">
-		<Empty.Media>
-			<Spinner class="size-5 text-muted-foreground" />
-		</Empty.Media>
-	</Empty.Root>
-{:then _}
+<WorkspaceGate
+	pending={zhongwen.idb.whenLoaded}
+	onSignOut={() => auth.signOut()}
+>
 	{@render children?.()}
-{:catch error}
-	<Empty.Root class="h-dvh flex-none border-0">
-		<Empty.Media>
-			<TriangleAlertIcon class="size-8 text-muted-foreground" />
-		</Empty.Media>
-		<Empty.Title>Failed to load workspace</Empty.Title>
-		<Empty.Description>
-			{error instanceof Error
-				? error.message
-				: 'The workspace could not be opened.'}
-		</Empty.Description>
-		<Empty.Content>
-			<div class="flex items-center gap-2">
-				<Button variant="outline" onclick={() => window.location.reload()}>
-					Reload
-				</Button>
-				<Button onclick={() => auth.signOut()}>Sign out</Button>
-			</div>
-		</Empty.Content>
-	</Empty.Root>
-{/await}
+</WorkspaceGate>

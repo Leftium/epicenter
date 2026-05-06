@@ -28,9 +28,9 @@
 		},
 		bearerToken: () => auth.bearerToken,
 	});
-	const state = createHoneycrispState(honeycrisp);
+	const honeycrispState = createHoneycrispState(honeycrisp);
 
-	setHoneycrispState(state);
+	setHoneycrispState(honeycrispState);
 
 	$effect(() => {
 		if (auth.state.status === 'signed-in') {
@@ -40,8 +40,8 @@
 	});
 
 	onDestroy(() => {
-		state[Symbol.dispose]();
-		honeycrisp.dispose();
+		honeycrispState[Symbol.dispose]();
+		honeycrisp[Symbol.dispose]();
 	});
 
 	setSignedIn({
@@ -58,7 +58,7 @@
 	<div class="flex h-dvh items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>
-{:then}
+{:then _}
 	{@render children?.()}
 {:catch error}
 	<Empty.Root class="h-dvh">

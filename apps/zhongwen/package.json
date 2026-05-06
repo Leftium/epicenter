@@ -5,11 +5,11 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		"./workspace": "./src/lib/workspace/index.ts",
-		"./openZhongwen": "./src/lib/zhongwen/index.ts",
-		"./browser": "./src/lib/zhongwen/browser.ts",
-		"./daemon": "./src/lib/zhongwen/daemon.ts",
-		"./script": "./src/lib/zhongwen/script.ts"
+		"./workspace": "./src/routes/(signed-in)/zhongwen/workspace/index.ts",
+		"./openZhongwen": "./src/routes/(signed-in)/zhongwen/index.ts",
+		"./browser": "./src/routes/(signed-in)/zhongwen/browser.ts",
+		"./daemon": "./src/routes/(signed-in)/zhongwen/daemon.ts",
+		"./script": "./src/routes/(signed-in)/zhongwen/script.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",
@@ -17,7 +17,7 @@
 		"dev:remote": "bun --bun vite dev --mode production",
 		"build": "bun --bun vite build",
 		"preview": "bun --bun vite preview",
-		"test": "bun test ./src/lib/zhongwen",
+		"test": "bun test ./src/routes/'(signed-in)'/zhongwen",
 		"typecheck": "svelte-check",
 		"deploy": "bun run build && wrangler deploy"
 	},

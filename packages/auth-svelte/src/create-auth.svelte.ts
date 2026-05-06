@@ -11,21 +11,21 @@ export type AuthClient = BaseAuthClient;
 /**
  * Svelte 5 wrapper around `@epicenter/auth`.
  *
- * Mirrors the core identity into `$state` so templates and derived values can
- * read `auth.identity` reactively. The spread copies core methods, and the
- * later getter overrides the copied identity value.
+ * Mirrors the core state into `$state` so templates and derived values can
+ * read `auth.state` reactively. The spread copies core methods, and the later
+ * getter overrides the copied state value.
  */
 function createReactiveAuth(base: BaseAuthClient): AuthClient {
-	let identity = $state(base.identity);
+	let state = $state(base.state);
 
-	const unsubscribe = base.onChange((next) => {
-		identity = next;
+	const unsubscribe = base.onStateChange((next) => {
+		state = next;
 	});
 
 	return {
 		...base,
-		get identity() {
-			return identity;
+		get state() {
+			return state;
 		},
 		[Symbol.dispose]() {
 			unsubscribe();

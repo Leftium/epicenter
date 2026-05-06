@@ -367,8 +367,7 @@ export async function load() {
   const handle = $derived(chatState.active);
 
   $effect(() => () => {
-    showPinyin.destroy();
-    chatState.destroy();
+    chatState[Symbol.dispose]();
   });
 
   function openForgetDeviceDialog() {

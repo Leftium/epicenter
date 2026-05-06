@@ -27,6 +27,13 @@ needs that review churn. The important boundary is that `client.ts` is the only
 singleton with side effects, while `index.ts`, `browser.ts`, `daemon.ts`, and
 `script.ts` stay pure construction surfaces.
 
+Some SvelteKit apps scope their browser workspace to `routes/(signed-in)/`
+instead of `src/lib/`. Use the owner of the lifecycle as the deciding rule:
+if a `SignedIn.svelte` gate opens the workspace from `AuthIdentity` and installs
+it in signed-in context, keep the app factory beside that gate. If a `$lib`
+client singleton owns the auth wait and workspace singleton, keep the factory
+beside that client until the app is migrated.
+
 ## Layers
 
 | File | Job | Imports | Returns |
@@ -183,18 +190,23 @@ Defaults:
 ## Package Exports
 
 Apps that expose daemon and script factories should export them explicitly.
+Point each subpath at the file's actual owner. Signed-in-owned apps may export
+from `src/routes/(signed-in)/...`; client-singleton apps usually export from
+`src/lib/...`.
 
 ```json
 {
 	"exports": {
-		"./workspace": "./src/lib/workspace.ts",
-		"./openFuji": "./src/lib/fuji/index.ts",
-		"./browser": "./src/lib/fuji/browser.ts",
-		"./daemon": "./src/lib/fuji/daemon.ts",
-		"./script": "./src/lib/fuji/script.ts"
+		"./workspace": "./src/routes/(signed-in)/fuji/workspace.ts",
+		"./openFuji": "./src/routes/(signed-in)/fuji/index.ts",
+		"./browser": "./src/routes/(signed-in)/fuji/browser.ts",
+		"./daemon": "./src/routes/(signed-in)/fuji/daemon.ts",
+		"./script": "./src/routes/(signed-in)/fuji/script.ts"
 	}
 }
 ```
+
+Client-singleton apps use the same subpaths, but point at `src/lib/...`.
 
 Do not export a running `client.ts` singleton from package exports.
 

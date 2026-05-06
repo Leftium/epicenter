@@ -3,8 +3,8 @@
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
+	import { WorkspaceLoading } from '@epicenter/svelte/workspace-loading';
 	import { auth } from '$lib/auth';
-	import Loading from '$lib/components/Loading.svelte';
 
 	let { children } = $props();
 </script>
@@ -13,7 +13,7 @@
 <ConfirmationDialog />
 <ModeWatcher />
 {#if auth.state.status === 'pending'}
-	<Loading />
+	<WorkspaceLoading />
 {:else}
 	{@render children?.()}
 {/if}

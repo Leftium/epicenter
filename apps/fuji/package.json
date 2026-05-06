@@ -5,11 +5,11 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		"./workspace": "./src/lib/fuji/workspace.ts",
-		"./openFuji": "./src/lib/fuji/index.ts",
-		"./browser": "./src/lib/fuji/browser.ts",
-		"./daemon": "./src/lib/fuji/daemon.ts",
-		"./script": "./src/lib/fuji/script.ts"
+		"./workspace": "./src/routes/(signed-in)/fuji/workspace.ts",
+		"./openFuji": "./src/routes/(signed-in)/fuji/index.ts",
+		"./browser": "./src/routes/(signed-in)/fuji/browser.ts",
+		"./daemon": "./src/routes/(signed-in)/fuji/daemon.ts",
+		"./script": "./src/routes/(signed-in)/fuji/script.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",
@@ -18,7 +18,7 @@
 		"build": "NODE_ENV=production vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"test": "bun test ./src/lib/fuji",
+		"test": "bun test ./src/routes/'(signed-in)'/fuji",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"devDependencies": {

@@ -366,6 +366,26 @@ Some components are used by exactly one route (e.g., `entries/[id]/EntryEditorTo
 - **Keep workspace primitive (`fuji/`, `workspace.ts`) inside `(signed-in)/` rather than a shared package**: the primitive depends on the user identity at construction; it is not auth-state-agnostic. Promoting it to a package would re-introduce the "this only works inside signed-in" smell at a lower layer.
   Revisit when: the workspace primitive is needed in a context that doesn't yet exist (e.g., a CLI that opens a workspace given an explicit identity).
 
+### Boundary map
+
+This spec narrows the older app layout rule. Browser factories do not move under
+`(signed-in)/` because they are named `browser.ts`. They move when the browser
+workspace can only be opened from a signed-in identity and the route group owns
+that lifecycle.
+
+```txt
+Fuji        routes/(signed-in)/fuji/browser.ts        signed-in gate owns workspace
+Honeycrisp  routes/(signed-in)/honeycrisp/browser.ts  signed-in gate owns workspace
+Zhongwen    routes/(signed-in)/zhongwen/browser.ts    signed-in gate owns workspace
+Opensidian  lib/opensidian/browser.ts                 client singleton still owns workspace
+Skills      lib/skills/browser.ts                     local browser workspace, no auth gate
+```
+
+The rule is about ownership, not filename. A browser factory that accepts
+`AuthIdentity` but is opened by a route-group `SignedIn` component belongs with
+that route group. A browser factory opened by a `$lib` client singleton stays
+with that singleton until the app adopts the signed-in route-group pattern.
+
 ## Success Criteria
 
 - [x] In each app, `$lib/components/` contains only auth-state-agnostic components

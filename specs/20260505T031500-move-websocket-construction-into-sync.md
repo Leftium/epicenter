@@ -346,9 +346,10 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 2: Add `bearerToken` to `SyncAttachmentConfig` (additive, optional)
 
-- [ ] **2.1** In `packages/workspace/src/document/attach-sync.ts`, add `bearerToken?: () => string | null` to `SyncAttachmentConfig` (alongside the existing `transport: SyncTransport`).
-- [ ] **2.2** In `attemptConnection`, prefer `config.bearerToken` if present: construct the WebSocket inline using the 3-line protocol logic. Fall back to `config.transport(...)` otherwise.
-- [ ] **2.3** Verify: workspace tests still pass.
+- [x] **2.1** In `packages/workspace/src/document/attach-sync.ts`, add `bearerToken?: () => string | null` to `SyncAttachmentConfig` (alongside the existing `transport: SyncTransport`).
+- [x] **2.2** In `attemptConnection`, prefer `config.bearerToken` if present: construct the WebSocket inline using the 3-line protocol logic. Fall back to `config.transport(...)` otherwise.
+- [x] **2.3** Verify: workspace tests still pass.
+  > Note: the first sandboxed workspace test run failed on Unix socket `EPERM`. The same command passed with sandbox escalation.
 
 ### Wave 3: Migrate consumers from `transport` to `bearerToken`
 

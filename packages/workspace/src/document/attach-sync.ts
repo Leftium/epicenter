@@ -10,6 +10,7 @@ import {
 	encodeSyncUpdate,
 	handleSyncPayload,
 	isRpcError,
+	BEARER_SUBPROTOCOL_PREFIX,
 	MAIN_SUBPROTOCOL,
 	MESSAGE_TYPE,
 	RpcError,
@@ -214,6 +215,11 @@ export type SyncAttachmentConfig = {
 	 * full document instead of just the delta.
 	 */
 	waitFor?: WaitForBarrier;
+	/**
+	 * Returns the current bearer token for sync WebSocket authentication.
+	 * Called on each reconnect so token rotation is observed.
+	 */
+	bearerToken?: () => string | null;
 	/** Authenticated WebSocket transport. */
 	transport: SyncTransport;
 	/**
@@ -603,7 +609,15 @@ export function attachSync(
 	): Promise<'connected' | 'failed'> {
 		let ws: WebSocket;
 		try {
-			ws = config.transport(config.url, [MAIN_SUBPROTOCOL]);
+			const token = config.bearerToken?.();
+			if (token) {
+				ws = new WebSocket(config.url, [
+					MAIN_SUBPROTOCOL,
+					`${BEARER_SUBPROTOCOL_PREFIX}${token}`,
+				]);
+			} else {
+				ws = config.transport(config.url, [MAIN_SUBPROTOCOL]);
+			}
 		} catch {
 			return 'failed';
 		}

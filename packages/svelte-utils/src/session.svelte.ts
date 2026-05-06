@@ -2,9 +2,14 @@
  * Shared session state machine for apps that gate UI on a signed-in identity
  * plus an app-defined payload (typically a workspace handle).
  *
- * Owns the auth subscription, transition writes, and the live-user-switch
- * refusal. Apps configure two hooks: `build` constructs the signed-in payload
- * from an identity; `applyKeys` applies rotated encryption keys in place.
+ * Status comes directly from `auth.state`; this factory only owns the payload
+ * lifecycle (build, applyKeys, dispose) and the live-user-switch refusal.
+ * `current` projects `auth.state` and decorates the signed-in variant with the
+ * built payload, so apps consume one read API and TypeScript narrows in one
+ * step.
+ *
+ * Requires an `AuthClient` whose `state` is Svelte-reactive (use
+ * `@epicenter/auth-svelte`, not `@epicenter/auth` directly).
  *
  * @example
  * ```ts
@@ -20,8 +25,7 @@
 import type { AuthClient, AuthIdentity, AuthState } from '@epicenter/auth';
 
 export type Session<TSignedIn> =
-	| { status: 'pending' }
-	| { status: 'signed-out' }
+	| Exclude<AuthState, { status: 'signed-in' }>
 	| { status: 'signed-in'; signedIn: TSignedIn };
 
 export type SignedInBase = {
@@ -37,49 +41,47 @@ export function createSession<TSignedIn extends SignedInBase>({
 	build: (identity: AuthIdentity) => TSignedIn;
 	applyKeys: (signedIn: TSignedIn, identity: AuthIdentity) => void;
 }) {
-	let session = $state<Session<TSignedIn>>({ status: 'pending' });
+	let signedIn = $state<TSignedIn | undefined>(undefined);
 
-	function next(
-		prev: Session<TSignedIn>,
-		a: AuthState,
-	): Session<TSignedIn> {
-		if (a.status === 'pending') {
-			return prev.status === 'pending' ? prev : { status: 'pending' };
-		}
-		if (a.status === 'signed-out') {
-			if (prev.status === 'signed-in') prev.signedIn[Symbol.dispose]();
-			return { status: 'signed-out' };
-		}
-		if (prev.status === 'signed-in') {
-			if (prev.signedIn.identity.user.id === a.identity.user.id) {
-				applyKeys(prev.signedIn, a.identity);
-				return {
-					status: 'signed-in',
-					signedIn: { ...prev.signedIn, identity: a.identity },
-				};
+	function reconcile(a: AuthState) {
+		if (a.status !== 'signed-in') {
+			if (signedIn) {
+				signedIn[Symbol.dispose]();
+				signedIn = undefined;
 			}
-			prev.signedIn[Symbol.dispose]();
-			location.reload();
-			throw new Error('unreachable: reload pending');
+			return;
 		}
-		return { status: 'signed-in', signedIn: build(a.identity) };
+		if (!signedIn) {
+			signedIn = build(a.identity);
+			return;
+		}
+		if (signedIn.identity.user.id === a.identity.user.id) {
+			applyKeys(signedIn, a.identity);
+			signedIn = { ...signedIn, identity: a.identity };
+			return;
+		}
+		signedIn[Symbol.dispose]();
+		location.reload();
+		throw new Error('unreachable: reload pending');
 	}
 
-	const unsubscribe = auth.onStateChange((s) => {
-		session = next(session, s);
-	});
+	const unsubscribe = auth.onStateChange(reconcile);
 	// Initial replay: auth may have already settled before subscribe ran.
-	session = next(session, auth.state);
+	reconcile(auth.state);
 
 	return {
-		get current() {
-			return session;
+		get current(): Session<TSignedIn> {
+			const a = auth.state;
+			if (a.status !== 'signed-in') return a;
+			// Invariant: reconcile runs synchronously inside onStateChange, so
+			// `signedIn` is always set when auth is signed-in. Defensive fallback
+			// keeps the type honest without an `!`.
+			if (!signedIn) return { status: 'pending' };
+			return { status: 'signed-in', signedIn };
 		},
 		[Symbol.dispose]() {
 			unsubscribe();
-			if (session.status === 'signed-in') {
-				session.signedIn[Symbol.dispose]();
-			}
+			signedIn?.[Symbol.dispose]();
 		},
 	};
 }

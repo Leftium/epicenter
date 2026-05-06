@@ -38,7 +38,7 @@ export function attachRecordingMarkdownFiles(
 	recordings: Table<Recording>,
 	config: {
 		dir: MaybePromise<string>;
-		whenReady: Promise<unknown>;
+		waitFor: Promise<unknown>;
 	},
 ): RecordingMarkdownFilesAttachment {
 	if (!isTauri()) {
@@ -85,7 +85,7 @@ export function attachRecordingMarkdownFiles(
 	});
 
 	const whenFlushed = (async () => {
-		await config.whenReady;
+		await config.waitFor;
 		syncQueue = syncQueue.then(async () => {
 			const dir = await dirPromise;
 			const files = recordings.getAllValid().map(toRecordingMarkdownFile);

@@ -2,6 +2,7 @@
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button } from '@epicenter/ui/button';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
+	import { DateTimeString } from '@epicenter/workspace';
 	import ArchiveRestoreIcon from '@lucide/svelte/icons/archive-restore';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import FolderIcon from '@lucide/svelte/icons/folder';
@@ -9,7 +10,6 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { foldersState, notesState } from '$lib/state';
-	import { DateTimeString } from '@epicenter/workspace';
 	import type { Note } from '$lib/workspace';
 
 	let {

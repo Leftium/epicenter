@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { Ok } from 'wellcrafted/result';
 import {
 	Awareness,
 	applyAwarenessUpdate,
@@ -36,7 +37,6 @@ import {
 	RPC_TYPE,
 	SYNC_MESSAGE_TYPE,
 } from './protocol';
-import { Ok } from 'wellcrafted/result';
 import { RpcError } from './rpc-errors';
 
 // ============================================================================

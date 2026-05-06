@@ -21,8 +21,8 @@
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
 import { honeycrisp } from '$lib/honeycrisp/client';
-import type { FolderId } from '$lib/workspace';
 import { searchParams } from '$lib/search-params.svelte';
+import type { FolderId } from '$lib/workspace';
 
 function createFoldersState() {
 	// ─── Reactive State ──────────────────────────────────────────────────

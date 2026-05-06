@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import * as Empty from '@epicenter/ui/empty';
 	import FileXIcon from '@lucide/svelte/icons/file-x';
+	import { page } from '$app/state';
 	import EntryEditor from '$lib/components/EntryEditor.svelte';
 	import { entriesState } from '$lib/entries-state.svelte';
 	import type { EntryId } from '$lib/workspace';

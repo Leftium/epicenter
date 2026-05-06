@@ -1,8 +1,4 @@
-import type {
-	InferKvValue,
-	KvDefinitions,
-	Kv,
-} from '@epicenter/workspace';
+import type { InferKvValue, Kv, KvDefinitions } from '@epicenter/workspace';
 
 /**
  * Create a reactive binding to a single workspace KV key.

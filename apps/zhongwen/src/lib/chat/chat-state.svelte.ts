@@ -19,7 +19,6 @@ import {
 } from '$lib/chat/providers';
 import { ZHONGWEN_SYSTEM_PROMPT } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { auth, zhongwen } from '$lib/zhongwen/client';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -27,6 +26,7 @@ import {
 	generateChatMessageId,
 	generateConversationId,
 } from '$lib/workspace';
+import { auth, zhongwen } from '$lib/zhongwen/client';
 
 const asChatMessageId = (id: string) => id as ChatMessageId;
 
@@ -37,8 +37,7 @@ function createChatState() {
 
 	const conversationsMap = fromTable(zhongwen.tables.conversations);
 	const conversations = $derived(
-		[...conversationsMap.values()]
-			.sort((a, b) => b.updatedAt - a.updatedAt),
+		[...conversationsMap.values()].sort((a, b) => b.updatedAt - a.updatedAt),
 	);
 
 	/** Returns the ID to activate, either the first existing conversation or a newly created default. */
@@ -97,19 +96,16 @@ function createChatState() {
 
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
-			connection: fetchServerSentEvents(
-				`${APP_URLS.API}/ai/chat`,
-				() => ({
-					fetchClient: auth.fetch,
-					body: {
-						data: {
-							provider: metadata?.provider ?? DEFAULT_PROVIDER,
-							model: metadata?.model ?? DEFAULT_MODEL,
-							systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
-						},
+			connection: fetchServerSentEvents(`${APP_URLS.API}/ai/chat`, () => ({
+				fetchClient: auth.fetch,
+				body: {
+					data: {
+						provider: metadata?.provider ?? DEFAULT_PROVIDER,
+						model: metadata?.model ?? DEFAULT_MODEL,
+						systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
 					},
-				}),
-			),
+				},
+			})),
 			onError: (err) => {
 				console.error(
 					'[zhongwen] stream error:',

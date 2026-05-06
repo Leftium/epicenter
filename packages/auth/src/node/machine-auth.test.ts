@@ -12,18 +12,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import {
-	createLogger,
-	memorySink,
-	type Logger,
-} from 'wellcrafted/logger';
+import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';
 import type { BearerSession } from '../auth-types.js';
 import type { BetterAuthSessionResponse } from '../contracts/auth-session.js';
-import {
-	loginWithDeviceCode,
-	logout,
-	status,
-} from './machine-auth.js';
+import { loginWithDeviceCode, logout, status } from './machine-auth.js';
 import {
 	createMachineAuthTransport,
 	type DeviceTokenError,
@@ -31,8 +23,8 @@ import {
 } from './machine-auth-transport.js';
 import {
 	loadMachineSession,
-	saveMachineSession,
 	type MachineAuthStorageError,
+	saveMachineSession,
 } from './machine-session-store.js';
 
 type Expect<TValue extends true> = TValue;
@@ -280,7 +272,9 @@ describe('machine auth free functions', () => {
 
 	test('logout signs out and clears the stored session', async () => {
 		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(makeSession({ token: 'logout-token' }), { backend });
+		await saveMachineSession(makeSession({ token: 'logout-token' }), {
+			backend,
+		});
 		const seenTokens: string[] = [];
 		const fetchImpl = (async (_input, init) => {
 			seenTokens.push(new Headers(init?.headers).get('authorization') ?? '');

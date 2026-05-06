@@ -161,11 +161,7 @@ export function createMachineAuthTransport({
 		 * `success` for in-progress states; expired, denied, and unknown OAuth
 		 * errors surface as typed `Err` so the caller never string-matches.
 		 */
-		async pollDeviceToken({
-			deviceCode,
-		}: {
-			deviceCode: string;
-		}) {
+		async pollDeviceToken({ deviceCode }: { deviceCode: string }) {
 			const { data: fetched, error: fetchError } = await tryAsync({
 				try: async () => {
 					const response = await fetchImpl(
@@ -227,11 +223,7 @@ export function createMachineAuthTransport({
 			});
 		},
 
-		async fetchSession({
-			token,
-		}: {
-			token: string;
-		}) {
+		async fetchSession({ token }: { token: string }) {
 			const { data: response, error } = await requestJson({
 				method: 'GET',
 				path: '/auth/get-session',
@@ -248,11 +240,7 @@ export function createMachineAuthTransport({
 			});
 		},
 
-		async signOut({
-			token,
-		}: {
-			token: string;
-		}) {
+		async signOut({ token }: { token: string }) {
 			return tryAsync({
 				try: async (): Promise<undefined> => {
 					await fetchImpl(`${EPICENTER_API_URL}/auth/sign-out`, {

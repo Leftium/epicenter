@@ -7,8 +7,8 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import { auth, fuji } from '$lib/fuji/client';
 	import { entriesState } from '$lib/entries-state.svelte';
+	import { auth, fuji } from '$lib/fuji/client';
 	import BulkAddModal from './BulkAddModal.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();

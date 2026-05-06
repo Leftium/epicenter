@@ -44,8 +44,7 @@ export async function loginWithDeviceCode({
 		verificationUriComplete: string;
 	}) => void | Promise<void>;
 } = {}) {
-	const { data: code, error: codeError } =
-		await transport.requestDeviceCode();
+	const { data: code, error: codeError } = await transport.requestDeviceCode();
 	if (codeError) return Err(codeError);
 
 	const device = {
@@ -59,8 +58,9 @@ export async function loginWithDeviceCode({
 	let accessToken: string | null = null;
 	while (Date.now() < deadline) {
 		await sleep(interval);
-		const { data: poll, error: pollError } =
-			await transport.pollDeviceToken({ deviceCode: code.device_code });
+		const { data: poll, error: pollError } = await transport.pollDeviceToken({
+			deviceCode: code.device_code,
+		});
 		if (pollError) return Err(pollError);
 		if (poll.status === 'success') {
 			accessToken = poll.accessToken;

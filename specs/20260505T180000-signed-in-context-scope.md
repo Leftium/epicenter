@@ -540,7 +540,7 @@ Fuji was implemented first as the reference shape. Honeycrisp mirrors Fuji with 
 ### Deviations from Spec
 
 - Zhongwen uses the full `<SignedIn>` bundle rather than the route-only fallback. The evidence was concrete: Zhongwen opens a per-user local workspace and route code reads its tables and KV.
-- Workspace factories keep legacy readiness names (`whenLoaded`, `[Symbol.dispose]`) alongside the new contract (`whenReady`, `dispose`) so existing child document code and package consumers are not broken mid-refactor. The new names were not added at first commit for Fuji and Honeycrisp; they were added in a follow-up commit (see "Follow-up findings" below).
+- Workspace factories no longer expose `whenReady` or a named `dispose` on the bundle root. The signed-in gates await `bundle.idb.whenLoaded` directly and dispose via `[Symbol.dispose]()`. This matches the convention in spec `20260506T020000-expose-attachments-not-aliases.md`: aliases that proxy a single subsystem event lie about composition; expose the subsystem and let consumers reach through. An interim commit (`ea286afaf`) had re-added the aliases against this convention; that was reverted.
 - Verification was deferred to a final cross-app pass and produced findings; see below.
 
 ### Follow-up findings (2026-05-06)
@@ -551,7 +551,7 @@ A post-implementation audit caught:
 - Fuji and Honeycrisp browser bundles never gained `whenReady` / `dispose()`, so all three gates were awaiting `idb.whenLoaded` and disposing via `[Symbol.dispose]()`. Fixed by adding the bundle-level names and switching the gates to use them.
 - Dead `&& page.url.pathname !== '/sign-in'` guard in all three `(signed-in)/+layout.svelte` files; the guard was unreachable because `/sign-in` lives outside the route group. Removed.
 - Fuji's `entries-state.svelte.ts` was a module-level singleton bound by `<SignedIn>` on mount — recreating the drift smell the migration was meant to kill. Replaced with `createEntriesState(fuji)` + `[getEntriesState, setEntriesState]` context, mirroring `createHoneycrispState` in apps/honeycrisp.
-- Three near-identical `<SignedIn>` `{:catch}` blocks deduped into a shared `<WorkspaceGate>` in `@epicenter/svelte/workspace-gate`; per-app gates now provide an `errorActions` snippet for Reload + Sign out.
+- A short-lived experiment extracted the `{:catch}` UI into a shared `<WorkspaceGate>` in `@epicenter/svelte/workspace-gate`. That component was deleted shortly after: the wrapper saved no lines once the caller still had to compose the readiness promise and override the error UI per app. Each gate now inlines the `{#await}` + `<Empty.Root>` markup. See `specs/20260506T020000-expose-attachments-not-aliases.md` for the full reasoning.
 - Identity `$state` snapshot defense documented inline so the next refactor does not collapse it into a live `auth.state.identity` read.
 
 ### Follow-up Work

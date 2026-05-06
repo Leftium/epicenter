@@ -64,9 +64,13 @@ The factory does not branch. The caller is honest about which world they are in.
 The argument for sync construction is usually "I want to export the thing from a module so UI components can read it without awaiting." That argument still holds after hoisting. The async loaders that cannot be made sync (keychain, IndexedDB, network) need exactly one render-gate at the app shell:
 
 ```svelte
-<WorkspaceGate whenReady={app.whenLoaded}>
+{#await app.idb.whenLoaded}
+  <Loading />
+{:then}
   {@render children()}
-</WorkspaceGate>
+{:catch error}
+  <ErrorState {error} />
+{/await}
 ```
 
 The gate already has to exist for everything else the app needs at boot (CRDT hydration, indexedDB, network handshake). Auth join the queue. The gate is the right layer for "wait until startup is done", not the inside of every factory that participates in startup.

@@ -31,12 +31,11 @@ export function openSkillsBrowser() {
 			onLocalUpdate(ydoc, () =>
 				doc.tables.skills.update(skillId, { updatedAt: Date.now() }),
 			);
-			const persistence = attachIndexedDb(ydoc);
+			const childIdb = attachIndexedDb(ydoc);
 			return {
 				ydoc,
 				instructions: attachPlainText(ydoc),
-				persistence,
-				whenReady: persistence.whenLoaded,
+				idb: childIdb,
 				/**
 				 * child disposer rejections do not propagate; bundle.wipe() relies on
 				 * IDB's deleteDatabase native blocking as belt-and-suspenders for
@@ -61,12 +60,11 @@ export function openSkillsBrowser() {
 			onLocalUpdate(ydoc, () =>
 				doc.tables.references.update(referenceId, { updatedAt: Date.now() }),
 			);
-			const persistence = attachIndexedDb(ydoc);
+			const childIdb = attachIndexedDb(ydoc);
 			return {
 				ydoc,
 				content: attachPlainText(ydoc),
-				persistence,
-				whenReady: persistence.whenLoaded,
+				idb: childIdb,
 				/**
 				 * child disposer rejections do not propagate; bundle.wipe() relies on
 				 * IDB's deleteDatabase native blocking as belt-and-suspenders for
@@ -84,12 +82,12 @@ export function openSkillsBrowser() {
 		tables: doc.tables,
 		async readInstructions(skillId) {
 			using handle = instructionsDocs.open(skillId);
-			await handle.whenReady;
+			await handle.idb.whenLoaded;
 			return handle.instructions.read();
 		},
 		async readReference(referenceId) {
 			using handle = referenceDocs.open(referenceId);
-			await handle.whenReady;
+			await handle.idb.whenLoaded;
 			return handle.content.read();
 		},
 	});
@@ -100,7 +98,6 @@ export function openSkillsBrowser() {
 		instructionsDocs,
 		referenceDocs,
 		actions,
-		whenReady: idb.whenLoaded,
 		async wipe() {
 			instructionsDocs[Symbol.dispose]();
 			referenceDocs[Symbol.dispose]();

@@ -15,7 +15,7 @@ import {
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import type { NoteId } from '$lib/workspace';
+import type { NoteId } from './workspace';
 import { openHoneycrisp as openHoneycrispDoc } from './index';
 
 function noteBodyDocGuid({
@@ -104,7 +104,6 @@ export function openHoneycrisp({
 		noteBodyDocs,
 		awareness,
 		sync,
-		whenReady: idb.whenLoaded,
 		async wipe() {
 			const fallbackGuids = [
 				doc.ydoc.guid,
@@ -125,10 +124,6 @@ export function openHoneycrisp({
 		},
 		remote,
 		rpc,
-		dispose() {
-			noteBodyDocs[Symbol.dispose]();
-			doc[Symbol.dispose]();
-		},
 		[Symbol.dispose]() {
 			noteBodyDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();

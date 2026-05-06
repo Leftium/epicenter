@@ -5,10 +5,10 @@
 	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import NoteCard from '$lib/components/NoteCard.svelte';
-	import { getHoneycrispState } from '$lib/state';
+	import NoteCard from '../components/NoteCard.svelte';
+	import { getHoneycrispState } from '../state';
 	import { getDateLabel } from '$lib/utils/date';
-	import type { Note } from '$lib/workspace';
+	import type { Note } from '../honeycrisp/workspace';
 
 	const { notesState, viewState } = getHoneycrispState();
 

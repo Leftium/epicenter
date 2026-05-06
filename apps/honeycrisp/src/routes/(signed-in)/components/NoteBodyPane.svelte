@@ -2,8 +2,8 @@
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
-	import { getHoneycrispState } from '$lib/state';
-	import { getSignedIn } from '$lib/signed-in';
+	import { getHoneycrispState } from '../state';
+	import { getSignedIn } from '../signed-in';
 
 	const signedIn = getSignedIn();
 	const { notesState } = getHoneycrispState();
@@ -17,7 +17,7 @@
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>
-{:then}
+{:then _}
 	<HoneycripEditor
 		yxmlfragment={doc.current.body.binding}
 		onContentChange={(change) => notesState.updateNoteContent(change)}

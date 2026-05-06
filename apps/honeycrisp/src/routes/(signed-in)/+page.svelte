@@ -1,11 +1,11 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
-	import NoteBodyPane from '$lib/components/NoteBodyPane.svelte';
-	import NoteList from '$lib/components/NoteList.svelte';
-	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
-	import { getHoneycrispState } from '$lib/state';
+	import CommandPalette from './components/CommandPalette.svelte';
+	import NoteBodyPane from './components/NoteBodyPane.svelte';
+	import NoteList from './components/NoteList.svelte';
+	import HoneycripSidebar from './components/Sidebar.svelte';
+	import { getHoneycrispState } from './state';
 
 	const { foldersState, notesState, viewState } = getHoneycrispState();
 </script>

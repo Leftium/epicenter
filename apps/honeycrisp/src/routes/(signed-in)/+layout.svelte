@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { auth } from '$lib/auth';
-	import SignedIn from '$lib/components/SignedIn.svelte';
+	import SignedIn from './components/SignedIn.svelte';
 
 	let { children } = $props();
 

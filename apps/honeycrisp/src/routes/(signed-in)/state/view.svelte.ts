@@ -12,7 +12,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { viewState } from '$lib/state';
+ *   import { viewState } from '../state';
  * </script>
  *
  * {#each viewState.filteredNotes as note (note.id)}
@@ -22,8 +22,8 @@
  * ```
  */
 
-import { searchParams, type SortBy } from '$lib/search-params.svelte';
-import type { FolderId, NoteId } from '$lib/workspace';
+import { searchParams, type SortBy } from '../search-params.svelte';
+import type { FolderId, NoteId } from '../honeycrisp/workspace';
 import type { createFoldersState } from './folders.svelte';
 import type { createNotesState } from './notes.svelte';
 

@@ -4,7 +4,7 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { getHoneycrispState } from '$lib/state';
+	import { getHoneycrispState } from '../state';
 
 	const { foldersState, notesState, viewState } = getHoneycrispState();
 

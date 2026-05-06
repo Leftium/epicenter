@@ -8,7 +8,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { foldersState } from '$lib/state';
+ *   import { foldersState } from '../state';
  * </script>
  *
  * {#each foldersState.folders as folder (folder.id)}
@@ -20,9 +20,9 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
-import type { Honeycrisp } from '$lib/honeycrisp/browser';
-import type { FolderId } from '$lib/workspace';
-import { searchParams } from '$lib/search-params.svelte';
+import type { Honeycrisp } from '../honeycrisp/browser';
+import type { FolderId } from '../honeycrisp/workspace';
+import { searchParams } from '../search-params.svelte';
 
 export function createFoldersState(honeycrisp: Honeycrisp) {
 	// ─── Reactive State ──────────────────────────────────────────────────
@@ -34,7 +34,7 @@ export function createFoldersState(honeycrisp: Honeycrisp) {
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
-		destroy() {
+		[Symbol.dispose]() {
 			foldersMap[Symbol.dispose]();
 		},
 

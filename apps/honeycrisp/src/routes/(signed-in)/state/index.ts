@@ -1,5 +1,5 @@
 import { createContext } from 'svelte';
-import type { Honeycrisp } from '$lib/honeycrisp/browser';
+import type { Honeycrisp } from '../honeycrisp/browser';
 import { createFoldersState } from './folders.svelte';
 import { createNotesState } from './notes.svelte';
 import { createViewState } from './view.svelte';
@@ -13,9 +13,9 @@ export function createHoneycrispState(honeycrisp: Honeycrisp) {
 		foldersState,
 		notesState,
 		viewState,
-		destroy() {
-			foldersState.destroy();
-			notesState.destroy();
+		[Symbol.dispose]() {
+			foldersState[Symbol.dispose]();
+			notesState[Symbol.dispose]();
 		},
 	};
 }

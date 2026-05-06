@@ -8,7 +8,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { notesState } from '$lib/state';
+ *   import { notesState } from '../state';
  * </script>
  *
  * {#each notesState.notes as note (note.id)}
@@ -20,9 +20,9 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { DateTimeString, generateId } from '@epicenter/workspace';
-import type { Honeycrisp } from '$lib/honeycrisp/browser';
-import type { FolderId, NoteId } from '$lib/workspace';
-import { searchParams } from '$lib/search-params.svelte';
+import type { Honeycrisp } from '../honeycrisp/browser';
+import type { FolderId, NoteId } from '../honeycrisp/workspace';
+import { searchParams } from '../search-params.svelte';
 import type { createFoldersState } from './folders.svelte';
 
 export function createNotesState({
@@ -63,7 +63,7 @@ export function createNotesState({
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
-		destroy() {
+		[Symbol.dispose]() {
 			allNotesMap[Symbol.dispose]();
 		},
 

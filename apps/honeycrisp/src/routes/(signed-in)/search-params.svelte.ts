@@ -11,7 +11,7 @@
  *
  * @example
  * ```typescript
- * import { searchParams } from '$lib/search-params.svelte';
+ * import { searchParams } from './search-params.svelte';
  *
  * // Read (reactive — tracked by $derived automatically)
  * const folder = searchParams.folder;
@@ -24,7 +24,7 @@
 
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
-import type { FolderId, NoteId } from '$lib/workspace';
+import type { FolderId, NoteId } from './honeycrisp/workspace';
 
 type SortBy = 'dateEdited' | 'dateCreated' | 'title';
 

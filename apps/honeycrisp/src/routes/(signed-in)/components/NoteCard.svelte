@@ -9,8 +9,8 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { getHoneycrispState } from '$lib/state';
-	import type { Note } from '$lib/workspace';
+	import { getHoneycrispState } from '../state';
+	import type { Note } from '../honeycrisp/workspace';
 
 	const { foldersState, notesState } = getHoneycrispState();
 

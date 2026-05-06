@@ -13,13 +13,10 @@
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import ZhongwenSidebar from '$lib/components/ZhongwenSidebar.svelte';
-	import { getZhongwen } from '$lib/zhongwen/browser';
-	import type { PageData } from './$types';
+	import { getSignedIn } from '$lib/signed-in';
 
-	let { data }: { data: PageData } = $props();
-
-	const zhongwen = getZhongwen();
-	const showPinyin = fromKv(zhongwen.kv, 'showPinyin');
+	const signedIn = getSignedIn();
+	const showPinyin = fromKv(signedIn.zhongwen.kv, 'showPinyin');
 	const chatState = createChatState();
 	let dismissedError = $state(false);
 
@@ -38,7 +35,7 @@
 			confirm: { text: 'Forget device', variant: 'destructive' },
 			onConfirm: async () => {
 				try {
-					await zhongwen.wipe();
+					await signedIn.zhongwen.wipe();
 					await auth.signOut();
 				} catch (error) {
 					toast.error('Failed to forget this device', {
@@ -75,7 +72,7 @@
 				</Button>
 
 				<span class="text-sm text-muted-foreground">
-					{data.identity.user.name}
+					{signedIn.identity.user.name}
 				</span>
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device

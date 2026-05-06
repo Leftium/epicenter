@@ -27,14 +27,14 @@ import {
 	generateChatMessageId,
 	generateConversationId,
 } from '$lib/workspace';
-import { getZhongwen } from '$lib/zhongwen/browser';
+import { getSignedIn } from '$lib/signed-in';
 
 const asChatMessageId = (id: string) => id as ChatMessageId;
 
 // ─── State Factory ───────────────────────────────────────────────────────────
 
 export function createChatState() {
-	const zhongwen = getZhongwen();
+	const { zhongwen } = getSignedIn();
 
 	// ── Conversation List (Y.Doc-backed) ──
 

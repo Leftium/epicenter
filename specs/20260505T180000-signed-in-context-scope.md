@@ -412,9 +412,11 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 
 ### Phase 7: Replicate for Zhongwen, rename `(protected)/` → `(signed-in)/`
 
-- [ ] **7.1** Rename `apps/zhongwen/src/routes/(protected)/` to `apps/zhongwen/src/routes/(signed-in)/`
-- [ ] **7.2** Update layout/component to match the spec; Zhongwen may not have a workspace open, in which case the `SignedIn` type can be `{ identity: AuthIdentity }` only and the gate skips the `openFuji`-equivalent step. **Decide per-app: if there is no workspace, this spec does not apply at the workspace level — only the auth-gate part.**
+- [x] **7.1** Rename `apps/zhongwen/src/routes/(protected)/` to `apps/zhongwen/src/routes/(signed-in)/`
+- [x] **7.2** Update layout/component to match the spec; Zhongwen may not have a workspace open, in which case the `SignedIn` type can be `{ identity: AuthIdentity }` only and the gate skips the `openFuji`-equivalent step. **Decide per-app: if there is no workspace, this spec does not apply at the workspace level — only the auth-gate part.**
+  > **Note**: Zhongwen does have a local workspace (`openZhongwen`, chat tables, and `showPinyin` KV), so it uses the full signed-in bundle with `SignedIn = { identity, zhongwen }`.
 - [ ] **7.3** Repeat verification + cleanup
+  > **Note**: Deferred to the final cross-app verification pass by request.
 
 ### Phase 8: Cross-app verification
 

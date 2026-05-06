@@ -500,3 +500,20 @@ test('response-header token rotation does not emit an identity change', async ()
 	expect(states).toEqual([]);
 	auth[Symbol.dispose]();
 });
+
+test('bearerToken returns the rotated token after set-auth-token response', async () => {
+	// Sync reads `auth.bearerToken` fresh on every reconnect attempt. If
+	// rotation ever stops updating the closure the getter would return the
+	// old token forever, and reconnects would carry stale credentials.
+	emitBetterSession(betterAuthSessionData(session({ token: 'old-token' })));
+	const setup = createStorage({ load: () => session({ token: 'old-token' }) });
+	const auth = createTestAuth(setup);
+
+	expect(auth.bearerToken).toBe('old-token');
+
+	signInResponseHeaders = { 'set-auth-token': 'new-token' };
+	await auth.signIn({ email: 'user@example.com', password: 'password' });
+
+	expect(auth.bearerToken).toBe('new-token');
+	auth[Symbol.dispose]();
+});

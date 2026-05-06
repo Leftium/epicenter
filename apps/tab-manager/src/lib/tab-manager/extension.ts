@@ -27,8 +27,8 @@ import { openTabManager as openTabManagerDoc } from './index';
  * window). Awaiting the identity up front means every peer sees a
  * well-formed `state.peer` from the first frame.
  *
- * `whenLoaded` still gates UI render on idb hydration; sync (the WebSocket)
- * is independent and connects whenever the network allows.
+ * `idb.whenLoaded` still gates UI render on idb hydration; sync (the
+ * WebSocket) is independent and connects whenever the network allows.
  */
 export async function openTabManager({
 	identity,

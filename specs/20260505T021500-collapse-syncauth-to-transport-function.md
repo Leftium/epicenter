@@ -4,6 +4,7 @@
 **Status**: Implemented with verification caveats
 **Author**: AI-assisted (Claude)
 **Branch**: feat/encrypted-local-workspace-storage
+**Superseded note**: `specs/20260505T031500-move-websocket-construction-into-sync.md` replaces the `SyncTransport` shape with `bearerToken?: () => string | null` and inline WebSocket construction. The `onStateChange` removal in this spec still applies.
 
 ## One-Sentence Test
 

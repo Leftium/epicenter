@@ -21,15 +21,15 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
-Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the provider, so encryption keys are applied in one place and terminal auth changes reload the page. Sync only receives the authenticated WebSocket transport.
+Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the provider, so encryption keys are applied in one place and terminal auth changes reload the page. Sync only receives a live bearer-token reader.
 
 ```ts
 export function openFuji({
   identity,
-  transport,
+  bearerToken,
 }: {
   identity: AuthIdentity;
-  transport: SyncTransport;
+  bearerToken?: () => string | null;
 }) {
   const userId = identity.user.id;
   const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
@@ -44,7 +44,7 @@ export function openFuji({
   const sync = attachSync(ydoc, {
     url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
-    transport,
+    bearerToken,
   });
 
   return {

@@ -141,16 +141,15 @@ import {
 	toWsUrl,
 } from '@epicenter/workspace';
 import type { AuthClient, AuthIdentity } from '@epicenter/auth';
-import type { SyncTransport } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
 	identity,
-	transport,
+	bearerToken,
 }: {
 	identity: AuthIdentity;
-	transport: SyncTransport;
+	bearerToken?: () => string | null;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
 	const userId = identity.user.id;
@@ -171,7 +170,7 @@ export function openApp({
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		transport,
+		bearerToken,
 		awareness,
 	});
 	const actions = {};
@@ -200,7 +199,7 @@ export function openApp({
 
 export const workspace = openApp({
 	identity,
-	transport: auth.openWebSocket,
+	bearerToken: () => auth.bearerToken,
 });
 ```
 

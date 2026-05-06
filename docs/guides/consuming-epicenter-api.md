@@ -31,7 +31,6 @@ import {
 	type EncryptionKeys,
 	getOrCreateInstallationId,
 	PeerIdentity,
-	type SyncTransport,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -71,11 +70,11 @@ function openMyAppDoc({
 function openMyApp({
 	identity,
 	peer,
-	transport,
+	bearerToken,
 }: {
 	identity: AuthIdentity;
 	peer: PeerIdentity;
-	transport: SyncTransport;
+	bearerToken?: () => string | null;
 }) {
 	const userId = identity.user.id;
 	const doc = openMyAppDoc({ encryptionKeys: identity.encryptionKeys });
@@ -88,7 +87,7 @@ function openMyApp({
 	});
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${doc.ydoc.guid}`),
-		transport,
+		bearerToken,
 		waitFor: idb.whenLoaded,
 		awareness,
 	});
@@ -121,7 +120,7 @@ if (auth.state.status !== 'signed-in') {
 
 export const workspace = openMyApp({
 	identity: auth.state.identity,
-	transport: auth.openWebSocket,
+	bearerToken: () => auth.bearerToken,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'My app',

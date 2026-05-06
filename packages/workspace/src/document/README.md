@@ -83,8 +83,8 @@ function openBlog() {
 
 ### Persistence + sync
 
-Auth belongs to the app. The workspace factory receives the client and passes it
-to sync.
+Auth belongs to the app. The workspace factory receives a live bearer-token
+reader and passes it to sync.
 
 ```typescript
 import {
@@ -104,7 +104,7 @@ function openBlog() {
   attachOwnedBroadcastChannel(ydoc, { userId });
   const sync = attachSync(ydoc, {
     url: `wss://api.example.com/workspaces/${ydoc.guid}`,
-    transport: auth.openWebSocket,
+    bearerToken: () => auth.bearerToken,
     waitFor: idb.whenLoaded,
   });
 

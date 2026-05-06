@@ -86,10 +86,10 @@ current public remote-action API.
 
 ```ts
 export function openFuji({
-	transport,
+	bearerToken,
 	device,
 }: {
-	transport: SyncTransport;
+	bearerToken?: () => string | null;
 	device: DeviceDescriptor;
 }) {
 	const doc = openFujiDoc();
@@ -98,7 +98,7 @@ export function openFuji({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		transport,
+		bearerToken,
 	});
 	return { ...doc, idb, sync, whenReady: idb.whenLoaded };
 }
@@ -113,13 +113,13 @@ Daemon factories own the writer side of local persistence.
 
 ```ts
 export function openFuji({
-	transport,
+	bearerToken,
 	device,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(projectDir),
 	apiUrl = EPICENTER_API_URL,
 }: {
-	transport: SyncTransport;
+	bearerToken?: () => string | null;
 	device: DeviceDescriptor;
 	projectDir?: ProjectDir;
 	clientID?: number;
@@ -131,7 +131,7 @@ export function openFuji({
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		transport,
+		bearerToken,
 	});
 	return { ...doc, persistence, sync };
 }
@@ -152,12 +152,12 @@ Script factories read the daemon's local Yjs log and write through sync.
 
 ```ts
 export function openFuji({
-	transport,
+	bearerToken,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 	apiUrl = EPICENTER_API_URL,
 }: {
-	transport: SyncTransport;
+	bearerToken?: () => string | null;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
@@ -168,7 +168,7 @@ export function openFuji({
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		transport,
+		bearerToken,
 	});
 	return { ...doc, persistence, sync };
 }

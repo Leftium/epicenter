@@ -391,12 +391,12 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 6: Documentation
 
-- [ ] **6.1** Update `packages/workspace/SYNC_ARCHITECTURE.md` : describe inline WebSocket construction; reference `bearerToken` callback.
-- [ ] **6.2** Update `packages/workspace/README.md`, `packages/workspace/src/document/README.md` : new `attachSync` examples.
-- [ ] **6.3** Update `apps/fuji/README.md` : new `openFuji` signature.
-- [ ] **6.4** Update `docs/architecture.md`, `docs/guides/consuming-epicenter-api.md`.
-- [ ] **6.5** Update `.agents/skills/auth/SKILL.md` and `.agents/skills/workspace-app-layout/SKILL.md`.
-- [ ] **6.6** Mark `specs/20260505T021500-collapse-syncauth-to-transport-function.md` as superseded by this spec where the `SyncTransport` shape is concerned. Leave the `onStateChange` removal section intact (still applies).
+- [x] **6.1** Update `packages/workspace/SYNC_ARCHITECTURE.md` : describe inline WebSocket construction; reference `bearerToken` callback.
+- [x] **6.2** Update `packages/workspace/README.md`, `packages/workspace/src/document/README.md` : new `attachSync` examples.
+- [x] **6.3** Update `apps/fuji/README.md` : new `openFuji` signature.
+- [x] **6.4** Update `docs/architecture.md`, `docs/guides/consuming-epicenter-api.md`.
+- [x] **6.5** Update `.agents/skills/auth/SKILL.md` and `.agents/skills/workspace-app-layout/SKILL.md`.
+- [x] **6.6** Mark `specs/20260505T021500-collapse-syncauth-to-transport-function.md` as superseded by this spec where the `SyncTransport` shape is concerned. Leave the `onStateChange` removal section intact (still applies).
 
 ### Wave 7: Final verification
 

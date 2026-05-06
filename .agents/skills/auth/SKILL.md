@@ -10,7 +10,7 @@ metadata:
 
 Three packages own the auth surface:
 
-- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, token rotation for bearer clients, cookie fetch policy for cookie clients, identity fan-out, `fetch`, and `openWebSocket`.
+- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, token rotation for bearer clients, cookie fetch policy for cookie clients, identity fan-out, `fetch`, and the live `bearerToken` getter.
 - **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors the core identity into `$state` and exposes a live `auth.identity` getter.
 - **`@epicenter/auth-workspace`**: framework-agnostic binding from auth identity changes to workspace lifecycle effects.
 
@@ -45,19 +45,18 @@ type AuthIdentity = {
 };
 
 type AuthClient = {
-	readonly identity: AuthIdentity | null;
-	readonly whenReady: Promise<void>;
-	onChange(fn: (identity: AuthIdentity | null) => void): () => void;
+	readonly state: AuthState;
+	readonly bearerToken: string | null;
+	onStateChange(fn: (state: AuthState) => void): () => void;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
-	openWebSocket(url: string | URL, protocols?: string | string[]): WebSocket;
 };
 ```
 
-Read `auth.identity` synchronously. Auth has no public loading variant. `whenReady` resolves after Better Auth's first settled session event and never rejects.
+Read `auth.state` synchronously. Use `waitForAuthSettled(auth)` when bootstrap needs the first settled session event.
 
-Use `auth.onChange(fn)` for future changes only. It does not replay. Consumers that need bootstrap behavior must read `auth.identity` once and then register the listener.
+Use `auth.onStateChange(fn)` for future changes only. It does not replay. Consumers that need bootstrap behavior must read `auth.state` once and then register the listener.
 
-Do not add projection helpers. There is no public token, user, session, authenticated, or busy getter beyond `auth.identity`.
+Do not add projection helpers. `auth.bearerToken` is the only public token read path, and it returns `null` for cookie auth.
 
 ## Factory Choice
 
@@ -115,22 +114,22 @@ bindAuthWorkspaceScope({
 });
 ```
 
-Each `attachSync` receives a transport function. Keep destructive reset policy inside `resetLocalClient()`.
+Each `attachSync` receives `bearerToken: () => auth.bearerToken`. Keep destructive reset policy inside `resetLocalClient()`.
 
 ## Sync Authentication
 
-Workspace sync takes auth capabilities, not tokens:
+Workspace sync takes a live bearer-token reader:
 
 ```ts
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 	waitFor: idb.whenLoaded,
-	transport: auth.openWebSocket,
+	bearerToken: () => auth.bearerToken,
 	awareness,
 });
 ```
 
-`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. Both factories throw from `openWebSocket` when no credentials are available. Callers must prove signed-in before constructing a workspace. `attachSync` never imports from `@epicenter/auth`, never reads a token, and never subscribes to auth state.
+`createCookieAuth` always returns `null` from `bearerToken`; the browser cookie jar handles credentials. `createBearerAuth` returns the current bearer token when signed in and `null` when signed out. `attachSync` owns WebSocket construction and adds the bearer subprotocol when the callback returns a token.
 
 `auth.fetch` follows the same transport rule internally:
 

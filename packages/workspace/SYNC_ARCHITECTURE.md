@@ -151,12 +151,10 @@ function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
 	const idb = attachIndexedDb(ydoc);
-	const transport = (url: string, protocols?: string | string[]) =>
-		new WebSocket(url, protocols);
 	// Connect to ALL sync nodes for maximum resilience
-	const syncDesktop = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: idb.whenLoaded, transport });
-	const syncLaptop = attachSync(ydoc, { url: SYNC_NODES.laptop, waitFor: idb.whenLoaded, transport });
-	const syncCloud = attachSync(ydoc, { url: SYNC_NODES.cloud, waitFor: idb.whenLoaded, transport });
+	const syncDesktop = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: idb.whenLoaded });
+	const syncLaptop = attachSync(ydoc, { url: SYNC_NODES.laptop, waitFor: idb.whenLoaded });
+	const syncCloud = attachSync(ydoc, { url: SYNC_NODES.cloud, waitFor: idb.whenLoaded });
 	return { id, ydoc, tables, idb, syncDesktop, syncLaptop, syncCloud, /* ... */ };
 }
 
@@ -173,10 +171,8 @@ function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
 	const idb = attachIndexedDb(ydoc);
-	const transport = (url: string, protocols?: string | string[]) =>
-		new WebSocket(url, protocols);
 	// Browser only needs to connect to its local server
-	const sync = attachSync(ydoc, { url: SYNC_NODES.localhost, waitFor: idb.whenLoaded, transport });
+	const sync = attachSync(ydoc, { url: SYNC_NODES.localhost, waitFor: idb.whenLoaded });
 	return { id, ydoc, tables, idb, sync, /* ... */ };
 }
 
@@ -381,7 +377,7 @@ Understanding the supervisor is the difference between "WebSocket reconnection j
 The base sync attachment does four jobs (in `packages/workspace/src/document/attach-sync.ts`):
 
 ```
-attachSync(doc, { url, transport, waitFor: idb, awareness })
+attachSync(doc, { url, bearerToken, waitFor: idb, awareness })
         │
         ├── 1. Pick the Y.Doc from a doc or doc bundle
         │
@@ -403,7 +399,7 @@ const awareness = attachAwareness(ydoc, {
 	schema: { peer: PeerIdentity },
 	initial: { peer: { id: 'macbook-pro', name: 'MacBook Pro', platform: 'node' } },
 });
-const sync = attachSync(ydoc, { url, transport, awareness });
+const sync = attachSync(ydoc, { url, bearerToken, awareness });
 ```
 
 RPC attaches later:
@@ -679,7 +675,7 @@ published by peer "macbook-pro" (a tab-manager instance).
 t=0ms      attachAwareness(ydoc, { schema, initial })
               └─ publishes local peer state on the awareness attachment
 
-t=1ms      attachSync(doc, { url, transport, waitFor: idb, awareness })
+t=1ms      attachSync(doc, { url, bearerToken, waitFor: idb, awareness })
               ├─ wires ydoc.on('updateV2')
               ├─ wires awareness.raw.on('update')
               └─ kicks off async waitFor → ensureSupervisor()
@@ -692,8 +688,7 @@ t=2ms      sync.attachRpc(actions)
 
 t=~10ms    idb.whenLoaded resolves (typical hot start)
 
-t=~10ms    supervisor: transport(url, [main])
-           supervisor: new WebSocket(...)
+t=~10ms    supervisor: new WebSocket(url, protocols)
 
            [CONNECT_TIMEOUT_MS = 15s timer running]
 

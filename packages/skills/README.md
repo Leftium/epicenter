@@ -48,12 +48,11 @@ const instructionsDocs = createDisposableCache(
 		onLocalUpdate(ydoc, () =>
 			doc.tables.skills.update(skillId, { updatedAt: Date.now() }),
 		);
-		const persistence = attachIndexedDb(ydoc);
+		const idb = attachIndexedDb(ydoc);
 		return {
 			ydoc,
 			instructions: attachPlainText(ydoc),
-			persistence,
-			whenReady: persistence.whenLoaded,
+			idb,
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},

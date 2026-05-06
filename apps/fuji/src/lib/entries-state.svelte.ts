@@ -1,18 +1,21 @@
 /**
  * Reactive Fuji entry state and search helpers.
  *
- * Keeps the workspace-backed entry collection and search predicate together,
- * while view preferences live in `view-state.svelte.ts`.
+ * Built once per <SignedIn> mount, exposed via context. Lifetime is
+ * coterminous with the workspace handle: same gate that opens the
+ * workspace creates this state and disposes it on unmount.
  *
  * @example
  * ```svelte
  * <script>
- *   import { entriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
+ *   import { getEntriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
+ *   const entriesState = getEntriesState();
  * </script>
  * ```
  */
 
 import { fromTable } from '@epicenter/svelte';
+import { createContext } from 'svelte';
 import { goto } from '$app/navigation';
 import type { Fuji } from '$lib/fuji/browser';
 import type { Entry, EntryId } from '$lib/fuji/workspace';
@@ -46,14 +49,14 @@ export function matchesEntrySearch(
 
 // Entries state
 
-function createEntriesStateForFuji(fuji: Fuji) {
+export function createEntriesState(fuji: Fuji) {
 	const map = fromTable(fuji.tables.entries);
 	const all = $derived([...map.values()]);
 	const active = $derived(all.filter((e) => e.deletedAt === undefined));
 	const deleted = $derived(all.filter((e) => e.deletedAt !== undefined));
 
 	return {
-		destroy() {
+		[Symbol.dispose]() {
 			map[Symbol.dispose]();
 		},
 
@@ -85,53 +88,6 @@ function createEntriesStateForFuji(fuji: Fuji) {
 	};
 }
 
-type EntriesStateDelegate = ReturnType<typeof createEntriesStateForFuji>;
-
-let delegate: EntriesStateDelegate | undefined;
-
-function getDelegate(): EntriesStateDelegate {
-	if (!delegate) {
-		throw new Error('entriesState read before Fuji workspace was bound');
-	}
-	return delegate;
-}
-
-export function createEntriesState() {
-	return {
-		bind(fuji: Fuji) {
-			delegate?.destroy();
-			delegate = createEntriesStateForFuji(fuji);
-		},
-
-		destroy() {
-			delegate?.destroy();
-			delegate = undefined;
-		},
-
-		/** Look up an entry by ID. Returns `undefined` if not found. */
-		get(id: EntryId) {
-			return getDelegate().get(id);
-		},
-
-		/** Active entries, not soft-deleted. Computed once per change cycle. */
-		get active() {
-			return getDelegate().active;
-		},
-
-		/** Soft-deleted entries, has `deletedAt` set. Computed once per change cycle. */
-		get deleted() {
-			return getDelegate().deleted;
-		},
-
-		createEntry() {
-			getDelegate().createEntry();
-		},
-	};
-}
-
 export type EntriesState = ReturnType<typeof createEntriesState>;
-export const entriesState = createEntriesState();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => entriesState.destroy());
-}
+export const [getEntriesState, setEntriesState] =
+	createContext<EntriesState>();

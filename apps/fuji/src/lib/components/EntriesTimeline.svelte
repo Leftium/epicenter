@@ -15,11 +15,12 @@
 	import { format, isToday, isYesterday } from 'date-fns';
 	import { VList } from 'virtua/svelte';
 	import { goto } from '$app/navigation';
-	import { entriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
+	import { getEntriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
 	import { viewState } from '$lib/view-state.svelte';
 	import type { Entry } from '$lib/fuji/workspace';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();
+	const entriesState = getEntriesState();
 
 	// ─── TanStack Table (sort + filter model) ──────────────────────────────
 

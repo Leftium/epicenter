@@ -19,13 +19,14 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { goto } from '$app/navigation';
-	import { entriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
+	import { getEntriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
 	import { relativeTime } from '$lib/format';
 	import { viewState } from '$lib/view-state.svelte';
 	import type { Entry } from '$lib/fuji/workspace';
 	import BadgeList from './BadgeList.svelte';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();
+	const entriesState = getEntriesState();
 
 	const columns = [
 		{

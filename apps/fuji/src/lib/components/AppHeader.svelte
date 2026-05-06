@@ -8,12 +8,13 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import { auth } from '$lib/auth';
-	import { entriesState } from '$lib/entries-state.svelte';
+	import { getEntriesState } from '$lib/entries-state.svelte';
 	import { getSignedIn } from '$lib/signed-in';
 	import BulkAddModal from './BulkAddModal.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
 	const signedIn = getSignedIn();
+	const entriesState = getEntriesState();
 
 	async function forgetFujiDevice(): Promise<void> {
 		await signedIn.fuji.wipe();

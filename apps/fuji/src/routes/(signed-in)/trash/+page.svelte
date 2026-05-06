@@ -8,11 +8,12 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
-	import { entriesState } from '$lib/entries-state.svelte';
+	import { getEntriesState } from '$lib/entries-state.svelte';
 	import { relativeTime } from '$lib/format';
 	import { getSignedIn } from '$lib/signed-in';
 
 	const signedIn = getSignedIn();
+	const entriesState = getEntriesState();
 
 	const deletedEntries = $derived(
 		[...entriesState.deleted].sort((a, b) =>

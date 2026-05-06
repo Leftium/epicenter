@@ -5,12 +5,13 @@
 	import { DateTimeString, generateId } from '@epicenter/workspace';
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
-	import { entriesState } from '$lib/entries-state.svelte';
+	import { getEntriesState } from '$lib/entries-state.svelte';
 	import type { EntryId } from '$lib/fuji/workspace';
 	import { getSignedIn } from '$lib/signed-in';
 
 	// ─── Config ──────────────────────────────────────────────────────────────────
 	const signedIn = getSignedIn();
+	const entriesState = getEntriesState();
 
 	const COUNTS = [1_000, 10_000] as const;
 

@@ -10,11 +10,12 @@
 	import type { Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { entriesState } from '$lib/entries-state.svelte';
+	import { getEntriesState } from '$lib/entries-state.svelte';
 	import AppHeader from './AppHeader.svelte';
 	import EntriesSidebar from './EntriesSidebar.svelte';
 
 	let { children }: { children: Snippet } = $props();
+	const entriesState = getEntriesState();
 
 	function flushPendingEdits() {
 		if (

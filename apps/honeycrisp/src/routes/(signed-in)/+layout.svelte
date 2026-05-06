@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { auth } from '$lib/auth';
 	import SignedIn from '$lib/components/SignedIn.svelte';
@@ -8,7 +7,7 @@
 	let { children } = $props();
 
 	$effect(() => {
-		if (auth.state.status === 'signed-out' && page.url.pathname !== '/sign-in') {
+		if (auth.state.status === 'signed-out') {
 			goto('/sign-in', { replaceState: true });
 		}
 	});

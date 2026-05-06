@@ -10,7 +10,7 @@
 	import type { Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { getEntriesState } from '$lib/entries-state.svelte';
+	import { getEntriesState } from '../state/entries.svelte';
 	import AppHeader from './AppHeader.svelte';
 	import EntriesSidebar from './EntriesSidebar.svelte';
 

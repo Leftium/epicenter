@@ -104,7 +104,6 @@ export function openFuji({
 		entryContentDocs,
 		awareness,
 		sync,
-		whenReady: idb.whenLoaded,
 		async wipe() {
 			const fallbackGuids = [
 				doc.ydoc.guid,
@@ -125,10 +124,6 @@ export function openFuji({
 		},
 		remote,
 		rpc,
-		dispose() {
-			entryContentDocs[Symbol.dispose]();
-			doc[Symbol.dispose]();
-		},
 		[Symbol.dispose]() {
 			entryContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();

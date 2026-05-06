@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth';
-	import FujiAppShell from '$lib/components/FujiAppShell.svelte';
-	import SignedIn from '$lib/components/SignedIn.svelte';
+	import FujiAppShell from './components/FujiAppShell.svelte';
+	import SignedIn from './components/SignedIn.svelte';
 
 	let { children } = $props();
 

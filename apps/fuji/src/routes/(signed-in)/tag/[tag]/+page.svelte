@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import EntriesTable from '$lib/components/EntriesTable.svelte';
-	import EntriesTimeline from '$lib/components/EntriesTimeline.svelte';
-	import { getEntriesState } from '$lib/entries-state.svelte';
-	import { viewState } from '$lib/view-state.svelte';
+	import EntriesTable from '../../components/EntriesTable.svelte';
+	import EntriesTimeline from '../../components/EntriesTimeline.svelte';
+	import { getEntriesState } from '../../state/entries.svelte';
+	import { viewState } from '../../state/view.svelte';
 
 	const entriesState = getEntriesState();
 	const tagParam = $derived(decodeURIComponent(page.params.tag ?? ''));

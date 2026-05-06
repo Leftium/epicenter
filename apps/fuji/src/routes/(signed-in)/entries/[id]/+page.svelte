@@ -2,9 +2,9 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import FileXIcon from '@lucide/svelte/icons/file-x';
 	import { page } from '$app/state';
-	import EntryEditor from '$lib/components/EntryEditor.svelte';
-	import { getEntriesState } from '$lib/entries-state.svelte';
-	import type { EntryId } from '$lib/fuji/workspace';
+	import EntryEditor from '../../components/EntryEditor.svelte';
+	import { getEntriesState } from '../../state/entries.svelte';
+	import type { EntryId } from '../../fuji/workspace';
 
 	const entriesState = getEntriesState();
 	const entryId = $derived(page.params.id as EntryId);

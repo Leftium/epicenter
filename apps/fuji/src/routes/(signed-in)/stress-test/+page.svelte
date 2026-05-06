@@ -5,9 +5,9 @@
 	import { DateTimeString, generateId } from '@epicenter/workspace';
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
-	import { getEntriesState } from '$lib/entries-state.svelte';
-	import type { EntryId } from '$lib/fuji/workspace';
-	import { getSignedIn } from '$lib/signed-in';
+	import { getEntriesState } from '../state/entries.svelte';
+	import type { EntryId } from '../fuji/workspace';
+	import { getSignedIn } from '../signed-in';
 
 	// ─── Config ──────────────────────────────────────────────────────────────────
 	const signedIn = getSignedIn();

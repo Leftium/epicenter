@@ -8,7 +8,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { getEntriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
+ *   import { getEntriesState, matchesEntrySearch } from '../state/entries.svelte';
  *   const entriesState = getEntriesState();
  * </script>
  * ```
@@ -17,8 +17,8 @@
 import { fromTable } from '@epicenter/svelte';
 import { createContext } from 'svelte';
 import { goto } from '$app/navigation';
-import type { Fuji } from '$lib/fuji/browser';
-import type { Entry, EntryId } from '$lib/fuji/workspace';
+import type { Fuji } from '../fuji/browser';
+import type { Entry, EntryId } from '../fuji/workspace';
 
 // Search
 

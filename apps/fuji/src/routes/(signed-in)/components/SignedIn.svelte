@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { Button } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import { getOrCreateInstallationId } from '@epicenter/workspace';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { onDestroy } from 'svelte';
 	import { auth } from '$lib/auth';
-	import { createEntriesState, setEntriesState } from '$lib/entries-state.svelte';
-	import { openFuji } from '$lib/fuji/browser';
-	import { setSignedIn } from '$lib/signed-in';
+	import { openFuji } from '../fuji/browser';
+	import { setSignedIn } from '../signed-in';
+	import { createEntriesState, setEntriesState } from '../state/entries.svelte';
 
 	let { children } = $props();
 
@@ -42,7 +44,7 @@
 
 	onDestroy(() => {
 		entriesState[Symbol.dispose]();
-		fuji.dispose();
+		fuji[Symbol.dispose]();
 	});
 
 	setSignedIn({
@@ -55,15 +57,32 @@
 	});
 </script>
 
-<WorkspaceGate pending={fuji.whenReady}>
+{#await fuji.idb.whenLoaded}
+	<Empty.Root class="h-dvh flex-none border-0" aria-live="polite">
+		<Empty.Media>
+			<Spinner class="size-5 text-muted-foreground" />
+		</Empty.Media>
+	</Empty.Root>
+{:then _}
 	{@render children?.()}
-
-	{#snippet errorActions()}
-		<div class="flex items-center gap-2">
-			<Button variant="outline" onclick={() => window.location.reload()}>
-				Reload
-			</Button>
-			<Button onclick={() => auth.signOut()}>Sign out</Button>
-		</div>
-	{/snippet}
-</WorkspaceGate>
+{:catch error}
+	<Empty.Root class="h-dvh flex-none border-0">
+		<Empty.Media>
+			<TriangleAlertIcon class="size-8 text-muted-foreground" />
+		</Empty.Media>
+		<Empty.Title>Failed to load workspace</Empty.Title>
+		<Empty.Description>
+			{error instanceof Error
+				? error.message
+				: 'The workspace could not be opened.'}
+		</Empty.Description>
+		<Empty.Content>
+			<div class="flex items-center gap-2">
+				<Button variant="outline" onclick={() => window.location.reload()}>
+					Reload
+				</Button>
+				<Button onclick={() => auth.signOut()}>Sign out</Button>
+			</div>
+		</Empty.Content>
+	</Empty.Root>
+{/await}

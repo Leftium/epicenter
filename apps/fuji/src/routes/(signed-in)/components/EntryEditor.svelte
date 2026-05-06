@@ -17,10 +17,10 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { goto } from '$app/navigation';
-	import type { Entry } from '$lib/fuji/workspace';
-	import { getSignedIn } from '$lib/signed-in';
-	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
-	import TagInput from './TagInput.svelte';
+	import type { Entry } from '../fuji/workspace';
+	import { getSignedIn } from '../signed-in';
+	import ProseMirrorEditor from '$lib/components/ProseMirrorEditor.svelte';
+	import TagInput from '$lib/components/TagInput.svelte';
 
 	let { entry }: { entry: Entry } = $props();
 	const signedIn = getSignedIn();
@@ -175,7 +175,7 @@
 		<div class="flex flex-1 items-center justify-center">
 			<Spinner class="size-5 text-muted-foreground" />
 		</div>
-	{:then}
+	{:then _}
 		<ProseMirrorEditor
 			yxmlfragment={contentDoc.current.body.binding}
 			onWordCountChange={(count) => (wordCount = count)}

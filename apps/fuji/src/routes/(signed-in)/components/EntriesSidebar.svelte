@@ -9,8 +9,8 @@
 	import { VList } from 'virtua/svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { getEntriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
-	import { viewState } from '$lib/view-state.svelte';
+	import { getEntriesState, matchesEntrySearch } from '../state/entries.svelte';
+	import { viewState } from '../state/view.svelte';
 
 	const entriesState = getEntriesState();
 	const isSearching = $derived(viewState.searchQuery.trim().length > 0);

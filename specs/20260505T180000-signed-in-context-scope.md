@@ -1,7 +1,7 @@
 # Signed-In Context Scope
 
 **Date**: 2026-05-05
-**Status**: Implemented, Verification Pending
+**Status**: Implemented, Verified with Findings (2026-05-06)
 **Author**: AI-assisted (design conversation with @bradenwong)
 **Branch**: feat/encrypted-local-workspace-storage
 
@@ -420,9 +420,10 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 
 ### Phase 8: Cross-app verification
 
-- [ ] **8.1** Run repo-wide `bun run check`
-  > **Note**: Started during final verification, then interrupted by request. Verification remains pending.
+- [x] **8.1** Run repo-wide `bun run check`
+  > **Note**: Verified app-by-app on 2026-05-06. Fuji and Zhongwen typecheck clean against the migration (only pre-existing unrelated errors in `packages/ui` and one Fuji `EntriesTable.svelte:223` issue). Honeycrisp surfaced a `state` / `$state` rune name collision in the new gate; fixed in the follow-up commits below.
 - [ ] **8.2** Run `bun run lint` if configured
+  > **Note**: No app-level lint script wired up; biome lint deferred.
 - [x] **8.3** Confirm no app references the old `client.ts` files (already deleted in working tree)
   > **Note**: Final grep found no references to the old Fuji or Honeycrisp client files from the three migrated app source trees.
 - [x] **8.4** Update any monorepo docs referencing the old gate pattern
@@ -539,14 +540,24 @@ Fuji was implemented first as the reference shape. Honeycrisp mirrors Fuji with 
 ### Deviations from Spec
 
 - Zhongwen uses the full `<SignedIn>` bundle rather than the route-only fallback. The evidence was concrete: Zhongwen opens a per-user local workspace and route code reads its tables and KV.
-- Workspace factories keep legacy readiness names (`whenLoaded`) alongside the new contract (`whenReady`, `dispose`) so existing child document code and package consumers are not broken mid-refactor.
-- Verification was intentionally paused. Typecheck and smoke-test checkboxes remain open.
+- Workspace factories keep legacy readiness names (`whenLoaded`, `[Symbol.dispose]`) alongside the new contract (`whenReady`, `dispose`) so existing child document code and package consumers are not broken mid-refactor. The new names were not added at first commit for Fuji and Honeycrisp; they were added in a follow-up commit (see "Follow-up findings" below).
+- Verification was deferred to a final cross-app pass and produced findings; see below.
+
+### Follow-up findings (2026-05-06)
+
+A post-implementation audit caught:
+
+- Honeycrisp `SignedIn.svelte` had `const state = ...` colliding with the `$state` rune. Fixed by renaming to `honeycrispState`.
+- Fuji and Honeycrisp browser bundles never gained `whenReady` / `dispose()`, so all three gates were awaiting `idb.whenLoaded` and disposing via `[Symbol.dispose]()`. Fixed by adding the bundle-level names and switching the gates to use them.
+- Dead `&& page.url.pathname !== '/sign-in'` guard in all three `(signed-in)/+layout.svelte` files; the guard was unreachable because `/sign-in` lives outside the route group. Removed.
+- Fuji's `entries-state.svelte.ts` was a module-level singleton bound by `<SignedIn>` on mount — recreating the drift smell the migration was meant to kill. Replaced with `createEntriesState(fuji)` + `[getEntriesState, setEntriesState]` context, mirroring `createHoneycrispState` in apps/honeycrisp.
+- Three near-identical `<SignedIn>` `{:catch}` blocks deduped into a shared `<WorkspaceGate>` in `@epicenter/svelte/workspace-gate`; per-app gates now provide an `errorActions` snippet for Reload + Sign out.
+- Identity `$state` snapshot defense documented inline so the next refactor does not collapse it into a live `auth.state.identity` read.
 
 ### Follow-up Work
 
-- Run app-level and repo-wide checks: Fuji, Honeycrisp, Zhongwen, then root `bun run typecheck` and configured lint.
-- Smoke-test signed-out redirect, signed-in mount, sign-out teardown, and account-switch remount in each app.
-- Review the duplicated `<SignedIn>`, `Loading`, and `ErrorState` files after verification. The spec deliberately deferred shared extraction; revisit only if duplication starts hiding a real invariant.
+- Smoke-test signed-out redirect, signed-in mount, sign-out teardown, and account-switch remount in each app (typecheck pass complete; UI walkthrough still pending).
+- Pre-existing Fuji `EntriesTable.svelte:223` typecheck error is unrelated to this migration but blocks a clean app-level pass; track separately.
 
 ## References
 

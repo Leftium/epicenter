@@ -7,7 +7,6 @@
 	import { auth } from '$lib/tab-manager/client';
 
 	let { open: drawerOpen = $bindable(false) }: { open: boolean } = $props();
-	const identity = $derived(auth.identity);
 </script>
 
 <Drawer.Root
@@ -25,7 +24,7 @@
 				Chat with AI about your tabs
 			</Drawer.Description>
 		</Drawer.Header>
-		{#if identity}
+		{#if auth.state.status === 'signed-in'}
 			<div class="h-[clamp(300px,50vh,600px)] px-4 pb-4"><AiChat /></div>
 		{:else}
 			<div

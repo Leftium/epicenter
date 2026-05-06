@@ -51,8 +51,7 @@
 	let popoverOpen = $state(false);
 	let signingOut = $state(false);
 	let forgettingDevice = $state(false);
-	const identity = $derived(auth.identity);
-	const isSignedIn = $derived(identity !== null);
+	const isSignedIn = $derived(auth.state.status === 'signed-in');
 
 	$effect(() => {
 		syncStatus = sync.status;
@@ -145,11 +144,13 @@
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-80 p-0" align="end">
-		{#if identity}
+		{#if auth.state.status === 'signed-in'}
 			<div class="p-4 space-y-3">
 				<div class="space-y-1">
-					<p class="text-sm font-medium">{identity.user.name}</p>
-					<p class="text-xs text-muted-foreground">{identity.user.email}</p>
+					<p class="text-sm font-medium">{auth.state.identity.user.name}</p>
+					<p class="text-xs text-muted-foreground">
+						{auth.state.identity.user.email}
+					</p>
 				</div>
 				<div class="border-t pt-3 space-y-1">
 					<p class="text-xs text-muted-foreground">

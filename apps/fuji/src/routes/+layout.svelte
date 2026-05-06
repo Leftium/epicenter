@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import {
 		CommandPalette,
 		type CommandPaletteItem,
@@ -11,12 +12,11 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import { ModeWatcher } from 'mode-watcher';
-	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
+	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
+	import { fuji } from '$lib/fuji/client';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
 	import { entriesState } from '$lib/entries-state.svelte';
-	import { fuji } from '$lib/fuji/client';
 	import '@epicenter/ui/app.css';
 
 	let { children } = $props();

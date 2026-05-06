@@ -22,10 +22,11 @@
  * ```
  */
 
-import { type SortBy, searchParams } from '$lib/search-params.svelte';
+import { searchParams, type SortBy } from '$lib/search-params.svelte';
 import type { FolderId, NoteId } from '$lib/workspace';
 import { foldersState } from './folders.svelte';
 import { notesState } from './notes.svelte';
+
 
 function createViewState() {
 	// ─── Derived State ───────────────────────────────────────────────────

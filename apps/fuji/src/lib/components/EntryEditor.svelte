@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import {
@@ -8,10 +7,11 @@
 		toDateTimeString,
 	} from '@epicenter/ui/natural-language-date-input';
 	import * as Popover from '@epicenter/ui/popover';
-	import { toastOnError } from '@epicenter/ui/sonner';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import * as StarRating from '@epicenter/ui/star-rating';
+	import { toastOnError } from '@epicenter/ui/sonner';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import { fromDisposableCache } from '@epicenter/svelte';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -32,7 +32,7 @@
 	function updateEntry(updates: EntryUpdate) {
 		toastOnError(
 			fuji.actions.entries.update({ id: entry.id, ...updates }),
-			"Couldn't save changes",
+			'Couldn\'t save changes',
 		);
 	}
 

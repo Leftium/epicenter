@@ -81,7 +81,9 @@ mock.module('better-auth/client', () => ({
 	InferPlugin: () => ({}),
 }));
 
-const { createBearerAuth, createCookieAuth } = await import('./create-auth.ts');
+const { createBearerAuth, createCookieAuth } = await import(
+	'./create-auth.ts'
+);
 
 const originalFetch = globalThis.fetch;
 const originalWebSocket = globalThis.WebSocket;

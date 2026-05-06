@@ -11,6 +11,5 @@
  * Awareness has no analogous encrypted path, so there's no reason to export
  * `createAwareness` here.
  */
-
-export { createKv } from './attach-kv.js';
 export { createReadonlyTable, createTable } from './attach-table.js';
+export { createKv } from './attach-kv.js';

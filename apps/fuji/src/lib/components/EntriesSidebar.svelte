@@ -1,14 +1,14 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { DateTimeString } from '@epicenter/workspace';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import HashIcon from '@lucide/svelte/icons/hash';
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import { format, isToday, isYesterday } from 'date-fns';
 	import { VList } from 'virtua/svelte';
-	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
+	import { format, isToday, isYesterday } from 'date-fns';
+	import { DateTimeString } from '@epicenter/workspace';
 	import { entriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
 	import { viewState } from '$lib/view-state.svelte';
 

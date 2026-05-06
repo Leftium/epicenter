@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
-	import { DateTimeString, generateId } from '@epicenter/workspace';
-	import { toast } from 'svelte-sonner';
-	import * as Y from 'yjs';
-	import { entriesState } from '$lib/entries-state.svelte';
+	import { Badge } from '@epicenter/ui/badge';
 	import { fuji } from '$lib/fuji/client';
+	import { entriesState } from '$lib/entries-state.svelte';
+	import { generateId, DateTimeString } from '@epicenter/workspace';
 	import type { EntryId } from '$lib/workspace';
+	import * as Y from 'yjs';
+	import { toast } from 'svelte-sonner';
 
 	// ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -161,9 +161,7 @@
 
 		try {
 			const now = DateTimeString.now();
-			const rows = Array.from({ length: count }, (_, i) =>
-				generateEntryRow(i, now),
-			);
+			const rows = Array.from({ length: count }, (_, i) => generateEntryRow(i, now));
 
 			const insertStart = performance.now();
 			await fuji.tables.entries.bulkSet(rows, {
@@ -221,9 +219,7 @@
 			await fuji.tables.entries.bulkDelete(ids);
 
 			results = null;
-			toast.success(
-				`Cleared ${ids.length.toLocaleString()} stress-test entries`,
-			);
+			toast.success(`Cleared ${ids.length.toLocaleString()} stress-test entries`);
 		} catch (error) {
 			toast.error(
 				`Clear failed: ${error instanceof Error ? error.message : String(error)}`,

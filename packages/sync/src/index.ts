@@ -8,15 +8,6 @@
  * `@epicenter/sync/server` instead.
  */
 
-// WebSocket subprotocol auth (shared client/server constants + helpers)
-export {
-	BEARER_SUBPROTOCOL_PREFIX,
-	extractBearerToken,
-	MAIN_SUBPROTOCOL,
-	parseSubprotocols,
-} from './auth-subprotocol';
-// Transport origin sentinels (shared across all sync layers)
-export { BC_ORIGIN, SYNC_ORIGIN } from './origins';
 // Protocol (encode/decode for WS messages and HTTP sync requests)
 export {
 	type DecodedRpcMessage,
@@ -43,5 +34,17 @@ export {
 	type SyncMessageType,
 	stateVectorsEqual,
 } from './protocol';
+
 // RPC error variants and type guard (used by both server and client)
 export { isRpcError, RpcError } from './rpc-errors';
+
+// Transport origin sentinels (shared across all sync layers)
+export { BC_ORIGIN, SYNC_ORIGIN } from './origins';
+
+// WebSocket subprotocol auth (shared client/server constants + helpers)
+export {
+	BEARER_SUBPROTOCOL_PREFIX,
+	MAIN_SUBPROTOCOL,
+	extractBearerToken,
+	parseSubprotocols,
+} from './auth-subprotocol';

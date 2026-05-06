@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getSignedInSession } from '$lib/signed-in-session';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import EntriesTable from './components/EntriesTable.svelte';
 	import EntriesTimeline from './components/EntriesTimeline.svelte';
 	import { viewState } from './state/view.svelte';

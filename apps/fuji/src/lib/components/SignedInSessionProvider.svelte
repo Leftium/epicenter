@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { fromTable } from '@epicenter/svelte';
 	import { onDestroy, type Snippet } from 'svelte';
-	import type { FujiSignedIn } from '$lib/session.svelte';
-	import { setSignedInSession } from '$lib/signed-in-session';
+	import { setSignedInSession, type FujiSignedIn } from '$lib/session.svelte';
 
 	let {
 		signedIn,
@@ -20,11 +19,12 @@
 	const captured = signedIn;
 
 	const entriesMap = fromTable(captured.fuji.tables.entries);
+	const entriesAll = $derived([...entriesMap.values()]);
 	const entriesActive = $derived(
-		[...entriesMap.values()].filter((e) => e.deletedAt === undefined),
+		entriesAll.filter((e) => e.deletedAt === undefined),
 	);
 	const entriesDeleted = $derived(
-		[...entriesMap.values()].filter((e) => e.deletedAt !== undefined),
+		entriesAll.filter((e) => e.deletedAt !== undefined),
 	);
 
 	setSignedInSession({

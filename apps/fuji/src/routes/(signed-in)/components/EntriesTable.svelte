@@ -19,7 +19,7 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { goto } from '$app/navigation';
-	import { getSignedInSession } from '$lib/signed-in-session';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import { matchesEntrySearch } from '$lib/entries-search';
 	import { relativeTime } from '$lib/format';
 	import { viewState } from '../state/view.svelte';

@@ -5,7 +5,7 @@
 	import { DateTimeString, generateId } from '@epicenter/workspace';
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
-	import { getSignedInSession } from '$lib/signed-in-session';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import type { EntryId } from '../fuji/workspace';
 
 	// ─── Config ──────────────────────────────────────────────────────────────────

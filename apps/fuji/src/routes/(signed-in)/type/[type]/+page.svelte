@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import EntriesTable from '../../components/EntriesTable.svelte';
 	import EntriesTimeline from '../../components/EntriesTimeline.svelte';
-	import { getSignedInSession } from '$lib/signed-in-session';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import { viewState } from '../../state/view.svelte';
 
 	const { entries } = getSignedInSession();

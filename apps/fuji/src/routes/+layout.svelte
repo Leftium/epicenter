@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { AuthForm } from '@epicenter/svelte/auth-form';
+	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
-	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { ModeWatcher } from 'mode-watcher';
 	import SignedInSessionProvider from '$lib/components/SignedInSessionProvider.svelte';
-	import SignInPage from '$lib/components/SignInPage.svelte';
 	import { auth } from '$lib/auth';
 	import { session } from '$lib/session.svelte';
 	import FujiAppShell from './(signed-in)/components/FujiAppShell.svelte';
@@ -21,7 +21,17 @@
 {#if current.status === 'pending'}
 	<Loading class="h-dvh" />
 {:else if current.status === 'signed-out'}
-	<SignInPage />
+	<div class="flex h-dvh items-center justify-center">
+		<AuthForm
+			{auth}
+			syncNoun="entries"
+			onSocialSignIn={() =>
+				auth.signInWithSocialRedirect({
+					provider: 'google',
+					callbackURL: window.location.origin,
+				})}
+		/>
+	</div>
 {:else}
 	<WorkspaceGate
 		pending={current.signedIn.fuji.idb.whenLoaded}

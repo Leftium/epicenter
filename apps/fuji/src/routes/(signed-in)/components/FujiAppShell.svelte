@@ -10,7 +10,7 @@
 	import type { Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { getSignedInSession } from '$lib/signed-in-session';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import AppHeader from './AppHeader.svelte';
 	import EntriesSidebar from './EntriesSidebar.svelte';
 

@@ -8,7 +8,7 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
-	import { getSignedInSession } from '$lib/signed-in-session';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import { relativeTime } from '$lib/format';
 
 	const { fuji, entries } = getSignedInSession();

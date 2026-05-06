@@ -2,7 +2,7 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import FileXIcon from '@lucide/svelte/icons/file-x';
 	import { page } from '$app/state';
-	import { getSignedInSession } from '$lib/signed-in-session';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import EntryEditor from '../../components/EntryEditor.svelte';
 	import type { EntryId } from '../../fuji/workspace';
 

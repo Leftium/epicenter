@@ -78,7 +78,6 @@ export async function openTabManager({
 		},
 		remote,
 		rpc,
-		whenLoaded: idb.whenLoaded,
 		peer: resolvedPeer,
 		device: resolvedPeer,
 		[Symbol.dispose]() {

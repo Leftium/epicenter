@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fromDisposableCache } from '@epicenter/svelte';
+	import { PaneSpinner } from '@epicenter/svelte/pane-spinner';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import {
@@ -9,7 +10,6 @@
 	} from '@epicenter/ui/natural-language-date-input';
 	import * as Popover from '@epicenter/ui/popover';
 	import { toastOnError } from '@epicenter/ui/sonner';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import * as StarRating from '@epicenter/ui/star-rating';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import { DateTimeString } from '@epicenter/workspace';
@@ -172,9 +172,7 @@
 
 	<!-- Editor body -->
 	{#await contentDoc.current.idb.whenLoaded}
-		<div class="flex flex-1 items-center justify-center">
-			<Spinner class="size-5 text-muted-foreground" />
-		</div>
+		<PaneSpinner />
 	{:then _}
 		<ProseMirrorEditor
 			yxmlfragment={contentDoc.current.body.binding}

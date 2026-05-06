@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { AccountPopover } from '@epicenter/svelte/account-popover';
+	import { PaneSpinner } from '@epicenter/svelte/pane-spinner';
 	import { Button } from '@epicenter/ui/button';
 	import { CommandPalette } from '@epicenter/ui/command-palette';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
@@ -7,7 +8,6 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
 	import { Toaster } from '@epicenter/ui/sonner';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import { Toggle } from '@epicenter/ui/toggle';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import CaseSensitiveIcon from '@lucide/svelte/icons/case-sensitive';
@@ -192,10 +192,7 @@
 		</header>
 		<!-- Gate on browser state seed so child components can read data synchronously -->
 		{#await browserState.whenReady}
-			<div class="flex flex-1 flex-col items-center justify-center gap-3">
-				<Spinner class="size-5 text-muted-foreground" />
-				<p class="text-sm text-muted-foreground">Loading tabs…</p>
-			</div>
+			<PaneSpinner label="Loading tabs…" />
 		{:then _}
 			<div class="flex-1 min-h-0"><UnifiedTabList /></div>
 		{:catch _error}

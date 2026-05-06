@@ -2,7 +2,7 @@
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
 	import { fromDisposableCache } from '@epicenter/svelte';
-	import { Spinner } from '@epicenter/ui/spinner';
+	import { PaneSpinner } from '@epicenter/svelte/pane-spinner';
 	import { opensidian } from '$lib/opensidian/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
@@ -51,9 +51,7 @@
 	stored entries).
 -->
 {#await doc.current.idb.whenLoaded}
-	<div class="flex h-full items-center justify-center">
-		<Spinner class="size-5 text-muted-foreground" />
-	</div>
+	<PaneSpinner class="h-full !flex-none" />
 {:then _}
 	<CodeMirrorEditor
 		ytext={doc.current.content.asText()}

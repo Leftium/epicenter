@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PaneSpinner } from '@epicenter/svelte/pane-spinner';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
@@ -121,9 +122,7 @@
 	</div>
 
 	{#if sidebarSearchState.isSearching && !hasResults}
-		<div class="flex flex-1 items-center justify-center">
-			<Spinner class="size-5 text-muted-foreground" />
-		</div>
+		<PaneSpinner />
 	{:else if hasResults}
 		<div class="border-b px-3 py-1.5 text-xs text-muted-foreground">
 			{sidebarSearchState.totalResults}

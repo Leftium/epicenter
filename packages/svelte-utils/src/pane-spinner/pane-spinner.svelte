@@ -1,9 +1,9 @@
 <!--
-	Full-viewport centered spinner, used at boot moments where the page is
-	intentionally blocked on a single async resource (auth bootstrap,
-	workspace hydration). Owns the viewport via `h-dvh`.
+	Region-level centered spinner. Fills its parent via `flex-1` (works in
+	any flex container). For non-flex parents, pass `class="h-full
+	!flex-none"` to switch to `height: 100%`.
 
-	For region-level loading inside a layout, use <PaneSpinner> instead.
+	For full-page boot loading, use <PageSpinner> instead.
 -->
 <script lang="ts">
 	import { Spinner } from '@epicenter/ui/spinner';
@@ -22,7 +22,7 @@
 
 <div
 	class={cn(
-		'flex h-dvh flex-col items-center justify-center gap-3',
+		'flex flex-1 flex-col items-center justify-center gap-3',
 		className,
 	)}
 	aria-live="polite"

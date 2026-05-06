@@ -278,7 +278,7 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 
 ### Phase 2: Build new path in Fuji (reference implementation)
 
-- [ ] **2.1** Create `apps/fuji/src/lib/signed-in.ts`:
+- [x] **2.1** Create `apps/fuji/src/lib/signed-in.ts`:
   ```ts
   import { createContext } from 'svelte';
   import type { AuthIdentity } from '$lib/auth';
@@ -291,8 +291,9 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
 
   export const [getSignedIn, setSignedIn] = createContext<SignedIn>();
   ```
-- [ ] **2.2** Verify `openFuji` is synchronous and exposes `.whenReady` and `.dispose()`. If not, refactor to match the `sync-construction-async-property-ui-render-gate-pattern` skill.
-- [ ] **2.3** Create `apps/fuji/src/lib/components/SignedIn.svelte`:
+- [x] **2.2** Verify `openFuji` is synchronous and exposes `.whenReady` and `.dispose()`. If not, refactor to match the `sync-construction-async-property-ui-render-gate-pattern` skill.
+  > **Note**: `openFuji` was already synchronous but exposed `whenLoaded` and `[Symbol.dispose]()` only. The browser workspace now also exposes `whenReady` and `dispose()` while keeping the old names for compatibility during the Fuji migration.
+- [x] **2.3** Create `apps/fuji/src/lib/components/SignedIn.svelte`:
   ```svelte
   <script lang="ts">
     import { onDestroy } from 'svelte';
@@ -332,7 +333,7 @@ Build → Prove → Remove ordering. Fuji first as the reference implementation;
     <ErrorState {error} />
   {/await}
   ```
-- [ ] **2.4** Create `apps/fuji/src/routes/(signed-in)/+layout.svelte`:
+- [x] **2.4** Create `apps/fuji/src/routes/(signed-in)/+layout.svelte`:
   ```svelte
   <script lang="ts">
     import { goto } from '$app/navigation';

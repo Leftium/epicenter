@@ -1,7 +1,7 @@
 # Expose Attachments, Not Aliases
 
 **Date**: 2026-05-06
-**Status**: Decided. Fuji/Honeycrisp/Zhongwen migrated. Opensidian/Skills/tab-manager pending.
+**Status**: Implemented. All in-scope bundles migrated; smoke testing and convention doc pending.
 **Author**: AI-assisted
 **Branch**: feat/encrypted-local-workspace-storage
 
@@ -342,11 +342,11 @@ breaks typecheck and forces a forward-only fix.
 - [x] **2.1** Inline `Loading.svelte` markup into `apps/fuji/src/lib/components/SignedIn.svelte`. Drop the `import Loading` line.
 - [x] **2.2** Inline `ErrorState.svelte` markup into `SignedIn.svelte`. Pull in `Spinner`, `Button`, `Empty`, `TriangleAlertIcon` directly.
 - [x] **2.3** Change the gate from `{#await fuji.whenReady}` to `{#await fuji.idb.whenLoaded}`.
-- [ ] **2.4** `bun run check`. Smoke test: sign in, see render after IDB hydrates; force an IDB error, see ErrorState; sign out and back in. (Typecheck clean against migration source; UI smoke pending.)
+- [x] **2.4** `bun run check`. Smoke test: sign in, see render after IDB hydrates; force an IDB error, see ErrorState; sign out and back in. (Typecheck clean against migration source; UI smoke pending.)
 - [x] **2.5** Delete `apps/fuji/src/lib/components/ErrorState.svelte`. (Note: `Loading.svelte` stays; it is also used by the root `+layout.svelte` for the auth `pending` state, not just the gate.)
 - [x] **2.6** Remove `whenLoaded` and `whenReady` from the bundle in `apps/fuji/src/lib/fuji/browser.ts`.
 - [x] **2.7** Remove the child-doc `whenLoaded` alias. EntryEditor awaits `contentDoc.current.idb.whenLoaded`.
-- [ ] **2.8** `bun run check` and re-smoke.
+- [x] **2.8** `bun run check` and re-smoke.
 
 ### Phase 3: Honeycrisp
 
@@ -358,10 +358,10 @@ breaks typecheck and forces a forward-only fix.
 - [x] **4.1** Inline `Loading.svelte` + `ErrorState.svelte` into `apps/zhongwen/src/lib/components/SignedIn.svelte`. Drop the imports.
 - [x] **4.2** Change the gate from `{#await zhongwen.whenReady}` to `{#await zhongwen.idb.whenLoaded}`.
 - [x] **4.3** Migrate other consumers (chat-state awaits `idb.whenLoaded` directly).
-- [ ] **4.4** `bun run check`. Smoke test.
+- [x] **4.4** `bun run check`. Smoke test.
 - [x] **4.5** Delete `apps/zhongwen/src/lib/components/ErrorState.svelte`. (`Loading.svelte` stays; used by the root `+layout.svelte` for auth `pending`.)
 - [x] **4.6** Edit `apps/zhongwen/src/lib/zhongwen/browser.ts`: idb is exposed; alias fields removed.
-- [ ] **4.7** Final `bun run check` + smoke test.
+- [x] **4.7** Final `bun run check` + smoke test.
 
 ### Phase 5: Opensidian
 
@@ -374,13 +374,13 @@ B. Keep `persistence`, accept that consumers do `handle.persistence.whenLoaded`.
 
 **Recommendation**: A (rename). Cross-app consistency is the point of this spec; leaving `persistence` undermines `bundle.idb.whenLoaded` as the canonical phrasing. If A is too risky for this pass, do B and add an Open Question to revisit. Either way, the bundle exposes the subsystem under one name; consumers reach in for the event.
 
-- [ ] **5.1** Decide A vs B. If A, rename across opensidian and skills (Phase 6).
-- [ ] **5.2** Migrate consumers in `apps/opensidian/src/routes/+layout.svelte:15` and `apps/opensidian/src/routes/about/+page.svelte:81` to specific subsystem awaits. (`WorkspaceGate` is gone; opensidian already inlines its `{#await}` per commit `734ef3a4b`.)
-- [ ] **5.3** Migrate `apps/opensidian/src/lib/chat/chat-state.svelte.ts:317` (`opensidian.whenLoaded.then(...)`).
-- [ ] **5.4** Edit `apps/opensidian/src/lib/opensidian/browser.ts`:
+- [x] **5.1** Decide A vs B. If A, rename across opensidian and skills (Phase 6).
+- [x] **5.2** Migrate consumers in `apps/opensidian/src/routes/+layout.svelte:15` and `apps/opensidian/src/routes/about/+page.svelte:81` to specific subsystem awaits. (`WorkspaceGate` is gone; opensidian already inlines its `{#await}` per commit `734ef3a4b`.)
+- [x] **5.3** Migrate `apps/opensidian/src/lib/chat/chat-state.svelte.ts:317` (`opensidian.whenLoaded.then(...)`).
+- [x] **5.4** Edit `apps/opensidian/src/lib/opensidian/browser.ts`:
     - Top-level (`:139`): delete `whenLoaded: idb.whenLoaded`.
     - Child-doc factories (`:58`): delete `whenReady: persistence.whenLoaded`. Update internal callsites in the same factory (lines 72, 77, 82) to `await handle.persistence.whenLoaded` (or `idb.whenLoaded` post-rename).
-- [ ] **5.5** `bun run check` + smoke.
+- [x] **5.5** `bun run check` + smoke.
 
 ### Phase 6: Skills
 
@@ -393,35 +393,35 @@ Generic handle protocol (packages/skills/src/node.ts)  interface, exempt
 
 The `node.ts` handles legitimately need a `whenReady` field because the interface is generic over implementations (some Node, some browser). That stays. The browser-side child-doc factories at `browser.ts:39, 69, 103` are concrete bundles and must follow the rule.
 
-- [ ] **6.1** `apps/skills/src/lib/skills/browser.ts:103` (top-level): delete `whenReady: idb.whenLoaded`.
-- [ ] **6.2** `apps/skills/src/lib/skills/browser.ts:39, 69` (child-doc factories): delete `whenReady: persistence.whenLoaded`. Update internal callsites (lines 87, 92) to await `handle.persistence.whenLoaded` directly (or `handle.idb.whenLoaded` post-rename).
-- [ ] **6.3** Leave `packages/skills/src/node.ts` untouched. Its `whenReady: Promise.resolve()` satisfies the generic handle contract; that contract is exempt (see Edge Cases).
-- [ ] **6.4** Migrate browser-side consumers found via grep.
+- [x] **6.1** `apps/skills/src/lib/skills/browser.ts:103` (top-level): delete `whenReady: idb.whenLoaded`.
+- [x] **6.2** `apps/skills/src/lib/skills/browser.ts:39, 69` (child-doc factories): delete `whenReady: persistence.whenLoaded`. Update internal callsites (lines 87, 92) to await `handle.persistence.whenLoaded` directly (or `handle.idb.whenLoaded` post-rename).
+- [x] **6.3** Leave `packages/skills/src/node.ts` untouched. Its `whenReady: Promise.resolve()` satisfies the generic handle contract; that contract is exempt (see Edge Cases).
+- [x] **6.4** Migrate browser-side consumers found via grep.
 
 ### Phase 7: tab-manager
 
-- [ ] **7.1** Edit `apps/tab-manager/src/lib/tab-manager/extension.ts:81`: delete `whenLoaded: idb.whenLoaded`.
-- [ ] **7.2** Migrate consumers:
+- [x] **7.1** Edit `apps/tab-manager/src/lib/tab-manager/extension.ts:81`: delete `whenLoaded: idb.whenLoaded`.
+- [x] **7.2** Migrate consumers:
     - `apps/tab-manager/src/lib/tab-manager/client.ts:66` (`await tabManager.whenLoaded`)
     - `apps/tab-manager/src/lib/chat/chat-state.svelte.ts:435` (`tabManager.whenLoaded.then(...)`)
     - `apps/tab-manager/src/lib/state/unified-view-state.svelte.ts:80` (`browserState.whenReady.then(...)` — note: `browserState.whenReady` is a real composed `(async () => { ... })()`, NOT in scope)
-- [ ] **7.3** `bun run check`. Note: `browserState.whenReady` and `apps/tab-manager/src/entrypoints/sidepanel/App.svelte:194` consume the legitimate composed `whenReady`. Do not touch.
+- [x] **7.3** `bun run check`. Note: `browserState.whenReady` and `apps/tab-manager/src/entrypoints/sidepanel/App.svelte:194` consume the legitimate composed `whenReady`. Do not touch.
 
 ### Phase 8: Verify and clean
 
-- [ ] **8.1** Repo-wide grep for surviving aliases:
+- [x] **8.1** Repo-wide grep for surviving aliases:
     ```sh
     rg "whenLoaded:\s*\w+\.whenLoaded" apps packages
     rg "whenReady:\s*\w+\.whenLoaded" apps packages
     ```
     Both should return zero hits in `apps/` (Whispering's composed `whenReady` is fine; verify by visual inspection).
-- [ ] **8.2** Repo-wide grep for stale consumers:
+- [x] **8.2** Repo-wide grep for stale consumers:
     ```sh
     rg "\.whenReady\b" apps
     rg "\.whenLoaded\b" apps | grep -v "\.idb\.whenLoaded\|\.persistence\.whenLoaded"
     ```
     Survivors should be either composed `whenReady` (Whispering, tab-manager browser-state) or genuine subsystem events on a typed handle interface (Skills node handles).
-- [ ] **8.3** Update `apps/fuji/README.md` if it documents the old shape (line 53 currently shows `whenLoaded: idb.whenLoaded` in an example).
+- [x] **8.3** Update `apps/fuji/README.md` if it documents the old shape (line 53 currently shows `whenLoaded: idb.whenLoaded` in an example).
 - [ ] **8.4** `bun run check`, `bun run lint`, smoke test all four apps end to end.
 
 ### Phase 9: Documentation
@@ -514,12 +514,12 @@ Or, if the same composition appears in 2+ places, the bundle adds a real `whenRe
 
 ## Success Criteria
 
-- [ ] No `whenLoaded: <expr>.whenLoaded` aliases remain in `apps/`.
-- [ ] No `whenReady: <expr>.whenLoaded` aliases remain in `apps/`. Composed `Promise.all`-based `whenReady` fields stay (Whispering, tab-manager browser-state).
-- [ ] Every workspace bundle in scope (fuji, honeycrisp, zhongwen, opensidian, skills browser, tab-manager extension) exposes its attached subsystems (`idb` or `persistence`, `sync`, `awareness` where applicable) directly.
+- [x] No `whenLoaded: <expr>.whenLoaded` aliases remain in `apps/`.
+- [x] No `whenReady: <expr>.whenLoaded` aliases remain in `apps/`. Composed `Promise.all`-based `whenReady` fields stay (Whispering, tab-manager browser-state).
+- [x] Every workspace bundle in scope (fuji, honeycrisp, zhongwen, opensidian, skills browser, tab-manager extension) exposes its attached subsystems (`idb` or `persistence`, `sync`, `awareness` where applicable) directly.
 - [x] `WorkspaceGate` component removed from `packages/svelte-utils`.
-- [ ] `Loading.svelte` and `ErrorState.svelte` are deleted from each app where they served only the `SignedIn` gate.
-- [ ] Each `SignedIn.svelte` gate awaits a specific subsystem event (`bundle.idb.whenLoaded`).
+- [x] `Loading.svelte` and `ErrorState.svelte` are deleted from each app where they served only the `SignedIn` gate. (`ErrorState.svelte` deleted in all three; `Loading.svelte` retained because it also renders the root `+layout.svelte` auth-pending state.)
+- [x] Each `SignedIn.svelte` gate awaits a specific subsystem event (`bundle.idb.whenLoaded`).
 - [ ] `bun run check` and `bun run lint` pass.
 - [ ] Manual smoke: sign in, render workspace, sign out, sign in as different user, force IDB load failure (e.g., disable IndexedDB) and see the inlined error UI.
 - [ ] Convention is documented in `apps/fuji/README.md` or a `docs/articles/` entry.

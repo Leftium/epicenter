@@ -51,7 +51,7 @@ const peer = await Promise.all([
 export const tabManager = await openTabManager({
 	identity: signedInState.identity,
 	peer,
-	transport: auth.openWebSocket,
+	bearerToken: () => auth.bearerToken,
 });
 
 /**

@@ -12,7 +12,6 @@ import {
 	attachSync,
 	createRemoteClient,
 	PeerIdentity,
-	type SyncTransport,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -34,11 +33,11 @@ import { openTabManager as openTabManagerDoc } from './index';
 export async function openTabManager({
 	identity,
 	peer,
-	transport,
+	bearerToken,
 }: {
 	identity: AuthIdentity;
 	peer: TabManagerPeer | Promise<TabManagerPeer>;
-	transport: SyncTransport;
+	bearerToken?: () => string | null;
 }) {
 	const resolvedPeer = await Promise.resolve(peer);
 	const userId = identity.user.id;
@@ -58,7 +57,7 @@ export async function openTabManager({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		transport,
+		bearerToken,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);

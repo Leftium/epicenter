@@ -23,7 +23,7 @@
 			name: 'Fuji',
 			platform: 'web',
 		},
-		transport: auth.openWebSocket,
+		bearerToken: () => auth.bearerToken,
 	});
 	const entriesState = createEntriesState(fuji);
 	setFuji(fuji);

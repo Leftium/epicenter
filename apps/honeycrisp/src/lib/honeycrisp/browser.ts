@@ -11,7 +11,6 @@ import {
 	docGuid,
 	onLocalUpdate,
 	PeerIdentity,
-	type SyncTransport,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -37,11 +36,11 @@ function noteBodyDocGuid({
 export function openHoneycrisp({
 	identity,
 	peer,
-	transport,
+	bearerToken,
 }: {
 	identity: AuthIdentity;
 	peer: PeerIdentity;
-	transport: SyncTransport;
+	bearerToken?: () => string | null;
 }) {
 	const userId = identity.user.id;
 	const doc = openHoneycrispDoc({ encryptionKeys: identity.encryptionKeys });
@@ -63,7 +62,7 @@ export function openHoneycrisp({
 		const childSync = attachSync(ydoc, {
 			url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
-			transport,
+			bearerToken,
 		});
 
 		onLocalUpdate(ydoc, () => {
@@ -95,7 +94,7 @@ export function openHoneycrisp({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		transport,
+		bearerToken,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);

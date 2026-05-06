@@ -221,7 +221,7 @@ export type SyncAttachmentConfig = {
 	 */
 	bearerToken?: () => string | null;
 	/** Authenticated WebSocket transport. */
-	transport: SyncTransport;
+	transport?: SyncTransport;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -609,14 +609,16 @@ export function attachSync(
 	): Promise<'connected' | 'failed'> {
 		let ws: WebSocket;
 		try {
-			const token = config.bearerToken?.();
-			if (token) {
-				ws = new WebSocket(config.url, [
-					MAIN_SUBPROTOCOL,
-					`${BEARER_SUBPROTOCOL_PREFIX}${token}`,
-				]);
-			} else {
+			if (config.bearerToken) {
+				const token = config.bearerToken();
+				const protocols = token
+					? [MAIN_SUBPROTOCOL, `${BEARER_SUBPROTOCOL_PREFIX}${token}`]
+					: [MAIN_SUBPROTOCOL];
+				ws = new WebSocket(config.url, protocols);
+			} else if (config.transport) {
 				ws = config.transport(config.url, [MAIN_SUBPROTOCOL]);
+			} else {
+				ws = new WebSocket(config.url, [MAIN_SUBPROTOCOL]);
 			}
 		} catch {
 			return 'failed';

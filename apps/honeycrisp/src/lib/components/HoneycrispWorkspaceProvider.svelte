@@ -24,7 +24,7 @@
 			name: 'Honeycrisp',
 			platform: 'web',
 		},
-		transport: auth.openWebSocket,
+		bearerToken: () => auth.bearerToken,
 	});
 	const state = createHoneycrispState(honeycrisp);
 	setHoneycrisp(honeycrisp);

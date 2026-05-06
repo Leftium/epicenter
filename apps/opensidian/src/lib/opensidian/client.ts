@@ -37,7 +37,7 @@ export const opensidian = openOpensidian({
 		name: 'Opensidian',
 		platform: 'web',
 	},
-	transport: auth.openWebSocket,
+	bearerToken: () => auth.bearerToken,
 });
 
 bindAuthWorkspaceScope({

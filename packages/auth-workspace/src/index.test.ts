@@ -59,13 +59,20 @@ function identity(input?: Parameters<typeof session>[0]): AuthIdentity {
 
 function createFakeAuth(initial: AuthIdentity | null) {
 	let currentIdentity = initial;
-	const listeners = new Set<(next: AuthIdentity | null) => void>();
-	const auth = {
-		get identity() {
-			return currentIdentity;
+	const listeners = new Set<
+		NonNullable<AuthClient['onStateChange']> extends (fn: infer Fn) => unknown
+			? Fn
+			: never
+	>();
+	const auth: AuthClient = {
+		get state() {
+			if (currentIdentity === null) return { status: 'signed-out' } as const;
+			return { status: 'signed-in', identity: currentIdentity } as const;
 		},
-		whenReady: Promise.resolve(),
-		onChange(fn) {
+		get bearerToken() {
+			return null;
+		},
+		onStateChange(fn) {
 			listeners.add(fn);
 			return () => listeners.delete(fn);
 		},
@@ -99,7 +106,7 @@ function createFakeAuth(initial: AuthIdentity | null) {
 		auth,
 		emit(next: AuthIdentity | null) {
 			currentIdentity = next;
-			for (const listener of listeners) listener(next);
+			for (const listener of listeners) listener(auth.state);
 		},
 	};
 }

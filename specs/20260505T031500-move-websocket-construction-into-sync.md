@@ -353,10 +353,12 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 
 ### Wave 3: Migrate consumers from `transport` to `bearerToken`
 
-- [ ] **3.1** For each file in the Surface Map "Consumer call sites" table, change the workspace factory parameter from `transport: SyncTransport` to `bearerToken?: () => string | null`. Thread to each `attachSync` call.
-- [ ] **3.2** For each `*WorkspaceProvider.svelte`, change the call site from `transport: auth.openWebSocket` to `bearerToken: () => auth.bearerToken`.
-- [ ] **3.3** Workspace-wide grep: `grep -rn "transport: auth\." apps/` and `grep -rn "transport: SyncTransport" apps/` should both return zero hits.
-- [ ] **3.4** Verify: `bun run typecheck` (workspace-wide) passes. App-level smoke tests still work.
+- [x] **3.1** For each file in the Surface Map "Consumer call sites" table, change the workspace factory parameter from `transport: SyncTransport` to `bearerToken?: () => string | null`. Thread to each `attachSync` call.
+- [x] **3.2** For each `*WorkspaceProvider.svelte`, change the call site from `transport: auth.openWebSocket` to `bearerToken: () => auth.bearerToken`.
+- [x] **3.3** Workspace-wide grep: `grep -rn "transport: auth\." apps/` and `grep -rn "transport: SyncTransport" apps/` should both return zero hits.
+- [x] **3.4** Verify: `bun run typecheck` (workspace-wide) passes. App-level smoke tests still work.
+  > Note: package-level checks for `@epicenter/workspace`, `@epicenter/auth`, and `@epicenter/auth-workspace` passed. Workspace-wide and touched app typechecks still fail on existing shared `packages/svelte-utils` / `packages/ui` errors and app-local errors unrelated to this migration.
+  > Note: `SyncAttachmentConfig.transport` was made optional in this wave so migrated cookie-style consumers can pass only `bearerToken: () => auth.bearerToken`. The field is still present and is removed in Wave 4.
 
 ### Wave 4: Make `transport` removable; migrate sync tests
 

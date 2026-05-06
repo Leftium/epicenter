@@ -205,10 +205,11 @@ export type SyncAttachmentConfig = {
 	 */
 	waitFor?: WaitForBarrier;
 	/**
-	 * Returns the current bearer token for sync WebSocket authentication.
-	 * Called on each reconnect so token rotation is observed.
+	 * Returns the current bearer token for sync WebSocket authentication, or
+	 * null when this app uses cookie or no auth. Called on each reconnect so
+	 * token rotation is observed.
 	 */
-	bearerToken?: () => string | null;
+	bearerToken: () => string | null;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -596,7 +597,7 @@ export function attachSync(
 	): Promise<'connected' | 'failed'> {
 		let ws: WebSocket;
 		try {
-			const token = config.bearerToken?.();
+			const token = config.bearerToken();
 			const protocols = token
 				? [MAIN_SUBPROTOCOL, `${BEARER_SUBPROTOCOL_PREFIX}${token}`]
 				: [MAIN_SUBPROTOCOL];

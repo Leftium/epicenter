@@ -1,6 +1,6 @@
 import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { createFujiActions, fujiTables } from '../workspace.js';
+import { createFujiActions, fujiTables } from './workspace.js';
 
 export const FUJI_WORKSPACE_ID = 'epicenter.fuji';
 

@@ -8,12 +8,12 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { fujiTables } from '../workspace.js';
 import {
 	connectFujiDaemonActions,
 	DEFAULT_FUJI_DAEMON_ROUTE,
 } from './daemon.js';
 import { FUJI_WORKSPACE_ID } from './index.js';
+import { fujiTables } from './workspace.js';
 
 type LoadOfflineEncryptionKeys = () => Promise<EncryptionKeys | null>;
 

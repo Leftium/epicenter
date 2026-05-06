@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		"./workspace": "./src/lib/workspace.ts",
+		"./workspace": "./src/lib/fuji/workspace.ts",
 		"./openFuji": "./src/lib/fuji/index.ts",
 		"./browser": "./src/lib/fuji/browser.ts",
 		"./daemon": "./src/lib/fuji/daemon.ts",

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { fromDisposableCache } from '@epicenter/svelte';
-	import { PageSpinner } from '@epicenter/svelte/page-spinner';
+	import { Loading } from '@epicenter/ui/loading';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { getHoneycrispState } from '../state';
 	import { getSignedIn } from '../signed-in';
@@ -14,7 +14,7 @@
 </script>
 
 {#await doc.current.idb.whenLoaded}
-	<PageSpinner class="h-full" />
+	<Loading class="h-full" />
 {:then _}
 	<HoneycripEditor
 		yxmlfragment={doc.current.body.binding}

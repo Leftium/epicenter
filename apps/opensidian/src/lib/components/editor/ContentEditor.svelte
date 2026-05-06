@@ -2,7 +2,7 @@
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
 	import { fromDisposableCache } from '@epicenter/svelte';
-	import { PageSpinner } from '@epicenter/svelte/page-spinner';
+	import { Loading } from '@epicenter/ui/loading';
 	import { opensidian } from '$lib/opensidian/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
@@ -51,7 +51,7 @@
 	stored entries).
 -->
 {#await doc.current.idb.whenLoaded}
-	<PageSpinner class="h-full" />
+	<Loading class="h-full" />
 {:then _}
 	<CodeMirrorEditor
 		ytext={doc.current.content.asText()}

@@ -1,8 +1,8 @@
 <!--
 	Render gate that blocks children until `pending` resolves.
 
-	Composition: defaults the loading state to <PageSpinner> (the same
-	shell used by pre-auth layouts) so the moment children mount is the only
+	Composition: defaults the loading state to <Loading> (the same shell
+	used by pre-auth layouts) so the moment children mount is the only
 	visible transition. The error state defaults to a workspace-flavored
 	Empty.Root with Reload + (optional) Sign out actions.
 
@@ -23,9 +23,9 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
+	import { Loading } from '@epicenter/ui/loading';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Snippet } from 'svelte';
-	import PageSpinner from '../page-spinner/page-spinner.svelte';
 
 	let {
 		pending,
@@ -38,7 +38,7 @@
 		pending: Promise<unknown>;
 		/** Children rendered after `pending` resolves. */
 		children: Snippet;
-		/** Override for the loading branch. Defaults to <PageSpinner>. */
+		/** Override for the loading branch. Defaults to <Loading>. */
 		loading?: Snippet;
 		/** Override for the error branch. Receives the rejection reason. */
 		error?: Snippet<[unknown]>;
@@ -55,7 +55,7 @@
 	{#if loading}
 		{@render loading()}
 	{:else}
-		<PageSpinner class="h-dvh" />
+		<Loading class="h-dvh" />
 	{/if}
 {:then _}
 	{@render children()}

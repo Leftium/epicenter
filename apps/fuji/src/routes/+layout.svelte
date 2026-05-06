@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
-	import { PageSpinner } from '@epicenter/svelte/page-spinner';
 	import { auth } from '$lib/auth';
 	import '@epicenter/ui/app.css';
 
@@ -12,7 +12,7 @@
 <svelte:head><title>Fuji</title></svelte:head>
 
 {#if auth.state.status === 'pending'}
-	<PageSpinner class="h-dvh" />
+	<Loading class="h-dvh" />
 {:else}
 	{@render children?.()}
 {/if}

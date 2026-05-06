@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { fromDisposableCache } from '@epicenter/svelte';
-	import { PageSpinner } from '@epicenter/svelte/page-spinner';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import { Loading } from '@epicenter/ui/loading';
 	import {
 		localTimezone,
 		NaturalLanguageDateInput,
@@ -172,7 +172,7 @@
 
 	<!-- Editor body -->
 	{#await contentDoc.current.idb.whenLoaded}
-		<PageSpinner class="flex-1" />
+		<Loading class="flex-1" />
 	{:then _}
 		<ProseMirrorEditor
 			yxmlfragment={contentDoc.current.body.binding}

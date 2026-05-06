@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
-	import { PageSpinner } from '@epicenter/svelte/page-spinner';
 	import { auth } from '$lib/auth';
 	import { queryClient } from '$lib/query/client';
 	import '@epicenter/ui/app.css';
@@ -16,7 +16,7 @@
 
 <QueryClientProvider client={queryClient}>
 	{#if auth.state.status === 'pending'}
-		<PageSpinner class="h-dvh" />
+		<Loading class="h-dvh" />
 	{:else}
 		{@render children?.()}
 	{/if}

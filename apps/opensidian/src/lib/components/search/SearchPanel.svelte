@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { PageSpinner } from '@epicenter/svelte/page-spinner';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
+	import { Loading } from '@epicenter/ui/loading';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { Toggle } from '@epicenter/ui/toggle';
@@ -122,7 +122,7 @@
 	</div>
 
 	{#if sidebarSearchState.isSearching && !hasResults}
-		<PageSpinner class="flex-1" />
+		<Loading class="flex-1" />
 	{:else if hasResults}
 		<div class="border-b px-3 py-1.5 text-xs text-muted-foreground">
 			{sidebarSearchState.totalResults}

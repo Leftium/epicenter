@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { AuthForm } from '@epicenter/svelte/auth-form';
-	import { PageSpinner } from '@epicenter/svelte/page-spinner';
 	import * as Card from '@epicenter/ui/card';
+	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
@@ -19,7 +19,7 @@
 <QueryClientProvider client={queryClient}>
 	<div class="min-h-screen bg-background text-foreground">
 		{#if auth.state.status === 'pending'}
-			<PageSpinner class="h-dvh" />
+			<Loading class="h-dvh" />
 		{:else if auth.state.status === 'signed-in'}
 			<header class="border-b bg-background/95 backdrop-blur">
 				<div

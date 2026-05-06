@@ -98,17 +98,13 @@ export function openHoneycrisp({
 	});
 	const rpc = sync.attachRpc(doc.actions);
 	const remote = createRemoteClient({ awareness, rpc });
-	const dispose = () => {
-		noteBodyDocs[Symbol.dispose]();
-		doc[Symbol.dispose]();
-	};
-
 	return {
 		...doc,
 		idb,
 		noteBodyDocs,
 		awareness,
 		sync,
+		whenReady: idb.whenLoaded,
 		async wipe() {
 			const fallbackGuids = [
 				doc.ydoc.guid,
@@ -129,8 +125,14 @@ export function openHoneycrisp({
 		},
 		remote,
 		rpc,
-		dispose,
-		[Symbol.dispose]: dispose,
+		dispose() {
+			noteBodyDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
+		},
+		[Symbol.dispose]() {
+			noteBodyDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
+		},
 	};
 }
 

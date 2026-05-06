@@ -98,17 +98,13 @@ export function openFuji({
 	});
 	const rpc = sync.attachRpc(doc.actions);
 	const remote = createRemoteClient({ awareness, rpc });
-	const dispose = () => {
-		entryContentDocs[Symbol.dispose]();
-		doc[Symbol.dispose]();
-	};
-
 	return {
 		...doc,
 		idb,
 		entryContentDocs,
 		awareness,
 		sync,
+		whenReady: idb.whenLoaded,
 		async wipe() {
 			const fallbackGuids = [
 				doc.ydoc.guid,
@@ -129,8 +125,14 @@ export function openFuji({
 		},
 		remote,
 		rpc,
-		dispose,
-		[Symbol.dispose]: dispose,
+		dispose() {
+			entryContentDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
+		},
+		[Symbol.dispose]() {
+			entryContentDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
+		},
 	};
 }
 

@@ -10,21 +10,25 @@ export function openZhongwen({ identity }: { identity: AuthIdentity }) {
 	const doc = openZhongwenDoc({ encryptionKeys: identity.encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
-	const dispose = () => doc[Symbol.dispose]();
 
 	return {
 		...doc,
 		idb,
-		dispose,
+		whenReady: idb.whenLoaded,
 		async wipe() {
-			dispose();
+			doc[Symbol.dispose]();
 			await idb.whenDisposed;
 			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: [doc.ydoc.guid],
 			});
 		},
-		[Symbol.dispose]: dispose,
+		dispose() {
+			doc[Symbol.dispose]();
+		},
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
 	};
 }
 

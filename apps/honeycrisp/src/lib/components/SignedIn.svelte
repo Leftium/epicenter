@@ -41,7 +41,7 @@
 
 	onDestroy(() => {
 		honeycrispState[Symbol.dispose]();
-		honeycrisp[Symbol.dispose]();
+		honeycrisp.dispose();
 	});
 
 	setSignedIn({
@@ -54,7 +54,7 @@
 	});
 </script>
 
-{#await honeycrisp.idb.whenLoaded}
+{#await honeycrisp.whenReady}
 	<div class="flex h-dvh items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>

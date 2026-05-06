@@ -38,11 +38,11 @@
 	});
 </script>
 
-{#await zhongwen.idb.whenLoaded}
+{#await zhongwen.whenReady}
 	<div class="flex h-dvh items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>
-{:then}
+{:then _}
 	{@render children?.()}
 {:catch error}
 	<Empty.Root class="h-dvh">

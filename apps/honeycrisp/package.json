@@ -40,7 +40,6 @@
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/auth-svelte": "workspace:*",
-		"@epicenter/auth-workspace": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@epicenter/constants": "workspace:*",

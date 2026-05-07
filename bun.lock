@@ -107,7 +107,6 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -156,7 +155,6 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -226,7 +224,6 @@
         "@codemirror/autocomplete": "^6.20.1",
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -327,7 +324,6 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
@@ -539,18 +535,6 @@
       },
       "peerDependencies": {
         "svelte": "^5.0.0",
-      },
-    },
-    "packages/auth-workspace": {
-      "name": "@epicenter/auth-workspace",
-      "version": "0.1.0",
-      "dependencies": {
-        "@epicenter/auth": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
       },
     },
     "packages/cli": {
@@ -1026,8 +1010,6 @@
     "@epicenter/auth": ["@epicenter/auth@workspace:packages/auth"],
 
     "@epicenter/auth-svelte": ["@epicenter/auth-svelte@workspace:packages/auth-svelte"],
-
-    "@epicenter/auth-workspace": ["@epicenter/auth-workspace@workspace:packages/auth-workspace"],
 
     "@epicenter/breddit": ["@epicenter/breddit@workspace:apps/breddit"],
 

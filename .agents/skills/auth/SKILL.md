@@ -8,11 +8,10 @@ metadata:
 
 # Epicenter Auth
 
-Three packages own the auth surface:
+Two packages own the auth surface:
 
 - **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, token rotation for bearer clients, cookie fetch policy for cookie clients, identity fan-out, `fetch`, and the live `bearerToken` getter.
 - **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors the core identity into `$state` and exposes a live `auth.identity` getter.
-- **`@epicenter/auth-workspace`**: framework-agnostic binding from auth identity changes to workspace lifecycle effects.
 
 The core model is two factories, one client interface:
 
@@ -95,7 +94,7 @@ export const auth = createBearerAuth({
 Identity-bound resources are read lazily through callbacks: workspaces don't hold the keys, they read them out of `auth.state` at every encryption attach site. The session module owns the workspace lifecycle (`createSession` from `@epicenter/svelte`), and each per-app build closure passes `() => requireSignedIn(auth).encryptionKeys` straight through to the workspace.
 
 ```ts
-import { requireSignedIn } from '@epicenter/auth-svelte';
+import { requireSignedIn } from '@epicenter/auth';
 import { createSession, type SignedInBase } from '@epicenter/svelte';
 
 type FujiSignedIn = SignedInBase & { readonly fuji: Fuji };
@@ -121,19 +120,15 @@ export const session = createSession<FujiSignedIn>({
 
 `createSession` reconciles `auth.state`: a sign-out disposes the workspace, a same-user identity update is a no-op (the lazy callback observes the change at the next read), and a different-user transition disposes the workspace and reloads. Each `attachSync` still receives `bearerToken: () => auth.bearerToken`. For destructive reset (wipe local data and reload), call `workspace.wipe()` and `location.reload()` inside the consumer that triggers it; there is no terminal callback on the session itself.
 
-For apps that need a side effect on every applied identity (like re-registering a device row), `bindAuthWorkspaceScope` from `@epicenter/auth-workspace` still exists. Its `applyAuthIdentity` no longer applies keys; pass an empty body or a side-effect-only callback:
+Browser apps that do not use `createSession` inline the meaningful auth transitions:
 
 ```ts
-import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
+const userId = requireSignedIn(auth).user.id;
 
-bindAuthWorkspaceScope({
-	auth,
-	applyAuthIdentity() {
-		// keys are read lazily through requireSignedIn(auth) at the workspace boundary
-		void registerDevice();
-	},
-	onSignOut() { window.location.reload(); },
-	onIdentityChanged() { window.location.reload(); },
+auth.onStateChange((state) => {
+	if (state.status === 'pending') return;
+	if (state.status === 'signed-out') return window.location.reload();
+	if (state.identity.user.id !== userId) return window.location.reload();
 });
 ```
 

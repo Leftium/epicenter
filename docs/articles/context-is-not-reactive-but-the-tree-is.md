@@ -138,7 +138,7 @@ In a signed-in session scope, handle that refresh inside the scope that opened t
 ```svelte
 <script lang="ts">
 	import type { AuthIdentity } from '@epicenter/auth';
-	import { requireSignedIn } from '@epicenter/auth-svelte';
+	import { requireSignedIn } from '@epicenter/auth';
 	import { onDestroy, type Snippet } from 'svelte';
 	import { auth } from '$lib/auth';
 	import { setSignedInSession } from '$lib/session.svelte';

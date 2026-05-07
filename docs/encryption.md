@@ -47,21 +47,21 @@ encrypted CRDT value
 ```
 On the server, `apps/api/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption` to parse the keyring and derive per-user keys.
 It returns one `{ version, userKeyBase64 }` entry per configured secret version.
-On the client, the encryption coordinator (`attachEncryption(ydoc, { getKeys })`) reads `getKeys()` synchronously at every `attachTable` / `attachKv` / `attachIndexedDb` site, decodes each `userKeyBase64`, runs `deriveWorkspaceKey(userKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
+On the client, the encryption coordinator (`attachEncryption(ydoc, { encryptionKeys })`) reads `encryptionKeys()` synchronously at every `attachTable` / `attachKv` / `attachIndexedDb` site, decodes each `userKeyBase64`, runs `deriveWorkspaceKey(userKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
 The highest version becomes the current key for new writes.
 
 ## How keys reach the client
 Keys come through the auth session.
 There is no separate key-fetch endpoint in the reviewed code.
 `apps/api/src/auth/create-auth.ts` attaches `encryptionKeys` to `/auth/get-session`.
-`@epicenter/auth-svelte` exposes those keys through `auth.state.identity.encryptionKeys` while the user is signed in.
+`@epicenter/auth` exposes those keys through `auth.state.identity.encryptionKeys` while the user is signed in.
 That happens in two places:
 - on boot from a cached session
 - on every authenticated session update from Better Auth
 The boot path exists so the workspace can unlock before the first auth roundtrip finishes.
-The workspace does not hold its own copy of the keys. `attachEncryption` takes a lazy `getKeys` callback that reads `auth.state` each time encryption needs to derive a per-doc keyring. In per-app session modules, the workspace builder passes `() => requireSignedIn(auth).encryptionKeys` straight through:
+The workspace does not hold its own copy of the keys. `attachEncryption` takes a lazy `encryptionKeys` callback that reads `auth.state` each time encryption needs to derive a per-doc keyring. In per-app session modules, the workspace builder passes `() => requireSignedIn(auth).encryptionKeys` straight through:
 ```ts
-import { requireSignedIn } from '@epicenter/auth-svelte';
+import { requireSignedIn } from '@epicenter/auth';
 
 const fuji = openFuji({
 	userId,
@@ -80,7 +80,7 @@ Two inputs flow into the workspace:
 
 The browser factory shape is:
 ```ts
-import { requireSignedIn } from '@epicenter/auth-svelte';
+import { requireSignedIn } from '@epicenter/auth';
 
 export function openMyApp({
 	userId,
@@ -93,7 +93,7 @@ export function openMyApp({
 	bearerToken?: () => string | null;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openMyAppDoc({ getKeys: encryptionKeys });
+	const doc = openMyAppDoc({ encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
@@ -115,10 +115,10 @@ Logout reloads the browser client after the auth session changes.
 It does not wipe local IndexedDB data.
 The reviewed code still does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`; the page reload is the current key-drop boundary.
 The closest Bitwarden analogy is lock, not logout: Bitwarden documents unlock as using encrypted data already stored on disk and lock as deleting decrypted vault data and the account encryption key from memory. Bitwarden separately documents that logout wipes PIN settings. See [Understand Log In vs. Unlock](https://bitwarden.com/help/understand-log-in-vs-unlock/) and [Unlock With PIN](https://bitwarden.com/help/unlock-with-pin/).
-The logout path is owned by the per-app session module. `createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user update is a no-op (the lazy `getKeys` callback observes the change at the next read), and a different-user transition disposes the workspace and reloads the page:
+The logout path is owned by the per-app session module. `createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user update is a no-op (the lazy `encryptionKeys` callback observes the change at the next read), and a different-user transition disposes the workspace and reloads the page:
 ```ts
 import { createSession, type SignedInBase } from '@epicenter/svelte';
-import { requireSignedIn } from '@epicenter/auth-svelte';
+import { requireSignedIn } from '@epicenter/auth';
 
 export const session = createSession<MyAppSignedIn>({
 	auth,
@@ -233,7 +233,7 @@ Before activation, the wrapper is a passthrough store and `set()` writes plainte
 After activation, `set()` always encrypts.
 The active state holds the full keyring, the current key, and the current key version.
 Calling `activateEncryption()` again updates that state to a new keyring, but it does not switch the store back to plaintext mode.
-The document builder reinforces that shape: `attachEncryption(ydoc, { getKeys })` returns a coordinator whose `encryption.attachTables(defs)` / `encryption.attachKv(defs)` methods register every table and KV store as encrypted wrappers from the start. The coordinator calls `getKeys()` synchronously at each registration site, derives the per-doc keyring, and activates the store before handing it back. There is no separate `applyKeys` mutation step: the keys are read lazily, so registration and activation happen in one call.
+The document builder reinforces that shape: `attachEncryption(ydoc, { encryptionKeys })` returns a coordinator whose `encryption.attachTables(defs)` / `encryption.attachKv(defs)` methods register every table and KV store as encrypted wrappers from the start. The coordinator calls `encryptionKeys()` synchronously at each registration site, derives the per-doc keyring, and activates the store before handing it back. There is no separate `applyKeys` mutation step: the keys are read lazily, so registration and activation happen in one call.
 
 ## What activation re-encrypts
 Activation does not rewrite everything.

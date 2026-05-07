@@ -190,6 +190,7 @@ export {
 } from './document/attach-broadcast-channel.js';
 export {
 	attachEncryption,
+	type AttachEncryptionOptions,
 	type EncryptionAttachment,
 } from './document/attach-encryption.js';
 export {

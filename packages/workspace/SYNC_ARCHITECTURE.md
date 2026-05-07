@@ -678,7 +678,8 @@ t=0ms      attachAwareness(ydoc, { schema, initial })
 t=1ms      attachSync(doc, { url, bearerToken, waitFor: idb, awareness })
               ├─ wires ydoc.on('updateV2')
               ├─ wires awareness.raw.on('update')
-              └─ kicks off async waitFor → ensureSupervisor()
+              └─ starts supervisor task: races waitFor against doc destroy,
+                 then iterates over cycleController until master abort
 
               returns SyncAttachment immediately
 
@@ -699,7 +700,7 @@ t=~50ms    ws.onopen
 t=~80ms    ws.onmessage: STEP2 from server
            handshakeComplete = true
            status: { phase: 'connected' }
-           resolveConnected()
+           connected.resolve()
 
 t=80ms+    [from here on, three loops run forever:]
             • PING every 60s

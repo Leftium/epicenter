@@ -162,7 +162,7 @@ Yes, partially. There are two distinct moments:
 MOMENT                                                       CHECK
 ─────────────────────────────────────────────────────        ────────────────────────────────────
 Construction. Daemon/script boots, loads keychain.           Throw if no saved session. This is
-A null initialSession means the user never logged in.        a real precondition, not paranoia.
+A null loaded session means the user never logged in.        a real precondition, not paranoia.
                                                              Lives inside createMachineAuthClient.
 
 Post-construction. Long-lived daemon. Server returns         Throw via requireSignedIn(auth)
@@ -206,20 +206,24 @@ Re-exported from `packages/auth/src/index.ts`. `packages/auth-svelte/src/require
 // packages/auth/src/node/machine-auth.ts
 export async function createMachineAuthClient(): Promise<AuthClient> {
   const log = createLogger('machine-auth');
-  const { data: initialSession, error } = await loadMachineSession();
+  const { data: loadedSession, error } = await loadMachineSession();
   if (error) throw error;
-  if (initialSession === null) {
+  if (loadedSession === null) {
     throw new Error(
       '[machine-auth] no saved session in the system keychain. ' +
         'Run `epicenter auth login` first.',
     );
   }
+  let currentSession = loadedSession;
   return createBearerAuth({
     baseURL: EPICENTER_API_URL,
-    initialSession,
-    saveSession: async (next) => {
-      const { error: saveError } = await saveMachineSession(next);
-      if (saveError) log.error(saveError);
+    sessionStorage: {
+      get: () => currentSession,
+      set: async (next) => {
+        currentSession = next;
+        const { error: saveError } = await saveMachineSession(next);
+        if (saveError) log.error(saveError);
+      },
     },
   });
 }
@@ -430,7 +434,7 @@ WAVE 1 — Move requireSignedIn to @epicenter/auth (clean break, no shim)
   - Verify: typecheck. `bun run typecheck` clean.
 
 WAVE 2 — createMachineAuthClient asserts signed-in at construction
-  - Throw on null initialSession with the message above.
+  - Throw on null loaded session with the message above.
   - Verify: typecheck. Run an end-to-end daemon test if available.
 
 WAVE 3 — Daemons/scripts use requireSignedIn

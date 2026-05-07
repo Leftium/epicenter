@@ -23,7 +23,7 @@ The core model is two factories, one client interface:
 
 ```ts
 const cookieAuth = createCookieAuth({ baseURL, initialIdentity, saveIdentity });
-const bearerAuth = createBearerAuth({ baseURL, initialSession, saveSession });
+const bearerAuth = createBearerAuth({ baseURL, sessionStorage });
 ```
 
 Both return `AuthClient`. Consumers use the same methods after construction and must not branch on which factory produced the client.
@@ -78,22 +78,42 @@ export const auth = createCookieAuth({
 });
 ```
 
-Use `createBearerAuth` when the runtime owns a bearer token: standalone-domain SPA, browser extension, daemon, or CLI. The caller loads storage before construction:
+Use `createBearerAuth` when the runtime owns a bearer token: standalone-domain SPA, browser extension, daemon, or CLI. The caller passes durable session storage:
 
 ```ts
 import { BearerSession, createBearerAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
-
-const initialSession = BearerSession.or('null').assert(await storage.read());
+import { createPersistedState } from '@epicenter/svelte';
 
 export const auth = createBearerAuth({
 	baseURL: APP_URLS.API,
-	initialSession,
-	saveSession: (next) => storage.write(next),
+	sessionStorage: createPersistedState({
+		key: 'app:authSession',
+		schema: BearerSession.or('null'),
+		defaultValue: null,
+	}),
 });
 ```
 
-`BearerSession` is the storage validation schema. Its token is visible only at the construction boundary and inside storage adapters. Do not pass it upward into UI, sync, or workspace lifecycle code.
+`BearerSession` is the storage validation schema. Its token is visible only inside storage adapters and the auth client. Do not pass it upward into UI, sync, or workspace lifecycle code. `createBearerAuth` calls `sessionStorage.get()` once during construction, then owns the live in-memory session and calls `sessionStorage.set(next)` when Better Auth validates, rotates, or clears it.
+
+Runtimes with async storage load before construction, then pass a synchronous adapter:
+
+```ts
+const loadedSession = BearerSession.or('null').assert(await storage.read());
+let currentSession = loadedSession;
+
+export const auth = createBearerAuth({
+	baseURL: APP_URLS.API,
+	sessionStorage: {
+		get: () => currentSession,
+		set: async (next) => {
+			currentSession = next;
+			await storage.write(next);
+		},
+	},
+});
+```
 
 ## Workspace Binding
 

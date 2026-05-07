@@ -8,6 +8,7 @@ export {
 	AuthError,
 	type AuthState,
 	type AuthStateChangeListener,
+	type BearerSessionStorage,
 	type CreateBearerAuthConfig,
 	type CreateCookieAuthConfig,
 	createBearerAuth,

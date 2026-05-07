@@ -17,6 +17,7 @@ import type {
 	AuthIdentity,
 	AuthState,
 	BearerSession,
+	BearerSessionStorage,
 } from './index.ts';
 
 type BetterAuthSessionState = {
@@ -261,10 +262,13 @@ const contractCases: ContractCase[] = [
 	{
 		name: 'bearer',
 		create() {
+			const sessionStorage: BearerSessionStorage = {
+				get: () => session(),
+				set: () => {},
+			};
 			return createBearerAuth({
 				baseURL: 'http://localhost:8787',
-				initialSession: session(),
-				saveSession: () => {},
+				sessionStorage,
 			});
 		},
 		expectTransport(auth) {

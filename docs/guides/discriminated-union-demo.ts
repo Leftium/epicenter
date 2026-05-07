@@ -65,56 +65,56 @@
 
 // Example 1: String discriminants (most common)
 type FileUpload =
-  | {
-      type: "url";
-      url: string;
-    }
-  | {
-      type: "file";
-      file: File;
-    }
-  | {
-      type: "text";
-      text: string;
-    };
+	| {
+			type: 'url';
+			url: string;
+	  }
+	| {
+			type: 'file';
+			file: File;
+	  }
+	| {
+			type: 'text';
+			text: string;
+	  };
 
 function handleUpload(upload: FileUpload) {
-  if (upload.type === "url") {
-    console.log("Fetching from:", upload.url);
-  } else if (upload.type === "file") {
-    console.log("Processing file:", upload.file.name);
-  } else {
-    console.log("Processing text:", upload.text);
-  }
+	if (upload.type === 'url') {
+		console.log('Fetching from:', upload.url);
+	} else if (upload.type === 'file') {
+		console.log('Processing file:', upload.file.name);
+	} else {
+		console.log('Processing text:', upload.text);
+	}
 }
 
 // Example 2: Number discriminants (also works!)
 type HttpResponse =
-  | { status: 200; data: unknown }
-  | { status: 404; error: "Not Found" }
-  | { status: 500; error: "Server Error" };
+	| { status: 200; data: unknown }
+	| { status: 404; error: 'Not Found' }
+	| { status: 500; error: 'Server Error' };
 
 function handleResponse(response: HttpResponse) {
-  if (response.status === 200) {
-    console.log("Data:", response.data);
-  } else if (response.status === 404) {
-    console.log("Not found");
-  } else {
-    console.log("Server error");
-  }
+	if (response.status === 200) {
+		console.log('Data:', response.data);
+	} else if (response.status === 404) {
+		console.log('Not found');
+	} else {
+		console.log('Server error');
+	}
 }
 
 // Example 3: Boolean discriminants (yes, even booleans!)
 type LoadState =
-  | { loaded: true; data: string }
-  | { loaded: false; error: Error };
+	| { loaded: true; data: string }
+	| { loaded: false; error: Error };
 
 function useLoadState(state: LoadState) {
-  if (state.loaded) {
-    console.log("Data:", state.data);
-  } else {
-    console.log("Error:", state.error);
-  }
+	if (state.loaded) {
+		console.log('Data:', state.data);
+	} else {
+		console.log('Error:', state.error);
+	}
 }
 
 /*
@@ -156,33 +156,33 @@ function useLoadState(state: LoadState) {
  */
 
 type RecordingSource =
-  | {
-      blob: Blob;           // blob is Blob (discriminant value #1)
-      blobSize: number;     // Additional properties for this variant
-      blobType: string;
-    }
-  | {
-      blob: null;           // blob is null (discriminant value #2)
-      filePath: string;     // Different properties for this variant
-      fileFormat: string;
-    };
+	| {
+			blob: Blob; // blob is Blob (discriminant value #1)
+			blobSize: number; // Additional properties for this variant
+			blobType: string;
+	  }
+	| {
+			blob: null; // blob is null (discriminant value #2)
+			filePath: string; // Different properties for this variant
+			fileFormat: string;
+	  };
 
 function useRecording(source: RecordingSource) {
-  if (source.blob !== null) {
-    // We have a blob variant
-    console.log("Blob size:", source.blob.size);
-    console.log("Stored size:", source.blobSize);
-    console.log("Type:", source.blobType);
-    // source.filePath doesn't exist here
-    // source.fileFormat doesn't exist here
-  } else {
-    // We have a file path variant
-    console.log("File path:", source.filePath);
-    console.log("Format:", source.fileFormat);
-    // source.blob is null here
-    // source.blobSize doesn't exist here
-    // source.blobType doesn't exist here
-  }
+	if (source.blob !== null) {
+		// We have a blob variant
+		console.log('Blob size:', source.blob.size);
+		console.log('Stored size:', source.blobSize);
+		console.log('Type:', source.blobType);
+		// source.filePath doesn't exist here
+		// source.fileFormat doesn't exist here
+	} else {
+		// We have a file path variant
+		console.log('File path:', source.filePath);
+		console.log('Format:', source.fileFormat);
+		// source.blob is null here
+		// source.blobSize doesn't exist here
+		// source.blobType doesn't exist here
+	}
 }
 
 /*
@@ -209,28 +209,28 @@ function useRecording(source: RecordingSource) {
  */
 
 type Result<T, E> =
-  | { data: T; error: null }      // 'data' is the discriminant: T vs null
-  | { data: null; error: E };     // 'error' is the discriminant: null vs E
-                                  // BOTH are discriminants!
+	| { data: T; error: null } // 'data' is the discriminant: T vs null
+	| { data: null; error: E }; // 'error' is the discriminant: null vs E
+// BOTH are discriminants!
 
 function handleResult<T, E>(result: Result<T, E>) {
-  // Discriminate on error:
-  if (result.error !== null) {
-    console.error("Error:", result.error);
-    return;
-  }
+	// Discriminate on error:
+	if (result.error !== null) {
+		console.error('Error:', result.error);
+		return;
+	}
 
-  // We have data:
-  console.log("Success:", result.data);
+	// We have data:
+	console.log('Success:', result.data);
 }
 
 function handleResult2<T, E>(result: Result<T, E>) {
-  // Or discriminate on data (symmetrical!):
-  if (result.data !== null) {
-    console.log("Success:", result.data);
-  } else {
-    console.error("Error:", result.error);
-  }
+	// Or discriminate on data (symmetrical!):
+	if (result.data !== null) {
+		console.log('Success:', result.data);
+	} else {
+		console.error('Error:', result.error);
+	}
 }
 
 /*
@@ -279,46 +279,46 @@ function handleResult2<T, E>(result: Result<T, E>) {
  */
 
 type Recording =
-  | {
-      // Base properties (always present)
-      id: string;
-      title: string;
-      content: string;
-      // Variant-specific properties (mutually exclusive)
-      audioFileSource: string;
-      blob: null;
-    }
-  | {
-      // Base properties (always present)
-      id: string;
-      title: string;
-      content: string;
-      // Variant-specific properties (mutually exclusive)
-      audioFileSource: null;
-      blob: Blob;
-    };
+	| {
+			// Base properties (always present)
+			id: string;
+			title: string;
+			content: string;
+			// Variant-specific properties (mutually exclusive)
+			audioFileSource: string;
+			blob: null;
+	  }
+	| {
+			// Base properties (always present)
+			id: string;
+			title: string;
+			content: string;
+			// Variant-specific properties (mutually exclusive)
+			audioFileSource: null;
+			blob: Blob;
+	  };
 
 function processRecording(recording: Recording) {
-  // Access base properties freely (always available)
-  console.log("Processing:", recording.title);
-  console.log("ID:", recording.id);
-  console.log("Content:", recording.content);
+	// Access base properties freely (always available)
+	console.log('Processing:', recording.title);
+	console.log('ID:', recording.id);
+	console.log('Content:', recording.content);
 
-  // Discriminate on either variant property:
-  if (recording.audioFileSource !== null) {
-    console.log("Loading from file:", recording.audioFileSource);
-  } else {
-    console.log("Processing blob:", recording.blob.size, "bytes");
-  }
+	// Discriminate on either variant property:
+	if (recording.audioFileSource !== null) {
+		console.log('Loading from file:', recording.audioFileSource);
+	} else {
+		console.log('Processing blob:', recording.blob.size, 'bytes');
+	}
 }
 
 function processRecording2(recording: Recording) {
-  // Or discriminate on the other property:
-  if (recording.blob !== null) {
-    console.log("Blob size:", recording.blob.size);
-  } else {
-    console.log("File path:", recording.audioFileSource);
-  }
+	// Or discriminate on the other property:
+	if (recording.blob !== null) {
+		console.log('Blob size:', recording.blob.size);
+	} else {
+		console.log('File path:', recording.audioFileSource);
+	}
 }
 
 /*
@@ -329,7 +329,6 @@ function processRecording2(recording: Recording) {
  * You could add a type field if you wanted to (Pattern 1). That's a
  * valid choice. This pattern just shows you don't have to.
  */
-
 
 // ============================================================================
 // Breaking the Symmetry: Back to Pattern 2
@@ -343,22 +342,20 @@ function processRecording2(recording: Recording) {
  * discriminate on one property.
  */
 
-type AsymmetricResult<T, E> =
-  | { data: T }
-  | { error: E; data: null };
+type AsymmetricResult<T, E> = { data: T } | { error: E; data: null };
 
 function handleAsymmetric<T, E>(result: AsymmetricResult<T, E>) {
-  // Only error can discriminate (data is present in both variants)
-  if ("error" in result) {
-    console.error("Error:", result.error);
-    // result.data is null here
-  } else {
-    console.log("Success:", result.data);
-    // result.data is T here
-  }
+	// Only error can discriminate (data is present in both variants)
+	if ('error' in result) {
+		console.error('Error:', result.error);
+		// result.data is null here
+	} else {
+		console.log('Success:', result.data);
+		// result.data is T here
+	}
 
-  // You can't discriminate on data (it's present in both variants):
-  // if (result.data !== null) { ... } // Doesn't narrow properly
+	// You can't discriminate on data (it's present in both variants):
+	// if (result.data !== null) { ... } // Doesn't narrow properly
 }
 
 /*

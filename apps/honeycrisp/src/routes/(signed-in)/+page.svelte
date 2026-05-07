@@ -1,13 +1,13 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import CommandPalette from './components/CommandPalette.svelte';
 	import NoteBodyPane from './components/NoteBodyPane.svelte';
 	import NoteList from './components/NoteList.svelte';
 	import HoneycripSidebar from './components/Sidebar.svelte';
-	import { getSignedInSession } from '$lib/session.svelte';
 
-	const { foldersState, notesState, viewState } = getSignedInSession().state;
+	const signedIn = getSignedInSession();
 </script>
 
 <svelte:window
@@ -17,11 +17,11 @@
 
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
-			foldersState.createFolder();
+			signedIn.state.folders.create();
 		} else if (e.key === 'n') {
 			e.preventDefault();
-			const { id } = notesState.createNote(viewState.selectedFolderId);
-			viewState.selectNote(id);
+			const { id } = signedIn.state.notes.create(signedIn.state.view.selectedFolderId);
+			signedIn.state.view.selectNote(id);
 		}
 	}}
 />
@@ -32,25 +32,13 @@
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
 			<Resizable.Pane defaultSize={35} minSize={20}>
-				{#if viewState.isRecentlyDeletedView}
-					<NoteList
-						notes={notesState.deletedNotes}
-						title="Recently Deleted"
-						showControls={false}
-						emptyMessage="No deleted notes"
-					/>
-				{:else}
-					<NoteList
-						notes={viewState.filteredNotes}
-						title={viewState.folderName}
-					/>
-				{/if}
+				<NoteList />
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if viewState.selectedNote && viewState.selectedNoteId}
-					{#key viewState.selectedNoteId}
-						<NoteBodyPane noteId={viewState.selectedNoteId} />
+				{#if signedIn.state.view.selectedNote && signedIn.state.view.selectedNoteId}
+					{#key signedIn.state.view.selectedNoteId}
+						<NoteBodyPane noteId={signedIn.state.view.selectedNoteId} />
 					{/key}
 				{:else}
 					<div class="flex h-full flex-col items-center justify-center gap-2">

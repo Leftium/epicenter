@@ -1,40 +1,41 @@
 /**
  * Reactive view state for Honeycrisp, backed by URL search params.
  *
- * Manages navigation, selection, search, sort, and view mode. Cross-cutting
- * derivations (filteredNotes, folderName, selectedNote) live here because
- * they combine data from multiple domains.
+ * The lens the user is currently looking through. Owns navigation,
+ * selection, search, sort, view mode, and the derived "what notes does
+ * the user see right now" question (`currentNotes` plus its title and
+ * empty-state messaging).
  *
  * State lives in the URL so it's bookmarkable, shareable, and works with
  * browser back/forward. Default values are elided from the URL to keep it
- * clean—`/` means all defaults (all notes, sorted by date edited, no search).
+ * clean: `/` means all defaults (all notes, sorted by date edited, no search).
  *
  * @example
  * ```svelte
  * <script>
  *   import { getSignedInSession } from '$lib/session.svelte';
  *
- *   const { viewState } = getSignedInSession().state;
+ *   const signedIn = getSignedInSession();
  * </script>
  *
- * {#each viewState.filteredNotes as note (note.id)}
+ * {#each signedIn.state.view.currentNotes as note (note.id)}
  *   <p>{note.title}</p>
  * {/each}
- * <p>Current folder: {viewState.folderName}</p>
+ * <p>Current title: {signedIn.state.view.currentTitle}</p>
  * ```
  */
 
-import { searchParams, type SortBy } from './search-params.svelte';
 import type { FolderId, NoteId } from '../honeycrisp/workspace';
-import type { createFoldersState } from './folders.svelte';
-import type { createNotesState } from './notes.svelte';
+import type { createFolders } from './folders.svelte';
+import type { createNotes } from './notes.svelte';
+import { type SortBy, searchParams } from './search-params.svelte';
 
-export function createViewState({
-	foldersState,
-	notesState,
+export function createView({
+	folders,
+	notes,
 }: {
-	foldersState: ReturnType<typeof createFoldersState>;
-	notesState: ReturnType<typeof createNotesState>;
+	folders: ReturnType<typeof createFolders>;
+	notes: ReturnType<typeof createNotes>;
 }) {
 	// ─── Derived State ───────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ export function createViewState({
 		const q = searchParams.q.trim().toLowerCase();
 		const sort = searchParams.sort;
 
-		return notesState.notes
+		return notes.all
 			.filter((n) => folderId === null || n.folderId === folderId)
 			.filter(
 				(n) =>
@@ -60,23 +61,22 @@ export function createViewState({
 			});
 	});
 
-	/** Human-readable name for the current folder (used as NoteList title). */
+	/** Human-readable name for the current folder. Feeds `currentTitle`. */
 	const folderName = $derived.by(() => {
 		const folderId = searchParams.folder;
-		return folderId
-			? (foldersState.get(folderId)?.name ?? 'Notes')
-			: 'All Notes';
+		return folderId ? (folders.get(folderId)?.name ?? 'Notes') : 'All Notes';
 	});
 
 	/** The currently selected note (can be active or deleted). */
 	const selectedNote = $derived.by(() => {
 		const noteId = searchParams.note;
-		return noteId ? (notesState.get(noteId) ?? null) : null;
+		return noteId ? (notes.get(noteId) ?? null) : null;
 	});
 
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
+		[Symbol.dispose]() {},
 		get selectedFolderId(): FolderId | null {
 			return searchParams.folder;
 		},
@@ -95,11 +95,27 @@ export function createViewState({
 		get isRecentlyDeletedView() {
 			return searchParams.isDeletedView;
 		},
-		get folderName() {
-			return folderName;
+
+		/**
+		 * The list of notes the user currently sees: deleted notes when in
+		 * Recently Deleted, otherwise the folder/search-filtered + sorted list.
+		 */
+		get currentNotes() {
+			return searchParams.isDeletedView ? notes.deleted : filteredNotes;
 		},
-		get filteredNotes() {
-			return filteredNotes;
+		/** The header title for the current notes list. */
+		get currentTitle(): string {
+			return searchParams.isDeletedView ? 'Recently Deleted' : folderName;
+		},
+		/** Whether the sort + new-note controls should appear. Off in Recently Deleted. */
+		get currentShowControls(): boolean {
+			return !searchParams.isDeletedView;
+		},
+		/** The empty-state message for the current notes list. */
+		get currentEmptyMessage(): string {
+			return searchParams.isDeletedView
+				? 'No deleted notes'
+				: 'No notes yet. Click + to create one.';
 		},
 
 		/**
@@ -111,10 +127,10 @@ export function createViewState({
 		 *
 		 * @example
 		 * ```typescript
-		 * viewState.selectFolder(folderId);
+		 * signedIn.state.view.selectFolder(folderId);
 		 *
 		 * // Show all notes
-		 * viewState.selectFolder(null);
+		 * signedIn.state.view.selectFolder(null);
 		 * ```
 		 */
 		selectFolder(folderId: FolderId | null) {
@@ -129,7 +145,7 @@ export function createViewState({
 		 *
 		 * @example
 		 * ```typescript
-		 * viewState.selectRecentlyDeleted();
+		 * signedIn.state.view.selectRecentlyDeleted();
 		 * ```
 		 */
 		selectRecentlyDeleted() {
@@ -141,7 +157,7 @@ export function createViewState({
 		 *
 		 * @example
 		 * ```typescript
-		 * viewState.selectNote(noteId);
+		 * signedIn.state.view.selectNote(noteId);
 		 * ```
 		 */
 		selectNote(noteId: NoteId) {
@@ -156,8 +172,8 @@ export function createViewState({
 		 *
 		 * @example
 		 * ```typescript
-		 * viewState.setSortBy('title');
-		 * viewState.setSortBy('dateEdited');
+		 * signedIn.state.view.setSortBy('title');
+		 * signedIn.state.view.setSortBy('dateEdited');
 		 * ```
 		 */
 		setSortBy(value: SortBy) {
@@ -173,8 +189,8 @@ export function createViewState({
 		 *
 		 * @example
 		 * ```typescript
-		 * viewState.setSearchQuery('meeting');
-		 * viewState.setSearchQuery(''); // clear
+		 * signedIn.state.view.setSearchQuery('meeting');
+		 * signedIn.state.view.setSearchQuery(''); // clear
 		 * ```
 		 */
 		setSearchQuery(query: string) {

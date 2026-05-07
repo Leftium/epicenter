@@ -5,24 +5,12 @@
 	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import NoteCard from '../components/NoteCard.svelte';
 	import { getSignedInSession } from '$lib/session.svelte';
 	import { getDateLabel } from '$lib/utils/date';
+	import NoteCard from '../components/NoteCard.svelte';
 	import type { Note } from '../honeycrisp/workspace';
 
-	const { notesState, viewState } = getSignedInSession().state;
-
-	let {
-		notes,
-		title,
-		showControls = true,
-		emptyMessage = 'No notes yet. Click + to create one.',
-	}: {
-		notes: Note[];
-		title: string;
-		showControls?: boolean;
-		emptyMessage?: string;
-	} = $props();
+	const signedIn = getSignedInSession();
 
 	const sortOptions = [
 		{ value: 'dateEdited' as const, label: 'Date Edited' },
@@ -31,6 +19,7 @@
 	];
 
 	const groupedNotes = $derived.by(() => {
+		const notes = signedIn.state.view.currentNotes;
 		const pinned = notes
 			.filter((n) => n.pinned)
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -82,28 +71,30 @@
 		if (flatNoteIds.length === 0) return;
 		e.preventDefault();
 
-		const currentIndex = viewState.selectedNoteId
-			? flatNoteIds.indexOf(viewState.selectedNoteId)
+		const currentIndex = signedIn.state.view.selectedNoteId
+			? flatNoteIds.indexOf(signedIn.state.view.selectedNoteId)
 			: -1;
 
 		if (e.key === 'ArrowDown') {
 			const nextIndex =
 				currentIndex < flatNoteIds.length - 1 ? currentIndex + 1 : 0;
-			viewState.selectNote(flatNoteIds[nextIndex]!);
+			signedIn.state.view.selectNote(flatNoteIds[nextIndex]!);
 		} else {
 			const prevIndex =
 				currentIndex > 0 ? currentIndex - 1 : flatNoteIds.length - 1;
-			viewState.selectNote(flatNoteIds[prevIndex]!);
+			signedIn.state.view.selectNote(flatNoteIds[prevIndex]!);
 		}
 	}}
 	tabindex="-1"
 >
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<div class="flex items-center gap-2">
-			<h2 class="text-sm font-semibold">{title}</h2>
-			<span class="text-xs text-muted-foreground">{notes.length}</span>
+			<h2 class="text-sm font-semibold">{signedIn.state.view.currentTitle}</h2>
+			<span class="text-xs text-muted-foreground"
+				>{signedIn.state.view.currentNotes.length}</span
+			>
 		</div>
-		{#if showControls}
+		{#if signedIn.state.view.currentShowControls}
 			<div class="flex items-center gap-1">
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
@@ -116,9 +107,9 @@
 					<DropdownMenu.Content align="end" class="w-44">
 						{#each sortOptions as option}
 							<DropdownMenu.Item
-								onclick={() => viewState.setSortBy(option.value)}
+								onclick={() => signedIn.state.view.setSortBy(option.value)}
 							>
-								{#if viewState.sortBy === option.value}
+								{#if signedIn.state.view.sortBy === option.value}
 									<CheckIcon class="mr-2 size-4" />
 								{:else}
 									<span class="mr-2 size-4"></span>
@@ -133,8 +124,10 @@
 					size="icon"
 					class="size-7"
 					onclick={() => {
-						const { id } = notesState.createNote(viewState.selectedFolderId);
-						viewState.selectNote(id);
+						const { id } = signedIn.state.notes.create(
+							signedIn.state.view.selectedFolderId,
+						);
+						signedIn.state.view.selectNote(id);
 					}}
 				>
 					<PlusIcon class="size-4" />
@@ -144,11 +137,11 @@
 	</div>
 
 	<ScrollArea.Root class="flex-1">
-		{#if notes.length === 0}
+		{#if signedIn.state.view.currentNotes.length === 0}
 			<div
 				class="flex h-full items-center justify-center p-8 text-center text-muted-foreground"
 			>
-				<p class="text-sm">{emptyMessage}</p>
+				<p class="text-sm">{signedIn.state.view.currentEmptyMessage}</p>
 			</div>
 		{:else}
 			<div class="flex flex-col gap-4 p-2">
@@ -160,8 +153,8 @@
 						{#each group.entries as note (note.id)}
 							<NoteCard
 								{note}
-								isSelected={note.id === viewState.selectedNoteId}
-								onSelect={() => viewState.selectNote(note.id)}
+								isSelected={note.id === signedIn.state.view.selectedNoteId}
+								onSelect={() => signedIn.state.view.selectNote(note.id)}
 							/>
 						{/each}
 					</div>

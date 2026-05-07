@@ -5,20 +5,17 @@ import { createFujiActions, fujiTables } from './workspace.js';
 export const FUJI_WORKSPACE_ID = 'epicenter.fuji';
 
 export function openFuji({
-	encryptionKeys,
+	getKeys,
 	clientID,
 }: {
-	encryptionKeys?: EncryptionKeys;
+	getKeys: () => EncryptionKeys;
 	clientID?: number;
-} = {}) {
+}) {
 	const ydoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
-	const encryption = attachEncryption(ydoc);
+	const encryption = attachEncryption(ydoc, { getKeys });
 	const tables = encryption.attachTables(fujiTables);
 	const kv = encryption.attachKv({});
-	if (encryptionKeys !== undefined) {
-		encryption.applyKeys(encryptionKeys);
-	}
 	const actions = createFujiActions(tables);
 	return {
 		ydoc,

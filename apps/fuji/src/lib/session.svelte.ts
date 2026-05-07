@@ -1,3 +1,4 @@
+import { requireSignedIn } from '@epicenter/auth-svelte';
 import { createSession, type SignedInBase } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { createContext } from 'svelte';
@@ -20,17 +21,19 @@ export type FujiSignedInSession = FujiSignedIn & {
 export const session = createSession<FujiSignedIn>({
 	auth,
 	build: (identity) => {
+		const userId = identity.user.id;
 		const fuji = openFuji({
-			identity,
+			userId,
 			peer: {
 				id: getOrCreateInstallationId(localStorage),
 				name: 'Fuji',
 				platform: 'web',
 			},
 			bearerToken: () => auth.bearerToken,
+			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 		});
 		return {
-			identity,
+			userId,
 			fuji,
 			[Symbol.dispose]() {
 				fuji[Symbol.dispose]();

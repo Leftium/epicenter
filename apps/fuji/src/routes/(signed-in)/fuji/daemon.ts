@@ -38,7 +38,18 @@ export function defineFujiDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
+			const doc = openFujiDoc({
+				clientID: hashClientId(projectDir),
+				getKeys: () => {
+					const state = auth.state;
+					if (state.status !== 'signed-in') {
+						throw new Error(
+							'[fuji-daemon] machine auth is not signed-in; cannot read encryption keys.',
+						);
+					}
+					return state.identity.encryptionKeys;
+				},
+			});
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
 			});

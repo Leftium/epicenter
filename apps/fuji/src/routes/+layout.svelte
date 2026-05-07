@@ -5,7 +5,6 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
-	import SignedInSessionProvider from '$lib/components/SignedInSessionProvider.svelte';
 	import { auth } from '$lib/auth';
 	import { session } from '$lib/session.svelte';
 	import FujiAppShell from './(signed-in)/components/FujiAppShell.svelte';
@@ -37,9 +36,7 @@
 		pending={current.signedIn.fuji.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
-		<SignedInSessionProvider signedIn={current.signedIn}>
-			<FujiAppShell>{@render children?.()}</FujiAppShell>
-		</SignedInSessionProvider>
+		<FujiAppShell>{@render children?.()}</FujiAppShell>
 	</WorkspaceGate>
 {/if}
 

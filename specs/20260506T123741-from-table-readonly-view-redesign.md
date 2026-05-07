@@ -71,9 +71,9 @@ The returned object is structurally a `SvelteMap`, which exposes `.set()`, `.del
 
 This creates problems:
 
-1. **Footgun in the type signature**: `SvelteMap` exposes write methods that, if called, get clobbered by the next observer fire. Audit shows 0 hits across 17 call sites, but the type lies about the contract.
+1. **Footgun in the type signature**: `SvelteMap` exposes write methods that, if called, get clobbered by the next observer fire. Audit shows 0 hits across the current `fromTable` bindings, but the type lies about the contract.
 2. **Mirror tax**: every row is stored twice (Yjs + SvelteMap), reparsed on every Yjs change to refresh the mirror, then read from cache.
-3. **Manual disposal everywhere**: 17 bindings span 16 files, many consumers wire `[Symbol.dispose]()`, several wrapper files plumb HMR teardown via `import.meta.hot.dispose`, and some component-level cleanup remains. This spec must separate cleanup that only detaches the `fromTable` observer from cleanup that owns other resources.
+3. **Manual disposal everywhere**: 16 bindings span 15 app files, many consumers wire `[Symbol.dispose]()`, several wrapper files plumb HMR teardown via `import.meta.hot.dispose`, and some component-level cleanup remains. This spec must separate cleanup that only detaches the `fromTable` observer from cleanup that owns other resources.
 4. **Mirror-cache hazards block lazier disposal**: switching to `createSubscriber` over the SvelteMap-backed design requires clearing the mirror on unsubscribe, which then leaves outside-effect reads seeing an empty cache. The mirror is the obstacle.
 
 ### Desired State

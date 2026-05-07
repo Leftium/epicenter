@@ -78,9 +78,17 @@ async function registerDevice(): Promise<void> {
 void tabManager.idb.whenLoaded.then(registerDevice);
 
 const unsubscribeAuthState = auth.onStateChange((state) => {
-	if (state.status === 'pending') return;
-	if (state.status === 'signed-out') return window.location.reload();
-	if (state.identity.user.id !== userId) return window.location.reload();
+	switch (state.status) {
+		case 'pending':
+			return;
+		case 'signed-out':
+			return window.location.reload();
+		case 'signed-in':
+			if (state.identity.user.id !== userId) window.location.reload();
+			return;
+		default:
+			state satisfies never;
+	}
 });
 
 export async function forgetTabManagerDevice(): Promise<void> {

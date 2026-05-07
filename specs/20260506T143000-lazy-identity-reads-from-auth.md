@@ -383,37 +383,56 @@ What's added: nothing. The factory is strictly smaller.
 
 ```ts
 // apps/fuji/src/lib/session.svelte.ts
-import type { AuthIdentity } from '@epicenter/auth';
-import { createSession, type SignedInBase } from '@epicenter/svelte';
+import { requireSignedIn } from '@epicenter/auth';
+import { createSession, type InferSignedIn } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { auth } from './auth';
-import { openFuji, type Fuji } from '../routes/(signed-in)/fuji/browser';
+import { openFuji } from '../routes/(signed-in)/fuji/browser';
 
-export type FujiSignedIn = SignedInBase & {
-  readonly fuji: Fuji;
-};
+export const session = createSession({
+  auth,
+  build: (identity) => {
+    // Capture exactly one identity field: user.id, used for IDB DB name.
+    // Everything else is read through `auth` at the consumer boundary.
+    const userId = identity.user.id;
+    const fuji = openFuji({
+      userId,
+      peer: {
+        id: getOrCreateInstallationId(localStorage),
+        name: 'Fuji',
+        platform: 'web',
+      },
+      bearerToken: () => auth.bearerToken,
+      encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+    });
+    return {
+      userId,
+      fuji,
+      [Symbol.dispose]() { fuji[Symbol.dispose](); },
+    };
+  },
+});
 
-function buildFujiSignedIn(identity: AuthIdentity): FujiSignedIn {
-  // Capture exactly one identity field: user.id, used for IDB DB name.
-  // Everything else is read lazily through `auth`.
-  const userId = identity.user.id;
-  const fuji = openFuji({
-    userId,
-    peer: {
-      id: getOrCreateInstallationId(localStorage),
-      name: 'Fuji',
-      platform: 'web',
-    },
-    bearerToken: () => auth.bearerToken,
-    encryptionKeys: () => {
-      const state = auth.state;
-      if (state.status !== 'signed-in') {
-        throw new Error(
-          '[fuji] encryption read while not signed-in. ' +
-          'This indicates a workspace operation outlived its signed-in scope.',
-        );
-      }
-      return state.identity.encryptionKeys;
+export type FujiSignedIn = InferSignedIn<typeof session>;
+
+export function getSignedInSession(): FujiSignedIn {
+  const c = session.current;
+  if (c.status !== 'signed-in') {
+    throw new Error(
+      '[fuji] getSignedInSession() called outside the signed-in branch.',
+    );
+  }
+  return c.signedIn;
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => session[Symbol.dispose]());
+}
+```
+
+About 35 lines, slightly more than spec 1's original per-app module because
+the app names its signed-in accessor. The lines are legible: each callback has
+one narrow job.
     },
   });
   return {

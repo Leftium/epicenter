@@ -6,7 +6,7 @@ A typed interface over Y.js for apps that need to evolve their data schema over 
 
 This is a wrapper around Y.js that handles schema versioning. Local-first apps can't run migration scripts, so data has to evolve gracefully. Old data coexists with new. The Workspace API bakes that into the design: define your schemas once with versions, write a migration function, and everything else is typed.
 
-The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, composes `attach*` calls inline, and returns whatever shape your app needs. There is no framework wrapper, just plain functions and the `attach*` primitives. Apps split into `index.ts` (iso doc factory), `<binding>.ts` (env-specific factory adding persistence/sync), and `client.ts` (singleton + lifecycle); see `.claude/skills/workspace-app-layout/SKILL.md`.
+The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, composes `attach*` calls inline, and returns whatever shape your app needs. There is no framework wrapper, just plain functions and the `attach*` primitives. Apps split factory code into `index.ts` (iso doc factory) and `<binding>.ts` (env-specific factory adding persistence/sync). Runtime lifecycle then lives in `session.svelte.ts` for SvelteKit signed-in apps or `client.ts` for singleton clients; see `.claude/skills/workspace-app-layout/SKILL.md`.
 
 ```
 +----------------------------------------------------------------+

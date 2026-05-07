@@ -524,8 +524,10 @@ Did I run the asymmetric wins pass before adding another invariant?
 
 ## Out of scope
 
-- Future encryption key rotation. Same-user rotation already flows through
-  the lazy callback; cross-user transitions reload. Nothing new needed.
+- Future encryption key rotation. Sync can read refreshed bearer tokens on
+  reconnect or request, but already-attached encrypted stores keep the keyring
+  they derived when they were attached. Same-user key rotation needs a
+  re-attach policy if we want it to affect live stores.
 - Wiping IDB on sign-out. Separate concern, separate spec.
 - Token-refresh re-registration heartbeat for tab-manager. If wanted, wire
   to sync.onReconnect explicitly; do not piggyback on auth events.

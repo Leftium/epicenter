@@ -71,9 +71,9 @@ The returned object is structurally a `SvelteMap`, which exposes `.set()`, `.del
 
 This creates problems:
 
-1. **Footgun in the type signature**: `SvelteMap` exposes write methods that, if called, get clobbered by the next observer fire. Audit shows 0 hits across 17 call sites, but the type lies about the contract.
+1. **Footgun in the type signature**: `SvelteMap` exposes write methods that, if called, get clobbered by the next observer fire. Audit shows 0 hits across the current `fromTable` bindings, but the type lies about the contract.
 2. **Mirror tax**: every row is stored twice (Yjs + SvelteMap), reparsed on every Yjs change to refresh the mirror, then read from cache.
-3. **Manual disposal everywhere**: 17 sites wire `[Symbol.dispose]()`, four wrapper files plumb HMR teardown via `import.meta.hot.dispose`, one component uses `onDestroy(...)`. None of this is intrinsic to the read view; it exists only to detach the Yjs observer when the SvelteMap is no longer needed.
+3. **Manual disposal everywhere**: many consumers wire `[Symbol.dispose]()`, several wrapper files plumb HMR teardown via `import.meta.hot.dispose`, and some component-level cleanup remains. This spec must separate cleanup that only detaches the `fromTable` observer from cleanup that owns other resources.
 4. **Mirror-cache hazards block lazier disposal**: switching to `createSubscriber` over the SvelteMap-backed design requires clearing the mirror on unsubscribe, which then leaves outside-effect reads seeing an empty cache. The mirror is the obstacle.
 
 ### Desired State
@@ -139,7 +139,7 @@ export { SvelteDate, SvelteSet, SvelteMap, SvelteURL, SvelteURLSearchParams, Med
 
 `createSubscriber` is the public primitive. The `.current` shape ReactiveValue provides is unnecessary if our methods do their own `subscribe()` calls; templates and `$derived` re-invoke methods on every read, which keeps reactivity live without a getter property.
 
-### Call site audit (17 bindings, 16 files)
+### Call site audit (16 bindings, 15 app files)
 
 | Operation | Count | Where |
 |---|---|---|
@@ -492,7 +492,7 @@ createSubscriber refcounts. Two `$derived` reading `recordings.all` produce one 
 
 ### Call sites (full list at Phase 2)
 
-17 fromTable bindings across 16 files. See per-file checklist above.
+16 `fromTable` bindings across 15 app files. See per-file checklist above.
 
 ### Related specs
 

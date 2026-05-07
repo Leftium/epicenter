@@ -9,10 +9,10 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { getHoneycrispState } from '../state';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import type { Note } from '../honeycrisp/workspace';
 
-	const { foldersState, notesState } = getHoneycrispState();
+	const { foldersState, notesState } = getSignedInSession().state;
 
 	let {
 		note,

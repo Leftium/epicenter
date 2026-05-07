@@ -4,6 +4,7 @@ import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { createContext } from 'svelte';
 import { auth } from './auth';
 import { openHoneycrisp } from '../routes/(signed-in)/honeycrisp/browser';
+import { createHoneycrispState } from '../routes/(signed-in)/state';
 
 export const session = createSession({
 	auth,
@@ -19,10 +20,13 @@ export const session = createSession({
 			bearerToken: () => auth.bearerToken,
 			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 		});
+		const state = createHoneycrispState(honeycrisp);
 		return {
 			userId,
 			honeycrisp,
+			state,
 			[Symbol.dispose]() {
+				state[Symbol.dispose]();
 				honeycrisp[Symbol.dispose]();
 			},
 		};

@@ -5,9 +5,9 @@
 	import NoteBodyPane from './components/NoteBodyPane.svelte';
 	import NoteList from './components/NoteList.svelte';
 	import HoneycripSidebar from './components/Sidebar.svelte';
-	import { getHoneycrispState } from './state';
+	import { getSignedInSession } from '$lib/session.svelte';
 
-	const { foldersState, notesState, viewState } = getHoneycrispState();
+	const { foldersState, notesState, viewState } = getSignedInSession().state;
 </script>
 
 <svelte:window

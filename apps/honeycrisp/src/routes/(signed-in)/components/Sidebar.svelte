@@ -8,10 +8,9 @@
 	import { auth } from '$lib/auth';
 	import { getSignedInSession } from '$lib/session.svelte';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
-	import { getHoneycrispState } from '../state';
 
 	const signedIn = getSignedInSession();
-	const { foldersState, notesState, viewState } = getHoneycrispState();
+	const { foldersState, notesState, viewState } = signedIn.state;
 
 	async function forgetHoneycrispDevice(): Promise<void> {
 		await signedIn.honeycrisp.wipe();

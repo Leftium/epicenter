@@ -3,10 +3,9 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { getSignedInSession } from '$lib/session.svelte';
-	import { getHoneycrispState } from '../state';
 
 	const signedIn = getSignedInSession();
-	const { notesState } = getHoneycrispState();
+	const { notesState } = signedIn.state;
 
 	let { noteId }: { noteId: string } = $props();
 

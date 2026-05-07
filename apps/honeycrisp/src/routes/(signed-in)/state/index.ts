@@ -1,4 +1,3 @@
-import { createContext } from 'svelte';
 import type { Honeycrisp } from '../honeycrisp/browser';
 import { createFoldersState } from './folders.svelte';
 import { createNotesState } from './notes.svelte';
@@ -19,7 +18,3 @@ export function createHoneycrispState(honeycrisp: Honeycrisp) {
 		},
 	};
 }
-
-export type HoneycrispState = ReturnType<typeof createHoneycrispState>;
-export const [getHoneycrispState, setHoneycrispState] =
-	createContext<HoneycrispState>();

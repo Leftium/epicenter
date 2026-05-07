@@ -6,10 +6,10 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { getHoneycrispState } from '../state';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import type { Folder } from '../honeycrisp/workspace';
 
-	const { foldersState, notesState, viewState } = getHoneycrispState();
+	const { foldersState, notesState, viewState } = getSignedInSession().state;
 
 	let { folder }: { folder: Folder } = $props();
 

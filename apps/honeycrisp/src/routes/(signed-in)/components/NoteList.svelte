@@ -6,11 +6,11 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import NoteCard from '../components/NoteCard.svelte';
-	import { getHoneycrispState } from '../state';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import { getDateLabel } from '$lib/utils/date';
 	import type { Note } from '../honeycrisp/workspace';
 
-	const { notesState, viewState } = getHoneycrispState();
+	const { notesState, viewState } = getSignedInSession().state;
 
 	let {
 		notes,

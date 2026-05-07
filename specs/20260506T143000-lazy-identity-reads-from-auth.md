@@ -512,10 +512,10 @@ Cold boot, signed-in user
 3. unsubscribe = auth.onStateChange(reconcile).
 4. Initial replay: reconcile(auth.state). If signed-in, build(identity)
    captures userId and constructs fuji with lazy callbacks.
-5. +layout: signed-in branch renders.
+5. +layout: signed-in branch reads getSignedInSession().
 6. WorkspaceGate awaits fuji.idb.whenLoaded.
-7. SignedInSessionProvider mounts; descendants read both
-   getSignedInSession() and auth.state for identity.
+7. Descendants receive the signed-in session through ordinary Svelte
+   component flow and read auth.state directly for live identity fields.
 
 Logout
 ──────

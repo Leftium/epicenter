@@ -28,6 +28,7 @@ type BetterAuthClientOptions = {
 	baseURL?: string;
 	basePath?: string;
 	fetchOptions?: {
+		credentials?: 'include' | 'omit' | 'same-origin';
 		auth?: {
 			type: 'Bearer';
 			token: () => string | undefined;
@@ -364,6 +365,14 @@ test('bearer fetch sends Authorization and omits cookies', async () => {
 	expect(new Headers(init?.headers).get('Authorization')).toBe(
 		'Bearer token-1',
 	);
+	auth[Symbol.dispose]();
+});
+
+test('bearer Better Auth client omits cookies internally', async () => {
+	const setup = createStorage({ get: () => session() });
+	const auth = createTestAuth(setup);
+
+	expect(betterAuthClientOptions?.fetchOptions?.credentials).toBe('omit');
 	auth[Symbol.dispose]();
 });
 

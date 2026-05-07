@@ -182,6 +182,7 @@ export function createBearerAuth({
 		baseURL,
 		initialIdentity: identityFromSession(session),
 		fetchOptions: {
+			credentials: 'omit',
 			auth: {
 				type: 'Bearer',
 				token: () => session?.token,

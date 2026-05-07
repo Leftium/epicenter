@@ -292,7 +292,7 @@ export function attachTable<
 ): Table<InferTableRow<TTableDefinition>> {
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 	const ykv = new YKeyValueLww<unknown>(yarray);
-	ydoc.on('destroy', () => ykv.dispose());
+	ydoc.once('destroy', () => ykv.dispose());
 	return createTable(ykv, definition, name);
 }
 
@@ -306,7 +306,7 @@ export function attachReadonlyTable<
 ): ReadonlyTable<InferTableRow<TTableDefinition>> {
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 	const ykv = new YKeyValueLww<unknown>(yarray);
-	ydoc.on('destroy', () => ykv.dispose());
+	ydoc.once('destroy', () => ykv.dispose());
 	return createReadonlyTable(ykv, definition, name);
 }
 

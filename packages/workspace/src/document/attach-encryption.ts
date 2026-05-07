@@ -179,7 +179,7 @@ export function attachEncryption(
 	const stores: AnyEncryptedStore[] = [];
 	const workspaceId = ydoc.guid;
 
-	ydoc.on('destroy', () => {
+	ydoc.once('destroy', () => {
 		for (const store of stores) store.dispose();
 	});
 

@@ -32,7 +32,7 @@ export type Session<TSignedIn> =
 	| { status: 'signed-in'; signedIn: TSignedIn };
 
 export type SignedInBase = {
-	readonly userId: string;
+	userId: string;
 } & Disposable;
 
 export function createSession<TSignedIn extends SignedInBase>({

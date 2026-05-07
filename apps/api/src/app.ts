@@ -26,6 +26,7 @@ import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
+import { TRUSTED_ORIGINS } from './trusted-origins';
 
 export { DocumentRoom } from './document-room';
 // Re-export so wrangler types generates DurableObjectNamespace<WorkspaceRoom|DocumentRoom>
@@ -96,24 +97,13 @@ export type Env = {
 
 const factory = createFactory<Env>({
 	initApp: (app) => {
-		// CORS — skip WebSocket upgrades (101 response headers are immutable).
-		// Allowed origins derived from APPS so adding an app automatically allows it.
-		const allowedOrigins = new Set([
-			'tauri://localhost',
-			...Object.values(APPS).flatMap((a) => [
-				...a.urls,
-				`http://localhost:${a.port}`,
-			]),
-		]);
+		// CORS: skip WebSocket upgrades (101 response headers are immutable).
+		// Trusted origins live in `./trusted-origins.ts`, shared with Better Auth.
 		app.use('*', async (c, next) => {
 			if (c.req.header('upgrade') === 'websocket') return next();
 			return cors({
-				origin: (origin) => {
-					if (!origin) return origin;
-					if (allowedOrigins.has(origin)) return origin;
-					if (origin.startsWith('chrome-extension://')) return origin;
-					return undefined;
-				},
+				origin: (origin) =>
+					origin && TRUSTED_ORIGINS.includes(origin) ? origin : undefined,
 				credentials: true,
 				allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
 				allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -121,7 +111,7 @@ const factory = createFactory<Env>({
 			})(c, next);
 		});
 
-		// Layer 1: Database — per-request pg.Client lifecycle (connect/end).
+		// Layer 1: Database: per-request pg.Client lifecycle (connect/end).
 		// Uses Client (not Pool) because Hyperdrive IS the connection pool.
 		app.use('*', async (c, next) => {
 			// 1. Create a fresh pg connection and afterResponse queue for this request.
@@ -139,19 +129,19 @@ const factory = createFactory<Env>({
 				//    promises (e.g. upsertDoInstance) into afterResponse.
 				await next();
 			} finally {
-				// 4. The response has already left — Hono streams it during `await next()`.
+				// 4. The response has already left; Hono streams it during `await next()`.
 				//    But the fire-and-forget promises are still in-flight. CF Workers
 				//    would kill the isolate as soon as the response finishes, so we use
 				//    `waitUntil()` to keep it alive. `drain()` settles every queued
 				//    promise via `Promise.allSettled`, then `.then()` closes the pg
-				//    connection — guaranteeing the client outlives all its queries.
+				//    connection, guaranteeing the client outlives all its queries.
 				c.executionCtx.waitUntil(
 					afterResponse.drain().then(() => client.end()),
 				);
 			}
 		});
 
-		// Layer 2: Auth — pure, reads db from context.
+		// Layer 2: Auth: pure, reads db from context.
 		// Wrangler dev uses the custom domain from routes config as the Host header,
 		// producing http://api.epicenter.so (no TLS). Detect this and use localhost.
 		app.use('*', async (c, next) => {
@@ -182,7 +172,7 @@ app.get(
 	(c) => c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
-// Auth pages — server-rendered Hono JSX
+// Auth pages: server-rendered Hono JSX
 app.get('/sign-in', async (c) => {
 	const session = await c.var.auth.api.getSession({
 		headers: c.req.raw.headers,
@@ -198,7 +188,7 @@ app.get('/sign-in', async (c) => {
 		if (callbackURL?.startsWith('/')) {
 			return c.redirect(callbackURL);
 		}
-		// Already signed in, no redirect needed — show signed-in confirmation
+		// Already signed in, no redirect needed, show signed-in confirmation
 		const displayName = session.user.name ?? session.user.email;
 		return c.html(
 			renderSignedInPage({ displayName, email: session.user.email }),
@@ -272,7 +262,7 @@ app.get(
 	(c) => oauthProviderAuthServerMetadata(c.var.auth)(c.req.raw),
 );
 
-// Asset reads — unauthenticated (unguessable URL is the credential).
+// Asset reads: unauthenticated (unguessable URL is the credential).
 // Must be mounted BEFORE requireSession so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
 
@@ -325,10 +315,10 @@ app.use('/ai/*', async (c, next) => {
 	await next();
 });
 
-// Billing — redirect legacy page to dashboard SPA
+// Billing: redirect legacy page to dashboard SPA
 app.get('/billing', (c) => c.redirect('/dashboard'));
 
-// Dashboard SPA — static assets served by Workers Static Assets (wrangler.jsonc).
+// Dashboard SPA: static assets served by Workers Static Assets (wrangler.jsonc).
 // This catch-all handles SPA client-side routing: when no static file matches,
 // serve index.html so the SvelteKit router takes over.
 app.get('/dashboard/*', async (c) => {
@@ -344,10 +334,10 @@ app.get('/dashboard', async (c) => {
 	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
 });
 
-// Billing API routes — typed JSON routes consumed by the dashboard SPA via hc<AppType>
+// Billing API routes: typed JSON routes consumed by the dashboard SPA via hc<AppType>
 app.route('/api/billing', billingRoutes);
 
-// Asset routes — upload + delete (authed, mounted after requireSession)
+// Asset routes: upload + delete (authed, mounted after requireSession)
 app.route('/api/assets', assetAuthedRoutes);
 
 // AI chat
@@ -361,7 +351,7 @@ app.post(
 );
 
 // ---------------------------------------------------------------------------
-// Workspace routes — one WorkspaceRoom DO per workspace (gc: true)
+// Workspace routes: one WorkspaceRoom DO per workspace (gc: true)
 // ---------------------------------------------------------------------------
 
 /**
@@ -388,7 +378,7 @@ app.post(
  * name stays the same, an ACL table grants access to other users, and auth
  * middleware checks "is this user the owner OR in the ACL?"
  *
- * Multi-tenant cloud isolation (if needed later) is a platform-layer concern—
+ * Multi-tenant cloud isolation (if needed later) is a platform-layer concern,
  * a tenant prefix added at the routing layer, not embedded in the app's data model.
  */
 
@@ -416,7 +406,7 @@ function getDocumentStub(c: Context<Env>) {
  * Records that a user accessed a DO, optionally updating storage bytes.
  * Uses INSERT ON CONFLICT so the first access creates the row and
  * subsequent accesses update `lastAccessedAt` (and `storageBytes` when
- * provided). Errors are caught and logged—this is best-effort telemetry,
+ * provided). Errors are caught and logged, this is best-effort telemetry,
  * not billing authority.
  */
 function upsertDoInstance(
@@ -524,7 +514,7 @@ app.post(
 );
 
 // ---------------------------------------------------------------------------
-// Document routes — one DocumentRoom DO per document (gc: false, snapshots)
+// Document routes: one DocumentRoom DO per document (gc: false, snapshots)
 // ---------------------------------------------------------------------------
 
 app.get(

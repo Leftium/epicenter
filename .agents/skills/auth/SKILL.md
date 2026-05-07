@@ -95,11 +95,9 @@ Identity-bound resources are read lazily through callbacks: workspaces don't hol
 
 ```ts
 import { requireSignedIn } from '@epicenter/auth';
-import { createSession, type SignedInBase } from '@epicenter/svelte';
+import { createSession, type InferSignedIn } from '@epicenter/svelte';
 
-type FujiSignedIn = SignedInBase & { readonly fuji: Fuji };
-
-export const session = createSession<FujiSignedIn>({
+export const session = createSession({
 	auth,
 	build: (identity) => {
 		const userId = identity.user.id;
@@ -116,9 +114,22 @@ export const session = createSession<FujiSignedIn>({
 		};
 	},
 });
+
+export type FujiSignedIn = InferSignedIn<typeof session>;
+
+/** Throws if invoked outside the signed-in branch. */
+export function getSignedInSession(): FujiSignedIn {
+	const c = session.current;
+	if (c.status !== 'signed-in') {
+		throw new Error('[fuji] getSignedInSession() called outside the signed-in branch.');
+	}
+	return c.signedIn;
+}
 ```
 
 `createSession` reconciles `auth.state`: a sign-out disposes the workspace, a same-user identity update is a no-op (the lazy callback observes the change at the next read), and a different-user transition disposes the workspace and reloads. Each `attachSync` still receives `bearerToken: () => auth.bearerToken`. For destructive reset (wipe local data and reload), call `workspace.wipe()` and `location.reload()` inside the consumer that triggers it; there is no terminal callback on the session itself.
+
+Descendant pages call `getSignedInSession()` directly: bind once at script init, dot-access fields. No context layer, no Provider component, no install step. The throw keeps the precondition honest at the call site.
 
 Browser apps that do not use `createSession` inline the meaningful auth transitions:
 

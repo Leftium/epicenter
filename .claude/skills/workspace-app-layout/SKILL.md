@@ -131,21 +131,17 @@ export function openZhongwen() {
 }
 ```
 
-### `client.ts` — running singleton + auth + device + lifecycle
+### `session.svelte.ts` — lifecycle + signed-in helper
 
 ```ts
 // apps/fuji/src/lib/session.svelte.ts
 import { requireSignedIn } from '@epicenter/auth';
-import { createSession, type SignedInBase } from '@epicenter/svelte';
+import { createSession, type InferSignedIn } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
-import { type Fuji, openFuji } from '../routes/(signed-in)/fuji/browser';
+import { openFuji } from '../routes/(signed-in)/fuji/browser';
 import { auth } from './auth';
 
-export type FujiSignedIn = SignedInBase & {
-	readonly fuji: Fuji;
-};
-
-export const session = createSession<FujiSignedIn>({
+export const session = createSession({
 	auth,
 	build: (identity) => {
 		const userId = identity.user.id;
@@ -169,14 +165,29 @@ export const session = createSession<FujiSignedIn>({
 	},
 });
 
+export type FujiSignedIn = InferSignedIn<typeof session>;
+
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());
+}
+
+/**
+ * Returns the live signed-in session. Throws if invoked outside the
+ * signed-in branch. Pages mounted under the layout's signed-in gate bind
+ * once at script init and dot-access fields.
+ */
+export function getSignedInSession(): FujiSignedIn {
+	const c = session.current;
+	if (c.status !== 'signed-in') {
+		throw new Error('[fuji] getSignedInSession() called outside the signed-in branch.');
+	}
+	return c.signedIn;
 }
 ```
 
 `createSession` reconciles `auth.state` against the live workspace: a sign-out disposes it, a same-user identity update is a no-op (the lazy `encryptionKeys` callback observes the change at the next read), and a different-user transition disposes it and reloads the page. There is no `applyKeys` mutation hook on the workspace; `userId` is captured once because IDB and BroadcastChannel keys are immutable for the workspace's lifetime, while `encryptionKeys` is a callback so same-user key rotation lands without a workspace-level event.
 
-`client.ts` itself, in this layout, becomes the place where `auth` is constructed. The session module imports `auth` from there, and the per-route layout provides `session.current` to descendants.
+Descendant pages call `getSignedInSession()` directly: bind once at script init, dot-access fields. No context layer, no Provider component, no install step. The throw keeps the precondition honest at the call site.
 
 For tab-manager (async chrome.storage), the descriptor is built as a
 Promise — the factory accepts `Promise<DeviceDescriptor<DeviceId>>` and

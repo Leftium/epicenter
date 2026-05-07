@@ -46,7 +46,7 @@ export type SimpleStorage = {
   setItem(key: string, value: string): void;
 };
 
-const KEY = 'epicenter:deviceId';
+const KEY = 'epicenter.device.id';
 
 /** Read or create a per-installation deviceId nanoid. Idempotent. */
 export function getOrCreateDeviceId(storage: SimpleStorage): string {

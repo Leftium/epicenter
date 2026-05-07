@@ -41,7 +41,7 @@ export function createStorageState<T, TSchema extends StandardSchemaV1>(
 Called once at module scope, exported as a constant:
 
 ```typescript
-export const serverUrl = createStorageState('local:serverUrl', {
+export const serverUrl = createStorageState('local:server.url', {
 	fallback: 'https://api.epicenter.so',
 	schema: type('string'),
 });

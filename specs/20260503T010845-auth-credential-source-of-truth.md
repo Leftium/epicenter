@@ -231,7 +231,7 @@ Browser apps persist that shape:
 
 ```ts
 const session = createPersistedState({
-	key: 'fuji:authSession',
+	key: 'fuji.auth.session',
 	schema: AuthSession.or('null'),
 	defaultValue: null,
 });

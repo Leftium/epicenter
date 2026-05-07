@@ -15,7 +15,7 @@ Add per-provider BYOK API key storage + a minimal settings UI in the sidebar. Wh
 ## Todo
 
 - [ ] **1. Add API key storage** — `apps/tab-manager/src/lib/state/settings.ts`
-  - Add `storage.defineItem<Record<string, string>>('local:providerApiKeys', { fallback: {} })` using wxt storage
+  - Add `storage.defineItem<Record<string, string>>('local:provider.api.keys', { fallback: {} })` using wxt storage
   - Export `getApiKey(provider): Promise<string | undefined>` and `setApiKey(provider, key): Promise<void>`
   - Simple read/write — no versioning needed for v1
 

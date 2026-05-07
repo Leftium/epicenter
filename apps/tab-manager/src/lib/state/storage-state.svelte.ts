@@ -15,7 +15,7 @@
  * import { type } from 'arktype';
  * import { createStorageState } from './storage-state.svelte';
  *
- * export const serverUrl = createStorageState('local:serverUrl', {
+ * export const serverUrl = createStorageState('local:server.url', {
  *   fallback: 'https://api.epicenter.so',
  *   schema: type('string'),
  * });

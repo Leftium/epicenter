@@ -297,7 +297,7 @@ Keep browser apps unchanged unless the normalizer moves:
 
 ```ts
 const session = createPersistedState({
-	key: 'fuji:authSession',
+	key: 'fuji.auth.session',
 	schema: AuthSession.or('null'),
 	defaultValue: null,
 });

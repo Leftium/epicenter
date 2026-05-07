@@ -17,7 +17,7 @@ const GOOGLE_CLIENT_ID =
 /**
  * Persisted bearer session in `chrome.storage.local`.
  */
-export const authSessionStorage = createStorageState('local:authSession', {
+export const authSessionStorage = createStorageState('local:auth.session', {
 	fallback: null,
 	schema: BearerSession.or('null'),
 });

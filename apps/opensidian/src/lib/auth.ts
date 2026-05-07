@@ -5,7 +5,7 @@ import { createPersistedState } from '@epicenter/svelte';
 export const auth = createBearerAuth({
 	baseURL: APP_URLS.API,
 	sessionStorage: createPersistedState({
-		key: 'opensidian:authSession',
+		key: 'opensidian.auth.session',
 		schema: BearerSession.or('null'),
 		defaultValue: null,
 	}),

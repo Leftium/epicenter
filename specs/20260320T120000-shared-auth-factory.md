@@ -26,7 +26,7 @@ Tab-manager has a full auth implementation in `auth.svelte.ts`, but it's coupled
 
 ```typescript
 // Token storage — chrome.storage via WXT
-const authToken = createStorageState('local:authToken', { ... });
+const authToken = createStorageState('local:auth.token', { ... });
 
 // Google OAuth — chrome.identity API
 const responseUrl = await browser.identity.launchWebAuthFlow({ ... });

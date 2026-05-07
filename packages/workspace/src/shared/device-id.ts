@@ -19,7 +19,7 @@ export type AsyncStorage = {
 	setItem(key: string, value: string): Promise<void>;
 };
 
-const KEY = 'epicenter:installationId';
+const KEY = 'epicenter.installation.id';
 
 export function getOrCreateInstallationId<T extends string = string>(
 	storage: SimpleStorage,

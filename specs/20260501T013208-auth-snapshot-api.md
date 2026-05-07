@@ -675,7 +675,7 @@ Current:
 
 ```ts
 const session = createPersistedState({
-	key: 'fuji:authSession',
+	key: 'fuji.auth.session',
 	schema: Session.or('null'),
 	defaultValue: null,
 });
@@ -690,7 +690,7 @@ Target:
 
 ```ts
 const session = createPersistedState({
-	key: 'fuji:authSession',
+	key: 'fuji.auth.session',
 	schema: Session.or('null'),
 	defaultValue: null,
 });
@@ -704,7 +704,7 @@ export const auth = createAuthClient({
 For tab-manager, remove the top-level await:
 
 ```ts
-const session = createStorageState('local:authSession', {
+const session = createStorageState('local:auth.session', {
 	fallback: null,
 	schema: Session.or('null'),
 });

@@ -31,7 +31,7 @@ The ideal browser call site becomes one expression:
 export const auth = createBearerAuth({
 	baseURL: APP_URLS.API,
 	sessionStorage: createPersistedState({
-		key: 'opensidian:authSession',
+		key: 'opensidian.auth.session',
 		schema: BearerSession.or('null'),
 		defaultValue: null,
 	}),
@@ -47,7 +47,7 @@ separate options:
 
 ```ts
 const authSession = createPersistedState({
-	key: 'opensidian:authSession',
+	key: 'opensidian.auth.session',
 	schema: BearerSession.or('null'),
 	defaultValue: null,
 });
@@ -93,7 +93,7 @@ The caller passes durable session storage as one thing:
 export const auth = createBearerAuth({
 	baseURL: APP_URLS.API,
 	sessionStorage: createPersistedState({
-		key: 'opensidian:authSession',
+		key: 'opensidian.auth.session',
 		schema: BearerSession.or('null'),
 		defaultValue: null,
 	}),
@@ -341,7 +341,7 @@ export function createBearerAuth(config: CreateBearerAuthConfig): AuthClient {
 +++ apps/opensidian/src/lib/auth.ts
 @@
 -const authSession = createPersistedState({
--  key: 'opensidian:authSession',
+-  key: 'opensidian.auth.session',
 -  schema: BearerSession.or('null'),
 -  defaultValue: null,
 -});
@@ -351,7 +351,7 @@ export function createBearerAuth(config: CreateBearerAuthConfig): AuthClient {
 -  initialSession: authSession.get(),
 -  saveSession: (next) => authSession.set(next),
 +  sessionStorage: createPersistedState({
-+    key: 'opensidian:authSession',
++    key: 'opensidian.auth.session',
 +    schema: BearerSession.or('null'),
 +    defaultValue: null,
 +  }),

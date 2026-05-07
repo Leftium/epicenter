@@ -4,11 +4,12 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SquarePenIcon from '@lucide/svelte/icons/square-pen';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { aiChatState } from '$lib/chat/chat-state.svelte';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import ChatInput from './ChatInput.svelte';
 	import MessageList from './MessageList.svelte';
 
-	const active = $derived(aiChatState.active);
+	const signedIn = getSignedInSession();
+	const active = $derived(signedIn.state.chat.active);
 
 	/** Tracks which error message was dismissed so it doesn't reappear. */
 	let dismissedError = $state<string | null>(null);
@@ -26,7 +27,7 @@
 			variant="ghost"
 			size="sm"
 			onclick={() => {
-				aiChatState.newConversation();
+				signedIn.state.chat.newConversation();
 				dismissedError = null;
 			}}
 		>

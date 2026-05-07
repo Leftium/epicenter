@@ -1,9 +1,9 @@
 import { requireSignedIn } from '@epicenter/auth';
 import { createSession, type InferSignedIn } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
-import { auth } from './auth';
 import { openHoneycrisp } from '../routes/(signed-in)/honeycrisp/browser';
 import { createHoneycrispState } from '../routes/(signed-in)/state';
+import { auth } from './auth';
 
 export const session = createSession({
 	auth,
@@ -59,7 +59,7 @@ if (import.meta.hot) {
  * the codebase rule for reactive accessors (memory:
  * feedback_no_destructure_reactive.md).
  */
-export function getSignedInSession(): HoneycrispSignedIn {
+export function getSignedInSession() {
 	const c = session.current;
 	if (c.status !== 'signed-in') {
 		throw new Error(

@@ -1,6 +1,6 @@
 import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
-import { opensidian } from '$lib/opensidian/client';
+import type { OpensidianWorkspace } from '$lib/opensidian/browser';
 
 export type MatchSnippet = {
 	snippet: string;
@@ -16,7 +16,11 @@ export type FileGroup = {
 
 const PAGE_SIZE = 50;
 
-function createSidebarSearchState() {
+export function createSidebarSearchState({
+	workspace,
+}: {
+	workspace: OpensidianWorkspace;
+}) {
 	// Persisted preferences
 	const caseSensitiveState = createPersistedState({
 		key: 'opensidian.sidebar-search.case-sensitive',
@@ -99,7 +103,7 @@ function createSidebarSearchState() {
 					(r) => re.test(r.snippet) || re.test(r.name),
 				);
 			} catch {
-				// Invalid regex — return unfiltered (FTS already matched)
+				// Invalid regex: return unfiltered (FTS already matched)
 			}
 		}
 
@@ -107,7 +111,7 @@ function createSidebarSearchState() {
 	}
 
 	async function executeSearch(query: string, offset: number) {
-		const client = opensidian.sqliteIndex.client;
+		const client = workspace.sqliteIndex.client;
 		const trimmed = query.trim();
 
 		try {
@@ -143,10 +147,14 @@ function createSidebarSearchState() {
 				regexState.current,
 			);
 
-			return { rows: filtered, hasMore: hasMoreResults };
+			return {
+				rows: filtered,
+				hasMore: hasMoreResults,
+				consumedRows: pageRows.length,
+			};
 		} catch {
 			// Invalid FTS5 query syntax
-			return { rows: [], hasMore: false };
+			return { rows: [], hasMore: false, consumedRows: 0 };
 		}
 	}
 
@@ -174,7 +182,7 @@ function createSidebarSearchState() {
 			totalResults = result.rows.length;
 			totalFiles = groups.length;
 			hasMore = result.hasMore;
-			currentOffset = result.rows.length;
+			currentOffset = result.consumedRows;
 			isSearching = false;
 		}, 200);
 	}
@@ -263,21 +271,12 @@ function createSidebarSearchState() {
 			totalResults += result.rows.length;
 			totalFiles = fileGroups.length;
 			hasMore = result.hasMore;
-			currentOffset += result.rows.length;
+			currentOffset += result.consumedRows;
 			isSearching = false;
 		},
 
-		reset() {
-			searchQuery = '';
-			fileGroups = [];
-			totalResults = 0;
-			totalFiles = 0;
-			hasMore = false;
-			isSearching = false;
-			currentOffset = 0;
+		[Symbol.dispose]() {
 			if (debounceTimer) clearTimeout(debounceTimer);
 		},
 	};
 }
-
-export const sidebarSearchState = createSidebarSearchState();

@@ -17,7 +17,8 @@ export const EncryptionKey = type({
  * Non-empty keyring of user encryption keys.
  *
  * New writes use the highest version after workspace activation. Older entries
- * stay in the keyring so existing blobs can be decrypted and lazily upgraded.
+ * stay in the keyring so activation can decrypt old-version blobs and rewrite
+ * them under the current version.
  */
 export const EncryptionKeys = type([
 	EncryptionKey,

@@ -12,6 +12,12 @@ metadata:
 
 - [TanStack Query](https://github.com/tanstack/query) — Async state management for data fetching
 
+## Upstream Grounding
+
+When TanStack Query behavior, Svelte adapter types, cache invalidation semantics, optimistic updates, or mutation lifecycle callbacks affect correctness, ask DeepWiki a narrow question against `tanstack/query` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+
+Skip DeepWiki for stable basics and repo-local patterns already documented below.
+
 The query layer is the reactive bridge between UI components and the service layer. It wraps pure service functions with caching, reactivity, and state management using TanStack Query and WellCrafted factories.
 
 > **Related Skills**: See `services-layer` for the service layer these queries consume. See `svelte` for Svelte-specific TanStack Query patterns. See `error-handling` for toast-on-error patterns—how errors from Results surface to users via `toastOnError` and `extractErrorMessage`.

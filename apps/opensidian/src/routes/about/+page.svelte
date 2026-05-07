@@ -80,16 +80,14 @@ export function openOpensidian() {
     ydoc, tables, idb, sqliteIndex, fs,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
-}
-
-export const opensidian = openOpensidian();`;
+}`;
 
 	const codeAnnotations = [
 		{
 			id: 'open-opensidian',
 			line: 'export function openOpensidian() { ... }',
 			explanation:
-				'A plain factory: constructs a Y.Doc and composes attachments inline. The module-scope `opensidian` singleton is the running thing; the factory exists so tests, codegen, and tooling can build a fresh doc without lifecycle.',
+				'A plain factory: constructs a Y.Doc and composes attachments inline. The signed-in session owns the live workspace, so tests, codegen, and tooling can still build a fresh one without browser UI state.',
 		},
 		{
 			id: 'attach-tables',
@@ -111,7 +109,7 @@ export const opensidian = openOpensidian();`;
 		},
 		{
 			id: 'filesystem',
-			line: 'attachYjsFileSystem(workspace.tables.files, fileContent)',
+			line: 'attachYjsFileSystem(tables.files, fileContent)',
 			explanation:
 				'Wraps the raw table and content operations into a familiar filesystem interface: writeFile, mkdir, rm, mv.',
 		},

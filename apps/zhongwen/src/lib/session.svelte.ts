@@ -1,7 +1,7 @@
 import { requireSignedIn } from '@epicenter/auth';
 import { createSession, type InferSignedIn } from '@epicenter/svelte';
-import { auth } from './auth';
 import { openZhongwen } from '../routes/(signed-in)/zhongwen/browser';
+import { auth } from './auth';
 
 export const session = createSession({
 	auth,
@@ -48,7 +48,7 @@ if (import.meta.hot) {
  * the codebase rule for reactive accessors (memory:
  * feedback_no_destructure_reactive.md).
  */
-export function getSignedInSession(): ZhongwenSignedIn {
+export function getSignedInSession() {
 	const c = session.current;
 	if (c.status !== 'signed-in') {
 		throw new Error(

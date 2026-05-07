@@ -3,27 +3,34 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Loading } from '@epicenter/ui/loading';
-	import { opensidian } from '$lib/opensidian/client';
-	import { fsState } from '$lib/state/fs-state.svelte';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
 	import { wikilinkAutocomplete } from './extensions/wikilink-autocomplete';
+
+	const signedIn = getSignedInSession();
 
 	let {
 		fileId,
 	}: {
 		fileId: FileId;
 	} = $props();
-	const filename = $derived(fsState.getFile(fileId)?.name ?? 'untitled.md');
+	const filename = $derived(
+		signedIn.state.files.getFile(fileId)?.name ?? 'untitled.md',
+	);
 	const isMarkdown = $derived(
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	const doc = fromDisposableCache(opensidian.fileContentDocs, () => fileId);
+	const doc = fromDisposableCache(
+		signedIn.workspace.fileContentDocs,
+		() => fileId,
+	);
 
 	const sharedLinkDecorations = linkDecorations({
-		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
-		resolveTitle: (ref) => fsState.getFile(ref.id as FileId)?.name ?? null,
+		onNavigate: (ref) => signedIn.state.files.selectFile(ref.id as FileId),
+		resolveTitle: (ref) =>
+			signedIn.state.files.getFile(ref.id as FileId)?.name ?? null,
 	});
 
 	const extensions = $derived(
@@ -31,10 +38,10 @@
 			? [
 					sharedLinkDecorations,
 					wikilinkAutocomplete({
-						workspaceId: opensidian.ydoc.guid,
+						workspaceId: signedIn.workspace.ydoc.guid,
 						tableName: 'files',
 						getFiles: () =>
-							opensidian.tables.files
+							signedIn.workspace.tables.files
 								.getAllValid()
 								.filter((r) => r.type === 'file')
 								.map((r) => ({ id: r.id, name: r.name })),

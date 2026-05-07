@@ -8,6 +8,9 @@ const config = {
 		adapter: staticAdapter({
 			fallback: 'index.html',
 		}),
+		alias: {
+			'#': '../../packages/ui/src',
+		},
 	},
 };
 

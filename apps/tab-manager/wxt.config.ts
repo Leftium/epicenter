@@ -23,6 +23,7 @@ export default defineConfig({
 		resolve: {
 			dedupe: ['yjs'],
 			alias: {
+				'#': resolve(__dirname, '../../packages/ui/src'),
 				$lib: resolve(__dirname, 'src/lib'),
 			},
 		},

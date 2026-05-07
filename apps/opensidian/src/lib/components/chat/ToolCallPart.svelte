@@ -5,7 +5,7 @@
 	import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import type { WorkspaceTools } from '$lib/opensidian/client';
+	import type { WorkspaceTools } from '$lib/chat/chat-state.svelte';
 
 	let {
 		part,
@@ -55,8 +55,8 @@
 		{:else}
 			<WrenchIcon class="size-3 text-muted-foreground" />
 		{/if}
-		<Badge variant={isApprovalRequested ? 'secondary' : badgeVariant}>
-			{displayName}{isRunning && !isApprovalRequested ? '…' : ''}
+		<Badge variant={isApprovalRequested ? 'secondary': badgeVariant}>
+			{displayName}{isRunning && !isApprovalRequested ? '…': ''}
 		</Badge>
 	</div>
 

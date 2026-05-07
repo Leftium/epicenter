@@ -100,7 +100,7 @@ Both are real gaps. Storage-level encryption closes them.
 | Wire format | Clean break | `[format=1][keyVersion][24 bytes nonce][ciphertext+tag]` | Format byte for future changes. Key version lets old local updates remain readable across key rotation. Nonce per write so identical updates are not detectable. AEAD tag inline. |
 | Required-keys ordering | Clean break | Throw if `applyKeys` has not run when `attachEncryptedIndexedDb` is called | Loud failure at construction. The factory in `createDisposableCache` runs lazily; by the time UI opens an entry, auth has fired. If it ever fires too early, the throw is a useful signal, not a silent regression. |
 | Migration of existing plaintext IDBs | Asymmetric win | None: sign-out spec changes the IDB key shape, orphaning legacy data | Sign-out spec moves IDB names from `ydoc.guid` to `epicenter:v1:user:{userId}:yjs:{ydocGuid}`. Legacy data is unreachable via the new naming. Resyncing from the server is the recovery path for in-flight users. No legacy reader needed. |
-| Key rotation | Coordinator invariant | Registered encrypted IDB attachments rederive their current write key on `applyKeys` | Mirrors `EncryptedYKeyValueLww` registration. Future writes use the new highest-version key; old blobs stay readable because the blob stores `keyVersion` and the keyring keeps historical keys. |
+| Key rotation | Attach-time invariant | Encrypted IDB attachments derive their write keyring when they attach | Mirrors the current coordinator shape. Future writes use the highest version from the attached keyring; old blobs stay readable because each blob stores `keyVersion` and the attached keyring keeps historical keys. Same-user rotation needs a reattach to affect an already-open provider. |
 | Cross-tab sync | Evidence | Unaffected | BroadcastChannel sends Yjs update bytes between tabs in the same browser. Both tabs have the same keys (same auth). The encryption is at the IDB write layer, not the BC layer. No double-encrypt. |
 | Wire sync | Evidence | Unaffected | `attachSync` sends Yjs update bytes over the WebSocket. Server is the trusted-merge layer. Cell-level encryption already covers value privacy on the wire. Storage-level operates only on what hits IDB. |
 | Bundling with `attachIndexedDb` API | Clean break | Same return shape (`whenLoaded`, `clearLocal`, `whenDisposed`) | Drop-in replacement at the call site. Apps swap one line in their child-doc factory; nothing else changes. |
@@ -219,7 +219,7 @@ The storage attachment changes and the explicit default `gcTime` argument disapp
   - Round-trip: write update, read back, Y.Doc state matches.
   - Throws if called before `applyKeys`.
   - Different `targetYdoc.guid` -> different derived key for the same plaintext.
-  - Key rotation changes the key version for future writes while old rows remain readable.
+  - A multi-version keyring writes with the highest key version while old rows remain readable.
   - `clearLocal()` clears the encrypted IDB.
   > **Note**: `attachIndexedDb` also gained an optional `persistenceKey`, preserving the default `ydoc.guid` behavior while sharing the owner-scoped key plumbing needed by the sign-out spec.
 
@@ -272,12 +272,11 @@ In practice this should not fire. The factory in `createDisposableCache` runs la
 
 ### Key rotation while child docs are open
 
-`applyKeys` is called again with a new keyring (e.g., after token refresh that includes new key material).
+The provider does not observe same-user key rotation after it has attached.
 
-- The encryption coordinator updates every registered encrypted table/KV store.
-- It also updates every registered encrypted IDB attachment.
-- Future IDB writes use the highest key version from the new keyring.
-- Existing IDB rows remain readable because each blob stores its key version and `decryptBytes` chooses from the keyring.
+- Future IDB writes use the highest key version from the keyring captured at attach time.
+- Existing IDB rows remain readable because each blob stores its key version and `decryptBytes` chooses from that attached keyring.
+- To pick up a newer keyring, the owning workspace must reattach or remount the encrypted provider.
 
 If a rotation revokes old keys, old local data becomes undecryptable. Treat that as a destructive security event: clear the affected owner-scoped local cache and resync from the server.
 

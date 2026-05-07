@@ -4,7 +4,6 @@ import {
 	waitForAuthState,
 } from '@epicenter/auth-svelte';
 import { requireSignedIn } from '@epicenter/auth';
-import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
@@ -30,9 +29,10 @@ const signedInState = await waitForAuthState(
 if (signedInState.status !== 'signed-in') {
 	throw new Error('Cannot open Opensidian workspace: signed-in auth required.');
 }
+const userId = signedInState.identity.user.id;
 
 export const opensidian = openOpensidian({
-	userId: signedInState.identity.user.id,
+	userId,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'Opensidian',
@@ -42,16 +42,10 @@ export const opensidian = openOpensidian({
 	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
 
-bindAuthWorkspaceScope({
-	auth,
-	// Identity is now read lazily through encryptionKeys / requireSignedIn.
-	applyAuthIdentity() {},
-	onSignOut() {
-		window.location.reload();
-	},
-	onIdentityChanged() {
-		window.location.reload();
-	},
+const unsubscribeAuthState = auth.onStateChange((state) => {
+	if (state.status === 'pending') return;
+	if (state.status === 'signed-out') return window.location.reload();
+	if (state.identity.user.id !== userId) return window.location.reload();
 });
 
 export async function forgetOpensidianDevice(): Promise<void> {
@@ -61,6 +55,7 @@ export async function forgetOpensidianDevice(): Promise<void> {
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
+		unsubscribeAuthState();
 		auth[Symbol.dispose]();
 		opensidian[Symbol.dispose]();
 	});

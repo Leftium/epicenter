@@ -1,6 +1,5 @@
 import { requireSignedIn } from '@epicenter/auth';
 import { createBearerAuth, waitForAuthState } from '@epicenter/auth-svelte';
-import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
@@ -26,6 +25,7 @@ if (signedInState.status !== 'signed-in') {
 		'Cannot open Tab Manager workspace: signed-in auth required.',
 	);
 }
+const userId = signedInState.identity.user.id;
 
 /**
  * Resolve the peer descriptor before constructing the workspace. `id` and
@@ -50,7 +50,7 @@ const peer = await Promise.all([
 }));
 
 export const tabManager = await openTabManager({
-	userId: signedInState.identity.user.id,
+	userId,
 	peer,
 	bearerToken: () => auth.bearerToken,
 	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
@@ -60,12 +60,9 @@ export const tabManager = await openTabManager({
  * Register this browser installation as a device in the workspace.
  *
  * Upserts the device row. Preserves existing name if present, otherwise
- * uses the resolved default. Awaits idb hydration before writing.
- * Idempotent: fires on every applied identity, so `lastSeen` refreshes when
- * auth changes reconnect the workspace.
+ * uses the resolved default.
  */
 async function registerDevice(): Promise<void> {
-	await tabManager.idb.whenLoaded;
 	const { id, name } = tabManager.peer;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
@@ -78,20 +75,12 @@ async function registerDevice(): Promise<void> {
 	});
 }
 
-bindAuthWorkspaceScope({
-	auth,
-	// Identity is read lazily through encryptionKeys / requireSignedIn at the
-	// workspace boundary. The hook here re-runs registerDevice on every applied
-	// identity so `lastSeen` refreshes when auth reconnects.
-	applyAuthIdentity() {
-		void registerDevice();
-	},
-	onSignOut() {
-		window.location.reload();
-	},
-	onIdentityChanged() {
-		window.location.reload();
-	},
+void tabManager.idb.whenLoaded.then(registerDevice);
+
+const unsubscribeAuthState = auth.onStateChange((state) => {
+	if (state.status === 'pending') return;
+	if (state.status === 'signed-out') return window.location.reload();
+	if (state.identity.user.id !== userId) return window.location.reload();
 });
 
 export async function forgetTabManagerDevice(): Promise<void> {
@@ -101,6 +90,7 @@ export async function forgetTabManagerDevice(): Promise<void> {
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
+		unsubscribeAuthState();
 		auth[Symbol.dispose]();
 		tabManager[Symbol.dispose]();
 	});

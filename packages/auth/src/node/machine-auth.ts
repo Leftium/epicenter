@@ -321,6 +321,12 @@ export async function createMachineAuthClient(): Promise<AuthClient> {
 	const log = createLogger('machine-auth');
 	const { data: initialSession, error } = await loadMachineSession();
 	if (error) throw error;
+	if (initialSession === null) {
+		throw new Error(
+			'[machine-auth] no saved session in the system keychain. ' +
+				'Run `epicenter auth login` first.',
+		);
+	}
 	return createBearerAuth({
 		baseURL: EPICENTER_API_URL,
 		initialSession,

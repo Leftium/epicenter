@@ -102,11 +102,34 @@ function handleDataOnly<T, E>(result: ResultDataOnly<T, E>) {
     const value: T = result.data;
     console.log("Success:", value);
   } else {
+    // You'd expect result.data to be `null` here. It's actually `T | null`.
+    // (See "A subtle gotcha" below for why.)
+    const t = result.data; // t: T | null
+
     // ❌ Type error! 'error' doesn't exist on the union
     // TypeScript narrowed 'data' to null, but can't guarantee 'error' exists
     // const err: E = result.error;
   }
 }
+
+/*
+ * A subtle gotcha: why is `t` typed as `T | null`, not `null`?
+ *
+ * `T` is unbounded — it could itself include null. If someone instantiates
+ * ResultDataOnly<string | null, Error>:
+ *   - Variant 1: { data: string | null }   ← can satisfy data === null!
+ *   - Variant 2: { data: null; error: E }
+ *
+ * After `result.data === null`, BOTH variants are still possible, so
+ * `result.data` is the union of the two: T (from V1) | null (from V2) = T | null.
+ *
+ * Checking `=== null` doesn't narrow a generic `T` inside a variant. It only
+ * includes or excludes whole variants from the union.
+ *
+ * The symmetric pattern below sidesteps this: by giving every variant BOTH
+ * `data` and `error`, you get two independent discriminants. Even when one
+ * is ambiguous due to generics, the other narrows cleanly.
+ */
 
 // ❌ Attempt 2: 'error' is shared, but 'data' is missing from failure variant
 type ResultErrorOnly<T, E> =

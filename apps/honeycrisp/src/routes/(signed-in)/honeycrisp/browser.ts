@@ -1,4 +1,3 @@
-import type { AuthIdentity } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
@@ -9,6 +8,7 @@ import {
 	createRemoteClient,
 	DateTimeString,
 	docGuid,
+	type EncryptionKeys,
 	onLocalUpdate,
 	PeerIdentity,
 	toWsUrl,
@@ -34,16 +34,17 @@ function noteBodyDocGuid({
 }
 
 export function openHoneycrisp({
-	identity,
+	userId,
 	peer,
 	bearerToken,
+	encryptionKeys,
 }: {
-	identity: AuthIdentity;
+	userId: string;
 	peer: PeerIdentity;
 	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 }) {
-	const userId = identity.user.id;
-	const doc = openHoneycrispDoc({ encryptionKeys: identity.encryptionKeys });
+	const doc = openHoneycrispDoc({ getKeys: encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });

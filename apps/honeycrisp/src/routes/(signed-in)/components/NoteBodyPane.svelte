@@ -2,10 +2,10 @@
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Loading } from '@epicenter/ui/loading';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import { getHoneycrispState } from '../state';
-	import { getSignedIn } from '../signed-in';
 
-	const signedIn = getSignedIn();
+	const signedIn = getSignedInSession();
 	const { notesState } = getHoneycrispState();
 
 	let { noteId }: { noteId: string } = $props();

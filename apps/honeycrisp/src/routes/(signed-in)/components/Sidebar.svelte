@@ -6,11 +6,11 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '$lib/auth';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 	import { getHoneycrispState } from '../state';
-	import { getSignedIn } from '../signed-in';
 
-	const signedIn = getSignedIn();
+	const signedIn = getSignedInSession();
 	const { foldersState, notesState, viewState } = getHoneycrispState();
 
 	async function forgetHoneycrispDevice(): Promise<void> {

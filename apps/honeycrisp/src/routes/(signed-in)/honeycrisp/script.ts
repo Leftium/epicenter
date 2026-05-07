@@ -17,7 +17,17 @@ export async function openHoneycrisp({
 	clientID?: number;
 }) {
 	const auth = await createMachineAuthClient();
-	const doc = openHoneycrispDoc({ clientID });
+	const doc = openHoneycrispDoc({
+		clientID,
+		getKeys: () => {
+			if (auth.state.status !== 'signed-in') {
+				throw new Error(
+					'[honeycrisp-script] machine auth is not signed-in; cannot read encryption keys.',
+				);
+			}
+			return auth.state.identity.encryptionKeys;
+		},
+	});
 	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});

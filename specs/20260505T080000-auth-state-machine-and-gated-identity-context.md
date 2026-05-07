@@ -437,8 +437,7 @@ await session.whenReady;  // chrome.storage hydration is genuinely async
 
 export const auth = createBearerAuth({
   baseURL: APP_URLS.API,
-  initialSession: session.get(),
-  saveSession: (next) => session.set(next),
+  sessionStorage: session,
 });
 
 // no await auth.whenReady; no throw if identity null

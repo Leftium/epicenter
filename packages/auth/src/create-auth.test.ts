@@ -309,7 +309,7 @@ test('listener failures do not stop later listeners', async () => {
 	auth[Symbol.dispose]();
 });
 
-test('initial session drives initial signed-in identity', async () => {
+test('stored session drives initial signed-in identity', async () => {
 	// Seed the BA atom so the late subscribe replays the matching session
 	// instead of the default null (which would flip the identity to null).
 	emitBetterSession(betterAuthSessionData(session()));
@@ -479,7 +479,7 @@ test('Better Auth signed-out emission clears session storage', async () => {
 	auth[Symbol.dispose]();
 });
 
-test('subscribe replay matching the initial session does not write storage', async () => {
+test('subscribe replay matching the stored session does not write storage', async () => {
 	emitBetterSession(betterAuthSessionData(session()));
 	const setup = createStorage({ get: () => session() });
 	const auth = createTestAuth(setup);
@@ -534,6 +534,9 @@ test('bearerToken returns the rotated token after set-auth-token response', asyn
 	await auth.signIn({ email: 'user@example.com', password: 'password' });
 
 	expect(auth.bearerToken).toBe('new-token');
+	expect(betterAuthClientOptions?.fetchOptions?.auth?.token()).toBe(
+		'new-token',
+	);
 	auth[Symbol.dispose]();
 });
 

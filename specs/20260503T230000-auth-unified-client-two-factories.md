@@ -58,25 +58,37 @@ The Storage Access API is not supported by Better Auth.
 
 **How this spec uses it**: opensidian.com (the only standalone-domain app) gets `createBearerAuth` by default. Reverse proxy is documented as the upgrade path if XSS exposure ever becomes load-bearing. The OAuth provider option is held in reserve for third-party SPAs we don't own. The earlier draft of the per-app map silently put opensidian on cookies; this revision corrects it.
 
-### 3. Sync identity hydration on reload (existing pattern)
+### 3. Sync identity hydration on reload (historical pattern)
+
+> Superseded on 2026-05-07 by
+> `20260507T150000-bearer-auth-session-storage-adapter.md`: bearer clients now
+> pass `sessionStorage: { get, set }`. Auth still reads storage synchronously
+> during construction and owns the live in-memory session afterward.
 
 Better Auth's `expoClient` plugin demonstrates the canonical pattern for non-web runtimes: read cached session synchronously from storage at init, populate the session atom immediately, validate via `/get-session` in the background. The client never blocks on storage during construction.
 
-This codebase already adopted the same pattern (see commits `d8eccf7f3`, `92f7ca5bb`, `ceb16e9fc`, `01e19854d`, `7a3f43c49`, plus the article `docs/articles/20260503T220500-pass-the-loaded-value-not-the-loader.md`). Today's `createAuth` accepts `initialSession` and `saveSession` exactly because:
+This codebase already adopted the same pattern (see commits `d8eccf7f3`, `92f7ca5bb`, `ceb16e9fc`, `01e19854d`, `7a3f43c49`, plus the article `docs/articles/20260503T220500-pass-the-loaded-value-not-the-loader.md`). Today's `createBearerAuth` accepts `sessionStorage` because:
 
 - The caller does the async storage read once before construction.
 - The factory stays sync.
 - Identity is populated at construction; useSession overwrites once it fires.
-- Writes go through `saveSession` on every change.
+- Writes go through `sessionStorage.set()` on every change.
 
-**How this spec uses it**: the bearer factory contract stays `initialSession` + `saveSession`, not a storage object. A storage abstraction (`{ read, write }`) on the factory would force async construction, which the codebase has already deliberately rejected. The browser factory exposes the same shape as optional parameters (`initialIdentity` + `saveIdentity`) for offline-friendly UX.
+**Current shape**: the bearer factory contract is `sessionStorage: { get, set }`, not a `{ read, write }` storage object. Async storage still loads before construction, then passes a synchronous adapter. The browser factory exposes `initialIdentity` + `saveIdentity` for cookie-auth offline-friendly UX.
 
 ```ts
-const cachedSession = await storage.read();        // caller awaits
-const auth = createBearerAuth({                    // factory is sync
+const cachedSession = await storage.read(); // caller awaits
+let currentSession = cachedSession;
+
+const auth = createBearerAuth({
   baseURL,
-  initialSession: cachedSession,
-  saveSession: (next) => storage.write(next),
+  sessionStorage: {
+    get: () => currentSession,
+    set: async (next) => {
+      currentSession = next;
+      await storage.write(next);
+    },
+  },
 });
 ```
 
@@ -147,8 +159,7 @@ createCookieAuth({
 
 createBearerAuth({
   baseURL?,
-  initialSession: BearerSession | null,
-  saveSession: (next: BearerSession | null) => MaybePromise<void>,
+  sessionStorage: BearerSessionStorage,
 }): AuthClient
 ```
 
@@ -160,12 +171,12 @@ Both factories return a sync `AuthClient`. The caller awaits any storage read be
 |------|---------|-------|
 | `AuthClient` | Unified credential lifecycle handle. Same shape regardless of transport. | `@epicenter/auth` |
 | `AuthIdentity` | `{ user, encryptionKeys }`. Transport-agnostic; no token. | `@epicenter/auth` |
-| `BearerSession` | `{ token, user, encryptionKeys }`. Exported arktype schema for caller-side storage validation. The token never appears on `AuthClient`, but the persistence payload is necessarily visible to apps wiring `initialSession` and `saveSession`. | `@epicenter/auth` |
+| `BearerSession` | `{ token, user, encryptionKeys }`. Exported arktype schema for caller-side storage validation. The token never appears on `AuthClient`, but the persistence payload is necessarily visible inside storage adapters passed as `sessionStorage`. | `@epicenter/auth` |
 | `createCookieAuth` | Factory for browser SPAs that share an origin (or subdomain) with the auth server. Uses cookie jar; optional cached identity hydration. | `@epicenter/auth` |
-| `createBearerAuth` | Factory for runtimes without a usable cookie jar (extension, CLI, daemon, cross-domain SPA). Owns its token via caller-resolved `initialSession`. | `@epicenter/auth` |
+| `createBearerAuth` | Factory for runtimes without a usable cookie jar (extension, CLI, daemon, cross-domain SPA). Owns its token via synchronous caller-provided `sessionStorage`. | `@epicenter/auth` |
 | `singleCredential` | API-side header normalizer. Returns `ok | mixed | none`. | `apps/api` |
 
-`AuthSession`, `AuthSnapshot`, `createAuth` cease to exist. `signInWithSocialRedirect` stays on the surface for the duration of this spec; its removal is tracked in `specs/20260504T010000-drop-authclient-redirect-sign-in.md` (per-app local credential minting; ships independently). There is no exported `TokenStorage` or generic storage abstraction; persistence is the caller's concern, expressed as two callbacks. `BearerSession` is exported as an arktype schema so callers can validate persisted blobs.
+`AuthSession`, `AuthSnapshot`, `createAuth` cease to exist. `signInWithSocialRedirect` stays on the surface for the duration of this spec; its removal is tracked in `specs/20260504T010000-drop-authclient-redirect-sign-in.md` (per-app local credential minting; ships independently). There is no exported `TokenStorage` or generic async storage abstraction; persistence is the caller's concern, expressed as a synchronous `sessionStorage` adapter. `BearerSession` is exported as an arktype schema so callers can validate persisted blobs.
 
 **The boundary is at construction.** Two factories, two construction shapes, two effects (cookie vs bearer). After construction, `AuthClient` is uniform and consumers cannot distinguish which factory produced it. The bearer token, the cookie jar, and the storage adapter all live below this boundary. `AuthClient` carries identity and capabilities; nothing transport-shaped leaks above the construction line.
 
@@ -215,7 +226,7 @@ Anything that *would* need the token is an authentication concern (transport, si
 
 A storage abstraction (`{ read, write }`) on the factory would make construction async, since `read` is async on every supported runtime. The current codebase deliberately rejects async construction (see commits cited above); the article in `docs/articles/20260503T220500-pass-the-loaded-value-not-the-loader.md` documents why.
 
-Better Auth's `expoClient` plugin uses the same caller-resolved pattern. The factory contract therefore stays sync, and the "storage" is the caller's adapter wrapped around two callbacks.
+Better Auth's `expoClient` plugin uses the same caller-resolved pattern. The factory contract therefore stays sync, and the storage read is a synchronous adapter boundary.
 
 ## Design Decisions
 
@@ -227,7 +238,7 @@ Better Auth's `expoClient` plugin uses the same caller-resolved pattern. The fac
 | State encoding | `identity: AuthIdentity \| null` | Collapse isomorphic `AuthSnapshot`. |
 | `loading` state | None | `whenReady: Promise<void>` is the validation gate. UI consumers prefer `identity` (cached). |
 | `whenReady` semantics | Resolves on first non-pending `useSession` event; never rejects | Better Auth's `useAuthQuery` flips `isPending` on any network outcome (success, network error, 401). No timeout to set. |
-| Bearer persistence | Caller-resolved `initialSession` + `saveSession` callbacks | Sync construction; matches Better Auth's `expoClient` pattern; no async factory. |
+| Bearer persistence | `sessionStorage: { get, set }` | Sync construction; matches Better Auth's `expoClient` pattern without preserving the old two-option mental model. |
 | Browser persistence | Optional `initialIdentity` + `saveIdentity` callbacks | Same shape, but optional because the browser cookie jar is already the credential. Apps that want offline UX provide them. |
 | Social sign-in | `signInWithIdToken` only | Drop `signInWithSocialRedirect`; Google supports OIDC, redirect path is dishonest. |
 | `baseURL` | Optional, defaults to `APPS.API.urls[0]` | Default works for production. Explicit override for dev or self-hosting. |
@@ -267,7 +278,7 @@ Better Auth's `expoClient` plugin uses the same caller-resolved pattern. The fac
 
 ```
    packages/auth/createCookieAuth      packages/auth/createBearerAuth
-   (sync; optional cached identity)     (sync; required initialSession)
+   (sync; optional cached identity)     (sync; required sessionStorage)
               │                                      │
               ▼                                      ▼
    ┌─────────────────────────┐         ┌─────────────────────────────┐
@@ -283,7 +294,7 @@ Better Auth's `expoClient` plugin uses the same caller-resolved pattern. The fac
    │    fetch credentials:   │         │    fetch credentials:'omit' │
    │      'include'          │         │    Authorization header     │
    │    no subprotocol       │         │    bearer.<token> subproto  │
-   │    saveIdentity?        │         │    saveSession (required)   │
+   │    saveIdentity?        │         │    sessionStorage.set       │
    └─────────────────────────┘         └─────────────────────────────┘
               │                                      │
               └──────────────┬───────────────────────┘
@@ -384,11 +395,11 @@ This wave removes the legacy state shape and renames the listener API. `attachSy
 
 ### Wave 3: Two factories and client migration
 
-- [x] **3.1** Rename `createAuth` → `createBearerAuth`. Contract is `{ baseURL?, initialSession: BearerSession | null, saveSession: (next) => MaybePromise<void> }`. Internals: `auth: { type: 'Bearer' }` config on Better Auth client; `fetch` uses `credentials: 'omit'` and sets `Authorization` from the in-memory token; `openWebSocket` adds `bearer.<token>` to subprotocols; `onSuccess` hook reads `set-auth-token` and writes through.
+- [x] **3.1** Rename `createAuth` → `createBearerAuth`. Current contract is `{ baseURL?, sessionStorage }`. Internals: `auth: { type: 'Bearer' }` config on Better Auth client; `fetch` uses `credentials: 'omit'` and sets `Authorization` from the in-memory token; `openWebSocket` adds `bearer.<token>` to subprotocols; `onSuccess` hook reads `set-auth-token` and writes through.
 - [x] **3.2** Add `createCookieAuth({ baseURL?, initialIdentity?, saveIdentity? })`. Internals: no `auth: { type: 'Bearer' }` on the underlying Better Auth client; `fetch` uses `credentials: 'include'`, never sets `Authorization`; `openWebSocket` returns plain `new WebSocket(url, protocols)` when `identity` is non-null and `null` otherwise. If `initialIdentity` is provided, `auth.identity` returns that value until `useSession` first fires. `saveIdentity` is called on identity changes.
 - [x] **3.3** Migrate `apps/{dashboard,fuji,honeycrisp,zhongwen}` to `createCookieAuth`. Optional offline UX: hydrate `initialIdentity` from `localStorage` and wire `saveIdentity` to write back. Sign-in still uses `signInWithSocialRedirect` (redirect removal tracked separately in the GIS-migration spec).
-- [x] **3.4** Migrate `apps/opensidian` to `createBearerAuth({ initialSession, saveSession })` with a `localStorage` adapter (validate the read with the exported `BearerSession` schema; treat parse failure as `null`). Document the reverse-proxy upgrade path in the app's README.
-- [x] **3.5** Migrate `apps/tab-manager` to `createBearerAuth({ initialSession, saveSession })` with a `chrome.storage.local` adapter. Caller awaits the storage read before construction; pre-existing pattern.
+- [x] **3.4** Migrate `apps/opensidian` to `createBearerAuth({ sessionStorage })` with a `localStorage` adapter (validate the read with the exported `BearerSession` schema; treat parse failure as `null`). Document the reverse-proxy upgrade path in the app's README.
+- [x] **3.5** Migrate `apps/tab-manager` to `createBearerAuth({ sessionStorage })` with a `chrome.storage.local` adapter. Caller awaits storage readiness before construction; pre-existing pattern.
 - [x] **3.6** Migrate `apps/*/daemon.ts` to `createBearerAuth`. `packages/cli` likewise. Caller awaits OS keychain read first.
 
 After Wave 3, no client double-sends credentials. The server still tolerates mixed (because `authGuard` hasn't tightened yet); browsers and bearer clients each send exactly one. This is the safe ordering.
@@ -466,11 +477,11 @@ Apps that want offline UX wire `initialIdentity` (about three lines via `localSt
 
 ### Bearer auth: stale identity at boot
 
-Caller awaits `initialSession` from storage before construction. Identity is rendered immediately on reload. `whenReady` resolves after first `/auth/get-session` validates the token. If validation fails (token expired), `signOut()` is called internally, identity becomes null, `whenReady` still resolves (with signed-out state).
+Caller awaits any async storage readiness before construction, then passes a synchronous `sessionStorage` adapter. Identity is rendered immediately on reload from `sessionStorage.get()`. `whenReady` resolves after first `/auth/get-session` validates the token. If validation fails (token expired), `signOut()` is called internally, identity becomes null, `whenReady` still resolves (with signed-out state).
 
 ### Token rotation (bearer only)
 
-`set-auth-token` response header. Bearer factory updates internal token, calls `saveSession` with the new value. `onChange` does NOT fire (identity didn't change, only the credential rotated). Open WebSocket connections continue using the old subprotocol; the WS subprotocol authenticates only the upgrade handshake, then the connection is plain. New connections via `openWebSocket` use the rotated token.
+`set-auth-token` response header. Bearer factory updates internal token, calls `sessionStorage.set()` with the new value. `onChange` does NOT fire (identity didn't change, only the credential rotated). Open WebSocket connections continue using the old subprotocol; the WS subprotocol authenticates only the upgrade handshake, then the connection is plain. New connections via `openWebSocket` use the rotated token.
 
 ### Cross-tab sign-out (cookie)
 
@@ -507,11 +518,11 @@ Out of scope. If needed later, `signInWithSocialRedirect` returns. Per YAGNI, no
 
 ### Storage write failure
 
-Bearer factory: if `saveSession(...)` rejects (quota, private mode, chrome.storage error), the in-memory state still updates and `onChange` fires. The next reload won't see the latest state (best-effort persistence). Errors are logged.
+Bearer factory: if `sessionStorage.set(...)` rejects (quota, private mode, chrome.storage error), the in-memory state still updates and `onChange` fires. The next reload won't see the latest state (best-effort persistence). Errors are logged.
 
 ### Storage read returns corrupt data
 
-The caller is responsible for parse validation before calling the factory. If the cached session is corrupt, the caller passes `null` as `initialSession` and the user re-authenticates.
+The caller is responsible for parse validation inside the storage adapter. If the cached session is corrupt, `sessionStorage.get()` returns `null` and the user re-authenticates.
 
 ## Open Questions
 
@@ -525,7 +536,7 @@ The caller is responsible for parse validation before calling the factory. If th
 
 3. **Cross-context bearer sync via `BroadcastChannel` / `chrome.storage.onChanged`?**
    Bearer in a Chrome extension has multiple contexts (background, popup, sidepanel). Should they share state?
-   **Recommendation**: defer. Today the extension uses a single context for auth UI; if pain emerges, add a sync adapter that calls `saveSession` cross-context.
+   **Recommendation**: defer. Today the extension uses a single context for auth UI; if pain emerges, add a sync adapter outside auth.
 
 4. **Open WebSocket revocation on cross-device sign-out**
    Per deepwiki, Better Auth doesn't broadcast session revocations to open connections. Existing gap.
@@ -541,7 +552,7 @@ The caller is responsible for parse validation before calling the factory. If th
    **Recommendation**: defer. Three lines per app, no real cost.
 
 7. **`@epicenter/auth/node` and `@epicenter/auth/extension` subpaths for runtime-specific defaults?**
-   For ready-made keychain or chrome.storage adapters that wrap `initialSession` + `saveSession`.
+   For ready-made keychain or chrome.storage adapters that satisfy `sessionStorage`.
    **Recommendation**: defer. Apps can ship their own adapters. If pain emerges, add the subpaths.
 
 ## Success Criteria
@@ -592,7 +603,7 @@ Prior specs that shaped the current state:
 
 Articles cited:
 
-- `docs/articles/20260503T220500-pass-the-loaded-value-not-the-loader.md` (the case for caller-resolved storage; this spec's `initialSession`/`saveSession` contract follows it directly)
+- `docs/articles/20260503T220500-pass-the-loaded-value-not-the-loader.md` (the case for caller-resolved storage; bearer auth now applies it through synchronous `sessionStorage.get()`)
 
 Better Auth research (verified via deepwiki against `better-auth/better-auth`):
 
@@ -621,7 +632,7 @@ Three corollaries worth stating explicitly:
 
 2. **No fourth option for the token on `AuthClient`.** If a consumer believes it needs the bearer token *via `auth`*, the answer is one of: (a) it's a Better Auth call and should go through `auth.fetch`; (b) it's a sync call and should go through `auth.openWebSocket`; (c) it's a different system that needs its own credential. There is no `auth.token` accessor. There is no `auth.getAuthHeaders()` escape hatch.
 
-   The exported `BearerSession` schema is *not* a violation of this rule. `BearerSession` is the storage payload that callers wiring `initialSession` and `saveSession` need to validate. It exists below the construction boundary, in the caller's storage adapter, never on the `AuthClient` returned by the factory. The hard rule is: **the token never appears on `AuthClient`**, not "no exported type can contain a token."
+   The exported `BearerSession` schema is *not* a violation of this rule. `BearerSession` is the storage payload that callers validate inside the `sessionStorage` adapter. It exists below the construction boundary, in the caller's storage adapter, never on the `AuthClient` returned by the factory. The hard rule is: **the token never appears on `AuthClient`**, not "no exported type can contain a token."
 
 3. **The factory is sync; the caller is async.** Storage reads happen before `createBearerAuth(...)` returns; the factory itself never awaits. This matches Better Auth's `expoClient` pattern and the established convention in this codebase. Do not introduce a `storage: TokenStorage` parameter; that path leads to async construction and the flicker we are trying to remove.
 

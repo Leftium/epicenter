@@ -50,7 +50,7 @@ export function assertEncryptionKeyVersion(version: number): void {
  * @example
  * ```typescript
  * if (!encryptionKeysEqual(nextKeys, currentKeys)) {
- *   workspace.encryption.applyKeys(nextKeys);
+ *   currentKeys = nextKeys;
  * }
  * ```
  */

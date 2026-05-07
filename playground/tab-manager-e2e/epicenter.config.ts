@@ -43,8 +43,17 @@ const WORKSPACE_ID = 'epicenter.tab-manager';
 
 const machineAuth = createMachineAuth();
 
+const { data: keys, error: keysError } =
+	await machineAuth.getActiveEncryptionKeys({ serverOrigin: SERVER_URL });
+if (keysError) throw keysError;
+if (!keys) {
+	throw new Error(
+		'[tab-manager-playground] no active encryption keys. Run `epicenter auth login` first.',
+	);
+}
+
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
-const encryption = attachEncryption(ydoc);
+const encryption = attachEncryption(ydoc, { getKeys: () => keys });
 const tables = encryption.attachTables(tabManagerTables);
 // Empty kv: tabManager has no KV definitions, but `.kv()` on the materializer
 // serializes the shared kv store. Keep an empty encrypted kv attached so the
@@ -55,30 +64,18 @@ const persistence = attachSqlite(ydoc, {
 	filePath: epicenterPaths.persistence(WORKSPACE_ID),
 });
 
-const whenCredentialsApplied = persistence.whenLoaded.then(async () => {
-	const { data: keys, error } = await machineAuth.getActiveEncryptionKeys({
-		serverOrigin: SERVER_URL,
-	});
-	if (error) throw error;
-	if (keys) encryption.applyKeys(keys);
-});
-
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
-	// Gate connection on local hydrate + unlock so the handshake only exchanges
-	// the delta, not the whole document.
-	waitFor: Promise.all([persistence.whenLoaded, whenCredentialsApplied]),
+	// Gate connection on local hydrate so the handshake only exchanges the
+	// delta, not the whole document.
+	waitFor: persistence.whenLoaded,
 	getToken: createMachineTokenGetter({
 		serverOrigin: SERVER_URL,
 		machineAuth,
 	}),
 });
 
-const whenReady = Promise.all([
-	persistence.whenLoaded,
-	whenCredentialsApplied,
-	sync.whenConnected,
-]);
+const whenReady = Promise.all([persistence.whenLoaded, sync.whenConnected]);
 
 const markdown = attachMarkdownMaterializer(
 	{ tables, kv, whenReady },

@@ -4,13 +4,13 @@
  * `browser-state.svelte.ts`.
  */
 
-import type { AuthIdentity } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
 	attachOwnedBroadcastChannel,
 	attachSync,
 	createRemoteClient,
+	type EncryptionKeys,
 	PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
@@ -31,20 +31,21 @@ import { openTabManager as openTabManagerDoc } from './index';
  * WebSocket) is independent and connects whenever the network allows.
  */
 export async function openTabManager({
-	identity,
+	userId,
 	peer,
 	bearerToken,
+	encryptionKeys,
 }: {
-	identity: AuthIdentity;
+	userId: string;
 	peer: TabManagerPeer | Promise<TabManagerPeer>;
 	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 }) {
 	const resolvedPeer = await Promise.resolve(peer);
-	const userId = identity.user.id;
 
 	const doc = openTabManagerDoc({
 		deviceId: Promise.resolve(resolvedPeer.id),
-		encryptionKeys: identity.encryptionKeys,
+		getKeys: encryptionKeys,
 	});
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });

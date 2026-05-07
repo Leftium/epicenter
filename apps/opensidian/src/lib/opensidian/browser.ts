@@ -1,4 +1,3 @@
-import type { AuthIdentity } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
@@ -13,6 +12,7 @@ import {
 	attachTimeline,
 	createDisposableCache,
 	createRemoteClient,
+	type EncryptionKeys,
 	onLocalUpdate,
 	PeerIdentity,
 	toWsUrl,
@@ -24,16 +24,17 @@ import { createOpensidianActions } from './actions';
 import { openOpensidian as openOpensidianDoc } from './index';
 
 export function openOpensidian({
-	identity,
+	userId,
 	peer,
 	bearerToken,
+	encryptionKeys,
 }: {
-	identity: AuthIdentity;
+	userId: string;
 	peer: PeerIdentity;
 	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 }) {
-	const userId = identity.user.id;
-	const doc = openOpensidianDoc({ encryptionKeys: identity.encryptionKeys });
+	const doc = openOpensidianDoc({ getKeys: encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });

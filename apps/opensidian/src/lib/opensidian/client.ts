@@ -1,6 +1,7 @@
 import {
 	BearerSession,
 	createBearerAuth,
+	requireSignedIn,
 	waitForAuthState,
 } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
@@ -31,20 +32,20 @@ if (signedInState.status !== 'signed-in') {
 }
 
 export const opensidian = openOpensidian({
-	identity: signedInState.identity,
+	userId: signedInState.identity.user.id,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'Opensidian',
 		platform: 'web',
 	},
 	bearerToken: () => auth.bearerToken,
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
 
 bindAuthWorkspaceScope({
 	auth,
-	applyAuthIdentity(session) {
-		opensidian.encryption.applyKeys(session.encryptionKeys);
-	},
+	// Identity is now read lazily through encryptionKeys / requireSignedIn.
+	applyAuthIdentity() {},
 	onSignOut() {
 		window.location.reload();
 	},

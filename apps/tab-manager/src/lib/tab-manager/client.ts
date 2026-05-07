@@ -1,4 +1,8 @@
-import { createBearerAuth, waitForAuthState } from '@epicenter/auth-svelte';
+import {
+	createBearerAuth,
+	requireSignedIn,
+	waitForAuthState,
+} from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
@@ -49,9 +53,10 @@ const peer = await Promise.all([
 }));
 
 export const tabManager = await openTabManager({
-	identity: signedInState.identity,
+	userId: signedInState.identity.user.id,
 	peer,
 	bearerToken: () => auth.bearerToken,
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
 
 /**
@@ -78,8 +83,10 @@ async function registerDevice(): Promise<void> {
 
 bindAuthWorkspaceScope({
 	auth,
-	applyAuthIdentity(session) {
-		tabManager.encryption.applyKeys(session.encryptionKeys);
+	// Identity is read lazily through encryptionKeys / requireSignedIn at the
+	// workspace boundary. The hook here re-runs registerDevice on every applied
+	// identity so `lastSeen` refreshes when auth reconnects.
+	applyAuthIdentity() {
 		void registerDevice();
 	},
 	onSignOut() {

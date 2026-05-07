@@ -1,4 +1,7 @@
-import { createMachineAuthClient } from '@epicenter/auth/node';
+import {
+	createMachineAuthClient,
+	requireSignedIn,
+} from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachAwareness,
@@ -40,14 +43,7 @@ export function defineFujiDaemon({
 			const auth = await createMachineAuthClient();
 			const doc = openFujiDoc({
 				clientID: hashClientId(projectDir),
-				getKeys: () => {
-					if (auth.state.status !== 'signed-in') {
-						throw new Error(
-							'[fuji-daemon] machine auth is not signed-in; cannot read encryption keys.',
-						);
-					}
-					return auth.state.identity.encryptionKeys;
-				},
+				getKeys: () => requireSignedIn(auth).encryptionKeys,
 			});
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),

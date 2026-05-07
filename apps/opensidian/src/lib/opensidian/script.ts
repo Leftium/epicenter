@@ -1,4 +1,7 @@
-import { createMachineAuthClient } from '@epicenter/auth/node';
+import {
+	createMachineAuthClient,
+	requireSignedIn,
+} from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { attachSync, type ProjectDir, toWsUrl } from '@epicenter/workspace';
 import {
@@ -19,14 +22,7 @@ export async function openOpensidian({
 	const auth = await createMachineAuthClient();
 	const doc = openOpensidianDoc({
 		clientID,
-		getKeys: () => {
-			if (auth.state.status !== 'signed-in') {
-				throw new Error(
-					'[opensidian-script] machine auth is not signed-in; cannot read encryption keys.',
-				);
-			}
-			return auth.state.identity.encryptionKeys;
-		},
+		getKeys: () => requireSignedIn(auth).encryptionKeys,
 	});
 	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),

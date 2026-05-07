@@ -150,13 +150,17 @@
 					size="icon-xs"
 					tooltip="Save for later"
 					onclick={(e: MouseEvent) => {
-						e.stopPropagation();
-						// Save always succeeds in the workspace; toast only if the
-						// source-tab close half failed (partial-success path).
-						savedTabState.save(tab).then((result) => {
-							if (result?.closeResult.error) toastOnError(result.closeResult);
-						});
-					}}
+							e.stopPropagation();
+							// Save always succeeds in the workspace; toast only if the
+							// source-tab close half failed (partial-success path).
+							savedTabState.save(tab).then((result) => {
+								if (result?.closeResult.error)
+									toastOnError(
+										result.closeResult,
+										'Could not close tab after saving',
+									);
+							});
+						}}
 				>
 					<ArchiveIcon />
 				</Button>
@@ -167,7 +171,7 @@
 					tooltip={isBookmarked ? 'Remove bookmark' : 'Bookmark'}
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						// Pure CRDT writes — can't fail, no Result to toast.
+						// Pure CRDT writes: can't fail, no Result to toast.
 						void bookmarkState.toggle(tab);
 					}}
 				>

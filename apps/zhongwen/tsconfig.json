@@ -2,6 +2,10 @@
 	"extends": ["../../tsconfig.base.dom.json", "./.svelte-kit/tsconfig.json"],
 	"compilerOptions": {
 		"checkJs": true,
+		"paths": {
+			"#/*": ["../../packages/ui/src/*"],
+			"$lib/*": ["./src/lib/*"]
+		},
 		"types": ["bun"]
 	}
 }

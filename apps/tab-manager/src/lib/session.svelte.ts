@@ -150,7 +150,7 @@ if (import.meta.hot) {
 	import.meta.hot.dispose(() => tabManagerSession[Symbol.dispose]());
 }
 
-export function getSignedInSession(): TabManagerSignedIn {
+export function getSignedInSession() {
 	const current = tabManagerSession.current;
 	if (current.status !== 'signed-in') {
 		throw new Error(

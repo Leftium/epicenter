@@ -59,7 +59,7 @@ if (import.meta.hot) {
  * the codebase rule for reactive accessors (memory:
  * feedback_no_destructure_reactive.md).
  */
-export function getSignedInSession(): HoneycrispSignedIn {
+export function getSignedInSession() {
 	const c = session.current;
 	if (c.status !== 'signed-in') {
 		throw new Error(

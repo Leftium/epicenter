@@ -96,7 +96,7 @@ if (import.meta.hot) {
  * Throws if invoked outside the signed-in branch. The typical caller is a
  * route or component mounted under the layout's signed-in gate.
  */
-export function getSignedInSession(): OpensidianSignedIn {
+export function getSignedInSession() {
 	const c = session.current;
 	if (c.status !== 'signed-in') {
 		throw new Error(

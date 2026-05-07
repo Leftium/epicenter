@@ -12,6 +12,12 @@ metadata:
 - [Hono](https://github.com/honojs/hono) — Ultrafast web framework for Cloudflare Workers
 - [Cloudflare Docs](https://github.com/cloudflare/cloudflare-docs) — Cloudflare Workers, Durable Objects, KV documentation
 
+## Upstream Grounding
+
+When Worker runtime behavior, Hono middleware semantics, request/response streaming, Durable Objects, WebSockets, or Cloudflare deployment limits affect correctness, ask DeepWiki a narrow question against `honojs/hono` or `cloudflare/cloudflare-docs` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+
+Skip DeepWiki for Elysia-specific conventions already documented below.
+
 ## When to Apply This Skill
 
 Use this pattern when you need to:

@@ -1,11 +1,10 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Exports the persisted session storage and the
- * Google credentials helper. The `auth` instance itself lives in
- * `./tab-manager/client` alongside the workspace.
+ * Exports persisted session storage and the Google credentials helper. The
+ * auth client itself is created after storage readiness in `./session.svelte`.
  *
- * @see {@link ./tab-manager/client} auth, workspace, and identity wiring
+ * @see {@link ./session.svelte} auth, workspace, and identity wiring
  * @see {@link ./state/storage-state.svelte} chrome.storage reactive wrapper
  */
 
@@ -18,7 +17,7 @@ const GOOGLE_CLIENT_ID =
 /**
  * Persisted bearer session in `chrome.storage.local`.
  */
-export const session = createStorageState('local:authSession', {
+export const authSessionStorage = createStorageState('local:authSession', {
 	fallback: null,
 	schema: BearerSession.or('null'),
 });

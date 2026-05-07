@@ -1,21 +1,22 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
-	import { aiChatState } from '$lib/chat/chat-state.svelte';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import ChatErrorBanner from './ChatErrorBanner.svelte';
 	import ChatInput from './ChatInput.svelte';
 	import ConversationPicker from './ConversationPicker.svelte';
 	import MessageList from './MessageList.svelte';
 
-	const active = $derived(aiChatState.active);
+	const signedIn = getSignedInSession();
+	const active = $derived(signedIn.tabManager.state.aiChat.active);
 </script>
 
 <div class="flex h-full flex-col">
 	<ConversationPicker
-		conversations={aiChatState.conversations}
-		activeId={aiChatState.activeConversationId}
-		onSwitch={(id) => aiChatState.switchTo(id)}
-		onCreate={() => aiChatState.createConversation()}
+		conversations={signedIn.tabManager.state.aiChat.conversations}
+		activeId={signedIn.tabManager.state.aiChat.activeConversationId}
+		onSwitch={(id) => signedIn.tabManager.state.aiChat.switchTo(id)}
+		onCreate={() => signedIn.tabManager.state.aiChat.createConversation()}
 	/>
 
 	<div class="min-h-0 flex-1">

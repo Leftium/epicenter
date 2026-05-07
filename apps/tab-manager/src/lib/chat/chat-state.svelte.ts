@@ -10,24 +10,10 @@
  * Background streaming is free: each conversation has its own chat instance.
  * Switching away from a streaming conversation doesn't stop it.
  *
- * @example
- * ```svelte
- * <script>
- *   import { aiChatState } from '$lib/chat/chat-state.svelte';
- * </script>
- *
- * {#each aiChatState.conversations as conv (conv.id)}
- *   <button onclick={() => aiChatState.switchTo(conv.id)}>
- *     {conv.title}
- *   </button>
- * {/each}
- *
- * {#each aiChatState.active?.messages ?? [] as message (message.id)}
- *   <ChatBubble {message} />
- * {/each}
- * ```
+ * Components read this through `signedIn.tabManager.state.aiChat`.
  */
 
+import type { AuthClient } from '@epicenter/auth';
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
@@ -46,7 +32,10 @@ import {
 	TAB_MANAGER_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { auth, tabManager, workspaceAiTools } from '$lib/tab-manager/client';
+import type {
+	TabManagerWorkspace,
+	WorkspaceAiTools,
+} from '$lib/session.svelte';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -55,11 +44,15 @@ import {
 	generateConversationId,
 } from '$lib/workspace';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// State Factory
-// ─────────────────────────────────────────────────────────────────────────────
-
-function createAiChatState() {
+export function createAiChatState({
+	auth,
+	tabManager,
+	workspaceAiTools,
+}: {
+	auth: AuthClient;
+	tabManager: TabManagerWorkspace;
+	workspaceAiTools: WorkspaceAiTools;
+}) {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
 
 	const conversationsMap = fromTable(tabManager.tables.conversations);
@@ -561,13 +554,6 @@ function createAiChatState() {
 	};
 }
 
-export const aiChatState = createAiChatState();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => aiChatState[Symbol.dispose]());
-}
-
 /** A reactive handle for a single conversation backed by `createChat`. */
-export type ConversationHandle = NonNullable<
-	ReturnType<(typeof aiChatState)['get']>
->;
+export type AiChatState = ReturnType<typeof createAiChatState>;
+export type ConversationHandle = NonNullable<ReturnType<AiChatState['get']>>;

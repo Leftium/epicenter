@@ -6,31 +6,27 @@
  * and future invocations auto-approve without prompting.
  *
  * Trust state syncs across devices via the workspace's Y.Doc CRDT.
- * Query tools never consult this module—they auto-execute always.
+ * Query tools never consult this module: they auto-execute always.
  *
  * @module
  */
 
 import { fromTable } from '@epicenter/svelte';
-import { tabManager } from '$lib/tab-manager/client';
+import type { TabManagerWorkspace } from '$lib/session.svelte';
 import type { ToolTrust } from '$lib/workspace';
 
 /**
  * Trust level for a mutation tool.
  *
- * - `'ask'` — show inline approval UI ([Allow] / [Always Allow] / [Deny])
- * - `'always'` — auto-approve immediately, show subtle indicator
+ * - `'ask'`: show inline approval UI ([Allow] / [Always Allow] / [Deny])
+ * - `'always'`: auto-approve immediately, show subtle indicator
  */
 export type TrustLevel = ToolTrust['trust'];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// State Factory
-// ─────────────────────────────────────────────────────────────────────────────
-
-function createToolTrustState() {
+export function createToolTrustState(tabManager: TabManagerWorkspace) {
 	const trustMap = fromTable(tabManager.tables.toolTrust);
 
-	/** Cached projection of trust entries — stable reference via $derived. */
+	/** Cached projection of trust entries: stable reference via $derived. */
 	const trustEntries = $derived(
 		[...trustMap.values()].map((t): [string, TrustLevel] => [t.id, t.trust]),
 	);
@@ -99,7 +95,7 @@ function createToolTrustState() {
 		/**
 		 * All trust entries as a cached reactive array.
 		 *
-		 * Returns `[toolName, trustLevel]` tuples. Stable reference via `$derived`—
+		 * Returns `[toolName, trustLevel]` tuples. Stable reference via `$derived`:
 		 * recomputes only when the underlying trustMap changes.
 		 *
 		 * @example
@@ -115,8 +111,4 @@ function createToolTrustState() {
 	};
 }
 
-export const toolTrustState = createToolTrustState();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => toolTrustState[Symbol.dispose]());
-}
+export type ToolTrustState = ReturnType<typeof createToolTrustState>;

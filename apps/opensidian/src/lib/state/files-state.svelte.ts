@@ -3,14 +3,14 @@ import { fromTable } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
 import { SvelteSet } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { opensidian } from '$lib/opensidian/client';
+import type { OpensidianWorkspace } from '$lib/opensidian/browser';
 import { searchParams } from '$lib/search-params.svelte';
 
 /**
  * Interaction mode discriminated union.
  *
  * Only one interaction can be active at a time. Setting any mode
- * implicitly cancels the previous one—impossible states are unrepresentable.
+ * implicitly cancels the previous one: impossible states are unrepresentable.
  */
 type InteractionMode =
 	| { type: 'idle' }
@@ -18,28 +18,33 @@ type InteractionMode =
 	| { type: 'creating'; parentId: FileId | null; fileType: 'file' | 'folder' };
 
 /**
- * Reactive filesystem state singleton.
+ * Reactive filesystem state factory.
  *
- * Follows the tab-manager pattern: factory function creates all state,
- * exports a single const. Components import and read directly.
+ * Follows the tab-manager pattern: a factory function creates all state.
+ * The session creates one instance and exposes it at
+ * `signedIn.state.files`.
  *
  * Reactivity: `fromTable()` provides a reactive `SvelteMap` that updates
  * granularly per-row. `childrenOf` derives tree structure eagerly (O(n)
- * iteration on any row change—acceptable for <5000 files). Paths are
- * computed lazily via `computePath()`—only the accessed file's ancestor
+ * iteration on any row change: acceptable for <5000 files). Paths are
+ * computed lazily via `computePath()`: only the accessed file's ancestor
  * chain is tracked, so `selected` and `PathBreadcrumb` stay fine-grained.
  *
  * @example
  * ```svelte
  * <script>
- *   import { fsState } from '$lib/state/fs-state.svelte';
- *   const children = fsState.rootChildIds;
+ *   const session = getSignedInSession();
+ *   const children = session.state.files.rootChildIds;
  * </script>
  * ```
  */
-function createFsState() {
+export function createFilesState({
+	workspace,
+}: {
+	workspace: OpensidianWorkspace;
+}) {
 	// ── Reactive source ──────────────────────────────────────────────
-	const filesMap = fromTable(opensidian.tables.files);
+	const filesMap = fromTable(workspace.tables.files);
 
 	// ── Reactive state ───────────────────────────────────────────────
 	const openFileIds = new SvelteSet<FileId>();
@@ -59,7 +64,7 @@ function createFsState() {
 	// ── Derived tree structure ───────────────────────────────────────
 	//
 	// childrenOf iterates the full filesMap (creating an all-key dependency),
-	// so it recomputes on ANY row change—even non-structural edits like
+	// so it recomputes on ANY row change: even non-structural edits like
 	// updatedAt bumps. At O(n) Map iteration for <5000 files this is <1ms,
 	// an intentional trade-off over the complexity of structural-only tracking.
 
@@ -69,7 +74,7 @@ function createFsState() {
 		for (const [id, row] of filesMap) {
 			if (row.trashedAt !== null) continue;
 			const siblings = map.get(row.parentId) ?? [];
-			siblings.push(id);
+			siblings.push(id as FileId);
 			map.set(row.parentId, siblings);
 		}
 		return map;
@@ -80,7 +85,7 @@ function createFsState() {
 	/**
 	 * Build the full POSIX path for a file by walking up the ancestor chain.
 	 *
-	 * O(depth) per call—typically 3–5 `filesMap.get()` lookups. In a reactive
+	 * O(depth) per call: typically 3-5 `filesMap.get()` lookups. In a reactive
 	 * context (`$derived`), this creates fine-grained dependencies on only the
 	 * accessed file's ancestors, not every row in the tree. In an imperative
 	 * context (action methods), it's a plain lookup with no reactive cost.
@@ -90,10 +95,10 @@ function createFsState() {
 	 *
 	 * @example
 	 * ```typescript
-	 * // In $derived — tracks only activeFile + ancestors
+	 * // In $derived: tracks only activeFile + ancestors
 	 * const path = $derived(computePath(activeFileId));
 	 *
-	 * // In action — plain lookup, no reactive tracking
+	 * // In action: plain lookup, no reactive tracking
 	 * const oldPath = computePath(id);
 	 * ```
 	 */
@@ -132,7 +137,7 @@ function createFsState() {
 	 *
 	 * Fine-grained: only tracks the active file's name and ancestor chain
 	 * (via `computePath`). A `size` or `updatedAt` change on a sibling file
-	 * won't trigger recomputation—only name/ancestry changes matter.
+	 * won't trigger recomputation: only name/ancestry changes matter.
 	 */
 	const selectedPath = $derived.by(() => {
 		const fileId = searchParams.file;
@@ -215,11 +220,6 @@ function createFsState() {
 			expandedIds.add(id);
 		},
 
-		/** Collapse a folder in the tree view (no-op if already collapsed). */
-		collapse(id: FileId) {
-			expandedIds.delete(id);
-		},
-
 		/** Get child FileIds of a folder. Reactive via `childrenOf` derived. */
 		getChildren(parentId: FileId | null) {
 			return childrenOf.get(parentId) ?? [];
@@ -256,13 +256,13 @@ function createFsState() {
 		 * @example
 		 * ```typescript
 		 * // Collect all visible IDs (respecting folder expansion)
-		 * const visibleIds = fsState.walkTree((id, row) => ({
+		 * const visibleIds = fs.walkTree((id, row) => ({
 		 *   collect: id,
-		 *   descend: row.type === 'folder' && fsState.isExpanded(id),
+		 *   descend: row.type === 'folder' && fs.isExpanded(id),
 		 * }));
 		 *
 		 * // Collect only files with metadata
-		 * const allFiles = fsState.walkTree((id, row) => {
+		 * const allFiles = fs.walkTree((id, row) => {
 		 *   if (row.type === 'file') return { collect: { id, name: row.name }, descend: false };
 		 *   return { descend: true };
 		 * });
@@ -378,7 +378,7 @@ function createFsState() {
 			await withErrorToast(async () => {
 				const parentPath = parentId ? (state.getPath(parentId) ?? '/') : '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-				await opensidian.fs.writeFile(path, '');
+				await workspace.fs.writeFile(path, '');
 				toast.success(`Created ${path}`);
 			}, 'Failed to create file');
 		},
@@ -387,7 +387,7 @@ function createFsState() {
 			await withErrorToast(async () => {
 				const parentPath = parentId ? (state.getPath(parentId) ?? '/') : '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-				await opensidian.fs.mkdir(path);
+				await workspace.fs.mkdir(path);
 				if (parentId) expandedIds.add(parentId);
 				toast.success(`Created ${path}/`);
 			}, 'Failed to create folder');
@@ -397,7 +397,7 @@ function createFsState() {
 			await withErrorToast(async () => {
 				const path = state.getPath(id);
 				if (!path) return;
-				await opensidian.fs.rm(path, { recursive: true });
+				await workspace.fs.rm(path, { recursive: true });
 				if (searchParams.file === id) searchParams.update({ file: null });
 				openFileIds.delete(id);
 				toast.success(`Deleted ${path}`);
@@ -412,28 +412,17 @@ function createFsState() {
 					oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
 				const newPath =
 					parentPath === '/' ? `/${newName}` : `${parentPath}/${newName}`;
-				await opensidian.fs.mv(oldPath, newPath);
+				await workspace.fs.mv(oldPath, newPath);
 				toast.success(`Renamed to ${newName}`);
 			}, 'Failed to rename');
 		},
 
 		[Symbol.dispose]() {
 			filesMap[Symbol.dispose]();
-			opensidian.fs.index.dispose();
-			opensidian.fs.dispose();
-		},
-
-		/** Cleanup: call from +layout.svelte onDestroy if needed. */
-		async dispose() {
-			state[Symbol.dispose]();
 		},
 	};
 
 	return state;
 }
 
-export const fsState = createFsState();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => fsState[Symbol.dispose]());
-}
+export type FilesState = ReturnType<typeof createFilesState>;

@@ -22,6 +22,12 @@ Use this pattern when you need to:
 
 - [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
 
+## Upstream Grounding
+
+When Better Auth two-factor plugin API shape, redirect behavior, TOTP verification, backup-code handling, trusted-device cookies, or security defaults affect correctness, ask DeepWiki a narrow question against `better-auth/better-auth` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+
+Skip DeepWiki for stable setup basics already documented below.
+
 1. Add `twoFactor()` plugin to server config with `issuer`
 2. Add `twoFactorClient()` plugin to client config
 3. Run `npx @better-auth/cli migrate`

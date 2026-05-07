@@ -1,21 +1,12 @@
 <script lang="ts">
-	import {
-		CommandPalette,
-		type CommandPaletteItem,
-	} from '@epicenter/ui/command-palette';
+	import { CommandPalette } from '@epicenter/ui/command-palette';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import { Toggle } from '@epicenter/ui/toggle';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TextIcon from '@lucide/svelte/icons/text';
-	import { auth } from '$lib/opensidian/client';
-	import { fsState } from '$lib/state/fs-state.svelte';
-	import { searchState } from '$lib/state/search-state.svelte';
-	import { sidebarSearchState } from '$lib/state/sidebar-search-state.svelte';
-	import { terminalState } from '$lib/state/terminal-state.svelte';
-	import { getFileIcon } from '$lib/utils/file-icons';
-	import { sampleDataLoader } from '$lib/utils/load-sample-data.svelte';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import AiChat from './chat/AiChat.svelte';
 	import ContentPanel from './editor/ContentPanel.svelte';
 	import StatusBar from './editor/StatusBar.svelte';
@@ -24,66 +15,13 @@
 	import TerminalPanel from './terminal/TerminalPanel.svelte';
 	import FileTree from './tree/FileTree.svelte';
 
+	const signedIn = getSignedInSession();
 	let paletteOpen = $state(false);
 	let chatOpen = $state(false);
 
-	// ── First-visit onboarding ──────────────────────────────────────
-	// Only auto-seed for anonymous visitors. Authenticated users get
-	// their data from sync. Seeding before sync finishes would create
-	// duplicates (new CRDT IDs locally + old IDs from the server).
-	let onboarded = false;
 	$effect(() => {
-		if (onboarded) return;
-		if (fsState.rootChildIds.length > 0) {
-			onboarded = true;
-			return;
-		}
-		if (auth.state.status === 'signed-in') {
-			onboarded = true;
-			return;
-		}
-		// Empty file tree plus anonymous: seed demo data, open terminal, show welcome.
-		onboarded = true;
-		sampleDataLoader.load().then(() => {
-			const readme = fsState.walkTree((id, row) => {
-				if (row.type === 'file' && row.name === 'README.md')
-					return { collect: id, descend: false };
-				return { descend: true };
-			});
-			if (readme[0]) fsState.selectFile(readme[0]);
-		});
-		terminalState.show();
+		if (!paletteOpen) signedIn.state.paletteSearch.reset();
 	});
-	$effect(() => {
-		if (!paletteOpen) searchState.reset();
-	});
-
-	const allFileItems = $derived.by((): CommandPaletteItem[] => {
-		if (!paletteOpen || searchState.scope !== 'names') return [];
-		return fsState.walkTree<CommandPaletteItem>((id, row) => {
-			if (row.type === 'file') {
-				const fullPath = fsState.getPath(id) ?? '';
-				const lastSlash = fullPath.lastIndexOf('/');
-				const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
-				return {
-					collect: {
-						id,
-						label: row.name,
-						description: parentDir || undefined,
-						icon: getFileIcon(row.name),
-						group: 'Files',
-						onSelect: () => fsState.selectFile(id),
-					},
-					descend: false,
-				};
-			}
-			return { descend: true };
-		});
-	});
-
-	const paletteItems = $derived(
-		searchState.shouldFilter ? allFileItems : searchState.searchResults,
-	);
 
 	let searchPanelRef: ReturnType<typeof SearchPanel> | undefined = $state();
 	let terminalRef: ReturnType<typeof TerminalPanel> | undefined = $state();
@@ -92,7 +30,7 @@
 	// Restore focus when terminal closes (covers both keyboard shortcut and X button).
 	let wasOpen = false;
 	$effect(() => {
-		const isOpen = terminalState.open;
+		const isOpen = signedIn.state.terminal.open;
 		if (wasOpen && !isOpen) {
 			previousFocus?.focus();
 			previousFocus = null;
@@ -103,22 +41,22 @@
 	function handleKeydown(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'f') {
 			e.preventDefault();
-			if (sidebarSearchState.leftPaneView === 'search') {
-				sidebarSearchState.closeSearch();
+			if (signedIn.state.sidebarSearch.leftPaneView === 'search') {
+				signedIn.state.sidebarSearch.closeSearch();
 			} else {
-				sidebarSearchState.openSearch();
+				signedIn.state.sidebarSearch.openSearch();
 				requestAnimationFrame(() => searchPanelRef?.focusInput());
 			}
 		}
 
 		if ((e.metaKey || e.ctrlKey) && e.key === '`') {
 			e.preventDefault();
-			if (!terminalState.open) {
+			if (!signedIn.state.terminal.open) {
 				previousFocus = document.activeElement as HTMLElement | null;
-				terminalState.toggle();
+				signedIn.state.terminal.toggle();
 				requestAnimationFrame(() => terminalRef?.focus());
 			} else {
-				terminalState.toggle();
+				signedIn.state.terminal.toggle();
 			}
 		}
 
@@ -136,7 +74,7 @@
 		<Resizable.Pane defaultSize={25} minSize={15} maxSize={50}>
 			<div class="flex h-full flex-col">
 				<SidebarHeader />
-				{#if sidebarSearchState.leftPaneView === 'search'}
+				{#if signedIn.state.sidebarSearch.leftPaneView === 'search'}
 					<SearchPanel bind:this={searchPanelRef} />
 				{:else}
 					<ScrollArea class="flex-1">
@@ -146,15 +84,15 @@
 			</div>
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
-		<Resizable.Pane defaultSize={chatOpen ? 45 : 75}>
+		<Resizable.Pane defaultSize={chatOpen ? 45: 75}>
 			<Resizable.PaneGroup direction="vertical">
 				<Resizable.Pane
-					defaultSize={terminalState.open ? 55 : 100}
+					defaultSize={signedIn.state.terminal.open ? 55: 100}
 					minSize={30}
 				>
 					<ContentPanel />
 				</Resizable.Pane>
-				{#if terminalState.open}
+				{#if signedIn.state.terminal.open}
 					<Resizable.Handle withHandle />
 					<Resizable.Pane defaultSize={45} minSize={15} maxSize={70}>
 						<TerminalPanel bind:this={terminalRef} />
@@ -171,14 +109,14 @@
 	</Resizable.PaneGroup>
 	<StatusBar bind:chatOpen />
 	<CommandPalette
-		items={paletteItems}
+		items={signedIn.state.paletteSearch.searchResults}
 		bind:open={paletteOpen}
-		bind:value={searchState.searchQuery}
-		placeholder={searchState.scope === 'names' ? 'Search file names...' : searchState.scope === 'content' ? 'Search content...' : 'Search files...'}
-		emptyMessage={searchState.scope === 'content' ? 'No content matches.' : searchState.scope === 'both' ? 'No results.' : 'No files found.'}
+		bind:value={signedIn.state.paletteSearch.searchQuery}
+		placeholder={signedIn.state.paletteSearch.scope === 'names' ? 'Search file names...': signedIn.state.paletteSearch.scope === 'content' ? 'Search content...': 'Search files...'}
+		emptyMessage={signedIn.state.paletteSearch.scope === 'content' ? 'No content matches.': signedIn.state.paletteSearch.scope === 'both' ? 'No results.': 'No files found.'}
 		title="Search Files"
 		description="Search for files by name or content"
-		shouldFilter={searchState.shouldFilter}
+		shouldFilter={signedIn.state.paletteSearch.shouldFilter}
 	>
 		{#snippet inputEndContent()}
 			<div class="flex items-center gap-0.5">
@@ -187,8 +125,8 @@
 						{#snippet child({ props })}
 							<Toggle
 								size="sm"
-								pressed={searchState.scope === 'names'}
-								onPressedChange={(v) => { searchState.scope = v ? 'names' : 'both'; }}
+								pressed={signedIn.state.paletteSearch.scope === 'names'}
+								onPressedChange={(v) => { signedIn.state.paletteSearch.scope = v ? 'names': 'both'; }}
 								aria-label="Names only"
 								class="size-6 rounded-sm p-0"
 								{...props}
@@ -204,8 +142,8 @@
 						{#snippet child({ props })}
 							<Toggle
 								size="sm"
-								pressed={searchState.scope === 'content'}
-								onPressedChange={(v) => { searchState.scope = v ? 'content' : 'both'; }}
+								pressed={signedIn.state.paletteSearch.scope === 'content'}
+								onPressedChange={(v) => { signedIn.state.paletteSearch.scope = v ? 'content': 'both'; }}
 								aria-label="Content only"
 								class="size-6 rounded-sm p-0"
 								{...props}

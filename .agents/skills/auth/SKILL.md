@@ -8,6 +8,12 @@ metadata:
 
 # Epicenter Auth
 
+## Upstream Grounding
+
+When changes depend on Better Auth session behavior, bearer transport, cookie handling, token rotation, plugins, or generated API shape, ask DeepWiki a narrow question against `better-auth/better-auth` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+
+Skip DeepWiki for Epicenter-specific invariants already documented in this skill or nearby specs.
+
 Two packages own the auth surface:
 
 - **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, token rotation for bearer clients, cookie fetch policy for cookie clients, identity fan-out, `fetch`, and the live `bearerToken` getter.

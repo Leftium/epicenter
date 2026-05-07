@@ -1,9 +1,11 @@
 <script lang="ts">
 	import * as Breadcrumb from '@epicenter/ui/breadcrumb';
-	import { fsState } from '$lib/state/fs-state.svelte';
 
+	import { getSignedInSession } from '$lib/session.svelte';
+
+	const signedIn = getSignedInSession();
 	const pathSegments = $derived.by(() => {
-		const path = fsState.selectedPath;
+		const path = signedIn.state.files.selectedPath;
 		if (!path) return [];
 		return path.split('/').filter(Boolean);
 	});

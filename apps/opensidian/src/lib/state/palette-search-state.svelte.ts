@@ -2,13 +2,19 @@ import type { FileId } from '@epicenter/filesystem';
 import { createPersistedState } from '@epicenter/svelte';
 import type { CommandPaletteItem } from '@epicenter/ui/command-palette';
 import { type } from 'arktype';
-import { opensidian } from '$lib/opensidian/client';
+import type { OpensidianWorkspace } from '$lib/opensidian/browser';
 import { getFileIcon } from '$lib/utils/file-icons';
-import { fsState } from './fs-state.svelte';
+import type { FilesState } from './files-state.svelte';
 
 export type SearchScope = 'names' | 'content' | 'both';
 
-function createSearchState() {
+export function createPaletteSearchState({
+	files,
+	workspace,
+}: {
+	files: FilesState;
+	workspace: OpensidianWorkspace;
+}) {
 	// Persisted scope preference
 	const scopeState = createPersistedState({
 		key: 'opensidian.search.scope',
@@ -26,34 +32,33 @@ function createSearchState() {
 	// Debounce timer
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
-	// ── Name search (instant, in-memory) ────────────────────────────
-	const nameResults = $derived.by((): CommandPaletteItem[] => {
-		const query = searchQuery.trim().toLowerCase();
-		if (!query) return [];
-
-		return fsState.walkTree<CommandPaletteItem>((id, row) => {
+	// ── File items (instant, in-memory) ─────────────────────────────
+	const fileItems = $derived.by((): CommandPaletteItem[] => {
+		return files.walkTree<CommandPaletteItem>((id, row) => {
 			if (row.type === 'file') {
-				const nameMatch = row.name.toLowerCase().includes(query);
-				if (nameMatch) {
-					const fullPath = fsState.getPath(id) ?? '';
-					const lastSlash = fullPath.lastIndexOf('/');
-					const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
-					return {
-						collect: {
-							id,
-							label: row.name,
-							description: parentDir || undefined,
-							icon: getFileIcon(row.name),
-							group: 'Files',
-							onSelect: () => fsState.selectFile(id as FileId),
-						},
-						descend: false,
-					};
-				}
-				return { descend: false };
+				const fullPath = files.getPath(id) ?? '';
+				const lastSlash = fullPath.lastIndexOf('/');
+				const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
+				return {
+					collect: {
+						id,
+						label: row.name,
+						description: parentDir || undefined,
+						icon: getFileIcon(row.name),
+						group: 'Files',
+						onSelect: () => files.selectFile(id as FileId),
+					},
+					descend: false,
+				};
 			}
 			return { descend: true };
 		});
+	});
+
+	const nameResults = $derived.by((): CommandPaletteItem[] => {
+		const query = searchQuery.trim().toLowerCase();
+		if (!query) return fileItems;
+		return fileItems.filter((item) => item.label.toLowerCase().includes(query));
 	});
 
 	// ── Content search (debounced FTS5) ─────────────────────────────
@@ -73,7 +78,7 @@ function createSearchState() {
 				const scope = scopeState.current;
 				// Add column filter for content-only mode
 				const ftsQuery = scope === 'content' ? `content:${trimmed}` : trimmed;
-				const results = await opensidian.sqliteIndex.search(ftsQuery);
+				const results = await workspace.sqliteIndex.search(ftsQuery);
 
 				contentResults = results.map((r) => ({
 					id: r.id,
@@ -84,7 +89,7 @@ function createSearchState() {
 					snippet: r.snippet,
 					icon: getFileIcon(r.name),
 					group: 'Content Matches',
-					onSelect: () => fsState.selectFile(r.id as FileId),
+					onSelect: () => files.selectFile(r.id as FileId),
 				}));
 			} catch {
 				contentResults = [];
@@ -100,7 +105,7 @@ function createSearchState() {
 
 		switch (scope) {
 			case 'names':
-				return nameResults;
+				return fileItems;
 			case 'content':
 				return contentResults;
 			case 'both': {
@@ -156,7 +161,8 @@ function createSearchState() {
 			isSearching = false;
 			if (debounceTimer) clearTimeout(debounceTimer);
 		},
+		[Symbol.dispose]() {
+			if (debounceTimer) clearTimeout(debounceTimer);
+		},
 	};
 }
-
-export const searchState = createSearchState();

@@ -17,11 +17,14 @@
  *
  * @example
  * ```ts
- * type FujiSignedIn = SignedInBase & { fuji: Fuji };
- * export const session = createSession<FujiSignedIn>({
+ * export const session = createSession({
  *   auth,
- *   build: (identity) => buildFujiSignedIn(identity),
+ *   build: (identity) => {
+ *     const fuji = openFuji({ ... });
+ *     return { userId: identity.user.id, fuji, [Symbol.dispose]() {...} };
+ *   },
  * });
+ * export type FujiSignedIn = InferSignedIn<typeof session>;
  * ```
  */
 

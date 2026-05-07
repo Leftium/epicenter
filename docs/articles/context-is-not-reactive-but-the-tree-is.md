@@ -133,36 +133,40 @@ If the speaker changes, this component is destroyed too. Its context read does n
 
 The same rule applies to signed-in app scopes, but not every upstream auth change should remount the subtree. A token refresh, cookie refresh, or encryption-key refresh for the same user is not a new scope.
 
-In a signed-in session scope, handle that refresh inside the scope that opened the workspace. The cleanest way is to pass identity-bound resources as callbacks so each subsystem reads `auth.state` at the boundary that needs it:
+In a signed-in session scope, handle that refresh inside the module that opened the workspace. Current workspace-backed apps use `createSession`, not a context setter component:
 
-```svelte
-<script lang="ts">
-	import type { AuthIdentity } from '@epicenter/auth';
-	import { requireSignedIn } from '@epicenter/auth';
-	import { onDestroy, type Snippet } from 'svelte';
-	import { auth } from '$lib/auth';
-	import { setVoiceSession } from '$lib/voice-session';
-	import { openVoiceWorkspace } from '$lib/voice/browser';
+```ts
+import { requireSignedIn } from '@epicenter/auth';
+import { createSession, type InferSignedIn } from '@epicenter/svelte';
+import { auth } from '$lib/auth';
+import { openVoiceWorkspace } from '$lib/voice/browser';
 
-	let {
-		identity,
-		children,
-	}: {
-		identity: AuthIdentity;
-		children: Snippet;
-	} = $props();
+export const session = createSession({
+	auth,
+	build: (identity) => {
+		const userId = identity.user.id;
+		const voice = openVoiceWorkspace({
+			userId,
+			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+		});
+		return {
+			userId,
+			voice,
+			[Symbol.dispose]() {
+				voice[Symbol.dispose]();
+			},
+		};
+	},
+});
 
-	const userId = identity.user.id;
-	const voice = openVoiceWorkspace({
-		userId,
-		encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
-	});
-	setVoiceSession({ userId, voice });
-
-	onDestroy(() => voice[Symbol.dispose]());
-</script>
-
-{@render children()}
+export type VoiceSignedIn = InferSignedIn<typeof session>;
+export function getVoiceSession(): VoiceSignedIn {
+	const current = session.current;
+	if (current.status !== 'signed-in') {
+		throw new Error('Voice session is only available inside the signed-in branch');
+	}
+	return current.signedIn;
+}
 ```
 
 The key answers "is this still the same scope?" The auth callback answers "did something inside this scope refresh?" There is no separate listener and no mutation hook on the workspace: sync can read a refreshed token on connection attempts, and new encrypted attachments can derive from the current keys.

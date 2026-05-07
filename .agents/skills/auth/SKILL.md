@@ -91,7 +91,7 @@ export const auth = createBearerAuth({
 
 ## Workspace Binding
 
-Identity-bound resources are read lazily through callbacks: workspaces don't hold the keys, they read them out of `auth.state` at every encryption attach site. The session module owns the workspace lifecycle (`createSession` from `@epicenter/svelte`), and each per-app build closure passes `() => requireSignedIn(auth).encryptionKeys` straight through to the workspace.
+Identity-bound resources are read through callbacks at the boundary that needs them. Sync can read a refreshed bearer token on connection attempts. Encrypted stores read `encryptionKeys()` when they attach and keep the derived keyring afterward. The session module owns the workspace lifecycle (`createSession` from `@epicenter/svelte`), and each per-app build closure passes `() => requireSignedIn(auth).encryptionKeys` straight through to the workspace.
 
 ```ts
 import { requireSignedIn } from '@epicenter/auth';

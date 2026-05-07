@@ -433,51 +433,32 @@ if (import.meta.hot) {
 About 35 lines, slightly more than spec 1's original per-app module because
 the app names its signed-in accessor. The lines are legible: each callback has
 one narrow job.
-    },
-  });
-  return {
-    userId,
-    fuji,
-    [Symbol.dispose]() { fuji[Symbol.dispose](); },
-  };
-}
-
-export const session = createSession<FujiSignedIn>({
-  auth,
-  build: buildFujiSignedIn,
-});
-
-if (import.meta.hot) {
-  import.meta.hot.dispose(() => session[Symbol.dispose]());
-}
-```
-
-About 35 lines, slightly more than spec 1's per-app module because of the
-two callback closures. The lines are legible: each callback has one
-narrow job.
 
 If a future feature attaches a non-fuji resource to the signed-in scope
 (billing, telemetry), it composes inside `build` the same way and reads
 identity values lazily through `auth.state`:
 
 ```ts
-function buildFujiSignedIn(identity: AuthIdentity): FujiSignedIn {
-  const userId = identity.user.id;
-  const fuji = openFuji({ userId, peer, bearerToken: ..., encryptionKeys: ... });
-  const billing = openBilling({
-    userId,
-    accessToken: () => auth.bearerToken,
-  });
-  return {
-    userId,
-    fuji,
-    billing,
-    [Symbol.dispose]() {
-      billing[Symbol.dispose]();
-      fuji[Symbol.dispose]();
-    },
-  };
-}
+export const session = createSession({
+  auth,
+  build: (identity) => {
+    const userId = identity.user.id;
+    const fuji = openFuji({ userId, peer, bearerToken: ..., encryptionKeys: ... });
+    const billing = openBilling({
+      userId,
+      accessToken: () => auth.bearerToken,
+    });
+    return {
+      userId,
+      fuji,
+      billing,
+      [Symbol.dispose]() {
+        billing[Symbol.dispose]();
+        fuji[Symbol.dispose]();
+      },
+    };
+  },
+});
 ```
 
 `createSession` is unchanged. New attachments add three lines: declare the

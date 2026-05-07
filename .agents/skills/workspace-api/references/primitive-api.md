@@ -74,28 +74,30 @@ For workspaces that need at-rest encryption, the coordinator owns the sibling at
 
 | Helper | Purpose |
 |---|---|
-| `attachEncryption(ydoc)` | Per-ydoc encryption coordinator. Returns `{ applyKeys, attachTable, attachTables, attachKv }`. Teardown is synchronous and cascades from `ydoc.destroy()`. |
-| `encryption.attachTable(name, def)` | Singular encrypted table; self-registers with the coordinator. |
+| `attachEncryption(ydoc, { getKeys })` | Per-ydoc encryption coordinator. Returns `{ attachTable, attachTables, attachKv, attachIndexedDb, ... }`. Reads `getKeys()` synchronously at every registration site. Teardown is synchronous and cascades from `ydoc.destroy()`. |
+| `encryption.attachTable(name, def)` | Singular encrypted table; self-registers with the coordinator and is activated with the current keyring before being returned. |
 | `encryption.attachTables(defs)` | Batch sugar over `encryption.attachTable`. |
 | `encryption.attachKv(defs)` | Encrypted KV singleton. |
+| `encryption.attachIndexedDb(targetYdoc, { userId })` | Encrypted local IndexedDB persistence for a root or child Y.Doc. |
 
 Standard composition:
 
 ```ts
 const ydoc       = new Y.Doc({ guid: id, gc: false });
-const encryption = attachEncryption(ydoc);
+const encryption = attachEncryption(ydoc, {
+	getKeys: () => requireSignedIn(auth).encryptionKeys,
+});
 const tables     = encryption.attachTables(myTables);
 const kv         = encryption.attachKv(myKv);
-
-// Later, after login:
-encryption.applyKeys(session.encryptionKeys);
 ```
+
+Keys are read lazily through the `getKeys` callback. There is no separate `applyKeys` step: registration and activation happen in one call, and same-user key rotation is observed at the next read of `getKeys()` (no mutation hook on the workspace). `getKeys()` should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth-svelte` does exactly that.
 
 Encryption is opt-in per slot; the coordinator carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted `encryption.attachTable(name, def)` (method) are both available; pick one per slot.
 
 > **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `encryption.attachTable('posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns, a silent data-at-rest leak. The framework does not catch this; the grep-able call-site shape (`encryption.attach*` vs top-level `attach*`) is the defense. One slot name, one variant, one intent.
 
-IDB / broadcast / sync / sqlite transitively see already-encrypted bytes after `applyKeys` runs. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
+IDB / broadcast / sync / sqlite transitively see already-encrypted bytes once encryption is registered. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
 
 ## Readiness Signals: Split, Don't Precompose
 

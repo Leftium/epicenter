@@ -47,56 +47,58 @@ encrypted CRDT value
 ```
 On the server, `apps/api/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption` to parse the keyring and derive per-user keys.
 It returns one `{ version, userKeyBase64 }` entry per configured secret version.
-On the client, `workspace.encryption.applyKeys(...)` (the `EncryptionAttachment` exposed from the document bundle) decodes each `userKeyBase64`, runs `deriveWorkspaceKey(userKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
+On the client, the encryption coordinator (`attachEncryption(ydoc, { getKeys })`) reads `getKeys()` synchronously at every `attachTable` / `attachKv` / `attachIndexedDb` site, decodes each `userKeyBase64`, runs `deriveWorkspaceKey(userKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
 The highest version becomes the current key for new writes.
 
 ## How keys reach the client
 Keys come through the auth session.
 There is no separate key-fetch endpoint in the reviewed code.
 `apps/api/src/auth/create-auth.ts` attaches `encryptionKeys` to `/auth/get-session`.
-`@epicenter/auth-svelte` exposes those keys through `auth.snapshot`.
+`@epicenter/auth-svelte` exposes those keys through `auth.state.identity.encryptionKeys` while the user is signed in.
 That happens in two places:
 - on boot from a cached session
 - on every authenticated session update from Better Auth
 The boot path exists so the workspace can unlock before the first auth roundtrip finishes.
-In app clients such as `apps/tab-manager/src/lib/tab-manager/client.ts`, `bindAuthWorkspaceScope` receives the app-owned lifecycle hooks:
+The workspace does not hold its own copy of the keys. `attachEncryption` takes a lazy `getKeys` callback that reads `auth.state` each time encryption needs to derive a per-doc keyring. In per-app session modules, the workspace builder passes `() => requireSignedIn(auth).encryptionKeys` straight through:
 ```ts
-bindAuthWorkspaceScope({
-	auth,
-	applyAuthIdentity(identity) {
-		tabManager.encryption.applyKeys(identity.encryptionKeys);
-		void registerDevice();
-	},
-	onSignOut() {
-		window.location.reload();
-	},
-	onIdentityChanged() {
-		window.location.reload();
-	},
+import { requireSignedIn } from '@epicenter/auth-svelte';
+
+const fuji = openFuji({
+	userId,
+	peer,
+	bearerToken: () => auth.bearerToken,
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
 ```
-The order matters.
-The binding calls `applyAuthIdentity(identity)` when a signed-in identity is active.
-The terminal callbacks are intentionally named separately even when both bodies reload today. That gives tests, telemetry, and non-browser platforms a precise hook without coupling sign-out to local data deletion.
+Same-user identity updates (key rotation, profile edits) propagate through the next read of `auth.state`. There is no mutation hook on the workspace: the session module owns the lifecycle, and the encryption attachment owns the read callback.
 
 ## Browser local persistence
-Authenticated browser workspaces open local IndexedDB only after `auth.identity` exists.
-The identity carries two separate inputs:
-- `identity.user.id` scopes local IndexedDB and BroadcastChannel names to the owner.
-- `identity.encryptionKeys` unlocks encrypted tables, KV, and local IndexedDB updates.
+Authenticated browser workspaces open local IndexedDB only after auth has settled into a signed-in state. The session module guarantees that boundary: it builds the workspace lazily once `auth.state.status === 'signed-in'` and disposes it on sign-out.
+Two inputs flow into the workspace:
+- `userId` scopes local IndexedDB and BroadcastChannel names to the owner. It is captured once at build time because IDB and BroadcastChannel keys are immutable for the lifetime of the workspace.
+- `encryptionKeys: () => EncryptionKeys` is a callback the encryption coordinator invokes lazily. It reads from `auth.state` each time, so same-user key rotation lands without a mutation hook.
 
 The browser factory shape is:
 ```ts
-const identity = auth.identity;
-if (identity === null) {
-	throw new Error('openMyApp requires signed-in auth.identity. Await auth.whenReady first.');
+import { requireSignedIn } from '@epicenter/auth-svelte';
+
+export function openMyApp({
+	userId,
+	peer,
+	bearerToken,
+	encryptionKeys,
+}: {
+	userId: string;
+	peer: PeerIdentity;
+	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
+}) {
+	const doc = openMyAppDoc({ getKeys: encryptionKeys });
+
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	// ...
 }
-
-const userId = identity.user.id;
-const doc = openMyAppDoc({ encryptionKeys: identity.encryptionKeys });
-
-const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-attachOwnedBroadcastChannel(doc.ydoc, { userId });
 ```
 
 The storage name is derived inside `@epicenter/workspace` as:
@@ -113,18 +115,28 @@ Logout reloads the browser client after the auth session changes.
 It does not wipe local IndexedDB data.
 The reviewed code still does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`; the page reload is the current key-drop boundary.
 The closest Bitwarden analogy is lock, not logout: Bitwarden documents unlock as using encrypted data already stored on disk and lock as deleting decrypted vault data and the account encryption key from memory. Bitwarden separately documents that logout wipes PIN settings. See [Understand Log In vs. Unlock](https://bitwarden.com/help/understand-log-in-vs-unlock/) and [Unlock With PIN](https://bitwarden.com/help/unlock-with-pin/).
-The logout path in the app clients is:
+The logout path is owned by the per-app session module. `createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user update is a no-op (the lazy `getKeys` callback observes the change at the next read), and a different-user transition disposes the workspace and reloads the page:
 ```ts
-bindAuthWorkspaceScope({
+import { createSession, type SignedInBase } from '@epicenter/svelte';
+import { requireSignedIn } from '@epicenter/auth-svelte';
+
+export const session = createSession<MyAppSignedIn>({
 	auth,
-	applyAuthIdentity(identity) {
-		workspace.encryption.applyKeys(identity.encryptionKeys);
-	},
-	onSignOut() {
-		window.location.reload();
-	},
-	onIdentityChanged() {
-		window.location.reload();
+	build: (identity) => {
+		const userId = identity.user.id;
+		const workspace = openMyApp({
+			userId,
+			peer,
+			bearerToken: () => auth.bearerToken,
+			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+		});
+		return {
+			userId,
+			workspace,
+			[Symbol.dispose]() {
+				workspace[Symbol.dispose]();
+			},
+		};
 	},
 });
 ```
@@ -221,7 +233,7 @@ Before activation, the wrapper is a passthrough store and `set()` writes plainte
 After activation, `set()` always encrypts.
 The active state holds the full keyring, the current key, and the current key version.
 Calling `activateEncryption()` again updates that state to a new keyring, but it does not switch the store back to plaintext mode.
-The document builder reinforces that shape: `attachEncryption(ydoc)` returns a coordinator whose `encryption.attachTables(defs)` / `encryption.attachKv(defs)` methods register every table and KV store as encrypted wrappers from the start, and `encryption.applyKeys(...)` later activates encryption across all of them.
+The document builder reinforces that shape: `attachEncryption(ydoc, { getKeys })` returns a coordinator whose `encryption.attachTables(defs)` / `encryption.attachKv(defs)` methods register every table and KV store as encrypted wrappers from the start. The coordinator calls `getKeys()` synchronously at each registration site, derives the per-doc keyring, and activates the store before handing it back. There is no separate `applyKeys` mutation step: the keys are read lazily, so registration and activation happen in one call.
 
 ## What activation re-encrypts
 Activation does not rewrite everything.

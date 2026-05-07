@@ -122,7 +122,7 @@ refcounting, and the `gcTime` grace period between last dispose and teardown.
 
 ### Plaintext vs encrypted
 
-Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc)` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`): additionally registers its backing store with that coordinator so keys applied via `encryption.applyKeys(...)` flow to every registered store atomically.
+Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { getKeys })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `getKeys()` synchronously at each registration site, derives the per-doc keyring, and activates the store before handing it back. Same-user key rotation propagates through the next `getKeys()` read; there is no `applyKeys` mutation hook.
 
 Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 
@@ -136,24 +136,25 @@ import {
 	attachOwnedBroadcastChannel,
 	attachSync,
 	createRemoteClient,
+	type EncryptionKeys,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
-import type { AuthClient, AuthIdentity } from '@epicenter/auth';
 import * as Y from 'yjs';
 import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
-	identity,
+	userId,
 	bearerToken,
+	encryptionKeys,
 }: {
-	identity: AuthIdentity;
+	userId: string;
 	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
-	const userId = identity.user.id;
 
-	const encryption = attachEncryption(ydoc);
+	const encryption = attachEncryption(ydoc, { getKeys: encryptionKeys });
 	const tables = encryption.attachTables(appTables);
 	const awareness = attachAwareness(ydoc, {
 		schema: {
@@ -196,8 +197,9 @@ export function openApp({
 }
 
 export const workspace = openApp({
-	identity,
+	userId,
 	bearerToken: () => auth.bearerToken,
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
 ```
 

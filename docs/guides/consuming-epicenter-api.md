@@ -17,7 +17,7 @@
 
 The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, AI inference, and encryption key derivation. It runs on Cloudflare Workers with Durable Objects; each user gets isolated DOs for their workspaces and documents. There is no shared state between accounts.
 
-On the client, `@epicenter/workspace` provides the primitives: define your schema with `defineTable` / `defineKv`, compose a live document by creating a `Y.Doc` and calling `attach*`, authenticate with `@epicenter/auth-svelte`, and wire auth transitions with `@epicenter/auth-workspace`.
+On the client, `@epicenter/workspace` provides the primitives: define your schema with `defineTable` / `defineKv`, compose a live document by creating a `Y.Doc` and calling `attach*`, authenticate with `@epicenter/auth-svelte`, and gate the workspace lifecycle on signed-in identity with `createSession` from `@epicenter/svelte`.
 
 ## Minimal end-to-end shape
 
@@ -34,9 +34,8 @@ import {
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
-import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
-import { waitForAuthSettled, type AuthIdentity } from '@epicenter/auth';
-import { createCookieAuth } from '@epicenter/auth-svelte';
+import { createCookieAuth, requireSignedIn } from '@epicenter/auth-svelte';
+import { createSession, type SignedInBase } from '@epicenter/svelte';
 import * as Y from 'yjs';
 import { type } from 'arktype';
 
@@ -54,30 +53,26 @@ export const auth = createCookieAuth({
 	baseURL: 'https://api.epicenter.so',
 });
 
-function openMyAppDoc({
-	encryptionKeys,
-}: { encryptionKeys?: EncryptionKeys } = {}) {
+function openMyAppDoc({ getKeys }: { getKeys: () => EncryptionKeys }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
-	const encryption = attachEncryption(ydoc);
+	const encryption = attachEncryption(ydoc, { getKeys });
 	const tables = encryption.attachTables(appTables);
 	const kv = encryption.attachKv({});
-	if (encryptionKeys !== undefined) {
-		encryption.applyKeys(encryptionKeys);
-	}
 	return { ydoc, encryption, tables, kv };
 }
 
 function openMyApp({
-	identity,
+	userId,
 	peer,
 	bearerToken,
+	encryptionKeys,
 }: {
-	identity: AuthIdentity;
+	userId: string;
 	peer: PeerIdentity;
 	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 }) {
-	const userId = identity.user.id;
-	const doc = openMyAppDoc({ encryptionKeys: identity.encryptionKeys });
+	const doc = openMyAppDoc({ getKeys: encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
@@ -113,35 +108,35 @@ function openMyApp({
 	};
 }
 
-await waitForAuthSettled(auth);
-if (auth.state.status !== 'signed-in') {
-	throw new Error('Cannot open My app workspace: auth identity is required.');
-}
+type MyAppSignedIn = SignedInBase & {
+	readonly workspace: ReturnType<typeof openMyApp>;
+};
 
-export const workspace = openMyApp({
-	identity: auth.state.identity,
-	bearerToken: () => auth.bearerToken,
-	peer: {
-		id: getOrCreateInstallationId(localStorage),
-		name: 'My app',
-		platform: 'web',
-	},
-});
-
-bindAuthWorkspaceScope({
+export const session = createSession<MyAppSignedIn>({
 	auth,
-	applyAuthIdentity(identity) {
-		workspace.encryption.applyKeys(identity.encryptionKeys);
-	},
-	onSignOut() {
-		window.location.reload();
-	},
-	onIdentityChanged() {
-		window.location.reload();
+	build: (identity) => {
+		const userId = identity.user.id;
+		const workspace = openMyApp({
+			userId,
+			peer: {
+				id: getOrCreateInstallationId(localStorage),
+				name: 'My app',
+				platform: 'web',
+			},
+			bearerToken: () => auth.bearerToken,
+			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+		});
+		return {
+			userId,
+			workspace,
+			[Symbol.dispose]() {
+				workspace[Symbol.dispose]();
+			},
+		};
 	},
 });
 ```
 
 The `ydoc.guid` becomes the sync room name. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin.
-For authenticated browser workspaces, local IndexedDB and BroadcastChannel names are scoped inside the primitives from `identity.user.id`. App code passes `{ userId }`, not a prebuilt storage key.
-In browser apps, both terminal auth callbacks usually reload the page. The separate names make the sign-out and account-switch cases testable, observable, and overridable on platforms that do not use `window.location.reload()`.
+For authenticated browser workspaces, local IndexedDB and BroadcastChannel names are scoped inside the primitives from `userId`. App code passes `{ userId }`, not a prebuilt storage key. The session module captures `userId` once at build time (since IDB and BroadcastChannel keys are immutable for the workspace's lifetime) and hands `encryptionKeys` to the workspace as a lazy callback so same-user key rotation lands without a mutation hook.
+`createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user identity update is a no-op (the lazy `getKeys` callback observes the change at the next read), and a different-user transition disposes the workspace and reloads the page.

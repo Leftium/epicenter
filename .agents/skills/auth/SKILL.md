@@ -92,29 +92,50 @@ export const auth = createBearerAuth({
 
 ## Workspace Binding
 
-Use `bindAuthWorkspaceScope` at setup time for cookie auth clients:
+Identity-bound resources are read lazily through callbacks: workspaces don't hold the keys, they read them out of `auth.state` at every encryption attach site. The session module owns the workspace lifecycle (`createSession` from `@epicenter/svelte`), and each per-app build closure passes `() => requireSignedIn(auth).encryptionKeys` straight through to the workspace.
+
+```ts
+import { requireSignedIn } from '@epicenter/auth-svelte';
+import { createSession, type SignedInBase } from '@epicenter/svelte';
+
+type FujiSignedIn = SignedInBase & { readonly fuji: Fuji };
+
+export const session = createSession<FujiSignedIn>({
+	auth,
+	build: (identity) => {
+		const userId = identity.user.id;
+		const fuji = openFuji({
+			userId,
+			peer,
+			bearerToken: () => auth.bearerToken,
+			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+		});
+		return {
+			userId,
+			fuji,
+			[Symbol.dispose]() { fuji[Symbol.dispose](); },
+		};
+	},
+});
+```
+
+`createSession` reconciles `auth.state`: a sign-out disposes the workspace, a same-user identity update is a no-op (the lazy callback observes the change at the next read), and a different-user transition disposes the workspace and reloads. Each `attachSync` still receives `bearerToken: () => auth.bearerToken`. For destructive reset (wipe local data and reload), call `workspace.wipe()` and `location.reload()` inside the consumer that triggers it; there is no terminal callback on the session itself.
+
+For apps that need a side effect on every applied identity (like re-registering a device row), `bindAuthWorkspaceScope` from `@epicenter/auth-workspace` still exists. Its `applyAuthIdentity` no longer applies keys; pass an empty body or a side-effect-only callback:
 
 ```ts
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 
 bindAuthWorkspaceScope({
 	auth,
-	applyAuthIdentity(identity) {
-		workspace.encryption.applyKeys(identity.encryptionKeys);
+	applyAuthIdentity() {
+		// keys are read lazily through requireSignedIn(auth) at the workspace boundary
+		void registerDevice();
 	},
-	async resetLocalClient() {
-		try {
-			await workspace.wipe();
-		} catch (error) {
-			reportCleanupError(error);
-		} finally {
-			window.location.reload();
-		}
-	},
+	onSignOut() { window.location.reload(); },
+	onIdentityChanged() { window.location.reload(); },
 });
 ```
-
-Each `attachSync` receives `bearerToken: () => auth.bearerToken`. Keep destructive reset policy inside `resetLocalClient()`.
 
 ## Sync Authentication
 

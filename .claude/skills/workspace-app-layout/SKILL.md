@@ -39,7 +39,7 @@ one below it.
 |---|---|---|---|
 | `index.ts` | Iso doc factory | `@epicenter/workspace` core, schemas | doc bundle (ydoc, tables, kv, encryption, batch, dispose) |
 | `<binding>.ts` | Env factory (pure, no side effects) | `./index` + env-specific `attach*` primitives | doc bundle + env-specific resources (idb, sync, materializers, caches) |
-| `client.ts` | Running singleton | `./<binding>` + `createAuth` | `auth` + `<app>` singleton + lifecycle subscriptions |
+| `client.ts` | Auth construction | auth factory (`createCookieAuth` / `createBearerAuth`) | `auth` for the session module to consume |
 
 ## Binding Names
 
@@ -63,15 +63,19 @@ Use `tauri.ts` over `desktop.ts` when the file's imports are Tauri-specific.
 
 ```ts
 // apps/zhongwen/src/lib/zhongwen/index.ts
-import { attachEncryption } from '@epicenter/workspace';
+import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { zhongwenKv, zhongwenTables } from '$lib/workspace';
 
-export function openZhongwen() {
+export function openZhongwen({
+	getKeys,
+}: {
+	getKeys: () => EncryptionKeys;
+}) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
-	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, zhongwenTables);
-	const kv = encryption.attachKv(ydoc, zhongwenKv);
+	const encryption = attachEncryption(ydoc, { getKeys });
+	const tables = encryption.attachTables(zhongwenTables);
+	const kv = encryption.attachKv(zhongwenKv);
 	return {
 		ydoc, tables, kv, encryption,
 		batch: (fn: () => void) => ydoc.transact(fn),
@@ -80,42 +84,36 @@ export function openZhongwen() {
 }
 ```
 
-### `<binding>.ts` — pure env factory (with auth + device dep injection)
+### `<binding>.ts` — pure env factory (lazy identity callbacks)
 
-For apps with sync, the factory takes `auth` and a `device` descriptor as
-injected dependencies. `auth` powers sync's `getToken`. `device` is the
-identity descriptor (`{ id, name, platform }`) — the factory adds `offers`
-(via `actionManifest(actions)`) and publishes the full `PeerDevice` into
-awareness so other peers can discover and dispatch to this runtime.
+For apps with sync, the factory takes plain values for things scoped once at build (`userId`, `peer`) and lazy callbacks for things that may change while the workspace is alive (`bearerToken`, `encryptionKeys`). The session module owns the lifecycle and passes these in: `userId` is captured because IDB and BroadcastChannel keys are immutable for the workspace's lifetime, while `bearerToken` and `encryptionKeys` are read lazily from `auth.state` so token rotation and same-user key rotation propagate without a mutation hook.
 
 ```ts
-// apps/fuji/src/lib/fuji/browser.ts
-import type { AuthClient } from '@epicenter/auth-svelte';
+// apps/fuji/src/routes/(signed-in)/fuji/browser.ts
 import {
-	actionManifest, attachBroadcastChannel, attachIndexedDb, attachSync,
-	type DeviceDescriptor, toWsUrl,
+	attachOwnedBroadcastChannel, attachIndexedDb, attachSync,
+	type EncryptionKeys, type PeerIdentity, toWsUrl,
 } from '@epicenter/workspace';
 import { openFuji as openFujiDoc } from './index';
 
 export function openFuji({
-	auth,
-	device,
+	userId,
+	peer,
+	bearerToken,
+	encryptionKeys,
 }: {
-	auth: AuthClient;
-	device: DeviceDescriptor;
+	userId: string;
+	peer: PeerIdentity;
+	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openFujiDoc();
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
-	const sync = attachSync(doc.ydoc, {
+	const doc = openFujiDoc({ getKeys: encryptionKeys });
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	const sync = attachSync(doc, {
 		url: toWsUrl(/* ... */),
-		waitFor: idb.whenLoaded,
-		awareness: doc.awareness.raw,
-		getToken: () => auth.getToken(),
-		actions: doc.actions,
-	});
-	doc.awareness.setLocal({
-		device: { ...device, offers: actionManifest(doc.actions) },
+		waitFor: idb,
+		bearerToken,
 	});
 	return { ...doc, idb, sync };
 }
@@ -136,44 +134,49 @@ export function openZhongwen() {
 ### `client.ts` — running singleton + auth + device + lifecycle
 
 ```ts
-// apps/fuji/src/lib/fuji/client.ts
-import { AuthSession, createAuth } from '@epicenter/auth-svelte';
-import { APP_URLS } from '@epicenter/constants/vite';
-import { createPersistedState } from '@epicenter/svelte';
-import { getOrCreateDeviceId } from '@epicenter/workspace';
-import { openFuji } from './browser';
+// apps/fuji/src/lib/session.svelte.ts
+import { requireSignedIn } from '@epicenter/auth-svelte';
+import { createSession, type SignedInBase } from '@epicenter/svelte';
+import { getOrCreateInstallationId } from '@epicenter/workspace';
+import { type Fuji, openFuji } from '../routes/(signed-in)/fuji/browser';
+import { auth } from './auth';
 
-const session = createPersistedState({
-	key: 'fuji:authSession',
-	schema: AuthSession.or('null'),
-	defaultValue: null,
-});
+export type FujiSignedIn = SignedInBase & {
+	readonly fuji: Fuji;
+};
 
-export const auth = createAuth({ baseURL: APP_URLS.API, session });
-
-export const fuji = openFuji({
+export const session = createSession<FujiSignedIn>({
 	auth,
-	device: {
-		id: getOrCreateDeviceId(localStorage),
-		name: 'Fuji',
-		platform: 'web',
+	build: (identity) => {
+		const userId = identity.user.id;
+		const fuji = openFuji({
+			userId,
+			peer: {
+				id: getOrCreateInstallationId(localStorage),
+				name: 'Fuji',
+				platform: 'web',
+			},
+			bearerToken: () => auth.bearerToken,
+			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+		});
+		return {
+			userId,
+			fuji,
+			[Symbol.dispose]() {
+				fuji[Symbol.dispose]();
+			},
+		};
 	},
 });
 
-auth.onSessionChange((next, previous) => {
-	if (next === null) {
-		fuji.sync.goOffline();
-		if (previous !== null) void fuji.idb.clearLocal();
-		return;
-	}
-	fuji.encryption.applyKeys(next.encryptionKeys);
-	if (previous?.token !== next.token) fuji.sync.reconnect();
-});
-
 if (import.meta.hot) {
-	import.meta.hot.dispose(() => { auth[Symbol.dispose](); });
+	import.meta.hot.dispose(() => session[Symbol.dispose]());
 }
 ```
+
+`createSession` reconciles `auth.state` against the live workspace: a sign-out disposes it, a same-user identity update is a no-op (the lazy `encryptionKeys` callback observes the change at the next read), and a different-user transition disposes it and reloads the page. There is no `applyKeys` mutation hook on the workspace; `userId` is captured once because IDB and BroadcastChannel keys are immutable for the workspace's lifetime, while `encryptionKeys` is a callback so same-user key rotation lands without a workspace-level event.
+
+`client.ts` itself, in this layout, becomes the place where `auth` is constructed. The session module imports `auth` from there, and the per-route layout provides `session.current` to descendants.
 
 For tab-manager (async chrome.storage), the descriptor is built as a
 Promise — the factory accepts `Promise<DeviceDescriptor<DeviceId>>` and

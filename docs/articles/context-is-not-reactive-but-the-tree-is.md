@@ -133,11 +133,12 @@ If the speaker changes, this component is destroyed too. Its context read does n
 
 The same rule applies to signed-in app scopes, but not every upstream auth change should remount the subtree. A token refresh, cookie refresh, or encryption-key refresh for the same user is not a new scope.
 
-In a signed-in session scope, handle that refresh inside the scope that opened the workspace:
+In a signed-in session scope, handle that refresh inside the scope that opened the workspace. The cleanest way is to pass identity-bound resources as lazy callbacks so the workspace reads them out of `auth.state` each time:
 
 ```svelte
 <script lang="ts">
 	import type { AuthIdentity } from '@epicenter/auth';
+	import { requireSignedIn } from '@epicenter/auth-svelte';
 	import { onDestroy, type Snippet } from 'svelte';
 	import { auth } from '$lib/auth';
 	import { setSignedInSession } from '$lib/session.svelte';
@@ -151,32 +152,26 @@ In a signed-in session scope, handle that refresh inside the scope that opened t
 		children: Snippet;
 	} = $props();
 
-	const voice = openVoiceWorkspace({ identity });
-	setSignedInSession({ identity, voice });
-
-	const unsubscribe = auth.onStateChange((state) => {
-		if (state.status !== 'signed-in') return;
-		if (state.identity.user.id !== identity.user.id) return;
-
-		voice.encryption.applyKeys(state.identity.encryptionKeys);
+	const userId = identity.user.id;
+	const voice = openVoiceWorkspace({
+		userId,
+		encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 	});
+	setSignedInSession({ userId, voice });
 
-	onDestroy(() => {
-		unsubscribe();
-		voice[Symbol.dispose]();
-	});
+	onDestroy(() => voice[Symbol.dispose]());
 </script>
 
 {@render children()}
 ```
 
-The key answers "is this still the same scope?" The listener answers "did something inside this scope refresh?"
+The key answers "is this still the same scope?" The lazy callback answers "did something inside this scope refresh?" There is no separate listener and no mutation hook on the workspace: `requireSignedIn(auth).encryptionKeys` reads the latest value from `auth.state` whenever encryption asks for it.
 
 ```txt
 same user id
   keep subtree
   keep workspace
-  apply refreshed keys
+  next read of getKeys() picks up rotated keys
 
 different user id
   destroy subtree

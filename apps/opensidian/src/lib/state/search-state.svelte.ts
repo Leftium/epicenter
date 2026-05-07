@@ -2,13 +2,19 @@ import type { FileId } from '@epicenter/filesystem';
 import { createPersistedState } from '@epicenter/svelte';
 import type { CommandPaletteItem } from '@epicenter/ui/command-palette';
 import { type } from 'arktype';
-import { opensidian } from '$lib/opensidian/client';
+import type { OpensidianWorkspace } from '$lib/session.svelte';
 import { getFileIcon } from '$lib/utils/file-icons';
-import { fsState } from './fs-state.svelte';
+import type { FsState } from './fs-state.svelte';
 
 export type SearchScope = 'names' | 'content' | 'both';
 
-function createSearchState() {
+export function createSearchState({
+	fs,
+	opensidian,
+}: {
+	fs: FsState;
+	opensidian: OpensidianWorkspace;
+}) {
 	// Persisted scope preference
 	const scopeState = createPersistedState({
 		key: 'opensidian.search.scope',
@@ -31,11 +37,11 @@ function createSearchState() {
 		const query = searchQuery.trim().toLowerCase();
 		if (!query) return [];
 
-		return fsState.walkTree<CommandPaletteItem>((id, row) => {
+		return fs.walkTree<CommandPaletteItem>((id, row) => {
 			if (row.type === 'file') {
 				const nameMatch = row.name.toLowerCase().includes(query);
 				if (nameMatch) {
-					const fullPath = fsState.getPath(id) ?? '';
+					const fullPath = fs.getPath(id) ?? '';
 					const lastSlash = fullPath.lastIndexOf('/');
 					const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
 					return {
@@ -45,7 +51,7 @@ function createSearchState() {
 							description: parentDir || undefined,
 							icon: getFileIcon(row.name),
 							group: 'Files',
-							onSelect: () => fsState.selectFile(id as FileId),
+							onSelect: () => fs.selectFile(id as FileId),
 						},
 						descend: false,
 					};
@@ -84,7 +90,7 @@ function createSearchState() {
 					snippet: r.snippet,
 					icon: getFileIcon(r.name),
 					group: 'Content Matches',
-					onSelect: () => fsState.selectFile(r.id as FileId),
+					onSelect: () => fs.selectFile(r.id as FileId),
 				}));
 			} catch {
 				contentResults = [];
@@ -156,7 +162,10 @@ function createSearchState() {
 			isSearching = false;
 			if (debounceTimer) clearTimeout(debounceTimer);
 		},
+		[Symbol.dispose]() {
+			if (debounceTimer) clearTimeout(debounceTimer);
+		},
 	};
 }
 
-export const searchState = createSearchState();
+export type SearchState = ReturnType<typeof createSearchState>;

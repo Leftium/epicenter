@@ -2,14 +2,14 @@ import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { defineCommand } from 'just-bash';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { opensidian } from '$lib/opensidian/client';
-import { fsState } from '$lib/state/fs-state.svelte';
+import type { OpensidianWorkspace } from '$lib/session.svelte';
+import type { FsState } from '$lib/state/fs-state.svelte';
 
 /**
  * A single entry in the terminal history.
  *
  * Input entries show the command the user typed (rendered with a `$` prompt).
- * Output entries carry the result of executing that command—stdout, stderr,
+ * Output entries carry the result of executing that command: stdout, stderr,
  * and the process exit code.
  */
 type TerminalEntry =
@@ -17,11 +17,12 @@ type TerminalEntry =
 	| { type: 'output'; stdout: string; stderr: string; exitCode: number };
 
 /**
- * Reactive terminal state singleton.
+ * Reactive terminal state factory.
  *
  * Follows the same factory pattern as `fs-state.svelte.ts`: a factory
  * function creates all `$state` and exposes a public API via a returned
- * object with getters. Components import the singleton and read directly.
+ * object with getters. The session exposes it at
+ * `signedIn.opensidian.state.terminal`.
  *
  * Manages:
  * - **History**: scrollable list of input/output entries
@@ -32,12 +33,18 @@ type TerminalEntry =
  * @example
  * ```svelte
  * <script>
- *   import { terminalState } from '$lib/state/terminal-state.svelte';
- *   terminalState.open // reactive boolean
+ *   const session = getSignedInSession();
+ *   session.opensidian.state.terminal.open // reactive boolean
  * </script>
  * ```
  */
-function createTerminalState() {
+export function createTerminalState({
+	fs,
+	opensidian,
+}: {
+	fs: FsState;
+	opensidian: OpensidianWorkspace;
+}) {
 	const openState = createPersistedState({
 		key: 'opensidian.terminal-open',
 		schema: type('boolean'),
@@ -49,7 +56,7 @@ function createTerminalState() {
 	let running = $state(false);
 
 	// ── Custom commands ──────────────────────────────────────────────
-	// Registered once at singleton creation via bash.registerCommand().
+	// Registered once for the signed-in session via bash.registerCommand().
 	// Uses registerCommand() instead of the constructor's customCommands
 	// option to avoid a circular dependency (workspace → fs-state).
 
@@ -69,7 +76,7 @@ function createTerminalState() {
 					stderr: `No such file: ${path}`,
 					exitCode: 1,
 				};
-			fsState.selectFile(id);
+			fs.selectFile(id);
 			return { stdout: `Opened ${path}\n`, stderr: '', exitCode: 0 };
 		}),
 	);
@@ -139,8 +146,8 @@ function createTerminalState() {
 		 *
 		 * @example
 		 * ```typescript
-		 * await terminalState.exec('echo "hello" > /greeting.md');
-		 * await terminalState.exec('cat /greeting.md');
+		 * await terminal.exec('echo "hello" > /greeting.md');
+		 * await terminal.exec('cat /greeting.md');
 		 * // history now has 4 entries: input, output, input, output
 		 * ```
 		 */
@@ -210,4 +217,4 @@ function createTerminalState() {
 	};
 }
 
-export const terminalState = createTerminalState();
+export type TerminalState = ReturnType<typeof createTerminalState>;

@@ -1,8 +1,8 @@
 import { toast } from '@epicenter/ui/sonner';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { opensidian } from '$lib/opensidian/client';
+import type { OpensidianWorkspace } from '$lib/session.svelte';
 
-function createSampleDataLoader() {
+export function createSampleDataLoader(opensidian: OpensidianWorkspace) {
 	let seeding = $state(false);
 
 	return {
@@ -21,7 +21,7 @@ function createSampleDataLoader() {
 				);
 				await opensidian.fs.writeFile(
 					'/docs/api.md',
-					'# API Reference\n\n## YjsFileSystem\n\nThe main filesystem class.\n\n### Methods\n\n- `writeFile(path, content)` — Create or overwrite a file\n- `mkdir(path)` — Create a directory\n- `rm(path, opts)` — Remove a file or directory\n- `mv(from, to)` — Move or rename\n',
+					'# API Reference\n\n## YjsFileSystem\n\nThe main filesystem class.\n\n### Methods\n\n- `writeFile(path, content)`: Create or overwrite a file\n- `mkdir(path)`: Create a directory\n- `rm(path, opts)`: Remove a file or directory\n- `mv(from, to)`: Move or rename\n',
 				);
 				await opensidian.fs.writeFile(
 					'/docs/guide.md',
@@ -48,4 +48,4 @@ function createSampleDataLoader() {
 	};
 }
 
-export const sampleDataLoader = createSampleDataLoader();
+export type SampleDataLoader = ReturnType<typeof createSampleDataLoader>;

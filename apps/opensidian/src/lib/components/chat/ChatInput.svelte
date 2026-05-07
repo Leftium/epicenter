@@ -4,11 +4,17 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import SendIcon from '@lucide/svelte/icons/send';
 	import SquareIcon from '@lucide/svelte/icons/square';
-	import { aiChatState } from '$lib/chat/chat-state.svelte';
 	import { PROVIDER_MODELS, type Provider } from '$lib/chat/providers';
 
+	import { getSignedInSession } from '$lib/session.svelte';
+
+	const signedIn = getSignedInSession();
 	const providers = Object.keys(PROVIDER_MODELS) as Provider[];
-	const models = $derived(aiChatState.modelsForProvider(aiChatState.provider));
+	const models = $derived(
+		signedIn.opensidian.state.chat.modelsForProvider(
+			signedIn.opensidian.state.chat.provider,
+		),
+	);
 
 	let inputValue = $state('');
 
@@ -16,7 +22,7 @@
 		const content = inputValue.trim();
 		if (!content) return;
 		inputValue = '';
-		aiChatState.sendMessage(content);
+		signedIn.opensidian.state.chat.sendMessage(content);
 	}
 </script>
 
@@ -25,13 +31,13 @@
 	<div class="flex gap-2">
 		<Select.Root
 			type="single"
-			value={aiChatState.provider}
+			value={signedIn.opensidian.state.chat.provider}
 			onValueChange={(v) => {
-				if (v) aiChatState.provider = v as Provider;
+				if (v) signedIn.opensidian.state.chat.provider = v as Provider;
 			}}
 		>
 			<Select.Trigger size="sm" class="w-[120px]">
-				{aiChatState.provider || 'Provider\u2026'}
+				{signedIn.opensidian.state.chat.provider || 'Provider\u2026'}
 			</Select.Trigger>
 			<Select.Content>
 				{#each providers as p (p)}
@@ -42,13 +48,15 @@
 
 		<Select.Root
 			type="single"
-			value={aiChatState.model}
+			value={signedIn.opensidian.state.chat.model}
 			onValueChange={(v) => {
-				if (v) aiChatState.model = v;
+				if (v) signedIn.opensidian.state.chat.model = v;
 			}}
 		>
 			<Select.Trigger size="sm" class="flex-1">
-				<span class="truncate">{aiChatState.model || 'Model\u2026'}</span>
+				<span class="truncate"
+					>{signedIn.opensidian.state.chat.model || 'Model\u2026'}</span
+				>
 			</Select.Trigger>
 			<Select.Content>
 				{#each models as m (m)}
@@ -79,12 +87,12 @@
 				}
 			}}
 		/>
-		{#if aiChatState.isLoading}
+		{#if signedIn.opensidian.state.chat.isLoading}
 			<Button
 				variant="outline"
 				size="icon-lg"
 				type="button"
-				onclick={() => aiChatState.stop()}
+				onclick={() => signedIn.opensidian.state.chat.stop()}
 			>
 				<SquareIcon />
 			</Button>

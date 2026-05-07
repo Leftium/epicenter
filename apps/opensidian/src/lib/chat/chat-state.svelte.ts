@@ -1,3 +1,4 @@
+import type { AuthClient } from '@epicenter/auth';
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
@@ -15,9 +16,12 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { auth, opensidian, workspaceAiTools } from '$lib/opensidian/client';
 import { searchParams } from '$lib/search-params.svelte';
-import { skillState } from '$lib/state/skill-state.svelte';
+import type {
+	OpensidianWorkspace,
+	WorkspaceAiTools,
+} from '$lib/session.svelte';
+import type { SkillState } from '$lib/state/skill-state.svelte';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -34,7 +38,23 @@ function getNumberValue(value: JsonValue | undefined, fallback = 0) {
 	return typeof value === 'number' ? value : fallback;
 }
 
-function createAiChatState() {
+function getProviderValue(value: JsonValue | undefined): Provider {
+	return typeof value === 'string' && value in PROVIDER_MODELS
+		? (value as Provider)
+		: DEFAULT_PROVIDER;
+}
+
+export function createAiChatState({
+	auth,
+	opensidian,
+	skills,
+	workspaceAiTools,
+}: {
+	auth: AuthClient;
+	opensidian: OpensidianWorkspace;
+	skills: SkillState;
+	workspaceAiTools: WorkspaceAiTools;
+}) {
 	const conversationsMap = fromTable(opensidian.tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()].sort(
@@ -103,13 +123,13 @@ function createAiChatState() {
 							systemPrompts: [
 								OPENSIDIAN_SYSTEM_PROMPT,
 								buildGlobalSkillsPrompt(
-									skillState.globalSkills.map((skill) => ({
+									skills.globalSkills.map((skill) => ({
 										name: skill.name,
 										instructions: skill.instructions,
 									})),
 								),
 								buildVaultSkillsPrompt(
-									skillState.vaultSkills.map((skill) => ({
+									skills.vaultSkills.map((skill) => ({
 										name: skill.name,
 										content: skill.content,
 									})),
@@ -158,7 +178,7 @@ function createAiChatState() {
 			},
 
 			get provider() {
-				return getStringValue(metadata?.provider, DEFAULT_PROVIDER);
+				return getProviderValue(metadata?.provider);
 			},
 			set provider(value: Provider) {
 				const models = PROVIDER_MODELS[value];
@@ -318,7 +338,7 @@ function createAiChatState() {
 	});
 
 	void opensidian.idb.whenLoaded.then(() => {
-		void skillState.loadAllSkills();
+		void skills.loadAllSkills();
 		reconcileHandles();
 
 		const newId = ensureDefaultConversation();
@@ -444,12 +464,5 @@ function createAiChatState() {
 	};
 }
 
-export const aiChatState = createAiChatState();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => aiChatState[Symbol.dispose]());
-}
-
-export type ConversationHandle = NonNullable<
-	ReturnType<(typeof aiChatState)['get']>
->;
+export type AiChatState = ReturnType<typeof createAiChatState>;
+export type ConversationHandle = NonNullable<ReturnType<AiChatState['get']>>;

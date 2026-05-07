@@ -8,9 +8,10 @@
 	import MessageSquareIcon from '@lucide/svelte/icons/message-square';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import { editorState } from '$lib/state/editor-state.svelte';
-	import { terminalState } from '$lib/state/terminal-state.svelte';
 
+	const signedIn = getSignedInSession();
 	let { chatOpen = $bindable(false) }: { chatOpen: boolean } = $props();
 
 	let popoverOpen = $state(false);
@@ -35,10 +36,10 @@
 					{#snippet child({ props })}
 						<Button
 							{...props}
-							variant={terminalState.open ? 'secondary' : 'ghost'}
+							variant={signedIn.opensidian.state.terminal.open ? 'secondary': 'ghost'}
 							size="sm"
 							class="h-5 gap-1 px-1.5 text-xs text-muted-foreground"
-							onclick={() => terminalState.toggle()}
+							onclick={() => signedIn.opensidian.state.terminal.toggle()}
 						>
 							<TerminalIcon class="size-3" />
 							Terminal
@@ -52,7 +53,7 @@
 					{#snippet child({ props })}
 						<Button
 							{...props}
-							variant={chatOpen ? 'secondary' : 'ghost'}
+							variant={chatOpen ? 'secondary': 'ghost'}
 							size="sm"
 							class="h-5 gap-1 px-1.5 text-xs text-muted-foreground"
 							onclick={() => (chatOpen = !chatOpen)}
@@ -90,7 +91,7 @@
 				{#if editorState.vimEnabled}
 					<p class="text-xs text-muted-foreground">
 						Browser extensions like Vimium can intercept Escape and break vim
-						keybindings—disable them for this site if keys aren't working.
+						keybindings: disable them for this site if keys aren't working.
 					</p>
 				{/if}
 				<div class="flex items-center justify-between">

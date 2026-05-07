@@ -1,6 +1,6 @@
 import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
-import { opensidian } from '$lib/opensidian/client';
+import type { OpensidianWorkspace } from '$lib/session.svelte';
 
 export type MatchSnippet = {
 	snippet: string;
@@ -16,7 +16,11 @@ export type FileGroup = {
 
 const PAGE_SIZE = 50;
 
-function createSidebarSearchState() {
+export function createSidebarSearchState({
+	opensidian,
+}: {
+	opensidian: OpensidianWorkspace;
+}) {
 	// Persisted preferences
 	const caseSensitiveState = createPersistedState({
 		key: 'opensidian.sidebar-search.case-sensitive',
@@ -99,7 +103,7 @@ function createSidebarSearchState() {
 					(r) => re.test(r.snippet) || re.test(r.name),
 				);
 			} catch {
-				// Invalid regex — return unfiltered (FTS already matched)
+				// Invalid regex: return unfiltered (FTS already matched)
 			}
 		}
 
@@ -277,7 +281,10 @@ function createSidebarSearchState() {
 			currentOffset = 0;
 			if (debounceTimer) clearTimeout(debounceTimer);
 		},
+		[Symbol.dispose]() {
+			if (debounceTimer) clearTimeout(debounceTimer);
+		},
 	};
 }
 
-export const sidebarSearchState = createSidebarSearchState();
+export type SidebarSearchState = ReturnType<typeof createSidebarSearchState>;

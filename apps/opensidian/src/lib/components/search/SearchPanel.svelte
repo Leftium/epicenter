@@ -10,24 +10,29 @@
 	import RegexIcon from '@lucide/svelte/icons/regex';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { sidebarSearchState } from '$lib/state/sidebar-search-state.svelte';
+	import { getSignedInSession } from '$lib/session.svelte';
 	import SearchResultGroup from './SearchResultGroup.svelte';
 
+	const signedIn = getSignedInSession();
 	let searchInputRef = $state<HTMLInputElement | null>(null);
 	let searchFocused = $state(false);
 
 	const isSearchActive = $derived(
-		searchFocused || sidebarSearchState.searchQuery !== '',
+		searchFocused || signedIn.opensidian.state.sidebarSearch.searchQuery !== '',
 	);
-	const hasQuery = $derived(sidebarSearchState.searchQuery.trim().length >= 2);
-	const hasResults = $derived(sidebarSearchState.fileGroups.length > 0);
+	const hasQuery = $derived(
+		signedIn.opensidian.state.sidebarSearch.searchQuery.trim().length >= 2,
+	);
+	const hasResults = $derived(
+		signedIn.opensidian.state.sidebarSearch.fileGroups.length > 0,
+	);
 
 	export function focusInput() {
 		searchInputRef?.focus();
 	}
 </script>
 
-{#snippet searchToggle(pressed: boolean, onPressedChange: (v: boolean) => void, Icon: typeof CaseSensitiveIcon, label: string)}
+{#snippet searchToggle(pressed: boolean, onPressedChange: (v: boolean) => void, Icon:typeof CaseSensitiveIcon, label: string)}
 	<Tooltip.Root>
 		<Tooltip.Trigger>
 			{#snippet child({ props })}
@@ -67,16 +72,16 @@
 				bind:ref={searchInputRef}
 				type="search"
 				placeholder="Search files..."
-				value={sidebarSearchState.searchQuery}
+				value={signedIn.opensidian.state.sidebarSearch.searchQuery}
 				oninput={(e: Event) => {
-					sidebarSearchState.searchQuery = (e.target as HTMLInputElement).value;
+					signedIn.opensidian.state.sidebarSearch.searchQuery = (e.target as HTMLInputElement).value;
 				}}
 				onkeydown={(e: KeyboardEvent) => {
 					if (e.key === 'Escape') {
-						if (sidebarSearchState.searchQuery === '') {
-							sidebarSearchState.closeSearch();
+						if (signedIn.opensidian.state.sidebarSearch.searchQuery === '') {
+							signedIn.opensidian.state.sidebarSearch.closeSearch();
 						} else {
-							sidebarSearchState.searchQuery = '';
+							signedIn.opensidian.state.sidebarSearch.searchQuery = '';
 						}
 					}
 				}}
@@ -88,12 +93,12 @@
 				<div
 					class="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5"
 				>
-					{#if sidebarSearchState.searchQuery}
+					{#if signedIn.opensidian.state.sidebarSearch.searchQuery}
 						<button
 							type="button"
 							class="flex size-6 items-center justify-center text-muted-foreground hover:text-foreground"
 							onclick={() => {
-								sidebarSearchState.searchQuery = '';
+								signedIn.opensidian.state.sidebarSearch.searchQuery = '';
 								searchInputRef?.focus();
 							}}
 						>
@@ -101,17 +106,17 @@
 						</button>
 					{/if}
 					{@render searchToggle(
-						sidebarSearchState.caseSensitive,
+						signedIn.opensidian.state.sidebarSearch.caseSensitive,
 						(v) => {
-							sidebarSearchState.caseSensitive = v;
+							signedIn.opensidian.state.sidebarSearch.caseSensitive = v;
 						},
 						CaseSensitiveIcon,
 						'Match Case'
 					)}
 					{@render searchToggle(
-						sidebarSearchState.regex,
+						signedIn.opensidian.state.sidebarSearch.regex,
 						(v) => {
-							sidebarSearchState.regex = v;
+							signedIn.opensidian.state.sidebarSearch.regex = v;
 						},
 						RegexIcon,
 						'Use Regular Expression'
@@ -121,36 +126,36 @@
 		</div>
 	</div>
 
-	{#if sidebarSearchState.isSearching && !hasResults}
+	{#if signedIn.opensidian.state.sidebarSearch.isSearching && !hasResults}
 		<Loading class="flex-1" />
 	{:else if hasResults}
 		<div class="border-b px-3 py-1.5 text-xs text-muted-foreground">
-			{sidebarSearchState.totalResults}
-			result{sidebarSearchState.totalResults === 1
+			{signedIn.opensidian.state.sidebarSearch.totalResults}
+			result{signedIn.opensidian.state.sidebarSearch.totalResults === 1
 				? ''
 				: 's'}
 			in
-			{sidebarSearchState.totalFiles}
-			file{sidebarSearchState.totalFiles === 1
+			{signedIn.opensidian.state.sidebarSearch.totalFiles}
+			file{signedIn.opensidian.state.sidebarSearch.totalFiles === 1
 				? ''
 				: 's'}
-			{#if sidebarSearchState.isSearching}
+			{#if signedIn.opensidian.state.sidebarSearch.isSearching}
 				<Spinner class="ml-1 inline-block size-3" />
 			{/if}
 		</div>
 		<ScrollArea class="flex-1">
 			<div class="p-1">
-				{#each sidebarSearchState.fileGroups as group (group.fileId)}
+				{#each signedIn.opensidian.state.sidebarSearch.fileGroups as group (group.fileId)}
 					<SearchResultGroup {group} defaultOpen={group.matchCount <= 5} />
 				{/each}
-				{#if sidebarSearchState.hasMore}
+				{#if signedIn.opensidian.state.sidebarSearch.hasMore}
 					<button
 						type="button"
 						class="flex w-full items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-center text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-						onclick={() => sidebarSearchState.loadMore()}
-						disabled={sidebarSearchState.isSearching}
+						onclick={() => signedIn.opensidian.state.sidebarSearch.loadMore()}
+						disabled={signedIn.opensidian.state.sidebarSearch.isSearching}
 					>
-						{#if sidebarSearchState.isSearching}
+						{#if signedIn.opensidian.state.sidebarSearch.isSearching}
 							<Spinner class="size-3" />
 							<span>Loading</span>
 						{:else}
@@ -160,7 +165,7 @@
 				{/if}
 			</div>
 		</ScrollArea>
-	{:else if hasQuery && !sidebarSearchState.isSearching}
+	{:else if hasQuery && !signedIn.opensidian.state.sidebarSearch.isSearching}
 		<Empty.Root class="flex-1 border-0">
 			<Empty.Media>
 				<SearchIcon class="size-8 text-muted-foreground" />
@@ -168,7 +173,7 @@
 			<Empty.Header>
 				<Empty.Title>No results</Empty.Title>
 				<Empty.Description
-					>No matches for "{sidebarSearchState.searchQuery}"</Empty.Description
+					>No matches for "{signedIn.opensidian.state.sidebarSearch.searchQuery}"</Empty.Description
 				>
 			</Empty.Header>
 		</Empty.Root>

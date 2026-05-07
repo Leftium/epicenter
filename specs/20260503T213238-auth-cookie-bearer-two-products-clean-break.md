@@ -1,9 +1,60 @@
 # Auth Cookie Bearer Two Products Clean Break
 
 **Date**: 2026-05-03
-**Status**: Draft
+**Status**: Reconciled, partially implemented
 **Author**: AI-assisted
 **Branch**: codex/explicit-daemon-host-config
+
+## Current Reconciliation (2026-05-07)
+
+Do not execute the original checklist below as written. The thesis landed, but
+the implementation shape changed while the auth packages kept evolving.
+
+Current code now makes these invariants true:
+
+```txt
+cookie auth  -> browser cookie jar owns the credential
+bearer auth  -> caller-owned token owns the credential
+API edge     -> mixed cookie and bearer credentials are rejected globally
+```
+
+Landed pieces:
+
+| Area | Current shape |
+| --- | --- |
+| Public factories | `createCookieAuth` and `createBearerAuth` live in `packages/auth/src/create-auth.ts` and are re-exported by `@epicenter/auth` and `@epicenter/auth-svelte`. |
+| Cookie HTTP | `createCookieAuth.fetch` deletes `Authorization` and sends `credentials: 'include'`. |
+| Bearer HTTP | `createBearerAuth.fetch` sets `Authorization: Bearer <token>` and sends `credentials: 'omit'`. |
+| Persisted bearer session | `BearerSession` is one persisted value: `{ token, user, encryptionKeys }`. This is the atomic persisted session fix from the earlier auth storage work. |
+| Cookie persistence | Cookie clients persist `AuthIdentity | null`, not a token-bearing session. The cookie jar is the credential source. |
+| API boundary | `apps/api/src/auth/single-credential.ts` is mounted globally and rejects mixed cookie, HTTP bearer, and WebSocket bearer credentials before Better Auth sees the request. |
+| Svelte wrapper | `packages/auth-svelte/src/create-auth.svelte.ts` is a thin reactive wrapper around the core factories. |
+
+Intentional divergences from this draft:
+
+| Original plan | Current decision |
+| --- | --- |
+| Split source into `cookie/`, `bearer/`, and `shared/` directories. | Keep one `create-auth.ts`. The factories are distinct enough at the public boundary; the shared Better Auth subscription machinery is small and easier to read in one file. |
+| Delete the shared `AuthClient` surface. | Keep `AuthClient` as the common operational surface: `state`, `bearerToken`, `onStateChange`, auth actions, `fetch`, and dispose. The product split lives in construction and credential ownership, not in two parallel method sets. |
+| Add `auth.openWebSocket` and `auth.onCredentialChange`. | Not landed. Workspace openers still receive `bearerToken: () => auth.bearerToken`, and sync reads it at connection boundaries. This remains the only substantive design fork from the original spec. |
+| Make `attachSync` entirely credential-agnostic. | Partially landed. Sync no longer mutates tokens through `setToken`, but it still knows the bearer subprotocol and accepts a token callback. |
+| Keep `@epicenter/auth-workspace` generic over both session shapes. | Superseded. `@epicenter/auth-workspace` is gone; app session builders now own workspace lifecycle directly. |
+
+Remaining actionable:
+
+1. Decide whether to finish the WebSocket inversion. The cleanest endpoint would
+   be `openWebSocket` or a transport object owned by auth, so `packages/sync`
+   no longer knows the bearer subprotocol. This is a design choice, not a bug.
+   The current callback shape is simple and working; change it only if the
+   sync package is still carrying too much auth vocabulary.
+2. Migrate `apps/opensidian` and `apps/tab-manager` away from top-level
+   `await waitForAuthState(auth, state => state.status === 'signed-in')`.
+   They are bearer clients, so they do not map one-to-one to the cookie app
+   session helpers, but the lifecycle smell is the same: signed-out boot should
+   not hang module evaluation.
+3. Treat the phase checklist below as historical research. Future work should
+   start from the current package layout, not from the deleted
+   `auth-workspace` plan or the old `createAuth` API.
 
 ## One-Sentence Test
 

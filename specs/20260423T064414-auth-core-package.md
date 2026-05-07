@@ -5,9 +5,26 @@ status: shipped
 
 # Extract framework-agnostic auth core into `packages/auth`
 
+## Current Reconciliation (2026-05-07)
+
+The shipped notes below are historically useful but stale in two important
+ways. `packages/auth/src` now has tests for the auth factories, auth contract,
+machine auth, machine session storage, and session normalization. The old
+"step 5 did not land" follow-up is no longer accurate.
+
+The remaining follow-up from this lineage is not "add auth tests from scratch."
+It is narrower:
+
+1. Add targeted tests only when changing the current contract.
+2. Keep the boot-cache storage invariant: storage loads an initial bearer
+   session or cookie identity, then auth state flows from Better Auth.
+3. Prefer changing the current `createCookieAuth` and `createBearerAuth`
+   surfaces directly. Do not revive the old `AuthCore`, `onSessionChange`,
+   `onLogin`, or `onLogout` API from this spec body.
+
 ## Shipped notes (2026-04-25)
 
-This spec was originally marked `queued`. The migration actually landed on the `drop-document-factory` branch across ~24 commits. `packages/auth/` and `packages/auth-svelte/` exist with the full `AuthCore` surface; all six apps consume `@epicenter/auth-svelte` and use `auth.onSessionChange(...)` in place of the old `applySession` Svelte-effect bridge. Steps 1---8 of the migration plan landed; **step 5 (unit tests) did not** and remains the highest-leverage follow-up.
+This spec was originally marked `queued`. The migration actually landed on the `drop-document-factory` branch across ~24 commits. `packages/auth/` and `packages/auth-svelte/` exist with the full `AuthCore` surface; all six apps consume `@epicenter/auth-svelte` and use `auth.onSessionChange(...)` in place of the old `applySession` Svelte-effect bridge. Steps 1---8 of the migration plan landed. Historical note: the 2026-04-25 shipped note said **step 5 (unit tests) did not** land, but that follow-up has since been superseded by the current auth test files.
 
 ### Divergences from the spec as written
 
@@ -27,9 +44,13 @@ This spec was originally marked `queued`. The migration actually landed on the `
 | Removing `sync.setToken` / `sync.reconnect` | `setToken` gone; `reconnect()` retained at 4 app `client.ts` call sites where session-change forces a workspace-doc reconnect. Marginal value remaining; keep. |
 | Collapsing `applySession` into `onLogin`/`onLogout` | **Not done.** All apps still use a single `onSessionChange` with `if (next === null)` / `if (previous?.token !== next.token)` branching. The `onLogin`/`onLogout` API exists on `AuthCore` but has zero call sites --- candidate for either deletion or a sweeping migration. |
 
-### Open follow-up worth doing
+### Historical follow-up, now superseded
 
-**Land the unit tests from step 5.** The spec lists 8 specific invariants (replay-on-subscribe semantics, firing order, isBusy counter under overlapping ops, subscriber-error isolation, etc.). Zero are guarded today. This is the highest-leverage cleanup before further auth changes --- refactors against an untested contract drift silently.
+The original follow-up was: **land the unit tests from step 5.** That is no
+longer the right action item. Current `packages/auth/src` contains auth factory,
+contract, machine auth, machine session storage, and normalization tests. Add
+new tests at the specific seam touched by future auth changes instead of
+backfilling the old `AuthCore` test matrix.
 
 ---
 

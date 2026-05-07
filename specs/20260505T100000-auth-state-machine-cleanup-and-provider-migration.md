@@ -1,10 +1,71 @@
 # Auth state machine cleanup and provider migration
 
 **Date**: 2026-05-05
-**Status**: Draft
+**Status**: Reconciled, mostly superseded
 **Author**: AI-assisted, grounded against the predecessor spec, the current `packages/auth` and `packages/auth-workspace` source, and the four `apps/*/src/lib/*/client.ts` modules
 **Branch**: feat/regex-improvements (continues the work started on feat/encrypted-local-workspace-storage)
 **Follows**: `specs/20260505T080000-auth-state-machine-and-gated-identity-context.md`
+
+## Current Reconciliation (2026-05-07)
+
+Do not execute this draft as a live implementation plan. Most of the intended
+cleanup landed through later specs, but with a smaller abstraction than the
+provider migration described here.
+
+Current canonical shape for cookie browser apps:
+
+```ts
+export const session = createSession({
+	auth,
+	build(identity) {
+		const workspace = openApp({
+			userId: identity.user.id,
+			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+			bearerToken: () => auth.bearerToken,
+		});
+
+		return {
+			userId: identity.user.id,
+			workspace,
+			[Symbol.dispose]() {
+				workspace[Symbol.dispose]();
+			},
+		};
+	},
+});
+```
+
+The important invariant is now:
+
+```txt
+auth.state owns authentication status
+createSession owns the signed-in app payload lifecycle
+app modules expose one narrowed getSignedInSession helper when a route needs it
+```
+
+Landed or superseded pieces:
+
+| Original concern | Current status |
+| --- | --- |
+| Top-level signed-in waits in cookie apps | Fixed for `fuji`, `honeycrisp`, and `zhongwen` by `createSession` plus per-app `getSignedInSession` helpers. |
+| `@epicenter/auth-workspace` ceremony | Superseded by deletion. Workspace lifecycle is now owned by app session builders rather than a shared bridge package. |
+| Protected provider wrapper | Superseded. The newer pattern avoids route-local provider ceremony for the shared app session path. |
+| Sign-in render branching | Addressed in the later route-loader and session-state specs. |
+| Nullable identity helpers in core | Mostly reduced. Core still has small projection helpers such as `identityFromSession`, but it no longer has the earlier backwards `AuthState -> AuthIdentity | null -> AuthState` drain machine. |
+
+Remaining actionable:
+
+1. `apps/opensidian/src/lib/opensidian/client.ts` still waits at module scope
+   for signed-in auth before opening the workspace.
+2. `apps/tab-manager/src/lib/tab-manager/client.ts` still waits at module
+   scope for signed-in auth before opening the workspace.
+3. If those two apps need signed-out UI, migrate them to a session-style
+   lifecycle. If they are intentionally signed-in-only runtimes, write that
+   invariant down near the top-level await so future agents do not keep
+   rediscovering it as a smell.
+4. A smaller core cleanup remains possible in `packages/auth/src/create-auth.ts`:
+   inline or rename `identityFromSession` only if a broader pass touches that
+   file. It is not worth a standalone abstraction hunt now.
 
 ## One-sentence thesis
 

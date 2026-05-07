@@ -12,6 +12,12 @@ metadata:
 
 - [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
 
+## Upstream Grounding
+
+When Better Auth API signatures, framework handlers, adapter setup, generated schema, plugin options, session behavior, or security defaults affect correctness, ask DeepWiki a narrow question against `better-auth/better-auth` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+
+Skip DeepWiki for stable planning steps and repo-local conventions already documented below.
+
 Guide for adding authentication to TypeScript/JavaScript applications using Better Auth.
 
 **For code examples and syntax, see [better-auth.com/docs](https://better-auth.com/docs).**

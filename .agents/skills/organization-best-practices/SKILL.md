@@ -22,6 +22,12 @@ Use this pattern when you need to:
 
 - [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
 
+## Upstream Grounding
+
+When Better Auth organization plugin API shape, role and permission behavior, invitation lifecycle, generated schema, or security constraints affect correctness, ask DeepWiki a narrow question against `better-auth/better-auth` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+
+Skip DeepWiki for stable setup basics already documented below.
+
 1. Add `organization()` plugin to server config
 2. Add `organizationClient()` plugin to client config
 3. Run `npx @better-auth/cli migrate`

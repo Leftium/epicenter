@@ -11,6 +11,12 @@ metadata:
 
 - [Yjs](https://github.com/yjs/yjs) — CRDT framework for shared editing and offline-first data
 
+## Upstream Grounding
+
+When conflict semantics, transaction origins, shared-type behavior, update encoding, storage growth, or provider interoperability affects correctness, ask DeepWiki a narrow question against `yjs/yjs` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+
+Skip DeepWiki for stable basics and repo-local patterns already documented below.
+
 > **Related Skills**: See `workspace-api` for the workspace abstraction built on Yjs.
 
 ## When to Apply This Skill

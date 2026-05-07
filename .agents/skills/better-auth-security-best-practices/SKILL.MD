@@ -10,6 +10,12 @@ metadata:
 
 - [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
 
+## Upstream Grounding
+
+When Better Auth rate limiting, CSRF and origin checks, cookie settings, secret handling, token encryption, audit behavior, or deployment security defaults affect correctness, ask DeepWiki a narrow question against `better-auth/better-auth` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+
+Skip DeepWiki for stable security basics already documented below.
+
 ## Secret Management
 
 ### Configuring the Secret

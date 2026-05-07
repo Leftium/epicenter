@@ -14,6 +14,12 @@ metadata:
 - [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte) — Port of shadcn/ui for Svelte with Bits UI primitives
 - [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras) — Additional components for shadcn-svelte
 
+## Upstream Grounding
+
+When Svelte 5 runes, compiler behavior, SvelteKit integration, or component-library APIs affect correctness, ask DeepWiki a narrow question against `sveltejs/svelte` or the relevant upstream repo before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+
+Skip DeepWiki for stable basics and repo-local patterns already documented below.
+
 > **Related Skills**: See `query-layer` for TanStack Query integration. See `error-handling` for toast-on-error patterns (`toastOnError`, `extractErrorMessage`) when handling errors in components. See `styling` for CSS and Tailwind conventions, including the **Flex Column Scroll Trap** pattern (critical when building scrollable content inside `Resizable.Pane`, `ScrollArea`, or any flex column with siblings).
 
 ## When to Apply This Skill

@@ -8,14 +8,15 @@
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '$lib/auth';
+	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireSignedIn } from '@epicenter/auth-svelte';
 	import { createChatState } from './chat/chat-state.svelte';
 	import ChatInput from './components/ChatInput.svelte';
 	import ChatMessage from './components/ChatMessage.svelte';
 	import ModelPicker from './components/ModelPicker.svelte';
 	import ZhongwenSidebar from './components/ZhongwenSidebar.svelte';
-	import { getSignedIn } from './signed-in';
 
-	const signedIn = getSignedIn();
+	const signedIn = getSignedInSession();
 	const showPinyin = fromKv(signedIn.zhongwen.kv, 'showPinyin');
 	const chatState = createChatState();
 	let dismissedError = $state(false);
@@ -71,7 +72,7 @@
 				</Button>
 
 				<span class="text-sm text-muted-foreground">
-					{signedIn.identity.user.name}
+					{requireSignedIn(auth).user.name}
 				</span>
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device

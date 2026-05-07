@@ -27,14 +27,14 @@ import {
 	generateChatMessageId,
 	generateConversationId,
 } from '../zhongwen/workspace';
-import { getSignedIn } from '../signed-in';
+import { getSignedInSession } from '$lib/session.svelte';
 
 const asChatMessageId = (id: string) => id as ChatMessageId;
 
 // ─── State Factory ───────────────────────────────────────────────────────────
 
 export function createChatState() {
-	const signedIn = getSignedIn();
+	const signedIn = getSignedInSession();
 
 	// ── Conversation List (Y.Doc-backed) ──
 

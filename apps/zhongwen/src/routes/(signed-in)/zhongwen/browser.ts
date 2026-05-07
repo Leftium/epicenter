@@ -1,13 +1,18 @@
-import type { AuthIdentity } from '@epicenter/auth';
 import {
 	attachOwnedBroadcastChannel,
+	type EncryptionKeys,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import { openZhongwen as openZhongwenDoc } from './index';
 
-export function openZhongwen({ identity }: { identity: AuthIdentity }) {
-	const userId = identity.user.id;
-	const doc = openZhongwenDoc({ encryptionKeys: identity.encryptionKeys });
+export function openZhongwen({
+	userId,
+	encryptionKeys,
+}: {
+	userId: string;
+	encryptionKeys: () => EncryptionKeys;
+}) {
+	const doc = openZhongwenDoc({ getKeys: encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 

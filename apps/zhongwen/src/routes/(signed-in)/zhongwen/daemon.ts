@@ -24,7 +24,17 @@ export function defineZhongwenDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const doc = openZhongwenDoc({ clientID: hashClientId(projectDir) });
+			const doc = openZhongwenDoc({
+				clientID: hashClientId(projectDir),
+				getKeys: () => {
+					if (auth.state.status !== 'signed-in') {
+						throw new Error(
+							'[zhongwen-daemon] machine auth is not signed-in; cannot read encryption keys.',
+						);
+					}
+					return auth.state.identity.encryptionKeys;
+				},
+			});
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
 			});

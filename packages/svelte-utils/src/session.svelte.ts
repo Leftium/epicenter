@@ -44,8 +44,8 @@ export function createSession<TSignedIn extends SignedInBase>({
 }) {
 	let signedIn = $state<TSignedIn | undefined>(undefined);
 
-	function reconcile(a: AuthState) {
-		if (a.status !== 'signed-in') {
+	function reconcile(state: AuthState) {
+		if (state.status !== 'signed-in') {
 			if (signedIn) {
 				signedIn[Symbol.dispose]();
 				signedIn = undefined;
@@ -53,13 +53,13 @@ export function createSession<TSignedIn extends SignedInBase>({
 			return;
 		}
 		if (!signedIn) {
-			signedIn = build(a.identity);
+			signedIn = build(state.identity);
 			return;
 		}
 		// Same user: no-op. The payload's lazy reads through `auth.state`
 		// observe any identity update (key rotation, profile edits) without
 		// involving the workspace lifecycle.
-		if (signedIn.userId === a.identity.user.id) return;
+		if (signedIn.userId === state.identity.user.id) return;
 		// Different user: refuse the live switch and reload (heap safety).
 		signedIn[Symbol.dispose]();
 		location.reload();
@@ -72,8 +72,8 @@ export function createSession<TSignedIn extends SignedInBase>({
 
 	return {
 		get current(): Session<TSignedIn> {
-			const a = auth.state;
-			if (a.status !== 'signed-in') return a;
+			if (auth.state.status === 'pending') return { status: 'pending' };
+			if (auth.state.status === 'signed-out') return { status: 'signed-out' };
 			// Invariant: reconcile runs synchronously inside onStateChange, so
 			// `signedIn` is always set when auth is signed-in. Defensive fallback
 			// keeps the type honest without an `!`.

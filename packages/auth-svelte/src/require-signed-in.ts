@@ -11,9 +11,8 @@ import type { AuthClient } from './create-auth.svelte.ts';
  * caller bug.
  */
 export function requireSignedIn(auth: AuthClient): AuthIdentity {
-	const state = auth.state;
-	if (state.status !== 'signed-in') {
+	if (auth.state.status !== 'signed-in') {
 		throw new Error('[auth] called requireSignedIn while not signed-in.');
 	}
-	return state.identity;
+	return auth.state.identity;
 }

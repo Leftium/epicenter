@@ -41,13 +41,12 @@ export function defineFujiDaemon({
 			const doc = openFujiDoc({
 				clientID: hashClientId(projectDir),
 				getKeys: () => {
-					const state = auth.state;
-					if (state.status !== 'signed-in') {
+					if (auth.state.status !== 'signed-in') {
 						throw new Error(
 							'[fuji-daemon] machine auth is not signed-in; cannot read encryption keys.',
 						);
 					}
-					return state.identity.encryptionKeys;
+					return auth.state.identity.encryptionKeys;
 				},
 			});
 			const yjsLog = attachYjsLog(doc.ydoc, {

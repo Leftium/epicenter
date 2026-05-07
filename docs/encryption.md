@@ -239,20 +239,19 @@ Calling `activateEncryption()` again updates that state to a new keyring, but it
 The document builder reinforces that shape: `attachEncryption(ydoc, { encryptionKeys })` returns a coordinator whose `encryption.attachTables(defs)` / `encryption.attachKv(defs)` methods register every table and KV store as encrypted wrappers from the start. The coordinator calls `encryptionKeys()` synchronously at each registration site, derives the keyring for that store, and activates the store before handing it back. There is no separate `applyKeys` mutation step: key read, registration, and activation happen in one call.
 
 ## What activation re-encrypts
-Activation does not rewrite everything.
-It only re-encrypts plaintext entries.
-The code in `activateEncryption()` walks the inner map and splits entries into two groups:
-- plaintext entries to encrypt now
-- encrypted blobs to leave alone
-For already encrypted blobs, the wrapper checks whether they were unreadable before and readable now.
-If a new keyring makes old blobs readable, it emits synthetic add events so observers can see them.
-It does not rewrite those blobs.
+Activation rewrites every decryptable entry that is not already stored under the current key version.
+The current key is the highest version in the supplied keyring.
+The code in `activateEncryption()` walks the inner map and handles four cases:
+- plaintext entries are encrypted with the current key version
+- encrypted blobs at a non-current version are decrypted through the keyring and re-encrypted with the current key version
+- encrypted blobs already at the current version are skipped
+- encrypted blobs whose key version is missing from the keyring are left unreadable and unchanged
+If a new keyring makes old blobs readable, activation also emits synthetic add events so observers can see them.
 
 ## Key rotation
-Key rotation is versioned and lazy.
+Key rotation is versioned and activation-driven.
 The blob carries the key version that encrypted it.
 New writes always use the highest key version in the active keyring.
-Old blobs keep their old version byte.
 Decryption follows this order:
 1. try the current key first
 2. if that fails, read `blob[1]`
@@ -260,9 +259,8 @@ Decryption follows this order:
 4. try that specific key
 That avoids brute-forcing every key.
 The blob tells the client which version it needs.
-Rotation does not bulk re-encrypt existing ciphertext.
-Only plaintext entries get re-encrypted when encryption is activated.
-Existing ciphertext, even if it uses an old key version, stays as-is until the next write to that key.
+When `activateEncryption()` receives a newer highest-version key, decryptable old-version blobs are re-encrypted under that current version during the activation pass.
+Blobs for versions absent from the keyring stay unreadable and unchanged until a future activation includes the needed key.
 
 ## What the sync server sees
 The sync server sees Yjs updates and relays them.

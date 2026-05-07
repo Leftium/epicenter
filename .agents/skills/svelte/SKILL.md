@@ -86,7 +86,7 @@ It's easy to write a double-dispose or leak here. The version above can't — th
 
 ## Async-gate variant
 
-When the resource exposes a readiness promise (`whenReady`, `whenLoaded`), gate rendering in the **template** with `{#await}`. Do NOT introduce a `$state(false)` flag + `$effect` that flips it inside `.then()` — Svelte already owns promise lifecycles, cancellation, and error branching. Rebuilding that in userland is pure ceremony.
+When the resource exposes a readiness promise (`whenReady`, `whenLoaded`), gate rendering in the **template** with `{#await}`. Do NOT introduce a `$state(false)` flag + `$effect` that flips it inside `.then()`: Svelte already owns promise lifecycles, cancellation, and error branching. Rebuilding that in userland is pure ceremony.
 
 ```svelte
 <script lang="ts">
@@ -98,14 +98,16 @@ When the resource exposes a readiness promise (`whenReady`, `whenLoaded`), gate 
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>
-{:then}
+{:then _}
 	<Editor binding={resource.body.binding} />
 {:catch error}
 	<ErrorState {error} />
 {/await}
 ```
 
-### Anti-pattern — don't do this
+Bare `{:then}` is valid Svelte when the resolved promise value is unused. In this repo, use `{:then _}` for readiness gates because Biome 2.4.x currently parses bare `{:then}` as `Expected an expression, instead none was found`. Treat `_` as a temporary compatibility placeholder, not a semantic value. Use `{:then value}` only when the resolved value is actually read.
+
+### Anti-pattern: don't do this
 
 ```svelte
 <!-- ❌ Re-implements {#await} with extra state and a cancellation flag -->
@@ -303,9 +305,6 @@ function createBookmarkState() {
 	const bookmarks = $derived(bookmarksMap.values().toArray());
 
 	return {
-		[Symbol.dispose]() {
-			bookmarksMap[Symbol.dispose]();
-		},
 		get bookmarks() { return bookmarks; },
 		async add(tab: Tab) { /* ... */ },
 		remove(id: BookmarkId) { /* ... */ },
@@ -314,51 +313,6 @@ function createBookmarkState() {
 
 export const bookmarkState = createBookmarkState();
 ```
-
-If a module-level singleton creates a persistent side effect, make the singleton
-disposable and register HMR teardown in that same module. The side effect might
-be a Yjs observer, browser listener, storage watcher, socket, interval, or any
-other subscription that survives outside Svelte's component tree.
-
-In a production SPA, a true module singleton can usually live until the page
-reloads. Vite HMR is different: the page does not reload, so the old module copy
-needs a chance to close what it opened. Use `import.meta.hot.dispose()` for that
-development-only teardown.
-
-```typescript
-function createWorkspaceState() {
-	const bookmarksMap = fromTable(workspaceClient.tables.bookmarks);
-	let sidebarWidth = $state(280);
-	const unwatchStorage = watchStorage('sidebar-width', (width) => {
-		sidebarWidth = width;
-	});
-	const bookmarks = $derived(bookmarksMap.values().toArray());
-
-	return {
-		[Symbol.dispose]() {
-			unwatchStorage();
-			bookmarksMap[Symbol.dispose]();
-		},
-		get bookmarks() { return bookmarks; },
-		get sidebarWidth() { return sidebarWidth; },
-	};
-}
-
-export const workspaceState = createWorkspaceState();
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => workspaceState[Symbol.dispose]());
-}
-```
-
-Do not scatter module cleanup through component code. Put teardown beside the
-code that created the side effect. If a provider owns the resource lifetime
-instead, dispose from the provider's teardown and skip module-level HMR in the
-state factory.
-
-See `docs/articles/your-spa-singleton-doesnt-need-effect-cleanup.md` for the
-SPA singleton lifetime explanation, and
-`docs/articles/vite-hmr-is-not-a-page-reload.md` for the focused Vite HMR rule.
 
 ## Naming
 
@@ -1024,18 +978,19 @@ The infinite loop only happens when the array is consumed by something that **tr
 
 If a `.svelte.ts` state module has a computed getter that returns an array/object, and that getter could be consumed by TanStack Table or a `$derived` chain that feeds into `$state`, **always memoize with `$derived`**. The cost is near-zero (one extra signal), and it prevents a class of bugs that's invisible in development until the page freezes.
 
-# Loading and Empty Branches
+# Loading and Empty State Patterns
 
-Use this skill for Svelte control flow, then use `epicenter-ui` for component choice.
+## Never Use Plain Text for Loading States
 
-Svelte decides which branch renders:
+Always use the `Spinner` component from `@epicenter/ui/spinner` instead of plain text like "Loading...". This applies to:
 
-- `{#await promise}` for one stable async gate such as `whenReady`.
-- `{#if query.isPending}` or a derived boolean for reactive query state.
-- `{#if data.length === 0}` for empty collections.
-- Disabled controls for action pending state.
+- `{#await}` blocks gating on async readiness
+- `{#if}` / `{:else}` conditional loading
+- Button loading states
 
-The branch content should come from `@epicenter/ui`: `Spinner`, `Skeleton`, `Progress`, `Empty`, `Command.Empty`, or chat typing state. Do not render plain `Loading...` text by itself.
+## Full-Page Loading (Async Gate)
+
+When gating UI on an async promise (e.g. `whenReady`, `whenLoaded`), use `Empty.*` for both loading and error states. This keeps the structure symmetric:
 
 ```svelte
 <script lang="ts">
@@ -1045,26 +1000,80 @@ The branch content should come from `@epicenter/ui`: `Spinner`, `Skeleton`, `Pro
 </script>
 
 {#await someState.whenReady}
-	<Empty.Root class="flex-1 border-0" aria-live="polite">
+	<Empty.Root class="flex-1">
 		<Empty.Media>
 			<Spinner class="size-5 text-muted-foreground" />
 		</Empty.Media>
-		<Empty.Title>Loading workspace</Empty.Title>
+		<Empty.Title>Loading tabs…</Empty.Title>
 	</Empty.Root>
 {:then _}
 	<MainContent />
 {:catch}
-	<Empty.Root class="flex-1 border-0">
-		<Empty.Media variant="icon">
-			<TriangleAlertIcon />
+	<Empty.Root class="flex-1">
+		<Empty.Media>
+			<TriangleAlertIcon class="size-8 text-muted-foreground" />
 		</Empty.Media>
 		<Empty.Title>Failed to load</Empty.Title>
-		<Empty.Description>Try reloading this view.</Empty.Description>
+		<Empty.Description>Something went wrong. Try reloading.</Empty.Description>
 	</Empty.Root>
 {/await}
 ```
 
-Always include `{:catch}` on `{#await}` blocks so a rejected promise does not leave the user in an endless pending state.
+## Inline Loading (Conditional)
+
+When loading state is controlled by a boolean or null check:
+
+```svelte
+<script lang="ts">
+	import { Spinner } from '@epicenter/ui/spinner';
+</script>
+
+{#if data}
+	<Content {data} />
+{:else}
+	<div class="flex h-full items-center justify-center">
+		<Spinner class="size-5 text-muted-foreground" />
+	</div>
+{/if}
+```
+
+## Button Loading State
+
+Use `Spinner` inside the button, matching the `AuthForm` pattern:
+
+```svelte
+<Button onclick={handleAction} disabled={isPending}>
+	{#if isPending}<Spinner class="size-3.5" />{:else}Submit{/if}
+</Button>
+```
+
+## Empty State (No Data)
+
+Use the `Empty.*` compound component for empty states (no results, no items):
+
+```svelte
+<script lang="ts">
+	import * as Empty from '@epicenter/ui/empty';
+	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
+</script>
+
+<Empty.Root class="py-8">
+	<Empty.Media>
+		<FolderOpenIcon class="size-8 text-muted-foreground" />
+	</Empty.Media>
+	<Empty.Title>No items found</Empty.Title>
+	<Empty.Description>Create an item to get started</Empty.Description>
+</Empty.Root>
+```
+
+### Key Rules
+
+- **Never** show plain text ("Loading...", "Loading tabs…") without a `Spinner`
+- **Always** include `{:catch}` on `{#await}` blocks. This prevents infinite spinners on failure
+- Use `{:then _}` for readiness gates when the resolved value is unused. Bare `{:then}` is valid Svelte, but Biome 2.4.x rejects it in `.svelte` files
+- Use `text-muted-foreground` for loading text and spinner color
+- Use `size-5` for full-page spinners, `size-3.5` for inline/button spinners
+- Match the `Empty.*` compound component pattern for both error and empty states
 
 # Prop-First Data Derivation
 

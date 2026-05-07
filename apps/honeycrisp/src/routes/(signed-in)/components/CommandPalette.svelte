@@ -8,19 +8,19 @@
 
 	const { foldersState, notesState, viewState } = getSignedInSession().state;
 
-	let open = $state(false);
+	let isOpen = $state(false);
 </script>
 
 <svelte:window
 	onkeydown={(e) => {
 		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
 			e.preventDefault();
-			open = !open;
+			isOpen = !isOpen;
 		}
 	}}
 />
 
-<Command.Dialog bind:open>
+<Command.Dialog bind:open={isOpen}>
 	<Command.Input placeholder="Search notes..." />
 	<Command.List>
 		<Command.Empty>No results found.</Command.Empty>
@@ -29,7 +29,7 @@
 			<Command.Item
 				onSelect={() => {
 					viewState.selectFolder(null);
-					open = false;
+					isOpen = false;
 				}}
 			>
 				<FileTextIcon class="mr-2 size-4" />
@@ -39,7 +39,7 @@
 				<Command.Item
 					onSelect={() => {
 						viewState.selectFolder(folder.id);
-						open = false;
+						isOpen = false;
 					}}
 				>
 					{#if folder.icon}
@@ -59,7 +59,7 @@
 				<Command.Item
 					onSelect={() => {
 					viewState.selectNote(note.id);
-						open = false;
+						isOpen = false;
 					}}
 				>
 					<FileTextIcon class="mr-2 size-4" />
@@ -90,7 +90,7 @@
 			<Command.Item
 				onSelect={() => {
 				foldersState.createFolder();
-					open = false;
+					isOpen = false;
 				}}
 			>
 				<FolderPlusIcon class="mr-2 size-4" />

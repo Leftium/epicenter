@@ -136,18 +136,20 @@ Daemon factories own the writer side of local persistence.
 ```ts
 export function openFuji({
 	bearerToken,
+	encryptionKeys,
 	device,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(projectDir),
 	apiUrl = EPICENTER_API_URL,
 }: {
 	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 	device: DeviceDescriptor;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
 }) {
-	const doc = openFujiDoc({ clientID });
+	const doc = openFujiDoc({ clientID, encryptionKeys });
 	const persistence = attachYjsLog(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
@@ -175,16 +177,18 @@ Script factories read the daemon's local Yjs log and write through sync.
 ```ts
 export function openFuji({
 	bearerToken,
+	encryptionKeys,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 	apiUrl = EPICENTER_API_URL,
 }: {
 	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
 }) {
-	const doc = openFujiDoc({ clientID });
+	const doc = openFujiDoc({ clientID, encryptionKeys });
 	const persistence = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});

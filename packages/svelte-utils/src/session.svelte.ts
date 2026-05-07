@@ -5,8 +5,18 @@
  * Status comes directly from `auth.state`; this factory only owns the payload
  * lifecycle (build, dispose) and the user-switch refusal (different `user.id`
  * disposes the payload and reloads the page). Same-user identity changes
- * (key rotation, profile edits) are no-ops here: the payload's lazy callbacks
- * pick up updates the next time they read `auth.state`.
+ * (key rotation, profile edits) are no-ops at the session boundary: the
+ * payload's lazy callbacks observe updates only when something reads them.
+ *
+ * Lazy callbacks (e.g., `bearerToken`, `encryptionKeys`) are read at:
+ *   - attachment time (e.g., `attachEncryption` reads `encryptionKeys()` once
+ *     per store registration to derive that store's keyring)
+ *   - reconnect / per-request boundaries (sync's `bearerToken` is read at
+ *     each sync attempt)
+ *
+ * They are NOT read by already-attached encrypted stores. Same-user key
+ * rotation does not propagate to stores whose keyring was derived at an
+ * earlier registration; a re-attach is required for those.
  *
  * `current` projects `auth.state` and decorates the signed-in variant with the
  * built payload, so apps consume one read API and TypeScript narrows in one

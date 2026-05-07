@@ -16,22 +16,21 @@
 		fileId: FileId;
 	} = $props();
 	const filename = $derived(
-		signedIn.opensidian.state.fs.getFile(fileId)?.name ?? 'untitled.md',
+		signedIn.state.files.getFile(fileId)?.name ?? 'untitled.md',
 	);
 	const isMarkdown = $derived(
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
 	const doc = fromDisposableCache(
-		signedIn.opensidian.fileContentDocs,
+		signedIn.workspace.fileContentDocs,
 		() => fileId,
 	);
 
 	const sharedLinkDecorations = linkDecorations({
-		onNavigate: (ref) =>
-			signedIn.opensidian.state.fs.selectFile(ref.id as FileId),
+		onNavigate: (ref) => signedIn.state.files.selectFile(ref.id as FileId),
 		resolveTitle: (ref) =>
-			signedIn.opensidian.state.fs.getFile(ref.id as FileId)?.name ?? null,
+			signedIn.state.files.getFile(ref.id as FileId)?.name ?? null,
 	});
 
 	const extensions = $derived(
@@ -39,10 +38,10 @@
 			? [
 					sharedLinkDecorations,
 					wikilinkAutocomplete({
-						workspaceId: signedIn.opensidian.ydoc.guid,
+						workspaceId: signedIn.workspace.ydoc.guid,
 						tableName: 'files',
 						getFiles: () =>
-							signedIn.opensidian.tables.files
+							signedIn.workspace.tables.files
 								.getAllValid()
 								.filter((r) => r.type === 'file')
 								.map((r) => ({ id: r.id, name: r.name })),

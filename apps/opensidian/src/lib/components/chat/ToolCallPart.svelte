@@ -5,7 +5,7 @@
 	import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import type { WorkspaceTools } from '$lib/session.svelte';
+	import type { WorkspaceTools } from '$lib/chat/chat-state.svelte';
 
 	let {
 		part,

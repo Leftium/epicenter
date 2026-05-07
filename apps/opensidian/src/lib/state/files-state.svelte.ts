@@ -3,8 +3,8 @@ import { fromTable } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
 import { SvelteSet } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
+import type { OpensidianWorkspace } from '$lib/opensidian/browser';
 import { searchParams } from '$lib/search-params.svelte';
-import type { OpensidianWorkspace } from '$lib/session.svelte';
 
 /**
  * Interaction mode discriminated union.
@@ -20,9 +20,9 @@ type InteractionMode =
 /**
  * Reactive filesystem state factory.
  *
- * Follows the tab-manager pattern: factory function creates all state,
+ * Follows the tab-manager pattern: a factory function creates all state.
  * The session creates one instance and exposes it at
- * `signedIn.opensidian.state.fs`.
+ * `signedIn.state.files`.
  *
  * Reactivity: `fromTable()` provides a reactive `SvelteMap` that updates
  * granularly per-row. `childrenOf` derives tree structure eagerly (O(n)
@@ -34,17 +34,17 @@ type InteractionMode =
  * ```svelte
  * <script>
  *   const session = getSignedInSession();
- *   const children = session.opensidian.state.fs.rootChildIds;
+ *   const children = session.state.files.rootChildIds;
  * </script>
  * ```
  */
-export function createFsState({
-	opensidian,
+export function createFilesState({
+	workspace,
 }: {
-	opensidian: OpensidianWorkspace;
+	workspace: OpensidianWorkspace;
 }) {
 	// ── Reactive source ──────────────────────────────────────────────
-	const filesMap = fromTable(opensidian.tables.files);
+	const filesMap = fromTable(workspace.tables.files);
 
 	// ── Reactive state ───────────────────────────────────────────────
 	const openFileIds = new SvelteSet<FileId>();
@@ -220,11 +220,6 @@ export function createFsState({
 			expandedIds.add(id);
 		},
 
-		/** Collapse a folder in the tree view (no-op if already collapsed). */
-		collapse(id: FileId) {
-			expandedIds.delete(id);
-		},
-
 		/** Get child FileIds of a folder. Reactive via `childrenOf` derived. */
 		getChildren(parentId: FileId | null) {
 			return childrenOf.get(parentId) ?? [];
@@ -383,7 +378,7 @@ export function createFsState({
 			await withErrorToast(async () => {
 				const parentPath = parentId ? (state.getPath(parentId) ?? '/') : '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-				await opensidian.fs.writeFile(path, '');
+				await workspace.fs.writeFile(path, '');
 				toast.success(`Created ${path}`);
 			}, 'Failed to create file');
 		},
@@ -392,7 +387,7 @@ export function createFsState({
 			await withErrorToast(async () => {
 				const parentPath = parentId ? (state.getPath(parentId) ?? '/') : '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-				await opensidian.fs.mkdir(path);
+				await workspace.fs.mkdir(path);
 				if (parentId) expandedIds.add(parentId);
 				toast.success(`Created ${path}/`);
 			}, 'Failed to create folder');
@@ -402,7 +397,7 @@ export function createFsState({
 			await withErrorToast(async () => {
 				const path = state.getPath(id);
 				if (!path) return;
-				await opensidian.fs.rm(path, { recursive: true });
+				await workspace.fs.rm(path, { recursive: true });
 				if (searchParams.file === id) searchParams.update({ file: null });
 				openFileIds.delete(id);
 				toast.success(`Deleted ${path}`);
@@ -417,24 +412,17 @@ export function createFsState({
 					oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
 				const newPath =
 					parentPath === '/' ? `/${newName}` : `${parentPath}/${newName}`;
-				await opensidian.fs.mv(oldPath, newPath);
+				await workspace.fs.mv(oldPath, newPath);
 				toast.success(`Renamed to ${newName}`);
 			}, 'Failed to rename');
 		},
 
 		[Symbol.dispose]() {
 			filesMap[Symbol.dispose]();
-			opensidian.fs.index.dispose();
-			opensidian.fs.dispose();
-		},
-
-		/** Cleanup: call from +layout.svelte onDestroy if needed. */
-		async dispose() {
-			state[Symbol.dispose]();
 		},
 	};
 
 	return state;
 }
 
-export type FsState = ReturnType<typeof createFsState>;
+export type FilesState = ReturnType<typeof createFilesState>;

@@ -11,9 +11,7 @@
 	const signedIn = getSignedInSession();
 	const providers = Object.keys(PROVIDER_MODELS) as Provider[];
 	const models = $derived(
-		signedIn.opensidian.state.chat.modelsForProvider(
-			signedIn.opensidian.state.chat.provider,
-		),
+		signedIn.state.chat.modelsForProvider(signedIn.state.chat.provider),
 	);
 
 	let inputValue = $state('');
@@ -22,7 +20,7 @@
 		const content = inputValue.trim();
 		if (!content) return;
 		inputValue = '';
-		signedIn.opensidian.state.chat.sendMessage(content);
+		signedIn.state.chat.sendMessage(content);
 	}
 </script>
 
@@ -31,13 +29,13 @@
 	<div class="flex gap-2">
 		<Select.Root
 			type="single"
-			value={signedIn.opensidian.state.chat.provider}
+			value={signedIn.state.chat.provider}
 			onValueChange={(v) => {
-				if (v) signedIn.opensidian.state.chat.provider = v as Provider;
+				if (v) signedIn.state.chat.provider = v as Provider;
 			}}
 		>
 			<Select.Trigger size="sm" class="w-[120px]">
-				{signedIn.opensidian.state.chat.provider || 'Provider\u2026'}
+				{signedIn.state.chat.provider || 'Provider\u2026'}
 			</Select.Trigger>
 			<Select.Content>
 				{#each providers as p (p)}
@@ -48,14 +46,14 @@
 
 		<Select.Root
 			type="single"
-			value={signedIn.opensidian.state.chat.model}
+			value={signedIn.state.chat.model}
 			onValueChange={(v) => {
-				if (v) signedIn.opensidian.state.chat.model = v;
+				if (v) signedIn.state.chat.model = v;
 			}}
 		>
 			<Select.Trigger size="sm" class="flex-1">
 				<span class="truncate"
-					>{signedIn.opensidian.state.chat.model || 'Model\u2026'}</span
+					>{signedIn.state.chat.model || 'Model\u2026'}</span
 				>
 			</Select.Trigger>
 			<Select.Content>
@@ -87,12 +85,12 @@
 				}
 			}}
 		/>
-		{#if signedIn.opensidian.state.chat.isLoading}
+		{#if signedIn.state.chat.isLoading}
 			<Button
 				variant="outline"
 				size="icon-lg"
 				type="button"
-				onclick={() => signedIn.opensidian.state.chat.stop()}
+				onclick={() => signedIn.state.chat.stop()}
 			>
 				<SquareIcon />
 			</Button>

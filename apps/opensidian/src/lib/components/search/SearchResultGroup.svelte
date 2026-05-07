@@ -27,7 +27,7 @@
 	}
 
 	function handleMatchClick(fileId: string) {
-		signedIn.opensidian.state.fs.selectFile(fileId as FileId);
+		signedIn.state.files.selectFile(fileId as FileId);
 	}
 
 	const displayPath = $derived(

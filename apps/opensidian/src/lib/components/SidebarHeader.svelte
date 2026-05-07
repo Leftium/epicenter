@@ -23,13 +23,13 @@
 					{#snippet child({ props })}
 						<Button
 							{...props}
-							variant={signedIn.opensidian.state.sidebarSearch.leftPaneView === 'search' ? 'secondary': 'ghost'}
+							variant={signedIn.state.sidebarSearch.leftPaneView === 'search' ? 'secondary': 'ghost'}
 							size="icon-xs"
 							onclick={() => {
-							if (signedIn.opensidian.state.sidebarSearch.leftPaneView === 'search') {
-								signedIn.opensidian.state.sidebarSearch.closeSearch();
+							if (signedIn.state.sidebarSearch.leftPaneView === 'search') {
+								signedIn.state.sidebarSearch.closeSearch();
 							} else {
-								signedIn.opensidian.state.sidebarSearch.openSearch();
+								signedIn.state.sidebarSearch.openSearch();
 							}
 							}}
 						>
@@ -46,7 +46,7 @@
 							{...props}
 							variant="ghost"
 							size="icon-xs"
-							onclick={() => signedIn.opensidian.state.fs.startCreate('folder')}
+							onclick={() => signedIn.state.files.startCreate('folder')}
 						>
 							<FolderPlusIcon class="size-3.5" />
 						</Button>
@@ -61,7 +61,7 @@
 							{...props}
 							variant="ghost"
 							size="icon-xs"
-							onclick={() => signedIn.opensidian.state.fs.startCreate('file')}
+							onclick={() => signedIn.state.files.startCreate('file')}
 						>
 							<FilePlusIcon class="size-3.5" />
 						</Button>

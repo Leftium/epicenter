@@ -15,29 +15,29 @@
 </script>
 
 <div class="flex items-center border-b">
-	{#if signedIn.opensidian.state.fs.hasOpenFiles}
+	{#if signedIn.state.files.hasOpenFiles}
 		<Tabs.Root
-			value={signedIn.opensidian.state.fs.activeFileId ?? ''}
-			onValueChange={(value) => signedIn.opensidian.state.fs.selectFile(value as FileId)}
+			value={signedIn.state.files.activeFileId ?? ''}
+			onValueChange={(value) => signedIn.state.files.selectFile(value as FileId)}
 			class="flex-1 min-w-0"
 		>
 			<Tabs.List
 				class="w-full justify-start overflow-x-auto rounded-none border-0 bg-transparent p-0"
 			>
-				{#each signedIn.opensidian.state.fs.openFileIds as fileId (fileId)}
-					{@const row = signedIn.opensidian.state.fs.getFile(fileId)}
+				{#each signedIn.state.files.openFileIds as fileId (fileId)}
+					{@const row = signedIn.state.files.getFile(fileId)}
 					{#if row}
 						<Tabs.Trigger
 							value={fileId}
 							class="relative flex-none rounded-none border-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none"
-							onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); signedIn.opensidian.state.fs.closeFile(fileId); } }}
+							onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); signedIn.state.files.closeFile(fileId); } }}
 						>
 							<span class="mr-4">{row.name}</span>
 							<Button
 								variant="ghost"
 								size="icon-xs"
 								class="absolute right-1 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"
-								onclick={(e: MouseEvent) => { e.stopPropagation(); e.preventDefault(); signedIn.opensidian.state.fs.closeFile(fileId); }}
+								onclick={(e: MouseEvent) => { e.stopPropagation(); e.preventDefault(); signedIn.state.files.closeFile(fileId); }}
 								aria-label="Close {row.name}"
 							>
 								<XIcon aria-hidden="true" class="size-3" />
@@ -60,7 +60,7 @@
 		</a>
 		<AccountPopover
 			{auth}
-			sync={signedIn.opensidian.sync}
+			sync={signedIn.workspace.sync}
 			syncNoun="notes"
 			onForgetDevice={forgetOpensidianDevice}
 			onSocialSignIn={() =>

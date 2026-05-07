@@ -21,7 +21,7 @@
 
 	// Auto-scroll to bottom when new entries appear.
 	$effect(() => {
-		void signedIn.opensidian.state.terminal.history.length;
+		void signedIn.state.terminal.history.length;
 		if (viewportRef) {
 			requestAnimationFrame(() => {
 				viewportRef?.scrollTo({ top: viewportRef.scrollHeight });
@@ -37,7 +37,7 @@
 			variant="ghost"
 			size="icon-xs"
 			aria-label="Close terminal"
-			onclick={() => signedIn.opensidian.state.terminal.hide()}
+			onclick={() => signedIn.state.terminal.hide()}
 		>
 			<X aria-hidden="true" class="size-3" />
 		</Button>
@@ -45,7 +45,7 @@
 	<Separator />
 	<ScrollArea class="min-h-0 flex-1" bind:viewportRef>
 		<div class="space-y-1 p-3">
-			{#each signedIn.opensidian.state.terminal.history as entry}
+			{#each signedIn.state.terminal.history as entry}
 				<TerminalOutput {entry} />
 			{/each}
 		</div>

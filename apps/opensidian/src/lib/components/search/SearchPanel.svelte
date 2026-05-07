@@ -18,13 +18,13 @@
 	let searchFocused = $state(false);
 
 	const isSearchActive = $derived(
-		searchFocused || signedIn.opensidian.state.sidebarSearch.searchQuery !== '',
+		searchFocused || signedIn.state.sidebarSearch.searchQuery !== '',
 	);
 	const hasQuery = $derived(
-		signedIn.opensidian.state.sidebarSearch.searchQuery.trim().length >= 2,
+		signedIn.state.sidebarSearch.searchQuery.trim().length >= 2,
 	);
 	const hasResults = $derived(
-		signedIn.opensidian.state.sidebarSearch.fileGroups.length > 0,
+		signedIn.state.sidebarSearch.fileGroups.length > 0,
 	);
 
 	export function focusInput() {
@@ -72,16 +72,16 @@
 				bind:ref={searchInputRef}
 				type="search"
 				placeholder="Search files..."
-				value={signedIn.opensidian.state.sidebarSearch.searchQuery}
+				value={signedIn.state.sidebarSearch.searchQuery}
 				oninput={(e: Event) => {
-					signedIn.opensidian.state.sidebarSearch.searchQuery = (e.target as HTMLInputElement).value;
+					signedIn.state.sidebarSearch.searchQuery = (e.target as HTMLInputElement).value;
 				}}
 				onkeydown={(e: KeyboardEvent) => {
 					if (e.key === 'Escape') {
-						if (signedIn.opensidian.state.sidebarSearch.searchQuery === '') {
-							signedIn.opensidian.state.sidebarSearch.closeSearch();
+						if (signedIn.state.sidebarSearch.searchQuery === '') {
+							signedIn.state.sidebarSearch.closeSearch();
 						} else {
-							signedIn.opensidian.state.sidebarSearch.searchQuery = '';
+							signedIn.state.sidebarSearch.searchQuery = '';
 						}
 					}
 				}}
@@ -93,12 +93,12 @@
 				<div
 					class="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5"
 				>
-					{#if signedIn.opensidian.state.sidebarSearch.searchQuery}
+					{#if signedIn.state.sidebarSearch.searchQuery}
 						<button
 							type="button"
 							class="flex size-6 items-center justify-center text-muted-foreground hover:text-foreground"
 							onclick={() => {
-								signedIn.opensidian.state.sidebarSearch.searchQuery = '';
+								signedIn.state.sidebarSearch.searchQuery = '';
 								searchInputRef?.focus();
 							}}
 						>
@@ -106,17 +106,17 @@
 						</button>
 					{/if}
 					{@render searchToggle(
-						signedIn.opensidian.state.sidebarSearch.caseSensitive,
+						signedIn.state.sidebarSearch.caseSensitive,
 						(v) => {
-							signedIn.opensidian.state.sidebarSearch.caseSensitive = v;
+							signedIn.state.sidebarSearch.caseSensitive = v;
 						},
 						CaseSensitiveIcon,
 						'Match Case'
 					)}
 					{@render searchToggle(
-						signedIn.opensidian.state.sidebarSearch.regex,
+						signedIn.state.sidebarSearch.regex,
 						(v) => {
-							signedIn.opensidian.state.sidebarSearch.regex = v;
+							signedIn.state.sidebarSearch.regex = v;
 						},
 						RegexIcon,
 						'Use Regular Expression'
@@ -126,36 +126,36 @@
 		</div>
 	</div>
 
-	{#if signedIn.opensidian.state.sidebarSearch.isSearching && !hasResults}
+	{#if signedIn.state.sidebarSearch.isSearching && !hasResults}
 		<Loading class="flex-1" />
 	{:else if hasResults}
 		<div class="border-b px-3 py-1.5 text-xs text-muted-foreground">
-			{signedIn.opensidian.state.sidebarSearch.totalResults}
-			result{signedIn.opensidian.state.sidebarSearch.totalResults === 1
+			{signedIn.state.sidebarSearch.totalResults}
+			result{signedIn.state.sidebarSearch.totalResults === 1
 				? ''
 				: 's'}
 			in
-			{signedIn.opensidian.state.sidebarSearch.totalFiles}
-			file{signedIn.opensidian.state.sidebarSearch.totalFiles === 1
+			{signedIn.state.sidebarSearch.totalFiles}
+			file{signedIn.state.sidebarSearch.totalFiles === 1
 				? ''
 				: 's'}
-			{#if signedIn.opensidian.state.sidebarSearch.isSearching}
+			{#if signedIn.state.sidebarSearch.isSearching}
 				<Spinner class="ml-1 inline-block size-3" />
 			{/if}
 		</div>
 		<ScrollArea class="flex-1">
 			<div class="p-1">
-				{#each signedIn.opensidian.state.sidebarSearch.fileGroups as group (group.fileId)}
+				{#each signedIn.state.sidebarSearch.fileGroups as group (group.fileId)}
 					<SearchResultGroup {group} defaultOpen={group.matchCount <= 5} />
 				{/each}
-				{#if signedIn.opensidian.state.sidebarSearch.hasMore}
+				{#if signedIn.state.sidebarSearch.hasMore}
 					<button
 						type="button"
 						class="flex w-full items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-center text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-						onclick={() => signedIn.opensidian.state.sidebarSearch.loadMore()}
-						disabled={signedIn.opensidian.state.sidebarSearch.isSearching}
+						onclick={() => signedIn.state.sidebarSearch.loadMore()}
+						disabled={signedIn.state.sidebarSearch.isSearching}
 					>
-						{#if signedIn.opensidian.state.sidebarSearch.isSearching}
+						{#if signedIn.state.sidebarSearch.isSearching}
 							<Spinner class="size-3" />
 							<span>Loading</span>
 						{:else}
@@ -165,7 +165,7 @@
 				{/if}
 			</div>
 		</ScrollArea>
-	{:else if hasQuery && !signedIn.opensidian.state.sidebarSearch.isSearching}
+	{:else if hasQuery && !signedIn.state.sidebarSearch.isSearching}
 		<Empty.Root class="flex-1 border-0">
 			<Empty.Media>
 				<SearchIcon class="size-8 text-muted-foreground" />
@@ -173,7 +173,7 @@
 			<Empty.Header>
 				<Empty.Title>No results</Empty.Title>
 				<Empty.Description
-					>No matches for "{signedIn.opensidian.state.sidebarSearch.searchQuery}"</Empty.Description
+					>No matches for "{signedIn.state.sidebarSearch.searchQuery}"</Empty.Description
 				>
 			</Empty.Header>
 		</Empty.Root>

@@ -9,7 +9,6 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import { getSignedInSession } from '$lib/session.svelte';
-	import { editorState } from '$lib/state/editor-state.svelte';
 
 	const signedIn = getSignedInSession();
 	let { chatOpen = $bindable(false) }: { chatOpen: boolean } = $props();
@@ -20,14 +19,17 @@
 <div
 	class="flex h-6 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground"
 >
-	<span>Ln {editorState.cursorLine}, Col {editorState.cursorCol}</span>
+	<span
+		>Ln {signedIn.state.editor.cursorLine}, Col
+		{signedIn.state.editor.cursorCol}</span
+	>
 
-	{#if editorState.selectionLength > 0}
-		<span>{editorState.selectionLength} selected</span>
+	{#if signedIn.state.editor.selectionLength > 0}
+		<span>{signedIn.state.editor.selectionLength} selected</span>
 	{/if}
 
-	<span>{editorState.wordCount} words</span>
-	<span>{editorState.lineCount} lines</span>
+	<span>{signedIn.state.editor.wordCount} words</span>
+	<span>{signedIn.state.editor.lineCount} lines</span>
 
 	<div class="ml-auto flex items-center gap-1.5">
 		<Tooltip.Provider>
@@ -36,10 +38,10 @@
 					{#snippet child({ props })}
 						<Button
 							{...props}
-							variant={signedIn.opensidian.state.terminal.open ? 'secondary': 'ghost'}
+							variant={signedIn.state.terminal.open ? 'secondary': 'ghost'}
 							size="sm"
 							class="h-5 gap-1 px-1.5 text-xs text-muted-foreground"
-							onclick={() => signedIn.opensidian.state.terminal.toggle()}
+							onclick={() => signedIn.state.terminal.toggle()}
 						>
 							<TerminalIcon class="size-3" />
 							Terminal
@@ -67,7 +69,7 @@
 			</Tooltip.Root>
 		</Tooltip.Provider>
 
-		{#if editorState.vimEnabled}
+		{#if signedIn.state.editor.vimEnabled}
 			<span class="font-mono text-[10px] font-medium uppercase tracking-wider"
 				>vim</span
 			>
@@ -84,11 +86,11 @@
 					<Label for="vim-mode" class="text-sm">Vim mode</Label>
 					<Switch
 						id="vim-mode"
-						checked={editorState.vimEnabled}
-						onCheckedChange={() => editorState.toggleVim()}
+						checked={signedIn.state.editor.vimEnabled}
+						onCheckedChange={() => signedIn.state.editor.toggleVim()}
 					/>
 				</div>
-				{#if editorState.vimEnabled}
+				{#if signedIn.state.editor.vimEnabled}
 					<p class="text-xs text-muted-foreground">
 						Browser extensions like Vimium can intercept Escape and break vim
 						keybindings: disable them for this site if keys aren't working.

@@ -10,8 +10,8 @@
 	async function handleSubmit() {
 		const cmd = value;
 		value = '';
-		await signedIn.opensidian.state.terminal.exec(cmd);
-		if (signedIn.opensidian.state.terminal.open) {
+		await signedIn.state.terminal.exec(cmd);
+		if (signedIn.state.terminal.open) {
 			await tick();
 			inputEl?.focus();
 		}
@@ -23,11 +23,11 @@
 			handleSubmit();
 		} else if (e.key === 'ArrowUp') {
 			e.preventDefault();
-			const prev = signedIn.opensidian.state.terminal.previousCommand();
+			const prev = signedIn.state.terminal.previousCommand();
 			if (prev !== undefined) value = prev;
 		} else if (e.key === 'ArrowDown') {
 			e.preventDefault();
-			const next = signedIn.opensidian.state.terminal.nextCommand();
+			const next = signedIn.state.terminal.nextCommand();
 			value = next ?? '';
 		}
 	}
@@ -47,8 +47,8 @@
 		bind:this={inputEl}
 		bind:value
 		onkeydown={handleKeydown}
-		disabled={signedIn.opensidian.state.terminal.running}
-		placeholder={signedIn.opensidian.state.terminal.running ? 'Running...': 'Type a command...'}
+		disabled={signedIn.state.terminal.running}
+		placeholder={signedIn.state.terminal.running ? 'Running...': 'Type a command...'}
 		aria-label="Terminal command input"
 		class="flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
 		spellcheck="false"

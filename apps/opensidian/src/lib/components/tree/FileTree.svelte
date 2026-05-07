@@ -15,73 +15,72 @@
 	 * Respects folder expansion state: collapsed folders hide their descendants.
 	 */
 	const visibleIds = $derived.by(() => {
-		return signedIn.opensidian.state.fs.walkTree<FileId>((id, row) => ({
+		return signedIn.state.files.walkTree<FileId>((id, row) => ({
 			collect: id,
-			descend:
-				row.type === 'folder' && signedIn.opensidian.state.fs.isExpanded(id),
+			descend: row.type === 'folder' && signedIn.state.files.isExpanded(id),
 		}));
 	});
 
 	/** Whether an inline create/rename is active (suppresses tree keyboard shortcuts). */
 	const isEditing = $derived(
-		signedIn.opensidian.state.fs.inlineCreate !== null ||
-			signedIn.opensidian.state.fs.renamingId !== null,
+		signedIn.state.files.inlineCreate !== null ||
+			signedIn.state.files.renamingId !== null,
 	);
 
 	function handleKeydown(e: KeyboardEvent) {
 		// Don't intercept keys while inline editing is active
 		if (isEditing) return;
 
-		const current = signedIn.opensidian.state.fs.focusedId;
+		const current = signedIn.state.files.focusedId;
 		const currentIndex = current ? visibleIds.indexOf(current) : -1;
 
 		switch (e.key) {
 			case 'ArrowDown': {
 				e.preventDefault();
 				if (currentIndex === -1) {
-					signedIn.opensidian.state.fs.focus(visibleIds[0] ?? null);
+					signedIn.state.files.focus(visibleIds[0] ?? null);
 				} else {
 					const next =
 						visibleIds[Math.min(currentIndex + 1, visibleIds.length - 1)];
-					signedIn.opensidian.state.fs.focus(next ?? null);
+					signedIn.state.files.focus(next ?? null);
 				}
 				break;
 			}
 			case 'ArrowUp': {
 				e.preventDefault();
 				if (currentIndex === -1) {
-					signedIn.opensidian.state.fs.focus(visibleIds[0] ?? null);
+					signedIn.state.files.focus(visibleIds[0] ?? null);
 				} else {
 					const prev = visibleIds[Math.max(currentIndex - 1, 0)];
-					signedIn.opensidian.state.fs.focus(prev ?? null);
+					signedIn.state.files.focus(prev ?? null);
 				}
 				break;
 			}
 			case 'ArrowRight': {
 				e.preventDefault();
 				if (!current) break;
-				const row = signedIn.opensidian.state.fs.getFile(current);
+				const row = signedIn.state.files.getFile(current);
 				if (row?.type !== 'folder') break;
-				if (!signedIn.opensidian.state.fs.isExpanded(current)) {
-					signedIn.opensidian.state.fs.toggleExpand(current);
+				if (!signedIn.state.files.isExpanded(current)) {
+					signedIn.state.files.toggleExpand(current);
 				} else {
-					const children = signedIn.opensidian.state.fs.getChildren(current);
+					const children = signedIn.state.files.getChildren(current);
 					if (children.length > 0)
-						signedIn.opensidian.state.fs.focus(children[0] ?? null);
+						signedIn.state.files.focus(children[0] ?? null);
 				}
 				break;
 			}
 			case 'ArrowLeft': {
 				e.preventDefault();
 				if (!current) break;
-				const row = signedIn.opensidian.state.fs.getFile(current);
+				const row = signedIn.state.files.getFile(current);
 				if (
 					row?.type === 'folder' &&
-					signedIn.opensidian.state.fs.isExpanded(current)
+					signedIn.state.files.isExpanded(current)
 				) {
-					signedIn.opensidian.state.fs.toggleExpand(current);
+					signedIn.state.files.toggleExpand(current);
 				} else if (row?.parentId) {
-					signedIn.opensidian.state.fs.focus(row.parentId);
+					signedIn.state.files.focus(row.parentId);
 				}
 				break;
 			}
@@ -89,43 +88,41 @@
 			case ' ': {
 				e.preventDefault();
 				if (!current) break;
-				const row = signedIn.opensidian.state.fs.getFile(current);
+				const row = signedIn.state.files.getFile(current);
 				if (row?.type === 'file') {
-					signedIn.opensidian.state.fs.selectFile(current);
+					signedIn.state.files.selectFile(current);
 				} else if (row?.type === 'folder') {
-					signedIn.opensidian.state.fs.toggleExpand(current);
+					signedIn.state.files.toggleExpand(current);
 				}
 				break;
 			}
 			case 'Home': {
 				e.preventDefault();
-				signedIn.opensidian.state.fs.focus(visibleIds[0] ?? null);
+				signedIn.state.files.focus(visibleIds[0] ?? null);
 				break;
 			}
 			case 'End': {
 				e.preventDefault();
-				signedIn.opensidian.state.fs.focus(visibleIds.at(-1) ?? null);
+				signedIn.state.files.focus(visibleIds.at(-1) ?? null);
 				break;
 			}
 			// ── Inline editing shortcuts ──────────────────────────────
 			case 'n':
 			case 'N': {
 				e.preventDefault();
-				signedIn.opensidian.state.fs.startCreate(
-					e.shiftKey ? 'folder' : 'file',
-				);
+				signedIn.state.files.startCreate(e.shiftKey ? 'folder' : 'file');
 				break;
 			}
 			case 'F2': {
 				e.preventDefault();
-				if (current) signedIn.opensidian.state.fs.startRename(current);
+				if (current) signedIn.state.files.startRename(current);
 				break;
 			}
 			case 'Delete':
 			case 'Backspace': {
 				e.preventDefault();
 				if (!current) break;
-				const row = signedIn.opensidian.state.fs.getFile(current);
+				const row = signedIn.state.files.getFile(current);
 				const name = row?.name ?? 'this item';
 				const isFolder = row?.type === 'folder';
 				confirmationDialog.open({
@@ -134,7 +131,7 @@
 						? 'This will delete the folder and all its contents. This action cannot be undone.'
 						: 'This will delete the file. This action cannot be undone.',
 					confirm: { text: 'Delete', variant: 'destructive' },
-					onConfirm: () => signedIn.opensidian.state.fs.deleteFile(current),
+					onConfirm: () => signedIn.state.files.deleteFile(current),
 				});
 				break;
 			}
@@ -144,7 +141,7 @@
 	}
 </script>
 
-{#if signedIn.opensidian.state.fs.rootChildIds.length === 0 && !signedIn.opensidian.state.fs.inlineCreate}
+{#if signedIn.state.files.rootChildIds.length === 0 && !signedIn.state.files.inlineCreate}
 	<Empty.Root class="border-0">
 		<Empty.Header>
 			<Empty.Title>No files yet</Empty.Title>
@@ -155,10 +152,10 @@
 		<Button
 			variant="outline"
 			size="sm"
-			onclick={() => signedIn.opensidian.state.sampleData.load()}
-			disabled={signedIn.opensidian.state.sampleData.seeding}
+			onclick={() => signedIn.state.sampleData.load()}
+			disabled={signedIn.state.sampleData.seeding}
 		>
-			{#if signedIn.opensidian.state.sampleData.seeding}
+			{#if signedIn.state.sampleData.seeding}
 				<Spinner class="size-3.5" />
 			{:else}
 				Load Sample Data
@@ -171,14 +168,14 @@
 		aria-label="File explorer"
 		onkeydown={handleKeydown}
 	>
-		{#each signedIn.opensidian.state.fs.rootChildIds as childId (childId)}
+		{#each signedIn.state.files.rootChildIds as childId (childId)}
 			<FileTreeItem id={childId} />
 		{/each}
-		{#if signedIn.opensidian.state.fs.inlineCreate?.parentId === null}
+		{#if signedIn.state.files.inlineCreate?.parentId === null}
 			<InlineNameInput
-				icon={signedIn.opensidian.state.fs.inlineCreate.type}
-				onConfirm={signedIn.opensidian.state.fs.confirmCreate}
-				onCancel={signedIn.opensidian.state.fs.cancelCreate}
+				icon={signedIn.state.files.inlineCreate.type}
+				onConfirm={signedIn.state.files.confirmCreate}
+				onCancel={signedIn.state.files.cancelCreate}
 			/>
 		{/if}
 	</TreeView.Root>

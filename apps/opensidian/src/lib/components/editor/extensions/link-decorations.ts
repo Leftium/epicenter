@@ -21,8 +21,8 @@ import {
  * @example
  * ```typescript
  * linkDecorations({
- *   onNavigate: (ref) => state.fs.selectFile(ref.id as FileId),
- *   resolveTitle: (ref) => state.fs.getFile(ref.id as FileId)?.name ?? null,
+ *   onNavigate: (ref) => state.files.selectFile(ref.id as FileId),
+ *   resolveTitle: (ref) => state.files.getFile(ref.id as FileId)?.name ?? null,
  * })
  * ```
  */
@@ -40,7 +40,7 @@ type LinkDecorationConfig = {
 	 * ```typescript
 	 * resolveTitle: (ref) => {
 	 *   if (ref.table !== 'files') return null;
-	 *   return state.fs.getFile(ref.id as FileId)?.name ?? null;
+	 *   return state.files.getFile(ref.id as FileId)?.name ?? null;
 	 * }
 	 * ```
 	 */
@@ -62,8 +62,8 @@ type LinkDecorationConfig = {
  *   table: 'files',
  *   id: 'abc123',
  * }, {
- *   onNavigate: (ref) => state.fs.selectFile(ref.id as FileId),
- *   resolveTitle: (ref) => state.fs.getFile(ref.id as FileId)?.name ?? null,
+ *   onNavigate: (ref) => state.files.selectFile(ref.id as FileId),
+ *   resolveTitle: (ref) => state.files.getFile(ref.id as FileId)?.name ?? null,
  * });
  * ```
  */
@@ -201,8 +201,8 @@ function buildDecorations(
  *
  * const extensions = [
  *   linkDecorations({
- *     onNavigate: (ref) => state.fs.selectFile(ref.id as FileId),
- *     resolveTitle: (ref) => state.fs.getFile(ref.id as FileId)?.name ?? null,
+ *     onNavigate: (ref) => state.files.selectFile(ref.id as FileId),
+ *     resolveTitle: (ref) => state.files.getFile(ref.id as FileId)?.name ?? null,
  *   }),
  * ];
  * ```

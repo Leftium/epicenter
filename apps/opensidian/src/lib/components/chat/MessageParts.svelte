@@ -6,7 +6,7 @@
 		ToolCallPart as TanStackToolCallPart,
 		ToolResultPart as ToolResultPartType,
 	} from '@tanstack/ai-client';
-	import type { WorkspaceTools } from '$lib/session.svelte';
+	import type { WorkspaceTools } from '$lib/chat/chat-state.svelte';
 	import ToolCallPart from './ToolCallPart.svelte';
 	import ToolResultPart from './ToolResultPart.svelte';
 

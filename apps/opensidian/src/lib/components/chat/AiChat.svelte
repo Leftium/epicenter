@@ -9,7 +9,7 @@
 	import MessageList from './MessageList.svelte';
 
 	const signedIn = getSignedInSession();
-	const active = $derived(signedIn.opensidian.state.chat.active);
+	const active = $derived(signedIn.state.chat.active);
 
 	/** Tracks which error message was dismissed so it doesn't reappear. */
 	let dismissedError = $state<string | null>(null);
@@ -27,7 +27,7 @@
 			variant="ghost"
 			size="sm"
 			onclick={() => {
-				signedIn.opensidian.state.chat.newConversation();
+				signedIn.state.chat.newConversation();
 				dismissedError = null;
 			}}
 		>

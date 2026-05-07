@@ -5,7 +5,7 @@
 
 	const signedIn = getSignedInSession();
 	const pathSegments = $derived.by(() => {
-		const path = signedIn.opensidian.state.fs.selectedPath;
+		const path = signedIn.state.files.selectedPath;
 		if (!path) return [];
 		return path.split('/').filter(Boolean);
 	});

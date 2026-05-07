@@ -1,6 +1,6 @@
 import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
-import type { OpensidianWorkspace } from '$lib/session.svelte';
+import type { OpensidianWorkspace } from '$lib/opensidian/browser';
 
 export type MatchSnippet = {
 	snippet: string;
@@ -17,9 +17,9 @@ export type FileGroup = {
 const PAGE_SIZE = 50;
 
 export function createSidebarSearchState({
-	opensidian,
+	workspace,
 }: {
-	opensidian: OpensidianWorkspace;
+	workspace: OpensidianWorkspace;
 }) {
 	// Persisted preferences
 	const caseSensitiveState = createPersistedState({
@@ -111,7 +111,7 @@ export function createSidebarSearchState({
 	}
 
 	async function executeSearch(query: string, offset: number) {
-		const client = opensidian.sqliteIndex.client;
+		const client = workspace.sqliteIndex.client;
 		const trimmed = query.trim();
 
 		try {
@@ -147,10 +147,14 @@ export function createSidebarSearchState({
 				regexState.current,
 			);
 
-			return { rows: filtered, hasMore: hasMoreResults };
+			return {
+				rows: filtered,
+				hasMore: hasMoreResults,
+				consumedRows: pageRows.length,
+			};
 		} catch {
 			// Invalid FTS5 query syntax
-			return { rows: [], hasMore: false };
+			return { rows: [], hasMore: false, consumedRows: 0 };
 		}
 	}
 
@@ -178,7 +182,7 @@ export function createSidebarSearchState({
 			totalResults = result.rows.length;
 			totalFiles = groups.length;
 			hasMore = result.hasMore;
-			currentOffset = result.rows.length;
+			currentOffset = result.consumedRows;
 			isSearching = false;
 		}, 200);
 	}
@@ -267,24 +271,12 @@ export function createSidebarSearchState({
 			totalResults += result.rows.length;
 			totalFiles = fileGroups.length;
 			hasMore = result.hasMore;
-			currentOffset += result.rows.length;
+			currentOffset += result.consumedRows;
 			isSearching = false;
 		},
 
-		reset() {
-			searchQuery = '';
-			fileGroups = [];
-			totalResults = 0;
-			totalFiles = 0;
-			hasMore = false;
-			isSearching = false;
-			currentOffset = 0;
-			if (debounceTimer) clearTimeout(debounceTimer);
-		},
 		[Symbol.dispose]() {
 			if (debounceTimer) clearTimeout(debounceTimer);
 		},
 	};
 }
-
-export type SidebarSearchState = ReturnType<typeof createSidebarSearchState>;

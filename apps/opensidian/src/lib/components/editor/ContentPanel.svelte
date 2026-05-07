@@ -13,10 +13,10 @@
 <div class="flex h-full flex-col">
 	<TabBar />
 
-	{#if signedIn.opensidian.state.fs.activeFileId && signedIn.opensidian.state.fs.selectedNode}
+	{#if signedIn.state.files.activeFileId && signedIn.state.files.selectedNode}
 		<div class="flex items-center border-b px-4 py-2"><PathBreadcrumb /></div>
 
-		{#if signedIn.opensidian.state.fs.selectedNode.type === 'folder'}
+		{#if signedIn.state.files.selectedNode.type === 'folder'}
 			<Empty.Root class="flex-1 border-0">
 				<Empty.Header>
 					<Empty.Title>Folder selected</Empty.Title>
@@ -27,8 +27,8 @@
 			</Empty.Root>
 		{:else}
 			<div class="flex-1 overflow-hidden">
-				{#key signedIn.opensidian.state.fs.activeFileId}
-					<ContentEditor fileId={signedIn.opensidian.state.fs.activeFileId} />
+				{#key signedIn.state.files.activeFileId}
+					<ContentEditor fileId={signedIn.state.files.activeFileId} />
 				{/key}
 			</div>
 		{/if}
@@ -40,14 +40,14 @@
 					>Click a file in the tree, or use the terminal below</Empty.Description
 				>
 			</Empty.Header>
-			{#if signedIn.opensidian.state.fs.rootChildIds.length === 0}
+			{#if signedIn.state.files.rootChildIds.length === 0}
 				<Button
 					variant="outline"
 					size="sm"
-					onclick={() => signedIn.opensidian.state.sampleData.load()}
-					disabled={signedIn.opensidian.state.sampleData.seeding}
+					onclick={() => signedIn.state.sampleData.load()}
+					disabled={signedIn.state.sampleData.seeding}
 				>
-					{#if signedIn.opensidian.state.sampleData.seeding}
+					{#if signedIn.state.sampleData.seeding}
 						<Spinner class="size-3.5" />
 					{:else}
 						Load Sample Data

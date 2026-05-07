@@ -2,8 +2,8 @@ import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { defineCommand } from 'just-bash';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import type { OpensidianWorkspace } from '$lib/session.svelte';
-import type { FsState } from '$lib/state/fs-state.svelte';
+import type { OpensidianWorkspace } from '$lib/opensidian/browser';
+import type { FilesState } from '$lib/state/files-state.svelte';
 
 /**
  * A single entry in the terminal history.
@@ -19,10 +19,10 @@ type TerminalEntry =
 /**
  * Reactive terminal state factory.
  *
- * Follows the same factory pattern as `fs-state.svelte.ts`: a factory
+ * Follows the same factory pattern as `files-state.svelte.ts`: a factory
  * function creates all `$state` and exposes a public API via a returned
  * object with getters. The session exposes it at
- * `signedIn.opensidian.state.terminal`.
+ * `signedIn.state.terminal`.
  *
  * Manages:
  * - **History**: scrollable list of input/output entries
@@ -34,16 +34,16 @@ type TerminalEntry =
  * ```svelte
  * <script>
  *   const session = getSignedInSession();
- *   session.opensidian.state.terminal.open // reactive boolean
+ *   session.state.terminal.open // reactive boolean
  * </script>
  * ```
  */
 export function createTerminalState({
-	fs,
-	opensidian,
+	files,
+	workspace,
 }: {
-	fs: FsState;
-	opensidian: OpensidianWorkspace;
+	files: FilesState;
+	workspace: OpensidianWorkspace;
 }) {
 	const openState = createPersistedState({
 		key: 'opensidian.terminal-open',
@@ -58,9 +58,9 @@ export function createTerminalState({
 	// ── Custom commands ──────────────────────────────────────────────
 	// Registered once for the signed-in session via bash.registerCommand().
 	// Uses registerCommand() instead of the constructor's customCommands
-	// option to avoid a circular dependency (workspace → fs-state).
+	// option to avoid a circular dependency from workspace construction to files state.
 
-	opensidian.bash.registerCommand(
+	workspace.bash.registerCommand(
 		defineCommand('open', async (args) => {
 			const path = args[0];
 			if (!path)
@@ -69,19 +69,19 @@ export function createTerminalState({
 					stderr: 'Usage: open <path>',
 					exitCode: 1,
 				};
-			const id = opensidian.fs.lookupId(path);
+			const id = workspace.fs.lookupId(path);
 			if (!id)
 				return {
 					stdout: '',
 					stderr: `No such file: ${path}`,
 					exitCode: 1,
 				};
-			fs.selectFile(id);
+			files.selectFile(id);
 			return { stdout: `Opened ${path}\n`, stderr: '', exitCode: 0 };
 		}),
 	);
 	const WELCOME_MESSAGE = [
-		'Welcome to Opensidian\u2014notes on CRDTs with a bash terminal.',
+		'Welcome to Opensidian: notes on CRDTs with a bash terminal.',
 		'',
 		'Try these:',
 		'  echo "# Hello HN" > /hello.md    create a file',
@@ -159,7 +159,7 @@ export function createTerminalState({
 			historyIndex = -1;
 			const { data: entry } = await tryAsync({
 				try: async () => {
-					const result = await opensidian.bash.exec(command);
+					const result = await workspace.bash.exec(command);
 					return {
 						type: 'output' as const,
 						stdout: result.stdout,
@@ -209,12 +209,5 @@ export function createTerminalState({
 			historyIndex = -1;
 			return undefined;
 		},
-
-		/** Clear all terminal output history. */
-		clear() {
-			history = [];
-		},
 	};
 }
-
-export type TerminalState = ReturnType<typeof createTerminalState>;

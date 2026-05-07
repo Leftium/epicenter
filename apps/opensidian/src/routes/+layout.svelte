@@ -34,7 +34,7 @@
 	</div>
 {:else}
 	<WorkspaceGate
-		pending={current.signedIn.opensidian.idb.whenLoaded}
+		pending={current.signedIn.workspace.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
 		{@render children()}

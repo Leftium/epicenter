@@ -11,20 +11,20 @@
 	const signedIn = getSignedInSession();
 	let { id }: { id: FileId } = $props();
 
-	const row = $derived(signedIn.opensidian.state.fs.getFile(id));
+	const row = $derived(signedIn.state.files.getFile(id));
 	const isFolder = $derived(row?.type === 'folder');
-	const isExpanded = $derived(signedIn.opensidian.state.fs.isExpanded(id));
-	const isSelected = $derived(signedIn.opensidian.state.fs.activeFileId === id);
+	const isExpanded = $derived(signedIn.state.files.isExpanded(id));
+	const isSelected = $derived(signedIn.state.files.activeFileId === id);
 	const children = $derived(
-		isFolder ? signedIn.opensidian.state.fs.getChildren(id) : [],
+		isFolder ? signedIn.state.files.getChildren(id) : [],
 	);
-	const isFocused = $derived(signedIn.opensidian.state.fs.focusedId === id);
-	const isRenaming = $derived(signedIn.opensidian.state.fs.renamingId === id);
+	const isFocused = $derived(signedIn.state.files.focusedId === id);
+	const isRenaming = $derived(signedIn.state.files.renamingId === id);
 	const showInlineCreate = $derived(
-		signedIn.opensidian.state.fs.inlineCreate?.parentId === id,
+		signedIn.state.files.inlineCreate?.parentId === id,
 	);
 	const isContextTarget = $derived(
-		signedIn.opensidian.state.fs.contextMenuTargetId === id,
+		signedIn.state.files.contextMenuTargetId === id,
 	);
 
 	/** Whether this item should show the highlight background. */
@@ -33,7 +33,7 @@
 
 {#if row}
 	<ContextMenu.Root
-		onOpenChange={(open) => signedIn.opensidian.state.fs.setContextMenuTarget(open ? id: null)}
+		onOpenChange={(open) => signedIn.state.files.setContextMenuTarget(open ? id: null)}
 	>
 		<ContextMenu.Trigger>
 			{#snippet child({ props })}
@@ -48,8 +48,8 @@
 						<InlineNameInput
 							defaultValue={row.name}
 							icon="folder"
-							onConfirm={signedIn.opensidian.state.fs.confirmRename}
-							onCancel={signedIn.opensidian.state.fs.cancelRename}
+							onConfirm={signedIn.state.files.confirmRename}
+							onCancel={signedIn.state.files.cancelRename}
 						/>
 					</div>
 				{:else if isFolder}
@@ -62,7 +62,7 @@
 						<TreeView.Folder
 							name={row.name}
 							open={isExpanded}
-							onOpenChange={() => signedIn.opensidian.state.fs.toggleExpand(id)}
+							onOpenChange={() => signedIn.state.files.toggleExpand(id)}
 							class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isHighlighted
 								? 'bg-accent text-accent-foreground'
 								: ''} {isFocused ? 'ring-1 ring-ring': ''}"
@@ -72,9 +72,9 @@
 							{/each}
 							{#if showInlineCreate}
 								<InlineNameInput
-									icon={signedIn.opensidian.state.fs.inlineCreate?.type ?? 'file'}
-									onConfirm={signedIn.opensidian.state.fs.confirmCreate}
-									onCancel={signedIn.opensidian.state.fs.cancelCreate}
+									icon={signedIn.state.files.inlineCreate?.type ?? 'file'}
+									onConfirm={signedIn.state.files.confirmCreate}
+									onCancel={signedIn.state.files.cancelCreate}
 								/>
 							{/if}
 						</TreeView.Folder>
@@ -89,8 +89,8 @@
 						<InlineNameInput
 							defaultValue={row.name}
 							icon="file"
-							onConfirm={signedIn.opensidian.state.fs.confirmRename}
-							onCancel={signedIn.opensidian.state.fs.cancelRename}
+							onConfirm={signedIn.state.files.confirmRename}
+							onCancel={signedIn.state.files.cancelRename}
 						/>
 					</div>
 				{:else}
@@ -101,7 +101,7 @@
 						class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isHighlighted
 							? 'bg-accent text-accent-foreground'
 							: ''} {isFocused ? 'ring-1 ring-ring': ''}"
-						onclick={() => signedIn.opensidian.state.fs.selectFile(id)}
+						onclick={() => signedIn.state.files.selectFile(id)}
 						aria-selected={isSelected}
 						role="treeitem"
 					>
@@ -118,7 +118,7 @@
 		</ContextMenu.Trigger>
 		<ContextMenu.Content
 			onCloseAutoFocus={(e) => {
-				if (signedIn.opensidian.state.fs.inlineCreate || signedIn.opensidian.state.fs.renamingId) {
+				if (signedIn.state.files.inlineCreate || signedIn.state.files.renamingId) {
 					e.preventDefault();
 				}
 			}}
@@ -126,9 +126,9 @@
 			{#if isFolder}
 				<ContextMenu.Item
 					onclick={() => {
-						signedIn.opensidian.state.fs.focus(id);
-						signedIn.opensidian.state.fs.expand(id);
-						signedIn.opensidian.state.fs.startCreate('file');
+						signedIn.state.files.focus(id);
+						signedIn.state.files.expand(id);
+						signedIn.state.files.startCreate('file');
 					}}
 				>
 					New File
@@ -136,9 +136,9 @@
 				</ContextMenu.Item>
 				<ContextMenu.Item
 					onclick={() => {
-						signedIn.opensidian.state.fs.focus(id);
-						signedIn.opensidian.state.fs.expand(id);
-						signedIn.opensidian.state.fs.startCreate('folder');
+						signedIn.state.files.focus(id);
+						signedIn.state.files.expand(id);
+						signedIn.state.files.startCreate('folder');
 					}}
 				>
 					New Folder
@@ -146,16 +146,14 @@
 				</ContextMenu.Item>
 				<ContextMenu.Separator />
 			{/if}
-			<ContextMenu.Item
-				onclick={() => signedIn.opensidian.state.fs.startRename(id)}
-			>
+			<ContextMenu.Item onclick={() => signedIn.state.files.startRename(id)}>
 				Rename
 				<ContextMenu.Shortcut>F2</ContextMenu.Shortcut>
 			</ContextMenu.Item>
 			<ContextMenu.Item
 				class="text-destructive"
 				onclick={() => {
-					const row = signedIn.opensidian.state.fs.getFile(id);
+					const row = signedIn.state.files.getFile(id);
 					const name = row?.name ?? 'this item';
 					const isFolder = row?.type === 'folder';
 					confirmationDialog.open({
@@ -164,7 +162,7 @@
 							? 'This will delete the folder and all its contents. This action cannot be undone.'
 							: 'This will delete the file. This action cannot be undone.',
 						confirm: { text: 'Delete', variant: 'destructive' },
-						onConfirm: () => signedIn.opensidian.state.fs.deleteFile(id),
+						onConfirm: () => signedIn.state.files.deleteFile(id),
 					});
 				}}
 			>

@@ -46,18 +46,5 @@ if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());
 }
 
-const [getRawSession, setSignedInSession] =
+export const [getSignedInSession, setSignedInSession] =
 	createContext<FujiSignedInSession>();
-
-export { setSignedInSession };
-
-export function getSignedInSession(): FujiSignedInSession {
-	const signedInSession = getRawSession();
-	if (!signedInSession) {
-		throw new Error(
-			'[fuji] getSignedInSession() called outside <SignedInSessionProvider>. ' +
-				'This route must mount under the signed-in branch of the root layout.',
-		);
-	}
-	return signedInSession;
-}

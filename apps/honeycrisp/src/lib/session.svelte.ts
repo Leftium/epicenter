@@ -40,18 +40,5 @@ if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());
 }
 
-const [getRawSession, setSignedInSession] =
+export const [getSignedInSession, setSignedInSession] =
 	createContext<HoneycrispSignedIn>();
-
-export { setSignedInSession };
-
-export function getSignedInSession(): HoneycrispSignedIn {
-	const s = getRawSession();
-	if (!s) {
-		throw new Error(
-			'[honeycrisp] getSignedInSession() called outside <SignedInSessionProvider>. ' +
-				'This route must mount under the signed-in branch of the root layout.',
-		);
-	}
-	return s;
-}

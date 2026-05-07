@@ -5,10 +5,10 @@
 	import { getSignedInSession } from '$lib/session.svelte';
 	import { viewState } from '../../state/view.svelte';
 
-	const { entries } = getSignedInSession();
+	const signedIn = getSignedInSession();
 	const tagParam = $derived(decodeURIComponent(page.params.tag ?? ''));
 	const filteredEntries = $derived(
-		entries.active.filter((e) => e.tags.includes(tagParam)),
+		signedIn.entries.active.filter((e) => e.tags.includes(tagParam)),
 	);
 </script>
 

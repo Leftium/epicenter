@@ -13,15 +13,15 @@
 	import BulkAddModal from './BulkAddModal.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
-	const { fuji } = getSignedInSession();
+	const signedIn = getSignedInSession();
 
 	async function forgetFujiDevice(): Promise<void> {
-		await fuji.wipe();
+		await signedIn.fuji.wipe();
 		window.location.reload();
 	}
 
 	function createEntry() {
-		const { id } = fuji.actions.entries.create({});
+		const { id } = signedIn.fuji.actions.entries.create({});
 		goto(`/entries/${id}`);
 	}
 </script>
@@ -66,7 +66,7 @@
 	<div class="flex items-center gap-1">
 		<AccountPopover
 			{auth}
-			sync={fuji.sync}
+			sync={signedIn.fuji.sync}
 			syncNoun="entries"
 			onForgetDevice={forgetFujiDevice}
 			onSocialSignIn={() =>

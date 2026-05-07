@@ -15,10 +15,10 @@
 	import EntriesSidebar from './EntriesSidebar.svelte';
 
 	let { children }: { children: Snippet } = $props();
-	const { fuji, entries } = getSignedInSession();
+	const signedIn = getSignedInSession();
 
 	function createEntry() {
-		const { id } = fuji.actions.entries.create({});
+		const { id } = signedIn.fuji.actions.entries.create({});
 		goto(`/entries/${id}`);
 	}
 
@@ -36,7 +36,7 @@
 
 	const paletteItems = $derived.by((): CommandPaletteItem[] => {
 		if (!paletteOpen) return [];
-		return entries.active.map((entry) => ({
+		return signedIn.entries.active.map((entry) => ({
 			id: entry.id,
 			label: entry.title || 'Untitled',
 			description: entry.subtitle || undefined,
@@ -91,8 +91,8 @@
 			class="flex h-7 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground"
 		>
 			<span
-				>{entries.active.length}
-				{entries.active.length === 1 ? 'entry' : 'entries'}</span
+				>{signedIn.entries.active.length}
+				{signedIn.entries.active.length === 1 ? 'entry' : 'entries'}</span
 			>
 			<div class="ml-auto flex items-center gap-1.5">
 				<span class="flex items-center gap-1"> Search <Kbd>⌘K</Kbd> </span>

@@ -6,9 +6,9 @@
 	import EntryEditor from '../../components/EntryEditor.svelte';
 	import type { EntryId } from '../../fuji/workspace';
 
-	const { entries } = getSignedInSession();
+	const signedIn = getSignedInSession();
 	const entryId = $derived(page.params.id as EntryId);
-	const entry = $derived(entryId ? (entries.get(entryId) ?? null) : null);
+	const entry = $derived(entryId ? (signedIn.entries.get(entryId) ?? null) : null);
 </script>
 
 <main class="flex h-full flex-1 flex-col overflow-hidden">

@@ -13,13 +13,13 @@
 	import { matchesEntrySearch } from '$lib/entries-search';
 	import { viewState } from '../state/view.svelte';
 
-	const { entries } = getSignedInSession();
+	const signedIn = getSignedInSession();
 	const isSearching = $derived(viewState.searchQuery.trim().length > 0);
 
 	/** Entries matching the search query across title, subtitle, tags, and type. */
 	const searchResults = $derived.by(() => {
 		if (!isSearching) return [];
-		return entries.active.filter((entry) =>
+		return signedIn.entries.active.filter((entry) =>
 			matchesEntrySearch(entry, viewState.searchQuery),
 		);
 	});
@@ -27,7 +27,7 @@
 	/** Unique types with entry counts, sorted by count descending. */
 	const typeGroups = $derived.by(() => {
 		const counts = new Map<string, number>();
-		for (const entry of entries.active) {
+		for (const entry of signedIn.entries.active) {
 			for (const t of entry.type) {
 				counts.set(t, (counts.get(t) ?? 0) + 1);
 			}
@@ -40,7 +40,7 @@
 	/** Unique tags with entry counts, sorted by count descending. */
 	const tagGroups = $derived.by(() => {
 		const counts = new Map<string, number>();
-		for (const entry of entries.active) {
+		for (const entry of signedIn.entries.active) {
 			for (const tag of entry.tags) {
 				counts.set(tag, (counts.get(tag) ?? 0) + 1);
 			}
@@ -52,7 +52,7 @@
 
 	/** Recent entries sorted by updatedAt, limited to 10. */
 	const recentEntries = $derived(
-		[...entries.active]
+		[...signedIn.entries.active]
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 			.slice(0, 10),
 	);
@@ -89,7 +89,7 @@
 							<FileTextIcon class="size-4" />
 							<span>All Entries</span>
 							<span class="ml-auto text-xs text-muted-foreground">
-								{entries.active.length}
+								{signedIn.entries.active.length}
 							</span>
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
@@ -100,9 +100,9 @@
 						>
 							<Trash2Icon class="size-4" />
 							<span>Recently Deleted</span>
-							{#if entries.deleted.length > 0}
+							{#if signedIn.entries.deleted.length > 0}
 								<span class="ml-auto text-xs text-muted-foreground">
-									{entries.deleted.length}
+									{signedIn.entries.deleted.length}
 								</span>
 							{/if}
 						</Sidebar.MenuButton>

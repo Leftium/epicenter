@@ -11,7 +11,7 @@
 	import { getSignedInSession } from '$lib/session.svelte';
 
 	const LINE_REGEX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(.+)$/;
-	const { fuji } = getSignedInSession();
+	const signedIn = getSignedInSession();
 
 	let isOpen = $state(false);
 	let rawText = $state('');
@@ -61,7 +61,7 @@
 				title: text,
 				date: DateTimeString.stringify(iso, timezone),
 			}));
-			fuji.actions.entries.bulkCreate({ entries: items });
+			signedIn.fuji.actions.entries.bulkCreate({ entries: items });
 			toast.success(`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`);
 			isOpen = false;
 			rawText = '';

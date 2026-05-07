@@ -21,10 +21,10 @@
 	import type { Entry } from '../fuji/workspace';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();
-	const { fuji } = getSignedInSession();
+	const signedIn = getSignedInSession();
 
 	function createEntry() {
-		const { id } = fuji.actions.entries.create({});
+		const { id } = signedIn.fuji.actions.entries.create({});
 		goto(`/entries/${id}`);
 	}
 

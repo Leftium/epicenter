@@ -23,22 +23,22 @@
 	import TagInput from '$lib/components/TagInput.svelte';
 
 	let { entry }: { entry: Entry } = $props();
-	const { fuji } = getSignedInSession();
+	const signedIn = getSignedInSession();
 
 	type EntryUpdate = Omit<
-		Parameters<typeof fuji.actions.entries.update>[0],
+		Parameters<typeof signedIn.fuji.actions.entries.update>[0],
 		'id'
 	>;
 
 	function updateEntry(updates: EntryUpdate) {
 		toastOnError(
-			fuji.actions.entries.update({ id: entry.id, ...updates }),
+			signedIn.fuji.actions.entries.update({ id: entry.id, ...updates }),
 			"Couldn't save changes",
 		);
 	}
 
 	const contentDoc = fromDisposableCache(
-		fuji.entryContentDocs,
+		signedIn.fuji.entryContentDocs,
 		() => entry.id,
 	);
 
@@ -66,7 +66,7 @@
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
 						toastOnError(
-							fuji.actions.entries.delete({ id: entry.id }),
+							signedIn.fuji.actions.entries.delete({ id: entry.id }),
 							'Couldn\'t delete entry',
 						);
 						goto('/');

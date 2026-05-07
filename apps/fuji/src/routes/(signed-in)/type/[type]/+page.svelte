@@ -5,10 +5,10 @@
 	import { getSignedInSession } from '$lib/session.svelte';
 	import { viewState } from '../../state/view.svelte';
 
-	const { entries } = getSignedInSession();
+	const signedIn = getSignedInSession();
 	const typeParam = $derived(decodeURIComponent(page.params.type ?? ''));
 	const filteredEntries = $derived(
-		entries.active.filter((e) => e.type.includes(typeParam)),
+		signedIn.entries.active.filter((e) => e.type.includes(typeParam)),
 	);
 </script>
 

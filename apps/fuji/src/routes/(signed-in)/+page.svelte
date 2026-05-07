@@ -4,11 +4,11 @@
 	import EntriesTimeline from './components/EntriesTimeline.svelte';
 	import { viewState } from './state/view.svelte';
 
-	const { entries } = getSignedInSession();
+	const signedIn = getSignedInSession();
 </script>
 
 {#if viewState.viewMode === 'table'}
-	<EntriesTable entries={entries.active} />
+	<EntriesTable entries={signedIn.entries.active} />
 {:else}
-	<EntriesTimeline entries={entries.active} />
+	<EntriesTimeline entries={signedIn.entries.active} />
 {/if}

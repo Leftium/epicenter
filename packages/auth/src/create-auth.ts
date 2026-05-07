@@ -39,11 +39,28 @@ export const AuthError = defineErrors({
 
 export type AuthError = InferErrors<typeof AuthError>;
 
+export type BearerSessionStorage = {
+	/**
+	 * Reads the durable bearer session once during auth client construction.
+	 *
+	 * This value seeds the in-memory bearer credential used by Better Auth's
+	 * first session request. Storage is not the live source of truth after
+	 * construction.
+	 */
+	get(): BearerSession | null;
+	/**
+	 * Persists the current bearer session for the next boot.
+	 *
+	 * The auth client calls this when Better Auth validates, rotates, or clears
+	 * the session. The auth client remains the live runtime owner.
+	 */
+	set(value: BearerSession | null): MaybePromise<void>;
+};
+
 export type CreateBearerAuthConfig = {
 	/** Resolved once at construction; recreate the client if the origin changes. */
 	baseURL?: string;
-	initialSession: BearerSession | null;
-	saveSession: (value: BearerSession | null) => MaybePromise<void>;
+	sessionStorage: BearerSessionStorage;
 };
 
 export type CreateCookieAuthConfig = {
@@ -108,13 +125,12 @@ type EpicenterCustomSessionPlugin = ReturnType<
  */
 export function createBearerAuth({
 	baseURL,
-	initialSession,
-	saveSession,
+	sessionStorage,
 }: CreateBearerAuthConfig): AuthClient {
-	let session: BearerSession | null = initialSession;
+	let session: BearerSession | null = sessionStorage.get();
 
 	function persistSession(next: BearerSession | null) {
-		void Promise.resolve(saveSession(next)).catch((error) => {
+		void Promise.resolve(sessionStorage.set(next)).catch((error) => {
 			console.error('[auth] failed to save session:', error);
 		});
 	}
@@ -164,7 +180,7 @@ export function createBearerAuth({
 
 	return createAuthCore({
 		baseURL,
-		initialIdentity: identityFromSession(initialSession),
+		initialIdentity: identityFromSession(session),
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',

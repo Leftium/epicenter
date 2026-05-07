@@ -320,22 +320,27 @@ async function fetchBearerSession({
  */
 export async function createMachineAuthClient(): Promise<AuthClient> {
 	const log = createLogger('machine-auth');
-	const { data: initialSession, error } = await loadMachineSession();
+	const { data: loadedSession, error } = await loadMachineSession();
 	if (error) throw error;
-	if (initialSession === null) {
+	if (loadedSession === null) {
 		throw new Error(
 			'[machine-auth] no saved session in the system keychain. ' +
 				'Run `epicenter auth login` first.',
 		);
 	}
+	let currentSession: BearerSession | null = loadedSession;
 	return createBearerAuth({
 		baseURL: EPICENTER_API_URL,
-		initialSession,
-		saveSession: async (next) => {
-			const { error: saveError } = await saveMachineSession(next);
-			if (saveError) {
-				log.error(saveError);
-			}
+		sessionStorage: {
+			get: () => currentSession,
+			set: (next) => {
+				currentSession = next;
+				void saveMachineSession(next).then(({ error: saveError }) => {
+					if (saveError) {
+						log.error(saveError);
+					}
+				});
+			},
 		},
 	});
 }

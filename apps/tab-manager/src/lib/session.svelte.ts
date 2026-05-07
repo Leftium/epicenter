@@ -41,8 +41,7 @@ let workspaceSession = $state<ReturnType<typeof createWorkspaceSession>>();
 export const whenReady = authSessionStorage.whenReady.then(() => {
 	authClient = createBearerAuth({
 		baseURL: APP_URLS.API,
-		initialSession: authSessionStorage.get(),
-		saveSession: (next) => authSessionStorage.set(next),
+		sessionStorage: authSessionStorage,
 	});
 	workspaceSession = createWorkspaceSession(authClient);
 });

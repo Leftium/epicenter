@@ -8,7 +8,9 @@
  * @example
  * ```svelte
  * <script>
- *   import { notesState } from '../state';
+ *   import { getSignedInSession } from '$lib/session.svelte';
+ *
+ *   const { notesState } = getSignedInSession().state;
  * </script>
  *
  * {#each notesState.notes as note (note.id)}

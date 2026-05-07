@@ -12,7 +12,9 @@
  * @example
  * ```svelte
  * <script>
- *   import { viewState } from '../state';
+ *   import { getSignedInSession } from '$lib/session.svelte';
+ *
+ *   const { viewState } = getSignedInSession().state;
  * </script>
  *
  * {#each viewState.filteredNotes as note (note.id)}

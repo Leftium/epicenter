@@ -8,6 +8,11 @@
 **Status**: Implemented
 **Author**: AI-assisted, grounded against the codebase post spec 1, and the SPA-ecosystem research compiled in spec 1's "Why we don't apply keys in place" section.
 **Depends on**: spec 1 must land first. This spec rewrites the workspace identity surface assuming spec 1's `createSession` factory is in place.
+**2026-05-07 note**: The lifecycle shape remains implemented, but the broad
+"identity updates propagate through lazy reads" wording below is too broad for
+encryption keys. Sync can read refreshed bearer tokens on reconnect or request.
+Encrypted stores derive their keyring when attached; already-attached stores do
+not observe same-user key rotation without re-attach.
 **Branch**: feat/encrypted-local-workspace-storage (or follow-up branch)
 
 ## One-sentence thesis
@@ -336,9 +341,9 @@ export function createSession<TSignedIn extends SignedInBase>({
       signedIn = build(a.identity);
       return;
     }
-    // Same user: no-op. Lazy reads through auth.state propagate any
-    // identity update (key rotation, profile edits) without involving
-    // the workspace lifecycle.
+    // Same user: no-op. Auth-bound callbacks read at their own boundaries:
+    // sync can see refreshed tokens on reconnect or request, while encrypted
+    // stores keep the keyring they derived when they were attached.
     if (signedIn.userId === a.identity.user.id) return;
     // Different user: refuse live switch (heap safety).
     signedIn[Symbol.dispose]();
@@ -825,7 +830,8 @@ to maintain. Worth it for the call-site clarity.
 Can I explain the new API without saying "or"?
   Yes. "auth owns identity; the workspace borrows what it needs lazily;
   the workspace lifecycle is bounded by user.id; same-user changes are
-  invisible to the workspace lifecycle and propagate through reactive reads."
+  invisible to the workspace lifecycle. Each auth-bound callback reads at
+  its own boundary."
 
 Does one layer own each invariant?
   Yes:

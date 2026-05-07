@@ -8,7 +8,9 @@
  * @example
  * ```svelte
  * <script>
- *   import { foldersState } from '../state';
+ *   import { getSignedInSession } from '$lib/session.svelte';
+ *
+ *   const { foldersState } = getSignedInSession().state;
  * </script>
  *
  * {#each foldersState.folders as folder (folder.id)}

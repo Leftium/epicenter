@@ -314,7 +314,7 @@ function createAiChatState() {
 		refreshFns.get(activeConversationId)?.();
 	});
 
-	void opensidian.whenLoaded.then(() => {
+	void opensidian.idb.whenLoaded.then(() => {
 		void skillState.loadAllSkills();
 		reconcileHandles();
 
@@ -366,6 +366,15 @@ function createAiChatState() {
 	);
 
 	return {
+		[Symbol.dispose]() {
+			_unobserveConversations();
+			_unobserveChatMessages();
+			conversationsMap[Symbol.dispose]();
+			for (const conversationId of handles.keys()) {
+				destroyConversation(conversationId);
+			}
+		},
+
 		get active() {
 			return handles.get(activeConversationId);
 		},
@@ -433,6 +442,10 @@ function createAiChatState() {
 }
 
 export const aiChatState = createAiChatState();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => aiChatState[Symbol.dispose]());
+}
 
 export type ConversationHandle = NonNullable<
 	ReturnType<(typeof aiChatState)['get']>

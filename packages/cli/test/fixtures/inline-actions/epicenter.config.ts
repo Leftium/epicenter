@@ -23,10 +23,10 @@ state.set('count', 0);
 
 const sync = {
 	whenConnected: Promise.resolve(),
-	status: { phase: 'connected', hasLocalChanges: false },
+	status: { phase: 'connected' },
 	onStatusChange: () => () => {},
 	reconnect() {},
-	whenDisposed: Promise.resolve(),
+	[Symbol.asyncDispose]: async () => {},
 	attachRpc: () => ({ rpc: async () => ({ data: null, error: null }) }),
 } as unknown as SyncAttachment;
 

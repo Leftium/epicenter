@@ -20,6 +20,97 @@ const textDecoder = new TextDecoder();
  */
 export type EncryptedBlob = Uint8Array & Brand<'EncryptedBlob'>;
 
+export type EncryptBytesOptions = {
+	key: Uint8Array;
+	keyVersion: number;
+	plaintext: Uint8Array;
+	aad?: Uint8Array;
+};
+
+export type DecryptBytesOptions = {
+	keyring: ReadonlyMap<number, Uint8Array>;
+	blob: EncryptedBlob;
+	aad?: Uint8Array;
+};
+
+function encryptPlaintextBytes({
+	key,
+	keyVersion,
+	plaintext,
+	aad,
+}: EncryptBytesOptions): EncryptedBlob {
+	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
+	assertEncryptionKeyVersion(keyVersion);
+	const nonce = randomBytes(NONCE_LENGTH);
+	const cipher = aad
+		? xchacha20poly1305(key, nonce, aad)
+		: xchacha20poly1305(key, nonce);
+	const ciphertext = cipher.encrypt(plaintext);
+
+	const packed = new Uint8Array(
+		HEADER_LENGTH + nonce.length + ciphertext.length,
+	);
+	packed[0] = 1;
+	packed[1] = keyVersion;
+	packed.set(nonce, HEADER_LENGTH);
+	packed.set(ciphertext, HEADER_LENGTH + nonce.length);
+
+	return packed as EncryptedBlob;
+}
+
+function decryptCiphertextBytes(
+	blob: EncryptedBlob,
+	key: Uint8Array,
+	aad?: Uint8Array,
+): Uint8Array {
+	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
+	const formatVersion = blob[0];
+	if (formatVersion !== 1) {
+		throw new Error(
+			`Unknown encryption format version: ${formatVersion}. This blob may require a newer client.`,
+		);
+	}
+
+	const nonce = blob.slice(HEADER_LENGTH, HEADER_LENGTH + NONCE_LENGTH);
+	const ciphertext = blob.slice(HEADER_LENGTH + NONCE_LENGTH);
+	const cipher = aad
+		? xchacha20poly1305(key, nonce, aad)
+		: xchacha20poly1305(key, nonce);
+	return cipher.decrypt(ciphertext);
+}
+
+/**
+ * Encrypt arbitrary bytes into the current binary blob format.
+ *
+ * This is the storage-level sibling to `encryptValue`: callers that already
+ * have bytes, such as Yjs update payloads, should use this instead of
+ * round-tripping through strings.
+ */
+export function encryptBytes(options: EncryptBytesOptions): EncryptedBlob {
+	return encryptPlaintextBytes(options);
+}
+
+/**
+ * Decrypt arbitrary bytes from the current binary blob format.
+ *
+ * The key is selected from `keyring` by the key-version byte stored in the
+ * blob header. Keep old keys in the map while old local blobs remain readable.
+ */
+export function decryptBytes({
+	keyring,
+	blob,
+	aad,
+}: DecryptBytesOptions): Uint8Array {
+	const keyVersion = getKeyVersion(blob);
+	const key = keyring.get(keyVersion);
+	if (key === undefined) {
+		throw new Error(
+			`Cannot decrypt encrypted blob: key version ${keyVersion} is not in the keyring.`,
+		);
+	}
+	return decryptCiphertextBytes(blob, key, aad);
+}
+
 /**
  * Encrypt a plaintext string into the current binary blob format.
  *
@@ -40,24 +131,12 @@ export function encryptValue(
 	aad?: Uint8Array,
 	keyVersion: number = 1,
 ): EncryptedBlob {
-	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
-	assertEncryptionKeyVersion(keyVersion);
-	const nonce = randomBytes(NONCE_LENGTH);
-	const cipher = aad
-		? xchacha20poly1305(key, nonce, aad)
-		: xchacha20poly1305(key, nonce);
-	const data = textEncoder.encode(plaintext);
-	const ciphertext = cipher.encrypt(data);
-
-	const packed = new Uint8Array(
-		HEADER_LENGTH + nonce.length + ciphertext.length,
-	);
-	packed[0] = 1;
-	packed[1] = keyVersion;
-	packed.set(nonce, HEADER_LENGTH);
-	packed.set(ciphertext, HEADER_LENGTH + nonce.length);
-
-	return packed as EncryptedBlob;
+	return encryptPlaintextBytes({
+		key,
+		keyVersion,
+		plaintext: textEncoder.encode(plaintext),
+		aad,
+	});
 }
 
 /**
@@ -72,22 +151,7 @@ export function decryptValue(
 	key: Uint8Array,
 	aad?: Uint8Array,
 ): string {
-	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
-	const formatVersion = blob[0];
-	if (formatVersion !== 1) {
-		throw new Error(
-			`Unknown encryption format version: ${formatVersion}. This blob may require a newer client.`,
-		);
-	}
-
-	const nonce = blob.slice(HEADER_LENGTH, HEADER_LENGTH + NONCE_LENGTH);
-	const ciphertext = blob.slice(HEADER_LENGTH + NONCE_LENGTH);
-	const cipher = aad
-		? xchacha20poly1305(key, nonce, aad)
-		: xchacha20poly1305(key, nonce);
-	const data = cipher.decrypt(ciphertext);
-
-	return textDecoder.decode(data);
+	return textDecoder.decode(decryptCiphertextBytes(blob, key, aad));
 }
 
 /**

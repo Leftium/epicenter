@@ -1,6 +1,6 @@
 ---
 name: one-sentence-test
-description: "Force a one-sentence description of a system, utility, or surface: then use the sentence as a scalpel. Two applications: cohesion audit (does every surface serve the thesis?) and value-add audit (does this abstraction earn its keep under the defaults in use?). Triggers proactively before adding a new layer, reviewing a wrapper, auditing a growing command/endpoint list, or when docs feel bloated. Also on phrases like \"what does X actually do\", \"in one sentence\", \"elevator sentence\", \"what is this thing\"."
+description: "Use this skill before adding a surface, reviewing a wrapper, auditing a growing command or endpoint list, or explaining what a system is. Force one concrete sentence, then use it to find orphaned surfaces, duplicate verbs, inert abstractions, and asymmetric wins where refusing 10-20 percent of functionality collapses 80-90 percent of complexity. Triggers on \"what does X do\", \"in one sentence\", \"too many options\", \"is this useful\", and designs that need cohesion."
 metadata:
   author: epicenter
   version: '2.0'
@@ -8,9 +8,10 @@ metadata:
 
 # One-Sentence Test
 
-Related skills: use `post-implementation-review` when the sentence is part of
-a post-change second read, and `cohesive-clean-breaks` when the sentence drives
-an API, ownership, lifecycle, or package boundary change.
+Related skills: use [post-implementation-review](../post-implementation-review/SKILL.md)
+when the sentence is part of a post-change second read, and
+[cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md) when the sentence
+drives an API, ownership, lifecycle, or package boundary change.
 
 **Core move.** Before continuing, stop and write one concrete sentence that describes the subject. Name the objects, verbs, and scope. No marketing words. No "flexibly handles." No "unified experience." Then use the sentence as an audit tool.
 
@@ -39,6 +40,24 @@ Audit the thesis against each surface:
 - If removed, would the sentence still be true?
 - Is there a verb in the sentence with no surface yet?
 - Do two surfaces serve the same verb redundantly?
+- Is a small convenience feature forcing a second product sentence?
+- Is there an asymmetric win: refusing 10-20 percent of functionality to
+  collapse 80-90 percent of complexity?
+
+After the surface audit, run an asymmetric wins check. This skill only detects
+the opportunity; [cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md)
+owns the decision.
+
+```txt
+1. List the convenience features, rare modes, old shapes, and fast paths.
+2. Circle the one that forces the most extra surface area.
+3. Remove that one from the sentence.
+4. If the sentence still describes a useful product, run the asymmetric wins
+   pass in cohesive-clean-breaks.
+```
+
+This matters most before greenfield implementation, when AI can make a second
+path feel cheap. The second path is still a permanent invariant.
 
 ### Worked example: notification API audit
 

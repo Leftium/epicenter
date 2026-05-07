@@ -142,11 +142,11 @@ function createUnifiedViewState() {
 		}
 
 		// Default: substring includes
-		const q = searchCaseSensitive.current
+		const queryText = searchCaseSensitive.current
 			? searchQuery
 			: searchQuery.toLowerCase();
-		const v = searchCaseSensitive.current ? value : value.toLowerCase();
-		return v.includes(q);
+		const valueText = searchCaseSensitive.current ? value : value.toLowerCase();
+		return valueText.includes(queryText);
 	}
 
 	/** Match against title and/or URL based on current search preferences. */
@@ -156,16 +156,16 @@ function createUnifiedViewState() {
 	): boolean {
 		if (!isFiltering) return true;
 
-		const t = title ?? '';
-		const u = url ?? '';
+		const titleText = title ?? '';
+		const urlText = url ?? '';
 
 		switch (searchField.current) {
 			case 'title':
-				return testField(t, 'title');
+				return testField(titleText, 'title');
 			case 'url':
-				return testField(u, 'url');
+				return testField(urlText, 'url');
 			case 'all':
-				return testField(t, 'title') || testField(u, 'url');
+				return testField(titleText, 'title') || testField(urlText, 'url');
 		}
 	}
 

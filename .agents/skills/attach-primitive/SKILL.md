@@ -31,7 +31,7 @@ attachIndexedDb(ydoc)                   // Y.Doc subject
 attachSqlite(ydoc, { filePath })
 attachSync(ydoc, { url, getToken })
 attachBroadcastChannel(ydoc)
-attachEncryption(ydoc)
+attachEncryption(ydoc, { encryptionKeys })
 attachTable(ydoc, name, def)            // Y.Doc subject + slot key + def
 attachTables(ydoc, defs)
 attachKv(ydoc, defs)
@@ -80,9 +80,9 @@ If the primitive is in-package with its coordinator, prefer method-on-coordinato
 When one attachment registers additional sibling attachments into itself, it owns the method surface:
 
 ```ts
-const encryption = attachEncryption(ydoc);
-const tables = encryption.attachTables(ydoc, defs);      // method on coordinator
-const kv = encryption.attachKv(ydoc, defs);
+const encryption = attachEncryption(ydoc, { encryptionKeys });
+const tables = encryption.attachTables(defs);      // method on coordinator
+const kv = encryption.attachKv(defs);
 ```
 
 vs. the top-level form that would read:
@@ -95,7 +95,7 @@ The method form says "use the encryption's attach-tables" directly. Preferred wh
 
 ## Invariants
 
-1. **Synchronous return.** Construction never awaits. Async work goes into `when*` promises on the returned object.
+1. **Synchronous return.** Construction never awaits. Startup work goes into semantic `when*` promises on the returned object. Genuine async teardown exposes a `whenDisposed` promise field resolved from the `ydoc.destroy()` cascade.
 2. **Teardown hooked to the subject's lifecycle.**
    - Y.Doc subject: `ydoc.once('destroy', ...)`. Never expose a `.destroy()` method on the attachment.
    - Attachment subject: use the subject attachment's disposal signal; or no teardown if there are no listeners.
@@ -108,7 +108,6 @@ The method form says "use the encryption's attach-tables" directly. Preferred wh
    - `whenConnected` — remote transport up + first exchange done (sync)
    - `whenChecked` — configuration action settled (session-unlock — resolves even if nothing was applied)
    - `whenFlushed` — initial side-effect pass done (materializer)
-   - `whenDisposed` — teardown settled (any subject with async cleanup)
    - `whenReady` — bundle-level aggregate only; not on individual attachments
 
 ## Composition inside a workspace builder
@@ -118,8 +117,8 @@ Primitives compose inside a build closure:
 ```ts
 const cache = createDisposableCache((id: string) => {
   const ydoc       = new Y.Doc({ guid: id, gc: false });
-  const encryption = attachEncryption(ydoc);
-  const tables     = encryption.attachTables(ydoc, schema);     // coordinator method
+  const encryption = attachEncryption(ydoc, { encryptionKeys });
+  const tables     = encryption.attachTables(schema);     // coordinator method
   const idb        = attachIndexedDb(ydoc);
   const unlock     = attachSessionUnlock(encryption, {          // non-ydoc subject
     sessions, serverUrl, waitFor: idb.whenLoaded,
@@ -134,8 +133,13 @@ const cache = createDisposableCache((id: string) => {
 
   return {
     ydoc, tables, encryption, idb, sync, markdown,
-    whenReady:    Promise.all([idb.whenLoaded, unlock.whenChecked, sync.whenConnected]).then(() => {}),
-    whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed, encryption.whenDisposed]).then(() => {}),
+    whenReady: Promise.all([idb.whenLoaded, unlock.whenChecked, sync.whenConnected]),
+    async wipe() {
+      ydoc.destroy();
+      await sync.whenDisposed;
+      await idb.whenDisposed;
+      await idb.clearLocal();
+    },
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 });
@@ -143,7 +147,7 @@ const cache = createDisposableCache((id: string) => {
 export const workspace = cache.open('my-app');
 ```
 
-The bundle aggregates child `whenLoaded` / `whenConnected` / `whenChecked` into one `whenReady`, and child `whenDisposed` into one `whenDisposed`. Consumers only await the bundle-level barriers.
+The bundle aggregates child `whenLoaded` / `whenConnected` / `whenChecked` into one `whenReady`. Browser bundles expose `wipe()` for reset flows that must dispose and delete local storage in the right order. Daemon bundles expose `[Symbol.asyncDispose]()` as the trigger and await attachment `whenDisposed` barriers before process exit.
 
 ## The `waitFor` convention
 
@@ -162,7 +166,7 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - **Don't duck-type an attachment.** If you need to brand it, use a `Symbol.for` marker. See `skills/typescript` — runtime shape-checking is a code smell.
 - **Don't take an `id` on a ydoc-bound primitive.** Use `ydoc.guid`.
 - **Don't use `createX` for a side-effectful primitive.** If it registers listeners, it's `attach*`.
-- **Don't introduce `attachEncryptedX(ydoc, encryption, ...)` top-level exports.** Use `encryption.attachX(ydoc, ...)` — the coordinator owns its siblings.
+- **Don't introduce `attachEncryptedX(ydoc, encryption, ...)` top-level exports.** Use `encryption.attachX(...)`: the coordinator owns its siblings.
 
 ## Reference implementations
 

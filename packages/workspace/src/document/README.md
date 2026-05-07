@@ -6,7 +6,7 @@ A typed interface over Y.js for apps that need to evolve their data schema over 
 
 This is a wrapper around Y.js that handles schema versioning. Local-first apps can't run migration scripts, so data has to evolve gracefully. Old data coexists with new. The Workspace API bakes that into the design: define your schemas once with versions, write a migration function, and everything else is typed.
 
-The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, composes `attach*` calls inline, and returns whatever shape your app needs. There is no framework wrapper, just plain functions and the `attach*` primitives. Apps split into `index.ts` (iso doc factory), `<binding>.ts` (env-specific factory adding persistence/sync), and `client.ts` (singleton + lifecycle); see `.claude/skills/workspace-app-layout/SKILL.md`.
+The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, composes `attach*` calls inline, and returns whatever shape your app needs. There is no framework wrapper, just plain functions and the `attach*` primitives. Apps split factory code into `index.ts` (iso doc factory) and `<binding>.ts` (env-specific factory adding persistence/sync). Runtime lifecycle then lives in `session.svelte.ts` for SvelteKit signed-in apps or `client.ts` for singleton clients; see `.claude/skills/workspace-app-layout/SKILL.md`.
 
 ```
 +----------------------------------------------------------------+
@@ -18,6 +18,7 @@ The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, co
 | attachEncryption -> .attachTable / .attachTables / .attachKv    |
 | attachAwareness                                                |
 | attachIndexedDb / attachSqlite / attachBroadcastChannel        |
+| attachOwnedBroadcastChannel                                    |
 | attachSync                                                     |
 | attachSqliteMaterializer                                       |
 +----------------------------------------------------------------+
@@ -69,26 +70,26 @@ The factory body is where you wire everything. Because you own the return shape,
 The encryption coordinator owns sibling attachments: `attachTable` / `attachTables` / `attachKv` are methods on it, not top-level exports.
 
 ```typescript
-import { attachEncryption } from '@epicenter/workspace';
+import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 
-function openBlog() {
+function openBlog({ encryptionKeys }: { encryptionKeys: () => EncryptionKeys }) {
   const ydoc = new Y.Doc({ guid: 'blog' });
-  const encryption = attachEncryption(ydoc);
-  const tables = encryption.attachTables(ydoc, myTables);
-  const kv = encryption.attachKv(ydoc, myKv);
+  const encryption = attachEncryption(ydoc, { encryptionKeys });
+  const tables = encryption.attachTables(myTables);
+  const kv = encryption.attachKv(myKv);
   return { ydoc, tables, kv, encryption, [Symbol.dispose]() { ydoc.destroy(); } };
 }
 ```
 
 ### Persistence + sync
 
-Auth belongs to the app. The workspace factory receives the client and passes it
-to sync.
+Auth belongs to the app. The workspace factory receives a live bearer-token
+reader and passes it to sync.
 
 ```typescript
 import {
   attachIndexedDb,
-  attachBroadcastChannel,
+  attachOwnedBroadcastChannel,
   attachSync,
 } from '@epicenter/workspace';
 import { auth } from './auth';
@@ -96,18 +97,18 @@ import { auth } from './auth';
 function openBlog() {
   const ydoc = new Y.Doc({ guid: 'blog' });
   const tables = attachTables(ydoc, myTables);
+  if (auth.state.status !== 'signed-in') return null;
 
   const idb = attachIndexedDb(ydoc);
-  attachBroadcastChannel(ydoc);
+  attachOwnedBroadcastChannel(ydoc, { userId: auth.state.identity.user.id });
   const sync = attachSync(ydoc, {
     url: `wss://api.example.com/workspaces/${ydoc.guid}`,
-    auth,
+    bearerToken: () => auth.bearerToken,
     waitFor: idb.whenLoaded,
   });
 
   return {
     ydoc, tables, idb, sync,
-    whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 }

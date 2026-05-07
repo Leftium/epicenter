@@ -27,6 +27,13 @@ needs that review churn. The important boundary is that `client.ts` is the only
 singleton with side effects, while `index.ts`, `browser.ts`, `daemon.ts`, and
 `script.ts` stay pure construction surfaces.
 
+Some SvelteKit apps scope their browser workspace to `routes/(signed-in)/`
+instead of `src/lib/`. Use the owner of the lifecycle as the deciding rule:
+if `$lib/session.svelte.ts` builds the workspace through `createSession` and
+exports `getSignedInSession()`, keep the app factory beside the signed-in
+routes. If a `$lib` client singleton owns the auth wait and workspace
+singleton, keep the factory beside that client until the app is migrated.
+
 ## Layers
 
 | File | Job | Imports | Returns |
@@ -35,7 +42,7 @@ singleton with side effects, while `index.ts`, `browser.ts`, `daemon.ts`, and
 | `browser.ts` | Browser factory | Iso factory plus IndexedDB, BroadcastChannel, sync, browser caches | Doc bundle plus browser resources |
 | `daemon.ts` | Long-lived daemon factory | Iso factory plus `attachYjsLog`, `attachSync`, materializers | Doc bundle plus writer persistence and sync |
 | `script.ts` | One-shot script factory | Iso factory plus `attachYjsLogReader`, `attachSync` | Doc bundle plus readonly warm hydrate and sync |
-| `client.ts` | App singleton | One env factory plus auth/session lifecycle | `auth` and the running app singleton |
+| `client.ts` | App singleton or auth owner | One env factory plus auth/session lifecycle | `auth`, or `auth` plus a running app singleton for apps not yet on `createSession` |
 
 ## Iso Factory
 
@@ -43,16 +50,22 @@ The iso factory accepts an optional `clientID` so daemon and script peers can
 use stable Yjs identities.
 
 ```ts
-import { attachEncryption } from '@epicenter/workspace';
+import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createFujiActions, fujiTables } from '../workspace.js';
 
-export function openFuji({ clientID }: { clientID?: number } = {}) {
+export function openFuji({
+	encryptionKeys,
+	clientID,
+}: {
+	encryptionKeys: () => EncryptionKeys;
+	clientID?: number;
+}) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
-	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, fujiTables);
-	const kv = encryption.attachKv(ydoc, {});
+	const encryption = attachEncryption(ydoc, { encryptionKeys });
+	const tables = encryption.attachTables(fujiTables);
+	const kv = encryption.attachKv({});
 	const actions = createFujiActions(tables);
 	return {
 		ydoc,
@@ -86,22 +99,30 @@ current public remote-action API.
 
 ```ts
 export function openFuji({
-	auth,
-	device,
+	userId,
+	peer,
+	bearerToken,
+	encryptionKeys,
 }: {
-	auth: AuthClient;
-	device: DeviceDescriptor;
+	userId: string;
+	peer: PeerIdentity;
+	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openFujiDoc();
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
+	const doc = openFujiDoc({ encryptionKeys });
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	const awareness = attachAwareness(doc.ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
+	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		device,
-		getToken: () => auth.getToken(),
+		bearerToken,
+		awareness,
 	});
-	return { ...doc, idb, sync, whenReady: idb.whenLoaded };
+	return { ...doc, idb, awareness, sync };
 }
 ```
 
@@ -114,26 +135,27 @@ Daemon factories own the writer side of local persistence.
 
 ```ts
 export function openFuji({
-	getToken,
+	bearerToken,
+	encryptionKeys,
 	device,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(projectDir),
 	apiUrl = EPICENTER_API_URL,
 }: {
-	getToken: () => Promise<string | null>;
+	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 	device: DeviceDescriptor;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
 }) {
-	const doc = openFujiDoc({ clientID });
+	const doc = openFujiDoc({ clientID, encryptionKeys });
 	const persistence = attachYjsLog(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		device,
-		getToken,
+		bearerToken,
 	});
 	return { ...doc, persistence, sync };
 }
@@ -154,23 +176,25 @@ Script factories read the daemon's local Yjs log and write through sync.
 
 ```ts
 export function openFuji({
-	getToken,
+	bearerToken,
+	encryptionKeys,
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 	apiUrl = EPICENTER_API_URL,
 }: {
-	getToken: () => Promise<string | null>;
+	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 	projectDir?: ProjectDir;
 	clientID?: number;
 	apiUrl?: string;
 }) {
-	const doc = openFujiDoc({ clientID });
+	const doc = openFujiDoc({ clientID, encryptionKeys });
 	const persistence = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-		getToken,
+		bearerToken,
 	});
 	return { ...doc, persistence, sync };
 }
@@ -185,18 +209,23 @@ Defaults:
 ## Package Exports
 
 Apps that expose daemon and script factories should export them explicitly.
+Point each subpath at the file's actual owner. Signed-in-owned apps may export
+from `src/routes/(signed-in)/...`; client-singleton apps usually export from
+`src/lib/...`.
 
 ```json
 {
 	"exports": {
-		"./workspace": "./src/lib/workspace.ts",
-		"./openFuji": "./src/lib/fuji/index.ts",
-		"./browser": "./src/lib/fuji/browser.ts",
-		"./daemon": "./src/lib/fuji/daemon.ts",
-		"./script": "./src/lib/fuji/script.ts"
+		"./workspace": "./src/routes/(signed-in)/fuji/workspace.ts",
+		"./openFuji": "./src/routes/(signed-in)/fuji/index.ts",
+		"./browser": "./src/routes/(signed-in)/fuji/browser.ts",
+		"./daemon": "./src/routes/(signed-in)/fuji/daemon.ts",
+		"./script": "./src/routes/(signed-in)/fuji/script.ts"
 	}
 }
 ```
+
+Client-singleton apps use the same subpaths, but point at `src/lib/...`.
 
 Do not export a running `client.ts` singleton from package exports.
 
@@ -214,7 +243,7 @@ script observes rows from attachYjsLogReader replay
 
 ## Anti-Patterns
 
-- Putting auth, `createPersistedState`, `onSessionChange`, or HMR disposal in
+- Putting auth, `createPersistedState`, `auth.onStateChange`, or HMR disposal in
   `browser.ts`, `daemon.ts`, or `script.ts`.
 - Importing `daemon.ts` from browser code.
 - Restoring `serve` as the public lifecycle command.

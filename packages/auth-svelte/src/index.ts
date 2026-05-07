@@ -1,11 +1,14 @@
 export {
-	type AuthChangeListener,
 	AuthError,
 	type AuthIdentity,
+	type AuthState,
+	type AuthStateChangeListener,
 	AuthUser,
 	BearerSession,
 	type CreateBearerAuthConfig,
 	type CreateCookieAuthConfig,
+	waitForAuthSettled,
+	waitForAuthState,
 } from '@epicenter/auth';
 export {
 	type AuthClient,

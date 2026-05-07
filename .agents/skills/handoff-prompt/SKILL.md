@@ -173,7 +173,7 @@ const cache = createDisposableCache((id: string) => {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, { files: filesTable });
   const idb = attachIndexedDb(ydoc);
-  return { ydoc, tables, idb, whenReady: idb.whenLoaded, [Symbol.dispose]() { ydoc.destroy(); } };
+  return { ydoc, tables, idb, [Symbol.dispose]() { ydoc.destroy(); } };
 });
 export const ws = cache.open('opensidian');
 \`\`\`

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
+	import { Loading } from '@epicenter/ui/loading';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { Toggle } from '@epicenter/ui/toggle';
@@ -121,9 +122,7 @@
 	</div>
 
 	{#if sidebarSearchState.isSearching && !hasResults}
-		<div class="flex flex-1 items-center justify-center">
-			<Spinner class="size-5 text-muted-foreground" />
-		</div>
+		<Loading class="flex-1" />
 	{:else if hasResults}
 		<div class="border-b px-3 py-1.5 text-xs text-muted-foreground">
 			{sidebarSearchState.totalResults}
@@ -147,12 +146,13 @@
 				{#if sidebarSearchState.hasMore}
 					<button
 						type="button"
-						class="w-full rounded-sm px-3 py-2 text-center text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+						class="flex w-full items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-center text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
 						onclick={() => sidebarSearchState.loadMore()}
 						disabled={sidebarSearchState.isSearching}
 					>
 						{#if sidebarSearchState.isSearching}
-							Loading...
+							<Spinner class="size-3" />
+							<span>Loading</span>
 						{:else}
 							Load more results
 						{/if}

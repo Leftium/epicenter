@@ -1,5 +1,7 @@
 export {
 	createMachineAuthClient,
+	MachineAuthRequestError,
+	DeviceTokenError,
 	loginWithDeviceCode,
 	status,
 	logout,
@@ -9,12 +11,4 @@ export {
 	saveMachineSession,
 	MachineAuthStorageError,
 } from './node/machine-session-store.js';
-export type {
-	DeviceCodeResponse,
-	DevicePollOutcome,
-	MachineAuthTransport,
-} from './node/machine-auth-transport.js';
-export {
-	MachineAuthRequestError,
-	DeviceTokenError,
-} from './node/machine-auth-transport.js';
+export { requireSignedIn } from './require-signed-in.ts';

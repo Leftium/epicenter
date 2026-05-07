@@ -35,11 +35,12 @@ function buildMyDoc(id: string) {
     content,
     idb,
     sync,
-    whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 }
 ```
+
+Consumers await readiness through the attached subsystem (`handle.idb.whenLoaded`) rather than a flat `whenReady` alias. Add a top-level `whenReady` only when it composes two or more subsystem signals into one `Promise.all` (see `specs/20260506T020000-expose-attachments-not-aliases.md`).
 
 Everything you need is in Yjs itself:
 
@@ -55,8 +56,8 @@ Each helper takes a `Y.Doc` and registers cleanup on `ydoc.on('destroy')`. Each 
 
 | Helper | Returns |
 |---|---|
-| `attachIndexedDb(ydoc)` | `{ whenLoaded, clearLocal, disposed }` |
-| `attachSync(ydoc, { url, getToken?, waitFor?, awareness? })` | `{ whenConnected, status, onStatusChange, reconnect, disposed }` |
+| `attachIndexedDb(ydoc)` | `{ whenLoaded, clearLocal, whenDisposed }` |
+| `attachSync(ydoc, { url, getToken?, waitFor?, awareness? })` | `{ whenConnected, status, onStatusChange, reconnect, whenDisposed }` |
 | `attachRichText(ydoc)` | `RichTextAttachment`: `{ read, write, binding: Y.XmlFragment }` |
 | `attachPlainText(ydoc)` | `PlainTextAttachment`: `{ read, write, binding: Y.Text }` |
 | `attachTable(ydoc, name, def)` | Typed row helper over `Y.Map` |
@@ -73,28 +74,30 @@ For workspaces that need at-rest encryption, the coordinator owns the sibling at
 
 | Helper | Purpose |
 |---|---|
-| `attachEncryption(ydoc)` | Per-ydoc encryption coordinator. Returns `{ applyKeys, register, attachTable, attachTables, attachKv, whenDisposed }`. `whenDisposed` is an attachment-level barrier, useful to consumers that want an explicit teardown gate. |
-| `encryption.attachTable(ydoc, name, def)` | Singular encrypted table; self-registers with the coordinator. |
-| `encryption.attachTables(ydoc, defs)` | Batch sugar over `encryption.attachTable`. |
-| `encryption.attachKv(ydoc, defs)` | Encrypted KV singleton. |
+| `attachEncryption(ydoc, { encryptionKeys })` | Per-ydoc encryption coordinator. Returns `{ attachTable, attachTables, attachKv, attachIndexedDb, ... }`. Reads `encryptionKeys()` synchronously at every registration site. Teardown is synchronous and cascades from `ydoc.destroy()`. |
+| `encryption.attachTable(name, def)` | Singular encrypted table; self-registers with the coordinator and is activated with the current keyring before being returned. |
+| `encryption.attachTables(defs)` | Batch sugar over `encryption.attachTable`. |
+| `encryption.attachKv(defs)` | Encrypted KV singleton. |
+| `encryption.attachIndexedDb(targetYdoc, { userId })` | Encrypted local IndexedDB persistence for a root or child Y.Doc. |
 
 Standard composition:
 
 ```ts
 const ydoc       = new Y.Doc({ guid: id, gc: false });
-const encryption = attachEncryption(ydoc);
-const tables     = encryption.attachTables(ydoc, myTables);
-const kv         = encryption.attachKv(ydoc, myKv);
-
-// Later, after login:
-encryption.applyKeys(session.encryptionKeys);
+const encryption = attachEncryption(ydoc, {
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+});
+const tables     = encryption.attachTables(myTables);
+const kv         = encryption.attachKv(myKv);
 ```
 
-Encryption is opt-in per slot; the coordinator carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted `encryption.attachTable(ydoc, name, def)` (method) are both available; pick one per slot.
+Keys are read through the `encryptionKeys` callback when an encrypted resource is attached. There is no separate `applyKeys` step: registration and activation happen in one call. Already-attached encrypted stores keep the keyring they derived at attach time; same-user key rotation needs a re-attach to affect those stores. `encryptionKeys()` should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth` does exactly that.
 
-> **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `encryption.attachTable(ydoc, 'posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns, a silent data-at-rest leak. The framework does not catch this; the grep-able call-site shape (`encryption.attach*` vs top-level `attach*`) is the defense. One slot name, one variant, one intent.
+Encryption is opt-in per slot; the coordinator carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted `encryption.attachTable(name, def)` (method) are both available; pick one per slot.
 
-IDB / broadcast / sync / sqlite transitively see already-encrypted bytes after `applyKeys` runs. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
+> **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `encryption.attachTable('posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns, a silent data-at-rest leak. The framework does not catch this; the grep-able call-site shape (`encryption.attach*` vs top-level `attach*`) is the defense. One slot name, one variant, one intent.
+
+IDB / broadcast / sync / sqlite transitively see already-encrypted bytes once encryption is registered. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
 
 ## Readiness Signals: Split, Don't Precompose
 
@@ -153,16 +156,13 @@ export const entryContentDocs = createDisposableCache((entryId: EntryId) => {
     content,
     idb,
     sync,
-    // The platform's readiness convention, declared as a typed
-    // optional field on this bundle (`Promise<unknown>`). The cache does
-    // not read it, but `WorkspaceGate`, the CLI, migrations,
-    // filesystem ops, the sqlite-index materializer, and every
-    // editor's `{#await}` block all do. Compose whatever "ready"
-    // means for this bundle. For a multi-step cascade:
-    // `Promise.all([persistence.whenLoaded, unlock.whenChecked,
-    // sync.whenConnected])`. The tuple-typed Promise assigns
-    // directly, no `.then(() => undefined)` needed.
-    whenReady: idb.whenLoaded,
+    // Consumers await `handle.idb.whenLoaded` directly. Add a
+    // `whenReady: Promise.all([...])` field only when the bundle has
+    // two or more subsystem signals to compose into one barrier
+    // (e.g. `Promise.all([persistence.whenLoaded, unlock.whenChecked,
+    // sync.whenConnected])`). A flat `whenReady: idb.whenLoaded`
+    // alias lies about composition; expose the subsystem instead.
+    // See specs/20260506T020000-expose-attachments-not-aliases.md.
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 });
@@ -209,7 +209,7 @@ async function readInstructions(id: SkillId): Promise<string> {
 }
 ```
 
-`whenReady` is an optional `Promise<unknown>` field on the returned bundle and the platform's readiness convention. The builder composes it from whatever attachment signals matter; consumers `await handle.whenReady` for a single barrier. The cache itself does not read it, but the rest of the platform does: `WorkspaceGate`, the CLI's `run` command, Whispering's migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and every editor's `{#await}` block all gate on it. Builders with nothing async to wait on can simply omit the field. Consumers can also pick a more specific gate at the call site:
+`whenReady` is an optional `Promise<unknown>` field on the returned bundle. It earns its place only when it composes two or more attachment signals into one barrier (`Promise.all([...])`). When a bundle has a single async subsystem, expose the subsystem (`idb`, `persistence`, ...) and let consumers reach through (`handle.idb.whenLoaded`); a flat `whenReady: idb.whenLoaded` alias lies about composition and is the anti-pattern called out in `specs/20260506T020000-expose-attachments-not-aliases.md`. Composed `whenReady` fields are consumed by the CLI's `run` command, Whispering's migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and editor `{#await}` gates. Builders with nothing async to wait on can omit the field entirely. Consumers can pick a more specific gate at the call site:
 
 ```typescript
 using h = docs.open(id);
@@ -220,7 +220,7 @@ await h.idb.whenLoaded;       // specific attachment readiness
 /* nothing: handle is already usable for this caller's purposes */
 ```
 
-If a test or logout flow needs a teardown barrier after disposal, opt into the attachment-level field:
+If a test or daemon needs a teardown barrier after disposal, opt into the attachment-level promise field:
 
 ```typescript
 const h = docs.open(id);
@@ -228,7 +228,7 @@ h[Symbol.dispose]();
 await h.idb.whenDisposed;     // attachment-level, not bundle-level
 ```
 
-`whenReady` is the bundle-level readiness convention. Disposal is fully attachment-driven: each attachment self-registers cleanup on `ydoc.on('destroy')`, and `[Symbol.dispose]()` is synchronous. There's no aggregated bundle-level disposal barrier. Callers needing one (tests that close-then-reopen, CLI exit) reach for a specific attachment field at the call site (`await h.idb.whenDisposed`).
+`whenReady` is the bundle-level readiness convention. Disposal is fully attachment-driven: each attachment self-registers cleanup on `ydoc.on('destroy')`, and `[Symbol.dispose]()` is synchronous. There's no aggregated bundle-level disposal barrier. Callers needing one (tests that close-then-reopen, CLI exit) reach for a specific attachment barrier at the call site (`await h.idb.whenDisposed`).
 
 ## GUID Convention
 

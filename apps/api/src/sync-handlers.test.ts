@@ -9,7 +9,7 @@
  * Key behaviors:
  * - computeInitialMessages returns SyncStep1 + awareness states
  * - registerConnection sets up doc/awareness event listeners
- * - applyMessage dispatches SYNC, AWARENESS, QUERY_AWARENESS, and SYNC_STATUS messages
+ * - applyMessage dispatches SYNC, AWARENESS, and QUERY_AWARENESS messages
  * - teardownConnection unregisters handlers and removes awareness states
  * - Multi-client broadcast: update from client A reaches client B via updateV2 handler
  * - Full handshake: SyncStep1 → SyncStep2 → documents converge

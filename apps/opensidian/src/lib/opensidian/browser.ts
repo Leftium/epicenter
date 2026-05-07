@@ -1,4 +1,3 @@
-import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
@@ -8,73 +7,79 @@ import {
 } from '@epicenter/filesystem';
 import {
 	attachAwareness,
-	attachBroadcastChannel,
-	attachIndexedDb,
+	attachOwnedBroadcastChannel,
 	attachSync,
 	attachTimeline,
 	createDisposableCache,
 	createRemoteClient,
+	type EncryptionKeys,
 	onLocalUpdate,
 	PeerIdentity,
 	toWsUrl,
+	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import { clearDocument } from 'y-indexeddb';
 import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
 import { openOpensidian as openOpensidianDoc } from './index';
 
 export function openOpensidian({
-	auth,
+	userId,
 	peer,
+	bearerToken,
+	encryptionKeys,
 }: {
-	auth: AuthClient;
+	userId: string;
 	peer: PeerIdentity;
+	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openOpensidianDoc();
+	const doc = openOpensidianDoc({ encryptionKeys });
 
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
-	const fileContentDocs = createDisposableCache(
-		(fileId: FileId) => {
-			const ydoc = new Y.Doc({
-				guid: fileContentDocGuid({
-					workspaceId: doc.ydoc.guid,
-					fileId,
-				}),
-				gc: false,
-			});
-			onLocalUpdate(ydoc, () =>
-				doc.tables.files.update(fileId, { updatedAt: Date.now() }),
-			);
-			const persistence = attachIndexedDb(ydoc);
-			return {
-				ydoc,
-				content: attachTimeline(ydoc),
-				persistence,
-				whenReady: persistence.whenLoaded,
-				[Symbol.dispose]() {
-					ydoc.destroy();
-				},
-			};
-		},
-		{ gcTime: 5_000 },
-	);
+	const fileContentDocs = createDisposableCache((fileId: FileId) => {
+		const ydoc = new Y.Doc({
+			guid: fileContentDocGuid({
+				workspaceId: doc.ydoc.guid,
+				fileId,
+			}),
+			gc: false,
+		});
+		onLocalUpdate(ydoc, () =>
+			doc.tables.files.update(fileId, { updatedAt: Date.now() }),
+		);
+		const childIdb = doc.encryption.attachIndexedDb(ydoc, { userId });
+		attachOwnedBroadcastChannel(ydoc, { userId });
+		return {
+			ydoc,
+			content: attachTimeline(ydoc),
+			idb: childIdb,
+			/**
+			 * child disposer rejections do not propagate; bundle.wipe() relies on
+			 * IDB's deleteDatabase native blocking as belt-and-suspenders for
+			 * storage deletion.
+			 */
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
+	});
 	const fileContent = {
 		async read(fileId: FileId) {
 			await using handle = fileContentDocs.open(fileId);
-			await handle.whenReady;
+			await handle.idb.whenLoaded;
 			return handle.content.read();
 		},
 		async write(fileId: FileId, text: string) {
 			await using handle = fileContentDocs.open(fileId);
-			await handle.whenReady;
+			await handle.idb.whenLoaded;
 			handle.content.write(text);
 		},
 		async append(fileId: FileId, text: string) {
 			await using handle = fileContentDocs.open(fileId);
-			await handle.whenReady;
+			await handle.idb.whenLoaded;
 			handle.content.appendText(text);
 			return handle.content.read();
 		},
@@ -95,7 +100,7 @@ export function openOpensidian({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		auth,
+		bearerToken,
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);
@@ -111,24 +116,26 @@ export function openOpensidian({
 		actions,
 		awareness,
 		sync,
-		async clearLocalData() {
-			await Promise.all([
-				// File content docs use their own IndexedDB document names.
+		async wipe() {
+			const fallbackGuids = [
+				doc.ydoc.guid,
 				...doc.tables.files.getAllValid().map((file) =>
-					clearDocument(
-						fileContentDocGuid({
-							workspaceId: doc.ydoc.guid,
-							fileId: file.id,
-						}),
-					),
+					fileContentDocGuid({
+						workspaceId: doc.ydoc.guid,
+						fileId: file.id,
+					}),
 				),
-				// The workspace IndexedDB helper only clears the root doc.
-				idb.clearLocal(),
-			]);
+			];
+			fileContentDocs[Symbol.dispose]();
+			doc[Symbol.dispose]();
+			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
+			await wipeOwnerLocalYjsData({
+				userId,
+				ydocGuids: fallbackGuids,
+			});
 		},
 		remote,
 		rpc,
-		whenLoaded: idb.whenLoaded,
 		[Symbol.dispose]() {
 			fileContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();

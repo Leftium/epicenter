@@ -83,6 +83,7 @@
 		"@types/node": "catalog:",
 		"better-sqlite3": "^12.4.1",
 		"drizzle-kit": "catalog:",
+		"fake-indexeddb": "^6.2.5",
 		"filenamify": "^7.0.1",
 		"typescript": "catalog:",
 		"yjs": "catalog:"

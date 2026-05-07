@@ -1,73 +1,68 @@
-import { BC_ORIGIN } from '@epicenter/sync';
+import { BC_ORIGIN, isTransportOrigin } from '@epicenter/sync';
 import * as Y from 'yjs';
+import { createOwnedYjsKey } from './local-yjs-key.js';
 
 export { BC_ORIGIN };
 
-export type BroadcastChannelAttachment = {
-	/**
-	 * Resolves after the Y.Doc is destroyed AND the BroadcastChannel is closed.
-	 * Named symmetrically with `attachIndexedDb`'s `whenDisposed` — opt-in signal
-	 * for tests and CLIs flushing before exit.
-	 */
-	whenDisposed: Promise<unknown>;
-};
-
 /**
- * BroadcastChannel cross-tab sync for a Yjs document.
+ * Local-only BroadcastChannel cross-tab sync for a Yjs document.
  *
  * Broadcasts every local `updateV2` to same-origin tabs and applies incoming
- * updates from other tabs. Uses `ydoc.guid` as the channel name so only docs
- * for the same workspace communicate.
+ * updates from other tabs. Uses `ydoc.guid` as the default channel key so only
+ * docs for the same local workspace communicate. Do not use this for
+ * authenticated browser workspaces where multiple signed-in users can share a
+ * browser profile. Use `attachOwnedBroadcastChannel` for those documents.
  *
  * Skips re-broadcasting updates that arrived from BroadcastChannel itself
- * (via `BC_ORIGIN`) and, when paired with another transport, updates that
- * arrived from that transport (via `transportOrigin`). Without the second
- * guard, transport-delivered updates would be re-broadcast to other tabs,
- * and those tabs would re-send them — creating an echo loop.
+ * (via `BC_ORIGIN`) and updates that arrived from WebSocket sync. Without
+ * those guards, delivered updates would be re-broadcast to other tabs, and
+ * those tabs would re-send them.
  *
  * No-ops gracefully when `BroadcastChannel` is unavailable (Node.js, SSR,
  * older browsers).
  *
  * @param ydoc - The Y.Doc to sync across tabs
- * @param opts.transportOrigin - Optional origin Symbol from another transport
- *   (e.g., `SYNC_ORIGIN` from `attachSync`). Updates with this origin are not
- *   re-broadcast, preventing cross-transport echo loops.
  */
-export function attachBroadcastChannel(
+export function attachBroadcastChannel(ydoc: Y.Doc): void {
+	attachBroadcastChannelWithKey(ydoc, ydoc.guid);
+}
+
+/**
+ * Owner-scoped BroadcastChannel cross-tab sync for authenticated documents.
+ *
+ * Authenticated workspaces include the owner id in the channel key so two
+ * signed-in users in the same browser profile cannot exchange plaintext Yjs
+ * updates through BroadcastChannel.
+ *
+ * @param ydoc - The Y.Doc to sync across tabs
+ * @param opts.userId - Owner id for the authenticated local channel.
+ */
+export function attachOwnedBroadcastChannel(
 	ydoc: Y.Doc,
-	{ transportOrigin }: { transportOrigin?: symbol } = {},
-): BroadcastChannelAttachment {
+	{ userId }: { userId: string },
+): void {
+	attachBroadcastChannelWithKey(ydoc, createOwnedYjsKey(userId, ydoc.guid));
+}
+
+function attachBroadcastChannelWithKey(ydoc: Y.Doc, channelKey: string): void {
 	if (typeof BroadcastChannel === 'undefined') {
-		return { whenDisposed: Promise.resolve() };
+		return;
 	}
 
-	const channel = new BroadcastChannel(`yjs:${ydoc.guid}`);
-	const { promise: whenDisposed, resolve: resolveDisposed } =
-		Promise.withResolvers<void>();
+	const channel = new BroadcastChannel(`yjs:${channelKey}`);
 
-	/** Broadcast local changes to other tabs.
-	 *  Skips updates from BroadcastChannel itself (echo prevention) and from
-	 *  the paired transport (e.g., WebSocket) to avoid cross-transport echo. */
 	const handleUpdate = (update: Uint8Array, origin: unknown) => {
-		if (origin === BC_ORIGIN) return;
-		if (transportOrigin && origin === transportOrigin) return;
+		if (isTransportOrigin(origin)) return;
 		channel.postMessage(update);
 	};
 	ydoc.on('updateV2', handleUpdate);
 
-	/** Apply incoming changes from other tabs. */
 	channel.onmessage = (event: MessageEvent) => {
 		Y.applyUpdateV2(ydoc, new Uint8Array(event.data), BC_ORIGIN);
 	};
 
 	ydoc.once('destroy', () => {
-		try {
-			ydoc.off('updateV2', handleUpdate);
-			channel.close();
-		} finally {
-			resolveDisposed();
-		}
+		ydoc.off('updateV2', handleUpdate);
+		channel.close();
 	});
-
-	return { whenDisposed };
 }

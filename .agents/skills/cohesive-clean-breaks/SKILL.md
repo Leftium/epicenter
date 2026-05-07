@@ -1,6 +1,6 @@
 ---
 name: cohesive-clean-breaks
-description: Use when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Also use when a code smell or defensive mechanism feels wrong and the local fix keeps growing: ask what the code is compensating for, go up a level, find the missing invariant, eliminate behaviors instead of patching them. Triggers on phrases like "deeper violation", "go up a level", "what is this compensating for", "eliminate this behavior", "move the boundary", "this smell wont die", "the local fix is growing". Guides agents to preserve a clear product and code vision, reject hybrid compromise APIs, mentally inline abstractions, remove stale names, use dependency injection and inversion of control deliberately, move abstraction boundaries, and keep invariants owned by one layer.
+description: "Use this skill when making architecture decisions, API redesigns, breaking changes, migration plans, or cleanup plans where cohesion matters more than compatibility. Also use when a smell keeps growing, a defensive mechanism compensates for a missing invariant, or a small feature promise forces a large implementation graph. Run the asymmetric wins pass: refuse 10-20 percent of functionality when it collapses 80-90 percent of complexity. Move invariants to the owning boundary, reject hybrid APIs, delete stale names, and leave one obvious product sentence."
 ---
 
 # Cohesive Clean Breaks
@@ -12,10 +12,20 @@ strategy.
 The goal is not to minimize diff size. The goal is to make the final system
 easy to explain, hard to misuse, and free of half-old, half-new behavior.
 
-Related skills: use `one-sentence-test` to state the thesis, `refactoring` for
-caller counting and straggler sweeps, `approachability-audit` for first-read
-clarity, `change-proposal` when showing current and proposed trees before
-editing, and `post-implementation-review` after implementation.
+Related skills: use [one-sentence-test](../one-sentence-test/SKILL.md) to state
+the thesis, [refactoring](../refactoring/SKILL.md) for caller counting and
+straggler sweeps, [approachability-audit](../approachability-audit/SKILL.md) for
+first-read clarity, [change-proposal](../change-proposal/SKILL.md) when showing
+current and proposed trees before editing, and
+[post-implementation-review](../post-implementation-review/SKILL.md) after
+implementation.
+
+## References
+
+Load these on demand based on the clean-break surface:
+
+- If working with **asymmetric wins or feature refusal examples**, read [references/asymmetric-wins.md](references/asymmetric-wins.md).
+- If planning a **multi-wave replacement, rollback point, or old-path deletion**, read [references/wave-ordering.md](references/wave-ordering.md).
 
 ## One Sentence First
 
@@ -93,6 +103,63 @@ into one."
 See `docs/articles/20260504T030000-when-the-smell-wont-die-go-up-a-level.md`
 for the worked example (workspace identity reset, six surfaces collapsed
 into one deterministic teardown).
+
+## Asymmetric Wins Pass
+
+Before installing a new invariant, ask whether an asymmetric win is available:
+can you refuse 10-20 percent of functionality and collapse 80-90 percent of
+the implementation complexity?
+
+This is not a quota. Do not remove arbitrary features. Find the small promise
+that owns a disproportionate implementation graph, then decide whether refusing
+that exact promise leaves the product sentence intact.
+
+Run this pass when the design adds:
+
+- a fast path beside the canonical path
+- a provider-specific SDK wrapper beside a standard protocol
+- a fallback parser for an old shape
+- a second transport for one environment's nicer UX
+- a compatibility alias nobody explicitly asked for
+- an option that only preserves an old mental model
+- a partial reflection API that makes callers ask which surfaces are real
+
+Follow this procedure:
+
+```txt
+1. Name the product sentence that must remain true.
+2. List candidate refusal points: fast paths, old shapes, rare modes, provider
+   exceptions, compatibility aliases, fallback parsers, partial reflection.
+3. For each candidate, list the code family it forces: methods, adapters,
+   unions, error variants, tests, docs branches, UI states, migrations.
+4. Pick the candidate with the largest code family, not the most visible name.
+5. Ask who loses what if that behavior is refused.
+6. If the loss is a small convenience and the deletion removes a second shape,
+   refuse the behavior and write that refusal into the spec.
+```
+
+Use this output shape in specs and design notes:
+
+```txt
+Product sentence:
+  ...
+
+Candidate refusal:
+  ...
+
+Code family it deletes:
+  ...
+
+User loss:
+  ...
+
+Decision:
+  Refuse it / keep it because ...
+```
+
+The rule is deliberately pushy: if the product sentence survives and the code
+family disappears, default to refusal. Keep the feature only when the user loss
+is load-bearing.
 
 ## Scratch Redesign Pass
 
@@ -270,9 +337,28 @@ When making a clean break:
    the explicit product goal.
 7. Move invariants to construction time or type signatures when possible.
 8. Prefer lifecycle-shaped names over implementation-shaped names.
+9. Refuse small convenience features when they force a second shape that will
+   live forever.
 
 Compatibility is a feature. If nobody explicitly asked for that feature, do not
 smuggle it into the implementation.
+
+## Wave Ordering: Build, Prove, Remove
+
+When a clean break replaces an old code path with a new one, order the
+implementation as four sequential phases:
+
+```txt
+Wave 1 to N    Build the new path
+Wave N+1       Stop importing the old path (it stays on disk, unused)
+Wave N+2       Verify (typecheck, tests, smoke against staging)
+Wave N+3       Delete the old path
+```
+
+Verification is Class 1 evidence, not design coherence. Do not collapse "the
+new design is coherent" into "the replacement works." Stop importing the old
+path, verify, then delete. For the failure mode and worked example, read
+[references/wave-ordering.md](references/wave-ordering.md).
 
 ## Naming Rules
 
@@ -358,6 +444,7 @@ Did I delete dead paths instead of leaving them unreachable?
 Did the file tree change to match the new ownership?
 Did every validation move to the earliest layer that can know the truth?
 Would mentally inlining each new helper make the code clearer?
+Did I run the asymmetric wins pass before adding another invariant?
 ```
 
 If any answer is no, keep simplifying.

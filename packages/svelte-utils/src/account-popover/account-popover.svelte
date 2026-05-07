@@ -3,13 +3,15 @@
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
-	import { toastOnError } from '@epicenter/ui/sonner';
+	import { toast, toastOnError } from '@epicenter/ui/sonner';
 	import type { SyncAttachment, SyncStatus } from '@epicenter/workspace';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
+	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import { extractErrorMessage } from 'wellcrafted/error';
 	import { AuthForm } from '../auth-form/index.js';
 
 	/**
@@ -17,8 +19,7 @@
 	 *
 	 * Renders sync status from a `SyncAttachment` (the concrete `attachSync`
 	 * return type exposed as `workspace.sync`) alongside auth identity,
-	 * reconnect, and sign-out. Sign-out asks for confirmation when
-	 * unsynced work exists.
+	 * reconnect, and sign-out.
 	 *
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
 	 */
@@ -34,15 +35,23 @@
 		syncNoun: string;
 		/** Handler called when the user clicks "Continue with Google". */
 		onSocialSignIn: () => Promise<{ error: { message: string } | null }>;
+		/** Optional destructive cleanup for this account's local device cache. */
+		onForgetDevice?: () => void | Promise<void>;
 	};
 
-	let { auth, sync, syncNoun, onSocialSignIn }: AccountPopoverProps = $props();
+	let {
+		auth,
+		sync,
+		syncNoun,
+		onSocialSignIn,
+		onForgetDevice,
+	}: AccountPopoverProps = $props();
 
-	let syncStatus = $state<SyncStatus>(sync.status);
+	let syncStatus = $state<SyncStatus>({ phase: 'offline' });
 	let popoverOpen = $state(false);
 	let signingOut = $state(false);
-	const identity = $derived(auth.identity);
-	const isSignedIn = $derived(identity !== null);
+	let forgettingDevice = $state(false);
+	const isSignedIn = $derived(auth.state.status === 'signed-in');
 
 	$effect(() => {
 		syncStatus = sync.status;
@@ -61,57 +70,49 @@
 			case 'connected':
 				return 'Connected';
 			case 'connecting':
-				if (s.lastError?.type === 'auth')
-					return 'Authentication failed. Click to reconnect';
 				if (s.retries > 0) return `Reconnecting (retry ${s.retries})…`;
 				return 'Connecting…';
 			case 'offline':
 				return 'Offline. Click to reconnect';
 			case 'failed':
-				return 'Sync failed';
+				return 'Authentication failed. Click to reconnect';
 		}
 	}
 
 	const tooltip = $derived(getSyncTooltip(syncStatus, isSignedIn));
 
-	/**
-	 * Safe sign-out gate. Connected + fully synced → sign out immediately.
-	 * Otherwise warn about unsynced work first.
-	 *
-	 * Sequence: `auth.signOut()`. Workspace cleanup and any hard reload belong
-	 * to the auth/workspace binding that observes the resulting identity.
-	 */
-	function handleSignOut() {
-		const current = sync.status;
-		const isSynced = current.phase === 'connected' && !current.hasLocalChanges;
-
-		const doSignOut = async () => {
-			signingOut = true;
-			try {
-				const result = await auth.signOut();
-				if (result.error) {
-					toastOnError(result, 'Failed to sign out');
-					return;
-				}
-			} finally {
-				signingOut = false;
-			}
-		};
-
-		if (isSynced) {
-			doSignOut();
-		} else {
-			confirmationDialog.open({
-				title: 'Sign out with unsynced changes?',
-				description:
-					"Some changes haven't synced to the cloud yet. Signing out will lose them.",
-				confirm: { text: 'Sign out anyway', variant: 'destructive' },
-				cancel: { text: 'Stay signed in' },
-				onConfirm: doSignOut,
-			});
-		}
-
+	async function signOut() {
 		popoverOpen = false;
+		signingOut = true;
+		try {
+			const result = await auth.signOut();
+			if (result.error) toastOnError(result, 'Failed to sign out');
+		} finally {
+			signingOut = false;
+		}
+	}
+
+	function forgetDevice() {
+		if (!onForgetDevice) return;
+		popoverOpen = false;
+		confirmationDialog.open({
+			title: 'Forget this device?',
+			description:
+				'This deletes local data for this account on this device. Synced data stays in your account.',
+			confirm: { text: 'Forget device', variant: 'destructive' },
+			onConfirm: async () => {
+				forgettingDevice = true;
+				try {
+					await onForgetDevice();
+				} catch (error) {
+					toast.error('Failed to forget this device', {
+						description: extractErrorMessage(error),
+					});
+				} finally {
+					forgettingDevice = false;
+				}
+			},
+		});
 	}
 </script>
 
@@ -141,11 +142,13 @@
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-80 p-0" align="end">
-		{#if identity}
+		{#if auth.state.status === 'signed-in'}
 			<div class="p-4 space-y-3">
 				<div class="space-y-1">
-					<p class="text-sm font-medium">{identity.user.name}</p>
-					<p class="text-xs text-muted-foreground">{identity.user.email}</p>
+					<p class="text-sm font-medium">{auth.state.identity.user.name}</p>
+					<p class="text-xs text-muted-foreground">
+						{auth.state.identity.user.email}
+					</p>
 				</div>
 				<div class="border-t pt-3 space-y-1">
 					<p class="text-xs text-muted-foreground">
@@ -170,16 +173,29 @@
 							Reconnect
 						</Button>
 					{/if}
-					<Button
-						variant="ghost"
-						size="sm"
-						class="flex-1"
-						onclick={handleSignOut}
-					>
+					<Button variant="ghost" size="sm" class="flex-1" onclick={signOut}>
 						<LogOut class="size-3.5" />
 						Sign out
 					</Button>
 				</div>
+				{#if onForgetDevice}
+					<div class="border-t pt-3">
+						<Button
+							variant="ghost"
+							size="sm"
+							class="w-full justify-start text-destructive hover:text-destructive"
+							onclick={forgetDevice}
+							disabled={forgettingDevice}
+						>
+							{#if forgettingDevice}
+								<LoaderCircle class="size-3.5 animate-spin" />
+							{:else}
+								<DatabaseZap class="size-3.5" />
+							{/if}
+							Forget this device
+						</Button>
+					</div>
+				{/if}
 			</div>
 		{:else}
 			<div class="flex items-center justify-center p-4">

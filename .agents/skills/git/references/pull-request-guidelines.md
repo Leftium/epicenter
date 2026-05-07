@@ -517,35 +517,36 @@ The old encryption system had five moving parts to answer one question: does thi
 ```typescript
 // Before — 3 steps, async, stateful
 const ydoc = new Y.Doc({ guid: id });
-const encryption = attachEncryption(ydoc);
-const tables = encryption.attachTables(ydoc, defs);
+const encryption = attachEncryption(ydoc, { encryptionKeys });
+const tables = encryption.attachTables(defs);
 
 await encryption.unlock(keys);
 ```
 
-Now it's one synchronous call, no unlock step, no state machine:
+Now keys are read lazily at every registration site, with no unlock step and no state machine:
 
 ```typescript
-// After — sync, idempotent
+// After — sync, lazy reads, no mutation hook
 const ydoc = new Y.Doc({ guid: id });
-const encryption = attachEncryption(ydoc);
-const tables = encryption.attachTables(ydoc, defs);
-
-encryption.applyKeys(keys);  // done
+const encryption = attachEncryption(ydoc, {
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+});
+const tables = encryption.attachTables(defs);
+// done, registration and activation happen in one call
 ```
 
-`applyKeys()` is idempotent and safe to call multiple times. The encrypted Y.Map wrapper no longer maintains a dual-cache — it encrypts on write and decrypts on read, one direction each way. The encryption runtime, key stores, IndexedDB wrappers, and dual-cache logic are all gone.
+The encrypted Y.Map wrapper no longer maintains a dual-cache: it encrypts on write and decrypts on read, one direction each way. The encryption runtime, key stores, IndexedDB wrappers, and dual-cache logic are all gone. Encrypted stores derive their keyring when they attach; same-user key rotation needs a re-attach to affect already-attached stores.
 
 ```
 Before:
-  attachEncryption(ydoc)
+  attachEncryption(ydoc, { encryptionKeys })
     ├── encryption-runtime.ts (state machine)
     ├── user-key-store.ts (IndexedDB persistence)
     └── y-keyvalue-lww-encrypted.ts (dual-cache: encrypted + decrypted)
 
 After:
-  attachEncryption(ydoc)
-    └── .applyKeys(keys)  // sync, one method
+  attachEncryption(ydoc, { encryptionKeys })
+    └── reads encryptionKeys() when each encrypted store attaches
         └── y-keyvalue-lww-encrypted.ts (one-way: encrypt on write, decrypt on read)
 ```
 

@@ -8,11 +8,10 @@ metadata:
 
 # Epicenter Auth
 
-Three packages own the auth surface:
+Two packages own the auth surface:
 
-- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, token rotation for bearer clients, cookie fetch policy for cookie clients, identity fan-out, `fetch`, and `openWebSocket`.
-- **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors the core identity into `$state` and exposes a live `auth.identity` getter.
-- **`@epicenter/auth-workspace`**: framework-agnostic binding from auth identity changes to workspace lifecycle effects.
+- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, token rotation for bearer clients, cookie fetch policy for cookie clients, identity fan-out, `fetch`, and the live `bearerToken` getter.
+- **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors `auth.state` into `$state` so templates and `$derived` read it reactively.
 
 The core model is two factories, one client interface:
 
@@ -45,19 +44,18 @@ type AuthIdentity = {
 };
 
 type AuthClient = {
-	readonly identity: AuthIdentity | null;
-	readonly whenReady: Promise<void>;
-	onChange(fn: (identity: AuthIdentity | null) => void): () => void;
+	readonly state: AuthState;
+	readonly bearerToken: string | null;
+	onStateChange(fn: (state: AuthState) => void): () => void;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
-	openWebSocket(url: string | URL, protocols?: string | string[]): WebSocket | null;
 };
 ```
 
-Read `auth.identity` synchronously. Auth has no public loading variant. `whenReady` resolves after Better Auth's first settled session event and never rejects.
+Read `auth.state` synchronously. Use `waitForAuthSettled(auth)` when bootstrap needs the first settled session event.
 
-Use `auth.onChange(fn)` for future changes only. It does not replay. Consumers that need bootstrap behavior must read `auth.identity` once and then register the listener.
+Use `auth.onStateChange(fn)` for future changes only. It does not replay. Consumers that need bootstrap behavior must read `auth.state` once and then register the listener.
 
-Do not add projection helpers. There is no public token, user, session, authenticated, or busy getter beyond `auth.identity`.
+Do not add projection helpers. `auth.bearerToken` is the only public token read path, and it returns `null` for cookie auth.
 
 ## Factory Choice
 
@@ -93,53 +91,72 @@ export const auth = createBearerAuth({
 
 ## Workspace Binding
 
-Use `bindAuthWorkspaceScope` at setup time for cookie auth clients:
+Identity-bound resources are read through callbacks at the boundary that needs them. Sync can read a refreshed bearer token on connection attempts. Encrypted stores read `encryptionKeys()` when they attach and keep the derived keyring afterward. The session module owns the workspace lifecycle (`createSession` from `@epicenter/svelte`), and each per-app build closure passes `() => requireSignedIn(auth).encryptionKeys` straight through to the workspace.
 
 ```ts
-import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
+import { requireSignedIn } from '@epicenter/auth';
+import { createSession, type InferSignedIn } from '@epicenter/svelte';
 
-bindAuthWorkspaceScope({
+export const session = createSession({
 	auth,
-	applyAuthIdentity(identity) {
-		workspace.encryption.applyKeys(identity.encryptionKeys);
+	build: (identity) => {
+		const userId = identity.user.id;
+		const fuji = openFuji({
+			userId,
+			peer,
+			bearerToken: () => auth.bearerToken,
+			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+		});
+		return {
+			userId,
+			fuji,
+			[Symbol.dispose]() { fuji[Symbol.dispose](); },
+		};
 	},
-	async resetLocalClient() {
-		try {
-			// The workspace bundle owns teardown order. Its disposer closes app
-			// resources and destroys the root Y.Doc, which tells attachments like
-			// sync, broadcast channel, and y-indexeddb to stop before local
-			// IndexedDB data is deleted.
-			workspace[Symbol.dispose]();
-			// This is safe after disposal. y-indexeddb deletes by database name,
-			// and any row data needed to compute child document names remains
-			// readable from memory after Y.Doc.destroy(); disposal has already
-			// stopped observers and providers.
-			await workspace.clearLocalData();
-		} catch (error) {
-			reportCleanupError(error);
-		} finally {
-			window.location.reload();
-		}
-	},
+});
+
+export type FujiSignedIn = InferSignedIn<typeof session>;
+
+/** Throws if invoked outside the signed-in branch. */
+export function getSignedInSession(): FujiSignedIn {
+	const c = session.current;
+	if (c.status !== 'signed-in') {
+		throw new Error('[fuji] getSignedInSession() called outside the signed-in branch.');
+	}
+	return c.signedIn;
+}
+```
+
+`createSession` reconciles `auth.state`: a sign-out disposes the workspace, a same-user identity update is a no-op at the session boundary, and a different-user transition disposes the workspace and reloads. Auth-bound callbacks read at their own boundaries: `attachSync` can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached. For destructive reset (wipe local data and reload), call `workspace.wipe()` and `location.reload()` inside the consumer that triggers it; there is no terminal callback on the session itself.
+
+Descendant pages call `getSignedInSession()` directly: bind once at script init, dot-access fields. No context layer, no Provider component, no install step. The throw keeps the precondition honest at the call site.
+
+Browser apps that do not use `createSession` inline the meaningful auth transitions:
+
+```ts
+const userId = requireSignedIn(auth).user.id;
+
+auth.onStateChange((state) => {
+	if (state.status === 'pending') return;
+	if (state.status === 'signed-out') return window.location.reload();
+	if (state.identity.user.id !== userId) return window.location.reload();
 });
 ```
 
-Each `attachSync` is independently auth-aware through its `auth` namespace; no sync fan-out is needed. Keep destructive reset policy inside `resetLocalClient()`.
-
 ## Sync Authentication
 
-Workspace sync takes auth capabilities, not tokens:
+Workspace sync takes a live bearer-token reader:
 
 ```ts
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 	waitFor: idb.whenLoaded,
-	auth,
+	bearerToken: () => auth.bearerToken,
 	awareness,
 });
 ```
 
-`createCookieAuth` opens a cookie-backed WebSocket with the caller's protocols. `createBearerAuth` adds the bearer subprotocol internally. Both factories return `null` from `openWebSocket` when no credentials are available; `attachSync` stays offline until the next `auth.onChange` event. `attachSync` never imports from `@epicenter/auth`, never reads a token, and reconnects when `auth.onChange` fires.
+`createCookieAuth` always returns `null` from `bearerToken`; the browser cookie jar handles credentials. `createBearerAuth` returns the current bearer token when signed in and `null` when signed out. `attachSync` owns WebSocket construction and adds the bearer subprotocol when the callback returns a token.
 
 `auth.fetch` follows the same transport rule internally:
 
@@ -148,16 +165,16 @@ const sync = attachSync(ydoc, {
 
 ## Svelte UI Reads
 
-Read `auth.identity` in templates, `$derived`, or `$effect`:
+Read `auth.state` in templates, `$derived`, or `$effect`:
 
 ```svelte
 <script lang="ts">
-	const identity = $derived(auth.identity);
+	const state = $derived(auth.state);
 </script>
 
-{#if identity}
-	<p>{identity.user.name}</p>
-{:else}
+{#if state.status === 'signed-in'}
+	<p>{state.identity.user.name}</p>
+{:else if state.status === 'signed-out'}
 	<AuthForm {auth} />
 {/if}
 ```
@@ -181,8 +198,8 @@ In-flight command state belongs to the issuing component:
 
 ## Common Pitfalls
 
-- In the Svelte wrapper, spread the core auth object before overriding `identity`. Object spread invokes the base getter and copies the current value, so `get identity()` must appear after `...base`.
-- Do not destructure `auth.identity` at module scope. That freezes the current value.
+- In the Svelte wrapper, spread the core auth object before overriding `state`. Object spread invokes the base getter and copies the current value, so `get state()` must appear after `...base`.
+- Do not destructure `auth.state` at module scope. That freezes the current value.
 - Do not clear local data on cold boot. Clear only when the previous identity was non-null and the next identity is null.
 - Do not import a generic `createAuth`. It no longer exists. Choose `createCookieAuth` or `createBearerAuth` at construction.
 - Do not expose bearer tokens above storage adapters. UI, workspace binding, and sync consume `AuthClient` capabilities.

@@ -109,8 +109,8 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 			writesInFlight--;
 			if (writesInFlight === 0) {
 				// Re-read to catch any external changes we suppressed.
-				const v = await item.getValue();
-				setValue(validate(v) ?? fallback);
+				const storedValue = await item.getValue();
+				setValue(validate(storedValue) ?? fallback);
 			}
 		}
 	}

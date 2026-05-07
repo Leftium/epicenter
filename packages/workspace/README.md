@@ -43,9 +43,12 @@ export function openBlog() {
 	const tables = attachTables(ydoc, { posts });
 	const kv = attachKv(ydoc, {});
 	const idb = attachIndexedDb(ydoc);
+	const transport = (url: string, protocols?: string | string[]) =>
+		new WebSocket(url, protocols);
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
+		transport,
 	});
 
 	return {
@@ -58,7 +61,6 @@ export function openBlog() {
 		idb,
 		sync,
 		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
@@ -69,7 +71,7 @@ export function openBlog() {
 export const blog = openBlog();
 
 async function quickStart() {
-	await blog.whenReady;
+	await blog.idb.whenLoaded;
 
 	blog.tables.posts.set({
 		id: 'welcome',
@@ -110,7 +112,7 @@ Every exported function in this package falls into one of three verbs. The prefi
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
 | `define*` | **None**: pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
-| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods) |
+| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachOwnedBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods) |
 | `create*` | **Pure construction**: no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition or cache | `createDisposableCache` |
 
 `createDisposableCache(build, opts?)` is the refcounted cache primitive. The
@@ -120,7 +122,7 @@ refcounting, and the `gcTime` grace period between last dispose and teardown.
 
 ### Plaintext vs encrypted
 
-Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc)` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`): additionally registers its backing store with that coordinator so keys applied via `encryption.applyKeys(...)` flow to every registered store atomically.
+Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { encryptionKeys })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `encryptionKeys()` synchronously at each registration site, derives the store keyring, and activates the store before handing it back. Already-attached encrypted stores keep their derived keyring; same-user key rotation needs a re-attach to affect those stores.
 
 Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 
@@ -129,27 +131,30 @@ Minimal encrypted workspace: encryption + IndexedDB + cross-tab + sync wired end
 ```typescript
 import {
 	attachAwareness,
-	attachBroadcastChannel,
 	attachEncryption,
-	attachIndexedDb,
+	attachOwnedBroadcastChannel,
 	attachSync,
 	createRemoteClient,
+	type EncryptionKeys,
 	PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
-import type { AuthClient } from '@epicenter/auth';
 import * as Y from 'yjs';
 import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
-	auth,
+	userId,
+	bearerToken,
+	encryptionKeys,
 }: {
-	auth: AuthClient;
+	userId: string;
+	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
 
-	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, appTables);
+	const encryption = attachEncryption(ydoc, { encryptionKeys });
+	const tables = encryption.attachTables(appTables);
 	const awareness = attachAwareness(ydoc, {
 		schema: {
 			peer: PeerIdentity,
@@ -159,12 +164,12 @@ export function openApp({
 		},
 	});
 
-	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
+	const idb = encryption.attachIndexedDb(ydoc, { userId });
+	attachOwnedBroadcastChannel(ydoc, { userId });
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		auth,
+		bearerToken,
 		awareness,
 	});
 	const actions = {};
@@ -184,19 +189,22 @@ export function openApp({
 		rpc,
 		remote,
 		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
 	};
 }
 
-export const workspace = openApp({ auth });
+export const workspace = openApp({
+	userId,
+	bearerToken: () => auth.bearerToken,
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+});
 ```
 
 The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.
 
-For production-shaped browser wiring, see `apps/fuji/src/lib/fuji/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/fuji/client.ts`.
+For production-shaped browser wiring, see `apps/fuji/src/routes/(signed-in)/fuji/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.svelte.ts`.
 
 ## Core Philosophy
 
@@ -323,7 +331,11 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
    child documents: use `createDisposableCache(...)` and call `.open(rowId)`
    per instance. For one-shot Node operations: call the child builder directly
    inside `using`.
-4. `await bundle.whenReady` (or `handle.whenReady`) before reading persisted state. `whenReady` is the platform's readiness convention: an optional `Promise<unknown>` field on the bundle you return. The cache itself does not read it, but `WorkspaceGate`, the CLI's `run` command, migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and every editor's `{#await}` block all gate on it. Expose it when the bundle has async initialization the caller should wait on, and compose it from whatever attachment signals make sense: `idb.whenLoaded` for a single barrier, or `Promise.all([persistence.whenLoaded, unlock.whenChecked, sync.whenConnected])` for a multi-step cascade. Because the field is typed `Promise<unknown>`, `Promise.all([...])` is assignable directly (no `.then(() => undefined)` tail required).
+4. Await the right readiness signal before reading persisted state. There are two shapes here, and the choice is load-bearing:
+   - **One subsystem to wait on.** Expose the subsystem (`idb`, `persistence`, ...) on the bundle root and let consumers reach through: `await bundle.idb.whenLoaded`. Do not alias `whenLoaded`/`whenReady` flat at the bundle root just to save a `.idb`; the alias lies about composition.
+   - **Two or more subsystems to compose into one barrier.** Then `whenReady` earns its place: `whenReady: Promise.all([persistence.whenLoaded, unlock.whenChecked, sync.whenConnected])`. Because the field is typed `Promise<unknown>`, `Promise.all([...])` is assignable directly. Consumers `await bundle.whenReady`. The CLI's `run` command, migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and `{#await}` gates in editors all consume this aggregate.
+
+   See `specs/20260506T020000-expose-attachments-not-aliases.md` for the rule and anti-patterns.
 5. Read and write through `bundle.tables`, `bundle.kv`, `bundle.awareness`, and (for per-row content docs) whatever you exposed in the returned bundle.
 6. Use `walkActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
 7. Dispose with `bundle[Symbol.dispose]()` for singletons or `handle[Symbol.dispose]()` for cache handles when you're done. Use `cache[Symbol.dispose]()` to flush every live entry.
@@ -347,7 +359,7 @@ The ID becomes `ydoc.guid` for the workspace doc, so it is not a throwaway strin
 
 A workspace is a `Y.Doc` plus whatever `attach*` handles you bound to it,
 packaged as a bundle with `{ id, ydoc, [Symbol.dispose], ... }`. A browser
-workspace also exposes `clearLocalData()`. A singleton app returns the bundle
+workspace also exposes `wipe()`. A singleton app returns the bundle
 from a top-level function like `openBlog()`. A document cache returns disposable
 handles over child documents keyed by row id.
 
@@ -425,7 +437,7 @@ cache primitive.
 
 The `$derived` swaps handles when `fileId` changes; the `$effect` cleanup releases the old handle. Refcount 0 arms the cache's `gcTime` timer; a fresh open during the grace window cancels the pending teardown, so rapid navigation doesn't flap persistence or sync.
 
-Reference implementations: `apps/opensidian/src/lib/opensidian/browser.ts`, `apps/skills/src/lib/skills/browser.ts`, `apps/fuji/src/lib/fuji/browser.ts`, `apps/honeycrisp/src/lib/honeycrisp/browser.ts`.
+Reference implementations: `apps/opensidian/src/lib/opensidian/browser.ts`, `apps/skills/src/lib/skills/browser.ts`, `apps/fuji/src/routes/(signed-in)/fuji/browser.ts`, `apps/honeycrisp/src/routes/(signed-in)/honeycrisp/browser.ts`.
 
 ## Schema definition
 
@@ -558,7 +570,11 @@ function openNotes() {
 
 const workspace = openNotes();
 
-workspace.awareness.setLocalField('cursor', { line: 12, column: 3 });
+workspace.awareness.setLocal({
+	name: 'Braden',
+	color: '#ff4d4f',
+	cursor: { line: 12, column: 3 },
+});
 ```
 
 ### Document-backed tables
@@ -600,7 +616,6 @@ function openFilesWorkspace() {
 		ydoc,
 		tables,
 		idb,
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
@@ -634,7 +649,6 @@ export const fileContentDocs = createDisposableCache((fileId: string) => {
 		ydoc,
 		content,
 		idb,
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 });
@@ -657,7 +671,7 @@ async function documentExample() {
 
 	// Load a content handle for the row. Dispose when done.
 	using handle = fileContentDocs.open('file-1');
-	await handle.whenReady;
+	await handle.idb.whenLoaded;
 
 	handle.content.insert(0, '# Hello from a document');
 	console.log(handle.content.toString());
@@ -800,6 +814,7 @@ Attachments are the opt-in capabilities you compose inside a builder. Browser-sa
 ```typescript
 import {
 	attachBroadcastChannel,
+	attachOwnedBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
 	attachTables,
@@ -810,7 +825,7 @@ import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 
 ### Persistence
 
-`attachIndexedDb(ydoc)` runs in the browser. `attachSqlite(ydoc, { filePath })` runs on Node/Bun. Both return a handle with `whenLoaded`, `whenDisposed`, and `clearLocal()`.
+`attachIndexedDb(ydoc)` runs in the browser. `attachSqlite(ydoc, { filePath })` runs on Node/Bun. Both return a handle with `whenLoaded` and `clearLocal()`. IndexedDB also exposes `whenDisposed` for callers that need to await provider shutdown before deleting local storage. Authenticated browser workspaces can call `wipeOwnerLocalYjsData({ userId, ydocGuids })` after disposal to delete owner-scoped local Yjs databases.
 
 ```typescript
 import * as Y from 'yjs';
@@ -833,7 +848,6 @@ function openNotes() {
 		ydoc,
 		tables,
 		sqlite,
-		whenReady: sqlite.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
@@ -843,7 +857,7 @@ void openNotes;
 
 ### Sync
 
-`attachSync(ydoc, config)` is the websocket transport; compose it with `attachBroadcastChannel(ydoc)` for cross-tab sync.
+`attachSync(ydoc, config)` is the websocket transport. Compose it with `attachBroadcastChannel(ydoc)` for local-only documents, or `attachOwnedBroadcastChannel(ydoc, { userId })` for authenticated browser workspaces.
 
 ```typescript
 import * as Y from 'yjs';
@@ -864,9 +878,12 @@ function openTabs() {
 	const tables = attachTables(ydoc, { tabs });
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
+	const transport = (url: string, protocols?: string | string[]) =>
+		new WebSocket(url, protocols);
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://sync.epicenter.so/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
+		transport,
 	});
 
 	return {
@@ -875,7 +892,6 @@ function openTabs() {
 		tables,
 		idb,
 		sync,
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
@@ -923,7 +939,6 @@ function openNotes() {
 		tables,
 		sqlite,
 		markdown,
-		whenReady: sqlite.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
@@ -971,12 +986,11 @@ function openBlog() {
 		tables,
 		sqlite,
 		mirror,
-		whenReady: sqlite.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
 
-// After whenReady:
+// After sqlite.whenLoaded:
 // blog.mirror.search('posts', 'hello');
 // blog.mirror.count('posts');
 // blog.mirror.rebuild('posts');
@@ -1290,7 +1304,6 @@ Two composition shapes, one builder contract.
 │   const idb    = attachIndexedDb(ydoc);                   │
 │   const sync   = attachSync(ydoc, { waitFor: ... });     │
 │   return { ydoc, tables, idb, sync,                       │
-│            whenReady: idb.whenLoaded,                     │
 │            [Symbol.dispose]() { ydoc.destroy(); } };     │
 │ }                                                         │
 │ export const workspace = openApp();                       │
@@ -1308,7 +1321,6 @@ export const fileContentDocs = createDisposableCache((fileId: string) => {
 		ydoc,
 		content,
 		idb,
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
@@ -1324,7 +1336,7 @@ export async function clearFileContentLocalData() {
 }
 
 using handle = fileContentDocs.open('file-1');
-await handle.whenReady;
+await handle.idb.whenLoaded;
 ```
 
 The cache builder names how to build one live child document. The app-local
@@ -1344,11 +1356,12 @@ workspace.batch(() => {
 
 Yjs transactions do not roll back on throw. They batch notifications; they are not SQL transactions.
 
-### `whenReady`, `clearLocal`, and teardown
+### Readiness, `clearLocal`, and teardown
 
 | API | What it means |
 | --- | --- |
-| `bundle.whenReady` / `handle.whenReady` | Builder convention, typically `idb.whenLoaded` (or `Promise.all([...])`) |
+| `bundle.idb.whenLoaded` (or `bundle.sqlite.whenLoaded`) | Direct subsystem readiness; the default form |
+| `bundle.whenReady` | Optional aggregate: only when the bundle composes 2+ subsystem signals into `Promise.all([...])` |
 | `bundle.idb.clearLocal()` (or `bundle.sqlite.clearLocal()`) | Wipes persisted local state for that attachment |
 | `bundle[Symbol.dispose]()` | Singleton teardown: your builder calls `ydoc.destroy()` |
 | `handle[Symbol.dispose]()` | Cache handle: decrements refcount; last dispose arms `gcTime` |
@@ -1422,8 +1435,8 @@ import { createDisposableCache } from '@epicenter/workspace';
 
 `createDisposableCache(build, { gcTime? })` returns a refcounted id cache.
 `.open(id)` mints a live handle by shallow-spreading the bundle your builder
-returned, so `ydoc`, `content`, `idb`, and `whenReady` are all things you
-explicitly put in the bundle.
+returned, so `ydoc`, `content`, `idb`, and any composed `whenReady` are all
+things you explicitly put in the bundle.
 
 For singleton apps, call your builder function once at module scope. For Node
 one-shot operations, call the child builder directly inside `using`. Use the
@@ -1444,7 +1457,7 @@ Everything below is a *convention*: the builder is free to expose more or less. 
 - `encryption` (when encrypted)
 - `actions`
 - `batch(fn)`
-- `whenReady`
+- `whenReady` (only when composed from 2+ subsystem signals; otherwise consumers await `idb.whenLoaded` directly)
 - `[Symbol.dispose]()`
 
 ### Document content attachments
@@ -1549,10 +1562,6 @@ import {
 Public awareness methods:
 
 - `setLocal(state)`
-- `setLocalField(key, value)`
-- `getLocal()`
-- `getLocalField(key)`
-- `getAll()`
 - `peers()`
 - `observe(callback)`
 - `raw`

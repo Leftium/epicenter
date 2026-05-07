@@ -1,4 +1,7 @@
-import { createMachineAuthClient } from '@epicenter/auth/node';
+import {
+	createMachineAuthClient,
+	requireSignedIn,
+} from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { attachSync, type ProjectDir, toWsUrl } from '@epicenter/workspace';
 import {
@@ -17,13 +20,16 @@ export async function openOpensidian({
 	clientID?: number;
 }) {
 	const auth = await createMachineAuthClient();
-	const doc = openOpensidianDoc({ clientID });
+	const doc = openOpensidianDoc({
+		clientID,
+		encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+	});
 	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-		auth,
+		bearerToken: () => auth.bearerToken,
 	});
 
 	return { ...doc, yjsLog, sync };

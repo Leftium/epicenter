@@ -44,7 +44,6 @@ const app = defineDocument((id: string) => {
 		tables,
 		idb,
 		sync,
-		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 });

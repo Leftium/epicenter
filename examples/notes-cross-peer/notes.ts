@@ -22,7 +22,7 @@ const WORKSPACE_ID = 'epicenter.notes-repro';
 // below passes `_v: 1`: same value, two different syntax conventions.
 const Note = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
-export function openNotes(peer: PeerIdentity) {
+export async function openNotes(peer: PeerIdentity) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
 	const tables = attachTables(ydoc, { notes: Note });
 
@@ -45,10 +45,10 @@ export function openNotes(peer: PeerIdentity) {
 		schema: { peer: PeerIdentity },
 		initial: { peer },
 	});
-	const auth = createMachineAuthClient();
+	const auth = await createMachineAuthClient();
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
-		auth,
+		bearerToken: () => auth.bearerToken,
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);

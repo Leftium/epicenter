@@ -88,11 +88,11 @@ export function normalizeBearerSession(
 	{ token }: { token: string },
 ): BearerSession {
 	const record = readRecord(value, 'Better Auth session response');
-	return BearerSession.assert({
+	return {
 		token,
 		user: normalizeAuthUser(record.user),
 		encryptionKeys: EncryptionKeys.assert(record.encryptionKeys),
-	});
+	} satisfies BearerSession;
 }
 
 /**

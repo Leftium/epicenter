@@ -212,7 +212,7 @@ Load these on demand based on what you're working on:
   }
   ```
 
-- **Factory return types derive from the factory**: If a public type is exactly the return object from a `create*` function, export the type as `ReturnType<typeof createThing>` and let the function return its concrete object. Put needed annotations on the returned methods and properties instead of on the factory itself. This keeps one source of truth and makes Go to Definition land on the returned object shape.
+- **Factory return types derive from the factory**: If a public type is exactly the return object from a `create*` function, export the type as `ReturnType<typeof createThing>` and let the function return its concrete object. If the public type is a nested slice of a factory result, use a focused inference helper like `InferSignedIn<typeof session>`. Put needed annotations on the returned methods and properties instead of on the factory itself. This keeps one source of truth and makes Go to Definition land on the returned object shape.
 
   ```typescript
   // Good: the factory owns the shape

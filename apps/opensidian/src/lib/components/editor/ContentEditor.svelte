@@ -2,7 +2,7 @@
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
 	import { fromDisposableCache } from '@epicenter/svelte';
-	import { Spinner } from '@epicenter/ui/spinner';
+	import { Loading } from '@epicenter/ui/loading';
 	import { opensidian } from '$lib/opensidian/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
@@ -45,15 +45,13 @@
 </script>
 
 <!--
-	Gate on whenReady: `asText()` on Timeline mutates when the doc is empty
-	(it pushes an entry). Calling it before persistence hydrates races the
-	IDB replay and can corrupt the timeline (phantom text entry alongside
-	the real stored entries).
+	Gate on idb hydration: `asText()` on Timeline mutates when the doc is empty
+	(it pushes an entry). Calling it before idb hydrates races the replay
+	and can corrupt the timeline (phantom text entry alongside the real
+	stored entries).
 -->
-{#await doc.current.whenReady}
-	<div class="flex h-full items-center justify-center">
-		<Spinner class="size-5 text-muted-foreground" />
-	</div>
+{#await doc.current.idb.whenLoaded}
+	<Loading class="h-full" />
 {:then _}
 	<CodeMirrorEditor
 		ytext={doc.current.content.asText()}

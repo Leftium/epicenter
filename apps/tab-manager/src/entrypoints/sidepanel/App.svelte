@@ -6,8 +6,8 @@
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
+	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import { Toggle } from '@epicenter/ui/toggle';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import CaseSensitiveIcon from '@lucide/svelte/icons/case-sensitive';
@@ -21,12 +21,16 @@
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import { ModeWatcher } from 'mode-watcher';
 	import { getGoogleCredentials } from '$lib/auth';
-	import { auth, tabManager } from '$lib/tab-manager/client';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { items } from '$lib/components/command-palette-items';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
+	import {
+		auth,
+		forgetTabManagerDevice,
+		tabManager,
+	} from '$lib/tab-manager/client';
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);
 	let commandPaletteOpen = $state(false);
@@ -178,6 +182,7 @@
 					{auth}
 					sync={tabManager.sync}
 					syncNoun="tabs"
+					onForgetDevice={forgetTabManagerDevice}
 					onSocialSignIn={async () => {
 						const { idToken, nonce } = await getGoogleCredentials();
 						return auth.signInWithIdToken({ provider: 'google', idToken, nonce });
@@ -187,10 +192,7 @@
 		</header>
 		<!-- Gate on browser state seed so child components can read data synchronously -->
 		{#await browserState.whenReady}
-			<div class="flex flex-1 flex-col items-center justify-center gap-3">
-				<Spinner class="size-5 text-muted-foreground" />
-				<p class="text-sm text-muted-foreground">Loading tabs…</p>
-			</div>
+			<Loading class="flex-1" label="Loading tabs…" />
 		{:then _}
 			<div class="flex-1 min-h-0"><UnifiedTabList /></div>
 		{:catch _error}

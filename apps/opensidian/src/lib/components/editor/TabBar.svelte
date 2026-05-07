@@ -4,8 +4,12 @@
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { auth, opensidian } from '$lib/opensidian/client';
 	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
+	import {
+		auth,
+		forgetOpensidianDevice,
+		opensidian,
+	} from '$lib/opensidian/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
 </script>
 
@@ -57,6 +61,7 @@
 			{auth}
 			sync={opensidian.sync}
 			syncNoun="notes"
+			onForgetDevice={forgetOpensidianDevice}
 			onSocialSignIn={() =>
 				auth.signInWithSocialRedirect({
 					provider: 'google',

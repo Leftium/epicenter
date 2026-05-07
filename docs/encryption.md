@@ -47,88 +47,106 @@ encrypted CRDT value
 ```
 On the server, `apps/api/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption` to parse the keyring and derive per-user keys.
 It returns one `{ version, userKeyBase64 }` entry per configured secret version.
-On the client, `workspace.encryption.applyKeys(...)` (the `EncryptionAttachment` exposed from the document bundle) decodes each `userKeyBase64`, runs `deriveWorkspaceKey(userKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
+On the client, the encryption coordinator (`attachEncryption(ydoc, { encryptionKeys })`) reads `encryptionKeys()` synchronously at every `attachTable` / `attachKv` / `attachIndexedDb` site, decodes each `userKeyBase64`, runs `deriveWorkspaceKey(userKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
 The highest version becomes the current key for new writes.
 
 ## How keys reach the client
 Keys come through the auth session.
 There is no separate key-fetch endpoint in the reviewed code.
 `apps/api/src/auth/create-auth.ts` attaches `encryptionKeys` to `/auth/get-session`.
-`@epicenter/auth-svelte` exposes those keys through `auth.snapshot`.
+`@epicenter/auth` exposes those keys through `auth.state.identity.encryptionKeys` while the user is signed in.
 That happens in two places:
 - on boot from a cached session
 - on every authenticated session update from Better Auth
 The boot path exists so the workspace can unlock before the first auth roundtrip finishes.
-In app clients such as `apps/tab-manager/src/lib/tab-manager/client.ts`, `bindAuthWorkspaceScope` receives the app-owned lifecycle hooks:
+The workspace does not hold an independently mutable copy of the keys. `attachEncryption` takes an `encryptionKeys` callback and calls it when an encrypted table, KV store, or IndexedDB provider attaches. Each attached store keeps the keyring derived at that attachment boundary. In per-app session modules, the workspace builder passes `() => requireSignedIn(auth).encryptionKeys` straight through:
 ```ts
-bindAuthWorkspaceScope({
-	auth,
-	applyAuthIdentity(identity) {
-		tabManager.encryption.applyKeys(identity.encryptionKeys);
-		void registerDevice();
-	},
-	async resetLocalClient() {
-		try {
-			// The workspace bundle owns teardown order. Its disposer destroys the
-			// root Y.Doc, which tells attachments like sync, broadcast channel, and
-			// y-indexeddb to stop before local IndexedDB data is deleted.
-			tabManager[Symbol.dispose]();
-			// This is safe after disposal. y-indexeddb deletes by database name,
-			// and any row data needed to compute child document names remains
-			// readable from memory after Y.Doc.destroy(); disposal has already
-			// stopped observers and providers.
-			await tabManager.clearLocalData();
-		} catch (error) {
-			toast.error('Could not clear local data', {
-				description: extractErrorMessage(error),
-			});
-		} finally {
-			window.location.reload();
-		}
-	},
+import { requireSignedIn } from '@epicenter/auth';
+
+const fuji = openFuji({
+	userId,
+	peer,
+	bearerToken: () => auth.bearerToken,
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
 ```
-The order matters.
-The binding calls `applyAuthIdentity(identity)` when a signed-in identity is active.
+Same-user identity updates do not remount the workspace. Auth callbacks read `auth.state` at the boundary that asks for them: sync can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached. There is no mutation hook on the workspace.
+
+## Browser local persistence
+Authenticated browser workspaces open local IndexedDB only after auth has settled into a signed-in state. The session module guarantees that boundary: it builds the workspace lazily once `auth.state.status === 'signed-in'` and disposes it on sign-out.
+Two inputs flow into the workspace:
+- `userId` scopes local IndexedDB and BroadcastChannel names to the owner. It is captured once at build time because IDB and BroadcastChannel keys are immutable for the lifetime of the workspace.
+- `encryptionKeys: () => EncryptionKeys` is a callback the encryption coordinator invokes when an encrypted store is attached. Already-attached stores keep their derived keyring; same-user key rotation needs a re-attach to affect those stores.
+
+The browser factory shape is:
+```ts
+import { requireSignedIn } from '@epicenter/auth';
+
+export function openMyApp({
+	userId,
+	peer,
+	bearerToken,
+	encryptionKeys,
+}: {
+	userId: string;
+	peer: PeerIdentity;
+	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
+}) {
+	const doc = openMyAppDoc({ encryptionKeys });
+
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	// ...
+}
+```
+
+The storage name is derived inside `@epicenter/workspace` as:
+```text
+epicenter:v1:user:{userId}:yjs:{ydocGuid}
+```
+
+App code should not build that string. Device cleanup uses `wipeOwnerLocalYjsData({ userId, ydocGuids })`, which deletes known document databases and also sweeps enumerable IndexedDB names with the same owner prefix when the browser exposes `indexedDB.databases()`.
 
 ## Key lifecycle in the current code
 Keys are definitely loaded on login.
 That part is explicit.
-Logout is less clean than the high-level comments suggest.
-The reviewed code clears the auth session and asks each app to reset its local browser client, but it does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`.
-The logout path in the app clients is:
+Sign-out disposes the live workspace after the auth session changes.
+It does not wipe local IndexedDB data.
+The reviewed code still does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`; workspace disposal is the current key-drop boundary for `createSession` apps.
+The closest Bitwarden analogy is lock, not logout: Bitwarden documents unlock as using encrypted data already stored on disk and lock as deleting decrypted vault data and the account encryption key from memory. Bitwarden separately documents that logout wipes PIN settings. See [Understand Log In vs. Unlock](https://bitwarden.com/help/understand-log-in-vs-unlock/) and [Unlock With PIN](https://bitwarden.com/help/unlock-with-pin/).
+The logout path is owned by the per-app session module. `createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user update is a no-op at the session boundary, and a different-user transition disposes the workspace and reloads the page:
 ```ts
-bindAuthWorkspaceScope({
+import { createSession, type InferSignedIn } from '@epicenter/svelte';
+import { requireSignedIn } from '@epicenter/auth';
+
+export const session = createSession({
 	auth,
-	applyAuthIdentity(identity) {
-		workspace.encryption.applyKeys(identity.encryptionKeys);
-	},
-	async resetLocalClient() {
-		try {
-			// The workspace bundle owns teardown order. Its disposer closes app
-			// resources and destroys the root Y.Doc, which tells attachments like
-			// sync, broadcast channel, and y-indexeddb to stop before local
-			// IndexedDB data is deleted.
-			workspace[Symbol.dispose]();
-			// This is safe after disposal. y-indexeddb deletes by database name,
-			// and any row data needed to compute child document names remains
-			// readable from memory after Y.Doc.destroy(); disposal has already
-			// stopped observers and providers.
-			await workspace.clearLocalData();
-		} catch (error) {
-			toast.error('Could not clear local data', {
-				description: extractErrorMessage(error),
-			});
-		} finally {
-			window.location.reload();
-		}
+	build: (identity) => {
+		const userId = identity.user.id;
+		const workspace = openMyApp({
+			userId,
+			peer,
+			bearerToken: () => auth.bearerToken,
+			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+		});
+		return {
+			userId,
+			workspace,
+			[Symbol.dispose]() {
+				workspace[Symbol.dispose]();
+			},
+		};
 	},
 });
+
+export type MyAppSignedIn = InferSignedIn<typeof session>;
 ```
 So these points are implemented and verifiable:
 - keys are loaded on login
-- app reset code wipes the configured local IndexedDB stores on logout or user switch
-- reset destroys the workspace document before local storage is cleared, which shuts down attached sync paths
+- sign-out disposes the live workspace
+- identity switch reloads the browser client
+- owner-scoped IndexedDB data remains available for the same authenticated owner after reload
 This point is not visible as an explicit step in the reviewed code:
 - clearing the in-memory encryption state after logout
 That gap matters because the encrypted wrapper exposes `activateEncryption()` but no `deactivateEncryption()`.
@@ -218,7 +236,7 @@ Before activation, the wrapper is a passthrough store and `set()` writes plainte
 After activation, `set()` always encrypts.
 The active state holds the full keyring, the current key, and the current key version.
 Calling `activateEncryption()` again updates that state to a new keyring, but it does not switch the store back to plaintext mode.
-The document builder reinforces that shape: `attachEncryption(ydoc)` returns a coordinator whose `encryption.attachTables(ydoc, defs)` / `encryption.attachKv(ydoc, defs)` methods register every table and KV store as encrypted wrappers from the start, and `encryption.applyKeys(...)` later activates encryption across all of them.
+The document builder reinforces that shape: `attachEncryption(ydoc, { encryptionKeys })` returns a coordinator whose `encryption.attachTables(defs)` / `encryption.attachKv(defs)` methods register every table and KV store as encrypted wrappers from the start. The coordinator calls `encryptionKeys()` synchronously at each registration site, derives the keyring for that store, and activates the store before handing it back. There is no separate `applyKeys` mutation step: key read, registration, and activation happen in one call.
 
 ## What activation re-encrypts
 Activation does not rewrite everything.
@@ -270,5 +288,5 @@ The trust model is also clear.
 This is not a zero-knowledge design.
 The auth server can derive per-user transport keys from `ENCRYPTION_SECRETS`, while the sync relay forwards ciphertext values rather than plaintext values.
 The sharp edge is logout behavior.
-App reset hooks wipe their configured local IndexedDB stores on logout or user switch, but an explicit in-memory key deactivation path is not present in the reviewed code.
+App auth-transition hooks reload the browser client on logout or user switch, but an explicit in-memory key deactivation path is not present in the reviewed code.
 If you are deciding whether this architecture fits your threat model, focus on that line: the sync relay handles ciphertext values, but the deployment that owns `ENCRYPTION_SECRETS` remains inside the trust boundary.

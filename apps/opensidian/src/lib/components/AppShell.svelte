@@ -26,7 +26,6 @@
 
 	let paletteOpen = $state(false);
 	let chatOpen = $state(false);
-	const identity = $derived(auth.identity);
 
 	// ── First-visit onboarding ──────────────────────────────────────
 	// Only auto-seed for anonymous visitors. Authenticated users get
@@ -39,7 +38,7 @@
 			onboarded = true;
 			return;
 		}
-		if (identity) {
+		if (auth.state.status === 'signed-in') {
 			onboarded = true;
 			return;
 		}

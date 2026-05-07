@@ -12,6 +12,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
+import type { BetterAuthOptions } from 'better-auth';
+import { createAuthClient, InferPlugin } from 'better-auth/client';
+import { deviceAuthorizationClient } from 'better-auth/client/plugins';
+import type { customSession } from 'better-auth/plugins';
 import {
 	createLogger,
 	memorySink,
@@ -20,15 +24,12 @@ import {
 import type { BearerSession } from '../auth-types.js';
 import type { BetterAuthSessionResponse } from '../contracts/auth-session.js';
 import {
+	type DeviceTokenError,
 	loginWithDeviceCode,
 	logout,
+	type MachineAuthRequestError,
 	status,
 } from './machine-auth.js';
-import {
-	createMachineAuthTransport,
-	type DeviceTokenError,
-	type MachineAuthRequestError,
-} from './machine-auth-transport.js';
 import {
 	loadMachineSession,
 	saveMachineSession,
@@ -44,6 +45,9 @@ type Equal<TActual, TExpected> =
 		: false;
 type ResultError<TValue extends { error: unknown }> = NonNullable<
 	TValue['error']
+>;
+type EpicenterCustomSessionPlugin = ReturnType<
+	typeof customSession<BetterAuthSessionResponse, BetterAuthOptions>
 >;
 
 export type LoginWithDeviceCodeError = Expect<
@@ -129,6 +133,22 @@ function jsonResponse(value: unknown, init?: ResponseInit): Response {
 	});
 }
 
+function makeTestAuthClient(fetchImpl: typeof globalThis.fetch) {
+	const authClient = createAuthClient({
+		baseURL: EPICENTER_API_URL,
+		basePath: '/auth',
+		plugins: [
+			InferPlugin<EpicenterCustomSessionPlugin>(),
+			deviceAuthorizationClient(),
+		],
+		fetchOptions: { customFetchImpl: fetchImpl },
+	});
+	return authClient as typeof authClient & {
+		deviceCode: typeof authClient.device.code;
+		deviceToken: typeof authClient.device.token;
+	};
+}
+
 function makeMemoryKeychainBackend(): typeof Bun.secrets & {
 	values: Map<string, string>;
 } {
@@ -188,7 +208,7 @@ describe('machine auth free functions', () => {
 		}) as typeof fetch;
 
 		const result = await loginWithDeviceCode({
-			transport: createMachineAuthTransport({ fetch: fetchImpl }),
+			authClient: makeTestAuthClient(fetchImpl),
 			backend,
 			sleep: async () => {},
 		});
@@ -216,7 +236,7 @@ describe('machine auth free functions', () => {
 		}) as typeof fetch;
 
 		const result = await status({
-			transport: createMachineAuthTransport({ fetch: fetchImpl }),
+			authClient: makeTestAuthClient(fetchImpl),
 			backend,
 			log,
 		});
@@ -239,7 +259,7 @@ describe('machine auth free functions', () => {
 			new Response('nope', { status: 503 })) as unknown as typeof fetch;
 
 		const result = await status({
-			transport: createMachineAuthTransport({ fetch: fetchImpl }),
+			authClient: makeTestAuthClient(fetchImpl),
 			backend,
 			log,
 		});
@@ -269,7 +289,7 @@ describe('machine auth free functions', () => {
 		}) as typeof fetch;
 
 		const result = await loginWithDeviceCode({
-			transport: createMachineAuthTransport({ fetch: fetchImpl }),
+			authClient: makeTestAuthClient(fetchImpl),
 			backend,
 			sleep: async () => {},
 		});
@@ -288,7 +308,7 @@ describe('machine auth free functions', () => {
 		}) as typeof fetch;
 
 		const result = await logout({
-			transport: createMachineAuthTransport({ fetch: fetchImpl }),
+			authClient: makeTestAuthClient(fetchImpl),
 			backend,
 			log,
 		});

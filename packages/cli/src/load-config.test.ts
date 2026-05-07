@@ -34,12 +34,7 @@ const daemonTransportFields = `
 		observe: () => () => {}
 	},
 	sync: {
-		whenDisposed: Promise.resolve(),
-		status: { phase: 'connected', hasLocalChanges: false },
 		onStatusChange: () => () => {}
-	},
-	remote: {
-		invoke: async () => ({ data: null, error: null })
 	},
 `;
 
@@ -230,24 +225,19 @@ describe('loadDaemonConfig', () => {
 		expect(started.error?.name).toBe('InvalidRouteRuntime');
 	});
 
-	test('rejects route runtimes missing sync status', async () => {
+	test('accepts route runtimes without unused CLI fields', async () => {
 		writeConfig(`
 			export default {
 				daemon: {
 					routes: [{
 						route: 'demo',
 						start: () => ({
-							actions: {},
 							awareness: {
 								peers: () => new Map(),
 								observe: () => () => {}
 							},
 							sync: {
-								whenDisposed: Promise.resolve(),
 								onStatusChange: () => () => {}
-							},
-							remote: {
-								invoke: async () => ({ data: null, error: null })
 							},
 							async [Symbol.asyncDispose]() {}
 						})
@@ -261,8 +251,8 @@ describe('loadDaemonConfig', () => {
 		if (loaded.error !== null) return;
 
 		const started = await startDaemonRoutes(loaded.data);
-		expect(started.data).toBeNull();
-		expect(started.error?.name).toBe('InvalidRouteRuntime');
+		expect(started.error).toBeNull();
+		expect(started.data?.[0]?.route).toBe('demo');
 	});
 
 	test('cleans up resolved runtimes when a later route rejects', async () => {

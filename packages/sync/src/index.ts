@@ -16,14 +16,12 @@ export {
 	decodeRpcPayload,
 	decodeSyncMessage,
 	decodeSyncRequest,
-	decodeSyncStatus,
 	encodeAwareness,
 	encodeAwarenessStates,
 	encodeQueryAwareness,
 	encodeRpcRequest,
 	encodeRpcResponse,
 	encodeSyncRequest,
-	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
@@ -39,7 +37,11 @@ export {
 export { isRpcError, RpcError } from './rpc-errors';
 
 // Transport origin sentinels (shared across all sync layers)
-export { BC_ORIGIN, SYNC_ORIGIN } from './origins';
+export {
+	BC_ORIGIN,
+	SYNC_ORIGIN,
+	isTransportOrigin,
+} from './origins';
 
 // WebSocket subprotocol auth (shared client/server constants + helpers)
 export {

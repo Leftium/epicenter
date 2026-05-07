@@ -1,51 +1,61 @@
 <!--
-	Render gate that blocks children until a workspace `whenReady` promise resolves.
+	Render gate that blocks children until `pending` resolves.
 
-	Uses `Empty.*` for both loading and error states to keep the structure symmetric.
-	Both states are overridable via optional snippets.
+	Composition: defaults the loading state to <Loading> (the same shell
+	used by pre-auth layouts) so the moment children mount is the only
+	visible transition. The error state defaults to a workspace-flavored
+	Empty.Root with Reload + (optional) Sign out actions.
+
+	Both branches accept snippet overrides for apps that need different chrome.
 
 	@example
 	```svelte
 	<script lang="ts">
 		import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
-		import workspace from '$lib/workspace';
+		import { auth, fuji } from '$lib/fuji/client';
 	</script>
 
-	<WorkspaceGate whenReady={workspace.whenReady}>
-		<AppShell />
+	<WorkspaceGate pending={fuji.idb.whenLoaded} onSignOut={() => auth.signOut()}>
+		{@render children?.()}
 	</WorkspaceGate>
 	```
 -->
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
-	import { Spinner } from '@epicenter/ui/spinner';
+	import { Loading } from '@epicenter/ui/loading';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Snippet } from 'svelte';
 
 	let {
-		whenReady,
+		pending,
 		children,
 		loading,
 		error,
+		onSignOut,
 	}: {
-		/** Promise that resolves when the workspace is ready to read. */
-		whenReady: Promise<unknown>;
-		/** Optional override for the loading state. Defaults to Empty with a centered spinner. */
+		/** Promise the gate awaits before rendering children. */
+		pending: Promise<unknown>;
+		/** Children rendered after `pending` resolves. */
+		children: Snippet;
+		/** Override for the loading branch. Defaults to <Loading>. */
 		loading?: Snippet;
-		/** Optional override for the error state. Defaults to Empty with a warning icon. */
+		/** Override for the error branch. Receives the rejection reason. */
 		error?: Snippet<[unknown]>;
+		/**
+		 * If provided, the default error branch shows a Sign out button that
+		 * invokes this callback. Omit on apps that have no auth (or where the
+		 * gate runs above auth).
+		 */
+		onSignOut?: () => void;
 	} = $props();
 </script>
 
-{#await whenReady}
+{#await pending}
 	{#if loading}
 		{@render loading()}
 	{:else}
-		<Empty.Root class="min-h-screen border-none">
-			<Empty.Media>
-				<Spinner class="size-5 text-muted-foreground" />
-			</Empty.Media>
-		</Empty.Root>
+		<Loading class="h-dvh" />
 	{/if}
 {:then _}
 	{@render children()}
@@ -53,15 +63,26 @@
 	{#if error}
 		{@render error(err)}
 	{:else}
-		<Empty.Root class="min-h-screen border-none">
+		<Empty.Root class="h-dvh flex-none border-0">
 			<Empty.Media>
 				<TriangleAlertIcon class="size-8 text-muted-foreground" />
 			</Empty.Media>
 			<Empty.Title>Failed to load workspace</Empty.Title>
 			<Empty.Description>
-				Something went wrong initializing the workspace. Try refreshing the
-				page.
+				{err instanceof Error
+					? err.message
+					: 'The workspace could not be opened.'}
 			</Empty.Description>
+			<Empty.Content>
+				<div class="flex items-center gap-2">
+					<Button variant="outline" onclick={() => window.location.reload()}>
+						Reload
+					</Button>
+					{#if onSignOut}
+						<Button onclick={onSignOut}>Sign out</Button>
+					{/if}
+				</div>
+			</Empty.Content>
 		</Empty.Root>
 	{/if}
 {/await}

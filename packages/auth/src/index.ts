@@ -4,11 +4,15 @@ export {
 	BearerSession,
 } from './auth-types.ts';
 export {
-	type AuthChangeListener,
 	type AuthClient,
 	AuthError,
+	type AuthState,
+	type AuthStateChangeListener,
 	type CreateBearerAuthConfig,
 	type CreateCookieAuthConfig,
 	createBearerAuth,
 	createCookieAuth,
+	waitForAuthSettled,
+	waitForAuthState,
 } from './create-auth.ts';
+export { requireSignedIn } from './require-signed-in.ts';

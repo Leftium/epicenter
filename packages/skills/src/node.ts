@@ -318,7 +318,6 @@ export function openSkillsNodeWorkspace({
 		ydoc: doc.ydoc,
 		tables,
 		kv: doc.kv,
-		encryption: doc.encryption,
 		actions,
 		batch: doc.batch,
 		[Symbol.dispose]() {

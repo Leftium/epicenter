@@ -185,7 +185,6 @@ const blog = defineDocument((id: string) => {
 
   return {
     id, ydoc, tables, idb, sync,
-    whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 });

@@ -7,12 +7,17 @@
  * Key behaviors:
  * - Both factories expose and exercise every public AuthClient member
  * - Better Auth command methods receive the expected input shapes
- * - Fetch and WebSocket credentials stay transport-specific below the client
+ * - HTTP credentials stay auth-specific; sync credentials stay token-only
  */
 
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
-import type { AuthClient, AuthIdentity, BearerSession } from './index.ts';
+import type {
+	AuthClient,
+	AuthIdentity,
+	AuthState,
+	BearerSession,
+} from './index.ts';
 
 type BetterAuthSessionState = {
 	isPending: boolean;
@@ -20,13 +25,20 @@ type BetterAuthSessionState = {
 };
 
 type BetterAuthClientOptions = {
+	baseURL?: string;
+	basePath?: string;
 	fetchOptions?: {
 		auth?: {
 			type: 'Bearer';
 			token: () => string | undefined;
 		};
 		onSuccess?: (context: { response: Response }) => void;
+		customFetchImpl?: typeof fetch;
 	};
+};
+type PerCallFetchOptions = {
+	headers?: RequestInit['headers'];
+	onSuccess?: (context: { response: Response }) => void;
 };
 
 let listeners = new Set<(state: BetterAuthSessionState) => void>();
@@ -34,7 +46,6 @@ let currentState: BetterAuthSessionState = { isPending: false, data: null };
 let betterAuthOptions: BetterAuthClientOptions | null = null;
 let calls: Array<{ method: string; input?: unknown }> = [];
 let fetches: Array<{ input: Request | string | URL; init?: RequestInit }> = [];
-let sockets: FakeWebSocket[] = [];
 
 mock.module('better-auth/client', () => ({
 	createAuthClient(options: BetterAuthClientOptions) {
@@ -68,31 +79,35 @@ mock.module('better-auth/client', () => ({
 					return { error: null };
 				},
 			},
-			signOut: async () => {
+			signOut: async (input?: { fetchOptions?: PerCallFetchOptions }) => {
 				calls.push({ method: 'signOut' });
-				return { error: null };
+				if (!options.fetchOptions?.customFetchImpl) return { error: null };
+				return callCustomFetch(options, '/sign-out', {
+					method: 'POST',
+					body: {},
+					fetchOptions: input?.fetchOptions,
+				});
 			},
+			deviceCode: (body: unknown) =>
+				callCustomFetch(options, '/device/code', { method: 'POST', body }),
+			deviceToken: (body: unknown) =>
+				callCustomFetch(options, '/device/token', { method: 'POST', body }),
+			getSession: (input?: { fetchOptions?: PerCallFetchOptions }) =>
+				callCustomFetch(options, '/get-session', {
+					method: 'GET',
+					fetchOptions: input?.fetchOptions,
+				}),
 		};
 	},
 	InferPlugin: () => ({}),
 }));
 
-const { createBearerAuth, createCookieAuth } = await import('./index.ts');
+const { createBearerAuth, createCookieAuth, waitForAuthSettled } = await import(
+	'./index.ts'
+);
 
 const originalFetch = globalThis.fetch;
-const originalWebSocket = globalThis.WebSocket;
 const originalConsoleError = console.error;
-
-class FakeWebSocket {
-	constructor(
-		readonly url: string | URL,
-		readonly protocols?: string | string[],
-	) {
-		sockets.push(this);
-	}
-
-	close() {}
-}
 
 beforeEach(() => {
 	listeners = new Set();
@@ -100,7 +115,6 @@ beforeEach(() => {
 	betterAuthOptions = null;
 	calls = [];
 	fetches = [];
-	sockets = [];
 	globalThis.fetch = (async (
 		input: Request | string | URL,
 		init?: RequestInit,
@@ -108,15 +122,54 @@ beforeEach(() => {
 		fetches.push({ input, init });
 		return new Response(null, { status: 204 });
 	}) as unknown as typeof fetch;
-	globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
 	console.error = () => {};
 });
 
 afterEach(() => {
 	globalThis.fetch = originalFetch;
-	globalThis.WebSocket = originalWebSocket;
 	console.error = originalConsoleError;
+	mock.restore();
 });
+
+async function callCustomFetch(
+	options: BetterAuthClientOptions,
+	path: string,
+	{
+		method,
+		body,
+		fetchOptions,
+	}: {
+		method: string;
+		body?: unknown;
+		fetchOptions?: PerCallFetchOptions;
+	},
+) {
+	const fetchImpl = options.fetchOptions?.customFetchImpl;
+	if (!fetchImpl) return { data: null, error: null };
+
+	const headers = new Headers(fetchOptions?.headers);
+	let requestBody: string | undefined;
+	if (body !== undefined) {
+		headers.set('content-type', 'application/json');
+		requestBody = JSON.stringify(body);
+	}
+
+	const response = await fetchImpl(
+		new URL(`${options.baseURL ?? ''}${options.basePath ?? ''}${path}`),
+		{ method, headers, body: requestBody },
+	);
+	if (response.ok) fetchOptions?.onSuccess?.({ response });
+
+	const text = await response.text();
+	let parsed: unknown = {};
+	try {
+		parsed = text ? JSON.parse(text) : {};
+	} catch {
+		parsed = { error: text };
+	}
+	if (response.ok) return { data: parsed, error: null };
+	return { data: null, error: parsed };
+}
 
 function session({
 	userId = 'user-1',
@@ -152,6 +205,10 @@ function identityFromSession(value: BearerSession): AuthIdentity {
 	};
 }
 
+function signedInState(value: BearerSession): AuthState {
+	return { status: 'signed-in', identity: identityFromSession(value) };
+}
+
 function betterAuthSessionData(value: BearerSession) {
 	return {
 		user: value.user,
@@ -180,7 +237,7 @@ function emitSession(value: BearerSession | null) {
 type ContractCase = {
 	name: string;
 	create(): AuthClient;
-	expectTransport(): void;
+	expectTransport(auth: AuthClient): void;
 };
 
 const contractCases: ContractCase[] = [
@@ -192,15 +249,12 @@ const contractCases: ContractCase[] = [
 				initialIdentity: identityFromSession(session()),
 			});
 		},
-		expectTransport() {
+		expectTransport(auth) {
 			expect(new Headers(fetches[0]?.init?.headers).has('Authorization')).toBe(
 				false,
 			);
 			expect(fetches[0]?.init?.credentials).toBe('include');
-			expect(sockets[0]).toMatchObject({
-				url: 'ws://localhost/sync',
-				protocols: ['epicenter'],
-			});
+			expect(auth.bearerToken).toBeNull();
 			expect(betterAuthOptions?.fetchOptions?.auth).toBeUndefined();
 		},
 	},
@@ -213,15 +267,12 @@ const contractCases: ContractCase[] = [
 				saveSession: () => {},
 			});
 		},
-		expectTransport() {
+		expectTransport(auth) {
 			expect(new Headers(fetches[0]?.init?.headers).get('Authorization')).toBe(
 				'Bearer token-2',
 			);
 			expect(fetches[0]?.init?.credentials).toBe('omit');
-			expect(sockets[0]).toMatchObject({
-				url: 'ws://localhost/sync',
-				protocols: ['epicenter', 'bearer.token-2'],
-			});
+			expect(auth.bearerToken).toBe('token-2');
 			expect(betterAuthOptions?.fetchOptions?.auth?.type).toBe('Bearer');
 		},
 	},
@@ -230,16 +281,16 @@ const contractCases: ContractCase[] = [
 for (const contractCase of contractCases) {
 	test(`${contractCase.name} factory satisfies the AuthClient contract`, async () => {
 		const auth = contractCase.create();
-		const identities: Array<AuthIdentity | null> = [];
-		const unsubscribe = auth.onChange((identity) => identities.push(identity));
+		const states: AuthState[] = [];
+		const unsubscribe = auth.onStateChange((state) => states.push(state));
 
-		expect(auth.identity).toEqual(identityFromSession(session()));
-		await auth.whenReady;
+		expect(auth.state).toEqual(signedInState(session()));
+		await waitForAuthSettled(auth);
 
 		emitSession(session({ userId: 'user-2', token: 'token-2' }));
 
-		expect(identities).toEqual([
-			identityFromSession(session({ userId: 'user-2', token: 'token-2' })),
+		expect(states).toEqual([
+			signedInState(session({ userId: 'user-2', token: 'token-2' })),
 		]);
 		expect(
 			await auth.signIn({ email: 'user@example.com', password: 'pw' }),
@@ -268,11 +319,8 @@ for (const contractCase of contractCases) {
 		await auth.fetch('http://localhost/api', {
 			headers: { Authorization: 'Bearer caller-token' },
 		});
-		expect(auth.openWebSocket('ws://localhost/sync', ['epicenter'])).toBe(
-			sockets[0] as unknown as WebSocket,
-		);
 
-		contractCase.expectTransport();
+		contractCase.expectTransport(auth);
 		expect(calls).toEqual([
 			{
 				method: 'signIn.email',
@@ -299,7 +347,7 @@ for (const contractCase of contractCases) {
 		]);
 
 		expect(await auth.signOut()).toEqual(Ok(undefined));
-		expect(auth.identity).toBeNull();
+		expect(auth.state).toEqual({ status: 'signed-out' });
 		expect(calls.at(-1)).toEqual({ method: 'signOut' });
 
 		unsubscribe();

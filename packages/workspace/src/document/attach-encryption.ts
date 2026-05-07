@@ -2,9 +2,9 @@
  * attachEncryption: per-ydoc encryption coordinator.
  *
  * A workspace owns several `EncryptedYKeyValueLww` stores (one per table plus
- * the KV store). This attachment coordinates key application across all of
- * them: it derives a per-workspace HKDF keyring from base64 user keys and
- * calls `activateEncryption(keyring)` on every registered store in lockstep.
+ * the KV store). This attachment derives a per-workspace HKDF keyring at
+ * registration time and calls `activateEncryption(keyring)` on each store
+ * before the caller gets it back.
  *
  * ## Method-on-coordinator pattern
  *
@@ -13,36 +13,34 @@
  * exports, call the methods on the returned attachment:
  *
  * ```ts
- * const encryption = attachEncryption(ydoc);
- * const tables = encryption.attachTables(ydoc, defs);
- * const kv = encryption.attachKv(ydoc, defs);
+ * const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
+ * const tables = encryption.attachTables(defs);
+ * const kv = encryption.attachKv(defs);
  * ```
  *
  * The method names deliberately mirror the plaintext primitives
  * (`attachTable`, `attachTables`, `attachKv`) so the pattern reads
  * symmetrically: "encryption's attach-tables" vs "plain attach-tables."
  *
- * ## Registration model
+ * ## Key source: lazy callback
  *
- * Each method creates the backing `EncryptedYKeyValueLww` store, registers it
- * with the coordinator, and returns the typed helper. The coordinator holds
- * the list and applies the current keyring (if any) to each new registrant
- * immediately: so registering after `applyKeys` has run does not leave the
- * store plaintext.
+ * `encryptionKeys` is a callback into whoever owns identity.
+ * The coordinator calls it synchronously at every `attachTable` / `attachKv` /
+ * `attachIndexedDb` site, derives the keyring, and activates the store. The
+ * keyring is not cached on the attachment: each registration is its own
+ * derivation, which keeps state out of this layer entirely.
  *
- * ## Keyring dedup
- *
- * Auth token refreshes fire `onLogin` repeatedly with identical key material.
- * The attachment keeps the last applied keyring so subsequent calls with the
- * same keys short-circuit before HKDF and per-store activation run. Equality is
- * order-independent: reversed key arrays are treated as the same keyring.
+ * Same-user identity updates (key rotation, profile edits) do not flow
+ * through this attachment. The session lifecycle reloads the page on
+ * different-user transitions; same-user updates are observed lazily via
+ * the `encryptionKeys` callback the next time it runs.
  *
  * ## Disposal
  *
  * The attachment registers a single `ydoc.on('destroy')` listener that
- * disposes every registered store and resolves `whenDisposed`. Callers tear
- * down encryption by calling `ydoc.destroy()`: the attachment does not
- * expose a standalone `dispose()` method.
+ * disposes every registered store. Callers tear down encryption by calling
+ * `ydoc.destroy()`: the attachment does not expose a standalone `dispose()`
+ * method.
  *
  * ## What this attachment does NOT do
  *
@@ -72,13 +70,16 @@ import {
 	base64ToBytes,
 	deriveWorkspaceKey,
 	type EncryptionKeys,
-	encryptionKeysEqual,
 } from '@epicenter/encryption';
 import type * as Y from 'yjs';
 import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import {
+	attachEncryptedProvider,
+	type IndexedDbAttachment,
+} from './attach-indexed-db.js';
 import type { Kv, KvDefinitions } from './attach-kv.js';
 import type {
 	InferTableRow,
@@ -91,6 +92,7 @@ import type {
 } from './attach-table.js';
 import { createKv, createReadonlyTable, createTable } from './internal.js';
 import { KV_KEY, TableKey } from './keys.js';
+import { createOwnedYjsKey } from './local-yjs-key.js';
 
 /**
  * The coordinator treats every registered store uniformly: it only calls
@@ -100,53 +102,28 @@ import { KV_KEY, TableKey } from './keys.js';
 // biome-ignore lint/suspicious/noExplicitAny: variance
 type AnyEncryptedStore = EncryptedYKeyValueLww<any>;
 
+export type AttachEncryptionOptions = {
+	/**
+	 * Lazy reader for the current user's encryption keys.
+	 *
+	 * Called synchronously at every `attachTable` / `attachKv` /
+	 * `attachIndexedDb` site. Throw if no keys are available (e.g. signed-out):
+	 * a throw here means the workspace outlived its signed-in scope, which is a
+	 * caller bug.
+	 */
+	encryptionKeys: () => EncryptionKeys;
+};
+
 export type EncryptionAttachment = {
 	/**
-	 * Apply encryption keys to every registered store. Synchronous: HKDF via
-	 * @noble/hashes and XChaCha20 via @noble/ciphers are both sync.
-	 *
-	 * On every call (including the first), every registered store walks its
-	 * entries and converges them to the current-version key:
-	 *
-	 * - Plaintext entries → encrypted with the current-version key.
-	 * - Ciphertext at a non-current version (but decryptable via the keyring)
-	 *   → decrypted and re-encrypted with the current-version key.
-	 * - Ciphertext already at the current version → no-op.
-	 *
-	 * This is how key rotation works: call `applyKeys` with the new keyring,
-	 * and all at-rest data upgrades to the new key. The ciphertext upgrades
-	 * propagate to peers via normal CRDT sync; eventually every device's live
-	 * view contains only current-version ciphertext.
-	 *
-	 * Dedup: a second call with an identical keyring is a no-op.
-	 * Order of the input array does not affect equality.
-	 *
-	 * Stores registered after this call will be auto-activated with the cached
-	 * keyring at registration time.
-	 */
-	applyKeys(keys: EncryptionKeys): void;
-
-	/**
-	 * Register a store for encryption coordination.
-	 *
-	 * If keys have already been applied, the store is activated immediately
-	 * with the cached keyring. Otherwise it is queued for the next
-	 * `applyKeys` call.
-	 *
-	 * @internal Called by the coordinator's own `attachTable` / `attachKv`
-	 * methods and by test setup, not by application code.
-	 */
-	register(store: AnyEncryptedStore): void;
-
-	/**
-	 * Attach an encrypted table: mirror of the plaintext `attachTable(ydoc,
-	 * name, def)` but with the store registered for encryption coordination.
+	 * Attach an encrypted table to the coordinator's Y.Doc. The store is
+	 * activated with the current keyring (via `encryptionKeys()`) before being
+	 * returned.
 	 */
 	attachTable<
 		// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
 		TTableDefinition extends TableDefinition<any>,
 	>(
-		ydoc: Y.Doc,
 		name: string,
 		definition: TTableDefinition,
 	): Table<InferTableRow<TTableDefinition>>;
@@ -155,111 +132,112 @@ export type EncryptionAttachment = {
 		// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
 		TTableDefinition extends TableDefinition<any>,
 	>(
-		ydoc: Y.Doc,
 		name: string,
 		definition: TTableDefinition,
 	): ReadonlyTable<InferTableRow<TTableDefinition>>;
 
 	/**
 	 * Batch sugar over `attachTable`: one encrypted store per entry, keyed by
-	 * name. Mirror of the plaintext `attachTables(ydoc, defs)`.
+	 * name.
 	 */
-	attachTables<T extends TableDefinitions>(
-		ydoc: Y.Doc,
-		definitions: T,
-	): Tables<T>;
+	attachTables<T extends TableDefinitions>(definitions: T): Tables<T>;
 
 	attachReadonlyTables<T extends TableDefinitions>(
-		ydoc: Y.Doc,
 		definitions: T,
 	): ReadonlyTables<T>;
 
 	/**
-	 * Attach the encrypted KV singleton. Mirror of the plaintext
-	 * `attachKv(ydoc, defs)`.
+	 * Attach the encrypted KV singleton to the coordinator's Y.Doc.
 	 */
-	attachKv<T extends KvDefinitions>(ydoc: Y.Doc, definitions: T): Kv<T>;
+	attachKv<T extends KvDefinitions>(definitions: T): Kv<T>;
 
-	/** Resolves when the Y.Doc is destroyed and every store has been disposed. */
-	readonly whenDisposed: Promise<unknown>;
+	/**
+	 * Attach encrypted local IndexedDB persistence for a root or child Y.Doc.
+	 *
+	 * Reads keys via `options.encryptionKeys()` at attach time and binds the derived
+	 * keyring to the provider. Same-user key rotation is not observed by the
+	 * provider after this point; cross-user transitions reload the page.
+	 */
+	attachIndexedDb(
+		targetYdoc: Y.Doc,
+		opts: { userId: string },
+	): IndexedDbAttachment;
 };
 
 /**
  * Create an encryption coordinator bound to `ydoc`.
  *
- * The returned coordinator owns `attachTable` / `attachTables` / `attachKv`
- * methods: call them to register encrypted stores. Call `applyKeys(keys)`
- * after login (or whenever the auth session produces keys) to activate
- * encryption across every registered store.
+ * The returned coordinator owns `attachTable` / `attachTables` / `attachKv` /
+ * `attachIndexedDb` methods: call them to register encrypted resources. The
+ * coordinator reads `options.encryptionKeys()` synchronously at each registration
+ * site and activates the resource before returning it.
  */
-export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
+export function attachEncryption(
+	ydoc: Y.Doc,
+	options: AttachEncryptionOptions,
+): EncryptionAttachment {
 	const stores: AnyEncryptedStore[] = [];
 	const workspaceId = ydoc.guid;
 
-	/** Cache the last-applied keyring so late-registered stores can activate. */
-	let cachedKeyring: Map<number, Uint8Array> | undefined;
-	/** Last-applied encryption keys for same-key dedup. */
-	let lastKeys: EncryptionKeys | undefined;
-
-	let resolveDisposed!: () => void;
-	const whenDisposed = new Promise<void>((resolve) => {
-		resolveDisposed = resolve;
-	});
-
 	ydoc.on('destroy', () => {
 		for (const store of stores) store.dispose();
-		resolveDisposed();
 	});
 
-	const attachment: EncryptionAttachment = {
-		applyKeys(keys) {
-			if (lastKeys !== undefined && encryptionKeysEqual(keys, lastKeys)) return;
-			lastKeys = [...keys] as EncryptionKeys;
+	function deriveKeyring(
+		keys: EncryptionKeys,
+		targetWorkspaceId: string,
+	): Map<number, Uint8Array> {
+		const keyring = new Map<number, Uint8Array>();
+		for (const { version, userKeyBase64 } of keys) {
+			const userKey = base64ToBytes(userKeyBase64);
+			keyring.set(version, deriveWorkspaceKey(userKey, targetWorkspaceId));
+		}
+		return keyring;
+	}
 
-			const keyring = new Map<number, Uint8Array>();
-			for (const { version, userKeyBase64 } of keys) {
-				const userKey = base64ToBytes(userKeyBase64);
-				keyring.set(version, deriveWorkspaceKey(userKey, workspaceId));
-			}
-			cachedKeyring = keyring;
-			for (const store of stores) store.activateEncryption(keyring);
-		},
-		register(store) {
-			stores.push(store);
-			if (cachedKeyring !== undefined) store.activateEncryption(cachedKeyring);
-		},
-		attachTable(ydoc, name, definition) {
+	function register(store: AnyEncryptedStore): void {
+		stores.push(store);
+		store.activateEncryption(deriveKeyring(options.encryptionKeys(), workspaceId));
+	}
+
+	const attachment: EncryptionAttachment = {
+		attachTable(name, definition) {
 			const store = createEncryptedYkvLww(ydoc, TableKey(name));
-			attachment.register(store);
+			register(store);
 			return createTable(store, definition, name);
 		},
-		attachReadonlyTable(ydoc, name, definition) {
+		attachReadonlyTable(name, definition) {
 			const store = createEncryptedYkvLww(ydoc, TableKey(name));
-			attachment.register(store);
+			register(store);
 			return createReadonlyTable(store, definition, name);
 		},
-		attachTables(ydoc, definitions) {
+		attachTables(definitions) {
 			return Object.fromEntries(
 				Object.entries(definitions).map(([name, def]) => [
 					name,
-					attachment.attachTable(ydoc, name, def),
+					attachment.attachTable(name, def),
 				]),
 			) as Tables<typeof definitions>;
 		},
-		attachReadonlyTables(ydoc, definitions) {
+		attachReadonlyTables(definitions) {
 			return Object.fromEntries(
 				Object.entries(definitions).map(([name, def]) => [
 					name,
-					attachment.attachReadonlyTable(ydoc, name, def),
+					attachment.attachReadonlyTable(name, def),
 				]),
 			) as ReadonlyTables<typeof definitions>;
 		},
-		attachKv(ydoc, definitions) {
+		attachKv(definitions) {
 			const store = createEncryptedYkvLww(ydoc, KV_KEY);
-			attachment.register(store);
+			register(store);
 			return createKv(store, definitions);
 		},
-		whenDisposed,
+		attachIndexedDb(targetYdoc, { userId }) {
+			return attachEncryptedProvider(targetYdoc, {
+				databaseName: createOwnedYjsKey(userId, targetYdoc.guid),
+				keyring: deriveKeyring(options.encryptionKeys(), targetYdoc.guid),
+			});
+		},
 	};
 
 	return attachment;

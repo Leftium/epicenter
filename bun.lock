@@ -107,7 +107,6 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -156,7 +155,6 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -226,7 +224,6 @@
         "@codemirror/autocomplete": "^6.20.1",
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -327,7 +324,6 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
@@ -450,7 +446,6 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/auth-workspace": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
@@ -462,6 +457,7 @@
         "@tanstack/ai-gemini": "catalog:",
         "@tanstack/ai-grok": "catalog:",
         "@tanstack/ai-openai": "catalog:",
+        "@tanstack/ai-svelte": "^0.6.7",
         "arktype": "catalog:",
         "dompurify": "^3.3.3",
         "marked": "^17.0.5",
@@ -516,7 +512,6 @@
       "dependencies": {
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
-        "@epicenter/sync": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "wellcrafted": "catalog:",
@@ -540,18 +535,6 @@
       },
       "peerDependencies": {
         "svelte": "^5.0.0",
-      },
-    },
-    "packages/auth-workspace": {
-      "name": "@epicenter/auth-workspace",
-      "version": "0.1.0",
-      "dependencies": {
-        "@epicenter/auth": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
       },
     },
     "packages/cli": {
@@ -767,6 +750,7 @@
         "@types/node": "catalog:",
         "better-sqlite3": "^12.4.1",
         "drizzle-kit": "catalog:",
+        "fake-indexeddb": "^6.2.5",
         "filenamify": "^7.0.1",
         "typescript": "catalog:",
         "yjs": "catalog:",
@@ -1026,8 +1010,6 @@
     "@epicenter/auth": ["@epicenter/auth@workspace:packages/auth"],
 
     "@epicenter/auth-svelte": ["@epicenter/auth-svelte@workspace:packages/auth-svelte"],
-
-    "@epicenter/auth-workspace": ["@epicenter/auth-workspace@workspace:packages/auth-workspace"],
 
     "@epicenter/breddit": ["@epicenter/breddit@workspace:apps/breddit"],
 
@@ -2316,6 +2298,8 @@
     "exsolve": ["exsolve@1.0.8", "", {}, "sha512-LmDxfWXwcTArk8fUEnOfSZpHOJ6zOMUJKOtFLFqJLoKJetuQG874Uc7/Kki7zFLzYybmZhp1M7+98pfMqeX8yA=="],
 
     "extend": ["extend@3.0.2", "", {}, "sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g=="],
+
+    "fake-indexeddb": ["fake-indexeddb@6.2.5", "", {}, "sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w=="],
 
     "fast-decode-uri-component": ["fast-decode-uri-component@1.0.1", "", {}, "sha512-WKgKWg5eUxvRZGwW8FvfbaH7AXSh2cL+3j5fMGzUMCxWBJ3dV3a7Wz8y2f/uQ0e3B6WmodD3oS54jTQ9HVTIIg=="],
 

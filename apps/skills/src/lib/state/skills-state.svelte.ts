@@ -45,6 +45,11 @@ function createSkillsState() {
 	});
 
 	return {
+		[Symbol.dispose]() {
+			skillsMap[Symbol.dispose]();
+			referencesMap[Symbol.dispose]();
+		},
+
 		/** All skills, sorted alphabetically by name. */
 		get skills() {
 			return skills;
@@ -172,3 +177,7 @@ function createSkillsState() {
 }
 
 export const skillsState = createSkillsState();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => skillsState[Symbol.dispose]());
+}

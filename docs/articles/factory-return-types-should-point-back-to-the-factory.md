@@ -73,6 +73,22 @@ export type DisposableCache = ReturnType<typeof createDisposableCache>;
 
 `satisfies` says: check this value against a contract without replacing the value. `ReturnType<typeof createX>` says: name the value after the factory defines it.
 
+Sometimes the public type is not the whole factory result. `createSession` returns a state machine, but apps usually want to name the signed-in payload inside `session.current`. In that case, use a focused inference helper instead of forcing `ReturnType` to fit:
+
+```typescript
+export const session = createSession({
+  auth,
+  build: (identity) => {
+    const workspace = openMyApp({ userId: identity.user.id });
+    return { userId: identity.user.id, workspace, [Symbol.dispose]() {} };
+  },
+});
+
+export type MyAppSignedIn = InferSignedIn<typeof session>;
+```
+
+The point is still the same: the build closure owns the payload shape, and the exported type follows it.
+
 The rule is narrow on purpose. Use it when the type is exactly the return shape of one factory and the factory is the best place to understand the API. Do not use it for shared contracts implemented by several factories:
 
 ```typescript

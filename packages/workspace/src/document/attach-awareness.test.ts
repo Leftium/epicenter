@@ -21,58 +21,25 @@ function setup() {
 }
 
 describe('AwarenessAttachment', () => {
-	test('setLocal() and getLocal() round-trip', () => {
-		const { awareness } = setup();
+	test('setLocal() publishes local state', () => {
+		const { awareness, raw } = setup();
 		awareness.setLocal({ cursorX: 10, cursorY: 20, name: 'alice' });
 
-		expect(awareness.getLocal()).toEqual({
+		expect(raw.getLocalState()).toEqual({
 			cursorX: 10,
 			cursorY: 20,
 			name: 'alice',
 		});
 	});
 
-	test('setLocalField() updates single field', () => {
-		const { awareness } = setup();
+	test('setLocal() updates one field without clearing others', () => {
+		const { awareness, raw } = setup();
 		awareness.setLocal({ cursorX: 0, cursorY: 0, name: 'alice' });
-		awareness.setLocalField('cursorX', 1);
+		awareness.setLocal({ cursorX: 1 });
 
-		expect(awareness.getLocal()).toEqual({
+		expect(raw.getLocalState()).toEqual({
 			name: 'alice',
 			cursorX: 1,
-			cursorY: 0,
-		});
-	});
-
-	test('getLocalField() returns undefined when not set', () => {
-		const { awareness, raw } = setup();
-		raw.setLocalState(null);
-		expect(awareness.getLocalField('cursorX')).toBeUndefined();
-	});
-
-	test('getAll() excludes peers missing any defined field', () => {
-		const { awareness, raw } = setup();
-		raw.getStates().set(202, { cursorX: 'bad', name: 'remote' });
-
-		expect(awareness.getAll().has(202)).toBe(false);
-	});
-
-	test('getAll() includes peers with all fields valid', () => {
-		const { awareness, raw } = setup();
-		raw.getStates().set(303, { cursorX: 1, cursorY: 2, name: 'ok' });
-
-		expect(awareness.getAll().get(303)).toEqual({
-			cursorX: 1,
-			cursorY: 2,
-			name: 'ok',
-		});
-	});
-
-	test('getAll() includes self', () => {
-		const { awareness, raw } = setup();
-		expect(awareness.getAll().get(raw.clientID)).toEqual({
-			name: 'local',
-			cursorX: 0,
 			cursorY: 0,
 		});
 	});
@@ -166,7 +133,7 @@ describe('attachAwareness', () => {
 			initial: { name: 'alice', score: 7 },
 		});
 
-		expect(awareness.getLocal()).toEqual({ name: 'alice', score: 7 });
+		expect(awareness.raw.getLocalState()).toEqual({ name: 'alice', score: 7 });
 	});
 
 	test('empty defs — works as a structural slot', () => {
@@ -179,7 +146,7 @@ describe('attachAwareness', () => {
 		// With zero defined fields, every state vacuously validates and
 		// surfaces as `{}`: no fields to project.
 		awareness.raw.getStates().set(777, { anything: 'goes' });
-		expect(awareness.getAll().get(777)).toEqual({});
+		expect(awareness.peers().get(777)).toEqual({});
 	});
 
 	test('ydoc.destroy() tears down the Awareness via its self-registered hook', () => {

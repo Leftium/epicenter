@@ -19,7 +19,7 @@ export function openWhispering() {
 		doc.tables.recordings,
 		{
 			dir: PATHS.DB.RECORDINGS(),
-			whenReady: idb.whenLoaded,
+			waitFor: idb.whenLoaded,
 		},
 	);
 

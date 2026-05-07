@@ -1,11 +1,9 @@
-import { createBearerAuth } from '@epicenter/auth-svelte';
-import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
+import { requireSignedIn } from '@epicenter/auth';
+import { createBearerAuth, waitForAuthState } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { toast } from '@epicenter/ui/sonner';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { storage } from '@wxt-dev/storage';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { session } from '$lib/auth';
 import type { DeviceId } from '$lib/workspace/definition';
 import { openTabManager } from './extension';
@@ -17,6 +15,17 @@ export const auth = createBearerAuth({
 	initialSession: session.get(),
 	saveSession: (next) => session.set(next),
 });
+
+const signedInState = await waitForAuthState(
+	auth,
+	(state) => state.status === 'signed-in',
+);
+if (signedInState.status !== 'signed-in') {
+	throw new Error(
+		'Cannot open Tab Manager workspace: signed-in auth required.',
+	);
+}
+const userId = signedInState.identity.user.id;
 
 /**
  * Resolve the peer descriptor before constructing the workspace. `id` and
@@ -40,18 +49,20 @@ const peer = await Promise.all([
 	platform: 'chrome-extension' as const,
 }));
 
-export const tabManager = await openTabManager({ auth, peer });
+export const tabManager = await openTabManager({
+	userId,
+	peer,
+	bearerToken: () => auth.bearerToken,
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+});
 
 /**
  * Register this browser installation as a device in the workspace.
  *
  * Upserts the device row. Preserves existing name if present, otherwise
- * uses the resolved default. Awaits idb hydration before writing.
- * Idempotent: fires on every applied identity, so `lastSeen` refreshes when
- * auth changes reconnect the workspace.
+ * uses the resolved default.
  */
 async function registerDevice(): Promise<void> {
-	await tabManager.whenLoaded;
 	const { id, name } = tabManager.peer;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
@@ -64,36 +75,32 @@ async function registerDevice(): Promise<void> {
 	});
 }
 
-bindAuthWorkspaceScope({
-	auth,
-	applyAuthIdentity(session) {
-		tabManager.encryption.applyKeys(session.encryptionKeys);
-		void registerDevice();
-	},
-	async resetLocalClient() {
-		try {
-			// The workspace bundle owns teardown order. Its disposer destroys the
-			// root Y.Doc, which tells attachments like sync, broadcast channel, and
-			// y-indexeddb to stop before local IndexedDB data is deleted.
-			tabManager[Symbol.dispose]();
-			// This is safe after disposal. y-indexeddb deletes by database name,
-			// and any row data needed to compute child document names remains
-			// readable from memory after Y.Doc.destroy(); disposal has already
-			// stopped observers and providers.
-			await tabManager.clearLocalData();
-		} catch (error) {
-			toast.error('Could not clear local data', {
-				description: extractErrorMessage(error),
-			});
-		} finally {
-			window.location.reload();
-		}
-	},
+void tabManager.idb.whenLoaded.then(registerDevice);
+
+const unsubscribeAuthState = auth.onStateChange((state) => {
+	switch (state.status) {
+		case 'pending':
+			return;
+		case 'signed-out':
+			return window.location.reload();
+		case 'signed-in':
+			if (state.identity.user.id !== userId) window.location.reload();
+			return;
+		default:
+			state satisfies never;
+	}
 });
+
+export async function forgetTabManagerDevice(): Promise<void> {
+	await tabManager.wipe();
+	window.location.reload();
+}
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
+		unsubscribeAuthState();
 		auth[Symbol.dispose]();
+		tabManager[Symbol.dispose]();
 	});
 }
 

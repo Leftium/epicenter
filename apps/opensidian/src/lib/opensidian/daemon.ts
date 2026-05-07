@@ -1,4 +1,7 @@
-import { createMachineAuthClient } from '@epicenter/auth/node';
+import {
+	createMachineAuthClient,
+	requireSignedIn,
+} from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachAwareness,
@@ -24,7 +27,10 @@ export function defineOpensidianDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const doc = openOpensidianDoc({ clientID: hashClientId(projectDir) });
+			const doc = openOpensidianDoc({
+				clientID: hashClientId(projectDir),
+				encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+			});
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
 			});
@@ -40,7 +46,7 @@ export function defineOpensidianDaemon({
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				auth,
+				bearerToken: () => auth.bearerToken,
 				awareness,
 			});
 
@@ -59,7 +65,7 @@ export function defineOpensidianDaemon({
 				remote,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();
-					await sync.whenDisposed;
+					await Promise.all([sync.whenDisposed, yjsLog.whenDisposed]);
 				},
 			};
 		},

@@ -22,8 +22,8 @@ export function fromDisposableCache<
 ): { readonly current: TValue } {
 	const handle = $derived(cache.open(idFn()));
 	$effect(() => {
-		const h = handle;
-		return () => h[Symbol.dispose]();
+		const handleToDispose = handle;
+		return () => handleToDispose[Symbol.dispose]();
 	});
 	return {
 		get current() {

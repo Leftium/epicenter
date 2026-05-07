@@ -36,8 +36,7 @@ Show what specific code will change. Use fenced diff blocks with file paths.
      return {
          get current() { return client; },
 -        async reset() {
--            await client.clearLocalData();
--            await client.dispose();
+-            await client.wipe();
 -            client = buildWorkspaceClient();
 +        async reset(options?: { key?: Uint8Array }) {
 +            await client.dispose();
@@ -60,8 +59,8 @@ Show how components relate before and after the change. Use the characters from 
 ```
 auth ──signOut()──→ workspace.reset() ──→ internally rebuilds
                          │ (self-manages lifecycle)
-                         ├── clearLocalData()
                          ├── dispose()
+                         ├── wipe()
                          └── client = build()
 ```
 

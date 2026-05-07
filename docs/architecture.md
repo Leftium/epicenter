@@ -111,7 +111,7 @@ const app = defineDocument((id: string) => {
 	const kv = attachKv(ydoc, { themeMode });
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachSync(ydoc, {
-		url: (docId) => toWsUrl(`https://sync.example.com/workspaces/${docId}`),
+		url: toWsUrl(`https://sync.example.com/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 	});
 	return { id, ydoc, tables, kv, idb, sync, /* ... */ };
@@ -143,17 +143,15 @@ const workspace = await app.load('example.app');
 That promise is the line between construction and full availability. Create now, await later, or use `load()` to do both at once.
 
 ## Disposal cascades from `ydoc.destroy()`
-Teardown runs through Yjs itself. Every `attach*` function registers `ydoc.once('destroy')` internally, so when the builder's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment tears down in parallel. Each attachment exposes a `whenDisposed` promise that resolves after its real cleanup completes (IDB awaits `db.close()`, sync awaits the supervisor + `onclose`), and the bundle aggregates them:
+Teardown runs through Yjs itself. Every async `attach*` function registers `ydoc.once('destroy')` internally, so when the builder's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment starts teardown in parallel. Attachments with genuine async cleanup expose `whenDisposed` for the callers that need a barrier:
 
 ```ts
-whenDisposed: Promise.all([
-  idb.whenDisposed,
-  sync.whenDisposed,
-  encryption.whenDisposed,
-]).then(() => {}),
+workspace[Symbol.dispose]();
+await workspace.idb.whenDisposed;
+await workspace.sync.whenDisposed;
 ```
 
-The refcounted cache calls `[Symbol.dispose]()` on the last release (after the `gcTime` grace period) and awaits `bundle.whenDisposed` in its `close()` / `closeAll()` methods.
+Browser bundles expose `wipe()` for explicit local cleanup such as "Forget this device." Sign-out does not call it. The wipe sequence disposes the live bundle, awaits the async attachments needed to unblock storage deletion, then deletes persisted local state. The refcounted cache still calls `[Symbol.dispose]()` on the last release after the `gcTime` grace period; it does not aggregate an async disposal barrier.
 
 ## Write and read flow
 Writes always hit Yjs first. Everything else reacts to that state instead of becoming a competing source of truth.
@@ -226,7 +224,7 @@ const opensidian = defineDocument((id: string) => {
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
-		auth,
+		bearerToken: () => auth.bearerToken,
 		waitFor: idb.whenLoaded,
 	});
 	const sqliteIndex = createSqliteIndex({ ydoc, tables });
@@ -243,7 +241,7 @@ const opensidian = defineDocument((id: string) => {
 export const workspace = opensidian.open('opensidian');
 ```
 
-That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/auth-svelte` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth-workspace` applies encryption keys and reset policy.
+That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/auth-svelte` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity used by lazy encryption key callbacks.
 
 ```text
 defineDocument(builder).open('opensidian')

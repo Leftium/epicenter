@@ -1,4 +1,4 @@
-import { attachEncryption } from '@epicenter/workspace';
+import { attachKv, attachTables } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { SKILLS_WORKSPACE_ID } from './constants.js';
 import { referencesTable, skillsTable } from './tables.js';
@@ -15,12 +15,11 @@ export function openSkills({
 	const ydoc = new Y.Doc({ guid: workspaceId, gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
 
-	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, {
+	const tables = attachTables(ydoc, {
 		skills: skillsTable,
 		references: referencesTable,
 	});
-	const kv = encryption.attachKv(ydoc, {});
+	const kv = attachKv(ydoc, {});
 
 	return {
 		get id() {
@@ -29,7 +28,6 @@ export function openSkills({
 		ydoc,
 		tables,
 		kv,
-		encryption,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		[Symbol.dispose]() {
 			ydoc.destroy();

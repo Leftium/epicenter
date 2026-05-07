@@ -9,8 +9,8 @@
  */
 
 import { Ok, tryAsync, trySync } from 'wellcrafted/result';
-import { whispering } from '$lib/whispering/client';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { whispering } from '$lib/whispering/client';
 import { whisperingKv } from '$lib/workspace';
 
 // ── Migration state ──────────────────────────────────────────────────────────
@@ -79,10 +79,7 @@ export async function migrateOldSettings(): Promise<void> {
 	const { error: readyError } = await tryAsync({
 		try: () => whispering.whenReady,
 		catch: (err) => {
-			console.warn(
-				'[settings-migration] whenReady failed, aborting:',
-				err,
-			);
+			console.warn('[settings-migration] whenReady failed, aborting:', err);
 			return Ok(undefined);
 		},
 	});
@@ -166,8 +163,8 @@ function tryParseJson(raw: string | null): Record<string, unknown> | null {
 function toNumber(raw: unknown): number | undefined {
 	if (typeof raw === 'number') return raw;
 	if (typeof raw === 'string') {
-		const n = parseFloat(raw);
-		return Number.isNaN(n) ? undefined : n;
+		const value = parseFloat(raw);
+		return Number.isNaN(value) ? undefined : value;
 	}
 	return undefined;
 }
@@ -175,8 +172,8 @@ function toNumber(raw: unknown): number | undefined {
 function toInteger(raw: unknown): number | undefined {
 	if (typeof raw === 'number') return Number.isInteger(raw) ? raw : undefined;
 	if (typeof raw === 'string') {
-		const n = parseInt(raw, 10);
-		return Number.isNaN(n) ? undefined : n;
+		const value = parseInt(raw, 10);
+		return Number.isNaN(value) ? undefined : value;
 	}
 	return undefined;
 }

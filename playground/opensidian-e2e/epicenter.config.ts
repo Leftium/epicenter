@@ -60,26 +60,27 @@ mkdirSync(MATERIALIZER_DIR, { recursive: true });
 const WORKSPACE_ID = 'opensidian';
 const machineAuth = createMachineAuth();
 
+const { data: keys, error: keysError } =
+	await machineAuth.getActiveEncryptionKeys({ serverOrigin: SERVER_URL });
+if (keysError) throw keysError;
+if (!keys) {
+	throw new Error(
+		'[opensidian-playground] no active encryption keys. Run `epicenter auth login` first.',
+	);
+}
+
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
-const encryption = attachEncryption(ydoc);
-const tables = encryption.attachTables(ydoc, opensidianTables);
-const kv = encryption.attachKv(ydoc, {});
+const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
+const tables = encryption.attachTables(opensidianTables);
+const kv = encryption.attachKv({});
 
 const persistence = attachSqlite(ydoc, {
 	filePath: epicenterPaths.persistence(WORKSPACE_ID),
 });
 
-const whenCredentialsApplied = persistence.whenLoaded.then(async () => {
-	const { data: keys, error } = await machineAuth.getActiveEncryptionKeys({
-		serverOrigin: SERVER_URL,
-	});
-	if (error) throw error;
-	if (keys) encryption.applyKeys(keys);
-});
-
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
-	waitFor: Promise.all([persistence.whenLoaded, whenCredentialsApplied]),
+	waitFor: persistence.whenLoaded,
 	getToken: createMachineTokenGetter({
 		serverOrigin: SERVER_URL,
 		machineAuth,
@@ -117,11 +118,7 @@ async function readContent(rowId: string): Promise<string | undefined> {
 	return handle.content.read();
 }
 
-const whenReady = Promise.all([
-	persistence.whenLoaded,
-	whenCredentialsApplied,
-	sync.whenConnected,
-]);
+const whenReady = Promise.all([persistence.whenLoaded, sync.whenConnected]);
 
 const markdown = attachMarkdownMaterializer(ydoc, {
 	dir: MARKDOWN_DIR,

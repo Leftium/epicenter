@@ -17,12 +17,11 @@
  *   defineTable,
  *   docGuid,
  * } from '@epicenter/workspace';
- * import type { AuthClient } from '@epicenter/auth';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * declare const auth: AuthClient;
+ * declare const bearerToken: () => string | null;
  *
  * // Singleton workspace: inline at module scope, no factory wrapper.
  * const ydoc = new Y.Doc({ guid: 'notes' });
@@ -31,7 +30,7 @@
  * const sync = attachSync(ydoc, {
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
  *   waitFor: idb,
- *   auth,
+ *   bearerToken,
  * });
  *
  * const noteBodyDocs = createDisposableCache(
@@ -50,7 +49,6 @@
  *       ydoc: bodyYdoc,
  *       body: attachRichText(bodyYdoc),
  *       idb: bodyIdb,
- *       whenReady: bodyIdb.whenLoaded,
  *       [Symbol.dispose]() {
  *         bodyYdoc.destroy();
  *       },
@@ -96,6 +94,7 @@ export {
 // RPC + REMOTE ACTIONS
 // ════════════════════════════════════════════════════════════════════════════
 
+export type { EncryptionKeys } from '@epicenter/encryption';
 export { isRpcError, RpcError } from '@epicenter/sync';
 // Cross-peer action calling.
 export {
@@ -126,7 +125,6 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { MaybePromise } from './shared/types';
-export type { BrowserWorkspace, Workspace } from './shared/workspace.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES
@@ -187,16 +185,18 @@ export {
 
 export {
 	attachBroadcastChannel,
+	attachOwnedBroadcastChannel,
 	BC_ORIGIN,
-	type BroadcastChannelAttachment,
 } from './document/attach-broadcast-channel.js';
 export {
 	attachEncryption,
+	type AttachEncryptionOptions,
 	type EncryptionAttachment,
 } from './document/attach-encryption.js';
 export {
 	attachIndexedDb,
 	type IndexedDbAttachment,
+	wipeOwnerLocalYjsData,
 } from './document/attach-indexed-db.js';
 export {
 	attachKv,
@@ -221,7 +221,6 @@ export {
 	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
-	type SyncAuth,
 	SyncFailedError,
 	type SyncFailedReason,
 	type SyncRpcAttachment,

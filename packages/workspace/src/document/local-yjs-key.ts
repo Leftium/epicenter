@@ -1,0 +1,15 @@
+const LOCAL_YJS_KEY_PREFIX = 'epicenter:v1:user';
+
+/**
+ * Create the browser-local persistence and BroadcastChannel key for a Y.Doc.
+ *
+ * This key is a local runtime name only. It does not change `ydoc.guid`, sync
+ * room names, child document GUIDs, or encryption workspace labels.
+ */
+export function createOwnedYjsKey(userId: string, ydocGuid: string): string {
+	return `${LOCAL_YJS_KEY_PREFIX}:${userId}:yjs:${ydocGuid}`;
+}
+
+export function createOwnedYjsKeyPrefix(userId: string): string {
+	return `${LOCAL_YJS_KEY_PREFIX}:${userId}:yjs:`;
+}

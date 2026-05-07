@@ -1,11 +1,18 @@
 # Collapse `attachSync` auth fields into a single `auth` namespace
 
 **Date**: 2026-05-04
-**Status**: Wave 1-6 implemented; Wave 7 in progress
+**Status**: Superseded by `specs/20260505T021500-collapse-syncauth-to-transport-function.md`
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth
 
 ## One-Sentence Test
+
+Superseded note, 2026-05-05: Phase 6.A of the sign-out preservation spec
+collapsed the old structural `SyncWebSocket` type into the DOM `WebSocket`
+contract directly. Keep this file as historical context only.
+
+Superseded note, 2026-05-05: `specs/20260505T021500-collapse-syncauth-to-transport-function.md`
+removes `SyncAuth` and replaces it with `SyncTransport`.
 
 `attachSync` requires an `auth: SyncAuth` capability and constructs sockets via a single property access; `webSocketImpl`, `WebSocketImpl`, `NoopWebSocket`, the duck-typed `requiresCredential` flag, the nullish-coalescing-ternary, and the unauthed-fallback branch no longer exist.
 
@@ -27,7 +34,7 @@ The `WebSocket | null` return on `openWebSocket` itself is **not** changing. It'
 
 ## Why this is its own spec
 
-Per the cohesive-clean-breaks skill: the smell that surfaced ("the ternary feels extremely bad") is the visible symptom of a deeper coupling — *capability inferred from callback presence*. Going up a level, the fix is structural: name the capability. That's a single coherent change with a one-sentence thesis, ~13 consumer migrations, and zero behavior change. It deserves its own spec rather than being absorbed into a larger auth refactor.
+Per the cohesive-clean-breaks skill: the smell that surfaced ("the ternary feels extremely bad") is the visible symptom of a deeper coupling : *capability inferred from callback presence*. Going up a level, the fix is structural: name the capability. That's a single coherent change with a one-sentence thesis, ~13 consumer migrations, and zero behavior change. It deserves its own spec rather than being absorbed into a larger auth refactor.
 
 The repo precedent: see `20260503T230000-auth-unified-client-two-factories.md` (split factories) and `20260504T030000-machine-auth-collapse-to-free-functions.md` (free functions). Each ships its own thesis-scoped spec even though they touch adjacent code.
 
@@ -192,7 +199,7 @@ attachSync(doc, {
 |---|---|---|
 | Bundle shape | Single optional `auth` namespace | The two callbacks always travel together; presence of the namespace = "authenticated transport." |
 | Sub-field name for the unsubscribe-style sub | `onChange` (not `onCredentialChange`) | `AuthClient.onChange` already exists with the right signature shape. Renaming inside `SyncAuth` would force every consumer to write `{ openWebSocket: auth.openWebSocket, onChange: auth.onChange }` instead of just `auth`. The semantic ("auth state changed, restart sync") is unchanged. |
-| Return type of `openWebSocket` | Keep `SyncWebSocket \| null` | Documented as "not an error condition." Atomic — no race against `auth.identity`. Canonical in browser API (`querySelector`, `Map.get`). Hono docs literally describe "no credentials → don't initiate" as the recommended pattern. |
+| Return type of `openWebSocket` | Keep `SyncWebSocket \| null` | Documented as "not an error condition." Atomic : no race against `auth.identity`. Canonical in browser API (`querySelector`, `Map.get`). Hono docs literally describe "no credentials → don't initiate" as the recommended pattern. |
 | `webSocketImpl` placement (wave 1) | ~~Stays at top level~~ → **deleted in wave 7** | Wave 1 kept it on the assumption the unauthed branch was real. Audit showed zero callers in `apps/`, `packages/`, `examples/`, or `playground/`. Tests use `globalThis.WebSocket` swap instead. The injection point that survives is `auth.openWebSocket`. |
 | `auth` optionality (wave 7) | **Required** | All 13 production callers pass `auth`. The 4 internal tests that pass `{ url }` only do so to test sync mechanics, not to exercise an unauthed feature. Optionality misrepresents the configuration space. |
 | `WebSocketImpl` exported type (wave 7) | **Deleted** | Sole consumers were `webSocketImpl` (deleted) and `NoopWebSocket` (deleted). No external consumer. |
@@ -324,7 +331,7 @@ Single PR. Waves are sequential; each wave leaves the workspace in a typecheckab
 
 - [x] **6.1** `bun run --filter @epicenter/workspace typecheck` passes.
 - [x] **6.2** `bun run --filter @epicenter/workspace test` passes.
-- [ ] **6.3** `bun run typecheck` (workspace-wide) passes — every consumer migrated.
+- [ ] **6.3** `bun run typecheck` (workspace-wide) passes : every consumer migrated.
 - [x] **6.4** Workspace-wide grep confirms zero remaining occurrences of `openWebSocket: auth.openWebSocket`, `onCredentialChange:`, or `requiresCredential` in any non-spec, non-historical-doc file.
 - [ ] **6.5** Spot-check at least one app smoke path (e.g., open Honeycrisp in the browser, observe sync connects with cookie auth, sign out, observe `phase: 'offline'` transition, sign in, observe reconnect).
 
@@ -349,8 +356,8 @@ Single PR. Waves are sequential; each wave leaves the workspace in a typecheckab
 - [x] The five-line nullish-coalescing-ternary at the old `attemptConnection:629-637` is replaced by a flat two-branch ternary keyed on `config.auth`.
 - [x] `SyncAttachmentConfig` has `auth?: SyncAuth` and no longer has `openWebSocket?` or `onCredentialChange?` at the top level.
 - [x] `SyncAuth` is exported from `@epicenter/workspace`.
-- [x] Every app consumer passes `auth,` (or `auth: <name>,`) — never the two flat fields.
-- [x] Every test consumer passes `auth: ...` — never the two flat fields.
+- [x] Every app consumer passes `auth,` (or `auth: <name>,`) : never the two flat fields.
+- [x] Every test consumer passes `auth: ...` : never the two flat fields.
 - [x] All documentation examples use the new shape.
 - [ ] `bun run typecheck` and workspace tests pass.
 - [ ] (wave 7) `auth` is required on `SyncAttachmentConfig` (no `?`).
@@ -389,13 +396,13 @@ Single PR. Waves are sequential; each wave leaves the workspace in a typecheckab
 
 ## References
 
-- `packages/workspace/src/document/attach-sync.ts` — file under refactor
-- `packages/workspace/src/document/attach-sync.test.ts` — test file under migration
-- `packages/auth/src/create-auth.ts:91-103, 195-201, 241-244, 375-377` — `AuthClient.openWebSocket` + `onChange` definitions (the structural target)
-- `packages/auth/src/contract.test.ts` — confirms both factories return the same `AuthClient` shape
-- `apps/api/src/app.ts:288-298` — the 4401 close-code path that justifies `null` as a deferred-credential signal
-- `specs/20260503T230000-auth-unified-client-two-factories.md` — established the `AuthClient` contract
-- `specs/20260504T030000-machine-auth-collapse-to-free-functions.md` — house-style spec template
+- `packages/workspace/src/document/attach-sync.ts` : file under refactor
+- `packages/workspace/src/document/attach-sync.test.ts` : test file under migration
+- `packages/auth/src/create-auth.ts:91-103, 195-201, 241-244, 375-377` : `AuthClient.openWebSocket` + `onChange` definitions (the structural target)
+- `packages/auth/src/contract.test.ts` : confirms both factories return the same `AuthClient` shape
+- `apps/api/src/app.ts:288-298` : the 4401 close-code path that justifies `null` as a deferred-credential signal
+- `specs/20260503T230000-auth-unified-client-two-factories.md` : established the `AuthClient` contract
+- `specs/20260504T030000-machine-auth-collapse-to-free-functions.md` : house-style spec template
 - DeepWiki findings (Better Auth, Hono, Cloudflare): no library ships a WebSocket auth helper; "don't initiate when no credentials" is the ecosystem norm; 4xxx close codes are in-spec but unprescribed
 - Skills referenced: `cohesive-clean-breaks`, `one-sentence-test`, `simplify`, `factory-function-composition`, `specification-writing`
 

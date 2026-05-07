@@ -56,10 +56,7 @@ const COMPACTION_DEBOUNCE_MS = 5_000;
 export type YjsLogAttachment = {
 	/** `DELETE FROM updates`. Drops the durable log without destroying the Y.Doc. */
 	clearLocal: () => void;
-	/**
-	 * Resolves after `ydoc.destroy()` AND a final compaction + DB close.
-	 * Opt-in: tests and CLIs flushing before exit await this.
-	 */
+	/** Resolves after final compaction runs and the SQLite handle closes. */
 	whenDisposed: Promise<unknown>;
 };
 
@@ -140,13 +137,12 @@ export function attachYjsLog(
 
 	ydoc.on('updateV2', updateHandler);
 
-	const { promise: whenDisposed, resolve: resolveDisposed } =
-		Promise.withResolvers<void>();
-
 	// On destroy: timer is cleared and the updateV2 listener is detached
 	// before db.close(), so neither the timer callback nor the listener
 	// can fire after the handle is gone. No `isClosed` guard needed.
-	ydoc.once('destroy', () => {
+	const { promise: whenDisposed, resolve: resolveDisposed } =
+		Promise.withResolvers<void>();
+	ydoc.once('destroy', async () => {
 		try {
 			resetCompactionTimer();
 			ydoc.off('updateV2', updateHandler);
@@ -162,9 +158,9 @@ export function attachYjsLog(
 					}),
 				);
 			}
-			// `db.close()` can throw if the handle was already closed or
-			// if SQLite refuses (e.g. unfinalized statements). Same
-			// rationale: log, don't let it escape the destroy listener.
+			// `db.close()` can throw if the handle was already closed or if SQLite
+			// refuses (e.g. unfinalized statements). Same rationale: log, don't let
+			// it escape the destroy listener.
 			try {
 				db.close();
 			} catch (cause) {

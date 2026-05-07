@@ -4,16 +4,16 @@
  * `browser-state.svelte.ts`.
  */
 
-import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
-	attachBroadcastChannel,
-	attachIndexedDb,
+	attachOwnedBroadcastChannel,
 	attachSync,
 	createRemoteClient,
+	type EncryptionKeys,
 	PeerIdentity,
 	toWsUrl,
+	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import type { DeviceId } from '$lib/workspace/definition';
 
@@ -27,22 +27,29 @@ import { openTabManager as openTabManagerDoc } from './index';
  * window). Awaiting the identity up front means every peer sees a
  * well-formed `state.peer` from the first frame.
  *
- * `whenLoaded` still gates UI render on idb hydration; sync (the WebSocket)
- * is independent and connects whenever the network allows.
+ * Consumers gate UI render on `tabManager.idb.whenLoaded`; sync (the
+ * WebSocket) is independent and connects whenever the network allows.
  */
 export async function openTabManager({
-	auth,
+	userId,
 	peer,
+	bearerToken,
+	encryptionKeys,
 }: {
-	auth: AuthClient;
+	userId: string;
 	peer: TabManagerPeer | Promise<TabManagerPeer>;
+	bearerToken?: () => string | null;
+	encryptionKeys: () => EncryptionKeys;
 }) {
 	const resolvedPeer = await Promise.resolve(peer);
 
-	const doc = openTabManagerDoc({ deviceId: Promise.resolve(resolvedPeer.id) });
+	const doc = openTabManagerDoc({
+		deviceId: Promise.resolve(resolvedPeer.id),
+		encryptionKeys,
+	});
 
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
@@ -51,7 +58,7 @@ export async function openTabManager({
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		auth,
+		bearerToken,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);
@@ -62,12 +69,16 @@ export async function openTabManager({
 		idb,
 		awareness,
 		sync,
-		async clearLocalData() {
-			await idb.clearLocal();
+		async wipe() {
+			doc[Symbol.dispose]();
+			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
+			await wipeOwnerLocalYjsData({
+				userId,
+				ydocGuids: [doc.ydoc.guid],
+			});
 		},
 		remote,
 		rpc,
-		whenLoaded: idb.whenLoaded,
 		peer: resolvedPeer,
 		device: resolvedPeer,
 		[Symbol.dispose]() {

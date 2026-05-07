@@ -5,7 +5,7 @@
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth
 **Supersedes**: `specs/20260503T213238-auth-cookie-bearer-two-products-clean-break.md`
-**Sibling specs**: `specs/20260504T010000-drop-redirect-sign-in-gis-migration.md` (per-app GIS migration), `specs/20260504T020000-workspace-identity-reset-deterministic-teardown.md` (Wave-5 carryover; replaces the partial reset path with a deterministic teardown sequence)
+**Sibling specs**: `specs/20260504T010000-drop-authclient-redirect-sign-in.md` (drops the `signInWithSocialRedirect` method; each browser app mints its own ID token), `specs/20260504T020000-workspace-identity-reset-deterministic-teardown.md` (Wave-5 carryover; replaces the partial reset path with a deterministic teardown sequence)
 
 ## One-Sentence Test
 
@@ -165,7 +165,7 @@ Both factories return a sync `AuthClient`. The caller awaits any storage read be
 | `createBearerAuth` | Factory for runtimes without a usable cookie jar (extension, CLI, daemon, cross-domain SPA). Owns its token via caller-resolved `initialSession`. | `@epicenter/auth` |
 | `singleCredential` | API-side header normalizer. Returns `ok | mixed | none`. | `apps/api` |
 
-`AuthSession`, `AuthSnapshot`, `createAuth` cease to exist. `signInWithSocialRedirect` stays on the surface for the duration of this spec; its removal is tracked in `specs/20260504T010000-drop-redirect-sign-in-gis-migration.md` (per-app GIS migration ships independently). There is no exported `TokenStorage` or generic storage abstraction; persistence is the caller's concern, expressed as two callbacks. `BearerSession` is exported as an arktype schema so callers can validate persisted blobs.
+`AuthSession`, `AuthSnapshot`, `createAuth` cease to exist. `signInWithSocialRedirect` stays on the surface for the duration of this spec; its removal is tracked in `specs/20260504T010000-drop-authclient-redirect-sign-in.md` (per-app local credential minting; ships independently). There is no exported `TokenStorage` or generic storage abstraction; persistence is the caller's concern, expressed as two callbacks. `BearerSession` is exported as an arktype schema so callers can validate persisted blobs.
 
 **The boundary is at construction.** Two factories, two construction shapes, two effects (cookie vs bearer). After construction, `AuthClient` is uniform and consumers cannot distinguish which factory produced it. The bearer token, the cookie jar, and the storage adapter all live below this boundary. `AuthClient` carries identity and capabilities; nothing transport-shaped leaks above the construction line.
 
@@ -333,7 +333,7 @@ Wave 5   Cleanup                         delete legacy files, move shared types.
 Wave 6   Verify                          full typecheck, contract test, smoke.
 ```
 
-The redirect-sign-in removal that previously rode here as "Wave 7" is now `specs/20260504T010000-drop-redirect-sign-in-gis-migration.md`. It ships independently per app and finishes with one auth-package deletion commit.
+The redirect-sign-in removal that previously rode here as "Wave 7" is now `specs/20260504T010000-drop-authclient-redirect-sign-in.md`. It ships independently per app and finishes with one auth-package deletion commit.
 
 Two ordering invariants:
 

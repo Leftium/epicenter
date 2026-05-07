@@ -4,7 +4,7 @@
 **Status**: Implemented; Round 5 follow-ups applied (see Review > Round 5)
 **Author**: AI-assisted (Claude)
 **Branch**: codex/sync-create-auth (or successor)
-**Sibling spec**: `specs/20260504T010000-drop-redirect-sign-in-gis-migration.md` (per-app GIS migration; ships independently)
+**Sibling spec**: `specs/20260504T010000-drop-authclient-redirect-sign-in.md` (per-app local credential minting; ships independently)
 **Supersedes**: `specs/20260504T000000-auth-workspace-drop-sync-control.md` (earlier draft scoped only to the syncControl parameter; the deeper teardown invariant turned out to be the load-bearing change)
 
 ## One-Sentence Test

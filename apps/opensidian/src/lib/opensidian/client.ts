@@ -1,11 +1,13 @@
-import { BearerSession, createBearerAuth } from '@epicenter/auth-svelte';
-import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
+import {
+	BearerSession,
+	createBearerAuth,
+	waitForAuthState,
+} from '@epicenter/auth-svelte';
+import { requireSignedIn } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
-import { toast } from '@epicenter/ui/sonner';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { openOpensidian } from './browser';
 
 const session = createPersistedState({
@@ -20,45 +22,50 @@ export const auth = createBearerAuth({
 	saveSession: (next) => session.set(next),
 });
 
-export const opensidian = openOpensidian({
+const signedInState = await waitForAuthState(
 	auth,
+	(state) => state.status === 'signed-in',
+);
+if (signedInState.status !== 'signed-in') {
+	throw new Error('Cannot open Opensidian workspace: signed-in auth required.');
+}
+const userId = signedInState.identity.user.id;
+
+export const opensidian = openOpensidian({
+	userId,
 	peer: {
 		id: getOrCreateInstallationId(localStorage),
 		name: 'Opensidian',
 		platform: 'web',
 	},
+	bearerToken: () => auth.bearerToken,
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
 
-bindAuthWorkspaceScope({
-	auth,
-	applyAuthIdentity(session) {
-		opensidian.encryption.applyKeys(session.encryptionKeys);
-	},
-	async resetLocalClient() {
-		try {
-			// The workspace bundle owns teardown order. Its disposer closes child
-			// document caches and destroys the root Y.Doc, which tells attachments
-			// like sync, broadcast channel, and y-indexeddb to stop before local
-			// IndexedDB data is deleted.
-			opensidian[Symbol.dispose]();
-			// This is safe after disposal. y-indexeddb deletes by database name,
-			// and any row data needed to compute child document names remains
-			// readable from memory after Y.Doc.destroy(); disposal has already
-			// stopped observers and providers.
-			await opensidian.clearLocalData();
-		} catch (error) {
-			toast.error('Could not clear local data', {
-				description: extractErrorMessage(error),
-			});
-		} finally {
-			window.location.reload();
-		}
-	},
+const unsubscribeAuthState = auth.onStateChange((state) => {
+	switch (state.status) {
+		case 'pending':
+			return;
+		case 'signed-out':
+			return window.location.reload();
+		case 'signed-in':
+			if (state.identity.user.id !== userId) window.location.reload();
+			return;
+		default:
+			state satisfies never;
+	}
 });
+
+export async function forgetOpensidianDevice(): Promise<void> {
+	await opensidian.wipe();
+	window.location.reload();
+}
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
+		unsubscribeAuthState();
 		auth[Symbol.dispose]();
+		opensidian[Symbol.dispose]();
 	});
 }
 

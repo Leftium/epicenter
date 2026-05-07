@@ -11,5 +11,11 @@
  * Awareness has no analogous encrypted path, so there's no reason to export
  * `createAwareness` here.
  */
+import type { IndexedDbAttachment } from './attach-indexed-db.js';
+
+export type InternalEncryptedIndexedDbAttachment = IndexedDbAttachment & {
+	activateEncryption(keyring: ReadonlyMap<number, Uint8Array>): void;
+};
+
 export { createReadonlyTable, createTable } from './attach-table.js';
 export { createKv } from './attach-kv.js';

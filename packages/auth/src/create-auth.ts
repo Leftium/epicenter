@@ -1,6 +1,5 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { encryptionKeysEqual } from '@epicenter/encryption';
-import { BEARER_SUBPROTOCOL_PREFIX, MAIN_SUBPROTOCOL } from '@epicenter/sync';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
@@ -14,11 +13,7 @@ import {
 	type BetterAuthSessionResponse,
 	bearerSessionFromBetterAuthSessionResponse,
 } from './contracts/auth-session.ts';
-import type {
-	AuthIdentity,
-	AuthUser,
-	BearerSession,
-} from './auth-types.ts';
+import type { AuthIdentity, AuthUser, BearerSession } from './auth-types.ts';
 
 export const AuthError = defineErrors({
 	InvalidCredentials: () => ({
@@ -60,14 +55,19 @@ export type CreateCookieAuthConfig = {
 
 type MaybePromise<T> = T | Promise<T>;
 
-export type AuthChangeListener = (identity: AuthIdentity | null) => void;
+export type AuthState =
+	| { status: 'pending' }
+	| { status: 'signed-in'; identity: AuthIdentity }
+	| { status: 'signed-out' };
 
-type SetIdentity = (next: AuthIdentity | null) => boolean;
+export type AuthStateChangeListener = (state: AuthState) => void;
+
+type SetAuthState = (next: AuthState) => void;
 
 export type AuthClient = {
-	readonly identity: AuthIdentity | null;
-	readonly whenReady: Promise<void>;
-	onChange(fn: AuthChangeListener): () => void;
+	readonly state: AuthState;
+	readonly bearerToken: string | null;
+	onStateChange(fn: AuthStateChangeListener): () => void;
 	signIn(input: {
 		email: string;
 		password: string;
@@ -88,20 +88,6 @@ export type AuthClient = {
 	}): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
-	/**
-	 * Open a WebSocket against the auth server with this transport's
-	 * credentials applied.
-	 *
-	 * Returns `null` when no credentials are currently available (signed out,
-	 * or bearer session not yet hydrated). Consumers like `attachSync` treat
-	 * `null` as "stay offline until the next auth change." It is not
-	 * an error condition.
-	 */
-	openWebSocket(
-		url: string | URL,
-		protocols?: string | string[],
-	): WebSocket | null;
-
 	[Symbol.dispose](): void;
 };
 
@@ -133,7 +119,7 @@ export function createBearerAuth({
 		});
 	}
 
-	function applyBearerSession(data: unknown, setIdentity: SetIdentity) {
+	function applyBearerSession(data: unknown, setState: SetAuthState) {
 		let parsed: BearerSession | null;
 		try {
 			parsed = bearerSessionFromBetterAuthSessionResponse(data);
@@ -149,16 +135,24 @@ export function createBearerAuth({
 						user: parsed.user,
 						encryptionKeys: parsed.encryptionKeys,
 					};
-		if (sessionsEqual(session, next)) return;
+		const nextIdentity = identityFromSession(next);
+		const nextState: AuthState =
+			nextIdentity === null
+				? { status: 'signed-out' }
+				: { status: 'signed-in', identity: nextIdentity };
+		if (sessionsEqual(session, next)) {
+			setState(nextState);
+			return;
+		}
 		session = next;
-		setIdentity(identityFromSession(next));
+		setState(nextState);
 		persistSession(next);
 	}
 
-	function clearBearerSession(setIdentity: SetIdentity) {
+	function clearBearerSession(setState: SetAuthState) {
 		if (session === null) return;
 		session = null;
-		setIdentity(null);
+		setState({ status: 'signed-out' });
 		persistSession(null);
 	}
 
@@ -192,13 +186,7 @@ export function createBearerAuth({
 			}
 			return fetch(input, { ...init, headers, credentials: 'omit' });
 		},
-		openWebSocket(url, protocols) {
-			if (session === null) return null;
-			return new WebSocket(
-				url,
-				websocketProtocolsWithBearer(session.token, protocols),
-			);
-		},
+		bearerToken: () => session?.token ?? null,
 	});
 }
 
@@ -210,7 +198,11 @@ export function createCookieAuth({
 	initialIdentity = null,
 	saveIdentity,
 }: CreateCookieAuthConfig): AuthClient {
-	function persistIdentity(next: AuthIdentity | null) {
+	let lastPersisted: AuthIdentity | null = initialIdentity;
+
+	function maybePersistIdentity(next: AuthIdentity | null) {
+		if (identitiesEqual(lastPersisted, next)) return;
+		lastPersisted = next;
 		void Promise.resolve(saveIdentity?.(next)).catch((error) => {
 			console.error('[auth] failed to save identity:', error);
 		});
@@ -219,7 +211,7 @@ export function createCookieAuth({
 	return createAuthCore({
 		baseURL,
 		initialIdentity,
-		handleBetterAuthSession(data, setIdentity) {
+		handleBetterAuthSession(data, setState) {
 			let next: BearerSession | null;
 			try {
 				next = bearerSessionFromBetterAuthSessionResponse(data);
@@ -228,20 +220,23 @@ export function createCookieAuth({
 				return;
 			}
 			const nextIdentity = identityFromSession(next);
-			if (setIdentity(nextIdentity)) persistIdentity(nextIdentity);
+			setState(
+				nextIdentity === null
+					? { status: 'signed-out' }
+					: { status: 'signed-in', identity: nextIdentity },
+			);
+			maybePersistIdentity(nextIdentity);
 		},
-		clearCredential(setIdentity) {
-			if (setIdentity(null)) persistIdentity(null);
+		clearCredential(setState) {
+			setState({ status: 'signed-out' });
+			maybePersistIdentity(null);
 		},
 		fetch(input, init) {
 			const headers = headersFromRequest(input, init);
 			headers.delete('Authorization');
 			return fetch(input, { ...init, headers, credentials: 'include' });
 		},
-		openWebSocket(url, protocols, identity) {
-			if (identity() === null) return null;
-			return new WebSocket(url, protocols);
-		},
+		bearerToken: () => null,
 	});
 }
 
@@ -251,14 +246,10 @@ type AuthCoreConfig = {
 	fetchOptions?: NonNullable<
 		Parameters<typeof createAuthClient>[0]
 	>['fetchOptions'];
-	handleBetterAuthSession(data: unknown, setIdentity: SetIdentity): void;
-	clearCredential(setIdentity: SetIdentity): void;
+	handleBetterAuthSession(data: unknown, setState: SetAuthState): void;
+	clearCredential(setState: SetAuthState): void;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
-	openWebSocket(
-		url: string | URL,
-		protocols: string | string[] | undefined,
-		identity: () => AuthIdentity | null,
-	): WebSocket | null;
+	bearerToken(): string | null;
 };
 
 function createAuthCore({
@@ -268,26 +259,26 @@ function createAuthCore({
 	handleBetterAuthSession,
 	clearCredential,
 	fetch,
-	openWebSocket,
+	bearerToken,
 }: AuthCoreConfig): AuthClient {
-	let identity: AuthIdentity | null = initialIdentity;
+	let state: AuthState =
+		initialIdentity === null
+			? { status: 'pending' }
+			: { status: 'signed-in', identity: initialIdentity };
 	let hasDisposed = false;
-	const { promise: whenReady, resolve: resolveReady } =
-		Promise.withResolvers<void>();
 
-	const changeListeners = new Set<AuthChangeListener>();
+	const stateChangeListeners = new Set<AuthStateChangeListener>();
 
-	function setIdentity(next: AuthIdentity | null) {
-		if (identitiesEqual(identity, next)) return false;
-		identity = next;
-		for (const listener of changeListeners) {
+	function setState(next: AuthState) {
+		if (authStatesEqual(state, next)) return;
+		state = next;
+		for (const listener of stateChangeListeners) {
 			try {
 				listener(next);
 			} catch (error) {
 				console.error('[auth] subscriber threw:', error);
 			}
 		}
-		return true;
 	}
 
 	const betterAuthClient = createAuthClient({
@@ -298,22 +289,23 @@ function createAuthCore({
 	});
 
 	const unsubscribeBetterAuth = betterAuthClient.useSession.subscribe(
-		(state) => {
-			if (state.isPending) return;
-			resolveReady();
-			handleBetterAuthSession(state.data, setIdentity);
+		(sessionState) => {
+			if (sessionState.isPending) return;
+			handleBetterAuthSession(sessionState.data, setState);
 		},
 	);
 
 	return {
-		get identity() {
-			return identity;
+		get state() {
+			return state;
 		},
-		whenReady,
-		onChange(fn) {
-			changeListeners.add(fn);
+		get bearerToken() {
+			return bearerToken();
+		},
+		onStateChange(fn) {
+			stateChangeListeners.add(fn);
 			return () => {
-				changeListeners.delete(fn);
+				stateChangeListeners.delete(fn);
 			};
 		},
 		async signIn(input) {
@@ -364,7 +356,7 @@ function createAuthCore({
 			try {
 				const { error } = await betterAuthClient.signOut();
 				if (error) return AuthError.SignOutFailed({ cause: error });
-				clearCredential(setIdentity);
+				clearCredential(setState);
 				return Ok(undefined);
 			} catch (error) {
 				return AuthError.SignOutFailed({ cause: error });
@@ -372,17 +364,33 @@ function createAuthCore({
 		},
 
 		fetch,
-		openWebSocket(url, protocols) {
-			return openWebSocket(url, protocols, () => identity);
-		},
 
 		[Symbol.dispose]() {
 			if (hasDisposed) return;
 			hasDisposed = true;
 			unsubscribeBetterAuth();
-			changeListeners.clear();
+			stateChangeListeners.clear();
 		},
 	};
+}
+
+export function waitForAuthState(
+	auth: AuthClient,
+	predicate: (state: AuthState) => boolean,
+): Promise<AuthState> {
+	if (predicate(auth.state)) return Promise.resolve(auth.state);
+
+	return new Promise((resolve) => {
+		const unsubscribe = auth.onStateChange((state) => {
+			if (!predicate(state)) return;
+			unsubscribe();
+			resolve(state);
+		});
+	});
+}
+
+export function waitForAuthSettled(auth: AuthClient) {
+	return waitForAuthState(auth, (state) => state.status !== 'pending');
 }
 
 function identityFromSession(value: BearerSession | null): AuthIdentity | null {
@@ -391,6 +399,12 @@ function identityFromSession(value: BearerSession | null): AuthIdentity | null {
 		user: value.user,
 		encryptionKeys: value.encryptionKeys,
 	};
+}
+
+function authStatesEqual(left: AuthState, right: AuthState) {
+	if (left.status !== right.status) return false;
+	if (left.status !== 'signed-in' || right.status !== 'signed-in') return true;
+	return identitiesEqual(left.identity, right.identity);
 }
 
 function identitiesEqual(
@@ -423,23 +437,6 @@ function headersFromRequest(input: Request | string | URL, init?: RequestInit) {
 		headers.set(key, value);
 	});
 	return headers;
-}
-
-function websocketProtocolsWithBearer(
-	token: string,
-	protocols?: string | string[],
-): string[] {
-	const offered =
-		protocols === undefined
-			? [MAIN_SUBPROTOCOL]
-			: Array.isArray(protocols)
-				? [...protocols]
-				: [protocols];
-	if (!offered.includes(MAIN_SUBPROTOCOL)) {
-		offered.unshift(MAIN_SUBPROTOCOL);
-	}
-	offered.push(`${BEARER_SUBPROTOCOL_PREFIX}${token}`);
-	return offered;
 }
 
 function usersEqual(left: AuthUser, right: AuthUser) {

@@ -1,24 +1,18 @@
 import { type AuthIdentity, requireSignedIn } from '@epicenter/auth';
-import { createSession, fromTable } from '@epicenter/svelte';
+import {
+	createSession,
+	fromTable,
+	type InferSignedIn,
+} from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { createContext } from 'svelte';
-import { type Fuji, openFuji } from '../routes/(signed-in)/fuji/browser';
-import type { Entry, EntryId } from '../routes/(signed-in)/fuji/workspace';
+import { openFuji } from '../routes/(signed-in)/fuji/browser';
+import type { EntryId } from '../routes/(signed-in)/fuji/workspace';
 import { auth } from './auth';
-
-export type FujiSignedIn = {
-	userId: string;
-	fuji: Fuji;
-	entries: {
-		get(id: EntryId): Entry | undefined;
-		active: Entry[];
-		deleted: Entry[];
-	};
-} & Disposable;
 
 export const session = createSession({
 	auth,
-	build: (identity: AuthIdentity): FujiSignedIn => {
+	build: (identity: AuthIdentity) => {
 		const userId = identity.user.id;
 		const fuji = openFuji({
 			userId,
@@ -41,7 +35,7 @@ export const session = createSession({
 			userId,
 			fuji,
 			entries: {
-				get: (id) => entriesMap.get(id),
+				get: (id: EntryId) => entriesMap.get(id),
 				get active() {
 					return active;
 				},
@@ -56,6 +50,8 @@ export const session = createSession({
 		};
 	},
 });
+
+export type FujiSignedIn = InferSignedIn<typeof session>;
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());

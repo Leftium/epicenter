@@ -13,6 +13,7 @@ export {
 } from './persisted-state.svelte.js';
 export {
 	createSession,
+	type InferSignedIn,
 	type Session,
 	type SignedInBase,
 } from './session.svelte.js';

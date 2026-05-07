@@ -35,6 +35,26 @@ export type SignedInBase = {
 	userId: string;
 } & Disposable;
 
+/**
+ * Infer the signed-in payload type from a session created by `createSession`.
+ *
+ * Lets per-app modules define the SignedIn shape in one place (the build
+ * factory) and derive the exported type from it, rather than declaring the
+ * type up front and matching it inside the factory.
+ *
+ * @example
+ * ```ts
+ * export const session = createSession({ auth, build: (identity) => {...} });
+ * export type FujiSignedIn = InferSignedIn<typeof session>;
+ * ```
+ */
+export type InferSignedIn<TSession extends { current: unknown }> =
+	TSession['current'] extends infer C
+		? C extends { status: 'signed-in'; signedIn: infer T }
+			? T
+			: never
+		: never;
+
 export function createSession<TSignedIn extends SignedInBase>({
 	auth,
 	build,

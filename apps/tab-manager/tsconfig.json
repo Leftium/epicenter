@@ -12,6 +12,7 @@
 		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"customConditions": ["browser"],
 		"paths": {
+			"#/*": ["../../packages/ui/src/*"],
 			"$lib/*": ["./src/lib/*"]
 		}
 	},

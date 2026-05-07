@@ -2,7 +2,7 @@
  * Command palette items for the tab manager.
  *
  * Each item has a label, description, icon, and `onSelect` handler.
- * Some items open a confirmation dialog before executing—they manage
+ * Some items open a confirmation dialog before executing. They manage
  * this internally so the confirmation message can include runtime context
  * (e.g. "Found 5 duplicates across 3 URLs").
  *
@@ -102,16 +102,20 @@ export const items: CommandPaletteItem[] = [
 
 			const groupOps = [...domains.entries()]
 				.filter(([, tabs]) => tabs.length >= 2)
-				.map(([domain, tabs]) => {
-					const nativeIds = tabs.map((t) => t.id);
-					return nativeIds.length >= 2 ? { domain, nativeIds } : null;
-				})
-				.filter((op) => op !== null);
+				.flatMap(([domain, tabs]) => {
+					const [firstId, secondId, ...restIds] = tabs.map((t) => Number(t.id));
+					if (firstId === undefined || secondId === undefined) return [];
+					const nativeIds = [firstId, secondId, ...restIds] satisfies [
+						number,
+						...number[],
+					];
+					return [{ domain, nativeIds }];
+				});
 
 			await Promise.allSettled(
 				groupOps.map(async ({ domain, nativeIds }) => {
 					const groupId = await browser.tabs.group({
-						tabIds: nativeIds as [number, ...number[]],
+						tabIds: nativeIds,
 					});
 					await browser.tabGroups.update(groupId, { title: domain });
 				}),
@@ -137,7 +141,7 @@ export const items: CommandPaletteItem[] = [
 					if (!tab) continue;
 					await tryAsync({
 						try: () => browser.tabs.move(tab.id, { index: i }),
-						catch: () => Ok(undefined),
+						catch: () => Ok(tab),
 					});
 				}
 			}

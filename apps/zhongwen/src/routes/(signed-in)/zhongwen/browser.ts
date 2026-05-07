@@ -12,7 +12,7 @@ export function openZhongwen({
 	userId: string;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openZhongwenDoc({ getKeys: encryptionKeys });
+	const doc = openZhongwenDoc({ encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 

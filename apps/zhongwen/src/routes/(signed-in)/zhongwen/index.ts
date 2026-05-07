@@ -3,15 +3,15 @@ import * as Y from 'yjs';
 import { zhongwenKv, zhongwenTables } from './workspace/index.js';
 
 export function openZhongwen({
-	getKeys,
+	encryptionKeys,
 	clientID,
 }: {
-	getKeys: () => EncryptionKeys;
+	encryptionKeys: () => EncryptionKeys;
 	clientID?: number;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
-	const encryption = attachEncryption(ydoc, { getKeys });
+	const encryption = attachEncryption(ydoc, { encryptionKeys });
 	const tables = encryption.attachTables(zhongwenTables);
 	const kv = encryption.attachKv(zhongwenKv);
 	return {

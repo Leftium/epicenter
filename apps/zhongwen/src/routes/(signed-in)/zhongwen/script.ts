@@ -22,7 +22,7 @@ export async function openZhongwen({
 	const auth = await createMachineAuthClient();
 	const doc = openZhongwenDoc({
 		clientID,
-		getKeys: () => requireSignedIn(auth).encryptionKeys,
+		encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 	});
 	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),

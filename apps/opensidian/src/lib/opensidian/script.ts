@@ -22,7 +22,7 @@ export async function openOpensidian({
 	const auth = await createMachineAuthClient();
 	const doc = openOpensidianDoc({
 		clientID,
-		getKeys: () => requireSignedIn(auth).encryptionKeys,
+		encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 	});
 	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),

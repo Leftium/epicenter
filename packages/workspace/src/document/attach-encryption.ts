@@ -13,7 +13,7 @@
  * exports, call the methods on the returned attachment:
  *
  * ```ts
- * const encryption = attachEncryption(ydoc, { getKeys: () => keys });
+ * const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
  * const tables = encryption.attachTables(defs);
  * const kv = encryption.attachKv(defs);
  * ```
@@ -24,7 +24,7 @@
  *
  * ## Key source: lazy callback
  *
- * `getKeys` is a callback into whoever owns identity (typically `auth-svelte`).
+ * `encryptionKeys` is a callback into whoever owns identity.
  * The coordinator calls it synchronously at every `attachTable` / `attachKv` /
  * `attachIndexedDb` site, derives the keyring, and activates the store. The
  * keyring is not cached on the attachment: each registration is its own
@@ -33,7 +33,7 @@
  * Same-user identity updates (key rotation, profile edits) do not flow
  * through this attachment. The session lifecycle reloads the page on
  * different-user transitions; same-user updates are observed lazily via
- * the `getKeys` callback the next time it runs.
+ * the `encryptionKeys` callback the next time it runs.
  *
  * ## Disposal
  *
@@ -111,13 +111,13 @@ export type AttachEncryptionOptions = {
 	 * a throw here means the workspace outlived its signed-in scope, which is a
 	 * caller bug.
 	 */
-	getKeys: () => EncryptionKeys;
+	encryptionKeys: () => EncryptionKeys;
 };
 
 export type EncryptionAttachment = {
 	/**
 	 * Attach an encrypted table to the coordinator's Y.Doc. The store is
-	 * activated with the current keyring (via `getKeys()`) before being
+	 * activated with the current keyring (via `encryptionKeys()`) before being
 	 * returned.
 	 */
 	attachTable<
@@ -154,7 +154,7 @@ export type EncryptionAttachment = {
 	/**
 	 * Attach encrypted local IndexedDB persistence for a root or child Y.Doc.
 	 *
-	 * Reads keys via `options.getKeys()` at attach time and binds the derived
+	 * Reads keys via `options.encryptionKeys()` at attach time and binds the derived
 	 * keyring to the provider. Same-user key rotation is not observed by the
 	 * provider after this point; cross-user transitions reload the page.
 	 */
@@ -169,7 +169,7 @@ export type EncryptionAttachment = {
  *
  * The returned coordinator owns `attachTable` / `attachTables` / `attachKv` /
  * `attachIndexedDb` methods: call them to register encrypted resources. The
- * coordinator reads `options.getKeys()` synchronously at each registration
+ * coordinator reads `options.encryptionKeys()` synchronously at each registration
  * site and activates the resource before returning it.
  */
 export function attachEncryption(
@@ -197,7 +197,7 @@ export function attachEncryption(
 
 	function register(store: AnyEncryptedStore): void {
 		stores.push(store);
-		store.activateEncryption(deriveKeyring(options.getKeys(), workspaceId));
+		store.activateEncryption(deriveKeyring(options.encryptionKeys(), workspaceId));
 	}
 
 	const attachment: EncryptionAttachment = {
@@ -235,7 +235,7 @@ export function attachEncryption(
 		attachIndexedDb(targetYdoc, { userId }) {
 			return attachEncryptedProvider(targetYdoc, {
 				databaseName: createOwnedYjsKey(userId, targetYdoc.guid),
-				keyring: deriveKeyring(options.getKeys(), targetYdoc.guid),
+				keyring: deriveKeyring(options.encryptionKeys(), targetYdoc.guid),
 			});
 		},
 	};

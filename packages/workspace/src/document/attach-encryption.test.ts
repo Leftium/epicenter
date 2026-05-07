@@ -1,5 +1,5 @@
 /**
- * attachEncryption tests: lazy getKeys callback wires the keyring at every
+ * attachEncryption tests: lazy encryptionKeys callback wires the keyring at every
  * registration site (table, kv, indexed-db). Plaintext mode does not exist:
  * registration always activates encryption.
  *
@@ -36,7 +36,7 @@ const encryptedRowDefinition = defineTable(
 
 function setup(keys: EncryptionKeys = toEncryptionKeys(randomBytes(32))) {
 	const ydoc = new Y.Doc({ guid: 'enc-test', gc: false });
-	const encryption = attachEncryption(ydoc, { getKeys: () => keys });
+	const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
 	const tableA = encryption.attachTable('a', encryptedRowDefinition);
 	const tableB = encryption.attachTable('b', encryptedRowDefinition);
 	return { ydoc, tableA, tableB, encryption };
@@ -94,16 +94,16 @@ describe('attachEncryption', () => {
 		});
 	});
 
-	test('late-registered store activates via getKeys at registration time', () => {
+	test('late-registered store activates via encryptionKeys at registration time', () => {
 		const keys = toEncryptionKeys(randomBytes(32));
 		const ydoc = new Y.Doc({ guid: 'enc-late-register', gc: false });
-		const encryption = attachEncryption(ydoc, { getKeys: () => keys });
+		const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
 
 		// Initial table is registered.
 		const earlyTable = encryption.attachTable('early', encryptedRowDefinition);
 		earlyTable.set({ id: '1', title: 'Early', _v: 1 });
 
-		// A later registration also calls getKeys() and is encrypted from the start.
+		// A later registration also calls encryptionKeys() and is encrypted from the start.
 		const lateTable = encryption.attachTable('late', encryptedRowDefinition);
 
 		lateTable.set({ id: '1', title: 'Written after late register', _v: 1 });
@@ -114,10 +114,10 @@ describe('attachEncryption', () => {
 		});
 	});
 
-	test('getKeys throwing at registration surfaces the throw', () => {
+	test('encryptionKeys throwing at registration surfaces the throw', () => {
 		const ydoc = new Y.Doc({ guid: 'enc-no-keys', gc: false });
 		const encryption = attachEncryption(ydoc, {
-			getKeys: () => {
+			encryptionKeys: () => {
 				throw new Error('not signed-in');
 			},
 		});
@@ -129,7 +129,7 @@ describe('attachEncryption', () => {
 	test('attachReadonlyTable reads encrypted rows without exposing writes', () => {
 		const keys = toEncryptionKeys(randomBytes(32));
 		const ydoc = new Y.Doc({ guid: 'enc-readonly-table', gc: false });
-		const encryption = attachEncryption(ydoc, { getKeys: () => keys });
+		const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
 		const definition = defineTable(
 			type({ id: 'string', title: 'string', _v: '1' }),
 		);
@@ -154,7 +154,7 @@ describe('attachEncryption', () => {
 	test('attachReadonlyTables returns readonly helpers keyed by definition', () => {
 		const keys = toEncryptionKeys(randomBytes(32));
 		const ydoc = new Y.Doc({ guid: 'enc-readonly-tables', gc: false });
-		const encryption = attachEncryption(ydoc, { getKeys: () => keys });
+		const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
 		const definition = defineTable(
 			type({ id: 'string', title: 'string', _v: '1' }),
 		);
@@ -177,10 +177,10 @@ describe('attachEncryption', () => {
 	});
 
 	describe('attachIndexedDb', () => {
-		test('throws when getKeys throws', () => {
+		test('throws when encryptionKeys throws', () => {
 			const ydoc = new Y.Doc({ guid: 'encrypted-idb-no-keys', gc: false });
 			const encryption = attachEncryption(ydoc, {
-				getKeys: () => {
+				encryptionKeys: () => {
 					throw new Error('not signed-in');
 				},
 			});
@@ -201,7 +201,7 @@ describe('attachEncryption', () => {
 				gc: false,
 			});
 			const firstEncryption = attachEncryption(firstDoc, {
-				getKeys: () => keys,
+				encryptionKeys: () => keys,
 			});
 			const firstIdb = firstEncryption.attachIndexedDb(firstDoc, {
 				userId,
@@ -221,7 +221,7 @@ describe('attachEncryption', () => {
 				gc: false,
 			});
 			const secondEncryption = attachEncryption(secondDoc, {
-				getKeys: () => keys,
+				encryptionKeys: () => keys,
 			});
 			const secondIdb = secondEncryption.attachIndexedDb(secondDoc, {
 				userId,
@@ -239,7 +239,7 @@ describe('attachEncryption', () => {
 			const databaseName = `epicenter:v1:user:${userId}:yjs:encrypted-idb-guid-a`;
 			const keys = toEncryptionKeys(randomBytes(32));
 			const ydoc = new Y.Doc({ guid: 'encrypted-idb-guid-a', gc: false });
-			const encryption = attachEncryption(ydoc, { getKeys: () => keys });
+			const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
 			const idb = encryption.attachIndexedDb(ydoc, { userId });
 			await idb.whenLoaded;
 			ydoc.getText('body').insert(0, 'guid bound');
@@ -265,7 +265,7 @@ describe('attachEncryption', () => {
 			const keys = toEncryptionKeys(randomBytes(32));
 			const firstDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: false });
 			const firstEncryption = attachEncryption(firstDoc, {
-				getKeys: () => keys,
+				encryptionKeys: () => keys,
 			});
 			const firstIdb = firstEncryption.attachIndexedDb(firstDoc, {
 				userId,
@@ -279,7 +279,7 @@ describe('attachEncryption', () => {
 
 			const secondDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: false });
 			const secondEncryption = attachEncryption(secondDoc, {
-				getKeys: () => keys,
+				encryptionKeys: () => keys,
 			});
 			const secondIdb = secondEncryption.attachIndexedDb(secondDoc, {
 				userId,

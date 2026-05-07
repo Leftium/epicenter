@@ -34,7 +34,7 @@ export function openOpensidian({
 	bearerToken?: () => string | null;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openOpensidianDoc({ getKeys: encryptionKeys });
+	const doc = openOpensidianDoc({ encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });

@@ -44,7 +44,7 @@ export function openHoneycrisp({
 	bearerToken?: () => string | null;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openHoneycrispDoc({ getKeys: encryptionKeys });
+	const doc = openHoneycrispDoc({ encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });

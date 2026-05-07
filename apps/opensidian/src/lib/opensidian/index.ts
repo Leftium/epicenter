@@ -3,15 +3,15 @@ import * as Y from 'yjs';
 import { opensidianTables } from '../workspace/definition.js';
 
 export function openOpensidian({
-	getKeys,
+	encryptionKeys,
 	clientID,
 }: {
-	getKeys: () => EncryptionKeys;
+	encryptionKeys: () => EncryptionKeys;
 	clientID?: number;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
-	const encryption = attachEncryption(ydoc, { getKeys });
+	const encryption = attachEncryption(ydoc, { encryptionKeys });
 	const tables = encryption.attachTables(opensidianTables);
 	const kv = encryption.attachKv({});
 	return {

@@ -70,7 +70,7 @@ if (!keys) {
 }
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
-const encryption = attachEncryption(ydoc, { getKeys: () => keys });
+const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
 const tables = encryption.attachTables(opensidianTables);
 const kv = encryption.attachKv({});
 

@@ -29,7 +29,7 @@ export function defineOpensidianDaemon({
 			const auth = await createMachineAuthClient();
 			const doc = openOpensidianDoc({
 				clientID: hashClientId(projectDir),
-				getKeys: () => requireSignedIn(auth).encryptionKeys,
+				encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 			});
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),

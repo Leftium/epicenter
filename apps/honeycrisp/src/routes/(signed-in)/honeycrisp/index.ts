@@ -3,15 +3,15 @@ import * as Y from 'yjs';
 import { createHoneycrispActions, honeycrispTables } from './workspace.js';
 
 export function openHoneycrisp({
-	getKeys,
+	encryptionKeys,
 	clientID,
 }: {
-	getKeys: () => EncryptionKeys;
+	encryptionKeys: () => EncryptionKeys;
 	clientID?: number;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.honeycrisp', gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
-	const encryption = attachEncryption(ydoc, { getKeys });
+	const encryption = attachEncryption(ydoc, { encryptionKeys });
 	const tables = encryption.attachTables(honeycrispTables);
 	const kv = encryption.attachKv({});
 	const actions = createHoneycrispActions(tables);

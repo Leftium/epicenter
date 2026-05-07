@@ -44,7 +44,7 @@ export function openFuji({
 	bearerToken?: () => string | null;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openFujiDoc({ getKeys: encryptionKeys });
+	const doc = openFujiDoc({ encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });

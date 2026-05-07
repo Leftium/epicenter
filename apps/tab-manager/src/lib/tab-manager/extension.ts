@@ -45,7 +45,7 @@ export async function openTabManager({
 
 	const doc = openTabManagerDoc({
 		deviceId: Promise.resolve(resolvedPeer.id),
-		getKeys: encryptionKeys,
+		encryptionKeys,
 	});
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });

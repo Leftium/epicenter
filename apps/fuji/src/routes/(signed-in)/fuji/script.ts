@@ -34,15 +34,17 @@ export async function openFujiSnapshot({
 	clientID = hashClientId(Bun.main),
 	loadOfflineEncryptionKeys = loadMachineOfflineEncryptionKeys,
 }: OpenFujiSnapshotOptions = {}) {
-	const encryptionKeys = await loadOfflineEncryptionKeys();
-	if (encryptionKeys === null) {
+	const offlineEncryptionKeys = await loadOfflineEncryptionKeys();
+	if (offlineEncryptionKeys === null) {
 		throw new Error(
 			'[fuji] cannot open snapshot: no machine encryption keys. Run `epicenter login` on this machine.',
 		);
 	}
 	const ydoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
 	ydoc.clientID = clientID;
-	const encryption = attachEncryption(ydoc, { getKeys: () => encryptionKeys });
+	const encryption = attachEncryption(ydoc, {
+		encryptionKeys: () => offlineEncryptionKeys,
+	});
 	const tables = encryption.attachReadonlyTables(fujiTables);
 	const yjsLog = attachYjsLogReader(ydoc, {
 		filePath: yjsPath(projectDir, ydoc.guid),

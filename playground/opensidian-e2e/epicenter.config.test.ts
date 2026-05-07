@@ -20,6 +20,7 @@ import {
 	attachEncryption,
 	createDisposableCache,
 	generateId,
+	type EncryptionKeys,
 } from '@epicenter/workspace';
 import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import { assembleMarkdown } from '@epicenter/workspace/document/materializer/markdown';
@@ -28,6 +29,12 @@ import * as Y from 'yjs';
 import { pushFromMarkdown } from './push-from-markdown';
 
 const WORKSPACE_ID = 'opensidian';
+const TEST_ENCRYPTION_KEYS = [
+	{
+		version: 1,
+		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+	},
+] satisfies EncryptionKeys;
 
 const PERSISTENCE_DIR = join(
 	import.meta.dir,
@@ -41,7 +48,9 @@ function dbPath(id: string) {
 /** Create a workspace client with filesystem persistence for testing. */
 function createTestClient() {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
-	const encryption = attachEncryption(ydoc);
+	const encryption = attachEncryption(ydoc, {
+		encryptionKeys: () => TEST_ENCRYPTION_KEYS,
+	});
 	const tables = encryption.attachTables(opensidianTables);
 	const kv = encryption.attachKv({});
 	const persistence = attachSqlite(ydoc, { filePath: dbPath(WORKSPACE_ID) });
@@ -201,7 +210,9 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 	function createImportClient() {
 		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
-		const encryption = attachEncryption(ydoc);
+		const encryption = attachEncryption(ydoc, {
+			encryptionKeys: () => TEST_ENCRYPTION_KEYS,
+		});
 		const tables = encryption.attachTables(opensidianTables);
 		const kv = encryption.attachKv({});
 		const persistence = attachSqlite(ydoc, {

@@ -5,13 +5,13 @@ import { type DeviceId, tabManagerTables } from '$lib/workspace/definition';
 
 export function openTabManager({
 	deviceId,
-	getKeys,
+	encryptionKeys,
 }: {
 	deviceId: Promise<DeviceId>;
-	getKeys: () => EncryptionKeys;
+	encryptionKeys: () => EncryptionKeys;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: false });
-	const encryption = attachEncryption(ydoc, { getKeys });
+	const encryption = attachEncryption(ydoc, { encryptionKeys });
 	const tables = encryption.attachTables(tabManagerTables);
 	const kv = encryption.attachKv({});
 	const batch = (fn: () => void) => ydoc.transact(fn);

@@ -43,7 +43,7 @@ export function defineFujiDaemon({
 			const auth = await createMachineAuthClient();
 			const doc = openFujiDoc({
 				clientID: hashClientId(projectDir),
-				getKeys: () => requireSignedIn(auth).encryptionKeys,
+				encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 			});
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),

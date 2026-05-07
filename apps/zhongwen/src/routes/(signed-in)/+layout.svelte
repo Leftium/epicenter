@@ -2,7 +2,6 @@
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { Loading } from '@epicenter/ui/loading';
 	import { goto } from '$app/navigation';
-	import SignedInSessionProvider from '$lib/components/SignedInSessionProvider.svelte';
 	import { auth } from '$lib/auth';
 	import { session } from '$lib/session.svelte';
 
@@ -24,8 +23,6 @@
 		pending={current.signedIn.zhongwen.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
-		<SignedInSessionProvider signedIn={current.signedIn}>
-			{@render children?.()}
-		</SignedInSessionProvider>
+		{@render children?.()}
 	</WorkspaceGate>
 {/if}

@@ -1,7 +1,7 @@
 # Bearer auth accepts session storage
 
 **Date**: 2026-05-07
-**Status**: In Progress
+**Status**: Implemented
 **Author**: AI-assisted (Codex)
 **Backwards compatibility**: none. Hard rename from `initialSession` and `saveSession` to `sessionStorage`.
 
@@ -575,3 +575,58 @@ runtime source of truth.
 - The public config names no longer expose `initialSession` or `saveSession`.
 - Tests prove storage is read once and written on validation, rotation, and clear.
 - Auth docs describe storage as the durable boot cache, not the live source of truth.
+
+## Review
+
+**Completed**: 2026-05-07
+**Branch**: `codex/bearer-auth-session-storage`
+
+### Files read
+
+```txt
+.agents/
+`-- skills/
+    `-- auth/
+        `-- SKILL.md
+apps/
+|-- opensidian/
+|   `-- src/lib/auth.ts
+`-- tab-manager/
+    `-- src/lib/session.svelte.ts
+packages/
+`-- auth/
+    `-- src/
+        |-- contract.test.ts
+        |-- create-auth.test.ts
+        |-- create-auth.ts
+        |-- index.ts
+        `-- node/machine-auth.ts
+specs/
+`-- 20260507T150000-bearer-auth-session-storage-adapter.md
+```
+
+### Summary
+
+`createBearerAuth` now accepts one durable storage adapter, reads it once during construction, and persists through the same adapter when Better Auth validates, clears, or rotates the bearer session. App and machine call sites now pass `sessionStorage`, with Opensidian using the inline `createPersistedState(...)` shape.
+
+Tests cover the new storage boundary, including one-time reads, validation writes, clear writes, token rotation writes, rotated `bearerToken`, fetch credentials, rejected storage writes, and compile-time rejection of the old config shape.
+
+### Deviations from spec
+
+- The machine auth adapter returns an async `set()` that updates the local session cell before awaiting keychain persistence. This preserves the spec's mutable-cell option and keeps unexpected persistence rejections visible to the core auth persistence catch.
+- There was no auth package README to update. The stale public guidance lived in `.agents/skills/auth/SKILL.md`, so that is the relevant documentation update.
+
+### Verification
+
+- `bun test packages/auth/src/create-auth.test.ts packages/auth/src/contract.test.ts`: 22 pass.
+- `bun run typecheck` in `packages/auth`: pass.
+- `bun run typecheck` in `packages/auth-svelte`: pass with the existing no-Svelte-input warning.
+- `bun run check` in `apps/opensidian`: pass.
+- `bun run typecheck` in `apps/tab-manager`: pass.
+- `rg -n "createBearerAuth\\(\\{" packages apps`: every factory call site passes `sessionStorage`.
+- `rg -n "initialSession|saveSession" packages apps .agents/skills/auth docs`: only the negative compile-time test mentions the old names outside this spec.
+- Unicode dash search on touched files: no em dashes or en dashes found.
+
+### Follow-up work
+
+- Consider a separate rename from `BearerSession` to `StoredBearerSession` if the storage-focused name would make future API reads clearer.

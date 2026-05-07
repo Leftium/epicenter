@@ -333,13 +333,12 @@ export async function createMachineAuthClient(): Promise<AuthClient> {
 		baseURL: EPICENTER_API_URL,
 		sessionStorage: {
 			get: () => currentSession,
-			set: (next) => {
+			set: async (next) => {
 				currentSession = next;
-				void saveMachineSession(next).then(({ error: saveError }) => {
-					if (saveError) {
-						log.error(saveError);
-					}
-				});
+				const { error: saveError } = await saveMachineSession(next);
+				if (saveError) {
+					log.error(saveError);
+				}
 			},
 		},
 	});

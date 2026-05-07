@@ -88,10 +88,15 @@ export function openOpensidian({
 		readContent: fileContent.read,
 	})({
 		tables: doc.tables,
-	}).exports;
+	});
+	const sqliteIndexExports = sqliteIndex.exports;
 	const fs = attachYjsFileSystem(doc.tables.files, fileContent);
 	const bash = new Bash({ fs, cwd: '/' });
-	const actions = createOpensidianActions({ fs, sqliteIndex, bash });
+	const actions = createOpensidianActions({
+		fs,
+		sqliteIndex: sqliteIndexExports,
+		bash,
+	});
 
 	const awareness = attachAwareness(doc.ydoc, {
 		schema: { peer: PeerIdentity },
@@ -105,12 +110,22 @@ export function openOpensidian({
 	});
 	const rpc = sync.attachRpc(actions);
 	const remote = createRemoteClient({ awareness, rpc });
+	let disposed = false;
+
+	function disposeWorkspaceResources() {
+		if (disposed) return;
+		disposed = true;
+		fileContentDocs[Symbol.dispose]();
+		sqliteIndex.dispose();
+		fs.dispose();
+		doc[Symbol.dispose]();
+	}
 
 	return {
 		...doc,
 		idb,
 		fileContentDocs,
-		sqliteIndex,
+		sqliteIndex: sqliteIndexExports,
 		fs,
 		bash,
 		actions,
@@ -126,8 +141,7 @@ export function openOpensidian({
 					}),
 				),
 			];
-			fileContentDocs[Symbol.dispose]();
-			doc[Symbol.dispose]();
+			disposeWorkspaceResources();
 			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
@@ -137,8 +151,9 @@ export function openOpensidian({
 		remote,
 		rpc,
 		[Symbol.dispose]() {
-			fileContentDocs[Symbol.dispose]();
-			doc[Symbol.dispose]();
+			disposeWorkspaceResources();
 		},
 	};
 }
+
+export type OpensidianWorkspace = ReturnType<typeof openOpensidian>;

@@ -130,11 +130,11 @@ export async function ftsSearch(
 		const rows = await stmt.all(trimmed, limit);
 
 		return rows.map((row) => {
-			const r = row as Record<string, unknown>;
+			const result = row as Record<string, unknown>;
 			return {
-				id: String(r.id),
-				snippet: String(r.snippet ?? ''),
-				rank: Number(r.rank ?? 0),
+				id: String(result.id),
+				snippet: String(result.snippet ?? ''),
+				rank: Number(result.rank ?? 0),
 			};
 		});
 	} catch (cause: unknown) {

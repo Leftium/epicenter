@@ -75,13 +75,11 @@ export class AuthIdentityContext {
   constructor(private auth: AuthClient) {}
 
   get identity(): AuthIdentity {
-    const state = this.auth.state;
-
-    if (state.status !== 'signed-in') {
+    if (this.auth.state.status !== 'signed-in') {
       throw new Error('Auth identity is only available inside a signed-in subtree');
     }
 
-    return state.identity;
+    return this.auth.state.identity;
   }
 
   get user() {

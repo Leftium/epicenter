@@ -92,10 +92,10 @@ export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
  * `true` when its mtime differs from the captured value, `false` otherwise.
  */
 function detectConfigChange(meta: DaemonMetadata): boolean | '?' {
-	const p = join(meta.dir, CONFIG_FILENAME);
-	if (!existsSync(p)) return '?';
+	const configPath = join(meta.dir, CONFIG_FILENAME);
+	if (!existsSync(configPath)) return '?';
 	try {
-		return statSync(p).mtimeMs !== meta.configMtime;
+		return statSync(configPath).mtimeMs !== meta.configMtime;
 	} catch {
 		return '?';
 	}

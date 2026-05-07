@@ -98,10 +98,9 @@ function openBlog() {
   const ydoc = new Y.Doc({ guid: 'blog' });
   const tables = attachTables(ydoc, myTables);
   if (auth.state.status !== 'signed-in') return null;
-  const userId = auth.state.identity.user.id;
 
   const idb = attachIndexedDb(ydoc);
-  attachOwnedBroadcastChannel(ydoc, { userId });
+  attachOwnedBroadcastChannel(ydoc, { userId: auth.state.identity.user.id });
   const sync = attachSync(ydoc, {
     url: `wss://api.example.com/workspaces/${ydoc.guid}`,
     bearerToken: () => auth.bearerToken,

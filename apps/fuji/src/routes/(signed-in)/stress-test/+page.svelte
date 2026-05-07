@@ -100,7 +100,8 @@
 	let results = $state<Results | null>(null);
 
 	const stressTestCount = $derived(
-		signedIn.entries.active.filter((e) => e.tags.includes('stress-test')).length,
+		signedIn.entries.active.filter((e) => e.tags.includes('stress-test'))
+			.length,
 	);
 
 	// ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -110,9 +111,9 @@
 	}
 
 	function pickN<T>(arr: T[], min: number, max: number): T[] {
-		const n = min + Math.floor(Math.random() * (max - min + 1));
+		const count = min + Math.floor(Math.random() * (max - min + 1));
 		const shuffled = [...arr].sort(() => Math.random() - 0.5);
-		return shuffled.slice(0, n);
+		return shuffled.slice(0, count);
 	}
 
 	const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -187,7 +188,9 @@
 			const filterTimeMs = performance.now() - filterStart;
 
 			// Y.Doc binary size
-			const ydocSizeBytes = Y.encodeStateAsUpdate(signedIn.fuji.ydoc).byteLength;
+			const ydocSizeBytes = Y.encodeStateAsUpdate(
+				signedIn.fuji.ydoc,
+			).byteLength;
 
 			results = {
 				insertTimeMs,

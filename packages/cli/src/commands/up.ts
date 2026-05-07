@@ -259,9 +259,9 @@ export const upCommand = cmd({
 // ---------------------------------------------------------------------------
 
 function readConfigMtime(absDir: string): number {
-	const p = join(absDir, CONFIG_FILENAME);
+	const configPath = join(absDir, CONFIG_FILENAME);
 	try {
-		return statSync(p).mtimeMs;
+		return statSync(configPath).mtimeMs;
 	} catch {
 		return 0;
 	}

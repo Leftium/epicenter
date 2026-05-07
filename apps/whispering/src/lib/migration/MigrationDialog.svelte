@@ -6,7 +6,8 @@
 	import { migrationDialog } from './migration-dialog.svelte';
 	import { MOCK_RECORDING_COUNT } from './migration-test-data';
 
-	let { trigger }: { trigger?: Snippet<[{ props: Record<string, unknown> }]> } = $props();
+	let { trigger }: { trigger?: Snippet<[{ props: Record<string, unknown> }]> } =
+		$props();
 
 	let logsContainer = $state<HTMLDivElement | null>(null);
 
@@ -62,21 +63,30 @@
 			{/if}
 
 			{#if migrationDialog.migrationResult}
-				{@const r = migrationDialog.migrationResult}
+				{@const migrationResult = migrationDialog.migrationResult}
 				<Field.Set class="rounded-lg border p-4">
 					<Field.Legend variant="label">Results</Field.Legend>
 					<div class="space-y-1">
 						<Field.Description>
-							Recordings: {r.recordings.migrated} migrated,
-							{r.recordings.skipped} skipped, {r.recordings.failed} failed (of {r.recordings.total})
+							Recordings: {migrationResult.recordings.migrated} migrated,
+							{migrationResult.recordings.skipped}
+							skipped, {migrationResult.recordings.failed}
+							failed (of {migrationResult.recordings.total})
 						</Field.Description>
 						<Field.Description>
-							Transformations: {r.transformations.migrated} migrated,
-							{r.transformations.skipped} skipped, {r.transformations.failed} failed (of {r.transformations.total})
+							Transformations:
+							{migrationResult.transformations.migrated}
+							migrated,
+							{migrationResult.transformations.skipped}
+							skipped,
+							{migrationResult.transformations.failed}
+							failed (of {migrationResult.transformations.total})
 						</Field.Description>
 						<Field.Description>
-							Steps: {r.steps.migrated} migrated, {r.steps.skipped} skipped,
-							{r.steps.failed} failed (of {r.steps.total})
+							Steps: {migrationResult.steps.migrated} migrated,
+							{migrationResult.steps.skipped}
+							skipped, {migrationResult.steps.failed}
+							failed (of {migrationResult.steps.total})
 						</Field.Description>
 					</div>
 				</Field.Set>
@@ -113,7 +123,8 @@
 						<Field.Set>
 							<Field.Legend variant="label">Reset</Field.Legend>
 							<Field.Description>
-								Clears workspace tables and resets localStorage—re-enables the migration button.
+								Clears workspace tables and resets localStorage—re-enables the
+								migration button.
 							</Field.Description>
 							<Button
 								onclick={migrationDialog.resetMigration}

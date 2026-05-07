@@ -11,16 +11,16 @@ export function matchesEntrySearch(
 	entry: Pick<Entry, 'title' | 'subtitle' | 'tags' | 'type'>,
 	query: string,
 ): boolean {
-	const q = query.trim().toLowerCase();
-	if (!q) return false;
+	const normalizedQuery = query.trim().toLowerCase();
+	if (!normalizedQuery) return false;
 	const title = entry.title.toLowerCase();
 	const subtitle = entry.subtitle.toLowerCase();
 	const tags = entry.tags.join(' ').toLowerCase();
 	const types = entry.type.join(' ').toLowerCase();
 	return (
-		title.includes(q) ||
-		subtitle.includes(q) ||
-		tags.includes(q) ||
-		types.includes(q)
+		title.includes(normalizedQuery) ||
+		subtitle.includes(normalizedQuery) ||
+		tags.includes(normalizedQuery) ||
+		types.includes(normalizedQuery)
 	);
 }

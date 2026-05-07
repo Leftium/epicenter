@@ -216,10 +216,13 @@ function describeInput(schema: TSchema): string[] {
 	const required = new Set(schema.required ?? []);
 	const lines: string[] = [];
 	for (const [key, field] of Object.entries(schema.properties)) {
-		const f = field as TSchema & { type?: string; description?: string };
-		const typeLabel = f.type ?? 'value';
+		const fieldSchema = field as TSchema & {
+			type?: string;
+			description?: string;
+		};
+		const typeLabel = fieldSchema.type ?? 'value';
 		const req = required.has(key) ? 'required' : 'optional';
-		const desc = f.description ? `  ${f.description}` : '';
+		const desc = fieldSchema.description ? `  ${fieldSchema.description}` : '';
 		lines.push(`${key}: ${typeLabel}  (${req})${desc}`);
 	}
 	return lines;

@@ -35,10 +35,10 @@
 
 	function formatBytes(bytes: number): string {
 		if (bytes === 0) return '0 B';
-		const k = 1024;
+		const bytesPerUnit = 1024;
 		const units = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return `${parseFloat((bytes / k ** i).toFixed(1))} ${units[i]}`;
+		const unitIndex = Math.floor(Math.log(bytes) / Math.log(bytesPerUnit));
+		return `${parseFloat((bytes / bytesPerUnit ** unitIndex).toFixed(1))} ${units[unitIndex]}`;
 	}
 </script>
 

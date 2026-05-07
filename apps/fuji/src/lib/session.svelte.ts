@@ -2,7 +2,7 @@ import { requireSignedIn } from '@epicenter/auth-svelte';
 import { createSession, type SignedInBase } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { createContext } from 'svelte';
-import { openFuji, type Fuji } from '../routes/(signed-in)/fuji/browser';
+import { type Fuji, openFuji } from '../routes/(signed-in)/fuji/browser';
 import type { Entry, EntryId } from '../routes/(signed-in)/fuji/workspace';
 import { auth } from './auth';
 
@@ -52,12 +52,12 @@ const [getRawSession, setSignedInSession] =
 export { setSignedInSession };
 
 export function getSignedInSession(): FujiSignedInSession {
-	const s = getRawSession();
-	if (!s) {
+	const signedInSession = getRawSession();
+	if (!signedInSession) {
 		throw new Error(
 			'[fuji] getSignedInSession() called outside <SignedInSessionProvider>. ' +
 				'This route must mount under the signed-in branch of the root layout.',
 		);
 	}
-	return s;
+	return signedInSession;
 }

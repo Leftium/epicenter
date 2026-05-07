@@ -15,3 +15,4 @@ export {
 	createBearerAuth,
 	createCookieAuth,
 } from './create-auth.svelte.ts';
+export { requireSignedIn } from './require-signed-in.ts';

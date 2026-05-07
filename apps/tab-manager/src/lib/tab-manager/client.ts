@@ -1,8 +1,5 @@
-import {
-	createBearerAuth,
-	requireSignedIn,
-	waitForAuthState,
-} from '@epicenter/auth-svelte';
+import { requireSignedIn } from '@epicenter/auth';
+import { createBearerAuth, waitForAuthState } from '@epicenter/auth-svelte';
 import { bindAuthWorkspaceScope } from '@epicenter/auth-workspace';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';

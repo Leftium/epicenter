@@ -1,5 +1,5 @@
-import type { AuthIdentity } from '@epicenter/auth';
-import type { AuthClient } from './create-auth.svelte.ts';
+import type { AuthIdentity } from './auth-types.ts';
+import type { AuthClient } from './create-auth.ts';
 
 /**
  * Read the current identity, throwing if auth is not signed-in.

@@ -1,4 +1,4 @@
-import { requireSignedIn } from '@epicenter/auth-svelte';
+import { requireSignedIn } from '@epicenter/auth';
 import { createSession, type SignedInBase } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { createContext } from 'svelte';

@@ -11,3 +11,4 @@ export {
 	saveMachineSession,
 	MachineAuthStorageError,
 } from './node/machine-session-store.js';
+export { requireSignedIn } from './require-signed-in.ts';

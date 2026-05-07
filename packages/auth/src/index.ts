@@ -15,3 +15,4 @@ export {
 	waitForAuthSettled,
 	waitForAuthState,
 } from './create-auth.ts';
+export { requireSignedIn } from './require-signed-in.ts';

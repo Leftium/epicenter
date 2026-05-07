@@ -9,7 +9,7 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { auth } from '$lib/auth';
 	import { getSignedInSession } from '$lib/session.svelte';
-	import { requireSignedIn } from '@epicenter/auth-svelte';
+	import { requireSignedIn } from '@epicenter/auth';
 	import { createChatState } from './chat/chat-state.svelte';
 	import ChatInput from './components/ChatInput.svelte';
 	import ChatMessage from './components/ChatMessage.svelte';

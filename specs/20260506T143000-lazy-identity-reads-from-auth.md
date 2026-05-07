@@ -146,10 +146,10 @@ trigger reload because no captured copy is out of date.
 ┌────────────────────────────────────────────────────────────┐
 │  attachEncryption (packages/workspace)                     │
 │                                                            │
-│  ({ getKeys }) — no mutable lastKeys, no applyKeys() exit  │
+│  ({ encryptionKeys }) — no mutable lastKeys, no applyKeys() exit  │
 │                                                            │
 │  Stores register; encryption derives keyring once at       │
-│  registration via getKeys(); same-user changes never       │
+│  registration via encryptionKeys(); same-user changes never       │
 │  invalidate (because user-switch reloads) so a single      │
 │  derivation per registration is sufficient.                │
 └────────────────────────────────────────────────────────────┘
@@ -178,7 +178,7 @@ WHO OWNS WHAT                       BEFORE (spec 1)             AFTER (this spec
 auth.state.identity                 live (auth-svelte)          live (auth-svelte)
 SignedIn.identity                   snapshot, kept fresh by     gone; replaced by `userId`
                                     reload-on-change            (single captured field)
-fuji.encryption keys                lastKeys field, mutable     getKeys callback closure
+fuji.encryption keys                lastKeys field, mutable     encryptionKeys callback closure
                                     via deleted applyKeys()
 fuji.encryption.applyKeys()         already deleted in spec 1   stays deleted; no caller
 fuji bearer token                   already lazy callback       already lazy callback
@@ -211,9 +211,9 @@ Refusal 2: encryption holds mutable keys
   Deletes:
     - attach-encryption.ts: `let lastKeys: EncryptionKeys | undefined;`
     - attach-encryption.ts: `applyKeys(keys)` method
-    - attach-encryption.ts: `requireKeys()` private helper (folded into getKeys callback)
+    - attach-encryption.ts: `requireKeys()` private helper (folded into encryptionKeys callback)
   Replaces:
-    - attachEncryption({ getKeys: () => EncryptionKeys })
+    - attachEncryption({ encryptionKeys: () => EncryptionKeys })
     - keyring derivation at store-registration time only
   User loss: none. Same-user key rotation, if it ever became real, would
             require a reload (which spec 1 already established as the rule
@@ -276,7 +276,7 @@ internally.
 // packages/workspace/src/document/attach-encryption.ts
 export type AttachEncryptionOptions = {
   workspaceId: string;
-  getKeys: () => EncryptionKeys;
+  encryptionKeys: () => EncryptionKeys;
 };
 
 export type EncryptionAttachment = {
@@ -290,14 +290,14 @@ export function attachEncryption(
   options: AttachEncryptionOptions,
 ): EncryptionAttachment {
   // No `lastKeys` field. No mutation.
-  // On registerStore: synchronously call options.getKeys(),
+  // On registerStore: synchronously call options.encryptionKeys(),
   // derive the keyring, activate the store. Done.
 }
 ```
 
 Internal note: the keyring derivation is still cached, but the cache lives
 per-registration rather than as a single mutable cell. Two registrations
-of the same store-type get the same keyring because `getKeys()` returns
+of the same store-type get the same keyring because `encryptionKeys()` returns
 the same keys (assuming same-user, which is the only case that exists
 post-reload-on-switch).
 
@@ -524,7 +524,7 @@ Same-user identity update (rotated keys, profile edit)
 1. atom emits new identity; same user.id.
 2. reconcile compares signedIn.userId === a.identity.user.id; equal; returns.
 3. Workspace lifecycle is undisturbed. No flicker, no remount, no reload.
-4. The next encryption operation calls getKeys(), which reads
+4. The next encryption operation calls encryptionKeys(), which reads
    auth.state.identity.encryptionKeys, getting the new keys.
 5. UI components reading auth.state.identity.X re-render through Svelte's
    normal reactivity (state changed → derived re-runs).
@@ -577,12 +577,12 @@ MODIFIED:
   packages/workspace/src/document/attach-encryption.ts
     - Remove `lastKeys: EncryptionKeys | undefined`
     - Remove `applyKeys(keys)` method from EncryptionAttachment type
-    - Add `getKeys: () => EncryptionKeys` to AttachEncryptionOptions
-    - Replace internal `requireKeys()` with `options.getKeys()` calls
+    - Add `encryptionKeys: () => EncryptionKeys` to AttachEncryptionOptions
+    - Replace internal `requireKeys()` with `options.encryptionKeys()` calls
     - Move keyring derivation into `registerStore` flow:
-        synchronously call getKeys() at registration, derive keyring,
+        synchronously call encryptionKeys() at registration, derive keyring,
         activate the store.
-    - Update tests in attach-encryption.test.ts to provide a getKeys
+    - Update tests in attach-encryption.test.ts to provide a encryptionKeys
       stub instead of calling applyKeys post-construction.
 
   packages/workspace/src/index.ts
@@ -647,7 +647,7 @@ Same shape of changes as fuji:
 ```txt
 Wave 0   Workspace package change (encryption module).
          packages/workspace/src/document/attach-encryption.ts:
-         - Add `getKeys: () => EncryptionKeys` to options.
+         - Add `encryptionKeys: () => EncryptionKeys` to options.
          - Internally still wired to applyKeys for backwards compat ONLY
            if needed during this wave (preferably not; clean break).
          - Update tests.
@@ -692,7 +692,7 @@ Wave 3   Verify fuji (rollback point).
          - encryption-specific tests:
              e. workspace encrypt/decrypt continues to work (round-trip
                 an entry through IDB; assert content integrity)
-             f. lazy getKeys() callback returns current keys (mock auth
+             f. lazy encryptionKeys() callback returns current keys (mock auth
                 emitting rotated keys; assert encryption uses them on
                 next operation)
          If any test fails, roll back wave 2 (the workspace and
@@ -738,7 +738,7 @@ outlived its scope, which is a bug worth screaming about.
 
 **Testing the encryption module gets simpler.** Old tests had to call
 `encryption.applyKeys(keys)` after construction to set up the test
-state. New tests pass `getKeys: () => testKeys` once and the keyring is
+state. New tests pass `encryptionKeys: () => testKeys` once and the keyring is
 ready immediately. Less ceremony, less likely to test "what if
 applyKeys fires twice" (which is now impossible).
 
@@ -770,7 +770,7 @@ If they do, two options:
 
 ```txt
 A. Force a reload (matches spec 1's general policy for identity changes).
-B. Re-derive the keyring on next operation if `getKeys()` returns a
+B. Re-derive the keyring on next operation if `encryptionKeys()` returns a
    different reference. Cheap to add later if needed.
 ```
 
@@ -799,7 +799,7 @@ encryptionKeys: () => {
 is repeated for any lazy callback that reads identity. A helper:
 
 ```ts
-// @epicenter/auth-svelte
+// @epicenter/auth
 export function requireSignedIn(auth: AuthClient): AuthIdentity {
   const state = auth.state;
   if (state.status !== 'signed-in') {
@@ -833,7 +833,7 @@ Does one layer own each invariant?
     createSession               when the workspace exists; user-switch refusal
     per-app session module      what the workspace's lazy callbacks read
     openFuji and siblings       per-resource construction
-    attachEncryption            keyring derivation from getKeys callback
+    attachEncryption            keyring derivation from encryptionKeys callback
     descendants                 UI policy
 
 Would a new caller find only one obvious path?

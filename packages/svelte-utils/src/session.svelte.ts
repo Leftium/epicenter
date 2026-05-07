@@ -3,11 +3,14 @@
  * plus an app-defined payload (typically a workspace handle).
  *
  * Status comes directly from `auth.state`; this factory only owns the payload
- * lifecycle (build, dispose) and the identity-mutation refusal (any change to
- * identity after open disposes the payload and reloads the page; see
- * "Why we don't apply keys in place" in the spec). `current` projects
- * `auth.state` and decorates the signed-in variant with the built payload, so
- * apps consume one read API and TypeScript narrows in one step.
+ * lifecycle (build, dispose) and the user-switch refusal (different `user.id`
+ * disposes the payload and reloads the page). Same-user identity changes
+ * (key rotation, profile edits) are no-ops here: the payload's lazy callbacks
+ * pick up updates the next time they read `auth.state`.
+ *
+ * `current` projects `auth.state` and decorates the signed-in variant with the
+ * built payload, so apps consume one read API and TypeScript narrows in one
+ * step.
  *
  * Requires an `AuthClient` whose `state` is Svelte-reactive (use
  * `@epicenter/auth-svelte`, not `@epicenter/auth` directly).
@@ -22,19 +25,14 @@
  * ```
  */
 
-import {
-	type AuthClient,
-	type AuthIdentity,
-	type AuthState,
-	identitiesEqual,
-} from '@epicenter/auth';
+import type { AuthClient, AuthIdentity, AuthState } from '@epicenter/auth';
 
 export type Session<TSignedIn> =
 	| Exclude<AuthState, { status: 'signed-in' }>
 	| { status: 'signed-in'; signedIn: TSignedIn };
 
 export type SignedInBase = {
-	readonly identity: AuthIdentity;
+	readonly userId: string;
 } & Disposable;
 
 export function createSession<TSignedIn extends SignedInBase>({
@@ -58,10 +56,11 @@ export function createSession<TSignedIn extends SignedInBase>({
 			signedIn = build(a.identity);
 			return;
 		}
-		// Benign re-emit (auth refetched, identity unchanged): no-op.
-		if (identitiesEqual(signedIn.identity, a.identity)) return;
-		// Anything else (different user, rotated keys, profile edit): dispose
-		// and reload. See "Why we don't apply keys in place" in the spec.
+		// Same user: no-op. The payload's lazy reads through `auth.state`
+		// observe any identity update (key rotation, profile edits) without
+		// involving the workspace lifecycle.
+		if (signedIn.userId === a.identity.user.id) return;
+		// Different user: refuse the live switch and reload (heap safety).
 		signedIn[Symbol.dispose]();
 		location.reload();
 		throw new Error('unreachable: reload pending');

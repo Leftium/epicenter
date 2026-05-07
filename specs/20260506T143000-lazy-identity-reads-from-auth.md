@@ -5,7 +5,7 @@
 > deleted; the SignedIn payload loses its `identity` field.
 
 **Date**: 2026-05-06
-**Status**: Proposed (follow-up to `20260506T013348-session-state-replaces-signed-in-component.md`)
+**Status**: Implemented
 **Author**: AI-assisted, grounded against the codebase post spec 1, and the SPA-ecosystem research compiled in spec 1's "Why we don't apply keys in place" section.
 **Depends on**: spec 1 must land first. This spec rewrites the workspace identity surface assuming spec 1's `createSession` factory is in place.
 **Branch**: feat/encrypted-local-workspace-storage (or follow-up branch)

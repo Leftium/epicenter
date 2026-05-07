@@ -141,7 +141,7 @@ In a signed-in session scope, handle that refresh inside the scope that opened t
 	import { requireSignedIn } from '@epicenter/auth';
 	import { onDestroy, type Snippet } from 'svelte';
 	import { auth } from '$lib/auth';
-	import { setSignedInSession } from '$lib/session.svelte';
+	import { setVoiceSession } from '$lib/voice-session';
 	import { openVoiceWorkspace } from '$lib/voice/browser';
 
 	let {
@@ -157,7 +157,7 @@ In a signed-in session scope, handle that refresh inside the scope that opened t
 		userId,
 		encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 	});
-	setSignedInSession({ userId, voice });
+	setVoiceSession({ userId, voice });
 
 	onDestroy(() => voice[Symbol.dispose]());
 </script>
@@ -199,13 +199,13 @@ this workspace belongs to this signed-in identity
 Keep the pair together:
 
 ```ts
-type SignedInSession = {
+type VoiceSession = {
 	identity: AuthIdentity;
 	voice: VoiceWorkspace;
 };
 
-export const [getSignedInSession, setSignedInSession] =
-	createContext<SignedInSession>();
+export const [getVoiceSession, setVoiceSession] =
+	createContext<VoiceSession>();
 ```
 
 One context says one thing. Two contexts make the reader wonder whether the lifetimes can differ.

@@ -4,11 +4,11 @@ export {
 	BearerSession,
 } from './auth-types.ts';
 export {
-	type BearerSessionStorage,
 	type AuthClient,
 	AuthError,
 	type AuthState,
 	type AuthStateChangeListener,
+	type BearerSessionStorage,
 	type CreateBearerAuthConfig,
 	type CreateCookieAuthConfig,
 	createBearerAuth,

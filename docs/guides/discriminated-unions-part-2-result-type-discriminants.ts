@@ -41,25 +41,25 @@
 
 // ❌ No shared property between variants
 type ResultOmitted<T, E> =
-  | { data: T }     // Success: only data
-  | { error: E };   // Failure: only error
+	| { data: T } // Success: only data
+	| { error: E }; // Failure: only error
 
 function handleOmitted<T, E>(result: ResultOmitted<T, E>) {
-  // ❌ Can't check result.data !== undefined
-  // TypeScript error: Property 'data' does not exist on type 'ResultOmitted<T, E>'
-  // (because 'data' doesn't exist in the { error: E } variant)
+	// ❌ Can't check result.data !== undefined
+	// TypeScript error: Property 'data' does not exist on type 'ResultOmitted<T, E>'
+	// (because 'data' doesn't exist in the { error: E } variant)
 
-  // ❌ Can't check result.error !== undefined either
-  // Same problem: 'error' doesn't exist in the { data: T } variant
+	// ❌ Can't check result.error !== undefined either
+	// Same problem: 'error' doesn't exist in the { data: T } variant
 
-  // The only option is the 'in' operator:
-  if ("data" in result) {
-    const value: T = result.data;   // ✅ This works
-    console.log("Success:", value);
-  } else {
-    const err: E = result.error;    // ✅ This works
-    console.error("Error:", err);
-  }
+	// The only option is the 'in' operator:
+	if ('data' in result) {
+		const value: T = result.data; // ✅ This works
+		console.log('Success:', value);
+	} else {
+		const err: E = result.error; // ✅ This works
+		console.error('Error:', err);
+	}
 }
 
 /*
@@ -94,22 +94,22 @@ function handleOmitted<T, E>(result: ResultOmitted<T, E>) {
 
 // ❌ Attempt 1: 'data' is shared, but 'error' is missing from success variant
 type ResultDataOnly<T, E> =
-  | { data: T }                 // Success: I have data (no error property)
-  | { data: null; error: E };   // Failure: no data, but I have error
+	| { data: T } // Success: I have data (no error property)
+	| { data: null; error: E }; // Failure: no data, but I have error
 
 function handleDataOnly<T, E>(result: ResultDataOnly<T, E>) {
-  if (result.data !== null) {
-    const value: T = result.data;
-    console.log("Success:", value);
-  } else {
-    // You'd expect result.data to be `null` here. It's actually `T | null`.
-    // (See "A subtle gotcha" below for why.)
-    const t = result.data; // t: T | null
+	if (result.data !== null) {
+		const value: T = result.data;
+		console.log('Success:', value);
+	} else {
+		// You'd expect result.data to be `null` here. It's actually `T | null`.
+		// (See "A subtle gotcha" below for why.)
+		const t = result.data; // t: T | null
 
-    // ❌ Type error! 'error' doesn't exist on the union
-    // TypeScript narrowed 'data' to null, but can't guarantee 'error' exists
-    // const err: E = result.error;
-  }
+		// ❌ Type error! 'error' doesn't exist on the union
+		// TypeScript narrowed 'data' to null, but can't guarantee 'error' exists
+		// const err: E = result.error;
+	}
 }
 
 /*
@@ -133,18 +133,18 @@ function handleDataOnly<T, E>(result: ResultDataOnly<T, E>) {
 
 // ❌ Attempt 2: 'error' is shared, but 'data' is missing from failure variant
 type ResultErrorOnly<T, E> =
-  | { data: T; error: null }  // Success: no error, I have data
-  | { error: E };             // Failure: I have error (no data property)
+	| { data: T; error: null } // Success: no error, I have data
+	| { error: E }; // Failure: I have error (no data property)
 
 function handleErrorOnly<T, E>(result: ResultErrorOnly<T, E>) {
-  if (result.error !== null) {
-    const err: E = result.error;
-    console.error("Error:", err);
-  } else {
-    // ❌ Type error! 'data' doesn't exist on the union
-    // TypeScript narrowed 'error' to null, but can't guarantee 'data' exists
-    // const value: T = result.data;
-  }
+	if (result.error !== null) {
+		const err: E = result.error;
+		console.error('Error:', err);
+	} else {
+		// ❌ Type error! 'data' doesn't exist on the union
+		// TypeScript narrowed 'error' to null, but can't guarantee 'data' exists
+		// const value: T = result.data;
+	}
 }
 
 /*
@@ -167,9 +167,9 @@ function handleErrorOnly<T, E>(result: ResultErrorOnly<T, E>) {
  */
 
 type Result<T, E> =
-  | { data: T; error: null }      // 'data' is complete: T vs null
-  | { data: null; error: E };     // 'error' is complete: null vs E
-                                  // ↑ BOTH properties in BOTH variants!
+	| { data: T; error: null } // 'data' is complete: T vs null
+	| { data: null; error: E }; // 'error' is complete: null vs E
+// ↑ BOTH properties in BOTH variants!
 
 /*
  * Now BOTH properties are discriminants:
@@ -180,30 +180,30 @@ type Result<T, E> =
  */
 
 function handleResult<T, E>(result: Result<T, E>) {
-  // Option 1: Check error first
-  if (result.error !== null) {
-    const err: E = result.error;     // ✅ error is E
-    console.error("Error:", err);
-    // result.data is null here
-    return;
-  }
+	// Option 1: Check error first
+	if (result.error !== null) {
+		const err: E = result.error; // ✅ error is E
+		console.error('Error:', err);
+		// result.data is null here
+		return;
+	}
 
-  const value: T = result.data;       // ✅ data is T
-  console.log("Success:", value);
-  // result.error is null here
+	const value: T = result.data; // ✅ data is T
+	console.log('Success:', value);
+	// result.error is null here
 }
 
 function handleResult2<T, E>(result: Result<T, E>) {
-  // Option 2: Check data first (equally valid!)
-  if (result.data !== null) {
-    const value: T = result.data;     // ✅ data is T
-    console.log("Success:", value);
-    // result.error is null here
-  } else {
-    const err: E = result.error;       // ✅ error is E
-    console.error("Error:", err);
-    // result.data is null here
-  }
+	// Option 2: Check data first (equally valid!)
+	if (result.data !== null) {
+		const value: T = result.data; // ✅ data is T
+		console.log('Success:', value);
+		// result.error is null here
+	} else {
+		const err: E = result.error; // ✅ error is E
+		console.error('Error:', err);
+		// result.data is null here
+	}
 }
 
 /*

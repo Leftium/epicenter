@@ -1,5 +1,5 @@
 /**
- * Tab Manager RPC Contract — type-only export for cross-device calls.
+ * Tab Manager RPC Contract: type-only export for cross-device calls.
  *
  * Import this type in other apps (CLI, desktop, etc.) to get type-safe
  * low-level `rpc.rpc(...)` calls against the tab-manager's actions. Zero
@@ -16,8 +16,8 @@
  * ```
  */
 import type { InferSyncRpcMap } from '@epicenter/workspace';
-import type { tabManager } from '../tab-manager/client';
+import type { TabManager } from '../tab-manager/client';
 
-type Actions = typeof tabManager.actions;
+type Actions = TabManager['actions'];
 
 export type TabManagerRpc = InferSyncRpcMap<Actions>;

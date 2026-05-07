@@ -21,7 +21,7 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
-Fuji's root workspace is built once per signed-in session by `createSession`. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The session module captures `userId` once at build time (since IDB and BroadcastChannel keys are immutable for the workspace's lifetime) and passes `bearerToken` and `encryptionKeys` as lazy callbacks that read from `auth.state` at use time, so token rotation and same-user key rotation propagate without a mutation hook on the workspace.
+Fuji's root workspace is built once per signed-in session by `createSession`. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The session module captures `userId` once at build time because IDB and BroadcastChannel keys are immutable for the workspace's lifetime. It passes auth-bound callbacks to the workspace at construction time: sync can read refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring derived when they attach.
 
 ```ts
 export function openFuji({

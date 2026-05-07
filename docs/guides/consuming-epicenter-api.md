@@ -36,7 +36,7 @@ import {
 } from '@epicenter/workspace';
 import { requireSignedIn } from '@epicenter/auth';
 import { createCookieAuth } from '@epicenter/auth-svelte';
-import { createSession, type SignedInBase } from '@epicenter/svelte';
+import { createSession, type InferSignedIn } from '@epicenter/svelte';
 import * as Y from 'yjs';
 import { type } from 'arktype';
 
@@ -109,11 +109,7 @@ function openMyApp({
 	};
 }
 
-type MyAppSignedIn = SignedInBase & {
-	readonly workspace: ReturnType<typeof openMyApp>;
-};
-
-export const session = createSession<MyAppSignedIn>({
+export const session = createSession({
 	auth,
 	build: (identity) => {
 		const userId = identity.user.id;
@@ -136,8 +132,10 @@ export const session = createSession<MyAppSignedIn>({
 		};
 	},
 });
+
+export type MyAppSignedIn = InferSignedIn<typeof session>;
 ```
 
 The `ydoc.guid` becomes the sync room name. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin.
-For authenticated browser workspaces, local IndexedDB and BroadcastChannel names are scoped inside the primitives from `userId`. App code passes `{ userId }`, not a prebuilt storage key. The session module captures `userId` once at build time (since IDB and BroadcastChannel keys are immutable for the workspace's lifetime) and hands `encryptionKeys` to the workspace as a lazy callback so same-user key rotation lands without a mutation hook.
-`createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user identity update is a no-op (the lazy `encryptionKeys` callback observes the change at the next read), and a different-user transition disposes the workspace and reloads the page.
+For authenticated browser workspaces, local IndexedDB and BroadcastChannel names are scoped inside the primitives from `userId`. App code passes `{ userId }`, not a prebuilt storage key. The session module captures `userId` once at build time because IDB and BroadcastChannel keys are immutable for the workspace's lifetime.
+`createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user identity update is a no-op at the session boundary, and a different-user transition disposes the workspace and reloads the page. Auth-bound callbacks still read `auth.state` at their own boundaries: sync can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached.

@@ -1,101 +1,103 @@
 ---
 name: workspace-app-layout
-description: How each app under apps/* lays out its workspace client — folder named after the app with three files (index.ts iso factory, <binding>.ts pure env factory, client.ts singleton + auth + lifecycle). Use when creating a new app with a workspace, splitting a single client file, deciding where browser-only or platform-specific imports belong, or naming a new env binding (worker, server, etc.).
+description: How each app under apps/* lays out its workspace package, pure environment factories, daemon/script bindings, and app singleton. Use when creating workspace-backed apps, adding daemon or script consumers, or deciding where browser-only, Bun-only, or platform-specific imports belong.
 metadata:
   author: epicenter
-  version: '2.0'
+  version: '3.0'
 ---
 
 # Workspace App Layout
 
-Every app under `apps/*` that has a workspace exposes it as a folder named
-after the app, with **three files**: an isomorphic doc factory, a pure
-environment factory, and a running client that wires auth + the singleton +
-lifecycle.
+Workspace apps split construction from runtime side effects.
 
-> **Related skills**: `factory-function-composition` (how the env factory takes injected deps), `workspace-api` (the `attach*` primitives), `monorepo` (where apps live).
-
-## When to Apply This Skill
-
-- Creating a new app under `apps/*` that needs a workspace.
-- Splitting a single `client.{svelte.,}ts` file into the three-file layout.
-- A non-browser consumer (build config, test, CLI, codegen) needs the doc
-  without dragging in `y-indexeddb` or platform APIs.
-- Adding a second environment binding to an existing app.
-
-## The Layout
-
-```
-apps/<app>/src/lib/<app>/
-├── index.ts          ← isomorphic doc factory       (open<App>())
-├── <binding>.ts      ← pure env factory             (open<App>(deps))
-└── client.ts         ← singleton + auth + lifecycle (the running thing)
+```txt
+apps/<app>/src/lib/
+|- client.ts              optional singleton when the app has been lifted
+`- <app>/
+    |- index.ts           iso doc factory, or core.ts after a larger relocation
+    |- browser.ts         browser factory
+    |- daemon.ts          long-lived daemon factory
+    |- script.ts          one-shot script factory
+    `- integration.test.ts
 ```
 
-**Three layers, three files, three jobs.** Each layer composes around the
-one below it.
+Current apps may still keep `client.ts` inside `src/lib/<app>/`. When changing
+only daemon transport, do not relocate the singleton unless the requested work
+needs that review churn. The important boundary is that `client.ts` is the only
+singleton with side effects, while `index.ts`, `browser.ts`, `daemon.ts`, and
+`script.ts` stay pure construction surfaces.
+
+Some SvelteKit apps scope their browser workspace to `routes/(signed-in)/`
+instead of `src/lib/`. Use the owner of the lifecycle as the deciding rule:
+if `$lib/session.svelte.ts` builds the workspace through `createSession` and
+exports `getSignedInSession()`, keep the app factory beside the signed-in
+routes. If a `$lib` client singleton owns the auth wait and workspace
+singleton, keep the factory beside that client until the app is migrated.
+
+## Layers
 
 | File | Job | Imports | Returns |
-|---|---|---|---|
-| `index.ts` | Iso doc factory | `@epicenter/workspace` core, schemas | doc bundle (ydoc, tables, kv, encryption, batch, dispose) |
-| `<binding>.ts` | Env factory (pure, no side effects) | `./index` + env-specific `attach*` primitives | doc bundle + env-specific resources (idb, sync, materializers, caches) |
-| `client.ts` | Auth construction | auth factory (`createCookieAuth` / `createBearerAuth`) | `auth` for the session module to consume |
+| --- | --- | --- | --- |
+| `index.ts` or `core.ts` | Isomorphic doc factory | Workspace core, schemas, pure action factories | `ydoc`, tables, kv, encryption, actions, batch, dispose |
+| `browser.ts` | Browser factory | Iso factory plus IndexedDB, BroadcastChannel, sync, browser caches | Doc bundle plus browser resources |
+| `daemon.ts` | Long-lived daemon factory | Iso factory plus `attachYjsLog`, `attachSync`, materializers | Doc bundle plus writer persistence and sync |
+| `script.ts` | One-shot script factory | Iso factory plus `attachYjsLogReader`, `attachSync` | Doc bundle plus readonly warm hydrate and sync |
+| `client.ts` | App singleton or auth owner | One env factory plus auth/session lifecycle | `auth`, or `auth` plus a running app singleton for apps not yet on `createSession` |
 
-## Binding Names
+## Iso Factory
 
-`<binding>` names the actual platform when bound to platform APIs, and
-generic when not:
-
-| Binding name | Use when the file imports |
-|---|---|
-| `browser.ts` | `y-indexeddb`, `BroadcastChannel`, plain `fetch`, no framework |
-| `tauri.ts` | `@tauri-apps/api/*`, Tauri-specific persistence/IPC |
-| `extension.ts` | `chrome.storage`, `chrome.runtime`, MV3 service-worker constraints |
-| `worker.ts` | Web Worker globals, no DOM |
-| `server.ts` / `node.ts` | Node SSR / CLI / tests |
-| `desktop.ts` | Generic Bun/Node desktop with no specific framework (rare) |
-
-Use `tauri.ts` over `desktop.ts` when the file's imports are Tauri-specific.
-
-## The Three Files (Reference)
-
-### `index.ts` — isomorphic factory
+The iso factory accepts an optional `clientID` so daemon and script peers can
+use stable Yjs identities.
 
 ```ts
-// apps/zhongwen/src/lib/zhongwen/index.ts
 import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { zhongwenKv, zhongwenTables } from '$lib/workspace';
+import { createFujiActions, fujiTables } from '../workspace.js';
 
-export function openZhongwen({
+export function openFuji({
 	encryptionKeys,
+	clientID,
 }: {
 	encryptionKeys: () => EncryptionKeys;
+	clientID?: number;
 }) {
-	const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
+	if (clientID !== undefined) ydoc.clientID = clientID;
 	const encryption = attachEncryption(ydoc, { encryptionKeys });
-	const tables = encryption.attachTables(zhongwenTables);
-	const kv = encryption.attachKv(zhongwenKv);
+	const tables = encryption.attachTables(fujiTables);
+	const kv = encryption.attachKv({});
+	const actions = createFujiActions(tables);
 	return {
-		ydoc, tables, kv, encryption,
+		ydoc,
+		tables,
+		kv,
+		encryption,
+		actions,
 		batch: (fn: () => void) => ydoc.transact(fn),
-		[Symbol.dispose]() { ydoc.destroy(); },
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
 	};
 }
 ```
 
-### `<binding>.ts` — pure env factory (lazy identity callbacks)
+Rules:
 
-For apps with sync, the factory takes plain values for things scoped once at build (`userId`, `peer`) and lazy callbacks for things that may change while the workspace is alive (`bearerToken`, `encryptionKeys`). The session module owns the lifecycle and passes these in: `userId` is captured because IDB and BroadcastChannel keys are immutable for the workspace's lifetime, while `bearerToken` and `encryptionKeys` are read lazily from `auth.state` so token rotation and same-user key rotation propagate without a mutation hook.
+- Keep the iso factory free of `node:*`, `bun:*`, `chrome.*`, Tauri APIs,
+  `y-indexeddb`, `BroadcastChannel`, and runtime singletons.
+- Use relative imports for schemas when daemon or script files will import the
+  factory outside Vite alias resolution.
+- Put pure actions in the iso factory when they depend only on tables.
+- Keep env-bound actions in the env factory when they need filesystem, SQLite,
+  shell, browser persistence, or other runtime state. Opensidian actions stay
+  extracted in `actions.ts`.
+
+## Browser Factory
+
+Browser factories hydrate local IndexedDB first and then attach sync with the
+current public remote-action API.
 
 ```ts
-// apps/fuji/src/routes/(signed-in)/fuji/browser.ts
-import {
-	attachOwnedBroadcastChannel, attachIndexedDb, attachSync,
-	type EncryptionKeys, type PeerIdentity, toWsUrl,
-} from '@epicenter/workspace';
-import { openFuji as openFujiDoc } from './index';
-
 export function openFuji({
 	userId,
 	peer,
@@ -110,252 +112,137 @@ export function openFuji({
 	const doc = openFujiDoc({ encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	const awareness = attachAwareness(doc.ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
+	});
 	const sync = attachSync(doc, {
-		url: toWsUrl(/* ... */),
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
 		bearerToken,
+		awareness,
 	});
-	return { ...doc, idb, sync };
+	return { ...doc, idb, awareness, sync };
 }
 ```
 
-For apps without sync/auth (zhongwen, whispering), the factory takes no
-deps:
+Do not restore `sync.peer()` or `describePeer()`. Remote calls use
+`createRemoteActions`; manifest fetches use `describeRemoteActions`.
+
+## Daemon Factory
+
+Daemon factories own the writer side of local persistence.
 
 ```ts
-export function openZhongwen() {
-	const doc = openZhongwenDoc();
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
-	return { ...doc, idb };
+export function openFuji({
+	bearerToken,
+	device,
+	projectDir = findEpicenterDir(),
+	clientID = hashClientId(projectDir),
+	apiUrl = EPICENTER_API_URL,
+}: {
+	bearerToken?: () => string | null;
+	device: DeviceDescriptor;
+	projectDir?: ProjectDir;
+	clientID?: number;
+	apiUrl?: string;
+}) {
+	const doc = openFujiDoc({ clientID });
+	const persistence = attachYjsLog(doc.ydoc, {
+		filePath: yjsPath(projectDir, doc.ydoc.guid),
+	});
+	const sync = attachSync(doc, {
+		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+		bearerToken,
+	});
+	return { ...doc, persistence, sync };
 }
 ```
 
-### `session.svelte.ts` — lifecycle + signed-in helper
+Defaults:
+
+- `projectDir = findEpicenterDir()`
+- `clientID = hashClientId(projectDir)`
+- `apiUrl = EPICENTER_API_URL`
+
+The public lifecycle command is `epicenter up`. Do not document daemon
+factories as `epicenter serve` consumers.
+
+## Script Factory
+
+Script factories read the daemon's local Yjs log and write through sync.
 
 ```ts
-// apps/fuji/src/lib/session.svelte.ts
-import { requireSignedIn } from '@epicenter/auth';
-import { createSession, type InferSignedIn } from '@epicenter/svelte';
-import { getOrCreateInstallationId } from '@epicenter/workspace';
-import { openFuji } from '../routes/(signed-in)/fuji/browser';
-import { auth } from './auth';
-
-export const session = createSession({
-	auth,
-	build: (identity) => {
-		const userId = identity.user.id;
-		const fuji = openFuji({
-			userId,
-			peer: {
-				id: getOrCreateInstallationId(localStorage),
-				name: 'Fuji',
-				platform: 'web',
-			},
-			bearerToken: () => auth.bearerToken,
-			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
-		});
-		return {
-			userId,
-			fuji,
-			[Symbol.dispose]() {
-				fuji[Symbol.dispose]();
-			},
-		};
-	},
-});
-
-export type FujiSignedIn = InferSignedIn<typeof session>;
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => session[Symbol.dispose]());
+export function openFuji({
+	bearerToken,
+	projectDir = findEpicenterDir(),
+	clientID = hashClientId(Bun.main),
+	apiUrl = EPICENTER_API_URL,
+}: {
+	bearerToken?: () => string | null;
+	projectDir?: ProjectDir;
+	clientID?: number;
+	apiUrl?: string;
+}) {
+	const doc = openFujiDoc({ clientID });
+	const persistence = attachYjsLogReader(doc.ydoc, {
+		filePath: yjsPath(projectDir, doc.ydoc.guid),
+	});
+	const sync = attachSync(doc, {
+		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+		bearerToken,
+	});
+	return { ...doc, persistence, sync };
 }
+```
 
-/**
- * Returns the live signed-in session. Throws if invoked outside the
- * signed-in branch. Pages mounted under the layout's signed-in gate bind
- * once at script init and dot-access fields.
- */
-export function getSignedInSession(): FujiSignedIn {
-	const c = session.current;
-	if (c.status !== 'signed-in') {
-		throw new Error('[fuji] getSignedInSession() called outside the signed-in branch.');
+Defaults:
+
+- `projectDir = findEpicenterDir()`
+- `clientID = hashClientId(Bun.main)`
+- `apiUrl = EPICENTER_API_URL`
+
+## Package Exports
+
+Apps that expose daemon and script factories should export them explicitly.
+Point each subpath at the file's actual owner. Signed-in-owned apps may export
+from `src/routes/(signed-in)/...`; client-singleton apps usually export from
+`src/lib/...`.
+
+```json
+{
+	"exports": {
+		"./workspace": "./src/routes/(signed-in)/fuji/workspace.ts",
+		"./openFuji": "./src/routes/(signed-in)/fuji/index.ts",
+		"./browser": "./src/routes/(signed-in)/fuji/browser.ts",
+		"./daemon": "./src/routes/(signed-in)/fuji/daemon.ts",
+		"./script": "./src/routes/(signed-in)/fuji/script.ts"
 	}
-	return c.signedIn;
 }
 ```
 
-`createSession` reconciles `auth.state` against the live workspace: a sign-out disposes it, a same-user identity update is a no-op (the lazy `encryptionKeys` callback observes the change at the next read), and a different-user transition disposes it and reloads the page. There is no `applyKeys` mutation hook on the workspace; `userId` is captured once because IDB and BroadcastChannel keys are immutable for the workspace's lifetime, while `encryptionKeys` is a callback so same-user key rotation lands without a workspace-level event.
+Client-singleton apps use the same subpaths, but point at `src/lib/...`.
 
-Descendant pages call `getSignedInSession()` directly: bind once at script init, dot-access fields. No context layer, no Provider component, no install step. The throw keeps the precondition honest at the call site.
+Do not export a running `client.ts` singleton from package exports.
 
-For tab-manager (async chrome.storage), the descriptor is built as a
-Promise — the factory accepts `Promise<DeviceDescriptor<DeviceId>>` and
-publishes awareness in the background. `tabManager.whenReady` gates
-dependent work without forcing TLA at the call site.
+## Tests
 
-For apps without auth (whispering), `client.ts` is minimal but still exists
-for consistency:
+Every daemon/script pair should have a handoff test:
 
-```ts
-// apps/whispering/src/lib/whispering/client.ts
-import { openWhispering } from './tauri';
-export const whispering = openWhispering();
+```txt
+daemon opens projectDir
+daemon writes rows
+daemon disposes and closes writer persistence
+script opens the same projectDir
+script observes rows from attachYjsLogReader replay
 ```
-
-## The Imports — what consumers do
-
-**Consumers always import from `client.ts`.** Same canonical function name
-(`open<App>`) only matters for internal composition; consumers see the
-singleton.
-
-```ts
-// app code — always import the singleton
-import { fuji } from '$lib/fuji/client';
-fuji.tables.entries.set(...);     // direct property access — no destructuring
-await fuji.whenReady;
-
-// app code that also needs auth
-import { auth, fuji } from '$lib/fuji/client';
-
-// Node tooling / build config / test — import the iso factory
-import { openFuji } from './apps/fuji/src/lib/fuji';
-```
-
-**Do not destructure the singleton** at call sites:
-
-```ts
-// ❌ Don't
-const { tables, actions } = fuji;
-tables.entries.set(...);
-
-// ✅ Do
-fuji.tables.entries.set(...);
-```
-
-Direct property access keeps the origin visible at every call site and
-avoids stale references when the singleton is rebuilt (HMR, tests).
-
-## Three Rules That Make Bleed Impossible
-
-1. **`index.ts` may import only isomorphic deps.** No `attach*` for
-   persistence/transport. No `node:*`, `bun:*`, `chrome.*`,
-   `@tauri-apps/*`, `y-indexeddb`, `BroadcastChannel`.
-2. **`<binding>.ts` is a pure factory.** Imports `./index` + env-specific
-   `attach*`. No top-level side effects, no `createAuth`, no singleton.
-   Takes injected dependencies (like `{ auth }`) when needed.
-3. **`client.ts` is the only file with side effects.** Constructs auth,
-   instantiates the singleton, wires `onSessionChange` and HMR. Imports
-   from `./<binding>` only.
-
-If all three hold, browser bundlers cannot reach Node code (and vice
-versa) through the import graph; tests can construct fresh docs without
-booting auth or chrome.storage; HMR can dispose and rebuild the client
-without re-importing the world.
-
-## What Goes Where
-
-| Concern | File |
-|---|---|
-| `Y.Doc` construction + GUID | `index.ts` |
-| `attachEncryption` + tables + kv + awareness | `index.ts` |
-| `batch` helper | `index.ts` |
-| `[Symbol.dispose]() { ydoc.destroy() }` | `index.ts` |
-| `actions` (when iso — depends only on `tables`) | `index.ts` |
-| `actions` (when env — depends on browser persistence, e.g. opensidian) | `<binding>.ts` |
-| `attachIndexedDb`, `attachBroadcastChannel` | `browser.ts` / `extension.ts` |
-| `attachSqlite`, filesystem materializers | `tauri.ts` |
-| `attachSync` (uses `WebSocket`) | `<binding>.ts` |
-| Per-row content caches that fetch over the network | `<binding>.ts` |
-| `createPersistedState({ key, ... })` for the auth session | `client.ts` |
-| `createAuth(...)` | `client.ts` |
-| `auth.onSessionChange(...)` | `client.ts` |
-| HMR `import.meta.hot.dispose` | `client.ts` |
-| Singleton `export const <app> = open<App>(...)` | `client.ts` |
-| Top-level `await` for env-specific init (e.g. `await session.whenReady` for chrome.storage) | `client.ts` |
-| `actionsToAiTools(opensidian.actions)` (uses singleton) | `client.ts` |
-
-## Naming Decisions, Pinned
-
-| Decision | Choice | Why |
-|---|---|---|
-| Folder name | The app name (`zhongwen/`, `whispering/`) | Self-describing imports. Maps to subpath exports if ever packaged. |
-| Iso file | `index.ts` | Default entry; matches `"."` subpath. |
-| Env file | `<binding>.ts`, single word | Folder is the namespace. Specific (`tauri`, `extension`) when bound to platform APIs; generic (`browser`) otherwise. |
-| Singleton file | `client.ts` | The running, configured client. Always the consumer's import target. |
-| Function name | `open<App>` in `index.ts` and `<binding>.ts` | Same canonical verb+noun. The env factory shadows the iso name via `import { open<App> as open<App>Doc } from './index'`. |
-| Singleton const | Lowercase `<app>`, only in `client.ts` | The singleton matches the folder name. |
-| Verb | `open` over `create`/`make` | Signals "resource needing teardown" — pairs with `[Symbol.dispose]`. |
-| Property access | `<app>.tables`, `<app>.actions` — no destructure at call sites | Origin stays visible; survives singleton rebuild. |
-| Always have `client.ts` | Even for apps without auth/sync | Consistency. Cost is one tiny file. |
-
-## Common Variations
-
-### App without auth or sync (whispering)
-
-`<binding>.ts` factory takes no deps. `client.ts` is just
-`export const <app> = open<App>()`.
-
-### App with `await` at module top-level (tab-manager)
-
-`await session.whenReady` (chrome.storage hydration) lives in `client.ts`,
-before `createAuth`. Importing `index.ts` from a Node config does not
-trigger the await chain.
-
-### App where `actions` depend on env state (opensidian)
-
-If `actions` use `fs` or `sqliteIndex` (which require browser
-persistence), they live in `<binding>.ts`, not `index.ts`. The iso file
-is then minimal — just doc + encryption + tables + kv.
-
-### Env file using Svelte runes
-
-Name the file `<binding>.svelte.ts` (e.g. `browser.svelte.ts`). Folder
-name is unchanged.
 
 ## Anti-Patterns
 
-- **Putting auth + singleton in `<binding>.ts`.** Conflates the env
-  factory with lifecycle. `<binding>.ts` is pure construction; `client.ts`
-  owns the running thing.
-- **Destructuring the singleton at call sites** (`const { tables } = fuji`).
-  Hides the origin and breaks if the singleton ever needs reconstruction.
-  Use `fuji.tables.*` directly.
-- **`core.ts` for the iso file.** Generic layering noun. `index.ts` is
-  conventional.
-- **`<App>Doc` suffix on the iso function.** Path disambiguates; same
-  function name keeps it grep-able. Local rename inside `<binding>.ts`
-  (`as open<App>Doc`) is the only place it appears.
-- **`browser.ts` for a Chrome extension or Tauri app.** Hides the actual
-  platform. Use `extension.ts` / `tauri.ts`.
-- **Module-scope side effects in `index.ts`.** Every consumer constructs
-  the doc just by importing — hostile to tests and codegen.
-- **Cross-environment imports** (`browser.ts` importing `tauri.ts`).
-  Breaks bleed prevention. Compose through `index.ts` instead.
-
-## Reference Implementation
-
-`apps/zhongwen/src/lib/zhongwen/{index,browser,client}.ts` is the
-canonical reference for the simplest case (no sync, no awareness). For
-sync + auth + cache, see fuji or honeycrisp. For platform-specific files,
-see whispering (Tauri) or tab-manager (Chrome extension).
-
-## Migrating an Existing App
-
-1. Make `apps/<app>/src/lib/<app>/` directory.
-2. **`index.ts`**: copy iso code (Y.Doc, encryption, tables, kv, batch,
-   dispose) as `open<App>()`.
-3. **`<binding>.ts`**: copy env-specific factory pieces (idb, BC, sync,
-   caches, env-bound actions). Compose around iso. Take `{ auth }` if
-   sync needs it. **No singleton, no `createAuth`, no
-   `onSessionChange`.**
-4. **`client.ts`**: `createAuth`, instantiate singleton (`open<App>({ auth })`),
-   wire `onSessionChange` and HMR dispose, derive `workspaceAiTools` if
-   any.
-5. Update call sites: `import { ... } from '$lib/client.svelte'` →
-   `import { <app> } from '$lib/<app>/client'`. Replace bare `tables`,
-   `actions` etc. with `<app>.tables`, `<app>.actions`. **No
-   destructuring** of the singleton at call sites.
-6. Delete old `client.{svelte.,}ts`.
-7. Typecheck + build. Verify no `node:*`/`bun:*` imports leaked into the
-   browser bundle.
+- Putting auth, `createPersistedState`, `auth.onStateChange`, or HMR disposal in
+  `browser.ts`, `daemon.ts`, or `script.ts`.
+- Importing `daemon.ts` from browser code.
+- Restoring `serve` as the public lifecycle command.
+- Restoring `sync.peer()` or `describePeer()` as the primary remote action API.
+- Inlining Opensidian actions back into `browser.ts`.
+- Relocating `client.ts` during a daemon-only change without a review reason.

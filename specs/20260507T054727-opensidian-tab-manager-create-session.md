@@ -1,18 +1,19 @@
-# opensidian and tab-manager adopt createSession
+# opensidian adopts createSession; tab-manager follow-up
 
-> Two apps still construct their workspace at module top-level via `await waitForAuthState`. Migrate them to the `createSession` factory pattern that fuji, honeycrisp, and zhongwen already use, so every app gates on identity through the same primitive.
+> Two apps still construct their workspace at module top-level via `await waitForAuthState`. Migrate opensidian to the `createSession` factory pattern that fuji, honeycrisp, and zhongwen already use. Keep tab-manager as an explicit follow-up because its sidepanel has the same lifecycle smell but its workspace factory is async today.
 
 **Date**: 2026-05-07
-**Status**: Proposed
+**Status**: Proposed; refreshed 2026-05-07; tab-manager blocked on async workspace construction decision
 **Author**: Captures the asymmetry surfaced after the spec-2 cleanup waves; opensidian and tab-manager are the last two apps not on `createSession`.
+**Current note**: This spec was written before `20260507T080000-drop-context-module-helper.md` landed and has been refreshed against the current tree. Do not implement a `SignedInSessionProvider`, `createContext`, or `setSignedInSession` path. Opensidian should match the current fuji, honeycrisp, and zhongwen shape: `session.current` for layout gating, `InferSignedIn<typeof session>` for the signed-in type, and a module-level `getSignedInSession()` helper exported from `session.svelte.ts`. Tab-manager has the same lifecycle smell in the side panel, but its workspace factory is async today, so it is not a direct `createSession` migration.
 **Branch**: follow-up to `feat/encrypted-local-workspace-storage`
 
 ## One-sentence thesis
 
 ```txt
-The five apps in this monorepo gate UI on a signed-in identity plus a
-workspace handle; one factory (`createSession`) should own that gating
-contract for all of them.
+Browser apps should not hide a signed-in-only workspace behind module import.
+SvelteKit apps can use `createSession` now; tab-manager needs an async
+construction decision before it can join the same pattern.
 ```
 
 ## Why this draft exists
@@ -36,6 +37,38 @@ auth.onStateChange((state) => { /* reload on sign-out / user-switch */ });
 ```
 
 Two patterns for the same problem. The split exists for historical reasons, not architectural ones.
+
+## Refresh findings: 2026-05-07
+
+Fresh code audits changed the action plan:
+
+```txt
+opensidian:
+  client.ts still owns auth, waitForAuthState, module-level opensidian,
+  workspaceAiTools, and manual auth.onStateChange reload policy.
+
+  Main consumers are +layout.svelte, fs-state, chat-state, ContentEditor,
+  terminal/search/skill state, sample-data loading, and TabBar.
+
+  Migration is still actionable and should move auth to lib/auth.ts,
+  create session.svelte.ts, expose getSignedInSession(), and migrate
+  consumers away from importing $lib/opensidian/client.
+
+tab-manager:
+  Only the sidepanel imports the signed-in workspace client. The background
+  entry point is inert.
+
+  client.ts still blocks on session.whenReady, waitForAuthState, peer/device
+  identity, and await openTabManager before App.svelte can finish importing.
+
+  createSession is conceptually the right lifecycle model for the sidepanel,
+  but createSession.build is synchronous and openTabManager is async today.
+  Resolve the async peer/workspace construction shape before migrating.
+```
+
+The consequence: opensidian can move now. Tab-manager should not be hand-waved
+as "just extension asymmetry," but it also should not be forced into
+`createSession` until the async `openTabManager` path has a deliberate home.
 
 ## What is wrong today
 
@@ -62,50 +95,51 @@ Workspace constructed once at module load      `export const opensidian = ...`  
 After this spec:
 
 ```txt
-"In every app, `session.current` is a discriminated union over
-auth lifecycle, and the signed-in variant carries the workspace
-handle the app needs."
+"opensidian uses `session.current` for auth lifecycle and carries its
+workspace handle in the signed-in payload; tab-manager's remaining
+top-level workspace export is documented as a temporary async-build blocker."
 ```
 
 ## Asymmetric refusals
 
 ```txt
-Refusal 1: top-level workspace export
+Refusal 1: opensidian top-level workspace export
   Deletes:
     - export const opensidian = openOpensidian({...})
-    - export const tabManager = await openTabManager({...})
-    - The blocking `await waitForAuthState(...)` at module load
-    - The hand-rolled auth.onStateChange reload logic
+    - The blocking `await waitForAuthState(...)` at opensidian module load
+    - The hand-rolled opensidian auth.onStateChange reload logic
 
   Replaces:
     - export const session = createSession({ auth, build: (identity) => {...} });
     - export type OpensidianSignedIn = InferSignedIn<typeof session>;
+    - export function getSignedInSession(): OpensidianSignedIn { ... }
     - createSession owns the user-switch reload; consumers narrow via `session.current`.
 
   User loss: every consumer that does `import { opensidian } from '...'` and
             uses it synchronously must migrate to `getSignedInSession()` (in a
             Svelte component scope) or guard via `session.current.status`.
 
-Refusal 2: tab-manager as a Chrome extension entry shape
-  Tab-manager has no SvelteKit `+layout.svelte`. Its entry points are popup,
-  sidepanel, background script, options page. Each is a separate Svelte app
-  bundle. createSession's provider model wants exactly one `setSignedInSession`
-  per render tree.
+Refusal 2: tab-manager immediate migration
+  Tab-manager has no SvelteKit `+layout.svelte`, but that is not the real
+  blocker: the current active entry point is only the sidepanel, and it could
+  gate on session.current at App.svelte. The real blocker is async build:
+  client.ts awaits peer/device identity and await openTabManager(...), while
+  createSession.build is synchronous.
 
   Decision required:
-    A. Migrate tab-manager: each entry point's root component installs the
-       provider. Three to four provider mounts, all reading the same `session`
-       module-level singleton. Workable but new pattern.
-    B. Refuse: keep tab-manager on its current synchronous shape. Document
-       why. Symmetry is broken for a defensible reason (extension ≠ SPA).
+    A. Make tab-manager workspace construction synchronous by resolving peer
+       identity before createSession or by changing openTabManager's shape.
+    B. Extend the session primitive with an async-build variant.
+    C. Keep the current top-level await temporarily, but document that signed-out
+       sidepanel rendering remains blocked by module import.
 
-  This spec proposes B with a follow-up to revisit if a third extension
-  consumer appears, but flags A as the fully-symmetric answer.
+  This spec proposes C for this wave and opens a follow-up for A or B. That is
+  not a permanent endorsement of the old client.ts shape.
 ```
 
 ## What changes per app (proposed)
 
-### apps/opensidian — full migration
+### apps/opensidian: full migration
 
 ```txt
 DELETED:
@@ -130,15 +164,11 @@ CREATED / MOVED:
         },
       });
     - export type OpensidianSignedIn = InferSignedIn<typeof session>;
-    - export const [getSignedInSession, setSignedInSession] = createContext<...>();
-
-  apps/opensidian/src/lib/components/SignedInSessionProvider.svelte
-    - 3-line setContext wrapper (same shape as fuji/zhongwen)
+    - export function getSignedInSession(): OpensidianSignedIn { ... }
 
   apps/opensidian/src/routes/+layout.svelte
     - gate on session.current with pending / signed-out / signed-in branches
     - WorkspaceGate inside the signed-in branch
-    - SignedInSessionProvider sets the context for descendants
 
 CONSUMERS:
   Audit `import { opensidian } from ...` across apps/opensidian/src.
@@ -151,37 +181,41 @@ CONSUMERS:
   per-mount tool instances.
 ```
 
-### apps/tab-manager — proposed: refuse migration, document the asymmetry
+### apps/tab-manager: defer migration, document the blocker
 
 ```txt
 TAB-MANAGER STAYS on current shape:
-  - top-level await pattern preserved (Chrome extension idiom)
+  - top-level await pattern preserved for this wave
   - registerDevice fires once after idb.whenLoaded (current behavior)
   - auth.onStateChange reload (current behavior)
+  - signed-out sidepanel rendering may remain blocked by module import
 
-ALTERNATIVE (Refusal 2 option A): full migration
-  Each entry point installs its own SignedInSessionProvider.
-  Three+ provider mounts referencing one module-level `session`.
-  Works but no other extension validates the pattern yet.
+FOLLOW-UP:
+  Decide whether tab-manager should:
+    A. make peer/workspace construction synchronous enough for createSession, or
+    B. use a new async createSession variant.
 
-This spec defaults to refusal; alternative is a follow-up if and only if
-a second extension app needs the same shape.
+Do not justify the old shape only by saying "extension." The current background
+entry point is inert; the sidepanel is the real consumer, and it has the same
+signed-in lifecycle issue as the SvelteKit apps.
 ```
 
 ## Wave ordering
 
 ```txt
-Wave 0   Decide tab-manager: refuse (default) or migrate?
-         If refuse, this wave is a no-op decision; tab-manager is unchanged.
+Wave 0   Decide tab-manager follow-up shape.
+         This wave does not migrate tab-manager. It records whether the next
+         spec should make openTabManager synchronous enough for createSession
+         or introduce an async session primitive.
 
 Wave 1   apps/opensidian/src/lib/session.svelte.ts (new)
          apps/opensidian/src/lib/auth.ts (move auth out of client.ts)
-         apps/opensidian/src/lib/components/SignedInSessionProvider.svelte (new)
          Drop top-level await, top-level export, bindAuthWorkspaceScope-replacement.
+         Export getSignedInSession() directly from session.svelte.ts.
          Typecheck.
 
 Wave 2   apps/opensidian/src/routes/+layout.svelte
-         Gate on session.current; install provider in signed-in branch.
+         Gate on session.current in the signed-in branch.
 
 Wave 3   Migrate consumers in apps/opensidian/src that read `opensidian.X`
          to `getSignedInSession().opensidian.X` (component code) or
@@ -196,9 +230,10 @@ Wave 4   Verify opensidian (rollback point):
            heaviest opensidian.X consumer)
          - sample data load still works
 
-Wave 5   (optional) Tab-manager full migration if Wave 0 chose option A.
-         Otherwise, cleanup pass: ensure tab-manager docs explain the
-         intentional asymmetry.
+Wave 5   Tab-manager documentation cleanup.
+         Document the temporary blocker: sidepanel uses the old top-level
+         await shape because openTabManager is async and createSession.build
+         is synchronous. Do not describe this as generic extension asymmetry.
 
 Wave 6   Final audit:
          grep -rn "waitForAuthState" apps/ packages/
@@ -208,15 +243,19 @@ Wave 6   Final audit:
 
 ## Tradeoffs (honest accounting)
 
-**Top-level await goes away.** Apps no longer block module load on auth. Consumers that imported `opensidian` and used it synchronously now hit a discriminated union. This is more honest — the workspace literally doesn't exist when signed-out — but every call site changes.
+**Top-level await goes away.** Apps no longer block module load on auth. Consumers that imported `opensidian` and used it synchronously now hit a discriminated union. This is more honest: the workspace literally doesn't exist when signed-out, but every call site changes.
 
-**Tab-manager refusal is intentional asymmetry.** The Chrome extension has different module-load semantics (multiple entry points, no shared root layout). Migrating it doubles the provider-install sites for one app. Until a second extension exists to test the pattern, the simpler shape wins. Spec acknowledges this.
+**Tab-manager migration is deferred, not rejected.** The sidepanel has the same
+signed-in lifecycle smell as opensidian: importing the client waits for
+signed-in auth before the UI can fully load. The reason not to migrate it in
+this wave is narrower: `createSession.build` is synchronous, while
+`openTabManager` awaits peer/device identity and workspace construction.
 
 **Module-level workspaceAiTools.** Tab-manager's `actionsToAiTools(tabManager.actions)` runs at module load today. After migration, tools are rebuilt per-mount or exposed static. Need to verify the AI tool registration works without a workspace handle at module scope.
 
 **HMR semantics.** Today's pattern disposes the workspace on HMR via `import.meta.hot.dispose`. After migration, the createSession factory's HMR hook handles it. Behavior should match.
 
-**registerDevice timing.** Tab-manager's `registerDevice` fires once after IDB load. In the migrated version, it'd run inside the build factory or as a side effect of the provider mount. Same shape, slightly different lifecycle anchor.
+**registerDevice timing.** Tab-manager's `registerDevice` fires once after IDB load. In a migrated version, it would run inside the signed-in workspace construction path or immediately after it settles. That timing must be preserved.
 
 ## Open questions
 
@@ -228,52 +267,55 @@ Default: leave chat state where it is for now; revisit if multiple components ne
 
 ### Q2: Should tab-manager's RPC contract types still reference the workspace handle?
 
-`apps/tab-manager/src/lib/workspace/rpc-contract.ts` imports `type { tabManager }`. If tab-manager stays on the top-level export, this still works. If tab-manager migrates, the type derives from `session` instead.
+`apps/tab-manager/src/lib/workspace/rpc-contract.ts` imports `type { tabManager }`. While tab-manager stays on the top-level export, this still works. If tab-manager migrates, the type should derive from `InferSignedIn<typeof session>['tabManager']` or from the factory return type.
 
-### Q3: Is there a way to share the SignedInSessionProvider across apps?
+### Q3: Is there still a shared provider to extract?
 
-Five copies of the same 3-line component. A generic component in `@epicenter/svelte` would centralize the `// svelte-ignore state_referenced_locally` suppression and the rationale comment. Tradeoff: per-app type narrowing vs one generic component with type parameters.
+No. `20260507T080000-drop-context-module-helper.md` deleted the provider layer
+in fuji, honeycrisp, and zhongwen. The current shared pattern is
+`createSession` plus a per-app module-level `getSignedInSession()` helper.
 
-This spec leaves the decision out of scope but flags it for the workspace-app-layout skill update.
+This question is closed unless a future app reintroduces a real context owner.
 
 ### Q4: What happens to `bindAuthWorkspaceScope` after this spec?
 
-Already deleted in spec 2 cleanup. This spec just removes the last hand-rolled replacements (the `auth.onStateChange` reload blocks in opensidian/tab-manager client.ts).
+Already deleted in spec 2 cleanup. This spec removes the opensidian hand-rolled replacement. Tab-manager keeps its replacement until the async construction decision is made.
 
-If tab-manager refuses migration, its `auth.onStateChange` block stays — that's the only remaining hand-rolled lifecycle handler in the monorepo. Document it as intentional.
+If tab-manager defers migration, its `auth.onStateChange` block stays. That's the only remaining hand-rolled lifecycle handler in the monorepo. Document it as a temporary async-build blocker, not as the preferred pattern.
 
 ## Final check (cohesive-clean-breaks)
 
 ```txt
 Can I explain the new API without saying "or"?
-  Mostly. "Every Svelte app gates on createSession; tab-manager (Chrome
-  extension) keeps its top-level shape because it has no shared layout."
-  The "or" is the deliberate refusal.
+  Not yet. "Every SvelteKit app gates on createSession; tab-manager sidepanel
+  still uses top-level await until async workspace construction has a home."
+  That exception is an open follow-up, not a settled design.
 
 Does one layer own each invariant?
   Yes:
     auth                        identity truth (same as today)
     createSession               when the workspace exists; user-switch reload
     per-app session.svelte.ts   what the SignedIn payload contains
-    SignedInSessionProvider     scopes the context to the signed-in subtree
+    getSignedInSession          enforces the signed-in precondition at read time
     descendants                 read getSignedInSession() once per component
 
 Would a new caller find only one obvious path?
-  For SPAs: yes — createSession + InferSignedIn + SignedInSessionProvider.
-  For extensions: top-level await pattern, documented as intentional.
+  For SPAs: yes: createSession + InferSignedIn + getSignedInSession.
+  For tab-manager: not yet. Current top-level await pattern is documented as temporary.
 
 Are examples free of compatibility shapes?
-  Yes if we commit. No half-migrated state.
+  For opensidian, yes. For tab-manager, no: the compatibility shape remains
+  until the async construction follow-up lands.
 
 Did I delete stale names instead of leaving aliases?
-  Yes. The opensidian module-level export is gone; consumers migrate.
+  Yes for opensidian. Tab-manager stale names remain by explicit deferral.
 
 Did I move the boundary that caused the smell, or only wrap it?
-  Moved. Auth lifecycle goes through createSession for every SPA.
+  Moved for opensidian. Tab-manager still needs a follow-up boundary move.
 
 Did I run the asymmetric wins pass before adding another invariant?
-  Yes. Refusing tab-manager's migration is the asymmetric refusal: one app's
-  exception keeps the other four apps' patterns clean.
+  Yes. Deferring tab-manager keeps this wave cohesive: opensidian can migrate
+  to the current session pattern without also designing async session builds.
 ```
 
 ## References

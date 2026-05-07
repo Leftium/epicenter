@@ -29,10 +29,10 @@ singleton with side effects, while `index.ts`, `browser.ts`, `daemon.ts`, and
 
 Some SvelteKit apps scope their browser workspace to `routes/(signed-in)/`
 instead of `src/lib/`. Use the owner of the lifecycle as the deciding rule:
-if a `SignedIn.svelte` gate opens the workspace from `AuthIdentity` and installs
-it in signed-in context, keep the app factory beside that gate. If a `$lib`
-client singleton owns the auth wait and workspace singleton, keep the factory
-beside that client until the app is migrated.
+if `$lib/session.svelte.ts` builds the workspace through `createSession` and
+exports `getSignedInSession()`, keep the app factory beside the signed-in
+routes. If a `$lib` client singleton owns the auth wait and workspace
+singleton, keep the factory beside that client until the app is migrated.
 
 ## Layers
 
@@ -42,7 +42,7 @@ beside that client until the app is migrated.
 | `browser.ts` | Browser factory | Iso factory plus IndexedDB, BroadcastChannel, sync, browser caches | Doc bundle plus browser resources |
 | `daemon.ts` | Long-lived daemon factory | Iso factory plus `attachYjsLog`, `attachSync`, materializers | Doc bundle plus writer persistence and sync |
 | `script.ts` | One-shot script factory | Iso factory plus `attachYjsLogReader`, `attachSync` | Doc bundle plus readonly warm hydrate and sync |
-| `client.ts` | App singleton | One env factory plus auth/session lifecycle | `auth` and the running app singleton |
+| `client.ts` | App singleton or auth owner | One env factory plus auth/session lifecycle | `auth`, or `auth` plus a running app singleton for apps not yet on `createSession` |
 
 ## Iso Factory
 
@@ -50,14 +50,20 @@ The iso factory accepts an optional `clientID` so daemon and script peers can
 use stable Yjs identities.
 
 ```ts
-import { attachEncryption } from '@epicenter/workspace';
+import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createFujiActions, fujiTables } from '../workspace.js';
 
-export function openFuji({ clientID }: { clientID?: number } = {}) {
+export function openFuji({
+	encryptionKeys,
+	clientID,
+}: {
+	encryptionKeys: () => EncryptionKeys;
+	clientID?: number;
+}) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
-	const encryption = attachEncryption(ydoc);
+	const encryption = attachEncryption(ydoc, { encryptionKeys });
 	const tables = encryption.attachTables(fujiTables);
 	const kv = encryption.attachKv({});
 	const actions = createFujiActions(tables);
@@ -93,21 +99,30 @@ current public remote-action API.
 
 ```ts
 export function openFuji({
+	userId,
+	peer,
 	bearerToken,
-	device,
+	encryptionKeys,
 }: {
+	userId: string;
+	peer: PeerIdentity;
 	bearerToken?: () => string | null;
-	device: DeviceDescriptor;
+	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openFujiDoc();
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
+	const doc = openFujiDoc({ encryptionKeys });
+	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	const awareness = attachAwareness(doc.ydoc, {
+		schema: { peer: PeerIdentity },
+		initial: { peer },
+	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
 		bearerToken,
+		awareness,
 	});
-	return { ...doc, idb, sync };
+	return { ...doc, idb, awareness, sync };
 }
 ```
 
@@ -224,7 +239,7 @@ script observes rows from attachYjsLogReader replay
 
 ## Anti-Patterns
 
-- Putting auth, `createPersistedState`, `onSessionChange`, or HMR disposal in
+- Putting auth, `createPersistedState`, `auth.onStateChange`, or HMR disposal in
   `browser.ts`, `daemon.ts`, or `script.ts`.
 - Importing `daemon.ts` from browser code.
 - Restoring `serve` as the public lifecycle command.

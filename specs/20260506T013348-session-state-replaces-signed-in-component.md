@@ -5,9 +5,10 @@
 > define what its signed-in payload is.
 
 **Date**: 2026-05-06
-**Status**: Implemented
+**Status**: Implemented; descendant access superseded by `20260507T080000-drop-context-module-helper.md`
 **Author**: AI-assisted, grounded against DeepWiki (Svelte 5, Better Auth), existing specs in `specs/`, and codebase articles in `docs/articles/`.
 **Generalizes**: `20260506T010807-signed-in-owns-the-workspace.md` (fuji-only) into a pattern that lands across fuji, honeycrisp, zhongwen via a shared factory.
+**Current shape**: `createSession` and `session.current` remain the canonical lifecycle model. The per-app `SignedInSessionProvider`, `createContext`, `setSignedInSession`, and `FujiSignedInSession` details below are historical. Current code exposes a module-level `getSignedInSession()` helper from each app's `session.svelte.ts`, and the signed-in payload owns app-specific reactive views directly.
 **Branch**: feat/encrypted-local-workspace-storage
 
 ## One-sentence thesis

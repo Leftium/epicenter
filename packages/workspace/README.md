@@ -122,7 +122,7 @@ refcounting, and the `gcTime` grace period between last dispose and teardown.
 
 ### Plaintext vs encrypted
 
-Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { encryptionKeys })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `encryptionKeys()` synchronously at each registration site, derives the per-doc keyring, and activates the store before handing it back. Same-user key rotation propagates through the next `encryptionKeys()` read; there is no `applyKeys` mutation hook.
+Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { encryptionKeys })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `encryptionKeys()` synchronously at each registration site, derives the store keyring, and activates the store before handing it back. Already-attached encrypted stores keep their derived keyring; same-user key rotation needs a re-attach to affect those stores.
 
 Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 
@@ -132,7 +132,6 @@ Minimal encrypted workspace: encryption + IndexedDB + cross-tab + sync wired end
 import {
 	attachAwareness,
 	attachEncryption,
-	attachIndexedDb,
 	attachOwnedBroadcastChannel,
 	attachSync,
 	createRemoteClient,
@@ -165,7 +164,7 @@ export function openApp({
 		},
 	});
 
-	const idb = attachIndexedDb(ydoc);
+	const idb = encryption.attachIndexedDb(ydoc, { userId });
 	attachOwnedBroadcastChannel(ydoc, { userId });
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
@@ -205,7 +204,7 @@ export const workspace = openApp({
 
 The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.
 
-For production-shaped browser wiring, see `apps/fuji/src/lib/fuji/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/fuji/client.ts`.
+For production-shaped browser wiring, see `apps/fuji/src/routes/(signed-in)/fuji/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.svelte.ts`.
 
 ## Core Philosophy
 
@@ -438,7 +437,7 @@ cache primitive.
 
 The `$derived` swaps handles when `fileId` changes; the `$effect` cleanup releases the old handle. Refcount 0 arms the cache's `gcTime` timer; a fresh open during the grace window cancels the pending teardown, so rapid navigation doesn't flap persistence or sync.
 
-Reference implementations: `apps/opensidian/src/lib/opensidian/browser.ts`, `apps/skills/src/lib/skills/browser.ts`, `apps/fuji/src/lib/fuji/browser.ts`, `apps/honeycrisp/src/lib/honeycrisp/browser.ts`.
+Reference implementations: `apps/opensidian/src/lib/opensidian/browser.ts`, `apps/skills/src/lib/skills/browser.ts`, `apps/fuji/src/routes/(signed-in)/fuji/browser.ts`, `apps/honeycrisp/src/routes/(signed-in)/honeycrisp/browser.ts`.
 
 ## Schema definition
 

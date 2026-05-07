@@ -31,7 +31,7 @@ attachIndexedDb(ydoc)                   // Y.Doc subject
 attachSqlite(ydoc, { filePath })
 attachSync(ydoc, { url, getToken })
 attachBroadcastChannel(ydoc)
-attachEncryption(ydoc)
+attachEncryption(ydoc, { encryptionKeys })
 attachTable(ydoc, name, def)            // Y.Doc subject + slot key + def
 attachTables(ydoc, defs)
 attachKv(ydoc, defs)
@@ -80,7 +80,7 @@ If the primitive is in-package with its coordinator, prefer method-on-coordinato
 When one attachment registers additional sibling attachments into itself, it owns the method surface:
 
 ```ts
-const encryption = attachEncryption(ydoc);
+const encryption = attachEncryption(ydoc, { encryptionKeys });
 const tables = encryption.attachTables(defs);      // method on coordinator
 const kv = encryption.attachKv(defs);
 ```
@@ -117,7 +117,7 @@ Primitives compose inside a build closure:
 ```ts
 const cache = createDisposableCache((id: string) => {
   const ydoc       = new Y.Doc({ guid: id, gc: false });
-  const encryption = attachEncryption(ydoc);
+  const encryption = attachEncryption(ydoc, { encryptionKeys });
   const tables     = encryption.attachTables(schema);     // coordinator method
   const idb        = attachIndexedDb(ydoc);
   const unlock     = attachSessionUnlock(encryption, {          // non-ydoc subject

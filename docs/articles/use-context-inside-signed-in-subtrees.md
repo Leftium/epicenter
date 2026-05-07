@@ -1,5 +1,12 @@
 # Use Context Inside Signed-In Subtrees
 
+Current workspace-backed apps do not use context for the signed-in workspace
+handle. Fuji, Honeycrisp, and Zhongwen use `createSession`, gate on
+`session.current`, and expose a module-level `getSignedInSession()` helper from
+`session.svelte.ts`. This article is about the narrower identity-only case:
+when a subtree needs an ambient authenticated identity and does not own a
+workspace lifecycle.
+
 For Svelte descendants, I like context better than prop drilling once you are inside a protected or signed-in subtree. The route gate already proved the user is signed in. Past that point, making every child accept `identity` as a prop or write `auth.identity?.user` is just making the rest of the tree re-prove something the parent already knows.
 
 The common version looks like this:

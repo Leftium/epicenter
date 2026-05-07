@@ -1,13 +1,42 @@
 # `fromTable` Readonly View Redesign
 
 **Date**: 2026-05-06
-**Status**: Draft
+**Status**: Draft; refreshed 2026-05-07; risky before execution
 **Author**: AI-assisted
 **Branch**: feat/encrypted-local-workspace-storage
+**Refresh note**: The May 7 session cleanup moved Fuji's `fromTable` usage
+from `apps/fuji/src/routes/(signed-in)/state/entries.svelte.ts` and
+`SignedInSessionProvider.svelte` into `apps/fuji/src/lib/session.svelte.ts`.
+The implementation plan below reflects that newer shape.
 
 ## Overview
 
 Replace `fromTable`'s `SvelteMap` mirror plus manual `[Symbol.dispose]()` with a `createSubscriber`-driven view exposing `all` and `byId(id)` that reads live from Yjs and self-disposes when no effect is reading it.
+
+## Refresh findings: 2026-05-07
+
+A fresh audit found the spec is still pointed at a real smell, but its first
+draft was too casual about migration risk.
+
+```txt
+Still true:
+  fromTable still returns a SvelteMap mirror plus Disposable.
+  Direct writes to returned maps are still absent.
+  Most call sites still read values(), get(id), has(id), keys(), size, or iterate.
+
+Stale or too optimistic:
+  Fuji now owns its entries view in apps/fuji/src/lib/session.svelte.ts.
+  Fuji no longer has SignedInSessionProvider.svelte.
+  Several wrappers have non-fromTable cleanup that must stay.
+  OpenSidian relies on per-key SvelteMap tracking in filesystem comments and reads.
+  OpenSidian explicitly accepts <5000 files, not only sub-1000 row tables.
+```
+
+This spec should not be executed as a mechanical "delete every dispose" pass.
+Each migrated file needs a lifecycle audit first: remove only the observer
+cleanup made unnecessary by `fromTable`, and keep cleanup for chat handles,
+message-table observers, filesystem indexes, workspace handles, and other
+resources.
 
 ## Motivation
 
@@ -115,7 +144,7 @@ export { SvelteDate, SvelteSet, SvelteMap, SvelteURL, SvelteURLSearchParams, Med
 | Operation | Count | Where |
 |---|---|---|
 | Direct WRITE (`.set`/`.delete`/`.clear`) on returned map | **0** | None |
-| `[...map.values()]` inside `$derived` | 15 | All wrappers and SignedInSessionProvider |
+| `[...map.values()]` inside `$derived` | 15 | Wrapper modules and Fuji's session payload |
 | `.get(id)` | ~14 | Per-row access |
 | `.size` | 5 | folders (semantic), 4 cosmetic counts |
 | `for (const [id, row] of map)` directly | 2 | transformation-steps, fs-state |
@@ -155,7 +184,13 @@ For a single observer fire reaching `N` `$derived` consumers of `view.all` over 
 | Notes app, 1000 rows, 5 consumers | 5 | 1000 | ~1µs | 5ms |
 | Pathological 10K rows, 10 consumers | 10 | 10000 | ~1µs | 100ms |
 
-**Implication**: at this codebase's scale (sub-1000 rows in any table, single-digit consumers per view) the cost is below 5ms per write. Per-key reactivity is the obvious upgrade if profiling ever pegs `parseRow`, but is not worth shipping speculatively.
+**Implication**: at the small-table end of this codebase, the cost is likely
+fine. OpenSidian is the exception to treat carefully: its filesystem state
+comments mention `<5000 files`, and its path helpers currently rely on
+`filesMap.get(id)` creating narrow key-level dependencies. A global
+`createSubscriber` view would make those reads invalidate on any table change.
+That may still be acceptable, but it must be a deliberate tradeoff verified
+with the OpenSidian filesystem UI, not a hidden side effect of the migration.
 
 ## Design Decisions
 
@@ -164,7 +199,7 @@ For a single observer fire reaching `N` `$derived` consumers of `view.all` over 
 | Lifecycle primitive | 1 evidence | `createSubscriber` from `svelte/reactivity` | Verified public export in `index-client.js`. Documented since 5.7.0. |
 | Return shape | 2 coherence | Plain object with `all` getter and `byId(id)` method, no `Disposable`, no `ReadonlyMap` | Map shape is structurally redundant once writes, dispose, and Map-only methods are gone; audit shows nothing depends on it. |
 | Storage strategy | 2 coherence | Live read from `table` on every access; no mirror | Mirror is the source of all disposal complexity and the empty-cache hazard from createSubscriber. |
-| Reactivity granularity | 3 taste | Single global subscriber; no per-key signals | At sub-1000-row scale the granularity gap is sub-millisecond per write. Per-key SvelteMap-as-signal pattern is documented as escape hatch. |
+| Reactivity granularity | 3 taste, risky | Single global subscriber; no per-key signals | Simpler lifecycle, but it invalidates keyed reads on any table change. Verify OpenSidian filesystem and chat metadata before accepting this globally. |
 | Verb naming for plural | 3 taste | `all` getter | Reads naturally as "all recordings"; matches the `get all() { return map }` shape already in 4 wrappers. |
 | Verb naming for keyed lookup | 3 taste | `byId(id)` method | JS-canonical idiom for keyed lookup off a Map shape; avoids `Row` noun collision with `@tanstack/table-core`. |
 | Dropped: `count`/`size` | 2 coherence | Use `view.all.length` | One semantic site (`folders.svelte.ts:69`), 4 cosmetic; -1 verb beats keeping a method to skip a `.length`. |
@@ -232,6 +267,13 @@ For a single observer fire reaching `N` `$derived` consumers of `view.all` over 
 
 Build, prove, remove. Phases 1 to 4 are sequential; within Phase 2 the per-app migrations can proceed in parallel.
 
+### Phase 0: Reconfirm lifecycle and granularity
+
+- [ ] **0.1** For every Phase 2 file, list each `[Symbol.dispose]()` or HMR cleanup and mark it as `fromTable observer cleanup` or `other resource cleanup`.
+- [ ] **0.2** Keep all `other resource cleanup` paths. Known examples: Fuji workspace disposal, OpenSidian `fs.index` and `fs` disposal, chat message observers, chat handles, and workspace handles.
+- [ ] **0.3** In OpenSidian filesystem state, rewrite comments that claim ancestor-only or key-level tracking if this migration accepts global invalidation.
+- [ ] **0.4** Measure or smoke-test OpenSidian filesystem interactions with a large sample tree before merging the global-subscriber version.
+
 ### Phase 1: Build the new primitive
 
 - [ ] **1.1** Rewrite `packages/svelte-utils/src/from-table.svelte.ts` to the new shape. Drop `ReactiveTableMap` type export; the inferred return type is sufficient.
@@ -250,8 +292,8 @@ Each file changes per the translation table below. No file change depends on ano
 - [ ] **2.1** `apps/honeycrisp/src/routes/(signed-in)/state/folders.svelte.ts`
 - [ ] **2.2** `apps/honeycrisp/src/routes/(signed-in)/state/notes.svelte.ts`
 - [ ] **2.3** `apps/zhongwen/src/routes/(signed-in)/chat/chat-state.svelte.ts`
-- [ ] **2.4** `apps/fuji/src/routes/(signed-in)/state/entries.svelte.ts`
-- [ ] **2.5** `apps/fuji/src/lib/components/SignedInSessionProvider.svelte`
+- [ ] **2.4** `apps/fuji/src/lib/session.svelte.ts`
+- [ ] **2.5** removed: Fuji no longer has `SignedInSessionProvider.svelte`
 - [ ] **2.6** `apps/tab-manager/src/lib/chat/chat-state.svelte.ts`
 - [ ] **2.7** `apps/opensidian/src/lib/chat/chat-state.svelte.ts`
 - [ ] **2.8** `apps/whispering/src/lib/state/transformation-steps.svelte.ts`
@@ -270,13 +312,13 @@ Each file changes per the translation table below. No file change depends on ano
 - [ ] **3.2** `bun run test` passes.
 - [ ] **3.3** Manual smoke: launch whispering, fuji, honeycrisp, tab-manager. Exercise per-app create/update/delete flows for at least one tabular view. Confirm no regressions in TanStack Table sorting or row updates.
 - [ ] **3.4** HMR check: edit one of the migrated wrapper files (e.g. `recordings.svelte.ts`), confirm hot replace does not leak observers (open devtools, check Yjs document for accumulated handlers if any.)
-- [ ] **3.5** Sign-out smoke: in fuji, sign out and back in. Confirm `SignedInSessionProvider` does not retain stale entries data.
+- [ ] **3.5** Sign-out smoke: in fuji, sign out and back in. Confirm the rebuilt session payload does not retain stale entries data.
 
 ### Phase 4: Remove
 
 - [ ] **4.1** Delete the `ReactiveTableMap` type export reference (already done in 1.2; this phase confirms nothing imports it).
 - [ ] **4.2** Search-and-fail: `grep -rn "ReactiveTableMap" packages/ apps/` returns zero hits.
-- [ ] **4.3** Search-and-fail: `grep -rn "fromTable.*\[Symbol.dispose\]\|map\[Symbol.dispose\]" apps/` returns zero hits.
+- [ ] **4.3** Search-and-fail: no cleanup remains whose only purpose is disposing a `fromTable` view. Cleanup for other resources may remain.
 - [ ] **4.4** Update `docs/articles/sveltemap-over-state-for-keyed-collections.md` and `docs/articles/derived-vs-getter-caching-matters.md` if the new primitive contradicts examples.
 
 ### Call site translation table
@@ -291,10 +333,10 @@ Each file changes per the translation table below. No file change depends on ano
 | `map.size` | `view.all.length` |
 | `for (const [id, row] of map)` | `for (const row of view.all)` (id is on `row.id`) |
 | `[...map.keys()]` | `view.all.map(r => r.id)` |
-| `map[Symbol.dispose]()` | delete the call |
-| `import.meta.hot.dispose(() => x[Symbol.dispose]())` | delete the block |
-| `onDestroy(() => x[Symbol.dispose]())` | delete the call |
-| `[Symbol.dispose]() { map[Symbol.dispose](); }` (in wrapper) | delete the method |
+| `map[Symbol.dispose]()` | delete only when the map was the only owned resource |
+| `import.meta.hot.dispose(() => x[Symbol.dispose]())` | keep if `x` still owns non-fromTable resources |
+| `onDestroy(() => x[Symbol.dispose]())` | keep if `x` still owns non-fromTable resources |
+| `[Symbol.dispose]() { map[Symbol.dispose](); }` (in wrapper) | remove the map line, not necessarily the whole method |
 
 ### Worked example: `recordings.svelte.ts`
 

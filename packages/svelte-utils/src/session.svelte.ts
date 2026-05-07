@@ -5,18 +5,18 @@
  * Status comes directly from `auth.state`; this factory only owns the payload
  * lifecycle (build, dispose) and the user-switch refusal (different `user.id`
  * disposes the payload and reloads the page). Same-user identity changes
- * (key rotation, profile edits) are no-ops at the session boundary: the
- * payload's lazy callbacks observe updates only when something reads them.
+ * (token refresh, key rotation, profile edits) are no-ops at the session
+ * boundary. Lazy callbacks read `auth.state` at their own boundaries.
  *
  * Lazy callbacks (e.g., `bearerToken`, `encryptionKeys`) are read at:
  *   - attachment time (e.g., `attachEncryption` reads `encryptionKeys()` once
  *     per store registration to derive that store's keyring)
- *   - reconnect / per-request boundaries (sync's `bearerToken` is read at
- *     each sync attempt)
+ *   - connection boundaries (sync's `bearerToken` is read at each sync
+ *     connection attempt)
  *
  * They are NOT read by already-attached encrypted stores. Same-user key
  * rotation does not propagate to stores whose keyring was derived at an
- * earlier registration; a re-attach is required for those.
+ * earlier registration; re-attach the store to derive a new keyring.
  *
  * `current` projects `auth.state` and decorates the signed-in variant with the
  * built payload, so apps consume one read API and TypeScript narrows in one
@@ -89,9 +89,9 @@ export function createSession<TSignedIn extends SignedInBase>({
 			signedIn = build(state.identity);
 			return;
 		}
-		// Same user: no-op. The payload's lazy reads through `auth.state`
-		// observe any identity update (key rotation, profile edits) without
-		// involving the workspace lifecycle.
+		// Same user: no-op. Auth-bound callbacks read at their own boundaries:
+		// sync can see refreshed tokens on connection attempts, while encrypted
+		// stores keep the keyring they derived when they were attached.
 		if (signedIn.userId === state.identity.user.id) return;
 		// Different user: refuse the live switch and reload (heap safety).
 		signedIn[Symbol.dispose]();

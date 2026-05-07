@@ -70,11 +70,11 @@ The factory body is where you wire everything. Because you own the return shape,
 The encryption coordinator owns sibling attachments: `attachTable` / `attachTables` / `attachKv` are methods on it, not top-level exports.
 
 ```typescript
-import { attachEncryption } from '@epicenter/workspace';
+import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 
-function openBlog() {
+function openBlog({ encryptionKeys }: { encryptionKeys: () => EncryptionKeys }) {
   const ydoc = new Y.Doc({ guid: 'blog' });
-  const encryption = attachEncryption(ydoc);
+  const encryption = attachEncryption(ydoc, { encryptionKeys });
   const tables = encryption.attachTables(myTables);
   const kv = encryption.attachKv(myKv);
   return { ydoc, tables, kv, encryption, [Symbol.dispose]() { ydoc.destroy(); } };

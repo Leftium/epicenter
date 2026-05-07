@@ -127,7 +127,7 @@ export function getSignedInSession(): FujiSignedIn {
 }
 ```
 
-`createSession` reconciles `auth.state`: a sign-out disposes the workspace, a same-user identity update is a no-op (the lazy callback observes the change at the next read), and a different-user transition disposes the workspace and reloads. Each `attachSync` still receives `bearerToken: () => auth.bearerToken`. For destructive reset (wipe local data and reload), call `workspace.wipe()` and `location.reload()` inside the consumer that triggers it; there is no terminal callback on the session itself.
+`createSession` reconciles `auth.state`: a sign-out disposes the workspace, a same-user identity update is a no-op at the session boundary, and a different-user transition disposes the workspace and reloads. Auth-bound callbacks read at their own boundaries: `attachSync` can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached. For destructive reset (wipe local data and reload), call `workspace.wipe()` and `location.reload()` inside the consumer that triggers it; there is no terminal callback on the session itself.
 
 Descendant pages call `getSignedInSession()` directly: bind once at script init, dot-access fields. No context layer, no Provider component, no install step. The throw keeps the precondition honest at the call site.
 

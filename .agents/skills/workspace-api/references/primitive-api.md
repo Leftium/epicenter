@@ -91,7 +91,7 @@ const tables     = encryption.attachTables(myTables);
 const kv         = encryption.attachKv(myKv);
 ```
 
-Keys are read lazily through the `encryptionKeys` callback. There is no separate `applyKeys` step: registration and activation happen in one call, and same-user key rotation is observed at the next read of `encryptionKeys()` (no mutation hook on the workspace). `encryptionKeys()` should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth` does exactly that.
+Keys are read through the `encryptionKeys` callback when an encrypted resource is attached. There is no separate `applyKeys` step: registration and activation happen in one call. Already-attached encrypted stores keep the keyring they derived at attach time; same-user key rotation needs a re-attach to affect those stores. `encryptionKeys()` should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth` does exactly that.
 
 Encryption is opt-in per slot; the coordinator carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted `encryption.attachTable(name, def)` (method) are both available; pick one per slot.
 

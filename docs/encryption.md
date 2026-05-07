@@ -59,7 +59,7 @@ That happens in two places:
 - on boot from a cached session
 - on every authenticated session update from Better Auth
 The boot path exists so the workspace can unlock before the first auth roundtrip finishes.
-The workspace does not hold its own copy of the keys. `attachEncryption` takes a lazy `encryptionKeys` callback that reads `auth.state` each time encryption needs to derive a per-doc keyring. In per-app session modules, the workspace builder passes `() => requireSignedIn(auth).encryptionKeys` straight through:
+The workspace does not hold an independently mutable copy of the keys. `attachEncryption` takes an `encryptionKeys` callback and calls it when an encrypted table, KV store, or IndexedDB provider attaches. Each attached store keeps the keyring derived at that attachment boundary. In per-app session modules, the workspace builder passes `() => requireSignedIn(auth).encryptionKeys` straight through:
 ```ts
 import { requireSignedIn } from '@epicenter/auth';
 
@@ -70,13 +70,13 @@ const fuji = openFuji({
 	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
 ```
-Same-user identity updates (key rotation, profile edits) propagate through the next read of `auth.state`. There is no mutation hook on the workspace: the session module owns the lifecycle, and the encryption attachment owns the read callback.
+Same-user identity updates do not remount the workspace. Auth callbacks read `auth.state` at the boundary that asks for them: sync can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached. There is no mutation hook on the workspace.
 
 ## Browser local persistence
 Authenticated browser workspaces open local IndexedDB only after auth has settled into a signed-in state. The session module guarantees that boundary: it builds the workspace lazily once `auth.state.status === 'signed-in'` and disposes it on sign-out.
 Two inputs flow into the workspace:
 - `userId` scopes local IndexedDB and BroadcastChannel names to the owner. It is captured once at build time because IDB and BroadcastChannel keys are immutable for the lifetime of the workspace.
-- `encryptionKeys: () => EncryptionKeys` is a callback the encryption coordinator invokes lazily. It reads from `auth.state` each time, so same-user key rotation lands without a mutation hook.
+- `encryptionKeys: () => EncryptionKeys` is a callback the encryption coordinator invokes when an encrypted store is attached. Already-attached stores keep their derived keyring; same-user key rotation needs a re-attach to affect those stores.
 
 The browser factory shape is:
 ```ts
@@ -111,16 +111,16 @@ App code should not build that string. Device cleanup uses `wipeOwnerLocalYjsDat
 ## Key lifecycle in the current code
 Keys are definitely loaded on login.
 That part is explicit.
-Logout reloads the browser client after the auth session changes.
+Sign-out disposes the live workspace after the auth session changes.
 It does not wipe local IndexedDB data.
-The reviewed code still does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`; the page reload is the current key-drop boundary.
+The reviewed code still does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`; workspace disposal is the current key-drop boundary for `createSession` apps.
 The closest Bitwarden analogy is lock, not logout: Bitwarden documents unlock as using encrypted data already stored on disk and lock as deleting decrypted vault data and the account encryption key from memory. Bitwarden separately documents that logout wipes PIN settings. See [Understand Log In vs. Unlock](https://bitwarden.com/help/understand-log-in-vs-unlock/) and [Unlock With PIN](https://bitwarden.com/help/unlock-with-pin/).
-The logout path is owned by the per-app session module. `createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user update is a no-op (the lazy `encryptionKeys` callback observes the change at the next read), and a different-user transition disposes the workspace and reloads the page:
+The logout path is owned by the per-app session module. `createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user update is a no-op at the session boundary, and a different-user transition disposes the workspace and reloads the page:
 ```ts
-import { createSession, type SignedInBase } from '@epicenter/svelte';
+import { createSession, type InferSignedIn } from '@epicenter/svelte';
 import { requireSignedIn } from '@epicenter/auth';
 
-export const session = createSession<MyAppSignedIn>({
+export const session = createSession({
 	auth,
 	build: (identity) => {
 		const userId = identity.user.id;
@@ -139,10 +139,13 @@ export const session = createSession<MyAppSignedIn>({
 		};
 	},
 });
+
+export type MyAppSignedIn = InferSignedIn<typeof session>;
 ```
 So these points are implemented and verifiable:
 - keys are loaded on login
-- sign-out and identity switch reload the browser client
+- sign-out disposes the live workspace
+- identity switch reloads the browser client
 - owner-scoped IndexedDB data remains available for the same authenticated owner after reload
 This point is not visible as an explicit step in the reviewed code:
 - clearing the in-memory encryption state after logout
@@ -233,7 +236,7 @@ Before activation, the wrapper is a passthrough store and `set()` writes plainte
 After activation, `set()` always encrypts.
 The active state holds the full keyring, the current key, and the current key version.
 Calling `activateEncryption()` again updates that state to a new keyring, but it does not switch the store back to plaintext mode.
-The document builder reinforces that shape: `attachEncryption(ydoc, { encryptionKeys })` returns a coordinator whose `encryption.attachTables(defs)` / `encryption.attachKv(defs)` methods register every table and KV store as encrypted wrappers from the start. The coordinator calls `encryptionKeys()` synchronously at each registration site, derives the per-doc keyring, and activates the store before handing it back. There is no separate `applyKeys` mutation step: the keys are read lazily, so registration and activation happen in one call.
+The document builder reinforces that shape: `attachEncryption(ydoc, { encryptionKeys })` returns a coordinator whose `encryption.attachTables(defs)` / `encryption.attachKv(defs)` methods register every table and KV store as encrypted wrappers from the start. The coordinator calls `encryptionKeys()` synchronously at each registration site, derives the keyring for that store, and activates the store before handing it back. There is no separate `applyKeys` mutation step: key read, registration, and activation happen in one call.
 
 ## What activation re-encrypts
 Activation does not rewrite everything.

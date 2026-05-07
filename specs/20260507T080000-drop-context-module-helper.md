@@ -472,19 +472,19 @@ drilling is the more idiomatic Svelte choice (handled in spec 4, not here).
 
 ## Catch-up items folded into this spec
 
-Cheap-to-fix items the third-party review surfaced; bundled to avoid a
-second pass.
+Cheap-to-fix items the third-party review surfaced and this implementation
+landed; bundled here to avoid a second pass.
 
 ```txt
 1. createSession JSDoc accuracy.
-   Current doc claims same-user identity changes are observed at the
+   Before this spec, the doc claimed same-user identity changes were observed at the
    "next read." Accurate for bearer tokens (lazy at sync) but not
    universally for encryption keys: attachEncryption reads keys at
    store-registration time and derives a per-store keyring. Same-user
    key rotation does NOT propagate to already-registered stores
    without a re-attach.
-   Fix: revise the JSDoc to say lazy callbacks are read at attachment,
-   reconnect, and per-request boundaries (sync's bearerToken; openFuji's
+   Landed: revise the JSDoc to say lazy callbacks are read at attachment,
+   connection and attachment boundaries (sync's bearerToken; openFuji's
    encryptionKeys callback at attachEncryption registration), not by
    already-attached encrypted stores.
 
@@ -493,14 +493,14 @@ second pass.
      build: (identity: AuthIdentity) => { ... }
    createSession's signature already constrains the parameter type.
    The annotation is noise.
-   Fix: drop the explicit annotation in fuji, honeycrisp, zhongwen.
+   Landed: drop the explicit annotation in fuji, honeycrisp, zhongwen.
 
 3. Drop unused AuthIdentity re-exports.
    apps/<app>/src/lib/auth.ts re-exports AuthIdentity from @epicenter/auth
    in some apps. After the lazy-reads migration, downstream readers of
    identity import from @epicenter/auth directly (or read auth.state).
    The re-export has no callers in the migrated apps.
-   Fix: remove the `export type { AuthIdentity }` line where present.
+   Landed: remove the `export type { AuthIdentity }` line where present.
 
 4. Update workspace-app-layout and auth skill examples.
    .claude/skills/workspace-app-layout/SKILL.md:134 still says
@@ -509,7 +509,7 @@ second pass.
    .claude/skills/workspace-app-layout/SKILL.md:144-146 declares the
    SignedIn type explicitly; should use InferSignedIn<typeof session>.
    .agents/skills/auth/SKILL.md:100-119 has the same pattern.
-   Fix: rewrite these example blocks to match the post-spec-2 runtime,
+   Landed: rewrite these example blocks to match the post-spec-2 runtime,
    AND document the new module-level getSignedInSession() pattern
    (no Provider component, no install step, no context).
 ```
@@ -584,7 +584,7 @@ DESCENDANTS (no change in surface):
 MODIFIED:
   packages/svelte-utils/src/session.svelte.ts
     - JSDoc on createSession revised: lazy callbacks read at attachment,
-      reconnect, and per-request boundaries; not magically by
+      connection and attachment boundaries; not magically by
       already-attached encrypted stores
     - no API change
 

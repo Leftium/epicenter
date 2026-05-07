@@ -133,7 +133,7 @@ If the speaker changes, this component is destroyed too. Its context read does n
 
 The same rule applies to signed-in app scopes, but not every upstream auth change should remount the subtree. A token refresh, cookie refresh, or encryption-key refresh for the same user is not a new scope.
 
-In a signed-in session scope, handle that refresh inside the scope that opened the workspace. The cleanest way is to pass identity-bound resources as lazy callbacks so the workspace reads them out of `auth.state` each time:
+In a signed-in session scope, handle that refresh inside the scope that opened the workspace. The cleanest way is to pass identity-bound resources as callbacks so each subsystem reads `auth.state` at the boundary that needs it:
 
 ```svelte
 <script lang="ts">
@@ -165,13 +165,14 @@ In a signed-in session scope, handle that refresh inside the scope that opened t
 {@render children()}
 ```
 
-The key answers "is this still the same scope?" The lazy callback answers "did something inside this scope refresh?" There is no separate listener and no mutation hook on the workspace: `requireSignedIn(auth).encryptionKeys` reads the latest value from `auth.state` whenever encryption asks for it.
+The key answers "is this still the same scope?" The auth callback answers "did something inside this scope refresh?" There is no separate listener and no mutation hook on the workspace: sync can read a refreshed token on connection attempts, and new encrypted attachments can derive from the current keys.
 
 ```txt
 same user id
   keep subtree
   keep workspace
-  next read of encryptionKeys() picks up rotated keys
+  new encrypted attachments derive from current keys
+  already-attached stores keep their derived keyring
 
 different user id
   destroy subtree

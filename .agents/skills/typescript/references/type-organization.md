@@ -82,6 +82,8 @@ export function createDisposableCache<
 
 This is different from annotating the factory as `: DisposableCache<TId, TValue>`. The annotation checks the shape, but it also makes editor navigation prefer the named type. The derived alias keeps the public name while letting Go to Definition walk into the actual returned member.
 
+If the public type is a nested slice of a factory result, use a focused inference helper instead of forcing `ReturnType` to name the whole result. For example, session modules use `InferSignedIn<typeof session>` because the app-owned payload lives inside `session.current`, not at the top level of the object returned by `createSession`.
+
 Use this pattern when:
 
 - The type is exactly the return shape of one factory.

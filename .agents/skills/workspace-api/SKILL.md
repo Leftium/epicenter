@@ -374,7 +374,7 @@ Attachments compose through plain lexical scope, so ordering is explicit: if `sy
 |---|---|---|
 | `attachSqlite` | — | Starts loading SQLite immediately |
 | `attachIndexedDb` | — | Starts loading IndexedDB immediately |
-| `attachEncryption` + `applyKeys` | after auth | Applied after auth resolves encryption keys |
+| `attachEncryption` | (none, sync) | Reads `encryptionKeys()` lazily at each register site |
 | `attachSync` | `idb.whenLoaded` (or `sqlite.whenLoaded`) | Opens WebSocket after local replay |
 
 The standard shape is **persistence first, then sync with `waitFor`**:

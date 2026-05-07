@@ -11,7 +11,7 @@ metadata:
 Two packages own the auth surface:
 
 - **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, token rotation for bearer clients, cookie fetch policy for cookie clients, identity fan-out, `fetch`, and the live `bearerToken` getter.
-- **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors the core identity into `$state` and exposes a live `auth.identity` getter.
+- **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors `auth.state` into `$state` so templates and `$derived` read it reactively.
 
 The core model is two factories, one client interface:
 
@@ -154,16 +154,16 @@ const sync = attachSync(ydoc, {
 
 ## Svelte UI Reads
 
-Read `auth.identity` in templates, `$derived`, or `$effect`:
+Read `auth.state` in templates, `$derived`, or `$effect`:
 
 ```svelte
 <script lang="ts">
-	const identity = $derived(auth.identity);
+	const state = $derived(auth.state);
 </script>
 
-{#if identity}
-	<p>{identity.user.name}</p>
-{:else}
+{#if state.status === 'signed-in'}
+	<p>{state.identity.user.name}</p>
+{:else if state.status === 'signed-out'}
 	<AuthForm {auth} />
 {/if}
 ```
@@ -187,8 +187,8 @@ In-flight command state belongs to the issuing component:
 
 ## Common Pitfalls
 
-- In the Svelte wrapper, spread the core auth object before overriding `identity`. Object spread invokes the base getter and copies the current value, so `get identity()` must appear after `...base`.
-- Do not destructure `auth.identity` at module scope. That freezes the current value.
+- In the Svelte wrapper, spread the core auth object before overriding `state`. Object spread invokes the base getter and copies the current value, so `get state()` must appear after `...base`.
+- Do not destructure `auth.state` at module scope. That freezes the current value.
 - Do not clear local data on cold boot. Clear only when the previous identity was non-null and the next identity is null.
 - Do not import a generic `createAuth`. It no longer exists. Choose `createCookieAuth` or `createBearerAuth` at construction.
 - Do not expose bearer tokens above storage adapters. UI, workspace binding, and sync consume `AuthClient` capabilities.

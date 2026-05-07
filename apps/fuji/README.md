@@ -21,45 +21,38 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
-Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. Auth transitions are handled in the provider, so encryption keys are applied in one place and terminal auth changes reload the page. Sync only receives a live bearer-token reader.
+Fuji's root workspace is built once per signed-in session by `createSession`. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The session module captures `userId` once at build time (since IDB and BroadcastChannel keys are immutable for the workspace's lifetime) and passes `bearerToken` and `encryptionKeys` as lazy callbacks that read from `auth.state` at use time, so token rotation and same-user key rotation propagate without a mutation hook on the workspace.
 
 ```ts
 export function openFuji({
-  identity,
+  userId,
+  peer,
   bearerToken,
+  encryptionKeys,
 }: {
-  identity: AuthIdentity;
+  userId: string;
+  peer: PeerIdentity;
   bearerToken?: () => string | null;
+  encryptionKeys: () => EncryptionKeys;
 }) {
-  const userId = identity.user.id;
-  const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
-
-  const encryption = attachEncryption(ydoc);
-  const tables = encryption.attachTables(fujiTables);
-  const kv = encryption.attachKv({});
-  const awareness = attachAwareness(ydoc, {});
-
-  const idb = attachIndexedDb(ydoc);
-  attachOwnedBroadcastChannel(ydoc, { userId });
-  const sync = attachSync(ydoc, {
-    url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
-    waitFor: idb.whenLoaded,
-    bearerToken,
+  const doc = openFujiDoc({ encryptionKeys });
+  const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
+  attachOwnedBroadcastChannel(doc.ydoc, { userId });
+  const awareness = attachAwareness(doc.ydoc, {
+    schema: { peer: PeerIdentity },
+    initial: { peer },
   });
-
-  return {
-    get id() { return ydoc.guid; },
-    ydoc, tables, kv, awareness, encryption, idb, sync,
-    [Symbol.dispose]() {
-      ydoc.destroy();
-    },
-  };
+  const sync = attachSync(doc, {
+    url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+    waitFor: idb,
+    bearerToken,
+    awareness,
+  });
+  return { ...doc, idb, awareness, sync };
 }
-
-export const workspace = openFuji();
 ```
 
-`bundle.id` is a getter over `ydoc.guid`, so there is only one source of truth. The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `session.current`; the signed-in variant owns the browser workspace and the root layout exposes it through `getSignedInSession()`. Local cleanup is a separate explicit action, not part of sign-out.
+The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `session.current`; the signed-in variant owns the browser workspace and the root layout exposes it through `getSignedInSession()`. Local cleanup is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/client.ts`.
 
@@ -102,7 +95,7 @@ bun run dev:remote
 - [Yjs](https://yjs.dev): CRDT engine
 - [Tailwind CSS](https://tailwindcss.com): styling
 - `@epicenter/workspace`: CRDT-backed tables, versioning, documents
-- `@epicenter/auth-svelte`: auth snapshot wrapper
+- `@epicenter/auth-svelte`: Svelte 5 wrapper around `@epicenter/auth`
 - `@epicenter/svelte`: workspace gate and reactive table/KV bindings
 - `@epicenter/ui`: shadcn-svelte component library
 

@@ -74,7 +74,7 @@ For workspaces that need at-rest encryption, the coordinator owns the sibling at
 
 | Helper | Purpose |
 |---|---|
-| `attachEncryption(ydoc, { getKeys })` | Per-ydoc encryption coordinator. Returns `{ attachTable, attachTables, attachKv, attachIndexedDb, ... }`. Reads `getKeys()` synchronously at every registration site. Teardown is synchronous and cascades from `ydoc.destroy()`. |
+| `attachEncryption(ydoc, { encryptionKeys })` | Per-ydoc encryption coordinator. Returns `{ attachTable, attachTables, attachKv, attachIndexedDb, ... }`. Reads `encryptionKeys()` synchronously at every registration site. Teardown is synchronous and cascades from `ydoc.destroy()`. |
 | `encryption.attachTable(name, def)` | Singular encrypted table; self-registers with the coordinator and is activated with the current keyring before being returned. |
 | `encryption.attachTables(defs)` | Batch sugar over `encryption.attachTable`. |
 | `encryption.attachKv(defs)` | Encrypted KV singleton. |
@@ -85,13 +85,13 @@ Standard composition:
 ```ts
 const ydoc       = new Y.Doc({ guid: id, gc: false });
 const encryption = attachEncryption(ydoc, {
-	getKeys: () => requireSignedIn(auth).encryptionKeys,
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
 const tables     = encryption.attachTables(myTables);
 const kv         = encryption.attachKv(myKv);
 ```
 
-Keys are read lazily through the `getKeys` callback. There is no separate `applyKeys` step: registration and activation happen in one call, and same-user key rotation is observed at the next read of `getKeys()` (no mutation hook on the workspace). `getKeys()` should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth-svelte` does exactly that.
+Keys are read lazily through the `encryptionKeys` callback. There is no separate `applyKeys` step: registration and activation happen in one call, and same-user key rotation is observed at the next read of `encryptionKeys()` (no mutation hook on the workspace). `encryptionKeys()` should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth` does exactly that.
 
 Encryption is opt-in per slot; the coordinator carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted `encryption.attachTable(name, def)` (method) are both available; pick one per slot.
 

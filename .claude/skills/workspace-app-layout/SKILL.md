@@ -68,12 +68,12 @@ import * as Y from 'yjs';
 import { zhongwenKv, zhongwenTables } from '$lib/workspace';
 
 export function openZhongwen({
-	getKeys,
+	encryptionKeys,
 }: {
-	getKeys: () => EncryptionKeys;
+	encryptionKeys: () => EncryptionKeys;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
-	const encryption = attachEncryption(ydoc, { getKeys });
+	const encryption = attachEncryption(ydoc, { encryptionKeys });
 	const tables = encryption.attachTables(zhongwenTables);
 	const kv = encryption.attachKv(zhongwenKv);
 	return {
@@ -107,7 +107,7 @@ export function openFuji({
 	bearerToken?: () => string | null;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openFujiDoc({ getKeys: encryptionKeys });
+	const doc = openFujiDoc({ encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 	const sync = attachSync(doc, {
@@ -135,7 +135,7 @@ export function openZhongwen() {
 
 ```ts
 // apps/fuji/src/lib/session.svelte.ts
-import { requireSignedIn } from '@epicenter/auth-svelte';
+import { requireSignedIn } from '@epicenter/auth';
 import { createSession, type SignedInBase } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { type Fuji, openFuji } from '../routes/(signed-in)/fuji/browser';

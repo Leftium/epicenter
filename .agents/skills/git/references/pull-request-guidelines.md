@@ -529,13 +529,13 @@ Now keys are read lazily at every registration site, with no unlock step and no 
 // After — sync, lazy reads, no mutation hook
 const ydoc = new Y.Doc({ guid: id });
 const encryption = attachEncryption(ydoc, {
-	getKeys: () => requireSignedIn(auth).encryptionKeys,
+	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
 const tables = encryption.attachTables(defs);
-// done — registration and activation happen in one call
+// done, registration and activation happen in one call
 ```
 
-The encrypted Y.Map wrapper no longer maintains a dual-cache: it encrypts on write and decrypts on read, one direction each way. The encryption runtime, key stores, IndexedDB wrappers, and dual-cache logic are all gone. Same-user key rotation is observed at the next `getKeys()` read; there is no separate mutation step.
+The encrypted Y.Map wrapper no longer maintains a dual-cache: it encrypts on write and decrypts on read, one direction each way. The encryption runtime, key stores, IndexedDB wrappers, and dual-cache logic are all gone. Same-user key rotation is observed at the next `encryptionKeys()` read; there is no separate mutation step.
 
 ```
 Before:
@@ -545,8 +545,8 @@ Before:
     └── y-keyvalue-lww-encrypted.ts (dual-cache: encrypted + decrypted)
 
 After:
-  attachEncryption(ydoc, { getKeys })
-    └── reads getKeys() at each attach site (lazy, no mutation hook)
+  attachEncryption(ydoc, { encryptionKeys })
+    └── reads encryptionKeys() at each attach site (lazy, no mutation hook)
         └── y-keyvalue-lww-encrypted.ts (one-way: encrypt on write, decrypt on read)
 ```
 

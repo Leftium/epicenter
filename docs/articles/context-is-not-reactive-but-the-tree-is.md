@@ -171,7 +171,7 @@ The key answers "is this still the same scope?" The lazy callback answers "did s
 same user id
   keep subtree
   keep workspace
-  next read of getKeys() picks up rotated keys
+  next read of encryptionKeys() picks up rotated keys
 
 different user id
   destroy subtree

@@ -8,7 +8,6 @@
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-	import SignedInSessionProvider from '$lib/components/SignedInSessionProvider.svelte';
 	import { auth } from '$lib/auth';
 	import { queryClient } from '$lib/query/client';
 	import { session } from '$lib/session.svelte';
@@ -41,9 +40,7 @@
 			pending={current.signedIn.honeycrisp.idb.whenLoaded}
 			onSignOut={() => auth.signOut()}
 		>
-			<SignedInSessionProvider signedIn={current.signedIn}>
-				<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
-			</SignedInSessionProvider>
+			<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
 		</WorkspaceGate>
 	{/if}
 </QueryClientProvider>

@@ -23,7 +23,7 @@ const config = {
 export default config;
 
 function selectAuthModule() {
-	// SvelteKit feeds this alias to Vite and generated TypeScript config.
+	// kit.alias is the source of truth for Vite and generated TypeScript config.
 	if (process.env.NODE_ENV === 'production') {
 		return './src/lib/platform/auth/cookie.ts';
 	}

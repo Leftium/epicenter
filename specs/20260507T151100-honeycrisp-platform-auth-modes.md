@@ -98,7 +98,7 @@ That means `https://honeycrisp.epicenter.so` can use cookie auth against `https:
 
 Localhost is not under `.epicenter.so`. Cookie auth can still work in some local setups if the API allows localhost origins and the browser accepts the cookie flow, but it creates more browser-policy surface area than bearer auth. Desktop has the same conclusion for a stronger reason: the app should own a token in native storage instead of leaning on a browser cookie jar.
 
-### Vite Platform Aliasing
+### SvelteKit Platform Aliasing
 
 The OpenSidian platform alias spec already describes the right boundary:
 
@@ -108,9 +108,11 @@ $platform/auth -> src/lib/platform/auth/bearer.ts
 $platform/auth -> src/lib/platform/auth/keychain.ts
 ```
 
-Vite resolves aliases before traversing the target module graph, so desktop-only imports do not enter the web build and web-only storage does not enter the desktop build.
+Alias resolution happens before the target module graph is traversed, so desktop-only imports do not enter the web build and web-only storage does not enter the desktop build.
 
-Honeycrisp also needs the SvelteKit tooling alias to follow the same production split. `kit.alias` feeds generated TypeScript paths and can otherwise pin `$platform/auth` to the local web module during `vite build`. The implementation keeps local web as the editor and typecheck default, then switches the SvelteKit alias to hosted web when the build script sets `NODE_ENV=production`.
+SvelteKit's `kit.alias` is the source of truth for `$platform/auth` in Honeycrisp. SvelteKit feeds that alias into Vite resolution and generated TypeScript config, so `vite.config.ts` does not need a duplicate `$platform/auth` entry.
+
+The production build script sets `NODE_ENV=production`, so `svelte.config.js` resolves `$platform/auth` to `cookie.ts`. Local development leaves `NODE_ENV` unset or development, so the same alias resolves to `bearer.ts`.
 
 ## Design Decisions
 
@@ -408,9 +410,9 @@ apps/honeycrisp/src/lib/platform/auth/
 `-- cookie.ts
 ```
 
-`$platform/auth` resolves to local bearer auth for Vite dev and SvelteKit tooling. Production build scripts set `NODE_ENV=production`, so SvelteKit's alias resolves it to hosted cookie auth. This keeps the localhost runtime from inheriting browser cookie assumptions while letting the deployed `honeycrisp.epicenter.so` app use the `.epicenter.so` cookie jar.
+`$platform/auth` resolves to local bearer auth for Vite dev and SvelteKit tooling. Production build scripts set `NODE_ENV=production`, so `kit.alias` resolves it to hosted cookie auth. This keeps the localhost runtime from inheriting browser cookie assumptions while letting the deployed `honeycrisp.epicenter.so` app use the `.epicenter.so` cookie jar.
 
-SvelteKit's generated alias participates in build resolution, so `svelte.config.js` also selects hosted auth when `NODE_ENV=production`. Without that, the production build can pass while still bundling `bearer.ts`.
+Because `kit.alias` feeds both Vite and generated TypeScript config, Honeycrisp does not repeat `$platform/auth` in `vite.config.ts`.
 
 The old `apps/honeycrisp/src/lib/auth.ts` module was deleted. Shared app code now imports directly from `$platform/auth`.
 

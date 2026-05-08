@@ -6,6 +6,7 @@ const config = {
 	preprocess: vitePreprocess(),
 	kit: {
 		alias: {
+			// kit.alias is the source of truth for Vite and generated TypeScript config.
 			'$platform/auth': './src/lib/platform/auth/bearer.ts',
 			'#': '../../packages/ui/src',
 		},

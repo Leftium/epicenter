@@ -18,7 +18,7 @@
 		"build": "bun --bun vite build",
 		"preview": "bun --bun vite preview",
 		"test": "bun test ./src/routes/'(signed-in)'/zhongwen",
-		"typecheck": "svelte-check",
+		"typecheck": "svelte-kit sync && svelte-check",
 		"deploy": "bun run build && wrangler deploy"
 	},
 	"dependencies": {

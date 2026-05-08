@@ -11,7 +11,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { mode, toggleMode } from 'mode-watcher';
 	import { api } from '$lib/api';
-	import { auth } from '$lib/auth';
+	import { auth } from '$platform/auth';
 	import { balanceQuery } from '$lib/query/billing';
 	import { capitalize, getInitials } from '$lib/utils';
 

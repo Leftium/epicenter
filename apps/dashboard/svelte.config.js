@@ -13,6 +13,7 @@ const config = {
 			base: '/dashboard',
 		},
 		alias: {
+			'$platform/auth': './src/lib/platform/auth/cookie.ts',
 			'#': '../../packages/ui/src',
 		},
 	},

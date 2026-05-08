@@ -8,7 +8,7 @@
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
-	import { auth } from '$lib/auth';
+	import { auth } from '$platform/auth';
 	import { queryClient } from '$lib/query/client';
 	import { session } from '$lib/session.svelte';
 	import '@epicenter/ui/app.css';

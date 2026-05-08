@@ -5,7 +5,7 @@ import { createPersistedState } from '@epicenter/svelte';
 export const auth = createBearerAuth({
 	baseURL: APP_URLS.API,
 	sessionStorage: createPersistedState({
-		key: 'honeycrisp:authSession',
+		key: 'honeycrisp.auth.session',
 		schema: BearerSession.or('null'),
 		defaultValue: null,
 	}),

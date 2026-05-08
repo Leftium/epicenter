@@ -9,6 +9,7 @@ const config = {
 		}),
 		alias: {
 			$routes: './src/routes',
+			'$platform/auth': selectAuthModule(),
 			'#': '../../packages/ui/src',
 		},
 	},
@@ -16,3 +17,12 @@ const config = {
 };
 
 export default config;
+
+function selectAuthModule() {
+	// SvelteKit uses this for tooling aliases. Vite owns command and mode aware selection.
+	if (process.env.NODE_ENV === 'production') {
+		return './src/lib/platform/auth/cookie.ts';
+	}
+
+	return './src/lib/platform/auth/bearer.ts';
+}

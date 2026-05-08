@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { AuthForm } from '@epicenter/svelte/auth-form';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth } from '$platform/auth';
 
 	$effect(() => {
 		if (auth.state.status === 'signed-in') {

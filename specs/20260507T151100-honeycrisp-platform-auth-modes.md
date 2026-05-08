@@ -1,7 +1,7 @@
 # Honeycrisp Platform Auth Modes
 
 **Date**: 2026-05-07
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## Overview
@@ -21,7 +21,7 @@ Honeycrisp currently constructs auth from a shared app module:
 export const auth = createBearerAuth({
 	baseURL: APP_URLS.API,
 	sessionStorage: createPersistedState({
-		key: 'honeycrisp:authSession',
+		key: 'honeycrisp.auth.session',
 		schema: BearerSession.or('null'),
 		defaultValue: null,
 	}),
@@ -103,12 +103,14 @@ Localhost is not under `.epicenter.so`. Cookie auth can still work in some local
 The OpenSidian platform alias spec already describes the right boundary:
 
 ```txt
-$platform/auth -> src/lib/platform/auth/live.web.ts
-$platform/auth -> src/lib/platform/auth/live.local.ts
-$platform/auth -> src/lib/platform/auth/live.desktop.ts
+$platform/auth -> src/lib/platform/auth/cookie.ts
+$platform/auth -> src/lib/platform/auth/bearer.ts
+$platform/auth -> src/lib/platform/auth/keychain.ts
 ```
 
 Vite resolves aliases before traversing the target module graph, so desktop-only imports do not enter the web build and web-only storage does not enter the desktop build.
+
+Honeycrisp also needs the SvelteKit tooling alias to follow the same production split. `kit.alias` feeds generated TypeScript paths and can otherwise pin `$platform/auth` to the local web module during `vite build`. The implementation keeps local web as the editor and typecheck default, then switches the SvelteKit alias to hosted web when the build script sets `NODE_ENV=production`.
 
 ## Design Decisions
 
@@ -119,7 +121,114 @@ Vite resolves aliases before traversing the target module graph, so desktop-only
 | Localhost auth | 3 taste | Prefer bearer auth by default | It avoids requiring a local `.epicenter.so` host and mirrors desktop more closely. |
 | Desktop auth | 2 coherence | Use bearer auth | Desktop should own a durable token in native storage. |
 | Platform selection | 2 coherence | Use `$platform/auth` alias | Shared UI should consume `AuthClient`, not transport facts. |
+| Hosted domain shape | 3 taste | Use `*.epicenter.so` for hosted web by default | Epicenter is a collection of apps. Keeping hosted apps under one site gives one cookie domain, one API origin, and less deployment branching. Custom domains stay an exception for apps with a real standalone product reason. |
+| Contributor setup | 3 taste | Do not require real product DNS for default local dev | Requiring `.epicenter.so` or `honeycrisp.com` host access makes basic contribution depend on shared DNS, OAuth callbacks, and secrets. Local bearer mode stays the low-friction default. |
 | Cookie cleanup for bearer OAuth | Deferred | Design with the handoff flow | Clearing cookies is part of the OAuth handoff, not a side effect inside generic auth construction. |
+
+## Hosted Deployment Shape
+
+The default hosted shape should be Epicenter subdomains:
+
+```txt
+Honeycrisp hosted web
+  https://honeycrisp.epicenter.so
+
+OpenSidian hosted web, preferred for now
+  https://opensidian.epicenter.so
+
+Shared hosted API
+  https://api.epicenter.so
+    |
+    v
+  apps/api Cloudflare Worker
+```
+
+That is already same-site for browser cookie purposes because every hosted app and the API live under `epicenter.so`. It gives the fastest coherent path:
+
+```txt
+*.epicenter.so app
+  |
+  v
+api.epicenter.so
+  |
+  v
+.epicenter.so cookie
+```
+
+For now, do not spend implementation energy on custom product domains unless an app has a real standalone distribution need. OpenSidian currently lists `https://opensidian.com`, but the platform-auth rollout can move faster if hosted web standardizes on `https://opensidian.epicenter.so` first.
+
+If a product later needs its own domain, use a matching product API subdomain backed by the same Worker:
+
+```txt
+OpenSidian production web
+  https://opensidian.com
+
+OpenSidian production API
+  https://api.opensidian.com
+    |
+    v
+  apps/api Cloudflare Worker
+```
+
+That keeps custom-domain production web on cookie auth without making the browser treat `api.epicenter.so` as a third-party site. The Worker can still serve many hostnames:
+
+```txt
+apps/api Worker
+  |
+  |-- api.epicenter.so
+  |-- api.opensidian.com
+  |-- api.honeycrisp.com      (only if Honeycrisp later moves to honeycrisp.com)
+  `-- api.<product-domain>
+```
+
+For each product API hostname, the auth server should choose the cookie domain from the request host:
+
+```txt
+api.epicenter.so      -> .epicenter.so
+api.opensidian.com    -> .opensidian.com
+api.honeycrisp.com    -> .honeycrisp.com
+localhost             -> no cross-subdomain cookie domain
+```
+
+For this spec, custom-domain support is a deferred escape hatch, not the default target. Cross-site cookies can work with `SameSite=None`, `Secure`, credentialed CORS, and trusted origin checks, but the browser privacy model keeps getting stricter around third-party cookies. Product API subdomains avoid leaning on that edge when a custom domain becomes worth the extra deployment shape.
+
+An app-local path proxy is still useful for local or special deployments:
+
+```txt
+https://honeycrisp.com/api/*
+  -> apps/api Worker
+```
+
+But it should not be the default production architecture unless a product strongly wants a single visible origin. Path proxying means either rewriting `/api/auth/*` to `/auth/*` or teaching the API to run under a base path. That touches auth callbacks, OAuth redirects, WebSocket URLs, asset routes, and generated route helpers.
+
+The contributor story should stay two-mode:
+
+```txt
+Default local dev
+  app: http://localhost:5175
+  api: http://localhost:8787 when apps/api is running locally
+  api: deployed API when using a remote API script
+  bearer auth
+  no DNS setup
+  no shared domain access
+
+Production-like auth testing
+  deployed app plus deployed matching API subdomain, or explicit local proxy mode
+  cookie auth
+```
+
+Do not force every contributor through real DNS just to run the app. It is valuable for release validation, OAuth work, and cookie debugging, but it is too much ceremony for UI, workspace, sync, or state work.
+
+The environment matrix should stay explicit:
+
+| Environment | App URL | API URL | Auth Mode | Why |
+| --- | --- | --- | --- | --- |
+| Honeycrisp hosted web | `https://honeycrisp.epicenter.so` | `https://api.epicenter.so` | Cookie | Both hosts are under `epicenter.so`, so `.epicenter.so` cookies work. |
+| OpenSidian hosted web, preferred for now | `https://opensidian.epicenter.so` | `https://api.epicenter.so` | Cookie | Same hosted-app rule as Honeycrisp; fastest consistent path. |
+| Custom-domain app, deferred | `https://opensidian.com` | `https://api.opensidian.com` | Cookie | Use only when standalone branding/distribution justifies the extra API hostname. |
+| Default local dev | `http://localhost:5175` | `http://localhost:8787` | Bearer | Reproducible without DNS, Cloudflare access, or OAuth callback setup. |
+| Remote API local dev | `http://localhost:5175` | Deployed API | Bearer | Useful when the API is not running locally, while avoiding cross-site cookie setup. |
+| Cookie-mode local testing | `http://localhost:5175` | Proxied through `http://localhost:5175` | Cookie | Tests cookie auth mechanics locally, but not exact production subdomain cookie behavior. |
 
 ## Architecture
 
@@ -171,23 +280,29 @@ This is not needed for hosted cookie web. In that runtime, the cookie is the cre
 
 ### Phase 1: Platform Entry Point
 
-- [ ] **1.1** Add Honeycrisp `$platform/auth` alias entries for hosted web, local web, and desktop.
-- [ ] **1.2** Move the current bearer auth module into the local web platform module.
-- [ ] **1.3** Add hosted web auth with `createCookieAuth({ baseURL: APP_URLS.API })`.
-- [ ] **1.4** Update shared Honeycrisp imports from `$lib/auth` to `$platform/auth`.
-- [ ] **1.5** Keep the public `AuthClient` surface unchanged for sessions and components.
+- [x] **1.1** Add Honeycrisp `$platform/auth` alias entries for hosted web, local web, and desktop.
+  > **Note**: Added hosted web and local web modules. Desktop stays deferred until there is a real desktop storage preload path, so the build cannot accidentally bless browser storage as the desktop credential owner.
+- [x] **1.2** Move the current bearer auth module into the local web platform module.
+  > **Note**: The local module uses `honeycrisp.auth.session` as its bearer session storage key.
+- [x] **1.3** Add hosted web auth with `createCookieAuth({ baseURL: APP_URLS.API })`.
+- [x] **1.4** Update shared Honeycrisp imports from `$lib/auth` to `$platform/auth`.
+- [x] **1.5** Keep the public `AuthClient` surface unchanged for sessions and components.
 
 ### Phase 2: Development Selection
 
-- [ ] **2.1** Decide how scripts select hosted web versus local bearer mode.
-- [ ] **2.2** Document the default developer flow.
-- [ ] **2.3** If cookie-mode local dev is supported, document the required `.epicenter.so` host setup.
+- [x] **2.1** Decide how scripts select hosted web versus local bearer mode.
+  > **Note**: Honeycrisp selects hosted cookie auth only for `command === 'build' && mode === 'production'`, with SvelteKit's tooling alias also keyed by `NODE_ENV=production`. Local dev, including `vite dev --mode production`, remains bearer auth.
+- [x] **2.2** Document the default developer flow.
+  > **Note**: `bun run dev:local` uses bearer auth against localhost API URLs. `bun run dev:remote` still runs on localhost, so it also uses bearer auth while `APP_URLS.API` points at production.
+- [x] **2.3** If cookie-mode local dev is supported, document the required `.epicenter.so` host setup.
+  > **Note**: Cookie-mode local dev is not supported by this pass. Use a production build on `https://honeycrisp.epicenter.so` for hosted cookie auth.
 
 ### Phase 3: Desktop Storage
 
 - [ ] **3.1** Define a desktop bearer session storage adapter.
 - [ ] **3.2** Preload async native storage before constructing `createBearerAuth()`.
 - [ ] **3.3** Keep the adapter synchronous at the auth factory boundary.
+  > **Deferred**: Desktop auth needs a real native storage preload before adding `keychain.ts`. A temporary `localStorage` adapter would make the platform boundary look finished while storing credentials in the wrong owner.
 
 ### Phase 4: Bearer OAuth Handoff
 
@@ -225,12 +340,13 @@ mixed request:
 1. Should local bearer OAuth use the same handoff endpoint as desktop?
 2. Should hosted web ever support bearer mode, or should bearer be reserved for localhost and desktop?
 3. Should the sign-in UI show a recovery action when `multiple_credentials` happens, or should the console diagnostic be enough for development?
+4. Should `apps/api` support host-derived cookie domains directly, or should product API domains get separate deployment config entries?
 
 ## Review Checklist
 
 Before implementing this spec, run a skeptical pass over the auth split:
 
-1. Read `packages/auth/src/create-auth.ts`, `packages/auth/src/create-auth.test.ts`, `packages/auth/src/contract.test.ts`, `apps/api/src/auth/single-credential.ts`, `apps/honeycrisp/src/lib/auth.ts`, and the companion bearer credential spec.
+1. Read `packages/auth/src/create-auth.ts`, `packages/auth/src/create-auth.test.ts`, `packages/auth/src/contract.test.ts`, `apps/api/src/auth/single-credential.ts`, the Honeycrisp `$platform/auth` consumers, and the companion bearer credential spec.
 2. List every file read as an ASCII tree before analysis.
 3. Mentally inline helpers, wrappers, files, extracted functions, and platform modules back into their call sites.
 4. Challenge whether the bearer credential tests are redundant or misplaced.
@@ -256,13 +372,13 @@ When this spec is ready to execute, use this closed task shape:
 
 ```txt
 apps/honeycrisp/src/lib/platform/auth/
-|-- live.hosted-web.ts
-|-- live.local-web.ts
-`-- live.desktop.ts
+|-- bearer.ts
+|-- cookie.ts
+`-- keychain.ts
 ```
 
 3. Hosted web exports `auth = createCookieAuth({ baseURL: APP_URLS.API })` with the normal hot-dispose pattern.
-4. Local web moves the current `createBearerAuth()` setup into the platform module, keeping the `honeycrisp:authSession` storage key.
+4. Local web moves the current `createBearerAuth()` setup into the platform module, using `honeycrisp.auth.session` as the storage key.
 5. Desktop uses bearer auth, but do not fake final desktop storage. Add the module only when the build config can select it without pulling desktop-only imports into the web graph. If storage is not ready, document the synchronous adapter requirement instead.
 6. Add the alias so shared Honeycrisp code imports `auth` from `$platform/auth`.
 7. Default localhost development to bearer mode. Use hosted cookie mode for production only if the existing scripts cleanly identify hosted web. If scripts do not distinguish these modes, update the spec before coding the alias.
@@ -281,3 +397,39 @@ If auth core changes during execution, also run:
 ```sh
 bun test packages/auth
 ```
+
+## Implementation Notes
+
+The platform auth pass added:
+
+```txt
+apps/honeycrisp/src/lib/platform/auth/
+|-- bearer.ts
+`-- cookie.ts
+```
+
+`$platform/auth` resolves to local bearer auth for Vite dev and SvelteKit tooling. Vite production builds resolve it to hosted cookie auth. This keeps the localhost runtime from inheriting browser cookie assumptions while letting the deployed `honeycrisp.epicenter.so` app use the `.epicenter.so` cookie jar.
+
+SvelteKit's generated alias participates in build resolution, so `svelte.config.js` also selects hosted auth when `NODE_ENV=production`. Without that, the production build can pass while still bundling `bearer.ts`.
+
+The old `apps/honeycrisp/src/lib/auth.ts` module was deleted. Shared app code now imports directly from `$platform/auth`.
+
+The local bearer storage key is `honeycrisp.auth.session`.
+
+## Review
+
+**Completed**: 2026-05-07
+
+### Summary
+
+Honeycrisp now chooses auth at the platform boundary. Hosted production builds use `createCookieAuth`, localhost builds use `createBearerAuth` with the `honeycrisp.auth.session` storage key, and shared session code consumes the stable `$platform/auth` entrypoint.
+
+### Deviations from Spec
+
+- Desktop auth was not added. The spec requires native storage or a preloaded synchronous adapter, and that path does not exist yet.
+- OAuth handoff was not implemented. The execution brief explicitly leaves it out of the platform-alias pass.
+
+### Follow-up Work
+
+- Add `keychain.ts` once the desktop boot path can preload native storage before constructing auth.
+- Design the bearer OAuth handoff endpoint before enabling social OAuth in bearer runtimes.

@@ -9,10 +9,19 @@ const config = {
 			fallback: 'index.html',
 		}),
 		alias: {
-			'$platform/auth': './src/lib/platform/auth/cookie.ts',
+			'$platform/auth': selectAuthModule(),
 			'#': '../../packages/ui/src',
 		},
 	},
 };
 
 export default config;
+
+function selectAuthModule() {
+	// SvelteKit feeds this alias to Vite and generated TypeScript config.
+	if (process.env.NODE_ENV === 'production') {
+		return './src/lib/platform/auth/cookie.ts';
+	}
+
+	return './src/lib/platform/auth/bearer.ts';
+}

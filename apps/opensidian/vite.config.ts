@@ -1,7 +1,6 @@
 import { APPS } from '@epicenter/constants/apps';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
@@ -15,11 +14,6 @@ export default defineConfig({
 		nodePolyfills({ include: ['zlib'] }),
 	],
 	resolve: {
-		alias: {
-			'$platform/auth': fileURLToPath(
-				new URL('./src/lib/platform/auth/bearer.ts', import.meta.url),
-			),
-		},
 		dedupe: ['yjs'],
 	},
 	optimizeDeps: {

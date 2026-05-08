@@ -15,7 +15,7 @@
 		"dev": "bun run dev:local",
 		"dev:local": "bun --bun vite dev",
 		"dev:remote": "bun --bun vite dev --mode production",
-		"build": "bun --bun vite build",
+		"build": "NODE_ENV=production bun --bun vite build",
 		"preview": "bun --bun vite preview",
 		"test": "bun test ./src/routes/'(signed-in)'/zhongwen",
 		"typecheck": "svelte-kit sync && svelte-check",

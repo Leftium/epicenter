@@ -291,7 +291,7 @@ This is not needed for hosted cookie web. In that runtime, the cookie is the cre
 ### Phase 2: Development Selection
 
 - [x] **2.1** Decide how scripts select hosted web versus local bearer mode.
-  > **Note**: Honeycrisp selects hosted cookie auth only for `command === 'build' && mode === 'production'`, with SvelteKit's tooling alias also keyed by `NODE_ENV=production`. Local dev, including `vite dev --mode production`, remains bearer auth.
+  > **Note**: Honeycrisp selects hosted cookie auth when the build script sets `NODE_ENV=production`. Local dev, including `vite dev --mode production`, remains bearer auth.
 - [x] **2.2** Document the default developer flow.
   > **Note**: `bun run dev:local` uses bearer auth against localhost API URLs. `bun run dev:remote` still runs on localhost, so it also uses bearer auth while `APP_URLS.API` points at production.
 - [x] **2.3** If cookie-mode local dev is supported, document the required `.epicenter.so` host setup.
@@ -408,7 +408,7 @@ apps/honeycrisp/src/lib/platform/auth/
 `-- cookie.ts
 ```
 
-`$platform/auth` resolves to local bearer auth for Vite dev and SvelteKit tooling. Vite production builds resolve it to hosted cookie auth. This keeps the localhost runtime from inheriting browser cookie assumptions while letting the deployed `honeycrisp.epicenter.so` app use the `.epicenter.so` cookie jar.
+`$platform/auth` resolves to local bearer auth for Vite dev and SvelteKit tooling. Production build scripts set `NODE_ENV=production`, so SvelteKit's alias resolves it to hosted cookie auth. This keeps the localhost runtime from inheriting browser cookie assumptions while letting the deployed `honeycrisp.epicenter.so` app use the `.epicenter.so` cookie jar.
 
 SvelteKit's generated alias participates in build resolution, so `svelte.config.js` also selects hosted auth when `NODE_ENV=production`. Without that, the production build can pass while still bundling `bearer.ts`.
 

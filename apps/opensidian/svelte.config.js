@@ -6,6 +6,7 @@ const config = {
 	preprocess: vitePreprocess(),
 	kit: {
 		alias: {
+			'$platform/auth': './src/lib/platform/auth/bearer.ts',
 			'#': '../../packages/ui/src',
 		},
 		adapter: staticAdapter({

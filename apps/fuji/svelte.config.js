@@ -9,6 +9,7 @@ const config = {
 		}),
 		alias: {
 			$routes: './src/routes',
+			'$platform/auth': './src/lib/platform/auth/cookie.ts',
 			'#': '../../packages/ui/src',
 		},
 	},

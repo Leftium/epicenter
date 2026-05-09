@@ -19,13 +19,6 @@
 	},
 	"homepage": "https://epicenter.so",
 	"type": "module",
-	"imports": {
-		"#*": [
-			"./src/*",
-			"./src/*.ts",
-			"./src/*/index.ts"
-		]
-	},
 	"exports": {
 		"./*": "./src/*/index.ts",
 		"./utils": "./src/utils.ts",

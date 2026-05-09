@@ -9,7 +9,7 @@
 
 <script lang="ts">
 	import * as chrono from 'chrono-node';
-	import * as Command from '#/command';
+	import * as Command from '../command/index.js';
 
 	let {
 		placeholder = 'E.g. "tomorrow at 5pm" or "in 2 hours"',

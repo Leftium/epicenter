@@ -8,9 +8,9 @@
  * Usage example:
  * ```svelte
  * <script lang="ts">
- *   import * as Command from '@epicenter/ui/command';
- *   import * as Popover from '@epicenter/ui/popover';
- *   import { useCombobox } from '@epicenter/ui/hooks';
+ *   import * as Command from '../command/index.js';
+ *   import * as Popover from '../popover/index.js';
+ *   import { useCombobox } from './index.js';
  *
  *   const combobox = useCombobox();
  * </script>

@@ -20,7 +20,11 @@ const violations: Violation[] = [];
 
 function* walk(dir: string): Generator<string> {
 	for (const entry of readdirSync(dir)) {
-		if (entry === 'node_modules' || entry === '.svelte-kit' || entry === '.wxt') {
+		if (
+			entry === 'node_modules' ||
+			entry === '.svelte-kit' ||
+			entry === '.wxt'
+		) {
 			continue;
 		}
 

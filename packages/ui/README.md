@@ -1,4 +1,4 @@
-# UI Package - shadcn-svelte Management Guide
+# UI Package: shadcn-svelte Management Guide
 
 This guide explains how we manage shadcn-svelte components in our monorepo setup, including our custom configuration and best practices.
 
@@ -38,52 +38,40 @@ We use different component types based on the interaction pattern:
 
 ## Key Differences from Standard shadcn-svelte
 
-### 1. Path Aliases Configuration
+### 1. Import Boundary
 
-Our `components.json` uses a flattened structure with the `#` symbol mapping directly to the `src` folder:
+Apps import UI through the public package API:
 
-```json
-{
-	"aliases": {
-		"components": "#",
-		"utils": "#/utils",
-		"ui": "#",
-		"hooks": "#/hooks",
-		"lib": "#/lib"
-	}
-}
+```typescript
+import { Button } from '@epicenter/ui/button';
+import { cn } from '@epicenter/ui/utils';
+import '@epicenter/ui/app.css';
 ```
 
-**What this means:**
+Files inside `packages/ui/src` import other UI files with relative paths:
 
-- `#` maps to `./src` (configured via Node.js subpath imports in `package.json`)
-- `#/button` resolves to `./src/button`
-- All components and utils live directly in the `src` folder (no nested `components` directory)
+```typescript
+import { Button } from '../button/index.js';
+import { cn } from '../utils.js';
+```
 
-### Why We Use # Instead of @
-
-We switched from `@` to `#` for path aliases because of how Node.js handles module resolution in monorepos. The `#` symbol is the standard prefix for [Node.js subpath imports](https://nodejs.org/api/packages.html#subpath-imports), which provides better compatibility with build tools and TypeScript in monorepo environments.
-
-This change was necessary to avoid conflicts with package name conventions (which often use `@` for scoped packages) and to ensure proper module resolution across different tools in our build pipeline. For more context on this issue, see the [Turborepo discussion on module resolution](https://github.com/vercel/turborepo/discussions/620).
+Do not add app aliases or tsconfig paths that point to `packages/ui/src`.
+Do not add `#`, `#ui/*`, or `#internal/*` aliases for UI source imports.
 
 ### 2. Package Exports Structure
 
-Our `package.json` uses a pattern-based export system with subpath imports:
+Our `package.json` uses a pattern-based export system:
 
 ```json
 {
 	"exports": {
 		"./*": "./src/*/index.ts",
 		"./utils": "./src/utils.ts",
+		"./utils/*": "./src/utils/*.ts",
 		"./app.css": "./src/app.css"
-	},
-	"imports": {
-		"#*": ["./src/*", "./src/*.ts", "./src/*/index.ts"]
 	}
 }
 ```
-
-The `imports` field enables the `#` prefix for internal module resolution, allowing multiple resolution patterns for flexibility.
 
 This allows consumers to import components like:
 
@@ -122,7 +110,7 @@ This pattern makes component updates much clearer: shadcn's style updates show i
 
 ```bash
 # Add a new component
-bunx shadcn-svelte@latest add dialog
+bun x shadcn-svelte@latest add dialog
 
 # The component will be added to packages/ui/src/dialog/
 ```
@@ -132,7 +120,7 @@ bunx shadcn-svelte@latest add dialog
 1. Run the add command with the `--overwrite` flag:
 
    ```bash
-   bunx shadcn-svelte@latest add dialog --overwrite
+   bun x shadcn-svelte@latest add dialog --overwrite
    ```
 
 2. Review the diff carefully, especially:
@@ -142,14 +130,14 @@ bunx shadcn-svelte@latest add dialog
 
 ### Import Path Convention
 
-Always use the `#/` alias for internal imports within the UI package:
+Use relative imports within the UI package:
 
 ```typescript
-// ❌ Don't use relative imports
-import { Button } from '../button';
+// App code
+import { Button } from '@epicenter/ui/button';
 
-// ✅ Do use # alias
-import { Button } from '#/button';
+// UI package source
+import { Button } from '../button/index.js';
 ```
 
 ## Directory Structure
@@ -179,30 +167,18 @@ packages/ui/
 2. **Use Barrel Exports**: Each component folder should have an `index.ts`
 3. **Document Overrides**: Always comment custom style additions
 4. **Test After Updates**: Verify components work after shadcn updates
-5. **Consistent Imports**: Use `#/` alias throughout the package
+5. **Consistent Imports**: Use relative imports inside `packages/ui/src`
 
-## TypeScript Path Resolution
+## Boundary Check
 
-The `#` symbol is configured in `tsconfig.json`:
+Run the boundary check after changing UI imports or app config:
 
-```json
-{
-	"compilerOptions": {
-		"paths": {
-			"#": ["./src"],
-			"#/*": ["./src/*"]
-		}
-	}
-}
+```bash
+bun run check:ui-boundary
 ```
 
-This configuration:
-
-- Maps `#` to the `src` directory
-- Enables autocomplete in your IDE
-- Ensures consistent import paths
-- Works with both TypeScript and bundlers
-- Aligns with the Node.js subpath imports defined in `package.json`
+The check fails when app configs point at `packages/ui/src`, when app tsconfigs
+add `#/*`, or when UI source imports itself through `#` or `@epicenter/ui/...`.
 
 ## Troubleshooting
 
@@ -210,8 +186,8 @@ This configuration:
 
 If imports aren't resolving:
 
-1. Check `tsconfig.json` paths configuration
-2. Ensure your IDE recognizes the TypeScript config
+1. Check that the component is exported by `@epicenter/ui`
+2. Ensure your IDE recognizes the package's TypeScript config
 3. Restart the TypeScript language server
 
 ### Style Conflicts

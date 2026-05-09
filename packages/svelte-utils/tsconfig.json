@@ -1,9 +1,6 @@
 {
 	"extends": ["../../tsconfig.base.dom.json"],
 	"compilerOptions": {
-		"paths": {
-			"#/*": ["../ui/src/*"]
-		},
 		"types": ["bun"]
 	}
 }

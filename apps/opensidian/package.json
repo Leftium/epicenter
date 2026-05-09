@@ -20,7 +20,8 @@
 		"preview": "bun --bun vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "bun test ./src/lib/opensidian",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check": "bun run typecheck"
 	},
 	"dependencies": {
 		"@codemirror/autocomplete": "^6.20.1",

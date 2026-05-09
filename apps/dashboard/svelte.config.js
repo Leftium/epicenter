@@ -12,9 +12,6 @@ const config = {
 		paths: {
 			base: '/dashboard',
 		},
-		alias: {
-			'#': '../../packages/ui/src',
-		},
 	},
 	preprocess: vitePreprocess(),
 };

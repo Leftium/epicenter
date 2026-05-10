@@ -42,7 +42,7 @@ describe('attachBroadcastChannel', () => {
 
 		attachBroadcastChannel(ydoc);
 
-		expect(FakeBroadcastChannel.names).toEqual(['yjs:epicenter.fuji']);
+		expect(FakeBroadcastChannel.names).toEqual(['yjs.epicenter.fuji']);
 		ydoc.destroy();
 	});
 
@@ -54,7 +54,7 @@ describe('attachBroadcastChannel', () => {
 		});
 
 		expect(FakeBroadcastChannel.names).toEqual([
-			'yjs:epicenter:v1:user:user-123:yjs:epicenter.fuji',
+			'yjs.epicenter.v1.user.user-123.yjs.epicenter.fuji',
 		]);
 		expect(ydoc.guid).toBe('epicenter.fuji');
 		ydoc.destroy();

@@ -49,8 +49,8 @@ describe('wipeOwnerLocalYjsData', () => {
 	});
 
 	test('clears known scoped document keys', async () => {
-		await createDatabase('epicenter:v1:user:user-1:yjs:doc-a');
-		await createDatabase('epicenter:v1:user:user-1:yjs:doc-b');
+		await createDatabase('epicenter.v1.user.user-1.yjs.doc-a');
+		await createDatabase('epicenter.v1.user.user-1.yjs.doc-b');
 
 		await wipeOwnerLocalYjsData({
 			userId: 'user-1',
@@ -58,17 +58,17 @@ describe('wipeOwnerLocalYjsData', () => {
 		});
 
 		expect(await databaseNames()).not.toContain(
-			'epicenter:v1:user:user-1:yjs:doc-a',
+			'epicenter.v1.user.user-1.yjs.doc-a',
 		);
 		expect(await databaseNames()).not.toContain(
-			'epicenter:v1:user:user-1:yjs:doc-b',
+			'epicenter.v1.user.user-1.yjs.doc-b',
 		);
 	});
 
 	test('also clears enumerated scoped database names', async () => {
-		await createDatabase('epicenter:v1:user:user-1:yjs:doc-a');
-		await createDatabase('epicenter:v1:user:user-1:yjs:doc-b');
-		await createDatabase('epicenter:v1:user:user-2:yjs:doc-c');
+		await createDatabase('epicenter.v1.user.user-1.yjs.doc-a');
+		await createDatabase('epicenter.v1.user.user-1.yjs.doc-b');
+		await createDatabase('epicenter.v1.user.user-2.yjs.doc-c');
 		await createDatabase('unscoped-doc');
 
 		await wipeOwnerLocalYjsData({
@@ -77,13 +77,13 @@ describe('wipeOwnerLocalYjsData', () => {
 		});
 
 		expect(await databaseNames()).not.toContain(
-			'epicenter:v1:user:user-1:yjs:doc-a',
+			'epicenter.v1.user.user-1.yjs.doc-a',
 		);
 		expect(await databaseNames()).not.toContain(
-			'epicenter:v1:user:user-1:yjs:doc-b',
+			'epicenter.v1.user.user-1.yjs.doc-b',
 		);
 		expect(await databaseNames()).toContain(
-			'epicenter:v1:user:user-2:yjs:doc-c',
+			'epicenter.v1.user.user-2.yjs.doc-c',
 		);
 		expect(await databaseNames()).toContain('unscoped-doc');
 	});

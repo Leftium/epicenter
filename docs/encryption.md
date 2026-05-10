@@ -103,8 +103,10 @@ export function openMyApp({
 
 The storage name is derived inside `@epicenter/workspace` as:
 ```text
-epicenter:v1:user:{userId}:yjs:{ydocGuid}
+epicenter.v1.user.{userId}.yjs.{ydocGuid}
 ```
+
+The `v1` segment names the local Yjs storage namespace. It gives future cleanup or migration code one prefix to target, while app code still treats the full string as an implementation detail.
 
 App code should not build that string. Device cleanup uses `wipeOwnerLocalYjsData({ userId, ydocGuids })`, which deletes known document databases and also sweeps enumerable IndexedDB names with the same owner prefix when the browser exposes `indexedDB.databases()`.
 

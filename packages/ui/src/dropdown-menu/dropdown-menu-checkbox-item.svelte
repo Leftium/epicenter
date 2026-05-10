@@ -3,7 +3,7 @@
 	import MinusIcon from '@lucide/svelte/icons/minus';
 	import { DropdownMenu as DropdownMenuPrimitive } from 'bits-ui';
 	import type { Snippet } from 'svelte';
-	import { cn, type WithoutChildrenOrChild } from '../utils.js';
+	import { cn, type WithoutChildrenOrChild } from '#utils';
 
 	let {
 		ref = $bindable(null),

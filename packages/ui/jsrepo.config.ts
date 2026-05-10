@@ -9,8 +9,8 @@ export default defineConfig({
 	 * jsrepo can install files without reintroducing a private UI source alias.
 	 *
 	 * shadcn-svelte still needs import aliases in its generator-only config.
-	 * Source files under src must use relative imports after generated components
-	 * are reviewed.
+	 * Source files under src use the package-private import names defined in
+	 * package.json#imports.
 	 */
 	paths: {
 		ui: './src',

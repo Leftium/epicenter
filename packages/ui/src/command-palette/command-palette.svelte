@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import * as Command from '../command/index.js';
-	import { confirmationDialog } from '../confirmation-dialog/index.js';
+	import * as Command from '#ui/command';
+	import { confirmationDialog } from '#ui/confirmation-dialog';
 	import type { CommandPaletteItem } from './index.js';
 
 	let {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Command as CommandPrimitive } from 'bits-ui';
 	import { box } from 'svelte-toolbelt';
-	import { cn } from '../utils.js';
+	import { cn } from '#utils';
 	import { useEmojiPicker } from './emoji-picker.svelte.js';
 	import type { EmojiPickerRootProps } from './types';
 

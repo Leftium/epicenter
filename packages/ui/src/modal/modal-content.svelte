@@ -5,8 +5,8 @@
 <script lang="ts">
 	import type { DialogContentProps } from 'bits-ui';
 
-	import * as Dialog from '../dialog/index.js';
-	import * as Drawer from '../drawer/index.js';
+	import * as Dialog from '#ui/dialog';
+	import * as Drawer from '#ui/drawer';
 
 	import { useModalSub } from './modal-state.svelte.js';
 

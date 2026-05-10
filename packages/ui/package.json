@@ -19,6 +19,17 @@
 	},
 	"homepage": "https://epicenter.so",
 	"type": "module",
+	"imports": {
+		"#hooks": "./src/hooks/index.ts",
+		"#hooks/*.svelte": "./src/hooks/*.svelte.ts",
+		"#hooks/*.svelte.js": "./src/hooks/*.svelte.ts",
+		"#hooks/*": "./src/hooks/*",
+		"#lib/*.js": "./src/*.ts",
+		"#lib/*": "./src/*",
+		"#ui/*": "./src/*/index.ts",
+		"#utils": "./src/utils.ts",
+		"#utils/*": "./src/utils/*.ts"
+	},
 	"exports": {
 		"./*": "./src/*/index.ts",
 		"./utils": "./src/utils.ts",

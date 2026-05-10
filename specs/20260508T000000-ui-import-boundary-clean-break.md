@@ -1,8 +1,15 @@
 # UI Import Boundary Clean Break
 
 **Date**: 2026-05-08
-**Status**: Implemented
+**Status**: Superseded
 **Author**: AI-assisted
+
+**Superseded by**: `specs/20260510T070722-ui-native-package-imports.md`
+
+This spec captured the first clean break: apps stopped aliasing `#` to
+`packages/ui/src`. The newer spec keeps that app boundary, but replaces
+relative UI source imports with native package-private imports owned by
+`packages/ui/package.json#imports`.
 
 ## One-sentence thesis
 

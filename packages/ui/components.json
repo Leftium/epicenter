@@ -5,11 +5,11 @@
 		"baseColor": "slate"
 	},
 	"aliases": {
-		"components": "#",
-		"utils": "#/utils",
-		"ui": "#",
-		"hooks": "#/hooks",
-		"lib": "#/lib"
+		"components": "#ui",
+		"utils": "#utils",
+		"ui": "#ui",
+		"hooks": "#hooks",
+		"lib": "#lib"
 	},
 	"typescript": {
 		"config": "./tsconfig.shadcn.json"

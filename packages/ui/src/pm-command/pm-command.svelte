@@ -32,10 +32,10 @@
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import type { Agent, Command } from 'package-manager-detector';
 	import { resolveCommand } from 'package-manager-detector/commands';
-	import CopyButton from '../copy-button/copy-button.svelte';
-	import * as Tabs from '../tabs/index.js';
-	import * as Tooltip from '../tooltip/index.js';
-	import { cn } from '../utils.js';
+	import CopyButton from '#lib/copy-button/copy-button.svelte';
+	import * as Tabs from '#ui/tabs';
+	import * as Tooltip from '#ui/tooltip';
+	import { cn } from '#utils';
 
 	let {
 		variant = 'default',

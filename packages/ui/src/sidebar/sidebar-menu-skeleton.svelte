@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { Skeleton } from '../skeleton/index.js';
-	import { cn, type WithElementRef } from '../utils.js';
+	import { Skeleton } from '#ui/skeleton';
+	import { cn, type WithElementRef } from '#utils';
 
 	let {
 		ref = $bindable(null),

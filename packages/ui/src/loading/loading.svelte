@@ -13,9 +13,9 @@
 	```
 -->
 <script lang="ts">
-	import * as Empty from '../empty/index.js';
-	import { Spinner } from '../spinner/index.js';
-	import { cn } from '../utils.js';
+	import * as Empty from '#ui/empty';
+	import { Spinner } from '#ui/spinner';
+	import { cn } from '#utils';
 
 	let {
 		label,

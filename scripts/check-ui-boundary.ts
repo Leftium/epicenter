@@ -28,11 +28,11 @@ type BoundaryRule = {
 
 const boundaryRules: BoundaryRule[] = [
 	{
-		name: 'UI source must use relative imports for UI internals',
+		name: 'UI source must not self-import through public or naked UI aliases',
 		roots: [uiSourceRoot],
 		appliesTo: (file) => hasExtension(file, ['.ts', '.svelte']),
 		pattern:
-			/\bfrom\s+['"](?:#|@epicenter\/ui\/)|\bimport\s*\(\s*['"](?:#|@epicenter\/ui\/)|\bimport\s+['"](?:#|@epicenter\/ui\/)/,
+			/\bfrom\s+['"](?:#(?:['"]|\/)|@epicenter\/ui\/)|\bimport\s*\(\s*['"](?:#(?:['"]|\/)|@epicenter\/ui\/)|\bimport\s+['"](?:#(?:['"]|\/)|@epicenter\/ui\/)/,
 	},
 	{
 		name: 'Config must not point at packages/ui/src',
@@ -41,10 +41,10 @@ const boundaryRules: BoundaryRule[] = [
 		pattern: /packages\/ui\/src/,
 	},
 	{
-		name: 'Config must not reintroduce private # UI aliases',
+		name: 'Config must not reintroduce private UI package imports',
 		roots: workspaceRoots,
 		appliesTo: (file) => configFileNames.has(basename(file)),
-		pattern: /["']#\/\*["']|['"]#['"]:/,
+		pattern: /["']#(?:\/\*|ui|utils|hooks|lib)/,
 	},
 	{
 		name: 'Consumers must not import packages/ui/src directly',
@@ -53,6 +53,14 @@ const boundaryRules: BoundaryRule[] = [
 			!isUiSourceFile(file) && hasExtension(file, sourceExtensions),
 		pattern:
 			/\bfrom\s+['"][^'"]*packages\/ui\/src|\bimport\s*\(\s*['"][^'"]*packages\/ui\/src|\bimport\s+['"][^'"]*packages\/ui\/src/,
+	},
+	{
+		name: 'Consumers must not import UI private package imports',
+		roots: workspaceRoots,
+		appliesTo: (file) =>
+			!isUiSourceFile(file) && hasExtension(file, sourceExtensions),
+		pattern:
+			/\bfrom\s+['"]#(?:ui|utils|hooks|lib)(?:\/|['"])|\bimport\s*\(\s*['"]#(?:ui|utils|hooks|lib)(?:\/|['"])|\bimport\s+['"]#(?:ui|utils|hooks|lib)(?:\/|['"])/,
 	},
 ];
 

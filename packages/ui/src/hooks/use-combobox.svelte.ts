@@ -8,8 +8,8 @@
  * Usage example:
  * ```svelte
  * <script lang="ts">
- *   import * as Command from '../command/index.js';
- *   import * as Popover from '../popover/index.js';
+ *   import * as Command from '#ui/command';
+ *   import * as Popover from '#ui/popover';
  *   import { useCombobox } from './index.js';
  *
  *   const combobox = useCombobox();

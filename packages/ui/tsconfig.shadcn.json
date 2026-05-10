@@ -2,8 +2,17 @@
 	"extends": "./tsconfig.json",
 	"compilerOptions": {
 		"paths": {
-			"#": ["./src"],
-			"#/*": ["./src/*"]
+			"#hooks": ["./src/hooks/index.ts"],
+			"#hooks/*.svelte": ["./src/hooks/*.svelte.ts"],
+			"#hooks/*.svelte.js": ["./src/hooks/*.svelte.ts"],
+			"#hooks/*": ["./src/hooks/*"],
+			"#lib": ["./src"],
+			"#lib/*.js": ["./src/*.ts"],
+			"#lib/*": ["./src/*"],
+			"#ui": ["./src"],
+			"#ui/*": ["./src/*"],
+			"#utils": ["./src/utils.ts"],
+			"#utils/*": ["./src/utils/*"]
 		}
 	}
 }

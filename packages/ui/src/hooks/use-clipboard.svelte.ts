@@ -3,7 +3,7 @@
 	Modified to support injectable copy function for cross-platform compatibility
 */
 
-import type { CopyFn } from '../copy-button/types.js';
+import type { CopyFn } from '#lib/copy-button/types.js';
 
 type Options = {
 	/** The time before the copied status is reset. */

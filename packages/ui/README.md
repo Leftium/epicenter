@@ -48,22 +48,48 @@ import { cn } from '@epicenter/ui/utils';
 import '@epicenter/ui/app.css';
 ```
 
-Files inside `packages/ui/src` import other UI files with relative paths:
+Files inside `packages/ui/src` import other UI files with package-private
+imports from `package.json#imports`:
 
 ```typescript
-import { Button } from '../button/index.js';
-import { cn } from '../utils.js';
+import { Button } from '#ui/button';
+import { cn } from '#utils';
 ```
 
 Do not add app aliases or tsconfig paths that point to `packages/ui/src`.
-Do not add `#`, `#ui/*`, or `#internal/*` aliases for UI source imports.
+Do not add `kit.alias` entries such as:
 
-### 2. Package Exports Structure
+```js
+kit: {
+	alias: {
+		'#': '../../packages/ui/src',
+	},
+}
+```
 
-Our `package.json` uses a pattern-based export system:
+The UI package owns its internal import names through `package.json#imports`.
+Apps should never define them.
+
+### 2. Package Imports and Exports Structure
+
+Our `package.json` has two separate maps:
+
+- `imports` is private to `packages/ui` source.
+- `exports` is public API for app consumers.
 
 ```json
 {
+	"imports": {
+		"#hooks": "./src/hooks/index.ts",
+		"#hooks/*.svelte": "./src/hooks/*.svelte.ts",
+		"#hooks/*.svelte.js": "./src/hooks/*.svelte.ts",
+		"#hooks/*": "./src/hooks/*",
+		"#lib/*.js": "./src/*.ts",
+		"#lib/*": "./src/*",
+		"#ui/*": "./src/*/index.ts",
+		"#utils": "./src/utils.ts",
+		"#utils/*": "./src/utils/*.ts"
+	},
 	"exports": {
 		"./*": "./src/*/index.ts",
 		"./utils": "./src/utils.ts",
@@ -73,7 +99,14 @@ Our `package.json` uses a pattern-based export system:
 }
 ```
 
-This allows consumers to import components like:
+This allows UI source to import components like:
+
+```typescript
+import { Button } from '#ui/button';
+import { cn } from '#utils';
+```
+
+It allows consumers to import components like:
 
 ```typescript
 import { Button } from '@epicenter/ui/button';
@@ -130,14 +163,15 @@ bun x shadcn-svelte@latest add dialog
 
 ### Import Path Convention
 
-Use relative imports within the UI package:
+Use package imports within the UI package and public package imports from apps:
 
 ```typescript
 // App code
 import { Button } from '@epicenter/ui/button';
 
 // UI package source
-import { Button } from '../button/index.js';
+import { Button } from '#ui/button';
+import { cn } from '#utils';
 ```
 
 ## Directory Structure
@@ -158,7 +192,8 @@ packages/ui/
 │   └── app.css
 ├── components.json
 ├── package.json
-└── tsconfig.json
+├── tsconfig.json
+└── tsconfig.shadcn.json
 ```
 
 ## Best Practices
@@ -167,7 +202,7 @@ packages/ui/
 2. **Use Barrel Exports**: Each component folder should have an `index.ts`
 3. **Document Overrides**: Always comment custom style additions
 4. **Test After Updates**: Verify components work after shadcn updates
-5. **Consistent Imports**: Use relative imports inside `packages/ui/src`
+5. **Consistent Imports**: Use `#ui`, `#utils`, `#hooks`, and `#lib` inside `packages/ui/src`
 
 ## Boundary Check
 
@@ -179,14 +214,17 @@ bun run check:ui-boundary
 
 The executable source of truth is `scripts/check-ui-boundary.ts`.
 The check fails when app configs point at `packages/ui/src`, when app tsconfigs
-add `#/*`, when app or package source imports `packages/ui/src` directly, or
-when UI source imports itself through `#` or `@epicenter/ui/...`.
+add private UI import paths, when app source imports private UI import names,
+when app or package source imports `packages/ui/src` directly, or when UI source
+imports itself through naked `#`, `#/...`, or `@epicenter/ui/...`.
 
 `components.json` and `tsconfig.shadcn.json` are shadcn-svelte generator input.
 They keep the CLI usable because shadcn requires aliases backed by a TypeScript
-config, but those aliases are not source import guidance. Do not add a `#/*`
-path to the package's real `tsconfig.json`. Convert generated UI source imports
-to relative paths before committing.
+config. Keep that compatibility in `tsconfig.shadcn.json`; do not merge it into
+the package's real `tsconfig.json`.
+
+The real source resolver is `package.json#imports`. That is why `#utils` works
+in source without any SvelteKit app alias, and why `#/utils` is not used.
 
 ## Troubleshooting
 

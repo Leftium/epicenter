@@ -16,8 +16,8 @@
 </script>
 
 <script lang="ts">
-	import * as Tooltip from '#ui/tooltip/index.js';
-	import { cn } from '#utils.js';
+	import * as Tooltip from '../tooltip/index.js';
+	import { cn } from '../utils.js';
 
 	let { children, class: className, tooltip, ...rest }: LinkProps = $props();
 </script>

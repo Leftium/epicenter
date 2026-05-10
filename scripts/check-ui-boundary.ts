@@ -10,8 +10,8 @@ type Violation = {
 
 const uiSourceRoot = 'packages/ui/src';
 const workspaceRoots = ['apps', 'packages'];
-const generatorConfigFiles = new Set(['packages/ui/tsconfig.shadcn.json']);
 const configFilePatterns = [
+	/^package\.json$/,
 	/^svelte\.config\.[cm]?[jt]s$/,
 	/^vite\.config\.[cm]?[jt]s$/,
 	/^wxt\.config\.[cm]?[jt]s$/,
@@ -29,11 +29,11 @@ type BoundaryRule = {
 
 const boundaryRules: BoundaryRule[] = [
 	{
-		name: 'UI source must not self-import through public, naked, or generator-only UI aliases',
+		name: 'UI source must use relative imports for its own files',
 		roots: [uiSourceRoot],
 		appliesTo: (file) => hasExtension(file, ['.ts', '.svelte']),
 		pattern:
-			/^\s*import(?:\s+type)?(?:\s+[^'"]*\s+from)?\s+['"](?:#(?:['"]|\/)|#lib(?:\/|\.js|['"])|@epicenter\/ui\/)|\bimport\s*\(\s*['"](?:#(?:['"]|\/)|#lib(?:\/|\.js|['"])|@epicenter\/ui\/)/,
+			/^\s*import(?:\s+type)?(?:\s+[^'"]*\s+from)?\s+['"](?:#(?:['"]|\/)|#(?:ui|utils|hooks|lib)(?:\/|\.js|['"])|@epicenter\/ui\/)|\bimport\s*\(\s*['"](?:#(?:['"]|\/)|#(?:ui|utils|hooks|lib)(?:\/|\.js|['"])|@epicenter\/ui\/)/,
 	},
 	{
 		name: 'Config must not point at packages/ui/src',
@@ -88,10 +88,6 @@ function hasExtension(file: string, extensions: string[]) {
 }
 
 function isBoundaryConfigFile(file: string) {
-	if (generatorConfigFiles.has(file)) {
-		return false;
-	}
-
 	return configFilePatterns.some((pattern) => pattern.test(basename(file)));
 }
 

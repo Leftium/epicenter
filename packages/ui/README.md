@@ -1,6 +1,6 @@
 # UI Package: shadcn-svelte Management Guide
 
-This guide explains how we manage shadcn-svelte components in our monorepo setup, including our custom configuration and best practices.
+This guide explains how we manage shadcn-svelte components in our monorepo setup, including the import boundary and update workflow.
 
 ## Component Library Overview
 
@@ -48,15 +48,14 @@ import { cn } from '@epicenter/ui/utils';
 import '@epicenter/ui/app.css';
 ```
 
-Files inside `packages/ui/src` import other UI files with package-private
-imports from `package.json#imports`:
+Files inside `packages/ui/src` import other UI files with relative paths:
 
 ```typescript
-import { Button } from '#ui/button/index.js';
-import { cn } from '#utils.js';
+import { Button } from '../button/index.js';
+import { cn } from '../utils.js';
 ```
 
-Direct raw file imports that skip a component barrel stay relative:
+Direct raw file imports use the same rule:
 
 ```typescript
 import Button from '../button/button.svelte';
@@ -73,25 +72,15 @@ kit: {
 }
 ```
 
-The UI package owns its internal import names through `package.json#imports`.
-Apps should never define them.
+The UI package has no private import aliases. Apps should never define aliases
+for `packages/ui/src`.
 
 ### 2. Package Imports and Exports Structure
 
-Our `package.json` has two separate maps:
-
-- `imports` is private to `packages/ui` source.
-- `exports` is public API for app consumers.
+Our `package.json` exposes only the public API for app consumers:
 
 ```json
 {
-	"imports": {
-		"#hooks": "./src/hooks/index.ts",
-		"#hooks/*.svelte.js": "./src/hooks/*.svelte.ts",
-		"#ui/*/index.js": "./src/*/index.ts",
-		"#utils.js": "./src/utils.ts",
-		"#utils/*.js": "./src/utils/*.ts"
-	},
 	"exports": {
 		"./*": "./src/*/index.ts",
 		"./utils": "./src/utils.ts",
@@ -101,14 +90,14 @@ Our `package.json` has two separate maps:
 }
 ```
 
-This allows UI source to import components like:
+UI source imports components with relative paths:
 
 ```typescript
-import { Button } from '#ui/button/index.js';
-import { cn } from '#utils.js';
+import { Button } from '../button/index.js';
+import { cn } from '../utils.js';
 ```
 
-It allows consumers to import components like:
+Consumers import components through the package API:
 
 ```typescript
 import { Button } from '@epicenter/ui/button';
@@ -143,37 +132,31 @@ This pattern makes component updates much clearer: shadcn's style updates show i
 
 ### Adding New Components
 
-```bash
-# Add a new component
-bun x shadcn-svelte@latest add dialog
-
-# The component will be added to packages/ui/src/dialog/
-```
+Add or update generated components in a scratch shadcn-svelte project, then copy
+the component into `packages/ui/src` and normalize imports to relative paths.
+This keeps the committed package free of generator aliases.
 
 ### Updating Components
 
-1. Run the add command with the `--overwrite` flag:
-
-   ```bash
-   bun x shadcn-svelte@latest add dialog --overwrite
-   ```
-
-2. Review the diff carefully, especially:
+1. Generate or update the component in a scratch project.
+2. Copy the changed component files into `packages/ui/src`.
+3. Normalize imports so UI source uses relative paths.
+4. Review the diff carefully, especially:
    - Custom style overrides (marked with comments)
    - Import path changes
    - Any custom props or functionality
 
 ### Import Path Convention
 
-Use package imports within the UI package and public package imports from apps:
+Use relative imports within the UI package and public package imports from apps:
 
 ```typescript
 // App code
 import { Button } from '@epicenter/ui/button';
 
 // UI package source
-import { Button } from '#ui/button/index.js';
-import { cn } from '#utils.js';
+import { Button } from '../button/index.js';
+import { cn } from '../utils.js';
 ```
 
 ## Directory Structure
@@ -192,10 +175,8 @@ packages/ui/
 │   │   └── index.ts
 │   ├── utils.ts
 │   └── app.css
-├── components.json
 ├── package.json
-├── tsconfig.json
-└── tsconfig.shadcn.json
+└── tsconfig.json
 ```
 
 ## Best Practices
@@ -204,7 +185,7 @@ packages/ui/
 2. **Use Barrel Exports**: Each component folder should have an `index.ts`
 3. **Document Overrides**: Always comment custom style additions
 4. **Test After Updates**: Verify components work after shadcn updates
-5. **Consistent Imports**: Use shadcn-compatible `#ui/*/index.js`, `#utils.js`, `#utils/*.js`, and `#hooks` imports inside `packages/ui/src`. Use relative imports for direct `.svelte` files and helper files that are not barrels.
+5. **Consistent Imports**: Use relative imports inside `packages/ui/src`. Use `@epicenter/ui` only from consumers outside this package.
 
 ## Boundary Check
 
@@ -215,21 +196,11 @@ bun run check:ui-boundary
 ```
 
 The executable source of truth is `scripts/check-ui-boundary.ts`.
-The check fails when app configs point at `packages/ui/src`, when app tsconfigs
-add private UI import paths, when app source imports private UI import names,
-when app or package source imports `packages/ui/src` directly, or when UI source
-imports itself through naked `#`, `#/...`, generator-only `#lib`, or
+The check fails when app configs point at `packages/ui/src`, when app configs
+or package manifests add private UI import paths, when app source imports
+private UI import names, when app or package source imports `packages/ui/src`
+directly, or when UI source imports itself through private aliases or
 `@epicenter/ui/...`.
-
-`components.json` and `tsconfig.shadcn.json` are shadcn-svelte generator input.
-They keep the CLI usable because shadcn requires aliases backed by a TypeScript
-config. Keep that compatibility in `tsconfig.shadcn.json`; do not merge it into
-the package's real `tsconfig.json`.
-
-The real source resolver is `package.json#imports`. That is why `#utils.js`
-works in source without any SvelteKit app alias, and why `#/utils` is not used.
-`#lib` is not a real source resolver; `components.json` maps its generator-only
-`lib` alias to `#ui` so generated files still land under `src`.
 
 ## Troubleshooting
 

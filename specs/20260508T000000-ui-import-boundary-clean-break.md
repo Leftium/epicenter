@@ -1,15 +1,11 @@
 # UI Import Boundary Clean Break
 
 **Date**: 2026-05-08
-**Status**: Superseded
+**Status**: Implemented
 **Author**: AI-assisted
 
-**Superseded by**: `specs/20260510T070722-ui-native-package-imports.md`
-
-This spec captured the first clean break: apps stopped aliasing `#` to
-`packages/ui/src`. The newer spec keeps that app boundary, but replaces
-relative UI source imports with native package-private imports owned by
-`packages/ui/package.json#imports`.
+This spec is the active UI import boundary after the native package import
+experiment was reverted.
 
 ## One-sentence thesis
 
@@ -218,7 +214,7 @@ import { cn } from '@epicenter/ui/utils';
 | `#internal/*` naming | 3 taste refused | Do not add now | `internal` is not a keyword. The name is clear but unnecessary if the rule is relative imports only. |
 | SvelteKit alias ownership | 1 evidence | Use `kit.alias` only for app-local aliases | SvelteKit generates TypeScript alias config. Manual tsconfig paths in SvelteKit apps duplicate that work. |
 | Migration style | 2 coherence | Clean break, no compatibility aliases | Existing app source already uses `@epicenter/ui`. The change is config cleanup plus UI internal import rewrites. |
-| shadcn-svelte generator config | 1 evidence | Use generator-only alias config | shadcn-svelte requires aliases in `components.json` and a TypeScript config with matching paths. Keep that compatibility in `tsconfig.shadcn.json`, not the package's real `tsconfig.json`. Generated source must be converted to relative imports before commit. |
+| shadcn-svelte generator config | 2 coherence | Do not keep generator alias config in `packages/ui` | Direct shadcn generation wants aliases, but the package boundary is clearer without committed generator aliases. Generate in a scratch project, copy files into `src`, and normalize imports before commit. |
 
 ## Architecture
 

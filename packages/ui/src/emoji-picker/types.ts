@@ -7,7 +7,7 @@ import type {
 } from 'bits-ui';
 import type { Snippet } from 'svelte';
 import type { HTMLAttributes } from 'svelte/elements';
-import type { ButtonProps } from '#ui/button/index.js';
+import type { ButtonProps } from '../button/index.js';
 
 export type SelectedEmoji = {
 	emoji: string;

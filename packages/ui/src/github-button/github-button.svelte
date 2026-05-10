@@ -20,7 +20,7 @@
 <script lang="ts">
 	import { cubicInOut } from 'svelte/easing';
 	import { Tween } from 'svelte/motion';
-	import { cn } from '#utils.js';
+	import { cn } from '../utils.js';
 	import Button from '../button/button.svelte';
 
 	let {

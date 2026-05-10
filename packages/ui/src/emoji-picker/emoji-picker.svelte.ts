@@ -1,7 +1,7 @@
 import data, { type EmojiMartData } from '@emoji-mart/data';
 import { Context, watch } from 'runed';
 import type { ReadableBoxedValues, WritableBoxedValues } from 'svelte-toolbelt';
-import { UseFrecency } from '#hooks/use-frecency.svelte.js';
+import { UseFrecency } from '../hooks/use-frecency.svelte.js';
 import type { EmojiPickerSkin, SelectedEmoji } from './types';
 
 const emojiData = data as EmojiMartData;

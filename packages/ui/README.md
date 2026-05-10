@@ -177,8 +177,16 @@ Run the boundary check after changing UI imports or app config:
 bun run check:ui-boundary
 ```
 
+The executable source of truth is `scripts/check-ui-boundary.ts`.
 The check fails when app configs point at `packages/ui/src`, when app tsconfigs
-add `#/*`, or when UI source imports itself through `#` or `@epicenter/ui/...`.
+add `#/*`, when app or package source imports `packages/ui/src` directly, or
+when UI source imports itself through `#` or `@epicenter/ui/...`.
+
+`components.json` and `tsconfig.shadcn.json` are shadcn-svelte generator input.
+They keep the CLI usable because shadcn requires aliases backed by a TypeScript
+config, but those aliases are not source import guidance. Do not add a `#/*`
+path to the package's real `tsconfig.json`. Convert generated UI source imports
+to relative paths before committing.
 
 ## Troubleshooting
 

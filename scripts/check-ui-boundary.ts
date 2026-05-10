@@ -2,29 +2,65 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 
 type Violation = {
+	rule: string;
 	file: string;
 	line: number;
 	text: string;
 };
 
 const uiSourceRoot = 'packages/ui/src';
-const configRoots = ['apps', 'packages'];
+const workspaceRoots = ['apps', 'packages'];
 const configFileNames = new Set([
 	'svelte.config.js',
 	'vite.config.ts',
 	'wxt.config.ts',
 	'tsconfig.json',
 ]);
+const sourceExtensions = ['.ts', '.js', '.svelte'];
+const ignoredDirectories = new Set(['node_modules', '.svelte-kit', '.wxt']);
+
+type BoundaryRule = {
+	name: string;
+	roots: string[];
+	appliesTo(file: string): boolean;
+	pattern: RegExp;
+};
+
+const boundaryRules: BoundaryRule[] = [
+	{
+		name: 'UI source must use relative imports for UI internals',
+		roots: [uiSourceRoot],
+		appliesTo: (file) => hasExtension(file, ['.ts', '.svelte']),
+		pattern:
+			/\bfrom\s+['"](?:#|@epicenter\/ui\/)|\bimport\s*\(\s*['"](?:#|@epicenter\/ui\/)|\bimport\s+['"](?:#|@epicenter\/ui\/)/,
+	},
+	{
+		name: 'Config must not point at packages/ui/src',
+		roots: workspaceRoots,
+		appliesTo: (file) => configFileNames.has(basename(file)),
+		pattern: /packages\/ui\/src/,
+	},
+	{
+		name: 'Config must not reintroduce private # UI aliases',
+		roots: workspaceRoots,
+		appliesTo: (file) => configFileNames.has(basename(file)),
+		pattern: /["']#\/\*["']|['"]#['"]:/,
+	},
+	{
+		name: 'Consumers must not import packages/ui/src directly',
+		roots: workspaceRoots,
+		appliesTo: (file) =>
+			!isUiSourceFile(file) && hasExtension(file, sourceExtensions),
+		pattern:
+			/\bfrom\s+['"][^'"]*packages\/ui\/src|\bimport\s*\(\s*['"][^'"]*packages\/ui\/src|\bimport\s+['"][^'"]*packages\/ui\/src/,
+	},
+];
 
 const violations: Violation[] = [];
 
 function* walk(dir: string): Generator<string> {
 	for (const entry of readdirSync(dir)) {
-		if (
-			entry === 'node_modules' ||
-			entry === '.svelte-kit' ||
-			entry === '.wxt'
-		) {
+		if (ignoredDirectories.has(entry)) {
 			continue;
 		}
 
@@ -38,13 +74,22 @@ function* walk(dir: string): Generator<string> {
 	}
 }
 
-function addViolations(file: string, pattern: RegExp) {
+function hasExtension(file: string, extensions: string[]) {
+	return extensions.some((extension) => file.endsWith(extension));
+}
+
+function isUiSourceFile(file: string) {
+	return file === uiSourceRoot || file.startsWith(`${uiSourceRoot}/`);
+}
+
+function addViolations(file: string, rule: BoundaryRule) {
 	const text = readFileSync(file, 'utf8');
 	const lines = text.split('\n');
 	for (const [index, line] of lines.entries()) {
-		pattern.lastIndex = 0;
-		if (pattern.test(line)) {
+		rule.pattern.lastIndex = 0;
+		if (rule.pattern.test(line)) {
 			violations.push({
+				rule: rule.name,
 				file,
 				line: index + 1,
 				text: line.trim(),
@@ -53,24 +98,15 @@ function addViolations(file: string, pattern: RegExp) {
 	}
 }
 
-for (const file of walk(uiSourceRoot)) {
-	if (!file.endsWith('.ts') && !file.endsWith('.svelte')) {
-		continue;
-	}
+for (const rule of boundaryRules) {
+	for (const root of rule.roots) {
+		for (const file of walk(root)) {
+			if (!rule.appliesTo(file)) {
+				continue;
+			}
 
-	addViolations(
-		file,
-		/\bfrom\s+['"](?:#|@epicenter\/ui\/)|\bimport\s*\(\s*['"](?:#|@epicenter\/ui\/)|\bimport\s+['"](?:#|@epicenter\/ui\/)/,
-	);
-}
-
-for (const root of configRoots) {
-	for (const file of walk(root)) {
-		if (!configFileNames.has(basename(file))) {
-			continue;
+			addViolations(file, rule);
 		}
-
-		addViolations(file, /packages\/ui\/src|["']#\/\*["']|['"]#['"]:/);
 	}
 }
 
@@ -78,7 +114,7 @@ if (violations.length > 0) {
 	console.error('UI boundary check failed:');
 	for (const violation of violations) {
 		console.error(
-			`${relative(process.cwd(), violation.file)}:${violation.line}: ${violation.text}`,
+			`${relative(process.cwd(), violation.file)}:${violation.line}: ${violation.rule}: ${violation.text}`,
 		);
 	}
 	process.exitCode = 1;

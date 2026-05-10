@@ -11,6 +11,8 @@
 		"hooks": "#/hooks",
 		"lib": "#/lib"
 	},
-	"typescript": true,
+	"typescript": {
+		"config": "./tsconfig.shadcn.json"
+	},
 	"registry": "https://shadcn-svelte.com/registry"
 }

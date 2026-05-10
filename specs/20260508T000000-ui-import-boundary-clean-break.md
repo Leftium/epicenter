@@ -211,6 +211,7 @@ import { cn } from '@epicenter/ui/utils';
 | `#internal/*` naming | 3 taste refused | Do not add now | `internal` is not a keyword. The name is clear but unnecessary if the rule is relative imports only. |
 | SvelteKit alias ownership | 1 evidence | Use `kit.alias` only for app-local aliases | SvelteKit generates TypeScript alias config. Manual tsconfig paths in SvelteKit apps duplicate that work. |
 | Migration style | 2 coherence | Clean break, no compatibility aliases | Existing app source already uses `@epicenter/ui`. The change is config cleanup plus UI internal import rewrites. |
+| shadcn-svelte generator config | 1 evidence | Use generator-only alias config | shadcn-svelte requires aliases in `components.json` and a TypeScript config with matching paths. Keep that compatibility in `tsconfig.shadcn.json`, not the package's real `tsconfig.json`. Generated source must be converted to relative imports before commit. |
 
 ## Architecture
 
@@ -364,9 +365,9 @@ updates typecheck scripts that hid generated config drift, and adds
 - Focused UI consumer checks still fail for `apps/landing`, `apps/dashboard`,
   `apps/fuji`, and `apps/whispering` on existing TypeScript or Svelte
   diagnostics unrelated to UI alias removal.
-- `bun typecheck` now gets past Tab Manager and fails at
-  `@epicenter/dashboard#typecheck` on existing dashboard, API env, and UI chart
-  diagnostics.
+- `bun typecheck` still fails on existing diagnostics outside this import
+  boundary change. The first failing package can vary with task ordering; one
+  run failed at `@epicenter/ui#typecheck` on existing UI strictness diagnostics.
 
 ### Follow-up Work
 

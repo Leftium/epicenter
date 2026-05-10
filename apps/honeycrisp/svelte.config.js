@@ -9,19 +9,9 @@ const config = {
 		}),
 		alias: {
 			$routes: './src/routes',
-			'$platform/auth': selectAuthModule(),
 		},
 	},
 	preprocess: vitePreprocess(),
 };
 
 export default config;
-
-function selectAuthModule() {
-	// SvelteKit owns aliases so Vite and generated TS config stay in sync.
-	if (process.env.NODE_ENV === 'production') {
-		return './src/lib/platform/auth/cookie.ts';
-	}
-
-	return './src/lib/platform/auth/bearer.ts';
-}

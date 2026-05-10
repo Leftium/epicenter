@@ -1,11 +1,11 @@
 <script lang="ts">
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
-	import { Button } from '#ui/button';
-	import * as Command from '#ui/command';
+	import { Button } from '#ui/button/index.js';
+	import * as Command from '#ui/command/index.js';
 	import { useCombobox } from '#hooks';
-	import * as Popover from '#ui/popover';
-	import { cn } from '#utils';
+	import * as Popover from '#ui/popover/index.js';
+	import { cn } from '#utils.js';
 
 	let {
 		value = $bindable(),

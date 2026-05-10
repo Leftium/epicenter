@@ -4,7 +4,7 @@
 	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
 	import type { Column } from '@tanstack/svelte-table';
 
-	import { Button } from '#ui/button';
+	import { Button } from '#ui/button/index.js';
 
 	let { column, headerText }: { column: TColumn; headerText: string } =
 		$props();

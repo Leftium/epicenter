@@ -13,6 +13,7 @@ export default defineConfig({
 	 * package.json#imports.
 	 */
 	paths: {
+		component: './src',
 		ui: './src',
 		lib: './src',
 		util: './src/utils',

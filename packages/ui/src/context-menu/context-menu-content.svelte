@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { ContextMenu as ContextMenuPrimitive } from 'bits-ui';
 	import type { ComponentProps } from 'svelte';
-	import type { WithoutChildrenOrChild } from '#utils';
-	import { cn } from '#utils';
+	import type { WithoutChildrenOrChild } from '#utils.js';
+	import { cn } from '#utils.js';
 	import ContextMenuPortal from './context-menu-portal.svelte';
 
 	let {

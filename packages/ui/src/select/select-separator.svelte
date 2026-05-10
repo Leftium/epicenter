@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Separator as SeparatorPrimitive } from 'bits-ui';
-	import { Separator } from '#ui/separator';
-	import { cn } from '#utils';
+	import { Separator } from '#ui/separator/index.js';
+	import { cn } from '#utils.js';
 
 	let {
 		ref = $bindable(null),

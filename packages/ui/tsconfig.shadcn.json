@@ -3,15 +3,13 @@
 	"compilerOptions": {
 		"paths": {
 			"#hooks": ["./src/hooks/index.ts"],
-			"#hooks/*.js": ["./src/hooks/*.ts"],
-			"#hooks/*": ["./src/hooks/*"],
-			"#lib": ["./src"],
-			"#lib/*.js": ["./src/*.ts"],
-			"#lib/*": ["./src/*"],
+			"#hooks/*.svelte.js": ["./src/hooks/*.svelte.ts"],
 			"#ui": ["./src"],
 			"#ui/*": ["./src/*"],
+			"#ui/*/index.js": ["./src/*/index.ts"],
 			"#utils": ["./src/utils.ts"],
-			"#utils/*": ["./src/utils/*"]
+			"#utils.js": ["./src/utils.ts"],
+			"#utils/*.js": ["./src/utils/*.ts"]
 		}
 	}
 }

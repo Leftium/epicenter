@@ -4,9 +4,9 @@
 
 <script lang="ts" module>
 	import { tv, type VariantProps } from 'tailwind-variants';
-	import { CopyButton } from '#ui/copy-button';
+	import { CopyButton } from '#ui/copy-button/index.js';
 	import type { UseClipboard } from '#hooks/use-clipboard.svelte.js';
-	import { cn } from '#utils';
+	import { cn } from '#utils.js';
 
 	const style = tv({
 		base: 'bg-background relative w-full max-w-full rounded-md border py-2.5 pr-12 pl-3',

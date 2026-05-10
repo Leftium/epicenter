@@ -10,12 +10,13 @@ type Violation = {
 
 const uiSourceRoot = 'packages/ui/src';
 const workspaceRoots = ['apps', 'packages'];
-const configFileNames = new Set([
-	'svelte.config.js',
-	'vite.config.ts',
-	'wxt.config.ts',
-	'tsconfig.json',
-]);
+const generatorConfigFiles = new Set(['packages/ui/tsconfig.shadcn.json']);
+const configFilePatterns = [
+	/^svelte\.config\.[cm]?[jt]s$/,
+	/^vite\.config\.[cm]?[jt]s$/,
+	/^wxt\.config\.[cm]?[jt]s$/,
+	/^tsconfig(?:\.[\w-]+)?\.json$/,
+];
 const sourceExtensions = ['.ts', '.js', '.svelte'];
 const ignoredDirectories = new Set(['node_modules', '.svelte-kit', '.wxt']);
 
@@ -28,22 +29,22 @@ type BoundaryRule = {
 
 const boundaryRules: BoundaryRule[] = [
 	{
-		name: 'UI source must not self-import through public or naked UI aliases',
+		name: 'UI source must not self-import through public, naked, or generator-only UI aliases',
 		roots: [uiSourceRoot],
 		appliesTo: (file) => hasExtension(file, ['.ts', '.svelte']),
 		pattern:
-			/\bfrom\s+['"](?:#(?:['"]|\/)|@epicenter\/ui\/)|\bimport\s*\(\s*['"](?:#(?:['"]|\/)|@epicenter\/ui\/)|\bimport\s+['"](?:#(?:['"]|\/)|@epicenter\/ui\/)/,
+			/^\s*import(?:\s+type)?(?:\s+[^'"]*\s+from)?\s+['"](?:#(?:['"]|\/)|#lib(?:\/|\.js|['"])|@epicenter\/ui\/)|\bimport\s*\(\s*['"](?:#(?:['"]|\/)|#lib(?:\/|\.js|['"])|@epicenter\/ui\/)/,
 	},
 	{
 		name: 'Config must not point at packages/ui/src',
 		roots: workspaceRoots,
-		appliesTo: (file) => configFileNames.has(basename(file)),
+		appliesTo: isBoundaryConfigFile,
 		pattern: /packages\/ui\/src/,
 	},
 	{
 		name: 'Config must not reintroduce private UI package imports',
 		roots: workspaceRoots,
-		appliesTo: (file) => configFileNames.has(basename(file)),
+		appliesTo: isBoundaryConfigFile,
 		pattern: /["']#(?:\/\*|ui|utils|hooks|lib)/,
 	},
 	{
@@ -52,7 +53,7 @@ const boundaryRules: BoundaryRule[] = [
 		appliesTo: (file) =>
 			!isUiSourceFile(file) && hasExtension(file, sourceExtensions),
 		pattern:
-			/\bfrom\s+['"][^'"]*packages\/ui\/src|\bimport\s*\(\s*['"][^'"]*packages\/ui\/src|\bimport\s+['"][^'"]*packages\/ui\/src/,
+			/^\s*import(?:\s+type)?(?:\s+[^'"]*\s+from)?\s+['"][^'"]*packages\/ui\/src|\bimport\s*\(\s*['"][^'"]*packages\/ui\/src/,
 	},
 	{
 		name: 'Consumers must not import UI private package imports',
@@ -60,7 +61,7 @@ const boundaryRules: BoundaryRule[] = [
 		appliesTo: (file) =>
 			!isUiSourceFile(file) && hasExtension(file, sourceExtensions),
 		pattern:
-			/\bfrom\s+['"]#(?:ui|utils|hooks|lib)(?:\/|['"])|\bimport\s*\(\s*['"]#(?:ui|utils|hooks|lib)(?:\/|['"])|\bimport\s+['"]#(?:ui|utils|hooks|lib)(?:\/|['"])/,
+			/^\s*import(?:\s+type)?(?:\s+[^'"]*\s+from)?\s+['"]#(?:ui|utils|hooks|lib)(?:\/|\.js|['"])|\bimport\s*\(\s*['"]#(?:ui|utils|hooks|lib)(?:\/|\.js|['"])/,
 	},
 ];
 
@@ -84,6 +85,14 @@ function* walk(dir: string): Generator<string> {
 
 function hasExtension(file: string, extensions: string[]) {
 	return extensions.some((extension) => file.endsWith(extension));
+}
+
+function isBoundaryConfigFile(file: string) {
+	if (generatorConfigFiles.has(file)) {
+		return false;
+	}
+
+	return configFilePatterns.some((pattern) => pattern.test(basename(file)));
 }
 
 function isUiSourceFile(file: string) {

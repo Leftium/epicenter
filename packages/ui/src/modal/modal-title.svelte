@@ -5,8 +5,8 @@
 <script lang="ts">
 	import type { DialogTitleProps } from 'bits-ui';
 
-	import * as Dialog from '#ui/dialog';
-	import * as Drawer from '#ui/drawer';
+	import * as Dialog from '#ui/dialog/index.js';
+	import * as Drawer from '#ui/drawer/index.js';
 
 	import { useModalSub } from './modal-state.svelte.js';
 

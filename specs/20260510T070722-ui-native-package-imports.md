@@ -14,8 +14,8 @@ while apps continue to consume only the @epicenter/ui public package API.
 ## Overview
 
 This changes `packages/ui` from generated relative-import cleanup to named
-native package imports: `#ui`, `#utils`, `#hooks`, and `#lib`. The app side does
-not get a SvelteKit alias, Vite alias, or app tsconfig path for UI source.
+native package imports: `#ui`, `#utils`, and `#hooks`. The app side does not get
+a SvelteKit alias, Vite alias, or app tsconfig path for UI source.
 
 ## Motivation
 
@@ -67,10 +67,15 @@ kit: {
 UI source uses named package-private imports:
 
 ```ts
-import { Button } from '#ui/button';
-import { cn } from '#utils';
+import { Button } from '#ui/button/index.js';
+import { cn } from '#utils.js';
 import { useCombobox } from '#hooks';
-import CopyButton from '#lib/copy-button/copy-button.svelte';
+```
+
+Direct imports of concrete component files stay relative:
+
+```ts
+import Button from '../button/button.svelte';
 ```
 
 `packages/ui/package.json` owns those names:
@@ -79,13 +84,10 @@ import CopyButton from '#lib/copy-button/copy-button.svelte';
 {
 	"imports": {
 		"#hooks": "./src/hooks/index.ts",
-		"#hooks/*.js": "./src/hooks/*.ts",
-		"#hooks/*": "./src/hooks/*",
-		"#lib/*.js": "./src/*.ts",
-		"#lib/*": "./src/*",
-		"#ui/*": "./src/*/index.ts",
-		"#utils": "./src/utils.ts",
-		"#utils/*": "./src/utils/*.ts"
+		"#hooks/*.svelte.js": "./src/hooks/*.svelte.ts",
+		"#ui/*/index.js": "./src/*/index.ts",
+		"#utils.js": "./src/utils.ts",
+		"#utils/*.js": "./src/utils/*.ts"
 	}
 }
 ```
@@ -99,7 +101,7 @@ import CopyButton from '#lib/copy-button/copy-button.svelte';
 		"utils": "#utils",
 		"ui": "#ui",
 		"hooks": "#hooks",
-		"lib": "#lib"
+		"lib": "#ui"
 	}
 }
 ```
@@ -108,6 +110,9 @@ import CopyButton from '#lib/copy-button/copy-button.svelte';
 `tsconfig.json` does not need those paths because TypeScript resolves package
 imports through `package.json`.
 
+The `lib` alias is generator-only. It points at `#ui` so shadcn can still place
+registry files under `src`, but committed source does not import from `#lib`.
+
 ## Research Findings
 
 ### Native package imports
@@ -115,8 +120,8 @@ imports through `package.json`.
 Node package imports are private package mappings whose keys start with `#`.
 TypeScript resolves them from the nearest `package.json` when package imports
 are enabled under modern module resolution. This repo uses bundler resolution in
-the shared base config, so `#utils` and `#ui/button` are valid source imports
-inside `packages/ui`.
+the shared base config, so `#utils.js` and `#ui/button/index.js` are valid source
+imports inside `packages/ui`.
 
 Sources:
 
@@ -132,10 +137,10 @@ imports do not.
 Probe: packages/ui source imported from #/utils
 Result: packages/ui svelte-check reported Cannot find module '#/utils'
 
-Probe: packages/ui source imported from #utils
+Probe: packages/ui source imported from #utils.js
 Result: packages/ui svelte-check resolved the import
 
-Probe: apps/honeycrisp consumed @epicenter/ui while packages/ui used #utils
+Probe: apps/honeycrisp consumed @epicenter/ui while packages/ui used #utils.js
 Result: app typecheck did not need a kit.alias or app tsconfig path
 ```
 
@@ -168,7 +173,8 @@ paths: {
 ```
 
 The installed files then use the package-private import names from
-`package.json#imports`.
+`package.json#imports` for barrels, utils, and hooks. Direct raw file imports
+stay relative.
 
 ### SvelteKit and Vite config
 
@@ -183,14 +189,14 @@ Source: https://svelte.dev/docs/kit/configuration#alias
 
 | Decision | Class | Choice | Rationale |
 | --- | --- | --- | --- |
-| Internal UI imports | 1 evidence | Use named package imports such as `#utils` and `#ui/button` | Local svelte-check resolved named imports and rejected `#/utils`. |
+| Internal UI imports | 1 evidence | Use named package imports such as `#utils.js` and `#ui/button/index.js` | Local svelte-check resolved named imports and rejected `#/utils`. |
 | Slash-after-hash imports | 1 evidence | Do not use `#/*` or `#/utils` | They behave like alias paths and failed the package source probe. |
 | App config | 2 coherence | Do not add `kit.alias`, Vite aliases, or app tsconfig paths for UI | Consumers should depend on package exports, not source layout. |
 | Public UI imports | 2 coherence | Apps keep using `@epicenter/ui/...` | This preserves the package boundary and matches `exports`. |
 | `tsconfig.shadcn.json` | 2 coherence | Keep it separate from `tsconfig.json` | It exists for shadcn-svelte alias validation. Merging it would turn generator compatibility into general source config. |
-| `components.json` aliases | 2 coherence | Point them at `#ui`, `#utils`, `#hooks`, and `#lib` | The generator now emits imports that match committed source. |
-| `*.js` bridges | 2 coherence | Use `#hooks/*.js` and `#lib/*.js` for TypeScript-backed runtime imports | Source imports should use runtime-looking `.js` specifiers while resolving to `.ts` implementation files. |
-| `#lib/*` | 3 taste under constraint | Use it only for direct internal file imports | Some extras import concrete component files or helper types. `#lib/*` names that escape hatch without exposing it to apps. |
+| `components.json` aliases | 2 coherence | Point `components`, `ui`, and generator-only `lib` at `#ui`; point `utils` and `hooks` at their own names | The generator has the aliases it expects without creating a runtime `#lib` namespace. |
+| `*.js` bridges | 2 coherence | Use runtime-looking `.js` package imports for TypeScript-backed files | Source imports match emitted module specifiers while resolving to `.ts` implementation files. |
+| `#lib/*` | 1 refusal | Do not map or commit `#lib` imports | Raw file imports are local implementation details, so relative paths are clearer and avoid a second private API. |
 | `jsrepo.config.ts` | 1 evidence | Keep filesystem paths | jsrepo installs files by path; those entries are not resolver aliases. |
 
 ## Architecture
@@ -202,10 +208,10 @@ shadcn-svelte CLI
   writes packages/ui/src/*
 
 packages/ui source
-  imports #ui/button
-  imports #utils
+  imports #ui/button/index.js
+  imports #utils.js
   imports #hooks
-  imports #lib/copy-button/copy-button.svelte
+  imports ../copy-button/copy-button.svelte for raw local files
   resolves through packages/ui/package.json#imports
 
 apps/*
@@ -218,7 +224,7 @@ There are two resolver surfaces:
 
 ```txt
 Private to packages/ui:
-  #ui, #utils, #hooks, #lib
+  #ui, #utils, #hooks
 
 Public to apps:
   @epicenter/ui/*
@@ -266,17 +272,18 @@ or `kit.alias` entries.
 
 - [x] Add named `imports` mappings to `packages/ui/package.json`.
 - [x] Change `packages/ui/components.json` aliases to `#ui`, `#utils`,
-      `#hooks`, and `#lib`.
+      and `#hooks`, with generator-only `lib` pointing at `#ui`.
 - [x] Keep shadcn alias paths in `packages/ui/tsconfig.shadcn.json`.
 - [x] Keep `packages/ui/tsconfig.json` free of those paths.
 
 ### Phase 2: Convert UI source
 
-- [x] Convert cross-component UI imports from relative paths to `#ui/*`.
-- [x] Convert utility imports to `#utils` and `#utils/*`.
+- [x] Convert cross-component UI imports from relative paths to
+      `#ui/*/index.js`.
+- [x] Convert utility imports to `#utils.js` and `#utils/*.js`.
 - [x] Convert hook imports to `#hooks` and runtime-looking
       `#hooks/*.svelte.js` specifiers.
-- [x] Use `#lib/*` only for direct file imports that are not public barrels.
+- [x] Keep direct raw file imports relative instead of adding `#lib`.
 
 ### Phase 3: Protect the boundary
 
@@ -284,8 +291,8 @@ or `kit.alias` entries.
       import paths.
 - [x] Update the UI boundary check so app source cannot import private UI import
       names.
-- [x] Keep the check forbidding naked `#`, `#/...`, and `@epicenter/ui/...`
-      self-imports inside UI source.
+- [x] Keep the check forbidding naked `#`, `#/...`, generator-only `#lib`,
+      and `@epicenter/ui/...` self-imports inside UI source.
 - [x] Update package docs to explain the new resolver split.
 
 ### Phase 4: Verify
@@ -301,8 +308,8 @@ Commands:
 
 ```bash
 bun run check:ui-boundary
-(cd packages/ui && bun -e "await import('#utils'); await import('#utils/casing'); await import('#hooks')")
-(cd packages/ui && bun -e "console.log(import.meta.resolve('#ui/button')); console.log(import.meta.resolve('#lib/copy-button/types.js')); console.log(import.meta.resolve('#hooks/use-auto-scroll.svelte.js'))")
+(cd packages/ui && bun -e "console.log(import.meta.resolve('#utils.js')); console.log(import.meta.resolve('#utils/casing.js')); console.log(import.meta.resolve('#hooks/use-auto-scroll.svelte.js')); console.log(import.meta.resolve('#ui/button/index.js'))")
+(cd packages/ui && bun -e "try { import.meta.resolve('#lib/copy-button/types.js'); process.exit(1); } catch { console.log('no #lib runtime mapping'); }")
 (cd apps/honeycrisp && bun run typecheck)
 (cd packages/ui && bun run typecheck)
 (cd packages/ui && bun run typecheck 2>&1 | rg "Cannot find module '#|Module '\"#|Could not resolve '#")
@@ -311,18 +318,19 @@ bun run check:ui-boundary
 Observed result:
 
 - Boundary check passes.
-- Bun resolves `#utils`, `#utils/casing`, and `#hooks` from inside
+- Bun resolves `#utils.js`, `#utils/casing.js`,
+  `#hooks/use-auto-scroll.svelte.js`, and `#ui/button/index.js` from inside
   `packages/ui`.
-- Bun resolves `#ui/button`, `#lib/copy-button/types.js`, and
-  `#hooks/use-auto-scroll.svelte.js` to the expected files.
+- Bun does not resolve `#lib/copy-button/types.js`, which confirms `#lib` is
+  generator-only and not a runtime source namespace.
 - `apps/honeycrisp` typecheck passes with 0 errors and no app alias.
 - `packages/ui` still reports pre-existing component typing issues, currently
   73 errors in 11 files, but the targeted resolver scan reports no missing
-  modules for `#ui`, `#utils`, `#hooks`, or `#lib`.
+  modules for `#ui`, `#utils`, or `#hooks`.
 
 ## Non-goals
 
-- Do not expose `#ui`, `#utils`, `#hooks`, or `#lib` to apps.
+- Do not expose `#ui`, `#utils`, or `#hooks` to apps.
 - Do not add `kit.alias` for UI source in any app.
 - Do not merge `tsconfig.shadcn.json` into `tsconfig.json`.
-- Do not make `#lib/*` a public import style for consumers.
+- Do not make `#lib/*` a committed source import style.

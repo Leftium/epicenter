@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
-	import { cn, type WithElementRef } from '#utils';
+	import { cn, type WithElementRef } from '#utils.js';
 
 	let {
 		ref = $bindable(null),

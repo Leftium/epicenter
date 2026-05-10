@@ -159,10 +159,10 @@
 </script>
 
 <script lang="ts">
-	import * as AlertDialog from '#ui/alert-dialog';
-	import { Input } from '#ui/input';
-	import { Spinner } from '#ui/spinner';
-	import { cn } from '#utils';
+	import * as AlertDialog from '#ui/alert-dialog/index.js';
+	import { Input } from '#ui/input/index.js';
+	import { Spinner } from '#ui/spinner/index.js';
+	import { cn } from '#utils.js';
 </script>
 
 <AlertDialog.Root bind:open={confirmationDialog.isOpen}>

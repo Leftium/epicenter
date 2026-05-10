@@ -33,7 +33,7 @@
 		"./app.css": "./src/app.css"
 	},
 	"scripts": {
-		"typecheck": "svelte-check"
+		"typecheck": "svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {
 		"@fontsource-variable/manrope": "^5.2.6",

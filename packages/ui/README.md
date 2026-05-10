@@ -81,8 +81,7 @@ Our `package.json` has two separate maps:
 {
 	"imports": {
 		"#hooks": "./src/hooks/index.ts",
-		"#hooks/*.svelte": "./src/hooks/*.svelte.ts",
-		"#hooks/*.svelte.js": "./src/hooks/*.svelte.ts",
+		"#hooks/*.js": "./src/hooks/*.ts",
 		"#hooks/*": "./src/hooks/*",
 		"#lib/*.js": "./src/*.ts",
 		"#lib/*": "./src/*",

@@ -5,7 +5,7 @@
 <script lang="ts" module>
 	import { tv, type VariantProps } from 'tailwind-variants';
 	import { CopyButton } from '#ui/copy-button';
-	import type { UseClipboard } from '#hooks/use-clipboard.svelte';
+	import type { UseClipboard } from '#hooks/use-clipboard.svelte.js';
 	import { cn } from '#utils';
 
 	const style = tv({

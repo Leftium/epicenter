@@ -4,7 +4,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { scale } from 'svelte/transition';
 	import { Button } from '#ui/button';
-	import { UseClipboard } from '#hooks/use-clipboard.svelte';
+	import { UseClipboard } from '#hooks/use-clipboard.svelte.js';
 	import { cn } from '#utils';
 	import type { CopyButtonProps } from './types';
 

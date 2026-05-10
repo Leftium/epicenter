@@ -79,8 +79,7 @@ import CopyButton from '#lib/copy-button/copy-button.svelte';
 {
 	"imports": {
 		"#hooks": "./src/hooks/index.ts",
-		"#hooks/*.svelte": "./src/hooks/*.svelte.ts",
-		"#hooks/*.svelte.js": "./src/hooks/*.svelte.ts",
+		"#hooks/*.js": "./src/hooks/*.ts",
 		"#hooks/*": "./src/hooks/*",
 		"#lib/*.js": "./src/*.ts",
 		"#lib/*": "./src/*",
@@ -190,6 +189,7 @@ Source: https://svelte.dev/docs/kit/configuration#alias
 | Public UI imports | 2 coherence | Apps keep using `@epicenter/ui/...` | This preserves the package boundary and matches `exports`. |
 | `tsconfig.shadcn.json` | 2 coherence | Keep it separate from `tsconfig.json` | It exists for shadcn-svelte alias validation. Merging it would turn generator compatibility into general source config. |
 | `components.json` aliases | 2 coherence | Point them at `#ui`, `#utils`, `#hooks`, and `#lib` | The generator now emits imports that match committed source. |
+| `*.js` bridges | 2 coherence | Use `#hooks/*.js` and `#lib/*.js` for TypeScript-backed runtime imports | Source imports should use runtime-looking `.js` specifiers while resolving to `.ts` implementation files. |
 | `#lib/*` | 3 taste under constraint | Use it only for direct internal file imports | Some extras import concrete component files or helper types. `#lib/*` names that escape hatch without exposing it to apps. |
 | `jsrepo.config.ts` | 1 evidence | Keep filesystem paths | jsrepo installs files by path; those entries are not resolver aliases. |
 
@@ -274,7 +274,8 @@ or `kit.alias` entries.
 
 - [x] Convert cross-component UI imports from relative paths to `#ui/*`.
 - [x] Convert utility imports to `#utils` and `#utils/*`.
-- [x] Convert hook imports to `#hooks` and `#hooks/*`.
+- [x] Convert hook imports to `#hooks` and runtime-looking
+      `#hooks/*.svelte.js` specifiers.
 - [x] Use `#lib/*` only for direct file imports that are not public barrels.
 
 ### Phase 3: Protect the boundary

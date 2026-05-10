@@ -4,12 +4,8 @@
 */
 
 import type { Snippet } from 'svelte';
-import type {
-	ButtonProps,
-	ButtonSize,
-	ButtonVariant,
-} from '#ui/button';
-import type { UseClipboard } from '#hooks/use-clipboard.svelte';
+import type { ButtonProps, ButtonSize, ButtonVariant } from '#ui/button';
+import type { UseClipboard } from '#hooks/use-clipboard.svelte.js';
 
 export type CopyFn = (text: string) => Promise<void>;
 

@@ -6,6 +6,12 @@ import {
 	encryptBytes,
 } from '@epicenter/encryption';
 import * as idb from 'lib0/indexeddb';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import { clearDocument } from 'y-indexeddb';
 import type * as Y from 'yjs';
 import { applyUpdateV2, encodeStateAsUpdateV2, transact } from 'yjs';
@@ -16,15 +22,64 @@ const CUSTOM_STORE_NAME = 'custom';
 const PREFERRED_TRIM_SIZE = 500;
 const textEncoder = new TextEncoder();
 
+/** Background failures logged by attachEncryptedIndexedDb. */
+export const EncryptedIndexedDbError = defineErrors({
+	/**
+	 * A single encrypted update failed to write. The in-memory ydoc still has
+	 * the update, so the next reload from this database will diverge from what
+	 * was last persisted.
+	 */
+	PersistUpdateFailed: ({
+		cause,
+		databaseName,
+	}: {
+		cause: unknown;
+		databaseName: string;
+	}) => ({
+		message: `[attachEncryptedIndexedDb] failed to persist update to '${databaseName}': ${extractErrorMessage(cause)}`,
+		cause,
+		databaseName,
+	}),
+	/**
+	 * Debounced compaction throw: pending updates remain un-merged, and the
+	 * trim threshold check will retry on the next write.
+	 */
+	CompactionFailed: ({
+		cause,
+		databaseName,
+	}: {
+		cause: unknown;
+		databaseName: string;
+	}) => ({
+		message: `[attachEncryptedIndexedDb] compaction failed for '${databaseName}': ${extractErrorMessage(cause)}`,
+		cause,
+		databaseName,
+	}),
+});
+export type EncryptedIndexedDbError = InferErrors<
+	typeof EncryptedIndexedDbError
+>;
+
 type EncryptedIndexedDbOptions = {
 	databaseName: string;
 	writeKey: { version: number; bytes: Uint8Array };
 	keyring: ReadonlyMap<number, Uint8Array>;
+	/**
+	 * Logger for background failures (persistence write rejections, compaction
+	 * throws). Defaults to a console-backed logger with source
+	 * `attachEncryptedIndexedDb`.
+	 */
+	log?: Logger;
 };
 
 export function attachEncryptedIndexedDb(
 	ydoc: Y.Doc,
-	{ databaseName, writeKey, keyring }: EncryptedIndexedDbOptions,
+	{
+		databaseName,
+		writeKey,
+		keyring,
+		log = createLogger('attachEncryptedIndexedDb'),
+	}: EncryptedIndexedDbOptions,
 ): IndexedDbAttachment {
 	let db: IDBDatabase | undefined;
 	let dbref = 0;
@@ -131,11 +186,19 @@ export function attachEncryptedIndexedDb(
 		if (db === undefined || origin === attachment) return;
 		const [updatesStore] = idb.transact(db, [UPDATES_STORE_NAME]);
 		if (updatesStore === undefined) return;
-		void addEncryptedUpdate(updatesStore, update);
+		addEncryptedUpdate(updatesStore, update).catch((cause) => {
+			log.warn(
+				EncryptedIndexedDbError.PersistUpdateFailed({ cause, databaseName }),
+			);
+		});
 		if (dbsize >= PREFERRED_TRIM_SIZE) {
 			if (storeTimeoutId !== undefined) clearTimeout(storeTimeoutId);
 			storeTimeoutId = setTimeout(() => {
-				void compactUpdates();
+				compactUpdates().catch((cause) => {
+					log.warn(
+						EncryptedIndexedDbError.CompactionFailed({ cause, databaseName }),
+					);
+				});
 				storeTimeoutId = undefined;
 			}, 1000);
 		}

@@ -6,13 +6,17 @@ import {
 	authStateFromIdentity,
 	createAuthStateStore,
 } from './auth-state-store.js';
-import type { AuthIdentity, OAuthSession } from './auth-types.js';
-import { authIdentityFromAuthSessionResponse } from './contracts/auth-session.js';
+import {
+	AuthIdentity,
+	type AuthIdentity as AuthIdentityType,
+	OAuthSession,
+	type OAuthSession as OAuthSessionType,
+} from './auth-types.js';
 import { headersFromRequest } from './request-headers.js';
 
 export type OAuthSessionStorage = {
-	get(): OAuthSession | null;
-	set(value: OAuthSession | null): void | Promise<void>;
+	get(): OAuthSessionType | null;
+	set(value: OAuthSessionType | null): void | Promise<void>;
 };
 
 export type OAuthSignInLauncher = {
@@ -32,8 +36,9 @@ export type OAuthTokenResult = {
 export type OAuthTokenRefresher = (input: {
 	baseURL: string;
 	clientId: string;
-	session: OAuthSession;
+	session: OAuthSessionType;
 	fetch: typeof fetch;
+	now: () => number;
 }) => Promise<OAuthTokenResult>;
 
 export type OAuthRefreshTokenRevoker = (input: {
@@ -73,36 +78,38 @@ export function createOAuthAppAuth({
 	let networkAuthPaused = false;
 	let hasDisposed = false;
 	let refreshPromise: Promise<boolean> | null = null;
+	let sessionEpoch = 0;
 
 	const stateStore = createAuthStateStore(
 		stateFromSession(session, {
 			networkAuthPaused,
-			now: now(),
 		}),
 	);
 
-	async function setSession(next: OAuthSession | null) {
-		await sessionStorage.set(next);
-		session = next;
+	function publishState() {
 		stateStore.setState(
 			stateFromSession(session, {
 				networkAuthPaused,
-				now: now(),
 			}),
 		);
 	}
 
-	async function applySignedInSession(next: OAuthSession) {
+	async function replaceSession(next: OAuthSessionType | null) {
+		const writeEpoch = sessionEpoch + 1;
+		sessionEpoch = writeEpoch;
+		const staleRefresh = refreshPromise;
+		if (staleRefresh) await staleRefresh.catch(() => false);
+		await sessionStorage.set(next);
+		if (writeEpoch !== sessionEpoch) return false;
+		session = next;
 		networkAuthPaused = false;
-		await setSession(next);
+		publishState();
+		return true;
 	}
 
-	async function clearSession() {
-		networkAuthPaused = false;
-		await setSession(null);
-	}
-
-	async function loadIdentity(tokens: OAuthTokenResult): Promise<OAuthSession> {
+	async function loadIdentity(
+		tokens: OAuthTokenResult,
+	): Promise<OAuthSessionType> {
 		const response = await fetchImpl(`${baseURL}/auth/me`, {
 			headers: { Authorization: `Bearer ${tokens.accessToken}` },
 			credentials: 'omit',
@@ -110,17 +117,14 @@ export function createOAuthAppAuth({
 		if (!response.ok) {
 			throw new Error(`/auth/me failed with ${response.status}.`);
 		}
-		const identity = authIdentityFromAuthSessionResponse(await response.json());
-		if (identity === null) {
-			throw new Error('/auth/me returned a signed-out identity.');
-		}
-		return {
+		const identity = AuthIdentity.assert(await response.json());
+		return OAuthSession.assert({
 			accessToken: tokens.accessToken,
 			refreshToken: tokens.refreshToken,
 			accessTokenExpiresAt: tokens.accessTokenExpiresAt,
 			user: identity.user,
 			encryptionKeys: identity.encryptionKeys,
-		} satisfies OAuthSession;
+		});
 	}
 
 	async function refreshSession({ force }: { force: boolean }) {
@@ -128,8 +132,9 @@ export function createOAuthAppAuth({
 		if (!force && !shouldRefresh(session, now())) return true;
 		if (refreshPromise) return refreshPromise;
 
+		const startedAt = sessionEpoch;
+		const current = session;
 		refreshPromise = (async () => {
-			const current = session;
 			if (current === null) return false;
 			try {
 				const tokens = await refreshOAuthToken({
@@ -137,24 +142,27 @@ export function createOAuthAppAuth({
 					clientId,
 					session: current,
 					fetch: fetchImpl,
+					now,
 				});
-				const next = {
+				if (startedAt !== sessionEpoch || session !== current) return false;
+				const next = OAuthSession.assert({
 					...current,
 					accessToken: tokens.accessToken,
 					refreshToken: tokens.refreshToken,
 					accessTokenExpiresAt: tokens.accessTokenExpiresAt,
-				} satisfies OAuthSession;
-				await applySignedInSession(next);
+				});
+				await sessionStorage.set(next);
+				if (startedAt !== sessionEpoch || session !== current) return false;
+				session = next;
+				networkAuthPaused = false;
+				publishState();
 				return true;
 			} catch (cause) {
-				networkAuthPaused = true;
-				stateStore.setState(
-					stateFromSession(session, {
-						networkAuthPaused,
-						now: now(),
-					}),
-				);
-				console.error('[auth] failed to refresh OAuth session:', cause);
+				if (startedAt === sessionEpoch && session === current) {
+					networkAuthPaused = true;
+					publishState();
+					console.error('[auth] failed to refresh OAuth session:', cause);
+				}
 				return false;
 			} finally {
 				refreshPromise = null;
@@ -182,7 +190,11 @@ export function createOAuthAppAuth({
 		} else {
 			headers.delete('Authorization');
 		}
-		return fetchImpl(input, { ...init, headers, credentials: 'omit' });
+		return fetchImpl(replayableInput(input), {
+			...init,
+			headers,
+			credentials: 'omit',
+		});
 	}
 
 	return {
@@ -197,7 +209,7 @@ export function createOAuthAppAuth({
 					return AuthError.StartSignInFailed({ cause: result.error });
 				}
 				if (result.data === null) return Ok(undefined);
-				await applySignedInSession(await loadIdentity(result.data));
+				await replaceSession(await loadIdentity(result.data));
 				return Ok(undefined);
 			} catch (cause) {
 				return AuthError.StartSignInFailed({ cause });
@@ -206,6 +218,7 @@ export function createOAuthAppAuth({
 		async signOut() {
 			try {
 				const sessionToRevoke = session;
+				sessionEpoch += 1;
 				if (sessionToRevoke !== null) {
 					await revokeOAuthRefreshToken({
 						baseURL,
@@ -214,7 +227,7 @@ export function createOAuthAppAuth({
 						fetch: fetchImpl,
 					}).catch(() => undefined);
 				}
-				await clearSession();
+				await replaceSession(null);
 				return Ok(undefined);
 			} catch (cause) {
 				return AuthError.SignOutFailed({ cause });
@@ -227,7 +240,14 @@ export function createOAuthAppAuth({
 			if (response.status !== 401) return response;
 			const refreshed = await refreshSession({ force: true });
 			if (!refreshed) return response;
-			return fetchWithAuth(input, init, { forceRefresh: false });
+			const retryResponse = await fetchWithAuth(input, init, {
+				forceRefresh: false,
+			});
+			if (retryResponse.status === 401) {
+				networkAuthPaused = true;
+				publishState();
+			}
+			return retryResponse;
 		},
 		async openWebSocket(url, protocols = []) {
 			const accessToken = await accessTokenForNetwork({ force: false });
@@ -245,36 +265,34 @@ export function createOAuthAppAuth({
 }
 
 function stateFromSession(
-	session: OAuthSession | null,
+	session: OAuthSessionType | null,
 	{
 		networkAuthPaused,
-		now,
 	}: {
 		networkAuthPaused: boolean;
-		now: number;
 	},
 ) {
 	if (session === null) return { status: 'signed-out' as const };
 	const identity = identityFromSession(session);
-	if (networkAuthPaused || tokenExpired(session, now)) {
+	if (networkAuthPaused) {
 		return { status: 'reauth-required' as const, identity };
 	}
 	return authStateFromIdentity(identity);
 }
 
-function identityFromSession(value: OAuthSession): AuthIdentity {
+function identityFromSession(value: OAuthSessionType): AuthIdentityType {
 	return {
 		user: value.user,
 		encryptionKeys: value.encryptionKeys,
 	};
 }
 
-function shouldRefresh(session: OAuthSession, now: number) {
+function shouldRefresh(session: OAuthSessionType, now: number) {
 	return session.accessTokenExpiresAt <= now + REFRESH_SKEW_MS;
 }
 
-function tokenExpired(session: OAuthSession, now: number) {
-	return session.accessTokenExpiresAt <= now;
+function replayableInput<TInput extends Request | string | URL>(input: TInput) {
+	return (input instanceof Request ? input.clone() : input) as TInput;
 }
 
 async function refreshOAuthTokenWithEndpoint({
@@ -282,11 +300,13 @@ async function refreshOAuthTokenWithEndpoint({
 	clientId,
 	session,
 	fetch,
+	now,
 }: {
 	baseURL: string;
 	clientId: string;
-	session: OAuthSession;
+	session: OAuthSessionType;
 	fetch: typeof globalThis.fetch;
+	now: () => number;
 }): Promise<OAuthTokenResult> {
 	const body = new URLSearchParams({
 		grant_type: 'refresh_token',
@@ -311,7 +331,7 @@ async function refreshOAuthTokenWithEndpoint({
 		refreshToken:
 			readOptionalString(data, 'refresh_token') ?? session.refreshToken,
 		accessTokenExpiresAt:
-			Date.now() + readPositiveNumber(data, 'expires_in') * 1000,
+			now() + readPositiveNumber(data, 'expires_in') * 1000,
 		scope: readOptionalString(data, 'scope'),
 		tokenType: readString(data, 'token_type'),
 	} satisfies OAuthTokenResult;

@@ -28,9 +28,7 @@ function identity({
 		user: {
 			id: userId,
 			email: `${userId}@example.com`,
-			emailVerified: true,
 			name: userId,
-			image: null,
 		},
 		encryptionKeys: [
 			{
@@ -79,6 +77,9 @@ function createStorage(initial: OAuthSession | null) {
 	const saved: Array<OAuthSession | null> = [];
 	return {
 		saved,
+		get current() {
+			return current;
+		},
 		sessionStorage: {
 			get: () => current,
 			set: async (next: OAuthSession | null) => {
@@ -170,7 +171,7 @@ test('startSignIn completion without tokens is not treated as signed in', async 
 	expect(setup.saved).toEqual([]);
 });
 
-test('cached OAuthSession boots into signed-in or reauth-required identity without network', () => {
+test('cached OAuthSession boots into signed-in identity without network when access token is expired', () => {
 	let fetchCalls = 0;
 	const signedInAuth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -183,7 +184,7 @@ test('cached OAuthSession boots into signed-in or reauth-required identity witho
 			return new Response(null, { status: 204 });
 		}) as unknown as typeof fetch,
 	});
-	const reauthAuth = createOAuthAppAuth({
+	const expiredAuth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
 		clientId: 'client-1',
 		now: () => now,
@@ -197,10 +198,9 @@ test('cached OAuthSession boots into signed-in or reauth-required identity witho
 	});
 
 	expect(signedInAuth.state).toEqual(signedInState());
-	expect(reauthAuth.state).toEqual({
-		status: 'reauth-required',
-		identity: identityFromSession(session({ accessTokenExpiresAt: now - 1 })),
-	});
+	expect(expiredAuth.state).toEqual(
+		signedInState(session({ accessTokenExpiresAt: now - 1 })),
+	);
 	expect(fetchCalls).toBe(0);
 });
 
@@ -286,6 +286,90 @@ test('fetch retries once after a 401 with a refreshed access token', async () =>
 	expect(setup.saved[0]?.accessToken).toBe('retry-access-token');
 });
 
+test('fetch enters reauth-required when refreshed retry is rejected', async () => {
+	const setup = createStorage(session());
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		refreshOAuthToken: async () => ({
+			accessToken: 'retry-access-token',
+			refreshToken: 'retry-refresh-token',
+			accessTokenExpiresAt: now + 3_600_000,
+			scope: null,
+			tokenType: 'bearer',
+		}),
+		fetch: (async () =>
+			new Response(null, { status: 401 })) as unknown as typeof fetch,
+	});
+
+	const response = await auth.fetch('http://localhost:8787/resource');
+
+	expect(response.status).toBe(401);
+	expect(auth.state).toEqual({
+		status: 'reauth-required',
+		identity: identityFromSession(
+			session({
+				accessToken: 'retry-access-token',
+				refreshToken: 'retry-refresh-token',
+				accessTokenExpiresAt: now + 3_600_000,
+			}),
+		),
+	});
+	expect(setup.current?.accessToken).toBe('retry-access-token');
+});
+
+test('fetch retries Request inputs with body using a fresh clone', async () => {
+	const setup = createStorage(session());
+	const attempts: Array<{ authorization: string | null; body: string }> = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		refreshOAuthToken: async () => ({
+			accessToken: 'retry-access-token',
+			refreshToken: 'retry-refresh-token',
+			accessTokenExpiresAt: now + 3_600_000,
+			scope: null,
+			tokenType: 'bearer',
+		}),
+		fetch: (async (input, init) => {
+			expect(input).toBeInstanceOf(Request);
+			attempts.push({
+				authorization: new Headers(init?.headers).get('authorization'),
+				body: await (input as Request).text(),
+			});
+			return new Response(null, {
+				status: attempts.length === 1 ? 401 : 204,
+			});
+		}) as typeof fetch,
+	});
+
+	const response = await auth.fetch(
+		new Request('http://localhost:8787/resource', {
+			method: 'POST',
+			body: 'request-body',
+			headers: { 'content-type': 'text/plain' },
+		}),
+	);
+
+	expect(response.status).toBe(204);
+	expect(attempts).toEqual([
+		{
+			authorization: 'Bearer access-token',
+			body: 'request-body',
+		},
+		{
+			authorization: 'Bearer retry-access-token',
+			body: 'request-body',
+		},
+	]);
+});
+
 test('refresh failure preserves identity and pauses network auth', async () => {
 	const setup = createStorage(session({ accessTokenExpiresAt: now + 1 }));
 	const authorizations: Array<string | null> = [];
@@ -317,6 +401,114 @@ test('refresh failure preserves identity and pauses network auth', async () => {
 		identity: identityFromSession(session({ accessTokenExpiresAt: now + 1 })),
 	});
 	expect(setup.saved).toEqual([]);
+	expect(setup.current).toEqual(session({ accessTokenExpiresAt: now + 1 }));
+	expect(authorizations).toEqual([null]);
+});
+
+test('same-user startSignIn repairs reauth-required state and resumes network auth', async () => {
+	const setup = createStorage(session({ accessTokenExpiresAt: now + 1 }));
+	const authorizations: Array<string | null> = [];
+	const originalConsoleError = console.error;
+	console.error = () => {};
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: {
+			startSignIn: async () =>
+				Ok({
+					accessToken: 'repair-access-token',
+					refreshToken: 'repair-refresh-token',
+					accessTokenExpiresAt: now + 3_600_000,
+					scope: null,
+					tokenType: 'bearer',
+				}),
+		},
+		refreshOAuthToken: async () => {
+			throw new Error('refresh failed');
+		},
+		fetch: (async (input, init) => {
+			if (String(input) === 'http://localhost:8787/auth/me') {
+				return json(identity());
+			}
+			authorizations.push(new Headers(init?.headers).get('authorization'));
+			return new Response(null, { status: 204 });
+		}) as typeof fetch,
+	});
+
+	try {
+		await auth.fetch('http://localhost:8787/resource');
+	} finally {
+		console.error = originalConsoleError;
+	}
+
+	expect(auth.state.status).toBe('reauth-required');
+	expect(await auth.startSignIn()).toEqual(Ok(undefined));
+	expect(auth.state).toEqual(
+		signedInState(
+			session({
+				accessToken: 'repair-access-token',
+				refreshToken: 'repair-refresh-token',
+			}),
+		),
+	);
+
+	await auth.fetch('http://localhost:8787/resource');
+
+	expect(authorizations).toEqual([null, 'Bearer repair-access-token']);
+});
+
+test('signOut during an in-flight refresh leaves the session signed out', async () => {
+	const setup = createStorage(session({ accessTokenExpiresAt: now + 1 }));
+	let releaseRefresh: (value: {
+		accessToken: string;
+		refreshToken: string;
+		accessTokenExpiresAt: number;
+		scope: string | null;
+		tokenType: string;
+	}) => void = () => {};
+	const authorizations: Array<string | null> = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		revokeOAuthRefreshToken: async () => {},
+		refreshOAuthToken: async () =>
+			new Promise((resolve) => {
+				releaseRefresh = resolve;
+			}),
+		fetch: (async (_input, init) => {
+			authorizations.push(new Headers(init?.headers).get('authorization'));
+			return new Response(null, { status: 204 });
+		}) as typeof fetch,
+	});
+
+	const fetchPromise = auth.fetch('http://localhost:8787/resource');
+	await Promise.resolve();
+	const signOutPromise = auth.signOut();
+	await Promise.resolve();
+
+	releaseRefresh({
+		accessToken: 'stale-access-token',
+		refreshToken: 'stale-refresh-token',
+		accessTokenExpiresAt: now + 3_600_000,
+		scope: null,
+		tokenType: 'bearer',
+	});
+
+	const [response, signOutResult] = await Promise.all([
+		fetchPromise,
+		signOutPromise,
+	]);
+
+	expect(response.status).toBe(204);
+	expect(signOutResult).toEqual(Ok(undefined));
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	expect(setup.current).toBeNull();
+	expect(setup.saved).toEqual([null]);
 	expect(authorizations).toEqual([null]);
 });
 

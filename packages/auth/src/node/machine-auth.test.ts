@@ -13,9 +13,9 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';
-import type { OAuthSession } from '../auth-types.js';
-import type { AuthSessionResponse } from '../contracts/auth-session.js';
+import type { AuthIdentity, OAuthSession } from '../auth-types.js';
 import {
+	createMachineAuthClient,
 	type DeviceTokenError,
 	loginWithDeviceCode,
 	logout,
@@ -67,25 +67,25 @@ const encryptionKeys = [
 
 function makeSession({
 	accessToken = 'authorization-token',
+	accessTokenExpiresAt = Date.now() + 3_600_000,
 }: {
 	accessToken?: string;
+	accessTokenExpiresAt?: number;
 } = {}): OAuthSession {
 	return {
 		accessToken,
 		refreshToken: 'refresh-token',
-		accessTokenExpiresAt: Date.now() + 3_600_000,
+		accessTokenExpiresAt,
 		user: {
 			id: 'user-1',
 			name: 'User One',
 			email: 'user@example.com',
-			emailVerified: true,
-			image: null,
 		},
 		encryptionKeys: [...encryptionKeys],
 	};
 }
 
-function makeAuthSessionResponse(): AuthSessionResponse {
+function makeAuthIdentity(): AuthIdentity {
 	const session = makeSession();
 	return {
 		user: session.user,
@@ -235,7 +235,7 @@ describe('machine auth free functions', () => {
 					expires_in: 3600,
 				});
 			}
-			return jsonResponse(makeAuthSessionResponse(), {
+			return jsonResponse(makeAuthIdentity(), {
 				headers: { 'set-auth-token': 'rotated-authorization-token' },
 			});
 		}) as typeof fetch;
@@ -266,7 +266,7 @@ describe('machine auth free functions', () => {
 		const seenTokens: string[] = [];
 		const fetchImpl = (async (_input, init) => {
 			seenTokens.push(new Headers(init?.headers).get('authorization') ?? '');
-			return jsonResponse(makeAuthSessionResponse(), {
+			return jsonResponse(makeAuthIdentity(), {
 				headers: { 'set-auth-token': 'new-token' },
 			});
 		}) as typeof fetch;
@@ -286,6 +286,64 @@ describe('machine auth free functions', () => {
 		expect(result.data?.status).toBe('valid');
 		expect(seenTokens).toEqual(['Bearer old-token']);
 		expect(savedSession?.accessToken).toBe('new-token');
+	});
+
+	test('machine auth refresh pauses network auth when keychain save fails', async () => {
+		const now = 1_000_000;
+		const backend = makeMemoryKeychainBackend();
+		await saveMachineSession(
+			makeSession({
+				accessToken: 'old-token',
+				accessTokenExpiresAt: now + 1,
+			}),
+			{ backend },
+		);
+		backend.set = async () => {
+			throw new Error('keychain unavailable');
+		};
+		const authorizations: Array<string | null> = [];
+		const originalConsoleError = console.error;
+		console.error = () => {};
+		const auth = await createMachineAuthClient({
+			backend,
+			log,
+			now: () => now,
+			refreshOAuthToken: async () => ({
+				accessToken: 'new-token',
+				refreshToken: 'new-refresh-token',
+				accessTokenExpiresAt: now + 3_600_000,
+				scope: null,
+				tokenType: 'bearer',
+			}),
+			fetch: (async (_input, init) => {
+				authorizations.push(new Headers(init?.headers).get('authorization'));
+				return new Response(null, { status: 204 });
+			}) as typeof fetch,
+		});
+
+		const response = await (async () => {
+			try {
+				return await auth.fetch(`${EPICENTER_API_URL}/resource`);
+			} finally {
+				console.error = originalConsoleError;
+			}
+		})();
+		const { data: savedSession, error: loadError } = await loadMachineSession({
+			backend,
+			log,
+		});
+
+		expect(response.status).toBe(204);
+		expect(loadError).toBeNull();
+		expect(savedSession?.accessToken).toBe('old-token');
+		expect(authorizations).toEqual([null]);
+		expect(auth.state).toEqual({
+			status: 'reauth-required',
+			identity: {
+				user: makeSession({ accessToken: 'old-token' }).user,
+				encryptionKeys,
+			},
+		});
 	});
 
 	test('status reports stored session when remote verification fails', async () => {

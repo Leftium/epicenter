@@ -67,8 +67,6 @@ function usersEqual(left: AuthUser, right: AuthUser) {
 	return (
 		left.id === right.id &&
 		left.email === right.email &&
-		left.emailVerified === right.emailVerified &&
-		left.name === right.name &&
-		left.image === right.image
+		left.name === right.name
 	);
 }

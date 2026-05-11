@@ -12,11 +12,16 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient } from '../auth-contract.js';
-import type { OAuthSession } from '../auth-types.js';
 import {
-	type AuthSessionResponse,
-	oauthSessionFromAuthSessionResponse,
-} from '../contracts/auth-session.js';
+	AuthIdentity,
+	type AuthIdentity as AuthIdentityType,
+	OAuthSession,
+	type OAuthSession as OAuthSessionType,
+} from '../auth-types.js';
+import type {
+	OAuthRefreshTokenRevoker,
+	OAuthTokenRefresher,
+} from '../create-oauth-app-auth.js';
 import { createOAuthAppAuth } from '../create-oauth-app-auth.js';
 import {
 	loadMachineSession,
@@ -24,7 +29,7 @@ import {
 } from './machine-session-store.js';
 
 type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<AuthSessionResponse, BetterAuthOptions>
+	typeof customSession<AuthIdentityType, BetterAuthOptions>
 >;
 
 const rawDefaultAuthClient = createAuthClient({
@@ -76,10 +81,10 @@ export const DeviceTokenError = defineErrors({
 export type DeviceTokenError = InferErrors<typeof DeviceTokenError>;
 
 type MachineSessionSummary = {
-	user: Pick<OAuthSession['user'], 'id' | 'name' | 'email'>;
+	user: Pick<OAuthSessionType['user'], 'id' | 'name' | 'email'>;
 };
 
-function sessionSummary(session: OAuthSession): MachineSessionSummary {
+function sessionSummary(session: OAuthSessionType): MachineSessionSummary {
 	return {
 		user: {
 			id: session.user.id,
@@ -247,7 +252,10 @@ async function pollForAccessToken({
 	sleep: (ms: number) => Promise<void>;
 }): Promise<
 	Result<
-		Pick<OAuthSession, 'accessToken' | 'refreshToken' | 'accessTokenExpiresAt'>,
+		Pick<
+			OAuthSessionType,
+			'accessToken' | 'refreshToken' | 'accessTokenExpiresAt'
+		>,
 		DeviceTokenError | MachineAuthRequestError
 	>
 > {
@@ -324,10 +332,10 @@ async function fetchOAuthSession({
 }: {
 	authClient: MachineAuthClient;
 	tokens: Pick<
-		OAuthSession,
+		OAuthSessionType,
 		'accessToken' | 'refreshToken' | 'accessTokenExpiresAt'
 	>;
-}): Promise<Result<OAuthSession, MachineAuthRequestError>> {
+}): Promise<Result<OAuthSessionType, MachineAuthRequestError>> {
 	let rotatedToken: string | null = null;
 	const { data, error } = await authClient.getSession({
 		fetchOptions: {
@@ -345,10 +353,13 @@ async function fetchOAuthSession({
 	}
 
 	try {
+		const identity = AuthIdentity.assert(data);
 		return Ok(
-			oauthSessionFromAuthSessionResponse(data, {
+			OAuthSession.assert({
 				...tokens,
 				accessToken: rotatedToken ?? tokens.accessToken,
+				user: identity.user,
+				encryptionKeys: identity.encryptionKeys,
 			}),
 		);
 	} catch (cause) {
@@ -362,9 +373,25 @@ async function fetchOAuthSession({
  * Storage failures are propagated; daemons should crash rather than silently
  * boot signed-out when the keychain is unreadable.
  */
-export async function createMachineAuthClient(): Promise<AuthClient> {
-	const log = createLogger('machine-auth');
-	const { data: loadedSession, error } = await loadMachineSession();
+export async function createMachineAuthClient({
+	backend = Bun.secrets,
+	fetch,
+	log = createLogger('machine-auth'),
+	now,
+	refreshOAuthToken,
+	revokeOAuthRefreshToken,
+}: {
+	backend?: typeof Bun.secrets;
+	fetch?: typeof globalThis.fetch;
+	log?: Logger;
+	now?: () => number;
+	refreshOAuthToken?: OAuthTokenRefresher;
+	revokeOAuthRefreshToken?: OAuthRefreshTokenRevoker;
+} = {}): Promise<AuthClient> {
+	const { data: loadedSession, error } = await loadMachineSession({
+		backend,
+		log,
+	});
 	if (error) throw error;
 	if (loadedSession === null) {
 		throw new Error(
@@ -372,7 +399,7 @@ export async function createMachineAuthClient(): Promise<AuthClient> {
 				'Run `epicenter auth login` first.',
 		);
 	}
-	let currentSession: OAuthSession | null = loadedSession;
+	let currentSession: OAuthSessionType | null = loadedSession;
 	return createOAuthAppAuth({
 		baseURL: EPICENTER_API_URL,
 		clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
@@ -382,12 +409,19 @@ export async function createMachineAuthClient(): Promise<AuthClient> {
 		sessionStorage: {
 			get: () => currentSession,
 			set: async (next) => {
-				currentSession = next;
-				const { error: saveError } = await saveMachineSession(next);
+				const { error: saveError } = await saveMachineSession(next, {
+					backend,
+				});
 				if (saveError) {
 					log.error(saveError);
+					throw saveError;
 				}
+				currentSession = next;
 			},
 		},
+		...(fetch ? { fetch } : {}),
+		...(now ? { now } : {}),
+		...(refreshOAuthToken ? { refreshOAuthToken } : {}),
+		...(revokeOAuthRefreshToken ? { revokeOAuthRefreshToken } : {}),
 	});
 }

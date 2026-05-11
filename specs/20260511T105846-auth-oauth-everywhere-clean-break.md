@@ -677,6 +677,8 @@ path has tests and app imports have moved.
   > Auth core now posts the refresh token to `/auth/oauth2/revoke` with `client_id` and `token_type_hint=refresh_token`, then clears local storage even if best-effort revocation fails.
 - [x] **4.9** Tests: begin sign-in, `/auth/me` identity load, refresh atomicity, 401 retry, refresh failure, reauth-required local unlock, sign out, openWebSocket token attachment.
   > Sign-out coverage now includes refresh-token revocation, revocation failure, and the default revoke endpoint request body.
+- [x] **4.10** Wave 3.5 auth core state collapse.
+  > Implemented by `specs/20260511T140228-auth-core-state-collapse.md`. `accessTokenExpiresAt` now controls transport refresh only, expired cached `OAuthSession` boots signed-in, refresh failure and refreshed 401 rejection preserve cached identity and storage, stale refresh writes are epoch-guarded, machine auth storage failures propagate, and `Request` inputs with bodies retry through fresh clones.
 
 ### Phase 5: Sync Boundary
 

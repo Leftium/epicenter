@@ -5,9 +5,7 @@ export const AuthUser = type({
 	'+': 'delete',
 	id: 'string',
 	email: 'string',
-	emailVerified: 'boolean',
 	name: 'string',
-	'image?': 'string | null | undefined',
 });
 
 export type AuthUser = typeof AuthUser.infer;

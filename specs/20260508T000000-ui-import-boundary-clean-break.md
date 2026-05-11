@@ -4,9 +4,6 @@
 **Status**: Implemented
 **Author**: AI-assisted
 
-This spec is the active UI import boundary after the native package import
-experiment was reverted.
-
 ## One-sentence thesis
 
 ```txt
@@ -104,24 +101,6 @@ No app config mentions `packages/ui/src`.
 
 ## Research Findings
 
-### Node package imports
-
-Node's `package.json#imports` field is for package-private mappings that start
-with `#`. It is useful when a package needs private names such as `#db/*` or
-`#platform/*`.
-
-Source: https://nodejs.org/api/packages.html#imports
-
-### TypeScript resolution
-
-TypeScript resolves `#` package imports through the nearest package.json when
-`moduleResolution` is `node16`, `nodenext`, or `bundler` and package imports are
-enabled. The current repo uses `moduleResolution: "bundler"`, so named package
-imports like `#ui/*` can work.
-
-Source:
-https://www.typescriptlang.org/docs/handbook/modules/reference.html#packagejson-imports-and-self-name-imports
-
 ### SvelteKit aliases
 
 SvelteKit `kit.alias` entries are passed to Vite and TypeScript, and SvelteKit
@@ -130,7 +109,7 @@ today.
 
 Source: https://svelte.dev/docs/kit/configuration#alias
 
-### Repo scan
+### Repo Scan
 
 `packages/ui/src` has many `#/...` imports. App source does not import `#/...`
 for UI directly. The leakage is in config, not in app call sites.
@@ -199,7 +178,6 @@ alias: {
 ```ts
 // packages/ui source
 import { cn } from '#/utils.js';
-import { cn } from '#ui/utils.js';
 import { cn } from '@epicenter/ui/utils';
 ```
 
@@ -210,7 +188,7 @@ import { cn } from '@epicenter/ui/utils';
 | Consumer import path | 2 coherence | `@epicenter/ui/...` only | Consumers should see the package API, not source layout. |
 | UI internal import path | 2 coherence | Relative imports only | The source tree is shallow. Relative imports keep ownership local and need no resolver magic. |
 | Package self-reference from UI internals | 2 coherence | Do not use `@epicenter/ui/...` inside `packages/ui` | Self-reference proves public exports, but it also makes the package depend on its own package resolution during development. Relative imports are simpler. |
-| `#ui/*` package imports | 3 taste refused | Do not add now | They are valid and better than `#/...`, but they are still a second import system. Add only if UI gains deep private trees where relative paths become a real readability problem. |
+| Private package imports | 3 taste refused | Do not add now | They would make shadcn updates quieter, but they are still a second import system. Keep the source graph easier to explain. |
 | `#internal/*` naming | 3 taste refused | Do not add now | `internal` is not a keyword. The name is clear but unnecessary if the rule is relative imports only. |
 | SvelteKit alias ownership | 1 evidence | Use `kit.alias` only for app-local aliases | SvelteKit generates TypeScript alias config. Manual tsconfig paths in SvelteKit apps duplicate that work. |
 | Migration style | 2 coherence | Clean break, no compatibility aliases | Existing app source already uses `@epicenter/ui`. The change is config cleanup plus UI internal import rewrites. |
@@ -263,8 +241,8 @@ Export it as public UI API
   Good when apps or many component families should rely on it.
 ```
 
-Only add `#ui/*` after both moves fail and relative imports have become
-materially hard to read. That is a future design decision, not a default.
+Only add a private import alias after both moves fail and relative imports have
+become materially hard to read. That is a future design decision, not a default.
 
 ## Implementation Plan
 
@@ -319,7 +297,7 @@ Root typecheck either passes or reports unrelated pre-existing errors.
 - Do not redesign `@epicenter/ui` exports.
 - Do not rename UI components.
 - Do not publish a compiled UI package.
-- Do not add `#ui/*` as a convenience alias during this migration.
+- Do not add a private import alias during this migration.
 - Do not change app source imports that already use `@epicenter/ui/...`.
 
 ## Open Questions
@@ -340,7 +318,7 @@ Root typecheck either passes or reports unrelated pre-existing errors.
 
 The UI boundary now has one public consumer path: apps and packages import UI
 through `@epicenter/ui/...` and `@epicenter/ui/app.css`. UI source imports its
-own files through relative paths, with no `#`, `#ui/*`, `#internal/*`, or package
+own files through relative paths, with no private aliases or package
 self-imports.
 
 The cleanup also removes app and package config paths to `packages/ui/src`,

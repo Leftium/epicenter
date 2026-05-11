@@ -1,6 +1,6 @@
-# UI Package: shadcn-svelte Management Guide
+# UI Package Guide
 
-This guide explains how we manage shadcn-svelte components in our monorepo setup, including the import boundary and update workflow.
+This guide explains the UI package import boundary and component update workflow.
 
 ## Component Library Overview
 

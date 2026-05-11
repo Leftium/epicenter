@@ -72,17 +72,17 @@ First-party + same Epicenter cookie boundary:
   direct hosted /sign-in
   no OAuth ceremony for normal sign-in
 
-First-party + outside the cookie boundary:
+Trusted static client + outside the cookie boundary:
   createBearerAuth
   OAuth authorization code + PKCE
-  consent can still be skipped because ownership is first-party
+  consent can be skipped because the client id is in the monorepo-owned list
 
 Third-party:
   OAuth bearer
   consent required
 ```
 
-Cookie auth is therefore not a generic "browser app" mode. It is an Epicenter web-property mode. A third-party app should not depend on Epicenter's first-party cookie jar, even if a trusted origin entry could make it work technically.
+Cookie auth is therefore not a generic "browser app" mode. It is an Epicenter web-property mode. A third-party app should not depend on Epicenter's first-party cookie jar, even if a trusted origin entry could make it work technically. Bearer clients are third-party by default unless their `clientId` appears in Epicenter's static trusted-client list in this monorepo.
 
 Do not collapse the transport split further in this cleanup:
 
@@ -322,12 +322,15 @@ Better Auth's bearer plugin returns a session token through the `set-auth-token`
 
 Better Auth custom session fields are attached to `getSession` and `useSession` through `customSession`. Source: [Better Auth Session Management](https://better-auth.com/docs/concepts/session-management).
 
+Better Auth treats consent bypass as a trusted-client property. Its OAuth provider docs describe `skip_consent` as a restricted field that should only be editable by admin or server code, useful for trusted clients. The same docs also describe hard-coded trusted clients and consent bypass for first-party applications. That maps cleanly to Epicenter using a static monorepo-owned client list as the source of trust, then seeding Better Auth clients with `skip_consent: true`.
+
 Implication:
 
 ```txt
 Email/password directly from a bearer app naturally gives token first.
 Epicenter needs token + user + encryptionKeys.
 Hosted OAuth + /auth/oauth-session lets Epicenter return that full shape once.
+OAuth clients are third-party unless Epicenter server code marks them trusted.
 ```
 
 ### Hono and Worker Routing
@@ -537,7 +540,7 @@ This package should still not depend on `@epicenter/auth` or `BearerSession`. It
 | Replace `signInWithSocial({ provider })` | 2 coherence | Use `beginSignIn()` | Provider choice belongs to the hosted page. Keeping provider in the app preserves a stale mental model. |
 | Cookie family eligibility | 2 coherence | Epicenter-owned and same cookie boundary only | Cookie auth relies on Epicenter's first-party browser cookie jar. That is an ownership and origin-boundary privilege, not a generic browser-app mode. |
 | Cookie app sign-in path | 2 coherence | Direct hosted `/sign-in` | Cookie apps want a Better Auth cookie, not an OAuth grant. OAuth authorize is ceremony unless the app needs bearer semantics. |
-| First-party outside cookie boundary | 2 coherence | Bearer with skip-consent eligibility | Ownership can be first-party while origin shape still forces bearer, e.g. Opensidian or a desktop app. Consent follows ownership, not transport. |
+| Trusted bearer client policy | 1 evidence and 2 coherence | Static monorepo list plus Better Auth `skip_consent` | Better Auth models consent bypass as a restricted trusted-client field. Epicenter should default OAuth clients to third-party and allow bypass only for client ids in code-owned static config. |
 | Third-party app transport | 2 coherence | OAuth bearer with consent | Third-party apps should not depend on Epicenter's first-party cookie jar. OAuth exists for delegated access. |
 | Keep `createCookieAuth` | 1 evidence and 2 coherence | Keep | Better Auth is cookie-native, local code already supports cookie apps, and unifying on bearer adds callback registration and token storage for no clear product win. |
 | Keep `createBearerAuth` | 1 evidence | Keep | Extensions, CLIs, Tauri, daemons, third-party apps, and cross-origin SPAs cannot rely on the same cookie assumptions. Better Auth documents bearer as the alternative for APIs that need bearer tokens. |
@@ -612,7 +615,7 @@ createCookieAuth:
   normal sign-in goes directly to hosted /sign-in
 
 createBearerAuth:
-  first-party app outside the cookie boundary
+  trusted static client outside the cookie boundary
   third-party app
   extension
   desktop app
@@ -749,10 +752,13 @@ Use Build, Prove, Remove ordering. Do not delete old paths until the hosted path
 ### Wave 1: Hosted Sign-In Production Base
 
 - [ ] **1.1** Add or verify OAuth public client seeding for `EPICENTER_OAUTH_PUBLIC_CLIENTS` while dynamic registration stays disabled.
-- [ ] **1.2** Add an explicit first-party marker for seeded Epicenter-owned OAuth clients and use it to skip consent.
-- [ ] **1.3** Add tests that `/sign-in` preserves OAuth continuation for email/password, sign-up, and Google.
-- [ ] **1.4** Add tests that `/auth/oauth-session` returns `set-auth-token`, `user`, and `encryptionKeys` for a valid OAuth access token.
-- [ ] **1.5** Add a smoke path for already-signed-in `/sign-in?sig=...` continuing to `/auth/oauth2/authorize`.
+- [ ] **1.2** Split or rename the seeded list to make trust explicit, e.g. `EPICENTER_TRUSTED_OAUTH_CLIENTS`, and include only clients whose consent can be skipped.
+- [ ] **1.3** Seed trusted clients through Better Auth admin APIs with `skip_consent: true`; all other clients remain consent-required.
+- [ ] **1.4** Configure `cachedTrustedClients` from the same static list if Better Auth exposes it in the installed version.
+- [ ] **1.5** Add tests that static trusted clients skip consent and dynamically/user-created clients do not.
+- [ ] **1.6** Add tests that `/sign-in` preserves OAuth continuation for email/password, sign-up, and Google.
+- [ ] **1.7** Add tests that `/auth/oauth-session` returns `set-auth-token`, `user`, and `encryptionKeys` for a valid OAuth access token.
+- [ ] **1.8** Add a smoke path for already-signed-in `/sign-in?sig=...` continuing to `/auth/oauth2/authorize`.
 
 ### Wave 2: Add New Auth Surface Beside Old Methods
 
@@ -850,6 +856,9 @@ Current workspace behavior does not remount on same-user identity update. Existi
 - Keep cookie and bearer factories.
   Revisit when: all production apps can use the same credential owner without losing HttpOnly cookie benefits or adding public OAuth client burden.
 
+- Use a static trusted OAuth client list instead of a broad first-party field.
+  Revisit when: Epicenter has a developer portal or organization-owned internal apps that need delegated trust management outside this monorepo.
+
 - Keep `encryptionKeys` in auth identity.
   Revisit when: Epicenter introduces explicit lock/unlock, user-held keys, PIN unlock, or a memory-wipe threat model stronger than current workspace disposal.
 
@@ -861,8 +870,8 @@ Current workspace behavior does not remount on same-user identity update. Existi
 
 ## Open Questions
 
-1. What exact database/config field marks a client as first-party?
-   - Recommendation: use an explicit server-owned registration field or seeded client list, not a naming convention. Consent policy is too important to infer from a client id prefix.
+1. Should the existing `EPICENTER_OAUTH_PUBLIC_CLIENTS` list be renamed or split?
+   - Recommendation: split it. Public means "no client secret." Trusted means "Epicenter-owned and allowed to skip consent." Those are different facts.
 
 2. What exact user-facing phrase should apps use?
    - Recommendation: "Sign in to Epicenter." It names the account boundary directly.

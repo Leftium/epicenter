@@ -1,23 +1,26 @@
 /**
  * Core Auth State API Tests
  *
- * Verifies the public state listener and settled-state helper exposed by
- * the framework-agnostic auth client.
+ * Verifies the framework-agnostic auth factories through public client
+ * behavior, not exported test helpers.
  *
  * Key behaviors:
  * - Caller-provided session storage seeds the first identity
+ * - Bearer email commands hydrate a full session from signed out
  * - Local updates are passed to the caller-provided storage adapter
  * - Better Auth session emissions drive live signed-in and signed-out state
  */
 
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { Ok } from 'wellcrafted/result';
 import type {
 	AuthIdentity,
 	AuthState,
 	BearerSession,
 	BearerSessionStorage,
 	CreateBearerAuthConfig,
-} from './index.ts';
+	OAuthSocialSignInAdapter,
+} from './index.js';
 
 type BetterAuthSessionState = {
 	isPending: boolean;
@@ -51,6 +54,9 @@ let currentBetterAuthState: BetterAuthSessionState = {
 };
 let betterAuthClientOptions: BetterAuthClientOptions | null = null;
 let signInResponseHeaders: Record<string, string> | undefined;
+let signInResponseData: unknown;
+let signUpResponseHeaders: Record<string, string> | undefined;
+let signUpResponseData: unknown;
 let capturedFetches: Array<{
 	input: Request | string | URL;
 	init: RequestInit | undefined;
@@ -81,12 +87,21 @@ mock.module('better-auth/client', () => ({
 							}),
 						});
 					}
-					return { error: null };
+					return { data: signInResponseData, error: null };
 				},
 				social: async () => ({ error: null }),
 			},
 			signUp: {
-				email: async () => ({ error: null }),
+				email: async () => {
+					if (signUpResponseHeaders) {
+						options.fetchOptions?.onSuccess?.({
+							response: new Response(null, {
+								headers: signUpResponseHeaders,
+							}),
+						});
+					}
+					return { data: signUpResponseData, error: null };
+				},
 			},
 			signOut: (input?: { fetchOptions?: PerCallFetchOptions }) =>
 				callCustomFetch(options, '/sign-out', {
@@ -108,9 +123,7 @@ mock.module('better-auth/client', () => ({
 	InferPlugin: () => ({}),
 }));
 
-const { createBearerAuth, createCookieAuth, waitForAuthSettled } = await import(
-	'./create-auth.ts'
-);
+const { createBearerAuth, createCookieAuth } = await import('./index.js');
 
 const originalFetch = globalThis.fetch;
 const originalConsoleError = console.error;
@@ -126,6 +139,9 @@ beforeEach(() => {
 	currentBetterAuthState = { isPending: false, data: null };
 	betterAuthClientOptions = null;
 	signInResponseHeaders = undefined;
+	signInResponseData = undefined;
+	signUpResponseHeaders = undefined;
+	signUpResponseData = undefined;
 	capturedFetches = [];
 });
 
@@ -259,6 +275,14 @@ function createTestAuth(setup: ReturnType<typeof createStorage>) {
 	});
 }
 
+function createOAuthAdapter(
+	accessToken = 'oauth-token',
+): OAuthSocialSignInAdapter {
+	return {
+		signInWithSocial: async () => Ok({ accessToken }),
+	};
+}
+
 function captureFetch() {
 	globalThis.fetch = (async (
 		input: Request | string | URL,
@@ -321,22 +345,37 @@ test('stored session drives initial signed-in identity', async () => {
 	auth[Symbol.dispose]();
 });
 
-test('waitForAuthSettled resolves after the first settled session event', async () => {
+test('pending bearer settles to signed-out on first null Better Auth emission', async () => {
 	currentBetterAuthState = { isPending: true, data: null };
 	const setup = createStorage({ get: () => null });
 	const auth = createTestAuth(setup);
-	let ready = false;
+	const states: AuthState[] = [];
+	auth.onStateChange((state) => states.push(state));
 
-	void waitForAuthSettled(auth).then(() => {
-		ready = true;
-	});
-	await Promise.resolve();
-	expect(ready).toBe(false);
+	expect(auth.state).toEqual({ status: 'pending' });
 
 	emitBetterSession(null);
-	await waitForAuthSettled(auth);
 
-	expect(ready).toBe(true);
+	expect(states).toEqual([{ status: 'signed-out' }]);
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	expect(setup.saved).toEqual([]);
+	auth[Symbol.dispose]();
+});
+
+test('pending bearer settles to signed-in on first Better Auth session emission', async () => {
+	currentBetterAuthState = { isPending: true, data: null };
+	const setup = createStorage({ get: () => null });
+	const auth = createTestAuth(setup);
+	const states: AuthState[] = [];
+	auth.onStateChange((state) => states.push(state));
+
+	expect(auth.state).toEqual({ status: 'pending' });
+
+	emitBetterSession(betterAuthSessionData(session()));
+
+	expect(states).toEqual([signedInState(session())]);
+	expect(auth.state).toEqual(signedInState(session()));
+	expect(setup.saved).toEqual([session()]);
 	auth[Symbol.dispose]();
 });
 
@@ -512,6 +551,138 @@ test('response-header token rotation persists through session storage save', asy
 	expect(auth.state).toEqual(signedInState(expected));
 	expect(setup.saved).toEqual([expected]);
 	expect(betterAuthClientOptions).not.toBeNull();
+	auth[Symbol.dispose]();
+});
+
+test('bearer email sign-in hydrates a full session from signed out', async () => {
+	const setup = createStorage({ get: () => null });
+	const auth = createTestAuth(setup);
+	globalThis.fetch = (async (
+		input: Request | string | URL,
+		init?: RequestInit,
+	) => {
+		capturedFetches.push({ input, init });
+		return Response.json(betterAuthSessionData(session({ token: 'ignored' })));
+	}) as unknown as typeof fetch;
+
+	signInResponseHeaders = { 'set-auth-token': 'session-token' };
+	const result = await auth.signIn({
+		email: 'user@example.com',
+		password: 'password',
+	});
+
+	expect(result).toEqual(Ok(undefined));
+	expect(String(capturedFetches[0]?.input)).toBe(
+		'http://localhost:8787/auth/get-session',
+	);
+	expect(
+		new Headers(capturedFetches[0]?.init?.headers).get('Authorization'),
+	).toBe('Bearer session-token');
+	expect(capturedFetches[0]?.init?.credentials).toBe('omit');
+	const expected = session({ token: 'session-token' });
+	expect(auth.state).toEqual(signedInState(expected));
+	expect(setup.saved).toEqual([expected]);
+	auth[Symbol.dispose]();
+});
+
+test('bearer email sign-up hydrates a full session from response data token', async () => {
+	const setup = createStorage({ get: () => null });
+	const auth = createTestAuth(setup);
+	globalThis.fetch = (async (
+		input: Request | string | URL,
+		init?: RequestInit,
+	) => {
+		capturedFetches.push({ input, init });
+		return Response.json(betterAuthSessionData(session({ token: 'ignored' })));
+	}) as unknown as typeof fetch;
+
+	signUpResponseData = { token: 'session-token' };
+	const result = await auth.signUp({
+		email: 'user@example.com',
+		password: 'password',
+		name: 'User',
+	});
+
+	expect(result).toEqual(Ok(undefined));
+	expect(String(capturedFetches[0]?.input)).toBe(
+		'http://localhost:8787/auth/get-session',
+	);
+	expect(
+		new Headers(capturedFetches[0]?.init?.headers).get('Authorization'),
+	).toBe('Bearer session-token');
+	const expected = session({ token: 'session-token' });
+	expect(auth.state).toEqual(signedInState(expected));
+	expect(setup.saved).toEqual([expected]);
+	auth[Symbol.dispose]();
+});
+
+test('failed bearer hydration does not reuse a stale pending token', async () => {
+	const setup = createStorage({ get: () => null });
+	const auth = createTestAuth(setup);
+	let requests = 0;
+	globalThis.fetch = (async (
+		input: Request | string | URL,
+		init?: RequestInit,
+	) => {
+		capturedFetches.push({ input, init });
+		requests += 1;
+		if (requests === 1) return new Response(null, { status: 500 });
+		return Response.json(betterAuthSessionData(session({ token: 'ignored' })));
+	}) as unknown as typeof fetch;
+
+	signInResponseHeaders = { 'set-auth-token': 'stale-token' };
+	const failed = await auth.signIn({
+		email: 'user@example.com',
+		password: 'password',
+	});
+
+	signInResponseHeaders = undefined;
+	signInResponseData = { token: 'fresh-token' };
+	const recovered = await auth.signIn({
+		email: 'user@example.com',
+		password: 'password',
+	});
+
+	expect(failed.error?.name).toBe('SignInFailed');
+	expect(recovered).toEqual(Ok(undefined));
+	expect(
+		new Headers(capturedFetches[1]?.init?.headers).get('Authorization'),
+	).toBe('Bearer fresh-token');
+	const expected = session({ token: 'fresh-token' });
+	expect(auth.state).toEqual(signedInState(expected));
+	expect(setup.saved).toEqual([expected]);
+	auth[Symbol.dispose]();
+});
+
+test('bearer social sign-in fetches enriched session and stores full session', async () => {
+	const setup = createStorage({ get: () => null });
+	globalThis.fetch = (async (
+		input: Request | string | URL,
+		init?: RequestInit,
+	) => {
+		capturedFetches.push({ input, init });
+		return Response.json(betterAuthSessionData(session({ token: 'ignored' })), {
+			headers: { 'set-auth-token': 'session-token' },
+		});
+	}) as unknown as typeof fetch;
+	const auth = createBearerAuth({
+		baseURL: 'http://localhost:8787',
+		sessionStorage: setup.sessionStorage,
+		oauthAdapter: createOAuthAdapter(),
+	});
+
+	const result = await auth.signInWithSocial({ provider: 'google' });
+
+	expect(result).toEqual(Ok(undefined));
+	expect(
+		new Headers(capturedFetches[0]?.init?.headers).get('Authorization'),
+	).toBe('Bearer oauth-token');
+	expect(String(capturedFetches[0]?.input)).toBe(
+		'http://localhost:8787/auth/oauth-session',
+	);
+	const expected = session({ token: 'session-token' });
+	expect(auth.state).toEqual(signedInState(expected));
+	expect(setup.saved).toEqual([expected]);
 	auth[Symbol.dispose]();
 });
 

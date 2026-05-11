@@ -32,6 +32,34 @@ Load these on demand based on what you're working on:
 
 ## Core Rules
 
+- **Do not add a type until you have tried to derive or import it**: New named
+  types are guilty until proven useful. Before declaring a type, check whether
+  the shape already exists in an external library, an arktype/typebox schema, a
+  factory return value, a runtime constant, or a function signature.
+
+  ```typescript
+  // Good: imported from the owner package
+  import type { User } from 'better-auth';
+
+  // Good: derived from a runtime schema
+  export const AuthUser = type({ id: 'string', email: 'string' });
+  export type AuthUser = typeof AuthUser.infer;
+
+  // Good: derived from a function or factory
+  type TokenOptions = Parameters<typeof verifyAccessToken>[1];
+  export type AuthClient = ReturnType<typeof createAuthClient>;
+
+  // Bad: hand-written copy of a shape owned elsewhere
+  type OAuthPayload = { sub?: unknown };
+  type AuthClient = { signOut(): Promise<void> };
+  ```
+
+  Keep explicit named types when they are the real contract: public package API,
+  protocol vocabulary, discriminated result unions, capability ports, or shapes
+  implemented by more than one runtime. Prefer `satisfies` when an
+  implementation should be checked against a contract while keeping inference
+  pointed at the concrete value.
+
 - Always use `type` instead of `interface` in TypeScript.
 - **`readonly` only for arrays and maps**: Never use `readonly` on primitive properties or object properties. The modifier is shallow and provides little protection for non-collection types. Use it only where mutation is a realistic footgun:
 

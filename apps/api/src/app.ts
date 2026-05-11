@@ -2,10 +2,12 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
+import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
+import { eq } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
@@ -15,6 +17,10 @@ import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
+import { deriveUserEncryptionKeys } from './auth/encryption';
+import { resolveOAuthIdentity } from './auth/me';
+import { resolveOAuthBearerSession } from './auth/oauth-session';
+import { createBetterAuthSessionResponse } from './auth/session-response';
 import { singleCredential } from './auth/single-credential';
 import {
 	renderConsentPage,
@@ -39,6 +45,12 @@ export { WorkspaceRoom } from './workspace-room';
 type Db = NodePgDatabase<typeof schema>;
 type Auth = ReturnType<typeof createAuth>;
 type Session = Auth['$Infer']['Session'];
+type OAuthOpenIdConfigAuth = Parameters<
+	typeof oauthProviderOpenIdConfigMetadata
+>[0];
+type OAuthAuthServerConfigAuth = Parameters<
+	typeof oauthProviderAuthServerMetadata
+>[0];
 
 /**
  * Create a queue for fire-and-forget promises that run after the HTTP response.
@@ -83,6 +95,7 @@ export type Env = {
 	Variables: {
 		db: Db;
 		auth: Auth;
+		authBaseURL: string;
 		user: Session['user'];
 		session: Session['session'];
 		afterResponse: AfterResponseQueue;
@@ -150,6 +163,7 @@ const factory = createFactory<Env>({
 				origin === `http://${new URL(APPS.API.urls[0]).host}`
 					? `http://localhost:${APPS.API.port}`
 					: origin;
+			c.set('authBaseURL', baseURL);
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
 			await next();
 		});
@@ -234,6 +248,83 @@ app.get(
 );
 
 // Auth
+app.post(
+	'/auth/oauth-session',
+	describeRoute({
+		description: 'Resolve an OAuth access token to an Epicenter auth session',
+		tags: ['auth', 'oauth'],
+	}),
+	async (c) => {
+		const result = await resolveOAuthBearerSession({
+			authorization: c.req.header('authorization') ?? null,
+			baseURL: c.var.authBaseURL,
+			createSessionResponse: ({ user, session }) =>
+				createBetterAuthSessionResponse(
+					{ user, session },
+					{ deriveUserEncryptionKeys },
+				),
+			async findSessionWithUserById(sessionId) {
+				const [row] = await c.var.db
+					.select({
+						session: schema.session,
+						user: schema.user,
+					})
+					.from(schema.session)
+					.innerJoin(schema.user, eq(schema.session.userId, schema.user.id))
+					.where(eq(schema.session.id, sessionId))
+					.limit(1);
+				return row ?? null;
+			},
+		});
+
+		if (result.status === 'malformed') {
+			return c.json({ code: 'malformed_oauth_token' }, 400);
+		}
+
+		if (result.status === 'invalid') {
+			return c.json({ code: 'invalid_oauth_token' }, 401);
+		}
+
+		c.header('set-auth-token', result.sessionToken);
+		return c.json(result.body);
+	},
+);
+app.get(
+	'/auth/me',
+	describeRoute({
+		description: 'Resolve an OAuth access token to Epicenter identity',
+		tags: ['auth', 'oauth'],
+	}),
+	async (c) => {
+		const resource = oauthProviderResourceClient();
+		const result = await resolveOAuthIdentity({
+			authorization: c.req.header('authorization') ?? null,
+			audience: c.var.authBaseURL,
+			issuer: `${c.var.authBaseURL}/auth`,
+			jwksUrl: `${c.var.authBaseURL}/auth/jwks`,
+			verifyOAuthAccessToken: resource.getActions().verifyAccessToken,
+			async findUserById(userId) {
+				const [row] = await c.var.db
+					.select()
+					.from(schema.user)
+					.where(eq(schema.user.id, userId))
+					.limit(1);
+				return row ?? null;
+			},
+			deriveUserEncryptionKeys,
+		});
+
+		if (result.status === 'malformed') {
+			return c.json({ code: 'malformed_oauth_token' }, 400);
+		}
+
+		if (result.status === 'invalid') {
+			return c.json({ code: 'invalid_oauth_token' }, 401);
+		}
+
+		return c.json(result.body);
+	},
+);
 app.on(
 	['GET', 'POST'],
 	'/auth/*',
@@ -251,7 +342,10 @@ app.get(
 		description: 'OpenID Connect discovery metadata',
 		tags: ['auth', 'oauth'],
 	}),
-	(c) => oauthProviderOpenIdConfigMetadata(c.var.auth)(c.req.raw),
+	(c) =>
+		oauthProviderOpenIdConfigMetadata(c.var.auth as OAuthOpenIdConfigAuth)(
+			c.req.raw,
+		),
 );
 app.get(
 	'/.well-known/oauth-authorization-server/auth',
@@ -259,7 +353,10 @@ app.get(
 		description: 'OAuth authorization server metadata',
 		tags: ['auth', 'oauth'],
 	}),
-	(c) => oauthProviderAuthServerMetadata(c.var.auth)(c.req.raw),
+	(c) =>
+		oauthProviderAuthServerMetadata(c.var.auth as OAuthAuthServerConfigAuth)(
+			c.req.raw,
+		),
 );
 
 // Asset reads: unauthenticated (unguessable URL is the credential).

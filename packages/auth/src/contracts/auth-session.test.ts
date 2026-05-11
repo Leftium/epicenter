@@ -13,9 +13,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import {
+	authIdentityFromBetterAuthSessionResponse,
 	bearerSessionFromBetterAuthSessionResponse,
 	normalizeBearerSession,
-} from './auth-session.ts';
+} from './auth-session.js';
 
 const encryptionKeys: EncryptionKeys = [
 	{
@@ -64,6 +65,32 @@ describe('normalizeBearerSession', () => {
 		expect(session.token).toBe('authorization-token');
 		expect(session.user.createdAt).toBe(response.user.createdAt.toISOString());
 		expect(JSON.stringify(session)).not.toContain('expiresAt');
+	});
+});
+
+describe('authIdentityFromBetterAuthSessionResponse', () => {
+	test('projects Better Auth custom session response into identity only', () => {
+		const response = betterAuthSessionResponse();
+
+		const identity = authIdentityFromBetterAuthSessionResponse(response);
+
+		expect(identity).toEqual({
+			user: {
+				id: 'user-1',
+				name: 'User One',
+				email: 'user@example.com',
+				emailVerified: true,
+				image: null,
+				createdAt: response.user.createdAt.toISOString(),
+				updatedAt: response.user.updatedAt.toISOString(),
+			},
+			encryptionKeys,
+		});
+	});
+
+	test('returns null for signed-out Better Auth session response', () => {
+		expect(authIdentityFromBetterAuthSessionResponse(null)).toBeNull();
+		expect(authIdentityFromBetterAuthSessionResponse(undefined)).toBeNull();
 	});
 });
 

@@ -1,5 +1,5 @@
-import type { AuthIdentity } from './auth-types.ts';
-import type { AuthClient } from './create-auth.ts';
+import type { AuthClient } from './auth-contract.js';
+import type { AuthIdentity } from './auth-types.js';
 
 /**
  * Read the current identity, throwing if auth is not signed-in.

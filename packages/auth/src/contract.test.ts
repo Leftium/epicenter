@@ -18,7 +18,8 @@ import type {
 	AuthState,
 	BearerSession,
 	BearerSessionStorage,
-} from './index.ts';
+	OAuthSocialSignInAdapter,
+} from './index.js';
 
 type BetterAuthSessionState = {
 	isPending: boolean;
@@ -104,9 +105,7 @@ mock.module('better-auth/client', () => ({
 	InferPlugin: () => ({}),
 }));
 
-const { createBearerAuth, createCookieAuth, waitForAuthSettled } = await import(
-	'./index.ts'
-);
+const { createBearerAuth, createCookieAuth } = await import('./index.js');
 
 const originalFetch = globalThis.fetch;
 const originalConsoleError = console.error;
@@ -240,6 +239,7 @@ type ContractCase = {
 	name: string;
 	create(): AuthClient;
 	expectTransport(auth: AuthClient): void;
+	expectSocialCalls(): void;
 };
 
 const contractCases: ContractCase[] = [
@@ -248,6 +248,7 @@ const contractCases: ContractCase[] = [
 		create() {
 			return createCookieAuth({
 				baseURL: 'http://localhost:8787',
+				getSocialCallbackURL: () => 'http://localhost:5173/current',
 				initialIdentity: identityFromSession(session()),
 			});
 		},
@@ -260,6 +261,15 @@ const contractCases: ContractCase[] = [
 			expect(betterAuthOptions?.fetchOptions?.auth).toBeUndefined();
 			expect(betterAuthOptions?.fetchOptions?.credentials).toBeUndefined();
 		},
+		expectSocialCalls() {
+			expect(calls).toContainEqual({
+				method: 'signIn.social',
+				input: {
+					provider: 'google',
+					callbackURL: 'http://localhost:5173/current',
+				},
+			});
+		},
 	},
 	{
 		name: 'bearer',
@@ -268,9 +278,13 @@ const contractCases: ContractCase[] = [
 				get: () => session(),
 				set: () => {},
 			};
+			const oauthAdapter: OAuthSocialSignInAdapter = {
+				signInWithSocial: async () => Ok(null),
+			};
 			return createBearerAuth({
 				baseURL: 'http://localhost:8787',
 				sessionStorage,
+				oauthAdapter,
 			});
 		},
 		expectTransport(auth) {
@@ -282,6 +296,12 @@ const contractCases: ContractCase[] = [
 			expect(betterAuthOptions?.fetchOptions?.auth?.type).toBe('Bearer');
 			expect(betterAuthOptions?.fetchOptions?.credentials).toBe('omit');
 		},
+		expectSocialCalls() {
+			expect(calls).not.toContainEqual({
+				method: 'signIn.social',
+				input: { provider: 'google' },
+			});
+		},
 	},
 ];
 
@@ -292,7 +312,6 @@ for (const contractCase of contractCases) {
 		const unsubscribe = auth.onStateChange((state) => states.push(state));
 
 		expect(auth.state).toEqual(signedInState(session()));
-		await waitForAuthSettled(auth);
 
 		emitSession(session({ userId: 'user-2', token: 'token-2' }));
 
@@ -310,17 +329,7 @@ for (const contractCase of contractCases) {
 			}),
 		).toEqual(Ok(undefined));
 		expect(
-			await auth.signInWithIdToken({
-				provider: 'google',
-				idToken: 'id-token',
-				nonce: 'nonce',
-			}),
-		).toEqual(Ok(undefined));
-		expect(
-			await auth.signInWithSocialRedirect({
-				provider: 'google',
-				callbackURL: 'http://localhost/callback',
-			}),
+			await auth.signInWithSocial({ provider: 'google' }),
 		).toEqual(Ok(undefined));
 
 		await auth.fetch('http://localhost/api', {
@@ -328,7 +337,7 @@ for (const contractCase of contractCases) {
 		});
 
 		contractCase.expectTransport(auth);
-		expect(calls).toEqual([
+		expect(calls.slice(0, 2)).toEqual([
 			{
 				method: 'signIn.email',
 				input: { email: 'user@example.com', password: 'pw' },
@@ -337,21 +346,8 @@ for (const contractCase of contractCases) {
 				method: 'signUp.email',
 				input: { email: 'user@example.com', password: 'pw', name: 'User' },
 			},
-			{
-				method: 'signIn.social',
-				input: {
-					provider: 'google',
-					idToken: { token: 'id-token', nonce: 'nonce' },
-				},
-			},
-			{
-				method: 'signIn.social',
-				input: {
-					provider: 'google',
-					callbackURL: 'http://localhost/callback',
-				},
-			},
 		]);
+		contractCase.expectSocialCalls();
 
 		expect(await auth.signOut()).toEqual(Ok(undefined));
 		expect(auth.state).toEqual({ status: 'signed-out' });

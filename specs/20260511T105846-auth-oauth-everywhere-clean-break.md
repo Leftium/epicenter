@@ -6,6 +6,44 @@
 **Branch**: `codex/auth-bearer-omit-cookies`
 **Supersedes**: `specs/20260511T092357-auth-hosted-sign-in-clean-break.md`
 
+## Current Worktree Handling
+
+This branch already contains parts of the superseded credential-family implementation. Do not reset the branch wholesale. Treat the existing work as a staging area:
+
+```txt
+Salvage:
+  packages/oauth-client PKCE and state machinery
+  OAuth client ID constants and future trusted-client registry shape
+  hosted auth page work
+  Better Auth oauthProvider validAudiences setup
+  app callback route experiments when they help OAuth code completion
+
+Replace:
+  POST /auth/oauth-session
+  set-auth-token as an app runtime credential
+  createCookieAuth versus createBearerAuth as the final public split
+  public auth.bearerToken
+  attachSync bearerToken getter
+  protected app routes backed by Better Auth getSession()
+
+Delete after replacement is covered:
+  bridge endpoint tests
+  app credential forms
+  stale cookie-family and bearer-family docs
+  stale AuthClient credential verbs
+```
+
+Foundation rule: build and prove the OAuth resource-server path before deleting the old bridge. The first code wave is server-only:
+
+```txt
+1. Add GET /auth/me.
+2. Verify access tokens with oauthProviderResourceClient.
+3. Load user by payload.sub.
+4. Derive and return { user, encryptionKeys }.
+5. Replace protected resource middleware with OAuth verification.
+6. Keep Better Auth getSession() only on hosted auth and OAuth interaction pages.
+```
+
 ## One-Sentence Thesis
 
 Every Epicenter app is an OAuth client; Better Auth cookies exist only inside the hosted API auth server to complete login, consent, and account factors, never as an app runtime credential.
@@ -101,7 +139,10 @@ The app-facing contract becomes transport-owned, not token-exposing:
 export type AuthClient = {
 	readonly state: AuthState;
 	onStateChange(fn: (state: AuthState) => void): () => void;
-	beginSignIn(input?: { returnTo?: string }): Promise<Result<undefined, AuthError>>;
+	startSignIn(
+		input?: { returnTo?: string },
+		options?: { onUserCode?: (code: DeviceUserCode) => void },
+	): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
 	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
@@ -110,6 +151,13 @@ export type AuthClient = {
 ```
 
 Apps do not decide whether the user enters email/password, signs up, uses Google, recovers access, or completes another factor. Apps only ask for an OAuth session.
+
+`startSignIn` resolution semantics differ across launchers and the promise is not a "did sign-in finish" signal. It only confirms that the launcher's own portion completed:
+
+- Redirect launchers (SvelteKit browser apps) navigate the page away. The function never resolves successfully because the page unloads mid-flight. Completion happens on the callback URL when the auth client constructor exchanges the code, persists `OAuthSession`, and transitions state to `signed-in`.
+- Extension and device launchers resolve `Ok(undefined)` after tokens land and state transitions.
+
+App code must observe `auth.state.status === 'signed-in'` to know if sign-in finished, never the return of `startSignIn`.
 
 ## Asymmetric Win
 
@@ -344,7 +392,7 @@ AuthClient
 ```txt
 App UI
   |
-  | beginSignIn()
+  | startSignIn()
   v
 Hosted API Auth Server
   |
@@ -403,19 +451,60 @@ export type OAuthSession = {
 
 The app can boot offline from a cached complete `OAuthSession`. Network calls
 refresh when online. If the refresh token is expired or revoked, the app
-transitions to signed out and asks the user to sign in again.
+transitions to `reauth-required` and asks the user to sign in again without
+clearing local workspace data.
+
+Clearing an `OAuthSession` is not the same operation as wiping local workspace
+data. Clearing the session removes tokens and cached identity material from auth
+storage. Wiping local workspace data deletes persisted Yjs updates. Token expiry,
+refresh failure, and WebSocket auth rejection may clear or repair network
+credentials, but they must not wipe local workspace data.
+
+### Offline Auth Invariants
+
+Offline editing is not an exception to OAuth everywhere. It is the local-first
+half of the same model: cached identity unlocks local data, while OAuth tokens
+authorize network resources.
+
+```txt
+Cached OAuthSession:
+  proves who owns local encrypted workspace data
+  provides user and encryptionKeys for offline boot
+
+Fresh OAuth access token:
+  proves the current process may call API resources
+  required for fetch and WebSocket sync
+
+Refresh token:
+  repairs network auth when online
+  failure pauses sync, not local editing
+```
+
+Auth failure must not delete unsynced local Yjs updates. A failed refresh,
+expired refresh token, or 4401 WebSocket auth close moves the app into
+`reauth-required`: local workspace data stays available, network transport is
+paused, and the next successful same-user OAuth login resumes sync. If login
+returns a different user, the app must not sync the cached workspace under that
+new identity.
 
 ## Proposed API
 
 ### Auth Client
 
 ```ts
+export type AuthState =
+	| { status: 'pending' }
+	| { status: 'signed-out' }
+	| { status: 'signed-in'; identity: AuthIdentity }
+	| { status: 'reauth-required'; identity: AuthIdentity };
+
 export type AuthClient = {
 	readonly state: AuthState;
 	onStateChange(fn: (state: AuthState) => void): () => void;
-	beginSignIn(input?: {
-		returnTo?: string;
-	}): Promise<Result<undefined, AuthError>>;
+	startSignIn(
+		input?: { returnTo?: string },
+		options?: { onUserCode?: (code: DeviceUserCode) => void },
+	): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
 	openWebSocket(
@@ -424,19 +513,32 @@ export type AuthClient = {
 	): Promise<WebSocket>;
 	[Symbol.dispose](): void;
 };
+
+export type DeviceUserCode = {
+	userCode: string;
+	verificationUriComplete: string;
+	expiresIn: number;
+};
 ```
 
 No public `bearerToken`. No public cookie family. No public credential verbs.
+
+`startSignIn`'s promise resolution is not a sign-in completion signal. For redirect launchers it never resolves successfully (the page unloads). For extension and device launchers it resolves `Ok(undefined)` after tokens land and state transitions. App code observes `auth.state.status === 'signed-in'` for completion. The `onUserCode` callback is only invoked by device-flow launchers and is ignored by redirect and extension launchers.
 
 ### OAuth Launcher
 
 ```ts
 export type HostedSignInLauncher = {
-	begin(input: {
-		returnTo?: string;
-		scope: string;
-		resource: string;
-	}): Promise<Result<HostedSignInTokens | null, unknown>>;
+	begin(
+		input: {
+			returnTo?: string;
+			scope: string;
+			resource: string;
+		},
+		options?: {
+			onUserCode?: (code: DeviceUserCode) => void;
+		},
+	): Promise<Result<HostedSignInTokens | null, unknown>>;
 };
 
 export type HostedSignInTokens = {
@@ -460,8 +562,9 @@ auth.fetch(request)
        await sessionStorage.set(rotated session)
        retry once
   -> if still 401 or refresh fails:
-       clear session
-       transition signed-out
+       preserve cached identity and encryptionKeys
+       transition reauth-required
+       stop network auth until sign-in repairs the session
 ```
 
 ### WebSocket Opening
@@ -513,6 +616,8 @@ access token used to open it. Every reconnect gets a fresh token first.
 | `/auth/oauth-session` | 2 coherence | Delete | It is the bridge back into Better Auth session-token world. |
 | Protected route auth | 2 coherence | OAuth resource middleware | App resources should validate app credentials directly. |
 | Public `bearerToken` | 2 coherence | Delete | Auth owns credential freshness and transport attachment. |
+| Offline reauth | 2 coherence | Pause sync, keep local data | Token failure is a network-auth problem, not a local-data deletion event. |
+| Same-user repair | 2 coherence | Required before sync resumes | Cached local workspace updates must not sync under a different user identity. |
 | WebSocket expiry | 3 taste | Check at connection time | Mid-socket expiry enforcement adds timers, close scheduling, and recovery semantics for little product value. |
 | Tauri launcher | Deferred | Decide later | Deep link, loopback, and device-style flows all fit the same token contract. |
 
@@ -525,9 +630,13 @@ path has tests and app imports have moved.
 ### Phase 1: Server OAuth Resource Foundation
 
 - [ ] **1.1** Replace `POST /auth/oauth-session` with `GET /auth/me`.
-- [ ] **1.2** Import `oauthProviderResourceClient` from `@better-auth/oauth-provider/resource-client`.
-- [ ] **1.3** Implement `verifyOAuthAccessToken(c)` that extracts `Authorization: Bearer`, verifies audience, requires `payload.sub`, and loads the user.
-- [ ] **1.4** Add `/auth/me` tests for valid token, wrong audience, expired token, missing user, and missing bearer header.
+  > Foundation progress: `GET /auth/me` now exists beside the old bridge. The old bridge is still mounted until app auth and protected-resource middleware move over.
+- [x] **1.2** Import `oauthProviderResourceClient` from `@better-auth/oauth-provider/resource-client`.
+  > Note: the implementation uses the no-auth resource client form with explicit `issuer`, `audience`, and `jwksUrl`. Passing the configured Better Auth instance hit an upstream generic mismatch during API typecheck.
+- [x] **1.3** Implement `verifyOAuthAccessToken(c)` that extracts `Authorization: Bearer`, verifies audience, requires `payload.sub`, and loads the user.
+  > Note: this lives in `apps/api/src/auth/me.ts` as `resolveOAuthIdentity(...)` so the route and tests can share the resource-server boundary.
+- [x] **1.4** Add `/auth/me` tests for valid token, wrong audience, expired token, missing user, and missing bearer header.
+  > Verified with `bun test apps/api/src/auth/me.test.ts`.
 - [ ] **1.5** Replace `requireSession` for app resource routes with `requireOAuthUser`.
 - [ ] **1.6** Keep Better Auth `getSession()` only on hosted auth pages and OAuth interaction pages.
 - [ ] **1.7** Test WebSocket upgrade rejection still returns close code 4401 for invalid OAuth credentials.
@@ -554,12 +663,13 @@ path has tests and app imports have moved.
 
 - [ ] **4.1** Replace `createCookieAuth` and `createBearerAuth` with one OAuth app auth factory.
 - [ ] **4.2** Remove `AuthClient.signIn`, `signUp`, `signInWithSocial`, `SocialProvider`, and `bearerToken`.
-- [ ] **4.3** Add `beginSignIn`, `fetch`, and `openWebSocket`.
+- [ ] **4.3** Add `startSignIn`, `fetch`, and `openWebSocket`. `startSignIn`'s promise must not be treated as a sign-in completion signal; document explicitly that callers observe `auth.state` for completion.
 - [ ] **4.4** Store `OAuthSession` with `accessToken`, `refreshToken`, `accessTokenExpiresAt`, `user`, and `encryptionKeys`.
 - [ ] **4.5** Implement refresh with `resource` and awaited `sessionStorage.set`.
 - [ ] **4.6** Refresh proactively before requests or socket opens when near expiry. Use reactive 401 retry for fetch correctness.
-- [ ] **4.7** Sign out by revoking the refresh token where possible, then clearing local session.
-- [ ] **4.8** Tests: begin sign-in, `/auth/me` identity load, refresh atomicity, 401 retry, refresh failure, sign out, openWebSocket token attachment.
+- [ ] **4.7** On refresh failure, preserve cached identity and encryption keys, transition to `reauth-required`, and pause network transports.
+- [ ] **4.8** Sign out by revoking the refresh token where possible, then clearing the OAuth session only when the user explicitly signs out.
+- [ ] **4.9** Tests: begin sign-in, `/auth/me` identity load, refresh atomicity, 401 retry, refresh failure, reauth-required local unlock, sign out, openWebSocket token attachment.
 
 ### Phase 5: Sync Boundary
 
@@ -567,11 +677,12 @@ path has tests and app imports have moved.
 - [ ] **5.2** Keep the default `new WebSocket(url, protocols)` for unauthenticated or test transports if needed.
 - [ ] **5.3** Ensure `attemptConnection()` awaits the opener before wiring handlers.
 - [ ] **5.4** Preserve reconnect backoff, liveness, awareness, and RPC behavior.
-- [ ] **5.5** Tests: opener called on every reconnect, opener failure retries, auth close 4401 can be reset by `reconnect()`.
+- [ ] **5.5** Report auth close 4401 to the app/session binding so it can enter `reauth-required`; `attachSync` does not own `AuthState`.
+- [ ] **5.6** Tests: opener called on every reconnect, opener failure retries, auth close 4401 can be reset by same-user reauth plus `reconnect()`.
 
 ### Phase 6: Apps
 
-- [ ] **6.1** Replace all app credential forms with one sign-in action calling `auth.beginSignIn({ returnTo })`.
+- [ ] **6.1** Replace all app credential forms with one sign-in action calling `auth.startSignIn({ returnTo })`. UI gates on `auth.state.status`, not on the `startSignIn` promise.
 - [ ] **6.2** Give every browser app a callback route or static fallback compatible with its SvelteKit deployment mode.
 - [ ] **6.3** Wire tab-manager through `browser.identity.launchWebAuthFlow` and persist PKCE transaction data to `chrome.storage.session`.
 - [ ] **6.4** Leave Tauri implementation deferred unless a Tauri app needs auth in this PR.
@@ -589,7 +700,7 @@ path has tests and app imports have moved.
 
 ### User Is Signed In On API But App Has No OAuth Session
 
-The app calls `beginSignIn()`. Hosted `/sign-in` sees the Better Auth cookie and
+The app calls `startSignIn()`. Hosted `/sign-in` sees the Better Auth cookie and
 continues OAuth authorize without asking for credentials again. The app still
 receives normal OAuth tokens.
 
@@ -605,13 +716,29 @@ break. If the socket later reconnects, `auth.openWebSocket` refreshes first.
 
 ### Refresh Token Is Revoked Or Replayed
 
-Refresh fails. Auth clears local session, transitions to signed out, and the app
-asks the user to sign in again. Do not retry with older refresh tokens.
+Refresh fails. Auth preserves cached identity and encryption keys, transitions
+to `reauth-required`, pauses network transports, and asks the user to sign in
+again. Do not retry with older refresh tokens.
+
+### Same User Reauth After Offline Edits
+
+The app completes hosted sign-in again. If `/auth/me` returns the same user ID as
+the cached local workspace owner, auth replaces the old OAuth tokens, keeps the
+local Yjs data, and calls sync reconnect. Pending local Yjs updates then sync
+through the normal CRDT protocol.
+
+### Different User Reauth After Offline Edits
+
+If hosted sign-in returns a different user ID, auth must not reconnect sync for
+the cached workspace. The app should keep the old local data isolated and ask
+the user whether to switch accounts, sign back in as the original user, or
+explicitly remove local data.
 
 ### User Row Is Deleted After Token Issue
 
-`/auth/me` and protected resource middleware return 401. The client clears local
-session after refresh or identity load fails.
+`/auth/me` and protected resource middleware return 401. The client transitions
+to `reauth-required` if cached local identity exists. Local data is removed only
+through an explicit local-data removal action.
 
 ### Offline Boot
 
@@ -633,7 +760,7 @@ PKCE verifier and state must be in `chrome.storage.session` before
 
 3. Which Tauri launcher should be first?
    - Options: deep link, loopback, device-style flow.
-   - Recommendation: defer. The auth core should only require a launcher returning `HostedSignInTokens`.
+   - Recommendation: defer. The auth core only requires a launcher conforming to `HostedSignInLauncher`, including the optional `onUserCode` for device-flow surfaces. Any of the three options can land later without changing the auth surface.
 
 4. Should refresh tokens be stored in a stronger runtime store per platform?
    - Recommendation: use the best practical store per app during implementation. Browser local storage is acceptable for this clean break only because local workspace data and encryption keys are already client-side.
@@ -656,6 +783,10 @@ PKCE verifier and state must be in `chrome.storage.session` before
 - [ ] Every app sign-in requests `offline_access` and sends `resource`.
 - [ ] Refresh persists rotated tokens before retrying a request or opening a WebSocket.
 - [ ] Sync receives `openWebSocket`, not a bearer token getter.
+- [ ] Refresh failure, expired refresh tokens, and WebSocket 4401 pause sync without clearing local Yjs updates.
+- [ ] Same-user reauth resumes sync and preserves pending local edits.
+- [ ] Different-user reauth cannot sync cached local data under the new user identity.
+- [ ] Local workspace data is wiped only by an explicit user action.
 - [ ] Cookie sessions are used only by hosted auth server routes.
 
 ## Straggler Searches

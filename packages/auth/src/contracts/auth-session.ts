@@ -3,7 +3,11 @@ import type {
 	User as BetterAuthUser,
 	Session as BetterSession,
 } from 'better-auth';
-import { AuthUser, BearerSession } from '../auth-types.js';
+import {
+	type AuthIdentity,
+	AuthUser,
+	type BearerSession,
+} from '../auth-types.js';
 
 export type BetterAuthSessionResponse = {
 	user: BetterAuthUser;
@@ -77,6 +81,24 @@ export function normalizeAuthUser(value: unknown): AuthUser {
 }
 
 /**
+ * Normalize Better Auth's custom session response into local identity state.
+ *
+ * Cookie auth only needs the identity and encryption keys. Keeping that path
+ * separate prevents cookie auth from depending on bearer credential storage.
+ */
+export function authIdentityFromBetterAuthSessionResponse(
+	value: unknown,
+): AuthIdentity | null {
+	if (value === null || value === undefined) return null;
+
+	const record = readRecord(value, 'Better Auth session response');
+	return {
+		user: normalizeAuthUser(record.user),
+		encryptionKeys: EncryptionKeys.assert(record.encryptionKeys),
+	};
+}
+
+/**
  * Normalize Better Auth's custom session response into local auth state.
  *
  * Better Auth's client plugin typing cannot carry this custom response through
@@ -87,11 +109,14 @@ export function normalizeBearerSession(
 	value: unknown,
 	{ token }: { token: string },
 ): BearerSession {
-	const record = readRecord(value, 'Better Auth session response');
+	const identity = authIdentityFromBetterAuthSessionResponse(value);
+	if (identity === null) {
+		throw new Error('Expected Better Auth session response to be signed in.');
+	}
 	return {
 		token,
-		user: normalizeAuthUser(record.user),
-		encryptionKeys: EncryptionKeys.assert(record.encryptionKeys),
+		user: identity.user,
+		encryptionKeys: identity.encryptionKeys,
 	} satisfies BearerSession;
 }
 

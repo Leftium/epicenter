@@ -12,12 +12,13 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { type BearerSession } from '../auth-types.js';
+import type { AuthClient } from '../auth-contract.js';
+import type { BearerSession } from '../auth-types.js';
 import {
 	type BetterAuthSessionResponse,
 	normalizeAuthUser,
 } from '../contracts/auth-session.js';
-import { type AuthClient, createBearerAuth } from '../create-auth.js';
+import { createBearerAuth } from '../create-bearer-auth.js';
 import {
 	loadMachineSession,
 	saveMachineSession,

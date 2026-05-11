@@ -1,19 +1,22 @@
 export {
+	type AuthClient,
+	type AuthState,
+	type SocialProvider,
+} from './auth-contract.js';
+export * from './auth-errors.js';
+export {
 	type AuthIdentity,
 	AuthUser,
 	BearerSession,
-} from './auth-types.ts';
+} from './auth-types.js';
 export {
-	type AuthClient,
-	AuthError,
-	type AuthState,
-	type AuthStateChangeListener,
 	type BearerSessionStorage,
 	type CreateBearerAuthConfig,
-	type CreateCookieAuthConfig,
 	createBearerAuth,
+	type OAuthSocialSignInAdapter,
+} from './create-bearer-auth.js';
+export {
+	type CreateCookieAuthConfig,
 	createCookieAuth,
-	waitForAuthSettled,
-	waitForAuthState,
-} from './create-auth.ts';
-export { requireSignedIn } from './require-signed-in.ts';
+} from './create-cookie-auth.js';
+export { requireSignedIn } from './require-signed-in.js';

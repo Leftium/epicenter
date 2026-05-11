@@ -20,16 +20,17 @@ export const AuthUser = type({
 
 export type AuthUser = typeof AuthUser.infer;
 
-export type AuthIdentity = {
-	user: AuthUser;
-	encryptionKeys: EncryptionKeys;
-};
+export const AuthIdentity = type({
+	user: AuthUser,
+	encryptionKeys: EncryptionKeys,
+});
+
+export type AuthIdentity = typeof AuthIdentity.infer;
 
 /** Bearer auth state persisted by browser, extension, and machine clients. */
 export const BearerSession = type({
+	'...': AuthIdentity,
 	token: 'string',
-	user: AuthUser,
-	encryptionKeys: EncryptionKeys,
 });
 
 export type BearerSession = typeof BearerSession.infer;

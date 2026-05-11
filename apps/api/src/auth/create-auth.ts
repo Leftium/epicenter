@@ -1,5 +1,4 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
-import type { BetterAuthSessionResponse } from '@epicenter/auth/contracts';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -14,7 +13,9 @@ import { FEATURE_IDS } from '../billing-plans';
 import * as schema from '../db/schema';
 import { TRUSTED_ORIGINS } from '../trusted-origins';
 import { BASE_AUTH_CONFIG } from './base-config';
+import { createCookieAdvancedConfig } from './cookie-config';
 import { deriveUserEncryptionKeys } from './encryption';
+import { createBetterAuthSessionResponse } from './session-response';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -82,40 +83,24 @@ export function createAuth({
 				strategy: 'jwe',
 			},
 		},
-		// Cross-origin cookie config for sessions.
+		// Cookie transport for browser clients.
 		//
-		// The auth server (api.epicenter.so) serves multiple client apps:
-		//   - Subdomains: fuji.epicenter.so, opensidian.epicenter.so
-		//   - External domains: opensidian.com
-		//   - Desktop: tauri://localhost
-		//   - Dev: localhost:5173, localhost:5174, etc.
+		// Localhost uses host-only, non-secure Lax cookies so local dashboard
+		// auth works through the Vite `/auth` proxy without a rejected Domain
+		// or Secure attribute. Production uses SameSite=None + Secure so
+		// browser apps can send cookies to api.epicenter.so from app origins.
 		//
-		// SameSite=None + Secure lets browsers send session cookies on
-		// cross-origin fetches (e.g. opensidian.com → api.epicenter.so).
-		// This trades browser-level CSRF for app-level origin checking,
-		// which Better Auth enforces via trustedOrigins on every request.
-		// Standard practice for auth servers on a separate domain. Same
-		// model as Auth0, Clerk, and Supabase Auth.
-		//
-		// crossSubDomainCookies scopes cookies to .epicenter.so so any
-		// subdomain shares sessions. Apps on other domains (opensidian.com)
-		// still work because their fetches target api.epicenter.so.
+		// Cross-subdomain cookies are only enabled outside localhost. In
+		// production, the cookie domain is .epicenter.so so Epicenter subdomains
+		// share sessions. Apps on other domains still work because their fetches
+		// target api.epicenter.so.
 		//
 		// NOTE: We intentionally omit `partitioned: true` (CHIPS).
 		// Partitioned cookies are keyed by the top-level site at creation
-		// time. During OAuth the top-level site changes mid-flow (client →
-		// Google → API callback), so the cookie becomes invisible at the
+		// time. During OAuth the top-level site changes mid-flow (client to
+		// Google to API callback), so the cookie becomes invisible at the
 		// callback step. Partitioned is for iframes, not redirect OAuth.
-		advanced: {
-			crossSubDomainCookies: {
-				enabled: true,
-				domain: '.epicenter.so',
-			},
-			defaultCookieAttributes: {
-				sameSite: 'none',
-				secure: true,
-			},
-		},
+		advanced: createCookieAdvancedConfig(baseURL),
 		databaseHooks: {
 			user: {
 				create: {
@@ -203,6 +188,7 @@ export function createAuth({
 			loginPage: '/sign-in',
 			consentPage: '/consent',
 			requirePKCE: true,
+			validAudiences: [baseURL],
 			allowDynamicClientRegistration: false,
 			// The plugin warns that /.well-known/oauth-authorization-server/auth must exist
 			// because basePath is /auth (not /), so it can't auto-mount at the root.
@@ -211,7 +197,7 @@ export function createAuth({
 		}),
 	];
 	/**
-	 * Enrich `/auth/get-session` responses with the full encryption keyring.
+	 * Enrich Better Auth session responses with the full encryption keyring.
 	 *
 	 * Derives a per-user key for every version in `ENCRYPTION_SECRETS`.
 	 * HKDF derivation adds <0.1ms per key, negligible next to the network round-trip.
@@ -219,14 +205,8 @@ export function createAuth({
 	 * enables fresh clients to decrypt blobs from any key version.
 	 */
 	const customSessionPlugin = customSession(
-		async ({ user, session }) => {
-			const encryptionKeys = await deriveUserEncryptionKeys(user.id);
-			return {
-				user,
-				session,
-				encryptionKeys,
-			} satisfies BetterAuthSessionResponse;
-		},
+		(input) =>
+			createBetterAuthSessionResponse(input, { deriveUserEncryptionKeys }),
 		{
 			...authOptionsBase,
 			plugins: basePlugins,

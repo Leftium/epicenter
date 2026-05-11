@@ -48,7 +48,7 @@ function setup() {
 		},
 		{ gcTime: Number.POSITIVE_INFINITY },
 	);
-	const fs = attachYjsFileSystem(ws.tables.files, {
+	const fs = attachYjsFileSystem(ws.ydoc, ws.tables.files, {
 		async read(fileId) {
 			await using handle = contentDocs.open(fileId);
 			await handle.whenReady;

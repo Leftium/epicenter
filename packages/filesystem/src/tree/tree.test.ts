@@ -21,7 +21,7 @@ function setup() {
 	const id = 'test';
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, { files: filesTable });
-	return attachFileTree(tables.files);
+	return attachFileTree(ydoc, tables.files);
 }
 
 describe('attachFileTree', () => {
@@ -482,10 +482,4 @@ describe('attachFileTree', () => {
 		});
 	});
 
-	describe('dispose', () => {
-		test('can be called without error', () => {
-			const tree = setup();
-			expect(() => tree.dispose()).not.toThrow();
-		});
-	});
 });

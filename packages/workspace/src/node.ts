@@ -66,16 +66,6 @@ export type {
 	StartedDaemonRoute,
 } from './daemon/types.js';
 export {
-	attachMarkdown,
-	type MarkdownShape,
-} from './document/attach-markdown.js';
-export { attachSqlite } from './document/attach-sqlite.js';
-export {
-	type AttachSqliteReaderOptions,
-	attachSqliteReader,
-	type SqliteReaderAttachment,
-} from './document/attach-sqlite-reader.js';
-export {
 	attachYjsLog,
 	type YjsLogAttachment,
 } from './document/attach-yjs-log.js';
@@ -83,7 +73,15 @@ export {
 	attachYjsLogReader,
 	type YjsLogReaderAttachment,
 } from './document/attach-yjs-log-reader.js';
-export { SqliteWriterError } from './document/sqlite-writer.js';
+export {
+	type OpenSqliteReaderOptions,
+	openSqliteReader,
+	type SqliteReader,
+} from './document/open-sqlite-reader.js';
+export {
+	openWriterSqlite,
+	SqliteWriterError,
+} from './document/sqlite-writer.js';
 export {
 	markdownPath,
 	sqlitePath,

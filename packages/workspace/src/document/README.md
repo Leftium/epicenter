@@ -17,7 +17,7 @@ The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, co
 | attachTable / attachTables / attachKv                          |
 | attachEncryption -> .attachTable / .attachTables / .attachKv    |
 | attachAwareness                                                |
-| attachIndexedDb / attachSqlite / attachBroadcastChannel        |
+| attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
 | attachOwnedBroadcastChannel                                    |
 | attachSync                                                     |
 | attachSqliteMaterializer                                       |

@@ -27,8 +27,6 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
-		"./document/attach-markdown": "./src/document/attach-markdown.ts",
-		"./document/attach-sqlite": "./src/document/attach-sqlite.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
 		"./daemon": "./src/daemon/index.ts",
 		"./ai": "./src/ai/index.ts",

@@ -40,7 +40,7 @@ import {
 	toWsUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
-import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
+import { attachYjsLog } from '@epicenter/workspace/node';
 import {
 	attachMarkdownMaterializer,
 	prepareMarkdownFiles,
@@ -74,13 +74,13 @@ const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
 const tables = encryption.attachTables(opensidianTables);
 const kv = encryption.attachKv({});
 
-const persistence = attachSqlite(ydoc, {
+const persistence = attachYjsLog(ydoc, {
 	filePath: epicenterPaths.persistence(WORKSPACE_ID),
 });
 
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
-	waitFor: persistence.whenLoaded,
+	waitFor: Promise.resolve(),
 	getToken: createMachineTokenGetter({
 		serverOrigin: SERVER_URL,
 		machineAuth,
@@ -105,7 +105,7 @@ const fileContentDocs = createDisposableCache(
 			workspaceId: WORKSPACE_ID,
 			filesTable: tables.files,
 			attachPersistence: (contentDoc) =>
-				attachSqlite(contentDoc, {
+				attachYjsLog(contentDoc, {
 					filePath: join(CONTENT_DIR, `${contentDoc.guid}.db`),
 				}),
 		}),
@@ -118,7 +118,7 @@ async function readContent(rowId: string): Promise<string | undefined> {
 	return handle.content.read();
 }
 
-const whenReady = Promise.all([persistence.whenLoaded, sync.whenConnected]);
+const whenReady = Promise.all([Promise.resolve(), sync.whenConnected]);
 
 const markdown = attachMarkdownMaterializer(ydoc, {
 	dir: MARKDOWN_DIR,

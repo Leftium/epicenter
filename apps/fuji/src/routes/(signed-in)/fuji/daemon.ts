@@ -10,18 +10,20 @@ import {
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import {
-	attachMarkdown,
+	attachMarkdownMaterializer,
 	slugFilename,
-} from '@epicenter/workspace/document/attach-markdown';
-import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
+} from '@epicenter/workspace/document/materializer/markdown';
+import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
 	attachYjsLog,
 	connectDaemonActions,
 	hashClientId,
 	markdownPath,
+	openWriterSqlite,
 	sqlitePath,
 	yjsPath,
 } from '@epicenter/workspace/node';
+import { createLogger } from 'wellcrafted/logger';
 import { openFuji as openFujiDoc } from './index.js';
 import type { createFujiActions } from './workspace.js';
 
@@ -62,10 +64,15 @@ export function defineFujiDaemon({
 			});
 			const rpc = sync.attachRpc(doc.actions);
 			const remote = createRemoteClient({ awareness, rpc });
-			attachSqlite(doc.ydoc, {
+			const sqliteDb = openWriterSqlite({
 				filePath: sqlitePath(projectDir, doc.ydoc.guid),
-			}).table(doc.tables.entries);
-			attachMarkdown(doc.ydoc, {
+				log: createLogger('fuji-sqlite'),
+			});
+			doc.ydoc.once('destroy', () => sqliteDb.close());
+			attachSqliteMaterializer(doc.ydoc, { db: sqliteDb }).table(
+				doc.tables.entries,
+			);
+			attachMarkdownMaterializer(doc.ydoc, {
 				dir: markdownPath(projectDir, doc.ydoc.guid),
 			}).table(doc.tables.entries, { filename: slugFilename('title') });
 

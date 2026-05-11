@@ -79,33 +79,9 @@ export async function wipeOwnerLocalYjsData({
 	userId: string;
 	ydocGuids?: Iterable<string>;
 }): Promise<void> {
-	await wipeOwnerLocalYjsDataWithDependencies(
-		{ userId, ydocGuids },
-		{
-			indexedDB: globalThis.indexedDB as
-				| IndexedDbFactoryWithDatabases
-				| undefined,
-			clearDocument,
-		},
-	);
-}
-
-async function wipeOwnerLocalYjsDataWithDependencies(
-	{
-		userId,
-		ydocGuids = [],
-	}: {
-		userId: string;
-		ydocGuids?: Iterable<string>;
-	},
-	{
-		indexedDB,
-		clearDocument: clear,
-	}: {
-		indexedDB?: IndexedDbFactoryWithDatabases;
-		clearDocument: (name: string) => Promise<void>;
-	},
-): Promise<void> {
+	const indexedDB = globalThis.indexedDB as
+		| IndexedDbFactoryWithDatabases
+		| undefined;
 	const prefix = createOwnedYjsKeyPrefix(userId);
 	const names = new Set<string>();
 
@@ -122,13 +98,37 @@ async function wipeOwnerLocalYjsDataWithDependencies(
 		}
 	}
 
-	await Promise.all([...names].map((name) => clear(name)));
+	await Promise.all([...names].map((name) => clearDocument(name)));
+}
+
+function resolveWriteKey(keyring: ReadonlyMap<number, Uint8Array>): {
+	keyVersion: number;
+	key: Uint8Array;
+} {
+	if (keyring.size === 0) {
+		throw new Error(
+			'Cannot attach encrypted IndexedDB provider: keyring is empty.',
+		);
+	}
+	const keyVersion = Math.max(...keyring.keys());
+	const key = keyring.get(keyVersion);
+	if (key === undefined) {
+		throw new Error(
+			`Cannot attach encrypted IndexedDB provider: key version ${keyVersion} is not in the keyring.`,
+		);
+	}
+	return { keyVersion, key };
 }
 
 export function attachEncryptedProvider(
 	ydoc: Y.Doc,
 	{ databaseName, keyring }: EncryptedProviderOptions,
 ): IndexedDbAttachment {
+	// Keyring is frozen at attach time, so resolve the write key once at the
+	// boundary. An empty or malformed keyring fails fast here instead of
+	// surfacing on the first write.
+	const { keyVersion: writeVersion, key: writeKey } = resolveWriteKey(keyring);
+
 	let db: IDBDatabase | undefined;
 	let dbref = 0;
 	let dbsize = 0;
@@ -156,45 +156,18 @@ export function attachEncryptedProvider(
 		whenDisposed,
 	};
 
-	function currentKey(): { version: number; key: Uint8Array } {
-		if (keyring.size === 0) {
-			throw new Error(
-				'Cannot write encrypted IndexedDB update: keyring is empty.',
-			);
-		}
-		const version = Math.max(...keyring.keys());
-		const key = keyring.get(version);
-		if (key === undefined) {
-			throw new Error(
-				`Cannot write encrypted IndexedDB update: key version ${version} is not in the keyring.`,
-			);
-		}
-		return { version, key };
-	}
-
-	function encryptUpdate(update: Uint8Array): EncryptedBlob {
-		const { version, key } = currentKey();
-		return encryptBytes({
-			key,
-			keyVersion: version,
-			plaintext: update,
-			aad,
-		});
-	}
-
-	function decryptUpdate(blob: EncryptedBlob): Uint8Array {
-		return decryptBytes({ keyring, blob, aad });
-	}
-
 	async function addEncryptedUpdate(
 		updatesStore: IDBObjectStore,
 		update: Uint8Array,
 	): Promise<void> {
 		dbsize += 1;
-		await idb.addAutoKey(
-			updatesStore,
-			encryptUpdate(update) as unknown as string,
-		);
+		const ciphertext = encryptBytes({
+			key: writeKey,
+			keyVersion: writeVersion,
+			plaintext: update,
+			aad,
+		});
+		await idb.addAutoKey(updatesStore, ciphertext as unknown as string);
 	}
 
 	async function fetchUpdates(
@@ -223,8 +196,12 @@ export function attachEncryptedProvider(
 			transact(
 				ydoc,
 				() => {
-					for (const encryptedUpdate of encryptedUpdates) {
-						applyUpdateV2(ydoc, decryptUpdate(encryptedUpdate), attachment);
+					for (const blob of encryptedUpdates) {
+						applyUpdateV2(
+							ydoc,
+							decryptBytes({ keyring, blob, aad }),
+							attachment,
+						);
 					}
 				},
 				attachment,
@@ -238,13 +215,16 @@ export function attachEncryptedProvider(
 		return updatesStore;
 	}
 
-	async function storeState(forceStore = true): Promise<void> {
+	// Debounced compaction: merge any pending updates, then if the running count
+	// is still over the trim threshold, encrypt a snapshot and drop the older
+	// per-update rows. The threshold check inside survives a concurrent
+	// cross-tab compaction lowering `dbsize` between schedule and fire.
+	async function compactUpdates(): Promise<void> {
 		const updatesStore = await fetchUpdates();
-		if (forceStore || dbsize >= PREFERRED_TRIM_SIZE) {
-			await addEncryptedUpdate(updatesStore, encodeStateAsUpdateV2(ydoc));
-			await idb.del(updatesStore, IDBKeyRange.upperBound(dbref, true));
-			dbsize = await idb.count(updatesStore);
-		}
+		if (dbsize < PREFERRED_TRIM_SIZE) return;
+		await addEncryptedUpdate(updatesStore, encodeStateAsUpdateV2(ydoc));
+		await idb.del(updatesStore, IDBKeyRange.upperBound(dbref, true));
+		dbsize = await idb.count(updatesStore);
 	}
 
 	const handleUpdate = (update: Uint8Array, origin: unknown) => {
@@ -255,7 +235,7 @@ export function attachEncryptedProvider(
 		if (dbsize >= PREFERRED_TRIM_SIZE) {
 			if (storeTimeoutId !== undefined) clearTimeout(storeTimeoutId);
 			storeTimeoutId = setTimeout(() => {
-				void storeState(false);
+				void compactUpdates();
 				storeTimeoutId = undefined;
 			}, 1000);
 		}

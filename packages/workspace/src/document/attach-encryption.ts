@@ -37,10 +37,10 @@
  *
  * ## Disposal
  *
- * The attachment registers a single `ydoc.on('destroy')` listener that
- * disposes every registered store. Callers tear down encryption by calling
- * `ydoc.destroy()`: the attachment does not expose a standalone `dispose()`
- * method.
+ * Each registered store hooks `ydoc.once('destroy', ...)` at registration
+ * time, mirroring the plaintext `attachTable` / `attachKv` primitives.
+ * Callers tear down encryption by calling `ydoc.destroy()`: the attachment
+ * does not expose a standalone `dispose()` method.
  *
  * ## What this attachment does NOT do
  *
@@ -93,14 +93,6 @@ import type {
 import { createKv, createReadonlyTable, createTable } from './internal.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createOwnedYjsKey } from './local-yjs-key.js';
-
-/**
- * The coordinator treats every registered store uniformly: it only calls
- * `activateEncryption(keyring)` and `dispose()`, neither of which depends on
- * the store's value type. `any` is the variance-friendly alias here.
- */
-// biome-ignore lint/suspicious/noExplicitAny: variance
-type AnyEncryptedStore = EncryptedYKeyValueLww<any>;
 
 export type AttachEncryptionOptions = {
 	/**
@@ -176,12 +168,7 @@ export function attachEncryption(
 	ydoc: Y.Doc,
 	options: AttachEncryptionOptions,
 ): EncryptionAttachment {
-	const stores: AnyEncryptedStore[] = [];
 	const workspaceId = ydoc.guid;
-
-	ydoc.once('destroy', () => {
-		for (const store of stores) store.dispose();
-	});
 
 	function deriveKeyring(
 		keys: EncryptionKeys,
@@ -195,8 +182,9 @@ export function attachEncryption(
 		return keyring;
 	}
 
-	function register(store: AnyEncryptedStore): void {
-		stores.push(store);
+	// biome-ignore lint/suspicious/noExplicitAny: variance
+	function register(store: EncryptedYKeyValueLww<any>): void {
+		ydoc.once('destroy', () => store.dispose());
 		store.activateEncryption(
 			deriveKeyring(options.encryptionKeys(), workspaceId),
 		);

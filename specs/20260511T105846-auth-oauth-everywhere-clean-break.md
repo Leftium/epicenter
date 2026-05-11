@@ -643,12 +643,13 @@ path has tests and app imports have moved.
 
 ### Phase 2: Trusted OAuth Client Registry
 
-- [ ] **2.1** Replace `EPICENTER_OAUTH_PUBLIC_CLIENTS` with `EPICENTER_TRUSTED_OAUTH_CLIENTS`.
-- [ ] **2.2** Include every app that needs auth: dashboard, fuji, honeycrisp, zhongwen, opensidian, tab-manager, future desktop apps, and CLI/device clients where applicable.
-- [ ] **2.3** Store per-client facts only: `clientId`, `name`, `runtime`, `redirectUris`.
-- [ ] **2.4** Project registry entries into Better Auth OAuth client rows with `skip_consent`, public client auth, authorization-code grant, PKCE, and allowed scopes including `offline_access`.
-- [ ] **2.5** Wire `cachedTrustedClients` only as a cache for DB-backed trusted clients, not as a replacement for client metadata.
-- [ ] **2.6** Test trusted clients skip consent and unknown clients do not.
+- [x] **2.1** Replace `EPICENTER_OAUTH_PUBLIC_CLIENTS` with `EPICENTER_TRUSTED_OAUTH_CLIENTS`.
+- [x] **2.2** Include every current app that needs auth: dashboard, fuji, honeycrisp, zhongwen, opensidian, tab-manager, and CLI/device clients where applicable. Future desktop clients remain deferred until a Tauri auth wave needs them.
+- [x] **2.3** Store per-client facts only: `clientId`, `name`, `runtime`, `redirectUris`.
+- [x] **2.4** Project registry entries into Better Auth OAuth client rows with `skip_consent`, public client auth, authorization-code grant, PKCE, and allowed scopes including `offline_access`.
+- [x] **2.5** Wire `cachedTrustedClients` only as a cache for DB-backed trusted clients, not as a replacement for client metadata.
+- [x] **2.6** Test trusted clients skip consent and unknown clients do not.
+  > Verified trusted-client behavior with `bun test apps/api/src/auth/trusted-oauth-clients.test.ts`. `bun run --filter @epicenter/api typecheck` passed before the separate dirty auth-session rename appeared; the current full-tree rerun is blocked by that unstaged auth-session work.
 
 ### Phase 3: OAuth Launcher Package
 

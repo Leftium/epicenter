@@ -22,6 +22,7 @@ import { resolveOAuthIdentity } from './auth/me';
 import { resolveOAuthBearerSession } from './auth/oauth-session';
 import { createBetterAuthSessionResponse } from './auth/session-response';
 import { singleCredential } from './auth/single-credential';
+import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
 import {
 	renderConsentPage,
 	renderDevicePage,
@@ -163,6 +164,7 @@ const factory = createFactory<Env>({
 				origin === `http://${new URL(APPS.API.urls[0]).host}`
 					? `http://localhost:${APPS.API.port}`
 					: origin;
+			await ensureTrustedOAuthClients(c.var.db);
 			c.set('authBaseURL', baseURL);
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
 			await next();

@@ -16,6 +16,7 @@ import { BASE_AUTH_CONFIG } from './base-config';
 import { createCookieAdvancedConfig } from './cookie-config';
 import { deriveUserEncryptionKeys } from './encryption';
 import { createBetterAuthSessionResponse } from './session-response';
+import { trustedOAuthClientIds } from './trusted-oauth-clients';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -188,6 +189,7 @@ export function createAuth({
 			loginPage: '/sign-in',
 			consentPage: '/consent',
 			requirePKCE: true,
+			cachedTrustedClients: trustedOAuthClientIds,
 			validAudiences: [baseURL],
 			allowDynamicClientRegistration: false,
 			// The plugin warns that /.well-known/oauth-authorization-server/auth must exist

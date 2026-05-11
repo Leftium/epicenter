@@ -13,15 +13,20 @@
 import { describe, expect, test } from 'bun:test';
 import { attachTables } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import type { FileId } from '../ids.js';
+import { type FileId, generateFileId } from '../ids.js';
 import { filesTable } from '../table.js';
 import { attachFileTree } from './tree.js';
 
 function setup() {
+	return setupWithHandles().tree;
+}
+
+function setupWithHandles() {
 	const id = 'test';
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, { files: filesTable });
-	return attachFileTree(ydoc, tables.files);
+	const tree = attachFileTree(ydoc, tables.files);
+	return { tree, ydoc, files: tables.files };
 }
 
 describe('attachFileTree', () => {
@@ -466,6 +471,43 @@ describe('attachFileTree', () => {
 		});
 	});
 
+	describe('ydoc destroy lifecycle', () => {
+		test('destroying ydoc stops observing the table', () => {
+			const { tree, ydoc, files } = setupWithHandles();
+
+			// Mutation pre-destroy: index reflects it.
+			const id = tree.create({
+				name: 'before.txt',
+				parentId: null,
+				type: 'file',
+				size: 0,
+			});
+			expect(tree.exists('/before.txt')).toBe(true);
+			expect(tree.lookupId('/before.txt')).toBe(id);
+
+			// Tear down the ydoc — the observer registered via
+			// ydoc.once('destroy', unobserve) should unregister.
+			ydoc.destroy();
+
+			// Mutate the underlying table directly.
+			const now = Date.now();
+			files.set({
+				id: generateFileId(),
+				name: 'after.txt',
+				parentId: null,
+				type: 'file',
+				size: 0,
+				createdAt: now,
+				updatedAt: now,
+				trashedAt: null,
+				_v: 1,
+			});
+
+			// Index did NOT update: the observer is gone.
+			expect(tree.lookupId('/after.txt')).toBeUndefined();
+		});
+	});
+
 	describe('setMtime', () => {
 		test('updates updatedAt to specific time', () => {
 			const tree = setup();
@@ -481,5 +523,4 @@ describe('attachFileTree', () => {
 			expect(row.updatedAt).toBe(specificTime.getTime());
 		});
 	});
-
 });

@@ -1,43 +1,61 @@
 import {
-	type AuthClient as BaseAuthClient,
+	type AuthClient,
 	type CreateBearerAuthConfig,
 	type CreateCookieAuthConfig,
 	createBearerAuth as createCoreBearerAuth,
 	createCookieAuth as createCoreCookieAuth,
 } from '@epicenter/auth';
+import { createSubscriber } from 'svelte/reactivity';
 
-export type AuthClient = BaseAuthClient;
+export type { AuthClient };
 
 /**
  * Svelte 5 wrapper around `@epicenter/auth`.
  *
- * Mirrors the core state into `$state` so templates and derived values can
- * read `auth.state` reactively. The spread copies core methods, and the later
- * getter overrides the copied state value.
+ * Bridges the core state listener into Svelte reactivity while preserving
+ * live core getters such as `bearerToken`.
  */
-function createReactiveAuth(base: BaseAuthClient): AuthClient {
-	let state = $state(base.state);
-
-	const unsubscribe = base.onStateChange((next) => {
-		state = next;
+function withReactiveState(auth: AuthClient): AuthClient {
+	const subscribe = createSubscriber((update) => {
+		return auth.onStateChange(update);
 	});
 
 	return {
-		...base,
 		get state() {
-			return state;
+			subscribe();
+			return auth.state;
+		},
+		get bearerToken() {
+			return auth.bearerToken;
+		},
+		onStateChange(fn) {
+			return auth.onStateChange(fn);
+		},
+		signIn(input) {
+			return auth.signIn(input);
+		},
+		signUp(input) {
+			return auth.signUp(input);
+		},
+		signInWithSocial(input) {
+			return auth.signInWithSocial(input);
+		},
+		signOut() {
+			return auth.signOut();
+		},
+		fetch(input, init) {
+			return auth.fetch(input, init);
 		},
 		[Symbol.dispose]() {
-			unsubscribe();
-			base[Symbol.dispose]();
+			auth[Symbol.dispose]();
 		},
 	} satisfies AuthClient;
 }
 
 export function createBearerAuth(config: CreateBearerAuthConfig): AuthClient {
-	return createReactiveAuth(createCoreBearerAuth(config));
+	return withReactiveState(createCoreBearerAuth(config));
 }
 
 export function createCookieAuth(config: CreateCookieAuthConfig): AuthClient {
-	return createReactiveAuth(createCoreCookieAuth(config));
+	return withReactiveState(createCoreCookieAuth(config));
 }

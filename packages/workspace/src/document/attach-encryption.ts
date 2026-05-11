@@ -182,23 +182,21 @@ export function attachEncryption(
 	}
 
 	// biome-ignore lint/suspicious/noExplicitAny: variance
-	function register(store: EncryptedYKeyValueLww<any>): void {
+	function attachStore(key: string): EncryptedYKeyValueLww<any> {
+		const store = createEncryptedYkvLww(ydoc, key);
 		ydoc.once('destroy', () => store.dispose());
 		store.activateEncryption(
 			deriveKeyring(options.encryptionKeys(), workspaceId),
 		);
+		return store;
 	}
 
 	const attachment: EncryptionAttachment = {
 		attachTable(name, definition) {
-			const store = createEncryptedYkvLww(ydoc, TableKey(name));
-			register(store);
-			return createTable(store, definition, name);
+			return createTable(attachStore(TableKey(name)), definition, name);
 		},
 		attachReadonlyTable(name, definition) {
-			const store = createEncryptedYkvLww(ydoc, TableKey(name));
-			register(store);
-			return createReadonlyTable(store, definition, name);
+			return createReadonlyTable(attachStore(TableKey(name)), definition, name);
 		},
 		attachTables(definitions) {
 			return Object.fromEntries(
@@ -217,9 +215,7 @@ export function attachEncryption(
 			) as ReadonlyTables<typeof definitions>;
 		},
 		attachKv(definitions) {
-			const store = createEncryptedYkvLww(ydoc, KV_KEY);
-			register(store);
-			return createKv(store, definitions);
+			return createKv(attachStore(KV_KEY), definitions);
 		},
 		attachIndexedDb(targetYdoc, { userId }) {
 			const keyring = deriveKeyring(options.encryptionKeys(), targetYdoc.guid);

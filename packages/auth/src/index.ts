@@ -8,6 +8,7 @@ export {
 export {
 	type CreateOAuthAppAuthConfig,
 	createOAuthAppAuth,
+	type OAuthRefreshTokenRevoker,
 	type OAuthSessionStorage,
 	type OAuthSignInLauncher,
 	type OAuthTokenRefresher,

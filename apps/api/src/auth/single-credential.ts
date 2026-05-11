@@ -6,7 +6,7 @@ import { HTTPException } from 'hono/http-exception';
 /**
  * Reject requests that carry more than one authentication credential and lift
  * any WebSocket subprotocol bearer into `Authorization` so downstream code
- * (Better Auth's `getSession`) sees one canonical input.
+ * sees one canonical input.
  *
  * ## Why this exists
  *

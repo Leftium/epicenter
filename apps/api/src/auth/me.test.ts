@@ -20,8 +20,8 @@ import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import { customSession, jwt } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
+import { createAuthIdentityResponse } from './identity-response.js';
 import { resolveOAuthIdentity } from './me.js';
-import { createAuthSessionResponse } from './session-response.js';
 
 const redirectUri = 'http://localhost:5174/auth/callback';
 const verifier = 'test-verifier-test-verifier-test-verifier';
@@ -174,7 +174,7 @@ function createOAuthIdentityTestServer() {
 				...basePlugins,
 				customSession(
 					(input) =>
-						createAuthSessionResponse(input, {
+						createAuthIdentityResponse(input, {
 							deriveUserEncryptionKeys: async () => encryptionKeys,
 						}),
 					{ ...baseAuthOptions, plugins: basePlugins },

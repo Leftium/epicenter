@@ -3,7 +3,7 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import { AiChatError } from '@epicenter/constants/ai-chat-errors';
+import type { AuthIdentity } from '@epicenter/auth';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -18,9 +18,18 @@ import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
 import { deriveUserEncryptionKeys } from './auth/encryption';
+import { createAuthIdentityResponse } from './auth/identity-response';
 import { resolveOAuthIdentity } from './auth/me';
+import {
+	createOAuthIssuerURL,
+	createOAuthJwksURL,
+	OAUTH_AUTHORIZATION_SERVER_METADATA_PATH,
+	OAUTH_METADATA_CACHE_CONTROL,
+	OAUTH_OPENID_CONFIGURATION_PATH,
+	OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
+} from './auth/oauth-metadata';
 import { resolveOAuthBearerSession } from './auth/oauth-session';
-import { createAuthSessionResponse } from './auth/session-response';
+import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
 import {
@@ -45,7 +54,6 @@ export { WorkspaceRoom } from './workspace-room';
 
 type Db = NodePgDatabase<typeof schema>;
 type Auth = ReturnType<typeof createAuth>;
-type AuthSession = Auth['$Infer']['Session'];
 type OAuthOpenIdConfigAuth = Parameters<
 	typeof oauthProviderOpenIdConfigMetadata
 >[0];
@@ -97,7 +105,7 @@ export type Env = {
 		db: Db;
 		auth: Auth;
 		authBaseURL: string;
-		user: AuthSession['user'];
+		user: AuthIdentity['user'];
 		afterResponse: AfterResponseQueue;
 		/** Current plan ID. Only set by ensureAutumnCustomer middleware on /ai/* routes. */
 		planId: string | undefined;
@@ -248,7 +256,6 @@ app.get(
 	},
 );
 
-// Auth
 app.post(
 	'/auth/oauth-session',
 	describeRoute({
@@ -260,7 +267,7 @@ app.post(
 			authorization: c.req.header('authorization') ?? null,
 			baseURL: c.var.authBaseURL,
 			createSessionResponse: ({ user }) =>
-				createAuthSessionResponse({ user }, { deriveUserEncryptionKeys }),
+				createAuthIdentityResponse({ user }, { deriveUserEncryptionKeys }),
 			async findSessionWithUserById(sessionId) {
 				const [row] = await c.var.db
 					.select({
@@ -287,6 +294,7 @@ app.post(
 		return c.json(result.body);
 	},
 );
+
 app.get(
 	'/auth/me',
 	describeRoute({
@@ -294,23 +302,7 @@ app.get(
 		tags: ['auth', 'oauth'],
 	}),
 	async (c) => {
-		const resource = oauthProviderResourceClient();
-		const result = await resolveOAuthIdentity({
-			authorization: c.req.header('authorization') ?? null,
-			audience: c.var.authBaseURL,
-			issuer: `${c.var.authBaseURL}/auth`,
-			jwksUrl: `${c.var.authBaseURL}/auth/jwks`,
-			verifyOAuthAccessToken: resource.getActions().verifyAccessToken,
-			async findUserById(userId) {
-				const [row] = await c.var.db
-					.select()
-					.from(schema.user)
-					.where(eq(schema.user.id, userId))
-					.limit(1);
-				return row ?? null;
-			},
-			deriveUserEncryptionKeys,
-		});
+		const result = await resolveOAuthIdentityForRequest(c);
 
 		if (result.status === 'malformed') {
 			return c.json({ code: 'malformed_oauth_token' }, 400);
@@ -323,19 +315,10 @@ app.get(
 		return c.json(result.body);
 	},
 );
-app.on(
-	['GET', 'POST'],
-	'/auth/*',
-	describeRoute({
-		description: 'Better Auth handler',
-		tags: ['auth'],
-	}),
-	(c) => c.var.auth.handler(c.req.raw),
-);
-
-// OAuth discovery
+// OAuth discovery. Register issuer-path routes before the /auth/* catch-all
+// because Hono matches routes in registration order.
 app.get(
-	'/.well-known/openid-configuration/auth',
+	OAUTH_OPENID_CONFIGURATION_PATH,
 	describeRoute({
 		description: 'OpenID Connect discovery metadata',
 		tags: ['auth', 'oauth'],
@@ -346,7 +329,7 @@ app.get(
 		),
 );
 app.get(
-	'/.well-known/oauth-authorization-server/auth',
+	OAUTH_AUTHORIZATION_SERVER_METADATA_PATH,
 	describeRoute({
 		description: 'OAuth authorization server metadata',
 		tags: ['auth', 'oauth'],
@@ -356,44 +339,76 @@ app.get(
 			c.req.raw,
 		),
 );
+app.get(
+	OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
+	describeRoute({
+		description: 'OAuth protected resource metadata',
+		tags: ['auth', 'oauth'],
+	}),
+	async (c) => {
+		const resource = oauthProviderResourceClient();
+		const metadata = await resource.getActions().getProtectedResourceMetadata({
+			resource: c.var.authBaseURL,
+			authorization_servers: [createOAuthIssuerURL(c.var.authBaseURL)],
+		});
+		c.header('Cache-Control', OAUTH_METADATA_CACHE_CONTROL);
+		return c.json(metadata);
+	},
+);
+app.on(
+	['GET', 'POST'],
+	'/auth/*',
+	describeRoute({
+		description: 'Better Auth handler',
+		tags: ['auth'],
+	}),
+	(c) => c.var.auth.handler(c.req.raw),
+);
 
 // Asset reads: unauthenticated (unguessable URL is the credential).
-// Must be mounted BEFORE requireSession so GET requests aren't blocked.
+// Must be mounted before requireOAuthUser so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
 
-// Require an authenticated session for protected routes. Assumes
-// {@link singleCredential} has already validated and normalized credentials,
-// so headers are guaranteed to carry at most one credential.
-const requireSession = factory.createMiddleware(async (c, next) => {
-	const result = await c.var.auth.api.getSession({
-		headers: c.req.raw.headers,
+async function resolveOAuthIdentityForRequest(c: Context<Env>) {
+	const resource = oauthProviderResourceClient();
+	return resolveOAuthIdentity({
+		authorization: c.req.header('authorization') ?? null,
+		audience: c.var.authBaseURL,
+		issuer: createOAuthIssuerURL(c.var.authBaseURL),
+		jwksUrl: createOAuthJwksURL(c.var.authBaseURL),
+		verifyOAuthAccessToken: resource.getActions().verifyAccessToken,
+		async findUserById(userId) {
+			const [row] = await c.var.db
+				.select()
+				.from(schema.user)
+				.where(eq(schema.user.id, userId))
+				.limit(1);
+			return row ?? null;
+		},
+		deriveUserEncryptionKeys,
 	});
-	if (!result) {
-		// WebSocket clients need a structured close code so they can decide
-		// whether to refresh their token or surface a sign-in prompt. HTTP
-		// clients get the standard 401 JSON body.
-		if (c.req.header('upgrade') === 'websocket') {
-			const pair = new WebSocketPair();
-			const [client, server] = [pair[0], pair[1]];
-			server.accept();
-			server.close(4401, JSON.stringify({ code: 'invalid_token' }));
-			return new Response(null, { status: 101, webSocket: client });
-		}
-		return c.json(AiChatError.Unauthorized(), 401);
+}
+
+// Require an OAuth access token for protected app resources. Assumes
+// {@link singleCredential} has already validated and normalized credentials.
+const requireOAuthUser = factory.createMiddleware(async (c, next) => {
+	const result = await resolveOAuthIdentityForRequest(c);
+	if (result.status !== 'resolved') {
+		return createOAuthUnauthorizedResourceResponse(c);
 	}
 
-	c.set('user', result.user);
+	c.set('user', result.body.user);
 	await next();
 });
 
-app.use('/ai/*', requireSession);
-app.use('/workspaces/*', requireSession);
-app.use('/documents/*', requireSession);
-app.use('/api/billing/*', requireSession);
-app.use('/api/assets/*', requireSession);
+app.use('/ai/*', requireOAuthUser);
+app.use('/workspaces/*', requireOAuthUser);
+app.use('/documents/*', requireOAuthUser);
+app.use('/api/billing/*', requireOAuthUser);
+app.use('/api/assets/*', requireOAuthUser);
 
 // Ensure Autumn customer exists and stash planId for model gating.
-// Runs after requireSession for AI routes so c.var.user is available.
+// Runs after requireOAuthUser for AI routes so c.var.user is available.
 app.use('/ai/*', async (c, next) => {
 	const autumn = createAutumn(c.env);
 	const customer = await autumn.customers.getOrCreate({
@@ -431,7 +446,7 @@ app.get('/dashboard', async (c) => {
 // Billing API routes: typed JSON routes consumed by the dashboard SPA via hc<AppType>
 app.route('/api/billing', billingRoutes);
 
-// Asset routes: upload + delete (authed, mounted after requireSession)
+// Asset routes: upload + delete (authed, mounted after requireOAuthUser)
 app.route('/api/assets', assetAuthedRoutes);
 
 // AI chat

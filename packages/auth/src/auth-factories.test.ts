@@ -9,7 +9,7 @@
  * - Refresh is persisted before protected fetches and WebSockets use new tokens
  * - 401 responses retry once after refresh
  * - Refresh failure preserves identity and pauses network auth
- * - Sign-out clears local OAuth session storage
+ * - Sign-out revokes the refresh token before clearing local storage
  */
 
 import { expect, test } from 'bun:test';
@@ -320,7 +320,39 @@ test('refresh failure preserves identity and pauses network auth', async () => {
 	expect(authorizations).toEqual([null]);
 });
 
-test('signOut clears OAuthSession storage', async () => {
+test('signOut revokes the refresh token before clearing OAuthSession storage', async () => {
+	const setup = createStorage(session());
+	const revokeCalls: Array<{
+		baseURL: string;
+		clientId: string;
+		refreshToken: string;
+	}> = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		revokeOAuthRefreshToken: async ({ baseURL, clientId, refreshToken }) => {
+			revokeCalls.push({ baseURL, clientId, refreshToken });
+		},
+	});
+
+	const result = await auth.signOut();
+
+	expect(result).toEqual(Ok(undefined));
+	expect(revokeCalls).toEqual([
+		{
+			baseURL: 'http://localhost:8787',
+			clientId: 'client-1',
+			refreshToken: 'refresh-token',
+		},
+	]);
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	expect(setup.saved).toEqual([null]);
+});
+
+test('signOut clears OAuthSession storage when refresh token revocation fails', async () => {
 	const setup = createStorage(session());
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -328,12 +360,51 @@ test('signOut clears OAuthSession storage', async () => {
 		now: () => now,
 		sessionStorage: setup.sessionStorage,
 		launcher: { startSignIn: async () => Ok(null) },
+		revokeOAuthRefreshToken: async () => {
+			throw new Error('revoke failed');
+		},
 	});
 
 	const result = await auth.signOut();
 
 	expect(result).toEqual(Ok(undefined));
 	expect(auth.state).toEqual({ status: 'signed-out' });
+	expect(setup.saved).toEqual([null]);
+});
+
+test('signOut calls OAuth revoke endpoint with the public client id', async () => {
+	const setup = createStorage(session());
+	const requests: Array<{ input: Request | string | URL; init?: RequestInit }> =
+		[];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		fetch: (async (input, init) => {
+			requests.push({ input, init });
+			return new Response(null, { status: 200 });
+		}) as typeof fetch,
+	});
+
+	await auth.signOut();
+
+	const body = requests[0]?.init?.body;
+	expect(String(requests[0]?.input)).toBe(
+		'http://localhost:8787/auth/oauth2/revoke',
+	);
+	expect(requests[0]?.init?.method).toBe('POST');
+	expect(requests[0]?.init?.credentials).toBe('omit');
+	expect(new Headers(requests[0]?.init?.headers).get('content-type')).toBe(
+		'application/x-www-form-urlencoded',
+	);
+	expect(body).toBeInstanceOf(URLSearchParams);
+	expect((body as URLSearchParams).get('client_id')).toBe('client-1');
+	expect((body as URLSearchParams).get('token')).toBe('refresh-token');
+	expect((body as URLSearchParams).get('token_type_hint')).toBe(
+		'refresh_token',
+	);
 	expect(setup.saved).toEqual([null]);
 });
 

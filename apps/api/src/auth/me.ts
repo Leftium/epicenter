@@ -2,7 +2,7 @@ import type { oauthProviderResourceClient } from '@better-auth/oauth-provider/re
 import type { AuthIdentity } from '@epicenter/auth';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { User } from 'better-auth';
-import { createAuthSessionResponse } from './session-response.js';
+import { createAuthIdentityResponse } from './identity-response.js';
 
 type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
@@ -48,7 +48,10 @@ export async function resolveOAuthIdentity({
 
 	return {
 		status: 'resolved',
-		body: await createAuthSessionResponse({ user }, { deriveUserEncryptionKeys }),
+		body: await createAuthIdentityResponse(
+			{ user },
+			{ deriveUserEncryptionKeys },
+		),
 	};
 }
 

@@ -630,16 +630,19 @@ path has tests and app imports have moved.
 ### Phase 1: Server OAuth Resource Foundation
 
 - [ ] **1.1** Replace `POST /auth/oauth-session` with `GET /auth/me`.
-  > Foundation progress: `GET /auth/me` now exists beside the old bridge. The old bridge is still mounted until app auth and protected-resource middleware move over.
+  > Foundation progress: `GET /auth/me` now exists beside the old bridge and protected app resources use it through the shared OAuth identity resolver. The old bridge is still mounted until later app migration and removal waves.
 - [x] **1.2** Import `oauthProviderResourceClient` from `@better-auth/oauth-provider/resource-client`.
   > Note: the implementation uses the no-auth resource client form with explicit `issuer`, `audience`, and `jwksUrl`. Passing the configured Better Auth instance hit an upstream generic mismatch during API typecheck.
 - [x] **1.3** Implement `verifyOAuthAccessToken(c)` that extracts `Authorization: Bearer`, verifies audience, requires `payload.sub`, and loads the user.
   > Note: this lives in `apps/api/src/auth/me.ts` as `resolveOAuthIdentity(...)` so the route and tests can share the resource-server boundary.
 - [x] **1.4** Add `/auth/me` tests for valid token, wrong audience, expired token, missing user, and missing bearer header.
   > Verified with `bun test apps/api/src/auth/me.test.ts`.
-- [ ] **1.5** Replace `requireSession` for app resource routes with `requireOAuthUser`.
-- [ ] **1.6** Keep Better Auth `getSession()` only on hosted auth pages and OAuth interaction pages.
-- [ ] **1.7** Test WebSocket upgrade rejection still returns close code 4401 for invalid OAuth credentials.
+- [x] **1.5** Replace `requireSession` for app resource routes with `requireOAuthUser`.
+  > App resources under `/ai/*`, `/workspaces/*`, `/documents/*`, `/api/billing/*`, and authenticated `/api/assets/*` now validate OAuth access tokens with audience and issuer checks.
+- [x] **1.6** Keep Better Auth `getSession()` only on hosted auth pages and OAuth interaction pages.
+  > API route scan now leaves `getSession()` only in `/sign-in`, `/consent`, and `/device`. `/auth/oauth-session` remains mounted for compatibility but is not used by protected app resources.
+- [x] **1.7** Test WebSocket upgrade rejection still returns close code 4401 for invalid OAuth credentials.
+  > Verified with `bun test apps/api/src/auth/me.test.ts apps/api/src/auth/oauth-resource.test.ts apps/api/src/auth/oauth-metadata.test.ts`.
 
 ### Phase 2: Trusted OAuth Client Registry
 
@@ -670,8 +673,10 @@ path has tests and app imports have moved.
 - [x] **4.5** Implement refresh with `resource` and awaited `sessionStorage.set`.
 - [x] **4.6** Refresh proactively before requests or socket opens when near expiry. Use reactive 401 retry for fetch correctness.
 - [x] **4.7** On refresh failure, preserve cached identity and encryption keys, transition to `reauth-required`, and pause network transports.
-- [ ] **4.8** Sign out by revoking the refresh token where possible, then clearing the OAuth session only when the user explicitly signs out.
+- [x] **4.8** Sign out by revoking the refresh token where possible, then clearing the OAuth session only when the user explicitly signs out.
+  > Auth core now posts the refresh token to `/auth/oauth2/revoke` with `client_id` and `token_type_hint=refresh_token`, then clears local storage even if best-effort revocation fails.
 - [x] **4.9** Tests: begin sign-in, `/auth/me` identity load, refresh atomicity, 401 retry, refresh failure, reauth-required local unlock, sign out, openWebSocket token attachment.
+  > Sign-out coverage now includes refresh-token revocation, revocation failure, and the default revoke endpoint request body.
 
 ### Phase 5: Sync Boundary
 

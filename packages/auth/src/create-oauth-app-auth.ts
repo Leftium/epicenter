@@ -36,6 +36,13 @@ export type OAuthTokenRefresher = (input: {
 	fetch: typeof fetch;
 }) => Promise<OAuthTokenResult>;
 
+export type OAuthRefreshTokenRevoker = (input: {
+	baseURL: string;
+	clientId: string;
+	refreshToken: string;
+	fetch: typeof fetch;
+}) => Promise<void>;
+
 export type CreateOAuthAppAuthConfig = {
 	baseURL?: string;
 	clientId: string;
@@ -44,6 +51,7 @@ export type CreateOAuthAppAuthConfig = {
 	fetch?: typeof fetch;
 	WebSocket?: typeof WebSocket;
 	refreshOAuthToken?: OAuthTokenRefresher;
+	revokeOAuthRefreshToken?: OAuthRefreshTokenRevoker;
 	now?: () => number;
 };
 
@@ -58,6 +66,7 @@ export function createOAuthAppAuth({
 	fetch: fetchImpl = globalThis.fetch.bind(globalThis),
 	WebSocket: WebSocketImpl = globalThis.WebSocket,
 	refreshOAuthToken = refreshOAuthTokenWithEndpoint,
+	revokeOAuthRefreshToken = revokeOAuthRefreshTokenWithEndpoint,
 	now = Date.now,
 }: CreateOAuthAppAuthConfig): AuthClient {
 	let session = sessionStorage.get();
@@ -196,6 +205,15 @@ export function createOAuthAppAuth({
 		},
 		async signOut() {
 			try {
+				const sessionToRevoke = session;
+				if (sessionToRevoke !== null) {
+					await revokeOAuthRefreshToken({
+						baseURL,
+						clientId,
+						refreshToken: sessionToRevoke.refreshToken,
+						fetch: fetchImpl,
+					}).catch(() => undefined);
+				}
 				await clearSession();
 				return Ok(undefined);
 			} catch (cause) {
@@ -297,6 +315,35 @@ async function refreshOAuthTokenWithEndpoint({
 		scope: readOptionalString(data, 'scope'),
 		tokenType: readString(data, 'token_type'),
 	} satisfies OAuthTokenResult;
+}
+
+async function revokeOAuthRefreshTokenWithEndpoint({
+	baseURL,
+	clientId,
+	refreshToken,
+	fetch,
+}: {
+	baseURL: string;
+	clientId: string;
+	refreshToken: string;
+	fetch: typeof globalThis.fetch;
+}) {
+	const body = new URLSearchParams({
+		client_id: clientId,
+		token: refreshToken,
+		token_type_hint: 'refresh_token',
+	});
+	const response = await fetch(`${baseURL}/auth/oauth2/revoke`, {
+		method: 'POST',
+		body,
+		headers: {
+			'content-type': 'application/x-www-form-urlencoded',
+		},
+		credentials: 'omit',
+	});
+	if (!response.ok) {
+		throw new Error(`OAuth revoke failed with ${response.status}.`);
+	}
 }
 
 function readRecord(value: unknown): Record<string, unknown> {

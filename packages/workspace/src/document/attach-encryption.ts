@@ -76,10 +76,8 @@ import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import {
-	attachEncryptedIndexedDb,
-	type IndexedDbAttachment,
-} from './attach-indexed-db.js';
+import { attachEncryptedIndexedDb } from './attach-encrypted-indexed-db.js';
+import type { IndexedDbAttachment } from './attach-indexed-db.js';
 import type { Kv, KvDefinitions } from './attach-kv.js';
 import type {
 	InferTableRow,

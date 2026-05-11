@@ -12,7 +12,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
-import { wipeOwnerLocalYjsData } from './attach-indexed-db.js';
+import { wipeOwnerLocalYjsData } from './wipe-owner-local-yjs-data.js';
 
 Object.assign(globalThis, { indexedDB, IDBKeyRange });
 

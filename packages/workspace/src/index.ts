@@ -196,8 +196,8 @@ export {
 export {
 	attachIndexedDb,
 	type IndexedDbAttachment,
-	wipeOwnerLocalYjsData,
 } from './document/attach-indexed-db.js';
+export { wipeOwnerLocalYjsData } from './document/wipe-owner-local-yjs-data.js';
 export {
 	attachKv,
 	type InferKvValue,

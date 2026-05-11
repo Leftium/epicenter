@@ -110,10 +110,12 @@ function createAwarenessAttachment<TSchema extends AwarenessSchema>(
 	 * This matches the publish-time invariant from `attachAwareness`: a
 	 * peer that publishes any state publishes all defined fields.
 	 */
-	function validateState(state: unknown): Record<string, unknown> | null {
+	function validateState(
+		state: Record<string, unknown>,
+	): Record<string, unknown> | null {
 		const validated: Record<string, unknown> = {};
 		for (const [fieldKey, fieldSchema] of defEntries) {
-			const fieldValue = (state as Record<string, unknown>)[fieldKey];
+			const fieldValue = state[fieldKey];
 			if (fieldValue === undefined) return null;
 
 			const fieldResult = fieldSchema['~standard'].validate(fieldValue);

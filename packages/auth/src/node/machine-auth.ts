@@ -42,7 +42,7 @@ const defaultAuthClient =
 		deviceToken: typeof rawDefaultAuthClient.device.token;
 	};
 
-type MachineAuthClient = typeof defaultAuthClient;
+export type MachineAuthClient = typeof defaultAuthClient;
 
 export const MachineAuthRequestError = defineErrors({
 	RequestFailed: ({ cause }: { cause: unknown }) => ({

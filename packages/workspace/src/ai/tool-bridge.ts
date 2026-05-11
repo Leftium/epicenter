@@ -138,18 +138,17 @@ export type ToolDefinition = {
  *   .find(d => d.name === 'tabs_close')?.title; // → 'Close Tabs'
  * ```
  */
-export function actionsToAiTools<T>(source: T): {
+export function actionsToAiTools<T extends Record<string, unknown>>(
+	source: T,
+): {
 	tools: (AnyClientTool & { name: ActionNames<T> })[];
 	definitions: ToolDefinition[];
 } {
-	const entries = Array.from(
-		walkActions(source as Record<string, unknown>),
-		([path, action]) => {
-			const segments = path.split('.');
-			assertToolPathSegments(segments, path);
-			return [action, segments] as const;
-		},
-	);
+	const entries = Array.from(walkActions(source), ([path, action]) => {
+		const segments = path.split('.');
+		assertToolPathSegments(segments, path);
+		return [action, segments] as const;
+	});
 
 	const tools = entries.map(([action, path]) => ({
 		__toolSide: 'client' as const,

@@ -12,6 +12,7 @@ import {
 	type WhisperingResult,
 } from '$lib/result';
 import { services } from '$lib/services';
+import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import { transformationRuns } from '$lib/state/transformation-runs.svelte';
@@ -89,7 +90,7 @@ const STANDARD_PROVIDER_CONFIG = {
 				userPrompt: string;
 			}) => Promise<Result<string, { message: string }>>;
 		};
-		apiKeyPath: Parameters<typeof deviceConfig.get>[0];
+		apiKeyPath: DeviceConfigKey;
 		modelKey: keyof TransformationStep;
 	}
 >;

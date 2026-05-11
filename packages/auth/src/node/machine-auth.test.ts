@@ -19,6 +19,7 @@ import {
 	type DeviceTokenError,
 	loginWithDeviceCode,
 	logout,
+	type MachineAuthClient,
 	type MachineAuthRequestError,
 	status,
 } from './machine-auth.js';
@@ -38,10 +39,6 @@ type Equal<TActual, TExpected> =
 type ResultError<TValue extends { error: unknown }> = NonNullable<
 	TValue['error']
 >;
-type MachineAuthClientInput = NonNullable<
-	Parameters<typeof loginWithDeviceCode>[0]
->['authClient'];
-
 export type LoginWithDeviceCodeError = Expect<
 	Equal<
 		ResultError<Awaited<ReturnType<typeof loginWithDeviceCode>>>,
@@ -139,7 +136,7 @@ function makeTestAuthClient(fetchImpl: typeof globalThis.fetch) {
 				body: {},
 				fetchOptions: input?.fetchOptions,
 			}),
-	} as unknown as MachineAuthClientInput;
+	} as unknown as MachineAuthClient;
 }
 
 async function callFakeAuth(

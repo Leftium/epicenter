@@ -13,6 +13,7 @@
  * ```
  */
 
+import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import { getDomain } from '$lib/utils/format';
 
 /**
@@ -47,16 +48,10 @@ export function normalizeUrl(url: string): string {
 }
 
 /**
- * Minimum fields needed for tab analysis helpers.
- *
- * Kept generic so tests can pass plain objects without importing
- * the full `BrowserTab` type from browser-state.
+ * Minimum fields needed for tab analysis helpers, derived from the browser
+ * state ingestion boundary.
  */
-type TabLike = {
-	id: number;
-	url?: string | undefined;
-	title?: string | undefined;
-};
+type TabAnalysisInput = Pick<BrowserTab, 'id' | 'url' | 'title'>;
 
 /**
  * Find groups of tabs with the same normalized URL.
@@ -77,7 +72,7 @@ type TabLike = {
  * // Map { 'https://github.com/foo' => [tab-1, tab-2] }
  * ```
  */
-export function findDuplicateGroups<T extends TabLike>(
+export function findDuplicateGroups<T extends TabAnalysisInput>(
 	tabs: T[],
 ): Map<string, T[]> {
 	const byUrl = new Map<string, T[]>();
@@ -112,7 +107,7 @@ export function findDuplicateGroups<T extends TabLike>(
  * // Map { 'github.com' => [tab-1, tab-2], 'youtube.com' => [tab-3] }
  * ```
  */
-export function groupTabsByDomain<T extends TabLike>(
+export function groupTabsByDomain<T extends TabAnalysisInput>(
 	tabs: T[],
 ): Map<string, T[]> {
 	const byDomain = new Map<string, T[]>();

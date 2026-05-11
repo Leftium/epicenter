@@ -266,7 +266,7 @@ export function resolveActionPath(
 		if (!isValidActionKey(segment)) return undefined;
 		if (!isPlainObject(target)) return undefined;
 		if (!Object.hasOwn(target, segment)) return undefined;
-		target = (target as Record<string, unknown>)[segment];
+		target = target[segment];
 	}
 	return isAction(target) ? target : undefined;
 }

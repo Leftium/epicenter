@@ -663,15 +663,15 @@ path has tests and app imports have moved.
 
 ### Phase 4: Auth Core
 
-- [ ] **4.1** Replace `createCookieAuth` and `createBearerAuth` with one OAuth app auth factory.
-- [ ] **4.2** Remove `AuthClient.signIn`, `signUp`, `signInWithSocial`, `SocialProvider`, and `bearerToken`.
-- [ ] **4.3** Add `startSignIn`, `fetch`, and `openWebSocket`. `startSignIn`'s promise must not be treated as a sign-in completion signal; document explicitly that callers observe `auth.state` for completion.
-- [ ] **4.4** Store `OAuthSession` with `accessToken`, `refreshToken`, `accessTokenExpiresAt`, `user`, and `encryptionKeys`.
-- [ ] **4.5** Implement refresh with `resource` and awaited `sessionStorage.set`.
-- [ ] **4.6** Refresh proactively before requests or socket opens when near expiry. Use reactive 401 retry for fetch correctness.
-- [ ] **4.7** On refresh failure, preserve cached identity and encryption keys, transition to `reauth-required`, and pause network transports.
+- [x] **4.1** Replace `createCookieAuth` and `createBearerAuth` with one OAuth app auth factory.
+- [x] **4.2** Remove `AuthClient.signIn`, `signUp`, `signInWithSocial`, `SocialProvider`, and `bearerToken`.
+- [x] **4.3** Add `startSignIn`, `fetch`, and `openWebSocket`. `startSignIn`'s promise must not be treated as a sign-in completion signal; document explicitly that callers observe `auth.state` for completion.
+- [x] **4.4** Store `OAuthSession` with `accessToken`, `refreshToken`, `accessTokenExpiresAt`, `user`, and `encryptionKeys`.
+- [x] **4.5** Implement refresh with `resource` and awaited `sessionStorage.set`.
+- [x] **4.6** Refresh proactively before requests or socket opens when near expiry. Use reactive 401 retry for fetch correctness.
+- [x] **4.7** On refresh failure, preserve cached identity and encryption keys, transition to `reauth-required`, and pause network transports.
 - [ ] **4.8** Sign out by revoking the refresh token where possible, then clearing the OAuth session only when the user explicitly signs out.
-- [ ] **4.9** Tests: begin sign-in, `/auth/me` identity load, refresh atomicity, 401 retry, refresh failure, reauth-required local unlock, sign out, openWebSocket token attachment.
+- [x] **4.9** Tests: begin sign-in, `/auth/me` identity load, refresh atomicity, 401 retry, refresh failure, reauth-required local unlock, sign out, openWebSocket token attachment.
 
 ### Phase 5: Sync Boundary
 
@@ -692,7 +692,7 @@ path has tests and app imports have moved.
 
 ### Phase 7: Remove Old Paths
 
-- [ ] **7.1** Verify typecheck and targeted tests pass.
+- [x] **7.1** Verify typecheck and targeted tests pass.
 - [ ] **7.2** Smoke sign-in for one browser app and tab-manager.
 - [ ] **7.3** Smoke WebSocket sync reconnect after forced refresh.
 - [ ] **7.4** Delete `createCookieAuth`, Better Auth bearer app-session handling, `/auth/oauth-session`, `set-auth-token` app handling, `AuthForm`, and stale docs.

@@ -6,7 +6,7 @@
  *
  * Key behaviors:
  * - Better Auth Date fields become portable ISO strings
- * - Auth-session responses normalize into identity and bearer sessions
+ * - Auth-session responses normalize into identity and OAuth sessions
  * - Extra server session metadata is stripped at the identity boundary
  * - Invalid key payloads fail at the auth contract boundary
  */
@@ -16,7 +16,7 @@ import type { EncryptionKeys } from '@epicenter/encryption';
 import {
 	authIdentityFromAuthSessionResponse,
 	authUserFromBetterAuthUser,
-	bearerSessionFromAuthSessionResponse,
+	oauthSessionFromAuthSessionResponse,
 } from './auth-session.js';
 
 const encryptionKeys: EncryptionKeys = [
@@ -95,16 +95,20 @@ describe('authIdentityFromAuthSessionResponse', () => {
 	});
 });
 
-describe('bearerSessionFromAuthSessionResponse', () => {
-	test('attaches a transport token to the auth-session response', () => {
+describe('oauthSessionFromAuthSessionResponse', () => {
+	test('attaches OAuth tokens to the auth-session response', () => {
 		const response = authSessionResponse();
 
-		const session = bearerSessionFromAuthSessionResponse(response, {
-			token: 'authorization-token',
+		const session = oauthSessionFromAuthSessionResponse(response, {
+			accessToken: 'access-token',
+			refreshToken: 'refresh-token',
+			accessTokenExpiresAt: 1_800_000,
 		});
 
 		expect(session).toEqual({
-			token: 'authorization-token',
+			accessToken: 'access-token',
+			refreshToken: 'refresh-token',
+			accessTokenExpiresAt: 1_800_000,
 			user: {
 				id: 'user-1',
 				name: 'User One',
@@ -120,9 +124,13 @@ describe('bearerSessionFromAuthSessionResponse', () => {
 
 	test('throws when auth-session response omits encryption keys', () => {
 		expect(() =>
-			bearerSessionFromAuthSessionResponse(
+			oauthSessionFromAuthSessionResponse(
 				{ user: authSessionResponse().user },
-				{ token: 'authorization-token' },
+				{
+					accessToken: 'access-token',
+					refreshToken: 'refresh-token',
+					accessTokenExpiresAt: 1_800_000,
+				},
 			),
 		).toThrow();
 	});

@@ -5,19 +5,15 @@
  * used by CLI and machine processes.
  *
  * Key behaviors:
- * - Device login stores the normalized `BearerSession`
- * - Status refreshes rotated authorization tokens
- * - Keychain storage persists one BearerSession value
+ * - Device login stores the normalized `OAuthSession`
+ * - Status refreshes rotated access tokens
+ * - Keychain storage persists one OAuthSession value
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import type { BetterAuthOptions } from 'better-auth';
-import { createAuthClient, InferPlugin } from 'better-auth/client';
-import { deviceAuthorizationClient } from 'better-auth/client/plugins';
-import type { customSession } from 'better-auth/plugins';
 import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';
-import type { BearerSession } from '../auth-types.js';
+import type { OAuthSession } from '../auth-types.js';
 import type { AuthSessionResponse } from '../contracts/auth-session.js';
 import {
 	type DeviceTokenError,
@@ -42,9 +38,9 @@ type Equal<TActual, TExpected> =
 type ResultError<TValue extends { error: unknown }> = NonNullable<
 	TValue['error']
 >;
-type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<AuthSessionResponse, BetterAuthOptions>
->;
+type MachineAuthClientInput = NonNullable<
+	Parameters<typeof loginWithDeviceCode>[0]
+>['authClient'];
 
 export type LoginWithDeviceCodeError = Expect<
 	Equal<
@@ -70,15 +66,17 @@ const encryptionKeys = [
 		version: 1,
 		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
-] satisfies BearerSession['encryptionKeys'];
+] satisfies OAuthSession['encryptionKeys'];
 
 function makeSession({
-	token = 'authorization-token',
+	accessToken = 'authorization-token',
 }: {
-	token?: string;
-} = {}): BearerSession {
+	accessToken?: string;
+} = {}): OAuthSession {
 	return {
-		token,
+		accessToken,
+		refreshToken: 'refresh-token',
+		accessTokenExpiresAt: Date.now() + 3_600_000,
 		user: {
 			id: 'user-1',
 			name: 'User One',
@@ -112,19 +110,77 @@ function jsonResponse(value: unknown, init?: ResponseInit): Response {
 }
 
 function makeTestAuthClient(fetchImpl: typeof globalThis.fetch) {
-	const authClient = createAuthClient({
-		baseURL: EPICENTER_API_URL,
-		basePath: '/auth',
-		plugins: [
-			InferPlugin<EpicenterCustomSessionPlugin>(),
-			deviceAuthorizationClient(),
-		],
-		fetchOptions: { customFetchImpl: fetchImpl },
+	return {
+		deviceCode: (body: unknown) =>
+			callFakeAuth(fetchImpl, '/auth/device/code', {
+				method: 'POST',
+				body,
+			}),
+		deviceToken: (body: unknown) =>
+			callFakeAuth(fetchImpl, '/auth/device/token', {
+				method: 'POST',
+				body,
+			}),
+		getSession: (input?: {
+			fetchOptions?: {
+				headers?: RequestInit['headers'];
+				onSuccess?: (context: { response: Response }) => void;
+			};
+		}) =>
+			callFakeAuth(fetchImpl, '/auth/get-session', {
+				method: 'GET',
+				fetchOptions: input?.fetchOptions,
+			}),
+		signOut: (input?: {
+			fetchOptions?: {
+				headers?: RequestInit['headers'];
+			};
+		}) =>
+			callFakeAuth(fetchImpl, '/auth/sign-out', {
+				method: 'POST',
+				body: {},
+				fetchOptions: input?.fetchOptions,
+			}),
+	} as unknown as MachineAuthClientInput;
+}
+
+async function callFakeAuth(
+	fetchImpl: typeof globalThis.fetch,
+	path: string,
+	{
+		method,
+		body,
+		fetchOptions,
+	}: {
+		method: string;
+		body?: unknown;
+		fetchOptions?: {
+			headers?: RequestInit['headers'];
+			onSuccess?: (context: { response: Response }) => void;
+		};
+	},
+) {
+	const headers = new Headers(fetchOptions?.headers);
+	let requestBody: string | undefined;
+	if (body !== undefined) {
+		headers.set('content-type', 'application/json');
+		requestBody = JSON.stringify(body);
+	}
+	const response = await fetchImpl(`${EPICENTER_API_URL}${path}`, {
+		method,
+		headers,
+		body: requestBody,
 	});
-	return authClient as typeof authClient & {
-		deviceCode: typeof authClient.device.code;
-		deviceToken: typeof authClient.device.token;
-	};
+	if (response.ok) fetchOptions?.onSuccess?.({ response });
+	const text = await response.text();
+	let parsed: unknown = {};
+	try {
+		parsed = text ? JSON.parse(text) : {};
+	} catch {
+		parsed = { error: text };
+	}
+	if (response.ok) return { data: parsed, error: null };
+	return { data: null, error: parsed };
 }
 
 function makeMemoryKeychainBackend(): typeof Bun.secrets & {
@@ -155,7 +211,7 @@ beforeEach(() => {
 });
 
 describe('machine auth free functions', () => {
-	test('login stores one BearerSession using the authorization token', async () => {
+	test('login stores one OAuthSession using the authorization token', async () => {
 		const backend = makeMemoryKeychainBackend();
 		const fetchImpl = (async (input, init) => {
 			const url = new URL(String(input));
@@ -178,7 +234,11 @@ describe('machine auth free functions', () => {
 					client_id: EPICENTER_CLI_OAUTH_CLIENT_ID,
 					device_code: 'device-code',
 				});
-				return jsonResponse({ access_token: 'device-token', expires_in: 3600 });
+				return jsonResponse({
+					access_token: 'device-token',
+					refresh_token: 'device-refresh-token',
+					expires_in: 3600,
+				});
 			}
 			return jsonResponse(makeAuthSessionResponse(), {
 				headers: { 'set-auth-token': 'rotated-authorization-token' },
@@ -198,13 +258,16 @@ describe('machine auth free functions', () => {
 		expect(result.error).toBeNull();
 		expect(loadError).toBeNull();
 		expect(result.data?.session.user.email).toBe('user@example.com');
-		expect(savedSession?.token).toBe('rotated-authorization-token');
+		expect(savedSession?.accessToken).toBe('rotated-authorization-token');
+		expect(savedSession?.refreshToken).toBe('device-refresh-token');
 		expect(JSON.stringify(savedSession)).not.toContain('session');
 	});
 
 	test('status verifies and refreshes the stored session token', async () => {
 		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(makeSession({ token: 'old-token' }), { backend });
+		await saveMachineSession(makeSession({ accessToken: 'old-token' }), {
+			backend,
+		});
 		const seenTokens: string[] = [];
 		const fetchImpl = (async (_input, init) => {
 			seenTokens.push(new Headers(init?.headers).get('authorization') ?? '');
@@ -227,7 +290,7 @@ describe('machine auth free functions', () => {
 		expect(loadError).toBeNull();
 		expect(result.data?.status).toBe('valid');
 		expect(seenTokens).toEqual(['Bearer old-token']);
-		expect(savedSession?.token).toBe('new-token');
+		expect(savedSession?.accessToken).toBe('new-token');
 	});
 
 	test('status reports stored session when remote verification fails', async () => {
@@ -278,7 +341,7 @@ describe('machine auth free functions', () => {
 
 	test('logout signs out and clears the stored session', async () => {
 		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(makeSession({ token: 'logout-token' }), {
+		await saveMachineSession(makeSession({ accessToken: 'logout-token' }), {
 			backend,
 		});
 		const seenTokens: string[] = [];
@@ -305,15 +368,15 @@ describe('machine auth free functions', () => {
 });
 
 describe('machine session storage', () => {
-	test('keychain storage writes one BearerSession item', async () => {
+	test('keychain storage writes one OAuthSession item', async () => {
 		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(makeSession({ token: 'stored-token' }), {
+		await saveMachineSession(makeSession({ accessToken: 'stored-token' }), {
 			backend,
 		});
 
 		expect(backend.values.size).toBe(1);
 		const { data: loaded } = await loadMachineSession({ backend, log });
-		expect(loaded).toMatchObject({ token: 'stored-token' });
+		expect(loaded).toMatchObject({ accessToken: 'stored-token' });
 		expect([...backend.values.values()][0]).not.toContain(
 			'server-session-token',
 		);

@@ -1,9 +1,8 @@
 /**
  * Merge a Request/URL/string input with caller-supplied `RequestInit.headers`.
  *
- * Used by both `createBearerAuth` and `createCookieAuth` to produce the
- * Headers object their `fetch` methods then mutate (set Authorization for
- * bearer, delete it for cookie) before delegating to global fetch.
+ * Used by auth-owned transports to produce the Headers object their `fetch`
+ * methods mutate before delegating to the runtime fetch implementation.
  */
 export function headersFromRequest(
 	input: Request | string | URL,
@@ -64,8 +63,6 @@ function isHeaderIterable(
 	value: unknown,
 ): value is Iterable<readonly [string, string]> {
 	return (
-		value !== null &&
-		typeof value === 'object' &&
-		Symbol.iterator in value
+		value !== null && typeof value === 'object' && Symbol.iterator in value
 	);
 }

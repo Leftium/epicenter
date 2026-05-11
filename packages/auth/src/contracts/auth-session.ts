@@ -1,11 +1,11 @@
 import type { User as BetterAuthUser } from 'better-auth';
-import {
-	AuthIdentity,
-	AuthUser,
-	type BearerSession,
-} from '../auth-types.js';
+import { AuthIdentity, AuthUser, type OAuthSession } from '../auth-types.js';
 
 export type AuthSessionResponse = AuthIdentity;
+export type OAuthTokenFields = Pick<
+	OAuthSession,
+	'accessToken' | 'refreshToken' | 'accessTokenExpiresAt'
+>;
 
 function readRecord(value: unknown, label: string): Record<string, unknown> {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -59,9 +59,7 @@ function normalizeOptionalString(
  * serialized. Persisted app and machine stores need ISO strings, so this parser
  * owns that conversion at the auth boundary.
  */
-export function authUserFromBetterAuthUser(
-	value: BetterAuthUser,
-): AuthUser {
+export function authUserFromBetterAuthUser(value: BetterAuthUser): AuthUser {
 	const record = readRecord(value, 'user');
 	return AuthUser.assert({
 		id: readString(record, 'id'),
@@ -77,8 +75,8 @@ export function authUserFromBetterAuthUser(
 /**
  * Validate the API auth-session response as local identity state.
  *
- * Cookie auth only needs the identity and encryption keys. Bearer clients attach
- * the transport token separately instead of depending on server session shape.
+ * App auth needs identity and encryption keys from the resource server. OAuth
+ * tokens attach separately instead of depending on server session shape.
  */
 export function authIdentityFromAuthSessionResponse(
 	value: unknown,
@@ -107,17 +105,17 @@ export function authIdentityFromAuthSessionResponse(
  * package boundary in this monorepo, so this function owns the runtime check
  * instead of letting callers trust an inline cast.
  */
-export function bearerSessionFromAuthSessionResponse(
+export function oauthSessionFromAuthSessionResponse(
 	value: unknown,
-	{ token }: { token: string },
-): BearerSession {
+	tokens: OAuthTokenFields,
+): OAuthSession {
 	const identity = authIdentityFromAuthSessionResponse(value);
 	if (identity === null) {
 		throw new Error('Expected auth-session response to be signed in.');
 	}
 	return {
-		token,
+		...tokens,
 		user: identity.user,
 		encryptionKeys: identity.encryptionKeys,
-	} satisfies BearerSession;
+	} satisfies OAuthSession;
 }

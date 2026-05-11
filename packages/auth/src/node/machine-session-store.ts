@@ -6,8 +6,8 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import {
-	BearerSession,
-	type BearerSession as BearerSessionType,
+	OAuthSession,
+	type OAuthSession as OAuthSessionType,
 } from '../auth-types.js';
 
 export const MachineAuthStorageError = defineErrors({
@@ -37,7 +37,7 @@ export async function loadMachineSession({
 }: {
 	backend?: typeof Bun.secrets;
 	log?: Logger;
-} = {}): Promise<Result<BearerSessionType | null, MachineAuthStorageError>> {
+} = {}): Promise<Result<OAuthSessionType | null, MachineAuthStorageError>> {
 	const { data: raw, error } = await tryAsync({
 		try: () => backend.get(machineSessionOptions),
 		catch: (cause) => MachineAuthStorageError.StorageFailed({ cause }),
@@ -46,7 +46,7 @@ export async function loadMachineSession({
 	if (raw === null) return Ok(null);
 
 	try {
-		return Ok(BearerSession.assert(JSON.parse(raw)));
+		return Ok(OAuthSession.assert(JSON.parse(raw)));
 	} catch (cause) {
 		log.warn(
 			MachineAuthStorageError.StorageFailed({
@@ -64,7 +64,7 @@ export async function loadMachineSession({
  * Save one machine auth session in the operating system keychain.
  */
 export async function saveMachineSession(
-	session: BearerSessionType | null,
+	session: OAuthSessionType | null,
 	{
 		backend = Bun.secrets,
 	}: {
@@ -78,7 +78,7 @@ export async function saveMachineSession(
 			} else {
 				await backend.set({
 					...machineSessionOptions,
-					value: JSON.stringify(BearerSession.assert(session)),
+					value: JSON.stringify(OAuthSession.assert(session)),
 				});
 			}
 			return undefined;

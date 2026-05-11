@@ -1,9 +1,7 @@
 import {
 	type AuthClient,
-	type CreateBearerAuthConfig,
-	type CreateCookieAuthConfig,
-	createBearerAuth as createCoreBearerAuth,
-	createCookieAuth as createCoreCookieAuth,
+	type CreateOAuthAppAuthConfig,
+	createOAuthAppAuth as createCoreOAuthAppAuth,
 } from '@epicenter/auth';
 import { createSubscriber } from 'svelte/reactivity';
 
@@ -12,8 +10,7 @@ export type { AuthClient };
 /**
  * Svelte 5 wrapper around `@epicenter/auth`.
  *
- * Bridges the core state listener into Svelte reactivity while preserving
- * live core getters such as `bearerToken`.
+ * Bridges the core state listener into Svelte reactivity.
  */
 function withReactiveState(auth: AuthClient): AuthClient {
 	const subscribe = createSubscriber((update) => {
@@ -25,20 +22,11 @@ function withReactiveState(auth: AuthClient): AuthClient {
 			subscribe();
 			return auth.state;
 		},
-		get bearerToken() {
-			return auth.bearerToken;
-		},
 		onStateChange(fn) {
 			return auth.onStateChange(fn);
 		},
-		signIn(input) {
-			return auth.signIn(input);
-		},
-		signUp(input) {
-			return auth.signUp(input);
-		},
-		signInWithSocial(input) {
-			return auth.signInWithSocial(input);
+		startSignIn(input) {
+			return auth.startSignIn(input);
 		},
 		signOut() {
 			return auth.signOut();
@@ -46,16 +34,17 @@ function withReactiveState(auth: AuthClient): AuthClient {
 		fetch(input, init) {
 			return auth.fetch(input, init);
 		},
+		openWebSocket(url, protocols) {
+			return auth.openWebSocket(url, protocols);
+		},
 		[Symbol.dispose]() {
 			auth[Symbol.dispose]();
 		},
 	} satisfies AuthClient;
 }
 
-export function createBearerAuth(config: CreateBearerAuthConfig): AuthClient {
-	return withReactiveState(createCoreBearerAuth(config));
-}
-
-export function createCookieAuth(config: CreateCookieAuthConfig): AuthClient {
-	return withReactiveState(createCoreCookieAuth(config));
+export function createOAuthAppAuth(
+	config: CreateOAuthAppAuthConfig,
+): AuthClient {
+	return withReactiveState(createCoreOAuthAppAuth(config));
 }

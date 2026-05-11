@@ -1,6 +1,9 @@
+export type {
+	AuthSessionResponse,
+	OAuthTokenFields,
+} from './auth-session.js';
 export {
 	authIdentityFromAuthSessionResponse,
 	authUserFromBetterAuthUser,
-	bearerSessionFromAuthSessionResponse,
+	oauthSessionFromAuthSessionResponse,
 } from './auth-session.js';
-export type { AuthSessionResponse } from './auth-session.js';

@@ -27,10 +27,12 @@ export const AuthIdentity = type({
 
 export type AuthIdentity = typeof AuthIdentity.infer;
 
-/** Bearer auth state persisted by browser, extension, and machine clients. */
-export const BearerSession = type({
+/** OAuth auth state persisted by browser, extension, and machine clients. */
+export const OAuthSession = type({
 	'...': AuthIdentity,
-	token: 'string',
+	accessToken: 'string',
+	refreshToken: 'string',
+	accessTokenExpiresAt: 'number',
 });
 
-export type BearerSession = typeof BearerSession.infer;
+export type OAuthSession = typeof OAuthSession.infer;

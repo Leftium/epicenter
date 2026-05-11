@@ -54,7 +54,12 @@ export function identitiesEqual(
 
 function authStatesEqual(left: AuthState, right: AuthState) {
 	if (left.status !== right.status) return false;
-	if (left.status !== 'signed-in' || right.status !== 'signed-in') return true;
+	if (
+		(left.status !== 'signed-in' && left.status !== 'reauth-required') ||
+		(right.status !== 'signed-in' && right.status !== 'reauth-required')
+	) {
+		return true;
+	}
 	return identitiesEqual(left.identity, right.identity);
 }
 

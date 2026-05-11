@@ -1,205 +1,30 @@
 /**
- * Core Auth State API Tests
+ * OAuth App Auth Factory Tests
  *
- * Verifies the framework-agnostic auth factories through public client
- * behavior, not exported test helpers.
+ * Verifies the OAuth-only app auth core through public client behavior.
  *
  * Key behaviors:
- * - Caller-provided session storage seeds the first identity
- * - Bearer email commands hydrate a full session from signed out
- * - Local updates are passed to the caller-provided storage adapter
- * - Better Auth session emissions drive live signed-in and signed-out state
+ * - Hosted sign-in loads identity through `/auth/me` and persists OAuthSession
+ * - Cached sessions boot into local identity without network
+ * - Refresh is persisted before protected fetches and WebSockets use new tokens
+ * - 401 responses retry once after refresh
+ * - Refresh failure preserves identity and pauses network auth
+ * - Sign-out clears local OAuth session storage
  */
 
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
-import type {
-	AuthIdentity,
-	AuthState,
-	BearerSession,
-	BearerSessionStorage,
-	CreateBearerAuthConfig,
-	OAuthSocialSignInAdapter,
-} from './index.js';
+import type { AuthIdentity, AuthState, OAuthSession } from './index.js';
+import { createOAuthAppAuth } from './index.js';
 
-type BetterAuthSessionState = {
-	isPending: boolean;
-	data: unknown;
-};
+const now = 1_000_000;
 
-type BetterAuthClientOptions = {
-	baseURL?: string;
-	basePath?: string;
-	fetchOptions?: {
-		credentials?: 'include' | 'omit' | 'same-origin';
-		auth?: {
-			type: 'Bearer';
-			token: () => string | undefined;
-		};
-		onSuccess?: (context: { response: Response }) => void;
-		customFetchImpl?: typeof fetch;
-	};
-};
-type PerCallFetchOptions = {
-	headers?: RequestInit['headers'];
-	onSuccess?: (context: { response: Response }) => void;
-};
-
-let betterAuthSessionListeners = new Set<
-	(state: BetterAuthSessionState) => void
->();
-let currentBetterAuthState: BetterAuthSessionState = {
-	isPending: false,
-	data: null,
-};
-let betterAuthClientOptions: BetterAuthClientOptions | null = null;
-let signInResponseHeaders: Record<string, string> | undefined;
-let signInResponseData: unknown;
-let signUpResponseHeaders: Record<string, string> | undefined;
-let signUpResponseData: unknown;
-let capturedFetches: Array<{
-	input: Request | string | URL;
-	init: RequestInit | undefined;
-}> = [];
-
-mock.module('better-auth/client', () => ({
-	createAuthClient(options: BetterAuthClientOptions) {
-		betterAuthClientOptions = options;
-		return {
-			useSession: {
-				subscribe(listener: (state: BetterAuthSessionState) => void) {
-					// Match nanostore semantics: the atom replays the current
-					// value to a new subscriber synchronously before adding
-					// it to the listener set.
-					listener(currentBetterAuthState);
-					betterAuthSessionListeners.add(listener);
-					return () => {
-						betterAuthSessionListeners.delete(listener);
-					};
-				},
-			},
-			signIn: {
-				email: async () => {
-					if (signInResponseHeaders) {
-						options.fetchOptions?.onSuccess?.({
-							response: new Response(null, {
-								headers: signInResponseHeaders,
-							}),
-						});
-					}
-					return { data: signInResponseData, error: null };
-				},
-				social: async () => ({ error: null }),
-			},
-			signUp: {
-				email: async () => {
-					if (signUpResponseHeaders) {
-						options.fetchOptions?.onSuccess?.({
-							response: new Response(null, {
-								headers: signUpResponseHeaders,
-							}),
-						});
-					}
-					return { data: signUpResponseData, error: null };
-				},
-			},
-			signOut: (input?: { fetchOptions?: PerCallFetchOptions }) =>
-				callCustomFetch(options, '/sign-out', {
-					method: 'POST',
-					body: {},
-					fetchOptions: input?.fetchOptions,
-				}),
-			deviceCode: (body: unknown) =>
-				callCustomFetch(options, '/device/code', { method: 'POST', body }),
-			deviceToken: (body: unknown) =>
-				callCustomFetch(options, '/device/token', { method: 'POST', body }),
-			getSession: (input?: { fetchOptions?: PerCallFetchOptions }) =>
-				callCustomFetch(options, '/get-session', {
-					method: 'GET',
-					fetchOptions: input?.fetchOptions,
-				}),
-		};
-	},
-	InferPlugin: () => ({}),
-}));
-
-const { createBearerAuth, createCookieAuth } = await import('./index.js');
-
-const originalFetch = globalThis.fetch;
-const originalConsoleError = console.error;
-
-beforeEach(() => {
-	globalThis.fetch = (async () =>
-		new Response(JSON.stringify(null), {
-			status: 200,
-			headers: { 'content-type': 'application/json' },
-		})) as unknown as typeof fetch;
-	console.error = () => {};
-	betterAuthSessionListeners = new Set();
-	currentBetterAuthState = { isPending: false, data: null };
-	betterAuthClientOptions = null;
-	signInResponseHeaders = undefined;
-	signInResponseData = undefined;
-	signUpResponseHeaders = undefined;
-	signUpResponseData = undefined;
-	capturedFetches = [];
-});
-
-afterEach(() => {
-	globalThis.fetch = originalFetch;
-	console.error = originalConsoleError;
-	mock.restore();
-});
-
-async function callCustomFetch(
-	options: BetterAuthClientOptions,
-	path: string,
-	{
-		method,
-		body,
-		fetchOptions,
-	}: {
-		method: string;
-		body?: unknown;
-		fetchOptions?: PerCallFetchOptions;
-	},
-) {
-	const fetchImpl = options.fetchOptions?.customFetchImpl;
-	if (!fetchImpl) return { data: null, error: null };
-
-	const headers = new Headers(fetchOptions?.headers);
-	let requestBody: string | undefined;
-	if (body !== undefined) {
-		headers.set('content-type', 'application/json');
-		requestBody = JSON.stringify(body);
-	}
-
-	const response = await fetchImpl(
-		new URL(`${options.baseURL ?? ''}${options.basePath ?? ''}${path}`),
-		{ method, headers, body: requestBody },
-	);
-	if (response.ok) fetchOptions?.onSuccess?.({ response });
-
-	const text = await response.text();
-	let parsed: unknown = {};
-	try {
-		parsed = text ? JSON.parse(text) : {};
-	} catch {
-		parsed = { error: text };
-	}
-	if (response.ok) return { data: parsed, error: null };
-	return { data: null, error: parsed };
-}
-
-function session({
+function identity({
 	userId = 'user-1',
-	token = 'token-1',
 }: {
 	userId?: string;
-	token?: string;
-} = {}): BearerSession {
+} = {}): AuthIdentity {
 	return {
-		token,
 		user: {
 			id: userId,
 			createdAt: '2026-01-01T00:00:00.000Z',
@@ -218,559 +43,333 @@ function session({
 	};
 }
 
-function betterAuthSessionData(value: BearerSession) {
-	return {
-		user: value.user,
-		encryptionKeys: value.encryptionKeys,
-	};
-}
-
-function identityFromSession(value: BearerSession): AuthIdentity {
-	return {
-		user: value.user,
-		encryptionKeys: value.encryptionKeys,
-	};
-}
-
-function signedInState(value: BearerSession): AuthState {
-	return { status: 'signed-in', identity: identityFromSession(value) };
-}
-
-function createStorage({
-	get,
-	set = () => {},
+function session({
+	accessToken = 'access-token',
+	refreshToken = 'refresh-token',
+	accessTokenExpiresAt = now + 3_600_000,
+	userId = 'user-1',
 }: {
-	get: () => BearerSession | null;
-	set?: (value: BearerSession | null) => void | Promise<void>;
-}) {
-	const saved: Array<BearerSession | null> = [];
-	const sessionStorage: BearerSessionStorage = {
-		get,
-		set(value) {
-			saved.push(value);
-			return set(value);
+	accessToken?: string;
+	refreshToken?: string;
+	accessTokenExpiresAt?: number;
+	userId?: string;
+} = {}): OAuthSession {
+	return {
+		...identity({ userId }),
+		accessToken,
+		refreshToken,
+		accessTokenExpiresAt,
+	};
+}
+
+function signedInState(value = session()): AuthState {
+	return {
+		status: 'signed-in',
+		identity: identityFromSession(value),
+	};
+}
+
+function identityFromSession(value: OAuthSession): AuthIdentity {
+	return {
+		user: value.user,
+		encryptionKeys: value.encryptionKeys,
+	};
+}
+
+function createStorage(initial: OAuthSession | null) {
+	let current = initial;
+	const saved: Array<OAuthSession | null> = [];
+	return {
+		saved,
+		sessionStorage: {
+			get: () => current,
+			set: async (next: OAuthSession | null) => {
+				current = next;
+				saved.push(next);
+			},
 		},
 	};
-
-	return {
-		sessionStorage,
-		saved,
-	};
 }
 
-function createTestAuth(setup: ReturnType<typeof createStorage>) {
-	return createBearerAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.sessionStorage,
+function json(value: unknown, init?: ResponseInit) {
+	return new Response(JSON.stringify(value), {
+		status: 200,
+		...init,
+		headers: {
+			'content-type': 'application/json',
+			...init?.headers,
+		},
 	});
 }
 
-function createOAuthAdapter(
-	accessToken = 'oauth-token',
-): OAuthSocialSignInAdapter {
-	return {
-		signInWithSocial: async () => Ok({ accessToken }),
-	};
-}
+test('startSignIn loads identity through auth/me and stores OAuthSession', async () => {
+	const setup = createStorage(null);
+	const fetches: Array<{ input: Request | string | URL; init?: RequestInit }> =
+		[];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: {
+			startSignIn: async (input) => {
+				expect(input).toEqual({ returnTo: '/workspaces/1' });
+				return Ok({
+					accessToken: 'oauth-access-token',
+					refreshToken: 'oauth-refresh-token',
+					accessTokenExpiresAt: now + 3_600_000,
+					scope: null,
+					tokenType: 'bearer',
+				});
+			},
+		},
+		fetch: (async (input: Request | string | URL, init?: RequestInit) => {
+			fetches.push({ input, init });
+			return json(identity());
+		}) as unknown as typeof fetch,
+	});
 
-function captureFetch() {
-	globalThis.fetch = (async (
-		input: Request | string | URL,
-		init?: RequestInit,
-	) => {
-		capturedFetches.push({ input, init });
-		return new Response(JSON.stringify(null), {
-			status: 200,
-			headers: { 'content-type': 'application/json' },
+	const result = await auth.startSignIn({ returnTo: '/workspaces/1' });
+
+	expect(result).toEqual(Ok(undefined));
+	expect(String(fetches[0]?.input)).toBe('http://localhost:8787/auth/me');
+	expect(new Headers(fetches[0]?.init?.headers).get('authorization')).toBe(
+		'Bearer oauth-access-token',
+	);
+	expect(fetches[0]?.init?.credentials).toBe('omit');
+	expect(auth.state).toEqual(
+		signedInState(
+			session({
+				accessToken: 'oauth-access-token',
+				refreshToken: 'oauth-refresh-token',
+			}),
+		),
+	);
+	expect(setup.saved).toEqual([
+		session({
+			accessToken: 'oauth-access-token',
+			refreshToken: 'oauth-refresh-token',
+		}),
+	]);
+});
+
+test('startSignIn completion without tokens is not treated as signed in', async () => {
+	const setup = createStorage(null);
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: {
+			startSignIn: async () => Ok(null),
+		},
+	});
+
+	const result = await auth.startSignIn();
+
+	expect(result).toEqual(Ok(undefined));
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	expect(setup.saved).toEqual([]);
+});
+
+test('cached OAuthSession boots into signed-in or reauth-required identity without network', () => {
+	let fetchCalls = 0;
+	const signedInAuth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: createStorage(session()).sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		fetch: (async () => {
+			fetchCalls += 1;
+			return new Response(null, { status: 204 });
+		}) as unknown as typeof fetch,
+	});
+	const reauthAuth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: createStorage(session({ accessTokenExpiresAt: now - 1 }))
+			.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		fetch: (async () => {
+			fetchCalls += 1;
+			return new Response(null, { status: 204 });
+		}) as unknown as typeof fetch,
+	});
+
+	expect(signedInAuth.state).toEqual(signedInState());
+	expect(reauthAuth.state).toEqual({
+		status: 'reauth-required',
+		identity: identityFromSession(session({ accessTokenExpiresAt: now - 1 })),
+	});
+	expect(fetchCalls).toBe(0);
+});
+
+test('fetch awaits refreshed session storage before sending the request', async () => {
+	const setup = createStorage(session({ accessTokenExpiresAt: now + 1 }));
+	const fetches: Array<{ input: Request | string | URL; init?: RequestInit }> =
+		[];
+	let releaseStorage: () => void = () => {};
+	setup.sessionStorage.set = (next: OAuthSession | null) => {
+		setup.saved.push(next);
+		return new Promise<void>((resolve) => {
+			releaseStorage = resolve;
 		});
-	}) as unknown as typeof fetch;
-}
+	};
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		refreshOAuthToken: async ({ session: current }) => {
+			expect(current.refreshToken).toBe('refresh-token');
+			return {
+				accessToken: 'new-access-token',
+				refreshToken: 'new-refresh-token',
+				accessTokenExpiresAt: now + 3_600_000,
+				scope: null,
+				tokenType: 'bearer',
+			};
+		},
+		fetch: (async (input, init) => {
+			fetches.push({ input, init });
+			return new Response(null, { status: 204 });
+		}) as typeof fetch,
+	});
 
-function emitBetterSession(data: unknown) {
-	currentBetterAuthState = { isPending: false, data };
-	for (const listener of betterAuthSessionListeners) {
-		listener(currentBetterAuthState);
+	const responsePromise = auth.fetch('http://localhost:8787/resource');
+	await Promise.resolve();
+	await Promise.resolve();
+
+	expect(fetches).toEqual([]);
+	releaseStorage();
+	const response = await responsePromise;
+
+	expect(response.status).toBe(204);
+	expect(new Headers(fetches[0]?.init?.headers).get('authorization')).toBe(
+		'Bearer new-access-token',
+	);
+	expect(setup.saved[0]?.accessToken).toBe('new-access-token');
+});
+
+test('fetch retries once after a 401 with a refreshed access token', async () => {
+	const setup = createStorage(session());
+	const authorizations: Array<string | null> = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		refreshOAuthToken: async () => ({
+			accessToken: 'retry-access-token',
+			refreshToken: 'retry-refresh-token',
+			accessTokenExpiresAt: now + 3_600_000,
+			scope: null,
+			tokenType: 'bearer',
+		}),
+		fetch: (async (_input, init) => {
+			authorizations.push(new Headers(init?.headers).get('authorization'));
+			return new Response(null, {
+				status: authorizations.length === 1 ? 401 : 204,
+			});
+		}) as typeof fetch,
+	});
+
+	const response = await auth.fetch('http://localhost:8787/resource');
+
+	expect(response.status).toBe(204);
+	expect(authorizations).toEqual([
+		'Bearer access-token',
+		'Bearer retry-access-token',
+	]);
+	expect(setup.saved[0]?.accessToken).toBe('retry-access-token');
+});
+
+test('refresh failure preserves identity and pauses network auth', async () => {
+	const setup = createStorage(session({ accessTokenExpiresAt: now + 1 }));
+	const authorizations: Array<string | null> = [];
+	const originalConsoleError = console.error;
+	console.error = () => {};
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		refreshOAuthToken: async () => {
+			throw new Error('refresh failed');
+		},
+		fetch: (async (_input, init) => {
+			authorizations.push(new Headers(init?.headers).get('authorization'));
+			return new Response(null, { status: 401 });
+		}) as typeof fetch,
+	});
+
+	try {
+		await auth.fetch('http://localhost:8787/resource');
+	} finally {
+		console.error = originalConsoleError;
 	}
-}
 
-function rememberToken(token: string) {
-	betterAuthClientOptions?.fetchOptions?.onSuccess?.({
-		response: new Response(null, {
-			headers: { 'set-auth-token': token },
+	expect(auth.state).toEqual({
+		status: 'reauth-required',
+		identity: identityFromSession(session({ accessTokenExpiresAt: now + 1 })),
+	});
+	expect(setup.saved).toEqual([]);
+	expect(authorizations).toEqual([null]);
+});
+
+test('signOut clears OAuthSession storage', async () => {
+	const setup = createStorage(session());
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+	});
+
+	const result = await auth.signOut();
+
+	expect(result).toEqual(Ok(undefined));
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	expect(setup.saved).toEqual([null]);
+});
+
+test('openWebSocket refreshes first and appends the bearer subprotocol', async () => {
+	const setup = createStorage(session({ accessTokenExpiresAt: now + 1 }));
+	const sockets: Array<{ url: string; protocols?: string[] }> = [];
+	const WebSocketImpl = class {
+		constructor(url: string, protocols?: string[]) {
+			sockets.push({ url, protocols });
+		}
+	} as unknown as typeof WebSocket;
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		sessionStorage: setup.sessionStorage,
+		launcher: { startSignIn: async () => Ok(null) },
+		WebSocket: WebSocketImpl,
+		refreshOAuthToken: async () => ({
+			accessToken: 'socket-access-token',
+			refreshToken: 'socket-refresh-token',
+			accessTokenExpiresAt: now + 3_600_000,
+			scope: null,
+			tokenType: 'bearer',
 		}),
 	});
-}
 
-test('onStateChange does not replay and receives future changes only', async () => {
-	const setup = createStorage({ get: () => null });
-	const auth = createTestAuth(setup);
+	await auth.openWebSocket('ws://localhost:8787/sync', ['epicenter']);
 
-	const states: AuthState[] = [];
-	auth.onStateChange((state) => states.push(state));
-
-	expect(states).toEqual([]);
-
-	rememberToken('token-1');
-	emitBetterSession(betterAuthSessionData(session()));
-
-	expect(states).toEqual([signedInState(session())]);
-	auth[Symbol.dispose]();
-});
-
-test('listener failures do not stop later listeners', async () => {
-	const setup = createStorage({ get: () => null });
-	const auth = createTestAuth(setup);
-	const states: AuthState[] = [];
-
-	auth.onStateChange(() => {
-		throw new Error('listener failed');
-	});
-	auth.onStateChange((state) => states.push(state));
-
-	rememberToken('token-2');
-	emitBetterSession(betterAuthSessionData(session({ token: 'token-2' })));
-
-	expect(states).toEqual([signedInState(session({ token: 'token-2' }))]);
-	auth[Symbol.dispose]();
-});
-
-test('stored session drives initial signed-in identity', async () => {
-	// Seed the BA atom so the late subscribe replays the matching session
-	// instead of the default null (which would flip the identity to null).
-	emitBetterSession(betterAuthSessionData(session()));
-	const setup = createStorage({ get: () => session() });
-	const auth = createTestAuth(setup);
-
-	expect(auth.state).toEqual(signedInState(session()));
-	auth[Symbol.dispose]();
-});
-
-test('pending bearer settles to signed-out on first null Better Auth emission', async () => {
-	currentBetterAuthState = { isPending: true, data: null };
-	const setup = createStorage({ get: () => null });
-	const auth = createTestAuth(setup);
-	const states: AuthState[] = [];
-	auth.onStateChange((state) => states.push(state));
-
-	expect(auth.state).toEqual({ status: 'pending' });
-
-	emitBetterSession(null);
-
-	expect(states).toEqual([{ status: 'signed-out' }]);
-	expect(auth.state).toEqual({ status: 'signed-out' });
-	expect(setup.saved).toEqual([]);
-	auth[Symbol.dispose]();
-});
-
-test('pending bearer settles to signed-in on first Better Auth session emission', async () => {
-	currentBetterAuthState = { isPending: true, data: null };
-	const setup = createStorage({ get: () => null });
-	const auth = createTestAuth(setup);
-	const states: AuthState[] = [];
-	auth.onStateChange((state) => states.push(state));
-
-	expect(auth.state).toEqual({ status: 'pending' });
-
-	rememberToken('token-1');
-	emitBetterSession(betterAuthSessionData(session()));
-
-	expect(states).toEqual([signedInState(session())]);
-	expect(auth.state).toEqual(signedInState(session()));
-	expect(setup.saved).toEqual([session()]);
-	auth[Symbol.dispose]();
-});
-
-test('bearerToken returns null signed out and current token signed in', async () => {
-	const setup = createStorage({ get: () => null });
-	const auth = createTestAuth(setup);
-
-	expect(auth.bearerToken).toBeNull();
-
-	rememberToken('token-2');
-	emitBetterSession(betterAuthSessionData(session({ token: 'token-2' })));
-
-	expect(auth.bearerToken).toBe('token-2');
-	auth[Symbol.dispose]();
-});
-
-test('bearer fetch sends Authorization and omits cookies', async () => {
-	captureFetch();
-	emitBetterSession(betterAuthSessionData(session()));
-	const setup = createStorage({ get: () => session() });
-	const auth = createTestAuth(setup);
-
-	await auth.fetch('http://localhost/api');
-
-	const init = capturedFetches[0]?.init;
-	expect(init?.credentials).toBe('omit');
-	expect(new Headers(init?.headers).get('Authorization')).toBe(
-		'Bearer token-1',
-	);
-	auth[Symbol.dispose]();
-});
-
-test('bearer Better Auth client omits cookies internally', async () => {
-	const setup = createStorage({ get: () => session() });
-	const auth = createTestAuth(setup);
-
-	expect(betterAuthClientOptions?.fetchOptions?.credentials).toBe('omit');
-	auth[Symbol.dispose]();
-});
-
-test('cookie fetch uses cookies and strips Authorization', async () => {
-	captureFetch();
-	currentBetterAuthState = { isPending: true, data: null };
-	const saved: Array<AuthIdentity | null> = [];
-	const auth = createCookieAuth({
-		baseURL: 'http://localhost:8787',
-		initialIdentity: identityFromSession(session()),
-		saveIdentity: (next) => {
-			saved.push(next);
+	expect(sockets).toEqual([
+		{
+			url: 'ws://localhost:8787/sync',
+			protocols: ['epicenter', 'bearer.socket-access-token'],
 		},
-	});
-
-	await auth.fetch('http://localhost/api', {
-		headers: { Authorization: 'Bearer should-not-send' },
-		credentials: 'omit',
-	});
-
-	const init = capturedFetches[0]?.init;
-	expect(init?.credentials).toBe('include');
-	expect(new Headers(init?.headers).has('Authorization')).toBe(false);
-	expect(saved).toEqual([]);
-	auth[Symbol.dispose]();
-});
-
-test('cookie signed-out settlement without cached identity does not write storage', async () => {
-	const saved: Array<AuthIdentity | null> = [];
-	const auth = createCookieAuth({
-		baseURL: 'http://localhost:8787',
-		saveIdentity: (next) => {
-			saved.push(next);
-		},
-	});
-
-	expect(auth.state).toEqual({ status: 'signed-out' });
-	expect(saved).toEqual([]);
-	auth[Symbol.dispose]();
-});
-
-test('cookie bearerToken always returns null', async () => {
-	currentBetterAuthState = { isPending: true, data: null };
-	const signedOutAuth = createCookieAuth({
-		baseURL: 'http://localhost:8787',
-		initialIdentity: null,
-	});
-	expect(signedOutAuth.bearerToken).toBeNull();
-	signedOutAuth[Symbol.dispose]();
-
-	const auth = createCookieAuth({
-		baseURL: 'http://localhost:8787',
-		initialIdentity: identityFromSession(session()),
-	});
-
-	expect(auth.bearerToken).toBeNull();
-	auth[Symbol.dispose]();
-});
-
-test('dispose is idempotent and unsubscribes from Better Auth once', async () => {
-	const setup = createStorage({
-		get: () => null,
-	});
-	const auth = createTestAuth(setup);
-	expect(betterAuthSessionListeners.size).toBe(1);
-
-	auth[Symbol.dispose]();
-	auth[Symbol.dispose]();
-
-	expect(betterAuthSessionListeners.size).toBe(0);
-});
-
-test('sessionStorage.get() is read once during construction', async () => {
-	let reads = 0;
-	const setup = createStorage({
-		get: () => {
-			reads += 1;
-			return null;
-		},
-	});
-	const auth = createTestAuth(setup);
-
-	rememberToken('token-1');
-	emitBetterSession(betterAuthSessionData(session()));
-	await auth.fetch('http://localhost/api');
-
-	expect(reads).toBe(1);
-	auth[Symbol.dispose]();
-});
-
-test('Better Auth signed-in validation drives identity and storage set', async () => {
-	const setup = createStorage({ get: () => null });
-	const auth = createTestAuth(setup);
-
-	rememberToken('token-1');
-	emitBetterSession(betterAuthSessionData(session()));
-
-	expect(auth.state).toEqual(signedInState(session()));
-	expect(setup.saved).toEqual([session()]);
-	auth[Symbol.dispose]();
-});
-
-test('Better Auth signed-out emission clears session storage', async () => {
-	// Seed the BA atom with the matching session so the late subscribe is
-	// a no-op (sessionsEqual short-circuits); the explicit null emission
-	// below is the only event that drives the signedIn -> signedOut switch.
-	emitBetterSession(betterAuthSessionData(session()));
-	const setup = createStorage({ get: () => session() });
-	const auth = createTestAuth(setup);
-
-	emitBetterSession(null);
-
-	expect(auth.state).toEqual({ status: 'signed-out' });
-	expect(setup.saved).toEqual([null]);
-	auth[Symbol.dispose]();
-});
-
-test('subscribe replay matching the stored session does not write storage', async () => {
-	emitBetterSession(betterAuthSessionData(session()));
-	const setup = createStorage({ get: () => session() });
-	const auth = createTestAuth(setup);
-
-	expect(setup.saved).toEqual([]);
-	auth[Symbol.dispose]();
-});
-
-test('response-header token rotation persists through session storage save', async () => {
-	// Seed the BA atom so the late subscribe is a no-op; without this, the
-	// default null replay would flip the identity to null and the rotation
-	// hook below would not fire.
-	emitBetterSession(betterAuthSessionData(session({ token: 'old-token' })));
-	const setup = createStorage({ get: () => session({ token: 'old-token' }) });
-	const auth = createTestAuth(setup);
-
-	signInResponseHeaders = { 'set-auth-token': 'new-token' };
-	await auth.signIn({ email: 'user@example.com', password: 'password' });
-
-	const expected = session({ token: 'new-token' });
-	expect(auth.state).toEqual(signedInState(expected));
-	expect(setup.saved).toEqual([expected]);
-	expect(betterAuthClientOptions).not.toBeNull();
-	auth[Symbol.dispose]();
-});
-
-test('bearer email sign-in hydrates a full session from signed out', async () => {
-	const setup = createStorage({ get: () => null });
-	const auth = createTestAuth(setup);
-	globalThis.fetch = (async (
-		input: Request | string | URL,
-		init?: RequestInit,
-	) => {
-		capturedFetches.push({ input, init });
-		return Response.json(betterAuthSessionData(session({ token: 'ignored' })));
-	}) as unknown as typeof fetch;
-
-	signInResponseHeaders = { 'set-auth-token': 'session-token' };
-	const result = await auth.signIn({
-		email: 'user@example.com',
-		password: 'password',
-	});
-
-	expect(result).toEqual(Ok(undefined));
-	expect(String(capturedFetches[0]?.input)).toBe(
-		'http://localhost:8787/auth/get-session',
-	);
-	expect(
-		new Headers(capturedFetches[0]?.init?.headers).get('Authorization'),
-	).toBe('Bearer session-token');
-	expect(capturedFetches[0]?.init?.credentials).toBe('omit');
-	const expected = session({ token: 'session-token' });
-	expect(auth.state).toEqual(signedInState(expected));
-	expect(setup.saved).toEqual([expected]);
-	auth[Symbol.dispose]();
-});
-
-test('bearer email sign-up hydrates a full session from response data token', async () => {
-	const setup = createStorage({ get: () => null });
-	const auth = createTestAuth(setup);
-	globalThis.fetch = (async (
-		input: Request | string | URL,
-		init?: RequestInit,
-	) => {
-		capturedFetches.push({ input, init });
-		return Response.json(betterAuthSessionData(session({ token: 'ignored' })));
-	}) as unknown as typeof fetch;
-
-	signUpResponseData = { token: 'session-token' };
-	const result = await auth.signUp({
-		email: 'user@example.com',
-		password: 'password',
-		name: 'User',
-	});
-
-	expect(result).toEqual(Ok(undefined));
-	expect(String(capturedFetches[0]?.input)).toBe(
-		'http://localhost:8787/auth/get-session',
-	);
-	expect(
-		new Headers(capturedFetches[0]?.init?.headers).get('Authorization'),
-	).toBe('Bearer session-token');
-	const expected = session({ token: 'session-token' });
-	expect(auth.state).toEqual(signedInState(expected));
-	expect(setup.saved).toEqual([expected]);
-	auth[Symbol.dispose]();
-});
-
-test('failed bearer hydration does not reuse a stale pending token', async () => {
-	const setup = createStorage({ get: () => null });
-	const auth = createTestAuth(setup);
-	let requests = 0;
-	globalThis.fetch = (async (
-		input: Request | string | URL,
-		init?: RequestInit,
-	) => {
-		capturedFetches.push({ input, init });
-		requests += 1;
-		if (requests === 1) return new Response(null, { status: 500 });
-		return Response.json(betterAuthSessionData(session({ token: 'ignored' })));
-	}) as unknown as typeof fetch;
-
-	signInResponseHeaders = { 'set-auth-token': 'stale-token' };
-	const failed = await auth.signIn({
-		email: 'user@example.com',
-		password: 'password',
-	});
-
-	signInResponseHeaders = undefined;
-	signInResponseData = { token: 'fresh-token' };
-	const recovered = await auth.signIn({
-		email: 'user@example.com',
-		password: 'password',
-	});
-
-	expect(failed.error?.name).toBe('SignInFailed');
-	expect(recovered).toEqual(Ok(undefined));
-	expect(
-		new Headers(capturedFetches[1]?.init?.headers).get('Authorization'),
-	).toBe('Bearer fresh-token');
-	const expected = session({ token: 'fresh-token' });
-	expect(auth.state).toEqual(signedInState(expected));
-	expect(setup.saved).toEqual([expected]);
-	auth[Symbol.dispose]();
-});
-
-test('bearer social sign-in fetches identity and stores bearer session', async () => {
-	const setup = createStorage({ get: () => null });
-	globalThis.fetch = (async (
-		input: Request | string | URL,
-		init?: RequestInit,
-	) => {
-		capturedFetches.push({ input, init });
-		return Response.json(betterAuthSessionData(session({ token: 'ignored' })), {
-			headers: { 'set-auth-token': 'session-token' },
-		});
-	}) as unknown as typeof fetch;
-	const auth = createBearerAuth({
-		baseURL: 'http://localhost:8787',
-		sessionStorage: setup.sessionStorage,
-		oauthAdapter: createOAuthAdapter(),
-	});
-
-	const result = await auth.signInWithSocial({ provider: 'google' });
-
-	expect(result).toEqual(Ok(undefined));
-	expect(
-		new Headers(capturedFetches[0]?.init?.headers).get('Authorization'),
-	).toBe('Bearer oauth-token');
-	expect(String(capturedFetches[0]?.input)).toBe(
-		'http://localhost:8787/auth/oauth-session',
-	);
-	const expected = session({ token: 'session-token' });
-	expect(auth.state).toEqual(signedInState(expected));
-	expect(setup.saved).toEqual([expected]);
-	auth[Symbol.dispose]();
-});
-
-test('response-header token rotation does not emit an identity change', async () => {
-	emitBetterSession(betterAuthSessionData(session({ token: 'old-token' })));
-	const setup = createStorage({ get: () => session({ token: 'old-token' }) });
-	const auth = createTestAuth(setup);
-	const states: AuthState[] = [];
-	auth.onStateChange((state) => states.push(state));
-
-	signInResponseHeaders = { 'set-auth-token': 'new-token' };
-	await auth.signIn({ email: 'user@example.com', password: 'password' });
-
-	expect(states).toEqual([]);
-	auth[Symbol.dispose]();
-});
-
-test('bearerToken returns the rotated token after set-auth-token response', async () => {
-	// Sync reads `auth.bearerToken` fresh on every reconnect attempt. If
-	// rotation ever stops updating the closure the getter would return the
-	// old token forever, and reconnects would carry stale credentials.
-	emitBetterSession(betterAuthSessionData(session({ token: 'old-token' })));
-	const setup = createStorage({ get: () => session({ token: 'old-token' }) });
-	const auth = createTestAuth(setup);
-
-	expect(auth.bearerToken).toBe('old-token');
-
-	signInResponseHeaders = { 'set-auth-token': 'new-token' };
-	await auth.signIn({ email: 'user@example.com', password: 'password' });
-
-	expect(auth.bearerToken).toBe('new-token');
-	expect(betterAuthClientOptions?.fetchOptions?.auth?.token()).toBe(
-		'new-token',
-	);
-	auth[Symbol.dispose]();
-});
-
-test('signOut clears bearer session storage', async () => {
-	emitBetterSession(betterAuthSessionData(session()));
-	const setup = createStorage({ get: () => session() });
-	const auth = createTestAuth(setup);
-
-	await auth.signOut();
-
-	expect(auth.state).toEqual({ status: 'signed-out' });
-	expect(setup.saved).toEqual([null]);
-	auth[Symbol.dispose]();
-});
-
-test('sessionStorage.set() rejection is caught and logged', async () => {
-	const failure = new Error('storage failed');
-	const errors: unknown[][] = [];
-	console.error = (...args: unknown[]) => {
-		errors.push(args);
-	};
-	const setup = createStorage({
-		get: () => null,
-		set: () => Promise.reject(failure),
-	});
-	const auth = createTestAuth(setup);
-
-	rememberToken('token-1');
-	emitBetterSession(betterAuthSessionData(session()));
-	await Promise.resolve();
-	await Promise.resolve();
-
-	expect(errors).toEqual([['[auth] failed to save session:', failure]]);
-	expect(auth.state).toEqual(signedInState(session()));
-	auth[Symbol.dispose]();
-});
-
-test('createBearerAuth rejects legacy session config at compile time', () => {
-	const sessionStorage: BearerSessionStorage = {
-		get: () => null,
-		set: () => {},
-	};
-	createBearerAuth({ baseURL: 'http://localhost:8787', sessionStorage });
-
-	const legacyConfig = {
-		baseURL: 'http://localhost:8787',
-		// @ts-expect-error: legacy initialSession and saveSession are not accepted
-		initialSession: null,
-		saveSession: () => {},
-	} satisfies CreateBearerAuthConfig;
-
-	expect(legacyConfig).toBeDefined();
+	]);
+	expect(setup.saved[0]?.accessToken).toBe('socket-access-token');
 });

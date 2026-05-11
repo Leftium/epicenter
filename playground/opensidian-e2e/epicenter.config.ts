@@ -80,6 +80,15 @@ const persistence = attachYjsLog(ydoc, {
 const sync = attachSync(ydoc, {
 	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 	waitFor: Promise.resolve(),
+	// TODO(claude-review): `SyncAttachmentConfig` has no `getToken` field; the
+	// supported auth field is `bearerToken?: () => string | null`. Real apps use
+	// `bearerToken: () => auth.bearerToken` against an `AuthClient` from
+	// `createMachineAuthClient()`. This playground imports `createMachineAuth`
+	// and `createMachineTokenGetter` from `@epicenter/auth/node`, but neither
+	// export exists today (only `createMachineAuthClient` is exported). The
+	// correct shape for `createMachineTokenGetter`'s return cannot be determined
+	// because the function itself is gone. Rewire to `createMachineAuthClient`
+	// + `bearerToken: () => auth.bearerToken` once the intended API is decided.
 	getToken: createMachineTokenGetter({
 		serverOrigin: SERVER_URL,
 		machineAuth,
@@ -176,13 +185,22 @@ const actions = {
 		}),
 	},
 };
-const presence = sync.attachPresence({
-	peer: {
-		id: 'opensidian-playground-daemon',
-		name: 'Opensidian Playground Daemon',
-		platform: 'node',
-	},
-});
+// TODO(claude-review): `sync.attachPresence(...)` no longer exists on
+// `SyncAttachment` (only `attachRpc` remains). Presence/awareness moved to a
+// top-level `attachAwareness(ydoc, { schema, initial })` that must be created
+// BEFORE `attachSync` and passed in as `attachSync(ydoc, { awareness, ... })`
+// (see apps/opensidian/src/lib/opensidian/daemon.ts for the canonical
+// pattern). Migrating here requires reshuffling the file so awareness is
+// constructed before `sync` and updating the exported `presence` field below.
+// Commented out so the daemon runtime contract still typechecks; restore once
+// the surrounding structure is reworked.
+// const presence = sync.attachPresence({
+// 	peer: {
+// 		id: 'opensidian-playground-daemon',
+// 		name: 'Opensidian Playground Daemon',
+// 		platform: 'node',
+// 	},
+// });
 const rpc = sync.attachRpc(actions);
 
 export const opensidian = {
@@ -190,7 +208,9 @@ export const opensidian = {
 	whenReady,
 	actions,
 	sync,
-	presence,
+	// TODO(claude-review): restore `presence` once `attachAwareness` migration
+	// above is completed.
+	// presence,
 	rpc,
 	async [Symbol.asyncDispose]() {
 		ydoc.destroy();

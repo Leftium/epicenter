@@ -40,14 +40,13 @@ import {
 	toWsUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
-import { attachYjsLog } from '@epicenter/workspace/node';
 import {
 	attachMarkdownMaterializer,
 	prepareMarkdownFiles,
 	toSlugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
-import { epicenterPaths } from '@epicenter/workspace/node';
+import { attachYjsLog, epicenterPaths } from '@epicenter/workspace/node';
 import { opensidianTables } from 'opensidian/workspace';
 import Type from 'typebox';
 import * as Y from 'yjs';
@@ -88,7 +87,7 @@ const sync = attachSync(ydoc, {
 });
 
 /**
- * Per-file content persistence via `attachSqlite`. Each content Y.Doc writes
+ * Per-file content persistence via `attachYjsLog`. Each content Y.Doc writes
  * its own `{guid}.db` under `~/.epicenter/persistence/{workspaceId}/content/`.
  * Survives restarts without relying on sync hydration.
  */

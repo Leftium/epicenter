@@ -29,12 +29,11 @@ import {
 } from '@epicenter/tab-manager/workspace';
 import { attachEncryption, attachSync, toWsUrl } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
-import { attachYjsLog } from '@epicenter/workspace/node';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
-import { epicenterPaths } from '@epicenter/workspace/node';
+import { attachYjsLog, epicenterPaths } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
 
 const SERVER_URL = 'https://api.epicenter.so';

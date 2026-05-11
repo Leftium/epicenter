@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), createDisposableCache, attach* primitives, and action composition. Use when the user mentions workspace, defineTable, defineKv, createDisposableCache, attachTables, attachSync, attachIndexedDb, attachSqlite, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), createDisposableCache, attach* primitives, and action composition. Use when the user mentions workspace, defineTable, defineKv, createDisposableCache, attachTables, attachSync, attachIndexedDb, attachYjsLog, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
 metadata:
   author: epicenter
   version: '6.0'
@@ -24,7 +24,7 @@ Type-safe schema definitions for tables and KV stores.
 - Reading, writing, or observing table/KV data
 - Composing a live document with a direct builder plus `attach*` primitives
 - Adding `createDisposableCache(builder)` for per-row or otherwise fan-out documents
-- Attaching persistence (`attachIndexedDb`, `attachSqlite`), sync (`attachSync`), or materializers inline
+- Attaching persistence (`attachIndexedDb`, `attachYjsLog`), sync (`attachSync`), or materializers (`attachSqliteMaterializer`, `attachMarkdownMaterializer`) inline
 - Writing server-side Bun scripts with `connectWorkspace()`
 ## Tables
 
@@ -255,7 +255,7 @@ src/lib/
 │   └── index.ts                        ← Barrel: re-exports definition + actions only
 │
 └── client.ts                           ← Runtime singleton: openX() builder composing
-                                           attachTables, attachIndexedDb/Sqlite, attachSync,
+                                           attachTables, attachIndexedDb/attachYjsLog, attachSync,
                                            attachEncryption, and runtime-specific actions
 ```
 
@@ -277,7 +277,7 @@ src/lib/
 ┌──────────────┐   ┌──────────────────┐   ┌──────────────────┐
 │ client.ts    │   │ server-client.ts │   │ cli-client.ts    │
 │ (browser)    │   │ (Node/Bun)       │   │ (CLI)            │
-│ attachIndex… │   │ attachSqlite     │   │ attachSqlite     │
+│ attachIndex… │   │ attachYjsLog     │   │ attachYjsLog     │
 │ attachSync   │   │ attachSync       │   │ (no sync)        │
 │ Chrome APIs  │   │ Node fs APIs     │   │                  │
 └──────────────┘   └──────────────────┘   └──────────────────┘
@@ -372,10 +372,10 @@ Attachments compose through plain lexical scope, so ordering is explicit: if `sy
 
 | Attachment | Typical `waitFor` | Behavior |
 |---|---|---|
-| `attachSqlite` | — | Starts loading SQLite immediately |
+| `attachYjsLog` | — | Starts loading the Yjs update log immediately |
 | `attachIndexedDb` | — | Starts loading IndexedDB immediately |
 | `attachEncryption` | (none, sync) | Reads `encryptionKeys()` synchronously at each registration site |
-| `attachSync` | `idb.whenLoaded` (or `sqlite.whenLoaded`) | Opens WebSocket after local replay |
+| `attachSync` | `idb.whenLoaded` (or `persistence.whenLoaded`) | Opens WebSocket after local replay |
 
 The standard shape is **persistence first, then sync with `waitFor`**:
 
@@ -392,21 +392,21 @@ This ordering matters because sync only exchanges the delta between local state 
 createDisposableCache((id) => {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, myTables);
-  const sqlite = attachSqlite(ydoc, { filePath: '...' });
+  const persistence = attachYjsLog(ydoc, { filePath: '...' });
   const sync = attachSync(ydoc, {
     url: (docId) => toWsUrl(`${serverUrl}/workspaces/${docId}`),
     getToken,
-    waitFor: sqlite.whenLoaded,
+    waitFor: persistence.whenLoaded,
   });
-  return { id, ydoc, tables, sqlite, sync, /* ... */ };
+  return { id, ydoc, tables, persistence, sync, /* ... */ };
 });
 
 // ❌ Wrong: sync starts before local state is loaded, downloads full document
 createDisposableCache((id) => {
   const ydoc = new Y.Doc({ guid: id });
   const sync = attachSync(ydoc, { url, getToken }); // no waitFor
-  const sqlite = attachSqlite(ydoc, { filePath: '...' });
-  return { id, ydoc, sqlite, sync, /* ... */ };
+  const persistence = attachYjsLog(ydoc, { filePath: '...' });
+  return { id, ydoc, persistence, sync, /* ... */ };
 });
 ```
 
@@ -457,4 +457,4 @@ Code references:
 - `packages/workspace/src/document/attach-kv.ts`
 - `packages/workspace/src/document/attach-sync.ts`
 - `packages/workspace/src/document/attach-indexed-db.ts`
-- `packages/workspace/src/document/attach-sqlite.ts`
+- `packages/workspace/src/document/attach-yjs-log.ts`

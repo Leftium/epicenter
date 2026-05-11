@@ -22,8 +22,8 @@ import {
 	type EncryptionKeys,
 	generateId,
 } from '@epicenter/workspace';
-import { attachYjsLog } from '@epicenter/workspace/node';
 import { assembleMarkdown } from '@epicenter/workspace/document/materializer/markdown';
+import { attachYjsLog } from '@epicenter/workspace/node';
 import { opensidianTables } from 'opensidian/workspace';
 import * as Y from 'yjs';
 import { pushFromMarkdown } from './push-from-markdown';

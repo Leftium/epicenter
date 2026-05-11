@@ -3,8 +3,8 @@
  *
  * A workspace owns several `EncryptedYKeyValueLww` stores (one per table plus
  * the KV store). This attachment derives a per-workspace HKDF keyring at
- * registration time and calls `activateEncryption(keyring)` on each store
- * before the caller gets it back.
+ * attach time and calls `activateEncryption(keyring)` on each store before
+ * the caller gets it back.
  *
  * ## Method-on-coordinator pattern
  *
@@ -27,7 +27,7 @@
  * `encryptionKeys` is a callback into whoever owns identity.
  * The coordinator calls it synchronously at every `attachTable` / `attachKv` /
  * `attachIndexedDb` site, derives the keyring, and activates the store. The
- * keyring is not cached on the attachment: each registration is its own
+ * keyring is not cached on the attachment: each attach call is its own
  * derivation, which keeps state out of this layer entirely.
  *
  * Same-user identity updates (key rotation, profile edits) do not flow
@@ -37,10 +37,13 @@
  *
  * ## Disposal
  *
- * Each registered store hooks `ydoc.once('destroy', ...)` at registration
- * time, mirroring the plaintext `attachTable` / `attachKv` primitives.
- * Callers tear down encryption by calling `ydoc.destroy()`: the attachment
- * does not expose a standalone `dispose()` method.
+ * Each attached store hooks `ydoc.once('destroy', ...)` at attach time,
+ * mirroring the plaintext `attachTable` / `attachKv` primitives.
+ * `attachIndexedDb` is the exception: its IDB provider wires its own
+ * teardown inside `attachEncryptedIndexedDb` rather than routing through
+ * the shared `attachStore` helper. Callers tear down encryption by calling
+ * `ydoc.destroy()`: the attachment does not expose a standalone `dispose()`
+ * method.
  *
  * ## What this attachment does NOT do
  *

@@ -3,10 +3,7 @@
 	"compilerOptions": {
 		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"types": ["bun"],
-		"rootDir": "src",
-		"paths": {
-			"#/*": ["./src/*"]
-		}
+		"rootDir": "src"
 	},
 	"include": ["src/**/*"],
 	"exclude": ["dist", "node_modules"]

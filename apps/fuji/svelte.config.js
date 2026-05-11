@@ -10,7 +10,6 @@ const config = {
 		alias: {
 			$routes: './src/routes',
 			'$platform/auth': selectAuthModule(),
-			'#': '../../packages/ui/src',
 		},
 	},
 	preprocess: vitePreprocess(),

@@ -14,7 +14,6 @@ const config = {
 		},
 		alias: {
 			'$platform/auth': selectAuthModule(),
-			'#': '../../packages/ui/src',
 		},
 	},
 	preprocess: vitePreprocess(),

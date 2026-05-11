@@ -653,12 +653,13 @@ path has tests and app imports have moved.
 
 ### Phase 3: OAuth Launcher Package
 
-- [ ] **3.1** Rename public concepts away from social/provider names.
-- [ ] **3.2** Require `scope: "openid profile email offline_access"` for app sign-in unless a caller deliberately narrows it.
-- [ ] **3.3** Send `resource` on authorization-code exchange.
-- [ ] **3.4** Parse and require `access_token`, `refresh_token`, and `expires_in`.
-- [ ] **3.5** Keep browser, extension, and future Tauri launchers as platform adapters returning the same token shape.
-- [ ] **3.6** Tests: PKCE, state mismatch, callback error, missing refresh token, missing expires_in, resource parameter.
+- [x] **3.1** Rename public concepts away from social/provider names.
+- [x] **3.2** Require `scope: "openid profile email offline_access"` for app sign-in unless a caller deliberately narrows it.
+- [x] **3.3** Send `resource` on authorization-code exchange.
+- [x] **3.4** Parse and require `access_token`, `refresh_token`, and `expires_in`.
+- [x] **3.5** Keep browser, extension, and future Tauri launchers as platform adapters returning the same token shape.
+- [x] **3.6** Tests: PKCE, state mismatch, callback error, missing refresh token, missing expires_in, resource parameter.
+  > Verified with `bun test packages/oauth-client/src` and `bun run --filter @epicenter/oauth-client typecheck`.
 
 ### Phase 4: Auth Core
 

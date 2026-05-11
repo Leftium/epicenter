@@ -18,7 +18,7 @@ import { Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { defineMutation } from '../shared/actions.js';
 import { attachAwareness } from './attach-awareness.js';
-import { attachSync } from './attach-sync.js';
+import { attachSync, type OpenWebSocket } from './attach-sync.js';
 import { PeerIdentity } from './peer-identity.js';
 
 class FakeWebSocket {
@@ -110,6 +110,11 @@ function serverStep2Frame(): Uint8Array {
 	return frame;
 }
 
+function openWithBearerToken(token: string): OpenWebSocket {
+	return (url, protocols = []) =>
+		new WebSocket(url, [...protocols, `${BEARER_SUBPROTOCOL_PREFIX}${token}`]);
+}
+
 async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 	const start = Date.now();
 	while (Date.now() - start < timeoutMs) {
@@ -121,11 +126,32 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 }
 
 describe('attachSync split surface', () => {
-	test('constructs websocket with main protocol and bearer subprotocol when token exists', async () => {
+	test('opener receives sync URL and main protocol', async () => {
+		const ydoc = new Y.Doc({ guid: 'split-opener-protocol' });
+		const calls: { url: string | URL; protocols?: string[] }[] = [];
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			openWebSocket: (url, protocols) => {
+				calls.push({ url, protocols });
+				return new WebSocket(url, protocols);
+			},
+		});
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		expect(calls).toEqual([
+			{ url: `ws://x/${ydoc.guid}`, protocols: [MAIN_SUBPROTOCOL] },
+		]);
+		expect(ws.protocols).toEqual([MAIN_SUBPROTOCOL]);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('auth-owned opener can append bearer subprotocol', async () => {
 		const ydoc = new Y.Doc({ guid: 'split-bearer-protocol' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			bearerToken: () => 'test-token',
+			openWebSocket: openWithBearerToken('test-token'),
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
@@ -138,11 +164,10 @@ describe('attachSync split surface', () => {
 		await sync.whenDisposed;
 	});
 
-	test('constructs websocket with only main protocol when bearer token is null', async () => {
-		const ydoc = new Y.Doc({ guid: 'split-cookie-protocol' });
+	test('default opener constructs websocket with only main protocol', async () => {
+		const ydoc = new Y.Doc({ guid: 'split-default-protocol' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			bearerToken: () => null,
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
@@ -152,14 +177,90 @@ describe('attachSync split surface', () => {
 		await sync.whenDisposed;
 	});
 
-	test('constructs websocket with only main protocol when bearer token is omitted', async () => {
-		const ydoc = new Y.Doc({ guid: 'split-no-bearer-protocol' });
+	test('opener runs again for reconnect attempts', async () => {
+		const ydoc = new Y.Doc({ guid: 'split-reconnect-opener' });
+		const calls: string[] = [];
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			openWebSocket: (url, protocols) => {
+				calls.push(String(url));
+				return new WebSocket(url, protocols);
+			},
+		});
+
+		await waitFor(() => FakeWebSocket.instances[0]);
+		sync.reconnect();
+
+		await waitFor(() => (calls.length === 2 ? calls.join(',') : undefined));
+		expect(calls).toEqual([`ws://x/${ydoc.guid}`, `ws://x/${ydoc.guid}`]);
+		expect(FakeWebSocket.instances).toHaveLength(2);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('opener failure retries through existing backoff', async () => {
+		const ydoc = new Y.Doc({ guid: 'split-opener-retry' });
+		let calls = 0;
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+			openWebSocket: (url, protocols) => {
+				calls += 1;
+				if (calls === 1) throw new Error('socket unavailable');
+				return new WebSocket(url, protocols);
+			},
+		});
+
+		await waitFor(() => (calls >= 2 ? calls : undefined), 1500);
+		expect(calls).toBe(2);
+		expect(FakeWebSocket.instances).toHaveLength(1);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('close 4401 enters failed auth status', async () => {
+		const ydoc = new Y.Doc({ guid: 'split-auth-failed' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
-		expect(ws.protocols).toEqual([MAIN_SUBPROTOCOL]);
+		ws.close(4401, JSON.stringify({ code: 'token_expired' }));
+
+		const status = await waitFor(() =>
+			sync.status.phase === 'failed' ? sync.status : undefined,
+		);
+		expect(status).toEqual({
+			phase: 'failed',
+			reason: { type: 'auth', code: 'token_expired' },
+		});
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('reconnect clears failed auth phase for same-user reauth', async () => {
+		const ydoc = new Y.Doc({ guid: 'split-auth-reauth' });
+		const sync = attachSync(ydoc, {
+			url: `ws://x/${ydoc.guid}`,
+		});
+
+		const firstWs = await waitFor(() => FakeWebSocket.instances[0]);
+		firstWs.close(4401, JSON.stringify({ code: 'token_expired' }));
+		await waitFor(() =>
+			sync.status.phase === 'failed' ? sync.status : undefined,
+		);
+
+		sync.reconnect();
+		const secondWs = await waitFor(() => FakeWebSocket.instances[1]);
+		await waitFor(() => secondWs.readyState === FakeWebSocket.OPEN);
+		secondWs.deliver(serverStep2Frame());
+
+		await waitFor(() =>
+			sync.status.phase === 'connected' ? sync.status : undefined,
+		);
+		expect(sync.status).toEqual({ phase: 'connected' });
 
 		ydoc.destroy();
 		await sync.whenDisposed;
@@ -169,7 +270,7 @@ describe('attachSync split surface', () => {
 		const ydoc = new Y.Doc({ guid: 'split-sync' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			bearerToken: () => 'test-token',
+			openWebSocket: openWithBearerToken('test-token'),
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
@@ -189,7 +290,7 @@ describe('attachSync split surface', () => {
 		const ydoc = new Y.Doc({ guid: 'split-bc-origin' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			bearerToken: () => 'test-token',
+			openWebSocket: openWithBearerToken('test-token'),
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
@@ -220,7 +321,7 @@ describe('attachSync split surface', () => {
 		});
 		attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			bearerToken: () => 'test-token',
+			openWebSocket: openWithBearerToken('test-token'),
 			awareness,
 		});
 
@@ -269,7 +370,7 @@ describe('attachSync split surface', () => {
 		const calls: unknown[] = [];
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			bearerToken: () => 'test-token',
+			openWebSocket: openWithBearerToken('test-token'),
 		});
 		const rpc = sync.attachRpc({
 			tabs: {
@@ -345,7 +446,7 @@ describe('attachSync split surface', () => {
 		const ydoc = new Y.Doc({ guid: 'split-system-reserved' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			bearerToken: () => 'test-token',
+			openWebSocket: openWithBearerToken('test-token'),
 		});
 
 		expect(() =>

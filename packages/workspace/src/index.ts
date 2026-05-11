@@ -21,7 +21,10 @@
  * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * declare const bearerToken: () => string | null;
+ * declare const openWebSocket: (
+ *   url: string | URL,
+ *   protocols?: string[],
+ * ) => Promise<WebSocket>;
  *
  * // Singleton workspace: inline at module scope, no factory wrapper.
  * const ydoc = new Y.Doc({ guid: 'notes' });
@@ -30,7 +33,7 @@
  * const sync = attachSync(ydoc, {
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
  *   waitFor: idb,
- *   bearerToken,
+ *   openWebSocket,
  * });
  *
  * const noteBodyDocs = createDisposableCache(
@@ -218,6 +221,7 @@ export {
 export {
 	type AttachSyncDoc,
 	attachSync,
+	type OpenWebSocket,
 	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,

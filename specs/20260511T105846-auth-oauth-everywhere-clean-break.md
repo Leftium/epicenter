@@ -675,12 +675,15 @@ path has tests and app imports have moved.
 
 ### Phase 5: Sync Boundary
 
-- [ ] **5.1** Change `attachSync` config from `bearerToken?: () => string | null` to `openWebSocket?: (url, protocols) => Promise<WebSocket> | WebSocket`.
-- [ ] **5.2** Keep the default `new WebSocket(url, protocols)` for unauthenticated or test transports if needed.
-- [ ] **5.3** Ensure `attemptConnection()` awaits the opener before wiring handlers.
-- [ ] **5.4** Preserve reconnect backoff, liveness, awareness, and RPC behavior.
-- [ ] **5.5** Report auth close 4401 to the app/session binding so it can enter `reauth-required`; `attachSync` does not own `AuthState`.
-- [ ] **5.6** Tests: opener called on every reconnect, opener failure retries, auth close 4401 can be reset by same-user reauth plus `reconnect()`.
+- [x] **5.1** Change `attachSync` config from `bearerToken?: () => string | null` to `openWebSocket?: (url, protocols) => Promise<WebSocket> | WebSocket`.
+- [x] **5.2** Keep the default `new WebSocket(url, protocols)` for unauthenticated or test transports if needed.
+- [x] **5.3** Ensure `attemptConnection()` awaits the opener before wiring handlers.
+- [x] **5.4** Preserve reconnect backoff, liveness, awareness, and RPC behavior.
+  > Verified by keeping the existing lifecycle, awareness, and RPC tests green while adding opener retry and reconnect coverage.
+- [x] **5.5** Report auth close 4401 to the app/session binding so it can enter `reauth-required`; `attachSync` does not own `AuthState`.
+  > `attachSync` still surfaces 4401 as `status.phase === 'failed'` with an auth reason. It does not import or mutate auth state.
+- [x] **5.6** Tests: opener called on every reconnect, opener failure retries, auth close 4401 can be reset by same-user reauth plus `reconnect()`.
+  > Verified with `bun test packages/workspace/src/document/attach-sync.test.ts`.
 
 ### Phase 6: Apps
 

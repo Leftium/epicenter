@@ -83,8 +83,8 @@ function openBlog({ encryptionKeys }: { encryptionKeys: () => EncryptionKeys }) 
 
 ### Persistence + sync
 
-Auth belongs to the app. The workspace factory receives a live bearer-token
-reader and passes it to sync.
+Auth belongs to the app. The workspace factory receives an auth-owned WebSocket
+opener and passes it to sync.
 
 ```typescript
 import {
@@ -103,7 +103,7 @@ function openBlog() {
   attachOwnedBroadcastChannel(ydoc, { userId: auth.state.identity.user.id });
   const sync = attachSync(ydoc, {
     url: `wss://api.example.com/workspaces/${ydoc.guid}`,
-    bearerToken: () => auth.bearerToken,
+    openWebSocket: auth.openWebSocket,
     waitFor: idb.whenLoaded,
   });
 

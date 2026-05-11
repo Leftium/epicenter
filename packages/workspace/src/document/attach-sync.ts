@@ -1,7 +1,6 @@
 /// <reference lib="dom" />
 
 import {
-	BEARER_SUBPROTOCOL_PREFIX,
 	decodeRpcPayload,
 	encodeAwareness,
 	encodeAwarenessStates,
@@ -190,6 +189,11 @@ export type WaitForBarrier =
 /** First arg of `attachSync`: either a bare `Y.Doc` or a doc bundle. */
 export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc };
 
+export type OpenWebSocket = (
+	url: string | URL,
+	protocols?: string[],
+) => Promise<WebSocket> | WebSocket;
+
 export type SyncAttachmentConfig = {
 	/**
 	 * WebSocket URL for the room. Must use ws:/wss:. Use `toWsUrl()` to convert
@@ -205,18 +209,16 @@ export type SyncAttachmentConfig = {
 	 */
 	waitFor?: WaitForBarrier;
 	/**
-	 * Optional bearer-token augmentation for the WebSocket handshake.
+	 * Optional WebSocket opener for auth-owned transport setup.
 	 *
 	 * When omitted, `attachSync` opens a normal sync WebSocket with only the
-	 * main Epicenter subprotocol. Browser cookie auth can still authenticate
-	 * that upgrade if the API origin has a valid session cookie.
+	 * main Epicenter subprotocol.
 	 *
-	 * When provided, the getter is called on every reconnect so token rotation
-	 * is observed. A string return adds `bearer.<token>` to the subprotocol
-	 * list. A null return sends no bearer subprotocol for this attempt. Browser
-	 * cookie auth can still authenticate that upgrade through the cookie jar.
+	 * When provided, the opener is called on every reconnect and may attach
+	 * credentials before returning the socket. `attachSync` stays independent
+	 * of auth state and only observes socket events after the opener resolves.
 	 */
-	bearerToken?: () => string | null;
+	openWebSocket?: OpenWebSocket;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -604,12 +606,21 @@ export function attachSync(
 	): Promise<'connected' | 'failed'> {
 		let ws: WebSocket;
 		try {
-			const token = config.bearerToken?.() ?? null;
-			const protocols = token
-				? [MAIN_SUBPROTOCOL, `${BEARER_SUBPROTOCOL_PREFIX}${token}`]
-				: [MAIN_SUBPROTOCOL];
-			ws = new WebSocket(config.url, protocols);
+			const opened = (config.openWebSocket ?? openDefaultWebSocket)(
+				config.url,
+				[MAIN_SUBPROTOCOL],
+			);
+			ws = isPromiseLike(opened) ? await opened : opened;
 		} catch {
+			return 'failed';
+		}
+		if (signal.aborted) {
+			if (
+				ws.readyState !== WebSocket.CLOSED &&
+				ws.readyState !== WebSocket.CLOSING
+			) {
+				ws.close();
+			}
 			return 'failed';
 		}
 		ws.binaryType = 'arraybuffer';
@@ -939,6 +950,22 @@ export function attachSync(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+function openDefaultWebSocket(
+	url: string | URL,
+	protocols?: string[],
+): WebSocket {
+	return new WebSocket(url, protocols);
+}
+
+function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		'then' in value &&
+		typeof value.then === 'function'
+	);
+}
 
 function createStatusEmitter<T>(initial: T) {
 	let current = initial;

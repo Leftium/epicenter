@@ -197,7 +197,6 @@ export {
 	attachIndexedDb,
 	type IndexedDbAttachment,
 } from './document/attach-indexed-db.js';
-export { wipeOwnerLocalYjsData } from './document/wipe-owner-local-yjs-data.js';
 export {
 	attachKv,
 	type InferKvValue,
@@ -220,10 +219,12 @@ export {
 	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
+	type SyncError,
 	SyncFailedError,
 	type SyncFailedReason,
 	type SyncRpcAttachment,
 	type SyncStatus,
+	SyncSupervisorError,
 	toWsUrl,
 } from './document/attach-sync.js';
 export {
@@ -270,6 +271,7 @@ export {
 	type ResolvedPeer,
 } from './document/peer-identity.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
+export { wipeOwnerLocalYjsData } from './document/wipe-owner-local-yjs-data.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

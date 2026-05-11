@@ -149,7 +149,7 @@ export type SyncAttachment = {
 	 * Browser apps generally await `idb.whenLoaded` to render; only CLIs
 	 * and tools that strictly need remote state await `whenConnected`.
 	 */
-	whenConnected: Promise<unknown>;
+	whenConnected: Promise<void>;
 	/** Current connection status. */
 	readonly status: SyncStatus;
 	/** Subscribe to status changes. Returns unsubscribe function. */
@@ -160,7 +160,7 @@ export type SyncAttachment = {
 	 * Resolves after `ydoc.destroy()` fires the cascade, the supervisor loop exits,
 	 * and any open websocket closes or reaches the safety timeout.
 	 */
-	whenDisposed: Promise<unknown>;
+	whenDisposed: Promise<void>;
 	attachRpc(actions: RpcActionSource): SyncRpcAttachment;
 };
 

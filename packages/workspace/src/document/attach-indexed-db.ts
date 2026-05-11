@@ -35,6 +35,7 @@ export type IndexedDbAttachment = {
 
 type EncryptedIndexedDbOptions = {
 	databaseName: string;
+	writeKey: { version: number; bytes: Uint8Array };
 	keyring: ReadonlyMap<number, Uint8Array>;
 };
 
@@ -101,34 +102,10 @@ export async function wipeOwnerLocalYjsData({
 	await Promise.all([...names].map((name) => clearDocument(name)));
 }
 
-function resolveWriteKey(keyring: ReadonlyMap<number, Uint8Array>): {
-	keyVersion: number;
-	key: Uint8Array;
-} {
-	if (keyring.size === 0) {
-		throw new Error(
-			'Cannot attach encrypted IndexedDB provider: keyring is empty.',
-		);
-	}
-	const keyVersion = Math.max(...keyring.keys());
-	const key = keyring.get(keyVersion);
-	if (key === undefined) {
-		throw new Error(
-			`Cannot attach encrypted IndexedDB provider: key version ${keyVersion} is not in the keyring.`,
-		);
-	}
-	return { keyVersion, key };
-}
-
 export function attachEncryptedIndexedDb(
 	ydoc: Y.Doc,
-	{ databaseName, keyring }: EncryptedIndexedDbOptions,
+	{ databaseName, writeKey, keyring }: EncryptedIndexedDbOptions,
 ): IndexedDbAttachment {
-	// Keyring is frozen at attach time, so resolve the write key once at the
-	// boundary. An empty or malformed keyring fails fast here instead of
-	// surfacing on the first write.
-	const { keyVersion: writeVersion, key: writeKey } = resolveWriteKey(keyring);
-
 	let db: IDBDatabase | undefined;
 	let dbref = 0;
 	let dbsize = 0;
@@ -165,8 +142,8 @@ export function attachEncryptedIndexedDb(
 	): Promise<void> {
 		dbsize += 1;
 		const ciphertext = encryptBytes({
-			key: writeKey,
-			keyVersion: writeVersion,
+			key: writeKey.bytes,
+			keyVersion: writeKey.version,
 			plaintext: update,
 			aad,
 		});

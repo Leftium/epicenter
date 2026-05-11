@@ -223,9 +223,21 @@ export function attachEncryption(
 			return createKv(store, definitions);
 		},
 		attachIndexedDb(targetYdoc, { userId }) {
+			const keyring = deriveKeyring(
+				options.encryptionKeys(),
+				targetYdoc.guid,
+			);
+			if (keyring.size === 0) {
+				throw new Error(
+					'Cannot attach encrypted IndexedDB provider: encryptionKeys() returned no usable keys.',
+				);
+			}
+			const version = Math.max(...keyring.keys());
+			const bytes = keyring.get(version)!;
 			return attachEncryptedIndexedDb(targetYdoc, {
 				databaseName: createOwnedYjsKey(userId, targetYdoc.guid),
-				keyring: deriveKeyring(options.encryptionKeys(), targetYdoc.guid),
+				writeKey: { version, bytes },
+				keyring,
 			});
 		},
 	};

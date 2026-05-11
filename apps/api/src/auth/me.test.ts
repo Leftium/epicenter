@@ -21,7 +21,7 @@ import { generateCodeChallenge } from 'better-auth/oauth2';
 import { customSession, jwt } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
 import { resolveOAuthIdentity } from './me.js';
-import { createBetterAuthSessionResponse } from './session-response.js';
+import { createAuthSessionResponse } from './session-response.js';
 
 const redirectUri = 'http://localhost:5174/auth/callback';
 const verifier = 'test-verifier-test-verifier-test-verifier';
@@ -47,7 +47,7 @@ test('auth/me returns identity for a valid OAuth access token', async () => {
 
 		expect(response.status).toBe(200);
 		expect(response.headers.get('set-auth-token')).toBeNull();
-			const body = (await response.json()) as AuthIdentity;
+		const body = (await response.json()) as AuthIdentity;
 		expect(body.user.email).toBe('oauth-identity@example.com');
 		expect(body).not.toHaveProperty('session');
 		expect(body.encryptionKeys).toEqual(encryptionKeys);
@@ -174,7 +174,7 @@ function createOAuthIdentityTestServer() {
 				...basePlugins,
 				customSession(
 					(input) =>
-						createBetterAuthSessionResponse(input, {
+						createAuthSessionResponse(input, {
 							deriveUserEncryptionKeys: async () => encryptionKeys,
 						}),
 					{ ...baseAuthOptions, plugins: basePlugins },
@@ -191,11 +191,11 @@ function createOAuthIdentityTestServer() {
 						const resource = oauthProviderResourceClient();
 						const result = await resolveOAuthIdentity({
 							authorization: request.headers.get('authorization'),
-								audience: baseURL,
-								issuer: `${baseURL}/auth`,
-								jwksUrl: `${baseURL}/auth/jwks`,
-								verifyOAuthAccessToken: resource.getActions().verifyAccessToken,
-								findUserById: async (userId) =>
+							audience: baseURL,
+							issuer: `${baseURL}/auth`,
+							jwksUrl: `${baseURL}/auth/jwks`,
+							verifyOAuthAccessToken: resource.getActions().verifyAccessToken,
+							findUserById: async (userId) =>
 								db.user?.find((user) => user.id === userId) ?? null,
 							deriveUserEncryptionKeys: async () => encryptionKeys,
 						});

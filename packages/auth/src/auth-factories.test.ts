@@ -221,16 +221,6 @@ function session({
 function betterAuthSessionData(value: BearerSession) {
 	return {
 		user: value.user,
-		session: {
-			id: 'session-1',
-			token: value.token,
-			userId: value.user.id,
-			expiresAt: '2026-02-01T00:00:00.000Z',
-			createdAt: value.user.createdAt,
-			updatedAt: value.user.updatedAt,
-			ipAddress: null,
-			userAgent: null,
-		},
 		encryptionKeys: value.encryptionKeys,
 	};
 }
@@ -303,6 +293,14 @@ function emitBetterSession(data: unknown) {
 	}
 }
 
+function rememberToken(token: string) {
+	betterAuthClientOptions?.fetchOptions?.onSuccess?.({
+		response: new Response(null, {
+			headers: { 'set-auth-token': token },
+		}),
+	});
+}
+
 test('onStateChange does not replay and receives future changes only', async () => {
 	const setup = createStorage({ get: () => null });
 	const auth = createTestAuth(setup);
@@ -312,6 +310,7 @@ test('onStateChange does not replay and receives future changes only', async () 
 
 	expect(states).toEqual([]);
 
+	rememberToken('token-1');
 	emitBetterSession(betterAuthSessionData(session()));
 
 	expect(states).toEqual([signedInState(session())]);
@@ -328,6 +327,7 @@ test('listener failures do not stop later listeners', async () => {
 	});
 	auth.onStateChange((state) => states.push(state));
 
+	rememberToken('token-2');
 	emitBetterSession(betterAuthSessionData(session({ token: 'token-2' })));
 
 	expect(states).toEqual([signedInState(session({ token: 'token-2' }))]);
@@ -371,6 +371,7 @@ test('pending bearer settles to signed-in on first Better Auth session emission'
 
 	expect(auth.state).toEqual({ status: 'pending' });
 
+	rememberToken('token-1');
 	emitBetterSession(betterAuthSessionData(session()));
 
 	expect(states).toEqual([signedInState(session())]);
@@ -385,6 +386,7 @@ test('bearerToken returns null signed out and current token signed in', async ()
 
 	expect(auth.bearerToken).toBeNull();
 
+	rememberToken('token-2');
 	emitBetterSession(betterAuthSessionData(session({ token: 'token-2' })));
 
 	expect(auth.bearerToken).toBe('token-2');
@@ -494,6 +496,7 @@ test('sessionStorage.get() is read once during construction', async () => {
 	});
 	const auth = createTestAuth(setup);
 
+	rememberToken('token-1');
 	emitBetterSession(betterAuthSessionData(session()));
 	await auth.fetch('http://localhost/api');
 
@@ -505,6 +508,7 @@ test('Better Auth signed-in validation drives identity and storage set', async (
 	const setup = createStorage({ get: () => null });
 	const auth = createTestAuth(setup);
 
+	rememberToken('token-1');
 	emitBetterSession(betterAuthSessionData(session()));
 
 	expect(auth.state).toEqual(signedInState(session()));
@@ -654,7 +658,7 @@ test('failed bearer hydration does not reuse a stale pending token', async () =>
 	auth[Symbol.dispose]();
 });
 
-test('bearer social sign-in fetches enriched session and stores full session', async () => {
+test('bearer social sign-in fetches identity and stores bearer session', async () => {
 	const setup = createStorage({ get: () => null });
 	globalThis.fetch = (async (
 		input: Request | string | URL,
@@ -744,6 +748,7 @@ test('sessionStorage.set() rejection is caught and logged', async () => {
 	});
 	const auth = createTestAuth(setup);
 
+	rememberToken('token-1');
 	emitBetterSession(betterAuthSessionData(session()));
 	await Promise.resolve();
 	await Promise.resolve();

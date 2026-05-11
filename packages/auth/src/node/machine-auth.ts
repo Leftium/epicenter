@@ -1,6 +1,5 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import { EncryptionKeys } from '@epicenter/encryption';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import { deviceAuthorizationClient } from 'better-auth/client/plugins';
@@ -15,8 +14,8 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient } from '../auth-contract.js';
 import type { BearerSession } from '../auth-types.js';
 import {
-	type BetterAuthSessionResponse,
-	normalizeAuthUser,
+	type AuthSessionResponse,
+	bearerSessionFromAuthSessionResponse,
 } from '../contracts/auth-session.js';
 import { createBearerAuth } from '../create-bearer-auth.js';
 import {
@@ -25,7 +24,7 @@ import {
 } from './machine-session-store.js';
 
 type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<BetterAuthSessionResponse, BetterAuthOptions>
+	typeof customSession<AuthSessionResponse, BetterAuthOptions>
 >;
 
 const rawDefaultAuthClient = createAuthClient({
@@ -303,11 +302,11 @@ async function fetchBearerSession({
 	}
 
 	try {
-		return Ok({
-			token: rotatedToken ?? accessToken,
-			user: normalizeAuthUser(data.user),
-			encryptionKeys: EncryptionKeys.assert(data.encryptionKeys),
-		});
+		return Ok(
+			bearerSessionFromAuthSessionResponse(data, {
+				token: rotatedToken ?? accessToken,
+			}),
+		);
 	} catch (cause) {
 		return MachineAuthRequestError.RequestFailed({ cause });
 	}

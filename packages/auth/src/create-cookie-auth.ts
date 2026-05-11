@@ -10,7 +10,7 @@ import {
 import { AuthError } from './auth-errors.js';
 import type { AuthIdentity } from './auth-types.js';
 import { epicenterCustomSessionPlugin } from './better-auth-session.js';
-import { authIdentityFromBetterAuthSessionResponse } from './contracts/auth-session.js';
+import { authIdentityFromAuthSessionResponse } from './contracts/auth-session.js';
 import { headersFromRequest } from './request-headers.js';
 
 export type CreateCookieAuthConfig = {
@@ -50,9 +50,9 @@ export function createCookieAuth({
 	function applyBetterAuthSession(data: unknown) {
 		let next: AuthIdentity | null;
 		try {
-			next = authIdentityFromBetterAuthSessionResponse(data);
+			next = authIdentityFromAuthSessionResponse(data);
 		} catch (error) {
-			console.error('[auth] invalid Better Auth session response:', error);
+			console.error('[auth] invalid auth-session response:', error);
 			return;
 		}
 		stateStore.setState(authStateFromIdentity(next));

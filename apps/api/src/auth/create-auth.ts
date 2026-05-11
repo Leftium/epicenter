@@ -15,7 +15,7 @@ import { TRUSTED_ORIGINS } from '../trusted-origins';
 import { BASE_AUTH_CONFIG } from './base-config';
 import { createCookieAdvancedConfig } from './cookie-config';
 import { deriveUserEncryptionKeys } from './encryption';
-import { createBetterAuthSessionResponse } from './session-response';
+import { createAuthSessionResponse } from './session-response';
 import { trustedOAuthClientIds } from './trusted-oauth-clients';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -31,8 +31,8 @@ type Db = NodePgDatabase<typeof schema>;
  * - Drizzle adapter (Postgres via Hyperdrive)
  * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
  * - Plugins: bearer tokens, JWT, device authorization, OAuth provider (PKCE)
- * - `customSession()` enrichment that appends the full encryption keyring
- *   to `/auth/get-session` responses (see {@link BetterAuthSessionResponse})
+ * - `customSession()` enrichment that returns the Epicenter identity
+ *   for `/auth/get-session` responses
  * - Autumn billing customer creation on user signup
  * - Cloudflare KV secondary storage for session caching
  */
@@ -199,16 +199,15 @@ export function createAuth({
 		}),
 	];
 	/**
-	 * Enrich Better Auth session responses with the full encryption keyring.
+	 * Enrich `/auth/get-session` responses with the Epicenter identity.
 	 *
 	 * Derives a per-user key for every version in `ENCRYPTION_SECRETS`.
 	 * HKDF derivation adds <0.1ms per key, negligible next to the network round-trip.
-	 * Embedding all keys here eliminates separate key-fetch endpoints and
-	 * enables fresh clients to decrypt blobs from any key version.
+	 * Embedding all keys here eliminates separate key-fetch endpoints.
 	 */
 	const customSessionPlugin = customSession(
 		(input) =>
-			createBetterAuthSessionResponse(input, { deriveUserEncryptionKeys }),
+			createAuthSessionResponse(input, { deriveUserEncryptionKeys }),
 		{
 			...authOptionsBase,
 			plugins: basePlugins,

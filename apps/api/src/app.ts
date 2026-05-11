@@ -20,7 +20,7 @@ import { createAuth } from './auth/create-auth';
 import { deriveUserEncryptionKeys } from './auth/encryption';
 import { resolveOAuthIdentity } from './auth/me';
 import { resolveOAuthBearerSession } from './auth/oauth-session';
-import { createBetterAuthSessionResponse } from './auth/session-response';
+import { createAuthSessionResponse } from './auth/session-response';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
 import {
@@ -45,7 +45,7 @@ export { WorkspaceRoom } from './workspace-room';
 
 type Db = NodePgDatabase<typeof schema>;
 type Auth = ReturnType<typeof createAuth>;
-type Session = Auth['$Infer']['Session'];
+type AuthSession = Auth['$Infer']['Session'];
 type OAuthOpenIdConfigAuth = Parameters<
 	typeof oauthProviderOpenIdConfigMetadata
 >[0];
@@ -97,8 +97,7 @@ export type Env = {
 		db: Db;
 		auth: Auth;
 		authBaseURL: string;
-		user: Session['user'];
-		session: Session['session'];
+		user: AuthSession['user'];
 		afterResponse: AfterResponseQueue;
 		/** Current plan ID. Only set by ensureAutumnCustomer middleware on /ai/* routes. */
 		planId: string | undefined;
@@ -260,11 +259,8 @@ app.post(
 		const result = await resolveOAuthBearerSession({
 			authorization: c.req.header('authorization') ?? null,
 			baseURL: c.var.authBaseURL,
-			createSessionResponse: ({ user, session }) =>
-				createBetterAuthSessionResponse(
-					{ user, session },
-					{ deriveUserEncryptionKeys },
-				),
+			createSessionResponse: ({ user }) =>
+				createAuthSessionResponse({ user }, { deriveUserEncryptionKeys }),
 			async findSessionWithUserById(sessionId) {
 				const [row] = await c.var.db
 					.select({
@@ -387,7 +383,6 @@ const requireSession = factory.createMiddleware(async (c, next) => {
 	}
 
 	c.set('user', result.user);
-	c.set('session', result.session);
 	await next();
 });
 

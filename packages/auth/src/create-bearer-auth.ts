@@ -11,8 +11,8 @@ import { AuthError } from './auth-errors.js';
 import type { AuthIdentity, BearerSession } from './auth-types.js';
 import { epicenterCustomSessionPlugin } from './better-auth-session.js';
 import {
-	bearerSessionFromBetterAuthSessionResponse,
-	normalizeBearerSession,
+	authIdentityFromAuthSessionResponse,
+	bearerSessionFromAuthSessionResponse,
 } from './contracts/auth-session.js';
 import { headersFromRequest } from './request-headers.js';
 
@@ -72,21 +72,24 @@ export function createBearerAuth({
 	}
 
 	function applyBetterAuthSession(data: unknown) {
-		let parsed: BearerSession | null;
+		let identity: AuthIdentity | null;
 		try {
-			parsed = bearerSessionFromBetterAuthSessionResponse(data);
+			identity = authIdentityFromAuthSessionResponse(data);
 		} catch (error) {
-			console.error('[auth] invalid Better Auth session response:', error);
+			console.error('[auth] invalid auth-session response:', error);
 			return;
 		}
-		const next: BearerSession | null =
-			parsed === null
-				? null
-				: {
-						token: pendingBearerToken ?? session?.token ?? parsed.token,
-						user: parsed.user,
-						encryptionKeys: parsed.encryptionKeys,
-					};
+		const token = pendingBearerToken ?? session?.token ?? null;
+		let next: BearerSession | null = null;
+		if (identity !== null) {
+			if (token === null) {
+				console.error(
+					'[auth] signed-in Better Auth session arrived without a bearer token.',
+				);
+				return;
+			}
+			next = bearerSessionFromAuthSessionResponse(identity, { token });
+		}
 		if (next === null) pendingBearerToken = null;
 		if (sessionsEqual(session, next)) {
 			// Carries the pending -> settled transition on the first BA replay
@@ -136,7 +139,9 @@ export function createBearerAuth({
 			throw new Error('Bearer token did not resolve a session.');
 		}
 		const responseToken = response.headers.get('set-auth-token') ?? token;
-		applyBearerSession(normalizeBearerSession(data, { token: responseToken }));
+		applyBearerSession(
+			bearerSessionFromAuthSessionResponse(data, { token: responseToken }),
+		);
 	}
 
 	async function hydrateSignedOutSession(token: string | null) {
@@ -179,7 +184,7 @@ export function createBearerAuth({
 					cause: new Error('OAuth session did not return a bearer token.'),
 				});
 			}
-			applyBearerSession(normalizeBearerSession(data, { token }));
+			applyBearerSession(bearerSessionFromAuthSessionResponse(data, { token }));
 			return Ok(undefined);
 		} catch (cause) {
 			return AuthError.SocialSignInFailed({ cause });

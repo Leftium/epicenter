@@ -1,7 +1,7 @@
 import type { BetterAuthOptions } from 'better-auth';
 import { InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
-import type { BetterAuthSessionResponse } from './contracts/auth-session.js';
+import type { AuthSessionResponse } from './contracts/auth-session.js';
 
 /**
  * Compile-time bridge for Better Auth's custom session type inference.
@@ -12,7 +12,7 @@ import type { BetterAuthSessionResponse } from './contracts/auth-session.js';
  * requiring a fabricated auth shape.
  */
 type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<BetterAuthSessionResponse, BetterAuthOptions>
+	typeof customSession<AuthSessionResponse, BetterAuthOptions>
 >;
 
 export function epicenterCustomSessionPlugin() {

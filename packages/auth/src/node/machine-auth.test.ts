@@ -18,7 +18,7 @@ import { deviceAuthorizationClient } from 'better-auth/client/plugins';
 import type { customSession } from 'better-auth/plugins';
 import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';
 import type { BearerSession } from '../auth-types.js';
-import type { BetterAuthSessionResponse } from '../contracts/auth-session.js';
+import type { AuthSessionResponse } from '../contracts/auth-session.js';
 import {
 	type DeviceTokenError,
 	loginWithDeviceCode,
@@ -43,7 +43,7 @@ type ResultError<TValue extends { error: unknown }> = NonNullable<
 	TValue['error']
 >;
 type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<BetterAuthSessionResponse, BetterAuthOptions>
+	typeof customSession<AuthSessionResponse, BetterAuthOptions>
 >;
 
 export type LoginWithDeviceCodeError = Expect<
@@ -92,28 +92,10 @@ function makeSession({
 	};
 }
 
-function makeBetterAuthSessionResponse({
-	sessionToken = 'server-session-token',
-}: {
-	sessionToken?: string;
-} = {}): BetterAuthSessionResponse {
+function makeAuthSessionResponse(): AuthSessionResponse {
 	const session = makeSession();
 	return {
-		user: {
-			...session.user,
-			createdAt: new Date(session.user.createdAt),
-			updatedAt: new Date(session.user.updatedAt),
-		},
-		session: {
-			id: 'session-1',
-			token: sessionToken,
-			userId: session.user.id,
-			expiresAt: new Date('2026-02-01T00:00:00.000Z'),
-			createdAt: new Date('2026-01-01T00:00:00.000Z'),
-			updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-			ipAddress: null,
-			userAgent: null,
-		},
+		user: session.user,
 		encryptionKeys: session.encryptionKeys,
 	};
 }
@@ -198,7 +180,7 @@ describe('machine auth free functions', () => {
 				});
 				return jsonResponse({ access_token: 'device-token', expires_in: 3600 });
 			}
-			return jsonResponse(makeBetterAuthSessionResponse(), {
+			return jsonResponse(makeAuthSessionResponse(), {
 				headers: { 'set-auth-token': 'rotated-authorization-token' },
 			});
 		}) as typeof fetch;
@@ -217,7 +199,7 @@ describe('machine auth free functions', () => {
 		expect(loadError).toBeNull();
 		expect(result.data?.session.user.email).toBe('user@example.com');
 		expect(savedSession?.token).toBe('rotated-authorization-token');
-		expect(JSON.stringify(savedSession)).not.toContain('server-session-token');
+		expect(JSON.stringify(savedSession)).not.toContain('session');
 	});
 
 	test('status verifies and refreshes the stored session token', async () => {
@@ -226,7 +208,7 @@ describe('machine auth free functions', () => {
 		const seenTokens: string[] = [];
 		const fetchImpl = (async (_input, init) => {
 			seenTokens.push(new Headers(init?.headers).get('authorization') ?? '');
-			return jsonResponse(makeBetterAuthSessionResponse(), {
+			return jsonResponse(makeAuthSessionResponse(), {
 				headers: { 'set-auth-token': 'new-token' },
 			});
 		}) as typeof fetch;

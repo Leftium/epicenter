@@ -1,4 +1,4 @@
-import type { BetterAuthSessionResponse } from '@epicenter/auth/contracts';
+import type { AuthSessionResponse } from '@epicenter/auth/contracts';
 import type { Session, User } from 'better-auth';
 import { verifyAccessToken } from 'better-auth/oauth2';
 
@@ -10,7 +10,7 @@ type SessionWithUser = {
 type ResolveOAuthBearerSessionResult =
 	| {
 			status: 'resolved';
-			body: BetterAuthSessionResponse;
+			body: AuthSessionResponse;
 			sessionToken: string;
 	  }
 	| { status: 'malformed' }
@@ -28,7 +28,7 @@ export async function resolveOAuthBearerSession({
 	findSessionWithUserById(sessionId: string): Promise<SessionWithUser | null>;
 	createSessionResponse(
 		input: SessionWithUser,
-	): Promise<BetterAuthSessionResponse>;
+	): Promise<AuthSessionResponse>;
 	verifyOAuthAccessToken?: typeof verifyAccessToken;
 }): Promise<ResolveOAuthBearerSessionResult> {
 	const accessToken = parseBearer(authorization);

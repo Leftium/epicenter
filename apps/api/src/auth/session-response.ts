@@ -1,17 +1,19 @@
-import type { BetterAuthSessionResponse } from '@epicenter/auth/contracts';
+import {
+	type AuthSessionResponse,
+	authUserFromBetterAuthUser,
+} from '@epicenter/auth/contracts';
 import type { EncryptionKeys } from '@epicenter/encryption';
-import type { Session, User } from 'better-auth';
+import type { User } from 'better-auth';
 
-export async function createBetterAuthSessionResponse(
-	{ user, session }: { user: User; session: Session },
+export async function createAuthSessionResponse(
+	{ user }: { user: User },
 	{
 		deriveUserEncryptionKeys,
 	}: { deriveUserEncryptionKeys: (userId: string) => Promise<EncryptionKeys> },
-): Promise<BetterAuthSessionResponse> {
+): Promise<AuthSessionResponse> {
 	const encryptionKeys = await deriveUserEncryptionKeys(user.id);
 	return {
-		user,
-		session,
+		user: authUserFromBetterAuthUser(user),
 		encryptionKeys,
-	} satisfies BetterAuthSessionResponse;
+	} satisfies AuthSessionResponse;
 }

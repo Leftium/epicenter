@@ -6,13 +6,13 @@
  *
  * Key behaviors:
  * - Authorization-code plus PKCE token exchange with resource returns a JWT
- * - `/auth/oauth-session` returns the enriched session and durable session token
+ * - `/auth/oauth-session` returns identity and a durable session token header
  * - Invalid access tokens and expired Better Auth sessions are rejected
  */
 
 import { expect, test } from 'bun:test';
 import { oauthProvider } from '@better-auth/oauth-provider';
-import type { BetterAuthSessionResponse } from '@epicenter/auth/contracts';
+import type { AuthSessionResponse } from '@epicenter/auth/contracts';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import { betterAuth, type Session, type User } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
@@ -20,7 +20,7 @@ import { generateCodeChallenge } from 'better-auth/oauth2';
 import { customSession, jwt } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
 import { resolveOAuthBearerSession } from './oauth-session.js';
-import { createBetterAuthSessionResponse } from './session-response.js';
+import { createAuthSessionResponse } from './session-response.js';
 
 const redirectUri = 'http://localhost:5174/auth/callback';
 const verifier = 'test-verifier-test-verifier-test-verifier';
@@ -32,7 +32,7 @@ const encryptionKeys: EncryptionKeys = [
 ];
 let nextOAuthSessionTestPort = 31_000 + Math.floor(Math.random() * 10_000);
 
-test('oauth-session returns enriched session for OAuth access token', async () => {
+test('oauth-session returns identity and bearer token for OAuth access token', async () => {
 	const setup = createOAuthSessionTestServer();
 
 	try {
@@ -48,8 +48,9 @@ test('oauth-session returns enriched session for OAuth access token', async () =
 		const session = setup.db.session?.[0];
 		expect(session).toBeTruthy();
 		expect(response.headers.get('set-auth-token')).toBe(session?.token);
-			const body = (await response.json()) as BetterAuthSessionResponse;
+		const body = (await response.json()) as AuthSessionResponse;
 		expect(body.user.email).toBe('oauth-session@example.com');
+		expect(body).not.toHaveProperty('session');
 		expect(body.encryptionKeys).toEqual(encryptionKeys);
 	} finally {
 		setup.server.stop(true);
@@ -154,7 +155,7 @@ function createOAuthSessionTestServer() {
 				...basePlugins,
 				customSession(
 					(input) =>
-						createBetterAuthSessionResponse(input, {
+						createAuthSessionResponse(input, {
 							deriveUserEncryptionKeys: async () => encryptionKeys,
 						}),
 					{ ...baseAuthOptions, plugins: basePlugins },
@@ -175,7 +176,7 @@ function createOAuthSessionTestServer() {
 							authorization: request.headers.get('authorization'),
 							baseURL,
 							createSessionResponse: (input) =>
-								createBetterAuthSessionResponse(input, {
+								createAuthSessionResponse(input, {
 									deriveUserEncryptionKeys: async () => encryptionKeys,
 								}),
 							findSessionWithUserById: (sessionId) =>

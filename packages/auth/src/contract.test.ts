@@ -213,21 +213,20 @@ function signedInState(value: BearerSession): AuthState {
 function betterAuthSessionData(value: BearerSession) {
 	return {
 		user: value.user,
-		session: {
-			id: 'session-1',
-			token: value.token,
-			userId: value.user.id,
-			expiresAt: '2026-02-01T00:00:00.000Z',
-			createdAt: value.user.createdAt,
-			updatedAt: value.user.updatedAt,
-			ipAddress: null,
-			userAgent: null,
-		},
 		encryptionKeys: value.encryptionKeys,
 	};
 }
 
+function rememberToken(token: string) {
+	betterAuthOptions?.fetchOptions?.onSuccess?.({
+		response: new Response(null, {
+			headers: { 'set-auth-token': token },
+		}),
+	});
+}
+
 function emitSession(value: BearerSession | null) {
+	if (value !== null) rememberToken(value.token);
 	currentState = {
 		isPending: false,
 		data: value === null ? null : betterAuthSessionData(value),

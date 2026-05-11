@@ -1,21 +1,22 @@
 /**
  * Auth Session Contract Tests
  *
- * Verifies normalization at the Better Auth boundary before auth state reaches
- * local session storage.
+ * Verifies projection at the Better Auth and API response boundaries before
+ * auth state reaches local session storage.
  *
  * Key behaviors:
  * - Better Auth Date fields become portable ISO strings
- * - Custom session responses normalize into app sessions
+ * - Auth-session responses normalize into identity and bearer sessions
+ * - Extra server session metadata is stripped at the identity boundary
  * - Invalid key payloads fail at the auth contract boundary
  */
 
 import { describe, expect, test } from 'bun:test';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import {
-	authIdentityFromBetterAuthSessionResponse,
-	bearerSessionFromBetterAuthSessionResponse,
-	normalizeBearerSession,
+	authIdentityFromAuthSessionResponse,
+	authUserFromBetterAuthUser,
+	bearerSessionFromAuthSessionResponse,
 } from './auth-session.js';
 
 const encryptionKeys: EncryptionKeys = [
@@ -54,25 +55,25 @@ function betterAuthSessionResponse() {
 	};
 }
 
-describe('normalizeBearerSession', () => {
-	test('normalizes Better Auth Date fields into the local session', () => {
+describe('authUserFromBetterAuthUser', () => {
+	test('projects Better Auth Date fields into the local user', () => {
 		const response = betterAuthSessionResponse();
 
-		const session = normalizeBearerSession(response, {
-			token: 'authorization-token',
-		});
+		const user = authUserFromBetterAuthUser(response.user);
 
-		expect(session.token).toBe('authorization-token');
-		expect(session.user.createdAt).toBe(response.user.createdAt.toISOString());
-		expect(JSON.stringify(session)).not.toContain('expiresAt');
+		expect(user.createdAt).toBe(response.user.createdAt.toISOString());
+		expect(user.updatedAt).toBe(response.user.updatedAt.toISOString());
 	});
 });
 
-describe('authIdentityFromBetterAuthSessionResponse', () => {
-	test('projects Better Auth custom session response into identity only', () => {
-		const response = betterAuthSessionResponse();
+describe('authIdentityFromAuthSessionResponse', () => {
+	test('validates the auth-session response as identity only', () => {
+		const response = authSessionResponse();
 
-		const identity = authIdentityFromBetterAuthSessionResponse(response);
+		const identity = authIdentityFromAuthSessionResponse({
+			...response,
+			session: { token: 'should-not-persist' },
+		});
 
 		expect(identity).toEqual({
 			user: {
@@ -81,53 +82,56 @@ describe('authIdentityFromBetterAuthSessionResponse', () => {
 				email: 'user@example.com',
 				emailVerified: true,
 				image: null,
-				createdAt: response.user.createdAt.toISOString(),
-				updatedAt: response.user.updatedAt.toISOString(),
+				createdAt: '2026-01-01T00:00:00.000Z',
+				updatedAt: '2026-01-02T00:00:00.000Z',
 			},
 			encryptionKeys,
 		});
 	});
 
-	test('returns null for signed-out Better Auth session response', () => {
-		expect(authIdentityFromBetterAuthSessionResponse(null)).toBeNull();
-		expect(authIdentityFromBetterAuthSessionResponse(undefined)).toBeNull();
+	test('returns null for signed-out auth-session response', () => {
+		expect(authIdentityFromAuthSessionResponse(null)).toBeNull();
+		expect(authIdentityFromAuthSessionResponse(undefined)).toBeNull();
 	});
 });
 
-describe('bearerSessionFromBetterAuthSessionResponse', () => {
-	test('projects Better Auth custom session response into app session', () => {
-		const response = betterAuthSessionResponse();
+describe('bearerSessionFromAuthSessionResponse', () => {
+	test('attaches a transport token to the auth-session response', () => {
+		const response = authSessionResponse();
 
-		const session = bearerSessionFromBetterAuthSessionResponse(response);
+		const session = bearerSessionFromAuthSessionResponse(response, {
+			token: 'authorization-token',
+		});
 
 		expect(session).toEqual({
-			token: 'session-token',
+			token: 'authorization-token',
 			user: {
 				id: 'user-1',
 				name: 'User One',
 				email: 'user@example.com',
 				emailVerified: true,
 				image: null,
-				createdAt: response.user.createdAt.toISOString(),
-				updatedAt: response.user.updatedAt.toISOString(),
+				createdAt: '2026-01-01T00:00:00.000Z',
+				updatedAt: '2026-01-02T00:00:00.000Z',
 			},
 			encryptionKeys,
 		});
 	});
 
-	test('returns null for signed-out Better Auth session response', () => {
-		expect(bearerSessionFromBetterAuthSessionResponse(null)).toBeNull();
-		expect(bearerSessionFromBetterAuthSessionResponse(undefined)).toBeNull();
-	});
-
-	test('throws when custom session response omits encryption keys', () => {
-		const response = betterAuthSessionResponse();
-
+	test('throws when auth-session response omits encryption keys', () => {
 		expect(() =>
-			bearerSessionFromBetterAuthSessionResponse({
-				user: response.user,
-				session: response.session,
-			}),
+			bearerSessionFromAuthSessionResponse(
+				{ user: authSessionResponse().user },
+				{ token: 'authorization-token' },
+			),
 		).toThrow();
 	});
 });
+
+function authSessionResponse() {
+	const response = betterAuthSessionResponse();
+	return {
+		user: authUserFromBetterAuthUser(response.user),
+		encryptionKeys,
+	};
+}

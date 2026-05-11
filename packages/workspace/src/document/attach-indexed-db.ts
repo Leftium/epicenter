@@ -140,6 +140,9 @@ export function attachEncryptedIndexedDb(
 		resolve: resolveLoaded,
 		reject: rejectLoaded,
 	} = Promise.withResolvers<void>();
+	// Swallow rejection when no consumer awaits (dispose lands before load,
+	// or after the consumer already resolved their wait).
+	whenLoaded.catch(() => {});
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
 
@@ -260,6 +263,13 @@ export function attachEncryptedIndexedDb(
 	ydoc.once('destroy', async () => {
 		if (storeTimeoutId !== undefined) clearTimeout(storeTimeoutId);
 		ydoc.off('updateV2', handleUpdate);
+		// Settle the load barrier if destroy lands before the boot chain
+		// resolves it. No-op when `whenLoaded` is already settled.
+		rejectLoaded(
+			new Error(
+				'[attachEncryptedIndexedDb] doc destroyed before load completed',
+			),
+		);
 		try {
 			(await dbPromise).close();
 		} finally {

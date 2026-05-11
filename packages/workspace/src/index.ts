@@ -29,7 +29,7 @@
  * const idb = attachIndexedDb(ydoc);
  * const sync = attachSync(ydoc, {
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
- *   waitFor: idb,
+ *   waitFor: idb.whenLoaded,
  *   bearerToken,
  * });
  *
@@ -216,7 +216,6 @@ export {
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
 export {
-	type AttachSyncDoc,
 	attachSync,
 	type RpcActionSource,
 	type SyncAttachment,
@@ -226,7 +225,6 @@ export {
 	type SyncRpcAttachment,
 	type SyncStatus,
 	toWsUrl,
-	type WaitForBarrier,
 } from './document/attach-sync.js';
 export {
 	attachReadonlyTable,

@@ -41,7 +41,7 @@ export function defineOpensidianDaemon({
 					},
 				},
 			});
-			const sync = attachSync(doc, {
+			const sync = attachSync(doc.ydoc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
 				bearerToken: () => auth.bearerToken,
 				awareness,

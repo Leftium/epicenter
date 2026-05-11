@@ -178,18 +178,6 @@ export type SyncRpcAttachment = {
 	): Promise<Result<TMap[TAction]['output'], RpcError>>;
 };
 
-/**
- * Anything with a `.whenLoaded` promise (typically `attachIndexedDb` or
- * `attachSqlite` results). Lets `waitFor` accept the attachment directly
- * rather than reaching into `.whenLoaded`.
- */
-export type WaitForBarrier =
-	| Promise<unknown>
-	| { whenLoaded: Promise<unknown> };
-
-/** First arg of `attachSync`: either a bare `Y.Doc` or a doc bundle. */
-export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc };
-
 export type SyncAttachmentConfig = {
 	/**
 	 * WebSocket URL for the room. Must use ws:/wss:. Use `toWsUrl()` to convert
@@ -197,13 +185,12 @@ export type SyncAttachmentConfig = {
 	 */
 	url: string;
 	/**
-	 * Gate the first connection attempt on another promise (typically
-	 * `attachIndexedDb(ydoc).whenLoaded`). Accepts the attachment directly
-	 * (uses its `.whenLoaded`) or a raw promise. Without this, the supervisor
+	 * Gate the first connection attempt on another promise, typically
+	 * `attachIndexedDb(ydoc).whenLoaded`. Without this, the supervisor
 	 * connects before local state hydrates and the handshake transfers the
 	 * full document instead of just the delta.
 	 */
-	waitFor?: WaitForBarrier;
+	waitFor?: Promise<unknown>;
 	/**
 	 * Optional bearer-token augmentation for the WebSocket handshake.
 	 *
@@ -284,17 +271,13 @@ export function toWsUrl(httpUrl: string): string {
 }
 
 export function attachSync(
-	doc: AttachSyncDoc,
+	ydoc: Y.Doc,
 	config: SyncAttachmentConfig,
 ): SyncAttachment {
-	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
 	let rpcActions: Record<string, unknown> | null = null;
 	const awareness = config.awareness?.raw ?? null;
 
-	const waitForPromise =
-		config.waitFor && 'whenLoaded' in config.waitFor
-			? config.waitFor.whenLoaded
-			: config.waitFor;
+	const waitForPromise = config.waitFor;
 
 	const log = config.log ?? createLogger('attachSync');
 

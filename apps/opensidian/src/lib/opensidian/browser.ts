@@ -104,7 +104,7 @@ export function openOpensidian({
 	});
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb,
+		waitFor: idb.whenLoaded,
 		bearerToken,
 		awareness,
 	});

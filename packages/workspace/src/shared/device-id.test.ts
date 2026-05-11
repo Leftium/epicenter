@@ -16,7 +16,7 @@ function makeMemoryStorage(
 describe('getOrCreateInstallationId', () => {
 	it('returns the existing value when storage already holds one', () => {
 		const storage = makeMemoryStorage({
-			'epicenter:installationId': 'preexisting-id',
+			'epicenter.installation.id': 'preexisting-id',
 		});
 		expect(getOrCreateInstallationId(storage)).toBe('preexisting-id');
 	});
@@ -25,7 +25,7 @@ describe('getOrCreateInstallationId', () => {
 		const storage = makeMemoryStorage();
 		const fresh = getOrCreateInstallationId(storage);
 		expect(fresh).toMatch(/^[a-z0-9]{15}$/);
-		expect(storage.getItem('epicenter:installationId')).toBe(fresh);
+		expect(storage.getItem('epicenter.installation.id')).toBe(fresh);
 	});
 
 	it('returns the same value on subsequent calls (idempotent)', () => {

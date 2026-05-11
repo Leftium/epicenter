@@ -9,12 +9,12 @@ export default defineConfig({
 		port: APPS.DASHBOARD.port,
 		strictPort: true,
 		proxy: {
-			// Forward API requests to the local Hono dev server
+			// Forward API requests to the local Hono dev server.
 			'/api': {
 				target: `http://localhost:${APPS.API.port}`,
 				changeOrigin: true,
 			},
-			// Forward auth requests for session cookies
+			// Forward auth requests for the local bearer auth flow.
 			'/auth': {
 				target: `http://localhost:${APPS.API.port}`,
 				changeOrigin: true,

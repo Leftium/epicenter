@@ -11,7 +11,7 @@ import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
-import { auth } from '$lib/auth';
+import { auth } from '$platform/auth';
 import { getSignedInSession } from '$lib/session.svelte';
 import {
 	type ChatMessageId,

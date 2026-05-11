@@ -453,7 +453,7 @@ import { createPersistedState } from '@epicenter/svelte';
 import { openFuji } from './browser';
 
 const session = createPersistedState({
-  key: 'fuji:authSession',
+  key: 'fuji.auth.session',
   schema: AuthSession.or('null'),
   defaultValue: null,
 });
@@ -501,7 +501,7 @@ import { createFujiActions, fujiTables } from '$lib/workspace';
 import { createEntryContentDocs } from '$lib/entry-content-docs';
 import * as Y from 'yjs';
 
-const session = createPersistedState({ key: 'fuji:authSession', schema: AuthSession.or('null'), defaultValue: null });
+const session = createPersistedState({ key: 'fuji.auth.session', schema: AuthSession.or('null'), defaultValue: null });
 export const auth = createAuth({ baseURL: APP_URLS.API, session });
 
 // ── Identity (persisted locally) ───────────────────────────────────

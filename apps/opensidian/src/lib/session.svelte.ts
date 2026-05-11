@@ -1,7 +1,7 @@
 import { requireSignedIn } from '@epicenter/auth';
 import { createSession, type InferSignedIn } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
-import { auth } from './auth';
+import { auth } from '$platform/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { openOpensidian } from './opensidian/browser';
 import { createEditorState } from './state/editor-state.svelte';

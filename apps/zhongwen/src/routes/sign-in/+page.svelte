@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Loading } from '@epicenter/ui/loading';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth } from '$platform/auth';
 
 	let submitError = $state<string | null>(null);
 

@@ -5,9 +5,9 @@ import {
 	type InferSignedIn,
 } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
+import { auth } from '$platform/auth';
 import { openFuji } from '../routes/(signed-in)/fuji/browser';
 import type { EntryId } from '../routes/(signed-in)/fuji/workspace';
-import { auth } from './auth';
 
 export const session = createSession({
 	auth,

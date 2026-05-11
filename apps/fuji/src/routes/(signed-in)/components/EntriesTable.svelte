@@ -227,7 +227,7 @@
 					{#each table.getRowModel().rows as row (row.id)}
 						<Table.Row
 							role="button"
-							tabindex="0"
+								tabindex={0}
 							class="cursor-pointer transition-colors hover:bg-accent/50"
 							onclick={() => goto(`/entries/${row.original.id}`)}
 							onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goto(`/entries/${row.original.id}`); } }}

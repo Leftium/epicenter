@@ -29,6 +29,7 @@ type BetterAuthClientOptions = {
 	baseURL?: string;
 	basePath?: string;
 	fetchOptions?: {
+		credentials?: 'include' | 'omit' | 'same-origin';
 		auth?: {
 			type: 'Bearer';
 			token: () => string | undefined;
@@ -257,6 +258,7 @@ const contractCases: ContractCase[] = [
 			expect(fetches[0]?.init?.credentials).toBe('include');
 			expect(auth.bearerToken).toBeNull();
 			expect(betterAuthOptions?.fetchOptions?.auth).toBeUndefined();
+			expect(betterAuthOptions?.fetchOptions?.credentials).toBeUndefined();
 		},
 	},
 	{
@@ -278,6 +280,7 @@ const contractCases: ContractCase[] = [
 			expect(fetches[0]?.init?.credentials).toBe('omit');
 			expect(auth.bearerToken).toBe('token-2');
 			expect(betterAuthOptions?.fetchOptions?.auth?.type).toBe('Bearer');
+			expect(betterAuthOptions?.fetchOptions?.credentials).toBe('omit');
 		},
 	},
 ];

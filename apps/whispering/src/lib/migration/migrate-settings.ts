@@ -15,7 +15,7 @@ import { whisperingKv } from '$lib/workspace';
 
 // ── Migration state ──────────────────────────────────────────────────────────
 
-const MIGRATION_STATE_KEY = 'whispering:settings-migration';
+const MIGRATION_STATE_KEY = 'whispering.settings.migration';
 type MigrationState = 'completed' | 'not-needed';
 
 function getMigrationState(): MigrationState | null {

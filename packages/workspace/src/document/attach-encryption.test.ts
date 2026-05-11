@@ -194,7 +194,7 @@ describe('attachEncryption', () => {
 
 		test('round trips encrypted Yjs updates through IndexedDB', async () => {
 			const userId = `user-${crypto.randomUUID()}`;
-			const databaseName = `epicenter:v1:user:${userId}:yjs:encrypted-idb-roundtrip`;
+			const databaseName = `epicenter.v1.user.${userId}.yjs.encrypted-idb-roundtrip`;
 			const keys = toEncryptionKeys(randomBytes(32));
 			const firstDoc = new Y.Doc({
 				guid: 'encrypted-idb-roundtrip',
@@ -236,7 +236,7 @@ describe('attachEncryption', () => {
 
 		test('target guid changes the derived storage key', async () => {
 			const userId = `user-${crypto.randomUUID()}`;
-			const databaseName = `epicenter:v1:user:${userId}:yjs:encrypted-idb-guid-a`;
+			const databaseName = `epicenter.v1.user.${userId}.yjs.encrypted-idb-guid-a`;
 			const keys = toEncryptionKeys(randomBytes(32));
 			const ydoc = new Y.Doc({ guid: 'encrypted-idb-guid-a', gc: false });
 			const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });

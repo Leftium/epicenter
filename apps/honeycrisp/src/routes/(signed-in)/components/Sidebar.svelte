@@ -5,7 +5,7 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { auth } from '$lib/auth';
+	import { auth } from '$platform/auth';
 	import { getSignedInSession } from '$lib/session.svelte';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 

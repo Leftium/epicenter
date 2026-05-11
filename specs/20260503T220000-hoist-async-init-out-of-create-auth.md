@@ -137,14 +137,14 @@ What changes for callers:
 
 ```ts
 // Before (apps/fuji/src/lib/fuji/client.ts)
-const session = createPersistedState({ key: 'fuji:authSession', schema, defaultValue: null });
+const session = createPersistedState({ key: 'fuji.auth.session', schema, defaultValue: null });
 export const auth = createAuth({
     baseURL: APP_URLS.API,
     sessionStorage: createSessionStorageAdapter(session),
 });
 
 // After
-const session = createPersistedState({ key: 'fuji:authSession', schema, defaultValue: null });
+const session = createPersistedState({ key: 'fuji.auth.session', schema, defaultValue: null });
 export const auth = createAuth({
     baseURL: APP_URLS.API,
     initialSession: session.get(),

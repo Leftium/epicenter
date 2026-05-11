@@ -5,14 +5,12 @@ import { createPersistedState } from '@epicenter/svelte';
 export const auth = createBearerAuth({
 	baseURL: APP_URLS.API,
 	sessionStorage: createPersistedState({
-		key: 'opensidian:authSession',
+		key: 'zhongwen.auth.session',
 		schema: BearerSession.or('null'),
 		defaultValue: null,
 	}),
 });
 
 if (import.meta.hot) {
-	import.meta.hot.dispose(() => {
-		auth[Symbol.dispose]();
-	});
+	import.meta.hot.dispose(() => auth[Symbol.dispose]());
 }

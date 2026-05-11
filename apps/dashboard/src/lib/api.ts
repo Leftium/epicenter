@@ -27,7 +27,7 @@ import type {
 } from '@epicenter/api/billing-contract';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { type Result, tryAsync } from 'wellcrafted/result';
-import { auth } from './auth';
+import { auth } from '$platform/auth';
 
 /**
  * Tagged error for the billing API boundary.

@@ -6,10 +6,9 @@
 	"type": "module",
 	"scripts": {
 		"dev": "bun run dev:local",
-		"dev:local": "bun --bun vite dev",
-		"dev:remote": "bun --bun vite dev --mode production",
-		"build": "bun --bun vite build",
-		"preview": "bun --bun vite preview",
+		"dev:local": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check": "bun run typecheck"

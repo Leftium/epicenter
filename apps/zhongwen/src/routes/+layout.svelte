@@ -4,7 +4,7 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
-	import { auth } from '$lib/auth';
+	import { auth } from '$platform/auth';
 
 	let { children } = $props();
 </script>

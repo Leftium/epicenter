@@ -12,8 +12,20 @@ const config = {
 		paths: {
 			base: '/dashboard',
 		},
+		alias: {
+			'$platform/auth': selectAuthModule(),
+		},
 	},
 	preprocess: vitePreprocess(),
 };
 
 export default config;
+
+function selectAuthModule() {
+	// kit.alias is the source of truth for Vite and generated TypeScript config.
+	if (process.env.NODE_ENV === 'production') {
+		return './src/lib/platform/auth/cookie.ts';
+	}
+
+	return './src/lib/platform/auth/bearer.ts';
+}

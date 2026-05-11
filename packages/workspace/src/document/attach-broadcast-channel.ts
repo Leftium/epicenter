@@ -49,7 +49,7 @@ function attachBroadcastChannelWithKey(ydoc: Y.Doc, channelKey: string): void {
 		return;
 	}
 
-	const channel = new BroadcastChannel(`yjs:${channelKey}`);
+	const channel = new BroadcastChannel(`yjs.${channelKey}`);
 
 	const handleUpdate = (update: Uint8Array, origin: unknown) => {
 		if (isTransportOrigin(origin)) return;

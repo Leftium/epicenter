@@ -10,8 +10,8 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
+import { createKv } from '../document/attach-kv.js';
 import { defineKv } from '../document/define-kv.js';
-import { createKv } from '../document/internal.js';
 import { attachTable } from '../index.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { generateId, measureTime, postDefinition } from './helpers.js';

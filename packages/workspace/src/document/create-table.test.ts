@@ -6,9 +6,13 @@ import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { attachReadonlyTable, attachTable } from './attach-table.js';
+import {
+	attachReadonlyTable,
+	attachTable,
+	createReadonlyTable,
+	createTable,
+} from './attach-table.js';
 import { defineTable } from './define-table.js';
-import { createReadonlyTable, createTable } from './internal.js';
 
 /** Creates Yjs infrastructure for testing */
 function setup() {

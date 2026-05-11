@@ -3,8 +3,8 @@
  *
  * A workspace owns several `EncryptedYKeyValueLww` stores (one per table plus
  * the KV store). This attachment derives a per-workspace HKDF keyring at
- * registration time and calls `activateEncryption(keyring)` on each store
- * before the caller gets it back.
+ * attach time and calls `activateEncryption(keyring)` on each store before
+ * the caller gets it back.
  *
  * ## Method-on-coordinator pattern
  *
@@ -27,7 +27,7 @@
  * `encryptionKeys` is a callback into whoever owns identity.
  * The coordinator calls it synchronously at every `attachTable` / `attachKv` /
  * `attachIndexedDb` site, derives the keyring, and activates the store. The
- * keyring is not cached on the attachment: each registration is its own
+ * keyring is not cached on the attachment: each attach call is its own
  * derivation, which keeps state out of this layer entirely.
  *
  * Same-user identity updates (key rotation, profile edits) do not flow
@@ -37,8 +37,11 @@
  *
  * ## Disposal
  *
- * The attachment registers a single `ydoc.on('destroy')` listener that
- * disposes every registered store. Callers tear down encryption by calling
+ * Each attached store hooks `ydoc.once('destroy', ...)` at attach time,
+ * mirroring the plaintext `attachTable` / `attachKv` primitives.
+ * `attachIndexedDb` is the exception: its IDB provider wires its own
+ * teardown inside `attachEncryptedIndexedDb` rather than routing through
+ * the shared `attachStore` helper. Callers tear down encryption by calling
  * `ydoc.destroy()`: the attachment does not expose a standalone `dispose()`
  * method.
  *
@@ -76,31 +79,22 @@ import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import { attachEncryptedIndexedDb } from './attach-encrypted-indexed-db.js';
+import type { IndexedDbAttachment } from './attach-indexed-db.js';
+import { createKv, type Kv, type KvDefinitions } from './attach-kv.js';
 import {
-	attachEncryptedProvider,
-	type IndexedDbAttachment,
-} from './attach-indexed-db.js';
-import type { Kv, KvDefinitions } from './attach-kv.js';
-import type {
-	InferTableRow,
-	ReadonlyTable,
-	ReadonlyTables,
-	Table,
-	TableDefinition,
-	TableDefinitions,
-	Tables,
+	createReadonlyTable,
+	createTable,
+	type InferTableRow,
+	type ReadonlyTable,
+	type ReadonlyTables,
+	type Table,
+	type TableDefinition,
+	type TableDefinitions,
+	type Tables,
 } from './attach-table.js';
-import { createKv, createReadonlyTable, createTable } from './internal.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createOwnedYjsKey } from './local-yjs-key.js';
-
-/**
- * The coordinator treats every registered store uniformly: it only calls
- * `activateEncryption(keyring)` and `dispose()`, neither of which depends on
- * the store's value type. `any` is the variance-friendly alias here.
- */
-// biome-ignore lint/suspicious/noExplicitAny: variance
-type AnyEncryptedStore = EncryptedYKeyValueLww<any>;
 
 export type AttachEncryptionOptions = {
 	/**
@@ -176,12 +170,7 @@ export function attachEncryption(
 	ydoc: Y.Doc,
 	options: AttachEncryptionOptions,
 ): EncryptionAttachment {
-	const stores: AnyEncryptedStore[] = [];
 	const workspaceId = ydoc.guid;
-
-	ydoc.on('destroy', () => {
-		for (const store of stores) store.dispose();
-	});
 
 	function deriveKeyring(
 		keys: EncryptionKeys,
@@ -195,23 +184,22 @@ export function attachEncryption(
 		return keyring;
 	}
 
-	function register(store: AnyEncryptedStore): void {
-		stores.push(store);
+	// biome-ignore lint/suspicious/noExplicitAny: variance
+	function attachStore(key: string): EncryptedYKeyValueLww<any> {
+		const store = createEncryptedYkvLww(ydoc, key);
+		ydoc.once('destroy', () => store.dispose());
 		store.activateEncryption(
 			deriveKeyring(options.encryptionKeys(), workspaceId),
 		);
+		return store;
 	}
 
 	const attachment: EncryptionAttachment = {
 		attachTable(name, definition) {
-			const store = createEncryptedYkvLww(ydoc, TableKey(name));
-			register(store);
-			return createTable(store, definition, name);
+			return createTable(attachStore(TableKey(name)), definition, name);
 		},
 		attachReadonlyTable(name, definition) {
-			const store = createEncryptedYkvLww(ydoc, TableKey(name));
-			register(store);
-			return createReadonlyTable(store, definition, name);
+			return createReadonlyTable(attachStore(TableKey(name)), definition, name);
 		},
 		attachTables(definitions) {
 			return Object.fromEntries(
@@ -230,14 +218,21 @@ export function attachEncryption(
 			) as ReadonlyTables<typeof definitions>;
 		},
 		attachKv(definitions) {
-			const store = createEncryptedYkvLww(ydoc, KV_KEY);
-			register(store);
-			return createKv(store, definitions);
+			return createKv(attachStore(KV_KEY), definitions);
 		},
 		attachIndexedDb(targetYdoc, { userId }) {
-			return attachEncryptedProvider(targetYdoc, {
+			const keyring = deriveKeyring(options.encryptionKeys(), targetYdoc.guid);
+			if (keyring.size === 0) {
+				throw new Error(
+					'Cannot attach encrypted IndexedDB provider: encryptionKeys() returned no usable keys.',
+				);
+			}
+			const version = Math.max(...keyring.keys());
+			const bytes = keyring.get(version)!;
+			return attachEncryptedIndexedDb(targetYdoc, {
 				databaseName: createOwnedYjsKey(userId, targetYdoc.guid),
-				keyring: deriveKeyring(options.encryptionKeys(), targetYdoc.guid),
+				writeKey: { version, bytes },
+				keyring,
 			});
 		},
 	};

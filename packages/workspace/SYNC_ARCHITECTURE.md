@@ -191,11 +191,11 @@ The server acts as BOTH:
 function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
-	const sqlite = attachSqlite(ydoc, { filePath: '...' });
+	const persistence = attachYjsLog(ydoc, { filePath: '...' });
 	// Connect to OTHER sync nodes (not itself). Desktop connects to laptop + cloud.
-	const syncToLaptop = attachSync(ydoc, { url: SYNC_NODES.laptop, waitFor: sqlite.whenLoaded });
-	const syncToCloud  = attachSync(ydoc, { url: SYNC_NODES.cloud,  waitFor: sqlite.whenLoaded });
-	return { id, ydoc, tables, sqlite, syncToLaptop, syncToCloud, /* ... */ };
+	const syncToLaptop = attachSync(ydoc, { url: SYNC_NODES.laptop, waitFor: persistence.whenLoaded });
+	const syncToCloud  = attachSync(ydoc, { url: SYNC_NODES.cloud,  waitFor: persistence.whenLoaded });
+	return { id, ydoc, tables, persistence, syncToLaptop, syncToCloud, /* ... */ };
 }
 
 export const blogWorkspace = openBlog('blog');
@@ -208,11 +208,11 @@ export const blogWorkspace = openBlog('blog');
 function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
-	const sqlite = attachSqlite(ydoc, { filePath: '...' });
+	const persistence = attachYjsLog(ydoc, { filePath: '...' });
 	// Laptop connects to: desktop + cloud
-	const syncToDesktop = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: sqlite.whenLoaded });
-	const syncToCloud   = attachSync(ydoc, { url: SYNC_NODES.cloud,   waitFor: sqlite.whenLoaded });
-	return { id, ydoc, tables, sqlite, syncToDesktop, syncToCloud, /* ... */ };
+	const syncToDesktop = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: persistence.whenLoaded });
+	const syncToCloud   = attachSync(ydoc, { url: SYNC_NODES.cloud,   waitFor: persistence.whenLoaded });
+	return { id, ydoc, tables, persistence, syncToDesktop, syncToCloud, /* ... */ };
 }
 
 export const blogWorkspace = openBlog('blog');
@@ -227,8 +227,8 @@ Cloud server typically only accepts connections and does not initiate. It has no
 function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
-	const sqlite = attachSqlite(ydoc, { filePath: '...' });
-	return { id, ydoc, tables, sqlite, /* ... */ };
+	const persistence = attachYjsLog(ydoc, { filePath: '...' });
+	return { id, ydoc, tables, persistence, /* ... */ };
 }
 
 export const blogWorkspace = openBlog('blog');
@@ -288,7 +288,7 @@ import * as Y from 'yjs';
 function openBlog(id: string) {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, blogTables);
-	// Local persistence (use attachSqlite on Node.js)
+	// Local persistence (use attachYjsLog on Node.js)
 	const idb = attachIndexedDb(ydoc);
 	// Network sync waits for local replay so the first exchange is a delta.
 	const sync = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: idb.whenLoaded });
@@ -678,7 +678,8 @@ t=0ms      attachAwareness(ydoc, { schema, initial })
 t=1ms      attachSync(doc, { url, bearerToken, waitFor: idb, awareness })
               ├─ wires ydoc.on('updateV2')
               ├─ wires awareness.raw.on('update')
-              └─ kicks off async waitFor → ensureSupervisor()
+              └─ starts supervisor task: races waitFor against doc destroy,
+                 then iterates over cycleController until master abort
 
               returns SyncAttachment immediately
 
@@ -699,7 +700,7 @@ t=~50ms    ws.onopen
 t=~80ms    ws.onmessage: STEP2 from server
            handshakeComplete = true
            status: { phase: 'connected' }
-           resolveConnected()
+           connected.resolve()
 
 t=80ms+    [from here on, three loops run forever:]
             • PING every 60s

@@ -1,5 +1,6 @@
 import type { Table } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
+import type * as Y from 'yjs';
 import { FS_ERRORS } from './errors.js';
 import type { FileId } from './ids.js';
 import { posixResolve } from './path.js';
@@ -21,8 +22,12 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  *
  * The returned object satisfies the `IFileSystem` interface from `just-bash`,
  * which allows this virtual filesystem to be used as a drop-in backend for
- * shell emulation while also exposing extra members (`index`,
- * `lookupId`, `dispose`) that aren't part of `IFileSystem`.
+ * shell emulation while also exposing extra members (`index`, `lookupId`)
+ * that aren't part of `IFileSystem`.
+ *
+ * Teardown is hooked to `ydoc.once('destroy', ...)` via the underlying tree
+ * and index. Callers do not call a dispose method; destroying the
+ * workspace's Y.Doc cascades.
  *
  * **No symlinks**: `symlink`, `link`, and `readlink` always throw ENOSYS.
  * **Soft deletes**: `rm` sets `trashedAt` rather than destroying rows.
@@ -35,10 +40,11 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  *
  * const ydoc = new Y.Doc({ guid: 'app' });
  * const files = attachTable(ydoc, 'files', filesTable);
- * const fs = attachYjsFileSystem(files, fileContent);
+ * const fs = attachYjsFileSystem(ydoc, files, fileContent);
  * ```
  */
 export function attachYjsFileSystem(
+	ydoc: Y.Doc,
 	filesTable: Table<FileRow>,
 	fileContent: {
 		read(fileId: FileId): Promise<string>;
@@ -47,7 +53,7 @@ export function attachYjsFileSystem(
 	},
 	cwd: string = '/',
 ) {
-	const tree = attachFileTree(filesTable);
+	const tree = attachFileTree(ydoc, filesTable);
 
 	return FileSystem({
 		/** Reactive file-system indexes for path lookups and parent-child queries. */
@@ -73,16 +79,6 @@ export function attachYjsFileSystem(
 		lookupId(path: string): FileId | undefined {
 			const abs = posixResolve(cwd, path);
 			return tree.lookupId(abs);
-		},
-
-		/**
-		 * Tear down reactive indexes.
-		 *
-		 * Content doc cleanup is handled by the workspace's documents manager
-		 * dispose cascade: no need to call `disposeAll()` here.
-		 */
-		dispose() {
-			tree.dispose();
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════

@@ -5,7 +5,7 @@
 > column builders) that no longer exists in this codebase.
 >
 > Persistence today is an *attachment*, not a provider — you call
-> `attachIndexedDb(ydoc)` in the browser or `attachSqlite(ydoc, { filePath })`
+> `attachIndexedDb(ydoc)` in the browser or `attachYjsLog(ydoc, { filePath })`
 > on Node/Bun, both inside a `defineDocument(builder)` closure. See
 > [`packages/workspace/README.md`](../../packages/workspace/README.md) for the
 > Quick Start and [`packages/workspace/SYNC_ARCHITECTURE.md`](../../packages/workspace/SYNC_ARCHITECTURE.md)
@@ -54,7 +54,7 @@ export const workspace = app.open('epicenter.myapp');
 Offline and sync behavior:
 
 1. Writes go through the typed helpers into the `Y.Doc`.
-2. `attachIndexedDb` (or `attachSqlite`) mirrors the Y.Doc to local storage.
+2. `attachIndexedDb` (or `attachYjsLog`) mirrors the Y.Doc to local storage.
 3. `attachSync` waits for `idb.whenLoaded` before opening the WebSocket, so the first remote exchange is a CRDT delta against an already-populated local state — not a full document transfer.
 4. When offline, writes accumulate in IndexedDB/SQLite; when back online, Yjs replays them against whatever peers did in the meantime. CRDT merge rules guarantee convergence.
 

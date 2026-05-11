@@ -1,0 +1,720 @@
+# OAuth Everywhere Auth Clean Break
+
+**Date**: 2026-05-11
+**Status**: Draft implementation spec
+**Author**: AI-assisted
+**Branch**: `codex/auth-bearer-omit-cookies`
+**Supersedes**: `specs/20260511T092357-auth-hosted-sign-in-clean-break.md`
+
+## One-Sentence Thesis
+
+Every Epicenter app is an OAuth client; Better Auth cookies exist only inside the hosted API auth server to complete login, consent, and account factors, never as an app runtime credential.
+
+## Overview
+
+This spec replaces the cookie-app versus bearer-app split with one app auth model. Apps start hosted sign-in, complete OAuth authorization code with PKCE, store an OAuth session, load Epicenter identity through `/auth/me`, and use auth-owned `fetch` and `openWebSocket` capabilities for protected resources.
+
+The cleaner break is not "every app stores every credential forever." The break is narrower:
+
+```txt
+Hosted API auth server:
+  Better Auth cookies
+  email/password
+  social login
+  account recovery
+  future MFA/passkeys
+  OAuth authorize/consent/token endpoints
+
+Every Epicenter app:
+  OAuth access token
+  OAuth refresh token
+  cached AuthIdentity { user, encryptionKeys }
+  no Better Auth session token
+  no app-rendered credential form
+```
+
+## Motivation
+
+### Current State
+
+The shared auth surface still exposes credential methods to every app:
+
+```ts
+export type AuthClient = {
+	readonly state: AuthState;
+	readonly bearerToken: string | null;
+	signIn(input: { email: string; password: string }): Promise<Result<undefined, AuthError>>;
+	signUp(input: { email: string; password: string; name: string }): Promise<Result<undefined, AuthError>>;
+	signInWithSocial(input: { provider: SocialProvider }): Promise<Result<undefined, AuthError>>;
+	signOut(): Promise<Result<undefined, AuthError>>;
+	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
+};
+```
+
+The server has a bridge endpoint that turns an OAuth access token back into a Better Auth session token:
+
+```txt
+POST /auth/oauth-session
+  Authorization: Bearer <oauth access token>
+  -> verify token
+  -> find Better Auth session by sid
+  -> return { user, encryptionKeys }
+  -> set-auth-token: <Better Auth session token>
+```
+
+Protected API routes still rely on Better Auth session lookup:
+
+```ts
+const requireSession = factory.createMiddleware(async (c, next) => {
+	const result = await c.var.auth.api.getSession({
+		headers: c.req.raw.headers,
+	});
+	if (!result) return c.json(AiChatError.Unauthorized(), 401);
+
+	c.set('user', result.user);
+	c.set('session', result.session);
+	await next();
+});
+```
+
+Sync receives a raw token getter:
+
+```ts
+attachSync(doc, {
+	url,
+	bearerToken: () => auth.bearerToken,
+});
+```
+
+That creates four problems.
+
+1. App code still knows credential verbs.
+2. Bearer clients still end up in Better Auth session-token world after OAuth.
+3. Protected resources are not truly OAuth resource-server endpoints.
+4. Sync reads a public token field instead of asking auth to open the transport.
+
+### Desired State
+
+The app-facing contract becomes transport-owned, not token-exposing:
+
+```ts
+export type AuthClient = {
+	readonly state: AuthState;
+	onStateChange(fn: (state: AuthState) => void): () => void;
+	beginSignIn(input?: { returnTo?: string }): Promise<Result<undefined, AuthError>>;
+	signOut(): Promise<Result<undefined, AuthError>>;
+	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
+	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
+	[Symbol.dispose](): void;
+};
+```
+
+Apps do not decide whether the user enters email/password, signs up, uses Google, recovers access, or completes another factor. Apps only ask for an OAuth session.
+
+## Asymmetric Win
+
+Product sentence:
+
+```txt
+Epicenter apps authenticate through hosted sign-in and use OAuth credentials to access Epicenter resources.
+```
+
+Candidate refusal:
+
+```txt
+Same-origin or same-site browser apps can use Better Auth cookies directly.
+```
+
+Code family it deletes:
+
+```txt
+createCookieAuth
+cookie identity persistence
+cookie app versus bearer app docs
+cookie protected-resource branch
+hybrid /auth/me question
+auth.bearerToken
+set-auth-token rotation on app fetches
+Better Auth bearer plugin as app credential
+```
+
+User loss:
+
+```txt
+Browser apps store OAuth credentials in app storage instead of relying on
+HttpOnly cookies. XSS impact is worse than cookie-only auth, but Epicenter apps
+already hold local workspace data and encryption keys client-side. XSS is
+already a serious compromise.
+```
+
+Decision:
+
+```txt
+Refuse cookie app auth. The app model becomes one OAuth model. Better Auth
+cookies remain inside the auth server, where they are strongest and least
+confusing.
+```
+
+## Research Findings
+
+### Local Source Shape
+
+`apps/epicenter` does not exist in this checkout. This spec treats `apps/api`,
+the SvelteKit app family, `apps/tab-manager`, and the local auth and sync
+packages as the Epicenter app surface.
+
+`apps/api/src/app.ts` is a Hono app with ordered middleware:
+
+```txt
+cors
+db connection and afterResponse queue
+createAuth per request
+singleCredential
+routes
+```
+
+Specific routes matter:
+
+```txt
+/sign-in
+/consent
+/device
+/auth/oauth-session
+/auth/*
+/.well-known/openid-configuration/auth
+/.well-known/oauth-authorization-server/auth
+protected app routes
+```
+
+The current protected route middleware calls Better Auth `getSession()`. In the
+OAuth-everywhere target, app resources must instead validate OAuth access
+tokens as resource-server requests.
+
+### Better Auth 1.5.6
+
+The installed package is `@better-auth/oauth-provider@1.5.6`. Its public export
+map exposes the resource helper at:
+
+```ts
+import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
+```
+
+The dist file is named `dist/client-resource.d.mts`, but the public subpath is
+`resource-client`.
+
+`oauthProviderResourceClient(...).getActions().verifyAccessToken()` is the
+resource-server helper. With an auth instance it can fill issuer and JWKS data,
+but `/auth/me` and protected resource middleware must still pass an audience:
+
+```ts
+await resource.getActions().verifyAccessToken(token, {
+	verifyOptions: { audience: authBaseURL },
+});
+```
+
+Better Auth token creation has two sharp edges:
+
+```txt
+Refresh token:
+  Returned only when scopes include offline_access.
+
+JWT access token:
+  Returned when the token request includes resource and JWT plugin is enabled.
+  Without resource, Better Auth creates an opaque access token.
+```
+
+Therefore every app sign-in must request:
+
+```txt
+scope = "openid profile email offline_access"
+resource = <api base URL>
+```
+
+Every refresh request must also include:
+
+```txt
+grant_type = refresh_token
+client_id = <app client id>
+refresh_token = <current refresh token>
+resource = <api base URL>
+```
+
+Better Auth rotates refresh tokens. If a revoked refresh token is reused, the
+provider deletes the refresh tokens for that user and client pair. The client
+must persist rotated tokens before retrying the request that needed refresh.
+
+### Hono and Cloudflare Workers
+
+The API already uses Hono middleware and route ordering as the boundary. This is
+the right place to install an OAuth resource middleware because all protected
+routes already flow through `app.use('/ai/*', ...)`, `app.use('/workspaces/*', ...)`,
+`app.use('/documents/*', ...)`, billing routes, and authed asset routes.
+
+Cloudflare WebSocket upgrades are handled before Durable Object dispatch. The
+API currently rejects unauthenticated WebSocket upgrades by returning a 101 with
+a socket that immediately closes with code 4401. That structure can stay, but
+the auth decision must come from OAuth access-token verification, not Better
+Auth `getSession()`.
+
+### SvelteKit, WXT, and Tauri
+
+The launcher differs by runtime, but the token contract should not:
+
+```txt
+SvelteKit browser app:
+  redirect to hosted authorize URL
+  finish through /auth/callback
+
+WXT extension:
+  browser.identity.launchWebAuthFlow
+  extension callback URL
+  PKCE transaction in chrome.storage.session
+
+Tauri:
+  deep link, loopback, or device-style launcher
+  same token response shape after completion
+```
+
+The launcher owns only the OAuth dance. It does not own refresh, identity
+loading, or WebSocket auth. Those belong to `@epicenter/auth`.
+
+### Yjs Sync
+
+`packages/workspace/src/document/attach-sync.ts` opens a WebSocket, sends the
+Yjs sync handshake, runs awareness and RPC over the same connection, and
+reconnects with backoff after transport failure. The current token hook is lazy
+on reconnect, but it is still a token leak from auth into sync.
+
+The clean boundary is:
+
+```txt
+sync owns:
+  Yjs protocol
+  awareness
+  RPC
+  reconnect loop
+
+auth owns:
+  access token freshness
+  refresh
+  WebSocket subprotocol auth
+```
+
+`attachSync` should receive an `openWebSocket` capability, not a bearer token
+getter.
+
+### Broader References
+
+The external repositories are grounding references, not all load-bearing
+implementation inputs. The load-bearing sources for this spec are local API and
+auth code, installed Better Auth source, Hono route structure, Cloudflare
+Workers WebSocket behavior, SvelteKit/WXT/Tauri launcher constraints, and Yjs
+sync protocol ownership.
+
+Security-oriented projects like Signal and Bitwarden are useful pressure tests:
+do not put encryption key material into a signed JWT just to delete `/auth/me`.
+Keep key delivery explicit and app-owned.
+
+## Architecture
+
+### Before
+
+```txt
+App UI
+  |
+  +-- email/password/sign-up/social provider
+  |
+  v
+AuthClient
+  |
+  +-- createCookieAuth
+  |     -> Better Auth cookie session
+  |     -> useSession/customSession
+  |
+  +-- createBearerAuth
+        -> OAuth code + PKCE
+        -> /auth/oauth-session
+        -> Better Auth bearer session token
+        -> set-auth-token rotation
+        -> auth.bearerToken exposed to sync
+```
+
+### After
+
+```txt
+App UI
+  |
+  | beginSignIn()
+  v
+Hosted API Auth Server
+  |
+  +-- /sign-in owns credentials and account factors
+  +-- Better Auth cookie proves user to /oauth2/authorize
+  +-- /oauth2/token returns OAuth tokens
+  |
+  v
+App Auth Client
+  |
+  +-- stores OAuthSession
+  +-- calls /auth/me for AuthIdentity
+  +-- fetch() attaches fresh access token
+  +-- openWebSocket() attaches fresh access token as subprotocol
+```
+
+### Server Boundary
+
+```txt
+Public auth server routes:
+  /sign-in
+  /consent
+  /device
+  /auth/*
+  /.well-known/*
+
+OAuth app identity route:
+  GET /auth/me
+    verify OAuth access token
+    load user by payload.sub
+    derive encryption keys
+    return { user, encryptionKeys }
+
+Protected app resource routes:
+  /ai/*
+  /workspaces/*
+  /documents/*
+  /api/billing/*
+  /api/assets/*
+    verify OAuth access token
+    set c.var.user
+    do not depend on Better Auth session token
+```
+
+### Client Session
+
+```ts
+export type OAuthSession = {
+	accessToken: string;
+	refreshToken: string;
+	accessTokenExpiresAt: number;
+	user: AuthUser;
+	encryptionKeys: EncryptionKeys;
+};
+```
+
+The app can boot offline from a cached complete `OAuthSession`. Network calls
+refresh when online. If the refresh token is expired or revoked, the app
+transitions to signed out and asks the user to sign in again.
+
+## Proposed API
+
+### Auth Client
+
+```ts
+export type AuthClient = {
+	readonly state: AuthState;
+	onStateChange(fn: (state: AuthState) => void): () => void;
+	beginSignIn(input?: {
+		returnTo?: string;
+	}): Promise<Result<undefined, AuthError>>;
+	signOut(): Promise<Result<undefined, AuthError>>;
+	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
+	openWebSocket(
+		url: string | URL,
+		protocols?: string[],
+	): Promise<WebSocket>;
+	[Symbol.dispose](): void;
+};
+```
+
+No public `bearerToken`. No public cookie family. No public credential verbs.
+
+### OAuth Launcher
+
+```ts
+export type HostedSignInLauncher = {
+	begin(input: {
+		returnTo?: string;
+		scope: string;
+		resource: string;
+	}): Promise<Result<HostedSignInTokens | null, unknown>>;
+};
+
+export type HostedSignInTokens = {
+	accessToken: string;
+	refreshToken: string;
+	accessTokenExpiresIn: number;
+};
+```
+
+The launcher returns tokens or `null` for redirect-away flows. It does not load
+identity, persist app sessions, refresh tokens, or open WebSockets.
+
+### Fetch Refresh
+
+```txt
+auth.fetch(request)
+  -> ensure access token is fresh enough
+  -> attach Authorization: Bearer <accessToken>
+  -> if 401:
+       refresh once with resource
+       await sessionStorage.set(rotated session)
+       retry once
+  -> if still 401 or refresh fails:
+       clear session
+       transition signed-out
+```
+
+### WebSocket Opening
+
+```txt
+auth.openWebSocket(url, protocols)
+  -> ensure access token is fresh enough
+  -> await any required refresh persistence
+  -> new WebSocket(url, [
+       ...protocols,
+       "bearer.<accessToken>",
+     ])
+```
+
+`attachSync` changes from:
+
+```ts
+attachSync(doc, {
+	url,
+	bearerToken: () => auth.bearerToken,
+});
+```
+
+To:
+
+```ts
+attachSync(doc, {
+	url,
+	openWebSocket: auth.openWebSocket,
+});
+```
+
+The spec explicitly refuses mid-connection token expiry enforcement for now.
+WebSocket auth is checked at connection time. A live socket may outlast the
+access token used to open it. Every reconnect gets a fresh token first.
+
+## Design Decisions
+
+| Decision | Class | Choice | Rationale |
+| --- | --- | --- | --- |
+| App credential model | 2 coherence | OAuth everywhere | One app auth model deletes cookie versus bearer branching. |
+| Hosted credential entry | 2 coherence | Hosted `/sign-in` only | Account factors belong to the auth server boundary. |
+| Better Auth cookies | 2 coherence | Auth server internal only | Cookies are still useful for `/sign-in` and `/oauth2/authorize`, but apps do not consume them as runtime credentials. |
+| Resource credential | 1 evidence | OAuth access token | Better Auth ships `oauthProviderResourceClient.verifyAccessToken` for resource-server validation. |
+| Resource helper import | 1 evidence | `@better-auth/oauth-provider/resource-client` | Installed package export map exposes this public subpath. |
+| Refresh scope | 1 evidence | Require `offline_access` | Better Auth returns refresh tokens only when scopes include `offline_access`. |
+| Token audience | 1 evidence | Always pass `resource` | Better Auth creates JWT access tokens for requested resource audiences; otherwise access tokens can be opaque. |
+| `/auth/me` | 2 coherence | Keep | The app needs `{ user, encryptionKeys }`. Do not put encryption keys in signed JWT claims. |
+| `/auth/oauth-session` | 2 coherence | Delete | It is the bridge back into Better Auth session-token world. |
+| Protected route auth | 2 coherence | OAuth resource middleware | App resources should validate app credentials directly. |
+| Public `bearerToken` | 2 coherence | Delete | Auth owns credential freshness and transport attachment. |
+| WebSocket expiry | 3 taste | Check at connection time | Mid-socket expiry enforcement adds timers, close scheduling, and recovery semantics for little product value. |
+| Tauri launcher | Deferred | Decide later | Deep link, loopback, and device-style flows all fit the same token contract. |
+
+## Implementation Plan
+
+Use Build, Prove, Remove ordering even if this lands as one PR. The codebase may
+be temporarily broken between commits, but deletion should happen after the new
+path has tests and app imports have moved.
+
+### Phase 1: Server OAuth Resource Foundation
+
+- [ ] **1.1** Replace `POST /auth/oauth-session` with `GET /auth/me`.
+- [ ] **1.2** Import `oauthProviderResourceClient` from `@better-auth/oauth-provider/resource-client`.
+- [ ] **1.3** Implement `verifyOAuthAccessToken(c)` that extracts `Authorization: Bearer`, verifies audience, requires `payload.sub`, and loads the user.
+- [ ] **1.4** Add `/auth/me` tests for valid token, wrong audience, expired token, missing user, and missing bearer header.
+- [ ] **1.5** Replace `requireSession` for app resource routes with `requireOAuthUser`.
+- [ ] **1.6** Keep Better Auth `getSession()` only on hosted auth pages and OAuth interaction pages.
+- [ ] **1.7** Test WebSocket upgrade rejection still returns close code 4401 for invalid OAuth credentials.
+
+### Phase 2: Trusted OAuth Client Registry
+
+- [ ] **2.1** Replace `EPICENTER_OAUTH_PUBLIC_CLIENTS` with `EPICENTER_TRUSTED_OAUTH_CLIENTS`.
+- [ ] **2.2** Include every app that needs auth: dashboard, fuji, honeycrisp, zhongwen, opensidian, tab-manager, future desktop apps, and CLI/device clients where applicable.
+- [ ] **2.3** Store per-client facts only: `clientId`, `name`, `runtime`, `redirectUris`.
+- [ ] **2.4** Project registry entries into Better Auth OAuth client rows with `skip_consent`, public client auth, authorization-code grant, PKCE, and allowed scopes including `offline_access`.
+- [ ] **2.5** Wire `cachedTrustedClients` only as a cache for DB-backed trusted clients, not as a replacement for client metadata.
+- [ ] **2.6** Test trusted clients skip consent and unknown clients do not.
+
+### Phase 3: OAuth Launcher Package
+
+- [ ] **3.1** Rename public concepts away from social/provider names.
+- [ ] **3.2** Require `scope: "openid profile email offline_access"` for app sign-in unless a caller deliberately narrows it.
+- [ ] **3.3** Send `resource` on authorization-code exchange.
+- [ ] **3.4** Parse and require `access_token`, `refresh_token`, and `expires_in`.
+- [ ] **3.5** Keep browser, extension, and future Tauri launchers as platform adapters returning the same token shape.
+- [ ] **3.6** Tests: PKCE, state mismatch, callback error, missing refresh token, missing expires_in, resource parameter.
+
+### Phase 4: Auth Core
+
+- [ ] **4.1** Replace `createCookieAuth` and `createBearerAuth` with one OAuth app auth factory.
+- [ ] **4.2** Remove `AuthClient.signIn`, `signUp`, `signInWithSocial`, `SocialProvider`, and `bearerToken`.
+- [ ] **4.3** Add `beginSignIn`, `fetch`, and `openWebSocket`.
+- [ ] **4.4** Store `OAuthSession` with `accessToken`, `refreshToken`, `accessTokenExpiresAt`, `user`, and `encryptionKeys`.
+- [ ] **4.5** Implement refresh with `resource` and awaited `sessionStorage.set`.
+- [ ] **4.6** Refresh proactively before requests or socket opens when near expiry. Use reactive 401 retry for fetch correctness.
+- [ ] **4.7** Sign out by revoking the refresh token where possible, then clearing local session.
+- [ ] **4.8** Tests: begin sign-in, `/auth/me` identity load, refresh atomicity, 401 retry, refresh failure, sign out, openWebSocket token attachment.
+
+### Phase 5: Sync Boundary
+
+- [ ] **5.1** Change `attachSync` config from `bearerToken?: () => string | null` to `openWebSocket?: (url, protocols) => Promise<WebSocket> | WebSocket`.
+- [ ] **5.2** Keep the default `new WebSocket(url, protocols)` for unauthenticated or test transports if needed.
+- [ ] **5.3** Ensure `attemptConnection()` awaits the opener before wiring handlers.
+- [ ] **5.4** Preserve reconnect backoff, liveness, awareness, and RPC behavior.
+- [ ] **5.5** Tests: opener called on every reconnect, opener failure retries, auth close 4401 can be reset by `reconnect()`.
+
+### Phase 6: Apps
+
+- [ ] **6.1** Replace all app credential forms with one sign-in action calling `auth.beginSignIn({ returnTo })`.
+- [ ] **6.2** Give every browser app a callback route or static fallback compatible with its SvelteKit deployment mode.
+- [ ] **6.3** Wire tab-manager through `browser.identity.launchWebAuthFlow` and persist PKCE transaction data to `chrome.storage.session`.
+- [ ] **6.4** Leave Tauri implementation deferred unless a Tauri app needs auth in this PR.
+- [ ] **6.5** Update AI chat, billing, assets, workspace, and document consumers to use `auth.fetch` or auth-backed sync only.
+
+### Phase 7: Remove Old Paths
+
+- [ ] **7.1** Verify typecheck and targeted tests pass.
+- [ ] **7.2** Smoke sign-in for one browser app and tab-manager.
+- [ ] **7.3** Smoke WebSocket sync reconnect after forced refresh.
+- [ ] **7.4** Delete `createCookieAuth`, Better Auth bearer app-session handling, `/auth/oauth-session`, `set-auth-token` app handling, `AuthForm`, and stale docs.
+- [ ] **7.5** Run straggler searches and leave matches only in historical specs or hosted auth page internals.
+
+## Edge Cases
+
+### User Is Signed In On API But App Has No OAuth Session
+
+The app calls `beginSignIn()`. Hosted `/sign-in` sees the Better Auth cookie and
+continues OAuth authorize without asking for credentials again. The app still
+receives normal OAuth tokens.
+
+### Access Token Expires While App Is Online
+
+`auth.fetch` and `auth.openWebSocket` refresh before work when the token is near
+expiry. `auth.fetch` also retries once after a 401.
+
+### Access Token Expires While WebSocket Is Open
+
+Nothing happens immediately. WebSocket auth is connection-time auth in this
+break. If the socket later reconnects, `auth.openWebSocket` refreshes first.
+
+### Refresh Token Is Revoked Or Replayed
+
+Refresh fails. Auth clears local session, transitions to signed out, and the app
+asks the user to sign in again. Do not retry with older refresh tokens.
+
+### User Row Is Deleted After Token Issue
+
+`/auth/me` and protected resource middleware return 401. The client clears local
+session after refresh or identity load fails.
+
+### Offline Boot
+
+The app can unlock local data from cached `OAuthSession` identity and
+`encryptionKeys`. Network calls wait until online and then refresh if possible.
+
+### Extension Service Worker Eviction
+
+PKCE verifier and state must be in `chrome.storage.session` before
+`launchWebAuthFlow` opens. In-memory transaction state is not enough.
+
+## Open Questions
+
+1. What exact access-token lifetime should the OAuth provider use?
+   - Recommendation: start with 15 minutes for app access tokens and revisit after sync smoke tests. One hour is Better Auth's default, but shorter tokens reduce damage if app storage is compromised.
+
+2. Should app resource routes require a custom scope beyond `openid profile email offline_access`?
+   - Recommendation: defer until third-party API access exists. First-party apps can start with audience validation and trusted-client registration.
+
+3. Which Tauri launcher should be first?
+   - Options: deep link, loopback, device-style flow.
+   - Recommendation: defer. The auth core should only require a launcher returning `HostedSignInTokens`.
+
+4. Should refresh tokens be stored in a stronger runtime store per platform?
+   - Recommendation: use the best practical store per app during implementation. Browser local storage is acceptable for this clean break only because local workspace data and encryption keys are already client-side.
+
+## Decisions Log
+
+- Keep cached `user` and `encryptionKeys` in `OAuthSession`: offline local-first unlock depends on complete identity at boot.
+  Revisit when: Epicenter adds an explicit lock screen or user-held key flow.
+
+- Allow WebSocket connections to outlive the access token used at handshake: enforcing expiry mid-connection adds DO timers and close coordination without changing the app's local data risk.
+  Revisit when: third-party real-time API access exists or server-side ACLs become document-granular.
+
+## Success Criteria
+
+- [ ] No app imports `AuthForm`, `signIn`, `signUp`, `signInWithSocial`, or `SocialProvider`.
+- [ ] No app auth path reads `set-auth-token`.
+- [ ] No app auth path calls `/auth/oauth-session`.
+- [ ] No public `AuthClient.bearerToken` remains.
+- [ ] Every protected app resource validates OAuth access tokens with audience.
+- [ ] Every app sign-in requests `offline_access` and sends `resource`.
+- [ ] Refresh persists rotated tokens before retrying a request or opening a WebSocket.
+- [ ] Sync receives `openWebSocket`, not a bearer token getter.
+- [ ] Cookie sessions are used only by hosted auth server routes.
+
+## Straggler Searches
+
+```txt
+rg -n "signIn\\(|signUp\\(|signInWithSocial|SocialProvider|AuthForm"
+rg -n "bearerToken|set-auth-token|oauth-session|createCookieAuth|createBearerAuth"
+rg -n "getSession\\(" apps/api/src packages
+rg -n "Authorization: `Bearer|Authorization', `Bearer|bearer\\."
+```
+
+Expected survivors:
+
+```txt
+apps/api/src/auth-pages/
+  hosted credential UI may still call Better Auth sign-in endpoints
+
+apps/api/src/app.ts or auth helper files
+  hosted auth pages may still call Better Auth getSession
+
+historical specs and docs
+  old architecture notes
+```
+
+## References
+
+Local files:
+
+- `apps/api/src/app.ts`: Hono route order, protected routes, WebSocket upgrade handling.
+- `apps/api/src/auth/create-auth.ts`: Better Auth plugin setup, OAuth provider config, cookie config.
+- `apps/api/src/auth/oauth-session.ts`: bridge endpoint to delete.
+- `packages/auth/src/auth-contract.ts`: app-facing auth surface to replace.
+- `packages/auth/src/create-bearer-auth.ts`: pending token, bridge, and public token surfaces to delete.
+- `packages/auth/src/create-cookie-auth.ts`: cookie app transport to delete.
+- `packages/oauth-client/src/index.ts`: OAuth launcher package to rename and harden.
+- `packages/workspace/src/document/attach-sync.ts`: WebSocket opener boundary.
+- `apps/tab-manager/src/lib/platform/auth/bearer.ts`: WXT launchWebAuthFlow and async storage constraints.
+- `apps/opensidian/src/lib/platform/auth/bearer.ts`: browser callback route pattern.
+
+Primary upstream references consulted:
+
+- [better-auth/better-auth](https://github.com/better-auth/better-auth)
+- [honojs/hono](https://github.com/honojs/hono)
+- [cloudflare/cloudflare-docs](https://github.com/cloudflare/cloudflare-docs)
+- [yjs/yjs](https://github.com/yjs/yjs)
+- [yjs/y-protocols](https://github.com/yjs/y-protocols)
+- [yjs/y-indexeddb](https://github.com/yjs/y-indexeddb)
+- [sveltejs/svelte](https://github.com/sveltejs/svelte)
+- [sveltejs/kit](https://github.com/sveltejs/kit)
+- [tauri-apps/tauri](https://github.com/tauri-apps/tauri)
+- [wxt-dev/wxt](https://github.com/wxt-dev/wxt)
+- [drizzle-team/drizzle-orm](https://github.com/drizzle-team/drizzle-orm)
+- [tursodatabase/turso](https://github.com/tursodatabase/turso)
+- [TanStack/ai](https://github.com/tanstack/ai)
+- `/Users/braden/Code/ai`
+- [jsrepojs/jsrepo](https://github.com/jsrepojs/jsrepo)
+- [signalapp/libsignal](https://github.com/signalapp/libsignal)
+- [bitwarden/server](https://github.com/bitwarden/server)
+- [huntabyte/shadcn-svelte](https://github.com/huntabyte/shadcn-svelte)
+- [ieedan/shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras)
+- [TanStack/table](https://github.com/TanStack/table)
+- [useautumn/autumn](https://github.com/useautumn/autumn)

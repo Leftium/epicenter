@@ -9,7 +9,6 @@ import * as idb from 'lib0/indexeddb';
 import { clearDocument, IndexeddbPersistence } from 'y-indexeddb';
 import type * as Y from 'yjs';
 import { applyUpdateV2, encodeStateAsUpdateV2, transact } from 'yjs';
-import type { InternalEncryptedIndexedDbAttachment } from './internal.js';
 import { createOwnedYjsKey, createOwnedYjsKeyPrefix } from './local-yjs-key.js';
 
 const UPDATES_STORE_NAME = 'updates';
@@ -48,13 +47,7 @@ type IndexedDbFactoryWithDatabases = IDBFactory & {
 };
 
 export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
-	return attachPlainIndexedDb(ydoc, ydoc.guid);
-}
-
-function attachPlainIndexedDb(
-	ydoc: Y.Doc,
-	databaseName: string,
-): IndexedDbAttachment {
+	const databaseName = ydoc.guid;
 	const idb = new IndexeddbPersistence(databaseName, ydoc);
 	// `IndexeddbPersistence`'s constructor binds `doc.on('destroy', this.destroy)`
 	// eagerly, and its `destroy()` has no top-level idempotency guard: two calls
@@ -135,12 +128,10 @@ async function wipeOwnerLocalYjsDataWithDependencies(
 export function attachEncryptedProvider(
 	ydoc: Y.Doc,
 	{ databaseName, keyring }: EncryptedProviderOptions,
-): InternalEncryptedIndexedDbAttachment {
-	let currentKeyring = keyring;
+): IndexedDbAttachment {
 	let db: IDBDatabase | undefined;
 	let dbref = 0;
 	let dbsize = 0;
-	let destroyed = false;
 	let storeTimeoutId: ReturnType<typeof setTimeout> | undefined;
 
 	const aad = textEncoder.encode(`yjs-update-v2:${ydoc.guid}`);
@@ -159,23 +150,20 @@ export function attachEncryptedProvider(
 		]);
 	});
 
-	const attachment: InternalEncryptedIndexedDbAttachment = {
+	const attachment: IndexedDbAttachment = {
 		whenLoaded,
 		clearLocal: () => clearDocument(databaseName),
 		whenDisposed,
-		activateEncryption(nextKeyring) {
-			currentKeyring = nextKeyring;
-		},
 	};
 
 	function currentKey(): { version: number; key: Uint8Array } {
-		if (currentKeyring.size === 0) {
+		if (keyring.size === 0) {
 			throw new Error(
 				'Cannot write encrypted IndexedDB update: keyring is empty.',
 			);
 		}
-		const version = Math.max(...currentKeyring.keys());
-		const key = currentKeyring.get(version);
+		const version = Math.max(...keyring.keys());
+		const key = keyring.get(version);
 		if (key === undefined) {
 			throw new Error(
 				`Cannot write encrypted IndexedDB update: key version ${version} is not in the keyring.`,
@@ -195,7 +183,7 @@ export function attachEncryptedProvider(
 	}
 
 	function decryptUpdate(blob: EncryptedBlob): Uint8Array {
-		return decryptBytes({ keyring: currentKeyring, blob, aad });
+		return decryptBytes({ keyring, blob, aad });
 	}
 
 	async function addEncryptedUpdate(
@@ -230,7 +218,7 @@ export function attachEncryptedProvider(
 			updatesStore,
 			IDBKeyRange.lowerBound(dbref, false),
 		)) as EncryptedBlob[];
-		if (!destroyed) {
+		if (!ydoc.isDestroyed) {
 			await beforeApplyUpdates(updatesStore);
 			transact(
 				ydoc,
@@ -280,7 +268,7 @@ export function attachEncryptedProvider(
 				(updatesStore) =>
 					addEncryptedUpdate(updatesStore, encodeStateAsUpdateV2(ydoc)),
 				() => {
-					if (!destroyed) resolveLoaded();
+					if (!ydoc.isDestroyed) resolveLoaded();
 				},
 			);
 		})
@@ -292,7 +280,6 @@ export function attachEncryptedProvider(
 	ydoc.once('destroy', async () => {
 		if (storeTimeoutId !== undefined) clearTimeout(storeTimeoutId);
 		ydoc.off('updateV2', handleUpdate);
-		destroyed = true;
 		try {
 			(await dbPromise).close();
 		} finally {

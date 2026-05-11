@@ -78,17 +78,18 @@ import {
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { attachEncryptedIndexedDb } from './attach-encrypted-indexed-db.js';
 import type { IndexedDbAttachment } from './attach-indexed-db.js';
-import type { Kv, KvDefinitions } from './attach-kv.js';
-import type {
-	InferTableRow,
-	ReadonlyTable,
-	ReadonlyTables,
-	Table,
-	TableDefinition,
-	TableDefinitions,
-	Tables,
+import { createKv, type Kv, type KvDefinitions } from './attach-kv.js';
+import {
+	createReadonlyTable,
+	createTable,
+	type InferTableRow,
+	type ReadonlyTable,
+	type ReadonlyTables,
+	type Table,
+	type TableDefinition,
+	type TableDefinitions,
+	type Tables,
 } from './attach-table.js';
-import { createKv, createReadonlyTable, createTable } from './internal.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createOwnedYjsKey } from './local-yjs-key.js';
 
@@ -221,10 +222,7 @@ export function attachEncryption(
 			return createKv(store, definitions);
 		},
 		attachIndexedDb(targetYdoc, { userId }) {
-			const keyring = deriveKeyring(
-				options.encryptionKeys(),
-				targetYdoc.guid,
-			);
+			const keyring = deriveKeyring(options.encryptionKeys(), targetYdoc.guid);
 			if (keyring.size === 0) {
 				throw new Error(
 					'Cannot attach encrypted IndexedDB provider: encryptionKeys() returned no usable keys.',

@@ -7,7 +7,6 @@
 	"scripts": {
 		"dev": "bun run dev:local",
 		"dev:local": "vite dev",
-		"dev:remote": "vite dev --mode production",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",

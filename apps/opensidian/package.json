@@ -14,7 +14,6 @@
 	"scripts": {
 		"dev": "bun run dev:local",
 		"dev:local": "vite dev",
-		"dev:remote": "vite dev --mode production",
 		"build": "vite build",
 		"deploy": "bun run build && wrangler deploy",
 		"preview": "vite preview",

@@ -60,6 +60,31 @@ Load these on demand based on what you're working on:
   implementation should be checked against a contract while keeping inference
   pointed at the concrete value.
 
+- **Local shape copies are boundary smells**: A local type that exists only to
+  imitate an upstream value should be suspicious before it becomes normal. The
+  common tells are names ending in `Like`, casts to local `Like` types,
+  `as Record<string, unknown>` inside already-typed internal code,
+  `Pick<T, 'singleMethod'>` dependency seams, test-only
+  `Parameters<typeof fn>[n]` gymnastics, and production casts whose only job is
+  to make a test fake compile.
+
+  ```typescript
+  // Bad: local copy of a dependency shape
+  type AuthClientLike = {
+    signOut(): Promise<void>;
+  };
+
+  // Good: name the caller's actual capability
+  type SignOut = () => Promise<void>;
+  ```
+
+  Prefer the owning runtime type, schema, factory return type, function
+  signature, or a caller-owned capability function. Keep incomplete fake objects
+  in tests, checked with `satisfies` when useful, instead of widening
+  production code to accommodate them. See
+  `docs/articles/copied-types-are-boundary-leaks.md` for the full review
+  pattern.
+
 - Always use `type` instead of `interface` in TypeScript.
 - **`readonly` only for arrays and maps**: Never use `readonly` on primitive properties or object properties. The modifier is shallow and provides little protection for non-collection types. Use it only where mutation is a realistic footgun:
 

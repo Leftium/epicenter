@@ -130,6 +130,46 @@ rg "Pick<[^>]+,\s*['\"][^'\"|]+['\"]\s*>" packages apps
 
 **False positive**: `Pick` is fine for data projection, DTO trimming, and multi-field view models. A single non-method field like `Pick<Session['session'], 'expiresAt'>` is not this smell.
 
+## 7. Copied TypeScript Boundary Shapes
+
+**Pattern**: local helper types that copy upstream shapes instead of deriving
+from the owner.
+
+```bash
+rg "type\s+\w+Like\b|interface\s+\w+Like\b" packages apps
+rg "as\s+\w+Like\b" packages apps
+rg "as\s+Record<string, unknown>" packages apps
+rg "Pick<[^>]+,\s*['\"][^'\"|]+['\"]\s*>" packages apps
+rg "Parameters<typeof\s+[^>]+>\[[0-9]+\]" packages apps
+```
+
+**Why it matters**: copied shapes create two sources of truth. A `Like` type,
+single-method `Pick`, or `Parameters<typeof fn>[n]` contortion can look precise,
+but often says "this layer knows an upstream object exists and only wants one
+piece of it." That is a boundary leak. Either derive from the owning runtime
+type, schema, factory, or function signature, or name the one capability the
+caller actually needs.
+
+**Triage**: read nearby context before judging. Classify each hit as:
+
+- justified boundary: external input, protocol compatibility, or a real shared
+  contract
+- test fake only: acceptable when contained in `*.test.ts` or setup helpers
+- refactor candidate: internal code copies a local upstream shape or production
+  code widened only to satisfy a test seam
+- false positive: data projection, DTO trimming, or a named capability that is
+  the actual caller-owned contract
+
+**Recipe**: clear candidates usually collapse one of four ways: derive the type
+from the owner, replace object-shaped dependency injection with a named
+capability function, move incomplete fake objects into tests with `satisfies`,
+or delete one-property option aliases that only rename the function signature.
+
+**False positive**: `Parameters<typeof fn>[n]` is fine when it derives a public
+helper type from a stable exported function. It becomes a smell when tests use it
+to reverse-engineer an unnamed seam, or when the index gymnastics hide the fact
+that the caller wants a smaller named capability.
+
 ## What This Skill Doesn't Catch (Reject from the Hunt)
 
 Tested and rejected as not-actually-smells in this codebase:

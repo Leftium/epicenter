@@ -33,7 +33,7 @@ export type IndexedDbAttachment = {
 	whenDisposed: Promise<unknown>;
 };
 
-type EncryptedProviderOptions = {
+type EncryptedIndexedDbOptions = {
 	databaseName: string;
 	keyring: ReadonlyMap<number, Uint8Array>;
 };
@@ -120,9 +120,9 @@ function resolveWriteKey(keyring: ReadonlyMap<number, Uint8Array>): {
 	return { keyVersion, key };
 }
 
-export function attachEncryptedProvider(
+export function attachEncryptedIndexedDb(
 	ydoc: Y.Doc,
-	{ databaseName, keyring }: EncryptedProviderOptions,
+	{ databaseName, keyring }: EncryptedIndexedDbOptions,
 ): IndexedDbAttachment {
 	// Keyring is frozen at attach time, so resolve the write key once at the
 	// boundary. An empty or malformed keyring fails fast here instead of

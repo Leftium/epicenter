@@ -77,7 +77,7 @@ import {
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import {
-	attachEncryptedProvider,
+	attachEncryptedIndexedDb,
 	type IndexedDbAttachment,
 } from './attach-indexed-db.js';
 import type { Kv, KvDefinitions } from './attach-kv.js';
@@ -235,7 +235,7 @@ export function attachEncryption(
 			return createKv(store, definitions);
 		},
 		attachIndexedDb(targetYdoc, { userId }) {
-			return attachEncryptedProvider(targetYdoc, {
+			return attachEncryptedIndexedDb(targetYdoc, {
 				databaseName: createOwnedYjsKey(userId, targetYdoc.guid),
 				keyring: deriveKeyring(options.encryptionKeys(), targetYdoc.guid),
 			});

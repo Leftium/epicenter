@@ -1,8 +1,8 @@
 <script lang="ts">
 	import data, { type EmojiMartData } from '@emoji-mart/data';
 	import { Command as CommandPrimitive } from 'bits-ui';
-	import * as Command from '../command';
-	import * as casing from '../utils/casing';
+	import * as Command from '../command/index.js';
+	import * as casing from '../utils/casing.js';
 	import { cn } from '../utils.js';
 	import {
 		makeValue,

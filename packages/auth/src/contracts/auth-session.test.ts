@@ -5,8 +5,7 @@
  * auth state reaches local session storage.
  *
  * Key behaviors:
- * - Better Auth Date fields become portable ISO strings
- * - Auth-session responses normalize into identity and OAuth sessions
+ * - Auth-session responses project into identity and OAuth sessions
  * - Extra server session metadata is stripped at the identity boundary
  * - Invalid key payloads fail at the auth contract boundary
  */
@@ -15,7 +14,6 @@ import { describe, expect, test } from 'bun:test';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import {
 	authIdentityFromAuthSessionResponse,
-	authUserFromBetterAuthUser,
 	oauthSessionFromAuthSessionResponse,
 } from './auth-session.js';
 
@@ -55,17 +53,6 @@ function betterAuthSessionResponse() {
 	};
 }
 
-describe('authUserFromBetterAuthUser', () => {
-	test('projects Better Auth Date fields into the local user', () => {
-		const response = betterAuthSessionResponse();
-
-		const user = authUserFromBetterAuthUser(response.user);
-
-		expect(user.createdAt).toBe(response.user.createdAt.toISOString());
-		expect(user.updatedAt).toBe(response.user.updatedAt.toISOString());
-	});
-});
-
 describe('authIdentityFromAuthSessionResponse', () => {
 	test('validates the auth-session response as identity only', () => {
 		const response = authSessionResponse();
@@ -82,8 +69,6 @@ describe('authIdentityFromAuthSessionResponse', () => {
 				email: 'user@example.com',
 				emailVerified: true,
 				image: null,
-				createdAt: '2026-01-01T00:00:00.000Z',
-				updatedAt: '2026-01-02T00:00:00.000Z',
 			},
 			encryptionKeys,
 		});
@@ -115,8 +100,6 @@ describe('oauthSessionFromAuthSessionResponse', () => {
 				email: 'user@example.com',
 				emailVerified: true,
 				image: null,
-				createdAt: '2026-01-01T00:00:00.000Z',
-				updatedAt: '2026-01-02T00:00:00.000Z',
 			},
 			encryptionKeys,
 		});
@@ -139,7 +122,7 @@ describe('oauthSessionFromAuthSessionResponse', () => {
 function authSessionResponse() {
 	const response = betterAuthSessionResponse();
 	return {
-		user: authUserFromBetterAuthUser(response.user),
+		user: response.user,
 		encryptionKeys,
 	};
 }

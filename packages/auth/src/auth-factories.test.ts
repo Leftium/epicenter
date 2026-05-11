@@ -27,8 +27,6 @@ function identity({
 	return {
 		user: {
 			id: userId,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
 			email: `${userId}@example.com`,
 			emailVerified: true,
 			name: userId,

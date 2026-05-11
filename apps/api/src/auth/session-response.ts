@@ -1,7 +1,5 @@
-import {
-	type AuthSessionResponse,
-	authUserFromBetterAuthUser,
-} from '@epicenter/auth/contracts';
+import { AuthUser } from '@epicenter/auth';
+import type { AuthSessionResponse } from '@epicenter/auth/contracts';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { User } from 'better-auth';
 
@@ -13,7 +11,7 @@ export async function createAuthSessionResponse(
 ): Promise<AuthSessionResponse> {
 	const encryptionKeys = await deriveUserEncryptionKeys(user.id);
 	return {
-		user: authUserFromBetterAuthUser(user),
+		user: AuthUser.assert(user),
 		encryptionKeys,
 	} satisfies AuthSessionResponse;
 }

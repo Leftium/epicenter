@@ -1,23 +1,13 @@
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import type { Context } from 'hono';
 
-type WebSocketPairLike = {
-	0: WebSocket;
-	1: {
-		accept(): void;
-		close(code?: number, reason?: string): void;
-	};
-};
-
-type OAuthUnauthorizedResourceResponseOptions = {
-	createWebSocketPair?: () => WebSocketPairLike;
-};
+type CreateWebSocketPair = () => InstanceType<typeof WebSocketPair>;
 
 export function createOAuthUnauthorizedResourceResponse(
 	c: Context,
 	{
-		createWebSocketPair = () => new WebSocketPair() as WebSocketPairLike,
-	}: OAuthUnauthorizedResourceResponseOptions = {},
+		createWebSocketPair = () => new WebSocketPair(),
+	}: { createWebSocketPair?: CreateWebSocketPair } = {},
 ) {
 	if (c.req.header('upgrade') !== 'websocket') {
 		return c.json(AiChatError.Unauthorized(), 401);

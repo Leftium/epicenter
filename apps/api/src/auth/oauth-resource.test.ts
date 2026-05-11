@@ -12,12 +12,6 @@ import { expect, test } from 'bun:test';
 import { Hono } from 'hono';
 import { createOAuthUnauthorizedResourceResponse } from './oauth-resource.js';
 
-type CreateWebSocketPair = NonNullable<
-	NonNullable<
-		Parameters<typeof createOAuthUnauthorizedResourceResponse>[1]
-	>['createWebSocketPair']
->;
-
 test('HTTP resource auth failure returns unauthorized JSON', async () => {
 	const app = new Hono();
 	app.get('/resource', (c) => createOAuthUnauthorizedResourceResponse(c));
@@ -37,21 +31,21 @@ test('HTTP resource auth failure returns unauthorized JSON', async () => {
 test('WebSocket resource auth failure closes with 4401 invalid token', async () => {
 	const closeCalls: Array<{ code?: number; reason?: string }> = [];
 	let accepted = false;
+	const server = {
+		accept() {
+			accepted = true;
+		},
+		close(code?: number, reason?: string) {
+			closeCalls.push({ code, reason });
+		},
+	} satisfies Pick<WebSocket, 'accept' | 'close'>;
 	const app = new Hono();
 	app.get('/resource', (c) =>
 		createOAuthUnauthorizedResourceResponse(c, {
-			createWebSocketPair: () =>
-				({
-					0: {} as WebSocket,
-					1: {
-						accept() {
-							accepted = true;
-						},
-						close(code?: number, reason?: string) {
-							closeCalls.push({ code, reason });
-						},
-					},
-				}) as ReturnType<CreateWebSocketPair>,
+			createWebSocketPair: () => ({
+				0: {} as WebSocket,
+				1: server as WebSocket,
+			}),
 		}),
 	);
 

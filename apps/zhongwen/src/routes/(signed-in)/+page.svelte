@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { requireSignedIn } from '@epicenter/auth';
+	import { requireIdentity } from '@epicenter/auth';
 	import { fromKv } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
@@ -8,20 +8,18 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
+	import { requireWorkspace } from '$lib/session.svelte';
 	import { auth } from '$platform/auth';
-	import { getSignedInSession } from '$lib/session.svelte';
 	import { createChatState } from './chat/chat-state.svelte';
 	import ChatInput from './components/ChatInput.svelte';
 	import ChatMessage from './components/ChatMessage.svelte';
 	import ModelPicker from './components/ModelPicker.svelte';
 	import ZhongwenSidebar from './components/ZhongwenSidebar.svelte';
 
-	const signedIn = getSignedInSession();
-	const showPinyin = fromKv(signedIn.zhongwen.kv, 'showPinyin');
+	const workspace = requireWorkspace();
+	const showPinyin = fromKv(workspace.zhongwen.kv, 'showPinyin');
 	const chatState = createChatState();
 	let dismissedError = $state(false);
-
-	const handle = $derived(chatState.active);
 
 	onDestroy(() => {
 		chatState[Symbol.dispose]();
@@ -35,7 +33,7 @@
 			confirm: { text: 'Forget device', variant: 'destructive' },
 			onConfirm: async () => {
 				try {
-					await signedIn.zhongwen.wipe();
+					await workspace.zhongwen.wipe();
 					await auth.signOut();
 				} catch (error) {
 					toast.error('Failed to forget this device', {
@@ -55,8 +53,8 @@
 			<div class="flex items-center gap-3">
 				<Sidebar.Trigger />
 				<h1 class="text-lg font-semibold">中文 Zhongwen</h1>
-				{#if handle}
-					<ModelPicker {handle} />
+				{#if chatState.active}
+					<ModelPicker handle={chatState.active} />
 				{/if}
 			</div>
 
@@ -72,7 +70,7 @@
 				</Button>
 
 				<span class="text-sm text-muted-foreground">
-					{requireSignedIn(auth).user.email}
+					{requireIdentity(auth).user.email}
 				</span>
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device
@@ -80,7 +78,8 @@
 			</div>
 		</header>
 
-		{#if handle}
+		{#if chatState.active}
+			{@const handle = chatState.active}
 			<Chat.List class="flex-1 overflow-y-auto p-4" aria-live="polite">
 				{#if handle.messages.length === 0}
 					<div

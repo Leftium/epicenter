@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { AuthForm } from '@epicenter/svelte/auth-form';
+	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
-	import { Loading } from '@epicenter/ui/loading';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { ModeWatcher } from 'mode-watcher';
 	import { auth } from '$platform/auth';
 	import UserMenu from '$lib/components/UserMenu.svelte';
@@ -12,15 +12,29 @@
 	import '../app.css';
 
 	let { children } = $props();
+
+	let signingIn = $state(false);
+	let signInError = $state<string | null>(null);
+
+	async function startSignIn() {
+		signInError = null;
+		signingIn = true;
+		try {
+			const { error } = await auth.startSignIn({
+				returnTo: window.location.href,
+			});
+			if (error) signInError = error.message;
+		} finally {
+			signingIn = false;
+		}
+	}
 </script>
 
 <svelte:head><title>Billing: Epicenter</title></svelte:head>
 
 <QueryClientProvider client={queryClient}>
 	<div class="min-h-screen bg-background text-foreground">
-		{#if auth.state.status === 'pending'}
-			<Loading class="h-dvh" />
-		{:else if auth.state.status === 'signed-in'}
+		{#if auth.state.status === 'signed-in'}
 			<header class="border-b bg-background/95 backdrop-blur">
 				<div
 					class="mx-auto max-w-5xl px-6 flex items-center justify-between h-14"
@@ -33,11 +47,31 @@
 		{:else}
 			<div class="flex min-h-screen items-center justify-center">
 				<Card.Root class="w-full max-w-sm p-6">
-					<AuthForm
-						{auth}
-						syncNoun="billing"
-						onSocialSignIn={() => auth.signInWithSocial({ provider: 'google' })}
-					/>
+					<div class="space-y-4 text-center">
+						<div class="space-y-1">
+							<p class="text-sm font-medium">Sign in to Epicenter</p>
+							<p class="text-xs text-muted-foreground">
+								Sign in to view billing and usage.
+							</p>
+						</div>
+						{#if signInError}
+							<p class="text-xs text-destructive">{signInError}</p>
+						{/if}
+						<Button
+							class="w-full"
+							onclick={startSignIn}
+							disabled={signingIn}
+						>
+							{#if signingIn}
+								<LoaderCircle class="size-4 animate-spin" />
+								Signing in…
+							{:else if auth.state.status === 'reauth-required'}
+								Reconnect
+							{:else}
+								Sign in with Epicenter
+							{/if}
+						</Button>
+					</div>
 				</Card.Root>
 			</div>
 		{/if}

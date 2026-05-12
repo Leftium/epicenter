@@ -58,6 +58,7 @@ export const whenReady = authSessionStorage.whenReady.then(() => {
 function createWorkspaceSession(auth: AuthClient) {
 	return createSession({
 		auth,
+		name: 'tab-manager',
 		build: (identity) => {
 			const userId = identity.user.id;
 			let disposed = false;

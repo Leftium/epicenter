@@ -21,31 +21,30 @@ export type WorkspaceAiTools = ReturnType<
 	typeof actionsToAiTools<TabManagerWorkspace['actions']>
 >;
 
-type TabManagerWithState = TabManagerWorkspace & {
-	state: {
-		savedTabs: ReturnType<typeof createSavedTabState>;
-		bookmarks: ReturnType<typeof createBookmarkState>;
-		toolTrust: ReturnType<typeof createToolTrustState>;
-		unifiedView: ReturnType<typeof createUnifiedViewState>;
-		aiChat: ReturnType<typeof createAiChatState>;
-	};
-};
-
 type ReadyTabManagerSession = {
-	tabManager: TabManagerWithState;
+	tabManager: TabManagerWorkspace & {
+		state: {
+			savedTabs: ReturnType<typeof createSavedTabState>;
+			bookmarks: ReturnType<typeof createBookmarkState>;
+			toolTrust: ReturnType<typeof createToolTrustState>;
+			unifiedView: ReturnType<typeof createUnifiedViewState>;
+			aiChat: ReturnType<typeof createAiChatState>;
+		};
+	};
 	workspaceAiTools: WorkspaceAiTools;
 };
 
-let authClient = $state<AuthClient | undefined>(undefined);
-let workspaceSession = $state<ReturnType<typeof createWorkspaceSession>>();
-
 /**
- * Awaiting `authSessionStorage.whenReady` before constructing the auth client
- * means `createOAuthAppAuth` sees the persisted OAuth session synchronously
- * during construction. Components await `whenReady` once at the entrypoint
- * boundary, after which `auth` and `workspaceSession` are guaranteed defined.
+ * Deferred-init values: set exactly once when `authSessionStorage.whenReady`
+ * resolves, never reassigned afterwards. They are plain `let`, not `$state`,
+ * because nothing needs the assignment itself to drive reactivity; consumers
+ * await the `whenReady` promise before reading, and the reactive surfaces
+ * (`auth.state`, `workspaceSession.current`) own their own `$state` internally.
  */
-export const whenReady = authSessionStorage.whenReady.then(() => {
+let authClient: AuthClient | undefined;
+let workspaceSession: ReturnType<typeof createWorkspaceSession> | undefined;
+
+const whenReady = authSessionStorage.whenReady.then(() => {
 	authClient = createOAuthAppAuth({
 		baseURL: APP_URLS.API,
 		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
@@ -61,7 +60,7 @@ function createWorkspaceSession(auth: AuthClient) {
 		build: (identity) => {
 			const userId = identity.user.id;
 			let disposed = false;
-			let ready = $state<ReadyTabManagerSession | undefined>(undefined);
+			let ready: ReadyTabManagerSession | undefined;
 			const whenReady = openTabManager({
 				userId,
 				peer: createPeer(),

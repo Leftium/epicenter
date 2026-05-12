@@ -9,7 +9,7 @@ const config = {
 			fallback: 'index.html',
 		}),
 		alias: {
-			'$platform/auth': './src/lib/platform/auth/cookie.ts',
+			'$platform/auth': './src/lib/platform/auth/auth.ts',
 			'#': '../../packages/ui/src',
 		},
 	},

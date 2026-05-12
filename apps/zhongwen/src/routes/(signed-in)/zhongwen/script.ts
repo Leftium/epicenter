@@ -26,7 +26,7 @@ export async function openZhongwen({
 	});
 	const sync = attachSync(doc, {
 		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-		bearerToken: () => auth.bearerToken,
+		openWebSocket: auth.openWebSocket,
 	});
 
 	return { ...doc, yjsLog, sync };

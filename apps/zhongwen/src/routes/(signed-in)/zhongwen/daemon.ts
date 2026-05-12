@@ -43,7 +43,7 @@ export function defineZhongwenDaemon({
 			});
 			const sync = attachSync(doc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				bearerToken: () => auth.bearerToken,
+				openWebSocket: auth.openWebSocket,
 				awareness,
 			});
 			const actions = {};

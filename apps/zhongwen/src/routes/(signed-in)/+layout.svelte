@@ -10,13 +10,13 @@
 	const current = $derived(session.current);
 
 	$effect(() => {
-		if (current.status === 'signed-out') {
+		if (current.status !== 'signed-in') {
 			void goto('/sign-in', { replaceState: true });
 		}
 	});
 </script>
 
-{#if current.status === 'pending' || current.status === 'signed-out'}
+{#if current.status !== 'signed-in'}
 	<Loading class="h-dvh" />
 {:else}
 	<WorkspaceGate

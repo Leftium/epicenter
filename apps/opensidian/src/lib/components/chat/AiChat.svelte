@@ -4,7 +4,7 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SquarePenIcon from '@lucide/svelte/icons/square-pen';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import ChatInput from './ChatInput.svelte';
 	import MessageList from './MessageList.svelte';
 

@@ -8,7 +8,7 @@
 	import MessageSquareIcon from '@lucide/svelte/icons/message-square';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 
 	const workspace = requireWorkspace();
 	let { chatOpen = $bindable(false) }: { chatOpen: boolean } = $props();

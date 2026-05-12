@@ -3,7 +3,7 @@
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import { Separator } from '@epicenter/ui/separator';
 	import { X } from '@lucide/svelte';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import TerminalInput from './TerminalInput.svelte';
 	import TerminalOutput from './TerminalOutput.svelte';
 

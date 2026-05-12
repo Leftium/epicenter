@@ -3,7 +3,7 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as TreeView from '@epicenter/ui/tree-view';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import { getFileIcon } from '$lib/utils/file-icons';
 	import FileTreeItem from './FileTreeItem.svelte';
 	import InlineNameInput from './InlineNameInput.svelte';

@@ -5,7 +5,7 @@
 	import { cn } from '@epicenter/ui/utils';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import type { FileGroup } from '$lib/state/sidebar-search-state.svelte';
 
 	const workspace = requireWorkspace();

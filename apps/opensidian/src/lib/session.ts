@@ -25,6 +25,7 @@ type OpensidianAppState = {
 
 export const session = createSession({
 	auth,
+	name: 'opensidian',
 	build: (identity) => {
 		const userId = identity.user.id;
 		const opensidian = openOpensidian({
@@ -79,33 +80,14 @@ export const session = createSession({
 	},
 });
 
+export const { requireWorkspace } = session;
+
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());
 }
 
-/**
- * Returns the live workspace payload for this app.
- *
- * Throws when `session.current` is null (no authenticated identity). The
- * typical caller is a route or component mounted under the layout's
- * `{#if current}` gate. The return type is inferred from the `createSession`
- * build factory above; the pre-existing `OpensidianWorkspace` type in
- * `$lib/opensidian/browser` refers to the doc handle (one level deeper).
- */
-export function requireWorkspace() {
-	const c = session.current;
-	if (!c) {
-		throw new Error(
-			'[opensidian] requireWorkspace() called without an authenticated session. ' +
-				'This indicates a route or component mounted without the layout gate, ' +
-				'or a callback firing after the workspace was disposed.',
-		);
-	}
-	return c.workspace;
-}
-
 export async function forgetOpensidianDevice(): Promise<void> {
-	const current = requireWorkspace();
-	await current.opensidian.wipe();
+	const workspace = requireWorkspace();
+	await workspace.opensidian.wipe();
 	window.location.reload();
 }

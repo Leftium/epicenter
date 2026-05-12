@@ -9,7 +9,7 @@
 	import {
 		forgetOpensidianDevice,
 		requireWorkspace,
-	} from '$lib/session.svelte';
+	} from '$lib/session';
 
 	const workspace = requireWorkspace();
 </script>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 
 	const workspace = requireWorkspace();
 	let value = $state('');

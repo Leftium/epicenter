@@ -10,7 +10,7 @@
 	import RegexIcon from '@lucide/svelte/icons/regex';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import SearchResultGroup from './SearchResultGroup.svelte';
 
 	const workspace = requireWorkspace();

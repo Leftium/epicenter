@@ -6,7 +6,7 @@
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import { PROVIDER_MODELS, type Provider } from '$lib/chat/providers';
 
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 
 	const workspace = requireWorkspace();
 	const providers = Object.keys(PROVIDER_MODELS) as Provider[];

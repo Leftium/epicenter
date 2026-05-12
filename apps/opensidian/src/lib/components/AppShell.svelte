@@ -6,7 +6,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TextIcon from '@lucide/svelte/icons/text';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import AiChat from './chat/AiChat.svelte';
 	import ContentPanel from './editor/ContentPanel.svelte';
 	import StatusBar from './editor/StatusBar.svelte';

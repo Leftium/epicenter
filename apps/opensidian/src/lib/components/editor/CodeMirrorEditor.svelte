@@ -10,7 +10,7 @@
 	import { mode } from 'mode-watcher';
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 	import type * as Y from 'yjs';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import { getEditorExtensions } from './extensions/language-support';
 
 	let {

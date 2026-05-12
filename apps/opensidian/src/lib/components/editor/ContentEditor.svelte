@@ -3,7 +3,7 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Loading } from '@epicenter/ui/loading';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
 	import { wikilinkAutocomplete } from './extensions/wikilink-autocomplete';

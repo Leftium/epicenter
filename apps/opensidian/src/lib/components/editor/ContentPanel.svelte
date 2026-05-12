@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import ContentEditor from './ContentEditor.svelte';
 	import PathBreadcrumb from './PathBreadcrumb.svelte';
 	import TabBar from './TabBar.svelte';

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Breadcrumb from '@epicenter/ui/breadcrumb';
 
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 
 	const workspace = requireWorkspace();
 	const pathSegments = $derived.by(() => {

@@ -5,7 +5,7 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as TreeView from '@epicenter/ui/tree-view';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import FileTreeItem from './FileTreeItem.svelte';
 	import InlineNameInput from './InlineNameInput.svelte';
 

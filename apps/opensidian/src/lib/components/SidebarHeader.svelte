@@ -4,7 +4,7 @@
 	import FilePlusIcon from '@lucide/svelte/icons/file-plus';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 
 	const workspace = requireWorkspace();
 </script>

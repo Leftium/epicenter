@@ -2,7 +2,7 @@ import type { AuthClient } from '@epicenter/auth';
 import { requireIdentity } from '@epicenter/auth';
 import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createSession, type InferWorkspace } from '@epicenter/svelte';
+import { createSession } from '@epicenter/svelte';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { storage } from '@wxt-dev/storage';
@@ -131,9 +131,6 @@ function createWorkspaceSession(auth: AuthClient) {
 	});
 }
 
-type TabManagerSessionBundle = InferWorkspace<
-	NonNullable<typeof workspaceSession>
->;
 export type WorkspaceTools = WorkspaceAiTools['tools'];
 
 export const tabManagerSession = {
@@ -162,16 +159,14 @@ if (import.meta.hot) {
 	import.meta.hot.dispose(() => tabManagerSession[Symbol.dispose]());
 }
 
-export function requireWorkspace(): TabManagerSessionBundle {
-	const current = tabManagerSession.current;
-	if (!current) {
+export function requireWorkspace() {
+	if (!workspaceSession) {
 		throw new Error(
-			'[tab-manager] requireWorkspace() called without an authenticated session. ' +
-				'This indicates a route or component mounted without the layout gate, ' +
-				'or a callback firing after the workspace was disposed.',
+			'[tab-manager] requireWorkspace() called before storage readiness. ' +
+				'Components must mount under `{#await tabManagerSession.whenReady}`.',
 		);
 	}
-	return current.workspace;
+	return workspaceSession.requireWorkspace();
 }
 
 export async function forgetTabManagerDevice(): Promise<void> {

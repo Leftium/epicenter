@@ -3,18 +3,16 @@ import { requireIdentity } from '@epicenter/auth';
 import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createSession } from '@epicenter/svelte';
-import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
-import { storage } from '@wxt-dev/storage';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { authSessionStorage, oauthLauncher } from './platform/auth/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
+import { createPeer, registerDevice } from './device';
 import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
 import { openTabManager } from './tab-manager/extension';
-import type { DeviceId } from './workspace/definition';
 
 export type TabManagerWorkspace = Awaited<ReturnType<typeof openTabManager>>;
 export type WorkspaceAiTools = ReturnType<
@@ -173,54 +171,4 @@ export async function forgetTabManagerDevice(): Promise<void> {
 	const workspace = requireWorkspace();
 	await workspace.tabManager.wipe();
 	window.location.reload();
-}
-
-async function registerDevice(tabManager: TabManagerWorkspace): Promise<void> {
-	const { id, name } = tabManager.peer;
-	const { data: existing, error } = tabManager.tables.devices.get(id);
-	const existingName = !error && existing ? existing.name : null;
-	tabManager.tables.devices.set({
-		id,
-		name: existingName ?? name,
-		lastSeen: new Date().toISOString(),
-		browser: import.meta.env.BROWSER,
-		_v: 1,
-	});
-}
-
-async function createPeer() {
-	const [id, name] = await Promise.all([
-		getOrCreateInstallationIdAsync<DeviceId>({
-			getItem: (k) => storage.getItem<string>(`local:${k}`),
-			setItem: async (k, v) => {
-				await storage.setItem(`local:${k}`, v);
-			},
-		}),
-		generateDefaultDeviceName(),
-	]);
-	return {
-		id,
-		name,
-		platform: 'chrome-extension' as const,
-	};
-}
-
-const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
-
-/** Default device label like "Chrome on macOS". */
-async function generateDefaultDeviceName(): Promise<string> {
-	const browserName = capitalize(import.meta.env.BROWSER);
-	const platformInfo = await browser.runtime.getPlatformInfo();
-	const osName = (
-		{
-			mac: 'macOS',
-			win: 'Windows',
-			linux: 'Linux',
-			cros: 'ChromeOS',
-			android: 'Android',
-			openbsd: 'OpenBSD',
-			fuchsia: 'Fuchsia',
-		} satisfies Record<Browser.runtime.PlatformInfo['os'], string>
-	)[platformInfo.os];
-	return `${browserName} on ${osName}`;
 }

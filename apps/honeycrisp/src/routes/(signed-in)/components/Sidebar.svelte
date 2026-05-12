@@ -27,7 +27,7 @@
 					sync={signedIn.honeycrisp.sync}
 					syncNoun="notes"
 					onForgetDevice={forgetHoneycrispDevice}
-					onSocialSignIn={() => auth.signInWithSocial({ provider: 'google' })}
+					onStartSignIn={() => auth.startSignIn()}
 				/>
 				<Sidebar.Trigger />
 			</div>

@@ -16,7 +16,7 @@ export const session = createSession({
 				name: 'Honeycrisp',
 				platform: 'web',
 			},
-			bearerToken: () => auth.bearerToken,
+			openWebSocket: auth.openWebSocket,
 			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 		});
 		const state = createHoneycrispState(honeycrisp);

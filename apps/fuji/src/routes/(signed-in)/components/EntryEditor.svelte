@@ -19,7 +19,7 @@
 	import { goto } from '$app/navigation';
 	import ProseMirrorEditor from '$lib/components/ProseMirrorEditor.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import type { Entry } from '../fuji/workspace';
 
 	let { entry }: { entry: Entry } = $props();

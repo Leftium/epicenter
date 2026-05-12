@@ -16,7 +16,7 @@
 	import { VList } from 'virtua/svelte';
 	import { goto } from '$app/navigation';
 	import { matchesEntrySearch } from '$lib/entries-search';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import type { Entry } from '../fuji/workspace';
 	import { viewState } from '../state/view.svelte';
 

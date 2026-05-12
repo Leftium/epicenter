@@ -10,7 +10,7 @@
 	import type { Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import AppHeader from './AppHeader.svelte';
 	import EntriesSidebar from './EntriesSidebar.svelte';
 

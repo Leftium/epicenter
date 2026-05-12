@@ -10,7 +10,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { matchesEntrySearch } from '$lib/entries-search';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import { viewState } from '../state/view.svelte';
 
 	const workspace = requireWorkspace();

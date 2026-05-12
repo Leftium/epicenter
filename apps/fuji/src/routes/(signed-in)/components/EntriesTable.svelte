@@ -22,7 +22,7 @@
 	import BadgeList from '$lib/components/BadgeList.svelte';
 	import { matchesEntrySearch } from '$lib/entries-search';
 	import { relativeTime } from '$lib/format';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import type { Entry } from '../fuji/workspace';
 	import { viewState } from '../state/view.svelte';
 

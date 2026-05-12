@@ -9,10 +9,10 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 	import type { Note } from '../honeycrisp/workspace';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 
 	let {
 		note,
@@ -67,7 +67,7 @@
 						class="size-6"
 						onclick={(e) => {
 						e.stopPropagation();
-						signedIn.state.notes.restore(note.id);
+						workspace.state.notes.restore(note.id);
 					}}
 					>
 						<ArchiveRestoreIcon class="size-3" />
@@ -96,7 +96,7 @@
 						class="size-6"
 						onclick={(e) => {
 							e.stopPropagation();
-					signedIn.state.notes.togglePin(note.id);
+					workspace.state.notes.togglePin(note.id);
 						}}
 					>
 						<PinIcon class="size-3 {note.pinned ? 'fill-current' : ''}" />
@@ -107,7 +107,7 @@
 						class="size-6 text-destructive hover:text-destructive"
 						onclick={(e) => {
 							e.stopPropagation();
-					signedIn.state.notes.softDelete(note.id);
+					workspace.state.notes.softDelete(note.id);
 						}}
 					>
 						<TrashIcon class="size-3" />
@@ -119,7 +119,7 @@
 
 	<ContextMenu.Content class="w-48">
 		{#if isDeleted}
-			<ContextMenu.Item onclick={() => signedIn.state.notes.restore(note.id)}>
+			<ContextMenu.Item onclick={() => workspace.state.notes.restore(note.id)}>
 				<ArchiveRestoreIcon class="mr-2 size-4" />
 				Restore
 			</ContextMenu.Item>
@@ -134,7 +134,7 @@
 				Delete Permanently
 			</ContextMenu.Item>
 		{:else}
-			<ContextMenu.Item onclick={() => signedIn.state.notes.togglePin(note.id)}>
+			<ContextMenu.Item onclick={() => workspace.state.notes.togglePin(note.id)}>
 				<PinIcon class="mr-2 size-4 {note.pinned ? 'fill-current' : ''}" />
 				{note.pinned ? 'Unpin' : 'Pin'}
 			</ContextMenu.Item>
@@ -146,15 +146,15 @@
 				</ContextMenu.SubTrigger>
 				<ContextMenu.SubContent class="w-48">
 					<ContextMenu.Item
-						onclick={() => signedIn.state.notes.moveToFolder(note.id, undefined)}
+						onclick={() => workspace.state.notes.moveToFolder(note.id, undefined)}
 					>
 						<FileTextIcon class="mr-2 size-4" />
 						Unfiled
 					</ContextMenu.Item>
 					<ContextMenu.Separator />
-					{#each signedIn.state.folders.all as folder (folder.id)}
+					{#each workspace.state.folders.all as folder (folder.id)}
 						<ContextMenu.Item
-							onclick={() => signedIn.state.notes.moveToFolder(note.id, folder.id)}
+							onclick={() => workspace.state.notes.moveToFolder(note.id, folder.id)}
 						>
 							{#if folder.icon}
 								<span class="mr-2 text-base leading-none">{folder.icon}</span>
@@ -169,7 +169,7 @@
 			<ContextMenu.Separator />
 			<ContextMenu.Item
 				class="text-destructive focus:text-destructive"
-				onclick={() => signedIn.state.notes.softDelete(note.id)}
+				onclick={() => workspace.state.notes.softDelete(note.id)}
 			>
 				<TrashIcon class="mr-2 size-4" />
 				Delete
@@ -189,7 +189,7 @@
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action
-				onclick={() => signedIn.state.notes.permanentlyDelete(note.id)}
+				onclick={() => workspace.state.notes.permanentlyDelete(note.id)}
 				>Delete</AlertDialog.Action
 			>
 		</AlertDialog.Footer>

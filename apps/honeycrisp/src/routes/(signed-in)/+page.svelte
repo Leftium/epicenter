@@ -1,13 +1,13 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 	import CommandPalette from './components/CommandPalette.svelte';
 	import NoteBodyPane from './components/NoteBodyPane.svelte';
 	import NoteList from './components/NoteList.svelte';
 	import HoneycripSidebar from './components/Sidebar.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 </script>
 
 <svelte:window
@@ -17,11 +17,11 @@
 
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
-			signedIn.state.folders.create();
+			workspace.state.folders.create();
 		} else if (e.key === 'n') {
 			e.preventDefault();
-			const { id } = signedIn.state.notes.create(signedIn.state.view.selectedFolderId);
-			signedIn.state.view.selectNote(id);
+			const { id } = workspace.state.notes.create(workspace.state.view.selectedFolderId);
+			workspace.state.view.selectNote(id);
 		}
 	}}
 />
@@ -36,9 +36,9 @@
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if signedIn.state.view.selectedNote && signedIn.state.view.selectedNoteId}
-					{#key signedIn.state.view.selectedNoteId}
-						<NoteBodyPane noteId={signedIn.state.view.selectedNoteId} />
+				{#if workspace.state.view.selectedNote && workspace.state.view.selectedNoteId}
+					{#key workspace.state.view.selectedNoteId}
+						<NoteBodyPane noteId={workspace.state.view.selectedNoteId} />
 					{/key}
 				{:else}
 					<div class="flex h-full flex-col items-center justify-center gap-2">

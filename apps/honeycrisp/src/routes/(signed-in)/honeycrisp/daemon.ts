@@ -1,4 +1,4 @@
-import { createMachineAuthClient, requireSignedIn } from '@epicenter/auth/node';
+import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachAwareness,
@@ -26,7 +26,7 @@ export function defineHoneycrispDaemon({
 			const auth = await createMachineAuthClient();
 			const doc = openHoneycrispDoc({
 				clientID: hashClientId(projectDir),
-				encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),

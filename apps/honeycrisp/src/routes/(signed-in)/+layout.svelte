@@ -3,12 +3,10 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
-	import { auth } from '$platform/auth';
 	import { session } from '$lib/session.svelte';
+	import { auth } from '$platform/auth';
 
 	let { children } = $props();
-
-	const current = $derived(session.current);
 
 	let signingIn = $state(false);
 	let signInError = $state<string | null>(null);
@@ -25,9 +23,9 @@
 	}
 </script>
 
-{#if current.status === 'signed-in'}
+{#if session.current}
 	<WorkspaceGate
-		pending={current.signedIn.honeycrisp.idb.whenLoaded}
+		pending={session.current.workspace.honeycrisp.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
 		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>
@@ -45,16 +43,10 @@
 		{#if signInError}
 			<p class="text-xs text-destructive">{signInError}</p>
 		{/if}
-		<Button
-			class="w-full max-w-xs"
-			onclick={startSignIn}
-			disabled={signingIn}
-		>
+		<Button class="w-full max-w-xs" onclick={startSignIn} disabled={signingIn}>
 			{#if signingIn}
 				<LoaderCircle class="size-4 animate-spin" />
 				Signing in…
-			{:else if current.status === 'reauth-required'}
-				Reconnect
 			{:else}
 				Sign in with Epicenter
 			{/if}

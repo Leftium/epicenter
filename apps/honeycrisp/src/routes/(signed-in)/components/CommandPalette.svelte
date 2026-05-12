@@ -4,9 +4,9 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 
 	let isOpen = $state(false);
 </script>
@@ -28,17 +28,17 @@
 		<Command.Group heading="Folders">
 			<Command.Item
 				onSelect={() => {
-					signedIn.state.view.selectFolder(null);
+					workspace.state.view.selectFolder(null);
 					isOpen = false;
 				}}
 			>
 				<FileTextIcon class="mr-2 size-4" />
 				All Notes
 			</Command.Item>
-			{#each signedIn.state.folders.all as folder (folder.id)}
+			{#each workspace.state.folders.all as folder (folder.id)}
 				<Command.Item
 					onSelect={() => {
-						signedIn.state.view.selectFolder(folder.id);
+						workspace.state.view.selectFolder(folder.id);
 						isOpen = false;
 					}}
 				>
@@ -55,10 +55,10 @@
 		<Command.Separator />
 
 		<Command.Group heading="Notes">
-			{#each signedIn.state.notes.all as note (note.id)}
+			{#each workspace.state.notes.all as note (note.id)}
 				<Command.Item
 					onSelect={() => {
-					signedIn.state.view.selectNote(note.id);
+					workspace.state.view.selectNote(note.id);
 						isOpen = false;
 					}}
 				>
@@ -80,8 +80,8 @@
 		<Command.Group heading="Actions">
 			<Command.Item
 				onSelect={() => {
-					const { id } = signedIn.state.notes.create(signedIn.state.view.selectedFolderId);
-					signedIn.state.view.selectNote(id);
+					const { id } = workspace.state.notes.create(workspace.state.view.selectedFolderId);
+					workspace.state.view.selectNote(id);
 				}}
 			>
 				<PlusIcon class="mr-2 size-4" />
@@ -89,7 +89,7 @@
 			</Command.Item>
 			<Command.Item
 				onSelect={() => {
-				signedIn.state.folders.create();
+				workspace.state.folders.create();
 					isOpen = false;
 				}}
 			>

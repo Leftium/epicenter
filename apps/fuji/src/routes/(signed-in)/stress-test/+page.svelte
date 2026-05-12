@@ -118,14 +118,11 @@
 
 	const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-	function randomDate(): DateTimeString {
-		const now = Date.now();
-		const twoYearsMs = 2 * 365 * 24 * 60 * 60 * 1000;
-		const ts = now - twoYearsMs + Math.random() * twoYearsMs;
-		return DateTimeString.stringify(new Date(ts).toISOString(), LOCAL_TZ);
-	}
-
 	function generateEntryRow(index: number, now: DateTimeString) {
+		const dateNow = Date.now();
+		const twoYearsMs = 2 * 365 * 24 * 60 * 60 * 1000;
+		const ts = dateNow - twoYearsMs + Math.random() * twoYearsMs;
+
 		return {
 			id: generateId() as string as EntryId,
 			title: `${pick(TITLES)} #${index + 1}`,
@@ -135,17 +132,11 @@
 			pinned: Math.random() < 0.05,
 			rating: Math.random() < 0.7 ? 0 : Math.floor(Math.random() * 5) + 1,
 			deletedAt: undefined,
-			date: randomDate(),
+			date: DateTimeString.stringify(new Date(ts).toISOString(), LOCAL_TZ),
 			createdAt: now,
 			updatedAt: now,
 			_v: 2 as const,
 		};
-	}
-
-	function formatBytes(bytes: number): string {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
 
 	function formatMs(ms: number): string {
@@ -325,7 +316,15 @@
 					{ label: 'Insert time', value: formatMs(results.insertTimeMs) },
 					{ label: 'Total rows', value: results.rowCount.toLocaleString() },
 					{ label: 'Stress-test rows', value: stressTestCount.toLocaleString() },
-					{ label: 'Y.Doc size', value: formatBytes(results.ydocSizeBytes) },
+					{
+						label: 'Y.Doc size',
+						value:
+							results.ydocSizeBytes < 1024
+								? `${results.ydocSizeBytes} B`
+								: results.ydocSizeBytes < 1024 * 1024
+									? `${(results.ydocSizeBytes / 1024).toFixed(1)} KB`
+									: `${(results.ydocSizeBytes / (1024 * 1024)).toFixed(1)} MB`,
+					},
 					{ label: 'getAllValid() time', value: formatMs(results.readTimeMs) },
 					{ label: 'filter() time', value: formatMs(results.filterTimeMs) },
 				]}

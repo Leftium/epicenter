@@ -17,11 +17,6 @@
 	let { children }: { children: Snippet } = $props();
 	const signedIn = getSignedInSession();
 
-	function createEntry() {
-		const { id } = signedIn.fuji.actions.entries.create({});
-		goto(`/entries/${id}`);
-	}
-
 	function flushPendingEdits() {
 		if (
 			document.visibilityState === 'hidden' &&
@@ -66,7 +61,8 @@
 
 		if (event.key === 'n' && event.metaKey) {
 			event.preventDefault();
-			createEntry();
+			const { id } = signedIn.fuji.actions.entries.create({});
+			goto(`/entries/${id}`);
 			return;
 		}
 

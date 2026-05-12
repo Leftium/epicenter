@@ -2,8 +2,8 @@
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { Button } from '@epicenter/ui/button';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
-	import { auth } from '$platform/auth';
 	import { session } from '$lib/session.svelte';
+	import { auth } from '$platform/auth';
 	import FujiAppShell from './components/FujiAppShell.svelte';
 
 	let { children } = $props();
@@ -12,19 +12,6 @@
 
 	let signingIn = $state(false);
 	let signInError = $state<string | null>(null);
-
-	async function startSignIn() {
-		signInError = null;
-		signingIn = true;
-		try {
-			const { error } = await auth.startSignIn({
-				returnTo: window.location.href,
-			});
-			if (error) signInError = error.message;
-		} finally {
-			signingIn = false;
-		}
-	}
 </script>
 
 {#if current.status === 'signed-in'}
@@ -47,7 +34,22 @@
 		{#if signInError}
 			<p class="text-xs text-destructive">{signInError}</p>
 		{/if}
-		<Button class="w-full max-w-xs" onclick={startSignIn} disabled={signingIn}>
+		<Button
+			class="w-full max-w-xs"
+			disabled={signingIn}
+			onclick={async () => {
+				signInError = null;
+				signingIn = true;
+				try {
+					const { error } = await auth.startSignIn({
+						returnTo: window.location.href,
+					});
+					if (error) signInError = error.message;
+				} finally {
+					signingIn = false;
+				}
+			}}
+		>
 			{#if signingIn}
 				<LoaderCircle class="size-4 animate-spin" />
 				Signing in…

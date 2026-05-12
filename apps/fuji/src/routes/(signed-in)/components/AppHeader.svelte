@@ -8,22 +8,12 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import { goto } from '$app/navigation';
-	import { auth } from '$platform/auth';
 	import { getSignedInSession } from '$lib/session.svelte';
+	import { auth } from '$platform/auth';
 	import BulkAddModal from './BulkAddModal.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
 	const signedIn = getSignedInSession();
-
-	async function forgetFujiDevice(): Promise<void> {
-		await signedIn.fuji.wipe();
-		window.location.reload();
-	}
-
-	function createEntry() {
-		const { id } = signedIn.fuji.actions.entries.create({});
-		goto(`/entries/${id}`);
-	}
 </script>
 
 <div class="flex h-10 shrink-0 items-center justify-between border-b px-3">
@@ -52,7 +42,10 @@
 						{...props}
 						variant="ghost"
 						size="icon-sm"
-						onclick={createEntry}
+						onclick={() => {
+							const { id } = signedIn.fuji.actions.entries.create({});
+							goto(`/entries/${id}`);
+						}}
 					>
 						<PlusIcon class="size-4" />
 					</Button>
@@ -68,7 +61,10 @@
 			{auth}
 			sync={signedIn.fuji.sync}
 			syncNoun="entries"
-			onForgetDevice={forgetFujiDevice}
+			onForgetDevice={async () => {
+				await signedIn.fuji.wipe();
+				window.location.reload();
+			}}
 			onStartSignIn={() => auth.startSignIn()}
 		/>
 		<GitHubButton

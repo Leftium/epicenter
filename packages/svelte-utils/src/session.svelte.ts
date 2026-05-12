@@ -15,9 +15,8 @@
  * `SessionPayload` reference across the transition.
  *
  * The returned `requireWorkspace()` method is the standard component-side
- * unwrap helper: it throws if `current` is null, and the thrown error is
- * prefixed with the app `name` passed to `createSession`. Re-export it from
- * each app's session module with `export const { requireWorkspace } = session`.
+ * unwrap helper: it throws if `current` is null. Re-export it from each app's
+ * session module with `export const { requireWorkspace } = session`.
  *
  * Lazy callbacks (e.g., `encryptionKeys`, `openWebSocket`) are read at:
  *   - attachment time (e.g., `attachEncryption` reads `encryptionKeys()` once
@@ -36,7 +35,6 @@
  * ```ts
  * export const session = createSession({
  *   auth,
- *   name: 'fuji',
  *   build: (identity) => {
  *     const fuji = openFuji({ ... });
  *     return { userId: identity.user.id, fuji, [Symbol.dispose]() {...} };
@@ -87,15 +85,9 @@ export type InferWorkspace<TSession extends { current: unknown }> =
 export function createSession<TWorkspace extends WorkspaceBase>({
 	auth,
 	build,
-	name,
 }: {
 	auth: AuthClient;
 	build: (identity: WorkspaceIdentity) => TWorkspace;
-	/**
-	 * App name prefix used in the `requireWorkspace()` throw, e.g. `"fuji"`
-	 * produces `[fuji] requireWorkspace() called without ...`.
-	 */
-	name: string;
 }) {
 	let payload = $state<SessionPayload<TWorkspace> | null>(null);
 	const lifecycle = createSessionLifecycle<TWorkspace>({
@@ -125,7 +117,7 @@ export function createSession<TWorkspace extends WorkspaceBase>({
 		requireWorkspace(): TWorkspace {
 			if (!payload) {
 				throw new Error(
-					`[${name}] requireWorkspace() called without an authenticated session. ` +
+					'requireWorkspace() called without an authenticated session. ' +
 						'This indicates a route or component mounted without the layout gate, ' +
 						'or a callback firing after the workspace was disposed.',
 				);

@@ -25,7 +25,6 @@ type OpensidianAppState = {
 
 export const session = createSession({
 	auth,
-	name: 'opensidian',
 	build: (identity) => {
 		const userId = identity.user.id;
 		const opensidian = openOpensidian({

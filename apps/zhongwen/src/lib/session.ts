@@ -5,7 +5,6 @@ import { openZhongwen } from '../routes/(signed-in)/zhongwen/browser';
 
 export const session = createSession({
 	auth,
-	name: 'zhongwen',
 	build: (identity) => {
 		const userId = identity.user.id;
 		const zhongwen = openZhongwen({

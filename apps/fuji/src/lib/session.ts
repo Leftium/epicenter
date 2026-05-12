@@ -7,7 +7,6 @@ import { openFuji } from '../routes/(signed-in)/fuji/browser';
 
 export const session = createSession({
 	auth,
-	name: 'fuji',
 	build: (identity) => {
 		const userId = identity.user.id;
 		const fuji = openFuji({

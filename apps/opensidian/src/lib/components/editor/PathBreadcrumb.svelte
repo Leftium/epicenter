@@ -1,11 +1,11 @@
 <script lang="ts">
 	import * as Breadcrumb from '@epicenter/ui/breadcrumb';
 
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 	const pathSegments = $derived.by(() => {
-		const path = signedIn.state.files.selectedPath;
+		const path = workspace.state.files.selectedPath;
 		if (!path) return [];
 		return path.split('/').filter(Boolean);
 	});

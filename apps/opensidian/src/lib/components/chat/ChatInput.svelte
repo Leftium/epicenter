@@ -6,12 +6,12 @@
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import { PROVIDER_MODELS, type Provider } from '$lib/chat/providers';
 
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 	const providers = Object.keys(PROVIDER_MODELS) as Provider[];
 	const models = $derived(
-		signedIn.state.chat.modelsForProvider(signedIn.state.chat.provider),
+		workspace.state.chat.modelsForProvider(workspace.state.chat.provider),
 	);
 
 	let inputValue = $state('');
@@ -20,7 +20,7 @@
 		const content = inputValue.trim();
 		if (!content) return;
 		inputValue = '';
-		signedIn.state.chat.sendMessage(content);
+		workspace.state.chat.sendMessage(content);
 	}
 </script>
 
@@ -29,13 +29,13 @@
 	<div class="flex gap-2">
 		<Select.Root
 			type="single"
-			value={signedIn.state.chat.provider}
+			value={workspace.state.chat.provider}
 			onValueChange={(v) => {
-				if (v) signedIn.state.chat.provider = v as Provider;
+				if (v) workspace.state.chat.provider = v as Provider;
 			}}
 		>
 			<Select.Trigger size="sm" class="w-[120px]">
-				{signedIn.state.chat.provider || 'Provider\u2026'}
+				{workspace.state.chat.provider || 'Provider\u2026'}
 			</Select.Trigger>
 			<Select.Content>
 				{#each providers as p (p)}
@@ -46,14 +46,14 @@
 
 		<Select.Root
 			type="single"
-			value={signedIn.state.chat.model}
+			value={workspace.state.chat.model}
 			onValueChange={(v) => {
-				if (v) signedIn.state.chat.model = v;
+				if (v) workspace.state.chat.model = v;
 			}}
 		>
 			<Select.Trigger size="sm" class="flex-1">
 				<span class="truncate"
-					>{signedIn.state.chat.model || 'Model\u2026'}</span
+					>{workspace.state.chat.model || 'Model\u2026'}</span
 				>
 			</Select.Trigger>
 			<Select.Content>
@@ -85,12 +85,12 @@
 				}
 			}}
 		/>
-		{#if signedIn.state.chat.isLoading}
+		{#if workspace.state.chat.isLoading}
 			<Button
 				variant="outline"
 				size="icon-lg"
 				type="button"
-				onclick={() => signedIn.state.chat.stop()}
+				onclick={() => workspace.state.chat.stop()}
 			>
 				<SquareIcon />
 			</Button>

@@ -24,7 +24,6 @@
 			'error' in part.output,
 	);
 	const isApprovalRequested = $derived(part.state === 'approval-requested');
-	const approval = $derived(part.approval);
 
 	const displayName = $derived(
 		part.name
@@ -66,7 +65,8 @@
 				variant="outline"
 				size="sm"
 				onclick={() => {
-					if (approval?.id) onApproveToolCall(approval.id);
+					const approvalId = part.approval?.id;
+					if (approvalId) onApproveToolCall(approvalId);
 				}}
 			>
 				Allow
@@ -76,7 +76,8 @@
 				size="sm"
 				class="text-muted-foreground"
 				onclick={() => {
-					if (approval?.id) onDenyToolCall(approval.id);
+					const approvalId = part.approval?.id;
+					if (approvalId) onDenyToolCall(approvalId);
 				}}
 			>
 				Deny

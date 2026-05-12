@@ -10,7 +10,7 @@
 	import { mode } from 'mode-watcher';
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 	import type * as Y from 'yjs';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 	import { getEditorExtensions } from './extensions/language-support';
 
 	let {
@@ -23,7 +23,7 @@
 		extensions?: Extension[];
 	} = $props();
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 	let container: HTMLDivElement | undefined = $state();
 
 	$effect(() => {
@@ -34,7 +34,7 @@
 				doc: ytext.toString(),
 				extensions: [
 					// vim() must be BEFORE other keymaps per @replit/codemirror-vim README.
-					...signedIn.state.editor.createExtensions(isDark),
+					...workspace.state.editor.createExtensions(isDark),
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,
@@ -59,10 +59,10 @@
 			}),
 			parent: container,
 		});
-		signedIn.state.editor.attach(view);
+		workspace.state.editor.attach(view);
 		return () => {
 			view.destroy();
-			signedIn.state.editor.detach();
+			workspace.state.editor.detach();
 		};
 	});
 </script>

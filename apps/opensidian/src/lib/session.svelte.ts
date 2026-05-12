@@ -1,5 +1,5 @@
-import { requireSignedIn } from '@epicenter/auth';
-import { createSession, type InferSignedIn } from '@epicenter/svelte';
+import { requireIdentity } from '@epicenter/auth';
+import { createSession } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
@@ -27,7 +27,7 @@ export const session = createSession({
 	auth,
 	build: (identity) => {
 		const userId = identity.user.id;
-		const workspace = openOpensidian({
+		const opensidian = openOpensidian({
 			userId,
 			peer: {
 				id: getOrCreateInstallationId(localStorage),
@@ -35,20 +35,23 @@ export const session = createSession({
 				platform: 'web',
 			},
 			openWebSocket: auth.openWebSocket,
-			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+			encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 		});
 		const editor = createEditorState();
-		const files = createFilesState({ workspace });
-		const paletteSearch = createPaletteSearchState({ files, workspace });
-		const sidebarSearch = createSidebarSearchState({ workspace });
-		const terminal = createTerminalState({ files, workspace });
-		const skills = createSkillState({ workspace });
+		const files = createFilesState({ workspace: opensidian });
+		const paletteSearch = createPaletteSearchState({
+			files,
+			workspace: opensidian,
+		});
+		const sidebarSearch = createSidebarSearchState({ workspace: opensidian });
+		const terminal = createTerminalState({ files, workspace: opensidian });
+		const skills = createSkillState({ workspace: opensidian });
 		const chat = createAiChatState({
 			auth,
-			workspace,
+			workspace: opensidian,
 			skills,
 		});
-		const sampleData = createSampleDataLoader(workspace);
+		const sampleData = createSampleDataLoader(opensidian);
 		const state = {
 			editor,
 			files,
@@ -62,7 +65,7 @@ export const session = createSession({
 
 		return {
 			userId,
-			workspace,
+			opensidian,
 			state,
 			[Symbol.dispose]() {
 				chat[Symbol.dispose]();
@@ -70,38 +73,39 @@ export const session = createSession({
 				sidebarSearch[Symbol.dispose]();
 				paletteSearch[Symbol.dispose]();
 				files[Symbol.dispose]();
-				workspace[Symbol.dispose]();
+				opensidian[Symbol.dispose]();
 			},
 		};
 	},
 });
-
-export type OpensidianSignedIn = InferSignedIn<typeof session>;
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());
 }
 
 /**
- * Returns the live signed-in session for this app.
+ * Returns the live workspace payload for this app.
  *
- * Throws if invoked outside the signed-in branch. The typical caller is a
- * route or component mounted under the layout's signed-in gate.
+ * Throws when `session.current` is null (no authenticated identity). The
+ * typical caller is a route or component mounted under the layout's
+ * `{#if current}` gate. The return type is inferred from the `createSession`
+ * build factory above; the pre-existing `OpensidianWorkspace` type in
+ * `$lib/opensidian/browser` refers to the doc handle (one level deeper).
  */
-export function getSignedInSession(): OpensidianSignedIn {
+export function requireWorkspace() {
 	const c = session.current;
-	if (c.status !== 'signed-in') {
+	if (!c) {
 		throw new Error(
-			'[opensidian] getSignedInSession() called outside the signed-in branch. ' +
+			'[opensidian] requireWorkspace() called without an authenticated session. ' +
 				'This indicates a route or component mounted without the layout gate, ' +
 				'or a callback firing after the workspace was disposed.',
 		);
 	}
-	return c.signedIn;
+	return c.workspace;
 }
 
 export async function forgetOpensidianDevice(): Promise<void> {
-	const current = getSignedInSession();
-	await current.workspace.wipe();
+	const current = requireWorkspace();
+	await current.opensidian.wipe();
 	window.location.reload();
 }

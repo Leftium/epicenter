@@ -4,9 +4,9 @@
 	import FilePlusIcon from '@lucide/svelte/icons/file-plus';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 </script>
 
 <Tooltip.Provider>
@@ -23,13 +23,13 @@
 					{#snippet child({ props })}
 						<Button
 							{...props}
-							variant={signedIn.state.sidebarSearch.leftPaneView === 'search' ? 'secondary': 'ghost'}
+							variant={workspace.state.sidebarSearch.leftPaneView === 'search' ? 'secondary': 'ghost'}
 							size="icon-xs"
 							onclick={() => {
-							if (signedIn.state.sidebarSearch.leftPaneView === 'search') {
-								signedIn.state.sidebarSearch.closeSearch();
+							if (workspace.state.sidebarSearch.leftPaneView === 'search') {
+								workspace.state.sidebarSearch.closeSearch();
 							} else {
-								signedIn.state.sidebarSearch.openSearch();
+								workspace.state.sidebarSearch.openSearch();
 							}
 							}}
 						>
@@ -46,7 +46,7 @@
 							{...props}
 							variant="ghost"
 							size="icon-xs"
-							onclick={() => signedIn.state.files.startCreate('folder')}
+							onclick={() => workspace.state.files.startCreate('folder')}
 						>
 							<FolderPlusIcon class="size-3.5" />
 						</Button>
@@ -61,7 +61,7 @@
 							{...props}
 							variant="ghost"
 							size="icon-xs"
-							onclick={() => signedIn.state.files.startCreate('file')}
+							onclick={() => workspace.state.files.startCreate('file')}
 						>
 							<FilePlusIcon class="size-3.5" />
 						</Button>

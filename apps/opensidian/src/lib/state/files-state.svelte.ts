@@ -22,7 +22,7 @@ type InteractionMode =
  *
  * Follows the tab-manager pattern: a factory function creates all state.
  * The session creates one instance and exposes it at
- * `signedIn.state.files`.
+ * `workspace.state.files`.
  *
  * Reactivity: `fromTable()` provides a reactive `SvelteMap` that updates
  * granularly per-row. `childrenOf` derives tree structure eagerly (O(n)
@@ -33,7 +33,7 @@ type InteractionMode =
  * @example
  * ```svelte
  * <script>
- *   const session = getSignedInSession();
+ *   const session = requireWorkspace();
  *   const children = session.state.files.rootChildIds;
  * </script>
  * ```

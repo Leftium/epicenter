@@ -2,12 +2,10 @@
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { Button } from '@epicenter/ui/button';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
-	import { auth } from '$platform/auth';
 	import { session } from '$lib/session.svelte';
+	import { auth } from '$platform/auth';
 
 	let { children } = $props();
-
-	const current = $derived(session.current);
 
 	let signingIn = $state(false);
 	let signInError = $state<string | null>(null);
@@ -24,9 +22,9 @@
 	}
 </script>
 
-{#if current.status === 'signed-in'}
+{#if session.current}
 	<WorkspaceGate
-		pending={current.signedIn.workspace.idb.whenLoaded}
+		pending={session.current.workspace.opensidian.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
 		{@render children()}
@@ -48,8 +46,6 @@
 			{#if signingIn}
 				<LoaderCircle class="size-4 animate-spin" />
 				Signing in…
-			{:else if current.status === 'reauth-required'}
-				Reconnect
 			{:else}
 				Sign in with Epicenter
 			{/if}

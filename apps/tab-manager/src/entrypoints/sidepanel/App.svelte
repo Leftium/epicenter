@@ -5,7 +5,6 @@
 	import { Toaster } from '@epicenter/ui/sonner';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { ModeWatcher } from 'mode-watcher';
-	import { getGoogleCredentials } from '$lib/auth';
 	import { tabManagerSession } from '$lib/session.svelte';
 	import SignedInApp from './SignedInApp.svelte';
 
@@ -22,14 +21,8 @@
 			<AuthForm
 				auth={tabManagerSession.auth}
 				syncNoun="tabs"
-				onSocialSignIn={async () => {
-					const { idToken, nonce } = await getGoogleCredentials();
-					return tabManagerSession.auth.signInWithIdToken({
-						provider: 'google',
-						idToken,
-						nonce,
-					});
-				}}
+				onSocialSignIn={() =>
+					tabManagerSession.auth.signInWithSocial({ provider: 'google' })}
 			/>
 		</main>
 	{:else}

@@ -6,7 +6,10 @@ import { createSession, type InferSignedIn } from '@epicenter/svelte';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { storage } from '@wxt-dev/storage';
-import { authSessionStorage } from './auth';
+import {
+	authSessionStorage,
+	oauthSignInAdapter,
+} from './platform/auth/bearer';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
@@ -42,6 +45,7 @@ export const whenReady = authSessionStorage.whenReady.then(() => {
 	authClient = createBearerAuth({
 		baseURL: APP_URLS.API,
 		sessionStorage: authSessionStorage,
+		oauthAdapter: oauthSignInAdapter,
 	});
 	workspaceSession = createWorkspaceSession(authClient);
 });

@@ -18,7 +18,6 @@
 	import WholeWordIcon from '@lucide/svelte/icons/whole-word';
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
-	import { getGoogleCredentials } from '$lib/auth';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { createCommandPaletteItems } from '$lib/components/command-palette-items';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
@@ -183,10 +182,7 @@
 					sync={signedIn.tabManager.sync}
 					syncNoun="tabs"
 					onForgetDevice={forgetTabManagerDevice}
-					onSocialSignIn={async () => {
-						const { idToken, nonce } = await getGoogleCredentials();
-						return auth.signInWithIdToken({ provider: 'google', idToken, nonce });
-					}}
+					onSocialSignIn={() => auth.signInWithSocial({ provider: 'google' })}
 				/>
 			</div>
 		</header>

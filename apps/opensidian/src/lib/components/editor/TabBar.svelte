@@ -63,7 +63,7 @@
 			sync={signedIn.workspace.sync}
 			syncNoun="notes"
 			onForgetDevice={forgetOpensidianDevice}
-			onSocialSignIn={() => auth.signInWithSocial({ provider: 'google' })}
+			onStartSignIn={() => auth.startSignIn()}
 		/>
 	</div>
 </div>

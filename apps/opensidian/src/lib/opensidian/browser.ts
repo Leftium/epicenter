@@ -14,6 +14,7 @@ import {
 	createRemoteClient,
 	type EncryptionKeys,
 	onLocalUpdate,
+	type OpenWebSocket,
 	PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
@@ -26,12 +27,12 @@ import { openOpensidian as openOpensidianDoc } from './index';
 export function openOpensidian({
 	userId,
 	peer,
-	bearerToken,
+	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
 	peer: PeerIdentity;
-	bearerToken?: () => string | null;
+	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
 	const doc = openOpensidianDoc({ encryptionKeys });
@@ -105,7 +106,7 @@ export function openOpensidian({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
-		bearerToken,
+		openWebSocket,
 		awareness,
 	});
 	const rpc = sync.attachRpc(actions);

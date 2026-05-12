@@ -34,7 +34,7 @@ export const session = createSession({
 				name: 'Opensidian',
 				platform: 'web',
 			},
-			bearerToken: () => auth.bearerToken,
+			openWebSocket: auth.openWebSocket,
 			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 		});
 		const editor = createEditorState();

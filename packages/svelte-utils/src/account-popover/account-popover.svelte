@@ -12,7 +12,6 @@
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { AuthForm } from '../auth-form/index.js';
 
 	/**
 	 * Shared account popover.
@@ -24,7 +23,7 @@
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
 	 */
 	type AccountPopoverProps = {
-		/** The auth client from `createCookieAuth()` or `createBearerAuth()`. */
+		/** The auth client from `createOAuthAppAuth()`. */
 		auth: AuthClient;
 		/**
 		 * The workspace's `attachSync` result, typically `workspace.sync`.
@@ -33,8 +32,11 @@
 		sync: SyncAttachment;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
-		/** Handler called when the user clicks "Continue with Google". */
-		onSocialSignIn: () => Promise<{ error: { message: string } | null }>;
+		/**
+		 * Handler called when the user clicks "Sign in with Epicenter" from the
+		 * signed-out popover. Should call `auth.startSignIn({ returnTo })`.
+		 */
+		onStartSignIn: () => Promise<{ error: { message: string } | null }>;
 		/** Optional destructive cleanup for this account's local device cache. */
 		onForgetDevice?: () => void | Promise<void>;
 	};
@@ -43,13 +45,15 @@
 		auth,
 		sync,
 		syncNoun,
-		onSocialSignIn,
+		onStartSignIn,
 		onForgetDevice,
 	}: AccountPopoverProps = $props();
 
 	let syncStatus = $state<SyncStatus>({ phase: 'offline' });
 	let popoverOpen = $state(false);
 	let signingOut = $state(false);
+	let signingIn = $state(false);
+	let signInError = $state<string | null>(null);
 	let forgettingDevice = $state(false);
 	const isSignedIn = $derived(auth.state.status === 'signed-in');
 
@@ -89,6 +93,17 @@
 			if (result.error) toastOnError(result, 'Failed to sign out');
 		} finally {
 			signingOut = false;
+		}
+	}
+
+	async function startSignIn() {
+		signInError = null;
+		signingIn = true;
+		try {
+			const { error } = await onStartSignIn();
+			if (error) signInError = error.message;
+		} finally {
+			signingIn = false;
 		}
 	}
 
@@ -195,8 +210,30 @@
 				{/if}
 			</div>
 		{:else}
-			<div class="flex items-center justify-center p-4">
-				<AuthForm {auth} {syncNoun} {onSocialSignIn} />
+			<div class="p-4 space-y-3">
+				<div class="space-y-1">
+					<p class="text-sm font-medium">Sign in</p>
+					<p class="text-xs text-muted-foreground">
+						Sign in to sync your {syncNoun} across devices.
+					</p>
+				</div>
+				{#if signInError}
+					<p class="text-xs text-destructive">{signInError}</p>
+				{/if}
+				<Button
+					class="w-full"
+					onclick={startSignIn}
+					disabled={signingIn || auth.state.status === 'reauth-required'}
+				>
+					{#if signingIn}
+						<LoaderCircle class="size-4 animate-spin" />
+						Signing in…
+					{:else if auth.state.status === 'reauth-required'}
+						Reconnect
+					{:else}
+						Sign in with Epicenter
+					{/if}
+				</Button>
 			</div>
 		{/if}
 	</Popover.Content>

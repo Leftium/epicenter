@@ -16,7 +16,7 @@
 	} = $props();
 
 	const models = $derived(
-		workspace.tabManager.state.aiChat.modelsForProvider(active?.provider ?? ''),
+		workspace.state.aiChat.modelsForProvider(active?.provider ?? ''),
 	);
 
 	function send() {
@@ -33,7 +33,7 @@
 	<div class="flex gap-2">
 		<ProviderSelect
 			value={active?.provider ?? ''}
-			providers={workspace.tabManager.state.aiChat.availableProviders}
+			providers={workspace.state.aiChat.availableProviders}
 			onValueChange={(v) => {
 				if (active) active.provider = v;
 			}}

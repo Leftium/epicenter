@@ -22,14 +22,13 @@ export type WorkspaceAiTools = ReturnType<
 >;
 
 type ReadyTabManagerSession = {
-	tabManager: TabManagerWorkspace & {
-		state: {
-			savedTabs: ReturnType<typeof createSavedTabState>;
-			bookmarks: ReturnType<typeof createBookmarkState>;
-			toolTrust: ReturnType<typeof createToolTrustState>;
-			unifiedView: ReturnType<typeof createUnifiedViewState>;
-			aiChat: ReturnType<typeof createAiChatState>;
-		};
+	tabManager: TabManagerWorkspace;
+	state: {
+		savedTabs: ReturnType<typeof createSavedTabState>;
+		bookmarks: ReturnType<typeof createBookmarkState>;
+		toolTrust: ReturnType<typeof createToolTrustState>;
+		unifiedView: ReturnType<typeof createUnifiedViewState>;
+		aiChat: ReturnType<typeof createAiChatState>;
 	};
 	workspaceAiTools: WorkspaceAiTools;
 };
@@ -83,15 +82,8 @@ function createWorkspaceSession(auth: AuthClient) {
 				});
 
 				ready = {
-					tabManager: Object.assign(tabManager, {
-						state: {
-							savedTabs,
-							bookmarks,
-							toolTrust,
-							unifiedView,
-							aiChat,
-						},
-					}),
+					tabManager,
+					state: { savedTabs, bookmarks, toolTrust, unifiedView, aiChat },
 					workspaceAiTools,
 				};
 				void tabManager.idb.whenLoaded.then(() => registerDevice(tabManager));
@@ -110,6 +102,14 @@ function createWorkspaceSession(auth: AuthClient) {
 					}
 					return ready.tabManager;
 				},
+				get state() {
+					if (!ready) {
+						throw new Error(
+							'[tab-manager] state read before signed-in session readiness.',
+						);
+					}
+					return ready.state;
+				},
 				get workspaceAiTools() {
 					if (!ready) {
 						throw new Error(
@@ -120,10 +120,10 @@ function createWorkspaceSession(auth: AuthClient) {
 				},
 				[Symbol.dispose]() {
 					disposed = true;
-					ready?.tabManager.state.aiChat[Symbol.dispose]();
-					ready?.tabManager.state.toolTrust[Symbol.dispose]();
-					ready?.tabManager.state.bookmarks[Symbol.dispose]();
-					ready?.tabManager.state.savedTabs[Symbol.dispose]();
+					ready?.state.aiChat[Symbol.dispose]();
+					ready?.state.toolTrust[Symbol.dispose]();
+					ready?.state.bookmarks[Symbol.dispose]();
+					ready?.state.savedTabs[Symbol.dispose]();
 					ready?.tabManager[Symbol.dispose]();
 				},
 			};

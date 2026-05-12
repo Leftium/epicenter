@@ -26,7 +26,7 @@
 
 	const domain = $derived(tab.url ? getDomain(tab.url) : '');
 	const isBookmarked = $derived(
-		workspace.tabManager.state.bookmarks.isUrlBookmarked(tab.url),
+		workspace.state.bookmarks.isUrlBookmarked(tab.url),
 	);
 </script>
 
@@ -155,7 +155,7 @@
 							e.stopPropagation();
 							// Save always succeeds in the workspace; toast only if the
 							// source-tab close half failed (partial-success path).
-							workspace.tabManager.state.savedTabs.save(tab).then((result) => {
+							workspace.state.savedTabs.save(tab).then((result) => {
 								if (result?.closeResult.error)
 									toastOnError(
 										result.closeResult,
@@ -174,7 +174,7 @@
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
 						// Pure CRDT writes: can't fail, no Result to toast.
-						void workspace.tabManager.state.bookmarks.toggle(tab);
+						void workspace.state.bookmarks.toggle(tab);
 					}}
 				>
 					<StarIcon

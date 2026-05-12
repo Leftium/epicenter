@@ -12,26 +12,26 @@
 
 <div class="flex h-full flex-col">
 	<ConversationPicker
-		conversations={workspace.tabManager.state.aiChat.conversations}
-		activeId={workspace.tabManager.state.aiChat.activeConversationId}
-		onSwitch={(id) => workspace.tabManager.state.aiChat.switchTo(id)}
-		onCreate={() => workspace.tabManager.state.aiChat.createConversation()}
+		conversations={workspace.state.aiChat.conversations}
+		activeId={workspace.state.aiChat.activeConversationId}
+		onSwitch={(id) => workspace.state.aiChat.switchTo(id)}
+		onCreate={() => workspace.state.aiChat.createConversation()}
 	/>
 
 	<div class="min-h-0 flex-1">
 		<MessageList
-			messages={workspace.tabManager.state.aiChat.active?.messages ?? []}
-			status={workspace.tabManager.state.aiChat.active?.status ?? 'ready'}
-			onReload={() => workspace.tabManager.state.aiChat.active?.reload()}
+			messages={workspace.state.aiChat.active?.messages ?? []}
+			status={workspace.state.aiChat.active?.status ?? 'ready'}
+			onReload={() => workspace.state.aiChat.active?.reload()}
 			onApproveToolCall={(id) =>
-				workspace.tabManager.state.aiChat.active?.approveToolCall(id)}
+				workspace.state.aiChat.active?.approveToolCall(id)}
 			onDenyToolCall={(id) =>
-				workspace.tabManager.state.aiChat.active?.denyToolCall(id)}
+				workspace.state.aiChat.active?.denyToolCall(id)}
 		/>
 	</div>
 
 	<!-- Error states: auth + credits are persistent, others go to ChatErrorBanner -->
-	{#if workspace.tabManager.state.aiChat.active?.isUnauthorized}
+	{#if workspace.state.aiChat.active?.isUnauthorized}
 		<div
 			role="alert"
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -49,7 +49,7 @@
 				Sign In
 			</Button>
 		</div>
-	{:else if workspace.tabManager.state.aiChat.active?.isCreditsExhausted}
+	{:else if workspace.state.aiChat.active?.isCreditsExhausted}
 		<div
 			role="alert"
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -66,22 +66,22 @@
 				Upgrade
 			</Button>
 		</div>
-	{:else if workspace.tabManager.state.aiChat.active}
+	{:else if workspace.state.aiChat.active}
 		<ChatErrorBanner
-			error={workspace.tabManager.state.aiChat.active.error}
-			dismissedError={workspace.tabManager.state.aiChat.active.dismissedError}
+			error={workspace.state.aiChat.active.error}
+			dismissedError={workspace.state.aiChat.active.dismissedError}
 			onRetry={() => {
-				if (!workspace.tabManager.state.aiChat.active) return;
-				workspace.tabManager.state.aiChat.active.dismissedError = null;
-				workspace.tabManager.state.aiChat.active.reload();
+				if (!workspace.state.aiChat.active) return;
+				workspace.state.aiChat.active.dismissedError = null;
+				workspace.state.aiChat.active.reload();
 			}}
 			onDismiss={() => {
-				if (!workspace.tabManager.state.aiChat.active) return;
-				workspace.tabManager.state.aiChat.active.dismissedError =
-					workspace.tabManager.state.aiChat.active.error?.message ?? null;
+				if (!workspace.state.aiChat.active) return;
+				workspace.state.aiChat.active.dismissedError =
+					workspace.state.aiChat.active.error?.message ?? null;
 			}}
 		/>
 	{/if}
 
-	<ChatInput active={workspace.tabManager.state.aiChat.active} />
+	<ChatInput active={workspace.state.aiChat.active} />
 </div>

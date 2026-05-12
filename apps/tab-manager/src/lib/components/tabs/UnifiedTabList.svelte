@@ -22,22 +22,22 @@
 	const workspace = requireWorkspace();
 </script>
 
-{#if workspace.tabManager.state.unifiedView.flatItems.length === 0}
+{#if workspace.state.unifiedView.flatItems.length === 0}
 	<Empty.Root class="py-8">
 		<Empty.Media>
-			{#if workspace.tabManager.state.unifiedView.isFiltering}
+			{#if workspace.state.unifiedView.isFiltering}
 				<SearchIcon class="size-8 text-muted-foreground" />
 			{:else}
 				<FolderOpenIcon class="size-8 text-muted-foreground" />
 			{/if}
 		</Empty.Media>
-		{#if workspace.tabManager.state.unifiedView.isFiltering}
+		{#if workspace.state.unifiedView.isFiltering}
 			<Empty.Title>No matching tabs</Empty.Title>
 			<Empty.Description>
-				{#if workspace.tabManager.state.unifiedView.isRegex && workspace.tabManager.state.unifiedView.isRegexInvalid}
+				{#if workspace.state.unifiedView.isRegex && workspace.state.unifiedView.isRegexInvalid}
 					Check your regular expression syntax
 				{:else}
-					No tabs match "{workspace.tabManager.state.unifiedView.searchQuery}"
+					No tabs match "{workspace.state.unifiedView.searchQuery}"
 				{/if}
 			</Empty.Description>
 		{:else}
@@ -47,7 +47,7 @@
 	</Empty.Root>
 {:else}
 	<VList
-		data={workspace.tabManager.state.unifiedView.flatItems}
+		data={workspace.state.unifiedView.flatItems}
 		style="height: 100%;"
 		getKey={(item) => {
 			switch (item.kind) {
@@ -67,8 +67,8 @@
 		{#snippet children(item)}
 			{#if item.kind === 'section-header'}
 				{@const isExpanded =
-					workspace.tabManager.state.unifiedView.isFiltering ||
-					workspace.tabManager.state.unifiedView.isSectionExpanded(item.section)}
+					workspace.state.unifiedView.isFiltering ||
+					workspace.state.unifiedView.isSectionExpanded(item.section)}
 				<div
 					class="sticky top-0 z-20 flex w-full items-center gap-2 border-b bg-background px-4 py-2.5 text-sm font-medium"
 				>
@@ -76,8 +76,8 @@
 						type="button"
 						disabled={item.count === 0}
 						onclick={() => {
-							if (!workspace.tabManager.state.unifiedView.isFiltering) {
-								workspace.tabManager.state.unifiedView.toggleSection(item.section);
+							if (!workspace.state.unifiedView.isFiltering) {
+								workspace.state.unifiedView.toggleSection(item.section);
 							}
 						}}
 						class="group flex flex-1 items-center gap-2 transition enabled:cursor-pointer enabled:hover:opacity-80"
@@ -93,13 +93,13 @@
 							{item.count}
 						</Badge>
 					</button>
-					{#if item.section === 'saved' && workspace.tabManager.state.savedTabs.tabs.length > 0 && isExpanded}
+					{#if item.section === 'saved' && workspace.state.savedTabs.tabs.length > 0 && isExpanded}
 						<div class="flex gap-1">
 							<Button
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore All"
-								onclick={() => void workspace.tabManager.state.savedTabs.restoreAll()}
+								onclick={() => void workspace.state.savedTabs.restoreAll()}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -108,7 +108,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete All"
-								onclick={() => workspace.tabManager.state.savedTabs.removeAll()}
+								onclick={() => workspace.state.savedTabs.removeAll()}
 							>
 								<Trash2Icon />
 							</Button>
@@ -120,13 +120,13 @@
 				{@const activeTab = windowTabs.find((t) => t.active)}
 				{@const firstTab = windowTabs.at(0)}
 				{@const isExpanded =
-					workspace.tabManager.state.unifiedView.isFiltering ||
-					workspace.tabManager.state.unifiedView.isWindowExpanded(item.window.id)}
+					workspace.state.unifiedView.isFiltering ||
+					workspace.state.unifiedView.isWindowExpanded(item.window.id)}
 				<button
 					type="button"
 					onclick={() => {
-						if (!workspace.tabManager.state.unifiedView.isFiltering) {
-						workspace.tabManager.state.unifiedView.toggleWindow(item.window.id);
+						if (!workspace.state.unifiedView.isFiltering) {
+						workspace.state.unifiedView.toggleWindow(item.window.id);
 						}
 					}}
 					class="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 border-b bg-muted/50 px-4 py-2 text-sm text-muted-foreground backdrop-blur transition hover:bg-muted/80"
@@ -175,7 +175,7 @@
 								size="icon-xs"
 								tooltip="Restore"
 								onclick={() =>
-							workspace.tabManager.state.savedTabs.restore(tab).then((r) => toastOnError(r, 'Failed to restore tab'))}
+							workspace.state.savedTabs.restore(tab).then((r) => toastOnError(r, 'Failed to restore tab'))}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -184,7 +184,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-								onclick={() => workspace.tabManager.state.savedTabs.remove(tab.id)}
+								onclick={() => workspace.state.savedTabs.remove(tab.id)}
 							>
 								<Trash2Icon />
 							</Button>
@@ -217,7 +217,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Open"
-								onclick={() => workspace.tabManager.state.bookmarks.open(bookmark).then((r) => toastOnError(r, 'Failed to open bookmark'))}
+								onclick={() => workspace.state.bookmarks.open(bookmark).then((r) => toastOnError(r, 'Failed to open bookmark'))}
 							>
 								<ExternalLinkIcon />
 							</Button>
@@ -226,7 +226,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-								onclick={() => workspace.tabManager.state.bookmarks.remove(bookmark.id)}
+								onclick={() => workspace.state.bookmarks.remove(bookmark.id)}
 							>
 								<Trash2Icon />
 							</Button>

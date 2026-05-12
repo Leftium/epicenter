@@ -7,7 +7,7 @@
 
 	const workspace = requireWorkspace();
 	const trustedTools = $derived(
-		workspace.tabManager.state.toolTrust.entries.filter(
+		workspace.state.toolTrust.entries.filter(
 			([, level]) => level === 'always',
 		),
 	);
@@ -36,7 +36,7 @@
 							<Switch
 								checked={true}
 								onCheckedChange={() =>
-									workspace.tabManager.state.toolTrust.set(name, 'ask')}
+									workspace.state.toolTrust.set(name, 'ask')}
 							/>
 						</div>
 					{/each}
@@ -47,7 +47,7 @@
 							class="text-xs text-muted-foreground hover:text-foreground transition-colors"
 							onclick={() => {
 								for (const [toolName] of trustedTools) {
-									workspace.tabManager.state.toolTrust.set(toolName, 'ask');
+									workspace.state.toolTrust.set(toolName, 'ask');
 								}
 							}}
 						>

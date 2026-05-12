@@ -31,13 +31,13 @@
 
 	const workspace = requireWorkspace();
 	const auth = tabManagerSession.auth;
-	const items = createCommandPaletteItems(workspace.tabManager.state.savedTabs);
+	const items = createCommandPaletteItems(workspace.state.savedTabs);
 	let searchInputRef = $state<HTMLInputElement | null>(null);
 	let commandPaletteOpen = $state(false);
 	let aiDrawerOpen = $state(false);
 	let searchFocused = $state(false);
 	const isSearchActive = $derived(
-		searchFocused || workspace.tabManager.state.unifiedView.searchQuery !== '',
+		searchFocused || workspace.state.unifiedView.searchQuery !== '',
 	);
 	const reauthRequired = $derived(auth.state.status === 'reauth-required');
 
@@ -110,21 +110,21 @@
 						bind:ref={searchInputRef}
 						type="search"
 						placeholder="Search tabs..."
-						bind:value={workspace.tabManager.state.unifiedView.searchQuery}
+						bind:value={workspace.state.unifiedView.searchQuery}
 						onkeydown={(e: KeyboardEvent) => {
 						// "/" in empty input opens command palette
-						if (e.key === '/' && workspace.tabManager.state.unifiedView.searchQuery === '') {
+						if (e.key === '/' && workspace.state.unifiedView.searchQuery === '') {
 							e.preventDefault();
 							commandPaletteOpen = true;
 						}
 						// "@" in empty input opens AI drawer (Phase 4)
-						if (e.key === '@' && workspace.tabManager.state.unifiedView.searchQuery === '') {
+						if (e.key === '@' && workspace.state.unifiedView.searchQuery === '') {
 							e.preventDefault();
 							aiDrawerOpen = true;
 						}
 						// Escape clears search
 						if (e.key === 'Escape') {
-							workspace.tabManager.state.unifiedView.searchQuery = '';
+							workspace.state.unifiedView.searchQuery = '';
 							searchInputRef?.blur();
 						}
 					}}
@@ -136,21 +136,21 @@
 						<div
 							class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5"
 						>
-							{#if workspace.tabManager.state.unifiedView.searchQuery}
+							{#if workspace.state.unifiedView.searchQuery}
 								<button
 									type="button"
 									class="text-muted-foreground hover:text-foreground"
 									onclick={() => {
-										workspace.tabManager.state.unifiedView.searchQuery = '';
+										workspace.state.unifiedView.searchQuery = '';
 										searchInputRef?.focus();
 									}}
 								>
 									<XIcon class="size-3.5" />
 								</button>
 							{/if}
-							{@render searchToggle(workspace.tabManager.state.unifiedView.isCaseSensitive, (v) => { workspace.tabManager.state.unifiedView.isCaseSensitive = v; }, CaseSensitiveIcon, 'Match Case')}
-							{@render searchToggle(workspace.tabManager.state.unifiedView.isRegex, (v) => { workspace.tabManager.state.unifiedView.isRegex = v; }, RegexIcon, 'Use Regular Expression')}
-							{@render searchToggle(workspace.tabManager.state.unifiedView.isExactMatch, (v) => { workspace.tabManager.state.unifiedView.isExactMatch = v; }, WholeWordIcon, 'Match Whole Word')}
+							{@render searchToggle(workspace.state.unifiedView.isCaseSensitive, (v) => { workspace.state.unifiedView.isCaseSensitive = v; }, CaseSensitiveIcon, 'Match Case')}
+							{@render searchToggle(workspace.state.unifiedView.isRegex, (v) => { workspace.state.unifiedView.isRegex = v; }, RegexIcon, 'Use Regular Expression')}
+							{@render searchToggle(workspace.state.unifiedView.isExactMatch, (v) => { workspace.state.unifiedView.isExactMatch = v; }, WholeWordIcon, 'Match Whole Word')}
 							<DropdownMenu.Root>
 								<DropdownMenu.Trigger>
 									{#snippet child({ props })}
@@ -159,14 +159,14 @@
 											class="flex items-center gap-0.5 rounded-sm px-1 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
 											{...props}
 										>
-											{({ all: 'All', title: 'Title', url: 'URL' })[workspace.tabManager.state.unifiedView.searchField]}
+											{({ all: 'All', title: 'Title', url: 'URL' })[workspace.state.unifiedView.searchField]}
 											<ChevronDownIcon class="size-2.5" />
 										</button>
 									{/snippet}
 								</DropdownMenu.Trigger>
 								<DropdownMenu.Content align="end" class="w-28">
 									<DropdownMenu.RadioGroup
-										bind:value={workspace.tabManager.state.unifiedView.searchField}
+										bind:value={workspace.state.unifiedView.searchField}
 									>
 										<DropdownMenu.RadioItem value="all"
 											>All Fields</DropdownMenu.RadioItem

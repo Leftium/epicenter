@@ -1,15 +1,13 @@
 import type { AuthClient } from '@epicenter/auth';
 import { requireSignedIn } from '@epicenter/auth';
-import { createBearerAuth } from '@epicenter/auth-svelte';
+import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createSession, type InferSignedIn } from '@epicenter/svelte';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { storage } from '@wxt-dev/storage';
-import {
-	authSessionStorage,
-	oauthSignInAdapter,
-} from './platform/auth/bearer';
+import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
+import { authSessionStorage, oauthLauncher } from './platform/auth/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
@@ -41,11 +39,18 @@ type ReadyTabManagerSession = {
 let authClient = $state<AuthClient | undefined>(undefined);
 let workspaceSession = $state<ReturnType<typeof createWorkspaceSession>>();
 
+/**
+ * Awaiting `authSessionStorage.whenReady` before constructing the auth client
+ * means `createOAuthAppAuth` sees the persisted OAuth session synchronously
+ * during construction. Components await `whenReady` once at the entrypoint
+ * boundary, after which `auth` and `workspaceSession` are guaranteed defined.
+ */
 export const whenReady = authSessionStorage.whenReady.then(() => {
-	authClient = createBearerAuth({
+	authClient = createOAuthAppAuth({
 		baseURL: APP_URLS.API,
+		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 		sessionStorage: authSessionStorage,
-		oauthAdapter: oauthSignInAdapter,
+		launcher: oauthLauncher,
 	});
 	workspaceSession = createWorkspaceSession(authClient);
 });
@@ -60,7 +65,7 @@ function createWorkspaceSession(auth: AuthClient) {
 			const whenReady = openTabManager({
 				userId,
 				peer: createPeer(),
-				bearerToken: () => auth.bearerToken,
+				openWebSocket: auth.openWebSocket,
 				encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 			}).then((tabManager) => {
 				if (disposed) {
@@ -140,7 +145,12 @@ export const tabManagerSession = {
 		return authClient;
 	},
 	get current() {
-		return workspaceSession?.current ?? { status: 'pending' as const };
+		if (!workspaceSession) {
+			throw new Error(
+				'[tab-manager] tabManagerSession.current read before storage readiness.',
+			);
+		}
+		return workspaceSession.current;
 	},
 	whenReady,
 	[Symbol.dispose]() {

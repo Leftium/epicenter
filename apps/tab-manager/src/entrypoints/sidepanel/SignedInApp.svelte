@@ -182,7 +182,7 @@
 					sync={signedIn.tabManager.sync}
 					syncNoun="tabs"
 					onForgetDevice={forgetTabManagerDevice}
-					onSocialSignIn={() => auth.signInWithSocial({ provider: 'google' })}
+					onStartSignIn={() => auth.startSignIn()}
 				/>
 			</div>
 		</header>

@@ -8,12 +8,12 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import { goto } from '$app/navigation';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 	import { auth } from '$platform/auth';
 	import BulkAddModal from './BulkAddModal.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 </script>
 
 <div class="flex h-10 shrink-0 items-center justify-between border-b px-3">
@@ -43,7 +43,7 @@
 						variant="ghost"
 						size="icon-sm"
 						onclick={() => {
-							const { id } = signedIn.fuji.actions.entries.create({});
+							const { id } = workspace.fuji.actions.entries.create({});
 							goto(`/entries/${id}`);
 						}}
 					>
@@ -59,10 +59,10 @@
 	<div class="flex items-center gap-1">
 		<AccountPopover
 			{auth}
-			sync={signedIn.fuji.sync}
+			sync={workspace.fuji.sync}
 			syncNoun="entries"
 			onForgetDevice={async () => {
-				await signedIn.fuji.wipe();
+				await workspace.fuji.wipe();
 				window.location.reload();
 			}}
 		/>

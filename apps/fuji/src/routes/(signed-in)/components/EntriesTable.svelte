@@ -22,15 +22,15 @@
 	import BadgeList from '$lib/components/BadgeList.svelte';
 	import { matchesEntrySearch } from '$lib/entries-search';
 	import { relativeTime } from '$lib/format';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 	import type { Entry } from '../fuji/workspace';
 	import { viewState } from '../state/view.svelte';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 
 	function createEntry() {
-		const { id } = signedIn.fuji.actions.entries.create({});
+		const { id } = workspace.fuji.actions.entries.create({});
 		goto(`/entries/${id}`);
 	}
 

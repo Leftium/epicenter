@@ -8,15 +8,13 @@
 
 	let { children } = $props();
 
-	const current = $derived(session.current);
-
 	let signingIn = $state(false);
 	let signInError = $state<string | null>(null);
 </script>
 
-{#if current.status === 'signed-in'}
+{#if session.current}
 	<WorkspaceGate
-		pending={current.signedIn.fuji.idb.whenLoaded}
+		pending={session.current.workspace.fuji.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
 		<FujiAppShell>{@render children?.()}</FujiAppShell>
@@ -51,8 +49,6 @@
 			{#if signingIn}
 				<LoaderCircle class="size-4 animate-spin" />
 				Signing in…
-			{:else if current.status === 'reauth-required'}
-				Reconnect
 			{:else}
 				Sign in with Epicenter
 			{/if}

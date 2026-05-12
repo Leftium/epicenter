@@ -12,11 +12,8 @@
 		}
 	});
 
-	async function signInWithGoogle() {
-		const { error } = await auth.signInWithSocialRedirect({
-			provider: 'google',
-			callbackURL: window.location.origin,
-		});
+	async function signInWithSocial() {
+		const { error } = await auth.signInWithSocial({ provider: 'google' });
 		if (error) submitError = error.message;
 	}
 </script>
@@ -27,7 +24,7 @@
 	<main class="flex h-dvh flex-col">
 		<header class="flex items-center justify-between border-b px-4 py-3">
 			<h1 class="text-lg font-semibold">中文 Zhongwen</h1>
-			<Button size="sm" onclick={signInWithGoogle}>Sign In</Button>
+			<Button size="sm" onclick={signInWithSocial}>Sign In</Button>
 		</header>
 
 		<div class="flex flex-1 items-center justify-center">
@@ -36,7 +33,7 @@
 				{#if submitError}
 					<p class="text-sm text-destructive">{submitError}</p>
 				{/if}
-				<Button onclick={signInWithGoogle}>Sign in with Google</Button>
+				<Button onclick={signInWithSocial}>Sign in with Google</Button>
 			</div>
 		</div>
 	</main>

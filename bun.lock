@@ -215,6 +215,7 @@
       "devDependencies": {
         "@lucide/astro": "^0.536.0",
         "@tailwindcss/typography": "catalog:",
+        "svelte-check": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -226,6 +227,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/oauth-client": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@tanstack/ai": "catalog:",
@@ -326,6 +328,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/oauth-client": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",

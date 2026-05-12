@@ -36,11 +36,7 @@
 					<AuthForm
 						{auth}
 						syncNoun="billing"
-						onSocialSignIn={() =>
-							auth.signInWithSocialRedirect({
-								provider: 'google',
-								callbackURL: window.location.href,
-							})}
+						onSocialSignIn={() => auth.signInWithSocial({ provider: 'google' })}
 					/>
 				</Card.Root>
 			</div>

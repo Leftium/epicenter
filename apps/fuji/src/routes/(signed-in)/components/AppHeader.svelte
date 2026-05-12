@@ -69,11 +69,7 @@
 			sync={signedIn.fuji.sync}
 			syncNoun="entries"
 			onForgetDevice={forgetFujiDevice}
-			onSocialSignIn={() =>
-				auth.signInWithSocialRedirect({
-					provider: 'google',
-					callbackURL: window.location.origin,
-				})}
+			onSocialSignIn={() => auth.signInWithSocial({ provider: 'google' })}
 		/>
 		<GitHubButton
 			repo={{ owner: 'EpicenterHQ', repo: 'epicenter' }}

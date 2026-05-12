@@ -27,11 +27,7 @@
 					sync={signedIn.honeycrisp.sync}
 					syncNoun="notes"
 					onForgetDevice={forgetHoneycrispDevice}
-					onSocialSignIn={() =>
-						auth.signInWithSocialRedirect({
-							provider: 'google',
-							callbackURL: window.location.origin,
-						})}
+					onSocialSignIn={() => auth.signInWithSocial({ provider: 'google' })}
 				/>
 				<Sidebar.Trigger />
 			</div>

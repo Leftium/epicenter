@@ -15,11 +15,7 @@
 		<AuthForm
 			{auth}
 			syncNoun="notes"
-			onSocialSignIn={() =>
-				auth.signInWithSocialRedirect({
-					provider: 'google',
-					callbackURL: window.location.origin,
-				})}
+			onSocialSignIn={() => auth.signInWithSocial({ provider: 'google' })}
 		/>
 	</div>
 {/if}

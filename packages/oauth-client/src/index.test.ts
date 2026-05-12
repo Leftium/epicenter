@@ -38,7 +38,7 @@ function createFetch({
 		refresh_token: 'refresh-token',
 		expires_in: 900,
 		token_type: 'Bearer',
-		scope: 'openid profile email offline_access',
+		scope: 'openid profile email offline_access workspaces:open',
 	},
 	onTokenBody,
 }: {
@@ -84,7 +84,7 @@ test('createAuthorizationUrl stores verifier state and returns PKCE URL', async 
 	expect(url?.searchParams.get('response_type')).toBe('code');
 	expect(url?.searchParams.get('client_id')).toBe('client-1');
 	expect(url?.searchParams.get('scope')).toBe(
-		'openid profile email offline_access',
+		'openid profile email offline_access workspaces:open',
 	);
 	expect(url?.searchParams.get('resource')).toBe('http://auth.test');
 	expect(url?.searchParams.get('code_challenge_method')).toBe('S256');

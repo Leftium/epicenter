@@ -85,7 +85,7 @@ type OAuthTransaction = {
 type RedirectTo = (url: string) => MaybePromise<void>;
 type LaunchWebAuthFlow = (url: string) => Promise<string>;
 
-const DEFAULT_SCOPE = 'openid profile email offline_access';
+const DEFAULT_SCOPE = 'openid profile email offline_access workspaces:open';
 
 export function createBrowserOAuthLauncher({
 	redirectTo = (url) => {

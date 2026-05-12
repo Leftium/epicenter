@@ -105,12 +105,12 @@ export function createOAuthAppAuth({
 	async function loadIdentity(
 		tokens: OAuthTokenGrant,
 	): Promise<OAuthSessionType> {
-		const response = await fetchImpl(`${baseURL}/auth/me`, {
+		const response = await fetchImpl(`${baseURL}/workspace-identity`, {
 			headers: { Authorization: `Bearer ${tokens.accessToken}` },
 			credentials: 'omit',
 		});
 		if (!response.ok) {
-			throw new Error(`/auth/me failed with ${response.status}.`);
+			throw new Error(`/workspace-identity failed with ${response.status}.`);
 		}
 		const identity = WorkspaceIdentity.assert(await response.json());
 		return OAuthSession.assert({

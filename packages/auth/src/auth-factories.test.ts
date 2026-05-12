@@ -4,7 +4,7 @@
  * Verifies the OAuth-only app auth core through public client behavior.
  *
  * Key behaviors:
- * - Hosted sign-in loads identity through `/auth/me` and persists OAuthSession
+ * - Hosted sign-in loads identity through `/workspace-identity` and persists OAuthSession
  * - Cached sessions boot into local identity without network
  * - Refresh is persisted before protected fetches and WebSockets use new tokens
  * - 401 responses retry once after refresh
@@ -129,7 +129,7 @@ test('startSignIn loads identity through auth/me and stores OAuthSession', async
 	const result = await auth.startSignIn({ returnTo: '/workspaces/1' });
 
 	expect(result).toEqual(Ok(undefined));
-	expect(String(fetches[0]?.input)).toBe('http://localhost:8787/auth/me');
+	expect(String(fetches[0]?.input)).toBe('http://localhost:8787/workspace-identity');
 	expect(new Headers(fetches[0]?.init?.headers).get('authorization')).toBe(
 		'Bearer oauth-access-token',
 	);
@@ -417,7 +417,7 @@ test('same-user startSignIn repairs reauth-required state and resumes network au
 			throw new Error('refresh failed');
 		},
 		fetch: (async (input, init) => {
-			if (String(input) === 'http://localhost:8787/auth/me') {
+			if (String(input) === 'http://localhost:8787/workspace-identity') {
 				return json(identity());
 			}
 			authorizations.push(new Headers(init?.headers).get('authorization'));

@@ -1,11 +1,11 @@
 /**
- * OAuth Identity Endpoint Tests
+ * /workspace-identity Endpoint Tests
  *
  * Verifies the Epicenter resource-server identity endpoint used by apps after
  * completing OAuth authorization code with PKCE.
  *
  * Key behaviors:
- * - `/auth/me` returns the local-first identity for a valid OAuth access token
+ * - `/workspace-identity` returns the local-first identity for a valid OAuth access token
  * - Audience mismatches, missing users, and malformed bearer input are rejected
  * - Access-token verification failures map to invalid OAuth credentials
  */
@@ -20,8 +20,8 @@ import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import { customSession, jwt } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
-import { createAuthIdentityResponse } from './identity-response.js';
-import { resolveOAuthIdentity } from './me.js';
+import { createWorkspaceIdentityResponse } from './workspace-identity-response.js';
+import { resolveWorkspaceIdentity } from './workspace-identity.js';
 
 const redirectUri = 'http://localhost:5174/auth/callback';
 const verifier = 'test-verifier-test-verifier-test-verifier';
@@ -31,17 +31,17 @@ const encryptionKeys: EncryptionKeys = [
 		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
 ];
-let nextOAuthIdentityTestPort = 41_000 + Math.floor(Math.random() * 10_000);
+let nextWorkspaceIdentityTestPort = 41_000 + Math.floor(Math.random() * 10_000);
 
-test('auth/me returns identity for a valid OAuth access token', async () => {
-	const setup = createOAuthIdentityTestServer();
+test('/workspace-identity returns identity for a valid OAuth access token', async () => {
+	const setup = createWorkspaceIdentityTestServer();
 
 	try {
 		const { accessToken, refreshToken } = await issueOAuthTokens(setup);
 		expect(accessToken.split('.')).toHaveLength(3);
 		expect(refreshToken).toBeTruthy();
 
-		const response = await fetch(`${setup.baseURL}/auth/me`, {
+		const response = await fetch(`${setup.baseURL}/workspace-identity`, {
 			headers: { authorization: `Bearer ${accessToken}` },
 		});
 
@@ -56,11 +56,11 @@ test('auth/me returns identity for a valid OAuth access token', async () => {
 	}
 });
 
-test('auth/me rejects missing bearer input', async () => {
-	const setup = createOAuthIdentityTestServer();
+test('/workspace-identity rejects missing bearer input', async () => {
+	const setup = createWorkspaceIdentityTestServer();
 
 	try {
-		const response = await fetch(`${setup.baseURL}/auth/me`);
+		const response = await fetch(`${setup.baseURL}/workspace-identity`);
 
 		expect(response.status).toBe(400);
 		await expect(response.json()).resolves.toEqual({
@@ -71,15 +71,15 @@ test('auth/me rejects missing bearer input', async () => {
 	}
 });
 
-test('auth/me rejects access tokens with the wrong audience', async () => {
-	const setup = createOAuthIdentityTestServer();
+test('/workspace-identity rejects access tokens with the wrong audience', async () => {
+	const setup = createWorkspaceIdentityTestServer();
 
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
 			resource: setup.wrongAudience,
 		});
 
-		const response = await fetch(`${setup.baseURL}/auth/me`, {
+		const response = await fetch(`${setup.baseURL}/workspace-identity`, {
 			headers: { authorization: `Bearer ${accessToken}` },
 		});
 
@@ -92,14 +92,14 @@ test('auth/me rejects access tokens with the wrong audience', async () => {
 	}
 });
 
-test('auth/me rejects tokens whose user no longer exists', async () => {
-	const setup = createOAuthIdentityTestServer();
+test('/workspace-identity rejects tokens whose user no longer exists', async () => {
+	const setup = createWorkspaceIdentityTestServer();
 
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
 		setup.db.user = [];
 
-		const response = await fetch(`${setup.baseURL}/auth/me`, {
+		const response = await fetch(`${setup.baseURL}/workspace-identity`, {
 			headers: { authorization: `Bearer ${accessToken}` },
 		});
 
@@ -112,8 +112,8 @@ test('auth/me rejects tokens whose user no longer exists', async () => {
 	}
 });
 
-test('resolveOAuthIdentity rejects expired access-token verification', async () => {
-	const result = await resolveOAuthIdentity({
+test('resolveWorkspaceIdentity rejects expired access-token verification', async () => {
+	const result = await resolveWorkspaceIdentity({
 		authorization: 'Bearer expired-token',
 		audience: 'http://localhost:8787',
 		issuer: 'http://localhost:8787/auth',
@@ -132,7 +132,7 @@ test('resolveOAuthIdentity rejects expired access-token verification', async () 
 	expect(result).toEqual({ status: 'invalid' });
 });
 
-function createOAuthIdentityTestServer() {
+function createWorkspaceIdentityTestServer() {
 	const db: MemoryDB = {
 		user: [],
 		session: [],
@@ -146,7 +146,7 @@ function createOAuthIdentityTestServer() {
 	};
 
 	for (let attempt = 0; attempt < 40; attempt += 1) {
-		const port = nextOAuthIdentityTestPort++;
+		const port = nextWorkspaceIdentityTestPort++;
 		const baseURL = `http://localhost:${port}`;
 		const wrongAudience = `${baseURL}/other-resource`;
 		const baseAuthOptions = {
@@ -174,7 +174,7 @@ function createOAuthIdentityTestServer() {
 				...basePlugins,
 				customSession(
 					(input) =>
-						createAuthIdentityResponse(input, {
+						createWorkspaceIdentityResponse(input, {
 							deriveUserEncryptionKeys: async () => encryptionKeys,
 						}),
 					{ ...baseAuthOptions, plugins: basePlugins },
@@ -187,9 +187,9 @@ function createOAuthIdentityTestServer() {
 				port,
 				fetch: async (request) => {
 					const url = new URL(request.url);
-					if (request.method === 'GET' && url.pathname === '/auth/me') {
+					if (request.method === 'GET' && url.pathname === '/workspace-identity') {
 						const resource = oauthProviderResourceClient();
-						const result = await resolveOAuthIdentity({
+						const result = await resolveWorkspaceIdentity({
 							authorization: request.headers.get('authorization'),
 							audience: baseURL,
 							issuer: `${baseURL}/auth`,
@@ -236,7 +236,7 @@ function isAddressInUse(error: unknown) {
 }
 
 async function issueOAuthTokens(
-	{ auth, baseURL }: ReturnType<typeof createOAuthIdentityTestServer>,
+	{ auth, baseURL }: ReturnType<typeof createWorkspaceIdentityTestServer>,
 	{ resource = baseURL }: { resource?: string } = {},
 ) {
 	const signUpResponse = await auth.handler(

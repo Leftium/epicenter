@@ -2,13 +2,13 @@ import type { oauthProviderResourceClient } from '@better-auth/oauth-provider/re
 import type { WorkspaceIdentity } from '@epicenter/auth';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { User } from 'better-auth';
-import { createAuthIdentityResponse } from './identity-response.js';
+import { createWorkspaceIdentityResponse } from './workspace-identity-response.js';
 
 type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
 >['verifyAccessToken'];
 
-type ResolveOAuthIdentityResult =
+type ResolveWorkspaceIdentityResult =
 	| {
 			status: 'resolved';
 			body: WorkspaceIdentity;
@@ -16,7 +16,7 @@ type ResolveOAuthIdentityResult =
 	| { status: 'malformed' }
 	| { status: 'invalid' };
 
-export async function resolveOAuthIdentity({
+export async function resolveWorkspaceIdentity({
 	authorization,
 	audience,
 	issuer,
@@ -32,7 +32,7 @@ export async function resolveOAuthIdentity({
 	verifyOAuthAccessToken: VerifyOAuthAccessToken;
 	findUserById(userId: string): Promise<User | null>;
 	deriveUserEncryptionKeys(userId: string): Promise<EncryptionKeys>;
-}): Promise<ResolveOAuthIdentityResult> {
+}): Promise<ResolveWorkspaceIdentityResult> {
 	const accessToken = parseBearer(authorization);
 	if (!accessToken) return { status: 'malformed' };
 
@@ -48,7 +48,7 @@ export async function resolveOAuthIdentity({
 
 	return {
 		status: 'resolved',
-		body: await createAuthIdentityResponse(
+		body: await createWorkspaceIdentityResponse(
 			{ user },
 			{ deriveUserEncryptionKeys },
 		),

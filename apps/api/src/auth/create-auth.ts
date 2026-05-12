@@ -15,7 +15,7 @@ import { TRUSTED_ORIGINS } from '../trusted-origins';
 import { BASE_AUTH_CONFIG } from './base-config';
 import { createCookieAdvancedConfig } from './cookie-config';
 import { deriveUserEncryptionKeys } from './encryption';
-import { createAuthIdentityResponse } from './identity-response';
+import { createWorkspaceIdentityResponse } from './workspace-identity-response';
 import { trustedOAuthClientIds } from './trusted-oauth-clients';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -206,7 +206,7 @@ export function createAuth({
 	 * Embedding all keys here eliminates separate key-fetch endpoints.
 	 */
 	const customSessionPlugin = customSession(
-		(input) => createAuthIdentityResponse(input, { deriveUserEncryptionKeys }),
+		(input) => createWorkspaceIdentityResponse(input, { deriveUserEncryptionKeys }),
 		{
 			...authOptionsBase,
 			plugins: basePlugins,

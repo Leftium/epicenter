@@ -18,7 +18,7 @@ import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
 import { deriveUserEncryptionKeys } from './auth/encryption';
-import { resolveOAuthIdentity } from './auth/me';
+import { resolveWorkspaceIdentity } from './auth/workspace-identity';
 import {
 	createOAuthIssuerURL,
 	createOAuthJwksURL,
@@ -255,13 +255,13 @@ app.get(
 );
 
 app.get(
-	'/auth/me',
+	'/workspace-identity',
 	describeRoute({
 		description: 'Resolve an OAuth access token to Epicenter identity',
 		tags: ['auth', 'oauth'],
 	}),
 	async (c) => {
-		const result = await resolveOAuthIdentityForRequest(c);
+		const result = await resolveWorkspaceIdentityForRequest(c);
 
 		if (result.status === 'malformed') {
 			return c.json({ code: 'malformed_oauth_token' }, 400);
@@ -328,9 +328,9 @@ app.on(
 // Must be mounted before requireOAuthUser so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
 
-async function resolveOAuthIdentityForRequest(c: Context<Env>) {
+async function resolveWorkspaceIdentityForRequest(c: Context<Env>) {
 	const resource = oauthProviderResourceClient();
-	return resolveOAuthIdentity({
+	return resolveWorkspaceIdentity({
 		authorization: c.req.header('authorization') ?? null,
 		audience: c.var.authBaseURL,
 		issuer: createOAuthIssuerURL(c.var.authBaseURL),
@@ -351,7 +351,7 @@ async function resolveOAuthIdentityForRequest(c: Context<Env>) {
 // Require an OAuth access token for protected app resources. Assumes
 // {@link singleCredential} has already validated and normalized credentials.
 const requireOAuthUser = factory.createMiddleware(async (c, next) => {
-	const result = await resolveOAuthIdentityForRequest(c);
+	const result = await resolveWorkspaceIdentityForRequest(c);
 	if (result.status !== 'resolved') {
 		return createOAuthUnauthorizedResourceResponse(c);
 	}

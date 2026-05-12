@@ -2,7 +2,7 @@ import { type WorkspaceIdentity, AuthUser } from '@epicenter/auth';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { User } from 'better-auth';
 
-export async function createAuthIdentityResponse(
+export async function createWorkspaceIdentityResponse(
 	{ user }: { user: User },
 	{
 		deriveUserEncryptionKeys,

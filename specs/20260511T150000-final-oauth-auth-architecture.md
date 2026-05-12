@@ -3,6 +3,9 @@
 **Date**: 2026-05-11
 **Status**: Draft, clean-break revision
 **Author**: AI assisted
+**Stack Map**: `specs/20260512T134603-auth-spec-stack-clean-break-map.md`
+**Stack Position**: North star for the auth stack.
+**Companion spec**: `specs/20260512T150000-cloud-modules-and-networks.md` (product-layer north star; owns the shape inside `apps/cloud`, including modules and per-network OAuth resources)
 **Supersedes**:
 
 - `specs/20260511T105846-auth-oauth-everywhere-clean-break.md`
@@ -924,12 +927,15 @@ into "one API app" unless the product boundary stays visible.
 | apps/cloud                                                   |
 |                                                              |
 | Owns:                                                        |
-|   Drizzle and Postgres                                       |
-|   billing                                                    |
-|   hosted storage registry                                    |
-|   asset management                                           |
-|   dashboards                                                 |
-|   hosted control APIs                                        |
+|   modular host for product modules and infrastructure modules|
+|   Drizzle and Postgres allowed                               |
+|   per-network OAuth protected resources                      |
+|                                                              |
+| Module shape (see cloud-modules-and-networks.md):            |
+|   product modules:        ark, betcha (each registers a      |
+|                           network and owns public records)   |
+|   infrastructure modules: billing, assets, dashboard         |
+|                           (serve api.epicenter.so directly)  |
 |                                                              |
 | Does not own:                                                |
 |   raw sign-in                                                |
@@ -937,6 +943,12 @@ into "one API app" unless the product boundary stays visible.
 |   self-hostable sync runtime                                 |
 +--------------------------------------------------------------+
 ```
+
+This spec stops at "apps/cloud is a modular host." The module list, the
+network shape, and the per-network scope namespaces are owned by the
+companion spec (`cloud-modules-and-networks.md`). Do not freeze billing,
+assets, or dashboard as permanent fields of `CloudEnv`: they are modules,
+optional per operator.
 
 ### Boundary Correction
 
@@ -1246,27 +1258,33 @@ Cloud composition dependency tree:
 CloudEnv
 |-- oauth
 |   |-- issuer = accounts.epicenter.so
-|   `-- resource = api.epicenter.so
+|   `-- cloud-host resource = api.epicenter.so
 |-- db
 |   |-- Drizzle
 |   `-- Postgres
-|-- billing
-|-- storageRegistry
-|-- assets
-|-- dashboardAssets
+|-- modules
+|   |-- registered product modules (each may host one or more networks)
+|   `-- registered infrastructure modules
+|-- networks
+|   `-- operator-configured network instances per product module
 `-- config
     `-- cloud origin
 
 createCloudResourceRoutes(CloudEnv)
-  -> verifies OAuth access tokens
-  -> uses db, billing, storageRegistry, assets
+  -> verifies OAuth access tokens against the cloud-host audience
+  -> dispatches infrastructure-module routes (billing, assets, dashboard)
   -> does not derive encryption keys
 
-createDashboardRoutes(CloudEnv)
-  -> serves built SvelteKit SPA
-  -> does not own sign-in
-  -> redirects to accounts OAuth when signed out
+createNetworkRoutes(CloudEnv, network)
+  -> verifies OAuth access tokens against the network audience
+  -> dispatches the owning module's product routes
+  -> publishes /.well-known/oauth-protected-resource for the network host
 ```
+
+The exact module list, network shape, and per-network scope namespaces
+live in `cloud-modules-and-networks.md`. This spec only commits that
+networks are OAuth protected resources distinct from the cloud-host
+resource.
 
 This is the compromise that keeps the architecture honest:
 
@@ -1588,6 +1606,58 @@ api.epicenter.so/dashboard
   -> token audience is api.epicenter.so
   -> dashboard calls api.epicenter.so/api/*
 ```
+
+### Browser Resource Boundaries
+
+CORS policy follows the protected-resource boundary. Do not solve browser access
+by adding one global allowlist to every hosted route.
+
+```txt
+sync.epicenter.so
+  resource purpose:
+    workspace identity, workspace sync, document sync
+  browser clients:
+    first-party apps and registered OAuth apps after consent
+  credential:
+    OAuth access token with workspaces:open
+  routes:
+    /workspace-identity
+    /workspaces/*
+    /documents/*
+
+api.epicenter.so
+  resource purpose:
+    hosted cloud control plane
+  browser clients:
+    dashboard and explicitly productized cloud clients
+  credential:
+    OAuth access token with cloud-specific scopes
+  routes:
+    /api/assets/*
+    /api/billing/*
+    /api/storage/*
+    /dashboard/*
+```
+
+This means third-party browser sync clients belong at the sync resource, not at
+the Cloud control plane by accident. If a third-party app needs both workspace
+sync and hosted Cloud APIs, it should request separate resource grants with the
+smallest scopes each resource enforces.
+
+Per-network resources extend this list. Each product-module network (for
+example `ark.epicenter.so`, `betcha.epicenter.so`, `ark.alice.com`) is its
+own OAuth protected resource with its own
+`/.well-known/oauth-protected-resource`, its own audience, its own scope
+namespace, and its own CORS allowlist. The per-network resource boundary
+is owned by the companion spec
+(`specs/20260512T150000-cloud-modules-and-networks.md`). The rule from
+this spec stays the same: tokens are audience-bound, never substitutable
+across resources, never able to claim more than one network at a time.
+
+Do not add a static WebSocket `Origin` allowlist for bearer sync. Browser
+WebSocket sync is authorized by the scoped OAuth access token. Origin checks are
+appropriate for cookie-authenticated browser flows, account pages, and any
+future route that depends on ambient browser credentials.
 
 Pricing and hosted subscription state belong to Cloud:
 
@@ -2427,6 +2497,7 @@ Each commit body should reference the wave items it implements (3.5, 3.6,
 - [ ] **5.6** Enforce the no-Postgres boundary with package dependencies and tests.
 - [ ] **5.7** Serve `accounts.epicenter.so` and `sync.epicenter.so` from this app in hosted production.
 - [ ] **5.8** Keep accounts and sync as mountable Hono route modules inside `apps/server`.
+- [ ] **5.9** Configure sync resource CORS for first-party apps and registered OAuth browser clients without adding a static WebSocket `Origin` allowlist for bearer sync.
 
 Verification:
 
@@ -2440,15 +2511,17 @@ manual smoke: sync protected-resource discovery returns resource sync.epicenter.
 
 Cloud move:
 
-- [ ] **5.9** Create `apps/cloud` as a Hono app.
-- [ ] **5.10** Move Drizzle, Postgres schema, billing, assets, hosted storage registry, dashboards, and cloud control APIs to `apps/cloud`.
-- [ ] **5.11** Verify access tokens with issuer `accounts.epicenter.so` and audience `api.epicenter.so`.
-- [ ] **5.12** Add `resolveOAuthPrincipal` for cloud protected routes.
-- [ ] **5.13** Make cloud middleware return `AuthUser`, not `WorkspaceIdentity`.
-- [ ] **5.14** Do not derive encryption keys in Cloud.
-- [ ] **5.15** Do not call Better Auth `getSession()` in Cloud.
-- [ ] **5.16** Build the dashboard as a SvelteKit SPA under `apps/cloud/dashboard`.
-- [ ] **5.17** Serve the dashboard SPA from `api.epicenter.so/dashboard/*` through the Cloud Hono app.
+- [ ] **5.10** Create `apps/cloud` as a Hono app.
+- [ ] **5.11** Move Drizzle, Postgres schema, billing, assets, hosted storage registry, dashboards, and cloud control APIs to `apps/cloud`.
+- [ ] **5.12** Verify access tokens with issuer `accounts.epicenter.so` and audience `api.epicenter.so`.
+- [ ] **5.13** Add `resolveOAuthPrincipal` for cloud protected routes.
+- [ ] **5.14** Make cloud middleware return `AuthUser`, not `WorkspaceIdentity`.
+- [ ] **5.15** Do not derive encryption keys in Cloud.
+- [ ] **5.16** Do not call Better Auth `getSession()` in Cloud.
+- [ ] **5.17** Build the dashboard as a SvelteKit SPA under `apps/cloud/dashboard`.
+- [ ] **5.18** Serve the dashboard SPA from `api.epicenter.so/dashboard/*` through the Cloud Hono app.
+- [ ] **5.19** Keep Cloud browser CORS scoped to the dashboard and explicitly productized cloud clients, not all registered sync clients.
+- [ ] **5.19a** Stop at the deployable split. The internal shape of `apps/cloud` (module list, network registry, per-network OAuth resource wiring) is owned by `specs/20260512T150000-cloud-modules-and-networks.md`. Do not freeze billing, assets, and dashboard as permanent fields of `CloudEnv`. Treat them as infrastructure modules that operators register, alongside product modules (Ark, Betcha) that operators also register and configure with networks.
 
 Verification:
 
@@ -2460,14 +2533,14 @@ bun run typecheck in apps/cloud/dashboard
 
 First-party app move:
 
-- [ ] **5.18** Configure dashboard with a Cloud OAuth client using `issuer = accounts.epicenter.so` and `resource = api.epicenter.so`.
-- [ ] **5.19** Configure workspace SvelteKit apps with `issuer = accounts.epicenter.so` and `resource = sync.epicenter.so`.
-- [ ] **5.20** Configure WXT extension launchers with `issuer = accounts.epicenter.so` and `resource = sync.epicenter.so`.
-- [ ] **5.21** Remove app credential forms that duplicate hosted sign-in.
-- [ ] **5.22** Replace sync bearer-token getters with `auth.openWebSocket`.
-- [ ] **5.23** Replace direct fetch with `auth.fetch` for protected resources.
-- [ ] **5.24** Use `sync.epicenter.so` as the hosted sync resource for workspace and document sync.
-- [ ] **5.25** Add explicit separate grants when one app needs both sync and Cloud resources.
+- [ ] **5.20** Configure dashboard with a Cloud OAuth client using `issuer = accounts.epicenter.so` and `resource = api.epicenter.so`.
+- [ ] **5.21** Configure workspace SvelteKit apps with `issuer = accounts.epicenter.so` and `resource = sync.epicenter.so`.
+- [ ] **5.22** Configure WXT extension launchers with `issuer = accounts.epicenter.so` and `resource = sync.epicenter.so`.
+- [ ] **5.23** Remove app credential forms that duplicate hosted sign-in.
+- [ ] **5.24** Replace sync bearer-token getters with `auth.openWebSocket`.
+- [ ] **5.25** Replace direct fetch with `auth.fetch` for protected resources.
+- [ ] **5.26** Use `sync.epicenter.so` as the hosted sync resource for workspace and document sync.
+- [ ] **5.27** Add explicit separate grants when one app needs both sync and Cloud resources.
 
 Verification:
 

@@ -4,7 +4,7 @@
  *
  * `Session<T>` is the projection layer between `AuthState` and the workspace.
  * The shape is the discriminator: `SessionPayload<T> | null`. Apps gate on
- * truthiness (`if (current)`). The projection never surfaces credential
+ * truthiness (`if (session.current)`). The projection never surfaces credential
  * freshness; consumers that care about it read `auth.state.status` directly.
  *
  * This factory owns the payload lifecycle (build, dispose) and the user-switch
@@ -13,6 +13,11 @@
  * Same-user `reauth-required` is a no-op, so local workspace state stays
  * mounted while credentials refresh, and `session.current` keeps the same
  * `SessionPayload` reference across the transition.
+ *
+ * The returned `requireWorkspace()` method is the standard component-side
+ * unwrap helper: it throws if `current` is null, and the thrown error is
+ * prefixed with the app `name` passed to `createSession`. Re-export it from
+ * each app's session module with `export const { requireWorkspace } = session`.
  *
  * Lazy callbacks (e.g., `encryptionKeys`, `openWebSocket`) are read at:
  *   - attachment time (e.g., `attachEncryption` reads `encryptionKeys()` once
@@ -31,11 +36,13 @@
  * ```ts
  * export const session = createSession({
  *   auth,
+ *   name: 'fuji',
  *   build: (identity) => {
  *     const fuji = openFuji({ ... });
  *     return { userId: identity.user.id, fuji, [Symbol.dispose]() {...} };
  *   },
  * });
+ * export const { requireWorkspace } = session;
  * export type FujiWorkspace = InferWorkspace<typeof session>;
  * ```
  */
@@ -66,7 +73,7 @@ export type WorkspaceBase = {
  *
  * @example
  * ```ts
- * export const session = createSession({ auth, build: (identity) => {...} });
+ * export const session = createSession({ auth, name: 'fuji', build: (identity) => {...} });
  * export type FujiWorkspace = InferWorkspace<typeof session>;
  * ```
  */
@@ -80,9 +87,15 @@ export type InferWorkspace<TSession extends { current: unknown }> =
 export function createSession<TWorkspace extends WorkspaceBase>({
 	auth,
 	build,
+	name,
 }: {
 	auth: AuthClient;
 	build: (identity: WorkspaceIdentity) => TWorkspace;
+	/**
+	 * App name prefix used in the `requireWorkspace()` throw, e.g. `"fuji"`
+	 * produces `[fuji] requireWorkspace() called without ...`.
+	 */
+	name: string;
 }) {
 	let payload = $state<SessionPayload<TWorkspace> | null>(null);
 	const lifecycle = createSessionLifecycle<TWorkspace>({
@@ -101,6 +114,23 @@ export function createSession<TWorkspace extends WorkspaceBase>({
 	return {
 		get current(): Session<TWorkspace> {
 			return payload;
+		},
+		/**
+		 * Returns the live workspace payload, throwing when there is no
+		 * authenticated identity. Callers (typically `+page.svelte` components
+		 * mounted under the layout's `{#if session.current}` gate) bind once at
+		 * script init and dot-access fields. Do NOT inline into templates;
+		 * re-evaluation breaks teardown semantics.
+		 */
+		requireWorkspace(): TWorkspace {
+			if (!payload) {
+				throw new Error(
+					`[${name}] requireWorkspace() called without an authenticated session. ` +
+						'This indicates a route or component mounted without the layout gate, ' +
+						'or a callback firing after the workspace was disposed.',
+				);
+			}
+			return payload.workspace;
 		},
 		[Symbol.dispose]() {
 			lifecycle[Symbol.dispose]();

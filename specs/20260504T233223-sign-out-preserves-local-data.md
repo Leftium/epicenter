@@ -12,6 +12,9 @@
 - `specs/20260501T221831-auth-workspace-lifecycle-inversion.md`: the lifecycle binding this spec reshapes
 - `specs/20260504T020000-workspace-identity-reset-deterministic-teardown.md`: the deterministic teardown contract this spec narrows to memory teardown plus owner-scoped local persistence
 
+**Stack Map**: `specs/20260512T134603-auth-spec-stack-clean-break-map.md`
+**Stack Position**: Runtime policy for account exit and local workspace persistence.
+
 ## One-sentence thesis
 
 > **Sign-out destroys the live workspace and reloads; sign-in opens only the local cache scoped to that authenticated owner.**

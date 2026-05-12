@@ -5,6 +5,8 @@
 **Author**: AI assisted
 **Branch**: codex/auth-bearer-omit-cookies
 **Depends on**: `specs/20260511T150000-final-oauth-auth-architecture.md`
+**Stack Map**: `specs/20260512T134603-auth-spec-stack-clean-break-map.md`
+**Stack Position**: Migration track from old app auth factories to the OAuth `AuthClient`.
 
 ## One Sentence
 

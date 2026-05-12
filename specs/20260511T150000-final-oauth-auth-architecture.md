@@ -5,7 +5,7 @@
 **Author**: AI assisted
 **Stack Map**: `specs/20260512T134603-auth-spec-stack-clean-break-map.md`
 **Stack Position**: North star for the auth stack.
-**Companion spec**: `specs/20260512T150000-cloud-modules-and-networks.md` (product-layer north star; owns the shape inside `apps/cloud`, including modules and per-network OAuth resources)
+**Companion spec**: `specs/20260512T150000-cloud-modules-and-networks.md` (product-layer north star; owns the shape inside `apps/cloud`, including compile-time Cloud Apps and App Instance OAuth resources)
 **Supersedes**:
 
 - `specs/20260511T105846-auth-oauth-everywhere-clean-break.md`
@@ -927,14 +927,14 @@ into "one API app" unless the product boundary stays visible.
 | apps/cloud                                                   |
 |                                                              |
 | Owns:                                                        |
-|   modular host for product modules and infrastructure modules|
+|   compile-time host for Cloud Apps                           |
 |   Drizzle and Postgres allowed                               |
-|   per-network OAuth protected resources                      |
+|   per-instance OAuth protected resources                     |
 |                                                              |
-| Module shape (see cloud-modules-and-networks.md):            |
-|   product modules:        ark, betcha (each registers a      |
-|                           network and owns public records)   |
-|   infrastructure modules: billing, assets, dashboard         |
+| Cloud App shape (see cloud-modules-and-networks.md):         |
+|   product apps:        ark, betcha (served through App        |
+|                        Instances that own public records)     |
+|   infrastructure apps: billing, assets, dashboard            |
 |                           (serve api.epicenter.so directly)  |
 |                                                              |
 | Does not own:                                                |
@@ -944,11 +944,10 @@ into "one API app" unless the product boundary stays visible.
 +--------------------------------------------------------------+
 ```
 
-This spec stops at "apps/cloud is a modular host." The module list, the
-network shape, and the per-network scope namespaces are owned by the
-companion spec (`cloud-modules-and-networks.md`). Do not freeze billing,
-assets, or dashboard as permanent fields of `CloudEnv`: they are modules,
-optional per operator.
+This spec stops at "apps/cloud is a Cloud App host." The Cloud App list, App
+Instance shape, and per-app scope namespaces are owned by the companion spec
+(`cloud-modules-and-networks.md`). Do not freeze billing, assets, or dashboard
+as permanent fields of `CloudEnv`: they are Cloud Apps, optional per operator.
 
 ### Boundary Correction
 
@@ -1262,29 +1261,28 @@ CloudEnv
 |-- db
 |   |-- Drizzle
 |   `-- Postgres
-|-- modules
-|   |-- registered product modules (each may host one or more networks)
-|   `-- registered infrastructure modules
-|-- networks
-|   `-- operator-configured network instances per product module
+|-- cloudApps
+|   |-- registered product Cloud Apps
+|   `-- registered infrastructure Cloud Apps
+|-- instances
+|   `-- operator-configured App Instances per product Cloud App
 `-- config
     `-- cloud origin
 
 createCloudResourceRoutes(CloudEnv)
   -> verifies OAuth access tokens against the cloud-host audience
-  -> dispatches infrastructure-module routes (billing, assets, dashboard)
+  -> dispatches infrastructure Cloud App routes (billing, assets, dashboard)
   -> does not derive encryption keys
 
-createNetworkRoutes(CloudEnv, network)
-  -> verifies OAuth access tokens against the network audience
-  -> dispatches the owning module's product routes
-  -> publishes /.well-known/oauth-protected-resource for the network host
+createAppInstanceRoutes(CloudEnv, instance)
+  -> verifies OAuth access tokens against the App Instance audience
+  -> dispatches the owning Cloud App's product routes
+  -> publishes /.well-known/oauth-protected-resource for the instance host
 ```
 
-The exact module list, network shape, and per-network scope namespaces
-live in `cloud-modules-and-networks.md`. This spec only commits that
-networks are OAuth protected resources distinct from the cloud-host
-resource.
+The exact Cloud App list, App Instance shape, and per-app scope namespaces
+live in `cloud-modules-and-networks.md`. This spec only commits that App
+Instances are OAuth protected resources distinct from the cloud-host resource.
 
 This is the compromise that keeps the architecture honest:
 
@@ -1644,15 +1642,15 @@ the Cloud control plane by accident. If a third-party app needs both workspace
 sync and hosted Cloud APIs, it should request separate resource grants with the
 smallest scopes each resource enforces.
 
-Per-network resources extend this list. Each product-module network (for
-example `ark.epicenter.so`, `betcha.epicenter.so`, `ark.alice.com`) is its
-own OAuth protected resource with its own
+App Instance resources extend this list. Each product Cloud App instance
+(for example `ark.epicenter.so`, `betcha.epicenter.so`, `ark.alice.com`) is
+its own OAuth protected resource with its own
 `/.well-known/oauth-protected-resource`, its own audience, its own scope
-namespace, and its own CORS allowlist. The per-network resource boundary
+namespace, and its own CORS allowlist. The App Instance resource boundary
 is owned by the companion spec
 (`specs/20260512T150000-cloud-modules-and-networks.md`). The rule from
 this spec stays the same: tokens are audience-bound, never substitutable
-across resources, never able to claim more than one network at a time.
+across resources, never able to claim more than one App Instance at a time.
 
 Do not add a static WebSocket `Origin` allowlist for bearer sync. Browser
 WebSocket sync is authorized by the scoped OAuth access token. Origin checks are
@@ -2521,7 +2519,7 @@ Cloud move:
 - [ ] **5.17** Build the dashboard as a SvelteKit SPA under `apps/cloud/dashboard`.
 - [ ] **5.18** Serve the dashboard SPA from `api.epicenter.so/dashboard/*` through the Cloud Hono app.
 - [ ] **5.19** Keep Cloud browser CORS scoped to the dashboard and explicitly productized cloud clients, not all registered sync clients.
-- [ ] **5.19a** Stop at the deployable split. The internal shape of `apps/cloud` (module list, network registry, per-network OAuth resource wiring) is owned by `specs/20260512T150000-cloud-modules-and-networks.md`. Do not freeze billing, assets, and dashboard as permanent fields of `CloudEnv`. Treat them as infrastructure modules that operators register, alongside product modules (Ark, Betcha) that operators also register and configure with networks.
+- [ ] **5.19a** Stop at the deployable split. The internal shape of `apps/cloud` (Cloud App list, App Instance registry, per-instance OAuth resource wiring) is owned by `specs/20260512T150000-cloud-modules-and-networks.md`. Do not freeze billing, assets, and dashboard as permanent fields of `CloudEnv`. Treat them as infrastructure Cloud Apps that operators register, alongside product Cloud Apps (Ark, Betcha) that operators also register and configure with App Instances.
 
 Verification:
 
@@ -2641,17 +2639,18 @@ apps/server/src/
 apps/cloud/src/
 |-- app.ts
 |-- oauth-resource.ts
-|-- modules/
-|   |-- cloud-resource.ts
-|   `-- dashboard.ts
-|-- db/
-|   |-- schema.ts
-|   `-- client.ts
-|-- billing/
-|-- assets/
-|-- storage-registry/
-|-- dashboards/
-`-- hosted-resources/
+|-- cloud-apps/                    (see cloud-modules-and-networks.md)
+|   |-- ark/                       (product Cloud App)
+|   |-- betcha/                    (product Cloud App)
+|   |-- billing/                   (infrastructure Cloud App)
+|   |-- assets/                    (infrastructure Cloud App)
+|   `-- dashboard/                 (infrastructure Cloud App)
+|-- instances/
+|   |-- app-instance.ts
+|   |-- instance-registry.ts
+|   `-- host-dispatch.ts
+`-- db/
+    `-- schema.ts                  (re-exports enabled Cloud App schemas)
 
 apps/cloud/dashboard/
 |-- src/
@@ -2717,13 +2716,17 @@ apps/server/src/modules/accounts.ts
 apps/server/src/modules/sync.ts
   -> sync.epicenter.so/*
 
-apps/cloud/src/modules/cloud-resource.ts
+apps/cloud/src/cloud-apps/{billing,assets}/routes.ts
   -> api.epicenter.so/api/*
   -> api.epicenter.so/.well-known/oauth-protected-resource
 
-apps/cloud/src/modules/dashboard.ts
+apps/cloud/src/cloud-apps/dashboard/routes.ts
   -> api.epicenter.so/dashboard/*
-  -> serves apps/cloud/dashboard build output
+  -> serves the dashboard SPA build output
+
+apps/cloud/src/cloud-apps/{ark,betcha}/routes.ts
+  -> {instance-host}/api/{ark,betcha}/*
+  -> {instance-host}/.well-known/oauth-protected-resource
 ```
 
 ## Resolved Questions

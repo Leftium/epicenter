@@ -10,7 +10,7 @@
 This spec preserves useful product research for Betcha and The Ark, especially
 the argument that social and wager data need server authority rather than Yjs
 CRDTs. Its deployment framing is stale. Future work should use
-`apps/cloud` modules and first-class networks from
+`apps/cloud` Cloud Apps and App Instances from
 `specs/20260512T150000-cloud-modules-and-networks.md`, not the older
 `apps/api` plus first-party direct-schema framing below.
 
@@ -192,7 +192,7 @@ If edit wars become a pattern, add opt-in majority voting:
 
 > **Historical diagram.** `apps/api` does not exist in the target architecture.
 > Public records (Betcha challenges, Ark posts, follows) move to
-> `apps/cloud` product modules and per-network resources. See
+> `apps/cloud` product Cloud Apps and per-instance resources. See
 > `specs/20260512T150000-cloud-modules-and-networks.md` for the current
 > shape. The "first-party vs third-party" distinction below is also no
 > longer load-bearing: all clients (first-party and third-party) authenticate
@@ -696,32 +696,32 @@ PlanetScale Postgres (eu-west-1)
 ### Phase 4: The Ark — API Layer
 
 > **Blocked on cloud-modules-and-networks landing.** When implemented, the
-> Ark schema and routes move into `apps/cloud/src/modules/ark/`, not
-> `apps/api`, and Ark runs on its own network host (e.g.
+> Ark schema and routes move into `apps/cloud/src/cloud-apps/ark/`, not
+> `apps/api`, and Ark runs on its own App Instance host (e.g.
 > `ark.epicenter.so`) with the `ark:read` and `ark:publish` scopes.
 
-- [ ] **4.1** Create `apps/cloud/src/modules/ark/schema.ts` with `pgTable()` tables
+- [ ] **4.1** Create `apps/cloud/src/cloud-apps/ark/schema.ts` with `pgTable()` tables
 - [ ] **4.2** Generate and run migration for Ark schema
-- [ ] **4.3** Create `apps/cloud/src/modules/ark/routes.ts` and `scopes.ts`: profiles, posts, feed, follows, communities
-- [ ] **4.4** Register Ark as a product module with at least one network host
+- [ ] **4.3** Create `apps/cloud/src/cloud-apps/ark/routes.ts` and `scopes.ts`: profiles, posts, feed, follows, communities
+- [ ] **4.4** Register Ark as a product Cloud App with at least one App Instance host
 
 ### Phase 5: The Ark — Frontend
 
 > **Blocked on cloud-modules-and-networks landing.** Hosted Ark UI lives
-> on the network host (`ark.epicenter.so`) and authenticates with an
+> on the App Instance host (`ark.epicenter.so`) and authenticates with an
 > `ark:read` / `ark:publish` token, not the Cloud control plane token.
 
 - [ ] **5.1** Scaffold `apps/theark/` SvelteKit app
 - [ ] **5.2** Pages: feed, profile, post detail, communities
-- [ ] **5.3** Media upload via the assets infrastructure module
-- [ ] **5.4** Deploy to the network host
+- [ ] **5.3** Media upload via the assets infrastructure Cloud App
+- [ ] **5.4** Deploy to the App Instance host
 
 ### Phase 6: Cross-App Integration
 
-> **Re-scope under islands by design.** Cross-module integration inside
-> one network is fine (Betcha and Ark sharing a follow table on the same
-> Cloud deployment). Cross-network integration (Ark on cloud A talking to
-> Betcha on cloud B) is out of scope.
+> **Re-scope under islands by design.** Cross-Cloud-App integration within
+> one Cloud deployment is fine (Betcha and Ark sharing a follow table on the
+> same Cloud deployment). Cross-deployment integration (Ark on cloud A
+> talking to Betcha on cloud B) is out of scope.
 
 - [ ] **6.1** API endpoint: "friends with active challenges" (JOIN inside one cloud deployment only)
 - [ ] **6.2** Shared notification system (per cloud deployment)
@@ -734,8 +734,8 @@ PlanetScale Postgres (eu-west-1)
 > here. This phase is retained for product context only.
 
 - [ ] **7.1** Flip `allowDynamicClientRegistration: true` in OAuth provider config
-- [ ] **7.2** Per-network public API scopes (see cloud-modules-and-networks.md)
-- [ ] **7.3** Rate limiting on public network APIs
+- [ ] **7.2** Per-instance public API scopes (see cloud-modules-and-networks.md)
+- [ ] **7.3** Rate limiting on public App Instance APIs
 - [ ] **7.4** Developer registration page at `developers.epicenter.so`
 
 ## Edge Cases

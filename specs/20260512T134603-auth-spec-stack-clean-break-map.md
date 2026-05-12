@@ -51,13 +51,14 @@ product stack:
 
 | Order | Spec | Job | Status |
 | --- | --- | --- | --- |
-| 0 | `specs/20260512T150000-cloud-modules-and-networks.md` | Defines the product shape inside `apps/cloud`: modules, networks, scopes, islands by design. | Product-layer north star |
+| 0 | `specs/20260512T150000-cloud-modules-and-networks.md` | Defines the product shape inside `apps/cloud`: compile-time Cloud Apps, App Instances, scopes, islands by design. | Product-layer north star |
 | 1 | `specs/20260413T120000-server-authoritative-apps-wager-social.md` | Historical research for Betcha and Ark. Phases 4 through 7 are blocked on the product north star. | Historical, partially superseded |
 
 The auth stack and the product stack are co-authoritative. Auth owns
-identity, scopes, audiences, and deployable boundaries. Product owns
-modules, networks, public-record schemas, and per-network scope names. They
-must not contradict; cross-references go through this map.
+identity, scopes, audiences, and deployable boundaries. Product owns Cloud
+Apps, App Instances, public-record schemas, migrations, route surfaces, and
+per-app scope names. They must not contradict; cross-references go through
+this map.
 
 ## Source Of Truth By Question
 
@@ -69,7 +70,7 @@ must not contradict; cross-references go through this map.
 | Who owns access tokens and refresh tokens? | `specs/20260512T114350-auth-token-capability-boundary.md` |
 | What does sign-out do to local workspace memory and persistence? | `specs/20260504T233223-sign-out-preserves-local-data.md` |
 | Where do new product surfaces (Ark, Betcha, billing, dashboard) live and what scopes do they need? | `specs/20260512T150000-cloud-modules-and-networks.md` |
-| What is the resource boundary for a public network? | `specs/20260512T150000-cloud-modules-and-networks.md` (each network is its own OAuth protected resource) |
+| What is the resource boundary for a public app island? | `specs/20260512T150000-cloud-modules-and-networks.md` (each App Instance is its own OAuth protected resource) |
 | When should deployable splitting happen? | After orders 1 through 4 are true in code and tests. |
 
 Older auth specs are historical unless this map or one of the current stack specs explicitly references them.
@@ -201,8 +202,8 @@ Keep these rules as the guardrail for future auth specs:
 5. Do not keep both `sessionStorage` and `sessionStore` as public config names long term.
 6. Do not add `/docs/*` aliases for document sync. Fix the clients to call `/documents/*`.
 7. Do not split deployables until the auth contract and invariant patch are passing tests.
-8. Do not put public-record state (Ark posts, Betcha challenges, follows) in `apps/server`. Public records live in `apps/cloud` modules and networks.
-9. Do not design federation. Networks are islands by default. If federation ever happens, it gets its own architecture spec, not an extension of the modules spec.
+8. Do not put public-record state (Ark posts, Betcha challenges, follows) in `apps/server`. Public records live in `apps/cloud` Cloud Apps and App Instances.
+9. Do not design federation. App Instances are islands by default. If federation ever happens, it gets its own architecture spec, not an extension of the Cloud Apps spec.
 
 ## Recommended Work Order
 

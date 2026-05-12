@@ -63,30 +63,32 @@
 			{/if}
 
 			{#if migrationDialog.migrationResult}
-				{@const migrationResult = migrationDialog.migrationResult}
 				<Field.Set class="rounded-lg border p-4">
 					<Field.Legend variant="label">Results</Field.Legend>
 					<div class="space-y-1">
 						<Field.Description>
-							Recordings: {migrationResult.recordings.migrated} migrated,
-							{migrationResult.recordings.skipped}
-							skipped, {migrationResult.recordings.failed}
-							failed (of {migrationResult.recordings.total})
+							Recordings:
+							{migrationDialog.migrationResult.recordings.migrated}
+							migrated,
+							{migrationDialog.migrationResult.recordings.skipped}
+							skipped, {migrationDialog.migrationResult.recordings.failed}
+							failed (of {migrationDialog.migrationResult.recordings.total})
 						</Field.Description>
 						<Field.Description>
 							Transformations:
-							{migrationResult.transformations.migrated}
+							{migrationDialog.migrationResult.transformations.migrated}
 							migrated,
-							{migrationResult.transformations.skipped}
+							{migrationDialog.migrationResult.transformations.skipped}
 							skipped,
-							{migrationResult.transformations.failed}
-							failed (of {migrationResult.transformations.total})
+							{migrationDialog.migrationResult.transformations.failed}
+							failed (of
+							{migrationDialog.migrationResult.transformations.total})
 						</Field.Description>
 						<Field.Description>
-							Steps: {migrationResult.steps.migrated} migrated,
-							{migrationResult.steps.skipped}
-							skipped, {migrationResult.steps.failed}
-							failed (of {migrationResult.steps.total})
+							Steps: {migrationDialog.migrationResult.steps.migrated} migrated,
+							{migrationDialog.migrationResult.steps.skipped}
+							skipped, {migrationDialog.migrationResult.steps.failed}
+							failed (of {migrationDialog.migrationResult.steps.total})
 						</Field.Description>
 					</div>
 				</Field.Set>

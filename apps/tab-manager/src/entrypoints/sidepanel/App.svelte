@@ -27,9 +27,8 @@
 {#await tabManagerSession.whenReady}
 	<Loading class="h-full" label="Loading tabs…" />
 {:then _}
-	{@const current = tabManagerSession.current}
-	{#if current}
-		{#await current.workspace.whenReady}
+	{#if tabManagerSession.current}
+		{#await tabManagerSession.current.workspace.whenReady}
 			<Loading class="h-full" label="Loading tabs…" />
 		{:then _}
 			<SignedInApp />
@@ -55,7 +54,11 @@
 			{#if signInError}
 				<p class="text-xs text-destructive">{signInError}</p>
 			{/if}
-			<Button class="w-full max-w-xs" onclick={startSignIn} disabled={signingIn}>
+			<Button
+				class="w-full max-w-xs"
+				onclick={startSignIn}
+				disabled={signingIn}
+			>
 				{#if signingIn}
 					<LoaderCircle class="size-4 animate-spin" />
 					Signing in…

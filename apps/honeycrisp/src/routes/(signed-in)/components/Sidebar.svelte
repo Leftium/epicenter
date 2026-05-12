@@ -27,7 +27,6 @@
 					sync={signedIn.honeycrisp.sync}
 					syncNoun="notes"
 					onForgetDevice={forgetHoneycrispDevice}
-					onStartSignIn={() => auth.startSignIn()}
 				/>
 				<Sidebar.Trigger />
 			</div>

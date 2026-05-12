@@ -182,7 +182,6 @@
 					sync={signedIn.tabManager.sync}
 					syncNoun="tabs"
 					onForgetDevice={forgetTabManagerDevice}
-					onStartSignIn={() => auth.startSignIn()}
 				/>
 			</div>
 		</header>

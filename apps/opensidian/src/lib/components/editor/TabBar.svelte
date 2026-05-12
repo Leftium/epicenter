@@ -63,7 +63,6 @@
 			sync={signedIn.workspace.sync}
 			syncNoun="notes"
 			onForgetDevice={forgetOpensidianDevice}
-			onStartSignIn={() => auth.startSignIn()}
 		/>
 	</div>
 </div>

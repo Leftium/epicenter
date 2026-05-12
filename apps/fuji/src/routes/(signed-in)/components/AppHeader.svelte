@@ -65,7 +65,6 @@
 				await signedIn.fuji.wipe();
 				window.location.reload();
 			}}
-			onStartSignIn={() => auth.startSignIn()}
 		/>
 		<GitHubButton
 			repo={{ owner: 'EpicenterHQ', repo: 'epicenter' }}

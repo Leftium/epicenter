@@ -32,11 +32,6 @@
 		sync: SyncAttachment;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
-		/**
-		 * Handler called when the user clicks "Sign in with Epicenter" from the
-		 * signed-out popover. Should call `auth.startSignIn({ returnTo })`.
-		 */
-		onStartSignIn: () => Promise<{ error: { message: string } | null }>;
 		/** Optional destructive cleanup for this account's local device cache. */
 		onForgetDevice?: () => void | Promise<void>;
 	};
@@ -45,7 +40,6 @@
 		auth,
 		sync,
 		syncNoun,
-		onStartSignIn,
 		onForgetDevice,
 	}: AccountPopoverProps = $props();
 
@@ -100,7 +94,7 @@
 		signInError = null;
 		signingIn = true;
 		try {
-			const { error } = await onStartSignIn();
+			const { error } = await auth.startSignIn();
 			if (error) signInError = error.message;
 		} finally {
 			signingIn = false;

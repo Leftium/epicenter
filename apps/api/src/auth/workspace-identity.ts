@@ -4,6 +4,8 @@ import type { EncryptionKeys } from '@epicenter/encryption';
 import type { User } from 'better-auth';
 import { createWorkspaceIdentityResponse } from './workspace-identity-response.js';
 
+export const WORKSPACES_OPEN_SCOPE = 'workspaces:open';
+
 type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
 >['verifyAccessToken'];
@@ -14,7 +16,8 @@ type ResolveWorkspaceIdentityResult =
 			body: WorkspaceIdentity;
 	  }
 	| { status: 'malformed' }
-	| { status: 'invalid' };
+	| { status: 'invalid' }
+	| { status: 'insufficient_scope'; requiredScope: string };
 
 export async function resolveWorkspaceIdentity({
 	authorization,
@@ -43,6 +46,10 @@ export async function resolveWorkspaceIdentity({
 	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
 	if (!userId) return { status: 'invalid' };
 
+	if (!hasScope(payload, WORKSPACES_OPEN_SCOPE)) {
+		return { status: 'insufficient_scope', requiredScope: WORKSPACES_OPEN_SCOPE };
+	}
+
 	const user = await findUserById(userId);
 	if (!user) return { status: 'invalid' };
 
@@ -53,6 +60,13 @@ export async function resolveWorkspaceIdentity({
 			{ deriveUserEncryptionKeys },
 		),
 	};
+}
+
+function hasScope(payload: unknown, required: string): boolean {
+	if (payload === null || typeof payload !== 'object') return false;
+	const raw = (payload as { scope?: unknown }).scope;
+	if (typeof raw !== 'string') return false;
+	return raw.split(/\s+/).filter(Boolean).includes(required);
 }
 
 function parseBearer(value: string | null): string | null {

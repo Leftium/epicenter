@@ -191,6 +191,13 @@ export function createAuth({
 			cachedTrustedClients: trustedOAuthClientIds,
 			validAudiences: [baseURL],
 			allowDynamicClientRegistration: false,
+			scopes: [
+				'openid',
+				'profile',
+				'email',
+				'offline_access',
+				'workspaces:open',
+			],
 			// The plugin warns that /.well-known/oauth-authorization-server/auth must exist
 			// because basePath is /auth (not /), so it can't auto-mount at the root.
 			// We already mount both discovery endpoints manually in app.ts.

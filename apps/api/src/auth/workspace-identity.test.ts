@@ -112,6 +112,31 @@ test('/workspace-identity rejects tokens whose user no longer exists', async () 
 	}
 });
 
+test('/workspace-identity rejects access tokens missing the workspaces:open scope', async () => {
+	const setup = createWorkspaceIdentityTestServer();
+
+	try {
+		const { accessToken } = await issueOAuthTokens(setup, {
+			scope: 'openid profile email offline_access',
+		});
+
+		const response = await fetch(`${setup.baseURL}/workspace-identity`, {
+			headers: { authorization: `Bearer ${accessToken}` },
+		});
+
+		expect(response.status).toBe(403);
+		expect(response.headers.get('WWW-Authenticate')).toBe(
+			'Bearer error="insufficient_scope" scope="workspaces:open"',
+		);
+		await expect(response.json()).resolves.toEqual({
+			code: 'insufficient_scope',
+			scope: 'workspaces:open',
+		});
+	} finally {
+		setup.server.stop(true);
+	}
+});
+
 test('resolveWorkspaceIdentity rejects expired access-token verification', async () => {
 	const result = await resolveWorkspaceIdentity({
 		authorization: 'Bearer expired-token',
@@ -165,6 +190,13 @@ function createWorkspaceIdentityTestServer() {
 				requirePKCE: true,
 				validAudiences: [baseURL, wrongAudience],
 				allowDynamicClientRegistration: false,
+				scopes: [
+					'openid',
+					'profile',
+					'email',
+					'offline_access',
+					'workspaces:open',
+				],
 				silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
 			}),
 		];
@@ -211,6 +243,20 @@ function createWorkspaceIdentityTestServer() {
 								{ status: 401 },
 							);
 						}
+						if (result.status === 'insufficient_scope') {
+							return Response.json(
+								{
+									code: 'insufficient_scope',
+									scope: result.requiredScope,
+								},
+								{
+									status: 403,
+									headers: {
+										'WWW-Authenticate': `Bearer error="insufficient_scope" scope="${result.requiredScope}"`,
+									},
+								},
+							);
+						}
 						return Response.json(result.body);
 					}
 					return auth.handler(request);
@@ -237,7 +283,10 @@ function isAddressInUse(error: unknown) {
 
 async function issueOAuthTokens(
 	{ auth, baseURL }: ReturnType<typeof createWorkspaceIdentityTestServer>,
-	{ resource = baseURL }: { resource?: string } = {},
+	{
+		resource = baseURL,
+		scope = 'openid profile email offline_access workspaces:open',
+	}: { resource?: string; scope?: string } = {},
 ) {
 	const signUpResponse = await auth.handler(
 		new Request(`${baseURL}/auth/sign-up/email`, {
@@ -260,7 +309,7 @@ async function issueOAuthTokens(
 			token_endpoint_auth_method: 'none',
 			grant_types: ['authorization_code'],
 			response_types: ['code'],
-			scope: 'openid profile email offline_access',
+			scope: 'openid profile email offline_access workspaces:open',
 			skip_consent: true,
 			require_pkce: true,
 		},
@@ -270,7 +319,7 @@ async function issueOAuthTokens(
 		response_type: 'code',
 		client_id: client.client_id,
 		redirect_uri: redirectUri,
-		scope: 'openid profile email offline_access',
+		scope,
 		state: 'state-1',
 		code_challenge: await generateCodeChallenge(verifier),
 		code_challenge_method: 'S256',

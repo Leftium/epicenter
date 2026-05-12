@@ -273,6 +273,17 @@ app.get(
 			return c.json({ code: 'invalid_oauth_token' }, 401);
 		}
 
+		if (result.status === 'insufficient_scope') {
+			c.header(
+				'WWW-Authenticate',
+				`Bearer error="insufficient_scope" scope="${result.requiredScope}"`,
+			);
+			return c.json(
+				{ code: 'insufficient_scope', scope: result.requiredScope },
+				403,
+			);
+		}
+
 		return c.json(result.body);
 	},
 );

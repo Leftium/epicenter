@@ -2,7 +2,13 @@ import { EPICENTER_TRUSTED_OAUTH_CLIENTS } from '@epicenter/constants/oauth';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema';
 
-const trustedOAuthScopes = ['openid', 'profile', 'email', 'offline_access'];
+const trustedOAuthScopes = [
+	'openid',
+	'profile',
+	'email',
+	'offline_access',
+	'workspaces:open',
+];
 const authorizationCodeGrantTypes = ['authorization_code'];
 const codeResponseTypes = ['code'];
 

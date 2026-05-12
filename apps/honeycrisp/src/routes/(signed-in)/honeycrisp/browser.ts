@@ -62,7 +62,7 @@ export function openHoneycrisp({
 		const childIdb = doc.encryption.attachIndexedDb(ydoc, { userId });
 		attachOwnedBroadcastChannel(ydoc, { userId });
 		const childSync = attachSync(ydoc, {
-			url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+			url: toWsUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
 		});

@@ -334,8 +334,8 @@ await verifyOAuthAccessToken(accessToken, {
 
 ### Phase 2: Fix Dead Sync Routes
 
-- [ ] **2.1** Change Fuji child document sync from `/docs/${ydoc.guid}` to `/documents/${ydoc.guid}`.
-- [ ] **2.2** Change Honeycrisp child document sync from `/docs/${ydoc.guid}` to `/documents/${ydoc.guid}`.
+- [x] **2.1** Change Fuji child document sync from `/docs/${ydoc.guid}` to `/documents/${ydoc.guid}`.
+- [x] **2.2** Change Honeycrisp child document sync from `/docs/${ydoc.guid}` to `/documents/${ydoc.guid}`.
 - [ ] **2.3** Add a tiny route helper only if it removes repeated route literals without hiding intent.
 - [ ] **2.4** Add or update tests where the app already tests sync URL construction. If no suitable test seam exists, add a narrow unit around the helper rather than broad component tests.
 

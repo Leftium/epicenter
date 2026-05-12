@@ -234,9 +234,7 @@ describe('machine auth free functions', () => {
 					expires_in: 3600,
 				});
 			}
-			return jsonResponse(makeAuthIdentity(), {
-				headers: { 'set-auth-token': 'rotated-authorization-token' },
-			});
+			return jsonResponse(makeAuthIdentity());
 		}) as typeof fetch;
 
 		const result = await loginWithDeviceCode({
@@ -252,12 +250,12 @@ describe('machine auth free functions', () => {
 		expect(result.error).toBeNull();
 		expect(loadError).toBeNull();
 		expect(result.data?.session.user.email).toBe('user@example.com');
-		expect(savedSession?.accessToken).toBe('rotated-authorization-token');
+		expect(savedSession?.accessToken).toBe('device-token');
 		expect(savedSession?.refreshToken).toBe('device-refresh-token');
 		expect(JSON.stringify(savedSession)).not.toContain('session');
 	});
 
-	test('status verifies and refreshes the stored session token', async () => {
+	test('status verifies the stored session token', async () => {
 		const backend = makeMemoryKeychainBackend();
 		await saveMachineSession(makeSession({ accessToken: 'old-token' }), {
 			backend,
@@ -265,9 +263,7 @@ describe('machine auth free functions', () => {
 		const seenTokens: string[] = [];
 		const fetchImpl = (async (_input, init) => {
 			seenTokens.push(new Headers(init?.headers).get('authorization') ?? '');
-			return jsonResponse(makeAuthIdentity(), {
-				headers: { 'set-auth-token': 'new-token' },
-			});
+			return jsonResponse(makeAuthIdentity());
 		}) as typeof fetch;
 
 		const result = await status({
@@ -284,7 +280,7 @@ describe('machine auth free functions', () => {
 		expect(loadError).toBeNull();
 		expect(result.data?.status).toBe('valid');
 		expect(seenTokens).toEqual(['Bearer old-token']);
-		expect(savedSession?.accessToken).toBe('new-token');
+		expect(savedSession?.accessToken).toBe('old-token');
 	});
 
 	test('machine auth refresh pauses network auth when keychain save fails', async () => {

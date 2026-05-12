@@ -325,13 +325,9 @@ async function fetchOAuthSession({
 		'accessToken' | 'refreshToken' | 'accessTokenExpiresAt'
 	>;
 }): Promise<Result<OAuthSessionType, MachineAuthRequestError>> {
-	let rotatedToken: string | null = null;
 	const { data, error } = await authClient.getSession({
 		fetchOptions: {
 			headers: { Authorization: `Bearer ${tokens.accessToken}` },
-			onSuccess: (ctx) => {
-				rotatedToken = ctx.response.headers.get('set-auth-token');
-			},
 		},
 	});
 	if (error) return MachineAuthRequestError.RequestFailed({ cause: error });
@@ -346,7 +342,6 @@ async function fetchOAuthSession({
 		return Ok(
 			OAuthSession.assert({
 				...tokens,
-				accessToken: rotatedToken ?? tokens.accessToken,
 				user: identity.user,
 				encryptionKeys: identity.encryptionKeys,
 			}),

@@ -127,7 +127,6 @@ const factory = createFactory<Env>({
 				credentials: true,
 				allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
 				allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-				exposeHeaders: ['set-auth-token'],
 			})(c, next);
 		});
 

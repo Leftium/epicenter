@@ -2,8 +2,9 @@ import type { oauthProviderResourceClient } from '@better-auth/oauth-provider/re
 import { AuthUser, type WorkspaceIdentity } from '@epicenter/auth';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { User } from 'better-auth';
+import { hasScope, WORKSPACES_OPEN_SCOPE } from './oauth-scope.js';
 
-export const WORKSPACES_OPEN_SCOPE = 'workspaces:open';
+export { WORKSPACES_OPEN_SCOPE };
 
 type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
@@ -59,13 +60,6 @@ export async function resolveWorkspaceIdentity({
 			encryptionKeys: await deriveUserEncryptionKeys(user.id),
 		},
 	};
-}
-
-function hasScope(payload: unknown, required: string): boolean {
-	if (payload === null || typeof payload !== 'object') return false;
-	const raw = (payload as { scope?: unknown }).scope;
-	if (typeof raw !== 'string') return false;
-	return raw.split(/\s+/).filter(Boolean).includes(required);
 }
 
 function parseBearer(value: string | null): string | null {

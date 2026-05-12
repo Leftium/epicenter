@@ -359,6 +359,12 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 			return row ?? null;
 		},
 	});
+	if (result.status === 'insufficient_scope') {
+		return createOAuthUnauthorizedResourceResponse(c, {
+			failure: { type: 'insufficient_scope', scope: result.requiredScope },
+		});
+	}
+
 	if (result.status !== 'resolved') {
 		return createOAuthUnauthorizedResourceResponse(c);
 	}

@@ -1,6 +1,7 @@
 import type { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import type { AuthUser } from '@epicenter/auth';
 import type { User } from 'better-auth';
+import { hasScope, WORKSPACES_OPEN_SCOPE } from './oauth-scope.js';
 
 type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
@@ -9,14 +10,17 @@ type VerifyOAuthAccessToken = ReturnType<
 export type OAuthPrincipalResult =
 	| { status: 'resolved'; user: AuthUser }
 	| { status: 'malformed' }
-	| { status: 'invalid' };
+	| { status: 'invalid' }
+	| { status: 'insufficient_scope'; requiredScope: string };
 
 /**
- * Verify an OAuth access token and return the AuthUser principal.
+ * Verify an OAuth access token and return the AuthUser principal for a
+ * protected resource route. Enforces the `workspaces:open` scope so a
+ * token issued for, say, `openid profile email` cannot reach `/workspaces/*`,
+ * `/documents/*`, `/api/billing/*`, `/api/assets/*`, or `/ai/*`.
  *
- * Cheaper than `resolveWorkspaceIdentity`: skips encryption key derivation
- * and the workspaces:open scope check, since protected resources only need
- * to know which user is calling them.
+ * Cheaper than `resolveWorkspaceIdentity`: skips encryption-key derivation,
+ * since protected resources only need the calling user once the scope is proven.
  */
 export async function resolveOAuthPrincipal({
 	authorization,
@@ -42,6 +46,13 @@ export async function resolveOAuthPrincipal({
 	}).catch(() => null);
 	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
 	if (!userId) return { status: 'invalid' };
+
+	if (!hasScope(payload, WORKSPACES_OPEN_SCOPE)) {
+		return {
+			status: 'insufficient_scope',
+			requiredScope: WORKSPACES_OPEN_SCOPE,
+		};
+	}
 
 	const user = await findUserById(userId);
 	if (!user) return { status: 'invalid' };

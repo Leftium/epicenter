@@ -14,14 +14,14 @@ The live tree was audited against this spec. Result:
 | Phase | Status | Notes |
 | --- | --- | --- |
 | 0 | Live | 0.3 (machine auth decision) still required before Phase 4. |
-| 1 | Live | `resolveOAuthPrincipal` still skips the scope check; misleading JSDoc still in tree; `createOAuthUnauthorizedResourceResponse` only knows `401` / `4401 invalid_token`. |
+| 1 | Landed | `resolveOAuthPrincipal` enforces `workspaces:open`, returns an `insufficient_scope` variant, and `createOAuthUnauthorizedResourceResponse` produces HTTP 403 / WS 4403 with `Bearer error="insufficient_scope" scope="workspaces:open"`. Shared `hasScope` helper at `apps/api/src/auth/oauth-scope.ts`. Coverage in `oauth-principal.test.ts` and `oauth-resource.test.ts`. JSDoc corrected. |
 | 2 | Landed | Fuji and Honeycrisp child sync use `/documents/` as of `52e5e668e` (`fix(fuji,honeycrisp): point child doc sync at /documents`). |
 | 3 | Superseded | Replaced by `specs/20260512T220000-session-two-axis-cohesive-reshape.md`. `Session<T>` is now `SessionPayload<T> \| null` and `createSession` disposes only on `signed-out` or different user. |
 | 4 | Live | `packages/auth/src/node/machine-auth.ts` still calls dead `device.code`, `device.token`, and `getSession` paths. Server has no `deviceAuthorization()`. |
 | 5 | Live | `singleCredential` lifts the WS bearer but does not strip it from `Sec-WebSocket-Protocol`, silently accepts duplicate WS bearers, and upgrade checks are case-sensitive. |
 | 6 | Live | Callback pages navigate on `startSignIn()` resolution without confirming `auth.state.status === 'signed-in'`. |
 
-Highest-priority remaining item: **Phase 1**. It is the smallest revert-safe security fix and unblocks the rest of the resource-boundary work. Recommended follow-up prompt is at the bottom of this spec.
+Highest-priority remaining items: **0.3** (machine auth decision) before Phase 4 code churn, then **Phase 5** (WebSocket credential normalization) as the next resource-boundary tightening now that Phase 1 sealed the HTTP path.
 
 ## One Sentence
 
@@ -340,23 +340,13 @@ The phases below are ordered patches, not parallel feature tracks. Do not start 
 
 ### Phase 1: Seal Current Resource Routes
 
-- [ ] **1.1** Update `resolveOAuthPrincipal` (`apps/api/src/auth/oauth-principal.ts:21`) to require `workspaces:open` for the currently mounted protected routes (`/ai/*`, `/workspaces/*`, `/documents/*`, `/api/billing/*`, `/api/assets/*` in `apps/api/src/app.ts:370-374`). Add a discriminated `'insufficient_scope'` result variant matching `resolveWorkspaceIdentity` (`apps/api/src/auth/workspace-identity.ts:19`).
-- [ ] **1.2** Prefer Better Auth verifier scope support if it matches local tests:
+- [x] **1.1** Update `resolveOAuthPrincipal` (`apps/api/src/auth/oauth-principal.ts`) to require `workspaces:open` for the currently mounted protected routes (`/ai/*`, `/workspaces/*`, `/documents/*`, `/api/billing/*`, `/api/assets/*` in `apps/api/src/app.ts`). Add a discriminated `'insufficient_scope'` result variant matching `resolveWorkspaceIdentity` (`apps/api/src/auth/workspace-identity.ts`).
+- [x] **1.2** Local `hasScope` check pulled into a shared helper (`apps/api/src/auth/oauth-scope.ts`) and used by both `resolveWorkspaceIdentity` and `resolveOAuthPrincipal`. Better Auth verifier `scopes` option was not used: the local check is already proven, it surfaces the exact missing scope to the caller, and it avoids speculating about distinguishable error shapes from the verifier.
+- [x] **1.3** Extended `createOAuthUnauthorizedResourceResponse` (`apps/api/src/auth/oauth-resource.ts`) with a `failure` parameter. Protected-resource middleware in `app.ts` now returns HTTP 403 (`Bearer error="insufficient_scope" scope="workspaces:open"`) and closes WebSocket upgrades with `4403 insufficient_scope` carrying the same body. `invalid_token` keeps its existing 401 / 4401 path as the default.
+- [x] **1.4** `apps/api/src/auth/oauth-principal.test.ts` added with: valid scoped token, missing scope, wrong audience, wrong issuer, malformed bearer input, missing user. Run with `bun --cwd apps/api test`.
+- [x] **1.5** JSDoc on `resolveOAuthPrincipal` rewritten to state the enforced scope; the misleading "skips ... workspaces:open scope check" sentence is gone.
 
-```ts
-await verifyOAuthAccessToken(accessToken, {
-	verifyOptions: { audience, issuer },
-	jwksUrl,
-	scopes: [WORKSPACES_OPEN_SCOPE],
-});
-```
-
-If `verifyAccessToken` does not raise a distinguishable `insufficient_scope` failure, fall back to the existing local `hasScope` check in `workspace-identity.ts:64-69` and pull it into a shared helper.
-- [ ] **1.3** Extend `createOAuthUnauthorizedResourceResponse` (`apps/api/src/auth/oauth-resource.ts:6-21`) so the protected-resource middleware in `app.ts:345-368` can return a 403 (`Bearer error="insufficient_scope" scope="workspaces:open"`) for HTTP and close WebSocket upgrades with `4403 insufficient_scope` (today everything collapses to 401 / 4401 `invalid_token`).
-- [ ] **1.4** Add `apps/api/src/auth/oauth-principal.test.ts` modeled after `workspace-identity.test.ts`, covering: valid scoped token, missing scope, wrong audience, wrong issuer, malformed bearer input, missing user. Run with `bun test apps/api/src/auth/oauth-principal.test.ts`.
-- [ ] **1.5** Remove the misleading JSDoc on `resolveOAuthPrincipal` (`apps/api/src/auth/oauth-principal.ts:14-20`) that says "skips ... workspaces:open scope check, since protected resources only need to know which user is calling them." Replace with one line documenting the enforced scope.
-
-Acceptance: `bun --cwd apps/api test` passes; `curl -H 'Authorization: Bearer <token-without-scope>' /workspaces/foo` returns 403 with `WWW-Authenticate: Bearer error="insufficient_scope"`; `bun --cwd apps/fuji run build` still typechecks.
+Acceptance: `bun --cwd apps/api test` passes (56 pass / 0 fail at landing); `apps/api` and `apps/fuji` typechecks are clean.
 
 ### Phase 2: Fix Dead Sync Routes
 

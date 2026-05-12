@@ -18,7 +18,6 @@ import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
 import { deriveUserEncryptionKeys } from './auth/encryption';
-import { createAuthIdentityResponse } from './auth/identity-response';
 import { resolveOAuthIdentity } from './auth/me';
 import {
 	createOAuthIssuerURL,
@@ -28,7 +27,6 @@ import {
 	OAUTH_OPENID_CONFIGURATION_PATH,
 	OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
 } from './auth/oauth-metadata';
-import { resolveOAuthBearerSession } from './auth/oauth-session';
 import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
@@ -253,45 +251,6 @@ app.get(
 			);
 		}
 		return c.html(renderDevicePage({ userCode }));
-	},
-);
-
-app.post(
-	'/auth/oauth-session',
-	describeRoute({
-		description: 'Resolve an OAuth access token to an Epicenter auth session',
-		tags: ['auth', 'oauth'],
-	}),
-	async (c) => {
-		const result = await resolveOAuthBearerSession({
-			authorization: c.req.header('authorization') ?? null,
-			baseURL: c.var.authBaseURL,
-			createSessionResponse: ({ user }) =>
-				createAuthIdentityResponse({ user }, { deriveUserEncryptionKeys }),
-			async findSessionWithUserById(sessionId) {
-				const [row] = await c.var.db
-					.select({
-						session: schema.session,
-						user: schema.user,
-					})
-					.from(schema.session)
-					.innerJoin(schema.user, eq(schema.session.userId, schema.user.id))
-					.where(eq(schema.session.id, sessionId))
-					.limit(1);
-				return row ?? null;
-			},
-		});
-
-		if (result.status === 'malformed') {
-			return c.json({ code: 'malformed_oauth_token' }, 400);
-		}
-
-		if (result.status === 'invalid') {
-			return c.json({ code: 'invalid_oauth_token' }, 401);
-		}
-
-		c.header('set-auth-token', result.sessionToken);
-		return c.json(result.body);
 	},
 );
 

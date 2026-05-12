@@ -1,12 +1,18 @@
 /**
- * Shared session state machine for apps that gate UI on a signed-in identity
- * plus an app-defined payload (typically a workspace handle).
+ * Shared session state machine for apps that gate UI on an authenticated
+ * identity plus an app-defined payload (typically a workspace handle).
  *
- * Status comes directly from `auth.state`; this factory only owns the payload
- * lifecycle (build, dispose) and the user-switch refusal (different `user.id`
- * disposes the payload and reloads the page). Same-user identity changes
- * (token refresh, key rotation, profile edits) are no-ops at the session
- * boundary. Lazy callbacks read `auth.state` at their own boundaries.
+ * `Session<T>` is the projection layer between `AuthState` and the workspace.
+ * The shape is the discriminator: `SessionPayload<T> | null`. Apps gate on
+ * truthiness (`if (current)`). The projection never surfaces credential
+ * freshness; consumers that care about it read `auth.state.status` directly.
+ *
+ * This factory owns the payload lifecycle (build, dispose) and the user-switch
+ * refusal (different `user.id` disposes the payload and reloads the page).
+ * Disposal is triggered ONLY by `signed-out` or a different `user.id`.
+ * Same-user `reauth-required` is a no-op, so local workspace state stays
+ * mounted while credentials refresh, and `session.current` keeps the same
+ * `SessionPayload` reference across the transition.
  *
  * Lazy callbacks (e.g., `encryptionKeys`, `openWebSocket`) are read at:
  *   - attachment time (e.g., `attachEncryption` reads `encryptionKeys()` once
@@ -17,10 +23,6 @@
  * They are NOT read by already-attached encrypted stores. Same-user key
  * rotation does not propagate to stores whose keyring was derived at an
  * earlier registration; re-attach the store to derive a new keyring.
- *
- * `current` projects `auth.state` and decorates the signed-in variant with the
- * built payload, so apps consume one read API and TypeScript narrows in one
- * step.
  *
  * Requires an `AuthClient` whose `state` is Svelte-reactive (use
  * `@epicenter/auth-svelte`, not `@epicenter/auth` directly).
@@ -34,91 +36,74 @@
  *     return { userId: identity.user.id, fuji, [Symbol.dispose]() {...} };
  *   },
  * });
- * export type FujiSignedIn = InferSignedIn<typeof session>;
+ * export type FujiWorkspace = InferWorkspace<typeof session>;
  * ```
  */
 
-import type { AuthClient, WorkspaceIdentity, AuthState } from '@epicenter/auth';
+import {
+	createSessionLifecycle,
+	type SessionLifecycleConfig,
+} from './session-lifecycle.js';
+import type { AuthClient, WorkspaceIdentity } from '@epicenter/auth';
 
-export type Session<TSignedIn> =
-	| Exclude<AuthState, { status: 'signed-in' }>
-	| { status: 'signed-in'; signedIn: TSignedIn };
+export type SessionPayload<T> = {
+	identity: WorkspaceIdentity;
+	workspace: T;
+};
 
-export type SignedInBase = {
+export type Session<T> = SessionPayload<T> | null;
+
+export type WorkspaceBase = {
 	userId: string;
 } & Disposable;
 
 /**
- * Infer the signed-in payload type from a session created by `createSession`.
+ * Infer the workspace payload type from a session created by `createSession`.
  *
- * Lets per-app modules define the SignedIn shape in one place (the build
+ * Lets per-app modules define the workspace shape in one place (the build
  * factory) and derive the exported type from it, rather than declaring the
  * type up front and matching it inside the factory.
  *
  * @example
  * ```ts
  * export const session = createSession({ auth, build: (identity) => {...} });
- * export type FujiSignedIn = InferSignedIn<typeof session>;
+ * export type FujiWorkspace = InferWorkspace<typeof session>;
  * ```
  */
-export type InferSignedIn<TSession extends { current: unknown }> =
+export type InferWorkspace<TSession extends { current: unknown }> =
 	TSession['current'] extends infer C
-		? C extends { status: 'signed-in'; signedIn: infer T }
+		? C extends { workspace: infer T }
 			? T
 			: never
 		: never;
 
-export function createSession<TSignedIn extends SignedInBase>({
+export function createSession<TWorkspace extends WorkspaceBase>({
 	auth,
 	build,
 }: {
 	auth: AuthClient;
-	build: (identity: WorkspaceIdentity) => TSignedIn;
+	build: (identity: WorkspaceIdentity) => TWorkspace;
 }) {
-	let signedIn = $state<TSignedIn | undefined>(undefined);
-
-	function reconcile(state: AuthState) {
-		if (state.status !== 'signed-in') {
-			if (signedIn) {
-				signedIn[Symbol.dispose]();
-				signedIn = undefined;
-			}
-			return;
-		}
-		if (!signedIn) {
-			signedIn = build(state.identity);
-			return;
-		}
-		// Same user: no-op. Auth-bound callbacks read at their own boundaries:
-		// sync can see refreshed tokens on connection attempts, while encrypted
-		// stores keep the keyring they derived when they were attached.
-		if (signedIn.userId === state.identity.user.id) return;
-		// Different user: refuse the live switch and reload (heap safety).
-		signedIn[Symbol.dispose]();
-		location.reload();
-		throw new Error('unreachable: reload pending');
-	}
-
-	const unsubscribe = auth.onStateChange(reconcile);
-	// Initial replay: auth may have already settled before subscribe ran.
-	reconcile(auth.state);
+	let payload = $state<SessionPayload<TWorkspace> | null>(null);
+	const lifecycle = createSessionLifecycle<TWorkspace>({
+		auth,
+		build,
+		getPayload: () => payload,
+		setPayload: (next) => {
+			payload = next;
+		},
+		onDifferentUser: () => {
+			location.reload();
+			throw new Error('unreachable: reload pending');
+		},
+	} satisfies SessionLifecycleConfig<TWorkspace>);
 
 	return {
-		get current(): Session<TSignedIn> {
-			const state = auth.state;
-			if (state.status !== 'signed-in') return state;
-			// Invariant: reconcile runs synchronously inside onStateChange, so
-			// `signedIn` is always set when auth is signed-in.
-			if (!signedIn) {
-				throw new Error(
-					'unreachable: auth state is signed-in but session payload was not built',
-				);
-			}
-			return { status: 'signed-in', signedIn };
+		get current(): Session<TWorkspace> {
+			return payload;
 		},
 		[Symbol.dispose]() {
-			unsubscribe();
-			signedIn?.[Symbol.dispose]();
+			lifecycle[Symbol.dispose]();
 		},
 	};
 }

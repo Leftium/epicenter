@@ -8,11 +8,11 @@
  * (token refresh, key rotation, profile edits) are no-ops at the session
  * boundary. Lazy callbacks read `auth.state` at their own boundaries.
  *
- * Lazy callbacks (e.g., `bearerToken`, `encryptionKeys`) are read at:
+ * Lazy callbacks (e.g., `encryptionKeys`, `openWebSocket`) are read at:
  *   - attachment time (e.g., `attachEncryption` reads `encryptionKeys()` once
  *     per store registration to derive that store's keyring)
- *   - connection boundaries (sync's `bearerToken` is read at each sync
- *     connection attempt)
+ *   - connection boundaries (`openWebSocket` is invoked at each sync
+ *     connection attempt to attach a fresh bearer subprotocol)
  *
  * They are NOT read by already-attached encrypted stores. Same-user key
  * rotation does not propagate to stores whose keyring was derived at an

@@ -20,7 +20,7 @@ export const session = createSession({
 				name: 'Fuji',
 				platform: 'web',
 			},
-			bearerToken: () => auth.bearerToken,
+			openWebSocket: auth.openWebSocket,
 			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 		});
 		const entriesMap = fromTable(fuji.tables.entries);

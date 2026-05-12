@@ -341,12 +341,20 @@ await verifyOAuthAccessToken(accessToken, {
 
 ### Phase 3: Preserve Local Workspaces During Reauth
 
-- [ ] **3.1** Change `Session<TSignedIn>` so same-user `reauth-required` carries the current signed-in payload.
-- [ ] **3.2** Change `createSession.reconcile()` to dispose only on `signed-out`, different user, or an explicit app-owned reload boundary.
-- [ ] **3.3** Update Fuji, Honeycrisp, Opensidian, Tab Manager, Dashboard, and Zhongwen gates so workspace apps treat `reauth-required` as local-usable instead of signed out.
-- [ ] **3.4** Make reconnect actions call `auth.startSignIn()` or the app-owned repair path without remounting the workspace.
-- [ ] **3.5** Add tests proving `signed-in -> reauth-required -> signed-in` preserves the same payload instance.
-- [ ] **3.6** Add tests proving `signed-in user A -> signed-in user B` disposes the old payload and reloads or otherwise refuses the live switch.
+> **Superseded by `specs/20260512T220000-session-two-axis-cohesive-reshape.md`.**
+> That spec reshapes `Session<T>` to `SessionPayload<T> | null` (collapsing the
+> three-state discriminator), renames `requireSignedIn` to `requireIdentity`,
+> renames each app's `getSignedInSession` to `requireWorkspace`, and lands the
+> same `reauth-required` workspace preservation invariant via one final
+> migration pass instead of the hybrid shape proposed here. Do not implement
+> the tasks below; the reshape spec covers them.
+
+- [ ] ~~**3.1** Change `Session<TSignedIn>` so same-user `reauth-required` carries the current signed-in payload.~~ Superseded.
+- [ ] ~~**3.2** Change `createSession.reconcile()` to dispose only on `signed-out`, different user, or an explicit app-owned reload boundary.~~ Superseded.
+- [ ] ~~**3.3** Update Fuji, Honeycrisp, Opensidian, Tab Manager, Dashboard, and Zhongwen gates so workspace apps treat `reauth-required` as local-usable instead of signed out.~~ Superseded.
+- [ ] ~~**3.4** Make reconnect actions call `auth.startSignIn()` or the app-owned repair path without remounting the workspace.~~ Superseded.
+- [ ] ~~**3.5** Add tests proving `signed-in -> reauth-required -> signed-in` preserves the same payload instance.~~ Superseded.
+- [ ] ~~**3.6** Add tests proving `signed-in user A -> signed-in user B` disposes the old payload and reloads or otherwise refuses the live switch.~~ Superseded.
 
 Guardrail: do not keep a live workspace after real sign-out. This phase only changes same-user network auth failure.
 

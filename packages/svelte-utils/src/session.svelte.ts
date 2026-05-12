@@ -105,12 +105,15 @@ export function createSession<TSignedIn extends SignedInBase>({
 
 	return {
 		get current(): Session<TSignedIn> {
-			if (auth.state.status === 'pending') return { status: 'pending' };
-			if (auth.state.status === 'signed-out') return { status: 'signed-out' };
+			const state = auth.state;
+			if (state.status !== 'signed-in') return state;
 			// Invariant: reconcile runs synchronously inside onStateChange, so
-			// `signedIn` is always set when auth is signed-in. Defensive fallback
-			// keeps the type honest without an `!`.
-			if (!signedIn) return { status: 'pending' };
+			// `signedIn` is always set when auth is signed-in.
+			if (!signedIn) {
+				throw new Error(
+					'unreachable: auth state is signed-in but session payload was not built',
+				);
+			}
 			return { status: 'signed-in', signedIn };
 		},
 		[Symbol.dispose]() {

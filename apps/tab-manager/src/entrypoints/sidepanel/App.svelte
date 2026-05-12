@@ -28,7 +28,21 @@
 	<Loading class="h-full" label="Loading tabs…" />
 {:then _}
 	{@const current = tabManagerSession.current}
-	{#if current.status === 'signed-out' || current.status === 'reauth-required'}
+	{#if current}
+		{#await current.workspace.whenReady}
+			<Loading class="h-full" label="Loading tabs…" />
+		{:then _}
+			<SignedInApp />
+		{:catch _error}
+			<Empty.Root class="h-full border-0">
+				<Empty.Media>
+					<TriangleAlertIcon class="size-8 text-muted-foreground" />
+				</Empty.Media>
+				<Empty.Title>Failed to load workspace</Empty.Title>
+				<Empty.Description> Try reopening the side panel. </Empty.Description>
+			</Empty.Root>
+		{/await}
+	{:else}
 		<main
 			class="flex h-full flex-col items-center justify-center gap-3 bg-background p-6 text-center"
 		>
@@ -45,27 +59,11 @@
 				{#if signingIn}
 					<LoaderCircle class="size-4 animate-spin" />
 					Signing in…
-				{:else if current.status === 'reauth-required'}
-					Reconnect
 				{:else}
 					Sign in with Epicenter
 				{/if}
 			</Button>
 		</main>
-	{:else}
-		{#await current.signedIn.whenReady}
-			<Loading class="h-full" label="Loading tabs…" />
-		{:then _}
-			<SignedInApp />
-		{:catch _error}
-			<Empty.Root class="h-full border-0">
-				<Empty.Media>
-					<TriangleAlertIcon class="size-8 text-muted-foreground" />
-				</Empty.Media>
-				<Empty.Title>Failed to load workspace</Empty.Title>
-				<Empty.Description> Try reopening the side panel. </Empty.Description>
-			</Empty.Root>
-		{/await}
 	{/if}
 {:catch _error}
 	<Empty.Root class="h-full border-0">

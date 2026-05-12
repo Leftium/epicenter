@@ -10,7 +10,7 @@
  * Background streaming is free: each conversation has its own chat instance.
  * Switching away from a streaming conversation doesn't stop it.
  *
- * Components read this through `signedIn.tabManager.state.aiChat`.
+ * Components read this through `workspace.tabManager.state.aiChat`.
  */
 
 import type { AuthClient } from '@epicenter/auth';

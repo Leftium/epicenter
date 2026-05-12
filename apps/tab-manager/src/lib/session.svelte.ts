@@ -1,8 +1,8 @@
 import type { AuthClient } from '@epicenter/auth';
-import { requireSignedIn } from '@epicenter/auth';
+import { requireIdentity } from '@epicenter/auth';
 import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createSession, type InferSignedIn } from '@epicenter/svelte';
+import { createSession, type InferWorkspace } from '@epicenter/svelte';
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { storage } from '@wxt-dev/storage';
@@ -21,7 +21,7 @@ export type WorkspaceAiTools = ReturnType<
 	typeof actionsToAiTools<TabManagerWorkspace['actions']>
 >;
 
-type TabManagerSignedInPayload = TabManagerWorkspace & {
+type TabManagerWithState = TabManagerWorkspace & {
 	state: {
 		savedTabs: ReturnType<typeof createSavedTabState>;
 		bookmarks: ReturnType<typeof createBookmarkState>;
@@ -32,7 +32,7 @@ type TabManagerSignedInPayload = TabManagerWorkspace & {
 };
 
 type ReadyTabManagerSession = {
-	tabManager: TabManagerSignedInPayload;
+	tabManager: TabManagerWithState;
 	workspaceAiTools: WorkspaceAiTools;
 };
 
@@ -66,7 +66,7 @@ function createWorkspaceSession(auth: AuthClient) {
 				userId,
 				peer: createPeer(),
 				openWebSocket: auth.openWebSocket,
-				encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			}).then((tabManager) => {
 				if (disposed) {
 					tabManager[Symbol.dispose]();
@@ -132,10 +132,10 @@ function createWorkspaceSession(auth: AuthClient) {
 	});
 }
 
-export type TabManagerSignedIn = InferSignedIn<
+type TabManagerSessionBundle = InferWorkspace<
 	NonNullable<typeof workspaceSession>
 >;
-export type WorkspaceTools = TabManagerSignedIn['workspaceAiTools']['tools'];
+export type WorkspaceTools = WorkspaceAiTools['tools'];
 
 export const tabManagerSession = {
 	get auth(): AuthClient {
@@ -163,21 +163,21 @@ if (import.meta.hot) {
 	import.meta.hot.dispose(() => tabManagerSession[Symbol.dispose]());
 }
 
-export function getSignedInSession() {
+export function requireWorkspace(): TabManagerSessionBundle {
 	const current = tabManagerSession.current;
-	if (current.status !== 'signed-in') {
+	if (!current) {
 		throw new Error(
-			'[tab-manager] getSignedInSession() called outside the signed-in branch. ' +
+			'[tab-manager] requireWorkspace() called without an authenticated session. ' +
 				'This indicates a route or component mounted without the layout gate, ' +
 				'or a callback firing after the workspace was disposed.',
 		);
 	}
-	return current.signedIn;
+	return current.workspace;
 }
 
 export async function forgetTabManagerDevice(): Promise<void> {
-	const current = getSignedInSession();
-	await current.tabManager.wipe();
+	const workspace = requireWorkspace();
+	await workspace.tabManager.wipe();
 	window.location.reload();
 }
 

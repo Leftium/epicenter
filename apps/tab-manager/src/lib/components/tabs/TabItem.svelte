@@ -13,7 +13,7 @@
 	import Volume2Icon from '@lucide/svelte/icons/volume-2';
 	import VolumeXIcon from '@lucide/svelte/icons/volume-x';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 	import {
 		type BrowserTab,
 		browserState,
@@ -21,12 +21,12 @@
 	import { getDomain } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 	let { tab }: { tab: BrowserTab } = $props();
 
 	const domain = $derived(tab.url ? getDomain(tab.url) : '');
 	const isBookmarked = $derived(
-		signedIn.tabManager.state.bookmarks.isUrlBookmarked(tab.url),
+		workspace.tabManager.state.bookmarks.isUrlBookmarked(tab.url),
 	);
 </script>
 
@@ -155,7 +155,7 @@
 							e.stopPropagation();
 							// Save always succeeds in the workspace; toast only if the
 							// source-tab close half failed (partial-success path).
-							signedIn.tabManager.state.savedTabs.save(tab).then((result) => {
+							workspace.tabManager.state.savedTabs.save(tab).then((result) => {
 								if (result?.closeResult.error)
 									toastOnError(
 										result.closeResult,
@@ -174,7 +174,7 @@
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
 						// Pure CRDT writes: can't fail, no Result to toast.
-						void signedIn.tabManager.state.bookmarks.toggle(tab);
+						void workspace.tabManager.state.bookmarks.toggle(tab);
 					}}
 				>
 					<StarIcon

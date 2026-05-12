@@ -9,7 +9,7 @@
  * pattern is always "render the full sorted list."
  *
  * @example
- * Components read this through `signedIn.tabManager.state.savedTabs`.
+ * Components read this through `workspace.tabManager.state.savedTabs`.
  */
 
 import { fromTable } from '@epicenter/svelte';

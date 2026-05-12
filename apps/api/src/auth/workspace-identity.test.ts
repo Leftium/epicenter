@@ -18,9 +18,7 @@ import type { EncryptionKeys } from '@epicenter/encryption';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
-import { customSession, jwt } from 'better-auth/plugins';
-import { bearer } from 'better-auth/plugins/bearer';
-import { createWorkspaceIdentityResponse } from './workspace-identity-response.js';
+import { jwt } from 'better-auth/plugins';
 import { resolveWorkspaceIdentity } from './workspace-identity.js';
 
 const redirectUri = 'http://localhost:5174/auth/callback';
@@ -46,7 +44,6 @@ test('/workspace-identity returns identity for a valid OAuth access token', asyn
 		});
 
 		expect(response.status).toBe(200);
-		expect(response.headers.get('set-auth-token')).toBeNull();
 		const body = (await response.json()) as WorkspaceIdentity;
 		expect(body.user.email).toBe('oauth-identity@example.com');
 		expect(body).not.toHaveProperty('session');
@@ -181,36 +178,25 @@ function createWorkspaceIdentityTestServer() {
 			baseURL,
 			secret: 'test-secret-test-secret-test-secret',
 		};
-		const basePlugins = [
-			bearer(),
-			jwt(),
-			oauthProvider({
-				loginPage: '/sign-in',
-				consentPage: '/consent',
-				requirePKCE: true,
-				validAudiences: [baseURL, wrongAudience],
-				allowDynamicClientRegistration: false,
-				scopes: [
-					'openid',
-					'profile',
-					'email',
-					'offline_access',
-					'workspaces:open',
-				],
-				silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
-			}),
-		];
 		const auth = betterAuth({
 			...baseAuthOptions,
 			plugins: [
-				...basePlugins,
-				customSession(
-					(input) =>
-						createWorkspaceIdentityResponse(input, {
-							deriveUserEncryptionKeys: async () => encryptionKeys,
-						}),
-					{ ...baseAuthOptions, plugins: basePlugins },
-				),
+				jwt(),
+				oauthProvider({
+					loginPage: '/sign-in',
+					consentPage: '/consent',
+					requirePKCE: true,
+					validAudiences: [baseURL, wrongAudience],
+					allowDynamicClientRegistration: false,
+					scopes: [
+						'openid',
+						'profile',
+						'email',
+						'offline_access',
+						'workspaces:open',
+					],
+					silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
+				}),
 			],
 		});
 

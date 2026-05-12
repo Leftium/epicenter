@@ -7,7 +7,6 @@
  */
 
 import { ConsentPage } from './consent-page';
-import { DevicePage } from './device-page';
 import { AuthLayout } from './layout';
 import { SignInPage } from './sign-in-page';
 import { SignedInPage } from './signed-in-page';
@@ -30,14 +29,6 @@ export function renderConsentPage({
 	return (
 		<AuthLayout title="Authorize — Epicenter">
 			<ConsentPage clientId={clientId} scope={scope} />
-		</AuthLayout>
-	);
-}
-
-export function renderDevicePage({ userCode }: { userCode?: string }) {
-	return (
-		<AuthLayout title="Authorize Device — Epicenter">
-			<DevicePage userCode={userCode} />
 		</AuthLayout>
 	);
 }

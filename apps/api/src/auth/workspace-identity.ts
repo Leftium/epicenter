@@ -1,8 +1,7 @@
 import type { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import type { WorkspaceIdentity } from '@epicenter/auth';
+import { AuthUser, type WorkspaceIdentity } from '@epicenter/auth';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { User } from 'better-auth';
-import { createWorkspaceIdentityResponse } from './workspace-identity-response.js';
 
 export const WORKSPACES_OPEN_SCOPE = 'workspaces:open';
 
@@ -55,10 +54,10 @@ export async function resolveWorkspaceIdentity({
 
 	return {
 		status: 'resolved',
-		body: await createWorkspaceIdentityResponse(
-			{ user },
-			{ deriveUserEncryptionKeys },
-		),
+		body: {
+			user: AuthUser.assert(user),
+			encryptionKeys: await deriveUserEncryptionKeys(user.id),
+		},
 	};
 }
 

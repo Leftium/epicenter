@@ -2,7 +2,6 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { bearer } from 'better-auth/plugins/bearer';
 import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
 import { jwt } from 'better-auth/plugins/jwt';
 import { eq } from 'drizzle-orm';
@@ -27,7 +26,7 @@ type Db = NodePgDatabase<typeof schema>;
  * Wires up:
  * - Drizzle adapter (Postgres via Hyperdrive)
  * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
- * - Plugins: bearer tokens, JWT, device authorization, OAuth provider (PKCE)
+ * - Plugins: JWT, device authorization, OAuth provider (PKCE)
  * - Autumn billing customer creation on user signup
  * - Cloudflare KV secondary storage for session caching
  *
@@ -176,7 +175,6 @@ export function createAuth({
 	return betterAuth({
 		...authOptionsBase,
 		plugins: [
-			bearer(),
 			jwt(),
 			deviceAuthorization({
 				verificationUri: '/device',

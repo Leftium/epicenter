@@ -18,6 +18,7 @@ import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
 import { deriveUserEncryptionKeys } from './auth/encryption';
+import { resolveOAuthPrincipal } from './auth/oauth-principal';
 import { resolveWorkspaceIdentity } from './auth/workspace-identity';
 import {
 	createOAuthIssuerURL,
@@ -364,12 +365,27 @@ async function resolveWorkspaceIdentityForRequest(c: Context<Env>) {
 // Require an OAuth access token for protected app resources. Assumes
 // {@link singleCredential} has already validated and normalized credentials.
 const requireOAuthUser = factory.createMiddleware(async (c, next) => {
-	const result = await resolveWorkspaceIdentityForRequest(c);
+	const resource = oauthProviderResourceClient();
+	const result = await resolveOAuthPrincipal({
+		authorization: c.req.header('authorization') ?? null,
+		audience: c.var.authBaseURL,
+		issuer: createOAuthIssuerURL(c.var.authBaseURL),
+		jwksUrl: createOAuthJwksURL(c.var.authBaseURL),
+		verifyOAuthAccessToken: resource.getActions().verifyAccessToken,
+		async findUserById(userId) {
+			const [row] = await c.var.db
+				.select()
+				.from(schema.user)
+				.where(eq(schema.user.id, userId))
+				.limit(1);
+			return row ?? null;
+		},
+	});
 	if (result.status !== 'resolved') {
 		return createOAuthUnauthorizedResourceResponse(c);
 	}
 
-	c.set('user', result.body.user);
+	c.set('user', result.user);
 	await next();
 });
 

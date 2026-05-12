@@ -1,4 +1,4 @@
-# Composable Server, Cloud Apps, And App Instances
+# Composable Server, Cloud Apps, And Instances
 
 **Date**: 2026-05-12
 **Status**: Draft, clean-break revision
@@ -8,10 +8,8 @@
 
 ## One Sentence
 
-Epicenter Server is one batteries-included workspace host: auth, workspace
-identity, sync, and document sync are the built-in core; Cloud Apps are
-optional compile-time capabilities; App Instances are OAuth-protected hosted
-islands of those Cloud Apps.
+Epicenter Server hosts private workspaces at one origin, plus any number of
+Cloud Apps mounted at their own OAuth-protected hosts.
 
 ## One Sentence Summaries
 
@@ -28,20 +26,20 @@ Server core:
 Cloud App:
   A compile-time server module that owns routes, schema, migrations, scopes, and policy.
 
-App Instance:
-  A configured hosted instance of one Cloud App with its own host, OAuth audience, records, and operator policy.
+Instance:
+  A configured mount of one Cloud App at one host, owning that host's OAuth audience, records, and operator policy.
 
 Epicenter Cloud:
-  Our hosted composition of Epicenter Server plus selected Cloud Apps and App Instances.
+  Our hosted composition of Epicenter Server plus selected Cloud Apps and instances.
 
 Third-party cloud:
-  Another operator's composition of Epicenter Server plus the Cloud Apps and App Instances they choose.
+  Another operator's composition of Epicenter Server plus the Cloud Apps and instances they choose.
 
 Public record:
-  Server-authoritative data owned by an App Instance, not by private workspace sync.
+  Server-authoritative data owned by an instance, not by private workspace sync.
 
 Integration:
-  An explicit action that projects private workspace data into an App Instance.
+  An explicit action that projects private workspace data into an instance.
 ```
 
 ## Overview
@@ -59,7 +57,7 @@ One process:
   auth + workspace sync + cloud infra + Ark + Betcha
 
 Deferred split:
-  separate auth, sync, infra, or App Instance traffic only after the
+  separate auth, sync, infra, or instance traffic only after the
   single-origin server model works
 
 Same architecture:
@@ -85,23 +83,23 @@ Other operators can run their own compositions.
 | Epicenter Server | A composable host with built-in private workspace core and optional Cloud Apps. | self-hosted server, Epicenter Cloud host |
 | Server core | Always-available private workspace capability built into Epicenter Server. | auth, `/workspace-identity`, workspace sync, document sync |
 | Cloud App | A compile-time server module. Owns routes, schema, migrations, scopes, policy, and optional client helpers or UI entrypoints. | Ark, Betcha, billing, assets |
-| App Instance | A configured hosted instance of one Cloud App. Owns host, OAuth audience, records, and operator policy. Product docs may call this a network when the instance is public and social. | `ark.epicenter.so`, `ark.alice.com` |
-| Record | A canonical public or shared object owned by one App Instance. | post, comment, reaction, wager, ledger entry |
-| Integration | A user action that moves or projects private workspace data into an App Instance. | "Post this presentation to Ark" |
+| Instance | A configured mount of one Cloud App at one host. Owns that host's OAuth audience, records, and operator policy. Product docs may call this a network when the instance is public and social. | `ark.epicenter.so`, `billing.epicenter.so`, `ark.alice.com` |
+| Record | A canonical public or shared object owned by one instance. | post, comment, reaction, wager, ledger entry |
+| Integration | A user action that moves or projects private workspace data into an instance. | "Post this presentation to Ark" |
 
 The important correction is this:
 
 ```txt
 Epicenter Server includes the private workspace core.
 Cloud Apps are optional registered capabilities.
-Operators configure App Instances.
-App Instances own public records.
-App Instances are OAuth protected resources.
+Operators configure instances.
+Instances own public records.
+Instances are OAuth protected resources.
 Cloud Apps are not.
 ```
 
 Do not say "Cloud owns Ark" as if Cloud is one fixed product bundle. Ark is a
-Cloud App. `ark.epicenter.so` is one App Instance. The OAuth resource boundary
+Cloud App. `ark.epicenter.so` is one instance. The OAuth resource boundary
 (audience, scope, discovery) lives at the instance host, not at a generic
 cloud deployable.
 
@@ -119,12 +117,12 @@ Better wording:
   Epicenter Server = composable host
   server core      = built-in auth, identity, workspace sync, document sync
   Cloud Apps       = optional compile-time capabilities
-  App Instances    = operator-configured resources for product Cloud Apps
+  instances    = operator-configured mounts for each enabled Cloud App
 ```
 
 The older server-authoritative apps spec has the right product instinct but the
 wrong current boundary. It says Betcha and Ark are first-party apps with direct
-schema access under `apps/api`. That predates the Cloud App and App Instance
+schema access under `apps/api`. That predates the Cloud App and instance
 vocabulary, and it predates the cleaner OAuth resource boundary.
 
 ## Desired State
@@ -138,7 +136,7 @@ Bob
   gets:
     private workspace auth and sync
   does not configure:
-    App Instances
+    instances
 
 Epicenter Cloud
   composes:
@@ -147,6 +145,9 @@ Epicenter Cloud
   configures:
     ark.epicenter.so
     betcha.epicenter.so
+    billing.epicenter.so
+    assets.epicenter.so
+    dashboard.epicenter.so
   gets:
     canonical hosted ecosystem
 
@@ -157,7 +158,7 @@ Alice Cloud
   configures:
     ark.alice.com
   gets:
-    her own Ark App Instance
+    her own Ark instance
 
 Company Cloud
   composes:
@@ -166,7 +167,7 @@ Company Cloud
   configures:
     betcha.company.com
   gets:
-    private or public company Betcha App Instance
+    private or public company Betcha instance
 ```
 
 One host can do all of this:
@@ -182,15 +183,14 @@ One host can do all of this:
 |   documentSync                                               |
 |                                                              |
 | optional Cloud Apps:                                         |
-|   ark                                                        |
-|   betcha                                                     |
-|   billing                                                    |
-|   assets                                                     |
-|   dashboard                                                  |
+|   ark, betcha, billing, assets, dashboard                    |
 |                                                              |
-| operator App Instances:                                      |
+| operator instances:                                          |
 |   ark.epicenter.so                                           |
 |   betcha.epicenter.so                                        |
+|   billing.epicenter.so                                       |
+|   assets.epicenter.so                                        |
+|   dashboard.epicenter.so                                     |
 +--------------------------------------------------------------+
 ```
 
@@ -206,7 +206,7 @@ The capability graph is stable even when the process graph changes.
 |   workspace, auth, sync, ui                                  |
 |                                                              |
 | host primitive                                               |
-|   createEpicenterServer({ origin, apps, appInstances })      |
+|   createEpicenterServer({ origin, apps, instances })         |
 +--------------------------------------------------------------+
                        |
                        v
@@ -217,22 +217,20 @@ The capability graph is stable even when the process graph changes.
 |   sign-in, OAuth, /workspace-identity                        |
 |   workspace sync, document sync                              |
 |                                                              |
-| optional infrastructure Cloud Apps:                          |
-|   billing, assets, dashboard                                 |
-|                                                              |
-| optional product Cloud Apps:                                 |
-|   ark, betcha                                                |
+| optional Cloud Apps:                                         |
+|   ark, betcha, billing, assets, dashboard                    |
 +--------------------------------------------------------------+
                        |
-                       | operator configures instances for
-                       | enabled product Cloud Apps
+                       | operator mounts one or more instances
+                       | for each enabled Cloud App
                        v
 +--------------------------------------------------------------+
-| App Instances                                                 |
+| Instances                                                     |
 |                                                              |
-|   ark.epicenter.so       app: ark,    operator: Epicenter     |
-|   betcha.epicenter.so    app: betcha, operator: Epicenter     |
-|   ark.alice.com          app: ark,    operator: Alice         |
+|   ark.epicenter.so       app: ark,      operator: Epicenter   |
+|   betcha.epicenter.so    app: betcha,   operator: Epicenter   |
+|   billing.epicenter.so   app: billing,  operator: Epicenter   |
+|   ark.alice.com          app: ark,      operator: Alice       |
 |                                                              |
 | each instance publishes:                                     |
 |   /.well-known/oauth-protected-resource                      |
@@ -241,7 +239,7 @@ The capability graph is stable even when the process graph changes.
 +--------------------------------------------------------------+
 ```
 
-### Server Origin And App Instance Origins
+### Server Origin And Instance Origins
 
 Default origin:
 
@@ -251,14 +249,17 @@ epicenter.so
   /workspace-identity
   /workspaces/*
   /documents/*
-  /cloud/billing/*
 ```
 
-App Instance origin:
+Instance origin:
 
 ```txt
 ark.epicenter.so
   /api/ark/*
+  /.well-known/oauth-protected-resource
+
+billing.epicenter.so
+  /api/billing/*
   /.well-known/oauth-protected-resource
 ```
 
@@ -273,19 +274,23 @@ sync.epicenter.so
   /workspaces/*
   /documents/*
 
-api.epicenter.so
-  /cloud/billing/*
-  /cloud/assets/*
-  /dashboard/*
-
 ark.epicenter.so
   /api/ark/*
+
+billing.epicenter.so
+  /api/billing/*
+
+assets.epicenter.so
+  /api/assets/*
+
+dashboard.epicenter.so
+  /api/dashboard/*
 ```
 
-The first implementation should support one Epicenter Server origin plus App
-Instance origins. Splitting auth, sync, and API traffic across separate origins
-is deferred. It is not the conceptual model and should not appear as config
-until operations prove it is needed.
+The first implementation should support one Epicenter Server origin plus
+instance origins. Splitting auth and sync across separate origins is deferred.
+It is not the conceptual model and should not appear as config until operations
+prove it is needed.
 
 ## Publish Flow
 
@@ -301,14 +306,14 @@ Example: Presenter posts to Ark.
    Resource choice: ark.epicenter.so, ark.alice.com, or another Ark instance
 
 3. Auth gets an instance-scoped grant.
-   Audience: selected App Instance resource
+   Audience: selected instance resource
    Scope: ark:publish
 
 4. Presenter sends a post input.
    POST {instance}/api/ark/posts
 
-5. Ark App Instance stores the public record.
-   Owner: selected App Instance
+5. Ark instance stores the public record.
+   Owner: selected instance
    Result: canonical public URL
 ```
 
@@ -324,7 +329,7 @@ Draft:
 Post:
   public or instance-visible
   server-authoritative
-  moderated by App Instance policy
+  moderated by instance policy
   served by the Cloud App instance
 ```
 
@@ -333,15 +338,18 @@ Post:
 | Decision | Class | Choice | Rationale |
 | --- | --- | --- | --- |
 | Keep the server core built in | 2 coherence | `createEpicenterServer` always includes auth, workspace identity, workspace sync, and document sync | These capabilities are the substrate, not optional peers of Ark or Betcha. |
-| Unify the composition primitive | 2 coherence | One `createEpicenterServer` shape registers optional Cloud Apps and App Instances | Operators should not need a second architecture concept to add public app capabilities. |
+| Unify the composition primitive | 2 coherence | One `createEpicenterServer` shape registers optional Cloud Apps and instances | Operators should not need a second architecture concept to add public app capabilities. |
 | Keep capability boundaries sharp | 2 coherence | Server core does not own public records | Social feeds, public records, moderation, and shared relational state are not workspace sync. |
-| Prefer one origin by default | 3 taste | Auth, sync, and host infrastructure live at the server origin unless overridden | A small install should be one origin; hosted Epicenter can split by domain, worker, or service for scaling and blast radius. |
+| One kind of Cloud App | 2 coherence | Every Cloud App, whether public-record (ark, betcha) or operator-facing (billing, assets, dashboard), mounts at its own instance host with `<app-id>:*` scopes | A second flavor with `cloud:*` scopes and a shared-origin shortcut produced two scope namespaces, two mount stories, and a hybrid API. The asymmetric win: refusing the shortcut collapses both flavors into one uniform model with no user-visible loss except a DNS record per enabled operator app. |
+| Server origin is sync-only | 3 taste | Auth, workspace identity, workspace sync, and document sync live at the server origin; no Cloud App mounts there | Origin sharing was the only thing that made "infrastructure Cloud App" a separate concept. Removing it removes the special case. |
 | Make Cloud app-based | 2 coherence | Cloud Apps are compile-time modules registered by the host | Operators should not be forced to run Ark, Betcha, billing, assets, and dashboard as one bundle. |
-| Make App Instance first-class | 2 coherence | App Instance owns public records | A public URL needs one authoritative host for moderation, deletion, feeds, and policy. |
+| Make instances first-class | 2 coherence | Each instance owns its host, audience, and records | A public URL needs one authoritative host for moderation, deletion, feeds, and policy. |
+| Derive instance type from registered apps | 2 coherence | `instances[].app` is typed as `apps[number]['id']` | A registered-but-missing-app reference becomes a compile-time error, not a startup-time check. Removes a class of runtime validation. |
+| Object config only | 2 coherence | No fluent `.withApp().withInstance()` builder | A builder cannot deliver the same compile-time cross-check between `apps` and `instances[].app`, and a hybrid object+builder API forces every reader to ask which path is canonical. |
 | Treat Epicenter Cloud as a composition | 2 coherence | Canonical hosted ecosystem, not the platform itself | Other operators can host their own ecosystems without becoming Epicenter-the-company. |
 | Copy Better Auth's composition shape, not runtime installation | 2 coherence | Cloud Apps are package imports registered at build time | Package imports give developers extension points without a runtime marketplace, dynamic schema mutation, or unknown code loading. |
-| Islands by design | 2 coherence | App Instances do not federate | Federation is a large protocol and moderation commitment for zero shipped users. Self-hostable islands give operators full control without an instance-to-instance protocol. If federation ever ships, it gets its own architecture spec. |
-| Keep integrations explicit | 2 coherence | Publish actions move private drafts into selected App Instances | Private workspace data should not become public by ambient sync. |
+| Islands by design | 2 coherence | Instances do not federate | Federation is a large protocol and moderation commitment for zero shipped users. Self-hostable islands give operators full control without an instance-to-instance protocol. If federation ever ships, it gets its own architecture spec. |
+| Keep integrations explicit | 2 coherence | Publish actions move private drafts into selected instances | Private workspace data should not become public by ambient sync. |
 | License server-hosted Cloud Apps with network-copyleft intent | Deferred | Legal review required | The current AGPL pattern likely fits hosted server software, but final license wording is outside this architecture spec. |
 
 ## Boundary Rules
@@ -352,39 +360,33 @@ Use these rules before adding a route, table, or Cloud App.
 If it is private workspace boot, workspace sync, or document sync:
   server core
 
-If it is a public or shared social object:
-  product Cloud App served through an App Instance
+If it is a public, shared, social, or operator-facing object served over HTTP:
+  Cloud App mounted at its own instance host
 
 If it needs moderation, feed ranking, public URLs, counters, or abuse controls:
-  product Cloud App served through an App Instance
-
-If it is host infrastructure that operators run but users do not publish
-records to:
-  infrastructure Cloud App
+  Cloud App mounted at its own instance host
 
 If it is a private draft or artifact before publishing:
   workspace document
 
 If it is the canonical public version after publishing:
-  App Instance record
+  instance record
 ```
 
-Two flavors of Cloud App, one composition rule:
+One kind of Cloud App, one composition rule:
 
 ```txt
-Product app:
-  owns public routes, schema, migrations, scopes, policy
+Every Cloud App:
+  owns routes, schema, migrations, scopes, policy
   optional typed clients and UI entrypoints
-  examples: ark, betcha
-  resource origin: per-instance host
-  scope namespace: <app>:*
+  mounts at one instance host
+  resource origin: instance host
+  scope namespace: <app-id>:*
 
-Infrastructure app:
-  serves the operator's host directly
-  no public App Instance
-  examples: billing, assets, dashboard
-  resource origin: server host or configured infra host
-  scope namespace: cloud:*
+Public-record apps (ark, betcha) and operator capabilities (billing,
+assets, dashboard) follow the same composition rule. What differs is the
+policy each Cloud App enforces on its records, not where it lives or how
+it is named.
 ```
 
 ## Suggested File Shape
@@ -403,7 +405,7 @@ apps/server/src/
 |   |-- workspace-sync/
 |   `-- document-sync/
 |-- cloud-apps/
-|   |-- ark/                       (product Cloud App)
+|   |-- ark/
 |   |   |-- index.ts               (exports arkApp)
 |   |   |-- routes.ts
 |   |   |-- schema.ts
@@ -411,12 +413,12 @@ apps/server/src/
 |   |   |-- scopes.ts
 |   |   |-- policy.ts
 |   |   `-- client.ts              (optional typed client helper)
-|   |-- betcha/                    (product Cloud App)
-|   |-- billing/                   (infrastructure Cloud App)
-|   |-- assets/                    (infrastructure Cloud App)
-|   `-- dashboard/                 (infrastructure Cloud App)
-|-- app-instances/
-|   |-- app-instance.ts
+|   |-- betcha/
+|   |-- billing/
+|   |-- assets/
+|   `-- dashboard/
+|-- instances/
+|   |-- instance.ts
 |   |-- instance-registry.ts
 |   `-- host-dispatch.ts
 |-- oauth-resource.ts
@@ -427,31 +429,22 @@ apps/server/src/
 The private workspace core lives under `core/` because it is part of the
 Epicenter Server contract. Cloud Apps live under `cloud-apps/` because they are
 compile-time server capabilities. They contribute routes, schemas, migrations,
-scopes, policies, and optional typed client helpers. App Instances live under
-`app-instances/` because operators configure them per deployment. The code
-primitive is App Instance; product docs may call public social instances
+scopes, policies, and optional typed client helpers. Instances live under
+`instances/` because operators configure them per deployment. The code
+primitive is instance; product docs may call public social instances
 "networks."
 
 App registration should avoid repeating the same app in two places. The host
-registers Cloud Apps once. App Instances refer to the registered app by stable
-ID.
+registers Cloud Apps once. Instances refer to the registered app by stable ID.
 
 ```ts
 export default createEpicenterServer({
 	origin: 'https://epicenter.so',
-	apps: [
-		arkApp,
-		billingApp,
-		dashboardApp,
-	],
-	appInstances: [
-		{
-			id: 'epicenter-ark',
-			host: 'ark.epicenter.so',
-			app: 'ark',
-			name: 'Ark',
-			visibility: 'public',
-		},
+	apps: [arkApp, billingApp, dashboardApp],
+	instances: [
+		{ app: 'ark',       host: 'ark.epicenter.so',       name: 'Ark' },
+		{ app: 'billing',   host: 'billing.epicenter.so' },
+		{ app: 'dashboard', host: 'dashboard.epicenter.so' },
 	],
 });
 ```
@@ -459,11 +452,26 @@ export default createEpicenterServer({
 `audience` is derived as `https://<host>`. `issuer` is derived from the server
 `origin`. Do not add override fields until a real deployment needs them.
 
-The instance object uses `app: 'ark'` instead of `arkApp.instance(...)` because
-the host should register each Cloud App once. Repeating the value object in both
-`apps: [arkApp]` and `arkApp.instance(...)` makes the call site look fluent, but
-it gives TypeScript two paths for the same ownership relationship. The stable
-ID is the boundary:
+The instance object uses `app: 'ark'` (string) instead of `arkApp.instance(...)`
+because the host should register each Cloud App once. Repeating the value
+object in both `apps: [arkApp]` and a fluent call would give TypeScript two
+paths for the same ownership relationship. TypeScript can derive the valid app
+IDs from the `apps` array so the string form is still type-checked:
+
+```ts
+function createEpicenterServer<const TApps extends readonly CloudApp[]>(config: {
+	origin: `https://${string}`;
+	apps: TApps;
+	instances: ReadonlyArray<{
+		app: TApps[number]['id'];   // literal union of registered IDs
+		host: string;
+		name?: string;
+	}>;
+}): EpicenterServer;
+```
+
+With this signature, "instance references an unregistered app" is a
+compile-time error at the call site, not just a startup-time check.
 
 ```ts
 export const arkApp = defineCloudApp({
@@ -477,29 +485,14 @@ export const arkApp = defineCloudApp({
 export default createEpicenterServer({
 	origin: 'https://epicenter.so',
 	apps: [arkApp],
-	appInstances: [
-		{
-			app: 'ark',
-			host: 'ark.epicenter.so',
-		},
-	],
+	instances: [{ app: 'ark', host: 'ark.epicenter.so' }],
 });
 ```
 
-A fluent builder remains possible, but it should be a convenience over the same
-data model, not the model itself.
-
-```ts
-export default createEpicenterServer({ origin: 'https://epicenter.so' })
-	.withApp(arkApp)
-	.withAppInstance({
-		app: 'ark',
-		host: 'ark.epicenter.so',
-	});
-```
-
-Prefer the object form first. It serializes cleanly, is easier to diff, and
-lets construction tests validate the whole graph at once.
+Object form only. A fluent `.withApp().withInstance()` builder is refused: it
+cannot give the same compile-time cross-check that an instance's `app` field
+references one of the registered `apps`, and a hybrid object+builder API
+forces every reader to ask which path is canonical.
 
 Start with normal Drizzle migration ownership. Each Cloud App exports schema
 and migrations; the host imports enabled app schemas into one schema entrypoint
@@ -509,10 +502,10 @@ composition becomes painful.
 
 ## OAuth And Scopes
 
-### Resource Discovery Per App Instance
+### Resource Discovery Per Instance
 
-Each App Instance is its own OAuth protected resource. This closes the loop
-with the auth north star: tokens are audience-bound, and the audience is the
+Each instance is its own OAuth protected resource. This closes the loop with
+the auth north star: tokens are audience-bound, and the audience is the
 instance host, not the generic server host.
 
 ```txt
@@ -534,49 +527,57 @@ Per-instance requirements:
     allowed origins are configured per instance, not per server composition
 ```
 
-Infrastructure Cloud Apps (billing, assets, dashboard) share the operator's
-server or infra host as their resource and use the `cloud:*` scope namespace.
-They do not publish per-app protected-resource metadata unless they later need
-their own host-level resource boundary.
+Every Cloud App publishes per-instance metadata. There is no shared-origin
+shortcut: operator capabilities like billing and dashboard mount at their own
+hosts and declare their own protected-resource metadata.
 
 ```txt
 Resource summary:
 
   epicenter.so               server core             scope: workspaces:open
-  epicenter.so               infrastructure apps     scope: cloud:billing, cloud:storage
   ark.epicenter.so           Cloud App ark           scope: ark:read, ark:publish
   betcha.epicenter.so        Cloud App betcha        scope: betcha:read, betcha:write
+  billing.epicenter.so       Cloud App billing       scope: billing:read, billing:admin
+  dashboard.epicenter.so     Cloud App dashboard     scope: dashboard:read
   ark.alice.com              Cloud App ark           scope: ark:read, ark:publish
 ```
 
 ### Cloud App Scopes
 
-Sync scopes and App Instance scopes are separate.
+Sync scopes and instance scopes are separate.
 
 ```txt
 workspaces:open
-  resource: sync resource
+  resource: sync resource (server origin)
   permits: workspace identity and sync
 
 ark:read
-  resource: Ark App Instance
+  resource: Ark instance
   permits: read user-visible posts and profiles
 
 ark:publish
-  resource: Ark App Instance
+  resource: Ark instance
   permits: create public records
 
 betcha:read
-  resource: Betcha App Instance
+  resource: Betcha instance
   permits: read visible challenges and ledgers
 
 betcha:write
-  resource: Betcha App Instance
+  resource: Betcha instance
   permits: create and update challenges
+
+billing:read
+  resource: Billing instance
+  permits: read the operator's own subscription and usage state
+
+billing:admin
+  resource: Billing instance
+  permits: change subscription, payment method, and plan
 ```
 
-If one app needs both private sync and instance publishing, it requests separate
-resource grants.
+If one user-facing action needs both private sync and instance publishing, it
+requests separate resource grants.
 
 ```txt
 Presenter:
@@ -611,17 +612,15 @@ private workspaces.
 
 The first implementation should prove the graph with plain `Request` objects
 before involving Cloudflare, DNS, or a browser. Host matching is exact. Unknown
-hosts return 404. App Instances cannot exist for apps that were not registered.
+hosts return 404. Instances cannot exist for apps that were not registered.
 
 ```ts
 const server = createEpicenterServer({
 	origin: 'https://epicenter.test',
-	apps: [arkApp],
-	appInstances: [
-		{
-			app: 'ark',
-			host: 'ark.epicenter.test',
-		},
+	apps: [arkApp, billingApp],
+	instances: [
+		{ app: 'ark',     host: 'ark.epicenter.test' },
+		{ app: 'billing', host: 'billing.epicenter.test' },
 	],
 });
 ```
@@ -629,32 +628,43 @@ const server = createEpicenterServer({
 Construction tests:
 
 ```txt
-server boots with built-in core
-duplicate app IDs are rejected
-duplicate hosts are rejected
-duplicate audiences are rejected
-App Instance for missing app is rejected
-App Instance for disabled app is rejected
+boots with core and zero apps
+rejects duplicate apps[].id
+rejects apps[].id that does not match /^[a-z][a-z0-9-]*$/
+rejects any scope in apps[].scopes that does not start with <id>:
+rejects overlapping scopes across registered apps
+rejects instances[].app not present in apps
+rejects duplicate instances[].host
+rejects instances[].host equal to URL.host(origin)
+rejects a registered app with no instance mount
+rejects origin that is not https:// in production builds
 ```
 
 Host dispatch tests:
 
 ```txt
-epicenter.test + /auth/* routes to auth
-epicenter.test + /workspaces/* routes to workspace sync
-epicenter.test + /cloud/billing/* routes to billing when billing is enabled
-ark.epicenter.test + /api/ark/* routes to Ark instance
-unknown.epicenter.test returns 404
-ark.epicenter.test + /workspaces/* returns 404
+epicenter.test + /auth/*                 routes to core auth
+epicenter.test + /workspace-identity     routes to core identity
+epicenter.test + /workspaces/*           routes to workspace sync
+epicenter.test + /documents/*            routes to document sync
+epicenter.test + /api/*                  returns 404 (no Cloud App at origin)
+ark.epicenter.test + /api/ark/*          routes to Ark instance
+billing.epicenter.test + /api/billing/*  routes to Billing instance
+ark.epicenter.test + /.well-known/oauth-protected-resource returns 200
+ark.epicenter.test + /workspaces/*       returns 404 (sync is not at instance hosts)
+unknown.epicenter.test                   returns 404
 ```
 
 OAuth boundary tests:
 
 ```txt
-sync token cannot publish to Ark
+audience(sync grant) = URL.host(origin)
+audience(app grant)  = URL.host(instance)
+sync token cannot publish to any instance
 Ark token cannot open private workspaces
-Ark token for ark.alice.test cannot call ark.epicenter.test
-disabled Cloud App exposes no routes
+Ark token for ark.alice.test cannot call ark.epicenter.test (same Cloud App, different instance)
+billing token cannot call ark.epicenter.test
+protected-resource metadata at instance host names issuer derived from server origin
 ```
 
 ## Licensing And Host Control
@@ -694,23 +704,24 @@ later clean break.
 
 ### Phase 1: Spec Alignment
 
-- [x] **1.1** Mark the older Betcha/Ark server-authoritative spec as historical where it conflicts with Cloud Apps and App Instances.
+- [x] **1.1** Mark the older Betcha/Ark server-authoritative spec as historical where it conflicts with Cloud Apps and instances.
 - [x] **1.2** Update the final OAuth architecture so deployable split is physical topology, not the core product model.
 - [x] **1.3** Update the auth stack map so the Cloud product north star is the composable server model.
 - [ ] **1.4** Update README or positioning only after the vocabulary survives one implementation pass.
 
 ### Phase 2: Composition Skeleton
 
-- [ ] **2.1** Define `createEpicenterServer({ origin, apps, appInstances })` with built-in auth, workspace identity, workspace sync, and document sync.
+- [ ] **2.1** Define `createEpicenterServer({ origin, apps, instances })` with built-in auth, workspace identity, workspace sync, and document sync.
 - [ ] **2.2** Define a `CloudApp` shape with route mounting, schema, migrations, scopes, policy, and optional typed clients.
-- [ ] **2.3** Define an `AppInstance` shape with `id`, `host`, `app`, `name`, and visibility.
+- [ ] **2.3** Define an `Instance` shape with `app`, `host`, and optional `name`.
 - [ ] **2.4** Derive `audience` from `host` and `issuer` from `origin`.
-- [ ] **2.5** Add exact host dispatch for the server origin and App Instance hosts.
-- [ ] **2.6** Add tests proving disabled Cloud Apps expose no routes.
-- [ ] **2.7** Add tests proving an App Instance cannot reference a missing or disabled Cloud App.
-- [ ] **2.8** Re-export enabled Cloud App schemas through the host Drizzle schema entrypoint.
+- [ ] **2.5** Type `instances[].app` as `apps[number]['id']` so unregistered app references fail at compile time.
+- [ ] **2.6** Add exact host dispatch for the server origin and instance hosts.
+- [ ] **2.7** Add tests proving every registered Cloud App has at least one instance mount.
+- [ ] **2.8** Add tests proving an instance cannot reference an unregistered app and cannot share the server origin host.
+- [ ] **2.9** Re-export enabled Cloud App schemas through the host Drizzle schema entrypoint.
 
-### Phase 3: First Product Cloud App
+### Phase 3: First Cloud App (Ark)
 
 - [ ] **3.1** Pick one Cloud App, likely Ark, as the first implementation.
 - [ ] **3.2** Create minimal `post` and `profile` tables inside the Cloud App.
@@ -746,7 +757,7 @@ Reasons not to split:
 
 ### Phase 5: Islands By Design
 
-App Instances are islands. `ark.alice.com` and `ark.epicenter.so` do not talk
+Instances are islands. `ark.alice.com` and `ark.epicenter.so` do not talk
 to each other. Users on one instance do not follow users on another instance.
 Posts, follows, reactions, and ledgers stay inside the instance where they were
 published.
@@ -771,15 +782,14 @@ spec. It is not a deferred phase of this one. The surfaces this spec leaves
 record) keep that future spec possible without forcing this one to design for
 it.
 
-- [ ] **5.1** Keep public read APIs stable per App Instance.
-- [ ] **5.2** Keep handles unique within an App Instance host only.
+- [ ] **5.1** Keep public read APIs stable per instance.
+- [ ] **5.2** Keep handles unique within an instance host only.
 - [ ] **5.3** Do not add cross-instance link, follow, or identity primitives.
 
 ## Open Questions
 
 1. Should the first implementation directory be `apps/server`, `apps/epicenter-server`, or a package consumed by a thin app wrapper?
 2. Does a third-party cloud need its own OAuth issuer, or can it trust a separate issuer controlled by the same operator?
-3. Should one server host many App Instances for the same Cloud App at first, or should that wait until one App Instance works end to end?
 
 ### Deferred
 
@@ -799,6 +809,34 @@ License wording for Cloud Apps:
 Mandatory split between server and cloud deployables:
   Status: refused as the default architecture.
   Reason: topology is operational. Composition is the product model.
+
+Two flavors of Cloud App (product vs infrastructure):
+  Status: refused. Every Cloud App mounts at its own instance host with
+  <app-id>:* scopes.
+  Reason: two flavors produced two scope namespaces, two mount stories, and
+  a hybrid API. Refusing the shared-origin shortcut for billing, assets, and
+  dashboard collapses everything into one uniform model. Self-hosters who
+  do not enable those apps pay nothing. Hosted operators who do enable them
+  already wanted audience separation per subdomain.
+
+Fluent builder API for createEpicenterServer:
+  Status: refused. Object form only.
+  Reason: a builder cannot deliver the same compile-time check that
+  `instances[].app` references a registered `apps[].id`, and a hybrid
+  object+builder API forces every reader to ask which path is canonical.
+
+Multiple instances of the same Cloud App on one server:
+  Status: deferred. v1 accepts one mount per app.
+  Reason: no shipped use case. Add only when a real second mount appears,
+  and document the policy boundary at that time.
+
+The `id` and `visibility` fields on an instance object:
+  Status: refused for v1.
+  Reason: `host` already uniquely identifies an instance. A second
+  identifier invites drift. `visibility` was ambiguous (does it change
+  routes, indexability, OAuth, or just operator-dashboard chrome?) so it
+  is owned by the Cloud App's policy until a real product reason forces
+  it back into mount config.
 ```
 
 ## Clean Break Rules
@@ -808,8 +846,10 @@ Mandatory split between server and cloud deployables:
 3. Do not let private workspace sync imply public publishing.
 4. Do not make Epicenter Cloud synonymous with the Epicenter Platform.
 5. Do not force every operator to run every Cloud App.
-6. Do not design federation. App Instances are islands. If federation ever ships, it gets its own architecture spec.
+6. Do not design federation. Instances are islands. If federation ever ships, it gets its own architecture spec.
 7. Do not make first-party Cloud Apps bypass the same OAuth resource boundary that third-party integrations use.
 8. Do not runtime-install unknown Cloud Apps. Package imports plus compile-time registration are the extension model.
 9. Do not put instance hostnames, tenant IDs, or record IDs into scope names. Use audience for the instance and policy for record-level authorization.
-10. Do not let a sync token publish to an App Instance. Do not let an instance token open private workspaces. Do not let one App Instance's token act on another App Instance.
+10. Do not let a sync token publish to an instance. Do not let an instance token open private workspaces. Do not let one instance's token act on another instance.
+11. Do not create two flavors of Cloud App. There is one Cloud App shape and one mount story. Operator-facing capabilities like billing and dashboard mount at their own instance hosts, just like product apps.
+12. Do not mount a Cloud App at the server origin. The server origin serves core sync only; every Cloud App lives at its own instance host.

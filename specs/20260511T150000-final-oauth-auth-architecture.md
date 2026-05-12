@@ -5,7 +5,23 @@
 **Author**: AI assisted
 **Stack Map**: `specs/20260512T134603-auth-spec-stack-clean-break-map.md`
 **Stack Position**: North star for the auth stack.
-**Companion spec**: `specs/20260512T150000-cloud-modules-and-networks.md` (product-layer north star; owns the composable server shape, including base modules, compile-time Cloud Apps, and App Instance OAuth resources)
+**Companion spec**: `specs/20260512T150000-cloud-modules-and-networks.md` (product-layer north star; owns the composable server shape, including built-in core, compile-time Cloud Apps, and per-Cloud-App OAuth resources)
+
+> **Vocabulary update (2026-05-12):** the companion spec has since collapsed
+> several distinctions this auth spec was written against. Read references in
+> this document accordingly:
+>
+> | Old wording in this spec | Current model in companion spec |
+> | --- | --- |
+> | "infrastructure Cloud App" vs "product Cloud App" | one uniform Cloud App; every Cloud App mounts at its own host with `<app-id>:*` scopes |
+> | "App Instance" / "App Instance host" | "mounted Cloud App" / the host the app was mounted at; instance is no longer a separate config primitive |
+> | "base modules" | "server core" — auth, workspace identity, workspace sync, document sync (substrate, not a Cloud App) |
+> | `cloud:billing`, `cloud:storage` | `billing:*`, `assets:*` (each Cloud App owns its own scope namespace) |
+> | `appInstances: [...]` config key | merged into `apps: [defineX({ host })]` |
+>
+> The auth-internal logic in this spec is unchanged. Only the surrounding Cloud
+> App vocabulary has moved on. When implementation begins, the companion spec
+> is authoritative for the Cloud App boundary.
 **Supersedes**:
 
 - `specs/20260511T105846-auth-oauth-everywhere-clean-break.md`

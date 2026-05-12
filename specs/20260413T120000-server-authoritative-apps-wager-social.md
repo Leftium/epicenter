@@ -9,10 +9,15 @@
 
 This spec preserves useful product research for Betcha and The Ark, especially
 the argument that social and wager data need server authority rather than Yjs
-CRDTs. Its deployment framing is stale. Future work should use
-`apps/cloud` Cloud Apps and App Instances from
-`specs/20260512T150000-cloud-modules-and-networks.md`, not the older
-`apps/api` plus first-party direct-schema framing below.
+CRDTs. Its deployment framing is stale. Future work should use the Cloud App
+model from `specs/20260512T150000-cloud-modules-and-networks.md`: one uniform
+Cloud App shape, mounted at its own host with `<app-id>:*` scopes, composed
+into one `apps: [defineX({ host })]` array. The current direction is a
+composable Epicenter Server host with built-in core (auth, identity, sync)
+plus optional Cloud Apps, not the older `apps/api` plus first-party
+direct-schema framing below. Phrases in the body of this spec that say
+"infrastructure Cloud App", "product Cloud App", or "App Instance host" should
+be read against the unified vocabulary in the companion spec.
 
 ## Overview
 

@@ -7,7 +7,7 @@
 
 ## One Sentence
 
-Epicenter clients use one OAuth `AuthClient` for identity, HTTP, and sync; app session state owns local workspace lifetime, and deployable boundaries stay behind the server resource contract.
+Epicenter clients use one OAuth `AuthClient` for identity, HTTP, and sync; app session state owns local workspace lifetime, and Cloud Apps compose into the server host behind resource-scoped OAuth boundaries.
 
 ## Verdict
 
@@ -28,8 +28,9 @@ Long-term cleanup:
   tokens stay private to auth
   persisted session names match the identity/network split
 
-Deployment:
-  apps/server and apps/cloud split only after the contract is stable
+Server composition:
+  one composable server host first
+  physical splitting only after the contract is stable
 ```
 
 ## Current Stack
@@ -37,28 +38,28 @@ Deployment:
 | Order | Spec | Job | Status in stack |
 | --- | --- | --- | --- |
 | 0 | `specs/20260504T233223-sign-out-preserves-local-data.md` | Defines account exit: sign-out destroys live workspace memory while owner-scoped local data survives. | Runtime policy |
-| 1 | `specs/20260511T150000-final-oauth-auth-architecture.md` | Defines the architecture: `AuthClient`, Better Auth server machinery, `/workspace-identity`, OAuth resource scopes, and deployable split boundaries. | North star |
+| 1 | `specs/20260511T150000-final-oauth-auth-architecture.md` | Defines the architecture: `AuthClient`, Better Auth server machinery, `/workspace-identity`, OAuth resource scopes, and server composition boundaries. | North star |
 | 2 | `specs/20260512T100428-app-side-oauth-migration.md` | Moves consumer apps onto the `AuthClient` surface. | Migration track |
 | 3 | `specs/20260512T111335-post-oauth-audit-remediation.md` | Fixes correctness gaps left after migration. | Immediate obligation |
 | 4 | `specs/20260512T114350-auth-token-capability-boundary.md` | Cleans up token ownership, persisted session shape, and storage vocabulary. | Long-term boundary cleanup |
-| 5 | Future deployable split spec | Moves pieces between `apps/api`, `apps/server`, and `apps/cloud` after the auth contract is stable. | Later |
+| 5 | Future server composition spec | Moves pieces out of `apps/api` into a composable server host after the auth contract is stable. Physical splitting stays optional. | Later |
 
 ## Product Stack (parallel to the auth stack)
 
-The auth stack above defines credentials, identity, and deployable
-boundaries. It does not define what lives inside `apps/cloud`. That is the
-product stack:
+The auth stack above defines credentials, identity, and protected-resource
+boundaries. It does not define which Cloud Apps are installed into the server
+host. That is the product stack:
 
 | Order | Spec | Job | Status |
 | --- | --- | --- | --- |
-| 0 | `specs/20260512T150000-cloud-modules-and-networks.md` | Defines the product shape inside `apps/cloud`: compile-time Cloud Apps, App Instances, scopes, islands by design. | Product-layer north star |
+| 0 | `specs/20260512T150000-cloud-modules-and-networks.md` | Defines the product shape for the composable server host: server core, optional Cloud Apps merged into one `apps[]` array, per-app `pgSchema` isolation, islands by design. | Product-layer north star |
 | 1 | `specs/20260413T120000-server-authoritative-apps-wager-social.md` | Historical research for Betcha and Ark. Phases 4 through 7 are blocked on the product north star. | Historical, partially superseded |
 
-The auth stack and the product stack are co-authoritative. Auth owns
-identity, scopes, audiences, and deployable boundaries. Product owns Cloud
-Apps, App Instances, public-record schemas, migrations, route surfaces, and
-per-app scope names. They must not contradict; cross-references go through
-this map.
+The auth stack and the product stack are co-authoritative. Auth owns identity,
+scopes, audiences, and protected-resource behavior. Product owns Cloud Apps,
+their mounts, public-record schemas, migrations, route surfaces, and per-app
+scope names. Process topology is deliberately secondary. They must not
+contradict; cross-references go through this map.
 
 ## Source Of Truth By Question
 
@@ -70,8 +71,8 @@ this map.
 | Who owns access tokens and refresh tokens? | `specs/20260512T114350-auth-token-capability-boundary.md` |
 | What does sign-out do to local workspace memory and persistence? | `specs/20260504T233223-sign-out-preserves-local-data.md` |
 | Where do new product surfaces (Ark, Betcha, billing, dashboard) live and what scopes do they need? | `specs/20260512T150000-cloud-modules-and-networks.md` |
-| What is the resource boundary for a public app island? | `specs/20260512T150000-cloud-modules-and-networks.md` (each App Instance is its own OAuth protected resource) |
-| When should deployable splitting happen? | After orders 1 through 4 are true in code and tests. |
+| What is the resource boundary for a public app island? | `specs/20260512T150000-cloud-modules-and-networks.md` (each mounted Cloud App is its own OAuth protected resource at its own host) |
+| When should physical deployable splitting happen? | After orders 1 through 4 are true in code and tests, and only if the single-host composition needs an operational split. |
 
 Older auth specs are historical unless this map or one of the current stack specs explicitly references them.
 
@@ -185,11 +186,11 @@ Possible later pass:
 
 Do not add a ticket endpoint until there is a concrete threat model or logging risk that pays for the extra protocol.
 
-### Deployable split versus auth contract
+### Server composition versus auth contract
 
 No conflict, but order matters.
 
-Do not start moving `apps/api` into `apps/server` and `apps/cloud` while apps still depend on old credential shapes, stale routes, or unsealed resource scopes. The deployable split should be boring file movement over a stable contract.
+Do not start moving `apps/api` into a new server composition while apps still depend on old credential shapes, stale routes, or unsealed resource scopes. The first target should be a single composable host. Physical splitting can come later as boring file movement over a stable contract.
 
 ## Clean Break Rules
 
@@ -202,8 +203,8 @@ Keep these rules as the guardrail for future auth specs:
 5. Do not keep both `sessionStorage` and `sessionStore` as public config names long term.
 6. Do not add `/docs/*` aliases for document sync. Fix the clients to call `/documents/*`.
 7. Do not split deployables until the auth contract and invariant patch are passing tests.
-8. Do not put public-record state (Ark posts, Betcha challenges, follows) in `apps/server`. Public records live in `apps/cloud` Cloud Apps and App Instances.
-9. Do not design federation. App Instances are islands by default. If federation ever happens, it gets its own architecture spec, not an extension of the Cloud Apps spec.
+8. Do not put public-record state (Ark posts, Betcha challenges, follows) in server core. Public records live in Cloud Apps mounted at their own hosts.
+9. Do not design federation. Mounted Cloud Apps are islands by default. If federation ever happens, it gets its own architecture spec, not an extension of the Cloud Apps spec.
 
 ## Recommended Work Order
 
@@ -212,7 +213,7 @@ Keep these rules as the guardrail for future auth specs:
 2. Land post-OAuth remediation.
 3. Run the token capability clean break.
 4. Update docs and skills to the new vocabulary.
-5. Only then start deployable split work.
+5. Only then start server composition work. Split processes only if operations demand it.
 ```
 
 ## Success Criteria
@@ -223,4 +224,5 @@ Keep these rules as the guardrail for future auth specs:
 - [ ] Same-user `reauth-required` keeps local workspace state mounted.
 - [ ] Real sign-out destroys live workspace memory.
 - [ ] App code cannot read access tokens or refresh tokens through `AuthClient`.
-- [ ] Deployable split work starts only after the auth boundary is stable.
+- [ ] Server composition work starts only after the auth boundary is stable.
+- [ ] Physical deployable split work is treated as optional topology, not the product model.

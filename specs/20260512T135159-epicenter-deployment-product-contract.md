@@ -68,9 +68,10 @@ apps/server base modules:
   no Postgres requirement
 
 apps/server cloud-apps subtree:
-  optional infrastructure Cloud Apps (billing, assets, dashboard)
-  optional product Cloud Apps (Ark, Betcha) plus operator App Instances
-  Drizzle and Postgres allowed inside Cloud Apps
+  optional Cloud Apps: billing, assets, dashboard, Ark, Betcha, others
+  each Cloud App mounts at its own host (e.g. ark.epicenter.so)
+  each Cloud App owns one pgSchema('<id>') in Postgres
+  Drizzle is the canonical schema and migration tool
 ```
 
 Physical splitting (separate processes, separate domains) stays available as
@@ -200,14 +201,14 @@ Epicenter Apps
   local-first apps built against the deployment contract
 
 Epicenter Server
-  composable host that mounts base modules and optional Cloud Apps
-  base modules: auth, /workspace-identity, workspace sync, document sync
-  optional infrastructure Cloud Apps: billing, dashboard, hosted storage, assets
-  optional product Cloud Apps and App Instances: Ark, Betcha, others
+  composable host that mounts server core plus optional Cloud Apps
+  server core: auth, /workspace-identity, workspace sync, document sync
+  optional Cloud Apps: billing, dashboard, assets, Ark, Betcha, others
+  each Cloud App mounts at its own host with its own OAuth audience
 
 Epicenter Cloud
-  Epicenter's hosted composition of the Epicenter Server, including selected
-  Cloud Apps and App Instances; not a separate code platform
+  Epicenter's hosted composition of the Epicenter Server with the Cloud
+  Apps Epicenter chooses to run; not a separate code platform
 
 Epicenter Directory
   optional future discovery surface for apps, deployments, and trusted shared resources
@@ -457,7 +458,7 @@ Auth token capability boundary:
 
 - [ ] **3.1** Pick the smallest self-hosted origin shape:
   `https://epicenter.example.com/auth`, `/sync`, and `/api`.
-- [ ] **3.2** Map existing `apps/server` base modules and the planned `cloud-apps/` subtree onto that origin. There is no separate `apps/cloud` deployable to map; treat infrastructure Cloud Apps as colocated modules.
+- [ ] **3.2** Map existing `apps/server` base modules and the planned `cloud-apps/` subtree onto that origin. There is no separate `apps/cloud` deployable to map; every Cloud App is a colocated compile-time module mounted at its own host.
 - [ ] **3.3** Identify which state needs a database for self-hosted accounts.
 - [ ] **3.4** Identify which hosted Cloud features require Postgres and must stay out of the minimal server.
 

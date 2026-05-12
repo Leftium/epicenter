@@ -91,17 +91,18 @@ The important correction is this:
 
 ```txt
 Epicenter Server includes the private workspace core.
-Cloud Apps are optional registered capabilities.
-Operators configure instances.
-Instances own public records.
-Instances are OAuth protected resources.
-Cloud Apps are not.
+The Cloud App package (e.g. @epicenter/ark) is the inert capability:
+  routes, schema, scopes, policy.
+The operator mounts it with defineArk({ host }), producing an instance:
+  a mounted Cloud App bound to that host.
+Instances own public records and are the OAuth protected resources.
+Bare unmounted Cloud Apps cannot enter apps[]; the type system rejects them.
 ```
 
 Do not say "Cloud owns Ark" as if Cloud is one fixed product bundle. Ark is a
-Cloud App. `ark.epicenter.so` is one instance. The OAuth resource boundary
-(audience, scope, discovery) lives at the instance host, not at a generic
-cloud deployable.
+Cloud App package. `ark.epicenter.so` is one instance of it. The OAuth
+resource boundary (audience, scope, discovery) lives at the instance host,
+not at a generic cloud deployable.
 
 ## Current State
 
@@ -127,47 +128,34 @@ vocabulary, and it predates the cleaner OAuth resource boundary.
 
 ## Desired State
 
-Operators choose one composition model, then choose their physical deployment.
+Operators write one `epicenter.config.ts` and choose their physical deployment.
 
 ```txt
 Bob
-  composes:
-    Epicenter Server core only
+  apps: []
   gets:
-    private workspace auth and sync
-  does not configure:
-    instances
+    server core only (private workspace auth and sync at his origin)
 
 Epicenter Cloud
-  composes:
-    Epicenter Server core
-    ark, betcha, billing, assets, dashboard
-  configures:
-    ark.epicenter.so
-    betcha.epicenter.so
-    billing.epicenter.so
-    assets.epicenter.so
-    dashboard.epicenter.so
+  apps: [
+    defineArk({       host: 'ark.epicenter.so' }),
+    defineBetcha({    host: 'betcha.epicenter.so' }),
+    defineBilling({   host: 'billing.epicenter.so' }),
+    defineAssets({    host: 'assets.epicenter.so' }),
+    defineDashboard({ host: 'dashboard.epicenter.so' }),
+  ]
   gets:
     canonical hosted ecosystem
 
 Alice Cloud
-  composes:
-    Epicenter Server core
-    ark
-  configures:
-    ark.alice.com
+  apps: [defineArk({ host: 'ark.alice.com' })]
   gets:
-    her own Ark instance
+    her own Ark, isolated from epicenter.so
 
 Company Cloud
-  composes:
-    Epicenter Server core
-    betcha
-  configures:
-    betcha.company.com
+  apps: [defineBetcha({ host: 'betcha.company.com' })]
   gets:
-    private or public company Betcha instance
+    private or public company Betcha
 ```
 
 One host can do all of this:
@@ -176,21 +164,15 @@ One host can do all of this:
 +--------------------------------------------------------------+
 | createEpicenterServer({ ... })                               |
 |                                                              |
-| built-in core:                                               |
-|   auth                                                       |
-|   workspaceIdentity                                          |
-|   workspaceSync                                              |
-|   documentSync                                               |
+| built-in core (always at origin):                            |
+|   auth, workspaceIdentity, workspaceSync, documentSync       |
 |                                                              |
-| optional Cloud Apps:                                         |
-|   ark, betcha, billing, assets, dashboard                    |
-|                                                              |
-| operator instances:                                          |
-|   ark.epicenter.so                                           |
-|   betcha.epicenter.so                                        |
-|   billing.epicenter.so                                       |
-|   assets.epicenter.so                                        |
-|   dashboard.epicenter.so                                     |
+| apps: [ ...each entry mounted at its own host... ]           |
+|   defineArk({       host: 'ark.epicenter.so'       })        |
+|   defineBetcha({    host: 'betcha.epicenter.so'    })        |
+|   defineBilling({   host: 'billing.epicenter.so'   })        |
+|   defineAssets({    host: 'assets.epicenter.so'    })        |
+|   defineDashboard({ host: 'dashboard.epicenter.so' })        |
 +--------------------------------------------------------------+
 ```
 
@@ -206,36 +188,35 @@ The capability graph is stable even when the process graph changes.
 |   workspace, auth, sync, ui                                  |
 |                                                              |
 | host primitive                                               |
-|   createEpicenterServer({ origin, apps, instances })         |
+|   createEpicenterServer({ origin, apps })                    |
 +--------------------------------------------------------------+
                        |
                        v
 +--------------------------------------------------------------+
 | Epicenter Server composition                                  |
 |                                                              |
-| built-in core:                                               |
+| built-in core (at origin):                                   |
 |   sign-in, OAuth, /workspace-identity                        |
 |   workspace sync, document sync                              |
 |                                                              |
-| optional Cloud Apps:                                         |
-|   ark, betcha, billing, assets, dashboard                    |
+| operator's apps array (each entry mounted at its own host):  |
+|   defineArk({ host: 'ark.epicenter.so' })                    |
+|   defineBetcha({ host: 'betcha.epicenter.so' })              |
+|   defineBilling({ host: 'billing.epicenter.so' })            |
+|   defineDashboard({ host: 'dashboard.epicenter.so' })        |
 +--------------------------------------------------------------+
                        |
-                       | operator mounts one or more instances
-                       | for each enabled Cloud App
                        v
 +--------------------------------------------------------------+
-| Instances                                                     |
-|                                                              |
-|   ark.epicenter.so       app: ark,      operator: Epicenter   |
-|   betcha.epicenter.so    app: betcha,   operator: Epicenter   |
-|   billing.epicenter.so   app: billing,  operator: Epicenter   |
-|   ark.alice.com          app: ark,      operator: Alice       |
-|                                                              |
-| each instance publishes:                                     |
+| Each mounted Cloud App publishes:                             |
 |   /.well-known/oauth-protected-resource                      |
-|   token audience = instance host                             |
-|   scopes scoped to the Cloud App                             |
+|   token audience = its host                                  |
+|   scopes drawn from its own <app-id>:* namespace             |
+|                                                              |
+|   ark.epicenter.so       Cloud App: ark,    operator: Epicenter |
+|   betcha.epicenter.so    Cloud App: betcha, operator: Epicenter |
+|   billing.epicenter.so   Cloud App: billing,operator: Epicenter |
+|   ark.alice.com          Cloud App: ark,    operator: Alice     |
 +--------------------------------------------------------------+
 ```
 
@@ -338,18 +319,21 @@ Post:
 | Decision | Class | Choice | Rationale |
 | --- | --- | --- | --- |
 | Keep the server core built in | 2 coherence | `createEpicenterServer` always includes auth, workspace identity, workspace sync, and document sync | These capabilities are the substrate, not optional peers of Ark or Betcha. |
-| Unify the composition primitive | 2 coherence | One `createEpicenterServer` shape registers optional Cloud Apps and instances | Operators should not need a second architecture concept to add public app capabilities. |
+| One array, not two | 2 coherence | `apps: [defineArk({host}), defineBilling({host})]` is the only composition primitive | Cloud Apps and their mounts have a strict 1:1 cardinality for v1. Two arrays (apps + instances) forced a runtime "every app has at least one mount" check and a string-id cross-reference that adds nothing the type system cannot already express. |
+| Per-app factories, not generic mount() | 2 coherence | Each Cloud App package exports `defineX(operatorConfig)` returning a mounted Cloud App | A generic `mount(app, {host})` forces every app into the same operator-facing config shape. Real apps need bespoke knobs (`stripeKeyEnv`, `defaultModeration`) that a generic envelope cannot type. Each package owning its own factory keeps operator surface honest. |
 | Keep capability boundaries sharp | 2 coherence | Server core does not own public records | Social feeds, public records, moderation, and shared relational state are not workspace sync. |
-| One kind of Cloud App | 2 coherence | Every Cloud App, whether public-record (ark, betcha) or operator-facing (billing, assets, dashboard), mounts at its own instance host with `<app-id>:*` scopes | A second flavor with `cloud:*` scopes and a shared-origin shortcut produced two scope namespaces, two mount stories, and a hybrid API. The asymmetric win: refusing the shortcut collapses both flavors into one uniform model with no user-visible loss except a DNS record per enabled operator app. |
+| One kind of Cloud App | 2 coherence | Every Cloud App, whether public-record (ark, betcha) or operator-facing (billing, assets, dashboard), mounts at its own host with `<app-id>:*` scopes | A second flavor with `cloud:*` scopes and a shared-origin shortcut produced two scope namespaces, two mount stories, and a hybrid API. The asymmetric win: refusing the shortcut collapses both flavors into one uniform model with no user-visible loss except a DNS record per enabled operator app. |
 | Server origin is sync-only | 3 taste | Auth, workspace identity, workspace sync, and document sync live at the server origin; no Cloud App mounts there | Origin sharing was the only thing that made "infrastructure Cloud App" a separate concept. Removing it removes the special case. |
-| Make Cloud app-based | 2 coherence | Cloud Apps are compile-time modules registered by the host | Operators should not be forced to run Ark, Betcha, billing, assets, and dashboard as one bundle. |
-| Make instances first-class | 2 coherence | Each instance owns its host, audience, and records | A public URL needs one authoritative host for moderation, deletion, feeds, and policy. |
-| Derive instance type from registered apps | 2 coherence | `instances[].app` is typed as `apps[number]['id']` | A registered-but-missing-app reference becomes a compile-time error, not a startup-time check. Removes a class of runtime validation. |
-| Object config only | 2 coherence | No fluent `.withApp().withInstance()` builder | A builder cannot deliver the same compile-time cross-check between `apps` and `instances[].app`, and a hybrid object+builder API forces every reader to ask which path is canonical. |
+| Drizzle all the way down | 2 coherence | Cloud Apps export raw Drizzle modules (`pgSchema('<id>')` + tables + relations); no Epicenter schema IR, no wrapper around `pgTable`, no custom migration runner | Wrapping Drizzle costs re-exports, documentation, and debugging layers for no gain. drizzle-kit is the canonical migration tool; we delegate to it the way Better Auth delegates to the user's chosen ORM. |
+| One Postgres schema per Cloud App | 2 coherence | `pgSchema('ark')`, `pgSchema('billing')`, etc. Core stays in `public` | Native Postgres schemas give real namespace isolation, cross-schema FKs to `public.user` work natively, `DROP SCHEMA ark CASCADE` cleans up an app on disable. Cheaper than per-database isolation and stronger than name-prefix-only. |
+| Core tables live in `public` | 3 taste | Auth, OAuth, workspace identity, and asset tables stay in the default schema | Better Auth ships with the `public` assumption baked in. Moving it requires `search_path` config and friction with the Drizzle adapter. The asymmetry is meaningful: core is the substrate everyone references; Cloud Apps reference back. |
+| Cloud App `schema` field is the whole module | 2 coherence | `defineCloudApp({ schema: import * as schema from './schema' })` accepts the `pgSchema` instance, every table, and every relation | One rule for Cloud App authors: pass the module. No "remember to add relations to a second field" bug. |
+| Type-preserve apps through to `server.db` | 2 coherence | `createEpicenterServer<const TApps extends readonly CloudApp[]>(...)` returns `{ db: Database<MergeSchemas<TApps>> }` | Operators get `server.db.query.post` fully typed without hand-spreading schemas. The const generic costs one signature line; the alternative (`apps: CloudApp[]`) erases all column types. |
 | Treat Epicenter Cloud as a composition | 2 coherence | Canonical hosted ecosystem, not the platform itself | Other operators can host their own ecosystems without becoming Epicenter-the-company. |
 | Copy Better Auth's composition shape, not runtime installation | 2 coherence | Cloud Apps are package imports registered at build time | Package imports give developers extension points without a runtime marketplace, dynamic schema mutation, or unknown code loading. |
 | Islands by design | 2 coherence | Instances do not federate | Federation is a large protocol and moderation commitment for zero shipped users. Self-hostable islands give operators full control without an instance-to-instance protocol. If federation ever ships, it gets its own architecture spec. |
 | Keep integrations explicit | 2 coherence | Publish actions move private drafts into selected instances | Private workspace data should not become public by ambient sync. |
+| Object config only | 2 coherence | No fluent `.withApp()` builder, no chained `.mount()` | When items in a list don't depend on each other, the list is data and chaining hides it from every tool that wants to read it. See `docs/articles/20260512T200000-chaining-is-for-dependencies-arrays-are-for-peers.md`. |
 | License server-hosted Cloud Apps with network-copyleft intent | Deferred | Legal review required | The current AGPL pattern likely fits hosted server software, but final license wording is outside this architecture spec. |
 
 ## Boundary Rules
@@ -406,10 +390,9 @@ apps/server/src/
 |   `-- document-sync/
 |-- cloud-apps/
 |   |-- ark/
-|   |   |-- index.ts               (exports arkApp)
+|   |   |-- index.ts               (exports defineArk factory)
+|   |   |-- schema.ts              (pgSchema('ark') + tables + relations)
 |   |   |-- routes.ts
-|   |   |-- schema.ts
-|   |   |-- migrations/
 |   |   |-- scopes.ts
 |   |   |-- policy.ts
 |   |   `-- client.ts              (optional typed client helper)
@@ -417,34 +400,36 @@ apps/server/src/
 |   |-- billing/
 |   |-- assets/
 |   `-- dashboard/
-|-- instances/
-|   |-- instance.ts
-|   |-- instance-registry.ts
-|   `-- host-dispatch.ts
-|-- oauth-resource.ts
-`-- db/
-    `-- schema.ts                  (re-exports enabled Cloud App schemas)
+|-- host-dispatch.ts
+`-- oauth-resource.ts
 ```
 
 The private workspace core lives under `core/` because it is part of the
-Epicenter Server contract. Cloud Apps live under `cloud-apps/` because they are
-compile-time server capabilities. They contribute routes, schemas, migrations,
-scopes, policies, and optional typed client helpers. Instances live under
-`instances/` because operators configure them per deployment. The code
-primitive is instance; product docs may call public social instances
-"networks."
-
-App registration should avoid repeating the same app in two places. The host
-registers Cloud Apps once. Instances refer to the registered app by stable ID.
+Epicenter Server contract. Cloud Apps live under `cloud-apps/` because they
+are compile-time server capabilities. Each Cloud App owns its routes, its
+Drizzle schema (under a `pgSchema('<id>')` namespace), its scopes, its policy,
+and an optional typed client. The operator's mount config (host, name)
+travels with the Cloud App value the operator constructs at composition time.
+There is no separate `instances/` directory because instances are not a
+separate code primitive: a mounted Cloud App IS an instance. Product docs may
+call a public social instance a "network."
 
 ```ts
+import { createEpicenterServer } from '@epicenter/server';
+import { defineArk } from '@epicenter/ark';
+import { defineBilling } from '@epicenter/billing';
+import { defineDashboard } from '@epicenter/dashboard';
+
 export default createEpicenterServer({
 	origin: 'https://epicenter.so',
-	apps: [arkApp, billingApp, dashboardApp],
-	instances: [
-		{ app: 'ark',       host: 'ark.epicenter.so',       name: 'Ark' },
-		{ app: 'billing',   host: 'billing.epicenter.so' },
-		{ app: 'dashboard', host: 'dashboard.epicenter.so' },
+	apps: [
+		defineArk({ host: 'ark.epicenter.so', name: 'Ark' }),
+		defineBilling({
+			host: 'billing.epicenter.so',
+			stripeKeyEnv: 'STRIPE_KEY',
+			defaultPlan: 'free',
+		}),
+		defineDashboard({ host: 'dashboard.epicenter.so' }),
 	],
 });
 ```
@@ -452,53 +437,127 @@ export default createEpicenterServer({
 `audience` is derived as `https://<host>`. `issuer` is derived from the server
 `origin`. Do not add override fields until a real deployment needs them.
 
-The instance object uses `app: 'ark'` (string) instead of `arkApp.instance(...)`
-because the host should register each Cloud App once. Repeating the value
-object in both `apps: [arkApp]` and a fluent call would give TypeScript two
-paths for the same ownership relationship. TypeScript can derive the valid app
-IDs from the `apps` array so the string form is still type-checked:
+There is one array, not two. Each `defineX` factory returns a mounted Cloud
+App: a value that already carries its host, name, schema, routes, scopes, and
+policy. A bare unmounted Cloud App is not a valid entry; the type system
+rejects it.
 
 ```ts
-function createEpicenterServer<const TApps extends readonly CloudApp[]>(config: {
-	origin: `https://${string}`;
-	apps: TApps;
-	instances: ReadonlyArray<{
-		app: TApps[number]['id'];   // literal union of registered IDs
-		host: string;
-		name?: string;
-	}>;
-}): EpicenterServer;
+function createEpicenterServer<const TApps extends readonly CloudApp[]>(
+	config: { origin: `https://${string}`; apps: TApps }
+): {
+	db: Database<MergeSchemas<TApps>>;
+	// dispatch, lifecycle, ...
+};
 ```
 
-With this signature, "instance references an unregistered app" is a
-compile-time error at the call site, not just a startup-time check.
+The `const TApps` generic preserves each app's literal id and schema through
+to the returned `db`, so `server.db.query.post` is type-narrowed against the
+actual registered apps' tables without operators writing the spread manually.
+
+### What a Cloud App package exposes
+
+Each Cloud App ships its schema as a normal Drizzle module under its own
+`pgSchema(<id>)`, plus an operator-facing factory function. The schema file
+has no Epicenter-specific imports beyond a reference to core for cross-schema
+foreign keys:
 
 ```ts
-export const arkApp = defineCloudApp({
-	id: 'ark',
-	routes: arkRoutes,
-	schema: arkSchema,
-	migrations: arkMigrations,
-	scopes: ['ark:read', 'ark:publish'],
+// @epicenter/ark/src/schema.ts
+import { pgSchema, text, timestamp } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+import { user } from '@epicenter/server/schema';
+
+export const ark = pgSchema('ark');
+
+export const post = ark.table('post', {
+	id: text('id').primaryKey(),
+	authorId: text('author_id').notNull()
+		.references(() => user.id, { onDelete: 'cascade' }),
+	content: text('content').notNull(),
+	publishedAt: timestamp('published_at').defaultNow().notNull(),
 });
 
-export default createEpicenterServer({
-	origin: 'https://epicenter.so',
-	apps: [arkApp],
-	instances: [{ app: 'ark', host: 'ark.epicenter.so' }],
+export const profile = ark.table('profile', {
+	userId: text('user_id').primaryKey()
+		.references(() => user.id, { onDelete: 'cascade' }),
+	handle: text('handle').notNull().unique(),
+});
+
+export const postRelations = relations(post, ({ one }) => ({
+	author: one(user, { fields: [post.authorId], references: [user.id] }),
+}));
+```
+
+The factory is thin — it accepts the operator's mount config and forwards the
+schema module wholesale to `defineCloudApp`:
+
+```ts
+// @epicenter/ark/src/index.ts
+import { defineCloudApp } from '@epicenter/server';
+import * as schema from './schema';
+import { arkRoutes } from './routes';
+import { arkPolicy } from './policy';
+
+export function defineArk(config: { host: string; name?: string }) {
+	return defineCloudApp({
+		id: 'ark',
+		schema,                            // whole module: pgSchema + tables + relations
+		routes: arkRoutes,
+		scopes: ['ark:read', 'ark:publish'],
+		policy: arkPolicy,
+		host: config.host,
+		name: config.name,
+	});
+}
+```
+
+The `schema` field accepts the whole module export (the `pgSchema` instance,
+all tables, and all relations). `defineCloudApp` validates at construction
+time: the schema's name matches `id`, every table belongs to it, scopes
+prefix-match `id`, and no foreign key references a different Cloud App's
+schema.
+
+Object config only. A fluent `.withApp(...).mount(...)` builder is refused:
+hybrid object+builder APIs force every reader to ask which path is canonical,
+and the merged-array shape already gives one obvious composition root.
+
+### Drizzle all the way down
+
+The schema field accepts Drizzle's native types directly. Epicenter does not
+ship a schema IR, a wrapper around `pgTable`, or its own migration runner.
+The operator's `drizzle.config.ts` lists each Cloud App's schema module by
+path; `drizzle-kit generate` produces one migration journal across every
+registered Cloud App's `pgSchema`. The operator runs
+`bun drizzle-kit migrate` like any other Drizzle project.
+
+```ts
+// drizzle.config.ts
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+	dialect: 'postgresql',
+	schema: [
+		require.resolve('@epicenter/server/schema'),
+		require.resolve('@epicenter/ark/schema'),
+		require.resolve('@epicenter/billing/schema'),
+	],
+	out: './drizzle',
+	dbCredentials: { url: process.env.DATABASE_URL! },
 });
 ```
 
-Object form only. A fluent `.withApp().withInstance()` builder is refused: it
-cannot give the same compile-time cross-check that an instance's `app` field
-references one of the registered `apps`, and a hybrid object+builder API
-forces every reader to ask which path is canonical.
+Listing the schemas here and in `epicenter.config.ts` is duplication, but it
+is Drizzle's expected shape (file paths for kit, runtime values for the
+server). The runtime merge happens inside `createEpicenterServer`: it spreads
+every registered Cloud App's `schema` module into one object and instantiates
+`drizzle(pool, { schema: merged })`. Operators do not write the spread.
 
-Start with normal Drizzle migration ownership. Each Cloud App exports schema
-and migrations; the host imports enabled app schemas into one schema entrypoint
-and runs the ordinary migration pipeline. A future `cloud generate` command can
-scan `createEpicenterServer({ apps })` only after manual schema
-composition becomes painful.
+At boot, `createEpicenterServer` checks that every registered Cloud App's
+Postgres schema exists in the connected database. A registered Cloud App
+whose schema is missing fails fast with a clear message: "Cloud App `ark` is
+registered but its Postgres schema does not exist. Did you run drizzle-kit
+migrate?"
 
 ## OAuth And Scopes
 
@@ -617,10 +676,9 @@ hosts return 404. Instances cannot exist for apps that were not registered.
 ```ts
 const server = createEpicenterServer({
 	origin: 'https://epicenter.test',
-	apps: [arkApp, billingApp],
-	instances: [
-		{ app: 'ark',     host: 'ark.epicenter.test' },
-		{ app: 'billing', host: 'billing.epicenter.test' },
+	apps: [
+		defineArk({ host: 'ark.epicenter.test' }),
+		defineBilling({ host: 'billing.epicenter.test' }),
 	],
 });
 ```
@@ -633,11 +691,15 @@ rejects duplicate apps[].id
 rejects apps[].id that does not match /^[a-z][a-z0-9-]*$/
 rejects any scope in apps[].scopes that does not start with <id>:
 rejects overlapping scopes across registered apps
-rejects instances[].app not present in apps
-rejects duplicate instances[].host
-rejects instances[].host equal to URL.host(origin)
-rejects a registered app with no instance mount
+rejects duplicate apps[].host
+rejects apps[].host equal to URL.host(origin)
+rejects apps[].schema name that does not equal apps[].id
+rejects any foreign key in apps[].schema that points outside
+  public.* or the app's own schema
 rejects origin that is not https:// in production builds
+
+At boot (after construction):
+  rejects when a registered Cloud App's Postgres schema does not exist
 ```
 
 Host dispatch tests:
@@ -648,8 +710,8 @@ epicenter.test + /workspace-identity     routes to core identity
 epicenter.test + /workspaces/*           routes to workspace sync
 epicenter.test + /documents/*            routes to document sync
 epicenter.test + /api/*                  returns 404 (no Cloud App at origin)
-ark.epicenter.test + /api/ark/*          routes to Ark instance
-billing.epicenter.test + /api/billing/*  routes to Billing instance
+ark.epicenter.test + /api/ark/*          routes to Ark
+billing.epicenter.test + /api/billing/*  routes to Billing
 ark.epicenter.test + /.well-known/oauth-protected-resource returns 200
 ark.epicenter.test + /workspaces/*       returns 404 (sync is not at instance hosts)
 unknown.epicenter.test                   returns 404
@@ -659,12 +721,12 @@ OAuth boundary tests:
 
 ```txt
 audience(sync grant) = URL.host(origin)
-audience(app grant)  = URL.host(instance)
-sync token cannot publish to any instance
+audience(app grant)  = URL.host(apps[].host)
+sync token cannot publish to any Cloud App
 Ark token cannot open private workspaces
-Ark token for ark.alice.test cannot call ark.epicenter.test (same Cloud App, different instance)
+Ark token for ark.alice.test cannot call ark.epicenter.test (same Cloud App, different operator)
 billing token cannot call ark.epicenter.test
-protected-resource metadata at instance host names issuer derived from server origin
+protected-resource metadata at app host names issuer derived from server origin
 ```
 
 ## Licensing And Host Control
@@ -711,15 +773,16 @@ later clean break.
 
 ### Phase 2: Composition Skeleton
 
-- [ ] **2.1** Define `createEpicenterServer({ origin, apps, instances })` with built-in auth, workspace identity, workspace sync, and document sync.
-- [ ] **2.2** Define a `CloudApp` shape with route mounting, schema, migrations, scopes, policy, and optional typed clients.
-- [ ] **2.3** Define an `Instance` shape with `app`, `host`, and optional `name`.
+- [ ] **2.1** Define `createEpicenterServer({ origin, apps })` with built-in auth, workspace identity, workspace sync, and document sync. The `apps` array is `ReadonlyArray<MountedCloudApp>`; bare unmounted Cloud Apps are not valid entries.
+- [ ] **2.2** Define a `CloudApp` shape with `id`, `host`, `name?`, `schema` (whole Drizzle module), `routes`, `scopes`, `policy`, and optional typed client.
+- [ ] **2.3** Implement `defineCloudApp` as a single validator: schema name matches id, scopes prefix-match id, no foreign key in schema points outside `public.*` or the app's own schema.
 - [ ] **2.4** Derive `audience` from `host` and `issuer` from `origin`.
-- [ ] **2.5** Type `instances[].app` as `apps[number]['id']` so unregistered app references fail at compile time.
-- [ ] **2.6** Add exact host dispatch for the server origin and instance hosts.
-- [ ] **2.7** Add tests proving every registered Cloud App has at least one instance mount.
-- [ ] **2.8** Add tests proving an instance cannot reference an unregistered app and cannot share the server origin host.
-- [ ] **2.9** Re-export enabled Cloud App schemas through the host Drizzle schema entrypoint.
+- [ ] **2.5** Type the signature as `createEpicenterServer<const TApps extends readonly CloudApp[]>(...)` so each app's schema flows through to the returned `db: Database<MergeSchemas<TApps>>`.
+- [ ] **2.6** Add exact host dispatch for the server origin and every registered app's host.
+- [ ] **2.7** Add tests proving duplicate hosts, duplicate ids, and host == origin are rejected at construction.
+- [ ] **2.8** Add tests proving no Cloud App can FK to another Cloud App's schema; only to its own or to `public.*`.
+- [ ] **2.9** Spread every registered Cloud App's `schema` module into the internal Drizzle instance; expose `server.db` so operators do not write the spread.
+- [ ] **2.10** Add a boot-time check: for every registered app, verify its Postgres schema exists; fail fast with "Did you run drizzle-kit migrate?" if not.
 
 ### Phase 3: First Cloud App (Ark)
 
@@ -821,22 +884,68 @@ Two flavors of Cloud App (product vs infrastructure):
 
 Fluent builder API for createEpicenterServer:
   Status: refused. Object form only.
-  Reason: a builder cannot deliver the same compile-time check that
-  `instances[].app` references a registered `apps[].id`, and a hybrid
-  object+builder API forces every reader to ask which path is canonical.
+  Reason: when items in a list don't depend on each other, the list is
+  data; chaining hides it from every tool that wants to read it. See
+  docs/articles/20260512T200000-chaining-is-for-dependencies-arrays-are-for-peers.md.
 
-Multiple instances of the same Cloud App on one server:
-  Status: deferred. v1 accepts one mount per app.
+Generic mount() primitive:
+  Status: refused. Per-app `defineX(operatorConfig)` factories instead.
+  Reason: a generic envelope forces every Cloud App to share one
+  operator-facing config shape. Real apps need bespoke knobs (Billing
+  wants stripeKeyEnv, Ark wants moderation defaults, Dashboard wants CSP
+  reporting). Per-app factories let each package own its own type
+  surface.
+
+Two-array model (apps: [] + instances: []):
+  Status: refused. One `apps: [defineArk({host}), ...]` array only.
+  Reason: every Cloud App must have a host (v1 cardinality is 1:1), so
+  the separation made an invariant runtime-checkable that the type
+  system can express. The merged shape collapses the runtime check, the
+  string-id cross-reference, and the type-derivation trick into one
+  obvious composition root.
+
+Multiple mounts of the same Cloud App on one server:
+  Status: deferred. v1 accepts one mount per app id.
   Reason: no shipped use case. Add only when a real second mount appears,
-  and document the policy boundary at that time.
+  and relax `apps[].id` uniqueness to `(id, host)` uniqueness at that
+  time. The merged-array shape supports this purely additively.
 
-The `id` and `visibility` fields on an instance object:
+The `id` and `visibility` fields on a mounted Cloud App:
   Status: refused for v1.
-  Reason: `host` already uniquely identifies an instance. A second
+  Reason: `host` already uniquely identifies a mount. A second
   identifier invites drift. `visibility` was ambiguous (does it change
   routes, indexability, OAuth, or just operator-dashboard chrome?) so it
   is owned by the Cloud App's policy until a real product reason forces
   it back into mount config.
+
+SQLite, D1, and Turso support for Cloud Apps:
+  Status: refused for v1. Postgres only.
+  Reason: Postgres already covers Epicenter Cloud, self-hosted production
+  deployments, and local dev (`docker run postgres`). Multi-dialect work
+  costs adapter testing, dialect-aware schema wrappers, and per-driver
+  migration paths for zero shipped users. Cloud Apps use `pgSchema(<id>)`
+  directly; an operator who cannot run Postgres cannot run Cloud Apps in
+  v1. Reconsider only when a real operator needs SQLite and Postgres is
+  truly not an option.
+
+Cross-version data migrations inside Cloud Apps:
+  Status: refused for v1; documented as a known limitation.
+  Reason: drizzle-kit generates structural migrations (add column, drop
+  column) but not data migrations (backfill, transform). Cloud Apps
+  cannot ship `migrations/` folders the operator's drizzle journal will
+  consume, because the operator's drizzle-kit owns the journal. When a
+  Cloud App needs a destructive schema redesign, it ships a CHANGELOG
+  entry and a SQL snippet the operator runs manually before the next
+  `drizzle-kit migrate`. The framework owns structural migrations only.
+  Reconsider when a Cloud App in production hits this and the manual
+  step is genuinely worse than building a runner.
+
+Custom epicenter migrate CLI:
+  Status: refused. Operators run `bun drizzle-kit generate && migrate`.
+  Reason: drizzle-kit is the canonical migration tool. Wrapping it
+  delivers nothing real and forces us to version, document, and maintain
+  a CLI. Better Auth's pattern of "emit Drizzle, delegate to drizzle-kit"
+  applies here unchanged.
 ```
 
 ## Clean Break Rules

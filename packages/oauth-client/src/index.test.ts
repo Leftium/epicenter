@@ -12,7 +12,6 @@
 
 import { expect, test } from 'bun:test';
 import {
-	createBrowserOAuthLauncherFromApi,
 	createOAuthClient,
 	type OAuthTemporaryStorage,
 } from './index.js';
@@ -319,42 +318,3 @@ test('handleCallback rejects a token response without expires_in', async () => {
 	expect(error?.name).toBe('MissingExpiresIn');
 });
 
-test('createBrowserOAuthLauncherFromApi wires issuer resource and browser storage', async () => {
-	const { storage, values } = createMemoryStorage();
-	let launchedUrl: string | undefined;
-	const launcher = createBrowserOAuthLauncherFromApi({
-		apiBaseURL: 'http://auth.test',
-		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
-		storage: storage as Storage,
-		redirectTo: (url) => {
-			launchedUrl = url;
-		},
-	});
-	const originalFetch = globalThis.fetch;
-	const originalWindowDescriptor = Object.getOwnPropertyDescriptor(
-		globalThis,
-		'window',
-	);
-	globalThis.fetch = createFetch();
-	Object.defineProperty(globalThis, 'window', {
-		configurable: true,
-		value: { location: { href: 'http://app.test/auth/callback' } },
-	});
-	try {
-		const { data, error } = await launcher.startSignIn();
-
-		expect(error).toBeNull();
-		expect(data).toBeNull();
-		expect(launchedUrl).toContain('http://auth.test/auth/oauth2/authorize');
-		expect(launchedUrl).toContain('resource=http%3A%2F%2Fauth.test');
-		expect(values.size).toBe(1);
-	} finally {
-		globalThis.fetch = originalFetch;
-		if (originalWindowDescriptor) {
-			Object.defineProperty(globalThis, 'window', originalWindowDescriptor);
-		} else {
-			delete (globalThis as { window?: unknown }).window;
-		}
-	}
-});

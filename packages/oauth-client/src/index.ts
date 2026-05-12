@@ -112,29 +112,6 @@ export function createBrowserOAuthLauncher({
 	};
 }
 
-export function createBrowserOAuthLauncherFromApi({
-	apiBaseURL,
-	clientId,
-	redirectUri,
-	storage = sessionStorage,
-	redirectTo,
-}: {
-	apiBaseURL: string;
-	clientId: string;
-	redirectUri: string;
-	storage?: Storage;
-	redirectTo?: RedirectTo;
-}): OAuthLauncher {
-	return createBrowserOAuthLauncher({
-		issuer: `${apiBaseURL}/auth`,
-		clientId,
-		redirectUri,
-		resource: apiBaseURL,
-		storage: createStorageAdapter(storage),
-		...(redirectTo ? { redirectTo } : {}),
-	});
-}
-
 export function createExtensionOAuthLauncher({
 	launchWebAuthFlow,
 	...config

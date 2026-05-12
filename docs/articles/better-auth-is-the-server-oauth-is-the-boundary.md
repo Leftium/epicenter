@@ -1,5 +1,25 @@
 # Better Auth Is the Server, OAuth Is the Boundary
 
+> **Historical note (2026-05-12):** This article was written before the
+> `/workspace-identity` rename and the composable server cleanup. The
+> composition story it sketches is still right in spirit, but two pieces
+> are out of date.
+>
+> 1. `/me` is now `/workspace-identity`, and `AuthIdentity` is now
+>    `WorkspaceIdentity`. See
+>    `specs/20260511T150000-final-oauth-auth-architecture.md` for the
+>    current names and route shape.
+> 2. There is no separate `apps/cloud` deployable. Hosted features
+>    (billing, dashboard, assets, storage registry) and product surfaces
+>    (Ark, Betcha) are Cloud Apps inside the composable `apps/server`
+>    host. Physical splitting across processes or domains is operational
+>    topology, not a second product platform. See
+>    `specs/20260512T150000-cloud-modules-and-networks.md`.
+>
+> The rest of the article is preserved as written for context. Read it as
+> the older two-deployable framing; rely on the specs above for current
+> architecture.
+
 Epicenter uses Better Auth for auth-server machinery and OAuth for the
 app/runtime boundary. Better Auth still owns users, account cookies, login,
 consent, token issuing, revocation, JWKS, and metadata. Epicenter clients store

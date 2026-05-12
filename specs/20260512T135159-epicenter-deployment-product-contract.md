@@ -54,26 +54,29 @@ Apps should not read:
   deployment-specific cookie state
 ```
 
-The deployable split is less product-shaped. The OAuth architecture spec has useful pieces:
+The deployable split is less product-shaped. The OAuth architecture spec and
+the cloud modules companion spec describe a single composable host with
+optional Cloud Apps, not two separate deployables:
 
 ```txt
-apps/server:
+apps/server base modules:
   auth
   OAuth
   /workspace-identity
-  sync
-  self-hostable runtime
-  no Postgres requirement in the target
+  workspace sync
+  document sync
+  no Postgres requirement
 
-apps/cloud:
-  Drizzle
-  Postgres
-  billing
-  hosted dashboard
-  hosted control APIs
+apps/server cloud-apps subtree:
+  optional infrastructure Cloud Apps (billing, assets, dashboard)
+  optional product Cloud Apps (Ark, Betcha) plus operator App Instances
+  Drizzle and Postgres allowed inside Cloud Apps
 ```
 
-This is close, but it leaves a product question unresolved:
+Physical splitting (separate processes, separate domains) stays available as
+an operational topology choice, but `apps/server` and `apps/cloud` are not
+two separate product platforms. This still leaves a product question
+unresolved:
 
 ```txt
 What exactly is the thing an app connects to?
@@ -197,12 +200,14 @@ Epicenter Apps
   local-first apps built against the deployment contract
 
 Epicenter Server
-  self-hostable deployment runtime
-  includes accounts, workspace identity, sync, and resource APIs
+  composable host that mounts base modules and optional Cloud Apps
+  base modules: auth, /workspace-identity, workspace sync, document sync
+  optional infrastructure Cloud Apps: billing, dashboard, hosted storage, assets
+  optional product Cloud Apps and App Instances: Ark, Betcha, others
 
 Epicenter Cloud
-  Epicenter-managed deployment and hosted control plane
-  includes billing, dashboard, hosted storage registry, and shared services
+  Epicenter's hosted composition of the Epicenter Server, including selected
+  Cloud Apps and App Instances; not a separate code platform
 
 Epicenter Directory
   optional future discovery surface for apps, deployments, and trusted shared resources
@@ -452,7 +457,7 @@ Auth token capability boundary:
 
 - [ ] **3.1** Pick the smallest self-hosted origin shape:
   `https://epicenter.example.com/auth`, `/sync`, and `/api`.
-- [ ] **3.2** Map existing `apps/server` and `apps/cloud` responsibilities onto that origin.
+- [ ] **3.2** Map existing `apps/server` base modules and the planned `cloud-apps/` subtree onto that origin. There is no separate `apps/cloud` deployable to map; treat infrastructure Cloud Apps as colocated modules.
 - [ ] **3.3** Identify which state needs a database for self-hosted accounts.
 - [ ] **3.4** Identify which hosted Cloud features require Postgres and must stay out of the minimal server.
 

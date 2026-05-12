@@ -311,7 +311,7 @@ The phases below are ordered patches, not parallel feature tracks. Do not start 
 
 ### Phase 0: Freeze Scope and Protect Existing Work
 
-- [ ] **0.1** Confirm `apps/epicenter` does not exist in this checkout. If a task mentions it, resolve whether it means `apps/api`, `apps/cloud`, `apps/server`, or a new planned app before editing.
+- [ ] **0.1** Confirm `apps/epicenter` does not exist in this checkout. If a task mentions it, resolve whether it means current `apps/api`, the target composable `apps/server` host with its `cloud-apps/` subtree (see `specs/20260512T150000-cloud-modules-and-networks.md`), or a new planned app before editing. There is no separate `apps/cloud` deployable in the target.
 - [ ] **0.2** Preserve existing uncommitted work in `apps/api/src/app.ts`, `apps/dashboard/src/routes/+layout.svelte`, and app layout files. Do not rewrite those changes blindly.
 - [ ] **0.3** Update this spec with the exact machine-auth decision before implementing machine auth.
 
@@ -488,4 +488,4 @@ These are the questions that must stay answered as implementation proceeds.
 1. Should all current protected routes use `workspaces:open`, or should AI, billing, and assets get narrower scopes before launch?
 2. Is CLI/device login currently shipped to users? If yes, restore a working machine login path immediately. If no, delete or hide the stale surface until loopback PKCE lands.
 3. Should WebSocket token expiry be enforced by client reconnect only, server close only, or both?
-4. Which app did the `apps/epicenter` request intend: `apps/api`, `apps/cloud`, `apps/server`, or a new app?
+4. Which app did the `apps/epicenter` request intend: current `apps/api`, the planned composable `apps/server` host (with its `cloud-apps/` subtree), or a new app? Note: `apps/cloud` is not a separate deployable in the target architecture.

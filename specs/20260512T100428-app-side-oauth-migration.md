@@ -16,8 +16,11 @@ Migrate six consumer apps + `packages/svelte-utils` from
 `openWebSocket`), so the branch typechecks and ships the contract collapse
 already landed in `packages/auth`.
 
-Out of scope: `apps/server`, `apps/cloud`, Wave 5 deployable split,
-`apps/whispering` (no auth client).
+Out of scope: server composition work in `apps/server` (base modules and
+Cloud Apps), Wave 5 of the OAuth spec, and `apps/whispering` (no auth
+client). There is no separate `apps/cloud` target; Cloud Apps live inside
+the composable `apps/server` host (see
+`specs/20260512T150000-cloud-modules-and-networks.md`).
 
 ## 1. Auth-Form Decision
 

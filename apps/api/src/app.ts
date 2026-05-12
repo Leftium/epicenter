@@ -210,9 +210,11 @@ app.get('/sign-in', async (c) => {
 			return c.redirect(callbackURL);
 		}
 		// Already signed in, no redirect needed, show signed-in confirmation
-		const displayName = session.user.name ?? session.user.email;
 		return c.html(
-			renderSignedInPage({ displayName, email: session.user.email }),
+			renderSignedInPage({
+				displayName: session.user.email,
+				email: session.user.email,
+			}),
 		);
 	}
 	return c.html(renderSignInPage());
@@ -372,7 +374,6 @@ app.use('/ai/*', async (c, next) => {
 	const autumn = createAutumn(c.env);
 	const customer = await autumn.customers.getOrCreate({
 		customerId: c.var.user.id,
-		name: c.var.user.name ?? undefined,
 		email: c.var.user.email ?? undefined,
 		expand: ['subscriptions.plan'],
 	});

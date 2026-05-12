@@ -116,7 +116,6 @@ export const assetAuthedRoutes = new Hono<Env>()
 			const autumn = createAutumn(c.env);
 			await autumn.customers.getOrCreate({
 				customerId: c.var.user.id,
-				name: c.var.user.name ?? undefined,
 				email: c.var.user.email ?? undefined,
 			});
 

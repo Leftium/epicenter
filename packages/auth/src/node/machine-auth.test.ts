@@ -78,7 +78,6 @@ function makeSession({
 		accessTokenExpiresAt,
 		user: {
 			id: 'user-1',
-			name: 'User One',
 			email: 'user@example.com',
 		},
 		encryptionKeys: [...encryptionKeys],

@@ -145,10 +145,7 @@
 		{#if auth.state.status === 'signed-in'}
 			<div class="p-4 space-y-3">
 				<div class="space-y-1">
-					<p class="text-sm font-medium">{auth.state.identity.user.name}</p>
-					<p class="text-xs text-muted-foreground">
-						{auth.state.identity.user.email}
-					</p>
+					<p class="text-sm font-medium">{auth.state.identity.user.email}</p>
 				</div>
 				<div class="border-t pt-3 space-y-1">
 					<p class="text-xs text-muted-foreground">

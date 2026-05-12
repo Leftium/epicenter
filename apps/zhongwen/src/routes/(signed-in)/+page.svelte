@@ -72,7 +72,7 @@
 				</Button>
 
 				<span class="text-sm text-muted-foreground">
-					{requireSignedIn(auth).user.name}
+					{requireSignedIn(auth).user.email}
 				</span>
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device

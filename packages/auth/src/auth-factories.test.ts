@@ -28,7 +28,6 @@ function identity({
 		user: {
 			id: userId,
 			email: `${userId}@example.com`,
-			name: userId,
 		},
 		encryptionKeys: [
 			{

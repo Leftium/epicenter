@@ -81,14 +81,13 @@ export const DeviceTokenError = defineErrors({
 export type DeviceTokenError = InferErrors<typeof DeviceTokenError>;
 
 type MachineSessionSummary = {
-	user: Pick<OAuthSessionType['user'], 'id' | 'name' | 'email'>;
+	user: Pick<OAuthSessionType['user'], 'id' | 'email'>;
 };
 
 function sessionSummary(session: OAuthSessionType): MachineSessionSummary {
 	return {
 		user: {
 			id: session.user.id,
-			name: session.user.name,
 			email: session.user.email,
 		},
 	};

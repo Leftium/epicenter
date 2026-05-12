@@ -10,10 +10,6 @@
 import * as machineAuth from '@epicenter/auth/node/machine-auth';
 import { cmd } from '../util/cmd.js';
 
-function displayName(session: { user: { name: string; email: string } }) {
-	return session.user.name ?? session.user.email;
-}
-
 function failAuthCommand(error: { message: string }) {
 	console.error(error.message);
 	process.exitCode = 1;
@@ -44,7 +40,7 @@ const loginCommand = cmd({
 			return;
 		}
 
-		console.log(`✓ Logged in as ${displayName(result.data.session)}`);
+		console.log(`✓ Logged in as ${result.data.session.user.email}`);
 	},
 });
 
@@ -83,9 +79,7 @@ const statusCommand = cmd({
 		}
 
 		const { session } = result.data;
-		console.log(
-			`Logged in as: ${displayName(session)} (${session.user.email})`,
-		);
+		console.log(`Logged in as: ${session.user.email}`);
 		if (result.data.status === 'valid') {
 			console.log('Session:      verified');
 		} else {

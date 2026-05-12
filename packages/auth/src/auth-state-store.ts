@@ -64,9 +64,5 @@ function authStatesEqual(left: AuthState, right: AuthState) {
 }
 
 function usersEqual(left: AuthUser, right: AuthUser) {
-	return (
-		left.id === right.id &&
-		left.email === right.email &&
-		left.name === right.name
-	);
+	return left.id === right.id && left.email === right.email;
 }

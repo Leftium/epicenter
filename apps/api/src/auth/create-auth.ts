@@ -109,7 +109,6 @@ export function createAuth({
 						const autumn = createAutumn(env);
 						await autumn.customers.getOrCreate({
 							customerId: user.id,
-							name: user.name,
 							email: user.email,
 						});
 					},

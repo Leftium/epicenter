@@ -33,7 +33,6 @@ import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
 import {
 	renderConsentPage,
-	renderDevicePage,
 	renderSignedInPage,
 	renderSignInPage,
 } from './auth-pages';
@@ -236,26 +235,6 @@ app.get(
 		return c.html(renderConsentPage({ clientId, scope }));
 	},
 );
-app.get(
-	'/device',
-	sValidator('query', type({ 'user_code?': 'string' })),
-	async (c) => {
-		const { user_code: userCode } = c.req.valid('query');
-		const session = await c.var.auth.api.getSession({
-			headers: c.req.raw.headers,
-		});
-		if (!session) {
-			const callbackURL = userCode
-				? `/device?user_code=${encodeURIComponent(userCode)}`
-				: '/device';
-			return c.redirect(
-				`/sign-in?callbackURL=${encodeURIComponent(callbackURL)}`,
-			);
-		}
-		return c.html(renderDevicePage({ userCode }));
-	},
-);
-
 app.get(
 	'/workspace-identity',
 	describeRoute({

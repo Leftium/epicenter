@@ -25,8 +25,8 @@ function withReactiveState(auth: AuthClient): AuthClient {
 		onStateChange(fn) {
 			return auth.onStateChange(fn);
 		},
-		startSignIn(input) {
-			return auth.startSignIn(input);
+		startSignIn() {
+			return auth.startSignIn();
 		},
 		signOut() {
 			return auth.signOut();

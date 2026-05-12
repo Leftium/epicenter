@@ -10,9 +10,7 @@ export type AuthState =
 export type AuthClient = {
 	state: AuthState;
 	onStateChange(fn: (state: AuthState) => void): () => void;
-	startSignIn(input?: {
-		returnTo?: string;
-	}): Promise<Result<undefined, AuthError>>;
+	startSignIn(): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
 	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;

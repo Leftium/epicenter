@@ -110,14 +110,12 @@ test('startSignIn loads identity through auth/me and stores OAuthSession', async
 		now: () => now,
 		sessionStorage: setup.sessionStorage,
 		launcher: {
-			startSignIn: async (input) => {
-				expect(input).toEqual({ returnTo: '/workspaces/1' });
-				return Ok({
+			startSignIn: async () =>
+				Ok({
 					accessToken: 'oauth-access-token',
 					refreshToken: 'oauth-refresh-token',
 					accessTokenExpiresAt: now + 3_600_000,
-				});
-			},
+				}),
 		},
 		fetch: (async (input: Request | string | URL, init?: RequestInit) => {
 			fetches.push({ input, init });
@@ -125,7 +123,7 @@ test('startSignIn loads identity through auth/me and stores OAuthSession', async
 		}) as unknown as typeof fetch,
 	});
 
-	const result = await auth.startSignIn({ returnTo: '/workspaces/1' });
+	const result = await auth.startSignIn();
 
 	expect(result).toEqual(Ok(undefined));
 	expect(String(fetches[0]?.input)).toBe('http://localhost:8787/workspace-identity');

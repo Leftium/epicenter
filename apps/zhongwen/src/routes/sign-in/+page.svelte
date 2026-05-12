@@ -17,9 +17,7 @@
 		signInError = null;
 		signingIn = true;
 		try {
-			const { error } = await auth.startSignIn({
-				returnTo: window.location.href,
-			});
+			const { error } = await auth.startSignIn();
 			if (error) signInError = error.message;
 		} finally {
 			signingIn = false;

@@ -20,9 +20,7 @@ export type OAuthSessionStorage = {
 };
 
 export type OAuthSignInLauncher = {
-	startSignIn(input?: {
-		returnTo?: string;
-	}): Promise<Result<OAuthTokenGrant | null, unknown>>;
+	startSignIn(): Promise<Result<OAuthTokenGrant | null, unknown>>;
 };
 
 export type OAuthTokenRefresher = (input: {
@@ -194,9 +192,9 @@ export function createOAuthAppAuth({
 			return stateStore.state;
 		},
 		onStateChange: stateStore.onStateChange,
-		async startSignIn(input) {
+		async startSignIn() {
 			try {
-				const result = await launcher.startSignIn(input);
+				const result = await launcher.startSignIn();
 				if (result.error) {
 					return AuthError.StartSignInFailed({ cause: result.error });
 				}

@@ -1,9 +1,7 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import type { BetterAuthOptions } from 'better-auth';
-import { createAuthClient, InferPlugin } from 'better-auth/client';
+import { createAuthClient } from 'better-auth/client';
 import { deviceAuthorizationClient } from 'better-auth/client/plugins';
-import type { customSession } from 'better-auth/plugins';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -14,7 +12,6 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient } from '../auth-contract.js';
 import {
 	WorkspaceIdentity,
-	type WorkspaceIdentity as WorkspaceIdentityType,
 	OAuthSession,
 	type OAuthSession as OAuthSessionType,
 } from '../auth-types.js';
@@ -28,17 +25,10 @@ import {
 	saveMachineSession,
 } from './machine-session-store.js';
 
-type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<WorkspaceIdentityType, BetterAuthOptions>
->;
-
 const rawDefaultAuthClient = createAuthClient({
 	baseURL: EPICENTER_API_URL,
 	basePath: '/auth',
-	plugins: [
-		InferPlugin<EpicenterCustomSessionPlugin>(),
-		deviceAuthorizationClient(),
-	],
+	plugins: [deviceAuthorizationClient()],
 });
 
 const defaultAuthClient =

@@ -2,7 +2,6 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { customSession } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
 import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
 import { jwt } from 'better-auth/plugins/jwt';
@@ -14,8 +13,6 @@ import * as schema from '../db/schema';
 import { TRUSTED_ORIGINS } from '../trusted-origins';
 import { BASE_AUTH_CONFIG } from './base-config';
 import { createCookieAdvancedConfig } from './cookie-config';
-import { deriveUserEncryptionKeys } from './encryption';
-import { createWorkspaceIdentityResponse } from './workspace-identity-response';
 import { trustedOAuthClientIds } from './trusted-oauth-clients';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -31,10 +28,11 @@ type Db = NodePgDatabase<typeof schema>;
  * - Drizzle adapter (Postgres via Hyperdrive)
  * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
  * - Plugins: bearer tokens, JWT, device authorization, OAuth provider (PKCE)
- * - `customSession()` enrichment that returns the Epicenter identity
- *   for `/auth/get-session` responses
  * - Autumn billing customer creation on user signup
  * - Cloudflare KV secondary storage for session caching
+ *
+ * `/workspace-identity` is the single Epicenter identity surface; this builder
+ * no longer enriches `/auth/get-session` with encryption keys.
  */
 export function createAuth({
 	db,
@@ -175,52 +173,37 @@ export function createAuth({
 		},
 	} satisfies Omit<BetterAuthOptions, 'plugins'>;
 
-	const basePlugins = [
-		bearer(),
-		jwt(),
-		deviceAuthorization({
-			verificationUri: '/device',
-			expiresIn: '10m',
-			interval: '5s',
-			validateClient: (clientId) => clientId === EPICENTER_CLI_OAUTH_CLIENT_ID,
-		}),
-		oauthProvider({
-			loginPage: '/sign-in',
-			consentPage: '/consent',
-			requirePKCE: true,
-			cachedTrustedClients: trustedOAuthClientIds,
-			validAudiences: [baseURL],
-			allowDynamicClientRegistration: false,
-			scopes: [
-				'openid',
-				'profile',
-				'email',
-				'offline_access',
-				'workspaces:open',
-			],
-			// The plugin warns that /.well-known/oauth-authorization-server/auth must exist
-			// because basePath is /auth (not /), so it can't auto-mount at the root.
-			// We already mount both discovery endpoints manually in app.ts.
-			silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
-		}),
-	];
-	/**
-	 * Enrich `/auth/get-session` responses with the Epicenter identity.
-	 *
-	 * Derives a per-user key for every version in `ENCRYPTION_SECRETS`.
-	 * HKDF derivation adds <0.1ms per key, negligible next to the network round-trip.
-	 * Embedding all keys here eliminates separate key-fetch endpoints.
-	 */
-	const customSessionPlugin = customSession(
-		(input) => createWorkspaceIdentityResponse(input, { deriveUserEncryptionKeys }),
-		{
-			...authOptionsBase,
-			plugins: basePlugins,
-		},
-	);
-
 	return betterAuth({
 		...authOptionsBase,
-		plugins: [...basePlugins, customSessionPlugin],
+		plugins: [
+			bearer(),
+			jwt(),
+			deviceAuthorization({
+				verificationUri: '/device',
+				expiresIn: '10m',
+				interval: '5s',
+				validateClient: (clientId) =>
+					clientId === EPICENTER_CLI_OAUTH_CLIENT_ID,
+			}),
+			oauthProvider({
+				loginPage: '/sign-in',
+				consentPage: '/consent',
+				requirePKCE: true,
+				cachedTrustedClients: trustedOAuthClientIds,
+				validAudiences: [baseURL],
+				allowDynamicClientRegistration: false,
+				scopes: [
+					'openid',
+					'profile',
+					'email',
+					'offline_access',
+					'workspaces:open',
+				],
+				// The plugin warns that /.well-known/oauth-authorization-server/auth must exist
+				// because basePath is /auth (not /), so it can't auto-mount at the root.
+				// We already mount both discovery endpoints manually in app.ts.
+				silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
+			}),
+		],
 	});
 }

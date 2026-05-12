@@ -14,4 +14,4 @@ export {
 	type OAuthSignInLauncher,
 	type OAuthTokenRefresher,
 } from './create-oauth-app-auth.js';
-export { requireSignedIn } from './require-signed-in.js';
+export { requireIdentity } from './require-identity.js';

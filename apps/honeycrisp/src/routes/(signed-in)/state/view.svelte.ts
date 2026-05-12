@@ -13,7 +13,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { requireWorkspace } from '$lib/session.svelte';
+ *   import { requireWorkspace } from '$lib/session';
  *
  *   const workspace = requireWorkspace();
  * </script>

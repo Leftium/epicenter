@@ -9,7 +9,7 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import type { Note } from '../honeycrisp/workspace';
 
 	const workspace = requireWorkspace();

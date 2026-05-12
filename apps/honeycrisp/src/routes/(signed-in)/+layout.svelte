@@ -3,7 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
-	import { session } from '$lib/session.svelte';
+	import { session } from '$lib/session';
 	import { auth } from '$platform/auth';
 
 	let { children } = $props();

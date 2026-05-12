@@ -2,7 +2,7 @@
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Loading } from '@epicenter/ui/loading';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import type { NoteId } from '../honeycrisp/workspace';
 
 	const workspace = requireWorkspace();

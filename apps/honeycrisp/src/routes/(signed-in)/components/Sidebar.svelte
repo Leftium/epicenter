@@ -6,7 +6,7 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '$platform/auth';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
 	const workspace = requireWorkspace();

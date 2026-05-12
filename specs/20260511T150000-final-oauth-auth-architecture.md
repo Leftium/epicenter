@@ -22,6 +22,26 @@
 > The auth-internal logic in this spec is unchanged. Only the surrounding Cloud
 > App vocabulary has moved on. When implementation begins, the companion spec
 > is authoritative for the Cloud App boundary.
+
+> **Session vocabulary update (2026-05-12):** the app-side projection of
+> `AuthState` has since landed in
+> `specs/20260512T220000-session-two-axis-cohesive-reshape.md`. In the live code:
+>
+> - `Session<T>` is `SessionPayload<T> \| null` (no discriminant field).
+> - Apps gate route access on `if (session.current)` and reach the workspace
+>   through `current.workspace`.
+> - `createSession()` exposes `requireWorkspace()` for descendants and no
+>   longer takes a `name` field.
+> - The auth helper was renamed: `requireSignedIn` → `requireIdentity`.
+> - Each app's session module is now `src/lib/session.ts`, not
+>   `session.svelte.ts`.
+>
+> `AuthState` itself is unchanged and still has three states. Wherever this
+> spec or its examples reference the older app-side projection (e.g.
+> `getSignedInSession`, `current.status === 'signed-in'`, `InferSignedIn`,
+> `apps/<x>/src/lib/session.svelte.ts`), read them through the reshape spec's
+> current names.
+
 **Supersedes**:
 
 - `specs/20260511T105846-auth-oauth-everywhere-clean-break.md`

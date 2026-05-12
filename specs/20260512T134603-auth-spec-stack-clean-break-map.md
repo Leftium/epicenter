@@ -40,9 +40,17 @@ Server composition:
 | 0 | `specs/20260504T233223-sign-out-preserves-local-data.md` | Defines account exit: sign-out destroys live workspace memory while owner-scoped local data survives. | Runtime policy |
 | 1 | `specs/20260511T150000-final-oauth-auth-architecture.md` | Defines the architecture: `AuthClient`, Better Auth server machinery, `/workspace-identity`, OAuth resource scopes, and server composition boundaries. | North star |
 | 2 | `specs/20260512T100428-app-side-oauth-migration.md` | Moves consumer apps onto the `AuthClient` surface. | Migration track |
-| 3 | `specs/20260512T111335-post-oauth-audit-remediation.md` | Fixes correctness gaps left after migration. | Immediate obligation |
+| 3 | `specs/20260512T111335-post-oauth-audit-remediation.md` | Fixes correctness gaps left after migration. Phase 3 (local workspace lifetime during reauth) is **superseded** by order 3.5; the rest still applies. | Immediate obligation |
+| 3.5 | `specs/20260512T220000-session-two-axis-cohesive-reshape.md` | Reshapes `Session<T>` to `SessionPayload<T> \| null`, renames `requireSignedIn` to `requireIdentity` and per-app `getSignedInSession` to `requireWorkspace`, and delivers the same-user `reauth-required` invariant. **Landed.** | Runtime cohesion fix |
 | 4 | `specs/20260512T114350-auth-token-capability-boundary.md` | Cleans up token ownership, persisted session shape, and storage vocabulary. | Long-term boundary cleanup |
 | 5 | Future server composition spec | Moves pieces out of `apps/api` into a composable server host after the auth contract is stable. Physical splitting stays optional. | Later |
+
+Rejected, do not execute: `specs/20260512T161042-async-storage-and-build-unification.md`
+collapsed sync and async session construction into one async builder. A second
+pass rejected the proposal; tab-manager's async readiness story stays open but
+will not be solved by that spec. The handoff prompt
+`specs/20260512T220000-session-two-axis-cohesive-reshape.handoff.prompt.md` is
+historical and not executable; the reshape has already landed.
 
 ## Product Stack (parallel to the auth stack)
 
@@ -67,7 +75,8 @@ contradict; cross-references go through this map.
 | --- | --- |
 | What is the public app auth API? | `specs/20260511T150000-final-oauth-auth-architecture.md` |
 | How do apps migrate to that API? | `specs/20260512T100428-app-side-oauth-migration.md` |
-| What must be fixed before the migration is trustworthy? | `specs/20260512T111335-post-oauth-audit-remediation.md` |
+| What must be fixed before the migration is trustworthy? | `specs/20260512T111335-post-oauth-audit-remediation.md` (Phase 3 superseded by the reshape spec) |
+| What shape does the app-side session projection take? | `specs/20260512T220000-session-two-axis-cohesive-reshape.md` (`SessionPayload<T> \| null`, `requireWorkspace()`, `requireIdentity()`) |
 | Who owns access tokens and refresh tokens? | `specs/20260512T114350-auth-token-capability-boundary.md` |
 | What does sign-out do to local workspace memory and persistence? | `specs/20260504T233223-sign-out-preserves-local-data.md` |
 | Where do new product surfaces (Ark, Betcha, billing, dashboard) live and what scopes do they need? | `specs/20260512T150000-cloud-modules-and-networks.md` |
@@ -210,10 +219,11 @@ Keep these rules as the guardrail for future auth specs:
 
 ```txt
 1. Finish app-side OAuth migration if any app still imports old auth factories.
-2. Land post-OAuth remediation.
-3. Run the token capability clean break.
-4. Update docs and skills to the new vocabulary.
-5. Only then start server composition work. Split processes only if operations demand it.
+2. Land post-OAuth remediation (Phases 1, 2, 4, 5, 6).
+3. Land the session two-axis reshape (covers remediation Phase 3). DONE.
+4. Run the token capability clean break.
+5. Update docs and skills to the new vocabulary.
+6. Only then start server composition work. Split processes only if operations demand it.
 ```
 
 ## Success Criteria

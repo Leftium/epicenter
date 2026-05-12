@@ -6,6 +6,19 @@
 **Depends on**: `specs/20260511T150000-final-oauth-auth-architecture.md`
 **Supersedes in part**: `specs/20260413T120000-server-authoritative-apps-wager-social.md`
 
+> **Canonical vocabulary (locked):**
+>
+> - The code primitive is `mounted Cloud App`, produced by `defineX({ host })`.
+> - The composition primitive is one `apps: [...]` array; there is no separate
+>   `instances: [...]` array. The two-array model is refused (see Deferred).
+> - Composition entry point is `createEpicenterServer({ origin, apps })`.
+> - There is one kind of Cloud App. The "infrastructure Cloud App vs product
+>   Cloud App" distinction is refused (see Deferred). Every Cloud App, public
+>   or operator-facing, mounts at its own host with `<app-id>:*` scopes.
+> - "Instance" and "network" remain valid **product** wording for a publicly
+>   hosted mounted Cloud App, with the meaning defined in the Vocabulary
+>   section. They are not separate code primitives.
+
 ## One Sentence
 
 Epicenter Server hosts private workspaces at one origin, plus any number of

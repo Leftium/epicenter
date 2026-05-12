@@ -242,7 +242,7 @@ reauth-required
 
 The disposal rule is simple: dispose on signed out or different user, not on same-user network auth failure.
 
-Expected session shape:
+Expected session shape (as originally proposed by this remediation):
 
 ```ts
 type Session<TSignedIn> =
@@ -254,6 +254,13 @@ type Session<TSignedIn> =
 			signedIn: TSignedIn;
 	  };
 ```
+
+> **Superseded.** `specs/20260512T220000-session-two-axis-cohesive-reshape.md`
+> collapsed this three-state discriminator to `SessionPayload<T> | null` (no
+> discriminant field) and pushed credential freshness back to `auth.state`.
+> The runtime invariant (same-user `reauth-required` keeps local workspace
+> mounted) is the same; the shape that delivers it changed. The current code
+> in `packages/svelte-utils/src/session.svelte.ts` follows the nullable shape.
 
 ### Protected Resource Check
 

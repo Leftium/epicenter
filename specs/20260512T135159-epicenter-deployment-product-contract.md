@@ -10,6 +10,16 @@
 - `specs/20260512T114350-auth-token-capability-boundary.md`
 - `specs/20260512T150000-cloud-modules-and-networks.md`
 
+> **Server-composition vocabulary (defer to companion spec):** the canonical
+> server-side composition primitive is `createEpicenterServer({ origin, apps })`,
+> where each `apps[]` entry is a mounted Cloud App produced by `defineX({ host })`.
+> There is no separate `instances: [...]` array, and no separate flavor for
+> "infrastructure" vs "product" Cloud Apps. See
+> `specs/20260512T150000-cloud-modules-and-networks.md` for the locked details.
+> This spec is the *consumer-side* deployment contract: how an app picks
+> between local-only, self-hosted, and Epicenter Cloud, and which resources
+> that deployment exposes.
+
 ## One Sentence
 
 Epicenter apps run against a deployment contract: local-only, self-hosted, or Epicenter Cloud, with shared infrastructure participating only when a resource server explicitly trusts the user's deployment.

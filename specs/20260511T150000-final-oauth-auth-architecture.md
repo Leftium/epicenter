@@ -5,23 +5,7 @@
 **Author**: AI assisted
 **Stack Map**: `specs/20260512T134603-auth-spec-stack-clean-break-map.md`
 **Stack Position**: North star for the auth stack.
-**Companion spec**: `specs/20260512T150000-cloud-modules-and-networks.md` (product-layer north star; owns the composable server shape, including built-in core, compile-time Cloud Apps, and per-Cloud-App OAuth resources)
-
-> **Vocabulary update (2026-05-12):** the companion spec has since collapsed
-> several distinctions this auth spec was written against. Read references in
-> this document accordingly:
->
-> | Old wording in this spec | Current model in companion spec |
-> | --- | --- |
-> | "infrastructure Cloud App" vs "product Cloud App" | one uniform Cloud App; every Cloud App mounts at its own host with `<app-id>:*` scopes |
-> | "App Instance" / "App Instance host" | "mounted Cloud App" / the host the app was mounted at; instance is no longer a separate config primitive |
-> | "base modules" | "server core" — auth, workspace identity, workspace sync, document sync (substrate, not a Cloud App) |
-> | `cloud:billing`, `cloud:storage` | `billing:*`, `assets:*` (each Cloud App owns its own scope namespace) |
-> | `appInstances: [...]` config key | merged into `apps: [defineX({ host })]` |
->
-> The auth-internal logic in this spec is unchanged. Only the surrounding Cloud
-> App vocabulary has moved on. When implementation begins, the companion spec
-> is authoritative for the Cloud App boundary.
+**Companion spec**: `specs/20260512T150000-cloud-modules-and-networks.md` (product-layer north star; owns the composable server shape, including server core, compile-time Cloud Apps, and per-Cloud-App OAuth resources)
 
 > **Session vocabulary update (2026-05-12):** the app-side projection of
 > `AuthState` has since landed in
@@ -68,7 +52,7 @@ Layer 2: Server composition (a separate decision)
   Epicenter Server: composable host
   Base modules: auth, /workspace-identity, workspace sync, document sync
   Optional Cloud Apps: billing, assets, dashboard, Ark, Betcha
-  Hosted domains: accounts.epicenter.so, sync.epicenter.so, api.epicenter.so, App Instance hosts
+  Hosted domains: accounts.epicenter.so, sync.epicenter.so, api.epicenter.so, Cloud App hosts
 ```
 
 The auth contract collapse must land before any server composition cleanup.
@@ -79,7 +63,7 @@ in place.
 The target is not "Better Auth everywhere." The target is narrower:
 
 ```txt
-Epicenter Server base modules:
+Epicenter Server core:
   account cookies
   Better Auth raw User and Session records
   OAuth login and consent
@@ -97,7 +81,7 @@ Optional Cloud Apps:
   hosted storage registry
   asset management
   dashboard and hosted control APIs
-  product App Instances such as Ark and Betcha
+  Cloud Apps such as Ark and Betcha
 
 Epicenter clients:
   private OAuthSession storage
@@ -425,12 +409,14 @@ email
   Auth user row inside /workspace-identity, not from token claims.
 ```
 
-Cloud control APIs do not need `workspaces:open`. A Cloud client requests an
-audience-bound token for `api.epicenter.so` with `offline_access` and any
-cloud-specific scopes the protected resource enforces (for example
-`cloud:billing`, `cloud:storage`). Cloud scopes are out of scope for this
-spec; they are listed only so the boundary stays clear: a sync token must not
-work against Cloud, and a Cloud token must not work against sync.
+Cloud App routes do not need `workspaces:open`. A client requests an
+audience-bound token for the specific Cloud App's host (e.g.
+`billing.epicenter.so`) with `offline_access` and any Cloud-App-specific
+scopes the protected resource enforces (for example `billing:read`,
+`billing:admin`). Per-Cloud-App scope namespaces are owned by the companion
+spec; they are listed only so the boundary stays clear: a sync token must
+not work against a Cloud App, and a Cloud App token must not work against
+sync, and a token for one Cloud App must not work against another.
 
 ### Hosted Versus Self-Hosted Composition
 
@@ -456,7 +442,7 @@ Hosted Epicenter (one composition, multiple public origins):
     /documents/*
 
   api.epicenter.so
-    served by infrastructure Cloud Apps
+    served by Cloud Apps
     OAuth protected resource for hosted control plane
     /.well-known/oauth-protected-resource
     /api/*
@@ -530,7 +516,7 @@ New model:
   AuthUser is small and stripped
 ```
 
-The smell is not the date normalization helper anymore. That helper was a symptom. The deeper problem is mixed credential ownership and mixed module ownership. A first-party browser app, extension, Tauri app, CLI, and daemon should not each teach the auth package a different credential family. A composed Epicenter Server running only base modules should also not have to import infrastructure Cloud Apps just to sync a workspace.
+The smell is not the date normalization helper anymore. That helper was a symptom. The deeper problem is mixed credential ownership and mixed module ownership. A first-party browser app, extension, Tauri app, CLI, and daemon should not each teach the auth package a different credential family. A composed Epicenter Server running only server core should also not have to import Cloud Apps just to sync a workspace.
 
 ## Non-Negotiable Invariants
 
@@ -719,7 +705,7 @@ Account profile metadata (created_at, image, emailVerified, etc.):
   must not become a back door for session metadata
 
 Cloud billing, assets, hosted storage registry:
-  stay inside infrastructure Cloud Apps
+  stay inside Cloud Apps
   must not enter workspace identity, /workspace-identity, or encryption key derivation
   must not be required for workspace boot
 
@@ -752,7 +738,7 @@ OAuth machinery, identity projection, and server composition.
 | App auth contract | `AuthClient`, `AuthState`, `WorkspaceIdentity`, `auth.fetch`, `auth.openWebSocket`, `startSignIn`, `signOut` | OAuth endpoints, raw tokens, Better Auth sessions, deployment domains |
 | Better Auth OAuth provider | authorize, token, revoke, metadata, JWKS, PKCE, consent, trusted clients, token issuing | Epicenter encryption keys, workspace identity projection, app transport API |
 | Epicenter identity projection | `/workspace-identity`, `AuthUser`, encryption key derivation, `WorkspaceIdentity` | OAuth token issuing, revocation, metadata, JWKS, consent |
-| Server composition and domain boundary | base modules, optional Cloud Apps, hosted domains, infrastructure ownership | Public app auth shape |
+| Server composition and domain boundary | server core, optional Cloud Apps, hosted domains, infrastructure ownership | Public app auth shape |
 
 Current code maps to those buckets like this:
 
@@ -779,7 +765,7 @@ Epicenter identity projection:
 
 Server composition and product boundary:
   current apps/api mixes base server modules and cloud work
-  target server host owns base modules
+  target server host owns server core
   optional Cloud Apps own hosted control-plane and public-record work
 ```
 
@@ -822,7 +808,7 @@ composition cleanup is downstream from the auth cleanup. Physical splitting is
 optional topology, not the product model.
 
 ```txt
-Epicenter Server base modules:
+Epicenter Server core:
   Better Auth
   OAuth provider
   /workspace-identity
@@ -836,7 +822,7 @@ Optional Cloud Apps:
   hosted storage registry
   assets
   dashboard
-  product App Instances
+  Cloud Apps
 ```
 
 Hosted domains can still split by public protocol role:
@@ -851,7 +837,7 @@ sync.epicenter.so
   OAuth protected resource for /workspace-identity, workspaces, and documents
 
 api.epicenter.so
-  served by infrastructure Cloud Apps
+  served by Cloud Apps
   OAuth protected resource for hosted control APIs
 ```
 
@@ -932,7 +918,7 @@ back into "one API app" unless the product boundary stays visible.
 |   hosted storage registry                                    |
 |   cloud asset management                                     |
 |   public records                                             |
-|   App Instances                                              |
+|   Cloud Apps                                              |
 +--------------------------------------------------------------+
                          |
                          | OAuth access token
@@ -963,7 +949,7 @@ back into "one API app" unless the product boundary stays visible.
 ```
 
 This spec stops at "the server host can compose Cloud Apps." The Cloud App
-list, App Instance shape, and per-app scope namespaces are owned by the
+list, Cloud App shape, and per-app scope namespaces are owned by the
 companion spec (`cloud-modules-and-networks.md`). Do not freeze billing,
 assets, or dashboard as permanent fields of a global cloud env: they are Cloud
 Apps, optional per operator.
@@ -1008,7 +994,7 @@ Capability product axis:
 Do not let the hostname axis choose the package boundary. A self-hosted install
 wants a small server that can run auth and sync without Postgres. A hosted
 composition can add Drizzle, Postgres, billing, registry tables, asset
-management, reconciliation jobs, dashboard APIs, and product Cloud Apps.
+management, reconciliation jobs, dashboard APIs, and Cloud Apps.
 
 The corrected product sentence:
 
@@ -1026,11 +1012,11 @@ Final app shape:
 ```txt
 apps/server
   composable Hono server
-  base modules have no Postgres dependency
+  server core has no Postgres dependency
   optional Cloud Apps may use Drizzle and Postgres
   auth, OAuth, /workspace-identity, workspace sync, document sync
   billing, registry, asset management, storage controls, hosted dashboards
-  product App Instances
+  Cloud Apps
 ```
 
 Avoid naming the self-hostable runtime `accounts`. Account pages are only one
@@ -1079,7 +1065,7 @@ sync.epicenter.so
   OAuth protected resource for /workspace-identity, workspaces, and documents
 
 api.epicenter.so
-  served by infrastructure Cloud Apps
+  served by Cloud Apps
   hosted cloud control plane
 ```
 
@@ -1087,21 +1073,21 @@ One composition root keeps the code boundary clean:
 
 ```txt
 apps/server
-  base modules:
+  server core:
     no Postgres
     auth + sync
 
-  optional infrastructure Cloud Apps:
+  optional Cloud Apps:
     Postgres allowed
     billing + assets + dashboard
 
-  optional product Cloud Apps:
+  optional Cloud Apps:
     Postgres allowed
-    Ark, Betcha, configured per App Instance
+    Ark, Betcha, configured per Cloud App
 ```
 
 There is no separate `apps/cloud` deployable in the target. The hosted
-control plane lives as infrastructure Cloud Apps inside the same composable
+control plane lives as Cloud Apps inside the same composable
 host. Physical splitting across processes or domains stays available as an
 operational topology, but it is not a second product platform.
 
@@ -1164,7 +1150,7 @@ sync.epicenter.so
      -> identity and sync routes
 
 api.epicenter.so
-  -> infrastructure Cloud Apps
+  -> Cloud Apps
      -> dashboard and hosted control APIs
 ```
 
@@ -1201,7 +1187,7 @@ apps/server
 `-- createServerApp()
     |-- mounts accounts routes for accounts.epicenter.so
     |-- mounts sync routes for sync.epicenter.so
-    `-- mounts Cloud App routes for api.epicenter.so and App Instance hosts
+    `-- mounts Cloud App routes for api.epicenter.so and Cloud App hosts
 ```
 
 Composition happens at the app root, not inside the feature modules:
@@ -1277,25 +1263,25 @@ CloudAppEnv
 |   |-- Drizzle
 |   `-- Postgres
 |-- cloudApps
-|   |-- registered product Cloud Apps
-|   `-- registered infrastructure Cloud Apps
+|   |-- registered Cloud Apps
+|   `-- registered Cloud Apps
 |-- instances
-|   `-- operator-configured App Instances per product Cloud App
+|   `-- operator-configured Cloud Apps per Cloud App
 `-- config
     `-- host origins
 
 createCloudAppRoutes(CloudAppEnv)
   -> verifies OAuth access tokens against the cloud-host audience
-  -> dispatches infrastructure Cloud App routes (billing, assets, dashboard)
+  -> dispatches Cloud App routes (billing, assets, dashboard)
   -> does not derive encryption keys
 
 createAppInstanceRoutes(CloudAppEnv, instance)
-  -> verifies OAuth access tokens against the App Instance audience
+  -> verifies OAuth access tokens against the Cloud App audience
   -> dispatches the owning Cloud App's product routes
   -> publishes /.well-known/oauth-protected-resource for the instance host
 ```
 
-The exact Cloud App list, App Instance shape, and per-app scope namespaces
+The exact Cloud App list, Cloud App shape, and per-app scope namespaces
 live in `cloud-modules-and-networks.md`. This spec only commits that App
 Instances are OAuth protected resources distinct from the cloud-host resource.
 
@@ -1335,7 +1321,7 @@ Why rejected:
   scaling or ownership need
 
 Mountable modules inside one composable host:
-  apps/server has accounts and sync base modules
+  apps/server provides accounts, /workspace-identity, and sync (server core)
   apps/server also registers optional Cloud Apps
 
 Why accepted:
@@ -1585,7 +1571,7 @@ https://api.epicenter.so
 /dashboard/*
 ```
 
-Epicenter Cloud is our hosted composition. Its infrastructure Cloud Apps form
+Epicenter Cloud is our hosted composition. Its Cloud Apps form
 an OAuth protected resource, but they are not the primary identity or sync
 runtime. They verify access tokens issued by the account base module and serve
 hosted-only control-plane APIs.
@@ -1594,7 +1580,7 @@ hosted-only control-plane APIs.
 `/auth/me`, or `/auth/workspace-identity`, and do not put workspace boot
 identity on Cloud.
 
-Dashboard lives under an infrastructure Cloud App:
+Dashboard lives under an Cloud App:
 
 ```txt
 https://api.epicenter.so/dashboard/*
@@ -1658,26 +1644,26 @@ the Cloud control plane by accident. If a third-party app needs both workspace
 sync and hosted Cloud APIs, it should request separate resource grants with the
 smallest scopes each resource enforces.
 
-App Instance resources extend this list. Each product Cloud App instance
+Cloud App resources extend this list. Each Cloud App instance
 (for example `ark.epicenter.so`, `betcha.epicenter.so`, `ark.alice.com`) is
 its own OAuth protected resource with its own
 `/.well-known/oauth-protected-resource`, its own audience, its own scope
-namespace, and its own CORS allowlist. The App Instance resource boundary
+namespace, and its own CORS allowlist. The Cloud App resource boundary
 is owned by the companion spec
 (`specs/20260512T150000-cloud-modules-and-networks.md`). The rule from
 this spec stays the same: tokens are audience-bound, never substitutable
-across resources, never able to claim more than one App Instance at a time.
+across resources, never able to claim more than one Cloud App at a time.
 
 Do not add a static WebSocket `Origin` allowlist for bearer sync. Browser
 WebSocket sync is authorized by the scoped OAuth access token. Origin checks are
 appropriate for cookie-authenticated browser flows, account pages, and any
 future route that depends on ambient browser credentials.
 
-Pricing and hosted subscription state belong to infrastructure Cloud Apps,
+Pricing and hosted subscription state belong to Cloud Apps,
 not to a separate deployable:
 
 ```txt
-infrastructure Cloud Apps inside apps/server
+Cloud Apps inside apps/server
 |-- billing Cloud App
 |   |-- dashboard pricing pages
 |   |-- checkout and subscription screens
@@ -1693,12 +1679,12 @@ infrastructure Cloud Apps inside apps/server
 Base server modules may show account settings that are required for sign-in,
 recovery, MFA, passkeys, consent, and self-hosted account administration. They
 must not need pricing tables, billing provider SDKs, hosted plan state, or
-infrastructure Cloud App registry tables to boot.
+Cloud App registry tables to boot.
 
 Infrastructure Cloud App dependency tree:
 
 ```txt
-infrastructure Cloud Apps
+Cloud Apps
 |-- depend on:
 |   |-- packages/ui
 |   |-- packages/auth shared types
@@ -1735,8 +1721,8 @@ base server modules
     |-- Drizzle Postgres bindings
     |-- billing provider SDKs
     |-- hosted storage registry
-    |-- infrastructure Cloud App source
-    `-- product Cloud App or App Instance code
+    |-- Cloud App source
+    `-- Cloud App or Cloud App code
 ```
 
 `/workspace-identity` flow:
@@ -1837,11 +1823,11 @@ sync token:
   scope = workspaces:open offline_access
   used for /workspace-identity, workspaces, documents
 
-cloud token:
-  issuer = accounts.epicenter.so
-  resource = api.epicenter.so
-  scope = offline_access plus any cloud:* scopes the API enforces
-  used for billing, storage registry, assets, dashboard APIs
+Cloud App token (one per app, one audience each):
+  issuer = the server's OAuth issuer
+  resource = the Cloud App's host (e.g. billing.epicenter.so)
+  scope = offline_access plus that Cloud App's own <app-id>:* scopes
+  used only against the Cloud App at that host
 ```
 
 Do not reuse a token across resource audiences.
@@ -2134,7 +2120,7 @@ the composable `apps/server` host with its `cloud-apps/` subtree.
 2. Keep OAuth protocol work in Better Auth.
 3. Move Epicenter identity projection to /workspace-identity.
 4. Delete old credential bridges inside current apps/api.
-5. Only then move base modules and Cloud Apps into apps/server.
+5. Only then move server core and Cloud Apps into apps/server.
    Physical deployable splitting stays optional after composition lands.
 ```
 
@@ -2515,7 +2501,7 @@ Each commit body should reference the wave items it implements (3.5, 3.6,
 - [ ] **5.3** Configure Better Auth with root OAuth paths.
 - [ ] **5.4** Keep `oauthProvider`, `jwt`, and configured login providers.
 - [ ] **5.5** Do not include `customSession`, `bearer`, or Better Auth `deviceAuthorization` in the final server path.
-- [ ] **5.6** Enforce the no-Postgres boundary for base modules with package dependencies and tests.
+- [ ] **5.6** Enforce the no-Postgres boundary for server core with package dependencies and tests.
 - [ ] **5.7** Serve `accounts.epicenter.so` and `sync.epicenter.so` from these modules in hosted production.
 - [ ] **5.8** Keep accounts and sync as mountable Hono route modules inside the server host.
 - [ ] **5.9** Configure sync resource CORS for first-party apps and registered OAuth browser clients without adding a static WebSocket `Origin` allowlist for bearer sync.
@@ -2533,16 +2519,16 @@ manual smoke: sync protected-resource discovery returns resource sync.epicenter.
 Cloud App composition:
 
 - [ ] **5.10** Add a `CloudApp` registration shape to the server host, or defer to `specs/20260512T150000-cloud-modules-and-networks.md` if this wave stays auth-only.
-- [ ] **5.11** Move Drizzle, Postgres schema, billing, assets, hosted storage registry, dashboard, and cloud control APIs into optional infrastructure Cloud Apps.
-- [ ] **5.12** Verify access tokens with issuer `accounts.epicenter.so` and audience `api.epicenter.so` for hosted infrastructure Cloud Apps.
+- [ ] **5.11** Move Drizzle, Postgres schema, billing, assets, hosted storage registry, dashboard, and cloud control APIs into optional Cloud Apps.
+- [ ] **5.12** Verify access tokens with issuer `accounts.epicenter.so` and audience `api.epicenter.so` for hosted Cloud Apps.
 - [ ] **5.13** Add `resolveOAuthPrincipal` for Cloud App protected routes.
 - [ ] **5.14** Make Cloud App middleware return `AuthUser`, not `WorkspaceIdentity`.
 - [ ] **5.15** Do not derive encryption keys in Cloud Apps.
 - [ ] **5.16** Do not call Better Auth `getSession()` in Cloud Apps.
-- [ ] **5.17** Build the dashboard as a SvelteKit SPA owned by the dashboard infrastructure Cloud App.
+- [ ] **5.17** Build the dashboard as a SvelteKit SPA owned by the dashboard Cloud App.
 - [ ] **5.18** Serve the dashboard SPA from `api.epicenter.so/dashboard/*` through the dashboard Cloud App.
 - [ ] **5.19** Keep Cloud App browser CORS scoped to the dashboard and explicitly productized cloud clients, not all registered sync clients.
-- [ ] **5.19a** Stop at server composition. The internal shape of Cloud Apps, App Instance registry, and per-instance OAuth resource wiring is owned by `specs/20260512T150000-cloud-modules-and-networks.md`. Do not freeze billing, assets, and dashboard as permanent fields of a global cloud env. Treat them as infrastructure Cloud Apps that operators register, alongside product Cloud Apps that operators also register and configure with App Instances.
+- [ ] **5.19a** Stop at server composition. The internal shape of Cloud Apps, Cloud App registry, and per-instance OAuth resource wiring is owned by `specs/20260512T150000-cloud-modules-and-networks.md`. Do not freeze billing, assets, and dashboard as permanent fields of a global cloud env. Treat them as Cloud Apps that operators register, alongside Cloud Apps that operators also register and configure with Cloud Apps.
 
 Verification:
 
@@ -2660,11 +2646,11 @@ apps/server/src/
 |   `-- rooms.ts
 |-- oauth-resource.ts
 |-- cloud-apps/                    (see cloud-modules-and-networks.md)
-|   |-- ark/                       (product Cloud App)
-|   |-- betcha/                    (product Cloud App)
-|   |-- billing/                   (infrastructure Cloud App)
-|   |-- assets/                    (infrastructure Cloud App)
-|   `-- dashboard/                 (infrastructure Cloud App)
+|   |-- ark/                       (Cloud App)
+|   |-- betcha/                    (Cloud App)
+|   |-- billing/                   (Cloud App)
+|   |-- assets/                    (Cloud App)
+|   `-- dashboard/                 (Cloud App)
 |-- instances/
 |   |-- app-instance.ts
 |   |-- instance-registry.ts
@@ -2704,16 +2690,16 @@ packages/oauth-client/src/
 This tree records the product boundary:
 
 ```txt
-base modules
+server core
   useful without Postgres
 
-infrastructure Cloud Apps
+Cloud Apps
   allowed to require Postgres
   own billing, assets, and dashboard
   serves the built SPA at /dashboard/*
 
-product Cloud Apps
-  own public records and App Instance routes
+Cloud Apps
+  own public records and Cloud App routes
 ```
 
 Dependency direction:
@@ -2724,12 +2710,12 @@ packages/auth shared types
   |
 apps/server composition root
   |-- base account and sync modules
-  |-- infrastructure Cloud Apps
+  |-- Cloud Apps
   |   `-- dashboard SPA
-  `-- product Cloud Apps and App Instances
+  `-- Cloud Apps and Cloud Apps
 
 Cloud Apps verify tokens through the server resource contract.
-Base modules do not import product Cloud Apps.
+Base modules do not import Cloud Apps.
 ```
 
 Path to domain ownership:
@@ -2759,9 +2745,9 @@ apps/server/src/cloud-apps/{ark,betcha}/routes.ts
 1. Rename toward a composable `apps/server` host in the clean-break wave.
 2. Hosted sync uses `sync.epicenter.so`, served by the sync base module.
 3. Hosted account pages use `accounts.epicenter.so`, served by the accounts base module.
-4. Hosted cloud control APIs use `api.epicenter.so`, served by infrastructure Cloud Apps.
+4. Hosted cloud control APIs use `api.epicenter.so`, served by Cloud Apps.
 5. Account profile metadata that belongs to sign-in, recovery, MFA, passkeys, or self-hosted account settings lives in base account modules.
-6. Hosted subscription, billing, and managed storage account metadata lives in infrastructure Cloud Apps.
+6. Hosted subscription, billing, and managed storage account metadata lives in Cloud Apps.
 7. Dashboard remains under `api.epicenter.so/dashboard` because it is a cloud-control UI.
 8. CLI uses loopback PKCE at launch. Headless device flow waits until it can issue real OAuth access and refresh tokens.
 9. The clean-break target exposes `/workspace-identity` only. Neither `/me`, `/auth/me`, nor `/auth/workspace-identity` is kept.
@@ -2770,7 +2756,7 @@ apps/server/src/cloud-apps/{ark,betcha}/routes.ts
 12. Hosted and self-hosted deployments share the same client contract. Only `issuer` and `resource` URLs change.
 13. The current trust model is server-trusted encryption, not zero-knowledge end-to-end encryption. Self-hosted shifts the trusted party from Epicenter-the-company to the operator, but it does not remove the trusted party.
 14. Accounts, sync, cloud resources, and dashboard surfaces are Hono route modules before they are deployables.
-15. The dashboard is a SvelteKit SPA owned by the dashboard infrastructure Cloud App and served at `api.epicenter.so/dashboard/*`.
+15. The dashboard is a SvelteKit SPA owned by the dashboard Cloud App and served at `api.epicenter.so/dashboard/*`.
 
 ## Decisions Log
 
@@ -2787,11 +2773,11 @@ apps/server/src/cloud-apps/{ark,betcha}/routes.ts
 - Keep one client contract across hosted and self-hosted. Hosted splits issuer (`accounts.epicenter.so`) from resource (`sync.epicenter.so`, `api.epicenter.so`). Self-hosted collapses them onto a single origin. The `AuthClient` does not branch.
 - Use one composable server host as the architecture default. Hosted production may still split physical deployables by domain after the composition contract is stable.
 - Treat host dispatch inside `apps/server` as public-role dispatch, not a package boundary.
-- Use mountable Hono route modules inside the server host. Revisit physical process splits only when accounts, sync, infrastructure Cloud Apps, or product Cloud Apps have independent scaling, storage, ownership, or release cadence. Physical deployable splitting is operational topology, not a second product platform.
-- Prefer base modules inside `apps/server` for the self-hostable no-Postgres auth and sync runtime.
+- Use mountable Hono route modules inside the server host. Revisit physical process splits only when accounts, sync, Cloud Apps, or Cloud Apps have independent scaling, storage, ownership, or release cadence. Physical deployable splitting is operational topology, not a second product platform.
+- Prefer server core inside `apps/server` for the self-hostable no-Postgres auth and sync runtime.
 - Prefer Cloud Apps inside the same `apps/server` host for Drizzle and Postgres control-plane work.
-- Keep hosted pricing, subscription, invoices, usage, and managed storage controls in infrastructure Cloud Apps, not base sync modules.
-- Serve the dashboard as a reactive SvelteKit SPA from an infrastructure Cloud App so it can use the existing Svelte UI stack without making account auth depend on hosted billing or storage.
+- Keep hosted pricing, subscription, invoices, usage, and managed storage controls in Cloud Apps, not base sync modules.
+- Serve the dashboard as a reactive SvelteKit SPA from an Cloud App so it can use the existing Svelte UI stack without making account auth depend on hosted billing or storage.
 - Do not add `/.auth` as a public namespace. Use standard `/.well-known/*` discovery and root OAuth endpoints in the target shape.
 - Delete `/auth/*` target paths instead of carrying aliases.
 - Defer headless OAuth device flow: Better Auth's device plugin currently issues Better Auth session tokens, not OAuth refreshable resource tokens. Revisit only when CLI usage proves loopback browser login is not enough.

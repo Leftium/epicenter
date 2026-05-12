@@ -10,17 +10,15 @@
  */
 
 import { expect, mock, test } from 'bun:test';
-import type {
-	AuthClient,
-	AuthState,
-	WorkspaceIdentity,
-} from '@epicenter/auth';
-import { createSessionLifecycle } from './session-lifecycle.js';
+import type { AuthClient, AuthState, WorkspaceIdentity } from '@epicenter/auth';
 import type { SessionPayload, WorkspaceBase } from './session.svelte.js';
+import { createSessionLifecycle } from './session-lifecycle.js';
 
 function makeIdentity({
 	userId = 'user-1',
-}: { userId?: string } = {}): WorkspaceIdentity {
+}: {
+	userId?: string;
+} = {}): WorkspaceIdentity {
 	return {
 		user: { id: userId, email: `${userId}@example.com` },
 		encryptionKeys: [
@@ -147,6 +145,7 @@ test('signed-in (user A) → signed-in (user B) disposes and triggers different-
 	});
 
 	expect(initial.workspace.disposed).toBe(true);
+	expect(holder.getPayload()).toBeNull();
 	expect(onDifferentUser).toHaveBeenCalledTimes(1);
 });
 
@@ -196,4 +195,28 @@ test('cold boot in reauth-required builds the workspace from identity', () => {
 	expect(payload).not.toBeNull();
 	expect(built).toHaveLength(1);
 	expect(payload!.workspace).toBe(built[0]!);
+});
+
+test('lifecycle disposal clears the payload after disposing the workspace', () => {
+	const auth = makeAuth({
+		status: 'signed-in',
+		identity: makeIdentity(),
+	});
+	const { build } = makeBuild();
+	const holder = makeHolder<TestWorkspace>();
+	const onDifferentUser = mock(() => {});
+
+	const lifecycle = createSessionLifecycle({
+		auth,
+		build,
+		getPayload: holder.getPayload,
+		setPayload: holder.setPayload,
+		onDifferentUser,
+	});
+
+	const initial = holder.getPayload()!;
+	lifecycle[Symbol.dispose]();
+
+	expect(initial.workspace.disposed).toBe(true);
+	expect(holder.getPayload()).toBeNull();
 });

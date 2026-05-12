@@ -45,11 +45,11 @@
  * ```
  */
 
+import type { AuthClient, WorkspaceIdentity } from '@epicenter/auth';
 import {
 	createSessionLifecycle,
 	type SessionLifecycleConfig,
 } from './session-lifecycle.js';
-import type { AuthClient, WorkspaceIdentity } from '@epicenter/auth';
 
 export type SessionPayload<T> = {
 	identity: WorkspaceIdentity;
@@ -71,7 +71,7 @@ export type WorkspaceBase = {
  *
  * @example
  * ```ts
- * export const session = createSession({ auth, name: 'fuji', build: (identity) => {...} });
+ * export const session = createSession({ auth, build: (identity) => {...} });
  * export type FujiWorkspace = InferWorkspace<typeof session>;
  * ```
  */

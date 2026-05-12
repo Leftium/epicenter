@@ -377,7 +377,7 @@ Understanding the supervisor is the difference between "WebSocket reconnection j
 The base sync attachment does four jobs (in `packages/workspace/src/document/attach-sync.ts`):
 
 ```
-attachSync(doc, { url, bearerToken, waitFor: idb, awareness })
+attachSync(doc, { url, openWebSocket, waitFor: idb, awareness })
         │
         ├── 1. Pick the Y.Doc from a doc or doc bundle
         │
@@ -399,7 +399,7 @@ const awareness = attachAwareness(ydoc, {
 	schema: { peer: PeerIdentity },
 	initial: { peer: { id: 'macbook-pro', name: 'MacBook Pro', platform: 'node' } },
 });
-const sync = attachSync(ydoc, { url, bearerToken, awareness });
+const sync = attachSync(ydoc, { url, openWebSocket, awareness });
 ```
 
 RPC attaches later:
@@ -675,7 +675,7 @@ published by peer "macbook-pro" (a tab-manager instance).
 t=0ms      attachAwareness(ydoc, { schema, initial })
               └─ publishes local peer state on the awareness attachment
 
-t=1ms      attachSync(doc, { url, bearerToken, waitFor: idb, awareness })
+t=1ms      attachSync(doc, { url, openWebSocket, waitFor: idb, awareness })
               ├─ wires ydoc.on('updateV2')
               ├─ wires awareness.raw.on('update')
               └─ kicks off async waitFor → ensureSupervisor()

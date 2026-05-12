@@ -51,6 +51,7 @@ export function createSessionLifecycle<TWorkspace extends WorkspaceBase>({
 		if (payload.workspace.userId === state.identity.user.id) return;
 		// Different user: refuse the live switch and reload (heap safety).
 		payload.workspace[Symbol.dispose]();
+		setPayload(null);
 		onDifferentUser();
 	}
 
@@ -62,6 +63,7 @@ export function createSessionLifecycle<TWorkspace extends WorkspaceBase>({
 		[Symbol.dispose]() {
 			unsubscribe();
 			getPayload()?.workspace[Symbol.dispose]();
+			setPayload(null);
 		},
 	};
 }

@@ -3,7 +3,7 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import { goto } from '$app/navigation';
 	import { auth } from '$platform/auth';
-	import { session } from '$lib/session.svelte';
+	import { session } from '$lib/session';
 
 	let { children } = $props();
 

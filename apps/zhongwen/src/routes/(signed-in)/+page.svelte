@@ -8,7 +8,7 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { requireWorkspace } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import { auth } from '$platform/auth';
 	import { createChatState } from './chat/chat-state.svelte';
 	import ChatInput from './components/ChatInput.svelte';

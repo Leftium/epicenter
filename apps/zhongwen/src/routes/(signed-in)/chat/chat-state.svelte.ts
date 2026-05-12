@@ -12,7 +12,7 @@ import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
 import { auth } from '$platform/auth';
-import { requireWorkspace } from '$lib/session.svelte';
+import { requireWorkspace } from '$lib/session';
 import {
 	type ChatMessageId,
 	type Conversation,

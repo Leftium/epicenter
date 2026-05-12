@@ -10,11 +10,31 @@
 
 ## One Sentence
 
-Epicenter Server is the self-hostable no-Postgres auth and sync runtime, Epicenter Cloud is the hosted Drizzle and Postgres control plane, and every Epicenter client uses OAuth access tokens for protected resources.
+Every Epicenter app talks to an `AuthClient` that exposes `state`, `startSignIn`, `signOut`, `fetch`, and `openWebSocket`; OAuth protocol machinery stays inside Better Auth, workspace identity and key release stay inside `/workspace-identity`, and the deployable split is a separate decision.
 
 ## Overview
 
-This spec collapses Epicenter auth into one model for browser apps, extensions, Tauri apps, CLI tools, and daemon processes, then separates the deployable products by infrastructure requirement. Epicenter Server owns self-hostable auth, OAuth, identity, and sync without Postgres. Epicenter Cloud owns hosted-only control-plane features that need Drizzle, Postgres, billing, registry tables, and managed infrastructure.
+This spec has two layers, and they must be read separately.
+
+```txt
+Layer 1: App auth contract (the main subject)
+  AuthClient surface:
+    state, startSignIn, signOut, fetch, openWebSocket
+  Shared types:
+    AuthState, WorkspaceIdentity, AuthUser
+  Internal to auth package:
+    OAuthSession, OAuthTokenGrant, OAuthTransaction, refresh, /workspace-identity calls
+
+Layer 2: Deployment architecture (a separate decision)
+  apps/server: self-hostable, no Postgres, owns Better Auth + /workspace-identity + sync
+  apps/cloud:  hosted control plane, Postgres + billing + dashboard
+  Hosted domains: accounts.epicenter.so, sync.epicenter.so, api.epicenter.so
+```
+
+The auth contract collapse must land before any deployable split. Apps must
+already be consuming `AuthClient` capabilities before file moves between
+`apps/api`, `apps/server`, and `apps/cloud` start, or the rename ships with the
+old credential shapes still in place.
 
 The target is not "Better Auth everywhere." The target is narrower:
 
@@ -28,6 +48,7 @@ Epicenter Server:
   OAuth access-token verification
   AuthUser projection
   encryption-key derivation
+  workspace-identity release
   workspace and document sync
 
 Epicenter Cloud:
@@ -38,9 +59,9 @@ Epicenter Cloud:
   dashboard and hosted control APIs
 
 Epicenter clients:
-  OAuthSession storage
-  AuthIdentity state
-  token refresh
+  private OAuthSession storage
+  AuthState and WorkspaceIdentity
+  token refresh behind auth.fetch and auth.openWebSocket
   auth-owned fetch and WebSocket transport
 ```
 
@@ -49,7 +70,7 @@ Epicenter clients:
 One sentence:
 
 ```txt
-Epicenter uses Better Auth as the auth server, OAuth as the app/resource protocol, and AuthIdentity as the Epicenter workspace boundary.
+Epicenter uses Better Auth as the auth server, OAuth as the app/resource protocol, and WorkspaceIdentity as the Epicenter workspace boundary.
 ```
 
 OAuth does not replace Better Auth. Better Auth still owns the hard generic auth
@@ -75,10 +96,10 @@ OAuth outside Epicenter Server:
   WebSocket sync credentials
 
 Epicenter-specific layer:
-  /me
+  /workspace-identity
   AuthUser projection
   encryption key derivation
-  AuthIdentity
+  WorkspaceIdentity
   OAuthSession
   auth.fetch()
   auth.openWebSocket()
@@ -106,6 +127,349 @@ Do not make every client type invent a credential shape.
 Do not put encryption keys in OAuth token claims.
 ```
 
+## Trust And Deployment Composition
+
+This section makes the trust model, the scope model, and the hosted versus
+self-hosted composition explicit. The clean-break question for this spec is
+where encryption key delivery lives. The answer below is "a single workspace
+identity endpoint authorized by an OAuth resource scope," and the rest of this
+section says why and how that endpoint composes across deployments.
+
+### Encryption Trust Model
+
+Epicenter is server-trusted encryption, not end-to-end encryption.
+
+```txt
+Epicenter Server holds ENCRYPTION_SECRETS.
+Encryption keys are derived from user.id at workspace-identity release time:
+  rootKey       = SHA-256(ENCRYPTION_SECRETS.current.secret)
+  userKey       = HKDF(rootKey, info="user:{userId}")
+  workspaceKey  = HKDF(userKey, info="workspace:{workspaceId}")
+An OAuth access token with the workspaces:open scope authorizes key release.
+```
+
+Two deployments, two trust readings:
+
+```txt
+Hosted Epicenter:
+  Epicenter-the-company owns ENCRYPTION_SECRETS.
+  Epicenter-the-company can derive any user's workspace keys.
+  This is not zero knowledge relative to Epicenter-the-company.
+
+Self-hosted Epicenter:
+  The self-hosted operator owns ENCRYPTION_SECRETS.
+  Epicenter-the-company cannot derive keys without operator cooperation.
+  This is zero knowledge relative to Epicenter-the-company.
+  This is not zero knowledge relative to the operator or server.
+```
+
+Not part of this architecture:
+
+```txt
+Client-managed master keys.
+Passphrase or device-bound recovery.
+Per-workspace wrapped keys held client-side.
+True end-to-end encryption where the server cannot read plaintext.
+```
+
+If any of those become product requirements, they need a separate spec. They
+would also change the endpoint shape: client-managed E2EE pushes the key
+boundary out of `/workspace-identity` and into the device. This spec does not
+pretend to deliver that.
+
+### Why The Endpoint Must Exist
+
+A newcomer reading this spec should be able to understand that
+`/workspace-identity` is not a design choice. It is a consequence of the
+constraints above. This subsection walks the chain so the rest of the
+architecture stops looking arbitrary.
+
+The constraint that drives everything is the product sentence:
+
+```txt
+The user signs in. Sync starts. No recovery code, no QR scan, no extra prompt
+unless they explicitly opt into an advanced mode.
+```
+
+That UX promise picks three of four corners of a known cryptographic
+trilemma:
+
+```txt
+1. Server cannot read your data         (end-to-end encrypted)
+2. Login is the only thing the user does (no recovery codes or scans)
+3. New devices sync automatically on login
+4. Forgetting your password does not lose your data
+```
+
+Any system can have three. No system can have all four. This is settled
+cryptographic literature, not a tooling gap. iCloud (default), Notion, and
+Dropbox sit at the corner that sacrifices 1. Signal and iMessage sit at the
+corner that sacrifices 3 (new devices need approval). Bitwarden and 1Password
+sit at the corner that sacrifices 4 (password loss equals data loss).
+
+Epicenter keeps 2, 3, and 4. Epicenter sacrifices 1.
+
+```txt
+Sacrifice 2 means recovery codes or device-to-device handoffs.
+  Rejected: violates the login-only UX promise.
+
+Sacrifice 3 means a new device cannot sync until an old device approves.
+  Rejected: violates the automatic-sync promise for multi-device users.
+
+Sacrifice 4 means forgetting your password loses your data.
+  Rejected: OAuth sign-in has no password to derive a recovery key from,
+  and data loss on credential reset is a brutal user experience.
+
+Sacrifice 1 means the server holds key material.
+  Accepted: server-trusted encryption, hosted by Epicenter or operator.
+```
+
+Once 1 is sacrificed, the server holds key material the client needs. The
+client must receive that material after login. The OAuth token endpoint
+stays standard (no key claims). OIDC ID tokens and UserInfo stay unused (no
+key claims there either). That leaves exactly two delivery paths:
+
+```txt
+HTTP endpoint:
+  GET /workspace-identity returns { user, encryptionKeys }.
+  One round trip on boot. Cacheable. Reusable by non-sync clients
+  (CLI, backup, snapshot decryption, future tools).
+
+WebSocket handshake:
+  The first frame of /workspaces/* WebSocket carries identity and keys.
+  Saves one round trip. Couples key delivery to sync transport.
+```
+
+The HTTP path wins because keys are not sync-shaped. Anything that needs to
+decrypt local data without holding a live sync session needs an HTTP path
+to keys anyway: a CLI command that decrypts a saved snapshot, a backup
+exporter, a future search indexer, a viewer-only client. None of them want
+to fake a sync session to retrieve keys.
+
+So the endpoint is forced, the shape is forced, and the transport is
+forced. The only real design freedom is the name and the bundle shape,
+both decided in the next subsection.
+
+```txt
+Trail of forced choices:
+
+  UX promise: login then automatic sync, no extra prompts.
+       |
+       v
+  Trilemma: sacrifice "server cannot read."
+       |
+       v
+  Server holds keys; client must receive them after login.
+       |
+       v
+  Not in OAuth token response (non-standard).
+  Not in ID tokens or UserInfo (OIDC, rejected upstream).
+       |
+       v
+  Authenticated endpoint must exist.
+       |
+       v
+  HTTP beats WebSocket-inline (keys are not sync-shaped).
+       |
+       v
+  /workspace-identity { user, encryptionKeys }.
+```
+
+### Endpoint Decision
+
+The question: does encryption key delivery belong in `WorkspaceIdentity` via `/me`,
+a renamed workspace identity endpoint, or a per-workspace key-release endpoint?
+
+Decision: a single workspace identity endpoint, named for its job.
+
+```txt
+GET {resource}/workspace-identity
+  Authorization: Bearer <oauth access token with workspaces:open>
+  ->
+  WorkspaceIdentity { user, encryptionKeys }
+```
+
+Rationale:
+
+```txt
+Reject: per-workspace key-release endpoint
+  Current keys derive from user.id alone:
+    userKey      = HKDF(rootKey, info="user:{userId}")
+    workspaceKey = HKDF(userKey, info="workspace:{workspaceId}")
+  A per-workspace endpoint releases material the same bearer token already
+  authorizes. Same scope, same audience, same trust boundary. It adds round
+  trips on boot without adding stricter policy. It would only stop being
+  ceremony under a different key model: per-workspace key wrapping,
+  device-bound key release, or client-managed E2EE. None of those are in
+  scope.
+
+Reject: /me
+  /me reads as a profile endpoint by REST and OIDC UserInfo convention.
+  This endpoint is not a profile endpoint. AuthUser is intentionally small,
+  account profile metadata lives behind a separate /account-profile
+  endpoint, and the encryption key release is the load-bearing job. The
+  name should match the job.
+
+Accept: /workspace-identity
+  Names the one job: release the identity required to open this user's
+  local workspaces.
+  Returns WorkspaceIdentity { user, encryptionKeys }, asserted with '+': 'delete'.
+  Authorized by an OAuth access token with the workspaces:open scope.
+  One round trip on boot; the workspace then operates offline against cached
+  WorkspaceIdentity.
+```
+
+### Forward Compatibility With Future E2EE
+
+If Epicenter ever ships an opt-in Advanced Data Protection mode (sacrificing
+trilemma corner 3 instead of corner 1), the endpoint survives. Only the
+payload type changes.
+
+```txt
+Today (server-trusted, default):
+  GET /workspace-identity
+    -> WorkspaceIdentity { user, encryptionKeys }
+       (raw keys, derived server-side from user.id)
+
+Future (opt-in E2EE, hypothetical):
+  GET /workspace-identity
+    -> WorkspaceIdentity { user, wrappedKeys, deviceEnrollment }
+       (keys wrapped to the user's enrolled-device public key,
+        unwrappable only on a device that completed enrollment)
+```
+
+Same scope, same transport, same audience, same auth, same caller surface.
+Treat `/workspace-identity` as a long-lived contract, not a transitional
+one. The endpoint is forward-compatible with the trust upgrade that has
+been deliberately deferred.
+
+### Scope Model
+
+OAuth scopes are how the access token says what it is allowed to do. The
+target system uses one Epicenter resource scope and one standard OAuth scope.
+
+```txt
+workspaces:open
+  Epicenter custom resource scope.
+  Required to call:
+    GET  {resource}/workspace-identity
+    GET  {resource}/workspaces/*
+    POST {resource}/workspaces/*
+    WS   {resource}/workspaces/*
+    GET  {resource}/documents/*
+  Releases encryption keys derived from user.id when used against
+  /workspace-identity.
+  Not an OIDC standard scope. Not Better Auth magic. It is an Epicenter
+  protected-resource scope enforced by Epicenter Server.
+
+offline_access
+  Standard OAuth scope.
+  Required when the client needs a refresh token (durable login).
+  All first-party Epicenter clients request it.
+```
+
+Not requested by Epicenter clients:
+
+```txt
+openid
+  Would activate OIDC ID-token and UserInfo behavior. Not used.
+  Encryption keys never travel through ID-token claims or UserInfo.
+
+profile
+  OIDC profile claims. Not used. Account profile metadata lives behind a
+  separate /account-profile endpoint when needed.
+
+email
+  OIDC email claims. Not used. The AuthUser email comes from the Better
+  Auth user row inside /workspace-identity, not from token claims.
+```
+
+Cloud control APIs do not need `workspaces:open`. A Cloud client requests an
+audience-bound token for `api.epicenter.so` with `offline_access` and any
+cloud-specific scopes the protected resource enforces (for example
+`cloud:billing`, `cloud:storage`). Cloud scopes are out of scope for this
+spec; they are listed only so the boundary stays clear: a sync token must not
+work against Cloud, and a Cloud token must not work against sync.
+
+### Hosted Versus Self-Hosted Composition
+
+The client contract is identical across deployments. Only the issuer and
+resource URLs change.
+
+```txt
+Hosted Epicenter (split deployables and three public origins):
+
+  accounts.epicenter.so
+    served by apps/server
+    OAuth issuer
+    sign-in, consent, /oauth2/authorize, /oauth2/token, /oauth2/revoke,
+    /jwks, /.well-known/openid-configuration,
+    /.well-known/oauth-authorization-server
+
+  sync.epicenter.so
+    served by apps/server
+    OAuth protected resource
+    /.well-known/oauth-protected-resource
+    /workspace-identity
+    /workspaces/*
+    /documents/*
+
+  api.epicenter.so
+    served by apps/cloud
+    OAuth protected resource for hosted control plane
+    /.well-known/oauth-protected-resource
+    /api/*
+    /dashboard/*
+
+Self-hosted Epicenter (one origin, issuer and resource collapsed):
+
+  server.example.com
+    served by apps/server
+    OAuth issuer AND OAuth protected resource
+    /.well-known/openid-configuration
+    /.well-known/oauth-authorization-server
+    /.well-known/oauth-protected-resource
+    /oauth2/authorize, /oauth2/token, /oauth2/revoke, /jwks
+    /sign-in, /consent, /device
+    /workspace-identity
+    /workspaces/*
+    /documents/*
+```
+
+The collapse is configuration, not a different code path. `apps/server`
+exposes the same Hono route modules either way; host dispatch is the only
+difference.
+
+```txt
+Hosted apps/server start-up:
+  createServerApp({ issuer: "accounts.epicenter.so",
+                    resource: "sync.epicenter.so" })
+    -> host dispatch routes accounts requests to createAccountsRoutes
+    -> host dispatch routes sync requests to createSyncRoutes
+
+Self-hosted apps/server start-up:
+  createServerApp({ issuer: "server.example.com",
+                    resource: "server.example.com" })
+    -> single origin mounts createAccountsRoutes and createSyncRoutes
+    -> /.well-known/oauth-authorization-server and
+       /.well-known/oauth-protected-resource both live on the same origin
+```
+
+Clients pick issuer and resource from configuration, not at runtime:
+
+```txt
+Hosted workspace app:
+  issuer   = https://accounts.epicenter.so
+  resource = https://sync.epicenter.so
+
+Self-hosted workspace app:
+  issuer   = https://server.example.com
+  resource = https://server.example.com
+```
+
+The `AuthClient` does not branch on hosted versus self-hosted. The OAuth
+launcher follows whichever URLs the consumer passes in.
+
 ## Why This Exists
 
 The current worktree is halfway between two models.
@@ -121,7 +485,7 @@ Old model:
 New model:
   apps use OAuth access and refresh tokens
   protected routes verify OAuth access tokens as resource-server requests
-  /me returns AuthIdentity only
+  /workspace-identity returns WorkspaceIdentity only
   AuthUser is small and stripped
 ```
 
@@ -138,17 +502,373 @@ Epicenter Server owns workspace and document sync.
 Epicenter Server has no Postgres dependency.
 Epicenter Server has no Drizzle Postgres bindings.
 Epicenter Cloud owns hosted control-plane state that requires Postgres.
-AuthIdentity never contains credentials.
+WorkspaceIdentity never contains credentials.
 OAuthSession may contain OAuth credentials because it is private auth storage.
 Better Auth session tokens never enter app auth storage.
 set-auth-token is not an app runtime credential.
-Workspace boot reads user id and encryption keys from AuthIdentity.
+Workspace boot reads user id and encryption keys from WorkspaceIdentity.
 Protected resource calls use OAuth access tokens.
 WebSocket sync uses OAuth access tokens.
 Refresh failure pauses network auth, not local workspace access.
 ```
 
-## Ownership Model
+### Key Delivery Invariants
+
+```txt
+Encryption keys leave the server only through /workspace-identity.
+Encryption keys never appear in OAuth token responses.
+Encryption keys never appear in OAuth access-token claims.
+Encryption keys never appear in OIDC ID tokens.
+Encryption keys never appear in OIDC UserInfo responses.
+/workspace-identity requires an OAuth access token with the workspaces:open scope.
+/workspace-identity must not accept Better Auth cookies as an app credential.
+Only /workspace-identity derives encryption keys.
+Workspace and document sync routes need the user principal, not encryption keys.
+Workspace boot reads cached WorkspaceIdentity, not a fresh request per workspace.
+There is no per-workspace key-release endpoint in the target system.
+Hosted and self-hosted deployments use the same client contract; only issuer and
+  resource URLs differ.
+True end-to-end encryption is out of scope; this is server-trusted encryption
+  with operator-controlled secrets when self-hosted.
+```
+
+## Collapsed Auth Boundary
+
+The app-facing contract should be small enough to explain without OAuth nouns:
+
+```txt
+Auth gives the app:
+  state
+  startSignIn()
+  signOut()
+  fetch()
+  openWebSocket()
+
+The app gives workspace code:
+  WorkspaceIdentity
+  auth-owned transport capabilities
+```
+
+Everything else is internal plumbing:
+
+```txt
+Internal to auth:
+  OAuthTransaction
+  OAuthTokenGrant
+  OAuthSession
+  accessToken
+  refreshToken
+  accessTokenExpiresAt
+  /workspace-identity fetch
+  refresh retry
+  WebSocket bearer subprotocol
+```
+
+This is the collapse:
+
+```txt
+Before:
+  App code knows about tokens, bearer headers, session response shapes,
+  sync bearer getters, and credential refresh.
+
+After:
+  App code knows about identity and capabilities.
+```
+
+Do not design app APIs around `OAuthSession`. It is private auth storage. The
+public shape is `AuthState`.
+
+```ts
+type AuthState =
+	| { status: 'signed-out' }
+	| { status: 'signed-in'; identity: WorkspaceIdentity }
+	| { status: 'reauth-required'; identity: WorkspaceIdentity };
+```
+
+`reauth-required` means the app still has local identity but network auth needs
+user action. It does not mean the access token timestamp is in the past.
+
+### What Better Auth Owns
+
+Better Auth and `@better-auth/oauth-provider` should own OAuth protocol
+machinery:
+
+```txt
+OAuth authorize endpoint
+OAuth token endpoint
+OAuth revoke endpoint
+OAuth introspection when needed
+OIDC and OAuth metadata
+JWKS
+PKCE validation
+consent state
+trusted clients
+OAuth access-token issuing
+OAuth refresh-token issuing
+```
+
+Epicenter should not create parallel abstractions for those jobs.
+
+### What `/workspace-identity` Replaces
+
+`/workspace-identity` is narrow. It replaces only Epicenter-specific identity
+bridges that turned one credential family into another. It does not replace
+any OAuth protocol endpoint.
+
+```txt
+What /workspace-identity replaces (Epicenter identity projection only):
+  /auth/oauth-session
+  /auth/me                         (old path-based identity projection)
+  AuthSessionResponse
+  BetterAuthSessionResponse
+  oauthSessionFromAuthSessionResponse
+  customSession identity enrichment for app runtime auth
+
+What /workspace-identity does NOT replace (Better Auth + oauthProvider still own these):
+  /oauth2/authorize
+  /oauth2/token
+  /oauth2/revoke
+  /.well-known/oauth-authorization-server
+  /.well-known/openid-configuration
+  /jwks
+  PKCE validation
+  consent state
+  trusted client registry
+  access-token issuing
+  refresh-token issuing
+
+Replaced by OAuth refresh inside Better Auth:
+  set-auth-token app runtime rotation
+
+Replaced by auth.fetch and auth.openWebSocket inside the auth package:
+  public bearerToken
+  sync bearer-token getters
+  app-written Authorization headers
+  app-written WebSocket bearer protocols
+```
+
+`/workspace-identity` has one job:
+
+```txt
+OAuth access token with workspaces:open -> WorkspaceIdentity
+```
+
+It verifies the token (using Better Auth's resource client), checks the
+`workspaces:open` scope, loads the user, projects `AuthUser`, derives
+encryption keys from `user.id`, and returns `{ user, encryptionKeys }`. It does
+not issue tokens. It does not create Better Auth sessions. It does not return
+account profile metadata. It does not run for individual workspace IDs; it
+returns the keying material the client needs to open any workspace it owns.
+
+### What Else Stays Out Of `/workspace-identity` And `WorkspaceIdentity`
+
+Beyond OAuth protocol machinery, some pieces look adjacent to identity but must
+not be pulled into `/workspace-identity` or `WorkspaceIdentity`. They live where
+they belong by other boundaries:
+
+```txt
+Better Auth account cookies:
+  stay inside the account server, sign-in pages, and consent pages
+  must not be accepted as app runtime credentials
+  must not be accepted by protected-resource handlers
+
+Account profile metadata (created_at, image, emailVerified, etc.):
+  belongs to a separate AccountProfile endpoint if needed
+  must not enter AuthUser or WorkspaceIdentity
+  must not become a back door for session metadata
+
+Cloud billing, assets, hosted storage registry:
+  stay inside apps/cloud
+  must not enter workspace identity, /workspace-identity, or encryption key derivation
+  must not be required for workspace boot
+
+Workspace and document sync:
+  stay as protected resources that verify OAuth access tokens
+  must not call Better Auth getSession()
+  must not derive encryption keys per request (only /workspace-identity derives keys)
+
+Refresh-token rotation (when Better Auth supports it):
+  stays inside Better Auth oauthProvider, not Epicenter code
+```
+
+The practical rule:
+
+```txt
+If it is OAuth protocol machinery, let Better Auth own it.
+If it turns a valid OAuth token into local-first identity, /workspace-identity owns it.
+If app code needs to call a resource, auth.fetch or auth.openWebSocket owns it.
+If it is Cloud-only state, it stays in apps/cloud.
+If it is account profile UI, it lives behind a separate /account-profile endpoint.
+```
+
+## Boundary Classification
+
+Use this table before moving any code. It keeps the app contract separate from
+OAuth machinery, identity projection, and deployment shape.
+
+| Boundary | Owns | Does not own |
+| --- | --- | --- |
+| App auth contract | `AuthClient`, `AuthState`, `WorkspaceIdentity`, `auth.fetch`, `auth.openWebSocket`, `startSignIn`, `signOut` | OAuth endpoints, raw tokens, Better Auth sessions, deployment domains |
+| Better Auth OAuth provider | authorize, token, revoke, metadata, JWKS, PKCE, consent, trusted clients, token issuing | Epicenter encryption keys, workspace identity projection, app transport API |
+| Epicenter identity projection | `/workspace-identity`, `AuthUser`, encryption key derivation, `WorkspaceIdentity` | OAuth token issuing, revocation, metadata, JWKS, consent |
+| Deployment and domain boundary | `apps/server`, `apps/cloud`, hosted domains, infrastructure ownership | Public app auth shape |
+
+Current code maps to those buckets like this:
+
+```txt
+App auth contract:
+  packages/auth/src/auth-contract.ts
+  packages/auth/src/create-oauth-app-auth.ts
+  packages/auth/src/auth-types.ts
+
+Better Auth OAuth provider machinery:
+  apps/api/src/auth/create-auth.ts
+    oauthProvider()
+    trusted clients
+    deviceAuthorization() until replaced
+    bearer() until deleted from app credential paths
+  apps/api/src/app.ts
+    /auth/* Better Auth handler
+    /.well-known/* metadata mounting
+
+Epicenter identity projection:
+  apps/api/src/auth/me.ts                  (current; renames to workspace-identity.ts)
+  apps/api/src/auth/identity-response.ts
+  apps/api/src/app.ts /auth/me route today, /workspace-identity in the target
+
+Deployment and product boundary:
+  current apps/api mixes server and cloud work
+  target apps/server owns auth plus sync
+  target apps/cloud owns hosted control plane work
+```
+
+### Old Credential Bridges
+
+These are the current bridge paths to remove before splitting deployables:
+
+```txt
+Better Auth session bridge:
+  /auth/oauth-session
+  AuthSessionResponse
+  BetterAuthSessionResponse
+  oauthSessionFromAuthSessionResponse
+  customSession app identity responses
+
+Session-token rotation bridge:
+  set-auth-token header exposure
+  machine auth reading set-auth-token
+
+App bearer session bridge:
+  createBearerAuth
+  BearerSession
+  Better Auth bearer() as an app credential path
+  auth.bearerToken
+  sync bearer-token getters
+
+Cookie app auth bridge:
+  createCookieAuth
+  app runtime calls to Better Auth getSession()
+```
+
+Delete these after callers use `AuthClient` capabilities. Keep WebSocket bearer
+subprotocol parsing as transport input normalization until `auth.openWebSocket`
+is the only app-facing sync entry point.
+
+### Deployment Boundary
+
+Do not start the implementation by moving domains or directories. The deployable
+split is real, but it is downstream from the auth cleanup.
+
+```txt
+apps/server
+  self-hostable auth and sync runtime
+  Better Auth
+  OAuth provider
+  /workspace-identity
+  workspace sync
+  document sync
+  no Postgres requirement in the target
+
+apps/cloud
+  hosted control plane
+  Drizzle and Postgres allowed
+  billing
+  hosted storage registry
+  assets
+  dashboard
+```
+
+Hosted domains split by public protocol role:
+
+```txt
+accounts.epicenter.so
+  served by apps/server
+  OAuth issuer and account pages
+
+sync.epicenter.so
+  served by apps/server
+  OAuth protected resource for /workspace-identity, workspaces, and documents
+
+api.epicenter.so
+  served by apps/cloud
+  OAuth protected resource for hosted control APIs
+```
+
+Self-hosted deployments can use one origin:
+
+```txt
+https://server.example.com
+  /.well-known/openid-configuration
+  /.well-known/oauth-authorization-server
+  /.well-known/oauth-protected-resource
+  /oauth2/authorize
+  /oauth2/token
+  /oauth2/revoke
+  /jwks
+  /sign-in
+  /consent
+  /device
+  /workspace-identity
+  /workspaces/*
+  /documents/*
+```
+
+Hosted clean-break target:
+
+```txt
+accounts.epicenter.so
+  /.well-known/openid-configuration
+  /.well-known/oauth-authorization-server
+  /oauth2/authorize
+  /oauth2/token
+  /oauth2/revoke
+  /jwks
+  /sign-in
+  /consent
+  /device
+
+sync.epicenter.so
+  /.well-known/oauth-protected-resource
+  /workspace-identity
+  /workspaces/*
+  /documents/*
+
+api.epicenter.so
+  /.well-known/oauth-protected-resource
+  /api/storage/*
+  /api/assets/*
+  /api/billing/*
+  /dashboard/*
+```
+
+Do not add `/.auth`. Do not keep `/auth/*` aliases in the clean-break target.
+The current `/auth/*` paths are migration facts, not the final public contract.
+
+## Ownership And Domain Rationale
+
+The short rule above is enough to implement against. This section keeps the
+reasoning that led to it, because the deployable split is easy to flatten back
+into "one API app" unless the product boundary stays visible.
 
 ```txt
 +--------------------------------------------------------------+
@@ -160,7 +880,7 @@ Refresh failure pauses network auth, not local workspace access.
 |   account cookies                                            |
 |   consent and account-factor flows                           |
 |   OAuth authorize, token, revoke, JWKS, metadata             |
-|   /me                                                        |
+|   /workspace-identity                                        |
 |   workspace sync                                             |
 |   document sync                                              |
 |   self-hostable storage                                      |
@@ -178,15 +898,23 @@ Refresh failure pauses network auth, not local workspace access.
 +--------------------------------------------------------------+
 | Epicenter apps                                               |
 |                                                              |
-| Owns:                                                        |
-|   OAuthSession                                               |
-|   local AuthIdentity                                         |
-|   refresh-token persistence                                  |
-|   auth.fetch and auth.openWebSocket                          |
+| Own publicly:                                                |
+|   AuthState                                                  |
+|   WorkspaceIdentity                                               |
+|   auth.fetch                                                 |
+|   auth.openWebSocket                                         |
+|   startSignIn                                                |
+|   signOut                                                    |
 |                                                              |
-| Does not own:                                                |
+| Own privately through the auth package:                      |
+|   OAuthSession storage                                       |
+|   refresh-token persistence                                  |
+|   token refresh and retry                                    |
+|                                                              |
+| Do not own:                                                  |
 |   Better Auth raw Session                                    |
 |   Better Auth session token                                  |
+|   OAuth protocol endpoints                                   |
 |   hosted credential forms                                    |
 +--------------------------------------------------------------+
                          |
@@ -195,7 +923,7 @@ Refresh failure pauses network auth, not local workspace access.
 +--------------------------------------------------------------+
 | apps/cloud                                                   |
 |                                                              |
-| Own:                                                         |
+| Owns:                                                        |
 |   Drizzle and Postgres                                       |
 |   billing                                                    |
 |   hosted storage registry                                    |
@@ -203,17 +931,17 @@ Refresh failure pauses network auth, not local workspace access.
 |   dashboards                                                 |
 |   hosted control APIs                                        |
 |                                                              |
-| Do not own:                                                  |
+| Does not own:                                                |
 |   raw sign-in                                                |
 |   account cookies                                            |
 |   self-hostable sync runtime                                 |
 +--------------------------------------------------------------+
 ```
 
-## Boundary Correction
+### Boundary Correction
 
 This spec began as a cleanup of path-based OAuth under `api.epicenter.so/auth`.
-That cleanup first produced the `accounts.epicenter.so` plus `api.epicenter.so`
+That cleanup first produced an `accounts.epicenter.so` plus `api.epicenter.so`
 origin split:
 
 ```txt
@@ -224,7 +952,7 @@ accounts.epicenter.so
 
 api.epicenter.so
   OAuth protected resource
-  /me
+  /workspace-identity
   workspace sync
   documents
   billing
@@ -247,16 +975,16 @@ Deployable product axis:
   hosted cloud control plane with Drizzle and Postgres
 ```
 
-Do not let the hostname axis choose the package boundary. The long-term
-self-hosted product wants a small server that can run auth and sync without
-Postgres. The hosted cloud product wants Drizzle, Postgres, billing, registry
-tables, asset management, reconciliation jobs, and dashboard APIs.
+Do not let the hostname axis choose the package boundary. The self-hosted
+product wants a small server that can run auth and sync without Postgres. The
+hosted cloud product wants Drizzle, Postgres, billing, registry tables, asset
+management, reconciliation jobs, and dashboard APIs.
 
 The corrected product sentence:
 
 ```txt
-Epicenter Server is the self-hostable auth and sync runtime; Epicenter Cloud is
-the hosted control plane that uses Postgres and managed infrastructure.
+Epicenter Server is the self-hostable auth and sync runtime.
+Epicenter Cloud is the hosted control plane that uses Postgres and managed infrastructure.
 ```
 
 ### Naming Direction
@@ -268,7 +996,7 @@ apps/server
   self-hostable Hono server
   no Postgres dependency
   no Drizzle Postgres bindings
-  auth, OAuth, /me, workspace sync, document sync
+  auth, OAuth, /workspace-identity, workspace sync, document sync
 
 apps/cloud
   hosted Hono server
@@ -319,7 +1047,7 @@ accounts.epicenter.so
 
 sync.epicenter.so
   served by apps/server
-  OAuth protected resource for /me, workspaces, and documents
+  OAuth protected resource for /workspace-identity, workspaces, and documents
 
 api.epicenter.so
   served by apps/cloud
@@ -342,13 +1070,13 @@ Three domains keep the public contract honest:
 
 ```txt
 accounts.epicenter.so
-  "sign in here"
+  sign in here
 
 sync.epicenter.so
-  "sync data here"
+  sync data here
 
 api.epicenter.so
-  "manage hosted cloud services here"
+  manage hosted cloud services here
 ```
 
 The repo boundary and the public domain boundary do not need to be identical.
@@ -373,7 +1101,7 @@ epicenter.so
 |
 |-- sync.epicenter.so
 |   |-- /.well-known/oauth-protected-resource
-|   |-- /me
+|   |-- /workspace-identity
 |   |-- /workspaces/*
 |   `-- /documents/*
 |
@@ -416,7 +1144,7 @@ apps/server
 |
 |-- createSyncRoutes()
 |   |-- protected-resource metadata
-|   |-- /me
+|   |-- /workspace-identity
 |   |-- workspace sync
 |   `-- document sync
 |
@@ -540,74 +1268,6 @@ createDashboardRoutes(CloudEnv)
   -> redirects to accounts OAuth when signed out
 ```
 
-Two-deployable target tree:
-
-```txt
-apps/
-|-- server/
-|   |-- src/app.ts
-|   |-- src/host-dispatch.ts
-|   |-- src/modules/accounts.ts
-|   |-- src/modules/sync.ts
-|   |-- src/auth/
-|   |-- src/identity/
-|   |-- src/sync/
-|   `-- src/storage/
-|
-`-- cloud/
-    |-- src/app.ts
-    |-- src/modules/cloud-resource.ts
-    |-- src/modules/dashboard.ts
-    |-- src/db/
-    |-- src/billing/
-    |-- src/assets/
-    |-- src/storage-registry/
-    `-- dashboard/
-```
-
-Future three-deployable split, only if accounts and sync become independently
-operated products:
-
-```txt
-apps/
-|-- accounts/
-|   |-- src/app.ts
-|   |-- src/auth/
-|   |-- src/oauth/
-|   `-- src/pages/
-|
-|-- sync/
-|   |-- src/app.ts
-|   |-- src/identity/
-|   |-- src/workspaces/
-|   |-- src/documents/
-|   `-- src/rooms/
-|
-`-- cloud/
-    |-- src/app.ts
-    |-- src/modules/cloud-resource.ts
-    |-- src/modules/dashboard.ts
-    |-- src/db/
-    |-- src/billing/
-    `-- dashboard/
-```
-
-The module contracts should make that future split boring:
-
-```txt
-Today:
-  apps/server/src/app.ts
-    -> mounts createAccountsRoutes()
-    -> mounts createSyncRoutes()
-
-Future:
-  apps/accounts/src/app.ts
-    -> mounts createAccountsRoutes()
-
-  apps/sync/src/app.ts
-    -> mounts createSyncRoutes()
-```
-
 This is the compromise that keeps the architecture honest:
 
 ```txt
@@ -654,97 +1314,17 @@ Why accepted:
   role-specific domains
 ```
 
-### Endpoint Shape
-
-Self-hosted single-origin shape:
-
-```txt
-https://server.example.com
-
-OAuth and account:
-  /.well-known/openid-configuration
-  /.well-known/oauth-authorization-server
-  /.well-known/oauth-protected-resource
-  /oauth2/authorize
-  /oauth2/token
-  /oauth2/revoke
-  /jwks
-  /sign-in
-  /consent
-  /device
-
-Identity:
-  /me
-
-Sync resources:
-  /workspaces/*
-  /documents/*
-```
-
-Hosted clean-break shape:
-
-```txt
-https://accounts.epicenter.so
-
-  /.well-known/openid-configuration
-  /.well-known/oauth-authorization-server
-  /oauth2/authorize
-  /oauth2/token
-  /oauth2/revoke
-  /jwks
-  /sign-in
-  /consent
-  /device
-
-https://sync.epicenter.so
-
-  /.well-known/oauth-protected-resource
-  /me
-  /workspaces/*
-  /documents/*
-
-https://api.epicenter.so
-
-  /.well-known/oauth-protected-resource
-  /api/storage/*
-  /api/assets/*
-  /api/billing/*
-  /dashboard/*
-```
-
-The `accounts` and `sync` hosts are both backed by `apps/server` in hosted
-production. Self-hosters run the same app on one origin; that origin exposes
-both issuer and protected-resource metadata.
-
-Do not introduce `/.auth` as the public namespace. The standard discovery
-namespace is `/.well-known/*`. Do not carry `/auth` aliases into the clean-break
-target. In the target self-hosted server and hosted accounts origin, OAuth is
-first-class:
-
-```txt
-Good target:
-  /.well-known/openid-configuration
-  /oauth2/token
-  /jwks
-
-Deleted old shape:
-  /auth/.well-known/openid-configuration
-  /auth/oauth2/token
-  /auth/jwks
-```
-
 ## Public Shapes
 
 ### AuthUser
 
-`AuthUser` is the signed-in principal, not the account profile.
+`AuthUser` is the signed-in principal, not the account profile. The minimum keying identity: a stable id and an email for display fallback.
 
 ```ts
 export const AuthUser = type({
 	'+': 'delete',
 	id: 'string',
 	email: 'string',
-	name: 'string',
 });
 
 export type AuthUser = typeof AuthUser.infer;
@@ -753,6 +1333,7 @@ export type AuthUser = typeof AuthUser.infer;
 Keep out:
 
 ```txt
+name                                (use email or a UI-side derived display name)
 createdAt
 updatedAt
 emailVerified
@@ -760,6 +1341,14 @@ image
 raw Better Auth plugin fields
 raw session fields
 ```
+
+`name` is intentionally dropped. Better Auth's user table still stores it, but `AuthUser` does not project it. Every existing caller already used `user.name ?? user.email`, `{#if user.name}`, or passed it as optional to a downstream API. No site treated it as load-bearing. Keeping it would be the precedent that lets `image`, `emailVerified`, and `createdAt` creep in next. UI surfaces that want a friendlier label can derive one from `email`:
+
+```ts
+const displayName = user.email.split('@')[0];
+```
+
+That is presentation, made where presentation happens.
 
 If apps need account/profile metadata later, add a separate endpoint and type:
 
@@ -778,24 +1367,24 @@ export const AccountProfile = type({
 
 That endpoint is not part of workspace boot. It must not become a back door for session metadata.
 
-### AuthIdentity
+### WorkspaceIdentity
 
-`AuthIdentity` is the local-first identity needed to open a workspace.
+`WorkspaceIdentity` is the local-first identity needed to open a workspace.
 
 ```ts
-export const AuthIdentity = type({
+export const WorkspaceIdentity = type({
 	'+': 'delete',
 	user: AuthUser,
 	encryptionKeys: EncryptionKeys,
 });
 
-export type AuthIdentity = typeof AuthIdentity.infer;
+export type WorkspaceIdentity = typeof WorkspaceIdentity.infer;
 ```
 
 The only stable public meaning is:
 
 ```txt
-AuthIdentity = who the local workspace belongs to + keys needed to decrypt it
+WorkspaceIdentity = who the local workspace belongs to + keys needed to decrypt it
 ```
 
 ### OAuthTokenGrant
@@ -837,7 +1426,7 @@ Do not persist `scope` or `tokenType`. They are parse-time validation details.
 
 ```ts
 export const OAuthSession = type({
-	'...': AuthIdentity,
+	'...': WorkspaceIdentity,
 	'+': 'delete',
 	accessToken: 'string',
 	refreshToken: 'string',
@@ -846,6 +1435,8 @@ export const OAuthSession = type({
 
 export type OAuthSession = typeof OAuthSession.infer;
 ```
+
+Arktype's `'...'` is a single-key spread (it is a JS object literal), so two spreads in one declaration is a duplicate key. The composition is still exactly `WorkspaceIdentity` plus `OAuthTokenGrant`; the inline fields just say so directly. A `.and()`-based composition (`WorkspaceIdentity.and(OAuthTokenGrant)`) would also work but loses the `'+': 'delete'` ergonomics.
 
 Expanded:
 
@@ -866,8 +1457,8 @@ This is allowed to contain OAuth credentials because it is stored behind the aut
 ```ts
 type AuthState =
 	| { status: 'signed-out' }
-	| { status: 'signed-in'; identity: AuthIdentity }
-	| { status: 'reauth-required'; identity: AuthIdentity };
+	| { status: 'signed-in'; identity: WorkspaceIdentity }
+	| { status: 'reauth-required'; identity: WorkspaceIdentity };
 ```
 
 `reauth-required` means:
@@ -926,7 +1517,7 @@ hosted:
 /sign-in
 /consent
 /device
-/me
+/workspace-identity
 /workspaces/*
 /documents/*
 /*
@@ -967,8 +1558,9 @@ Cloud is an OAuth protected resource, but it is not the primary identity or
 sync runtime. It verifies access tokens issued by Epicenter Server and serves
 hosted-only control-plane APIs.
 
-`/me` exists on Epicenter Server. Do not add `/auth/me`, and do not put
-workspace boot identity on Cloud.
+`/workspace-identity` exists on Epicenter Server. Do not add `/me`,
+`/auth/me`, or `/auth/workspace-identity`, and do not put workspace boot
+identity on Cloud.
 
 Dashboard lives under Cloud:
 
@@ -1033,7 +1625,7 @@ apps/cloud
     |-- Better Auth getSession() for protected resources
     |-- encryption key derivation
     |-- apps/server sync internals
-    `-- /me as workspace boot identity
+    `-- /workspace-identity as workspace boot identity
 ```
 
 Server dependency tree:
@@ -1058,31 +1650,33 @@ apps/server
     `-- proprietary cloud-only control-plane code
 ```
 
-`/me` flow:
+`/workspace-identity` flow:
 
 ```txt
 1. Read Authorization: Bearer <access token>.
 2. Verify token with issuer and audience for the server resource.
-3. Read payload.sub.
-4. Load Better Auth user row by id.
-5. Project AuthUser with AuthUser.assert(row).
-6. Derive encryption keys from user.id.
-7. Return AuthIdentity.
+3. Confirm the workspaces:open scope is present.
+4. Read payload.sub.
+5. Load Better Auth user row by id.
+6. Project AuthUser with AuthUser.assert(row).
+7. Derive encryption keys from user.id.
+8. Return WorkspaceIdentity.
 ```
 
-Protected resource middleware:
+Protected resource middleware (workspaces, documents, future cloud routes):
 
 ```txt
 1. Verify OAuth access token.
-2. Load user row by payload.sub.
-3. Set c.var.user = AuthUser.assert(row).
-4. Do not derive encryption keys.
-5. Do not call Better Auth getSession().
+2. Confirm the route's required scope is present.
+3. Load user row by payload.sub.
+4. Set c.var.user = AuthUser.assert(row).
+5. Do not derive encryption keys.
+6. Do not call Better Auth getSession().
 ```
 
-Only `/me` should derive encryption keys. Billing routes, assets, storage
-controls, documents, and workspace sync need the user principal, not encryption
-keys.
+Only `/workspace-identity` should derive encryption keys. Billing routes,
+assets, storage controls, documents, and workspace sync need the user
+principal, not encryption keys.
 
 ## Client Flows
 
@@ -1095,11 +1689,12 @@ App route:
 Sign-in:
 	auth.startSignIn({ returnTo })
 	  -> launcher creates PKCE transaction
+	  -> launcher requests scopes: workspaces:open offline_access
 	  -> browser navigates to accounts /oauth2/authorize
 	  -> accounts uses Better Auth cookie to complete login and consent
 	  -> accounts redirects back with code
 	  -> launcher exchanges code for OAuthTokenGrant
-	  -> auth calls GET resource /me
+	  -> auth calls GET resource /workspace-identity
 	  -> auth stores OAuthSession
 ```
 
@@ -1113,11 +1708,12 @@ Workspace app sign-in:
 workspace app
   -> redirects to accounts.epicenter.so/oauth2/authorize
   -> includes resource = https://sync.epicenter.so
+  -> includes scope = workspaces:open offline_access
   -> accounts completes sign-in and consent
   -> workspace app exchanges code at accounts.epicenter.so/oauth2/token
   -> token audience is sync.epicenter.so
-  -> workspace app calls sync.epicenter.so/me
-  -> /me returns AuthIdentity with encryption keys
+  -> workspace app calls sync.epicenter.so/workspace-identity
+  -> /workspace-identity returns WorkspaceIdentity with encryption keys
   -> workspace app opens sync.epicenter.so/workspaces/*
 ```
 
@@ -1126,7 +1722,7 @@ Workspace sync runtime:
 ```txt
 workspace app
 |-- OAuthSession
-|   |-- AuthIdentity
+|   |-- WorkspaceIdentity
 |   |   |-- AuthUser
 |   |   `-- encryptionKeys
 |   |-- accessToken for sync.epicenter.so
@@ -1149,11 +1745,13 @@ separate Cloud grant:
 sync token:
   issuer = accounts.epicenter.so
   resource = sync.epicenter.so
-  used for /me, workspaces, documents
+  scope = workspaces:open offline_access
+  used for /workspace-identity, workspaces, documents
 
 cloud token:
   issuer = accounts.epicenter.so
   resource = api.epicenter.so
+  scope = offline_access plus any cloud:* scopes the API enforces
   used for billing, storage registry, assets, dashboard APIs
 ```
 
@@ -1167,7 +1765,8 @@ Extension:
   PKCE transaction in extension session storage
   token exchange through oauth4webapi
   same OAuthTokenGrant as browser apps
-  same GET /me identity load
+  same GET /workspace-identity identity load
+  same workspaces:open offline_access scopes
 ```
 
 ### Tauri Apps
@@ -1211,10 +1810,10 @@ Do not use Better Auth `deviceAuthorization` as the final machine flow. Its curr
 ## Auth Client API
 
 This is the local-first app auth client for Epicenter Server resources. It
-loads `AuthIdentity`, including encryption keys, from the configured resource's
-`/me` endpoint. Cloud-control surfaces that only need hosted account and billing
-state should use a narrower Cloud OAuth client that stores an OAuth grant and
-projects `AuthUser`, not workspace keys.
+loads `WorkspaceIdentity`, including encryption keys, from the configured resource's
+`/workspace-identity` endpoint. Cloud-control surfaces that only need hosted
+account and billing state should use a narrower Cloud OAuth client that stores
+an OAuth grant and projects `AuthUser`, not workspace keys.
 
 ```ts
 export type CreateOAuthAppAuthConfig = {
@@ -1278,7 +1877,7 @@ Use ArkType at durable and network boundaries:
 
 ```txt
 Better Auth user row -> AuthUser.assert(row)
-GET /me response -> AuthIdentity.assert(json)
+GET /workspace-identity response -> WorkspaceIdentity.assert(json)
 token grant parser -> OAuthTokenGrant.assert(parsed)
 storage load -> OAuthSession.assert(JSON.parse(raw))
 storage save -> OAuthSession.assert(value)
@@ -1294,16 +1893,17 @@ Delete:
   AuthSessionResponse
   BetterAuthSessionResponse
   oauthSessionFromAuthSessionResponse
-  authIdentityFromAuthSessionResponse
+  workspaceIdentityFromAuthSessionResponse
+  OAuthTokenResult            (dead alias of OAuthTokenGrant)
+  identityFromSession         (three-line projection; inline at the one call site)
 
 Keep or create:
-  createAuthIdentityResponse
+  createWorkspaceIdentityResponse
   resolveOAuthPrincipal
   parseTokenGrant
-  identityFromSession
 ```
 
-`createAuthIdentityResponse` belongs on the Epicenter Server side because it derives encryption keys. It should be used by `/me`, not by Better Auth `customSession` in the final system.
+`createWorkspaceIdentityResponse` belongs on the Epicenter Server side because it derives encryption keys. It should be used by `/workspace-identity`, not by Better Auth `customSession` in the final system.
 
 ## Asymmetric Refusals
 
@@ -1367,12 +1967,12 @@ Decision:
 Refuse it. Better Auth session tokens stay inside Epicenter Server. OAuth resource access tokens are the only app runtime credential.
 ```
 
-### Refuse Account Profile In AuthIdentity
+### Refuse Account Profile In WorkspaceIdentity
 
 Behavior refused:
 
 ```txt
-AuthIdentity includes account metadata because the user table has it.
+WorkspaceIdentity includes account metadata because the user table has it.
 ```
 
 Code family deleted:
@@ -1387,22 +1987,107 @@ confusion between account management and workspace boot
 Decision:
 
 ```txt
-Refuse it. AuthIdentity is for local workspace ownership, not account profile UI.
+Refuse it. WorkspaceIdentity is for local workspace ownership, not account profile UI.
+```
+
+### Refuse Client-Managed E2EE In The Default Path
+
+Product sentence:
+
+```txt
+The user signs in once. Sync starts automatically on every device.
+```
+
+Behavior refused:
+
+```txt
+Default-path client-managed end-to-end encryption that requires recovery
+codes, device-to-device approval, or any extra user action on multi-device
+login.
+```
+
+Code family deleted by this refusal:
+
+```txt
+passphrase or recovery-code UI on first sign-up
+device-pairing flows (QR scans, push approvals, code entry)
+per-device key stores with cross-device sync plumbing
+per-workspace wrapped-key tables in /workspaces routes
+recovery-key escrow paths
+"your data is locked, scan from your old device" failure modes
+```
+
+User loss:
+
+```txt
+Epicenter (when hosting) or the self-hosted operator can technically decrypt
+workspace data. This is server-trusted encryption, not zero-knowledge. The
+trust ceiling is named, not hidden.
+```
+
+Decision:
+
+```txt
+Refuse it in the default path. Plan an opt-in Advanced Data Protection mode
+for users who accept the recovery cost. /workspace-identity is forward-
+compatible with that mode (payload becomes wrapped keys instead of raw
+keys; see "Forward Compatibility With Future E2EE").
 ```
 
 ## Clean-Break Implementation Plan
 
-Order matters. Build the new surfaces directly, move callers to them, then
-delete the old surfaces. Do not add compatibility aliases to the target design.
+Order matters. The auth contract is the first cleanup. Better Auth ownership,
+`/workspace-identity`, and old bridge deletion all happen before `apps/server`
+and `apps/cloud` move into place.
 
-### Wave 1: Freeze The Shared Types
+```txt
+1. Collapse app code to AuthState and auth capabilities.
+2. Keep OAuth protocol work in Better Auth.
+3. Move Epicenter identity projection to /workspace-identity.
+4. Delete old credential bridges inside current apps/api.
+5. Only then split apps/server and apps/cloud.
+```
 
-- [ ] **1.1** Keep `AuthUser` as `{ id, email, name }` with `'+': 'delete'`.
-- [ ] **1.2** Keep `AuthIdentity` as `{ user, encryptionKeys }` with `'+': 'delete'`.
-- [ ] **1.3** Add `OAuthTokenGrant` and remove persisted `scope` and `tokenType` from auth core.
-- [ ] **1.4** Keep `OAuthSession` as `AuthIdentity + accessToken + refreshToken + accessTokenExpiresAt`.
-- [ ] **1.5** Ensure storage load and save assert `OAuthSession`.
-- [ ] **1.6** Ensure token parser validates `token_type` before discarding it.
+Build new surfaces directly, move callers, verify, then delete old surfaces. No
+compatibility aliases in the target design.
+
+### Wave 1: Collapse App Code To AuthState And Capabilities
+
+- [ ] **1.1** Treat `OAuthSession`, `OAuthTokenGrant`, `OAuthTransaction`, access tokens, refresh tokens, and token expiry as private auth internals.
+- [ ] **1.2** Ensure app code only uses `auth.state`, `auth.startSignIn`, `auth.signOut`, `auth.fetch`, and `auth.openWebSocket`.
+- [ ] **1.3** Ensure workspace construction receives `WorkspaceIdentity`, not tokens or session response objects.
+- [ ] **1.4** Ensure sync receives `auth.openWebSocket`, not a bearer-token getter.
+- [ ] **1.5** Ensure HTTP consumers use `auth.fetch`, not app-written `Authorization` headers.
+- [ ] **1.6** Ensure `reauth-required` means failed refresh or rejected network auth, not merely an expired access-token timestamp.
+
+Verification:
+
+```txt
+# Apps must not reference private auth internals.
+rg -n "bearerToken|accessToken|refreshToken|OAuthSession|OAuthTokenGrant|OAuthTransaction|Authorization:\s*Bearer" apps \
+  --glob '!apps/**/*.test.ts' \
+  --glob '!apps/**/auth/**'
+
+# Apps must not call the old identity bridge directly.
+rg -n "/auth/oauth-session|set-auth-token" apps packages \
+  --glob '!**/*.test.ts' \
+  --glob '!specs/**' \
+  --glob '!docs/**'
+```
+
+Hits inside `packages/auth/**`, `packages/oauth-client/**`, tests, and specs are
+expected. Hits in app code are not.
+
+### Wave 2: Keep OAuth Protocol Work In Better Auth
+
+- [ ] **2.1** Keep `oauthProvider` responsible for authorize, token, revoke, metadata, JWKS, PKCE, consent, trusted clients, and token issuing.
+- [ ] **2.2** Do not add Epicenter-owned OAuth endpoint wrappers beyond route mounting and resource metadata.
+- [ ] **2.3** Keep `OAuthTokenGrant` as an internal token parser result and remove persisted `scope` and `tokenType` from auth core.
+- [ ] **2.4** Ensure token parsing validates `token_type`, `access_token`, `refresh_token`, and `expires_in` before discarding fields auth does not use.
+- [ ] **2.5** Split client config from `baseURL` into `issuer` and `resource`.
+- [ ] **2.6** Change refresh requests to call `${issuer}/oauth2/token` with `resource`.
+- [ ] **2.7** Change revoke requests to call `${issuer}/oauth2/revoke`.
+- [ ] **2.8** Keep one `OAuthSession` per resource audience.
 
 Verification:
 
@@ -1411,14 +2096,35 @@ bun test packages/auth/src
 bun run typecheck in packages/auth
 ```
 
-### Wave 2: Split Issuer And Resource In Client Config
+### Wave 3: Move Identity Projection To /workspace-identity
 
-- [ ] **2.1** Change `CreateOAuthAppAuthConfig.baseURL` to `issuer` and `resource`.
-- [ ] **2.2** Change refresh-token requests to call `${issuer}/oauth2/token` with `resource`.
-- [ ] **2.3** Change revoke requests to call `${issuer}/oauth2/revoke`.
-- [ ] **2.4** Change identity loading to call `${resource}/me`.
-- [ ] **2.5** Update OAuth launchers to discover from `issuer` and request `resource`.
-- [ ] **2.6** Delete `createBrowserOAuthLauncherFromApi`.
+- [ ] **3.1** Narrow `AuthUser` to `{ id, email }` with `'+': 'delete'`. Drop `name` from the projection. The Better Auth user row still stores `name`; `AuthUser` simply stops surfacing it.
+- [ ] **3.1a** Update every UI consumer of `user.name`:
+  - `packages/svelte-utils/src/account-popover/account-popover.svelte`: render `user.email` (or a derived display name).
+  - `apps/dashboard/src/lib/components/UserMenu.svelte`: delete the `{#if user.name}` block; pass `user.email` to `getInitials` (drop the first arg).
+  - `apps/zhongwen/src/routes/(signed-in)/+page.svelte`: render `user.email` or `user.email.split('@')[0]`.
+- [ ] **3.1b** Update every server consumer:
+  - `packages/cli/src/commands/auth.ts`: replace `session.user.name ?? session.user.email` with `session.user.email`.
+  - `apps/api/src/app.ts:213`: same.
+  - `apps/api/src/app.ts:375`, `asset-routes.ts:119`, `billing-routes.ts:48`: delete the `name: c.var.user.name ?? undefined` field passed to autumn.
+  - `apps/api/src/auth/create-auth.ts:112`: drop `name` from the `customSession` projection.
+  - `packages/auth/src/node/machine-auth.ts:91`: drop `name` from the machine-auth user projection.
+- [ ] **3.1c** Update test fixtures: every `AuthUser.assert({ id, email, name })` becomes `AuthUser.assert({ id, email })`. Fixtures that still pass `name` are not test failures (`'+': 'delete'` strips it silently), but they are misleading. The test would suggest `name` is part of the shape when the runtime drops it. Update them for clarity.
+- [ ] **3.2** Keep `WorkspaceIdentity` as `{ user, encryptionKeys }` with `'+': 'delete'`.
+- [ ] **3.3** Keep `OAuthSession` as private auth storage: `WorkspaceIdentity + accessToken + refreshToken + accessTokenExpiresAt`.
+- [ ] **3.4** Ensure storage load and save assert `OAuthSession`.
+- [ ] **3.5** Add the `workspaces:open` resource scope to Epicenter Server's OAuth provider configuration and to the trusted-client scope lists.
+- [ ] **3.6** Change identity loading to call `${resource}/workspace-identity` with the `workspaces:open` scope on the access token.
+- [ ] **3.7** Update OAuth launchers to discover from `issuer`, request `resource`, and ask for `workspaces:open offline_access` for sync clients.
+- [ ] **3.8** Delete `createBrowserOAuthLauncherFromApi`.
+- [ ] **3.9** Keep `/workspace-identity` calls inside auth. App code should not call `/workspace-identity` directly.
+- [ ] **3.10** Rename `apps/api/src/auth/me.ts` to `apps/api/src/auth/workspace-identity.ts` (and the route handler from `/auth/me` to `/auth/workspace-identity` during the migration, then to `/workspace-identity` in the clean-break target). Drop any `/me` or `/auth/me` aliases.
+- [ ] **3.11** Have `/workspace-identity` reject access tokens missing the `workspaces:open` scope with a 403 that names the missing scope.
+- [ ] **3.12** Document that `/workspace-identity` replaces only Epicenter identity bridges, not Better Auth or `oauthProvider` machinery (authorize, token, revoke, metadata, JWKS, PKCE, consent, trusted clients, access-token issuing, refresh-token issuing).
+- [ ] **3.13** Document that no per-workspace key-release endpoint exists; `/workspace-identity` returns all keying material the client needs to open any workspace it owns.
+- [ ] **3.14** Rename the type `AuthIdentity` to `WorkspaceIdentity` in `packages/auth/src/auth-types.ts`, and update every callsite, test fixture, and assert. Field name on `AuthState` stays `identity`.
+- [ ] **3.15** Delete the dead alias `export type OAuthTokenResult = OAuthTokenGrant` in `packages/auth/src/create-oauth-app-auth.ts`. Inline any imports of `OAuthTokenResult` to `OAuthTokenGrant`.
+- [ ] **3.16** Inline the three-line `identityFromSession` helper at its single call site in `create-oauth-app-auth.ts`. The projection is `{ user, encryptionKeys } = session`; the helper added a name without adding meaning.
 
 Verification:
 
@@ -1427,16 +2133,300 @@ bun test packages/oauth-client/src
 bun test packages/auth/src
 ```
 
-### Wave 3: Create Apps Server
+### Wave 4: Delete Old Credential Bridges In Current apps/api
 
-- [ ] **3.1** Create `apps/server` as a Hono app.
-- [ ] **3.2** Move Better Auth construction, sign-in pages, consent pages, OAuth metadata, JWKS, `/me`, workspace sync, and document sync to `apps/server`.
-- [ ] **3.3** Configure Better Auth with root OAuth paths.
-- [ ] **3.4** Keep `oauthProvider`, `jwt`, and configured login providers.
-- [ ] **3.5** Do not include `customSession`, `bearer`, or Better Auth `deviceAuthorization` in the final server path.
-- [ ] **3.6** Enforce the no-Postgres boundary with package dependencies and tests.
-- [ ] **3.7** Serve `accounts.epicenter.so` and `sync.epicenter.so` from this app in hosted production.
-- [ ] **3.8** Keep accounts and sync as mountable Hono route modules inside `apps/server`.
+Do this before any file moves to `apps/server` or `apps/cloud`. While
+`apps/api` still owns every route, the bridge code is in one place and easy to
+excise. Renaming directories first only hides the smell.
+
+Scope reminder: this wave deletes Epicenter-side bridges only. Better Auth
+plugins that still own real OAuth protocol work stay configured (`oauthProvider`,
+`jwt`, email/password, social providers).
+
+- [ ] **4.1** Replace `/auth/oauth-session` callers with OAuth token exchange plus auth-owned `/workspace-identity` identity loading.
+- [ ] **4.2** Remove `AuthSessionResponse`, `BetterAuthSessionResponse`, and conversion helpers from live app paths.
+- [ ] **4.3** Remove app runtime dependence on `set-auth-token`. Drop it from CORS `exposeHeaders` in `apps/api/src/app.ts`.
+- [ ] **4.4** Remove `customSession` identity enrichment from `apps/api/src/auth/create-auth.ts`. `/workspace-identity` becomes the only identity projection.
+- [ ] **4.5** Remove the Better Auth `bearer()` plugin from `apps/api/src/auth/create-auth.ts`. Protected resources verify oauthProvider access tokens through a principal resolver that returns `AuthUser`, not `WorkspaceIdentity`.
+- [ ] **4.6** Keep WebSocket bearer subprotocol parsing as transport input normalization until `auth.openWebSocket` owns all app sync usage.
+- [ ] **4.7** Remove Better Auth `deviceAuthorization` from the live plugin list. Its `access_token` is a Better Auth session token, not an OAuth resource token. Machine auth moves to loopback PKCE first.
+
+Verification:
+
+```txt
+# Live app code must not reference removed bridges.
+rg -n "AuthSessionResponse|BetterAuthSessionResponse|/auth/oauth-session|customSession|bearer\(\)|deviceAuthorization|createCookieAuth|createBearerAuth" \
+  apps packages \
+  --glob '!**/*.test.ts' \
+  --glob '!specs/**' \
+  --glob '!docs/**' \
+  --glob '!**/README.md' \
+  --glob '!**/SYNC_ARCHITECTURE.md'
+
+# CORS must not expose set-auth-token.
+rg -n "set-auth-token" apps/api
+
+# auth.bearerToken must not be public.
+rg -n "auth\.bearerToken|\.bearerToken\b" apps packages --glob '!**/*.test.ts'
+```
+
+Expected hits: tests, specs, historical docs. Live code should be clean.
+
+### Wave 3 And Wave 4 Commit Plan
+
+Wave 3 (rename, scope) and Wave 4 (bridge deletion) compose into five
+reviewable commits in dependency order. Each commit verifies on its own.
+Each pair of consecutive commits leaves the system in a running state, so
+the chain can stop at any commit boundary and ship.
+
+```txt
+Commit 1: Rename /auth/me to /workspace-identity            (mechanical)
+Commit 2: Add the workspaces:open scope and enforce it      (load-bearing)
+Commit 3: Delete customSession and set-auth-token           (small bridges)
+Commit 4: Delete auth.bearerToken from the AuthClient       (cascade win)
+Commit 5: Delete deviceAuthorization; add CLI loopback PKCE (substantive)
+```
+
+The order is dependency-driven, not size-driven. Each later commit assumes
+the earlier ones already landed.
+
+#### Commit 1: Rename to /workspace-identity
+
+```txt
+Route mount:
+  apps/api/src/app.ts:258    /auth/me  ->  /workspace-identity
+
+File renames:
+  apps/api/src/auth/me.ts          ->  workspace-identity.ts
+  apps/api/src/auth/me.test.ts     ->  workspace-identity.test.ts
+  apps/api/src/auth/identity-response.ts stays
+    (the helper is internal; rename the export instead of the file)
+
+Identifier renames:
+  AuthIdentity                 ->  WorkspaceIdentity
+    packages/auth/src/auth-types.ts
+  createAuthIdentityResponse   ->  createWorkspaceIdentityResponse
+    apps/api/src/auth/identity-response.ts
+  resolveOAuthIdentity         stays (it returns WorkspaceIdentity now)
+
+Implements wave items: 3.10, 3.14
+
+Why first:
+  No behavior change. Pure cohesion lock-in. Reviewable in isolation.
+  Locks the names down before scope semantics arrive in the next commit.
+
+Verification:
+  rg -n "AuthIdentity|/auth/me" apps packages --glob '!specs/**'
+    -> only specs and historical docs should match.
+  bun test apps/api/src/auth/workspace-identity.test.ts
+```
+
+#### Commit 2: Add workspaces:open scope
+
+```txt
+Server side:
+  apps/api/src/auth/trusted-oauth-clients.ts:5
+    trustedOAuthScopes:
+      ['openid', 'profile', 'email', 'offline_access']
+        ->
+      ['openid', 'profile', 'email', 'offline_access', 'workspaces:open']
+  apps/api/src/auth/trusted-oauth-clients.ts:28
+    per-client scope grants: include workspaces:open on every first-party
+    client that needs sync (CLI, dashboard, fuji, honeycrisp, opensidian,
+    zhongwen, tab-manager).
+  apps/api/src/auth/workspace-identity.ts
+    middleware adds: assert workspaces:open in token claims; 403 if missing,
+    with a body that names the missing scope.
+
+Client side:
+  packages/auth/src/create-oauth-app-auth.ts
+    OAuth launcher requests scope = "workspaces:open offline_access".
+  packages/oauth-client/src/* (browser, extension, loopback launchers)
+    pass the scope through unchanged.
+
+Tests:
+  apps/api/src/auth/workspace-identity.test.ts
+    add cases: missing scope -> 403; present scope -> 200.
+
+Implements wave items: 3.5, 3.6, 3.7, 3.11
+
+Why second:
+  Load-bearing behavior change. Roughly 30 lines on the server plus the
+  launcher updates. Visible in the issuer metadata's scopes_supported list.
+  Reviewable on its own because no callers behave differently yet:
+  customSession still enriches /auth/get-session as a parallel identity
+  path that Commit 3 will remove.
+
+Verification:
+  curl /.well-known/oauth-authorization-server | jq .scopes_supported
+    -> includes "workspaces:open".
+  curl /workspace-identity (token without scope)  -> 403.
+  curl /workspace-identity (token with scope)     -> WorkspaceIdentity.
+```
+
+#### Commit 3: Delete customSession and set-auth-token
+
+```txt
+customSession:
+  apps/api/src/auth/create-auth.ts:5
+    remove `import { customSession } from 'better-auth/plugins'`
+  apps/api/src/auth/create-auth.ts:208-214
+    remove the customSessionPlugin block
+  apps/api/src/auth/create-auth.ts:218
+    remove customSessionPlugin from the plugins array
+  packages/auth/src/node/machine-auth.ts:6
+    remove customSession type import
+  packages/auth/src/node/machine-auth.ts:31-32
+    remove customSession typing on the machine-auth client
+
+set-auth-token:
+  apps/api/src/app.ts:129
+    remove "set-auth-token" from CORS exposeHeaders
+  packages/auth/src/node/machine-auth.ts:181
+    remove the set-auth-token reader
+  packages/auth/src/node/machine-auth.test.ts:87, 104
+    remove the rotation-header tests
+
+Implements wave items: 4.3, 4.4
+
+Why third:
+  Surgical deletes. customSession only enriches /auth/get-session; removing
+  it leaves that endpoint returning the bare Better Auth session shape, and
+  /workspace-identity is the only identity surface. set-auth-token removal
+  forces machine-auth to load identity through /workspace-identity like
+  every other client.
+
+Verification:
+  rg -n "customSession" apps/api packages/auth --glob '!**/*.test.ts'
+  rg -n "set-auth-token" apps packages
+    -> no live-code hits.
+  bun test apps/api/src
+```
+
+#### Commit 4: Delete auth.bearerToken from the AuthClient surface
+
+```txt
+Surface delete:
+  packages/auth/src/create-oauth-app-auth.ts
+    remove the bearerToken getter from the AuthClient return shape
+  packages/auth/src/auth-contract.ts
+    remove bearerToken from the AuthClient type
+
+Cascade (13 closure call sites; mechanical):
+  apps/fuji/src/lib/session.svelte.ts:23
+  apps/honeycrisp/src/lib/session.svelte.ts:23
+  apps/opensidian/src/lib/session.svelte.ts:24
+  apps/zhongwen/src/lib/session.svelte.ts:23
+  apps/tab-manager/src/lib/session.svelte.ts:22
+  apps/fuji/src/routes/(signed-in)/fuji/daemon.ts
+  apps/honeycrisp/src/routes/(signed-in)/honeycrisp/daemon.ts (and script.ts)
+  apps/opensidian/src/lib/opensidian/daemon.ts (and script.ts)
+  apps/zhongwen/src/routes/(signed-in)/zhongwen/daemon.ts (and script.ts)
+  examples/notes-cross-peer/notes.ts
+
+Each call site change:
+  before:
+    workspaceConfig({ bearerToken: () => auth.bearerToken, ... })
+  after:
+    workspaceConfig({ fetch: auth.fetch, openWebSocket: auth.openWebSocket, ... })
+  or simply drop the closure if the workspace adapter already reads
+  transport from the auth client.
+
+Test:
+  packages/auth/src/contract.test.ts:57 already asserts absence; the
+  assertion stops being aspirational.
+
+Implements wave items: closes out Wave 1 collapse.
+
+Why fourth:
+  Asymmetric win. One surface delete cascades 13 mechanical call-site
+  edits. After this commit, apps never materialize tokens. auth.fetch and
+  auth.openWebSocket are the only credential paths.
+
+Verification:
+  rg -n "auth\.bearerToken|\.bearerToken\b" apps packages --glob '!**/*.test.ts'
+    -> no hits.
+  bun run typecheck across every touched app.
+```
+
+#### Commit 5: Delete deviceAuthorization, add CLI loopback PKCE
+
+```txt
+Server delete:
+  apps/api/src/auth/create-auth.ts:7
+    remove `import { deviceAuthorization } from 'better-auth/plugins/device-authorization'`
+  apps/api/src/auth/create-auth.ts:182-187
+    remove the deviceAuthorization() plugin block
+  apps/api/src/app.ts (the /device page handler)
+    remove or replace with a placeholder for a future real OAuth device grant
+
+CLI side:
+  packages/auth/src/node/machine-auth.ts
+    replace device-flow client with loopback PKCE:
+      - listen on 127.0.0.1:<random port>
+      - open system browser to issuer /oauth2/authorize
+      - capture authorization code on the loopback callback
+      - exchange for OAuth access and refresh tokens at /oauth2/token
+      - store as OAuthSession in the keychain
+  packages/cli/src/commands/auth.ts
+    update login UX:
+      "Open this URL in your browser. The CLI will receive the code
+       automatically when you finish signing in."
+
+Implements wave items: 4.7
+
+Why last:
+  Substantive code change with user-visible CLI behavior. The
+  deviceAuthorization plugin issues Better Auth session tokens, not OAuth
+  resource tokens, and cannot satisfy the workspaces:open scope check
+  added in Commit 2.
+
+Grounded against Better Auth source:
+  node_modules/better-auth/dist/plugins/device-authorization/routes.mjs:272-276
+    -> access_token: session.token   (a Better Auth session, not an OAuth token)
+    -> no refresh_token field at all
+  node_modules/@better-auth/oauth-provider/dist (grep "device")
+    -> zero hits. No RFC 8628 support upstream yet.
+
+Verification:
+  manual CLI smoke:
+    epicenter auth login
+      -> opens system browser
+      -> captures code on loopback callback
+      -> stores OAuthSession in keychain
+    epicenter <any authenticated command>
+      -> works against /workspace-identity with workspaces:open scope.
+  bun test packages/auth/src/node/machine-auth.test.ts
+```
+
+#### What ships independently
+
+```txt
+Commit 1 alone:           Safe. Cosmetic rename. All callers still work.
+Commits 1+2:              Safe. Scope check active on /workspace-identity;
+                          first-party launchers request the scope.
+Commits 1+2+3:            Safe. customSession gone; /auth/get-session
+                          returns the bare Better Auth shape;
+                          /workspace-identity is the sole identity surface.
+Commits 1+2+3+4:          Safe. Apps stop reading bearerToken; auth.fetch
+                          and auth.openWebSocket handle credentials.
+Commits 1+2+3+4+5:        OAuth-everywhere is true across browser,
+                          extension, Tauri, CLI. One credential family.
+```
+
+Each commit body should reference the wave items it implements (3.5, 3.6,
+3.10, 3.11, 3.14, 4.3, 4.4, 4.7) so reviewers can cross-check the spec.
+
+### Wave 5: Split Apps Server And Apps Cloud
+
+- [ ] **5.1** Create `apps/server` as a Hono app.
+- [ ] **5.2** Move Better Auth construction, sign-in pages, consent pages, OAuth metadata, JWKS, `/workspace-identity`, workspace sync, and document sync to `apps/server`.
+- [ ] **5.3** Configure Better Auth with root OAuth paths.
+- [ ] **5.4** Keep `oauthProvider`, `jwt`, and configured login providers.
+- [ ] **5.5** Do not include `customSession`, `bearer`, or Better Auth `deviceAuthorization` in the final server path.
+- [ ] **5.6** Enforce the no-Postgres boundary with package dependencies and tests.
+- [ ] **5.7** Serve `accounts.epicenter.so` and `sync.epicenter.so` from this app in hosted production.
+- [ ] **5.8** Keep accounts and sync as mountable Hono route modules inside `apps/server`.
 
 Verification:
 
@@ -1448,17 +2438,17 @@ manual smoke: accounts OAuth discovery returns issuer accounts.epicenter.so
 manual smoke: sync protected-resource discovery returns resource sync.epicenter.so
 ```
 
-### Wave 4: Create Apps Cloud
+Cloud move:
 
-- [ ] **4.1** Create `apps/cloud` as a Hono app.
-- [ ] **4.2** Move Drizzle, Postgres schema, billing, assets, hosted storage registry, dashboards, and cloud control APIs to `apps/cloud`.
-- [ ] **4.3** Verify access tokens with issuer `accounts.epicenter.so` and audience `api.epicenter.so`.
-- [ ] **4.4** Add `resolveOAuthPrincipal` for cloud protected routes.
-- [ ] **4.5** Make cloud middleware return `AuthUser`, not `AuthIdentity`.
-- [ ] **4.6** Do not derive encryption keys in Cloud.
-- [ ] **4.7** Do not call Better Auth `getSession()` in Cloud.
-- [ ] **4.8** Build the dashboard as a SvelteKit SPA under `apps/cloud/dashboard`.
-- [ ] **4.9** Serve the dashboard SPA from `api.epicenter.so/dashboard/*` through the Cloud Hono app.
+- [ ] **5.9** Create `apps/cloud` as a Hono app.
+- [ ] **5.10** Move Drizzle, Postgres schema, billing, assets, hosted storage registry, dashboards, and cloud control APIs to `apps/cloud`.
+- [ ] **5.11** Verify access tokens with issuer `accounts.epicenter.so` and audience `api.epicenter.so`.
+- [ ] **5.12** Add `resolveOAuthPrincipal` for cloud protected routes.
+- [ ] **5.13** Make cloud middleware return `AuthUser`, not `WorkspaceIdentity`.
+- [ ] **5.14** Do not derive encryption keys in Cloud.
+- [ ] **5.15** Do not call Better Auth `getSession()` in Cloud.
+- [ ] **5.16** Build the dashboard as a SvelteKit SPA under `apps/cloud/dashboard`.
+- [ ] **5.17** Serve the dashboard SPA from `api.epicenter.so/dashboard/*` through the Cloud Hono app.
 
 Verification:
 
@@ -1468,16 +2458,16 @@ bun run typecheck in apps/cloud
 bun run typecheck in apps/cloud/dashboard
 ```
 
-### Wave 5: Move First-Party Apps To OAuth Everywhere
+First-party app move:
 
-- [ ] **5.1** Configure dashboard with a Cloud OAuth client using `issuer = accounts.epicenter.so` and `resource = api.epicenter.so`.
-- [ ] **5.2** Configure workspace SvelteKit apps with `issuer = accounts.epicenter.so` and `resource = sync.epicenter.so`.
-- [ ] **5.3** Configure WXT extension launchers with `issuer = accounts.epicenter.so` and `resource = sync.epicenter.so`.
-- [ ] **5.4** Remove app credential forms that duplicate hosted sign-in.
-- [ ] **5.5** Replace sync bearer-token getters with `auth.openWebSocket`.
-- [ ] **5.6** Replace direct fetch with `auth.fetch` for protected resources.
-- [ ] **5.7** Use `sync.epicenter.so` as the hosted sync resource for workspace and document sync.
-- [ ] **5.8** Add explicit separate grants when one app needs both sync and Cloud resources.
+- [ ] **5.18** Configure dashboard with a Cloud OAuth client using `issuer = accounts.epicenter.so` and `resource = api.epicenter.so`.
+- [ ] **5.19** Configure workspace SvelteKit apps with `issuer = accounts.epicenter.so` and `resource = sync.epicenter.so`.
+- [ ] **5.20** Configure WXT extension launchers with `issuer = accounts.epicenter.so` and `resource = sync.epicenter.so`.
+- [ ] **5.21** Remove app credential forms that duplicate hosted sign-in.
+- [ ] **5.22** Replace sync bearer-token getters with `auth.openWebSocket`.
+- [ ] **5.23** Replace direct fetch with `auth.fetch` for protected resources.
+- [ ] **5.24** Use `sync.epicenter.so` as the hosted sync resource for workspace and document sync.
+- [ ] **5.25** Add explicit separate grants when one app needs both sync and Cloud resources.
 
 Verification:
 
@@ -1487,45 +2477,32 @@ app smoke: sign in, refresh page, load workspace, sync
 extension smoke: sign in, refresh side panel, sync
 ```
 
-### Wave 6: Fix Machine Auth Honestly
-
-- [ ] **6.1** Stop treating Better Auth device `access_token` as OAuthSession.
-- [ ] **6.2** Implement CLI loopback PKCE sign-in against Epicenter Server.
-- [ ] **6.3** Store the resulting OAuthSession in keychain.
-- [ ] **6.4** Make daemon auth reuse the same OAuthSession refresh path as apps.
-- [ ] **6.5** Do not ship headless device flow until it issues oauthProvider access and refresh tokens.
-
-Verification:
+Final verification after Wave 5:
 
 ```txt
-bun test packages/auth/src/node
-CLI smoke: login, status, protected fetch, logout
-daemon smoke: starts with saved OAuthSession and syncs
+# Bridges and old credential names must be gone from live code.
+rg -n "@epicenter/auth/contracts|/auth/oauth-session|set-auth-token|auth\.bearerToken|createCookieAuth|createBearerAuth|AuthSessionResponse|BetterAuthSessionResponse|customSession|bearer\(\)|deviceAuthorization" \
+  apps packages \
+  --glob '!**/*.test.ts' \
+  --glob '!specs/**' \
+  --glob '!docs/**' \
+  --glob '!**/README.md' \
+  --glob '!**/SYNC_ARCHITECTURE.md'
+
+# Protected resources must not call Better Auth getSession.
+# (Better Auth still uses getSession internally for sign-in pages and OAuth
+#  consent. Only protected resource handlers must be clean.)
+rg -n "getSession" apps/server/src \
+  --glob '!apps/server/src/auth/**' \
+  --glob '!**/*.test.ts'
+
+# Machine auth must not treat Better Auth device tokens as OAuthSession.
+rg -n "deviceCode|deviceToken|set-auth-token|getSession" packages/auth/src/node \
+  --glob '!**/*.test.ts'
 ```
 
-### Wave 7: Delete Old Paths
-
-- [ ] **7.1** No live code imports `@epicenter/auth/contracts`.
-- [ ] **7.2** No live code calls `/auth/oauth-session`.
-- [ ] **7.3** No app live code reads `set-auth-token`.
-- [ ] **7.4** No protected route calls Better Auth `getSession()`.
-- [ ] **7.5** No app exposes or consumes `auth.bearerToken`.
-- [ ] **7.6** No app runtime imports `createCookieAuth` or `createBearerAuth`.
-- [ ] **7.7** Delete `/auth/oauth-session` implementation and tests.
-- [ ] **7.8** Delete contract modules that name `AuthSessionResponse`.
-- [ ] **7.9** Delete Better Auth bearer app-session handling.
-- [ ] **7.10** Delete `customSession` enrichment.
-- [ ] **7.11** Remove `set-auth-token` from CORS exposure.
-- [ ] **7.12** Delete old platform auth mode files.
-- [ ] **7.13** Update docs and specs that describe the bridge model.
-
-Verification:
-
-```txt
-rg "@epicenter/auth/contracts|/auth/oauth-session|set-auth-token|auth\\.bearerToken|createCookieAuth|createBearerAuth|getSession" apps packages
-```
-
-The grep may still find specs and historical docs. Live code should be clean.
+Hits inside Better Auth pages, OAuth consent flows, tests, or specs are fine.
+Protected resource handlers and app runtime code must be clean.
 
 Verification:
 
@@ -1579,7 +2556,7 @@ apps/server/src/
 |   |-- pages.tsx
 |   `-- trusted-oauth-clients.ts
 |-- identity/
-|   |-- me.ts
+|   |-- workspace-identity.ts
 |   `-- auth-identity.ts
 |-- sync/
 |   |-- workspace-routes.ts
@@ -1686,14 +2663,27 @@ apps/cloud/src/modules/dashboard.ts
 6. Hosted subscription, billing, and managed storage account metadata lives in `apps/cloud`.
 7. Dashboard remains under `api.epicenter.so/dashboard` because it is a cloud-control UI.
 8. CLI uses loopback PKCE at launch. Headless device flow waits until it can issue real OAuth access and refresh tokens.
-9. `/auth/me` is not kept. The clean-break target exposes `/me` only.
-10. Accounts, sync, cloud resources, and dashboard surfaces are Hono route modules before they are deployables.
-11. The dashboard is a SvelteKit SPA owned by `apps/cloud` and served at `api.epicenter.so/dashboard/*`.
+9. The clean-break target exposes `/workspace-identity` only. Neither `/me`, `/auth/me`, nor `/auth/workspace-identity` is kept.
+10. Encryption key delivery uses a single workspace identity endpoint, not `/me` and not a per-workspace key-release endpoint. The endpoint returns `WorkspaceIdentity { user, encryptionKeys }` and requires an OAuth access token with the `workspaces:open` scope.
+11. Custom OAuth resource scope is `workspaces:open`. `offline_access` is requested when refresh tokens are needed. `openid`, `profile`, and `email` are not requested; Epicenter does not use OIDC ID tokens or UserInfo.
+12. Hosted and self-hosted deployments share the same client contract. Only `issuer` and `resource` URLs change.
+13. The current trust model is server-trusted encryption, not zero-knowledge end-to-end encryption. Self-hosted shifts the trusted party from Epicenter-the-company to the operator, but it does not remove the trusted party.
+14. Accounts, sync, cloud resources, and dashboard surfaces are Hono route modules before they are deployables.
+15. The dashboard is a SvelteKit SPA owned by `apps/cloud` and served at `api.epicenter.so/dashboard/*`.
 
 ## Decisions Log
 
-- Keep `AuthIdentity` as a distinct type from `OAuthSession`: the distinction names the credential boundary. Revisit only if no code ever needs identity without tokens.
-- Keep `/me` on Epicenter Server: encryption keys belong to the self-hostable runtime, not token claims and not Cloud.
+- Keep `WorkspaceIdentity` as a distinct type from `OAuthSession`: the distinction names the credential boundary. Revisit only if no code ever needs identity without tokens.
+- Rename the type `AuthIdentity` to `WorkspaceIdentity`. The payload is workspace boot material (`user` + `encryptionKeys`), not session or profile identity. The `AuthIdentity` name kept inviting profile metadata (`image`, `emailVerified`, `createdAt`) to creep in. The new name makes any such addition look wrong on sight.
+- Drop `name` from `AuthUser`. Final shape is `{ id, email }`. Every existing caller already had an email fallback or an absent-case guard, so `name` was never load-bearing; it was a display nicety. Keeping it set the precedent that would have let `image` and `emailVerified` creep in next. UI surfaces that want a friendlier label derive one from `email`. Richer profile data goes behind a separate `/account-profile` endpoint if and when a profile UI needs it.
+- Name the workspace identity endpoint `/workspace-identity`, not `/me`. The endpoint is not a profile endpoint; the name should match its job. Account profile metadata, if ever exposed, lives behind a separate `/account-profile` endpoint.
+- Ship Wave 3 and Wave 4 as five reviewable commits in dependency order: (1) rename `/auth/me` to `/workspace-identity`, (2) add and enforce `workspaces:open`, (3) delete `customSession` and `set-auth-token`, (4) delete `auth.bearerToken` from the `AuthClient` surface, (5) delete `deviceAuthorization` and replace CLI machine-auth with loopback PKCE. The full commit-by-commit plan with file references lives under "Wave 3 And Wave 4 Commit Plan." Reviewable in isolation; every intermediate state runs.
+- Refuse a per-workspace key-release endpoint. Current keys derive from `user.id` alone, so per-workspace lookup releases the same material the user already has rights to and uses the same bearer token. It is inert ceremony until per-workspace wrapping, device-bound release, or client-managed E2EE are in scope.
+- Keep `/workspace-identity` on Epicenter Server: encryption keys belong to the self-hostable runtime, not token claims and not Cloud.
+- Use `workspaces:open` as the custom OAuth resource scope for sync. It is an Epicenter protected-resource scope, not an OIDC standard scope and not Better Auth magic. `offline_access` is requested when refresh tokens are needed.
+- Do not request `openid`, `profile`, or `email`. Epicenter does not use OIDC ID tokens or UserInfo. Encryption keys never travel through token claims, ID tokens, or UserInfo.
+- State the trust model in the spec: this is server-trusted encryption. Self-hosted shifts the trusted party to the operator; it does not remove it. Client-managed E2EE is a future mode, not a guarantee this spec delivers.
+- Keep one client contract across hosted and self-hosted. Hosted splits issuer (`accounts.epicenter.so`) from resource (`sync.epicenter.so`, `api.epicenter.so`). Self-hosted collapses them onto a single origin. The `AuthClient` does not branch.
 - Use two deployables and three hosted domains: `apps/server` serves `accounts.epicenter.so` and `sync.epicenter.so`; `apps/cloud` serves `api.epicenter.so`.
 - Treat host dispatch inside `apps/server` as public-role dispatch, not a package boundary.
 - Use mountable Hono route modules inside the deployables. Revisit separate deployables only when accounts and sync have independent scaling, storage, ownership, or release cadence.

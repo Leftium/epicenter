@@ -160,11 +160,11 @@ Key finding: **the reshape this spec proposes is not invention; it matches Bette
 | --- | --- | --- |
 | `packages/svelte-utils/src/session.svelte.ts` | Three-state `Session<T>`, dispose on any non-signed-in | Nullable `SessionPayload<T> \| null`, dispose only on signed-out or different-user |
 | `packages/auth/src/require-signed-in.ts` | Throws unless `status === 'signed-in'` | Renamed `requireIdentity`, throws only on `signed-out` |
-| `apps/fuji/src/lib/session.svelte.ts` | `getSignedInSession()` throws unless signed-in | Renamed `requireWorkspace`, throws only when `current` is null |
-| `apps/honeycrisp/src/lib/session.svelte.ts` | Same | Same |
-| `apps/opensidian/src/lib/session.svelte.ts` | Same | Same |
-| `apps/zhongwen/src/lib/session.svelte.ts` | Same | Same |
-| `apps/tab-manager/src/lib/session.svelte.ts` | Same | Same |
+| `apps/fuji/src/lib/session.ts` | `getSignedInSession()` throws unless signed-in | Re-exports `createSession().requireWorkspace`, which throws only when `current` is null |
+| `apps/honeycrisp/src/lib/session.ts` | Same | Same |
+| `apps/opensidian/src/lib/session.ts` | Same | Same |
+| `apps/zhongwen/src/lib/session.ts` | Same | Same |
+| `apps/tab-manager/src/lib/session.svelte.ts` | Same helper shape, plus async Chrome storage/workspace readiness wrapper | Custom wrapper remains until the async storage/build unification follow-up |
 | `apps/*/src/routes/(signed-in)/+layout.svelte` | Binary `status === 'signed-in'` gate, redirect to /sign-in otherwise | Binary `if (current)` gate, redirect only when null |
 | `packages/svelte-utils/src/account-popover/account-popover.svelte` | Reads `auth.state.status === 'reauth-required'` for button label | No change. It legitimately consults credential freshness. |
 | `apps/*/src/routes/sign-in/+page.svelte` | Reads `auth.state.status === 'reauth-required'` for "Reconnect" label | No change. It legitimately consults credential freshness. |
@@ -209,11 +209,11 @@ The asymmetric win is **refusing the three-state shape entirely at the `Session<
 | Credential freshness on `Session<T>` | 2 coherence | Not modeled. Consumers read `auth.state.status` directly. | The asymmetric win is `Session<T>` answering exactly one question. Adding `credentialsFresh` would re-introduce the second axis. The few legitimate consumers (account-popover, sign-in pages, sync indicator) already import `auth` for `startSignIn`. |
 | Disposal trigger | 1 evidence, 2 coherence | Dispose only on `signed-out` or different user. `reauth-required` is a no-op. | Better Auth and Yjs both treat refresh failure as recoverable; preserving local identity is the documented intent (auth skill, clean-break map success criterion). |
 | `requireSignedIn` rename | 2 coherence | Rename to `requireIdentity`. Throw only when `status === 'signed-out'`. | The invariant is identity presence, not credential freshness. Same axis correction as `Session<T>`. |
-| Per-app `getSignedInSession` rename | 2 coherence | Rename to `getWorkspace`. Check `current.authenticated`. | Same as above at the app layer. |
+| Descendant workspace assertion | 2 coherence | `createSession` returns `requireWorkspace()`. Apps re-export it from their session modules. | One shared assertion helper matches the nullable `Session<T>` shape. It avoids per-app copy-paste while keeping descendants on the bind-once pattern. |
 | Three-state `AuthState` | 2 coherence | Leave unchanged | Its consumers (sync transport, fetch retry logic, account-popover, sign-in page button label) legitimately want three discrete states. The mismatch is at the `Session<T>` projection, not at `AuthState`. |
 | Credential staleness UI surface | 2 coherence | Sync/connection indicator only, plus per-operation toasts on 401 | Honest mapping to "offline because of auth" instead of a global banner. Matches local-first principle: auth gates network, not app. |
 | Per-operation 401 toast plumbing | Deferred | Defer | Useful but not load-bearing for this reshape. The auth core already transitions to `reauth-required` on 401; the sync indicator surfaces it. Per-operation contextual toasts are follow-up polish. |
-| `<Loading />` placeholder semantics | 1 evidence | Render only on `!authenticated` while redirect to `/sign-in` resolves | No longer pretends to load anything during `reauth-required`. |
+| `<Loading />` placeholder semantics | 1 evidence | Render only on `!session.current` while redirect to `/sign-in` resolves | No longer pretends to load anything during `reauth-required`. |
 | Auth-side `node` entrypoint rename | 2 coherence | `requireSignedIn` is re-exported from `packages/auth/src/node.ts:14`; rename in lockstep | Single rename sweep, not two |
 | Cold-boot in `reauth-required` | 1 evidence | Build workspace from `state.identity` | Workspace construction does not synchronously touch the network. Verified by reading `openZhongwen`/`openFuji` pre-implementation, but Phase 3 of the implementation plan validates. |
 | Sync indicator scope | 3 taste | Add the new state variant per app that already has a sync/connection indicator. Apps without one do not gain one in this spec. | Adding indicators uniformly is a separate UI consistency pass; not load-bearing here. |
@@ -270,7 +270,7 @@ AFTER
 On every auth state change:
 
   state.status === 'signed-out'?
-    └─ yes → dispose workspace (if any), set undefined, return
+    └─ yes → dispose workspace (if any), set null, return
 
   workspace not yet built?
     └─ yes → build(state.identity), return
@@ -312,15 +312,19 @@ packages/auth/src/
 packages/svelte-utils/src/
   session.svelte.ts             reshape Session<T>, reconcile, current getter
 
-apps/{fuji,honeycrisp,opensidian,zhongwen,tab-manager}/src/lib/
-  session.svelte.ts             rename getSignedInSession → getWorkspace,
-                                update check, update build callback if it
-                                uses requireSignedIn
+apps/{fuji,honeycrisp,opensidian,zhongwen}/src/lib/
+  session.ts                    re-export { requireWorkspace } from session,
+                                update build callback if it uses requireSignedIn
+
+apps/tab-manager/src/lib/
+  session.svelte.ts             keep custom wrapper for now; async storage and
+                                build unification should later collapse it to
+                                the shared session shape
 
 apps/{fuji,honeycrisp,opensidian,zhongwen}/src/routes/(signed-in)/
-  +layout.svelte                gate on current.authenticated, drop triple
-                                branch, render workspace under both
-                                authenticated states
+  +layout.svelte                gate on `if (session.current)`, drop triple
+                                branch, render workspace while identity is
+                                present
 
 apps/tab-manager/src/entrypoints/sidepanel/
   App.svelte                    same gate update
@@ -359,7 +363,7 @@ Wave order per cohesive-clean-breaks: Build, Prove, Remove. No coexistence perio
 
 For each of `fuji`, `honeycrisp`, `opensidian`, `zhongwen`, `tab-manager`:
 
-- [x] **3.x.1** Update `src/lib/session.svelte.ts`: rename `getSignedInSession` → `requireWorkspace` (matches `requireIdentity` naming, both throw on absence). Update check to `if (!c)`. Return `c.workspace`. Update any callers (Phase 4 sweep).
+- [x] **3.x.1** Update each app session module to expose `requireWorkspace`. For the SvelteKit apps, re-export the shared helper with `export const { requireWorkspace } = session`. Tab-manager keeps its custom wrapper until async storage/build unification removes the outer readiness layer.
 - [x] **3.x.2** Update `(signed-in)/+layout.svelte` (or app-equivalent gate) to use `if (current)`. Collapse to binary branch. Read `current.workspace.X.idb.whenLoaded` for `WorkspaceGate`.
 - [x] **3.x.3** Update sync indicator (or app shell where sync status lives) to surface `auth.state.status === 'reauth-required'` as a "session expired" state. Skip if the app currently has no sync indicator.
 - [x] **3.x.4** Verify build callback in `createSession({ build })` reads `requireIdentity(auth)` (after Phase 2 rename) for things like `encryptionKeys`.
@@ -457,8 +461,7 @@ Chosen shape: `SessionPayload<T> | null`. The shape is the discriminator. No fie
 ## Open questions
 
 1. **Should `InferSignedIn<T>` be renamed to `InferWorkspace<T>`?**
-   - Options: (a) rename to match new vocabulary (b) keep the name with updated JSDoc.
-   - Recommendation: rename. The whole point of this spec is honest naming. `FujiSignedIn`, `ZhongwenSignedIn`, etc. type exports across apps would rename to `FujiWorkspace`, `ZhongwenWorkspace`. Two-letter saving, semantic clarity.
+   - Resolved: yes. `packages/svelte-utils` exports `InferWorkspace`, and app session modules export workspace-shaped aliases such as `FujiWorkspace` and `ZhongwenWorkspace`.
 
 2. **Should tab-manager's sidepanel render workspace during `reauth-required`?**
    - Currently the sidepanel gates on `status === 'signed-out' || status === 'reauth-required'` and shows the sign-in card for both.
@@ -480,7 +483,7 @@ Chosen shape: `SessionPayload<T> | null`. The shape is the discriminator. No fie
 ## Decisions log (Class 3 keeps)
 
 - **Keep three-state `AuthState`.** Its consumers (`auth.fetch` retry logic, `account-popover.svelte`, sign-in pages, sync indicator) legitimately want three discrete states. The wrong-question trap was at the `Session<T>` projection, not at `AuthState` itself. Revisit when: any consumer outside the legitimate set above starts reading `auth.state.status` in a way that re-introduces the trap.
-- **Keep `<Loading />` placeholder in the `(signed-in)` layout.** It now renders only on the brief `!authenticated → redirect → /sign-in` transition. Revisit when: routing becomes synchronous or the placeholder is observed to flash visibly.
+- **Keep `<Loading />` placeholder in the `(signed-in)` layout.** It now renders only on the brief `!session.current -> redirect -> /sign-in` transition. Revisit when: routing becomes synchronous or the placeholder is observed to flash visibly.
 
 ## Acceptance criteria
 
@@ -492,8 +495,9 @@ Chosen shape: `SessionPayload<T> | null`. The shape is the discriminator. No fie
   Same-user reauth-required is a no-op at the session boundary.
 - packages/auth exports `requireIdentity`, not `requireSignedIn`. The check
   throws only when status is signed-out.
-- Every app's getSignedInSession is renamed to `requireWorkspace` and
-  narrows via `if (!c)`.
+- Every app exposes `requireWorkspace`. SvelteKit apps re-export the shared
+  `createSession().requireWorkspace`; tab-manager keeps a custom wrapper until
+  its async readiness layer is collapsed.
 - Every app's (signed-in)/+layout (or equivalent gate) gates on `if (current)`.
   No app's layout references `status` or `authenticated` on `current`.
 - Apps with a sync/connection indicator show a "session expired" variant

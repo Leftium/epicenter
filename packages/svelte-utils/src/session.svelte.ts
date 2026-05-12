@@ -14,8 +14,10 @@
  * mounted while credentials refresh, and `session.current` keeps the same
  * `SessionPayload` reference across the transition.
  *
- * The returned `requireWorkspace()` method is the standard component-side
- * unwrap helper: it throws if `current` is null. Re-export it from each app's
+ * The returned `requireWorkspace()` method is the standard descendant-side
+ * assertion helper. Route layouts prove `session.current` before mounting
+ * signed-in children; descendants call `requireWorkspace()` once at script init
+ * to assert they are inside that gated subtree. Re-export it from each app's
  * session module with `export const { requireWorkspace } = session`.
  *
  * Lazy callbacks (e.g., `encryptionKeys`, `openWebSocket`) are read at:
@@ -109,10 +111,10 @@ export function createSession<TWorkspace extends WorkspaceBase>({
 		},
 		/**
 		 * Returns the live workspace payload, throwing when there is no
-		 * authenticated identity. Callers (typically `+page.svelte` components
-		 * mounted under the layout's `{#if session.current}` gate) bind once at
-		 * script init and dot-access fields. Do NOT inline into templates;
-		 * re-evaluation breaks teardown semantics.
+		 * authenticated identity. Callers are typically descendants mounted under
+		 * the layout's `{#if session.current}` gate. Bind once at script init and
+		 * dot-access fields. Do NOT inline into templates; re-evaluation breaks
+		 * teardown semantics.
 		 */
 		requireWorkspace(): TWorkspace {
 			if (!payload) {

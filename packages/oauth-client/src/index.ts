@@ -70,8 +70,6 @@ export type OAuthTokenGrant = {
 	accessTokenExpiresAt: number;
 };
 
-export type OAuthTokenResult = OAuthTokenGrant;
-
 export type OAuthLauncher = {
 	startSignIn(): Promise<Result<OAuthTokenGrant | null, OAuthClientError>>;
 };

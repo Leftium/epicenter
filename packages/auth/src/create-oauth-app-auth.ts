@@ -8,7 +8,6 @@ import {
 } from './auth-state-store.js';
 import {
 	WorkspaceIdentity,
-	type WorkspaceIdentity as WorkspaceIdentityType,
 	OAuthSession,
 	type OAuthSession as OAuthSessionType,
 	type OAuthTokenGrant,
@@ -25,8 +24,6 @@ export type OAuthSignInLauncher = {
 		returnTo?: string;
 	}): Promise<Result<OAuthTokenGrant | null, unknown>>;
 };
-
-export type OAuthTokenResult = OAuthTokenGrant;
 
 export type OAuthTokenRefresher = (input: {
 	baseURL: string;
@@ -268,18 +265,12 @@ function stateFromSession(
 	},
 ) {
 	if (session === null) return { status: 'signed-out' as const };
-	const identity = identityFromSession(session);
+	const { user, encryptionKeys } = session;
+	const identity = { user, encryptionKeys };
 	if (networkAuthPaused) {
 		return { status: 'reauth-required' as const, identity };
 	}
 	return authStateFromIdentity(identity);
-}
-
-function identityFromSession(value: OAuthSessionType): WorkspaceIdentityType {
-	return {
-		user: value.user,
-		encryptionKeys: value.encryptionKeys,
-	};
 }
 
 function shouldRefresh(session: OAuthSessionType, now: number) {

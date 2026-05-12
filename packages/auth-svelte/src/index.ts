@@ -8,7 +8,6 @@ export {
 	type OAuthSessionStorage,
 	type OAuthSignInLauncher,
 	type OAuthTokenRefresher,
-	type OAuthTokenResult,
 } from '@epicenter/auth';
 export {
 	type AuthClient,

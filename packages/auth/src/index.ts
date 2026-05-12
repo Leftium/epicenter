@@ -13,6 +13,5 @@ export {
 	type OAuthSessionStorage,
 	type OAuthSignInLauncher,
 	type OAuthTokenRefresher,
-	type OAuthTokenResult,
 } from './create-oauth-app-auth.js';
 export { requireSignedIn } from './require-signed-in.js';

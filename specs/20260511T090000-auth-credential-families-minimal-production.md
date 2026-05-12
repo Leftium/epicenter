@@ -1,19 +1,17 @@
 # Auth Credential Families: Minimal Production
 
 **Date**: 2026-05-11
-**Status**: Partially superseded. Do not execute as written.
+**Status**: Superseded. Do not execute.
 **Author**: AI-assisted (Claude)
 **Supersedes**: `specs/20260504T010000-drop-authclient-redirect-sign-in.md`, `specs/20260510T120000-platform-google-sign-in.md`
 **Builds on**: `specs/20260503T213238-auth-cookie-bearer-two-products-clean-break.md` (the two-factory split, landed)
-**Superseded by**: `specs/20260511T092357-auth-hosted-sign-in-clean-break.md` for the public app sign-in API.
+**Superseded by**: `specs/20260511T105846-auth-oauth-everywhere-clean-break.md`
 
 ## Supersession Note
 
 This spec remains useful as an implementation record for:
 
 ```txt
-/auth/oauth-session
-oauthProvider access token versus durable Better Auth session token
 OAuth public-client registration
 extension callback handling
 Tauri callback notes
@@ -21,7 +19,7 @@ CLI device flow behavior
 manual verification coverage
 ```
 
-Do not carry forward its public app API. The current direction is:
+Do not carry forward its runtime credential model. The current direction is:
 
 ```ts
 await auth.beginSignIn({ returnTo });
@@ -33,27 +31,42 @@ Not:
 await auth.signInWithSocial({ provider: 'google' });
 ```
 
-The provider choice, sign-up mode, account recovery, MFA, and passkeys belong to hosted `/sign-in`, not app UI.
-
-The transport split still stands:
+And not:
 
 ```txt
-createCookieAuth:
-  hosted sign-in -> HttpOnly cookie session -> /auth/get-session
-
-createBearerAuth:
-  hosted sign-in -> OAuth code + PKCE -> /auth/oauth-session -> BearerSession
+OAuth access token -> /auth/oauth-session -> Better Auth session token
 ```
 
-When this document conflicts with `20260511T092357-auth-hosted-sign-in-clean-break.md`, follow the hosted sign-in clean break spec.
+The provider choice, sign-up mode, account recovery, MFA, and passkeys belong to hosted `/sign-in`, not app UI. App runtime credentials are OAuth credentials. Better Auth session cookies and session tokens stay inside the hosted API auth server boundary.
+
+The old transport split does not stand:
+
+```txt
+old:
+  cookie family -> HttpOnly cookie session
+  bearer family -> /auth/oauth-session -> Better Auth session token
+
+current:
+  every app -> OAuth code + PKCE -> OAuthSession
+  identity -> GET /auth/me
+  resources -> OAuth access token verification
+```
+
+When this document conflicts with `20260511T105846-auth-oauth-everywhere-clean-break.md`, follow the OAuth-everywhere spec.
 
 ## Current Reconciliation (2026-05-11)
 
-This spec is no longer spec-only. The current worktree has implemented the OAuth client package, `/auth/oauth-session`, the auth core split into `auth-contract.ts`, `create-bearer-auth.ts`, and `create-cookie-auth.ts`, and the cookie/bearer app platform files.
+This spec is no longer spec-only. The current worktree has implemented parts of this older direction: the OAuth client package, `/auth/oauth-session`, the auth core split into `auth-contract.ts`, `create-bearer-auth.ts`, and `create-cookie-auth.ts`, and cookie/bearer app platform files.
 
-The remaining load-bearing gap is OAuth public-client registration. `packages/constants/src/oauth.ts` declares the OpenSidian and Tab Manager client IDs, but the API does not seed or register those clients while dynamic registration is disabled. Do not treat bearer app OAuth as production-complete until that owner is added.
+Treat those changes as salvage, not as the final plan. Keep the PKCE launcher machinery and trusted client registration work where useful. Replace the bridge and family split with `/auth/me`, `OAuthSession`, auth-owned `fetch`, and auth-owned `openWebSocket`.
 
-## One-Sentence Test
+---
+
+## Historical Content Below
+
+Everything below this marker is the superseded plan. It intentionally preserves the old vocabulary so the audit trail remains readable, but it is not implementation guidance. In particular, ignore any instruction below that says to build `/auth/oauth-session`, persist a Better Auth session token in app storage, keep cookie and bearer app families, or expose `auth.bearerToken`.
+
+## Historical One-Sentence Test
 
 Every Epicenter client belongs to exactly one credential family: the cookie family (browser owns the credential, same-eTLD+1 SPAs only) or the bearer family (the app owns an opaque Better Auth session token, used by extensions, CLI, daemons, Tauri, and cross-origin browser SPAs); every app calls the same `auth.signInWithSocial({ provider })` method, while each factory implements that method through its own credential family; OAuth provider access tokens are transient proof-of-identity that get exchanged at `/auth/oauth-session` for a durable session token, never persisted as a durable credential.
 

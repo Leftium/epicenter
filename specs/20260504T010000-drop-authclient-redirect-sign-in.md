@@ -1,10 +1,32 @@
 # Drop AuthClient Social Methods: All Sign-In Through OAuth 2.1 Client
 
 **Date**: 2026-05-04
-**Status**: Draft
+**Status**: Superseded (2026-05-11)
+**Superseded by**: `specs/20260511T105846-auth-oauth-everywhere-clean-break.md`
 **Author**: AI-assisted (Claude)
 **Branch**: TBD (single feature branch; ships as one cohesive change set)
 **Depends on**: `specs/20260503T230000-auth-unified-client-two-factories.md` (Waves 1-6, implemented), `havana/specs/20260504T210000-better-auth-1.6.9-upgrade.md` (need 1.6.0+ for RFC 8252 loopback redirect URI matching)
+
+## Reconciliation (2026-05-10)
+
+The thesis of this spec only partially stands. Dropping `signInWithIdToken` and `signInWithSocialRedirect` was right, but the replacement should not be `auth.signInWithSocial({ provider })`. Provider choice, account creation, recovery, MFA, and future passkeys belong to hosted `/sign-in`. The active app API is:
+
+```ts
+await auth.beginSignIn({ returnTo });
+```
+
+Two load-bearing assumptions in the implementation plan below did not survive verification against `better-auth/better-auth`:
+
+1. **P.1 hopes `bearer()` accepts oauthProvider JWT access tokens via `getSession`.** It does not. Better Auth's `bearer()` plugin extracts an opaque session token and looks it up in the session store; it rejects anything else. `oauthProvider` access tokens are short-lived JWTs intended for resource-server verification (`verifyAccessToken`, `oauthProviderResourceClient`), not durable session credentials. Configuring `jwt()` to use HMAC does not bridge this; the two token classes are semantically distinct, and conflating them creates a footgun where any access token that passes signature is treated as a session credential.
+2. **Three packages (`oauth-client-spa`, `-extension`, `-tauri`) is one too many.** The transport differences are small; one `packages/oauth-client/` core with named per-platform launchers tree-shakes correctly and avoids three publish surfaces.
+
+The later credential-family spec tried to solve this by adding `/auth/oauth-session`, an exchange endpoint that minted a durable Better Auth session token from an OAuth access token. That bridge has since been rejected. The active spec is stricter: every app is an OAuth client, `/auth/oauth-session` becomes `GET /auth/me`, and protected resources verify OAuth access tokens directly with Better Auth's resource-server helper.
+
+The per-app surface map, the wave structure, and the edge-case discussion below are historical reference only. Do not execute the implementation plan in this file.
+
+---
+
+(Original spec content follows.)
 
 ## One-Sentence Test
 

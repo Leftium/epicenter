@@ -1,10 +1,18 @@
 # OAuth Everywhere Auth Clean Break
 
 **Date**: 2026-05-11
-**Status**: Draft implementation spec
+**Status**: Superseded. Do not execute directly.
 **Author**: AI-assisted
 **Branch**: `codex/auth-bearer-omit-cookies`
 **Supersedes**: `specs/20260511T092357-auth-hosted-sign-in-clean-break.md`
+**Superseded by**: `specs/20260511T150000-final-oauth-auth-architecture.md`
+
+## Supersession Note
+
+This spec is retained as migration history. Its OAuth-everywhere direction is
+now folded into `specs/20260511T150000-final-oauth-auth-architecture.md`,
+which also adds the accounts/resource origin split and the final machine-auth
+boundary. Use the newer spec as the implementation source of truth.
 
 ## Current Worktree Handling
 

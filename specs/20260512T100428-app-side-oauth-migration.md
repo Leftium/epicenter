@@ -8,6 +8,28 @@
 **Stack Map**: `specs/20260512T134603-auth-spec-stack-clean-break-map.md`
 **Stack Position**: Migration track from old app auth factories to the OAuth `AuthClient`.
 
+> **Session vocabulary update (2026-05-12):** the app-side projection of
+> `AuthState` has since landed in
+> `specs/20260512T220000-session-two-axis-cohesive-reshape.md`. In the live code:
+>
+> - `Session<T>` is `SessionPayload<T> | null` (no discriminant field).
+> - Apps gate route access on `if (session.current)` and reach the workspace
+>   through `current.workspace`.
+> - `createSession()` exposes `requireWorkspace()` for descendants and no
+>   longer takes a `name` field.
+> - The auth helper was renamed: `requireSignedIn` -> `requireIdentity`.
+> - SvelteKit apps' session modules are now `src/lib/session.ts`, not
+>   `session.svelte.ts`. Tab-manager keeps a custom wrapper until the async
+>   storage/build unification follow-up.
+>
+> `AuthState` itself is unchanged and still has three states. Wherever this
+> spec or its rewrite tables reference the older app-side projection (e.g.
+> `current.status === 'pending'`, `current.status === 'signed-in'`,
+> `current.status !== 'signed-out'`, `apps/<x>/src/lib/session.svelte.ts`),
+> read them through the reshape spec's current names. The Edge Cases
+> guidance about "branch on `current.status === 'signed-in'`" is now
+> "branch on `if (session.current)`"; same intent, current shape.
+
 ## One Sentence
 
 Migrate six consumer apps + `packages/svelte-utils` from

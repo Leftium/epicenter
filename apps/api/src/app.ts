@@ -3,7 +3,7 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import type { AuthIdentity } from '@epicenter/auth';
+import type { WorkspaceIdentity } from '@epicenter/auth';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -103,7 +103,7 @@ export type Env = {
 		db: Db;
 		auth: Auth;
 		authBaseURL: string;
-		user: AuthIdentity['user'];
+		user: WorkspaceIdentity['user'];
 		afterResponse: AfterResponseQueue;
 		/** Current plan ID. Only set by ensureAutumnCustomer middleware on /ai/* routes. */
 		planId: string | undefined;

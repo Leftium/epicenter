@@ -1,4 +1,4 @@
-import { type AuthIdentity, AuthUser } from '@epicenter/auth';
+import { type WorkspaceIdentity, AuthUser } from '@epicenter/auth';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { User } from 'better-auth';
 
@@ -7,10 +7,10 @@ export async function createAuthIdentityResponse(
 	{
 		deriveUserEncryptionKeys,
 	}: { deriveUserEncryptionKeys: (userId: string) => Promise<EncryptionKeys> },
-): Promise<AuthIdentity> {
+): Promise<WorkspaceIdentity> {
 	const encryptionKeys = await deriveUserEncryptionKeys(user.id);
 	return {
 		user: AuthUser.assert(user),
 		encryptionKeys,
-	} satisfies AuthIdentity;
+	} satisfies WorkspaceIdentity;
 }

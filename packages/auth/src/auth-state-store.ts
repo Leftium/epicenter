@@ -1,6 +1,6 @@
 import { encryptionKeysEqual } from '@epicenter/encryption';
 import type { AuthState } from './auth-contract.js';
-import type { AuthIdentity, AuthUser } from './auth-types.js';
+import type { WorkspaceIdentity, AuthUser } from './auth-types.js';
 
 export function createAuthStateStore(initialState: AuthState) {
 	let state = initialState;
@@ -34,7 +34,7 @@ export function createAuthStateStore(initialState: AuthState) {
 }
 
 export function authStateFromIdentity(
-	identity: AuthIdentity | null,
+	identity: WorkspaceIdentity | null,
 ): AuthState {
 	return identity === null
 		? { status: 'signed-out' }
@@ -42,8 +42,8 @@ export function authStateFromIdentity(
 }
 
 export function identitiesEqual(
-	left: AuthIdentity | null,
-	right: AuthIdentity | null,
+	left: WorkspaceIdentity | null,
+	right: WorkspaceIdentity | null,
 ) {
 	if (left === null || right === null) return left === right;
 	return (

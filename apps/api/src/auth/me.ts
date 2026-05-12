@@ -1,5 +1,5 @@
 import type { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import type { AuthIdentity } from '@epicenter/auth';
+import type { WorkspaceIdentity } from '@epicenter/auth';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { User } from 'better-auth';
 import { createAuthIdentityResponse } from './identity-response.js';
@@ -11,7 +11,7 @@ type VerifyOAuthAccessToken = ReturnType<
 type ResolveOAuthIdentityResult =
 	| {
 			status: 'resolved';
-			body: AuthIdentity;
+			body: WorkspaceIdentity;
 	  }
 	| { status: 'malformed' }
 	| { status: 'invalid' };

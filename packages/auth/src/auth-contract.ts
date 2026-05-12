@@ -1,10 +1,10 @@
 import type { Result } from 'wellcrafted/result';
 import type { AuthError } from './auth-errors.js';
-import type { AuthIdentity } from './auth-types.js';
+import type { WorkspaceIdentity } from './auth-types.js';
 
 export type AuthState =
-	| { status: 'signed-in'; identity: AuthIdentity }
-	| { status: 'reauth-required'; identity: AuthIdentity }
+	| { status: 'signed-in'; identity: WorkspaceIdentity }
+	| { status: 'reauth-required'; identity: WorkspaceIdentity }
 	| { status: 'signed-out' };
 
 export type AuthClient = {

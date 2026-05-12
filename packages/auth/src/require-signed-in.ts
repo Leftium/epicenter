@@ -1,5 +1,5 @@
 import type { AuthClient } from './auth-contract.js';
-import type { AuthIdentity } from './auth-types.js';
+import type { WorkspaceIdentity } from './auth-types.js';
 
 /**
  * Read the current identity, throwing if auth is not signed-in.
@@ -10,7 +10,7 @@ import type { AuthIdentity } from './auth-types.js';
  * if it ever fires, the workspace outlived its signed-in scope, which is a
  * caller bug.
  */
-export function requireSignedIn(auth: AuthClient): AuthIdentity {
+export function requireSignedIn(auth: AuthClient): WorkspaceIdentity {
 	if (auth.state.status !== 'signed-in') {
 		throw new Error('[auth] called requireSignedIn while not signed-in.');
 	}

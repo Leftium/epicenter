@@ -7,8 +7,8 @@ import {
 	createAuthStateStore,
 } from './auth-state-store.js';
 import {
-	AuthIdentity,
-	type AuthIdentity as AuthIdentityType,
+	WorkspaceIdentity,
+	type WorkspaceIdentity as WorkspaceIdentityType,
 	OAuthSession,
 	type OAuthSession as OAuthSessionType,
 	type OAuthTokenGrant,
@@ -112,7 +112,7 @@ export function createOAuthAppAuth({
 		if (!response.ok) {
 			throw new Error(`/auth/me failed with ${response.status}.`);
 		}
-		const identity = AuthIdentity.assert(await response.json());
+		const identity = WorkspaceIdentity.assert(await response.json());
 		return OAuthSession.assert({
 			accessToken: tokens.accessToken,
 			refreshToken: tokens.refreshToken,
@@ -275,7 +275,7 @@ function stateFromSession(
 	return authStateFromIdentity(identity);
 }
 
-function identityFromSession(value: OAuthSessionType): AuthIdentityType {
+function identityFromSession(value: OAuthSessionType): WorkspaceIdentityType {
 	return {
 		user: value.user,
 		encryptionKeys: value.encryptionKeys,

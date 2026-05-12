@@ -13,7 +13,7 @@
 import { expect, test } from 'bun:test';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import type { AuthIdentity } from '@epicenter/auth';
+import type { WorkspaceIdentity } from '@epicenter/auth';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
@@ -47,7 +47,7 @@ test('auth/me returns identity for a valid OAuth access token', async () => {
 
 		expect(response.status).toBe(200);
 		expect(response.headers.get('set-auth-token')).toBeNull();
-		const body = (await response.json()) as AuthIdentity;
+		const body = (await response.json()) as WorkspaceIdentity;
 		expect(body.user.email).toBe('oauth-identity@example.com');
 		expect(body).not.toHaveProperty('session');
 		expect(body.encryptionKeys).toEqual(encryptionKeys);

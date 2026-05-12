@@ -1,6 +1,6 @@
 export {
 	AuthError,
-	type AuthIdentity,
+	type WorkspaceIdentity,
 	type AuthState,
 	AuthUser,
 	type CreateOAuthAppAuthConfig,

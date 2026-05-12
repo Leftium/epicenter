@@ -38,7 +38,7 @@
  * ```
  */
 
-import type { AuthClient, AuthIdentity, AuthState } from '@epicenter/auth';
+import type { AuthClient, WorkspaceIdentity, AuthState } from '@epicenter/auth';
 
 export type Session<TSignedIn> =
 	| Exclude<AuthState, { status: 'signed-in' }>
@@ -73,7 +73,7 @@ export function createSession<TSignedIn extends SignedInBase>({
 	build,
 }: {
 	auth: AuthClient;
-	build: (identity: AuthIdentity) => TSignedIn;
+	build: (identity: WorkspaceIdentity) => TSignedIn;
 }) {
 	let signedIn = $state<TSignedIn | undefined>(undefined);
 

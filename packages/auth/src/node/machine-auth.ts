@@ -13,8 +13,8 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient } from '../auth-contract.js';
 import {
-	AuthIdentity,
-	type AuthIdentity as AuthIdentityType,
+	WorkspaceIdentity,
+	type WorkspaceIdentity as WorkspaceIdentityType,
 	OAuthSession,
 	type OAuthSession as OAuthSessionType,
 } from '../auth-types.js';
@@ -29,7 +29,7 @@ import {
 } from './machine-session-store.js';
 
 type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<AuthIdentityType, BetterAuthOptions>
+	typeof customSession<WorkspaceIdentityType, BetterAuthOptions>
 >;
 
 const rawDefaultAuthClient = createAuthClient({
@@ -353,7 +353,7 @@ async function fetchOAuthSession({
 	}
 
 	try {
-		const identity = AuthIdentity.assert(data);
+		const identity = WorkspaceIdentity.assert(data);
 		return Ok(
 			OAuthSession.assert({
 				...tokens,

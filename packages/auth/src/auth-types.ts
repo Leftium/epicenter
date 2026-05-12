@@ -10,13 +10,13 @@ export const AuthUser = type({
 
 export type AuthUser = typeof AuthUser.infer;
 
-export const AuthIdentity = type({
+export const WorkspaceIdentity = type({
 	'+': 'delete',
 	user: AuthUser,
 	encryptionKeys: EncryptionKeys,
 });
 
-export type AuthIdentity = typeof AuthIdentity.infer;
+export type WorkspaceIdentity = typeof WorkspaceIdentity.infer;
 
 /** Parsed OAuth token grant used before identity loading. */
 export const OAuthTokenGrant = type({
@@ -30,7 +30,7 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
 
 /** OAuth auth state persisted by browser, extension, and machine clients. */
 export const OAuthSession = type({
-	'...': AuthIdentity,
+	'...': WorkspaceIdentity,
 	'+': 'delete',
 	accessToken: 'string',
 	refreshToken: 'string',

@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';
-import type { AuthIdentity, OAuthSession } from '../auth-types.js';
+import type { WorkspaceIdentity, OAuthSession } from '../auth-types.js';
 import {
 	createMachineAuthClient,
 	type DeviceTokenError,
@@ -85,7 +85,7 @@ function makeSession({
 	};
 }
 
-function makeAuthIdentity(): AuthIdentity {
+function makeAuthIdentity(): WorkspaceIdentity {
 	const session = makeSession();
 	return {
 		user: session.user,

@@ -14,7 +14,7 @@
 
 import { expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
-import type { AuthIdentity, AuthState, OAuthSession } from './index.js';
+import type { WorkspaceIdentity, AuthState, OAuthSession } from './index.js';
 import { createOAuthAppAuth } from './index.js';
 
 const now = 1_000_000;
@@ -23,7 +23,7 @@ function identity({
 	userId = 'user-1',
 }: {
 	userId?: string;
-} = {}): AuthIdentity {
+} = {}): WorkspaceIdentity {
 	return {
 		user: {
 			id: userId,
@@ -65,7 +65,7 @@ function signedInState(value = session()): AuthState {
 	};
 }
 
-function identityFromSession(value: OAuthSession): AuthIdentity {
+function identityFromSession(value: OAuthSession): WorkspaceIdentity {
 	return {
 		user: value.user,
 		encryptionKeys: value.encryptionKeys,

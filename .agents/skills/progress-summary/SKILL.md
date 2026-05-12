@@ -10,6 +10,8 @@ metadata:
 
 Generate conversational summaries of work in progress, using the same style as well-crafted PR descriptions.
 
+For newcomer-friendly architecture explanations, use [notebook-explanation](../notebook-explanation/SKILL.md) as the format: short working notes, tiny definitions, ASCII diagrams, concrete examples, and compressed rules.
+
 ## Core Principles
 
 ### Motivation First
@@ -81,7 +83,24 @@ and update the migration guide.
 
 For "explain what's happening here" on larger work:
 
-Use ASCII diagrams liberally. They're more scannable than prose.
+Use ASCII diagrams liberally. They're more scannable than prose. When the user is trying to build a mental model, switch into notebook style:
+
+```txt
+Question:
+  What are we trying to understand?
+
+Notebook model:
+  term = meaning
+  owner = boundary
+
+Flow:
+  thing A
+    -> thing B
+    -> thing C
+
+Rule:
+  durable takeaway
+```
 
 **Journey/Evolution Diagrams** (when work iterates on previous attempts):
 

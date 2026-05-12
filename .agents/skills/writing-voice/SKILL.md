@@ -10,6 +10,8 @@ metadata:
 
 **Core principle**: Write for the ear, not just the eyes. Prose should be suitable to read out loud.
 
+For technical explanations where the user is trying to understand a system, combine this voice with [notebook-explanation](../notebook-explanation/SKILL.md): short working notes, code blocks, tiny definitions, ASCII diagrams, and durable rules.
+
 ## When to Apply This Skill
 
 Use this pattern when you need to:
@@ -144,6 +146,25 @@ Mechanical substitutions you can apply without judgment:
 ## Explaining Technical Concepts
 
 When explaining how something works, show the mechanism, not the marketing. Lead with what happens, then why.
+
+When the topic is architecture, auth, APIs, ownership, or design tradeoffs, prefer notebook style over long prose:
+
+```txt
+Question:
+  What are we trying to understand?
+
+Model:
+  term = meaning
+  boundary = owner
+
+Flow:
+  thing A
+    -> thing B
+    -> thing C
+
+Rule:
+  durable takeaway
+```
 
 Bad (over-explains, AI voice):
 

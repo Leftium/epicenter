@@ -201,8 +201,6 @@ test('handleCallback returns token result after successful exchange', async () =
 	expect(data?.accessToken).toBe('access-token');
 	expect(data?.refreshToken).toBe('refresh-token');
 	expect(data?.accessTokenExpiresAt).toBeGreaterThanOrEqual(now + 899_000);
-	expect(data?.scope).toBe('openid profile email offline_access');
-	expect(data?.tokenType).toBe('bearer');
 	expect(tokenBody?.get('resource')).toBe('http://auth.test');
 	expect(values.size).toBe(0);
 });

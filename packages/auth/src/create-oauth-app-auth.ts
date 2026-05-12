@@ -11,6 +11,7 @@ import {
 	type AuthIdentity as AuthIdentityType,
 	OAuthSession,
 	type OAuthSession as OAuthSessionType,
+	type OAuthTokenGrant,
 } from './auth-types.js';
 import { headersFromRequest } from './request-headers.js';
 
@@ -22,16 +23,10 @@ export type OAuthSessionStorage = {
 export type OAuthSignInLauncher = {
 	startSignIn(input?: {
 		returnTo?: string;
-	}): Promise<Result<OAuthTokenResult | null, unknown>>;
+	}): Promise<Result<OAuthTokenGrant | null, unknown>>;
 };
 
-export type OAuthTokenResult = {
-	accessToken: string;
-	refreshToken: string;
-	accessTokenExpiresAt: number;
-	scope: string | null;
-	tokenType: string;
-};
+export type OAuthTokenResult = OAuthTokenGrant;
 
 export type OAuthTokenRefresher = (input: {
 	baseURL: string;
@@ -39,7 +34,7 @@ export type OAuthTokenRefresher = (input: {
 	session: OAuthSessionType;
 	fetch: typeof fetch;
 	now: () => number;
-}) => Promise<OAuthTokenResult>;
+}) => Promise<OAuthTokenGrant>;
 
 export type OAuthRefreshTokenRevoker = (input: {
 	baseURL: string;
@@ -108,7 +103,7 @@ export function createOAuthAppAuth({
 	}
 
 	async function loadIdentity(
-		tokens: OAuthTokenResult,
+		tokens: OAuthTokenGrant,
 	): Promise<OAuthSessionType> {
 		const response = await fetchImpl(`${baseURL}/auth/me`, {
 			headers: { Authorization: `Bearer ${tokens.accessToken}` },
@@ -307,7 +302,7 @@ async function refreshOAuthTokenWithEndpoint({
 	session: OAuthSessionType;
 	fetch: typeof globalThis.fetch;
 	now: () => number;
-}): Promise<OAuthTokenResult> {
+}): Promise<OAuthTokenGrant> {
 	const body = new URLSearchParams({
 		grant_type: 'refresh_token',
 		refresh_token: session.refreshToken,
@@ -326,15 +321,16 @@ async function refreshOAuthTokenWithEndpoint({
 		throw new Error(`OAuth refresh failed with ${response.status}.`);
 	}
 	const data = await response.json();
+	const tokenType = readString(data, 'token_type');
+	if (tokenType.toLowerCase() !== 'bearer') {
+		throw new Error(`Expected token_type to be bearer, got ${tokenType}.`);
+	}
 	return {
 		accessToken: readString(data, 'access_token'),
 		refreshToken:
 			readOptionalString(data, 'refresh_token') ?? session.refreshToken,
-		accessTokenExpiresAt:
-			now() + readPositiveNumber(data, 'expires_in') * 1000,
-		scope: readOptionalString(data, 'scope'),
-		tokenType: readString(data, 'token_type'),
-	} satisfies OAuthTokenResult;
+		accessTokenExpiresAt: now() + readPositiveNumber(data, 'expires_in') * 1000,
+	} satisfies OAuthTokenGrant;
 }
 
 async function revokeOAuthRefreshTokenWithEndpoint({

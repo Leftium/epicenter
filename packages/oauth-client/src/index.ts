@@ -64,16 +64,16 @@ export type OAuthClientConfig = {
 	fetch?: typeof fetch;
 };
 
-export type OAuthTokenResult = {
+export type OAuthTokenGrant = {
 	accessToken: string;
 	refreshToken: string;
 	accessTokenExpiresAt: number;
-	scope: string | null;
-	tokenType: string;
 };
 
+export type OAuthTokenResult = OAuthTokenGrant;
+
 export type OAuthLauncher = {
-	startSignIn(): Promise<Result<OAuthTokenResult | null, OAuthClientError>>;
+	startSignIn(): Promise<Result<OAuthTokenGrant | null, OAuthClientError>>;
 };
 
 type MaybePromise<T> = T | Promise<T>;
@@ -233,7 +233,7 @@ export function createOAuthClient({
 
 	async function handleCallback(
 		url: string | URL,
-	): Promise<Result<OAuthTokenResult | null, OAuthClientError>> {
+	): Promise<Result<OAuthTokenGrant | null, OAuthClientError>> {
 		const callbackUrl = new URL(url);
 		if (
 			!callbackUrl.searchParams.has('code') &&
@@ -325,7 +325,7 @@ export function createOAuthClient({
 
 function parseTokenResult(
 	tokenResponse: oauth.TokenEndpointResponse,
-): Result<OAuthTokenResult, OAuthClientError> {
+): Result<OAuthTokenGrant, OAuthClientError> {
 	if (!tokenResponse.access_token) return OAuthClientError.MissingAccessToken();
 	if (!tokenResponse.refresh_token)
 		return OAuthClientError.MissingRefreshToken();
@@ -336,13 +336,10 @@ function parseTokenResult(
 	) {
 		return OAuthClientError.MissingExpiresIn();
 	}
-
 	return Ok({
 		accessToken: tokenResponse.access_token,
 		refreshToken: tokenResponse.refresh_token,
 		accessTokenExpiresAt: Date.now() + tokenResponse.expires_in * 1000,
-		scope: tokenResponse.scope ?? null,
-		tokenType: tokenResponse.token_type,
 	});
 }
 

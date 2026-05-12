@@ -312,8 +312,6 @@ describe('machine auth free functions', () => {
 				accessToken: 'new-token',
 				refreshToken: 'new-refresh-token',
 				accessTokenExpiresAt: now + 3_600_000,
-				scope: null,
-				tokenType: 'bearer',
 			}),
 			fetch: (async (_input, init) => {
 				authorizations.push(new Headers(init?.headers).get('authorization'));

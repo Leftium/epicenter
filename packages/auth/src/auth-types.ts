@@ -18,6 +18,16 @@ export const AuthIdentity = type({
 
 export type AuthIdentity = typeof AuthIdentity.infer;
 
+/** Parsed OAuth token grant used before identity loading. */
+export const OAuthTokenGrant = type({
+	'+': 'delete',
+	accessToken: 'string',
+	refreshToken: 'string',
+	accessTokenExpiresAt: 'number',
+});
+
+export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
+
 /** OAuth auth state persisted by browser, extension, and machine clients. */
 export const OAuthSession = type({
 	'...': AuthIdentity,

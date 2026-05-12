@@ -117,8 +117,6 @@ test('startSignIn loads identity through auth/me and stores OAuthSession', async
 					accessToken: 'oauth-access-token',
 					refreshToken: 'oauth-refresh-token',
 					accessTokenExpiresAt: now + 3_600_000,
-					scope: null,
-					tokenType: 'bearer',
 				});
 			},
 		},
@@ -227,8 +225,6 @@ test('fetch awaits refreshed session storage before sending the request', async 
 				accessToken: 'new-access-token',
 				refreshToken: 'new-refresh-token',
 				accessTokenExpiresAt: now + 3_600_000,
-				scope: null,
-				tokenType: 'bearer',
 			};
 		},
 		fetch: (async (input, init) => {
@@ -265,8 +261,6 @@ test('fetch retries once after a 401 with a refreshed access token', async () =>
 			accessToken: 'retry-access-token',
 			refreshToken: 'retry-refresh-token',
 			accessTokenExpiresAt: now + 3_600_000,
-			scope: null,
-			tokenType: 'bearer',
 		}),
 		fetch: (async (_input, init) => {
 			authorizations.push(new Headers(init?.headers).get('authorization'));
@@ -298,8 +292,6 @@ test('fetch enters reauth-required when refreshed retry is rejected', async () =
 			accessToken: 'retry-access-token',
 			refreshToken: 'retry-refresh-token',
 			accessTokenExpiresAt: now + 3_600_000,
-			scope: null,
-			tokenType: 'bearer',
 		}),
 		fetch: (async () =>
 			new Response(null, { status: 401 })) as unknown as typeof fetch,
@@ -334,8 +326,6 @@ test('fetch retries Request inputs with body using a fresh clone', async () => {
 			accessToken: 'retry-access-token',
 			refreshToken: 'retry-refresh-token',
 			accessTokenExpiresAt: now + 3_600_000,
-			scope: null,
-			tokenType: 'bearer',
 		}),
 		fetch: (async (input, init) => {
 			expect(input).toBeInstanceOf(Request);
@@ -421,8 +411,6 @@ test('same-user startSignIn repairs reauth-required state and resumes network au
 					accessToken: 'repair-access-token',
 					refreshToken: 'repair-refresh-token',
 					accessTokenExpiresAt: now + 3_600_000,
-					scope: null,
-					tokenType: 'bearer',
 				}),
 		},
 		refreshOAuthToken: async () => {
@@ -465,8 +453,6 @@ test('signOut during an in-flight refresh leaves the session signed out', async 
 		accessToken: string;
 		refreshToken: string;
 		accessTokenExpiresAt: number;
-		scope: string | null;
-		tokenType: string;
 	}) => void = () => {};
 	const authorizations: Array<string | null> = [];
 	const auth = createOAuthAppAuth({
@@ -495,8 +481,6 @@ test('signOut during an in-flight refresh leaves the session signed out', async 
 		accessToken: 'stale-access-token',
 		refreshToken: 'stale-refresh-token',
 		accessTokenExpiresAt: now + 3_600_000,
-		scope: null,
-		tokenType: 'bearer',
 	});
 
 	const [response, signOutResult] = await Promise.all([
@@ -619,8 +603,6 @@ test('openWebSocket refreshes first and appends the bearer subprotocol', async (
 			accessToken: 'socket-access-token',
 			refreshToken: 'socket-refresh-token',
 			accessTokenExpiresAt: now + 3_600_000,
-			scope: null,
-			tokenType: 'bearer',
 		}),
 	});
 

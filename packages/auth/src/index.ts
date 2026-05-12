@@ -4,6 +4,7 @@ export {
 	type AuthIdentity,
 	AuthUser,
 	OAuthSession,
+	type OAuthTokenGrant,
 } from './auth-types.js';
 export {
 	type CreateOAuthAppAuthConfig,

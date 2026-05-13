@@ -491,3 +491,45 @@ Phase 3 no longer moves the browser file. The file stays at `apps/<app>/src/.../
 - `playground/tab-manager-e2e/epicenter.config.ts`: same.
 - `packages/workspace/src/client/{daemon-actions,connect-daemon-actions}.ts`: JSDoc references to old subpaths to update.
 - `jsrepo`: https://jsrepo.dev (CLI, build config, manifest format).
+
+## Review (Phases 1-5a, 6 verification)
+
+### Landed commits
+
+| Phase | Commit | Summary |
+| --- | --- | --- |
+| 1 | `refactor(apps): inline document layer, drop ./document subpath` | Inlined `openXDocument` into every runtime caller; deleted each `document.ts`; dropped `./document` subpath. Fuji moved `FUJI_WORKSPACE_ID` to `workspace.ts`; Zhongwen kept its typed `zhongwenKv`. |
+| 2 | `refactor(apps): promote schema to root npm export` | `./workspace` -> `.` for all 5 apps. Updated playground configs and the `@epicenter/workspace` JSDoc. Bundled Tab Manager's document inlining here for thesis consistency (spec said "no doc.ts"; turned out it had one). |
+| 3 | `refactor(apps): drop ./browser subpath, browser stays app-private` | Removed `./browser` exports. Files unchanged: every consumer was already a relative or `$lib` alias import, not a package boundary import. |
+| 4 | `refactor(apps): move script and daemon to apps/<app>/blocks/` | `apps/<app>/{src/...}/{script,daemon}.ts` -> `apps/<app>/blocks/{script,daemon-route}.ts`. Rewrote schema imports to the package root. Dropped `./script` and `./daemon` subpaths. Updated the `@epicenter/cli` README to show the recipe-as-block pattern. |
+| 5a | `build(jsrepo): add registry config for app blocks` | `jsrepo.config.ts` at repo root, 8 items (`epicenter/<app>/{script,daemon-route}` x 4 apps), `repository()` output producing `registry.json` (gitignored). Cross-block deps (e.g. Fuji's script -> daemon-route) auto-detected. |
+
+### Phase 6 verification outcome
+
+- **6.1 typecheck (per-app, in scope)**: all 5 apps return `0 ERRORS 0 WARNINGS 0 FILES_WITH_PROBLEMS`.
+- **6.1 typecheck (root)**: fails on pre-existing errors in `@epicenter/ui` (DateTimeString brand mismatches, emoji-picker types) and `packages/workspace/src/document/peer.test.ts` (DocOpts shape). Confirmed unrelated to this spec by reproducing on a clean stash of the working tree before any phase landed.
+- **6.2 test (root)**: `turbo run test` fails because four apps and one package have `test` scripts that point at directories with no test files. Pre-existing on the base branch; not introduced by this spec.
+- **6.3 dev-server smoke**: not executed in this pass (each app needs an authenticated session against a running API). Per-app typecheck is the closest automated proxy. Worth a manual smoke before the next deploy.
+- **6.4 playground configs**: not executed in this pass (need machine auth credentials). The import rewrites typecheck via TypeScript module resolution diagnostics, which confirmed the new package-root paths resolve to the schema files.
+- **6.5 grep sweep**: zero hits for all four spec'd patterns:
+  - `'@epicenter/(honeycrisp|fuji|zhongwen|tab-manager)/(workspace|document|browser|script|daemon)'` -> 0 hits.
+  - `'opensidian/(workspace|document|browser|script|daemon)'` -> 0 hits.
+  - `openXDocument|XDocument\b` (across all five apps) -> 0 hits.
+  - `find apps -type f \( -name 'document.ts' -o -name 'script.ts' -o -name 'daemon.ts' \) -not -path '*/blocks/*'` -> 0 hits.
+- **6.6 package.json exports**: every app has exactly one entry, `"."`:
+  - `@epicenter/honeycrisp` -> `./src/routes/(signed-in)/honeycrisp/workspace.ts`
+  - `@epicenter/fuji` -> `./src/routes/(signed-in)/fuji/workspace.ts`
+  - `@epicenter/zhongwen` -> `./src/routes/(signed-in)/zhongwen/workspace/index.ts`
+  - `opensidian` -> `./src/lib/workspace/definition.ts`
+  - `@epicenter/tab-manager` -> `./src/lib/workspace/index.ts`
+
+### Spec discrepancies discovered during execution
+
+- **Tab Manager had a `document.ts`** under `apps/tab-manager/src/lib/tab-manager/`. The spec asserted "no `document.ts`/`script.ts`/`daemon.ts`", so the spec's "Phase 1 is a no-op for Tab Manager" was wrong on the `document.ts` count. Inlined and deleted it during Phase 2 (where the package.json was being touched anyway). Tab Manager still has no `script` or `daemon`, so Phase 4 was a true no-op for it.
+- **jsrepo config filename**: the spec said `jsrepo-build-config.json`. The actual jsrepo CLI looks for `jsrepo.config.(ts|js|mts|mjs)`. Used `jsrepo.config.ts`.
+
+### Deferred (per spec)
+
+- **Phase 5b (registry hosting)**: blocked on Open Question 1. Decide between `epicenter.so/r/`, a dedicated `registry.epicenter.so` subdomain, or `github.com/EpicenterHQ/blocks`. Until then `registry.json` is produced locally and gitignored.
+- **Open Question 3 (helper for the four inlined lines)**: kept inline. No new primitive.
+- **Open Question 4 (playground migration to jsrepo add)**: kept inline. Playground configs still serve as the canonical "what does this block look like in use" demo.

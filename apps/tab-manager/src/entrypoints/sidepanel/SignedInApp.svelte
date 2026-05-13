@@ -24,20 +24,20 @@
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import {
 		forgetTabManagerDevice,
-		requireWorkspace,
+		requireApp,
 		tabManagerSession,
 	} from '$lib/session.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 	const auth = tabManagerSession.auth;
-	const items = createCommandPaletteItems(workspace.state.savedTabs);
+	const items = createCommandPaletteItems(app.state.savedTabs);
 	let searchInputRef = $state<HTMLInputElement | null>(null);
 	let commandPaletteOpen = $state(false);
 	let aiDrawerOpen = $state(false);
 	let searchFocused = $state(false);
 	const isSearchActive = $derived(
-		searchFocused || workspace.state.unifiedView.searchQuery !== '',
+		searchFocused || app.state.unifiedView.searchQuery !== '',
 	);
 	const reauthRequired = $derived(auth.state.status === 'reauth-required');
 
@@ -110,21 +110,21 @@
 						bind:ref={searchInputRef}
 						type="search"
 						placeholder="Search tabs..."
-						bind:value={workspace.state.unifiedView.searchQuery}
+						bind:value={app.state.unifiedView.searchQuery}
 						onkeydown={(e: KeyboardEvent) => {
 						// "/" in empty input opens command palette
-						if (e.key === '/' && workspace.state.unifiedView.searchQuery === '') {
+						if (e.key === '/' && app.state.unifiedView.searchQuery === '') {
 							e.preventDefault();
 							commandPaletteOpen = true;
 						}
 						// "@" in empty input opens AI drawer (Phase 4)
-						if (e.key === '@' && workspace.state.unifiedView.searchQuery === '') {
+						if (e.key === '@' && app.state.unifiedView.searchQuery === '') {
 							e.preventDefault();
 							aiDrawerOpen = true;
 						}
 						// Escape clears search
 						if (e.key === 'Escape') {
-							workspace.state.unifiedView.searchQuery = '';
+							app.state.unifiedView.searchQuery = '';
 							searchInputRef?.blur();
 						}
 					}}
@@ -136,21 +136,21 @@
 						<div
 							class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5"
 						>
-							{#if workspace.state.unifiedView.searchQuery}
+							{#if app.state.unifiedView.searchQuery}
 								<button
 									type="button"
 									class="text-muted-foreground hover:text-foreground"
 									onclick={() => {
-										workspace.state.unifiedView.searchQuery = '';
+										app.state.unifiedView.searchQuery = '';
 										searchInputRef?.focus();
 									}}
 								>
 									<XIcon class="size-3.5" />
 								</button>
 							{/if}
-							{@render searchToggle(workspace.state.unifiedView.isCaseSensitive, (v) => { workspace.state.unifiedView.isCaseSensitive = v; }, CaseSensitiveIcon, 'Match Case')}
-							{@render searchToggle(workspace.state.unifiedView.isRegex, (v) => { workspace.state.unifiedView.isRegex = v; }, RegexIcon, 'Use Regular Expression')}
-							{@render searchToggle(workspace.state.unifiedView.isExactMatch, (v) => { workspace.state.unifiedView.isExactMatch = v; }, WholeWordIcon, 'Match Whole Word')}
+							{@render searchToggle(app.state.unifiedView.isCaseSensitive, (v) => { app.state.unifiedView.isCaseSensitive = v; }, CaseSensitiveIcon, 'Match Case')}
+							{@render searchToggle(app.state.unifiedView.isRegex, (v) => { app.state.unifiedView.isRegex = v; }, RegexIcon, 'Use Regular Expression')}
+							{@render searchToggle(app.state.unifiedView.isExactMatch, (v) => { app.state.unifiedView.isExactMatch = v; }, WholeWordIcon, 'Match Whole Word')}
 							<DropdownMenu.Root>
 								<DropdownMenu.Trigger>
 									{#snippet child({ props })}
@@ -159,14 +159,14 @@
 											class="flex items-center gap-0.5 rounded-sm px-1 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
 											{...props}
 										>
-											{({ all: 'All', title: 'Title', url: 'URL' })[workspace.state.unifiedView.searchField]}
+											{({ all: 'All', title: 'Title', url: 'URL' })[app.state.unifiedView.searchField]}
 											<ChevronDownIcon class="size-2.5" />
 										</button>
 									{/snippet}
 								</DropdownMenu.Trigger>
 								<DropdownMenu.Content align="end" class="w-28">
 									<DropdownMenu.RadioGroup
-										bind:value={workspace.state.unifiedView.searchField}
+										bind:value={app.state.unifiedView.searchField}
 									>
 										<DropdownMenu.RadioItem value="all"
 											>All Fields</DropdownMenu.RadioItem
@@ -205,14 +205,14 @@
 				</Button>
 				<AccountPopover
 					{auth}
-					workspace={workspace.tabManager.workspace}
+					collaboration={app.tabManager.collaboration}
 					syncNoun="tabs"
 					onForgetDevice={forgetTabManagerDevice}
 				/>
 			</div>
 		</header>
 		<!-- Gate on browser state seed so child components can read data synchronously -->
-		{#await Promise.all([workspace.tabManager.idb.whenLoaded, browserState.whenReady])}
+		{#await Promise.all([app.tabManager.idb.whenLoaded, browserState.whenReady])}
 			<Loading class="flex-1" label="Loading tabs…" />
 		{:then _}
 			<div class="flex-1 min-h-0"><UnifiedTabList /></div>

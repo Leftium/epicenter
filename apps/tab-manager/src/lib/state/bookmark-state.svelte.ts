@@ -14,11 +14,11 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
-import type { TabManagerWorkspace } from '$lib/session.svelte';
+import type { TabManagerBinding } from '$lib/session.svelte';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { Bookmark, BookmarkId } from '$lib/workspace';
 
-export function createBookmarkState(tabManager: TabManagerWorkspace) {
+export function createBookmarkState(tabManager: TabManagerBinding) {
 	const bookmarksMap = fromTable(tabManager.tables.bookmarks);
 
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
@@ -62,7 +62,7 @@ export function createBookmarkState(tabManager: TabManagerWorkspace) {
 		 */
 		async toggle(tab: BrowserTab) {
 			if (!tab.url) return;
-			return tabManager.actions.bookmarks.toggle({
+			return tabManager.collaboration.actions.bookmarks.toggle({
 				url: tab.url,
 				title: tab.title || 'Untitled',
 				favIconUrl: tab.favIconUrl,
@@ -71,17 +71,17 @@ export function createBookmarkState(tabManager: TabManagerWorkspace) {
 
 		/** Open a bookmark in a new browser tab without removing the bookmark. */
 		async open(bookmark: Bookmark) {
-			return tabManager.actions.bookmarks.open({ url: bookmark.url });
+			return tabManager.collaboration.actions.bookmarks.open({ url: bookmark.url });
 		},
 
 		/** Delete a bookmark by ID. Synchronous CRDT delete. */
 		remove(id: BookmarkId) {
-			return tabManager.actions.bookmarks.remove({ id });
+			return tabManager.collaboration.actions.bookmarks.remove({ id });
 		},
 
 		/** Delete all bookmarks. Synchronous CRDT batch delete. */
 		removeAll() {
-			return tabManager.actions.bookmarks.removeAll();
+			return tabManager.collaboration.actions.bookmarks.removeAll();
 		},
 	};
 }

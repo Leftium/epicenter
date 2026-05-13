@@ -9,16 +9,17 @@ import {
 	attachOwnedBroadcastChannel,
 	type EncryptionKeys,
 	type OpenWebSocket,
-	openWorkspace,
+	openCollaboration,
 	type PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
+import { createTabManagerActions } from '$lib/workspace/actions';
 import type { DeviceId } from '$lib/workspace/definition';
 
-type TabManagerPeer = PeerIdentity & { id: DeviceId };
+import { openTabManagerDoc } from './index';
 
-import { openTabManager as openTabManagerDoc } from './index';
+type TabManagerPeer = PeerIdentity & { id: DeviceId };
 
 /**
  * Construction is async because awareness publishes the peer identity
@@ -40,38 +41,41 @@ export async function openTabManager({
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const resolvedPeer = await Promise.resolve(peer);
+	const identity = await Promise.resolve(peer);
 
-	const doc = openTabManagerDoc({
-		deviceId: Promise.resolve(resolvedPeer.id),
-		encryptionKeys,
-	});
-
+	const doc = openTabManagerDoc({ encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
-	const workspace = openWorkspace(doc.ydoc, {
+	const actions = createTabManagerActions({
+		tables: doc.tables,
+		batch: doc.batch,
+		deviceId: Promise.resolve(identity.id),
+	});
+
+	const collaboration = openCollaboration(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		identity: resolvedPeer,
-		actions: doc.actions,
+		identity,
+		actions,
 	});
 
 	return {
-		...doc,
+		ydoc: doc.ydoc,
+		tables: doc.tables,
+		kv: doc.kv,
+		batch: doc.batch,
 		idb,
-		workspace,
+		collaboration,
 		async wipe() {
 			doc[Symbol.dispose]();
-			await Promise.all([idb.whenDisposed, workspace.whenDisposed]);
+			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: [doc.ydoc.guid],
 			});
 		},
-		peer: resolvedPeer,
-		device: resolvedPeer,
 		[Symbol.dispose]() {
 			doc[Symbol.dispose]();
 		},

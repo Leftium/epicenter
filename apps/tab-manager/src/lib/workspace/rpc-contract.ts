@@ -18,6 +18,6 @@
 import type { InferSyncRpcMap } from '@epicenter/workspace';
 import type { TabManager } from '../tab-manager/client';
 
-type Actions = TabManager['actions'];
+type Actions = TabManager['collaboration']['actions'];
 
 export type TabManagerRpc = InferSyncRpcMap<Actions>;

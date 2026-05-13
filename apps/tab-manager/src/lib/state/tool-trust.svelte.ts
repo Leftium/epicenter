@@ -12,7 +12,7 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import type { TabManagerWorkspace } from '$lib/session.svelte';
+import type { TabManagerBinding } from '$lib/session.svelte';
 import type { ToolTrust } from '$lib/workspace';
 
 /**
@@ -23,7 +23,7 @@ import type { ToolTrust } from '$lib/workspace';
  */
 export type TrustLevel = ToolTrust['trust'];
 
-export function createToolTrustState(tabManager: TabManagerWorkspace) {
+export function createToolTrustState(tabManager: TabManagerBinding) {
 	const trustMap = fromTable(tabManager.tables.toolTrust);
 
 	/** Cached projection of trust entries: stable reference via $derived. */

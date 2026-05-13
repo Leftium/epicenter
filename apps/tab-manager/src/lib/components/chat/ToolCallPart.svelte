@@ -6,16 +6,16 @@
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import { requireWorkspace, type WorkspaceTools } from '$lib/session.svelte';
+	import { requireApp, type SessionTools } from '$lib/session.svelte';
 	import CollapsibleSection from '../CollapsibleSection.svelte';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 	let {
 		part,
 		onApproveToolCall,
 		onDenyToolCall,
 	}: {
-		part: TanStackToolCallPart<WorkspaceTools>;
+		part: TanStackToolCallPart<SessionTools>;
 		onApproveToolCall: (approvalId: string) => void;
 		onDenyToolCall: (approvalId: string) => void;
 	} = $props();
@@ -27,7 +27,7 @@
 			'error' in part.output,
 	);
 	const displayName = $derived(
-		workspace.workspaceAiTools.definitions.find((d) => d.name === part.name)
+		app.sessionAiTools.definitions.find((d) => d.name === part.name)
 			?.title ??
 			part.name.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()),
 	);
@@ -38,7 +38,7 @@
 		if (
 			isApprovalRequested &&
 			approval?.id &&
-			workspace.state.toolTrust.shouldAutoApprove(part.name)
+			app.state.toolTrust.shouldAutoApprove(part.name)
 		) {
 			onApproveToolCall(approval.id);
 		}
@@ -51,7 +51,7 @@
 
 	function handleAlwaysAllow() {
 		if (!approval?.id) return;
-		workspace.state.toolTrust.set(part.name, 'always');
+		app.state.toolTrust.set(part.name, 'always');
 		onApproveToolCall(approval.id);
 	}
 
@@ -74,9 +74,9 @@
 
 <div class="flex flex-col gap-1 py-1">
 	<div class="flex items-center gap-1.5">
-		{#if isApprovalRequested && !workspace.state.toolTrust.shouldAutoApprove(part.name)}
+		{#if isApprovalRequested && !app.state.toolTrust.shouldAutoApprove(part.name)}
 			<ShieldAlertIcon class="size-3 text-amber-500" />
-		{:else if isApprovalRequested && workspace.state.toolTrust.shouldAutoApprove(part.name)}
+		{:else if isApprovalRequested && app.state.toolTrust.shouldAutoApprove(part.name)}
 			<ShieldCheckIcon class="size-3 text-green-500" />
 		{:else if isRunning}
 			<Spinner class="size-3 text-blue-500" />
@@ -88,7 +88,7 @@
 		</Badge>
 	</div>
 
-	{#if isApprovalRequested && !workspace.state.toolTrust.shouldAutoApprove(part.name)}
+	{#if isApprovalRequested && !app.state.toolTrust.shouldAutoApprove(part.name)}
 		<div class="flex items-center gap-1.5 pl-[1.125rem]">
 			<Button variant="outline" size="sm" onclick={handleAllow}> Allow </Button>
 			<Button variant="outline" size="sm" onclick={handleAlwaysAllow}>
@@ -103,7 +103,7 @@
 				Deny
 			</Button>
 		</div>
-	{:else if isApprovalRequested && workspace.state.toolTrust.shouldAutoApprove(part.name)}
+	{:else if isApprovalRequested && app.state.toolTrust.shouldAutoApprove(part.name)}
 		<div class="pl-[1.125rem] text-xs text-muted-foreground">Auto-approved</div>
 	{/if}
 

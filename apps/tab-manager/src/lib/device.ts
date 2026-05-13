@@ -1,15 +1,15 @@
 /**
  * Device identity helpers for the tab-manager extension.
  *
- * The extension's "peer" identity is the (id, name, platform) tuple stored
- * in `chrome.storage.local` and surfaced through the workspace's awareness
- * + devices table. These helpers compute it at workspace-build time and
- * register the device record once IndexedDB has loaded.
+ * The extension's peer identity is the (id, name, platform) tuple stored
+ * in `chrome.storage.local` and surfaced through the collaboration's
+ * awareness + the devices table. These helpers compute it at binding-build
+ * time and register the device record once IndexedDB has loaded.
  */
 
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
-import type { TabManagerWorkspace } from './session.svelte';
+import type { TabManagerBinding } from './session.svelte';
 import type { DeviceId } from './workspace/definition';
 
 /**
@@ -40,9 +40,12 @@ export async function createPeer() {
  * peer's default name.
  */
 export async function registerDevice(
-	tabManager: TabManagerWorkspace,
+	tabManager: TabManagerBinding,
 ): Promise<void> {
-	const { id, name } = tabManager.peer;
+	// The binding's openTabManager narrows peer.id to DeviceId at construction;
+	// PeerIdentity's id field is a plain string, so cast back to the branded type.
+	const id = tabManager.collaboration.identity.id as DeviceId;
+	const { name } = tabManager.collaboration.identity;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
 	tabManager.tables.devices.set({

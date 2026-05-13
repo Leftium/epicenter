@@ -33,8 +33,8 @@ import {
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
 import type {
-	TabManagerWorkspace,
-	WorkspaceAiTools,
+	SessionAiTools,
+	TabManagerBinding,
 } from '$lib/session.svelte';
 import {
 	type ChatMessageId,
@@ -47,11 +47,11 @@ import {
 export function createAiChatState({
 	auth,
 	tabManager,
-	workspaceAiTools,
+	sessionAiTools,
 }: {
 	auth: AuthClient;
-	tabManager: TabManagerWorkspace;
-	workspaceAiTools: WorkspaceAiTools;
+	tabManager: TabManagerBinding;
+	sessionAiTools: SessionAiTools;
 }) {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
 
@@ -135,9 +135,9 @@ export function createAiChatState({
 
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
-			tools: workspaceAiTools.tools,
+			tools: sessionAiTools.tools,
 			connection: fetchServerSentEvents(`${APP_URLS.API}/ai/chat`, async () => {
-				const { id: deviceId } = tabManager.device;
+				const { id: deviceId } = tabManager.collaboration.identity;
 				return {
 					fetchClient: createAiChatFetch(auth.fetch),
 					body: {
@@ -149,7 +149,7 @@ export function createAiChatState({
 								buildDeviceConstraints(deviceId),
 								metadata?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
 							],
-							tools: workspaceAiTools.definitions,
+							tools: sessionAiTools.definitions,
 						},
 					},
 				};

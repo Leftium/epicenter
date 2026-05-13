@@ -13,11 +13,11 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import type { TabManagerWorkspace } from '$lib/session.svelte';
+import type { TabManagerBinding } from '$lib/session.svelte';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { SavedTab, SavedTabId } from '$lib/workspace';
 
-export function createSavedTabState(tabManager: TabManagerWorkspace) {
+export function createSavedTabState(tabManager: TabManagerBinding) {
 	const tabsMap = fromTable(tabManager.tables.savedTabs);
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
@@ -45,7 +45,7 @@ export function createSavedTabState(tabManager: TabManagerWorkspace) {
 		 */
 		async save(tab: BrowserTab) {
 			if (!tab.url) return;
-			return tabManager.actions.savedTabs.save({
+			return tabManager.collaboration.actions.savedTabs.save({
 				browserTabId: tab.id,
 				url: tab.url,
 				title: tab.title || 'Untitled',
@@ -62,7 +62,7 @@ export function createSavedTabState(tabManager: TabManagerWorkspace) {
 		 * doesn't lose the URL.
 		 */
 		async restore(savedTab: SavedTab) {
-			return tabManager.actions.savedTabs.restore({
+			return tabManager.collaboration.actions.savedTabs.restore({
 				id: savedTab.id,
 				url: savedTab.url,
 				pinned: savedTab.pinned,
@@ -71,17 +71,17 @@ export function createSavedTabState(tabManager: TabManagerWorkspace) {
 
 		/** Restore all saved tabs at once. */
 		async restoreAll() {
-			return tabManager.actions.savedTabs.restoreAll();
+			return tabManager.collaboration.actions.savedTabs.restoreAll();
 		},
 
 		/** Delete a saved tab without restoring it. Synchronous CRDT delete. */
 		remove(id: SavedTabId) {
-			return tabManager.actions.savedTabs.remove({ id });
+			return tabManager.collaboration.actions.savedTabs.remove({ id });
 		},
 
 		/** Delete all saved tabs without restoring them. Synchronous CRDT batch delete. */
 		removeAll() {
-			return tabManager.actions.savedTabs.removeAll();
+			return tabManager.collaboration.actions.savedTabs.removeAll();
 		},
 	};
 }

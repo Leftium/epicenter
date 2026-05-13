@@ -73,7 +73,7 @@ export function attachKv<TKvDefinitions extends KvDefinitions>(
 ): Kv<TKvDefinitions> {
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = new YKeyValueLww<unknown>(yarray);
-	ydoc.once('destroy', () => ykv.dispose());
+	ydoc.once('destroy', () => ykv[Symbol.dispose]());
 	return createKv(ykv, definitions);
 }
 

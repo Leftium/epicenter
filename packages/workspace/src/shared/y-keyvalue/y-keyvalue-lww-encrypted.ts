@@ -397,7 +397,7 @@ export function createEncryptedYkvLww<T>(
 		 */
 		dispose(): void {
 			inner.unobserve(observer);
-			inner.dispose();
+			inner[Symbol.dispose]();
 		},
 	};
 }

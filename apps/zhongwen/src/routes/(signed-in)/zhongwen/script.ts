@@ -13,7 +13,7 @@ import {
 } from '@epicenter/workspace/node';
 import { openZhongwenDocument } from './document.js';
 
-export async function openZhongwenBrowser({
+export async function openZhongwenScript({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 }: {
@@ -33,5 +33,18 @@ export async function openZhongwenBrowser({
 		openWebSocket: auth.openWebSocket,
 	});
 
-	return { ...doc, yjsLog, sync };
+	return {
+		ydoc: doc.ydoc,
+		tables: doc.tables,
+		kv: doc.kv,
+		encryption: doc.encryption,
+		batch: doc.batch,
+		yjsLog,
+		sync,
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
+	};
 }
+
+export type ZhongwenScript = Awaited<ReturnType<typeof openZhongwenScript>>;

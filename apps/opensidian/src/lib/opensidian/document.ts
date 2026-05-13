@@ -25,3 +25,5 @@ export function openOpensidianDocument({
 		},
 	};
 }
+
+export type OpensidianDocument = ReturnType<typeof openOpensidianDocument>;

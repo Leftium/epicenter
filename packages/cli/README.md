@@ -138,7 +138,7 @@ import { type } from 'arktype';
 
 const SavedTab = defineTable(type({ id: 'string', title: 'string', url: 'string', _v: '1' }));
 
-async function openTabManager() {
+async function openTabManagerDaemon() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager' });
 	const tables = attachTables(ydoc, { savedTabs: SavedTab });
 	const actions = {
@@ -180,7 +180,7 @@ async function openTabManager() {
 
 export default defineConfig({
 	daemon: {
-		routes: [{ route: 'tabManager', start: () => openTabManager() }],
+		routes: [{ route: 'tabManager', start: () => openTabManagerDaemon() }],
 	},
 });
 ```
@@ -263,7 +263,7 @@ import { defineConfig } from '@epicenter/workspace/daemon';
 export default defineConfig({
 	daemon: {
 		routes: [
-			{ route: 'tabManager', start: () => openTabManager() },
+			{ route: 'tabManager', start: () => openTabManagerDaemon() },
 			defineFujiDaemon(),
 		],
 	},

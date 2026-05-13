@@ -1,5 +1,5 @@
 import { fromTable } from '@epicenter/svelte';
-import type { Fuji } from '../routes/(signed-in)/fuji/browser';
+import type { FujiBrowser } from '../routes/(signed-in)/fuji/browser';
 import type { EntryId } from '../routes/(signed-in)/fuji/workspace';
 
 /**
@@ -9,7 +9,7 @@ import type { EntryId } from '../routes/(signed-in)/fuji/workspace';
  * deleted lists update reactively as entries change. Disposed alongside the
  * session.
  */
-export function createEntriesState(fuji: Fuji) {
+export function createEntriesState(fuji: FujiBrowser) {
 	const entriesMap = fromTable(fuji.tables.entries);
 	const active = $derived(
 		[...entriesMap.values()].filter((e) => e.deletedAt === undefined),

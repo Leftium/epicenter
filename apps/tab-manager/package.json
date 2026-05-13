@@ -5,7 +5,9 @@
 	"type": "module",
 	"private": true,
 	"exports": {
-		"./workspace": "./src/lib/workspace/index.ts"
+		"./workspace": "./src/lib/workspace/index.ts",
+		"./document": "./src/lib/tab-manager/document.ts",
+		"./browser": "./src/lib/tab-manager/extension.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

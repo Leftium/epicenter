@@ -23,3 +23,5 @@ export function openTabManagerDocument({
 		},
 	};
 }
+
+export type TabManagerDocument = ReturnType<typeof openTabManagerDocument>;

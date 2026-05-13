@@ -2,7 +2,7 @@ import type { FileId } from '@epicenter/filesystem';
 import { createPersistedState } from '@epicenter/svelte';
 import type { CommandPaletteItem } from '@epicenter/ui/command-palette';
 import { type } from 'arktype';
-import type { Opensidian } from '$lib/opensidian/browser';
+import type { OpensidianBrowser } from '$lib/opensidian/browser';
 import { getFileIcon } from '$lib/utils/file-icons';
 import type { FilesState } from './files-state.svelte';
 
@@ -13,7 +13,7 @@ export function createPaletteSearchState({
 	binding,
 }: {
 	files: FilesState;
-	binding: Opensidian;
+	binding: OpensidianBrowser;
 }) {
 	// Persisted scope preference
 	const scopeState = createPersistedState({

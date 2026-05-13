@@ -12,7 +12,7 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import type { TabManagerBrowser } from '$lib/tab-manager/client';
+import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 import type { ToolTrust } from '$lib/workspace';
 
 /**

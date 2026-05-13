@@ -6,18 +6,18 @@
  * `page.url.searchParams`), and a batch `update()` that writes all changes
  * in a single `goto()` call.
  *
- * Defaults are elided from the URL to keep it clean—`/` means all defaults
+ * Defaults are elided from the URL to keep it clean: `/` means all defaults
  * (all notes, sorted by date edited, no search, no deleted view).
  *
  * @example
  * ```typescript
  * import { searchParams } from './search-params.svelte';
  *
- * // Read (reactive — tracked by $derived automatically)
+ * // Read (reactive, tracked by $derived automatically)
  * const folder = searchParams.folder;
  * const note = searchParams.note;
  *
- * // Write (atomic — one goto() regardless of how many params change)
+ * // Write (atomic, one goto() regardless of how many params change)
  * searchParams.update({ view: null, note: null, folder: folderId });
  * ```
  */
@@ -32,7 +32,7 @@ type SortBy = 'dateEdited' | 'dateCreated' | 'title';
  * The complete URL state schema for Honeycrisp.
  *
  * Every search param the app uses, its TypeScript type, and its default value.
- * Adding a param here is the only step needed—getters and update() pick it up
+ * Adding a param here is the only step needed: getters and update() pick it up
  * automatically. Typos in `update({ foler: ... })` are compile-time errors.
  */
 type SearchParams = {
@@ -43,7 +43,7 @@ type SearchParams = {
 	q: string;
 };
 
-/** Values that get elided from the URL — presence in the URL means non-default. */
+/** Values that get elided from the URL. Presence in the URL means non-default. */
 const DEFAULTS = {
 	folder: null,
 	note: null,
@@ -99,13 +99,13 @@ function createSearchParams() {
 			return page.url.searchParams.get('view') === 'deleted';
 		},
 
-		/** Current sort order — defaults to `'dateEdited'` when absent from URL. */
+		/** Current sort order. Defaults to `'dateEdited'` when absent from URL. */
 		get sort(): SortBy {
 			const raw = page.url.searchParams.get('sort');
 			return SORT_KEYS.includes(raw as SortBy) ? (raw as SortBy) : 'dateEdited';
 		},
 
-		/** Current search query — defaults to `''` when absent from URL. */
+		/** Current search query. Defaults to `''` when absent from URL. */
 		get q(): string {
 			return page.url.searchParams.get('q') ?? '';
 		},

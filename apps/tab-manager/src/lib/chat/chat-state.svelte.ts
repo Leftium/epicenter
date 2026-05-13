@@ -33,7 +33,7 @@ import {
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
 import type { SessionAiTools } from '$lib/session.svelte';
-import type { TabManagerBrowser } from '$lib/tab-manager/client';
+import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 import {
 	type ChatMessageId,
 	type Conversation,

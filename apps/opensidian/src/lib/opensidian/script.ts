@@ -13,7 +13,7 @@ import {
 } from '@epicenter/workspace/node';
 import { openOpensidianDocument } from './document.js';
 
-export async function openOpensidianBrowser({
+export async function openOpensidianScript({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 }: {
@@ -33,5 +33,18 @@ export async function openOpensidianBrowser({
 		openWebSocket: auth.openWebSocket,
 	});
 
-	return { ...doc, yjsLog, sync };
+	return {
+		ydoc: doc.ydoc,
+		tables: doc.tables,
+		kv: doc.kv,
+		encryption: doc.encryption,
+		batch: doc.batch,
+		yjsLog,
+		sync,
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
+	};
 }
+
+export type OpensidianScript = Awaited<ReturnType<typeof openOpensidianScript>>;

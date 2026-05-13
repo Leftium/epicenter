@@ -13,7 +13,7 @@ import {
 } from '@epicenter/workspace';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import * as Y from 'yjs';
-import type { Opensidian } from '$lib/opensidian/browser';
+import type { OpensidianBrowser } from '$lib/opensidian/browser';
 
 /** A global skill loaded from the @epicenter/skills workspace. */
 type GlobalSkill = { name: string; instructions: string };
@@ -58,7 +58,7 @@ type VaultSkill = { name: string; content: string };
 export function createSkillState({
 	binding,
 }: {
-	binding: Opensidian;
+	binding: OpensidianBrowser;
 }) {
 	const globalSkillsWorkspace = openGlobalSkillsWorkspace();
 	let globalSkills = $state<GlobalSkill[]>([]);

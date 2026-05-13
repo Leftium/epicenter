@@ -25,3 +25,5 @@ export function openHoneycrispDocument({
 		},
 	};
 }
+
+export type HoneycrispDocument = ReturnType<typeof openHoneycrispDocument>;

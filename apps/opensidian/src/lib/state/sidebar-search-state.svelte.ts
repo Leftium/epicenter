@@ -1,6 +1,6 @@
 import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
-import type { Opensidian } from '$lib/opensidian/browser';
+import type { OpensidianBrowser } from '$lib/opensidian/browser';
 
 export type MatchSnippet = {
 	snippet: string;
@@ -19,7 +19,7 @@ const PAGE_SIZE = 50;
 export function createSidebarSearchState({
 	binding,
 }: {
-	binding: Opensidian;
+	binding: OpensidianBrowser;
 }) {
 	// Persisted preferences
 	const caseSensitiveState = createPersistedState({

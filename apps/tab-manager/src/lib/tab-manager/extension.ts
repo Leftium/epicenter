@@ -78,3 +78,5 @@ export function openTabManagerBrowser({
 		},
 	};
 }
+
+export type TabManagerBrowser = ReturnType<typeof openTabManagerBrowser>;

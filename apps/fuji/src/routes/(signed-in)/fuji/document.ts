@@ -27,3 +27,5 @@ export function openFujiDocument({
 		},
 	};
 }
+
+export type FujiDocument = ReturnType<typeof openFujiDocument>;

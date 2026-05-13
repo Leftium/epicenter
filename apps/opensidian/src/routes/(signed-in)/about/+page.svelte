@@ -64,7 +64,7 @@
 import { attachIndexedDb, attachTables } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
-export function openOpensidian() {
+export function openOpensidianBrowser() {
   const ydoc = new Y.Doc({ guid: 'opensidian' });
   const tables = attachTables(ydoc, { files: filesTable });
   const idb = attachIndexedDb(ydoc);
@@ -85,9 +85,9 @@ export function openOpensidian() {
 	const codeAnnotations = [
 		{
 			id: 'open-opensidian',
-			line: 'export function openOpensidian() { ... }',
+			line: 'export function openOpensidianBrowser() { ... }',
 			explanation:
-				'A plain factory: constructs a Y.Doc and composes attachments inline. The signed-in session owns the live workspace, so tests, codegen, and tooling can still build a fresh one without browser UI state.',
+				'A browser factory: constructs a Y.Doc and composes browser attachments inline. The signed-in session owns the live workspace, so tests, codegen, and tooling can still build a fresh one without UI state.',
 		},
 		{
 			id: 'attach-tables',
@@ -165,7 +165,7 @@ export function openOpensidian() {
 	<header>
 		<h1 class="text-4xl font-extrabold tracking-tight">Opensidian</h1>
 		<p class="text-muted-foreground mt-2 text-lg">
-			Open-source, local-first notes&mdash;built on CRDTs
+			Open-source, local-first notes built on CRDTs
 		</p>
 		<div class="mt-4 flex flex-wrap gap-2">
 			{#each techBadges as label}
@@ -180,7 +180,7 @@ export function openOpensidian() {
 	<section>
 		<h2 class="text-2xl font-semibold tracking-tight">How it works</h2>
 		<p class="text-muted-foreground mt-3 leading-relaxed">
-			Every note is a Yjs document. Edits are CRDT operations&mdash;they merge
+			Every note is a Yjs document. Edits are CRDT operations, and they merge
 			automatically and never conflict. The Y.Doc persists to IndexedDB so your
 			data survives page refreshes. A SQLite index (running in-browser via WASM)
 			materializes the file tree for fast parent/child lookups.

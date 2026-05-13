@@ -6,7 +6,7 @@
 	"type": "module",
 	"exports": {
 		"./workspace": "./src/routes/(signed-in)/fuji/workspace.ts",
-		"./openFujiBrowser": "./src/routes/(signed-in)/fuji/index.ts",
+		"./document": "./src/routes/(signed-in)/fuji/document.ts",
 		"./browser": "./src/routes/(signed-in)/fuji/browser.ts",
 		"./daemon": "./src/routes/(signed-in)/fuji/daemon.ts",
 		"./script": "./src/routes/(signed-in)/fuji/script.ts"

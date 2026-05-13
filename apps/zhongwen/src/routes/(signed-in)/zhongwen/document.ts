@@ -25,3 +25,5 @@ export function openZhongwenDocument({
 		},
 	};
 }
+
+export type ZhongwenDocument = ReturnType<typeof openZhongwenDocument>;

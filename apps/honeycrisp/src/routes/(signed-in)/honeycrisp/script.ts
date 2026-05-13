@@ -13,7 +13,7 @@ import {
 } from '@epicenter/workspace/node';
 import { openHoneycrispDocument } from './document.js';
 
-export async function openHoneycrispBrowser({
+export async function openHoneycrispScript({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 }: {
@@ -33,5 +33,18 @@ export async function openHoneycrispBrowser({
 		openWebSocket: auth.openWebSocket,
 	});
 
-	return { ...doc, yjsLog, sync };
+	return {
+		ydoc: doc.ydoc,
+		tables: doc.tables,
+		kv: doc.kv,
+		encryption: doc.encryption,
+		batch: doc.batch,
+		yjsLog,
+		sync,
+		[Symbol.dispose]() {
+			doc[Symbol.dispose]();
+		},
+	};
 }
+
+export type HoneycrispScript = Awaited<ReturnType<typeof openHoneycrispScript>>;

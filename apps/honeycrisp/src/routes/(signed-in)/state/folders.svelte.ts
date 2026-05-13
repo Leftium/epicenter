@@ -22,11 +22,11 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
-import type { Honeycrisp } from '../honeycrisp/browser';
+import type { HoneycrispBrowser } from '../honeycrisp/browser';
 import type { FolderId } from '../honeycrisp/workspace';
 import { searchParams } from './search-params.svelte';
 
-export function createFolders(honeycrisp: Honeycrisp) {
+export function createFolders(honeycrisp: HoneycrispBrowser) {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
 	const foldersMap = fromTable(honeycrisp.tables.folders);

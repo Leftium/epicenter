@@ -27,7 +27,7 @@ const DEFAULT_RUN_WAIT_MS = 5_000;
  * `defineMutation` leaves.
  *
  * Pass the canonical action root type as `T` (typically
- * `ReturnType<typeof openFuji>['actions']`) and `DaemonActions<T>` filters it
+ * `ReturnType<typeof openFujiBrowser>['actions']`) and `DaemonActions<T>` filters it
  * to:
  *
  * - branded leaves at any depth become wire-callable and `Result`-wrapped

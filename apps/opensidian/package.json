@@ -6,7 +6,7 @@
 	"type": "module",
 	"exports": {
 		"./workspace": "./src/lib/workspace/definition.ts",
-		"./openOpensidianBrowser": "./src/lib/opensidian/index.ts",
+		"./document": "./src/lib/opensidian/document.ts",
 		"./browser": "./src/lib/opensidian/browser.ts",
 		"./daemon": "./src/lib/opensidian/daemon.ts",
 		"./script": "./src/lib/opensidian/script.ts"

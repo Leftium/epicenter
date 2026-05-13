@@ -9,7 +9,7 @@
 
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
-import type { TabManagerBrowser } from './tab-manager/client';
+import type { TabManagerBrowser } from './tab-manager/extension';
 import type { DeviceId } from './workspace/definition';
 
 /**

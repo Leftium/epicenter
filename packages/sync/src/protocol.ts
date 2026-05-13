@@ -43,10 +43,13 @@ export const MESSAGE_TYPE = {
 	QUERY_AWARENESS: 3,
 	/**
 	 * Remote procedure call between peers, routed through the DO.
-	 * Uses REQUEST/RESPONSE sub-types.
+	 * Uses ACTION_REQUEST / RUNTIME_REQUEST / RESPONSE sub-types.
 	 *
-	 * Wire format (REQUEST):
+	 * Wire format (ACTION_REQUEST):
 	 * `[varuint: 101] [varuint: 0] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: action] [varUint8Array: JSON input]`
+	 *
+	 * Wire format (RUNTIME_REQUEST):
+	 * `[varuint: 101] [varuint: 2] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: verb]`
 	 *
 	 * Wire format (RESPONSE):
 	 * `[varuint: 101] [varuint: 1] [varuint: requestId] [varuint: requesterClientId] [varUint8Array: JSON Result<T, E>]`
@@ -393,22 +396,43 @@ export function stateVectorsEqual(a: Uint8Array, b: Uint8Array): boolean {
 /**
  * RPC sub-types within an RPC message.
  * The second varuint after MESSAGE_TYPE.RPC identifies the sub-type.
+ *
+ * Two distinct request kinds keep app behavior and collaboration runtime
+ * behavior on separate planes:
+ *
+ *   ACTION_REQUEST   app action invocation by dot path (`tabs.close`, ...)
+ *   RUNTIME_REQUEST  runtime verb owned by the collaboration layer
+ *                    (introspection, capability, version, ...) — never
+ *                    authored by the app
+ *
+ * Both share the RESPONSE envelope.
  */
 export const RPC_TYPE = {
-	/** Client → DO → target peer: invoke an action */
-	REQUEST: 0,
-	/** Target peer → DO → requester: action result */
+	/** Client → DO → target peer: invoke an app action by dot path. */
+	ACTION_REQUEST: 0,
+	/** Target peer → DO → requester: shared result envelope for both request kinds. */
 	RESPONSE: 1,
+	/** Client → DO → target peer: invoke a runtime verb (not an app action). */
+	RUNTIME_REQUEST: 2,
 } as const;
 
 export type RpcType = (typeof RPC_TYPE)[keyof typeof RPC_TYPE];
 
 /**
- * Decoded RPC message — discriminated union of REQUEST and RESPONSE.
+ * Closed set of collaboration runtime verbs carried by `RUNTIME_REQUEST`.
+ *
+ * Add a new entry here when introducing a new collaboration-runtime operation
+ * (capability advertise, health, version, etc.). Verbs are not in the app
+ * action namespace; the wire kind keeps them syntactically separate.
+ */
+export type RuntimeVerb = 'describe-actions';
+
+/**
+ * Decoded RPC message — discriminated union of the three sub-types.
  */
 export type DecodedRpcMessage =
 	| {
-			type: 'request';
+			type: 'action-request';
 			requestId: number;
 			targetClientId: number;
 			requesterClientId: number;
@@ -420,20 +444,27 @@ export type DecodedRpcMessage =
 			requestId: number;
 			requesterClientId: number;
 			result: { data: unknown; error: unknown };
+	  }
+	| {
+			type: 'runtime-request';
+			requestId: number;
+			targetClientId: number;
+			requesterClientId: number;
+			verb: RuntimeVerb;
 	  };
 
 /**
- * Encode an RPC REQUEST message.
+ * Encode an RPC ACTION_REQUEST message (app action invocation by dot path).
  *
  * Wire format:
- * `[varuint: 101] [varuint: 0=REQUEST] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: action] [varUint8Array: JSON input]`
+ * `[varuint: 101] [varuint: 0=ACTION_REQUEST] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: action] [varUint8Array: JSON input]`
  *
  * @param options.requestId - Monotonic counter scoped to the connection
  * @param options.targetClientId - Awareness clientId of the target peer
  * @param options.requesterClientId - Awareness clientId of the sender (for response routing)
  * @param options.action - Dot-path action name (e.g. 'tabs.close')
  * @param options.input - Action input (serialized as JSON)
- * @returns Encoded RPC REQUEST message
+ * @returns Encoded RPC ACTION_REQUEST message
  */
 export function encodeRpcRequest({
 	requestId,
@@ -451,12 +482,44 @@ export function encodeRpcRequest({
 	const jsonBytes = new TextEncoder().encode(JSON.stringify(input ?? null));
 	return encoding.encode((encoder) => {
 		encoding.writeVarUint(encoder, MESSAGE_TYPE.RPC);
-		encoding.writeVarUint(encoder, RPC_TYPE.REQUEST);
+		encoding.writeVarUint(encoder, RPC_TYPE.ACTION_REQUEST);
 		encoding.writeVarUint(encoder, requestId);
 		encoding.writeVarUint(encoder, targetClientId);
 		encoding.writeVarUint(encoder, requesterClientId);
 		encoding.writeVarString(encoder, action);
 		encoding.writeVarUint8Array(encoder, jsonBytes);
+	});
+}
+
+/**
+ * Encode an RPC RUNTIME_REQUEST message.
+ *
+ * Identical routing fields to an ACTION_REQUEST (requestId / targetClientId /
+ * requesterClientId), so the DO forwards it via the same blind-route path.
+ * The payload is a closed-set `verb` string and nothing else: runtime verbs
+ * are wire-distinct from app action paths and don't share their input shape.
+ *
+ * Wire format:
+ * `[varuint: 101] [varuint: 2=RUNTIME_REQUEST] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: verb]`
+ */
+export function encodeRpcRuntimeRequest({
+	requestId,
+	targetClientId,
+	requesterClientId,
+	verb,
+}: {
+	requestId: number;
+	targetClientId: number;
+	requesterClientId: number;
+	verb: RuntimeVerb;
+}): Uint8Array {
+	return encoding.encode((encoder) => {
+		encoding.writeVarUint(encoder, MESSAGE_TYPE.RPC);
+		encoding.writeVarUint(encoder, RPC_TYPE.RUNTIME_REQUEST);
+		encoding.writeVarUint(encoder, requestId);
+		encoding.writeVarUint(encoder, targetClientId);
+		encoding.writeVarUint(encoder, requesterClientId);
+		encoding.writeVarString(encoder, verb);
 	});
 }
 
@@ -504,7 +567,7 @@ export function encodeRpcResponse({
  * Decode an RPC message into its typed components.
  *
  * Reads the full message bytes (including the MESSAGE_TYPE.RPC prefix).
- * Returns a discriminated union of REQUEST or RESPONSE.
+ * Returns a discriminated union of ACTION_REQUEST, RUNTIME_REQUEST, or RESPONSE.
  *
  * Use this when you have the raw wire bytes. If the transport has already
  * consumed the message-type varint, use {@link decodeRpcPayload} instead
@@ -539,7 +602,7 @@ export function decodeRpcPayload(decoder: decoding.Decoder): DecodedRpcMessage {
 	const rpcType = decoding.readVarUint(decoder);
 
 	switch (rpcType) {
-		case RPC_TYPE.REQUEST: {
+		case RPC_TYPE.ACTION_REQUEST: {
 			const requestId = decoding.readVarUint(decoder);
 			const targetClientId = decoding.readVarUint(decoder);
 			const requesterClientId = decoding.readVarUint(decoder);
@@ -547,7 +610,7 @@ export function decodeRpcPayload(decoder: decoding.Decoder): DecodedRpcMessage {
 			const jsonBytes = decoding.readVarUint8Array(decoder);
 			const input = JSON.parse(new TextDecoder().decode(jsonBytes));
 			return {
-				type: 'request',
+				type: 'action-request',
 				requestId,
 				targetClientId,
 				requesterClientId,
@@ -570,6 +633,19 @@ export function decodeRpcPayload(decoder: decoding.Decoder): DecodedRpcMessage {
 			}
 			const result = raw as { data: unknown; error: unknown };
 			return { type: 'response', requestId, requesterClientId, result };
+		}
+		case RPC_TYPE.RUNTIME_REQUEST: {
+			const requestId = decoding.readVarUint(decoder);
+			const targetClientId = decoding.readVarUint(decoder);
+			const requesterClientId = decoding.readVarUint(decoder);
+			const verb = decoding.readVarString(decoder) as RuntimeVerb;
+			return {
+				type: 'runtime-request',
+				requestId,
+				targetClientId,
+				requesterClientId,
+				verb,
+			};
 		}
 		default:
 			throw new Error(`Unknown RPC sub-type: ${rpcType}`);

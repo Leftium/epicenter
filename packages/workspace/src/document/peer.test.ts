@@ -1,15 +1,16 @@
 /**
  * Tests for the peer surface.
  *
- * Exercises `createPeersSurface` and `waitForPeer` with a mock `sendRequest`
- * hook plus direct awareness-state injection (no WebSocket, no real RPC).
+ * Exercises `createPeersSurface` and `waitForPeer` with mock send hooks plus
+ * direct awareness-state injection (no WebSocket, no real RPC).
  *
  * Covers spec Phase 2.1 / 2.3:
  *   - list() excludes self by clientID and by identity.id
  *   - list() drops malformed states; sorts by clientId
  *   - find() returns undefined when absent; lowest clientId on identity collision
  *   - peer.invoke routes through hooks.sendRequest and surfaces PeerLeft
- *   - peer.describe dispatches system.describe
+ *   - peer.describe routes through hooks.sendRuntimeRequest with the
+ *     'describe-actions' runtime verb
  *   - waitForPeer initial / awareness-change / timeout / non-positive timeout
  */
 
@@ -28,15 +29,18 @@ function setup({
 	selfClientId = 1,
 	selfId = 'self',
 	send,
+	sendRuntime,
 }: {
 	selfClientId?: number;
 	selfId?: string;
 	send?: PeerWireHooks['sendRequest'];
+	sendRuntime?: PeerWireHooks['sendRuntimeRequest'];
 } = {}) {
 	const ydoc = new Y.Doc({ clientID: selfClientId });
 	const awareness = new Awareness(ydoc);
 	const hooks: PeerWireHooks = {
 		sendRequest: send ?? (async () => Ok(null)),
+		sendRuntimeRequest: sendRuntime ?? (async () => Ok(null)),
 	};
 	const peers = createPeersSurface(awareness, selfId, hooks);
 	return { ydoc, awareness, peers };
@@ -248,19 +252,29 @@ describe('peer.invoke', () => {
 });
 
 describe('peer.describe', () => {
-	test('dispatches the system.describe path', async () => {
-		let dispatchedAction = '';
+	test('dispatches the describe-actions runtime verb (not via sendRequest)', async () => {
+		let actionCalls = 0;
+		let dispatchedVerb = '';
+		let dispatchedTarget = 0;
 		const { awareness, peers } = setup({
-			send: async (_target, action) => {
-				dispatchedAction = action;
+			send: async () => {
+				actionCalls++;
+				return Ok(null);
+			},
+			sendRuntime: async (target, verb) => {
+				dispatchedTarget = target;
+				dispatchedVerb = verb;
 				return Ok({ 'tabs.close': { type: 'mutation' } });
 			},
 		});
 		publish(awareness, 42, validPeerState('mac'));
 
 		const result = await peers.find('mac')?.describe();
-		expect(dispatchedAction).toBe('system.describe');
+		expect(dispatchedVerb).toBe('describe-actions');
+		expect(dispatchedTarget).toBe(42);
+		expect(actionCalls).toBe(0);
 		expect(result?.error).toBeNull();
+		expect(result?.data).toEqual({ 'tabs.close': { type: 'mutation' } });
 	});
 });
 

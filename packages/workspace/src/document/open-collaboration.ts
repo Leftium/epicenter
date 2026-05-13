@@ -19,14 +19,13 @@
 import { RpcError } from '@epicenter/sync';
 import type { Logger } from 'wellcrafted/logger';
 import { Awareness } from 'y-protocols/awareness';
+import { Ok } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import {
 	type Actions,
-	defineQuery,
 	describeActions,
 	invokeActionForRpc,
 	resolveActionPath,
-	type SystemActions,
 	walkActions,
 } from '../shared/actions.js';
 import { attachAwareness } from './attach-awareness.js';
@@ -55,11 +54,11 @@ export type OpenCollaborationConfig<TActions extends Actions = Actions> = {
 	identity: PeerIdentity;
 	/**
 	 * Local action registry published to peers. May be `{}` for a participant
-	 * that only consumes remote actions. The `system.*` namespace is reserved
-	 * for runtime meta operations (`system.describe`) and refused at the type
-	 * level: declaring `actions: { system: ... }` fails to compile.
+	 * that only consumes remote actions. The action tree is yours alone:
+	 * collaboration runtime requests (e.g. peer.describe) ride a separate
+	 * wire kind (`RUNTIME_REQUEST`), not the action namespace.
 	 */
-	actions: TActions & { system?: never };
+	actions: TActions;
 };
 
 export type Collaboration<TActions extends Actions = Actions> = {
@@ -92,16 +91,6 @@ export function openCollaboration<TActions extends Actions>(
 ): Collaboration<TActions> {
 	const { identity, actions: userActions } = config;
 
-	const systemActions: SystemActions = Object.freeze({
-		describe: defineQuery({
-			handler: () => describeActions(userActions),
-		}),
-	});
-	const fullActions = Object.freeze({
-		...userActions,
-		system: systemActions,
-	});
-
 	// Computed once at startup. Two peers running the same code publish
 	// byte-identical arrays so awareness updates don't ping-pong on ordering
 	// differences.
@@ -126,9 +115,18 @@ export function openCollaboration<TActions extends Actions>(
 		log: config.log,
 		awareness,
 		onRpcRequest: async (rpc) => {
-			const target = resolveActionPath(fullActions, rpc.action);
+			const target = resolveActionPath(userActions, rpc.action);
 			if (!target) return RpcError.ActionNotFound({ action: rpc.action });
 			return invokeActionForRpc(target, rpc.input, rpc.action);
+		},
+		onRuntimeRequest: async (rpc) => {
+			// Closed-set switch. Adding a new verb without a branch here is a
+			// compile error, so the runtime can never silently drop a verb peers
+			// expect us to handle.
+			switch (rpc.verb) {
+				case 'describe-actions':
+					return Ok(describeActions(userActions));
+			}
 		},
 	});
 
@@ -141,6 +139,12 @@ export function openCollaboration<TActions extends Actions>(
 				return Promise.resolve(SelfInvocationError.SelfInvocation({ action }));
 			}
 			return supervisor.sendRpcRequest(target, action, input, options);
+		},
+		sendRuntimeRequest: (target, verb, options) => {
+			if (target === awareness.clientID) {
+				return Promise.resolve(SelfInvocationError.SelfInvocation({ action: verb }));
+			}
+			return supervisor.sendRuntimeRequest(target, verb, options);
 		},
 	});
 

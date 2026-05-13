@@ -279,10 +279,14 @@ export function applyMessage({
 				case MESSAGE_TYPE.RPC: {
 					const rpc = decodeRpcMessage(data);
 					switch (rpc.type) {
-						case 'request': {
+						case 'action-request':
+						case 'runtime-request': {
 							// Prepare PeerOffline response in case target is not connected.
-							// The DO will send this back to the requester if the target
+							// The DO sends this back to the requester if the target
 							// clientId is not found in any connection's controlledClientIds.
+							// Action requests and runtime requests share the same routing
+							// path and response envelope; only the receiving peer cares
+							// about the discriminator.
 							const onMissReply = encodeRpcResponse({
 								requestId: rpc.requestId,
 								requesterClientId: rpc.requesterClientId,

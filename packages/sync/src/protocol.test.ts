@@ -27,6 +27,7 @@ import {
 	encodeQueryAwareness,
 	encodeRpcRequest,
 	encodeRpcResponse,
+	encodeRpcRuntimeRequest,
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
@@ -61,11 +62,12 @@ describe('RPC protocol', () => {
 	});
 
 	test('RPC_TYPE constants', () => {
-		expect(RPC_TYPE.REQUEST).toBe(0);
+		expect(RPC_TYPE.ACTION_REQUEST).toBe(0);
 		expect(RPC_TYPE.RESPONSE).toBe(1);
+		expect(RPC_TYPE.RUNTIME_REQUEST).toBe(2);
 	});
 
-	test('round-trip: encode/decode RPC REQUEST', () => {
+	test('round-trip: encode/decode RPC ACTION_REQUEST', () => {
 		const encoded = encodeRpcRequest({
 			requestId: 42,
 			targetClientId: 100,
@@ -77,8 +79,8 @@ describe('RPC protocol', () => {
 		expect(decodeMessageType(encoded)).toBe(MESSAGE_TYPE.RPC);
 
 		const decoded = decodeRpcMessage(encoded);
-		expect(decoded.type).toBe('request');
-		if (decoded.type === 'request') {
+		expect(decoded.type).toBe('action-request');
+		if (decoded.type === 'action-request') {
 			expect(decoded.requestId).toBe(42);
 			expect(decoded.targetClientId).toBe(100);
 			expect(decoded.requesterClientId).toBe(200);
@@ -105,7 +107,7 @@ describe('RPC protocol', () => {
 		}
 	});
 
-	test('REQUEST with null input', () => {
+	test('ACTION_REQUEST with null input', () => {
 		const encoded = encodeRpcRequest({
 			requestId: 0,
 			targetClientId: 50,
@@ -114,8 +116,8 @@ describe('RPC protocol', () => {
 		});
 
 		const decoded = decodeRpcMessage(encoded);
-		expect(decoded.type).toBe('request');
-		if (decoded.type === 'request') {
+		expect(decoded.type).toBe('action-request');
+		if (decoded.type === 'action-request') {
 			expect(decoded.input).toBeNull();
 		}
 	});
@@ -138,8 +140,8 @@ describe('RPC protocol', () => {
 		}
 	});
 
-	test('decodeRpcMessage discriminates REQUEST vs RESPONSE', () => {
-		const request = encodeRpcRequest({
+	test('decodeRpcMessage discriminates ACTION_REQUEST vs RESPONSE vs RUNTIME_REQUEST', () => {
+		const actionRequest = encodeRpcRequest({
 			requestId: 1,
 			targetClientId: 10,
 			requesterClientId: 20,
@@ -150,9 +152,36 @@ describe('RPC protocol', () => {
 			requesterClientId: 20,
 			result: Ok('ok'),
 		});
+		const runtimeRequest = encodeRpcRuntimeRequest({
+			requestId: 1,
+			targetClientId: 10,
+			requesterClientId: 20,
+			verb: 'describe-actions',
+		});
 
-		expect(decodeRpcMessage(request).type).toBe('request');
+		expect(decodeRpcMessage(actionRequest).type).toBe('action-request');
 		expect(decodeRpcMessage(response).type).toBe('response');
+		expect(decodeRpcMessage(runtimeRequest).type).toBe('runtime-request');
+	});
+
+	test('round-trip: encode/decode RPC RUNTIME_REQUEST', () => {
+		const encoded = encodeRpcRuntimeRequest({
+			requestId: 7,
+			targetClientId: 100,
+			requesterClientId: 200,
+			verb: 'describe-actions',
+		});
+
+		expect(decodeMessageType(encoded)).toBe(MESSAGE_TYPE.RPC);
+
+		const decoded = decodeRpcMessage(encoded);
+		expect(decoded.type).toBe('runtime-request');
+		if (decoded.type === 'runtime-request') {
+			expect(decoded.requestId).toBe(7);
+			expect(decoded.targetClientId).toBe(100);
+			expect(decoded.requesterClientId).toBe(200);
+			expect(decoded.verb).toBe('describe-actions');
+		}
 	});
 
 	test('decodeRpcMessage throws on non-RPC message', () => {

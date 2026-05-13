@@ -7,13 +7,14 @@
  * Self is never exposed: local actions are reached via
  * `collaboration.actions.*` instead.
  *
- * Wire-level dispatch (`peer.invoke`, `peer.describe`) is wired by
- * `openCollaboration`, which injects a `sendRequest` hook so this module
- * stays decoupled from the supervisor implementation. `peer.test.ts`
- * exercises the surface with a mock sender.
+ * `peer.invoke` rides ACTION_REQUEST (app action by dot path) and
+ * `peer.describe` rides RUNTIME_REQUEST (collaboration runtime verb);
+ * `openCollaboration` injects `sendRequest` and `sendRuntimeRequest` hooks
+ * so this module stays decoupled from the supervisor implementation.
+ * `peer.test.ts` exercises the surface with mock senders.
  */
 
-import { RpcError } from '@epicenter/sync';
+import { RpcError, type RuntimeVerb } from '@epicenter/sync';
 import { type } from 'arktype';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
@@ -150,14 +151,20 @@ export type PeersSurface = {
 
 /**
  * Wire hook injected by `openCollaboration`. The peers surface only needs
- * to dispatch a request and observe awareness change; everything else
- * lives in the supervisor.
+ * to dispatch requests and observe awareness changes; everything else lives
+ * in the supervisor. Two methods so app action invocation and runtime verbs
+ * stay on the same separate planes as their wire kinds.
  */
 export type PeerWireHooks = {
 	sendRequest(
 		targetClientId: number,
 		action: string,
 		input: unknown,
+		options: RemoteCallOptions | undefined,
+	): Promise<Result<unknown, RpcError | SelfInvocationError>>;
+	sendRuntimeRequest(
+		targetClientId: number,
+		verb: RuntimeVerb,
 		options: RemoteCallOptions | undefined,
 	): Promise<Result<unknown, RpcError | SelfInvocationError>>;
 };
@@ -201,18 +208,26 @@ export function createPeersSurface(
 			clientID: clientId,
 			actionPaths: state.actionPaths,
 			invoke: (path, input, options) =>
-				dispatch(clientId, state.identity.id, path, input, options),
+				dispatch(clientId, state.identity.id, path, () =>
+					hooks.sendRequest(clientId, path, input, options),
+				),
 			describe: (options) =>
-				dispatch(clientId, state.identity.id, 'system.describe', undefined, options),
+				dispatch(clientId, state.identity.id, 'describe-actions', () =>
+					hooks.sendRuntimeRequest(clientId, 'describe-actions', options),
+				),
 		};
 	}
 
+	/**
+	 * Wrap a send hook with the PeerLeft watchdog. `label` is used purely for
+	 * error reporting (the action path or runtime verb that was in flight when
+	 * the peer disappeared).
+	 */
 	function dispatch<TOutput>(
 		targetClientId: number,
 		peerId: string,
-		path: string,
-		input: unknown,
-		options: RemoteCallOptions | undefined,
+		label: string,
+		send: () => Promise<Result<unknown, RpcError | SelfInvocationError>>,
 	): Promise<Result<TOutput, RemoteCallError>> {
 		return new Promise<Result<TOutput, RemoteCallError>>((resolve) => {
 			let settled = false;
@@ -225,21 +240,20 @@ export function createPeersSurface(
 
 			const onChange = () => {
 				if (!readPeers().has(targetClientId)) {
-					settle(PeerLeftError.PeerLeft({ peerId, action: path }));
+					settle(PeerLeftError.PeerLeft({ peerId, action: label }));
 				}
 			};
 			awareness.on('change', onChange);
 
 			if (!readPeers().has(targetClientId)) {
-				settle(PeerLeftError.PeerLeft({ peerId, action: path }));
+				settle(PeerLeftError.PeerLeft({ peerId, action: label }));
 				return;
 			}
 
-			hooks
-				.sendRequest(targetClientId, path, input, options)
+			send()
 				.then((result) => settle(result as Result<TOutput, RemoteCallError>))
 				.catch((cause) =>
-					settle(RpcError.ActionFailed({ action: path, cause })),
+					settle(RpcError.ActionFailed({ action: label, cause })),
 				);
 		});
 	}

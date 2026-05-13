@@ -9,7 +9,7 @@
  *
  *     Action tree                   <->    ActionManifest
  *     nested, callable                     flat, metadata-only
- *     local, in-memory                     wire form (system.describe)
+ *     local, in-memory                     wire form (peer.describe)
  *
  *     {                                    {
  *       tabs: { close: Mutation },           "tabs.close": { type, ... },
@@ -89,8 +89,8 @@ export type ActionMeta<
 
 /**
  * Flat dot-path to `ActionMeta` map describing a peer's full action surface.
- * Returned by the runtime-injected `system.describe` RPC and consumed via
- * `collaboration.peers.find(peerId)?.describe()`.
+ * Returned by the `RUNTIME_REQUEST { verb: 'describe-actions' }` wire kind
+ * and consumed via `collaboration.peers.find(peerId)?.describe()`.
  */
 export type ActionManifest = Record<string, ActionMeta>;
 
@@ -134,17 +134,6 @@ export type Action<
  */
 export type Actions = {
 	[key: string]: Action | Actions;
-};
-
-/**
- * The runtime-injected `system.*` action namespace. Single canonical type:
- * `attachRpc` constructs `systemActions: SystemActions` and `remote-actions.ts`
- * derives `remote.describe(peerId)` from
- * the same source. Drift between the runtime handler return and the consumer's
- * expected return becomes a compile error.
- */
-export type SystemActions = {
-	describe: Query<undefined, ActionManifest>;
 };
 
 /**
@@ -306,9 +295,9 @@ export function* walkActions(
 }
 
 /**
- * Walk a tree into its flat `ActionManifest`: the wire form returned by
- * `system.describe`. Live `input` schemas are retained; functions are
- * dropped. Pairs with `collaboration.peers.find(peerId)?.describe()`,
+ * Walk a tree into its flat `ActionManifest`: the wire form returned by the
+ * `describe-actions` runtime verb. Live `input` schemas are retained;
+ * functions are dropped. Pairs with `collaboration.peers.find(peerId)?.describe()`,
  * which returns the same shape from a remote peer.
  *
  * Built atop {@link walkActions}. Use that primitive directly if you want

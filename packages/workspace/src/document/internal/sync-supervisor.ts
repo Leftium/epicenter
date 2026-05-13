@@ -22,9 +22,9 @@ import {
 	decodeRpcPayload,
 	encodeAwareness,
 	encodeAwarenessStates,
-	encodeRpcProtocolRequest,
 	encodeRpcRequest,
 	encodeRpcResponse,
+	encodeRpcRuntimeRequest,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncPayload,
@@ -32,8 +32,8 @@ import {
 	isTransportOrigin,
 	MAIN_SUBPROTOCOL,
 	MESSAGE_TYPE,
-	type ProtocolVerb,
 	RpcError,
+	type RuntimeVerb,
 	SYNC_MESSAGE_TYPE,
 	SYNC_ORIGIN,
 	type SyncMessageType,
@@ -127,13 +127,14 @@ export type IncomingRpcRequest = {
 };
 
 /**
- * Incoming runtime protocol request. Carries a verb instead of an action path:
- * protocol operations live on a separate plane from the app action namespace.
+ * Incoming collaboration runtime request. Carries a verb instead of an action
+ * path: runtime operations live on a separate plane from the app action
+ * namespace.
  */
-export type IncomingProtocolRequest = {
+export type IncomingRuntimeRequest = {
 	requestId: number;
 	requesterClientId: number;
-	verb: ProtocolVerb;
+	verb: RuntimeVerb;
 };
 
 export type SyncSupervisorConfig = {
@@ -149,19 +150,18 @@ export type SyncSupervisorConfig = {
 	/**
 	 * Optional incoming app-action dispatcher. When omitted, inbound action
 	 * requests receive `RpcError.ActionNotFound`. When provided, the supervisor
-	 * calls this for every inbound action request and sends the resolved
+	 * calls this for every inbound ACTION_REQUEST and sends the resolved
 	 * Result back over the wire.
 	 */
 	onRpcRequest?: (rpc: IncomingRpcRequest) => Promise<Result<unknown, unknown>>;
 	/**
-	 * Optional incoming protocol-verb dispatcher. When omitted, inbound
-	 * protocol requests receive `RpcError.ActionNotFound`. When provided, the
-	 * supervisor routes every PROTOCOL_REQUEST to this handler — never to
-	 * `onRpcRequest` — so app code and runtime protocol code stay on separate
-	 * planes.
+	 * Optional incoming runtime-verb dispatcher. When omitted, inbound runtime
+	 * requests receive `RpcError.ActionNotFound`. When provided, the supervisor
+	 * routes every RUNTIME_REQUEST to this handler — never to `onRpcRequest` —
+	 * so app code and collaboration runtime code stay on separate planes.
 	 */
-	onProtocolRequest?: (
-		request: IncomingProtocolRequest,
+	onRuntimeRequest?: (
+		request: IncomingRuntimeRequest,
 	) => Promise<Result<unknown, unknown>>;
 };
 
@@ -175,6 +175,11 @@ export type SyncSupervisor = {
 		target: number,
 		action: string,
 		input: unknown,
+		options?: RemoteCallOptions,
+	): Promise<Result<unknown, RpcError>>;
+	sendRuntimeRequest(
+		target: number,
+		verb: RuntimeVerb,
 		options?: RemoteCallOptions,
 	): Promise<Result<unknown, RpcError>>;
 };
@@ -238,6 +243,7 @@ export function createSyncSupervisor(
 ): SyncSupervisor {
 	const awareness = config.awareness ?? null;
 	const onRpcRequest = config.onRpcRequest ?? null;
+	const onRuntimeRequest = config.onRuntimeRequest ?? null;
 
 	const waitForPromise = config.waitFor;
 	const log = config.log ?? createLogger('sync');
@@ -328,6 +334,24 @@ export function createSyncSupervisor(
 		}
 
 		sendResponse(await onRpcRequest(rpc));
+	}
+
+	async function handleIncomingRuntimeRequest(rpc: IncomingRuntimeRequest) {
+		const sendResponse = (result: Result<unknown, unknown>) =>
+			send(
+				encodeRpcResponse({
+					requestId: rpc.requestId,
+					requesterClientId: rpc.requesterClientId,
+					result,
+				}),
+			);
+
+		if (!onRuntimeRequest) {
+			sendResponse(RpcError.ActionNotFound({ action: rpc.verb }));
+			return;
+		}
+
+		sendResponse(await onRuntimeRequest(rpc));
 	}
 
 	function send(message: Uint8Array) {
@@ -551,17 +575,24 @@ export function createSyncSupervisor(
 
 				case MESSAGE_TYPE.RPC: {
 					const rpc = decodeRpcPayload(decoder);
-					if (rpc.type === 'response') {
-						const pending = pendingRequests.get(rpc.requestId);
-						if (pending) {
-							clearTimeout(pending.timer);
-							pendingRequests.delete(rpc.requestId);
-							// Trust-the-wire cast: the JSON payload is structurally a
-							// Result, but decodeRpcPayload types it as the raw shape.
-							pending.resolve(rpc.result as Result<unknown, unknown>);
+					switch (rpc.type) {
+						case 'response': {
+							const pending = pendingRequests.get(rpc.requestId);
+							if (pending) {
+								clearTimeout(pending.timer);
+								pendingRequests.delete(rpc.requestId);
+								// Trust-the-wire cast: the JSON payload is structurally a
+								// Result, but decodeRpcPayload types it as the raw shape.
+								pending.resolve(rpc.result as Result<unknown, unknown>);
+							}
+							break;
 						}
-					} else if (rpc.type === 'request') {
-						void handleIncomingRpcRequest(rpc);
+						case 'action-request':
+							void handleIncomingRpcRequest(rpc);
+							break;
+						case 'runtime-request':
+							void handleIncomingRuntimeRequest(rpc);
+							break;
 					}
 					break;
 				}
@@ -674,6 +705,57 @@ export function createSyncSupervisor(
 		}
 	});
 
+	/**
+	 * Send a request wire frame and track its pending response. Shared between
+	 * ACTION_REQUEST (app actions) and RUNTIME_REQUEST (runtime verbs): the
+	 * response envelope and timeout/error normalization are identical; only
+	 * the encoded wire kind and the action label differ.
+	 *
+	 * `errorLabel` populates `ActionFailed.action` when the remote returned a
+	 * non-RpcError; for app actions it is the dot path, for runtime requests
+	 * it is the verb.
+	 */
+	async function sendTrackedRequest(
+		encode: (requestId: number) => Uint8Array,
+		errorLabel: string,
+		{ timeout = DEFAULT_RPC_TIMEOUT_MS }: RemoteCallOptions = {},
+	): Promise<Result<unknown, RpcError>> {
+		if (masterController.signal.aborted) return RpcError.Disconnected();
+		if (websocket?.readyState !== WebSocket.OPEN) {
+			return RpcError.Disconnected();
+		}
+
+		return new Promise((resolve) => {
+			const requestId = nextRequestId++;
+			send(encode(requestId));
+
+			const timer = setTimeout(() => {
+				pendingRequests.delete(requestId);
+				resolve(RpcError.Timeout({ ms: timeout }));
+			}, timeout);
+
+			pendingRequests.set(requestId, {
+				action: errorLabel,
+				resolve: (result) => {
+					clearTimeout(timer);
+					if (isRpcError(result.error)) {
+						resolve(Err(result.error));
+					} else if (result.error != null) {
+						resolve(
+							RpcError.ActionFailed({
+								action: errorLabel,
+								cause: result.error,
+							}),
+						);
+					} else {
+						resolve(Ok(result.data));
+					}
+				},
+				timer,
+			});
+		});
+	}
+
 	return {
 		whenConnected: connected.promise,
 		get status() {
@@ -682,21 +764,9 @@ export function createSyncSupervisor(
 		onStatusChange: status.subscribe,
 		reconnect,
 		whenDisposed,
-		sendRpcRequest: async (
-			target: number,
-			action: string,
-			input: unknown,
-			{ timeout = DEFAULT_RPC_TIMEOUT_MS }: RemoteCallOptions = {},
-		): Promise<Result<unknown, RpcError>> => {
-			if (masterController.signal.aborted) return RpcError.Disconnected();
-
-			if (websocket?.readyState !== WebSocket.OPEN) {
-				return RpcError.Disconnected();
-			}
-
-			return new Promise((resolve) => {
-				const requestId = nextRequestId++;
-				send(
+		sendRpcRequest: (target, action, input, options) =>
+			sendTrackedRequest(
+				(requestId) =>
 					encodeRpcRequest({
 						requestId,
 						targetClientId: target,
@@ -704,35 +774,22 @@ export function createSyncSupervisor(
 						action,
 						input,
 					}),
-				);
-
-				const timer = setTimeout(() => {
-					pendingRequests.delete(requestId);
-					resolve(RpcError.Timeout({ ms: timeout }));
-				}, timeout);
-
-				pendingRequests.set(requestId, {
-					action,
-					resolve: (result) => {
-						clearTimeout(timer);
-						if (isRpcError(result.error)) {
-							resolve(Err(result.error));
-						} else if (result.error != null) {
-							resolve(
-								RpcError.ActionFailed({
-									action,
-									cause: result.error,
-								}),
-							);
-						} else {
-							resolve(Ok(result.data));
-						}
-					},
-					timer,
-				});
-			});
-		},
-	};
+				action,
+				options,
+			),
+		sendRuntimeRequest: (target, verb, options) =>
+			sendTrackedRequest(
+				(requestId) =>
+					encodeRpcRuntimeRequest({
+						requestId,
+						targetClientId: target,
+						requesterClientId: ydoc.clientID,
+						verb,
+					}),
+				verb,
+				options,
+			),
+	} satisfies SyncSupervisor;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

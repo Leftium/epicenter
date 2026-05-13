@@ -8,15 +8,16 @@
  *
  * Covers spec Phase 2.1:
  *   - identity publication
- *   - actionPaths alphabetically sorted, never includes the reserved
- *     `system.describe` path
+ *   - actionPaths alphabetically sorted; no runtime verbs leak into the
+ *     publishedaction surface (runtime verbs ride RUNTIME_REQUEST, not
+ *     ACTION_REQUEST)
  *   - peers.list() never includes self
- *   - reserved `system` namespace fails to type-check
  */
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import {
+	type Actions,
 	defineMutation,
 	defineQuery,
 	walkActions,
@@ -63,13 +64,15 @@ function stalledOpenWebSocket(): Promise<WebSocket> {
 	return Promise.resolve(ws as unknown as WebSocket);
 }
 
-function setup(actions: Record<string, unknown> = {}) {
+function setup<TActions extends Actions = Actions>(
+	actions: TActions = {} as TActions,
+) {
 	const ydoc = new Y.Doc({ guid: 'open-collab-test' });
-	const collaboration = openCollaboration(ydoc, {
+	const collaboration = openCollaboration<TActions>(ydoc, {
 		url: 'wss://ignored.invalid/',
 		openWebSocket: stalledOpenWebSocket,
 		identity,
-		actions: actions as never,
+		actions,
 	});
 	return { ydoc, collaboration };
 }
@@ -86,14 +89,12 @@ describe('openCollaboration', () => {
 		}
 	});
 
-	test('user actions do not surface the system namespace', () => {
-		const { ydoc, collaboration } = setup({
-			tabs: { list: defineQuery({ handler: () => [] }) },
-		});
+	test('collaboration.actions returns exactly the user-supplied tree', () => {
+		const list = defineQuery({ handler: () => [] });
+		const { ydoc, collaboration } = setup({ tabs: { list } });
 		try {
-			expect(
-				(collaboration.actions as Record<string, unknown>).system,
-			).toBeUndefined();
+			expect(collaboration.actions).toEqual({ tabs: { list } });
+			expect(Object.keys(collaboration.actions)).toEqual(['tabs']);
 		} finally {
 			ydoc.destroy();
 		}
@@ -139,26 +140,21 @@ describe('action paths publication shape', () => {
 		expect(paths).toEqual(['a.list', 'm.ping', 'z.close']);
 	});
 
-	test('walkActions does not surface the system namespace from a user action root', () => {
+	test('walkActions emits exactly the user-authored paths (runtime verbs never appear here)', () => {
 		const actions = {
 			tabs: { list: defineQuery({ handler: () => [] }) },
 		};
 		const paths = Array.from(walkActions(actions), ([path]) => path).sort();
 		expect(paths).toEqual(['tabs.list']);
 	});
-});
 
-describe('openCollaboration type-level guards', () => {
-	test('actions parameter refuses a top-level system namespace', () => {
-		// @ts-expect-error reserved namespace must be refused at compile time
-		const _config = {
-			url: 'wss://ignored.invalid/',
-			openWebSocket: stalledOpenWebSocket,
-			identity,
-			actions: {
-				system: { broken: defineQuery({ handler: () => null }) },
-			},
-		} as const;
-		void _config;
+	test('a top-level `system` key in user actions is legal and shows up in actionPaths', () => {
+		// The runtime previously reserved `system.*`; the runtime/action plane
+		// split means user code can use the name freely now.
+		const actions = {
+			system: { ping: defineQuery({ handler: () => 'pong' }) },
+		};
+		const paths = Array.from(walkActions(actions), ([path]) => path).sort();
+		expect(paths).toEqual(['system.ping']);
 	});
 });

@@ -29,7 +29,6 @@ export type YjsSyncAttachment = {
 	readonly whenDisposed: Promise<void>;
 	onStatusChange(listener: (status: SyncStatus) => void): () => void;
 	reconnect(): void;
-	goOffline(): void;
 };
 
 export function attachYjsSync(
@@ -45,6 +44,5 @@ export function attachYjsSync(
 		whenDisposed: supervisor.whenDisposed,
 		onStatusChange: supervisor.onStatusChange,
 		reconnect: supervisor.reconnect,
-		goOffline: supervisor.goOffline,
 	};
 }

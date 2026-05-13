@@ -10,7 +10,6 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Result } from 'wellcrafted/result';
-import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 import type { Collaboration } from '../document/open-collaboration.js';
@@ -25,13 +24,11 @@ function fakeEntry(name: string, actions: Record<string, unknown> = {}): Started
 	const collaboration = {
 		identity: { id: 'self', name: 'Self', platform: 'node' },
 		actions,
-		awareness: new Awareness(ydoc),
 		status: { phase: 'connected' },
 		whenConnected: Promise.resolve(),
 		whenDisposed: Promise.resolve(),
 		onStatusChange: () => () => {},
 		reconnect() {},
-		goOffline() {},
 		peers: {
 			list: () => [],
 			find: () => undefined,

@@ -10,14 +10,11 @@
 import { defineMutation, defineQuery } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
 import Type from 'typebox';
-import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 const ydoc = new Y.Doc({ guid: 'epicenter.demo' });
 const state = ydoc.getMap<number>('state');
 state.set('count', 0);
-
-const awareness = new Awareness(ydoc);
 
 const actions = {
 	counter: {
@@ -47,13 +44,11 @@ const actions = {
 const collaboration = {
 	identity: { id: 'fixture', name: 'fixture', platform: 'node' as const },
 	actions,
-	awareness,
 	status: { phase: 'connected' as const },
 	whenConnected: Promise.resolve(),
 	whenDisposed: Promise.resolve(),
 	onStatusChange: () => () => {},
 	reconnect: () => {},
-	goOffline: () => {},
 	peers: {
 		list: () => [],
 		find: () => undefined,

@@ -22,6 +22,7 @@ import {
 	decodeRpcPayload,
 	encodeAwareness,
 	encodeAwarenessStates,
+	encodeRpcProtocolRequest,
 	encodeRpcRequest,
 	encodeRpcResponse,
 	encodeSyncStep1,
@@ -31,6 +32,7 @@ import {
 	isTransportOrigin,
 	MAIN_SUBPROTOCOL,
 	MESSAGE_TYPE,
+	type ProtocolVerb,
 	RpcError,
 	SYNC_MESSAGE_TYPE,
 	SYNC_ORIGIN,
@@ -51,11 +53,10 @@ import {
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
-import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import type { RemoteCallOptions } from '../../shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════
-// Public types (re-exported via open-workspace and attach-yjs-sync)
+// Public types (re-exported via open-collaboration and attach-yjs-sync)
 // ════════════════════════════════════════════════════════════════════════════
 
 export type SyncError = { type: 'connection' };
@@ -117,12 +118,22 @@ export type OpenWebSocket = (
 	protocols?: string[],
 ) => Promise<WebSocket> | WebSocket;
 
-/** Incoming RPC request, dispatched by the supervisor when configured. */
+/** Incoming app-action RPC request, dispatched by the supervisor when configured. */
 export type IncomingRpcRequest = {
 	requestId: number;
 	requesterClientId: number;
 	action: string;
 	input: unknown;
+};
+
+/**
+ * Incoming runtime protocol request. Carries a verb instead of an action path:
+ * protocol operations live on a separate plane from the app action namespace.
+ */
+export type IncomingProtocolRequest = {
+	requestId: number;
+	requesterClientId: number;
+	verb: ProtocolVerb;
 };
 
 export type SyncSupervisorConfig = {
@@ -136,12 +147,22 @@ export type SyncSupervisorConfig = {
 	 */
 	awareness?: Awareness;
 	/**
-	 * Optional incoming-RPC dispatcher. When omitted, inbound RPC requests
-	 * receive `RpcError.ActionNotFound`. When provided, the supervisor calls
-	 * this handler for every inbound request and sends the resolved Result
-	 * back over the wire.
+	 * Optional incoming app-action dispatcher. When omitted, inbound action
+	 * requests receive `RpcError.ActionNotFound`. When provided, the supervisor
+	 * calls this for every inbound action request and sends the resolved
+	 * Result back over the wire.
 	 */
 	onRpcRequest?: (rpc: IncomingRpcRequest) => Promise<Result<unknown, unknown>>;
+	/**
+	 * Optional incoming protocol-verb dispatcher. When omitted, inbound
+	 * protocol requests receive `RpcError.ActionNotFound`. When provided, the
+	 * supervisor routes every PROTOCOL_REQUEST to this handler — never to
+	 * `onRpcRequest` — so app code and runtime protocol code stay on separate
+	 * planes.
+	 */
+	onProtocolRequest?: (
+		request: IncomingProtocolRequest,
+	) => Promise<Result<unknown, unknown>>;
 };
 
 export type SyncSupervisor = {
@@ -149,21 +170,13 @@ export type SyncSupervisor = {
 	readonly status: SyncStatus;
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
 	reconnect(): void;
-	/**
-	 * Park the supervisor in `offline`: the current cycle is aborted and the
-	 * loop sleeps until `reconnect()` wakes it. Safe to call repeatedly.
-	 */
-	goOffline(): void;
 	whenDisposed: Promise<void>;
-	sendRpcRequest<
-		TMap extends RpcActionMap = DefaultRpcMap,
-		TAction extends string & keyof TMap = string & keyof TMap,
-	>(
+	sendRpcRequest(
 		target: number,
-		action: TAction,
-		input?: TMap[TAction]['input'],
+		action: string,
+		input: unknown,
 		options?: RemoteCallOptions,
-	): Promise<Result<TMap[TAction]['output'], RpcError>>;
+	): Promise<Result<unknown, RpcError>>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -273,9 +286,6 @@ export function createSyncSupervisor(
 	 */
 	const masterController = new AbortController();
 	let cycleController: AbortController = childOf(masterController.signal);
-
-	/** When set, supervisor parks indefinitely in `offline` until `reconnect()`. */
-	let offlineRequested = false;
 
 	let websocket: WebSocket | null = null;
 
@@ -592,9 +602,8 @@ export function createSyncSupervisor(
 
 		try {
 			while (!masterController.signal.aborted) {
-				// Park in either `failed` or `offline` (when requested) until
-				// `reconnect` aborts the cycle to wake us.
-				if (status.get().phase === 'failed' || offlineRequested) {
+				// Park in `failed` until `reconnect` aborts the cycle to wake us.
+				if (status.get().phase === 'failed') {
 					await waitForAbort(cycleController.signal);
 					continue;
 				}
@@ -620,7 +629,6 @@ export function createSyncSupervisor(
 				if (
 					!masterController.signal.aborted &&
 					status.get().phase !== 'failed' &&
-					!offlineRequested &&
 					!signal.aborted
 				) {
 					await backoff.sleep(signal);
@@ -638,20 +646,9 @@ export function createSyncSupervisor(
 	function reconnect() {
 		if (masterController.signal.aborted) return;
 		if (status.get().phase === 'failed') setStatus({ phase: 'offline' });
-		offlineRequested = false;
 		const old = cycleController;
 		cycleController = childOf(masterController.signal);
 		backoff.reset();
-		old.abort();
-	}
-
-	function goOffline() {
-		if (masterController.signal.aborted) return;
-		if (offlineRequested) return;
-		offlineRequested = true;
-		setStatus({ phase: 'offline' });
-		const old = cycleController;
-		cycleController = childOf(masterController.signal);
 		old.abort();
 	}
 
@@ -684,17 +681,13 @@ export function createSyncSupervisor(
 		},
 		onStatusChange: status.subscribe,
 		reconnect,
-		goOffline,
 		whenDisposed,
-		sendRpcRequest: async <
-			TMap extends RpcActionMap = DefaultRpcMap,
-			TAction extends string & keyof TMap = string & keyof TMap,
-		>(
+		sendRpcRequest: async (
 			target: number,
-			action: TAction,
-			input?: TMap[TAction]['input'],
+			action: string,
+			input: unknown,
 			{ timeout = DEFAULT_RPC_TIMEOUT_MS }: RemoteCallOptions = {},
-		): Promise<Result<TMap[TAction]['output'], RpcError>> => {
+		): Promise<Result<unknown, RpcError>> => {
 			if (masterController.signal.aborted) return RpcError.Disconnected();
 
 			if (websocket?.readyState !== WebSocket.OPEN) {
@@ -732,7 +725,7 @@ export function createSyncSupervisor(
 								}),
 							);
 						} else {
-							resolve(Ok(result.data as TMap[TAction]['output']));
+							resolve(Ok(result.data));
 						}
 					},
 					timer,

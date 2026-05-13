@@ -8,7 +8,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import { RpcError } from '@epicenter/sync';
-import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
@@ -72,13 +71,11 @@ function fakeCollaboration<TActions extends Actions>({
 	return {
 		identity: { id: 'self', name: 'Self', platform: 'node' },
 		actions,
-		awareness: new Awareness(ydoc),
 		status: syncStatus,
 		whenConnected: Promise.resolve(),
 		whenDisposed: Promise.resolve(),
 		onStatusChange: () => () => {},
 		reconnect() {},
-		goOffline() {},
 		peers,
 		[Symbol.dispose]() {
 			ydoc.destroy();

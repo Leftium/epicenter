@@ -55,30 +55,22 @@ export type OpenCollaborationConfig<TActions extends Actions = Actions> = {
 	identity: PeerIdentity;
 	/**
 	 * Local action registry published to peers. May be `{}` for a participant
-	 * that only consumes remote actions. The reserved `system.*` namespace is
-	 * injected by the supervisor and must not appear at the top level.
+	 * that only consumes remote actions. The `system.*` namespace is reserved
+	 * for runtime meta operations (`system.describe`) and refused at the type
+	 * level: declaring `actions: { system: ... }` fails to compile.
 	 */
-	actions: TActions;
+	actions: TActions & { system?: never };
 };
 
 export type Collaboration<TActions extends Actions = Actions> = {
 	readonly identity: PeerIdentity;
 	readonly actions: TActions;
 
-	/**
-	 * Underlying y-protocols `Awareness` instance. Compose custom presence
-	 * fields (cursors, selections) via
-	 * `attachAwareness(collaboration.awareness, { schema, initial })`.
-	 * Reserved keys: `identity` and `actionPaths`.
-	 */
-	readonly awareness: Awareness;
-
 	readonly status: SyncStatus;
 	readonly whenConnected: Promise<void>;
 	readonly whenDisposed: Promise<void>;
 	onStatusChange(listener: (status: SyncStatus) => void): () => void;
 	reconnect(): void;
-	goOffline(): void;
 
 	readonly peers: PeersSurface;
 
@@ -100,12 +92,6 @@ export function openCollaboration<TActions extends Actions>(
 ): Collaboration<TActions> {
 	const { identity, actions: userActions } = config;
 
-	if ('system' in userActions) {
-		throw new Error(
-			"[openCollaboration] user actions cannot define the 'system.*' namespace. It is reserved for runtime meta operations.",
-		);
-	}
-
 	const systemActions: SystemActions = Object.freeze({
 		describe: defineQuery({
 			handler: () => describeActions(userActions),
@@ -125,9 +111,6 @@ export function openCollaboration<TActions extends Actions>(
 
 	const awareness = new Awareness(ydoc);
 
-	// `attachAwareness` validates the schema on read and merges into the local
-	// state so future `attachAwareness(collaboration.awareness, ...)` calls
-	// compose rather than clobber.
 	attachAwareness(awareness, {
 		schema: peerAwarenessSchema,
 		initial: {
@@ -164,7 +147,6 @@ export function openCollaboration<TActions extends Actions>(
 	return {
 		identity,
 		actions: userActions,
-		awareness,
 		get status() {
 			return supervisor.status;
 		},
@@ -172,7 +154,6 @@ export function openCollaboration<TActions extends Actions>(
 		whenDisposed: supervisor.whenDisposed,
 		onStatusChange: supervisor.onStatusChange,
 		reconnect: supervisor.reconnect,
-		goOffline: supervisor.goOffline,
 		peers,
 		[Symbol.dispose]() {
 			ydoc.destroy();

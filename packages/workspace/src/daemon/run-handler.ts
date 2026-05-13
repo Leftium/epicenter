@@ -5,7 +5,7 @@
  * `epicenter run` is a shell shortcut for one daemon runtime primitive:
  *
  *   request.peerTarget === undefined   ->  invokeAction(...)
- *   request.peerTarget === <peerId>    ->  remote.invoke(peerId, path, input)
+ *   request.peerTarget === <peerId>    ->  workspace.peers.find(peerId)?.invoke(path, input)
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
@@ -17,7 +17,8 @@
  */
 
 import { Ok } from 'wellcrafted/result';
-import type { SyncStatus } from '../document/attach-sync.js';
+import type { SyncStatus } from '../document/internal/sync-supervisor.js';
+import { waitForPeer } from '../document/peer.js';
 import {
 	invokeAction,
 	resolveActionPath,
@@ -56,7 +57,7 @@ export async function executeRun(
 	const { entry, localPath } = target.data;
 	const { runtime } = entry;
 
-	const action = resolveActionPath(runtime.actions, localPath);
+	const action = resolveActionPath(runtime.workspace.actions, localPath);
 	if (!action) {
 		const descendants = daemonActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {
@@ -129,21 +130,26 @@ async function invokeRemote({
 }): Promise<RunResponse> {
 	const { runtime } = entry;
 
-	const result = await runtime.remote.invoke(
-		peerTarget,
-		localPath,
-		actionInput,
-		{
-			waitForPeerMs: waitMs,
-			timeout: waitMs,
-		},
-	);
+	const peer = await waitForPeer(runtime.workspace.peers, peerTarget, {
+		timeoutMs: waitMs,
+	});
+	if (!peer) {
+		return RunError.PeerNotFound({
+			peerTarget,
+			waitMs,
+			syncStatus: toRunSyncStatus(runtime.workspace.status),
+		});
+	}
+
+	const result = await peer.invoke(localPath, actionInput, {
+		timeout: waitMs,
+	});
 
 	if (result.error !== null) {
 		return RunError.RemoteCallFailed({
 			cause: result.error,
 			peerTarget,
-			syncStatus: toRunSyncStatus(runtime.sync.status),
+			syncStatus: toRunSyncStatus(runtime.workspace.status),
 		});
 	}
 	return Ok(result.data);
@@ -182,7 +188,7 @@ function daemonActionSuggestionLines(
 	entry: StartedDaemonRoute,
 	prefix: string,
 ): string[] {
-	const entries = [...walkActions(entry.runtime.actions)];
+	const entries = [...walkActions(entry.runtime.workspace.actions)];
 	const descendants = entriesUnder(entries, prefix);
 	return descendants.map(
 		([path, action]) =>
@@ -194,7 +200,7 @@ function daemonActionNearestSiblingLines(
 	entry: StartedDaemonRoute,
 	missedPath: string,
 ): string[] {
-	const entries = [...walkActions(entry.runtime.actions)];
+	const entries = [...walkActions(entry.runtime.workspace.actions)];
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();

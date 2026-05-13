@@ -12,7 +12,7 @@ const awarenessDefs = {
 
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'awareness-test' });
-	const awareness = attachAwareness(ydoc, {
+	const awareness = attachAwareness(new YAwareness(ydoc), {
 		schema: awarenessDefs,
 		initial: { cursorX: 0, cursorY: 0, name: 'local' },
 	});
@@ -115,20 +115,21 @@ describe('AwarenessAttachment', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('attachAwareness', () => {
-	test('constructs a fresh y-protocols Awareness bound to the ydoc', () => {
+	test('wraps the supplied Awareness instance', () => {
 		const ydoc = new Y.Doc();
-		const { raw } = attachAwareness(ydoc, {
+		const raw0 = new YAwareness(ydoc);
+		const { raw } = attachAwareness(raw0, {
 			schema: { name: type('string') },
 			initial: { name: 'alice' },
 		});
 
-		expect(raw).toBeInstanceOf(YAwareness);
+		expect(raw).toBe(raw0);
 		expect(raw.doc).toBe(ydoc);
 	});
 
 	test('publishes initial state synchronously before returning', () => {
 		const ydoc = new Y.Doc();
-		const awareness = attachAwareness(ydoc, {
+		const awareness = attachAwareness(new YAwareness(ydoc), {
 			schema: { name: type('string'), score: type('number') },
 			initial: { name: 'alice', score: 7 },
 		});
@@ -136,9 +137,12 @@ describe('attachAwareness', () => {
 		expect(awareness.raw.getLocalState()).toEqual({ name: 'alice', score: 7 });
 	});
 
-	test('empty defs — works as a structural slot', () => {
+	test('empty defs work as a structural slot', () => {
 		const ydoc = new Y.Doc();
-		const awareness = attachAwareness(ydoc, { schema: {}, initial: {} });
+		const awareness = attachAwareness(new YAwareness(ydoc), {
+			schema: {},
+			initial: {},
+		});
 
 		// `.raw` is usable regardless of defs.
 		expect(awareness.raw).toBeInstanceOf(YAwareness);
@@ -151,7 +155,10 @@ describe('attachAwareness', () => {
 
 	test('ydoc.destroy() tears down the Awareness via its self-registered hook', () => {
 		const ydoc = new Y.Doc();
-		const { raw } = attachAwareness(ydoc, { schema: {}, initial: {} });
+		const { raw } = attachAwareness(new YAwareness(ydoc), {
+			schema: {},
+			initial: {},
+		});
 
 		let destroyed = 0;
 		raw.on('destroy', () => {

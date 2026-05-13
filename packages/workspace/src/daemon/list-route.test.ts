@@ -10,39 +10,46 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Result } from 'wellcrafted/result';
+import { Awareness } from 'y-protocols/awareness';
+import * as Y from 'yjs';
 
+import type { Workspace } from '../document/open-workspace.js';
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
 import { buildDaemonApp } from './app.js';
-import type { DaemonRuntime, StartedDaemonRoute } from './types.js';
+import type { StartedDaemonRoute } from './types.js';
 
 type ListResult = Result<ActionManifest, never>;
 
-function fakeEntry(
-	name: string,
-	runtimeShape: Record<string, unknown> = {},
-): StartedDaemonRoute {
-	const runtime: DaemonRuntime = {
-		actions: {},
-		sync: {
-			whenConnected: Promise.resolve(),
-			status: { phase: 'connected' },
-			onStatusChange: () => () => {},
-			reconnect() {},
-			[Symbol.asyncDispose]: async () => {},
-		} as unknown as DaemonRuntime['sync'],
-		awareness: {
-			peers: () => new Map(),
+function fakeEntry(name: string, actions: Record<string, unknown> = {}): StartedDaemonRoute {
+	const ydoc = new Y.Doc();
+	const workspace = {
+		identity: { id: 'self', name: 'Self', platform: 'node' },
+		actions,
+		awareness: new Awareness(ydoc),
+		status: { phase: 'connected' },
+		whenConnected: Promise.resolve(),
+		whenDisposed: Promise.resolve(),
+		onStatusChange: () => () => {},
+		reconnect() {},
+		goOffline() {},
+		peers: {
+			list: () => [],
+			find: () => undefined,
 			observe: () => () => {},
-		} as unknown as DaemonRuntime['awareness'],
-		remote: {
-			invoke: async () => ({ data: null, error: null }),
-		} as unknown as DaemonRuntime['remote'],
-		...runtimeShape,
-		async [Symbol.asyncDispose]() {},
-	} satisfies DaemonRuntime;
+		},
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	} as unknown as Workspace;
+
 	return {
 		route: name,
-		runtime,
+		runtime: {
+			workspace,
+			async [Symbol.asyncDispose]() {
+				ydoc.destroy();
+			},
+		},
 	};
 }
 
@@ -60,13 +67,11 @@ describe('/list route', () => {
 	test('returns route-prefixed paths under the action root', async () => {
 		const reply = await postList([
 			fakeEntry('demo', {
-				actions: {
-					counter: {
-						get: defineQuery({
-							description: 'Read the counter',
-							handler: () => 0,
-						}),
-					},
+				counter: {
+					get: defineQuery({
+						description: 'Read the counter',
+						handler: () => 0,
+					}),
 				},
 			}),
 		]);
@@ -76,24 +81,6 @@ describe('/list route', () => {
 			expect(reply.data['demo.counter.get']?.description).toBe(
 				'Read the counter',
 			);
-		}
-	});
-
-	test('ignores action leaves outside the canonical action root', async () => {
-		const reply = await postList([
-			fakeEntry('demo', {
-				actions: {},
-				sqlite: {
-					get: defineQuery({
-						handler: () => 0,
-					}),
-				},
-			}),
-		]);
-
-		expect(reply.error).toBeNull();
-		if (reply.error === null) {
-			expect(reply.data).toEqual({});
 		}
 	});
 
@@ -108,14 +95,10 @@ describe('/list route', () => {
 	test('prefixes actions from every daemon route', async () => {
 		const reply = await postList([
 			fakeEntry('notes', {
-				actions: {
-					add: defineQuery({ handler: () => null }),
-				},
+				add: defineQuery({ handler: () => null }),
 			}),
 			fakeEntry('tasks', {
-				actions: {
-					list: defineQuery({ handler: () => [] }),
-				},
+				list: defineQuery({ handler: () => [] }),
 			}),
 		]);
 

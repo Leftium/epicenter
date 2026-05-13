@@ -5,9 +5,9 @@
  *
  * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  runtime.awareness.peers()                   all routes
- *   /list   ->  describeActions({ route: runtime.actions }) all routes
- *   /run    ->  invokeAction(...) | rpc.rpc(...)              route-routed
+ *   /peers  ->  workspace.peers.list()                       all routes
+ *   /list   ->  describeActions({ route: workspace.actions }) all routes
+ *   /run    ->  invokeAction(...) | peer.invoke(...)         route-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -47,14 +47,15 @@ export type RunRequest = typeof RunRequest.infer;
 
 /**
  * Row shape returned by `/peers`. One row per `(route, clientID)` pair,
- * tagged with its route name so a multi-route daemon can fan out.
- * `peer` carries the canonical peer identity from the standard presence
- * convention; renderers consume it directly without a cast.
+ * tagged with its route name so a multi-route daemon can fan out. `identity`
+ * carries the published peer identity; renderers consume it directly without
+ * a cast.
  */
 export const PeerSnapshot = type({
 	route: 'string',
 	clientID: 'number',
-	peer: PeerIdentity,
+	identity: PeerIdentity,
+	actionPaths: 'string[]',
 });
 export type PeerSnapshot = typeof PeerSnapshot.infer;
 
@@ -75,12 +76,12 @@ export function buildDaemonApp(
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
 			for (const entry of runtimes) {
-				const peers = entry.runtime.awareness.peers();
-				for (const [clientID, state] of peers) {
+				for (const peer of entry.runtime.workspace.peers.list()) {
 					rows.push({
 						route: entry.route,
-						clientID,
-						peer: state.peer,
+						clientID: peer.clientID,
+						identity: peer.identity,
+						actionPaths: [...peer.actionPaths],
 					});
 				}
 			}
@@ -88,7 +89,7 @@ export function buildDaemonApp(
 		})
 		.post('/list', (c) => {
 			const actionRoots = Object.fromEntries(
-				runtimes.map((entry) => [entry.route, entry.runtime.actions]),
+				runtimes.map((entry) => [entry.route, entry.runtime.workspace.actions]),
 			);
 			return c.json(Ok(describeActions(actionRoots)));
 		})

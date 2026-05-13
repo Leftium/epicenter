@@ -28,14 +28,22 @@ let originalXdg: string | undefined;
 let runtimeRoot: string;
 let workDir: string;
 
-function makeRuntime(actions: DaemonRuntime['actions'] = {}): DaemonRuntime {
+function makeRuntime(
+	actions: DaemonRuntime['workspace']['actions'] = {},
+): DaemonRuntime {
 	return {
-		actions,
+		workspace: {
+			actions,
+			peers: {
+				list: () => [],
+				find: () => undefined,
+				observe: () => () => {},
+			},
+			onStatusChange: () => () => {},
+			status: { phase: 'connected' },
+		},
 		async [Symbol.asyncDispose]() {
 			/* no-op */
-		},
-		awareness: {
-			peers: () => new Map(),
 		},
 	} as unknown as DaemonRuntime;
 }

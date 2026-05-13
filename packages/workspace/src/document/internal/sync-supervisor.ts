@@ -1,5 +1,23 @@
 /// <reference lib="dom" />
 
+/**
+ * Internal sync supervisor: connects a Y.Doc to a WebSocket sync server,
+ * runs the Yjs sync protocol (STEP1/STEP2/UPDATE), relays awareness frames
+ * if an `Awareness` is supplied, and dispatches RPC frames if `onRpcRequest`
+ * is supplied.
+ *
+ * Two higher-level primitives wrap this module:
+ *
+ *   - `openWorkspace` supplies both `awareness` and `onRpcRequest`, and uses
+ *     `sendRpcRequest` to drive its peers surface.
+ *   - `attachYjsSync` supplies neither; it is a pure byte transport for
+ *     content docs.
+ *
+ * Lifecycle is supervisor-driven: connect, exponential backoff with jitter,
+ * liveness via 60s pings and 90s timeout, browser online/offline/visibility
+ * wakeups, permanent-failure park on 4401 close codes.
+ */
+
 import {
 	decodeRpcPayload,
 	encodeAwareness,
@@ -27,49 +45,18 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
+	type Awareness,
 	applyAwarenessUpdate,
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import * as Y from 'yjs';
-import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
-import {
-	defineQuery,
-	describeActions,
-	invokeActionForRpc,
-	type RemoteCallOptions,
-	resolveActionPath,
-	type SystemActions,
-} from '../shared/actions.js';
-import type {
-	AwarenessAttachment,
-	AwarenessSchema,
-} from './attach-awareness.js';
+import type * as Y from 'yjs';
+import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
+import type { RemoteCallOptions } from '../../shared/actions.js';
 
-/**
- * Minimal Y.Doc sync attachment: connects a Y.Doc to a WebSocket sync server.
- *
- * This is a low-level primitive for `packages/document`. It handles the
- * Y.Doc sync protocol (STEP1/STEP2/UPDATE), supervisor loop with exponential
- * backoff, liveness detection, and graceful shutdown.
- *
- * **Not included** (workspace-layer concerns):
- * - BroadcastChannel cross-tab sync (separate `attachBroadcastChannel` helper)
- * - Peer directory helpers over an attached awareness state
- * - Peer RPC (`sync.attachRpc(actions)`)
- *
- * Register `attachIndexedDb` first and pass its `whenLoaded`
- * as `waitFor` so the supervisor connects only after local state hydrates:
- * the handshake then exchanges only the delta, not the full document.
- *
- * `SYNC_ORIGIN` is imported from `@epicenter/sync` so every sync layer
- * (workspace WebSocket, BroadcastChannel, document attachSync) agrees on the
- * same symbol and echo guards work across layers.
- */
-
-// ============================================================================
-// Types
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════════
+// Public types (re-exported via open-workspace and attach-yjs-sync)
+// ════════════════════════════════════════════════════════════════════════════
 
 export type SyncError = { type: 'connection' };
 
@@ -95,29 +82,20 @@ export type SyncStatus =
  */
 export const SyncFailedError = defineErrors({
 	AuthRejected: ({ code }: { code: string }) => ({
-		message: `[attachSync] server rejected auth: ${code}`,
+		message: `[sync] server rejected auth: ${code}`,
 		code,
 	}),
 });
 export type SyncFailedError = InferErrors<typeof SyncFailedError>;
 
-/** Errors surfaced by the sync supervisor's background lifecycle. */
+/** Background lifecycle warnings logged by the supervisor. */
 export const SyncSupervisorError = defineErrors({
-	/**
-	 * The `waitFor` barrier (typically IndexedDB hydration) rejected before
-	 * the supervisor started. Sync proceeds anyway: better to try syncing
-	 * than to stay silently offline because persistence failed.
-	 */
 	WaitForRejected: ({ cause }: { cause: unknown }) => ({
-		message: `[attachSync] waitFor rejected; starting sync anyway: ${extractErrorMessage(cause)}`,
+		message: `[sync] waitFor rejected; starting sync anyway: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	/**
-	 * The socket didn't fire 'close' within the shutdown timeout, so
-	 * `whenDisposed` resolves anyway rather than hanging forever.
-	 */
 	CloseTimeout: ({ timeoutMs }: { timeoutMs: number }) => ({
-		message: `[attachSync] WebSocket did not fire onclose within ${timeoutMs}ms; resolving whenDisposed anyway`,
+		message: `[sync] WebSocket did not fire onclose within ${timeoutMs}ms; resolving whenDisposed anyway`,
 		timeoutMs,
 	}),
 	PermanentClose: ({
@@ -127,46 +105,57 @@ export const SyncSupervisorError = defineErrors({
 		closeCode: number;
 		reason: SyncFailedReason;
 	}) => ({
-		message: `[attachSync] server sent permanent close ${closeCode}: ${reason.code}`,
+		message: `[sync] server sent permanent close ${closeCode}: ${reason.code}`,
 		closeCode,
 		reason,
 	}),
 });
 export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
 
-export type SyncAttachment = {
-	/**
-	 * Resolves after the WebSocket handshake completes and the first sync
-	 * exchange finishes. Unlike `y-indexeddb`'s `whenSynced`, this is a
-	 * real "transport established, initial state reconciled" guarantee.
-	 *
-	 * Rejects with an error if the doc is destroyed before the first
-	 * successful handshake (permanent failure: dead URL, auth denied,
-	 * dispose during outage). Callers awaiting it should attach a `.catch`
-	 * or use `await using` to bound the wait by the doc's lifetime.
-	 *
-	 * Browser apps generally await `idb.whenLoaded` to render; only CLIs
-	 * and tools that strictly need remote state await `whenConnected`.
-	 */
-	whenConnected: Promise<void>;
-	/** Current connection status. */
-	readonly status: SyncStatus;
-	/** Subscribe to status changes. Returns unsubscribe function. */
-	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
-	/** Force a fresh connection with new credentials (supervisor restarts iteration). */
-	reconnect(): void;
-	/**
-	 * Resolves after `ydoc.destroy()` fires the cascade, the supervisor loop exits,
-	 * and any open websocket closes or reaches the safety timeout.
-	 */
-	whenDisposed: Promise<void>;
-	attachRpc(actions: RpcActionSource): SyncRpcAttachment;
+export type OpenWebSocket = (
+	url: string | URL,
+	protocols?: string[],
+) => Promise<WebSocket> | WebSocket;
+
+/** Incoming RPC request, dispatched by the supervisor when configured. */
+export type IncomingRpcRequest = {
+	requestId: number;
+	requesterClientId: number;
+	action: string;
+	input: unknown;
 };
 
-export type RpcActionSource = Record<string, unknown>;
+export type SyncSupervisorConfig = {
+	url: string;
+	waitFor?: Promise<unknown>;
+	openWebSocket?: OpenWebSocket;
+	log?: Logger;
+	/**
+	 * Optional Awareness to wire over the same WebSocket. When omitted, no
+	 * awareness frames are emitted, accepted, or queried.
+	 */
+	awareness?: Awareness;
+	/**
+	 * Optional incoming-RPC dispatcher. When omitted, inbound RPC requests
+	 * receive `RpcError.ActionNotFound`. When provided, the supervisor calls
+	 * this handler for every inbound request and sends the resolved Result
+	 * back over the wire.
+	 */
+	onRpcRequest?: (rpc: IncomingRpcRequest) => Promise<Result<unknown, unknown>>;
+};
 
-export type SyncRpcAttachment = {
-	rpc<
+export type SyncSupervisor = {
+	whenConnected: Promise<void>;
+	readonly status: SyncStatus;
+	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
+	reconnect(): void;
+	/**
+	 * Park the supervisor in `offline`: the current cycle is aborted and the
+	 * loop sleeps until `reconnect()` wakes it. Safe to call repeatedly.
+	 */
+	goOffline(): void;
+	whenDisposed: Promise<void>;
+	sendRpcRequest<
 		TMap extends RpcActionMap = DefaultRpcMap,
 		TAction extends string & keyof TMap = string & keyof TMap,
 	>(
@@ -177,52 +166,9 @@ export type SyncRpcAttachment = {
 	): Promise<Result<TMap[TAction]['output'], RpcError>>;
 };
 
-export type OpenWebSocket = (
-	url: string | URL,
-	protocols?: string[],
-) => Promise<WebSocket> | WebSocket;
-
-
-export type SyncAttachmentConfig = {
-	/**
-	 * WebSocket URL for the room. Must use ws:/wss:. Use `toWsUrl()` to convert
-	 * an HTTP URL. Typically interpolates `ydoc.guid` into the path.
-	 */
-	url: string;
-	/**
-	 * Gate the first connection attempt on another promise, typically
-	 * `attachIndexedDb(ydoc).whenLoaded`. Without this, the supervisor
-	 * connects before local state hydrates and the handshake transfers the
-	 * full document instead of just the delta.
-	 */
-	waitFor?: Promise<unknown>;
-	/**
-	 * Optional WebSocket opener for auth-owned transport setup.
-	 *
-	 * When omitted, `attachSync` opens a normal sync WebSocket with only the
-	 * main Epicenter subprotocol.
-	 *
-	 * When provided, the opener is called on every reconnect and may attach
-	 * credentials before returning the socket. `attachSync` stays independent
-	 * of auth state and only observes socket events after the opener resolves.
-	 */
-	openWebSocket?: OpenWebSocket;
-	/**
-	 * Logger for background supervisor failures (waitFor rejections, socket
-	 * close timeouts). Defaults to a console-backed logger with source
-	 * `attachSync`.
-	 */
-	log?: Logger;
-	/**
-	 * Optional awareness attachment to transport over the same WebSocket.
-	 * When omitted, document sync works without creating awareness state.
-	 */
-	awareness?: AwarenessAttachment<AwarenessSchema>;
-};
-
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════════
 // Constants
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════════
 
 const DEFAULT_RPC_TIMEOUT_MS = 5_000;
 const BASE_DELAY_MS = 500;
@@ -241,8 +187,8 @@ const PERMANENT_AUTH_CLOSE_CODE = 4401;
 /**
  * Failsafe: returns null when `event` is not a permanent-failure signal,
  * `SyncFailedReason` otherwise. A buggy server that sends 4401 with malformed
- * JSON or no reason still produces a usable reason (`code: 'unknown'`); we
- * never throw from here.
+ * JSON still produces a usable reason (`code: 'unknown'`); we never throw
+ * from here.
  */
 function parsePermanentFailure(event: {
 	code: number;
@@ -265,24 +211,23 @@ function parsePermanentFailure(event: {
 	return { type: 'auth', code: 'unknown' };
 }
 
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════════
 // Public API
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════════
 
 export function toWsUrl(httpUrl: string): string {
 	return httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 }
 
-export function attachSync(
+export function createSyncSupervisor(
 	ydoc: Y.Doc,
-	config: SyncAttachmentConfig,
-): SyncAttachment {
-	let rpcActions: Record<string, unknown> | null = null;
-	const awareness = config.awareness?.raw ?? null;
+	config: SyncSupervisorConfig,
+): SyncSupervisor {
+	const awareness = config.awareness ?? null;
+	const onRpcRequest = config.onRpcRequest ?? null;
 
 	const waitForPromise = config.waitFor;
-
-	const log = config.log ?? createLogger('attachSync');
+	const log = config.log ?? createLogger('sync');
 
 	const status = createStatusEmitter<SyncStatus>({ phase: 'offline' });
 	function setStatus(next: SyncStatus) {
@@ -308,8 +253,7 @@ export function attachSync(
 
 	// `whenConnected` settles once: resolved when the first successful handshake
 	// lands (STEP2/UPDATE), rejected on permanent server auth failure (close
-	// 4401) or on doc destroy before the first handshake. Settled directly at
-	// each transition site below (no internal status subscription).
+	// 4401) or on doc destroy before the first handshake.
 	const connected = createOneShotPromise<void>();
 	const backoff = createBackoff();
 
@@ -330,15 +274,15 @@ export function attachSync(
 	const masterController = new AbortController();
 	let cycleController: AbortController = childOf(masterController.signal);
 
-	/** Current WebSocket instance, or null. */
+	/** When set, supervisor parks indefinitely in `offline` until `reconnect()`. */
+	let offlineRequested = false;
+
 	let websocket: WebSocket | null = null;
 
-	// RPC state.
-	//
-	// `pendingRequests` tracks outbound RPCs awaiting a response. Cleared in
-	// `ws.onclose`: the next connection is a fresh server-side context, so any
-	// in-flight request from the prior connection will never resolve, and the
-	// caller deserves an immediate `Disconnected` instead of a timeout.
+	// Outbound RPC state. Cleared on each `ws.onclose`: the next connection is
+	// a fresh server-side context, so any in-flight request from the prior
+	// connection will never resolve, and the caller deserves an immediate
+	// `Disconnected` instead of a timeout.
 	const pendingRequests = new Map<
 		number,
 		{
@@ -358,19 +302,7 @@ export function attachSync(
 		pendingRequests.clear();
 	}
 
-	/**
-	 * Handle an inbound RPC request: resolve against the attached RPC action
-	 * tree and send the response back to the requester.
-	 *
-	 * When no dispatcher is configured, respond with `ActionNotFound` so the
-	 * caller sees a typed error instead of a timeout.
-	 */
-	async function handleRpcRequest(rpc: {
-		requestId: number;
-		requesterClientId: number;
-		action: string;
-		input: unknown;
-	}) {
+	async function handleIncomingRpcRequest(rpc: IncomingRpcRequest) {
 		const sendResponse = (result: Result<unknown, unknown>) =>
 			send(
 				encodeRpcResponse({
@@ -380,20 +312,13 @@ export function attachSync(
 				}),
 			);
 
-		// Resolve the action up front so a missing path surfaces as
-		// ActionNotFound (typed) rather than ActionFailed wrapping a raw throw.
-		const target = rpcActions
-			? resolveActionPath(rpcActions, rpc.action)
-			: null;
-		if (!target) {
+		if (!onRpcRequest) {
 			sendResponse(RpcError.ActionNotFound({ action: rpc.action }));
 			return;
 		}
 
-		sendResponse(await invokeActionForRpc(target, rpc.input, rpc.action));
+		sendResponse(await onRpcRequest(rpc));
 	}
-
-	// ── Message senders ──
 
 	function send(message: Uint8Array) {
 		if (websocket?.readyState === WebSocket.OPEN) {
@@ -460,9 +385,9 @@ export function attachSync(
 	}
 
 	// Browser online/offline/visibility wakeups. Auto-removed when the master
-	// signal aborts (i.e., on doc destroy). All three are no-ops when the
-	// supervisor isn't actively trying to connect, so attaching at construction
-	// time before `waitFor` settles is harmless.
+	// signal aborts. All three are no-ops when the supervisor isn't actively
+	// trying to connect, so attaching at construction time before `waitFor`
+	// settles is harmless.
 	if (typeof window !== 'undefined') {
 		window.addEventListener('online', () => backoff.wake(), {
 			signal: masterController.signal,
@@ -472,10 +397,6 @@ export function attachSync(
 		});
 	}
 	if (typeof document !== 'undefined') {
-		// Visibility ping probes "is the wire responsive?" when a tab returns
-		// to foreground, beyond what the 60s PING_INTERVAL_MS keepalive covers.
-		// If the server doesn't echo strings, this is a no-op; the 90s
-		// LIVENESS_TIMEOUT_MS still catches a dead wire eventually.
 		document.addEventListener(
 			'visibilitychange',
 			() => {
@@ -523,9 +444,6 @@ export function attachSync(
 			if (ws.readyState === WebSocket.CONNECTING) ws.close();
 		}, CONNECT_TIMEOUT_MS);
 
-		// Cycle abort closes the in-flight socket so `closePromise` resolves
-		// and the loop can iterate. Listener auto-detaches when this socket's
-		// own close fires (we wire ws.onclose to call cleanupAbortListener).
 		const onAbort = () => {
 			if (
 				ws.readyState !== WebSocket.CLOSED &&
@@ -546,9 +464,7 @@ export function attachSync(
 		ws.onopen = () => {
 			clearTimeout(connectTimeout);
 			send(encodeSyncStep1({ doc: ydoc }));
-
 			sendLocalAwarenessState();
-
 			liveness.start();
 			resolveOpen(true);
 		};
@@ -635,7 +551,7 @@ export function attachSync(
 							pending.resolve(rpc.result as Result<unknown, unknown>);
 						}
 					} else if (rpc.type === 'request') {
-						void handleRpcRequest(rpc);
+						void handleIncomingRpcRequest(rpc);
 					}
 					break;
 				}
@@ -658,17 +574,11 @@ export function attachSync(
 		return handshakeComplete ? 'connected' : 'failed';
 	}
 
-	// One supervisor task, started after `waitFor` settles, lives until master
-	// abort. Each iteration reads `cycleController.signal` fresh so `reconnect()`
-	// just swaps the controller and aborts the old; the supervisor wakes
-	// (either from `attemptConnection`, `backoff.sleep`, or the parked-on-failed
-	// `waitForAbort`) and the next iteration picks up the replacement.
+	// Supervisor loop. Reads `cycleController.signal` fresh each iteration so
+	// `reconnect()` swaps the controller and aborts the old; the supervisor
+	// wakes from `attemptConnection`, `backoff.sleep`, or the parked-on-failed
+	// `waitForAbort` and the next iteration picks up the replacement.
 	const supervisorPromise = (async () => {
-		// Race `waitFor` against doc destroy so we don't hang forever if a
-		// caller passes a never-settling barrier and then destroys the doc.
-		// The `.catch` on `waitForPromise` is unconditional so a late rejection
-		// (after the race has already resolved via abort) does not surface as an
-		// unhandled rejection.
 		if (waitForPromise) {
 			const settled = Promise.resolve(waitForPromise).catch((cause) => {
 				if (masterController.signal.aborted) return;
@@ -682,10 +592,9 @@ export function attachSync(
 
 		try {
 			while (!masterController.signal.aborted) {
-				// In `failed`, park until reconnect aborts the cycle to wake us.
-				// `reconnect` swaps `cycleController` first, then aborts the old
-				// one, so on wake we read the fresh signal next iteration.
-				if (status.get().phase === 'failed') {
+				// Park in either `failed` or `offline` (when requested) until
+				// `reconnect` aborts the cycle to wake us.
+				if (status.get().phase === 'failed' || offlineRequested) {
 					await waitForAbort(cycleController.signal);
 					continue;
 				}
@@ -711,6 +620,7 @@ export function attachSync(
 				if (
 					!masterController.signal.aborted &&
 					status.get().phase !== 'failed' &&
+					!offlineRequested &&
 					!signal.aborted
 				) {
 					await backoff.sleep(signal);
@@ -727,35 +637,34 @@ export function attachSync(
 
 	function reconnect() {
 		if (masterController.signal.aborted) return;
-		// Clear the terminal `failed` phase so the supervisor unparks and tries
-		// again. The status emit also notifies external subscribers.
 		if (status.get().phase === 'failed') setStatus({ phase: 'offline' });
+		offlineRequested = false;
 		const old = cycleController;
 		cycleController = childOf(masterController.signal);
 		backoff.reset();
 		old.abort();
 	}
 
-	// ── Attach listeners + teardown ──
+	function goOffline() {
+		if (masterController.signal.aborted) return;
+		if (offlineRequested) return;
+		offlineRequested = true;
+		setStatus({ phase: 'offline' });
+		const old = cycleController;
+		cycleController = childOf(masterController.signal);
+		old.abort();
+	}
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
 
-	// `whenDisposed` resolves only after the supervisor loop has fully exited
-	// and any still-open socket has hit CLOSED, or the safety timeout elapses.
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
 	ydoc.once('destroy', async () => {
 		try {
-			// Master abort cascades to cycleController (closes ws, wakes
-			// backoff sleep, fires attemptConnection's abort listener, and
-			// unparks the supervisor if it was waiting in the `failed` phase).
 			masterController.abort();
-			// Reject `whenConnected` if dispose lands before the first handshake
-			// (permanent failure: dead URL, denied auth, dispose during outage).
-			// Callers awaiting it would otherwise hang forever.
 			connected.reject(
-				new Error('[attachSync] doc destroyed before first handshake'),
+				new Error('[sync] doc destroyed before first handshake'),
 			);
 			ydoc.off('updateV2', handleDocUpdate);
 			awareness?.off('update', handleAwarenessUpdate);
@@ -775,92 +684,67 @@ export function attachSync(
 		},
 		onStatusChange: status.subscribe,
 		reconnect,
+		goOffline,
 		whenDisposed,
-		attachRpc(userActions) {
-			if (rpcActions) throw new Error('[attachSync] RPC already attached');
-			if ('system' in userActions) {
-				throw new Error(
-					"User actions cannot define the 'system.*' namespace. It is reserved for runtime meta operations.",
-				);
+		sendRpcRequest: async <
+			TMap extends RpcActionMap = DefaultRpcMap,
+			TAction extends string & keyof TMap = string & keyof TMap,
+		>(
+			target: number,
+			action: TAction,
+			input?: TMap[TAction]['input'],
+			{ timeout = DEFAULT_RPC_TIMEOUT_MS }: RemoteCallOptions = {},
+		): Promise<Result<TMap[TAction]['output'], RpcError>> => {
+			if (masterController.signal.aborted) return RpcError.Disconnected();
+
+			if (websocket?.readyState !== WebSocket.OPEN) {
+				return RpcError.Disconnected();
 			}
-			const systemActions: SystemActions = Object.freeze({
-				describe: defineQuery({
-					handler: () => describeActions(userActions),
-				}),
+
+			return new Promise((resolve) => {
+				const requestId = nextRequestId++;
+				send(
+					encodeRpcRequest({
+						requestId,
+						targetClientId: target,
+						requesterClientId: ydoc.clientID,
+						action,
+						input,
+					}),
+				);
+
+				const timer = setTimeout(() => {
+					pendingRequests.delete(requestId);
+					resolve(RpcError.Timeout({ ms: timeout }));
+				}, timeout);
+
+				pendingRequests.set(requestId, {
+					action,
+					resolve: (result) => {
+						clearTimeout(timer);
+						if (isRpcError(result.error)) {
+							resolve(Err(result.error));
+						} else if (result.error != null) {
+							resolve(
+								RpcError.ActionFailed({
+									action,
+									cause: result.error,
+								}),
+							);
+						} else {
+							resolve(Ok(result.data as TMap[TAction]['output']));
+						}
+					},
+					timer,
+				});
 			});
-			rpcActions = Object.freeze({
-				...userActions,
-				system: systemActions,
-			});
-			return {
-				rpc: async <
-					TMap extends RpcActionMap = DefaultRpcMap,
-					TAction extends string & keyof TMap = string & keyof TMap,
-				>(
-					target: number,
-					action: TAction,
-					input?: TMap[TAction]['input'],
-					{ timeout = DEFAULT_RPC_TIMEOUT_MS }: { timeout?: number } = {},
-				): Promise<Result<TMap[TAction]['output'], RpcError>> => {
-					if (target === ydoc.clientID) {
-						return RpcError.ActionFailed({
-							action,
-							cause: 'Cannot RPC to self, call the action directly',
-						});
-					}
-
-					if (masterController.signal.aborted) return RpcError.Disconnected();
-
-					if (websocket?.readyState !== WebSocket.OPEN) {
-						return RpcError.Disconnected();
-					}
-
-					return new Promise((resolve) => {
-						const requestId = nextRequestId++;
-						send(
-							encodeRpcRequest({
-								requestId,
-								targetClientId: target,
-								requesterClientId: ydoc.clientID,
-								action,
-								input,
-							}),
-						);
-
-						const timer = setTimeout(() => {
-							pendingRequests.delete(requestId);
-							resolve(RpcError.Timeout({ ms: timeout }));
-						}, timeout);
-
-						pendingRequests.set(requestId, {
-							action,
-							resolve: (result) => {
-								clearTimeout(timer);
-								if (isRpcError(result.error)) {
-									resolve(Err(result.error));
-								} else if (result.error != null) {
-									resolve(
-										RpcError.ActionFailed({
-											action,
-											cause: result.error,
-										}),
-									);
-								} else {
-									resolve(Ok(result.data as TMap[TAction]['output']));
-								}
-							},
-							timer,
-						});
-					});
-				},
-			};
 		},
 	};
 }
 
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════════
 // Helpers
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════════
 
 function openDefaultWebSocket(
 	url: string | URL,
@@ -880,9 +764,8 @@ function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
 
 /**
  * One-shot promise with idempotent `resolve`/`reject`. Pre-attaches a no-op
- * `.catch` so a rejection without a consumer (e.g., `whenConnected` rejected
- * by permanent failure or dispose-before-handshake when no caller awaits it)
- * does not surface as an unhandled rejection.
+ * `.catch` so a rejection without a consumer does not surface as an
+ * unhandled rejection.
  */
 function createOneShotPromise<T>() {
 	const { promise, resolve, reject } = Promise.withResolvers<T>();
@@ -910,7 +793,6 @@ function waitForAbort(signal: AbortSignal): Promise<void> {
 		signal.addEventListener('abort', () => resolve(), { once: true });
 	});
 }
-
 
 function createStatusEmitter<T>(initial: T) {
 	let current = initial;
@@ -970,9 +852,8 @@ function createLivenessMonitor(ws: WebSocket) {
 /**
  * Await a WebSocket's `close` event, with a timeout safeguard.
  *
- * Resolves immediately if the socket is null or already CLOSED. Otherwise
- * attaches a one-shot `close` listener and races it against `timeoutMs`.
- * A misbehaving server that never sends a close frame shouldn't block
+ * Resolves immediately if the socket is null or already CLOSED. A
+ * misbehaving server that never sends a close frame should not block
  * teardown indefinitely.
  */
 function waitForWsClose(
@@ -1048,7 +929,7 @@ function createBackoff() {
 
 /**
  * Build an `AbortController` whose signal is aborted whenever `parent` is.
- * Aborting the child does NOT abort the parent. The parent→child listener
+ * Aborting the child does NOT abort the parent. The parent->child listener
  * self-cleans when the child is aborted first via the `signal` option.
  */
 function childOf(parent: AbortSignal): AbortController {

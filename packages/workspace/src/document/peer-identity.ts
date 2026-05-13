@@ -1,18 +1,25 @@
 /**
- * Standard peer awareness convention.
+ * Standard peer awareness convention used by `openWorkspace`.
  *
- * Each connected peer publishes a small `peer` identity: id, name, and
- * platform. Action discovery is not in awareness. It is fetched on demand via
- * `createRemoteClient({ awareness, rpc }).describe(peerId)`.
+ * Each connected peer publishes two fields:
  *
- * `PeerIdentity` is the only arktype-validated shape here because it crosses
- * the wire (awareness state on read, daemon `/peers` response). The plain TS
- * types (`PeerAwarenessState`, `ResolvedPeer`) are derived shapes consumed
- * locally and never deserialized from untrusted input.
+ *     {
+ *       identity: { id, name, platform },
+ *       actionPaths: ['tabs.close', 'tabs.list', ...],
+ *     }
+ *
+ * `identity` is the stable peer descriptor. `actionPaths` is the alphabetically
+ * sorted dot-path listing of every action the peer hosts, computed once at
+ * `openWorkspace` startup. Full action schemas (input shapes, descriptions)
+ * are not in awareness; fetch them via `peer.describe()` when needed.
+ *
+ * `PeerIdentity` is the arktype-validated identity shape that crosses the
+ * wire. `peerAwarenessSchema` is the field-keyed schema record consumed by
+ * `attachAwareness`. `PeerAwarenessState` is the runtime shape of a peer's
+ * published state.
  */
 
 import { type } from 'arktype';
-import type { AwarenessSchema } from './attach-awareness.js';
 
 /** Awareness identity published by each connected peer. */
 export const PeerIdentity = type({
@@ -25,13 +32,18 @@ export type PeerIdentity = typeof PeerIdentity.infer;
 /** Closed enum of supported peer runtimes. Derived from the schema above. */
 export type PeerRuntime = PeerIdentity['platform'];
 
-/** Awareness schema containing the standard `peer` field. */
-export type PeerAwarenessSchema = AwarenessSchema & {
-	peer: typeof PeerIdentity;
+/**
+ * Field-keyed schema record for the workspace's standard awareness fields.
+ * `attachAwareness` validates each entry independently when reading peer
+ * states; malformed states are silently dropped.
+ */
+export const peerAwarenessSchema = {
+	identity: PeerIdentity,
+	actionPaths: type('string[]'),
 };
 
-/** A peer's awareness state under the standard `peer` schema. */
-export type PeerAwarenessState = { peer: PeerIdentity };
-
-/** Result of a `find(peerId)` lookup: clientId plus full peer state. */
-export type ResolvedPeer = { clientId: number; state: PeerAwarenessState };
+/** The runtime shape of a peer's awareness state under the standard schema. */
+export type PeerAwarenessState = {
+	identity: PeerIdentity;
+	actionPaths: readonly string[];
+};

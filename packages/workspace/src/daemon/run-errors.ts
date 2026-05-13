@@ -7,7 +7,8 @@
  * command imports both for renderer typing.
  *
  * Remote call failures keep the remote client error intact so the CLI owns
- * every presentation choice for peer misses, peer disconnects, and RPC errors.
+ * every presentation choice for peer disconnects, timeouts, and other
+ * wire-level RPC errors.
  */
 
 import {
@@ -17,8 +18,11 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
-import type { SyncError, SyncFailedReason } from '../document/attach-sync.js';
-import type { RemoteCallError } from '../rpc/remote-actions.js';
+import type {
+	SyncError,
+	SyncFailedReason,
+} from '../document/internal/sync-supervisor.js';
+import type { RemoteCallError } from '../document/peer.js';
 
 export type RunSyncStatus =
 	| { phase: 'offline' }
@@ -37,8 +41,10 @@ export type RunSyncStatus =
  *
  * - `UsageError`: bad action path / missing sync; renderer exitCode=1.
  * - `RuntimeError`: action returned Err locally; renderer exitCode=2.
- * - `RemoteCallFailed`: `--peer <target>` failed in remote client dispatch;
- *   renderer maps `PeerNotFound` to exitCode=3 and other causes to exitCode=2.
+ * - `PeerNotFound`: `--peer <target>` did not resolve within `--wait`;
+ *   renderer exitCode=3.
+ * - `RemoteCallFailed`: peer resolved but the RPC call itself failed
+ *   (timeout, peer disconnected mid-call, wire error); renderer exitCode=2.
  */
 export const RunError = defineErrors({
 	UsageError: ({
@@ -51,6 +57,20 @@ export const RunError = defineErrors({
 	RuntimeError: ({ cause }: { cause: unknown }) => ({
 		message: extractErrorMessage(cause),
 		cause,
+	}),
+	PeerNotFound: ({
+		peerTarget,
+		waitMs,
+		syncStatus,
+	}: {
+		peerTarget: string;
+		waitMs: number;
+		syncStatus: RunSyncStatus;
+	}) => ({
+		message: `no peer matches peer id "${peerTarget}"`,
+		peerTarget,
+		waitMs,
+		syncStatus,
 	}),
 	RemoteCallFailed: ({
 		cause,

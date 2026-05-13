@@ -3,18 +3,15 @@
  *
  * `DaemonRouteDefinition` is the config-time contract: a delayed route starter
  * with its own route name. `DaemonRuntime` is the runtime contract every
- * started daemon route has to satisfy: lifecycle hook, required `actions` root,
- * awareness state, sync transport, and remote action client.
+ * started daemon route has to satisfy: async dispose plus the hosted
+ * `Workspace<TActions>` that owns identity, actions, sync, and peers.
  *
  * `StartedDaemonRoute` is one routed runtime the daemon serves internally. The
  * CLI's config loader opens route definitions from the default
  * `{ daemon: { routes } }` export in `epicenter.config.ts`.
  */
 
-import type { AwarenessAttachment } from '../document/attach-awareness.js';
-import type { SyncAttachment } from '../document/attach-sync.js';
-import type { PeerAwarenessSchema } from '../document/peer-identity.js';
-import type { RemoteClient } from '../rpc/remote-actions.js';
+import type { Workspace } from '../document/open-workspace.js';
 import type { Actions } from '../shared/actions.js';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
 
@@ -26,22 +23,15 @@ export type DaemonRouteContext = {
 /**
  * Fields the daemon looks at on each started runtime.
  */
-export type DaemonRuntime = {
+export type DaemonRuntime<TActions extends Actions = Actions> = {
 	/** Called by the daemon at exit. */
 	[Symbol.asyncDispose](): MaybePromise<void>;
 
 	/**
-	 * Canonical public action root. Daemon paths are relative to this object:
-	 * `workspace.actions.entries.create` is invoked as `<route>.entries.create`.
+	 * The hosted workspace. Identity, action registry, sync status, and the
+	 * peers surface for cross-route dispatch all live here.
 	 */
-	readonly actions: Actions;
-
-	/** Typed awareness state containing the standard peer identity field. */
-	readonly awareness: AwarenessAttachment<PeerAwarenessSchema>;
-	/** Underlying sync transport for bringing the route online. */
-	readonly sync: SyncAttachment;
-	/** Peer-addressed remote action client used by `run --peer`. */
-	readonly remote: RemoteClient;
+	readonly workspace: Workspace<TActions>;
 };
 
 export type DaemonRouteDefinition<

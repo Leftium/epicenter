@@ -11,11 +11,12 @@
  * import {
  *   attachIndexedDb,
  *   attachRichText,
- *   attachSync,
  *   attachTables,
+ *   attachYjsSync,
  *   createDisposableCache,
  *   defineTable,
  *   docGuid,
+ *   openWorkspace,
  * } from '@epicenter/workspace';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
@@ -30,10 +31,12 @@
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
- * const sync = attachSync(ydoc, {
+ * const ws = openWorkspace(ydoc, {
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
  *   waitFor: idb.whenLoaded,
  *   openWebSocket,
+ *   identity: { id: 'browser', name: 'Browser', platform: 'web' },
+ *   actions: {},
  * });
  *
  * const noteBodyDocs = createDisposableCache(
@@ -48,10 +51,16 @@
  *       gc: false,
  *     });
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
+ *     const bodySync = attachYjsSync(bodyYdoc, {
+ *       url: `wss://api.example.com/documents/${bodyYdoc.guid}`,
+ *       waitFor: bodyIdb.whenLoaded,
+ *       openWebSocket,
+ *     });
  *     return {
  *       ydoc: bodyYdoc,
  *       body: attachRichText(bodyYdoc),
  *       idb: bodyIdb,
+ *       sync: bodySync,
  *       [Symbol.dispose]() {
  *         bodyYdoc.destroy();
  *       },
@@ -59,11 +68,6 @@
  *   },
  *   { gcTime: 5_000 },
  * );
- * async function clearNoteBodyLocalData() {
- *   await Promise.all(
- *     tables.posts.getAllValid().map((post) => clearStoredNoteBody(post.id)),
- *   );
- * }
  * ```
  *
  * @packageDocumentation
@@ -99,17 +103,7 @@ export {
 
 export type { EncryptionKeys } from '@epicenter/encryption';
 export { isRpcError, RpcError } from '@epicenter/sync';
-// Cross-peer action calling.
-export {
-	createRemoteClient,
-	PeerAddressError,
-	type RemoteCallError,
-	type RemoteClient,
-	type RemoteClientOptions,
-	type RemotePeerCallOptions,
-	type WireRpcError,
-} from './rpc/remote-actions.js';
-export type { InferSyncRpcMap, RpcActionMap } from './rpc/types';
+export type { DefaultRpcMap, InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -218,19 +212,32 @@ export {
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
 export {
-	attachSync,
+	attachYjsSync,
+	type AttachYjsSyncConfig,
+	type YjsSyncAttachment,
+} from './document/attach-yjs-sync.js';
+export {
 	type OpenWebSocket,
-	type RpcActionSource,
-	type SyncAttachment,
-	type SyncAttachmentConfig,
 	type SyncError,
 	SyncFailedError,
 	type SyncFailedReason,
-	type SyncRpcAttachment,
 	type SyncStatus,
 	SyncSupervisorError,
 	toWsUrl,
-} from './document/attach-sync.js';
+} from './document/internal/sync-supervisor.js';
+export {
+	type OpenWorkspaceConfig,
+	openWorkspace,
+	type Workspace,
+} from './document/open-workspace.js';
+export {
+	type Peer,
+	PeerLeftError,
+	type PeersSurface,
+	type RemoteCallError,
+	SelfInvocationError,
+	waitForPeer,
+} from './document/peer.js';
 export {
 	attachReadonlyTable,
 	attachReadonlyTables,
@@ -268,11 +275,9 @@ export { docGuid } from './document/doc-guid.js';
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
-	type PeerAwarenessSchema,
 	type PeerAwarenessState,
 	PeerIdentity,
 	type PeerRuntime,
-	type ResolvedPeer,
 } from './document/peer-identity.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 export { wipeOwnerLocalYjsData } from './document/wipe-owner-local-yjs-data.js';

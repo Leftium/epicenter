@@ -7,87 +7,113 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import type { AwarenessAttachment } from '../document/attach-awareness.js';
-import type { SyncStatus } from '../document/attach-sync.js';
-import type { PeerAwarenessSchema } from '../document/peer-identity.js';
-import type { RemoteClient } from '../rpc/remote-actions.js';
+import { RpcError } from '@epicenter/sync';
+import { Awareness } from 'y-protocols/awareness';
+import * as Y from 'yjs';
+import type { SyncStatus } from '../document/internal/sync-supervisor.js';
+import type { Workspace } from '../document/open-workspace.js';
+import type { Peer, PeersSurface } from '../document/peer.js';
+import type { Actions } from '../shared/actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import type { RunSyncStatus } from './run-errors.js';
 import { executeRun } from './run-handler.js';
 import type { StartedDaemonRoute } from './types.js';
 
-type Runtime = StartedDaemonRoute['runtime'];
+type FakeInvoke = (
+	peerTarget: string,
+	action: string,
+	input: unknown,
+	options?: { timeout?: number },
+) => Promise<{ data: unknown; error: unknown }>;
 
-function fakeAwareness(): AwarenessAttachment<PeerAwarenessSchema> {
+function fakePeer({
+	peerId,
+	invoke,
+}: {
+	peerId: string;
+	invoke: FakeInvoke;
+}): Peer {
 	return {
-		peers: () => new Map(),
-		observe: () => () => {},
-	} as unknown as AwarenessAttachment<PeerAwarenessSchema>;
-}
-
-function fakeRemote(overrides: Partial<RemoteClient> = {}): RemoteClient {
-	return {
-		actions: () => ({}) as never,
-		describe: async () => ({ data: {}, error: null }),
-		invoke: async () => ({ data: null, error: null }),
-		...overrides,
-	} as RemoteClient;
-}
-
-function fakeSync(
-	status: SyncStatus = { phase: 'connected' },
-): Runtime['sync'] {
-	return {
-		whenConnected: Promise.resolve(),
-		whenDisposed: Promise.resolve(),
-		status,
-		onStatusChange: () => () => {},
-		reconnect() {},
-		attachRpc: () => ({ rpc: async () => ({ data: null, error: null }) }),
-	} as Runtime['sync'];
-}
-
-function fakeRuntime(
-	actions: Runtime['actions'],
-	extra: Record<string, unknown> = {},
-): Runtime {
-	return {
-		actions,
-		awareness: fakeAwareness(),
-		sync: fakeSync(),
-		remote: fakeRemote(),
-		async [Symbol.asyncDispose]() {},
-		...extra,
+		id: peerId,
+		identity: { id: peerId, name: peerId, platform: 'node' },
+		clientID: 1,
+		actionPaths: [],
+		invoke: (action, input, options) =>
+			invoke(peerId, action, input, options) as never,
+		describe: async () => ({ data: {}, error: null }) as never,
 	};
 }
 
-function fakeEntry({
-	remote = {},
-	syncStatus,
+function fakePeers({
+	known,
+	invoke,
 }: {
-	remote?: Partial<RemoteClient>;
-	syncStatus?: SyncStatus;
-} = {}): StartedDaemonRoute {
-	const runtime = fakeRuntime(
-		{
-			tabs: {
-				list: defineQuery({
-					handler: () => [],
-				}),
-			},
-		},
-		{
-			remote: fakeRemote(remote),
-			...(syncStatus ? { sync: fakeSync(syncStatus) } : {}),
-		},
-	);
+	known: string[];
+	invoke: FakeInvoke;
+}): PeersSurface {
+	return {
+		list: () => known.map((peerId) => fakePeer({ peerId, invoke })),
+		find: (peerId) =>
+			known.includes(peerId) ? fakePeer({ peerId, invoke }) : undefined,
+		observe: () => () => {},
+	};
+}
 
-	return { route: 'demo', runtime };
+function fakeWorkspace<TActions extends Actions>({
+	actions,
+	syncStatus = { phase: 'connected' },
+	peers,
+}: {
+	actions: TActions;
+	syncStatus?: SyncStatus;
+	peers: PeersSurface;
+}): Workspace<TActions> {
+	const ydoc = new Y.Doc();
+	return {
+		identity: { id: 'self', name: 'Self', platform: 'node' },
+		actions,
+		awareness: new Awareness(ydoc),
+		status: syncStatus,
+		whenConnected: Promise.resolve(),
+		whenDisposed: Promise.resolve(),
+		onStatusChange: () => () => {},
+		reconnect() {},
+		goOffline() {},
+		peers,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	} as Workspace<TActions>;
+}
+
+function fakeEntry({
+	actions = {
+		tabs: {
+			list: defineQuery({ handler: () => [] }),
+		},
+	},
+	syncStatus,
+	knownPeers = [],
+	invoke = async () => ({ data: null, error: null }),
+}: {
+	actions?: Actions;
+	syncStatus?: SyncStatus;
+	knownPeers?: string[];
+	invoke?: FakeInvoke;
+} = {}): StartedDaemonRoute {
+	const peers = fakePeers({ known: knownPeers, invoke });
+	const workspace = fakeWorkspace({ actions, syncStatus, peers });
+	return {
+		route: 'demo',
+		runtime: {
+			workspace,
+			async [Symbol.asyncDispose]() {},
+		},
+	};
 }
 
 describe('executeRun peer dispatch', () => {
 	test('peer miss returns RunError.RemoteCallFailed with sync status', async () => {
-		let invokeCalls = 0;
 		const syncStatus: SyncStatus = {
 			phase: 'connecting',
 			retries: 2,
@@ -98,24 +124,7 @@ describe('executeRun peer dispatch', () => {
 			retries: 2,
 			lastErrorType: 'connection',
 		} satisfies RunSyncStatus;
-		const entry = fakeEntry({
-			syncStatus,
-			remote: {
-				async invoke(peerTarget, _action, _input, options) {
-					invokeCalls++;
-					return {
-						data: null,
-						error: {
-							name: 'PeerNotFound',
-							message: `no peer matches peer id "${peerTarget}"`,
-							peerTarget,
-							sawPeers: true,
-							waitMs: options?.waitForPeerMs ?? 0,
-						},
-					};
-				},
-			},
-		});
+		const entry = fakeEntry({ syncStatus, knownPeers: [] });
 
 		const result = await executeRun([entry], {
 			actionPath: 'demo.tabs.list',
@@ -124,7 +133,6 @@ describe('executeRun peer dispatch', () => {
 			waitMs: 25,
 		});
 
-		expect(invokeCalls).toBe(1);
 		expect(result.error).not.toBeNull();
 		if (result.error === null) throw new Error('expected RemoteCallFailed');
 		expect(result.error.name).toBe('RemoteCallFailed');
@@ -136,19 +144,16 @@ describe('executeRun peer dispatch', () => {
 		expect(result.error.cause).toMatchObject({
 			name: 'PeerNotFound',
 			peerTarget: 'ghost',
-			sawPeers: true,
-			waitMs: 25,
 		});
 	});
 
 	test('remote dispatch sends only the inner action path', async () => {
-		let rpcAction = '';
+		let invokedAction = '';
 		const entry = fakeEntry({
-			remote: {
-				async invoke(_peerId, action) {
-					rpcAction = action;
-					return { data: [], error: null };
-				},
+			knownPeers: ['mac'],
+			invoke: async (_peerId, action) => {
+				invokedAction = action;
+				return { data: [], error: null };
 			},
 		});
 
@@ -160,23 +165,42 @@ describe('executeRun peer dispatch', () => {
 		});
 
 		expect(result.error).toBeNull();
-		expect(rpcAction).toBe('tabs.list');
+		expect(invokedAction).toBe('tabs.list');
+	});
+
+	test('remote dispatch surfaces RpcError unchanged', async () => {
+		const entry = fakeEntry({
+			knownPeers: ['mac'],
+			invoke: async () => RpcError.Timeout({ ms: 25 }),
+		});
+
+		const result = await executeRun([entry], {
+			actionPath: 'demo.tabs.list',
+			input: undefined,
+			peerTarget: 'mac',
+			waitMs: 25,
+		});
+
+		expect(result.error?.name).toBe('RemoteCallFailed');
+		if (result.error?.name !== 'RemoteCallFailed') {
+			throw new Error('expected RemoteCallFailed');
+		}
+		expect(result.error.cause).toMatchObject({ name: 'Timeout', ms: 25 });
 	});
 });
 
 describe('executeRun route-prefixed routing', () => {
 	test('invokes action under the selected daemon route', async () => {
-		const runtime = fakeRuntime({
-			notes: {
-				add: defineMutation({
-					handler: () => ({ body: 'hello' }),
-				}),
+		const entry = fakeEntry({
+			actions: {
+				notes: {
+					add: defineMutation({
+						handler: () => ({ body: 'hello' }),
+					}),
+				},
 			},
 		});
-		const entry = {
-			route: 'notes',
-			runtime,
-		};
+		entry.route = 'notes';
 
 		const result = await executeRun([entry], {
 			actionPath: 'notes.notes.add',
@@ -188,43 +212,17 @@ describe('executeRun route-prefixed routing', () => {
 		expect(result.data).toEqual({ body: 'hello' });
 	});
 
-	test('ignores action leaves outside the canonical action root', async () => {
-		const runtime = fakeRuntime(
-			{},
-			{
+	test('missing path suggests action-root-relative sibling', async () => {
+		const entry = fakeEntry({
+			actions: {
 				notes: {
 					add: defineMutation({
 						handler: () => ({ body: 'hello' }),
 					}),
 				},
 			},
-		);
-		const entry = {
-			route: 'notes',
-			runtime,
-		};
-
-		const result = await executeRun([entry], {
-			actionPath: 'notes.notes.add',
-			input: { body: 'hello' },
-			waitMs: 25,
 		});
-
-		expect(result.error?.name).toBe('UsageError');
-	});
-
-	test('missing path suggests action-root-relative sibling', async () => {
-		const runtime = fakeRuntime({
-			notes: {
-				add: defineMutation({
-					handler: () => ({ body: 'hello' }),
-				}),
-			},
-		});
-		const entry = {
-			route: 'notes',
-			runtime,
-		};
+		entry.route = 'notes';
 
 		const result = await executeRun([entry], {
 			actionPath: 'notes.add',
@@ -243,10 +241,11 @@ describe('executeRun route-prefixed routing', () => {
 		const result = await executeRun(
 			[
 				fakeEntry({}),
-				{
-					route: 'tasks',
-					runtime: fakeRuntime({}),
-				},
+				(() => {
+					const tasks = fakeEntry({ actions: {} });
+					tasks.route = 'tasks';
+					return tasks;
+				})(),
 			],
 			{
 				actionPath: 'missing.actions.add',

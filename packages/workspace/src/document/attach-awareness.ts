@@ -1,13 +1,21 @@
 /**
- * attachAwareness(): Bind awareness schema to a Y.Doc.
+ * attachAwareness(): Bind a typed schema to a y-protocols `Awareness`.
  *
- * Constructs a fresh y-protocols `Awareness` instance over `ydoc` and wraps
- * it with a typed `AwarenessAttachment<TSchema>` helper. Awareness cleanup is handled by
- * y-protocols: its constructor registers `doc.on('destroy', () => this.destroy())`,
- * so destroying the ydoc tears down the Awareness automatically.
+ * Wraps an existing `Awareness` instance with a `AwarenessAttachment<TSchema>`
+ * helper: `setLocal` merges typed fields into the local state, `peers`
+ * returns validated remote states, `observe` reports change deltas.
  *
- * To wire awareness into a sync attachment, pass the attachment itself to
- * `attachSync(ydoc, { awareness, ... })`.
+ * The caller owns the `Awareness`. Construct it with `new Awareness(ydoc)`,
+ * or pass `workspace.awareness` from `openWorkspace` to compose custom
+ * presence (cursors, selections) on top of the workspace's `identity` and
+ * `actionPaths` fields. Awareness teardown happens automatically when the
+ * underlying ydoc is destroyed: y-protocols registers a `destroy` listener
+ * inside its own constructor.
+ *
+ * Multiple `attachAwareness` calls against the same `Awareness` instance
+ * compose: `setLocal` merges fields into the existing local state rather
+ * than overwriting, so reserved keys (e.g., `identity`/`actionPaths` owned
+ * by `openWorkspace`) and custom keys coexist.
  *
  * Awareness invariants (from y-protocols/awareness):
  *
@@ -21,8 +29,7 @@
  *     awareness under whatever name they choose.
  */
 
-import { Awareness as YAwareness } from 'y-protocols/awareness';
-import type * as Y from 'yjs';
+import type { Awareness as YAwareness } from 'y-protocols/awareness';
 import type { CombinedStandardSchema } from './standard-schema.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -64,24 +71,26 @@ export type AwarenessAttachment<TSchema extends AwarenessSchema> = {
 };
 
 /**
- * Bind a record of awareness field definitions to a Y.Doc.
+ * Bind a typed schema to an existing y-protocols `Awareness`.
  *
  * `initial` carries the starting value for every defined field. It is set
  * synchronously before the function returns, so the local state on the wire
  * is well-formed from the first frame. No consumer ever observes a peer
  * with a field defined but unset.
  *
- * Fields can still be updated later via `setLocal`.
+ * Fields can still be updated later via `setLocal`, which merges into the
+ * existing local state rather than overwriting. Multiple `attachAwareness`
+ * calls against the same `Awareness` compose.
  *
- * Each field is independently validated on read. The underlying
- * `Awareness` instance tears itself down on `ydoc.destroy()` via a handler
- * registered by `y-protocols` in its constructor.
+ * Each field is independently validated on read. The underlying `Awareness`
+ * tears itself down on its ydoc's `destroy` event via a handler registered
+ * by `y-protocols` in its constructor.
  *
- * @param ydoc - The Y.Doc to attach awareness to
+ * @param awareness - The Awareness instance to attach the typed schema to
  * @param options - Schema and starting value for every defined field
  */
 export function attachAwareness<TSchema extends AwarenessSchema>(
-	ydoc: Y.Doc,
+	awareness: YAwareness,
 	{
 		schema,
 		initial,
@@ -90,9 +99,9 @@ export function attachAwareness<TSchema extends AwarenessSchema>(
 		initial: AwarenessState<TSchema>;
 	},
 ): AwarenessAttachment<TSchema> {
-	const awareness = createAwarenessAttachment(new YAwareness(ydoc), schema);
-	awareness.setLocal(initial);
-	return awareness;
+	const attachment = createAwarenessAttachment(awareness, schema);
+	attachment.setLocal(initial);
+	return attachment;
 }
 
 /**

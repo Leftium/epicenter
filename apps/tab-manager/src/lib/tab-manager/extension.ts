@@ -17,47 +17,44 @@ import {
 import { createTabManagerActions } from '$lib/workspace/actions';
 import type { DeviceId } from '$lib/workspace/definition';
 
-import { openTabManagerDoc } from './index';
+import { openTabManagerDocument } from './document.js';
 
 type TabManagerPeer = PeerIdentity & { id: DeviceId };
 
 /**
- * Construction is async because awareness publishes the peer identity
- * synchronously at attach time (no two-step "online but no device yet"
- * window). Awaiting the identity up front means every peer sees a
- * well-formed `identity` field from the first frame.
+ * Build the tab-manager binding. Synchronous: callers must resolve the
+ * peer identity before invoking (the extension's identity comes from
+ * `chrome.storage.local` and from `createPeer()` in `device.ts`).
  *
  * Consumers gate UI render on `tabManager.idb.whenLoaded`; sync (the
  * WebSocket) is independent and connects whenever the network allows.
  */
-export async function openTabManager({
+export function openTabManagerBrowser({
 	userId,
 	peer,
 	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	peer: TabManagerPeer | Promise<TabManagerPeer>;
+	peer: TabManagerPeer;
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const identity = await Promise.resolve(peer);
-
-	const doc = openTabManagerDoc({ encryptionKeys });
+	const doc = openTabManagerDocument({ encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
 	const actions = createTabManagerActions({
 		tables: doc.tables,
 		batch: doc.batch,
-		deviceId: Promise.resolve(identity.id),
+		deviceId: Promise.resolve(peer.id),
 	});
 
 	const collaboration = openCollaboration(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		identity,
+		identity: peer,
 		actions,
 	});
 

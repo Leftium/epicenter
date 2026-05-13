@@ -28,7 +28,7 @@
 	<Loading class="h-full" label="Loading tabs…" />
 {:then _}
 	{#if tabManagerSession.current}
-		{#await tabManagerSession.current.app.whenReady}
+		{#await tabManagerSession.current.idb.whenLoaded}
 			<Loading class="h-full" label="Loading tabs…" />
 		{:then _}
 			<SignedInApp />

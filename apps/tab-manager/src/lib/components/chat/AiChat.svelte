@@ -1,37 +1,37 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
-	import { requireApp } from '$lib/session.svelte';
+	import { requireTabManager } from '$lib/session.svelte';
 	import ChatErrorBanner from './ChatErrorBanner.svelte';
 	import ChatInput from './ChatInput.svelte';
 	import ConversationPicker from './ConversationPicker.svelte';
 	import MessageList from './MessageList.svelte';
 
-	const app = requireApp();
+	const tabManager = requireTabManager();
 </script>
 
 <div class="flex h-full flex-col">
 	<ConversationPicker
-		conversations={app.state.aiChat.conversations}
-		activeId={app.state.aiChat.activeConversationId}
-		onSwitch={(id) => app.state.aiChat.switchTo(id)}
-		onCreate={() => app.state.aiChat.createConversation()}
+		conversations={tabManager.state.aiChat.conversations}
+		activeId={tabManager.state.aiChat.activeConversationId}
+		onSwitch={(id) => tabManager.state.aiChat.switchTo(id)}
+		onCreate={() => tabManager.state.aiChat.createConversation()}
 	/>
 
 	<div class="min-h-0 flex-1">
 		<MessageList
-			messages={app.state.aiChat.active?.messages ?? []}
-			status={app.state.aiChat.active?.status ?? 'ready'}
-			onReload={() => app.state.aiChat.active?.reload()}
+			messages={tabManager.state.aiChat.active?.messages ?? []}
+			status={tabManager.state.aiChat.active?.status ?? 'ready'}
+			onReload={() => tabManager.state.aiChat.active?.reload()}
 			onApproveToolCall={(id) =>
-				app.state.aiChat.active?.approveToolCall(id)}
+				tabManager.state.aiChat.active?.approveToolCall(id)}
 			onDenyToolCall={(id) =>
-				app.state.aiChat.active?.denyToolCall(id)}
+				tabManager.state.aiChat.active?.denyToolCall(id)}
 		/>
 	</div>
 
 	<!-- Error states: auth + credits are persistent, others go to ChatErrorBanner -->
-	{#if app.state.aiChat.active?.isUnauthorized}
+	{#if tabManager.state.aiChat.active?.isUnauthorized}
 		<div
 			role="alert"
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -49,7 +49,7 @@
 				Sign In
 			</Button>
 		</div>
-	{:else if app.state.aiChat.active?.isCreditsExhausted}
+	{:else if tabManager.state.aiChat.active?.isCreditsExhausted}
 		<div
 			role="alert"
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -66,22 +66,22 @@
 				Upgrade
 			</Button>
 		</div>
-	{:else if app.state.aiChat.active}
+	{:else if tabManager.state.aiChat.active}
 		<ChatErrorBanner
-			error={app.state.aiChat.active.error}
-			dismissedError={app.state.aiChat.active.dismissedError}
+			error={tabManager.state.aiChat.active.error}
+			dismissedError={tabManager.state.aiChat.active.dismissedError}
 			onRetry={() => {
-				if (!app.state.aiChat.active) return;
-				app.state.aiChat.active.dismissedError = null;
-				app.state.aiChat.active.reload();
+				if (!tabManager.state.aiChat.active) return;
+				tabManager.state.aiChat.active.dismissedError = null;
+				tabManager.state.aiChat.active.reload();
 			}}
 			onDismiss={() => {
-				if (!app.state.aiChat.active) return;
-				app.state.aiChat.active.dismissedError =
-					app.state.aiChat.active.error?.message ?? null;
+				if (!tabManager.state.aiChat.active) return;
+				tabManager.state.aiChat.active.dismissedError =
+					tabManager.state.aiChat.active.error?.message ?? null;
 			}}
 		/>
 	{/if}
 
-	<ChatInput active={app.state.aiChat.active} />
+	<ChatInput active={tabManager.state.aiChat.active} />
 </div>

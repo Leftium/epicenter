@@ -13,31 +13,31 @@
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { VList } from 'virtua/svelte';
-	import { requireApp } from '$lib/session.svelte';
+	import { requireTabManager } from '$lib/session.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { getDomain, getRelativeTime } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
 	import TabItem from './TabItem.svelte';
 
-	const app = requireApp();
+	const tabManager = requireTabManager();
 </script>
 
-{#if app.state.unifiedView.flatItems.length === 0}
+{#if tabManager.state.unifiedView.flatItems.length === 0}
 	<Empty.Root class="py-8">
 		<Empty.Media>
-			{#if app.state.unifiedView.isFiltering}
+			{#if tabManager.state.unifiedView.isFiltering}
 				<SearchIcon class="size-8 text-muted-foreground" />
 			{:else}
 				<FolderOpenIcon class="size-8 text-muted-foreground" />
 			{/if}
 		</Empty.Media>
-		{#if app.state.unifiedView.isFiltering}
+		{#if tabManager.state.unifiedView.isFiltering}
 			<Empty.Title>No matching tabs</Empty.Title>
 			<Empty.Description>
-				{#if app.state.unifiedView.isRegex && app.state.unifiedView.isRegexInvalid}
+				{#if tabManager.state.unifiedView.isRegex && tabManager.state.unifiedView.isRegexInvalid}
 					Check your regular expression syntax
 				{:else}
-					No tabs match "{app.state.unifiedView.searchQuery}"
+					No tabs match "{tabManager.state.unifiedView.searchQuery}"
 				{/if}
 			</Empty.Description>
 		{:else}
@@ -47,7 +47,7 @@
 	</Empty.Root>
 {:else}
 	<VList
-		data={app.state.unifiedView.flatItems}
+		data={tabManager.state.unifiedView.flatItems}
 		style="height: 100%;"
 		getKey={(item) => {
 			switch (item.kind) {
@@ -67,8 +67,8 @@
 		{#snippet children(item)}
 			{#if item.kind === 'section-header'}
 				{@const isExpanded =
-					app.state.unifiedView.isFiltering ||
-					app.state.unifiedView.isSectionExpanded(item.section)}
+					tabManager.state.unifiedView.isFiltering ||
+					tabManager.state.unifiedView.isSectionExpanded(item.section)}
 				<div
 					class="sticky top-0 z-20 flex w-full items-center gap-2 border-b bg-background px-4 py-2.5 text-sm font-medium"
 				>
@@ -76,8 +76,8 @@
 						type="button"
 						disabled={item.count === 0}
 						onclick={() => {
-							if (!app.state.unifiedView.isFiltering) {
-								app.state.unifiedView.toggleSection(item.section);
+							if (!tabManager.state.unifiedView.isFiltering) {
+								tabManager.state.unifiedView.toggleSection(item.section);
 							}
 						}}
 						class="group flex flex-1 items-center gap-2 transition enabled:cursor-pointer enabled:hover:opacity-80"
@@ -93,13 +93,13 @@
 							{item.count}
 						</Badge>
 					</button>
-					{#if item.section === 'saved' && app.state.savedTabs.tabs.length > 0 && isExpanded}
+					{#if item.section === 'saved' && tabManager.state.savedTabs.tabs.length > 0 && isExpanded}
 						<div class="flex gap-1">
 							<Button
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore All"
-								onclick={() => void app.state.savedTabs.restoreAll()}
+								onclick={() => void tabManager.state.savedTabs.restoreAll()}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -108,7 +108,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete All"
-								onclick={() => app.state.savedTabs.removeAll()}
+								onclick={() => tabManager.state.savedTabs.removeAll()}
 							>
 								<Trash2Icon />
 							</Button>
@@ -120,13 +120,13 @@
 				{@const activeTab = windowTabs.find((t) => t.active)}
 				{@const firstTab = windowTabs.at(0)}
 				{@const isExpanded =
-					app.state.unifiedView.isFiltering ||
-					app.state.unifiedView.isWindowExpanded(item.window.id)}
+					tabManager.state.unifiedView.isFiltering ||
+					tabManager.state.unifiedView.isWindowExpanded(item.window.id)}
 				<button
 					type="button"
 					onclick={() => {
-						if (!app.state.unifiedView.isFiltering) {
-						app.state.unifiedView.toggleWindow(item.window.id);
+						if (!tabManager.state.unifiedView.isFiltering) {
+						tabManager.state.unifiedView.toggleWindow(item.window.id);
 						}
 					}}
 					class="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 border-b bg-muted/50 px-4 py-2 text-sm text-muted-foreground backdrop-blur transition hover:bg-muted/80"
@@ -175,7 +175,7 @@
 								size="icon-xs"
 								tooltip="Restore"
 								onclick={() =>
-							app.state.savedTabs.restore(tab).then((r) => toastOnError(r, 'Failed to restore tab'))}
+							tabManager.state.savedTabs.restore(tab).then((r) => toastOnError(r, 'Failed to restore tab'))}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -184,7 +184,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-								onclick={() => app.state.savedTabs.remove(tab.id)}
+								onclick={() => tabManager.state.savedTabs.remove(tab.id)}
 							>
 								<Trash2Icon />
 							</Button>
@@ -217,7 +217,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Open"
-								onclick={() => app.state.bookmarks.open(bookmark).then((r) => toastOnError(r, 'Failed to open bookmark'))}
+								onclick={() => tabManager.state.bookmarks.open(bookmark).then((r) => toastOnError(r, 'Failed to open bookmark'))}
 							>
 								<ExternalLinkIcon />
 							</Button>
@@ -226,7 +226,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-								onclick={() => app.state.bookmarks.remove(bookmark.id)}
+								onclick={() => tabManager.state.bookmarks.remove(bookmark.id)}
 							>
 								<Trash2Icon />
 							</Button>

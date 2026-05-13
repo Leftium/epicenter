@@ -5,7 +5,7 @@
  * This file can be safely imported by the CLI daemon or any Node/Bun process.
  *
  * The extension-bound wiring lives in `lib/tab-manager/extension.ts`, which
- * imports this schema and composes every attachment inside its `openTabManager`
+ * imports this schema and composes every attachment inside its `openTabManagerBrowser`
  * factory.
  */
 

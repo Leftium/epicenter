@@ -33,7 +33,7 @@ import {
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
 import type { SessionAiTools } from '$lib/session.svelte';
-import type { TabManager } from '$lib/tab-manager/client';
+import type { TabManagerBrowser } from '$lib/tab-manager/client';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -48,7 +48,7 @@ export function createAiChatState({
 	sessionAiTools,
 }: {
 	auth: AuthClient;
-	tabManager: TabManager;
+	tabManager: TabManagerBrowser;
 	sessionAiTools: SessionAiTools;
 }) {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────

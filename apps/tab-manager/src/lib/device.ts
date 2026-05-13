@@ -9,7 +9,7 @@
 
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
-import type { TabManager } from './tab-manager/client';
+import type { TabManagerBrowser } from './tab-manager/client';
 import type { DeviceId } from './workspace/definition';
 
 /**
@@ -40,9 +40,9 @@ export async function createPeer() {
  * peer's default name.
  */
 export async function registerDevice(
-	tabManager: TabManager,
+	tabManager: TabManagerBrowser,
 ): Promise<void> {
-	// The binding's openTabManager narrows peer.id to DeviceId at construction;
+	// The binding's openTabManagerBrowser narrows peer.id to DeviceId at construction;
 	// PeerIdentity's id field is a plain string, so cast back to the branded type.
 	const id = tabManager.collaboration.identity.id as DeviceId;
 	const { data: existing, error } = tabManager.tables.devices.get(id);

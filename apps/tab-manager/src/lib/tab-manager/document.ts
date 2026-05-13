@@ -2,7 +2,7 @@ import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { tabManagerTables } from '$lib/workspace/definition';
 
-export function openTabManagerDoc({
+export function openTabManagerDocument({
 	encryptionKeys,
 }: {
 	encryptionKeys: () => EncryptionKeys;

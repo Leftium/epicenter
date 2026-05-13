@@ -1,3 +1,3 @@
-import { openTabManager } from './extension';
+import { openTabManagerBrowser } from './extension';
 
-export type TabManager = Awaited<ReturnType<typeof openTabManager>>;
+export type TabManagerBrowser = Awaited<ReturnType<typeof openTabManagerBrowser>>;

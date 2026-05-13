@@ -4,11 +4,11 @@
 	import SendIcon from '@lucide/svelte/icons/send';
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import type { ConversationHandle } from '$lib/chat/chat-state.svelte';
-	import { requireApp } from '$lib/session.svelte';
+	import { requireTabManager } from '$lib/session.svelte';
 	import ModelCombobox from './ModelCombobox.svelte';
 	import ProviderSelect from './ProviderSelect.svelte';
 
-	const app = requireApp();
+	const tabManager = requireTabManager();
 	let {
 		active,
 	}: {
@@ -16,7 +16,7 @@
 	} = $props();
 
 	const models = $derived(
-		app.state.aiChat.modelsForProvider(active?.provider ?? ''),
+		tabManager.state.aiChat.modelsForProvider(active?.provider ?? ''),
 	);
 
 	function send() {
@@ -33,7 +33,7 @@
 	<div class="flex gap-2">
 		<ProviderSelect
 			value={active?.provider ?? ''}
-			providers={app.state.aiChat.availableProviders}
+			providers={tabManager.state.aiChat.availableProviders}
 			onValueChange={(v) => {
 				if (active) active.provider = v;
 			}}

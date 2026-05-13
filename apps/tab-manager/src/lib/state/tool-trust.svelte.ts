@@ -12,7 +12,7 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import type { TabManager } from '$lib/tab-manager/client';
+import type { TabManagerBrowser } from '$lib/tab-manager/client';
 import type { ToolTrust } from '$lib/workspace';
 
 /**
@@ -23,7 +23,7 @@ import type { ToolTrust } from '$lib/workspace';
  */
 export type TrustLevel = ToolTrust['trust'];
 
-export function createToolTrustState(tabManager: TabManager) {
+export function createToolTrustState(tabManager: TabManagerBrowser) {
 	const trustMap = fromTable(tabManager.tables.toolTrust);
 
 	/** Cached projection of trust entries: stable reference via $derived. */

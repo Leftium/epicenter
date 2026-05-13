@@ -12,126 +12,80 @@ import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
-import type { TabManager } from './tab-manager/client';
-import { openTabManager } from './tab-manager/extension';
+import type { TabManagerBrowser } from './tab-manager/client';
+import { openTabManagerBrowser } from './tab-manager/extension';
 
 export type SessionAiTools = ReturnType<
-	typeof actionsToAiTools<TabManager['collaboration']['actions']>
+	typeof actionsToAiTools<TabManagerBrowser['collaboration']['actions']>
 >;
-
-type ReadyTabManager = {
-	tabManager: TabManager;
-	state: {
-		savedTabs: ReturnType<typeof createSavedTabState>;
-		bookmarks: ReturnType<typeof createBookmarkState>;
-		toolTrust: ReturnType<typeof createToolTrustState>;
-		unifiedView: ReturnType<typeof createUnifiedViewState>;
-		aiChat: ReturnType<typeof createAiChatState>;
-	};
-	sessionAiTools: SessionAiTools;
-};
+export type SessionTools = SessionAiTools['tools'];
 
 /**
  * Deferred-init values: set exactly once when `authSessionStorage.whenReady`
- * resolves, never reassigned afterwards. They are plain `let`, not `$state`,
+ * AND the peer identity have resolved. They are plain `let`, not `$state`,
  * because nothing needs the assignment itself to drive reactivity; consumers
- * await the `whenReady` promise before reading, and the reactive surfaces
- * (`auth.state`, `appSession.current`) own their own `$state` internally.
+ * await `tabManagerSession.whenReady` before reading.
+ *
+ * Once storage and peer are ready, `session` is the synchronous
+ * `createSession()` return value. Its `current` getter is `null` when signed
+ * out and the augmented tab-manager binding (binding fields + `state` +
+ * `sessionAiTools`) when signed in.
  */
 let authClient: AuthClient | undefined;
-let appSession: ReturnType<typeof createTabManagerSession> | undefined;
+let session: ReturnType<typeof buildSession> | undefined;
 
-const whenReady = authSessionStorage.whenReady.then(() => {
+const whenReady = Promise.all([
+	authSessionStorage.whenReady,
+	createPeer(),
+]).then(([, peer]) => {
 	authClient = createOAuthAppAuth({
 		baseURL: APP_URLS.API,
 		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 		sessionStorage: authSessionStorage,
 		launcher: oauthLauncher,
 	});
-	appSession = createTabManagerSession(authClient);
+	session = buildSession(authClient, peer);
 });
 
-function createTabManagerSession(auth: AuthClient) {
+function buildSession(
+	auth: AuthClient,
+	peer: Awaited<ReturnType<typeof createPeer>>,
+) {
 	return createSession({
 		auth,
 		build: (identity) => {
-			const userId = identity.user.id;
-			let disposed = false;
-			let ready: ReadyTabManager | undefined;
-			const whenReady = openTabManager({
-				userId,
-				peer: createPeer(),
+			const tabManager = openTabManagerBrowser({
+				userId: identity.user.id,
+				peer,
 				openWebSocket: auth.openWebSocket,
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
-			}).then((tabManager) => {
-				if (disposed) {
-					tabManager[Symbol.dispose]();
-					return;
-				}
-				const sessionAiTools = actionsToAiTools(
-					tabManager.collaboration.actions,
-				);
-				const savedTabs = createSavedTabState(tabManager);
-				const bookmarks = createBookmarkState(tabManager);
-				const toolTrust = createToolTrustState(tabManager);
-				const unifiedView = createUnifiedViewState({ bookmarks, savedTabs });
-				const aiChat = createAiChatState({
-					auth,
-					tabManager,
-					sessionAiTools,
-				});
-
-				ready = {
-					tabManager,
-					state: { savedTabs, bookmarks, toolTrust, unifiedView, aiChat },
-					sessionAiTools,
-				};
-				void tabManager.idb.whenLoaded.then(() => registerDevice(tabManager));
 			});
+			const sessionAiTools = actionsToAiTools(tabManager.collaboration.actions);
+			const savedTabs = createSavedTabState(tabManager);
+			const bookmarks = createBookmarkState(tabManager);
+			const toolTrust = createToolTrustState(tabManager);
+			const unifiedView = createUnifiedViewState({ bookmarks, savedTabs });
+			const aiChat = createAiChatState({ auth, tabManager, sessionAiTools });
+			const state = { savedTabs, bookmarks, toolTrust, unifiedView, aiChat };
+
+			void tabManager.idb.whenLoaded.then(() => registerDevice(tabManager));
 
 			return {
-				userId,
-				get whenReady() {
-					return whenReady;
-				},
-				get tabManager() {
-					if (!ready) {
-						throw new Error(
-							'[tab-manager] tabManager read before signed-in session readiness.',
-						);
-					}
-					return ready.tabManager;
-				},
-				get state() {
-					if (!ready) {
-						throw new Error(
-							'[tab-manager] state read before signed-in session readiness.',
-						);
-					}
-					return ready.state;
-				},
-				get sessionAiTools() {
-					if (!ready) {
-						throw new Error(
-							'[tab-manager] sessionAiTools read before signed-in session readiness.',
-						);
-					}
-					return ready.sessionAiTools;
-				},
+				...tabManager,
+				state,
+				sessionAiTools,
 				[Symbol.dispose]() {
-					disposed = true;
-					ready?.state.aiChat[Symbol.dispose]();
-					ready?.state.toolTrust[Symbol.dispose]();
-					ready?.state.bookmarks[Symbol.dispose]();
-					ready?.state.savedTabs[Symbol.dispose]();
-					ready?.tabManager[Symbol.dispose]();
+					aiChat[Symbol.dispose]();
+					toolTrust[Symbol.dispose]();
+					bookmarks[Symbol.dispose]();
+					savedTabs[Symbol.dispose]();
+					tabManager[Symbol.dispose]();
 				},
 			};
 		},
+		onDifferentUser: () => location.reload(),
 	});
 }
-
-export type SessionTools = SessionAiTools['tools'];
 
 export const tabManagerSession = {
 	get auth(): AuthClient {
@@ -141,16 +95,16 @@ export const tabManagerSession = {
 		return authClient;
 	},
 	get current() {
-		if (!appSession) {
+		if (!session) {
 			throw new Error(
 				'[tab-manager] tabManagerSession.current read before storage readiness.',
 			);
 		}
-		return appSession.current;
+		return session.current;
 	},
 	whenReady,
 	[Symbol.dispose]() {
-		appSession?.[Symbol.dispose]();
+		session?.[Symbol.dispose]();
 		authClient?.[Symbol.dispose]();
 	},
 };
@@ -159,18 +113,23 @@ if (import.meta.hot) {
 	import.meta.hot.dispose(() => tabManagerSession[Symbol.dispose]());
 }
 
-export function requireApp() {
-	if (!appSession) {
+export function requireTabManager() {
+	if (!session) {
 		throw new Error(
-			'[tab-manager] requireApp() called before storage readiness. ' +
+			'[tab-manager] requireTabManager() called before storage readiness. ' +
 				'Components must mount under `{#await tabManagerSession.whenReady}`.',
 		);
 	}
-	return appSession.requireApp();
+	if (!session.current) {
+		throw new Error(
+			'[tab-manager] requireTabManager() called without an authenticated session.',
+		);
+	}
+	return session.current;
 }
 
 export async function forgetTabManagerDevice(): Promise<void> {
-	const app = requireApp();
-	await app.tabManager.wipe();
+	const tabManager = requireTabManager();
+	await tabManager.wipe();
 	window.location.reload();
 }

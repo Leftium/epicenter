@@ -32,14 +32,12 @@ test('resolveOAuthPrincipal resolves a valid scoped token to the calling user', 
 
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
-		const result = await callResolver(setup, accessToken);
+		const { data, error } = await callResolver(setup, accessToken);
 
-		expect(result).toEqual({
-			status: 'resolved',
-			user: {
-				id: expect.any(String),
-				email: 'principal-test@example.com',
-			},
+		expect(error).toBeNull();
+		expect(data).toEqual({
+			id: expect.any(String),
+			email: 'principal-test@example.com',
 		});
 	} finally {
 		setup.server.stop(true);
@@ -53,50 +51,53 @@ test('resolveOAuthPrincipal rejects tokens missing the workspaces:open scope', a
 		const { accessToken } = await issueOAuthTokens(setup, {
 			scope: 'openid profile email offline_access',
 		});
-		const result = await callResolver(setup, accessToken);
+		const { data, error } = await callResolver(setup, accessToken);
 
-		expect(result).toEqual({
-			status: 'insufficient_scope',
-			requiredScope: 'workspaces:open',
-		});
+		expect(data).toBeNull();
+		expect(error?.name).toBe('InsufficientScope');
+		expect(error?.name === 'InsufficientScope' && error.scope).toBe(
+			'workspaces:open',
+		);
 	} finally {
 		setup.server.stop(true);
 	}
 });
 
-test('resolveOAuthPrincipal rejects tokens issued for the wrong audience', async () => {
+test('resolveOAuthPrincipal rejects tokens issued for the wrong audience as InvalidToken', async () => {
 	const setup = createPrincipalTestServer();
 
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
 			resource: setup.wrongAudience,
 		});
-		const result = await callResolver(setup, accessToken);
+		const { data, error } = await callResolver(setup, accessToken);
 
-		expect(result).toEqual({ status: 'invalid' });
+		expect(data).toBeNull();
+		expect(error?.name).toBe('InvalidToken');
 	} finally {
 		setup.server.stop(true);
 	}
 });
 
-test('resolveOAuthPrincipal rejects tokens verified against the wrong issuer', async () => {
+test('resolveOAuthPrincipal rejects tokens verified against the wrong issuer as InvalidToken', async () => {
 	const setup = createPrincipalTestServer();
 
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
-		const result = await callResolver(setup, accessToken, {
+		const { data, error } = await callResolver(setup, accessToken, {
 			issuer: `${setup.baseURL}/some-other-issuer`,
 		});
 
-		expect(result).toEqual({ status: 'invalid' });
+		expect(data).toBeNull();
+		expect(error?.name).toBe('InvalidToken');
 	} finally {
 		setup.server.stop(true);
 	}
 });
 
-test('resolveOAuthPrincipal rejects malformed bearer input before verifying', async () => {
+test('resolveOAuthPrincipal rejects malformed bearer input as InvalidToken before verifying', async () => {
 	let verifierCalls = 0;
-	const result = await resolveOAuthPrincipal({
+	const { data, error } = await resolveOAuthPrincipal({
 		authorization: 'Token not-a-bearer',
 		audience: 'http://localhost:8787',
 		issuer: 'http://localhost:8787/auth',
@@ -110,20 +111,22 @@ test('resolveOAuthPrincipal rejects malformed bearer input before verifying', as
 		},
 	});
 
-	expect(result).toEqual({ status: 'malformed' });
+	expect(data).toBeNull();
+	expect(error?.name).toBe('InvalidToken');
 	expect(verifierCalls).toBe(0);
 });
 
-test('resolveOAuthPrincipal rejects tokens whose user no longer exists', async () => {
+test('resolveOAuthPrincipal rejects tokens whose user no longer exists as InvalidToken', async () => {
 	const setup = createPrincipalTestServer();
 
 	try {
 		const { accessToken } = await issueOAuthTokens(setup);
 		setup.db.user = [];
 
-		const result = await callResolver(setup, accessToken);
+		const { data, error } = await callResolver(setup, accessToken);
 
-		expect(result).toEqual({ status: 'invalid' });
+		expect(data).toBeNull();
+		expect(error?.name).toBe('InvalidToken');
 	} finally {
 		setup.server.stop(true);
 	}

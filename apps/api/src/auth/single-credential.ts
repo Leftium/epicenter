@@ -39,7 +39,10 @@ import { HTTPException } from 'hono/http-exception';
  * 2. Parses HTTP `Authorization: Bearer <token>` and the WebSocket bearer
  *    subprotocol `sec-websocket-protocol: epicenter, bearer.<token>`. Browsers
  *    cannot set `Authorization` on `new WebSocket(url)` upgrades, so the
- *    subprotocol is the only smuggling channel for WS auth.
+ *    subprotocol is the only smuggling channel for WS auth. More than one
+ *    `bearer.*` entry is rejected (400 `multiple_credentials`); a single
+ *    entry is consumed and stripped from `Sec-WebSocket-Protocol` so the
+ *    raw token does not flow past this middleware.
  * 3. If a cookie and a bearer are both present, or two bearers disagree, throws
  *    HTTP 400. Otherwise, if only a WS bearer is present, mutates `c.req.raw`
  *    so downstream handlers see `Authorization: Bearer` directly. This is the
@@ -54,16 +57,29 @@ export const singleCredential = createMiddleware(async (c, next) => {
 	const httpBearer = parseHttpBearer(headers.get('authorization'));
 	const wsBearer = parseWsBearer(headers.get('sec-websocket-protocol'));
 
-	if (cookie && (httpBearer || wsBearer)) {
-		throw new HTTPException(400, { message: 'multiple_credentials' });
-	}
-	if (httpBearer && wsBearer && httpBearer !== wsBearer) {
+	if (wsBearer.type === 'duplicate') {
 		throw new HTTPException(400, { message: 'multiple_credentials' });
 	}
 
-	if (wsBearer && !httpBearer) {
+	const wsBearerToken = wsBearer.type === 'single' ? wsBearer.token : null;
+
+	if (cookie && (httpBearer || wsBearerToken)) {
+		throw new HTTPException(400, { message: 'multiple_credentials' });
+	}
+	if (httpBearer && wsBearerToken && httpBearer !== wsBearerToken) {
+		throw new HTTPException(400, { message: 'multiple_credentials' });
+	}
+
+	if (wsBearer.type === 'single') {
 		const normalized = new Headers(headers);
-		normalized.set('authorization', `Bearer ${wsBearer}`);
+		if (!httpBearer) {
+			normalized.set('authorization', `Bearer ${wsBearer.token}`);
+		}
+		if (wsBearer.remaining.length > 0) {
+			normalized.set('sec-websocket-protocol', wsBearer.remaining.join(', '));
+		} else {
+			normalized.delete('sec-websocket-protocol');
+		}
 		c.req.raw = new Request(c.req.raw, { headers: normalized });
 	}
 
@@ -76,9 +92,23 @@ function parseHttpBearer(value: string | null): string | null {
 	return match?.[1]?.trim() || null;
 }
 
-function parseWsBearer(value: string | null): string | null {
-	const entry = parseSubprotocols(value).find((protocol) =>
-		protocol.startsWith(BEARER_SUBPROTOCOL_PREFIX),
-	);
-	return entry ? entry.slice(BEARER_SUBPROTOCOL_PREFIX.length) : null;
+type WsBearerResult =
+	| { type: 'none' }
+	| { type: 'single'; token: string; remaining: string[] }
+	| { type: 'duplicate' };
+
+function parseWsBearer(value: string | null): WsBearerResult {
+	const protocols = parseSubprotocols(value).filter((p) => p !== '');
+	const bearers: string[] = [];
+	const remaining: string[] = [];
+	for (const protocol of protocols) {
+		if (protocol.startsWith(BEARER_SUBPROTOCOL_PREFIX)) {
+			bearers.push(protocol.slice(BEARER_SUBPROTOCOL_PREFIX.length));
+		} else {
+			remaining.push(protocol);
+		}
+	}
+	if (bearers.length === 0) return { type: 'none' };
+	if (bearers.length > 1) return { type: 'duplicate' };
+	return { type: 'single', token: bearers[0]!, remaining };
 }

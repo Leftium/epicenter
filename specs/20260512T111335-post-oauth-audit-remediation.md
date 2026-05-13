@@ -18,7 +18,7 @@ The live tree was audited against this spec. Result:
 | 2 | Landed | Fuji and Honeycrisp child sync use `/documents/` as of `52e5e668e` (`fix(fuji,honeycrisp): point child doc sync at /documents`). |
 | 3 | Superseded | Replaced by `specs/20260512T220000-session-two-axis-cohesive-reshape.md`. `Session<T>` is now `SessionPayload<T> \| null` and `createSession` disposes only on `signed-out` or different user. |
 | 4 | Live | `packages/auth/src/node/machine-auth.ts` still calls dead `device.code`, `device.token`, and `getSession` paths. Server has no `deviceAuthorization()`. |
-| 5 | Live | `singleCredential` lifts the WS bearer but does not strip it from `Sec-WebSocket-Protocol`, silently accepts duplicate WS bearers, and upgrade checks are case-sensitive. |
+| 5 | Landed | `isWebSocketUpgrade(c)` makes the four upgrade-detection sites case-insensitive. `singleCredential` now rejects duplicate `bearer.*` entries and strips every `bearer.*` from `Sec-WebSocket-Protocol` before forwarding (deleting the header when nothing remains). Coverage in `single-credential.test.ts`. |
 | 6 | Live | Callback pages navigate on `startSignIn()` resolution without confirming `auth.state.status === 'signed-in'`. |
 
 Highest-priority remaining items: **0.3** (machine auth decision) before Phase 4 code churn, then **Phase 5** (WebSocket credential normalization) as the next resource-boundary tightening now that Phase 1 sealed the HTTP path.
@@ -412,16 +412,11 @@ Acceptance: `bun --cwd packages/auth test` passes; running `epicenter auth login
 ### Phase 5: Tighten WebSocket Auth
 
 - [x] **5.1** Decision: no static `Origin` allowlist for bearer WS sync. Current code has no such gate (`apps/api/src/app.ts:121-130` skips CORS on upgrades and there is no separate WS origin check). Item resolved as "do not add."
-- [ ] **5.2** Make upgrade detection case-insensitive. Four sites still compare a raw header value against the lowercase literal:
-  - `apps/api/src/app.ts:122`
-  - `apps/api/src/app.ts:530`
-  - `apps/api/src/app.ts:603`
-  - `apps/api/src/auth/oauth-resource.ts:12`
-  Pull a shared helper, e.g. `isWebSocketUpgrade(c)` that does `c.req.header('upgrade')?.toLowerCase() === 'websocket'`, and replace all four call sites.
-- [ ] **5.3** `singleCredential` (`apps/api/src/auth/single-credential.ts:55-67`, helper at `:79-84`) currently uses `parseSubprotocols(...).find(...)` and silently drops additional `bearer.*` entries. Reject when more than one bearer entry is offered.
-- [ ] **5.4** After consuming the bearer, strip every `bearer.*` entry from `Sec-WebSocket-Protocol` in `singleCredential` (`apps/api/src/auth/single-credential.ts:64-68`) and only forward the remaining tokens (typically `MAIN_SUBPROTOCOL = "epicenter"`). The DO echo path in `apps/api/src/base-sync-room.ts:238-244` only echoes `epicenter`, but the DO `fetch` still currently receives the raw `bearer.<token>` on the header; the resource boundary must not forward raw credential material past `singleCredential`.
-- [ ] **5.5** Extend `apps/api/src/auth/single-credential.test.ts` with: duplicate WS bearer entries rejected, stripped protocol forwarding (downstream sees only `epicenter`), case-insensitive `Upgrade: WebSocket`, cookie + WS bearer (already present, keep), HTTP bearer + WS bearer mismatch (already present, keep). Run with `bun test apps/api/src/auth/single-credential.test.ts`.
-- [ ] **5.6** Open question for follow-up: WebSocket access-token expiry policy for long-lived hibernated DOs. Default proposal: client-side reconnect ahead of expiry via `auth.openWebSocket`'s fresh access token. Server-side close is deferred unless a malicious-client threat model is identified. Track in Open Questions, not as a checklist task.
+- [x] **5.2** Shared `isWebSocketUpgrade(c)` helper at `apps/api/src/is-websocket-upgrade.ts` lowercases the `Upgrade` header before comparing to `websocket`. Used at the CORS bypass (`app.ts`), both `/workspaces/:workspace` and `/documents/:document` upgrade gates, and `createOAuthUnauthorizedResourceResponse`.
+- [x] **5.3** `parseWsBearer` now collects every `bearer.*` subprotocol entry and returns a discriminated result; two or more entries throw `HTTPException(400, 'multiple_credentials')` from `singleCredential` instead of silently picking the first.
+- [x] **5.4** After consuming a single bearer, `singleCredential` rewrites `Sec-WebSocket-Protocol` to drop every `bearer.*` entry (and removes the header entirely when no other entries remain) before downstream handlers and the DO `fetch` see the request. Raw credential material no longer crosses the middleware boundary.
+- [x] **5.5** `single-credential.test.ts` extended with: protocol stripped when only a WS bearer is present, full header removed when no non-bearer entries remain, two `bearer.*` entries rejected as `multiple_credentials`, mixed-case `Upgrade: WebSocket` still strips and lifts. Existing cookie + WS-bearer and HTTP + WS-bearer mismatch tests retained.
+- [x] **5.6** Folded into Open Questions item 3: default is client-side reconnect ahead of expiry; server-side close stays deferred.
 
 ### Phase 6: Callback and Extension Durability
 
@@ -536,7 +531,7 @@ These are the questions that must stay answered as implementation proceeds.
 
 1. Should all current protected routes use `workspaces:open`, or should AI, billing, and assets get narrower scopes before launch?
 2. Is CLI/device login currently shipped to users? If yes, restore a working machine login path immediately. If no, delete or hide the stale surface until loopback PKCE lands.
-3. Should WebSocket token expiry be enforced by client reconnect only, server close only, or both?
+3. Should WebSocket token expiry be enforced by client reconnect only, server close only, or both? Default proposal: client-side reconnect ahead of expiry via `auth.openWebSocket`'s fresh access token. Server-side close is deferred unless a malicious-client threat model is identified that the local-first product is willing to defend against at the DO boundary. Long-lived hibernated DOs are the case this question protects against.
 4. Resolved: `apps/epicenter` is not a deployable. Use `apps/api` for current work. Composable host (`apps/server` + `cloud-apps/`) is tracked under `specs/20260512T150000-cloud-modules-and-networks.md`.
 
 ## Next Implementation Prompt

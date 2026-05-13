@@ -2,7 +2,12 @@ import type { oauthProviderResourceClient } from '@better-auth/oauth-provider/re
 import { AuthUser, type WorkspaceIdentity } from '@epicenter/auth';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import type { User } from 'better-auth';
-import { hasScope, WORKSPACES_OPEN_SCOPE } from './oauth-scope.js';
+import { Ok, type Result } from 'wellcrafted/result';
+import {
+	hasScope,
+	OAuthError,
+	WORKSPACES_OPEN_SCOPE,
+} from './oauth-error.js';
 
 export { WORKSPACES_OPEN_SCOPE };
 
@@ -10,15 +15,16 @@ type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
 >['verifyAccessToken'];
 
-type ResolveWorkspaceIdentityResult =
-	| {
-			status: 'resolved';
-			body: WorkspaceIdentity;
-	  }
-	| { status: 'malformed' }
-	| { status: 'invalid' }
-	| { status: 'insufficient_scope'; requiredScope: string };
-
+/**
+ * Verify an OAuth access token, enforce the `workspaces:open` scope, and
+ * return the local-first identity payload the apps need at boot:
+ * the resolved `AuthUser` plus the per-user encryption key set derived
+ * from the workspace identity secret.
+ *
+ * Shares the same failure vocabulary (`OAuthError`) as
+ * `resolveOAuthPrincipal`, so the `/workspace-identity` route and the
+ * protected resource middleware can serialize errors identically.
+ */
 export async function resolveWorkspaceIdentity({
 	authorization,
 	audience,
@@ -35,31 +41,28 @@ export async function resolveWorkspaceIdentity({
 	verifyOAuthAccessToken: VerifyOAuthAccessToken;
 	findUserById(userId: string): Promise<User | null>;
 	deriveUserEncryptionKeys(userId: string): Promise<EncryptionKeys>;
-}): Promise<ResolveWorkspaceIdentityResult> {
+}): Promise<Result<WorkspaceIdentity, OAuthError>> {
 	const accessToken = parseBearer(authorization);
-	if (!accessToken) return { status: 'malformed' };
+	if (!accessToken) return OAuthError.InvalidToken();
 
 	const payload = await verifyOAuthAccessToken(accessToken, {
 		verifyOptions: { audience, issuer },
 		jwksUrl,
 	}).catch(() => null);
 	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
-	if (!userId) return { status: 'invalid' };
+	if (!userId) return OAuthError.InvalidToken();
 
 	if (!hasScope(payload, WORKSPACES_OPEN_SCOPE)) {
-		return { status: 'insufficient_scope', requiredScope: WORKSPACES_OPEN_SCOPE };
+		return OAuthError.InsufficientScope({ scope: WORKSPACES_OPEN_SCOPE });
 	}
 
 	const user = await findUserById(userId);
-	if (!user) return { status: 'invalid' };
+	if (!user) return OAuthError.InvalidToken();
 
-	return {
-		status: 'resolved',
-		body: {
-			user: AuthUser.assert(user),
-			encryptionKeys: await deriveUserEncryptionKeys(user.id),
-		},
-	};
+	return Ok({
+		user: AuthUser.assert(user),
+		encryptionKeys: await deriveUserEncryptionKeys(user.id),
+	});
 }
 
 function parseBearer(value: string | null): string | null {

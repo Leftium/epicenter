@@ -31,6 +31,7 @@ import {
 import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
+import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import {
 	renderConsentPage,
 	renderSignedInPage,
@@ -119,7 +120,7 @@ const factory = createFactory<Env>({
 		// CORS: skip WebSocket upgrades (101 response headers are immutable).
 		// Trusted origins live in `./trusted-origins.ts`, shared with Better Auth.
 		app.use('*', async (c, next) => {
-			if (c.req.header('upgrade') === 'websocket') return next();
+			if (isWebSocketUpgrade(c)) return next();
 			return cors({
 				origin: (origin) =>
 					origin && TRUSTED_ORIGINS.includes(origin) ? origin : undefined,
@@ -242,28 +243,9 @@ app.get(
 		tags: ['auth', 'oauth'],
 	}),
 	async (c) => {
-		const result = await resolveWorkspaceIdentityForRequest(c);
-
-		if (result.status === 'malformed') {
-			return c.json({ code: 'malformed_oauth_token' }, 400);
-		}
-
-		if (result.status === 'invalid') {
-			return c.json({ code: 'invalid_oauth_token' }, 401);
-		}
-
-		if (result.status === 'insufficient_scope') {
-			c.header(
-				'WWW-Authenticate',
-				`Bearer error="insufficient_scope" scope="${result.requiredScope}"`,
-			);
-			return c.json(
-				{ code: 'insufficient_scope', scope: result.requiredScope },
-				403,
-			);
-		}
-
-		return c.json(result.body);
+		const { data: identity, error } = await resolveWorkspaceIdentityForRequest(c);
+		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
+		return c.json(identity);
 	},
 );
 // OAuth discovery. Register issuer-path routes before the /auth/* catch-all
@@ -344,7 +326,7 @@ async function resolveWorkspaceIdentityForRequest(c: Context<Env>) {
 // {@link singleCredential} has already validated and normalized credentials.
 const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 	const resource = oauthProviderResourceClient();
-	const result = await resolveOAuthPrincipal({
+	const { data: user, error } = await resolveOAuthPrincipal({
 		authorization: c.req.header('authorization') ?? null,
 		audience: c.var.authBaseURL,
 		issuer: createOAuthIssuerURL(c.var.authBaseURL),
@@ -359,17 +341,9 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 			return row ?? null;
 		},
 	});
-	if (result.status === 'insufficient_scope') {
-		return createOAuthUnauthorizedResourceResponse(c, {
-			failure: { type: 'insufficient_scope', scope: result.requiredScope },
-		});
-	}
+	if (error) return createOAuthUnauthorizedResourceResponse(c, error);
 
-	if (result.status !== 'resolved') {
-		return createOAuthUnauthorizedResourceResponse(c);
-	}
-
-	c.set('user', result.user);
+	c.set('user', user);
 	await next();
 });
 
@@ -533,7 +507,7 @@ app.get(
 	async (c) => {
 		const { stub, doName } = getWorkspaceStub(c);
 
-		if (c.req.header('upgrade') === 'websocket') {
+		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
 					userId: c.var.user.id,
@@ -606,7 +580,7 @@ app.get(
 	async (c) => {
 		const { stub, doName } = getDocumentStub(c);
 
-		if (c.req.header('upgrade') === 'websocket') {
+		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
 					userId: c.var.user.id,

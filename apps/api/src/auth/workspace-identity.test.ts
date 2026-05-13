@@ -53,16 +53,18 @@ test('/workspace-identity returns identity for a valid OAuth access token', asyn
 	}
 });
 
-test('/workspace-identity rejects missing bearer input', async () => {
+test('/workspace-identity rejects missing bearer input as InvalidToken', async () => {
 	const setup = createWorkspaceIdentityTestServer();
 
 	try {
 		const response = await fetch(`${setup.baseURL}/workspace-identity`);
 
-		expect(response.status).toBe(400);
-		await expect(response.json()).resolves.toEqual({
-			code: 'malformed_oauth_token',
-		});
+		expect(response.status).toBe(401);
+		expect(response.headers.get('WWW-Authenticate')).toBe(
+			'Bearer error="invalid_token"',
+		);
+		const body = (await response.json()) as { name: string };
+		expect(body.name).toBe('InvalidToken');
 	} finally {
 		setup.server.stop(true);
 	}
@@ -81,9 +83,8 @@ test('/workspace-identity rejects access tokens with the wrong audience', async 
 		});
 
 		expect(response.status).toBe(401);
-		await expect(response.json()).resolves.toEqual({
-			code: 'invalid_oauth_token',
-		});
+		const body = (await response.json()) as { name: string };
+		expect(body.name).toBe('InvalidToken');
 	} finally {
 		setup.server.stop(true);
 	}
@@ -101,9 +102,8 @@ test('/workspace-identity rejects tokens whose user no longer exists', async () 
 		});
 
 		expect(response.status).toBe(401);
-		await expect(response.json()).resolves.toEqual({
-			code: 'invalid_oauth_token',
-		});
+		const body = (await response.json()) as { name: string };
+		expect(body.name).toBe('InvalidToken');
 	} finally {
 		setup.server.stop(true);
 	}
@@ -125,17 +125,16 @@ test('/workspace-identity rejects access tokens missing the workspaces:open scop
 		expect(response.headers.get('WWW-Authenticate')).toBe(
 			'Bearer error="insufficient_scope" scope="workspaces:open"',
 		);
-		await expect(response.json()).resolves.toEqual({
-			code: 'insufficient_scope',
-			scope: 'workspaces:open',
-		});
+		const body = (await response.json()) as { name: string; scope: string };
+		expect(body.name).toBe('InsufficientScope');
+		expect(body.scope).toBe('workspaces:open');
 	} finally {
 		setup.server.stop(true);
 	}
 });
 
-test('resolveWorkspaceIdentity rejects expired access-token verification', async () => {
-	const result = await resolveWorkspaceIdentity({
+test('resolveWorkspaceIdentity rejects expired access-token verification as InvalidToken', async () => {
+	const { data, error } = await resolveWorkspaceIdentity({
 		authorization: 'Bearer expired-token',
 		audience: 'http://localhost:8787',
 		issuer: 'http://localhost:8787/auth',
@@ -151,7 +150,8 @@ test('resolveWorkspaceIdentity rejects expired access-token verification', async
 		},
 	});
 
-	expect(result).toEqual({ status: 'invalid' });
+	expect(data).toBeNull();
+	expect(error?.name).toBe('InvalidToken');
 });
 
 function createWorkspaceIdentityTestServer() {
@@ -207,7 +207,7 @@ function createWorkspaceIdentityTestServer() {
 					const url = new URL(request.url);
 					if (request.method === 'GET' && url.pathname === '/workspace-identity') {
 						const resource = oauthProviderResourceClient();
-						const result = await resolveWorkspaceIdentity({
+						const { data: identity, error } = await resolveWorkspaceIdentity({
 							authorization: request.headers.get('authorization'),
 							audience: baseURL,
 							issuer: `${baseURL}/auth`,
@@ -217,33 +217,21 @@ function createWorkspaceIdentityTestServer() {
 								db.user?.find((user) => user.id === userId) ?? null,
 							deriveUserEncryptionKeys: async () => encryptionKeys,
 						});
-						if (result.status === 'malformed') {
-							return Response.json(
-								{ code: 'malformed_oauth_token' },
-								{ status: 400 },
-							);
-						}
-						if (result.status === 'invalid') {
-							return Response.json(
-								{ code: 'invalid_oauth_token' },
-								{ status: 401 },
-							);
-						}
-						if (result.status === 'insufficient_scope') {
-							return Response.json(
-								{
-									code: 'insufficient_scope',
-									scope: result.requiredScope,
-								},
-								{
+						if (error) {
+							if (error.name === 'InsufficientScope') {
+								return Response.json(error, {
 									status: 403,
 									headers: {
-										'WWW-Authenticate': `Bearer error="insufficient_scope" scope="${result.requiredScope}"`,
+										'WWW-Authenticate': `Bearer error="insufficient_scope" scope="${error.scope}"`,
 									},
-								},
-							);
+								});
+							}
+							return Response.json(error, {
+								status: 401,
+								headers: { 'WWW-Authenticate': 'Bearer error="invalid_token"' },
+							});
 						}
-						return Response.json(result.body);
+						return Response.json(identity);
 					}
 					return auth.handler(request);
 				},

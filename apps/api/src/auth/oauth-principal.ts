@@ -1,20 +1,19 @@
 import type { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import type { AuthUser } from '@epicenter/auth';
 import type { User } from 'better-auth';
-import { hasScope, WORKSPACES_OPEN_SCOPE } from './oauth-scope.js';
+import { Ok, type Result } from 'wellcrafted/result';
+import {
+	hasScope,
+	OAuthError,
+	WORKSPACES_OPEN_SCOPE,
+} from './oauth-error.js';
 
 type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
 >['verifyAccessToken'];
 
-export type OAuthPrincipalResult =
-	| { status: 'resolved'; user: AuthUser }
-	| { status: 'malformed' }
-	| { status: 'invalid' }
-	| { status: 'insufficient_scope'; requiredScope: string };
-
 /**
- * Verify an OAuth access token and return the AuthUser principal for a
+ * Verify an OAuth access token and return the `AuthUser` principal for a
  * protected resource route. Enforces the `workspaces:open` scope so a
  * token issued for, say, `openid profile email` cannot reach `/workspaces/*`,
  * `/documents/*`, `/api/billing/*`, `/api/assets/*`, or `/ai/*`.
@@ -36,31 +35,25 @@ export async function resolveOAuthPrincipal({
 	jwksUrl: string;
 	verifyOAuthAccessToken: VerifyOAuthAccessToken;
 	findUserById(userId: string): Promise<User | null>;
-}): Promise<OAuthPrincipalResult> {
+}): Promise<Result<AuthUser, OAuthError>> {
 	const accessToken = parseBearer(authorization);
-	if (!accessToken) return { status: 'malformed' };
+	if (!accessToken) return OAuthError.InvalidToken();
 
 	const payload = await verifyOAuthAccessToken(accessToken, {
 		verifyOptions: { audience, issuer },
 		jwksUrl,
 	}).catch(() => null);
 	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
-	if (!userId) return { status: 'invalid' };
+	if (!userId) return OAuthError.InvalidToken();
 
 	if (!hasScope(payload, WORKSPACES_OPEN_SCOPE)) {
-		return {
-			status: 'insufficient_scope',
-			requiredScope: WORKSPACES_OPEN_SCOPE,
-		};
+		return OAuthError.InsufficientScope({ scope: WORKSPACES_OPEN_SCOPE });
 	}
 
 	const user = await findUserById(userId);
-	if (!user) return { status: 'invalid' };
+	if (!user) return OAuthError.InvalidToken();
 
-	return {
-		status: 'resolved',
-		user: { id: user.id, email: user.email },
-	};
+	return Ok({ id: user.id, email: user.email });
 }
 
 function parseBearer(value: string | null): string | null {

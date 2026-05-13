@@ -1,5 +1,5 @@
 import { requireIdentity } from '@epicenter/auth';
-import { createSession, type InferApp } from '@epicenter/svelte';
+import { createSession } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { openHoneycrisp } from '../routes/(signed-in)/honeycrisp/browser';
@@ -33,7 +33,6 @@ export const session = createSession({
 });
 
 export const { requireApp } = session;
-export type HoneycrispBinding = InferApp<typeof session>;
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());

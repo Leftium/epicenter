@@ -21,7 +21,7 @@ import {
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
-import { openOpensidian as openOpensidianDoc } from './index';
+import { openOpensidianDoc } from './index';
 
 export function openOpensidian({
 	userId,
@@ -107,7 +107,7 @@ export function openOpensidian({
 	});
 	let disposed = false;
 
-	function disposeWorkspaceResources() {
+	function disposeResources() {
 		if (disposed) return;
 		disposed = true;
 		fileContentDocs[Symbol.dispose]();
@@ -136,7 +136,7 @@ export function openOpensidian({
 					}),
 				),
 			];
-			disposeWorkspaceResources();
+			disposeResources();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
@@ -144,9 +144,9 @@ export function openOpensidian({
 			});
 		},
 		[Symbol.dispose]() {
-			disposeWorkspaceResources();
+			disposeResources();
 		},
 	};
 }
 
-export type OpensidianBinding = ReturnType<typeof openOpensidian>;
+export type Opensidian = ReturnType<typeof openOpensidian>;

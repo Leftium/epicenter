@@ -9,7 +9,7 @@
 
 import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
-import type { TabManagerBinding } from './session.svelte';
+import type { TabManager } from './tab-manager/client';
 import type { DeviceId } from './workspace/definition';
 
 /**
@@ -40,7 +40,7 @@ export async function createPeer() {
  * peer's default name.
  */
 export async function registerDevice(
-	tabManager: TabManagerBinding,
+	tabManager: TabManager,
 ): Promise<void> {
 	// The binding's openTabManager narrows peer.id to DeviceId at construction;
 	// PeerIdentity's id field is a plain string, so cast back to the branded type.

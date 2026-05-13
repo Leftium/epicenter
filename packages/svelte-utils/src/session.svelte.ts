@@ -44,7 +44,7 @@
  *   },
  * });
  * export const { requireApp } = session;
- * export type FujiBinding = InferApp<typeof session>;
+ * export type Fuji = InferApp<typeof session>;
  * ```
  */
 
@@ -75,7 +75,7 @@ export type AppBase = {
  * @example
  * ```ts
  * export const session = createSession({ auth, build: (identity) => {...} });
- * export type FujiBinding = InferApp<typeof session>;
+ * export type Fuji = InferApp<typeof session>;
  * ```
  */
 export type InferApp<TSession extends { current: unknown }> =

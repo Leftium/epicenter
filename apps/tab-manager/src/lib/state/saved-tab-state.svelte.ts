@@ -13,11 +13,11 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import type { TabManagerBinding } from '$lib/session.svelte';
+import type { TabManager } from '$lib/tab-manager/client';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { SavedTab, SavedTabId } from '$lib/workspace';
 
-export function createSavedTabState(tabManager: TabManagerBinding) {
+export function createSavedTabState(tabManager: TabManager) {
 	const tabsMap = fromTable(tabManager.tables.savedTabs);
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */

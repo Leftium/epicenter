@@ -3,7 +3,7 @@ import { fromTable } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
 import { SvelteSet } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
-import type { OpensidianBinding } from '$lib/opensidian/browser';
+import type { Opensidian } from '$lib/opensidian/browser';
 import { searchParams } from '$lib/search-params.svelte';
 
 /**
@@ -41,7 +41,7 @@ type InteractionMode =
 export function createFilesState({
 	binding,
 }: {
-	binding: OpensidianBinding;
+	binding: Opensidian;
 }) {
 	// ── Reactive source ──────────────────────────────────────────────
 	const filesMap = fromTable(binding.tables.files);

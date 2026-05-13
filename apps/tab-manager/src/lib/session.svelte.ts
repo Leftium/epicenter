@@ -12,15 +12,15 @@ import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
+import type { TabManager } from './tab-manager/client';
 import { openTabManager } from './tab-manager/extension';
 
-export type TabManagerBinding = Awaited<ReturnType<typeof openTabManager>>;
 export type SessionAiTools = ReturnType<
-	typeof actionsToAiTools<TabManagerBinding['collaboration']['actions']>
+	typeof actionsToAiTools<TabManager['collaboration']['actions']>
 >;
 
-type ReadyTabManagerApp = {
-	tabManager: TabManagerBinding;
+type ReadyTabManager = {
+	tabManager: TabManager;
 	state: {
 		savedTabs: ReturnType<typeof createSavedTabState>;
 		bookmarks: ReturnType<typeof createBookmarkState>;
@@ -57,7 +57,7 @@ function createTabManagerSession(auth: AuthClient) {
 		build: (identity) => {
 			const userId = identity.user.id;
 			let disposed = false;
-			let ready: ReadyTabManagerApp | undefined;
+			let ready: ReadyTabManager | undefined;
 			const whenReady = openTabManager({
 				userId,
 				peer: createPeer(),

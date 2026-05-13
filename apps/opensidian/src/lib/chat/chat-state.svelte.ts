@@ -17,7 +17,7 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import type { OpensidianBinding } from '$lib/opensidian/browser';
+import type { Opensidian } from '$lib/opensidian/browser';
 import { searchParams } from '$lib/search-params.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
 import {
@@ -43,7 +43,7 @@ function getProviderValue(value: JsonValue | undefined): Provider {
 }
 
 type SessionAiTools = ReturnType<
-	typeof actionsToAiTools<OpensidianBinding['collaboration']['actions']>
+	typeof actionsToAiTools<Opensidian['collaboration']['actions']>
 >;
 export type SessionTools = SessionAiTools['tools'];
 
@@ -53,7 +53,7 @@ export function createAiChatState({
 	skills,
 }: {
 	auth: AuthClient;
-	binding: OpensidianBinding;
+	binding: Opensidian;
 	skills: SkillState;
 }) {
 	const sessionAiTools = actionsToAiTools(binding.collaboration.actions);

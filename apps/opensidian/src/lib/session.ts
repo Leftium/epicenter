@@ -1,5 +1,5 @@
 import { requireIdentity } from '@epicenter/auth';
-import { createSession, type InferApp } from '@epicenter/svelte';
+import { createSession } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
@@ -12,7 +12,7 @@ import { createSkillState } from './state/skill-state.svelte';
 import { createTerminalState } from './state/terminal-state.svelte';
 import { createSampleDataLoader } from './utils/load-sample-data.svelte';
 
-type OpensidianAppState = {
+type OpensidianState = {
 	editor: ReturnType<typeof createEditorState>;
 	files: ReturnType<typeof createFilesState>;
 	paletteSearch: ReturnType<typeof createPaletteSearchState>;
@@ -61,7 +61,7 @@ export const session = createSession({
 			skills,
 			chat,
 			sampleData,
-		} satisfies OpensidianAppState;
+		} satisfies OpensidianState;
 
 		return {
 			userId,
@@ -78,8 +78,6 @@ export const session = createSession({
 		};
 	},
 });
-
-export type OpensidianApp = InferApp<typeof session>;
 
 export const { requireApp } = session;
 

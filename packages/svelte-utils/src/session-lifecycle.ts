@@ -1,12 +1,5 @@
 import type { AuthClient, AuthState, WorkspaceIdentity } from '@epicenter/auth';
 
-export type SessionLifecycleConfig<T extends Disposable> = {
-	auth: AuthClient;
-	build: (identity: WorkspaceIdentity) => T;
-	getPayload: () => T | null;
-	setPayload: (payload: T | null) => void;
-};
-
 /**
  * Pure lifecycle for the session payload. Builds once per identity, disposes
  * on signed-out. Reactivity is injected via `getPayload`/`setPayload` so this
@@ -23,7 +16,12 @@ export function createSessionLifecycle<T extends Disposable>({
 	build,
 	getPayload,
 	setPayload,
-}: SessionLifecycleConfig<T>) {
+}: {
+	auth: AuthClient;
+	build: (identity: WorkspaceIdentity) => T;
+	getPayload: () => T | null;
+	setPayload: (payload: T | null) => void;
+}) {
 	function reconcile(state: AuthState) {
 		const payload = getPayload();
 		if (state.status === 'signed-out') {

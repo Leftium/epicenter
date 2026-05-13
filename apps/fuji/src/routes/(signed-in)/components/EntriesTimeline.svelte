@@ -16,15 +16,15 @@
 	import { VList } from 'virtua/svelte';
 	import { goto } from '$app/navigation';
 	import { matchesEntrySearch } from '$lib/entries-search';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import type { Entry } from '../fuji/workspace';
 	import { viewState } from '../state/view.svelte';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();
-	const workspace = requireWorkspace();
+	const app = requireApp();
 
 	function createEntry() {
-		const { id } = workspace.fuji.actions.entries.create({});
+		const { id } = app.fuji.collaboration.actions.entries.create({});
 		goto(`/entries/${id}`);
 	}
 

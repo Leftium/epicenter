@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import EntriesTable from '../../components/EntriesTable.svelte';
 	import EntriesTimeline from '../../components/EntriesTimeline.svelte';
 	import { viewState } from '../../state/view.svelte';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 	const tagParam = $derived(decodeURIComponent(page.params.tag ?? ''));
 	const filteredEntries = $derived(
-		workspace.entries.active.filter((e) => e.tags.includes(tagParam)),
+		app.entries.active.filter((e) => e.tags.includes(tagParam)),
 	);
 </script>
 

@@ -1,6 +1,6 @@
 import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { createFujiActions, fujiTables } from './workspace.js';
+import { fujiTables } from './workspace.js';
 
 export const FUJI_WORKSPACE_ID = 'epicenter.fuji';
 
@@ -16,13 +16,11 @@ export function openFuji({
 	const encryption = attachEncryption(ydoc, { encryptionKeys });
 	const tables = encryption.attachTables(fujiTables);
 	const kv = encryption.attachKv({});
-	const actions = createFujiActions(tables);
 	return {
 		ydoc,
 		tables,
 		kv,
 		encryption,
-		actions,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		[Symbol.dispose]() {
 			ydoc.destroy();

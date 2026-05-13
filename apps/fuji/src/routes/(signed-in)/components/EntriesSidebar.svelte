@@ -10,16 +10,16 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { matchesEntrySearch } from '$lib/entries-search';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import { viewState } from '../state/view.svelte';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 	const isSearching = $derived(viewState.searchQuery.trim().length > 0);
 
 	/** Entries matching the search query across title, subtitle, tags, and type. */
 	const searchResults = $derived.by(() => {
 		if (!isSearching) return [];
-		return workspace.entries.active.filter((entry) =>
+		return app.entries.active.filter((entry) =>
 			matchesEntrySearch(entry, viewState.searchQuery),
 		);
 	});
@@ -27,7 +27,7 @@
 	/** Unique types with entry counts, sorted by count descending. */
 	const typeGroups = $derived.by(() => {
 		const counts = new Map<string, number>();
-		for (const entry of workspace.entries.active) {
+		for (const entry of app.entries.active) {
 			for (const t of entry.type) {
 				counts.set(t, (counts.get(t) ?? 0) + 1);
 			}
@@ -40,7 +40,7 @@
 	/** Unique tags with entry counts, sorted by count descending. */
 	const tagGroups = $derived.by(() => {
 		const counts = new Map<string, number>();
-		for (const entry of workspace.entries.active) {
+		for (const entry of app.entries.active) {
 			for (const tag of entry.tags) {
 				counts.set(tag, (counts.get(tag) ?? 0) + 1);
 			}
@@ -52,7 +52,7 @@
 
 	/** Recent entries sorted by updatedAt, limited to 10. */
 	const recentEntries = $derived(
-		[...workspace.entries.active]
+		[...app.entries.active]
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 			.slice(0, 10),
 	);
@@ -89,7 +89,7 @@
 							<FileTextIcon class="size-4" />
 							<span>All Entries</span>
 							<span class="ml-auto text-xs text-muted-foreground">
-								{workspace.entries.active.length}
+								{app.entries.active.length}
 							</span>
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
@@ -100,9 +100,9 @@
 						>
 							<Trash2Icon class="size-4" />
 							<span>Recently Deleted</span>
-							{#if workspace.entries.deleted.length > 0}
+							{#if app.entries.deleted.length > 0}
 								<span class="ml-auto text-xs text-muted-foreground">
-									{workspace.entries.deleted.length}
+									{app.entries.deleted.length}
 								</span>
 							{/if}
 						</Sidebar.MenuButton>

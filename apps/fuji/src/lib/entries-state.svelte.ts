@@ -3,11 +3,11 @@ import type { Fuji } from '../routes/(signed-in)/fuji/browser';
 import type { EntryId } from '../routes/(signed-in)/fuji/workspace';
 
 /**
- * Reactive entries selectors derived from the fuji workspace's entries table.
+ * Reactive entries selectors derived from the fuji binding's entries table.
  *
- * Components read this through `requireWorkspace().entries`; the active and
+ * Components read this through `requireApp().entries`; the active and
  * deleted lists update reactively as entries change. Disposed alongside the
- * workspace.
+ * session.
  */
 export function createEntriesState(fuji: Fuji) {
 	const entriesMap = fromTable(fuji.tables.entries);

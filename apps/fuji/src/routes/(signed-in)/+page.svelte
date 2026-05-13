@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import EntriesTable from './components/EntriesTable.svelte';
 	import EntriesTimeline from './components/EntriesTimeline.svelte';
 	import { viewState } from './state/view.svelte';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 </script>
 
 {#if viewState.viewMode === 'table'}
-	<EntriesTable entries={workspace.entries.active} />
+	<EntriesTable entries={app.entries.active} />
 {:else}
-	<EntriesTimeline entries={workspace.entries.active} />
+	<EntriesTimeline entries={app.entries.active} />
 {/if}

@@ -1,7 +1,7 @@
 import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
-	openWorkspace,
+	openCollaboration,
 	type ProjectDir,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -22,7 +22,7 @@ import {
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
 import { openFuji as openFujiDoc } from './index.js';
-import type { createFujiActions } from './workspace.js';
+import { createFujiActions } from './workspace.js';
 
 export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 
@@ -44,7 +44,8 @@ export function defineFujiDaemon({
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
 			});
-			const workspace = openWorkspace(doc.ydoc, {
+			const actions = createFujiActions(doc.tables);
+			const collaboration = openCollaboration(doc.ydoc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
 				identity: {
@@ -52,7 +53,7 @@ export function defineFujiDaemon({
 					name: 'Fuji Daemon',
 					platform: 'node',
 				},
-				actions: doc.actions,
+				actions,
 			});
 			const sqliteDb = openWriterSqlite({
 				filePath: sqlitePath(projectDir, doc.ydoc.guid),
@@ -67,11 +68,11 @@ export function defineFujiDaemon({
 			}).table(doc.tables.entries, { filename: slugFilename('title') });
 
 			return {
-				workspace,
+				collaboration,
 				yjsLog,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();
-					await Promise.all([workspace.whenDisposed, yjsLog.whenDisposed]);
+					await Promise.all([collaboration.whenDisposed, yjsLog.whenDisposed]);
 				},
 			};
 		},

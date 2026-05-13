@@ -14,7 +14,7 @@
 
 {#if session.current}
 	<WorkspaceGate
-		pending={session.current.workspace.fuji.idb.whenLoaded}
+		pending={session.current.app.fuji.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
 		<FujiAppShell>{@render children?.()}</FujiAppShell>

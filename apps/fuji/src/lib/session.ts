@@ -1,5 +1,5 @@
 import { requireIdentity } from '@epicenter/auth';
-import { createSession, type InferWorkspace } from '@epicenter/svelte';
+import { createSession, type InferApp } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { createEntriesState } from './entries-state.svelte';
@@ -32,8 +32,8 @@ export const session = createSession({
 	},
 });
 
-export const { requireWorkspace } = session;
-export type FujiWorkspace = InferWorkspace<typeof session>;
+export const { requireApp } = session;
+export type FujiBinding = InferApp<typeof session>;
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());

@@ -9,14 +9,14 @@ import {
 	type EncryptionKeys,
 	onLocalUpdate,
 	type OpenWebSocket,
-	openWorkspace,
+	openCollaboration,
 	type PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { openFuji as openFujiDoc } from './index';
-import type { EntryId } from './workspace';
+import { createFujiActions, type EntryId } from './workspace';
 
 function entryContentDocGuid({
 	workspaceId,
@@ -88,19 +88,23 @@ export function openFuji({
 		};
 	});
 
-	const workspace = openWorkspace(doc.ydoc, {
+	const actions = createFujiActions(doc.tables);
+	const collaboration = openCollaboration(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		identity: peer,
-		actions: doc.actions,
+		actions,
 	});
 
 	return {
-		...doc,
+		ydoc: doc.ydoc,
+		tables: doc.tables,
+		kv: doc.kv,
+		batch: doc.batch,
 		idb,
 		entryContentDocs,
-		workspace,
+		collaboration,
 		async wipe() {
 			const fallbackGuids = [
 				doc.ydoc.guid,
@@ -113,7 +117,7 @@ export function openFuji({
 			];
 			entryContentDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
-			await Promise.all([idb.whenDisposed, workspace.whenDisposed]);
+			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: fallbackGuids,

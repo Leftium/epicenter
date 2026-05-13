@@ -3,7 +3,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { openCollaboration, toWsUrl } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import { openOpensidianDoc } from './index.js';
+import { openOpensidianDocument } from './document.js';
 
 export const DEFAULT_OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 
@@ -18,7 +18,7 @@ export function defineOpensidianDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const doc = openOpensidianDoc({
+			const doc = openOpensidianDocument({
 				clientID: hashClientId(projectDir),
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});

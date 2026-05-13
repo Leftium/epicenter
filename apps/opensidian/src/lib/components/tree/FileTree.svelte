@@ -5,82 +5,82 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as TreeView from '@epicenter/ui/tree-view';
-	import { requireApp } from '$lib/session';
+	import { requireOpensidian } from '$lib/session';
 	import FileTreeItem from './FileTreeItem.svelte';
 	import InlineNameInput from './InlineNameInput.svelte';
 
-	const app = requireApp();
+	const opensidian = requireOpensidian();
 	/**
 	 * Flat list of visible item IDs in visual order.
 	 * Respects folder expansion state: collapsed folders hide their descendants.
 	 */
 	const visibleIds = $derived.by(() => {
-		return app.state.files.walkTree<FileId>((id, row) => ({
+		return opensidian.state.files.walkTree<FileId>((id, row) => ({
 			collect: id,
-			descend: row.type === 'folder' && app.state.files.isExpanded(id),
+			descend: row.type === 'folder' && opensidian.state.files.isExpanded(id),
 		}));
 	});
 
 	/** Whether an inline create/rename is active (suppresses tree keyboard shortcuts). */
 	const isEditing = $derived(
-		app.state.files.inlineCreate !== null ||
-			app.state.files.renamingId !== null,
+		opensidian.state.files.inlineCreate !== null ||
+			opensidian.state.files.renamingId !== null,
 	);
 
 	function handleKeydown(e: KeyboardEvent) {
 		// Don't intercept keys while inline editing is active
 		if (isEditing) return;
 
-		const current = app.state.files.focusedId;
+		const current = opensidian.state.files.focusedId;
 		const currentIndex = current ? visibleIds.indexOf(current) : -1;
 
 		switch (e.key) {
 			case 'ArrowDown': {
 				e.preventDefault();
 				if (currentIndex === -1) {
-					app.state.files.focus(visibleIds[0] ?? null);
+					opensidian.state.files.focus(visibleIds[0] ?? null);
 				} else {
 					const next =
 						visibleIds[Math.min(currentIndex + 1, visibleIds.length - 1)];
-					app.state.files.focus(next ?? null);
+					opensidian.state.files.focus(next ?? null);
 				}
 				break;
 			}
 			case 'ArrowUp': {
 				e.preventDefault();
 				if (currentIndex === -1) {
-					app.state.files.focus(visibleIds[0] ?? null);
+					opensidian.state.files.focus(visibleIds[0] ?? null);
 				} else {
 					const prev = visibleIds[Math.max(currentIndex - 1, 0)];
-					app.state.files.focus(prev ?? null);
+					opensidian.state.files.focus(prev ?? null);
 				}
 				break;
 			}
 			case 'ArrowRight': {
 				e.preventDefault();
 				if (!current) break;
-				const row = app.state.files.getFile(current);
+				const row = opensidian.state.files.getFile(current);
 				if (row?.type !== 'folder') break;
-				if (!app.state.files.isExpanded(current)) {
-					app.state.files.toggleExpand(current);
+				if (!opensidian.state.files.isExpanded(current)) {
+					opensidian.state.files.toggleExpand(current);
 				} else {
-					const children = app.state.files.getChildren(current);
+					const children = opensidian.state.files.getChildren(current);
 					if (children.length > 0)
-						app.state.files.focus(children[0] ?? null);
+						opensidian.state.files.focus(children[0] ?? null);
 				}
 				break;
 			}
 			case 'ArrowLeft': {
 				e.preventDefault();
 				if (!current) break;
-				const row = app.state.files.getFile(current);
+				const row = opensidian.state.files.getFile(current);
 				if (
 					row?.type === 'folder' &&
-					app.state.files.isExpanded(current)
+					opensidian.state.files.isExpanded(current)
 				) {
-					app.state.files.toggleExpand(current);
+					opensidian.state.files.toggleExpand(current);
 				} else if (row?.parentId) {
-					app.state.files.focus(row.parentId);
+					opensidian.state.files.focus(row.parentId);
 				}
 				break;
 			}
@@ -88,41 +88,41 @@
 			case ' ': {
 				e.preventDefault();
 				if (!current) break;
-				const row = app.state.files.getFile(current);
+				const row = opensidian.state.files.getFile(current);
 				if (row?.type === 'file') {
-					app.state.files.selectFile(current);
+					opensidian.state.files.selectFile(current);
 				} else if (row?.type === 'folder') {
-					app.state.files.toggleExpand(current);
+					opensidian.state.files.toggleExpand(current);
 				}
 				break;
 			}
 			case 'Home': {
 				e.preventDefault();
-				app.state.files.focus(visibleIds[0] ?? null);
+				opensidian.state.files.focus(visibleIds[0] ?? null);
 				break;
 			}
 			case 'End': {
 				e.preventDefault();
-				app.state.files.focus(visibleIds.at(-1) ?? null);
+				opensidian.state.files.focus(visibleIds.at(-1) ?? null);
 				break;
 			}
 			// ── Inline editing shortcuts ──────────────────────────────
 			case 'n':
 			case 'N': {
 				e.preventDefault();
-				app.state.files.startCreate(e.shiftKey ? 'folder' : 'file');
+				opensidian.state.files.startCreate(e.shiftKey ? 'folder' : 'file');
 				break;
 			}
 			case 'F2': {
 				e.preventDefault();
-				if (current) app.state.files.startRename(current);
+				if (current) opensidian.state.files.startRename(current);
 				break;
 			}
 			case 'Delete':
 			case 'Backspace': {
 				e.preventDefault();
 				if (!current) break;
-				const row = app.state.files.getFile(current);
+				const row = opensidian.state.files.getFile(current);
 				const name = row?.name ?? 'this item';
 				const isFolder = row?.type === 'folder';
 				confirmationDialog.open({
@@ -131,7 +131,7 @@
 						? 'This will delete the folder and all its contents. This action cannot be undone.'
 						: 'This will delete the file. This action cannot be undone.',
 					confirm: { text: 'Delete', variant: 'destructive' },
-					onConfirm: () => app.state.files.deleteFile(current),
+					onConfirm: () => opensidian.state.files.deleteFile(current),
 				});
 				break;
 			}
@@ -141,7 +141,7 @@
 	}
 </script>
 
-{#if app.state.files.rootChildIds.length === 0 && !app.state.files.inlineCreate}
+{#if opensidian.state.files.rootChildIds.length === 0 && !opensidian.state.files.inlineCreate}
 	<Empty.Root class="border-0">
 		<Empty.Header>
 			<Empty.Title>No files yet</Empty.Title>
@@ -152,10 +152,10 @@
 		<Button
 			variant="outline"
 			size="sm"
-			onclick={() => app.state.sampleData.load()}
-			disabled={app.state.sampleData.seeding}
+			onclick={() => opensidian.state.sampleData.load()}
+			disabled={opensidian.state.sampleData.seeding}
 		>
-			{#if app.state.sampleData.seeding}
+			{#if opensidian.state.sampleData.seeding}
 				<Spinner class="size-3.5" />
 			{:else}
 				Load Sample Data
@@ -168,14 +168,14 @@
 		aria-label="File explorer"
 		onkeydown={handleKeydown}
 	>
-		{#each app.state.files.rootChildIds as childId (childId)}
+		{#each opensidian.state.files.rootChildIds as childId (childId)}
 			<FileTreeItem id={childId} />
 		{/each}
-		{#if app.state.files.inlineCreate?.parentId === null}
+		{#if opensidian.state.files.inlineCreate?.parentId === null}
 			<InlineNameInput
-				icon={app.state.files.inlineCreate.type}
-				onConfirm={app.state.files.confirmCreate}
-				onCancel={app.state.files.cancelCreate}
+				icon={opensidian.state.files.inlineCreate.type}
+				onConfirm={opensidian.state.files.confirmCreate}
+				onCancel={opensidian.state.files.cancelCreate}
 			/>
 		{/if}
 	</TreeView.Root>

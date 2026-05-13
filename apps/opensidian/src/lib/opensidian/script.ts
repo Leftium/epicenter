@@ -11,9 +11,9 @@ import {
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import { openOpensidianDoc } from './index.js';
+import { openOpensidianDocument } from './document.js';
 
-export async function openOpensidian({
+export async function openOpensidianBrowser({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 }: {
@@ -21,7 +21,7 @@ export async function openOpensidian({
 	clientID?: number;
 }) {
 	const auth = await createMachineAuthClient();
-	const doc = openOpensidianDoc({
+	const doc = openOpensidianDocument({
 		clientID,
 		encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 	});

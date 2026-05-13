@@ -3,7 +3,7 @@ import { createSession } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
-import { openOpensidian } from './opensidian/browser';
+import { openOpensidianBrowser } from './opensidian/browser';
 import { createEditorState } from './state/editor-state.svelte';
 import { createFilesState } from './state/files-state.svelte';
 import { createPaletteSearchState } from './state/palette-search-state.svelte';
@@ -12,23 +12,11 @@ import { createSkillState } from './state/skill-state.svelte';
 import { createTerminalState } from './state/terminal-state.svelte';
 import { createSampleDataLoader } from './utils/load-sample-data.svelte';
 
-type OpensidianState = {
-	editor: ReturnType<typeof createEditorState>;
-	files: ReturnType<typeof createFilesState>;
-	paletteSearch: ReturnType<typeof createPaletteSearchState>;
-	sidebarSearch: ReturnType<typeof createSidebarSearchState>;
-	terminal: ReturnType<typeof createTerminalState>;
-	skills: ReturnType<typeof createSkillState>;
-	chat: ReturnType<typeof createAiChatState>;
-	sampleData: ReturnType<typeof createSampleDataLoader>;
-};
-
 export const session = createSession({
 	auth,
 	build: (identity) => {
-		const userId = identity.user.id;
-		const opensidian = openOpensidian({
-			userId,
+		const opensidian = openOpensidianBrowser({
+			userId: identity.user.id,
 			peer: {
 				id: getOrCreateInstallationId(localStorage),
 				name: 'Opensidian',
@@ -61,11 +49,10 @@ export const session = createSession({
 			skills,
 			chat,
 			sampleData,
-		} satisfies OpensidianState;
+		};
 
 		return {
-			userId,
-			opensidian,
+			...opensidian,
 			state,
 			[Symbol.dispose]() {
 				chat[Symbol.dispose]();
@@ -77,16 +64,24 @@ export const session = createSession({
 			},
 		};
 	},
+	onDifferentUser: () => location.reload(),
 });
 
-export const { requireApp } = session;
+export function requireOpensidian() {
+	if (!session.current) {
+		throw new Error(
+			'requireOpensidian() called without an authenticated session.',
+		);
+	}
+	return session.current;
+}
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());
 }
 
 export async function forgetOpensidianDevice(): Promise<void> {
-	const app = requireApp();
-	await app.opensidian.wipe();
+	const opensidian = requireOpensidian();
+	await opensidian.wipe();
 	window.location.reload();
 }

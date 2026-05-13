@@ -22,7 +22,7 @@ type InteractionMode =
  *
  * Follows the tab-manager pattern: a factory function creates all state.
  * The session creates one instance and exposes it at
- * `app.state.files`.
+ * `opensidian.state.files`.
  *
  * Reactivity: `fromTable()` provides a reactive `SvelteMap` that updates
  * granularly per-row. `childrenOf` derives tree structure eagerly (O(n)
@@ -33,8 +33,8 @@ type InteractionMode =
  * @example
  * ```svelte
  * <script>
- *   const app = requireApp();
- *   const children = app.state.files.rootChildIds;
+ *   const opensidian = requireOpensidian();
+ *   const children = opensidian.state.files.rootChildIds;
  * </script>
  * ```
  */

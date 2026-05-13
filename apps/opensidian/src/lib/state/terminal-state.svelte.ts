@@ -22,7 +22,7 @@ type TerminalEntry =
  * Follows the same factory pattern as `files-state.svelte.ts`: a factory
  * function creates all `$state` and exposes a public API via a returned
  * object with getters. The session exposes it at
- * `app.state.terminal`.
+ * `opensidian.state.terminal`.
  *
  * Manages:
  * - **History**: scrollable list of input/output entries
@@ -33,8 +33,8 @@ type TerminalEntry =
  * @example
  * ```svelte
  * <script>
- *   const app = requireApp();
- *   app.state.terminal.open // reactive boolean
+ *   const opensidian = requireOpensidian();
+ *   opensidian.state.terminal.open // reactive boolean
  * </script>
  * ```
  */

@@ -21,9 +21,9 @@ import {
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
-import { openOpensidianDoc } from './index';
+import { openOpensidianDocument } from './document.js';
 
-export function openOpensidian({
+export function openOpensidianBrowser({
 	userId,
 	peer,
 	openWebSocket,
@@ -34,7 +34,7 @@ export function openOpensidian({
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openOpensidianDoc({ encryptionKeys });
+	const doc = openOpensidianDocument({ encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
@@ -149,4 +149,4 @@ export function openOpensidian({
 	};
 }
 
-export type Opensidian = ReturnType<typeof openOpensidian>;
+export type OpensidianBrowser = ReturnType<typeof openOpensidianBrowser>;

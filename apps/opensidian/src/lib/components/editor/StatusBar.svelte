@@ -8,9 +8,9 @@
 	import MessageSquareIcon from '@lucide/svelte/icons/message-square';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import { requireApp } from '$lib/session';
+	import { requireOpensidian } from '$lib/session';
 
-	const app = requireApp();
+	const opensidian = requireOpensidian();
 	let { chatOpen = $bindable(false) }: { chatOpen: boolean } = $props();
 
 	let popoverOpen = $state(false);
@@ -20,16 +20,16 @@
 	class="flex h-6 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground"
 >
 	<span
-		>Ln {app.state.editor.cursorLine}, Col
-		{app.state.editor.cursorCol}</span
+		>Ln {opensidian.state.editor.cursorLine}, Col
+		{opensidian.state.editor.cursorCol}</span
 	>
 
-	{#if app.state.editor.selectionLength > 0}
-		<span>{app.state.editor.selectionLength} selected</span>
+	{#if opensidian.state.editor.selectionLength > 0}
+		<span>{opensidian.state.editor.selectionLength} selected</span>
 	{/if}
 
-	<span>{app.state.editor.wordCount} words</span>
-	<span>{app.state.editor.lineCount} lines</span>
+	<span>{opensidian.state.editor.wordCount} words</span>
+	<span>{opensidian.state.editor.lineCount} lines</span>
 
 	<div class="ml-auto flex items-center gap-1.5">
 		<Tooltip.Provider>
@@ -38,10 +38,10 @@
 					{#snippet child({ props })}
 						<Button
 							{...props}
-							variant={app.state.terminal.open ? 'secondary': 'ghost'}
+							variant={opensidian.state.terminal.open ? 'secondary': 'ghost'}
 							size="sm"
 							class="h-5 gap-1 px-1.5 text-xs text-muted-foreground"
-							onclick={() => app.state.terminal.toggle()}
+							onclick={() => opensidian.state.terminal.toggle()}
 						>
 							<TerminalIcon class="size-3" />
 							Terminal
@@ -69,7 +69,7 @@
 			</Tooltip.Root>
 		</Tooltip.Provider>
 
-		{#if app.state.editor.vimEnabled}
+		{#if opensidian.state.editor.vimEnabled}
 			<span class="font-mono text-[10px] font-medium uppercase tracking-wider"
 				>vim</span
 			>
@@ -86,11 +86,11 @@
 					<Label for="vim-mode" class="text-sm">Vim mode</Label>
 					<Switch
 						id="vim-mode"
-						checked={app.state.editor.vimEnabled}
-						onCheckedChange={() => app.state.editor.toggleVim()}
+						checked={opensidian.state.editor.vimEnabled}
+						onCheckedChange={() => opensidian.state.editor.toggleVim()}
 					/>
 				</div>
-				{#if app.state.editor.vimEnabled}
+				{#if opensidian.state.editor.vimEnabled}
 					<p class="text-xs text-muted-foreground">
 						Browser extensions like Vimium can intercept Escape and break vim
 						keybindings: disable them for this site if keys aren't working.

@@ -6,12 +6,12 @@
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import { PROVIDER_MODELS, type Provider } from '$lib/chat/providers';
 
-	import { requireApp } from '$lib/session';
+	import { requireOpensidian } from '$lib/session';
 
-	const app = requireApp();
+	const opensidian = requireOpensidian();
 	const providers = Object.keys(PROVIDER_MODELS) as Provider[];
 	const models = $derived(
-		app.state.chat.modelsForProvider(app.state.chat.provider),
+		opensidian.state.chat.modelsForProvider(opensidian.state.chat.provider),
 	);
 
 	let inputValue = $state('');
@@ -20,7 +20,7 @@
 		const content = inputValue.trim();
 		if (!content) return;
 		inputValue = '';
-		app.state.chat.sendMessage(content);
+		opensidian.state.chat.sendMessage(content);
 	}
 </script>
 
@@ -29,13 +29,13 @@
 	<div class="flex gap-2">
 		<Select.Root
 			type="single"
-			value={app.state.chat.provider}
+			value={opensidian.state.chat.provider}
 			onValueChange={(v) => {
-				if (v) app.state.chat.provider = v as Provider;
+				if (v) opensidian.state.chat.provider = v as Provider;
 			}}
 		>
 			<Select.Trigger size="sm" class="w-[120px]">
-				{app.state.chat.provider || 'Provider\u2026'}
+				{opensidian.state.chat.provider || 'Provider\u2026'}
 			</Select.Trigger>
 			<Select.Content>
 				{#each providers as p (p)}
@@ -46,14 +46,14 @@
 
 		<Select.Root
 			type="single"
-			value={app.state.chat.model}
+			value={opensidian.state.chat.model}
 			onValueChange={(v) => {
-				if (v) app.state.chat.model = v;
+				if (v) opensidian.state.chat.model = v;
 			}}
 		>
 			<Select.Trigger size="sm" class="flex-1">
 				<span class="truncate"
-					>{app.state.chat.model || 'Model\u2026'}</span
+					>{opensidian.state.chat.model || 'Model\u2026'}</span
 				>
 			</Select.Trigger>
 			<Select.Content>
@@ -85,12 +85,12 @@
 				}
 			}}
 		/>
-		{#if app.state.chat.isLoading}
+		{#if opensidian.state.chat.isLoading}
 			<Button
 				variant="outline"
 				size="icon-lg"
 				type="button"
-				onclick={() => app.state.chat.stop()}
+				onclick={() => opensidian.state.chat.stop()}
 			>
 				<SquareIcon />
 			</Button>

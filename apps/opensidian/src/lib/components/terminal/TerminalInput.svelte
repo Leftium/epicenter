@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 
-	import { requireApp } from '$lib/session';
+	import { requireOpensidian } from '$lib/session';
 
-	const app = requireApp();
+	const opensidian = requireOpensidian();
 	let value = $state('');
 	let inputEl: HTMLInputElement | undefined = $state();
 
 	async function handleSubmit() {
 		const cmd = value;
 		value = '';
-		await app.state.terminal.exec(cmd);
-		if (app.state.terminal.open) {
+		await opensidian.state.terminal.exec(cmd);
+		if (opensidian.state.terminal.open) {
 			await tick();
 			inputEl?.focus();
 		}
@@ -23,11 +23,11 @@
 			handleSubmit();
 		} else if (e.key === 'ArrowUp') {
 			e.preventDefault();
-			const prev = app.state.terminal.previousCommand();
+			const prev = opensidian.state.terminal.previousCommand();
 			if (prev !== undefined) value = prev;
 		} else if (e.key === 'ArrowDown') {
 			e.preventDefault();
-			const next = app.state.terminal.nextCommand();
+			const next = opensidian.state.terminal.nextCommand();
 			value = next ?? '';
 		}
 	}
@@ -47,8 +47,8 @@
 		bind:this={inputEl}
 		bind:value
 		onkeydown={handleKeydown}
-		disabled={app.state.terminal.running}
-		placeholder={app.state.terminal.running ? 'Running...': 'Type a command...'}
+		disabled={opensidian.state.terminal.running}
+		placeholder={opensidian.state.terminal.running ? 'Running...': 'Type a command...'}
 		aria-label="Terminal command input"
 		class="flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
 		spellcheck="false"

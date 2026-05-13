@@ -1,20 +1,23 @@
 /**
  * Read-only handle on the daemon's materialized SQLite mirror file.
  *
- * `attachSqlite` runs on the daemon side and writes the mirror
- * in WAL journal mode (one writer, many readers, MVCC snapshots). Script
- * peers open the same file via `attachSqliteReader({ filePath })`, get a
- * read-only `Database` handle plus an FTS5 `search()` helper symmetric
- * with the writer's, and skip the cold-start cost of computing the index
- * themselves.
+ * `attachSqliteMaterializer` runs on the daemon side and writes the mirror in
+ * WAL journal mode (one writer, many readers, MVCC snapshots). Script peers
+ * open the same file via `openSqliteReader({ filePath })`, get a read-only
+ * `Database` handle plus an FTS5 `search()` helper symmetric with the
+ * writer's, and skip the cold-start cost of computing the index themselves.
  *
  * Output handle:
  *   { db, search(table, query, opts?), [Symbol.dispose]() }
  *
  * `db` is a `bun:sqlite` `Database` opened with `{ readonly: true }` and
  * `PRAGMA query_only = ON`, so any errant write attempt fails fast at the
- * driver. Wrapping it in Drizzle (`drizzle(mirror.db, { schema })`) is the
+ * driver. Wrapping it in Drizzle (`drizzle(reader.db, { schema })`) is the
  * per-app peer factory's job; this primitive intentionally stays narrow.
+ *
+ * Named `open*` rather than `attach*` because it has no Y.Doc subject and
+ * registers no listeners. The caller owns the lifecycle through `using` or
+ * an explicit `[Symbol.dispose]()` call.
  *
  * The mirror does not observe schema changes or ydoc state. It is a thin
  * wrapper around an on-disk file the daemon owns; if the daemon hasn't
@@ -23,14 +26,16 @@
  */
 
 import { Database } from 'bun:sqlite';
-import { quoteIdentifier } from './sqlite/ddl.js';
-import { ftsSearch } from './sqlite/fts.js';
-import type { SearchOptions, SearchResult } from './sqlite/types.js';
+import { quoteIdentifier } from './materializer/sqlite/ddl.js';
+import type {
+	SearchOptions,
+	SearchResult,
+} from './materializer/sqlite/types.js';
 
 /**
- * Options for {@link attachSqliteReader}.
+ * Options for {@link openSqliteReader}.
  */
-export type AttachSqliteReaderOptions = {
+export type OpenSqliteReaderOptions = {
 	/**
 	 * Absolute path to the daemon's mirror SQLite file. Typically
 	 * `sqlitePath(projectDir, ydoc.guid)`.
@@ -41,12 +46,12 @@ export type AttachSqliteReaderOptions = {
 /**
  * Read-only handle on the daemon's materialized SQLite mirror.
  *
- * Returned by {@link attachSqliteReader}. Disposable via the
+ * Returned by {@link openSqliteReader}. Disposable via the
  * explicit-resource-management protocol: declare with
- * `using reader = attachSqliteReader(...)` and the underlying database
+ * `using reader = openSqliteReader(...)` and the underlying database
  * handle closes on scope exit.
  */
-export type SqliteReaderAttachment = {
+export type SqliteReader = {
 	/**
 	 * The opened SQLite database handle. Read-only; `query_only` PRAGMA is
 	 * set so accidental writes fail at the driver layer.
@@ -76,21 +81,21 @@ export type SqliteReaderAttachment = {
  *
  * @example
  * ```ts
- * using reader = attachSqliteReader({
+ * using reader = openSqliteReader({
  *   filePath: sqlitePath(projectDir, fuji.ydoc.guid),
  * });
  * const hits = reader.search('entries', 'hello world', { limit: 25 });
  * const drizzleDb = drizzle(reader.db, { schema });
  * ```
  */
-export function attachSqliteReader({
+export function openSqliteReader({
 	filePath,
-}: AttachSqliteReaderOptions): SqliteReaderAttachment {
+}: OpenSqliteReaderOptions): SqliteReader {
 	const db = new Database(filePath, { readonly: true });
 	db.run('PRAGMA query_only = ON');
 	// Wait up to 5s on SQLITE_BUSY when a reader opens during a checkpoint
 	// instead of surfacing the error to callers. The writer
-	// (`attachSqlite`) sets the same value.
+	// (`attachSqliteMaterializer`) sets the same value.
 	db.run('PRAGMA busy_timeout = 5000');
 
 	let isDisposed = false;
@@ -113,12 +118,41 @@ export function attachSqliteReader({
 	function search(
 		tableName: string,
 		query: string,
-		options?: SearchOptions,
+		{ limit = 50, snippetColumn }: SearchOptions = {},
 	): SearchResult[] {
 		if (isDisposed) return [];
+		const trimmed = query.trim();
+		if (!trimmed) return [];
+
 		const ftsColumns = ftsColumnsFor(tableName);
 		if (ftsColumns.length === 0) return [];
-		return ftsSearch(db, tableName, ftsColumns, query, options);
+
+		const snippetColumnIndex = snippetColumn
+			? Math.max(ftsColumns.indexOf(snippetColumn), 0)
+			: 0;
+
+		const qt = quoteIdentifier(tableName);
+		const qfts = quoteIdentifier(`${tableName}_fts`);
+		const rows = db
+			.query(
+				`SELECT ${qt}.${quoteIdentifier('id')} AS id,\n` +
+					`  snippet(${qfts}, ${snippetColumnIndex}, '<mark>', '</mark>', '...', 64) AS snippet,\n` +
+					`  rank\n` +
+					`FROM ${qfts}\n` +
+					`JOIN ${qt} ON ${qt}.rowid = ${qfts}.rowid\n` +
+					`WHERE ${qfts} MATCH ?\n` +
+					`ORDER BY rank LIMIT ?`,
+			)
+			.all(trimmed, limit);
+
+		return rows.map((row) => {
+			const result = row as Record<string, unknown>;
+			return {
+				id: String(result.id),
+				snippet: String(result.snippet ?? ''),
+				rank: Number(result.rank ?? 0),
+			};
+		});
 	}
 
 	function dispose() {

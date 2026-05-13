@@ -148,7 +148,7 @@ export type SyncAttachment = {
 	 * Browser apps generally await `idb.whenLoaded` to render; only CLIs
 	 * and tools that strictly need remote state await `whenConnected`.
 	 */
-	whenConnected: Promise<unknown>;
+	whenConnected: Promise<void>;
 	/** Current connection status. */
 	readonly status: SyncStatus;
 	/** Subscribe to status changes. Returns unsubscribe function. */
@@ -159,7 +159,7 @@ export type SyncAttachment = {
 	 * Resolves after `ydoc.destroy()` fires the cascade, the supervisor loop exits,
 	 * and any open websocket closes or reaches the safety timeout.
 	 */
-	whenDisposed: Promise<unknown>;
+	whenDisposed: Promise<void>;
 	attachRpc(actions: RpcActionSource): SyncRpcAttachment;
 };
 
@@ -177,22 +177,11 @@ export type SyncRpcAttachment = {
 	): Promise<Result<TMap[TAction]['output'], RpcError>>;
 };
 
-/**
- * Anything with a `.whenLoaded` promise (typically `attachIndexedDb` or
- * `attachSqlite` results). Lets `waitFor` accept the attachment directly
- * rather than reaching into `.whenLoaded`.
- */
-export type WaitForBarrier =
-	| Promise<unknown>
-	| { whenLoaded: Promise<unknown> };
-
-/** First arg of `attachSync`: either a bare `Y.Doc` or a doc bundle. */
-export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc };
-
 export type OpenWebSocket = (
 	url: string | URL,
 	protocols?: string[],
 ) => Promise<WebSocket> | WebSocket;
+
 
 export type SyncAttachmentConfig = {
 	/**
@@ -201,13 +190,12 @@ export type SyncAttachmentConfig = {
 	 */
 	url: string;
 	/**
-	 * Gate the first connection attempt on another promise (typically
-	 * `attachIndexedDb(ydoc).whenLoaded`). Accepts the attachment directly
-	 * (uses its `.whenLoaded`) or a raw promise. Without this, the supervisor
+	 * Gate the first connection attempt on another promise, typically
+	 * `attachIndexedDb(ydoc).whenLoaded`. Without this, the supervisor
 	 * connects before local state hydrates and the handshake transfers the
 	 * full document instead of just the delta.
 	 */
-	waitFor?: WaitForBarrier;
+	waitFor?: Promise<unknown>;
 	/**
 	 * Optional WebSocket opener for auth-owned transport setup.
 	 *
@@ -286,17 +274,13 @@ export function toWsUrl(httpUrl: string): string {
 }
 
 export function attachSync(
-	doc: AttachSyncDoc,
+	ydoc: Y.Doc,
 	config: SyncAttachmentConfig,
 ): SyncAttachment {
-	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
 	let rpcActions: Record<string, unknown> | null = null;
 	const awareness = config.awareness?.raw ?? null;
 
-	const waitForPromise =
-		config.waitFor && 'whenLoaded' in config.waitFor
-			? config.waitFor.whenLoaded
-			: config.waitFor;
+	const waitForPromise = config.waitFor;
 
 	const log = config.log ?? createLogger('attachSync');
 
@@ -321,53 +305,13 @@ export function attachSync(
 				break;
 		}
 	}
-	// `whenConnected` settles in one of two ways: resolved when the first
-	// successful handshake lands (STEP2/UPDATE), rejected when the doc is
-	// destroyed before that happens. Without the destroy-side rejection,
-	// callers awaiting `whenConnected` against a permanently dead URL or
-	// failed auth would hang forever.
-	const {
-		promise: whenConnected,
-		resolve: resolveConnected,
-		reject: rejectConnected,
-	} = Promise.withResolvers<void>();
-	let connectedSettled = false;
-	const settleConnected = (op: () => void) => {
-		if (connectedSettled) return;
-		connectedSettled = true;
-		op();
-	};
+
+	// `whenConnected` settles once: resolved when the first successful handshake
+	// lands (STEP2/UPDATE), rejected on permanent server auth failure (close
+	// 4401) or on doc destroy before the first handshake. Settled directly at
+	// each transition site below (no internal status subscription).
+	const connected = createOneShotPromise<void>();
 	const backoff = createBackoff();
-
-	/**
-	 * Set when the server signals permanent failure via close 4401. Read by
-	 * `runLoop` to break the retry loop, and cleared by `reconnect()` so a
-	 * subsequent attempt can leave the `failed` phase.
-	 */
-	let permanentFailure: SyncFailedReason | null = null;
-
-	// `whenConnected` settles off status transitions. The first `connected`
-	// resolves it; the first `failed` rejects with a typed `SyncFailedError`.
-	// Doc-destroy still rejects via the destroy handler below; `connectedSettled`
-	// gates double-settle.
-	const unsubFirstSettle = status.subscribe((s) => {
-		if (s.phase === 'connected') {
-			settleConnected(resolveConnected);
-			unsubFirstSettle();
-		} else if (s.phase === 'failed') {
-			// Attach the no-op catch BEFORE rejecting so the rejection isn't
-			// unhandled when no consumer awaits (same pattern as the dispose
-			// path further down).
-			whenConnected.catch(() => {});
-			const reason = s.reason;
-			settleConnected(() => {
-				rejectConnected(
-					SyncFailedError.AuthRejected({ code: reason.code }).error,
-				);
-			});
-			unsubFirstSettle();
-		}
-	});
 
 	/**
 	 * Cancellation hierarchy:
@@ -379,27 +323,22 @@ export function attachSync(
 	 * `cycleController` is replaced (not just re-aborted) by `reconnect()` so
 	 * the new connection cycle has a fresh signal unrelated to the old one.
 	 * Aborting an already-aborted controller is a no-op, which makes repeated
-	 * reconnects structurally safe.
+	 * reconnects structurally safe. The supervisor reads `cycleController.signal`
+	 * fresh at the top of each iteration; aborting the old one wakes a parked
+	 * supervisor and the next iteration picks up the replacement.
 	 */
 	const masterController = new AbortController();
 	let cycleController: AbortController = childOf(masterController.signal);
-	let waitForSettled = false;
-	let destroyStarted = false;
 
 	/** Current WebSocket instance, or null. */
 	let websocket: WebSocket | null = null;
 
-	/**
-	 * Promise of the currently-running supervisor loop, or null when no loop
-	 * is running. `ensureSupervisor` starts one if absent; teardown awaits it.
-	 */
-	let loopPromise: Promise<void> | null = null;
-
 	// RPC state.
 	//
-	// `pendingRequests` tracks outbound RPCs awaiting a response. Cleared on
-	// disconnect (the next connection is a fresh server-side context, so any
-	// in-flight request from the prior connection will never resolve).
+	// `pendingRequests` tracks outbound RPCs awaiting a response. Cleared in
+	// `ws.onclose`: the next connection is a fresh server-side context, so any
+	// in-flight request from the prior connection will never resolve, and the
+	// caller deserves an immediate `Disconnected` instead of a timeout.
 	const pendingRequests = new Map<
 		number,
 		{
@@ -410,7 +349,6 @@ export function attachSync(
 	>();
 	let nextRequestId = 0;
 
-	/** Resolve all pending RPC requests with Disconnected and clear state. */
 	function clearPendingRequests() {
 		const disconnected = RpcError.Disconnected();
 		for (const [, pending] of pendingRequests) {
@@ -418,7 +356,6 @@ export function attachSync(
 			pending.resolve(disconnected);
 		}
 		pendingRequests.clear();
-		nextRequestId = 0;
 	}
 
 	/**
@@ -522,83 +459,31 @@ export function attachSync(
 		removeAwarenessStates(awareness, remoteClientIds, SYNC_ORIGIN);
 	}
 
-	// ── Browser event handlers ──
-
-	function handleOnline() {
-		backoff.wake();
-	}
-
-	function handleOffline() {
-		websocket?.close();
-	}
-
-	function handleVisibilityChange() {
-		if (document.visibilityState !== 'visible') return;
-		// Wakeup ping after the tab returns to foreground. The server is
-		// expected to echo any inbound message via `liveness.touch()`, so
-		// this also probes "is the wire actually responsive?" beyond what
-		// the 60s PING_INTERVAL_MS keepalive covers. If the server doesn't
-		// echo strings, focus events become a no-op for liveness. The
-		// 90s LIVENESS_TIMEOUT_MS still catches a dead wire eventually.
-		if (websocket?.readyState === WebSocket.OPEN) {
-			websocket.send('ping');
-		}
-	}
-
-	function manageWindowListeners(action: 'add' | 'remove') {
-		const method =
-			action === 'add' ? 'addEventListener' : 'removeEventListener';
-		if (typeof window !== 'undefined') {
-			window[method]('offline', handleOffline);
-			window[method]('online', handleOnline);
-		}
-		if (typeof document !== 'undefined') {
-			document[method]('visibilitychange', handleVisibilityChange);
-		}
-	}
-
-	// Supervisor loop.
-
-	async function runLoop(signal: AbortSignal) {
-		let lastError: SyncError | undefined;
-
-		while (!signal.aborted && !permanentFailure) {
-			// Pending RPCs from the previous connection will never resolve.
-			// clear them before starting a new attempt.
-			clearPendingRequests();
-
-			setStatus({ phase: 'connecting', retries: backoff.retries, lastError });
-
-			const result = await attemptConnection(signal);
-			if (signal.aborted) break;
-
-			if (result === 'connected') {
-				backoff.reset();
-				lastError = undefined;
-			} else {
-				lastError = { type: 'connection' };
-			}
-
-			if (!signal.aborted) {
-				await backoff.sleep(signal);
-			}
-		}
-
-		setStatus(
-			permanentFailure
-				? { phase: 'failed', reason: permanentFailure }
-				: { phase: 'offline' },
-		);
-		log.info('sync supervisor exited', {
-			cause: permanentFailure
-				? 'permanent-failure'
-				: signal.aborted && destroyStarted
-					? 'doc-destroyed'
-					: signal.aborted
-						? 'dispose'
-						: 'offline',
-			docGuid: ydoc.guid,
+	// Browser online/offline/visibility wakeups. Auto-removed when the master
+	// signal aborts (i.e., on doc destroy). All three are no-ops when the
+	// supervisor isn't actively trying to connect, so attaching at construction
+	// time before `waitFor` settles is harmless.
+	if (typeof window !== 'undefined') {
+		window.addEventListener('online', () => backoff.wake(), {
+			signal: masterController.signal,
 		});
+		window.addEventListener('offline', () => websocket?.close(), {
+			signal: masterController.signal,
+		});
+	}
+	if (typeof document !== 'undefined') {
+		// Visibility ping probes "is the wire responsive?" when a tab returns
+		// to foreground, beyond what the 60s PING_INTERVAL_MS keepalive covers.
+		// If the server doesn't echo strings, this is a no-op; the 90s
+		// LIVENESS_TIMEOUT_MS still catches a dead wire eventually.
+		document.addEventListener(
+			'visibilitychange',
+			() => {
+				if (document.visibilityState !== 'visible') return;
+				if (websocket?.readyState === WebSocket.OPEN) websocket.send('ping');
+			},
+			{ signal: masterController.signal },
+		);
 	}
 
 	async function attemptConnection(
@@ -673,9 +558,13 @@ export function attachSync(
 			cleanupAbortListener();
 			liveness.stop();
 			removeRemoteAwarenessStates();
+			clearPendingRequests();
 			const failure = parsePermanentFailure(event);
 			if (failure) {
-				permanentFailure = failure;
+				setStatus({ phase: 'failed', reason: failure });
+				connected.reject(
+					SyncFailedError.AuthRejected({ code: failure.code }).error,
+				);
 				log.warn(
 					SyncSupervisorError.PermanentClose({
 						closeCode: event.code,
@@ -719,6 +608,7 @@ export function attachSync(
 					) {
 						handshakeComplete = true;
 						setStatus({ phase: 'connected' });
+						connected.resolve();
 					}
 					break;
 				}
@@ -768,89 +658,110 @@ export function attachSync(
 		return handshakeComplete ? 'connected' : 'failed';
 	}
 
-	function ensureSupervisor() {
+	// One supervisor task, started after `waitFor` settles, lives until master
+	// abort. Each iteration reads `cycleController.signal` fresh so `reconnect()`
+	// just swaps the controller and aborts the old; the supervisor wakes
+	// (either from `attemptConnection`, `backoff.sleep`, or the parked-on-failed
+	// `waitForAbort`) and the next iteration picks up the replacement.
+	const supervisorPromise = (async () => {
+		// Race `waitFor` against doc destroy so we don't hang forever if a
+		// caller passes a never-settling barrier and then destroys the doc.
+		// The `.catch` on `waitForPromise` is unconditional so a late rejection
+		// (after the race has already resolved via abort) does not surface as an
+		// unhandled rejection.
+		if (waitForPromise) {
+			const settled = Promise.resolve(waitForPromise).catch((cause) => {
+				if (masterController.signal.aborted) return;
+				log.warn(SyncSupervisorError.WaitForRejected({ cause }));
+			});
+			await Promise.race([settled, waitForAbort(masterController.signal)]);
+		}
 		if (masterController.signal.aborted) return;
-		if (!waitForSettled) return;
-		if (loopPromise) return;
-		manageWindowListeners('add');
-		const signal = cycleController.signal;
-		loopPromise = runLoop(signal).finally(() => {
-			loopPromise = null;
-			// If `reconnect()` swapped in a fresh cycleController while we were
-			// draining (e.g., a status subscriber called `reconnect()` from
-			// inside `runLoop`'s synchronous tail), the new cycle won't have
-			// started yet. Detect this and chain a fresh loop. Without this,
-			// the reconnect's `ensureSupervisor` early-returned because
-			// loopPromise was still set, and the supervisor would silently die.
-			if (
-				!masterController.signal.aborted &&
-				!permanentFailure &&
-				cycleController.signal !== signal &&
-				!cycleController.signal.aborted
-			) {
-				ensureSupervisor();
+
+		let lastError: SyncError | undefined;
+
+		try {
+			while (!masterController.signal.aborted) {
+				// In `failed`, park until reconnect aborts the cycle to wake us.
+				// `reconnect` swaps `cycleController` first, then aborts the old
+				// one, so on wake we read the fresh signal next iteration.
+				if (status.get().phase === 'failed') {
+					await waitForAbort(cycleController.signal);
+					continue;
+				}
+
+				const signal = cycleController.signal;
+
+				setStatus({
+					phase: 'connecting',
+					retries: backoff.retries,
+					lastError,
+				});
+
+				const result = await attemptConnection(signal);
+				if (masterController.signal.aborted) break;
+
+				if (result === 'connected') {
+					backoff.reset();
+					lastError = undefined;
+				} else {
+					lastError = { type: 'connection' };
+				}
+
+				if (
+					!masterController.signal.aborted &&
+					status.get().phase !== 'failed' &&
+					!signal.aborted
+				) {
+					await backoff.sleep(signal);
+				}
 			}
-		});
-	}
+		} finally {
+			if (status.get().phase !== 'failed') setStatus({ phase: 'offline' });
+			log.info('sync supervisor exited', {
+				phase: status.get().phase,
+				docGuid: ydoc.guid,
+			});
+		}
+	})();
 
 	function reconnect() {
 		if (masterController.signal.aborted) return;
-		permanentFailure = null;
-		cycleController.abort();
+		// Clear the terminal `failed` phase so the supervisor unparks and tries
+		// again. The status emit also notifies external subscribers.
+		if (status.get().phase === 'failed') setStatus({ phase: 'offline' });
+		const old = cycleController;
 		cycleController = childOf(masterController.signal);
 		backoff.reset();
-		if (waitForSettled) manageWindowListeners('add');
-		ensureSupervisor();
+		old.abort();
 	}
 
-	// ── Attach listeners + start ──
+	// ── Attach listeners + teardown ──
 
 	ydoc.on('updateV2', handleDocUpdate);
 	awareness?.on('update', handleAwarenessUpdate);
-
-	// Gate the first connection on `waitFor` (typically idb.whenLoaded).
-	// If `waitFor` rejects, log but still start: better to try syncing than
-	// silently stay offline because persistence failed.
-	void (async () => {
-		try {
-			await waitForPromise;
-		} catch (cause) {
-			log.warn(SyncSupervisorError.WaitForRejected({ cause }));
-		}
-		waitForSettled = true;
-		ensureSupervisor();
-	})();
-
-	// Teardown.
 
 	// `whenDisposed` resolves only after the supervisor loop has fully exited
 	// and any still-open socket has hit CLOSED, or the safety timeout elapses.
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
 	ydoc.once('destroy', async () => {
-		destroyStarted = true;
 		try {
 			// Master abort cascades to cycleController (closes ws, wakes
-			// backoff sleep, fires attemptConnection's abort listener).
+			// backoff sleep, fires attemptConnection's abort listener, and
+			// unparks the supervisor if it was waiting in the `failed` phase).
 			masterController.abort();
 			// Reject `whenConnected` if dispose lands before the first handshake
-			// (permanent failure: dead URL, denied auth). Callers awaiting it
-			// would otherwise hang forever. The doc is gone, so the promise must
-			// settle. Attach a no-op catch BEFORE rejecting so the rejection
-			// isn't unhandled when no consumer awaits.
-			whenConnected.catch(() => {});
-			settleConnected(() => {
-				rejectConnected(
-					new Error('[attachSync] doc destroyed before first handshake'),
-				);
-			});
+			// (permanent failure: dead URL, denied auth, dispose during outage).
+			// Callers awaiting it would otherwise hang forever.
+			connected.reject(
+				new Error('[attachSync] doc destroyed before first handshake'),
+			);
 			ydoc.off('updateV2', handleDocUpdate);
 			awareness?.off('update', handleAwarenessUpdate);
 			const ws = websocket;
-			clearPendingRequests();
-			manageWindowListeners('remove');
 			status.clear();
-			if (loopPromise) await loopPromise;
+			await supervisorPromise;
 			await waitForWsClose(ws, 1000, log);
 		} finally {
 			resolveDisposed();
@@ -858,7 +769,7 @@ export function attachSync(
 	});
 
 	return {
-		whenConnected,
+		whenConnected: connected.promise,
 		get status() {
 			return status.get();
 		},
@@ -966,6 +877,40 @@ function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
 		typeof value.then === 'function'
 	);
 }
+
+/**
+ * One-shot promise with idempotent `resolve`/`reject`. Pre-attaches a no-op
+ * `.catch` so a rejection without a consumer (e.g., `whenConnected` rejected
+ * by permanent failure or dispose-before-handshake when no caller awaits it)
+ * does not surface as an unhandled rejection.
+ */
+function createOneShotPromise<T>() {
+	const { promise, resolve, reject } = Promise.withResolvers<T>();
+	promise.catch(() => {});
+	let settled = false;
+	return {
+		promise,
+		resolve(value: T) {
+			if (settled) return;
+			settled = true;
+			resolve(value);
+		},
+		reject(error: unknown) {
+			if (settled) return;
+			settled = true;
+			reject(error);
+		},
+	};
+}
+
+/** Resolves when the signal aborts (or immediately if already aborted). */
+function waitForAbort(signal: AbortSignal): Promise<void> {
+	if (signal.aborted) return Promise.resolve();
+	return new Promise<void>((resolve) => {
+		signal.addEventListener('abort', () => resolve(), { once: true });
+	});
+}
+
 
 function createStatusEmitter<T>(initial: T) {
 	let current = initial;

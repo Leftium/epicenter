@@ -76,7 +76,7 @@ const fileContent = {
 };
 
 const ws = {
-	fs: attachYjsFileSystem(tables.files, fileContent),
+	fs: attachYjsFileSystem(ydoc, tables.files, fileContent),
 	[Symbol.dispose]() {
 		ydoc.destroy();
 	},

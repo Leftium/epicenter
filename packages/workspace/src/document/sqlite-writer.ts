@@ -1,12 +1,12 @@
 /**
  * Writer-side SQLite file factory.
  *
- * Both `attachYjsLog` (the Y.Doc update-log writer) and `attachSqlite`
- * (the queryable projection writer) sit on the same axis: a single
- * daemon writes the file, many script peers open it `{ readonly: true }`
- * and snapshot-read in parallel. This factory is the one place that
- * handles the writer-side preamble: ensure the parent dir exists, open
- * the database, and apply the standard concurrency PRAGMAs.
+ * Both `attachYjsLog` (the Y.Doc update-log writer) and consumers of
+ * `attachSqliteMaterializer` (the queryable projection writer) sit on the
+ * same axis: a single daemon writes the file, many script peers open it
+ * `{ readonly: true }` and snapshot-read in parallel. This factory is the
+ * one place that handles the writer-side preamble: ensure the parent dir
+ * exists, open the database, and apply the standard concurrency PRAGMAs.
  *
  *   journal_mode = WAL    enables MVCC snapshot reads while we write.
  *   synchronous = NORMAL  the canonical durability tradeoff under WAL.

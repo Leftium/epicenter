@@ -22,8 +22,8 @@ import {
 	type EncryptionKeys,
 	generateId,
 } from '@epicenter/workspace';
-import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import { assembleMarkdown } from '@epicenter/workspace/document/materializer/markdown';
+import { attachYjsLog } from '@epicenter/workspace/node';
 import { opensidianTables } from 'opensidian/workspace';
 import * as Y from 'yjs';
 import { pushFromMarkdown } from './push-from-markdown';
@@ -53,7 +53,7 @@ function createTestClient() {
 	});
 	const tables = encryption.attachTables(opensidianTables);
 	const kv = encryption.attachKv({});
-	const persistence = attachSqlite(ydoc, { filePath: dbPath(WORKSPACE_ID) });
+	const persistence = attachYjsLog(ydoc, { filePath: dbPath(WORKSPACE_ID) });
 
 	const contentDocs = createDisposableCache(
 		(fileId: FileId) =>
@@ -62,7 +62,7 @@ function createTestClient() {
 				workspaceId: WORKSPACE_ID,
 				filesTable: tables.files,
 				attachPersistence: (contentDoc) =>
-					attachSqlite(contentDoc, {
+					attachYjsLog(contentDoc, {
 						filePath: join(PERSISTENCE_DIR, 'content', `${contentDoc.guid}.db`),
 					}),
 			}),
@@ -74,7 +74,7 @@ function createTestClient() {
 		ydoc,
 		tables,
 		kv,
-		whenReady: persistence.whenLoaded,
+		whenReady: Promise.resolve(),
 		async dispose() {
 			ydoc.destroy();
 		},
@@ -215,7 +215,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		});
 		const tables = encryption.attachTables(opensidianTables);
 		const kv = encryption.attachKv({});
-		const persistence = attachSqlite(ydoc, {
+		const persistence = attachYjsLog(ydoc, {
 			filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
 		});
 
@@ -226,7 +226,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 					workspaceId: WORKSPACE_ID,
 					filesTable: tables.files,
 					attachPersistence: (contentDoc) =>
-						attachSqlite(contentDoc, {
+						attachYjsLog(contentDoc, {
 							filePath: join(
 								IMPORT_PERSISTENCE,
 								'content',
@@ -242,7 +242,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 			ydoc,
 			tables,
 			kv,
-			whenReady: persistence.whenLoaded,
+			whenReady: Promise.resolve(),
 			async dispose() {
 				ydoc.destroy();
 			},

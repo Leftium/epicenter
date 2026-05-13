@@ -79,6 +79,10 @@ API keys for AI providers are environment secrets (`wrangler secret put`). They 
 
 ## Development
 
+Prerequisites: Bun, local PostgreSQL, and Infisical CLI access to the API dev
+environment. `dev:local` exports secrets from Infisical before Wrangler starts,
+so Postgres alone is not enough.
+
 ### Local Postgres setup
 
 The API needs a local PostgreSQL instance for development. The connection string is configured in `wrangler.jsonc` under the Hyperdrive `localConnectionString`.
@@ -103,15 +107,14 @@ There are three layers, each with a different URL source:
 |---|---|---|
 | Local dev (runtime) | `wrangler.jsonc` Hyperdrive `localConnectionString` | `bun dev:local` (wrangler) |
 | Local dev (drizzle-kit) | `DATABASE_URL` from `.dev.vars` (generated from Infisical dev env) | `db:push:local`, `db:studio:local` |
-| Remote | `DATABASE_URL` injected by `infisical run` | `db:migrate:remote`, `db:studio:remote` |
+| Remote admin | `DATABASE_URL` injected by `infisical run` | `db:migrate:remote`, `db:studio:remote` |
 
-`dev:local` regenerates `.dev.vars` from Infisical's dev environment on every run. Infisical dev has `DATABASE_URL` set to the local Postgres URL, so `.dev.vars` always points to local. The `:remote` scripts use `infisical run` which injects the production `DATABASE_URL` at runtime without touching `.dev.vars`.
+`dev:local` regenerates `.dev.vars` from Infisical's dev environment on every run. Infisical dev has `DATABASE_URL` set to the local Postgres URL, so `.dev.vars` always points to local. Remote database commands use `infisical run` and should be treated as admin operations, not dev mode.
 
 ### Running the server
 
 ```bash
 bun dev:local        # Local dev server (uses local Postgres)
-bun dev:remote       # Dev with remote secrets via Infisical
 bun deploy           # Deploy to Cloudflare Workers
 bun run typecheck    # Type check
 bun test             # Run tests

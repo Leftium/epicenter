@@ -74,7 +74,7 @@ export function openOpensidian() {
     append: (fileId, text) => appendFileContent(fileId, text),
   };
   const sqliteIndex = createSqliteIndex({ readContent: fileContent.read })({ tables });
-  const fs = attachYjsFileSystem(tables.files, fileContent);
+  const fs = attachYjsFileSystem(ydoc, tables.files, fileContent);
 
   return {
     ydoc, tables, idb, sqliteIndex, fs,
@@ -109,7 +109,7 @@ export function openOpensidian() {
 		},
 		{
 			id: 'filesystem',
-			line: 'attachYjsFileSystem(tables.files, fileContent)',
+			line: 'attachYjsFileSystem(ydoc, tables.files, fileContent)',
 			explanation:
 				'Wraps the raw table and content operations into a familiar filesystem interface: writeFile, mkdir, rm, mv.',
 		},

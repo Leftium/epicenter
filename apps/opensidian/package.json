@@ -14,13 +14,13 @@
 	"scripts": {
 		"dev": "bun run dev:local",
 		"dev:local": "vite dev",
-		"dev:remote": "vite dev --mode production",
 		"build": "vite build",
 		"deploy": "bun run build && wrangler deploy",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "bun test ./src/lib/opensidian",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check": "bun run typecheck"
 	},
 	"dependencies": {
 		"@codemirror/autocomplete": "^6.20.1",

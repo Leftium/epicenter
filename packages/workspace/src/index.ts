@@ -32,7 +32,7 @@
  * const idb = attachIndexedDb(ydoc);
  * const sync = attachSync(ydoc, {
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
- *   waitFor: idb,
+ *   waitFor: idb.whenLoaded,
  *   openWebSocket,
  * });
  *
@@ -199,7 +199,6 @@ export {
 export {
 	attachIndexedDb,
 	type IndexedDbAttachment,
-	wipeOwnerLocalYjsData,
 } from './document/attach-indexed-db.js';
 export {
 	attachKv,
@@ -219,18 +218,18 @@ export {
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
 export {
-	type AttachSyncDoc,
 	attachSync,
 	type OpenWebSocket,
 	type RpcActionSource,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
+	type SyncError,
 	SyncFailedError,
 	type SyncFailedReason,
 	type SyncRpcAttachment,
 	type SyncStatus,
+	SyncSupervisorError,
 	toWsUrl,
-	type WaitForBarrier,
 } from './document/attach-sync.js';
 export {
 	attachReadonlyTable,
@@ -276,6 +275,7 @@ export {
 	type ResolvedPeer,
 } from './document/peer-identity.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
+export { wipeOwnerLocalYjsData } from './document/wipe-owner-local-yjs-data.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

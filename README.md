@@ -258,13 +258,19 @@ Or download directly from [GitHub Releases](https://github.com/EpicenterHQ/epice
 ### Build from Source
 
 ```bash
-# Prerequisites: Bun (https://bun.sh) and Rust (https://rustup.rs)
+# Prerequisites: Bun, local Postgres, and Infisical access for API secrets
 git clone https://github.com/EpicenterHQ/epicenter.git
 cd epicenter
 bun install
-cd apps/whispering
 bun dev
 ```
+
+Root `bun dev` starts one local workflow: the API and Tab Manager. See
+[`apps/api/README.md`](apps/api/README.md) for local Postgres and Infisical
+setup. Use `bun run dev:api` for only the local API, or
+`bun run dev:tab-manager:ui` for only the extension UI. App folders still
+support `bun dev` for focused local work on that app. Rust is only needed for
+Tauri apps like Whispering.
 
 ### Troubleshooting
 

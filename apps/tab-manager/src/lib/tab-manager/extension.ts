@@ -56,9 +56,9 @@ export async function openTabManager({
 		schema: { peer: PeerIdentity },
 		initial: { peer: resolvedPeer },
 	});
-	const sync = attachSync(doc, {
+	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb,
+		waitFor: idb.whenLoaded,
 		openWebSocket,
 		awareness,
 	});

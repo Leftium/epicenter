@@ -20,7 +20,7 @@ import { Bash } from 'just-bash';
 import * as Y from 'yjs';
 import { fileContentDocGuid } from './file-content-docs.js';
 import { attachYjsFileSystem, type YjsFileSystem } from './file-system.js';
-import type { FileId } from './ids.js';
+import { type FileId, generateFileId } from './ids.js';
 import { filesTable } from './table.js';
 
 function setup() {
@@ -48,7 +48,7 @@ function setup() {
 		},
 		{ gcTime: Number.POSITIVE_INFINITY },
 	);
-	const fs = attachYjsFileSystem(ws.tables.files, {
+	const fs = attachYjsFileSystem(ws.ydoc, ws.tables.files, {
 		async read(fileId) {
 			await using handle = contentDocs.open(fileId);
 			await handle.whenReady;
@@ -406,6 +406,40 @@ describe('Uint8Array write support', () => {
 		await fs.writeFile('/file.bin', data);
 		await fs.rm('/file.bin');
 		expect(await fs.exists('/file.bin')).toBe(false);
+	});
+});
+
+describe('ydoc destroy lifecycle', () => {
+	test('destroying ydoc stops observing the table', async () => {
+		const { fs, ws } = setup();
+
+		// Mutation pre-destroy: index reflects it.
+		await fs.writeFile('/before.txt', 'content');
+		expect(await fs.exists('/before.txt')).toBe(true);
+		const beforeId = fs.lookupId('/before.txt');
+		expect(beforeId).toBeDefined();
+
+		// Tear down the ydoc — the observer registered via
+		// ydoc.once('destroy', unobserve) should unregister.
+		ws.ydoc.destroy();
+
+		// Mutate the underlying table directly, bypassing fs (which uses
+		// contentDocs that are now torn down).
+		const now = Date.now();
+		ws.tables.files.set({
+			id: generateFileId(),
+			name: 'after.txt',
+			parentId: null,
+			type: 'file',
+			size: 0,
+			createdAt: now,
+			updatedAt: now,
+			trashedAt: null,
+			_v: 1,
+		});
+
+		// Index did NOT update: the observer is gone.
+		expect(fs.lookupId('/after.txt')).toBeUndefined();
 	});
 });
 

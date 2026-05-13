@@ -10,7 +10,6 @@ const config = {
 		alias: {
 			$routes: './src/routes',
 			'$platform/auth': './src/lib/platform/auth/auth.ts',
-			'#': '../../packages/ui/src',
 		},
 	},
 	preprocess: vitePreprocess(),

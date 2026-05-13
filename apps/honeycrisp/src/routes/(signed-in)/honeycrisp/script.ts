@@ -24,7 +24,7 @@ export async function openHoneycrisp({
 	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
-	const sync = attachSync(doc, {
+	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
 		openWebSocket: auth.openWebSocket,
 	});

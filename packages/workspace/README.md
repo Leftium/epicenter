@@ -112,8 +112,9 @@ Every exported function in this package falls into one of three verbs. The prefi
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
 | `define*` | **None**: pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
-| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachOwnedBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods) |
+| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachYjsLog`, `attachBroadcastChannel`, `attachOwnedBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods), `attachMarkdownMaterializer`, `attachSqliteMaterializer` |
 | `create*` | **Pure construction**: no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition or cache | `createDisposableCache` |
+| `open*` | **Opens a local resource (no Y.Doc subject)**: returns a disposable handle owned by the caller. | Resource config | Handle with `[Symbol.dispose]()` | `openSqliteReader`, `openWriterSqlite` |
 
 `createDisposableCache(build, opts?)` is the refcounted cache primitive. The
 user owns construction; the cache owns identity keyed by id,
@@ -399,7 +400,7 @@ KV entries are for settings and scalar preferences. They are keyed by string and
 
 "Extensions" in Epicenter are just `attach*` calls inside your builder function. There is no `.withExtension` chain, no extension registry, no priority flag: just lexical scope.
 
-- Call the relevant `attach*` function (e.g. `attachIndexedDb`, `attachSync`, `attachSqlite`, `attachEncryption`) inside the builder and include the handle in the returned bundle.
+- Call the relevant `attach*` function (e.g. `attachIndexedDb`, `attachSync`, `attachYjsLog`, `attachEncryption`) inside the builder and include the handle in the returned bundle.
 - Order matters only through lexical scope: later `attach*` calls see earlier handles directly.
 - For browser per-row content docs, write a separate `createDisposableCache(...)` and `.open(rowId)` it from the main workspace's actions or components.
 
@@ -824,12 +825,21 @@ import {
 	attachTables,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
+import { attachYjsLog } from '@epicenter/workspace/node';
 ```
 
 ### Persistence
 
-`attachIndexedDb(ydoc)` runs in the browser. `attachSqlite(ydoc, { filePath })` runs on Node/Bun. Both return a handle with `whenLoaded` and `clearLocal()`. IndexedDB also exposes `whenDisposed` for callers that need to await provider shutdown before deleting local storage. Authenticated browser workspaces can call `wipeOwnerLocalYjsData({ userId, ydocGuids })` after disposal to delete owner-scoped local Yjs databases.
+Browser apps use `attachIndexedDb(ydoc)`. Bun/Node daemons use `attachYjsLog(ydoc, { filePath })`. Both bind to the Y.Doc and tear down on `ydoc.destroy()`.
+
+| Primitive | Runtime | Barrier | Other | Purpose |
+|---|---|---|---|---|
+| `attachIndexedDb(ydoc)` | browser | `whenLoaded`, `whenDisposed` | `clearLocal()` | Local Yjs persistence via `y-indexeddb` |
+| `attachYjsLog(ydoc, { filePath })` | Bun/Node | `whenDisposed` (sync replay; no `whenLoaded` needed) | `clearLocal()` | Append-log SQLite file the daemon writes |
+
+Authenticated browser workspaces can call `wipeOwnerLocalYjsData({ userId, ydocGuids })` after disposal to delete owner-scoped local Yjs databases.
+
+`attachSqliteMaterializer` and `attachMarkdownMaterializer` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. See the materializer subsections below.
 
 ```typescript
 import * as Y from 'yjs';
@@ -837,7 +847,7 @@ import {
 	attachTables,
 	defineTable,
 } from '@epicenter/workspace';
-import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
+import { attachYjsLog } from '@epicenter/workspace/node';
 import { type } from 'arktype';
 
 const notes = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
@@ -845,13 +855,13 @@ const notes = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 function openNotes() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.notes' });
 	const tables = attachTables(ydoc, { notes });
-	const sqlite = attachSqlite(ydoc, { filePath: '/tmp/epicenter/notes.db' });
+	const yjsLog = attachYjsLog(ydoc, { filePath: '/tmp/epicenter/notes.db' });
 
 	return {
 		get id() { return ydoc.guid; },
 		ydoc,
 		tables,
-		sqlite,
+		yjsLog,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
@@ -916,7 +926,7 @@ import {
 	attachTables,
 	defineTable,
 } from '@epicenter/workspace';
-import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
+import { attachYjsLog } from '@epicenter/workspace/node';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -929,19 +939,18 @@ const notes = defineTable(
 function openNotes() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.notes' });
 	const tables = attachTables(ydoc, { notes });
-	const sqlite = attachSqlite(ydoc, {
+	const yjsLog = attachYjsLog(ydoc, {
 		filePath: '/tmp/epicenter/notes-workspace.db',
 	});
-	const markdown = attachMarkdownMaterializer(
-		{ ydoc, tables },
-		{ dir: '/tmp/epicenter/markdown' },
-	).table('notes', { filename: slugFilename('title') });
+	const markdown = attachMarkdownMaterializer(ydoc, {
+		dir: '/tmp/epicenter/markdown',
+	}).table(tables.notes, { filename: slugFilename('title') });
 
 	return {
 		get id() { return ydoc.guid; },
 		ydoc,
 		tables,
-		sqlite,
+		yjsLog,
 		markdown,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
@@ -961,7 +970,6 @@ import {
 	attachTables,
 	defineTable,
 } from '@epicenter/workspace';
-import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import { type } from 'arktype';
 
@@ -978,23 +986,22 @@ const posts = defineTable(
 function openBlog() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.blog' });
 	const tables = attachTables(ydoc, { posts });
-	const sqlite = attachSqlite(ydoc, { filePath: '/tmp/epicenter/blog.db' });
-	const mirror = attachSqliteMaterializer(
-		{ ydoc, tables },
-		{ db: new Database('/tmp/epicenter/blog.db') },
-	).table('posts', { fts: ['title', 'body'] });
+	const db = new Database('/tmp/epicenter/blog.db');
+	ydoc.once('destroy', () => db.close());
+	const mirror = attachSqliteMaterializer(ydoc, { db }).table(tables.posts, {
+		fts: ['title', 'body'],
+	});
 
 	return {
 		get id() { return ydoc.guid; },
 		ydoc,
 		tables,
-		sqlite,
 		mirror,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
 
-// After sqlite.whenLoaded:
+// After mirror.whenFlushed:
 // blog.mirror.search('posts', 'hello');
 // blog.mirror.count('posts');
 // blog.mirror.rebuild('posts');
@@ -1287,7 +1294,8 @@ and a few utility surfaces.
 
 | Import path | What it exports | Public today |
 | --- | --- | --- |
-| `@epicenter/workspace` | `createDisposableCache`, `defineTable`, `defineKv`, every `attach*` (tables, kv, indexeddb, sqlite, sync, broadcast-channel, awareness, encryption, rich-text, plain-text, timeline), action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
+| `@epicenter/workspace` | `createDisposableCache`, `defineTable`, `defineKv`, browser-safe `attach*` (tables, kv, indexeddb, sync, broadcast-channel, awareness, encryption, rich-text, plain-text, timeline), action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
+| `@epicenter/workspace/node` | Bun/Node `attach*` and `open*` (`attachYjsLog`, `attachYjsLogReader`, `openSqliteReader`, `openWriterSqlite`), daemon helpers, workspace paths | Yes |
 | `@epicenter/workspace/document/materializer/markdown` | `attachMarkdownMaterializer`, serializers | Yes |
 | `@epicenter/workspace/document/materializer/sqlite` | `attachSqliteMaterializer`, `generateDdl`, types | Yes |
 | `@epicenter/workspace/ai` | `actionsToAiTools` (TanStack AI bindings) | Yes |

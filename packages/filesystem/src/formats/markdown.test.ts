@@ -185,7 +185,7 @@ describe('markdown integration with YjsFileSystem', () => {
 			},
 			{ gcTime: Number.POSITIVE_INFINITY },
 		);
-		return attachYjsFileSystem(ws.tables.files, {
+		return attachYjsFileSystem(ws.ydoc, ws.tables.files, {
 			async read(fileId) {
 				await using handle = contentDocs.open(fileId);
 				await handle.whenReady;

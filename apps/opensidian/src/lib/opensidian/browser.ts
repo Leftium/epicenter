@@ -91,7 +91,7 @@ export function openOpensidian({
 		tables: doc.tables,
 	});
 	const sqliteIndexExports = sqliteIndex.exports;
-	const fs = attachYjsFileSystem(doc.tables.files, fileContent);
+	const fs = attachYjsFileSystem(doc.ydoc, doc.tables.files, fileContent);
 	const bash = new Bash({ fs, cwd: '/' });
 	const actions = createOpensidianActions({
 		fs,
@@ -105,7 +105,7 @@ export function openOpensidian({
 	});
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb,
+		waitFor: idb.whenLoaded,
 		openWebSocket,
 		awareness,
 	});
@@ -118,7 +118,6 @@ export function openOpensidian({
 		disposed = true;
 		fileContentDocs[Symbol.dispose]();
 		sqliteIndex.dispose();
-		fs.dispose();
 		doc[Symbol.dispose]();
 	}
 

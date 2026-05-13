@@ -7,11 +7,11 @@
 	"scripts": {
 		"dev": "bun run dev:local",
 		"dev:local": "vite dev",
-		"dev:remote": "vite dev --mode production",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check": "bun run typecheck"
 	},
 	"devDependencies": {
 		"@codemirror/commands": "^6.10.3",

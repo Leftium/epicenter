@@ -1,7 +1,7 @@
 /**
- * Tests for `attachSqliteReader` (the script-side read-only handle on the
+ * Tests for `openSqliteReader` (the script-side read-only handle on the
  * daemon's SQLite materializer file). The daemon side is exercised via a real
- * `attachSqlite` writing to an on-disk WAL file in a tmpdir; the
+ * `attachSqliteMaterializer` writing to an on-disk WAL file in a tmpdir; the
  * mirror reads the same file and asserts FTS5 lookups + raw row reads work.
  */
 
@@ -10,11 +10,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type } from 'arktype';
+import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
-
 import { attachTables, defineTable } from '../index.js';
-import { attachSqlite } from './attach-sqlite.js';
-import { attachSqliteReader } from './attach-sqlite-reader.js';
+import { attachSqliteMaterializer } from './materializer/sqlite/sqlite.js';
+import { openSqliteReader } from './open-sqlite-reader.js';
+import { openWriterSqlite } from './sqlite-writer.js';
 
 const entriesTable = defineTable(
 	type({
@@ -28,7 +29,7 @@ const entriesTable = defineTable(
 let workDir: string;
 
 beforeEach(() => {
-	workDir = mkdtempSync(join(tmpdir(), 'attach-sqlite-reader-'));
+	workDir = mkdtempSync(join(tmpdir(), 'open-sqlite-reader-'));
 });
 
 afterEach(() => {
@@ -38,22 +39,28 @@ afterEach(() => {
 async function seedMirrorFile(
 	filePath: string,
 	rows: Array<{ id: string; title: string; body: string }>,
+	{ fts = true }: { fts?: boolean } = {},
 ) {
 	const ydoc = new Y.Doc({ guid: 'test-mirror' });
 	const tables = attachTables(ydoc, { entries: entriesTable });
-	const materializer = attachSqlite(ydoc, {
-		filePath,
-	}).table(tables.entries, { fts: ['title', 'body'] });
-	await materializer.whenLoaded;
+	const db = openWriterSqlite({ filePath, log: createLogger('test') });
+	ydoc.once('destroy', () => db.close());
+	// debounceMs: 0 so each set() flushes on the next microtask, matching the
+	// "seed then read" shape of these tests.
+	const builder = attachSqliteMaterializer(ydoc, { db, debounceMs: 0 });
+	const materializer = fts
+		? builder.table(tables.entries, { fts: ['title', 'body'] })
+		: builder.table(tables.entries);
+	await materializer.whenFlushed;
 	for (const row of rows) tables.entries.set({ ...row, _v: 1 });
-	// One tick lets the post-transact flush enqueued in `afterTransaction`
-	// drain through the materializer's syncQueue.
+	// Yield once for the debounced flush, then once more for the awaited
+	// syncQueue chain inside flushPendingSync to settle.
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
-	// Destroying the ydoc closes the materializer's database.
+	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 	ydoc.destroy();
 }
 
-describe('attachSqliteReader', () => {
+describe('openSqliteReader', () => {
 	test('opens the file read-only and reads materialized rows', async () => {
 		const filePath = join(workDir, 'mirror.db');
 		await seedMirrorFile(filePath, [
@@ -61,7 +68,7 @@ describe('attachSqliteReader', () => {
 			{ id: 'b', title: 'Beta', body: 'second entry' },
 		]);
 
-		using mirror = attachSqliteReader({ filePath });
+		using mirror = openSqliteReader({ filePath });
 		const rows = mirror.db
 			.prepare('SELECT id, title FROM entries ORDER BY id')
 			.all() as Array<{ id: string; title: string }>;
@@ -77,7 +84,7 @@ describe('attachSqliteReader', () => {
 			{ id: 'a', title: 'Alpha', body: 'first' },
 		]);
 
-		using mirror = attachSqliteReader({ filePath });
+		using mirror = openSqliteReader({ filePath });
 		expect(() =>
 			mirror.db.run(
 				"INSERT INTO entries (id, title, body) VALUES ('c', 't', 'b')",
@@ -93,7 +100,7 @@ describe('attachSqliteReader', () => {
 			{ id: 'c', title: 'Hello again', body: 'morning followup' },
 		]);
 
-		using mirror = attachSqliteReader({ filePath });
+		using mirror = openSqliteReader({ filePath });
 		const hits = mirror.search('entries', 'hello');
 		const ids = hits.map((h) => h.id).sort();
 		expect(ids).toEqual(['a', 'c']);
@@ -105,15 +112,9 @@ describe('attachSqliteReader', () => {
 
 	test('search returns empty array for missing FTS table', async () => {
 		const filePath = join(workDir, 'empty.db');
-		// Materializer with no FTS-indexed columns: the underlying table
-		// exists but `entries_fts` does not.
-		const ydoc = new Y.Doc({ guid: 'no-fts' });
-		const tables = attachTables(ydoc, { entries: entriesTable });
-		const m = attachSqlite(ydoc, { filePath }).table(tables.entries);
-		await m.whenLoaded;
-		ydoc.destroy();
+		await seedMirrorFile(filePath, [], { fts: false });
 
-		using mirror = attachSqliteReader({ filePath });
+		using mirror = openSqliteReader({ filePath });
 		const hits = mirror.search('entries', 'anything');
 		expect(hits).toEqual([]);
 	});
@@ -124,7 +125,7 @@ describe('attachSqliteReader', () => {
 			{ id: 'a', title: 'Alpha', body: 'first' },
 		]);
 
-		const mirror = attachSqliteReader({ filePath });
+		const mirror = openSqliteReader({ filePath });
 		mirror[Symbol.dispose]();
 		// Subsequent search short-circuits without throwing.
 		const hits = mirror.search('entries', 'alpha');

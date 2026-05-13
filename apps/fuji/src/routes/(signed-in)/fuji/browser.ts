@@ -92,9 +92,9 @@ export function openFuji({
 		schema: { peer: PeerIdentity },
 		initial: { peer },
 	});
-	const sync = attachSync(doc, {
+	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb,
+		waitFor: idb.whenLoaded,
 		openWebSocket,
 		awareness,
 	});

@@ -29,12 +29,11 @@ import {
 } from '@epicenter/tab-manager/workspace';
 import { attachEncryption, attachSync, toWsUrl } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
-import { attachSqlite } from '@epicenter/workspace/document/attach-sqlite';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
-import { epicenterPaths } from '@epicenter/workspace/node';
+import { attachYjsLog, epicenterPaths } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
 
 const SERVER_URL = 'https://api.epicenter.so';
@@ -60,7 +59,7 @@ const tables = encryption.attachTables(tabManagerTables);
 // materializer's `.kv()` call has something to observe.
 const kv = encryption.attachKv({});
 
-const persistence = attachSqlite(ydoc, {
+const persistence = attachYjsLog(ydoc, {
 	filePath: epicenterPaths.persistence(WORKSPACE_ID),
 });
 
@@ -68,14 +67,14 @@ const sync = attachSync(ydoc, {
 	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 	// Gate connection on local hydrate so the handshake only exchanges the
 	// delta, not the whole document.
-	waitFor: persistence.whenLoaded,
+	waitFor: Promise.resolve(),
 	getToken: createMachineTokenGetter({
 		serverOrigin: SERVER_URL,
 		machineAuth,
 	}),
 });
 
-const whenReady = Promise.all([persistence.whenLoaded, sync.whenConnected]);
+const whenReady = Promise.all([Promise.resolve(), sync.whenConnected]);
 
 const markdown = attachMarkdownMaterializer(
 	{ tables, kv, whenReady },

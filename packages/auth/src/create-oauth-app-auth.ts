@@ -85,6 +85,12 @@ export function createOAuthAppAuth({
 	}
 
 	async function replaceSession(next: OAuthSessionType | null) {
+		if (next && session && session.user.id !== next.user.id) {
+			throw new Error(
+				'[auth] replaceSession received an identity that does not match the ' +
+					'current session. Sign out before signing in as a different user.',
+			);
+		}
 		const writeEpoch = sessionEpoch + 1;
 		sessionEpoch = writeEpoch;
 		const staleRefresh = refreshPromise;

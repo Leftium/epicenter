@@ -187,7 +187,7 @@ export function attachEncryption(
 	// biome-ignore lint/suspicious/noExplicitAny: variance
 	function attachStore(key: string): EncryptedYKeyValueLww<any> {
 		const store = createEncryptedYkvLww(ydoc, key);
-		ydoc.once('destroy', () => store.dispose());
+		ydoc.once('destroy', () => store[Symbol.dispose]());
 		store.activateEncryption(
 			deriveKeyring(options.encryptionKeys(), workspaceId),
 		);

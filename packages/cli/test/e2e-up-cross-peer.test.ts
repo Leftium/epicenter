@@ -57,13 +57,11 @@ import { join } from 'node:path';
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/inline-actions');
 const BIN_PATH = join(import.meta.dir, '..', 'src', 'bin.ts');
 
-type EnvOverrides = {
+type EnvOverrides = Disposable & {
 	/** Stable `runtimeDir()` root: $XDG_RUNTIME_DIR/epicenter. */
 	xdgRoot: string;
 	/** Stable `epicenterPaths.home()`: $HOME/.epicenter (logs land here). */
 	home: string;
-	/** Cleanup callback. */
-	dispose: () => void;
 };
 
 function makeEnv(): EnvOverrides {
@@ -73,7 +71,7 @@ function makeEnv(): EnvOverrides {
 	return {
 		xdgRoot,
 		home,
-		dispose: () => {
+		[Symbol.dispose]: () => {
 			rmSync(xdgRoot, { recursive: true, force: true });
 			rmSync(home, { recursive: true, force: true });
 		},
@@ -188,7 +186,7 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 			const leftovers = runtimeLeftovers(runtimeRoot);
 			expect(leftovers).toEqual([]);
 		} finally {
-			env.dispose();
+			env[Symbol.dispose]();
 		}
 	}, 30000);
 
@@ -207,7 +205,7 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 				await awaitExit(child);
 			}
 		} finally {
-			env.dispose();
+			env[Symbol.dispose]();
 		}
 	}, 30000);
 
@@ -227,7 +225,7 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 				: [];
 			expect(leftovers).toEqual([]);
 		} finally {
-			env.dispose();
+			env[Symbol.dispose]();
 		}
 	}, 30000);
 
@@ -246,7 +244,7 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 				await awaitExit(child);
 			}
 		} finally {
-			env.dispose();
+			env[Symbol.dispose]();
 		}
 	}, 30000);
 
@@ -263,7 +261,7 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 				await awaitExit(child);
 			}
 		} finally {
-			env.dispose();
+			env[Symbol.dispose]();
 		}
 	}, 30000);
 });

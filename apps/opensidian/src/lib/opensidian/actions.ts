@@ -18,7 +18,7 @@ export function createOpensidianActions({
 	bash: Bash;
 }) {
 	return {
-		'files.search': defineQuery({
+		files_search: defineQuery({
 			title: 'Search Notes',
 			description:
 				'Search notes by content using full-text search. Returns matching file paths and content snippets.',
@@ -27,7 +27,7 @@ export function createOpensidianActions({
 			}),
 			handler: async ({ query }) => Ok(await sqliteIndex.search(query)),
 		}),
-		'files.read': defineQuery({
+		files_read: defineQuery({
 			title: 'Read File',
 			description:
 				'Read the full content of a file by its absolute path (e.g. "/notes/meeting.md").',
@@ -50,7 +50,7 @@ export function createOpensidianActions({
 				return Ok({ content, truncated: false });
 			},
 		}),
-		'files.list': defineQuery({
+		files_list: defineQuery({
 			title: 'List Directory',
 			description:
 				'List files and folders in a directory. Use "/" for the root.',
@@ -64,7 +64,7 @@ export function createOpensidianActions({
 				return Ok({ entries });
 			},
 		}),
-		'files.write': defineMutation({
+		files_write: defineMutation({
 			title: 'Write File',
 			description:
 				'Write content to a file. Creates the file if it does not exist, overwrites if it does.',
@@ -77,7 +77,7 @@ export function createOpensidianActions({
 				return Ok({ success: true, path });
 			},
 		}),
-		'files.create': defineMutation({
+		files_create: defineMutation({
 			title: 'Create File',
 			description: 'Create a new empty file at the given path.',
 			input: Type.Object({
@@ -90,7 +90,7 @@ export function createOpensidianActions({
 				return Ok({ success: true, path });
 			},
 		}),
-		'files.delete': defineMutation({
+		files_delete: defineMutation({
 			title: 'Delete File',
 			description: 'Delete a file or directory at the given path.',
 			input: Type.Object({
@@ -101,7 +101,7 @@ export function createOpensidianActions({
 				return Ok({ success: true, path });
 			},
 		}),
-		'files.move': defineMutation({
+		files_move: defineMutation({
 			title: 'Move/Rename File',
 			description: 'Move or rename a file from one path to another.',
 			input: Type.Object({
@@ -113,7 +113,7 @@ export function createOpensidianActions({
 				return Ok({ success: true, from: src, to: dst });
 			},
 		}),
-		'files.mkdir': defineMutation({
+		files_mkdir: defineMutation({
 			title: 'Create Directory',
 			description: 'Create a new directory at the given path.',
 			input: Type.Object({
@@ -124,7 +124,7 @@ export function createOpensidianActions({
 				return Ok({ success: true, path });
 			},
 		}),
-		'bash.exec': defineMutation({
+		bash_exec: defineMutation({
 			title: 'Execute Bash Command',
 			description:
 				'Execute a bash command against the virtual filesystem. Supports standard Unix commands (ls, cat, grep, echo, etc.).',

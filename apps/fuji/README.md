@@ -21,10 +21,10 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
-Fuji's root workspace is built once per signed-in session by `createSession`. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The session module captures `userId` once at build time because IDB and BroadcastChannel keys are immutable for the workspace's lifetime. It passes auth-bound callbacks to the workspace at construction time: sync opens sockets through auth on connection attempts, while encrypted stores keep the keyring derived when they attach.
+Fuji's root workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The session module captures `userId` once at build time because IDB and BroadcastChannel keys are immutable for the workspace's lifetime. It passes auth-bound callbacks to the workspace at construction time: sync opens sockets through auth on connection attempts, while encrypted stores keep the keyring derived when they attach.
 
 ```ts
-export function openFuji({
+export function openFujiBrowser({
   userId,
   peer,
   openWebSocket,
@@ -38,7 +38,7 @@ export function openFuji({
   ) => WebSocket | Promise<WebSocket>;
   encryptionKeys: () => EncryptionKeys;
 }) {
-  const doc = openFujiDoc({ encryptionKeys });
+  const doc = openFujiDocument({ encryptionKeys });
   const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
   attachOwnedBroadcastChannel(doc.ydoc, { userId });
   const awareness = attachAwareness(doc.ydoc, {

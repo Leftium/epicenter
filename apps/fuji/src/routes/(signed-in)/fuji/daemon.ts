@@ -21,7 +21,7 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { openFujiDoc } from './index.js';
+import { openFujiDocument } from './document.js';
 import { createFujiActions } from './workspace.js';
 
 export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
@@ -37,7 +37,7 @@ export function defineFujiDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const doc = openFujiDoc({
+			const doc = openFujiDocument({
 				clientID: hashClientId(projectDir),
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});

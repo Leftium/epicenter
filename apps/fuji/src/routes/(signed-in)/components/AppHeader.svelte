@@ -8,12 +8,12 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import { goto } from '$app/navigation';
-	import { requireApp } from '$lib/session';
+	import { requireFuji } from '$lib/session';
 	import { auth } from '$platform/auth';
 	import BulkAddModal from './BulkAddModal.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
-	const app = requireApp();
+	const fuji = requireFuji();
 </script>
 
 <div class="flex h-10 shrink-0 items-center justify-between border-b px-3">
@@ -43,7 +43,7 @@
 						variant="ghost"
 						size="icon-sm"
 						onclick={() => {
-							const { id } = app.fuji.collaboration.actions.entries.create({});
+							const { id } = fuji.collaboration.actions.entries.create({});
 							goto(`/entries/${id}`);
 						}}
 					>
@@ -59,10 +59,10 @@
 	<div class="flex items-center gap-1">
 		<AccountPopover
 			{auth}
-			collaboration={app.fuji.collaboration}
+			collaboration={fuji.collaboration}
 			syncNoun="entries"
 			onForgetDevice={async () => {
-				await app.fuji.wipe();
+				await fuji.wipe();
 				window.location.reload();
 			}}
 		/>

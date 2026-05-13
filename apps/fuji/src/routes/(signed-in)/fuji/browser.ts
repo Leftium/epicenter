@@ -15,7 +15,7 @@ import {
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { openFujiDoc } from './index';
+import { openFujiDocument } from './document.js';
 import { createFujiActions, type EntryId } from './workspace';
 
 function entryContentDocGuid({
@@ -33,7 +33,7 @@ function entryContentDocGuid({
 	});
 }
 
-export function openFuji({
+export function openFujiBrowser({
 	userId,
 	peer,
 	openWebSocket,
@@ -44,7 +44,7 @@ export function openFuji({
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openFujiDoc({ encryptionKeys });
+	const doc = openFujiDocument({ encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
@@ -130,4 +130,4 @@ export function openFuji({
 	};
 }
 
-export type Fuji = ReturnType<typeof openFuji>;
+export type FujiBrowser = ReturnType<typeof openFujiBrowser>;

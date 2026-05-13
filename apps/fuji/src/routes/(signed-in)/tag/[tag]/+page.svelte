@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { requireApp } from '$lib/session';
+	import { requireFuji } from '$lib/session';
 	import EntriesTable from '../../components/EntriesTable.svelte';
 	import EntriesTimeline from '../../components/EntriesTimeline.svelte';
 	import { viewState } from '../../state/view.svelte';
 
-	const app = requireApp();
+	const fuji = requireFuji();
 	const tagParam = $derived(decodeURIComponent(page.params.tag ?? ''));
 	const filteredEntries = $derived(
-		app.entries.active.filter((e) => e.tags.includes(tagParam)),
+		fuji.entries.active.filter((e) => e.tags.includes(tagParam)),
 	);
 </script>
 

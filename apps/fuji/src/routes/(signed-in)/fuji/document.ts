@@ -4,7 +4,7 @@ import { fujiTables } from './workspace.js';
 
 export const FUJI_WORKSPACE_ID = 'epicenter.fuji';
 
-export function openFujiDoc({
+export function openFujiDocument({
 	encryptionKeys,
 	clientID,
 }: {

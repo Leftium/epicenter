@@ -3,14 +3,13 @@ import { createSession } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { createEntriesState } from './entries-state.svelte';
-import { openFuji } from '../routes/(signed-in)/fuji/browser';
+import { openFujiBrowser } from '../routes/(signed-in)/fuji/browser';
 
 export const session = createSession({
 	auth,
 	build: (identity) => {
-		const userId = identity.user.id;
-		const fuji = openFuji({
-			userId,
+		const fuji = openFujiBrowser({
+			userId: identity.user.id,
 			peer: {
 				id: getOrCreateInstallationId(localStorage),
 				name: 'Fuji',
@@ -21,8 +20,7 @@ export const session = createSession({
 		});
 		const entries = createEntriesState(fuji);
 		return {
-			userId,
-			fuji,
+			...fuji,
 			entries,
 			[Symbol.dispose]() {
 				entries[Symbol.dispose]();
@@ -30,9 +28,15 @@ export const session = createSession({
 			},
 		};
 	},
+	onDifferentUser: () => location.reload(),
 });
 
-export const { requireApp } = session;
+export function requireFuji() {
+	if (!session.current) {
+		throw new Error('requireFuji() called without an authenticated session.');
+	}
+	return session.current;
+}
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());

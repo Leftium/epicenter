@@ -5,7 +5,7 @@ import type { EntryId } from '../routes/(signed-in)/fuji/workspace';
 /**
  * Reactive entries selectors derived from the fuji binding's entries table.
  *
- * Components read this through `requireApp().entries`; the active and
+ * Components read this through `requireFuji().entries`; the active and
  * deleted lists update reactively as entries change. Disposed alongside the
  * session.
  */

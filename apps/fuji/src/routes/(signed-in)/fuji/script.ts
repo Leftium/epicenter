@@ -12,7 +12,7 @@ import {
 	connectFujiDaemonActions,
 	DEFAULT_FUJI_DAEMON_ROUTE,
 } from './daemon.js';
-import { FUJI_WORKSPACE_ID } from './index.js';
+import { FUJI_WORKSPACE_ID } from './document.js';
 import { fujiTables } from './workspace.js';
 
 type LoadOfflineEncryptionKeys = () => Promise<EncryptionKeys | null>;

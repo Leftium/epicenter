@@ -10,12 +10,12 @@
 	import type { Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { requireApp } from '$lib/session';
+	import { requireFuji } from '$lib/session';
 	import AppHeader from './AppHeader.svelte';
 	import EntriesSidebar from './EntriesSidebar.svelte';
 
 	let { children }: { children: Snippet } = $props();
-	const app = requireApp();
+	const fuji = requireFuji();
 
 	function flushPendingEdits() {
 		if (
@@ -31,7 +31,7 @@
 
 	const paletteItems = $derived.by((): CommandPaletteItem[] => {
 		if (!paletteOpen) return [];
-		return app.entries.active.map((entry) => ({
+		return fuji.entries.active.map((entry) => ({
 			id: entry.id,
 			label: entry.title || 'Untitled',
 			description: entry.subtitle || undefined,
@@ -61,7 +61,7 @@
 
 		if (event.key === 'n' && event.metaKey) {
 			event.preventDefault();
-			const { id } = app.fuji.collaboration.actions.entries.create({});
+			const { id } = fuji.collaboration.actions.entries.create({});
 			goto(`/entries/${id}`);
 			return;
 		}
@@ -87,8 +87,8 @@
 			class="flex h-7 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground"
 		>
 			<span
-				>{app.entries.active.length}
-				{app.entries.active.length === 1 ? 'entry' : 'entries'}</span
+				>{fuji.entries.active.length}
+				{fuji.entries.active.length === 1 ? 'entry' : 'entries'}</span
 			>
 			<div class="ml-auto flex items-center gap-1.5">
 				<span class="flex items-center gap-1"> Search <Kbd>⌘K</Kbd> </span>

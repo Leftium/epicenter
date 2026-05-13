@@ -5,11 +5,11 @@
 	import { DateTimeString, generateId } from '@epicenter/workspace';
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
-	import { requireApp } from '$lib/session';
+	import { requireFuji } from '$lib/session';
 	import type { EntryId } from '../fuji/workspace';
 
 	// ─── Config ──────────────────────────────────────────────────────────────────
-	const app = requireApp();
+	const fuji = requireFuji();
 
 	const COUNTS = [1_000, 10_000] as const;
 
@@ -100,7 +100,7 @@
 	let results = $state<Results | null>(null);
 
 	const stressTestCount = $derived(
-		app.entries.active.filter((e) => e.tags.includes('stress-test'))
+		fuji.entries.active.filter((e) => e.tags.includes('stress-test'))
 			.length,
 	);
 
@@ -158,7 +158,7 @@
 			);
 
 			const insertStart = performance.now();
-			await app.fuji.tables.entries.bulkSet(rows, {
+			await fuji.tables.entries.bulkSet(rows, {
 				chunkSize: INSERT_CHUNK_SIZE,
 				onProgress: (p) => {
 					progress = p;
@@ -168,19 +168,19 @@
 
 			// Read performance
 			const readStart = performance.now();
-			const allValid = app.fuji.tables.entries.getAllValid();
+			const allValid = fuji.tables.entries.getAllValid();
 			const readTimeMs = performance.now() - readStart;
 
 			// Filter performance
 			const filterStart = performance.now();
-			const stressEntries = app.fuji.tables.entries.filter((e) =>
+			const stressEntries = fuji.tables.entries.filter((e) =>
 				e.tags.includes('stress-test'),
 			);
 			const filterTimeMs = performance.now() - filterStart;
 
 			// Y.Doc binary size
 			const ydocSizeBytes = Y.encodeStateAsUpdate(
-				app.fuji.ydoc,
+				fuji.ydoc,
 			).byteLength;
 
 			results = {
@@ -207,12 +207,12 @@
 		clearing = true;
 
 		try {
-			const stressEntries = app.fuji.tables.entries.filter((e) =>
+			const stressEntries = fuji.tables.entries.filter((e) =>
 				e.tags.includes('stress-test'),
 			);
 			const ids = stressEntries.map((e) => e.id);
 
-			await app.fuji.tables.entries.bulkDelete(ids);
+			await fuji.tables.entries.bulkDelete(ids);
 
 			results = null;
 			toast.success(
@@ -342,7 +342,7 @@
 
 	<!-- Live count -->
 	<div class="text-xs text-muted-foreground">
-		Total active entries: {app.entries.active.length.toLocaleString()}
+		Total active entries: {fuji.entries.active.length.toLocaleString()}
 		{#if stressTestCount > 0}
 			· Stress-test entries: {stressTestCount.toLocaleString()}
 		{/if}

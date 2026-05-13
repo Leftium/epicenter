@@ -23,6 +23,8 @@ import {
 import { CONFIG_FILENAME } from '../load-config.js';
 import { cmd } from '../util/cmd.js';
 
+const PING_TIMEOUT_MS = 250;
+
 // `ps` shows a liveness column and sweeps obviously-dead entries it sees;
 // the kernel-level `kill -0` predicate stays small and inline rather than
 // re-exported from metadata.ts (no startup-time correctness gate uses it).
@@ -35,57 +37,12 @@ function isProcessAlive(pid: number): boolean {
 	}
 }
 
-/**
- * A row of the `ps` table.
- *
- * Per Invariant 7 the daemon serves every workspace route in its config;
- * the row carries the dir + pid + uptime. Detailed workspace/action state
- * stays on `list` and `peers`.
- */
-export type PsRow = {
+type PsRow = {
 	dir: string;
 	pid: number;
 	uptime: string;
 	configChanged: boolean | '?';
 };
-
-/** Test seam; matches the production `pingDaemon` signature. */
-export type RunPsDeps = {
-	pingDaemon?: (socketPath: string, timeoutMs?: number) => Promise<boolean>;
-};
-
-/**
- * Body of `ps`. Returns the rows the table renderer prints. Dead-pid
- * metadata files are unlinked as a side effect (along with any phantom
- * socket files) before the function returns.
- */
-export async function runPs(deps: RunPsDeps = {}): Promise<PsRow[]> {
-	const ping = deps.pingDaemon ?? pingDaemon;
-	const rows: PsRow[] = [];
-	for (const meta of enumerateDaemons()) {
-		// Dead pid: orphan, unlink metadata + socket and skip.
-		if (!isProcessAlive(meta.pid)) {
-			sweepDaemonRuntimeFiles(meta.dir);
-			continue;
-		}
-
-		// Pid alive but socket unresponsive: also orphan.
-		const sockPath = socketPathFor(meta.dir);
-		const responsive = await ping(sockPath, 250);
-		if (!responsive) {
-			sweepDaemonRuntimeFiles(meta.dir);
-			continue;
-		}
-
-		rows.push({
-			dir: meta.dir,
-			pid: meta.pid,
-			uptime: humanUptime(meta.startedAt),
-			configChanged: detectConfigChange(meta),
-		});
-	}
-	return rows;
-}
 
 /**
  * `'?'` when the config file is missing (e.g. project dir was renamed),
@@ -117,7 +74,30 @@ export const psCommand = cmd({
 	command: 'ps',
 	describe: 'List running `epicenter up` daemons (this user, this machine).',
 	handler: async () => {
-		const rows = await runPs();
+		const rows: PsRow[] = [];
+		for (const meta of enumerateDaemons()) {
+			// Dead pid: orphan, unlink metadata + socket and skip.
+			if (!isProcessAlive(meta.pid)) {
+				sweepDaemonRuntimeFiles(meta.dir);
+				continue;
+			}
+			// Pid alive but socket unresponsive: also orphan.
+			const responsive = await pingDaemon(
+				socketPathFor(meta.dir),
+				PING_TIMEOUT_MS,
+			);
+			if (!responsive) {
+				sweepDaemonRuntimeFiles(meta.dir);
+				continue;
+			}
+			rows.push({
+				dir: meta.dir,
+				pid: meta.pid,
+				uptime: humanUptime(meta.startedAt),
+				configChanged: detectConfigChange(meta),
+			});
+		}
+
 		if (rows.length === 0) {
 			process.stderr.write('no daemons running\n');
 			return;

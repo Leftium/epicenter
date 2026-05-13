@@ -1,11 +1,11 @@
 import type { AuthClient, AuthState, WorkspaceIdentity } from '@epicenter/auth';
-import type { SessionPayload, WorkspaceBase } from './session.svelte.js';
+import type { AppBase, SessionPayload } from './session.svelte.js';
 
-export type SessionLifecycleConfig<TWorkspace extends WorkspaceBase> = {
+export type SessionLifecycleConfig<TApp extends AppBase> = {
 	auth: AuthClient;
-	build: (identity: WorkspaceIdentity) => TWorkspace;
-	getPayload: () => SessionPayload<TWorkspace> | null;
-	setPayload: (payload: SessionPayload<TWorkspace> | null) => void;
+	build: (identity: WorkspaceIdentity) => TApp;
+	getPayload: () => SessionPayload<TApp> | null;
+	setPayload: (payload: SessionPayload<TApp> | null) => void;
 	onDifferentUser: () => void;
 };
 
@@ -22,35 +22,35 @@ export type SessionLifecycleConfig<TWorkspace extends WorkspaceBase> = {
  * object is preserved, so consumer references stay stable across the auth
  * state transition.
  */
-export function createSessionLifecycle<TWorkspace extends WorkspaceBase>({
+export function createSessionLifecycle<TApp extends AppBase>({
 	auth,
 	build,
 	getPayload,
 	setPayload,
 	onDifferentUser,
-}: SessionLifecycleConfig<TWorkspace>) {
+}: SessionLifecycleConfig<TApp>) {
 	function reconcile(state: AuthState) {
 		const payload = getPayload();
 		if (state.status === 'signed-out') {
 			if (payload) {
-				payload.workspace[Symbol.dispose]();
+				payload.app[Symbol.dispose]();
 				setPayload(null);
 			}
 			return;
 		}
 		// signed-in or reauth-required: both carry identity.
 		if (!payload) {
-			const workspace = build(state.identity);
-			setPayload({ identity: state.identity, workspace });
+			const app = build(state.identity);
+			setPayload({ identity: state.identity, app });
 			return;
 		}
 		// Same user: no-op. The payload reference stays stable across
 		// signed-in <-> reauth-required transitions so consumers keep their
 		// references. Auth-bound callbacks read `auth.state` at their own
 		// boundaries (sync at reconnect, fetch at next call).
-		if (payload.workspace.userId === state.identity.user.id) return;
+		if (payload.app.userId === state.identity.user.id) return;
 		// Different user: refuse the live switch and reload (heap safety).
-		payload.workspace[Symbol.dispose]();
+		payload.app[Symbol.dispose]();
 		setPayload(null);
 		onDifferentUser();
 	}
@@ -62,7 +62,7 @@ export function createSessionLifecycle<TWorkspace extends WorkspaceBase>({
 	return {
 		[Symbol.dispose]() {
 			unsubscribe();
-			getPayload()?.workspace[Symbol.dispose]();
+			getPayload()?.app[Symbol.dispose]();
 			setPayload(null);
 		},
 	};

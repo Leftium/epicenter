@@ -11,7 +11,7 @@
 
 import { expect, mock, test } from 'bun:test';
 import type { AuthClient, AuthState, WorkspaceIdentity } from '@epicenter/auth';
-import type { SessionPayload, WorkspaceBase } from './session.svelte.js';
+import type { AppBase, SessionPayload } from './session.svelte.js';
 import { createSessionLifecycle } from './session-lifecycle.js';
 
 function makeIdentity({
@@ -51,30 +51,30 @@ function makeAuth(initial: AuthState) {
 	return auth as typeof auth & AuthClient;
 }
 
-type TestWorkspace = WorkspaceBase & {
+type TestApp = AppBase & {
 	id: number;
 	disposed: boolean;
 };
 
-let workspaceCounter = 0;
+let appCounter = 0;
 function makeBuild() {
-	const built: TestWorkspace[] = [];
-	const build = (identity: WorkspaceIdentity): TestWorkspace => {
-		const workspace: TestWorkspace = {
-			id: ++workspaceCounter,
+	const built: TestApp[] = [];
+	const build = (identity: WorkspaceIdentity): TestApp => {
+		const app: TestApp = {
+			id: ++appCounter,
 			userId: identity.user.id,
 			disposed: false,
 			[Symbol.dispose]() {
-				workspace.disposed = true;
+				app.disposed = true;
 			},
 		};
-		built.push(workspace);
-		return workspace;
+		built.push(app);
+		return app;
 	};
 	return { build, built };
 }
 
-function makeHolder<T extends WorkspaceBase>() {
+function makeHolder<T extends AppBase>() {
 	let payload: SessionPayload<T> | null = null;
 	return {
 		getPayload: () => payload,
@@ -90,7 +90,7 @@ test('signed-in → reauth-required → signed-in preserves the same SessionPayl
 		identity: makeIdentity(),
 	});
 	const { build, built } = makeBuild();
-	const holder = makeHolder<TestWorkspace>();
+	const holder = makeHolder<TestApp>();
 	const onDifferentUser = mock(() => {});
 
 	using _lifecycle = createSessionLifecycle({
@@ -104,18 +104,18 @@ test('signed-in → reauth-required → signed-in preserves the same SessionPayl
 	const initial = holder.getPayload();
 	expect(initial).not.toBeNull();
 	expect(built).toHaveLength(1);
-	expect(initial!.workspace).toBe(built[0]!);
-	expect(initial!.workspace.disposed).toBe(false);
+	expect(initial!.app).toBe(built[0]!);
+	expect(initial!.app.disposed).toBe(false);
 
 	auth.setState({ status: 'reauth-required', identity: makeIdentity() });
 	expect(holder.getPayload()).toBe(initial);
 	expect(built).toHaveLength(1);
-	expect(initial!.workspace.disposed).toBe(false);
+	expect(initial!.app.disposed).toBe(false);
 
 	auth.setState({ status: 'signed-in', identity: makeIdentity() });
 	expect(holder.getPayload()).toBe(initial);
 	expect(built).toHaveLength(1);
-	expect(initial!.workspace.disposed).toBe(false);
+	expect(initial!.app.disposed).toBe(false);
 	expect(onDifferentUser).not.toHaveBeenCalled();
 });
 
@@ -125,7 +125,7 @@ test('signed-in (user A) → signed-in (user B) disposes and triggers different-
 		identity: makeIdentity({ userId: 'user-A' }),
 	});
 	const { build, built } = makeBuild();
-	const holder = makeHolder<TestWorkspace>();
+	const holder = makeHolder<TestApp>();
 	const onDifferentUser = mock(() => {});
 
 	using _lifecycle = createSessionLifecycle({
@@ -137,25 +137,25 @@ test('signed-in (user A) → signed-in (user B) disposes and triggers different-
 	});
 
 	const initial = holder.getPayload()!;
-	expect(initial.workspace.userId).toBe('user-A');
+	expect(initial.app.userId).toBe('user-A');
 
 	auth.setState({
 		status: 'signed-in',
 		identity: makeIdentity({ userId: 'user-B' }),
 	});
 
-	expect(initial.workspace.disposed).toBe(true);
+	expect(initial.app.disposed).toBe(true);
 	expect(holder.getPayload()).toBeNull();
 	expect(onDifferentUser).toHaveBeenCalledTimes(1);
 });
 
-test('signed-out disposes the workspace and clears the payload', () => {
+test('signed-out disposes the app and clears the payload', () => {
 	const auth = makeAuth({
 		status: 'signed-in',
 		identity: makeIdentity(),
 	});
 	const { build, built } = makeBuild();
-	const holder = makeHolder<TestWorkspace>();
+	const holder = makeHolder<TestApp>();
 	const onDifferentUser = mock(() => {});
 
 	using _lifecycle = createSessionLifecycle({
@@ -169,18 +169,18 @@ test('signed-out disposes the workspace and clears the payload', () => {
 	const initial = holder.getPayload()!;
 	auth.setState({ status: 'signed-out' });
 
-	expect(initial.workspace.disposed).toBe(true);
+	expect(initial.app.disposed).toBe(true);
 	expect(holder.getPayload()).toBeNull();
 	expect(onDifferentUser).not.toHaveBeenCalled();
 });
 
-test('cold boot in reauth-required builds the workspace from identity', () => {
+test('cold boot in reauth-required builds the app from identity', () => {
 	const auth = makeAuth({
 		status: 'reauth-required',
 		identity: makeIdentity(),
 	});
 	const { build, built } = makeBuild();
-	const holder = makeHolder<TestWorkspace>();
+	const holder = makeHolder<TestApp>();
 	const onDifferentUser = mock(() => {});
 
 	using _lifecycle = createSessionLifecycle({
@@ -194,16 +194,16 @@ test('cold boot in reauth-required builds the workspace from identity', () => {
 	const payload = holder.getPayload();
 	expect(payload).not.toBeNull();
 	expect(built).toHaveLength(1);
-	expect(payload!.workspace).toBe(built[0]!);
+	expect(payload!.app).toBe(built[0]!);
 });
 
-test('lifecycle disposal clears the payload after disposing the workspace', () => {
+test('lifecycle disposal clears the payload after disposing the app', () => {
 	const auth = makeAuth({
 		status: 'signed-in',
 		identity: makeIdentity(),
 	});
 	const { build } = makeBuild();
-	const holder = makeHolder<TestWorkspace>();
+	const holder = makeHolder<TestApp>();
 	const onDifferentUser = mock(() => {});
 
 	const lifecycle = createSessionLifecycle({
@@ -217,6 +217,6 @@ test('lifecycle disposal clears the payload after disposing the workspace', () =
 	const initial = holder.getPayload()!;
 	lifecycle[Symbol.dispose]();
 
-	expect(initial.workspace.disposed).toBe(true);
+	expect(initial.app.disposed).toBe(true);
 	expect(holder.getPayload()).toBeNull();
 });

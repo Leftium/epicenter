@@ -12,9 +12,9 @@ export {
 	PersistedError,
 } from './persisted-state.svelte.js';
 export {
+	type AppBase,
 	createSession,
-	type InferWorkspace,
+	type InferApp,
 	type Session,
 	type SessionPayload,
-	type WorkspaceBase,
 } from './session.svelte.js';

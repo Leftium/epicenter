@@ -4,7 +4,7 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
 	import { toast, toastOnError } from '@epicenter/ui/sonner';
-	import type { SyncStatus, Workspace } from '@epicenter/workspace';
+	import type { Collaboration, SyncStatus } from '@epicenter/workspace';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
@@ -16,8 +16,11 @@
 	/**
 	 * Shared account popover.
 	 *
-	 * Renders sync status from a `Workspace` (the `openWorkspace` return type)
-	 * alongside auth identity, reconnect, and sign-out.
+	 * Renders sync status from a collaboration runtime alongside auth
+	 * identity, reconnect, and sign-out. Takes only the three fields it
+	 * actually needs (`status`, `onStatusChange`, `reconnect`) rather than the
+	 * full `Collaboration` value, so RPC, peers, and awareness do not leak
+	 * into the account UI surface.
 	 *
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
 	 */
@@ -25,10 +28,15 @@
 		/** The auth client from `createOAuthAppAuth()`. */
 		auth: AuthClient;
 		/**
-		 * The hosted workspace, typically `bundle.workspace`. Stable for this
-		 * component's lifetime. Remount when switching workspaces.
+		 * Sync surface slice from the binding's `collaboration`. Pass
+		 * `binding.collaboration` and TypeScript narrows; or build a literal
+		 * `{ status, onStatusChange, reconnect }` when the consumer holds a
+		 * smaller adapter.
 		 */
-		workspace: Workspace;
+		collaboration: Pick<
+			Collaboration,
+			'status' | 'onStatusChange' | 'reconnect'
+		>;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
 		/** Optional destructive cleanup for this account's local device cache. */
@@ -37,7 +45,7 @@
 
 	let {
 		auth,
-		workspace,
+		collaboration,
 		syncNoun,
 		onForgetDevice,
 	}: AccountPopoverProps = $props();
@@ -51,8 +59,8 @@
 	const isSignedIn = $derived(auth.state.status === 'signed-in');
 
 	$effect(() => {
-		syncStatus = workspace.status;
-		const unsubscribe = workspace.onStatusChange((status) => {
+		syncStatus = collaboration.status;
+		const unsubscribe = collaboration.onStatusChange((status) => {
 			syncStatus = status;
 		});
 		return unsubscribe;
@@ -172,7 +180,7 @@
 							variant="outline"
 							size="sm"
 							class="flex-1"
-							onclick={() => workspace.reconnect()}
+							onclick={() => collaboration.reconnect()}
 						>
 							<RefreshCw class="size-3.5" />
 							Reconnect

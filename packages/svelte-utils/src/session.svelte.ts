@@ -1,24 +1,25 @@
 /**
  * Shared session state machine for apps that gate UI on an authenticated
- * identity plus an app-defined payload (typically a workspace handle).
+ * identity plus an app-defined payload.
  *
- * `Session<T>` is the projection layer between `AuthState` and the workspace.
- * The shape is the discriminator: `SessionPayload<T> | null`. Apps gate on
- * truthiness (`if (session.current)`). The projection never surfaces credential
- * freshness; consumers that care about it read `auth.state.status` directly.
+ * `Session<T>` is the projection layer between `AuthState` and the app
+ * binding. The shape is the discriminator: `SessionPayload<T> | null`. Apps
+ * gate on truthiness (`if (session.current)`). The projection never surfaces
+ * credential freshness; consumers that care about it read `auth.state.status`
+ * directly.
  *
  * This factory owns the payload lifecycle (build, dispose) and the user-switch
  * refusal (different `user.id` disposes the payload and reloads the page).
  * Disposal is triggered ONLY by `signed-out` or a different `user.id`.
- * Same-user `reauth-required` is a no-op, so local workspace state stays
- * mounted while credentials refresh, and `session.current` keeps the same
+ * Same-user `reauth-required` is a no-op, so local app state stays mounted
+ * while credentials refresh, and `session.current` keeps the same
  * `SessionPayload` reference across the transition.
  *
- * The returned `requireWorkspace()` method is the standard descendant-side
+ * The returned `requireApp()` method is the standard descendant-side
  * assertion helper. Route layouts prove `session.current` before mounting
- * signed-in children; descendants call `requireWorkspace()` once at script init
+ * signed-in children; descendants call `requireApp()` once at script init
  * to assert they are inside that gated subtree. Re-export it from each app's
- * session module with `export const { requireWorkspace } = session`.
+ * session module with `export const { requireApp } = session`.
  *
  * Lazy callbacks (e.g., `encryptionKeys`, `openWebSocket`) are read at:
  *   - attachment time (e.g., `attachEncryption` reads `encryptionKeys()` once
@@ -42,8 +43,8 @@
  *     return { userId: identity.user.id, fuji, [Symbol.dispose]() {...} };
  *   },
  * });
- * export const { requireWorkspace } = session;
- * export type FujiWorkspace = InferWorkspace<typeof session>;
+ * export const { requireApp } = session;
+ * export type FujiBinding = InferApp<typeof session>;
  * ```
  */
 
@@ -55,44 +56,44 @@ import {
 
 export type SessionPayload<T> = {
 	identity: WorkspaceIdentity;
-	workspace: T;
+	app: T;
 };
 
 export type Session<T> = SessionPayload<T> | null;
 
-export type WorkspaceBase = {
+export type AppBase = {
 	userId: string;
 } & Disposable;
 
 /**
- * Infer the workspace payload type from a session created by `createSession`.
+ * Infer the app handle type from a session created by `createSession`.
  *
- * Lets per-app modules define the workspace shape in one place (the build
+ * Lets per-app modules define the app shape in one place (the build
  * factory) and derive the exported type from it, rather than declaring the
  * type up front and matching it inside the factory.
  *
  * @example
  * ```ts
  * export const session = createSession({ auth, build: (identity) => {...} });
- * export type FujiWorkspace = InferWorkspace<typeof session>;
+ * export type FujiBinding = InferApp<typeof session>;
  * ```
  */
-export type InferWorkspace<TSession extends { current: unknown }> =
+export type InferApp<TSession extends { current: unknown }> =
 	TSession['current'] extends infer C
-		? C extends { workspace: infer T }
+		? C extends { app: infer T }
 			? T
 			: never
 		: never;
 
-export function createSession<TWorkspace extends WorkspaceBase>({
+export function createSession<TApp extends AppBase>({
 	auth,
 	build,
 }: {
 	auth: AuthClient;
-	build: (identity: WorkspaceIdentity) => TWorkspace;
+	build: (identity: WorkspaceIdentity) => TApp;
 }) {
-	let payload = $state<SessionPayload<TWorkspace> | null>(null);
-	const lifecycle = createSessionLifecycle<TWorkspace>({
+	let payload = $state<SessionPayload<TApp> | null>(null);
+	const lifecycle = createSessionLifecycle<TApp>({
 		auth,
 		build,
 		getPayload: () => payload,
@@ -103,28 +104,28 @@ export function createSession<TWorkspace extends WorkspaceBase>({
 			location.reload();
 			throw new Error('unreachable: reload pending');
 		},
-	} satisfies SessionLifecycleConfig<TWorkspace>);
+	} satisfies SessionLifecycleConfig<TApp>);
 
 	return {
-		get current(): Session<TWorkspace> {
+		get current(): Session<TApp> {
 			return payload;
 		},
 		/**
-		 * Returns the live workspace payload, throwing when there is no
+		 * Returns the live app handle, throwing when there is no
 		 * authenticated identity. Callers are typically descendants mounted under
 		 * the layout's `{#if session.current}` gate. Bind once at script init and
 		 * dot-access fields. Do NOT inline into templates; re-evaluation breaks
 		 * teardown semantics.
 		 */
-		requireWorkspace(): TWorkspace {
+		requireApp(): TApp {
 			if (!payload) {
 				throw new Error(
-					'requireWorkspace() called without an authenticated session. ' +
+					'requireApp() called without an authenticated session. ' +
 						'This indicates a route or component mounted without the layout gate, ' +
-						'or a callback firing after the workspace was disposed.',
+						'or a callback firing after the app was disposed.',
 				);
 			}
-			return payload.workspace;
+			return payload.app;
 		},
 		[Symbol.dispose]() {
 			lifecycle[Symbol.dispose]();

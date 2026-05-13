@@ -1,4 +1,4 @@
-import type { Entry } from '../routes/(signed-in)/fuji/workspace';
+import type { Entry } from '@epicenter/fuji';
 
 /**
  * Test whether an entry matches a search query.

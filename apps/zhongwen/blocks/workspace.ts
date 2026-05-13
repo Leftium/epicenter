@@ -1,9 +1,9 @@
 /**
- * Workspace schema: branded IDs and table/kv definitions.
+ * Zhongwen workspace: schema definition with branded IDs and table/kv defs.
  *
  * Browser-agnostic: no IndexedDB, no Svelte imports, no Y.Doc construction.
- * The Y.Doc and attachments live in `lib/zhongwen/document.ts` (document) and
- * `lib/zhongwen/browser.ts` (env-bound), composed through `openZhongwenBrowser`.
+ * The Y.Doc and attachments live in `script.ts` (Bun script) and `browser.ts`
+ * (env-bound), composed through `openZhongwenBrowser`.
  */
 
 import {

@@ -25,7 +25,7 @@
 import type { FileId } from '@epicenter/filesystem';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
-import type { ConversationId } from '$lib/workspace/definition';
+import type { ConversationId } from 'opensidian';
 
 /**
  * The complete URL state schema for Opensidian.

@@ -20,10 +20,10 @@ import { defineConfig, js, repository } from 'jsrepo';
  */
 
 const BLOCKS = {
-	fuji: ['snapshot', 'script', 'daemon-route'],
-	honeycrisp: ['script', 'daemon-route'],
-	opensidian: ['script', 'daemon-route'],
-	zhongwen: ['script', 'daemon-route'],
+	fuji: ['workspace', 'snapshot', 'script', 'daemon-route'],
+	honeycrisp: ['workspace', 'script', 'daemon-route'],
+	opensidian: ['workspace', 'script', 'daemon-route'],
+	zhongwen: ['workspace', 'script', 'daemon-route'],
 } as const;
 
 export default defineConfig({

@@ -1,6 +1,6 @@
 import { loadMachineSession } from '@epicenter/auth/node';
 import type { EncryptionKeys } from '@epicenter/encryption';
-import { FUJI_WORKSPACE_ID, fujiTables } from '@epicenter/fuji';
+import { FUJI_WORKSPACE_ID, fujiTables } from './workspace.js';
 import { attachEncryption, type ProjectDir } from '@epicenter/workspace';
 import {
 	attachYjsLogReader,

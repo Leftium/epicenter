@@ -19,7 +19,7 @@ import {
 	type ConversationId,
 	generateChatMessageId,
 	generateConversationId,
-} from '../zhongwen/workspace';
+} from '@epicenter/zhongwen';
 import {
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,

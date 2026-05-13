@@ -4,7 +4,7 @@ import {
 	createFujiActions,
 	FUJI_WORKSPACE_ID,
 	fujiTables,
-} from '@epicenter/fuji';
+} from './workspace.js';
 import {
 	attachEncryption,
 	openCollaboration,

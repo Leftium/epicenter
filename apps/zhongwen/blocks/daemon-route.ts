@@ -7,7 +7,7 @@ import {
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import { zhongwenKv, zhongwenTables } from '@epicenter/zhongwen';
+import { zhongwenKv, zhongwenTables } from './workspace.js';
 import * as Y from 'yjs';
 
 export const DEFAULT_ZHONGWEN_DAEMON_ROUTE = 'zhongwen';

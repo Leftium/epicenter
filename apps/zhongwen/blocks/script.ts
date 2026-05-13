@@ -13,7 +13,7 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { zhongwenKv, zhongwenTables } from '@epicenter/zhongwen';
+import { zhongwenKv, zhongwenTables } from './workspace.js';
 
 export async function openZhongwenScript({
 	projectDir = findEpicenterDir(),

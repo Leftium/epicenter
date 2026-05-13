@@ -26,7 +26,7 @@ import {
 	type ConversationId,
 	generateChatMessageId,
 	generateConversationId,
-} from '$lib/workspace/definition';
+} from 'opensidian';
 
 function getStringValue(value: JsonValue | undefined, fallback: string) {
 	return typeof value === 'string' ? value : fallback;

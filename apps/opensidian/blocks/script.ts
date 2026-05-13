@@ -13,7 +13,7 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { opensidianTables } from 'opensidian';
+import { opensidianTables } from './workspace.js';
 
 export async function openOpensidianScript({
 	projectDir = findEpicenterDir(),

@@ -12,6 +12,7 @@
  */
 
 import {
+	type ActionRegistry,
 	DateTimeString,
 	defineMutation,
 	defineTable,
@@ -130,28 +131,27 @@ export type HoneycrispTables = Tables<typeof honeycrispTables>;
  */
 export function createHoneycrispActions(tables: HoneycrispTables) {
 	return {
-		folders: {
-			/**
-			 * Delete a folder and move all its notes to unfiled.
-			 *
-			 * Re-parents every note in the folder (sets `folderId` to undefined)
-			 * and deletes the folder row. Selection clearing is handled by the
-			 * Svelte state layer (folders) via URL search params.
-			 */
-			delete: defineMutation({
-				description: 'Delete a folder and re-parent its notes to unfiled',
-				input: Type.Object({ folderId: Type.String() }),
-				handler: ({ folderId: rawId }) => {
-					const folderId = rawId as FolderId;
-					const folderNotes = tables.notes
-						.getAllValid()
-						.filter((n) => n.folderId === folderId);
-					for (const note of folderNotes) {
-						tables.notes.update(note.id, { folderId: undefined });
-					}
-					tables.folders.delete(folderId);
-				},
-			}),
-		},
-	};
+		/**
+		 * Delete a folder and move all its notes to unfiled.
+		 *
+		 * Re-parents every note in the folder (sets `folderId` to undefined)
+		 * and deletes the folder row. Selection clearing is handled by the
+		 * Svelte state layer (folders) via URL search params.
+		 */
+		'folders.delete': defineMutation({
+			description: 'Delete a folder and re-parent its notes to unfiled',
+			input: Type.Object({ folderId: Type.String() }),
+			handler: ({ folderId: rawId }) => {
+				const folderId = rawId as FolderId;
+				const folderNotes = tables.notes
+					.getAllValid()
+					.filter((n) => n.folderId === folderId);
+				for (const note of folderNotes) {
+					tables.notes.update(note.id, { folderId: undefined });
+				}
+				tables.folders.delete(folderId);
+			},
+		}),
+	} satisfies ActionRegistry;
 }
+export type HoneycrispActions = ReturnType<typeof createHoneycrispActions>;

@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./src/routes/(signed-in)/fuji/workspace.ts"
+		".": "./blocks/workspace.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

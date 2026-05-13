@@ -3,7 +3,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	createHoneycrispActions,
 	honeycrispTables,
-} from '@epicenter/honeycrisp';
+} from './workspace.js';
 import {
 	attachEncryption,
 	openCollaboration,

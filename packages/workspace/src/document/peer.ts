@@ -7,7 +7,7 @@
  * Self is never exposed: local actions are reached via
  * `collaboration.actions.*` instead.
  *
- * `peer.invoke` rides ACTION_REQUEST (app action by dot path) and
+ * `peer.invoke` rides ACTION_REQUEST (app action by snake_case key) and
  * `peer.describe` rides RUNTIME_REQUEST (collaboration runtime verb);
  * `openCollaboration` injects `sendActionRequest` and `sendRuntimeRequest` hooks
  * so this module stays decoupled from the supervisor implementation.
@@ -47,7 +47,7 @@ export type DefaultRpcMap = Record<string, { input: unknown; output: unknown }>;
  * need covariant compatibility: `{ input: string }` must extend
  * `{ input: any }` but does NOT extend `{ input: unknown }`.
  *
- * Apps that want typed cross-device dispatch declare a flat map (path -> input/output)
+ * Apps that want typed cross-device dispatch declare a flat map (key -> input/output)
  * and pass it as the type argument to `find` or `invoke`.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,9 +107,9 @@ export type Peer<TActions = unknown> = {
 	 */
 	readonly clientID: number;
 	/**
-	 * Alphabetically sorted dot-path listing of every action the peer hosts,
+	 * Alphabetically sorted snake_case key listing of every action the peer hosts,
 	 * read from awareness. Use for capability-based picks:
-	 * `peers.list().find(p => p.actionPaths.includes('whispering.startRecording'))`.
+	 * `peers.list().find(p => p.actionPaths.includes('recordings_start'))`.
 	 */
 	readonly actionPaths: readonly string[];
 

@@ -1,6 +1,6 @@
 /**
  * Actions: typed queries (reads) and mutations (writes) authored as a flat
- * record keyed by dot path. `defineQuery`/`defineMutation` attach metadata
+ * record keyed by snake_case key. `defineQuery`/`defineMutation` attach metadata
  * to the handler and return it. The action callable IS the handler, so local
  * callers see exactly what the author wrote (sync stays sync, `Result` stays
  * `Result`).
@@ -12,21 +12,21 @@
  *     local, in-memory                     wire form (peer.describe)
  *
  *     {                                    {
- *       'tabs.close': Action,                'tabs.close': { type, ... },
+ *       tabs_close:   Action,                tabs_close:   { type, ... },
  *       'ping':       Action,                'ping':       { type, ... },
  *     }                                    }
  *
  * Functions don't serialize, so the wire form drops them and keeps just the
  * metadata. The wire form is "the registry minus handlers"; both views index
- * by the same dot path. There is no walker, no segment loop, no path
- * resolver: `Object.entries(actions)` is the iterator, `actions[path]` is
+ * by the same snake_case key. There is no walker, no segment loop, no path
+ * resolver: `Object.entries(actions)` is the iterator, `actions[key]` is
  * the lookup.
  *
  * Unknown local callers use `invokeAction`, which Ok-wraps raw values,
  * preserves existing Results, and catches throws as `RpcError.ActionFailed`.
  * RPC uses `invokeActionForRpc`, which also converts custom non-RPC errors
  * into `RpcError.ActionFailed` before the result crosses the wire. Remote
- * callers reach actions via `collaboration.peers.find(peerId)?.invoke(path, input)`,
+ * callers reach actions via `collaboration.peers.find(peerId)?.invoke(key, input)`,
  * which returns `Promise<Result<T, RemoteCallError>>`.
  *
  * @module
@@ -72,6 +72,8 @@ type ActionConfig<TInput extends TSchema | undefined, R> = {
 
 type ActionType = 'query' | 'mutation';
 
+export const ACTION_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+
 /**
  * Metadata properties attached to a callable action.
  *
@@ -91,7 +93,7 @@ export type ActionMeta<
 };
 
 /**
- * Flat dot-path to `ActionMeta` map describing a peer's full action surface.
+ * Flat snake_case key to `ActionMeta` map describing a peer's full action surface.
  * Returned by the `RUNTIME_REQUEST { verb: 'describe-actions' }` wire kind
  * and consumed via `collaboration.peers.find(peerId)?.describe()`.
  */
@@ -112,9 +114,9 @@ export type Action<
 > = ActionHandler<TInput, R> & ActionMeta<TInput, TType>;
 
 /**
- * Flat dot-path to `Action` map. The single shape for an in-process action
- * surface: keys are the wire path, the AI tool name (after one
- * dot-to-underscore swap), and the CLI argument. Author with a literal and
+ * Flat snake_case key to `Action` map. The single shape for an in-process
+ * action surface: keys are the local address, peer RPC method, daemon
+ * argument, CLI flag, and AI tool name. Author with a literal and
  * `satisfies ActionRegistry`; consumers iterate with `Object.entries` or
  * index by string.
  */
@@ -229,16 +231,16 @@ export function toActionMeta({
  * must be an `RpcError`.
  *
  * `errorLabel` is required and appears as `action` on a returned
- * `RpcError.ActionFailed`. Every caller has the action path at the call site
+ * `RpcError.ActionFailed`. Every caller has the action key at the call site
  * (it's how it dispatched to the action), so pass it through; there is no
  * fallback chain.
  *
  * @example
  * ```ts
  * const result = await invokeAction<{ closedCount: number }>(
- *   workspace.actions['tabs.close'],
+ *   workspace.actions.tabs_close,
  *   { tabIds: [1, 2] },
- *   'tabs.close',
+ *   'tabs_close',
  * );
  * if (result.error) { ... }
  * console.log(result.data.closedCount);

@@ -5,11 +5,11 @@
  *
  *     {
  *       identity: { id, name, platform },
- *       actionPaths: ['tabs.close', 'tabs.list', ...],
+ *       actionPaths: ['tabs_close', 'tabs_list', ...],
  *     }
  *
  * `identity` is the stable peer descriptor. `actionPaths` is the alphabetically
- * sorted dot-path listing of every action the peer hosts, computed once at
+ * sorted snake_case key listing of every action the peer hosts, computed once at
  * `openCollaboration` startup. Full action schemas (input shapes, descriptions)
  * are not in awareness; fetch them via `peer.describe()` when needed.
  *
@@ -17,9 +17,20 @@
  * wire. `peerAwarenessSchema` is the field-keyed schema record consumed by
  * `attachAwareness`. `PeerAwarenessState` is the runtime shape of a peer's
  * published state.
+ *
+ * NOTE: this file is mid-transition (see spec
+ * 20260513T220000-document-sync-and-identity-collapse.md). `PeerIdentity` and
+ * the `identity`/`name` fields are scheduled for deletion. The new shape is
+ * `Replica` (client-claimed, install-stable) + `Subject` (server-stamped on
+ * the wire envelope). Wave 3 swaps the schema record over; Wave 6 deletes
+ * the old types.
  */
 
 import { type } from 'arktype';
+
+// ════════════════════════════════════════════════════════════════════════════
+// Legacy shape (scheduled for deletion in Wave 6)
+// ════════════════════════════════════════════════════════════════════════════
 
 /** Awareness identity published by each connected peer. */
 export const PeerIdentity = type({
@@ -47,3 +58,36 @@ export type PeerAwarenessState = {
 	identity: PeerIdentity;
 	actionPaths: readonly string[];
 };
+
+// ════════════════════════════════════════════════════════════════════════════
+// New shape: Replica (client-claimed) + Subject (server-stamped)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Client-claimed peer descriptor. `id` is install-stable (one UUID per device
+ * persisted in storage); `platform` is install-property (the runtime the
+ * device executes inside). Multiple browser tabs on the same machine publish
+ * the same `replica` but distinct Yjs `clientID`s.
+ *
+ * Replica fields are claimed by the client and only the client knows them.
+ * Trust-attested identity (the auth subject) is stamped by the server on the
+ * wire envelope, not in this payload.
+ */
+export const Replica = type({
+	id: 'string',
+	platform: '"web" | "tauri" | "chrome-extension" | "node"',
+});
+export type Replica = typeof Replica.infer;
+
+/**
+ * Closed enum of supported peer runtimes. Derived from `Replica` so any
+ * additions stay schema-driven.
+ */
+export type Platform = Replica['platform'];
+
+/**
+ * Server-stamped subject. The authenticated user id, derived by the server
+ * from the OAuth session at WebSocket ingress and attached to the awareness
+ * envelope frame. Clients never publish this directly.
+ */
+export type Subject = string;

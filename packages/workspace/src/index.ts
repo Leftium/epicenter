@@ -84,6 +84,7 @@ export type {
 	ActionRegistry,
 } from './shared/actions';
 export {
+	ACTION_KEY_PATTERN,
 	defineMutation,
 	defineQuery,
 	invokeAction,

@@ -183,9 +183,8 @@ function daemonActionSuggestionLines(
 	entry: StartedDaemonRoute,
 	prefix: string,
 ): string[] {
-	const pfx = prefix ? `${prefix}.` : '';
 	return Object.entries(entry.runtime.collaboration.actions)
-		.filter(([path]) => !pfx || path === prefix || path.startsWith(pfx))
+		.filter(([path]) => !prefix || path.startsWith(prefix))
 		.map(
 			([path, action]) =>
 				`  ${toDaemonActionPath(entry, path)}  (${action.type})`,
@@ -196,10 +195,10 @@ function daemonActionNearestSiblingLines(
 	entry: StartedDaemonRoute,
 	missedPath: string,
 ): string[] {
-	const parts = missedPath.split('.');
+	const parts = missedPath.split('_');
 	while (parts.length > 0) {
 		parts.pop();
-		const prefix = parts.join('.');
+		const prefix = parts.join('_');
 		const alts = daemonActionSuggestionLines(entry, prefix);
 		if (alts.length > 0) return alts;
 	}

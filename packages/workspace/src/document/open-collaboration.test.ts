@@ -8,7 +8,7 @@
  *
  * Covers:
  *   - identity publication
- *   - actionPaths alphabetically sorted; no runtime verbs leak into the
+ *   - action keys alphabetically sorted; no runtime verbs leak into the
  *     published action surface (runtime verbs ride RUNTIME_REQUEST, not
  *     ACTION_REQUEST)
  *   - peers.list() never includes self
@@ -79,10 +79,10 @@ function setup<TActions extends ActionRegistry = ActionRegistry>(
 describe('openCollaboration', () => {
 	test('exposes the supplied identity and user actions', () => {
 		const list = defineQuery({ handler: () => [] });
-		const { ydoc, collaboration } = setup({ 'tabs.list': list });
+		const { ydoc, collaboration } = setup({ tabs_list: list });
 		try {
 			expect(collaboration.identity).toEqual(identity);
-			expect(collaboration.actions).toEqual({ 'tabs.list': list });
+			expect(collaboration.actions).toEqual({ tabs_list: list });
 		} finally {
 			ydoc.destroy();
 		}
@@ -99,7 +99,7 @@ describe('openCollaboration', () => {
 
 	test('peers.list() returns [] when no remote peers are present (self is filtered)', () => {
 		const { ydoc, collaboration } = setup({
-			'tabs.list': defineQuery({ handler: () => [] }),
+			tabs_list: defineQuery({ handler: () => [] }),
 		});
 		try {
 			expect(collaboration.peers.list()).toEqual([]);
@@ -120,23 +120,40 @@ describe('openCollaboration', () => {
 describe('action paths publication shape', () => {
 	test('Object.keys + alphabetical sort produces the publication order', () => {
 		const actions = {
-			'z.close': defineMutation({ handler: () => null }),
-			'a.list': defineQuery({ handler: () => [] }),
-			'm.ping': defineQuery({ handler: () => 'pong' }),
+			z_close: defineMutation({ handler: () => null }),
+			a_list: defineQuery({ handler: () => [] }),
+			m_ping: defineQuery({ handler: () => 'pong' }),
 		} satisfies ActionRegistry;
-		expect(Object.keys(actions).sort()).toEqual([
-			'a.list',
-			'm.ping',
-			'z.close',
-		]);
+		expect(Object.keys(actions).sort()).toEqual(['a_list', 'm_ping', 'z_close']);
 	});
 
 	test('a top-level `system` key in user actions is legal and shows up in actionPaths', () => {
 		// The runtime previously reserved `system.*`; the runtime/action plane
 		// split means user code can use the name freely now.
 		const actions = {
-			'system.ping': defineQuery({ handler: () => 'pong' }),
+			system_ping: defineQuery({ handler: () => 'pong' }),
 		} satisfies ActionRegistry;
-		expect(Object.keys(actions).sort()).toEqual(['system.ping']);
+		expect(Object.keys(actions).sort()).toEqual(['system_ping']);
+	});
+
+	test('throws when an action key does not match the shared pattern', () => {
+		const dottedKey = ['tabs', 'close'].join('.');
+		expect(() =>
+			setup({
+				[dottedKey]: defineMutation({ handler: () => null }),
+			}),
+		).toThrow(/Invalid action key/);
+
+		expect(() =>
+			setup({
+				TabsClose: defineMutation({ handler: () => null }),
+			}),
+		).toThrow(/Invalid action key/);
+
+		expect(() =>
+			setup({
+				'0tabs': defineMutation({ handler: () => null }),
+			}),
+		).toThrow(/Invalid action key/);
 	});
 });

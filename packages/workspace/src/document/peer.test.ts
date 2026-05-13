@@ -36,7 +36,9 @@ function setup({
 	send?: PeerWireHooks['sendActionRequest'];
 	sendRuntime?: PeerWireHooks['sendRuntimeRequest'];
 } = {}) {
-	const ydoc = new Y.Doc({ clientID: selfClientId });
+	// Yjs accepts `clientID` at runtime but it isn't on `DocOpts`. The cast
+	// is test-only: production code never sets a deterministic clientID.
+	const ydoc = new Y.Doc({ clientID: selfClientId } as ConstructorParameters<typeof Y.Doc>[0]);
 	const awareness = new Awareness(ydoc);
 	const hooks: PeerWireHooks = {
 		sendActionRequest: send ?? (async () => Ok(null)),
@@ -101,7 +103,9 @@ describe('createPeersSurface.list', () => {
 
 	test('drops non-object state', () => {
 		const { awareness, peers } = setup();
-		awareness.getStates().set(10, null);
+		// Awareness state map types values as records, but the readers must
+		// tolerate null entries; injecting null here exercises that guard.
+		(awareness.getStates() as Map<number, unknown>).set(10, null);
 
 		expect(peers.list()).toEqual([]);
 	});
@@ -117,10 +121,10 @@ describe('createPeersSurface.list', () => {
 
 	test('peer.actionPaths surfaces from awareness', () => {
 		const { awareness, peers } = setup();
-		publish(awareness, 10, validPeerState('mac', ['tabs.close', 'tabs.list']));
+		publish(awareness, 10, validPeerState('mac', ['tabs_close', 'tabs_list']));
 
 		const list = peers.list();
-		expect(list[0]?.actionPaths).toEqual(['tabs.close', 'tabs.list']);
+		expect(list[0]?.actionPaths).toEqual(['tabs_close', 'tabs_list']);
 	});
 });
 
@@ -186,10 +190,14 @@ describe('peer.invoke', () => {
 		publish(awareness, 42, validPeerState('mac'));
 
 		const peer = peers.find('mac');
-		const result = await peer?.invoke('tabs.close', { tabIds: [1] }, { timeout: 100 });
+		const result = await peer?.invoke(
+			'tabs_close',
+			{ tabIds: [1] },
+			{ timeout: 100 },
+		);
 
 		expect(captured.target).toBe(42);
-		expect(captured.action).toBe('tabs.close');
+		expect(captured.action).toBe('tabs_close');
 		expect(captured.input).toEqual({ tabIds: [1] });
 		expect(captured.options).toEqual({ timeout: 100 });
 		expect(result?.data).toEqual({ closedCount: 1 });
@@ -213,7 +221,7 @@ describe('peer.invoke', () => {
 		publish(awareness, 42, validPeerState('mac'));
 
 		const peer = peers.find('mac')!;
-		const invocation = peer.invoke('tabs.close', { tabIds: [1] });
+		const invocation = peer.invoke('tabs_close', { tabIds: [1] });
 
 		// Peer leaves before sendActionRequest resolves.
 		awareness.getStates().delete(42);
@@ -227,7 +235,7 @@ describe('peer.invoke', () => {
 		expect(result.error?.name).toBe('PeerLeft');
 		if (result.error?.name === 'PeerLeft') {
 			expect(result.error.peerId).toBe('mac');
-			expect(result.error.action).toBe('tabs.close');
+			expect(result.error.action).toBe('tabs_close');
 		}
 
 		// Resolve the dangling send so the test process doesn't leak.
@@ -241,11 +249,11 @@ describe('peer.invoke', () => {
 		publish(awareness, 42, validPeerState('mac'));
 
 		const peer = peers.find('mac')!;
-		const result = await peer.invoke('tabs.close', { tabIds: [1] });
+		const result = await peer.invoke('tabs_close', { tabIds: [1] });
 
 		expect(result.error?.name).toBe('ActionFailed');
 		if (result.error?.name === 'ActionFailed') {
-			expect(result.error.action).toBe('tabs.close');
+			expect(result.error.action).toBe('tabs_close');
 			expect((result.error.cause as Error).message).toBe('boom');
 		}
 	});
@@ -264,7 +272,7 @@ describe('peer.describe', () => {
 			sendRuntime: async (target, verb) => {
 				dispatchedTarget = target;
 				dispatchedVerb = verb;
-				return Ok({ 'tabs.close': { type: 'mutation' } });
+				return Ok({ tabs_close: { type: 'mutation' } });
 			},
 		});
 		publish(awareness, 42, validPeerState('mac'));
@@ -274,7 +282,7 @@ describe('peer.describe', () => {
 		expect(dispatchedTarget).toBe(42);
 		expect(actionCalls).toBe(0);
 		expect(result?.error).toBeNull();
-		expect(result?.data).toEqual({ 'tabs.close': { type: 'mutation' } });
+		expect(result?.data).toEqual({ tabs_close: { type: 'mutation' } });
 	});
 });
 
@@ -329,4 +337,3 @@ describe('waitForPeer', () => {
 		expect(peer?.id).toBe('mac');
 	});
 });
-

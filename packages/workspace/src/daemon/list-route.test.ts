@@ -5,7 +5,7 @@
  * it, so this is the load-bearing test surface for list dispatch logic.
  *
  * `/list` is now a one-primitive route: describe every hosted route and
- * prefix each action path with the route name.
+ * prefix each action key with the route name.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -64,7 +64,7 @@ describe('/list route', () => {
 	test('returns route-prefixed paths under the action root', async () => {
 		const reply = await postList([
 			fakeEntry('demo', {
-				'counter.get': defineQuery({
+				counter_get: defineQuery({
 					description: 'Read the counter',
 					handler: () => 0,
 				}),
@@ -72,8 +72,8 @@ describe('/list route', () => {
 		]);
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
-			expect(Object.keys(reply.data).sort()).toEqual(['demo.counter.get']);
-			expect(reply.data['demo.counter.get']?.description).toBe(
+			expect(Object.keys(reply.data).sort()).toEqual(['demo.counter_get']);
+			expect(reply.data['demo.counter_get']?.description).toBe(
 				'Read the counter',
 			);
 		}
@@ -90,18 +90,18 @@ describe('/list route', () => {
 	test('prefixes actions from every daemon route', async () => {
 		const reply = await postList([
 			fakeEntry('notes', {
-				add: defineQuery({ handler: () => null }),
+				notes_add: defineQuery({ handler: () => null }),
 			}),
 			fakeEntry('tasks', {
-				list: defineQuery({ handler: () => [] }),
+				tasks_list: defineQuery({ handler: () => [] }),
 			}),
 		]);
 
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {
 			expect(Object.keys(reply.data).sort()).toEqual([
-				'notes.add',
-				'tasks.list',
+				'notes.notes_add',
+				'tasks.tasks_list',
 			]);
 		}
 	});

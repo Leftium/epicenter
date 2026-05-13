@@ -1,7 +1,7 @@
 /**
  * `buildDaemonActions`: typed proxy that turns a `DaemonClient` into a flat
- * action-root facade. Local call sites use the same dot-path key the action
- * was authored under (`workspace['tabs.open'](...)`); each call dispatches
+ * action-root facade. Local call sites use the same snake_case key the action
+ * was authored under (`workspace.tabs_open(...)`); each call dispatches
  * over the unix socket via `client.run`.
  *
  * The proxy is one level: property access returns a function, calling that
@@ -39,8 +39,8 @@ type WrapDaemonAction<F> = F extends (...args: infer Args) => infer R
 
 /**
  * The daemon-callable shape of `TActions`. Each registry entry is awaited
- * and `Result`-wrapped at the daemon boundary. One level: keys are dot
- * paths exactly as the author wrote them.
+ * and `Result`-wrapped at the daemon boundary. One level: keys are the
+ * snake_case action keys exactly as the author wrote them.
  *
  * Wrapped in {@link Simplify} so IDE hover output shows the flattened call
  * shape rather than a wall of conditional types.

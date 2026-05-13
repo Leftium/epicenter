@@ -38,7 +38,7 @@ const typedActions = {
 	visible: defineQuery({
 		handler: () => 'visible',
 	}),
-	'entries.get': defineQuery({
+	entries_get: defineQuery({
 		handler: () => 'entry',
 	}),
 } satisfies ActionRegistry;
@@ -57,8 +57,8 @@ type HasKey<TObject, TKey extends PropertyKey> = TKey extends keyof TObject
 	? true
 	: false;
 
-export type DaemonDotKeyPreserved = Expect<
-	Equal<HasKey<TypedDaemonActions, 'entries.get'>, true>
+export type DaemonActionKeyPreserved = Expect<
+	Equal<HasKey<TypedDaemonActions, 'entries_get'>, true>
 >;
 export type DaemonValidKeyPreserved = Expect<
 	Equal<HasKey<TypedDaemonActions, 'visible'>, true>
@@ -70,12 +70,12 @@ describe('buildDaemonActions workspace facade', () => {
 		// biome-ignore lint/suspicious/noExplicitAny: smoke test: shape is irrelevant
 		const workspace: any = buildDaemonActions(client, WORKSPACE);
 
-		await workspace['entries.get']('xyz');
+		await workspace.entries_get('xyz');
 
 		expect(calls).toHaveLength(1);
 		expect(calls[0]!.method).toBe('run');
 		expect(calls[0]!.arg).toMatchObject({
-			actionPath: 'demo.entries.get',
+			actionPath: 'demo.entries_get',
 			input: 'xyz',
 		});
 	});
@@ -86,10 +86,10 @@ describe('buildDaemonActions workspace facade', () => {
 		const workspace: any = buildDaemonActions(client, WORKSPACE);
 		const row = { id: 'a', title: 'hi', _v: 1 };
 
-		await workspace['entries.set'](row);
+		await workspace.entries_set(row);
 
 		expect(calls[0]!.arg).toMatchObject({
-			actionPath: 'demo.entries.set',
+			actionPath: 'demo.entries_set',
 			input: row,
 		});
 	});

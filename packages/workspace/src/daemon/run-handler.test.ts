@@ -85,7 +85,7 @@ function fakeCollaboration<TActions extends ActionRegistry>({
 
 function fakeEntry({
 	actions = {
-		'tabs.list': defineQuery({ handler: () => [] }),
+		tabs_list: defineQuery({ handler: () => [] }),
 	},
 	syncStatus,
 	knownPeers = [],
@@ -122,7 +122,7 @@ describe('executeRun peer dispatch', () => {
 		const entry = fakeEntry({ syncStatus, knownPeers: [] });
 
 		const result = await executeRun([entry], {
-			actionPath: 'demo.tabs.list',
+			actionPath: 'demo.tabs_list',
 			input: undefined,
 			peerTarget: 'ghost',
 			waitMs: 25,
@@ -147,14 +147,14 @@ describe('executeRun peer dispatch', () => {
 		});
 
 		const result = await executeRun([entry], {
-			actionPath: 'demo.tabs.list',
+			actionPath: 'demo.tabs_list',
 			input: undefined,
 			peerTarget: 'mac',
 			waitMs: 25,
 		});
 
 		expect(result.error).toBeNull();
-		expect(invokedAction).toBe('tabs.list');
+		expect(invokedAction).toBe('tabs_list');
 	});
 
 	test('remote dispatch surfaces RpcError unchanged', async () => {
@@ -164,7 +164,7 @@ describe('executeRun peer dispatch', () => {
 		});
 
 		const result = await executeRun([entry], {
-			actionPath: 'demo.tabs.list',
+			actionPath: 'demo.tabs_list',
 			input: undefined,
 			peerTarget: 'mac',
 			waitMs: 25,
@@ -182,7 +182,7 @@ describe('executeRun route-prefixed routing', () => {
 	test('invokes action under the selected daemon route', async () => {
 		const entry = fakeEntry({
 			actions: {
-				'notes.add': defineMutation({
+				notes_add: defineMutation({
 					handler: () => ({ body: 'hello' }),
 				}),
 			},
@@ -190,7 +190,7 @@ describe('executeRun route-prefixed routing', () => {
 		entry.route = 'notes';
 
 		const result = await executeRun([entry], {
-			actionPath: 'notes.notes.add',
+			actionPath: 'notes.notes_add',
 			input: { body: 'hello' },
 			waitMs: 25,
 		});
@@ -199,10 +199,10 @@ describe('executeRun route-prefixed routing', () => {
 		expect(result.data).toEqual({ body: 'hello' });
 	});
 
-	test('missing path suggests action-root-relative sibling', async () => {
+	test('missing prefix suggests action-root-relative sibling', async () => {
 		const entry = fakeEntry({
 			actions: {
-				'notes.add': defineMutation({
+				notes_add: defineMutation({
 					handler: () => ({ body: 'hello' }),
 				}),
 			},
@@ -210,7 +210,7 @@ describe('executeRun route-prefixed routing', () => {
 		entry.route = 'notes';
 
 		const result = await executeRun([entry], {
-			actionPath: 'notes.add',
+			actionPath: 'notes.notes',
 			input: { body: 'hello' },
 			waitMs: 25,
 		});
@@ -219,7 +219,7 @@ describe('executeRun route-prefixed routing', () => {
 		if (result.error?.name !== 'UsageError') {
 			throw new Error('expected UsageError');
 		}
-		expect(result.error.suggestions).toEqual(['  notes.notes.add  (mutation)']);
+		expect(result.error.suggestions).toEqual(['  notes.notes_add  (mutation)']);
 	});
 
 	test('unknown route returns available route suggestions', async () => {
@@ -233,7 +233,7 @@ describe('executeRun route-prefixed routing', () => {
 				})(),
 			],
 			{
-				actionPath: 'missing.actions.add',
+				actionPath: 'missing.actions_add',
 				input: undefined,
 				waitMs: 25,
 			},

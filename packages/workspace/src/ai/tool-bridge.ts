@@ -12,10 +12,9 @@
  *    server can forward them to the AI provider. Functions like `execute`
  *    can't travel over the wire.
  *
- * This module converts a flat workspace action registry (keys authored as
- * dot paths) into both representations at once, so you don't have to build
- * them by hand. The AI tool name is the action key with `.` swapped for
- * `_` (provider name regex requires `[a-zA-Z0-9_-]+`).
+ * This module converts a flat workspace action registry into both
+ * representations at once, so you don't have to build them by hand. The AI
+ * tool name is the action key verbatim.
  *
  * @module
  */
@@ -29,20 +28,8 @@ import { invokeAction } from '../shared/actions';
 // ---------------------------------------------------------------------------
 
 /**
- * Type-level `'.'` -> `'_'` swap on every dot in a string literal. Mirrors
- * the runtime `path.replaceAll('.', '_')` at the AI boundary.
- */
-type DotsToUnderscores<S extends string> = S extends `${infer A}.${infer B}`
-	? `${A}_${DotsToUnderscores<B>}`
-	: S;
-
-/**
- * Tool names produced from an action registry: action key with `.` replaced
- * by `_`.
- *
- * **Constraint**: Action keys must not contain underscores, or flattened
- * names will collide (e.g. action key `"foo_bar"` vs path `foo.bar` both
- * produce `"foo_bar"`).
+ * Tool names produced from an action registry. Action keys are already valid
+ * provider tool names, so the name is preserved verbatim.
  *
  * @example
  * ```ts
@@ -51,9 +38,7 @@ type DotsToUnderscores<S extends string> = S extends `${infer A}.${infer B}`
  * ```
  */
 export type ActionNames<TActions> = {
-	[K in keyof TActions & string]: TActions[K] extends Action
-		? DotsToUnderscores<K>
-		: never;
+	[K in keyof TActions & string]: TActions[K] extends Action ? K : never;
 }[keyof TActions & string];
 
 /**
@@ -104,13 +89,12 @@ export type ToolDefinition = {
  *
  * ### How it works
  *
- * The action registry is a flat record keyed by dot path. This function
- * renames each key by swapping `.` for `_` so the result is a flat tool
- * list whose names match the AI provider's `[a-zA-Z0-9_-]+` requirement:
+ * The action registry is a flat record keyed by snake_case action key. This
+ * function preserves each key as the AI tool name:
  *
  * ```
- * { 'tabs.close': defineMutation(...) }  →  tool named "tabs_close"
- * { 'files.read': defineQuery(...) }     →  tool named "files_read"
+ * { tabs_close: defineMutation(...) }  ->  tool named "tabs_close"
+ * { files_read: defineQuery(...) }     ->  tool named "files_read"
  * ```
  *
  * Mutations automatically get `needsApproval: true` so the chat UI can show
@@ -148,18 +132,9 @@ export function actionsToAiTools<TActions extends ActionRegistry>(
 	tools: (AnyClientTool & { name: ActionNames<TActions> })[];
 	definitions: ToolDefinition[];
 } {
-	const entries = Object.entries(actions).map(([path, action]) => {
-		if (path.includes(ACTION_NAME_SEPARATOR)) {
-			throw new Error(
-				`Action keys used as AI tools cannot contain "${ACTION_NAME_SEPARATOR}" at "${path}"`,
-			);
-		}
-		return [path, action] as const;
-	});
+	const entries = Object.entries(actions);
 
-	const tools = entries.map(([path, action]) => {
-		const name = path.replaceAll('.', ACTION_NAME_SEPARATOR);
-		return {
+	const tools = entries.map(([name, action]) => ({
 			__toolSide: 'client' as const,
 			name: name as ActionNames<TActions>,
 			description: action.description ?? `${action.type}: ${name}`,
@@ -174,14 +149,11 @@ export function actionsToAiTools<TActions extends ActionRegistry>(
 				if (result.error !== null) throw result.error;
 				return result.data;
 			},
-		};
-	});
+		}));
 
 	// Derive wire definitions directly from actions. Avoids the type-widening
 	// round-trip through AnyClientTool that required `as JSONSchema` casts.
-	const definitions: ToolDefinition[] = entries.map(([path, action]) => {
-		const name = path.replaceAll('.', ACTION_NAME_SEPARATOR);
-		return {
+	const definitions: ToolDefinition[] = entries.map(([name, action]) => ({
 			name,
 			...(action.title && { title: action.title }),
 			description: action.description ?? `${action.type}: ${name}`,
@@ -191,8 +163,7 @@ export function actionsToAiTools<TActions extends ActionRegistry>(
 				inputSchema: normalizeSchema(action.input as JSONSchema),
 			}),
 			...(action.type === 'mutation' && { needsApproval: true }),
-		};
-	});
+		}));
 
 	return { tools, definitions };
 }
@@ -200,15 +171,6 @@ export function actionsToAiTools<TActions extends ActionRegistry>(
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
-
-/**
- * Separator used when projecting an action's dot-path key into a tool name.
- *
- * Action keys must not contain this character, or projected names will
- * collide. For example, key `"foo_bar"` and path `foo.bar` would both
- * produce `"foo_bar"`.
- */
-const ACTION_NAME_SEPARATOR = '_';
 
 /** JSON Schema with `properties` and `required` guaranteed present. */
 type NormalizedJsonSchema = JSONSchema &

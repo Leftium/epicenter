@@ -12,6 +12,7 @@ import { isRpcError, RpcError } from '@epicenter/sync';
 import Type from 'typebox';
 import { Err, Ok } from 'wellcrafted/result';
 import {
+	ACTION_KEY_PATTERN,
 	type ActionRegistry,
 	defineMutation,
 	defineQuery,
@@ -172,10 +173,10 @@ describe('invokeAction', () => {
 					throw new Error('x');
 				},
 			});
-			const result = await invokeAction(action, undefined, 'tabs.close');
+			const result = await invokeAction(action, undefined, 'tabs_close');
 			expect(result.error?.name).toBe('ActionFailed');
 			if (result.error?.name === 'ActionFailed') {
-				expect(result.error.action).toBe('tabs.close');
+				expect(result.error.action).toBe('tabs_close');
 			}
 		});
 	});
@@ -215,22 +216,22 @@ describe('invokeActionForRpc', () => {
 			handler: () => Err(customError) as unknown as ReturnType<typeof Ok>,
 		});
 
-		const result = await invokeActionForRpc(action, undefined, 'tabs.close');
+		const result = await invokeActionForRpc(action, undefined, 'tabs_close');
 
 		expect(result.data).toBeNull();
 		expect(result.error?.name).toBe('ActionFailed');
 		if (result.error?.name === 'ActionFailed') {
-			expect(result.error.action).toBe('tabs.close');
+			expect(result.error.action).toBe('tabs_close');
 			expect(result.error.cause).toEqual(customError);
 		}
 	});
 
 	test('passes existing RpcError values through unchanged', async () => {
 		const action = defineMutation({
-			handler: () => RpcError.ActionNotFound({ action: 'tabs.close' }),
+			handler: () => RpcError.ActionNotFound({ action: 'tabs_close' }),
 		});
 
-		const result = await invokeActionForRpc(action, undefined, 'tabs.close');
+		const result = await invokeActionForRpc(action, undefined, 'tabs_close');
 
 		expect(result.data).toBeNull();
 		expect(result.error?.name).toBe('ActionNotFound');
@@ -244,15 +245,25 @@ describe('invokeActionForRpc', () => {
 describe('ActionRegistry', () => {
 	test('registry keys are addresses; flat string lookup, no recursion', () => {
 		const actions = {
-			'entries.create': defineMutation({ handler: () => ({ id: 'x' }) }),
-			'entries.update': defineMutation({ handler: () => ({ id: 'x' }) }),
+			entries_create: defineMutation({ handler: () => ({ id: 'x' }) }),
+			entries_update: defineMutation({ handler: () => ({ id: 'x' }) }),
 		} satisfies ActionRegistry;
 
 		expect(Object.keys(actions).sort()).toEqual([
-			'entries.create',
-			'entries.update',
+			'entries_create',
+			'entries_update',
 		]);
-		expect(actions['entries.create']).toBeDefined();
+		expect(actions.entries_create).toBeDefined();
 		// No segment walking. The key is the address.
+	});
+
+	test('action keys must match ACTION_KEY_PATTERN', () => {
+		expect(ACTION_KEY_PATTERN.test('tabs_close')).toBe(true);
+		expect(ACTION_KEY_PATTERN.test('entries_bulk_create')).toBe(true);
+		expect(ACTION_KEY_PATTERN.test(['tabs', 'close'].join('.'))).toBe(false);
+		expect(ACTION_KEY_PATTERN.test('TabsClose')).toBe(false);
+		expect(ACTION_KEY_PATTERN.test('0tabs')).toBe(false);
+		expect(ACTION_KEY_PATTERN.test('_tabs')).toBe(false);
+		expect(ACTION_KEY_PATTERN.test('a'.repeat(65))).toBe(false);
 	});
 });

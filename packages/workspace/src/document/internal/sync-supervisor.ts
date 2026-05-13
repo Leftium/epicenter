@@ -707,7 +707,7 @@ export function createSyncSupervisor(
 	 * the encoded wire kind and the action label differ.
 	 *
 	 * `errorLabel` populates `ActionFailed.action` when the remote returned a
-	 * non-RpcError; for app actions it is the dot path, for runtime requests
+	 * non-RpcError; for app actions it is the action key, for runtime requests
 	 * it is the verb.
 	 */
 	async function sendTrackedRequest(

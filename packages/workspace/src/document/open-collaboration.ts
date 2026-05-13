@@ -3,14 +3,14 @@
  *
  * Replaces the four-step `attachSync + attachAwareness + attachRpc +
  * createRemoteClient` chain. One call opens the sync transport, publishes
- * the local identity and action paths in awareness, dispatches inbound RPC
+ * the local identity and action keys in awareness, dispatches inbound RPC
  * against the local action registry, and exposes a typed `peers` surface
  * for cross-peer invocation.
  *
  * Naming model: a document stores local-first app data; collaboration
  * publishes its actions and makes it live with peers. Local invocation is
- * `collaboration.actions['path'](input)`; remote invocation is
- * `collaboration.peers.find<TActions>(peerId)?.invoke('path', input)`.
+ * `collaboration.actions.action_key(input)`; remote invocation is
+ * `collaboration.peers.find<TActions>(peerId)?.invoke('action_key', input)`.
  *
  * Sibling primitive `attachYjsSync` handles content docs (sync-only, no
  * presence, no RPC).
@@ -22,6 +22,7 @@ import { Awareness } from 'y-protocols/awareness';
 import { Ok } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import {
+	ACTION_KEY_PATTERN,
 	type ActionRegistry,
 	invokeActionForRpc,
 	toActionMeta,
@@ -92,6 +93,14 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	config: OpenCollaborationConfig<TActions>,
 ): Collaboration<TActions> {
 	const { identity, actions: userActions } = config;
+
+	for (const key of Object.keys(userActions)) {
+		if (!ACTION_KEY_PATTERN.test(key)) {
+			throw new Error(
+				`Invalid action key "${key}". Action keys must match ${ACTION_KEY_PATTERN} (snake_case ASCII, starting with a letter, max 64 chars).`,
+			);
+		}
+	}
 
 	// Computed once at startup. Two peers running the same code publish
 	// byte-identical arrays so awareness updates don't ping-pong on ordering

@@ -7,7 +7,6 @@ import type { WorkspaceIdentity } from '@epicenter/auth';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
-import { eq } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
@@ -18,17 +17,18 @@ import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
 import { deriveUserEncryptionKeys } from './auth/encryption';
-import { resolveOAuthPrincipal } from './auth/oauth-principal';
-import { resolveWorkspaceIdentity } from './auth/workspace-identity';
 import {
 	createOAuthIssuerURL,
-	createOAuthJwksURL,
 	OAUTH_AUTHORIZATION_SERVER_METADATA_PATH,
 	OAUTH_METADATA_CACHE_CONTROL,
 	OAUTH_OPENID_CONFIGURATION_PATH,
 	OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
 } from './auth/oauth-metadata';
 import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
+import {
+	resolveRequestOAuthUser,
+	resolveRequestWorkspaceIdentity,
+} from './auth/resource-boundary';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
@@ -243,7 +243,8 @@ app.get(
 		tags: ['auth', 'oauth'],
 	}),
 	async (c) => {
-		const { data: identity, error } = await resolveWorkspaceIdentityForRequest(c);
+		const { data: identity, error } =
+			await resolveRequestWorkspaceIdentity(c, deriveUserEncryptionKeys);
 		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
 		return c.json(identity);
 	},
@@ -302,47 +303,11 @@ app.on(
 // Must be mounted before requireOAuthUser so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
 
-async function resolveWorkspaceIdentityForRequest(c: Context<Env>) {
-	const resource = oauthProviderResourceClient();
-	return resolveWorkspaceIdentity({
-		authorization: c.req.header('authorization') ?? null,
-		audience: c.var.authBaseURL,
-		issuer: createOAuthIssuerURL(c.var.authBaseURL),
-		jwksUrl: createOAuthJwksURL(c.var.authBaseURL),
-		verifyOAuthAccessToken: resource.getActions().verifyAccessToken,
-		async findUserById(userId) {
-			const [row] = await c.var.db
-				.select()
-				.from(schema.user)
-				.where(eq(schema.user.id, userId))
-				.limit(1);
-			return row ?? null;
-		},
-		deriveUserEncryptionKeys,
-	});
-}
-
 // Require an OAuth access token for protected app resources. Assumes
 // {@link singleCredential} has already validated and normalized credentials.
 const requireOAuthUser = factory.createMiddleware(async (c, next) => {
-	const resource = oauthProviderResourceClient();
-	const { data: user, error } = await resolveOAuthPrincipal({
-		authorization: c.req.header('authorization') ?? null,
-		audience: c.var.authBaseURL,
-		issuer: createOAuthIssuerURL(c.var.authBaseURL),
-		jwksUrl: createOAuthJwksURL(c.var.authBaseURL),
-		verifyOAuthAccessToken: resource.getActions().verifyAccessToken,
-		async findUserById(userId) {
-			const [row] = await c.var.db
-				.select()
-				.from(schema.user)
-				.where(eq(schema.user.id, userId))
-				.limit(1);
-			return row ?? null;
-		},
-	});
+	const { data: user, error } = await resolveRequestOAuthUser(c);
 	if (error) return createOAuthUnauthorizedResourceResponse(c, error);
-
 	c.set('user', user);
 	await next();
 });

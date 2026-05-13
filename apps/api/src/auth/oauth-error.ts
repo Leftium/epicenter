@@ -10,8 +10,8 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 export const WORKSPACES_OPEN_SCOPE = 'workspaces:open';
 
 /**
- * Failure shapes produced by every OAuth resource-boundary resolver in
- * this package (`resolveOAuthPrincipal`, `resolveWorkspaceIdentity`).
+ * Failure shapes produced by every OAuth resource-boundary resolver in this
+ * package.
  *
  * Variants:
  * - `InvalidToken`: bearer was missing, unparseable, failed verification,

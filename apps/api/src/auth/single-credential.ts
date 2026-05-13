@@ -2,6 +2,7 @@ import { BEARER_SUBPROTOCOL_PREFIX, parseSubprotocols } from '@epicenter/sync';
 import { getSessionCookie } from 'better-auth/cookies';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
+import { parseBearer } from './resource-boundary.js';
 
 /**
  * Reject requests that carry more than one authentication credential and lift
@@ -54,7 +55,7 @@ import { HTTPException } from 'hono/http-exception';
 export const singleCredential = createMiddleware(async (c, next) => {
 	const headers = c.req.raw.headers;
 	const cookie = getSessionCookie(c.req.raw);
-	const httpBearer = parseHttpBearer(headers.get('authorization'));
+	const httpBearer = parseBearer(headers.get('authorization'));
 	const wsBearer = parseWsBearer(headers.get('sec-websocket-protocol'));
 
 	if (wsBearer.type === 'duplicate') {
@@ -85,12 +86,6 @@ export const singleCredential = createMiddleware(async (c, next) => {
 
 	await next();
 });
-
-function parseHttpBearer(value: string | null): string | null {
-	if (!value) return null;
-	const match = value.match(/^Bearer\s+(.+)$/i);
-	return match?.[1]?.trim() || null;
-}
 
 type WsBearerResult =
 	| { type: 'none' }

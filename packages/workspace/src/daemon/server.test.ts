@@ -29,10 +29,10 @@ let runtimeRoot: string;
 let workDir: string;
 
 function makeRuntime(
-	actions: DaemonRuntime['workspace']['actions'] = {},
+	actions: DaemonRuntime['collaboration']['actions'] = {},
 ): DaemonRuntime {
 	return {
-		workspace: {
+		collaboration: {
 			actions,
 			peers: {
 				list: () => [],

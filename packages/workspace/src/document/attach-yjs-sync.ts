@@ -1,11 +1,11 @@
 /**
- * `attachYjsSync`: content-doc sync sibling of `openWorkspace`.
+ * `attachYjsSync`: content-doc sync sibling of `openCollaboration`.
  *
  * Pure byte transport for content docs (rich-text bodies, attachments,
- * anything nested under a workspace that syncs independently). No presence,
- * no RPC, no identity. The status/lifecycle surface mirrors a workspace's
- * sync portion so app code that gates UI render on `whenConnected` works
- * identically for either primitive.
+ * anything nested under a parent document that syncs independently). No
+ * presence, no RPC, no identity. The status/lifecycle surface mirrors the
+ * sync portion of `openCollaboration` so app code that gates UI render on
+ * `whenConnected` works identically for either primitive.
  */
 
 import type { Logger } from 'wellcrafted/logger';

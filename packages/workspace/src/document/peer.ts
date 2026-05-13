@@ -1,15 +1,16 @@
 /**
- * Peer surface for `openWorkspace`.
+ * Peer surface for `openCollaboration`.
  *
- * A `Peer<TActions>` represents one online remote workspace, identified by
- * a stable `id` published in awareness. The `peers` surface on a workspace
- * lists them, finds them, and observes membership changes. Self is never
- * exposed: local actions are reached via `ws.actions.*` instead.
+ * A `Peer<TActions>` represents one online remote participant, identified
+ * by a stable `id` published in awareness. The `peers` surface on a
+ * collaboration lists them, finds them, and observes membership changes.
+ * Self is never exposed: local actions are reached via
+ * `collaboration.actions.*` instead.
  *
  * Wire-level dispatch (`peer.invoke`, `peer.describe`) is wired by
- * `openWorkspace`, which injects a `sendRequest` hook so this module stays
- * decoupled from the supervisor implementation. `peer.test.ts` exercises
- * the surface with a mock sender.
+ * `openCollaboration`, which injects a `sendRequest` hook so this module
+ * stays decoupled from the supervisor implementation. `peer.test.ts`
+ * exercises the surface with a mock sender.
  */
 
 import { RpcError } from '@epicenter/sync';
@@ -41,7 +42,7 @@ import {
  */
 export const SelfInvocationError = defineErrors({
 	SelfInvocation: ({ action }: { action: string }) => ({
-		message: `[openWorkspace] cannot RPC to self for "${action}"; call ws.actions.${action} directly`,
+		message: `[openCollaboration] cannot RPC to self for "${action}"; call collaboration.actions.${action} directly`,
 		action,
 	}),
 });
@@ -65,11 +66,12 @@ export type RemoteCallError = RpcError | SelfInvocationError | PeerLeftError;
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * One online remote workspace.
+ * One online remote participant.
  *
- * Obtain via `ws.peers.find<TActions>(peerId)` or iteration over
- * `ws.peers.list()`. The generic narrows `invoke` path autocomplete and
- * input/output types when the caller knows the remote's action map.
+ * Obtain via `collaboration.peers.find<TActions>(peerId)` or iteration
+ * over `collaboration.peers.list()`. The generic narrows `invoke` path
+ * autocomplete and input/output types when the caller knows the remote's
+ * action map.
  */
 export type Peer<TActions = unknown> = {
 	readonly id: string;
@@ -103,7 +105,7 @@ export type Peer<TActions = unknown> = {
 	): Promise<Result<ActionManifest, RemoteCallError>>;
 };
 
-/** Remote workspace surface exposed by `openWorkspace`. */
+/** Remote participants surface exposed by `openCollaboration`. */
 export type PeersSurface = {
 	/** Online peers, never including self, in clientId-ascending order. */
 	list(): Peer[];
@@ -124,9 +126,9 @@ export type PeersSurface = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Wire hook injected by `openWorkspace`. The peers surface only needs to
- * dispatch a request and observe awareness change; everything else lives in
- * the supervisor.
+ * Wire hook injected by `openCollaboration`. The peers surface only needs
+ * to dispatch a request and observe awareness change; everything else
+ * lives in the supervisor.
  */
 export type PeerWireHooks = {
 	sendRequest(

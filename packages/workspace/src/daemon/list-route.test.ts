@@ -13,7 +13,7 @@ import type { Result } from 'wellcrafted/result';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
-import type { Workspace } from '../document/open-workspace.js';
+import type { Collaboration } from '../document/open-collaboration.js';
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
 import { buildDaemonApp } from './app.js';
 import type { StartedDaemonRoute } from './types.js';
@@ -22,7 +22,7 @@ type ListResult = Result<ActionManifest, never>;
 
 function fakeEntry(name: string, actions: Record<string, unknown> = {}): StartedDaemonRoute {
 	const ydoc = new Y.Doc();
-	const workspace = {
+	const collaboration = {
 		identity: { id: 'self', name: 'Self', platform: 'node' },
 		actions,
 		awareness: new Awareness(ydoc),
@@ -40,12 +40,12 @@ function fakeEntry(name: string, actions: Record<string, unknown> = {}): Started
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	} as unknown as Workspace;
+	} as unknown as Collaboration;
 
 	return {
 		route: name,
 		runtime: {
-			workspace,
+			collaboration,
 			async [Symbol.asyncDispose]() {
 				ydoc.destroy();
 			},
@@ -84,7 +84,7 @@ describe('/list route', () => {
 		}
 	});
 
-	test('returns an empty manifest when the workspace has no actions', async () => {
+	test('returns an empty manifest when the collaboration has no actions', async () => {
 		const reply = await postList([fakeEntry('demo')]);
 		expect(reply.error).toBeNull();
 		if (reply.error === null) {

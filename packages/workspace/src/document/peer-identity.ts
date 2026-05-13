@@ -1,5 +1,5 @@
 /**
- * Standard peer awareness convention used by `openWorkspace`.
+ * Standard peer awareness convention used by `openCollaboration`.
  *
  * Each connected peer publishes two fields:
  *
@@ -10,7 +10,7 @@
  *
  * `identity` is the stable peer descriptor. `actionPaths` is the alphabetically
  * sorted dot-path listing of every action the peer hosts, computed once at
- * `openWorkspace` startup. Full action schemas (input shapes, descriptions)
+ * `openCollaboration` startup. Full action schemas (input shapes, descriptions)
  * are not in awareness; fetch them via `peer.describe()` when needed.
  *
  * `PeerIdentity` is the arktype-validated identity shape that crosses the
@@ -33,7 +33,7 @@ export type PeerIdentity = typeof PeerIdentity.infer;
 export type PeerRuntime = PeerIdentity['platform'];
 
 /**
- * Field-keyed schema record for the workspace's standard awareness fields.
+ * Field-keyed schema record for the collaboration's standard awareness fields.
  * `attachAwareness` validates each entry independently when reading peer
  * states; malformed states are silently dropped.
  */

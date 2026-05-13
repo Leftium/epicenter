@@ -6,16 +6,16 @@
  * returns validated remote states, `observe` reports change deltas.
  *
  * The caller owns the `Awareness`. Construct it with `new Awareness(ydoc)`,
- * or pass `workspace.awareness` from `openWorkspace` to compose custom
- * presence (cursors, selections) on top of the workspace's `identity` and
- * `actionPaths` fields. Awareness teardown happens automatically when the
- * underlying ydoc is destroyed: y-protocols registers a `destroy` listener
- * inside its own constructor.
+ * or pass `collaboration.awareness` from `openCollaboration` to compose
+ * custom presence (cursors, selections) on top of the collaboration's
+ * `identity` and `actionPaths` fields. Awareness teardown happens
+ * automatically when the underlying ydoc is destroyed: y-protocols
+ * registers a `destroy` listener inside its own constructor.
  *
  * Multiple `attachAwareness` calls against the same `Awareness` instance
  * compose: `setLocal` merges fields into the existing local state rather
  * than overwriting, so reserved keys (e.g., `identity`/`actionPaths` owned
- * by `openWorkspace`) and custom keys coexist.
+ * by `openCollaboration`) and custom keys coexist.
  *
  * Awareness invariants (from y-protocols/awareness):
  *

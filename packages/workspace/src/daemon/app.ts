@@ -5,9 +5,9 @@
  *
  * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  workspace.peers.list()                       all routes
- *   /list   ->  describeActions({ route: workspace.actions }) all routes
- *   /run    ->  invokeAction(...) | peer.invoke(...)         route-routed
+ *   /peers  ->  collaboration.peers.list()                       all routes
+ *   /list   ->  describeActions({ route: collaboration.actions }) all routes
+ *   /run    ->  invokeAction(...) | peer.invoke(...)              route-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -76,7 +76,7 @@ export function buildDaemonApp(
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
 			for (const entry of runtimes) {
-				for (const peer of entry.runtime.workspace.peers.list()) {
+				for (const peer of entry.runtime.collaboration.peers.list()) {
 					rows.push({
 						route: entry.route,
 						clientID: peer.clientID,
@@ -89,7 +89,7 @@ export function buildDaemonApp(
 		})
 		.post('/list', (c) => {
 			const actionRoots = Object.fromEntries(
-				runtimes.map((entry) => [entry.route, entry.runtime.workspace.actions]),
+				runtimes.map((entry) => [entry.route, entry.runtime.collaboration.actions]),
 			);
 			return c.json(Ok(describeActions(actionRoots)));
 		})

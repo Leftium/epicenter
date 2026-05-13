@@ -16,7 +16,7 @@
  *   createDisposableCache,
  *   defineTable,
  *   docGuid,
- *   openWorkspace,
+ *   openCollaboration,
  * } from '@epicenter/workspace';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
@@ -27,11 +27,11 @@
  *   protocols?: string[],
  * ) => Promise<WebSocket>;
  *
- * // Singleton workspace: inline at module scope, no factory wrapper.
+ * // Singleton document + collaboration: inline at module scope, no factory wrapper.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
- * const ws = openWorkspace(ydoc, {
+ * const collaboration = openCollaboration(ydoc, {
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
  *   waitFor: idb.whenLoaded,
  *   openWebSocket,
@@ -226,10 +226,10 @@ export {
 	toWsUrl,
 } from './document/internal/sync-supervisor.js';
 export {
-	type OpenWorkspaceConfig,
-	openWorkspace,
-	type Workspace,
-} from './document/open-workspace.js';
+	type Collaboration,
+	type OpenCollaborationConfig,
+	openCollaboration,
+} from './document/open-collaboration.js';
 export {
 	type Peer,
 	PeerLeftError,

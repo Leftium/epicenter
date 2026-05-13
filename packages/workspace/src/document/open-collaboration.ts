@@ -1,11 +1,16 @@
 /**
- * `openWorkspace`: the one workspace primitive.
+ * `openCollaboration`: the one collaboration primitive on a document.
  *
  * Replaces the four-step `attachSync + attachAwareness + attachRpc +
  * createRemoteClient` chain. One call opens the sync transport, publishes
  * the local identity and action paths in awareness, dispatches inbound RPC
  * against the local action registry, and exposes a typed `peers` surface
  * for cross-peer invocation.
+ *
+ * Naming model: a document stores local-first app data; collaboration
+ * publishes its actions and makes it live with peers. Local invocation is
+ * `collaboration.actions.<path>(input)`; remote invocation is
+ * `collaboration.peers.find<TActions>(peerId)?.invoke('path', input)`.
  *
  * Sibling primitive `attachYjsSync` handles content docs (sync-only, no
  * presence, no RPC).
@@ -41,7 +46,7 @@ import {
 // PUBLIC TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-export type OpenWorkspaceConfig<TActions extends Actions = Actions> = {
+export type OpenCollaborationConfig<TActions extends Actions = Actions> = {
 	url: string;
 	waitFor?: Promise<unknown>;
 	openWebSocket?: OpenWebSocket;
@@ -49,22 +54,22 @@ export type OpenWorkspaceConfig<TActions extends Actions = Actions> = {
 	/** Stable peer identity published in awareness. */
 	identity: PeerIdentity;
 	/**
-	 * Local action registry. May be `{}` for a workspace that only consumes
-	 * remote actions. The reserved `system.*` namespace is injected by the
-	 * supervisor and must not appear at the top level.
+	 * Local action registry published to peers. May be `{}` for a participant
+	 * that only consumes remote actions. The reserved `system.*` namespace is
+	 * injected by the supervisor and must not appear at the top level.
 	 */
 	actions: TActions;
 };
 
-export type Workspace<TActions extends Actions = Actions> = {
+export type Collaboration<TActions extends Actions = Actions> = {
 	readonly identity: PeerIdentity;
 	readonly actions: TActions;
 
 	/**
 	 * Underlying y-protocols `Awareness` instance. Compose custom presence
 	 * fields (cursors, selections) via
-	 * `attachAwareness(ws.awareness, { schema, initial })`. Reserved keys:
-	 * `identity` and `actionPaths`.
+	 * `attachAwareness(collaboration.awareness, { schema, initial })`.
+	 * Reserved keys: `identity` and `actionPaths`.
 	 */
 	readonly awareness: Awareness;
 
@@ -89,15 +94,15 @@ export type Workspace<TActions extends Actions = Actions> = {
 // IMPLEMENTATION
 // ════════════════════════════════════════════════════════════════════════════
 
-export function openWorkspace<TActions extends Actions>(
+export function openCollaboration<TActions extends Actions>(
 	ydoc: Y.Doc,
-	config: OpenWorkspaceConfig<TActions>,
-): Workspace<TActions> {
+	config: OpenCollaborationConfig<TActions>,
+): Collaboration<TActions> {
 	const { identity, actions: userActions } = config;
 
 	if ('system' in userActions) {
 		throw new Error(
-			"[openWorkspace] user actions cannot define the 'system.*' namespace. It is reserved for runtime meta operations.",
+			"[openCollaboration] user actions cannot define the 'system.*' namespace. It is reserved for runtime meta operations.",
 		);
 	}
 
@@ -121,8 +126,8 @@ export function openWorkspace<TActions extends Actions>(
 	const awareness = new Awareness(ydoc);
 
 	// `attachAwareness` validates the schema on read and merges into the local
-	// state so future `attachAwareness(ws.awareness, ...)` calls compose
-	// rather than clobber.
+	// state so future `attachAwareness(collaboration.awareness, ...)` calls
+	// compose rather than clobber.
 	attachAwareness(awareness, {
 		schema: peerAwarenessSchema,
 		initial: {

@@ -8,8 +8,8 @@
  *
  * Two higher-level primitives wrap this module:
  *
- *   - `openWorkspace` supplies both `awareness` and `onRpcRequest`, and uses
- *     `sendRpcRequest` to drive its peers surface.
+ *   - `openCollaboration` supplies both `awareness` and `onRpcRequest`, and
+ *     uses `sendRpcRequest` to drive its peers surface.
  *   - `attachYjsSync` supplies neither; it is a pure byte transport for
  *     content docs.
  *

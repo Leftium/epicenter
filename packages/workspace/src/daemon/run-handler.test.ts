@@ -11,7 +11,7 @@ import { RpcError } from '@epicenter/sync';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
-import type { Workspace } from '../document/open-workspace.js';
+import type { Collaboration } from '../document/open-collaboration.js';
 import type { Peer, PeersSurface } from '../document/peer.js';
 import type { Actions } from '../shared/actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
@@ -59,7 +59,7 @@ function fakePeers({
 	};
 }
 
-function fakeWorkspace<TActions extends Actions>({
+function fakeCollaboration<TActions extends Actions>({
 	actions,
 	syncStatus = { phase: 'connected' },
 	peers,
@@ -67,7 +67,7 @@ function fakeWorkspace<TActions extends Actions>({
 	actions: TActions;
 	syncStatus?: SyncStatus;
 	peers: PeersSurface;
-}): Workspace<TActions> {
+}): Collaboration<TActions> {
 	const ydoc = new Y.Doc();
 	return {
 		identity: { id: 'self', name: 'Self', platform: 'node' },
@@ -83,7 +83,7 @@ function fakeWorkspace<TActions extends Actions>({
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	} as Workspace<TActions>;
+	} as Collaboration<TActions>;
 }
 
 function fakeEntry({
@@ -102,11 +102,11 @@ function fakeEntry({
 	invoke?: FakeInvoke;
 } = {}): StartedDaemonRoute {
 	const peers = fakePeers({ known: knownPeers, invoke });
-	const workspace = fakeWorkspace({ actions, syncStatus, peers });
+	const collaboration = fakeCollaboration({ actions, syncStatus, peers });
 	return {
 		route: 'demo',
 		runtime: {
-			workspace,
+			collaboration,
 			async [Symbol.asyncDispose]() {},
 		},
 	};

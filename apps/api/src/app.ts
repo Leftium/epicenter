@@ -2,7 +2,8 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
-import { AiChatError } from '@epicenter/constants/ai-chat-errors';
+import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
+import type { WorkspaceIdentity } from '@epicenter/auth';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -15,10 +16,24 @@ import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
+import { deriveUserEncryptionKeys } from './auth/encryption';
+import {
+	createOAuthIssuerURL,
+	OAUTH_AUTHORIZATION_SERVER_METADATA_PATH,
+	OAUTH_METADATA_CACHE_CONTROL,
+	OAUTH_OPENID_CONFIGURATION_PATH,
+	OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
+} from './auth/oauth-metadata';
+import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
+import {
+	resolveRequestOAuthUser,
+	resolveRequestWorkspaceIdentity,
+} from './auth/resource-boundary';
 import { singleCredential } from './auth/single-credential';
+import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
+import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import {
 	renderConsentPage,
-	renderDevicePage,
 	renderSignedInPage,
 	renderSignInPage,
 } from './auth-pages';
@@ -38,7 +53,12 @@ export { WorkspaceRoom } from './workspace-room';
 
 type Db = NodePgDatabase<typeof schema>;
 type Auth = ReturnType<typeof createAuth>;
-type Session = Auth['$Infer']['Session'];
+type OAuthOpenIdConfigAuth = Parameters<
+	typeof oauthProviderOpenIdConfigMetadata
+>[0];
+type OAuthAuthServerConfigAuth = Parameters<
+	typeof oauthProviderAuthServerMetadata
+>[0];
 
 /**
  * Create a queue for fire-and-forget promises that run after the HTTP response.
@@ -83,8 +103,8 @@ export type Env = {
 	Variables: {
 		db: Db;
 		auth: Auth;
-		user: Session['user'];
-		session: Session['session'];
+		authBaseURL: string;
+		user: WorkspaceIdentity['user'];
 		afterResponse: AfterResponseQueue;
 		/** Current plan ID. Only set by ensureAutumnCustomer middleware on /ai/* routes. */
 		planId: string | undefined;
@@ -100,14 +120,13 @@ const factory = createFactory<Env>({
 		// CORS: skip WebSocket upgrades (101 response headers are immutable).
 		// Trusted origins live in `./trusted-origins.ts`, shared with Better Auth.
 		app.use('*', async (c, next) => {
-			if (c.req.header('upgrade') === 'websocket') return next();
+			if (isWebSocketUpgrade(c)) return next();
 			return cors({
 				origin: (origin) =>
 					origin && TRUSTED_ORIGINS.includes(origin) ? origin : undefined,
 				credentials: true,
 				allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
 				allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-				exposeHeaders: ['set-auth-token'],
 			})(c, next);
 		});
 
@@ -150,6 +169,8 @@ const factory = createFactory<Env>({
 				origin === `http://${new URL(APPS.API.urls[0]).host}`
 					? `http://localhost:${APPS.API.port}`
 					: origin;
+			await ensureTrustedOAuthClients(c.var.db);
+			c.set('authBaseURL', baseURL);
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
 			await next();
 		});
@@ -189,9 +210,11 @@ app.get('/sign-in', async (c) => {
 			return c.redirect(callbackURL);
 		}
 		// Already signed in, no redirect needed, show signed-in confirmation
-		const displayName = session.user.name ?? session.user.email;
 		return c.html(
-			renderSignedInPage({ displayName, email: session.user.email }),
+			renderSignedInPage({
+				displayName: session.user.email,
+				email: session.user.email,
+			}),
 		);
 	}
 	return c.html(renderSignInPage());
@@ -214,26 +237,58 @@ app.get(
 	},
 );
 app.get(
-	'/device',
-	sValidator('query', type({ 'user_code?': 'string' })),
+	'/workspace-identity',
+	describeRoute({
+		description: 'Resolve an OAuth access token to Epicenter identity',
+		tags: ['auth', 'oauth'],
+	}),
 	async (c) => {
-		const { user_code: userCode } = c.req.valid('query');
-		const session = await c.var.auth.api.getSession({
-			headers: c.req.raw.headers,
-		});
-		if (!session) {
-			const callbackURL = userCode
-				? `/device?user_code=${encodeURIComponent(userCode)}`
-				: '/device';
-			return c.redirect(
-				`/sign-in?callbackURL=${encodeURIComponent(callbackURL)}`,
-			);
-		}
-		return c.html(renderDevicePage({ userCode }));
+		const { data: identity, error } =
+			await resolveRequestWorkspaceIdentity(c, deriveUserEncryptionKeys);
+		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
+		return c.json(identity);
 	},
 );
-
-// Auth
+// OAuth discovery. Register issuer-path routes before the /auth/* catch-all
+// because Hono matches routes in registration order.
+app.get(
+	OAUTH_OPENID_CONFIGURATION_PATH,
+	describeRoute({
+		description: 'OpenID Connect discovery metadata',
+		tags: ['auth', 'oauth'],
+	}),
+	(c) =>
+		oauthProviderOpenIdConfigMetadata(c.var.auth as OAuthOpenIdConfigAuth)(
+			c.req.raw,
+		),
+);
+app.get(
+	OAUTH_AUTHORIZATION_SERVER_METADATA_PATH,
+	describeRoute({
+		description: 'OAuth authorization server metadata',
+		tags: ['auth', 'oauth'],
+	}),
+	(c) =>
+		oauthProviderAuthServerMetadata(c.var.auth as OAuthAuthServerConfigAuth)(
+			c.req.raw,
+		),
+);
+app.get(
+	OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
+	describeRoute({
+		description: 'OAuth protected resource metadata',
+		tags: ['auth', 'oauth'],
+	}),
+	async (c) => {
+		const resource = oauthProviderResourceClient();
+		const metadata = await resource.getActions().getProtectedResourceMetadata({
+			resource: c.var.authBaseURL,
+			authorization_servers: [createOAuthIssuerURL(c.var.authBaseURL)],
+		});
+		c.header('Cache-Control', OAUTH_METADATA_CACHE_CONTROL);
+		return c.json(metadata);
+	},
+);
 app.on(
 	['GET', 'POST'],
 	'/auth/*',
@@ -244,67 +299,31 @@ app.on(
 	(c) => c.var.auth.handler(c.req.raw),
 );
 
-// OAuth discovery
-app.get(
-	'/.well-known/openid-configuration/auth',
-	describeRoute({
-		description: 'OpenID Connect discovery metadata',
-		tags: ['auth', 'oauth'],
-	}),
-	(c) => oauthProviderOpenIdConfigMetadata(c.var.auth)(c.req.raw),
-);
-app.get(
-	'/.well-known/oauth-authorization-server/auth',
-	describeRoute({
-		description: 'OAuth authorization server metadata',
-		tags: ['auth', 'oauth'],
-	}),
-	(c) => oauthProviderAuthServerMetadata(c.var.auth)(c.req.raw),
-);
-
 // Asset reads: unauthenticated (unguessable URL is the credential).
-// Must be mounted BEFORE requireSession so GET requests aren't blocked.
+// Must be mounted before requireOAuthUser so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
 
-// Require an authenticated session for protected routes. Assumes
-// {@link singleCredential} has already validated and normalized credentials,
-// so headers are guaranteed to carry at most one credential.
-const requireSession = factory.createMiddleware(async (c, next) => {
-	const result = await c.var.auth.api.getSession({
-		headers: c.req.raw.headers,
-	});
-	if (!result) {
-		// WebSocket clients need a structured close code so they can decide
-		// whether to refresh their token or surface a sign-in prompt. HTTP
-		// clients get the standard 401 JSON body.
-		if (c.req.header('upgrade') === 'websocket') {
-			const pair = new WebSocketPair();
-			const [client, server] = [pair[0], pair[1]];
-			server.accept();
-			server.close(4401, JSON.stringify({ code: 'invalid_token' }));
-			return new Response(null, { status: 101, webSocket: client });
-		}
-		return c.json(AiChatError.Unauthorized(), 401);
-	}
-
-	c.set('user', result.user);
-	c.set('session', result.session);
+// Require an OAuth access token for protected app resources. Assumes
+// {@link singleCredential} has already validated and normalized credentials.
+const requireOAuthUser = factory.createMiddleware(async (c, next) => {
+	const { data: user, error } = await resolveRequestOAuthUser(c);
+	if (error) return createOAuthUnauthorizedResourceResponse(c, error);
+	c.set('user', user);
 	await next();
 });
 
-app.use('/ai/*', requireSession);
-app.use('/workspaces/*', requireSession);
-app.use('/documents/*', requireSession);
-app.use('/api/billing/*', requireSession);
-app.use('/api/assets/*', requireSession);
+app.use('/ai/*', requireOAuthUser);
+app.use('/workspaces/*', requireOAuthUser);
+app.use('/documents/*', requireOAuthUser);
+app.use('/api/billing/*', requireOAuthUser);
+app.use('/api/assets/*', requireOAuthUser);
 
 // Ensure Autumn customer exists and stash planId for model gating.
-// Runs after requireSession for AI routes so c.var.user is available.
+// Runs after requireOAuthUser for AI routes so c.var.user is available.
 app.use('/ai/*', async (c, next) => {
 	const autumn = createAutumn(c.env);
 	const customer = await autumn.customers.getOrCreate({
 		customerId: c.var.user.id,
-		name: c.var.user.name ?? undefined,
 		email: c.var.user.email ?? undefined,
 		expand: ['subscriptions.plan'],
 	});
@@ -337,7 +356,7 @@ app.get('/dashboard', async (c) => {
 // Billing API routes: typed JSON routes consumed by the dashboard SPA via hc<AppType>
 app.route('/api/billing', billingRoutes);
 
-// Asset routes: upload + delete (authed, mounted after requireSession)
+// Asset routes: upload + delete (authed, mounted after requireOAuthUser)
 app.route('/api/assets', assetAuthedRoutes);
 
 // AI chat
@@ -453,7 +472,7 @@ app.get(
 	async (c) => {
 		const { stub, doName } = getWorkspaceStub(c);
 
-		if (c.req.header('upgrade') === 'websocket') {
+		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
 					userId: c.var.user.id,
@@ -526,7 +545,7 @@ app.get(
 	async (c) => {
 		const { stub, doName } = getDocumentStub(c);
 
-		if (c.req.header('upgrade') === 'websocket') {
+		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
 					userId: c.var.user.id,

@@ -5,11 +5,11 @@
 	import { DateTimeString, generateId } from '@epicenter/workspace';
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import type { EntryId } from '../fuji/workspace';
 
 	// ─── Config ──────────────────────────────────────────────────────────────────
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 
 	const COUNTS = [1_000, 10_000] as const;
 
@@ -100,7 +100,7 @@
 	let results = $state<Results | null>(null);
 
 	const stressTestCount = $derived(
-		signedIn.entries.active.filter((e) => e.tags.includes('stress-test'))
+		workspace.entries.active.filter((e) => e.tags.includes('stress-test'))
 			.length,
 	);
 
@@ -118,14 +118,11 @@
 
 	const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-	function randomDate(): DateTimeString {
-		const now = Date.now();
-		const twoYearsMs = 2 * 365 * 24 * 60 * 60 * 1000;
-		const ts = now - twoYearsMs + Math.random() * twoYearsMs;
-		return DateTimeString.stringify(new Date(ts).toISOString(), LOCAL_TZ);
-	}
-
 	function generateEntryRow(index: number, now: DateTimeString) {
+		const dateNow = Date.now();
+		const twoYearsMs = 2 * 365 * 24 * 60 * 60 * 1000;
+		const ts = dateNow - twoYearsMs + Math.random() * twoYearsMs;
+
 		return {
 			id: generateId() as string as EntryId,
 			title: `${pick(TITLES)} #${index + 1}`,
@@ -135,17 +132,11 @@
 			pinned: Math.random() < 0.05,
 			rating: Math.random() < 0.7 ? 0 : Math.floor(Math.random() * 5) + 1,
 			deletedAt: undefined,
-			date: randomDate(),
+			date: DateTimeString.stringify(new Date(ts).toISOString(), LOCAL_TZ),
 			createdAt: now,
 			updatedAt: now,
 			_v: 2 as const,
 		};
-	}
-
-	function formatBytes(bytes: number): string {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
 
 	function formatMs(ms: number): string {
@@ -167,7 +158,7 @@
 			);
 
 			const insertStart = performance.now();
-			await signedIn.fuji.tables.entries.bulkSet(rows, {
+			await workspace.fuji.tables.entries.bulkSet(rows, {
 				chunkSize: INSERT_CHUNK_SIZE,
 				onProgress: (p) => {
 					progress = p;
@@ -177,19 +168,19 @@
 
 			// Read performance
 			const readStart = performance.now();
-			const allValid = signedIn.fuji.tables.entries.getAllValid();
+			const allValid = workspace.fuji.tables.entries.getAllValid();
 			const readTimeMs = performance.now() - readStart;
 
 			// Filter performance
 			const filterStart = performance.now();
-			const stressEntries = signedIn.fuji.tables.entries.filter((e) =>
+			const stressEntries = workspace.fuji.tables.entries.filter((e) =>
 				e.tags.includes('stress-test'),
 			);
 			const filterTimeMs = performance.now() - filterStart;
 
 			// Y.Doc binary size
 			const ydocSizeBytes = Y.encodeStateAsUpdate(
-				signedIn.fuji.ydoc,
+				workspace.fuji.ydoc,
 			).byteLength;
 
 			results = {
@@ -216,12 +207,12 @@
 		clearing = true;
 
 		try {
-			const stressEntries = signedIn.fuji.tables.entries.filter((e) =>
+			const stressEntries = workspace.fuji.tables.entries.filter((e) =>
 				e.tags.includes('stress-test'),
 			);
 			const ids = stressEntries.map((e) => e.id);
 
-			await signedIn.fuji.tables.entries.bulkDelete(ids);
+			await workspace.fuji.tables.entries.bulkDelete(ids);
 
 			results = null;
 			toast.success(
@@ -325,7 +316,15 @@
 					{ label: 'Insert time', value: formatMs(results.insertTimeMs) },
 					{ label: 'Total rows', value: results.rowCount.toLocaleString() },
 					{ label: 'Stress-test rows', value: stressTestCount.toLocaleString() },
-					{ label: 'Y.Doc size', value: formatBytes(results.ydocSizeBytes) },
+					{
+						label: 'Y.Doc size',
+						value:
+							results.ydocSizeBytes < 1024
+								? `${results.ydocSizeBytes} B`
+								: results.ydocSizeBytes < 1024 * 1024
+									? `${(results.ydocSizeBytes / 1024).toFixed(1)} KB`
+									: `${(results.ydocSizeBytes / (1024 * 1024)).toFixed(1)} MB`,
+					},
 					{ label: 'getAllValid() time', value: formatMs(results.readTimeMs) },
 					{ label: 'filter() time', value: formatMs(results.filterTimeMs) },
 				]}
@@ -343,7 +342,7 @@
 
 	<!-- Live count -->
 	<div class="text-xs text-muted-foreground">
-		Total active entries: {signedIn.entries.active.length.toLocaleString()}
+		Total active entries: {workspace.entries.active.length.toLocaleString()}
 		{#if stressTestCount > 0}
 			· Stress-test entries: {stressTestCount.toLocaleString()}
 		{/if}

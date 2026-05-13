@@ -8,22 +8,12 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import { goto } from '$app/navigation';
+	import { requireWorkspace } from '$lib/session';
 	import { auth } from '$platform/auth';
-	import { getSignedInSession } from '$lib/session.svelte';
 	import BulkAddModal from './BulkAddModal.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
-	const signedIn = getSignedInSession();
-
-	async function forgetFujiDevice(): Promise<void> {
-		await signedIn.fuji.wipe();
-		window.location.reload();
-	}
-
-	function createEntry() {
-		const { id } = signedIn.fuji.actions.entries.create({});
-		goto(`/entries/${id}`);
-	}
+	const workspace = requireWorkspace();
 </script>
 
 <div class="flex h-10 shrink-0 items-center justify-between border-b px-3">
@@ -52,7 +42,10 @@
 						{...props}
 						variant="ghost"
 						size="icon-sm"
-						onclick={createEntry}
+						onclick={() => {
+							const { id } = workspace.fuji.actions.entries.create({});
+							goto(`/entries/${id}`);
+						}}
 					>
 						<PlusIcon class="size-4" />
 					</Button>
@@ -66,14 +59,12 @@
 	<div class="flex items-center gap-1">
 		<AccountPopover
 			{auth}
-			sync={signedIn.fuji.sync}
+			sync={workspace.fuji.sync}
 			syncNoun="entries"
-			onForgetDevice={forgetFujiDevice}
-			onSocialSignIn={() =>
-				auth.signInWithSocialRedirect({
-					provider: 'google',
-					callbackURL: window.location.origin,
-				})}
+			onForgetDevice={async () => {
+				await workspace.fuji.wipe();
+				window.location.reload();
+			}}
 		/>
 		<GitHubButton
 			repo={{ owner: 'EpicenterHQ', repo: 'epicenter' }}

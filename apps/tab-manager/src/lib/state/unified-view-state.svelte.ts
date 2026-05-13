@@ -10,7 +10,7 @@
  * already works in the original `FlatTabList`: a `SvelteSet` tracks expanded
  * sections, and `$derived` flatItems includes or excludes child items.
  *
- * Components read this through `signedIn.tabManager.state.unifiedView`.
+ * Components read this through `workspace.state.unifiedView`.
  */
 
 import { SvelteSet } from 'svelte/reactivity';

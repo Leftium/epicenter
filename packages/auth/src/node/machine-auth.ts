@@ -1,10 +1,7 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import { EncryptionKeys } from '@epicenter/encryption';
-import type { BetterAuthOptions } from 'better-auth';
-import { createAuthClient, InferPlugin } from 'better-auth/client';
+import { createAuthClient } from 'better-auth/client';
 import { deviceAuthorizationClient } from 'better-auth/client/plugins';
-import type { customSession } from 'better-auth/plugins';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -12,28 +9,26 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { type BearerSession } from '../auth-types.js';
+import type { AuthClient } from '../auth-contract.js';
 import {
-	type BetterAuthSessionResponse,
-	normalizeAuthUser,
-} from '../contracts/auth-session.js';
-import { type AuthClient, createBearerAuth } from '../create-auth.js';
+	WorkspaceIdentity,
+	OAuthSession,
+	type OAuthSession as OAuthSessionType,
+} from '../auth-types.js';
+import type {
+	OAuthRefreshTokenRevoker,
+	OAuthTokenRefresher,
+} from '../create-oauth-app-auth.js';
+import { createOAuthAppAuth } from '../create-oauth-app-auth.js';
 import {
 	loadMachineSession,
 	saveMachineSession,
 } from './machine-session-store.js';
 
-type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<BetterAuthSessionResponse, BetterAuthOptions>
->;
-
 const rawDefaultAuthClient = createAuthClient({
 	baseURL: EPICENTER_API_URL,
 	basePath: '/auth',
-	plugins: [
-		InferPlugin<EpicenterCustomSessionPlugin>(),
-		deviceAuthorizationClient(),
-	],
+	plugins: [deviceAuthorizationClient()],
 });
 
 const defaultAuthClient =
@@ -42,7 +37,7 @@ const defaultAuthClient =
 		deviceToken: typeof rawDefaultAuthClient.device.token;
 	};
 
-type MachineAuthClient = typeof defaultAuthClient;
+export type MachineAuthClient = typeof defaultAuthClient;
 
 export const MachineAuthRequestError = defineErrors({
 	RequestFailed: ({ cause }: { cause: unknown }) => ({
@@ -76,14 +71,13 @@ export const DeviceTokenError = defineErrors({
 export type DeviceTokenError = InferErrors<typeof DeviceTokenError>;
 
 type MachineSessionSummary = {
-	user: Pick<BearerSession['user'], 'id' | 'name' | 'email'>;
+	user: Pick<OAuthSessionType['user'], 'id' | 'email'>;
 };
 
-function sessionSummary(session: BearerSession): MachineSessionSummary {
+function sessionSummary(session: OAuthSessionType): MachineSessionSummary {
 	return {
 		user: {
 			id: session.user.id,
-			name: session.user.name,
 			email: session.user.email,
 		},
 	};
@@ -119,7 +113,7 @@ export async function loginWithDeviceCode({
 	};
 	await onDeviceCode?.(device);
 
-	const { data: accessToken, error: pollError } = await pollForAccessToken({
+	const { data: tokens, error: pollError } = await pollForAccessToken({
 		authClient,
 		deviceCode: code.device_code,
 		intervalMs: code.interval * 1000,
@@ -128,9 +122,9 @@ export async function loginWithDeviceCode({
 	});
 	if (pollError) return Err(pollError);
 
-	const { data: session, error: fetchError } = await fetchBearerSession({
+	const { data: session, error: fetchError } = await fetchOAuthSession({
 		authClient,
-		accessToken,
+		tokens,
 	});
 	if (fetchError) return Err(fetchError);
 
@@ -167,9 +161,13 @@ export async function status({
 	if (loadError) return Err(loadError);
 	if (session === null) return Ok({ status: 'signedOut' as const });
 
-	const { data: remoteSession, error: fetchError } = await fetchBearerSession({
+	const { data: remoteSession, error: fetchError } = await fetchOAuthSession({
 		authClient,
-		accessToken: session.token,
+		tokens: {
+			accessToken: session.accessToken,
+			refreshToken: session.refreshToken,
+			accessTokenExpiresAt: session.accessTokenExpiresAt,
+		},
 	});
 	if (fetchError) {
 		return Ok({
@@ -208,7 +206,7 @@ export async function logout({
 	try {
 		const { error: signOutError } = await authClient.signOut({
 			fetchOptions: {
-				headers: { Authorization: `Bearer ${session.token}` },
+				headers: { Authorization: `Bearer ${session.accessToken}` },
 			},
 		});
 		if (signOutError) {
@@ -241,7 +239,15 @@ async function pollForAccessToken({
 	intervalMs: number;
 	expiresInMs: number;
 	sleep: (ms: number) => Promise<void>;
-}): Promise<Result<string, DeviceTokenError | MachineAuthRequestError>> {
+}): Promise<
+	Result<
+		Pick<
+			OAuthSessionType,
+			'accessToken' | 'refreshToken' | 'accessTokenExpiresAt'
+		>,
+		DeviceTokenError | MachineAuthRequestError
+	>
+> {
 	const deadline = Date.now() + expiresInMs;
 	let interval = intervalMs;
 	while (Date.now() < deadline) {
@@ -251,7 +257,15 @@ async function pollForAccessToken({
 			device_code: deviceCode,
 			client_id: EPICENTER_CLI_OAUTH_CLIENT_ID,
 		});
-		if (data) return Ok(data.access_token);
+		if (data) {
+			const tokenData = readRecord(data, 'device token response');
+			return Ok({
+				accessToken: readString(tokenData, 'access_token'),
+				refreshToken: readString(tokenData, 'refresh_token'),
+				accessTokenExpiresAt:
+					Date.now() + readPositiveNumber(tokenData, 'expires_in') * 1000,
+			});
+		}
 		if (!error) {
 			return MachineAuthRequestError.RequestFailed({
 				cause: new Error('device.token returned neither data nor error'),
@@ -278,20 +292,42 @@ async function pollForAccessToken({
 	return DeviceTokenError.DeviceCodeExpired();
 }
 
-async function fetchBearerSession({
+function readRecord(value: unknown, label: string): Record<string, unknown> {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error(`Expected ${label} to be an object.`);
+	}
+	return value as Record<string, unknown>;
+}
+
+function readString(record: Record<string, unknown>, key: string) {
+	const value = record[key];
+	if (typeof value !== 'string') {
+		throw new Error(`Expected ${key} to be a string.`);
+	}
+	return value;
+}
+
+function readPositiveNumber(record: Record<string, unknown>, key: string) {
+	const value = record[key];
+	if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+		throw new Error(`Expected ${key} to be a positive number.`);
+	}
+	return value;
+}
+
+async function fetchOAuthSession({
 	authClient,
-	accessToken,
+	tokens,
 }: {
 	authClient: MachineAuthClient;
-	accessToken: string;
-}): Promise<Result<BearerSession, MachineAuthRequestError>> {
-	let rotatedToken: string | null = null;
+	tokens: Pick<
+		OAuthSessionType,
+		'accessToken' | 'refreshToken' | 'accessTokenExpiresAt'
+	>;
+}): Promise<Result<OAuthSessionType, MachineAuthRequestError>> {
 	const { data, error } = await authClient.getSession({
 		fetchOptions: {
-			headers: { Authorization: `Bearer ${accessToken}` },
-			onSuccess: (ctx) => {
-				rotatedToken = ctx.response.headers.get('set-auth-token');
-			},
+			headers: { Authorization: `Bearer ${tokens.accessToken}` },
 		},
 	});
 	if (error) return MachineAuthRequestError.RequestFailed({ cause: error });
@@ -302,11 +338,14 @@ async function fetchBearerSession({
 	}
 
 	try {
-		return Ok({
-			token: rotatedToken ?? accessToken,
-			user: normalizeAuthUser(data.user),
-			encryptionKeys: EncryptionKeys.assert(data.encryptionKeys),
-		});
+		const identity = WorkspaceIdentity.assert(data);
+		return Ok(
+			OAuthSession.assert({
+				...tokens,
+				user: identity.user,
+				encryptionKeys: identity.encryptionKeys,
+			}),
+		);
 	} catch (cause) {
 		return MachineAuthRequestError.RequestFailed({ cause });
 	}
@@ -318,9 +357,25 @@ async function fetchBearerSession({
  * Storage failures are propagated; daemons should crash rather than silently
  * boot signed-out when the keychain is unreadable.
  */
-export async function createMachineAuthClient(): Promise<AuthClient> {
-	const log = createLogger('machine-auth');
-	const { data: loadedSession, error } = await loadMachineSession();
+export async function createMachineAuthClient({
+	backend = Bun.secrets,
+	fetch,
+	log = createLogger('machine-auth'),
+	now,
+	refreshOAuthToken,
+	revokeOAuthRefreshToken,
+}: {
+	backend?: typeof Bun.secrets;
+	fetch?: typeof globalThis.fetch;
+	log?: Logger;
+	now?: () => number;
+	refreshOAuthToken?: OAuthTokenRefresher;
+	revokeOAuthRefreshToken?: OAuthRefreshTokenRevoker;
+} = {}): Promise<AuthClient> {
+	const { data: loadedSession, error } = await loadMachineSession({
+		backend,
+		log,
+	});
 	if (error) throw error;
 	if (loadedSession === null) {
 		throw new Error(
@@ -328,18 +383,29 @@ export async function createMachineAuthClient(): Promise<AuthClient> {
 				'Run `epicenter auth login` first.',
 		);
 	}
-	let currentSession: BearerSession | null = loadedSession;
-	return createBearerAuth({
+	let currentSession: OAuthSessionType | null = loadedSession;
+	return createOAuthAppAuth({
 		baseURL: EPICENTER_API_URL,
+		clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
+		launcher: {
+			startSignIn: async () => Ok(null),
+		},
 		sessionStorage: {
 			get: () => currentSession,
 			set: async (next) => {
-				currentSession = next;
-				const { error: saveError } = await saveMachineSession(next);
+				const { error: saveError } = await saveMachineSession(next, {
+					backend,
+				});
 				if (saveError) {
 					log.error(saveError);
+					throw saveError;
 				}
+				currentSession = next;
 			},
 		},
+		...(fetch ? { fetch } : {}),
+		...(now ? { now } : {}),
+		...(refreshOAuthToken ? { refreshOAuthToken } : {}),
+		...(revokeOAuthRefreshToken ? { revokeOAuthRefreshToken } : {}),
 	});
 }

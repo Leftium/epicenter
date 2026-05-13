@@ -10,6 +10,7 @@ import {
 	docGuid,
 	type EncryptionKeys,
 	onLocalUpdate,
+	type OpenWebSocket,
 	PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
@@ -36,12 +37,12 @@ function noteBodyDocGuid({
 export function openHoneycrisp({
 	userId,
 	peer,
-	bearerToken,
+	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
 	peer: PeerIdentity;
-	bearerToken?: () => string | null;
+	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
 	const doc = openHoneycrispDoc({ encryptionKeys });
@@ -61,9 +62,9 @@ export function openHoneycrisp({
 		const childIdb = doc.encryption.attachIndexedDb(ydoc, { userId });
 		attachOwnedBroadcastChannel(ydoc, { userId });
 		const childSync = attachSync(ydoc, {
-			url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+			url: toWsUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
-			bearerToken,
+			openWebSocket,
 		});
 
 		onLocalUpdate(ydoc, () => {
@@ -94,7 +95,7 @@ export function openHoneycrisp({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		bearerToken,
+		openWebSocket,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);

@@ -1,19 +1,17 @@
+export { type AuthClient, type AuthState } from './auth-contract.js';
+export * from './auth-errors.js';
 export {
-	type AuthIdentity,
+	type WorkspaceIdentity,
 	AuthUser,
-	BearerSession,
-} from './auth-types.ts';
+	OAuthSession,
+	type OAuthTokenGrant,
+} from './auth-types.js';
 export {
-	type AuthClient,
-	AuthError,
-	type AuthState,
-	type AuthStateChangeListener,
-	type BearerSessionStorage,
-	type CreateBearerAuthConfig,
-	type CreateCookieAuthConfig,
-	createBearerAuth,
-	createCookieAuth,
-	waitForAuthSettled,
-	waitForAuthState,
-} from './create-auth.ts';
-export { requireSignedIn } from './require-signed-in.ts';
+	type CreateOAuthAppAuthConfig,
+	createOAuthAppAuth,
+	type OAuthRefreshTokenRevoker,
+	type OAuthSessionStorage,
+	type OAuthSignInLauncher,
+	type OAuthTokenRefresher,
+} from './create-oauth-app-auth.js';
+export { requireIdentity } from './require-identity.js';

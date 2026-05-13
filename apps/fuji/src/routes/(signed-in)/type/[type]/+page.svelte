@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import EntriesTable from '../../components/EntriesTable.svelte';
 	import EntriesTimeline from '../../components/EntriesTimeline.svelte';
 	import { viewState } from '../../state/view.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 	const typeParam = $derived(decodeURIComponent(page.params.type ?? ''));
 	const filteredEntries = $derived(
-		signedIn.entries.active.filter((e) => e.type.includes(typeParam)),
+		workspace.entries.active.filter((e) => e.type.includes(typeParam)),
 	);
 </script>
 

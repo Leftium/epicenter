@@ -16,7 +16,7 @@ try {
 }
 
 /**
- * Derive the encryption keyring attached to Better Auth session responses.
+ * Derive the encryption keyring attached to Epicenter auth-session responses.
  *
  * The API owns env access and fail-fast worker startup. `@epicenter/encryption`
  * owns parsing and HKDF derivation, keeping workspace encryption separate from

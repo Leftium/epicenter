@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 	let value = $state('');
 	let inputEl: HTMLInputElement | undefined = $state();
 
 	async function handleSubmit() {
 		const cmd = value;
 		value = '';
-		await signedIn.state.terminal.exec(cmd);
-		if (signedIn.state.terminal.open) {
+		await workspace.state.terminal.exec(cmd);
+		if (workspace.state.terminal.open) {
 			await tick();
 			inputEl?.focus();
 		}
@@ -23,11 +23,11 @@
 			handleSubmit();
 		} else if (e.key === 'ArrowUp') {
 			e.preventDefault();
-			const prev = signedIn.state.terminal.previousCommand();
+			const prev = workspace.state.terminal.previousCommand();
 			if (prev !== undefined) value = prev;
 		} else if (e.key === 'ArrowDown') {
 			e.preventDefault();
-			const next = signedIn.state.terminal.nextCommand();
+			const next = workspace.state.terminal.nextCommand();
 			value = next ?? '';
 		}
 	}
@@ -47,8 +47,8 @@
 		bind:this={inputEl}
 		bind:value
 		onkeydown={handleKeydown}
-		disabled={signedIn.state.terminal.running}
-		placeholder={signedIn.state.terminal.running ? 'Running...': 'Type a command...'}
+		disabled={workspace.state.terminal.running}
+		placeholder={workspace.state.terminal.running ? 'Running...': 'Type a command...'}
 		aria-label="Terminal command input"
 		class="flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
 		spellcheck="false"

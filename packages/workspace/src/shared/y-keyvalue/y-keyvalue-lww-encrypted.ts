@@ -213,7 +213,10 @@ export function createEncryptedYkvLww<T>(
 	 * writes (those are internal re-encryption during activation, not user
 	 * changes). Logs a single warning on undecryptable remote entries.
 	 */
-	const observer: Parameters<typeof inner.observe>[0] = (changes, origin) => {
+	const observer: KvStoreChangeHandler<EncryptedBlob | T> = (
+		changes,
+		origin,
+	) => {
 		if (origin === REENCRYPT_ORIGIN) return;
 		const decryptedChanges = new Map<string, KvStoreChange<T>>();
 		for (const [key, change] of changes) {

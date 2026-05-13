@@ -15,7 +15,6 @@
 	],
 	"exports": {
 		".": "./src/index.ts",
-		"./auth-form": "./src/auth-form/index.ts",
 		"./account-popover": "./src/account-popover/index.ts",
 		"./workspace-gate": "./src/workspace-gate/index.ts"
 	},
@@ -40,7 +39,8 @@
 		"typescript": "catalog:"
 	},
 	"scripts": {
-		"typecheck": "svelte-check --tsconfig ./tsconfig.json"
+		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
+		"test": "bun test"
 	},
 	"license": "MIT"
 }

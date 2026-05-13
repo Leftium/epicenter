@@ -2,14 +2,14 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import FileXIcon from '@lucide/svelte/icons/file-x';
 	import { page } from '$app/state';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import EntryEditor from '../../components/EntryEditor.svelte';
 	import type { EntryId } from '../../fuji/workspace';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 	const entryId = $derived(page.params.id as EntryId);
 	const entry = $derived(
-		entryId ? (signedIn.entries.get(entryId) ?? null) : null,
+		entryId ? (workspace.entries.get(entryId) ?? null) : null,
 	);
 </script>
 

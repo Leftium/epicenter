@@ -19,26 +19,26 @@
 	import { goto } from '$app/navigation';
 	import ProseMirrorEditor from '$lib/components/ProseMirrorEditor.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import type { Entry } from '../fuji/workspace';
 
 	let { entry }: { entry: Entry } = $props();
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 
 	type EntryUpdate = Omit<
-		Parameters<typeof signedIn.fuji.actions.entries.update>[0],
+		Parameters<typeof workspace.fuji.actions.entries.update>[0],
 		'id'
 	>;
 
 	function updateEntry(updates: EntryUpdate) {
 		toastOnError(
-			signedIn.fuji.actions.entries.update({ id: entry.id, ...updates }),
+			workspace.fuji.actions.entries.update({ id: entry.id, ...updates }),
 			"Couldn't save changes",
 		);
 	}
 
 	const contentDoc = fromDisposableCache(
-		signedIn.fuji.entryContentDocs,
+		workspace.fuji.entryContentDocs,
 		() => entry.id,
 	);
 
@@ -66,7 +66,7 @@
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
 						toastOnError(
-							signedIn.fuji.actions.entries.delete({ id: entry.id }),
+							workspace.fuji.actions.entries.delete({ id: entry.id }),
 							'Couldn\'t delete entry',
 						);
 						goto('/');

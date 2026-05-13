@@ -3,26 +3,26 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import { goto } from '$app/navigation';
 	import { auth } from '$platform/auth';
-	import { session } from '$lib/session.svelte';
+	import { session } from '$lib/session';
 
 	let { children } = $props();
 
 	const current = $derived(session.current);
 
 	$effect(() => {
-		if (current.status === 'signed-out') {
+		if (!current) {
 			void goto('/sign-in', { replaceState: true });
 		}
 	});
 </script>
 
-{#if current.status === 'pending' || current.status === 'signed-out'}
-	<Loading class="h-dvh" />
-{:else}
+{#if current}
 	<WorkspaceGate
-		pending={current.signedIn.zhongwen.idb.whenLoaded}
+		pending={current.workspace.zhongwen.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
 		{@render children?.()}
 	</WorkspaceGate>
+{:else}
+	<Loading class="h-dvh" />
 {/if}

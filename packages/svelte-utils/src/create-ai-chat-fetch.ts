@@ -49,10 +49,7 @@ type FetchFn = (
 ) => Promise<Response>;
 
 export function createAiChatFetch(authFetch: FetchFn): typeof fetch {
-	const fetchClient = async (
-		input: Parameters<typeof fetch>[0],
-		init?: Parameters<typeof fetch>[1],
-	) => {
+	const fetchClient = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const response = await authFetch(input, init);
 		if (response.ok) return response;
 

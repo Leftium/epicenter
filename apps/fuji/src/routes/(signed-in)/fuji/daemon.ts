@@ -1,4 +1,4 @@
-import { createMachineAuthClient, requireSignedIn } from '@epicenter/auth/node';
+import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachAwareness,
@@ -42,7 +42,7 @@ export function defineFujiDaemon({
 			const auth = await createMachineAuthClient();
 			const doc = openFujiDoc({
 				clientID: hashClientId(projectDir),
-				encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
@@ -59,7 +59,7 @@ export function defineFujiDaemon({
 			});
 			const sync = attachSync(doc.ydoc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				bearerToken: () => auth.bearerToken,
+				openWebSocket: auth.openWebSocket,
 				awareness,
 			});
 			const rpc = sync.attachRpc(doc.actions);

@@ -1,36 +1,37 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 	import ChatErrorBanner from './ChatErrorBanner.svelte';
 	import ChatInput from './ChatInput.svelte';
 	import ConversationPicker from './ConversationPicker.svelte';
 	import MessageList from './MessageList.svelte';
 
-	const signedIn = getSignedInSession();
-	const active = $derived(signedIn.tabManager.state.aiChat.active);
+	const workspace = requireWorkspace();
 </script>
 
 <div class="flex h-full flex-col">
 	<ConversationPicker
-		conversations={signedIn.tabManager.state.aiChat.conversations}
-		activeId={signedIn.tabManager.state.aiChat.activeConversationId}
-		onSwitch={(id) => signedIn.tabManager.state.aiChat.switchTo(id)}
-		onCreate={() => signedIn.tabManager.state.aiChat.createConversation()}
+		conversations={workspace.state.aiChat.conversations}
+		activeId={workspace.state.aiChat.activeConversationId}
+		onSwitch={(id) => workspace.state.aiChat.switchTo(id)}
+		onCreate={() => workspace.state.aiChat.createConversation()}
 	/>
 
 	<div class="min-h-0 flex-1">
 		<MessageList
-			messages={active?.messages ?? []}
-			status={active?.status ?? 'ready'}
-			onReload={() => active?.reload()}
-			onApproveToolCall={(id) => active?.approveToolCall(id)}
-			onDenyToolCall={(id) => active?.denyToolCall(id)}
+			messages={workspace.state.aiChat.active?.messages ?? []}
+			status={workspace.state.aiChat.active?.status ?? 'ready'}
+			onReload={() => workspace.state.aiChat.active?.reload()}
+			onApproveToolCall={(id) =>
+				workspace.state.aiChat.active?.approveToolCall(id)}
+			onDenyToolCall={(id) =>
+				workspace.state.aiChat.active?.denyToolCall(id)}
 		/>
 	</div>
 
 	<!-- Error states: auth + credits are persistent, others go to ChatErrorBanner -->
-	{#if active?.isUnauthorized}
+	{#if workspace.state.aiChat.active?.isUnauthorized}
 		<div
 			role="alert"
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -48,7 +49,7 @@
 				Sign In
 			</Button>
 		</div>
-	{:else if active?.isCreditsExhausted}
+	{:else if workspace.state.aiChat.active?.isCreditsExhausted}
 		<div
 			role="alert"
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -65,19 +66,22 @@
 				Upgrade
 			</Button>
 		</div>
-	{:else if active}
+	{:else if workspace.state.aiChat.active}
 		<ChatErrorBanner
-			error={active.error}
-			dismissedError={active.dismissedError}
+			error={workspace.state.aiChat.active.error}
+			dismissedError={workspace.state.aiChat.active.dismissedError}
 			onRetry={() => {
-				active.dismissedError = null;
-				active.reload();
+				if (!workspace.state.aiChat.active) return;
+				workspace.state.aiChat.active.dismissedError = null;
+				workspace.state.aiChat.active.reload();
 			}}
 			onDismiss={() => {
-				active.dismissedError = active.error?.message ?? null;
+				if (!workspace.state.aiChat.active) return;
+				workspace.state.aiChat.active.dismissedError =
+					workspace.state.aiChat.active.error?.message ?? null;
 			}}
 		/>
 	{/if}
 
-	<ChatInput {active} />
+	<ChatInput active={workspace.state.aiChat.active} />
 </div>

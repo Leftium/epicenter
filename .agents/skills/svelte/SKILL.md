@@ -31,6 +31,7 @@ Use this pattern when you need to:
 - Decide between `createMutation` in `.svelte` and `.execute()` in `.ts`.
 - Follow shadcn-svelte import, composition, and component organization patterns.
 - Refactor one-off `handle*` wrappers into inline template actions.
+- Remove shallow `$derived` and `{@const}` aliases that only rename a property read.
 - Convert SvelteMap data to arrays for derived state or component props.
 - Avoid template gotchas (unicode escapes in HTML vs JS context).
 - Extract repetitive markup into data-driven `{#each}` or `{#snippet}` patterns.
@@ -154,6 +155,68 @@ In this codebase, the rule applies to any component calling `*Docs.open()` (Yjs 
 - The `sync-construction-async-property-ui-render-gate-pattern` skill covers the service-layer equivalent for clients with async-ready properties.
 - `docs/articles/svelte-5-createsubscriber-pattern.md` covers `createSubscriber` for wrapping external event sources into reactive values — a different job than component-scoped handles.
 - `docs/articles/20260420T160000-state-handle-null-is-the-component-lifecycle-in-disguise.md` walks through why this rule exists and when Pattern B is still correct.
+
+# Shallow Template Aliases: Inline Direct Reads
+
+Svelte template expressions already track reactive property reads. Do not add a `$derived` or `{@const}` whose only job is to rename a shallow property read for markup.
+
+```svelte
+<!-- Bad: the alias does not compute anything -->
+<script lang="ts">
+	const current = $derived(session.current);
+</script>
+
+{#if current}
+	<WorkspaceGate pending={current.workspace.app.idb.whenLoaded} />
+{/if}
+```
+
+```svelte
+<!-- Good: read the source directly in markup -->
+{#if session.current}
+	<WorkspaceGate pending={session.current.workspace.app.idb.whenLoaded} />
+{/if}
+```
+
+The same rule applies to block-local `{@const}` passthroughs:
+
+```svelte
+<!-- Bad -->
+{#await tabManagerSession.whenReady}
+	<Loading />
+{:then _}
+	{@const current = tabManagerSession.current}
+	{#if current}
+		<SignedInApp workspace={current.workspace} />
+	{/if}
+{/await}
+```
+
+```svelte
+<!-- Good -->
+{#await tabManagerSession.whenReady}
+	<Loading />
+{:then _}
+	{#if tabManagerSession.current}
+		<SignedInApp workspace={tabManagerSession.current.workspace} />
+	{/if}
+{/await}
+```
+
+Keep the alias when it owns real work:
+
+- Computed predicates or values: `const isSelected = $derived(selectedId === item.id)`.
+- Values used by script logic, effects, or other derived values.
+- Expensive or noisy computations that should run once per block.
+- Dynamic component binding: `{@const Icon = item.icon}` before `<Icon />`.
+- Discriminated union payloads inside an `{#each}` branch when the alias improves narrowing and readability: `{@const bookmark = item.bookmark}`.
+
+Searches:
+
+```bash
+rg -n '\$derived\([^)]*\.[A-Za-z_$][A-Za-z0-9_$]*\)' --glob '*.svelte'
+rg -n '\{@const\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*[^}\n]+\.[A-Za-z_$][A-Za-z0-9_$]*\s*\}' --glob '*.svelte'
+```
 
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 

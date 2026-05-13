@@ -1,4 +1,4 @@
-import { createMachineAuthClient, requireSignedIn } from '@epicenter/auth/node';
+import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { attachSync, type ProjectDir, toWsUrl } from '@epicenter/workspace';
 import {
@@ -19,14 +19,14 @@ export async function openHoneycrisp({
 	const auth = await createMachineAuthClient();
 	const doc = openHoneycrispDoc({
 		clientID,
-		encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+		encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 	});
 	const yjsLog = attachYjsLogReader(doc.ydoc, {
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-		bearerToken: () => auth.bearerToken,
+		openWebSocket: auth.openWebSocket,
 	});
 	const rpc = sync.attachRpc(doc.actions);
 

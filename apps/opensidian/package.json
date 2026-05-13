@@ -27,6 +27,7 @@
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/auth-svelte": "workspace:*",
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/oauth-client": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@tanstack/ai": "catalog:",

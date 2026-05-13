@@ -1,17 +1,15 @@
 export {
 	AuthError,
-	type AuthIdentity,
+	type WorkspaceIdentity,
 	type AuthState,
-	type AuthStateChangeListener,
 	AuthUser,
-	BearerSession,
-	type CreateBearerAuthConfig,
-	type CreateCookieAuthConfig,
-	waitForAuthSettled,
-	waitForAuthState,
+	type CreateOAuthAppAuthConfig,
+	OAuthSession,
+	type OAuthSessionStorage,
+	type OAuthSignInLauncher,
+	type OAuthTokenRefresher,
 } from '@epicenter/auth';
 export {
 	type AuthClient,
-	createBearerAuth,
-	createCookieAuth,
-} from './create-auth.svelte.ts';
+	createOAuthAppAuth,
+} from './create-auth.svelte.js';

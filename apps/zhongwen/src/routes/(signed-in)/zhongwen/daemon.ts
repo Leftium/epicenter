@@ -1,4 +1,4 @@
-import { createMachineAuthClient, requireSignedIn } from '@epicenter/auth/node';
+import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachAwareness,
@@ -26,7 +26,7 @@ export function defineZhongwenDaemon({
 			const auth = await createMachineAuthClient();
 			const doc = openZhongwenDoc({
 				clientID: hashClientId(projectDir),
-				encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
@@ -43,7 +43,7 @@ export function defineZhongwenDaemon({
 			});
 			const sync = attachSync(doc.ydoc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
-				bearerToken: () => auth.bearerToken,
+				openWebSocket: auth.openWebSocket,
 				awareness,
 			});
 			const actions = {};

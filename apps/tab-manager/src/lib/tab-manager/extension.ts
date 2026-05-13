@@ -11,6 +11,7 @@ import {
 	attachSync,
 	createRemoteClient,
 	type EncryptionKeys,
+	type OpenWebSocket,
 	PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
@@ -33,12 +34,12 @@ import { openTabManager as openTabManagerDoc } from './index';
 export async function openTabManager({
 	userId,
 	peer,
-	bearerToken,
+	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
 	peer: TabManagerPeer | Promise<TabManagerPeer>;
-	bearerToken?: () => string | null;
+	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
 	const resolvedPeer = await Promise.resolve(peer);
@@ -58,7 +59,7 @@ export async function openTabManager({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		bearerToken,
+		openWebSocket,
 		awareness,
 	});
 	const rpc = sync.attachRpc(doc.actions);

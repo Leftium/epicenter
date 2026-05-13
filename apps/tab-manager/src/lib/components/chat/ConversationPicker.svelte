@@ -137,11 +137,10 @@
 										</Button>
 									</span>
 								</span>
-								{@const preview = conv.lastMessagePreview}
-								{#if preview}
+								{#if conv.lastMessagePreview}
 									<span
 										class="w-full truncate pl-5 text-[10px] text-muted-foreground"
-										>{preview}</span
+										>{conv.lastMessagePreview}</span
 									>
 								{/if}
 							</Command.Item>

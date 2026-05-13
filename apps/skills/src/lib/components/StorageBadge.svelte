@@ -30,7 +30,6 @@
 		};
 	}
 
-	const skillCount = $derived(skillsState.skills.length);
 	const storageSize = createYdocSize(skills.ydoc);
 
 	function formatBytes(bytes: number): string {
@@ -47,8 +46,8 @@
 >
 	<Database class="size-3 shrink-0" />
 	<span>
-		{skillCount}
-		{skillCount === 1 ? 'skill' : 'skills'}
+		{skillsState.skills.length}
+		{skillsState.skills.length === 1 ? 'skill' : 'skills'}
 		<span class="text-muted-foreground/60">·</span>
 		{formatBytes(storageSize.bytes)}
 	</span>

@@ -6,13 +6,13 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '$platform/auth';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 
 	async function forgetHoneycrispDevice(): Promise<void> {
-		await signedIn.honeycrisp.wipe();
+		await workspace.honeycrisp.wipe();
 		window.location.reload();
 	}
 </script>
@@ -24,14 +24,9 @@
 			<div class="flex items-center gap-1">
 				<AccountPopover
 					{auth}
-					sync={signedIn.honeycrisp.sync}
+					sync={workspace.honeycrisp.sync}
 					syncNoun="notes"
 					onForgetDevice={forgetHoneycrispDevice}
-					onSocialSignIn={() =>
-						auth.signInWithSocialRedirect({
-							provider: 'google',
-							callbackURL: window.location.origin,
-						})}
 				/>
 				<Sidebar.Trigger />
 			</div>
@@ -39,8 +34,8 @@
 		<div class="px-2 pb-1">
 			<Sidebar.Input
 				placeholder="Search notes…"
-				value={signedIn.state.view.searchQuery}
-				oninput={(e) => signedIn.state.view.setSearchQuery(e.currentTarget.value)}
+				value={workspace.state.view.searchQuery}
+				oninput={(e) => workspace.state.view.setSearchQuery(e.currentTarget.value)}
 			/>
 		</div>
 	</Sidebar.Header>
@@ -51,26 +46,26 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={signedIn.state.view.selectedFolderId === null && !signedIn.state.view.isRecentlyDeletedView}
-							onclick={() => signedIn.state.view.selectFolder(null)}
+							isActive={workspace.state.view.selectedFolderId === null && !workspace.state.view.isRecentlyDeletedView}
+							onclick={() => workspace.state.view.selectFolder(null)}
 						>
 							<FileTextIcon class="size-4" />
 							<span>All Notes</span>
 							<span class="ml-auto text-xs text-muted-foreground">
-								{signedIn.state.notes.all.length}
+								{workspace.state.notes.all.length}
 							</span>
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={signedIn.state.view.isRecentlyDeletedView && signedIn.state.view.selectedFolderId === null}
-							onclick={() => signedIn.state.view.selectRecentlyDeleted()}
+							isActive={workspace.state.view.isRecentlyDeletedView && workspace.state.view.selectedFolderId === null}
+							onclick={() => workspace.state.view.selectRecentlyDeleted()}
 						>
 							<TrashIcon class="size-4" />
 							<span>Recently Deleted</span>
-							{#if signedIn.state.notes.deleted.length > 0}
+							{#if workspace.state.notes.deleted.length > 0}
 								<span class="ml-auto text-xs text-muted-foreground">
-									{signedIn.state.notes.deleted.length}
+									{workspace.state.notes.deleted.length}
 								</span>
 							{/if}
 						</Sidebar.MenuButton>
@@ -86,7 +81,7 @@
 				</Collapsible.Trigger>
 				<Sidebar.GroupAction
 					title="New Folder"
-					onclick={() => signedIn.state.folders.create()}
+					onclick={() => workspace.state.folders.create()}
 				>
 					<PlusIcon />
 					<span class="sr-only">New Folder</span>
@@ -94,7 +89,7 @@
 				<Collapsible.Content>
 					<Sidebar.GroupContent>
 						<Sidebar.Menu>
-							{#each signedIn.state.folders.all as folder (folder.id)}
+							{#each workspace.state.folders.all as folder (folder.id)}
 								<FolderMenuItem {folder} />
 							{:else}
 								<Sidebar.MenuItem>

@@ -53,8 +53,6 @@
 		enabled: !!latestRecording?.id,
 	}));
 
-	const blobUrl = $derived(audioPlaybackUrlQuery.data);
-
 	const availableModes = $derived(
 		RECORDING_MODE_OPTIONS.filter((mode) => {
 			if (!mode.desktopOnly) return true;
@@ -387,12 +385,12 @@
 				}}
 			/>
 
-			{#if blobUrl}
+			{#if audioPlaybackUrlQuery.data}
 				<audio
 					style="view-transition-name: {viewTransition.recording(
 						latestRecording.id,
 					).audio}"
-					src={blobUrl}
+					src={audioPlaybackUrlQuery.data}
 					controls
 					class="h-8 w-full"
 				></audio>

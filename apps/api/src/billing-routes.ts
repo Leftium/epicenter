@@ -45,7 +45,6 @@ billingRoutes.get('/balance', async (c) => {
 	const autumn = createAutumn(c.env);
 	const customer = await autumn.customers.getOrCreate({
 		customerId: c.var.user.id,
-		name: c.var.user.name ?? undefined,
 		email: c.var.user.email ?? undefined,
 		expand: ['subscriptions.plan', 'balances.feature'],
 	});

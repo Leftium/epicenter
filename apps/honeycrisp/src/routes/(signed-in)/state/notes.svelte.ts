@@ -8,15 +8,15 @@
  * @example
  * ```svelte
  * <script>
- *   import { getSignedInSession } from '$lib/session.svelte';
+ *   import { requireWorkspace } from '$lib/session';
  *
- *   const signedIn = getSignedInSession();
+ *   const workspace = requireWorkspace();
  * </script>
  *
- * {#each signedIn.state.notes.all as note (note.id)}
+ * {#each workspace.state.notes.all as note (note.id)}
  *   <p>{note.title}</p>
  * {/each}
- * <button onclick={() => signedIn.state.notes.create()}>New Note</button>
+ * <button onclick={() => workspace.state.notes.create()}>New Note</button>
  * ```
  */
 
@@ -93,8 +93,8 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * const { id } = signedIn.state.notes.create(signedIn.state.view.selectedFolderId);
-		 * signedIn.state.view.selectNote(id);
+		 * const { id } = workspace.state.notes.create(workspace.state.view.selectedFolderId);
+		 * workspace.state.view.selectNote(id);
 		 * ```
 		 */
 		create(folderId?: FolderId | null) {
@@ -123,7 +123,7 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * signedIn.state.notes.softDelete(noteId);
+		 * workspace.state.notes.softDelete(noteId);
 		 * // Note moves to Recently Deleted, editor closes
 		 * ```
 		 */
@@ -144,7 +144,7 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * signedIn.state.notes.restore(noteId);
+		 * workspace.state.notes.restore(noteId);
 		 * // Note reappears in its original folder (or unfiled)
 		 * ```
 		 */
@@ -168,7 +168,7 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * signedIn.state.notes.permanentlyDelete(noteId);
+		 * workspace.state.notes.permanentlyDelete(noteId);
 		 * // Note is removed from Recently Deleted and database
 		 * ```
 		 */
@@ -187,7 +187,7 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * signedIn.state.notes.togglePin(noteId);
+		 * workspace.state.notes.togglePin(noteId);
 		 * // Note moves to the top of the list (or unpins)
 		 * ```
 		 */
@@ -207,10 +207,10 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * signedIn.state.notes.moveToFolder(noteId, folderId);
+		 * workspace.state.notes.moveToFolder(noteId, folderId);
 		 *
 		 * // Move a note to unfiled
-		 * signedIn.state.notes.moveToFolder(noteId, undefined);
+		 * workspace.state.notes.moveToFolder(noteId, undefined);
 		 * ```
 		 */
 		moveToFolder(noteId: NoteId, folderId: FolderId | undefined) {
@@ -226,7 +226,7 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * signedIn.state.notes.updateContent(noteId, {
+		 * workspace.state.notes.updateContent(noteId, {
 		 *   title: 'My Note Title',
 		 *   preview: 'First line of content...',
 		 *   wordCount: 42,

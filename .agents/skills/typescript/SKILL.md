@@ -32,6 +32,59 @@ Load these on demand based on what you're working on:
 
 ## Core Rules
 
+- **Do not add a type until you have tried to derive or import it**: New named
+  types are guilty until proven useful. Before declaring a type, check whether
+  the shape already exists in an external library, an arktype/typebox schema, a
+  factory return value, a runtime constant, or a function signature.
+
+  ```typescript
+  // Good: imported from the owner package
+  import type { User } from 'better-auth';
+
+  // Good: derived from a runtime schema
+  export const AuthUser = type({ id: 'string', email: 'string' });
+  export type AuthUser = typeof AuthUser.infer;
+
+  // Good: derived from a function or factory
+  type TokenOptions = Parameters<typeof verifyAccessToken>[1];
+  export type AuthClient = ReturnType<typeof createAuthClient>;
+
+  // Bad: hand-written copy of a shape owned elsewhere
+  type OAuthPayload = { sub?: unknown };
+  type AuthClient = { signOut(): Promise<void> };
+  ```
+
+  Keep explicit named types when they are the real contract: public package API,
+  protocol vocabulary, discriminated result unions, capability ports, or shapes
+  implemented by more than one runtime. Prefer `satisfies` when an
+  implementation should be checked against a contract while keeping inference
+  pointed at the concrete value.
+
+- **Local shape copies are boundary smells**: A local type that exists only to
+  imitate an upstream value should be suspicious before it becomes normal. The
+  common tells are names ending in `Like`, casts to local `Like` types,
+  `as Record<string, unknown>` inside already-typed internal code,
+  `Pick<T, 'singleMethod'>` dependency seams, test-only
+  `Parameters<typeof fn>[n]` gymnastics, and production casts whose only job is
+  to make a test fake compile.
+
+  ```typescript
+  // Bad: local copy of a dependency shape
+  type AuthClientLike = {
+    signOut(): Promise<void>;
+  };
+
+  // Good: name the caller's actual capability
+  type SignOut = () => Promise<void>;
+  ```
+
+  Prefer the owning runtime type, schema, factory return type, function
+  signature, or a caller-owned capability function. Keep incomplete fake objects
+  in tests, checked with `satisfies` when useful, instead of widening
+  production code to accommodate them. See
+  `docs/articles/copied-types-are-boundary-leaks.md` for the full review
+  pattern.
+
 - Always use `type` instead of `interface` in TypeScript.
 - **`readonly` only for arrays and maps**: Never use `readonly` on primitive properties or object properties. The modifier is shallow and provides little protection for non-collection types. Use it only where mutation is a realistic footgun:
 

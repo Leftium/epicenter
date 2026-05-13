@@ -1,26 +1,26 @@
 import type { AuthClient } from '@epicenter/auth';
-import { requireSignedIn } from '@epicenter/auth';
-import { createBearerAuth } from '@epicenter/auth-svelte';
+import { requireIdentity } from '@epicenter/auth';
+import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createSession, type InferSignedIn } from '@epicenter/svelte';
-import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
+import { createSession } from '@epicenter/svelte';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
-import { storage } from '@wxt-dev/storage';
-import { authSessionStorage } from './auth';
+import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
+import { authSessionStorage, oauthLauncher } from './platform/auth/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
+import { createPeer, registerDevice } from './device';
 import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
 import { openTabManager } from './tab-manager/extension';
-import type { DeviceId } from './workspace/definition';
 
 export type TabManagerWorkspace = Awaited<ReturnType<typeof openTabManager>>;
 export type WorkspaceAiTools = ReturnType<
 	typeof actionsToAiTools<TabManagerWorkspace['actions']>
 >;
 
-type TabManagerSignedInPayload = TabManagerWorkspace & {
+type ReadyTabManagerSession = {
+	tabManager: TabManagerWorkspace;
 	state: {
 		savedTabs: ReturnType<typeof createSavedTabState>;
 		bookmarks: ReturnType<typeof createBookmarkState>;
@@ -28,20 +28,25 @@ type TabManagerSignedInPayload = TabManagerWorkspace & {
 		unifiedView: ReturnType<typeof createUnifiedViewState>;
 		aiChat: ReturnType<typeof createAiChatState>;
 	};
-};
-
-type ReadyTabManagerSession = {
-	tabManager: TabManagerSignedInPayload;
 	workspaceAiTools: WorkspaceAiTools;
 };
 
-let authClient = $state<AuthClient | undefined>(undefined);
-let workspaceSession = $state<ReturnType<typeof createWorkspaceSession>>();
+/**
+ * Deferred-init values: set exactly once when `authSessionStorage.whenReady`
+ * resolves, never reassigned afterwards. They are plain `let`, not `$state`,
+ * because nothing needs the assignment itself to drive reactivity; consumers
+ * await the `whenReady` promise before reading, and the reactive surfaces
+ * (`auth.state`, `workspaceSession.current`) own their own `$state` internally.
+ */
+let authClient: AuthClient | undefined;
+let workspaceSession: ReturnType<typeof createWorkspaceSession> | undefined;
 
-export const whenReady = authSessionStorage.whenReady.then(() => {
-	authClient = createBearerAuth({
+const whenReady = authSessionStorage.whenReady.then(() => {
+	authClient = createOAuthAppAuth({
 		baseURL: APP_URLS.API,
+		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 		sessionStorage: authSessionStorage,
+		launcher: oauthLauncher,
 	});
 	workspaceSession = createWorkspaceSession(authClient);
 });
@@ -52,12 +57,12 @@ function createWorkspaceSession(auth: AuthClient) {
 		build: (identity) => {
 			const userId = identity.user.id;
 			let disposed = false;
-			let ready = $state<ReadyTabManagerSession | undefined>(undefined);
+			let ready: ReadyTabManagerSession | undefined;
 			const whenReady = openTabManager({
 				userId,
 				peer: createPeer(),
-				bearerToken: () => auth.bearerToken,
-				encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+				openWebSocket: auth.openWebSocket,
+				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			}).then((tabManager) => {
 				if (disposed) {
 					tabManager[Symbol.dispose]();
@@ -75,15 +80,8 @@ function createWorkspaceSession(auth: AuthClient) {
 				});
 
 				ready = {
-					tabManager: Object.assign(tabManager, {
-						state: {
-							savedTabs,
-							bookmarks,
-							toolTrust,
-							unifiedView,
-							aiChat,
-						},
-					}),
+					tabManager,
+					state: { savedTabs, bookmarks, toolTrust, unifiedView, aiChat },
 					workspaceAiTools,
 				};
 				void tabManager.idb.whenLoaded.then(() => registerDevice(tabManager));
@@ -102,6 +100,14 @@ function createWorkspaceSession(auth: AuthClient) {
 					}
 					return ready.tabManager;
 				},
+				get state() {
+					if (!ready) {
+						throw new Error(
+							'[tab-manager] state read before signed-in session readiness.',
+						);
+					}
+					return ready.state;
+				},
 				get workspaceAiTools() {
 					if (!ready) {
 						throw new Error(
@@ -112,10 +118,10 @@ function createWorkspaceSession(auth: AuthClient) {
 				},
 				[Symbol.dispose]() {
 					disposed = true;
-					ready?.tabManager.state.aiChat[Symbol.dispose]();
-					ready?.tabManager.state.toolTrust[Symbol.dispose]();
-					ready?.tabManager.state.bookmarks[Symbol.dispose]();
-					ready?.tabManager.state.savedTabs[Symbol.dispose]();
+					ready?.state.aiChat[Symbol.dispose]();
+					ready?.state.toolTrust[Symbol.dispose]();
+					ready?.state.bookmarks[Symbol.dispose]();
+					ready?.state.savedTabs[Symbol.dispose]();
 					ready?.tabManager[Symbol.dispose]();
 				},
 			};
@@ -123,10 +129,7 @@ function createWorkspaceSession(auth: AuthClient) {
 	});
 }
 
-export type TabManagerSignedIn = InferSignedIn<
-	NonNullable<typeof workspaceSession>
->;
-export type WorkspaceTools = TabManagerSignedIn['workspaceAiTools']['tools'];
+export type WorkspaceTools = WorkspaceAiTools['tools'];
 
 export const tabManagerSession = {
 	get auth(): AuthClient {
@@ -136,7 +139,12 @@ export const tabManagerSession = {
 		return authClient;
 	},
 	get current() {
-		return workspaceSession?.current ?? { status: 'pending' as const };
+		if (!workspaceSession) {
+			throw new Error(
+				'[tab-manager] tabManagerSession.current read before storage readiness.',
+			);
+		}
+		return workspaceSession.current;
 	},
 	whenReady,
 	[Symbol.dispose]() {
@@ -149,70 +157,18 @@ if (import.meta.hot) {
 	import.meta.hot.dispose(() => tabManagerSession[Symbol.dispose]());
 }
 
-export function getSignedInSession() {
-	const current = tabManagerSession.current;
-	if (current.status !== 'signed-in') {
+export function requireWorkspace() {
+	if (!workspaceSession) {
 		throw new Error(
-			'[tab-manager] getSignedInSession() called outside the signed-in branch. ' +
-				'This indicates a route or component mounted without the layout gate, ' +
-				'or a callback firing after the workspace was disposed.',
+			'[tab-manager] requireWorkspace() called before storage readiness. ' +
+				'Components must mount under `{#await tabManagerSession.whenReady}`.',
 		);
 	}
-	return current.signedIn;
+	return workspaceSession.requireWorkspace();
 }
 
 export async function forgetTabManagerDevice(): Promise<void> {
-	const current = getSignedInSession();
-	await current.tabManager.wipe();
+	const workspace = requireWorkspace();
+	await workspace.tabManager.wipe();
 	window.location.reload();
-}
-
-async function registerDevice(tabManager: TabManagerWorkspace): Promise<void> {
-	const { id, name } = tabManager.peer;
-	const { data: existing, error } = tabManager.tables.devices.get(id);
-	const existingName = !error && existing ? existing.name : null;
-	tabManager.tables.devices.set({
-		id,
-		name: existingName ?? name,
-		lastSeen: new Date().toISOString(),
-		browser: import.meta.env.BROWSER,
-		_v: 1,
-	});
-}
-
-async function createPeer() {
-	const [id, name] = await Promise.all([
-		getOrCreateInstallationIdAsync<DeviceId>({
-			getItem: (k) => storage.getItem<string>(`local:${k}`),
-			setItem: async (k, v) => {
-				await storage.setItem(`local:${k}`, v);
-			},
-		}),
-		generateDefaultDeviceName(),
-	]);
-	return {
-		id,
-		name,
-		platform: 'chrome-extension' as const,
-	};
-}
-
-const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
-
-/** Default device label like "Chrome on macOS". */
-async function generateDefaultDeviceName(): Promise<string> {
-	const browserName = capitalize(import.meta.env.BROWSER);
-	const platformInfo = await browser.runtime.getPlatformInfo();
-	const osName = (
-		{
-			mac: 'macOS',
-			win: 'Windows',
-			linux: 'Linux',
-			cros: 'ChromeOS',
-			android: 'Android',
-			openbsd: 'OpenBSD',
-			fuchsia: 'Fuchsia',
-		} satisfies Record<Browser.runtime.PlatformInfo['os'], string>
-	)[platformInfo.os];
-	return `${browserName} on ${osName}`;
 }

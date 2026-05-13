@@ -1,47 +1,113 @@
 ---
 name: auth
-description: Epicenter auth packages, @epicenter/auth and @epicenter/auth-svelte. Covers the two auth factories, shared AuthClient surface, identity state, sync authentication, and workspace lifecycle binding.
+description: Epicenter auth packages, @epicenter/auth and @epicenter/auth-svelte. Covers OAuth app auth, OAuthSession storage, identity state, auth-owned fetch and WebSocket transport, and workspace lifecycle binding.
 metadata:
   author: epicenter
-  version: '4.0'
+  version: '5.0'
 ---
 
 # Epicenter Auth
 
 ## Upstream Grounding
 
-When changes depend on Better Auth session behavior, bearer transport, cookie handling, token rotation, plugins, or generated API shape, ask DeepWiki a narrow question against `better-auth/better-auth` before relying on memory. Use it to orient, then verify decisive details against local installed types, source, or official docs before changing code.
+When changes depend on Better Auth OAuth provider behavior, bearer token
+verification, device authorization, cookie handling, token rotation, plugin
+shape, or generated API shape, ask DeepWiki a narrow question against
+`better-auth/better-auth` before relying on memory. Use it to orient, then
+verify decisive details against local installed types, source, tests, or
+official docs before changing code.
 
-Skip DeepWiki for Epicenter-specific invariants already documented in this skill or nearby specs.
+Known Better Auth source landmarks:
 
-Two packages own the auth surface:
-
-- **`@epicenter/auth`**: framework-agnostic core. Owns Better Auth transport, token rotation for bearer clients, cookie fetch policy for cookie clients, identity fan-out, `fetch`, and the live `bearerToken` getter.
-- **`@epicenter/auth-svelte`**: Svelte 5 wrapper. Mirrors `auth.state` into `$state` so templates and `$derived` read it reactively.
-
-The core model is two factories, one client interface:
-
-```ts
-const cookieAuth = createCookieAuth({ baseURL, initialIdentity, saveIdentity });
-const bearerAuth = createBearerAuth({ baseURL, sessionStorage });
+```txt
+packages/oauth-provider/src/oauth.ts
+packages/oauth-provider/src/authorize.ts
+packages/oauth-provider/src/token.ts
+packages/oauth-provider/src/revoke.ts
+packages/oauth-provider/src/client-resource.ts
+packages/better-auth/src/plugins/device-authorization/index.ts
+packages/better-auth/src/plugins/device-authorization/client.ts
+packages/better-auth/src/plugins/custom-session/index.ts
 ```
 
-Both return `AuthClient`. Consumers use the same methods after construction and must not branch on which factory produced the client.
+Better Auth remains the auth server and session engine. Epicenter extends it
+through plugins and options; it does not replace Better Auth's server-side
+session model.
 
-This model is grounded in `specs/20260503T230000-auth-unified-client-two-factories.md`, especially the section "Why Better Auth Already Solves This". Better Auth already supplies stale-while-revalidate identity, bearer transport, token rotation, cookie transport, and the caller-resolved sync hydration pattern. Epicenter composes those primitives instead of adding a parallel auth state machine.
+Use this composition sentence when explaining the architecture:
 
-## When to Apply This Skill
+```txt
+Epicenter uses Better Auth for auth-server machinery, OAuth for the app/resource boundary, and AuthIdentity for workspace boot.
+```
 
-Use this skill when:
+That means Better Auth owns users, account cookies, login, consent, token
+issuing, revocation, JWKS, and metadata. Epicenter clients store
+`OAuthSession`, not Better Auth sessions. `/me` is the adapter that verifies an
+OAuth access token, loads the Better Auth user, derives encryption keys, and
+returns `AuthIdentity`.
 
-- Wiring a browser app, extension, daemon, CLI, or Svelte component to auth.
-- Reacting to auth transitions in sync, encryption, or storage layers.
-- Loading a persisted bearer session before constructing auth.
-- Reading auth state in UI, fetch callbacks, or workspace sync callbacks.
+When the user asks whether this is idiomatic Better Auth, be precise:
+
+```txt
+It is not the shortest Better Auth browser-cookie path.
+It is an idiomatic composition of Better Auth as the auth server beneath a cross-client OAuth runtime.
+```
+
+Do not suggest removing Better Auth unless the user has a concrete blocker that
+cannot be handled with configuration, a small adapter, or an upstream fix.
+Building OAuth by hand means owning PKCE validation, redirect URI validation,
+state and mix-up protections, trusted clients, token signing, refresh token
+rotation, revocation, JWKS, metadata, consent, account sessions, and security
+fixes forever.
+
+## Current Model
+
+Epicenter app clients use one OAuth app auth model:
+
+```ts
+const auth = createOAuthAppAuth({
+	baseURL: APP_URLS.API,
+	clientId,
+	launcher,
+	sessionStorage,
+});
+```
+
+The old split between `createCookieAuth` and `createBearerAuth` is legacy.
+Do not add new code using those factories, `BearerSession`, or
+`auth.bearerToken`. When touching old app code that still uses those names,
+migrate it to `createOAuthAppAuth` and auth-owned transports.
+
+Two packages own the public surface:
+
+- `@epicenter/auth`: framework-agnostic core. Owns OAuth session storage,
+  identity loading, refresh, refresh-token revocation, authenticated fetch, and
+  WebSocket opening.
+- `@epicenter/auth-svelte`: Svelte 5 wrapper. Mirrors `auth.state` through
+  `createSubscriber` so templates and `$derived` reads are reactive.
+
+The API server composes Better Auth like this:
+
+```txt
+Hono app
+  -> CORS
+  -> per-request DB
+  -> createAuth({ db, env, baseURL })
+  -> singleCredential
+  -> /auth/* Better Auth handler
+  -> /auth/me OAuth identity projection
+  -> protected resources
+```
+
+`createAuth()` configures Better Auth with Drizzle, Google sign-in,
+email/password, `bearer`, `jwt`, `deviceAuthorization`, `oauthProvider`, and
+`customSession`. The OAuth provider owns `/auth/oauth2/authorize`,
+`/auth/oauth2/token`, and `/auth/oauth2/revoke`. Epicenter owns `/auth/me`,
+which verifies an OAuth access token and returns the local-first identity.
 
 ## Public Surface
 
-Auth has one public read path:
+Auth has one public client interface:
 
 ```ts
 type AuthIdentity = {
@@ -49,75 +115,135 @@ type AuthIdentity = {
 	encryptionKeys: EncryptionKeys;
 };
 
+type AuthState =
+	| { status: 'signed-in'; identity: AuthIdentity }
+	| { status: 'reauth-required'; identity: AuthIdentity }
+	| { status: 'signed-out' };
+
 type AuthClient = {
-	readonly state: AuthState;
-	readonly bearerToken: string | null;
+	state: AuthState;
 	onStateChange(fn: (state: AuthState) => void): () => void;
+	startSignIn(input?: {
+		returnTo?: string;
+	}): Promise<Result<undefined, AuthError>>;
+	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
+	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
+	[Symbol.dispose](): void;
 };
 ```
 
-Read `auth.state` synchronously. Use `waitForAuthSettled(auth)` when bootstrap needs the first settled session event.
+Read `auth.state` synchronously. Use `auth.onStateChange(fn)` for future
+changes only; it does not replay. Consumers that need bootstrap behavior must
+read `auth.state` once and then register the listener.
 
-Use `auth.onStateChange(fn)` for future changes only. It does not replay. Consumers that need bootstrap behavior must read `auth.state` once and then register the listener.
+Do not expose raw tokens above auth storage and transport boundaries. UI,
+workspace binding, AI fetches, and sync consume capabilities: `auth.fetch` and
+`auth.openWebSocket`.
 
-Do not add projection helpers. `auth.bearerToken` is the only public token read path, and it returns `null` for cookie auth.
+## OAuthSession
 
-## Factory Choice
-
-Use `createCookieAuth` when the browser can use the API cookie jar:
+`OAuthSession` is the durable app session shape:
 
 ```ts
-import { createCookieAuth } from '@epicenter/auth-svelte';
-import { APP_URLS } from '@epicenter/constants/vite';
-
-export const auth = createCookieAuth({
-	baseURL: APP_URLS.API,
-	initialIdentity: cachedIdentity.get(),
-	saveIdentity: (next) => cachedIdentity.set(next),
+export const OAuthSession = type({
+	'...': AuthIdentity,
+	'+': 'delete',
+	accessToken: 'string',
+	refreshToken: 'string',
+	accessTokenExpiresAt: 'number',
 });
 ```
 
-Use `createBearerAuth` when the runtime owns a bearer token: standalone-domain SPA, browser extension, daemon, or CLI. The caller passes durable session storage:
+Expanded:
 
 ```ts
-import { BearerSession, createBearerAuth } from '@epicenter/auth-svelte';
-import { APP_URLS } from '@epicenter/constants/vite';
-import { createPersistedState } from '@epicenter/svelte';
+type OAuthSession = {
+	user: AuthUser;
+	encryptionKeys: EncryptionKeys;
+	accessToken: string;
+	refreshToken: string;
+	accessTokenExpiresAt: number;
+};
+```
 
-export const auth = createBearerAuth({
-	baseURL: APP_URLS.API,
-	sessionStorage: createPersistedState({
-		key: 'app:authSession',
-		schema: BearerSession.or('null'),
-		defaultValue: null,
-	}),
+It deliberately combines local identity and network credentials:
+
+```txt
+OAuthSession
+  user + encryptionKeys  -> local identity and offline unlock
+  accessToken            -> fetch and WebSocket credential
+  refreshToken           -> renew network access
+  accessTokenExpiresAt   -> transport refresh hint
+```
+
+The app can boot from a cached `OAuthSession` without calling the network.
+Refresh failure must preserve the cached identity and encryption keys so local
+workspace data can remain available.
+
+The current cleanup direction is stricter than some live code: token expiry
+should be transport freshness only. `reauth-required` should mean a refresh
+failed or the server rejected auth for an existing `OAuthSession`, not merely
+that `accessTokenExpiresAt` is in the past.
+
+## Sign-In Flow
+
+Apps ask auth to start hosted sign-in:
+
+```ts
+await auth.startSignIn({ returnTo: location.href });
+```
+
+The launcher decides how the runtime completes OAuth:
+
+- Browser redirect launchers navigate to the hosted `/sign-in` and usually do
+  not resolve before the page unloads.
+- Extension and device launchers may resolve after receiving tokens.
+- CLI and daemon flows use device authorization and machine session storage.
+
+The return value of `startSignIn` is not the "user is signed in" signal.
+Observe `auth.state.status === 'signed-in'` for completion.
+
+After tokens arrive, auth calls `/auth/me` with
+`Authorization: Bearer <accessToken>`. The API verifies the token with
+`oauthProviderResourceClient().verifyAccessToken`, loads the user, derives
+encryption keys, and returns `AuthIdentity`. Auth stores that as `OAuthSession`.
+
+## Transport
+
+Use `auth.fetch` for HTTP resources:
+
+```ts
+const response = await auth.fetch(`${APP_URLS.API}/ai/chat`, {
+	method: 'POST',
+	body,
 });
 ```
 
-`BearerSession` is the storage validation schema. Its token is visible only inside storage adapters and the auth client. Do not pass it upward into UI, sync, or workspace lifecycle code. `createBearerAuth` calls `sessionStorage.get()` once during construction, then owns the live in-memory session and calls `sessionStorage.set(next)` when Better Auth validates, rotates, or clears it.
+Auth refreshes before network use when the access token is near expiry, retries
+one 401 after a forced refresh, and sends `credentials: 'omit'` for OAuth app
+requests. Storage writes are awaited before the refreshed token is used.
 
-Runtimes with async storage load before construction, then pass a synchronous adapter:
+Use `auth.openWebSocket` for sync:
 
 ```ts
-const loadedSession = BearerSession.or('null').assert(await storage.read());
-let currentSession = loadedSession;
-
-export const auth = createBearerAuth({
-	baseURL: APP_URLS.API,
-	sessionStorage: {
-		get: () => currentSession,
-		set: async (next) => {
-			currentSession = next;
-			await storage.write(next);
-		},
-	},
+const sync = attachSync(ydoc, {
+	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+	waitFor: idb.whenLoaded,
+	openWebSocket: auth.openWebSocket,
+	awareness,
 });
 ```
+
+Browsers cannot attach `Authorization` headers to `new WebSocket()`, so auth
+adds the bearer token as a WebSocket subprotocol. The API's `singleCredential`
+middleware normalizes that subprotocol into `Authorization` and rejects
+requests that carry multiple credentials.
 
 ## Workspace Binding
 
-Identity-bound resources are read through callbacks at the boundary that needs them. Sync can read a refreshed bearer token on connection attempts. Encrypted stores read `encryptionKeys()` when they attach and keep the derived keyring afterward. The session module owns the workspace lifecycle (`createSession` from `@epicenter/svelte`), and each per-app build closure passes `() => requireSignedIn(auth).encryptionKeys` straight through to the workspace.
+Workspace construction reads identity from `createSession` and gives lower
+layers callbacks for data they need at their own boundary:
 
 ```ts
 import { requireSignedIn } from '@epicenter/auth';
@@ -130,103 +256,65 @@ export const session = createSession({
 		const fuji = openFuji({
 			userId,
 			peer,
-			bearerToken: () => auth.bearerToken,
+			openWebSocket: auth.openWebSocket,
 			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 		});
 		return {
 			userId,
 			fuji,
-			[Symbol.dispose]() { fuji[Symbol.dispose](); },
+			[Symbol.dispose]() {
+				fuji[Symbol.dispose]();
+			},
 		};
 	},
 });
 
 export type FujiSignedIn = InferSignedIn<typeof session>;
-
-/** Throws if invoked outside the signed-in branch. */
-export function getSignedInSession(): FujiSignedIn {
-	const c = session.current;
-	if (c.status !== 'signed-in') {
-		throw new Error('[fuji] getSignedInSession() called outside the signed-in branch.');
-	}
-	return c.signedIn;
-}
 ```
 
-`createSession` reconciles `auth.state`: a sign-out disposes the workspace, a same-user identity update is a no-op at the session boundary, and a different-user transition disposes the workspace and reloads. Auth-bound callbacks read at their own boundaries: `attachSync` can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached. For destructive reset (wipe local data and reload), call `workspace.wipe()` and `location.reload()` inside the consumer that triggers it; there is no terminal callback on the session itself.
+`createSession` owns workspace lifecycle. A sign-out disposes the workspace. A
+same-user identity refresh is a no-op at the session boundary. A different-user
+transition must dispose or reload before sync resumes.
 
-Descendant pages call `getSignedInSession()` directly: bind once at script init, dot-access fields. No context layer, no Provider component, no install step. The throw keeps the precondition honest at the call site.
+Local workspace data must not be wiped just because network auth failed. Wiping
+Yjs or IndexedDB storage is a separate destructive user action.
 
-Browser apps that do not use `createSession` inline the meaningful auth transitions:
+## Server Routes
 
-```ts
-const userId = requireSignedIn(auth).user.id;
+In `apps/api/src/app.ts`, keep OAuth discovery routes before the `/auth/*`
+catch-all because Hono matches in registration order.
 
-auth.onStateChange((state) => {
-	if (state.status === 'pending') return;
-	if (state.status === 'signed-out') return window.location.reload();
-	if (state.identity.user.id !== userId) return window.location.reload();
-});
+Protected resources use `requireOAuthUser`:
+
+```txt
+/ai/*
+/workspaces/*
+/documents/*
+/api/billing/*
+/api/assets/*
 ```
 
-## Sync Authentication
+`requireOAuthUser` calls `/auth/me` logic internally: verify bearer token, load
+the user, derive identity, then set `c.var.user`.
 
-Workspace sync takes a live bearer-token reader:
-
-```ts
-const sync = attachSync(ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
-	waitFor: idb.whenLoaded,
-	bearerToken: () => auth.bearerToken,
-	awareness,
-});
-```
-
-`createCookieAuth` always returns `null` from `bearerToken`; the browser cookie jar handles credentials. `createBearerAuth` returns the current bearer token when signed in and `null` when signed out. `attachSync` owns WebSocket construction and adds the bearer subprotocol when the callback returns a token.
-
-`auth.fetch` follows the same transport rule internally:
-
-- Cookie auth uses `credentials: 'include'` and removes `Authorization`.
-- Bearer auth uses `credentials: 'omit'` and sets `Authorization` from the private in-memory session.
-
-## Svelte UI Reads
-
-Read `auth.state` in templates, `$derived`, or `$effect`:
-
-```svelte
-<script lang="ts">
-	const state = $derived(auth.state);
-</script>
-
-{#if state.status === 'signed-in'}
-	<p>{state.identity.user.name}</p>
-{:else if state.status === 'signed-out'}
-	<AuthForm {auth} />
-{/if}
-```
-
-In-flight command state belongs to the issuing component:
-
-```svelte
-<script lang="ts">
-	let busy = $state(false);
-
-	async function submit() {
-		busy = true;
-		try {
-			await auth.signIn({ email, password });
-		} finally {
-			busy = false;
-		}
-	}
-</script>
-```
+WebSocket sync enters through the same protected workspace and document routes.
+The API accepts the upgrade only after `singleCredential` and
+`requireOAuthUser` have resolved one user.
 
 ## Common Pitfalls
 
-- In the Svelte wrapper, spread the core auth object before overriding `state`. Object spread invokes the base getter and copies the current value, so `get state()` must appear after `...base`.
-- Do not destructure `auth.state` at module scope. That freezes the current value.
-- Do not clear local data on cold boot. Clear only when the previous identity was non-null and the next identity is null.
-- Do not import a generic `createAuth`. It no longer exists. Choose `createCookieAuth` or `createBearerAuth` at construction.
-- Do not expose bearer tokens above storage adapters. UI, workspace binding, and sync consume `AuthClient` capabilities.
-- Do not wrap redirect sign-in in global auth busy state. The page navigates away on success; local state is enough for commands that stay on the page.
+- Do not add `auth.bearerToken`. Token reading leaks transport details back
+  into app code.
+- Do not reintroduce cookie-vs-bearer app factories. Better Auth still uses
+  cookies for hosted sign-in pages, but app resources use OAuth access tokens.
+- Do not treat `startSignIn()` resolving as signed-in. State is the source of
+  truth.
+- Do not clear local workspace data on refresh failure. Move to
+  `reauth-required` and keep identity available.
+- Do not let `accessTokenExpiresAt` decide local identity state after the auth
+  core cleanup lands. It belongs to refresh decisions.
+- Do not send both cookies and bearer tokens to resource routes.
+  `singleCredential` should reject ambiguity before Better Auth sees it.
+- Do not hide persistence failures in storage adapters used by auth core. If
+  storage cannot save the refreshed session, the client should not keep using
+  the new token as if it is durable.

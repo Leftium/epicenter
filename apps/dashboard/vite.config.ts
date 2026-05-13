@@ -14,7 +14,7 @@ export default defineConfig({
 				target: `http://localhost:${APPS.API.port}`,
 				changeOrigin: true,
 			},
-			// Forward auth requests for the local bearer auth flow.
+			// Forward auth requests for local cookie auth.
 			'/auth': {
 				target: `http://localhost:${APPS.API.port}`,
 				changeOrigin: true,

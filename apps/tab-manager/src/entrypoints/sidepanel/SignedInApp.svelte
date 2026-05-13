@@ -7,6 +7,7 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
 	import { Loading } from '@epicenter/ui/loading';
+	import { toast } from '@epicenter/ui/sonner';
 	import { Toggle } from '@epicenter/ui/toggle';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import CaseSensitiveIcon from '@lucide/svelte/icons/case-sensitive';
@@ -18,27 +19,38 @@
 	import WholeWordIcon from '@lucide/svelte/icons/whole-word';
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
-	import { getGoogleCredentials } from '$lib/auth';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { createCommandPaletteItems } from '$lib/components/command-palette-items';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import {
 		forgetTabManagerDevice,
-		getSignedInSession,
+		requireWorkspace,
 		tabManagerSession,
 	} from '$lib/session.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 	const auth = tabManagerSession.auth;
-	const items = createCommandPaletteItems(signedIn.tabManager.state.savedTabs);
+	const items = createCommandPaletteItems(workspace.state.savedTabs);
 	let searchInputRef = $state<HTMLInputElement | null>(null);
 	let commandPaletteOpen = $state(false);
 	let aiDrawerOpen = $state(false);
 	let searchFocused = $state(false);
 	const isSearchActive = $derived(
-		searchFocused || signedIn.tabManager.state.unifiedView.searchQuery !== '',
+		searchFocused || workspace.state.unifiedView.searchQuery !== '',
 	);
+	const reauthRequired = $derived(auth.state.status === 'reauth-required');
+
+	let reconnecting = $state(false);
+	async function reconnect() {
+		reconnecting = true;
+		try {
+			const { error } = await auth.startSignIn();
+			if (error) toast.error('Failed to reconnect', { description: error.message });
+		} finally {
+			reconnecting = false;
+		}
+	}
 </script>
 
 {#snippet searchToggle(pressed: boolean, onPressedChange: (v: boolean) => void, Icon:typeof CaseSensitiveIcon, label: string)}
@@ -68,6 +80,19 @@
 		<header
 			class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 px-3 py-2"
 		>
+			{#if reauthRequired}
+				<button
+					type="button"
+					class="mb-2 flex w-full items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-left text-xs text-amber-700 hover:bg-amber-500/20 dark:text-amber-300"
+					onclick={reconnect}
+					disabled={reconnecting}
+				>
+					<span>Session expired. Local edits still work.</span>
+					<span class="font-medium underline-offset-2 hover:underline">
+						{reconnecting ? 'Reconnecting…' : 'Reconnect'}
+					</span>
+				</button>
+			{/if}
 			<div class="flex items-center gap-2">
 				<div
 					class="relative flex-1"
@@ -85,21 +110,21 @@
 						bind:ref={searchInputRef}
 						type="search"
 						placeholder="Search tabs..."
-						bind:value={signedIn.tabManager.state.unifiedView.searchQuery}
+						bind:value={workspace.state.unifiedView.searchQuery}
 						onkeydown={(e: KeyboardEvent) => {
 						// "/" in empty input opens command palette
-						if (e.key === '/' && signedIn.tabManager.state.unifiedView.searchQuery === '') {
+						if (e.key === '/' && workspace.state.unifiedView.searchQuery === '') {
 							e.preventDefault();
 							commandPaletteOpen = true;
 						}
 						// "@" in empty input opens AI drawer (Phase 4)
-						if (e.key === '@' && signedIn.tabManager.state.unifiedView.searchQuery === '') {
+						if (e.key === '@' && workspace.state.unifiedView.searchQuery === '') {
 							e.preventDefault();
 							aiDrawerOpen = true;
 						}
 						// Escape clears search
 						if (e.key === 'Escape') {
-							signedIn.tabManager.state.unifiedView.searchQuery = '';
+							workspace.state.unifiedView.searchQuery = '';
 							searchInputRef?.blur();
 						}
 					}}
@@ -111,21 +136,21 @@
 						<div
 							class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5"
 						>
-							{#if signedIn.tabManager.state.unifiedView.searchQuery}
+							{#if workspace.state.unifiedView.searchQuery}
 								<button
 									type="button"
 									class="text-muted-foreground hover:text-foreground"
 									onclick={() => {
-										signedIn.tabManager.state.unifiedView.searchQuery = '';
+										workspace.state.unifiedView.searchQuery = '';
 										searchInputRef?.focus();
 									}}
 								>
 									<XIcon class="size-3.5" />
 								</button>
 							{/if}
-							{@render searchToggle(signedIn.tabManager.state.unifiedView.isCaseSensitive, (v) => { signedIn.tabManager.state.unifiedView.isCaseSensitive = v; }, CaseSensitiveIcon, 'Match Case')}
-							{@render searchToggle(signedIn.tabManager.state.unifiedView.isRegex, (v) => { signedIn.tabManager.state.unifiedView.isRegex = v; }, RegexIcon, 'Use Regular Expression')}
-							{@render searchToggle(signedIn.tabManager.state.unifiedView.isExactMatch, (v) => { signedIn.tabManager.state.unifiedView.isExactMatch = v; }, WholeWordIcon, 'Match Whole Word')}
+							{@render searchToggle(workspace.state.unifiedView.isCaseSensitive, (v) => { workspace.state.unifiedView.isCaseSensitive = v; }, CaseSensitiveIcon, 'Match Case')}
+							{@render searchToggle(workspace.state.unifiedView.isRegex, (v) => { workspace.state.unifiedView.isRegex = v; }, RegexIcon, 'Use Regular Expression')}
+							{@render searchToggle(workspace.state.unifiedView.isExactMatch, (v) => { workspace.state.unifiedView.isExactMatch = v; }, WholeWordIcon, 'Match Whole Word')}
 							<DropdownMenu.Root>
 								<DropdownMenu.Trigger>
 									{#snippet child({ props })}
@@ -134,14 +159,14 @@
 											class="flex items-center gap-0.5 rounded-sm px-1 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
 											{...props}
 										>
-											{({ all: 'All', title: 'Title', url: 'URL' })[signedIn.tabManager.state.unifiedView.searchField]}
+											{({ all: 'All', title: 'Title', url: 'URL' })[workspace.state.unifiedView.searchField]}
 											<ChevronDownIcon class="size-2.5" />
 										</button>
 									{/snippet}
 								</DropdownMenu.Trigger>
 								<DropdownMenu.Content align="end" class="w-28">
 									<DropdownMenu.RadioGroup
-										bind:value={signedIn.tabManager.state.unifiedView.searchField}
+										bind:value={workspace.state.unifiedView.searchField}
 									>
 										<DropdownMenu.RadioItem value="all"
 											>All Fields</DropdownMenu.RadioItem
@@ -180,18 +205,14 @@
 				</Button>
 				<AccountPopover
 					{auth}
-					sync={signedIn.tabManager.sync}
+					sync={workspace.tabManager.sync}
 					syncNoun="tabs"
 					onForgetDevice={forgetTabManagerDevice}
-					onSocialSignIn={async () => {
-						const { idToken, nonce } = await getGoogleCredentials();
-						return auth.signInWithIdToken({ provider: 'google', idToken, nonce });
-					}}
 				/>
 			</div>
 		</header>
 		<!-- Gate on browser state seed so child components can read data synchronously -->
-		{#await Promise.all([signedIn.tabManager.idb.whenLoaded, browserState.whenReady])}
+		{#await Promise.all([workspace.tabManager.idb.whenLoaded, browserState.whenReady])}
 			<Loading class="flex-1" label="Loading tabs…" />
 		{:then _}
 			<div class="flex-1 min-h-0"><UnifiedTabList /></div>

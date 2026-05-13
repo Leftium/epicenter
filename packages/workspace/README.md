@@ -130,6 +130,7 @@ Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both
 Minimal encrypted workspace: encryption + IndexedDB + cross-tab + sync wired end-to-end:
 
 ```typescript
+import { requireIdentity } from '@epicenter/auth';
 import {
 	attachAwareness,
 	attachEncryption,
@@ -145,11 +146,14 @@ import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
 	userId,
-	bearerToken,
+	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	bearerToken?: () => string | null;
+	openWebSocket?: (
+		url: string | URL,
+		protocols?: string[],
+	) => WebSocket | Promise<WebSocket>;
 	encryptionKeys: () => EncryptionKeys;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
@@ -170,7 +174,7 @@ export function openApp({
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		bearerToken,
+		openWebSocket,
 		awareness,
 	});
 	const actions = {};
@@ -198,8 +202,8 @@ export function openApp({
 
 export const workspace = openApp({
 	userId,
-	bearerToken: () => auth.bearerToken,
-	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+	openWebSocket: auth.openWebSocket,
+	encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 });
 ```
 

@@ -21,18 +21,21 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
-Fuji's root workspace is built once per signed-in session by `createSession`. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The session module captures `userId` once at build time because IDB and BroadcastChannel keys are immutable for the workspace's lifetime. It passes auth-bound callbacks to the workspace at construction time: sync can read refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring derived when they attach.
+Fuji's root workspace is built once per signed-in session by `createSession`. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The session module captures `userId` once at build time because IDB and BroadcastChannel keys are immutable for the workspace's lifetime. It passes auth-bound callbacks to the workspace at construction time: sync opens sockets through auth on connection attempts, while encrypted stores keep the keyring derived when they attach.
 
 ```ts
 export function openFuji({
   userId,
   peer,
-  bearerToken,
+  openWebSocket,
   encryptionKeys,
 }: {
   userId: string;
   peer: PeerIdentity;
-  bearerToken?: () => string | null;
+  openWebSocket?: (
+    url: string | URL,
+    protocols?: string[],
+  ) => WebSocket | Promise<WebSocket>;
   encryptionKeys: () => EncryptionKeys;
 }) {
   const doc = openFujiDoc({ encryptionKeys });
@@ -45,14 +48,14 @@ export function openFuji({
   const sync = attachSync(doc, {
     url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
     waitFor: idb,
-    bearerToken,
+    openWebSocket,
     awareness,
   });
   return { ...doc, idb, awareness, sync };
 }
 ```
 
-The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `session.current`; the signed-in variant owns the browser workspace, and pages reach it via the module-level `getSignedInSession()` exported from `$lib/session.svelte` (throws if called outside the signed-in branch). Local cleanup is a separate explicit action, not part of sign-out.
+The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `session.current`; when present, it carries the browser workspace, and pages reach it via the module-level `requireWorkspace()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/whispering/client.ts`.
 

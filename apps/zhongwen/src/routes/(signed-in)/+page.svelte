@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { requireSignedIn } from '@epicenter/auth';
+	import { requireIdentity } from '@epicenter/auth';
 	import { fromKv } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
@@ -8,20 +8,18 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
+	import { requireWorkspace } from '$lib/session';
 	import { auth } from '$platform/auth';
-	import { getSignedInSession } from '$lib/session.svelte';
 	import { createChatState } from './chat/chat-state.svelte';
 	import ChatInput from './components/ChatInput.svelte';
 	import ChatMessage from './components/ChatMessage.svelte';
 	import ModelPicker from './components/ModelPicker.svelte';
 	import ZhongwenSidebar from './components/ZhongwenSidebar.svelte';
 
-	const signedIn = getSignedInSession();
-	const showPinyin = fromKv(signedIn.zhongwen.kv, 'showPinyin');
+	const workspace = requireWorkspace();
+	const showPinyin = fromKv(workspace.zhongwen.kv, 'showPinyin');
 	const chatState = createChatState();
 	let dismissedError = $state(false);
-
-	const handle = $derived(chatState.active);
 
 	onDestroy(() => {
 		chatState[Symbol.dispose]();
@@ -35,7 +33,7 @@
 			confirm: { text: 'Forget device', variant: 'destructive' },
 			onConfirm: async () => {
 				try {
-					await signedIn.zhongwen.wipe();
+					await workspace.zhongwen.wipe();
 					await auth.signOut();
 				} catch (error) {
 					toast.error('Failed to forget this device', {
@@ -55,8 +53,8 @@
 			<div class="flex items-center gap-3">
 				<Sidebar.Trigger />
 				<h1 class="text-lg font-semibold">中文 Zhongwen</h1>
-				{#if handle}
-					<ModelPicker {handle} />
+				{#if chatState.active}
+					<ModelPicker handle={chatState.active} />
 				{/if}
 			</div>
 
@@ -72,7 +70,7 @@
 				</Button>
 
 				<span class="text-sm text-muted-foreground">
-					{requireSignedIn(auth).user.name}
+					{requireIdentity(auth).user.email}
 				</span>
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device
@@ -80,9 +78,9 @@
 			</div>
 		</header>
 
-		{#if handle}
+		{#if chatState.active}
 			<Chat.List class="flex-1 overflow-y-auto p-4" aria-live="polite">
-				{#if handle.messages.length === 0}
+				{#if chatState.active.messages.length === 0}
 					<div
 						class="flex flex-1 items-center justify-center text-muted-foreground"
 					>
@@ -92,29 +90,32 @@
 						</p>
 					</div>
 				{:else}
-					{#each handle.messages as message, i (message.id)}
+					{#each chatState.active.messages as message, i (message.id)}
 						<ChatMessage
 							{message}
 							showPinyin={showPinyin.current}
-							isStreaming={handle.isLoading}
-							isLast={i === handle.messages.length - 1}
-							onRegenerate={() => handle.reload()}
+							isStreaming={chatState.active.isLoading}
+							isLast={i === chatState.active.messages.length - 1}
+							onRegenerate={() => chatState.active?.reload()}
 						/>
 					{/each}
 				{/if}
 
-				{#if handle.isLoading}
+				{#if chatState.active.isLoading}
 					<Chat.Bubble variant="received">
 						<Chat.BubbleMessage typing />
 					</Chat.Bubble>
 				{/if}
 
-				{#if handle.error && !dismissedError}
+				{#if chatState.active.error && !dismissedError}
 					<div
 						class="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
 					>
-						<span class="flex-1">{handle.error.message}</span>
-						<Button size="sm" variant="outline" onclick={() => handle.reload()}
+						<span class="flex-1">{chatState.active.error.message}</span>
+						<Button
+							size="sm"
+							variant="outline"
+							onclick={() => chatState.active?.reload()}
 							>Retry</Button
 						>
 						<Button
@@ -127,7 +128,7 @@
 				{/if}
 			</Chat.List>
 
-			<ChatInput {handle} />
+			<ChatInput handle={chatState.active} />
 		{/if}
 	</main>
 </Sidebar.Provider>

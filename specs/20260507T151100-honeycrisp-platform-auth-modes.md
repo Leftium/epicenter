@@ -1,8 +1,19 @@
 # Honeycrisp Platform Auth Modes
 
 **Date**: 2026-05-07
-**Status**: Implemented
+**Status**: Superseded (2026-05-11)
 **Author**: AI-assisted
+**Superseded by**: `specs/20260511T105846-auth-oauth-everywhere-clean-break.md`
+
+## Reconciliation (2026-05-11)
+
+Do not use this spec as the current implementation source. The credential-family spec briefly replaced the Honeycrisp-specific local-bearer split with a repository-wide cookie versus bearer family rule. That rule is now superseded too.
+
+The useful lesson from this spec remains the same: auth ownership belongs at the platform auth boundary, not in shared app code. The current boundary is stricter: every app starts hosted sign-in, completes OAuth authorization code with PKCE, stores OAuth credentials, and uses auth-owned `fetch` and `openWebSocket` capabilities. Better Auth cookies are internal to the hosted API auth server only.
+
+---
+
+(Original spec content follows.)
 
 ## Overview
 

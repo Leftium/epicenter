@@ -16,29 +16,14 @@ export function capitalize(str: string): string {
 }
 
 /**
- * Derive display initials from a user's name or email.
- *
- * Takes first + last initials from a multi-word name, first two
- * characters from a single-word name, or first two characters
- * from an email address as fallback.
+ * Derive display initials from a user's email address.
  *
  * @example
  * ```typescript
- * getInitials('Braden Wong', 'b@e.so');    // "BW"
- * getInitials('Braden', 'b@e.so');         // "BR"
- * getInitials('', 'braden@epicenter.so');   // "BR"
- * getInitials('', '');                      // ""
+ * getInitials('braden@epicenter.so'); // "BR"
+ * getInitials('');                    // ""
  * ```
  */
-export function getInitials(name: string, email: string): string {
-	if (name) {
-		const parts = name.trim().split(/\s+/);
-		if (parts.length >= 2) {
-			const first = parts[0]?.[0] ?? '';
-			const last = parts[parts.length - 1]?.[0] ?? '';
-			return (first + last).toUpperCase();
-		}
-		return name.slice(0, 2).toUpperCase();
-	}
+export function getInitials(email: string): string {
 	return email.slice(0, 2).toUpperCase();
 }

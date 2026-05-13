@@ -1,11 +1,6 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
-import type { BetterAuthSessionResponse } from '@epicenter/auth/contracts';
-import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { customSession } from 'better-auth/plugins';
-import { bearer } from 'better-auth/plugins/bearer';
-import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
 import { jwt } from 'better-auth/plugins/jwt';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -14,7 +9,8 @@ import { FEATURE_IDS } from '../billing-plans';
 import * as schema from '../db/schema';
 import { TRUSTED_ORIGINS } from '../trusted-origins';
 import { BASE_AUTH_CONFIG } from './base-config';
-import { deriveUserEncryptionKeys } from './encryption';
+import { createCookieAdvancedConfig } from './cookie-config';
+import { trustedOAuthClientIds } from './trusted-oauth-clients';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -28,11 +24,12 @@ type Db = NodePgDatabase<typeof schema>;
  * Wires up:
  * - Drizzle adapter (Postgres via Hyperdrive)
  * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
- * - Plugins: bearer tokens, JWT, device authorization, OAuth provider (PKCE)
- * - `customSession()` enrichment that appends the full encryption keyring
- *   to `/auth/get-session` responses (see {@link BetterAuthSessionResponse})
+ * - Plugins: JWT, OAuth provider (PKCE)
  * - Autumn billing customer creation on user signup
  * - Cloudflare KV secondary storage for session caching
+ *
+ * `/workspace-identity` is the single Epicenter identity surface; this builder
+ * no longer enriches `/auth/get-session` with encryption keys.
  */
 export function createAuth({
 	db,
@@ -82,40 +79,24 @@ export function createAuth({
 				strategy: 'jwe',
 			},
 		},
-		// Cross-origin cookie config for sessions.
+		// Cookie transport for browser clients.
 		//
-		// The auth server (api.epicenter.so) serves multiple client apps:
-		//   - Subdomains: fuji.epicenter.so, opensidian.epicenter.so
-		//   - External domains: opensidian.com
-		//   - Desktop: tauri://localhost
-		//   - Dev: localhost:5173, localhost:5174, etc.
+		// Localhost uses host-only, non-secure Lax cookies so local dashboard
+		// auth works through the Vite `/auth` proxy without a rejected Domain
+		// or Secure attribute. Production uses SameSite=None + Secure so
+		// browser apps can send cookies to api.epicenter.so from app origins.
 		//
-		// SameSite=None + Secure lets browsers send session cookies on
-		// cross-origin fetches (e.g. opensidian.com → api.epicenter.so).
-		// This trades browser-level CSRF for app-level origin checking,
-		// which Better Auth enforces via trustedOrigins on every request.
-		// Standard practice for auth servers on a separate domain. Same
-		// model as Auth0, Clerk, and Supabase Auth.
-		//
-		// crossSubDomainCookies scopes cookies to .epicenter.so so any
-		// subdomain shares sessions. Apps on other domains (opensidian.com)
-		// still work because their fetches target api.epicenter.so.
+		// Cross-subdomain cookies are only enabled outside localhost. In
+		// production, the cookie domain is .epicenter.so so Epicenter subdomains
+		// share sessions. Apps on other domains still work because their fetches
+		// target api.epicenter.so.
 		//
 		// NOTE: We intentionally omit `partitioned: true` (CHIPS).
 		// Partitioned cookies are keyed by the top-level site at creation
-		// time. During OAuth the top-level site changes mid-flow (client →
-		// Google → API callback), so the cookie becomes invisible at the
+		// time. During OAuth the top-level site changes mid-flow (client to
+		// Google to API callback), so the cookie becomes invisible at the
 		// callback step. Partitioned is for iframes, not redirect OAuth.
-		advanced: {
-			crossSubDomainCookies: {
-				enabled: true,
-				domain: '.epicenter.so',
-			},
-			defaultCookieAttributes: {
-				sameSite: 'none',
-				secure: true,
-			},
-		},
+		advanced: createCookieAdvancedConfig(baseURL),
 		databaseHooks: {
 			user: {
 				create: {
@@ -123,7 +104,6 @@ export function createAuth({
 						const autumn = createAutumn(env);
 						await autumn.customers.getOrCreate({
 							customerId: user.id,
-							name: user.name,
 							email: user.email,
 						});
 					},
@@ -190,51 +170,29 @@ export function createAuth({
 		},
 	} satisfies Omit<BetterAuthOptions, 'plugins'>;
 
-	const basePlugins = [
-		bearer(),
-		jwt(),
-		deviceAuthorization({
-			verificationUri: '/device',
-			expiresIn: '10m',
-			interval: '5s',
-			validateClient: (clientId) => clientId === EPICENTER_CLI_OAUTH_CLIENT_ID,
-		}),
-		oauthProvider({
-			loginPage: '/sign-in',
-			consentPage: '/consent',
-			requirePKCE: true,
-			allowDynamicClientRegistration: false,
-			// The plugin warns that /.well-known/oauth-authorization-server/auth must exist
-			// because basePath is /auth (not /), so it can't auto-mount at the root.
-			// We already mount both discovery endpoints manually in app.ts.
-			silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
-		}),
-	];
-	/**
-	 * Enrich `/auth/get-session` responses with the full encryption keyring.
-	 *
-	 * Derives a per-user key for every version in `ENCRYPTION_SECRETS`.
-	 * HKDF derivation adds <0.1ms per key, negligible next to the network round-trip.
-	 * Embedding all keys here eliminates separate key-fetch endpoints and
-	 * enables fresh clients to decrypt blobs from any key version.
-	 */
-	const customSessionPlugin = customSession(
-		async ({ user, session }) => {
-			const encryptionKeys = await deriveUserEncryptionKeys(user.id);
-			return {
-				user,
-				session,
-				encryptionKeys,
-			} satisfies BetterAuthSessionResponse;
-		},
-		{
-			...authOptionsBase,
-			plugins: basePlugins,
-		},
-	);
-
 	return betterAuth({
 		...authOptionsBase,
-		plugins: [...basePlugins, customSessionPlugin],
+		plugins: [
+			jwt(),
+			oauthProvider({
+				loginPage: '/sign-in',
+				consentPage: '/consent',
+				requirePKCE: true,
+				cachedTrustedClients: trustedOAuthClientIds,
+				validAudiences: [baseURL],
+				allowDynamicClientRegistration: false,
+				scopes: [
+					'openid',
+					'profile',
+					'email',
+					'offline_access',
+					'workspaces:open',
+				],
+				// The plugin warns that /.well-known/oauth-authorization-server/auth must exist
+				// because basePath is /auth (not /), so it can't auto-mount at the root.
+				// We already mount both discovery endpoints manually in app.ts.
+				silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
+			}),
+		],
 	});
 }

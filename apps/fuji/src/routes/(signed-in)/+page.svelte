@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session';
 	import EntriesTable from './components/EntriesTable.svelte';
 	import EntriesTimeline from './components/EntriesTimeline.svelte';
 	import { viewState } from './state/view.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 </script>
 
 {#if viewState.viewMode === 'table'}
-	<EntriesTable entries={signedIn.entries.active} />
+	<EntriesTable entries={workspace.entries.active} />
 {:else}
-	<EntriesTimeline entries={signedIn.entries.active} />
+	<EntriesTimeline entries={workspace.entries.active} />
 {/if}

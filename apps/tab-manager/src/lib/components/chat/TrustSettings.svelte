@@ -3,11 +3,11 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import { Switch } from '@epicenter/ui/switch';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import { getSignedInSession } from '$lib/session.svelte';
+	import { requireWorkspace } from '$lib/session.svelte';
 
-	const signedIn = getSignedInSession();
+	const workspace = requireWorkspace();
 	const trustedTools = $derived(
-		signedIn.tabManager.state.toolTrust.entries.filter(
+		workspace.state.toolTrust.entries.filter(
 			([, level]) => level === 'always',
 		),
 	);
@@ -28,7 +28,7 @@
 					{#each trustedTools as [ name ] (name)}
 						<div class="flex items-center justify-between gap-2">
 							<span class="text-sm">
-								{signedIn.workspaceAiTools.definitions.find(d => d.name === name)?.title ??
+								{workspace.workspaceAiTools.definitions.find(d => d.name === name)?.title ??
 									name
 										.replace(/_/g, ' ')
 										.replace(/^\w/, (c) => c.toUpperCase())}
@@ -36,7 +36,7 @@
 							<Switch
 								checked={true}
 								onCheckedChange={() =>
-									signedIn.tabManager.state.toolTrust.set(name, 'ask')}
+									workspace.state.toolTrust.set(name, 'ask')}
 							/>
 						</div>
 					{/each}
@@ -47,7 +47,7 @@
 							class="text-xs text-muted-foreground hover:text-foreground transition-colors"
 							onclick={() => {
 								for (const [toolName] of trustedTools) {
-									signedIn.tabManager.state.toolTrust.set(toolName, 'ask');
+									workspace.state.toolTrust.set(toolName, 'ask');
 								}
 							}}
 						>

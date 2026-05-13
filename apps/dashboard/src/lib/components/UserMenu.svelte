@@ -28,7 +28,7 @@
 	);
 	const isOnTrial = $derived(subscription?.trialEndsAt != null);
 
-	const initials = $derived(getInitials(user.name, user.email));
+	const initials = $derived(getInitials(user.email));
 
 	/** Open Stripe billing portal via the API. */
 	async function openBillingPortal() {
@@ -57,10 +57,7 @@
 	<DropdownMenu.Content align="end" class="w-56">
 		<DropdownMenu.Label class="font-normal">
 			<div class="flex flex-col gap-1">
-				{#if user.name}
-					<p class="text-sm font-medium leading-none">{user.name}</p>
-				{/if}
-				<p class="text-xs text-muted-foreground leading-none">{user.email}</p>
+				<p class="text-sm font-medium leading-none">{user.email}</p>
 				<div class="flex items-center gap-1.5 pt-1">
 					<Badge variant="secondary" class="text-[10px] px-1.5 py-0">
 						{planName}

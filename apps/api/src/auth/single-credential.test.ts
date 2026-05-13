@@ -45,7 +45,7 @@ test('only-bearer passes through unchanged', async () => {
 	expect(body.cookie).toBeNull();
 });
 
-test('only-WS-bearer is lifted into Authorization', async () => {
+test('only-WS-bearer is lifted into Authorization and stripped from the protocol', async () => {
 	const res = await createTestApp().request('/', {
 		headers: { 'sec-websocket-protocol': 'epicenter, bearer.token-1' },
 	});
@@ -53,6 +53,43 @@ test('only-WS-bearer is lifted into Authorization', async () => {
 	expect(res.status).toBe(200);
 	const body = (await res.json()) as Record<string, string | null>;
 	expect(body.authorization).toBe('Bearer token-1');
+	expect(body.subprotocol).toBe('epicenter');
+});
+
+test('only-WS-bearer with no remaining protocols drops the header entirely', async () => {
+	const res = await createTestApp().request('/', {
+		headers: { 'sec-websocket-protocol': 'bearer.token-1' },
+	});
+
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as Record<string, string | null>;
+	expect(body.authorization).toBe('Bearer token-1');
+	expect(body.subprotocol).toBeNull();
+});
+
+test('two WS bearer entries are rejected as multiple_credentials', async () => {
+	const res = await createTestApp().request('/', {
+		headers: {
+			'sec-websocket-protocol':
+				'epicenter, bearer.token-1, bearer.token-2',
+		},
+	});
+
+	expect(res.status).toBe(400);
+});
+
+test('mixed-case Upgrade with a WS bearer still strips the bearer entry', async () => {
+	const res = await createTestApp().request('/', {
+		headers: {
+			'upgrade': 'WebSocket',
+			'sec-websocket-protocol': 'epicenter, bearer.token-1',
+		},
+	});
+
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as Record<string, string | null>;
+	expect(body.authorization).toBe('Bearer token-1');
+	expect(body.subprotocol).toBe('epicenter');
 });
 
 test('matching HTTP and WS bearers are accepted', async () => {

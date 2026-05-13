@@ -8,15 +8,15 @@
  * @example
  * ```svelte
  * <script>
- *   import { getSignedInSession } from '$lib/session.svelte';
+ *   import { requireWorkspace } from '$lib/session';
  *
- *   const signedIn = getSignedInSession();
+ *   const workspace = requireWorkspace();
  * </script>
  *
- * {#each signedIn.state.folders.all as folder (folder.id)}
+ * {#each workspace.state.folders.all as folder (folder.id)}
  *   <p>{folder.name}</p>
  * {/each}
- * <button onclick={() => signedIn.state.folders.create()}>New Folder</button>
+ * <button onclick={() => workspace.state.folders.create()}>New Folder</button>
  * ```
  */
 
@@ -59,7 +59,7 @@ export function createFolders(honeycrisp: Honeycrisp) {
 		 *
 		 * @example
 		 * ```typescript
-		 * signedIn.state.folders.create();
+		 * workspace.state.folders.create();
 		 * // Folder appears in sidebar with name "New Folder"
 		 * ```
 		 */
@@ -81,7 +81,7 @@ export function createFolders(honeycrisp: Honeycrisp) {
 		 *
 		 * @example
 		 * ```typescript
-		 * signedIn.state.folders.rename(folderId, 'Work');
+		 * workspace.state.folders.rename(folderId, 'Work');
 		 * ```
 		 */
 		rename(folderId: FolderId, name: string) {
@@ -97,7 +97,7 @@ export function createFolders(honeycrisp: Honeycrisp) {
 		 *
 		 * @example
 		 * ```typescript
-		 * signedIn.state.folders.delete(folderId);
+		 * workspace.state.folders.delete(folderId);
 		 * // Folder disappears from sidebar, its notes move to "All Notes"
 		 * ```
 		 */

@@ -9,7 +9,7 @@
  * always "render the full sorted list") plus a URL lookup set for O(1)
  * bookmark checks.
  *
- * Components read this through `signedIn.tabManager.state.bookmarks`.
+ * Components read this through `workspace.state.bookmarks`.
  */
 
 import { fromTable } from '@epicenter/svelte';

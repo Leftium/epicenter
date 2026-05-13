@@ -1,43 +1,50 @@
 import {
-	type AuthClient as BaseAuthClient,
-	type CreateBearerAuthConfig,
-	type CreateCookieAuthConfig,
-	createBearerAuth as createCoreBearerAuth,
-	createCookieAuth as createCoreCookieAuth,
+	type AuthClient,
+	type CreateOAuthAppAuthConfig,
+	createOAuthAppAuth as createCoreOAuthAppAuth,
 } from '@epicenter/auth';
+import { createSubscriber } from 'svelte/reactivity';
 
-export type AuthClient = BaseAuthClient;
+export type { AuthClient };
 
 /**
  * Svelte 5 wrapper around `@epicenter/auth`.
  *
- * Mirrors the core state into `$state` so templates and derived values can
- * read `auth.state` reactively. The spread copies core methods, and the later
- * getter overrides the copied state value.
+ * Bridges the core state listener into Svelte reactivity.
  */
-function createReactiveAuth(base: BaseAuthClient): AuthClient {
-	let state = $state(base.state);
-
-	const unsubscribe = base.onStateChange((next) => {
-		state = next;
+function withReactiveState(auth: AuthClient): AuthClient {
+	const subscribe = createSubscriber((update) => {
+		return auth.onStateChange(update);
 	});
 
 	return {
-		...base,
 		get state() {
-			return state;
+			subscribe();
+			return auth.state;
+		},
+		onStateChange(fn) {
+			return auth.onStateChange(fn);
+		},
+		startSignIn() {
+			return auth.startSignIn();
+		},
+		signOut() {
+			return auth.signOut();
+		},
+		fetch(input, init) {
+			return auth.fetch(input, init);
+		},
+		openWebSocket(url, protocols) {
+			return auth.openWebSocket(url, protocols);
 		},
 		[Symbol.dispose]() {
-			unsubscribe();
-			base[Symbol.dispose]();
+			auth[Symbol.dispose]();
 		},
 	} satisfies AuthClient;
 }
 
-export function createBearerAuth(config: CreateBearerAuthConfig): AuthClient {
-	return createReactiveAuth(createCoreBearerAuth(config));
-}
-
-export function createCookieAuth(config: CreateCookieAuthConfig): AuthClient {
-	return createReactiveAuth(createCoreCookieAuth(config));
+export function createOAuthAppAuth(
+	config: CreateOAuthAppAuthConfig,
+): AuthClient {
+	return withReactiveState(createCoreOAuthAppAuth(config));
 }

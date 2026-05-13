@@ -47,7 +47,7 @@ import {
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import { attachYjsLog, epicenterPaths } from '@epicenter/workspace/node';
-import { opensidianTables } from 'opensidian/workspace';
+import { opensidianTables } from 'opensidian';
 import Type from 'typebox';
 import * as Y from 'yjs';
 

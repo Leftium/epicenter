@@ -6,6 +6,7 @@
 
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	attachEncryption,
 	attachOwnedBroadcastChannel,
 	type EncryptionKeys,
 	type OpenWebSocket,
@@ -14,10 +15,12 @@ import {
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
+import * as Y from 'yjs';
 import { createTabManagerActions } from '$lib/workspace/actions';
-import type { DeviceId } from '$lib/workspace/definition';
-
-import { openTabManagerDocument } from './document.js';
+import {
+	type DeviceId,
+	tabManagerTables,
+} from '$lib/workspace/definition';
 
 type TabManagerPeer = PeerIdentity & { id: DeviceId };
 
@@ -40,18 +43,23 @@ export function openTabManagerBrowser({
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openTabManagerDocument({ encryptionKeys });
-	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: false });
+	const encryption = attachEncryption(ydoc, { encryptionKeys });
+	const tables = encryption.attachTables(tabManagerTables);
+	const kv = encryption.attachKv({});
+	const batch = (fn: () => void) => ydoc.transact(fn);
+
+	const idb = encryption.attachIndexedDb(ydoc, { userId });
+	attachOwnedBroadcastChannel(ydoc, { userId });
 
 	const actions = createTabManagerActions({
-		tables: doc.tables,
-		batch: doc.batch,
+		tables,
+		batch,
 		deviceId: Promise.resolve(peer.id),
 	});
 
-	const collaboration = openCollaboration(doc.ydoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+	const collaboration = openCollaboration(ydoc, {
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		identity: peer,
@@ -59,22 +67,22 @@ export function openTabManagerBrowser({
 	});
 
 	return {
-		ydoc: doc.ydoc,
-		tables: doc.tables,
-		kv: doc.kv,
-		batch: doc.batch,
+		ydoc,
+		tables,
+		kv,
+		batch,
 		idb,
 		collaboration,
 		async wipe() {
-			doc[Symbol.dispose]();
+			ydoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
-				ydocGuids: [doc.ydoc.guid],
+				ydocGuids: [ydoc.guid],
 			});
 		},
 		[Symbol.dispose]() {
-			doc[Symbol.dispose]();
+			ydoc.destroy();
 		},
 	};
 }

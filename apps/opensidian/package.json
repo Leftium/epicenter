@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		"./workspace": "./src/lib/workspace/definition.ts",
+		".": "./src/lib/workspace/definition.ts",
 		"./browser": "./src/lib/opensidian/browser.ts",
 		"./daemon": "./src/lib/opensidian/daemon.ts",
 		"./script": "./src/lib/opensidian/script.ts"

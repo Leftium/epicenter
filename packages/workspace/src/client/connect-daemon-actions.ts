@@ -13,7 +13,7 @@
  * @example
  * ```ts
  * import { connectDaemonActions } from '@epicenter/workspace/node';
- * import type { createFujiActions } from '@epicenter/fuji/workspace';
+ * import type { createFujiActions } from '@epicenter/fuji';
  *
  * const fuji = await connectDaemonActions<ReturnType<typeof createFujiActions>>({
  *   route: 'fuji',

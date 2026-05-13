@@ -26,7 +26,7 @@ import {
 import {
 	tabManagerAwarenessDefs,
 	tabManagerTables,
-} from '@epicenter/tab-manager/workspace';
+} from '@epicenter/tab-manager';
 import { attachEncryption, attachSync, toWsUrl } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
 import {

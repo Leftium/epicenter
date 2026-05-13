@@ -5,8 +5,7 @@
 	"type": "module",
 	"private": true,
 	"exports": {
-		"./workspace": "./src/lib/workspace/index.ts",
-		"./document": "./src/lib/tab-manager/document.ts",
+		".": "./src/lib/workspace/index.ts",
 		"./browser": "./src/lib/tab-manager/extension.ts"
 	},
 	"scripts": {

@@ -7,18 +7,16 @@ import {
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import * as Y from 'yjs';
 import { zhongwenKv, zhongwenTables } from '@epicenter/zhongwen';
+import * as Y from 'yjs';
 
 export const DEFAULT_ZHONGWEN_DAEMON_ROUTE = 'zhongwen';
 
-export type ZhongwenDaemonOptions = {
-	route?: string;
-};
-
 export function defineZhongwenDaemon({
 	route = DEFAULT_ZHONGWEN_DAEMON_ROUTE,
-}: ZhongwenDaemonOptions = {}): DaemonRouteDefinition {
+}: {
+	route?: string;
+} = {}) {
 	return {
 		route,
 		async start({ projectDir }) {
@@ -57,5 +55,5 @@ export function defineZhongwenDaemon({
 				},
 			};
 		},
-	};
+	} satisfies DaemonRouteDefinition;
 }

@@ -1,5 +1,6 @@
 import { loadMachineSession } from '@epicenter/auth/node';
 import type { EncryptionKeys } from '@epicenter/encryption';
+import { FUJI_WORKSPACE_ID, fujiTables } from '@epicenter/fuji';
 import { attachEncryption, type ProjectDir } from '@epicenter/workspace';
 import {
 	attachYjsLogReader,
@@ -12,14 +13,11 @@ import {
 	connectFujiDaemonActions,
 	DEFAULT_FUJI_DAEMON_ROUTE,
 } from './daemon-route.js';
-import { FUJI_WORKSPACE_ID, fujiTables } from '@epicenter/fuji';
-
-type LoadOfflineEncryptionKeys = () => Promise<EncryptionKeys | null>;
 
 export type OpenFujiSnapshotOptions = {
 	projectDir?: ProjectDir;
 	clientID?: number;
-	loadOfflineEncryptionKeys?: LoadOfflineEncryptionKeys;
+	loadOfflineEncryptionKeys?: () => Promise<EncryptionKeys | null>;
 };
 
 async function loadMachineOfflineEncryptionKeys(): Promise<EncryptionKeys | null> {

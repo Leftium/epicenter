@@ -7,18 +7,16 @@ import {
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import * as Y from 'yjs';
 import { opensidianTables } from 'opensidian';
+import * as Y from 'yjs';
 
 export const DEFAULT_OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 
-export type OpensidianDaemonOptions = {
-	route?: string;
-};
-
 export function defineOpensidianDaemon({
 	route = DEFAULT_OPENSIDIAN_DAEMON_ROUTE,
-}: OpensidianDaemonOptions = {}): DaemonRouteDefinition {
+}: {
+	route?: string;
+} = {}) {
 	return {
 		route,
 		async start({ projectDir }) {
@@ -60,5 +58,5 @@ export function defineOpensidianDaemon({
 				},
 			};
 		},
-	};
+	} satisfies DaemonRouteDefinition;
 }

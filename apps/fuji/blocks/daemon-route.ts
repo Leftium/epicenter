@@ -1,6 +1,11 @@
 import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
+	createFujiActions,
+	FUJI_WORKSPACE_ID,
+	fujiTables,
+} from '@epicenter/fuji';
+import {
 	attachEncryption,
 	openCollaboration,
 	type ProjectDir,
@@ -23,21 +28,14 @@ import {
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
-import {
-	createFujiActions,
-	FUJI_WORKSPACE_ID,
-	fujiTables,
-} from '@epicenter/fuji';
 
 export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 
-export type FujiDaemonOptions = {
-	route?: string;
-};
-
 export function defineFujiDaemon({
 	route = DEFAULT_FUJI_DAEMON_ROUTE,
-}: FujiDaemonOptions = {}): DaemonRouteDefinition {
+}: {
+	route?: string;
+} = {}) {
 	return {
 		route,
 		async start({ projectDir }) {
@@ -82,7 +80,7 @@ export function defineFujiDaemon({
 				},
 			};
 		},
-	};
+	} satisfies DaemonRouteDefinition;
 }
 
 export function connectFujiDaemonActions({

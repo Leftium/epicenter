@@ -1,20 +1,25 @@
 import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { attachEncryption, openCollaboration, toWsUrl } from '@epicenter/workspace';
+import {
+	createHoneycrispActions,
+	honeycrispTables,
+} from '@epicenter/honeycrisp';
+import {
+	attachEncryption,
+	openCollaboration,
+	toWsUrl,
+} from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { createHoneycrispActions, honeycrispTables } from '@epicenter/honeycrisp';
 
 export const DEFAULT_HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
 
-export type HoneycrispDaemonOptions = {
-	route?: string;
-};
-
 export function defineHoneycrispDaemon({
 	route = DEFAULT_HONEYCRISP_DAEMON_ROUTE,
-}: HoneycrispDaemonOptions = {}): DaemonRouteDefinition {
+}: {
+	route?: string;
+} = {}) {
 	return {
 		route,
 		async start({ projectDir }) {
@@ -54,5 +59,5 @@ export function defineHoneycrispDaemon({
 				},
 			};
 		},
-	};
+	} satisfies DaemonRouteDefinition;
 }

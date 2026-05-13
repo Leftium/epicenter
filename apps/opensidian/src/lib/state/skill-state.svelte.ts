@@ -71,10 +71,10 @@ export function createSkillState({
 		const { data } = await tryAsync({
 			try: async () => {
 				await globalSkillsWorkspace.idb.whenLoaded;
-				const catalog = globalSkillsWorkspace.actions.listSkills();
+				const catalog = globalSkillsWorkspace.actions.list_skills();
 				const loadedSkills = await Promise.all(
 					catalog.map(({ id }) =>
-						globalSkillsWorkspace.actions.getSkill({ id }),
+						globalSkillsWorkspace.actions.get_skill({ id }),
 					),
 				);
 

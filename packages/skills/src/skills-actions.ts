@@ -3,7 +3,7 @@
  *
  * Extracted from the closure so both the browser (`./index.ts`) and node
  * (`./node.ts`) document factories can share the three read actions. The
- * node entry builds on top of this to add `importFromDisk` / `exportToDisk`.
+ * node entry builds on top of this to add `import_from_disk` / `export_to_disk`.
  *
  * @module
  */
@@ -28,7 +28,7 @@ export function createSkillsActions({
 }) {
 	return {
 		/** List all skills as lightweight catalog entries: no docs opened. */
-		listSkills: defineQuery({
+		list_skills: defineQuery({
 			description: 'List all skills (id, name, description)',
 			handler: () =>
 				tables.skills
@@ -38,7 +38,7 @@ export function createSkillsActions({
 		}),
 
 		/** Get a single skill's metadata and instructions. Opens one Y.Doc. */
-		getSkill: defineQuery({
+		get_skill: defineQuery({
 			description: 'Get skill metadata and instructions by ID',
 			input: Type.Object({ id: Type.String() }),
 			handler: async ({ id }) => {
@@ -50,7 +50,7 @@ export function createSkillsActions({
 		}),
 
 		/** Get a skill with full instructions and all reference content. */
-		getSkillWithReferences: defineQuery({
+		get_skill_with_references: defineQuery({
 			description: 'Get skill with instructions and all reference content',
 			input: Type.Object({ id: Type.String() }),
 			handler: async ({ id }) => {

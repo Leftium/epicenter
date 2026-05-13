@@ -87,8 +87,8 @@ Use `@epicenter/skills/node` when disk import/export actions are needed:
 import { openSkillsNodeWorkspace } from '@epicenter/skills/node';
 
 using workspace = openSkillsNodeWorkspace({ workspaceId: 'epicenter.skills' });
-await workspace.actions.importFromDisk({ dir: '.agents/skills' });
-await workspace.actions.exportToDisk({ dir: '.agents/skills' });
+await workspace.actions.import_from_disk({ dir: '.agents/skills' });
+await workspace.actions.export_to_disk({ dir: '.agents/skills' });
 ```
 
 Node opens instruction and reference docs per operation. The browser cache

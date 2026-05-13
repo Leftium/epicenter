@@ -2,8 +2,8 @@
  * @fileoverview Server-side entry for the shared skills workspace.
  *
  * Exports `openSkillsNodeWorkspace`: a direct Node/Bun workspace opener with
- * NO IndexedDB / BroadcastChannel attachments and WITH `importFromDisk` /
- * `exportToDisk` actions.
+ * NO IndexedDB / BroadcastChannel attachments and WITH `import_from_disk` /
+ * `export_to_disk` actions.
  *
  * Uses the same `SKILLS_WORKSPACE_ID` guid as the browser entry, so data
  * authored on either side targets the same logical Y.Doc.
@@ -13,8 +13,8 @@
  * import { openSkillsNodeWorkspace } from '@epicenter/skills/node';
  *
  * using workspace = openSkillsNodeWorkspace({ workspaceId: 'epicenter.skills' });
- * await workspace.actions.importFromDisk({ dir: '.agents/skills' });
- * await workspace.actions.exportToDisk({ dir: '.agents/skills' });
+ * await workspace.actions.import_from_disk({ dir: '.agents/skills' });
+ * await workspace.actions.export_to_disk({ dir: '.agents/skills' });
  * ```
  *
  * @module
@@ -63,7 +63,7 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
 /**
  * Open a skills workspace for Node/Bun runtimes. No IndexedDB, no broadcast
  * channel. Callers layer their own persistence if needed. The returned
- * bundle includes `importFromDisk` and `exportToDisk` actions alongside the
+ * bundle includes `import_from_disk` and `export_to_disk` actions alongside the
  * standard read actions.
  *
  * Uses `SKILLS_WORKSPACE_ID`, the same guid as the browser entry, so
@@ -144,7 +144,7 @@ export function openSkillsNodeWorkspace({
 		 * deterministic IDs derived from `skillId + filename`: no ephemeral IDs,
 		 * no matching needed.
 		 */
-		importFromDisk: defineMutation({
+		import_from_disk: defineMutation({
 			description: 'Import skills from an agentskills.io-compliant directory',
 			input: DirInput,
 			handler: async ({ dir }) => {
@@ -245,7 +245,7 @@ export function openSkillsNodeWorkspace({
 		 * Claude Code, OpenCode) to pick up the latest skill definitions.
 		 * Stale directories for deleted skills are cleaned up automatically.
 		 */
-		exportToDisk: defineMutation({
+		export_to_disk: defineMutation({
 			description: 'Export all skills to an agentskills.io-compliant directory',
 			input: DirInput,
 			handler: async ({ dir }) => {

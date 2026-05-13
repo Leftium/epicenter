@@ -117,7 +117,7 @@ export function openOpensidian({
 		if (disposed) return;
 		disposed = true;
 		fileContentDocs[Symbol.dispose]();
-		sqliteIndex.dispose();
+		sqliteIndex[Symbol.dispose]();
 		doc[Symbol.dispose]();
 	}
 

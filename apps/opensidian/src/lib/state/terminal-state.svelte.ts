@@ -2,7 +2,7 @@ import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { defineCommand } from 'just-bash';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import type { OpensidianWorkspace } from '$lib/opensidian/browser';
+import type { OpensidianBinding } from '$lib/opensidian/browser';
 import type { FilesState } from '$lib/state/files-state.svelte';
 
 /**
@@ -22,28 +22,28 @@ type TerminalEntry =
  * Follows the same factory pattern as `files-state.svelte.ts`: a factory
  * function creates all `$state` and exposes a public API via a returned
  * object with getters. The session exposes it at
- * `workspace.state.terminal`.
+ * `app.state.terminal`.
  *
  * Manages:
  * - **History**: scrollable list of input/output entries
  * - **Command recall**: arrow-up/down cycles through previously executed commands
- * - **Execution**: delegates to `bash.exec()` from workspace.ts
+ * - **Execution**: delegates to `bash.exec()` from the opensidian binding
  * - **Visibility**: open/closed state for the terminal panel
  *
  * @example
  * ```svelte
  * <script>
- *   const session = requireWorkspace();
- *   session.state.terminal.open // reactive boolean
+ *   const app = requireApp();
+ *   app.state.terminal.open // reactive boolean
  * </script>
  * ```
  */
 export function createTerminalState({
 	files,
-	workspace,
+	binding,
 }: {
 	files: FilesState;
-	workspace: OpensidianWorkspace;
+	binding: OpensidianBinding;
 }) {
 	const openState = createPersistedState({
 		key: 'opensidian.terminal-open',
@@ -60,7 +60,7 @@ export function createTerminalState({
 	// Uses registerCommand() instead of the constructor's customCommands
 	// option to avoid a circular dependency from workspace construction to files state.
 
-	workspace.bash.registerCommand(
+	binding.bash.registerCommand(
 		defineCommand('open', async (args) => {
 			const path = args[0];
 			if (!path)
@@ -69,7 +69,7 @@ export function createTerminalState({
 					stderr: 'Usage: open <path>',
 					exitCode: 1,
 				};
-			const id = workspace.fs.lookupId(path);
+			const id = binding.fs.lookupId(path);
 			if (!id)
 				return {
 					stdout: '',
@@ -159,7 +159,7 @@ export function createTerminalState({
 			historyIndex = -1;
 			const { data: entry } = await tryAsync({
 				try: async () => {
-					const result = await workspace.bash.exec(command);
+					const result = await binding.bash.exec(command);
 					return {
 						type: 'output' as const,
 						stdout: result.stdout,

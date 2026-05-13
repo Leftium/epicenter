@@ -8,9 +8,9 @@
 	import MessageSquareIcon from '@lucide/svelte/icons/message-square';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 	let { chatOpen = $bindable(false) }: { chatOpen: boolean } = $props();
 
 	let popoverOpen = $state(false);
@@ -20,16 +20,16 @@
 	class="flex h-6 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground"
 >
 	<span
-		>Ln {workspace.state.editor.cursorLine}, Col
-		{workspace.state.editor.cursorCol}</span
+		>Ln {app.state.editor.cursorLine}, Col
+		{app.state.editor.cursorCol}</span
 	>
 
-	{#if workspace.state.editor.selectionLength > 0}
-		<span>{workspace.state.editor.selectionLength} selected</span>
+	{#if app.state.editor.selectionLength > 0}
+		<span>{app.state.editor.selectionLength} selected</span>
 	{/if}
 
-	<span>{workspace.state.editor.wordCount} words</span>
-	<span>{workspace.state.editor.lineCount} lines</span>
+	<span>{app.state.editor.wordCount} words</span>
+	<span>{app.state.editor.lineCount} lines</span>
 
 	<div class="ml-auto flex items-center gap-1.5">
 		<Tooltip.Provider>
@@ -38,10 +38,10 @@
 					{#snippet child({ props })}
 						<Button
 							{...props}
-							variant={workspace.state.terminal.open ? 'secondary': 'ghost'}
+							variant={app.state.terminal.open ? 'secondary': 'ghost'}
 							size="sm"
 							class="h-5 gap-1 px-1.5 text-xs text-muted-foreground"
-							onclick={() => workspace.state.terminal.toggle()}
+							onclick={() => app.state.terminal.toggle()}
 						>
 							<TerminalIcon class="size-3" />
 							Terminal
@@ -69,7 +69,7 @@
 			</Tooltip.Root>
 		</Tooltip.Provider>
 
-		{#if workspace.state.editor.vimEnabled}
+		{#if app.state.editor.vimEnabled}
 			<span class="font-mono text-[10px] font-medium uppercase tracking-wider"
 				>vim</span
 			>
@@ -86,11 +86,11 @@
 					<Label for="vim-mode" class="text-sm">Vim mode</Label>
 					<Switch
 						id="vim-mode"
-						checked={workspace.state.editor.vimEnabled}
-						onCheckedChange={() => workspace.state.editor.toggleVim()}
+						checked={app.state.editor.vimEnabled}
+						onCheckedChange={() => app.state.editor.toggleVim()}
 					/>
 				</div>
-				{#if workspace.state.editor.vimEnabled}
+				{#if app.state.editor.vimEnabled}
 					<p class="text-xs text-muted-foreground">
 						Browser extensions like Vimium can intercept Escape and break vim
 						keybindings: disable them for this site if keys aren't working.

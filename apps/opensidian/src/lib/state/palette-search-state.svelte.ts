@@ -2,7 +2,7 @@ import type { FileId } from '@epicenter/filesystem';
 import { createPersistedState } from '@epicenter/svelte';
 import type { CommandPaletteItem } from '@epicenter/ui/command-palette';
 import { type } from 'arktype';
-import type { OpensidianWorkspace } from '$lib/opensidian/browser';
+import type { OpensidianBinding } from '$lib/opensidian/browser';
 import { getFileIcon } from '$lib/utils/file-icons';
 import type { FilesState } from './files-state.svelte';
 
@@ -10,10 +10,10 @@ export type SearchScope = 'names' | 'content' | 'both';
 
 export function createPaletteSearchState({
 	files,
-	workspace,
+	binding,
 }: {
 	files: FilesState;
-	workspace: OpensidianWorkspace;
+	binding: OpensidianBinding;
 }) {
 	// Persisted scope preference
 	const scopeState = createPersistedState({
@@ -78,7 +78,7 @@ export function createPaletteSearchState({
 				const scope = scopeState.current;
 				// Add column filter for content-only mode
 				const ftsQuery = scope === 'content' ? `content:${trimmed}` : trimmed;
-				const results = await workspace.sqliteIndex.search(ftsQuery);
+				const results = await binding.sqliteIndex.search(ftsQuery);
 
 				contentResults = results.map((r) => ({
 					id: r.id,

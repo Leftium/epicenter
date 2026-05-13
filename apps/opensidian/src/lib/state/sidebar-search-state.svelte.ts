@@ -1,6 +1,6 @@
 import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
-import type { OpensidianWorkspace } from '$lib/opensidian/browser';
+import type { OpensidianBinding } from '$lib/opensidian/browser';
 
 export type MatchSnippet = {
 	snippet: string;
@@ -17,9 +17,9 @@ export type FileGroup = {
 const PAGE_SIZE = 50;
 
 export function createSidebarSearchState({
-	workspace,
+	binding,
 }: {
-	workspace: OpensidianWorkspace;
+	binding: OpensidianBinding;
 }) {
 	// Persisted preferences
 	const caseSensitiveState = createPersistedState({
@@ -111,7 +111,7 @@ export function createSidebarSearchState({
 	}
 
 	async function executeSearch(query: string, offset: number) {
-		const client = workspace.sqliteIndex.client;
+		const client = binding.sqliteIndex.client;
 		const trimmed = query.trim();
 
 		try {

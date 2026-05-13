@@ -5,10 +5,10 @@
 	import { cn } from '@epicenter/ui/utils';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import type { FileGroup } from '$lib/state/sidebar-search-state.svelte';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 	let {
 		group,
 		defaultOpen = true,
@@ -27,7 +27,7 @@
 	}
 
 	function handleMatchClick(fileId: string) {
-		workspace.state.files.selectFile(fileId as FileId);
+		app.state.files.selectFile(fileId as FileId);
 	}
 
 	const displayPath = $derived(

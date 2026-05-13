@@ -10,21 +10,21 @@
 	import RegexIcon from '@lucide/svelte/icons/regex';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import SearchResultGroup from './SearchResultGroup.svelte';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 	let searchInputRef = $state<HTMLInputElement | null>(null);
 	let searchFocused = $state(false);
 
 	const isSearchActive = $derived(
-		searchFocused || workspace.state.sidebarSearch.searchQuery !== '',
+		searchFocused || app.state.sidebarSearch.searchQuery !== '',
 	);
 	const hasQuery = $derived(
-		workspace.state.sidebarSearch.searchQuery.trim().length >= 2,
+		app.state.sidebarSearch.searchQuery.trim().length >= 2,
 	);
 	const hasResults = $derived(
-		workspace.state.sidebarSearch.fileGroups.length > 0,
+		app.state.sidebarSearch.fileGroups.length > 0,
 	);
 
 	export function focusInput() {
@@ -72,16 +72,16 @@
 				bind:ref={searchInputRef}
 				type="search"
 				placeholder="Search files..."
-				value={workspace.state.sidebarSearch.searchQuery}
+				value={app.state.sidebarSearch.searchQuery}
 				oninput={(e: Event) => {
-					workspace.state.sidebarSearch.searchQuery = (e.target as HTMLInputElement).value;
+					app.state.sidebarSearch.searchQuery = (e.target as HTMLInputElement).value;
 				}}
 				onkeydown={(e: KeyboardEvent) => {
 					if (e.key === 'Escape') {
-						if (workspace.state.sidebarSearch.searchQuery === '') {
-							workspace.state.sidebarSearch.closeSearch();
+						if (app.state.sidebarSearch.searchQuery === '') {
+							app.state.sidebarSearch.closeSearch();
 						} else {
-							workspace.state.sidebarSearch.searchQuery = '';
+							app.state.sidebarSearch.searchQuery = '';
 						}
 					}
 				}}
@@ -93,12 +93,12 @@
 				<div
 					class="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5"
 				>
-					{#if workspace.state.sidebarSearch.searchQuery}
+					{#if app.state.sidebarSearch.searchQuery}
 						<button
 							type="button"
 							class="flex size-6 items-center justify-center text-muted-foreground hover:text-foreground"
 							onclick={() => {
-								workspace.state.sidebarSearch.searchQuery = '';
+								app.state.sidebarSearch.searchQuery = '';
 								searchInputRef?.focus();
 							}}
 						>
@@ -106,17 +106,17 @@
 						</button>
 					{/if}
 					{@render searchToggle(
-						workspace.state.sidebarSearch.caseSensitive,
+						app.state.sidebarSearch.caseSensitive,
 						(v) => {
-							workspace.state.sidebarSearch.caseSensitive = v;
+							app.state.sidebarSearch.caseSensitive = v;
 						},
 						CaseSensitiveIcon,
 						'Match Case'
 					)}
 					{@render searchToggle(
-						workspace.state.sidebarSearch.regex,
+						app.state.sidebarSearch.regex,
 						(v) => {
-							workspace.state.sidebarSearch.regex = v;
+							app.state.sidebarSearch.regex = v;
 						},
 						RegexIcon,
 						'Use Regular Expression'
@@ -126,36 +126,36 @@
 		</div>
 	</div>
 
-	{#if workspace.state.sidebarSearch.isSearching && !hasResults}
+	{#if app.state.sidebarSearch.isSearching && !hasResults}
 		<Loading class="flex-1" />
 	{:else if hasResults}
 		<div class="border-b px-3 py-1.5 text-xs text-muted-foreground">
-			{workspace.state.sidebarSearch.totalResults}
-			result{workspace.state.sidebarSearch.totalResults === 1
+			{app.state.sidebarSearch.totalResults}
+			result{app.state.sidebarSearch.totalResults === 1
 				? ''
 				: 's'}
 			in
-			{workspace.state.sidebarSearch.totalFiles}
-			file{workspace.state.sidebarSearch.totalFiles === 1
+			{app.state.sidebarSearch.totalFiles}
+			file{app.state.sidebarSearch.totalFiles === 1
 				? ''
 				: 's'}
-			{#if workspace.state.sidebarSearch.isSearching}
+			{#if app.state.sidebarSearch.isSearching}
 				<Spinner class="ml-1 inline-block size-3" />
 			{/if}
 		</div>
 		<ScrollArea class="flex-1">
 			<div class="p-1">
-				{#each workspace.state.sidebarSearch.fileGroups as group (group.fileId)}
+				{#each app.state.sidebarSearch.fileGroups as group (group.fileId)}
 					<SearchResultGroup {group} defaultOpen={group.matchCount <= 5} />
 				{/each}
-				{#if workspace.state.sidebarSearch.hasMore}
+				{#if app.state.sidebarSearch.hasMore}
 					<button
 						type="button"
 						class="flex w-full items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-center text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-						onclick={() => workspace.state.sidebarSearch.loadMore()}
-						disabled={workspace.state.sidebarSearch.isSearching}
+						onclick={() => app.state.sidebarSearch.loadMore()}
+						disabled={app.state.sidebarSearch.isSearching}
 					>
-						{#if workspace.state.sidebarSearch.isSearching}
+						{#if app.state.sidebarSearch.isSearching}
 							<Spinner class="size-3" />
 							<span>Loading</span>
 						{:else}
@@ -165,7 +165,7 @@
 				{/if}
 			</div>
 		</ScrollArea>
-	{:else if hasQuery && !workspace.state.sidebarSearch.isSearching}
+	{:else if hasQuery && !app.state.sidebarSearch.isSearching}
 		<Empty.Root class="flex-1 border-0">
 			<Empty.Media>
 				<SearchIcon class="size-8 text-muted-foreground" />
@@ -173,7 +173,7 @@
 			<Empty.Header>
 				<Empty.Title>No results</Empty.Title>
 				<Empty.Description
-					>No matches for "{workspace.state.sidebarSearch.searchQuery}"</Empty.Description
+					>No matches for "{app.state.sidebarSearch.searchQuery}"</Empty.Description
 				>
 			</Empty.Header>
 		</Empty.Root>

@@ -13,7 +13,7 @@ import {
 } from '@epicenter/workspace';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import * as Y from 'yjs';
-import type { OpensidianWorkspace } from '$lib/opensidian/browser';
+import type { OpensidianBinding } from '$lib/opensidian/browser';
 
 /** A global skill loaded from the @epicenter/skills workspace. */
 type GlobalSkill = { name: string; instructions: string };
@@ -56,9 +56,9 @@ type VaultSkill = { name: string; content: string };
  * ```
  */
 export function createSkillState({
-	workspace,
+	binding,
 }: {
-	workspace: OpensidianWorkspace;
+	binding: OpensidianBinding;
 }) {
 	const globalSkillsWorkspace = openGlobalSkillsWorkspace();
 	let globalSkills = $state<GlobalSkill[]>([]);
@@ -96,7 +96,7 @@ export function createSkillState({
 
 		const { data } = await tryAsync({
 			try: async () => {
-				const entries = await workspace.fs.readdir('/skills');
+				const entries = await binding.fs.readdir('/skills');
 				const markdownEntries = entries.filter((entry) =>
 					entry.endsWith('.md'),
 				);
@@ -104,7 +104,7 @@ export function createSkillState({
 				return Promise.all(
 					markdownEntries.map(async (entry) => ({
 						name: entry.replace('.md', ''),
-						content: await workspace.fs.readFile(`/skills/${entry}`),
+						content: await binding.fs.readFile(`/skills/${entry}`),
 					})),
 				);
 			},

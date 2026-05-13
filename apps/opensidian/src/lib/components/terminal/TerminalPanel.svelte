@@ -3,11 +3,11 @@
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import { Separator } from '@epicenter/ui/separator';
 	import { X } from '@lucide/svelte';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import TerminalInput from './TerminalInput.svelte';
 	import TerminalOutput from './TerminalOutput.svelte';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 	let inputRef: ReturnType<typeof TerminalInput> | undefined = $state();
 	let viewportRef: HTMLElement | null = $state(null);
 
@@ -21,7 +21,7 @@
 
 	// Auto-scroll to bottom when new entries appear.
 	$effect(() => {
-		void workspace.state.terminal.history.length;
+		void app.state.terminal.history.length;
 		if (viewportRef) {
 			requestAnimationFrame(() => {
 				viewportRef?.scrollTo({ top: viewportRef.scrollHeight });
@@ -37,7 +37,7 @@
 			variant="ghost"
 			size="icon-xs"
 			aria-label="Close terminal"
-			onclick={() => workspace.state.terminal.hide()}
+			onclick={() => app.state.terminal.hide()}
 		>
 			<X aria-hidden="true" class="size-3" />
 		</Button>
@@ -45,7 +45,7 @@
 	<Separator />
 	<ScrollArea class="min-h-0 flex-1" bind:viewportRef>
 		<div class="space-y-1 p-3">
-			{#each workspace.state.terminal.history as entry}
+			{#each app.state.terminal.history as entry}
 				<TerminalOutput {entry} />
 			{/each}
 		</div>

@@ -24,7 +24,7 @@
 
 {#if session.current}
 	<WorkspaceGate
-		pending={session.current.workspace.opensidian.idb.whenLoaded}
+		pending={session.current.app.opensidian.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
 		{@render children()}

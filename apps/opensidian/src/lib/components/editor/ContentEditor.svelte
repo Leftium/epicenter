@@ -3,12 +3,12 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Loading } from '@epicenter/ui/loading';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
 	import { wikilinkAutocomplete } from './extensions/wikilink-autocomplete';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 
 	let {
 		fileId,
@@ -16,21 +16,21 @@
 		fileId: FileId;
 	} = $props();
 	const filename = $derived(
-		workspace.state.files.getFile(fileId)?.name ?? 'untitled.md',
+		app.state.files.getFile(fileId)?.name ?? 'untitled.md',
 	);
 	const isMarkdown = $derived(
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
 	const doc = fromDisposableCache(
-		workspace.opensidian.fileContentDocs,
+		app.opensidian.fileContentDocs,
 		() => fileId,
 	);
 
 	const sharedLinkDecorations = linkDecorations({
-		onNavigate: (ref) => workspace.state.files.selectFile(ref.id as FileId),
+		onNavigate: (ref) => app.state.files.selectFile(ref.id as FileId),
 		resolveTitle: (ref) =>
-			workspace.state.files.getFile(ref.id as FileId)?.name ?? null,
+			app.state.files.getFile(ref.id as FileId)?.name ?? null,
 	});
 
 	const extensions = $derived(
@@ -38,10 +38,10 @@
 			? [
 					sharedLinkDecorations,
 					wikilinkAutocomplete({
-						workspaceId: workspace.opensidian.ydoc.guid,
+						workspaceId: app.opensidian.ydoc.guid,
 						tableName: 'files',
 						getFiles: () =>
-							workspace.opensidian.tables.files
+							app.opensidian.tables.files
 								.getAllValid()
 								.filter((r) => r.type === 'file')
 								.map((r) => ({ id: r.id, name: r.name })),

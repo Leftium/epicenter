@@ -13,7 +13,7 @@ import {
 	type EncryptionKeys,
 	onLocalUpdate,
 	type OpenWebSocket,
-	openWorkspace,
+	openCollaboration,
 	type PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
@@ -98,7 +98,7 @@ export function openOpensidian({
 		bash,
 	});
 
-	const workspace = openWorkspace(doc.ydoc, {
+	const collaboration = openCollaboration(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
@@ -116,14 +116,16 @@ export function openOpensidian({
 	}
 
 	return {
-		...doc,
+		ydoc: doc.ydoc,
+		tables: doc.tables,
+		kv: doc.kv,
+		batch: doc.batch,
 		idb,
 		fileContentDocs,
 		sqliteIndex: sqliteIndexExports,
 		fs,
 		bash,
-		actions,
-		workspace,
+		collaboration,
 		async wipe() {
 			const fallbackGuids = [
 				doc.ydoc.guid,
@@ -135,7 +137,7 @@ export function openOpensidian({
 				),
 			];
 			disposeWorkspaceResources();
-			await Promise.all([idb.whenDisposed, workspace.whenDisposed]);
+			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: fallbackGuids,
@@ -147,4 +149,4 @@ export function openOpensidian({
 	};
 }
 
-export type OpensidianWorkspace = ReturnType<typeof openOpensidian>;
+export type OpensidianBinding = ReturnType<typeof openOpensidian>;

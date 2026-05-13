@@ -17,7 +17,7 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import type { OpensidianWorkspace } from '$lib/opensidian/browser';
+import type { OpensidianBinding } from '$lib/opensidian/browser';
 import { searchParams } from '$lib/search-params.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
 import {
@@ -42,22 +42,22 @@ function getProviderValue(value: JsonValue | undefined): Provider {
 		: DEFAULT_PROVIDER;
 }
 
-type WorkspaceAiTools = ReturnType<
-	typeof actionsToAiTools<OpensidianWorkspace['actions']>
+type SessionAiTools = ReturnType<
+	typeof actionsToAiTools<OpensidianBinding['collaboration']['actions']>
 >;
-export type WorkspaceTools = WorkspaceAiTools['tools'];
+export type SessionTools = SessionAiTools['tools'];
 
 export function createAiChatState({
 	auth,
-	workspace,
+	binding,
 	skills,
 }: {
 	auth: AuthClient;
-	workspace: OpensidianWorkspace;
+	binding: OpensidianBinding;
 	skills: SkillState;
 }) {
-	const workspaceAiTools = actionsToAiTools(workspace.actions);
-	const conversationsMap = fromTable(workspace.tables.conversations);
+	const sessionAiTools = actionsToAiTools(binding.collaboration.actions);
+	const conversationsMap = fromTable(binding.tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()].sort(
 			(a, b) => getNumberValue(b.updatedAt) - getNumberValue(a.updatedAt),
@@ -70,7 +70,7 @@ export function createAiChatState({
 		const id = generateConversationId();
 		const now = Date.now();
 
-		workspace.tables.conversations.set({
+		binding.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: DEFAULT_PROVIDER,
@@ -87,14 +87,14 @@ export function createAiChatState({
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		workspace.tables.conversations.update(conversationId, {
+		binding.tables.conversations.update(conversationId, {
 			...patch,
 			updatedAt: Date.now(),
 		});
 	}
 
 	function loadMessages(conversationId: ConversationId) {
-		return workspace.tables.chatMessages
+		return binding.tables.chatMessages
 			.filter((message) => message.conversationId === conversationId)
 			.sort((a, b) => a.createdAt - b.createdAt)
 			.map(toUiMessage);
@@ -110,7 +110,7 @@ export function createAiChatState({
 
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
-			tools: workspaceAiTools.tools,
+			tools: sessionAiTools.tools,
 			connection: fetchServerSentEvents(
 				`${APP_URLS.API}/ai/chat`,
 				async () => ({
@@ -135,13 +135,13 @@ export function createAiChatState({
 									})),
 								),
 							].filter(Boolean),
-							tools: workspaceAiTools.definitions,
+							tools: sessionAiTools.definitions,
 						},
 					},
 				}),
 			),
 			onFinish: (message) => {
-				workspace.tables.chatMessages.set({
+				binding.tables.chatMessages.set({
 					id: message.id as ChatMessageId,
 					conversationId,
 					role: 'assistant',
@@ -241,7 +241,7 @@ export function createAiChatState({
 					id: userMessageId,
 				});
 
-				workspace.tables.chatMessages.set({
+				binding.tables.chatMessages.set({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
@@ -263,7 +263,7 @@ export function createAiChatState({
 			reload() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					workspace.tables.chatMessages.delete(lastMessage.id as ChatMessageId);
+					binding.tables.chatMessages.delete(lastMessage.id as ChatMessageId);
 				}
 
 				void chat.reload();
@@ -320,14 +320,14 @@ export function createAiChatState({
 		(searchParams.chat ?? '') as ConversationId,
 	);
 
-	const _unobserveConversations = workspace.tables.conversations.observe(() => {
+	const _unobserveConversations = binding.tables.conversations.observe(() => {
 		reconcileHandles();
 	});
-	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
+	const _unobserveChatMessages = binding.tables.chatMessages.observe(() => {
 		handles.get(activeConversationId)?.refreshMessages();
 	});
 
-	void workspace.idb.whenLoaded.then(() => {
+	void binding.idb.whenLoaded.then(() => {
 		void skills.loadAllSkills();
 		reconcileHandles();
 
@@ -353,7 +353,7 @@ export function createAiChatState({
 		const now = Date.now();
 		const active = handles.get(activeConversationId);
 
-		workspace.tables.conversations.set({
+		binding.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: active?.provider ?? DEFAULT_PROVIDER,

@@ -1,5 +1,5 @@
 import { requireIdentity } from '@epicenter/auth';
-import { createSession } from '@epicenter/svelte';
+import { createSession, type InferApp } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
@@ -38,17 +38,17 @@ export const session = createSession({
 			encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 		});
 		const editor = createEditorState();
-		const files = createFilesState({ workspace: opensidian });
+		const files = createFilesState({ binding: opensidian });
 		const paletteSearch = createPaletteSearchState({
 			files,
-			workspace: opensidian,
+			binding: opensidian,
 		});
-		const sidebarSearch = createSidebarSearchState({ workspace: opensidian });
-		const terminal = createTerminalState({ files, workspace: opensidian });
-		const skills = createSkillState({ workspace: opensidian });
+		const sidebarSearch = createSidebarSearchState({ binding: opensidian });
+		const terminal = createTerminalState({ files, binding: opensidian });
+		const skills = createSkillState({ binding: opensidian });
 		const chat = createAiChatState({
 			auth,
-			workspace: opensidian,
+			binding: opensidian,
 			skills,
 		});
 		const sampleData = createSampleDataLoader(opensidian);
@@ -79,14 +79,16 @@ export const session = createSession({
 	},
 });
 
-export const { requireWorkspace } = session;
+export type OpensidianApp = InferApp<typeof session>;
+
+export const { requireApp } = session;
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());
 }
 
 export async function forgetOpensidianDevice(): Promise<void> {
-	const workspace = requireWorkspace();
-	await workspace.opensidian.wipe();
+	const app = requireApp();
+	await app.opensidian.wipe();
 	window.location.reload();
 }

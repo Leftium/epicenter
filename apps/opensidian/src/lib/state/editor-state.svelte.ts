@@ -26,7 +26,7 @@ let vimConfigured = false;
  * Bridges CodeMirror 6 editor state into Svelte 5 reactivity via
  * an `EditorView.updateListener` that pushes values into `$state`.
  * The signed-in session creates one instance and exposes it at
- * `workspace.state.editor`.
+ * `app.state.editor`.
  *
  * Vim preference is backed by `createPersistedState`: cross-tab sync
  * and focus-based re-reads come free.
@@ -37,13 +37,13 @@ let vimConfigured = false;
  * @example
  * ```svelte
  * <script>
- *   const workspace = requireWorkspace();
- *   const line = $derived(workspace.state.editor.cursorLine);
+ *   const app = requireApp();
+ *   const line = $derived(app.state.editor.cursorLine);
  * </script>
  *
- * <span>Ln {workspace.state.editor.cursorLine}, Col {workspace.state.editor.cursorCol}</span>
- * <button onclick={() => workspace.state.editor.toggleVim()}>
- *   {workspace.state.editor.vimEnabled ? 'VIM' : 'NORMAL'}
+ * <span>Ln {app.state.editor.cursorLine}, Col {app.state.editor.cursorCol}</span>
+ * <button onclick={() => app.state.editor.toggleVim()}>
+ *   {app.state.editor.vimEnabled ? 'VIM' : 'NORMAL'}
  * </button>
  * ```
  */

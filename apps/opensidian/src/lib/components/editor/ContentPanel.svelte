@@ -2,21 +2,21 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import ContentEditor from './ContentEditor.svelte';
 	import PathBreadcrumb from './PathBreadcrumb.svelte';
 	import TabBar from './TabBar.svelte';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 </script>
 
 <div class="flex h-full flex-col">
 	<TabBar />
 
-	{#if workspace.state.files.activeFileId && workspace.state.files.selectedNode}
+	{#if app.state.files.activeFileId && app.state.files.selectedNode}
 		<div class="flex items-center border-b px-4 py-2"><PathBreadcrumb /></div>
 
-		{#if workspace.state.files.selectedNode.type === 'folder'}
+		{#if app.state.files.selectedNode.type === 'folder'}
 			<Empty.Root class="flex-1 border-0">
 				<Empty.Header>
 					<Empty.Title>Folder selected</Empty.Title>
@@ -27,8 +27,8 @@
 			</Empty.Root>
 		{:else}
 			<div class="flex-1 overflow-hidden">
-				{#key workspace.state.files.activeFileId}
-					<ContentEditor fileId={workspace.state.files.activeFileId} />
+				{#key app.state.files.activeFileId}
+					<ContentEditor fileId={app.state.files.activeFileId} />
 				{/key}
 			</div>
 		{/if}
@@ -40,14 +40,14 @@
 					>Click a file in the tree, or use the terminal below</Empty.Description
 				>
 			</Empty.Header>
-			{#if workspace.state.files.rootChildIds.length === 0}
+			{#if app.state.files.rootChildIds.length === 0}
 				<Button
 					variant="outline"
 					size="sm"
-					onclick={() => workspace.state.sampleData.load()}
-					disabled={workspace.state.sampleData.seeding}
+					onclick={() => app.state.sampleData.load()}
+					disabled={app.state.sampleData.seeding}
 				>
-					{#if workspace.state.sampleData.seeding}
+					{#if app.state.sampleData.seeding}
 						<Spinner class="size-3.5" />
 					{:else}
 						Load Sample Data

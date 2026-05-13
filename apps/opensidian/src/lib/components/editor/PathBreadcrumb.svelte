@@ -1,11 +1,11 @@
 <script lang="ts">
 	import * as Breadcrumb from '@epicenter/ui/breadcrumb';
 
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 	const pathSegments = $derived.by(() => {
-		const path = workspace.state.files.selectedPath;
+		const path = app.state.files.selectedPath;
 		if (!path) return [];
 		return path.split('/').filter(Boolean);
 	});

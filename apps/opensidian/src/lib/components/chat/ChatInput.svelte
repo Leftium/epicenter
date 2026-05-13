@@ -6,12 +6,12 @@
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import { PROVIDER_MODELS, type Provider } from '$lib/chat/providers';
 
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 
-	const workspace = requireWorkspace();
+	const app = requireApp();
 	const providers = Object.keys(PROVIDER_MODELS) as Provider[];
 	const models = $derived(
-		workspace.state.chat.modelsForProvider(workspace.state.chat.provider),
+		app.state.chat.modelsForProvider(app.state.chat.provider),
 	);
 
 	let inputValue = $state('');
@@ -20,7 +20,7 @@
 		const content = inputValue.trim();
 		if (!content) return;
 		inputValue = '';
-		workspace.state.chat.sendMessage(content);
+		app.state.chat.sendMessage(content);
 	}
 </script>
 
@@ -29,13 +29,13 @@
 	<div class="flex gap-2">
 		<Select.Root
 			type="single"
-			value={workspace.state.chat.provider}
+			value={app.state.chat.provider}
 			onValueChange={(v) => {
-				if (v) workspace.state.chat.provider = v as Provider;
+				if (v) app.state.chat.provider = v as Provider;
 			}}
 		>
 			<Select.Trigger size="sm" class="w-[120px]">
-				{workspace.state.chat.provider || 'Provider\u2026'}
+				{app.state.chat.provider || 'Provider\u2026'}
 			</Select.Trigger>
 			<Select.Content>
 				{#each providers as p (p)}
@@ -46,14 +46,14 @@
 
 		<Select.Root
 			type="single"
-			value={workspace.state.chat.model}
+			value={app.state.chat.model}
 			onValueChange={(v) => {
-				if (v) workspace.state.chat.model = v;
+				if (v) app.state.chat.model = v;
 			}}
 		>
 			<Select.Trigger size="sm" class="flex-1">
 				<span class="truncate"
-					>{workspace.state.chat.model || 'Model\u2026'}</span
+					>{app.state.chat.model || 'Model\u2026'}</span
 				>
 			</Select.Trigger>
 			<Select.Content>
@@ -85,12 +85,12 @@
 				}
 			}}
 		/>
-		{#if workspace.state.chat.isLoading}
+		{#if app.state.chat.isLoading}
 			<Button
 				variant="outline"
 				size="icon-lg"
 				type="button"
-				onclick={() => workspace.state.chat.stop()}
+				onclick={() => app.state.chat.stop()}
 			>
 				<SquareIcon />
 			</Button>

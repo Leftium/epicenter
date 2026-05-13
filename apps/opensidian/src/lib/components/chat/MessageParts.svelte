@@ -6,7 +6,7 @@
 		ToolCallPart as TanStackToolCallPart,
 		ToolResultPart as ToolResultPartType,
 	} from '@tanstack/ai-client';
-	import type { WorkspaceTools } from '$lib/chat/chat-state.svelte';
+	import type { SessionTools } from '$lib/chat/chat-state.svelte';
 	import ToolCallPart from './ToolCallPart.svelte';
 	import ToolResultPart from './ToolResultPart.svelte';
 
@@ -32,7 +32,7 @@
 		<p class="whitespace-pre-wrap text-sm">{part.content}</p>
 	{:else if part.type === 'tool-call'}
 		<ToolCallPart
-			part={part as TanStackToolCallPart<WorkspaceTools>}
+			part={part as TanStackToolCallPart<SessionTools>}
 			{onApproveToolCall}
 			{onDenyToolCall}
 		/>

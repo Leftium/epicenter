@@ -3,7 +3,7 @@ import { fromTable } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
 import { SvelteSet } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
-import type { OpensidianWorkspace } from '$lib/opensidian/browser';
+import type { OpensidianBinding } from '$lib/opensidian/browser';
 import { searchParams } from '$lib/search-params.svelte';
 
 /**
@@ -22,7 +22,7 @@ type InteractionMode =
  *
  * Follows the tab-manager pattern: a factory function creates all state.
  * The session creates one instance and exposes it at
- * `workspace.state.files`.
+ * `app.state.files`.
  *
  * Reactivity: `fromTable()` provides a reactive `SvelteMap` that updates
  * granularly per-row. `childrenOf` derives tree structure eagerly (O(n)
@@ -33,18 +33,18 @@ type InteractionMode =
  * @example
  * ```svelte
  * <script>
- *   const session = requireWorkspace();
- *   const children = session.state.files.rootChildIds;
+ *   const app = requireApp();
+ *   const children = app.state.files.rootChildIds;
  * </script>
  * ```
  */
 export function createFilesState({
-	workspace,
+	binding,
 }: {
-	workspace: OpensidianWorkspace;
+	binding: OpensidianBinding;
 }) {
 	// ── Reactive source ──────────────────────────────────────────────
-	const filesMap = fromTable(workspace.tables.files);
+	const filesMap = fromTable(binding.tables.files);
 
 	// ── Reactive state ───────────────────────────────────────────────
 	const openFileIds = new SvelteSet<FileId>();
@@ -378,7 +378,7 @@ export function createFilesState({
 			await withErrorToast(async () => {
 				const parentPath = parentId ? (state.getPath(parentId) ?? '/') : '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-				await workspace.fs.writeFile(path, '');
+				await binding.fs.writeFile(path, '');
 				toast.success(`Created ${path}`);
 			}, 'Failed to create file');
 		},
@@ -387,7 +387,7 @@ export function createFilesState({
 			await withErrorToast(async () => {
 				const parentPath = parentId ? (state.getPath(parentId) ?? '/') : '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-				await workspace.fs.mkdir(path);
+				await binding.fs.mkdir(path);
 				if (parentId) expandedIds.add(parentId);
 				toast.success(`Created ${path}/`);
 			}, 'Failed to create folder');
@@ -397,7 +397,7 @@ export function createFilesState({
 			await withErrorToast(async () => {
 				const path = state.getPath(id);
 				if (!path) return;
-				await workspace.fs.rm(path, { recursive: true });
+				await binding.fs.rm(path, { recursive: true });
 				if (searchParams.file === id) searchParams.update({ file: null });
 				openFileIds.delete(id);
 				toast.success(`Deleted ${path}`);
@@ -412,7 +412,7 @@ export function createFilesState({
 					oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
 				const newPath =
 					parentPath === '/' ? `/${newName}` : `${parentPath}/${newName}`;
-				await workspace.fs.mv(oldPath, newPath);
+				await binding.fs.mv(oldPath, newPath);
 				toast.success(`Renamed to ${newName}`);
 			}, 'Failed to rename');
 		},

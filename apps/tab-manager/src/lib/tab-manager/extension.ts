@@ -6,13 +6,11 @@
 
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
-	attachAwareness,
 	attachOwnedBroadcastChannel,
-	attachSync,
-	createRemoteClient,
 	type EncryptionKeys,
 	type OpenWebSocket,
-	PeerIdentity,
+	openWorkspace,
+	type PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -26,7 +24,7 @@ import { openTabManager as openTabManagerDoc } from './index';
  * Construction is async because awareness publishes the peer identity
  * synchronously at attach time (no two-step "online but no device yet"
  * window). Awaiting the identity up front means every peer sees a
- * well-formed `state.peer` from the first frame.
+ * well-formed `identity` field from the first frame.
  *
  * Consumers gate UI render on `tabManager.idb.whenLoaded`; sync (the
  * WebSocket) is independent and connects whenever the network allows.
@@ -52,34 +50,26 @@ export async function openTabManager({
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
-	const awareness = attachAwareness(doc.ydoc, {
-		schema: { peer: PeerIdentity },
-		initial: { peer: resolvedPeer },
-	});
-	const sync = attachSync(doc.ydoc, {
+	const workspace = openWorkspace(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		awareness,
+		identity: resolvedPeer,
+		actions: doc.actions,
 	});
-	const rpc = sync.attachRpc(doc.actions);
-	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		...doc,
 		idb,
-		awareness,
-		sync,
+		workspace,
 		async wipe() {
 			doc[Symbol.dispose]();
-			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
+			await Promise.all([idb.whenDisposed, workspace.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: [doc.ydoc.guid],
 			});
 		},
-		remote,
-		rpc,
 		peer: resolvedPeer,
 		device: resolvedPeer,
 		[Symbol.dispose]() {

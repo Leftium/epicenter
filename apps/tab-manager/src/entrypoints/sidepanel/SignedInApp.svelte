@@ -205,7 +205,7 @@
 				</Button>
 				<AccountPopover
 					{auth}
-					sync={workspace.tabManager.sync}
+					workspace={workspace.tabManager.workspace}
 					syncNoun="tabs"
 					onForgetDevice={forgetTabManagerDevice}
 				/>

@@ -59,7 +59,7 @@
 	<div class="flex items-center gap-1">
 		<AccountPopover
 			{auth}
-			sync={workspace.fuji.sync}
+			workspace={workspace.fuji.workspace}
 			syncNoun="entries"
 			onForgetDevice={async () => {
 				await workspace.fuji.wipe();

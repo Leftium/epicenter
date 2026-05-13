@@ -4,7 +4,7 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
 	import { toast, toastOnError } from '@epicenter/ui/sonner';
-	import type { SyncAttachment, SyncStatus } from '@epicenter/workspace';
+	import type { SyncStatus, Workspace } from '@epicenter/workspace';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
@@ -16,9 +16,8 @@
 	/**
 	 * Shared account popover.
 	 *
-	 * Renders sync status from a `SyncAttachment` (the concrete `attachSync`
-	 * return type exposed as `workspace.sync`) alongside auth identity,
-	 * reconnect, and sign-out.
+	 * Renders sync status from a `Workspace` (the `openWorkspace` return type)
+	 * alongside auth identity, reconnect, and sign-out.
 	 *
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
 	 */
@@ -26,10 +25,10 @@
 		/** The auth client from `createOAuthAppAuth()`. */
 		auth: AuthClient;
 		/**
-		 * The workspace's `attachSync` result, typically `workspace.sync`.
-		 * Stable for this component's lifetime. Remount when switching workspaces.
+		 * The hosted workspace, typically `bundle.workspace`. Stable for this
+		 * component's lifetime. Remount when switching workspaces.
 		 */
-		sync: SyncAttachment;
+		workspace: Workspace;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
 		/** Optional destructive cleanup for this account's local device cache. */
@@ -38,7 +37,7 @@
 
 	let {
 		auth,
-		sync,
+		workspace,
 		syncNoun,
 		onForgetDevice,
 	}: AccountPopoverProps = $props();
@@ -52,8 +51,8 @@
 	const isSignedIn = $derived(auth.state.status === 'signed-in');
 
 	$effect(() => {
-		syncStatus = sync.status;
-		const unsubscribe = sync.onStatusChange((status) => {
+		syncStatus = workspace.status;
+		const unsubscribe = workspace.onStatusChange((status) => {
 			syncStatus = status;
 		});
 		return unsubscribe;
@@ -173,7 +172,7 @@
 							variant="outline"
 							size="sm"
 							class="flex-1"
-							onclick={() => sync.reconnect()}
+							onclick={() => workspace.reconnect()}
 						>
 							<RefreshCw class="size-3.5" />
 							Reconnect

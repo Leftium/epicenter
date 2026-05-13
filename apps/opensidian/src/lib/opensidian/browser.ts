@@ -6,16 +6,15 @@ import {
 	fileContentDocGuid,
 } from '@epicenter/filesystem';
 import {
-	attachAwareness,
 	attachOwnedBroadcastChannel,
-	attachSync,
 	attachTimeline,
+	attachYjsSync,
 	createDisposableCache,
-	createRemoteClient,
 	type EncryptionKeys,
 	onLocalUpdate,
 	type OpenWebSocket,
-	PeerIdentity,
+	openWorkspace,
+	type PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -99,18 +98,13 @@ export function openOpensidian({
 		bash,
 	});
 
-	const awareness = attachAwareness(doc.ydoc, {
-		schema: { peer: PeerIdentity },
-		initial: { peer },
-	});
-	const sync = attachSync(doc.ydoc, {
+	const workspace = openWorkspace(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		awareness,
+		identity: peer,
+		actions,
 	});
-	const rpc = sync.attachRpc(actions);
-	const remote = createRemoteClient({ awareness, rpc });
 	let disposed = false;
 
 	function disposeWorkspaceResources() {
@@ -129,8 +123,7 @@ export function openOpensidian({
 		fs,
 		bash,
 		actions,
-		awareness,
-		sync,
+		workspace,
 		async wipe() {
 			const fallbackGuids = [
 				doc.ydoc.guid,
@@ -142,14 +135,12 @@ export function openOpensidian({
 				),
 			];
 			disposeWorkspaceResources();
-			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
+			await Promise.all([idb.whenDisposed, workspace.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: fallbackGuids,
 			});
 		},
-		remote,
-		rpc,
 		[Symbol.dispose]() {
 			disposeWorkspaceResources();
 		},

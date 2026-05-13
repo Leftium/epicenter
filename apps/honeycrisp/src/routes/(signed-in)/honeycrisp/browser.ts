@@ -1,17 +1,16 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
-	attachAwareness,
 	attachOwnedBroadcastChannel,
 	attachRichText,
-	attachSync,
+	attachYjsSync,
 	createDisposableCache,
-	createRemoteClient,
 	DateTimeString,
 	docGuid,
 	type EncryptionKeys,
 	onLocalUpdate,
 	type OpenWebSocket,
-	PeerIdentity,
+	openWorkspace,
+	type PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -61,7 +60,7 @@ export function openHoneycrisp({
 		const body = attachRichText(ydoc);
 		const childIdb = doc.encryption.attachIndexedDb(ydoc, { userId });
 		attachOwnedBroadcastChannel(ydoc, { userId });
-		const childSync = attachSync(ydoc, {
+		const childSync = attachYjsSync(ydoc, {
 			url: toWsUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
@@ -88,24 +87,20 @@ export function openHoneycrisp({
 			},
 		};
 	});
-	const awareness = attachAwareness(doc.ydoc, {
-		schema: { peer: PeerIdentity },
-		initial: { peer },
-	});
-	const sync = attachSync(doc.ydoc, {
+
+	const workspace = openWorkspace(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		awareness,
+		identity: peer,
+		actions: doc.actions,
 	});
-	const rpc = sync.attachRpc(doc.actions);
-	const remote = createRemoteClient({ awareness, rpc });
+
 	return {
 		...doc,
 		idb,
 		noteBodyDocs,
-		awareness,
-		sync,
+		workspace,
 		async wipe() {
 			const fallbackGuids = [
 				doc.ydoc.guid,
@@ -118,14 +113,12 @@ export function openHoneycrisp({
 			];
 			noteBodyDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
-			await Promise.all([idb.whenDisposed, sync.whenDisposed]);
+			await Promise.all([idb.whenDisposed, workspace.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: fallbackGuids,
 			});
 		},
-		remote,
-		rpc,
 		[Symbol.dispose]() {
 			noteBodyDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();

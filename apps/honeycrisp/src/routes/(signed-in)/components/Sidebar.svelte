@@ -24,7 +24,7 @@
 			<div class="flex items-center gap-1">
 				<AccountPopover
 					{auth}
-					sync={workspace.honeycrisp.sync}
+					workspace={workspace.honeycrisp.workspace}
 					syncNoun="notes"
 					onForgetDevice={forgetHoneycrispDevice}
 				/>

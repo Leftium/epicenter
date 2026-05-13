@@ -60,7 +60,7 @@
 		</a>
 		<AccountPopover
 			{auth}
-			sync={workspace.opensidian.sync}
+			workspace={workspace.opensidian.workspace}
 			syncNoun="notes"
 			onForgetDevice={forgetOpensidianDevice}
 		/>

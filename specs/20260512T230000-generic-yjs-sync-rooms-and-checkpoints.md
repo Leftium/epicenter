@@ -312,33 +312,34 @@ This keeps isolation unchanged while removing the workspace/document branch.
 
 ## Implementation Plan
 
-The first PR is Phases 1 through 3. Phase 4 (checkpoints) and Phase 5 (snapshot history) are explicitly out of scope for the first PR and only land when a real product surface needs them. Treat them as future specs, not deferred sub-tasks of this one.
+This is a clean break. Server-side data on the old `WorkspaceRoom` and `DocumentRoom` Durable Objects is intentionally destroyed. Local-first clients repush from IndexedDB on first reconnect; cold devices wait for any peer to come online. There is no compat window, no traffic-verification gate, and no parallel-routing period.
+
+The first PR is Phases 1 through 3, all in one PR, deployed atomically. Phase 4 (checkpoints) and Phase 5 (snapshot history) are out of scope and become their own specs when a real consumer exists.
 
 ```txt
-First PR commit graph (one logical change per commit):
+First PR commit graph:
 
-  1. server: add SyncRoom DO + /sync/:room routes (no client changes)
-  2. clients: switch attachSync URLs to /sync/:room (one commit per app, or one batched commit)
-  3. server: remove /workspaces and /documents routes + DocumentRoom snapshot RPCs
+  1. server: add SyncRoom DO + /sync/:room routes (additive, old routes still answer)
+  2. clients: switch every attachSync URL to /sync/:room
+  3. server: delete /workspaces, /documents, snapshot routes; delete WorkspaceRoom + DocumentRoom classes; v2 migration with deleted_classes; collapse DoType to 'sync'
 
-Each commit must be independently shippable:
-  - After commit 1, no behavior changes for clients.
-  - After commit 2, all clients use /sync/:room; old routes still answer for safety.
-  - Commit 3 lands only after metrics show zero traffic on /workspaces/* and /documents/*.
+Commit 3 is the destructive one. After it deploys, all WorkspaceRoom and
+DocumentRoom storage is gone forever. Three commits keep the diff reviewable;
+the deploy is one atomic event.
 ```
 
-### Phase 1: Build Generic Sync Room
+### Phase 1: Build Generic Sync Room (commit 1, additive)
 
 - [ ] **1.1** Add `apps/api/src/sync-room.ts` that extends `BaseSyncRoom` with `{ gc: true }`.
 - [ ] **1.2** Export `SyncRoom` from `apps/api/src/app.ts` alongside the existing `WorkspaceRoom`/`DocumentRoom` re-exports for Wrangler type generation.
-- [ ] **1.3** Add `SYNC_ROOM` Durable Object binding in `apps/api/wrangler.jsonc`. Add a new migration tag (for example `v2`) with `new_sqlite_classes: ["SyncRoom"]`. Do not touch the existing `v1` migration. Do not list `WorkspaceRoom` or `DocumentRoom` under `deleted_classes` or `renamed_classes`; that path destroys all existing user instance data.
+- [ ] **1.3** Add `SYNC_ROOM` Durable Object binding in `apps/api/wrangler.jsonc`. Add a `v2` migration tag with `new_sqlite_classes: ["SyncRoom"]`. Do not touch `v1` yet; the old classes still need to answer until commit 3 lands.
 - [ ] **1.4** Regenerate Cloudflare binding types so `c.env.SYNC_ROOM` is typed.
 - [ ] **1.5** Add `getSyncStub(c)` in `apps/api/src/app.ts` using DO names shaped as `user:{userId}:sync:{room}`.
 - [ ] **1.6** Add `GET /sync/:room` and `POST /sync/:room` routes with the same auth, payload limit, storage tracking, and response behavior as the current workspace/document routes.
-- [ ] **1.7** Add `'sync'` to the `DoType` union in `apps/api/src/db/schema.ts` and use it for `upsertDoInstance` calls on the new routes. Old rows with `doType: 'workspace' | 'document'` stay valid; no Postgres data migration is required.
-- [ ] **1.8** Add tests that prove WebSocket and HTTP sync still work through `/sync/:room`.
+- [ ] **1.7** Temporarily widen `DoType` to `'workspace' | 'document' | 'sync'` so the new route's `upsertDoInstance` calls type-check. Commit 3 collapses it.
+- [ ] **1.8** Add tests that prove WebSocket and HTTP sync work through `/sync/:room`.
 
-### Phase 2: Prove Generic Callers
+### Phase 2: Switch Every Client to `/sync` (commit 2)
 
 Concrete call sites (verified in `apps/`, `packages/`, `examples/`, and `playground/`):
 
@@ -360,27 +361,33 @@ workspace doc URL:
   playground/opensidian-e2e/epicenter.config.ts
 
 child content doc URL (currently /documents/*):
-  apps/fuji/src/routes/(signed-in)/fuji/browser.ts (entry body, gc: false)
-  apps/honeycrisp/src/routes/(signed-in)/honeycrisp/browser.ts (note body, gc: false)
+  apps/fuji/src/routes/(signed-in)/fuji/browser.ts (entry body, gc: false locally)
+  apps/honeycrisp/src/routes/(signed-in)/honeycrisp/browser.ts (note body, gc: false locally)
 ```
 
-- [ ] **2.1** Update app sync URLs from `/workspaces/${doc.ydoc.guid}` to `/sync/${encodeURIComponent(doc.ydoc.guid)}` via a shared `syncRoomUrl()` helper exported from `@epicenter/workspace` next to `toWsUrl`. A single helper keeps the encoding rule in one place.
-- [ ] **2.2** Update child content doc URLs from `/documents/${ydoc.guid}` to the same helper. The local docs stay `gc: false` (clients still want history-capable RAM model); the server side becomes `gc: true`. This is the documented "client `gc: false`, server `gc: true`" edge case and is acceptable.
-- [ ] **2.3** Update the example URL in `packages/workspace/src/index.ts` JSDoc and any other references to `/workspaces/*` or `/documents/*` as sync endpoints in docs and guides.
-- [ ] **2.4** Run targeted typecheck and tests for `apps/api`, `packages/workspace`, and every app whose URL changed.
-- [ ] **2.5** Keep old `/workspaces/*` and `/documents/*` routes alive through this phase. Deletion is a separate commit gated on traffic verification.
+- [ ] **2.1** Add a `syncRoomUrl(apiUrl, roomId)` helper to `@epicenter/workspace` next to `toWsUrl`. It returns `toWsUrl(\`${apiUrl}/sync/${encodeURIComponent(roomId)}\`)`.
+- [ ] **2.2** Replace every workspace URL above with `syncRoomUrl(APP_URLS.API, doc.ydoc.guid)`.
+- [ ] **2.3** Replace every child content doc URL with the same helper. Local docs stay `gc: false` (clients still want history-capable RAM model); server is `gc: true`. Documented and acceptable.
+- [ ] **2.4** Update the example URL in `packages/workspace/src/index.ts` JSDoc and any other references to `/workspaces/*` or `/documents/*` as sync endpoints in docs and guides.
+- [ ] **2.5** Run targeted typecheck and tests for `apps/api`, `packages/workspace`, and every app whose URL changed.
 
-### Phase 3: Remove Product-Named Room Types
+### Phase 3: Delete Everything Old (commit 3, destructive)
 
-Critical constraint: do not let Wrangler delete the `WorkspaceRoom` or `DocumentRoom` SQLite classes. Marking them under `deleted_classes` (or removing them from `new_sqlite_classes` without a replacement migration) is a permanent, irreversible destruction of every existing user instance's data. The first PR removes only the routes and the route-bound code paths. The DO classes themselves stay registered until a follow-up confirms zero remaining instances.
+This is the clean break. After this commit deploys, all server-side state in `WorkspaceRoom` and `DocumentRoom` is permanently destroyed.
 
-- [ ] **3.1** Confirm before deletion that no shipped UI calls the `/documents/:document/snapshots*` endpoints. Verified during spec review: only `apps/api/src/app.ts` references them; no client app, package, or example does. The auto-save in `DocumentRoom.onAllDisconnected` writes snapshots that nothing reads.
-- [ ] **3.2** Delete the four `/documents/:document/snapshots*` routes from `apps/api/src/app.ts`.
-- [ ] **3.3** Delete the `/workspaces/:workspace` and `/documents/:document` routes (GET and POST) from `apps/api/src/app.ts`.
-- [ ] **3.4** Remove the `app.use('/workspaces/*', requireOAuthUser)` and `app.use('/documents/*', requireOAuthUser)` middlewares.
-- [ ] **3.5** Delete `getWorkspaceStub` and `getDocumentStub` helpers in `apps/api/src/app.ts`.
-- [ ] **3.6** Leave `WorkspaceRoom` and `DocumentRoom` exports, the `WORKSPACE_ROOM`/`DOCUMENT_ROOM` Wrangler bindings, and the `v1` migration entry in place. The classes still hold user data; deleting them is a separate retirement decision with its own data plan, not part of the route migration.
-- [ ] **3.7** Decide before merging whether to drop the `'workspace'` and `'document'` values from `DoType`. Recommendation: leave them in the union so historical `durable_object_instance` rows continue to type-check. Stop writing them in new code.
+- [ ] **3.1** Delete `apps/api/src/workspace-room.ts` and `apps/api/src/document-room.ts`.
+- [ ] **3.2** From `apps/api/src/app.ts`, remove:
+  - the `export { DocumentRoom }` and `export { WorkspaceRoom }` re-exports
+  - `app.use('/workspaces/*', requireOAuthUser)` and `app.use('/documents/*', requireOAuthUser)`
+  - `getWorkspaceStub` and `getDocumentStub` helpers
+  - the `GET`/`POST /workspaces/:workspace` routes
+  - the `GET`/`POST /documents/:document` routes
+  - the four `/documents/:document/snapshots*` routes
+- [ ] **3.3** From `apps/api/wrangler.jsonc`, remove the `WORKSPACE_ROOM` and `DOCUMENT_ROOM` durable object bindings. Extend the `v2` migration to also list `deleted_classes: ["WorkspaceRoom", "DocumentRoom"]`. This is the line that destroys the old storage.
+- [ ] **3.4** Collapse `DoType` in `apps/api/src/db/schema.ts` to a single literal: `export type DoType = 'sync';`.
+- [ ] **3.5** Add a one-shot SQL migration that deletes orphan rows: `DELETE FROM durable_object_instance WHERE do_type IN ('workspace', 'document');`. The instances those rows reference no longer exist.
+- [ ] **3.6** Remove the snapshot RPC tests for `DocumentRoom` and any workspace/document route tests not already replaced by the `/sync/:room` tests from Phase 1.
+- [ ] **3.7** Confirm no remaining references to `WorkspaceRoom`, `DocumentRoom`, `WORKSPACE_ROOM`, `DOCUMENT_ROOM`, `/workspaces/`, or `/documents/` anywhere in `apps/`, `packages/`, `examples/`, or `playground/`.
 
 ### Phase 4: Add Checkpoints Later (separate spec, separate PR)
 
@@ -442,71 +449,71 @@ room_policy:
 - [ ] **5.4** Add snapshot marker endpoints under a history namespace, not the default sync path.
 - [ ] **5.5** Add quota and retention UI before allowing snapshot-history rooms in production.
 
-## Backwards Compatibility Hazards
+## Clean Break Consequences
 
-### DO data lives under the old class name
+This is the one-time price of cutting the old surface. Listed so the team merges with eyes open, not to argue for keeping it around.
 
-`/workspaces/${guid}` resolves to a Durable Object named `user:{userId}:workspace:{guid}` of class `WorkspaceRoom`. `/sync/${guid}` resolves to a different Durable Object named `user:{userId}:sync:{guid}` of class `SyncRoom`. The two share no storage. Switching a client to the new URL means the server starts that room from empty state.
+### Server-side state is destroyed on deploy
 
-In practice this is recoverable but visible:
+`/workspaces/${guid}` and `/documents/${guid}` resolve to Durable Objects named `user:{userId}:workspace:{guid}` and `user:{userId}:document:{guid}`. The new `/sync/${guid}` resolves to `user:{userId}:sync:{guid}`. Different name, different DO instance, different storage. The `v2` Wrangler migration's `deleted_classes` entry then drops the old class storage entirely.
 
-```txt
-warm device (has IndexedDB):
-  client opens /sync/${guid}, server returns empty doc
-  client pushes its full state on first STEP2/UPDATE
-  server is hydrated; all peers converge
-
-cold device (no IndexedDB, e.g. fresh sign-in on a new machine):
-  client opens /sync/${guid}, server returns empty doc
-  client has nothing to push; user sees a blank workspace
-  recovery requires another peer (warm device) to come online first
-```
-
-For the affected products (Fuji, Honeycrisp, Opensidian, Zhongwen, Tab Manager) almost every device today is warm. Still, the spec must be honest about the cold-device case. If we want to avoid even that, a one-shot data copy from the WorkspaceRoom DO into a same-named SyncRoom DO is required, and that is a separate engineering effort. Recommendation: ship the cutover, accept the cold-device gap for the small population it affects, and document the recovery procedure ("sign in on a device that already has the workspace").
-
-### Wrangler migrations are one-way
+Result by device class:
 
 ```txt
-SAFE in this PR:
-  add a v2 migration with new_sqlite_classes: ["SyncRoom"]
+warm device (any client that still has IndexedDB):
+  reconnects to empty /sync room
+  pushes full state on first STEP2/UPDATE
+  server hydrated within seconds; all peers converge
 
-NEVER in this PR (or ever, lightly):
-  add WorkspaceRoom or DocumentRoom to deleted_classes
-  remove WorkspaceRoom or DocumentRoom from any prior migration
+cold device (fresh sign-in, no IndexedDB):
+  sees an empty workspace
+  recovers only when another warm device comes online and rehydrates the room
+
+no warm device exists:
+  the workspace is effectively gone
+  this is the same failure mode as losing the local IndexedDB on the only device,
+  and the product already accepts that risk as part of being local-first
 ```
 
-A `deleted_classes` entry destroys every existing instance's storage permanently. That is the user's data. The first PR keeps both classes registered.
+For the affected products (Fuji, Honeycrisp, Opensidian, Zhongwen, Tab Manager) the active device population is overwhelmingly warm. The cold-device case is a one-time, one-line "open the workspace on your other device first" recovery.
 
-### In-flight clients during the route swap
+### Stale clients break, do not self-heal
+
+The moment commit 3 deploys:
 
 ```txt
-commit 1 lands  : both /workspaces and /sync answer
-commit 2 lands  : new client builds talk to /sync; old tabs still open keep talking to /workspaces
-commit 3 lands  : /workspaces and /documents return 404
+old client build talking to /workspaces/* or /documents/*  : 404
+in-flight WebSocket on /workspaces or /documents           : closed
+published Tab Manager extension that has not auto-updated  : broken
+Whispering or other desktop build shipping old URLs        : broken
+open browser tab loaded against old code                   : broken on next reconnect
 ```
 
-Old open tabs and unupdated installs (the published Tab Manager extension, Whispering desktop builds, anyone with a stale browser tab) keep talking to the old routes. Commit 3 is a hard break. Before merging it, verify:
+Self-healing only happens once the user updates the binary or reloads the page against the new client build. There is no compat shim.
+
+### Wrangler migration is irreversible
 
 ```txt
-- production access logs show zero successful traffic on /workspaces/* and /documents/*
-  for at least one full release cycle
-- the Tab Manager extension auto-update has reached >X% of installs (pick a number)
-- no Whispering or other desktop build in active distribution still ships old URLs
+{
+  "tag": "v2",
+  "new_sqlite_classes": ["SyncRoom"],
+  "deleted_classes":   ["WorkspaceRoom", "DocumentRoom"]
+}
 ```
 
-If any of those fail, hold commit 3 and ship a deprecation period instead.
+Once Cloudflare runs this migration in production, the `WorkspaceRoom` and `DocumentRoom` SQLite storage is gone. Reverting the deploy gets you back the old code but not the old data. There is no rollback; that is the trade we are explicitly making.
 
 ### Snapshot RPCs have no consumers
 
-Confirmed by grep: nothing outside `apps/api/` calls `saveSnapshot`, `listSnapshots`, `getSnapshot`, or `deleteSnapshot`. The auto-save in `DocumentRoom.onAllDisconnected` writes data nothing reads. Deleting the snapshot routes (Phase 3.2) is safe today. The DocumentRoom class still exists per Phase 3.6, so the snapshot table on disk is preserved for any future migration.
+Confirmed by grep: nothing outside `apps/api/` calls `saveSnapshot`, `listSnapshots`, `getSnapshot`, or `deleteSnapshot`. The auto-save in `DocumentRoom.onAllDisconnected` writes data nothing reads. Deletion is a pure subtraction with zero functional impact on any shipped UI.
 
-### `DoType` enum
+### `DoType` collapse
 
-`durable_object_instance.do_type` is a Postgres `text` column constrained at the type level by `DoType = 'workspace' | 'document'`. Adding `'sync'` is a TypeScript-only change; no SQL migration is needed. Old rows keep their existing values; new rows on the new routes write `'sync'`.
+`DoType` becomes `'sync'`. The `DELETE FROM durable_object_instance WHERE do_type IN ('workspace', 'document')` migration in Phase 3 drops the orphan rows so the type narrows cleanly.
 
 ### URL encoding
 
-Existing call sites pass `${doc.ydoc.guid}` raw. Guids generated by `docGuid()` look like `epicenter.fuji.entries.entry_123.body`, all dot-separated and ASCII-safe. Switching to `encodeURIComponent` is a behavioral no-op for current guid shapes, and a defensive correctness win for any future guid that contains `?`, `#`, or `/`. Use the helper from day one so individual call sites cannot drift.
+Existing call sites pass `${doc.ydoc.guid}` raw. Guids generated by `docGuid()` look like `epicenter.fuji.entries.entry_123.body`: dot-separated, ASCII-safe. Switching to `encodeURIComponent` via the new `syncRoomUrl()` helper is a behavioral no-op today and a defensive correctness win for any future guid containing `?`, `#`, or `/`.
 
 ## Edge Cases
 

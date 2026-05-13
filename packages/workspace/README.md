@@ -22,8 +22,8 @@ import * as Y from 'yjs';
 import {
 	attachIndexedDb,
 	attachKv,
-	attachSync,
 	attachTables,
+	attachYjsSync,
 	defineTable,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -43,12 +43,9 @@ export function openBlog() {
 	const tables = attachTables(ydoc, { posts });
 	const kv = attachKv(ydoc, {});
 	const idb = attachIndexedDb(ydoc);
-	const transport = (url: string, protocols?: string | string[]) =>
-		new WebSocket(url, protocols);
-	const sync = attachSync(ydoc, {
+	const sync = attachYjsSync(ydoc, {
 		url: toWsUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		transport,
 	});
 
 	return {
@@ -94,7 +91,7 @@ That example uses the current public API end to end:
 
 - `defineTable(...)` with a real schema
 - a direct `openBlog()` builder function that owns `new Y.Doc` and returns the bundle
-- `attachTables` / `attachKv` / `attachIndexedDb` / `attachSync` composed inline
+- `attachTables` / `attachKv` / `attachIndexedDb` / `attachYjsSync` composed inline
 - direct property access via `blog.tables.posts`
 - `set`, `get`, `update`, `delete`, `getAllValid`, and `observe`
 
@@ -112,9 +109,9 @@ Every exported function in this package falls into one of three verbs. The prefi
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
 | `define*` | **None**: pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
-| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachYjsLog`, `attachBroadcastChannel`, `attachOwnedBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods), `attachMarkdownMaterializer`, `attachSqliteMaterializer` |
+| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachYjsLog`, `attachBroadcastChannel`, `attachOwnedBroadcastChannel`, `attachYjsSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods), `attachMarkdownMaterializer`, `attachSqliteMaterializer` |
 | `create*` | **Pure construction**: no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition or cache | `createDisposableCache` |
-| `open*` | **Opens a local resource (no Y.Doc subject)**: returns a disposable handle owned by the caller. | Resource config | Handle with `[Symbol.dispose]()` | `openSqliteReader`, `openWriterSqlite` |
+| `open*` | **Opens a runtime over a Y.Doc or a local resource**: returns a typed handle with its own teardown. The Y.Doc-bound case (`openCollaboration`) registers `ydoc.on('destroy')` like `attach*` does; the resource case (`openSqliteReader`) takes no Y.Doc and returns a `[Symbol.dispose]()` handle. | Y.Doc + config, or resource config | Typed runtime handle | `openCollaboration`, `openSqliteReader`, `openWriterSqlite` |
 
 `createDisposableCache(build, opts?)` is the refcounted cache primitive. The
 user owns construction; the cache owns identity keyed by id,
@@ -127,18 +124,16 @@ Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, 
 
 Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 
-Minimal encrypted workspace: encryption + IndexedDB + cross-tab + sync wired end-to-end:
+Minimal encrypted workspace: encryption + IndexedDB + cross-tab + collaboration (sync + presence + RPC) wired end-to-end:
 
 ```typescript
 import { requireIdentity } from '@epicenter/auth';
 import {
-	attachAwareness,
 	attachEncryption,
 	attachOwnedBroadcastChannel,
-	attachSync,
-	createRemoteClient,
 	type EncryptionKeys,
-	PeerIdentity,
+	openCollaboration,
+	type PeerIdentity,
 	toWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -146,10 +141,12 @@ import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
 	userId,
+	identity,
 	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
+	identity: PeerIdentity;
 	openWebSocket?: (
 		url: string | URL,
 		protocols?: string[],
@@ -160,26 +157,17 @@ export function openApp({
 
 	const encryption = attachEncryption(ydoc, { encryptionKeys });
 	const tables = encryption.attachTables(appTables);
-	const awareness = attachAwareness(ydoc, {
-		schema: {
-			peer: PeerIdentity,
-		},
-		initial: {
-			peer: { id: 'macbook', name: 'MacBook', platform: 'node' },
-		},
-	});
 
 	const idb = encryption.attachIndexedDb(ydoc, { userId });
 	attachOwnedBroadcastChannel(ydoc, { userId });
-	const sync = attachSync(ydoc, {
+
+	const collaboration = openCollaboration(ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		awareness,
+		identity,
+		actions: {},
 	});
-	const actions = {};
-	const rpc = sync.attachRpc(actions);
-	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		get id() {
@@ -187,12 +175,9 @@ export function openApp({
 		},
 		ydoc,
 		tables,
-		awareness,
 		encryption,
 		idb,
-		sync,
-		rpc,
-		remote,
+		collaboration,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		[Symbol.dispose]() {
 			ydoc.destroy();
@@ -202,10 +187,13 @@ export function openApp({
 
 export const workspace = openApp({
 	userId,
+	identity: { id: 'macbook', name: 'MacBook', platform: 'tauri' },
 	openWebSocket: auth.openWebSocket,
 	encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 });
 ```
+
+`openCollaboration` is the workspace primitive: it wraps the sync supervisor, publishes peer identity in awareness, dispatches inbound action and runtime requests, and exposes a `peers` surface (`workspace.collaboration.peers.find(id)?.invoke('path', input)`). For content documents that need bytes-only sync (no presence, no RPC), use the sibling primitive `attachYjsSync(ydoc, { url, ... })`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
 The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.
 
@@ -237,7 +225,7 @@ function openBlog() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.blog' });
 	const tables = attachTables(ydoc, { posts });
 	const idb = attachIndexedDb(ydoc);
-	const sync = attachSync(ydoc, { url, waitFor: idb.whenLoaded });
+	const sync = attachYjsSync(ydoc, { url, waitFor: idb.whenLoaded });
 	return {
 		get id() { return ydoc.guid; },
 		ydoc, tables, idb, sync,
@@ -331,7 +319,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 ### How It All Fits Together
 
 1. Define tables and KV entries with `defineTable` and `defineKv`.
-2. Write a builder function that constructs `new Y.Doc({ guid })` and composes `attachTables` / `attachKv` / `attachIndexedDb` / `attachSync` / etc. inline, returning the bundle.
+2. Write a builder function that constructs `new Y.Doc({ guid })` and composes `attachTables` / `attachKv` / `attachIndexedDb` / `openCollaboration` (or `attachYjsSync` for content docs) inline, returning the bundle.
 3. For singleton apps: call the builder once at module scope. For browser
    child documents: use `createDisposableCache(...)` and call `.open(rowId)`
    per instance. For one-shot Node operations: call the child builder directly
@@ -341,7 +329,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
    - **Two or more subsystems to compose into one barrier.** Then `whenReady` earns its place: `whenReady: Promise.all([persistence.whenLoaded, unlock.whenChecked, sync.whenConnected])`. Because the field is typed `Promise<unknown>`, `Promise.all([...])` is assignable directly. Consumers `await bundle.whenReady`. The CLI's `run` command, migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and `{#await}` gates in editors all consume this aggregate.
 
    See `specs/20260506T020000-expose-attachments-not-aliases.md` for the rule and anti-patterns.
-5. Read and write through `bundle.tables`, `bundle.kv`, `bundle.awareness`, and (for per-row content docs) whatever you exposed in the returned bundle.
+5. Read and write through `bundle.tables`, `bundle.kv`, `bundle.collaboration.peers` (for cross-peer dispatch), and (for per-row content docs) whatever you exposed in the returned bundle.
 6. Use `walkActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
 7. Dispose with `bundle[Symbol.dispose]()` for singletons or `handle[Symbol.dispose]()` for cache handles when you're done. Use `cache[Symbol.dispose]()` to flush every live entry.
 
@@ -400,7 +388,7 @@ KV entries are for settings and scalar preferences. They are keyed by string and
 
 "Extensions" in Epicenter are just `attach*` calls inside your builder function. There is no `.withExtension` chain, no extension registry, no priority flag: just lexical scope.
 
-- Call the relevant `attach*` function (e.g. `attachIndexedDb`, `attachSync`, `attachYjsLog`, `attachEncryption`) inside the builder and include the handle in the returned bundle.
+- Call the relevant `attach*` or `open*` function (e.g. `attachIndexedDb`, `attachYjsSync`, `attachYjsLog`, `attachEncryption`, `openCollaboration`) inside the builder and include the handle in the returned bundle.
 - Order matters only through lexical scope: later `attach*` calls see earlier handles directly.
 - For browser per-row content docs, write a separate `createDisposableCache(...)` and `.open(rowId)` it from the main workspace's actions or components.
 
@@ -531,8 +519,11 @@ KV is validate-or-default. There is no migration function.
 
 ### Awareness schema
 
+For the workspace's own peer identity + action paths, prefer `openCollaboration` (above): it owns an `Awareness` and publishes the standard fields. The `attachAwareness` primitive is the lower-level building block; reach for it when you need a separately-typed presence channel (for example, cursors on a content doc that doesn't participate in the collaboration RPC plane).
+
 ```typescript
 import { type } from 'arktype';
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import {
 	attachAwareness,
@@ -551,7 +542,7 @@ const notes = defineTable(
 function openNotes() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.notes' });
 	const tables = attachTables(ydoc, { notes });
-	const awareness = attachAwareness(ydoc, {
+	const presence = attachAwareness(new Awareness(ydoc), {
 		schema: {
 			name: type('string'),
 			color: type('string'),
@@ -568,14 +559,14 @@ function openNotes() {
 		get id() { return ydoc.guid; },
 		ydoc,
 		tables,
-		awareness,
+		presence,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 }
 
 const workspace = openNotes();
 
-workspace.awareness.setLocal({
+workspace.presence.setLocal({
 	name: 'Braden',
 	color: '#ff4d4f',
 	cursor: { line: 12, column: 3 },
@@ -821,8 +812,9 @@ import {
 	attachBroadcastChannel,
 	attachOwnedBroadcastChannel,
 	attachIndexedDb,
-	attachSync,
 	attachTables,
+	attachYjsSync,
+	openCollaboration,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { attachYjsLog } from '@epicenter/workspace/node';
@@ -871,15 +863,15 @@ void openNotes;
 
 ### Sync
 
-`attachSync(ydoc, config)` is the websocket transport. Compose it with `attachBroadcastChannel(ydoc)` for local-only documents, or `attachOwnedBroadcastChannel(ydoc, { userId })` for authenticated browser workspaces.
+Two primitives wrap the WebSocket transport: `openCollaboration` for the workspace document (sync + presence + RPC + peers), and `attachYjsSync` for content documents that only need bytes-on-the-wire. Compose either with `attachBroadcastChannel(ydoc)` for local-only documents, or `attachOwnedBroadcastChannel(ydoc, { userId })` for authenticated browser workspaces.
 
 ```typescript
 import * as Y from 'yjs';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	attachSync,
 	attachTables,
+	attachYjsSync,
 	defineTable,
 	toWsUrl,
 } from '@epicenter/workspace';
@@ -892,12 +884,9 @@ function openTabs() {
 	const tables = attachTables(ydoc, { tabs });
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
-	const transport = (url: string, protocols?: string | string[]) =>
-		new WebSocket(url, protocols);
-	const sync = attachSync(ydoc, {
+	const sync = attachYjsSync(ydoc, {
 		url: toWsUrl(`https://sync.epicenter.so/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		transport,
 	});
 
 	return {
@@ -1312,10 +1301,12 @@ Two composition shapes, one builder contract.
 ┌──────────────────────────────────────────────────────────┐
 │ function openApp() {                                      │
 │   const ydoc = new Y.Doc({ guid: 'epicenter.my-app' });  │
-│   const tables = attachTables(ydoc, { ... });            │
-│   const idb    = attachIndexedDb(ydoc);                   │
-│   const sync   = attachSync(ydoc, { waitFor: ... });     │
-│   return { ydoc, tables, idb, sync,                       │
+│   const tables        = attachTables(ydoc, { ... });     │
+│   const idb           = attachIndexedDb(ydoc);            │
+│   const collaboration = openCollaboration(ydoc, {         │
+│     waitFor: idb.whenLoaded, identity, actions: { ... },  │
+│   });                                                     │
+│   return { ydoc, tables, idb, collaboration,              │
 │            [Symbol.dispose]() { ydoc.destroy(); } };     │
 │ }                                                         │
 │ export const workspace = openApp();                       │
@@ -1420,10 +1411,10 @@ await handle.idb.whenDisposed;
 
 What the package does give you is the raw material a server adapter needs:
 
-- `bundle.actions` (if your builder groups actions there)
+- `bundle.collaboration.actions` (the typed action registry from `openCollaboration`)
 - `walkActions(...)`
 - action metadata (`type`, `title`, `input`, `description`)
-- direct access to `bundle.tables`, `bundle.kv`, `bundle.awareness`, and per-row content factories
+- direct access to `bundle.tables`, `bundle.kv`, `bundle.collaboration.peers`, and per-row content factories
 
 If you want HTTP, CLI, or MCP on top, build or import an adapter around those primitives.
 

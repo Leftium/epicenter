@@ -5,21 +5,21 @@
 Each verb is a one-line shell shortcut for one workspace primitive:
 
 ```
-                 +--------+--------------------------------------+
-                 | Verb   | Workspace primitive                  |
-                 +--------+--------------------------------------+
-   Enumerate     | list   | describeActions(workspace.actions)   |
-   Invoke        | run    | invokeAction(...) / rpc.rpc(...)     |
-   Presence      | peers  | presence.peers()                     |
-                 +--------+--------------------------------------+
+                 +--------+--------------------------------------------------+
+                 | Verb   | Workspace primitive                              |
+                 +--------+--------------------------------------------------+
+   Enumerate     | list   | describeActions(collaboration.actions)           |
+   Invoke        | run    | invokeAction(...) | peer.invoke(path, input)     |
+   Presence      | peers  | collaboration.peers.list()                       |
+                 +--------+--------------------------------------------------+
 
  Cross-cutting: auth (machine session, pre-workspace)
 ```
 
 `list` is the local view of what *this* device exposes across all hosted
 routes. `peers` shows who is online across those routes. `run --peer
-<deviceId>` invokes a remote action through the selected route's RPC
-attachment.
+<peerId>` invokes a remote action through the selected route's
+`collaboration.peers.find(peerId)?.invoke(path, input)` dispatch.
 
 Anything that would need a flag to fan out across peers, loop, or
 compose is a user-authored `.ts` script that imports app packages or
@@ -85,10 +85,9 @@ prefixed by route. `run` is local by default and remote when `--peer
 target moves.
 
 Fan-out across peers (e.g. "who exposes action X?") is a five-line
-script that walks `workspace.awareness.peers()` and calls
-`workspace.remote.describe(peerId)` or
-`createRemoteClient({ awareness, rpc }).describe(peerId)` on each. The CLI
-deliberately does not grow a flag for it.
+script that walks `collaboration.peers.list()` and calls `peer.describe()`
+(or filters `peer.actionPaths` directly when full schemas aren't needed).
+The CLI deliberately does not grow a flag for it.
 
 Peer awareness has a ~30s liveness window: a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--wait <ms>` expires (default 5000). `peers` reads the current awareness snapshot one-shot.
 
@@ -125,14 +124,11 @@ injects the project context when it starts them, so configs do not need to call
 // epicenter.config.ts
 import * as Y from 'yjs';
 import {
-	attachAwareness,
-	createRemoteClient,
-	defineTable,
 	attachTables,
-	attachSync,
-	defineQuery,
 	defineMutation,
-	PeerIdentity,
+	defineQuery,
+	defineTable,
+	openCollaboration,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
@@ -142,7 +138,7 @@ import { type } from 'arktype';
 
 const SavedTab = defineTable(type({ id: 'string', title: 'string', url: 'string', _v: '1' }));
 
-function openTabManager() {
+async function openTabManager() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager' });
 	const tables = attachTables(ydoc, { savedTabs: SavedTab });
 	const actions = {
@@ -158,40 +154,26 @@ function openTabManager() {
 			}),
 		},
 	};
-	const peer = {
-		id: 'tab-manager-daemon',
-		name: 'Tab Manager Daemon',
-		platform: 'node',
-	};
-	const awareness = attachAwareness(ydoc, {
-		schema: { peer: PeerIdentity },
-		initial: { peer },
-	});
-	const auth = createMachineAuthClient();
-	const sync = attachSync(ydoc, {
+	const auth = await createMachineAuthClient();
+	const collaboration = openCollaboration(ydoc, {
 		url: toWsUrl('https://api.epicenter.so/workspaces/epicenter.tab-manager'),
-		auth,
-		awareness,
+		openWebSocket: auth.openWebSocket,
+		identity: {
+			id: 'tab-manager-daemon',
+			name: 'Tab Manager Daemon',
+			platform: 'node',
+		},
+		actions,
 	});
-	const rpc = sync.attachRpc(actions);
-	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		ydoc,
 		tables,
-		awareness,
-		sync,
-		rpc,
-		remote,
-
-		// Actions are grouped away from infrastructure.
-		// Only the operations you wrap with defineQuery/defineMutation
-		// show up in `epicenter list`.
-		actions,
+		collaboration,
 
 		async [Symbol.asyncDispose]() {
 			ydoc.destroy();
-			await sync.whenDisposed;
+			await collaboration.whenDisposed;
 		},
 	};
 }
@@ -229,37 +211,38 @@ This is deliberate. Auto-exposing CRUD would put methods nobody asked for in you
 The common convention is to group actions under `actions:` first, then nest by the domain they operate on:
 
 ```ts
+const actions = {
+    tabs: {                                        // domain
+        list: defineQuery({ ... }),                // action
+        open: defineMutation({ ... }),
+    },
+    bookmarks: {
+        list: defineQuery({ ... }),
+    },
+
+    // Cross-cutting actions can sit beside domain groups
+    importBackup: defineMutation({ ... }),
+};
+
+const collaboration = openCollaboration(ydoc, {
+    url, identity, openWebSocket: auth.openWebSocket, actions,
+});
+
 return {
     ydoc,
     tables,
-    awareness,
-    sync,
-    presence,
-    rpc,
-
-    actions: {
-        tabs: {                                        // domain
-            list: defineQuery({ ... }),                // action
-            open: defineMutation({ ... }),
-        },
-        bookmarks: {
-            list: defineQuery({ ... }),
-        },
-
-        // Cross-cutting actions can sit beside domain groups
-        importBackup: defineMutation({ ... }),
-    },
+    collaboration,
 
     async [Symbol.asyncDispose]() {
         ydoc.destroy();
-        await sync.whenDisposed;
+        await collaboration.whenDisposed;
     },
 };
 ```
 
 CLI paths: `tabManager.tabs.list`, `tabManager.bookmarks.list`, `tabManager.importBackup`.
 
-The CLI walks `workspace.actions`. Infrastructure such as `ydoc`, tables, persistence, sync, and materializers is not public unless you deliberately mount action leaves under `actions`.
+The CLI walks `runtime.collaboration.actions`. Infrastructure such as `ydoc`, tables, persistence, and materializers is not public unless you deliberately mount action leaves under the `actions` registry passed to `openCollaboration`.
 
 ## Naming Routes
 

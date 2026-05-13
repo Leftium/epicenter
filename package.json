@@ -118,7 +118,8 @@
 		"bump-version": "bun run scripts/bump-version.ts",
 		"clean": "bun run scripts/clean.ts",
 		"nuke": "bun run scripts/clean.ts --nuke",
-		"epicenter": "EPICENTER_SERVER=http://localhost:8787 bun run --bun epicenter"
+		"epicenter": "EPICENTER_SERVER=http://localhost:8787 bun run --bun epicenter",
+		"jsrepo:build": "bunx jsrepo build"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",

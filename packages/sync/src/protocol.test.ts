@@ -25,7 +25,7 @@ import {
 	encodeAwareness,
 	encodeAwarenessStates,
 	encodeQueryAwareness,
-	encodeRpcRequest,
+	encodeRpcActionRequest,
 	encodeRpcResponse,
 	encodeRpcRuntimeRequest,
 	encodeSyncStep1,
@@ -68,7 +68,7 @@ describe('RPC protocol', () => {
 	});
 
 	test('round-trip: encode/decode RPC ACTION_REQUEST', () => {
-		const encoded = encodeRpcRequest({
+		const encoded = encodeRpcActionRequest({
 			requestId: 42,
 			targetClientId: 100,
 			requesterClientId: 200,
@@ -108,7 +108,7 @@ describe('RPC protocol', () => {
 	});
 
 	test('ACTION_REQUEST with null input', () => {
-		const encoded = encodeRpcRequest({
+		const encoded = encodeRpcActionRequest({
 			requestId: 0,
 			targetClientId: 50,
 			requesterClientId: 60,
@@ -141,7 +141,7 @@ describe('RPC protocol', () => {
 	});
 
 	test('decodeRpcMessage discriminates ACTION_REQUEST vs RESPONSE vs RUNTIME_REQUEST', () => {
-		const actionRequest = encodeRpcRequest({
+		const actionRequest = encodeRpcActionRequest({
 			requestId: 1,
 			targetClientId: 10,
 			requesterClientId: 20,

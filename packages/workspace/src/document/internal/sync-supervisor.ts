@@ -3,14 +3,15 @@
 /**
  * Internal sync supervisor: connects a Y.Doc to a WebSocket sync server,
  * runs the Yjs sync protocol (STEP1/STEP2/UPDATE), relays awareness frames
- * if an `Awareness` is supplied, and dispatches RPC frames if `onRpcRequest`
- * is supplied.
+ * if an `Awareness` is supplied, and dispatches RPC frames if
+ * `onActionRequest` and/or `onRuntimeRequest` is supplied.
  *
  * Two higher-level primitives wrap this module:
  *
- *   - `openCollaboration` supplies both `awareness` and `onRpcRequest`, and
- *     uses `sendRpcRequest` to drive its peers surface.
- *   - `attachYjsSync` supplies neither; it is a pure byte transport for
+ *   - `openCollaboration` supplies `awareness`, `onActionRequest`,
+ *     `onRuntimeRequest`, and uses `sendActionRequest`/`sendRuntimeRequest`
+ *     to drive its peers surface.
+ *   - `attachYjsSync` supplies none of these; it is a pure byte transport for
  *     content docs.
  *
  * Lifecycle is supervisor-driven: connect, exponential backoff with jitter,
@@ -22,7 +23,7 @@ import {
 	decodeRpcPayload,
 	encodeAwareness,
 	encodeAwarenessStates,
-	encodeRpcRequest,
+	encodeRpcActionRequest,
 	encodeRpcResponse,
 	encodeRpcRuntimeRequest,
 	encodeSyncStep1,
@@ -119,7 +120,7 @@ export type OpenWebSocket = (
 ) => Promise<WebSocket> | WebSocket;
 
 /** Incoming app-action RPC request, dispatched by the supervisor when configured. */
-export type IncomingRpcRequest = {
+export type IncomingActionRequest = {
 	requestId: number;
 	requesterClientId: number;
 	action: string;
@@ -153,11 +154,11 @@ export type SyncSupervisorConfig = {
 	 * calls this for every inbound ACTION_REQUEST and sends the resolved
 	 * Result back over the wire.
 	 */
-	onRpcRequest?: (rpc: IncomingRpcRequest) => Promise<Result<unknown, unknown>>;
+	onActionRequest?: (rpc: IncomingActionRequest) => Promise<Result<unknown, unknown>>;
 	/**
 	 * Optional incoming runtime-verb dispatcher. When omitted, inbound runtime
 	 * requests receive `RpcError.ActionNotFound`. When provided, the supervisor
-	 * routes every RUNTIME_REQUEST to this handler — never to `onRpcRequest` —
+	 * routes every RUNTIME_REQUEST to this handler — never to `onActionRequest` —
 	 * so app code and collaboration runtime code stay on separate planes.
 	 */
 	onRuntimeRequest?: (
@@ -171,7 +172,7 @@ export type SyncSupervisor = {
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
 	reconnect(): void;
 	whenDisposed: Promise<void>;
-	sendRpcRequest(
+	sendActionRequest(
 		target: number,
 		action: string,
 		input: unknown,
@@ -242,7 +243,7 @@ export function createSyncSupervisor(
 	config: SyncSupervisorConfig,
 ): SyncSupervisor {
 	const awareness = config.awareness ?? null;
-	const onRpcRequest = config.onRpcRequest ?? null;
+	const onActionRequest = config.onActionRequest ?? null;
 	const onRuntimeRequest = config.onRuntimeRequest ?? null;
 
 	const waitForPromise = config.waitFor;
@@ -318,7 +319,7 @@ export function createSyncSupervisor(
 		pendingRequests.clear();
 	}
 
-	async function handleIncomingRpcRequest(rpc: IncomingRpcRequest) {
+	async function handleIncomingActionRequest(rpc: IncomingActionRequest) {
 		const sendResponse = (result: Result<unknown, unknown>) =>
 			send(
 				encodeRpcResponse({
@@ -328,12 +329,12 @@ export function createSyncSupervisor(
 				}),
 			);
 
-		if (!onRpcRequest) {
+		if (!onActionRequest) {
 			sendResponse(RpcError.ActionNotFound({ action: rpc.action }));
 			return;
 		}
 
-		sendResponse(await onRpcRequest(rpc));
+		sendResponse(await onActionRequest(rpc));
 	}
 
 	async function handleIncomingRuntimeRequest(rpc: IncomingRuntimeRequest) {
@@ -588,7 +589,7 @@ export function createSyncSupervisor(
 							break;
 						}
 						case 'action-request':
-							void handleIncomingRpcRequest(rpc);
+							void handleIncomingActionRequest(rpc);
 							break;
 						case 'runtime-request':
 							void handleIncomingRuntimeRequest(rpc);
@@ -764,10 +765,10 @@ export function createSyncSupervisor(
 		onStatusChange: status.subscribe,
 		reconnect,
 		whenDisposed,
-		sendRpcRequest: (target, action, input, options) =>
+		sendActionRequest: (target, action, input, options) =>
 			sendTrackedRequest(
 				(requestId) =>
-					encodeRpcRequest({
+					encodeRpcActionRequest({
 						requestId,
 						targetClientId: target,
 						requesterClientId: ydoc.clientID,

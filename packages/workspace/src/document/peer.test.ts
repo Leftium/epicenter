@@ -8,7 +8,7 @@
  *   - list() excludes self by clientID and by identity.id
  *   - list() drops malformed states; sorts by clientId
  *   - find() returns undefined when absent; lowest clientId on identity collision
- *   - peer.invoke routes through hooks.sendRequest and surfaces PeerLeft
+ *   - peer.invoke routes through hooks.sendActionRequest and surfaces PeerLeft
  *   - peer.describe routes through hooks.sendRuntimeRequest with the
  *     'describe-actions' runtime verb
  *   - waitForPeer initial / awareness-change / timeout / non-positive timeout
@@ -33,13 +33,13 @@ function setup({
 }: {
 	selfClientId?: number;
 	selfId?: string;
-	send?: PeerWireHooks['sendRequest'];
+	send?: PeerWireHooks['sendActionRequest'];
 	sendRuntime?: PeerWireHooks['sendRuntimeRequest'];
 } = {}) {
 	const ydoc = new Y.Doc({ clientID: selfClientId });
 	const awareness = new Awareness(ydoc);
 	const hooks: PeerWireHooks = {
-		sendRequest: send ?? (async () => Ok(null)),
+		sendActionRequest: send ?? (async () => Ok(null)),
 		sendRuntimeRequest: sendRuntime ?? (async () => Ok(null)),
 	};
 	const peers = createPeersSurface(awareness, selfId, hooks);
@@ -170,7 +170,7 @@ describe('createPeersSurface.observe', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('peer.invoke', () => {
-	test('passes target clientId, action, input, options to sendRequest', async () => {
+	test('passes target clientId, action, input, options to sendActionRequest', async () => {
 		let captured: {
 			target?: number;
 			action?: string;
@@ -215,7 +215,7 @@ describe('peer.invoke', () => {
 		const peer = peers.find('mac')!;
 		const invocation = peer.invoke('tabs.close', { tabIds: [1] });
 
-		// Peer leaves before sendRequest resolves.
+		// Peer leaves before sendActionRequest resolves.
 		awareness.getStates().delete(42);
 		awareness.emit('change', [
 			{ added: [], updated: [], removed: [42] },
@@ -234,7 +234,7 @@ describe('peer.invoke', () => {
 		resolveSend(Ok(null));
 	});
 
-	test('wraps thrown sendRequest errors in RpcError.ActionFailed', async () => {
+	test('wraps thrown sendActionRequest errors in RpcError.ActionFailed', async () => {
 		const { awareness, peers } = setup({
 			send: () => Promise.reject(new Error('boom')),
 		});
@@ -252,7 +252,7 @@ describe('peer.invoke', () => {
 });
 
 describe('peer.describe', () => {
-	test('dispatches the describe-actions runtime verb (not via sendRequest)', async () => {
+	test('dispatches the describe-actions runtime verb (not via sendActionRequest)', async () => {
 		let actionCalls = 0;
 		let dispatchedVerb = '';
 		let dispatchedTarget = 0;

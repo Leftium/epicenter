@@ -114,7 +114,7 @@ export function openCollaboration<TActions extends Actions>(
 		openWebSocket: config.openWebSocket,
 		log: config.log,
 		awareness,
-		onRpcRequest: async (rpc) => {
+		onActionRequest: async (rpc) => {
 			const target = resolveActionPath(userActions, rpc.action);
 			if (!target) return RpcError.ActionNotFound({ action: rpc.action });
 			return invokeActionForRpc(target, rpc.input, rpc.action);
@@ -131,14 +131,14 @@ export function openCollaboration<TActions extends Actions>(
 	});
 
 	const peers = createPeersSurface(awareness, identity.id, {
-		sendRequest: (target, action, input, options) => {
+		sendActionRequest: (target, action, input, options) => {
 			// Wire fallback for self-RPC. The peers surface filters self by
 			// identity.id, so reaching this branch requires a stale clientId
 			// reference (deserialized fixture, test injection, future bug).
 			if (target === awareness.clientID) {
 				return Promise.resolve(SelfInvocationError.SelfInvocation({ action }));
 			}
-			return supervisor.sendRpcRequest(target, action, input, options);
+			return supervisor.sendActionRequest(target, action, input, options);
 		},
 		sendRuntimeRequest: (target, verb, options) => {
 			if (target === awareness.clientID) {

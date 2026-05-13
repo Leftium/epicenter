@@ -9,7 +9,7 @@
  * Covers spec Phase 2.1:
  *   - identity publication
  *   - actionPaths alphabetically sorted; no runtime verbs leak into the
- *     publishedaction surface (runtime verbs ride RUNTIME_REQUEST, not
+ *     published action surface (runtime verbs ride RUNTIME_REQUEST, not
  *     ACTION_REQUEST)
  *   - peers.list() never includes self
  */

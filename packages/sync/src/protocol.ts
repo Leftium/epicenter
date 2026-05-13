@@ -466,7 +466,7 @@ export type DecodedRpcMessage =
  * @param options.input - Action input (serialized as JSON)
  * @returns Encoded RPC ACTION_REQUEST message
  */
-export function encodeRpcRequest({
+export function encodeRpcActionRequest({
 	requestId,
 	targetClientId,
 	requesterClientId,

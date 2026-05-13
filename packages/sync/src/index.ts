@@ -32,7 +32,7 @@ export {
 	encodeAwareness,
 	encodeAwarenessStates,
 	encodeQueryAwareness,
-	encodeRpcRequest,
+	encodeRpcActionRequest,
 	encodeRpcResponse,
 	encodeRpcRuntimeRequest,
 	encodeSyncRequest,

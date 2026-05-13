@@ -9,7 +9,7 @@
  *
  * `peer.invoke` rides ACTION_REQUEST (app action by dot path) and
  * `peer.describe` rides RUNTIME_REQUEST (collaboration runtime verb);
- * `openCollaboration` injects `sendRequest` and `sendRuntimeRequest` hooks
+ * `openCollaboration` injects `sendActionRequest` and `sendRuntimeRequest` hooks
  * so this module stays decoupled from the supervisor implementation.
  * `peer.test.ts` exercises the surface with mock senders.
  */
@@ -156,7 +156,7 @@ export type PeersSurface = {
  * stay on the same separate planes as their wire kinds.
  */
 export type PeerWireHooks = {
-	sendRequest(
+	sendActionRequest(
 		targetClientId: number,
 		action: string,
 		input: unknown,
@@ -209,7 +209,7 @@ export function createPeersSurface(
 			actionPaths: state.actionPaths,
 			invoke: (path, input, options) =>
 				dispatch(clientId, state.identity.id, path, () =>
-					hooks.sendRequest(clientId, path, input, options),
+					hooks.sendActionRequest(clientId, path, input, options),
 				),
 			describe: (options) =>
 				dispatch(clientId, state.identity.id, 'describe-actions', () =>

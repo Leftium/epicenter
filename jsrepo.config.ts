@@ -10,8 +10,21 @@
 
 import { defineConfig, js, repository } from 'jsrepo';
 
-const APPS = ['fuji', 'honeycrisp', 'opensidian', 'zhongwen'] as const;
-const BLOCKS = ['script', 'daemon-route'] as const;
+/**
+ * Each app contributes one item per file under `apps/<app>/blocks/`. Fuji has
+ * three (snapshot + script + daemon-route); the others have two (script +
+ * daemon-route). jsrepo auto-detects cross-block imports as
+ * `registryDependencies`, so a consumer running `bunx jsrepo add
+ * epicenter/fuji/script` transitively pulls `epicenter/fuji/snapshot` and
+ * `epicenter/fuji/daemon-route`.
+ */
+
+const BLOCKS = {
+	fuji: ['snapshot', 'script', 'daemon-route'],
+	honeycrisp: ['script', 'daemon-route'],
+	opensidian: ['script', 'daemon-route'],
+	zhongwen: ['script', 'daemon-route'],
+} as const;
 
 export default defineConfig({
 	languages: [js()],
@@ -20,8 +33,8 @@ export default defineConfig({
 		version: 'package',
 		homepage: 'https://epicenter.so',
 		repository: 'https://github.com/EpicenterHQ/epicenter',
-		items: APPS.flatMap((app) =>
-			BLOCKS.map((block) => ({
+		items: Object.entries(BLOCKS).flatMap(([app, blocks]) =>
+			blocks.map((block) => ({
 				name: `epicenter/${app}/${block}`,
 				type: 'block',
 				files: [{ path: `apps/${app}/blocks/${block}.ts` }],

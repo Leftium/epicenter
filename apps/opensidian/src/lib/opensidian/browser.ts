@@ -9,7 +9,6 @@ import {
 	attachEncryption,
 	attachOwnedBroadcastChannel,
 	attachTimeline,
-	attachYjsSync,
 	createDisposableCache,
 	type EncryptionKeys,
 	onLocalUpdate,

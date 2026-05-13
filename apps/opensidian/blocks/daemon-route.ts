@@ -32,8 +32,9 @@ export function defineOpensidianDaemon({
 				filePath: yjsPath(projectDir, ydoc.guid),
 			});
 
-			// Daemon runtime is materializer-only for now. Browser runtime owns
-			// Opensidian file and shell actions because they need browser services.
+			// Daemon runtime is sync-only for now: no actions and no materializers.
+			// Browser runtime owns Opensidian file and shell actions because they
+			// need browser services.
 			const collaboration = openCollaboration(ydoc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,

@@ -119,7 +119,7 @@
 		"clean": "bun run scripts/clean.ts",
 		"nuke": "bun run scripts/clean.ts --nuke",
 		"epicenter": "EPICENTER_SERVER=http://localhost:8787 bun run --bun epicenter",
-		"jsrepo:build": "bunx jsrepo build"
+		"jsrepo:build": "jsrepo build"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",

@@ -29,6 +29,14 @@ for what the post-collapse tests should look like;
 [one-sentence-test](../one-sentence-test/SKILL.md) to confirm the inner
 function has no independent product sentence.
 
+## References
+
+Load on demand based on the task:
+
+- For **running a systematic audit across the codebase** (audit greps,
+  triage buckets, commit hygiene, anti-patterns, walking away), read
+  [references/sweep-procedure.md](references/sweep-procedure.md).
+
 ## When to Apply
 
 Trigger when any of these hold:

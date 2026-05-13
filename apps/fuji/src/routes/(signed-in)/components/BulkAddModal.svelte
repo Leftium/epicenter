@@ -61,7 +61,7 @@
 				title: text,
 				date: DateTimeString.stringify(iso, timezone),
 			}));
-			fuji.collaboration.actions.entries.bulkCreate({ entries: items });
+			fuji.collaboration.actions['entries.bulkCreate']({ entries: items });
 			toast.success(`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`);
 			isOpen = false;
 			rawText = '';

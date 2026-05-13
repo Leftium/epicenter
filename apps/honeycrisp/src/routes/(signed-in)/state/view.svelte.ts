@@ -25,7 +25,7 @@
  * ```
  */
 
-import type { FolderId, NoteId } from '../honeycrisp/workspace';
+import type { FolderId, NoteId } from '@epicenter/honeycrisp';
 import type { createFolders } from './folders.svelte';
 import type { createNotes } from './notes.svelte';
 import { type SortBy, searchParams } from './search-params.svelte';

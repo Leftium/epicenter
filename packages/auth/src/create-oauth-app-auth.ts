@@ -7,10 +7,10 @@ import {
 	createAuthStateStore,
 } from './auth-state-store.js';
 import {
-	WorkspaceIdentity,
 	OAuthSession,
 	type OAuthSession as OAuthSessionType,
 	type OAuthTokenGrant,
+	WorkspaceIdentity,
 } from './auth-types.js';
 import { headersFromRequest } from './request-headers.js';
 
@@ -63,7 +63,7 @@ export function createOAuthAppAuth({
 	refreshOAuthToken = refreshOAuthTokenWithEndpoint,
 	revokeOAuthRefreshToken = revokeOAuthRefreshTokenWithEndpoint,
 	now = Date.now,
-}: CreateOAuthAppAuthConfig): AuthClient {
+}: CreateOAuthAppAuthConfig) {
 	let session = sessionStorage.get();
 	let networkAuthPaused = false;
 	let hasDisposed = false;
@@ -229,7 +229,7 @@ export function createOAuthAppAuth({
 				return AuthError.SignOutFailed({ cause });
 			}
 		},
-		async fetch(input, init) {
+		async fetch(input, init?: RequestInit) {
 			const response = await fetchWithAuth(input, init, {
 				forceRefresh: false,
 			});
@@ -257,7 +257,7 @@ export function createOAuthAppAuth({
 			hasDisposed = true;
 			stateStore.clearListeners();
 		},
-	};
+	} satisfies AuthClient;
 }
 
 function stateFromSession(

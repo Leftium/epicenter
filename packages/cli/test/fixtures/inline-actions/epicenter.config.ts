@@ -17,28 +17,26 @@ const state = ydoc.getMap<number>('state');
 state.set('count', 0);
 
 const actions = {
-	counter: {
-		get: defineQuery({
-			description: 'Read the current counter value',
-			handler: () => state.get('count') ?? 0,
-		}),
-		increment: defineMutation({
-			description: 'Increment the counter by one',
-			handler: () => {
-				const next = (state.get('count') ?? 0) + 1;
-				state.set('count', next);
-				return next;
-			},
-		}),
-		set: defineMutation({
-			description: 'Overwrite the counter value',
-			input: Type.Object({ value: Type.Number() }),
-			handler: ({ value }: { value: number }) => {
-				state.set('count', value);
-				return value;
-			},
-		}),
-	},
+	'counter.get': defineQuery({
+		description: 'Read the current counter value',
+		handler: () => state.get('count') ?? 0,
+	}),
+	'counter.increment': defineMutation({
+		description: 'Increment the counter by one',
+		handler: () => {
+			const next = (state.get('count') ?? 0) + 1;
+			state.set('count', next);
+			return next;
+		},
+	}),
+	'counter.set': defineMutation({
+		description: 'Overwrite the counter value',
+		input: Type.Object({ value: Type.Number() }),
+		handler: ({ value }: { value: number }) => {
+			state.set('count', value);
+			return value;
+		},
+	}),
 };
 
 const collaboration = {

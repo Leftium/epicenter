@@ -95,7 +95,7 @@ export type OpenAiCompatibleConfig = {
  */
 export function createOpenAiCompatibleCompletionService(
 	config: OpenAiCompatibleConfig,
-): CompletionService {
+) {
 	return {
 		async complete(params) {
 			// Validate params if validator provided
@@ -149,5 +149,5 @@ export function createOpenAiCompatibleCompletionService(
 
 			return Ok(responseText);
 		},
-	};
+	} satisfies CompletionService;
 }

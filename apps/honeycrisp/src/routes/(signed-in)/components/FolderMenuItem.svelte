@@ -7,7 +7,7 @@
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { requireHoneycrisp } from '$lib/session';
-	import type { Folder } from '../honeycrisp/workspace';
+	import type { Folder } from '@epicenter/honeycrisp';
 
 	const honeycrisp = requireHoneycrisp();
 

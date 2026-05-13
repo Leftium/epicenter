@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { requireFuji } from '$lib/session';
 	import EntryEditor from '../../components/EntryEditor.svelte';
-	import type { EntryId } from '../../fuji/workspace';
+	import type { EntryId } from '@epicenter/fuji';
 
 	const fuji = requireFuji();
 	const entryId = $derived(page.params.id as EntryId);

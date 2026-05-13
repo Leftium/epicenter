@@ -13,7 +13,7 @@ import { createBlobStoreWeb } from './web';
  *
  */
 
-export function createBlobStoreDesktop(): BlobStore {
+export function createBlobStoreDesktop() {
 	const fileSystemDb = createFileSystemBlobStore();
 	const indexedDb = createBlobStoreWeb();
 
@@ -116,5 +116,5 @@ export function createBlobStoreDesktop(): BlobStore {
 
 			return Ok(undefined);
 		},
-	};
+	} satisfies BlobStore;
 }

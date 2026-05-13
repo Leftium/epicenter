@@ -78,7 +78,7 @@
 										title="Restore entry"
 										onclick={() => {
 										toastOnError(
-											fuji.collaboration.actions.entries.restore({ id: entry.id }),
+											fuji.collaboration.actions['entries.restore']({ id: entry.id }),
 											'Couldn\'t restore entry',
 										);
 										goto(`/entries/${entry.id}`);

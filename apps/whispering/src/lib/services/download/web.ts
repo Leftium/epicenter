@@ -2,7 +2,7 @@ import { tryAsync } from 'wellcrafted/result';
 import type { DownloadService } from '.';
 import { DownloadError } from './types';
 
-export function createDownloadServiceWeb(): DownloadService {
+export function createDownloadServiceWeb() {
 	return {
 		downloadBlob: ({ name, blob }) =>
 			tryAsync({
@@ -19,5 +19,5 @@ export function createDownloadServiceWeb(): DownloadService {
 				},
 				catch: (error) => DownloadError.BrowserDownloadFailed({ cause: error }),
 			}),
-	};
+	} satisfies DownloadService;
 }

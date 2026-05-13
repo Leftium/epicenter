@@ -21,7 +21,7 @@ import {
 	type EntryId,
 	FUJI_WORKSPACE_ID,
 	fujiTables,
-} from './workspace';
+} from '@epicenter/fuji';
 
 function entryContentDocGuid({
 	workspaceId,

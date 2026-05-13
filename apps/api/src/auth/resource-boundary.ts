@@ -7,11 +7,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import * as schema from '../db/schema';
-import {
-	hasScope,
-	OAuthError,
-	WORKSPACES_OPEN_SCOPE,
-} from './oauth-error.js';
+import { hasScope, OAuthError, WORKSPACES_OPEN_SCOPE } from './oauth-error.js';
 import { createOAuthIssuerURL, createOAuthJwksURL } from './oauth-metadata.js';
 
 export { WORKSPACES_OPEN_SCOPE };
@@ -142,9 +138,7 @@ export function resolveRequestWorkspaceIdentity<E extends RequestOAuthEnv>(
 	});
 }
 
-function createResolverDeps<E extends RequestOAuthEnv>(
-	c: Context<E>,
-): ResolverDeps {
+function createResolverDeps<E extends RequestOAuthEnv>(c: Context<E>) {
 	const audience = c.var.authBaseURL;
 	return {
 		authorization: c.req.header('authorization') ?? null,
@@ -161,5 +155,5 @@ function createResolverDeps<E extends RequestOAuthEnv>(
 				.limit(1);
 			return row ?? null;
 		},
-	};
+	} satisfies ResolverDeps;
 }

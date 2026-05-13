@@ -3,7 +3,7 @@
 	import { Loading } from '@epicenter/ui/loading';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { requireHoneycrisp } from '$lib/session';
-	import type { NoteId } from '../honeycrisp/workspace';
+	import type { NoteId } from '@epicenter/honeycrisp';
 
 	const honeycrisp = requireHoneycrisp();
 

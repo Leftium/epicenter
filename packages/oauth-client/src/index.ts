@@ -94,7 +94,7 @@ export function createBrowserOAuthLauncher({
 	...config
 }: OAuthClientConfig & {
 	redirectTo?: RedirectTo;
-}): OAuthLauncher {
+}) {
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {
@@ -109,7 +109,7 @@ export function createBrowserOAuthLauncher({
 			await redirectTo(urlResult.data.toString());
 			return Ok(null);
 		},
-	};
+	} satisfies OAuthLauncher;
 }
 
 export function createExtensionOAuthLauncher({
@@ -117,7 +117,7 @@ export function createExtensionOAuthLauncher({
 	...config
 }: OAuthClientConfig & {
 	launchWebAuthFlow: LaunchWebAuthFlow;
-}): OAuthLauncher {
+}) {
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {
@@ -131,15 +131,15 @@ export function createExtensionOAuthLauncher({
 				return OAuthClientError.LaunchFailed({ cause });
 			}
 		},
-	};
+	} satisfies OAuthLauncher;
 }
 
-export function createStorageAdapter(storage: Storage): OAuthTemporaryStorage {
+export function createStorageAdapter(storage: Storage) {
 	return {
 		getItem: (key) => storage.getItem(key),
 		setItem: (key, value) => storage.setItem(key, value),
 		removeItem: (key) => storage.removeItem(key),
-	};
+	} satisfies OAuthTemporaryStorage;
 }
 
 export function createOAuthClient({

@@ -6,7 +6,7 @@
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
 	import { requireFuji } from '$lib/session';
-	import type { EntryId } from '../fuji/workspace';
+	import type { EntryId } from '@epicenter/fuji';
 
 	// ─── Config ──────────────────────────────────────────────────────────────────
 	const fuji = requireFuji();

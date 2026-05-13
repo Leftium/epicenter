@@ -40,11 +40,11 @@ export function attachRecordingMarkdownFiles(
 		dir: MaybePromise<string>;
 		waitFor: Promise<unknown>;
 	},
-): RecordingMarkdownFilesAttachment {
+) {
 	if (!isTauri()) {
 		return {
 			whenFlushed: Promise.resolve(),
-		};
+		} satisfies RecordingMarkdownFilesAttachment;
 	}
 
 	// Serialized promise chain — observer batches complete sequentially so
@@ -103,5 +103,5 @@ export function attachRecordingMarkdownFiles(
 		unsubscribe();
 	});
 
-	return { whenFlushed };
+	return { whenFlushed } satisfies RecordingMarkdownFilesAttachment;
 }

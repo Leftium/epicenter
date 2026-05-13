@@ -23,7 +23,7 @@
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
 import type { HoneycrispBrowser } from '../honeycrisp/browser';
-import type { FolderId } from '../honeycrisp/workspace';
+import type { FolderId } from '@epicenter/honeycrisp';
 import { searchParams } from './search-params.svelte';
 
 export function createFolders(honeycrisp: HoneycrispBrowser) {
@@ -102,7 +102,7 @@ export function createFolders(honeycrisp: HoneycrispBrowser) {
 		 * ```
 		 */
 		delete(folderId: FolderId) {
-			honeycrisp.collaboration.actions.folders.delete({ folderId });
+			honeycrisp.collaboration.actions['folders.delete']({ folderId });
 			if (searchParams.folder === folderId) {
 				searchParams.update({ folder: null, note: null });
 			}

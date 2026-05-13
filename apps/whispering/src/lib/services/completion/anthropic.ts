@@ -4,7 +4,7 @@ import { customFetch } from '$lib/services/http';
 import type { CompletionService } from './types';
 import { CompletionError } from './types';
 
-export function createAnthropicCompletionService(): CompletionService {
+export function createAnthropicCompletionService() {
 	return {
 		async complete({ apiKey, model, systemPrompt, userPrompt }) {
 			const client = new Anthropic({
@@ -46,7 +46,7 @@ export function createAnthropicCompletionService(): CompletionService {
 
 			return Ok(responseText);
 		},
-	};
+	} satisfies CompletionService;
 }
 
 export type AnthropicCompletionService = ReturnType<

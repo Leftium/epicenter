@@ -7,7 +7,7 @@ import { NotificationError, toBrowserNotification } from './types';
  * Creates a web-based notification service that handles browser notifications
  * with fallback support for extension-based notifications.
  */
-export function createNotificationServiceWeb(): NotificationService {
+export function createNotificationServiceWeb() {
 	// Cache extension detection result
 	let extensionChecked = false;
 	let hasExtension = false;
@@ -107,5 +107,5 @@ export function createNotificationServiceWeb(): NotificationService {
 			// }
 			return Ok(undefined);
 		},
-	};
+	} satisfies NotificationService;
 }

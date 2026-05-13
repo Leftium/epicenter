@@ -36,7 +36,7 @@ async function deleteFilesInDirectory(
  *   - {id}.{ext} (audio file: .wav, .opus, .mp3, etc.)
  *   - {id}.md (metadata materialized by workspace, NOT written by this service)
  */
-export function createFileSystemBlobStore(): BlobStore {
+export function createFileSystemBlobStore() {
 	return {
 		async save(key, blob) {
 			return tryAsync({
@@ -134,7 +134,7 @@ export function createFileSystemBlobStore(): BlobStore {
 				catch: (error) => BlobError.WriteFailed({ cause: error }),
 			});
 		},
-	};
+	} satisfies BlobStore;
 }
 
 /**

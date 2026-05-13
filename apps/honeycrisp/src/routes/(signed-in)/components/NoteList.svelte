@@ -8,7 +8,7 @@
 	import { requireHoneycrisp } from '$lib/session';
 	import { getDateLabel } from '$lib/utils/date';
 	import NoteCard from '../components/NoteCard.svelte';
-	import type { Note } from '../honeycrisp/workspace';
+	import type { Note } from '@epicenter/honeycrisp';
 
 	const honeycrisp = requireHoneycrisp();
 

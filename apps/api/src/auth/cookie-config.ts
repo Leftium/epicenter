@@ -1,8 +1,6 @@
 import type { BetterAuthOptions } from 'better-auth';
 
-export function createCookieAdvancedConfig(
-	baseURL: string,
-): NonNullable<BetterAuthOptions['advanced']> {
+export function createCookieAdvancedConfig(baseURL: string) {
 	const { hostname } = new URL(baseURL);
 	if (isLocalhost(hostname)) {
 		return {
@@ -11,7 +9,7 @@ export function createCookieAdvancedConfig(
 				sameSite: 'lax',
 				secure: false,
 			},
-		};
+		} satisfies NonNullable<BetterAuthOptions['advanced']>;
 	}
 
 	return {
@@ -24,7 +22,7 @@ export function createCookieAdvancedConfig(
 			sameSite: 'none',
 			secure: true,
 		},
-	};
+	} satisfies NonNullable<BetterAuthOptions['advanced']>;
 }
 
 function isLocalhost(hostname: string) {

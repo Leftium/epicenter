@@ -24,7 +24,7 @@
 
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
-import type { FolderId, NoteId } from '../honeycrisp/workspace';
+import type { FolderId, NoteId } from '@epicenter/honeycrisp';
 
 type SortBy = 'dateEdited' | 'dateCreated' | 'title';
 

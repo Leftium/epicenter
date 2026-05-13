@@ -10,7 +10,7 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { requireHoneycrisp } from '$lib/session';
-	import type { Note } from '../honeycrisp/workspace';
+	import type { Note } from '@epicenter/honeycrisp';
 
 	const honeycrisp = requireHoneycrisp();
 

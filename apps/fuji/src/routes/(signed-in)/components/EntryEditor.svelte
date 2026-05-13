@@ -20,19 +20,19 @@
 	import ProseMirrorEditor from '$lib/components/ProseMirrorEditor.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
 	import { requireFuji } from '$lib/session';
-	import type { Entry } from '../fuji/workspace';
+	import type { Entry } from '@epicenter/fuji';
 
 	let { entry }: { entry: Entry } = $props();
 	const fuji = requireFuji();
 
 	type EntryUpdate = Omit<
-		Parameters<typeof fuji.collaboration.actions.entries.update>[0],
+		Parameters<typeof fuji.collaboration.actions['entries.update']>[0],
 		'id'
 	>;
 
 	function updateEntry(updates: EntryUpdate) {
 		toastOnError(
-			fuji.collaboration.actions.entries.update({ id: entry.id, ...updates }),
+			fuji.collaboration.actions['entries.update']({ id: entry.id, ...updates }),
 			"Couldn't save changes",
 		);
 	}
@@ -66,7 +66,7 @@
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
 						toastOnError(
-							fuji.collaboration.actions.entries.delete({ id: entry.id }),
+							fuji.collaboration.actions['entries.delete']({ id: entry.id }),
 							'Couldn\'t delete entry',
 						);
 						goto('/');

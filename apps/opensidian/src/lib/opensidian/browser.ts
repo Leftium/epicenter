@@ -20,7 +20,7 @@ import {
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import { opensidianTables } from '../workspace/definition.js';
+import { opensidianTables } from 'opensidian';
 import { createOpensidianActions } from './actions';
 
 export function openOpensidianBrowser({

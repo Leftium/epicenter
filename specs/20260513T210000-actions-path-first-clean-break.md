@@ -585,8 +585,8 @@ This stops working. Nobody is doing it on the audited branch. If a future use ca
 - [x] `invokeAction` requires `errorLabel`.
 - [x] `Query`/`Mutation`/`ActionFailed` named aliases removed; callers use `Action` and `RpcError.ActionFailed` directly.
 - [x] `describeActions` removed; both internal call sites use the exported `toActionMeta` helper directly (deviation: kept a one-line internal helper instead of inlining at the only-one site, because there are two call sites: `open-collaboration.ts` and `daemon/app.ts`).
-- [ ] All app factories return flat records with `satisfies ActionRegistry`.
-- [ ] All in-app action call sites use bracket syntax.
+- [x] All app factories return flat records with `satisfies ActionRegistry`.
+- [x] All in-app action call sites use bracket syntax.
 - [x] No tests for behavior that no longer exists (class-instance fence, intermediate proxy thenable, anonymous fallback).
 
 ## Why the asymmetric win

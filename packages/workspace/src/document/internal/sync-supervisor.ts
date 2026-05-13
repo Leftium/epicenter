@@ -120,7 +120,7 @@ export type OpenWebSocket = (
 ) => Promise<WebSocket> | WebSocket;
 
 /** Incoming app-action RPC request, dispatched by the supervisor when configured. */
-export type IncomingActionRequest = {
+type IncomingActionRequest = {
 	requestId: number;
 	requesterClientId: number;
 	action: string;
@@ -132,7 +132,7 @@ export type IncomingActionRequest = {
  * path: runtime operations live on a separate plane from the app action
  * namespace.
  */
-export type IncomingRuntimeRequest = {
+type IncomingRuntimeRequest = {
 	requestId: number;
 	requesterClientId: number;
 	verb: RuntimeVerb;
@@ -319,7 +319,19 @@ export function createSyncSupervisor(
 		pendingRequests.clear();
 	}
 
-	async function handleIncomingActionRequest(rpc: IncomingActionRequest) {
+	/**
+	 * Shared incoming-request bookkeeping for ACTION_REQUEST and
+	 * RUNTIME_REQUEST: response envelope, fallback when no handler is
+	 * configured. Generic over the rpc shape; only `requestId` and
+	 * `requesterClientId` are needed for the response.
+	 */
+	async function dispatchIncomingRequest<
+		R extends { requestId: number; requesterClientId: number },
+	>(
+		rpc: R,
+		handler: ((rpc: R) => Promise<Result<unknown, unknown>>) | null,
+		errorLabel: string,
+	) {
 		const sendResponse = (result: Result<unknown, unknown>) =>
 			send(
 				encodeRpcResponse({
@@ -329,30 +341,12 @@ export function createSyncSupervisor(
 				}),
 			);
 
-		if (!onActionRequest) {
-			sendResponse(RpcError.ActionNotFound({ action: rpc.action }));
+		if (!handler) {
+			sendResponse(RpcError.ActionNotFound({ action: errorLabel }));
 			return;
 		}
 
-		sendResponse(await onActionRequest(rpc));
-	}
-
-	async function handleIncomingRuntimeRequest(rpc: IncomingRuntimeRequest) {
-		const sendResponse = (result: Result<unknown, unknown>) =>
-			send(
-				encodeRpcResponse({
-					requestId: rpc.requestId,
-					requesterClientId: rpc.requesterClientId,
-					result,
-				}),
-			);
-
-		if (!onRuntimeRequest) {
-			sendResponse(RpcError.ActionNotFound({ action: rpc.verb }));
-			return;
-		}
-
-		sendResponse(await onRuntimeRequest(rpc));
+		sendResponse(await handler(rpc));
 	}
 
 	function send(message: Uint8Array) {
@@ -589,10 +583,10 @@ export function createSyncSupervisor(
 							break;
 						}
 						case 'action-request':
-							void handleIncomingActionRequest(rpc);
+							void dispatchIncomingRequest(rpc, onActionRequest, rpc.action);
 							break;
 						case 'runtime-request':
-							void handleIncomingRuntimeRequest(rpc);
+							void dispatchIncomingRequest(rpc, onRuntimeRequest, rpc.verb);
 							break;
 					}
 					break;

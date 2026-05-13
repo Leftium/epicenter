@@ -416,8 +416,6 @@ export const RPC_TYPE = {
 	RUNTIME_REQUEST: 2,
 } as const;
 
-export type RpcType = (typeof RPC_TYPE)[keyof typeof RPC_TYPE];
-
 /**
  * Closed set of collaboration runtime verbs carried by `RUNTIME_REQUEST`.
  *

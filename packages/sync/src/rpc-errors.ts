@@ -19,7 +19,8 @@ import {
  *
  * @example
  * ```typescript
- * const { data, error } = await workspace.rpc.rpc(clientId, 'tabs.close', { tabIds: [1] });
+ * const peer = collaboration.peers.find('macbook-pro');
+ * const { data, error } = await peer?.invoke('tabs.close', { tabIds: [1] }) ?? {};
  * if (error) {
  *   switch (error.name) {
  *     case 'PeerOffline': // target not connected

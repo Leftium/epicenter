@@ -75,8 +75,8 @@ function emit(rows: PeerSnapshot[], format: OutputFormat | undefined): void {
 function toRow(snap: PeerSnapshot) {
 	return {
 		clientID: snap.clientID,
-		peerId: snap.peer.id,
-		name: snap.peer.name,
-		platform: snap.peer.platform,
+		peerId: snap.identity.id,
+		name: snap.identity.name,
+		platform: snap.identity.platform,
 	};
 }

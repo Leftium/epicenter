@@ -1,88 +1,75 @@
 /**
  * Minimal fixture: one daemon route with inline `defineQuery` /
- * `defineMutation` nodes grouped under `actions:`. No sqlite or encryption.
- * The CLI walks `workspace.actions`, so CLI paths are
- * `demo.counter.{get,increment,set}`.
+ * `defineMutation` nodes grouped under `actions:`. No sqlite or encryption,
+ * no real WebSocket: a hand-stubbed `workspace` matches the daemon's
+ * structural contract so `loadDaemonConfig` accepts it.
+ *
+ * CLI paths are `demo.counter.{get,increment,set}`.
  */
 
-import {
-	type AwarenessAttachment,
-	defineMutation,
-	defineQuery,
-	type PeerAwarenessSchema,
-	type RemoteClient,
-	type SyncAttachment,
-} from '@epicenter/workspace';
+import { defineMutation, defineQuery } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
 import Type from 'typebox';
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 const ydoc = new Y.Doc({ guid: 'epicenter.demo' });
 const state = ydoc.getMap<number>('state');
 state.set('count', 0);
 
-const sync = {
+const awareness = new Awareness(ydoc);
+
+const actions = {
+	counter: {
+		get: defineQuery({
+			description: 'Read the current counter value',
+			handler: () => state.get('count') ?? 0,
+		}),
+		increment: defineMutation({
+			description: 'Increment the counter by one',
+			handler: () => {
+				const next = (state.get('count') ?? 0) + 1;
+				state.set('count', next);
+				return next;
+			},
+		}),
+		set: defineMutation({
+			description: 'Overwrite the counter value',
+			input: Type.Object({ value: Type.Number() }),
+			handler: ({ value }: { value: number }) => {
+				state.set('count', value);
+				return value;
+			},
+		}),
+	},
+};
+
+const workspace = {
+	identity: { id: 'fixture', name: 'fixture', platform: 'node' as const },
+	actions,
+	awareness,
+	status: { phase: 'connected' as const },
 	whenConnected: Promise.resolve(),
-	status: { phase: 'connected' },
+	whenDisposed: Promise.resolve(),
 	onStatusChange: () => () => {},
-	reconnect() {},
-	[Symbol.asyncDispose]: async () => {},
-	attachRpc: () => ({ rpc: async () => ({ data: null, error: null }) }),
-} as unknown as SyncAttachment;
-
-const awareness = {
-	peers: () => new Map(),
-	observe: () => () => {},
-} as unknown as AwarenessAttachment<PeerAwarenessSchema>;
-
-const remote = {
-	actions: () => ({}),
-	describe: async () => ({ data: {}, error: null }),
-	invoke: async () => ({
-		error: {
-			name: 'PeerNotFound',
-			message: 'no peer matches peer id "missing"',
-			peerTarget: 'missing',
-			sawPeers: false,
-			waitMs: 0,
-		},
-		data: null,
-	}),
-} as unknown as RemoteClient;
+	reconnect: () => {},
+	goOffline: () => {},
+	peers: {
+		list: () => [],
+		find: () => undefined,
+		observe: () => () => {},
+	},
+	[Symbol.dispose]() {
+		ydoc.destroy();
+	},
+};
 
 export const demo = {
 	workspaceId: ydoc.guid,
-	actions: {
-		counter: {
-			get: defineQuery({
-				description: 'Read the current counter value',
-				handler: () => state.get('count') ?? 0,
-			}),
-			increment: defineMutation({
-				description: 'Increment the counter by one',
-				handler: () => {
-					const next = (state.get('count') ?? 0) + 1;
-					state.set('count', next);
-					return next;
-				},
-			}),
-			set: defineMutation({
-				description: 'Overwrite the counter value',
-				input: Type.Object({ value: Type.Number() }),
-				handler: ({ value }: { value: number }) => {
-					state.set('count', value);
-					return value;
-				},
-			}),
-		},
-	},
-	awareness,
-	sync,
-	remote,
+	workspace,
 	async [Symbol.asyncDispose]() {
 		ydoc.destroy();
 	},
-	// Extras for direct script use, not part of the hosted daemon runtime contract.
 	ydoc,
 };
 

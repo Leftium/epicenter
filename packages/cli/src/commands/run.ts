@@ -17,11 +17,7 @@
  *   3: peer not found (`--peer <target>` did not resolve within `--wait`)
  */
 
-import {
-	type PeerAwarenessState,
-	type RemoteCallError,
-	type RpcError,
-} from '@epicenter/workspace';
+import { type RemoteCallError, type RpcError } from '@epicenter/workspace';
 import {
 	type DaemonError,
 	type RunError as DaemonRunError,
@@ -118,13 +114,17 @@ function renderRunResult(
 			outputError(result.error.message);
 			process.exitCode = 2;
 			return;
-		case 'RemoteCallFailed': {
-			emitRemoteCallError(
+		case 'PeerNotFound':
+			emitPeerNotFound(
 				result.error.peerTarget,
-				result.error.cause,
+				result.error.waitMs,
 				result.error.syncStatus,
 			);
-			process.exitCode = result.error.cause.name === 'PeerNotFound' ? 3 : 2;
+			process.exitCode = 3;
+			return;
+		case 'RemoteCallFailed': {
+			emitRemoteCallError(result.error.peerTarget, result.error.cause);
+			process.exitCode = 2;
 			return;
 		}
 		case 'MissingConfig':
@@ -144,43 +144,30 @@ async function resolveInput(input: string | undefined): Promise<unknown> {
 	return parseJsonInput({ positional, stdinContent });
 }
 
-/**
- * Two miss shapes: nothing seen on the wire (probably a connect-status
- * problem) vs peers visible but none matched the requested peer id.
- */
-function emitMissError(
+function emitPeerNotFound(
 	target: string,
-	sawPeers: boolean,
 	waitMs: number,
 	syncStatus: RunSyncStatus,
 ): void {
-	if (!sawPeers) {
-		outputError(
-			`error: no peers seen after waiting ${waitMs}ms for "${target}"`,
-		);
-		outputError(`  reason: ${describePeerMissReason(syncStatus)}`);
-		return;
-	}
-	outputError(`error: no peer matches peer id "${target}"`);
+	outputError(`error: no peer matches peer id "${target}" after ${waitMs}ms`);
 	outputError(`  reason: ${describePeerMissReason(syncStatus)}`);
-	outputError('run `epicenter peers` to see connected peers');
+	if (syncStatus.phase === 'connected') {
+		outputError('run `epicenter peers` to see connected peers');
+	}
 }
 
 export function emitRemoteCallError(
 	peerTarget: string,
 	cause: RemoteCallError,
-	syncStatus: RunSyncStatus,
 ): void {
 	switch (cause.name) {
-		case 'PeerNotFound':
-			emitMissError(cause.peerTarget, cause.sawPeers, cause.waitMs, syncStatus);
-			return;
 		case 'PeerLeft':
-			emitPeerLeftError(
-				cause.peerTarget,
-				cause.targetClientId,
-				cause.peerState,
+			outputError(
+				`error: peer "${cause.peerId}" disconnected before "${cause.action}" responded`,
 			);
+			return;
+		case 'SelfInvocation':
+			outputError(`error: cannot RPC to self for "${cause.action}"`);
 			return;
 		case 'ActionNotFound':
 		case 'Timeout':
@@ -210,11 +197,10 @@ function describePeerMissReason(status: RunSyncStatus): string {
 }
 
 /**
- * Format every `RpcError` variant labeled with the peer's presence info
- * (`peer.name`, `peer.platform`) at resolution time. The exhaustive
- * switch is enforced at compile time via the `never` check: adding a new
- * variant to `@epicenter/workspace`'s `RpcError` breaks the build until a
- * case is added here.
+ * Format every `RpcError` variant labeled with the peer target. The
+ * exhaustive switch is enforced at compile time: adding a new variant to
+ * `@epicenter/workspace`'s `RpcError` breaks the build until a case is
+ * added here.
  */
 function emitRpcError(error: RpcError, peerTarget: string): void {
 	switch (error.name) {
@@ -238,15 +224,4 @@ function emitRpcError(error: RpcError, peerTarget: string): void {
 		default:
 			error satisfies never;
 	}
-}
-
-function emitPeerLeftError(
-	peerTarget: string,
-	targetClientId: number,
-	peerState: PeerAwarenessState,
-): void {
-	const { peer } = peerState;
-	const peerLabel = `${peer.name} (${targetClientId}, ${peer.platform})`;
-	outputError(`error: peer "${peerTarget}" disconnected before responding`);
-	outputError(`  last seen as ${peerLabel}`);
 }

@@ -87,25 +87,22 @@ afterEach(() => {
 
 function makeFakeWorkspace(onDispose?: () => void): DaemonRuntime {
 	return {
-		actions: {},
-		async [Symbol.asyncDispose]() {
-			onDispose?.();
-		},
-		sync: {
+		workspace: {
+			actions: {},
 			whenConnected: new Promise(() => {
 				/* sync connects in the background */
 			}),
 			status: { phase: 'connected' },
 			onStatusChange: () => () => {},
-			// Unused fields; cast through unknown to keep the fake minimal.
-		} as unknown as DaemonRuntime['sync'],
-		awareness: {
-			peers: () => new Map(),
-			observe: () => () => {},
-		} as unknown as DaemonRuntime['awareness'],
-		remote: {
-			invoke: async () => ({ data: null, error: null }),
-		} as unknown as DaemonRuntime['remote'],
+			peers: {
+				list: () => [],
+				find: () => undefined,
+				observe: () => () => {},
+			},
+		} as unknown as DaemonRuntime['workspace'],
+		async [Symbol.asyncDispose]() {
+			onDispose?.();
+		},
 	};
 }
 

@@ -29,11 +29,13 @@ function writeConfig(source: string) {
 }
 
 const daemonTransportFields = `
-	awareness: {
-		peers: () => new Map(),
-		observe: () => () => {}
-	},
-	sync: {
+	workspace: {
+		actions: {},
+		peers: {
+			list: () => [],
+			find: () => undefined,
+			observe: () => () => {}
+		},
 		onStatusChange: () => () => {}
 	},
 `;
@@ -51,13 +53,20 @@ describe('loadDaemonConfig', () => {
 						start: ({ projectDir, route }) => {
 							globalThis.__loadConfigEvents.push('started');
 							return {
-								actions: {
-									paths: {
-										projectDir: { handler: () => projectDir },
-										route: { handler: () => route }
-									}
+								workspace: {
+									actions: {
+										paths: {
+											projectDir: { handler: () => projectDir },
+											route: { handler: () => route }
+										}
+									},
+									peers: {
+										list: () => [],
+										find: () => undefined,
+										observe: () => () => {}
+									},
+									onStatusChange: () => () => {}
 								},
-								${daemonTransportFields}
 								async [Symbol.asyncDispose]() {}
 							};
 						}
@@ -79,7 +88,7 @@ describe('loadDaemonConfig', () => {
 
 		expect(started.error).toBeNull();
 		expect(started.data?.map((entry) => entry.route)).toEqual(['demo']);
-		const paths = started.data?.[0]?.runtime.actions.paths as
+		const paths = started.data?.[0]?.runtime.workspace.actions.paths as
 			| {
 					projectDir: { handler(): string };
 					route: { handler(): string };
@@ -169,7 +178,6 @@ describe('loadDaemonConfig', () => {
 					routes: [{
 						route: 'demo',
 						start: () => Promise.resolve({
-							actions: {},
 							${daemonTransportFields}
 							async [Symbol.asyncDispose]() {}
 						})
@@ -232,13 +240,7 @@ describe('loadDaemonConfig', () => {
 					routes: [{
 						route: 'demo',
 						start: () => ({
-							awareness: {
-								peers: () => new Map(),
-								observe: () => () => {}
-							},
-							sync: {
-								onStatusChange: () => () => {}
-							},
+							${daemonTransportFields}
 							async [Symbol.asyncDispose]() {}
 						})
 					}]
@@ -265,7 +267,6 @@ describe('loadDaemonConfig', () => {
 						{
 							route: 'first',
 							start: () => ({
-								actions: {},
 								${daemonTransportFields}
 								async [Symbol.asyncDispose]() {
 									globalThis.__loadConfigEvents.push('disposed:first');

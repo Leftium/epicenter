@@ -278,48 +278,50 @@ async function safeDisposeStartedRoutes(
 }
 
 function printPeersSnapshot(entry: StartedDaemonRoute): void {
-	const peers = entry.runtime.awareness.peers();
-	if (peers.size === 0) {
+	const peers = entry.runtime.workspace.peers.list();
+	if (peers.length === 0) {
 		process.stderr.write(`${entry.route}: no peers connected\n`);
 		return;
 	}
-	for (const [clientID, state] of peers) {
+	for (const peer of peers) {
 		process.stderr.write(
-			`${entry.route}: peer ${state.peer.id} (clientID=${clientID}, name=${state.peer.name})\n`,
+			`${entry.route}: peer ${peer.id} (clientID=${peer.clientID}, name=${peer.identity.name})\n`,
 		);
 	}
 }
 
 function subscribeAwareness(entry: StartedDaemonRoute, quiet: boolean): void {
-	const awareness = entry.runtime.awareness;
-	let prev = new Map(awareness.peers());
-	awareness.observe(() => {
-		const next = awareness.peers();
-		for (const [clientID, state] of next) {
+	const { peers } = entry.runtime.workspace;
+	const snapshot = () =>
+		new Map(peers.list().map((peer) => [peer.clientID, peer]));
+	let prev = snapshot();
+	peers.observe(() => {
+		const next = snapshot();
+		for (const [clientID, peer] of next) {
 			if (!prev.has(clientID)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.route}: ${state.peer.id} joined (clientID=${clientID})\n`,
+						`${entry.route}: ${peer.id} joined (clientID=${clientID})\n`,
 					);
 				}
 			}
 		}
-		for (const [clientID, state] of prev) {
+		for (const [clientID, peer] of prev) {
 			if (!next.has(clientID)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.route}: ${state.peer.id} left (clientID=${clientID})\n`,
+						`${entry.route}: ${peer.id} left (clientID=${clientID})\n`,
 					);
 				}
 			}
 		}
-		prev = new Map(next);
+		prev = next;
 	});
 }
 
 function subscribeSyncStatus(entry: StartedDaemonRoute): void {
-	const sync = entry.runtime.sync;
-	sync.onStatusChange((status) => {
+	const { workspace } = entry.runtime;
+	workspace.onStatusChange((status) => {
 		if (status.phase === 'connecting') {
 			logSyncStatus(`${entry.route}: connecting (retry ${status.retries})`);
 		} else if (status.phase === 'connected') {

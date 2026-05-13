@@ -6,7 +6,6 @@
 	"type": "module",
 	"exports": {
 		"./workspace": "./src/routes/(signed-in)/honeycrisp/workspace.ts",
-		"./document": "./src/routes/(signed-in)/honeycrisp/document.ts",
 		"./browser": "./src/routes/(signed-in)/honeycrisp/browser.ts",
 		"./daemon": "./src/routes/(signed-in)/honeycrisp/daemon.ts",
 		"./script": "./src/routes/(signed-in)/honeycrisp/script.ts"

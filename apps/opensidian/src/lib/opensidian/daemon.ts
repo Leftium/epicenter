@@ -1,9 +1,14 @@
 import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { openCollaboration, toWsUrl } from '@epicenter/workspace';
+import {
+	attachEncryption,
+	openCollaboration,
+	toWsUrl,
+} from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import { openOpensidianDocument } from './document.js';
+import * as Y from 'yjs';
+import { opensidianTables } from '../workspace/definition.js';
 
 export const DEFAULT_OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 
@@ -18,18 +23,21 @@ export function defineOpensidianDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const doc = openOpensidianDocument({
-				clientID: hashClientId(projectDir),
+			const ydoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
+			ydoc.clientID = hashClientId(projectDir);
+			const encryption = attachEncryption(ydoc, {
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});
-			const yjsLog = attachYjsLog(doc.ydoc, {
-				filePath: yjsPath(projectDir, doc.ydoc.guid),
+			const tables = encryption.attachTables(opensidianTables);
+			const kv = encryption.attachKv({});
+			const yjsLog = attachYjsLog(ydoc, {
+				filePath: yjsPath(projectDir, ydoc.guid),
 			});
 
 			// Daemon runtime is materializer-only for now. Browser runtime owns
 			// Opensidian file and shell actions because they need browser services.
-			const collaboration = openCollaboration(doc.ydoc, {
-				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
+			const collaboration = openCollaboration(ydoc, {
+				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
 				identity: {
 					id: 'opensidian-daemon',
@@ -40,14 +48,14 @@ export function defineOpensidianDaemon({
 			});
 
 			return {
-				ydoc: doc.ydoc,
-				tables: doc.tables,
-				kv: doc.kv,
-				batch: doc.batch,
+				ydoc,
+				tables,
+				kv,
+				batch: (fn: () => void) => ydoc.transact(fn),
 				yjsLog,
 				collaboration,
 				async [Symbol.asyncDispose]() {
-					doc[Symbol.dispose]();
+					ydoc.destroy();
 					await Promise.all([collaboration.whenDisposed, yjsLog.whenDisposed]);
 				},
 			};

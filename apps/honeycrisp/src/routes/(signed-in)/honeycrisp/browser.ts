@@ -1,5 +1,6 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	attachEncryption,
 	attachOwnedBroadcastChannel,
 	attachRichText,
 	attachYjsSync,
@@ -15,8 +16,7 @@ import {
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { openHoneycrispDocument } from './document.js';
-import { createHoneycrispActions, type NoteId } from './workspace';
+import { createHoneycrispActions, honeycrispTables, type NoteId } from './workspace';
 
 function noteBodyDocGuid({
 	workspaceId,
@@ -44,21 +44,24 @@ export function openHoneycrispBrowser({
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openHoneycrispDocument({ encryptionKeys });
+	const rootYdoc = new Y.Doc({ guid: 'epicenter.honeycrisp', gc: false });
+	const encryption = attachEncryption(rootYdoc, { encryptionKeys });
+	const tables = encryption.attachTables(honeycrispTables);
+	const kv = encryption.attachKv({});
 
-	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	const idb = encryption.attachIndexedDb(rootYdoc, { userId });
+	attachOwnedBroadcastChannel(rootYdoc, { userId });
 
 	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
 		const ydoc = new Y.Doc({
 			guid: noteBodyDocGuid({
-				workspaceId: doc.ydoc.guid,
+				workspaceId: rootYdoc.guid,
 				noteId,
 			}),
 			gc: false,
 		});
 		const body = attachRichText(ydoc);
-		const childIdb = doc.encryption.attachIndexedDb(ydoc, { userId });
+		const childIdb = encryption.attachIndexedDb(ydoc, { userId });
 		attachOwnedBroadcastChannel(ydoc, { userId });
 		const childSync = attachYjsSync(ydoc, {
 			url: toWsUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
@@ -67,7 +70,7 @@ export function openHoneycrispBrowser({
 		});
 
 		onLocalUpdate(ydoc, () => {
-			doc.tables.notes.update(noteId, {
+			tables.notes.update(noteId, {
 				updatedAt: DateTimeString.now(),
 			});
 		});
@@ -88,9 +91,9 @@ export function openHoneycrispBrowser({
 		};
 	});
 
-	const actions = createHoneycrispActions(doc.tables);
-	const collaboration = openCollaboration(doc.ydoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+	const actions = createHoneycrispActions(tables);
+	const collaboration = openCollaboration(rootYdoc, {
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		identity: peer,
@@ -98,25 +101,25 @@ export function openHoneycrispBrowser({
 	});
 
 	return {
-		ydoc: doc.ydoc,
-		tables: doc.tables,
-		kv: doc.kv,
-		batch: doc.batch,
+		ydoc: rootYdoc,
+		tables,
+		kv,
+		batch: (fn: () => void) => rootYdoc.transact(fn),
 		idb,
 		noteBodyDocs,
 		collaboration,
 		async wipe() {
 			const fallbackGuids = [
-				doc.ydoc.guid,
-				...doc.tables.notes.getAllValid().map((note) =>
+				rootYdoc.guid,
+				...tables.notes.getAllValid().map((note) =>
 					noteBodyDocGuid({
-						workspaceId: doc.ydoc.guid,
+						workspaceId: rootYdoc.guid,
 						noteId: note.id,
 					}),
 				),
 			];
 			noteBodyDocs[Symbol.dispose]();
-			doc[Symbol.dispose]();
+			rootYdoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
@@ -125,7 +128,7 @@ export function openHoneycrispBrowser({
 		},
 		[Symbol.dispose]() {
 			noteBodyDocs[Symbol.dispose]();
-			doc[Symbol.dispose]();
+			rootYdoc.destroy();
 		},
 	};
 }

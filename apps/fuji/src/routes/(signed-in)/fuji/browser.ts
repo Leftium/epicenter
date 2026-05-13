@@ -1,5 +1,6 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	attachEncryption,
 	attachOwnedBroadcastChannel,
 	attachRichText,
 	attachYjsSync,
@@ -15,8 +16,12 @@ import {
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { openFujiDocument } from './document.js';
-import { createFujiActions, type EntryId } from './workspace';
+import {
+	createFujiActions,
+	type EntryId,
+	FUJI_WORKSPACE_ID,
+	fujiTables,
+} from './workspace';
 
 function entryContentDocGuid({
 	workspaceId,
@@ -44,21 +49,24 @@ export function openFujiBrowser({
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openFujiDocument({ encryptionKeys });
+	const rootYdoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
+	const encryption = attachEncryption(rootYdoc, { encryptionKeys });
+	const tables = encryption.attachTables(fujiTables);
+	const kv = encryption.attachKv({});
 
-	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	const idb = encryption.attachIndexedDb(rootYdoc, { userId });
+	attachOwnedBroadcastChannel(rootYdoc, { userId });
 
 	const entryContentDocs = createDisposableCache((entryId: EntryId) => {
 		const ydoc = new Y.Doc({
 			guid: entryContentDocGuid({
-				workspaceId: doc.ydoc.guid,
+				workspaceId: rootYdoc.guid,
 				entryId,
 			}),
 			gc: false,
 		});
 		const body = attachRichText(ydoc);
-		const childIdb = doc.encryption.attachIndexedDb(ydoc, { userId });
+		const childIdb = encryption.attachIndexedDb(ydoc, { userId });
 		attachOwnedBroadcastChannel(ydoc, { userId });
 		const childSync = attachYjsSync(ydoc, {
 			url: toWsUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
@@ -67,7 +75,7 @@ export function openFujiBrowser({
 		});
 
 		onLocalUpdate(ydoc, () => {
-			doc.tables.entries.update(entryId, {
+			tables.entries.update(entryId, {
 				updatedAt: DateTimeString.now(),
 			});
 		});
@@ -88,9 +96,9 @@ export function openFujiBrowser({
 		};
 	});
 
-	const actions = createFujiActions(doc.tables);
-	const collaboration = openCollaboration(doc.ydoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+	const actions = createFujiActions(tables);
+	const collaboration = openCollaboration(rootYdoc, {
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		identity: peer,
@@ -98,25 +106,25 @@ export function openFujiBrowser({
 	});
 
 	return {
-		ydoc: doc.ydoc,
-		tables: doc.tables,
-		kv: doc.kv,
-		batch: doc.batch,
+		ydoc: rootYdoc,
+		tables,
+		kv,
+		batch: (fn: () => void) => rootYdoc.transact(fn),
 		idb,
 		entryContentDocs,
 		collaboration,
 		async wipe() {
 			const fallbackGuids = [
-				doc.ydoc.guid,
-				...doc.tables.entries.getAllValid().map((entry) =>
+				rootYdoc.guid,
+				...tables.entries.getAllValid().map((entry) =>
 					entryContentDocGuid({
-						workspaceId: doc.ydoc.guid,
+						workspaceId: rootYdoc.guid,
 						entryId: entry.id,
 					}),
 				),
 			];
 			entryContentDocs[Symbol.dispose]();
-			doc[Symbol.dispose]();
+			rootYdoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
@@ -125,7 +133,7 @@ export function openFujiBrowser({
 		},
 		[Symbol.dispose]() {
 			entryContentDocs[Symbol.dispose]();
-			doc[Symbol.dispose]();
+			rootYdoc.destroy();
 		},
 	};
 }

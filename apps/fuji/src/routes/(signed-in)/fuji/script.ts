@@ -1,17 +1,18 @@
 import { loadMachineSession } from '@epicenter/auth/node';
 import type { EncryptionKeys } from '@epicenter/encryption';
-import type { ProjectDir } from '@epicenter/workspace';
+import { attachEncryption, type ProjectDir } from '@epicenter/workspace';
 import {
 	attachYjsLogReader,
 	findEpicenterDir,
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
+import * as Y from 'yjs';
 import {
 	connectFujiDaemonActions,
 	DEFAULT_FUJI_DAEMON_ROUTE,
 } from './daemon.js';
-import { openFujiDocument } from './document.js';
+import { FUJI_WORKSPACE_ID, fujiTables } from './workspace.js';
 
 type LoadOfflineEncryptionKeys = () => Promise<EncryptionKeys | null>;
 
@@ -38,19 +39,22 @@ export async function openFujiSnapshot({
 			'[fuji] cannot open snapshot: no machine encryption keys. Run `epicenter login` on this machine.',
 		);
 	}
-	const doc = openFujiDocument({
-		clientID,
+	const ydoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
+	if (clientID !== undefined) ydoc.clientID = clientID;
+	const encryption = attachEncryption(ydoc, {
 		encryptionKeys: () => offlineEncryptionKeys,
 	});
-	const yjsLog = attachYjsLogReader(doc.ydoc, {
-		filePath: yjsPath(projectDir, doc.ydoc.guid),
+	const tables = encryption.attachTables(fujiTables);
+	encryption.attachKv({});
+	const yjsLog = attachYjsLogReader(ydoc, {
+		filePath: yjsPath(projectDir, ydoc.guid),
 	});
 
 	return {
-		tables: doc.tables,
+		tables,
 		yjsLog,
 		[Symbol.dispose]() {
-			doc[Symbol.dispose]();
+			ydoc.destroy();
 		},
 	};
 }

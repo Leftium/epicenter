@@ -38,17 +38,21 @@ export function openFujiBrowser({
   ) => WebSocket | Promise<WebSocket>;
   encryptionKeys: () => EncryptionKeys;
 }) {
-  const doc = openFujiDocument({ encryptionKeys });
-  const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-  attachOwnedBroadcastChannel(doc.ydoc, { userId });
-  const collaboration = openCollaboration(doc.ydoc, {
-    url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+  const rootYdoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
+  const encryption = attachEncryption(rootYdoc, { encryptionKeys });
+  const tables = encryption.attachTables(fujiTables);
+  const kv = encryption.attachKv({});
+  const idb = encryption.attachIndexedDb(rootYdoc, { userId });
+  attachOwnedBroadcastChannel(rootYdoc, { userId });
+  const actions = createFujiActions(tables);
+  const collaboration = openCollaboration(rootYdoc, {
+    url: toWsUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
     waitFor: idb.whenLoaded,
     openWebSocket,
     identity: peer,
-    actions: doc.actions,
+    actions,
   });
-  return { ...doc, idb, collaboration };
+  return { ydoc: rootYdoc, tables, kv, idb, collaboration };
 }
 ```
 

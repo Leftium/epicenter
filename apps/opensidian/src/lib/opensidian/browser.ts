@@ -6,6 +6,7 @@ import {
 	fileContentDocGuid,
 } from '@epicenter/filesystem';
 import {
+	attachEncryption,
 	attachOwnedBroadcastChannel,
 	attachTimeline,
 	attachYjsSync,
@@ -20,8 +21,8 @@ import {
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
+import { opensidianTables } from '../workspace/definition.js';
 import { createOpensidianActions } from './actions';
-import { openOpensidianDocument } from './document.js';
 
 export function openOpensidianBrowser({
 	userId,
@@ -34,23 +35,26 @@ export function openOpensidianBrowser({
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openOpensidianDocument({ encryptionKeys });
+	const rootYdoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
+	const encryption = attachEncryption(rootYdoc, { encryptionKeys });
+	const tables = encryption.attachTables(opensidianTables);
+	const kv = encryption.attachKv({});
 
-	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	const idb = encryption.attachIndexedDb(rootYdoc, { userId });
+	attachOwnedBroadcastChannel(rootYdoc, { userId });
 
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
 		const ydoc = new Y.Doc({
 			guid: fileContentDocGuid({
-				workspaceId: doc.ydoc.guid,
+				workspaceId: rootYdoc.guid,
 				fileId,
 			}),
 			gc: false,
 		});
 		onLocalUpdate(ydoc, () =>
-			doc.tables.files.update(fileId, { updatedAt: Date.now() }),
+			tables.files.update(fileId, { updatedAt: Date.now() }),
 		);
-		const childIdb = doc.encryption.attachIndexedDb(ydoc, { userId });
+		const childIdb = encryption.attachIndexedDb(ydoc, { userId });
 		attachOwnedBroadcastChannel(ydoc, { userId });
 		return {
 			ydoc,
@@ -87,10 +91,10 @@ export function openOpensidianBrowser({
 	const sqliteIndex = createSqliteIndex({
 		readContent: fileContent.read,
 	})({
-		tables: doc.tables,
+		tables,
 	});
 	const sqliteIndexExports = sqliteIndex.exports;
-	const fs = attachYjsFileSystem(doc.ydoc, doc.tables.files, fileContent);
+	const fs = attachYjsFileSystem(rootYdoc, tables.files, fileContent);
 	const bash = new Bash({ fs, cwd: '/' });
 	const actions = createOpensidianActions({
 		fs,
@@ -98,8 +102,8 @@ export function openOpensidianBrowser({
 		bash,
 	});
 
-	const collaboration = openCollaboration(doc.ydoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+	const collaboration = openCollaboration(rootYdoc, {
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		identity: peer,
@@ -112,14 +116,14 @@ export function openOpensidianBrowser({
 		disposed = true;
 		fileContentDocs[Symbol.dispose]();
 		sqliteIndex[Symbol.dispose]();
-		doc[Symbol.dispose]();
+		rootYdoc.destroy();
 	}
 
 	return {
-		ydoc: doc.ydoc,
-		tables: doc.tables,
-		kv: doc.kv,
-		batch: doc.batch,
+		ydoc: rootYdoc,
+		tables,
+		kv,
+		batch: (fn: () => void) => rootYdoc.transact(fn),
 		idb,
 		fileContentDocs,
 		sqliteIndex: sqliteIndexExports,
@@ -128,10 +132,10 @@ export function openOpensidianBrowser({
 		collaboration,
 		async wipe() {
 			const fallbackGuids = [
-				doc.ydoc.guid,
-				...doc.tables.files.getAllValid().map((file) =>
+				rootYdoc.guid,
+				...tables.files.getAllValid().map((file) =>
 					fileContentDocGuid({
-						workspaceId: doc.ydoc.guid,
+						workspaceId: rootYdoc.guid,
 						fileId: file.id,
 					}),
 				),

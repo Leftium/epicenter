@@ -1,6 +1,7 @@
 import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
+	attachEncryption,
 	openCollaboration,
 	type ProjectDir,
 	toWsUrl,
@@ -21,8 +22,12 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { openFujiDocument } from './document.js';
-import { createFujiActions } from './workspace.js';
+import * as Y from 'yjs';
+import {
+	createFujiActions,
+	FUJI_WORKSPACE_ID,
+	fujiTables,
+} from './workspace.js';
 
 export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 
@@ -37,16 +42,19 @@ export function defineFujiDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const doc = openFujiDocument({
-				clientID: hashClientId(projectDir),
+			const ydoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
+			ydoc.clientID = hashClientId(projectDir);
+			const encryption = attachEncryption(ydoc, {
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});
-			const yjsLog = attachYjsLog(doc.ydoc, {
-				filePath: yjsPath(projectDir, doc.ydoc.guid),
+			const tables = encryption.attachTables(fujiTables);
+			encryption.attachKv({});
+			const yjsLog = attachYjsLog(ydoc, {
+				filePath: yjsPath(projectDir, ydoc.guid),
 			});
-			const actions = createFujiActions(doc.tables);
-			const collaboration = openCollaboration(doc.ydoc, {
-				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
+			const actions = createFujiActions(tables);
+			const collaboration = openCollaboration(ydoc, {
+				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
 				identity: {
 					id: 'fuji-daemon',
@@ -56,22 +64,20 @@ export function defineFujiDaemon({
 				actions,
 			});
 			const sqliteDb = openWriterSqlite({
-				filePath: sqlitePath(projectDir, doc.ydoc.guid),
+				filePath: sqlitePath(projectDir, ydoc.guid),
 				log: createLogger('fuji-sqlite'),
 			});
-			doc.ydoc.once('destroy', () => sqliteDb.close());
-			attachSqliteMaterializer(doc.ydoc, { db: sqliteDb }).table(
-				doc.tables.entries,
-			);
-			attachMarkdownMaterializer(doc.ydoc, {
-				dir: markdownPath(projectDir, doc.ydoc.guid),
-			}).table(doc.tables.entries, { filename: slugFilename('title') });
+			ydoc.once('destroy', () => sqliteDb.close());
+			attachSqliteMaterializer(ydoc, { db: sqliteDb }).table(tables.entries);
+			attachMarkdownMaterializer(ydoc, {
+				dir: markdownPath(projectDir, ydoc.guid),
+			}).table(tables.entries, { filename: slugFilename('title') });
 
 			return {
 				collaboration,
 				yjsLog,
 				async [Symbol.asyncDispose]() {
-					doc[Symbol.dispose]();
+					ydoc.destroy();
 					await Promise.all([collaboration.whenDisposed, yjsLog.whenDisposed]);
 				},
 			};

@@ -20,6 +20,8 @@ import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
+export const FUJI_WORKSPACE_ID = 'epicenter.fuji';
+
 export type EntryId = string & Brand<'EntryId'>;
 export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
 

@@ -1,6 +1,7 @@
 import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
+	attachEncryption,
 	attachYjsSync,
 	type ProjectDir,
 	toWsUrl,
@@ -11,7 +12,8 @@ import {
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import { openZhongwenDocument } from './document.js';
+import * as Y from 'yjs';
+import { zhongwenKv, zhongwenTables } from './workspace/index.js';
 
 export async function openZhongwenScript({
 	projectDir = findEpicenterDir(),
@@ -21,28 +23,31 @@ export async function openZhongwenScript({
 	clientID?: number;
 }) {
 	const auth = await createMachineAuthClient();
-	const doc = openZhongwenDocument({
-		clientID,
+	const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
+	ydoc.clientID = clientID;
+	const encryption = attachEncryption(ydoc, {
 		encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 	});
-	const yjsLog = attachYjsLogReader(doc.ydoc, {
-		filePath: yjsPath(projectDir, doc.ydoc.guid),
+	const tables = encryption.attachTables(zhongwenTables);
+	const kv = encryption.attachKv(zhongwenKv);
+	const yjsLog = attachYjsLogReader(ydoc, {
+		filePath: yjsPath(projectDir, ydoc.guid),
 	});
-	const sync = attachYjsSync(doc.ydoc, {
-		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
+	const sync = attachYjsSync(ydoc, {
+		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 		openWebSocket: auth.openWebSocket,
 	});
 
 	return {
-		ydoc: doc.ydoc,
-		tables: doc.tables,
-		kv: doc.kv,
-		encryption: doc.encryption,
-		batch: doc.batch,
+		ydoc,
+		tables,
+		kv,
+		encryption,
+		batch: (fn: () => void) => ydoc.transact(fn),
 		yjsLog,
 		sync,
 		[Symbol.dispose]() {
-			doc[Symbol.dispose]();
+			ydoc.destroy();
 		},
 	};
 }

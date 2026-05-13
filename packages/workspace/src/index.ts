@@ -85,6 +85,7 @@ export type {
 } from './shared/actions';
 export {
 	ACTION_KEY_PATTERN,
+	defineActions,
 	defineMutation,
 	defineQuery,
 	invokeAction,
@@ -113,6 +114,14 @@ export {
 	getOrCreateInstallationIdAsync,
 	type SimpleStorage,
 } from './shared/device-id.js';
+
+// New replica-id helper (Wave 1 of spec
+// 20260513T220000-document-sync-and-identity-collapse.md). Co-exists with the
+// installation-id helper until Wave 4 migrates apps; Wave 6 deletes the old.
+export {
+	createReplicaId,
+	createReplicaIdAsync,
+} from './document/replica-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SHARED TYPES

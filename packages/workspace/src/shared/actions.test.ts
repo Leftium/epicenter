@@ -14,6 +14,7 @@ import { Err, Ok } from 'wellcrafted/result';
 import {
 	ACTION_KEY_PATTERN,
 	type ActionRegistry,
+	defineActions,
 	defineMutation,
 	defineQuery,
 	invokeAction,
@@ -265,5 +266,88 @@ describe('ActionRegistry', () => {
 		expect(ACTION_KEY_PATTERN.test('0tabs')).toBe(false);
 		expect(ACTION_KEY_PATTERN.test('_tabs')).toBe(false);
 		expect(ACTION_KEY_PATTERN.test('a'.repeat(65))).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// defineActions
+// ---------------------------------------------------------------------------
+
+describe('defineActions', () => {
+	test('returns the input record verbatim for valid snake_case keys', () => {
+		const actions = defineActions({
+			tabs_close: defineMutation({ handler: () => ({ closed: 1 }) }),
+			tabs_list: defineQuery({ handler: () => [] }),
+		});
+		expect(Object.keys(actions).sort()).toEqual(['tabs_close', 'tabs_list']);
+	});
+
+	test('preserves Action type narrowing for type extraction', () => {
+		const actions = defineActions({
+			entries_update: defineMutation({
+				input: Type.Object({ id: Type.String() }),
+				handler: ({ id }) => ({ id }),
+			}),
+		});
+		type UpdateInput = Parameters<typeof actions.entries_update>[0];
+		const ok: UpdateInput = { id: 'x' };
+		expect(ok.id).toBe('x');
+	});
+
+	test('throws at construction when a dynamic key fails the pattern', () => {
+		const dynamic = {
+			'tabs.close': defineMutation({ handler: () => null }),
+		} as unknown as Parameters<typeof defineActions>[0];
+		// Cast simulates `Object.fromEntries(...)` or `as ActionRegistry` bypass.
+		expect(() => defineActions(dynamic)).toThrow(/Invalid action key "tabs.close"/);
+	});
+
+	test('throws on a name longer than 64 chars', () => {
+		const longKey = `a${'b'.repeat(64)}`;
+		const dynamic = {
+			[longKey]: defineMutation({ handler: () => null }),
+		} as unknown as Parameters<typeof defineActions>[0];
+		expect(() => defineActions(dynamic)).toThrow(/Invalid action key/);
+	});
+
+	test('compile-time type-check rejects dotted keys (and runtime throws if bypassed)', () => {
+		const action = defineMutation({ handler: () => null });
+		expect(() =>
+			defineActions({
+				// @ts-expect-error: 'tabs.close' fails IsSnakeCaseKey -> branded error type
+				'tabs.close': action,
+				tabs_open: action,
+			}),
+		).toThrow(/Invalid action key "tabs.close"/);
+	});
+
+	test('compile-time type-check rejects camelCase keys (and runtime throws if bypassed)', () => {
+		const action = defineMutation({ handler: () => null });
+		expect(() =>
+			defineActions({
+				// @ts-expect-error: 'TabsClose' fails IsSnakeCaseKey (capital letters)
+				TabsClose: action,
+			}),
+		).toThrow(/Invalid action key "TabsClose"/);
+	});
+
+	test('compile-time type-check rejects leading digit (and runtime throws)', () => {
+		const action = defineMutation({ handler: () => null });
+		expect(() =>
+			defineActions({
+				// @ts-expect-error: '0tab' fails IsSnakeCaseKey (leading digit)
+				'0tab': action,
+			}),
+		).toThrow(/Invalid action key "0tab"/);
+	});
+
+	test('compile-time type-check rejects leading underscore (and runtime throws)', () => {
+		const action = defineMutation({ handler: () => null });
+		expect(() =>
+			defineActions({
+				// @ts-expect-error: '_x' fails IsSnakeCaseKey (leading underscore)
+				_x: action,
+			}),
+		).toThrow(/Invalid action key "_x"/);
 	});
 });

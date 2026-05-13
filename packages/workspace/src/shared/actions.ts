@@ -72,8 +72,6 @@ type ActionConfig<TInput extends TSchema | undefined, R> = {
 
 type ActionType = 'query' | 'mutation';
 
-export const ACTION_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
-
 /**
  * Metadata properties attached to a callable action.
  *
@@ -116,11 +114,105 @@ export type Action<
 /**
  * Flat snake_case key to `Action` map. The single shape for an in-process
  * action surface: keys are the local address, peer RPC method, daemon
- * argument, CLI flag, and AI tool name. Author with a literal and
- * `satisfies ActionRegistry`; consumers iterate with `Object.entries` or
- * index by string.
+ * argument, CLI flag, and AI tool name. Author with `defineActions({...})`
+ * so the helper enforces the key shape at compile time and at construction;
+ * consumers iterate with `Object.entries` or index by string.
  */
 export type ActionRegistry = Record<string, Action>;
+
+// ════════════════════════════════════════════════════════════════════════════
+// KEY VALIDATION (compile-time + runtime)
+// ════════════════════════════════════════════════════════════════════════════
+
+type Lower =
+	| 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm'
+	| 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z';
+type Digit = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
+type WordChar = Lower | Digit | '_';
+
+/** Recursive tail check: every remaining char must be `[a-z0-9_]`. */
+type IsActionKeyTail<S extends string> = S extends ''
+	? true
+	: S extends `${WordChar}${infer Rest}`
+		? IsActionKeyTail<Rest>
+		: false;
+
+/**
+ * `true` iff `S` matches `^[a-z][a-z0-9_]*$` at the type level. Length is
+ * not checked here; the regex catches >64 at runtime. Verified empirically:
+ * `arkregex` falls back to `string` for `[a-z]`-class patterns, so we
+ * hand-write the template literal walk.
+ */
+type IsSnakeCaseKey<S extends string> = S extends `${Lower}${infer Rest}`
+	? IsActionKeyTail<Rest> extends true
+		? true
+		: false
+	: false;
+
+/**
+ * Branded type-level error returned from `ValidatedKey<S>` when `S` is not
+ * a valid snake_case action key.
+ *
+ * The trailing `​` (Unicode zero-width space) makes this literal
+ * structurally distinct from any plain string a user could type. TypeScript
+ * renders the message in IDE error tooltips without showing the invisible
+ * character, so the developer sees a clean English sentence:
+ *
+ *     Type 'Action' is not assignable to type
+ *     'Invalid action key "tabs.close", must be snake_case ASCII matching /^[a-z][a-z0-9_]*$/'.
+ *
+ * Same pattern `@ark/util`'s internal `ErrorMessage<M>` uses. Inlined here
+ * because that helper is not part of `arktype`'s public surface.
+ */
+type InvalidActionKey<S extends string> =
+	`Invalid action key "${S}", must be snake_case ASCII matching /^[a-z][a-z0-9_]*$/​`;
+
+/**
+ * Regex enforcing `^[a-z][a-z0-9_]{0,63}$` at runtime. Exported so the CLI
+ * and tests can share the same definition.
+ */
+export const ACTION_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * Author an `ActionRegistry` with compile-time + runtime key validation.
+ *
+ * Compile time: each key is checked against the snake_case template-literal
+ * type `IsSnakeCaseKey<K>`. A bad key (`'tabs.close'`, `'TabsClose'`,
+ * `'0tab'`, `'_x'`) gets typed to `InvalidActionKey<K>` (a branded error
+ * string) at that property, so the `Action` value the author wrote fails
+ * to assign and TypeScript surfaces the error message at the edit site.
+ *
+ * Runtime: each key is checked against `ACTION_KEY_PATTERN` so dynamic
+ * builders (`Object.fromEntries(...)`) and `as ActionRegistry` casts that
+ * bypass the type still fail fast at construction.
+ *
+ * @example
+ * ```ts
+ * export function createFujiActions(tables: FujiTables) {
+ *   return defineActions({
+ *     entries_create: defineMutation({ ... }),
+ *     entries_update: defineMutation({ ... }),
+ *   });
+ * }
+ * export type FujiActions = ReturnType<typeof createFujiActions>;
+ * ```
+ */
+export function defineActions<T extends ActionRegistry>(
+	actions: {
+		[K in keyof T & string]: IsSnakeCaseKey<K> extends true
+			? T[K]
+			: InvalidActionKey<K>;
+	},
+): T {
+	for (const key of Object.keys(actions)) {
+		if (!ACTION_KEY_PATTERN.test(key)) {
+			throw new Error(
+				`Invalid action key "${key}". Must match ${ACTION_KEY_PATTERN.source} (snake_case ASCII, starting with a letter, max 64 chars).`,
+			);
+		}
+	}
+	return actions as T;
+}
 
 /**
  * Define a query (read operation) with full type inference.

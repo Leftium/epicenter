@@ -136,24 +136,6 @@ describe('action paths publication shape', () => {
 		expect(Object.keys(actions).sort()).toEqual(['system_ping']);
 	});
 
-	test('throws when an action key does not match the shared pattern', () => {
-		const dottedKey = ['tabs', 'close'].join('.');
-		expect(() =>
-			setup({
-				[dottedKey]: defineMutation({ handler: () => null }),
-			}),
-		).toThrow(/Invalid action key/);
-
-		expect(() =>
-			setup({
-				TabsClose: defineMutation({ handler: () => null }),
-			}),
-		).toThrow(/Invalid action key/);
-
-		expect(() =>
-			setup({
-				'0tabs': defineMutation({ handler: () => null }),
-			}),
-		).toThrow(/Invalid action key/);
-	});
+	// Key validation lives in `defineActions` (see shared/actions.test.ts).
+	// `openCollaboration` trusts what the helper produced.
 });

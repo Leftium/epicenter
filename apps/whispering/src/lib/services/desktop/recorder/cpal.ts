@@ -266,7 +266,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 
 		// If there's a file path, delete the file using Tauri FS plugin
 		if (audioRecording?.filePath) {
-			const { filePath } = audioRecording;
+			const filePath = audioRecording.filePath;
 			const { error: removeError } = await tryAsync({
 				try: () => remove(filePath),
 				catch: (error) => RecorderError.FileDeleteFailed({ cause: error }),

@@ -78,8 +78,7 @@ const statusCommand = cmd({
 			return;
 		}
 
-		const { session } = result.data;
-		console.log(`Logged in as: ${session.user.email}`);
+		console.log(`Logged in as: ${result.data.session.user.email}`);
 		if (result.data.status === 'valid') {
 			console.log('Session:      verified');
 		} else {

@@ -55,9 +55,11 @@ export async function executeRun(
 	}
 
 	const { entry, localPath } = target.data;
-	const { runtime } = entry;
 
-	const action = resolveActionPath(runtime.collaboration.actions, localPath);
+	const action = resolveActionPath(
+		entry.runtime.collaboration.actions,
+		localPath,
+	);
 	if (!action) {
 		const descendants = daemonActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {

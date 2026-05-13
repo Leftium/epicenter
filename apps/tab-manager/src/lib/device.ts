@@ -45,20 +45,18 @@ export async function registerDevice(
 	// The binding's openTabManager narrows peer.id to DeviceId at construction;
 	// PeerIdentity's id field is a plain string, so cast back to the branded type.
 	const id = tabManager.collaboration.identity.id as DeviceId;
-	const { name } = tabManager.collaboration.identity;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
 	tabManager.tables.devices.set({
 		id,
-		name: existingName ?? name,
+		name: existingName ?? tabManager.collaboration.identity.name,
 		lastSeen: new Date().toISOString(),
 		browser: import.meta.env.BROWSER,
 		_v: 1,
 	});
 }
 
-const capitalize = (str: string) =>
-	str.charAt(0).toUpperCase() + str.slice(1);
+const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
 
 /** Default device label like "Chrome on macOS". */
 async function generateDefaultDeviceName(): Promise<string> {

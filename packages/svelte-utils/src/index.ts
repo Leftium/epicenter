@@ -11,10 +11,4 @@ export {
 	createPersistedState,
 	PersistedError,
 } from './persisted-state.svelte.js';
-export {
-	type AppBase,
-	createSession,
-	type InferApp,
-	type Session,
-	type SessionPayload,
-} from './session.svelte.js';
+export { createSession } from './session.svelte.js';

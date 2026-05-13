@@ -1,57 +1,60 @@
 import type { AuthClient, AuthState, WorkspaceIdentity } from '@epicenter/auth';
-import type { AppBase, SessionPayload } from './session.svelte.js';
 
-export type SessionLifecycleConfig<TApp extends AppBase> = {
+export type SessionLifecycleConfig<T extends Disposable> = {
 	auth: AuthClient;
-	build: (identity: WorkspaceIdentity) => TApp;
-	getPayload: () => SessionPayload<TApp> | null;
-	setPayload: (payload: SessionPayload<TApp> | null) => void;
+	build: (identity: WorkspaceIdentity) => T;
+	getPayload: () => T | null;
+	setPayload: (payload: T | null) => void;
 	onDifferentUser: () => void;
 };
 
 /**
  * Pure lifecycle for the session payload. Owns the build/dispose contract
- * and the user-switch refusal. Reactivity (`$state`) is injected through
+ * and the user-switch refusal. Reactivity is injected via
  * `getPayload`/`setPayload` so this helper can be tested without Svelte.
  *
  * Disposal triggers:
  *   - `state.status === 'signed-out'` → dispose, set null
- *   - same payload, different `user.id` → dispose, call `onDifferentUser`
+ *   - same-session different `user.id` → dispose, call `onDifferentUser`
  *
- * Same-user `reauth-required` is a no-op: the existing `SessionPayload`
- * object is preserved, so consumer references stay stable across the auth
- * state transition.
+ * Same-user `reauth-required` is a no-op: the existing payload reference
+ * stays stable so consumers keep their references. The lifecycle tracks
+ * the built user id internally; the payload does NOT need to carry it.
  */
-export function createSessionLifecycle<TApp extends AppBase>({
+export function createSessionLifecycle<T extends Disposable>({
 	auth,
 	build,
 	getPayload,
 	setPayload,
 	onDifferentUser,
-}: SessionLifecycleConfig<TApp>) {
+}: SessionLifecycleConfig<T>) {
+	let currentUserId: string | null = null;
+
 	function reconcile(state: AuthState) {
 		const payload = getPayload();
 		if (state.status === 'signed-out') {
 			if (payload) {
-				payload.app[Symbol.dispose]();
+				payload[Symbol.dispose]();
 				setPayload(null);
+				currentUserId = null;
 			}
 			return;
 		}
 		// signed-in or reauth-required: both carry identity.
 		if (!payload) {
-			const app = build(state.identity);
-			setPayload({ identity: state.identity, app });
+			currentUserId = state.identity.user.id;
+			setPayload(build(state.identity));
 			return;
 		}
 		// Same user: no-op. The payload reference stays stable across
 		// signed-in <-> reauth-required transitions so consumers keep their
 		// references. Auth-bound callbacks read `auth.state` at their own
 		// boundaries (sync at reconnect, fetch at next call).
-		if (payload.app.userId === state.identity.user.id) return;
-		// Different user: refuse the live switch and reload (heap safety).
-		payload.app[Symbol.dispose]();
+		if (currentUserId === state.identity.user.id) return;
+		// Different user: refuse the live switch (apps typically reload).
+		payload[Symbol.dispose]();
 		setPayload(null);
+		currentUserId = null;
 		onDifferentUser();
 	}
 
@@ -62,8 +65,9 @@ export function createSessionLifecycle<TApp extends AppBase>({
 	return {
 		[Symbol.dispose]() {
 			unsubscribe();
-			getPayload()?.app[Symbol.dispose]();
+			getPayload()?.[Symbol.dispose]();
 			setPayload(null);
+			currentUserId = null;
 		},
 	};
 }

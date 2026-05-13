@@ -2,8 +2,8 @@
  * Tests for the pure session lifecycle. Asserts the invariants that the
  * Svelte-facing `createSession` wrapper depends on:
  *
- *   - signed-in → reauth-required → signed-in preserves the same
- *     `SessionPayload` instance (object identity).
+ *   - signed-in → reauth-required → signed-in preserves the same payload
+ *     instance (object identity).
  *   - signed-in (user A) → signed-in (user B) disposes and triggers the
  *     different-user escape hatch.
  *   - signed-out disposes and clears the payload.
@@ -11,7 +11,6 @@
 
 import { expect, mock, test } from 'bun:test';
 import type { AuthClient, AuthState, WorkspaceIdentity } from '@epicenter/auth';
-import type { AppBase, SessionPayload } from './session.svelte.js';
 import { createSessionLifecycle } from './session-lifecycle.js';
 
 function makeIdentity({
@@ -51,8 +50,9 @@ function makeAuth(initial: AuthState) {
 	return auth as typeof auth & AuthClient;
 }
 
-type TestApp = AppBase & {
+type TestApp = Disposable & {
 	id: number;
+	userId: string;
 	disposed: boolean;
 };
 
@@ -74,17 +74,17 @@ function makeBuild() {
 	return { build, built };
 }
 
-function makeHolder<T extends AppBase>() {
-	let payload: SessionPayload<T> | null = null;
+function makeHolder<T extends Disposable>() {
+	let payload: T | null = null;
 	return {
 		getPayload: () => payload,
-		setPayload: (next: SessionPayload<T> | null) => {
+		setPayload: (next: T | null) => {
 			payload = next;
 		},
 	};
 }
 
-test('signed-in → reauth-required → signed-in preserves the same SessionPayload', () => {
+test('signed-in → reauth-required → signed-in preserves the same payload', () => {
 	const auth = makeAuth({
 		status: 'signed-in',
 		identity: makeIdentity(),
@@ -104,18 +104,18 @@ test('signed-in → reauth-required → signed-in preserves the same SessionPayl
 	const initial = holder.getPayload();
 	expect(initial).not.toBeNull();
 	expect(built).toHaveLength(1);
-	expect(initial!.app).toBe(built[0]!);
-	expect(initial!.app.disposed).toBe(false);
+	expect(initial).toBe(built[0]!);
+	expect(initial!.disposed).toBe(false);
 
 	auth.setState({ status: 'reauth-required', identity: makeIdentity() });
 	expect(holder.getPayload()).toBe(initial);
 	expect(built).toHaveLength(1);
-	expect(initial!.app.disposed).toBe(false);
+	expect(initial!.disposed).toBe(false);
 
 	auth.setState({ status: 'signed-in', identity: makeIdentity() });
 	expect(holder.getPayload()).toBe(initial);
 	expect(built).toHaveLength(1);
-	expect(initial!.app.disposed).toBe(false);
+	expect(initial!.disposed).toBe(false);
 	expect(onDifferentUser).not.toHaveBeenCalled();
 });
 
@@ -124,7 +124,7 @@ test('signed-in (user A) → signed-in (user B) disposes and triggers different-
 		status: 'signed-in',
 		identity: makeIdentity({ userId: 'user-A' }),
 	});
-	const { build, built } = makeBuild();
+	const { build } = makeBuild();
 	const holder = makeHolder<TestApp>();
 	const onDifferentUser = mock(() => {});
 
@@ -137,24 +137,24 @@ test('signed-in (user A) → signed-in (user B) disposes and triggers different-
 	});
 
 	const initial = holder.getPayload()!;
-	expect(initial.app.userId).toBe('user-A');
+	expect(initial.userId).toBe('user-A');
 
 	auth.setState({
 		status: 'signed-in',
 		identity: makeIdentity({ userId: 'user-B' }),
 	});
 
-	expect(initial.app.disposed).toBe(true);
+	expect(initial.disposed).toBe(true);
 	expect(holder.getPayload()).toBeNull();
 	expect(onDifferentUser).toHaveBeenCalledTimes(1);
 });
 
-test('signed-out disposes the app and clears the payload', () => {
+test('signed-out disposes the payload and clears it', () => {
 	const auth = makeAuth({
 		status: 'signed-in',
 		identity: makeIdentity(),
 	});
-	const { build, built } = makeBuild();
+	const { build } = makeBuild();
 	const holder = makeHolder<TestApp>();
 	const onDifferentUser = mock(() => {});
 
@@ -169,12 +169,12 @@ test('signed-out disposes the app and clears the payload', () => {
 	const initial = holder.getPayload()!;
 	auth.setState({ status: 'signed-out' });
 
-	expect(initial.app.disposed).toBe(true);
+	expect(initial.disposed).toBe(true);
 	expect(holder.getPayload()).toBeNull();
 	expect(onDifferentUser).not.toHaveBeenCalled();
 });
 
-test('cold boot in reauth-required builds the app from identity', () => {
+test('cold boot in reauth-required builds the payload from identity', () => {
 	const auth = makeAuth({
 		status: 'reauth-required',
 		identity: makeIdentity(),
@@ -194,10 +194,10 @@ test('cold boot in reauth-required builds the app from identity', () => {
 	const payload = holder.getPayload();
 	expect(payload).not.toBeNull();
 	expect(built).toHaveLength(1);
-	expect(payload!.app).toBe(built[0]!);
+	expect(payload).toBe(built[0]!);
 });
 
-test('lifecycle disposal clears the payload after disposing the app', () => {
+test('lifecycle disposal clears the payload after disposing it', () => {
 	const auth = makeAuth({
 		status: 'signed-in',
 		identity: makeIdentity(),
@@ -217,6 +217,6 @@ test('lifecycle disposal clears the payload after disposing the app', () => {
 	const initial = holder.getPayload()!;
 	lifecycle[Symbol.dispose]();
 
-	expect(initial.app.disposed).toBe(true);
+	expect(initial.disposed).toBe(true);
 	expect(holder.getPayload()).toBeNull();
 });

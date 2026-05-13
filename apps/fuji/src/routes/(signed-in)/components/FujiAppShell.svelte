@@ -61,7 +61,7 @@
 
 		if (event.key === 'n' && event.metaKey) {
 			event.preventDefault();
-			const { id } = fuji.collaboration.actions['entries.create']({});
+			const { id } = fuji.collaboration.actions.entries_create({});
 			goto(`/entries/${id}`);
 			return;
 		}

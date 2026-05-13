@@ -70,7 +70,7 @@ export type FujiTables = Tables<typeof fujiTables>;
 
 export function createFujiActions(tables: FujiTables) {
 	return {
-		'entries.get': defineQuery({
+		entries_get: defineQuery({
 			title: 'Get Entry',
 			description: 'Read one entry by ID from the daemon workspace.',
 			input: Type.Object({
@@ -80,7 +80,7 @@ export function createFujiActions(tables: FujiTables) {
 				return tables.entries.get(id);
 			},
 		}),
-		'entries.getAllValid': defineQuery({
+		entries_get_all_valid: defineQuery({
 			title: 'List Valid Entries',
 			description: 'Read all valid entries from the daemon workspace.',
 			input: Type.Object({}),
@@ -88,7 +88,7 @@ export function createFujiActions(tables: FujiTables) {
 				return tables.entries.getAllValid();
 			},
 		}),
-		'entries.count': defineQuery({
+		entries_count: defineQuery({
 			title: 'Count Entries',
 			description: 'Count entries in the daemon workspace.',
 			input: Type.Object({}),
@@ -96,7 +96,7 @@ export function createFujiActions(tables: FujiTables) {
 				return tables.entries.count();
 			},
 		}),
-		'entries.has': defineQuery({
+		entries_has: defineQuery({
 			title: 'Has Entry',
 			description: 'Check whether an entry exists in the daemon workspace.',
 			input: Type.Object({
@@ -106,7 +106,7 @@ export function createFujiActions(tables: FujiTables) {
 				return tables.entries.has(id);
 			},
 		}),
-		'entries.create': defineMutation({
+		entries_create: defineMutation({
 			title: 'Create Entry',
 			description:
 				'Create a new CMS entry with optional title, subtitle, type, tags, and rating.',
@@ -147,7 +147,7 @@ export function createFujiActions(tables: FujiTables) {
 				return { id };
 			},
 		}),
-		'entries.upsert': defineMutation({
+		entries_upsert: defineMutation({
 			title: 'Upsert Entry',
 			description: 'Insert or replace a full entry row.',
 			input: Type.Object({
@@ -187,7 +187,7 @@ export function createFujiActions(tables: FujiTables) {
 				return { id: parsed.data.id };
 			},
 		}),
-		'entries.update': defineMutation({
+		entries_update: defineMutation({
 			title: 'Update Entry',
 			description:
 				'Update entry metadata fields. Automatically bumps updatedAt.',
@@ -222,7 +222,7 @@ export function createFujiActions(tables: FujiTables) {
 				});
 			},
 		}),
-		'entries.delete': defineMutation({
+		entries_delete: defineMutation({
 			title: 'Delete Entry',
 			description: 'Soft-delete an entry by setting deletedAt to now.',
 			input: Type.Object({
@@ -235,7 +235,7 @@ export function createFujiActions(tables: FujiTables) {
 				});
 			},
 		}),
-		'entries.restore': defineMutation({
+		entries_restore: defineMutation({
 			title: 'Restore Entry',
 			description: 'Restore a soft-deleted entry by clearing deletedAt.',
 			input: Type.Object({
@@ -248,7 +248,7 @@ export function createFujiActions(tables: FujiTables) {
 				});
 			},
 		}),
-		'entries.bulkCreate': defineMutation({
+		entries_bulk_create: defineMutation({
 			title: 'Bulk Create Entries',
 			description: 'Create multiple entries at once from title + date pairs.',
 			input: Type.Object({

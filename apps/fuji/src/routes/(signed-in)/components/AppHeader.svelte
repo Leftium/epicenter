@@ -43,7 +43,7 @@
 						variant="ghost"
 						size="icon-sm"
 						onclick={() => {
-							const { id } = fuji.collaboration.actions['entries.create']({});
+							const { id } = fuji.collaboration.actions.entries_create({});
 							goto(`/entries/${id}`);
 						}}
 					>

@@ -26,13 +26,13 @@
 	const fuji = requireFuji();
 
 	type EntryUpdate = Omit<
-		Parameters<typeof fuji.collaboration.actions['entries.update']>[0],
+		Parameters<typeof fuji.collaboration.actions.entries_update>[0],
 		'id'
 	>;
 
 	function updateEntry(updates: EntryUpdate) {
 		toastOnError(
-			fuji.collaboration.actions['entries.update']({ id: entry.id, ...updates }),
+			fuji.collaboration.actions.entries_update({ id: entry.id, ...updates }),
 			"Couldn't save changes",
 		);
 	}
@@ -66,7 +66,7 @@
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
 						toastOnError(
-							fuji.collaboration.actions['entries.delete']({ id: entry.id }),
+							fuji.collaboration.actions.entries_delete({ id: entry.id }),
 							'Couldn\'t delete entry',
 						);
 						goto('/');

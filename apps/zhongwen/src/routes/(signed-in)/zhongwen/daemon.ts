@@ -3,7 +3,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { openCollaboration, toWsUrl } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import { openZhongwenDoc } from './index.js';
+import { openZhongwenDocument } from './document.js';
 
 export const DEFAULT_ZHONGWEN_DAEMON_ROUTE = 'zhongwen';
 
@@ -18,7 +18,7 @@ export function defineZhongwenDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const doc = openZhongwenDoc({
+			const doc = openZhongwenDocument({
 				clientID: hashClientId(projectDir),
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});

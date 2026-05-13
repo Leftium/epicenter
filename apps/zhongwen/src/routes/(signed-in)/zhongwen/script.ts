@@ -11,9 +11,9 @@ import {
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import { openZhongwenDoc } from './index.js';
+import { openZhongwenDocument } from './document.js';
 
-export async function openZhongwen({
+export async function openZhongwenBrowser({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 }: {
@@ -21,7 +21,7 @@ export async function openZhongwen({
 	clientID?: number;
 }) {
 	const auth = await createMachineAuthClient();
-	const doc = openZhongwenDoc({
+	const doc = openZhongwenDocument({
 		clientID,
 		encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 	});

@@ -1,27 +1,26 @@
 import { requireIdentity } from '@epicenter/auth';
 import { createSession } from '@epicenter/svelte';
 import { auth } from '$platform/auth';
-import { openZhongwen } from '../routes/(signed-in)/zhongwen/browser';
+import { openZhongwenBrowser } from '../routes/(signed-in)/zhongwen/browser';
 
 export const session = createSession({
 	auth,
-	build: (identity) => {
-		const userId = identity.user.id;
-		const zhongwen = openZhongwen({
-			userId,
+	build: (identity) =>
+		openZhongwenBrowser({
+			userId: identity.user.id,
 			encryptionKeys: () => requireIdentity(auth).encryptionKeys,
-		});
-		return {
-			userId,
-			zhongwen,
-			[Symbol.dispose]() {
-				zhongwen[Symbol.dispose]();
-			},
-		};
-	},
+		}),
+	onDifferentUser: () => location.reload(),
 });
 
-export const { requireApp } = session;
+export function requireZhongwen() {
+	if (!session.current) {
+		throw new Error(
+			'requireZhongwen() called without an authenticated session.',
+		);
+	}
+	return session.current;
+}
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());

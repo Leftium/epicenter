@@ -8,7 +8,7 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { requireApp } from '$lib/session';
+	import { requireZhongwen } from '$lib/session';
 	import { auth } from '$platform/auth';
 	import { createChatState } from './chat/chat-state.svelte';
 	import ChatInput from './components/ChatInput.svelte';
@@ -16,7 +16,7 @@
 	import ModelPicker from './components/ModelPicker.svelte';
 	import ZhongwenSidebar from './components/ZhongwenSidebar.svelte';
 
-	const { zhongwen } = requireApp();
+	const zhongwen = requireZhongwen();
 	const showPinyin = fromKv(zhongwen.kv, 'showPinyin');
 	const chatState = createChatState();
 	let dismissedError = $state(false);

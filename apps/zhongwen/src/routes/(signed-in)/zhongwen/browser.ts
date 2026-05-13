@@ -3,16 +3,16 @@ import {
 	type EncryptionKeys,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
-import { openZhongwenDoc } from './index';
+import { openZhongwenDocument } from './document.js';
 
-export function openZhongwen({
+export function openZhongwenBrowser({
 	userId,
 	encryptionKeys,
 }: {
 	userId: string;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openZhongwenDoc({ encryptionKeys });
+	const doc = openZhongwenDocument({ encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
@@ -33,4 +33,4 @@ export function openZhongwen({
 	};
 }
 
-export type Zhongwen = ReturnType<typeof openZhongwen>;
+export type ZhongwenBrowser = ReturnType<typeof openZhongwenBrowser>;

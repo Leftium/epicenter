@@ -138,7 +138,7 @@ export function createHoneycrispActions(tables: HoneycrispTables) {
 		 * and deletes the folder row. Selection clearing is handled by the
 		 * Svelte state layer (folders) via URL search params.
 		 */
-		'folders.delete': defineMutation({
+		folders_delete: defineMutation({
 			description: 'Delete a folder and re-parent its notes to unfiled',
 			input: Type.Object({ folderId: Type.String() }),
 			handler: ({ folderId: rawId }) => {

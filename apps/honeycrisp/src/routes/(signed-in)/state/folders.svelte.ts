@@ -102,7 +102,7 @@ export function createFolders(honeycrisp: HoneycrispBrowser) {
 		 * ```
 		 */
 		delete(folderId: FolderId) {
-			honeycrisp.collaboration.actions['folders.delete']({ folderId });
+			honeycrisp.collaboration.actions.folders_delete({ folderId });
 			if (searchParams.folder === folderId) {
 				searchParams.update({ folder: null, note: null });
 			}

@@ -5,9 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./src/lib/workspace/definition.ts",
-		"./daemon": "./src/lib/opensidian/daemon.ts",
-		"./script": "./src/lib/opensidian/script.ts"
+		".": "./src/lib/workspace/definition.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

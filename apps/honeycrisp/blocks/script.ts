@@ -13,7 +13,7 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { honeycrispTables } from './workspace.js';
+import { honeycrispTables } from '@epicenter/honeycrisp';
 
 export async function openHoneycrispScript({
 	projectDir = findEpicenterDir(),

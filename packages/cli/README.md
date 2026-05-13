@@ -185,11 +185,14 @@ export default defineConfig({
 });
 ```
 
-App packages can expose narrower helpers. A Fuji config can be this small:
+App packages publish their schema on npm. Runtime recipes (script entries,
+daemon routes) ship as jsrepo blocks the consumer copies into their tree.
+A Fuji config that uses the daemon-route block looks like this:
 
 ```ts
-import { defineFujiDaemon } from '@epicenter/fuji/daemon';
+// epicenter.config.ts
 import { defineConfig } from '@epicenter/workspace/daemon';
+import { defineFujiDaemon } from './blocks/daemon-route';
 
 export default defineConfig({
 	daemon: {
@@ -198,9 +201,10 @@ export default defineConfig({
 });
 ```
 
-`defineFujiDaemon()` defaults auth through `createMachineAuthClient()` from
-`@epicenter/auth/node`. Override `auth` only when the deployment needs a custom
-auth client.
+Add the block with `bunx jsrepo add epicenter/fuji/daemon-route`. The block
+defaults auth through `createMachineAuthClient()` from `@epicenter/auth/node`
+and is yours to edit (override the auth source, the sync URL, the route name,
+etc.) without breaking sync compatibility.
 
 ## Exposing operations via CLI
 
@@ -257,8 +261,8 @@ explicit and lets app packages own their default route names.
 
 ```ts
 // epicenter.config.ts
-import { defineFujiDaemon } from '@epicenter/fuji/daemon';
 import { defineConfig } from '@epicenter/workspace/daemon';
+import { defineFujiDaemon } from './blocks/daemon-route';
 
 export default defineConfig({
 	daemon: {

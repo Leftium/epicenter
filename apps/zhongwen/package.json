@@ -5,9 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./src/routes/(signed-in)/zhongwen/workspace/index.ts",
-		"./daemon": "./src/routes/(signed-in)/zhongwen/daemon.ts",
-		"./script": "./src/routes/(signed-in)/zhongwen/script.ts"
+		".": "./src/routes/(signed-in)/zhongwen/workspace/index.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

@@ -27,7 +27,7 @@ import {
 	createFujiActions,
 	FUJI_WORKSPACE_ID,
 	fujiTables,
-} from './workspace.js';
+} from '@epicenter/fuji';
 
 export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
 

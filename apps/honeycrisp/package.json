@@ -5,9 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./src/routes/(signed-in)/honeycrisp/workspace.ts",
-		"./daemon": "./src/routes/(signed-in)/honeycrisp/daemon.ts",
-		"./script": "./src/routes/(signed-in)/honeycrisp/script.ts"
+		".": "./src/routes/(signed-in)/honeycrisp/workspace.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

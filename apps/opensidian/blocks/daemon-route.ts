@@ -8,37 +8,40 @@ import {
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { zhongwenKv, zhongwenTables } from './workspace/index.js';
+import { opensidianTables } from 'opensidian';
 
-export const DEFAULT_ZHONGWEN_DAEMON_ROUTE = 'zhongwen';
+export const DEFAULT_OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 
-export type ZhongwenDaemonOptions = {
+export type OpensidianDaemonOptions = {
 	route?: string;
 };
 
-export function defineZhongwenDaemon({
-	route = DEFAULT_ZHONGWEN_DAEMON_ROUTE,
-}: ZhongwenDaemonOptions = {}): DaemonRouteDefinition {
+export function defineOpensidianDaemon({
+	route = DEFAULT_OPENSIDIAN_DAEMON_ROUTE,
+}: OpensidianDaemonOptions = {}): DaemonRouteDefinition {
 	return {
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
+			const ydoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
 			ydoc.clientID = hashClientId(projectDir);
 			const encryption = attachEncryption(ydoc, {
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});
-			const tables = encryption.attachTables(zhongwenTables);
-			const kv = encryption.attachKv(zhongwenKv);
+			const tables = encryption.attachTables(opensidianTables);
+			const kv = encryption.attachKv({});
 			const yjsLog = attachYjsLog(ydoc, {
 				filePath: yjsPath(projectDir, ydoc.guid),
 			});
+
+			// Daemon runtime is materializer-only for now. Browser runtime owns
+			// Opensidian file and shell actions because they need browser services.
 			const collaboration = openCollaboration(ydoc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
 				identity: {
-					id: 'zhongwen-daemon',
-					name: 'Zhongwen Daemon',
+					id: 'opensidian-daemon',
+					name: 'Opensidian Daemon',
 					platform: 'node',
 				},
 				actions: {},

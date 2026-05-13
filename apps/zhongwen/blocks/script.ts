@@ -13,9 +13,9 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { opensidianTables } from '../workspace/definition.js';
+import { zhongwenKv, zhongwenTables } from '@epicenter/zhongwen';
 
-export async function openOpensidianScript({
+export async function openZhongwenScript({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 }: {
@@ -23,13 +23,13 @@ export async function openOpensidianScript({
 	clientID?: number;
 }) {
 	const auth = await createMachineAuthClient();
-	const ydoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
 	ydoc.clientID = clientID;
 	const encryption = attachEncryption(ydoc, {
 		encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 	});
-	const tables = encryption.attachTables(opensidianTables);
-	const kv = encryption.attachKv({});
+	const tables = encryption.attachTables(zhongwenTables);
+	const kv = encryption.attachKv(zhongwenKv);
 	const yjsLog = attachYjsLogReader(ydoc, {
 		filePath: yjsPath(projectDir, ydoc.guid),
 	});
@@ -52,4 +52,4 @@ export async function openOpensidianScript({
 	};
 }
 
-export type OpensidianScript = Awaited<ReturnType<typeof openOpensidianScript>>;
+export type ZhongwenScript = Awaited<ReturnType<typeof openZhongwenScript>>;

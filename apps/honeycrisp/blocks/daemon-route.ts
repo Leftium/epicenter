@@ -1,50 +1,44 @@
 import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import {
-	attachEncryption,
-	openCollaboration,
-	toWsUrl,
-} from '@epicenter/workspace';
+import { attachEncryption, openCollaboration, toWsUrl } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { opensidianTables } from '../workspace/definition.js';
+import { createHoneycrispActions, honeycrispTables } from '@epicenter/honeycrisp';
 
-export const DEFAULT_OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
+export const DEFAULT_HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
 
-export type OpensidianDaemonOptions = {
+export type HoneycrispDaemonOptions = {
 	route?: string;
 };
 
-export function defineOpensidianDaemon({
-	route = DEFAULT_OPENSIDIAN_DAEMON_ROUTE,
-}: OpensidianDaemonOptions = {}): DaemonRouteDefinition {
+export function defineHoneycrispDaemon({
+	route = DEFAULT_HONEYCRISP_DAEMON_ROUTE,
+}: HoneycrispDaemonOptions = {}): DaemonRouteDefinition {
 	return {
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const ydoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
+			const ydoc = new Y.Doc({ guid: 'epicenter.honeycrisp', gc: false });
 			ydoc.clientID = hashClientId(projectDir);
 			const encryption = attachEncryption(ydoc, {
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});
-			const tables = encryption.attachTables(opensidianTables);
+			const tables = encryption.attachTables(honeycrispTables);
 			const kv = encryption.attachKv({});
 			const yjsLog = attachYjsLog(ydoc, {
 				filePath: yjsPath(projectDir, ydoc.guid),
 			});
-
-			// Daemon runtime is materializer-only for now. Browser runtime owns
-			// Opensidian file and shell actions because they need browser services.
+			const actions = createHoneycrispActions(tables);
 			const collaboration = openCollaboration(ydoc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
 				identity: {
-					id: 'opensidian-daemon',
-					name: 'Opensidian Daemon',
+					id: 'honeycrisp-daemon',
+					name: 'Honeycrisp Daemon',
 					platform: 'node',
 				},
-				actions: {},
+				actions,
 			});
 
 			return {

@@ -189,7 +189,7 @@ const actions = {
 // `SyncAttachment` (only `attachRpc` remains). Presence/awareness moved to a
 // top-level `attachAwareness(ydoc, { schema, initial })` that must be created
 // BEFORE `attachSync` and passed in as `attachSync(ydoc, { awareness, ... })`
-// (see apps/opensidian/src/lib/opensidian/daemon.ts for the canonical
+// (see apps/opensidian/blocks/daemon-route.ts for the canonical
 // pattern). Migrating here requires reshuffling the file so awareness is
 // constructed before `sync` and updating the exported `presence` field below.
 // Commented out so the daemon runtime contract still typechecks; restore once

@@ -28,6 +28,7 @@
  */
 
 import { getDaemon } from '../daemon/client.js';
+import type { ActionRegistry } from '../shared/actions.js';
 import type { ProjectDir } from '../shared/types.js';
 import { buildDaemonActions, type DaemonActions } from './daemon-actions.js';
 import { findEpicenterDir } from './find-epicenter-dir.js';
@@ -47,9 +48,7 @@ import { findEpicenterDir } from './find-epicenter-dir.js';
  * Start one with `epicenter up`. There is no auto-spawn: explicit lifecycle
  * is the contract.
  */
-export async function connectDaemonActions<
-	TActions extends Record<string, unknown>,
->({
+export async function connectDaemonActions<TActions extends ActionRegistry>({
 	route,
 	projectDir = findEpicenterDir(),
 }: {

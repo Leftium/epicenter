@@ -81,19 +81,17 @@ export type {
 	Action,
 	ActionManifest,
 	ActionMeta,
-	Actions,
-	Mutation,
-	Query,
+	ActionRegistry,
 } from './shared/actions';
 export {
 	defineMutation,
 	defineQuery,
-	describeActions,
 	invokeAction,
 	invokeActionForRpc,
 	isAction,
-	resolveActionPath,
-	walkActions,
+	isMutation,
+	isQuery,
+	toActionMeta,
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════

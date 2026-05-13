@@ -12,7 +12,7 @@ import * as Y from 'yjs';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
 import type { Peer, PeersSurface } from '../document/peer.js';
-import type { Actions } from '../shared/actions.js';
+import type { ActionRegistry } from '../shared/actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import type { RunSyncStatus } from './run-errors.js';
 import { executeRun } from './run-handler.js';
@@ -58,7 +58,7 @@ function fakePeers({
 	};
 }
 
-function fakeCollaboration<TActions extends Actions>({
+function fakeCollaboration<TActions extends ActionRegistry>({
 	actions,
 	syncStatus = { phase: 'connected' },
 	peers,
@@ -85,15 +85,13 @@ function fakeCollaboration<TActions extends Actions>({
 
 function fakeEntry({
 	actions = {
-		tabs: {
-			list: defineQuery({ handler: () => [] }),
-		},
+		'tabs.list': defineQuery({ handler: () => [] }),
 	},
 	syncStatus,
 	knownPeers = [],
 	invoke = async () => ({ data: null, error: null }),
 }: {
-	actions?: Actions;
+	actions?: ActionRegistry;
 	syncStatus?: SyncStatus;
 	knownPeers?: string[];
 	invoke?: FakeInvoke;
@@ -110,7 +108,7 @@ function fakeEntry({
 }
 
 describe('executeRun peer dispatch', () => {
-	test('peer miss returns RunError.RemoteCallFailed with sync status', async () => {
+	test('peer miss returns RunError.PeerNotFound with sync status', async () => {
 		const syncStatus: SyncStatus = {
 			phase: 'connecting',
 			retries: 2,
@@ -130,18 +128,12 @@ describe('executeRun peer dispatch', () => {
 			waitMs: 25,
 		});
 
-		expect(result.error).not.toBeNull();
-		if (result.error === null) throw new Error('expected RemoteCallFailed');
-		expect(result.error.name).toBe('RemoteCallFailed');
-		if (result.error.name !== 'RemoteCallFailed') {
-			throw new Error(`expected RemoteCallFailed, got ${result.error.name}`);
+		expect(result.error?.name).toBe('PeerNotFound');
+		if (result.error?.name !== 'PeerNotFound') {
+			throw new Error(`expected PeerNotFound, got ${result.error?.name}`);
 		}
 		expect(result.error.peerTarget).toBe('ghost');
 		expect(result.error.syncStatus).toEqual(runSyncStatus);
-		expect(result.error.cause).toMatchObject({
-			name: 'PeerNotFound',
-			peerTarget: 'ghost',
-		});
 	});
 
 	test('remote dispatch sends only the inner action path', async () => {
@@ -190,11 +182,9 @@ describe('executeRun route-prefixed routing', () => {
 	test('invokes action under the selected daemon route', async () => {
 		const entry = fakeEntry({
 			actions: {
-				notes: {
-					add: defineMutation({
-						handler: () => ({ body: 'hello' }),
-					}),
-				},
+				'notes.add': defineMutation({
+					handler: () => ({ body: 'hello' }),
+				}),
 			},
 		});
 		entry.route = 'notes';
@@ -212,11 +202,9 @@ describe('executeRun route-prefixed routing', () => {
 	test('missing path suggests action-root-relative sibling', async () => {
 		const entry = fakeEntry({
 			actions: {
-				notes: {
-					add: defineMutation({
-						handler: () => ({ body: 'hello' }),
-					}),
-				},
+				'notes.add': defineMutation({
+					handler: () => ({ body: 'hello' }),
+				}),
 			},
 		});
 		entry.route = 'notes';

@@ -19,11 +19,7 @@
 import { Ok } from 'wellcrafted/result';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import { waitForPeer } from '../document/peer.js';
-import {
-	invokeAction,
-	resolveActionPath,
-	walkActions,
-} from '../shared/actions.js';
+import { invokeAction } from '../shared/actions.js';
 import type { RunRequest } from './app.js';
 import {
 	RunError,
@@ -56,10 +52,7 @@ export async function executeRun(
 
 	const { entry, localPath } = target.data;
 
-	const action = resolveActionPath(
-		entry.runtime.collaboration.actions,
-		localPath,
-	);
+	const action = entry.runtime.collaboration.actions[localPath];
 	if (!action) {
 		const descendants = daemonActionSuggestionLines(entry, localPath);
 		if (descendants.length > 0) {
@@ -190,38 +183,25 @@ function daemonActionSuggestionLines(
 	entry: StartedDaemonRoute,
 	prefix: string,
 ): string[] {
-	const entries = [...walkActions(entry.runtime.collaboration.actions)];
-	const descendants = entriesUnder(entries, prefix);
-	return descendants.map(
-		([path, action]) =>
-			`  ${toDaemonActionPath(entry, path)}  (${action.type})`,
-	);
+	const pfx = prefix ? `${prefix}.` : '';
+	return Object.entries(entry.runtime.collaboration.actions)
+		.filter(([path]) => !pfx || path === prefix || path.startsWith(pfx))
+		.map(
+			([path, action]) =>
+				`  ${toDaemonActionPath(entry, path)}  (${action.type})`,
+		);
 }
 
 function daemonActionNearestSiblingLines(
 	entry: StartedDaemonRoute,
 	missedPath: string,
 ): string[] {
-	const entries = [...walkActions(entry.runtime.collaboration.actions)];
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();
 		const prefix = parts.join('.');
-		const alts = entriesUnder(entries, prefix);
-		if (alts.length === 0) continue;
-		return alts.map(
-			([path, action]) =>
-				`  ${toDaemonActionPath(entry, path)}  (${action.type})`,
-		);
+		const alts = daemonActionSuggestionLines(entry, prefix);
+		if (alts.length > 0) return alts;
 	}
 	return [];
-}
-
-function entriesUnder<TValue>(
-	entries: Array<[string, TValue]>,
-	prefix: string,
-): Array<[string, TValue]> {
-	if (!prefix) return entries;
-	const pfx = `${prefix}.`;
-	return entries.filter(([path]) => path === prefix || path.startsWith(pfx));
 }

@@ -12,7 +12,7 @@
  */
 
 import type { Collaboration } from '../document/open-collaboration.js';
-import type { Actions } from '../shared/actions.js';
+import type { ActionRegistry } from '../shared/actions.js';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
 
 export type DaemonRouteContext = {
@@ -23,7 +23,9 @@ export type DaemonRouteContext = {
 /**
  * Fields the daemon looks at on each started runtime.
  */
-export type DaemonRuntime<TActions extends Actions = Actions> = {
+export type DaemonRuntime<
+	TActions extends ActionRegistry = ActionRegistry,
+> = {
 	/** Called by the daemon at exit. */
 	[Symbol.asyncDispose](): MaybePromise<void>;
 

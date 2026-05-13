@@ -6,7 +6,7 @@
  * exercise here. RPC roundtrip and self-RPC wire fallback are covered in
  * `peer.test.ts` with a fake hook.
  *
- * Covers spec Phase 2.1:
+ * Covers:
  *   - identity publication
  *   - actionPaths alphabetically sorted; no runtime verbs leak into the
  *     published action surface (runtime verbs ride RUNTIME_REQUEST, not
@@ -17,10 +17,9 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import {
-	type Actions,
+	type ActionRegistry,
 	defineMutation,
 	defineQuery,
-	walkActions,
 } from '../shared/actions.js';
 import { openCollaboration } from './open-collaboration.js';
 import type { PeerIdentity } from './peer-identity.js';
@@ -64,7 +63,7 @@ function stalledOpenWebSocket(): Promise<WebSocket> {
 	return Promise.resolve(ws as unknown as WebSocket);
 }
 
-function setup<TActions extends Actions = Actions>(
+function setup<TActions extends ActionRegistry = ActionRegistry>(
 	actions: TActions = {} as TActions,
 ) {
 	const ydoc = new Y.Doc({ guid: 'open-collab-test' });
@@ -80,21 +79,10 @@ function setup<TActions extends Actions = Actions>(
 describe('openCollaboration', () => {
 	test('exposes the supplied identity and user actions', () => {
 		const list = defineQuery({ handler: () => [] });
-		const { ydoc, collaboration } = setup({ tabs: { list } });
+		const { ydoc, collaboration } = setup({ 'tabs.list': list });
 		try {
 			expect(collaboration.identity).toEqual(identity);
-			expect(collaboration.actions).toEqual({ tabs: { list } });
-		} finally {
-			ydoc.destroy();
-		}
-	});
-
-	test('collaboration.actions returns exactly the user-supplied tree', () => {
-		const list = defineQuery({ handler: () => [] });
-		const { ydoc, collaboration } = setup({ tabs: { list } });
-		try {
-			expect(collaboration.actions).toEqual({ tabs: { list } });
-			expect(Object.keys(collaboration.actions)).toEqual(['tabs']);
+			expect(collaboration.actions).toEqual({ 'tabs.list': list });
 		} finally {
 			ydoc.destroy();
 		}
@@ -111,7 +99,7 @@ describe('openCollaboration', () => {
 
 	test('peers.list() returns [] when no remote peers are present (self is filtered)', () => {
 		const { ydoc, collaboration } = setup({
-			tabs: { list: defineQuery({ handler: () => [] }) },
+			'tabs.list': defineQuery({ handler: () => [] }),
 		});
 		try {
 			expect(collaboration.peers.list()).toEqual([]);
@@ -130,31 +118,25 @@ describe('openCollaboration', () => {
 });
 
 describe('action paths publication shape', () => {
-	test('walkActions + alphabetical sort produces the publication order', () => {
+	test('Object.keys + alphabetical sort produces the publication order', () => {
 		const actions = {
-			z: { close: defineMutation({ handler: () => null }) },
-			a: { list: defineQuery({ handler: () => [] }) },
-			m: { ping: defineQuery({ handler: () => 'pong' }) },
-		};
-		const paths = Array.from(walkActions(actions), ([path]) => path).sort();
-		expect(paths).toEqual(['a.list', 'm.ping', 'z.close']);
-	});
-
-	test('walkActions emits exactly the user-authored paths (runtime verbs never appear here)', () => {
-		const actions = {
-			tabs: { list: defineQuery({ handler: () => [] }) },
-		};
-		const paths = Array.from(walkActions(actions), ([path]) => path).sort();
-		expect(paths).toEqual(['tabs.list']);
+			'z.close': defineMutation({ handler: () => null }),
+			'a.list': defineQuery({ handler: () => [] }),
+			'm.ping': defineQuery({ handler: () => 'pong' }),
+		} satisfies ActionRegistry;
+		expect(Object.keys(actions).sort()).toEqual([
+			'a.list',
+			'm.ping',
+			'z.close',
+		]);
 	});
 
 	test('a top-level `system` key in user actions is legal and shows up in actionPaths', () => {
 		// The runtime previously reserved `system.*`; the runtime/action plane
 		// split means user code can use the name freely now.
 		const actions = {
-			system: { ping: defineQuery({ handler: () => 'pong' }) },
-		};
-		const paths = Array.from(walkActions(actions), ([path]) => path).sort();
-		expect(paths).toEqual(['system.ping']);
+			'system.ping': defineQuery({ handler: () => 'pong' }),
+		} satisfies ActionRegistry;
+		expect(Object.keys(actions).sort()).toEqual(['system.ping']);
 	});
 });

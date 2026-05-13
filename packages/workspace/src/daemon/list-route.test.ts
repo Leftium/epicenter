@@ -64,12 +64,10 @@ describe('/list route', () => {
 	test('returns route-prefixed paths under the action root', async () => {
 		const reply = await postList([
 			fakeEntry('demo', {
-				counter: {
-					get: defineQuery({
-						description: 'Read the counter',
-						handler: () => 0,
-					}),
-				},
+				'counter.get': defineQuery({
+					description: 'Read the counter',
+					handler: () => 0,
+				}),
 			}),
 		]);
 		expect(reply.error).toBeNull();

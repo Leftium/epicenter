@@ -6,7 +6,7 @@
  * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
  *   /peers  ->  collaboration.peers.list()                       all routes
- *   /list   ->  describeActions({ route: collaboration.actions }) all routes
+ *   /list   ->  flat manifest of `${route}.${actionPath}` -> meta  all routes
  *   /run    ->  invokeAction(...) | peer.invoke(...)              route-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
@@ -20,7 +20,7 @@ import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
 import { PeerIdentity } from '../document/peer-identity.js';
-import { describeActions } from '../shared/actions.js';
+import { type ActionManifest, toActionMeta } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
 import type { StartedDaemonRoute } from './types.js';
 
@@ -88,10 +88,15 @@ export function buildDaemonApp(
 			return c.json(Ok(rows));
 		})
 		.post('/list', (c) => {
-			const actionRoots = Object.fromEntries(
-				runtimes.map((entry) => [entry.route, entry.runtime.collaboration.actions]),
-			);
-			return c.json(Ok(describeActions(actionRoots)));
+			const manifest: ActionManifest = {};
+			for (const entry of runtimes) {
+				for (const [path, action] of Object.entries(
+					entry.runtime.collaboration.actions,
+				)) {
+					manifest[`${entry.route}.${path}`] = toActionMeta(action);
+				}
+			}
+			return c.json(Ok(manifest));
 		})
 		.post('/run', sValidator('json', RunRequest), async (c) => {
 			const request = c.req.valid('json');

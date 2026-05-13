@@ -13,7 +13,6 @@ import type * as Y from 'yjs';
 import {
 	createSyncSupervisor,
 	type OpenWebSocket,
-	type SyncStatus,
 } from './internal/sync-supervisor.js';
 
 export type AttachYjsSyncConfig = {
@@ -23,18 +22,10 @@ export type AttachYjsSyncConfig = {
 	log?: Logger;
 };
 
-export type YjsSyncAttachment = {
-	readonly status: SyncStatus;
-	readonly whenConnected: Promise<void>;
-	readonly whenDisposed: Promise<void>;
-	onStatusChange(listener: (status: SyncStatus) => void): () => void;
-	reconnect(): void;
-};
-
 export function attachYjsSync(
 	ydoc: Y.Doc,
 	config: AttachYjsSyncConfig,
-): YjsSyncAttachment {
+) {
 	const supervisor = createSyncSupervisor(ydoc, config);
 	return {
 		get status() {
@@ -46,3 +37,5 @@ export function attachYjsSync(
 		reconnect: supervisor.reconnect,
 	};
 }
+
+export type YjsSyncAttachment = ReturnType<typeof attachYjsSync>;

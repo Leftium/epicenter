@@ -22,11 +22,9 @@ import { Awareness } from 'y-protocols/awareness';
 import { Ok } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import {
-	type Actions,
-	describeActions,
+	type ActionRegistry,
 	invokeActionForRpc,
-	resolveActionPath,
-	walkActions,
+	toActionMeta,
 } from '../shared/actions.js';
 import { attachAwareness } from './attach-awareness.js';
 import {
@@ -45,7 +43,9 @@ import {
 // PUBLIC TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-export type OpenCollaborationConfig<TActions extends Actions = Actions> = {
+export type OpenCollaborationConfig<
+	TActions extends ActionRegistry = ActionRegistry,
+> = {
 	url: string;
 	waitFor?: Promise<unknown>;
 	openWebSocket?: OpenWebSocket;
@@ -54,14 +54,16 @@ export type OpenCollaborationConfig<TActions extends Actions = Actions> = {
 	identity: PeerIdentity;
 	/**
 	 * Local action registry published to peers. May be `{}` for a participant
-	 * that only consumes remote actions. The action tree is yours alone:
+	 * that only consumes remote actions. The registry is yours alone:
 	 * collaboration runtime requests (e.g. peer.describe) ride a separate
 	 * wire kind (`RUNTIME_REQUEST`), not the action namespace.
 	 */
 	actions: TActions;
 };
 
-export type Collaboration<TActions extends Actions = Actions> = {
+export type Collaboration<
+	TActions extends ActionRegistry = ActionRegistry,
+> = {
 	readonly identity: PeerIdentity;
 	readonly actions: TActions;
 
@@ -85,7 +87,7 @@ export type Collaboration<TActions extends Actions = Actions> = {
 // IMPLEMENTATION
 // ════════════════════════════════════════════════════════════════════════════
 
-export function openCollaboration<TActions extends Actions>(
+export function openCollaboration<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	config: OpenCollaborationConfig<TActions>,
 ): Collaboration<TActions> {
@@ -94,9 +96,7 @@ export function openCollaboration<TActions extends Actions>(
 	// Computed once at startup. Two peers running the same code publish
 	// byte-identical arrays so awareness updates don't ping-pong on ordering
 	// differences.
-	const actionPaths = Object.freeze(
-		Array.from(walkActions(userActions), ([path]) => path).sort(),
-	);
+	const actionPaths = Object.freeze(Object.keys(userActions).sort());
 
 	const awareness = new Awareness(ydoc);
 
@@ -115,7 +115,7 @@ export function openCollaboration<TActions extends Actions>(
 		log: config.log,
 		awareness,
 		onActionRequest: async (rpc) => {
-			const target = resolveActionPath(userActions, rpc.action);
+			const target = userActions[rpc.action];
 			if (!target) return RpcError.ActionNotFound({ action: rpc.action });
 			return invokeActionForRpc(target, rpc.input, rpc.action);
 		},
@@ -125,7 +125,14 @@ export function openCollaboration<TActions extends Actions>(
 			// expect us to handle.
 			switch (rpc.verb) {
 				case 'describe-actions':
-					return Ok(describeActions(userActions));
+					return Ok(
+						Object.fromEntries(
+							Object.entries(userActions).map(([path, action]) => [
+								path,
+								toActionMeta(action),
+							]),
+						),
+					);
 			}
 		},
 	});

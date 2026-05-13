@@ -12,13 +12,11 @@ import { isRpcError, RpcError } from '@epicenter/sync';
 import Type from 'typebox';
 import { Err, Ok } from 'wellcrafted/result';
 import {
+	type ActionRegistry,
 	defineMutation,
 	defineQuery,
-	describeActions,
 	invokeAction,
 	invokeActionForRpc,
-	resolveActionPath,
-	walkActions,
 } from './actions.js';
 
 // ---------------------------------------------------------------------------
@@ -31,7 +29,11 @@ describe('invokeAction', () => {
 			const action = defineMutation({
 				handler: () => ({ count: 7 }),
 			});
-			const result = await invokeAction<{ count: number }>(action);
+			const result = await invokeAction<{ count: number }>(
+				action,
+				undefined,
+				'test',
+			);
 			expect(result.error).toBeNull();
 			expect(result.data).toEqual({ count: 7 });
 		});
@@ -40,7 +42,11 @@ describe('invokeAction', () => {
 			const action = defineMutation({
 				handler: async () => ({ count: 11 }),
 			});
-			const result = await invokeAction<{ count: number }>(action);
+			const result = await invokeAction<{ count: number }>(
+				action,
+				undefined,
+				'test',
+			);
 			expect(result.error).toBeNull();
 			expect(result.data).toEqual({ count: 11 });
 		});
@@ -49,7 +55,11 @@ describe('invokeAction', () => {
 			const action = defineMutation({
 				handler: () => Ok({ ok: true }),
 			});
-			const result = await invokeAction<{ ok: boolean }>(action);
+			const result = await invokeAction<{ ok: boolean }>(
+				action,
+				undefined,
+				'test',
+			);
 			expect(result.error).toBeNull();
 			expect(result.data).toEqual({ ok: true });
 		});
@@ -59,7 +69,7 @@ describe('invokeAction', () => {
 			const action = defineMutation({
 				handler: () => Err(customError) as unknown as ReturnType<typeof Ok>,
 			});
-			const result = await invokeAction(action);
+			const result = await invokeAction(action, undefined, 'test');
 			expect(result.data).toBeNull();
 			expect(result.error as unknown).toEqual(customError);
 		});
@@ -73,7 +83,7 @@ describe('invokeAction', () => {
 			const action = defineMutation({
 				handler: () => lookalike as unknown as ReturnType<typeof Ok>,
 			});
-			const result = await invokeAction<string>(action);
+			const result = await invokeAction<string>(action, undefined, 'test');
 			expect(result.error).toBeNull();
 			expect(result.data).toBe('fake');
 		});
@@ -87,7 +97,7 @@ describe('invokeAction', () => {
 					throw cause;
 				},
 			});
-			const result = await invokeAction(action);
+			const result = await invokeAction(action, undefined, 'test');
 			expect(result.data).toBeNull();
 			expect(isRpcError(result.error)).toBe(true);
 			expect(result.error?.name).toBe('ActionFailed');
@@ -103,7 +113,7 @@ describe('invokeAction', () => {
 					throw cause;
 				},
 			});
-			const result = await invokeAction(action);
+			const result = await invokeAction(action, undefined, 'test');
 			expect(result.data).toBeNull();
 			expect(result.error?.name).toBe('ActionFailed');
 			if (result.error?.name === 'ActionFailed') {
@@ -117,7 +127,7 @@ describe('invokeAction', () => {
 					throw 'string-throw';
 				},
 			});
-			const result = await invokeAction(action);
+			const result = await invokeAction(action, undefined, 'test');
 			expect(result.error?.name).toBe('ActionFailed');
 			if (result.error?.name === 'ActionFailed') {
 				expect(result.error.cause).toBe('string-throw');
@@ -134,7 +144,7 @@ describe('invokeAction', () => {
 					return null;
 				},
 			});
-			await invokeAction(action, { ignored: true });
+			await invokeAction(action, { ignored: true }, 'test');
 			expect(seenArgs).toEqual([[]]);
 		});
 
@@ -148,7 +158,7 @@ describe('invokeAction', () => {
 					return input.x * 2;
 				},
 			});
-			const result = await invokeAction<number>(action, { x: 21 });
+			const result = await invokeAction<number>(action, { x: 21 }, 'test');
 			expect(seenInputs).toEqual([{ x: 21 }]);
 			expect(result.data).toBe(42);
 		});
@@ -168,31 +178,6 @@ describe('invokeAction', () => {
 				expect(result.error.action).toBe('tabs.close');
 			}
 		});
-
-		test('falls back to action.title when no errorLabel provided', async () => {
-			const action = defineMutation({
-				title: 'My Action',
-				handler: () => {
-					throw new Error('x');
-				},
-			});
-			const result = await invokeAction(action);
-			if (result.error?.name === 'ActionFailed') {
-				expect(result.error.action).toBe('My Action');
-			}
-		});
-
-		test('falls back to "anonymous" when neither errorLabel nor title is set', async () => {
-			const action = defineMutation({
-				handler: () => {
-					throw new Error('x');
-				},
-			});
-			const result = await invokeAction(action);
-			if (result.error?.name === 'ActionFailed') {
-				expect(result.error.action).toBe('anonymous');
-			}
-		});
 	});
 
 	describe('query and mutation parity', () => {
@@ -203,8 +188,16 @@ describe('invokeAction', () => {
 			const mutation = defineMutation({
 				handler: () => ({ kind: 'mutation' as const }),
 			});
-			const queryResult = await invokeAction<{ kind: 'query' }>(query);
-			const mutationResult = await invokeAction<{ kind: 'mutation' }>(mutation);
+			const queryResult = await invokeAction<{ kind: 'query' }>(
+				query,
+				undefined,
+				'test',
+			);
+			const mutationResult = await invokeAction<{ kind: 'mutation' }>(
+				mutation,
+				undefined,
+				'test',
+			);
 			expect(queryResult.data).toEqual({ kind: 'query' });
 			expect(mutationResult.data).toEqual({ kind: 'mutation' });
 		});
@@ -237,67 +230,29 @@ describe('invokeActionForRpc', () => {
 			handler: () => RpcError.ActionNotFound({ action: 'tabs.close' }),
 		});
 
-		const result = await invokeActionForRpc(action);
+		const result = await invokeActionForRpc(action, undefined, 'tabs.close');
 
 		expect(result.data).toBeNull();
 		expect(result.error?.name).toBe('ActionNotFound');
 	});
 });
 
-describe('action path walking', () => {
-	test('resolution only follows routes that discovery can expose', () => {
-		class HostedActions {
-			hidden = defineQuery({
-				handler: () => 'hidden',
-			});
-		}
+// ---------------------------------------------------------------------------
+// Registry shape
+// ---------------------------------------------------------------------------
 
+describe('ActionRegistry', () => {
+	test('registry keys are addresses; flat string lookup, no recursion', () => {
 		const actions = {
-			visible: defineQuery({
-				handler: () => 'visible',
-			}),
-			hosted: new HostedActions(),
-		};
+			'entries.create': defineMutation({ handler: () => ({ id: 'x' }) }),
+			'entries.update': defineMutation({ handler: () => ({ id: 'x' }) }),
+		} satisfies ActionRegistry;
 
-		expect([...walkActions(actions)].map(([path]) => path)).toEqual([
-			'visible',
+		expect(Object.keys(actions).sort()).toEqual([
+			'entries.create',
+			'entries.update',
 		]);
-		expect(Object.keys(describeActions(actions))).toEqual(['visible']);
-		expect(resolveActionPath(actions, 'visible')).toBe(actions.visible);
-		expect(resolveActionPath(actions, 'hosted.hidden')).toBeUndefined();
-	});
-
-	test('rejects dot-containing keys because the wire path uses dots', () => {
-		const actions = {
-			'bad.key': defineQuery({
-				handler: () => 'hidden',
-			}),
-		};
-
-		expect(() => [...walkActions(actions)]).toThrow(
-			'Action keys cannot contain "." at "bad.key"',
-		);
-		expect(resolveActionPath(actions, 'bad.key')).toBeUndefined();
-	});
-
-	test('rejects dot-containing object keys on action-bearing branches', () => {
-		const workspace = {
-			settings: {
-				'bad.key': {
-					visible: defineQuery({
-						handler: () => 'visible',
-					}),
-				},
-			},
-			actions: {
-				visible: defineQuery({
-					handler: () => 'visible',
-				}),
-			},
-		};
-
-		expect(() => [...walkActions(workspace)]).toThrow(
-			'Action keys cannot contain "." at "settings.bad.key"',
-		);
+		expect(actions['entries.create']).toBeDefined();
+		// No segment walking. The key is the address.
 	});
 });

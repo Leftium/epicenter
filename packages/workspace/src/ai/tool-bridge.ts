@@ -3,38 +3,45 @@
  *
  * TanStack AI needs tools in two places:
  *
- * 1. **In the browser** — `createChat({ tools })` expects an array of
+ * 1. **In the browser**: `createChat({ tools })` expects an array of
  *    `AnyClientTool` objects with `execute` functions so the `ChatClient`
  *    can run tool calls locally without a server round-trip.
  *
- * 2. **On the server** — the HTTP request body needs a JSON-serializable
+ * 2. **On the server**: the HTTP request body needs a JSON-serializable
  *    description of each tool (name, description, input schema) so the
  *    server can forward them to the AI provider. Functions like `execute`
  *    can't travel over the wire.
  *
- * This module converts workspace action leaves (`defineQuery` /
- * `defineMutation`) into both representations at once, so you don't
- * have to build them by hand.
+ * This module converts a flat workspace action registry (keys authored as
+ * dot paths) into both representations at once, so you don't have to build
+ * them by hand. The AI tool name is the action key with `.` swapped for
+ * `_` (provider name regex requires `[a-zA-Z0-9_-]+`).
  *
  * @module
  */
 
 import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
-import type { Action } from '../shared/actions';
-import { invokeAction, walkActions } from '../shared/actions';
+import type { Action, ActionRegistry } from '../shared/actions';
+import { invokeAction } from '../shared/actions';
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
 /**
- * Recursively extract all tool names from an action source as a string literal union.
+ * Type-level `'.'` -> `'_'` swap on every dot in a string literal. Mirrors
+ * the runtime `path.replaceAll('.', '_')` at the AI boundary.
+ */
+type DotsToUnderscores<S extends string> = S extends `${infer A}.${infer B}`
+	? `${A}_${DotsToUnderscores<B>}`
+	: S;
+
+/**
+ * Tool names produced from an action registry: action key with `.` replaced
+ * by `_`.
  *
- * Leaf `Action` nodes produce their key directly. Nested action objects
- * produce `"parent_child"` paths joined with `_`.
- *
- * **Constraint**: Action keys must not contain underscores, or flattened names
- * will collide (e.g. action key `"foo_bar"` vs nested path `foo → bar` both
+ * **Constraint**: Action keys must not contain underscores, or flattened
+ * names will collide (e.g. action key `"foo_bar"` vs path `foo.bar` both
  * produce `"foo_bar"`).
  *
  * @example
@@ -43,17 +50,15 @@ import { invokeAction, walkActions } from '../shared/actions';
  * // "tabs_search" | "tabs_list" | ...
  * ```
  */
-export type ActionNames<T> = {
-	[K in keyof T & string]: [T[K]] extends [Action]
-		? K
-		: T[K] extends Record<string, unknown>
-			? `${K}_${ActionNames<T[K]>}`
-			: never;
-}[keyof T & string];
+export type ActionNames<TActions> = {
+	[K in keyof TActions & string]: TActions[K] extends Action
+		? DotsToUnderscores<K>
+		: never;
+}[keyof TActions & string];
 
 /**
  * JSON-serializable description of a tool, sent to the server in the HTTP
- * request body. This is what the AI provider sees—it tells the LLM what
+ * request body. This is what the AI provider sees. It tells the LLM what
  * tools exist, what arguments they accept, and whether they need user
  * approval before running.
  *
@@ -80,17 +85,17 @@ export type ToolDefinition = {
 // ---------------------------------------------------------------------------
 
 /**
- * Convert a workspace action source into the two representations TanStack AI
+ * Convert a workspace action registry into the two representations TanStack AI
  * needs for AI-powered chat with tool calling.
  *
  * ### What you get
  *
- * - **`.tools`** — Pass these to `createChat({ tools })`. They're TanStack AI
+ * - **`.tools`**: Pass these to `createChat({ tools })`. They're TanStack AI
  *   `AnyClientTool` objects with `execute` wired to your action handlers.
  *   When the LLM calls a tool, `ChatClient` runs the matching `execute`
- *   function in the browser automatically—no server round-trip needed.
+ *   function in the browser automatically, no server round-trip needed.
  *
- * - **`.definitions`** — Send these to the server in your HTTP request body.
+ * - **`.definitions`**: Send these to the server in your HTTP request body.
  *   They're the same tools minus `execute` (which can't be serialized to
  *   JSON), plus normalized input schemas. The server forwards them to the AI
  *   provider so the LLM knows what tools are available. Each definition also
@@ -99,20 +104,19 @@ export type ToolDefinition = {
  *
  * ### How it works
  *
- * Your workspace actions (`defineQuery` / `defineMutation`) are leaves in a
- * nested source object. This function flattens them into a flat tool list
- * with `_`-separated names:
+ * The action registry is a flat record keyed by dot path. This function
+ * renames each key by swapping `.` for `_` so the result is a flat tool
+ * list whose names match the AI provider's `[a-zA-Z0-9_-]+` requirement:
  *
  * ```
- * { tabs: { close: defineMutation(...) } }  →  tool named "tabs_close"
- * { tabs: { close: defineMutation(...) } }  →  "tabs_close"
- * { files: { read: defineQuery(...) } }      →  tool named "files_read"
+ * { 'tabs.close': defineMutation(...) }  →  tool named "tabs_close"
+ * { 'files.read': defineQuery(...) }     →  tool named "files_read"
  * ```
  *
  * Mutations automatically get `needsApproval: true` so the chat UI can show
  * a confirmation dialog before executing them. Queries run immediately.
  *
- * @param source - The action tree to expose as tools.
+ * @param actions - The flat action registry to expose as tools.
  *
  * @example
  * ```ts
@@ -138,56 +142,57 @@ export type ToolDefinition = {
  *   .find(d => d.name === 'tabs_close')?.title; // → 'Close Tabs'
  * ```
  */
-export function actionsToAiTools<T extends Record<string, unknown>>(
-	source: T,
+export function actionsToAiTools<TActions extends ActionRegistry>(
+	actions: TActions,
 ): {
-	tools: (AnyClientTool & { name: ActionNames<T> })[];
+	tools: (AnyClientTool & { name: ActionNames<TActions> })[];
 	definitions: ToolDefinition[];
 } {
-	const entries = Array.from(walkActions(source), ([path, action]) => {
-		const segments = path.split('.');
-		assertToolPathSegments(segments, path);
-		return [action, segments] as const;
+	const entries = Object.entries(actions).map(([path, action]) => {
+		if (path.includes(ACTION_NAME_SEPARATOR)) {
+			throw new Error(
+				`Action keys used as AI tools cannot contain "${ACTION_NAME_SEPARATOR}" at "${path}"`,
+			);
+		}
+		return [path, action] as const;
 	});
 
-	const tools = entries.map(([action, path]) => ({
-		__toolSide: 'client' as const,
-		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<T>,
-		description:
-			action.description ??
-			`${action.type}: ${path.join(ACTION_NAME_SEPARATOR)}`,
-		...(action.input && { inputSchema: action.input }),
-		...(action.type === 'mutation' && { needsApproval: true }),
-		// TanStack AI's `execute` contract is: return data on success, throw
-		// on failure. invokeAction handles all four handler shapes (raw,
-		// Result, sync, async) and converts thrown errors into typed
-		// Err(ActionFailed); we then unwrap for AI consumption.
-		execute: async (args: unknown) => {
-			const result = await invokeAction(
-				action,
-				args,
-				path.join(ACTION_NAME_SEPARATOR),
-			);
-			if (result.error !== null) throw result.error;
-			return result.data;
-		},
-	}));
+	const tools = entries.map(([path, action]) => {
+		const name = path.replaceAll('.', ACTION_NAME_SEPARATOR);
+		return {
+			__toolSide: 'client' as const,
+			name: name as ActionNames<TActions>,
+			description: action.description ?? `${action.type}: ${name}`,
+			...(action.input && { inputSchema: action.input }),
+			...(action.type === 'mutation' && { needsApproval: true }),
+			// TanStack AI's `execute` contract is: return data on success, throw
+			// on failure. invokeAction handles all four handler shapes (raw,
+			// Result, sync, async) and converts thrown errors into typed
+			// Err(ActionFailed); we then unwrap for AI consumption.
+			execute: async (args: unknown) => {
+				const result = await invokeAction(action, args, name);
+				if (result.error !== null) throw result.error;
+				return result.data;
+			},
+		};
+	});
 
-	// Derive wire definitions directly from actions—avoids the type-widening
+	// Derive wire definitions directly from actions. Avoids the type-widening
 	// round-trip through AnyClientTool that required `as JSONSchema` casts.
-	const definitions: ToolDefinition[] = entries.map(([action, path]) => ({
-		name: path.join(ACTION_NAME_SEPARATOR),
-		...(action.title && { title: action.title }),
-		description:
-			action.description ??
-			`${action.type}: ${path.join(ACTION_NAME_SEPARATOR)}`,
-		// Safe cast: workspace actions only accept TypeBox schemas (TSchema),
-		// which ARE plain JSON Schema objects at runtime.
-		...(action.input && {
-			inputSchema: normalizeSchema(action.input as JSONSchema),
-		}),
-		...(action.type === 'mutation' && { needsApproval: true }),
-	}));
+	const definitions: ToolDefinition[] = entries.map(([path, action]) => {
+		const name = path.replaceAll('.', ACTION_NAME_SEPARATOR);
+		return {
+			name,
+			...(action.title && { title: action.title }),
+			description: action.description ?? `${action.type}: ${name}`,
+			// Safe cast: workspace actions only accept TypeBox schemas (TSchema),
+			// which ARE plain JSON Schema objects at runtime.
+			...(action.input && {
+				inputSchema: normalizeSchema(action.input as JSONSchema),
+			}),
+			...(action.type === 'mutation' && { needsApproval: true }),
+		};
+	});
 
 	return { tools, definitions };
 }
@@ -197,23 +202,13 @@ export function actionsToAiTools<T extends Record<string, unknown>>(
 // ---------------------------------------------------------------------------
 
 /**
- * Separator used to join action path segments into tool names.
+ * Separator used when projecting an action's dot-path key into a tool name.
  *
- * Action keys must not contain this character, or flattened names will collide.
- * For example, key `"foo_bar"` and nested path `foo → bar` would both produce
- * `"foo_bar"`.
+ * Action keys must not contain this character, or projected names will
+ * collide. For example, key `"foo_bar"` and path `foo.bar` would both
+ * produce `"foo_bar"`.
  */
 const ACTION_NAME_SEPARATOR = '_';
-
-function assertToolPathSegments(segments: string[], path: string) {
-	for (const segment of segments) {
-		if (segment.includes(ACTION_NAME_SEPARATOR)) {
-			throw new Error(
-				`Action keys used as AI tools cannot contain "_" at "${path}"`,
-			);
-		}
-	}
-}
 
 /** JSON Schema with `properties` and `required` guaranteed present. */
 type NormalizedJsonSchema = JSONSchema &

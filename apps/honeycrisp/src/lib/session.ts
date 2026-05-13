@@ -28,15 +28,9 @@ export const session = createSession({
 			},
 		};
 	},
-	onDifferentUser: () => location.reload(),
 });
 
-export function requireHoneycrisp() {
-	if (!session.current) {
-		throw new Error('requireHoneycrisp() called without an authenticated session.');
-	}
-	return session.current;
-}
+export const requireHoneycrisp = session.require;
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());

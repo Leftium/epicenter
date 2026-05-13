@@ -12,8 +12,8 @@ import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
-import type { TabManagerBrowser } from './tab-manager/client';
 import { openTabManagerBrowser } from './tab-manager/extension';
+import type { TabManagerBrowser } from './tab-manager/extension';
 
 export type SessionAiTools = ReturnType<
 	typeof actionsToAiTools<TabManagerBrowser['collaboration']['actions']>
@@ -83,7 +83,6 @@ function buildSession(
 				},
 			};
 		},
-		onDifferentUser: () => location.reload(),
 	});
 }
 
@@ -120,12 +119,7 @@ export function requireTabManager() {
 				'Components must mount under `{#await tabManagerSession.whenReady}`.',
 		);
 	}
-	if (!session.current) {
-		throw new Error(
-			'[tab-manager] requireTabManager() called without an authenticated session.',
-		);
-	}
-	return session.current;
+	return session.require();
 }
 
 export async function forgetTabManagerDevice(): Promise<void> {

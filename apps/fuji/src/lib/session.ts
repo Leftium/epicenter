@@ -28,15 +28,9 @@ export const session = createSession({
 			},
 		};
 	},
-	onDifferentUser: () => location.reload(),
 });
 
-export function requireFuji() {
-	if (!session.current) {
-		throw new Error('requireFuji() called without an authenticated session.');
-	}
-	return session.current;
-}
+export const requireFuji = session.require;
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());

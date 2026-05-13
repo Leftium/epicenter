@@ -10,17 +10,9 @@ export const session = createSession({
 			userId: identity.user.id,
 			encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 		}),
-	onDifferentUser: () => location.reload(),
 });
 
-export function requireZhongwen() {
-	if (!session.current) {
-		throw new Error(
-			'requireZhongwen() called without an authenticated session.',
-		);
-	}
-	return session.current;
-}
+export const requireZhongwen = session.require;
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());

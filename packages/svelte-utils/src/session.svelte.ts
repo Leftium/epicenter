@@ -2,15 +2,14 @@
  * Reactive auth-gated payload.
  *
  * Listens to `auth.state` and builds the app payload on sign-in, disposes
- * on sign-out, and refuses a same-session user switch via the
- * `onDifferentUser` callback. Same-user `reauth-required` is a no-op so
- * the payload stays mounted across credential refreshes.
+ * on sign-out. Same-user `reauth-required` is a no-op so the payload stays
+ * mounted across credential refreshes.
  *
- * The framework owns the lifecycle; apps own the payload shape. There is
- * no envelope, no required field set, no framework-side assertion helper.
- * The build function returns whatever shape the app wants (it must be
- * `Disposable`); each app writes its own `requireX` helper if it wants
- * one.
+ * The framework owns the lifecycle; apps own the payload shape. The build
+ * function returns whatever shape the app wants (it must be `Disposable`).
+ * Apps typically alias `session.require` to a named export
+ * (`export const requireFuji = session.require`) for a one-line presence
+ * assertion in descendants.
  *
  * Lazy callbacks (e.g., `encryptionKeys`, `openWebSocket`) are read at:
  *   - attachment time (e.g., `attachEncryption` reads `encryptionKeys()` once
@@ -29,20 +28,14 @@
  * ```ts
  * export const session = createSession({
  *   auth,
- *   build: (identity) => openFuji({
+ *   build: (identity) => openFujiBrowser({
  *     userId: identity.user.id,
  *     encryptionKeys: () => requireIdentity(auth).encryptionKeys,
  *     ...
  *   }),
- *   onDifferentUser: () => location.reload(),
  * });
  *
- * export function requireFuji() {
- *   if (!session.current) {
- *     throw new Error('requireFuji() called without an authenticated session.');
- *   }
- *   return session.current;
- * }
+ * export const requireFuji = session.require;
  * ```
  */
 
@@ -52,11 +45,9 @@ import { createSessionLifecycle } from './session-lifecycle.js';
 export function createSession<T extends Disposable>({
 	auth,
 	build,
-	onDifferentUser,
 }: {
 	auth: AuthClient;
 	build: (identity: WorkspaceIdentity) => T;
-	onDifferentUser?: () => void;
 }) {
 	let payload = $state<T | null>(null);
 	const lifecycle = createSessionLifecycle<T>({
@@ -66,17 +57,23 @@ export function createSession<T extends Disposable>({
 		setPayload: (next) => {
 			payload = next;
 		},
-		onDifferentUser:
-			onDifferentUser ??
-			(() => {
-				/* no-op: app didn't opt in to user-switch handling */
-			}),
 	});
+
+	function require(): T {
+		if (!payload) {
+			throw new Error(
+				'[session] require() called without a payload. ' +
+					'A descendant likely mounted outside the signed-in gate.',
+			);
+		}
+		return payload;
+	}
 
 	return {
 		get current(): T | null {
 			return payload;
 		},
+		require,
 		[Symbol.dispose]() {
 			lifecycle[Symbol.dispose]();
 		},

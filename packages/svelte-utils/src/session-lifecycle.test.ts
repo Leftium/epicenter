@@ -1,15 +1,19 @@
 /**
- * Tests for the pure session lifecycle. Asserts the invariants that the
+ * Tests for the pure session lifecycle. Asserts the invariants the
  * Svelte-facing `createSession` wrapper depends on:
  *
- *   - signed-in → reauth-required → signed-in preserves the same payload
+ *   - signed-in -> reauth-required -> signed-in preserves the same payload
  *     instance (object identity).
- *   - signed-in (user A) → signed-in (user B) disposes and triggers the
- *     different-user escape hatch.
- *   - signed-out disposes and clears the payload.
+ *   - signed-out disposes the payload and clears the slot.
+ *   - cold boot in reauth-required builds from the preserved identity.
+ *   - lifecycle disposal disposes the payload and clears the slot.
+ *
+ * The lifecycle does not test a user-switch transition. OAuth session storage
+ * is single-user by structure, so two consecutive identity-bearing states are
+ * guaranteed to carry the same user; the lifecycle trusts that invariant.
  */
 
-import { expect, mock, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import type { AuthClient, AuthState, WorkspaceIdentity } from '@epicenter/auth';
 import { createSessionLifecycle } from './session-lifecycle.js';
 
@@ -84,21 +88,19 @@ function makeHolder<T extends Disposable>() {
 	};
 }
 
-test('signed-in → reauth-required → signed-in preserves the same payload', () => {
+test('signed-in -> reauth-required -> signed-in preserves the same payload', () => {
 	const auth = makeAuth({
 		status: 'signed-in',
 		identity: makeIdentity(),
 	});
 	const { build, built } = makeBuild();
 	const holder = makeHolder<TestApp>();
-	const onDifferentUser = mock(() => {});
 
 	using _lifecycle = createSessionLifecycle({
 		auth,
 		build,
 		getPayload: holder.getPayload,
 		setPayload: holder.setPayload,
-		onDifferentUser,
 	});
 
 	const initial = holder.getPayload();
@@ -116,54 +118,21 @@ test('signed-in → reauth-required → signed-in preserves the same payload', (
 	expect(holder.getPayload()).toBe(initial);
 	expect(built).toHaveLength(1);
 	expect(initial!.disposed).toBe(false);
-	expect(onDifferentUser).not.toHaveBeenCalled();
 });
 
-test('signed-in (user A) → signed-in (user B) disposes and triggers different-user escape', () => {
-	const auth = makeAuth({
-		status: 'signed-in',
-		identity: makeIdentity({ userId: 'user-A' }),
-	});
-	const { build } = makeBuild();
-	const holder = makeHolder<TestApp>();
-	const onDifferentUser = mock(() => {});
-
-	using _lifecycle = createSessionLifecycle({
-		auth,
-		build,
-		getPayload: holder.getPayload,
-		setPayload: holder.setPayload,
-		onDifferentUser,
-	});
-
-	const initial = holder.getPayload()!;
-	expect(initial.userId).toBe('user-A');
-
-	auth.setState({
-		status: 'signed-in',
-		identity: makeIdentity({ userId: 'user-B' }),
-	});
-
-	expect(initial.disposed).toBe(true);
-	expect(holder.getPayload()).toBeNull();
-	expect(onDifferentUser).toHaveBeenCalledTimes(1);
-});
-
-test('signed-out disposes the payload and clears it', () => {
+test('signed-out disposes the payload and clears the slot', () => {
 	const auth = makeAuth({
 		status: 'signed-in',
 		identity: makeIdentity(),
 	});
 	const { build } = makeBuild();
 	const holder = makeHolder<TestApp>();
-	const onDifferentUser = mock(() => {});
 
 	using _lifecycle = createSessionLifecycle({
 		auth,
 		build,
 		getPayload: holder.getPayload,
 		setPayload: holder.setPayload,
-		onDifferentUser,
 	});
 
 	const initial = holder.getPayload()!;
@@ -171,7 +140,6 @@ test('signed-out disposes the payload and clears it', () => {
 
 	expect(initial.disposed).toBe(true);
 	expect(holder.getPayload()).toBeNull();
-	expect(onDifferentUser).not.toHaveBeenCalled();
 });
 
 test('cold boot in reauth-required builds the payload from identity', () => {
@@ -181,14 +149,12 @@ test('cold boot in reauth-required builds the payload from identity', () => {
 	});
 	const { build, built } = makeBuild();
 	const holder = makeHolder<TestApp>();
-	const onDifferentUser = mock(() => {});
 
 	using _lifecycle = createSessionLifecycle({
 		auth,
 		build,
 		getPayload: holder.getPayload,
 		setPayload: holder.setPayload,
-		onDifferentUser,
 	});
 
 	const payload = holder.getPayload();
@@ -197,21 +163,19 @@ test('cold boot in reauth-required builds the payload from identity', () => {
 	expect(payload).toBe(built[0]!);
 });
 
-test('lifecycle disposal clears the payload after disposing it', () => {
+test('lifecycle disposal disposes the payload and clears the slot', () => {
 	const auth = makeAuth({
 		status: 'signed-in',
 		identity: makeIdentity(),
 	});
 	const { build } = makeBuild();
 	const holder = makeHolder<TestApp>();
-	const onDifferentUser = mock(() => {});
 
 	const lifecycle = createSessionLifecycle({
 		auth,
 		build,
 		getPayload: holder.getPayload,
 		setPayload: holder.setPayload,
-		onDifferentUser,
 	});
 
 	const initial = holder.getPayload()!;

@@ -64,17 +64,9 @@ export const session = createSession({
 			},
 		};
 	},
-	onDifferentUser: () => location.reload(),
 });
 
-export function requireOpensidian() {
-	if (!session.current) {
-		throw new Error(
-			'requireOpensidian() called without an authenticated session.',
-		);
-	}
-	return session.current;
-}
+export const requireOpensidian = session.require;
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());

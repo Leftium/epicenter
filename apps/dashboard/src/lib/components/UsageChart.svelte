@@ -8,7 +8,7 @@
 	import { scaleUtc } from 'd3-scale';
 	import { curveMonotoneX } from 'd3-shape';
 	import { Area, AreaChart, LinearGradient } from 'layerchart';
-	import { usageQueryOptions } from '$lib/query/billing';
+	import { billing } from '$lib/query/billing';
 
 	type Range = '7d' | '30d' | '90d';
 
@@ -27,12 +27,12 @@
 	let selectedRange = $state<Range>('30d');
 
 	const usage = createQuery(() =>
-		usageQueryOptions({
+		billing.usage({
 			range: selectedRange,
 			binSize: selectedRange === '7d' ? 'hour' : 'day',
 			groupBy: 'properties.model',
 			maxGroups: 8,
-		}),
+		}).options,
 	);
 
 	const rangeOptions = [

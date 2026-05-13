@@ -12,12 +12,12 @@
 	import { mode, toggleMode } from 'mode-watcher';
 	import { api } from '$lib/api';
 	import { auth } from '$platform/auth';
-	import { balanceQuery } from '$lib/query/billing';
+	import { billing } from '$lib/query/billing';
 	import { capitalize, getInitials } from '$lib/utils';
 
 	let { user }: { user: AuthUser } = $props();
 
-	const balance = createQuery(() => balanceQuery.options);
+	const balance = createQuery(() => billing.balance.options);
 
 	const subscription = $derived(
 		balance.data?.subscriptions?.find((s) => !s.addOn) ?? null,

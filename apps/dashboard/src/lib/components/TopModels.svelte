@@ -5,14 +5,14 @@
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Table from '@epicenter/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { usageQueryOptions } from '$lib/query/billing';
+	import { billing } from '$lib/query/billing';
 
 	const usage = createQuery(() =>
-		usageQueryOptions({
+		billing.usage({
 			range: '30d',
 			binSize: 'day',
 			groupBy: 'properties.model',
-		}),
+		}).options,
 	);
 
 	/**

@@ -14,10 +14,10 @@
 	import PlanComparison from '$lib/components/PlanComparison.svelte';
 	import TopModels from '$lib/components/TopModels.svelte';
 	import UsageChart from '$lib/components/UsageChart.svelte';
-	import { balanceQuery, billingKeys, topUpMutation } from '$lib/query/billing';
+	import { billing, billingKeys } from '$lib/query/billing';
 	import { queryClient } from '$lib/query/client';
 
-	const balance = createQuery(() => balanceQuery.options);
+	const balance = createQuery(() => billing.balance.options);
 	const subscription = $derived(
 		balance.data?.subscriptions?.find((s) => !s.addOn) ?? null,
 	);
@@ -30,7 +30,7 @@
 		if (data.url) window.location.href = data.url;
 	}
 
-	const topUp = createMutation(() => topUpMutation.options);
+	const topUp = createMutation(() => billing.topUp.options);
 </script>
 
 <CreditBalance />

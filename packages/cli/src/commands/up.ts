@@ -278,7 +278,7 @@ async function safeDisposeStartedRoutes(
 }
 
 function printPeersSnapshot(entry: StartedDaemonRoute): void {
-	const peers = entry.runtime.workspace.peers.list();
+	const peers = entry.runtime.collaboration.peers.list();
 	if (peers.length === 0) {
 		process.stderr.write(`${entry.route}: no peers connected\n`);
 		return;
@@ -291,11 +291,14 @@ function printPeersSnapshot(entry: StartedDaemonRoute): void {
 }
 
 function subscribeAwareness(entry: StartedDaemonRoute, quiet: boolean): void {
-	const { peers } = entry.runtime.workspace;
 	const snapshot = () =>
-		new Map(peers.list().map((peer) => [peer.clientID, peer]));
+		new Map(
+			entry.runtime.collaboration.peers
+				.list()
+				.map((peer) => [peer.clientID, peer]),
+		);
 	let prev = snapshot();
-	peers.observe(() => {
+	entry.runtime.collaboration.peers.observe(() => {
 		const next = snapshot();
 		for (const [clientID, peer] of next) {
 			if (!prev.has(clientID)) {
@@ -320,8 +323,7 @@ function subscribeAwareness(entry: StartedDaemonRoute, quiet: boolean): void {
 }
 
 function subscribeSyncStatus(entry: StartedDaemonRoute): void {
-	const { workspace } = entry.runtime;
-	workspace.onStatusChange((status) => {
+	entry.runtime.collaboration.onStatusChange((status) => {
 		if (status.phase === 'connecting') {
 			logSyncStatus(`${entry.route}: connecting (retry ${status.retries})`);
 		} else if (status.phase === 'connected') {

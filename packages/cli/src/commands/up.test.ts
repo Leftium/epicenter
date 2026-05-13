@@ -85,9 +85,9 @@ afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
 });
 
-function makeFakeWorkspace(onDispose?: () => void): DaemonRuntime {
+function makeFakeRuntime(onDispose?: () => void): DaemonRuntime {
 	return {
-		workspace: {
+		collaboration: {
 			actions: {},
 			whenConnected: new Promise(() => {
 				/* sync connects in the background */
@@ -99,7 +99,7 @@ function makeFakeWorkspace(onDispose?: () => void): DaemonRuntime {
 				find: () => undefined,
 				observe: () => () => {},
 			},
-		} as unknown as DaemonRuntime['workspace'],
+		} as unknown as DaemonRuntime['collaboration'],
 		async [Symbol.asyncDispose]() {
 			onDispose?.();
 		},
@@ -122,7 +122,7 @@ function makeFakeConfig(runtime: DaemonRuntime): LoadedDaemonConfig {
 
 describe('runUp: happy path', () => {
 	test('writes metadata, binds socket, replies to ping', async () => {
-		const workspace = makeFakeWorkspace();
+		const workspace = makeFakeRuntime();
 		const config = makeFakeConfig(workspace);
 
 		const handle = expectOk(
@@ -179,7 +179,7 @@ describe('runUp: failure cleanup', () => {
 	});
 
 	test('releases the daemon lease when route startup fails', async () => {
-		const config = makeFakeConfig(makeFakeWorkspace());
+		const config = makeFakeConfig(makeFakeRuntime());
 
 		const { error } = await runUp(
 			{
@@ -203,7 +203,7 @@ describe('runUp: failure cleanup', () => {
 	});
 
 	test('returns MetadataWriteFailed and tears down when metadata path is blocked', async () => {
-		const workspace = makeFakeWorkspace();
+		const workspace = makeFakeRuntime();
 		const config = makeFakeConfig(workspace);
 		mkdirSync(metadataPathFor(workDir));
 
@@ -251,14 +251,14 @@ describe('runUp: already running', () => {
 				{
 					loadDaemonConfig: async () => {
 						loadCalls++;
-						return Ok(makeFakeConfig(makeFakeWorkspace()));
+						return Ok(makeFakeConfig(makeFakeRuntime()));
 					},
 					startDaemonRoutes: async () => {
 						startCalls++;
 						return Ok([
 							{
 								route: 'default',
-								runtime: makeFakeWorkspace(() => {
+								runtime: makeFakeRuntime(() => {
 									disposeCalls++;
 								}),
 							},
@@ -294,7 +294,7 @@ describe('runUp: already running', () => {
 				{
 					loadDaemonConfig: async () => {
 						loadCalls++;
-						return Ok(makeFakeConfig(makeFakeWorkspace()));
+						return Ok(makeFakeConfig(makeFakeRuntime()));
 					},
 					startDaemonRoutes: async () => {
 						startCalls++;
@@ -327,7 +327,7 @@ describe('runUp: orphan path', () => {
 			configMtime: 0,
 		});
 
-		const workspace = makeFakeWorkspace();
+		const workspace = makeFakeRuntime();
 		const config = makeFakeConfig(workspace);
 
 		const handle = expectOk(

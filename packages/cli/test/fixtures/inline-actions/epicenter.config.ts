@@ -1,7 +1,7 @@
 /**
  * Minimal fixture: one daemon route with inline `defineQuery` /
  * `defineMutation` nodes grouped under `actions:`. No sqlite or encryption,
- * no real WebSocket: a hand-stubbed `workspace` matches the daemon's
+ * no real WebSocket: a hand-stubbed `collaboration` matches the daemon's
  * structural contract so `loadDaemonConfig` accepts it.
  *
  * CLI paths are `demo.counter.{get,increment,set}`.
@@ -44,7 +44,7 @@ const actions = {
 	},
 };
 
-const workspace = {
+const collaboration = {
 	identity: { id: 'fixture', name: 'fixture', platform: 'node' as const },
 	actions,
 	awareness,
@@ -66,7 +66,7 @@ const workspace = {
 
 export const demo = {
 	workspaceId: ydoc.guid,
-	workspace,
+	collaboration,
 	async [Symbol.asyncDispose]() {
 		ydoc.destroy();
 	},

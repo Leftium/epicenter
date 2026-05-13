@@ -111,8 +111,8 @@ export const DaemonConfigError = defineErrors({
 	}) => ({
 		message:
 			`Invalid daemon route "${route}" in ${configPath}: ` +
-			`expected a daemon runtime with workspace.peers, ` +
-			`workspace.onStatusChange, and [Symbol.asyncDispose].`,
+			`expected a daemon runtime with collaboration.peers, ` +
+			`collaboration.onStatusChange, and [Symbol.asyncDispose].`,
 		configPath,
 		route,
 	}),
@@ -134,14 +134,14 @@ export type DaemonConfigError = InferErrors<typeof DaemonConfigError>;
 
 function hasDaemonRuntimeShape(value: unknown): value is DaemonRuntime {
 	if (!isObjectRecord(value)) return false;
-	const { workspace } = value;
-	if (!isObjectRecord(workspace)) return false;
-	const peers = workspace.peers;
+	const { collaboration } = value;
+	if (!isObjectRecord(collaboration)) return false;
+	const peers = collaboration.peers;
 	if (!isObjectRecord(peers)) return false;
 	return (
 		typeof peers.list === 'function' &&
 		typeof peers.observe === 'function' &&
-		typeof workspace.onStatusChange === 'function' &&
+		typeof collaboration.onStatusChange === 'function' &&
 		typeof value[Symbol.asyncDispose] === 'function'
 	);
 }

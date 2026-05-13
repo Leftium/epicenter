@@ -29,7 +29,7 @@ function writeConfig(source: string) {
 }
 
 const daemonTransportFields = `
-	workspace: {
+	collaboration: {
 		actions: {},
 		peers: {
 			list: () => [],
@@ -53,7 +53,7 @@ describe('loadDaemonConfig', () => {
 						start: ({ projectDir, route }) => {
 							globalThis.__loadConfigEvents.push('started');
 							return {
-								workspace: {
+								collaboration: {
 									actions: {
 										paths: {
 											projectDir: { handler: () => projectDir },
@@ -88,7 +88,7 @@ describe('loadDaemonConfig', () => {
 
 		expect(started.error).toBeNull();
 		expect(started.data?.map((entry) => entry.route)).toEqual(['demo']);
-		const paths = started.data?.[0]?.runtime.workspace.actions.paths as
+		const paths = started.data?.[0]?.runtime.collaboration.actions.paths as
 			| {
 					projectDir: { handler(): string };
 					route: { handler(): string };

@@ -55,7 +55,7 @@ export function openFuji({
 }
 ```
 
-The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `session.current`; when present, it carries the browser workspace, and pages reach it via the module-level `requireWorkspace()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup is a separate explicit action, not part of sign-out.
+The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `session.current`; when present, it carries the app binding, and pages reach it via the module-level `requireApp()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/whispering/client.ts`.
 

@@ -20,7 +20,6 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import {
 	createPeersSurface,
-	PeerLeftError,
 	type PeerWireHooks,
 	waitForPeer,
 } from './peer.js';
@@ -193,16 +192,9 @@ describe('peer.invoke', () => {
 		expect(result?.error).toBeNull();
 	});
 
-	test('returns PeerLeft when peer is already gone at dispatch time', async () => {
-		const { peers } = setup({
-			send: async () => Ok(null),
-		});
-
-		// Construct a peer reference by hand; the peer never existed in awareness.
-		// In practice this happens via stale references, but a direct call is the
-		// simplest way to verify the dispatch-time check.
-		const peer = peers.find('ghost');
-		expect(peer).toBeUndefined();
+	test('peers.find returns undefined when the peer is not in awareness', () => {
+		const { peers } = setup();
+		expect(peers.find('ghost')).toBeUndefined();
 	});
 
 	test('returns PeerLeft when peer disappears mid-call', async () => {
@@ -324,11 +316,3 @@ describe('waitForPeer', () => {
 	});
 });
 
-// PeerLeftError is exercised through invoke; this re-uses the error to keep
-// the import live and document the variant shape callers see.
-test('PeerLeftError.PeerLeft carries peerId and action', () => {
-	const err = PeerLeftError.PeerLeft({ peerId: 'mac', action: 'tabs.close' });
-	expect(err.error?.name).toBe('PeerLeft');
-	expect(err.error?.peerId).toBe('mac');
-	expect(err.error?.action).toBe('tabs.close');
-});

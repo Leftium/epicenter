@@ -103,7 +103,8 @@ export function attachSqliteMaterializer(
 		debounceMs?: number;
 		/**
 		 * Gate: the materializer awaits this before the initial DDL + full-load.
-		 * Matches the `waitFor` convention used by `attachSync`. Omit for no gate.
+		 * Matches the `waitFor` convention used by `openCollaboration` and
+		 * `attachYjsSync`. Omit for no gate.
 		 */
 		waitFor?: Promise<unknown>;
 		/**

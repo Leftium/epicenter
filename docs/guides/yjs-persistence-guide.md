@@ -22,9 +22,9 @@ Each app composes its workspace in a single builder:
 ```typescript
 import {
 	attachIndexedDb,
-	attachSync,
 	attachTables,
 	defineDocument,
+	openCollaboration,
 	toWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -32,10 +32,12 @@ import * as Y from 'yjs';
 const app = defineDocument((id: string) => {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, appTables);
-	const idb = attachIndexedDb(ydoc);                 // local persistence
-	const sync = attachSync(ydoc, {                    // network sync
-		url: (docId) => toWsUrl(`${serverUrl}/workspaces/${docId}`),
-		waitFor: idb.whenLoaded,                         // delta-only on reconnect
+	const idb = attachIndexedDb(ydoc);                          // local persistence
+	const collaboration = openCollaboration(ydoc, {              // sync + presence + RPC
+		url: toWsUrl(`${serverUrl}/workspaces/${ydoc.guid}`),
+		waitFor: idb.whenLoaded,                                   // delta-only on reconnect
+		identity: { id: 'browser', name: 'Browser', platform: 'web' },
+		actions: {},
 	});
 
 	return {
@@ -43,7 +45,7 @@ const app = defineDocument((id: string) => {
 		ydoc,
 		tables,
 		idb,
-		sync,
+		collaboration,
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 });
@@ -55,7 +57,9 @@ Offline and sync behavior:
 
 1. Writes go through the typed helpers into the `Y.Doc`.
 2. `attachIndexedDb` (or `attachYjsLog`) mirrors the Y.Doc to local storage.
-3. `attachSync` waits for `idb.whenLoaded` before opening the WebSocket, so the first remote exchange is a CRDT delta against an already-populated local state — not a full document transfer.
+3. `openCollaboration` waits for `idb.whenLoaded` before opening the WebSocket, so the first remote exchange is a CRDT delta against an already-populated local state — not a full document transfer.
 4. When offline, writes accumulate in IndexedDB/SQLite; when back online, Yjs replays them against whatever peers did in the meantime. CRDT merge rules guarantee convergence.
+
+For content documents that only need bytes-on-the-wire (no presence, no RPC), use the sibling `attachYjsSync(ydoc, { url, ... })` instead of `openCollaboration`.
 
 For the server-side (Elysia) equivalent of accepting sync connections, see the `createSyncPlugin` helper in `@epicenter/server-remote-cloudflare` or the `apps/api/` hub.

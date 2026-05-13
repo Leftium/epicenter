@@ -4,9 +4,10 @@
  * Owns one SQLite file (`updates` table, BLOB column, autoincrement id).
  * Every Y.Doc `updateV2` becomes a row; on construction the rows are
  * replayed in id order; periodically the log is compacted into a single
- * state-as-update row. Pairs with `attachSync` for cross-machine
- * convergence; pairs with `attachYjsLogReader` for read-only consumers
- * (script-side mirrors, the daemon-as-materializer-worker design).
+ * state-as-update row. Pairs with `openCollaboration` (workspace doc) or
+ * `attachYjsSync` (content doc) for cross-machine convergence; pairs with
+ * `attachYjsLogReader` for read-only consumers (script-side mirrors, the
+ * daemon-as-materializer-worker design).
  *
  * Distinct from `attachSqliteMaterializer`, which writes a different file
  * with derived per-table rows for SQL queries. This module is the Y.Doc-

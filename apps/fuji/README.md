@@ -41,21 +41,18 @@ export function openFujiBrowser({
   const doc = openFujiDocument({ encryptionKeys });
   const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
   attachOwnedBroadcastChannel(doc.ydoc, { userId });
-  const awareness = attachAwareness(doc.ydoc, {
-    schema: { peer: PeerIdentity },
-    initial: { peer },
-  });
-  const sync = attachSync(doc, {
+  const collaboration = openCollaboration(doc.ydoc, {
     url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-    waitFor: idb,
+    waitFor: idb.whenLoaded,
     openWebSocket,
-    awareness,
+    identity: peer,
+    actions: doc.actions,
   });
-  return { ...doc, idb, awareness, sync };
+  return { ...doc, idb, collaboration };
 }
 ```
 
-The browser bundle exposes concrete resources like `idb`, `sync`, and child document collections. Auth state flows through `session.current`; when present, it carries the app binding, and pages reach it via the module-level `requireApp()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup is a separate explicit action, not part of sign-out.
+The browser bundle exposes concrete resources like `idb`, `collaboration`, and child document collections. Auth state flows through `session.current`; when present, it carries the app binding, and pages reach it via the module-level `requireApp()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/whispering/client.ts`.
 

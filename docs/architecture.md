@@ -92,16 +92,16 @@ workspace.tables.files.set({ id: 'readme.md', name: 'README.md', _v: 1 });
 The split is conceptual, not cosmetic. Definitions describe what data means; the builder is the runtime that can actually hold and mutate that data.
 
 ### 3. Extend means adding more `attach*` calls
-There is no plugin chain. Persistence, sync, indexing, and materializers all mount through `attach*` functions. You add them to the builder alongside tables and KV:
+There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + RPC + peers) mounts through the `openCollaboration` primitive. You add them to the builder alongside tables and KV:
 
 ```ts
 import * as Y from 'yjs';
 import {
 	attachIndexedDb,
 	attachKv,
-	attachSync,
 	attachTables,
 	defineDocument,
+	openCollaboration,
 	toWsUrl,
 } from '@epicenter/workspace';
 
@@ -110,20 +110,22 @@ const app = defineDocument((id: string) => {
 	const tables = attachTables(ydoc, { files });
 	const kv = attachKv(ydoc, { themeMode });
 	const idb = attachIndexedDb(ydoc);
-	const sync = attachSync(ydoc, {
+	const collaboration = openCollaboration(ydoc, {
 		url: toWsUrl(`https://sync.example.com/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
+		identity: { id: 'browser', name: 'Browser', platform: 'web' },
+		actions: {},
 	});
-	return { id, ydoc, tables, kv, idb, sync, /* ... */ };
+	return { id, ydoc, tables, kv, idb, collaboration, /* ... */ };
 });
 ```
 
-Ordering is lexical. `attachSync` reads `idb.whenLoaded` as `waitFor` because `idb` is already in scope. Later attachments see earlier ones directly. There is no context object to route through.
+Ordering is lexical. `openCollaboration` reads `idb.whenLoaded` as `waitFor` because `idb` is already in scope. Later attachments see earlier ones directly. There is no context object to route through.
 
-For extensions that need their own Y.Doc per row (file content, note bodies), define a *second* `defineDocument` keyed on the row's content guid. The main workspace doc and per-row docs are the same primitive, just different ids.
+For extensions that need their own Y.Doc per row (file content, note bodies), define a *second* `defineDocument` keyed on the row's content guid. Content docs typically use the sibling `attachYjsSync(ydoc, { url, ... })` instead of `openCollaboration`: same supervisor lifecycle, no presence, no RPC.
 
-### 4. Sync is just another attachment, but it changes the topology
-Sync does not own the document. It attaches to a Y.Doc that already exists and starts moving CRDT updates between peers. The `waitFor: idb.whenLoaded` option ensures local state is replayed first, so the initial handshake is a delta, not a full document transfer.
+### 4. Collaboration is just another attachment, but it changes the topology
+`openCollaboration` does not own the document. It attaches to a Y.Doc that already exists and starts moving CRDT updates between peers, plus publishing presence and dispatching RPC. The `waitFor: idb.whenLoaded` option ensures local state is replayed first, so the initial handshake is a delta, not a full document transfer.
 
 Local state exists first, then optional durability, then optional network coordination.
 
@@ -148,7 +150,7 @@ Teardown runs through Yjs itself. Every async `attach*` function registers `ydoc
 ```ts
 workspace[Symbol.dispose]();
 await workspace.idb.whenDisposed;
-await workspace.sync.whenDisposed;
+await workspace.collaboration.whenDisposed;
 ```
 
 Browser bundles expose `wipe()` for explicit local cleanup such as "Forget this device." Sign-out does not call it. The wipe sequence disposes the live bundle, awaits the async attachments needed to unblock storage deletion, then deletes persisted local state. The refcounted cache still calls `[Symbol.dispose]()` on the last release after the `gcTime` grace period; it does not aggregate an async disposal barrier.
@@ -202,10 +204,10 @@ import { filesTable } from '@epicenter/filesystem';
 import * as Y from 'yjs';
 import {
 	attachIndexedDb,
-	attachSync,
 	attachTables,
 	defineDocument,
 	defineTable,
+	openCollaboration,
 	toWsUrl,
 } from '@epicenter/workspace';
 
@@ -222,11 +224,6 @@ const opensidian = defineDocument((id: string) => {
 		toolTrust: toolTrustTable,
 	});
 	const idb = attachIndexedDb(ydoc);
-	const sync = attachSync(ydoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
-		bearerToken: () => auth.bearerToken,
-		waitFor: idb.whenLoaded,
-	});
 	const sqliteIndex = createSqliteIndex({ ydoc, tables });
 	const actions = {
 		files: {
@@ -235,7 +232,14 @@ const opensidian = defineDocument((id: string) => {
 			}),
 		},
 	};
-	return { id, ydoc, tables, idb, sync, sqliteIndex, actions, /* ... */ };
+	const collaboration = openCollaboration(ydoc, {
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+		openWebSocket: auth.openWebSocket,
+		waitFor: idb.whenLoaded,
+		identity: { id: 'browser', name: 'Browser', platform: 'web' },
+		actions,
+	});
+	return { id, ydoc, tables, idb, collaboration, sqliteIndex, /* ... */ };
 });
 
 export const workspace = opensidian.open('opensidian');
@@ -248,9 +252,8 @@ defineDocument(builder).open('opensidian')
     |
     +-- attachTables(ydoc, {...})
     +-- attachIndexedDb(ydoc)
-    +-- attachSync(ydoc, { waitFor: idb.whenLoaded })
     +-- createSqliteIndex(...)
-    +-- actions
+    +-- openCollaboration(ydoc, { waitFor: idb.whenLoaded, identity, actions })
     |
     +-- attachYjsFileSystem(...)              -> editor + terminal + file tree
     +-- actionsToAiTools(...).tools           -> local AI tool execution
@@ -264,7 +267,7 @@ That is the whole monorepo in miniature. The app is mostly composition code beca
 ## The sync philosophy is dumb server, smart client
 The server is a relay, not the authority. Clients own schema meaning, table helpers, migrations, encryption activation, action handlers, and most of the user-facing behavior.
 
-`@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions and shared error types, while `attachSync` plugs those primitives into a live document that already knows how to read and write its own data.
+`@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions and shared error types, while `openCollaboration` and `attachYjsSync` plug those primitives into a live document that already knows how to read and write its own data.
 
 That means the server does not need to understand your tables. It forwards Yjs sync messages, awareness updates, and RPC payloads, but it does not become the canonical interpreter of the workspace schema.
 

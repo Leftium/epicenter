@@ -2,9 +2,10 @@
 
 > **Historical note.** The long-form version of this guide described a
 > `createWorkspace(definition).withEncryption().withExtension('persistence', ...).withExtension('sync', ...)`
-> builder chain. That API is gone. There is one primitive today:
-> a user-owned document factory, with every attachment (`attachTables`,
-> `attachIndexedDb`, `attachSync`, `attachEncryption`, etc.) composed inline.
+> builder chain. That API is gone. There is one pattern today: a user-owned
+> document factory, with every attachment (`attachTables`, `attachIndexedDb`,
+> `attachEncryption`, etc.) composed inline plus the `openCollaboration`
+> primitive that wraps sync, presence, RPC, and the peers surface in one call.
 >
 > Rather than maintain two versions of the same narrative, this guide now
 > points at the canonical sources:
@@ -23,14 +24,13 @@ On the client, `@epicenter/workspace` provides the primitives: define your schem
 
 ```typescript
 import {
-	attachAwareness,
 	attachEncryption,
 	attachOwnedBroadcastChannel,
-	attachSync,
 	defineTable,
 	type EncryptionKeys,
 	getOrCreateInstallationId,
-	PeerIdentity,
+	openCollaboration,
+	type PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -64,39 +64,38 @@ function openMyAppDoc({ encryptionKeys }: { encryptionKeys: () => EncryptionKeys
 
 function openMyApp({
 	userId,
-	peer,
-	bearerToken,
+	identity,
+	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	peer: PeerIdentity;
-	bearerToken?: () => string | null;
+	identity: PeerIdentity;
+	openWebSocket?: (
+		url: string | URL,
+		protocols?: string[],
+	) => WebSocket | Promise<WebSocket>;
 	encryptionKeys: () => EncryptionKeys;
 }) {
 	const doc = openMyAppDoc({ encryptionKeys });
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
-	const awareness = attachAwareness(doc.ydoc, {
-		schema: { peer: PeerIdentity },
-		initial: { peer },
-	});
-	const sync = attachSync(doc.ydoc, {
+	const collaboration = openCollaboration(doc.ydoc, {
 		url: toWsUrl(`https://api.epicenter.so/workspaces/${doc.ydoc.guid}`),
-		bearerToken,
+		openWebSocket,
 		waitFor: idb.whenLoaded,
-		awareness,
+		identity,
+		actions: {},
 	});
 
 	return {
 		...doc,
-		awareness,
 		idb,
-		sync,
+		collaboration,
 		whenLoaded: idb.whenLoaded,
 		async wipe() {
 			doc.ydoc.destroy();
-			await sync.whenDisposed;
+			await collaboration.whenDisposed;
 			await idb.whenDisposed;
 			await wipeOwnerLocalYjsData({
 				userId,

@@ -19,7 +19,8 @@ The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, co
 | attachAwareness                                                |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
 | attachOwnedBroadcastChannel                                    |
-| attachSync                                                     |
+| attachYjsSync (content docs)                                   |
+| openCollaboration (workspace doc: sync + presence + RPC + peers)|
 | attachSqliteMaterializer                                       |
 +----------------------------------------------------------------+
 | Y.Doc (raw CRDT)                                               |
@@ -81,16 +82,18 @@ function openBlog({ encryptionKeys }: { encryptionKeys: () => EncryptionKeys }) 
 }
 ```
 
-### Persistence + sync
+### Persistence + collaboration
 
 Auth belongs to the app. The workspace factory receives an auth-owned WebSocket
-opener and passes it to sync.
+opener and passes it to `openCollaboration`, which wraps the sync supervisor,
+publishes peer identity in awareness, dispatches inbound action and runtime
+requests, and exposes a `peers` surface for cross-peer dispatch.
 
 ```typescript
 import {
   attachIndexedDb,
   attachOwnedBroadcastChannel,
-  attachSync,
+  openCollaboration,
 } from '@epicenter/workspace';
 import { auth } from './auth';
 
@@ -101,29 +104,36 @@ function openBlog() {
 
   const idb = attachIndexedDb(ydoc);
   attachOwnedBroadcastChannel(ydoc, { userId: auth.state.identity.user.id });
-  const sync = attachSync(ydoc, {
+  const collaboration = openCollaboration(ydoc, {
     url: `wss://api.example.com/workspaces/${ydoc.guid}`,
     openWebSocket: auth.openWebSocket,
     waitFor: idb.whenLoaded,
+    identity: { id: 'browser', name: 'Browser', platform: 'web' },
+    actions: {},
   });
 
   return {
-    ydoc, tables, idb, sync,
+    ydoc, tables, idb, collaboration,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 }
 ```
 
-### Awareness
+For content documents (rich-text bodies, attachments) that only need bytes-on-the-wire, swap `openCollaboration` for the sibling `attachYjsSync(ydoc, { url, ... })` — same supervisor lifecycle, no presence, no RPC.
+
+### Awareness (lower-level)
+
+`openCollaboration` already publishes `{ identity, actionPaths }` on its own Awareness. Reach for the `attachAwareness` primitive directly only when you need a separately-typed presence channel (cursors on a content doc, custom selection state) on its own Awareness instance.
 
 ```typescript
+import { Awareness } from 'y-protocols/awareness';
 import { attachAwareness } from '@epicenter/workspace';
 
-const awareness = attachAwareness(ydoc, {
-  schema: myAwarenessSchema,
-  initial: myInitialAwarenessState,
+const presence = attachAwareness(new Awareness(ydoc), {
+  schema: myPresenceSchema,
+  initial: myInitialPresenceState,
 });
-// awareness.setLocal({...}), awareness.observe(...), awareness.raw for y-protocols
+// presence.setLocal({...}), presence.observe(...), presence.raw for y-protocols
 ```
 
 ### Per-row content documents

@@ -3,7 +3,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { openCollaboration, toWsUrl } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import { openZhongwen as openZhongwenDoc } from './index.js';
+import { openZhongwenDoc } from './index.js';
 
 export const DEFAULT_ZHONGWEN_DAEMON_ROUTE = 'zhongwen';
 

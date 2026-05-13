@@ -2,7 +2,7 @@ import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { opensidianTables } from '../workspace/definition.js';
 
-export function openOpensidian({
+export function openOpensidianDoc({
 	encryptionKeys,
 	clientID,
 }: {

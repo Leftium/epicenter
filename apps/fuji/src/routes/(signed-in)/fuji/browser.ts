@@ -15,7 +15,7 @@ import {
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { openFuji as openFujiDoc } from './index';
+import { openFujiDoc } from './index';
 import { createFujiActions, type EntryId } from './workspace';
 
 function entryContentDocGuid({

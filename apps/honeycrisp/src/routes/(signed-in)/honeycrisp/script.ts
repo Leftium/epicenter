@@ -11,7 +11,7 @@ import {
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import { openHoneycrisp as openHoneycrispDoc } from './index.js';
+import { openHoneycrispDoc } from './index.js';
 
 export async function openHoneycrisp({
 	projectDir = findEpicenterDir(),

@@ -11,7 +11,7 @@ import {
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import { openOpensidian as openOpensidianDoc } from './index.js';
+import { openOpensidianDoc } from './index.js';
 
 export async function openOpensidian({
 	projectDir = findEpicenterDir(),

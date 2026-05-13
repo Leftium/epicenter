@@ -11,7 +11,7 @@ import {
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import { openZhongwen as openZhongwenDoc } from './index.js';
+import { openZhongwenDoc } from './index.js';
 
 export async function openZhongwen({
 	projectDir = findEpicenterDir(),

@@ -3,7 +3,7 @@ import {
 	type EncryptionKeys,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
-import { openZhongwen as openZhongwenDoc } from './index';
+import { openZhongwenDoc } from './index';
 
 export function openZhongwen({
 	userId,

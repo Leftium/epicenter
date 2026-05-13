@@ -3,7 +3,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { openCollaboration, toWsUrl } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import { openOpensidian as openOpensidianDoc } from './index.js';
+import { openOpensidianDoc } from './index.js';
 
 export const DEFAULT_OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 

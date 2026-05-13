@@ -3,7 +3,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { openCollaboration, toWsUrl } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import { openHoneycrisp as openHoneycrispDoc } from './index.js';
+import { openHoneycrispDoc } from './index.js';
 import { createHoneycrispActions } from './workspace.js';
 
 export const DEFAULT_HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';

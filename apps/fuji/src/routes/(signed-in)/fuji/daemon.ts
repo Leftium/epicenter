@@ -21,7 +21,7 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { openFuji as openFujiDoc } from './index.js';
+import { openFujiDoc } from './index.js';
 import { createFujiActions } from './workspace.js';
 
 export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';

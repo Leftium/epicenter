@@ -6,13 +6,13 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '$platform/auth';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
-	const workspace = requireWorkspace();
+	const honeycrisp = requireApp();
 
 	async function forgetHoneycrispDevice(): Promise<void> {
-		await workspace.honeycrisp.wipe();
+		await honeycrisp.wipe();
 		window.location.reload();
 	}
 </script>
@@ -24,7 +24,7 @@
 			<div class="flex items-center gap-1">
 				<AccountPopover
 					{auth}
-					workspace={workspace.honeycrisp.workspace}
+					collaboration={honeycrisp.collaboration}
 					syncNoun="notes"
 					onForgetDevice={forgetHoneycrispDevice}
 				/>
@@ -34,8 +34,8 @@
 		<div class="px-2 pb-1">
 			<Sidebar.Input
 				placeholder="Search notes…"
-				value={workspace.state.view.searchQuery}
-				oninput={(e) => workspace.state.view.setSearchQuery(e.currentTarget.value)}
+				value={honeycrisp.state.view.searchQuery}
+				oninput={(e) => honeycrisp.state.view.setSearchQuery(e.currentTarget.value)}
 			/>
 		</div>
 	</Sidebar.Header>
@@ -46,26 +46,26 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={workspace.state.view.selectedFolderId === null && !workspace.state.view.isRecentlyDeletedView}
-							onclick={() => workspace.state.view.selectFolder(null)}
+							isActive={honeycrisp.state.view.selectedFolderId === null && !honeycrisp.state.view.isRecentlyDeletedView}
+							onclick={() => honeycrisp.state.view.selectFolder(null)}
 						>
 							<FileTextIcon class="size-4" />
 							<span>All Notes</span>
 							<span class="ml-auto text-xs text-muted-foreground">
-								{workspace.state.notes.all.length}
+								{honeycrisp.state.notes.all.length}
 							</span>
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={workspace.state.view.isRecentlyDeletedView && workspace.state.view.selectedFolderId === null}
-							onclick={() => workspace.state.view.selectRecentlyDeleted()}
+							isActive={honeycrisp.state.view.isRecentlyDeletedView && honeycrisp.state.view.selectedFolderId === null}
+							onclick={() => honeycrisp.state.view.selectRecentlyDeleted()}
 						>
 							<TrashIcon class="size-4" />
 							<span>Recently Deleted</span>
-							{#if workspace.state.notes.deleted.length > 0}
+							{#if honeycrisp.state.notes.deleted.length > 0}
 								<span class="ml-auto text-xs text-muted-foreground">
-									{workspace.state.notes.deleted.length}
+									{honeycrisp.state.notes.deleted.length}
 								</span>
 							{/if}
 						</Sidebar.MenuButton>
@@ -81,7 +81,7 @@
 				</Collapsible.Trigger>
 				<Sidebar.GroupAction
 					title="New Folder"
-					onclick={() => workspace.state.folders.create()}
+					onclick={() => honeycrisp.state.folders.create()}
 				>
 					<PlusIcon />
 					<span class="sr-only">New Folder</span>
@@ -89,7 +89,7 @@
 				<Collapsible.Content>
 					<Sidebar.GroupContent>
 						<Sidebar.Menu>
-							{#each workspace.state.folders.all as folder (folder.id)}
+							{#each honeycrisp.state.folders.all as folder (folder.id)}
 								<FolderMenuItem {folder} />
 							{:else}
 								<Sidebar.MenuItem>

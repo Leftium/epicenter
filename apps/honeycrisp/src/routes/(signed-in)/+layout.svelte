@@ -25,7 +25,7 @@
 
 {#if session.current}
 	<WorkspaceGate
-		pending={session.current.workspace.honeycrisp.idb.whenLoaded}
+		pending={session.current.app.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
 		<Tooltip.Provider>{@render children?.()}</Tooltip.Provider>

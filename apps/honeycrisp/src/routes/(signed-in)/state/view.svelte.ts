@@ -13,15 +13,15 @@
  * @example
  * ```svelte
  * <script>
- *   import { requireWorkspace } from '$lib/session';
+ *   import { requireApp } from '$lib/session';
  *
- *   const workspace = requireWorkspace();
+ *   const honeycrisp = requireApp();
  * </script>
  *
- * {#each workspace.state.view.currentNotes as note (note.id)}
+ * {#each honeycrisp.state.view.currentNotes as note (note.id)}
  *   <p>{note.title}</p>
  * {/each}
- * <p>Current title: {workspace.state.view.currentTitle}</p>
+ * <p>Current title: {honeycrisp.state.view.currentTitle}</p>
  * ```
  */
 
@@ -127,10 +127,10 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * workspace.state.view.selectFolder(folderId);
+		 * honeycrisp.state.view.selectFolder(folderId);
 		 *
 		 * // Show all notes
-		 * workspace.state.view.selectFolder(null);
+		 * honeycrisp.state.view.selectFolder(null);
 		 * ```
 		 */
 		selectFolder(folderId: FolderId | null) {
@@ -145,7 +145,7 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * workspace.state.view.selectRecentlyDeleted();
+		 * honeycrisp.state.view.selectRecentlyDeleted();
 		 * ```
 		 */
 		selectRecentlyDeleted() {
@@ -157,7 +157,7 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * workspace.state.view.selectNote(noteId);
+		 * honeycrisp.state.view.selectNote(noteId);
 		 * ```
 		 */
 		selectNote(noteId: NoteId) {
@@ -172,8 +172,8 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * workspace.state.view.setSortBy('title');
-		 * workspace.state.view.setSortBy('dateEdited');
+		 * honeycrisp.state.view.setSortBy('title');
+		 * honeycrisp.state.view.setSortBy('dateEdited');
 		 * ```
 		 */
 		setSortBy(value: SortBy) {
@@ -189,8 +189,8 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * workspace.state.view.setSearchQuery('meeting');
-		 * workspace.state.view.setSearchQuery(''); // clear
+		 * honeycrisp.state.view.setSearchQuery('meeting');
+		 * honeycrisp.state.view.setSearchQuery(''); // clear
 		 * ```
 		 */
 		setSearchQuery(query: string) {

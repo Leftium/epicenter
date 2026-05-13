@@ -2,15 +2,15 @@
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Loading } from '@epicenter/ui/loading';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import type { NoteId } from '../honeycrisp/workspace';
 
-	const workspace = requireWorkspace();
+	const honeycrisp = requireApp();
 
 	let { noteId }: { noteId: NoteId } = $props();
 
 	const doc = fromDisposableCache(
-		workspace.honeycrisp.noteBodyDocs,
+		honeycrisp.noteBodyDocs,
 		() => noteId,
 	);
 </script>
@@ -20,6 +20,6 @@
 {:then _}
 	<HoneycripEditor
 		yxmlfragment={doc.current.body.binding}
-		onContentChange={(change) => workspace.state.notes.updateContent(noteId, change)}
+		onContentChange={(change) => honeycrisp.state.notes.updateContent(noteId, change)}
 	/>
 {/await}

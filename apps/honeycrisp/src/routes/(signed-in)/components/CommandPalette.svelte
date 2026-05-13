@@ -4,9 +4,9 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 
-	const workspace = requireWorkspace();
+	const honeycrisp = requireApp();
 
 	let isOpen = $state(false);
 </script>
@@ -28,17 +28,17 @@
 		<Command.Group heading="Folders">
 			<Command.Item
 				onSelect={() => {
-					workspace.state.view.selectFolder(null);
+					honeycrisp.state.view.selectFolder(null);
 					isOpen = false;
 				}}
 			>
 				<FileTextIcon class="mr-2 size-4" />
 				All Notes
 			</Command.Item>
-			{#each workspace.state.folders.all as folder (folder.id)}
+			{#each honeycrisp.state.folders.all as folder (folder.id)}
 				<Command.Item
 					onSelect={() => {
-						workspace.state.view.selectFolder(folder.id);
+						honeycrisp.state.view.selectFolder(folder.id);
 						isOpen = false;
 					}}
 				>
@@ -55,10 +55,10 @@
 		<Command.Separator />
 
 		<Command.Group heading="Notes">
-			{#each workspace.state.notes.all as note (note.id)}
+			{#each honeycrisp.state.notes.all as note (note.id)}
 				<Command.Item
 					onSelect={() => {
-					workspace.state.view.selectNote(note.id);
+					honeycrisp.state.view.selectNote(note.id);
 						isOpen = false;
 					}}
 				>
@@ -80,8 +80,8 @@
 		<Command.Group heading="Actions">
 			<Command.Item
 				onSelect={() => {
-					const { id } = workspace.state.notes.create(workspace.state.view.selectedFolderId);
-					workspace.state.view.selectNote(id);
+					const { id } = honeycrisp.state.notes.create(honeycrisp.state.view.selectedFolderId);
+					honeycrisp.state.view.selectNote(id);
 				}}
 			>
 				<PlusIcon class="mr-2 size-4" />
@@ -89,7 +89,7 @@
 			</Command.Item>
 			<Command.Item
 				onSelect={() => {
-				workspace.state.folders.create();
+				honeycrisp.state.folders.create();
 					isOpen = false;
 				}}
 			>

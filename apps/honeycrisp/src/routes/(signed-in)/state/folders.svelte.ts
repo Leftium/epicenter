@@ -8,15 +8,15 @@
  * @example
  * ```svelte
  * <script>
- *   import { requireWorkspace } from '$lib/session';
+ *   import { requireApp } from '$lib/session';
  *
- *   const workspace = requireWorkspace();
+ *   const honeycrisp = requireApp();
  * </script>
  *
- * {#each workspace.state.folders.all as folder (folder.id)}
+ * {#each honeycrisp.state.folders.all as folder (folder.id)}
  *   <p>{folder.name}</p>
  * {/each}
- * <button onclick={() => workspace.state.folders.create()}>New Folder</button>
+ * <button onclick={() => honeycrisp.state.folders.create()}>New Folder</button>
  * ```
  */
 
@@ -59,7 +59,7 @@ export function createFolders(honeycrisp: Honeycrisp) {
 		 *
 		 * @example
 		 * ```typescript
-		 * workspace.state.folders.create();
+		 * honeycrisp.state.folders.create();
 		 * // Folder appears in sidebar with name "New Folder"
 		 * ```
 		 */
@@ -81,7 +81,7 @@ export function createFolders(honeycrisp: Honeycrisp) {
 		 *
 		 * @example
 		 * ```typescript
-		 * workspace.state.folders.rename(folderId, 'Work');
+		 * honeycrisp.state.folders.rename(folderId, 'Work');
 		 * ```
 		 */
 		rename(folderId: FolderId, name: string) {
@@ -97,12 +97,12 @@ export function createFolders(honeycrisp: Honeycrisp) {
 		 *
 		 * @example
 		 * ```typescript
-		 * workspace.state.folders.delete(folderId);
+		 * honeycrisp.state.folders.delete(folderId);
 		 * // Folder disappears from sidebar, its notes move to "All Notes"
 		 * ```
 		 */
 		delete(folderId: FolderId) {
-			honeycrisp.actions.folders.delete({ folderId });
+			honeycrisp.collaboration.actions.folders.delete({ folderId });
 			if (searchParams.folder === folderId) {
 				searchParams.update({ folder: null, note: null });
 			}

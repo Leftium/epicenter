@@ -6,10 +6,10 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import type { Folder } from '../honeycrisp/workspace';
 
-	const workspace = requireWorkspace();
+	const honeycrisp = requireApp();
 
 	let { folder }: { folder: Folder } = $props();
 
@@ -20,7 +20,7 @@
 
 	function commitRename() {
 		if (editingName.trim()) {
-			workspace.state.folders.rename(folder.id, editingName.trim());
+			honeycrisp.state.folders.rename(folder.id, editingName.trim());
 		}
 		isEditing = false;
 		editingName = '';
@@ -51,8 +51,8 @@
 		</div>
 	{:else}
 		<Sidebar.MenuButton
-			isActive={workspace.state.view.selectedFolderId === folder.id}
-			onclick={() => workspace.state.view.selectFolder(folder.id)}
+			isActive={honeycrisp.state.view.selectedFolderId === folder.id}
+			onclick={() => honeycrisp.state.view.selectFolder(folder.id)}
 		>
 			{#if folder.icon}
 				<span class="text-base leading-none">{folder.icon}</span>
@@ -61,7 +61,7 @@
 			{/if}
 			<span>{folder.name}</span>
 			<span class="ml-auto text-xs text-muted-foreground">
-				{workspace.state.notes.countsByFolder[folder.id] ?? 0}
+				{honeycrisp.state.notes.countsByFolder[folder.id] ?? 0}
 			</span>
 		</Sidebar.MenuButton>
 		<DropdownMenu.Root>
@@ -108,7 +108,7 @@
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action
 				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-				onclick={() => workspace.state.folders.delete(folder.id)}
+				onclick={() => honeycrisp.state.folders.delete(folder.id)}
 			>
 				Delete
 			</AlertDialog.Action>

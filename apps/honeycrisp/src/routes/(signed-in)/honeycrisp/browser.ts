@@ -9,14 +9,14 @@ import {
 	type EncryptionKeys,
 	onLocalUpdate,
 	type OpenWebSocket,
-	openWorkspace,
+	openCollaboration,
 	type PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { openHoneycrisp as openHoneycrispDoc } from './index';
-import type { NoteId } from './workspace';
+import { createHoneycrispActions, type NoteId } from './workspace';
 
 function noteBodyDocGuid({
 	workspaceId,
@@ -88,19 +88,23 @@ export function openHoneycrisp({
 		};
 	});
 
-	const workspace = openWorkspace(doc.ydoc, {
+	const actions = createHoneycrispActions(doc.tables);
+	const collaboration = openCollaboration(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		identity: peer,
-		actions: doc.actions,
+		actions,
 	});
 
 	return {
-		...doc,
+		ydoc: doc.ydoc,
+		tables: doc.tables,
+		kv: doc.kv,
+		batch: doc.batch,
 		idb,
 		noteBodyDocs,
-		workspace,
+		collaboration,
 		async wipe() {
 			const fallbackGuids = [
 				doc.ydoc.guid,
@@ -113,7 +117,7 @@ export function openHoneycrisp({
 			];
 			noteBodyDocs[Symbol.dispose]();
 			doc[Symbol.dispose]();
-			await Promise.all([idb.whenDisposed, workspace.whenDisposed]);
+			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeOwnerLocalYjsData({
 				userId,
 				ydocGuids: fallbackGuids,

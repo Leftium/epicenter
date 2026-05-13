@@ -1,13 +1,13 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import CommandPalette from './components/CommandPalette.svelte';
 	import NoteBodyPane from './components/NoteBodyPane.svelte';
 	import NoteList from './components/NoteList.svelte';
 	import HoneycripSidebar from './components/Sidebar.svelte';
 
-	const workspace = requireWorkspace();
+	const honeycrisp = requireApp();
 </script>
 
 <svelte:window
@@ -17,11 +17,11 @@
 
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
-			workspace.state.folders.create();
+			honeycrisp.state.folders.create();
 		} else if (e.key === 'n') {
 			e.preventDefault();
-			const { id } = workspace.state.notes.create(workspace.state.view.selectedFolderId);
-			workspace.state.view.selectNote(id);
+			const { id } = honeycrisp.state.notes.create(honeycrisp.state.view.selectedFolderId);
+			honeycrisp.state.view.selectNote(id);
 		}
 	}}
 />
@@ -36,9 +36,9 @@
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if workspace.state.view.selectedNote && workspace.state.view.selectedNoteId}
-					{#key workspace.state.view.selectedNoteId}
-						<NoteBodyPane noteId={workspace.state.view.selectedNoteId} />
+				{#if honeycrisp.state.view.selectedNote && honeycrisp.state.view.selectedNoteId}
+					{#key honeycrisp.state.view.selectedNoteId}
+						<NoteBodyPane noteId={honeycrisp.state.view.selectedNoteId} />
 					{/key}
 				{:else}
 					<div class="flex h-full flex-col items-center justify-center gap-2">

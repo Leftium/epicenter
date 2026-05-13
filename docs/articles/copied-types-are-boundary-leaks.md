@@ -35,11 +35,11 @@ Inside typed production code, though, `Like` often means the owner was nearby an
 ```typescript
 type WorkspaceLike = {
 	ydoc: Y.Doc;
-	dispose(): void;
+	[Symbol.dispose](): void;
 };
 
 const workspace = value as WorkspaceLike;
-workspace.dispose();
+workspace[Symbol.dispose]();
 ```
 
 If `value` came from our own workspace factory, the factory should own the handle type:
@@ -48,7 +48,7 @@ If `value` came from our own workspace factory, the factory should own the handl
 export type WorkspaceHandle = ReturnType<typeof createWorkspaceHandle>;
 
 const workspace: WorkspaceHandle = createWorkspaceHandle();
-workspace.dispose();
+workspace[Symbol.dispose]();
 ```
 
 If `value` came from outside the system, validate or brand it at the boundary. Do not spread the cast across internal code.

@@ -13,7 +13,7 @@ I was reviewing five Svelte components that all opened a Yjs doc handle. Four of
 	$effect(() => {
 		const h = fileContentDocs.open(fileId);
 		handle = h;
-		return () => { h.dispose(); handle = null; };
+		return () => { h[Symbol.dispose](); handle = null; };
 	});
 </script>
 
@@ -30,7 +30,7 @@ One of them, `EntryEditor.svelte`, looked like this:
 	const id = entry.id;
 
 	const contentDoc = entryContentDocs.open(id);
-	$effect(() => () => contentDoc.dispose());
+	$effect(() => () => contentDoc[Symbol.dispose]());
 </script>
 
 <Editor yxmlfragment={contentDoc.content.binding} />
@@ -65,7 +65,7 @@ Before (`honeycrisp/+page.svelte`):
 		if (!id) { bodyHandle = null; return; }
 		const handle = noteBodyDocs.open(id);
 		bodyHandle = handle;
-		return () => { handle.dispose(); bodyHandle = null; };
+		return () => { handle[Symbol.dispose](); bodyHandle = null; };
 	});
 </script>
 
@@ -92,7 +92,7 @@ And `NoteBodyPane.svelte`:
 <script lang="ts">
 	let { noteId }: { noteId: string } = $props();
 	const handle = noteBodyDocs.open(noteId);
-	$effect(() => () => handle.dispose());
+	$effect(() => () => handle[Symbol.dispose]());
 </script>
 
 <HoneycripEditor yxmlfragment={handle.body.binding} ... />
@@ -111,12 +111,12 @@ The code DeepWiki produced:
 ```svelte
 $effect(() => {
 	if (externalResource) {
-		externalResource.dispose();
+		externalResource[Symbol.dispose]();
 	}
 	externalResource = openExternalResource(resourceId);
 	return () => {
 		if (externalResource) {
-			externalResource.dispose();
+			externalResource[Symbol.dispose]();
 		}
 	};
 });
@@ -127,7 +127,7 @@ That disposes twice on every prop change. The effect body disposes the previous 
 This isn't a slight against the docs. It's the point. The pattern is hard to write correctly. The equivalent Pattern A version cannot write this bug, because the effect has one line:
 
 ```svelte
-$effect(() => () => handle.dispose());
+$effect(() => () => handle[Symbol.dispose]());
 ```
 
 There is no body to desynchronize from the cleanup, because the body is the cleanup.

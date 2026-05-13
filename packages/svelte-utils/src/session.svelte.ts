@@ -5,6 +5,11 @@
  * on sign-out. Same-user `reauth-required` is a no-op so the payload stays
  * mounted across credential refreshes.
  *
+ * OAuth session storage is single-user by structure (one monolithic
+ * `OAuthSession` blob; refresh tokens are user-scoped at issuance), so the
+ * lifecycle treats two consecutive identity-bearing states as the same user
+ * and does not re-check.
+ *
  * The framework owns the lifecycle; apps own the payload shape. The build
  * function returns whatever shape the app wants (it must be `Disposable`).
  * Apps typically alias `session.require` to a named export
@@ -29,8 +34,7 @@
  * ```
  */
 
-import type { AuthClient, WorkspaceIdentity } from '@epicenter/auth';
-import { createSessionLifecycle } from './session-lifecycle.js';
+import type { AuthClient, AuthState, WorkspaceIdentity } from '@epicenter/auth';
 
 export function createSession<T extends Disposable>({
 	auth,
@@ -40,14 +44,18 @@ export function createSession<T extends Disposable>({
 	build: (identity: WorkspaceIdentity) => T;
 }) {
 	let payload = $state<T | null>(null);
-	const lifecycle = createSessionLifecycle<T>({
-		auth,
-		build,
-		getPayload: () => payload,
-		setPayload: (next) => {
-			payload = next;
-		},
-	});
+
+	function reconcile(state: AuthState) {
+		if (state.status === 'signed-out') {
+			payload?.[Symbol.dispose]();
+			payload = null;
+		} else {
+			payload ??= build(state.identity);
+		}
+	}
+
+	const unsubscribe = auth.onStateChange(reconcile);
+	reconcile(auth.state);
 
 	return {
 		get current(): T | null {
@@ -63,7 +71,9 @@ export function createSession<T extends Disposable>({
 			return payload;
 		},
 		[Symbol.dispose]() {
-			lifecycle[Symbol.dispose]();
+			unsubscribe();
+			payload?.[Symbol.dispose]();
+			payload = null;
 		},
 	};
 }

@@ -395,7 +395,7 @@ export function createEncryptedYkvLww<T>(
 		 * Unregister the inner observer and release resources. Call when this
 		 * wrapper is no longer needed but the underlying Y.Array continues to exist.
 		 */
-		dispose(): void {
+		[Symbol.dispose](): void {
 			inner.unobserve(observer);
 			inner[Symbol.dispose]();
 		},

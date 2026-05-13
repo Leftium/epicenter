@@ -41,7 +41,7 @@ export const TabError = defineErrors({
 	 * The saved-tab record was written successfully, but `browser.tabs.remove`
 	 * failed during the close-source-tab step. The save is intact in the
 	 * workspace; only the cleanup half failed. Surfaced as the `closeResult`
-	 * channel on `savedTabs.save`'s mixed return so callers can warn the user
+	 * channel on `saved_tabs_save`'s mixed return so callers can warn the user
 	 * without losing the success of the save.
 	 */
 	SaveCloseFailed: ({
@@ -73,7 +73,7 @@ export function createTabManagerActions({
 	deviceId: Promise<DeviceId>;
 }) {
 	return {
-		'devices.list': defineQuery({
+		devices_list: defineQuery({
 			title: 'List Devices',
 			description:
 				'List all synced devices with their names, browsers, and online status.',
@@ -89,7 +89,7 @@ export function createTabManagerActions({
 				};
 			},
 		}),
-		'tabs.list': defineQuery({
+		tabs_list: defineQuery({
 			title: 'List Open Tabs',
 			description:
 				'List all currently open browser tabs on this device. Returns live tab state from Chrome, not stored in the workspace.',
@@ -105,7 +105,7 @@ export function createTabManagerActions({
 				}));
 			},
 		}),
-		'tabs.close': defineMutation({
+		tabs_close: defineMutation({
 			title: 'Close Tabs',
 			description: 'Close one or more tabs by their IDs.',
 			input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
@@ -122,7 +122,7 @@ export function createTabManagerActions({
 				return Ok({ closedCount: tabIds.length });
 			},
 		}),
-		'tabs.open': defineMutation({
+		tabs_open: defineMutation({
 			title: 'Open Tab',
 			description: 'Open a new tab with the given URL on the current device.',
 			input: Type.Object({ url: Type.String() }),
@@ -139,7 +139,7 @@ export function createTabManagerActions({
 						}),
 				}),
 		}),
-		'tabs.activate': defineMutation({
+		tabs_activate: defineMutation({
 			title: 'Activate Tab',
 			description: 'Activate (focus) a specific tab by its ID.',
 			input: Type.Object({ tabId: Type.Number() }),
@@ -156,7 +156,7 @@ export function createTabManagerActions({
 						}),
 				}),
 		}),
-		'tabs.save': defineMutation({
+		tabs_save: defineMutation({
 			title: 'Save Tabs',
 			description: 'Save tabs for later. Optionally close them after saving.',
 			input: Type.Object({
@@ -196,7 +196,7 @@ export function createTabManagerActions({
 				return { savedCount: validTabs.length };
 			},
 		}),
-		'tabs.group': defineMutation({
+		tabs_group: defineMutation({
 			title: 'Group Tabs',
 			description: 'Group tabs together with an optional title and color.',
 			input: Type.Object({
@@ -226,7 +226,7 @@ export function createTabManagerActions({
 						}),
 				}),
 		}),
-		'tabs.pin': defineMutation({
+		tabs_pin: defineMutation({
 			title: 'Pin Tabs',
 			description: 'Pin or unpin tabs.',
 			input: Type.Object({
@@ -242,7 +242,7 @@ export function createTabManagerActions({
 				};
 			},
 		}),
-		'tabs.mute': defineMutation({
+		tabs_mute: defineMutation({
 			title: 'Mute Tabs',
 			description: 'Mute or unmute tabs.',
 			input: Type.Object({
@@ -258,7 +258,7 @@ export function createTabManagerActions({
 				};
 			},
 		}),
-		'tabs.reload': defineMutation({
+		tabs_reload: defineMutation({
 			title: 'Reload Tabs',
 			description: 'Reload one or more tabs.',
 			input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
@@ -277,7 +277,7 @@ export function createTabManagerActions({
 		 * browser tab. Used by the UI where the BrowserTab object is already
 		 * available. Silently no-ops for tabs without a URL.
 		 */
-		'savedTabs.save': defineMutation({
+		saved_tabs_save: defineMutation({
 			title: 'Save Tab',
 			description:
 				'Save a tab for later by its metadata, then close the source tab. The save always succeeds (modulo CRDT errors); the close is best-effort and reported separately on `closeResult`.',
@@ -312,7 +312,7 @@ export function createTabManagerActions({
 				return { saved: true as const, closeResult };
 			},
 		}),
-		'savedTabs.restore': defineMutation({
+		saved_tabs_restore: defineMutation({
 			title: 'Restore Saved Tab',
 			description:
 				'Re-open a saved tab in the browser and delete the record.',
@@ -338,7 +338,7 @@ export function createTabManagerActions({
 				return Ok({ restored: true });
 			},
 		}),
-		'savedTabs.restoreAll': defineMutation({
+		saved_tabs_restore_all: defineMutation({
 			title: 'Restore All Saved Tabs',
 			description: 'Re-open all saved tabs and delete their records.',
 			handler: async () => {
@@ -354,7 +354,7 @@ export function createTabManagerActions({
 				return { restoredCount: all.length };
 			},
 		}),
-		'savedTabs.remove': defineMutation({
+		saved_tabs_remove: defineMutation({
 			title: 'Remove Saved Tab',
 			description: 'Delete a saved tab without restoring it.',
 			input: Type.Object({ id: Type.String() }),
@@ -363,7 +363,7 @@ export function createTabManagerActions({
 				return { removed: true };
 			},
 		}),
-		'savedTabs.removeAll': defineMutation({
+		saved_tabs_remove_all: defineMutation({
 			title: 'Remove All Saved Tabs',
 			description: 'Delete all saved tabs without restoring them.',
 			handler: () => {
@@ -374,7 +374,7 @@ export function createTabManagerActions({
 				return { removedCount: all.length };
 			},
 		}),
-		'bookmarks.toggle': defineMutation({
+		bookmarks_toggle: defineMutation({
 			title: 'Toggle Bookmark',
 			description:
 				'Add or remove a bookmark for a URL. If the URL is already bookmarked, removes all matching bookmarks; otherwise creates a new bookmark.',
@@ -408,7 +408,7 @@ export function createTabManagerActions({
 				return { action: 'added' as const, removedCount: 0 };
 			},
 		}),
-		'bookmarks.open': defineMutation({
+		bookmarks_open: defineMutation({
 			title: 'Open Bookmark',
 			description:
 				'Open a bookmarked URL in a new browser tab. The bookmark is not deleted.',
@@ -426,7 +426,7 @@ export function createTabManagerActions({
 						}),
 				}),
 		}),
-		'bookmarks.remove': defineMutation({
+		bookmarks_remove: defineMutation({
 			title: 'Remove Bookmark',
 			description: 'Delete a bookmark by its ID.',
 			input: Type.Object({ id: Type.String() }),
@@ -435,7 +435,7 @@ export function createTabManagerActions({
 				return { removed: true };
 			},
 		}),
-		'bookmarks.removeAll': defineMutation({
+		bookmarks_remove_all: defineMutation({
 			title: 'Remove All Bookmarks',
 			description: 'Delete every bookmark.',
 			handler: () => {

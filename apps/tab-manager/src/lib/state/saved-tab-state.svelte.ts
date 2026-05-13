@@ -37,7 +37,7 @@ export function createSavedTabState(tabManager: TabManagerBrowser) {
 		/**
 		 * Save a tab: snapshot its metadata to Y.Doc and close the browser tab.
 		 *
-		 * Delegates to the `savedTabs.save` workspace action. Silently no-ops
+		 * Delegates to the `saved_tabs_save` workspace action. Silently no-ops
 		 * for tabs without a URL. The action's Result envelope flows through
 		 * to callers; today the action's Err channel is `never` because
 		 * browser-API failures during the close step are intentionally
@@ -45,7 +45,7 @@ export function createSavedTabState(tabManager: TabManagerBrowser) {
 		 */
 		async save(tab: BrowserTab) {
 			if (!tab.url) return;
-			return tabManager.collaboration.actions['savedTabs.save']({
+			return tabManager.collaboration.actions.saved_tabs_save({
 				browserTabId: tab.id,
 				url: tab.url,
 				title: tab.title || 'Untitled',
@@ -62,7 +62,7 @@ export function createSavedTabState(tabManager: TabManagerBrowser) {
 		 * doesn't lose the URL.
 		 */
 		async restore(savedTab: SavedTab) {
-			return tabManager.collaboration.actions['savedTabs.restore']({
+			return tabManager.collaboration.actions.saved_tabs_restore({
 				id: savedTab.id,
 				url: savedTab.url,
 				pinned: savedTab.pinned,
@@ -71,17 +71,17 @@ export function createSavedTabState(tabManager: TabManagerBrowser) {
 
 		/** Restore all saved tabs at once. */
 		async restoreAll() {
-			return tabManager.collaboration.actions['savedTabs.restoreAll']();
+			return tabManager.collaboration.actions.saved_tabs_restore_all();
 		},
 
 		/** Delete a saved tab without restoring it. Synchronous CRDT delete. */
 		remove(id: SavedTabId) {
-			return tabManager.collaboration.actions['savedTabs.remove']({ id });
+			return tabManager.collaboration.actions.saved_tabs_remove({ id });
 		},
 
 		/** Delete all saved tabs without restoring them. Synchronous CRDT batch delete. */
 		removeAll() {
-			return tabManager.collaboration.actions['savedTabs.removeAll']();
+			return tabManager.collaboration.actions.saved_tabs_remove_all();
 		},
 	};
 }

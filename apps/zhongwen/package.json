@@ -6,7 +6,6 @@
 	"type": "module",
 	"exports": {
 		".": "./src/routes/(signed-in)/zhongwen/workspace/index.ts",
-		"./browser": "./src/routes/(signed-in)/zhongwen/browser.ts",
 		"./daemon": "./src/routes/(signed-in)/zhongwen/daemon.ts",
 		"./script": "./src/routes/(signed-in)/zhongwen/script.ts"
 	},

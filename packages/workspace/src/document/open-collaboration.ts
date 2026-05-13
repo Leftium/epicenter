@@ -9,7 +9,7 @@
  *
  * Naming model: a document stores local-first app data; collaboration
  * publishes its actions and makes it live with peers. Local invocation is
- * `collaboration.actions.<path>(input)`; remote invocation is
+ * `collaboration.actions['path'](input)`; remote invocation is
  * `collaboration.peers.find<TActions>(peerId)?.invoke('path', input)`.
  *
  * Sibling primitive `attachYjsSync` handles content docs (sync-only, no

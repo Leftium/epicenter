@@ -1,7 +1,7 @@
 # Actions Path-First Clean Break
 
 **Date**: 2026-05-13
-**Status**: In Progress
+**Status**: Implemented
 **Author**: Braden + Claude
 **Supersedes** (the action portion of): `20260513T200000-workspace-surface-clean-break-vision.md`
 
@@ -599,3 +599,31 @@ This stops working. Nobody is doing it on the audited branch. If a future use ca
 | `defineActions` helper (would have been the identity function) | One fewer primitive in the public surface |
 
 The product sentence reads cleanly without the rest. The collapse is not three separate refactors; it is one shape change that lets the surrounding code stop apologizing for itself.
+
+## Review
+
+**Completed**: 2026-05-13
+**Branch**: `codex/sync-room-plus-stacked-refactors`
+**Commits**: `df3d444fe` (workspace internals), `84ab9fba3` (spec), `e81ce2664` (apps + CLI fixtures).
+
+### Summary
+
+`ActionRegistry = Record<string, Action>` is now the only registry shape. The recursive `Actions` type, the `walkActions` generator, the `resolveActionPath` segment loop, the `isPlainObject` class fence, the `Query`/`Mutation`/`ActionFailed` named aliases, and the recursive daemon proxy + AI bridge type machinery are gone. `invokeAction` requires `errorLabel`. `Action<TInput, R, TType>` now carries the type discriminant at the type level, so consumers narrowing on `action.type === 'mutation'` get full inference. Four app factories (fuji, honeycrisp, opensidian, tab-manager) author flat records with `satisfies ActionRegistry` and the matching public type is derived with `ReturnType<typeof createXxxActions>`.
+
+### Deviations from Spec
+
+- **`toActionMeta` kept as an internal helper.** Spec open question #3 recommends inlining at the single caller, but there are two callers (`open-collaboration.ts` and `daemon/app.ts`). One internal helper beats two copies of the same `if input !== undefined; if title !== undefined; if description !== undefined` conditional spread.
+- **`Action` is parameterized on `TType`.** A linter pass during Wave 1 added a third type parameter `TType extends ActionType = ActionType`. This preserves the type discriminant at the type level (so `defineQuery` returns `Action<_, _, 'query'>`), which gives downstream consumers narrowing on `action.type` better inference than my initial monomorphic union. Kept.
+- **Fixed a pre-existing test assertion** in `run-handler.test.ts`: the case was named "peer miss returns RunError.RemoteCallFailed" but the implementation returns `PeerNotFound` directly, matching its JSDoc. Test now expects `PeerNotFound`. Unrelated to this refactor; surfaced because the test gate had to be green for Wave 1.
+- **File moves outside spec scope.** Mid-session, the user/linter moved `apps/<x>/src/routes/.../workspace.ts` to `apps/<x>/blocks/workspace.ts` and renamed `definition.ts -> blocks/workspace.ts` for opensidian and tab-manager. These are tracked as renames in the Wave 2 commit; the action-key flattening sits on top of the moves.
+
+### Verification
+
+- `bun test packages/workspace packages/cli packages/skills` → 681 pass / 1 todo / 0 fail (1709 expectations).
+- `bun run tsc --noEmit` clean for apps/fuji, apps/honeycrisp, apps/opensidian. The tab-manager check surfaces two pre-existing errors in `packages/ui/src/confirmation-dialog/index.ts` (named imports from a `.svelte` module with default-only export); unrelated to this refactor.
+- Final grep sweep: no remaining imports of `Actions`, `Query`, `Mutation`, `ActionFailed`, `walkActions`, `resolveActionPath`, `describeActions`. No remaining `actions.<ns>.<verb>(` call sites.
+
+### Follow-up Work
+
+- The pre-existing `packages/ui/src/confirmation-dialog/index.ts` import shape and the two `packages/workspace/src/document/peer.test.ts` typecheck errors deserve a separate cleanup pass.
+- `Peer<TActions>` keeps a `TActions = unknown` default and its `invoke<TMap extends RpcActionMap>` overload uses a manually-authored `RpcActionMap` shape, not `ActionRegistry`. This means typed peer dispatch still requires the app to write its own `{ 'foo.bar': { input, output } }` map. Worth a future spec to unify.

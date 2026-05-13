@@ -84,7 +84,6 @@ export type {
 	Actions,
 	Mutation,
 	Query,
-	RemoteActionProxy,
 } from './shared/actions';
 export {
 	defineMutation,
@@ -98,12 +97,11 @@ export {
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════
-// RPC + REMOTE ACTIONS
+// REMOTE CALLS
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { EncryptionKeys } from '@epicenter/encryption';
 export { isRpcError, RpcError } from '@epicenter/sync';
-export type { DefaultRpcMap, InferSyncRpcMap, RpcActionMap } from './rpc/types';
 export type { RemoteCallOptions } from './shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════

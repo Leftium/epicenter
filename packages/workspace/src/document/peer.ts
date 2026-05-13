@@ -18,7 +18,6 @@ import { type } from 'arktype';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Awareness } from 'y-protocols/awareness';
-import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
 import type {
 	ActionManifest,
 	RemoteCallOptions,
@@ -28,6 +27,30 @@ import {
 	type PeerAwarenessState,
 	type PeerIdentity,
 } from './peer-identity.js';
+
+// ════════════════════════════════════════════════════════════════════════════
+// RPC MAP TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Default RPC action map used when `peer.invoke` has no type narrowing.
+ * Accepts any string action with unknown input/output.
+ */
+export type DefaultRpcMap = Record<string, { input: unknown; output: unknown }>;
+
+/**
+ * Constraint for the `TMap` generic on `peer.invoke<TMap>(...)` and
+ * `peers.find<TMap>(id)`.
+ *
+ * Uses `any` (not `unknown`) for input/output because generic constraints
+ * need covariant compatibility: `{ input: string }` must extend
+ * `{ input: any }` but does NOT extend `{ input: unknown }`.
+ *
+ * Apps that want typed cross-device dispatch declare a flat map (path -> input/output)
+ * and pass it as the type argument to `find` or `invoke`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type RpcActionMap = Record<string, { input: any; output: any }>;
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERRORS

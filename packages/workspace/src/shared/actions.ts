@@ -26,8 +26,8 @@
  * preserves existing Results, and catches throws as `RpcError.ActionFailed`.
  * RPC uses `invokeActionForRpc`, which also converts custom non-RPC errors
  * into `RpcError.ActionFailed` before the result crosses the wire. Remote
- * callers use `createRemoteClient().actions(peerId)`, whose leaves expose
- * `Promise<Result<T, RpcError>>`.
+ * callers reach actions via `collaboration.peers.find(peerId)?.invoke(path, input)`,
+ * which returns `Promise<Result<T, RemoteCallError>>`.
  *
  * @module
  */
@@ -90,7 +90,7 @@ export type ActionMeta<
 /**
  * Flat dot-path to `ActionMeta` map describing a peer's full action surface.
  * Returned by the runtime-injected `system.describe` RPC and consumed via
- * `createRemoteClient({ awareness, rpc }).describe(peerId)`.
+ * `collaboration.peers.find(peerId)?.describe()`.
  */
 export type ActionManifest = Record<string, ActionMeta>;
 
@@ -153,8 +153,8 @@ export type SystemActions = {
  * Returns the handler with metadata attached. The action callable IS the
  * handler. Local callers see whatever the handler returns (sync if sync,
  * raw if raw, `Result` if explicit). Remote/AI/CLI consumers see uniform
- * `Promise<Result>` via the boundary normalizers (`createRemoteClient()` for
- * callers, `invokeActionForRpc()` for the inbound wire).
+ * `Promise<Result>` via the wire boundary in `invokeActionForRpc()` and
+ * the peer dispatch path in `collaboration.peers.find(...)?.invoke(...)`.
  */
 /** No input. `TInput` is explicitly `undefined`. */
 export function defineQuery<R>(
@@ -308,7 +308,7 @@ export function* walkActions(
 /**
  * Walk a tree into its flat `ActionManifest`: the wire form returned by
  * `system.describe`. Live `input` schemas are retained; functions are
- * dropped. Pairs with `createRemoteClient({ awareness, rpc }).describe(peerId)`,
+ * dropped. Pairs with `collaboration.peers.find(peerId)?.describe()`,
  * which returns the same shape from a remote peer.
  *
  * Built atop {@link walkActions}. Use that primitive directly if you want
@@ -408,102 +408,17 @@ export async function invokeActionForRpc<T = unknown>(
 export type ActionFailed = Extract<RpcError, { name: 'ActionFailed' }>;
 
 // ════════════════════════════════════════════════════════════════════════════
-// REMOTE ACTION TYPES (RPC proxy surface)
+// REMOTE CALL OPTIONS
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Per-remote-call options, threaded through every wrapped leaf as a trailing
- * optional argument. The proxy passes these to `rpc.rpc(...)` directly:
- * same shape, same name, single source of truth.
+ * Per-remote-call options. Threaded through `peer.invoke(path, input, options)`
+ * and the daemon `/run` route as a trailing optional argument.
  *
  * Currently just `timeout`. Cancellation via `AbortSignal` is deliberately
- * out. The underlying transport doesn't support it (a real cancel requires
- * a CANCEL frame the server understands). Add when plumbed through.
+ * out: the underlying wire does not support a CANCEL frame yet.
  */
 export type RemoteCallOptions = {
 	/** Per-call override of the default RPC timeout (ms). Default: 5000. */
 	timeout?: number;
 };
-
-/**
- * Append an optional `RemoteCallOptions` parameter to an existing arg tuple.
- * No-arg handlers `(): R` become `(input?: undefined, options?: RemoteCallOptions) => ...`
- * so callers can always pass options as the second arg, regardless of whether
- * the action has input.
- */
-type WithOptions<
-	Args extends readonly unknown[],
-	TOptions extends RemoteCallOptions,
-> = Args extends []
-	? [input?: undefined, options?: TOptions]
-	: [...Args, options?: TOptions];
-
-/**
- * Compute the wrapped shape of a single action callable for remote/normalized
- * consumption. Four flat branches:
- *
- * - `(...) => Promise<Result<T, E>>` -> `(...) => Promise<Result<T, RpcError>>`
- * - `(...) => Promise<R>`            -> `(...) => Promise<Result<R, RpcError>>`
- * - `(...) => Result<T, E>`          -> `(...) => Promise<Result<T, RpcError>>`
- * - `(...) => R`                     -> `(...) => Promise<Result<R, RpcError>>`
- *
- * The success data type is unchanged. Custom non-RPC `Err(E)` values cross
- * the wire as `RpcError.ActionFailed` with the original error under `cause`,
- * so the remote type exposes only `RpcError`. Every wrapped leaf accepts a
- * trailing `RemoteCallOptions` for per-call overrides.
- */
-export type WrapAction<
-	F,
-	TError = RpcError,
-	TOptions extends RemoteCallOptions = RemoteCallOptions,
-> = F extends (...args: infer Args) => infer R
-	? (
-			...args: WithOptions<Args, TOptions>
-		) => Promise<Result<RemoteSuccessOutput<R>, TError>>
-	: never;
-
-type RemoteSuccessOutput<TOutput> =
-	Awaited<TOutput> extends Result<infer TData, unknown>
-		? TData
-		: Awaited<TOutput>;
-
-/**
- * Filter any object `T` down to its action-shaped leaves and wrap each leaf
- * via {@link WrapAction} so callers see uniform `Promise<Result<T, RpcError>>`.
- *
- * Pass a pure action tree: non-action keys are removed at the type level via
- * key-remapping. Subtrees that contain zero actions are also pruned, so
- * consumers only see paths that lead somewhere callable.
- *
- * Bracketed `[T[K]] extends [Action]` form is intentional: prevents
- * unwanted distribution if a key's type is a union (e.g., `Foo | undefined`).
- */
-export type RemoteActionProxy<
-	T,
-	TError = RpcError,
-	TOptions extends RemoteCallOptions = RemoteCallOptions,
-> = {
-	[K in keyof T & string as ActionPathKey<K> extends never
-		? never
-		: [T[K]] extends [Action]
-			? K
-			: T[K] extends readonly unknown[]
-				? never
-				: T[K] extends Record<string, unknown>
-					? keyof RemoteActionProxy<T[K], TError, TOptions> extends never
-						? never
-						: K
-					: never]: [T[K]] extends [Action]
-		? WrapAction<T[K], TError, TOptions>
-		: T[K] extends readonly unknown[]
-			? never
-			: T[K] extends Record<string, unknown>
-				? RemoteActionProxy<T[K], TError, TOptions>
-				: never;
-};
-
-type ActionPathKey<TKey extends string> = TKey extends ''
-	? never
-	: TKey extends `${string}.${string}`
-		? never
-		: TKey;

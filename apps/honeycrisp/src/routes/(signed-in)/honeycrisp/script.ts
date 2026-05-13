@@ -11,9 +11,9 @@ import {
 	hashClientId,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import { openHoneycrispDoc } from './index.js';
+import { openHoneycrispDocument } from './document.js';
 
-export async function openHoneycrisp({
+export async function openHoneycrispBrowser({
 	projectDir = findEpicenterDir(),
 	clientID = hashClientId(Bun.main),
 }: {
@@ -21,7 +21,7 @@ export async function openHoneycrisp({
 	clientID?: number;
 }) {
 	const auth = await createMachineAuthClient();
-	const doc = openHoneycrispDoc({
+	const doc = openHoneycrispDocument({
 		clientID,
 		encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 	});

@@ -6,10 +6,10 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { requireApp } from '$lib/session';
+	import { requireHoneycrisp } from '$lib/session';
 	import type { Folder } from '../honeycrisp/workspace';
 
-	const honeycrisp = requireApp();
+	const honeycrisp = requireHoneycrisp();
 
 	let { folder }: { folder: Folder } = $props();
 

@@ -8,9 +8,9 @@
  * @example
  * ```svelte
  * <script>
- *   import { requireApp } from '$lib/session';
+ *   import { requireHoneycrisp } from '$lib/session';
  *
- *   const honeycrisp = requireApp();
+ *   const honeycrisp = requireHoneycrisp();
  * </script>
  *
  * {#each honeycrisp.state.folders.all as folder (folder.id)}
@@ -59,7 +59,7 @@ export function createFolders(honeycrisp: Honeycrisp) {
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.folders.create();
+		 * app.state.folders.create();
 		 * // Folder appears in sidebar with name "New Folder"
 		 * ```
 		 */
@@ -81,7 +81,7 @@ export function createFolders(honeycrisp: Honeycrisp) {
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.folders.rename(folderId, 'Work');
+		 * app.state.folders.rename(folderId, 'Work');
 		 * ```
 		 */
 		rename(folderId: FolderId, name: string) {
@@ -97,7 +97,7 @@ export function createFolders(honeycrisp: Honeycrisp) {
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.folders.delete(folderId);
+		 * app.state.folders.delete(folderId);
 		 * // Folder disappears from sidebar, its notes move to "All Notes"
 		 * ```
 		 */

@@ -2,7 +2,7 @@ import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { honeycrispTables } from './workspace.js';
 
-export function openHoneycrispDoc({
+export function openHoneycrispDocument({
 	encryptionKeys,
 	clientID,
 }: {

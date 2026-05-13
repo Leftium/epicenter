@@ -9,10 +9,10 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import { requireApp } from '$lib/session';
+	import { requireHoneycrisp } from '$lib/session';
 	import type { Note } from '../honeycrisp/workspace';
 
-	const honeycrisp = requireApp();
+	const honeycrisp = requireHoneycrisp();
 
 	let {
 		note,

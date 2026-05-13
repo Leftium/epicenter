@@ -13,9 +13,9 @@
  * @example
  * ```svelte
  * <script>
- *   import { requireApp } from '$lib/session';
+ *   import { requireHoneycrisp } from '$lib/session';
  *
- *   const honeycrisp = requireApp();
+ *   const honeycrisp = requireHoneycrisp();
  * </script>
  *
  * {#each honeycrisp.state.view.currentNotes as note (note.id)}
@@ -127,10 +127,10 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.view.selectFolder(folderId);
+		 * app.state.view.selectFolder(folderId);
 		 *
 		 * // Show all notes
-		 * honeycrisp.state.view.selectFolder(null);
+		 * app.state.view.selectFolder(null);
 		 * ```
 		 */
 		selectFolder(folderId: FolderId | null) {
@@ -145,7 +145,7 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.view.selectRecentlyDeleted();
+		 * app.state.view.selectRecentlyDeleted();
 		 * ```
 		 */
 		selectRecentlyDeleted() {
@@ -157,7 +157,7 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.view.selectNote(noteId);
+		 * app.state.view.selectNote(noteId);
 		 * ```
 		 */
 		selectNote(noteId: NoteId) {
@@ -172,8 +172,8 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.view.setSortBy('title');
-		 * honeycrisp.state.view.setSortBy('dateEdited');
+		 * app.state.view.setSortBy('title');
+		 * app.state.view.setSortBy('dateEdited');
 		 * ```
 		 */
 		setSortBy(value: SortBy) {
@@ -189,8 +189,8 @@ export function createView({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.view.setSearchQuery('meeting');
-		 * honeycrisp.state.view.setSearchQuery(''); // clear
+		 * app.state.view.setSearchQuery('meeting');
+		 * app.state.view.setSearchQuery(''); // clear
 		 * ```
 		 */
 		setSearchQuery(query: string) {

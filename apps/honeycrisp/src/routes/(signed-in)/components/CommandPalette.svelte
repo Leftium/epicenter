@@ -4,9 +4,9 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { requireApp } from '$lib/session';
+	import { requireHoneycrisp } from '$lib/session';
 
-	const honeycrisp = requireApp();
+	const honeycrisp = requireHoneycrisp();
 
 	let isOpen = $state(false);
 </script>

@@ -15,7 +15,7 @@ import {
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { openHoneycrispDoc } from './index';
+import { openHoneycrispDocument } from './document.js';
 import { createHoneycrispActions, type NoteId } from './workspace';
 
 function noteBodyDocGuid({
@@ -33,7 +33,7 @@ function noteBodyDocGuid({
 	});
 }
 
-export function openHoneycrisp({
+export function openHoneycrispBrowser({
 	userId,
 	peer,
 	openWebSocket,
@@ -44,7 +44,7 @@ export function openHoneycrisp({
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
-	const doc = openHoneycrispDoc({ encryptionKeys });
+	const doc = openHoneycrispDocument({ encryptionKeys });
 
 	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
@@ -130,4 +130,4 @@ export function openHoneycrisp({
 	};
 }
 
-export type Honeycrisp = ReturnType<typeof openHoneycrisp>;
+export type HoneycrispBrowser = ReturnType<typeof openHoneycrispBrowser>;

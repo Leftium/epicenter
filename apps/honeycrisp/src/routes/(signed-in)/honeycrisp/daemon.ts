@@ -3,7 +3,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { openCollaboration, toWsUrl } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import { openHoneycrispDoc } from './index.js';
+import { openHoneycrispDocument } from './document.js';
 import { createHoneycrispActions } from './workspace.js';
 
 export const DEFAULT_HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
@@ -19,7 +19,7 @@ export function defineHoneycrispDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const doc = openHoneycrispDoc({
+			const doc = openHoneycrispDocument({
 				clientID: hashClientId(projectDir),
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});

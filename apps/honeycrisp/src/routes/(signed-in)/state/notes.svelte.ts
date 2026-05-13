@@ -8,9 +8,9 @@
  * @example
  * ```svelte
  * <script>
- *   import { requireApp } from '$lib/session';
+ *   import { requireHoneycrisp } from '$lib/session';
  *
- *   const honeycrisp = requireApp();
+ *   const honeycrisp = requireHoneycrisp();
  * </script>
  *
  * {#each honeycrisp.state.notes.all as note (note.id)}
@@ -93,8 +93,8 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * const { id } = honeycrisp.state.notes.create(honeycrisp.state.view.selectedFolderId);
-		 * honeycrisp.state.view.selectNote(id);
+		 * const { id } = app.state.notes.create(app.state.view.selectedFolderId);
+		 * app.state.view.selectNote(id);
 		 * ```
 		 */
 		create(folderId?: FolderId | null) {
@@ -123,7 +123,7 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.notes.softDelete(noteId);
+		 * app.state.notes.softDelete(noteId);
 		 * // Note moves to Recently Deleted, editor closes
 		 * ```
 		 */
@@ -144,7 +144,7 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.notes.restore(noteId);
+		 * app.state.notes.restore(noteId);
 		 * // Note reappears in its original folder (or unfiled)
 		 * ```
 		 */
@@ -168,7 +168,7 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.notes.permanentlyDelete(noteId);
+		 * app.state.notes.permanentlyDelete(noteId);
 		 * // Note is removed from Recently Deleted and database
 		 * ```
 		 */
@@ -187,7 +187,7 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.notes.togglePin(noteId);
+		 * app.state.notes.togglePin(noteId);
 		 * // Note moves to the top of the list (or unpins)
 		 * ```
 		 */
@@ -207,10 +207,10 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.notes.moveToFolder(noteId, folderId);
+		 * app.state.notes.moveToFolder(noteId, folderId);
 		 *
 		 * // Move a note to unfiled
-		 * honeycrisp.state.notes.moveToFolder(noteId, undefined);
+		 * app.state.notes.moveToFolder(noteId, undefined);
 		 * ```
 		 */
 		moveToFolder(noteId: NoteId, folderId: FolderId | undefined) {
@@ -226,7 +226,7 @@ export function createNotes({
 		 *
 		 * @example
 		 * ```typescript
-		 * honeycrisp.state.notes.updateContent(noteId, {
+		 * app.state.notes.updateContent(noteId, {
 		 *   title: 'My Note Title',
 		 *   preview: 'First line of content...',
 		 *   wordCount: 42,

@@ -2,15 +2,14 @@ import { requireIdentity } from '@epicenter/auth';
 import { createSession } from '@epicenter/svelte';
 import { getOrCreateInstallationId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
-import { openHoneycrisp } from '../routes/(signed-in)/honeycrisp/browser';
+import { openHoneycrispBrowser } from '../routes/(signed-in)/honeycrisp/browser';
 import { createHoneycrispState } from '../routes/(signed-in)/state';
 
 export const session = createSession({
 	auth,
 	build: (identity) => {
-		const userId = identity.user.id;
-		const honeycrisp = openHoneycrisp({
-			userId,
+		const honeycrisp = openHoneycrispBrowser({
+			userId: identity.user.id,
 			peer: {
 				id: getOrCreateInstallationId(localStorage),
 				name: 'Honeycrisp',
@@ -22,7 +21,6 @@ export const session = createSession({
 		const state = createHoneycrispState(honeycrisp);
 		return {
 			...honeycrisp,
-			userId,
 			state,
 			[Symbol.dispose]() {
 				state[Symbol.dispose]();
@@ -30,9 +28,15 @@ export const session = createSession({
 			},
 		};
 	},
+	onDifferentUser: () => location.reload(),
 });
 
-export const { requireApp } = session;
+export function requireHoneycrisp() {
+	if (!session.current) {
+		throw new Error('requireHoneycrisp() called without an authenticated session.');
+	}
+	return session.current;
+}
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => session[Symbol.dispose]());

@@ -6,10 +6,10 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { auth } from '$platform/auth';
-	import { requireApp } from '$lib/session';
+	import { requireHoneycrisp } from '$lib/session';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
-	const honeycrisp = requireApp();
+	const honeycrisp = requireHoneycrisp();
 
 	async function forgetHoneycrispDevice(): Promise<void> {
 		await honeycrisp.wipe();

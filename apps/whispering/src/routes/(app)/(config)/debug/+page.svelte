@@ -149,7 +149,7 @@
 				const { error } = trySync({
 					try: () => {
 						measure('Generated', count, () => {
-							whispering.ydoc.transact(() => {
+							whispering.batch(() => {
 								for (let i = 0; i < count; i++) {
 									const now = new Date().toISOString();
 									const transcript = content;

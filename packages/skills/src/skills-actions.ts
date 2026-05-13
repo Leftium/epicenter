@@ -8,7 +8,7 @@
  * @module
  */
 
-import { defineQuery, type Table } from '@epicenter/workspace';
+import { defineActions, defineQuery, type Table } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Reference, Skill } from './tables.js';
 
@@ -26,7 +26,7 @@ export function createSkillsActions({
 	readInstructions(id: string): Promise<string>;
 	readReference(id: string): Promise<string>;
 }) {
-	return {
+	return defineActions({
 		/** List all skills as lightweight catalog entries: no docs opened. */
 		list_skills: defineQuery({
 			description: 'List all skills (id, name, description)',
@@ -71,5 +71,5 @@ export function createSkillsActions({
 				};
 			},
 		}),
-	};
+	});
 }

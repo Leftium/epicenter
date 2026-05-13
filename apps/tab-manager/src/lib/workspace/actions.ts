@@ -7,7 +7,7 @@
  */
 
 import {
-	type ActionRegistry,
+	defineActions,
 	defineMutation,
 	defineQuery,
 } from '@epicenter/workspace';
@@ -72,7 +72,7 @@ export function createTabManagerActions({
 	batch: (fn: () => void) => void;
 	deviceId: Promise<DeviceId>;
 }) {
-	return {
+	return defineActions({
 		devices_list: defineQuery({
 			title: 'List Devices',
 			description:
@@ -446,7 +446,7 @@ export function createTabManagerActions({
 				return { removedCount: all.length };
 			},
 		}),
-	} satisfies ActionRegistry;
+	});
 }
 
 export type TabManagerActions = ReturnType<typeof createTabManagerActions>;

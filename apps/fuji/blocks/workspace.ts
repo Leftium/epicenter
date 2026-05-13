@@ -5,11 +5,18 @@
  * pieces: articles, thoughts, ideas: organized by tags and type, displayed in a
  * data table with an editor panel. Each entry has a rich-text content document
  * for collaborative editing via ProseMirror + y-prosemirror.
+ *
+ * Distribution: this file is both the `@epicenter/fuji` npm root export AND
+ * the `epicenter/fuji/workspace` jsrepo block. The table shapes here are the
+ * wire contract for sync: forking a column shape breaks sync compatibility
+ * with peers running the canonical schema. Recipes (script.ts, snapshot.ts,
+ * daemon-route.ts) are yours to edit freely. See apps/README.md for the
+ * dual-channel convention.
  */
 
 import {
-	type ActionRegistry,
 	DateTimeString,
+	defineActions,
 	defineMutation,
 	defineQuery,
 	defineTable,
@@ -69,7 +76,7 @@ export const fujiTables = { entries: entriesTable };
 export type FujiTables = Tables<typeof fujiTables>;
 
 export function createFujiActions(tables: FujiTables) {
-	return {
+	return defineActions({
 		entries_get: defineQuery({
 			title: 'Get Entry',
 			description: 'Read one entry by ID from the daemon workspace.',
@@ -282,7 +289,7 @@ export function createFujiActions(tables: FujiTables) {
 				return { count: rows.length };
 			},
 		}),
-	} satisfies ActionRegistry;
+	});
 }
 
 export type FujiActions = ReturnType<typeof createFujiActions>;

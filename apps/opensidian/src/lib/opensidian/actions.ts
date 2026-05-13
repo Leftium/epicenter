@@ -1,6 +1,6 @@
 import type { SqliteIndex, YjsFileSystem } from '@epicenter/filesystem';
 import {
-	type ActionRegistry,
+	defineActions,
 	defineMutation,
 	defineQuery,
 } from '@epicenter/workspace';
@@ -17,7 +17,7 @@ export function createOpensidianActions({
 	sqliteIndex: SqliteIndex['exports'];
 	bash: Bash;
 }) {
-	return {
+	return defineActions({
 		files_search: defineQuery({
 			title: 'Search Notes',
 			description:
@@ -142,7 +142,7 @@ export function createOpensidianActions({
 				});
 			},
 		}),
-	} satisfies ActionRegistry;
+	});
 }
 
 export type OpensidianActions = ReturnType<typeof createOpensidianActions>;

@@ -7,13 +7,20 @@
  *
  * Contains branded NoteId/FolderId types, folders and notes table definitions
  * with DateTimeString timestamps, and the cross-table actions factory. The Y.Doc
- * is constructed in `lib/honeycrisp/index.ts` (iso) and `browser.ts` (env-bound),
- * composing these tables with `attachTables` inside `openHoneycrispBrowser`.
+ * is constructed in `browser.ts` (browser) and `blocks/script.ts` (Bun),
+ * composing these tables with `attachTables`.
+ *
+ * Distribution: this file is both the `@epicenter/honeycrisp` npm root export
+ * AND the `epicenter/honeycrisp/workspace` jsrepo block. The table shapes
+ * here are the wire contract for sync: forking a column shape breaks sync
+ * compatibility with peers running the canonical schema. Recipes (script.ts,
+ * daemon-route.ts) are yours to edit freely. See apps/README.md for the
+ * dual-channel convention.
  */
 
 import {
-	type ActionRegistry,
 	DateTimeString,
+	defineActions,
 	defineMutation,
 	defineTable,
 	type InferTableRow,
@@ -130,7 +137,7 @@ export type HoneycrispTables = Tables<typeof honeycrispTables>;
  * stays in the Svelte state files.
  */
 export function createHoneycrispActions(tables: HoneycrispTables) {
-	return {
+	return defineActions({
 		/**
 		 * Delete a folder and move all its notes to unfiled.
 		 *
@@ -152,6 +159,6 @@ export function createHoneycrispActions(tables: HoneycrispTables) {
 				tables.folders.delete(folderId);
 			},
 		}),
-	} satisfies ActionRegistry;
+	});
 }
 export type HoneycrispActions = ReturnType<typeof createHoneycrispActions>;

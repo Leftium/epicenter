@@ -3,6 +3,13 @@
  *
  * This file stays isomorphic so the same schema can be imported by the app,
  * CLI tooling, and any future sync or migration code.
+ *
+ * Distribution: this file is both the `opensidian` npm root export AND the
+ * `epicenter/opensidian/workspace` jsrepo block. The table shapes here are
+ * the wire contract for sync: forking a column shape breaks sync
+ * compatibility with peers running the canonical schema. Recipes (script.ts,
+ * daemon-route.ts) are yours to edit freely. See apps/README.md for the
+ * dual-channel convention.
  */
 
 import { filesTable } from '@epicenter/filesystem';

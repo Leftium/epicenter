@@ -2,8 +2,15 @@
  * Zhongwen workspace: schema definition with branded IDs and table/kv defs.
  *
  * Browser-agnostic: no IndexedDB, no Svelte imports, no Y.Doc construction.
- * The Y.Doc and attachments live in `script.ts` (Bun script) and `browser.ts`
+ * The Y.Doc and attachments live in `blocks/script.ts` (Bun) and `browser.ts`
  * (env-bound), composed through `openZhongwenBrowser`.
+ *
+ * Distribution: this file is both the `@epicenter/zhongwen` npm root export
+ * AND the `epicenter/zhongwen/workspace` jsrepo block. The table and KV
+ * shapes here are the wire contract for sync: forking a column shape breaks
+ * sync compatibility with peers running the canonical schema. Recipes
+ * (script.ts, daemon-route.ts) are yours to edit freely. See apps/README.md
+ * for the dual-channel convention.
  */
 
 import {

@@ -55,8 +55,8 @@ describe('loadDaemonConfig', () => {
 							return {
 								collaboration: {
 									actions: {
-										'paths.projectDir': { handler: () => projectDir },
-										'paths.route': { handler: () => route }
+										paths_project_dir: { handler: () => projectDir },
+										paths_route: { handler: () => route }
 									},
 									peers: {
 										list: () => [],
@@ -89,8 +89,8 @@ describe('loadDaemonConfig', () => {
 		const actions = started.data?.[0]?.runtime.collaboration.actions as
 			| Record<string, { handler(): string }>
 			| undefined;
-		expect(actions?.['paths.projectDir']?.handler()).toBe(workDir);
-		expect(actions?.['paths.route']?.handler()).toBe('demo');
+		expect(actions?.paths_project_dir?.handler()).toBe(workDir);
+		expect(actions?.paths_route?.handler()).toBe('demo');
 		expect(
 			(globalThis as { __loadConfigEvents?: string[] }).__loadConfigEvents,
 		).toEqual(['started']);

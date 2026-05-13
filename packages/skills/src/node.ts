@@ -25,6 +25,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	attachPlainText,
+	defineActions,
 	defineMutation,
 	generateId,
 	onLocalUpdate,
@@ -131,7 +132,7 @@ export function openSkillsNodeWorkspace({
 		},
 	});
 
-	const nodeActions = {
+	const nodeActions = defineActions({
 		/**
 		 * Scan a directory of SKILL.md files and upsert them into the workspace.
 		 *
@@ -307,7 +308,7 @@ export function openSkillsNodeWorkspace({
 				);
 			},
 		}),
-	};
+	});
 
 	const actions = { ...readActions, ...nodeActions };
 

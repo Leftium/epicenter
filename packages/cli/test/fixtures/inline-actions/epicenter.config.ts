@@ -4,7 +4,7 @@
  * no real WebSocket: a hand-stubbed `collaboration` matches the daemon's
  * structural contract so `loadDaemonConfig` accepts it.
  *
- * CLI paths are `demo.counter.{get,increment,set}`.
+ * CLI paths are `demo.counter_{get,increment,set}`.
  */
 
 import { defineMutation, defineQuery } from '@epicenter/workspace';
@@ -17,11 +17,11 @@ const state = ydoc.getMap<number>('state');
 state.set('count', 0);
 
 const actions = {
-	'counter.get': defineQuery({
+	counter_get: defineQuery({
 		description: 'Read the current counter value',
 		handler: () => state.get('count') ?? 0,
 	}),
-	'counter.increment': defineMutation({
+	counter_increment: defineMutation({
 		description: 'Increment the counter by one',
 		handler: () => {
 			const next = (state.get('count') ?? 0) + 1;
@@ -29,7 +29,7 @@ const actions = {
 			return next;
 		},
 	}),
-	'counter.set': defineMutation({
+	counter_set: defineMutation({
 		description: 'Overwrite the counter value',
 		input: Type.Object({ value: Type.Number() }),
 		handler: ({ value }: { value: number }) => {

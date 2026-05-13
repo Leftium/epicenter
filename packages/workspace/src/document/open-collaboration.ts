@@ -22,6 +22,7 @@ import { Awareness } from 'y-protocols/awareness';
 import { Ok } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import {
+	ACTION_KEY_PATTERN,
 	type ActionRegistry,
 	invokeActionForRpc,
 	toActionMeta,
@@ -93,9 +94,13 @@ export function openCollaboration<TActions extends ActionRegistry>(
 ): Collaboration<TActions> {
 	const { identity, actions: userActions } = config;
 
-	// Key validation is owned by `defineActions`; `openCollaboration` trusts
-	// what the helper produced. Casts that bypass `defineActions` still hit
-	// `ActionNotFound` at the wire layer.
+	for (const key of Object.keys(userActions)) {
+		if (!ACTION_KEY_PATTERN.test(key)) {
+			throw new Error(
+				`Invalid action key "${key}". Action keys must match ${ACTION_KEY_PATTERN.source} (snake_case ASCII, starting with a letter, max 64 chars).`,
+			);
+		}
+	}
 
 	// Computed once at startup. Two peers running the same code publish
 	// byte-identical arrays so awareness updates don't ping-pong on ordering

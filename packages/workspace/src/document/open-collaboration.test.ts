@@ -136,6 +136,11 @@ describe('action paths publication shape', () => {
 		expect(Object.keys(actions).sort()).toEqual(['system_ping']);
 	});
 
-	// Key validation lives in `defineActions` (see shared/actions.test.ts).
-	// `openCollaboration` trusts what the helper produced.
+	test('rejects invalid action keys at the collaboration boundary', () => {
+		expect(() =>
+			setup({
+				'tabs.close': defineMutation({ handler: () => null }),
+			} as unknown as ActionRegistry),
+		).toThrow(/Invalid action key "tabs\.close"/);
+	});
 });

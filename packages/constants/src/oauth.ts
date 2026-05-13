@@ -23,7 +23,7 @@ export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 		name: 'Epicenter Dashboard',
 		runtime: 'browser',
 		redirectUris: [
-			'http://localhost:5178/auth/callback',
+			'http://localhost:5178/dashboard/auth/callback',
 			'https://api.epicenter.so/dashboard/auth/callback',
 		],
 	},

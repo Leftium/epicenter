@@ -1,20 +1,37 @@
 # Collaboration runtime protocol plane
 
 **Date**: 2026-05-13
-**Status**: Implemented. Typecheck green (workspace, sync, api); affected unit tests (sync protocol, workspace peer / open-collaboration / actions) all pass.
+**Status**: Implemented + post-implementation rename. Typecheck green (workspace, sync, api); affected unit tests (sync protocol, workspace peer / open-collaboration / actions) all pass.
 **Author**: AI-assisted
 **Branch**: refactor/standardize-symbol-dispose
 
-## Final naming (decided during review)
+## Final naming (after symmetry-rename pass)
 
-- `RPC_TYPE.REQUEST` → `RPC_TYPE.ACTION_REQUEST` (value 0, renamed for symmetry)
+Wire (`packages/sync`):
+
+- `RPC_TYPE.ACTION_REQUEST` (value 0, renamed from `REQUEST`)
 - `RPC_TYPE.RESPONSE` (value 1, unchanged)
-- new `RPC_TYPE.RUNTIME_REQUEST` (value 2)
-- decoded discriminators: `'action-request'`, `'response'`, `'runtime-request'`
-- runtime verb: `'describe-actions'`
-- exported type `RuntimeVerb`, encoder `encodeRpcRuntimeRequest`
-- supervisor: `IncomingRuntimeRequest`, config `onRuntimeRequest`, method `sendRuntimeRequest`
-- peer hooks: `sendRuntimeRequest`
+- `RPC_TYPE.RUNTIME_REQUEST` (value 2, new)
+- decoded discriminators: `'action-request'` / `'response'` / `'runtime-request'`
+- runtime verb literal: `'describe-actions'`
+- exported types: `RuntimeVerb`, `DecodedRpcMessage`
+- exported encoders: `encodeRpcActionRequest` (renamed from `encodeRpcRequest`), `encodeRpcResponse`, `encodeRpcRuntimeRequest`
+
+Supervisor (`packages/workspace/src/document/internal/sync-supervisor.ts`):
+
+- inbound types: `IncomingActionRequest`, `IncomingRuntimeRequest`
+- config callbacks: `onActionRequest`, `onRuntimeRequest` (both optional; absent means `RpcError.ActionNotFound`)
+- send methods: `sendActionRequest`, `sendRuntimeRequest`
+- shared internal helper: `sendTrackedRequest` (pending-bookkeeping + timeout + error normalization)
+- internal dispatch helpers: `handleIncomingActionRequest`, `handleIncomingRuntimeRequest`
+
+Peer surface (`packages/workspace/src/document/peer.ts`):
+
+- `PeerWireHooks` exposes `sendActionRequest` and `sendRuntimeRequest`
+- `peer.invoke` rides `sendActionRequest`; `peer.describe()` rides `sendRuntimeRequest('describe-actions')`
+- `dispatch` helper takes a `send: () => Promise<...>` closure so both peer methods share the PeerLeft watchdog without sharing wire shape
+
+Naming axis throughout: **Action / Runtime** matches the wire kinds end-to-end. No `Rpc`-prefixed identifier names a single plane.
 
 ## One-sentence thesis
 
@@ -95,9 +112,10 @@ Add `RPC_TYPE.PROTOCOL_REQUEST = 2` carrying a closed-set verb string. Currently
 | Sub-type vs new MESSAGE_TYPE | 2 coherence | New RPC sub-type | Shares response envelope and DO routing path; conceptually still RPC. |
 | Verb on wire vs sub-type per verb | 3 taste | One sub-type with `verb: ProtocolVerb` string | Adding future runtime verbs is a TS change, not a wire+DO change. Closed `ProtocolVerb` union keeps it honest. |
 | Discriminator string for decoded type | 3 taste | `'protocol-request'` (existing `'request'` kept for app actions) | Less churn; symmetry by suffix. Rename `'request'` → `'action-request'` was considered but trades clarity for diff size. **Open question for the reviewer.** |
-| Verb name | 3 taste | `'describe-actions'` (kebab) | Matches naming convention of the action manifest concept. **Open question: `'describe'` is shorter and the verb space is small.** |
-| Sub-type constant name | 3 taste | `PROTOCOL_REQUEST` | Distinct from y-websocket "protocol" sense in context. **Open question: `RUNTIME_REQUEST` may be clearer.** |
-| Supervisor config shape | 2 coherence | Two callbacks: `onRpcRequest` (app), `onProtocolRequest` (runtime) | Symmetric with wire sub-types. Each callback gets exactly its plane. |
+| Verb name | 3 taste | `'describe-actions'` (kebab) | Matches naming convention of the action manifest concept. Extensible to `'describe-identity'` etc. without overload. |
+| Sub-type constant name | 3 taste | `RUNTIME_REQUEST` (chosen during review) | "Protocol" is overloaded with the y-websocket layer; "Runtime" matches the task vocabulary and pairs cleanly with `ACTION_REQUEST`. |
+| Existing `RPC_TYPE.REQUEST` rename | 2 coherence | Renamed to `ACTION_REQUEST` | Symmetric naming axis (Action / Runtime). RPC is the category; both kinds are RPC. |
+| Supervisor config shape | 2 coherence | Two callbacks: `onActionRequest` (app), `onRuntimeRequest` (runtime) | Symmetric with wire sub-types. Each callback gets exactly its plane. |
 | Delete `SystemActions` type | 2 coherence | Delete | Only existed to type the injected runtime action. With injection gone, it has no consumer. |
 | Delete `actions: TActions & { system?: never }` | 2 coherence | Delete reservation | Wire-level plane separation makes user-action `system` namespaces legal again. No collision exists. |
 | Preserve `peer.describe()` | 1 evidence | Keep | User task explicitly requires the capability. |
@@ -109,12 +127,12 @@ Add `RPC_TYPE.PROTOCOL_REQUEST = 2` carrying a closed-set verb string. Currently
 
 ```
 MESSAGE_TYPE.RPC (101)
-  RPC_TYPE.REQUEST          (0)   app action: requestId, target, requester, action_path, json_input
-  RPC_TYPE.RESPONSE         (1)   shared envelope:  requestId, requester, json_Result<T, E>
-  RPC_TYPE.PROTOCOL_REQUEST (2)   runtime verb:     requestId, target, requester, verb_string
+  RPC_TYPE.ACTION_REQUEST  (0)   app action: requestId, target, requester, action_path, json_input
+  RPC_TYPE.RESPONSE        (1)   shared envelope: requestId, requester, json_Result<T, E>
+  RPC_TYPE.RUNTIME_REQUEST (2)   runtime verb:    requestId, target, requester, verb_string
 ```
 
-Both REQUEST and PROTOCOL_REQUEST share the same DO forward-by-clientId routing path. RESPONSE is unchanged.
+Both ACTION_REQUEST and RUNTIME_REQUEST share the same DO forward-by-clientId routing path. RESPONSE is unchanged.
 
 ### Receiver dispatch
 
@@ -123,7 +141,7 @@ Both REQUEST and PROTOCOL_REQUEST share the same DO forward-by-clientId routing 
                    │
         ┌─────── supervisor ────────┐
         │                            │
-   onRpcRequest                onProtocolRequest
+   onActionRequest             onRuntimeRequest
    (app actions)               (runtime verbs)
         │                            │
         ▼                            ▼
@@ -132,61 +150,67 @@ Both REQUEST and PROTOCOL_REQUEST share the same DO forward-by-clientId routing 
    invokeActionForRpc                 describeActions(userActions)
 ```
 
-App actions never enter the protocol callback. Runtime verbs never enter the action dispatcher. No string-prefix discrimination.
+App actions never enter the runtime callback. Runtime verbs never enter the action dispatcher. No string-prefix discrimination.
 
 ### Caller flow for peer.describe()
 
 ```
 peer.describe()
-  → peers.sendProtocolRequest(clientId, 'describe-actions')
-  → supervisor.sendProtocolRequest
-  → wire: encodeRpcProtocolRequest(...)
+  → peer hook sendRuntimeRequest(clientId, 'describe-actions')
+  → supervisor.sendRuntimeRequest
+  → wire: encodeRpcRuntimeRequest(...)
   → DO forwards by targetClientId
-  → remote supervisor decodes RPC sub-type PROTOCOL_REQUEST
-  → remote onProtocolRequest('describe-actions')
+  → remote supervisor decodes RPC sub-type RUNTIME_REQUEST
+  → remote onRuntimeRequest({ verb: 'describe-actions' })
   → describeActions(userActions)
   → wire: encodeRpcResponse(Ok(manifest))
   → DO forwards by requesterClientId
   → caller resolves Promise<Result<ActionManifest>>
 ```
 
-## Implementation plan (wave order)
+## Implementation plan (waves landed)
 
-### Wave 1: wire (packages/sync) — DONE in mid-implementation
-- [x] Add `RPC_TYPE.PROTOCOL_REQUEST = 2`, `ProtocolVerb` type, `encodeRpcProtocolRequest`, decode branch.
+All waves complete on branch `refactor/standardize-symbol-dispose`. Final names use the Action / Runtime axis after the post-implementation rename pass.
+
+### Wave 1: wire (packages/sync)
+- [x] `RPC_TYPE.ACTION_REQUEST` (renamed from `REQUEST`), `RPC_TYPE.RUNTIME_REQUEST` (new), `RuntimeVerb` type, `encodeRpcActionRequest` (renamed from `encodeRpcRequest`), `encodeRpcRuntimeRequest` (new), decode branches.
 - [x] Export from `packages/sync/src/index.ts`.
 - [x] Round-trip tests in `protocol.test.ts`.
 
-### Wave 2: DO routing (apps/api) — DONE in mid-implementation
-- [x] `sync-handlers.ts`: forward `'protocol-request'` by `targetClientId` with `onMissReply` (same as `'request'`).
+### Wave 2: DO routing (apps/api)
+- [x] `sync-handlers.ts`: forward `'action-request'` and `'runtime-request'` identically (shared `targetClientId` route and `onMissReply`).
 
-### Wave 3: supervisor (packages/workspace) — PARTIAL
-- [x] Add `IncomingProtocolRequest` type and `onProtocolRequest` config field.
-- [ ] Decode `protocol-request` branch in the WS message handler.
-- [ ] Add `sendProtocolRequest(target, verb, options)` method.
+### Wave 3: supervisor (packages/workspace)
+- [x] Add `IncomingActionRequest`, `IncomingRuntimeRequest` types.
+- [x] Decode `action-request` / `runtime-request` branches; dispatch to corresponding callback.
+- [x] Add `sendActionRequest`, `sendRuntimeRequest` methods sharing a `sendTrackedRequest` helper for pending-bookkeeping and error normalization.
 
 ### Wave 4: open-collaboration
-- [ ] Remove `SystemActions` import and `fullActions` synthesis.
-- [ ] Pass `onRpcRequest` resolving against `userActions` directly.
-- [ ] Pass `onProtocolRequest` switching on verb (currently `'describe-actions'` → `describeActions(userActions)`).
-- [ ] Drop `actions: TActions & { system?: never }`; the field becomes `actions: TActions`.
+- [x] Remove `SystemActions` import and `fullActions` synthesis.
+- [x] Pass `onActionRequest` resolving against `userActions` directly.
+- [x] Pass `onRuntimeRequest` with a closed-set verb switch (exhaustiveness enforced by TypeScript on the `RuntimeVerb` union).
+- [x] Drop `actions: TActions & { system?: never }`; the field is now `actions: TActions`.
 
 ### Wave 5: peer.ts
-- [ ] Extend `PeerWireHooks` with `sendProtocolRequest`.
-- [ ] `peer.describe()` calls the new hook.
+- [x] `PeerWireHooks` exposes `sendActionRequest` and `sendRuntimeRequest`.
+- [x] `peer.describe()` rides `sendRuntimeRequest('describe-actions')`.
+- [x] `dispatch` helper refactored to take a `send: () => Promise<...>` closure so both peer methods share the PeerLeft watchdog without sharing wire shape.
 
 ### Wave 6: actions.ts cleanup
-- [ ] Delete `SystemActions` type.
-- [ ] Scrub `system.describe` references from JSDoc comments.
+- [x] `SystemActions` type deleted.
+- [x] `system.describe` references scrubbed from JSDoc.
 
 ### Wave 7: tests + verify
-- [ ] Update `peer.test.ts`: `peer.describe` now drives `sendProtocolRequest`, not `sendRequest` with `'system.describe'`.
-- [ ] Update `open-collaboration.test.ts`: drop the `system?: never` type-level guard test; add a test asserting `actions.system` is allowed at the type level if a user really wants it (or remove the guard test entirely).
-- [ ] Run `bun run typecheck` in `packages/workspace`, `packages/sync`, `apps/api`.
-- [ ] Run `bun test` in those packages.
+- [x] `peer.test.ts`: `peer.describe` test routes through `sendRuntimeRequest` and asserts the action hook is not called.
+- [x] `open-collaboration.test.ts`: `@ts-expect-error` guard test removed; new test asserts `actions.system` is legal at the type level.
+- [x] `bun run typecheck` clean in `packages/sync`, `packages/workspace` (only pre-existing errors unrelated to this work), `apps/api`.
+- [x] `bun test` green for sync protocol, workspace peer, open-collaboration, and actions tests.
 
 ### Wave 8: deletion sweep
-- [ ] grep for `SystemActions`, `system.describe`, `fullActions`. Confirm zero results.
+- [x] grep confirms zero references to `SystemActions`, `system.describe`, `fullActions`, `encodeRpcRequest` (non-action), `onRpcRequest`, `sendRpcRequest`, `IncomingRpcRequest`, `PROTOCOL_REQUEST`, `ProtocolVerb`.
+
+### Wave 9: post-implementation symmetry rename
+- [x] Renamed `Rpc`-prefixed action-plane identifiers to `Action` (`encodeRpcActionRequest`, `IncomingActionRequest`, `onActionRequest`, `sendActionRequest`, `PeerWireHooks.sendActionRequest`).
 
 ## Edge cases
 

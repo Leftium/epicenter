@@ -8,7 +8,7 @@
 	import { toast } from '@epicenter/ui/sonner';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { requireWorkspace } from '$lib/session';
+	import { requireApp } from '$lib/session';
 	import { auth } from '$platform/auth';
 	import { createChatState } from './chat/chat-state.svelte';
 	import ChatInput from './components/ChatInput.svelte';
@@ -16,8 +16,8 @@
 	import ModelPicker from './components/ModelPicker.svelte';
 	import ZhongwenSidebar from './components/ZhongwenSidebar.svelte';
 
-	const workspace = requireWorkspace();
-	const showPinyin = fromKv(workspace.zhongwen.kv, 'showPinyin');
+	const { zhongwen } = requireApp();
+	const showPinyin = fromKv(zhongwen.kv, 'showPinyin');
 	const chatState = createChatState();
 	let dismissedError = $state(false);
 
@@ -33,7 +33,7 @@
 			confirm: { text: 'Forget device', variant: 'destructive' },
 			onConfirm: async () => {
 				try {
-					await workspace.zhongwen.wipe();
+					await zhongwen.wipe();
 					await auth.signOut();
 				} catch (error) {
 					toast.error('Failed to forget this device', {

@@ -18,7 +18,7 @@
 
 {#if current}
 	<WorkspaceGate
-		pending={current.workspace.zhongwen.idb.whenLoaded}
+		pending={current.app.zhongwen.idb.whenLoaded}
 		onSignOut={() => auth.signOut()}
 	>
 		{@render children?.()}

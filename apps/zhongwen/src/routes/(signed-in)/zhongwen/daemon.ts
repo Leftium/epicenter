@@ -1,6 +1,6 @@
 import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { openWorkspace, toWsUrl } from '@epicenter/workspace';
+import { openCollaboration, toWsUrl } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import { openZhongwen as openZhongwenDoc } from './index.js';
@@ -25,7 +25,7 @@ export function defineZhongwenDaemon({
 			const yjsLog = attachYjsLog(doc.ydoc, {
 				filePath: yjsPath(projectDir, doc.ydoc.guid),
 			});
-			const workspace = openWorkspace(doc.ydoc, {
+			const collaboration = openCollaboration(doc.ydoc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${doc.ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
 				identity: {
@@ -37,12 +37,15 @@ export function defineZhongwenDaemon({
 			});
 
 			return {
-				...doc,
+				ydoc: doc.ydoc,
+				tables: doc.tables,
+				kv: doc.kv,
+				batch: doc.batch,
 				yjsLog,
-				workspace,
+				collaboration,
 				async [Symbol.asyncDispose]() {
 					doc[Symbol.dispose]();
-					await Promise.all([workspace.whenDisposed, yjsLog.whenDisposed]);
+					await Promise.all([collaboration.whenDisposed, yjsLog.whenDisposed]);
 				},
 			};
 		},

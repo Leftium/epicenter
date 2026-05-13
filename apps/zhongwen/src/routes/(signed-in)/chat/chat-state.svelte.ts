@@ -12,7 +12,7 @@ import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
 import { auth } from '$platform/auth';
-import { requireWorkspace } from '$lib/session';
+import { requireApp } from '$lib/session';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -34,11 +34,11 @@ const asChatMessageId = (id: string) => id as ChatMessageId;
 // ─── State Factory ───────────────────────────────────────────────────────────
 
 export function createChatState() {
-	const workspace = requireWorkspace();
+	const app = requireApp();
 
 	// ── Conversation List (Y.Doc-backed) ──
 
-	const conversationsMap = fromTable(workspace.zhongwen.tables.conversations);
+	const conversationsMap = fromTable(app.zhongwen.tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()].sort((a, b) => b.updatedAt - a.updatedAt),
 	);
@@ -50,7 +50,7 @@ export function createChatState() {
 
 		const id = generateConversationId();
 		const now = Date.now();
-		workspace.zhongwen.tables.conversations.set({
+		app.zhongwen.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: DEFAULT_PROVIDER,
@@ -68,14 +68,14 @@ export function createChatState() {
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		workspace.zhongwen.tables.conversations.update(conversationId, {
+		app.zhongwen.tables.conversations.update(conversationId, {
 			...patch,
 			updatedAt: Date.now(),
 		});
 	}
 
 	function loadMessages(conversationId: ConversationId) {
-		return workspace.zhongwen.tables.chatMessages
+		return app.zhongwen.tables.chatMessages
 			.filter((m) => m.conversationId === conversationId)
 			.sort((a, b) => a.createdAt - b.createdAt)
 			.map(toUiMessage);
@@ -118,7 +118,7 @@ export function createChatState() {
 				);
 			},
 			onFinish: (message) => {
-				workspace.zhongwen.tables.chatMessages.set({
+				app.zhongwen.tables.chatMessages.set({
 					id: asChatMessageId(message.id),
 					conversationId,
 					role: 'assistant',
@@ -126,7 +126,7 @@ export function createChatState() {
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
 					_v: 1,
 				});
-				workspace.zhongwen.tables.conversations.update(conversationId, {
+				app.zhongwen.tables.conversations.update(conversationId, {
 					updatedAt: Date.now(),
 				});
 			},
@@ -190,7 +190,7 @@ export function createChatState() {
 				// observer fires refreshFromDoc (which skips when loading).
 				void chat.sendMessage({ content, id: userMessageId });
 
-				workspace.zhongwen.tables.chatMessages.set({
+				app.zhongwen.tables.chatMessages.set({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
@@ -210,7 +210,7 @@ export function createChatState() {
 			reload() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					workspace.zhongwen.tables.chatMessages.delete(
+					app.zhongwen.tables.chatMessages.delete(
 						asChatMessageId(lastMessage.id),
 					);
 				}
@@ -249,19 +249,19 @@ export function createChatState() {
 
 	// fromTable owns the reactive data; this observer only handles
 	// imperative handle lifecycle (creating/destroying chat instances).
-	const unobserveConversations = workspace.zhongwen.tables.conversations.observe(
+	const unobserveConversations = app.zhongwen.tables.conversations.observe(
 		() => {
 			reconcileHandles();
 		},
 	);
-	const unobserveChatMessages = workspace.zhongwen.tables.chatMessages.observe(
+	const unobserveChatMessages = app.zhongwen.tables.chatMessages.observe(
 		() => {
 			handles.get(activeConversationId)?.syncMessages();
 		},
 	);
 
 	// Initialize after persistence loads
-	void workspace.zhongwen.idb.whenLoaded.then(() => {
+	void app.zhongwen.idb.whenLoaded.then(() => {
 		reconcileHandles();
 		activeConversationId = ensureDefaultConversation();
 	});
@@ -275,7 +275,7 @@ export function createChatState() {
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 
-		workspace.zhongwen.tables.conversations.set({
+		app.zhongwen.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: current?.provider ?? DEFAULT_PROVIDER,
@@ -297,14 +297,14 @@ export function createChatState() {
 	function deleteConversation(conversationId: ConversationId) {
 		destroyConversation(conversationId);
 
-		const msgs = workspace.zhongwen.tables.chatMessages
+		const msgs = app.zhongwen.tables.chatMessages
 			.getAllValid()
 			.filter((m) => m.conversationId === conversationId);
-		workspace.zhongwen.batch(() => {
+		app.zhongwen.batch(() => {
 			for (const m of msgs) {
-				workspace.zhongwen.tables.chatMessages.delete(m.id);
+				app.zhongwen.tables.chatMessages.delete(m.id);
 			}
-			workspace.zhongwen.tables.conversations.delete(conversationId);
+			app.zhongwen.tables.conversations.delete(conversationId);
 		});
 
 		if (activeConversationId === conversationId) {

@@ -40,7 +40,8 @@ const actions = {
 };
 
 const collaboration = {
-	identity: { id: 'fixture', name: 'fixture', platform: 'node' as const },
+	replicaId: 'fixture',
+	connId: 'fixture-conn',
 	actions,
 	status: { phase: 'connected' as const },
 	whenConnected: Promise.resolve(),
@@ -51,6 +52,9 @@ const collaboration = {
 		list: () => [],
 		find: () => undefined,
 		observe: () => () => {},
+	},
+	dispatch: async () => {
+		throw new Error('fixture does not dispatch');
 	},
 	[Symbol.dispose]() {
 		ydoc.destroy();

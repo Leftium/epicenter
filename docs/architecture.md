@@ -31,8 +31,8 @@ The dependency shape runs bottom to top. Apps depend on middleware; middleware d
 | @epicenter/workspace   @epicenter/sync   @epicenter/constants   @epicenter/ui |
 +----------------------------------------------------------------------------+
 ```
-`@epicenter/workspace` is the center of gravity. It defines the schema layer, creates the live Yjs-backed client, owns the extension lifecycle, and exposes tables, KV, documents, awareness, and actions.
-`@epicenter/sync` is the wire format, not the app model. It exports protocol primitives like `encodeSyncStep1`, `encodeSyncUpdate`, `decodeSyncMessage`, and shared RPC error types so server and client can speak the same binary language without duplicating protocol logic.
+`@epicenter/workspace` is the center of gravity. It defines the schema layer, creates the live Yjs-backed client, owns the extension lifecycle, and exposes tables, KV, documents, presence, and actions.
+`@epicenter/sync` is the wire format, not the app model. It exports protocol primitives like `encodeSyncStep1`, `encodeSyncUpdate`, `decodeSyncMessage` so server and client can speak the same binary language without duplicating protocol logic.
 `@epicenter/constants` is the routing glue. It gives apps one source of truth for URLs, ports, and versioning so sync endpoints, auth URLs, and cross-app links do not drift.
 `@epicenter/ui` is the shared presentation layer. It knows Svelte components, not Yjs semantics.
 The middleware layer is where workspace data starts feeling like an application. `@epicenter/svelte` turns workspace helpers into reactive Svelte state, `@epicenter/filesystem` turns workspace rows and documents into a POSIX-style filesystem, `@epicenter/skills` proves that whole workspaces can be packaged and embedded as data products, and `@epicenter/workspace/ai` bridges workspace actions into LLM-callable tools.
@@ -65,7 +65,7 @@ const themeMode = defineKv(type("'light' | 'dark' | 'system'"), 'system');
 That purity is what makes cross-package reuse work. The same table and KV declarations can be imported by an app, a CLI tool, a migration utility, a test, or another package without dragging runtime side effects along for the ride.
 
 ### 2. `defineDocument` is where the live bundle appears
-`defineDocument(builder)` is the boundary where static meaning turns into live state. The user-owned builder allocates the `Y.Doc`, wires up table/KV/awareness helpers via `attachTables` / `attachKv` / `attachAwareness`, attaches persistence and sync, and returns a typed bundle. `.open(id)` hands back a refcounted handle.
+`defineDocument(builder)` is the boundary where static meaning turns into live state. The user-owned builder allocates the `Y.Doc`, wires up table/KV helpers via `attachTables` / `attachKv`, attaches persistence, calls `openCollaboration` for the live network surface (sync, presence, RPC), and returns a typed bundle. `.open(id)` hands back a refcounted handle.
 
 ```ts
 import * as Y from 'yjs';
@@ -113,7 +113,7 @@ const app = defineDocument((id: string) => {
 	const collaboration = openCollaboration(ydoc, {
 		url: websocketUrl(`https://sync.example.com/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		identity: { id: 'browser', name: 'Browser', platform: 'web' },
+		replicaId: 'browser',
 		actions: {},
 	});
 	return { id, ydoc, tables, kv, idb, collaboration, /* ... */ };
@@ -122,7 +122,7 @@ const app = defineDocument((id: string) => {
 
 Ordering is lexical. `openCollaboration` reads `idb.whenLoaded` as `waitFor` because `idb` is already in scope. Later attachments see earlier ones directly. There is no context object to route through.
 
-For extensions that need their own Y.Doc per row (file content, note bodies), define a *second* `defineDocument` keyed on the row's content guid. Content docs typically use the sibling `attachYjsSync(ydoc, { url, ... })` instead of `openCollaboration`: same supervisor lifecycle, no presence, no RPC.
+For extensions that need their own Y.Doc per row (file content, note bodies), define a *second* `defineDocument` keyed on the row's content guid. Content docs use the same `openCollaboration` primitive with an empty `actions` registry, which skips the action runner observer entirely. Same byte transport, no app-defined handlers.
 
 ### 4. Collaboration is just another attachment, but it changes the topology
 `openCollaboration` does not own the document. It attaches to a Y.Doc that already exists and starts moving CRDT updates between peers, plus publishing presence and dispatching RPC. The `waitFor: idb.whenLoaded` option ensures local state is replayed first, so the initial handshake is a delta, not a full document transfer.
@@ -236,7 +236,7 @@ const opensidian = defineDocument((id: string) => {
 		url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		openWebSocket: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
-		identity: { id: 'browser', name: 'Browser', platform: 'web' },
+		replicaId: 'browser',
 		actions,
 	});
 	return { id, ydoc, tables, idb, collaboration, sqliteIndex, /* ... */ };
@@ -253,7 +253,7 @@ defineDocument(builder).open('opensidian')
     +-- attachTables(ydoc, {...})
     +-- attachIndexedDb(ydoc)
     +-- createSqliteIndex(...)
-    +-- openCollaboration(ydoc, { waitFor: idb.whenLoaded, identity, actions })
+    +-- openCollaboration(ydoc, { waitFor: idb.whenLoaded, replicaId, actions })
     |
     +-- attachYjsFileSystem(...)              -> editor + terminal + file tree
     +-- actionsToAiTools(...).tools           -> local AI tool execution
@@ -267,9 +267,9 @@ That is the whole monorepo in miniature. The app is mostly composition code beca
 ## The sync philosophy is dumb server, smart client
 The server is a relay, not the authority. Clients own schema meaning, table helpers, migrations, encryption activation, action handlers, and most of the user-facing behavior.
 
-`@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions and shared error types, while `openCollaboration` and `attachYjsSync` plug those primitives into a live document that already knows how to read and write its own data.
+`@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions, while `openCollaboration` plugs those primitives into a live document that already knows how to read and write its own data.
 
-That means the server does not need to understand your tables. It forwards Yjs sync messages, awareness updates, and RPC payloads, but it does not become the canonical interpreter of the workspace schema.
+That means the server does not need to understand your tables. It forwards Yjs sync messages. Presence and RPC are themselves writes to reserved Y.Doc arrays, carried by the same byte transport; the server validates that peers do not write to the presence array, but it never decodes the RPC array.
 
 This is what "smart client" means here. The client can boot locally, read persisted state, apply encryption keys, expose actions, open document timelines, and keep working offline before the network helps at all.
 

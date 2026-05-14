@@ -2,7 +2,7 @@
  * `epicenter peers`: presence view of who's connected right now.
  *
  * Shows the identity fields needed to target a peer with `run --peer`:
- * peer id, friendly name, platform, and the session-local clientID.
+ * replica id, subject, and the session-local connection id.
  *
  * `epicenter peers` requires a running daemon for the discovered project.
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
@@ -67,16 +67,17 @@ function emit(rows: PeerSnapshot[], format: OutputFormat | undefined): void {
 	for (const [route, group] of byRoute) {
 		if (i > 0) console.log('');
 		console.log(route);
-		console.table(group.map(toRow).sort((a, b) => a.clientID - b.clientID));
+		console.table(
+			group.map(toRow).sort((a, b) => a.connId.localeCompare(b.connId)),
+		);
 		i++;
 	}
 }
 
 function toRow(snap: PeerSnapshot) {
 	return {
-		clientID: snap.clientID,
+		connId: snap.connId,
 		subject: snap.subject,
-		replicaId: snap.replica.id,
-		platform: snap.replica.platform,
+		replicaId: snap.replicaId,
 	};
 }

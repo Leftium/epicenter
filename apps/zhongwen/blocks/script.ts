@@ -36,7 +36,7 @@ export async function openZhongwenScript({
 	const collaboration = openCollaboration(ydoc, {
 		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 		openWebSocket: auth.openWebSocket,
-		replica: { id: 'zhongwen-script', platform: 'node' },
+		replicaId: 'zhongwen-script',
 	});
 
 	return {

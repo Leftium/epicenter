@@ -1,14 +1,13 @@
 /**
  * Error-emission tests for the `run --peer` path.
  *
- * Covers the remote-call failure shapes (peer left and every `RpcError`
- * variant). Capture `console.error` and assert line-by-line. RPC errors are
- * constructed via `RpcError.X({...}).error` so they match the wire shape
- * exactly.
+ * Covers every `DispatchError` variant. Capture `console.error` and assert
+ * line-by-line. Dispatch errors are constructed via
+ * `DispatchError.X({...}).error` so they match the wire shape exactly.
  */
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { PeerLeftError, RpcError } from '@epicenter/workspace';
+import { DispatchError } from '@epicenter/workspace';
 import { emitRemoteCallError } from './run';
 
 function captureErrors() {
@@ -28,40 +27,36 @@ describe('emitRemoteCallError', () => {
 	let cap: ReturnType<typeof captureErrors>;
 	afterEach(() => cap?.restore());
 
+	test('Cancelled with TimeoutError reason prints timeout label', () => {
+		cap = captureErrors();
+		emitRemoteCallError(
+			'macbook-pro',
+			DispatchError.Cancelled({
+				reason: new DOMException('Timed out', 'TimeoutError'),
+			}).error,
+		);
+		expect(cap.lines).toEqual(['error: timeout calling macbook-pro']);
+	});
+
+	test('Cancelled with non-timeout reason prints generic cancel label', () => {
+		cap = captureErrors();
+		emitRemoteCallError(
+			'macbook-pro',
+			DispatchError.Cancelled({ reason: 'user-cancel' }).error,
+		);
+		expect(cap.lines).toEqual([
+			'error: dispatch to macbook-pro was cancelled: user-cancel',
+		]);
+	});
+
 	test('ActionNotFound labels with peer id', () => {
 		cap = captureErrors();
 		emitRemoteCallError(
 			'macbook-pro',
-			RpcError.ActionNotFound({ action: 'tabs_close_all' }).error,
+			DispatchError.ActionNotFound({ action: 'tabs_close_all' }).error,
 		);
 		expect(cap.lines).toEqual([
 			'error: ActionNotFound "tabs_close_all" on macbook-pro',
-		]);
-	});
-
-	test('Timeout reports ms and peer', () => {
-		cap = captureErrors();
-		emitRemoteCallError('macbook-pro', RpcError.Timeout({ ms: 5000 }).error);
-		expect(cap.lines).toEqual(['error: timeout after 5000ms on macbook-pro']);
-	});
-
-	test('PeerOffline', () => {
-		cap = captureErrors();
-		emitRemoteCallError('macbook-pro', RpcError.PeerOffline().error);
-		expect(cap.lines).toEqual(['error: peer macbook-pro is offline']);
-	});
-
-	test('PeerLeft surfaces the peer id and action', () => {
-		cap = captureErrors();
-		emitRemoteCallError(
-			'macbook-pro',
-			PeerLeftError.PeerLeft({
-				peerId: 'macbook-pro',
-				action: 'tabs_close',
-			}).error,
-		);
-		expect(cap.lines).toEqual([
-			'error: peer "macbook-pro" disconnected before "tabs_close" responded',
 		]);
 	});
 
@@ -69,21 +64,13 @@ describe('emitRemoteCallError', () => {
 		cap = captureErrors();
 		emitRemoteCallError(
 			'macbook-pro',
-			RpcError.ActionFailed({
+			DispatchError.ActionFailed({
 				action: 'tabs_close',
-				cause: new Error('Tab 99 not found'),
+				cause: new Error('handler boom'),
 			}).error,
 		);
 		expect(cap.lines).toEqual([
-			'error: "tabs_close" failed on macbook-pro: Tab 99 not found',
-		]);
-	});
-
-	test('Disconnected', () => {
-		cap = captureErrors();
-		emitRemoteCallError('macbook-pro', RpcError.Disconnected().error);
-		expect(cap.lines).toEqual([
-			'error: connection lost before macbook-pro responded',
+			'error: "tabs_close" failed on macbook-pro: handler boom',
 		]);
 	});
 });

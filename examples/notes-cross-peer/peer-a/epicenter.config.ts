@@ -6,12 +6,7 @@ export default defineConfig({
 		routes: [
 			{
 				route: 'notes',
-				start: () =>
-					openNotes({
-						id: 'notes-repro-peer-a',
-						name: 'Peer A',
-						platform: 'node',
-					}),
+				start: () => openNotes('notes-repro-peer-a'),
 			},
 		],
 	},

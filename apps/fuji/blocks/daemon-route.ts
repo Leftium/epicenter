@@ -54,7 +54,7 @@ export function defineFujiDaemon({
 			const collaboration = openCollaboration(ydoc, {
 				url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
-				replica: { id: 'fuji-daemon', platform: 'node' },
+				replicaId: 'fuji-daemon',
 				actions,
 			});
 			const sqliteDb = openWriterSqlite({

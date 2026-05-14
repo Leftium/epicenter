@@ -18,7 +18,7 @@
  *   3: peer not found (`--peer <target>` did not resolve within `--wait`)
  */
 
-import { type RemoteCallError, type RpcError } from '@epicenter/workspace';
+import { type DispatchError } from '@epicenter/workspace';
 import {
 	type DaemonError,
 	type RunError as DaemonRunError,
@@ -157,22 +157,35 @@ function emitPeerNotFound(
 	}
 }
 
+/**
+ * Format every `DispatchError` variant labeled with the peer target. The
+ * exhaustive switch is enforced at compile time: adding a new variant to
+ * `@epicenter/workspace`'s `DispatchError` breaks the build until a case is
+ * added here.
+ */
 export function emitRemoteCallError(
 	peerTarget: string,
-	cause: RemoteCallError,
+	cause: DispatchError,
 ): void {
 	switch (cause.name) {
-		case 'PeerLeft':
-			outputError(
-				`error: peer "${cause.peerId}" disconnected before "${cause.action}" responded`,
-			);
+		case 'Cancelled': {
+			const reason = cause.reason;
+			if (reason instanceof DOMException && reason.name === 'TimeoutError') {
+				outputError(`error: timeout calling ${peerTarget}`);
+			} else {
+				outputError(
+					`error: dispatch to ${peerTarget} was cancelled: ${extractErrorMessage(reason)}`,
+				);
+			}
 			return;
+		}
 		case 'ActionNotFound':
-		case 'Timeout':
-		case 'PeerOffline':
+			outputError(`error: ActionNotFound "${cause.action}" on ${peerTarget}`);
+			return;
 		case 'ActionFailed':
-		case 'Disconnected':
-			emitRpcError(cause, peerTarget);
+			outputError(
+				`error: "${cause.action}" failed on ${peerTarget}: ${extractErrorMessage(cause.cause)}`,
+			);
 			return;
 		default:
 			cause satisfies never;
@@ -192,34 +205,4 @@ function describePeerMissReason(status: RunSyncStatus): string {
 		return `not connected (${status.reason.type} ${status.reason.code})`;
 	}
 	return 'not connected';
-}
-
-/**
- * Format every `RpcError` variant labeled with the peer target. The
- * exhaustive switch is enforced at compile time: adding a new variant to
- * `@epicenter/workspace`'s `RpcError` breaks the build until a case is
- * added here.
- */
-function emitRpcError(error: RpcError, peerTarget: string): void {
-	switch (error.name) {
-		case 'ActionNotFound':
-			outputError(`error: ActionNotFound "${error.action}" on ${peerTarget}`);
-			return;
-		case 'Timeout':
-			outputError(`error: timeout after ${error.ms}ms on ${peerTarget}`);
-			return;
-		case 'PeerOffline':
-			outputError(`error: peer ${peerTarget} is offline`);
-			return;
-		case 'ActionFailed':
-			outputError(
-				`error: "${error.action}" failed on ${peerTarget}: ${extractErrorMessage(error.cause)}`,
-			);
-			return;
-		case 'Disconnected':
-			outputError(`error: connection lost before ${peerTarget} responded`);
-			return;
-		default:
-			error satisfies never;
-	}
 }

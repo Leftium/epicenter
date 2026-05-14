@@ -35,7 +35,7 @@ export function defineHoneycrispDaemon({
 			const collaboration = openCollaboration(ydoc, {
 				url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
-				replica: { id: 'honeycrisp-daemon', platform: 'node' },
+				replicaId: 'honeycrisp-daemon',
 				actions,
 			});
 

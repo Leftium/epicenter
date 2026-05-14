@@ -50,10 +50,10 @@ import { projectOption } from '../util/common-options.js';
 const CLI_VERSION = packageJson.version;
 
 /**
- * Sync-status / awareness lines write directly to stderr so they reach the
+ * Sync-status / presence lines write directly to stderr so they reach the
  * operator regardless of `--quiet`; the brief calls these out as "print
- * regardless of --quiet". `--quiet` only suppresses awareness join/leave
- * lines (handled at their call sites), not these.
+ * regardless of --quiet". `--quiet` only suppresses peer join/leave lines
+ * (handled at their call sites), not these.
  */
 function logSyncStatus(message: string): void {
 	process.stderr.write(`${message}\n`);
@@ -203,7 +203,7 @@ export async function runUp(
 /**
  * Yargs `up` command. Thin glue: parses argv, calls {@link runUp}, prints
  * the operator-facing banner + initial peers snapshot, wires SIGINT/SIGTERM,
- * subscribes to awareness/status across every loaded workspace, and parks
+ * subscribes to presence/status across every loaded workspace, and parks
  * until a signal triggers teardown.
  */
 export const upCommand = cmd({
@@ -216,7 +216,7 @@ export const upCommand = cmd({
 			type: 'boolean',
 			default: false,
 			description:
-				'Suppress awareness join/leave lines (sync state changes still print)',
+				'Suppress peer join/leave lines (sync state changes still print)',
 		},
 	},
 	handler: async (argv) => {
@@ -236,7 +236,7 @@ export const upCommand = cmd({
 
 		for (const entry of handle.runtimes) {
 			printPeersSnapshot(entry);
-			subscribeAwareness(entry, options.quiet);
+			subscribePeers(entry, options.quiet);
 			subscribeSyncStatus(entry);
 		}
 
@@ -285,35 +285,35 @@ function printPeersSnapshot(entry: StartedDaemonRoute): void {
 	}
 	for (const peer of peers) {
 		process.stderr.write(
-			`${entry.route}: peer ${peer.replica.id} (clientID=${peer.clientID}, subject=${peer.subject})\n`,
+			`${entry.route}: peer ${peer.replicaId} (connId=${peer.connId}, subject=${peer.subject})\n`,
 		);
 	}
 }
 
-function subscribeAwareness(entry: StartedDaemonRoute, quiet: boolean): void {
+function subscribePeers(entry: StartedDaemonRoute, quiet: boolean): void {
 	const snapshot = () =>
 		new Map(
 			entry.runtime.collaboration.peers
 				.list()
-				.map((peer) => [peer.clientID, peer]),
+				.map((peer) => [peer.connId, peer]),
 		);
 	let prev = snapshot();
 	entry.runtime.collaboration.peers.observe(() => {
 		const next = snapshot();
-		for (const [clientID, peer] of next) {
-			if (!prev.has(clientID)) {
+		for (const [connId, peer] of next) {
+			if (!prev.has(connId)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.route}: ${peer.replica.id} joined (clientID=${clientID})\n`,
+						`${entry.route}: ${peer.replicaId} joined (connId=${connId})\n`,
 					);
 				}
 			}
 		}
-		for (const [clientID, peer] of prev) {
-			if (!next.has(clientID)) {
+		for (const [connId, peer] of prev) {
+			if (!next.has(connId)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.route}: ${peer.replica.id} left (clientID=${clientID})\n`,
+						`${entry.route}: ${peer.replicaId} left (connId=${connId})\n`,
 					);
 				}
 			}

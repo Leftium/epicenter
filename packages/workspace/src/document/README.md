@@ -16,11 +16,9 @@ The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, co
 +----------------------------------------------------------------+
 | attachTable / attachTables / attachKv                          |
 | attachEncryption -> .attachTable / .attachTables / .attachKv    |
-| attachAwareness                                                |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
 | attachOwnedBroadcastChannel                                    |
-| attachYjsSync (content docs)                                   |
-| openCollaboration (workspace doc: sync + presence + RPC + peers)|
+| openCollaboration (sync + presence + RPC + peers; actions: {} for content docs)|
 | attachSqliteMaterializer                                       |
 +----------------------------------------------------------------+
 | Y.Doc (raw CRDT)                                               |
@@ -119,22 +117,7 @@ function openBlog() {
 }
 ```
 
-For content documents (rich-text bodies, attachments) that only need bytes-on-the-wire, swap `openCollaboration` for the sibling `attachYjsSync(ydoc, { url, ... })` — same supervisor lifecycle, no presence, no RPC.
-
-### Awareness (lower-level)
-
-`openCollaboration` already publishes `{ identity, actionKeys }` on its own Awareness. Reach for the `attachAwareness` primitive directly only when you need a separately-typed presence channel (cursors on a content doc, custom selection state) on its own Awareness instance.
-
-```typescript
-import { Awareness } from 'y-protocols/awareness';
-import { attachAwareness } from '@epicenter/workspace';
-
-const presence = attachAwareness(new Awareness(ydoc), {
-  schema: myPresenceSchema,
-  initial: myInitialPresenceState,
-});
-// presence.setLocal({...}), presence.observe(...), presence.raw for y-protocols
-```
+For content documents (rich-text bodies, attachments) that only need bytes-on-the-wire, use `openCollaboration` with an empty `actions: {}` registry. The action runner is skipped entirely; the byte transport is identical, and the workspace's presence/RPC arrays simply stay empty.
 
 ### Per-row content documents
 

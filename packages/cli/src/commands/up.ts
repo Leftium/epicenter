@@ -1,9 +1,9 @@
 /**
- * `epicenter up`: start the long-lived foreground daemon for one project.
+ * `epicenter daemon up`: start the long-lived foreground daemon for one project.
  *
  * Loads every daemon route declared by `epicenter.config.ts` and exposes a
  * Unix-socket IPC channel for that project. `peers`, `list`, and `run`
- * dispatch to this daemon over IPC; without `up` they error with a hint
+ * dispatch to this daemon over IPC; without `daemon up` they error with a hint
  * pointing back here.
  *
  * One daemon per project; that daemon serves every route in the config.
@@ -32,7 +32,8 @@ import {
 import { Ok, type Result, trySync } from 'wellcrafted/result';
 /**
  * Read once at module load. Bun resolves the JSON import relative to this
- * file at build/run time, so no runtime fs work happens per `up` invocation.
+ * file at build/run time, so no runtime fs work happens per `daemon up`
+ * invocation.
  */
 import packageJson from '../../package.json' with { type: 'json' };
 import {
@@ -201,7 +202,7 @@ export async function runUp(
 }
 
 /**
- * Yargs `up` command. Thin glue: parses argv, calls {@link runUp}, prints
+ * Yargs `daemon up` command. Thin glue: parses argv, calls {@link runUp}, prints
  * the operator-facing banner + initial peers snapshot, wires SIGINT/SIGTERM,
  * subscribes to presence/status across every loaded workspace, and parks
  * until a signal triggers teardown.

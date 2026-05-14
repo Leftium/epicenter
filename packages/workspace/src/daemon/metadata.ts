@@ -1,6 +1,6 @@
 /**
  * Server metadata sidecar: the JSON-on-disk record that lets `bindOrRecover`
- * surface a useful "already running (pid=X)" error when a second `up`
+ * surface a useful "already running (pid=X)" error when a second `daemon up`
  * tries to take the same socket.
  *
  * One `<runtimeDir>/<dirHash>.meta.json` per running server. Written once at

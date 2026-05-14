@@ -1,5 +1,5 @@
 /**
- * Wave 7 unit tests for `epicenter logs` helpers.
+ * Wave 7 unit tests for `epicenter daemon logs` helpers.
  *
  * Covers:
  *   - `tailLines` returns the last N lines of a file (mirrors `tail`).

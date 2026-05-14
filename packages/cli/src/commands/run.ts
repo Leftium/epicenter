@@ -1,14 +1,15 @@
 /**
  * `epicenter run <route.action_key> [input]`: invoke a `defineQuery` /
  * `defineMutation` by route-qualified action key through the local
- * `epicenter up` daemon.
+ * `epicenter daemon up` daemon.
  *
  * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
  * With `--peer <target>`, the invocation is dispatched over the selected
  * route's RPC channel to a remote peer instead of running locally.
  *
  * `epicenter run` requires a running daemon for the discovered project.
- * Without `up`, the handler errors with a hint pointing at `epicenter up`.
+ * Without `daemon up`, the handler errors with a hint pointing at
+ * `epicenter daemon up`.
  *
  * Exit codes:
  *   1: usage error (unknown route, unknown action, invalid input for

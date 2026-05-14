@@ -13,7 +13,7 @@
  * Used by `connectDaemonActions` and per-app `script.ts` factories so vault
  * scripts don't have to pass `projectDir` explicitly: running a script from
  * anywhere inside the vault tree resolves the same daemon socket the
- * surrounding `epicenter up` is bound to.
+ * surrounding `epicenter daemon up` is bound to.
  *
  * Throws if no marker is found before reaching the filesystem root.
  * Catching is deliberate: callers that want a "run anywhere, cold-sync

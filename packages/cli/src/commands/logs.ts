@@ -1,5 +1,5 @@
 /**
- * `epicenter logs`: tail the rotating log file for a running daemon.
+ * `epicenter daemon logs`: tail the rotating log file for a running daemon.
  *
  * Default: print the last 50 lines and exit (mirrors `tail` defaults).
  * `--follow`: stream new bytes via `node:fs.watch`, reopening on rotation

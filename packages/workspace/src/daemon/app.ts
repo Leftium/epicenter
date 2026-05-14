@@ -1,5 +1,5 @@
 /**
- * Hono app for the `epicenter up` daemon. Single source of truth for the
+ * Hono app for the `epicenter daemon up` daemon. Single source of truth for the
  * routes; the daemon server wires its fetch handler into Bun's listener and
  * the hand-rolled `daemonClient` in `./client.ts` POSTs against it.
  *

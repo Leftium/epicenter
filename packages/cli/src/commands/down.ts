@@ -1,5 +1,5 @@
 /**
- * `epicenter down`: stop a running `up` daemon.
+ * `epicenter daemon down`: stop a running `daemon up` daemon.
  *
  * Default: shut down the daemon for the discovered project via IPC
  * `shutdown` (1 s budget).
@@ -68,7 +68,7 @@ async function shutdownOne(meta: DaemonMetadata): Promise<Outcome> {
 
 export const downCommand = cmd({
 	command: 'down',
-	describe: 'Stop a running `epicenter up` daemon.',
+	describe: 'Stop a running `epicenter daemon up` daemon.',
 	builder: {
 		C: projectOption,
 		all: {

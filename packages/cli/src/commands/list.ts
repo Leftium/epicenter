@@ -8,7 +8,8 @@
  * daemon's route-qualified action surface only.
  *
  * `epicenter list` requires a running daemon for the discovered project.
- * Without `up`, the handler errors with a hint pointing at `epicenter up`.
+ * Without `daemon up`, the handler errors with a hint pointing at
+ * `epicenter daemon up`.
  */
 
 import type { ActionManifest } from '@epicenter/workspace';

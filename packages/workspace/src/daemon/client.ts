@@ -1,5 +1,5 @@
 /**
- * Hand-rolled typed client for the `epicenter up` daemon. Three surfaces:
+ * Hand-rolled typed client for the `epicenter daemon up` daemon. Three surfaces:
  *
  * - {@link pingDaemon}: cheap liveness probe; never throws, never returns
  *   Result. Boolean is the right shape for a fast-path predicate.
@@ -40,7 +40,7 @@ const CONFIG_FILENAME = 'epicenter.config.ts';
  * call sites narrow once on `result.error.name`. No class hierarchy, no
  * throwing across the seam.
  *
- * - `Required`: no daemon is running for this directory; user must `up`.
+ * - `Required`: no daemon is running for this directory; user must `daemon up`.
  * - `Timeout`: the per-call AbortSignal fired before the daemon answered.
  * - `Unreachable`: socket missing, ECONNREFUSED, transport closed.
  * - `HandlerCrashed`: the daemon answered with a non-2xx status. Reserved
@@ -53,7 +53,7 @@ export const DaemonError = defineErrors({
 		projectDir,
 	}),
 	Required: ({ projectDir }: { projectDir: string }) => ({
-		message: `no daemon running for ${projectDir}; start one with \`epicenter up\` first`,
+		message: `no daemon running for ${projectDir}; start one with \`epicenter daemon up\` first`,
 		projectDir,
 	}),
 	Timeout: ({
@@ -189,9 +189,9 @@ export type DaemonClient = ReturnType<typeof daemonClient>;
  *
  *   - `MissingConfig`: no `epicenter.config.ts` in `projectDir`. Surfaced
  *     distinctly from `Required` so unconfigured users don't get pointed
- *     at `epicenter up` (which would fail and mislead).
+ *     at `epicenter daemon up` (which would fail and mislead).
  *   - `Required`: config exists but no daemon is running. Renderer
- *     prints the start-with-`up` hint.
+ *     prints the start-with-`daemon up` hint.
  *
  * `run`, `list`, and `peers` are mandatory-daemon commands; if they hit
  * neither variant they have a typed client to dispatch against.

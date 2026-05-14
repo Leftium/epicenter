@@ -1,12 +1,11 @@
 import yargs from 'yargs';
 import { authCommand } from './commands/auth';
-import { downCommand } from './commands/down';
+import { daemonCommand } from './commands/daemon';
 import { listCommand } from './commands/list';
-import { logsCommand } from './commands/logs';
 import { peersCommand } from './commands/peers';
-import { psCommand } from './commands/ps';
 import { runCommand } from './commands/run';
-import { upCommand } from './commands/up';
+
+const REMOVED_DAEMON_COMMANDS = new Set(['up', 'down', 'ps', 'logs']);
 
 /**
  * Create the Epicenter CLI instance.
@@ -15,6 +14,7 @@ import { upCommand } from './commands/up';
  * `epicenter.config.ts`, either locally or on a peer that's online right now.
  *
  *   - `auth`:  manage the local machine auth session (pre-workspace)
+ *   - `daemon`: operate daemon lifecycle commands
  *   - `list`:  tree view of runnable actions (local schema is authoritative)
  *   - `run`:   invoke one by route-qualified action key; `--peer` dispatches over RPC
  *   - `peers`: enumerate other clients currently online via the workspace presence row
@@ -25,16 +25,18 @@ import { upCommand } from './commands/up';
 export function createCLI() {
 	return {
 		run: async (argv: string[]) => {
+			const [command] = argv;
+			if (command && REMOVED_DAEMON_COMMANDS.has(command)) {
+				throw new Error(`Unknown command: ${command}`);
+			}
+
 			const cli = yargs()
 				.scriptName('epicenter')
 				.command(authCommand)
-				.command(downCommand)
+				.command(daemonCommand)
 				.command(listCommand)
-				.command(logsCommand)
 				.command(peersCommand)
-				.command(psCommand)
 				.command(runCommand)
-				.command(upCommand)
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

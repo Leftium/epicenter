@@ -1,14 +1,14 @@
 /**
  * CLI entry-point tests.
  *
- * The binary surfaces four commands: `auth`, `list`, `peers`, `run`. These
- * tests assert registration via `--help` output so they stay decoupled from
- * command semantics.
+ * The binary surfaces daily workspace commands plus namespaced supporting
+ * systems. These tests assert registration via `--help` output so they stay
+ * decoupled from command semantics.
  */
 import { describe, expect, spyOn, test } from 'bun:test';
 import { createCLI } from './cli';
 
-function captureHelp(): Promise<string> {
+function captureHelp(argv: string[] = ['--help']): Promise<string> {
 	const chunks: string[] = [];
 	const logSpy = spyOn(console, 'log').mockImplementation(
 		(...args: unknown[]) => {
@@ -21,7 +21,7 @@ function captureHelp(): Promise<string> {
 		},
 	);
 	return createCLI()
-		.run(['--help'])
+		.run(argv)
 		.catch(() => {})
 		.finally(() => {
 			logSpy.mockRestore();
@@ -50,12 +50,48 @@ describe('createCLI', () => {
 		errorSpy.mockRestore();
 	});
 
-	test('help output registers auth, list, peers, and run', async () => {
+	test('help output registers auth, daemon, list, peers, and run', async () => {
 		const help = await captureHelp();
 		expect(help).toMatch(/\bauth\b/);
+		expect(help).toMatch(/\bdaemon\b/);
 		expect(help).toMatch(/\blist\b/);
 		expect(help).toMatch(/\bpeers\b/);
 		expect(help).toMatch(/\brun\b/);
+		expect(help).not.toMatch(/\bup\b/);
+		expect(help).not.toMatch(/\bdown\b/);
+		expect(help).not.toMatch(/\bps\b/);
+		expect(help).not.toMatch(/\blogs\b/);
+	});
+
+	test('daemon help output registers lifecycle subcommands', async () => {
+		const help = await captureHelp(['daemon', '--help']);
+		expect(help).toMatch(/\bup\b/);
+		expect(help).toMatch(/\bdown\b/);
+		expect(help).toMatch(/\bps\b/);
+		expect(help).toMatch(/\blogs\b/);
+	});
+
+	test('daemon without a subcommand shows daemon guidance', async () => {
+		const help = await captureHelp(['daemon']);
+		expect(help).toContain('Specify a subcommand: up, down, ps, or logs');
+		expect(help).toMatch(/\bup\b/);
+		expect(help).toMatch(/\bdown\b/);
+		expect(help).toMatch(/\bps\b/);
+		expect(help).toMatch(/\blogs\b/);
+	});
+
+	test('top-level daemon lifecycle commands are unknown', async () => {
+		const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+
+		try {
+			for (const command of ['up', 'down', 'ps', 'logs']) {
+				await expect(createCLI().run([command])).rejects.toThrow(
+					`Unknown command: ${command}`,
+				);
+			}
+		} finally {
+			errorSpy.mockRestore();
+		}
 	});
 
 	test('auth status rejects extra positionals', async () => {

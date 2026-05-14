@@ -44,8 +44,8 @@ import { findEpicenterDir } from './find-epicenter-dir.js';
  *
  * Throws `DaemonError.MissingConfig` when the project has no config, or
  * `DaemonError.Required` when no daemon is listening on the resolved socket.
- * Start one with `epicenter up`. There is no auto-spawn: explicit lifecycle
- * is the contract.
+ * Start one with `epicenter daemon up`. There is no auto-spawn: explicit
+ * lifecycle is the contract.
  */
 export async function connectDaemonActions<TActions extends ActionRegistry>({
 	route,

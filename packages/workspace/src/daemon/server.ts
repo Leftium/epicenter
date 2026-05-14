@@ -1,7 +1,7 @@
 /**
  * Daemon server starter: build the app for started routes and bind a unix
  * socket. The "build + bind" core extracted from the CLI's
- * `epicenter up` command so any bun process (CLI, vault, embedded) can
+ * `epicenter daemon up` command so any bun process (CLI, vault, embedded) can
  * stand up the daemon transport without depending on `@epicenter/cli`.
  *
  * Lifecycle (metadata sidecar, signal handlers, log routing, dispose

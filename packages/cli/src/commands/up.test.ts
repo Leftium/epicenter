@@ -1,5 +1,5 @@
 /**
- * Wave 5 unit-level tests for `epicenter up`.
+ * Wave 5 unit-level tests for `epicenter daemon up`.
  *
  * These tests run `runUp` in-process with a fake `DaemonRuntime` /
  * `SyncAttachment` so we never spawn a child or call `process.exit`. The

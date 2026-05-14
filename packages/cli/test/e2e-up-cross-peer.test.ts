@@ -1,5 +1,5 @@
 /**
- * Wave 8 end-to-end coverage for `epicenter up` lifecycle.
+ * Wave 8 end-to-end coverage for `epicenter daemon up` lifecycle.
  *
  * ## Acceptance-criteria coverage map
  *
@@ -7,18 +7,18 @@
  * § "Acceptance criteria". Each line below cites the criterion and the test
  * that exercises it (or the infra gap that blocks coverage).
  *
- *   [ok] `up` prints "online (routes=[...])" on stderr,
+ *   [ok] `daemon up` prints "online (routes=[...])" on stderr,
  *        followed by the initial peers snapshot.
- *        Covered by `up lifecycle: online banner + peers snapshot + clean exit`.
+ *        Covered by `daemon up lifecycle: online banner + peers snapshot + clean exit`.
  *   [ok] Ctrl-C / SIGTERM exits cleanly with no orphan socket / metadata.
  *        Covered by the same test, which asserts files are gone post-shutdown.
- *   [ok] `epicenter ps` lists the running daemon (deviceId / pid / uptime).
+ *   [ok] `epicenter daemon ps` lists the running daemon (deviceId / pid / uptime).
  *        Covered by `ps lists the running daemon while up is alive`.
- *   [ok] `epicenter logs -C <p>` tails the rotating log (default 50 lines).
+ *   [ok] `epicenter daemon logs -C <p>` tails the rotating log (default 50 lines).
  *        Covered by `logs prints recent lines from the daemon's log file`.
- *   [ok] `epicenter down -C <p>` shuts down gracefully.
+ *   [ok] `epicenter daemon down -C <p>` shuts down gracefully.
  *        Covered by `down terminates the daemon gracefully via IPC`.
- *   [ok] Two `up`s same project: second exits 1 with
+ *   [ok] Two `daemon up`s same project: second exits 1 with
  *        "daemon already running (pid=X)".
  *        Covered by `second up against the same dir exits 1`.
  *   [gap] Stale-auth fast-fail with literal "401 Unauthorized" message.
@@ -87,13 +87,13 @@ function childEnv(env: EnvOverrides): NodeJS.ProcessEnv {
 }
 
 /**
- * Spawn `epicenter up -C <fixture>` and wait until it prints the
+ * Spawn `epicenter daemon up -C <fixture>` and wait until it prints the
  * "online" banner on stderr. Returns the child + a buffered stderr string
  * the caller can keep reading from. The caller is responsible for
  * sending SIGTERM and awaiting exit.
  */
 async function spawnUp(env: EnvOverrides, dir: string) {
-	const child = spawn('bun', ['run', BIN_PATH, 'up', '-C', dir], {
+	const child = spawn('bun', ['run', BIN_PATH, 'daemon', 'up', '-C', dir], {
 		cwd: dir,
 		env: childEnv(env),
 		stdio: ['ignore', 'pipe', 'pipe'],
@@ -158,7 +158,7 @@ function runtimeLeftovers(runtimeRoot: string): string[] {
 	);
 }
 
-describe('up lifecycle (scaled down, no real cross-peer)', () => {
+describe('daemon up lifecycle (scaled down, no real cross-peer)', () => {
 	test('online banner + peers snapshot + clean exit on SIGTERM', async () => {
 		const env = makeEnv();
 		try {
@@ -195,7 +195,7 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 		try {
 			const { child } = await spawnUp(env, FIXTURE_DIR);
 			try {
-				const result = await runCli(env, ['ps']);
+				const result = await runCli(env, ['daemon', 'ps']);
 				expect(result.exitCode).toBe(0);
 				// console.table renders pid + dir as plain text columns.
 				expect(result.stdout).toContain(String(child.pid));
@@ -213,7 +213,7 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 		const env = makeEnv();
 		try {
 			const { child } = await spawnUp(env, FIXTURE_DIR);
-			const result = await runCli(env, ['down', '-C', FIXTURE_DIR]);
+			const result = await runCli(env, ['daemon', 'down', '-C', FIXTURE_DIR]);
 			expect(result.exitCode).toBe(0);
 			const code = await awaitExit(child);
 			expect(code).toBe(0);
@@ -234,7 +234,12 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 		try {
 			const { child } = await spawnUp(env, FIXTURE_DIR);
 			try {
-				const result = await runCli(env, ['logs', '-C', FIXTURE_DIR]);
+				const result = await runCli(env, [
+					'daemon',
+					'logs',
+					'-C',
+					FIXTURE_DIR,
+				]);
 				// Log file is written under $HOME/.epicenter/log/<h>.log; if
 				// the daemon has emitted anything by now, `logs` succeeds with
 				// some output. A bare exitCode=0 is the load-bearing assertion.
@@ -253,7 +258,12 @@ describe('up lifecycle (scaled down, no real cross-peer)', () => {
 		try {
 			const { child } = await spawnUp(env, FIXTURE_DIR);
 			try {
-				const result = await runCli(env, ['up', '-C', FIXTURE_DIR]);
+				const result = await runCli(env, [
+					'daemon',
+					'up',
+					'-C',
+					FIXTURE_DIR,
+				]);
 				expect(result.exitCode).toBe(1);
 				expect(result.stderr).toContain('daemon already running (pid=');
 			} finally {

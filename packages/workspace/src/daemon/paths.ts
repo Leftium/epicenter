@@ -10,7 +10,7 @@
  * For per-workspace data layout (yjs/sqlite/markdown under `<projectDir>/.epicenter/`),
  * see `document/workspace-paths.ts`. Different audience, different rationale.
  *
- * Pure helpers: no side effects, no directory creation. The `up` command
+ * Pure helpers: no side effects, no directory creation. The `daemon up` command
  * owns the `mkdir`/`chmod` work; consumers here are free to call these from
  * anywhere without worrying about filesystem mutation.
  */
@@ -30,7 +30,7 @@ function epicenterHome(): string {
  * - Linux with `XDG_RUNTIME_DIR` uses `$XDG_RUNTIME_DIR/epicenter` (tmpfs,
  *   reboot-cleaned by the OS).
  * - macOS / Windows / Linux without XDG uses `~/.epicenter/run` (orphan
- *   cleanup at `up` startup substitutes for the missing tmpfs reset).
+ *   cleanup at `daemon up` startup substitutes for the missing tmpfs reset).
  */
 export function runtimeDir(): string {
 	if (process.env.XDG_RUNTIME_DIR) {

@@ -1,5 +1,5 @@
 /**
- * `epicenter ps`: list running `up` daemons (this user, this machine).
+ * `epicenter daemon ps`: list running `daemon up` daemons (this user, this machine).
  *
  * Enumerates `<runtimeDir>/*.meta.json`, pings each socket to confirm
  * liveness, and renders a compact table. Dead-pid metadata and socket files
@@ -72,7 +72,8 @@ function humanUptime(startedAt: string): string {
 
 export const psCommand = cmd({
 	command: 'ps',
-	describe: 'List running `epicenter up` daemons (this user, this machine).',
+	describe:
+		'List running `epicenter daemon up` daemons (this user, this machine).',
 	handler: async () => {
 		const rows: PsRow[] = [];
 		for (const meta of enumerateDaemons()) {

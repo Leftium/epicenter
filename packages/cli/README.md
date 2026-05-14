@@ -13,7 +13,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
    Presence      | peers  | collaboration.peers.list()                       |
                  +--------+--------------------------------------------------+
 
- Cross-cutting: auth (machine session, pre-workspace)
+ Supporting systems: auth (machine session), daemon (process lifecycle)
 ```
 
 `list` is the local view of what *this* device exposes across all hosted
@@ -42,7 +42,7 @@ The package exposes the `epicenter` binary via `src/bin.ts`.
 
 ## Commands
 
-`run`, `list`, and `peers` dispatch to the local `epicenter up` daemon for the discovered project. Start it once at the top of your session (`epicenter up &`), then run as many shell-shortcut commands as you want. Without `up`, those three verbs error with a hint pointing back here. `up`, `down`, `ps`, `logs`, and `auth` work without a daemon.
+`run`, `list`, and `peers` dispatch to the local `epicenter daemon up` process for the discovered project. Start it once at the top of your session (`epicenter daemon up &`), then run as many shell-shortcut commands as you want. Without `daemon up`, those three verbs error with a hint pointing back here. `daemon up`, `daemon down`, `daemon ps`, `daemon logs`, and `auth` work without a daemon.
 
 ```bash
 # auth: machine session (pre-workspace; no project flag)
@@ -50,9 +50,12 @@ epicenter auth login
 epicenter auth status
 epicenter auth logout
 
-# up: bring every hosted route online as a callable peer (run once per session)
-epicenter up &
-epicenter up -C examples/notes-cross-peer/peer-b &
+# daemon: bring every hosted route online as a callable peer (run once per session)
+epicenter daemon up &
+epicenter daemon up -C examples/notes-cross-peer/peer-b &
+epicenter daemon ps
+epicenter daemon logs
+epicenter daemon down
 
 # list: what actions are exposed on this device
 epicenter list                                      # full tree
@@ -95,7 +98,7 @@ Peer awareness has a ~30s liveness window: a peer that crashed recently may stil
 
 | Flag | Alias | Commands | Purpose |
 | ---- | ----- | -------- | ------- |
-| `-C` | none | `up`, `down`, `logs`, `list`, `run`, `peers` | Start directory for project discovery. Defaults to the current directory. |
+| `-C` | none | `daemon up`, `daemon down`, `daemon logs`, `list`, `run`, `peers` | Start directory for project discovery. Defaults to the current directory. |
 | `--peer` | none | `run` | Address a remote peer by `deviceId`. Dispatches the invocation over the selected route's RPC channel. |
 | `--wait` | none | `run --peer` (default 5000) | Ms to wait for peer resolution and the RPC call. |
 | `--format` | none | `list`, `run`, `peers` | `json` or `jsonl`. Pretty-prints on TTY, compact when piped. Without it, commands emit their human-readable shape (tree / value / table). |

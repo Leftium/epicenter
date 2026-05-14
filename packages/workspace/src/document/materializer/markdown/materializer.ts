@@ -12,11 +12,7 @@ import type * as Y from 'yjs';
 import { defineMutation } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { Kv } from '../../attach-kv.js';
-import {
-	type BaseRow,
-	type Table,
-	type TableParseError,
-} from '../../attach-table.js';
+import type { BaseRow, Table, TableParseError } from '../../attach-table.js';
 import type { SerializeResult } from './markdown.js';
 import { assembleMarkdown } from './markdown.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
@@ -152,10 +148,11 @@ type RegisteredKv = {
 const defaultFilename = (row: BaseRow): string => `${row.id}.md`;
 
 /** Default toMarkdown: dump row as frontmatter, no body. */
-const defaultToMarkdown = (row: BaseRow): MarkdownShape => ({
-	frontmatter: { ...row },
-	body: undefined,
-});
+const defaultToMarkdown = (row: BaseRow) =>
+	({
+		frontmatter: { ...row },
+		body: undefined,
+	}) satisfies MarkdownShape;
 
 /** Default fromMarkdown: treat frontmatter as the row. */
 const defaultFromMarkdown = (parsed: MarkdownShape): BaseRow =>
@@ -165,12 +162,11 @@ const defaultFromMarkdown = (parsed: MarkdownShape): BaseRow =>
  * Default KV serializer: pretty-printed JSON in `kv.json`. Used whenever a
  * registered kv's `config.serialize` isn't provided.
  */
-const defaultKvSerialize = (
-	data: Record<string, unknown>,
-): SerializeResult => ({
-	filename: 'kv.json',
-	content: JSON.stringify(data, null, 2),
-});
+const defaultKvSerialize = (data: Record<string, unknown>) =>
+	({
+		filename: 'kv.json',
+		content: JSON.stringify(data, null, 2),
+	}) satisfies SerializeResult;
 
 /**
  * Compose a row into the full on-disk artifact: filename + content string.

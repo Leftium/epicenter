@@ -330,7 +330,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 
    See `specs/20260506T020000-expose-attachments-not-aliases.md` for the rule and anti-patterns.
 5. Read and write through `bundle.tables`, `bundle.kv`, `bundle.collaboration.peers` (for cross-peer dispatch), and (for per-row content docs) whatever you exposed in the returned bundle.
-6. Use `walkActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
+6. Iterate `Object.entries(bundle.actions)` and read each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
 7. Dispose with `bundle[Symbol.dispose]()` for singletons or `handle[Symbol.dispose]()` for cache handles when you're done. Use `cache[Symbol.dispose]()` to flush every live entry.
 
 The architecture stays local-first: the workspace works offline, synchronizes opportunistically, and treats external systems as helpers around the document, not the other way around.
@@ -398,7 +398,7 @@ Actions are callable functions with metadata.
 
 - `defineQuery(...)` creates a read action
 - `defineMutation(...)` creates a write action
-- Include them in your bundle as `actions: { ... }` (typically via a `createMyAppActions({ tables, batch })` helper defined nearby)
+- Include them in your bundle as `actions: defineActions({...})` (typically via a `createMyAppActions({ tables, batch })` helper defined nearby). The helper enforces snake_case ASCII keys at compile time and runtime; consumers index by string or iterate with `Object.entries`.
 
 Handlers close over `tables`, `kv`, and anything else the builder has in scope through normal JavaScript closure. They do not receive a framework context object.
 
@@ -519,7 +519,7 @@ KV is validate-or-default. There is no migration function.
 
 ### Awareness schema
 
-For the workspace's own peer identity + action paths, prefer `openCollaboration` (above): it owns an `Awareness` and publishes the standard fields. The `attachAwareness` primitive is the lower-level building block; reach for it when you need a separately-typed presence channel (for example, cursors on a content doc that doesn't participate in the collaboration RPC plane).
+For the workspace's own peer identity + action keys, prefer `openCollaboration` (above): it owns an `Awareness` and publishes the standard fields. The `attachAwareness` primitive is the lower-level building block; reach for it when you need a separately-typed presence channel (for example, cursors on a content doc that doesn't participate in the collaboration RPC plane).
 
 ```typescript
 import { type } from 'arktype';
@@ -1011,9 +1011,7 @@ import { defineMutation } from '@epicenter/workspace';
 
 declare const authWorkspace: {
 	actions: {
-		users: {
-			getById: (input: { id: string }) => { id: string; name: string } | null;
-		};
+		users_get_by_id: (input: { id: string }) => { id: string; name: string } | null;
 	};
 };
 
@@ -1039,7 +1037,7 @@ const createPost = defineMutation({
 		authorId: Type.String(),
 	}),
 	handler: ({ id, title, authorId }) => {
-		const author = authWorkspace.actions.users.getById({ id: authorId });
+		const author = authWorkspace.actions.users_get_by_id({ id: authorId });
 		if (!author) return null;
 
 		blogWorkspace.tables.posts.set({
@@ -1067,7 +1065,7 @@ They have four important properties:
 1. They are callable functions.
 2. They carry metadata (`type`, `title`, `description`, `input`).
 3. They close over `tables`, `kv`, and friends by normal JavaScript closure.
-4. They are exposed on the bundle returned from your builder (typically as `actions: { ... }`).
+4. They are exposed on the bundle returned from your builder (typically as `actions: defineActions({ ... })`, a flat registry keyed by snake_case ASCII strings).
 
 ### Query actions
 
@@ -1079,6 +1077,7 @@ import Type from 'typebox';
 import * as Y from 'yjs';
 import {
 	attachTables,
+	defineActions,
 	defineQuery,
 	defineTable,
 } from '@epicenter/workspace';
@@ -1096,22 +1095,19 @@ function openPosts() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.actions.queries' });
 	const tables = attachTables(ydoc, { posts });
 
-	const actions = {
-		posts: {
-			list: defineQuery({
-				title: 'List Posts',
-				description: 'List all posts.',
-				handler: () => tables.posts.getAllValid(),
-			}),
-
-			getById: defineQuery({
-				title: 'Get Post',
-				description: 'Get one post by ID.',
-				input: Type.Object({ id: Type.String() }),
-				handler: ({ id }) => tables.posts.get(id),
-			}),
-		},
-	};
+	const actions = defineActions({
+		posts_list: defineQuery({
+			title: 'List Posts',
+			description: 'List all posts.',
+			handler: () => tables.posts.getAllValid(),
+		}),
+		posts_get_by_id: defineQuery({
+			title: 'Get Post',
+			description: 'Get one post by ID.',
+			input: Type.Object({ id: Type.String() }),
+			handler: ({ id }) => tables.posts.get(id),
+		}),
+	});
 
 	return {
 		get id() { return ydoc.guid; },
@@ -1123,7 +1119,7 @@ function openPosts() {
 }
 
 const workspace = openPosts();
-const actionType = workspace.actions.posts.list.type;
+const actionType = workspace.actions.posts_list.type;
 void actionType;
 ```
 
@@ -1137,6 +1133,7 @@ import Type from 'typebox';
 import * as Y from 'yjs';
 import {
 	attachTables,
+	defineActions,
 	defineMutation,
 	defineTable,
 	generateId,
@@ -1155,27 +1152,24 @@ function openPosts() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.actions.mutations' });
 	const tables = attachTables(ydoc, { posts });
 
-	const actions = {
-		posts: {
-			create: defineMutation({
-				title: 'Create Post',
-				description: 'Create a new post row.',
-				input: Type.Object({ title: Type.String() }),
-				handler: ({ title }) => {
-					const id = generateId();
-					tables.posts.set({ id, title, published: false, _v: 1 });
-					return { id };
-				},
-			}),
-
-			publish: defineMutation({
-				title: 'Publish Post',
-				description: 'Mark a post as published.',
-				input: Type.Object({ id: Type.String() }),
-				handler: ({ id }) => tables.posts.update(id, { published: true }),
-			}),
-		},
-	};
+	const actions = defineActions({
+		posts_create: defineMutation({
+			title: 'Create Post',
+			description: 'Create a new post row.',
+			input: Type.Object({ title: Type.String() }),
+			handler: ({ title }) => {
+				const id = generateId();
+				tables.posts.set({ id, title, published: false, _v: 1 });
+				return { id };
+			},
+		}),
+		posts_publish: defineMutation({
+			title: 'Publish Post',
+			description: 'Mark a post as published.',
+			input: Type.Object({ id: Type.String() }),
+			handler: ({ id }) => tables.posts.update(id, { published: true }),
+		}),
+	});
 
 	return {
 		get id() { return ydoc.guid; },
@@ -1239,37 +1233,33 @@ And the action itself is callable. There is no separate `.handler` property on t
 ```typescript
 import Type from 'typebox';
 import {
+	defineActions,
 	defineMutation,
 	defineQuery,
 	isAction,
-	isMutation,
-	isQuery,
-	walkActions,
 } from '@epicenter/workspace';
 
-const actions = {
-	posts: {
-		list: defineQuery({ handler: () => [] as string[] }),
-		create: defineMutation({
-			input: Type.Object({ title: Type.String() }),
-			handler: ({ title }) => ({ title }),
-		}),
-	},
-};
+const actions = defineActions({
+	posts_list: defineQuery({ handler: () => [] as string[] }),
+	posts_create: defineMutation({
+		input: Type.Object({ title: Type.String() }),
+		handler: ({ title }) => ({ title }),
+	}),
+});
 
-for (const [path, action] of walkActions(actions)) {
+for (const [key, action] of Object.entries(actions)) {
 	if (isAction(action)) {
-		console.log(path, action.type);
+		console.log(key, action.type);
 	}
 }
 
-const listAction = actions.posts.list;
-if (isQuery(listAction)) {
+const listAction = actions.posts_list;
+if (listAction.type === 'query') {
 	console.log(listAction.type);
 }
 
-const createAction = actions.posts.create;
-if (isMutation(createAction)) {
+const createAction = actions.posts_create;
+if (createAction.type === 'mutation') {
 	console.log(createAction.type);
 }
 ```
@@ -1411,8 +1401,10 @@ await handle.idb.whenDisposed;
 
 What the package does give you is the raw material a server adapter needs:
 
-- `bundle.collaboration.actions` (the typed action registry from `openCollaboration`)
-- `walkActions(...)`
+- `bundle.collaboration.actions` (the typed `ActionRegistry` from `openCollaboration`)
+- `defineActions(actions)` to author a flat snake_case registry
+- `toActionMeta(action)` to project an action to its wire-safe metadata
+- iterate with `Object.entries(actions)`
 - action metadata (`type`, `title`, `input`, `description`)
 - direct access to `bundle.tables`, `bundle.kv`, `bundle.collaboration.peers`, and per-row content factories
 
@@ -1490,15 +1482,13 @@ onLocalUpdate(ydoc, () => {
 
 ```typescript
 import {
+	defineActions,
 	defineMutation,
 	defineQuery,
 	isAction,
-	isMutation,
-	isQuery,
-	walkActions,
+	toActionMeta,
 	type Action,
-	type Mutation,
-	type Query,
+	type ActionRegistry,
 } from '@epicenter/workspace';
 ```
 
@@ -1573,14 +1563,12 @@ Public awareness methods:
 
 ```typescript
 import {
-	walkActions,
 	isAction,
-	isMutation,
-	isQuery,
+	toActionMeta,
 } from '@epicenter/workspace';
 ```
 
-`walkActions(source)` flattens action leaves reachable through plain object properties into `[path, action]` pairs. Pass the canonical action tree, usually `workspace.actions`. Combined with each action's `type`, `title`, `description`, and `input` schema, that is enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport.
+`Object.entries(actions)` lets you iterate the flat registry. Combined with each action's `type`, `title`, `description`, and `input` schema, that is enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport. `toActionMeta(action)` projects a single action to its wire-safe metadata if you need to ship it across a transport.
 
 ### IDs and dates
 
@@ -1613,8 +1601,9 @@ These matter when you are writing low-level tooling against raw Yjs structures.
 The core package does not export an MCP server. What it does export is the metadata you need to build one:
 
 - actions with `type`, `title`, `description`, and `input`
-- `walkActions(...)` to flatten a nested action tree
-- `isAction` / `isQuery` / `isMutation` type guards
+- `Object.entries(actions)` to iterate the flat registry
+- `isAction` type guard; narrow on `action.type === 'query' | 'mutation'` for the variant
+- `toActionMeta(action)` to project an action to its wire-safe shape
 - `@epicenter/workspace/ai`: `actionsToAiTools(...)` for TanStack AI tool bindings
 
 That is enough to build adapters that expose workspace actions over HTTP, CLI, or MCP without coupling the core package to one transport.
@@ -1624,31 +1613,28 @@ That is enough to build adapters that expose workspace actions over HTTP, CLI, o
 ```typescript
 import Type from 'typebox';
 import {
+	defineActions,
 	defineMutation,
 	defineQuery,
-	walkActions,
 } from '@epicenter/workspace';
 
-const actions = {
-	posts: {
-		list: defineQuery({
-			title: 'List Posts',
-			description: 'List all posts.',
-			handler: () => [] as Array<{ id: string; title: string }>,
-		}),
+const actions = defineActions({
+	posts_list: defineQuery({
+		title: 'List Posts',
+		description: 'List all posts.',
+		handler: () => [] as Array<{ id: string; title: string }>,
+	}),
+	posts_create: defineMutation({
+		title: 'Create Post',
+		description: 'Create a post.',
+		input: Type.Object({ title: Type.String() }),
+		handler: ({ title }) => ({ id: title.toLowerCase() }),
+	}),
+});
 
-		create: defineMutation({
-			title: 'Create Post',
-			description: 'Create a post.',
-			input: Type.Object({ title: Type.String() }),
-			handler: ({ title }) => ({ id: title.toLowerCase() }),
-		}),
-	},
-};
-
-for (const [path, action] of walkActions(actions)) {
+for (const [key, action] of Object.entries(actions)) {
 	console.log({
-		name: path,
+		name: key,
 		type: action.type,
 		title: action.title,
 		description: action.description,

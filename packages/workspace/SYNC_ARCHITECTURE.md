@@ -422,7 +422,11 @@ End-to-end. A fuji-running script asks `macbook-pro` (a tab-manager peer) for it
            │                                               │
            │                                               │ 6. switch(rpc.verb) {
            │                                               │      case 'describe-actions':
-           │                                               │        return Ok(describeActions(userActions))
+           │                                               │        return Ok(Object.fromEntries(
+           │                                               │          Object.entries(userActions).map(
+           │                                               │            ([key, action]) => [key, toActionMeta(action)]
+           │                                               │          )
+           │                                               │        ))
            │                                               │    }
            │                                               │
            │ ◄── encodeRpcResponse ───────────────────    │

@@ -25,7 +25,7 @@ The first result stays in the browser. The second goes into the request body so 
 
 ## How the bridge works
 
-Workspace actions are nested objects. `actionsToAiTools()` walks the source with `walkActions()` from `@epicenter/workspace`, joins path segments with `_`, and returns TanStack AI client tools plus wire-safe definitions.
+Workspace actions are a flat `ActionRegistry` keyed by snake_case ASCII strings. `actionsToAiTools()` reads each entry with `Object.entries(actions)` and returns TanStack AI client tools plus wire-safe definitions. The AI tool name is the action key verbatim; there is no projection.
 
 Queries become ordinary client tools. Mutations automatically get `needsApproval: true`, which is how the UI knows not to run destructive actions silently.
 
@@ -37,7 +37,7 @@ One detail matters more than it looks. Input schemas are normalized so `properti
 
 ### `actionsToAiTools(source)`
 
-Converts an action tree into TanStack AI client tools and JSON definitions. Tool names come from the action path, so a nested action like `tabs.close` becomes `tabs_close`.
+Converts an action registry into TanStack AI client tools and JSON definitions. The tool name is the action key, which is already snake_case ASCII (e.g. an action keyed `tabs_close` produces a tool named `tabs_close`).
 
 ### `ToolDefinition`
 
@@ -45,7 +45,7 @@ The wire-safe tool shape for the HTTP request body.
 
 ### `ActionNames<T>`
 
-Type-level helper that turns an action source into a string union of tool names.
+Type-level helper that turns an `ActionRegistry` into a string union of tool names.
 
 ```typescript
 type Names = ActionNames<typeof workspace.actions>;
@@ -56,7 +56,7 @@ type Names = ActionNames<typeof workspace.actions>;
 
 `@epicenter/workspace/ai` sits between `@epicenter/workspace` and chat clients built on `@tanstack/ai`.
 
-- `@epicenter/workspace` defines actions and exposes `walkActions()`.
+- `@epicenter/workspace` defines actions and exposes `defineActions` / `defineQuery` / `defineMutation`.
 - `@epicenter/workspace/ai` adapts those actions into client tools and wire payloads.
 - Apps like `apps/opensidian` feed the client tools into local chat execution and send the stripped definitions to the API.
 

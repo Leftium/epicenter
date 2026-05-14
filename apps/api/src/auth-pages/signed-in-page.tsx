@@ -42,6 +42,8 @@ const SIGNED_IN_SCRIPT = raw(`<script>
  * or callbackURL params—they don't need the sign-in form, just
  * confirmation that they're authenticated.
  */
+/** @jsxImportSource hono/jsx */
+
 export function SignedInPage({
 	displayName,
 	email,

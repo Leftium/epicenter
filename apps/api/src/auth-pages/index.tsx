@@ -1,3 +1,5 @@
+/** @jsxImportSource hono/jsx */
+
 /**
  * Render functions for auth pages.
  *

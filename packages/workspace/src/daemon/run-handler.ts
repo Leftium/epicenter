@@ -139,14 +139,10 @@ async function invokeRemote({
 		});
 	}
 
-	const result = await runtime.collaboration.dispatch(
-		localPath,
-		actionInput,
-		{
-			to: peer.connId,
-			signal: AbortSignal.timeout(waitMs),
-		},
-	);
+	const result = await runtime.collaboration.dispatch(localPath, actionInput, {
+		to: peer.connId,
+		signal: AbortSignal.timeout(waitMs),
+	});
 
 	if (result.error !== null) {
 		return RunError.RemoteCallFailed({

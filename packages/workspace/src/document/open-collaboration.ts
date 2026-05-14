@@ -27,10 +27,7 @@
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
 import type * as Y from 'yjs';
-import {
-	ACTION_KEY_PATTERN,
-	type ActionRegistry,
-} from '../shared/actions.js';
+import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
 import {
 	createSyncSupervisor,
 	type OpenWebSocket,
@@ -45,9 +42,9 @@ import {
 import {
 	attachActionRunner,
 	type Call,
-	dispatch as dispatchCall,
 	type DispatchError,
 	type DispatchOptions,
+	dispatch as dispatchCall,
 } from './rpc.js';
 import { YKeyValueLww } from './y-keyvalue/y-keyvalue-lww.js';
 
@@ -76,9 +73,7 @@ export type OpenCollaborationConfig<
 	actions?: TActions;
 };
 
-export type Collaboration<
-	TActions extends ActionRegistry = ActionRegistry,
-> = {
+export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	readonly replicaId: string;
 	/**
 	 * Per-socket routing address, client-minted at startup via

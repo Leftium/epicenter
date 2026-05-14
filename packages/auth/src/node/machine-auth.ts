@@ -11,9 +11,9 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient } from '../auth-contract.js';
 import {
-	WorkspaceIdentity,
 	OAuthSession,
 	type OAuthSession as OAuthSessionType,
+	WorkspaceIdentity,
 } from '../auth-types.js';
 import type {
 	OAuthRefreshTokenRevoker,

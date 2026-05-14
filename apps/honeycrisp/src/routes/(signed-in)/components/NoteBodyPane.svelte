@@ -1,18 +1,15 @@
 <script lang="ts">
+	import type { NoteId } from '@epicenter/honeycrisp';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Loading } from '@epicenter/ui/loading';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { requireHoneycrisp } from '$lib/session';
-	import type { NoteId } from '@epicenter/honeycrisp';
 
 	const honeycrisp = requireHoneycrisp();
 
 	let { noteId }: { noteId: NoteId } = $props();
 
-	const doc = fromDisposableCache(
-		honeycrisp.noteBodyDocs,
-		() => noteId,
-	);
+	const doc = fromDisposableCache(honeycrisp.noteBodyDocs, () => noteId);
 </script>
 
 {#await doc.current.idb.whenLoaded}

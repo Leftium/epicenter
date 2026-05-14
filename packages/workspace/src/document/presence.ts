@@ -72,7 +72,9 @@ export function createPresenceSurface(
 			if (entry.val.connId === selfConnId) continue;
 			out.push(entry.val);
 		}
-		out.sort((a, b) => (a.connId < b.connId ? -1 : a.connId > b.connId ? 1 : 0));
+		out.sort((a, b) =>
+			a.connId < b.connId ? -1 : a.connId > b.connId ? 1 : 0,
+		);
 		return out;
 	}
 

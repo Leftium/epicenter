@@ -14,8 +14,8 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
-import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
+import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 import type { Bookmark, BookmarkId } from '$lib/workspace';
 
 export function createBookmarkState(tabManager: TabManagerBrowser) {

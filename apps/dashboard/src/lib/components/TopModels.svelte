@@ -7,12 +7,13 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { billing } from '$lib/query/billing';
 
-	const usage = createQuery(() =>
-		billing.usage({
-			range: '30d',
-			binSize: 'day',
-			groupBy: 'properties.model',
-		}).options,
+	const usage = createQuery(
+		() =>
+			billing.usage({
+				range: '30d',
+				binSize: 'day',
+				groupBy: 'properties.model',
+			}).options,
 	);
 
 	/**

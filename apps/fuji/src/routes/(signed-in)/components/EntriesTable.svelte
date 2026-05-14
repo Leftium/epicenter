@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Entry } from '@epicenter/fuji';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as StarRating from '@epicenter/ui/star-rating';
@@ -23,7 +24,6 @@
 	import { matchesEntrySearch } from '$lib/entries-search';
 	import { relativeTime } from '$lib/format';
 	import { requireFuji } from '$lib/session';
-	import type { Entry } from '@epicenter/fuji';
 	import { viewState } from '../state/view.svelte';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();
@@ -227,7 +227,7 @@
 					{#each table.getRowModel().rows as row (row.id)}
 						<Table.Row
 							role="button"
-								tabindex={0}
+							tabindex={0}
 							class="cursor-pointer transition-colors hover:bg-accent/50"
 							onclick={() => goto(`/entries/${row.original.id}`)}
 							onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goto(`/entries/${row.original.id}`); } }}

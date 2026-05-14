@@ -75,7 +75,7 @@
 				class="font-mono text-xs"
 			/>
 			<div class="space-y-1.5">
-					<span class="text-sm font-medium">Timezone</span>
+				<span class="text-sm font-medium">Timezone</span>
 				<TimezoneCombobox bind:value={timezone} />
 			</div>
 			{#if rawText.trim()}

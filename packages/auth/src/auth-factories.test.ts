@@ -14,7 +14,7 @@
 
 import { expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
-import type { WorkspaceIdentity, AuthState, OAuthSession } from './index.js';
+import type { AuthState, OAuthSession, WorkspaceIdentity } from './index.js';
 import { createOAuthAppAuth } from './index.js';
 
 const now = 1_000_000;
@@ -126,7 +126,9 @@ test('startSignIn loads identity through auth/me and stores OAuthSession', async
 	const result = await auth.startSignIn();
 
 	expect(result).toEqual(Ok(undefined));
-	expect(String(fetches[0]?.input)).toBe('http://localhost:8787/workspace-identity');
+	expect(String(fetches[0]?.input)).toBe(
+		'http://localhost:8787/workspace-identity',
+	);
 	expect(new Headers(fetches[0]?.init?.headers).get('authorization')).toBe(
 		'Bearer oauth-access-token',
 	);

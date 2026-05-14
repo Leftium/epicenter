@@ -1,6 +1,5 @@
 export {
 	AuthError,
-	type WorkspaceIdentity,
 	type AuthState,
 	AuthUser,
 	type CreateOAuthAppAuthConfig,
@@ -8,6 +7,7 @@ export {
 	type OAuthSessionStorage,
 	type OAuthSignInLauncher,
 	type OAuthTokenRefresher,
+	type WorkspaceIdentity,
 } from '@epicenter/auth';
 export {
 	type AuthClient,

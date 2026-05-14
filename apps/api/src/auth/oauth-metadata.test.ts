@@ -42,11 +42,10 @@ test('issuer-path discovery route is registered before the auth catch-all', asyn
 
 test('protected resource metadata advertises API resource and auth issuer', async () => {
 	const resource = oauthProviderResourceClient();
-	const metadata =
-		await resource.getActions().getProtectedResourceMetadata({
-			resource: 'https://api.epicenter.so',
-			authorization_servers: ['https://api.epicenter.so/auth'],
-		});
+	const metadata = await resource.getActions().getProtectedResourceMetadata({
+		resource: 'https://api.epicenter.so',
+		authorization_servers: ['https://api.epicenter.so/auth'],
+	});
 
 	expect(metadata.resource).toBe('https://api.epicenter.so');
 	expect(metadata.authorization_servers).toEqual([

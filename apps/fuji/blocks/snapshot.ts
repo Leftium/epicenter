@@ -1,6 +1,5 @@
 import { loadMachineSession } from '@epicenter/auth/node';
 import type { EncryptionKeys } from '@epicenter/encryption';
-import { FUJI_WORKSPACE_ID, fujiTables } from './workspace.js';
 import { attachEncryption, type ProjectDir } from '@epicenter/workspace';
 import {
 	attachYjsLogReader,
@@ -9,6 +8,7 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
+import { FUJI_WORKSPACE_ID, fujiTables } from './workspace.js';
 
 export type OpenFujiSnapshotOptions = {
 	projectDir?: ProjectDir;

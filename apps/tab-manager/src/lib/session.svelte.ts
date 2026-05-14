@@ -1,19 +1,19 @@
 import type { AuthClient } from '@epicenter/auth';
 import { requireIdentity } from '@epicenter/auth';
 import { createOAuthAppAuth } from '@epicenter/auth-svelte';
+import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createSession } from '@epicenter/svelte';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
-import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import { authSessionStorage, oauthLauncher } from './platform/auth/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { createDeviceProfile, registerDevice } from './device';
+import { authSessionStorage, oauthLauncher } from './platform/auth/auth';
 import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
-import { openTabManagerBrowser } from './tab-manager/extension';
 import type { TabManagerBrowser } from './tab-manager/extension';
+import { openTabManagerBrowser } from './tab-manager/extension';
 
 export type SessionAiTools = ReturnType<
 	typeof actionsToAiTools<TabManagerBrowser['collaboration']['actions']>

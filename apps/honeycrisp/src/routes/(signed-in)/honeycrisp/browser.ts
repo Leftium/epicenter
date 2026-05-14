@@ -1,5 +1,10 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	createHoneycrispActions,
+	honeycrispTables,
+	type NoteId,
+} from '@epicenter/honeycrisp';
+import {
 	attachEncryption,
 	attachOwnedBroadcastChannel,
 	attachRichText,
@@ -7,15 +12,14 @@ import {
 	DateTimeString,
 	docGuid,
 	type EncryptionKeys,
-	onLocalUpdate,
 	type OpenWebSocket,
+	onLocalUpdate,
 	openCollaboration,
 	type Replica,
 	websocketUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { createHoneycrispActions, honeycrispTables, type NoteId } from '@epicenter/honeycrisp';
 
 function noteBodyDocGuid({
 	workspaceId,

@@ -11,6 +11,7 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
+import { secureHeaders } from 'hono/secure-headers';
 import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
@@ -32,6 +33,7 @@ import {
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
 import {
+	renderCliCallbackPage,
 	renderConsentPage,
 	renderSignedInPage,
 	renderSignInPage,
@@ -233,6 +235,32 @@ app.get(
 		}
 		const { client_id: clientId, scope } = c.req.valid('query');
 		return c.html(renderConsentPage({ clientId, scope }));
+	},
+);
+// OAuth CLI callback: the OOB authorization-code flow lands here after the
+// user signs in on the hosted portal. The page renders the one-time code in
+// a monospace block so the user can paste it into the terminal. The code is
+// useless without the PKCE verifier held in the CLI process; even so, set
+// Cache-Control: no-store, no-transform to keep Cloudflare's edge from
+// caching or mutating the value. secureHeaders applies CSP, X-Frame-Options,
+// X-Content-Type-Options, Referrer-Policy, and HSTS as a group.
+app.get(
+	'/auth/cli-callback',
+	describeRoute({
+		description: 'CLI OAuth out-of-band callback page',
+		tags: ['auth', 'oauth'],
+	}),
+	secureHeaders(),
+	(c) => {
+		c.header('Cache-Control', 'no-store, no-transform');
+		return c.html(
+			renderCliCallbackPage({
+				code: c.req.query('code'),
+				state: c.req.query('state'),
+				error: c.req.query('error'),
+				errorDescription: c.req.query('error_description'),
+			}),
+		);
 	},
 );
 app.get(

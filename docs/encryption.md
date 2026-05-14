@@ -10,7 +10,7 @@ This page only makes claims visible in the current code:
 - `apps/api/src/auth/create-auth.ts`
 - `packages/svelte-utils/src/auth/create-auth.svelte.ts`
 - `packages/workspace/src/document/attach-indexed-db.ts`
-- `apps/api/src/base-sync-room.ts`
+- `apps/api/src/room.ts`
 If something is not visible there, it is not presented as fact here.
 
 ## What this system is
@@ -266,7 +266,7 @@ Blobs for versions absent from the keyring stay unreadable and unchanged until a
 
 ## What the sync server sees
 The sync server sees Yjs updates and relays them.
-In the reviewed server code, `BaseSyncRoom.sync()` calls `Y.applyUpdateV2(this.doc, update, 'http')` and returns diffs with `Y.encodeStateAsUpdateV2(this.doc, clientSV)`.
+In the reviewed server code, `Room.sync()` calls `Y.applyUpdateV2(this.doc, update, 'http')` and returns diffs with `Y.encodeStateAsUpdateV2(this.doc, clientSV)`.
 The WebSocket path broadcasts raw protocol messages to peers.
 There is no decryption step in that sync room code.
 Because encryption happens before values are written into the Yjs document, the synced value payloads are ciphertext blobs.

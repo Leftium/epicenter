@@ -85,7 +85,11 @@ export function createOAuthAppAuth({
 	}
 
 	async function replaceSession(next: OAuthSessionType | null) {
-		if (next && session && session.user.id !== next.user.id) {
+		if (
+			next &&
+			session &&
+			session.identity.user.id !== next.identity.user.id
+		) {
 			throw new Error(
 				'[auth] replaceSession received an identity that does not match the ' +
 					'current session. Sign out before signing in as a different user.',
@@ -114,13 +118,7 @@ export function createOAuthAppAuth({
 			throw new Error(`/workspace-identity failed with ${response.status}.`);
 		}
 		const identity = WorkspaceIdentity.assert(await response.json());
-		return OAuthSession.assert({
-			accessToken: tokens.accessToken,
-			refreshToken: tokens.refreshToken,
-			accessTokenExpiresAt: tokens.accessTokenExpiresAt,
-			user: identity.user,
-			encryptionKeys: identity.encryptionKeys,
-		});
+		return OAuthSession.assert({ tokens, identity });
 	}
 
 	async function refreshSession({ force }: { force: boolean }) {
@@ -142,10 +140,8 @@ export function createOAuthAppAuth({
 				});
 				if (startedAt !== sessionEpoch || session !== current) return false;
 				const next = OAuthSession.assert({
-					...current,
-					accessToken: tokens.accessToken,
-					refreshToken: tokens.refreshToken,
-					accessTokenExpiresAt: tokens.accessTokenExpiresAt,
+					identity: current.identity,
+					tokens,
 				});
 				await sessionStorage.set(next);
 				if (startedAt !== sessionEpoch || session !== current) return false;
@@ -171,7 +167,7 @@ export function createOAuthAppAuth({
 	async function accessTokenForNetwork({ force }: { force: boolean }) {
 		const refreshed = await refreshSession({ force });
 		if (!refreshed || session === null || networkAuthPaused) return null;
-		return session.accessToken;
+		return session.tokens.accessToken;
 	}
 
 	async function fetchWithAuth(
@@ -219,7 +215,7 @@ export function createOAuthAppAuth({
 					await revokeOAuthRefreshToken({
 						baseURL,
 						clientId,
-						refreshToken: sessionToRevoke.refreshToken,
+						refreshToken: sessionToRevoke.tokens.refreshToken,
 						fetch: fetchImpl,
 					}).catch(() => undefined);
 				}
@@ -269,16 +265,14 @@ function stateFromSession(
 	},
 ) {
 	if (session === null) return { status: 'signed-out' as const };
-	const { user, encryptionKeys } = session;
-	const identity = { user, encryptionKeys };
 	if (networkAuthPaused) {
-		return { status: 'reauth-required' as const, identity };
+		return { status: 'reauth-required' as const, identity: session.identity };
 	}
-	return authStateFromIdentity(identity);
+	return authStateFromIdentity(session.identity);
 }
 
 function shouldRefresh(session: OAuthSessionType, now: number) {
-	return session.accessTokenExpiresAt <= now + REFRESH_SKEW_MS;
+	return session.tokens.accessTokenExpiresAt <= now + REFRESH_SKEW_MS;
 }
 
 function replayableInput<TInput extends Request | string | URL>(input: TInput) {
@@ -300,7 +294,7 @@ async function refreshOAuthTokenWithEndpoint({
 }): Promise<OAuthTokenGrant> {
 	const body = new URLSearchParams({
 		grant_type: 'refresh_token',
-		refresh_token: session.refreshToken,
+		refresh_token: session.tokens.refreshToken,
 		client_id: clientId,
 		resource: baseURL,
 	});
@@ -323,7 +317,7 @@ async function refreshOAuthTokenWithEndpoint({
 	return {
 		accessToken: readString(data, 'access_token'),
 		refreshToken:
-			readOptionalString(data, 'refresh_token') ?? session.refreshToken,
+			readOptionalString(data, 'refresh_token') ?? session.tokens.refreshToken,
 		accessTokenExpiresAt: now() + readPositiveNumber(data, 'expires_in') * 1000,
 	} satisfies OAuthTokenGrant;
 }

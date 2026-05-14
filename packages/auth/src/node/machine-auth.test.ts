@@ -63,7 +63,7 @@ const encryptionKeys = [
 		version: 1,
 		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
-] satisfies OAuthSession['encryptionKeys'];
+] satisfies WorkspaceIdentity['encryptionKeys'];
 
 function makeSession({
 	accessToken = 'authorization-token',
@@ -73,23 +73,23 @@ function makeSession({
 	accessTokenExpiresAt?: number;
 } = {}): OAuthSession {
 	return {
-		accessToken,
-		refreshToken: 'refresh-token',
-		accessTokenExpiresAt,
-		user: {
-			id: 'user-1',
-			email: 'user@example.com',
+		tokens: {
+			accessToken,
+			refreshToken: 'refresh-token',
+			accessTokenExpiresAt,
 		},
-		encryptionKeys: [...encryptionKeys],
+		identity: {
+			user: {
+				id: 'user-1',
+				email: 'user@example.com',
+			},
+			encryptionKeys: [...encryptionKeys],
+		},
 	};
 }
 
 function makeAuthIdentity(): WorkspaceIdentity {
-	const session = makeSession();
-	return {
-		user: session.user,
-		encryptionKeys: session.encryptionKeys,
-	};
+	return makeSession().identity;
 }
 
 function jsonResponse(value: unknown, init?: ResponseInit): Response {
@@ -250,8 +250,8 @@ describe('machine auth free functions', () => {
 		expect(result.error).toBeNull();
 		expect(loadError).toBeNull();
 		expect(result.data?.session.user.email).toBe('user@example.com');
-		expect(savedSession?.accessToken).toBe('device-token');
-		expect(savedSession?.refreshToken).toBe('device-refresh-token');
+		expect(savedSession?.tokens.accessToken).toBe('device-token');
+		expect(savedSession?.tokens.refreshToken).toBe('device-refresh-token');
 		expect(JSON.stringify(savedSession)).not.toContain('session');
 	});
 
@@ -280,7 +280,7 @@ describe('machine auth free functions', () => {
 		expect(loadError).toBeNull();
 		expect(result.data?.status).toBe('valid');
 		expect(seenTokens).toEqual(['Bearer old-token']);
-		expect(savedSession?.accessToken).toBe('old-token');
+		expect(savedSession?.tokens.accessToken).toBe('old-token');
 	});
 
 	test('machine auth refresh pauses network auth when keychain save fails', async () => {
@@ -328,14 +328,11 @@ describe('machine auth free functions', () => {
 
 		expect(response.status).toBe(204);
 		expect(loadError).toBeNull();
-		expect(savedSession?.accessToken).toBe('old-token');
+		expect(savedSession?.tokens.accessToken).toBe('old-token');
 		expect(authorizations).toEqual([null]);
 		expect(auth.state).toEqual({
 			status: 'reauth-required',
-			identity: {
-				user: makeSession({ accessToken: 'old-token' }).user,
-				encryptionKeys,
-			},
+			identity: makeSession({ accessToken: 'old-token' }).identity,
 		});
 	});
 
@@ -422,7 +419,7 @@ describe('machine session storage', () => {
 
 		expect(backend.values.size).toBe(1);
 		const { data: loaded } = await loadMachineSession({ backend, log });
-		expect(loaded).toMatchObject({ accessToken: 'stored-token' });
+		expect(loaded).toMatchObject({ tokens: { accessToken: 'stored-token' } });
 		expect([...backend.values.values()][0]).not.toContain(
 			'server-session-token',
 		);

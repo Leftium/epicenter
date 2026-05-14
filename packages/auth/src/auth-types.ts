@@ -29,11 +29,9 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
 
 /** OAuth auth state persisted by browser, extension, and machine clients. */
 export const OAuthSession = type({
-	'...': WorkspaceIdentity,
 	'+': 'delete',
-	accessToken: 'string',
-	refreshToken: 'string',
-	accessTokenExpiresAt: 'number',
+	tokens: OAuthTokenGrant,
+	identity: WorkspaceIdentity,
 });
 
 export type OAuthSession = typeof OAuthSession.infer;

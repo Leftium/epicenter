@@ -1,4 +1,4 @@
-import { OAuthSession } from '@epicenter/auth';
+import { PersistedAuth } from '@epicenter/auth';
 import {
 	createBrowserOAuthLauncher,
 	createStorageAdapter,
@@ -13,9 +13,9 @@ const apiBaseURL = window.location.origin;
 export const auth = createOAuthAppAuth({
 	baseURL: apiBaseURL,
 	clientId: EPICENTER_DASHBOARD_OAUTH_CLIENT_ID,
-	sessionStorage: createPersistedState({
-		key: 'dashboard.auth.session',
-		schema: OAuthSession.or('null'),
+	persistedAuthStorage: createPersistedState({
+		key: 'dashboard.auth.persisted',
+		schema: PersistedAuth.or('null'),
 		defaultValue: null,
 	}),
 	launcher: createBrowserOAuthLauncher({

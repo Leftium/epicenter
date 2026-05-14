@@ -19,7 +19,7 @@
  */
 
 import { join } from 'node:path';
-import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
+import { createMachineAuthClient } from '@epicenter/auth/node';
 import { tabManagerTables } from '@epicenter/tab-manager';
 import {
 	attachEncryption,
@@ -43,7 +43,12 @@ const auth = await createMachineAuthClient();
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 const encryption = attachEncryption(ydoc, {
-	encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+	encryptionKeys: () => {
+		if (auth.state.status === 'signed-out') {
+			throw new Error('[tab-manager-playground] auth signed-out.');
+		}
+		return auth.state.unlock.encryptionKeys;
+	},
 });
 const tables = encryption.attachTables(tabManagerTables);
 // Empty kv: tabManager has no KV definitions, but `.kv()` on the materializer

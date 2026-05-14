@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { requireIdentity } from '@epicenter/auth';
 	import { fromKv } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
@@ -70,7 +69,7 @@
 				</Button>
 
 				<span class="text-sm text-muted-foreground">
-					{requireIdentity(auth).user.email}
+					{auth.state.status === 'signed-out' ? '' : (auth.state.email ?? 'Account')}
 				</span>
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device

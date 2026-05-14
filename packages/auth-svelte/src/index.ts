@@ -3,11 +3,12 @@ export {
 	type AuthState,
 	AuthUser,
 	type CreateOAuthAppAuthConfig,
-	OAuthSession,
-	type OAuthSessionStorage,
+	type LocalUnlockBundle,
 	type OAuthSignInLauncher,
+	type OAuthTokenGrant,
 	type OAuthTokenRefresher,
-	type WorkspaceIdentity,
+	PersistedAuth,
+	type PersistedAuthStorage,
 } from '@epicenter/auth';
 export {
 	type AuthClient,

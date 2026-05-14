@@ -13,13 +13,19 @@
  * envelope; the two are joined by the peers surface.
  */
 
-import {
-	type AsyncStorage,
-	type SimpleStorage,
-} from '../shared/device-id.js';
 import { generateGuid } from '../shared/id.js';
 
-export type { AsyncStorage, SimpleStorage };
+/** Storage primitive that mirrors the synchronous Web Storage shape. */
+export type SimpleStorage = {
+	getItem(key: string): string | null;
+	setItem(key: string, value: string): void;
+};
+
+/** Storage primitive with the async shape (chrome.storage, IndexedDB wrappers). */
+export type AsyncStorage = {
+	getItem(key: string): Promise<string | null>;
+	setItem(key: string, value: string): Promise<void>;
+};
 
 const KEY = 'epicenter.installation.id';
 

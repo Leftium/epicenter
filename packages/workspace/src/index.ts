@@ -12,8 +12,8 @@
  *   attachIndexedDb,
  *   attachRichText,
  *   attachTables,
- *   attachYjsSync,
  *   createDisposableCache,
+ *   createReplicaId,
  *   defineTable,
  *   docGuid,
  *   openCollaboration,
@@ -27,6 +27,11 @@
  *   protocols?: string[],
  * ) => Promise<WebSocket>;
  *
+ * const replica = {
+ *   id: createReplicaId({ storage: localStorage }),
+ *   platform: 'web' as const,
+ * };
+ *
  * // Singleton document + collaboration: inline at module scope, no factory wrapper.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
@@ -35,10 +40,10 @@
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
  *   waitFor: idb.whenLoaded,
  *   openWebSocket,
- *   identity: { id: 'browser', name: 'Browser', platform: 'web' },
- *   actions: {},
+ *   replica,
  * });
  *
+ * // Content docs use the same primitive with an empty action registry.
  * const noteBodyDocs = createDisposableCache(
  *   (noteId: string) => {
  *     const bodyYdoc = new Y.Doc({
@@ -51,10 +56,11 @@
  *       gc: false,
  *     });
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
- *     const bodySync = attachYjsSync(bodyYdoc, {
+ *     const bodySync = openCollaboration(bodyYdoc, {
  *       url: `wss://api.example.com/documents/${bodyYdoc.guid}`,
  *       waitFor: bodyIdb.whenLoaded,
  *       openWebSocket,
+ *       replica,
  *     });
  *     return {
  *       ydoc: bodyYdoc,
@@ -102,18 +108,14 @@ export { isRpcError, RpcError } from '@epicenter/sync';
 export type { RemoteCallOptions } from './shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DEVICE IDENTITY
+// REPLICA IDENTITY
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
 	type AsyncStorage,
-	getOrCreateInstallationId,
-	getOrCreateInstallationIdAsync,
-	type SimpleStorage,
-} from './shared/device-id.js';
-export {
 	createReplicaId,
 	createReplicaIdAsync,
+	type SimpleStorage,
 } from './document/replica-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -211,19 +213,14 @@ export {
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
 export {
-	attachYjsSync,
-	type AttachYjsSyncConfig,
-	type YjsSyncAttachment,
-} from './document/attach-yjs-sync.js';
-export {
 	type OpenWebSocket,
 	type SyncError,
 	SyncFailedError,
 	type SyncFailedReason,
 	type SyncStatus,
 	SyncSupervisorError,
-	toWsUrl,
 } from './document/internal/sync-supervisor.js';
+export { toWsUrl } from './document/transport.js';
 export {
 	type Collaboration,
 	type OpenCollaborationConfig,
@@ -234,7 +231,6 @@ export {
 	PeerLeftError,
 	type PeersSurface,
 	type RemoteCallError,
-	SelfInvocationError,
 	waitForPeer,
 } from './document/peer.js';
 export {
@@ -275,8 +271,6 @@ export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
 	type PeerAwarenessState,
-	PeerIdentity,
-	type PeerRuntime,
 	type Platform,
 	Replica,
 	type Subject,

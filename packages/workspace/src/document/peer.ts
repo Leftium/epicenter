@@ -59,21 +59,6 @@ export type RpcActionMap = Record<string, { input: any; output: any }>;
 // ERRORS
 // ════════════════════════════════════════════════════════════════════════════
 
-/**
- * Self-RPC attempted at the wire layer. The peers surface filters self by
- * identity, so reaching this variant requires a stale clientId reference
- * (deserialized fixture, test injection, future bug). The type system
- * makes this unreachable for typical callers; the wire fallback keeps the
- * failure typed if it slips through.
- */
-export const SelfInvocationError = defineErrors({
-	SelfInvocation: ({ action }: { action: string }) => ({
-		message: `[openCollaboration] cannot RPC to self for "${action}"; call collaboration.actions.${action} directly`,
-		action,
-	}),
-});
-export type SelfInvocationError = InferErrors<typeof SelfInvocationError>;
-
 /** Target peer disappeared from awareness while an RPC was in flight. */
 export const PeerLeftError = defineErrors({
 	PeerLeft: ({ peerId, action }: { peerId: string; action: string }) => ({
@@ -85,7 +70,7 @@ export const PeerLeftError = defineErrors({
 export type PeerLeftError = InferErrors<typeof PeerLeftError>;
 
 /** Errors that may surface from `peer.invoke` or `peer.describe`. */
-export type RemoteCallError = RpcError | SelfInvocationError | PeerLeftError;
+export type RemoteCallError = RpcError | PeerLeftError;
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -184,12 +169,12 @@ export type PeerWireHooks = {
 		action: string,
 		input: unknown,
 		options: RemoteCallOptions | undefined,
-	): Promise<Result<unknown, RpcError | SelfInvocationError>>;
+	): Promise<Result<unknown, RpcError>>;
 	sendRuntimeRequest(
 		targetClientId: number,
 		verb: RuntimeVerb,
 		options: RemoteCallOptions | undefined,
-	): Promise<Result<unknown, RpcError | SelfInvocationError>>;
+	): Promise<Result<unknown, RpcError>>;
 };
 
 /**
@@ -262,7 +247,7 @@ export function createPeersSurface(
 		targetClientId: number,
 		peerId: string,
 		label: string,
-		send: () => Promise<Result<unknown, RpcError | SelfInvocationError>>,
+		send: () => Promise<Result<unknown, RpcError>>,
 	): Promise<Result<TOutput, RemoteCallError>> {
 		return new Promise<Result<TOutput, RemoteCallError>>((resolve) => {
 			let settled = false;

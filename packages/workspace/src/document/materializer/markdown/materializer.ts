@@ -255,8 +255,8 @@ export function attachMarkdownMaterializer(
 		dir: string | (() => MaybePromise<string>);
 		/**
 		 * Gate: the materializer awaits this before the initial filesystem flush.
-		 * Matches the `waitFor` convention used by `openCollaboration` and
-		 * `attachYjsSync`. Omit for no gate.
+		 * Matches the `waitFor` convention used by `openCollaboration`. Omit for
+		 * no gate.
 		 */
 		waitFor?: Promise<unknown>;
 		/**

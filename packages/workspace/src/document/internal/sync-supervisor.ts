@@ -2,17 +2,15 @@
 
 /**
  * Internal sync supervisor: connects a Y.Doc to a WebSocket sync server,
- * runs the Yjs sync protocol (STEP1/STEP2/UPDATE), relays awareness frames
- * if an `Awareness` is supplied, and dispatches RPC frames if
- * `onActionRequest` and/or `onRuntimeRequest` is supplied.
+ * runs the Yjs sync protocol (STEP1/STEP2/UPDATE), relays awareness frames,
+ * and dispatches incoming RPC frames against the supplied handlers.
  *
- * Two higher-level primitives wrap this module:
- *
- *   - `openCollaboration` supplies `awareness`, `onActionRequest`,
- *     `onRuntimeRequest`, and uses `sendActionRequest`/`sendRuntimeRequest`
- *     to drive its peers surface.
- *   - `attachYjsSync` supplies none of these; it is a pure byte transport for
- *     content docs.
+ * The supervisor is private to `openCollaboration` — there is no longer a
+ * "byte transport only" wrapper; content docs that previously used
+ * `attachYjsSync` now call `openCollaboration` with an empty action
+ * registry. That keeps the supervisor configuration fully required
+ * (`awareness`, `onActionRequest`, `onRuntimeRequest`) and removes every
+ * null-check that used to gate the awareness/RPC paths.
  *
  * Lifecycle is supervisor-driven: connect, exponential backoff with jitter,
  * liveness via 60s pings and 90s timeout, browser online/offline/visibility
@@ -144,25 +142,22 @@ export type SyncSupervisorConfig = {
 	waitFor?: Promise<unknown>;
 	openWebSocket?: OpenWebSocket;
 	log?: Logger;
+	/** Awareness wired over this socket. Required: one supervisor, one awareness. */
+	awareness: Awareness;
 	/**
-	 * Optional Awareness to wire over the same WebSocket. When omitted, no
-	 * awareness frames are emitted, accepted, or queried.
+	 * Incoming app-action dispatcher. Required. The supervisor calls this for
+	 * every inbound ACTION_REQUEST and sends the resolved Result back over
+	 * the wire.
 	 */
-	awareness?: Awareness;
+	onActionRequest: (
+		rpc: IncomingActionRequest,
+	) => Promise<Result<unknown, unknown>>;
 	/**
-	 * Optional incoming app-action dispatcher. When omitted, inbound action
-	 * requests receive `RpcError.ActionNotFound`. When provided, the supervisor
-	 * calls this for every inbound ACTION_REQUEST and sends the resolved
-	 * Result back over the wire.
+	 * Incoming runtime-verb dispatcher. Required. RUNTIME_REQUEST never falls
+	 * through to `onActionRequest`; the supervisor enforces the plane split
+	 * at the wire boundary.
 	 */
-	onActionRequest?: (rpc: IncomingActionRequest) => Promise<Result<unknown, unknown>>;
-	/**
-	 * Optional incoming runtime-verb dispatcher. When omitted, inbound runtime
-	 * requests receive `RpcError.ActionNotFound`. When provided, the supervisor
-	 * routes every RUNTIME_REQUEST to this handler — never to `onActionRequest` —
-	 * so app code and collaboration runtime code stay on separate planes.
-	 */
-	onRuntimeRequest?: (
+	onRuntimeRequest: (
 		request: IncomingRuntimeRequest,
 	) => Promise<Result<unknown, unknown>>;
 };
@@ -250,17 +245,11 @@ function parsePermanentFailure(event: {
 // Public API
 // ════════════════════════════════════════════════════════════════════════════
 
-export function toWsUrl(httpUrl: string): string {
-	return httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
-}
-
 export function createSyncSupervisor(
 	ydoc: Y.Doc,
 	config: SyncSupervisorConfig,
 ): SyncSupervisor {
-	const awareness = config.awareness ?? null;
-	const onActionRequest = config.onActionRequest ?? null;
-	const onRuntimeRequest = config.onRuntimeRequest ?? null;
+	const { awareness, onActionRequest, onRuntimeRequest } = config;
 
 	const waitForPromise = config.waitFor;
 	const log = config.log ?? createLogger('sync');
@@ -345,24 +334,15 @@ export function createSyncSupervisor(
 		R extends { requestId: number; requesterClientId: number },
 	>(
 		rpc: R,
-		handler: ((rpc: R) => Promise<Result<unknown, unknown>>) | null,
-		errorLabel: string,
+		handler: (rpc: R) => Promise<Result<unknown, unknown>>,
 	) {
-		const sendResponse = (result: Result<unknown, unknown>) =>
-			send(
-				encodeRpcResponse({
-					requestId: rpc.requestId,
-					requesterClientId: rpc.requesterClientId,
-					result,
-				}),
-			);
-
-		if (!handler) {
-			sendResponse(RpcError.ActionNotFound({ action: errorLabel }));
-			return;
-		}
-
-		sendResponse(await handler(rpc));
+		send(
+			encodeRpcResponse({
+				requestId: rpc.requestId,
+				requesterClientId: rpc.requesterClientId,
+				result: await handler(rpc),
+			}),
+		);
 	}
 
 	function send(message: Uint8Array) {
@@ -386,7 +366,7 @@ export function createSyncSupervisor(
 		}: { added: number[]; updated: number[]; removed: number[] },
 		origin: unknown,
 	) {
-		if (!awareness || origin === SYNC_ORIGIN) return;
+		if (origin === SYNC_ORIGIN) return;
 		const changedClients = added.concat(updated).concat(removed);
 		send(
 			encodeAwareness({
@@ -396,7 +376,6 @@ export function createSyncSupervisor(
 	}
 
 	function handleRemoteAwarenessUpdate(update: Uint8Array) {
-		if (!awareness) return;
 		applyAwarenessUpdate(awareness, update, SYNC_ORIGIN);
 	}
 
@@ -412,7 +391,6 @@ export function createSyncSupervisor(
 	let currentEnvelopeSubject: string | null = null;
 
 	function handleRemoteAwarenessAttested(subject: string, update: Uint8Array) {
-		if (!awareness) return;
 		currentEnvelopeSubject = subject;
 		try {
 			applyAwarenessUpdate(awareness, update, SYNC_ORIGIN);
@@ -421,38 +399,36 @@ export function createSyncSupervisor(
 		}
 	}
 
-	if (awareness) {
-		// Track subject by clientID. Only stamp on updates the supervisor
-		// originated (origin === SYNC_ORIGIN); local mutations have no
-		// envelope and can't attest a subject. Removed clients drop their
-		// metadata so callers don't see stale subjects for departed peers.
-		awareness.on(
-			'update',
-			(
-				{
-					added,
-					updated,
-					removed,
-				}: { added: number[]; updated: number[]; removed: number[] },
-				origin: unknown,
-			) => {
-				if (origin === SYNC_ORIGIN && currentEnvelopeSubject !== null) {
-					for (const id of added) {
-						peerMetadata.set(id, { subject: currentEnvelopeSubject });
-					}
-					for (const id of updated) {
-						peerMetadata.set(id, { subject: currentEnvelopeSubject });
-					}
+	// Track subject by clientID. Only stamp on updates the supervisor
+	// originated (origin === SYNC_ORIGIN); local mutations have no
+	// envelope and can't attest a subject. Removed clients drop their
+	// metadata so callers don't see stale subjects for departed peers.
+	awareness.on(
+		'update',
+		(
+			{
+				added,
+				updated,
+				removed,
+			}: { added: number[]; updated: number[]; removed: number[] },
+			origin: unknown,
+		) => {
+			if (origin === SYNC_ORIGIN && currentEnvelopeSubject !== null) {
+				for (const id of added) {
+					peerMetadata.set(id, { subject: currentEnvelopeSubject });
 				}
-				for (const id of removed) {
-					peerMetadata.delete(id);
+				for (const id of updated) {
+					peerMetadata.set(id, { subject: currentEnvelopeSubject });
 				}
-			},
-		);
-	}
+			}
+			for (const id of removed) {
+				peerMetadata.delete(id);
+			}
+		},
+	);
 
 	function sendLocalAwarenessState() {
-		if (!awareness || awareness.getLocalState() === null) return;
+		if (awareness.getLocalState() === null) return;
 		send(
 			encodeAwarenessStates({
 				awareness,
@@ -462,7 +438,6 @@ export function createSyncSupervisor(
 	}
 
 	function sendKnownAwarenessStates() {
-		if (!awareness) return;
 		send(
 			encodeAwarenessStates({
 				awareness,
@@ -472,7 +447,6 @@ export function createSyncSupervisor(
 	}
 
 	function removeRemoteAwarenessStates() {
-		if (!awareness) return;
 		const remoteClientIds = Array.from(awareness.getStates().keys()).filter(
 			(clientId) => clientId !== ydoc.clientID,
 		);
@@ -660,10 +634,10 @@ export function createSyncSupervisor(
 							break;
 						}
 						case 'action-request':
-							void dispatchIncomingRequest(rpc, onActionRequest, rpc.action);
+							void dispatchIncomingRequest(rpc, onActionRequest);
 							break;
 						case 'runtime-request':
-							void dispatchIncomingRequest(rpc, onRuntimeRequest, rpc.verb);
+							void dispatchIncomingRequest(rpc, onRuntimeRequest);
 							break;
 					}
 					break;

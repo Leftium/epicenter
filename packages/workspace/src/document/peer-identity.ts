@@ -23,17 +23,9 @@
  * `peerAwarenessSchema` is the field-keyed schema record consumed by
  * `attachAwareness`. `PeerAwarenessState` is the runtime shape of a peer's
  * published state.
- *
- * The legacy `PeerIdentity` shape is preserved alongside the new shape only
- * because the daemon's `PeerSnapshot` JSON contract still names it. Both go
- * away in Wave 6 of the document-sync-and-identity-collapse spec.
  */
 
 import { type } from 'arktype';
-
-// ════════════════════════════════════════════════════════════════════════════
-// Replica (client-claimed) + Subject (server-stamped envelope)
-// ════════════════════════════════════════════════════════════════════════════
 
 /**
  * Client-claimed peer descriptor. `id` is install-stable (one UUID per device
@@ -79,22 +71,3 @@ export type PeerAwarenessState = {
 	replica: Replica;
 	actionKeys: readonly string[];
 };
-
-// ════════════════════════════════════════════════════════════════════════════
-// Legacy shape (scheduled for deletion in Wave 6)
-//
-// The daemon's PeerSnapshot JSON contract still references `PeerIdentity` as
-// the peer descriptor type. Keep it exported for the transition; remove with
-// the rest of the legacy surface in Wave 6.
-// ════════════════════════════════════════════════════════════════════════════
-
-/** Legacy awareness identity. Use `Replica` for new code. */
-export const PeerIdentity = type({
-	id: 'string',
-	name: 'string',
-	platform: '"web" | "tauri" | "chrome-extension" | "node"',
-});
-export type PeerIdentity = typeof PeerIdentity.infer;
-
-/** Closed enum of supported peer runtimes (legacy alias). */
-export type PeerRuntime = PeerIdentity['platform'];

@@ -3,7 +3,6 @@ import {
 	attachEncryption,
 	attachOwnedBroadcastChannel,
 	attachRichText,
-	attachYjsSync,
 	createDisposableCache,
 	DateTimeString,
 	docGuid,
@@ -68,10 +67,11 @@ export function openFujiBrowser({
 		const body = attachRichText(ydoc);
 		const childIdb = encryption.attachIndexedDb(ydoc, { userId });
 		attachOwnedBroadcastChannel(ydoc, { userId });
-		const childSync = attachYjsSync(ydoc, {
+		const childSync = openCollaboration(ydoc, {
 			url: toWsUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
+			replica,
 		});
 
 		onLocalUpdate(ydoc, () => {

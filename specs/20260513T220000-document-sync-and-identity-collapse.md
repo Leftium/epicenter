@@ -292,11 +292,11 @@ This wave is the one that needs the server-side reviewer per Open Question #1.
 
 ### Wave 6: Delete old paths (Remove)
 
-- [ ] **6.1** Delete `packages/workspace/src/document/attach-yjs-sync.ts`. Delete `YjsSyncAttachment` and `AttachYjsSyncConfig` types.
-- [ ] **6.2** `SyncSupervisorConfig`: make `awareness`, `onActionRequest`, `onRuntimeRequest` required. Delete every null-check on these fields in `sync-supervisor.ts` (lines 344, 373, 384, 388, 398, 408, 562).
-- [ ] **6.3** Move `toWsUrl` out of `sync-supervisor.ts` to a `transport/url.ts` or similar (it is not a supervisor concern).
-- [ ] **6.4** Remove the `SelfInvocationError` wire fallback (`open-collaboration.ts:136-148`). With server-attested subject, server rejects same-subject self-RPC at ingress.
-- [ ] **6.5** Confirm no `PeerIdentity` type or import remains. The type and its file go.
+- [x] **6.1** Deleted `packages/workspace/src/document/attach-yjs-sync.ts` (and its smoke test). Every caller migrated to `openCollaboration(ydoc, { ..., actions: {} })`: fuji + honeycrisp browser content docs reuse the parent's `replica`, daemon scripts (`apps/{honeycrisp,opensidian,zhongwen}/blocks/script.ts`) pass a `'{app}-script'` node replica.
+- [x] **6.2** `SyncSupervisorConfig` makes `awareness`, `onActionRequest`, `onRuntimeRequest` required. Removed every `?? null` indirection and the `if (!awareness)` / `if (!handler)` guards from `sync-supervisor.ts`. `dispatchIncomingRequest` no longer takes an `errorLabel`/fallback path.
+- [x] **6.3** `toWsUrl` moved out of `sync-supervisor.ts` to `packages/workspace/src/document/transport.ts`; re-exported from the package root.
+- [x] **6.4** Dropped the `SelfInvocationError` wire fallback in `open-collaboration.ts`. The peers surface still filters self by `replica.id`, so the only path that could have hit the fallback (stale clientID reference, test injection) now relies on caller hygiene. The `SelfInvocationError` type, its `RemoteCallError` membership, the CLI rendering branch, and the corresponding cli test were all removed.
+- [x] **6.5** `PeerIdentity` / `PeerRuntime` are gone. The legacy section of `peer-identity.ts` is deleted; `packages/workspace/src/shared/device-id.ts` (and its test) are deleted; `replica-id.ts` carries the `SimpleStorage` / `AsyncStorage` definitions directly. `getOrCreateInstallationId{,Async}` are no longer exported.
 
 ## Edge Cases
 

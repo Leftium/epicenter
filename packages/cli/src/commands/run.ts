@@ -167,9 +167,6 @@ export function emitRemoteCallError(
 				`error: peer "${cause.peerId}" disconnected before "${cause.action}" responded`,
 			);
 			return;
-		case 'SelfInvocation':
-			outputError(`error: cannot RPC to self for "${cause.action}"`);
-			return;
 		case 'ActionNotFound':
 		case 'Timeout':
 		case 'PeerOffline':

@@ -1,18 +1,14 @@
 /**
  * Error-emission tests for the `run --peer` path.
  *
- * Covers the remote-call failure shapes (peer left, self invocation, and
- * every `RpcError` variant). Capture `console.error` and assert line-by-line.
- * RPC errors are constructed via `RpcError.X({...}).error` so they match the
- * wire shape exactly.
+ * Covers the remote-call failure shapes (peer left and every `RpcError`
+ * variant). Capture `console.error` and assert line-by-line. RPC errors are
+ * constructed via `RpcError.X({...}).error` so they match the wire shape
+ * exactly.
  */
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import {
-	PeerLeftError,
-	RpcError,
-	SelfInvocationError,
-} from '@epicenter/workspace';
+import { PeerLeftError, RpcError } from '@epicenter/workspace';
 import { emitRemoteCallError } from './run';
 
 function captureErrors() {
@@ -69,17 +65,6 @@ describe('emitRemoteCallError', () => {
 		);
 		expect(cap.lines).toEqual([
 			'error: peer "macbook-pro" disconnected before "tabs_close" responded',
-		]);
-	});
-
-	test('SelfInvocation reports the action', () => {
-		cap = captureErrors();
-		emitRemoteCallError(
-			'self',
-			SelfInvocationError.SelfInvocation({ action: 'tabs_list' }).error,
-		);
-		expect(cap.lines).toEqual([
-			'error: cannot RPC to self for "tabs_list"',
 		]);
 	});
 

@@ -1,651 +1,748 @@
-# Identity comes from `/api/me`, not `id_token`
+# Online grant, local unlock, profile: three concerns, three lifecycles
 
-**Date**: 2026-05-14
-**Status**: Proposed
+**Date**: 2026-05-14 (revised)
+**Status**: Proposed (revision 3; supersedes the in-memory-identity draft of revision 2)
 **Supersedes**:
 - `specs/20260514T154500-id-token-bearing-encryption-keys.md` (the id_token-carries-keys design)
-- `specs/20260514T160000-execute-id-token-and-oob-cli.md` (the Wave 1-4 execution plan based on that design)
-**Composes with**: `specs/20260514T120000-machine-auth-oob-clean-break.md` (the OOB CLI flow; this spec adjusts the persisted shape it writes from 4 fields to 3)
+- `specs/20260514T160000-execute-id-token-and-oob-cli.md` (the Wave 1-4 plan based on that design)
+- `specs/20260514T091255-tokens-only-auth-extract-identity-to-workspace.md` (the WorkspaceIdentityStore variant)
+**Composes with**: `specs/20260514T120000-machine-auth-oob-clean-break.md` (the OOB CLI flow; this spec adjusts the persisted shape the CLI's `~/.epicenter/auth.json` holds)
 
 ## One Sentence
 
 ```
-Three fields persist (access_token, refresh_token, expires_at);
-identity comes from GET /api/me, fetched once per sign-in and cached
-in memory; there is no id_token in the bundle, no JWT-decode dance
-on the client, and no signed envelope carrying capability material.
+There are three concerns, not two: an online grant (server access),
+a local unlock (offline decryption), and a profile (UI labels).
+Each persists where it earns its keep: the grant and the unlock on
+disk in one cell with two clearly-labeled sections; the profile
+in memory only, fetched from /api/me when online.
 ```
 
-This is the cohesion sentence. Anything that does not preserve it belongs in a different spec.
+This is the cohesion sentence. The previous draft tried to split on "tokens vs identity" and broke offline cold-boot. The correct split is on lifecycle and authority, not on the wire shape.
 
-## Why this exists (and why the previous spec doesn't)
+## The journey to this design
 
-The previous spec proposed that the OAuth `id_token` carry a custom `workspace_encryption_keys` claim. Clients would decode the id_token on every read to extract both identity (`{ user: { id, email } }`) and capability material (`{ encryptionKeys }`). The pitch was: one token bundle, decode on read, three storage cells share one arktype, no `/workspace-identity` round-trip.
-
-The pitch is half-true and the half that's true does not require the rest. The genuine wins (no second storage adapter; one decode path; freshness story for identity) hold up. The mechanism (id_token-as-capability-carrier) does not. The critique that surfaced before any code shipped:
+Five proposals preceded this one. Listing them as alternatives considered, with the specific failure mode that eliminated each:
 
 ```
-1. OIDC convention reserves id_token claims for "identity facts about
-   the subject": sub, email, name, picture, auth_time. Not key
-   material. workspace_encryption_keys is not a fact about who the
-   user is. It is a capability we grant the bearer. Putting it inside
-   id_token piggybacks on OIDC's signing infrastructure to deliver
-   something that isn't OIDC. The standard works; we just are not
-   following it.
+1. /workspace-identity (status quo)
+   identity captured at sign-in, never refreshed
+   freshness bug: keys go stale, no recovery path
 
-2. id_tokens have a different "is this sensitive?" cultural assumption
-   than refresh_tokens. Logging middleware, Sentry replays, devtools
-   network panels, OIDC-aware analytics, mobile JWT pretty-printers,
-   and customer-support pasted console output all routinely treat
-   id_tokens as non-sensitive identity data. Persisting one that
-   contains encryption keys widens the data-at-rest leakage surface
-   compared to /workspace-identity (which only returned the keys in
-   an HTTP response body, in memory at sign-in, never persisted).
+2. WorkspaceIdentityStore as a second package (spec 20260514T091255)
+   adds a parallel store with its own attach/detach lifecycle
+   over-engineered; the smell it attacked dissolved at a different layer
 
-3. The signature does not earn its keep. The previous spec's own
-   JSDoc on `decodeIdTokenClaims` tells the reader: "do not verify
-   this signature; TLS already authenticates the issuer and the
-   token never leaves this client." A signed envelope only earns its
-   keep when a relying party trusts the issuer by signature instead
-   of by transport. We are the only consumer of our own id_tokens.
+3. id_token-bearing encryption keys (spec 20260514T154500)
+   identity rides in id_token's claims; one-cell, decode-on-read
+   OIDC abuse: keys are capability material, not identity facts
+   leakage surface widens: loggers treat id_tokens as non-sensitive
+   signature theater: client decodes but does not verify
 
-4. The "freshness on every refresh" pitch overstates the problem.
-   The previous design solved a specific bug: identity captured once
-   at sign-in and never updated. The honest fix is "fetch identity
-   when you need it and cache for the session," which is what every
-   non-OIDC OAuth API does. It does not require welding identity's
-   rotation cadence to access-token rotation cadence.
+4. /api/me + in-memory-only identity (revision 2 of THIS spec)
+   tokens persist; identity fetched on cold boot
+   offline cold-boot breaks: daemon cannot decrypt local Yjs data
+   loading-as-failure-mode: long network outage looks like infinite loading
+
+5. /api/me + bundled identity (Option B "charitable")
+   tokens and identity in one cell, same shape as today
+   freshness fix via cold-boot refresh
+   conceptually muddy: bundles "what's needed for the server" with
+   "what's needed for offline decrypt" with "what UI shows"
 ```
 
-The alternative is not "more clever." It is "less clever." We stop trying to make OAuth 2.1 do OIDC's job. Identity comes from a tiny REST endpoint named after what it returns. Tokens stay tokens.
+This proposal is the response to (5)'s muddiness. The mechanical answer is the same one-cell shape, but the conceptual model is sharper.
 
-## The shape
+## The split
 
-### Wire
+```
+ONLINE GRANT
+  what:        server access; the bearer for /api/* and the rotation key
+  fields:      accessToken, refreshToken, accessTokenExpiresAt
+  fetched:     /auth/oauth2/token (sign-in; refresh on 401)
+  persisted:   yes (offline-useless, but needed to call the server when online)
+  refreshed:   on 401 (auto); rotation invisible to callers
+  cleared:     sign-out
 
-```http
-POST /auth/oauth2/token
-Content-Type: application/x-www-form-urlencoded
-grant_type=authorization_code&code=...&code_verifier=...&client_id=...
+LOCAL UNLOCK
+  what:        device capability to decrypt local Yjs data without the server
+  fields:      userId, encryptionKeys
+  fetched:     /api/me (sign-in; cold-boot when online)
+  persisted:   yes (offline cold-boot reads this to decrypt)
+  refreshed:   /api/me on cold-boot when online; updated only if keys changed
+  cleared:     sign-out, OR same-user guard mismatch on next /api/me
 
-→ 200 OK
-{
-  "access_token":  "eyJ...",   // JWT, sub=userId, scope, exp
-  "refresh_token": "abc...",   // opaque rotation key
-  "expires_in":    3600,
-  "token_type":    "bearer"
-}
+PROFILE
+  what:        UI display labels for the human (email; future: name, avatar)
+  fields:      email
+  fetched:     /api/me (sign-in; cold-boot when online)
+  persisted:   NO (memory only; cold-boot offline degrades to generic label)
+  refreshed:   /api/me on cold-boot when online
+  cleared:     sign-out, process exit
 ```
 
-If Better Auth still returns `id_token` because `openid` is in the granted scope set, the client discards it. We do not negotiate the field out of the response in this spec; that is a downstream cleanup once we are sure no client cares.
+The asymmetric move: refuse to persist email even though we could. The reason is policy-by-construction, not byte-counting. Drawing the line at "disk holds device capability material, nothing decorative" means future contributors do not face "is this OK to persist?" debates each time a UI feature wants a label cached.
 
-```http
-GET /api/me
-Authorization: Bearer <access_token>
-
-→ 200 OK
-{
-  "user": { "id": "...", "email": "..." },
-  "encryptionKeys": [
-    { "version": 1, "userKeyBase64": "..." },
-    { "version": 2, "userKeyBase64": "..." }
-  ]
-}
-```
-
-This is the renamed `/workspace-identity`. Same handler shape, same `resolveBearerIdentity` resolver, same `deriveUserEncryptionKeys` injection. The new path puts it under `/api/*` where every other protected resource lives.
-
-### Persisted on the client
+## Persisted shape
 
 ```ts
+// packages/auth/src/auth-types.ts
+
 export const OAuthTokenGrant = type({
   '+': 'delete',
   accessToken:           'string',
   refreshToken:          'string',
   accessTokenExpiresAt:  'number',
 });
+export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
+
+export const LocalUnlockBundle = type({
+  '+': 'delete',
+  userId:          'string',
+  encryptionKeys:  EncryptionKeys,
+});
+export type LocalUnlockBundle = typeof LocalUnlockBundle.infer;
+
+export const PersistedAuth = type({
+  '+': 'delete',
+  grant:  OAuthTokenGrant,
+  unlock: LocalUnlockBundle,
+});
+export type PersistedAuth = typeof PersistedAuth.infer;
 ```
 
-Three fields. Flat. No nesting. No `identity` peer. No `idToken`. Browser localStorage, extension `chrome.storage.local`, and the CLI's `~/.epicenter/auth.json` all validate against this exact arktype.
+One cell. Two sections. The browser persists this to localStorage; the extension to chrome.storage.local; the CLI to `~/.epicenter/auth.json` (mode 0o600). All three storage cells validate against the same arktype.
 
-### Held in memory (not persisted)
+`OAuthSession` (today's `{ tokens, identity }`) is deleted; this is a clean break, not a rename.
+
+## Persisted storage contract
 
 ```ts
+type PersistedAuthStorage = {
+  get(): PersistedAuth | null;
+  set(value: PersistedAuth | null): void | Promise<void>;
+  watch?(fn: (value: PersistedAuth | null) => void): () => void;
+};
+```
+
+`watch` is optional because the CLI file store has one process owner. Browser and extension stores must provide it:
+
+```
+Browser localStorage      createPersistedState.watch
+Extension chrome.storage  createStorageState.watch
+CLI auth.json             no watch hook
+```
+
+`createOAuthAppAuth` treats external storage changes as authoritative. If another tab or extension context clears the cell, this instance clears `grant`, `unlock`, `profile`, and moves to `signed-out`. If another context writes a cell for the same `unlock.userId`, this instance adopts the new grant and unlock, drops profile to `null`, marks profile freshness as `missing`, and runs the online verification path before attaching a bearer again. If another context writes a cell for a different `unlock.userId`, this instance drops profile and forces `signed-out` instead of serving two users in one live runtime.
+
+## Profile is memory-only
+
+```ts
+// packages/auth/src/auth-contract.ts (or co-located with createOAuthAppAuth)
+
+type Profile = {
+  email: string;
+  // Future: name, avatar; everything here is fetched, never persisted.
+};
+```
+
+There is no `Profile` arktype because we never validate it from disk. It is built from `/api/me` responses and lives inside the running `createOAuthAppAuth` instance.
+
+## AuthState
+
+```ts
+type ProfileStatus = 'missing' | 'refreshing' | 'fresh' | 'stale';
+
 type AuthState =
   | { status: 'signed-out' }
-  | { status: 'loading' }                                     // NEW: tokens on disk;
-                                                              // /api/me not yet returned
-  | { status: 'signed-in';       identity: WorkspaceIdentity }
-  | { status: 'reauth-required'; identity: WorkspaceIdentity | null };
-                                                              // identity is null when
-                                                              // reauth-required happens
-                                                              // across process restart
-                                                              // (no in-memory cache to
-                                                              // preserve "last known good")
-
-type WorkspaceIdentity = { user: { id: string; email: string }; encryptionKeys: EncryptionKeys };
+  | {
+      status: 'signed-in';
+      unlock: LocalUnlockBundle;
+      profile: Profile | null;
+      profileStatus: ProfileStatus;
+    }
+  | {
+      status: 'reauth-required';
+      unlock: LocalUnlockBundle;
+      profile: Profile | null;
+      profileStatus: ProfileStatus;
+    };
 ```
 
-The `loading` variant is new vs the id_token spec. There, tokens-present implied identity-present because identity was bundled in the same blob. Here, cold boot reads tokens synchronously, then fires `GET /api/me`; the gap between those two events is a real state worth naming. UIs treat `loading` as "show a spinner; don't render the sign-in form."
-
-`reauth-required.identity` is now `WorkspaceIdentity | null`. Within a running process, it preserves the last known good identity (so the UI can say "Welcome back, alice@example.com, your session expired"). After a process restart with expired refresh_token, in-memory identity is gone and the field is null (the UI says "Your session expired, please sign in again" without a username). This is a minor UX regression vs the id_token spec and we accept it; persisting identity hints to disk would re-introduce the dual-write problem the spec was written to eliminate.
-
-`WorkspaceIdentity` shape is unchanged from today. Provenance changes: `identity` was previously embedded in a persisted `OAuthSession` blob; now it lives only in the running `createOAuthAppAuth` instance's memory. Each fresh process fetches `/api/me` once on the first signed-in transition and caches the result for the lifetime of that instance.
-
-## Trust model (unchanged, stated explicitly)
+Three variants. `unlock` is always present in `signed-in` and `reauth-required` because we persist it; `profile` is `null` until `/api/me` succeeds at least once. UIs gate on `unlock` for "can I decrypt?" and on `profile?.email` for display. `profileStatus` is the typed home for the freshness bit:
 
 ```
-Server derives per-user encryption keys from a server secret.    (unchanged)
-Server can decrypt any user's data.                              (unchanged)
-Client receives keys via TLS-protected HTTP response body.       (unchanged shape;
-                                                                  previously called
-                                                                  /workspace-identity)
+missing     no /api/me response has loaded in this runtime
+refreshing  /api/me is in flight
+fresh       /api/me succeeded for the current unlock/grant epoch
+stale       a later /api/me attempt failed after a profile had loaded
 ```
 
-This spec is a packaging cleanup, not a security model change. It is not a stepping stone to zero-knowledge encryption; that is a separate, larger product decision tracked in the previous spec's "Out of scope" section.
+No `loading` state. Disk reads are synchronous in browsers (localStorage) and fast in Node (`fs.readFile` of a tiny JSON file); the transition from "nothing in memory" to "signed-in" happens in one tick. Offline-and-cannot-unlock would be a degenerate state (unlock cell missing) that we map to `signed-out`, forcing re-auth.
 
-## Architecture
+`profileStatus` is not a fourth auth state. It is metadata about the online profile check. Local workspace construction can proceed with `unlock` while `profileStatus` is `missing`; bearer-bearing network calls cannot.
 
-### Server side: `apps/api/src/app.ts`
+## Network gate
 
-Add a new route:
-
-```ts
-import { resolveRequestWorkspaceIdentity } from './auth/resource-boundary';
-import { deriveUserEncryptionKeys } from './auth/encryption';
-import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
-
-app.get(
-  '/api/me',
-  describeRoute({
-    description: 'Return the authenticated user and their workspace encryption keys',
-    tags: ['auth'],
-  }),
-  async (c) => {
-    const { data: identity, error } = await resolveRequestWorkspaceIdentity(
-      c,
-      deriveUserEncryptionKeys,
-    );
-    if (error) return createOAuthUnauthorizedResourceResponse(c, error);
-    return c.json(identity);
-  },
-);
-```
-
-`/workspace-identity` stays alive for one release window so existing clients (if any) do not break. The previous spec's Wave 4a env-flagged 503 pattern still applies, with the endpoint flipped from "alive" to "gone" once telemetry says no one calls it.
-
-There is no change to `create-auth.ts`. No `customIdTokenClaims` hook. No new `customAccessTokenClaims` hook. The plugin set stays exactly as it is (jwt + oauthProvider). The ES256 signing already landed; nothing new there.
-
-There is no change to `apps/api/src/auth/resource-boundary.ts`; the `resolveRequestWorkspaceIdentity` helper is the same one `/workspace-identity` already uses. The new `/api/me` route follows the `/workspace-identity` handler pattern (call the resolver directly, which enforces bearer + `workspaces:open` scope internally), not the `/api/health` pattern (`app.use('/api/health', requireOAuthUser)` middleware). Both patterns coexist in `app.ts` today; we use the resolver-direct pattern because we need encryption keys, not just the lean user object.
-
-### Server side: id_token issuance
-
-`@better-auth/oauth-provider` issues an id_token whenever the granted scope set includes `openid`. Today every Epicenter client's scope set includes `openid` (it is in `EPICENTER_TRUSTED_OAUTH_CLIENTS` and re-asserted in the `oauthProvider({ scopes: [...] })` registration). The id_token contains standard OIDC claims (sub, email, iss, aud, exp, iat, optionally name and picture from profile scope) and nothing custom because `customIdTokenClaims` is not configured.
-
-The client ignores the field. This is the cleanest cut: we do not modify scope handling, do not break OIDC discovery, do not need to coordinate a client-and-server scope change across releases. We just stop reading the id_token. Some bandwidth is wasted on every `/oauth2/token` response (~500 bytes for the unused field); negligible compared to the simpler client code and forward-compat headroom.
-
-Future cleanup spec, if we are sure we never want OIDC: drop `openid` from `trustedOAuthScopes` and from the plugin's `scopes` array. Not in this spec.
-
-### Client side: `@epicenter/auth`
-
-The public shape collapses:
+`auth.fetch` and `auth.openWebSocket` only attach a bearer after the current runtime has confirmed `/api/me` for the current persisted cell. The rule:
 
 ```
-Before (id_token spec):
-  @epicenter/auth/
-    auth-types.ts                      OAuthTokenGrant (4 fields) + IdTokenClaims arktype
-    decode-id-token.ts                 NEW: ~30 lines; decode + assert
-    create-oauth-app-auth.ts           rename sessionStorage -> tokensStorage; derive
-                                       identity from decoded id_token; same-user guard
-                                       on claims.sub equality
-    auth-state-store.ts                identities and keys diffed on token-bundle change
-    auth-errors.ts                     gains IdTokenInvalid variant
-    node/machine-tokens-store.ts       file backend persists 4 fields
-
-After (this spec):
-  @epicenter/auth/
-    auth-types.ts                      OAuthTokenGrant (3 fields). WorkspaceIdentity stays.
-    create-oauth-app-auth.ts           rename sessionStorage -> tokensStorage; fetch
-                                       identity from GET /api/me; same-user guard moves
-                                       to identity-fetch step
-    auth-state-store.ts                identities diffed when /api/me returns a different user
-    node/machine-tokens-store.ts       file backend persists 3 fields
+Before attaching Authorization or bearer.<token>:
+  1. if profileStatus === 'fresh', continue
+  2. if grant is expired or within refresh skew, refresh grant first
+  3. call GET /api/me with the fresh-enough access token
+  4. if /api/me returns the same userId:
+       update unlock if keys changed
+       set profile
+       profileStatus = 'fresh'
+       attach bearer and continue
+  5. if /api/me returns a different userId:
+       clear persisted cell
+       profile = null
+       state = signed-out
+       do not attach bearer
+  6. if /api/me fails for network/server reasons:
+       keep unlock for local decrypt
+       profileStatus = profile ? 'stale' : 'missing'
+       do not attach bearer
 ```
 
-Deleted vs the id_token spec:
+This is the fix for the sync race. Cold boot can mount encrypted local Yjs data immediately, including offline. Collaboration and API requests wait until the same-user guard has passed in this runtime. If the device is offline, no bearer is attached, so the network path fails closed while local-first data remains usable.
+
+## Server endpoints
 
 ```
-decode-id-token.ts                     never written
-IdTokenClaims arktype                  never declared
-IdTokenInvalid error variant           never added
-the "decode but do not verify" JSDoc comment that documented the footgun
-the same-user guard's reliance on claims.sub
-the pairwiseSecret load-bearing comment in create-auth.ts (no longer load-bearing)
-the customIdTokenClaims hook in create-auth.ts (never added)
-the workspace_encryption_keys claim shape
-the deriveUserEncryptionKeys parameter on createAuth({ ... })
-the spec's V3, V4, V5 verification of jwt() plugin behavior beyond ES256
+POST /auth/oauth2/token   standard OAuth 2.1 token response
+                          no server-side wrapping
+                          { access_token, refresh_token, expires_in,
+                            token_type, scope, id_token? }
+
+GET  /api/me              { user: { id, email }, encryptionKeys }
+                          single identity refresh point;
+                          inherits bearer + workspaces:open from
+                          resolveRequestWorkspaceIdentity
 ```
 
-ES256 still earns its keep because the JWT access_token uses it for stateless validation at the resource server. We keep that.
+Two endpoints, both standard. No id_token claim hook. No customAccessTokenClaims. Better Auth may still include `id_token` when `openid` is granted; the client ignores it and never persists it. The `/api/me` route already shipped in commit `9f32ea0bc` and earns its keep in this design as the identity refresh point.
 
-### Lifecycle: sign-in (browser, cold)
+`/workspace-identity` stays alive as a legacy alias until Wave 4 deletes it.
 
-```
-1. user clicks sign-in                                state: signed-out
-2. auth.startSignIn()
-     - launcher runs OAuth PKCE flow
-     - /auth/oauth2/token returns { access_token, refresh_token, expires_in }
-     - tokensStorage.set({ accessToken, refreshToken, accessTokenExpiresAt })
-3. state transitions: signed-out -> loading
-4. authClient.fetchIdentity()
-     - GET /api/me with the new bearer
-     - returns { user, encryptionKeys }
-     - same-user guard: if a prior identity was cached (e.g., user just
-       finished a reauth-required loop), compare prior.user.id to new.user.id;
-       on mismatch, drop prior, no guard violation (the new identity wins).
-     - store identity in memory
-5. state transitions: loading -> signed-in
-6. UI unblocks
-```
+## Lifecycles
 
-One round-trip after the OAuth dance. The user has just clicked "sign in" and waited for the OAuth redirect; one more `GET` is invisible. Same shape as today's `/workspace-identity` call. Same network cost.
-
-### Lifecycle: cold boot (existing user)
+### Sign-in (cold)
 
 ```
-1. tokensStorage.get() -> { accessToken, refreshToken, accessTokenExpiresAt }
-2. derive initial state:
-     - tokens missing                  -> signed-out (end)
-     - tokens present                  -> loading
-3. fetch /api/me with the access_token
-4. resolve final state:
-     - 200 + payload                   -> signed-in
-     - 401, refresh succeeds, retry 200-> signed-in
-     - 401, refresh fails (refresh_token expired or revoked)
-                                       -> reauth-required (identity: null)
-     - any other failure (network)    -> stay loading; retry policy TBD
-                                          (likely: exponential backoff +
-                                          surface offline state to UI)
-5. UI renders
+1. user clicks "sign in"
+2. OAuth PKCE dance: redirect, consent, code
+3. POST /auth/oauth2/token              → { access_token, refresh_token, expires_in }
+4. write grant cell                       (3 fields)
+5. GET /api/me                          → { user: { id, email }, encryptionKeys }
+6. write unlock cell                      (userId + encryptionKeys; NOT email)
+7. set memory profile                     (email)
+8. same-user guard fires:
+   - if prior unlock cell existed AND userId differs, treat as fresh sign-in
+     (drop prior memory; new identity wins; old workspace data is unreachable
+     because the key derivation differs)
+9. state = signed-in
 ```
 
-The `loading` sub-state is brief in the happy path: the time between reading tokens and `/api/me` completing. UIs gate on `state.status === 'signed-in'`; in `loading`, they render a neutral spinner, not the sign-in form. On a slow or failing network, `loading` can persist; the consumer decides whether to retry, time out, or surface an offline UI.
+Two round-trips on sign-in (token, then me). This is the rare event; the cost is invisible.
 
-### Lifecycle: refresh
+### Cold boot
+
+```
+1. read persisted cell                    (one file; both sections)
+   - cell absent       → state = signed-out (end)
+   - cell present      → continue
+2. state = signed-in immediately
+   (unlock has userId + encryptionKeys; workspace can decrypt local Yjs;
+    profile = null and profileStatus = missing at this point;
+    UI shows generic account label)
+3. if online:
+   a. if access_token is stale, refresh the grant first
+      (touches grant cell only)
+   b. GET /api/me
+      success → update unlock cell if encryptionKeys changed;
+                set memory profile.email;
+                profileStatus = fresh;
+                same-user guard: if response.user.id !== unlock.userId,
+                  wipe cell, drop profile, state = signed-out (force re-auth)
+      failure → keep state = signed-in;
+                profileStatus = profile ? stale : missing
+4. UI renders
+```
+
+Offline cold-boot stops at step 2; data is decryptable; the user can read and write to local Yjs blobs. Reconciliation happens when the device comes online.
+
+### Refresh (on 401 during a fetch)
 
 ```
 1. auth.fetch hits a 401
-2. force-refresh access_token via /auth/oauth2/token
-3. new access_token persists; refresh_token rotates
-4. identity STAYS THE SAME in memory; we do NOT re-fetch /api/me
-   (token rotation does not change who the user is)
-5. retry the original request
+2. force-refresh: POST /auth/oauth2/token grant_type=refresh_token
+3. response → write grant cell (3 fields)
+4. unlock cell untouched
+5. profile untouched
+6. retry the original request
 ```
 
-This is the key simplification vs the id_token design. There, every refresh produced a fresh id_token, which the client decoded and diffed against cached identity, possibly triggering identity-change events. Here, the refresh path touches tokens only. Identity is independent.
+Refresh is purely an online-grant concern. It does not write or read unlock; it does not touch profile.
 
-The same-user guard does NOT fire on refresh. It fires only on `/api/me` calls, which happen on sign-in and on cold-boot. Refresh is "I am still me; give me a new access_token." Same-user is not in scope.
-
-Mid-session identity changes (email changed in another tab, encryption keys rotated server-side) are not propagated by token refresh. They propagate on the next cold boot or sign-in. This matches user expectation: an email change in another tab does not silently appear in this tab without a page reload.
-
-### Lifecycle: reauth-required
-
-Two flavors, depending on whether the process was running when the refresh failed:
-
-```
-In-process reauth (refresh fails during an active session):
-  1. /auth/oauth2/token refresh returns 401
-  2. state -> reauth-required, identity preserved from memory
-     (UI shows "Welcome back alice@example.com, your session expired")
-  3. user re-signs-in
-  4. new tokens arrive; new /api/me call returns next identity
-  5. same-user guard at /api/me response:
-       next.user.id === prior.user.id -> state -> signed-in (continuous)
-       next.user.id !== prior.user.id -> drop prior identity, treat as
-                                          fresh signed-in (this is a user
-                                          switch, not a user-swap attack)
-
-Cross-process reauth (cold boot with expired refresh_token):
-  1. tokensStorage.get() -> tokens present
-  2. state -> loading
-  3. /api/me -> 401 -> refresh -> refresh fails
-  4. state -> reauth-required, identity = null
-     (UI shows "Your session expired, please sign in again" without a name)
-  5. user re-signs-in
-  6. fresh tokens + /api/me
-  7. state -> signed-in (no prior identity to compare against)
-```
-
-The same-user guard moves from "compare two id_token decodes on every refresh" to "compare two /api/me responses on sign-in only." Same intent, narrower trigger, simpler to reason about.
-
-### Lifecycle: sign-out
+### Sign-out
 
 ```
 1. auth.signOut()
 2. POST /auth/oauth2/revoke with refresh_token (RFC 7009)
-3. tokensStorage.set(null)
-4. identity dropped from memory
-5. state -> signed-out
+3. clear persisted cell (both sections, atomic)
+4. clear memory profile
+5. state = signed-out
 ```
 
-### Tab sync
-
-The tokens cell is the only persisted thing. Browser tabs cross-sync via `localStorage` storage events (already done by `createPersistedState`). Each tab decodes the new tokens and fetches its own `/api/me` after receiving the cross-tab change.
-
-In-memory identity is per-tab, never synchronized. This is the same cost-shape as fetching identity once on each cold boot. Two tabs equals two `/api/me` calls per user-session. Negligible.
-
-## Implementation plan
-
-Follows Build, Prove, Remove.
-
-### Wave 1 (server, additive): LANDED + one route to add
-
-Four commits already landed on this branch:
+### Reauth-required (refresh fails)
 
 ```
-feat(api): sign JWTs with ES256 for broadest verifier support
-refactor(constants,api): epicenter-cli is a native client with HTTPS callback
-feat(api): /auth/cli-callback page for the CLI OOB authorization-code flow
-feat(api): /api/health endpoint for bearer-liveness probes
+1. /auth/oauth2/token refresh returns 401 (refresh_token expired/revoked)
+2. state = reauth-required, unlock preserved, profile preserved if loaded
+3. UI shows "session expired; signed in as ${profile?.email ?? 'your account'}"
+4. user re-signs-in:
+   - new tokens arrive; new /api/me call
+   - same-user guard at step 5 of sign-in flow handles continuity or swap
 ```
 
-One more commit completes Wave 1:
+## Why each field earns its keep
 
 ```
-feat(api): /api/me endpoint returns user + encryption keys
+grant.accessToken            proves authorization until accessTokenExpiresAt;
+                             sent on every /api/* request;
+                             ~700 bytes JWT (ES256 + standard claims)
+
+grant.refreshToken           obtains the next accessToken when this one expires;
+                             opaque; ~32 bytes; the survival key
+
+grant.accessTokenExpiresAt   skip a refresh round-trip when accessToken is fresh;
+                             also signals "you might be offline a while";
+                             number
+
+unlock.userId                same-user guard (if /api/me returns different user,
+                             this device is now serving a different account);
+                             binds encryptionKeys to a subject;
+                             string
+
+unlock.encryptionKeys        decrypt local Yjs blobs; the whole reason unlock
+                             persists at all;
+                             array of { version, userKeyBase64 }
+
+profile.email (memory only)  UI display in account popover, sign-out confirm,
+                             share dialogs; absent on cold-boot offline;
+                             string
 ```
 
-Files to touch:
+What does NOT earn its keep:
 
 ```
-apps/api/src/app.ts        EDIT: register app.get('/api/me', ...) using the
-                                 existing resolveRequestWorkspaceIdentity helper
-                                 and deriveUserEncryptionKeys.
+unlock.validatedAt           a TOFU receipt for "when did /api/me last confirm
+                             these keys?"; useful only if we have a policy like
+                             "refuse offline decrypt after 30 days unvalidated."
+                             We don't have that policy. YAGNI.
 
-apps/api/src/auth/resource-boundary.test.ts  (existing) already covers the
-                                              resolver shape; no test change
-                                              required for the rename.
+email on disk                decorative; not capability material; cold-boot
+                             offline UI degrades to "Account" gracefully.
+                             Persisting it sets a precedent for caching more
+                             profile fields, which is the slippery slope this
+                             spec exists to prevent.
 
-apps/api/src/api-me.test.ts   NEW: integration test asserting GET /api/me with
-                                   a valid scoped bearer returns the identity
-                                   payload; 401 without bearer; 403 without
-                                   workspaces:open scope.
+id_token                     dead. Federation roadmap is empty; the signed
+                             envelope proves nothing TLS hadn't already.
+
+OAuthSession bundle          deleted. The "two concerns, one blob" shape was
+                             what caused the freshness bug to begin with.
 ```
 
-Acceptance: `bun --cwd apps/api run typecheck` clean; `bun --cwd apps/api test` green. Manual curl with a real bearer optional.
+## Same-user guard
 
-`/workspace-identity` stays alive; the new route is purely additive.
-
-### Wave 2 (client schema, one PR): the schema change
+The guard fires in two places, both at /api/me response time:
 
 ```
-packages/auth/src/auth-types.ts                EDIT: OAuthTokenGrant drops to 3 fields;
-                                                     delete OAuthSession entirely.
-packages/auth/src/auth-contract.ts             EDIT: JSDoc on AuthState clarifies
-                                                     that identity is in-memory,
-                                                     not persisted.
-packages/auth/src/auth-state-store.ts          EDIT: state derivation now operates
-                                                     on token-presence + in-memory
-                                                     identity, not on a bundled blob.
-packages/auth/src/create-oauth-app-auth.ts     EDIT: rename sessionStorage ->
-                                                     tokensStorage. Replace
-                                                     loadIdentity (POST
-                                                     /workspace-identity) with
-                                                     fetchIdentity (GET /api/me).
-                                                     replaceSession's same-user guard
-                                                     now diffs identity.user.id from
-                                                     the previous /api/me result, not
-                                                     from a decoded id_token.
-packages/auth/src/auth-errors.ts               EDIT: gains FetchIdentityFailed variant;
-                                                     no IdTokenInvalid variant.
-packages/auth/src/index.ts                     EDIT: drop OAuthSession export; keep
-                                                     OAuthTokenGrant, WorkspaceIdentity,
-                                                     AuthClient, AuthState.
-packages/auth/src/contract.test.ts             EDIT: cover the new fetch-identity-after-
-                                                     sign-in path; cover same-user guard
-                                                     after re-sign-in.
+Place 1: sign-in completes
+  prior unlock cell exists AND response.user.id !== unlock.userId
+    → treat as fresh sign-in: drop prior unlock; new unlock wins
+    (the user is signing in as a different account on this device;
+     prior workspace data is unreachable, which is intentional)
 
-packages/auth/src/node/machine-tokens-store.ts NEW (renamed from machine-session-store):
-                                                     persists OAuthTokenGrant (3 fields)
-                                                     to ~/.epicenter/auth.json with mode
-                                                     0o600. Atomic-rename write, corrupt
-                                                     blob -> Ok(null) + warn,
-                                                     permissions-too-open refused load
-                                                     with chmod hint.
-packages/auth/src/node/machine-session-store.ts        DELETE
-packages/auth/src/node/machine-session-store.test.ts   DELETE
-packages/auth/src/node/machine-tokens-store.test.ts    NEW
-packages/auth/src/node.ts                              EDIT: export loadMachineTokens,
-                                                              saveMachineTokens; drop
-                                                              loadMachineSession.
+Place 2: cold-boot online refresh
+  response.user.id !== unlock.userId
+    → wipe persisted cell; drop profile; state = signed-out
+    (the persisted unlock is stale OR an attacker injected refresh_token
+     for a different user; either way, force re-auth)
 ```
 
-Acceptance: `bun --cwd packages/auth typecheck` clean; `bun --cwd packages/auth test` green. Browser apps and CLI will not run yet because their call sites still use the old `sessionStorage` field name; Wave 3 fixes them.
+The guard moved from "compare two id_token decodes" to "compare /api/me response.user.id to cached unlock.userId." Simpler placement, same intent.
 
-Cross-checks after acceptance:
+## Comparison to alternatives considered
+
+| Concern | id_token spec | C.2 in-memory | Option B bundle | THIS spec |
+| --- | --- | --- | --- | --- |
+| Offline cold-boot | works (id_token decode) | BREAKS | works | works |
+| OIDC abuse | yes (custom claim) | no | no | no |
+| Signature theater | yes (no verify) | no | no | no |
+| JWT decode dance | yes | no | no | no |
+| Persisted cells | 1 | 1 | 1 | 1 (two sections) |
+| Persists email | yes (in JWT) | no | yes | no (memory only) |
+| Refresh writes identity | yes (every refresh) | n/a | yes (bundled) | no (tokens only) |
+| Round-trips on sign-in | 1 | 2 | 1 (today) / 2 (revised) | 2 |
+| Same-user guard | sub equality on JWT | n/a | replaceSession | /api/me response |
+| AuthState variants | 3 | 4 | 3 | 3 |
+| Profile cache slippery slope | mitigated by JWT contract | n/a | not addressed | drawn at unlock |
+
+The 2 round-trips on sign-in (token, then /api/me) are the price of separating the OAuth dance from the identity surface. We pay this because:
+- OAuth 2.1's token endpoint has a standard response shape; we do not extend it
+- Sign-in is rare; cold-boot online is rarer-still per-user
+- Cold-boot offline does not pay this cost at all
+
+## More radical options considered (and rejected)
 
 ```
-grep -rn 'OAuthSession' packages/ apps/ | grep -v node_modules
-# Expect zero matches in packages/auth.
+A. Drop OAuth entirely; use Better Auth's email/password endpoints
+   rejected: cross-origin bearer issuance is OAuth's actual job;
+   whispering.app cannot share session cookies with api.epicenter.so
+   in modern browser privacy modes (Safari ITP, Chrome's cookie phaseout).
 
-grep -rn 'machine-session-store\|loadMachineSession' packages/ apps/
-# Expect zero matches.
+B. Single long-lived bearer; no refresh
+   rejected: short-lived access + rotating refresh is real defense in depth;
+   a leaked access token expires in ~1 hour, vs ~30 days for a leaked bearer.
 
-grep -rn 'IdTokenClaims\|decodeIdTokenClaims' packages/ apps/
-# Expect zero matches. The id_token spec's helper never existed in this design.
+C. Encryption keys derived client-side from the access_token's sub
+   rejected: requires the server secret to be on the client (it isn't);
+   true zero-knowledge encryption requires a user-typed password or
+   WebAuthn PRF; out of scope.
+
+D. Per-workspace data keys; LocalUnlockBundle is a set of receipts
+   rejected for THIS spec; promising as a follow-up.
+   The receipt shape would be:
+     { userId, workspaceId, encryptedWorkspaceDataKey, keyVersion }
+   Wins: smaller blast radius per leak; collaboration-ready; honest authority.
+   Costs: crypto migration on existing data; encryption layer contract change.
+   Defer to a follow-up spec after this lands.
+
+E. Encrypt the persisted cell with a device key
+   rejected: device key needs to be retrievable on cold-boot without user
+   input, which means storing it... where? OS keychain reintroduces the
+   libsecret-on-Linux fragility the OOB spec rejected.
+   At-rest encryption is the OS's job (FileVault, BitLocker, LUKS).
+
+F. Wrap /auth/oauth2/token to inline identity in the response
+   rejected: extending OAuth's wire shape ties the auth client to a
+   non-standard token endpoint; the round-trip saved on sign-in is rare
+   and invisible; the standardness we keep is valuable.
+
+G. Persist email "in case we want offline UI to show it"
+   rejected: the slippery-slope concern is real (avatar next, then
+   recent workspaces, then theme preferences); the UX cost of "Account"
+   vs "alice@..." on cold-boot offline is minor.
+
+H. Persist unlock.validatedAt for future TOFU policy
+   rejected: YAGNI; add the field when the policy lands.
 ```
 
-### Wave 3 (adoption)
+## Architecture and files to touch
 
-Each consumer of `@epicenter/auth` and `@epicenter/auth-svelte`:
+### Server side (already landed except Wave 4)
 
 ```
-@epicenter/auth-svelte                  rename sessionStorage -> tokensStorage in
-                                        internal config; verify exports.
+LANDED (Wave 1):
+  apps/api/src/auth/create-auth.ts                ES256 jwt() configuration
+  apps/api/src/auth-pages/cli-callback-page.tsx   OOB callback page
+  apps/api/src/auth-pages/scripts/cli-callback.ts page script
+  apps/api/src/auth-pages/styles.ts               .code-block CSS
+  apps/api/src/auth-pages/index.tsx               renderCliCallbackPage export
+  apps/api/src/app.ts                             /auth/cli-callback route,
+                                                  /api/me route,
+                                                  /api/health route,
+                                                  legacy /workspace-identity alias
+  packages/constants/src/oauth.ts                 epicenter-cli runtime: native,
+                                                  HTTPS callback redirect
+  apps/api/src/auth/trusted-oauth-clients.ts      toOAuthClientType two-arm switch
+  apps/api/src/api-me.test.ts                     /api/me boundary tests
+  apps/api/src/auth-pages/cli-callback-page.test.ts callback page tests
+  apps/api/src/health.test.ts                     /api/health tests
+
+WAVE 4 (cleanup):
+  apps/api/src/app.ts                             delete /workspace-identity route
+                                                  after one release of soak time
+```
+
+### Client side (Wave 2)
+
+```
+packages/auth/src/auth-types.ts                   EDIT
+  - keep OAuthTokenGrant (already 3 fields)
+  - NEW: LocalUnlockBundle arktype (userId + encryptionKeys)
+  - NEW: PersistedAuth arktype (grant + unlock)
+  - DELETE: OAuthSession entirely
+
+packages/auth/src/auth-contract.ts                EDIT
+  - AuthState gains 'signed-in' and 'reauth-required' carrying
+    { unlock: LocalUnlockBundle; profile: Profile | null; profileStatus }
+  - add Profile and ProfileStatus public types
+  - DELETE WorkspaceIdentity from the public AuthState surface
+    (it stays internal as a helper type for /api/me responses)
+
+packages/auth/src/auth-state-store.ts             EDIT
+  - state derivation operates on (cellPresent, profile, profileStatus)
+  - state-change events fire on profile load and on unlock change
+
+packages/auth/src/create-oauth-app-auth.ts        EDIT (significant rewrite)
+  - rename config field: sessionStorage -> persistedAuthStorage
+  - one storage adapter; reads/writes PersistedAuth shape
+  - persistedAuthStorage.watch is optional; browser/extension call sites must
+    pass it through so cross-tab sign-out and same-user guard wipes propagate
+  - fetchProfile(): GET /api/me, returns { user, encryptionKeys }
+  - same-user guard at fetchProfile response time
+  - auth.fetch/openWebSocket refresh expired grants before fetchProfile and do
+    not attach a bearer until profileStatus is fresh for the current cell
+  - refresh path writes only the grant section
+  - sign-in path writes the cell atomically (both sections)
+
+packages/auth/src/auth-errors.ts                  EDIT
+  - add FetchProfileFailed variant (non-fatal in offline cold-boot)
+  - keep StartSignInFailed, SignOutFailed
+
+packages/auth/src/require-identity.ts             EDIT
+  - DELETE; consumers should reach for state.unlock or state.profile
+    directly per their need
+
+packages/auth/src/require-session.ts              EDIT (or delete)
+  - re-evaluate; today bundles identity + transport methods
+  - if kept, becomes "ensure unlock present; return unlock + transport"
+
+packages/auth/src/index.ts                        EDIT
+  - drop OAuthSession and WorkspaceIdentity exports
+  - add LocalUnlockBundle, Profile, PersistedAuth
+  - drop requireIdentity export (if deleted)
+
+packages/auth/src/contract.test.ts                EDIT
+  - cover three-state machine
+  - cover sign-in writes both sections
+  - cover refresh writes only grant
+  - cover cold-boot signed-in with profile=null
+  - cover same-user guard on /api/me response
+  - cover storage watch: external clear signs out this runtime
+  - cover network gate: cold boot can expose unlock immediately, but fetch and
+    openWebSocket do not attach a bearer until /api/me confirms same user
+  - cover expired grant ordering: refresh grant before first /api/me
+  - cover profileStatus missing/fresh/stale transitions
+
+packages/auth/src/node/machine-tokens-store.ts    NEW (renamed from machine-session-store)
+  - persists PersistedAuth (grant + unlock; no profile)
+  - file path: ~/.epicenter/auth.json mode 0o600
+  - atomic write via .tmp + rename
+  - corrupt-blob -> Ok(null) + warn
+  - permissions-too-open -> refuse load with chmod hint
+  - MachineAuthStorageError defined here
+
+packages/auth/src/node/machine-session-store.ts   DELETE
+packages/auth/src/node/machine-session-store.test.ts  DELETE
+packages/auth/src/node/machine-tokens-store.test.ts  NEW
+packages/auth/src/node.ts                         EDIT
+  - export loadMachineTokens, saveMachineTokens
+  - drop loadMachineSession, saveMachineSession
+```
+
+### Wave 3 (consumer adoption)
+
+```
+packages/auth-svelte                              rename config field;
+                                                  verify exports
 
 apps/whispering, dashboard, honeycrisp,
-apps/opensidian, zhongwen, fuji         EDIT: rename sessionStorage -> tokensStorage
-                                        at the createOAuthAppAuth call site. Verify
-                                        the persisted shape matches OAuthTokenGrant
-                                        (3 fields). None call /workspace-identity.
+apps/opensidian, zhongwen, fuji                   rename sessionStorage ->
+                                                  persistedAuthStorage at the
+                                                  createOAuthAppAuth call site;
+                                                  verify persisted shape
 
-apps/tab-manager                        EDIT: same rename; verify the chrome.storage
-                                        cell key is local:auth.tokens.
+apps/tab-manager                                  same rename; chrome.storage
+                                                  cell key migrates to
+                                                  local:auth.persisted
 
-packages/auth/src/node/oob-launcher.ts  NEW per the OOB spec. Persists 3-field tokens
-                                        from /oauth2/token response. Does not write
-                                        id_token to the file even if Better Auth
-                                        returns one.
-packages/auth/src/node/oob-launcher.test.ts                       NEW
-
-packages/auth/src/node/machine-auth.ts  REPLACE per the OOB spec. New shape:
-                                        loginWithOob, status, logout,
-                                        createMachineAuthClient. Identity from
-                                        /api/me, not from /workspace-identity, not
-                                        from decoded id_token.
-
-packages/cli/src/commands/auth.ts       EDIT: calls loginWithOob, reports identity
-                                        summary from the returned WorkspaceIdentity.
+packages/auth/src/node/oob-launcher.ts            NEW per OOB spec
+                                                  returns OAuthTokenGrant
+                                                  (caller pairs with /api/me
+                                                   to fetch unlock + profile)
+packages/auth/src/node/oob-launcher.test.ts       NEW
+packages/auth/src/node/machine-auth.ts            REPLACE per OOB spec
+  - loginWithOob: tokens + /api/me; write grant + unlock
+  - status: load cell; ping /api/health; decode profile from /api/me on demand
+  - logout: revoke + clear cell
+  - createMachineAuthClient: load cell; build createOAuthAppAuth
+packages/cli/src/commands/auth.ts                 EDIT
+  - call loginWithOob; report identity summary
 ```
-
-Acceptance: typecheck + tests at every layer; manual smoke per the OOB spec's Verification Plan (browser smoke on one app; CLI smoke on macOS + headless SSH + Docker).
 
 ### Wave 4 (cleanup)
 
 ```
-4a. Env-flagged 503 on /workspace-identity (one release of soak time).
-4b. Delete /workspace-identity route from apps/api/src/app.ts.
-4c. If resolveBearerIdentity has no remaining callers after 4b, delete it.
-    (resolveBearerUser stays; it is /api/me's dependency and the bearer
-     middleware's dependency.)
-    Actually: /api/me USES resolveBearerIdentity (because it needs encryption
-    keys, not just user). So resolveBearerIdentity stays. resolveBearerUser
-    stays too. Both earn their keep.
-4d. docs/encryption.md: replace /workspace-identity references with /api/me.
-4e. packages/cli/README.md: document `epicenter auth login` and the three-field
-    file format.
-4f. specs/20260512T111335-post-oauth-audit-remediation.md: prepend "Superseded by
-    20260514T120000 + 20260514T200000" notice on Phase 4.
+apps/api/src/app.ts                               delete /workspace-identity
+                                                  after env-flagged 503 soak
+apps/api/src/auth/resource-boundary.ts            keep resolveBearerIdentity
+                                                  (used by /api/me)
+docs/encryption.md                                update /workspace-identity
+                                                  references to /api/me
+packages/cli/README.md                            document OOB flow + auth.json
+specs/20260512T111335-post-oauth-audit-remediation.md
+                                                  prepend "superseded by ..."
+                                                  notice on Phase 4
 ```
 
-## What this spec does NOT do
+## Migration
 
-These are explicit non-goals so the next reviewer does not mistake omission for oversight:
+Clean break, same as the prior specs. Pre-launch product; zero existing users; the migration is one forced sign-in per tester.
+
+Storage cell keys are renamed so old `OAuthSession`-shaped data does not accidentally validate against the new arktype:
 
 ```
-Adopt zero-knowledge encryption.    Server still derives and knows all keys.
-
-Move tokens to HttpOnly cookies.    Same-origin-XSS surface unchanged.
-
-Drop the OIDC openid scope.         id_token still issues with standard claims.
-                                    Client ignores it. Forward-compat headroom.
-
-Change OAuth ceremony.              PKCE, refresh rotation, revoke unchanged.
-
-Introduce per-user master password
-or WebAuthn PRF.                    Zero-knowledge enablers; separate decision.
-
-Add a /api/me/keys endpoint.        Identity and keys bundle in one response.
-
-Add an /api/me/refresh endpoint.    Refresh is the OAuth /token endpoint.
+Browser localStorage:    <app>.auth.session   -> <app>.auth.persisted
+Extension chrome.storage:           auth.session  -> auth.persisted
+CLI file path:           keychain (deleted)    -> ~/.epicenter/auth.json
 ```
 
-## Decisions log
+Old keys are ignored. The new `PersistedAuth` arktype refuses to parse `OAuthSession`-shaped blobs (the field names do not match: `tokens` vs `grant`, `identity` vs `unlock`).
 
-1. **`/api/me` instead of `/workspace-identity`.** Conventional REST naming used by Spotify, Figma, Notion, Twitter, GitHub-variants. Lives under `/api/*` with every other protected resource. Returns user + encryption keys because both are caller-specific; not splitting them avoids an extra round-trip and matches `/v1/account`-style endpoints (Stripe) that include capabilities alongside identity.
+## Verification targets
 
-2. **Drop id_token from client-side consumption; leave server issuance alone.** Server stays OIDC-compliant for any future federation roadmap. Client persists 3 fields. The ~500 bytes of unused id_token in each `/oauth2/token` response is negligible compared to coordinating a scope-set change across server + every client.
+```
+V1. resolveRequestWorkspaceIdentity at apps/api/src/auth/resource-boundary.ts:131-139
+    enforces bearer + workspaces:open scope and returns { user, encryptionKeys }.
+    Wired in app.ts:248-262 for /api/me; verified by apps/api/src/api-me.test.ts.
 
-3. **Identity is in-memory, not persisted.** Eliminates the dual-write coupling on refresh, the freshness-skew bug class, and the same-user guard at the storage layer. Trade-off: one `GET /api/me` per cold boot per tab. Verified cheap: same network cost as today's `/workspace-identity` call.
+V2. PersistedAuth arktype validates against the actual shape written by
+    createOAuthAppAuth on sign-in. Test: round-trip a sign-in token response
+    + /api/me response into the persisted shape; assert arktype accepts it.
 
-4. **Same-user guard moves to identity-fetch.** When `/api/me` returns a different `user.id` than a prior cached identity (e.g., after re-sign-in following reauth-required), the auth client resets to signed-out before transitioning to signed-in. Catches the user-swap bug class. The previous spec put the guard on `decodeIdTokenClaims(next.idToken).sub === identity.user.id`; same intent, different mechanism.
+V3. Refresh path writes ONLY grant. Test: pre-write a PersistedAuth cell;
+    force a refresh; assert unlock.encryptionKeys is byte-identical before
+    and after.
 
-5. **No refresh-time identity recomputation.** Token refresh is for tokens. Identity is fetched on sign-in and trusted for the session lifetime. Mid-session identity drift (email change, key rotation in another tab) propagates on next cold boot. This matches the behavior of GitHub, Stripe, AWS SSO, Linear, Figma; it is the path of least surprise.
+V4. Cold-boot offline: pre-write a cell; stub fetch to throw; assert
+    state transitions to signed-in (not signed-out, not stuck-loading) with
+    unlock present, profile null.
 
-6. **Three-field persistence shape.** Matches GitHub CLI's `auth.json`, AWS SSO's cache files, Codex's pre-id_token shape. Refused: 4-field (idToken peer), nested `{ tokens: {...}, identity: {...} }` (the old `OAuthSession`), version field (clean break, zero users, re-login is the migration), users map (single signed-in account per cell).
+V5. Same-user guard: pre-write a cell with userId=alice; stub /api/me to
+    return userId=bob; assert cell is wiped and state = signed-out.
 
-7. **Keep JWT access_token signing.** Earns its keep at the resource boundary: `resolveBearerUser` verifies the signature locally and reads `sub` without a database round-trip. This is the design win of JWT access tokens. We keep it.
+V6. OAuth /token endpoint is unchanged; standard response shape.
+    Test against node_modules/@better-auth/oauth-provider/dist/index.mjs:403
+    (the createUserTokens response). id_token may be present when openid is
+    granted; clients ignore and never persist it.
 
-8. **No `customAccessTokenClaims`.** Tempting to embed email in the access_token so the resource boundary can read it without a DB lookup; resisted because (a) `resolveBearerUser` already does the DB lookup, (b) access_token rides on every request and bloating it has compounding network cost, (c) email change propagation gets harder (every issued access_token is stale on email change). The DB lookup is fast and centralized.
+V7. Network gate: pre-write a cell; construct auth; assert state exposes
+    unlock immediately with profileStatus=missing; call auth.fetch and assert
+    /api/me is called before the protected request, and the protected request
+    receives Authorization only after /api/me returns matching userId.
+
+V8. Expired grant ordering: pre-write an expired accessToken with a valid
+    refreshToken; construct auth; trigger auth.fetch; assert refresh writes only
+    grant before /api/me is called.
+
+V9. Cross-context storage: create storage with watch; construct auth; emit an
+    external null write; assert state becomes signed-out and profile is cleared.
+
+V10. Profile freshness: /api/me failure on cold boot leaves unlock present,
+     profile null, profileStatus=missing, and no bearer attached to network
+     requests; a later successful /api/me sets profileStatus=fresh.
+```
 
 ## Open questions
 
-1. **Should the `id_token` field in `/oauth2/token` responses be omitted at the server (a follow-up spec)?** Pro: smaller responses, honest signal that we are not OIDC. Con: scope coordination across every trusted client; loses forward-compat headroom for federation. Recommendation: leave it. Revisit if the bandwidth shows up in metrics.
+1. **Should `LocalUnlockBundle.validatedAt` be added preemptively for a future TOFU policy?** Recommendation: no. Add when the policy lands. Adding it now invites premature decisions about "how stale is too stale."
 
-2. **Is one `/api/me` call per cold-boot per tab a problem at the scale we expect?** No today; flag for revisit if cold-boot p95 latency starts mattering.
+2. **Should sign-in be one round-trip via a server-wrapped /token endpoint?** Recommendation: no. The standardness of OAuth /token is worth preserving. Two round-trips on the rare sign-in event is invisible.
 
-3. **Should `/api/me` cache the encryption-keys derivation on the server?** `deriveUserEncryptionKeys` does HKDF, which is fast but not free. If `/api/me` becomes a hot path (e.g., daemons that bounce frequently), a per-userId server-side cache with TTL is a one-file change. Not in this spec; flag for the perf-watch period.
+3. **Should we delete `requireIdentity` and `requireSession` helpers?** Today they bundle identity-presence checks. With the three-concern split, consumers asking for "the user's keys" should reach for `state.unlock.encryptionKeys` directly; consumers asking for email should reach for `state.profile?.email`. Recommendation: delete both; let consumers compose what they need.
 
-4. **Naming: `/api/me` vs `/api/me/identity` vs splitting `/api/me/profile` and `/api/me/keys`?** Bundling is the recommendation; split if a use case ever wants only one half. Not now.
+4. **Where does `WorkspaceIdentity` live now?** It is no longer a top-level domain concept. The shape `{ user, encryptionKeys }` is a `/api/me` response type, internal to the auth package. Recommendation: keep it as `ApiMeResponse` (or similar) inside `create-oauth-app-auth.ts`; do not export.
 
-## Verification targets (Pass 2, against actual sources)
+5. **Per-workspace unlock receipts (option D above): when?** When the first collaboration feature ships, or when the encryption layer's blast radius becomes a measurable concern. Track as a separate spec.
 
-```
-V1. Better Auth's /auth/oauth2/token returns access_token + refresh_token
-    (+ optional id_token when openid is in scope) per the standard /oauth2
-    token-endpoint shape. Verify against node_modules/@better-auth/oauth-provider/dist/index.mjs
-    around `createUserTokens` (the same code path the previous spec verified
-    at lines 403-447). No code change to that path is required for this spec.
+The Wave 2 blockers from the fresh-eyes pass are now resolved in the spec body: `PersistedAuthStorage.watch`, `profileStatus`, refresh-before-profile-fetch, and the network gate are part of the required implementation and verification targets.
 
-V2. /api/me handler reuses resolveRequestWorkspaceIdentity (apps/api/src/auth/
-    resource-boundary.ts:131-139) without modification. Verify by literally
-    pointing the new route at the same helper /workspace-identity uses today.
+## Decisions log
 
-V3. apps/api/src/app.ts route registration is order-independent under Hono's
-    SmartRouter for non-overlapping paths. /api/me does not collide with the
-    /auth/* catch-all (different prefix). The handler enforces bearer + scope
-    internally via resolveRequestWorkspaceIdentity, mirroring the today's
-    /workspace-identity pattern (apps/api/src/app.ts:238-252). We deliberately
-    do NOT layer app.use('/api/me', requireOAuthUser) on top, because we need
-    the resolver's encryption-key derivation path, not requireOAuthUser's lean
-    user-only path. The two patterns coexist in app.ts today; this spec keeps
-    them both.
+1. **Three concerns, three lifecycles, two persistence locations (disk + memory).** Rejects bundling identity into either tokens (id_token spec) or a single "session" blob (OAuthSession). The split is on lifecycle (does this survive a process restart? does this survive going offline?) and authority (do we trust this without re-validation?).
 
-V4. The three-field OAuthTokenGrant arktype validates without changes against
-    Better Auth's token response payload (the existing fields are
-    access_token, refresh_token, expires_in; we already map to camelCase in
-    refreshOAuthTokenWithEndpoint at packages/auth/src/create-oauth-app-auth.ts).
+2. **One persistence cell, two sections (`grant` + `unlock`).** Rejects two separate files. Filesystem-level separation buys nothing the type can't express; two files invite desync.
 
-V5. resolveBearerIdentity (apps/api/src/auth/resource-boundary.ts:99-114)
-    enforces workspaces:open scope. /api/me inherits this requirement.
-    Bearer with the wrong scope -> 403 InsufficientScope; without bearer ->
-    401 InvalidToken. Same as /workspace-identity today.
+3. **Email is memory-only.** Rejects persisting profile for offline UI. The slippery slope concern is real and the UX regression is minor (one rare event, "Account" instead of an email).
 
-V6. Cross-tab sync: the existing createPersistedState over localStorage
-    fires storage events that other tabs receive. Each tab independently
-    fetches /api/me on cold boot. No new tab-sync logic.
-```
+4. **`unlock.validatedAt` is not persisted.** YAGNI until we have a policy that consumes it.
+
+5. **Same-user guard at /api/me response, not at storage write.** Moves the check to the place where actual user identity is known. The storage layer is no longer in the authority business.
+
+6. **Refresh writes only the grant section.** Decouples token rotation from identity. Identity is refreshed only on cold-boot and on sign-in.
+
+7. **AuthState has three variants, not four or six.** No `loading` (disk reads are fast). No `signed-in-offline` (derived from `profileStatus`). No `locked-offline` (degenerate; map to signed-out). The state machine carries authority; profile freshness carries connectivity.
+
+8. **`/api/me` endpoint is kept.** Already shipped; central to the cold-boot refresh path; OAuth /token stays standard.
+
+9. **No id_token consumption client-side.** Server may still issue id_tokens (Better Auth includes them when `openid` scope is granted) but the client never reads them. The bandwidth waste is negligible; forward-compat headroom for federation is preserved.
+
+10. **`requireIdentity` and `requireSession` are deleted.** Their existence assumed identity was one thing; the three-concern split makes them misleading. Consumers reach for the slot they need.
+
+11. **Browser and extension auth storage must be watched by the auth core.** Cross-tab sign-out, token rotation, and same-user guard wipes are not merely storage details. `createOAuthAppAuth` subscribes where the storage backend can watch and treats external changes as authoritative.
+
+12. **Local unlock is immediate; bearer-bearing network waits for `/api/me`.** This preserves offline cold boot without allowing collaboration or protected API calls before the same-user guard has passed. If `/api/me` cannot be reached, local data remains usable and network fails closed.
+
+13. **Cold boot refreshes stale grants before fetching profile.** `/api/me` is protected by the access token, so an expired access token must be repaired before the identity refresh can be trusted.
+
+14. **Profile freshness is public state.** `profileStatus` replaces the vague `lastFetchFailed` prose. UI and session code can tell "no profile yet" from "profile loaded and later went stale" without inventing ad hoc flags.
+
+15. **Different-user sign-in replaces the local unlock in pre-launch builds.** Today `replaceSession` throws on a user mismatch. This spec deliberately changes sign-in to let a new account win, which can orphan the prior account's local encrypted blobs on that device. That is acceptable while there are no launched users; reviewers should see this called out in the Wave 2 commit message.
 
 ## References
 
-Today's bundled shape (rewritten by this spec):
+```
+Server side (already landed):
+  apps/api/src/app.ts:240-294                    /api/me + legacy alias routes
+  apps/api/src/auth/create-auth.ts               ES256 jwt config
+  apps/api/src/auth/resource-boundary.ts:99-139  resolveBearerIdentity helpers
+  apps/api/src/auth/encryption.ts                deriveUserEncryptionKeys
 
-```
-packages/auth/src/auth-types.ts:21-37            OAuthTokenGrant (4 fields today)
-                                                 + OAuthSession bundle.
-packages/auth/src/auth-contract.ts:5-18          AuthState with identity.
-packages/auth/src/auth-state-store.ts            notify-on-change pattern.
-packages/auth/src/create-oauth-app-auth.ts:110-122  loadIdentity calls
-                                                    /workspace-identity.
-packages/auth/src/node/machine-auth.ts:298-323   fetchOAuthSession uses
-                                                 the dead /auth/get-session.
-```
+Client side (to be rewritten):
+  packages/auth/src/auth-types.ts                OAuthTokenGrant kept; OAuthSession deleted
+  packages/auth/src/auth-contract.ts             AuthState union rewritten
+  packages/auth/src/create-oauth-app-auth.ts     storage rename + fetchProfile + guards
+  packages/auth/src/auth-state-store.ts          state-change semantics
+  packages/auth/src/node/machine-session-store.ts -> machine-tokens-store.ts
+  packages/auth/src/require-identity.ts          DELETE
+  packages/auth/src/require-session.ts           DELETE or rewrite
 
-Server side:
+Better Auth plugin (unchanged):
+  node_modules/@better-auth/oauth-provider/dist/index.mjs:403-447
+    createUserTokens - the standard /oauth2/token response we consume as-is
 
-```
-apps/api/src/app.ts:238-252                      /workspace-identity route (renamed
-                                                 to /api/me by this spec; old route
-                                                 stays alive until Wave 4).
-apps/api/src/auth/resource-boundary.ts:99-114    resolveBearerIdentity stays.
-apps/api/src/auth/resource-boundary.ts:131-139   resolveRequestWorkspaceIdentity
-                                                 stays.
-apps/api/src/auth/create-auth.ts                 unchanged; no customIdTokenClaims.
-```
-
-Encryption:
-
-```
-packages/encryption/src/keys.ts:11-30            EncryptionKey / EncryptionKeys
-                                                 arktype; reused in /api/me JSON.
-packages/encryption/src/keys.ts:58-73            encryptionKeysEqual (used by the
-                                                 identity-diff in auth-state-store).
-```
+Encryption (unchanged):
+  packages/encryption/src/keys.ts                EncryptionKey / EncryptionKeys
 
 Predecessor specs:
-
-```
-specs/20260514T091255-tokens-only-auth-extract-identity-to-workspace.md
-   The WorkspaceIdentityStore-extraction variant; rejected by both this spec
-   and its predecessor for over-engineering.
-
-specs/20260514T154500-id-token-bearing-encryption-keys.md
-   The id_token-carries-keys design; superseded by this spec. The critique
-   of OIDC abuse, leakage surface, and lifecycle coupling is what motivated
-   the rewrite.
-
-specs/20260514T160000-execute-id-token-and-oob-cli.md
-   The execution plan for the superseded design. Wave 1 of that plan still
-   stands (the four landed commits); Waves 2-4 are superseded by this spec.
-
-specs/20260514T120000-machine-auth-oob-clean-break.md
-   The OOB CLI flow. Composes with this spec; the only adjustment is that the
-   CLI's auth.json file persists 3 fields, not 4.
+  specs/20260514T091255-tokens-only-auth-extract-identity-to-workspace.md (superseded)
+  specs/20260514T154500-id-token-bearing-encryption-keys.md              (superseded)
+  specs/20260514T160000-execute-id-token-and-oob-cli.md                   (superseded)
+  specs/20260514T120000-machine-auth-oob-clean-break.md                   (composes)
 ```
 
-## What this spec deletes vs the id_token spec
+## Done when (spec is watertight)
 
 ```
-Spec text  ~600 lines (id_token spec) → ~200 lines (this spec, approximately).
-Code       Wave 2-4 deltas roughly halve. No new package, no new arktype, no
-           new error variant, no new decode helper, no new server hook, no new
-           server-side guard against missing email scope, no new pairwiseSecret
-           load-bearing assumption to document, no new V3/V4/V5 ES256-discovery
-           verification work.
-Mental model One concept: tokens go in storage; identity comes from /api/me.
-           No "id_token is the identity surface but do not verify the signature
-           because TLS already authenticates the server" rationale to carry.
+[x] Three concerns named (online grant / local unlock / profile)
+[x] Persistence shape defined: one cell, two sections
+[x] AuthState defined: three variants, unlock always present in signed-in
+[x] Lifecycle prose covers sign-in, cold-boot online/offline, refresh, sign-out, reauth-required
+[x] Each persisted field has a "why is this here?" justification
+[x] Alternatives considered include the radical ones (drop OAuth, per-workspace keys, etc.)
+[x] Same-user guard placement is explicit
+[x] Migration is documented as a clean break with key renames
+[x] Verification targets reference real file:line locations
+[x] Open questions are listed (fresh-eyes blockers resolved into spec body)
+[ ] Reviewed by Braden; product UX cost on cold-boot offline accepted
+[x] No em or en dashes in spec body (verified by grep)
 ```
 
-This is what the asymmetric-wins pass looks like in practice: the previous spec gained "zero round-trips after sign-in" and a one-decode-path cohesion claim. This spec accepts one round-trip on cold boot (same as today) and gets a cleaner OIDC story, a smaller persistence shape, and a smaller code surface in return. The "cohesion sentence" still holds because the cohesion was never about the id_token mechanism; it was about "one storage cell, one validator, three storage backends." That survives unchanged.
+After Braden sign-off, this spec moves from Proposed to Accepted and Wave 2 begins.

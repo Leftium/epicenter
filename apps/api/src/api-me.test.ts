@@ -1,8 +1,8 @@
 /**
  * GET /api/me integration tests.
  *
- * The current-user endpoint replaces /workspace-identity as the single
- * Epicenter identity surface clients fetch once after sign-in. It returns
+ * The current-user endpoint is the single Epicenter identity surface
+ * clients fetch at sign-in and at cold-boot when online. It returns
  * { user: AuthUser, encryptionKeys: EncryptionKeys }; unauthenticated or
  * under-scoped callers get RFC 6750-shaped errors via
  * createOAuthUnauthorizedResourceResponse.

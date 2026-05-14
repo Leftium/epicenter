@@ -1,7 +1,7 @@
 # Online grant, local unlock, profile: three concerns, three lifecycles
 
 **Date**: 2026-05-14 (revised)
-**Status**: Proposed (revision 3; supersedes the in-memory-identity draft of revision 2)
+**Status**: Accepted (revision 4; Waves 2-4 landed on 2026-05-14 with asymmetric simplifications applied during implementation)
 **Supersedes**:
 - `specs/20260514T154500-id-token-bearing-encryption-keys.md` (the id_token-carries-keys design)
 - `specs/20260514T160000-execute-id-token-and-oob-cli.md` (the Wave 1-4 plan based on that design)
@@ -121,66 +121,41 @@ One cell. Two sections. The browser persists this to localStorage; the extension
 type PersistedAuthStorage = {
   get(): PersistedAuth | null;
   set(value: PersistedAuth | null): void | Promise<void>;
-  watch?(fn: (value: PersistedAuth | null) => void): () => void;
 };
 ```
 
-`watch` is optional because the CLI file store has one process owner. Browser and extension stores must provide it:
+Two methods. No `watch` hook: cross-tab and cross-context sign-out propagates through the server authority, not through a client-side subscription. If Tab A wipes its cell on a same-user-guard mismatch, Tab B's next bearer-bearing call hits the network gate, calls `/api/me`, gets either a different userId (wipes Tab B's cell too) or a 401 from the revoked refresh token (drops Tab B to `reauth-required`). Brief cross-tab UI desync is acceptable; the network gate is the actual reconciliation mechanism.
 
-```
-Browser localStorage      createPersistedState.watch
-Extension chrome.storage  createStorageState.watch
-CLI auth.json             no watch hook
-```
-
-`createOAuthAppAuth` treats external storage changes as authoritative. If another tab or extension context clears the cell, this instance clears `grant`, `unlock`, `profile`, and moves to `signed-out`. If another context writes a cell for the same `unlock.userId`, this instance adopts the new grant and unlock, drops profile to `null`, marks profile freshness as `missing`, and runs the online verification path before attaching a bearer again. If another context writes a cell for a different `unlock.userId`, this instance drops profile and forces `signed-out` instead of serving two users in one live runtime.
+This was an asymmetric win during Wave 2: the `watch` hook added an optional storage method, an `adoptExternalCell` handler with three branches, a self-write echo filter, and per-app `createPersistedState.watch` / `createStorageState.watch` wiring. The server-as-authority model collapses that surface back to zero.
 
 ## Profile is memory-only
 
-```ts
-// packages/auth/src/auth-contract.ts (or co-located with createOAuthAppAuth)
-
-type Profile = {
-  email: string;
-  // Future: name, avatar; everything here is fetched, never persisted.
-};
-```
-
-There is no `Profile` arktype because we never validate it from disk. It is built from `/api/me` responses and lives inside the running `createOAuthAppAuth` instance.
+Email is exposed directly on the AuthState as `email: string | null`. There is no separate `Profile` type and no arktype for it: the value is fetched from `/api/me`, never persisted, and `null` means "no `/api/me` has succeeded for the current persisted cell in this runtime."
 
 ## AuthState
 
 ```ts
-type ProfileStatus = 'missing' | 'refreshing' | 'fresh' | 'stale';
-
 type AuthState =
   | { status: 'signed-out' }
   | {
       status: 'signed-in';
       unlock: LocalUnlockBundle;
-      profile: Profile | null;
-      profileStatus: ProfileStatus;
+      email: string | null;
     }
   | {
       status: 'reauth-required';
       unlock: LocalUnlockBundle;
-      profile: Profile | null;
-      profileStatus: ProfileStatus;
+      email: string | null;
     };
 ```
 
-Three variants. `unlock` is always present in `signed-in` and `reauth-required` because we persist it; `profile` is `null` until `/api/me` succeeds at least once. UIs gate on `unlock` for "can I decrypt?" and on `profile?.email` for display. `profileStatus` is the typed home for the freshness bit:
-
-```
-missing     no /api/me response has loaded in this runtime
-refreshing  /api/me is in flight
-fresh       /api/me succeeded for the current unlock/grant epoch
-stale       a later /api/me attempt failed after a profile had loaded
-```
+Three variants. `unlock` is always present in `signed-in` and `reauth-required` because we persist it. `email` is `null` until `/api/me` succeeds at least once for the current cell; UIs gate decryption on `unlock`, display labels on `email`. Freshness is implicit: an `email` value means it was confirmed by `/api/me` for the current persisted cell. Every cell mutation (sign-in, sign-out, same-user-guard wipe) clears `email` back to `null`, forcing a fresh verification before the next bearer attachment.
 
 No `loading` state. Disk reads are synchronous in browsers (localStorage) and fast in Node (`fs.readFile` of a tiny JSON file); the transition from "nothing in memory" to "signed-in" happens in one tick. Offline-and-cannot-unlock would be a degenerate state (unlock cell missing) that we map to `signed-out`, forcing re-auth.
 
-`profileStatus` is not a fourth auth state. It is metadata about the online profile check. Local workspace construction can proceed with `unlock` while `profileStatus` is `missing`; bearer-bearing network calls cannot.
+Local workspace construction can proceed with `unlock` while `email` is `null`; bearer-bearing network calls cannot (see Network gate).
+
+This was an asymmetric win during Wave 2: the earlier draft carried a 4-value `profileStatus` enum (`missing | refreshing | fresh | stale`) and a separate named `Profile` type. The implementation showed both were redundant: `email !== null` IS the freshness predicate, and the four-value vocabulary encoded distinctions the auth client never branches on.
 
 ## Network gate
 
@@ -188,22 +163,21 @@ No `loading` state. Disk reads are synchronous in browsers (localStorage) and fa
 
 ```
 Before attaching Authorization or bearer.<token>:
-  1. if profileStatus === 'fresh', continue
+  1. if email !== null, continue
   2. if grant is expired or within refresh skew, refresh grant first
   3. call GET /api/me with the fresh-enough access token
   4. if /api/me returns the same userId:
        update unlock if keys changed
-       set profile
-       profileStatus = 'fresh'
+       set email
        attach bearer and continue
   5. if /api/me returns a different userId:
        clear persisted cell
-       profile = null
+       email = null
        state = signed-out
        do not attach bearer
   6. if /api/me fails for network/server reasons:
        keep unlock for local decrypt
-       profileStatus = profile ? 'stale' : 'missing'
+       email stays at its previous value (null or the prior fresh value)
        do not attach bearer
 ```
 
@@ -256,23 +230,24 @@ Two round-trips on sign-in (token, then me). This is the rare event; the cost is
    - cell present      → continue
 2. state = signed-in immediately
    (unlock has userId + encryptionKeys; workspace can decrypt local Yjs;
-    profile = null and profileStatus = missing at this point;
-    UI shows generic account label)
-3. if online:
+    email = null at this point; UI shows generic account label)
+3. UI renders. Lazy verification: the first auth.fetch or auth.openWebSocket
+   triggers the Network gate:
    a. if access_token is stale, refresh the grant first
       (touches grant cell only)
    b. GET /api/me
       success → update unlock cell if encryptionKeys changed;
-                set memory profile.email;
-                profileStatus = fresh;
+                set memory email;
                 same-user guard: if response.user.id !== unlock.userId,
-                  wipe cell, drop profile, state = signed-out (force re-auth)
+                  wipe cell, drop email, state = signed-out (force re-auth)
       failure → keep state = signed-in;
-                profileStatus = profile ? stale : missing
-4. UI renders
+                email stays null (or stays at its prior fresh value);
+                no bearer attached this round
 ```
 
-Offline cold-boot stops at step 2; data is decryptable; the user can read and write to local Yjs blobs. Reconciliation happens when the device comes online.
+Offline cold-boot stops at step 2; data is decryptable; the user can read and write to local Yjs blobs. Reconciliation happens lazily on the first online network call.
+
+This was an asymmetric win during Wave 2: an earlier draft fired `/api/me` eagerly at construction. Lazy verification removes the construction-time race, removes the test knob (`skipBootProfile`), and matches "do work on demand" semantics: if the user does nothing, there's nothing to verify.
 
 ### Refresh (on 401 during a fetch)
 
@@ -293,7 +268,7 @@ Refresh is purely an online-grant concern. It does not write or read unlock; it 
 1. auth.signOut()
 2. POST /auth/oauth2/revoke with refresh_token (RFC 7009)
 3. clear persisted cell (both sections, atomic)
-4. clear memory profile
+4. clear memory email
 5. state = signed-out
 ```
 
@@ -301,8 +276,8 @@ Refresh is purely an online-grant concern. It does not write or read unlock; it 
 
 ```
 1. /auth/oauth2/token refresh returns 401 (refresh_token expired/revoked)
-2. state = reauth-required, unlock preserved, profile preserved if loaded
-3. UI shows "session expired; signed in as ${profile?.email ?? 'your account'}"
+2. state = reauth-required, unlock preserved, email preserved if loaded
+3. UI shows "session expired; signed in as ${email ?? 'your account'}"
 4. user re-signs-in:
    - new tokens arrive; new /api/me call
    - same-user guard at step 5 of sign-in flow handles continuity or swap
@@ -456,8 +431,7 @@ LANDED (Wave 1):
   apps/api/src/auth-pages/index.tsx               renderCliCallbackPage export
   apps/api/src/app.ts                             /auth/cli-callback route,
                                                   /api/me route,
-                                                  /api/health route,
-                                                  legacy /workspace-identity alias
+                                                  /api/health route
   packages/constants/src/oauth.ts                 epicenter-cli runtime: native,
                                                   HTTPS callback redirect
   apps/api/src/auth/trusted-oauth-clients.ts      toOAuthClientType two-arm switch
@@ -465,9 +439,7 @@ LANDED (Wave 1):
   apps/api/src/auth-pages/cli-callback-page.test.ts callback page tests
   apps/api/src/health.test.ts                     /api/health tests
 
-WAVE 4 (cleanup):
-  apps/api/src/app.ts                             delete /workspace-identity route
-                                                  after one release of soak time
+WAVE 4 (landed): legacy /workspace-identity route deleted from apps/api/src/app.ts.
 ```
 
 ### Client side (Wave 2)
@@ -481,24 +453,21 @@ packages/auth/src/auth-types.ts                   EDIT
 
 packages/auth/src/auth-contract.ts                EDIT
   - AuthState gains 'signed-in' and 'reauth-required' carrying
-    { unlock: LocalUnlockBundle; profile: Profile | null; profileStatus }
-  - add Profile and ProfileStatus public types
+    { unlock: LocalUnlockBundle; email: string | null }
   - DELETE WorkspaceIdentity from the public AuthState surface
     (it stays internal as a helper type for /api/me responses)
 
 packages/auth/src/auth-state-store.ts             EDIT
-  - state derivation operates on (cellPresent, profile, profileStatus)
-  - state-change events fire on profile load and on unlock change
+  - state derivation operates on (cellPresent, email)
+  - state-change events fire on email change and on unlock change
 
 packages/auth/src/create-oauth-app-auth.ts        EDIT (significant rewrite)
   - rename config field: sessionStorage -> persistedAuthStorage
-  - one storage adapter; reads/writes PersistedAuth shape
-  - persistedAuthStorage.watch is optional; browser/extension call sites must
-    pass it through so cross-tab sign-out and same-user guard wipes propagate
-  - fetchProfile(): GET /api/me, returns { user, encryptionKeys }
-  - same-user guard at fetchProfile response time
-  - auth.fetch/openWebSocket refresh expired grants before fetchProfile and do
-    not attach a bearer until profileStatus is fresh for the current cell
+  - PersistedAuthStorage is { get, set }; cross-tab sync resolves via server
+  - verifyProfile(): GET /api/me, returns { user, encryptionKeys }
+  - same-user guard at verifyProfile response time
+  - auth.fetch/openWebSocket refresh expired grants before verifyProfile and
+    do not attach a bearer until email !== null for the current cell
   - refresh path writes only the grant section
   - sign-in path writes the cell atomically (both sections)
 
@@ -506,30 +475,25 @@ packages/auth/src/auth-errors.ts                  EDIT
   - add FetchProfileFailed variant (non-fatal in offline cold-boot)
   - keep StartSignInFailed, SignOutFailed
 
-packages/auth/src/require-identity.ts             EDIT
-  - DELETE; consumers should reach for state.unlock or state.profile
-    directly per their need
+packages/auth/src/require-identity.ts             DELETE
+  - consumers reach for state.unlock or state.email directly
 
-packages/auth/src/require-session.ts              EDIT (or delete)
-  - re-evaluate; today bundles identity + transport methods
-  - if kept, becomes "ensure unlock present; return unlock + transport"
+packages/auth/src/require-session.ts              DELETE
+  - consumers compose auth.fetch / auth.openWebSocket + state.unlock inline
 
 packages/auth/src/index.ts                        EDIT
   - drop OAuthSession and WorkspaceIdentity exports
-  - add LocalUnlockBundle, Profile, PersistedAuth
-  - drop requireIdentity export (if deleted)
+  - add LocalUnlockBundle, PersistedAuth, PersistedAuthStorage
+  - drop requireIdentity / requireSession exports
 
 packages/auth/src/contract.test.ts                EDIT
   - cover three-state machine
   - cover sign-in writes both sections
   - cover refresh writes only grant
-  - cover cold-boot signed-in with profile=null
+  - cover cold-boot signed-in with email=null
   - cover same-user guard on /api/me response
-  - cover storage watch: external clear signs out this runtime
   - cover network gate: cold boot can expose unlock immediately, but fetch and
     openWebSocket do not attach a bearer until /api/me confirms same user
-  - cover expired grant ordering: refresh grant before first /api/me
-  - cover profileStatus missing/fresh/stale transitions
 
 packages/auth/src/node/machine-tokens-store.ts    NEW (renamed from machine-session-store)
   - persists PersistedAuth (grant + unlock; no profile)
@@ -634,20 +598,21 @@ V6. OAuth /token endpoint is unchanged; standard response shape.
     granted; clients ignore and never persist it.
 
 V7. Network gate: pre-write a cell; construct auth; assert state exposes
-    unlock immediately with profileStatus=missing; call auth.fetch and assert
-    /api/me is called before the protected request, and the protected request
+    unlock immediately with email=null; call auth.fetch and assert /api/me
+    is called before the protected request, and the protected request
     receives Authorization only after /api/me returns matching userId.
 
 V8. Expired grant ordering: pre-write an expired accessToken with a valid
-    refreshToken; construct auth; trigger auth.fetch; assert refresh writes only
-    grant before /api/me is called.
+    refreshToken; construct auth; trigger auth.fetch; assert refresh writes
+    only grant before /api/me is called.
 
-V9. Cross-context storage: create storage with watch; construct auth; emit an
-    external null write; assert state becomes signed-out and profile is cleared.
+V9. (Removed.) Earlier draft required cross-context storage watch; Wave 2
+    dropped the watch hook and relies on the server authority + network gate
+    for cross-tab reconciliation.
 
 V10. Profile freshness: /api/me failure on cold boot leaves unlock present,
-     profile null, profileStatus=missing, and no bearer attached to network
-     requests; a later successful /api/me sets profileStatus=fresh.
+     email null, and no bearer attached to network requests; a later
+     successful /api/me sets email to the user's address.
 ```
 
 ## Open questions
@@ -656,13 +621,13 @@ V10. Profile freshness: /api/me failure on cold boot leaves unlock present,
 
 2. **Should sign-in be one round-trip via a server-wrapped /token endpoint?** Recommendation: no. The standardness of OAuth /token is worth preserving. Two round-trips on the rare sign-in event is invisible.
 
-3. **Should we delete `requireIdentity` and `requireSession` helpers?** Today they bundle identity-presence checks. With the three-concern split, consumers asking for "the user's keys" should reach for `state.unlock.encryptionKeys` directly; consumers asking for email should reach for `state.profile?.email`. Recommendation: delete both; let consumers compose what they need.
+3. **Should we delete `requireIdentity` and `requireSession` helpers?** Today they bundle identity-presence checks. With the three-concern split, consumers asking for "the user's keys" should reach for `state.unlock.encryptionKeys` directly; consumers asking for email should reach for `state.email`. Recommendation: delete both; let consumers compose what they need.
 
 4. **Where does `WorkspaceIdentity` live now?** It is no longer a top-level domain concept. The shape `{ user, encryptionKeys }` is a `/api/me` response type, internal to the auth package. Recommendation: keep it as `ApiMeResponse` (or similar) inside `create-oauth-app-auth.ts`; do not export.
 
 5. **Per-workspace unlock receipts (option D above): when?** When the first collaboration feature ships, or when the encryption layer's blast radius becomes a measurable concern. Track as a separate spec.
 
-The Wave 2 blockers from the fresh-eyes pass are now resolved in the spec body: `PersistedAuthStorage.watch`, `profileStatus`, refresh-before-profile-fetch, and the network gate are part of the required implementation and verification targets.
+The Wave 2 blockers from the fresh-eyes pass were resolved during implementation. The shipped shape took further asymmetric wins: `PersistedAuthStorage.watch` was dropped (server authority handles cross-tab reconciliation), `profileStatus` was dropped (`email !== null` is the implicit freshness predicate), eager `/api/me` at construction was dropped (lazy on first network call). The network gate and refresh-before-profile-fetch remain load-bearing.
 
 ## Decisions log
 
@@ -678,7 +643,7 @@ The Wave 2 blockers from the fresh-eyes pass are now resolved in the spec body: 
 
 6. **Refresh writes only the grant section.** Decouples token rotation from identity. Identity is refreshed only on cold-boot and on sign-in.
 
-7. **AuthState has three variants, not four or six.** No `loading` (disk reads are fast). No `signed-in-offline` (derived from `profileStatus`). No `locked-offline` (degenerate; map to signed-out). The state machine carries authority; profile freshness carries connectivity.
+7. **AuthState has three variants, not four or six.** No `loading` (disk reads are fast). No `signed-in-offline` (derived from `email === null`). No `locked-offline` (degenerate; map to signed-out). The state machine carries authority; email presence carries verification freshness.
 
 8. **`/api/me` endpoint is kept.** Already shipped; central to the cold-boot refresh path; OAuth /token stays standard.
 
@@ -686,33 +651,33 @@ The Wave 2 blockers from the fresh-eyes pass are now resolved in the spec body: 
 
 10. **`requireIdentity` and `requireSession` are deleted.** Their existence assumed identity was one thing; the three-concern split makes them misleading. Consumers reach for the slot they need.
 
-11. **Browser and extension auth storage must be watched by the auth core.** Cross-tab sign-out, token rotation, and same-user guard wipes are not merely storage details. `createOAuthAppAuth` subscribes where the storage backend can watch and treats external changes as authoritative.
+11. **Cross-tab and cross-context sign-out resolves via the server authority, not a client-side watch hook.** `PersistedAuthStorage` is `{ get, set }`. If another context wipes the cell or rotates to a different user, this runtime's next bearer-bearing call hits the network gate, calls `/api/me`, and reconciles (wipes its cell on a userId mismatch, or 401s back to `reauth-required` on a revoked refresh token). Brief in-memory desync between tabs is acceptable; the network gate is the actual reconciliation mechanism.
 
 12. **Local unlock is immediate; bearer-bearing network waits for `/api/me`.** This preserves offline cold boot without allowing collaboration or protected API calls before the same-user guard has passed. If `/api/me` cannot be reached, local data remains usable and network fails closed.
 
-13. **Cold boot refreshes stale grants before fetching profile.** `/api/me` is protected by the access token, so an expired access token must be repaired before the identity refresh can be trusted.
+13. **Cold boot refreshes stale grants before fetching profile.** `/api/me` is protected by the access token, so an expired access token must be repaired before the identity refresh can be trusted. `/api/me` itself fires lazily on the first network call rather than eagerly at construction.
 
-14. **Profile freshness is public state.** `profileStatus` replaces the vague `lastFetchFailed` prose. UI and session code can tell "no profile yet" from "profile loaded and later went stale" without inventing ad hoc flags.
+14. **Profile freshness is implicit via `email !== null`.** An earlier draft carried a 4-value `profileStatus` enum (`missing | refreshing | fresh | stale`). The implementation showed the auth client only ever branches on fresh-vs-not-fresh, and that predicate is exactly `email !== null` because cell mutations clear email back to null. The named `Profile` type was also dropped for the same reason: inlined `email: string | null` on `AuthState` is what the consumers actually need.
 
-15. **Different-user sign-in replaces the local unlock in pre-launch builds.** Today `replaceSession` throws on a user mismatch. This spec deliberately changes sign-in to let a new account win, which can orphan the prior account's local encrypted blobs on that device. That is acceptable while there are no launched users; reviewers should see this called out in the Wave 2 commit message.
+15. **Different-user sign-in replaces the local unlock in pre-launch builds.** Previously `replaceSession` threw on a user mismatch. This spec deliberately changes sign-in to let a new account win, which can orphan the prior account's local encrypted blobs on that device. That is acceptable while there are no launched users; reviewers should see this called out in the Wave 2 commit message.
 
 ## References
 
 ```
 Server side (already landed):
-  apps/api/src/app.ts:240-294                    /api/me + legacy alias routes
+  apps/api/src/app.ts:247-293                    /auth/cli-callback + /api/me routes
   apps/api/src/auth/create-auth.ts               ES256 jwt config
   apps/api/src/auth/resource-boundary.ts:99-139  resolveBearerIdentity helpers
   apps/api/src/auth/encryption.ts                deriveUserEncryptionKeys
 
-Client side (to be rewritten):
+Client side (landed):
   packages/auth/src/auth-types.ts                OAuthTokenGrant kept; OAuthSession deleted
   packages/auth/src/auth-contract.ts             AuthState union rewritten
-  packages/auth/src/create-oauth-app-auth.ts     storage rename + fetchProfile + guards
+  packages/auth/src/create-oauth-app-auth.ts     storage rename + verifyProfile + network gate
   packages/auth/src/auth-state-store.ts          state-change semantics
-  packages/auth/src/node/machine-session-store.ts -> machine-tokens-store.ts
-  packages/auth/src/require-identity.ts          DELETE
-  packages/auth/src/require-session.ts           DELETE or rewrite
+  packages/auth/src/node/machine-tokens-store.ts replaces machine-session-store
+  packages/auth/src/require-identity.ts          DELETED
+  packages/auth/src/require-session.ts           DELETED
 
 Better Auth plugin (unchanged):
   node_modules/@better-auth/oauth-provider/dist/index.mjs:403-447

@@ -8,8 +8,8 @@
  * - `resolveBearerUser`: cheap resolver used by `requireOAuthUser` for every
  *   protected app resource (`/ai/*`, `/rooms/*`,
  *   `/api/billing/*`, `/api/assets/*`).
- * - `resolveBearerIdentity`: full resolver used by `/workspace-identity`,
- *   adding per-user encryption keys to the returned payload.
+ * - `resolveBearerIdentity`: full resolver used by `/api/me`, adding
+ *   per-user encryption keys to the returned payload.
  *
  * HTTP and WebSocket wire-format coverage lives in `oauth-resource.test.ts`.
  */

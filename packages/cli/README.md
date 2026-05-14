@@ -40,6 +40,31 @@ Inside this monorepo:
 
 The package exposes the `epicenter` binary via `src/bin.ts`.
 
+## Authentication
+
+`epicenter auth login` runs the OAuth 2.1 out-of-band code flow. The CLI
+prints an authorize URL, you sign in on the hosted portal, and paste the
+displayed code back into the terminal. On success the CLI persists the
+auth cell to `~/.epicenter/auth.json` (file mode `0o600`).
+
+The persisted shape is `PersistedAuth = { grant, unlock }`:
+
+- `grant` (`{ accessToken, refreshToken, accessTokenExpiresAt }`) is the
+  online server-access material. The refresh token rotates on every
+  refresh; revoked on `epicenter auth logout` via RFC 7009.
+- `unlock` (`{ userId, encryptionKeys }`) is the local capability to
+  decrypt workspace Yjs data without a network roundtrip. Loaded once at
+  sign-in from `GET /api/me` and re-confirmed at cold-boot when online.
+
+Profile data (the signed-in email) is fetched fresh from `/api/me` and
+held in memory only; cold-boot offline shows a generic "Account" label
+until the next successful verification.
+
+The CLI integration with the OOB flow composes with
+`specs/20260514T120000-machine-auth-oob-clean-break.md`; the wire-up
+between `loginWithOob` and the CLI's `auth login` command lands in that
+spec's Phase 4.
+
 ## Commands
 
 `run`, `list`, and `peers` dispatch to the local `epicenter daemon up` process for the discovered project. Start it once at the top of your session (`epicenter daemon up &`), then run as many shell-shortcut commands as you want. Without `daemon up`, those three verbs error with a hint pointing back here. `daemon up`, `daemon down`, `daemon ps`, `daemon logs`, and `auth` work without a daemon.

@@ -265,37 +265,18 @@ app.get(
 );
 // Current-user endpoint: returns the authenticated user record plus their
 // workspace encryption keys. This is the single Epicenter identity surface
-// every client (browser apps, browser extension, CLI) calls once after
-// sign-in and caches in memory for the session lifetime.
+// every client (browser apps, browser extension, CLI) calls at sign-in and
+// at cold-boot when online to refresh the persisted unlock cell.
 //
 // Inherits the bearer + workspaces:open scope check from
 // resolveRequestWorkspaceIdentity, so unauthenticated/under-scoped callers
 // get the standard 401/403 OAuth resource responses (WWW-Authenticate +
 // JSON body) without a separate middleware layer.
-//
-// The legacy route below (/workspace-identity) is the original name and
-// stays alive until clients migrate; both routes invoke the same handler
-// shape and return the same payload.
 app.get(
 	'/api/me',
 	describeRoute({
 		description: 'Return the authenticated user and their workspace encryption keys',
 		tags: ['auth'],
-	}),
-	async (c) => {
-		const { data: identity, error } = await resolveRequestWorkspaceIdentity(
-			c,
-			deriveUserEncryptionKeys,
-		);
-		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
-		return c.json(identity);
-	},
-);
-app.get(
-	'/workspace-identity',
-	describeRoute({
-		description: 'Legacy alias for /api/me; kept alive while clients migrate',
-		tags: ['auth', 'oauth'],
 	}),
 	async (c) => {
 		const { data: identity, error } = await resolveRequestWorkspaceIdentity(

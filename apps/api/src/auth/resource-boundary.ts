@@ -54,7 +54,7 @@ export function parseBearer(value: string | null): string | null {
  *
  * Wrappers project the user differently:
  * - `resolveBearerUser` returns the lean `AuthUser` for the middleware path.
- * - `resolveBearerIdentity` adds derived encryption keys for `/workspace-identity`.
+ * - `resolveBearerIdentity` adds derived encryption keys for `/api/me`.
  */
 async function verifyBearerToUser(
 	deps: ResolverDeps,
@@ -96,9 +96,9 @@ export async function resolveBearerUser(
 }
 
 /**
- * Full resolver for `/workspace-identity`. Returns the local-first payload
- * the apps need at boot: the calling user plus the per-user encryption key
- * set derived from the workspace identity secret.
+ * Full resolver for `/api/me`. Returns the local-first payload the apps
+ * need at boot: the calling user plus the per-user encryption key set
+ * derived from the workspace identity secret.
  */
 export async function resolveBearerIdentity(
 	deps: ResolverDeps & {

@@ -1,42 +1,52 @@
 /**
  * `openCollaboration`: the one collaboration primitive on a document.
  *
- * Replaces the four-step `attachSync + attachAwareness + attachRpc +
- * createRemoteClient` chain. One call opens the sync transport, publishes
- * the local replica and action keys in awareness, dispatches inbound RPC
- * against the local action registry, and exposes a typed `peers` surface
- * for cross-peer invocation.
+ * Identity, presence, and RPC all live in Y.Doc state. The workspace ydoc
+ * reserves two top-level Y.Arrays (see `keys.ts`):
  *
- * Naming model: a document stores local-first app data; collaboration
- * publishes its actions and makes it live with peers. Local invocation is
- * `collaboration.actions.action_key(input)`; remote invocation is
- * `collaboration.peers.find<TActions>(replicaId)?.invoke('action_key', input)`.
+ *     RPC_KEY       'rpc'        backs YKeyValueLww<Call>
+ *     PRESENCE_KEY  'presence'   backs YKeyValueLww<PresenceEntry>
  *
- * Content docs (rich-text bodies, attachments, anything nested under a
- * parent that syncs independently) use this same primitive with `actions`
- * omitted — the default registry is `{}` and the byte transport is
- * identical.
+ * The wire is plain Yjs sync. Calls are LWW rows whose `response` flips from
+ * `null` to `Result`; presence is a server-written row per connected socket.
+ * No awareness, no RPC envelopes, no runtime envelopes.
+ *
+ * Routing is by per-socket `connId` (client-minted at startup, echoed by the
+ * server as a query param). `replicaId` is install-stable but can map to many
+ * `connId`s (one per tab). Callers pick a concrete connection at the call
+ * site: `collab.peers.list().find((p) => p.replicaId === id)` for "any tab,"
+ * `peers.list().filter(...)` for fan-out. The presence surface deliberately
+ * does not hide that choice behind a `find` verb.
+ *
+ * Content docs (rich-text bodies, attachments, anything nested under a parent
+ * that syncs independently) use this same primitive with `actions` omitted:
+ * the default registry is `{}`, the action runner is skipped entirely, and
+ * the byte transport is identical.
  */
 
-import { RpcError } from '@epicenter/sync';
 import type { Logger } from 'wellcrafted/logger';
-import { Ok } from 'wellcrafted/result';
-import { Awareness } from 'y-protocols/awareness';
+import type { Result } from 'wellcrafted/result';
 import type * as Y from 'yjs';
-import {
-	ACTION_KEY_PATTERN,
-	type ActionRegistry,
-	invokeActionForRpc,
-	toActionMeta,
-} from '../shared/actions.js';
-import { attachAwareness } from './attach-awareness.js';
+import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
 import {
 	createSyncSupervisor,
 	type OpenWebSocket,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
-import { createPeersSurface, type PeersSurface } from './peer.js';
-import { peerAwarenessSchema, type Replica } from './peer-identity.js';
+import { PRESENCE_KEY, RPC_KEY } from './keys.js';
+import {
+	createPresenceSurface,
+	type PresenceEntry,
+	type PresenceSurface,
+} from './presence.js';
+import {
+	attachActionRunner,
+	type Call,
+	type DispatchError,
+	type DispatchOptions,
+	dispatch as dispatchCall,
+} from './rpc.js';
+import { YKeyValueLww } from './y-keyvalue/y-keyvalue-lww.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -50,22 +60,27 @@ export type OpenCollaborationConfig<
 	openWebSocket?: OpenWebSocket;
 	log?: Logger;
 	/**
-	 * Install-stable, client-claimed descriptor published in awareness. The
-	 * authenticated `subject` is stamped by the server on the wire envelope;
-	 * clients only publish what only they know.
+	 * Install-stable replica id. Identifies "this install" across reconnects
+	 * and tabs. Multiple tabs on the same install publish the same
+	 * `replicaId` with distinct per-socket `connId`s.
 	 */
-	replica: Replica;
+	replicaId: string;
 	/**
-	 * Local action registry published to peers. Defaults to `{}` for content
-	 * docs and consume-only participants. The registry is yours alone:
-	 * collaboration runtime requests (e.g. peer.describe) ride a separate wire
-	 * kind (`RUNTIME_REQUEST`), not the action registry.
+	 * Local action registry. Defaults to `{}` for content docs and
+	 * consume-only participants. When the registry is empty, no action
+	 * runner observer is attached: pure listeners pay zero handler cost.
 	 */
 	actions?: TActions;
 };
 
 export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
-	readonly replica: Replica;
+	readonly replicaId: string;
+	/**
+	 * Per-socket routing address, client-minted at startup via
+	 * `crypto.randomUUID()`. Stable for the lifetime of this
+	 * `openCollaboration` call; a new call mints a new `connId`.
+	 */
+	readonly connId: string;
 	readonly actions: TActions;
 
 	readonly status: SyncStatus;
@@ -74,7 +89,20 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	onStatusChange(listener: (status: SyncStatus) => void): () => void;
 	reconnect(): void;
 
-	readonly peers: PeersSurface;
+	readonly peers: PresenceSurface;
+
+	/**
+	 * Dispatch a remote call. The target is identified by `connId`; resolve
+	 * one from `peers.list()`, e.g.:
+	 * `peers.list().find((p) => p.replicaId === id)?.connId`.
+	 * `options.signal` is required: timeout via `AbortSignal.timeout(ms)`,
+	 * user cancel via `AbortController`, compose with `AbortSignal.any([...])`.
+	 */
+	dispatch<TInput, TOutput>(
+		action: string,
+		input: TInput,
+		options: DispatchOptions,
+	): Promise<Result<TOutput, DispatchError>>;
 
 	/**
 	 * Sugar for `ydoc.destroy()`. Both cascade to all attached primitives via
@@ -92,7 +120,6 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	config: OpenCollaborationConfig<TActions>,
 ): Collaboration<TActions> {
-	const { replica } = config;
 	const userActions = (config.actions ?? ({} as TActions)) as TActions;
 
 	for (const key of Object.keys(userActions)) {
@@ -103,62 +130,55 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		}
 	}
 
-	// Computed once at startup. Two peers running the same code publish
-	// byte-identical arrays so awareness updates don't ping-pong on ordering
-	// differences.
-	const actionKeys = Object.freeze(Object.keys(userActions).sort());
+	const replicaId = config.replicaId;
+	const connId = crypto.randomUUID();
 
-	const awareness = new Awareness(ydoc);
+	const rpc = new YKeyValueLww<Call>(ydoc.getArray(RPC_KEY));
+	const presence = new YKeyValueLww<PresenceEntry>(ydoc.getArray(PRESENCE_KEY));
 
-	attachAwareness(awareness, {
-		schema: peerAwarenessSchema,
-		initial: {
-			replica,
-			actionKeys: [...actionKeys],
-		},
-	});
+	// Wrap the user-supplied opener so every connect (including reconnects)
+	// carries `?replicaId=&connId=` without callers re-encoding the URL.
+	const userOpen = config.openWebSocket;
+	const openWebSocket: OpenWebSocket = (rawUrl, protocols) => {
+		const url = new URL(rawUrl.toString());
+		url.searchParams.set('replicaId', replicaId);
+		url.searchParams.set('connId', connId);
+		return userOpen ? userOpen(url, protocols) : new WebSocket(url, protocols);
+	};
 
 	const supervisor = createSyncSupervisor(ydoc, {
 		url: config.url,
 		waitFor: config.waitFor,
-		openWebSocket: config.openWebSocket,
+		openWebSocket,
 		log: config.log,
-		awareness,
-		onActionRequest: async (rpc) => {
-			const target = userActions[rpc.action];
-			if (!target) return RpcError.ActionNotFound({ action: rpc.action });
-			return invokeActionForRpc(target, rpc.input, rpc.action);
-		},
-		onRuntimeRequest: async (rpc) => {
-			// Closed-set switch. Adding a new verb without a branch here is a
-			// compile error, so the runtime can never silently drop a verb peers
-			// expect us to handle.
-			switch (rpc.verb) {
-				case 'describe-actions':
-					return Ok(
-						Object.fromEntries(
-							Object.entries(userActions).map(([key, action]) => [
-								key,
-								toActionMeta(action),
-							]),
-						),
-					);
-			}
-		},
 	});
 
-	const peers = createPeersSurface(
-		awareness,
-		supervisor.peerMetadata,
-		replica.id,
-		{
-			sendActionRequest: supervisor.sendActionRequest,
-			sendRuntimeRequest: supervisor.sendRuntimeRequest,
-		},
-	);
+	// Skip the observer entirely when there is nothing to handle. Pure
+	// listeners (content docs, consume-only participants) pay zero cost.
+	if (Object.keys(userActions).length > 0) {
+		const detachRunner = attachActionRunner(rpc, connId, userActions);
+		ydoc.once('destroy', detachRunner);
+	}
+
+	const peers = createPresenceSurface(presence, connId);
+
+	// Client-side orphan sweep. If a previous run crashed between writing a
+	// call and reaching `finally { rpc.delete(id) }`, the entry persists in
+	// the workspace doc. Sweep anything older than 1h once we are online.
+	// Wrapped in `.catch` because the supervisor rejects `whenConnected` on
+	// permanent auth failure, and we do not want to surface that here.
+	void supervisor.whenConnected
+		.then(() => {
+			const cutoff = Date.now() - 1000 * 60 * 60;
+			for (const [id, entry] of rpc.entries()) {
+				if (entry.val.sent_at < cutoff) rpc.delete(id);
+			}
+		})
+		.catch(() => {});
 
 	return {
-		replica,
+		replicaId,
+		connId,
 		actions: userActions,
 		get status() {
 			return supervisor.status;
@@ -168,6 +188,13 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		onStatusChange: supervisor.onStatusChange,
 		reconnect: supervisor.reconnect,
 		peers,
+		dispatch<TInput, TOutput>(
+			action: string,
+			input: TInput,
+			options: DispatchOptions,
+		): Promise<Result<TOutput, DispatchError>> {
+			return dispatchCall<TInput, TOutput>(rpc, action, input, options);
+		},
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},

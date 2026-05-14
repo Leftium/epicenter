@@ -1,39 +1,22 @@
 /// <reference lib="dom" />
 
 /**
- * Internal sync supervisor: connects a Y.Doc to a WebSocket sync server,
- * runs the Yjs sync protocol (STEP1/STEP2/UPDATE), relays awareness frames,
- * and dispatches incoming RPC frames against the supplied handlers.
- *
- * The supervisor is private to `openCollaboration` — there is no longer a
- * "byte transport only" wrapper; content docs that previously used
- * `attachYjsSync` now call `openCollaboration` with an empty action
- * registry. That keeps the supervisor configuration fully required
- * (`awareness`, `onActionRequest`, `onRuntimeRequest`) and removes every
- * null-check that used to gate the awareness/RPC paths.
+ * Internal sync supervisor: connects a Y.Doc to a WebSocket sync server and
+ * runs the Yjs sync protocol (STEP1/STEP2/UPDATE).
  *
  * Lifecycle is supervisor-driven: connect, exponential backoff with jitter,
  * liveness via 60s pings and 90s timeout, browser online/offline/visibility
- * wakeups, permanent-failure park on 4401 close codes.
+ * wakeups, permanent-failure park on 4401 close codes. The supervisor emits a
+ * `SyncStatus` and exposes `whenConnected`, `reconnect()`, and `whenDisposed`.
  */
 
 import {
-	decodeAwarenessAttestedPayload,
-	decodeRpcPayload,
-	encodeAwareness,
-	encodeAwarenessStates,
-	encodeRpcActionRequest,
-	encodeRpcResponse,
-	encodeRpcRuntimeRequest,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncPayload,
-	isRpcError,
 	isTransportOrigin,
 	MAIN_SUBPROTOCOL,
 	MESSAGE_TYPE,
-	RpcError,
-	type RuntimeVerb,
 	SYNC_MESSAGE_TYPE,
 	SYNC_ORIGIN,
 	type SyncMessageType,
@@ -45,15 +28,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { Err, Ok, type Result } from 'wellcrafted/result';
-import {
-	type Awareness,
-	applyAwarenessUpdate,
-	encodeAwarenessUpdate,
-	removeAwarenessStates,
-} from 'y-protocols/awareness';
 import type * as Y from 'yjs';
-import type { RemoteCallOptions } from '../../shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Public types (re-exported via open-collaboration and attach-yjs-sync)
@@ -118,54 +93,11 @@ export type OpenWebSocket = (
 	protocols?: string[],
 ) => Promise<WebSocket> | WebSocket;
 
-/** Incoming app-action RPC request, dispatched by the supervisor when configured. */
-type IncomingActionRequest = {
-	requestId: number;
-	requesterClientId: number;
-	action: string;
-	input: unknown;
-};
-
-/**
- * Incoming collaboration runtime request. Carries a verb instead of an action
- * path: runtime operations live on a separate plane from the app action
- * namespace.
- */
-type IncomingRuntimeRequest = {
-	requestId: number;
-	requesterClientId: number;
-	verb: RuntimeVerb;
-};
-
 export type SyncSupervisorConfig = {
 	url: string;
 	waitFor?: Promise<unknown>;
 	openWebSocket?: OpenWebSocket;
 	log?: Logger;
-	/** Awareness wired over this socket. Required: one supervisor, one awareness. */
-	awareness: Awareness;
-	/**
-	 * Incoming app-action dispatcher. Required. The supervisor calls this for
-	 * every inbound ACTION_REQUEST and sends the resolved Result back over
-	 * the wire.
-	 */
-	onActionRequest: (
-		rpc: IncomingActionRequest,
-	) => Promise<Result<unknown, unknown>>;
-	/**
-	 * Incoming runtime-verb dispatcher. Required. RUNTIME_REQUEST never falls
-	 * through to `onActionRequest`; the supervisor enforces the plane split
-	 * at the wire boundary.
-	 */
-	onRuntimeRequest: (
-		request: IncomingRuntimeRequest,
-	) => Promise<Result<unknown, unknown>>;
-};
-
-/** Server-attested metadata for a remote awareness client. */
-export type PeerMetadata = {
-	/** Auth-derived subject the server stamped on the AWARENESS_ATTESTED envelope. */
-	subject: string;
 };
 
 export type SyncSupervisor = {
@@ -174,33 +106,12 @@ export type SyncSupervisor = {
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
 	reconnect(): void;
 	whenDisposed: Promise<void>;
-	sendActionRequest(
-		target: number,
-		action: string,
-		input: unknown,
-		options?: RemoteCallOptions,
-	): Promise<Result<unknown, RpcError>>;
-	sendRuntimeRequest(
-		target: number,
-		verb: RuntimeVerb,
-		options?: RemoteCallOptions,
-	): Promise<Result<unknown, RpcError>>;
-	/**
-	 * Read-only snapshot of server-attested metadata per remote Yjs clientID.
-	 *
-	 * Populated as AWARENESS_ATTESTED envelopes arrive. Entries are removed
-	 * when a peer's awareness state is dropped (disconnect or explicit
-	 * remove). The peers surface joins this map with the claimed awareness
-	 * payload to produce a complete `Peer`.
-	 */
-	readonly peerMetadata: ReadonlyMap<number, PeerMetadata>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
 // Constants
 // ════════════════════════════════════════════════════════════════════════════
 
-const DEFAULT_RPC_TIMEOUT_MS = 5_000;
 const BASE_DELAY_MS = 500;
 const MAX_DELAY_MS = 30_000;
 const PING_INTERVAL_MS = 60_000;
@@ -249,8 +160,6 @@ export function createSyncSupervisor(
 	ydoc: Y.Doc,
 	config: SyncSupervisorConfig,
 ): SyncSupervisor {
-	const { awareness, onActionRequest, onRuntimeRequest } = config;
-
 	const waitForPromise = config.waitFor;
 	const log = config.log ?? createLogger('sync');
 
@@ -301,47 +210,6 @@ export function createSyncSupervisor(
 
 	let websocket: WebSocket | null = null;
 
-	// Outbound RPC state. Cleared on each `ws.onclose`: the next connection is
-	// a fresh server-side context, so any in-flight request from the prior
-	// connection will never resolve, and the caller deserves an immediate
-	// `Disconnected` instead of a timeout.
-	const pendingRequests = new Map<
-		number,
-		{
-			action: string;
-			resolve: (result: Result<unknown, unknown>) => void;
-			timer: ReturnType<typeof setTimeout>;
-		}
-	>();
-	let nextRequestId = 0;
-
-	function clearPendingRequests() {
-		const disconnected = RpcError.Disconnected();
-		for (const [, pending] of pendingRequests) {
-			clearTimeout(pending.timer);
-			pending.resolve(disconnected);
-		}
-		pendingRequests.clear();
-	}
-
-	/**
-	 * Shared incoming-request bookkeeping for ACTION_REQUEST and
-	 * RUNTIME_REQUEST: response envelope, fallback when no handler is
-	 * configured. Generic over the rpc shape; only `requestId` and
-	 * `requesterClientId` are needed for the response.
-	 */
-	async function dispatchIncomingRequest<
-		R extends { requestId: number; requesterClientId: number },
-	>(rpc: R, handler: (rpc: R) => Promise<Result<unknown, unknown>>) {
-		send(
-			encodeRpcResponse({
-				requestId: rpc.requestId,
-				requesterClientId: rpc.requesterClientId,
-				result: await handler(rpc),
-			}),
-		);
-	}
-
 	function send(message: Uint8Array) {
 		if (websocket?.readyState === WebSocket.OPEN) {
 			websocket.send(message);
@@ -353,94 +221,6 @@ export function createSyncSupervisor(
 	function handleDocUpdate(update: Uint8Array, origin: unknown) {
 		if (isTransportOrigin(origin)) return;
 		send(encodeSyncUpdate({ update }));
-	}
-
-	function handleAwarenessUpdate(
-		{
-			added,
-			updated,
-			removed,
-		}: { added: number[]; updated: number[]; removed: number[] },
-		origin: unknown,
-	) {
-		if (origin === SYNC_ORIGIN) return;
-		const changedClients = added.concat(updated).concat(removed);
-		send(
-			encodeAwareness({
-				update: encodeAwarenessUpdate(awareness, changedClients),
-			}),
-		);
-	}
-
-	// Server-attested metadata per remote clientID. The supervisor populates
-	// this from AWARENESS_ATTESTED envelopes; entries are pruned when the
-	// awareness state for a clientID is removed (peer disconnect).
-	const peerMetadata = new Map<number, PeerMetadata>();
-
-	// Apply an envelope-attested awareness update: stamp `subject` for every
-	// clientID the inner payload touches, then forward the bytes to y-protocols.
-	// Computes the affected clientID set by diffing the awareness state map
-	// before and after the apply call, so the subject<->clientID join doesn't
-	// depend on listener registration order or on the synchronous-event
-	// contract leaking out of y-protocols.
-	function handleRemoteAwarenessAttested(subject: string, update: Uint8Array) {
-		const before = new Set(awareness.getStates().keys());
-		applyAwarenessUpdate(awareness, update, SYNC_ORIGIN);
-		for (const clientId of awareness.getStates().keys()) {
-			if (clientId === ydoc.clientID) continue;
-			if (!before.has(clientId)) {
-				peerMetadata.set(clientId, { subject });
-				continue;
-			}
-			// Existing client: subject is install-stable but the envelope
-			// always carries the same value for a given DO, so overwrite is a
-			// no-op for the user-scoped-DO case and a self-correcting refresh
-			// otherwise.
-			peerMetadata.set(clientId, { subject });
-		}
-	}
-
-	// Drop metadata for peers that disconnected. Origin doesn't matter:
-	// `applyAwarenessUpdate` and explicit `removeAwarenessStates` both fire
-	// 'update' with `removed` populated.
-	awareness.on(
-		'update',
-		({
-			removed,
-		}: {
-			added: number[];
-			updated: number[];
-			removed: number[];
-		}) => {
-			for (const id of removed) peerMetadata.delete(id);
-		},
-	);
-
-	function sendLocalAwarenessState() {
-		if (awareness.getLocalState() === null) return;
-		send(
-			encodeAwarenessStates({
-				awareness,
-				clients: [ydoc.clientID],
-			}),
-		);
-	}
-
-	function sendKnownAwarenessStates() {
-		send(
-			encodeAwarenessStates({
-				awareness,
-				clients: Array.from(awareness.getStates().keys()),
-			}),
-		);
-	}
-
-	function removeRemoteAwarenessStates() {
-		const remoteClientIds = Array.from(awareness.getStates().keys()).filter(
-			(clientId) => clientId !== ydoc.clientID,
-		);
-		if (remoteClientIds.length === 0) return;
-		removeAwarenessStates(awareness, remoteClientIds, SYNC_ORIGIN);
 	}
 
 	// Browser online/offline/visibility wakeups. Auto-removed when the master
@@ -523,7 +303,6 @@ export function createSyncSupervisor(
 		ws.onopen = () => {
 			clearTimeout(connectTimeout);
 			send(encodeSyncStep1({ doc: ydoc }));
-			sendLocalAwarenessState();
 			liveness.start();
 			resolveOpen(true);
 		};
@@ -532,8 +311,6 @@ export function createSyncSupervisor(
 			clearTimeout(connectTimeout);
 			cleanupAbortListener();
 			liveness.stop();
-			removeRemoteAwarenessStates();
-			clearPendingRequests();
 			const failure = parsePermanentFailure(event);
 			if (failure) {
 				setStatus({ phase: 'failed', reason: failure });
@@ -584,41 +361,6 @@ export function createSyncSupervisor(
 						handshakeComplete = true;
 						setStatus({ phase: 'connected' });
 						connected.resolve();
-					}
-					break;
-				}
-
-				case MESSAGE_TYPE.AWARENESS_ATTESTED: {
-					const { subject, update } = decodeAwarenessAttestedPayload(decoder);
-					handleRemoteAwarenessAttested(subject, update);
-					break;
-				}
-
-				case MESSAGE_TYPE.QUERY_AWARENESS: {
-					sendKnownAwarenessStates();
-					break;
-				}
-
-				case MESSAGE_TYPE.RPC: {
-					const rpc = decodeRpcPayload(decoder);
-					switch (rpc.type) {
-						case 'response': {
-							const pending = pendingRequests.get(rpc.requestId);
-							if (pending) {
-								clearTimeout(pending.timer);
-								pendingRequests.delete(rpc.requestId);
-								// Trust-the-wire cast: the JSON payload is structurally a
-								// Result, but decodeRpcPayload types it as the raw shape.
-								pending.resolve(rpc.result as Result<unknown, unknown>);
-							}
-							break;
-						}
-						case 'action-request':
-							void dispatchIncomingRequest(rpc, onActionRequest);
-							break;
-						case 'runtime-request':
-							void dispatchIncomingRequest(rpc, onRuntimeRequest);
-							break;
 					}
 					break;
 				}
@@ -710,7 +452,6 @@ export function createSyncSupervisor(
 	}
 
 	ydoc.on('updateV2', handleDocUpdate);
-	awareness?.on('update', handleAwarenessUpdate);
 
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
@@ -721,7 +462,6 @@ export function createSyncSupervisor(
 				new Error('[sync] doc destroyed before first handshake'),
 			);
 			ydoc.off('updateV2', handleDocUpdate);
-			awareness?.off('update', handleAwarenessUpdate);
 			const ws = websocket;
 			status.clear();
 			await supervisorPromise;
@@ -731,57 +471,6 @@ export function createSyncSupervisor(
 		}
 	});
 
-	/**
-	 * Send a request wire frame and track its pending response. Shared between
-	 * ACTION_REQUEST (app actions) and RUNTIME_REQUEST (runtime verbs): the
-	 * response envelope and timeout/error normalization are identical; only
-	 * the encoded wire kind and the action label differ.
-	 *
-	 * `errorLabel` populates `ActionFailed.action` when the remote returned a
-	 * non-RpcError; for app actions it is the action key, for runtime requests
-	 * it is the verb.
-	 */
-	async function sendTrackedRequest(
-		encode: (requestId: number) => Uint8Array,
-		errorLabel: string,
-		{ timeout = DEFAULT_RPC_TIMEOUT_MS }: RemoteCallOptions = {},
-	): Promise<Result<unknown, RpcError>> {
-		if (masterController.signal.aborted) return RpcError.Disconnected();
-		if (websocket?.readyState !== WebSocket.OPEN) {
-			return RpcError.Disconnected();
-		}
-
-		return new Promise((resolve) => {
-			const requestId = nextRequestId++;
-			send(encode(requestId));
-
-			const timer = setTimeout(() => {
-				pendingRequests.delete(requestId);
-				resolve(RpcError.Timeout({ ms: timeout }));
-			}, timeout);
-
-			pendingRequests.set(requestId, {
-				action: errorLabel,
-				resolve: (result) => {
-					clearTimeout(timer);
-					if (isRpcError(result.error)) {
-						resolve(Err(result.error));
-					} else if (result.error != null) {
-						resolve(
-							RpcError.ActionFailed({
-								action: errorLabel,
-								cause: result.error,
-							}),
-						);
-					} else {
-						resolve(Ok(result.data));
-					}
-				},
-				timer,
-			});
-		});
-	}
-
 	return {
 		whenConnected: connected.promise,
 		get status() {
@@ -790,32 +479,6 @@ export function createSyncSupervisor(
 		onStatusChange: status.subscribe,
 		reconnect,
 		whenDisposed,
-		sendActionRequest: (target, action, input, options) =>
-			sendTrackedRequest(
-				(requestId) =>
-					encodeRpcActionRequest({
-						requestId,
-						targetClientId: target,
-						requesterClientId: ydoc.clientID,
-						action,
-						input,
-					}),
-				action,
-				options,
-			),
-		sendRuntimeRequest: (target, verb, options) =>
-			sendTrackedRequest(
-				(requestId) =>
-					encodeRpcRuntimeRequest({
-						requestId,
-						targetClientId: target,
-						requesterClientId: ydoc.clientID,
-						verb,
-					}),
-				verb,
-				options,
-			),
-		peerMetadata,
 	} satisfies SyncSupervisor;
 }
 

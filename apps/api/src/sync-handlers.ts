@@ -2,49 +2,46 @@
  * Yjs sync protocol handlers, tailored for Cloudflare Durable Objects.
  *
  * Inlined from the generic @epicenter/sync-server package. Narrowed to CF
- * WebSocket types — no framework-agnostic indirection, no WeakMap tricks.
+ * WebSocket types: no framework-agnostic indirection, no WeakMap tricks.
  *
  * ## API surface
  *
- * - {@link computeInitialMessages} — pure, computes SyncStep1 + awareness states
- * - {@link registerConnection} — side-effectful, registers doc/awareness listeners
- * - {@link applyMessage} — mutates doc/awareness, returns additional effects
- * - {@link teardownConnection} — cleanup, unregisters listeners + removes awareness
+ * - {@link registerConnection}: side-effectful, registers doc update listener
+ * - {@link applyMessage}: mutates doc, returns additional effects
+ * - {@link teardownConnection}: cleanup, unregisters listener
  *
  * ## Error handling rationale (grounded in Yjs internals)
  *
- * `Y.applyUpdateV2` is resilient by design — it never throws on malformed
+ * `Y.applyUpdateV2` is resilient by design: it never throws on malformed
  * data. Missing dependencies are stored in `doc.store.pendingStructs` and
  * automatically retried when future updates arrive.
  *
  * However, `lib0/decoding` functions (readVarUint, readVarUint8Array) DO
- * throw on buffer underflow, and `applyAwarenessUpdate` from y-protocols
- * throws on malformed JSON. Since WebSocket messages are untrusted input,
+ * throw on buffer underflow. Since WebSocket messages are untrusted input,
  * `applyMessage` wraps the decode+dispatch path with `trySync` to catch
  * these at the system boundary.
+ *
+ * Inbound `SYNC` updates that touch `PRESENCE_KEY` are rejected: only the
+ * server writes presence rows, so a client mutation of that reserved array
+ * is a protocol violation. `applyMessage` decodes such payloads into a
+ * scratch `Y.Doc` for the validation check and returns
+ * `Err(SyncHandlerError.PresenceWriteForbidden)`; the caller closes the
+ * socket with code `4400` and reason `'presence-write-forbidden'`.
  */
 
 import {
-	decodeRpcMessage,
-	encodeAwarenessAttested,
-	encodeRpcResponse,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncPayload,
 	MESSAGE_TYPE,
-	RpcError,
+	SYNC_MESSAGE_TYPE,
 	type SyncMessageType,
 } from '@epicenter/sync';
+import { PRESENCE_KEY } from '@epicenter/workspace';
 import * as decoding from 'lib0/decoding';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, trySync } from 'wellcrafted/result';
-import {
-	type Awareness,
-	applyAwarenessUpdate,
-	encodeAwarenessUpdate,
-	removeAwarenessStates,
-} from 'y-protocols/awareness';
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
 
 // ============================================================================
 // Errors
@@ -53,14 +50,22 @@ import type * as Y from 'yjs';
 /**
  * Errors from the sync handler layer.
  *
- * `MessageDecode` covers all failures when processing untrusted WebSocket
- * binary frames: lib0 buffer underflow (truncated messages), y-protocols
- * awareness JSON parse errors, and any other decode-time exceptions.
+ * - `MessageDecode` covers all failures when processing untrusted WebSocket
+ *   binary frames: lib0 buffer underflow (truncated messages) and any other
+ *   decode-time exceptions.
+ * - `PresenceWriteForbidden` is returned when a client `SYNC` update writes
+ *   to the reserved `PRESENCE_KEY` array. Only the server writes presence;
+ *   the caller closes the socket with `4400` and reason
+ *   `'presence-write-forbidden'`.
  */
-const SyncHandlerError = defineErrors({
+export const SyncHandlerError = defineErrors({
 	MessageDecode: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to decode WebSocket message: ${extractErrorMessage(cause)}`,
 		cause,
+	}),
+	PresenceWriteForbidden: (_: Record<string, never>) => ({
+		message:
+			'Client SYNC update attempted to write to the reserved presence array',
 	}),
 });
 
@@ -69,116 +74,87 @@ const SyncHandlerError = defineErrors({
 // ============================================================================
 
 /**
- * Shared room state — the doc, awareness instance, and auth-derived
- * subject that all connections in a room share. The DO is user-scoped
- * (DO name encodes the owning user id), so every connection in this room
- * carries the same `subject`. Handlers stamp it on outbound AWARENESS_ATTESTED
- * frames so peers see a server-trusted identity per Yjs clientID.
+ * Shared room state: the doc and auth-derived subject that all connections
+ * in a room share. The DO is user-scoped (DO name encodes the owning user
+ * id), so every connection in this room carries the same `subject`. The
+ * server stamps `subject` onto `PresenceEntry` rows it writes on connect.
  */
 export type RoomContext = {
 	doc: Y.Doc;
-	awareness: Awareness;
 	subject: string;
 };
 
 /**
  * Per-connection state stored in `Map<WebSocket, Connection>`.
  *
- * Contains only per-connection data: the socket, the set of awareness
- * client IDs this connection controls, and an `unregister` closure that
- * removes the doc/awareness event listeners registered by
+ * Contains only per-connection data: the socket and an `unregister` closure
+ * that removes the doc update listener registered by
  * {@link registerConnection}.
  */
 export type Connection = {
 	ws: WebSocket;
-	controlledClientIds: Set<number>;
-	/** Removes `doc.on('updateV2')` and `awareness.on('update')` listeners for this connection. */
+	/** Removes the `doc.on('updateV2')` listener for this connection. */
 	unregister: () => void;
 };
 
 /**
  * Result of handling a single WebSocket message.
  *
- * Discriminated union on `action` — each variant maps to exactly one routing
- * pattern in the DO caller:
+ * Discriminated union on `action`. Each variant maps to one routing pattern
+ * in the DO caller:
  *
  * - `reply`: Send data back to the sender only.
- * - `broadcast`: Fan out to all other connections, optionally persist attachment.
- * - `forward`: Route to a specific peer by clientId, with optional miss reply.
+ * - `broadcast`: Fan out to all other connections.
  *
- * `applyMessage` returns `Result<MessageResult | null>` — `null` means valid
+ * `applyMessage` returns `Result<MessageResult | null>`: `null` means valid
  * message with no action needed (AUTH, unknown types).
  */
 export type MessageResult =
 	| { action: 'reply'; data: Uint8Array }
-	| { action: 'broadcast'; data: Uint8Array; shouldPersistAttachment: boolean }
-	| {
-			action: 'forward';
-			targetClientId: number;
-			data: Uint8Array;
-			onMissReply?: Uint8Array;
-	  };
+	| { action: 'broadcast'; data: Uint8Array };
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Decode an inbound update into a scratch doc and check whether it writes
+ * to the reserved `PRESENCE_KEY` array.
+ *
+ * Only the server writes presence rows; a client mutation of that array is
+ * a protocol violation. The scratch doc uses `gc: true` to keep the check
+ * lightweight: we only need to know whether the presence array received
+ * any items, not preserve history.
+ */
+export function updateTouchesPresence(payload: Uint8Array): boolean {
+	const scratch = new Y.Doc({ gc: true });
+	Y.applyUpdateV2(scratch, payload);
+	return scratch.getArray(PRESENCE_KEY).length > 0;
+}
 
 // ============================================================================
 // Handlers
 // ============================================================================
 
 /**
- * Compute the initial messages to send to a newly connected client.
+ * Register a WebSocket connection's doc update listener.
  *
- * Pure function — no side effects. Returns a SyncStep1 message (the room's
- * state vector) and, if any awareness states exist, the current awareness
- * snapshot. The caller sends these over the WebSocket after accepting the
- * upgrade.
- *
- * Separated from {@link registerConnection} so callers that don't need
- * initial messages (e.g. `restoreHibernated`) can skip this entirely.
+ * Side-effectful: registers a `doc.on('updateV2')` handler that forwards
+ * updates to the WebSocket. Returns a {@link Connection} with an
+ * `unregister` closure that removes the listener; call it via
+ * {@link teardownConnection} when the socket closes.
  *
  * @param options.doc - The shared Yjs document
- * @param options.awareness - The shared awareness instance
- * @returns Array of encoded messages to send to the new client
- */
-export function computeInitialMessages({
-	doc,
-	awareness,
-	subject,
-}: RoomContext): Uint8Array[] {
-	const messages: Uint8Array[] = [encodeSyncStep1({ doc })];
-	const awarenessStates = awareness.getStates();
-	if (awarenessStates.size > 0) {
-		messages.push(
-			encodeAwarenessAttested({
-				subject,
-				update: encodeAwarenessUpdate(
-					awareness,
-					Array.from(awarenessStates.keys()),
-				),
-			}),
-		);
-	}
-	return messages;
-}
-
-/**
- * Register a WebSocket connection's doc and awareness event listeners.
- *
- * Side-effectful — registers `doc.on('updateV2')` and `awareness.on('update')`
- * handlers that forward updates to the WebSocket and track controlled client
- * IDs. Returns a {@link Connection} with an `unregister` closure that removes
- * both listeners — call it via {@link teardownConnection} when the socket closes.
- *
- * @param options.doc - The shared Yjs document
- * @param options.awareness - The shared awareness instance
- * @param options.ws - The WebSocket to register listeners for
+ * @param options.ws - The WebSocket to register the listener for
  * @returns Per-connection state with cleanup handle
  */
 export function registerConnection({
 	doc,
-	awareness,
 	ws,
-}: RoomContext & { ws: WebSocket }): Connection {
-	const controlledClientIds = new Set<number>();
-
+}: {
+	doc: Y.Doc;
+	ws: WebSocket;
+}): Connection {
 	// Forward V2 doc updates to this connection (skip echo via identity check)
 	const updateHandler = (update: Uint8Array, origin: unknown) => {
 		if (origin === ws) return;
@@ -189,28 +165,10 @@ export function registerConnection({
 	};
 	doc.on('updateV2', updateHandler);
 
-	// Track which awareness client IDs this connection controls
-	const awarenessHandler = (
-		{
-			added,
-			updated,
-			removed,
-		}: { added: number[]; updated: number[]; removed: number[] },
-		origin: unknown,
-	) => {
-		if (origin !== ws) return;
-		for (const id of added) controlledClientIds.add(id);
-		for (const id of updated) controlledClientIds.add(id);
-		for (const id of removed) controlledClientIds.delete(id);
-	};
-	awareness.on('update', awarenessHandler);
-
 	return {
 		ws,
-		controlledClientIds,
 		unregister() {
 			doc.off('updateV2', updateHandler);
-			awareness.off('update', awarenessHandler);
 		},
 	};
 }
@@ -218,19 +176,20 @@ export function registerConnection({
 /**
  * Dispatch an incoming binary WebSocket message.
  *
- * Mutates `room.doc` and `room.awareness` via `applyUpdateV2` and
- * `applyAwarenessUpdate` respectively, then returns a `Result` — `Ok` with
- * a {@link MessageResult} describing what the caller should do, or
- * `Err(SyncHandlerError.MessageDecode)` if the binary frame is malformed.
+ * Mutates `room.doc` via `applyUpdateV2`, then returns a `Result`: `Ok`
+ * with a {@link MessageResult} describing what the caller should do,
+ * `Err(SyncHandlerError.MessageDecode)` if the binary frame is malformed,
+ * or `Err(SyncHandlerError.PresenceWriteForbidden)` if the inbound update
+ * writes to the reserved `PRESENCE_KEY` array.
  *
  * The `trySync` wrapper catches lib0 decoder throws (buffer underflow on
- * truncated messages) and y-protocols awareness errors (malformed JSON).
- * Yjs's own `applyUpdateV2` is resilient and won't throw — it stores
- * unresolved dependencies in `doc.store.pendingStructs` automatically.
+ * truncated messages). Yjs's own `applyUpdateV2` is resilient and won't
+ * throw: it stores unresolved dependencies in `doc.store.pendingStructs`
+ * automatically.
  *
  * @param options.data - Raw binary WebSocket message
- * @param options.room - The shared room context (doc + awareness)
- * @param options.connection - The per-connection state (ws + controlled IDs)
+ * @param options.room - The shared room context (doc + subject)
+ * @param options.connection - The per-connection state (ws + cleanup)
  */
 export function applyMessage({
 	data,
@@ -241,143 +200,78 @@ export function applyMessage({
 	room: RoomContext;
 	connection: Connection;
 }) {
-	return trySync({
-		try: (): MessageResult | null => {
+	const decoded = trySync({
+		try: (): { result: MessageResult | null; forbidden: boolean } => {
 			const decoder = decoding.createDecoder(data);
 			const messageType = decoding.readVarUint(decoder);
 
 			switch (messageType) {
 				case MESSAGE_TYPE.SYNC: {
-					const syncType = decoding.readVarUint(decoder);
+					const syncType = decoding.readVarUint(decoder) as SyncMessageType;
 					const payload = decoding.readVarUint8Array(decoder);
+
+					// STEP1 is a state-vector probe with no doc mutation, so it
+					// needs no validation. STEP2 and UPDATE both call
+					// Y.applyUpdateV2 inside handleSyncPayload; reject early if
+					// the payload would write to the reserved presence array.
+					if (
+						syncType === SYNC_MESSAGE_TYPE.STEP2 ||
+						syncType === SYNC_MESSAGE_TYPE.UPDATE
+					) {
+						if (updateTouchesPresence(payload)) {
+							return { result: null, forbidden: true };
+						}
+					}
+
 					const response = handleSyncPayload({
-						syncType: syncType as SyncMessageType,
+						syncType,
 						payload,
 						doc: room.doc,
 						origin: connection.ws,
 					});
-					return response ? { action: 'reply', data: response } : null;
-				}
-
-				case MESSAGE_TYPE.AWARENESS: {
-					// Client publishes an opaque awareness payload. Apply locally,
-					// then re-emit to peers wrapped in an AWARENESS_ATTESTED envelope
-					// stamped with the connection's auth-derived subject. Any
-					// `subject` the client tries to encode inside the payload is
-					// irrelevant: peers read trust-attested identity from the
-					// envelope, not the payload.
-					const update = decoding.readVarUint8Array(decoder);
-					applyAwarenessUpdate(room.awareness, update, connection.ws);
 					return {
-						action: 'broadcast',
-						data: encodeAwarenessAttested({
-							subject: room.subject,
-							update,
-						}),
-						shouldPersistAttachment: true,
+						result: response ? { action: 'reply', data: response } : null,
+						forbidden: false,
 					};
-				}
-
-				case MESSAGE_TYPE.QUERY_AWARENESS: {
-					const awarenessStates = room.awareness.getStates();
-					if (awarenessStates.size > 0) {
-						return {
-							action: 'reply',
-							data: encodeAwarenessAttested({
-								subject: room.subject,
-								update: encodeAwarenessUpdate(
-									room.awareness,
-									Array.from(awarenessStates.keys()),
-								),
-							}),
-						};
-					}
-					return null;
-				}
-
-				case MESSAGE_TYPE.RPC: {
-					const rpc = decodeRpcMessage(data);
-					switch (rpc.type) {
-						case 'action-request':
-						case 'runtime-request': {
-							// Prepare PeerOffline response in case target is not connected.
-							// The DO sends this back to the requester if the target
-							// clientId is not found in any connection's controlledClientIds.
-							// Action requests and runtime requests share the same routing
-							// path and response envelope; only the receiving peer cares
-							// about the discriminator.
-							const onMissReply = encodeRpcResponse({
-								requestId: rpc.requestId,
-								requesterClientId: rpc.requesterClientId,
-								result: RpcError.PeerOffline(),
-							});
-							return {
-								action: 'forward',
-								targetClientId: rpc.targetClientId,
-								data,
-								onMissReply,
-							};
-						}
-						case 'response':
-							// Route back to the original requester. No onMissReply —
-							// if requester disconnected, silently drop.
-							return {
-								action: 'forward',
-								targetClientId: rpc.requesterClientId,
-								data,
-							};
-					}
 				}
 
 				case MESSAGE_TYPE.AUTH: {
 					// Auth is handled at the Worker boundary (Better Auth middleware).
-					// Receiving AUTH on an already-authenticated WS is unexpected —
+					// Receiving AUTH on an already-authenticated WS is unexpected:
 					// log for observability but don't close the connection.
 					console.warn(
 						'[sync] Unexpected AUTH message on authenticated WebSocket',
 					);
-					return null;
+					return { result: null, forbidden: false };
 				}
 
 				default:
 					console.warn(`[sync] Unknown WS message type: ${messageType}`);
-					return null;
+					return { result: null, forbidden: false };
 			}
 		},
 		catch: (cause) => SyncHandlerError.MessageDecode({ cause }),
 	});
+
+	if (decoded.error) return decoded;
+	if (decoded.data.forbidden) {
+		return SyncHandlerError.PresenceWriteForbidden({});
+	}
+	return Ok(decoded.data.result);
 }
 
 /**
  * Clean up a closed WebSocket connection.
  *
- * Calls `connection.unregister()` to remove the `doc.on('updateV2')` and
- * `awareness.on('update')` listeners, then removes awareness states for
- * this connection's controlled client IDs. The `removeAwarenessStates`
- * call is wrapped in `trySync` as a safety net — awareness cleanup should
- * never prevent handler deregistration from completing.
- *
- * @param options.room - The shared room context (doc + awareness)
- * @param options.connection - The per-connection state to tear down
+ * Calls `connection.unregister()` to remove the `doc.on('updateV2')`
+ * listener. Presence rows for the closed connection are deleted by
+ * `webSocketClose` in `BaseSyncRoom`, not here, because deletion needs
+ * the room's `presence` store and the `SERVER_ORIGIN` transaction tag.
  */
 export function teardownConnection({
-	room,
 	connection,
 }: {
-	room: RoomContext;
 	connection: Connection;
 }): void {
 	connection.unregister();
-
-	if (connection.controlledClientIds.size > 0) {
-		trySync({
-			try: () =>
-				removeAwarenessStates(
-					room.awareness,
-					Array.from(connection.controlledClientIds),
-					null,
-				),
-			catch: () => Ok(undefined), // cleanup best-effort
-		});
-	}
 }

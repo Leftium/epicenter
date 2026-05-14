@@ -7,7 +7,7 @@
  *
  *   /peers  ->  collaboration.peers.list()                       all routes
  *   /list   ->  flat manifest of `${route}.${action_key}` -> meta  all routes
- *   /run    ->  invokeAction(...) | peer.invoke(...)              route-routed
+ *   /run    ->  invokeAction(...) | collab.dispatch(...)          route-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -19,7 +19,6 @@ import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
-import { Replica } from '../document/peer-identity.js';
 import { type ActionManifest, toActionMeta } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
 import type { StartedDaemonRoute } from './types.js';
@@ -46,20 +45,18 @@ export const RunRequest = type({
 export type RunRequest = typeof RunRequest.infer;
 
 /**
- * Row shape returned by `/peers`. One row per `(route, clientID)` pair,
+ * Row shape returned by `/peers`. One row per `(route, connId)` pair,
  * tagged with its route name so a multi-route daemon can fan out.
  *
- * `subject` is the server-attested user id (from the AWARENESS_ATTESTED
- * envelope); `replica` is the install-stable, client-claimed descriptor.
- * Renderers consume both directly without a cast. Display names are not in
- * scope here; the CLI shows `subject` until a lookup endpoint exists.
+ * `subject` is the server-attested user id; `replicaId` is the install-stable,
+ * client-claimed identity; `connId` is the per-socket routing address used
+ * by `collab.dispatch({ to })`.
  */
 export const PeerSnapshot = type({
 	route: 'string',
-	clientID: 'number',
+	connId: 'string',
+	replicaId: 'string',
 	subject: 'string',
-	replica: Replica,
-	actionKeys: 'string[]',
 });
 export type PeerSnapshot = typeof PeerSnapshot.infer;
 
@@ -83,10 +80,9 @@ export function buildDaemonApp(
 				for (const peer of entry.runtime.collaboration.peers.list()) {
 					rows.push({
 						route: entry.route,
-						clientID: peer.clientID,
+						connId: peer.connId,
+						replicaId: peer.replicaId,
 						subject: peer.subject,
-						replica: peer.replica,
-						actionKeys: [...peer.actionKeys],
 					});
 				}
 			}

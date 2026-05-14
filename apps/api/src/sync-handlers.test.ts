@@ -1,695 +1,387 @@
 /**
  * Sync Handler Integration Tests
  *
- * Tests the server-side Yjs sync protocol handlers that manage WebSocket
- * connections in Cloudflare Durable Objects. These handlers are the critical
- * path: if they correctly handle the sync handshake, incremental updates,
- * awareness, and cleanup, the DOs (thin wrappers around them) work.
- *
- * Key behaviors:
- * - computeInitialMessages returns SyncStep1 + awareness states
- * - registerConnection sets up doc/awareness event listeners
- * - applyMessage dispatches SYNC, AWARENESS, and QUERY_AWARENESS messages
- * - teardownConnection unregisters handlers and removes awareness states
- * - Multi-client broadcast: update from client A reaches client B via updateV2 handler
- * - Full handshake: SyncStep1 → SyncStep2 → documents converge
- *
- * See also:
- * - `packages/sync/src/protocol.test.ts` for protocol encode/decode unit tests
- * - `packages/sync-client/src/provider.test.ts` for client-side provider lifecycle
+ * Exercises the slimmed `applyMessage` / `registerConnection` /
+ * `teardownConnection` surface that survived the RPC-on-Yjs-state collapse.
+ * Only SYNC frames produce traffic; AUTH is a reserved sentinel; client
+ * writes to the reserved `PRESENCE_KEY` array are rejected at the boundary.
  */
 
 import { describe, expect, test } from 'bun:test';
+
 import {
-	decodeAwarenessAttestedPayload,
-	decodeMessageType,
-	decodeSyncMessage,
-	encodeAwareness,
-	encodeAwarenessAttested,
-	encodeQueryAwareness,
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
 	MESSAGE_TYPE,
+	SYNC_MESSAGE_TYPE,
 } from '@epicenter/sync';
-import * as decoding from 'lib0/decoding';
-import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
+import { PRESENCE_KEY } from '@epicenter/workspace';
+import * as encoding from 'lib0/encoding';
 import * as Y from 'yjs';
+
 import {
 	applyMessage,
-	computeInitialMessages,
+	type Connection,
 	type RoomContext,
 	registerConnection,
+	SyncHandlerError,
 	teardownConnection,
+	updateTouchesPresence,
 } from './sync-handlers';
 
 // ============================================================================
-// Mock WebSocket
+// Test Helpers
 // ============================================================================
 
 /**
- * Minimal mock of Cloudflare's WebSocket for testing sync-handlers.
- *
- * The handlers only use `.send()` (to forward updates), `.readyState`
- * (checked by DO broadcast logic, not by handlers directly), and identity
- * comparison (`origin === ws` for echo prevention).
+ * Minimal stand-in for a Cloudflare WebSocket. We only care about `send`
+ * capturing outbound frames so tests can assert on them; `readyState = 1`
+ * matches `WebSocket.OPEN` so any production code probing readiness is happy.
  */
 class MockWebSocket {
 	sent: Uint8Array[] = [];
-	readyState = 1; // WebSocket.OPEN
-
-	send(data: Uint8Array | ArrayBuffer | string) {
-		if (data instanceof Uint8Array) {
-			this.sent.push(data);
-		} else if (data instanceof ArrayBuffer) {
-			this.sent.push(new Uint8Array(data));
+	readyState = 1;
+	send(data: Uint8Array | string): void {
+		if (typeof data === 'string') {
+			this.sent.push(new TextEncoder().encode(data));
+			return;
 		}
-	}
-
-	close() {
-		this.readyState = 3; // WebSocket.CLOSED
+		this.sent.push(data);
 	}
 }
 
-// ============================================================================
-// Setup Helpers
-// ============================================================================
+function makeRoom(subject = 'test-user'): RoomContext {
+	return { doc: new Y.Doc(), subject };
+}
 
-/** Create a single-connection setup: room context + mock ws + connection. */
-function setup(init?: (doc: Y.Doc) => void) {
-	const doc = new Y.Doc();
-	if (init) init(doc);
-	const awareness = new Awareness(doc);
-	const room: RoomContext = { doc, awareness, subject: 'test-user' };
+function makeConnection(doc: Y.Doc): {
+	ws: MockWebSocket;
+	connection: Connection;
+} {
 	const ws = new MockWebSocket();
-	const initialMessages = computeInitialMessages(room);
 	const connection = registerConnection({
-		...room,
+		doc,
 		ws: ws as unknown as WebSocket,
 	});
-	return { doc, awareness, room, ws, connection, initialMessages };
+	return { ws, connection };
 }
 
-/** Create a two-client setup sharing the same doc and awareness. */
-function setupTwoClients(init?: (doc: Y.Doc) => void) {
-	const doc = new Y.Doc();
-	if (init) init(doc);
-	const awareness = new Awareness(doc);
-	const room: RoomContext = { doc, awareness, subject: 'test-user' };
+/** Build a raw SYNC + UPDATE frame around an arbitrary V2 update payload. */
+function frameSyncUpdate(update: Uint8Array): Uint8Array {
+	return encodeSyncUpdate({ update });
+}
 
-	const ws1 = new MockWebSocket();
-	const init1 = computeInitialMessages(room);
-	const connection1 = registerConnection({
-		...room,
-		ws: ws1 as unknown as WebSocket,
+/** Build a frame with an arbitrary top-level message type for unknown-type tests. */
+function frameSingleByte(messageType: number): Uint8Array {
+	return encoding.encode((encoder) => {
+		encoding.writeVarUint(encoder, messageType);
 	});
+}
 
-	const ws2 = new MockWebSocket();
-	const init2 = computeInitialMessages(room);
-	const connection2 = registerConnection({
-		...room,
-		ws: ws2 as unknown as WebSocket,
-	});
-
-	return {
-		doc,
-		awareness,
-		room,
-		ws1,
-		connection1,
-		init1,
-		ws2,
-		connection2,
-		init2,
-	};
+/** Build a bare AUTH frame: just the AUTH varint with no payload. */
+function frameAuth(): Uint8Array {
+	return frameSingleByte(MESSAGE_TYPE.AUTH);
 }
 
 // ============================================================================
-// computeInitialMessages Tests
-// ============================================================================
-
-describe('computeInitialMessages', () => {
-	test('returns SyncStep1 as first initial message', () => {
-		const { initialMessages } = setup();
-
-		expect(initialMessages.length).toBeGreaterThanOrEqual(1);
-		// biome-ignore lint/style/noNonNullAssertion: length asserted above
-		const decoded = decodeSyncMessage(initialMessages[0]!);
-		expect(decoded.type).toBe('step1');
-	});
-
-	test('returns only SyncStep1 when awareness has no states', () => {
-		const doc = new Y.Doc();
-		const awareness = new Awareness(doc);
-		// Awareness constructor sets a default local state — clear it
-		awareness.setLocalState(null);
-
-		const initialMessages = computeInitialMessages({
-			doc,
-			awareness,
-			subject: 'test-user',
-		});
-
-		expect(initialMessages).toHaveLength(1);
-		// biome-ignore lint/style/noNonNullAssertion: length asserted above
-		expect(decodeMessageType(initialMessages[0]!)).toBe(MESSAGE_TYPE.SYNC);
-	});
-
-	test('returns awareness states as second message when awareness has entries', () => {
-		const doc = new Y.Doc();
-		const awareness = new Awareness(doc);
-		awareness.setLocalState({ name: 'existing-user' });
-
-		const initialMessages = computeInitialMessages({
-			doc,
-			awareness,
-			subject: 'test-user',
-		});
-
-		expect(initialMessages).toHaveLength(2);
-		// biome-ignore lint/style/noNonNullAssertion: length asserted above
-		expect(decodeMessageType(initialMessages[0]!)).toBe(MESSAGE_TYPE.SYNC);
-		// biome-ignore lint/style/noNonNullAssertion: length asserted above
-		expect(decodeMessageType(initialMessages[1]!)).toBe(
-			MESSAGE_TYPE.AWARENESS_ATTESTED,
-		);
-	});
-});
-
-// ============================================================================
-// registerConnection Tests
+// registerConnection
 // ============================================================================
 
 describe('registerConnection', () => {
-	test('registered updateHandler forwards doc changes to ws.send', () => {
-		const { doc, ws } = setup();
-		const sentBefore = ws.sent.length;
+	test('forwards doc updates from other origins to the socket', () => {
+		const room = makeRoom();
+		const { ws } = makeConnection(room.doc);
 
-		// Change from a DIFFERENT origin (simulates another client's update being applied)
-		Y.applyUpdateV2(
-			doc,
-			Y.encodeStateAsUpdateV2(
-				createDoc((d) => d.getMap('data').set('key', 'value')),
-			),
-			'other-origin',
-		);
+		// Origin is *not* this ws, so the update should be forwarded.
+		room.doc.transact(() => {
+			room.doc.getMap('data').set('hello', 'world');
+		}, 'some-other-origin');
 
-		expect(ws.sent.length).toBeGreaterThan(sentBefore);
-		// biome-ignore lint/style/noNonNullAssertion: length asserted above
-		expect(decodeMessageType(ws.sent[ws.sent.length - 1]!)).toBe(
-			MESSAGE_TYPE.SYNC,
-		);
+		expect(ws.sent.length).toBe(1);
+		// The forwarded frame is a SYNC + UPDATE frame.
+		expect(ws.sent[0]?.[0]).toBe(MESSAGE_TYPE.SYNC);
+		expect(ws.sent[0]?.[1]).toBe(SYNC_MESSAGE_TYPE.UPDATE);
 	});
 
-	test('registered updateHandler skips echo (origin === ws)', () => {
-		const { doc, ws, connection } = setup();
-		const sentBefore = ws.sent.length;
-
-		// Change from THIS connection's ws (should be skipped)
-		Y.applyUpdateV2(
-			doc,
-			Y.encodeStateAsUpdateV2(
-				createDoc((d) => d.getMap('data').set('echo', 'test')),
-			),
-			connection.ws, // same identity as the registered handler's ws
-		);
-
-		expect(ws.sent.length).toBe(sentBefore);
-	});
-
-	test('returns Connection with empty controlledClientIds', () => {
-		const { connection } = setup();
-
-		expect(connection.controlledClientIds).toBeInstanceOf(Set);
-		expect(connection.controlledClientIds.size).toBe(0);
-	});
-});
-
-// ============================================================================
-// applyMessage — SYNC Tests
-// ============================================================================
-
-describe('applyMessage — SYNC', () => {
-	test('SyncStep1 from client returns SyncStep2 response', () => {
-		const { room, connection } = setup((d) => {
-			d.getMap('data').set('server-key', 'server-value');
-		});
-
-		// Client sends its state vector (empty doc)
-		const clientDoc = new Y.Doc();
-		const step1Message = encodeSyncStep1({ doc: clientDoc });
-
-		const result = applyMessage({ data: step1Message, room, connection });
-
-		expect(result.error).toBeNull();
-		expect(result.data).not.toBeNull();
-		expect(result.data?.action).toBe('reply');
-		if (result.data?.action === 'reply') {
-			const decoded = decodeSyncMessage(result.data.data);
-			expect(decoded.type).toBe('step2');
-		}
-	});
-
-	test('SyncStep2 from client applies update to server doc', () => {
-		const { doc, room, connection } = setup();
-
-		// Client has content the server doesn't
-		const clientDoc = createDoc((d) => {
-			d.getMap('data').set('client-key', 'client-value');
-		});
-		const step2Message = encodeSyncStep2({ doc: clientDoc });
-
-		const result = applyMessage({ data: step2Message, room, connection });
-
-		expect(result.error).toBeNull();
-		expect(result.data).toBeNull();
-		expect(doc.getMap('data').get('client-key')).toBe('client-value');
-	});
-
-	test('SyncUpdate from client applies incremental update to server doc', () => {
-		const { doc, room, connection } = setup();
-
-		// Capture an incremental V2 update
-		const sourceDoc = new Y.Doc();
-		let capturedUpdate: Uint8Array | null = null;
-		sourceDoc.on('updateV2', (update: Uint8Array) => {
-			capturedUpdate = update;
-		});
-		sourceDoc.getMap('data').set('incremental', 'update-value');
-
-		// biome-ignore lint/style/noNonNullAssertion: updateV2 handler fires synchronously from .set() above
-		const updateMessage = encodeSyncUpdate({ update: capturedUpdate! });
-		const result = applyMessage({ data: updateMessage, room, connection });
-
-		expect(result.error).toBeNull();
-		expect(result.data).toBeNull();
-		expect(doc.getMap('data').get('incremental')).toBe('update-value');
-	});
-});
-
-// ============================================================================
-// applyMessage — AWARENESS Tests
-// ============================================================================
-
-describe('applyMessage — AWARENESS', () => {
-	test('awareness update returns broadcast and persistAttachment effects', () => {
-		const { room, connection } = setup();
-
-		// Create a separate awareness to generate an update
-		const clientDoc = new Y.Doc();
-		const clientAwareness = new Awareness(clientDoc);
-		clientAwareness.setLocalState({
-			name: 'TestUser',
-			cursor: { x: 10, y: 20 },
-		});
-
-		const update = encodeAwarenessUpdate(clientAwareness, [
-			clientAwareness.clientID,
-		]);
-		const message = encodeAwareness({ update });
-
-		const result = applyMessage({ data: message, room, connection });
-
-		expect(result.error).toBeNull();
-		expect(result.data).not.toBeNull();
-		expect(result.data?.action).toBe('broadcast');
-		if (result.data?.action === 'broadcast') {
-			expect(decodeMessageType(result.data.data)).toBe(
-				MESSAGE_TYPE.AWARENESS_ATTESTED,
-			);
-			expect(result.data.shouldPersistAttachment).toBe(true);
-		}
-	});
-
-	test('awareness update is applied to the shared awareness instance', () => {
-		const { room, connection, awareness } = setup();
-
-		const clientDoc = new Y.Doc();
-		const clientAwareness = new Awareness(clientDoc);
-		clientAwareness.setLocalState({ name: 'Alice' });
-
-		const update = encodeAwarenessUpdate(clientAwareness, [
-			clientAwareness.clientID,
-		]);
-		const message = encodeAwareness({ update });
-
-		applyMessage({ data: message, room, connection });
-
-		const states = awareness.getStates();
-		expect(states.has(clientAwareness.clientID)).toBe(true);
-		expect(states.get(clientAwareness.clientID)).toEqual({ name: 'Alice' });
-	});
-
-	test('broadcast envelope stamps room.subject, ignoring any subject the client encoded inside the payload', () => {
-		const { room, connection } = setup();
-
-		// Simulate a malicious client trying to claim a different subject in
-		// the awareness payload. The server-stamped envelope subject must
-		// match room.subject, not the forged value.
-		const clientDoc = new Y.Doc();
-		const clientAwareness = new Awareness(clientDoc);
-		clientAwareness.setLocalState({
-			subject: 'attacker',
-			replica: { id: 'r-bad', platform: 'web' },
-		});
-
-		const update = encodeAwarenessUpdate(clientAwareness, [
-			clientAwareness.clientID,
-		]);
-		const message = encodeAwareness({ update });
-
-		const result = applyMessage({ data: message, room, connection });
-		expect(result.error).toBeNull();
-		if (result.data?.action !== 'broadcast')
-			throw new Error('expected broadcast');
-
-		const decoder = decoding.createDecoder(result.data.data);
-		expect(decoding.readVarUint(decoder)).toBe(MESSAGE_TYPE.AWARENESS_ATTESTED);
-		const decoded = decodeAwarenessAttestedPayload(decoder);
-		expect(decoded.subject).toBe(room.subject);
-		expect(decoded.subject).not.toBe('attacker');
-	});
-
-	test('AWARENESS_ATTESTED is a server-to-client-only frame: inbound is silently ignored', () => {
-		// A client that constructs the envelope itself and tries to assert a
-		// forged subject must not bypass the auth boundary. The dispatcher has
-		// no AWARENESS_ATTESTED case at all, so the frame falls through to the
-		// default branch, logs an unknown-type warning, and returns null. No
-		// broadcast, no apply, no envelope echo.
-		const { room, connection } = setup();
-		const forged = encodeAwarenessAttested({
-			subject: 'attacker',
-			update: new Uint8Array([0]),
-		});
-		const beforeStates = new Map(room.awareness.getStates());
-
-		const result = applyMessage({ data: forged, room, connection });
-		expect(result.error).toBeNull();
-		expect(result.data).toBeNull();
-		// Awareness was not touched.
-		expect(room.awareness.getStates()).toEqual(beforeStates);
-	});
-});
-
-// ============================================================================
-// applyMessage — QUERY_AWARENESS Tests
-// ============================================================================
-
-describe('applyMessage — QUERY_AWARENESS', () => {
-	test('returns awareness states when present', () => {
-		const { room, connection, awareness } = setup();
-		awareness.setLocalState({ name: 'ServerUser' });
-
-		const message = encodeQueryAwareness();
-		const result = applyMessage({ data: message, room, connection });
-
-		expect(result.error).toBeNull();
-		expect(result.data).not.toBeNull();
-		expect(result.data?.action).toBe('reply');
-		if (result.data?.action === 'reply') {
-			expect(decodeMessageType(result.data.data)).toBe(
-				MESSAGE_TYPE.AWARENESS_ATTESTED,
-			);
-		}
-	});
-
-	test('returns empty result when no awareness states exist', () => {
-		const doc = new Y.Doc();
-		const awareness = new Awareness(doc);
-		// Clear the local state that Awareness sets by default
-		awareness.setLocalState(null);
-
-		const room: RoomContext = { doc, awareness, subject: 'test-user' };
+	test('skips echo when origin is the connection itself', () => {
+		const room = makeRoom();
 		const ws = new MockWebSocket();
 		const connection = registerConnection({
-			...room,
+			doc: room.doc,
 			ws: ws as unknown as WebSocket,
 		});
 
-		const message = encodeQueryAwareness();
-		const result = applyMessage({ data: message, room, connection });
+		room.doc.transact(() => {
+			room.doc.getMap('data').set('hello', 'world');
+		}, connection.ws);
 
-		expect(result.error).toBeNull();
-		expect(result.data).toBeNull();
+		expect(ws.sent.length).toBe(0);
+	});
+
+	test('multiple non-origin updates each produce a frame', () => {
+		const room = makeRoom();
+		const { ws } = makeConnection(room.doc);
+
+		room.doc.transact(() => {
+			room.doc.getMap('data').set('a', 1);
+		}, 'origin-1');
+		room.doc.transact(() => {
+			room.doc.getMap('data').set('b', 2);
+		}, 'origin-2');
+
+		expect(ws.sent.length).toBe(2);
 	});
 });
 
 // ============================================================================
-// applyMessage — Error Handling Tests
+// applyMessage - SYNC
 // ============================================================================
 
-describe('applyMessage — error handling', () => {
-	test('malformed binary returns MessageDecode error', () => {
-		const { room, connection } = setup();
+describe('applyMessage SYNC STEP1', () => {
+	test('replies with a STEP2 frame containing the server diff', () => {
+		const room = makeRoom();
+		room.doc.getMap('data').set('seed', 'value');
 
-		// Garbage bytes that will cause lib0 decoder to throw
-		const malformed = new Uint8Array([255, 255, 255, 255, 255]);
-		const result = applyMessage({ data: malformed, room, connection });
+		// Client probes with an empty state vector.
+		const clientDoc = new Y.Doc();
+		const step1 = encodeSyncStep1({ doc: clientDoc });
 
+		const ws = new MockWebSocket();
+		const connection = registerConnection({
+			doc: room.doc,
+			ws: ws as unknown as WebSocket,
+		});
+
+		const result = applyMessage({
+			data: step1,
+			room,
+			connection,
+		});
+
+		expect(result.error).toBeNull();
+		expect(result.data).not.toBeNull();
+		expect(result.data?.action).toBe('reply');
+		const reply = result.data?.data;
+		expect(reply).toBeInstanceOf(Uint8Array);
+		expect(reply?.[0]).toBe(MESSAGE_TYPE.SYNC);
+		expect(reply?.[1]).toBe(SYNC_MESSAGE_TYPE.STEP2);
+	});
+});
+
+describe('applyMessage SYNC STEP2 / UPDATE', () => {
+	test('STEP2 payload applies state to the target doc', () => {
+		const source = new Y.Doc();
+		source.getMap('data').set('shared', 'yes');
+		const step2 = encodeSyncStep2({ doc: source });
+
+		const room = makeRoom();
+		const ws = new MockWebSocket();
+		const connection = registerConnection({
+			doc: room.doc,
+			ws: ws as unknown as WebSocket,
+		});
+
+		const result = applyMessage({
+			data: step2,
+			room,
+			connection,
+		});
+
+		expect(result.error).toBeNull();
+		expect(result.data).toBeNull(); // STEP2 has no reply.
+		expect(room.doc.getMap('data').get('shared')).toBe('yes');
+	});
+
+	test('UPDATE payload applies state to the target doc', () => {
+		const source = new Y.Doc();
+		source.getMap('data').set('hello', 'world');
+		const update = Y.encodeStateAsUpdateV2(source);
+		const frame = frameSyncUpdate(update);
+
+		const room = makeRoom();
+		const ws = new MockWebSocket();
+		const connection = registerConnection({
+			doc: room.doc,
+			ws: ws as unknown as WebSocket,
+		});
+
+		const result = applyMessage({
+			data: frame,
+			room,
+			connection,
+		});
+
+		expect(result.error).toBeNull();
+		expect(result.data).toBeNull();
+		expect(room.doc.getMap('data').get('hello')).toBe('world');
+	});
+});
+
+// ============================================================================
+// Presence write rejection
+// ============================================================================
+
+describe('applyMessage presence write rejection', () => {
+	test('rejects UPDATE frames that touch the reserved PRESENCE_KEY array', () => {
+		const offender = new Y.Doc();
+		offender.getArray(PRESENCE_KEY).push(['spoofed-presence-row']);
+		const update = Y.encodeStateAsUpdateV2(offender);
+		const frame = frameSyncUpdate(update);
+
+		const room = makeRoom();
+		const beforeSv = Y.encodeStateVector(room.doc);
+		const ws = new MockWebSocket();
+		const connection = registerConnection({
+			doc: room.doc,
+			ws: ws as unknown as WebSocket,
+		});
+
+		const result = applyMessage({
+			data: frame,
+			room,
+			connection,
+		});
+
+		expect(result.data).toBeNull();
 		expect(result.error).not.toBeNull();
-		// biome-ignore lint/style/noNonNullAssertion: error is non-null (asserted above)
-		expect(result.error!.message).toContain(
-			'Failed to decode WebSocket message',
-		);
+		expect(result.error?.name).toBe('PresenceWriteForbidden');
+
+		// Doc must not be mutated.
+		const afterSv = Y.encodeStateVector(room.doc);
+		expect(afterSv.byteLength).toBe(beforeSv.byteLength);
+		for (let i = 0; i < afterSv.byteLength; i++) {
+			expect(afterSv[i]).toBe(beforeSv[i] as number);
+		}
+		expect(room.doc.getArray(PRESENCE_KEY).length).toBe(0);
 	});
 
-	test('unknown message type returns empty effects (no error)', () => {
-		const { room, connection } = setup();
+	test('rejects STEP2 frames that touch the reserved PRESENCE_KEY array', () => {
+		const offender = new Y.Doc();
+		offender.getArray(PRESENCE_KEY).push(['spoofed-presence-row']);
+		const frame = encodeSyncStep2({ doc: offender });
 
-		// Message type 99 — unknown but validly encoded
-		const encoder = new Uint8Array([99]);
-		const result = applyMessage({ data: encoder, room, connection });
+		const room = makeRoom();
+		const ws = new MockWebSocket();
+		const connection = registerConnection({
+			doc: room.doc,
+			ws: ws as unknown as WebSocket,
+		});
 
-		// Unknown types return empty effects array with no error
-		expect(result.error).toBeNull();
-		expect(result.data).toBeNull();
+		const result = applyMessage({
+			data: frame,
+			room,
+			connection,
+		});
+
+		expect(result.error?.name).toBe('PresenceWriteForbidden');
+		expect(room.doc.getArray(PRESENCE_KEY).length).toBe(0);
+	});
+
+	test('matches the variant factory output for SyncHandlerError', () => {
+		// Sanity: the factory returns an Err-wrapped tagged error; `.error.name`
+		// is the discriminator the dispatcher matches on.
+		const sample = SyncHandlerError.PresenceWriteForbidden({});
+		expect(sample.error?.name).toBe('PresenceWriteForbidden');
 	});
 });
 
 // ============================================================================
-// teardownConnection Tests
+// updateTouchesPresence helper
+// ============================================================================
+
+describe('updateTouchesPresence', () => {
+	test('returns true when the update writes to PRESENCE_KEY', () => {
+		const doc = new Y.Doc();
+		doc.getArray(PRESENCE_KEY).push(['row-a']);
+		const update = Y.encodeStateAsUpdateV2(doc);
+		expect(updateTouchesPresence(update)).toBe(true);
+	});
+
+	test('returns false when the update writes to some other Y.Array key', () => {
+		const doc = new Y.Doc();
+		doc.getArray('table:posts').push(['unrelated-row']);
+		const update = Y.encodeStateAsUpdateV2(doc);
+		expect(updateTouchesPresence(update)).toBe(false);
+	});
+
+	test('returns false when the update is purely Y.Map writes', () => {
+		const doc = new Y.Doc();
+		doc.getMap('data').set('key', 'value');
+		const update = Y.encodeStateAsUpdateV2(doc);
+		expect(updateTouchesPresence(update)).toBe(false);
+	});
+});
+
+// ============================================================================
+// teardownConnection
 // ============================================================================
 
 describe('teardownConnection', () => {
-	test('unregisters updateV2 handler (doc mutations no longer forward to ws)', () => {
-		const { doc, ws, room, connection } = setup();
-		const sentBefore = ws.sent.length;
-
-		teardownConnection({ room, connection });
-
-		// Mutate doc from external origin — should NOT trigger ws.send
-		Y.applyUpdateV2(
-			doc,
-			Y.encodeStateAsUpdateV2(
-				createDoc((d) => d.getMap('data').set('after-close', 'value')),
-			),
-			'external',
-		);
-
-		expect(ws.sent.length).toBe(sentBefore);
-	});
-
-	test('removes awareness states for controlled client IDs', () => {
-		const { room, connection, awareness } = setup();
-
-		// Simulate awareness update from this connection to populate controlledClientIds
-		const clientDoc = new Y.Doc();
-		const clientAwareness = new Awareness(clientDoc);
-		clientAwareness.setLocalState({ name: 'DisconnectingUser' });
-
-		const update = encodeAwarenessUpdate(clientAwareness, [
-			clientAwareness.clientID,
-		]);
-		const message = encodeAwareness({ update });
-		applyMessage({ data: message, room, connection });
-
-		// The awareness handler tracks controlled IDs when origin === ws
-		// Since applyAwarenessUpdate is called with origin=connection.ws, the handler fires
-		expect(awareness.getStates().has(clientAwareness.clientID)).toBe(true);
-
-		// Manually add to controlled set (the awareness handler only tracks origin === ws)
-		connection.controlledClientIds.add(clientAwareness.clientID);
-
-		teardownConnection({ room, connection });
-
-		expect(awareness.getStates().has(clientAwareness.clientID)).toBe(false);
-	});
-
-	test('handles close with no controlled client IDs gracefully', () => {
-		const { room, connection } = setup();
-
-		expect(connection.controlledClientIds.size).toBe(0);
-
-		// Should not throw
-		teardownConnection({ room, connection });
-	});
-});
-
-// ============================================================================
-// Multi-Client Broadcast Tests
-// ============================================================================
-
-describe('multi-client broadcast', () => {
-	test('update from client A reaches client B via updateV2 handler', () => {
-		const { room, ws1, connection1, ws2 } = setupTwoClients();
-
-		// Clear initial messages from ws2.sent
-		const ws2SentBefore = ws2.sent.length;
-		const ws1SentBefore = ws1.sent.length;
-
-		// Client A sends a sync update
-		const sourceDoc = new Y.Doc();
-		let capturedUpdate: Uint8Array | null = null;
-		sourceDoc.on('updateV2', (update: Uint8Array) => {
-			capturedUpdate = update;
-		});
-		sourceDoc.getMap('data').set('from-client-a', 'hello');
-
-		// biome-ignore lint/style/noNonNullAssertion: updateV2 handler fires synchronously from .set() above
-		const updateMessage = encodeSyncUpdate({ update: capturedUpdate! });
-		applyMessage({ data: updateMessage, room, connection: connection1 });
-
-		// Client B's ws should have received the forwarded update
-		expect(ws2.sent.length).toBeGreaterThan(ws2SentBefore);
-
-		// The forwarded message should be a SYNC message
-		// biome-ignore lint/style/noNonNullAssertion: length asserted above
-		expect(decodeMessageType(ws2.sent[ws2.sent.length - 1]!)).toBe(
-			MESSAGE_TYPE.SYNC,
-		);
-
-		// Client A's ws should NOT have received it (echo prevention)
-		expect(ws1.sent.length).toBe(ws1SentBefore);
-	});
-
-	test('awareness broadcast reaches other clients', () => {
-		const { room, connection1, awareness } = setupTwoClients();
-
-		// Client A sends awareness update
-		const clientDoc = new Y.Doc();
-		const clientAwareness = new Awareness(clientDoc);
-		clientAwareness.setLocalState({ name: 'ClientA' });
-
-		const update = encodeAwarenessUpdate(clientAwareness, [
-			clientAwareness.clientID,
-		]);
-		const message = encodeAwareness({ update });
-
-		const result = applyMessage({
-			data: message,
-			room,
-			connection: connection1,
-		});
-
-		// The broadcast field should be set for the DO to distribute
-		expect(result.data).not.toBeNull();
-		expect(result.data?.action).toBe('broadcast');
-
-		// The awareness state should be applied to the shared instance
-		expect(awareness.getStates().has(clientAwareness.clientID)).toBe(true);
-	});
-});
-
-// ============================================================================
-// Full Handshake Convergence Tests
-// ============================================================================
-
-describe('full handshake convergence', () => {
-	test('server content syncs to client via SyncStep1 → SyncStep2 exchange', () => {
-		// Server has content
-		const { room, connection, initialMessages } = setup((d) => {
-			d.getMap('notes').set('note1', 'Hello from server');
-			d.getArray('items').push(['item-a', 'item-b']);
-		});
-
-		// Client starts empty
-		const clientDoc = new Y.Doc();
-
-		// Step 1: Client receives server's SyncStep1 (from initialMessages)
-		// biome-ignore lint/style/noNonNullAssertion: setup() always returns at least one message
-		const serverStep1 = initialMessages[0]!;
-		const decoded = decodeSyncMessage(serverStep1);
-		expect(decoded.type).toBe('step1');
-
-		// Step 2: Client sends its own SyncStep1 to server
-		const clientStep1 = encodeSyncStep1({ doc: clientDoc });
-		const result = applyMessage({ data: clientStep1, room, connection });
-
-		expect(result.error).toBeNull();
-		expect(result.data).not.toBeNull();
-		expect(result.data?.action).toBe('reply');
-
-		// Step 3: Client applies server's SyncStep2 response
-		if (result.data?.action === 'reply') {
-			const decodedStep2 = decodeSyncMessage(result.data.data);
-			expect(decodedStep2.type).toBe('step2');
-			if (decodedStep2.type === 'step2') {
-				Y.applyUpdateV2(clientDoc, decodedStep2.update, 'server');
-			}
-		}
-
-		// Step 4: Client sends its SyncStep2 to server (client has nothing server needs)
-		const clientStep2 = encodeSyncStep2({ doc: clientDoc });
-		applyMessage({ data: clientStep2, room, connection });
-
-		// Both docs should now have identical content
-		expect(clientDoc.getMap('notes').get('note1')).toBe('Hello from server');
-		expect(clientDoc.getArray('items').toArray()).toEqual(['item-a', 'item-b']);
-	});
-
-	test('bidirectional sync merges content from both sides', () => {
-		// Server has server-side content
-		const serverDoc = new Y.Doc();
-		serverDoc.getMap('data').set('server-key', 'server-value');
-		const awareness = new Awareness(serverDoc);
-		const room: RoomContext = {
-			doc: serverDoc,
-			awareness,
-			subject: 'test-user',
-		};
+	test('stops forwarding doc updates after unregister', () => {
+		const room = makeRoom();
 		const ws = new MockWebSocket();
 		const connection = registerConnection({
-			...room,
+			doc: room.doc,
 			ws: ws as unknown as WebSocket,
 		});
 
-		// Client has client-side content
-		const clientDoc = new Y.Doc();
-		clientDoc.getMap('data').set('client-key', 'client-value');
+		// Pre-teardown: an update should be forwarded.
+		room.doc.transact(() => {
+			room.doc.getMap('data').set('pre', 1);
+		}, 'other-origin');
+		expect(ws.sent.length).toBe(1);
 
-		// Client sends SyncStep1 to server → gets SyncStep2 back
-		const clientStep1 = encodeSyncStep1({ doc: clientDoc });
-		const result1 = applyMessage({ data: clientStep1, room, connection });
-		expect(result1.data).not.toBeNull();
-		expect(result1.data?.action).toBe('reply');
+		teardownConnection({ connection });
 
-		// Client applies server's diff
-		if (result1.data?.action === 'reply') {
-			const serverDiff = decodeSyncMessage(result1.data.data);
-			if (serverDiff.type === 'step2') {
-				Y.applyUpdateV2(clientDoc, serverDiff.update, 'server');
-			}
-		}
-
-		// Client sends its full state to server (SyncStep2)
-		const clientStep2 = encodeSyncStep2({ doc: clientDoc });
-		applyMessage({ data: clientStep2, room, connection });
-
-		// Both docs should have content from both sides
-		expect(serverDoc.getMap('data').get('server-key')).toBe('server-value');
-		expect(serverDoc.getMap('data').get('client-key')).toBe('client-value');
-		expect(clientDoc.getMap('data').get('server-key')).toBe('server-value');
-		expect(clientDoc.getMap('data').get('client-key')).toBe('client-value');
+		// Post-teardown: no further forwarding.
+		room.doc.transact(() => {
+			room.doc.getMap('data').set('post', 2);
+		}, 'other-origin');
+		expect(ws.sent.length).toBe(1);
 	});
 });
 
 // ============================================================================
-// Test Utilities (hoisted — placed at bottom for readability)
+// AUTH and unknown message types
 // ============================================================================
 
-/** Create a Y.Doc with optional initial content. */
-function createDoc(init?: (doc: Y.Doc) => void): Y.Doc {
-	const doc = new Y.Doc();
-	if (init) init(doc);
-	return doc;
-}
+describe('applyMessage AUTH', () => {
+	test('AUTH frame is a no-op (null result, no error)', () => {
+		const room = makeRoom();
+		const ws = new MockWebSocket();
+		const connection = registerConnection({
+			doc: room.doc,
+			ws: ws as unknown as WebSocket,
+		});
+
+		const result = applyMessage({
+			data: frameAuth(),
+			room,
+			connection,
+		});
+
+		expect(result.error).toBeNull();
+		expect(result.data).toBeNull();
+	});
+});
+
+describe('applyMessage unknown message type', () => {
+	test('unknown top-level type is a no-op (null result, no error)', () => {
+		const room = makeRoom();
+		const ws = new MockWebSocket();
+		const connection = registerConnection({
+			doc: room.doc,
+			ws: ws as unknown as WebSocket,
+		});
+
+		const result = applyMessage({
+			data: frameSingleByte(99),
+			room,
+			connection,
+		});
+
+		expect(result.error).toBeNull();
+		expect(result.data).toBeNull();
+	});
+});

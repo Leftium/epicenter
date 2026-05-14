@@ -515,7 +515,16 @@ app.post(
 		}
 
 		const { stub, doName } = getWorkspaceStub(c);
-		const { diff, storageBytes } = await stub.sync(body);
+		let diff: Uint8Array | null;
+		let storageBytes: number;
+		try {
+			({ diff, storageBytes } = await stub.sync(body));
+		} catch (err) {
+			if (err instanceof Error && err.name === 'PresenceWriteForbidden') {
+				return c.body('presence-write-forbidden', 403);
+			}
+			throw err;
+		}
 
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
@@ -588,7 +597,16 @@ app.post(
 		}
 
 		const { stub, doName } = getDocumentStub(c);
-		const { diff, storageBytes } = await stub.sync(body);
+		let diff: Uint8Array | null;
+		let storageBytes: number;
+		try {
+			({ diff, storageBytes } = await stub.sync(body));
+		} catch (err) {
+			if (err instanceof Error && err.name === 'PresenceWriteForbidden') {
+				return c.body('presence-write-forbidden', 403);
+			}
+			throw err;
+		}
 
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {

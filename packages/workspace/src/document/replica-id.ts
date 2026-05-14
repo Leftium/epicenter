@@ -8,9 +8,10 @@
  * supplied storage; subsequent calls return the persisted value.
  *
  * Replica ids are claimed by the client and only the client knows them. They
- * live inside the Yjs awareness payload as part of the `Replica` descriptor.
- * The server stamps the authenticated `subject` separately on the wire
- * envelope; the two are joined by the peers surface.
+ * are passed to `openCollaboration` as the `replicaId` config field and
+ * echoed by the server onto a presence row inside the workspace Y.Doc. The
+ * server stamps the authenticated `subject` on the same row; the two are
+ * joined by the presence surface.
  */
 
 import { generateGuid } from '../shared/id.js';

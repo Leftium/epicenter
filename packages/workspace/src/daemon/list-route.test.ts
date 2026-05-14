@@ -29,7 +29,8 @@ function fakeEntry(
 ): StartedDaemonRoute {
 	const ydoc = new Y.Doc();
 	const collaboration = {
-		replica: { id: 'self', platform: 'node' },
+		replicaId: 'self',
+		connId: 'self-conn',
 		actions,
 		status: { phase: 'connected' },
 		whenConnected: Promise.resolve(),
@@ -41,10 +42,13 @@ function fakeEntry(
 			find: () => undefined,
 			observe: () => () => {},
 		},
+		async dispatch() {
+			return { data: null, error: null };
+		},
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	} as Collaboration<typeof actions>;
+	} as unknown as Collaboration<typeof actions>;
 
 	return {
 		route: name,

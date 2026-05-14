@@ -3,15 +3,8 @@
  *
  * No real WebSocket: `openWebSocket` returns a never-resolving promise, so
  * the supervisor parks in `connecting` and the synchronous setup is what we
- * exercise here. RPC roundtrip and self-RPC wire fallback are covered in
- * `peer.test.ts` with a fake hook.
- *
- * Covers:
- *   - identity publication
- *   - action keys alphabetically sorted; no runtime verbs leak into the
- *     published action surface (runtime verbs ride RUNTIME_REQUEST, not
- *     ACTION_REQUEST)
- *   - peers.list() never includes self
+ * exercise here. RPC roundtrip coverage lives in `rpc.test.ts` against a
+ * shared Y.Doc (no WebSocket needed).
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -22,12 +15,8 @@ import {
 	defineQuery,
 } from '../shared/actions.js';
 import { openCollaboration } from './open-collaboration.js';
-import type { Replica } from './peer-identity.js';
 
-const replica: Replica = {
-	id: 'self',
-	platform: 'node',
-};
+const replicaId = 'self';
 
 /**
  * Returns a fake WebSocket that parks in CONNECTING until `close()` is
@@ -69,18 +58,20 @@ function setup<TActions extends ActionRegistry = ActionRegistry>(
 	const collaboration = openCollaboration<TActions>(ydoc, {
 		url: 'wss://ignored.invalid/',
 		openWebSocket: stalledOpenWebSocket,
-		replica,
+		replicaId,
 		actions,
 	});
 	return { ydoc, collaboration };
 }
 
 describe('openCollaboration', () => {
-	test('exposes the supplied replica and user actions', () => {
+	test('exposes the supplied replicaId, a minted connId, and user actions', () => {
 		const list = defineQuery({ handler: () => [] });
 		const { ydoc, collaboration } = setup({ tabs_list: list });
 		try {
-			expect(collaboration.replica).toEqual(replica);
+			expect(collaboration.replicaId).toBe(replicaId);
+			expect(typeof collaboration.connId).toBe('string');
+			expect(collaboration.connId.length).toBeGreaterThan(0);
 			expect(collaboration.actions).toEqual({ tabs_list: list });
 		} finally {
 			ydoc.destroy();
@@ -130,7 +121,7 @@ describe('action key publication shape', () => {
 		]);
 	});
 
-	test('a top-level `system` key in user actions is legal and shows up in actionKeys', () => {
+	test('a top-level `system` key in user actions is legal', () => {
 		// The runtime previously reserved `system.*`; the runtime/action plane
 		// split means user code can use the name freely now.
 		const actions = {

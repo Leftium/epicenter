@@ -5,19 +5,19 @@ A single-method `Pick` often means the old object boundary leaked into a place t
 That is the whole smell. `Pick` is not bad. It is useful when you are projecting a data shape, trimming a DTO, or naming the part of a type a caller can see. The problem shows up when `Pick` becomes dependency injection:
 
 ```ts
-type OpenFujiSnapshotOptions = {
+type OpenSnapshotOptions = {
 	machineAuth?: Pick<MachineAuth, 'getOfflineEncryptionKeys'>;
 };
 ```
 
-This looks nicely narrow. It is not. `openFujiSnapshot()` does not participate in the `MachineAuth` life cycle. It does not log in, log out, check status, or refresh credentials. It needs one capability: load offline encryption keys.
+This looks nicely narrow. It is not. `openSnapshot()` does not participate in the `MachineAuth` life cycle. It does not log in, log out, check status, or refresh credentials. It needs one capability: load offline encryption keys.
 
 Name that capability in the caller's language:
 
 ```ts
 type LoadOfflineEncryptionKeys = () => Promise<EncryptionKeys | null>;
 
-type OpenFujiSnapshotOptions = {
+type OpenSnapshotOptions = {
 	loadOfflineEncryptionKeys?: LoadOfflineEncryptionKeys;
 };
 ```

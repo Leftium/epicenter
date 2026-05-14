@@ -5,7 +5,7 @@
  * `epicenter run` is a shell shortcut for one daemon runtime primitive:
  *
  *   request.peerTarget === undefined   ->  invokeAction(...)
- *   request.peerTarget === <peerId>    ->  collaboration.peers.find(peerId)?.invoke(path, input)
+ *   request.peerTarget === <replicaId> ->  collab.peers.list().find((p) => p.replicaId === ...) -> collab.dispatch(...)
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
@@ -18,7 +18,6 @@
 
 import { Ok } from 'wellcrafted/result';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
-import { waitForPeer } from '../document/peer.js';
 import { invokeAction } from '../shared/actions.js';
 import type { RunRequest } from './app.js';
 import {
@@ -77,7 +76,7 @@ export async function executeRun(
 		});
 	}
 
-	const result = await invokeAction(action, actionInput, actionPath);
+	const result = await invokeAction(action, actionInput);
 	if (result.error !== null) {
 		return RunError.RuntimeError({ cause: result.error });
 	}
@@ -125,9 +124,13 @@ async function invokeRemote({
 }): Promise<RunResponse> {
 	const { runtime } = entry;
 
-	const peer = await waitForPeer(runtime.collaboration.peers, peerTarget, {
-		timeoutMs: waitMs,
-	});
+	// `peerTarget` is a `replicaId` from the CLI; presence rows are keyed by
+	// `connId`, so pick the first (lowest-`connId`) tab on that install.
+	// `peers.list()` is already sorted by `connId` ascending, so `find` here
+	// is deterministic without an extra sort.
+	const peer = runtime.collaboration.peers
+		.list()
+		.find((p) => p.replicaId === peerTarget);
 	if (!peer) {
 		return RunError.PeerNotFound({
 			peerTarget,
@@ -136,9 +139,14 @@ async function invokeRemote({
 		});
 	}
 
-	const result = await peer.invoke(localPath, actionInput, {
-		timeout: waitMs,
-	});
+	const result = await runtime.collaboration.dispatch(
+		localPath,
+		actionInput,
+		{
+			to: peer.connId,
+			signal: AbortSignal.timeout(waitMs),
+		},
+	);
 
 	if (result.error !== null) {
 		return RunError.RemoteCallFailed({

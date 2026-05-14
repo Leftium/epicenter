@@ -27,10 +27,7 @@
  *   protocols?: string[],
  * ) => Promise<WebSocket>;
  *
- * const replica = {
- *   id: createReplicaId({ storage: localStorage }),
- *   platform: 'web' as const,
- * };
+ * const replicaId = createReplicaId({ storage: localStorage });
  *
  * // Singleton document + collaboration: inline at module scope, no factory wrapper.
  * const ydoc = new Y.Doc({ guid: 'notes' });
@@ -40,7 +37,7 @@
  *   url: `wss://api.example.com/workspaces/${ydoc.guid}`,
  *   waitFor: idb.whenLoaded,
  *   openWebSocket,
- *   replica,
+ *   replicaId,
  * });
  *
  * // Content docs use the same primitive with an empty action registry.
@@ -60,7 +57,7 @@
  *       url: `wss://api.example.com/documents/${bodyYdoc.guid}`,
  *       waitFor: bodyIdb.whenLoaded,
  *       openWebSocket,
- *       replica,
+ *       replicaId,
  *     });
  *     return {
  *       ydoc: bodyYdoc,
@@ -94,7 +91,6 @@ export {
 	defineMutation,
 	defineQuery,
 	invokeAction,
-	invokeActionForRpc,
 	isAction,
 	toActionMeta,
 } from './shared/actions';
@@ -104,8 +100,6 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { EncryptionKeys } from '@epicenter/encryption';
-export { isRpcError, RpcError } from '@epicenter/sync';
-export type { RemoteCallOptions } from './shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // REPLICA IDENTITY
@@ -173,13 +167,6 @@ export {
 	type DisposableCache,
 	DisposableCacheError,
 } from './cache/disposable-cache.js';
-export {
-	type AwarenessAttachment,
-	type AwarenessSchema,
-	type AwarenessState,
-	attachAwareness,
-	type InferAwarenessValue,
-} from './document/attach-awareness.js';
 
 export {
 	attachBroadcastChannel,
@@ -227,13 +214,6 @@ export {
 	openCollaboration,
 } from './document/open-collaboration.js';
 export {
-	type Peer,
-	PeerLeftError,
-	type PeersSurface,
-	type RemoteCallError,
-	waitForPeer,
-} from './document/peer.js';
-export {
 	attachReadonlyTable,
 	attachReadonlyTables,
 	attachTable,
@@ -267,14 +247,34 @@ export {
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
-export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
-export { onLocalUpdate } from './document/on-local-update.js';
 export {
-	type PeerAwarenessState,
-	type Platform,
-	Replica,
-	type Subject,
-} from './document/peer-identity.js';
+	KV_KEY,
+	type KvKey,
+	PRESENCE_KEY,
+	RPC_KEY,
+	TableKey,
+} from './document/keys.js';
+export {
+	type Call,
+	DispatchError,
+	type DispatchOptions,
+	attachActionRunner,
+	dispatch,
+} from './document/rpc.js';
+export {
+	type PresenceEntry,
+	type PresenceSurface,
+	createPresenceSurface,
+} from './document/presence.js';
+export type {
+	KvEntry,
+	KvStoreChange,
+} from './document/y-keyvalue/observable-kv-store.js';
+export {
+	YKeyValueLww,
+	type YKeyValueLwwEntry,
+} from './document/y-keyvalue/y-keyvalue-lww.js';
+export { onLocalUpdate } from './document/on-local-update.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 export { wipeOwnerLocalYjsData } from './document/wipe-owner-local-yjs-data.js';
 // ════════════════════════════════════════════════════════════════════════════

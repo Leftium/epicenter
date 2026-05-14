@@ -22,7 +22,7 @@ import type {
 	SyncError,
 	SyncFailedReason,
 } from '../document/internal/sync-supervisor.js';
-import type { RemoteCallError } from '../document/peer.js';
+import type { DispatchError } from '../document/rpc.js';
 
 export type RunSyncStatus =
 	| { phase: 'offline' }
@@ -78,7 +78,7 @@ export const RunError = defineErrors({
 		syncStatus,
 	}: {
 		peerTarget: string;
-		cause: RemoteCallError;
+		cause: DispatchError;
 		syncStatus: RunSyncStatus;
 	}) => ({
 		message: `remote call failed: ${cause.name}`,

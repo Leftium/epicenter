@@ -142,10 +142,10 @@ export function actionsToAiTools<TActions extends ActionRegistry>(
 		...(action.type === 'mutation' && { needsApproval: true }),
 		// TanStack AI's `execute` contract is: return data on success, throw
 		// on failure. invokeAction handles all four handler shapes (raw,
-		// Result, sync, async) and converts thrown errors into typed
-		// Err(ActionFailed); we then unwrap for AI consumption.
+		// Result, sync, async) and surfaces thrown errors as `Err(cause)`;
+		// we re-throw the raw cause for AI consumption.
 		execute: async (args: unknown) => {
-			const result = await invokeAction(action, args, name);
+			const result = await invokeAction(action, args);
 			if (result.error !== null) throw result.error;
 			return result.data;
 		},

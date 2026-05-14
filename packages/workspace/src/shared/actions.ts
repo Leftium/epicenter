@@ -9,7 +9,7 @@
  *
  *     ActionRegistry                       ActionManifest
  *     flat, callable                       flat, metadata-only
- *     local, in-memory                     wire form (peer.describe)
+ *     local, in-memory                     wire form
  *
  *     {                                    {
  *       tabs_close:   Action,                tabs_close:   { type, ... },
@@ -22,20 +22,17 @@
  * resolver: `Object.entries(actions)` is the iterator, `actions[key]` is
  * the lookup.
  *
- * Unknown local callers use `invokeAction`, which Ok-wraps raw values,
- * preserves existing Results, and catches throws as `RpcError.ActionFailed`.
- * RPC uses `invokeActionForRpc`, which also converts custom non-RPC errors
- * into `RpcError.ActionFailed` before the result crosses the wire. Remote
- * callers reach actions via `collaboration.peers.find(peerId)?.invoke(key, input)`,
- * which returns `Promise<Result<T, RemoteCallError>>`.
+ * Local callers use `invokeAction`, which Ok-wraps raw values, preserves
+ * existing Results, and catches throws as `Err(cause)`. The RPC wire boundary
+ * (`attachActionRunner` in `document/rpc.ts`) has its own inlined invoker that
+ * wraps thrown causes into `DispatchError.ActionFailed` before the response
+ * crosses the wire.
  *
  * @module
  */
 
-import { isRpcError, RpcError } from '@epicenter/sync';
 import type { Static, TSchema } from 'typebox';
-import type { Result } from 'wellcrafted/result';
-import { isResult, Ok } from 'wellcrafted/result';
+import { Err, isResult, Ok, type Result } from 'wellcrafted/result';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ACTION DEFINITION TYPES
@@ -91,9 +88,9 @@ export type ActionMeta<
 };
 
 /**
- * Flat snake_case key to `ActionMeta` map describing a peer's full action surface.
- * Returned by the `RUNTIME_REQUEST { verb: 'describe-actions' }` wire kind
- * and consumed via `collaboration.peers.find(peerId)?.describe()`.
+ * Flat snake_case key to `ActionMeta` map. The metadata-only projection of an
+ * `ActionRegistry`, suitable for surfaces that cannot carry callable handlers
+ * (e.g. the daemon `/list` route).
  */
 export type ActionManifest = Record<string, ActionMeta>;
 
@@ -102,8 +99,8 @@ export type ActionManifest = Record<string, ActionMeta>;
  * properties attached. Queries are idempotent reads; mutations write. The
  * `type` discriminant lives on the value, so the type stays a single union
  * rather than three named aliases. The local callable shape IS the handler's
- * signature (sync stays sync, raw stays raw); remote/AI/CLI consumers see
- * uniform `Promise<Result<T, RpcError>>` via the boundary normalizers.
+ * signature (sync stays sync, raw stays raw); the RPC boundary normalizes
+ * the response to `Result<T, DispatchError>` before it crosses the wire.
  */
 export type Action<
 	TInput extends TSchema | undefined = TSchema | undefined,
@@ -222,9 +219,9 @@ export function defineActions<T extends ActionRegistry>(
  *
  * Returns the handler with metadata attached. The action callable IS the
  * handler. Local callers see whatever the handler returns (sync if sync,
- * raw if raw, `Result` if explicit). Remote/AI/CLI consumers see uniform
- * `Promise<Result>` via the wire boundary in `invokeActionForRpc()` and
- * the peer dispatch path in `collaboration.peers.find(...)?.invoke(...)`.
+ * raw if raw, `Result` if explicit). Remote callers go through
+ * `collab.dispatch`, which normalizes the response to
+ * `Result<T, DispatchError>` before it crosses the wire.
  */
 /** No input. `TInput` is explicitly `undefined`. */
 export function defineQuery<R>(
@@ -299,8 +296,8 @@ export function isMutation(
 
 /**
  * Project a callable action onto its wire-form metadata. Functions drop;
- * live schemas, titles, and descriptions are kept. Used at the two action
- * manifest boundaries (`peer.describe()` and the daemon `/list` route).
+ * live schemas, titles, and descriptions are kept. Used at the daemon
+ * `/list` route and any other surface that needs metadata without handlers.
  */
 export function toActionMeta({
 	type,
@@ -320,22 +317,17 @@ export function toActionMeta({
  * return shape.
  *
  * Raw values get `Ok`-wrapped, existing `Result`s pass through, and thrown
- * errors become `Err(RpcError.ActionFailed)`. This is intentionally an
- * in-process helper: a handler's custom `Err(E)` is preserved for local
- * callers. Use `invokeActionForRpc` at the wire boundary, where every error
- * must be an `RpcError`.
- *
- * `errorLabel` is required and appears as `action` on a returned
- * `RpcError.ActionFailed`. Every caller has the action key at the call site
- * (it's how it dispatched to the action), so pass it through; there is no
- * fallback chain.
+ * errors become `Err(cause)` with the raw thrown value under `.error`. The
+ * RPC wire boundary (`attachActionRunner` in `document/rpc.ts`) is
+ * responsible for wrapping the cause into `DispatchError.ActionFailed`
+ * before the response crosses the wire; callers in-process see whatever
+ * the handler actually threw or returned.
  *
  * @example
  * ```ts
  * const result = await invokeAction<{ closedCount: number }>(
  *   workspace.actions.tabs_close,
  *   { tabIds: [1, 2] },
- *   'tabs_close',
  * );
  * if (result.error) { ... }
  * console.log(result.data.closedCount);
@@ -344,50 +336,14 @@ export function toActionMeta({
 export async function invokeAction<T = unknown>(
 	action: Action,
 	input: unknown | undefined,
-	errorLabel: string,
-): Promise<Result<T, RpcError>> {
+): Promise<Result<T, unknown>> {
 	try {
 		const ret =
 			action.input !== undefined
 				? await (action as (i: unknown) => unknown)(input)
 				: await (action as () => unknown)();
-		return (isResult(ret) ? ret : Ok(ret)) as Result<T, RpcError>;
+		return (isResult(ret) ? ret : Ok(ret)) as Result<T, unknown>;
 	} catch (cause) {
-		return RpcError.ActionFailed({ action: errorLabel, cause });
+		return Err(cause);
 	}
 }
-
-/**
- * Invoke an action for the RPC wire boundary.
- *
- * This keeps the remote contract honest: every failure crossing the sync RPC
- * channel is an `RpcError`. Raw values and Ok Results preserve their success
- * data. Thrown errors and custom `Err(E)` values become
- * `RpcError.ActionFailed`, with the original error under `cause`.
- */
-export async function invokeActionForRpc<T = unknown>(
-	action: Action,
-	input: unknown | undefined,
-	errorLabel: string,
-): Promise<Result<T, RpcError>> {
-	const result = await invokeAction<T>(action, input, errorLabel);
-	if (result.error === null) return result;
-	if (isRpcError(result.error)) return result;
-	return RpcError.ActionFailed({ action: errorLabel, cause: result.error });
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// REMOTE CALL OPTIONS
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Per-remote-call options. Threaded through `peer.invoke(path, input, options)`
- * and the daemon `/run` route as a trailing optional argument.
- *
- * Currently just `timeout`. Cancellation via `AbortSignal` is deliberately
- * out: the underlying wire does not support a CANCEL frame yet.
- */
-export type RemoteCallOptions = {
-	/** Per-call override of the default RPC timeout (ms). Default: 5000. */
-	timeout?: number;
-};

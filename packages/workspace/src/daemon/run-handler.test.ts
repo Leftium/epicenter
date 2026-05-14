@@ -1,59 +1,39 @@
 /**
  * executeRun peer dispatch tests.
  *
- * Verifies the daemon preserves remote client errors in one `/run` envelope
- * before the response crosses the IPC boundary.
+ * Verifies the daemon preserves remote dispatch errors in one `/run` envelope
+ * before the response crosses the IPC boundary. The presence surface is
+ * faked here so the test can exercise `peers.list()` and the
+ * `collab.dispatch` path without spinning up real Yjs sync.
  */
 
 import { describe, expect, test } from 'bun:test';
 
-import { RpcError } from '@epicenter/sync';
 import * as Y from 'yjs';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
-import type { Peer, PeersSurface } from '../document/peer.js';
+import type { PresenceEntry, PresenceSurface } from '../document/presence.js';
+import { DispatchError } from '../document/rpc.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import type { RunSyncStatus } from './run-errors.js';
 import { executeRun } from './run-handler.js';
 import type { StartedDaemonRoute } from './types.js';
 
-type FakeInvoke = (
-	peerTarget: string,
+type FakeDispatch = (
 	action: string,
 	input: unknown,
-	options?: { timeout?: number },
+	options: { to: string; signal: AbortSignal },
 ) => Promise<{ data: unknown; error: unknown }>;
 
-function fakePeer({
-	peerId,
-	invoke,
-}: {
-	peerId: string;
-	invoke: FakeInvoke;
-}): Peer {
-	return {
-		clientID: 1,
+function fakePresence({ known }: { known: string[] }): PresenceSurface {
+	const entries: PresenceEntry[] = known.map((replicaId) => ({
+		connId: `${replicaId}-conn`,
+		replicaId,
 		subject: 'test-user',
-		replica: { id: peerId, platform: 'node' },
-		actionKeys: [],
-		invoke: (action, input, options) =>
-			invoke(peerId, action, input, options) as never,
-		describe: async () => ({ data: {}, error: null }) as never,
-	};
-}
-
-function fakePeers({
-	known,
-	invoke,
-}: {
-	known: string[];
-	invoke: FakeInvoke;
-}): PeersSurface {
+	}));
 	return {
-		list: () => known.map((peerId) => fakePeer({ peerId, invoke })),
-		find: (peerId) =>
-			known.includes(peerId) ? fakePeer({ peerId, invoke }) : undefined,
+		list: () => entries,
 		observe: () => () => {},
 	};
 }
@@ -62,14 +42,17 @@ function fakeCollaboration<TActions extends ActionRegistry>({
 	actions,
 	syncStatus = { phase: 'connected' },
 	peers,
+	dispatch,
 }: {
 	actions: TActions;
 	syncStatus?: SyncStatus;
-	peers: PeersSurface;
+	peers: PresenceSurface;
+	dispatch: FakeDispatch;
 }): Collaboration<TActions> {
 	const ydoc = new Y.Doc();
 	return {
-		replica: { id: 'self', platform: 'node' },
+		replicaId: 'self',
+		connId: 'self-conn',
 		actions,
 		status: syncStatus,
 		whenConnected: Promise.resolve(),
@@ -77,10 +60,11 @@ function fakeCollaboration<TActions extends ActionRegistry>({
 		onStatusChange: () => () => {},
 		reconnect() {},
 		peers,
+		dispatch: dispatch as Collaboration<TActions>['dispatch'],
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	} as Collaboration<TActions>;
+	} as unknown as Collaboration<TActions>;
 }
 
 function fakeEntry({
@@ -89,15 +73,20 @@ function fakeEntry({
 	},
 	syncStatus,
 	knownPeers = [],
-	invoke = async () => ({ data: null, error: null }),
+	dispatch = async () => ({ data: null, error: null }),
 }: {
 	actions?: ActionRegistry;
 	syncStatus?: SyncStatus;
 	knownPeers?: string[];
-	invoke?: FakeInvoke;
+	dispatch?: FakeDispatch;
 } = {}): StartedDaemonRoute {
-	const peers = fakePeers({ known: knownPeers, invoke });
-	const collaboration = fakeCollaboration({ actions, syncStatus, peers });
+	const peers = fakePresence({ known: knownPeers });
+	const collaboration = fakeCollaboration({
+		actions,
+		syncStatus,
+		peers,
+		dispatch,
+	});
 	return {
 		route: 'demo',
 		runtime: {
@@ -136,12 +125,14 @@ describe('executeRun peer dispatch', () => {
 		expect(result.error.syncStatus).toEqual(runSyncStatus);
 	});
 
-	test('remote dispatch sends only the action key', async () => {
+	test('remote dispatch sends only the action key, to the resolved connId', async () => {
 		let invokedAction = '';
+		let invokedTo = '';
 		const entry = fakeEntry({
 			knownPeers: ['mac'],
-			invoke: async (_peerId, action) => {
+			dispatch: async (action, _input, { to }) => {
 				invokedAction = action;
+				invokedTo = to;
 				return { data: [], error: null };
 			},
 		});
@@ -155,12 +146,17 @@ describe('executeRun peer dispatch', () => {
 
 		expect(result.error).toBeNull();
 		expect(invokedAction).toBe('tabs_list');
+		expect(invokedTo).toBe('mac-conn');
 	});
 
-	test('remote dispatch surfaces RpcError unchanged', async () => {
+	test('remote dispatch surfaces DispatchError unchanged', async () => {
 		const entry = fakeEntry({
 			knownPeers: ['mac'],
-			invoke: async () => RpcError.Timeout({ ms: 25 }),
+			dispatch: async () =>
+				DispatchError.ActionFailed({
+					action: 'tabs_list',
+					cause: new Error('boom'),
+				}),
 		});
 
 		const result = await executeRun([entry], {
@@ -174,7 +170,7 @@ describe('executeRun peer dispatch', () => {
 		if (result.error?.name !== 'RemoteCallFailed') {
 			throw new Error('expected RemoteCallFailed');
 		}
-		expect(result.error.cause).toMatchObject({ name: 'Timeout', ms: 25 });
+		expect(result.error.cause).toMatchObject({ name: 'ActionFailed' });
 	});
 });
 

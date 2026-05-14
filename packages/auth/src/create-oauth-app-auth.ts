@@ -184,14 +184,10 @@ export function createOAuthAppAuth({
 	 * Wipes the cell on same-user-guard mismatch. Single-flight: concurrent
 	 * callers share the in-flight promise.
 	 */
-	async function verifyProfile(): Promise<Result<ApiMeResponse, AuthError>> {
+	async function verifyProfile(
+		startedFrom: PersistedAuthType,
+	): Promise<Result<ApiMeResponse, AuthError>> {
 		if (profilePromise) return profilePromise;
-		if (persisted === null) {
-			return AuthError.FetchProfileFailed({
-				cause: new Error('No persisted cell; cannot verify profile.'),
-			});
-		}
-		const startedFrom = persisted;
 		profilePromise = (async (): Promise<Result<ApiMeResponse, AuthError>> => {
 			const { data: apiMe, error } = await callApiMe(startedFrom.grant);
 			if (error) return AuthError.FetchProfileFailed({ cause: error });
@@ -251,7 +247,7 @@ export function createOAuthAppAuth({
 		const refreshed = await refreshGrant({ force });
 		if (!refreshed || persisted === null || networkAuthPaused) return null;
 		if (email === null) {
-			await verifyProfile();
+			await verifyProfile(persisted);
 			if (persisted === null || networkAuthPaused || email === null) {
 				return null;
 			}

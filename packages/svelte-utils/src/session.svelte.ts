@@ -1,4 +1,8 @@
-import { requireIdentity, type AuthClient, type AuthState } from '@epicenter/auth';
+import {
+	type AuthClient,
+	type AuthState,
+	requireIdentity,
+} from '@epicenter/auth';
 import { createLocalOwner, type LocalOwner } from '@epicenter/workspace';
 
 /**

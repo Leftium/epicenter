@@ -109,9 +109,9 @@ export type { ProjectDir } from './shared/types';
 // ID + DATE PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
+export { DateTimeString } from './shared/datetime-string';
 export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId } from './shared/id';
-export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES
@@ -124,10 +124,6 @@ export {
 
 export { attachBroadcastChannel } from './document/attach-broadcast-channel.js';
 export { attachEncryption } from './document/attach-encryption.js';
-export {
-	createLocalOwner,
-	type LocalOwner,
-} from './document/local-owner.js';
 export { attachIndexedDb } from './document/attach-indexed-db.js';
 export {
 	attachKv,
@@ -153,6 +149,10 @@ export {
 	type OpenWebSocket,
 	type SyncStatus,
 } from './document/internal/sync-supervisor.js';
+export {
+	createLocalOwner,
+	type LocalOwner,
+} from './document/local-owner.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
 	type Collaboration,

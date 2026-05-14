@@ -3,8 +3,8 @@
 import {
 	decryptBytes,
 	type EncryptedBlob,
-	encryptBytes,
 	type EncryptionKeys,
+	encryptBytes,
 } from '@epicenter/encryption';
 import * as idb from 'lib0/indexeddb';
 import {

@@ -227,7 +227,9 @@ async function pollForAccessToken({
 	intervalMs: number;
 	expiresInMs: number;
 	sleep: (ms: number) => Promise<void>;
-}): Promise<Result<OAuthTokenGrant, DeviceTokenError | MachineAuthRequestError>> {
+}): Promise<
+	Result<OAuthTokenGrant, DeviceTokenError | MachineAuthRequestError>
+> {
 	const deadline = Date.now() + expiresInMs;
 	let interval = intervalMs;
 	while (Date.now() < deadline) {

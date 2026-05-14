@@ -115,7 +115,7 @@ export function createOAuthAppAuth({
 		stateStore.setState(deriveState());
 	}
 
-	async function refreshGrant({ force }: { force: boolean }): Promise<boolean> {
+	async function refreshGrant(force: boolean): Promise<boolean> {
 		if (persisted === null || networkAuthPaused) return false;
 		if (!force && !shouldRefreshGrant(persisted.grant, now())) return true;
 		if (refreshPromise) return refreshPromise;
@@ -238,13 +238,9 @@ export function createOAuthAppAuth({
 	 * stale, call `/api/me`, then attach. Offline: fails closed; local
 	 * workspace decrypt continues via `unlock`.
 	 */
-	async function bearerForNetwork({
-		force,
-	}: {
-		force: boolean;
-	}): Promise<string | null> {
+	async function bearerForNetwork(force: boolean): Promise<string | null> {
 		if (persisted === null || networkAuthPaused) return null;
-		const refreshed = await refreshGrant({ force });
+		const refreshed = await refreshGrant(force);
 		if (!refreshed || persisted === null || networkAuthPaused) return null;
 		if (email === null) {
 			await verifyProfile(persisted);
@@ -258,10 +254,10 @@ export function createOAuthAppAuth({
 	async function fetchWithAuth(
 		input: Request | string | URL,
 		init: RequestInit | undefined,
-		{ forceRefresh }: { forceRefresh: boolean },
+		forceRefresh: boolean,
 	) {
 		const headers = headersFromRequest(input, init);
-		const accessToken = await bearerForNetwork({ force: forceRefresh });
+		const accessToken = await bearerForNetwork(forceRefresh);
 		if (accessToken) {
 			headers.set('Authorization', `Bearer ${accessToken}`);
 		} else {
@@ -337,15 +333,11 @@ export function createOAuthAppAuth({
 			}
 		},
 		async fetch(input, init?: RequestInit) {
-			const response = await fetchWithAuth(input, init, {
-				forceRefresh: false,
-			});
+			const response = await fetchWithAuth(input, init, false);
 			if (response.status !== 401) return response;
-			const refreshed = await refreshGrant({ force: true });
+			const refreshed = await refreshGrant(true);
 			if (!refreshed) return response;
-			const retryResponse = await fetchWithAuth(input, init, {
-				forceRefresh: false,
-			});
+			const retryResponse = await fetchWithAuth(input, init, false);
 			if (retryResponse.status === 401) {
 				networkAuthPaused = true;
 				publishState();
@@ -353,7 +345,7 @@ export function createOAuthAppAuth({
 			return retryResponse;
 		},
 		async openWebSocket(url, protocols = []) {
-			const accessToken = await bearerForNetwork({ force: false });
+			const accessToken = await bearerForNetwork(false);
 			const authProtocols = accessToken
 				? [...protocols, `${BEARER_SUBPROTOCOL_PREFIX}${accessToken}`]
 				: protocols;

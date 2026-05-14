@@ -2,10 +2,7 @@ import {
 	connectFujiDaemonActions,
 	DEFAULT_FUJI_DAEMON_ROUTE,
 } from './daemon-route.js';
-import {
-	openFujiSnapshot,
-	type OpenFujiSnapshotOptions,
-} from './snapshot.js';
+import { type OpenFujiSnapshotOptions, openFujiSnapshot } from './snapshot.js';
 
 export async function openFujiScript({
 	route = DEFAULT_FUJI_DAEMON_ROUTE,

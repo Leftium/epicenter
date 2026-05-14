@@ -19,14 +19,11 @@ import { type } from 'arktype';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Awareness } from 'y-protocols/awareness';
-import type {
-	ActionManifest,
-	RemoteCallOptions,
-} from '../shared/actions.js';
+import type { ActionManifest, RemoteCallOptions } from '../shared/actions.js';
 import type { PeerMetadata } from './internal/sync-supervisor.js';
 import {
-	peerAwarenessSchema,
 	type PeerAwarenessState,
+	peerAwarenessSchema,
 	type Replica,
 	type Subject,
 } from './peer-identity.js';
@@ -199,10 +196,7 @@ export function createPeersSurface(
 	hooks: PeerWireHooks,
 ): PeersSurface {
 	function readPeers(): Map<number, PeerAwarenessState & { subject: Subject }> {
-		const result = new Map<
-			number,
-			PeerAwarenessState & { subject: Subject }
-		>();
+		const result = new Map<number, PeerAwarenessState & { subject: Subject }>();
 		const selfClientId = awareness.clientID;
 		for (const [clientId, rawState] of awareness.getStates()) {
 			if (clientId === selfClientId) continue;

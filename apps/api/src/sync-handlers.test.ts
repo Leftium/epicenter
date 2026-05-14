@@ -20,7 +20,6 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import * as decoding from 'lib0/decoding';
 import {
 	decodeAwarenessAttestedPayload,
 	decodeMessageType,
@@ -33,6 +32,7 @@ import {
 	encodeSyncUpdate,
 	MESSAGE_TYPE,
 } from '@epicenter/sync';
+import * as decoding from 'lib0/decoding';
 import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import {
@@ -360,7 +360,8 @@ describe('applyMessage — AWARENESS', () => {
 
 		const result = applyMessage({ data: message, room, connection });
 		expect(result.error).toBeNull();
-		if (result.data?.action !== 'broadcast') throw new Error('expected broadcast');
+		if (result.data?.action !== 'broadcast')
+			throw new Error('expected broadcast');
 
 		const decoder = decoding.createDecoder(result.data.data);
 		expect(decoding.readVarUint(decoder)).toBe(MESSAGE_TYPE.AWARENESS_ATTESTED);
@@ -641,7 +642,11 @@ describe('full handshake convergence', () => {
 		const serverDoc = new Y.Doc();
 		serverDoc.getMap('data').set('server-key', 'server-value');
 		const awareness = new Awareness(serverDoc);
-		const room: RoomContext = { doc: serverDoc, awareness, subject: 'test-user' };
+		const room: RoomContext = {
+			doc: serverDoc,
+			awareness,
+			subject: 'test-user',
+		};
 		const ws = new MockWebSocket();
 		const connection = registerConnection({
 			...room,

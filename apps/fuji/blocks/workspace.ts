@@ -263,8 +263,7 @@ export function createFujiActions(tables: FujiTables) {
 					Type.Object({
 						title: Type.String({ description: 'Entry title' }),
 						date: Type.String({
-							description:
-								'ISO date string in workspace DateTimeString format',
+							description: 'ISO date string in workspace DateTimeString format',
 						}),
 					}),
 				),

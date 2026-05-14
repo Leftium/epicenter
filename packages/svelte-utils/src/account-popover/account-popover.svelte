@@ -43,12 +43,8 @@
 		onForgetDevice?: () => void | Promise<void>;
 	};
 
-	let {
-		auth,
-		collaboration,
-		syncNoun,
-		onForgetDevice,
-	}: AccountPopoverProps = $props();
+	let { auth, collaboration, syncNoun, onForgetDevice }: AccountPopoverProps =
+		$props();
 
 	let syncStatus = $state<SyncStatus>({ phase: 'offline' });
 	let popoverOpen = $state(false);

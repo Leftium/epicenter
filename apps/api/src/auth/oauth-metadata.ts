@@ -11,12 +11,10 @@ export function createOAuthJwksURL(baseURL: string) {
 	return `${createOAuthIssuerURL(baseURL)}/jwks`;
 }
 
-export const OAUTH_OPENID_CONFIGURATION_PATH =
-	`${AUTH_ISSUER_PATH}/.well-known/openid-configuration`;
-export const OAUTH_AUTHORIZATION_SERVER_METADATA_PATH =
-	AUTH_ISSUER_SEGMENT
-		? `/.well-known/oauth-authorization-server/${AUTH_ISSUER_SEGMENT}`
-		: '/.well-known/oauth-authorization-server';
+export const OAUTH_OPENID_CONFIGURATION_PATH = `${AUTH_ISSUER_PATH}/.well-known/openid-configuration`;
+export const OAUTH_AUTHORIZATION_SERVER_METADATA_PATH = AUTH_ISSUER_SEGMENT
+	? `/.well-known/oauth-authorization-server/${AUTH_ISSUER_SEGMENT}`
+	: '/.well-known/oauth-authorization-server';
 export const OAUTH_PROTECTED_RESOURCE_METADATA_PATH =
 	'/.well-known/oauth-protected-resource';
 export const OAUTH_METADATA_CACHE_CONTROL =

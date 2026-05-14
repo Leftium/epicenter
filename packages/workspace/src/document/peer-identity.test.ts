@@ -1,5 +1,5 @@
-import { type } from 'arktype';
 import { describe, expect, it } from 'bun:test';
+import { type } from 'arktype';
 import { Replica } from './peer-identity.js';
 
 describe('Replica schema', () => {

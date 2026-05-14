@@ -26,13 +26,14 @@
 
 	let selectedRange = $state<Range>('30d');
 
-	const usage = createQuery(() =>
-		billing.usage({
-			range: selectedRange,
-			binSize: selectedRange === '7d' ? 'hour' : 'day',
-			groupBy: 'properties.model',
-			maxGroups: 8,
-		}).options,
+	const usage = createQuery(
+		() =>
+			billing.usage({
+				range: selectedRange,
+				binSize: selectedRange === '7d' ? 'hour' : 'day',
+				groupBy: 'properties.model',
+				maxGroups: 8,
+			}).options,
 	);
 
 	const rangeOptions = [

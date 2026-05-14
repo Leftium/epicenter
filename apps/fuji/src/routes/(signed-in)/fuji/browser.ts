@@ -1,5 +1,11 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	createFujiActions,
+	type EntryId,
+	FUJI_WORKSPACE_ID,
+	fujiTables,
+} from '@epicenter/fuji';
+import {
 	attachEncryption,
 	attachOwnedBroadcastChannel,
 	attachRichText,
@@ -7,20 +13,14 @@ import {
 	DateTimeString,
 	docGuid,
 	type EncryptionKeys,
-	onLocalUpdate,
 	type OpenWebSocket,
+	onLocalUpdate,
 	openCollaboration,
 	type Replica,
 	websocketUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import {
-	createFujiActions,
-	type EntryId,
-	FUJI_WORKSPACE_ID,
-	fujiTables,
-} from '@epicenter/fuji';
 
 function entryContentDocGuid({
 	workspaceId,

@@ -38,11 +38,7 @@ type InteractionMode =
  * </script>
  * ```
  */
-export function createFilesState({
-	binding,
-}: {
-	binding: OpensidianBrowser;
-}) {
+export function createFilesState({ binding }: { binding: OpensidianBrowser }) {
 	// ── Reactive source ──────────────────────────────────────────────
 	const filesMap = fromTable(binding.tables.files);
 

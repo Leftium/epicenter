@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import * as decoding from 'lib0/decoding';
 import { Ok } from 'wellcrafted/result';
 import {
 	Awareness,
@@ -18,7 +19,6 @@ import {
 	encodeAwarenessUpdate,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import * as decoding from 'lib0/decoding';
 import {
 	decodeAwarenessAttestedPayload,
 	decodeMessageType,

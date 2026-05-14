@@ -4,12 +4,9 @@
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { auth } from '$platform/auth';
 	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
-	import {
-		forgetOpensidianDevice,
-		requireOpensidian,
-	} from '$lib/session';
+	import { forgetOpensidianDevice, requireOpensidian } from '$lib/session';
+	import { auth } from '$platform/auth';
 
 	const opensidian = requireOpensidian();
 </script>

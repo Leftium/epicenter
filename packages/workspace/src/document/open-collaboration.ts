@@ -105,7 +105,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	// Computed once at startup. Two peers running the same code publish
 	// byte-identical arrays so awareness updates don't ping-pong on ordering
 	// differences.
-	const actionPaths = Object.freeze(Object.keys(userActions).sort());
+	const actionKeys = Object.freeze(Object.keys(userActions).sort());
 
 	const awareness = new Awareness(ydoc);
 
@@ -113,7 +113,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		schema: peerAwarenessSchema,
 		initial: {
 			identity,
-			actionPaths: [...actionPaths],
+			actionKeys: [...actionKeys],
 		},
 	});
 

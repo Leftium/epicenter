@@ -1,11 +1,11 @@
 /**
- * `epicenter list [dot.path]`: render actions exposed by this project.
+ * `epicenter list [route.action_key]`: render actions exposed by this project.
  *
- * The daemon returns route-prefixed action paths for every host in
+ * The daemon returns route-qualified action keys for every host in
  * `epicenter.config.ts`. The CLI only filters and renders that manifest.
  *
  * Per-peer schema introspection is a script concern. The CLI lists the local
- * daemon's route-prefixed action surface only.
+ * daemon's route-qualified action surface only.
  *
  * `epicenter list` requires a running daemon for the discovered project.
  * Without `up`, the handler errors with a hint pointing at `epicenter up`.
@@ -32,7 +32,7 @@ export const listCommand = cmd({
 		yargs
 			.positional('path', {
 				type: 'string',
-				describe: 'Optional dot-path to narrow the view',
+				describe: 'Optional route-qualified key to narrow the view',
 			})
 			.option('C', projectOption)
 			.options(formatOptions),

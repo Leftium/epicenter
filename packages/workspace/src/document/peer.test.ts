@@ -56,10 +56,10 @@ function publish(
 	awareness.getStates().set(clientId, state);
 }
 
-function validPeerState(id: string, actionPaths: string[] = []) {
+function validPeerState(id: string, actionKeys: string[] = []) {
 	return {
 		identity: { id, name: id, platform: 'node' as const },
-		actionPaths,
+		actionKeys,
 	};
 }
 
@@ -86,16 +86,16 @@ describe('createPeersSurface.list', () => {
 
 	test('drops state with missing identity', () => {
 		const { awareness, peers } = setup();
-		publish(awareness, 10, { actionPaths: [] });
+		publish(awareness, 10, { actionKeys: [] });
 
 		expect(peers.list()).toEqual([]);
 	});
 
-	test('drops state with malformed actionPaths', () => {
+	test('drops state with malformed actionKeys', () => {
 		const { awareness, peers } = setup();
 		publish(awareness, 10, {
 			identity: { id: 'mac', name: 'mac', platform: 'node' },
-			actionPaths: 'not-an-array',
+			actionKeys: 'not-an-array',
 		});
 
 		expect(peers.list()).toEqual([]);
@@ -119,12 +119,12 @@ describe('createPeersSurface.list', () => {
 		expect(peers.list().map((p) => p.clientID)).toEqual([10, 20, 30]);
 	});
 
-	test('peer.actionPaths surfaces from awareness', () => {
+	test('peer.actionKeys surfaces from awareness', () => {
 		const { awareness, peers } = setup();
 		publish(awareness, 10, validPeerState('mac', ['tabs_close', 'tabs_list']));
 
 		const list = peers.list();
-		expect(list[0]?.actionPaths).toEqual(['tabs_close', 'tabs_list']);
+		expect(list[0]?.actionKeys).toEqual(['tabs_close', 'tabs_list']);
 	});
 });
 

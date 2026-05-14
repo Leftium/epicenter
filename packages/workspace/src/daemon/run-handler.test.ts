@@ -36,7 +36,7 @@ function fakePeer({
 		id: peerId,
 		identity: { id: peerId, name: peerId, platform: 'node' },
 		clientID: 1,
-		actionPaths: [],
+		actionKeys: [],
 		invoke: (action, input, options) =>
 			invoke(peerId, action, input, options) as never,
 		describe: async () => ({ data: {}, error: null }) as never,
@@ -136,7 +136,7 @@ describe('executeRun peer dispatch', () => {
 		expect(result.error.syncStatus).toEqual(runSyncStatus);
 	});
 
-	test('remote dispatch sends only the inner action path', async () => {
+	test('remote dispatch sends only the action key', async () => {
 		let invokedAction = '';
 		const entry = fakeEntry({
 			knownPeers: ['mac'],

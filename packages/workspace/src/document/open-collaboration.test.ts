@@ -117,7 +117,7 @@ describe('openCollaboration', () => {
 	});
 });
 
-describe('action paths publication shape', () => {
+describe('action key publication shape', () => {
 	test('Object.keys + alphabetical sort produces the publication order', () => {
 		const actions = {
 			z_close: defineMutation({ handler: () => null }),
@@ -127,7 +127,7 @@ describe('action paths publication shape', () => {
 		expect(Object.keys(actions).sort()).toEqual(['a_list', 'm_ping', 'z_close']);
 	});
 
-	test('a top-level `system` key in user actions is legal and shows up in actionPaths', () => {
+	test('a top-level `system` key in user actions is legal and shows up in actionKeys', () => {
 		// The runtime previously reserved `system.*`; the runtime/action plane
 		// split means user code can use the name freely now.
 		const actions = {

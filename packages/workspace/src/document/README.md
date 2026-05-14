@@ -123,7 +123,7 @@ For content documents (rich-text bodies, attachments) that only need bytes-on-th
 
 ### Awareness (lower-level)
 
-`openCollaboration` already publishes `{ identity, actionPaths }` on its own Awareness. Reach for the `attachAwareness` primitive directly only when you need a separately-typed presence channel (cursors on a content doc, custom selection state) on its own Awareness instance.
+`openCollaboration` already publishes `{ identity, actionKeys }` on its own Awareness. Reach for the `attachAwareness` primitive directly only when you need a separately-typed presence channel (cursors on a content doc, custom selection state) on its own Awareness instance.
 
 ```typescript
 import { Awareness } from 'y-protocols/awareness';

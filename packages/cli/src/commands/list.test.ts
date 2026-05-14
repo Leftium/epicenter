@@ -11,8 +11,8 @@ import { filterByPath } from './list';
 
 describe('filterByPath', () => {
 	const entries = {
-		'demo.counter.get': { type: 'query' as const },
-		'demo.counter.set': { type: 'mutation' as const },
+		'demo.counter_get': { type: 'query' as const },
+		'demo.counter_set': { type: 'mutation' as const },
 		'other.thing': { type: 'query' as const },
 	};
 
@@ -21,15 +21,15 @@ describe('filterByPath', () => {
 	});
 
 	test('exact-leaf path returns just that leaf', () => {
-		expect(Object.keys(filterByPath(entries, 'demo.counter.get'))).toEqual([
-			'demo.counter.get',
+		expect(Object.keys(filterByPath(entries, 'demo.counter_get'))).toEqual([
+			'demo.counter_get',
 		]);
 	});
 
 	test('subtree prefix returns descendants', () => {
-		expect(Object.keys(filterByPath(entries, 'demo.counter')).sort()).toEqual([
-			'demo.counter.get',
-			'demo.counter.set',
+		expect(Object.keys(filterByPath(entries, 'demo')).sort()).toEqual([
+			'demo.counter_get',
+			'demo.counter_set',
 		]);
 	});
 

@@ -135,7 +135,10 @@ export function attachEncryptedIndexedDb(
 			plaintext: update,
 			aad,
 		});
-		await idb.addAutoKey(updatesStore, ciphertext as unknown as string);
+		// lib0's `addAutoKey` types `item` narrower than IDB structured-clone
+		// accepts. Uint8Array is supported at runtime; the cast widens the type
+		// signature, not the runtime contract.
+		await idb.addAutoKey(updatesStore, ciphertext as unknown as ArrayBuffer);
 	}
 
 	async function fetchUpdates(

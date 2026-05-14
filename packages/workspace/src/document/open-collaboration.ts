@@ -120,7 +120,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	config: OpenCollaborationConfig<TActions>,
 ): Collaboration<TActions> {
-	const userActions = (config.actions ?? ({} as TActions)) as TActions;
+	const userActions = config.actions ?? ({} as TActions);
 
 	for (const key of Object.keys(userActions)) {
 		if (!ACTION_KEY_PATTERN.test(key)) {

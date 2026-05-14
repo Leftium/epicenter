@@ -29,7 +29,7 @@ Examples of the common form:
 ```ts
 attachIndexedDb(ydoc)                   // Y.Doc subject
 attachSqlite(ydoc, { filePath })
-attachSync(ydoc, { url, getToken })
+openCollaboration(ydoc, { url, openWebSocket, replicaId, actions })
 attachBroadcastChannel(ydoc)
 attachEncryption(ydoc, { encryptionKeys })
 attachTable(ydoc, name, def)            // Y.Doc subject + slot key + def
@@ -123,20 +123,20 @@ const cache = createDisposableCache((id: string) => {
   const unlock     = attachSessionUnlock(encryption, {          // non-ydoc subject
     sessions, serverUrl, waitFor: idb.whenLoaded,
   });
-  const sync       = attachSync(ydoc, {
-    url, getToken,
+  const collaboration = openCollaboration(ydoc, {
+    url, openWebSocket, replicaId, actions,
     waitFor: Promise.all([idb.whenLoaded, unlock.whenChecked]),
   });
   const markdown   = attachMarkdownMaterializer(ydoc, {           // chainable return
-    dir, waitFor: sync.whenConnected,
+    dir, waitFor: collaboration.whenConnected,
   }).table(tables.posts, { filename: slugFilename('title') });
 
   return {
-    ydoc, tables, encryption, idb, sync, markdown,
-    whenReady: Promise.all([idb.whenLoaded, unlock.whenChecked, sync.whenConnected]),
+    ydoc, tables, encryption, idb, collaboration, markdown,
+    whenReady: Promise.all([idb.whenLoaded, unlock.whenChecked, collaboration.whenConnected]),
     async wipe() {
       ydoc.destroy();
-      await sync.whenDisposed;
+      await collaboration.whenDisposed;
       await idb.whenDisposed;
       await idb.clearLocal();
     },
@@ -151,12 +151,12 @@ The bundle aggregates child `whenLoaded` / `whenConnected` / `whenChecked` into 
 
 ## The `waitFor` convention
 
-Primitives that perform a gated startup (sync, session-unlock) accept `waitFor?: Promise<unknown>` in their options. The primitive awaits it before taking its first action. This replaces the old extension-chain "init pipeline": sequencing is now explicit at the call site, visible in one file, with no hidden ordering.
+Primitives that perform a gated startup (collaboration, session-unlock) accept `waitFor?: Promise<unknown>` in their options. The primitive awaits it before taking its first action. This replaces the old extension-chain "init pipeline": sequencing is now explicit at the call site, visible in one file, with no hidden ordering.
 
 Use it whenever a primitive's startup must follow another's. Examples:
-- `attachSync` after local hydrate: `waitFor: idb.whenLoaded`
+- `openCollaboration` after local hydrate: `waitFor: idb.whenLoaded`
 - `attachSessionUnlock` after hydrate (so stored keys don't clobber freshly-hydrated plaintext mid-replay): `waitFor: persistence.whenLoaded`
-- `attachSync` after both hydrate AND unlock: `waitFor: Promise.all([idb.whenLoaded, unlock.whenChecked])`
+- `openCollaboration` after both hydrate AND unlock: `waitFor: Promise.all([idb.whenLoaded, unlock.whenChecked])`
 
 ## Anti-patterns
 
@@ -171,7 +171,7 @@ Use it whenever a primitive's startup must follow another's. Examples:
 ## Reference implementations
 
 - `packages/workspace/src/document/attach-indexed-db.ts` — the canonical 40-line example.
-- `packages/workspace/src/document/attach-sync.ts` — network variant with `whenConnected` + `waitFor`.
+- `packages/workspace/src/document/open-collaboration.ts` — document collaboration surface with sync, presence, peers, and action dispatch.
 - `packages/workspace/src/document/attach-encryption.ts` — state-owning coordinator; exposes `attachTable` / `attachTables` / `attachKv` as methods.
 - `packages/workspace/src/document/materializer/markdown/materializer.ts` — chainable builder with `.table()/.kv()`.
 - `apps/whispering/src/lib/client.ts`: full singleton composition.

@@ -19,17 +19,12 @@
  */
 
 import { join } from 'node:path';
-import {
-	createMachineAuth,
-	createMachineTokenGetter,
-} from '@epicenter/auth/node';
-import {
-	tabManagerAwarenessDefs,
-	tabManagerTables,
-} from '@epicenter/tab-manager';
+import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
+import { tabManagerTables } from '@epicenter/tab-manager';
 import {
 	attachEncryption,
-	attachSync,
+	defineActions,
+	openCollaboration,
 	websocketUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
@@ -44,19 +39,12 @@ const SERVER_URL = 'https://api.epicenter.so';
 const MARKDOWN_DIR = join(import.meta.dir, 'data');
 const WORKSPACE_ID = 'epicenter.tab-manager';
 
-const machineAuth = createMachineAuth();
-
-const { data: keys, error: keysError } =
-	await machineAuth.getActiveEncryptionKeys({ serverOrigin: SERVER_URL });
-if (keysError) throw keysError;
-if (!keys) {
-	throw new Error(
-		'[tab-manager-playground] no active encryption keys. Run `epicenter auth login` first.',
-	);
-}
+const auth = await createMachineAuthClient();
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
-const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
+const encryption = attachEncryption(ydoc, {
+	encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+});
 const tables = encryption.attachTables(tabManagerTables);
 // Empty kv: tabManager has no KV definitions, but `.kv()` on the materializer
 // serializes the shared kv store. Keep an empty encrypted kv attached so the
@@ -67,55 +55,40 @@ const persistence = attachYjsLog(ydoc, {
 	filePath: epicenterPaths.persistence(WORKSPACE_ID),
 });
 
-const sync = attachSync(ydoc, {
+const actions = defineActions({});
+
+const collaboration = openCollaboration(ydoc, {
 	url: websocketUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
-	// Gate connection on local hydrate so the handshake only exchanges the
-	// delta, not the whole document.
-	waitFor: Promise.resolve(),
-	getToken: createMachineTokenGetter({
-		serverOrigin: SERVER_URL,
-		machineAuth,
-	}),
+	openWebSocket: auth.openWebSocket,
+	replicaId: 'tab-manager-playground-daemon',
+	actions,
 });
 
-const whenReady = Promise.all([Promise.resolve(), sync.whenConnected]);
+const whenReady = collaboration.whenConnected;
 
-const markdown = attachMarkdownMaterializer(
-	{ tables, kv, whenReady },
-	{ dir: MARKDOWN_DIR },
-)
-	.table('savedTabs', { filename: slugFilename('title') })
-	.table('bookmarks', { filename: slugFilename('title') })
-	.table('devices')
-	.kv();
-
-const actions = {};
-const presence = sync.attachPresence({
-	peer: {
-		id: 'tab-manager-playground-daemon',
-		name: 'Tab Manager Playground Daemon',
-		platform: 'node',
-	},
-});
-const rpc = sync.attachRpc(actions);
+const markdown = attachMarkdownMaterializer(ydoc, {
+	dir: MARKDOWN_DIR,
+	waitFor: whenReady,
+})
+	.table(tables.savedTabs, { filename: slugFilename('title') })
+	.table(tables.bookmarks, { filename: slugFilename('title') })
+	.table(tables.devices)
+	.kv(kv);
 
 export const tabManager = {
 	workspaceId: ydoc.guid,
 	whenReady,
 	actions,
-	sync,
-	presence,
-	rpc,
+	collaboration,
 	async [Symbol.asyncDispose]() {
 		ydoc.destroy();
-		await sync.whenDisposed;
+		await collaboration.whenDisposed;
 	},
 	// Extras for direct script use, not part of the hosted daemon runtime contract.
 	id: WORKSPACE_ID,
 	ydoc,
 	tables,
 	kv,
-	awarenessDefs: tabManagerAwarenessDefs,
 	encryption,
 	persistence,
 	markdown,

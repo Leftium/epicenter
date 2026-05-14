@@ -203,10 +203,9 @@ import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
   attachIndexedDb,
-  attachSync,
   attachTables,
-  defineDocument,
   defineTable,
+  openCollaboration,
   websocketUrl,
 } from '@epicenter/workspace';
 
@@ -214,22 +213,23 @@ const posts = defineTable(
   type({ id: 'string', title: 'string', published: 'boolean', _v: '1' }),
 );
 
-const blog = defineDocument((id: string) => {
+function openBlog(id: string, replicaId: string) {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, { posts });
   const idb = attachIndexedDb(ydoc);
-  const sync = attachSync(ydoc, {
-    url: (docId) => websocketUrl(`http://localhost:3913/rooms/${docId}`),
+  const collaboration = openCollaboration(ydoc, {
+    url: websocketUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
+    replicaId,
   });
 
   return {
-    id, ydoc, tables, idb, sync,
+    id, ydoc, tables, idb, collaboration,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
-});
+}
 
-const workspace = await blog.load('epicenter.blog');
+const workspace = openBlog('epicenter.blog', 'browser-dev');
 workspace.tables.posts.set({ id: '1', title: 'Hello', published: false, _v: 1 });
 ```
 

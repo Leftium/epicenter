@@ -88,8 +88,8 @@ const log = createLogger('module-name');
 // Optional parameter (for libraries that may want a caller-supplied logger)
 function createX({ log = createLogger('x') }: { log?: Logger } = {}) { ... }
 
-// Config-injected (used in attachSync)
-const log = config.log ?? createLogger('attachSync');
+// Config-injected (used in openCollaboration)
+const log = config.log ?? createLogger('collaboration');
 ```
 
 **Triage**: this category is verified periodically: the codebase has historically been clean. Treat any hit as a regression and route through `wellcrafted/logger` before merging. New `console.*` in library code should be refused at PR review unless the call site is explicitly a CLI command, test, or benchmark.

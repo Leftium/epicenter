@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), createDisposableCache, attach* primitives, and action composition. Use when the user mentions workspace, defineTable, defineKv, createDisposableCache, attachTables, attachSync, attachIndexedDb, attachYjsLog, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), createDisposableCache, attach* primitives, openCollaboration, and action composition. Use when the user mentions workspace, defineTable, defineKv, createDisposableCache, attachTables, openCollaboration, attachIndexedDb, attachYjsLog, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
 metadata:
   author: epicenter
   version: '6.0'
@@ -24,7 +24,7 @@ Type-safe schema definitions for tables and KV stores.
 - Reading, writing, or observing table/KV data
 - Composing a live document with a direct builder plus `attach*` primitives
 - Adding `createDisposableCache(builder)` for per-row or otherwise fan-out documents
-- Attaching persistence (`attachIndexedDb`, `attachYjsLog`), sync (`attachSync`), or materializers (`attachSqliteMaterializer`, `attachMarkdownMaterializer`) inline
+- Attaching persistence (`attachIndexedDb`, `attachYjsLog`), opening collaboration (`openCollaboration`), or materializers (`attachSqliteMaterializer`, `attachMarkdownMaterializer`) inline
 - Writing server-side Bun scripts with `connectWorkspace()`
 ## Tables
 
@@ -200,20 +200,21 @@ export function createBlogActions({ tables, batch }) {
 
 Actions have **two** type surfaces depending on how they're invoked. **Local**
 callers see the handler's signature verbatim — sync stays sync, raw stays raw,
-throws throw. **Remote** callers (via `createRemoteActions` or `sync.rpc()`)
-always get `Promise<Result<T, E | ActionFailed>>`: the transport wraps raw
-values in `Ok`, converts thrown errors into `Err(RpcError.ActionFailed)`, and
-passes existing `Result`s through.
+throws throw. **Remote** callers (via `collaboration.dispatch()`)
+always get `Promise<Result<T, DispatchError>>`: the transport wraps raw values
+in `Ok` and converts thrown errors or returned `Err`s into
+`Err(DispatchError.ActionFailed)`.
 
 **Rule of thumb:**
 
-- **Return `Err(TypedError)`** for failures your caller should branch on.
+- **Return `Err(TypedError)`** for failures local callers should branch on.
 - **Throw** for bugs / invariants. On the wire, throws become `ActionFailed`
   — the caller loses the stack and can only say "something broke."
 - **Return raw** when failure isn't a meaningful concept for the operation.
 
-If you need structured errors on the wire, `return Err(...)` explicitly —
-don't throw and hope.
+Remote peer calls currently expose `DispatchError`, not each handler's typed
+error union. If a remote caller needs a narrower failure contract, add an
+explicit action surface for that workflow.
 
 For the full matrix (every caller's view of every handler shape, all the
 decision trees, and the normalization boundaries), read
@@ -255,7 +256,8 @@ src/lib/
 │   └── index.ts                        ← Barrel: re-exports definition + actions only
 │
 └── client.ts                           ← Runtime singleton: openX() builder composing
-                                           attachTables, attachIndexedDb/attachYjsLog, attachSync,
+                                           attachTables, attachIndexedDb/attachYjsLog,
+                                           openCollaboration,
                                            attachEncryption, and runtime-specific actions
 ```
 
@@ -278,7 +280,7 @@ src/lib/
 │ client.ts    │   │ server-client.ts │   │ cli-client.ts    │
 │ (browser)    │   │ (Node/Bun)       │   │ (CLI)            │
 │ attachIndex… │   │ attachYjsLog     │   │ attachYjsLog     │
-│ attachSync   │   │ attachSync       │   │ (no sync)        │
+│ openCollab   │   │ openCollab       │   │ (no sync)        │
 │ Chrome APIs  │   │ Node fs APIs     │   │                  │
 └──────────────┘   └──────────────────┘   └──────────────────┘
 ```
@@ -342,25 +344,29 @@ function openMyApp() {
   const ydoc = new Y.Doc({ guid: 'epicenter.myapp' });
   const tables = attachTables(ydoc, myAppTables);
   const idb = attachIndexedDb(ydoc);
-  const sync = attachSync(ydoc, { url, waitFor: idb.whenLoaded });
   const batch = (fn) => ydoc.transact(fn);
 
-  const actions = {
+  const actions = defineActions({
     ...createMyAppActions({ tables, batch }),
-    tabs: {
-      close: defineMutation({
-        title: 'Close Tabs',
-        description: 'Close browser tabs by ID.',
-        input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
-        handler: async ({ tabIds }) => {
-          await browser.tabs.remove(tabIds);  // Chrome API
-          return { closedCount: tabIds.length };
-        },
-      }),
-    },
-  };
+    tabs_close: defineMutation({
+      title: 'Close Tabs',
+      description: 'Close browser tabs by ID.',
+      input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
+      handler: async ({ tabIds }) => {
+        await browser.tabs.remove(tabIds);  // Chrome API
+        return { closedCount: tabIds.length };
+      },
+    }),
+  });
+  const collaboration = openCollaboration(ydoc, {
+    url,
+    waitFor: idb.whenLoaded,
+    openWebSocket,
+    replicaId,
+    actions,
+  });
 
-  return { ydoc, tables, idb, sync, actions, batch, /* whenReady, ... */ };
+  return { ydoc, tables, idb, collaboration, actions, batch, /* whenReady, ... */ };
 }
 
 export const workspace = openMyApp();
@@ -368,45 +374,46 @@ export const workspace = openMyApp();
 
 ## Attachment Ordering
 
-Attachments compose through plain lexical scope, so ordering is explicit: if `sync` needs to wait for local state, its `waitFor` option reads `idb.whenLoaded` — and `idb` must be defined first.
+Attachments compose through plain lexical scope, so ordering is explicit: if `openCollaboration` needs to wait for local state, its `waitFor` option reads `idb.whenLoaded`, and `idb` must be defined first.
 
 | Attachment | Typical `waitFor` | Behavior |
 |---|---|---|
 | `attachYjsLog` | — | Starts loading the Yjs update log immediately |
 | `attachIndexedDb` | — | Starts loading IndexedDB immediately |
 | `attachEncryption` | (none, sync) | Reads `encryptionKeys()` synchronously at each registration site |
-| `attachSync` | `idb.whenLoaded` (or `persistence.whenLoaded`) | Opens WebSocket after local replay |
+| `openCollaboration` | `idb.whenLoaded` (or another local-load promise) | Opens WebSocket after local replay |
 
-The standard shape is **persistence first, then sync with `waitFor`**:
+The standard shape is **persistence first, then collaboration with `waitFor`**:
 
 ```
 attachIndexedDb  ────────────→ idb.whenLoaded resolves
                                        ↓
-attachSync({ waitFor: idb.whenLoaded }) ────→ WebSocket opens → synced
+openCollaboration({ waitFor: idb.whenLoaded }) ────→ WebSocket opens → synced
 ```
 
 This ordering matters because sync only exchanges the delta between local state and the server. Without persistence loading first, every cold start downloads the full document.
 
 ```typescript
-// ✅ Correct: persistence loads first, sync waits for idb, exchanges delta only
+// Correct: persistence loads first, collaboration waits for idb, exchanges delta only
 createDisposableCache((id) => {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, myTables);
-  const persistence = attachYjsLog(ydoc, { filePath: '...' });
-  const sync = attachSync(ydoc, {
-    url: (docId) => toWsUrl(`${serverUrl}/workspaces/${docId}`),
-    getToken,
-    waitFor: persistence.whenLoaded,
+  const idb = attachIndexedDb(ydoc);
+  const collaboration = openCollaboration(ydoc, {
+    url: toWsUrl(`${serverUrl}/workspaces/${ydoc.guid}`),
+    waitFor: idb.whenLoaded,
+    openWebSocket,
+    replicaId,
   });
-  return { id, ydoc, tables, persistence, sync, /* ... */ };
+  return { id, ydoc, tables, idb, collaboration, /* ... */ };
 });
 
-// ❌ Wrong: sync starts before local state is loaded, downloads full document
+// Wrong: collaboration starts before local state is loaded, downloads full document
 createDisposableCache((id) => {
   const ydoc = new Y.Doc({ guid: id });
-  const sync = attachSync(ydoc, { url, getToken }); // no waitFor
-  const persistence = attachYjsLog(ydoc, { filePath: '...' });
-  return { id, ydoc, persistence, sync, /* ... */ };
+  const collaboration = openCollaboration(ydoc, { url, openWebSocket, replicaId });
+  const idb = attachIndexedDb(ydoc);
+  return { id, ydoc, idb, collaboration, /* ... */ };
 });
 ```
 
@@ -445,8 +452,8 @@ Load these on demand based on what you're working on:
 
 - If working with **table migrations** (migration function rules, direct-to-latest strategy, migration anti-patterns, `as const` note), read [references/table-migrations.md](references/table-migrations.md)
 - If working with **table/KV CRUD or observation** (`get`, `set`, `update`, `observe`, Svelte observer guidance), read [references/table-kv-crud-observation.md](references/table-kv-crud-observation.md)
-- If working with **per-row or standalone Y.Docs** (raw `new Y.Doc({ guid, gc })` + `attachRichText`/`attachPlainText`, `attachIndexedDb`, `attachSync`, `whenLoaded` vs `whenConnected`), read [references/primitive-api.md](references/primitive-api.md)
-- If working with **action return shapes, throw vs `Err`, remote error envelopes, `createRemoteActions`, `RemoteActions<A>`, `ActionFailed`, or the local/remote type-surface split**, read [references/action-return-shapes.md](references/action-return-shapes.md)
+- If working with **per-row or standalone Y.Docs** (raw `new Y.Doc({ guid, gc })` + `attachRichText`/`attachPlainText`, `attachIndexedDb`, `openCollaboration`, `whenLoaded` vs `whenConnected`), read [references/primitive-api.md](references/primitive-api.md)
+- If working with **action return shapes, throw vs `Err`, remote error envelopes, `collaboration.dispatch()`, `DispatchError`, or the local/remote type-surface split**, read [references/action-return-shapes.md](references/action-return-shapes.md)
 
 Code references:
 
@@ -455,6 +462,6 @@ Code references:
 - `packages/workspace/src/cache/disposable-cache.ts`
 - `packages/workspace/src/document/attach-table.ts`
 - `packages/workspace/src/document/attach-kv.ts`
-- `packages/workspace/src/document/attach-sync.ts`
+- `packages/workspace/src/document/open-collaboration.ts`
 - `packages/workspace/src/document/attach-indexed-db.ts`
 - `packages/workspace/src/document/attach-yjs-log.ts`

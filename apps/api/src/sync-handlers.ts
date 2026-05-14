@@ -37,7 +37,7 @@ import {
 	SYNC_MESSAGE_TYPE,
 	type SyncMessageType,
 } from '@epicenter/sync';
-import { PRESENCE_KEY } from '@epicenter/workspace';
+import { PRESENCE_KEY } from '@epicenter/workspace/document/keys';
 import * as decoding from 'lib0/decoding';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, trySync } from 'wellcrafted/result';

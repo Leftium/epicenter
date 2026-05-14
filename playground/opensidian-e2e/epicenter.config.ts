@@ -19,24 +19,23 @@
  *   # Runs until Ctrl+C.
  *   bun run playground/opensidian-e2e/epicenter.config.ts
  *
- *   # Invoke the markdown.prepare mutation.
- *   epicenter run opensidian.markdown.prepare '{"directory":"./some/dir"}' \
+ *   # Invoke the markdown_prepare mutation.
+ *   epicenter run opensidian.markdown_prepare '{"directory":"./some/dir"}' \
  *     -C playground/opensidian-e2e
  */
 
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-	createMachineAuth,
-	createMachineTokenGetter,
-} from '@epicenter/auth/node';
-import { createFileContentDoc } from '@epicenter/filesystem';
+import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
+import { fileContentDocGuid } from '@epicenter/filesystem';
 import {
 	attachEncryption,
-	attachSync,
+	attachTimeline,
 	createDisposableCache,
+	defineActions,
 	defineMutation,
+	openCollaboration,
 	websocketUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
@@ -57,42 +56,17 @@ const MATERIALIZER_DIR = join(import.meta.dir, '.epicenter', 'materializer');
 mkdirSync(MATERIALIZER_DIR, { recursive: true });
 
 const WORKSPACE_ID = 'opensidian';
-const machineAuth = createMachineAuth();
-
-const { data: keys, error: keysError } =
-	await machineAuth.getActiveEncryptionKeys({ serverOrigin: SERVER_URL });
-if (keysError) throw keysError;
-if (!keys) {
-	throw new Error(
-		'[opensidian-playground] no active encryption keys. Run `epicenter auth login` first.',
-	);
-}
+const auth = await createMachineAuthClient();
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
-const encryption = attachEncryption(ydoc, { encryptionKeys: () => keys });
+const encryption = attachEncryption(ydoc, {
+	encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+});
 const tables = encryption.attachTables(opensidianTables);
 const kv = encryption.attachKv({});
 
 const persistence = attachYjsLog(ydoc, {
 	filePath: epicenterPaths.persistence(WORKSPACE_ID),
-});
-
-const sync = attachSync(ydoc, {
-	url: websocketUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
-	waitFor: Promise.resolve(),
-	// TODO(claude-review): `SyncAttachmentConfig` has no `getToken` field; the
-	// supported auth field is `bearerToken?: () => string | null`. Real apps use
-	// `bearerToken: () => auth.bearerToken` against an `AuthClient` from
-	// `createMachineAuthClient()`. This playground imports `createMachineAuth`
-	// and `createMachineTokenGetter` from `@epicenter/auth/node`, but neither
-	// export exists today (only `createMachineAuthClient` is exported). The
-	// correct shape for `createMachineTokenGetter`'s return cannot be determined
-	// because the function itself is gone. Rewire to `createMachineAuthClient`
-	// + `bearerToken: () => auth.bearerToken` once the intended API is decided.
-	getToken: createMachineTokenGetter({
-		serverOrigin: SERVER_URL,
-		machineAuth,
-	}),
 });
 
 /**
@@ -107,26 +81,57 @@ const CONTENT_DIR = join(
 	'content',
 );
 const fileContentDocs = createDisposableCache(
-	(fileId: string) =>
-		createFileContentDoc({
-			fileId: fileId as never,
-			workspaceId: WORKSPACE_ID,
-			filesTable: tables.files,
-			attachPersistence: (contentDoc) =>
-				attachYjsLog(contentDoc, {
-					filePath: join(CONTENT_DIR, `${contentDoc.guid}.db`),
-				}),
-		}),
+	(fileId: string) => {
+		const contentYdoc = new Y.Doc({
+			guid: fileContentDocGuid({
+				workspaceId: WORKSPACE_ID,
+				fileId: fileId as never,
+			}),
+			gc: false,
+		});
+		const contentPersistence = attachYjsLog(contentYdoc, {
+			filePath: join(CONTENT_DIR, `${contentYdoc.guid}.db`),
+		});
+		return {
+			ydoc: contentYdoc,
+			content: attachTimeline(contentYdoc),
+			persistence: contentPersistence,
+			[Symbol.dispose]() {
+				contentYdoc.destroy();
+			},
+		};
+	},
 	{ gcTime: 5_000 },
 );
 
 async function readContent(rowId: string): Promise<string | undefined> {
 	await using handle = fileContentDocs.open(rowId);
-	await handle.whenReady;
 	return handle.content.read();
 }
 
-const whenReady = Promise.all([Promise.resolve(), sync.whenConnected]);
+/**
+ * Scan a directory for `.md` files and inject a unique `id` into the YAML
+ * frontmatter of any file that doesn't already have one. Errors if duplicate
+ * IDs are detected across files.
+ */
+const actions = defineActions({
+	markdown_prepare: defineMutation({
+		title: 'Prepare Markdown Files',
+		description:
+			'Add unique IDs to markdown files missing them in YAML frontmatter',
+		input: Type.Object({ directory: Type.String() }),
+		handler: async ({ directory }) => prepareMarkdownFiles(directory),
+	}),
+});
+
+const collaboration = openCollaboration(ydoc, {
+	url: websocketUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
+	openWebSocket: auth.openWebSocket,
+	replicaId: 'opensidian-playground-daemon',
+	actions,
+});
+
+const whenReady = collaboration.whenConnected;
 
 const markdown = attachMarkdownMaterializer(ydoc, {
 	dir: MARKDOWN_DIR,
@@ -169,52 +174,14 @@ const sqlite = attachSqliteMaterializer(ydoc, {
 	waitFor: whenReady,
 }).table(tables.files, { fts: ['name'] });
 
-/**
- * Scan a directory for `.md` files and inject a unique `id` into the YAML
- * frontmatter of any file that doesn't already have one. Errors if duplicate
- * IDs are detected across files.
- */
-const actions = {
-	markdown: {
-		prepare: defineMutation({
-			title: 'Prepare Markdown Files',
-			description:
-				'Add unique IDs to markdown files missing them in YAML frontmatter',
-			input: Type.Object({ directory: Type.String() }),
-			handler: async ({ directory }) => prepareMarkdownFiles(directory),
-		}),
-	},
-};
-// TODO(claude-review): `sync.attachPresence(...)` no longer exists on
-// `SyncAttachment` (only `attachRpc` remains). Presence/awareness moved to a
-// top-level `attachAwareness(ydoc, { schema, initial })` that must be created
-// BEFORE `attachSync` and passed in as `attachSync(ydoc, { awareness, ... })`
-// (see apps/opensidian/blocks/daemon-route.ts for the canonical
-// pattern). Migrating here requires reshuffling the file so awareness is
-// constructed before `sync` and updating the exported `presence` field below.
-// Commented out so the daemon runtime contract still typechecks; restore once
-// the surrounding structure is reworked.
-// const presence = sync.attachPresence({
-// 	peer: {
-// 		id: 'opensidian-playground-daemon',
-// 		name: 'Opensidian Playground Daemon',
-// 		platform: 'node',
-// 	},
-// });
-const rpc = sync.attachRpc(actions);
-
 export const opensidian = {
 	workspaceId: ydoc.guid,
 	whenReady,
 	actions,
-	sync,
-	// TODO(claude-review): restore `presence` once `attachAwareness` migration
-	// above is completed.
-	// presence,
-	rpc,
+	collaboration,
 	async [Symbol.asyncDispose]() {
 		ydoc.destroy();
-		await sync.whenDisposed;
+		await collaboration.whenDisposed;
 	},
 	// Extras for direct script use, not part of the hosted daemon runtime contract.
 	id: WORKSPACE_ID,

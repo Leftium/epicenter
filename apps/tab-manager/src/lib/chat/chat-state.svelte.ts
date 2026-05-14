@@ -109,10 +109,6 @@ export function createAiChatState({
 		ReturnType<typeof createConversationHandle>
 	>();
 
-	/** Internal lifecycle closures, not exposed on ConversationHandle. */
-	const destroyFns = new Map<ConversationId, () => void>();
-	const refreshFns = new Map<ConversationId, () => void>();
-
 	// ── Conversation Handle Factory ──────────────────────────────────
 
 	/**
@@ -171,13 +167,6 @@ export function createAiChatState({
 				});
 				updateConversation(conversationId, {});
 			},
-		});
-
-		// Register internal lifecycle closures
-		destroyFns.set(conversationId, () => chat.stop());
-		refreshFns.set(conversationId, () => {
-			if (chat.isLoading) return;
-			chat.setMessages(loadMessages(conversationId));
 		});
 
 		return {
@@ -357,6 +346,19 @@ export function createAiChatState({
 				chat.stop();
 			},
 
+			/**
+			 * Reload messages from the Y.Doc into the chat instance.
+			 * Skips while a stream is in flight (`isLoading`) to avoid the
+			 * observer racing the chat's own message append: the user message
+			 * is written to Y.Doc immediately after `chat.sendMessage`, and if
+			 * this fired during the stream it would feed Svelte two copies of
+			 * the same id and crash.
+			 */
+			refreshFromDoc() {
+				if (chat.isLoading) return;
+				chat.setMessages(loadMessages(conversationId));
+			},
+
 			approveToolCall(approvalId: string) {
 				void chat.addToolApprovalResponse({ id: approvalId, approved: true });
 			},
@@ -379,9 +381,7 @@ export function createAiChatState({
 
 	/** Stop client and remove the handle for a conversation. */
 	function destroyConversation(id: ConversationId) {
-		destroyFns.get(id)?.();
-		destroyFns.delete(id);
-		refreshFns.delete(id);
+		handles.get(id)?.stop();
 		handles.delete(id);
 	}
 
@@ -419,7 +419,7 @@ export function createAiChatState({
 		},
 	);
 	const _unobserveChatMessages = tabManager.tables.chatMessages.observe(() => {
-		refreshFns.get(activeConversationId)?.();
+		handles.get(activeConversationId)?.refreshFromDoc();
 	});
 
 	// Initialize after persistence loads
@@ -469,7 +469,7 @@ export function createAiChatState({
 
 	function switchConversation(conversationId: ConversationId) {
 		activeConversationId = conversationId;
-		refreshFns.get(conversationId)?.();
+		handles.get(conversationId)?.refreshFromDoc();
 	}
 
 	function deleteConversation(conversationId: ConversationId) {

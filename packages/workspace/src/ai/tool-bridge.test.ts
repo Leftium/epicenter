@@ -8,7 +8,7 @@ import {
 	type ActionRegistry,
 	defineMutation,
 	defineQuery,
-} from '@epicenter/workspace';
+} from '../shared/actions.js';
 import { Err, Ok } from 'wellcrafted/result';
 import { actionsToAiTools } from './tool-bridge.js';
 

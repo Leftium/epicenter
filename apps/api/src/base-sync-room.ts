@@ -4,8 +4,8 @@
  * Everything a sync room needs lives in this file: SQLite persistence,
  * WebSocket lifecycle, connection management, presence writes, and the
  * abstract base class. The only external dependency is `sync-handlers.ts`
- * for the Yjs wire protocol (encode/decode/dispatch). Subclasses
- * (`WorkspaceRoom`, `DocumentRoom`) import from here and nowhere else.
+ * for the Yjs wire protocol (encode/decode/dispatch). `SyncRoom` imports
+ * from here and nowhere else.
  *
  * ## Module structure
  *
@@ -22,11 +22,9 @@ import {
 	parseSubprotocols,
 	stateVectorsEqual,
 } from '@epicenter/sync';
-import {
-	PRESENCE_KEY,
-	type PresenceEntry,
-	YKeyValueLww,
-} from '@epicenter/workspace';
+import { type PresenceEntry } from '@epicenter/workspace';
+import { PRESENCE_KEY } from '@epicenter/workspace/document/keys';
+import { YKeyValueLww } from '@epicenter/workspace/document/y-keyvalue/y-keyvalue-lww';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import {
@@ -53,8 +51,8 @@ type SyncRoomConfig = {
 	/**
 	 * Whether to enable Yjs garbage collection.
 	 *
-	 * - `true`: workspace rooms that don't need version history
-	 * - `false`: document rooms that preserve delete history so
+	 * - `true`: compact current-state rooms
+	 * - `false`: retained-history rooms that preserve delete history so
 	 *   `Y.snapshot()` can reconstruct past states
 	 */
 	gc: boolean;
@@ -109,7 +107,7 @@ export class PresenceWriteForbidden extends Error {
  *
  * The Hono Worker in `app.ts` calls into DOs via two mechanisms:
  *
- * - **RPC** (`stub.sync()`, `stub.getDoc()`): for HTTP sync and snapshot
+ * - **RPC** (`stub.sync()`, `stub.getDoc()`): for HTTP sync and bootstrap
  *   bootstrap. Direct method calls avoid Request/Response serialization
  *   overhead for binary payloads. The Worker handles HTTP concerns (status
  *   codes, content-type headers); the DO handles only Yjs logic.
@@ -138,15 +136,14 @@ export class PresenceWriteForbidden extends Error {
  * re-validate (it trusts the Worker boundary).
  *
  * DO names are user-scoped: the Worker constructs
- * `user:{userId}:{type}:{name}` before calling `idFromName()`, where
- * `{type}` is `workspace` or `document`.
+ * `user:{userId}:sync:{room}` before calling `idFromName()`.
  * This ensures each user's data is isolated in separate DO instances, even
- * if multiple users create workspaces with the same name (e.g., "epicenter.tab-manager").
+ * if multiple users sync rooms with the same name (e.g., "epicenter.tab-manager").
  *
  * We chose user-scoped DO names (Google Docs model) over org-scoped names
- * (Vercel/Supabase model) because most workspaces hold personal data.
+ * (Vercel/Supabase model) because most rooms hold personal data.
  * For enterprise self-hosted, the deployment itself is the org boundary.
- * See `getWorkspaceStub` in app.ts for the full rationale.
+ * See `getSyncStub` in app.ts for the full rationale.
  */
 export class BaseSyncRoom extends DurableObject {
 	/**
@@ -164,7 +161,7 @@ export class BaseSyncRoom extends DurableObject {
 	 * 2. **Synchronous async callback**: The callback passed to
 	 *    `blockConcurrencyWhile` contains no `await`, so it executes to
 	 *    completion synchronously. This means `doc` is assigned before the
-	 *    constructor returns, so subclass constructors (e.g. `DocumentRoom`)
+	 *    constructor returns, so subclass constructors (e.g. `SyncRoom`)
 	 *    can safely access `this.doc` after `super()`.
 	 *
 	 * If an `await` is ever added to the `blockConcurrencyWhile` callback,
@@ -262,7 +259,7 @@ export class BaseSyncRoom extends DurableObject {
 	// --- fetch: WebSocket upgrades only ---
 
 	/**
-	 * Only handles WebSocket upgrades. HTTP operations (sync, snapshot) are
+	 * Only handles WebSocket upgrades. HTTP sync operations are
 	 * exposed as RPC methods called directly on the stub, avoiding the overhead
 	 * of constructing/parsing Request/Response objects for binary payloads.
 	 */
@@ -476,8 +473,7 @@ export class BaseSyncRoom extends DurableObject {
 	 * the remote end).
 	 *
 	 * When the last connection leaves, calls {@link onAllDisconnected} for
-	 * subclass cleanup (e.g. auto-saving snapshots in `DocumentRoom`) and
-	 * schedules a deferred compaction alarm.
+	 * subclass cleanup and schedules a deferred compaction alarm.
 	 */
 	override async webSocketClose(
 		ws: WebSocket,
@@ -527,8 +523,6 @@ export class BaseSyncRoom extends DurableObject {
 	 * Hook called when the last WebSocket client disconnects.
 	 *
 	 * Override in subclasses to perform cleanup when all clients leave.
-	 * For example, `DocumentRoom` overrides this to auto-save a snapshot
-	 * if the document changed since the last save.
 	 *
 	 * Called before the compaction alarm is scheduled. The base
 	 * implementation is a no-op.
@@ -562,8 +556,8 @@ export class BaseSyncRoom extends DurableObject {
 /**
  * Extract the owning user id (`subject`) from the DO name.
  *
- * DO names are formatted by `getWorkspaceStub` / `getDocumentStub` in app.ts
- * as `user:{userId}:{workspace|document}:{name}`. Every connection to this
+ * DO names are formatted by `getSyncStub` in app.ts as
+ * `user:{userId}:sync:{room}`. Every connection to this
  * DO shares the same auth context, so `subject` is room-scoped, not
  * connection-scoped. Parsing once at construction lets the value survive
  * hibernation without extra plumbing through `WsAttachment`.
@@ -578,7 +572,7 @@ function subjectFromDoName(name: string | undefined): string {
 	if (!match) {
 		throw new Error(
 			`[base-sync-room] DO name does not match expected ` +
-				`"user:{userId}:{workspace|document}:{name}" format: ${JSON.stringify(name)}`,
+				`"user:{userId}:sync:{room}" format: ${JSON.stringify(name)}`,
 		);
 	}
 	return match[1] as string;

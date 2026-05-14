@@ -81,7 +81,7 @@ export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 		return {
 			schema,
 			migrate: (row: unknown) => row as BaseRow,
-		} as unknown as TableDefinition<[TSchema]>;
+		} as TableDefinition<[TSchema]>;
 	}
 
 	const versions = args as CombinedStandardSchema[];
@@ -93,7 +93,7 @@ export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 				migrate: fn,
 			};
 		},
-	} as unknown as {
+	} as {
 		migrate(
 			fn: (row: unknown) => unknown,
 		): TableDefinition<CombinedStandardSchema<BaseRow>[]>;

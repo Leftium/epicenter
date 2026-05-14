@@ -19,9 +19,8 @@
  * does not hide that choice behind a `find` verb.
  *
  * Content docs (rich-text bodies, attachments, anything nested under a parent
- * that syncs independently) use this same primitive with `actions` omitted:
- * the default registry is `{}`, the action runner is skipped entirely, and
- * the byte transport is identical.
+ * that syncs independently) use this same primitive with `actions: {}`: the
+ * action runner is skipped entirely and the byte transport is identical.
  */
 
 import type { Logger } from 'wellcrafted/logger';
@@ -52,9 +51,7 @@ import { YKeyValueLww } from './y-keyvalue/y-keyvalue-lww.js';
 // PUBLIC TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-export type OpenCollaborationConfig<
-	TActions extends ActionRegistry = ActionRegistry,
-> = {
+export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	url: string;
 	waitFor?: Promise<unknown>;
 	openWebSocket?: OpenWebSocket;
@@ -66,11 +63,11 @@ export type OpenCollaborationConfig<
 	 */
 	replicaId: string;
 	/**
-	 * Local action registry. Defaults to `{}` for content docs and
-	 * consume-only participants. When the registry is empty, no action
-	 * runner observer is attached: pure listeners pay zero handler cost.
+	 * Local action registry. Pass `{}` for content docs and consume-only
+	 * participants. When the registry is empty, no action runner observer is
+	 * attached: pure listeners pay zero handler cost.
 	 */
-	actions?: TActions;
+	actions: TActions;
 };
 
 export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
@@ -120,7 +117,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	config: OpenCollaborationConfig<TActions>,
 ): Collaboration<TActions> {
-	const userActions = (config.actions ?? ({} as TActions)) as TActions;
+	const userActions = config.actions;
 
 	for (const key of Object.keys(userActions)) {
 		if (!ACTION_KEY_PATTERN.test(key)) {

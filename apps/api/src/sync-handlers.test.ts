@@ -16,7 +16,7 @@ import {
 	MESSAGE_TYPE,
 	SYNC_MESSAGE_TYPE,
 } from '@epicenter/sync';
-import { PRESENCE_KEY } from '@epicenter/workspace';
+import { PRESENCE_KEY } from '@epicenter/workspace/document/keys';
 import * as encoding from 'lib0/encoding';
 import * as Y from 'yjs';
 

@@ -257,10 +257,7 @@ export function defineQuery<TInput extends TSchema, R>(
 ): Action<TInput, R, 'query'>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function defineQuery({ handler, ...rest }: any): Action {
-	return Object.assign(handler, {
-		type: 'query' as const,
-		...rest,
-	}) as unknown as Action;
+	return Object.assign(handler, { type: 'query' as const, ...rest });
 }
 
 /**
@@ -280,10 +277,7 @@ export function defineMutation<TInput extends TSchema, R>(
 ): Action<TInput, R, 'mutation'>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function defineMutation({ handler, ...rest }: any): Action {
-	return Object.assign(handler, {
-		type: 'mutation' as const,
-		...rest,
-	}) as unknown as Action;
+	return Object.assign(handler, { type: 'mutation' as const, ...rest });
 }
 
 /**

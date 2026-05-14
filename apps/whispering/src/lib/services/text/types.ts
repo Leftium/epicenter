@@ -1,4 +1,3 @@
-import type { MaybePromise } from '@epicenter/workspace';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -6,6 +5,8 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { WhisperingError } from '$lib/result';
+
+type MaybePromise<T> = T | Promise<T>;
 
 export const TextError = defineErrors({
 	ClipboardRead: ({ cause }: { cause: unknown }) => ({

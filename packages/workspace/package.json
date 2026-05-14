@@ -33,7 +33,11 @@
 		"./node": "./src/node.ts",
 		"./document/materializer/sqlite": "./src/document/materializer/sqlite/index.ts",
 		"./logger/jsonl-sink": "./src/shared/logger/jsonl-sink.ts",
-		"./test-utils": "./src/shared/test-utils.ts"
+		"./test-utils": "./src/shared/test-utils.ts",
+		"./links": "./src/links.ts",
+		"./document/keys": "./src/document/keys.ts",
+		"./document/y-keyvalue/y-keyvalue-lww": "./src/document/y-keyvalue/y-keyvalue-lww.ts",
+		"./document/attach-timeline": "./src/document/attach-timeline/index.ts"
 	},
 	"license": "MIT",
 	"scripts": {

@@ -66,6 +66,7 @@ export function openFujiBrowser({
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
 			replicaId,
+			actions: {},
 		});
 
 		onLocalUpdate(ydoc, () => {

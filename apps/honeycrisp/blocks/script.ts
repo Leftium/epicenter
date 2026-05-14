@@ -38,6 +38,7 @@ export async function openHoneycrispScript({
 		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 		openWebSocket: session.openWebSocket,
 		replicaId: 'honeycrisp-script',
+		actions: {},
 	});
 
 	return {

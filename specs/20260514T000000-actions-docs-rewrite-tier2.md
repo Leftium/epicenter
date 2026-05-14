@@ -1,7 +1,7 @@
 # Tier 2: Actions Documentation Rewrite
 
 **Date**: 2026-05-14
-**Status**: Proposed
+**Status**: Implemented
 **Author**: Braden + Claude
 **Follow-up to**: `20260513T233714-define-actions-typed-key-validation.md`
 
@@ -27,6 +27,16 @@ This is a documentation pass, not a code refactor. Drafted as a separate spec so
 - New examples that aren't already in the existing docs.
 - The articles in `docs/articles/` (each is point-in-time prose; leave historical accuracy alone unless a claim is misleading today).
 - The historical specs (`20260513T200000-workspace-surface-clean-break-vision.md`, `20260513T210000-actions-path-first-clean-break.md`, `20260513T231157-actions-snake-case-only-no-dots.md`). Status fields are already set; bodies are records of decisions.
+
+## Execution note
+
+Current status: already implemented in the published docs. `packages/workspace/README.md`, `packages/workspace/SYNC_ARCHITECTURE.md`, and `packages/ai/README.md` already describe flat `ActionRegistry` authoring with `defineActions({...})`, snake_case action keys, `Object.entries(...)` iteration, and AI tool names that equal action keys verbatim.
+
+Implemented now: marked this spec as implemented and kept the docs unchanged because the current tracked files already match the source barrel in `packages/workspace/src/index.ts`.
+
+Out of scope now: no source changes, no article rewrites, and no historical spec rewrites.
+
+Validation: stale-term greps below should return zero hits except generic words such as `Actions` in headings or type names like `Collaboration<TActions>`.
 
 ## Affected files
 
@@ -56,7 +66,7 @@ You are updating three published documentation files to match the current state 
 
 ### File 1: `packages/workspace/README.md`
 
-Audit the whole `## Core Concepts` → `### Actions` section (around line 395) and the worked examples around lines 1085–1280. The pattern of stale claims is:
+Audit the whole `## Core Concepts` to `### Actions` section (around line 395) and the worked examples around lines 1085-1280. The pattern of stale claims is:
 
 - Authoring shape: examples use `actions = { posts: { list: defineQuery(...) } }`. Rewrite to flat:
   ```ts
@@ -152,7 +162,7 @@ grep -rn "walkActions\|describeActions\|type Mutation\|type Query\|DotsToUndersc
 
 ### Constraints
 
-- No em dashes (`—`) or en dashes (`–`). Use colon, comma, semicolon, parenthesis, or sentence break.
+- No em dash or en dash characters. Use colon, comma, semicolon, parenthesis, or sentence break.
 - No emojis (existing docs do not use them).
 - Keep section ordering and headings unless a heading is itself stale.
 - Where two equivalent phrasings exist, prefer the one that names the actual API in `packages/workspace/src/index.ts`.
@@ -205,7 +215,7 @@ Keep this spec file open in a fourth tab.
 
 ### Step 1: workspace README, the imports block (line ~1489)
 
-Search for `### Actions` in `packages/workspace/README.md`. There are two — find the one inside `## Public adapter surface` (around line 1489).
+Search for `### Actions` in `packages/workspace/README.md`. There are two; find the one inside `## Public adapter surface` (around line 1489).
 
 Current:
 ```typescript
@@ -242,7 +252,7 @@ Why each change:
 - `defineActions` and `toActionMeta` are the new helpers worth surfacing.
 - `ActionRegistry` is the type to name when documenting the registry shape.
 
-### Step 2: workspace README, the introspection example (lines 1235–1280)
+### Step 2: workspace README, the introspection example (lines 1235-1280)
 
 Look for `### Introspection` (around line 1236).
 
@@ -321,7 +331,7 @@ if (createAction.type === 'mutation') {
 
 Why: `isQuery`/`isMutation` were dropped from the barrel; consumers narrow on `action.type` directly. The discriminant is carried by `Action<_, _, TType>`.
 
-### Step 3: workspace README, the queries example (lines 1080–1130)
+### Step 3: workspace README, the queries example (lines 1080-1130)
 
 Search for `### Query actions`. Replace nested authoring with flat + `defineActions`:
 
@@ -352,7 +362,7 @@ const actionType = workspace.actions.posts.list.type;
 const actionType = workspace.actions.posts_list.type;
 ```
 
-### Step 4: workspace README, the mutations example (lines 1145–1200)
+### Step 4: workspace README, the mutations example (lines 1145-1200)
 
 Search for `### Mutation actions`. Same treatment:
 
@@ -403,7 +413,7 @@ There's a bullet list of exported names. Search for `walkActions`:
 - Add `- \`defineActions(actions)\``.
 - Add `- \`toActionMeta(action)\``.
 
-### Step 8: workspace README, the long-form walkActions description (lines 1576–1660)
+### Step 8: workspace README, the long-form walkActions description (lines 1576-1660)
 
 Search for `walkActions(source)` paragraph. Rewrite:
 

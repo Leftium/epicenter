@@ -74,7 +74,7 @@ Streamed append via Bun's `FileSink`. Parent directory auto-created. The returne
 
 ```ts
 await using sink = jsonlFileSink(join(DATA_DIR, 'app.log.jsonl'));
-const log = createLogger('attachSync', sink);
+const log = createLogger('collaboration', sink);
 // ... do work ...
 // scope exit → flush + close the writer
 ```
@@ -123,7 +123,7 @@ No module-level logger registry. No `setDefaultLogger()`. Each attach primitive 
 ```ts
 const markdown = attachMarkdownMaterializer(ydoc, { dir, log });
 const sqlite   = attachSqliteMaterializer(ydoc, { db, log });
-const sync     = attachSync(ydoc, { url, log });
+const collaboration = openCollaboration(ydoc, { url, log, openWebSocket, replicaId });
 ```
 
 Share one sink across loggers (avoids interleaved writes on the same file):

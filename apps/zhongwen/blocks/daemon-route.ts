@@ -40,6 +40,7 @@ export function defineZhongwenDaemon({
 				url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: session.openWebSocket,
 				replicaId: 'zhongwen-daemon',
+				actions: {},
 			});
 
 			return {

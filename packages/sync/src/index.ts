@@ -24,12 +24,14 @@ export {
 // Protocol (encode/decode for WS messages and HTTP sync requests)
 export {
 	type DecodedRpcMessage,
+	decodeAwarenessAttestedPayload,
 	decodeMessageType,
 	decodeRpcMessage,
 	decodeRpcPayload,
 	decodeSyncMessage,
 	decodeSyncRequest,
 	encodeAwareness,
+	encodeAwarenessAttested,
 	encodeAwarenessStates,
 	encodeQueryAwareness,
 	encodeRpcActionRequest,

@@ -263,10 +263,10 @@ Build, Prove, Remove waves. Each wave is one commit. Deletion waves only run aft
 
 This wave is the one that needs the server-side reviewer per Open Question #1.
 
-- [ ] **2.1** In `@epicenter/sync`, decide envelope format: either a new `MESSAGE_TYPE.AWARENESS_ATTESTED` that wraps the existing `MESSAGE_TYPE.AWARENESS` payload, or a sibling outer frame. Investigate existing `MESSAGE_TYPE` enum before committing.
-- [ ] **2.2** Server: on ingress of an awareness frame from an authenticated WebSocket, derive `subject` from the session and emit the envelope-attested form to relayed peers. Client-published awareness payload is forwarded unchanged.
-- [ ] **2.3** Server-side test: client publishes a forged subject in the payload; server's envelope `subject` is the auth-derived value, not the forgery.
-- [ ] **2.4** Client supervisor: decode the new envelope kind; expose `subject` per clientID via a `peerMetadata` map.
+- [x] **2.1** Added `MESSAGE_TYPE.AWARENESS_ATTESTED = 100` to `packages/sync/src/protocol.ts` plus `encodeAwarenessAttested({ subject, update })` / `decodeAwarenessAttestedPayload(decoder)` helpers, exported from `@epicenter/sync`. Wire format: `[varuint 100][varString subject][varUint8Array opaque update]`. Old `AWARENESS` stays client to server only; server emits the attested form to peers.
+- [x] **2.2** `RoomContext` gains a server-derived `subject` field; the DO parses it from `ctx.id.name` (format `user:{userId}:{type}:{name}`) once at construction in `apps/api/src/base-sync-room.ts`. `applyMessage`'s AWARENESS and QUERY_AWARENESS branches now emit `AWARENESS_ATTESTED` with `room.subject`; `computeInitialMessages` stamps the existing-states snapshot the same way. The opaque awareness bytes pass through unchanged.
+- [x] **2.3** Added an explicit forgery-resistance test in `sync-handlers.test.ts`: a client encodes a `subject: 'attacker'` field inside the awareness payload, server's broadcast envelope still carries `room.subject`, not the forged value.
+- [x] **2.4** `sync-supervisor.ts` decodes `AWARENESS_ATTESTED`, applies the opaque payload via the existing `handleRemoteAwarenessUpdate` path, and stamps a `peerMetadata: Map<clientID, { subject }>` using a synchronous closure during `applyAwarenessUpdate` so the awareness `update` event sees the envelope's subject. The map is removed when a clientID is dropped. Exposed on the `SyncSupervisor` surface as `readonly peerMetadata`. Wave 3 will wire it into the peers surface.
 
 ### Wave 3: `openCollaboration` config migration (Build)
 

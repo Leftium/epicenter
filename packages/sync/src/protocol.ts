@@ -35,12 +35,26 @@ import * as Y from 'yjs';
 export const MESSAGE_TYPE = {
 	/** Document synchronization messages (sync step 1, 2, or update) */
 	SYNC: 0,
-	/** User presence/cursor information */
+	/** User presence/cursor information (client to server, payload is opaque y-protocols awareness bytes) */
 	AWARENESS: 1,
 	/** Authentication (reserved for future use) */
 	AUTH: 2,
 	/** Request current awareness states from server */
 	QUERY_AWARENESS: 3,
+	/**
+	 * Server-attested awareness frame relayed to peers.
+	 *
+	 * Wraps an opaque y-protocols awareness payload with a server-stamped
+	 * `subject`. The server derives `subject` from the authenticated session at
+	 * WebSocket ingress; clients never publish this frame. Peers decode the
+	 * envelope, apply the inner payload to their local Awareness, and read
+	 * `subject` from the envelope to surface a trust-attested identity per
+	 * Yjs clientID.
+	 *
+	 * Wire format:
+	 * `[varuint: 100] [varString: subject] [varUint8Array: opaque awareness update]`
+	 */
+	AWARENESS_ATTESTED: 100,
 	/**
 	 * Remote procedure call between peers, routed through the DO.
 	 * Uses ACTION_REQUEST / RUNTIME_REQUEST / RESPONSE sub-types.
@@ -317,6 +331,49 @@ export function encodeQueryAwareness(): Uint8Array {
 	return encoding.encode((encoder) => {
 		encoding.writeVarUint(encoder, MESSAGE_TYPE.QUERY_AWARENESS);
 	});
+}
+
+/**
+ * Encode a server-attested awareness frame.
+ *
+ * The server stamps `subject` from the authenticated session at WebSocket
+ * ingress, then forwards the original `update` bytes unchanged. Peers join
+ * `subject` (envelope) with the inner payload (claimed `replica`, action
+ * keys) at the consumer surface.
+ *
+ * @param options.subject - Auth-derived user id stamped by the server.
+ * @param options.update - Raw awareness update bytes (from encodeAwarenessUpdate)
+ * @returns Encoded message ready to send over WebSocket
+ */
+export function encodeAwarenessAttested({
+	subject,
+	update,
+}: {
+	subject: string;
+	update: Uint8Array;
+}): Uint8Array {
+	return encoding.encode((encoder) => {
+		encoding.writeVarUint(encoder, MESSAGE_TYPE.AWARENESS_ATTESTED);
+		encoding.writeVarString(encoder, subject);
+		encoding.writeVarUint8Array(encoder, update);
+	});
+}
+
+/**
+ * Decode a server-attested awareness frame.
+ *
+ * The caller MUST pass a decoder positioned after `MESSAGE_TYPE.AWARENESS_ATTESTED`
+ * has already been read. Mirrors the existing `decodeRpcPayload` style: the
+ * top-level message type is consumed by the dispatcher, the sub-decoder
+ * reads the remaining fields.
+ */
+export function decodeAwarenessAttestedPayload(decoder: decoding.Decoder): {
+	subject: string;
+	update: Uint8Array;
+} {
+	const subject = decoding.readVarString(decoder);
+	const update = decoding.readVarUint8Array(decoder);
+	return { subject, update };
 }
 
 // ============================================================================

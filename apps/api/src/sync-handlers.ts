@@ -26,8 +26,7 @@
 
 import {
 	decodeRpcMessage,
-	encodeAwareness,
-	encodeAwarenessStates,
+	encodeAwarenessAttested,
 	encodeRpcResponse,
 	encodeSyncStep1,
 	encodeSyncUpdate,
@@ -36,6 +35,7 @@ import {
 	RpcError,
 	type SyncMessageType,
 } from '@epicenter/sync';
+import { encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as decoding from 'lib0/decoding';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, trySync } from 'wellcrafted/result';
@@ -69,13 +69,16 @@ const SyncHandlerError = defineErrors({
 // ============================================================================
 
 /**
- * Shared room state — the doc and awareness instance that all connections
- * in a room share. Passed explicitly to handlers rather than duplicated
- * in every {@link Connection}.
+ * Shared room state — the doc, awareness instance, and auth-derived
+ * subject that all connections in a room share. The DO is user-scoped
+ * (DO name encodes the owning user id), so every connection in this room
+ * carries the same `subject`. Handlers stamp it on outbound AWARENESS_ATTESTED
+ * frames so peers see a server-trusted identity per Yjs clientID.
  */
 export type RoomContext = {
 	doc: Y.Doc;
 	awareness: Awareness;
+	subject: string;
 };
 
 /**
@@ -138,14 +141,18 @@ export type MessageResult =
 export function computeInitialMessages({
 	doc,
 	awareness,
+	subject,
 }: RoomContext): Uint8Array[] {
 	const messages: Uint8Array[] = [encodeSyncStep1({ doc })];
 	const awarenessStates = awareness.getStates();
 	if (awarenessStates.size > 0) {
 		messages.push(
-			encodeAwarenessStates({
-				awareness,
-				clients: Array.from(awarenessStates.keys()),
+			encodeAwarenessAttested({
+				subject,
+				update: encodeAwarenessUpdate(
+					awareness,
+					Array.from(awarenessStates.keys()),
+				),
 			}),
 		);
 	}
@@ -253,11 +260,20 @@ export function applyMessage({
 				}
 
 				case MESSAGE_TYPE.AWARENESS: {
+					// Client publishes an opaque awareness payload. Apply locally,
+					// then re-emit to peers wrapped in an AWARENESS_ATTESTED envelope
+					// stamped with the connection's auth-derived subject. Any
+					// `subject` the client tries to encode inside the payload is
+					// irrelevant: peers read trust-attested identity from the
+					// envelope, not the payload.
 					const update = decoding.readVarUint8Array(decoder);
 					applyAwarenessUpdate(room.awareness, update, connection.ws);
 					return {
 						action: 'broadcast',
-						data: encodeAwareness({ update }),
+						data: encodeAwarenessAttested({
+							subject: room.subject,
+							update,
+						}),
 						shouldPersistAttachment: true,
 					};
 				}
@@ -267,9 +283,12 @@ export function applyMessage({
 					if (awarenessStates.size > 0) {
 						return {
 							action: 'reply',
-							data: encodeAwarenessStates({
-								awareness: room.awareness,
-								clients: Array.from(awarenessStates.keys()),
+							data: encodeAwarenessAttested({
+								subject: room.subject,
+								update: encodeAwarenessUpdate(
+									room.awareness,
+									Array.from(awarenessStates.keys()),
+								),
 							}),
 						};
 					}

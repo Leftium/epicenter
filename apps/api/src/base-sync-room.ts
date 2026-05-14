@@ -144,7 +144,11 @@ export class BaseSyncRoom extends DurableObject {
 
 		ctx.blockConcurrencyWhile(async () => {
 			this.doc = new Y.Doc({ gc: config.gc });
-			this.room = { doc: this.doc, awareness: new Awareness(this.doc) };
+			this.room = {
+				doc: this.doc,
+				awareness: new Awareness(this.doc),
+				subject: subjectFromDoName(ctx.id.name),
+			};
 
 			// --- Update log: DDL + cold-start load + compaction + live persist ---
 
@@ -471,6 +475,28 @@ export class BaseSyncRoom extends DurableObject {
 		if (this.connections.size > 0) return;
 		compactUpdateLog(this.ctx, this.doc);
 	}
+}
+
+// ============================================================================
+// Subject parser
+// ============================================================================
+
+/**
+ * Extract the owning user id (`subject`) from the DO name.
+ *
+ * DO names are formatted by `getWorkspaceStub` / `getDocumentStub` in app.ts
+ * as `user:{userId}:{workspace|document}:{name}`. Every connection to this
+ * DO shares the same auth context, so `subject` is room-scoped, not
+ * connection-scoped. Parsing once at construction lets the value survive
+ * hibernation without extra plumbing through `WsAttachment`.
+ *
+ * Returns the empty string if the DO was constructed without a name (only
+ * possible in test rigs that bypass the Worker's name builders).
+ */
+function subjectFromDoName(name: string | undefined): string {
+	if (!name) return '';
+	const match = name.match(/^user:([^:]+):/);
+	return match?.[1] ?? '';
 }
 
 // ============================================================================

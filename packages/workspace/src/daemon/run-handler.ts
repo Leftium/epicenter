@@ -16,56 +16,20 @@
  * and surface as `HandlerCrashed` on the client side.
  */
 
-import { Ok, type Result } from 'wellcrafted/result';
+import { Ok } from 'wellcrafted/result';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
-import type { PresenceSurface } from '../document/presence.js';
-import type { DispatchError } from '../document/rpc.js';
-import type { ActionRegistry } from '../shared/actions.js';
 import { invokeAction } from '../shared/actions.js';
+import { joinDaemonActionPath, parseDaemonActionPath } from './action-path.js';
 import type { RunRequest } from './app.js';
 import {
 	RunError,
 	type RunResponse,
 	type RunSyncStatus,
 } from './run-errors.js';
-
-/**
- * The exact collaboration surface `/run` reads.
- *
- * This keeps `executeRun` as the single source of truth for peer dispatch
- * behavior while letting tests build narrow fixtures. Full daemon runtimes can
- * still pass through structurally, but tests no longer fake unrelated lifecycle
- * fields just to reach action lookup, presence lookup, and dispatch.
- */
-export type DaemonRunCollaboration<
-	TActions extends ActionRegistry = ActionRegistry,
-> = {
-	actions: TActions;
-	peers: Pick<PresenceSurface, 'list'>;
-	status: SyncStatus;
-	dispatch(
-		action: string,
-		input: unknown,
-		options: { to: string; signal: AbortSignal },
-	): Promise<Result<unknown, DispatchError>>;
-};
-
-/**
- * One daemon route as read by `/run`.
- *
- * The full `StartedDaemonRoute` remains the server lifecycle type. This type is
- * narrower on purpose: route selection, local invocation, and remote peer
- * dispatch all depend on this shape and no other daemon runtime fields.
- */
-export type DaemonRunRoute<TActions extends ActionRegistry = ActionRegistry> = {
-	route: string;
-	runtime: {
-		collaboration: DaemonRunCollaboration<TActions>;
-	};
-};
+import type { DaemonServedRoute } from './types.js';
 
 type DaemonActionTarget = {
-	entry: DaemonRunRoute;
+	entry: DaemonServedRoute;
 	localPath: string;
 };
 
@@ -75,7 +39,7 @@ type DaemonRouteError = {
 };
 
 export async function executeRun(
-	runtimes: DaemonRunRoute[],
+	runtimes: readonly DaemonServedRoute[],
 	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
 	const target = resolveDaemonActionTarget(runtimes, actionPath);
@@ -121,12 +85,12 @@ export async function executeRun(
 }
 
 function resolveDaemonActionTarget(
-	runtimes: DaemonRunRoute[],
+	runtimes: readonly DaemonServedRoute[],
 	actionPath: string,
 ):
 	| { data: DaemonActionTarget; error: null }
 	| { data: null; error: DaemonRouteError } {
-	const [routeName = '', ...rest] = actionPath.split('.');
+	const { routeName, localPath } = parseDaemonActionPath(actionPath);
 	const entry = runtimes.find((candidate) => candidate.route === routeName);
 	if (!entry) {
 		return {
@@ -140,7 +104,7 @@ function resolveDaemonActionTarget(
 	return {
 		data: {
 			entry,
-			localPath: rest.join('.'),
+			localPath,
 		},
 		error: null,
 	};
@@ -154,7 +118,7 @@ async function invokeRemote({
 	waitMs,
 }: {
 	actionInput: unknown;
-	entry: DaemonRunRoute;
+	entry: DaemonServedRoute;
 	localPath: string;
 	peerTarget: string;
 	waitMs: number;
@@ -213,27 +177,20 @@ function toRunSyncStatus(status: SyncStatus): RunSyncStatus {
 	}
 }
 
-function toDaemonActionPath(
-	entry: DaemonRunRoute,
-	localPath: string,
-): string {
-	return localPath ? `${entry.route}.${localPath}` : entry.route;
-}
-
 function daemonActionSuggestionLines(
-	entry: DaemonRunRoute,
+	entry: DaemonServedRoute,
 	prefix: string,
 ): string[] {
 	return Object.entries(entry.runtime.collaboration.actions)
 		.filter(([path]) => !prefix || path.startsWith(prefix))
 		.map(
 			([path, action]) =>
-				`  ${toDaemonActionPath(entry, path)}  (${action.type})`,
+				`  ${joinDaemonActionPath(entry.route, path)}  (${action.type})`,
 		);
 }
 
 function daemonActionNearestSiblingLines(
-	entry: DaemonRunRoute,
+	entry: DaemonServedRoute,
 	missedPath: string,
 ): string[] {
 	const parts = missedPath.split('_');

@@ -11,16 +11,13 @@ import { describe, expect, test } from 'bun:test';
 import type { Result } from 'wellcrafted/result';
 
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
-import type { PresenceEntry, PresenceSurface } from '../document/presence.js';
+import type { PresenceEntry } from '../document/presence.js';
 import { DispatchError } from '../document/rpc.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import type { RunSyncStatus } from './run-errors.js';
-import {
-	type DaemonRunCollaboration,
-	type DaemonRunRoute,
-	executeRun,
-} from './run-handler.js';
+import { executeRun } from './run-handler.js';
+import type { DaemonServedCollaboration, DaemonServedRoute } from './types.js';
 
 type FakeDispatch = (
 	action: string,
@@ -28,7 +25,11 @@ type FakeDispatch = (
 	options: { to: string; signal: AbortSignal },
 ) => Promise<Result<unknown, DispatchError>>;
 
-function fakePresence({ known }: { known: string[] }): PresenceSurface {
+function fakePresence({
+	known,
+}: {
+	known: string[];
+}): DaemonServedCollaboration['peers'] {
 	const entries: PresenceEntry[] = known.map((replicaId) => ({
 		connId: `${replicaId}-conn`,
 		replicaId,
@@ -36,7 +37,6 @@ function fakePresence({ known }: { known: string[] }): PresenceSurface {
 	}));
 	return {
 		list: () => entries,
-		observe: () => () => {},
 	};
 }
 
@@ -48,9 +48,9 @@ function fakeCollaboration<TActions extends ActionRegistry>({
 }: {
 	actions: TActions;
 	syncStatus?: SyncStatus;
-	peers: PresenceSurface;
+	peers: DaemonServedCollaboration['peers'];
 	dispatch: FakeDispatch;
-}): DaemonRunCollaboration<TActions> {
+}): DaemonServedCollaboration<TActions> {
 	return {
 		actions,
 		status: syncStatus,
@@ -73,7 +73,7 @@ function fakeEntry({
 	syncStatus?: SyncStatus;
 	knownPeers?: string[];
 	dispatch?: FakeDispatch;
-} = {}): DaemonRunRoute {
+} = {}): DaemonServedRoute {
 	const peers = fakePresence({ known: knownPeers });
 	const collaboration = fakeCollaboration({
 		actions,
@@ -213,10 +213,7 @@ describe('executeRun route-prefixed routing', () => {
 
 	test('unknown route returns available route suggestions', async () => {
 		const result = await executeRun(
-			[
-				fakeEntry({}),
-				fakeEntry({ route: 'tasks', actions: {} }),
-			],
+			[fakeEntry({}), fakeEntry({ route: 'tasks', actions: {} })],
 			{
 				actionPath: 'missing.actions_add',
 				input: undefined,

@@ -1,8 +1,25 @@
 # Auth owns tokens only; identity moves to workspace
 
 **Date**: 2026-05-14
-**Status**: Draft
+**Status**: Superseded (2026-05-14). Do not implement.
 **Author**: Braden + Claude
+**Superseded by**:
+- `specs/20260514T120000-machine-auth-oob-clean-break.md` — replaces this spec's CLI/device-code consolidation. CLI switches to OAuth 2.1 authorization-code with OOB paste and a file-backed session at `~/.epicenter/auth.json`; the device-code grant is removed, not consolidated. Identity continues to load from `/workspace-identity` like every other client.
+- The "extract identity from auth into workspace" half of this spec is retracted, not replaced. Identity remains in `@epicenter/auth` as `OAuthSession.identity` (the `WorkspaceIdentity` shape `{ user, encryptionKeys }`), loaded once from `/workspace-identity` after sign-in. See `docs/articles/if-you-dont-trust-the-server-become-the-server.md` and `docs/articles/encryption-at-rest-is-the-gold-standard.md` for the trust-model rationale (server-managed encryption for hosted, self-host for real privacy).
+- **Note:** an earlier successor pair (`specs/20260514T154500-id-token-bearing-encryption-keys.md` + `specs/20260514T160000-execute-id-token-and-oob-cli.md`) was itself retracted on 2026-05-14. Those specs proposed moving encryption keys into id_token claims; they introduced a security regression at the leakage surface and were rejected. See their respective `## Retraction` sections.
+
+## Superseded
+
+> Read this section first. **Do not start any Phase 1-5 task below.** The proposed end state of this spec has been retracted. The successor replaces its two load-bearing contributions as follows:
+>
+> | This spec proposed | Successor decision |
+> | --- | --- |
+> | Extract identity into `@epicenter/workspace` as a new `WorkspaceIdentityStore` with its own storage adapter, `attach`/`detach` lifecycle, and dedicated error taxonomy. | Retracted, not replaced. Identity stays in `@epicenter/auth` as `OAuthSession.identity`. No new package, no new store, no second adapter, no separate lifecycle. The trust model is "server-managed encryption for hosted; self-host for real privacy." |
+> | Consolidate the CLI device-code path onto `/workspace-identity` (Decisions log entry #3). | OOB spec: CLI drops device-code entirely and runs the same OAuth 2.1 authorization-code flow the browser runs, with a manual paste step. Session is a `0o600` file, not `Bun.secrets`. Identity loads from `/workspace-identity` exactly like every other client. |
+>
+> There is no remaining role for the identity-extraction design in this document. The CLI consolidation lives in the OOB spec.
+>
+> **What is still useful in this file.** Everything below the metadata is preserved as a historical snapshot. The Pass 1-12 verification work (file paths, line numbers, call-site counts, deepwiki citations, Bun.secrets shape, `createPersistedState` behavior) is accurate as a description of the codebase at commit `a3213ab7f` and may be reused as grounding for the OOB CLI spec. The `## Done when (spec is watertight)` block at the bottom remains legitimately `[x]` for the checks it ran; it just no longer gates anything because the proposed end state has been retracted.
 
 ## Sentence
 
@@ -574,6 +591,8 @@ Existing persisted `OAuthSession = { tokens, identity }` blobs live in:
 This applies to machine auth too: `loadMachineSession` / `saveMachineSession` are deleted, not renamed. The new machine path stores tokens and identity in separate keychain entries with new service names, and there is no read from the old one.
 
 ## Implementation plan
+
+> **[SUPERSEDED — do not start.]** This plan is retained as historical record. The work below is replaced by the two successor specs cited at the top of this document. In particular: Phase 1 (workspace identity package) is rejected by the `id_token` spec; Phase 2 (auth shrink to tokens-only with `identity` removed from `AuthState`) is rejected by the `id_token` spec's revert of that change; Phase 2.3 / 3 (CLI consolidation on `/workspace-identity`) is replaced by the OOB spec.
 
 Follows Build, Prove, Remove.
 
@@ -1184,7 +1203,7 @@ Prior precedent:
 
 ## Done when (spec is watertight)
 
-> This is the gating checklist for this spec-revision pass and the **final section of this document**. It governs spec tightness only: every item below is satisfied by edits in this document. The implementation outcomes are tracked in `## Implementation outcomes (post-spec)` above; those checkboxes are deliberately unchecked because that work has not started and does not gate this revision.
+> **[SUPERSEDED.]** This checklist still legitimately reads `[x]` for the verification work that ran against this spec — file paths and line numbers were re-checked against the working tree at commit `a3213ab7f`, type contracts were checked for compilability, and library claims were grounded. It is preserved as historical record. It **no longer gates anything**, because the proposed end state has been retracted in favor of the two successor specs cited at the top of this document. Treat the checks below as "this spec was watertight at the moment it was retired."
 
 * [x] Every file path, type name, and function name in the spec resolves on the current branch (commit `a3213ab7f`). Pass 1 grounding; spec body uses `file.ts:line` references throughout.
 * [x] Every protocol / library claim verified via DeepWiki or in-repo source, with a citation in the spec. See `Research findings (Pass 2)`, items 1-5.

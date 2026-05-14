@@ -27,14 +27,16 @@ import {
 
 function setup({
 	selfClientId = 1,
-	selfId = 'self',
+	selfReplicaId = 'self',
 	send,
 	sendRuntime,
+	peerMetadata,
 }: {
 	selfClientId?: number;
-	selfId?: string;
+	selfReplicaId?: string;
 	send?: PeerWireHooks['sendActionRequest'];
 	sendRuntime?: PeerWireHooks['sendRuntimeRequest'];
+	peerMetadata?: Map<number, { subject: string }>;
 } = {}) {
 	// Yjs accepts `clientID` at runtime but it isn't on `DocOpts`. The cast
 	// is test-only: production code never sets a deterministic clientID.
@@ -44,8 +46,9 @@ function setup({
 		sendActionRequest: send ?? (async () => Ok(null)),
 		sendRuntimeRequest: sendRuntime ?? (async () => Ok(null)),
 	};
-	const peers = createPeersSurface(awareness, selfId, hooks);
-	return { ydoc, awareness, peers };
+	const metadata = peerMetadata ?? new Map<number, { subject: string }>();
+	const peers = createPeersSurface(awareness, metadata, selfReplicaId, hooks);
+	return { ydoc, awareness, peers, peerMetadata: metadata };
 }
 
 function publish(
@@ -56,9 +59,9 @@ function publish(
 	awareness.getStates().set(clientId, state);
 }
 
-function validPeerState(id: string, actionKeys: string[] = []) {
+function validPeerState(replicaId: string, actionKeys: string[] = []) {
 	return {
-		identity: { id, name: id, platform: 'node' as const },
+		replica: { id: replicaId, platform: 'node' as const },
 		actionKeys,
 	};
 }
@@ -73,18 +76,18 @@ describe('createPeersSurface.list', () => {
 		publish(awareness, awareness.clientID, validPeerState('self'));
 		publish(awareness, 2, validPeerState('mac'));
 
-		expect(peers.list().map((p) => p.id)).toEqual(['mac']);
+		expect(peers.list().map((p) => p.replica.id)).toEqual(['mac']);
 	});
 
-	test('excludes stale self entry by identity.id even when clientId differs', () => {
-		const { awareness, peers } = setup({ selfId: 'self' });
+	test('excludes stale self entry by replica.id even when clientId differs', () => {
+		const { awareness, peers } = setup({ selfReplicaId: 'self' });
 		publish(awareness, 99, validPeerState('self'));
 		publish(awareness, 100, validPeerState('mac'));
 
-		expect(peers.list().map((p) => p.id)).toEqual(['mac']);
+		expect(peers.list().map((p) => p.replica.id)).toEqual(['mac']);
 	});
 
-	test('drops state with missing identity', () => {
+	test('drops state with missing replica', () => {
 		const { awareness, peers } = setup();
 		publish(awareness, 10, { actionKeys: [] });
 
@@ -94,7 +97,7 @@ describe('createPeersSurface.list', () => {
 	test('drops state with malformed actionKeys', () => {
 		const { awareness, peers } = setup();
 		publish(awareness, 10, {
-			identity: { id: 'mac', name: 'mac', platform: 'node' },
+			replica: { id: 'mac', platform: 'node' },
 			actionKeys: 'not-an-array',
 		});
 
@@ -129,7 +132,7 @@ describe('createPeersSurface.list', () => {
 });
 
 describe('createPeersSurface.find', () => {
-	test('returns matching peer by identity.id', () => {
+	test('returns matching peer by replica.id', () => {
 		const { awareness, peers } = setup();
 		publish(awareness, 10, validPeerState('mac'));
 
@@ -141,13 +144,32 @@ describe('createPeersSurface.find', () => {
 		expect(peers.find('nobody')).toBeUndefined();
 	});
 
-	test('returns lowest clientId when multiple peers share an identity.id', () => {
+	test('returns lowest clientId when multiple peers share a replica.id', () => {
 		const { awareness, peers } = setup();
 		publish(awareness, 30, validPeerState('dup'));
 		publish(awareness, 10, validPeerState('dup'));
 		publish(awareness, 20, validPeerState('dup'));
 
 		expect(peers.find('dup')?.clientID).toBe(10);
+	});
+
+	test('peer.subject is joined from the supervisor peerMetadata map', () => {
+		const peerMetadata = new Map<number, { subject: string }>([
+			[10, { subject: 'user_alice' }],
+		]);
+		const { awareness, peers } = setup({ peerMetadata });
+		publish(awareness, 10, validPeerState('mac'));
+
+		const peer = peers.find('mac');
+		expect(peer?.subject).toBe('user_alice');
+	});
+
+	test('peer.subject falls back to empty string when no envelope has arrived', () => {
+		const { awareness, peers } = setup();
+		publish(awareness, 10, validPeerState('mac'));
+
+		const peer = peers.find('mac');
+		expect(peer?.subject).toBe('');
 	});
 });
 
@@ -296,7 +318,7 @@ describe('waitForPeer', () => {
 		publish(awareness, 42, validPeerState('mac'));
 
 		const peer = await waitForPeer(peers, 'mac', { timeoutMs: 1000 });
-		expect(peer?.id).toBe('mac');
+		expect(peer?.replica.id).toBe('mac');
 	});
 
 	test('resolves when peer arrives via awareness change', async () => {
@@ -312,7 +334,7 @@ describe('waitForPeer', () => {
 		]);
 
 		const peer = await pending;
-		expect(peer?.id).toBe('mac');
+		expect(peer?.replica.id).toBe('mac');
 	});
 
 	test('resolves undefined on timeout', async () => {
@@ -334,6 +356,6 @@ describe('waitForPeer', () => {
 		publish(awareness, 42, validPeerState('mac'));
 
 		const peer = await waitForPeer(peers, 'mac', { timeoutMs: 0 });
-		expect(peer?.id).toBe('mac');
+		expect(peer?.replica.id).toBe('mac');
 	});
 });

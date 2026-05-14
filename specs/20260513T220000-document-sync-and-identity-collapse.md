@@ -270,10 +270,10 @@ This wave is the one that needs the server-side reviewer per Open Question #1.
 
 ### Wave 3: `openCollaboration` config migration (Build)
 
-- [ ] **3.1** Change `OpenCollaborationConfig`: drop `identity`, add `replica: Replica`. `actions` becomes optional with default `{}`.
-- [ ] **3.2** Inside `openCollaboration`, write awareness with `{ replica, actionPaths }`. Do not publish `subject` from the client; it is stamped on the wire.
-- [ ] **3.3** Update `Collaboration` return type. Remove `identity`. Peers surface returns `Peer` with `clientID`, `subject`, `replica`, `actionPaths`.
-- [ ] **3.4** Update `createPeersSurface` to join envelope subject (from supervisor's `peerMetadata`) with awareness payload (`replica`, `actionPaths`).
+- [x] **3.1** `OpenCollaborationConfig` drops `identity`, gains `replica: Replica`. `actions` is optional and defaults to `{}` inside `openCollaboration`. `Collaboration.replica` replaces `Collaboration.identity` on the return type.
+- [x] **3.2** `openCollaboration` writes awareness with `{ replica, actionKeys }` (no client-side subject). The wire-level subject is stamped by the server on the envelope, not by the client.
+- [x] **3.3** `Peer` shape now has `clientID`, `subject`, `replica`, `actionKeys`, plus `invoke` / `describe`. The legacy `id` and `identity` fields are gone. `peers.find(replicaId)` matches against `replica.id`.
+- [x] **3.4** `createPeersSurface` takes the supervisor's `peerMetadata` as a parameter and joins it with the awareness payload at read time. The `peer.subject` field falls back to `""` when no envelope has arrived, so clients connected to a server that hasn't shipped attested envelopes degrade gracefully instead of throwing. Daemon `PeerSnapshot` was migrated to the new shape; CLI `peers` / `up` consumers read `subject` and `replica.id` (display names are deferred to a separate spec).
 
 ### Wave 4: Apps switch to `replica` (Build, Prove)
 

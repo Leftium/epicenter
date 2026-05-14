@@ -23,10 +23,12 @@ import type {
 	ActionManifest,
 	RemoteCallOptions,
 } from '../shared/actions.js';
+import type { PeerMetadata } from './internal/sync-supervisor.js';
 import {
 	peerAwarenessSchema,
 	type PeerAwarenessState,
-	type PeerIdentity,
+	type Replica,
+	type Subject,
 } from './peer-identity.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -92,20 +94,37 @@ export type RemoteCallError = RpcError | SelfInvocationError | PeerLeftError;
 /**
  * One online remote participant.
  *
- * Obtain via `collaboration.peers.find<TActions>(peerId)` or iteration
+ * Obtain via `collaboration.peers.find<TActions>(replicaId)` or iteration
  * over `collaboration.peers.list()`. The generic narrows `invoke` key
  * autocomplete and input/output types when the caller knows the remote's
  * action map.
+ *
+ * Three identifiers live on a peer, each with a distinct lifetime:
+ *
+ *  - `clientID`: per-session Yjs id. Disambiguates two tabs on one device.
+ *  - `replica`: per-install. Same value across reconnects from the same
+ *    device, same value for two tabs of the same browser.
+ *  - `subject`: per-user. Server-stamped from the auth session. Two
+ *    different devices owned by the same user share a subject.
  */
 export type Peer<TActions = unknown> = {
-	readonly id: string;
-	readonly identity: PeerIdentity;
 	/**
 	 * Session-local awareness clientID. Wire artifact, not stable across
-	 * reconnects; do not persist. Useful when `id` is shared (multiple tabs
-	 * from one browser) and a caller needs to disambiguate entries.
+	 * reconnects; do not persist.
 	 */
 	readonly clientID: number;
+	/**
+	 * Auth-derived user id, stamped by the server on the AWARENESS_ATTESTED
+	 * envelope. The trust-boundary field: two clients cannot share a subject
+	 * unless they authenticated as the same user.
+	 */
+	readonly subject: Subject;
+	/**
+	 * Install-stable descriptor claimed by the client. Two tabs on the same
+	 * browser publish the same `replica`. Verifying ownership is the server's
+	 * job (via `subject`), not this field.
+	 */
+	readonly replica: Replica;
 	/**
 	 * Alphabetically sorted snake_case key listing of every action the peer hosts,
 	 * read from awareness. Use for capability-based picks:
@@ -134,8 +153,12 @@ export type PeersSurface = {
 	/** Online peers, never including self, in clientId-ascending order. */
 	list(): Peer[];
 
-	/** Find by stable peer id. Returns undefined if not currently online. */
-	find<TActions = unknown>(peerId: string): Peer<TActions> | undefined;
+	/**
+	 * Find by install-stable replica id. Returns the first match in
+	 * clientId-ascending order (multi-tab on one device picks the lower
+	 * clientID). Returns undefined if no peer with that replica is online.
+	 */
+	find<TActions = unknown>(replicaId: string): Peer<TActions> | undefined;
 
 	/**
 	 * Subscribe to changes in the peer list. Bare callback; snapshot reads
@@ -171,8 +194,14 @@ export type PeerWireHooks = {
 
 /**
  * Build a `PeersSurface` over `awareness`. Self is filtered both by
- * `Awareness#clientID` (transport-level self) and by `selfId` (the published
- * identity.id; catches stale-entry-for-self after reconnect).
+ * `Awareness#clientID` (transport-level self) and by `selfReplicaId` (the
+ * published replica.id; catches stale-entry-for-self after reconnect, and
+ * filters every tab of the same browser).
+ *
+ * `peerMetadata` is the supervisor-maintained map of envelope-attested
+ * `subject` per clientID. Joining it with the awareness payload at read time
+ * (rather than copying into the payload) keeps the trust boundary visible:
+ * subject only exists for clientIDs the server attested.
  *
  * Awareness states that fail `PeerAwarenessState` validation are silently
  * dropped: a peer running mismatched code appears offline rather than
@@ -180,7 +209,8 @@ export type PeerWireHooks = {
  */
 export function createPeersSurface(
 	awareness: Awareness,
-	selfId: string,
+	peerMetadata: ReadonlyMap<number, PeerMetadata>,
+	selfReplicaId: string,
 	hooks: PeerWireHooks,
 ): PeersSurface {
 	function readPeers(): Map<number, PeerAwarenessState> {
@@ -189,30 +219,35 @@ export function createPeersSurface(
 		for (const [clientId, rawState] of awareness.getStates()) {
 			if (clientId === selfClientId) continue;
 			if (rawState === null || typeof rawState !== 'object') continue;
-			const identityRaw = (rawState as Record<string, unknown>).identity;
+			const replicaRaw = (rawState as Record<string, unknown>).replica;
 			const actionKeysRaw = (rawState as Record<string, unknown>).actionKeys;
-			const identity = peerAwarenessSchema.identity(identityRaw);
-			if (identity instanceof type.errors) continue;
+			const replica = peerAwarenessSchema.replica(replicaRaw);
+			if (replica instanceof type.errors) continue;
 			const actionKeys = peerAwarenessSchema.actionKeys(actionKeysRaw);
 			if (actionKeys instanceof type.errors) continue;
-			if (identity.id === selfId) continue;
-			result.set(clientId, { identity, actionKeys });
+			if (replica.id === selfReplicaId) continue;
+			result.set(clientId, { replica, actionKeys });
 		}
 		return result;
 	}
 
 	function makePeer(clientId: number, state: PeerAwarenessState): Peer {
+		// `subject` comes from the envelope-attested map; clients on a server
+		// that hasn't shipped attested envelopes yet land here with an empty
+		// string. Callers reading `peer.subject` decide whether that's OK for
+		// their UI (typically: show a placeholder until the lookup arrives).
+		const subject = peerMetadata.get(clientId)?.subject ?? '';
 		return {
-			id: state.identity.id,
-			identity: state.identity,
 			clientID: clientId,
+			subject,
+			replica: state.replica,
 			actionKeys: state.actionKeys,
 			invoke: (path, input, options) =>
-				dispatch(clientId, state.identity.id, path, () =>
+				dispatch(clientId, state.replica.id, path, () =>
 					hooks.sendActionRequest(clientId, path, input, options),
 				),
 			describe: (options) =>
-				dispatch(clientId, state.identity.id, 'describe-actions', () =>
+				dispatch(clientId, state.replica.id, 'describe-actions', () =>
 					hooks.sendRuntimeRequest(clientId, 'describe-actions', options),
 				),
 		};
@@ -266,12 +301,12 @@ export function createPeersSurface(
 				makePeer(clientId, peers.get(clientId)!),
 			);
 		},
-		find<TActions = unknown>(peerId: string): Peer<TActions> | undefined {
+		find<TActions = unknown>(replicaId: string): Peer<TActions> | undefined {
 			const peers = readPeers();
 			const sortedClientIds = [...peers.keys()].sort((a, b) => a - b);
 			for (const clientId of sortedClientIds) {
 				const state = peers.get(clientId)!;
-				if (state.identity.id === peerId) {
+				if (state.replica.id === replicaId) {
 					return makePeer(clientId, state) as Peer<TActions>;
 				}
 			}

@@ -33,7 +33,7 @@ import {
 	type OpenWebSocket,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
-import { peerAwarenessSchema, type PeerIdentity } from './peer-identity.js';
+import { peerAwarenessSchema, type Replica } from './peer-identity.js';
 import {
 	createPeersSurface,
 	type PeersSurface,
@@ -51,21 +51,25 @@ export type OpenCollaborationConfig<
 	waitFor?: Promise<unknown>;
 	openWebSocket?: OpenWebSocket;
 	log?: Logger;
-	/** Stable peer identity published in awareness. */
-	identity: PeerIdentity;
 	/**
-	 * Local action registry published to peers. May be `{}` for a participant
-	 * that only consumes remote actions. The registry is yours alone:
-	 * collaboration runtime requests (e.g. peer.describe) ride a separate
-	 * wire kind (`RUNTIME_REQUEST`), not the action namespace.
+	 * Install-stable, client-claimed descriptor published in awareness. The
+	 * authenticated `subject` is stamped by the server on the wire envelope;
+	 * clients only publish what only they know.
 	 */
-	actions: TActions;
+	replica: Replica;
+	/**
+	 * Local action registry published to peers. Defaults to `{}` for content
+	 * docs and consume-only participants. The registry is yours alone:
+	 * collaboration runtime requests (e.g. peer.describe) ride a separate wire
+	 * kind (`RUNTIME_REQUEST`), not the action namespace.
+	 */
+	actions?: TActions;
 };
 
 export type Collaboration<
 	TActions extends ActionRegistry = ActionRegistry,
 > = {
-	readonly identity: PeerIdentity;
+	readonly replica: Replica;
 	readonly actions: TActions;
 
 	readonly status: SyncStatus;
@@ -92,7 +96,8 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	config: OpenCollaborationConfig<TActions>,
 ): Collaboration<TActions> {
-	const { identity, actions: userActions } = config;
+	const { replica } = config;
+	const userActions = (config.actions ?? ({} as TActions)) as TActions;
 
 	for (const key of Object.keys(userActions)) {
 		if (!ACTION_KEY_PATTERN.test(key)) {
@@ -112,7 +117,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	attachAwareness(awareness, {
 		schema: peerAwarenessSchema,
 		initial: {
-			identity,
+			replica,
 			actionKeys: [...actionKeys],
 		},
 	});
@@ -146,10 +151,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		},
 	});
 
-	const peers = createPeersSurface(awareness, identity.id, {
+	const peers = createPeersSurface(awareness, supervisor.peerMetadata, replica.id, {
 		sendActionRequest: (target, action, input, options) => {
 			// Wire fallback for self-RPC. The peers surface filters self by
-			// identity.id, so reaching this branch requires a stale clientId
+			// replica.id, so reaching this branch requires a stale clientId
 			// reference (deserialized fixture, test injection, future bug).
 			if (target === awareness.clientID) {
 				return Promise.resolve(SelfInvocationError.SelfInvocation({ action }));
@@ -165,7 +170,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	});
 
 	return {
-		identity,
+		replica,
 		actions: userActions,
 		get status() {
 			return supervisor.status;

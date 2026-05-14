@@ -19,7 +19,7 @@ import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
-import { PeerIdentity } from '../document/peer-identity.js';
+import { Replica } from '../document/peer-identity.js';
 import { type ActionManifest, toActionMeta } from '../shared/actions.js';
 import { executeRun } from './run-handler.js';
 import type { StartedDaemonRoute } from './types.js';
@@ -47,14 +47,18 @@ export type RunRequest = typeof RunRequest.infer;
 
 /**
  * Row shape returned by `/peers`. One row per `(route, clientID)` pair,
- * tagged with its route name so a multi-route daemon can fan out. `identity`
- * carries the published peer identity; renderers consume it directly without
- * a cast.
+ * tagged with its route name so a multi-route daemon can fan out.
+ *
+ * `subject` is the server-attested user id (from the AWARENESS_ATTESTED
+ * envelope); `replica` is the install-stable, client-claimed descriptor.
+ * Renderers consume both directly without a cast. Display names are not in
+ * scope here; the CLI shows `subject` until a lookup endpoint exists.
  */
 export const PeerSnapshot = type({
 	route: 'string',
 	clientID: 'number',
-	identity: PeerIdentity,
+	subject: 'string',
+	replica: Replica,
 	actionKeys: 'string[]',
 });
 export type PeerSnapshot = typeof PeerSnapshot.infer;
@@ -80,7 +84,8 @@ export function buildDaemonApp(
 					rows.push({
 						route: entry.route,
 						clientID: peer.clientID,
-						identity: peer.identity,
+						subject: peer.subject,
+						replica: peer.replica,
 						actionKeys: [...peer.actionKeys],
 					});
 				}

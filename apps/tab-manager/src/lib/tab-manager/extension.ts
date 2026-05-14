@@ -11,7 +11,6 @@ import {
 	type EncryptionKeys,
 	type OpenWebSocket,
 	openCollaboration,
-	type Replica,
 	websocketUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -22,11 +21,9 @@ import {
 	tabManagerTables,
 } from '$lib/workspace/definition';
 
-type TabManagerReplica = Replica & { id: DeviceId };
-
 /**
  * Build the tab-manager binding. Synchronous: callers must resolve the
- * replica descriptor before invoking (the extension's replica id comes from
+ * replica id before invoking (the extension's replica id comes from
  * `chrome.storage.local` and from `createDeviceProfile()` in `device.ts`).
  *
  * Consumers gate UI render on `tabManager.idb.whenLoaded`; sync (the
@@ -34,12 +31,12 @@ type TabManagerReplica = Replica & { id: DeviceId };
  */
 export function openTabManagerBrowser({
 	userId,
-	replica,
+	replicaId,
 	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	replica: TabManagerReplica;
+	replicaId: DeviceId;
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
@@ -55,14 +52,14 @@ export function openTabManagerBrowser({
 	const actions = createTabManagerActions({
 		tables,
 		batch,
-		deviceId: Promise.resolve(replica.id),
+		deviceId: Promise.resolve(replicaId),
 	});
 
 	const collaboration = openCollaboration(ydoc, {
 		url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		replica,
+		replicaId,
 		actions,
 	});
 

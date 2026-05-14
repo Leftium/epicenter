@@ -56,7 +56,7 @@ function buildSession(
 		build: (identity) => {
 			const tabManager = openTabManagerBrowser({
 				userId: identity.user.id,
-				replica: profile.replica,
+				replicaId: profile.replicaId,
 				openWebSocket: auth.openWebSocket,
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});

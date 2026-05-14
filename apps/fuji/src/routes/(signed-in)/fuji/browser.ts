@@ -10,7 +10,6 @@ import {
 	onLocalUpdate,
 	type OpenWebSocket,
 	openCollaboration,
-	type Replica,
 	websocketUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -39,12 +38,12 @@ function entryContentDocGuid({
 
 export function openFujiBrowser({
 	userId,
-	replica,
+	replicaId,
 	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	replica: Replica;
+	replicaId: string;
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
@@ -71,7 +70,7 @@ export function openFujiBrowser({
 			url: websocketUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
-			replica,
+			replicaId,
 		});
 
 		onLocalUpdate(ydoc, () => {
@@ -101,7 +100,7 @@ export function openFujiBrowser({
 		url: websocketUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		replica,
+		replicaId,
 		actions,
 	});
 

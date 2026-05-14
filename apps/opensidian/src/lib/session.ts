@@ -17,10 +17,7 @@ export const session = createSession({
 	build: (identity) => {
 		const opensidian = openOpensidianBrowser({
 			userId: identity.user.id,
-			replica: {
-				id: createReplicaId({ storage: localStorage }),
-				platform: 'web',
-			},
+			replicaId: createReplicaId({ storage: localStorage }),
 			openWebSocket: auth.openWebSocket,
 			encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 		});

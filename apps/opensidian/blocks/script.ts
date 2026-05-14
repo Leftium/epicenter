@@ -36,7 +36,7 @@ export async function openOpensidianScript({
 	const collaboration = openCollaboration(ydoc, {
 		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 		openWebSocket: auth.openWebSocket,
-		replica: { id: 'opensidian-script', platform: 'node' },
+		replicaId: 'opensidian-script',
 	});
 
 	return {

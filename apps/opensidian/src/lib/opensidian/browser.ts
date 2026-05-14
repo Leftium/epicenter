@@ -14,7 +14,6 @@ import {
 	onLocalUpdate,
 	type OpenWebSocket,
 	openCollaboration,
-	type Replica,
 	websocketUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -25,12 +24,12 @@ import { createOpensidianActions } from './actions';
 
 export function openOpensidianBrowser({
 	userId,
-	replica,
+	replicaId,
 	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	replica: Replica;
+	replicaId: string;
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
@@ -105,7 +104,7 @@ export function openOpensidianBrowser({
 		url: websocketUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		replica,
+		replicaId,
 		actions,
 	});
 	let disposed = false;

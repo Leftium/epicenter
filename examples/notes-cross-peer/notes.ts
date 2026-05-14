@@ -1,14 +1,11 @@
 import { createMachineAuthClient } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
-	attachAwareness,
-	attachSync,
 	attachTables,
-	createRemoteClient,
 	defineMutation,
 	defineQuery,
 	defineTable,
-	PeerIdentity,
+	openCollaboration,
 	websocketUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
@@ -22,7 +19,7 @@ const WORKSPACE_ID = 'epicenter.notes-repro';
 // below passes `_v: 1`: same value, two different syntax conventions.
 const Note = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
-export async function openNotes(peer: PeerIdentity) {
+export async function openNotes(replicaId: string) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
 	const tables = attachTables(ydoc, { notes: Note });
 
@@ -41,30 +38,22 @@ export async function openNotes(peer: PeerIdentity) {
 		},
 	};
 
-	const awareness = attachAwareness(ydoc, {
-		schema: { peer: PeerIdentity },
-		initial: { peer },
-	});
 	const auth = await createMachineAuthClient();
-	const sync = attachSync(ydoc, {
+	const collaboration = openCollaboration(ydoc, {
 		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
-		bearerToken: () => auth.bearerToken,
-		awareness,
+		openWebSocket: auth.openWebSocket,
+		replicaId,
+		actions,
 	});
-	const rpc = sync.attachRpc(actions);
-	const remote = createRemoteClient({ awareness, rpc });
 
 	return {
 		workspaceId: ydoc.guid,
 		actions,
-		awareness,
-		remote,
-		rpc,
-		sync,
-		whenReady: sync.whenConnected,
+		collaboration,
+		whenReady: collaboration.whenConnected,
 		async [Symbol.asyncDispose]() {
 			ydoc.destroy();
-			await sync.whenDisposed;
+			await collaboration.whenDisposed;
 		},
 	};
 }

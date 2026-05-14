@@ -36,7 +36,7 @@ export async function openHoneycrispScript({
 	const collaboration = openCollaboration(ydoc, {
 		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 		openWebSocket: auth.openWebSocket,
-		replica: { id: 'honeycrisp-script', platform: 'node' },
+		replicaId: 'honeycrisp-script',
 	});
 
 	return {

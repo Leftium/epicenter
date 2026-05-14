@@ -17,7 +17,7 @@ import { upCommand } from './commands/up';
  *   - `auth`:  manage the local machine auth session (pre-workspace)
  *   - `list`:  tree view of runnable actions (local schema is authoritative)
  *   - `run`:   invoke one by route-qualified action key; `--peer` dispatches over RPC
- *   - `peers`: enumerate other clients currently online via Yjs awareness
+ *   - `peers`: enumerate other clients currently online via the workspace presence row
  *
  * Specs: `specs/20260421T155436-cli-scripting-first-redesign.md` (base
  * surface), `specs/20260423T174126-cli-remote-peer-rpc.md` (`peers` + `--peer`).

@@ -19,7 +19,7 @@
 	 * Renders sync status from a collaboration runtime alongside auth
 	 * identity, reconnect, and sign-out. Takes only the three fields it
 	 * actually needs (`status`, `onStatusChange`, `reconnect`) rather than the
-	 * full `Collaboration` value, so RPC, peers, and awareness do not leak
+	 * full `Collaboration` value, so RPC, peers, and presence do not leak
 	 * into the account UI surface.
 	 *
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.

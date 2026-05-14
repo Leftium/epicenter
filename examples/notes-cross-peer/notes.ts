@@ -1,4 +1,4 @@
-import { createMachineAuthClient } from '@epicenter/auth/node';
+import { createMachineAuthClient, requireSession } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachTables,
@@ -39,9 +39,10 @@ export async function openNotes(replicaId: string) {
 	};
 
 	const auth = await createMachineAuthClient();
+	const session = requireSession(auth);
 	const collaboration = openCollaboration(ydoc, {
 		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
-		openWebSocket: auth.openWebSocket,
+		openWebSocket: session.openWebSocket,
 		replicaId,
 		actions,
 	});

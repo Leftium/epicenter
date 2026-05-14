@@ -15,3 +15,4 @@ export {
 	type OAuthTokenRefresher,
 } from './create-oauth-app-auth.js';
 export { requireIdentity } from './require-identity.js';
+export { requireSession, type Session } from './require-session.js';

@@ -1,4 +1,4 @@
-import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
+import { createMachineAuthClient, requireSession } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachEncryption,
@@ -21,10 +21,11 @@ export function defineOpensidianDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
+			const session = requireSession(auth);
 			const ydoc = new Y.Doc({ guid: OPENSIDIAN_WORKSPACE_ID, gc: false });
 			ydoc.clientID = hashClientId(projectDir);
 			const encryption = attachEncryption(ydoc, {
-				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+				encryptionKeys: () => session.encryptionKeys,
 			});
 			const tables = encryption.attachTables(opensidianTables);
 			const kv = encryption.attachKv({});
@@ -37,7 +38,7 @@ export function defineOpensidianDaemon({
 			// need browser services.
 			const collaboration = openCollaboration(ydoc, {
 				url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
-				openWebSocket: auth.openWebSocket,
+				openWebSocket: session.openWebSocket,
 				replicaId: 'opensidian-daemon',
 			});
 

@@ -114,6 +114,10 @@ export {
 	getOrCreateInstallationIdAsync,
 	type SimpleStorage,
 } from './shared/device-id.js';
+export {
+	createReplicaId,
+	createReplicaIdAsync,
+} from './document/replica-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SHARED TYPES
@@ -276,6 +280,9 @@ export {
 	type PeerAwarenessState,
 	PeerIdentity,
 	type PeerRuntime,
+	type Platform,
+	Replica,
+	type Subject,
 } from './document/peer-identity.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 export { wipeOwnerLocalYjsData } from './document/wipe-owner-local-yjs-data.js';

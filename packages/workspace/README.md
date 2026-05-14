@@ -134,7 +134,7 @@ import {
 	type EncryptionKeys,
 	openCollaboration,
 	type Replica,
-	websocketUrl,
+	syncRoomUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { appTables } from '$lib/workspace/definition';
@@ -162,7 +162,7 @@ export function openApp({
 	attachOwnedBroadcastChannel(ydoc, { userId });
 
 	const collaboration = openCollaboration(ydoc, {
-		url: websocketUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
+		url: syncRoomUrl('https://api.epicenter.so', ydoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		replica,
@@ -815,6 +815,7 @@ import {
 	attachTables,
 	attachYjsSync,
 	openCollaboration,
+	syncRoomUrl,
 	websocketUrl,
 } from '@epicenter/workspace';
 import { attachYjsLog } from '@epicenter/workspace/node';

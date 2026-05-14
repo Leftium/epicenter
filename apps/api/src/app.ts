@@ -43,9 +43,8 @@ import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import { TRUSTED_ORIGINS } from './trusted-origins';
 
-export { DocumentRoom } from './document-room';
-// Re-export so wrangler types generates DurableObjectNamespace<WorkspaceRoom|DocumentRoom>
-export { WorkspaceRoom } from './workspace-room';
+// Re-export so wrangler types generates DurableObjectNamespace<SyncRoom>.
+export { SyncRoom } from './sync-room';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -315,8 +314,7 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 });
 
 app.use('/ai/*', requireOAuthUser);
-app.use('/workspaces/*', requireOAuthUser);
-app.use('/documents/*', requireOAuthUser);
+app.use('/sync/*', requireOAuthUser);
 app.use('/api/billing/*', requireOAuthUser);
 app.use('/api/assets/*', requireOAuthUser);
 
@@ -372,21 +370,21 @@ app.post(
 );
 
 // ---------------------------------------------------------------------------
-// Workspace routes: one WorkspaceRoom DO per workspace (gc: true)
+// Sync routes: one SyncRoom DO per named Y.Doc (gc: true)
 // ---------------------------------------------------------------------------
 
 /**
- * DO name namespacing: `user:{userId}:{type}:{name}`
+ * DO name namespacing: `user:{userId}:sync:{room}`
  *
  * We use user-scoped DO names (Google Docs model) rather than org-scoped names
- * (Vercel/Supabase model). Each user gets their own DO instance per workspace.
+ * (Vercel/Supabase model). Each user gets their own DO instance per room.
  *
  * Alternatives considered:
  *
- * - **Org-scoped (`org:{orgId}:{name}`)**: Evaluated for enterprise/self-hosted.
- *   Problems: most workspaces (Whispering recordings, Entries) are personal data
- *   that shouldn't merge into a shared Y.Doc. Org-scoped would require a
- *   per-workspace `scope` flag anyway, adding complexity without simplifying.
+ * - **Org-scoped (`org:{orgId}:{name}`)**: Evaluated for enterprise and self-hosted.
+ *   Problems: most rooms hold personal data that should not merge into a
+ *   shared Y.Doc. Org-scoped would require a per-room `scope` flag anyway,
+ *   adding complexity without simplifying.
  *
  * - **Org-scoped with personal sub-scope (`org:{orgId}:user:{userId}:{name}`)**:
  *   Embeds org management in the app. For self-hosted enterprise, the deployment
@@ -403,21 +401,15 @@ app.post(
  * a tenant prefix added at the routing layer, not embedded in the app's data model.
  */
 
-/** Get a WorkspaceRoom DO stub and its DO name for the authenticated user's workspace. */
-function getWorkspaceStub(c: Context<Env>) {
-	const doName = `user:${c.var.user.id}:workspace:${c.req.param('workspace')}`;
+/** Get a SyncRoom DO stub and its DO name for the authenticated user's room. */
+function getSyncStub(c: Context<Env>) {
+	const room = c.req.param('room');
+	if (!room) throw new Error('Missing sync room route param');
+	const doName = `user:${c.var.user.id}:sync:${room}`;
 	return {
-		stub: c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(doName)),
+		stub: c.env.SYNC_ROOM.get(c.env.SYNC_ROOM.idFromName(doName)),
 		doName,
-	};
-}
-
-/** Get a DocumentRoom DO stub and its DO name for the authenticated user's document. */
-function getDocumentStub(c: Context<Env>) {
-	const doName = `user:${c.var.user.id}:document:${c.req.param('document')}`;
-	return {
-		stub: c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(doName)),
-		doName,
+		room,
 	};
 }
 
@@ -434,7 +426,6 @@ function upsertDoInstance(
 	db: Db,
 	params: {
 		userId: string;
-		doType: schema.DoType;
 		resourceName: string;
 		doName: string;
 		storageBytes?: number;
@@ -445,7 +436,6 @@ function upsertDoInstance(
 		.insert(schema.durableObjectInstance)
 		.values({
 			userId: params.userId,
-			doType: params.doType,
 			resourceName: params.resourceName,
 			doName: params.doName,
 			storageBytes: params.storageBytes ?? null,
@@ -465,21 +455,28 @@ function upsertDoInstance(
 		.catch((e) => console.error('[do-tracking] upsert failed:', e));
 }
 
+function binaryResponse(data: Uint8Array): Response {
+	const body = new ArrayBuffer(data.byteLength);
+	new Uint8Array(body).set(data);
+	return new Response(body, {
+		headers: { 'content-type': 'application/octet-stream' },
+	});
+}
+
 app.get(
-	'/workspaces/:workspace',
+	'/sync/:room',
 	describeRoute({
-		description: 'Get workspace doc or upgrade to WebSocket',
-		tags: ['workspaces'],
+		description: 'Get sync room doc or upgrade to WebSocket',
+		tags: ['sync'],
 	}),
 	async (c) => {
-		const { stub, doName } = getWorkspaceStub(c);
+		const { stub, doName, room } = getSyncStub(c);
 
 		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
 					userId: c.var.user.id,
-					doType: 'workspace',
-					resourceName: c.req.param('workspace'),
+					resourceName: room,
 					doName,
 				}),
 			);
@@ -490,23 +487,20 @@ app.get(
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
-				doType: 'workspace',
-				resourceName: c.req.param('workspace'),
+				resourceName: room,
 				doName,
 				storageBytes,
 			}),
 		);
-		return new Response(data, {
-			headers: { 'content-type': 'application/octet-stream' },
-		});
+		return binaryResponse(data);
 	},
 );
 
 app.post(
-	'/workspaces/:workspace',
+	'/sync/:room',
 	describeRoute({
-		description: 'Sync workspace doc',
-		tags: ['workspaces'],
+		description: 'Sync room doc',
+		tags: ['sync'],
 	}),
 	async (c) => {
 		const body = new Uint8Array(await c.req.arrayBuffer());
@@ -514,7 +508,7 @@ app.post(
 			return c.body('Payload too large', 413);
 		}
 
-		const { stub, doName } = getWorkspaceStub(c);
+		const { stub, doName, room } = getSyncStub(c);
 		let diff: Uint8Array | null;
 		let storageBytes: number;
 		try {
@@ -529,162 +523,14 @@ app.post(
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
-				doType: 'workspace',
-				resourceName: c.req.param('workspace'),
+				resourceName: room,
 				doName,
 				storageBytes,
 			}),
 		);
 
 		if (!diff) return c.body(null, 304);
-		return new Response(diff, {
-			headers: { 'content-type': 'application/octet-stream' },
-		});
-	},
-);
-
-// ---------------------------------------------------------------------------
-// Document routes: one DocumentRoom DO per document (gc: false, snapshots)
-// ---------------------------------------------------------------------------
-
-app.get(
-	'/documents/:document',
-	describeRoute({
-		description: 'Get document doc or upgrade to WebSocket',
-		tags: ['documents'],
-	}),
-	async (c) => {
-		const { stub, doName } = getDocumentStub(c);
-
-		if (isWebSocketUpgrade(c)) {
-			c.var.afterResponse.push(
-				upsertDoInstance(c.var.db, {
-					userId: c.var.user.id,
-					doType: 'document',
-					resourceName: c.req.param('document'),
-					doName,
-				}),
-			);
-			return stub.fetch(c.req.raw);
-		}
-
-		const { data, storageBytes } = await stub.getDoc();
-		c.var.afterResponse.push(
-			upsertDoInstance(c.var.db, {
-				userId: c.var.user.id,
-				doType: 'document',
-				resourceName: c.req.param('document'),
-				doName,
-				storageBytes,
-			}),
-		);
-		return new Response(data, {
-			headers: { 'content-type': 'application/octet-stream' },
-		});
-	},
-);
-
-app.post(
-	'/documents/:document',
-	describeRoute({
-		description: 'Sync document doc',
-		tags: ['documents'],
-	}),
-	async (c) => {
-		const body = new Uint8Array(await c.req.arrayBuffer());
-		if (body.byteLength > MAX_PAYLOAD_BYTES) {
-			return c.body('Payload too large', 413);
-		}
-
-		const { stub, doName } = getDocumentStub(c);
-		let diff: Uint8Array | null;
-		let storageBytes: number;
-		try {
-			({ diff, storageBytes } = await stub.sync(body));
-		} catch (err) {
-			if (err instanceof Error && err.name === 'PresenceWriteForbidden') {
-				return c.body('presence-write-forbidden', 403);
-			}
-			throw err;
-		}
-
-		c.var.afterResponse.push(
-			upsertDoInstance(c.var.db, {
-				userId: c.var.user.id,
-				doType: 'document',
-				resourceName: c.req.param('document'),
-				doName,
-				storageBytes,
-			}),
-		);
-
-		if (!diff) return c.body(null, 304);
-		return new Response(diff, {
-			headers: { 'content-type': 'application/octet-stream' },
-		});
-	},
-);
-
-// Snapshot endpoints for DocumentRoom
-app.post(
-	'/documents/:document/snapshots',
-	describeRoute({
-		description: 'Save a document snapshot',
-		tags: ['documents', 'snapshots'],
-	}),
-	sValidator('json', type({ label: 'string | null' })),
-	async (c) => {
-		const { stub } = getDocumentStub(c);
-		const { label } = c.req.valid('json');
-		const result = await stub.saveSnapshot(label ?? undefined);
-		return c.json(result);
-	},
-);
-
-app.get(
-	'/documents/:document/snapshots',
-	describeRoute({
-		description: 'List document snapshots',
-		tags: ['documents', 'snapshots'],
-	}),
-	async (c) => {
-		const { stub } = getDocumentStub(c);
-		const snapshots = await stub.listSnapshots();
-		return c.json(snapshots);
-	},
-);
-
-app.get(
-	'/documents/:document/snapshots/:id',
-	describeRoute({
-		description: 'Get a document snapshot by ID',
-		tags: ['documents', 'snapshots'],
-	}),
-	sValidator('param', type({ document: 'string', id: 'string.numeric' })),
-	async (c) => {
-		const { stub } = getDocumentStub(c);
-		const { id } = c.req.valid('param');
-		const data = await stub.getSnapshot(Number(id));
-		if (!data) return c.body('Snapshot not found', 404);
-		return new Response(data, {
-			headers: { 'content-type': 'application/octet-stream' },
-		});
-	},
-);
-
-app.delete(
-	'/documents/:document/snapshots/:id',
-	describeRoute({
-		description: 'Delete a document snapshot',
-		tags: ['documents', 'snapshots'],
-	}),
-	sValidator('param', type({ document: 'string', id: 'string.numeric' })),
-	async (c) => {
-		const { stub } = getDocumentStub(c);
-		const { id } = c.req.valid('param');
-		const deleted = await stub.deleteSnapshot(Number(id));
-		if (!deleted) return c.body('Snapshot not found', 404);
-		return c.body(null, 204);
+		return binaryResponse(diff);
 	},
 );
 

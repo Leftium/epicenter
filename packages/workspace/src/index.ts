@@ -1,8 +1,8 @@
 /**
  * Epicenter: YJS-First Collaborative Workspace System
  *
- * `@epicenter/workspace` attaches typed primitives — tables, KV, plain/rich
- * text, presence, timeline, and an action registry — to a `Y.Doc`, then
+ * `@epicenter/workspace` attaches typed primitives: tables, KV, plain/rich
+ * text, presence, timeline, and an action registry to a `Y.Doc`, then
  * wires the result to IndexedDB persistence, end-to-end encryption, and
  * WebSocket sync via `openCollaboration`.
  *

@@ -4,7 +4,7 @@ The hub server. Handles authentication, real-time sync, and AI inference: everyt
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. Self-hosting the unmodified server is encouraged; see the encryption and trust model below.
 
-Runs on Cloudflare Workers with Durable Objects. Each user gets dedicated Durable Objects for their workspaces and documents, providing per-user isolation with WebSocket-based real-time sync.
+Runs on Cloudflare Workers with Durable Objects. Each user gets dedicated sync-room Durable Objects, providing per-user isolation with WebSocket-based real-time sync.
 
 ## Why a hub exists
 
@@ -18,11 +18,11 @@ Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is 
 
 Cloudflare Durable Objects are the current deployment target. Three things make them a natural fit for per-user Yjs sync:
 
-- **Single-threaded per object.** Each user's WorkspaceRoom or DocumentRoom runs in its own isolate. No mutex, no race conditions on CRDT state. The runtime guarantees it.
+- **Single-threaded per object.** Each user's SyncRoom runs in its own isolate. No mutex, no race conditions on CRDT state. The runtime guarantees it.
 - **Built-in SQLite.** The update log lives inside the Durable Object's storage. No external database for sync state, no connection pooling, no cold-start latency from network hops.
 - **WebSocket Hibernation.** Idle connections don't consume compute. A user can leave a tab open for hours and the DO sleeps until the next message arrives. Costs stay proportional to actual sync traffic, not connection count.
 
-We're focused on Durable Objects to keep the maintenance surface small and iterate fast. The Cloudflare-specific code lives in three files: `workspace-room.ts`, `document-room.ts`, and `base-sync-room.ts`. Everything else, routes, auth, AI, and validation, is runtime-portable Hono code.
+We're focused on Durable Objects to keep the maintenance surface small and iterate fast. The Cloudflare-specific sync code lives in `sync-room.ts` and `base-sync-room.ts`. Everything else, routes, auth, AI, and validation, is runtime-portable Hono code.
 
 We want self-hosting adapters. The plan is to stabilize the API surface on Durable Objects first, then extract the sync room logic into a runtime-agnostic layer backed by Node.js WebSockets + SQLite. If you want to deploy today, fork the repo and use the existing `wrangler.jsonc`. Everything you need is in there.
 
@@ -65,14 +65,10 @@ Cloudflare Workers
 ├── Hono app (src/app.ts)
 │   ├── /auth/*          Better Auth (email/password, Google OAuth, OAuth provider)
 │   ├── /ai/chat         AI streaming (OpenAI, Anthropic via @tanstack/ai)
-│   ├── /workspaces/:id  Yjs sync (WebSocket upgrade or HTTP)
-│   └── /documents/:id   Yjs sync with snapshots
+│   └── /sync/:room      Yjs sync (WebSocket upgrade or HTTP)
 │
-├── WorkspaceRoom (Durable Object, SQLite-backed)
-│   └── Per-user Yjs document for workspace data (settings, transcripts, notes)
-│
-└── DocumentRoom (Durable Object, SQLite-backed)
-    └── Per-user Yjs document for long-form content, with snapshot history
+└── SyncRoom (Durable Object, SQLite-backed)
+    └── Per-user Yjs document for any app-owned room id
 ```
 
 API keys for AI providers are environment secrets (`wrangler secret put`). They never leave the hub. The client sends a session token, the hub validates it and swaps in the real key before forwarding to the provider.

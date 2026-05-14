@@ -34,8 +34,7 @@ Self-hosters can run the same server on one origin:
 https://server.example.com
 |-- account and OAuth routes
 |-- /me
-|-- /workspaces/*
-`-- /documents/*
+`-- /sync/*
 ```
 
 Composition happens in the deployable root:

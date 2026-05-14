@@ -8,6 +8,13 @@
 			"when": 1776083464858,
 			"tag": "0000_equal_thor_girl",
 			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1778734800000,
+			"tag": "0001_delete_old_sync_rooms",
+			"breakpoints": true
 		}
 	]
 }

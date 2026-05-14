@@ -83,7 +83,7 @@ async function verifyBearerToUser(
 
 /**
  * Cheap resolver for the protected-resource boundary (`/ai/*`,
- * `/workspaces/*`, `/documents/*`, `/api/billing/*`, `/api/assets/*`).
+ * `/sync/*`, `/api/billing/*`, `/api/assets/*`).
  * Skips encryption-key derivation; only the calling user is needed once
  * the scope is proven.
  */

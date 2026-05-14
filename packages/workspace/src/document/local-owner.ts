@@ -10,22 +10,6 @@
  * user's encryption keys. The owner is the one named place that knows the
  * pair.
  *
- * ## What the methods own
- *
- * - `attachEncryption(ydoc)` is a thin delegate to the free
- *   `attachEncryption(ydoc, { encryptionKeys })`. Browsers go through the owner
- *   so the encryption keys never have to be re-passed at every doc.
- * - `attachIndexedDb(ydoc)` is the join point between encryption and local
- *   ownership: it derives the per-doc keyring AND the owner-scoped database
- *   name, then attaches an encrypted IndexedDB provider.
- * - `attachBroadcastChannel(ydoc)` opens a cross-tab channel under an
- *   owner-scoped key so two signed-in users in the same browser profile
- *   cannot exchange plaintext updates.
- * - `wipeLocalYjsData(ydocGuids)` deletes every owner-scoped IndexedDB
- *   database visible to this profile, plus any explicitly provided guids.
- *   Browsers call this from `wipe()` on sign-out and from the "forget device"
- *   action.
- *
  * Daemons do not construct an owner: they call `attachEncryption` directly
  * with just `encryptionKeys` and persist via filesystem instead of IDB.
  */
@@ -35,44 +19,10 @@ import { clearDocument } from 'y-indexeddb';
 import type * as Y from 'yjs';
 import { attachBroadcastChannelWithKey } from './attach-broadcast-channel.js';
 import { attachEncryptedIndexedDb } from './attach-encrypted-indexed-db.js';
-import {
-	attachEncryption,
-	type EncryptionAttachment,
-} from './attach-encryption.js';
-import type { IndexedDbAttachment } from './attach-indexed-db.js';
-import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
+import { attachEncryption } from './attach-encryption.js';
 import { createOwnedYjsKey, createOwnedYjsKeyPrefix } from './local-yjs-key.js';
 
-export type LocalOwner = {
-	readonly userId: string;
-	/**
-	 * Attach per-ydoc encrypted tables and KV. Equivalent to calling the free
-	 * `attachEncryption(ydoc, { encryptionKeys })` but reads the owner's keys
-	 * implicitly.
-	 */
-	attachEncryption(ydoc: Y.Doc): EncryptionAttachment;
-	/**
-	 * Attach encrypted local IndexedDB persistence. The database name is
-	 * `createOwnedYjsKey(userId, ydoc.guid)` so other signed-in users on the
-	 * same browser profile cannot read this user's persisted CRDT state.
-	 */
-	attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment;
-	/**
-	 * Attach owner-scoped cross-tab BroadcastChannel sync.
-	 */
-	attachBroadcastChannel(ydoc: Y.Doc): void;
-	/**
-	 * Delete every owner-scoped IndexedDB database currently visible to this
-	 * browser profile, plus any explicitly named ones. Use from `wipe()` paths
-	 * on sign-out so the next signed-in user starts from a clean slate.
-	 */
-	wipeLocalYjsData(ydocGuids?: Iterable<string>): Promise<void>;
-};
-
-type IndexedDbDatabaseInfo = { name?: string | null };
-type IndexedDbFactoryWithDatabases = IDBFactory & {
-	databases?: () => Promise<IndexedDbDatabaseInfo[]>;
-};
+export type LocalOwner = ReturnType<typeof createLocalOwner>;
 
 export function createLocalOwner({
 	userId,
@@ -80,35 +30,46 @@ export function createLocalOwner({
 }: {
 	userId: string;
 	encryptionKeys: () => EncryptionKeys;
-}): LocalOwner {
+}) {
 	return {
-		userId,
-		attachEncryption(ydoc) {
+		/**
+		 * Attach per-ydoc encrypted tables and KV. Thin delegate to the free
+		 * `attachEncryption(ydoc, { encryptionKeys })`; browsers go through
+		 * the owner so the encryption keys never have to be re-passed.
+		 */
+		attachEncryption(ydoc: Y.Doc) {
 			return attachEncryption(ydoc, { encryptionKeys });
 		},
-		attachIndexedDb(ydoc) {
-			const keyring = deriveWorkspaceKeyring(encryptionKeys(), ydoc.guid);
-			if (keyring.size === 0) {
-				throw new Error(
-					'Cannot attach encrypted IndexedDB provider: encryptionKeys() returned no usable keys.',
-				);
-			}
-			const version = Math.max(...keyring.keys());
-			const bytes = keyring.get(version)!;
+		/**
+		 * Attach encrypted local IndexedDB persistence. The database name is
+		 * `createOwnedYjsKey(userId, ydoc.guid)` so other signed-in users on
+		 * the same browser profile cannot read this user's persisted CRDT
+		 * state.
+		 */
+		attachIndexedDb(ydoc: Y.Doc) {
 			return attachEncryptedIndexedDb(ydoc, {
 				databaseName: createOwnedYjsKey(userId, ydoc.guid),
-				writeKey: { version, bytes },
-				keyring,
+				encryptionKeys,
 			});
 		},
-		attachBroadcastChannel(ydoc) {
+		/**
+		 * Attach owner-scoped cross-tab BroadcastChannel sync. Two signed-in
+		 * users in the same browser profile cannot exchange plaintext updates
+		 * through BroadcastChannel.
+		 */
+		attachBroadcastChannel(ydoc: Y.Doc) {
 			attachBroadcastChannelWithKey(
 				ydoc,
 				createOwnedYjsKey(userId, ydoc.guid),
 			);
 		},
-		async wipeLocalYjsData(ydocGuids = []) {
-			const indexedDB = globalThis.indexedDB as | IndexedDbFactoryWithDatabases | undefined;
+		/**
+		 * Delete every owner-scoped IndexedDB database currently visible to
+		 * this browser profile, plus any explicitly named ones. Use from
+		 * `wipe()` paths on sign-out so the next signed-in user starts from a
+		 * clean slate.
+		 */
+		async wipeLocalYjsData(ydocGuids: Iterable<string> = []) {
 			const prefix = createOwnedYjsKeyPrefix(userId);
 			const names = new Set<string>();
 
@@ -116,7 +77,7 @@ export function createLocalOwner({
 				names.add(createOwnedYjsKey(userId, guid));
 			}
 
-			if (indexedDB?.databases) {
+			if ('databases' in indexedDB) {
 				const databases = await indexedDB.databases().catch(() => []);
 				for (const database of databases) {
 					if (typeof database.name !== 'string') continue;

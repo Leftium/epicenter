@@ -19,6 +19,8 @@ import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 
+export const TAB_MANAGER_WORKSPACE_ID = 'epicenter.tab-manager';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Branded ID Types
 // ─────────────────────────────────────────────────────────────────────────────

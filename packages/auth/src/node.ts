@@ -12,3 +12,4 @@ export {
 	saveMachineSession,
 } from './node/machine-session-store.js';
 export { requireIdentity } from './require-identity.js';
+export { requireSession, type Session } from './require-session.js';

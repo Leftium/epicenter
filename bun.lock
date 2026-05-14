@@ -227,7 +227,6 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/oauth-client": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@tanstack/ai": "catalog:",
@@ -328,7 +327,6 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/oauth-client": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -518,6 +516,7 @@
         "@epicenter/encryption": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
+        "oauth4webapi": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -614,18 +613,6 @@
       },
       "peerDependencies": {
         "yjs": "catalog:",
-      },
-    },
-    "packages/oauth-client": {
-      "name": "@epicenter/oauth-client",
-      "version": "0.1.0",
-      "dependencies": {
-        "oauth4webapi": "catalog:",
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
       },
     },
     "packages/skills": {
@@ -1045,8 +1032,6 @@
     "@epicenter/honeycrisp": ["@epicenter/honeycrisp@workspace:apps/honeycrisp"],
 
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
-
-    "@epicenter/oauth-client": ["@epicenter/oauth-client@workspace:packages/oauth-client"],
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 

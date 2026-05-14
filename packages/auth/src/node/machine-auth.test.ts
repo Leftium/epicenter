@@ -63,9 +63,16 @@ const encryptionKeys = [
 		version: 1,
 		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
-] satisfies OAuthSession['encryptionKeys'];
+] satisfies WorkspaceIdentity['encryptionKeys'];
 
-function makeSession({
+function identity(): WorkspaceIdentity {
+	return {
+		user: { id: 'user-1', email: 'user@example.com' },
+		encryptionKeys: [...encryptionKeys],
+	};
+}
+
+function session({
 	accessToken = 'authorization-token',
 	accessTokenExpiresAt = Date.now() + 3_600_000,
 }: {
@@ -73,22 +80,8 @@ function makeSession({
 	accessTokenExpiresAt?: number;
 } = {}): OAuthSession {
 	return {
-		accessToken,
-		refreshToken: 'refresh-token',
-		accessTokenExpiresAt,
-		user: {
-			id: 'user-1',
-			email: 'user@example.com',
-		},
-		encryptionKeys: [...encryptionKeys],
-	};
-}
-
-function makeAuthIdentity(): WorkspaceIdentity {
-	const session = makeSession();
-	return {
-		user: session.user,
-		encryptionKeys: session.encryptionKeys,
+		tokens: { accessToken, refreshToken: 'refresh-token', accessTokenExpiresAt },
+		identity: identity(),
 	};
 }
 
@@ -234,7 +227,7 @@ describe('machine auth free functions', () => {
 					expires_in: 3600,
 				});
 			}
-			return jsonResponse(makeAuthIdentity());
+			return jsonResponse(identity());
 		}) as typeof fetch;
 
 		const result = await loginWithDeviceCode({
@@ -250,20 +243,20 @@ describe('machine auth free functions', () => {
 		expect(result.error).toBeNull();
 		expect(loadError).toBeNull();
 		expect(result.data?.session.user.email).toBe('user@example.com');
-		expect(savedSession?.accessToken).toBe('device-token');
-		expect(savedSession?.refreshToken).toBe('device-refresh-token');
+		expect(savedSession?.tokens.accessToken).toBe('device-token');
+		expect(savedSession?.tokens.refreshToken).toBe('device-refresh-token');
 		expect(JSON.stringify(savedSession)).not.toContain('session');
 	});
 
 	test('status verifies the stored session token', async () => {
 		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(makeSession({ accessToken: 'old-token' }), {
+		await saveMachineSession(session({ accessToken: 'old-token' }), {
 			backend,
 		});
 		const seenTokens: string[] = [];
 		const fetchImpl = (async (_input, init) => {
 			seenTokens.push(new Headers(init?.headers).get('authorization') ?? '');
-			return jsonResponse(makeAuthIdentity());
+			return jsonResponse(identity());
 		}) as typeof fetch;
 
 		const result = await status({
@@ -280,14 +273,14 @@ describe('machine auth free functions', () => {
 		expect(loadError).toBeNull();
 		expect(result.data?.status).toBe('valid');
 		expect(seenTokens).toEqual(['Bearer old-token']);
-		expect(savedSession?.accessToken).toBe('old-token');
+		expect(savedSession?.tokens.accessToken).toBe('old-token');
 	});
 
 	test('machine auth refresh pauses network auth when keychain save fails', async () => {
 		const now = 1_000_000;
 		const backend = makeMemoryKeychainBackend();
 		await saveMachineSession(
-			makeSession({
+			session({
 				accessToken: 'old-token',
 				accessTokenExpiresAt: now + 1,
 			}),
@@ -328,20 +321,17 @@ describe('machine auth free functions', () => {
 
 		expect(response.status).toBe(204);
 		expect(loadError).toBeNull();
-		expect(savedSession?.accessToken).toBe('old-token');
+		expect(savedSession?.tokens.accessToken).toBe('old-token');
 		expect(authorizations).toEqual([null]);
 		expect(auth.state).toEqual({
 			status: 'reauth-required',
-			identity: {
-				user: makeSession({ accessToken: 'old-token' }).user,
-				encryptionKeys,
-			},
+			identity: session({ accessToken: 'old-token' }).identity,
 		});
 	});
 
 	test('status reports stored session when remote verification fails', async () => {
 		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(makeSession(), { backend });
+		await saveMachineSession(session(), { backend });
 		const fetchImpl = (async () =>
 			new Response('nope', { status: 503 })) as unknown as typeof fetch;
 
@@ -387,7 +377,7 @@ describe('machine auth free functions', () => {
 
 	test('logout signs out and clears the stored session', async () => {
 		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(makeSession({ accessToken: 'logout-token' }), {
+		await saveMachineSession(session({ accessToken: 'logout-token' }), {
 			backend,
 		});
 		const seenTokens: string[] = [];
@@ -416,13 +406,13 @@ describe('machine auth free functions', () => {
 describe('machine session storage', () => {
 	test('keychain storage writes one OAuthSession item', async () => {
 		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(makeSession({ accessToken: 'stored-token' }), {
+		await saveMachineSession(session({ accessToken: 'stored-token' }), {
 			backend,
 		});
 
 		expect(backend.values.size).toBe(1);
 		const { data: loaded } = await loadMachineSession({ backend, log });
-		expect(loaded).toMatchObject({ accessToken: 'stored-token' });
+		expect(loaded).toMatchObject({ tokens: { accessToken: 'stored-token' } });
 		expect([...backend.values.values()][0]).not.toContain(
 			'server-session-token',
 		);

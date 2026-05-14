@@ -13,6 +13,7 @@ import type { AuthClient } from '../auth-contract.js';
 import {
 	OAuthSession,
 	type OAuthSession as OAuthSessionType,
+	type OAuthTokenGrant,
 	WorkspaceIdentity,
 } from '../auth-types.js';
 import type {
@@ -70,17 +71,8 @@ export const DeviceTokenError = defineErrors({
 });
 export type DeviceTokenError = InferErrors<typeof DeviceTokenError>;
 
-type MachineSessionSummary = {
-	user: Pick<OAuthSessionType['user'], 'id' | 'email'>;
-};
-
-function sessionSummary(session: OAuthSessionType): MachineSessionSummary {
-	return {
-		user: {
-			id: session.user.id,
-			email: session.user.email,
-		},
-	};
+function sessionSummary(session: OAuthSessionType) {
+	return { user: session.identity.user };
 }
 
 /**
@@ -163,11 +155,7 @@ export async function status({
 
 	const { data: remoteSession, error: fetchError } = await fetchOAuthSession({
 		authClient,
-		tokens: {
-			accessToken: session.accessToken,
-			refreshToken: session.refreshToken,
-			accessTokenExpiresAt: session.accessTokenExpiresAt,
-		},
+		tokens: session.tokens,
 	});
 	if (fetchError) {
 		return Ok({
@@ -206,7 +194,7 @@ export async function logout({
 	try {
 		const { error: signOutError } = await authClient.signOut({
 			fetchOptions: {
-				headers: { Authorization: `Bearer ${session.accessToken}` },
+				headers: { Authorization: `Bearer ${session.tokens.accessToken}` },
 			},
 		});
 		if (signOutError) {
@@ -239,15 +227,7 @@ async function pollForAccessToken({
 	intervalMs: number;
 	expiresInMs: number;
 	sleep: (ms: number) => Promise<void>;
-}): Promise<
-	Result<
-		Pick<
-			OAuthSessionType,
-			'accessToken' | 'refreshToken' | 'accessTokenExpiresAt'
-		>,
-		DeviceTokenError | MachineAuthRequestError
-	>
-> {
+}): Promise<Result<OAuthTokenGrant, DeviceTokenError | MachineAuthRequestError>> {
 	const deadline = Date.now() + expiresInMs;
 	let interval = intervalMs;
 	while (Date.now() < deadline) {
@@ -320,10 +300,7 @@ async function fetchOAuthSession({
 	tokens,
 }: {
 	authClient: MachineAuthClient;
-	tokens: Pick<
-		OAuthSessionType,
-		'accessToken' | 'refreshToken' | 'accessTokenExpiresAt'
-	>;
+	tokens: OAuthTokenGrant;
 }): Promise<Result<OAuthSessionType, MachineAuthRequestError>> {
 	const { data, error } = await authClient.getSession({
 		fetchOptions: {
@@ -339,13 +316,7 @@ async function fetchOAuthSession({
 
 	try {
 		const identity = WorkspaceIdentity.assert(data);
-		return Ok(
-			OAuthSession.assert({
-				...tokens,
-				user: identity.user,
-				encryptionKeys: identity.encryptionKeys,
-			}),
-		);
+		return Ok(OAuthSession.assert({ tokens, identity }));
 	} catch (cause) {
 		return MachineAuthRequestError.RequestFailed({ cause });
 	}

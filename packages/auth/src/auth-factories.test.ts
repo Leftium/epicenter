@@ -50,24 +50,15 @@ function session({
 	userId?: string;
 } = {}): OAuthSession {
 	return {
-		...identity({ userId }),
-		accessToken,
-		refreshToken,
-		accessTokenExpiresAt,
+		tokens: { accessToken, refreshToken, accessTokenExpiresAt },
+		identity: identity({ userId }),
 	};
 }
 
 function signedInState(value = session()): AuthState {
 	return {
 		status: 'signed-in',
-		identity: identityFromSession(value),
-	};
-}
-
-function identityFromSession(value: OAuthSession): WorkspaceIdentity {
-	return {
-		user: value.user,
-		encryptionKeys: value.encryptionKeys,
+		identity: value.identity,
 	};
 }
 
@@ -219,7 +210,7 @@ test('fetch awaits refreshed session storage before sending the request', async 
 		sessionStorage: setup.sessionStorage,
 		launcher: { startSignIn: async () => Ok(null) },
 		refreshOAuthToken: async ({ session: current }) => {
-			expect(current.refreshToken).toBe('refresh-token');
+			expect(current.tokens.refreshToken).toBe('refresh-token');
 			return {
 				accessToken: 'new-access-token',
 				refreshToken: 'new-refresh-token',
@@ -244,7 +235,7 @@ test('fetch awaits refreshed session storage before sending the request', async 
 	expect(new Headers(fetches[0]?.init?.headers).get('authorization')).toBe(
 		'Bearer new-access-token',
 	);
-	expect(setup.saved[0]?.accessToken).toBe('new-access-token');
+	expect(setup.saved[0]?.tokens.accessToken).toBe('new-access-token');
 });
 
 test('fetch retries once after a 401 with a refreshed access token', async () => {
@@ -276,7 +267,7 @@ test('fetch retries once after a 401 with a refreshed access token', async () =>
 		'Bearer access-token',
 		'Bearer retry-access-token',
 	]);
-	expect(setup.saved[0]?.accessToken).toBe('retry-access-token');
+	expect(setup.saved[0]?.tokens.accessToken).toBe('retry-access-token');
 });
 
 test('fetch enters reauth-required when refreshed retry is rejected', async () => {
@@ -301,15 +292,13 @@ test('fetch enters reauth-required when refreshed retry is rejected', async () =
 	expect(response.status).toBe(401);
 	expect(auth.state).toEqual({
 		status: 'reauth-required',
-		identity: identityFromSession(
-			session({
-				accessToken: 'retry-access-token',
-				refreshToken: 'retry-refresh-token',
-				accessTokenExpiresAt: now + 3_600_000,
-			}),
-		),
+		identity: session({
+			accessToken: 'retry-access-token',
+			refreshToken: 'retry-refresh-token',
+			accessTokenExpiresAt: now + 3_600_000,
+		}).identity,
 	});
-	expect(setup.current?.accessToken).toBe('retry-access-token');
+	expect(setup.current?.tokens.accessToken).toBe('retry-access-token');
 });
 
 test('fetch retries Request inputs with body using a fresh clone', async () => {
@@ -387,7 +376,7 @@ test('refresh failure preserves identity and pauses network auth', async () => {
 
 	expect(auth.state).toEqual({
 		status: 'reauth-required',
-		identity: identityFromSession(session({ accessTokenExpiresAt: now + 1 })),
+		identity: session({ accessTokenExpiresAt: now + 1 }).identity,
 	});
 	expect(setup.saved).toEqual([]);
 	expect(setup.current).toEqual(session({ accessTokenExpiresAt: now + 1 }));
@@ -613,5 +602,5 @@ test('openWebSocket refreshes first and appends the bearer subprotocol', async (
 			protocols: ['epicenter', 'bearer.socket-access-token'],
 		},
 	]);
-	expect(setup.saved[0]?.accessToken).toBe('socket-access-token');
+	expect(setup.saved[0]?.tokens.accessToken).toBe('socket-access-token');
 });

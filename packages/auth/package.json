@@ -9,7 +9,8 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./node": "./src/node.ts",
-		"./node/machine-auth": "./src/node/machine-auth.ts"
+		"./node/machine-auth": "./src/node/machine-auth.ts",
+		"./oauth-launchers": "./src/oauth-launchers/index.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
@@ -20,6 +21,7 @@
 		"@epicenter/encryption": "workspace:*",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
+		"oauth4webapi": "catalog:",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {

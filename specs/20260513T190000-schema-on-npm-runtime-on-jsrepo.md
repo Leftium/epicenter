@@ -1,9 +1,9 @@
 # Schema on npm, Runtime on jsrepo
 
 **Date**: 2026-05-13
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
-**Branch**: TBD
+**Branch**: feat/miscellaneous-spec-implementations
 
 ## Overview
 
@@ -283,11 +283,11 @@ Verification commands (used at the end of each phase):
 
 For Fuji, Honeycrisp, Opensidian, Zhongwen (Tab Manager skipped):
 
-- [ ] **1.1** Pre-inline prep, app-specific:
+- [x] **1.1** Pre-inline prep, app-specific:
   - **Fuji**: move `export const FUJI_WORKSPACE_ID = 'epicenter.fuji'` from `document.ts` to `workspace.ts`. (Daemon doesn't import it today, but the constant must survive.)
   - **Honeycrisp / Opensidian**: no prep; doc layer hardcodes the guid string.
   - **Zhongwen**: confirm `zhongwenKv` is exported from `workspace/index.ts` (it already is); inlined files will import it.
-- [ ] **1.2** In `browser.ts`, replace `const doc = openXDocument(...)` with the inlined body:
+- [x] **1.2** In `browser.ts`, replace `const doc = openXDocument(...)` with the inlined body:
   ```ts
   const ydoc = new Y.Doc({ guid: '<app-guid>', gc: false });
   const encryption = attachEncryption(ydoc, { encryptionKeys });
@@ -295,11 +295,11 @@ For Fuji, Honeycrisp, Opensidian, Zhongwen (Tab Manager skipped):
   const kv = encryption.attachKv(<kvSchema>);  // Zhongwen: zhongwenKv. Others: {}
   ```
   Then update all subsequent `doc.X` references (`doc.ydoc` → `ydoc`, `doc.tables` → `tables`, `doc.encryption` → `encryption`, `doc.kv` → `kv`, `doc.batch` → inline `(fn) => ydoc.transact(fn)` where used). Update the `[Symbol.dispose]` to `ydoc.destroy()`. Delete the `import { openXDocument } from './document.js'` line.
-- [ ] **1.3** Same inlining for `script.ts` (if present).
-- [ ] **1.4** Same inlining for `daemon.ts` (if present).
-- [ ] **1.5** Delete `apps/<app>/src/.../document.ts`.
-- [ ] **1.6** Remove `"./document": "..."` from `apps/<app>/package.json` `exports`.
-- [ ] **1.7** Grep the app's directory for `XDocument` (the type) and `openXDocument` (the function); confirm zero hits.
+- [x] **1.3** Same inlining for `script.ts` (if present).
+- [x] **1.4** Same inlining for `daemon.ts` (if present).
+- [x] **1.5** Delete `apps/<app>/src/.../document.ts`.
+- [x] **1.6** Remove `"./document": "..."` from `apps/<app>/package.json` `exports`.
+- [x] **1.7** Grep the app's directory for `XDocument` (the type) and `openXDocument` (the function); confirm zero hits.
 
 Fuji has TWO call sites in `script.ts` (`openFujiSnapshot` and `openFujiScript`): inline into both.
 
@@ -309,18 +309,20 @@ Verification after each app: `bun run --cwd apps/<app> typecheck` and `bun run -
 
 For each app, in one commit:
 
-- [ ] **2.1** Edit `apps/<app>/package.json` exports map to replace `"./workspace": "<path>"` with `".": "<path>"`. Targets:
+- [x] **2.1** Edit `apps/<app>/package.json` exports map to replace `"./workspace": "<path>"` with `".": "<path>"`. Targets:
   - Honeycrisp: `./src/routes/(signed-in)/honeycrisp/workspace.ts`
   - Fuji: `./src/routes/(signed-in)/fuji/workspace.ts`
   - Zhongwen: `./src/routes/(signed-in)/zhongwen/workspace/index.ts`
   - Opensidian: `./src/lib/workspace/definition.ts`
   - Tab Manager: `./src/lib/workspace/index.ts`
-- [ ] **2.2** Update every cross-package consumer to import from the package root:
+- [x] **2.2** Update every cross-package consumer to import from the package root:
   - `playground/tab-manager-e2e/epicenter.config.ts`: `'@epicenter/tab-manager/workspace'` → `'@epicenter/tab-manager'`
   - `playground/opensidian-e2e/epicenter.config.ts`: `'opensidian/workspace'` → `'opensidian'`
   - `playground/opensidian-e2e/epicenter.config.test.ts`: same.
   - `packages/workspace/src/client/connect-daemon-actions.ts:16` (JSDoc): `'@epicenter/fuji/workspace'` → `'@epicenter/fuji'`.
-- [ ] **2.3** Grep the repo for `'@epicenter/(honeycrisp|fuji|zhongwen|tab-manager)/workspace'` and `'opensidian/workspace'`; expect zero hits.
+- [x] **2.3** Grep the repo for `'@epicenter/(honeycrisp|fuji|zhongwen|tab-manager)/workspace'` and `'opensidian/workspace'`; expect zero hits.
+
+2026-05-14 note: the current tree exports `./blocks/workspace.ts` as the package root for Honeycrisp, Fuji, Opensidian, and Zhongwen. Tab Manager still exports `./src/lib/workspace/index.ts`. This keeps the schema as the package-root npm contract and also makes the four app schemas available as jsrepo blocks.
 
 Verification: `bun run typecheck` (root). `bun run test` (root).
 
@@ -330,7 +332,7 @@ The browser file already lives inside the app's `src/` tree; `apps/<app>/src/lib
 
 For each app:
 
-- [ ] **3.1** Remove `"./browser": "..."` from `apps/<app>/package.json` exports.
+- [x] **3.1** Remove `"./browser": "..."` from `apps/<app>/package.json` exports.
 
 Verification: `bun run typecheck`.
 
@@ -338,23 +340,23 @@ Verification: `bun run typecheck`.
 
 For Fuji, Honeycrisp, Opensidian, Zhongwen (Tab Manager skipped):
 
-- [ ] **4.1** Create `apps/<app>/blocks/` directory.
-- [ ] **4.2** Move `apps/<app>/src/.../script.ts` to `apps/<app>/blocks/script.ts`.
-- [ ] **4.3** Move `apps/<app>/src/.../daemon.ts` to `apps/<app>/blocks/daemon-route.ts`.
-- [ ] **4.4** Inside the moved files, rewrite the schema import to use the package root (depends on Phase 2):
+- [x] **4.1** Create `apps/<app>/blocks/` directory.
+- [x] **4.2** Move `apps/<app>/src/.../script.ts` to `apps/<app>/blocks/script.ts`.
+- [x] **4.3** Move `apps/<app>/src/.../daemon.ts` to `apps/<app>/blocks/daemon-route.ts`.
+- [x] **4.4** Inside the moved files, rewrite the schema import to use the package root (depends on Phase 2):
   - Was: `import { <appTables>, ... } from './workspace.js'` (or `'./workspace/index.js'` for Zhongwen, `'../workspace/definition.js'` for Opensidian).
   - Now: `import { <appTables>, ... } from '@epicenter/<app>'` (or `'opensidian'` for Opensidian).
-- [ ] **4.5** Fuji-specific: `daemon.ts` exports both `defineFujiDaemon` and `connectFujiDaemonActions`. Both move into `blocks/daemon-route.ts`. `blocks/script.ts` imports them via relative path `'./daemon-route.js'`.
-- [ ] **4.6** Update Fuji's `blocks/script.ts` import of `openFujiDocument` (which was deleted in Phase 1; the body is now inlined). The remaining schema import in `script.ts` is `EncryptionKeys` from `@epicenter/encryption` and `ProjectDir` from `@epicenter/workspace`: these stay.
-- [ ] **4.7** Remove `"./script": "..."` and `"./daemon": "..."` from `apps/<app>/package.json` exports.
+- [x] **4.5** Fuji-specific: `daemon.ts` exports both `defineFujiDaemon` and `connectFujiDaemonActions`. Both move into `blocks/daemon-route.ts`. `blocks/script.ts` imports them via relative path `'./daemon-route.js'`.
+- [x] **4.6** Update Fuji's `blocks/script.ts` import of `openFujiDocument` (which was deleted in Phase 1; the body is now inlined). The remaining schema import in `script.ts` is `EncryptionKeys` from `@epicenter/encryption` and `ProjectDir` from `@epicenter/workspace`: these stay.
+- [x] **4.7** Remove `"./script": "..."` and `"./daemon": "..."` from `apps/<app>/package.json` exports.
 
 Verification: `bun run typecheck`. The block files now compile against the package root, the same way a third-party consumer's copy will.
 
 ### Phase 5a: jsrepo build config (no hosting decision needed)
 
-- [ ] **5a.1** Add `jsrepo-build-config.json` at the monorepo root. Block category: `blocks` glob `apps/*/blocks/*.ts`. Each app's blocks become a category named after the app (e.g. `epicenter/honeycrisp/script`).
-- [ ] **5a.2** Run `bunx jsrepo build` locally; verify a manifest is produced with the expected block list.
-- [ ] **5a.3** Add `bun run jsrepo:build` to root `package.json` scripts so the manifest can be regenerated on demand.
+- [x] **5a.1** Add `jsrepo.config.ts` at the monorepo root. Block category: `blocks` glob `apps/*/blocks/*.ts`. Each app's blocks become a category named after the app (e.g. `epicenter/honeycrisp/script`).
+- [x] **5a.2** Run `bun run jsrepo:build` locally; verify a manifest is produced with the expected block list.
+- [x] **5a.3** Add `bun run jsrepo:build` to root `package.json` scripts so the manifest can be regenerated on demand.
 
 Verification: manifest contains four blocks per app (script, daemon-route, plus Fuji's snapshot variant if split out), no unexpected entries.
 
@@ -384,14 +386,14 @@ Verification: manifest contains four blocks per app (script, daemon-route, plus 
   bun run playground/tab-manager-e2e/epicenter.config.ts
   ```
   Confirm both connect, sync, and exit cleanly on Ctrl+C.
-- [ ] **6.5** Final grep sweep, expect zero hits in source (excluding `specs/` and `docs/articles/`):
+- [x] **6.5** Final grep sweep, expect zero hits in source (excluding `specs/` and `docs/articles/`):
   ```
   rg 'openXDocument|XDocument\b' --type=ts        # X is each app name
   rg "'@epicenter/[^/]+/(workspace|document|browser|script|daemon)'" --type=ts --type=svelte
   rg "'opensidian/(workspace|document|browser|script|daemon)'" --type=ts
   rg 'src/.*/(document|script|daemon)\.ts'        # any straggler runtime file outside blocks/
   ```
-- [ ] **6.6** Confirm each app's `package.json` exports has exactly one entry: `"."`.
+- [x] **6.6** Confirm each app's `package.json` exports has exactly one entry: `"."`.
 
 ## Edge Cases
 
@@ -465,19 +467,19 @@ Phase 3 no longer moves the browser file. The file stays at `apps/<app>/src/.../
 
 ## Success Criteria
 
-- [ ] Each app's `package.json` lists exactly one export entry: `"."`.
-- [ ] No file named `document.ts` exists under `apps/*/src/`.
-- [ ] No file named `script.ts` or `daemon.ts` exists under `apps/*/src/` (Fuji, Honeycrisp, Opensidian, Zhongwen recipes live in `apps/*/blocks/`; Tab Manager has none).
-- [ ] `browser.ts` still exists at `apps/*/src/.../browser.ts` (or `extension.ts` for Tab Manager); only its package subpath export is gone.
-- [ ] `rg "'@epicenter/(honeycrisp|fuji|zhongwen|tab-manager)/(workspace|document|browser|script|daemon)'"` returns zero hits in source.
-- [ ] `rg "'opensidian/(workspace|document|browser|script|daemon)'"` returns zero hits in source.
-- [ ] `rg 'openXDocument|XDocument\b'` (X = each app) returns zero hits.
+- [x] Each app's `package.json` lists exactly one export entry: `"."`.
+- [x] No file named `document.ts` exists under `apps/*/src/`.
+- [x] No file named `script.ts` or `daemon.ts` exists under `apps/*/src/` (Fuji, Honeycrisp, Opensidian, Zhongwen recipes live in `apps/*/blocks/`; Tab Manager has none).
+- [x] `browser.ts` still exists at `apps/*/src/.../browser.ts` (or `extension.ts` for Tab Manager); only its package subpath export is gone.
+- [x] `rg "'@epicenter/(honeycrisp|fuji|zhongwen|tab-manager)/(workspace|document|browser|script|daemon)'"` returns zero hits in source.
+- [x] `rg "'opensidian/(workspace|document|browser|script|daemon)'"` returns zero hits in source.
+- [x] `rg 'openXDocument|XDocument\b'` (X = each app) returns zero hits.
 - [ ] `bun run typecheck` passes at the repo root.
 - [ ] `bun run test` passes at the repo root.
 - [ ] Every app's `bun run --cwd apps/<app> dev:local` starts and the signed-in route opens its workspace successfully.
 - [ ] `bun run playground/opensidian-e2e/epicenter.config.ts` runs without errors until Ctrl+C.
 - [ ] `bun run playground/tab-manager-e2e/epicenter.config.ts` runs without errors until Ctrl+C.
-- [ ] `jsrepo-build-config.json` exists at the monorepo root and `bunx jsrepo build` produces a manifest covering every block under `apps/*/blocks/`.
+- [x] `jsrepo.config.ts` exists at the monorepo root and `bun run jsrepo:build` produces a manifest covering every block under `apps/*/blocks/`.
 
 ## References
 
@@ -517,11 +519,15 @@ Phase 3 no longer moves the browser file. The file stays at `apps/<app>/src/.../
   - `openXDocument|XDocument\b` (across all five apps) -> 0 hits.
   - `find apps -type f \( -name 'document.ts' -o -name 'script.ts' -o -name 'daemon.ts' \) -not -path '*/blocks/*'` -> 0 hits.
 - **6.6 package.json exports**: every app has exactly one entry, `"."`:
-  - `@epicenter/honeycrisp` -> `./src/routes/(signed-in)/honeycrisp/workspace.ts`
-  - `@epicenter/fuji` -> `./src/routes/(signed-in)/fuji/workspace.ts`
-  - `@epicenter/zhongwen` -> `./src/routes/(signed-in)/zhongwen/workspace/index.ts`
-  - `opensidian` -> `./src/lib/workspace/definition.ts`
+  - `@epicenter/honeycrisp` -> `./blocks/workspace.ts`
+  - `@epicenter/fuji` -> `./blocks/workspace.ts`
+  - `@epicenter/zhongwen` -> `./blocks/workspace.ts`
+  - `opensidian` -> `./blocks/workspace.ts`
   - `@epicenter/tab-manager` -> `./src/lib/workspace/index.ts`
+
+### Status finalization
+
+On 2026-05-14, the current tree already matched the implemented distribution shape. No source files were changed in this pass. This update marks the spec implemented and records the current package-root export paths.
 
 ### Spec discrepancies discovered during execution
 

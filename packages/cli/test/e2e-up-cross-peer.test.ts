@@ -234,12 +234,7 @@ describe('daemon up lifecycle (scaled down, no real cross-peer)', () => {
 		try {
 			const { child } = await spawnUp(env, FIXTURE_DIR);
 			try {
-				const result = await runCli(env, [
-					'daemon',
-					'logs',
-					'-C',
-					FIXTURE_DIR,
-				]);
+				const result = await runCli(env, ['daemon', 'logs', '-C', FIXTURE_DIR]);
 				// Log file is written under $HOME/.epicenter/log/<h>.log; if
 				// the daemon has emitted anything by now, `logs` succeeds with
 				// some output. A bare exitCode=0 is the load-bearing assertion.
@@ -258,12 +253,7 @@ describe('daemon up lifecycle (scaled down, no real cross-peer)', () => {
 		try {
 			const { child } = await spawnUp(env, FIXTURE_DIR);
 			try {
-				const result = await runCli(env, [
-					'daemon',
-					'up',
-					'-C',
-					FIXTURE_DIR,
-				]);
+				const result = await runCli(env, ['daemon', 'up', '-C', FIXTURE_DIR]);
 				expect(result.exitCode).toBe(1);
 				expect(result.stderr).toContain('daemon already running (pid=');
 			} finally {

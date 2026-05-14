@@ -17,7 +17,6 @@
 
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
-import { type Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 // ============================================================================
@@ -28,53 +27,20 @@ import * as Y from 'yjs';
  * Top-level message types in the y-websocket protocol.
  * The first varint in any message identifies its type.
  *
- * Standard y-protocols: 0–1. y-websocket conventions: 2–3.
- * Reserved 4–99 (buffer for future upstream additions).
- * Epicenter extensions: 100+.
+ * After the RPC-on-Yjs-state collapse, only two values remain on the wire:
+ *
+ *   SYNC (0): document synchronization (the only frame that produces traffic)
+ *   AUTH (2): reserved sentinel for the 4401 close path; no frames exchanged
+ *
+ * Awareness, query-awareness, attested-awareness, and RPC envelopes have
+ * been removed: identity, presence, and remote calls now live as rows in
+ * reserved Y.Doc arrays and ride the SYNC channel like any other state.
  */
 export const MESSAGE_TYPE = {
 	/** Document synchronization messages (sync step 1, 2, or update) */
 	SYNC: 0,
-	/** User presence/cursor information (client to server, payload is opaque y-protocols awareness bytes) */
-	AWARENESS: 1,
-	/** Authentication (reserved for future use) */
+	/** Authentication (reserved sentinel for the 4401 close path; no frames are exchanged) */
 	AUTH: 2,
-	/** Request current awareness states from server */
-	QUERY_AWARENESS: 3,
-	/**
-	 * Server-attested awareness frame relayed to peers.
-	 *
-	 * Wraps an opaque y-protocols awareness payload with a server-stamped
-	 * `subject`. The server derives `subject` from the authenticated session at
-	 * WebSocket ingress; clients never publish this frame. Peers decode the
-	 * envelope, apply the inner payload to their local Awareness, and read
-	 * `subject` from the envelope to surface a trust-attested identity per
-	 * Yjs clientID.
-	 *
-	 * Wire format:
-	 * `[varuint: 100] [varString: subject] [varUint8Array: opaque awareness update]`
-	 */
-	AWARENESS_ATTESTED: 100,
-	/**
-	 * Remote procedure call between peers, routed through the DO.
-	 * Uses ACTION_REQUEST / RUNTIME_REQUEST / RESPONSE sub-types.
-	 *
-	 * Wire format (ACTION_REQUEST):
-	 * `[varuint: 101] [varuint: 0] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: action] [varUint8Array: JSON input]`
-	 *
-	 * Wire format (RUNTIME_REQUEST):
-	 * `[varuint: 101] [varuint: 2] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: verb]`
-	 *
-	 * Wire format (RESPONSE):
-	 * `[varuint: 101] [varuint: 1] [varuint: requestId] [varuint: requesterClientId] [varUint8Array: JSON Result<T, E>]`
-	 *
-	 * The JSON payload is a wellcrafted `Result<T, E>`: success is
-	 * `{ data, error: null }`, failure is `{ data: null, error: <serialized> }`.
-	 * The discriminator is `error === null`, not key presence, so a void
-	 * handler that produces `{ data: undefined, error: null }` round-trips
-	 * correctly even though `JSON.stringify` drops the `data` key.
-	 */
-	RPC: 101,
 } as const;
 
 export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
@@ -84,14 +50,12 @@ export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
  *
  * The first varint in any y-websocket message is the message type:
  * - 0: MESSAGE_SYNC (document sync)
- * - 1: MESSAGE_AWARENESS (user presence)
- * - 2: MESSAGE_AUTH (authentication, reserved)
- * - 3: MESSAGE_QUERY_AWARENESS (request awareness states)
+ * - 2: MESSAGE_AUTH (authentication, reserved sentinel)
  *
  * Useful for quickly determining message type before full parsing.
  *
  * @param data - Raw message bytes
- * @returns The message type constant (0=SYNC, 1=AWARENESS, etc.)
+ * @returns The message type constant (0=SYNC, 2=AUTH)
  */
 export function decodeMessageType(data: Uint8Array): number {
 	const decoder = decoding.createDecoder(data);
@@ -121,7 +85,7 @@ export type SyncMessageType =
 	(typeof SYNC_MESSAGE_TYPE)[keyof typeof SYNC_MESSAGE_TYPE];
 
 /**
- * Decoded sync message - discriminated union of the three sync sub-types.
+ * Decoded sync message: discriminated union of the three sync sub-types.
  * Update payloads are V2-encoded.
  */
 export type DecodedSyncMessage =
@@ -227,14 +191,14 @@ export function decodeSyncMessage(data: Uint8Array): DecodedSyncMessage {
 /**
  * Handle a decoded sync sub-message and return a response if needed.
  *
- * Pre-decoded alternative to y-protocols' `readSyncMessage` — accepts already-
+ * Pre-decoded alternative to y-protocols' `readSyncMessage`: accepts already-
  * decoded `syncType` and `payload` instead of a mutable lib0 decoder. The
  * caller reads these two fields from the decoder inline.
  *
  * Dispatches on the three sync sub-types (all V2 encoded):
- * - STEP1: `payload` is a state vector → responds with a V2 diff (STEP2)
- * - STEP2: `payload` is a V2 update → applied to doc, no response
- * - UPDATE: `payload` is a V2 update → applied to doc, no response
+ * - STEP1: `payload` is a state vector, responds with a V2 diff (STEP2)
+ * - STEP2: `payload` is a V2 update, applied to doc, no response
+ * - UPDATE: `payload` is a V2 update, applied to doc, no response
  *
  * @param options.syncType - Which sync sub-message (STEP1, STEP2, or UPDATE)
  * @param options.payload - The sub-message bytes (state vector for STEP1, V2 update for STEP2/UPDATE)
@@ -273,117 +237,13 @@ export function handleSyncPayload({
 }
 
 // ============================================================================
-// Awareness Protocol
-// ============================================================================
-
-/**
- * Encodes an awareness update message from raw awareness bytes.
- *
- * Awareness is used for ephemeral user presence data like cursor positions,
- * user names, and online status. Unlike document updates, awareness state
- * is not persisted and is cleared when users disconnect.
- *
- * @param options.update - Raw awareness update bytes (from encodeAwarenessUpdate)
- * @returns Encoded message ready to send over WebSocket
- */
-export function encodeAwareness({
-	update,
-}: {
-	update: Uint8Array;
-}): Uint8Array {
-	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.AWARENESS);
-		encoding.writeVarUint8Array(encoder, update);
-	});
-}
-
-/**
- * Encodes awareness states for specified clients.
- *
- * Convenience function that combines awareness encoding with message wrapping.
- * Typically used to send current awareness states to newly connected clients.
- *
- * @param options.awareness - The awareness instance containing client states
- * @param options.clients - Array of client IDs whose states should be encoded
- * @returns Encoded message ready to send over WebSocket
- */
-export function encodeAwarenessStates({
-	awareness,
-	clients,
-}: {
-	awareness: Awareness;
-	clients: number[];
-}): Uint8Array {
-	return encodeAwareness({
-		update: encodeAwarenessUpdate(awareness, clients),
-	});
-}
-
-/**
- * Encodes a query awareness message.
- *
- * This message requests all current awareness states from the server.
- * Typically sent by clients that need to refresh their view of other users.
- *
- * @returns Encoded message ready to send over WebSocket
- */
-export function encodeQueryAwareness(): Uint8Array {
-	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.QUERY_AWARENESS);
-	});
-}
-
-/**
- * Encode a server-attested awareness frame.
- *
- * The server stamps `subject` from the authenticated session at WebSocket
- * ingress, then forwards the original `update` bytes unchanged. Peers join
- * `subject` (envelope) with the inner payload (claimed `replica`, action
- * keys) at the consumer surface.
- *
- * @param options.subject - Auth-derived user id stamped by the server.
- * @param options.update - Raw awareness update bytes (from encodeAwarenessUpdate)
- * @returns Encoded message ready to send over WebSocket
- */
-export function encodeAwarenessAttested({
-	subject,
-	update,
-}: {
-	subject: string;
-	update: Uint8Array;
-}): Uint8Array {
-	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.AWARENESS_ATTESTED);
-		encoding.writeVarString(encoder, subject);
-		encoding.writeVarUint8Array(encoder, update);
-	});
-}
-
-/**
- * Decode a server-attested awareness frame.
- *
- * The caller MUST pass a decoder positioned after `MESSAGE_TYPE.AWARENESS_ATTESTED`
- * has already been read. Mirrors the existing `decodeRpcPayload` style: the
- * top-level message type is consumed by the dispatcher, the sub-decoder
- * reads the remaining fields.
- */
-export function decodeAwarenessAttestedPayload(decoder: decoding.Decoder): {
-	subject: string;
-	update: Uint8Array;
-} {
-	const subject = decoding.readVarString(decoder);
-	const update = decoding.readVarUint8Array(decoder);
-	return { subject, update };
-}
-
-// ============================================================================
 // HTTP Sync Request Encoding (binary frame format for POST body)
 // ============================================================================
 
 /**
  * Encode a single-round-trip HTTP sync request body.
  *
- * Collapses the WebSocket 3-message handshake (step1 → step2 → step2) into
+ * Collapses the WebSocket 3-message handshake (step1 -> step2 -> step2) into
  * one HTTP POST/response. The client bundles its state vector and an optional
  * update together:
  *
@@ -444,265 +304,4 @@ export function stateVectorsEqual(a: Uint8Array, b: Uint8Array): boolean {
 		if (a[i] !== b[i]) return false;
 	}
 	return true;
-}
-
-// ============================================================================
-// RPC Protocol (101)
-// ============================================================================
-
-/**
- * RPC sub-types within an RPC message.
- * The second varuint after MESSAGE_TYPE.RPC identifies the sub-type.
- *
- * Two distinct request kinds keep app behavior and collaboration runtime
- * behavior on separate planes:
- *
- *   ACTION_REQUEST   app action invocation by snake_case key (`tabs_close`, ...)
- *   RUNTIME_REQUEST  runtime verb owned by the collaboration layer
- *                    (introspection, capability, version, ...) — never
- *                    authored by the app
- *
- * Both share the RESPONSE envelope.
- */
-export const RPC_TYPE = {
-	/** Client → DO → target peer: invoke an app action by snake_case key. */
-	ACTION_REQUEST: 0,
-	/** Target peer → DO → requester: shared result envelope for both request kinds. */
-	RESPONSE: 1,
-	/** Client → DO → target peer: invoke a runtime verb (not an app action). */
-	RUNTIME_REQUEST: 2,
-} as const;
-
-/**
- * Closed set of collaboration runtime verbs carried by `RUNTIME_REQUEST`.
- *
- * Add a new entry here when introducing a new collaboration-runtime operation
- * (capability advertise, health, version, etc.). Verbs are not in the app
- * action namespace; the wire kind keeps them syntactically separate.
- */
-export type RuntimeVerb = 'describe-actions';
-
-/**
- * Decoded RPC message — discriminated union of the three sub-types.
- */
-export type DecodedRpcMessage =
-	| {
-			type: 'action-request';
-			requestId: number;
-			targetClientId: number;
-			requesterClientId: number;
-			action: string;
-			input: unknown;
-	  }
-	| {
-			type: 'response';
-			requestId: number;
-			requesterClientId: number;
-			result: { data: unknown; error: unknown };
-	  }
-	| {
-			type: 'runtime-request';
-			requestId: number;
-			targetClientId: number;
-			requesterClientId: number;
-			verb: RuntimeVerb;
-	  };
-
-/**
- * Encode an RPC ACTION_REQUEST message (app action invocation by snake_case key).
- *
- * Wire format:
- * `[varuint: 101] [varuint: 0=ACTION_REQUEST] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: action] [varUint8Array: JSON input]`
- *
- * @param options.requestId - Monotonic counter scoped to the connection
- * @param options.targetClientId - Awareness clientId of the target peer
- * @param options.requesterClientId - Awareness clientId of the sender (for response routing)
- * @param options.action - Snake_case action key (e.g. 'tabs_close')
- * @param options.input - Action input (serialized as JSON)
- * @returns Encoded RPC ACTION_REQUEST message
- */
-export function encodeRpcActionRequest({
-	requestId,
-	targetClientId,
-	requesterClientId,
-	action,
-	input,
-}: {
-	requestId: number;
-	targetClientId: number;
-	requesterClientId: number;
-	action: string;
-	input?: unknown;
-}): Uint8Array {
-	const jsonBytes = new TextEncoder().encode(JSON.stringify(input ?? null));
-	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.RPC);
-		encoding.writeVarUint(encoder, RPC_TYPE.ACTION_REQUEST);
-		encoding.writeVarUint(encoder, requestId);
-		encoding.writeVarUint(encoder, targetClientId);
-		encoding.writeVarUint(encoder, requesterClientId);
-		encoding.writeVarString(encoder, action);
-		encoding.writeVarUint8Array(encoder, jsonBytes);
-	});
-}
-
-/**
- * Encode an RPC RUNTIME_REQUEST message.
- *
- * Identical routing fields to an ACTION_REQUEST (requestId / targetClientId /
- * requesterClientId), so the DO forwards it via the same blind-route path.
- * The payload is a closed-set `verb` string and nothing else: runtime verbs
- * are wire-distinct from app action keys and don't share their input shape.
- *
- * Wire format:
- * `[varuint: 101] [varuint: 2=RUNTIME_REQUEST] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: verb]`
- */
-export function encodeRpcRuntimeRequest({
-	requestId,
-	targetClientId,
-	requesterClientId,
-	verb,
-}: {
-	requestId: number;
-	targetClientId: number;
-	requesterClientId: number;
-	verb: RuntimeVerb;
-}): Uint8Array {
-	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.RPC);
-		encoding.writeVarUint(encoder, RPC_TYPE.RUNTIME_REQUEST);
-		encoding.writeVarUint(encoder, requestId);
-		encoding.writeVarUint(encoder, targetClientId);
-		encoding.writeVarUint(encoder, requesterClientId);
-		encoding.writeVarString(encoder, verb);
-	});
-}
-
-/**
- * Encode an RPC RESPONSE message.
- *
- * The result envelope follows wellcrafted's `Result<T, E>` shape: success is
- * `{ data, error: null }`, failure is `{ data: null, error: <err> }`. The
- * discriminator is the **value** of `error` (`error === null` means success),
- * never key presence — which means it doesn't matter that `JSON.stringify`
- * silently drops keys whose value is `undefined`. A void handler producing
- * `{ data: undefined, error: null }` round-trips as `{ error: null }`, still
- * decodes as success, and `result.data` is correctly `undefined`.
- *
- * @see https://github.com/wellcrafted/wellcrafted — `isOk`/`isErr` use the same value-based discriminator.
- *
- * Wire format:
- * `[varuint: 101] [varuint: 1=RESPONSE] [varuint: requestId] [varuint: requesterClientId] [varUint8Array: JSON Result]`
- *
- * @param options.requestId - Echo of the request's requestId
- * @param options.requesterClientId - Awareness clientId of the original requester (for DO routing)
- * @param options.result - The wellcrafted Result envelope: `{ data, error }`
- * @returns Encoded RPC RESPONSE message
- */
-export function encodeRpcResponse({
-	requestId,
-	requesterClientId,
-	result,
-}: {
-	requestId: number;
-	requesterClientId: number;
-	result: { data: unknown; error: unknown };
-}): Uint8Array {
-	const jsonBytes = new TextEncoder().encode(JSON.stringify(result));
-	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.RPC);
-		encoding.writeVarUint(encoder, RPC_TYPE.RESPONSE);
-		encoding.writeVarUint(encoder, requestId);
-		encoding.writeVarUint(encoder, requesterClientId);
-		encoding.writeVarUint8Array(encoder, jsonBytes);
-	});
-}
-
-/**
- * Decode an RPC message into its typed components.
- *
- * Reads the full message bytes (including the MESSAGE_TYPE.RPC prefix).
- * Returns a discriminated union of ACTION_REQUEST, RUNTIME_REQUEST, or RESPONSE.
- *
- * Use this when you have the raw wire bytes. If the transport has already
- * consumed the message-type varint, use {@link decodeRpcPayload} instead
- * to avoid re-parsing the prefix.
- *
- * @param data - Raw RPC message bytes (starting with MESSAGE_TYPE.RPC prefix)
- * @returns Decoded RPC message with type discriminator
- */
-export function decodeRpcMessage(data: Uint8Array): DecodedRpcMessage {
-	const decoder = decoding.createDecoder(data);
-	const messageType = decoding.readVarUint(decoder);
-	if (messageType !== MESSAGE_TYPE.RPC) {
-		throw new Error(
-			`Expected RPC message (${MESSAGE_TYPE.RPC}), got ${messageType}`,
-		);
-	}
-
-	return decodeRpcPayload(decoder);
-}
-
-/**
- * Decode an RPC payload after the message-type varint has already been consumed.
- *
- * Use this when registering a message handler for {@link MESSAGE_TYPE.RPC}—the
- * transport reads the message-type varint and passes the positioned decoder to
- * the handler, which calls this to decode the RPC sub-type and fields.
- *
- * @param decoder - A lib0 decoder positioned after the message-type varint
- * @returns Decoded RPC message with type discriminator
- */
-export function decodeRpcPayload(decoder: decoding.Decoder): DecodedRpcMessage {
-	const rpcType = decoding.readVarUint(decoder);
-
-	switch (rpcType) {
-		case RPC_TYPE.ACTION_REQUEST: {
-			const requestId = decoding.readVarUint(decoder);
-			const targetClientId = decoding.readVarUint(decoder);
-			const requesterClientId = decoding.readVarUint(decoder);
-			const action = decoding.readVarString(decoder);
-			const jsonBytes = decoding.readVarUint8Array(decoder);
-			const input = JSON.parse(new TextDecoder().decode(jsonBytes));
-			return {
-				type: 'action-request',
-				requestId,
-				targetClientId,
-				requesterClientId,
-				action,
-				input,
-			};
-		}
-		case RPC_TYPE.RESPONSE: {
-			const requestId = decoding.readVarUint(decoder);
-			const requesterClientId = decoding.readVarUint(decoder);
-			const jsonBytes = decoding.readVarUint8Array(decoder);
-			const raw = JSON.parse(new TextDecoder().decode(jsonBytes));
-			// Validate on `error` — the discriminator key — not `data`.
-			// `data` may be absent on the wire when the handler returned
-			// `undefined` (JSON.stringify drops undefined keys); `error` is
-			// always set to `null` on success or a serialized error on failure,
-			// so it survives the round trip.
-			if (typeof raw !== 'object' || raw === null || !('error' in raw)) {
-				throw new Error('Malformed RPC response: expected { data, error }');
-			}
-			const result = raw as { data: unknown; error: unknown };
-			return { type: 'response', requestId, requesterClientId, result };
-		}
-		case RPC_TYPE.RUNTIME_REQUEST: {
-			const requestId = decoding.readVarUint(decoder);
-			const targetClientId = decoding.readVarUint(decoder);
-			const requesterClientId = decoding.readVarUint(decoder);
-			const verb = decoding.readVarString(decoder) as RuntimeVerb;
-			return {
-				type: 'runtime-request',
-				requestId,
-				targetClientId,
-				requesterClientId,
-				verb,
-			};
-		}
-		default:
-			throw new Error(`Unknown RPC sub-type: ${rpcType}`);
-	}
 }

@@ -132,7 +132,10 @@ describe('LocalOwner.attachIndexedDb', () => {
 			guid: 'encrypted-idb-roundtrip',
 			gc: false,
 		});
-		const secondOwner = createLocalOwner({ userId, encryptionKeys: () => keys });
+		const secondOwner = createLocalOwner({
+			userId,
+			encryptionKeys: () => keys,
+		});
 		const secondIdb = secondOwner.attachIndexedDb(secondDoc);
 		await secondIdb.whenLoaded;
 
@@ -183,7 +186,10 @@ describe('LocalOwner.attachIndexedDb', () => {
 		await firstIdb.clearLocal();
 
 		const secondDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: false });
-		const secondOwner = createLocalOwner({ userId, encryptionKeys: () => keys });
+		const secondOwner = createLocalOwner({
+			userId,
+			encryptionKeys: () => keys,
+		});
 		const secondIdb = secondOwner.attachIndexedDb(secondDoc);
 		await secondIdb.whenLoaded;
 

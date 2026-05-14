@@ -32,7 +32,6 @@ function setup(keys: EncryptionKeys = toEncryptionKeys(randomBytes(32))) {
 	return { ydoc, tableA, tableB, encryption };
 }
 
-
 describe('attachEncryption', () => {
 	test('registered stores accept encrypted writes immediately', () => {
 		const { tableA, tableB } = setup();

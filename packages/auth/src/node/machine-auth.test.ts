@@ -80,7 +80,11 @@ function session({
 	accessTokenExpiresAt?: number;
 } = {}): OAuthSession {
 	return {
-		tokens: { accessToken, refreshToken: 'refresh-token', accessTokenExpiresAt },
+		tokens: {
+			accessToken,
+			refreshToken: 'refresh-token',
+			accessTokenExpiresAt,
+		},
 		identity: identity(),
 	};
 }

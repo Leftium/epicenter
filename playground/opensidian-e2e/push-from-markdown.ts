@@ -10,11 +10,11 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FileRow } from '@epicenter/filesystem';
+import { parseMarkdownFile } from '@epicenter/workspace/document/materializer/markdown';
 import {
 	convertWikilinksToEpicenterLinks,
 	makeEpicenterLink,
 } from '@epicenter/workspace/links';
-import { parseMarkdownFile } from '@epicenter/workspace/document/materializer/markdown';
 import type { opensidian } from './epicenter.config';
 
 const MARKDOWN_DIR = join(import.meta.dir, 'data');

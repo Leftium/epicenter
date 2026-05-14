@@ -10,6 +10,7 @@
 import type { Table } from '@epicenter/workspace';
 
 type MaybePromise<T> = T | Promise<T>;
+
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import yaml from 'js-yaml';
 import type * as Y from 'yjs';

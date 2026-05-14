@@ -58,10 +58,7 @@ export function createLocalOwner({
 		 * through BroadcastChannel.
 		 */
 		attachBroadcastChannel(ydoc: Y.Doc) {
-			attachBroadcastChannelWithKey(
-				ydoc,
-				createOwnedYjsKey(userId, ydoc.guid),
-			);
+			attachBroadcastChannelWithKey(ydoc, createOwnedYjsKey(userId, ydoc.guid));
 		},
 		/**
 		 * Delete every owner-scoped IndexedDB database currently visible to

@@ -78,7 +78,6 @@ import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
 import { createKv, type Kv, type KvDefinitions } from './attach-kv.js';
 import {
 	createReadonlyTable,
@@ -91,6 +90,7 @@ import {
 	type TableDefinitions,
 	type Tables,
 } from './attach-table.js';
+import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
 import { KV_KEY, TableKey } from './keys.js';
 
 export type AttachEncryptionOptions = {

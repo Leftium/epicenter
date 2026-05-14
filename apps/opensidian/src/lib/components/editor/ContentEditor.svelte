@@ -22,10 +22,7 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	const doc = fromDisposableCache(
-		opensidian.fileContentDocs,
-		() => fileId,
-	);
+	const doc = fromDisposableCache(opensidian.fileContentDocs, () => fileId);
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => opensidian.state.files.selectFile(ref.id as FileId),

@@ -37,6 +37,6 @@ export {
 	handleSyncPayload,
 	MESSAGE_TYPE,
 	SYNC_MESSAGE_TYPE,
-	stateVectorsEqual,
 	type SyncMessageType,
+	stateVectorsEqual,
 } from './protocol';

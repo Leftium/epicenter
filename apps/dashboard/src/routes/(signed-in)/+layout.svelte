@@ -2,8 +2,8 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
-	import { auth } from '$platform/auth';
 	import UserMenu from '$lib/components/UserMenu.svelte';
+	import { auth } from '$platform/auth';
 
 	let { children } = $props();
 
@@ -24,9 +24,7 @@
 
 {#if auth.state.status === 'signed-in'}
 	<header class="border-b bg-background/95 backdrop-blur">
-		<div
-			class="mx-auto max-w-5xl px-6 flex items-center justify-between h-14"
-		>
+		<div class="mx-auto max-w-5xl px-6 flex items-center justify-between h-14">
 			<span class="text-sm font-semibold tracking-tight">Epicenter</span>
 			<UserMenu user={auth.state.identity.user} />
 		</div>

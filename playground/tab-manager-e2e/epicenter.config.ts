@@ -27,7 +27,11 @@ import {
 	tabManagerAwarenessDefs,
 	tabManagerTables,
 } from '@epicenter/tab-manager';
-import { attachEncryption, attachSync, websocketUrl } from '@epicenter/workspace';
+import {
+	attachEncryption,
+	attachSync,
+	websocketUrl,
+} from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,

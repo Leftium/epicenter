@@ -31,7 +31,6 @@ import {
 } from './auth/resource-boundary';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
-import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import {
 	renderConsentPage,
 	renderSignedInPage,
@@ -41,6 +40,7 @@ import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
+import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import { TRUSTED_ORIGINS } from './trusted-origins';
 
 export { DocumentRoom } from './document-room';
@@ -243,8 +243,10 @@ app.get(
 		tags: ['auth', 'oauth'],
 	}),
 	async (c) => {
-		const { data: identity, error } =
-			await resolveRequestWorkspaceIdentity(c, deriveUserEncryptionKeys);
+		const { data: identity, error } = await resolveRequestWorkspaceIdentity(
+			c,
+			deriveUserEncryptionKeys,
+		);
 		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
 		return c.json(identity);
 	},

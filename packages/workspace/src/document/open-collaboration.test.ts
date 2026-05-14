@@ -123,7 +123,11 @@ describe('action key publication shape', () => {
 			a_list: defineQuery({ handler: () => [] }),
 			m_ping: defineQuery({ handler: () => 'pong' }),
 		} satisfies ActionRegistry;
-		expect(Object.keys(actions).sort()).toEqual(['a_list', 'm_ping', 'z_close']);
+		expect(Object.keys(actions).sort()).toEqual([
+			'a_list',
+			'm_ping',
+			'z_close',
+		]);
 	});
 
 	test('a top-level `system` key in user actions is legal and shows up in actionKeys', () => {

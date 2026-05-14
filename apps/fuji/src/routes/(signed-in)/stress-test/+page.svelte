@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { EntryId } from '@epicenter/fuji';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
@@ -6,7 +7,6 @@
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
 	import { requireFuji } from '$lib/session';
-	import type { EntryId } from '@epicenter/fuji';
 
 	// ─── Config ──────────────────────────────────────────────────────────────────
 	const fuji = requireFuji();
@@ -100,8 +100,7 @@
 	let results = $state<Results | null>(null);
 
 	const stressTestCount = $derived(
-		fuji.entries.active.filter((e) => e.tags.includes('stress-test'))
-			.length,
+		fuji.entries.active.filter((e) => e.tags.includes('stress-test')).length,
 	);
 
 	// ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -179,9 +178,7 @@
 			const filterTimeMs = performance.now() - filterStart;
 
 			// Y.Doc binary size
-			const ydocSizeBytes = Y.encodeStateAsUpdate(
-				fuji.ydoc,
-			).byteLength;
+			const ydocSizeBytes = Y.encodeStateAsUpdate(fuji.ydoc).byteLength;
 
 			results = {
 				insertTimeMs,

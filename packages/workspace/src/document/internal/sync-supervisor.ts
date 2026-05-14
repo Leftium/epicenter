@@ -332,10 +332,7 @@ export function createSyncSupervisor(
 	 */
 	async function dispatchIncomingRequest<
 		R extends { requestId: number; requesterClientId: number },
-	>(
-		rpc: R,
-		handler: (rpc: R) => Promise<Result<unknown, unknown>>,
-	) {
+	>(rpc: R, handler: (rpc: R) => Promise<Result<unknown, unknown>>) {
 		send(
 			encodeRpcResponse({
 				requestId: rpc.requestId,
@@ -408,7 +405,13 @@ export function createSyncSupervisor(
 	// 'update' with `removed` populated.
 	awareness.on(
 		'update',
-		({ removed }: { added: number[]; updated: number[]; removed: number[] }) => {
+		({
+			removed,
+		}: {
+			added: number[];
+			updated: number[];
+			removed: number[];
+		}) => {
 			for (const id of removed) peerMetadata.delete(id);
 		},
 	);

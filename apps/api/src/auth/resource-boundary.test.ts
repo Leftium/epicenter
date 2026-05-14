@@ -14,10 +14,10 @@
  * HTTP and WebSocket wire-format coverage lives in `oauth-resource.test.ts`.
  */
 
+import { expect, test } from 'bun:test';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import type { EncryptionKeys } from '@epicenter/encryption';
-import { expect, test } from 'bun:test';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';

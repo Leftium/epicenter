@@ -1,16 +1,14 @@
 <script lang="ts">
+	import type { EntryId } from '@epicenter/fuji';
 	import * as Empty from '@epicenter/ui/empty';
 	import FileXIcon from '@lucide/svelte/icons/file-x';
 	import { page } from '$app/state';
 	import { requireFuji } from '$lib/session';
 	import EntryEditor from '../../components/EntryEditor.svelte';
-	import type { EntryId } from '@epicenter/fuji';
 
 	const fuji = requireFuji();
 	const entryId = $derived(page.params.id as EntryId);
-	const entry = $derived(
-		entryId ? (fuji.entries.get(entryId) ?? null) : null,
-	);
+	const entry = $derived(entryId ? (fuji.entries.get(entryId) ?? null) : null);
 </script>
 
 <main class="flex h-full flex-1 flex-col overflow-hidden">

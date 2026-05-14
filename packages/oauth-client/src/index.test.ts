@@ -11,10 +11,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import {
-	createOAuthClient,
-	type OAuthTemporaryStorage,
-} from './index.js';
+import { createOAuthClient, type OAuthTemporaryStorage } from './index.js';
 
 function createMemoryStorage(seed: Record<string, string> = {}) {
 	const values = new Map(Object.entries(seed));
@@ -317,4 +314,3 @@ test('handleCallback rejects a token response without expires_in', async () => {
 
 	expect(error?.name).toBe('MissingExpiresIn');
 });
-

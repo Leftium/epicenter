@@ -20,8 +20,8 @@
 
 import { RpcError } from '@epicenter/sync';
 import type { Logger } from 'wellcrafted/logger';
-import { Awareness } from 'y-protocols/awareness';
 import { Ok } from 'wellcrafted/result';
+import { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import {
 	ACTION_KEY_PATTERN,
@@ -35,8 +35,8 @@ import {
 	type OpenWebSocket,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
-import { peerAwarenessSchema, type Replica } from './peer-identity.js';
 import { createPeersSurface, type PeersSurface } from './peer.js';
+import { peerAwarenessSchema, type Replica } from './peer-identity.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -64,9 +64,7 @@ export type OpenCollaborationConfig<
 	actions?: TActions;
 };
 
-export type Collaboration<
-	TActions extends ActionRegistry = ActionRegistry,
-> = {
+export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	readonly replica: Replica;
 	readonly actions: TActions;
 

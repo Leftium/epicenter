@@ -19,11 +19,7 @@ import { RpcError } from '@epicenter/sync';
 import { Ok, type Result } from 'wellcrafted/result';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import {
-	createPeersSurface,
-	type PeerWireHooks,
-	waitForPeer,
-} from './peer.js';
+import { createPeersSurface, type PeerWireHooks, waitForPeer } from './peer.js';
 
 function setup({
 	selfClientId = 1,
@@ -38,14 +34,21 @@ function setup({
 } = {}) {
 	// Yjs accepts `clientID` at runtime but it isn't on `DocOpts`. The cast
 	// is test-only: production code never sets a deterministic clientID.
-	const ydoc = new Y.Doc({ clientID: selfClientId } as ConstructorParameters<typeof Y.Doc>[0]);
+	const ydoc = new Y.Doc({ clientID: selfClientId } as ConstructorParameters<
+		typeof Y.Doc
+	>[0]);
 	const awareness = new Awareness(ydoc);
 	const hooks: PeerWireHooks = {
 		sendActionRequest: send ?? (async () => Ok(null)),
 		sendRuntimeRequest: sendRuntime ?? (async () => Ok(null)),
 	};
 	const peerMetadata = new Map<number, { subject: string }>();
-	const peers = createPeersSurface(awareness, peerMetadata, selfReplicaId, hooks);
+	const peers = createPeersSurface(
+		awareness,
+		peerMetadata,
+		selfReplicaId,
+		hooks,
+	);
 	// Inline helper bound to this awareness + metadata map. Mirrors what the
 	// supervisor does on AWARENESS_ATTESTED in production: store the state and
 	// stamp a subject for the clientID. Default subject is derived from the

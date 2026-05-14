@@ -35,13 +35,13 @@ import {
 	RpcError,
 	type SyncMessageType,
 } from '@epicenter/sync';
-import { encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as decoding from 'lib0/decoding';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, trySync } from 'wellcrafted/result';
 import {
 	type Awareness,
 	applyAwarenessUpdate,
+	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import type * as Y from 'yjs';

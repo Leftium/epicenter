@@ -143,7 +143,7 @@ A daemon with no meaningful remote commands still has RPC. Its action tree can b
 start: ({ projectDir }) => {
 	const doc = openZhongwenDoc({ clientID: hashClientId(projectDir) });
 	const sync = attachSync(doc, {
-		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+		url: websocketUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
 		getToken,
 		webSocketImpl,
 	});
@@ -433,7 +433,7 @@ export function defineFujiDaemon({
 			const fuji = openFuji({ clientID: hashClientId(projectDir) });
 			const actions = createFujiActions(fuji);
 			const sync = attachSync(fuji, {
-				url: toWsUrl(`${apiUrl}/workspaces/${fuji.ydoc.guid}`),
+				url: websocketUrl(`${apiUrl}/workspaces/${fuji.ydoc.guid}`),
 				getToken,
 				webSocketImpl,
 			});
@@ -474,7 +474,7 @@ export default defineConfig({
 				});
 				const actions = createNotesActions(notes);
 				const sync = attachSync(notes, {
-					url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${notes.ydoc.guid}`),
+					url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${notes.ydoc.guid}`),
 					getToken: createCredentialTokenGetter({
 						serverOrigin: EPICENTER_API_URL,
 					}),

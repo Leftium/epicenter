@@ -46,7 +46,7 @@ export function openFujiBrowser({
   attachOwnedBroadcastChannel(rootYdoc, { userId });
   const actions = createFujiActions(tables);
   const collaboration = openCollaboration(rootYdoc, {
-    url: toWsUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
+    url: websocketUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
     waitFor: idb.whenLoaded,
     openWebSocket,
     identity: peer,

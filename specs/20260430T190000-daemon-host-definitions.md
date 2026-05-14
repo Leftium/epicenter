@@ -320,7 +320,7 @@ export function defineFujiDaemon({
 		start: ({ projectDir }) => {
 			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
 			const sync = attachSync(doc, {
-				url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+				url: websocketUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
 				getToken,
 				webSocketImpl,
 			});

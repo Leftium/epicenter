@@ -20,10 +20,12 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Awareness } from 'y-protocols/awareness';
 import type { ActionManifest, RemoteCallOptions } from '../shared/actions.js';
+import type { PeerMetadata } from './internal/sync-supervisor.js';
 import {
 	type PeerAwarenessState,
-	type PeerIdentity,
 	peerAwarenessSchema,
+	type Replica,
+	type Subject,
 } from './peer-identity.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -54,21 +56,6 @@ export type RpcActionMap = Record<string, { input: any; output: any }>;
 // ERRORS
 // ════════════════════════════════════════════════════════════════════════════
 
-/**
- * Self-RPC attempted at the wire layer. The peers surface filters self by
- * identity, so reaching this variant requires a stale clientId reference
- * (deserialized fixture, test injection, future bug). The type system
- * makes this unreachable for typical callers; the wire fallback keeps the
- * failure typed if it slips through.
- */
-export const SelfInvocationError = defineErrors({
-	SelfInvocation: ({ action }: { action: string }) => ({
-		message: `[openCollaboration] cannot RPC to self for "${action}"; call collaboration.actions.${action} directly`,
-		action,
-	}),
-});
-export type SelfInvocationError = InferErrors<typeof SelfInvocationError>;
-
 /** Target peer disappeared from awareness while an RPC was in flight. */
 export const PeerLeftError = defineErrors({
 	PeerLeft: ({ peerId, action }: { peerId: string; action: string }) => ({
@@ -80,7 +67,7 @@ export const PeerLeftError = defineErrors({
 export type PeerLeftError = InferErrors<typeof PeerLeftError>;
 
 /** Errors that may surface from `peer.invoke` or `peer.describe`. */
-export type RemoteCallError = RpcError | SelfInvocationError | PeerLeftError;
+export type RemoteCallError = RpcError | PeerLeftError;
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -89,20 +76,37 @@ export type RemoteCallError = RpcError | SelfInvocationError | PeerLeftError;
 /**
  * One online remote participant.
  *
- * Obtain via `collaboration.peers.find<TActions>(peerId)` or iteration
+ * Obtain via `collaboration.peers.find<TActions>(replicaId)` or iteration
  * over `collaboration.peers.list()`. The generic narrows `invoke` key
  * autocomplete and input/output types when the caller knows the remote's
  * action map.
+ *
+ * Three identifiers live on a peer, each with a distinct lifetime:
+ *
+ *  - `clientID`: per-session Yjs id. Disambiguates two tabs on one device.
+ *  - `replica`: per-install. Same value across reconnects from the same
+ *    device, same value for two tabs of the same browser.
+ *  - `subject`: per-user. Server-stamped from the auth session. Two
+ *    different devices owned by the same user share a subject.
  */
 export type Peer<TActions = unknown> = {
-	readonly id: string;
-	readonly identity: PeerIdentity;
 	/**
 	 * Session-local awareness clientID. Wire artifact, not stable across
-	 * reconnects; do not persist. Useful when `id` is shared (multiple tabs
-	 * from one browser) and a caller needs to disambiguate entries.
+	 * reconnects; do not persist.
 	 */
 	readonly clientID: number;
+	/**
+	 * Auth-derived user id, stamped by the server on the AWARENESS_ATTESTED
+	 * envelope. The trust-boundary field: two clients cannot share a subject
+	 * unless they authenticated as the same user.
+	 */
+	readonly subject: Subject;
+	/**
+	 * Install-stable descriptor claimed by the client. Two tabs on the same
+	 * browser publish the same `replica`. Verifying ownership is the server's
+	 * job (via `subject`), not this field.
+	 */
+	readonly replica: Replica;
 	/**
 	 * Alphabetically sorted snake_case key listing of every action the peer hosts,
 	 * read from awareness. Use for capability-based picks:
@@ -131,8 +135,12 @@ export type PeersSurface = {
 	/** Online peers, never including self, in clientId-ascending order. */
 	list(): Peer[];
 
-	/** Find by stable peer id. Returns undefined if not currently online. */
-	find<TActions = unknown>(peerId: string): Peer<TActions> | undefined;
+	/**
+	 * Find by install-stable replica id. Returns the first match in
+	 * clientId-ascending order (multi-tab on one device picks the lower
+	 * clientID). Returns undefined if no peer with that replica is online.
+	 */
+	find<TActions = unknown>(replicaId: string): Peer<TActions> | undefined;
 
 	/**
 	 * Subscribe to changes in the peer list. Bare callback; snapshot reads
@@ -158,18 +166,24 @@ export type PeerWireHooks = {
 		action: string,
 		input: unknown,
 		options: RemoteCallOptions | undefined,
-	): Promise<Result<unknown, RpcError | SelfInvocationError>>;
+	): Promise<Result<unknown, RpcError>>;
 	sendRuntimeRequest(
 		targetClientId: number,
 		verb: RuntimeVerb,
 		options: RemoteCallOptions | undefined,
-	): Promise<Result<unknown, RpcError | SelfInvocationError>>;
+	): Promise<Result<unknown, RpcError>>;
 };
 
 /**
  * Build a `PeersSurface` over `awareness`. Self is filtered both by
- * `Awareness#clientID` (transport-level self) and by `selfId` (the published
- * identity.id; catches stale-entry-for-self after reconnect).
+ * `Awareness#clientID` (transport-level self) and by `selfReplicaId` (the
+ * published replica.id; catches stale-entry-for-self after reconnect, and
+ * filters every tab of the same browser).
+ *
+ * `peerMetadata` is the supervisor-maintained map of envelope-attested
+ * `subject` per clientID. Joining it with the awareness payload at read time
+ * (rather than copying into the payload) keeps the trust boundary visible:
+ * subject only exists for clientIDs the server attested.
  *
  * Awareness states that fail `PeerAwarenessState` validation are silently
  * dropped: a peer running mismatched code appears offline rather than
@@ -177,39 +191,50 @@ export type PeerWireHooks = {
  */
 export function createPeersSurface(
 	awareness: Awareness,
-	selfId: string,
+	peerMetadata: ReadonlyMap<number, PeerMetadata>,
+	selfReplicaId: string,
 	hooks: PeerWireHooks,
 ): PeersSurface {
-	function readPeers(): Map<number, PeerAwarenessState> {
-		const result = new Map<number, PeerAwarenessState>();
+	function readPeers(): Map<number, PeerAwarenessState & { subject: Subject }> {
+		const result = new Map<number, PeerAwarenessState & { subject: Subject }>();
 		const selfClientId = awareness.clientID;
 		for (const [clientId, rawState] of awareness.getStates()) {
 			if (clientId === selfClientId) continue;
 			if (rawState === null || typeof rawState !== 'object') continue;
-			const identityRaw = (rawState as Record<string, unknown>).identity;
+			const replicaRaw = (rawState as Record<string, unknown>).replica;
 			const actionKeysRaw = (rawState as Record<string, unknown>).actionKeys;
-			const identity = peerAwarenessSchema.identity(identityRaw);
-			if (identity instanceof type.errors) continue;
+			const replica = peerAwarenessSchema.replica(replicaRaw);
+			if (replica instanceof type.errors) continue;
 			const actionKeys = peerAwarenessSchema.actionKeys(actionKeysRaw);
 			if (actionKeys instanceof type.errors) continue;
-			if (identity.id === selfId) continue;
-			result.set(clientId, { identity, actionKeys });
+			if (replica.id === selfReplicaId) continue;
+			// No subject for this clientID means the supervisor saw an
+			// awareness state without a matching AWARENESS_ATTESTED envelope.
+			// That's only possible if a malicious or misconfigured peer is
+			// injecting raw AWARENESS frames the server didn't stamp; drop
+			// the peer rather than surface a half-attested entry.
+			const metadata = peerMetadata.get(clientId);
+			if (!metadata) continue;
+			result.set(clientId, { replica, actionKeys, subject: metadata.subject });
 		}
 		return result;
 	}
 
-	function makePeer(clientId: number, state: PeerAwarenessState): Peer {
+	function makePeer(
+		clientId: number,
+		state: PeerAwarenessState & { subject: Subject },
+	): Peer {
 		return {
-			id: state.identity.id,
-			identity: state.identity,
 			clientID: clientId,
+			subject: state.subject,
+			replica: state.replica,
 			actionKeys: state.actionKeys,
 			invoke: (path, input, options) =>
-				dispatch(clientId, state.identity.id, path, () =>
+				dispatch(clientId, state.replica.id, path, () =>
 					hooks.sendActionRequest(clientId, path, input, options),
 				),
 			describe: (options) =>
-				dispatch(clientId, state.identity.id, 'describe-actions', () =>
+				dispatch(clientId, state.replica.id, 'describe-actions', () =>
 					hooks.sendRuntimeRequest(clientId, 'describe-actions', options),
 				),
 		};
@@ -224,7 +249,7 @@ export function createPeersSurface(
 		targetClientId: number,
 		peerId: string,
 		label: string,
-		send: () => Promise<Result<unknown, RpcError | SelfInvocationError>>,
+		send: () => Promise<Result<unknown, RpcError>>,
 	): Promise<Result<TOutput, RemoteCallError>> {
 		return new Promise<Result<TOutput, RemoteCallError>>((resolve) => {
 			let settled = false;
@@ -263,12 +288,12 @@ export function createPeersSurface(
 				makePeer(clientId, peers.get(clientId)!),
 			);
 		},
-		find<TActions = unknown>(peerId: string): Peer<TActions> | undefined {
+		find<TActions = unknown>(replicaId: string): Peer<TActions> | undefined {
 			const peers = readPeers();
 			const sortedClientIds = [...peers.keys()].sort((a, b) => a - b);
 			for (const clientId of sortedClientIds) {
 				const state = peers.get(clientId)!;
-				if (state.identity.id === peerId) {
+				if (state.replica.id === replicaId) {
 					return makePeer(clientId, state) as Peer<TActions>;
 				}
 			}

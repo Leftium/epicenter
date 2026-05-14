@@ -135,7 +135,7 @@ export function createAiChatState({
 			initialMessages: loadMessages(conversationId),
 			tools: sessionAiTools.tools,
 			connection: fetchServerSentEvents(`${APP_URLS.API}/ai/chat`, async () => {
-				const { id: deviceId } = tabManager.collaboration.identity;
+				const { id: deviceId } = tabManager.collaboration.replica;
 				return {
 					fetchClient: createAiChatFetch(auth.fetch),
 					body: {

@@ -3,7 +3,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachEncryption,
 	openCollaboration,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
@@ -32,14 +32,9 @@ export function defineZhongwenDaemon({
 				filePath: yjsPath(projectDir, ydoc.guid),
 			});
 			const collaboration = openCollaboration(ydoc, {
-				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
+				url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
-				identity: {
-					id: 'zhongwen-daemon',
-					name: 'Zhongwen Daemon',
-					platform: 'node',
-				},
-				actions: {},
+				replica: { id: 'zhongwen-daemon', platform: 'node' },
 			});
 
 			return {

@@ -33,9 +33,9 @@ function fakePeer({
 	invoke: FakeInvoke;
 }): Peer {
 	return {
-		id: peerId,
-		identity: { id: peerId, name: peerId, platform: 'node' },
 		clientID: 1,
+		subject: 'test-user',
+		replica: { id: peerId, platform: 'node' },
 		actionKeys: [],
 		invoke: (action, input, options) =>
 			invoke(peerId, action, input, options) as never,
@@ -69,7 +69,7 @@ function fakeCollaboration<TActions extends ActionRegistry>({
 }): Collaboration<TActions> {
 	const ydoc = new Y.Doc();
 	return {
-		identity: { id: 'self', name: 'Self', platform: 'node' },
+		replica: { id: 'self', platform: 'node' },
 		actions,
 		status: syncStatus,
 		whenConnected: Promise.resolve(),

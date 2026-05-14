@@ -84,7 +84,7 @@ const noteBodyDocs = createDisposableCache(
 		const body = attachRichText(ydoc);
 		const idb = attachIndexedDb(ydoc);
 		const sync = attachSync(ydoc, {
-			url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+			url: websocketUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 			waitFor: idb.whenLoaded,
 			tokenSource,
 		});

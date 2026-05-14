@@ -507,7 +507,7 @@ Build, Prove, Remove. Each wave leaves the workspace typecheckable.
 ## Open Questions
 
 1. **Should `SyncTransport` accept `URL` in addition to `string`?**
-   - Today `attachSync` constructs `config.url` as `string` upstream via `toWsUrl()`. `AuthClient.openWebSocket` accepts `string | URL`.
+   - Today `attachSync` constructs `config.url` as `string` upstream via `websocketUrl()`. `AuthClient.openWebSocket` accepts `string | URL`.
    - **Recommendation**: keep `SyncTransport` typed with `string`. Function-parameter contravariance lets `auth.openWebSocket` (which accepts `string | URL`) satisfy the narrower `(url: string) => WebSocket` contract. No friction at the call site.
 
 2. **Should the throw on missing credentials be a typed error?**

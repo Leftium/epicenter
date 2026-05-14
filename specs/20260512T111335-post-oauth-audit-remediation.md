@@ -132,7 +132,7 @@ The current server config installs `jwt()` and `oauthProvider()`, not `deviceAut
 Finally, Fuji and Honeycrisp child document sync still use `/docs/*`:
 
 ```ts
-url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`);
+url: websocketUrl(`${APP_URLS.API}/docs/${ydoc.guid}`);
 ```
 
 The API route is `/documents/:document`:
@@ -352,7 +352,7 @@ Acceptance: `bun --cwd apps/api test` passes (56 pass / 0 fail at landing); `app
 
 - [x] **2.1** Fuji child document sync uses `/documents/${ydoc.guid}` (`apps/fuji/src/routes/(signed-in)/fuji/browser.ts:65`). Committed in `52e5e668e`.
 - [x] **2.2** Honeycrisp child document sync uses `/documents/${ydoc.guid}` (`apps/honeycrisp/src/routes/(signed-in)/honeycrisp/browser.ts:65`). Committed in `52e5e668e`.
-- [x] **2.3** ~~Add a tiny route helper~~. Refused: two call sites do not justify the indirection; both already share `APP_URLS.API` and `toWsUrl`.
+- [x] **2.3** ~~Add a tiny route helper~~. Refused: two call sites do not justify the indirection; both already share `APP_URLS.API` and `websocketUrl`.
 - [x] **2.4** Resolved as stale. No app-side sync URL test seam exists; the typed `AppType` consumed by `hc<AppType>` in the dashboard plus the API route handlers in `apps/api/src/app.ts:594-661` already pin `/documents/:document`. Reopen only if the URL string regresses.
 
 ### Phase 3: Preserve Local Workspaces During Reauth

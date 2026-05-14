@@ -25,7 +25,7 @@ import {
 	attachTables,
 	attachYjsSync,
 	defineTable,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 
 const posts = defineTable(
@@ -44,7 +44,7 @@ export function openBlog() {
 	const kv = attachKv(ydoc, {});
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachYjsSync(ydoc, {
-		url: toWsUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
+		url: websocketUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 	});
 
@@ -133,20 +133,20 @@ import {
 	attachOwnedBroadcastChannel,
 	type EncryptionKeys,
 	openCollaboration,
-	type PeerIdentity,
-	toWsUrl,
+	type Replica,
+	websocketUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
 	userId,
-	identity,
+	replica,
 	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	identity: PeerIdentity;
+	replica: Replica;
 	openWebSocket?: (
 		url: string | URL,
 		protocols?: string[],
@@ -162,10 +162,10 @@ export function openApp({
 	attachOwnedBroadcastChannel(ydoc, { userId });
 
 	const collaboration = openCollaboration(ydoc, {
-		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
+		url: websocketUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		identity,
+		replica,
 		actions: {},
 	});
 
@@ -187,13 +187,13 @@ export function openApp({
 
 export const workspace = openApp({
 	userId,
-	identity: { id: 'macbook', name: 'MacBook', platform: 'tauri' },
+	replica: { id: 'macbook', platform: 'tauri' },
 	openWebSocket: auth.openWebSocket,
 	encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 });
 ```
 
-`openCollaboration` is the workspace primitive: it wraps the sync supervisor, publishes peer identity in awareness, dispatches inbound action and runtime requests, and exposes a `peers` surface (`workspace.collaboration.peers.find(id)?.invoke('path', input)`). For content documents that need bytes-only sync (no presence, no RPC), use the sibling primitive `attachYjsSync(ydoc, { url, ... })`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
+`openCollaboration` is the workspace primitive: it wraps the sync supervisor, publishes the local replica in awareness, dispatches inbound action and runtime requests, and exposes a `peers` surface (`workspace.collaboration.peers.find(replicaId)?.invoke('path', input)`). For content documents that need bytes-only sync (no presence, no RPC), use the sibling primitive `attachYjsSync(ydoc, { url, ... })`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
 The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.
 
@@ -519,7 +519,7 @@ KV is validate-or-default. There is no migration function.
 
 ### Awareness schema
 
-For the workspace's own peer identity + action keys, prefer `openCollaboration` (above): it owns an `Awareness` and publishes the standard fields. The `attachAwareness` primitive is the lower-level building block; reach for it when you need a separately-typed presence channel (for example, cursors on a content doc that doesn't participate in the collaboration RPC plane).
+For the workspace's own replica + action keys, prefer `openCollaboration` (above): it owns an `Awareness` and publishes the standard fields. The `attachAwareness` primitive is the lower-level building block; reach for it when you need a separately-typed presence channel (for example, cursors on a content doc that doesn't participate in the collaboration RPC plane).
 
 ```typescript
 import { type } from 'arktype';
@@ -815,7 +815,7 @@ import {
 	attachTables,
 	attachYjsSync,
 	openCollaboration,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 import { attachYjsLog } from '@epicenter/workspace/node';
 ```
@@ -873,7 +873,7 @@ import {
 	attachTables,
 	attachYjsSync,
 	defineTable,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 
@@ -885,7 +885,7 @@ function openTabs() {
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
 	const sync = attachYjsSync(ydoc, {
-		url: toWsUrl(`https://sync.epicenter.so/rooms/${ydoc.guid}`),
+		url: websocketUrl(`https://sync.epicenter.so/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 	});
 
@@ -1294,7 +1294,7 @@ Two composition shapes, one builder contract.
 │   const tables        = attachTables(ydoc, { ... });     │
 │   const idb           = attachIndexedDb(ydoc);            │
 │   const collaboration = openCollaboration(ydoc, {         │
-│     waitFor: idb.whenLoaded, identity, actions: { ... },  │
+│     waitFor: idb.whenLoaded, replica, actions: { ... },   │
 │   });                                                     │
 │   return { ydoc, tables, idb, collaboration,              │
 │            [Symbol.dispose]() { ydoc.destroy(); } };     │

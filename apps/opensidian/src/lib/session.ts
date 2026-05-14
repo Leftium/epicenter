@@ -1,6 +1,6 @@
 import { requireIdentity } from '@epicenter/auth';
 import { createSession } from '@epicenter/svelte';
-import { getOrCreateInstallationId } from '@epicenter/workspace';
+import { createReplicaId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { openOpensidianBrowser } from './opensidian/browser';
@@ -17,9 +17,8 @@ export const session = createSession({
 	build: (identity) => {
 		const opensidian = openOpensidianBrowser({
 			userId: identity.user.id,
-			peer: {
-				id: getOrCreateInstallationId(localStorage),
-				name: 'Opensidian',
+			replica: {
+				id: createReplicaId({ storage: localStorage }),
 				platform: 'web',
 			},
 			openWebSocket: auth.openWebSocket,

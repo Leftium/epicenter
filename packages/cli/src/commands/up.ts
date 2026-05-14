@@ -285,7 +285,7 @@ function printPeersSnapshot(entry: StartedDaemonRoute): void {
 	}
 	for (const peer of peers) {
 		process.stderr.write(
-			`${entry.route}: peer ${peer.id} (clientID=${peer.clientID}, name=${peer.identity.name})\n`,
+			`${entry.route}: peer ${peer.replica.id} (clientID=${peer.clientID}, subject=${peer.subject})\n`,
 		);
 	}
 }
@@ -304,7 +304,7 @@ function subscribeAwareness(entry: StartedDaemonRoute, quiet: boolean): void {
 			if (!prev.has(clientID)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.route}: ${peer.id} joined (clientID=${clientID})\n`,
+						`${entry.route}: ${peer.replica.id} joined (clientID=${clientID})\n`,
 					);
 				}
 			}
@@ -313,7 +313,7 @@ function subscribeAwareness(entry: StartedDaemonRoute, quiet: boolean): void {
 			if (!next.has(clientID)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.route}: ${peer.id} left (clientID=${clientID})\n`,
+						`${entry.route}: ${peer.replica.id} left (clientID=${clientID})\n`,
 					);
 				}
 			}

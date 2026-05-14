@@ -22,7 +22,7 @@ const yjsLog = attachYjsLogReader(doc.ydoc, {
 	filePath: yjsPath(projectDir, doc.ydoc.guid),
 });
 const sync = attachSync(doc, {
-	url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+	url: websocketUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
 	getToken,
 	webSocketImpl,
 });

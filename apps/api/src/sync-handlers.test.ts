@@ -21,15 +21,18 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+	decodeAwarenessAttestedPayload,
 	decodeMessageType,
 	decodeSyncMessage,
 	encodeAwareness,
+	encodeAwarenessAttested,
 	encodeQueryAwareness,
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
 	MESSAGE_TYPE,
 } from '@epicenter/sync';
+import * as decoding from 'lib0/decoding';
 import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import {
@@ -77,7 +80,7 @@ function setup(init?: (doc: Y.Doc) => void) {
 	const doc = new Y.Doc();
 	if (init) init(doc);
 	const awareness = new Awareness(doc);
-	const room: RoomContext = { doc, awareness };
+	const room: RoomContext = { doc, awareness, subject: 'test-user' };
 	const ws = new MockWebSocket();
 	const initialMessages = computeInitialMessages(room);
 	const connection = registerConnection({
@@ -92,7 +95,7 @@ function setupTwoClients(init?: (doc: Y.Doc) => void) {
 	const doc = new Y.Doc();
 	if (init) init(doc);
 	const awareness = new Awareness(doc);
-	const room: RoomContext = { doc, awareness };
+	const room: RoomContext = { doc, awareness, subject: 'test-user' };
 
 	const ws1 = new MockWebSocket();
 	const init1 = computeInitialMessages(room);
@@ -141,7 +144,11 @@ describe('computeInitialMessages', () => {
 		// Awareness constructor sets a default local state — clear it
 		awareness.setLocalState(null);
 
-		const initialMessages = computeInitialMessages({ doc, awareness });
+		const initialMessages = computeInitialMessages({
+			doc,
+			awareness,
+			subject: 'test-user',
+		});
 
 		expect(initialMessages).toHaveLength(1);
 		// biome-ignore lint/style/noNonNullAssertion: length asserted above
@@ -153,13 +160,19 @@ describe('computeInitialMessages', () => {
 		const awareness = new Awareness(doc);
 		awareness.setLocalState({ name: 'existing-user' });
 
-		const initialMessages = computeInitialMessages({ doc, awareness });
+		const initialMessages = computeInitialMessages({
+			doc,
+			awareness,
+			subject: 'test-user',
+		});
 
 		expect(initialMessages).toHaveLength(2);
 		// biome-ignore lint/style/noNonNullAssertion: length asserted above
 		expect(decodeMessageType(initialMessages[0]!)).toBe(MESSAGE_TYPE.SYNC);
 		// biome-ignore lint/style/noNonNullAssertion: length asserted above
-		expect(decodeMessageType(initialMessages[1]!)).toBe(MESSAGE_TYPE.AWARENESS);
+		expect(decodeMessageType(initialMessages[1]!)).toBe(
+			MESSAGE_TYPE.AWARENESS_ATTESTED,
+		);
 	});
 });
 
@@ -301,7 +314,9 @@ describe('applyMessage — AWARENESS', () => {
 		expect(result.data).not.toBeNull();
 		expect(result.data?.action).toBe('broadcast');
 		if (result.data?.action === 'broadcast') {
-			expect(decodeMessageType(result.data.data)).toBe(MESSAGE_TYPE.AWARENESS);
+			expect(decodeMessageType(result.data.data)).toBe(
+				MESSAGE_TYPE.AWARENESS_ATTESTED,
+			);
 			expect(result.data.shouldPersistAttachment).toBe(true);
 		}
 	});
@@ -324,6 +339,56 @@ describe('applyMessage — AWARENESS', () => {
 		expect(states.has(clientAwareness.clientID)).toBe(true);
 		expect(states.get(clientAwareness.clientID)).toEqual({ name: 'Alice' });
 	});
+
+	test('broadcast envelope stamps room.subject, ignoring any subject the client encoded inside the payload', () => {
+		const { room, connection } = setup();
+
+		// Simulate a malicious client trying to claim a different subject in
+		// the awareness payload. The server-stamped envelope subject must
+		// match room.subject, not the forged value.
+		const clientDoc = new Y.Doc();
+		const clientAwareness = new Awareness(clientDoc);
+		clientAwareness.setLocalState({
+			subject: 'attacker',
+			replica: { id: 'r-bad', platform: 'web' },
+		});
+
+		const update = encodeAwarenessUpdate(clientAwareness, [
+			clientAwareness.clientID,
+		]);
+		const message = encodeAwareness({ update });
+
+		const result = applyMessage({ data: message, room, connection });
+		expect(result.error).toBeNull();
+		if (result.data?.action !== 'broadcast')
+			throw new Error('expected broadcast');
+
+		const decoder = decoding.createDecoder(result.data.data);
+		expect(decoding.readVarUint(decoder)).toBe(MESSAGE_TYPE.AWARENESS_ATTESTED);
+		const decoded = decodeAwarenessAttestedPayload(decoder);
+		expect(decoded.subject).toBe(room.subject);
+		expect(decoded.subject).not.toBe('attacker');
+	});
+
+	test('AWARENESS_ATTESTED is a server-to-client-only frame: inbound is silently ignored', () => {
+		// A client that constructs the envelope itself and tries to assert a
+		// forged subject must not bypass the auth boundary. The dispatcher has
+		// no AWARENESS_ATTESTED case at all, so the frame falls through to the
+		// default branch, logs an unknown-type warning, and returns null. No
+		// broadcast, no apply, no envelope echo.
+		const { room, connection } = setup();
+		const forged = encodeAwarenessAttested({
+			subject: 'attacker',
+			update: new Uint8Array([0]),
+		});
+		const beforeStates = new Map(room.awareness.getStates());
+
+		const result = applyMessage({ data: forged, room, connection });
+		expect(result.error).toBeNull();
+		expect(result.data).toBeNull();
+		// Awareness was not touched.
+		expect(room.awareness.getStates()).toEqual(beforeStates);
+	});
 });
 
 // ============================================================================
@@ -342,7 +407,9 @@ describe('applyMessage — QUERY_AWARENESS', () => {
 		expect(result.data).not.toBeNull();
 		expect(result.data?.action).toBe('reply');
 		if (result.data?.action === 'reply') {
-			expect(decodeMessageType(result.data.data)).toBe(MESSAGE_TYPE.AWARENESS);
+			expect(decodeMessageType(result.data.data)).toBe(
+				MESSAGE_TYPE.AWARENESS_ATTESTED,
+			);
 		}
 	});
 
@@ -352,7 +419,7 @@ describe('applyMessage — QUERY_AWARENESS', () => {
 		// Clear the local state that Awareness sets by default
 		awareness.setLocalState(null);
 
-		const room: RoomContext = { doc, awareness };
+		const room: RoomContext = { doc, awareness, subject: 'test-user' };
 		const ws = new MockWebSocket();
 		const connection = registerConnection({
 			...room,
@@ -575,7 +642,11 @@ describe('full handshake convergence', () => {
 		const serverDoc = new Y.Doc();
 		serverDoc.getMap('data').set('server-key', 'server-value');
 		const awareness = new Awareness(serverDoc);
-		const room: RoomContext = { doc: serverDoc, awareness };
+		const room: RoomContext = {
+			doc: serverDoc,
+			awareness,
+			subject: 'test-user',
+		};
 		const ws = new MockWebSocket();
 		const connection = registerConnection({
 			...room,

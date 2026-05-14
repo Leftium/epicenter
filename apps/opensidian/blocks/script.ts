@@ -2,9 +2,9 @@ import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachEncryption,
-	attachYjsSync,
+	openCollaboration,
 	type ProjectDir,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 import {
 	attachYjsLogReader,
@@ -33,9 +33,10 @@ export async function openOpensidianScript({
 	const yjsLog = attachYjsLogReader(ydoc, {
 		filePath: yjsPath(projectDir, ydoc.guid),
 	});
-	const sync = attachYjsSync(ydoc, {
-		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
+	const collaboration = openCollaboration(ydoc, {
+		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 		openWebSocket: auth.openWebSocket,
+		replica: { id: 'opensidian-script', platform: 'node' },
 	});
 
 	return {
@@ -45,7 +46,7 @@ export async function openOpensidianScript({
 		encryption,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		yjsLog,
-		sync,
+		collaboration,
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},

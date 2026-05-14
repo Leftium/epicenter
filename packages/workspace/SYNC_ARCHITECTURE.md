@@ -92,30 +92,34 @@ Apps reach the wire through one of two primitives. Both are sync clients; the di
 
 ### `openCollaboration`
 
-For the workspace document: tables, KV, identity, action registry, peers.
+For the workspace document: tables, KV, replica, action registry, peers.
 
 ```ts
-import { openCollaboration } from '@epicenter/workspace';
+import {
+    defineActions,
+    defineMutation,
+    openCollaboration,
+} from '@epicenter/workspace';
 
 const collaboration = openCollaboration(ydoc, {
     url: 'wss://api.example.com/workspaces/' + ydoc.guid,
     waitFor: idb.whenLoaded,
     openWebSocket: auth.openWebSocket,
-    identity: { id: 'macbook', name: 'MacBook', platform: 'tauri' },
-    actions: { tabs: { close: defineMutation({ ... }) } },
+    replica: { id: 'macbook', platform: 'tauri' },
+    actions: defineActions({ tabs_close: defineMutation({ ... }) }),
 });
 
 // Local invocation: direct function call against the registry.
 await collaboration.actions.tabs_close({ tabIds: [1, 2] });
 
-// Remote invocation: find by stable peer id, dispatch by snake_case key.
+// Remote invocation: find by stable replica id, dispatch by snake_case key.
 const phone = collaboration.peers.find('phone');
 await phone?.invoke('tabs_close', { tabIds: [1, 2] });
 ```
 
 ### `attachYjsSync`
 
-For content documents nested inside a workspace (rich-text bodies, attachments, anything that syncs independently). No identity, no actions, no peers; just bytes over the wire.
+For content documents nested inside a workspace (rich-text bodies, attachments, anything that syncs independently). No replica, no actions, no peers; just bytes over the wire.
 
 ```ts
 import { attachYjsSync } from '@epicenter/workspace';
@@ -256,7 +260,7 @@ The RESPONSE envelope is shared so the request-id table on the client side stays
 ```ts
 collaboration.peers
     .list()                        // Peer[], clientID-ascending, never self
-    .find<TMap>(peerId)            // Peer<TMap> | undefined
+    .find<TMap>(replicaId)         // Peer<TMap> | undefined
     .observe(callback)             // unsubscribe = peers.observe(cb)
 ```
 
@@ -264,9 +268,9 @@ Each `Peer<TMap>` carries:
 
 ```ts
 type Peer<TMap = unknown> = {
-    readonly id: string;            // stable identity.id
-    readonly identity: PeerIdentity;
     readonly clientID: number;       // session-local; do not persist
+    readonly subject: Subject;       // auth-derived user id from the server
+    readonly replica: Replica;       // install-stable peer descriptor
     readonly actionKeys: readonly string[];
     invoke<TPath>(path, input, options?): Promise<Result<...>>;
     describe(options?): Promise<Result<ActionManifest, ...>>;
@@ -278,7 +282,7 @@ type Peer<TMap = unknown> = {
 `peers.list()` and `peers.find()` filter self twice:
 
 1. By transport `clientID`: drops the entry under `awareness.clientID`.
-2. By `identity.id`: drops any entry whose published identity matches `collaboration.identity.id` (catches stale-self after reconnect under a new clientID).
+2. By `replica.id`: drops any entry whose published replica matches `collaboration.replica.id` (catches stale-self after reconnect under a new clientID).
 
 Self is never reachable through the peers surface; local actions are reached via `collaboration.actions.*`. A wire-layer fallback in `openCollaboration` returns `SelfInvocationError` if a stale clientId reference ever reaches the supervisor.
 

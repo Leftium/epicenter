@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import * as decoding from 'lib0/decoding';
 import { Ok } from 'wellcrafted/result';
 import {
 	Awareness,
@@ -19,10 +20,12 @@ import {
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import {
+	decodeAwarenessAttestedPayload,
 	decodeMessageType,
 	decodeRpcMessage,
 	decodeSyncMessage,
 	encodeAwareness,
+	encodeAwarenessAttested,
 	encodeAwarenessStates,
 	encodeQueryAwareness,
 	encodeRpcActionRequest,
@@ -49,6 +52,64 @@ describe('MESSAGE_TYPE constants', () => {
 		expect(MESSAGE_TYPE.AWARENESS).toBe(1);
 		expect(MESSAGE_TYPE.AUTH).toBe(2);
 		expect(MESSAGE_TYPE.QUERY_AWARENESS).toBe(3);
+		expect(MESSAGE_TYPE.AWARENESS_ATTESTED).toBe(100);
+	});
+});
+
+// ============================================================================
+// Awareness-Attested Encode/Decode Tests
+// ============================================================================
+
+describe('AWARENESS_ATTESTED protocol', () => {
+	test('round-trips subject + opaque payload', () => {
+		const awareness = new Awareness(new Y.Doc());
+		awareness.setLocalState({ replica: { id: 'r-1', platform: 'node' } });
+		const update = encodeAwarenessUpdate(awareness, [awareness.clientID]);
+
+		const message = encodeAwarenessAttested({
+			subject: 'user_abc',
+			update,
+		});
+
+		expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.AWARENESS_ATTESTED);
+
+		const decoder = decoding.createDecoder(message);
+		decoding.readVarUint(decoder); // discard type tag
+		const decoded = decodeAwarenessAttestedPayload(decoder);
+		expect(decoded.subject).toBe('user_abc');
+		expect(decoded.update).toEqual(update);
+	});
+
+	test('preserves opaque payload bytes verbatim (server stays oblivious to y-protocols)', () => {
+		const opaque = new Uint8Array([1, 2, 3, 4, 5, 254, 255]);
+		const message = encodeAwarenessAttested({
+			subject: '',
+			update: opaque,
+		});
+
+		const decoder = decoding.createDecoder(message);
+		decoding.readVarUint(decoder);
+		const decoded = decodeAwarenessAttestedPayload(decoder);
+		expect(decoded.subject).toBe('');
+		expect(decoded.update).toEqual(opaque);
+	});
+
+	test('subject is the server-stamped value, not whatever lives in the payload', () => {
+		// Encode an "awareness state" whose payload happens to claim a different
+		// subject. The envelope subject is what consumers read; the payload is
+		// opaque to the envelope layer.
+		const forgedClaim = new TextEncoder().encode(
+			JSON.stringify({ subject: 'attacker', replica: { id: 'r-1' } }),
+		);
+		const message = encodeAwarenessAttested({
+			subject: 'real_user',
+			update: forgedClaim,
+		});
+
+		const decoder = decoding.createDecoder(message);
+		decoding.readVarUint(decoder);
+		const decoded = decodeAwarenessAttestedPayload(decoder);
+		expect(decoded.subject).toBe('real_user');
 	});
 });
 

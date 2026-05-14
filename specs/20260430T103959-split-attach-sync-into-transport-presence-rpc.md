@@ -271,7 +271,7 @@ const idb = attachIndexedDb(doc.ydoc);
 attachBroadcastChannel(doc.ydoc);
 
 const sync = attachSync(doc.ydoc, {
-  url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+  url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
   waitFor: idb.whenLoaded,
   getToken: () => auth.getToken(),
 });

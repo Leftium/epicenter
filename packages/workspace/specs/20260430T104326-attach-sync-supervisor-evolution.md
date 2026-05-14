@@ -122,7 +122,7 @@ const idb = attachIndexedDb(doc.ydoc);
 attachBroadcastChannel(doc.ydoc);
 
 const sync = attachSync(doc, {
-  url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+  url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
   waitFor: idb,
   device,
   loadToken: async () => auth.loadToken(),

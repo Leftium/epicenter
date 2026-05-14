@@ -22,11 +22,10 @@ import {
 	defineQuery,
 } from '../shared/actions.js';
 import { openCollaboration } from './open-collaboration.js';
-import type { PeerIdentity } from './peer-identity.js';
+import type { Replica } from './peer-identity.js';
 
-const identity: PeerIdentity = {
+const replica: Replica = {
 	id: 'self',
-	name: 'Self',
 	platform: 'node',
 };
 
@@ -70,18 +69,18 @@ function setup<TActions extends ActionRegistry = ActionRegistry>(
 	const collaboration = openCollaboration<TActions>(ydoc, {
 		url: 'wss://ignored.invalid/',
 		openWebSocket: stalledOpenWebSocket,
-		identity,
+		replica,
 		actions,
 	});
 	return { ydoc, collaboration };
 }
 
 describe('openCollaboration', () => {
-	test('exposes the supplied identity and user actions', () => {
+	test('exposes the supplied replica and user actions', () => {
 		const list = defineQuery({ handler: () => [] });
 		const { ydoc, collaboration } = setup({ tabs_list: list });
 		try {
-			expect(collaboration.identity).toEqual(identity);
+			expect(collaboration.replica).toEqual(replica);
 			expect(collaboration.actions).toEqual({ tabs_list: list });
 		} finally {
 			ydoc.destroy();

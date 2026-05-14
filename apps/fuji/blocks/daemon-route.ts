@@ -4,7 +4,7 @@ import {
 	attachEncryption,
 	openCollaboration,
 	type ProjectDir,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import {
@@ -52,13 +52,9 @@ export function defineFujiDaemon({
 			});
 			const actions = createFujiActions(tables);
 			const collaboration = openCollaboration(ydoc, {
-				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
+				url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
-				identity: {
-					id: 'fuji-daemon',
-					name: 'Fuji Daemon',
-					platform: 'node',
-				},
+				replica: { id: 'fuji-daemon', platform: 'node' },
 				actions,
 			});
 			const sqliteDb = openWriterSqlite({

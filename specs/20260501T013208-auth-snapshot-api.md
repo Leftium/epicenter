@@ -100,7 +100,7 @@ Workspace sync adapts a sync token read into an async callback:
 
 ```ts
 const sync = attachSync(doc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+	url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 	waitFor: idb,
 	getToken: async () => legacyTokenGetter(),
 });

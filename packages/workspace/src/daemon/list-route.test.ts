@@ -13,7 +13,11 @@ import type { Result } from 'wellcrafted/result';
 import * as Y from 'yjs';
 
 import type { Collaboration } from '../document/open-collaboration.js';
-import { type ActionManifest, defineQuery } from '../shared/actions.js';
+import {
+	type ActionManifest,
+	type ActionRegistry,
+	defineQuery,
+} from '../shared/actions.js';
 import { buildDaemonApp } from './app.js';
 import type { StartedDaemonRoute } from './types.js';
 
@@ -21,11 +25,11 @@ type ListResult = Result<ActionManifest, never>;
 
 function fakeEntry(
 	name: string,
-	actions: Record<string, unknown> = {},
+	actions: ActionRegistry = {},
 ): StartedDaemonRoute {
 	const ydoc = new Y.Doc();
 	const collaboration = {
-		identity: { id: 'self', name: 'Self', platform: 'node' },
+		replica: { id: 'self', platform: 'node' },
 		actions,
 		status: { phase: 'connected' },
 		whenConnected: Promise.resolve(),
@@ -40,7 +44,7 @@ function fakeEntry(
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	} as unknown as Collaboration;
+	} as Collaboration<typeof actions>;
 
 	return {
 		route: name,

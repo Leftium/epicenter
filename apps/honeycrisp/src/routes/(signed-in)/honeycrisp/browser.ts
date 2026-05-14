@@ -8,7 +8,6 @@ import {
 	attachEncryption,
 	attachOwnedBroadcastChannel,
 	attachRichText,
-	attachYjsSync,
 	createDisposableCache,
 	DateTimeString,
 	docGuid,
@@ -16,8 +15,8 @@ import {
 	type OpenWebSocket,
 	onLocalUpdate,
 	openCollaboration,
-	type PeerIdentity,
-	toWsUrl,
+	type Replica,
+	websocketUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -39,12 +38,12 @@ function noteBodyDocGuid({
 
 export function openHoneycrispBrowser({
 	userId,
-	peer,
+	replica,
 	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	peer: PeerIdentity;
+	replica: Replica;
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
@@ -67,10 +66,11 @@ export function openHoneycrispBrowser({
 		const body = attachRichText(ydoc);
 		const childIdb = encryption.attachIndexedDb(ydoc, { userId });
 		attachOwnedBroadcastChannel(ydoc, { userId });
-		const childSync = attachYjsSync(ydoc, {
-			url: toWsUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
+		const childSync = openCollaboration(ydoc, {
+			url: websocketUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
+			replica,
 		});
 
 		onLocalUpdate(ydoc, () => {
@@ -97,10 +97,10 @@ export function openHoneycrispBrowser({
 
 	const actions = createHoneycrispActions(tables);
 	const collaboration = openCollaboration(rootYdoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
+		url: websocketUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		identity: peer,
+		replica,
 		actions,
 	});
 

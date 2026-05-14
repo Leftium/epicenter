@@ -31,7 +31,7 @@ For the workspace sync, that glue lived in a Svelte component:
 
 ```ts
 const sync = attachSync(ydoc, {
-  url: (docId) => toWsUrl(`${APP_URLS.API}/workspaces/${docId}`),
+  url: (docId) => websocketUrl(`${APP_URLS.API}/workspaces/${docId}`),
   requiresToken: true,
 });
 
@@ -58,7 +58,7 @@ type AuthSource = {
 };
 
 attachSync(ydoc, {
-  url: (docId) => toWsUrl(`.../${docId}`),
+  url: (docId) => websocketUrl(`.../${docId}`),
   authSource: {
     get: () => auth.token,
     subscribe: (fn) => {
@@ -89,7 +89,7 @@ attachSync(ydoc, {
   url: (docId) => {
     const token = auth.token;       // re-read on every connect attempt
     if (!token) return null;        // null = park, don't connect
-    return toWsUrl(`.../${docId}?token=${token}`);
+    return websocketUrl(`.../${docId}?token=${token}`);
   },
 });
 ```
@@ -104,7 +104,7 @@ const sync = attachSync(ydoc, {
   url: (docId) => {
     const token = auth.token;
     if (!token) return null;
-    return toWsUrl(`${APP_URLS.API}/workspaces/${docId}`);
+    return websocketUrl(`${APP_URLS.API}/workspaces/${docId}`);
   },
   waitFor: idb.whenReady,
   awareness: awareness.raw,
@@ -115,7 +115,7 @@ const sync = attachSync(ydoc, {
   url: (docId) => {
     const token = auth.token;
     if (!token) return null;
-    return toWsUrl(`${APP_URLS.API}/docs/${docId}`);
+    return websocketUrl(`${APP_URLS.API}/docs/${docId}`);
   },
   waitFor: idb.whenReady,
 });
@@ -262,7 +262,7 @@ const sync = attachSync(ydoc, {
   url: (docId) => {
     const token = authCore.loadToken();
     if (!token) return null;
-    return toWsUrl(`${APP_URLS.API}/workspaces/${docId}`);
+    return websocketUrl(`${APP_URLS.API}/workspaces/${docId}`);
   },
   waitFor: idb.whenReady,
   awareness: awareness.raw,
@@ -276,7 +276,7 @@ const sync = attachSync(ydoc, {
   url: (docId) => {
     const token = authCore.loadToken();
     if (!token) return null;
-    return toWsUrl(`${APP_URLS.API}/docs/${docId}`);
+    return websocketUrl(`${APP_URLS.API}/docs/${docId}`);
   },
   waitFor: idb.whenReady,
 });

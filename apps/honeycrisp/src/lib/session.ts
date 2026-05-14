@@ -1,6 +1,6 @@
 import { requireIdentity } from '@epicenter/auth';
 import { createSession } from '@epicenter/svelte';
-import { getOrCreateInstallationId } from '@epicenter/workspace';
+import { createReplicaId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { openHoneycrispBrowser } from '../routes/(signed-in)/honeycrisp/browser';
 import { createHoneycrispState } from '../routes/(signed-in)/state';
@@ -10,9 +10,8 @@ export const session = createSession({
 	build: (identity) => {
 		const honeycrisp = openHoneycrispBrowser({
 			userId: identity.user.id,
-			peer: {
-				id: getOrCreateInstallationId(localStorage),
-				name: 'Honeycrisp',
+			replica: {
+				id: createReplicaId({ storage: localStorage }),
 				platform: 'web',
 			},
 			openWebSocket: auth.openWebSocket,

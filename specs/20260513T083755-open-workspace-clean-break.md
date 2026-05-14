@@ -45,7 +45,7 @@ A representative workspace factory today (`apps/fuji/src/routes/(signed-in)/fuji
 
 ```ts
 const sync = attachSync(ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+	url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 	waitFor: idb.whenLoaded,
 	getToken: () => auth.getToken(),
 });
@@ -493,7 +493,7 @@ ws.dispose();
 
 ```ts
 const ws = openWorkspace(ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+	url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 	waitFor: idb.whenLoaded,
 	getToken: () => auth.getToken(),
 	identity: { id: getOrCreateInstallationId(), name: 'Fuji', platform: 'web' },
@@ -575,7 +575,7 @@ const result = await peer.invoke(argv.action, parsedInput);
 const bodyDoc = new Y.Doc({ guid: entry.bodyDocGuid });
 const idb = attachIndexedDb(bodyDoc);
 const sync = attachYjsSync(bodyDoc, {
-	url: toWsUrl(`${APP_URLS.API}/docs/${entry.bodyDocGuid}`),
+	url: websocketUrl(`${APP_URLS.API}/docs/${entry.bodyDocGuid}`),
 	waitFor: idb.whenLoaded,
 	getToken: () => auth.getToken(),
 });

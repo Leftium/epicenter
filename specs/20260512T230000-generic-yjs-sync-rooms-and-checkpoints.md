@@ -67,7 +67,7 @@ const ydoc = new Y.Doc({ guid: 'epicenter.blog' });
 const tables = attachTables(ydoc, { posts });
 const idb = attachIndexedDb(ydoc);
 const sync = attachSync(ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+	url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 	waitFor: idb.whenLoaded,
 	openWebSocket,
 });
@@ -365,7 +365,7 @@ child content doc URL (currently /documents/*):
   apps/honeycrisp/src/routes/(signed-in)/honeycrisp/browser.ts (note body, gc: false locally)
 ```
 
-- [ ] **2.1** Add a `syncRoomUrl(apiUrl, roomId)` helper to `@epicenter/workspace` next to `toWsUrl`. It returns `toWsUrl(\`${apiUrl}/sync/${encodeURIComponent(roomId)}\`)`.
+- [ ] **2.1** Add a `syncRoomUrl(apiUrl, roomId)` helper to `@epicenter/workspace` next to `websocketUrl`. It returns `websocketUrl(\`${apiUrl}/sync/${encodeURIComponent(roomId)}\`)`.
 - [ ] **2.2** Replace every workspace URL above with `syncRoomUrl(APP_URLS.API, doc.ydoc.guid)`.
 - [ ] **2.3** Replace every child content doc URL with the same helper. Local docs stay `gc: false` (clients still want history-capable RAM model); server is `gc: true`. Documented and acceptable.
 - [ ] **2.4** Update the example URL in `packages/workspace/src/index.ts` JSDoc and any other references to `/workspaces/*` or `/documents/*` as sync endpoints in docs and guides.
@@ -575,7 +575,7 @@ Room ids may contain slashes or punctuation if derived from document paths. Prov
 
 ```ts
 function syncRoomUrl(apiUrl: string, roomId: string) {
-	return toWsUrl(`${apiUrl}/sync/${encodeURIComponent(roomId)}`);
+	return websocketUrl(`${apiUrl}/sync/${encodeURIComponent(roomId)}`);
 }
 ```
 

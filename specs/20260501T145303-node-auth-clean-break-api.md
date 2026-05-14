@@ -94,7 +94,7 @@ Node runtimes use a token adapter:
 
 ```ts
 const sync = attachSync(doc, {
-	url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+	url: websocketUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
 	getToken: createCredentialTokenGetter({ serverOrigin: apiUrl }),
 });
 ```

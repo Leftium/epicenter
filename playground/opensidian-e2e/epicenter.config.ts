@@ -37,7 +37,7 @@ import {
 	attachSync,
 	createDisposableCache,
 	defineMutation,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
 import {
@@ -78,7 +78,7 @@ const persistence = attachYjsLog(ydoc, {
 });
 
 const sync = attachSync(ydoc, {
-	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
+	url: websocketUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 	waitFor: Promise.resolve(),
 	// TODO(claude-review): `SyncAttachmentConfig` has no `getToken` field; the
 	// supported auth field is `bearerToken?: () => string | null`. Real apps use

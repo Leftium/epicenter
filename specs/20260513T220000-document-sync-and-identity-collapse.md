@@ -285,10 +285,10 @@ This wave is the one that needs the server-side reviewer per Open Question #1.
 
 ### Wave 5: Verify clean break (Prove)
 
-- [ ] **5.1** Grep workspace package and apps for `attachYjsSync`. Confirm zero references outside the file itself.
-- [ ] **5.2** Grep workspace package for `PeerIdentity`. Confirm zero references.
-- [ ] **5.3** Grep workspace package for `peer:` workspace constructor arguments. Confirm all migrated to `replica:`.
-- [ ] **5.4** Devtools network check: awareness frames over the wire carry the envelope; `subject` is the auth-derived value, not whatever the client might have tried to write.
+- [~] **5.1** `attachYjsSync` still has callers in fuji/honeycrisp browser bundles (per-row content docs) and in `apps/{honeycrisp,opensidian,zhongwen}/blocks/script.ts` (daemon-side sync scripts). Wave 6 folds the call-site migration into the deletion pass (each caller switches to `openCollaboration(ydoc, { ..., actions: {} })` first, then the file goes).
+- [x] **5.2** `PeerIdentity` only survives inside `packages/workspace/src/document/peer-identity.ts` and its one re-export in `packages/workspace/src/index.ts`; no app references remain.
+- [x] **5.3** `peer:` in workspace constructor arguments: zero remaining call sites (`openFujiBrowser`, `openHoneycrispBrowser`, `openOpensidianBrowser`, `openTabManagerBrowser` all take `replica:`).
+- [ ] **5.4** Devtools wire check is a manual smoke deferred to the user. Protocol-level forgery resistance is covered by `sync-handlers.test.ts` ("broadcast envelope stamps room.subject, ignoring any subject the client encoded inside the payload").
 
 ### Wave 6: Delete old paths (Remove)
 

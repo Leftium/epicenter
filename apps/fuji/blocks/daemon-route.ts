@@ -3,7 +3,6 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachEncryption,
 	openCollaboration,
-	type ProjectDir,
 	roomWsUrl,
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
@@ -14,7 +13,6 @@ import {
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
 	attachYjsLog,
-	connectDaemonActions,
 	hashClientId,
 	markdownPath,
 	openWriterSqlite,
@@ -29,10 +27,8 @@ import {
 	fujiTables,
 } from './workspace.js';
 
-export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
-
 export function defineFujiDaemon({
-	route = DEFAULT_FUJI_DAEMON_ROUTE,
+	route = 'fuji',
 }: {
 	route?: string;
 } = {}) {
@@ -78,17 +74,4 @@ export function defineFujiDaemon({
 			};
 		},
 	} satisfies DaemonRouteDefinition;
-}
-
-export function connectFujiDaemonActions({
-	route = DEFAULT_FUJI_DAEMON_ROUTE,
-	projectDir,
-}: {
-	route?: string;
-	projectDir?: ProjectDir;
-} = {}) {
-	return connectDaemonActions<ReturnType<typeof createFujiActions>>({
-		route,
-		projectDir,
-	});
 }

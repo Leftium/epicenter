@@ -39,7 +39,7 @@ export type RunSyncStatus =
  * in-band lets the renderer set `process.exitCode` from a single switch,
  * even when the result arrived over IPC.
  *
- * - `UsageError`: bad action path / missing sync; renderer exitCode=1.
+ * - `UsageError`: bad action key / missing sync; renderer exitCode=1.
  * - `RuntimeError`: action returned Err locally; renderer exitCode=2.
  * - `PeerNotFound`: `--peer <target>` did not resolve within `--wait`;
  *   renderer exitCode=3.

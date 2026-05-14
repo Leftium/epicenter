@@ -46,7 +46,8 @@
 		reconnecting = true;
 		try {
 			const { error } = await auth.startSignIn();
-			if (error) toast.error('Failed to reconnect', { description: error.message });
+			if (error)
+				toast.error('Failed to reconnect', { description: error.message });
 		} finally {
 			reconnecting = false;
 		}

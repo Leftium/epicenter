@@ -55,11 +55,7 @@ type VaultSkill = { name: string; content: string };
  * const vaultLayer = skills.vaultSkills;
  * ```
  */
-export function createSkillState({
-	binding,
-}: {
-	binding: OpensidianBrowser;
-}) {
+export function createSkillState({ binding }: { binding: OpensidianBrowser }) {
 	const globalSkillsWorkspace = openGlobalSkillsWorkspace();
 	let globalSkills = $state<GlobalSkill[]>([]);
 	let vaultSkills = $state<VaultSkill[]>([]);

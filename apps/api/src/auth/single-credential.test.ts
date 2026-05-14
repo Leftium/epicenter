@@ -70,8 +70,7 @@ test('only-WS-bearer with no remaining protocols drops the header entirely', asy
 test('two WS bearer entries are rejected as multiple_credentials', async () => {
 	const res = await createTestApp().request('/', {
 		headers: {
-			'sec-websocket-protocol':
-				'epicenter, bearer.token-1, bearer.token-2',
+			'sec-websocket-protocol': 'epicenter, bearer.token-1, bearer.token-2',
 		},
 	});
 
@@ -81,7 +80,7 @@ test('two WS bearer entries are rejected as multiple_credentials', async () => {
 test('mixed-case Upgrade with a WS bearer still strips the bearer entry', async () => {
 	const res = await createTestApp().request('/', {
 		headers: {
-			'upgrade': 'WebSocket',
+			upgrade: 'WebSocket',
 			'sec-websocket-protocol': 'epicenter, bearer.token-1',
 		},
 	});

@@ -80,7 +80,6 @@
 export type {
 	Action,
 	ActionManifest,
-	ActionMeta,
 	ActionRegistry,
 } from './shared/actions';
 export {
@@ -91,8 +90,6 @@ export {
 	invokeAction,
 	invokeActionForRpc,
 	isAction,
-	isMutation,
-	isQuery,
 	toActionMeta,
 } from './shared/actions';
 
@@ -210,33 +207,6 @@ export {
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
 export {
-	attachYjsSync,
-	type AttachYjsSyncConfig,
-	type YjsSyncAttachment,
-} from './document/attach-yjs-sync.js';
-export {
-	type OpenWebSocket,
-	type SyncError,
-	SyncFailedError,
-	type SyncFailedReason,
-	type SyncStatus,
-	SyncSupervisorError,
-	toWsUrl,
-} from './document/internal/sync-supervisor.js';
-export {
-	type Collaboration,
-	type OpenCollaborationConfig,
-	openCollaboration,
-} from './document/open-collaboration.js';
-export {
-	type Peer,
-	PeerLeftError,
-	type PeersSurface,
-	type RemoteCallError,
-	SelfInvocationError,
-	waitForPeer,
-} from './document/peer.js';
-export {
 	attachReadonlyTable,
 	attachReadonlyTables,
 	attachTable,
@@ -267,11 +237,38 @@ export {
 	type Timeline,
 	type TimelineEntry,
 } from './document/attach-timeline/index.js';
+export {
+	type AttachYjsSyncConfig,
+	attachYjsSync,
+	type YjsSyncAttachment,
+} from './document/attach-yjs-sync.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
+export {
+	type OpenWebSocket,
+	type SyncError,
+	SyncFailedError,
+	type SyncFailedReason,
+	type SyncStatus,
+	SyncSupervisorError,
+	toWsUrl,
+} from './document/internal/sync-supervisor.js';
 export { KV_KEY, type KvKey, TableKey } from './document/keys.js';
 export { onLocalUpdate } from './document/on-local-update.js';
+export {
+	type Collaboration,
+	type OpenCollaborationConfig,
+	openCollaboration,
+} from './document/open-collaboration.js';
+export {
+	type Peer,
+	PeerLeftError,
+	type PeersSurface,
+	type RemoteCallError,
+	SelfInvocationError,
+	waitForPeer,
+} from './document/peer.js';
 export {
 	type PeerAwarenessState,
 	PeerIdentity,

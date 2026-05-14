@@ -106,11 +106,11 @@ const collaboration = openCollaboration(ydoc, {
 });
 
 // Local invocation: direct function call against the registry.
-await collaboration.actions.tabs.close({ tabIds: [1, 2] });
+await collaboration.actions.tabs_close({ tabIds: [1, 2] });
 
-// Remote invocation: find by stable peer id, dispatch by dot-path.
+// Remote invocation: find by stable peer id, dispatch by snake_case key.
 const phone = collaboration.peers.find('phone');
-await phone?.invoke('tabs.close', { tabIds: [1, 2] });
+await phone?.invoke('tabs_close', { tabIds: [1, 2] });
 ```
 
 ### `attachYjsSync`
@@ -138,8 +138,8 @@ openCollaboration(ydoc, { url, identity, actions, ... })
         │
         ├─ build awareness  ─────────────────────┐
         │  attachAwareness(awareness, {          │
-        │    schema: { identity, actionPaths },  │
-        │    initial: { identity, actionPaths }  │
+        │    schema: { identity, actionKeys },  │
+        │    initial: { identity, actionKeys }  │
         │  })                                    │
         │                                        │
         ├─ start sync supervisor ────────────────┤
@@ -170,17 +170,17 @@ The returned `Collaboration<TActions>` exposes:
 | `reconnect`       | Manually wake the supervisor (resets backoff)                       |
 | `[Symbol.dispose]`| Sugar for `ydoc.destroy()`; cascades through every attachment       |
 
-### `actionPaths` is alphabetically sorted, computed once
+### `actionKeys` is alphabetically sorted, computed once
 
-Every peer publishes its full set of action dot-paths in the awareness state, sorted alphabetically. Because two peers running the same code produce byte-identical arrays, awareness updates do not ping-pong on irrelevant ordering differences.
+Every peer publishes its full set of action keys in the awareness state, sorted alphabetically. Because two peers running the same code produce byte-identical arrays, awareness updates do not ping-pong on irrelevant ordering differences.
 
-`actionPaths` enables capability-based picks without an extra roundtrip:
+`actionKeys` enables capability-based picks without an extra roundtrip:
 
 ```ts
 const recorder = collaboration.peers.list().find((p) =>
-    p.actionPaths.includes('whispering.startRecording'),
+    p.actionKeys.includes('whispering_start_recording'),
 );
-await recorder?.invoke('whispering.startRecording', { deviceId });
+await recorder?.invoke('whispering_start_recording', { deviceId });
 ```
 
 ## The wire: three planes on one WebSocket
@@ -208,11 +208,11 @@ Each peer publishes:
 ```ts
 {
     identity: { id, name, platform },
-    actionPaths: ['tabs.close', 'tabs.list', 'whispering.startRecording', ...],
+    actionKeys: ['tabs_close', 'tabs_list', 'whispering_start_recording', ...],
 }
 ```
 
-`actionPaths` is the alphabetically sorted dot-path listing computed at workspace startup; full schemas (input shapes, descriptions) are not in awareness. Apps that need them call `peer.describe()` on demand.
+`actionKeys` is the alphabetically sorted snake_case key listing computed at workspace startup; full schemas (input shapes, descriptions) are not in awareness. Apps that need them call `peer.describe()` on demand.
 
 Custom awareness fields (cursors, typing indicators) are not added through `openCollaboration`; if you want them on the same socket, attach a separate `Awareness` instance and reuse the supervisor pattern. The standard fields above are owned by `openCollaboration` and reserved.
 
@@ -222,7 +222,7 @@ Two distinct request kinds keep app behavior and collaboration runtime behavior 
 
 ```ts
 export const RPC_TYPE = {
-    ACTION_REQUEST: 0,   // app action invocation by dot path ('tabs.close', ...)
+    ACTION_REQUEST: 0,   // app action invocation by snake_case key ('tabs_close', ...)
     RESPONSE:       1,   // shared envelope for both request kinds
     RUNTIME_REQUEST: 2,  // closed-set runtime verb ('describe-actions')
 } as const;
@@ -230,7 +230,7 @@ export const RPC_TYPE = {
 
 | Sub-type        | Authored by | Carries     | Surface                       |
 | --------------- | ----------- | ----------- | ----------------------------- |
-| ACTION_REQUEST  | App         | dot-path    | `peer.invoke(path, input)`    |
+| ACTION_REQUEST  | App         | snake_case key    | `peer.invoke(path, input)`    |
 | RUNTIME_REQUEST | Framework   | runtime verb| `peer.describe()` and friends |
 | RESPONSE        | (envelope)  | result      | shared by both                |
 
@@ -267,7 +267,7 @@ type Peer<TMap = unknown> = {
     readonly id: string;            // stable identity.id
     readonly identity: PeerIdentity;
     readonly clientID: number;       // session-local; do not persist
-    readonly actionPaths: readonly string[];
+    readonly actionKeys: readonly string[];
     invoke<TPath>(path, input, options?): Promise<Result<...>>;
     describe(options?): Promise<Result<ActionManifest, ...>>;
 };
@@ -289,19 +289,19 @@ const phone = await waitForPeer(collaboration.peers, 'phone', {
     timeoutMs: 5000,
 });
 if (!phone) return notFoundUi();
-await phone.invoke('tabs.close', { tabIds: [1] });
+await phone.invoke('tabs_close', { tabIds: [1] });
 ```
 
 Resolves with the `Peer` on first sighting, or `undefined` on timeout. `timeoutMs <= 0` is a synchronous one-shot lookup wrapped in a promise.
 
 ### Capability-based picks
 
-`peers.list()` plus `actionPaths` covers fan-out without any extra surface:
+`peers.list()` plus `actionKeys` covers fan-out without any extra surface:
 
 ```ts
 const recorders = collaboration.peers
     .list()
-    .filter((p) => p.actionPaths.includes('whispering.startRecording'));
+    .filter((p) => p.actionKeys.includes('whispering_start_recording'));
 ```
 
 No dedicated `peers.hosts(path)` helper exists; standard array methods are sufficient.
@@ -314,7 +314,7 @@ type RemoteCallError = RpcError | SelfInvocationError | PeerLeftError;
 
 | Variant                       | Source                          | When                                    |
 | ----------------------------- | ------------------------------- | --------------------------------------- |
-| `RpcError.ActionNotFound`     | `@epicenter/sync`               | Bad action path on the remote          |
+| `RpcError.ActionNotFound`     | `@epicenter/sync`               | Bad action key on the remote           |
 | `RpcError.Timeout`            | `@epicenter/sync`               | No response within the timeout         |
 | `RpcError.PeerOffline`        | `@epicenter/sync`               | Server says the target is not connected |
 | `RpcError.ActionFailed`       | `@epicenter/sync`               | Remote handler threw or returned Err    |
@@ -422,7 +422,11 @@ End-to-end. A fuji-running script asks `macbook-pro` (a tab-manager peer) for it
            │                                               │
            │                                               │ 6. switch(rpc.verb) {
            │                                               │      case 'describe-actions':
-           │                                               │        return Ok(describeActions(userActions))
+           │                                               │        return Ok(Object.fromEntries(
+           │                                               │          Object.entries(userActions).map(
+           │                                               │            ([key, action]) => [key, toActionMeta(action)]
+           │                                               │          )
+           │                                               │        ))
            │                                               │    }
            │                                               │
            │ ◄── encodeRpcResponse ───────────────────    │
@@ -447,7 +451,7 @@ End-to-end. A fuji-running script asks `macbook-pro` (a tab-manager peer) for it
 `peer.invoke` and `peer.describe` race the dispatch against a peer-removed signal. The dispatch helper subscribes to `awareness.on('change', ...)` for the lifetime of the call; if the target's clientID disappears from awareness before the response arrives, the in-flight Promise resolves with `PeerLeftError.PeerLeft({ peerId, action })` instead of waiting out the RPC timeout.
 
 ```
-peer.invoke('tabs.close', { tabIds: [1] })
+peer.invoke('tabs_close', { tabIds: [1] })
   │
   ├─ subscribe: awareness.on('change', onChange)
   ├─ check:    peer still in readPeers()? If no → PeerLeft (synchronous)
@@ -462,10 +466,10 @@ peer.invoke('tabs.close', { tabIds: [1] })
 
 ```
 t=0           openCollaboration(ydoc, { url, identity, actions, ... })
-              ├─ Object.freeze(actionPaths.sort())     // computed once
+              ├─ Object.freeze(actionKeys.sort())     // computed once
               ├─ new Awareness(ydoc)
               ├─ attachAwareness(awareness, { schema, initial })
-              │   └─ awareness.setLocalState({ identity, actionPaths })
+              │   └─ awareness.setLocalState({ identity, actionKeys })
               │
               ├─ createSyncSupervisor(ydoc, {
               │     awareness, onRpcRequest, onRuntimeRequest, ...
@@ -495,4 +499,4 @@ t=N+δ         whenConnected resolves. Apps can call collaboration.peers.list().
 
 ## Mental model in one paragraph
 
-`openCollaboration(ydoc, config)` is the wire and the supervisor for a participating workspace. It builds an `Awareness` for presence (`identity` + `actionPaths`), starts the supervisor loop that owns the WebSocket and runs the Yjs sync protocol, and exposes a `peers` surface backed by two wire kinds: `peer.invoke` rides ACTION_REQUEST (app actions by dot-path), `peer.describe` rides RUNTIME_REQUEST (closed-set framework verbs). Self is filtered at two layers and reachable only as `collaboration.actions.*` (the live local registry, called directly). Errors are typed: `RpcError | SelfInvocationError | PeerLeftError` as `RemoteCallError`. Lifecycle is supervisor-driven (exponential backoff with jitter, 60 s pings, 90 s liveness, permanent-park on close code 4401), and `whenDisposed` resolves once the cascade from `ydoc.destroy()` finishes. Content documents that need bytes-only sync use `attachYjsSync(ydoc, config)`: same supervisor lifecycle, no presence, no RPC.
+`openCollaboration(ydoc, config)` is the wire and the supervisor for a participating workspace. It builds an `Awareness` for presence (`identity` + `actionKeys`), starts the supervisor loop that owns the WebSocket and runs the Yjs sync protocol, and exposes a `peers` surface backed by two wire kinds: `peer.invoke` rides ACTION_REQUEST (app actions by snake_case key), `peer.describe` rides RUNTIME_REQUEST (closed-set framework verbs). Self is filtered at two layers and reachable only as `collaboration.actions.*` (the live local registry, called directly). Errors are typed: `RpcError | SelfInvocationError | PeerLeftError` as `RemoteCallError`. Lifecycle is supervisor-driven (exponential backoff with jitter, 60 s pings, 90 s liveness, permanent-park on close code 4401), and `whenDisposed` resolves once the cascade from `ydoc.destroy()` finishes. Content documents that need bytes-only sync use `attachYjsSync(ydoc, config)`: same supervisor lifecycle, no presence, no RPC.

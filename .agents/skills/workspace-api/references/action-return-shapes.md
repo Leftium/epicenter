@@ -8,16 +8,16 @@ and how the wrapping happens at each boundary.
 ## The three call contexts
 
 ```
- 1. LOCAL      workspace.actions.tabs.close({...})
-                (same process, direct function call — zero wrapping)
+ 1. LOCAL      workspace.actions.tabs_close({...})
+                (same process, direct function call, zero wrapping)
 
- 2. ADAPTER    epicenter run tabs.close            (CLI)
+ 2. ADAPTER    epicenter run app.tabs_close        (CLI)
                LLM calls tabs_close tool           (AI bridge)
                 (in-process, formatter peels the Result envelope)
 
- 3. REMOTE     createRemoteActions(...).tabs.close({...})
-               sync.rpc(peer, 'tabs.close', ...)
-                (crosses the wire — always Result-wrapped)
+ 3. REMOTE     createRemoteActions(...).tabs_close({...})
+               sync.rpc(peer, 'tabs_close', ...)
+                (crosses the wire, always Result-wrapped)
 ```
 
 ## One handler, every caller's view
@@ -25,7 +25,7 @@ and how the wrapping happens at each boundary.
 Given this handler:
 
 ```typescript
-tabs.close: defineMutation({
+tabs_close: defineMutation({
   input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
   handler: async ({ tabIds }) => {
     const { error } = await tryAsync({
@@ -125,7 +125,7 @@ Am I calling locally or remotely?
 
 ```typescript
 // HANDLER
-bookmarks.removeAll: defineMutation({
+bookmarks_remove_all: defineMutation({
   handler: () => {
     const all = tables.bookmarks.getAllValid();
     batch(() => {
@@ -136,10 +136,10 @@ bookmarks.removeAll: defineMutation({
 })
 
 // LOCAL
-const { removedCount } = workspace.actions.bookmarks.removeAll();
+const { removedCount } = workspace.actions.bookmarks_remove_all();
 
 // REMOTE (createRemoteActions)
-const { data, error } = await remote.bookmarks.removeAll();
+const { data, error } = await remote.bookmarks_remove_all();
 if (error) toast.error('Operation failed');  // only transport/server bug
 else toast.success(`Removed ${data.removedCount}`);
 ```
@@ -148,16 +148,16 @@ else toast.success(`Removed ${data.removedCount}`);
 
 ```typescript
 // LOCAL
-const { data, error } = await workspace.actions.tabs.close({ tabIds: [1] });
+const { data, error } = await workspace.actions.tabs_close({ tabIds: [1] });
 if (error) {
-  // error.name === 'BrowserApiFailed' — known, typed
+  // error.name === 'BrowserApiFailed', known and typed
   toast.error(error.message);
   return;
 }
 toast.success(`Closed ${data.closedCount}`);
 
 // REMOTE (createRemoteActions)
-const { data, error } = await remote.tabs.close({ tabIds: [1] });
+const { data, error } = await remote.tabs_close({ tabIds: [1] });
 if (error) {
   switch (error.name) {
     case 'BrowserApiFailed': toast.error(error.message); break;
@@ -174,7 +174,7 @@ by `ActionFailed`.
 
 ```typescript
 // HANDLER
-devices.rename: defineMutation({
+devices_rename: defineMutation({
   input: Type.Object({ id: Type.String(), name: Type.String() }),
   handler: ({ id, name }) => {
     const existing = tables.devices.get(id);
@@ -184,15 +184,15 @@ devices.rename: defineMutation({
   },
 })
 
-// LOCAL — standard JS try/catch
+// LOCAL: standard JS try/catch
 try {
-  workspace.actions.devices.rename({ id, name });
+  workspace.actions.devices_rename({ id, name });
 } catch (err) {
   toast.error(String(err));
 }
 
-// REMOTE — the throw becomes ActionFailed on the wire
-const { data, error } = await remote.devices.rename({ id, name });
+// REMOTE: the throw becomes ActionFailed on the wire
+const { data, error } = await remote.devices_rename({ id, name });
 if (error) {
   // error.name === 'ActionFailed' — can't distinguish "not found" from
   // "server crashed". If that distinction matters, promote to Err.

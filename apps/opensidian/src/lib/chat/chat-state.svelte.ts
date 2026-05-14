@@ -4,6 +4,13 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
+import {
+	type ChatMessageId,
+	type Conversation,
+	type ConversationId,
+	generateChatMessageId,
+	generateConversationId,
+} from 'opensidian';
 import type { JsonValue } from 'wellcrafted/json';
 import {
 	DEFAULT_MODEL,
@@ -20,13 +27,6 @@ import { toUiMessage } from '$lib/chat/ui-message';
 import type { OpensidianBrowser } from '$lib/opensidian/browser';
 import { searchParams } from '$lib/search-params.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
-import {
-	type ChatMessageId,
-	type Conversation,
-	type ConversationId,
-	generateChatMessageId,
-	generateConversationId,
-} from 'opensidian';
 
 function getStringValue(value: JsonValue | undefined, fallback: string) {
 	return typeof value === 'string' ? value : fallback;

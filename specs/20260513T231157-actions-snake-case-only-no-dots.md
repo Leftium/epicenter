@@ -1,7 +1,7 @@
 # Actions: Snake Case Only, No Dots, No Translation
 
 **Date**: 2026-05-13
-**Status**: Proposed
+**Status**: Implemented
 **Author**: Braden + Claude
 **Supersedes** (the key-format portion of): `20260513T210000-actions-path-first-clean-break.md`
 
@@ -485,7 +485,11 @@ Delete swap code, swap tests, "projection" JSDoc paragraphs, and the `ACTION_NAM
 
 ### Key validation timing
 
-Compile-time validation via template-literal types on `Record<string, T>` keys is possible but adds compile time and produces poor error messages for invalid keys. Runtime check at `openCollaboration` startup is cheap, exact, and produces a readable error including the offending key. Use runtime.
+Authoring-time validation lives in `defineActions(...)`, which sees literal
+registry keys and rejects dotted, camelCase, leading-digit, and leading-underscore
+keys at the edit site. Runtime validation still runs in `openCollaboration`
+because that public boundary accepts an `ActionRegistry` and callers can bypass
+the helper with casts, dynamic objects, or plain JavaScript.
 
 ### Hyphens
 
@@ -536,16 +540,45 @@ Use a longer prefix. `tabs_groups_create`, `tabs_groups_remove`, `tabs_groups_se
 - [x] `ACTION_KEY_PATTERN` defined in `shared/actions.ts` and exported
 - [x] Validation runs in `openCollaboration` and throws on invalid keys
 - [x] `DotsToUnderscores<S>`, `ACTION_NAME_SEPARATOR`, and both `replaceAll('.', '_')` sites deleted
-- [ ] All app `create*Actions` factories use snake_case keys
-- [ ] All call sites (peer.invoke, daemon client.run, local `actions.x_y()`) updated
+- [x] All app `create*Actions` factories use snake_case keys
+- [x] All call sites (peer.invoke, daemon client.run, local `actions.x_y()`) updated
 - [x] Tests added: regex validator, AI tool name equals key
 - [x] Tests removed: dot-to-underscore swap, underscore collision throw
 - [x] Module JSDoc in `shared/actions.ts` no longer mentions dot paths or projection
 - [x] `tool-bridge.ts` JSDoc no longer mentions dot-to-underscore swap
-- [ ] grep for dotted keys returns no hits in `apps/` or `packages/`
+- [x] grep audit has no real dotted action-key hits in `apps/` or `packages/`
 
 ## One-line summary for commit message
 
 ```
 refactor(actions): snake_case action keys end-to-end; remove dot-to-underscore swap
 ```
+
+## Review
+
+**Completed**: 2026-05-13
+**Branch**: `codex/sync-room-plus-stacked-refactors`
+
+### Summary
+
+Action keys are now authored as lowercase snake_case and cross the local,
+daemon, RPC, CLI, and AI boundaries without dot-to-underscore translation.
+`defineActions(...)` is the authoring helper for typed registries, while
+`openCollaboration(...)` remains the runtime guard for untyped or casted input.
+
+### Deviations from Spec
+
+- Added `defineActions(...)` so literal registry keys fail at compile time as
+  well as runtime. This is the right type location because `ActionRegistry =
+  Record<string, Action>` cannot validate object literal keys on its own.
+- Renamed the peer awareness action listing from `actionPaths` to `actionKeys`
+  to remove the last public surface that taught the old path vocabulary.
+
+### Verification
+
+- `bun test packages/workspace`
+- `bun test packages/cli/src/load-config.test.ts`
+- `bun test packages/workspace/src/document/peer.test.ts packages/workspace/src/document/open-collaboration.test.ts packages/workspace/src/daemon/run-handler.test.ts packages/cli/src/commands/list.test.ts packages/cli/src/commands/run-peer-errors.test.ts`
+- `bun run typecheck` in `packages/workspace`
+- `bun run typecheck` in `packages/sync`
+- `bun x tsc --noEmit -p packages/cli/tsconfig.json`

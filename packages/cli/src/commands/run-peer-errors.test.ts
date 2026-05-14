@@ -36,19 +36,16 @@ describe('emitRemoteCallError', () => {
 		cap = captureErrors();
 		emitRemoteCallError(
 			'macbook-pro',
-			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
+			RpcError.ActionNotFound({ action: 'tabs_close_all' }).error,
 		);
 		expect(cap.lines).toEqual([
-			'error: ActionNotFound "tabs.closeAll" on macbook-pro',
+			'error: ActionNotFound "tabs_close_all" on macbook-pro',
 		]);
 	});
 
 	test('Timeout reports ms and peer', () => {
 		cap = captureErrors();
-		emitRemoteCallError(
-			'macbook-pro',
-			RpcError.Timeout({ ms: 5000 }).error,
-		);
+		emitRemoteCallError('macbook-pro', RpcError.Timeout({ ms: 5000 }).error);
 		expect(cap.lines).toEqual(['error: timeout after 5000ms on macbook-pro']);
 	});
 
@@ -64,11 +61,11 @@ describe('emitRemoteCallError', () => {
 			'macbook-pro',
 			PeerLeftError.PeerLeft({
 				peerId: 'macbook-pro',
-				action: 'tabs.close',
+				action: 'tabs_close',
 			}).error,
 		);
 		expect(cap.lines).toEqual([
-			'error: peer "macbook-pro" disconnected before "tabs.close" responded',
+			'error: peer "macbook-pro" disconnected before "tabs_close" responded',
 		]);
 	});
 
@@ -76,11 +73,9 @@ describe('emitRemoteCallError', () => {
 		cap = captureErrors();
 		emitRemoteCallError(
 			'self',
-			SelfInvocationError.SelfInvocation({ action: 'tabs.list' }).error,
+			SelfInvocationError.SelfInvocation({ action: 'tabs_list' }).error,
 		);
-		expect(cap.lines).toEqual([
-			'error: cannot RPC to self for "tabs.list"',
-		]);
+		expect(cap.lines).toEqual(['error: cannot RPC to self for "tabs_list"']);
 	});
 
 	test('ActionFailed surfaces underlying cause', () => {
@@ -88,21 +83,18 @@ describe('emitRemoteCallError', () => {
 		emitRemoteCallError(
 			'macbook-pro',
 			RpcError.ActionFailed({
-				action: 'tabs.close',
+				action: 'tabs_close',
 				cause: new Error('Tab 99 not found'),
 			}).error,
 		);
 		expect(cap.lines).toEqual([
-			'error: "tabs.close" failed on macbook-pro: Tab 99 not found',
+			'error: "tabs_close" failed on macbook-pro: Tab 99 not found',
 		]);
 	});
 
 	test('Disconnected', () => {
 		cap = captureErrors();
-		emitRemoteCallError(
-			'macbook-pro',
-			RpcError.Disconnected().error,
-		);
+		emitRemoteCallError('macbook-pro', RpcError.Disconnected().error);
 		expect(cap.lines).toEqual([
 			'error: connection lost before macbook-pro responded',
 		]);

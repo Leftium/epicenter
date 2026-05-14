@@ -5,8 +5,8 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { auth } from '$platform/auth';
 	import { requireHoneycrisp } from '$lib/session';
+	import { auth } from '$platform/auth';
 	import FolderMenuItem from '../components/FolderMenuItem.svelte';
 
 	const honeycrisp = requireHoneycrisp();

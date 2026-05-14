@@ -400,7 +400,7 @@ export function stateVectorsEqual(a: Uint8Array, b: Uint8Array): boolean {
  * Two distinct request kinds keep app behavior and collaboration runtime
  * behavior on separate planes:
  *
- *   ACTION_REQUEST   app action invocation by dot path (`tabs.close`, ...)
+ *   ACTION_REQUEST   app action invocation by snake_case key (`tabs_close`, ...)
  *   RUNTIME_REQUEST  runtime verb owned by the collaboration layer
  *                    (introspection, capability, version, ...) — never
  *                    authored by the app
@@ -408,7 +408,7 @@ export function stateVectorsEqual(a: Uint8Array, b: Uint8Array): boolean {
  * Both share the RESPONSE envelope.
  */
 export const RPC_TYPE = {
-	/** Client → DO → target peer: invoke an app action by dot path. */
+	/** Client → DO → target peer: invoke an app action by snake_case key. */
 	ACTION_REQUEST: 0,
 	/** Target peer → DO → requester: shared result envelope for both request kinds. */
 	RESPONSE: 1,
@@ -452,7 +452,7 @@ export type DecodedRpcMessage =
 	  };
 
 /**
- * Encode an RPC ACTION_REQUEST message (app action invocation by dot path).
+ * Encode an RPC ACTION_REQUEST message (app action invocation by snake_case key).
  *
  * Wire format:
  * `[varuint: 101] [varuint: 0=ACTION_REQUEST] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: action] [varUint8Array: JSON input]`
@@ -460,7 +460,7 @@ export type DecodedRpcMessage =
  * @param options.requestId - Monotonic counter scoped to the connection
  * @param options.targetClientId - Awareness clientId of the target peer
  * @param options.requesterClientId - Awareness clientId of the sender (for response routing)
- * @param options.action - Dot-path action name (e.g. 'tabs.close')
+ * @param options.action - Snake_case action key (e.g. 'tabs_close')
  * @param options.input - Action input (serialized as JSON)
  * @returns Encoded RPC ACTION_REQUEST message
  */
@@ -495,7 +495,7 @@ export function encodeRpcActionRequest({
  * Identical routing fields to an ACTION_REQUEST (requestId / targetClientId /
  * requesterClientId), so the DO forwards it via the same blind-route path.
  * The payload is a closed-set `verb` string and nothing else: runtime verbs
- * are wire-distinct from app action paths and don't share their input shape.
+ * are wire-distinct from app action keys and don't share their input shape.
  *
  * Wire format:
  * `[varuint: 101] [varuint: 2=RUNTIME_REQUEST] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: verb]`

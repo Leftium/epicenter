@@ -154,7 +154,9 @@ export type SyncSupervisorConfig = {
 	 * calls this for every inbound ACTION_REQUEST and sends the resolved
 	 * Result back over the wire.
 	 */
-	onActionRequest?: (rpc: IncomingActionRequest) => Promise<Result<unknown, unknown>>;
+	onActionRequest?: (
+		rpc: IncomingActionRequest,
+	) => Promise<Result<unknown, unknown>>;
 	/**
 	 * Optional incoming runtime-verb dispatcher. When omitted, inbound runtime
 	 * requests receive `RpcError.ActionNotFound`. When provided, the supervisor

@@ -8,7 +8,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
                  +--------+--------------------------------------------------+
                  | Verb   | Workspace primitive                              |
                  +--------+--------------------------------------------------+
-   Enumerate     | list   | describeActions(collaboration.actions)           |
+   Enumerate     | list   | Object.entries(collaboration.actions)            |
    Invoke        | run    | invokeAction(...) | peer.invoke(path, input)     |
    Presence      | peers  | collaboration.peers.list()                       |
                  +--------+--------------------------------------------------+
@@ -56,25 +56,25 @@ epicenter up -C examples/notes-cross-peer/peer-b &
 
 # list: what actions are exposed on this device
 epicenter list                                      # full tree
-epicenter list tabManager.tabs                      # subtree
-epicenter list tabManager.tabs.open                 # action detail with JSON input shape
+epicenter list tabManager                           # route subtree
+epicenter list tabManager.tabs_open                 # action detail with JSON input shape
 
 # run: do one (locally, or on a remote peer with --peer)
-epicenter run tabManager.tabs.list
-epicenter run tabManager.tabs.open '{"url":"https://..."}'
-epicenter run tabManager.tabs.open @payload.json
-cat payload.json | epicenter run tabManager.tabs.open
-epicenter run tabManager.tabs.list --peer 0xabc
+epicenter run tabManager.tabs_list
+epicenter run tabManager.tabs_open '{"url":"https://..."}'
+epicenter run tabManager.tabs_open @payload.json
+cat payload.json | epicenter run tabManager.tabs_open
+epicenter run tabManager.tabs_list --peer 0xabc
 
 # peers: who is online right now (awareness snapshot)
 epicenter peers
 epicenter peers -C examples/notes-cross-peer/peer-b
 ```
 
-`run` resolves the first path segment against the hosted routes declared by
-`epicenter.config.ts`; everything after walks through `workspace.actions` until
-it hits a `defineQuery` / `defineMutation` action. With `--peer`, the route
-prefix selects the local RPC attachment, then the inner path is sent to the
+`run` resolves the route prefix against the hosted routes declared by
+`epicenter.config.ts`; the suffix is the snake_case key in
+`workspace.actions`. With `--peer`, the route prefix selects the local RPC
+attachment, then the action key is sent to the
 remote peer.
 
 ### Local vs. remote
@@ -86,7 +86,7 @@ target moves.
 
 Fan-out across peers (e.g. "who exposes action X?") is a five-line
 script that walks `collaboration.peers.list()` and calls `peer.describe()`
-(or filters `peer.actionPaths` directly when full schemas aren't needed).
+(or filters `peer.actionKeys` directly when full schemas aren't needed).
 The CLI deliberately does not grow a flag for it.
 
 Peer awareness has a ~30s liveness window: a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--wait <ms>` expires (default 5000). `peers` reads the current awareness snapshot one-shot.
@@ -108,7 +108,7 @@ Scripts can distinguish these cases without parsing stderr:
 
 | Code | Meaning |
 | ---- | ------- |
-| `1` | Usage or setup error: unknown command, bad flag, missing config, unknown route, or action path does not exist. |
+| `1` | Usage or setup error: unknown command, bad flag, missing config, unknown route, or action key does not exist. |
 | `2` | Runtime error: local action returned `Err`, or a remote RPC completed with a failure (ActionFailed, Timeout, PeerOffline, Disconnected). |
 | `3` | Peer miss: `--peer <target>` did not resolve within `--wait`. Distinct from `2` so scripts can retry or re-enumerate peers. |
 
@@ -125,6 +125,7 @@ injects the project context when it starts them, so configs do not need to call
 import * as Y from 'yjs';
 import {
 	attachTables,
+	defineActions,
 	defineMutation,
 	defineQuery,
 	defineTable,
@@ -141,19 +142,17 @@ const SavedTab = defineTable(type({ id: 'string', title: 'string', url: 'string'
 async function openTabManagerDaemon() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager' });
 	const tables = attachTables(ydoc, { savedTabs: SavedTab });
-	const actions = {
-		savedTabs: {
-			list: defineQuery({
-				description: 'List all saved tabs',
-				handler: () => tables.savedTabs.getAllValid(),
-			}),
-			delete: defineMutation({
-				input: Type.Object({ id: Type.String() }),
-				description: 'Delete a saved tab by id',
-				handler: ({ id }) => tables.savedTabs.delete(id),
-			}),
-		},
-	};
+	const actions = defineActions({
+		saved_tabs_list: defineQuery({
+			description: 'List all saved tabs',
+			handler: () => tables.savedTabs.getAllValid(),
+		}),
+		saved_tabs_delete: defineMutation({
+			input: Type.Object({ id: Type.String() }),
+			description: 'Delete a saved tab by id',
+			handler: ({ id }) => tables.savedTabs.delete(id),
+		}),
+	});
 	const auth = await createMachineAuthClient();
 	const collaboration = openCollaboration(ydoc, {
 		url: toWsUrl('https://api.epicenter.so/workspaces/epicenter.tab-manager'),
@@ -212,21 +211,20 @@ There is no auto-expose for `attachTable` / `attachKv` methods. If you want an o
 
 This is deliberate. Auto-exposing CRUD would put methods nobody asked for in your CLI tree, and the curated set would either be too narrow for some apps or too wide for others. Explicit wrapping keeps the CLI surface intentional and small.
 
-The common convention is to group actions under `actions:` first, then nest by the domain they operate on:
+The common convention is a flat registry keyed by `<domain>_<action>` snake_case strings, with cross-cutting actions as standalone keys at the same level:
 
 ```ts
-const actions = {
-    tabs: {                                        // domain
-        list: defineQuery({ ... }),                // action
-        open: defineMutation({ ... }),
-    },
-    bookmarks: {
-        list: defineQuery({ ... }),
-    },
+const actions = defineActions({
+    // tabs domain
+    tabs_list: defineQuery({ ... }),
+    tabs_open: defineMutation({ ... }),
 
-    // Cross-cutting actions can sit beside domain groups
-    importBackup: defineMutation({ ... }),
-};
+    // bookmarks domain
+    bookmarks_list: defineQuery({ ... }),
+
+    // Cross-cutting actions sit beside the domain-prefixed keys
+    import_backup: defineMutation({ ... }),
+});
 
 const collaboration = openCollaboration(ydoc, {
     url, identity, openWebSocket: auth.openWebSocket, actions,
@@ -244,14 +242,14 @@ return {
 };
 ```
 
-CLI paths: `tabManager.tabs.list`, `tabManager.bookmarks.list`, `tabManager.importBackup`.
+CLI keys are `<route>.<action_key>`: `tabManager.tabs_list`, `tabManager.bookmarks_list`, `tabManager.import_backup`.
 
-The CLI walks `runtime.collaboration.actions`. Infrastructure such as `ydoc`, tables, persistence, and materializers is not public unless you deliberately mount action leaves under the `actions` registry passed to `openCollaboration`.
+The CLI iterates `runtime.collaboration.actions` with `Object.entries(...)`. Infrastructure such as `ydoc`, tables, persistence, and materializers is not public unless you deliberately add it as an entry in the flat `actions` registry passed to `openCollaboration`.
 
 ## Naming Routes
 
 Every `route` on a daemon route definition becomes the first segment of every
-CLI dot-path. A config with a single route can use any name (`tabManager`, `tm`,
+CLI selector. A config with a single route can use any name (`tabManager`, `tm`,
 `w`), but once you add a second route, the prefix disambiguates them, so a
 readable name ages better than a one-letter one.
 
@@ -272,8 +270,8 @@ export default defineConfig({
 		],
 	},
 });
-// epicenter run tabManager.tabs.list
-// epicenter run fuji.entries.list
+// epicenter run tabManager.tabs_list
+// epicenter run fuji.entries_list
 ```
 
 The Y.Doc GUID and the route serve different purposes:

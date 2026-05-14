@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Note } from '@epicenter/honeycrisp';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button } from '@epicenter/ui/button';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
@@ -10,7 +11,6 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { requireHoneycrisp } from '$lib/session';
-	import type { Note } from '@epicenter/honeycrisp';
 
 	const honeycrisp = requireHoneycrisp();
 
@@ -134,7 +134,9 @@
 				Delete Permanently
 			</ContextMenu.Item>
 		{:else}
-			<ContextMenu.Item onclick={() => honeycrisp.state.notes.togglePin(note.id)}>
+			<ContextMenu.Item
+				onclick={() => honeycrisp.state.notes.togglePin(note.id)}
+			>
 				<PinIcon class="mr-2 size-4 {note.pinned ? 'fill-current' : ''}" />
 				{note.pinned ? 'Unpin' : 'Pin'}
 			</ContextMenu.Item>

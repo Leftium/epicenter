@@ -19,7 +19,10 @@ import type { StartedDaemonRoute } from './types.js';
 
 type ListResult = Result<ActionManifest, never>;
 
-function fakeEntry(name: string, actions: Record<string, unknown> = {}): StartedDaemonRoute {
+function fakeEntry(
+	name: string,
+	actions: Record<string, unknown> = {},
+): StartedDaemonRoute {
 	const ydoc = new Y.Doc();
 	const collaboration = {
 		identity: { id: 'self', name: 'Self', platform: 'node' },

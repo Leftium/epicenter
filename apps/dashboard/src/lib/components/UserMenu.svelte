@@ -11,9 +11,9 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { mode, toggleMode } from 'mode-watcher';
 	import { api } from '$lib/api';
-	import { auth } from '$platform/auth';
 	import { billing } from '$lib/query/billing';
 	import { capitalize, getInitials } from '$lib/utils';
+	import { auth } from '$platform/auth';
 
 	let { user }: { user: AuthUser } = $props();
 

@@ -19,14 +19,11 @@ import { type } from 'arktype';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Awareness } from 'y-protocols/awareness';
-import type {
-	ActionManifest,
-	RemoteCallOptions,
-} from '../shared/actions.js';
+import type { ActionManifest, RemoteCallOptions } from '../shared/actions.js';
 import {
-	peerAwarenessSchema,
 	type PeerAwarenessState,
 	type PeerIdentity,
+	peerAwarenessSchema,
 } from './peer-identity.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -93,7 +90,7 @@ export type RemoteCallError = RpcError | SelfInvocationError | PeerLeftError;
  * One online remote participant.
  *
  * Obtain via `collaboration.peers.find<TActions>(peerId)` or iteration
- * over `collaboration.peers.list()`. The generic narrows `invoke` path
+ * over `collaboration.peers.list()`. The generic narrows `invoke` key
  * autocomplete and input/output types when the caller knows the remote's
  * action map.
  */
@@ -109,9 +106,9 @@ export type Peer<TActions = unknown> = {
 	/**
 	 * Alphabetically sorted snake_case key listing of every action the peer hosts,
 	 * read from awareness. Use for capability-based picks:
-	 * `peers.list().find(p => p.actionPaths.includes('recordings_start'))`.
+	 * `peers.list().find(p => p.actionKeys.includes('recordings_start'))`.
 	 */
-	readonly actionPaths: readonly string[];
+	readonly actionKeys: readonly string[];
 
 	invoke<
 		TMap extends RpcActionMap = TActions extends RpcActionMap
@@ -190,13 +187,13 @@ export function createPeersSurface(
 			if (clientId === selfClientId) continue;
 			if (rawState === null || typeof rawState !== 'object') continue;
 			const identityRaw = (rawState as Record<string, unknown>).identity;
-			const actionPathsRaw = (rawState as Record<string, unknown>).actionPaths;
+			const actionKeysRaw = (rawState as Record<string, unknown>).actionKeys;
 			const identity = peerAwarenessSchema.identity(identityRaw);
 			if (identity instanceof type.errors) continue;
-			const actionPaths = peerAwarenessSchema.actionPaths(actionPathsRaw);
-			if (actionPaths instanceof type.errors) continue;
+			const actionKeys = peerAwarenessSchema.actionKeys(actionKeysRaw);
+			if (actionKeys instanceof type.errors) continue;
 			if (identity.id === selfId) continue;
-			result.set(clientId, { identity, actionPaths });
+			result.set(clientId, { identity, actionKeys });
 		}
 		return result;
 	}
@@ -206,7 +203,7 @@ export function createPeersSurface(
 			id: state.identity.id,
 			identity: state.identity,
 			clientID: clientId,
-			actionPaths: state.actionPaths,
+			actionKeys: state.actionKeys,
 			invoke: (path, input, options) =>
 				dispatch(clientId, state.identity.id, path, () =>
 					hooks.sendActionRequest(clientId, path, input, options),
@@ -220,7 +217,7 @@ export function createPeersSurface(
 
 	/**
 	 * Wrap a send hook with the PeerLeft watchdog. `label` is used purely for
-	 * error reporting (the action path or runtime verb that was in flight when
+	 * error reporting (the action key or runtime verb that was in flight when
 	 * the peer disappeared).
 	 */
 	function dispatch<TOutput>(

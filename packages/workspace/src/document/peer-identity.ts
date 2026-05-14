@@ -5,10 +5,10 @@
  *
  *     {
  *       identity: { id, name, platform },
- *       actionPaths: ['tabs_close', 'tabs_list', ...],
+ *       actionKeys: ['tabs_close', 'tabs_list', ...],
  *     }
  *
- * `identity` is the stable peer descriptor. `actionPaths` is the alphabetically
+ * `identity` is the stable peer descriptor. `actionKeys` is the alphabetically
  * sorted snake_case key listing of every action the peer hosts, computed once at
  * `openCollaboration` startup. Full action schemas (input shapes, descriptions)
  * are not in awareness; fetch them via `peer.describe()` when needed.
@@ -50,13 +50,13 @@ export type PeerRuntime = PeerIdentity['platform'];
  */
 export const peerAwarenessSchema = {
 	identity: PeerIdentity,
-	actionPaths: type('string[]'),
+	actionKeys: type('string[]'),
 };
 
 /** The runtime shape of a peer's awareness state under the standard schema. */
 export type PeerAwarenessState = {
 	identity: PeerIdentity;
-	actionPaths: readonly string[];
+	actionKeys: readonly string[];
 };
 
 // ════════════════════════════════════════════════════════════════════════════

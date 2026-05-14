@@ -6,7 +6,7 @@
  * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
  *   /peers  ->  collaboration.peers.list()                       all routes
- *   /list   ->  flat manifest of `${route}.${actionPath}` -> meta  all routes
+ *   /list   ->  flat manifest of `${route}.${action_key}` -> meta  all routes
  *   /run    ->  invokeAction(...) | peer.invoke(...)              route-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
@@ -55,7 +55,7 @@ export const PeerSnapshot = type({
 	route: 'string',
 	clientID: 'number',
 	identity: PeerIdentity,
-	actionPaths: 'string[]',
+	actionKeys: 'string[]',
 });
 export type PeerSnapshot = typeof PeerSnapshot.infer;
 
@@ -63,9 +63,9 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * Build the daemon's Hono app. Tests import this directly; production serves
  * the app through the daemon server factory.
  *
- * `/list` exposes route-prefixed action paths. `/run` uses that same
- * prefix to pick the hosted daemon runtime before dispatching the inner action
- * path locally or over RPC.
+ * `/list` exposes route-qualified action keys. `/run` uses that same
+ * prefix to pick the hosted daemon runtime before dispatching the action key
+ * locally or over RPC.
  */
 export function buildDaemonApp(
 	runtimes: StartedDaemonRoute[],
@@ -81,7 +81,7 @@ export function buildDaemonApp(
 						route: entry.route,
 						clientID: peer.clientID,
 						identity: peer.identity,
-						actionPaths: [...peer.actionPaths],
+						actionKeys: [...peer.actionKeys],
 					});
 				}
 			}

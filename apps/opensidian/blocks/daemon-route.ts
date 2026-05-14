@@ -7,8 +7,8 @@ import {
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
-import { opensidianTables } from './workspace.js';
 import * as Y from 'yjs';
+import { opensidianTables } from './workspace.js';
 
 export const DEFAULT_OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 

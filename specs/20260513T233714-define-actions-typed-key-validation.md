@@ -1,7 +1,7 @@
 # defineActions: Compile-Time + Runtime Key Validation
 
 **Date**: 2026-05-13
-**Status**: Proposed
+**Status**: Implemented
 **Author**: Braden + Claude
 **Supersedes** (the validation portion of): `20260513T231157-actions-snake-case-only-no-dots.md`
 
@@ -336,19 +336,48 @@ dependencies.
 
 ## Final state checklist
 
-- [ ] `defineActions<T>(actions)` exported from `packages/workspace/src/shared/actions.ts` and re-exported from the package barrel
-- [ ] `IsSnakeCase`, `ValidatedKey`, `InvalidActionKey` types live alongside it
-- [ ] `ACTION_KEY_PATTERN` regex still exported (CLI consumers may want it)
-- [ ] Runtime check moved INTO `defineActions`; removed from `openCollaboration`
-- [ ] All app factories use `defineActions({...})` instead of `satisfies ActionRegistry`
-- [ ] All app action keys are snake_case ASCII matching `^[a-z][a-z0-9_]*$`
-- [ ] All call sites use dot-access (`actions.tabs_close`) not bracket-string
-- [ ] AI bridge collapsed (no `DotsToUnderscores`, no `ACTION_NAME_SEPARATOR`, no `replaceAll('.', '_')`)
-- [ ] CLI fixtures and inline-test fakes use snake_case keys + `defineActions`
-- [ ] `bun test packages/workspace packages/cli packages/skills` green
-- [ ] Per-app `bun run tsc --noEmit` clean
-- [ ] Skill at `.claude/skills/type-level-error-messages/SKILL.md`
-- [ ] Article at `docs/articles/<ts>-type-level-error-messages.md`
+- [x] `defineActions<T>(actions)` exported from `packages/workspace/src/shared/actions.ts` and re-exported from the package barrel
+- [x] `IsSnakeCaseKey`, `IsActionKeyTail`, `InvalidActionKey` types live alongside it
+- [x] `ACTION_KEY_PATTERN` regex still exported
+- [x] Runtime check inside `defineActions`. `openCollaboration` keeps its own pass as belt-and-suspenders defense for casts that bypass the helper (deviation from spec)
+- [x] All app factories use `defineActions({...})` instead of `satisfies ActionRegistry`
+- [x] All app action keys are snake_case ASCII matching `^[a-z][a-z0-9_]*$`
+- [x] All call sites use dot-access (`actions.tabs_close`) not bracket-string
+- [x] AI bridge collapsed (no `DotsToUnderscores`, no `ACTION_NAME_SEPARATOR`, no `replaceAll('.', '_')`)
+- [x] CLI fixtures and inline-test fakes use snake_case keys + `defineActions`
+- [x] `bun test packages/workspace packages/cli packages/skills` green: 690 pass, 1 todo, 0 fail
+- [x] Per-app `bun run tsc --noEmit` clean for fuji, honeycrisp, opensidian (tab-manager has pre-existing unrelated UI errors)
+- [x] Skill at `.claude/skills/type-level-error-messages/SKILL.md`
+- [x] Article at `docs/articles/20260513T235515-type-level-error-messages.md`
+
+## Review
+
+**Completed**: 2026-05-13
+**Branch**: `codex/sync-room-plus-stacked-refactors`
+**Commits**:
+- `417132bdf` workspace: defineActions + validation types + tests + spec
+- `02f836373` apps: adopt defineActions, snake_case fixtures, drop dead replica-id export
+- `3db03570f` docs: skill + article
+
+### Summary
+
+`defineActions<T>(actions)` is now the recommended (and only documented) way to author an `ActionRegistry`. The helper enforces snake_case keys at compile time via a recursive template-literal type `IsSnakeCaseKey<S>` and at construction via `ACTION_KEY_PATTERN`. Bad keys fail at the property in the editor with a readable error message branded with U+200B (the same trick `@ark/util`'s internal `ErrorMessage<M>` uses). Four app factories and CLI test fixtures adopted the helper.
+
+### Deviations
+
+- **Runtime check stayed in `openCollaboration` too.** The spec originally said "one owner per invariant: defineActions". The linter kept reintroducing the check at the wire boundary and added a test for it. Accepting that as belt-and-suspenders: both layers are cheap, the wire-side guards against `as ActionRegistry` casts that bypass the helper, and the cost is five lines.
+- **Removed a dead `replica-id.js` re-export** from `packages/workspace/src/index.ts` discovered during this work. The file did not exist on disk; CLI `up` lifecycle tests were failing because the daemon could not import `@epicenter/workspace`. Cleanup unrelated to this spec but it surfaced during verification.
+
+### Verification
+
+- 690 tests pass, 1 todo, 0 fail across workspace + cli + skills.
+- Three of four apps typecheck clean. tab-manager surfaces only pre-existing `packages/ui/src/confirmation-dialog/index.ts` TS2614 errors (default vs named imports), unrelated.
+- Grep across `apps/` and `packages/` for dotted action keys (`'tabs.close'`, `'entries.create'`, etc.) returns only legitimate hits: error-context strings in `TabError.BrowserApiFailed({ operation: 'tabs.create' })`, JSDoc examples, and the test cases that intentionally exercise rejection.
+
+### Follow-up
+
+- `packages/ui/src/confirmation-dialog/index.ts` has named imports from a `.svelte` module with default-only export. Pre-existing, unrelated, worth a separate cleanup pass.
+- Could extract the U+200B-branded template literal pattern (`InvalidActionKey<S>`) into a generic `BrandedError<M>` helper if a second use surfaces. Skipping for now (one caller).
 
 ## One-line summary for commit message
 

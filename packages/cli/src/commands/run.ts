@@ -1,6 +1,7 @@
 /**
- * `epicenter run <dot.path> [input]`: invoke a `defineQuery` /
- * `defineMutation` by dot-path through the local `epicenter up` daemon.
+ * `epicenter run <route.action_key> [input]`: invoke a `defineQuery` /
+ * `defineMutation` by route-qualified action key through the local
+ * `epicenter up` daemon.
  *
  * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
  * With `--peer <target>`, the invocation is dispatched over the selected
@@ -43,13 +44,13 @@ const DEFAULT_PEER_WAIT_MS = 5000;
 export const runCommand = cmd({
 	command: 'run <action> [input]',
 	describe:
-		'Invoke a defineQuery / defineMutation by dot-path, locally or on a remote peer (--peer)',
+		'Invoke a defineQuery / defineMutation by action key, locally or on a remote peer (--peer)',
 	builder: (yargs) =>
 		yargs
 			.positional('action', {
 				type: 'string',
 				demandOption: true,
-				describe: 'Route-prefixed action path, e.g. notes.notes.add',
+				describe: 'Route-qualified action key, e.g. notes.notes_add',
 			})
 			.positional('input', {
 				type: 'string',
@@ -104,7 +105,7 @@ function renderRunResult(
 			outputError(result.error.message);
 			if (result.error.suggestions && result.error.suggestions.length > 0) {
 				outputError('');
-				outputError('Exposed actions at this path:');
+				outputError('Exposed actions at this key:');
 				for (const line of result.error.suggestions) outputError(line);
 			}
 			process.exitCode = 1;

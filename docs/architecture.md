@@ -205,7 +205,9 @@ import * as Y from 'yjs';
 import {
 	attachIndexedDb,
 	attachTables,
+	defineActions,
 	defineDocument,
+	defineQuery,
 	defineTable,
 	openCollaboration,
 	toWsUrl,
@@ -225,13 +227,11 @@ const opensidian = defineDocument((id: string) => {
 	});
 	const idb = attachIndexedDb(ydoc);
 	const sqliteIndex = createSqliteIndex({ ydoc, tables });
-	const actions = {
-		files: {
-			search: defineQuery({
-				handler: async ({ query }) => sqliteIndex.search(query),
-			}),
-		},
-	};
+	const actions = defineActions({
+		files_search: defineQuery({
+			handler: async ({ query }) => sqliteIndex.search(query),
+		}),
+	});
 	const collaboration = openCollaboration(ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		openWebSocket: auth.openWebSocket,

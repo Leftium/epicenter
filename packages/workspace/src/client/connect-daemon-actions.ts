@@ -37,8 +37,8 @@ import { findEpicenterDir } from './find-epicenter-dir.js';
  * Connect to a workspace's public actions hosted by a running daemon.
  *
  * `route` is the hosted daemon route from `epicenter.config.ts`. The daemon
- * uses it as the first segment of every action path, then dispatches the
- * remaining path against that workspace.
+ * prefixes each snake_case action key with `${route}.`, then dispatches the
+ * remaining key against that workspace.
  *
  * `projectDir` defaults to walking up from `process.cwd()` for an
  * `epicenter.config.ts` file or a `.epicenter/` directory.

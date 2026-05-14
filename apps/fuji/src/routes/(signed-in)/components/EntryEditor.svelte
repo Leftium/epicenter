@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Entry } from '@epicenter/fuji';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
@@ -20,7 +21,6 @@
 	import ProseMirrorEditor from '$lib/components/ProseMirrorEditor.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
 	import { requireFuji } from '$lib/session';
-	import type { Entry } from '@epicenter/fuji';
 
 	let { entry }: { entry: Entry } = $props();
 	const fuji = requireFuji();
@@ -37,10 +37,7 @@
 		);
 	}
 
-	const contentDoc = fromDisposableCache(
-		fuji.entryContentDocs,
-		() => entry.id,
-	);
+	const contentDoc = fromDisposableCache(fuji.entryContentDocs, () => entry.id);
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);

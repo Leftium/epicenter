@@ -63,7 +63,7 @@ type ActionHandler<
  * Configuration for defining an action (query or mutation).
  */
 type ActionConfig<TInput extends TSchema | undefined, R> = {
-	/** Short, human-readable display name for UI surfaces (e.g. 'Close Tabs'). Falls back to path-derived name if omitted. */
+	/** Short, human-readable display name for UI surfaces (e.g. 'Close Tabs'). Optional; the action key is used when omitted. */
 	title?: string;
 	description?: string;
 	input?: TInput;
@@ -84,7 +84,7 @@ export type ActionMeta<
 	TType extends ActionType = ActionType,
 > = {
 	type: TType;
-	/** Short, human-readable display name for UI surfaces (e.g. 'Close Tabs'). Falls back to path-derived name if omitted. */
+	/** Short, human-readable display name for UI surfaces (e.g. 'Close Tabs'). Optional; the action key is used when omitted. */
 	title?: string;
 	description?: string;
 	input?: TInput;
@@ -125,8 +125,32 @@ export type ActionRegistry = Record<string, Action>;
 // ════════════════════════════════════════════════════════════════════════════
 
 type Lower =
-	| 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm'
-	| 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z';
+	| 'a'
+	| 'b'
+	| 'c'
+	| 'd'
+	| 'e'
+	| 'f'
+	| 'g'
+	| 'h'
+	| 'i'
+	| 'j'
+	| 'k'
+	| 'l'
+	| 'm'
+	| 'n'
+	| 'o'
+	| 'p'
+	| 'q'
+	| 'r'
+	| 's'
+	| 't'
+	| 'u'
+	| 'v'
+	| 'w'
+	| 'x'
+	| 'y'
+	| 'z';
 type Digit = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
 type WordChar = Lower | Digit | '_';
 
@@ -168,8 +192,11 @@ type InvalidActionKey<S extends string> =
 	`Invalid action key "${S}", must be snake_case ASCII matching /^[a-z][a-z0-9_]*$/​`;
 
 /**
- * Regex enforcing `^[a-z][a-z0-9_]{0,63}$` at runtime. Exported so the CLI
- * and tests can share the same definition.
+ * Regex enforcing `^[a-z][a-z0-9_]{0,63}$` at runtime. Used by
+ * `defineActions` for the authoring boundary check and by
+ * `openCollaboration` for the construction-time defense against `as`
+ * casts. Exported so tests and future external validators can share the
+ * single source of truth.
  */
 export const ACTION_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 

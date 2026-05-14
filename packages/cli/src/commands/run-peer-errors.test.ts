@@ -45,10 +45,7 @@ describe('emitRemoteCallError', () => {
 
 	test('Timeout reports ms and peer', () => {
 		cap = captureErrors();
-		emitRemoteCallError(
-			'macbook-pro',
-			RpcError.Timeout({ ms: 5000 }).error,
-		);
+		emitRemoteCallError('macbook-pro', RpcError.Timeout({ ms: 5000 }).error);
 		expect(cap.lines).toEqual(['error: timeout after 5000ms on macbook-pro']);
 	});
 
@@ -78,9 +75,7 @@ describe('emitRemoteCallError', () => {
 			'self',
 			SelfInvocationError.SelfInvocation({ action: 'tabs_list' }).error,
 		);
-		expect(cap.lines).toEqual([
-			'error: cannot RPC to self for "tabs_list"',
-		]);
+		expect(cap.lines).toEqual(['error: cannot RPC to self for "tabs_list"']);
 	});
 
 	test('ActionFailed surfaces underlying cause', () => {
@@ -99,10 +94,7 @@ describe('emitRemoteCallError', () => {
 
 	test('Disconnected', () => {
 		cap = captureErrors();
-		emitRemoteCallError(
-			'macbook-pro',
-			RpcError.Disconnected().error,
-		);
+		emitRemoteCallError('macbook-pro', RpcError.Disconnected().error);
 		expect(cap.lines).toEqual([
 			'error: connection lost before macbook-pro responded',
 		]);

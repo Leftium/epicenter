@@ -19,11 +19,7 @@ import { RpcError } from '@epicenter/sync';
 import { Ok, type Result } from 'wellcrafted/result';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import {
-	createPeersSurface,
-	type PeerWireHooks,
-	waitForPeer,
-} from './peer.js';
+import { createPeersSurface, type PeerWireHooks, waitForPeer } from './peer.js';
 
 function setup({
 	selfClientId = 1,
@@ -38,7 +34,9 @@ function setup({
 } = {}) {
 	// Yjs accepts `clientID` at runtime but it isn't on `DocOpts`. The cast
 	// is test-only: production code never sets a deterministic clientID.
-	const ydoc = new Y.Doc({ clientID: selfClientId } as ConstructorParameters<typeof Y.Doc>[0]);
+	const ydoc = new Y.Doc({ clientID: selfClientId } as ConstructorParameters<
+		typeof Y.Doc
+	>[0]);
 	const awareness = new Awareness(ydoc);
 	const hooks: PeerWireHooks = {
 		sendActionRequest: send ?? (async () => Ok(null)),

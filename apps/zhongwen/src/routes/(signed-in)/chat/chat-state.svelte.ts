@@ -8,11 +8,6 @@
 
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
-import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
-import { SvelteMap } from 'svelte/reactivity';
-import type { JsonValue } from 'wellcrafted/json';
-import { auth } from '$platform/auth';
-import { requireZhongwen } from '$lib/session';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -20,6 +15,11 @@ import {
 	generateChatMessageId,
 	generateConversationId,
 } from '@epicenter/zhongwen';
+import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
+import { SvelteMap } from 'svelte/reactivity';
+import type { JsonValue } from 'wellcrafted/json';
+import { requireZhongwen } from '$lib/session';
+import { auth } from '$platform/auth';
 import {
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,
@@ -210,9 +210,7 @@ export function createChatState() {
 			reload() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					zhongwen.tables.chatMessages.delete(
-						asChatMessageId(lastMessage.id),
-					);
+					zhongwen.tables.chatMessages.delete(asChatMessageId(lastMessage.id));
 				}
 				void chat.reload();
 			},
@@ -249,16 +247,12 @@ export function createChatState() {
 
 	// fromTable owns the reactive data; this observer only handles
 	// imperative handle lifecycle (creating/destroying chat instances).
-	const unobserveConversations = zhongwen.tables.conversations.observe(
-		() => {
-			reconcileHandles();
-		},
-	);
-	const unobserveChatMessages = zhongwen.tables.chatMessages.observe(
-		() => {
-			handles.get(activeConversationId)?.syncMessages();
-		},
-	);
+	const unobserveConversations = zhongwen.tables.conversations.observe(() => {
+		reconcileHandles();
+	});
+	const unobserveChatMessages = zhongwen.tables.chatMessages.observe(() => {
+		handles.get(activeConversationId)?.syncMessages();
+	});
 
 	// Initialize after persistence loads
 	void zhongwen.idb.whenLoaded.then(() => {

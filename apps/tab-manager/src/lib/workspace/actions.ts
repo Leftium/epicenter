@@ -267,8 +267,7 @@ export function createTabManagerActions({
 					tabIds.map((id) => browser.tabs.reload(id)),
 				);
 				return {
-					reloadedCount: results.filter((r) => r.status === 'fulfilled')
-						.length,
+					reloadedCount: results.filter((r) => r.status === 'fulfilled').length,
 				};
 			},
 		}),
@@ -314,8 +313,7 @@ export function createTabManagerActions({
 		}),
 		saved_tabs_restore: defineMutation({
 			title: 'Restore Saved Tab',
-			description:
-				'Re-open a saved tab in the browser and delete the record.',
+			description: 'Re-open a saved tab in the browser and delete the record.',
 			input: Type.Object({
 				id: Type.String(),
 				url: Type.String(),

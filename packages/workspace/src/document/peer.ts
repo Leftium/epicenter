@@ -19,14 +19,11 @@ import { type } from 'arktype';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Awareness } from 'y-protocols/awareness';
-import type {
-	ActionManifest,
-	RemoteCallOptions,
-} from '../shared/actions.js';
+import type { ActionManifest, RemoteCallOptions } from '../shared/actions.js';
 import {
-	peerAwarenessSchema,
 	type PeerAwarenessState,
 	type PeerIdentity,
+	peerAwarenessSchema,
 } from './peer-identity.js';
 
 // ════════════════════════════════════════════════════════════════════════════

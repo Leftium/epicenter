@@ -18,8 +18,8 @@
 
 import { RpcError } from '@epicenter/sync';
 import type { Logger } from 'wellcrafted/logger';
-import { Awareness } from 'y-protocols/awareness';
 import { Ok } from 'wellcrafted/result';
+import { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import {
 	ACTION_KEY_PATTERN,
@@ -33,12 +33,12 @@ import {
 	type OpenWebSocket,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
-import { peerAwarenessSchema, type PeerIdentity } from './peer-identity.js';
 import {
 	createPeersSurface,
 	type PeersSurface,
 	SelfInvocationError,
 } from './peer.js';
+import { type PeerIdentity, peerAwarenessSchema } from './peer-identity.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -62,9 +62,7 @@ export type OpenCollaborationConfig<
 	actions: TActions;
 };
 
-export type Collaboration<
-	TActions extends ActionRegistry = ActionRegistry,
-> = {
+export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	readonly identity: PeerIdentity;
 	readonly actions: TActions;
 
@@ -158,7 +156,9 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		},
 		sendRuntimeRequest: (target, verb, options) => {
 			if (target === awareness.clientID) {
-				return Promise.resolve(SelfInvocationError.SelfInvocation({ action: verb }));
+				return Promise.resolve(
+					SelfInvocationError.SelfInvocation({ action: verb }),
+				);
 			}
 			return supervisor.sendRuntimeRequest(target, verb, options);
 		},

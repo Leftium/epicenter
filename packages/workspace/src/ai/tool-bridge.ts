@@ -135,35 +135,35 @@ export function actionsToAiTools<TActions extends ActionRegistry>(
 	const entries = Object.entries(actions);
 
 	const tools = entries.map(([name, action]) => ({
-			__toolSide: 'client' as const,
-			name: name as ActionNames<TActions>,
-			description: action.description ?? `${action.type}: ${name}`,
-			...(action.input && { inputSchema: action.input }),
-			...(action.type === 'mutation' && { needsApproval: true }),
-			// TanStack AI's `execute` contract is: return data on success, throw
-			// on failure. invokeAction handles all four handler shapes (raw,
-			// Result, sync, async) and converts thrown errors into typed
-			// Err(ActionFailed); we then unwrap for AI consumption.
-			execute: async (args: unknown) => {
-				const result = await invokeAction(action, args, name);
-				if (result.error !== null) throw result.error;
-				return result.data;
-			},
-		}));
+		__toolSide: 'client' as const,
+		name: name as ActionNames<TActions>,
+		description: action.description ?? `${action.type}: ${name}`,
+		...(action.input && { inputSchema: action.input }),
+		...(action.type === 'mutation' && { needsApproval: true }),
+		// TanStack AI's `execute` contract is: return data on success, throw
+		// on failure. invokeAction handles all four handler shapes (raw,
+		// Result, sync, async) and converts thrown errors into typed
+		// Err(ActionFailed); we then unwrap for AI consumption.
+		execute: async (args: unknown) => {
+			const result = await invokeAction(action, args, name);
+			if (result.error !== null) throw result.error;
+			return result.data;
+		},
+	}));
 
 	// Derive wire definitions directly from actions. Avoids the type-widening
 	// round-trip through AnyClientTool that required `as JSONSchema` casts.
 	const definitions: ToolDefinition[] = entries.map(([name, action]) => ({
-			name,
-			...(action.title && { title: action.title }),
-			description: action.description ?? `${action.type}: ${name}`,
-			// Safe cast: workspace actions only accept TypeBox schemas (TSchema),
-			// which ARE plain JSON Schema objects at runtime.
-			...(action.input && {
-				inputSchema: normalizeSchema(action.input as JSONSchema),
-			}),
-			...(action.type === 'mutation' && { needsApproval: true }),
-		}));
+		name,
+		...(action.title && { title: action.title }),
+		description: action.description ?? `${action.type}: ${name}`,
+		// Safe cast: workspace actions only accept TypeBox schemas (TSchema),
+		// which ARE plain JSON Schema objects at runtime.
+		...(action.input && {
+			inputSchema: normalizeSchema(action.input as JSONSchema),
+		}),
+		...(action.type === 'mutation' && { needsApproval: true }),
+	}));
 
 	return { tools, definitions };
 }

@@ -22,10 +22,7 @@ export type AttachYjsSyncConfig = {
 	log?: Logger;
 };
 
-export function attachYjsSync(
-	ydoc: Y.Doc,
-	config: AttachYjsSyncConfig,
-) {
+export function attachYjsSync(ydoc: Y.Doc, config: AttachYjsSyncConfig) {
 	const supervisor = createSyncSupervisor(ydoc, config);
 	return {
 		get status() {

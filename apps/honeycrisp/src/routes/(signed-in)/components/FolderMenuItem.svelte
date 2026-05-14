@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Folder } from '@epicenter/honeycrisp';
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Sidebar from '@epicenter/ui/sidebar';
@@ -7,7 +8,6 @@
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { requireHoneycrisp } from '$lib/session';
-	import type { Folder } from '@epicenter/honeycrisp';
 
 	const honeycrisp = requireHoneycrisp();
 

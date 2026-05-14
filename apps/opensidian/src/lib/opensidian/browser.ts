@@ -11,16 +11,16 @@ import {
 	attachTimeline,
 	createDisposableCache,
 	type EncryptionKeys,
-	onLocalUpdate,
 	type OpenWebSocket,
+	onLocalUpdate,
 	openCollaboration,
 	type PeerIdentity,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import * as Y from 'yjs';
 import { opensidianTables } from 'opensidian';
+import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
 
 export function openOpensidianBrowser({

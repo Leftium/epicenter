@@ -12,7 +12,7 @@
 import { OAuthSession } from '@epicenter/auth-svelte';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createExtensionOAuthLauncher } from '@epicenter/oauth-client';
+import { createExtensionOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { createStorageState } from '../../state/storage-state.svelte';
 
 /**

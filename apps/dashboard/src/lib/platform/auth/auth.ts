@@ -4,7 +4,7 @@ import { EPICENTER_DASHBOARD_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth'
 import {
 	createBrowserOAuthLauncher,
 	createStorageAdapter,
-} from '@epicenter/oauth-client';
+} from '@epicenter/auth/oauth-launchers';
 import { createPersistedState } from '@epicenter/svelte';
 import { base } from '$app/paths';
 

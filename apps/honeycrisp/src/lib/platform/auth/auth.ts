@@ -5,7 +5,7 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	createBrowserOAuthLauncher,
 	createStorageAdapter,
-} from '@epicenter/oauth-client';
+} from '@epicenter/auth/oauth-launchers';
 import { createPersistedState } from '@epicenter/svelte';
 
 export const auth = createOAuthAppAuth({

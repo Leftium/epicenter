@@ -17,7 +17,7 @@ export const WorkspaceIdentity = type({
 
 export type WorkspaceIdentity = typeof WorkspaceIdentity.infer;
 
-/** Parsed OAuth token grant used before identity loading. */
+/** OAuth token grant exchanged at sign-in and refresh; persisted as `OAuthSession.tokens`. */
 export const OAuthTokenGrant = type({
 	'+': 'delete',
 	accessToken: 'string',

@@ -15,7 +15,6 @@ import {
 	type OAuthSession as OAuthSessionType,
 	type OAuthTokenGrant,
 	WorkspaceIdentity,
-	type WorkspaceIdentity as WorkspaceIdentityType,
 } from '../auth-types.js';
 import type {
 	OAuthRefreshTokenRevoker,
@@ -72,17 +71,8 @@ export const DeviceTokenError = defineErrors({
 });
 export type DeviceTokenError = InferErrors<typeof DeviceTokenError>;
 
-type MachineSessionSummary = {
-	user: Pick<WorkspaceIdentityType['user'], 'id' | 'email'>;
-};
-
-function sessionSummary(session: OAuthSessionType): MachineSessionSummary {
-	return {
-		user: {
-			id: session.identity.user.id,
-			email: session.identity.user.email,
-		},
-	};
+function sessionSummary(session: OAuthSessionType) {
+	return { user: session.identity.user };
 }
 
 /**

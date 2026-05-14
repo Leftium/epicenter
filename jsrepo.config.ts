@@ -11,19 +11,20 @@
 import { defineConfig, js, repository } from 'jsrepo';
 
 /**
- * Each app contributes one item per file under `apps/<app>/blocks/`. Fuji has
- * three (snapshot + script + daemon-route); the others have two (script +
- * daemon-route). jsrepo auto-detects cross-block imports as
- * `registryDependencies`, so a consumer running `bunx jsrepo add
- * epicenter/fuji/script` transitively pulls `epicenter/fuji/snapshot` and
- * `epicenter/fuji/daemon-route`.
+ * Each app contributes one item per file under `apps/<app>/blocks/`.
+ *
+ * `workspace.ts` (schema + actions) and `daemon-route.ts` (the long-lived
+ * writer) ship for every app. Scripts are not recipes: a script is a
+ * user-owned Bun file that reads the local SQLite materializer and writes
+ * through `connectDaemonActions`. See `docs/scripting.md` for the canonical
+ * three-import example.
  */
 
 const BLOCKS = {
-	fuji: ['workspace', 'snapshot', 'script', 'daemon-route'],
-	honeycrisp: ['workspace', 'script', 'daemon-route'],
-	opensidian: ['workspace', 'script', 'daemon-route'],
-	zhongwen: ['workspace', 'script', 'daemon-route'],
+	fuji: ['workspace', 'daemon-route'],
+	honeycrisp: ['workspace', 'daemon-route'],
+	opensidian: ['workspace', 'daemon-route'],
+	zhongwen: ['workspace', 'daemon-route'],
 } as const;
 
 export default defineConfig({

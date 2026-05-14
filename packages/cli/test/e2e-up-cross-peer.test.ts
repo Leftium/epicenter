@@ -86,6 +86,19 @@ function childEnv(env: EnvOverrides): NodeJS.ProcessEnv {
 	};
 }
 
+async function waitFor(
+	predicate: () => boolean,
+	errorMessage: () => string,
+	{ timeoutMs = 10_000, intervalMs = 50 } = {},
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (predicate()) return;
+		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+	}
+	throw new Error(errorMessage());
+}
+
 /**
  * Spawn `epicenter daemon up -C <fixture>` and wait until it prints the
  * "online" banner on stderr. Returns the child + a buffered stderr string
@@ -105,18 +118,14 @@ async function spawnUp(env: EnvOverrides, dir: string) {
 		stderr += chunk;
 	});
 
-	// Wait up to 10 s for the online banner. Polling works because
-	// stderr is buffered into the closure above.
-	const deadline = Date.now() + 10000;
-	while (Date.now() < deadline) {
-		if (stderr.includes('online (')) break;
-		await new Promise((res) => setTimeout(res, 50));
-	}
-	if (!stderr.includes('online (')) {
-		child.kill('SIGTERM');
-		throw new Error(
-			`up did not print "online" within 10 s. stderr so far:\n${stderr}`,
+	try {
+		await waitFor(
+			() => stderr.includes('online ('),
+			() => `up did not print "online" within 10 s. stderr so far:\n${stderr}`,
 		);
+	} catch (error) {
+		child.kill('SIGTERM');
+		throw error;
 	}
 
 	return {
@@ -165,16 +174,12 @@ describe('daemon up lifecycle (scaled down, no real cross-peer)', () => {
 			const { child, getStderr } = await spawnUp(env, FIXTURE_DIR);
 
 			expect(getStderr()).toContain('online (');
-			// Initial peers snapshot prints right after the banner. Poll because
-			// stderr buffering means "online" can land before the snapshot
-			// flushes, so we wait briefly for the second line.
-			const snapshotDeadline = Date.now() + 2000;
-			while (
-				Date.now() < snapshotDeadline &&
-				!getStderr().includes('no peers connected')
-			) {
-				await new Promise((res) => setTimeout(res, 25));
-			}
+			await waitFor(
+				() => getStderr().includes('no peers connected'),
+				() =>
+					`up did not print the initial peers snapshot. stderr so far:\n${getStderr()}`,
+				{ timeoutMs: 2_000, intervalMs: 25 },
+			);
 			expect(getStderr()).toContain('no peers connected');
 
 			child.kill('SIGTERM');

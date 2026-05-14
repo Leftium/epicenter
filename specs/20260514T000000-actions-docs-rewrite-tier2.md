@@ -178,9 +178,355 @@ docs: rewrite action sections in three READMEs for snake_case + defineActions
 
 If you fire this as an agent prompt, set `subagent_type: general-purpose` and pass it the full text above plus a one-line summary like "Execute Tier 2 documentation rewrite per the prompt." The agent has everything it needs and can verify its own work with the grep commands.
 
-If you do it by hand, the workspace README is the long one. Open it, search-and-replace the recurring phrases first (`walkActions` → `Object.entries`, `type Mutation` → remove, nested examples → flat), then read the section narratively to catch anything that's correct in the small but inconsistent in the large.
+If you do it by hand, follow the runbook below. The workspace README is the long one. Open it, search-and-replace the recurring phrases first (`walkActions` → `Object.entries`, `type Mutation` → remove, nested examples → flat), then read the section narratively to catch anything that's correct in the small but inconsistent in the large.
 
 Estimated effort:
 - workspace README: ~30 minutes (largest, most examples)
 - SYNC_ARCHITECTURE: ~5 minutes (one diagram cell)
 - ai README: ~10 minutes (three lines + surrounding paragraphs)
+
+## Hand execution runbook
+
+Step-by-step instructions for executing this by hand. Follow in order.
+
+### Pre-flight
+
+```bash
+cd /Users/braden/Code/epicenter
+git status   # should be clean or only have unrelated work
+```
+
+Open three files in your editor side-by-side:
+1. `packages/workspace/README.md`
+2. `packages/workspace/SYNC_ARCHITECTURE.md`
+3. `packages/ai/README.md`
+
+Keep this spec file open in a fourth tab.
+
+### Step 1: workspace README, the imports block (line ~1489)
+
+Search for `### Actions` in `packages/workspace/README.md`. There are two — find the one inside `## Public adapter surface` (around line 1489).
+
+Current:
+```typescript
+import {
+    defineMutation,
+    defineQuery,
+    isAction,
+    isMutation,
+    isQuery,
+    walkActions,
+    type Action,
+    type Mutation,
+    type Query,
+} from '@epicenter/workspace';
+```
+
+Replace with:
+```typescript
+import {
+    defineActions,
+    defineMutation,
+    defineQuery,
+    isAction,
+    toActionMeta,
+    type Action,
+    type ActionRegistry,
+} from '@epicenter/workspace';
+```
+
+Why each change:
+- `walkActions` is gone; consumers iterate `Object.entries(actions)`.
+- `isMutation` and `isQuery` are dropped from the public barrel (Tier 1).
+- `type Mutation` and `type Query` are gone; both collapsed into `Action<TInput, R, TType>`.
+- `defineActions` and `toActionMeta` are the new helpers worth surfacing.
+- `ActionRegistry` is the type to name when documenting the registry shape.
+
+### Step 2: workspace README, the introspection example (lines 1235–1280)
+
+Look for `### Introspection` (around line 1236).
+
+Current shape:
+```typescript
+import {
+    defineMutation,
+    defineQuery,
+    isAction,
+    isMutation,
+    isQuery,
+    walkActions,
+} from '@epicenter/workspace';
+
+const actions = {
+    posts: {
+        list: defineQuery({ handler: () => [] as string[] }),
+        create: defineMutation({
+            input: Type.Object({ title: Type.String() }),
+            handler: ({ title }) => ({ title }),
+        }),
+    },
+};
+
+for (const [path, action] of walkActions(actions)) {
+    if (isAction(action)) {
+        console.log(path, action.type);
+    }
+}
+
+const listAction = actions.posts.list;
+if (isQuery(listAction)) {
+    console.log(listAction.type);
+}
+
+const createAction = actions.posts.create;
+if (isMutation(createAction)) {
+    console.log(createAction.type);
+}
+```
+
+Replace with:
+```typescript
+import {
+    defineActions,
+    defineMutation,
+    defineQuery,
+    isAction,
+} from '@epicenter/workspace';
+import Type from 'typebox';
+
+const actions = defineActions({
+    posts_list: defineQuery({ handler: () => [] as string[] }),
+    posts_create: defineMutation({
+        input: Type.Object({ title: Type.String() }),
+        handler: ({ title }) => ({ title }),
+    }),
+});
+
+for (const [key, action] of Object.entries(actions)) {
+    if (isAction(action)) {
+        console.log(key, action.type);
+    }
+}
+
+const listAction = actions.posts_list;
+if (listAction.type === 'query') {
+    console.log(listAction.type);
+}
+
+const createAction = actions.posts_create;
+if (createAction.type === 'mutation') {
+    console.log(createAction.type);
+}
+```
+
+Why: `isQuery`/`isMutation` were dropped from the barrel; consumers narrow on `action.type` directly. The discriminant is carried by `Action<_, _, TType>`.
+
+### Step 3: workspace README, the queries example (lines 1080–1130)
+
+Search for `### Query actions`. Replace nested authoring with flat + `defineActions`:
+
+```typescript
+const actions = defineActions({
+    posts_list: defineQuery({
+        title: 'List Posts',
+        description: 'List all posts.',
+        handler: () => tables.posts.getAllValid(),
+    }),
+    posts_get_by_id: defineQuery({
+        title: 'Get Post',
+        description: 'Get one post by ID.',
+        input: Type.Object({ id: Type.String() }),
+        handler: ({ id }) => tables.posts.get(id),
+    }),
+});
+```
+
+Add `defineActions` to the imports list at the top of that example block.
+
+Update the trailing assertion at line ~1126:
+```typescript
+// Before
+const actionType = workspace.actions.posts.list.type;
+
+// After
+const actionType = workspace.actions.posts_list.type;
+```
+
+### Step 4: workspace README, the mutations example (lines 1145–1200)
+
+Search for `### Mutation actions`. Same treatment:
+
+```typescript
+const actions = defineActions({
+    posts_create: defineMutation({
+        title: 'Create Post',
+        description: 'Create a new post row.',
+        input: Type.Object({ title: Type.String() }),
+        handler: ({ title }) => {
+            const id = generateId();
+            tables.posts.set({ id, title, published: false, _v: 1 });
+            return { id };
+        },
+    }),
+    posts_publish: defineMutation({
+        title: 'Publish Post',
+        description: 'Mark a post as published.',
+        input: Type.Object({ id: Type.String() }),
+        handler: ({ id }) => tables.posts.update(id, { published: true }),
+    }),
+});
+```
+
+Add `defineActions` to the imports.
+
+### Step 5: workspace README, the Actions Concepts paragraph (line ~395)
+
+Replace:
+> Include them in your bundle as `actions: { ... }` (typically via a `createMyAppActions({ tables, batch })` helper defined nearby)
+
+With:
+> Include them in your bundle as `actions: defineActions({...})` (typically via a `createMyAppActions({ tables, batch })` helper defined nearby). The helper enforces snake_case ASCII keys at compile time and runtime; consumers index by string or iterate with `Object.entries`.
+
+### Step 6: workspace README, the "How It All Fits Together" callout (line ~333)
+
+Current:
+> 6. Use `walkActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
+
+Replace:
+> 6. Iterate `Object.entries(bundle.actions)` and read each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
+
+### Step 7: workspace README, the API list (line ~1415)
+
+There's a bullet list of exported names. Search for `walkActions`:
+- Remove `- \`walkActions(...)\``.
+- If `describeActions(...)` or `resolveActionPath(...)` appear, remove them.
+- Add `- \`defineActions(actions)\``.
+- Add `- \`toActionMeta(action)\``.
+
+### Step 8: workspace README, the long-form walkActions description (lines 1576–1660)
+
+Search for `walkActions(source)` paragraph. Rewrite:
+
+> `Object.entries(actions)` lets you iterate the flat registry. Combined with each action's `type`, `title`, `description`, and `input` schema, that is enough to build HTTP, CLI, or MCP adapters without coupling the core package to a transport.
+
+And the bullet list `- \`walkActions(...)\` to flatten a nested action tree` becomes:
+> - `Object.entries(actions)` to iterate the flat registry
+
+Update the code block at line ~1629 that imports `walkActions` and uses nested `posts: { list, create }`. Replace with the flat snake_case + `Object.entries` form (mirror Step 2's pattern).
+
+### Step 9: SYNC_ARCHITECTURE diagram (line ~425)
+
+Open `packages/workspace/SYNC_ARCHITECTURE.md`. Find:
+
+```
+6. switch(rpc.verb) {
+     case 'describe-actions':
+       return Ok(describeActions(userActions))
+   }
+```
+
+Replace with:
+```
+6. switch(rpc.verb) {
+     case 'describe-actions':
+       return Ok(
+         Object.fromEntries(
+           Object.entries(userActions).map(([key, action]) =>
+             [key, toActionMeta(action)]
+           )
+         )
+       )
+   }
+```
+
+If the ASCII box collapses (line gets too long), use the shorthand:
+```
+6. switch(rpc.verb) {
+     case 'describe-actions':
+       return Ok(<flat key -> ActionMeta>)
+   }
+```
+And add a footnote: `<flat key -> ActionMeta>` is `Object.fromEntries(Object.entries(userActions).map(([key, a]) => [key, toActionMeta(a)]))`.
+
+### Step 10: ai README, line 28
+
+Open `packages/ai/README.md`. Find the paragraph that starts:
+
+> Workspace actions are nested objects. `actionsToAiTools()` walks the source with `walkActions()` from `@epicenter/workspace`, joins path segments with `_`, and returns TanStack AI client tools plus wire-safe definitions.
+
+Replace:
+
+> Workspace actions are a flat `ActionRegistry` keyed by snake_case ASCII strings. `actionsToAiTools()` reads each entry with `Object.entries(actions)` and returns TanStack AI client tools plus wire-safe definitions. The AI tool name is the action key verbatim; there is no projection.
+
+### Step 11: ai README, line 40
+
+Find the description under `### actionsToAiTools(source)`:
+
+> Converts an action tree into TanStack AI client tools and JSON definitions. Tool names come from the action path, so a nested action like `tabs.close` becomes `tabs_close`.
+
+Replace:
+
+> Converts an action registry into TanStack AI client tools and JSON definitions. The tool name is the action key, which is already snake_case ASCII (e.g. an action keyed `tabs_close` produces a tool named `tabs_close`).
+
+### Step 12: ai README, line 59
+
+Find:
+
+> `@epicenter/workspace` defines actions and exposes `walkActions()`.
+
+Replace:
+
+> `@epicenter/workspace` defines actions and exposes `defineActions` / `defineQuery` / `defineMutation`.
+
+### Verification
+
+Run from repo root:
+
+```bash
+# 1. No removed exports referenced anywhere in published docs.
+grep -rn "walkActions\|describeActions\|type Mutation\|type Query\|DotsToUnderscores\|ACTION_NAME_SEPARATOR\|resolveActionPath" \
+  packages/workspace/README.md \
+  packages/workspace/SYNC_ARCHITECTURE.md \
+  packages/ai/README.md
+# Expect: zero hits.
+
+# 2. No nested authoring shape examples.
+grep -n "posts: {[[:space:]]*$" packages/workspace/README.md
+# Expect: zero hits.
+
+# 3. Bracket-string access has been replaced with dot-access.
+grep -n "actions\['[a-z]" packages/workspace/README.md packages/ai/README.md
+# Expect: zero hits.
+
+# 4. Spot-check by typechecking an example. Copy one of the updated code blocks
+# into a scratch file under apps/fuji/src/, then run `bun run tsc --noEmit` from
+# apps/fuji. Should compile.
+```
+
+If verification grep #1 returns hits, you missed a spot; jump back to the relevant step.
+
+### Commit
+
+```bash
+git add packages/workspace/README.md packages/workspace/SYNC_ARCHITECTURE.md packages/ai/README.md
+git commit -m "$(cat <<'EOF'
+docs: rewrite action sections in three READMEs for snake_case + defineActions
+
+- packages/workspace/README.md: flat ActionRegistry authoring with
+  defineActions; remove walkActions, describeActions, type Mutation,
+  type Query references; rewrite "nested action tree" prose as flat
+  prefix-keyed registry.
+- packages/workspace/SYNC_ARCHITECTURE.md: sequence diagram cell now
+  shows the actual Object.entries + toActionMeta inline form.
+- packages/ai/README.md: tool name equals action key verbatim; no
+  projection; uses Object.entries, not walkActions.
+EOF
+)"
+```
+
+### If you get stuck
+
+- The "search for `### Actions`" instruction matches twice in the workspace README. The first one is in `## Core Concepts` (a short paragraph; Step 5). The second is in `## Public adapter surface` (the imports block; Step 1). Both need updating.
+- The `posts: {` pattern in Step 2 also matches inside the unchanged JSDoc above the import block; that's fine, the search is just navigation.
+- If you find a stale reference NOT covered above (e.g. a comment in a code block that says "the action tree"), fix it inline. The runbook hits the obvious spots; the file is long.
+- If you'd rather punt and let an agent do it, use the "Handoff prompt" section earlier in this spec.

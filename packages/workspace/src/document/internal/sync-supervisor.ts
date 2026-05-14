@@ -375,55 +375,41 @@ export function createSyncSupervisor(
 		);
 	}
 
-	function handleRemoteAwarenessUpdate(update: Uint8Array) {
-		applyAwarenessUpdate(awareness, update, SYNC_ORIGIN);
-	}
-
 	// Server-attested metadata per remote clientID. The supervisor populates
 	// this from AWARENESS_ATTESTED envelopes; entries are pruned when the
 	// awareness state for a clientID is removed (peer disconnect).
 	const peerMetadata = new Map<number, PeerMetadata>();
-	// Subject carried by the currently-being-applied AWARENESS_ATTESTED envelope.
-	// `applyAwarenessUpdate` fires the awareness 'update' event synchronously
-	// inside its call, so capturing the subject in a closure here lets the
-	// metadata listener stamp the right value for every affected clientID
-	// without having to parse y-protocols binary inline.
-	let currentEnvelopeSubject: string | null = null;
 
+	// Apply an envelope-attested awareness update: stamp `subject` for every
+	// clientID the inner payload touches, then forward the bytes to y-protocols.
+	// Computes the affected clientID set by diffing the awareness state map
+	// before and after the apply call, so the subject<->clientID join doesn't
+	// depend on listener registration order or on the synchronous-event
+	// contract leaking out of y-protocols.
 	function handleRemoteAwarenessAttested(subject: string, update: Uint8Array) {
-		currentEnvelopeSubject = subject;
-		try {
-			applyAwarenessUpdate(awareness, update, SYNC_ORIGIN);
-		} finally {
-			currentEnvelopeSubject = null;
+		const before = new Set(awareness.getStates().keys());
+		applyAwarenessUpdate(awareness, update, SYNC_ORIGIN);
+		for (const clientId of awareness.getStates().keys()) {
+			if (clientId === ydoc.clientID) continue;
+			if (!before.has(clientId)) {
+				peerMetadata.set(clientId, { subject });
+				continue;
+			}
+			// Existing client: subject is install-stable but the envelope
+			// always carries the same value for a given DO, so overwrite is a
+			// no-op for the user-scoped-DO case and a self-correcting refresh
+			// otherwise.
+			peerMetadata.set(clientId, { subject });
 		}
 	}
 
-	// Track subject by clientID. Only stamp on updates the supervisor
-	// originated (origin === SYNC_ORIGIN); local mutations have no
-	// envelope and can't attest a subject. Removed clients drop their
-	// metadata so callers don't see stale subjects for departed peers.
+	// Drop metadata for peers that disconnected. Origin doesn't matter:
+	// `applyAwarenessUpdate` and explicit `removeAwarenessStates` both fire
+	// 'update' with `removed` populated.
 	awareness.on(
 		'update',
-		(
-			{
-				added,
-				updated,
-				removed,
-			}: { added: number[]; updated: number[]; removed: number[] },
-			origin: unknown,
-		) => {
-			if (origin === SYNC_ORIGIN && currentEnvelopeSubject !== null) {
-				for (const id of added) {
-					peerMetadata.set(id, { subject: currentEnvelopeSubject });
-				}
-				for (const id of updated) {
-					peerMetadata.set(id, { subject: currentEnvelopeSubject });
-				}
-			}
-			for (const id of removed) {
-				peerMetadata.delete(id);
-			}
+		({ removed }: { added: number[]; updated: number[]; removed: number[] }) => {
+			for (const id of removed) peerMetadata.delete(id);
 		},
 	);
 
@@ -596,15 +582,6 @@ export function createSyncSupervisor(
 						setStatus({ phase: 'connected' });
 						connected.resolve();
 					}
-					break;
-				}
-
-				case MESSAGE_TYPE.AWARENESS: {
-					// Legacy/loopback path: bare AWARENESS frames carry no envelope
-					// subject. Production servers stamp AWARENESS_ATTESTED instead;
-					// the bare case stays here so client-side decoders never crash
-					// on a server that hasn't been upgraded yet.
-					handleRemoteAwarenessUpdate(decoding.readVarUint8Array(decoder));
 					break;
 				}
 

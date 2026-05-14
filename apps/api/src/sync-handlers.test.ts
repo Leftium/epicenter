@@ -26,6 +26,7 @@ import {
 	decodeMessageType,
 	decodeSyncMessage,
 	encodeAwareness,
+	encodeAwarenessAttested,
 	encodeQueryAwareness,
 	encodeSyncStep1,
 	encodeSyncStep2,
@@ -366,6 +367,26 @@ describe('applyMessage — AWARENESS', () => {
 		const decoded = decodeAwarenessAttestedPayload(decoder);
 		expect(decoded.subject).toBe(room.subject);
 		expect(decoded.subject).not.toBe('attacker');
+	});
+
+	test('AWARENESS_ATTESTED is a server-to-client-only frame: inbound is silently ignored', () => {
+		// A client that constructs the envelope itself and tries to assert a
+		// forged subject must not bypass the auth boundary. The dispatcher has
+		// no AWARENESS_ATTESTED case at all, so the frame falls through to the
+		// default branch, logs an unknown-type warning, and returns null. No
+		// broadcast, no apply, no envelope echo.
+		const { room, connection } = setup();
+		const forged = encodeAwarenessAttested({
+			subject: 'attacker',
+			update: new Uint8Array([0]),
+		});
+		const beforeStates = new Map(room.awareness.getStates());
+
+		const result = applyMessage({ data: forged, room, connection });
+		expect(result.error).toBeNull();
+		expect(result.data).toBeNull();
+		// Awareness was not touched.
+		expect(room.awareness.getStates()).toEqual(beforeStates);
 	});
 });
 

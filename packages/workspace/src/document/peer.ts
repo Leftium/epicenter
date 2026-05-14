@@ -198,8 +198,11 @@ export function createPeersSurface(
 	selfReplicaId: string,
 	hooks: PeerWireHooks,
 ): PeersSurface {
-	function readPeers(): Map<number, PeerAwarenessState> {
-		const result = new Map<number, PeerAwarenessState>();
+	function readPeers(): Map<number, PeerAwarenessState & { subject: Subject }> {
+		const result = new Map<
+			number,
+			PeerAwarenessState & { subject: Subject }
+		>();
 		const selfClientId = awareness.clientID;
 		for (const [clientId, rawState] of awareness.getStates()) {
 			if (clientId === selfClientId) continue;
@@ -211,20 +214,25 @@ export function createPeersSurface(
 			const actionKeys = peerAwarenessSchema.actionKeys(actionKeysRaw);
 			if (actionKeys instanceof type.errors) continue;
 			if (replica.id === selfReplicaId) continue;
-			result.set(clientId, { replica, actionKeys });
+			// No subject for this clientID means the supervisor saw an
+			// awareness state without a matching AWARENESS_ATTESTED envelope.
+			// That's only possible if a malicious or misconfigured peer is
+			// injecting raw AWARENESS frames the server didn't stamp; drop
+			// the peer rather than surface a half-attested entry.
+			const metadata = peerMetadata.get(clientId);
+			if (!metadata) continue;
+			result.set(clientId, { replica, actionKeys, subject: metadata.subject });
 		}
 		return result;
 	}
 
-	function makePeer(clientId: number, state: PeerAwarenessState): Peer {
-		// `subject` comes from the envelope-attested map; clients on a server
-		// that hasn't shipped attested envelopes yet land here with an empty
-		// string. Callers reading `peer.subject` decide whether that's OK for
-		// their UI (typically: show a placeholder until the lookup arrives).
-		const subject = peerMetadata.get(clientId)?.subject ?? '';
+	function makePeer(
+		clientId: number,
+		state: PeerAwarenessState & { subject: Subject },
+	): Peer {
 		return {
 			clientID: clientId,
-			subject,
+			subject: state.subject,
 			replica: state.replica,
 			actionKeys: state.actionKeys,
 			invoke: (path, input, options) =>

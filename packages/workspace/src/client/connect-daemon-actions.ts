@@ -3,12 +3,11 @@
  * daemon. This is the typed workspace-action handle for vault scripts and
  * app-side automation that want to call a running daemon.
  *
- * Generic `TActions` is the in-process action-root shape. The runtime returns
- * an action-root proxy backed by a unix-socket `DaemonClient`.
+ * Generic `TActions` is the in-process `ActionRegistry`. The runtime returns
+ * a flat action proxy backed by a unix-socket `DaemonClient`.
  * `TActions` is type-only: no workspace code runs in the caller process.
- * `DaemonActions<TActions>` filters the canonical action root to branded
- * `defineQuery` / `defineMutation` leaves and rewrites each into the daemon
- * `/run` result.
+ * `DaemonActions<TActions>` rewrites each snake_case action key into the
+ * daemon `/run` result shape.
  *
  * @example
  * ```ts
@@ -18,7 +17,7 @@
  * const fuji = await connectDaemonActions<ReturnType<typeof createFujiActions>>({
  *   route: 'fuji',
  * });
- * await fuji.entries.update({ id, tags: ['untagged'] });
+ * await fuji.entries_update({ id, tags: ['untagged'] });
  * ```
  *
  * Daemon-scope calls (peers, list across routes) live on `DaemonClient`

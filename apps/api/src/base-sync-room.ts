@@ -490,13 +490,20 @@ export class BaseSyncRoom extends DurableObject {
  * connection-scoped. Parsing once at construction lets the value survive
  * hibernation without extra plumbing through `WsAttachment`.
  *
- * Returns the empty string if the DO was constructed without a name (only
- * possible in test rigs that bypass the Worker's name builders).
+ * Throws on an unrecognized shape so misconfigured deployments (test rigs
+ * using `idFromString` / `newUniqueId`, or a future name builder regressing
+ * the format) fail loudly at boot rather than silently broadcasting an empty
+ * subject on every awareness envelope.
  */
 function subjectFromDoName(name: string | undefined): string {
-	if (!name) return '';
-	const match = name.match(/^user:([^:]+):/);
-	return match?.[1] ?? '';
+	const match = name?.match(/^user:([^:]+):/);
+	if (!match) {
+		throw new Error(
+			`[base-sync-room] DO name does not match expected ` +
+				`"user:{userId}:{workspace|document}:{name}" format: ${JSON.stringify(name)}`,
+		);
+	}
+	return match[1] as string;
 }
 
 // ============================================================================

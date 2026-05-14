@@ -298,6 +298,24 @@ This wave is the one that needs the server-side reviewer per Open Question #1.
 - [x] **6.4** Dropped the `SelfInvocationError` wire fallback in `open-collaboration.ts`. The peers surface still filters self by `replica.id`, so the only path that could have hit the fallback (stale clientID reference, test injection) now relies on caller hygiene. The `SelfInvocationError` type, its `RemoteCallError` membership, the CLI rendering branch, and the corresponding cli test were all removed.
 - [x] **6.5** `PeerIdentity` / `PeerRuntime` are gone. The legacy section of `peer-identity.ts` is deleted; `packages/workspace/src/shared/device-id.ts` (and its test) are deleted; `replica-id.ts` carries the `SimpleStorage` / `AsyncStorage` definitions directly. `getOrCreateInstallationId{,Async}` are no longer exported.
 
+### Post-implementation review fixes
+
+Round of cleanup after `code-reviewer` audited the wave-6 result.
+
+- **Subject is non-empty by construction.** Dropped the `subject ?? ''` fallback in `peer.ts`. A peer surface entry now requires a matching `peerMetadata.get(clientId)` — if the supervisor saw an awareness state without a matching `AWARENESS_ATTESTED` envelope (only possible on a wire-protocol violation), the peer is filtered from `peers.list()` / `peers.find()` rather than surfaced with an empty subject.
+- **Bare-AWARENESS client decode path removed.** The "legacy server compatibility" branch in `sync-supervisor.ts` (and the orphan `handleRemoteAwarenessUpdate` helper) was the exact transitional shim the spec promised to delete. The client now only accepts `AWARENESS_ATTESTED`; servers that haven't shipped the envelope drop their peers out of the surface (intentional hard break).
+- **`subjectFromDoName` fails loudly.** Replaced the silent empty-string fallback with a throw so misconfigured deployments (test rigs using `idFromString` / `newUniqueId`, or a future name-builder regression) blow up at boot instead of broadcasting empty-subject envelopes.
+- **AWARENESS_ATTESTED rejection is now load-bearing tested.** Added an inbound test in `sync-handlers.test.ts` that constructs a client-side `AWARENESS_ATTESTED` frame with subject `"attacker"`, asserts the server returns no result and does not mutate awareness state. The previous test only covered payload-embedded forgery.
+- **Closure pattern hardened.** `handleRemoteAwarenessAttested` now computes the affected clientID set by diffing `awareness.getStates()` keys before and after `applyAwarenessUpdate`, instead of relying on the `currentEnvelopeSubject` closure firing inside a synchronous y-protocols event. The supervisor's `awareness.on('update')` handler is reduced to its only remaining job: dropping `peerMetadata` entries on `removed`.
+
+### Deferred follow-ups
+
+These came up in review but are not blockers:
+
+- **Content-doc presence is wasteful.** Every cached content doc opens its own `Awareness` + supervisor + peers surface even though no consumer reads them. A future `presence?: boolean = true` knob on `OpenCollaborationConfig` would let content docs skip the awareness channel entirely. Out of scope for this spec.
+- **Self-RPC failure mode is silent round-trip.** With `SelfInvocationError` gone, a stale clientID pointing at self now routes through the server back to the same connection. Works but pays an RTT. The peers surface filters self by `replica.id` before this can happen in normal flows. Document or guard separately if it ever matters.
+- **Stale doc references.** `packages/workspace/{README,SYNC_ARCHITECTURE}.md` and `packages/workspace/src/document/README.md` still mention `attachYjsSync`. A separate doc-cleanup pass will rewrite those sections to describe content-doc usage as `openCollaboration` with no actions.
+
 ## Edge Cases
 
 ### Multi-tab on same device, same workspace

@@ -52,12 +52,11 @@ function buildSession(
 ) {
 	return createSession({
 		auth,
-		build: ({ identity, encryptionKeys }) => {
+		build: ({ owner }) => {
 			const tabManager = openTabManagerBrowser({
-				userId: identity.user.id,
+				owner,
 				replicaId: profile.replicaId,
 				openWebSocket: auth.openWebSocket,
-				encryptionKeys,
 			});
 			const sessionAiTools = actionsToAiTools(tabManager.collaboration.actions);
 			const savedTabs = createSavedTabState(tabManager);

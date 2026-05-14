@@ -6,12 +6,11 @@ import { createHoneycrispState } from '../routes/(signed-in)/state';
 
 export const session = createSession({
 	auth,
-	build: ({ identity, encryptionKeys }) => {
+	build: ({ owner }) => {
 		const honeycrisp = openHoneycrispBrowser({
-			userId: identity.user.id,
+			owner,
 			replicaId: createReplicaId({ storage: localStorage }),
 			openWebSocket: auth.openWebSocket,
-			encryptionKeys,
 		});
 		const state = createHoneycrispState(honeycrisp);
 		return {

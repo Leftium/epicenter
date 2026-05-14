@@ -1,25 +1,14 @@
-import {
-	attachEncryption,
-	attachOwnedBroadcastChannel,
-	type EncryptionKeys,
-	wipeOwnerLocalYjsData,
-} from '@epicenter/workspace';
+import { type LocalOwner } from '@epicenter/workspace';
 import { zhongwenKv, zhongwenTables } from '@epicenter/zhongwen';
 import * as Y from 'yjs';
 
-export function openZhongwenBrowser({
-	userId,
-	encryptionKeys,
-}: {
-	userId: string;
-	encryptionKeys: () => EncryptionKeys;
-}) {
+export function openZhongwenBrowser({ owner }: { owner: LocalOwner }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
-	const encryption = attachEncryption(ydoc, { encryptionKeys });
+	const encryption = owner.attachEncryption(ydoc);
 	const tables = encryption.attachTables(zhongwenTables);
 	const kv = encryption.attachKv(zhongwenKv);
-	const idb = encryption.attachIndexedDb(ydoc, { userId });
-	attachOwnedBroadcastChannel(ydoc, { userId });
+	const idb = owner.attachIndexedDb(ydoc);
+	owner.attachBroadcastChannel(ydoc);
 
 	return {
 		ydoc,
@@ -31,10 +20,7 @@ export function openZhongwenBrowser({
 		async wipe() {
 			ydoc.destroy();
 			await idb.whenDisposed;
-			await wipeOwnerLocalYjsData({
-				userId,
-				ydocGuids: [ydoc.guid],
-			});
+			await owner.wipeLocalYjsData([ydoc.guid]);
 		},
 		[Symbol.dispose]() {
 			ydoc.destroy();

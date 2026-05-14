@@ -6,12 +6,11 @@ import { createEntriesState } from './entries-state.svelte';
 
 export const session = createSession({
 	auth,
-	build: ({ identity, encryptionKeys }) => {
+	build: ({ owner }) => {
 		const fuji = openFujiBrowser({
-			userId: identity.user.id,
+			owner,
 			replicaId: createReplicaId({ storage: localStorage }),
 			openWebSocket: auth.openWebSocket,
-			encryptionKeys,
 		});
 		const entries = createEntriesState(fuji);
 		return {

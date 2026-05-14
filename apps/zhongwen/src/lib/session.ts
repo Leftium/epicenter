@@ -4,11 +4,8 @@ import { openZhongwenBrowser } from '../routes/(signed-in)/zhongwen/browser';
 
 export const session = createSession({
 	auth,
-	build: ({ identity, encryptionKeys }) =>
-		openZhongwenBrowser({
-			userId: identity.user.id,
-			encryptionKeys,
-		}),
+	build: ({ owner }) =>
+		openZhongwenBrowser({ owner }),
 });
 
 export const requireZhongwen = session.require;

@@ -38,6 +38,7 @@ export async function openOpensidianScript({
 		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 		openWebSocket: session.openWebSocket,
 		replicaId: 'opensidian-script',
+		actions: {},
 	});
 
 	return {

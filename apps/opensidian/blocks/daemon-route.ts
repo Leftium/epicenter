@@ -40,6 +40,7 @@ export function defineOpensidianDaemon({
 				url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: session.openWebSocket,
 				replicaId: 'opensidian-daemon',
+				actions: {},
 			});
 
 			return {

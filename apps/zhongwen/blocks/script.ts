@@ -42,6 +42,7 @@ export async function openZhongwenScript({
 		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 		openWebSocket: session.openWebSocket,
 		replicaId: 'zhongwen-script',
+		actions: {},
 	});
 
 	return {

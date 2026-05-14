@@ -65,6 +65,7 @@ export function openHoneycrispBrowser({
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
 			replicaId,
+			actions: {},
 		});
 
 		onLocalUpdate(ydoc, () => {

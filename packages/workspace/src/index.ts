@@ -38,6 +38,7 @@
  *   waitFor: idb.whenLoaded,
  *   openWebSocket,
  *   replicaId,
+ *   actions: {},
  * });
  *
  * // Content docs use the same primitive with an empty action registry.
@@ -58,6 +59,7 @@
  *       waitFor: bodyIdb.whenLoaded,
  *       openWebSocket,
  *       replicaId,
+ *       actions: {},
  *     });
  *     return {
  *       ydoc: bodyYdoc,

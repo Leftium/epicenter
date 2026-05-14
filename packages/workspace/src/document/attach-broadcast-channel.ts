@@ -1,6 +1,5 @@
 import { BC_ORIGIN, isTransportOrigin } from '@epicenter/sync';
 import * as Y from 'yjs';
-import { createOwnedYjsKey } from './local-yjs-key.js';
 
 export { BC_ORIGIN };
 
@@ -11,7 +10,7 @@ export { BC_ORIGIN };
  * updates from other tabs. Uses `ydoc.guid` as the default channel key so only
  * docs for the same local workspace communicate. Do not use this for
  * authenticated browser workspaces where multiple signed-in users can share a
- * browser profile. Use `attachOwnedBroadcastChannel` for those documents.
+ * browser profile. Use `LocalOwner.attachBroadcastChannel` for those docs.
  *
  * Skips re-broadcasting updates that arrived from BroadcastChannel itself
  * (via `BC_ORIGIN`) and updates that arrived from WebSocket sync. Without
@@ -28,23 +27,14 @@ export function attachBroadcastChannel(ydoc: Y.Doc): void {
 }
 
 /**
- * Owner-scoped BroadcastChannel cross-tab sync for authenticated documents.
- *
- * Authenticated workspaces include the owner id in the channel key so two
- * signed-in users in the same browser profile cannot exchange plaintext Yjs
- * updates through BroadcastChannel.
- *
- * @param ydoc - The Y.Doc to sync across tabs
- * @param opts.userId - Owner id for the authenticated local channel.
+ * Internal: attach a BroadcastChannel using an explicit channel key. Called
+ * by `attachBroadcastChannel` (ydoc.guid) and by `LocalOwner.attachBroadcastChannel`
+ * (owner-scoped key). Not re-exported through the package barrel.
  */
-export function attachOwnedBroadcastChannel(
+export function attachBroadcastChannelWithKey(
 	ydoc: Y.Doc,
-	{ userId }: { userId: string },
+	channelKey: string,
 ): void {
-	attachBroadcastChannelWithKey(ydoc, createOwnedYjsKey(userId, ydoc.guid));
-}
-
-function attachBroadcastChannelWithKey(ydoc: Y.Doc, channelKey: string): void {
 	if (typeof BroadcastChannel === 'undefined') {
 		return;
 	}

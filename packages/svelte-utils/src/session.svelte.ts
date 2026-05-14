@@ -1,47 +1,27 @@
+import { requireIdentity, type AuthClient, type AuthState } from '@epicenter/auth';
+import { createLocalOwner, type LocalOwner } from '@epicenter/workspace';
+
 /**
- * Reactive auth-gated payload.
+ * Auth-gated payload built once per identity-bearing auth state and disposed
+ * on sign-out. `reauth-required` keeps the existing payload mounted: OAuth
+ * sessions are single-user by structure, so two consecutive identity-bearing
+ * states are always the same user.
  *
- * Listens to `auth.state` and builds the app payload on sign-in, disposes
- * on sign-out. Same-user `reauth-required` is a no-op so the payload stays
- * mounted across credential refreshes.
- *
- * OAuth session storage is single-user by structure (one monolithic
- * `OAuthSession` blob; refresh tokens are user-scoped at issuance), so the
- * lifecycle treats two consecutive identity-bearing states as the same user
- * and does not re-check.
- *
- * The framework owns the lifecycle; apps own the payload shape. The build
- * function returns whatever shape the app wants (it must be `Disposable`).
- * Apps typically alias `session.require` to a named export
- * (`export const requireFuji = session.require`) for a one-line presence
- * assertion in descendants.
+ * The build callback receives a `LocalOwner` (`@epicenter/workspace`) that
+ * carries `userId` plus a lazy `encryptionKeys()` reader. Apps forward `owner`
+ * to their browser bundle and call `owner.attachEncryption(ydoc)`,
+ * `owner.attachIndexedDb(ydoc)`, etc., instead of threading `userId` and
+ * `encryptionKeys` separately.
  *
  * Requires an `AuthClient` whose `state` is Svelte-reactive (use
  * `@epicenter/auth-svelte`, not `@epicenter/auth` directly).
- *
- * @example
- * ```ts
- * export const session = createSession({
- *   auth,
- *   build: (identity) => openFujiBrowser({
- *     userId: identity.user.id,
- *     encryptionKeys: () => requireIdentity(auth).encryptionKeys,
- *     ...
- *   }),
- * });
- *
- * export const requireFuji = session.require;
- * ```
  */
-
-import type { AuthClient, AuthState, WorkspaceIdentity } from '@epicenter/auth';
-
 export function createSession<T extends Disposable>({
 	auth,
 	build,
 }: {
 	auth: AuthClient;
-	build: (identity: WorkspaceIdentity) => T;
+	build: (context: { owner: LocalOwner }) => T;
 }) {
 	let payload = $state<T | null>(null);
 
@@ -49,9 +29,15 @@ export function createSession<T extends Disposable>({
 		if (state.status === 'signed-out') {
 			payload?.[Symbol.dispose]();
 			payload = null;
-		} else {
-			payload ??= build(state.identity);
+			return;
 		}
+		if (payload) return;
+		payload = build({
+			owner: createLocalOwner({
+				userId: state.identity.user.id,
+				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+			}),
+		});
 	}
 
 	const unsubscribe = auth.onStateChange(reconcile);
@@ -63,10 +49,7 @@ export function createSession<T extends Disposable>({
 		},
 		require(): T {
 			if (!payload) {
-				throw new Error(
-					'[session] require() called without a payload. ' +
-						'A descendant likely mounted outside the signed-in gate.',
-				);
+				throw new Error('[session] require() called while signed-out.');
 			}
 			return payload;
 		},

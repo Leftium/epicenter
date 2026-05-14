@@ -4,6 +4,7 @@ import {
 	decryptBytes,
 	type EncryptedBlob,
 	encryptBytes,
+	type EncryptionKeys,
 } from '@epicenter/encryption';
 import * as idb from 'lib0/indexeddb';
 import {
@@ -16,6 +17,7 @@ import { clearDocument } from 'y-indexeddb';
 import type * as Y from 'yjs';
 import { applyUpdateV2, encodeStateAsUpdateV2, transact } from 'yjs';
 import type { IndexedDbAttachment } from './attach-indexed-db.js';
+import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
 
 const UPDATES_STORE_NAME = 'updates';
 const CUSTOM_STORE_NAME = 'custom';
@@ -62,8 +64,12 @@ export type EncryptedIndexedDbError = InferErrors<
 
 type EncryptedIndexedDbOptions = {
 	databaseName: string;
-	writeKey: { version: number; bytes: Uint8Array };
-	keyring: ReadonlyMap<number, Uint8Array>;
+	/**
+	 * Lazy reader for the current user's encryption keys. Called once at
+	 * attach time to derive the per-`ydoc.guid` workspace keyring; the
+	 * latest version becomes the write key.
+	 */
+	encryptionKeys: () => EncryptionKeys;
 	/**
 	 * Logger for background failures (persistence write rejections, compaction
 	 * throws). Defaults to a console-backed logger with source
@@ -76,11 +82,18 @@ export function attachEncryptedIndexedDb(
 	ydoc: Y.Doc,
 	{
 		databaseName,
-		writeKey,
-		keyring,
+		encryptionKeys,
 		log = createLogger('attachEncryptedIndexedDb'),
 	}: EncryptedIndexedDbOptions,
 ): IndexedDbAttachment {
+	const keyring = deriveWorkspaceKeyring(encryptionKeys(), ydoc.guid);
+	if (keyring.size === 0) {
+		throw new Error(
+			'Cannot attach encrypted IndexedDB provider: encryptionKeys() returned no usable keys.',
+		);
+	}
+	const writeVersion = Math.max(...keyring.keys());
+	const writeBytes = keyring.get(writeVersion)!;
 	let db: IDBDatabase | undefined;
 	let dbref = 0;
 	let dbsize = 0;
@@ -117,8 +130,8 @@ export function attachEncryptedIndexedDb(
 	): Promise<void> {
 		dbsize += 1;
 		const ciphertext = encryptBytes({
-			key: writeKey.bytes,
-			keyVersion: writeKey.version,
+			key: writeBytes,
+			keyVersion: writeVersion,
 			plaintext: update,
 			aad,
 		});

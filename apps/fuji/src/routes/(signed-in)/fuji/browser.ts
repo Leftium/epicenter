@@ -6,18 +6,15 @@ import {
 	fujiTables,
 } from '@epicenter/fuji';
 import {
-	attachEncryption,
-	attachOwnedBroadcastChannel,
 	attachRichText,
 	createDisposableCache,
 	DateTimeString,
 	docGuid,
-	type EncryptionKeys,
+	type LocalOwner,
 	type OpenWebSocket,
 	onLocalUpdate,
 	openCollaboration,
 	websocketUrl,
-	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
@@ -37,23 +34,21 @@ function entryContentDocGuid({
 }
 
 export function openFujiBrowser({
-	userId,
+	owner,
 	replicaId,
 	openWebSocket,
-	encryptionKeys,
 }: {
-	userId: string;
+	owner: LocalOwner;
 	replicaId: string;
 	openWebSocket?: OpenWebSocket;
-	encryptionKeys: () => EncryptionKeys;
 }) {
 	const rootYdoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
-	const encryption = attachEncryption(rootYdoc, { encryptionKeys });
+	const encryption = owner.attachEncryption(rootYdoc);
 	const tables = encryption.attachTables(fujiTables);
 	const kv = encryption.attachKv({});
 
-	const idb = encryption.attachIndexedDb(rootYdoc, { userId });
-	attachOwnedBroadcastChannel(rootYdoc, { userId });
+	const idb = owner.attachIndexedDb(rootYdoc);
+	owner.attachBroadcastChannel(rootYdoc);
 
 	const entryContentDocs = createDisposableCache((entryId: EntryId) => {
 		const ydoc = new Y.Doc({
@@ -64,8 +59,8 @@ export function openFujiBrowser({
 			gc: false,
 		});
 		const body = attachRichText(ydoc);
-		const childIdb = encryption.attachIndexedDb(ydoc, { userId });
-		attachOwnedBroadcastChannel(ydoc, { userId });
+		const childIdb = owner.attachIndexedDb(ydoc);
+		owner.attachBroadcastChannel(ydoc);
 		const childSync = openCollaboration(ydoc, {
 			url: websocketUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
@@ -125,10 +120,7 @@ export function openFujiBrowser({
 			entryContentDocs[Symbol.dispose]();
 			rootYdoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-			await wipeOwnerLocalYjsData({
-				userId,
-				ydocGuids: fallbackGuids,
-			});
+			await owner.wipeLocalYjsData(fallbackGuids);
 		},
 		[Symbol.dispose]() {
 			entryContentDocs[Symbol.dispose]();

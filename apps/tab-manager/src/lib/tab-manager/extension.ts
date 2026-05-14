@@ -6,13 +6,10 @@
 
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
-	attachEncryption,
-	attachOwnedBroadcastChannel,
-	type EncryptionKeys,
+	type LocalOwner,
 	type OpenWebSocket,
 	openCollaboration,
 	websocketUrl,
-	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createTabManagerActions } from '$lib/workspace/actions';
@@ -27,24 +24,22 @@ import { type DeviceId, tabManagerTables } from '$lib/workspace/definition';
  * WebSocket) is independent and connects whenever the network allows.
  */
 export function openTabManagerBrowser({
-	userId,
+	owner,
 	replicaId,
 	openWebSocket,
-	encryptionKeys,
 }: {
-	userId: string;
+	owner: LocalOwner;
 	replicaId: DeviceId;
 	openWebSocket?: OpenWebSocket;
-	encryptionKeys: () => EncryptionKeys;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: false });
-	const encryption = attachEncryption(ydoc, { encryptionKeys });
+	const encryption = owner.attachEncryption(ydoc);
 	const tables = encryption.attachTables(tabManagerTables);
 	const kv = encryption.attachKv({});
 	const batch = (fn: () => void) => ydoc.transact(fn);
 
-	const idb = encryption.attachIndexedDb(ydoc, { userId });
-	attachOwnedBroadcastChannel(ydoc, { userId });
+	const idb = owner.attachIndexedDb(ydoc);
+	owner.attachBroadcastChannel(ydoc);
 
 	const actions = createTabManagerActions({
 		tables,
@@ -70,10 +65,7 @@ export function openTabManagerBrowser({
 		async wipe() {
 			ydoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-			await wipeOwnerLocalYjsData({
-				userId,
-				ydocGuids: [ydoc.guid],
-			});
+			await owner.wipeLocalYjsData([ydoc.guid]);
 		},
 		[Symbol.dispose]() {
 			ydoc.destroy();

@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import {
-	attachBroadcastChannel,
-	attachOwnedBroadcastChannel,
-} from './attach-broadcast-channel.js';
+import { attachBroadcastChannel } from './attach-broadcast-channel.js';
 
 const originalBroadcastChannel = globalThis.BroadcastChannel;
 
@@ -43,20 +40,6 @@ describe('attachBroadcastChannel', () => {
 		attachBroadcastChannel(ydoc);
 
 		expect(FakeBroadcastChannel.names).toEqual(['yjs.epicenter.fuji']);
-		ydoc.destroy();
-	});
-
-	test('owned function uses owner-scoped channel key without changing ydoc.guid', () => {
-		const ydoc = new Y.Doc({ guid: 'epicenter.fuji' });
-
-		attachOwnedBroadcastChannel(ydoc, {
-			userId: 'user-123',
-		});
-
-		expect(FakeBroadcastChannel.names).toEqual([
-			'yjs.epicenter.v1.user.user-123.yjs.epicenter.fuji',
-		]);
-		expect(ydoc.guid).toBe('epicenter.fuji');
 		ydoc.destroy();
 	});
 

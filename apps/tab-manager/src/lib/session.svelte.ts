@@ -1,5 +1,4 @@
 import type { AuthClient } from '@epicenter/auth';
-import { requireIdentity } from '@epicenter/auth';
 import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -53,12 +52,11 @@ function buildSession(
 ) {
 	return createSession({
 		auth,
-		build: (identity) => {
+		build: ({ owner }) => {
 			const tabManager = openTabManagerBrowser({
-				userId: identity.user.id,
+				owner,
 				replicaId: profile.replicaId,
 				openWebSocket: auth.openWebSocket,
-				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});
 			const sessionAiTools = actionsToAiTools(tabManager.collaboration.actions);
 			const savedTabs = createSavedTabState(tabManager);

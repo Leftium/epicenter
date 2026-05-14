@@ -170,7 +170,6 @@ export {
 
 export {
 	attachBroadcastChannel,
-	attachOwnedBroadcastChannel,
 	BC_ORIGIN,
 } from './document/attach-broadcast-channel.js';
 export {
@@ -178,6 +177,10 @@ export {
 	attachEncryption,
 	type EncryptionAttachment,
 } from './document/attach-encryption.js';
+export {
+	createLocalOwner,
+	type LocalOwner,
+} from './document/local-owner.js';
 export {
 	attachIndexedDb,
 	type IndexedDbAttachment,
@@ -268,7 +271,6 @@ export {
 } from './document/rpc.js';
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 export { websocketUrl } from './document/transport.js';
-export { wipeOwnerLocalYjsData } from './document/wipe-owner-local-yjs-data.js';
 export type {
 	KvEntry,
 	KvStoreChange,

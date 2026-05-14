@@ -90,7 +90,6 @@ export function createOAuthAppAuth({
 	 */
 	let email: string | null = null;
 	let networkAuthPaused = false;
-	let hasDisposed = false;
 	let refreshPromise: Promise<boolean> | null = null;
 	let profilePromise: Promise<Result<ApiMeResponse, AuthError>> | null = null;
 
@@ -367,8 +366,6 @@ export function createOAuthAppAuth({
 			return new WebSocketImpl(String(url), authProtocols);
 		},
 		[Symbol.dispose]() {
-			if (hasDisposed) return;
-			hasDisposed = true;
 			stateStore.clearListeners();
 		},
 	};

@@ -36,7 +36,7 @@ import {
 	defineActions,
 	defineMutation,
 	openCollaboration,
-	websocketUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
 import {
@@ -125,7 +125,7 @@ const actions = defineActions({
 });
 
 const collaboration = openCollaboration(ydoc, {
-	url: websocketUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
+	url: roomWsUrl(SERVER_URL, ydoc.guid),
 	openWebSocket: auth.openWebSocket,
 	replicaId: 'opensidian-playground-daemon',
 	actions,

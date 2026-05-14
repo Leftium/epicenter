@@ -1,15 +1,14 @@
 /**
  * Self-contained Yjs sync room for Cloudflare Durable Objects.
  *
- * Everything a sync room needs lives in this file: SQLite persistence,
+ * Everything a room needs lives in this file: SQLite persistence,
  * WebSocket lifecycle, connection management, presence writes, and the
- * abstract base class. The only external dependency is `sync-handlers.ts`
- * for the Yjs wire protocol (encode/decode/dispatch). `SyncRoom` imports
- * from here and nowhere else.
+ * `Room` class itself. The only external dependency is `sync-handlers.ts`
+ * for the Yjs wire protocol (encode/decode/dispatch).
  *
  * ## Module structure
  *
- * - {@link BaseSyncRoom}: DO base class wiring persistence + connections together
+ * - {@link Room}: the Durable Object class wiring persistence + connections together
  * - {@link PresenceWriteForbidden}: thrown by `sync()` RPC when an HTTP
  *   update tries to mutate the reserved presence array
  */
@@ -38,27 +37,6 @@ import {
 } from './sync-handlers';
 
 // ============================================================================
-// SyncRoomConfig
-// ============================================================================
-
-/**
- * Configuration for customizing sync room behavior.
- *
- * Passed to the {@link BaseSyncRoom} constructor. Keeps customization
- * explicit and co-located with the subclass constructor.
- */
-type SyncRoomConfig = {
-	/**
-	 * Whether to enable Yjs garbage collection.
-	 *
-	 * - `true`: compact current-state rooms
-	 * - `false`: retained-history rooms that preserve delete history so
-	 *   `Y.snapshot()` can reconstruct past states
-	 */
-	gc: boolean;
-};
-
-// ============================================================================
 // Origins & errors
 // ============================================================================
 
@@ -73,10 +51,9 @@ const SERVER_ORIGIN = Symbol('SERVER_ORIGIN');
 
 /**
  * Thrown by `sync()` RPC when an inbound HTTP update writes to the
- * reserved `PRESENCE_KEY` array. The Worker layer (`app.ts`) does not yet
- * map this to an explicit status code, so it currently surfaces as a 500.
- * The error name is stable; promote it to a 403 mapping in `app.ts` if a
- * dedicated status is needed.
+ * reserved `PRESENCE_KEY` array. The Worker layer (`app.ts`) catches it
+ * by name and maps it to HTTP 403; the WebSocket path closes the socket
+ * with code 4400.
  */
 export class PresenceWriteForbidden extends Error {
 	override readonly name = 'PresenceWriteForbidden';
@@ -88,29 +65,27 @@ export class PresenceWriteForbidden extends Error {
 }
 
 // ============================================================================
-// BaseSyncRoom
+// Room
 // ============================================================================
 
 /**
- * Base class for Yjs sync rooms backed by Cloudflare Durable Objects.
+ * Yjs sync room backed by a Cloudflare Durable Object.
  *
- * Owns the shared infrastructure that every sync room needs: SQLite update log
- * persistence, WebSocket lifecycle via the Hibernation API, HTTP sync via RPC,
- * connection management, and server-stamped presence writes. Subclasses
- * customize via {@link SyncRoomConfig}:
+ * Owns: SQLite update log persistence, WebSocket lifecycle via the
+ * Hibernation API, HTTP sync via RPC, connection management, and
+ * server-stamped presence writes. Every room runs with `gc: true`.
+ * Retained-history policies (Yjs snapshots needing `gc: false`) are
+ * deferred and, if they return, will be a per-room policy lookup in
+ * this constructor, not a sibling DO class.
  *
- * - `gc`: Y.Doc garbage collection via {@link SyncRoomConfig}
- * - {@link BaseSyncRoom.onAllDisconnected}: override to run cleanup when the
- *   last WebSocket client leaves
+ * ## Worker to DO interface
  *
- * ## Worker → DO interface
+ * The Hono Worker in `app.ts` calls into this DO via two mechanisms:
  *
- * The Hono Worker in `app.ts` calls into DOs via two mechanisms:
- *
- * - **RPC** (`stub.sync()`, `stub.getDoc()`): for HTTP sync and bootstrap
- *   bootstrap. Direct method calls avoid Request/Response serialization
- *   overhead for binary payloads. The Worker handles HTTP concerns (status
- *   codes, content-type headers); the DO handles only Yjs logic.
+ * - **RPC** (`stub.sync()`, `stub.getDoc()`): for HTTP sync and bootstrap.
+ *   Direct method calls avoid Request/Response serialization overhead
+ *   for binary payloads. The Worker handles HTTP concerns (status codes,
+ *   content-type headers); the DO handles only Yjs logic.
  * - **fetch** (`stub.fetch(request)`): for WebSocket upgrades only, since
  *   the 101 Switching Protocols handshake requires HTTP request/response
  *   semantics. After upgrade, all sync traffic flows through the Hibernation
@@ -130,24 +105,24 @@ export class PresenceWriteForbidden extends Error {
  *
  * ## Auth & data isolation
  *
- * Handled upstream by `requireSession` middleware in app.ts. The Worker validates
- * the session (cookie, or `bearer.<token>` subprotocol for WebSocket) via Better Auth
- * before calling RPC methods or forwarding fetch. The DO itself does not
- * re-validate (it trusts the Worker boundary).
+ * Handled upstream by `requireOAuthUser` in app.ts. The Worker validates
+ * the session (cookie, or `bearer.<token>` subprotocol for WebSocket) via
+ * Better Auth before calling RPC methods or forwarding fetch. The DO
+ * itself does not re-validate (it trusts the Worker boundary).
  *
  * DO names are user-scoped: the Worker constructs
- * `user:{userId}:sync:{room}` before calling `idFromName()`.
- * This ensures each user's data is isolated in separate DO instances, even
- * if multiple users sync rooms with the same name (e.g., "epicenter.tab-manager").
+ * `user:{userId}:rooms:{room}` before calling `idFromName()`. This ensures
+ * each user's data is isolated in separate DO instances, even if multiple
+ * users access rooms with the same name (e.g., "epicenter.tab-manager").
  *
  * We chose user-scoped DO names (Google Docs model) over org-scoped names
- * (Vercel/Supabase model) because most rooms hold personal data.
- * For enterprise self-hosted, the deployment itself is the org boundary.
- * See `getSyncStub` in app.ts for the full rationale.
+ * (Vercel/Supabase model) because most rooms hold personal data. For
+ * enterprise self-hosted, the deployment itself is the org boundary.
+ * See `getRoomStub` in app.ts for the full rationale.
  */
-export class BaseSyncRoom extends DurableObject {
+export class Room extends DurableObject {
 	/**
-	 * The shared Yjs document for this sync room.
+	 * The shared Yjs document for this room.
 	 *
 	 * Initialized inside `ctx.blockConcurrencyWhile()` in the constructor.
 	 * The definite assignment assertion (`!`) is safe because of two
@@ -161,15 +136,14 @@ export class BaseSyncRoom extends DurableObject {
 	 * 2. **Synchronous async callback**: The callback passed to
 	 *    `blockConcurrencyWhile` contains no `await`, so it executes to
 	 *    completion synchronously. This means `doc` is assigned before the
-	 *    constructor returns, so subclass constructors (e.g. `SyncRoom`)
-	 *    can safely access `this.doc` after `super()`.
+	 *    constructor returns.
 	 *
 	 * If an `await` is ever added to the `blockConcurrencyWhile` callback,
-	 * guarantee (2) breaks and subclass constructor access becomes unsafe.
+	 * guarantee (2) breaks.
 	 *
 	 * @see {@link https://developers.cloudflare.com/durable-objects/api/state/#blockconcurrencywhile | blockConcurrencyWhile docs}
 	 */
-	protected doc!: Y.Doc;
+	private doc!: Y.Doc;
 
 	/** Shared room state: the Yjs doc and auth-derived subject. */
 	private room!: RoomContext;
@@ -180,7 +154,7 @@ export class BaseSyncRoom extends DurableObject {
 	/** Active WebSocket connections and their per-connection sync state. */
 	private connections = new Map<WebSocket, Connection>();
 
-	constructor(ctx: DurableObjectState, env: Env, config: SyncRoomConfig) {
+	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 
 		ctx.setWebSocketAutoResponse(
@@ -188,7 +162,7 @@ export class BaseSyncRoom extends DurableObject {
 		);
 
 		ctx.blockConcurrencyWhile(async () => {
-			this.doc = new Y.Doc({ gc: config.gc });
+			this.doc = new Y.Doc({ gc: true });
 			this.room = {
 				doc: this.doc,
 				subject: subjectFromDoName(ctx.id.name),
@@ -347,10 +321,10 @@ export class BaseSyncRoom extends DurableObject {
 	 * 1. Validates the client update does not write to the reserved
 	 *    `PRESENCE_KEY` array (only the server writes presence). Throws
 	 *    {@link PresenceWriteForbidden} on violation.
-	 * 2. Applies client update to the live doc (triggers `updateV2` → SQLite
+	 * 2. Applies client update to the live doc (triggers `updateV2` then SQLite
 	 *    persist + broadcast to WebSocket peers).
 	 * 3. Compares state vectors: returns `null` if already in sync (caller
-	 *    maps to 304).
+	 *    maps to 204 No Content).
 	 * 4. Otherwise returns the binary diff the client is missing.
 	 */
 	async sync(
@@ -472,8 +446,7 @@ export class BaseSyncRoom extends DurableObject {
 	 * attempts to close the underlying socket (no-op if already closed by
 	 * the remote end).
 	 *
-	 * When the last connection leaves, calls {@link onAllDisconnected} for
-	 * subclass cleanup and schedules a deferred compaction alarm.
+	 * When the last connection leaves, schedules a deferred compaction alarm.
 	 */
 	override async webSocketClose(
 		ws: WebSocket,
@@ -503,7 +476,6 @@ export class BaseSyncRoom extends DurableObject {
 		}
 
 		if (this.connections.size === 0) {
-			this.onAllDisconnected();
 			void this.ctx.storage.setAlarm(Date.now() + COMPACTION_DELAY_MS);
 		}
 	}
@@ -519,16 +491,6 @@ export class BaseSyncRoom extends DurableObject {
 		await this.webSocketClose(ws, 1011, 'WebSocket error', false);
 	}
 
-	/**
-	 * Hook called when the last WebSocket client disconnects.
-	 *
-	 * Override in subclasses to perform cleanup when all clients leave.
-	 *
-	 * Called before the compaction alarm is scheduled. The base
-	 * implementation is a no-op.
-	 */
-	protected onAllDisconnected(): void {}
-
 	// --- Alarm: deferred compaction ---
 
 	/**
@@ -539,7 +501,7 @@ export class BaseSyncRoom extends DurableObject {
 	 *
 	 * If the DO is evicted before the alarm fires, the alarm still wakes it:
 	 * the constructor re-runs `blockConcurrencyWhile` which does cold-start
-	 * compaction, so the alarm handler finds ≤ 1 row and no-ops.
+	 * compaction, so the alarm handler finds <= 1 row and no-ops.
 	 *
 	 * @see {@link https://developers.cloudflare.com/durable-objects/api/alarms/ | Durable Objects Alarms}
 	 */
@@ -556,11 +518,11 @@ export class BaseSyncRoom extends DurableObject {
 /**
  * Extract the owning user id (`subject`) from the DO name.
  *
- * DO names are formatted by `getSyncStub` in app.ts as
- * `user:{userId}:sync:{room}`. Every connection to this
- * DO shares the same auth context, so `subject` is room-scoped, not
- * connection-scoped. Parsing once at construction lets the value survive
- * hibernation without extra plumbing through `WsAttachment`.
+ * DO names are formatted by `getRoomStub` in app.ts as
+ * `user:{userId}:rooms:{room}`. Every connection to this DO shares the
+ * same auth context, so `subject` is room-scoped, not connection-scoped.
+ * Parsing once at construction lets the value survive hibernation without
+ * extra plumbing through `WsAttachment`.
  *
  * Throws on an unrecognized shape so misconfigured deployments (test rigs
  * using `idFromString` / `newUniqueId`, or a future name builder regressing
@@ -571,8 +533,8 @@ function subjectFromDoName(name: string | undefined): string {
 	const match = name?.match(/^user:([^:]+):/);
 	if (!match) {
 		throw new Error(
-			`[base-sync-room] DO name does not match expected ` +
-				`"user:{userId}:sync:{room}" format: ${JSON.stringify(name)}`,
+			`[room] DO name does not match expected ` +
+				`"user:{userId}:rooms:{room}" format: ${JSON.stringify(name)}`,
 		);
 	}
 	return match[1] as string;
@@ -625,7 +587,7 @@ type WsAttachment = {
  * thorough (with `gc: false`). Also avoids the exponential performance
  * edge case documented in yjs#710.
  *
- * No-ops if the log already has ≤ 1 row or the compacted blob exceeds
+ * No-ops if the log already has <= 1 row or the compacted blob exceeds
  * the 2 MB per-row BLOB limit.
  *
  * @see {@link https://github.com/yjs/yjs/issues/710 | yjs#710 mergeUpdatesV2 performance}
@@ -644,5 +606,5 @@ function compactUpdateLog(ctx: DurableObjectState, doc: Y.Doc): void {
 		ctx.storage.sql.exec('INSERT INTO updates (data) VALUES (?)', compacted);
 	});
 
-	console.log(`[compaction] ${rowCount} rows → ${compacted.byteLength} bytes`);
+	console.log(`[compaction] ${rowCount} rows to ${compacted.byteLength} bytes`);
 }

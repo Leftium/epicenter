@@ -6,7 +6,7 @@ import {
 	defineQuery,
 	defineTable,
 	openCollaboration,
-	websocketUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 import Type from 'typebox';
@@ -41,7 +41,7 @@ export async function openNotes(replicaId: string) {
 	const auth = await createMachineAuthClient();
 	const session = requireSession(auth);
 	const collaboration = openCollaboration(ydoc, {
-		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
+		url: roomWsUrl(EPICENTER_API_URL, ydoc.guid),
 		openWebSocket: session.openWebSocket,
 		replicaId,
 		actions,

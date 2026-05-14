@@ -2,7 +2,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
 /**
  * Required scope for any route under the protected resource boundary
- * (`/ai/*`, `/sync/*`, `/api/billing/*`,
+ * (`/ai/*`, `/rooms/*`, `/api/billing/*`,
  * `/api/assets/*`). The workspace-identity endpoint enforces it for
  * key release; protected resource middleware enforces it before the
  * route handler runs.

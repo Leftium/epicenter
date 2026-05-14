@@ -4,7 +4,7 @@
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import('./src/app');
-		durableNamespaces: 'SyncRoom';
+		durableNamespaces: 'Room';
 	}
 	interface Env {
 		SESSION_KV: KVNamespace;
@@ -20,7 +20,7 @@ declare namespace Cloudflare {
 		ANTHROPIC_API_KEY: string;
 		AUTUMN_SECRET_KEY: string;
 		GEMINI_API_KEY: string;
-		SYNC_ROOM: DurableObjectNamespace<import('./src/app').SyncRoom>;
+		ROOM: DurableObjectNamespace<import('./src/app').Room>;
 	}
 }
 interface Env extends Cloudflare.Env {}

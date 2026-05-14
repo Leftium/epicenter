@@ -92,7 +92,7 @@ import {
   attachIndexedDb,
   attachOwnedBroadcastChannel,
   openCollaboration,
-  syncRoomUrl,
+  roomWsUrl,
 } from '@epicenter/workspace';
 import { auth } from './auth';
 
@@ -104,7 +104,7 @@ function openBlog() {
   const idb = attachIndexedDb(ydoc);
   attachOwnedBroadcastChannel(ydoc, { userId: auth.state.identity.user.id });
   const collaboration = openCollaboration(ydoc, {
-    url: syncRoomUrl('https://api.example.com', ydoc.guid),
+    url: roomWsUrl('https://api.example.com', ydoc.guid),
     openWebSocket: auth.openWebSocket,
     waitFor: idb.whenLoaded,
     identity: { id: 'browser', name: 'Browser', platform: 'web' },

@@ -1,12 +1,12 @@
-# Generic Yjs Sync Rooms And Checkpoints
+# Generic Yjs Rooms And Checkpoints
 
-**Date**: 2026-05-12
-**Status**: Implemented
+**Date**: 2026-05-12 (revised 2026-05-14)
+**Status**: Implemented (route tests deferred; not yet deployed)
 **Author**: Braden + Codex
 
 ## Overview
 
-Replace product-named server sync room types with one generic Yjs sync room. Keep the default room compact with `gc: true`, add full binary checkpoints as the first history feature, and defer `gc: false` snapshot history until there is a product surface that needs exact historical reconstruction.
+Replace product-named server sync room types with one generic Yjs room. Keep the default room compact with `gc: true`, add full binary checkpoints as the first history feature, and defer `gc: false` snapshot history until there is a product surface that needs exact historical reconstruction.
 
 The clean sentence:
 
@@ -18,7 +18,9 @@ Epicenter Server syncs named Y.Docs; apps decide what those docs mean.
 
 **Current status**: The old API still had separate `WorkspaceRoom` and `DocumentRoom` Durable Objects, old `/workspaces/*` and `/documents/*` routes, and client URLs pointed at those product-named sync endpoints.
 
-**Implemented now**: Collapsed hosted sync to one `SyncRoom`, moved app/example/playground sync callers to `syncRoomUrl(apiUrl, roomId)`, removed the old snapshot routes and DO classes, switched Wrangler to a `SYNC_ROOM` binding, and removed the `do_type` discriminator column from Durable Object telemetry because no live path still branches on room category.
+**Implemented now**: Collapsed hosted sync to one `Room` Durable Object (no abstract base class, no empty subclass: the previous `BaseSyncRoom` + `SyncRoom` pair was inlined). Routes moved to `/rooms/:room`; clients use `roomWsUrl(apiUrl, roomId)` (and the new `roomUrl` for HTTP). Removed the old snapshot routes and DO classes, switched Wrangler to a single `ROOM` binding for class `Room`, and removed the `do_type` discriminator column from Durable Object telemetry because no live path still branches on room category. HTTP "already in sync" now returns `204 No Content` instead of `304 Not Modified` (304 implies a conditional request, which this is not).
+
+**Pre-deploy revision (2026-05-14)**: The first execution shipped under `/sync/:room` with a `SyncRoom` class. On review, we picked `/rooms/:room` and `Room`: the URL space is a resource hierarchy (rooms are the resource; sync is one of several verbs we may do to a room), and `SyncRoom` was a tautology now that the class no longer needs to distinguish itself from a non-sync sibling. The empty `SyncRoom extends BaseSyncRoom` was advertising an extension point we had explicitly decided not to maintain (the spec's own Phase 5 says retention policy is a per-room runtime lookup, not a sibling class). Inlined.
 
 **Out of scope**: Checkpoints, retained-history room policies, snapshot-history rooms, restore behavior, and any compatibility alias for old `/workspaces/*` or `/documents/*` routes.
 
@@ -92,10 +94,10 @@ This creates problems:
 
 ### Desired State
 
-The server exposes one generic sync room concept:
+The server exposes one generic room concept:
 
 ```txt
-/sync/:room
+/rooms/:room
   GET  full Y.Doc state or WebSocket upgrade
   POST HTTP sync
 ```
@@ -117,15 +119,15 @@ epicenter.honeycrisp.notes.note_456.body
 History arrives later through explicit checkpoint endpoints:
 
 ```txt
-/sync/:room/checkpoints
+/rooms/:room/checkpoints
   POST create full binary checkpoint
   GET  list checkpoints
 
-/sync/:room/checkpoints/:id
+/rooms/:room/checkpoints/:id
   GET    fetch checkpoint metadata or binary
   DELETE delete checkpoint
 
-/sync/:room/checkpoints/:id/restore
+/rooms/:room/checkpoints/:id/restore
   POST restore checkpoint into the live room
 ```
 
@@ -232,25 +234,25 @@ The checkpoint path is the better first feature because it keeps the default syn
 
 | Decision | Class | Choice | Rationale |
 | --- | --- | --- | --- |
-| Server sync unit | 2 coherence | Generic `SyncRoom` | Yjs syncs Y.Docs. Product nouns belong above the room layer. |
+| Server sync unit | 2 coherence | Generic `Room` | Yjs syncs Y.Docs. Product nouns belong above the room layer. |
 | Default GC | 1 evidence | `gc: true` | Yjs defaults to true. It keeps deleted content compact and supports normal sync. |
 | First history feature | 2 coherence | Full binary checkpoints | Checkpoints work with `gc: true` and do not force every room to retain deleted content. |
 | `gc: false` support | Deferred | Do not implement now | It is only needed for exact Yjs snapshot reconstruction. No current UI needs that promise. |
 | Client GC matching | 1 evidence | Do not require matching | Normal update sync works across different local GC policies. Only snapshot origin docs require `gc: false`. |
 | Room policy control | 2 coherence | Server owns persisted retention | A client connection must not be able to silently turn a room into retained-history storage. |
-| Route compatibility | 3 taste | Build generic routes first, migrate callers, then delete old routes | A clean break is easier to explain than keeping `/workspaces`, `/documents`, and `/sync` as equal long-term shapes. |
+| Route compatibility | 3 taste | Build generic routes first, migrate callers, then delete old routes | A clean break is easier to explain than keeping `/workspaces`, `/documents`, and `/rooms` as equal long-term shapes. |
 
 ## Architecture
 
 ### Target Room
 
 ```txt
-apps/api/src/sync-room.ts
+apps/api/src/room.ts
 ┌────────────────────────────────────────────┐
-│ SyncRoom extends BaseSyncRoom              │
+│ class Room extends DurableObject           │
 │                                            │
 │ config:                                    │
-│   gc: true                                 │
+│   gc: true (hardcoded in constructor)      │
 │                                            │
 │ storage:                                   │
 │   updates table                            │
@@ -268,30 +270,30 @@ apps/api/src/sync-room.ts
 ```txt
 apps/api/src/app.ts
 
-GET /sync/:room
+GET /rooms/:room
   if Upgrade: websocket
     auth already resolved
     stub.fetch(request)
   else
     stub.getDoc()
 
-POST /sync/:room
+POST /rooms/:room
   body: encoded sync request
   stub.sync(body)
 
-POST /sync/:room/checkpoints
+POST /rooms/:room/checkpoints
   stub.createCheckpoint({ label? })
 
-GET /sync/:room/checkpoints
+GET /rooms/:room/checkpoints
   stub.listCheckpoints()
 
-GET /sync/:room/checkpoints/:id
+GET /rooms/:room/checkpoints/:id
   metadata or binary, final response shape to decide in implementation
 
-POST /sync/:room/checkpoints/:id/restore
+POST /rooms/:room/checkpoints/:id/restore
   stub.restoreCheckpoint(id)
 
-DELETE /sync/:room/checkpoints/:id
+DELETE /rooms/:room/checkpoints/:id
   stub.deleteCheckpoint(id)
 ```
 
@@ -313,7 +315,7 @@ server does not infer:
 The current user-scoped Durable Object naming still applies:
 
 ```txt
-user:{userId}:sync:{room}
+user:{userId}:rooms:{room}
 ```
 
 This keeps isolation unchanged while removing the workspace/document branch.
@@ -325,34 +327,40 @@ This is a clean break. Server-side data on the old `WorkspaceRoom` and `Document
 The first PR is Phases 1 through 3, all in one PR, deployed atomically. Phase 4 (checkpoints) and Phase 5 (snapshot history) are out of scope and become their own specs when a real consumer exists.
 
 ```txt
-First PR commit graph:
+First PR commit graph (as executed):
 
-  1. server: add SyncRoom DO + /sync/:room routes (additive, old routes still answer)
-  2. clients: switch every attachSync URL to /sync/:room
-  3. server: delete /workspaces, /documents, snapshot routes; delete WorkspaceRoom + DocumentRoom classes; v2 migration with deleted_classes; collapse DoType to 'sync'
+  1. refactor(api): collapse sync rooms
+       - introduces SyncRoom (later renamed; see commit 2)
+       - moves clients to /sync/:room
+       - deletes /workspaces, /documents, snapshot routes
+       - deletes WorkspaceRoom + DocumentRoom classes
+       - v2 migration with deleted_classes
+       - drops do_type column
+  2. refactor(api): rename SyncRoom → Room, /sync → /rooms (pre-deploy)
+       - inlines BaseSyncRoom + SyncRoom into a single Room class
+       - 304 → 204 for "already in sync"
+       - syncRoomUrl → roomWsUrl; adds roomUrl (HTTP)
+       - apiUrl trailing slash stripped in helpers
 
-Commit 3 is the destructive one. After it deploys, all WorkspaceRoom and
-DocumentRoom storage is gone forever. Three commits keep the diff reviewable;
-the deploy is one atomic event.
+Commit 1 is the destructive one for any existing WorkspaceRoom/DocumentRoom
+storage. Commit 2 is internal-only naming and is safe because nothing has
+been deployed yet. The deploy is one atomic event after commit 2.
 ```
 
-### Phase 1: Build Generic Sync Room (commit 1, additive)
+### Phase 1: Build Generic Room (commit 1, additive)
 
-- [x] **1.1** Add `apps/api/src/sync-room.ts` that extends `BaseSyncRoom` with `{ gc: true }`.
-- [x] **1.2** Export `SyncRoom` from `apps/api/src/app.ts` alongside the existing `WorkspaceRoom`/`DocumentRoom` re-exports for Wrangler type generation.
-  > **Note**: The final commit exports only `SyncRoom` because this execution lands the clean break in one atomic commit.
-- [x] **1.3** Add `SYNC_ROOM` Durable Object binding in `apps/api/wrangler.jsonc`. Add a `v2` migration tag with `new_sqlite_classes: ["SyncRoom"]`. Do not touch `v1` yet; the old classes still need to answer until commit 3 lands.
-  > **Note**: `v2` also declares `deleted_classes: ["WorkspaceRoom", "DocumentRoom"]` because the old classes are removed in this same commit.
-- [x] **1.4** Regenerate Cloudflare binding types so `c.env.SYNC_ROOM` is typed.
-  > **Note**: `worker-configuration.d.ts` was updated to the new binding shape used by typecheck.
-- [x] **1.5** Add `getSyncStub(c)` in `apps/api/src/app.ts` using DO names shaped as `user:{userId}:sync:{room}`.
-- [x] **1.6** Add `GET /sync/:room` and `POST /sync/:room` routes with the same auth, payload limit, storage tracking, and response behavior as the current workspace/document routes.
-- [x] **1.7** Temporarily widen `DoType` to `'workspace' | 'document' | 'sync'` so the new route's `upsertDoInstance` calls type-check. Commit 3 collapses it.
-  > **Note**: The final shape removes the Durable Object type discriminator entirely, including the `do_type` database column, because sync is now the only room category and no live path reads it.
-- [ ] **1.8** Add tests that prove WebSocket and HTTP sync work through `/sync/:room`.
-  > **Note**: Existing tests cover the sync handler protocol. There is no current Hono route harness for Durable Object RPC, so this execution uses targeted typecheck and sync handler tests rather than adding a brittle partial route mock.
+- [x] **1.1** Add a single `Room` Durable Object class (`apps/api/src/room.ts`) with `gc: true` hardcoded in the constructor. No abstract base, no empty subclass.
+  > **Note**: The original execution landed an abstract `BaseSyncRoom` plus an empty `SyncRoom extends BaseSyncRoom`. The pre-deploy revision inlined both into one `Room` class, because the empty subclass was advertising an extension point we had explicitly decided not to maintain (retention policy is per-room runtime lookup, not a sibling class).
+- [x] **1.2** Export `Room` from `apps/api/src/app.ts` for Wrangler type generation.
+- [x] **1.3** Add `ROOM` Durable Object binding in `apps/api/wrangler.jsonc` with `class_name: "Room"`. Add a `v2` migration tag with `new_sqlite_classes: ["Room"]` and `deleted_classes: ["WorkspaceRoom", "DocumentRoom"]`. Keep `v1` intact.
+- [x] **1.4** Regenerate Cloudflare binding types so `c.env.ROOM` is typed.
+- [x] **1.5** Add `getRoomStub(c)` in `apps/api/src/app.ts` using DO names shaped as `user:{userId}:rooms:{room}`.
+- [x] **1.6** Add `GET /rooms/:room` and `POST /rooms/:room` routes with the same auth, payload limit, storage tracking, and response behavior as the old workspace/document routes. POST returns `204 No Content` when the client is already in sync.
+- [x] **1.7** Remove the `DoType` discriminator and the `do_type` column entirely (no live path branches on room category).
+- [ ] **1.8** Add tests that prove WebSocket and HTTP sync work through `/rooms/:room` end-to-end (Hono-level, not just sync handler unit tests).
+  > **Note**: Still deferred. Existing tests cover the sync handler protocol. Before deploying the destructive `v2` migration, add at least one route-level test per HTTP path (GET binary, POST 200/204/413, WebSocket upgrade). Tracked as a pre-deploy blocker, not a Phase 4 future-work item.
 
-### Phase 2: Switch Every Client to `/sync` (commit 2)
+### Phase 2: Switch Every Client to `/rooms` (commit 2)
 
 Concrete call sites (verified in `apps/`, `packages/`, `examples/`, and `playground/`):
 
@@ -373,13 +381,13 @@ workspace doc URL:
   playground/tab-manager-e2e/epicenter.config.ts
   playground/opensidian-e2e/epicenter.config.ts
 
-child content doc URL (currently /documents/*):
+child content doc URL (was /documents/*):
   apps/fuji/src/routes/(signed-in)/fuji/browser.ts (entry body, gc: false locally)
   apps/honeycrisp/src/routes/(signed-in)/honeycrisp/browser.ts (note body, gc: false locally)
 ```
 
-- [x] **2.1** Add a `syncRoomUrl(apiUrl, roomId)` helper to `@epicenter/workspace` next to `websocketUrl`. It returns `websocketUrl(\`${apiUrl}/sync/${encodeURIComponent(roomId)}\`)`.
-- [x] **2.2** Replace every workspace URL above with `syncRoomUrl(APP_URLS.API, doc.ydoc.guid)`.
+- [x] **2.1** Add `roomUrl(apiUrl, roomId)` (HTTP) and `roomWsUrl(apiUrl, roomId)` (WebSocket) helpers to `@epicenter/workspace` next to `websocketUrl`. Both strip trailing slashes from `apiUrl` and `encodeURIComponent` the room id so ids containing `/`, `?`, or `#` round-trip via Hono's `:room` decoder.
+- [x] **2.2** Replace every workspace URL above with `roomWsUrl(APP_URLS.API, doc.ydoc.guid)`.
 - [x] **2.3** Replace every child content doc URL with the same helper. Local docs stay `gc: false` (clients still want history-capable RAM model); server is `gc: true`. Documented and acceptable.
 - [x] **2.4** Update the example URL in `packages/workspace/src/index.ts` JSDoc and any other references to `/workspaces/*` or `/documents/*` as sync endpoints in docs and guides.
 - [x] **2.5** Run targeted typecheck and tests for `apps/api`, `packages/workspace`, and every app whose URL changed.
@@ -398,11 +406,11 @@ This is the clean break. After this commit deploys, all server-side state in `Wo
   - the `GET`/`POST /documents/:document` routes
   - the four `/documents/:document/snapshots*` routes
 - [x] **3.3** From `apps/api/wrangler.jsonc`, remove the `WORKSPACE_ROOM` and `DOCUMENT_ROOM` durable object bindings. Extend the `v2` migration to also list `deleted_classes: ["WorkspaceRoom", "DocumentRoom"]`. This is the line that destroys the old storage.
-- [x] **3.4** Collapse `DoType` in `apps/api/src/db/schema.ts` to a single literal: `export type DoType = 'sync';`.
+- [x] **3.4** Collapse `DoType` in `apps/api/src/db/schema.ts` to a single literal: `export type DoType = 'rooms';`.
   > **Note**: Superseded by removing `DoType` and the `do_type` column entirely after confirming no live path still uses separate room categories.
 - [x] **3.5** Add a one-shot SQL migration that deletes orphan rows: `DELETE FROM durable_object_instance WHERE do_type IN ('workspace', 'document');`. The instances those rows reference no longer exist.
   > **Note**: The migration deletes old typed rows, then drops the `do_type` column.
-- [x] **3.6** Remove the snapshot RPC tests for `DocumentRoom` and any workspace/document route tests not already replaced by the `/sync/:room` tests from Phase 1.
+- [x] **3.6** Remove the snapshot RPC tests for `DocumentRoom` and any workspace/document route tests not already replaced by the `/rooms/:room` tests from Phase 1.
   > **Note**: No dedicated `DocumentRoom` route tests existed. The old room class and snapshot RPC routes were removed.
 - [x] **3.7** Confirm no remaining references to `WorkspaceRoom`, `DocumentRoom`, `WORKSPACE_ROOM`, `DOCUMENT_ROOM`, `/workspaces/`, or `/documents/` anywhere in `apps/`, `packages/`, `examples/`, or `playground/`.
   > **Note**: Confirmed with `rg`, excluding old migration history and historical package specs.
@@ -411,7 +419,7 @@ This is the clean break. After this commit deploys, all server-side state in `Wo
 
 Out of scope for this spec's first PR. Move to its own spec when there is a real consumer (restore UI, import safety, user-visible version list). Listed below for reference only.
 
-- [ ] **4.1** Add a `checkpoints` table to `SyncRoom` storage:
+- [ ] **4.1** Add a `checkpoints` table to `Room` storage:
 
 ```sql
 CREATE TABLE IF NOT EXISTS checkpoints (
@@ -473,13 +481,13 @@ This is the one-time price of cutting the old surface. Listed so the team merges
 
 ### Server-side state is destroyed on deploy
 
-`/workspaces/${guid}` and `/documents/${guid}` resolve to Durable Objects named `user:{userId}:workspace:{guid}` and `user:{userId}:document:{guid}`. The new `/sync/${guid}` resolves to `user:{userId}:sync:{guid}`. Different name, different DO instance, different storage. The `v2` Wrangler migration's `deleted_classes` entry then drops the old class storage entirely.
+`/workspaces/${guid}` and `/documents/${guid}` resolve to Durable Objects named `user:{userId}:workspace:{guid}` and `user:{userId}:document:{guid}`. The new `/rooms/${guid}` resolves to `user:{userId}:rooms:{guid}`. Different name, different DO instance, different storage. The `v2` Wrangler migration's `deleted_classes` entry then drops the old class storage entirely.
 
 Result by device class:
 
 ```txt
 warm device (any client that still has IndexedDB):
-  reconnects to empty /sync room
+  reconnects to empty /rooms room
   pushes full state on first STEP2/UPDATE
   server hydrated within seconds; all peers converge
 
@@ -514,7 +522,7 @@ Self-healing only happens once the user updates the binary or reloads the page a
 ```txt
 {
   "tag": "v2",
-  "new_sqlite_classes": ["SyncRoom"],
+  "new_sqlite_classes": ["Room"],
   "deleted_classes":   ["WorkspaceRoom", "DocumentRoom"]
 }
 ```
@@ -527,11 +535,11 @@ Confirmed by grep: nothing outside `apps/api/` calls `saveSnapshot`, `listSnapsh
 
 ### `DoType` collapse
 
-`DoType` becomes `'sync'`. The `DELETE FROM durable_object_instance WHERE do_type IN ('workspace', 'document')` migration in Phase 3 drops the orphan rows so the type narrows cleanly.
+`DoType` is removed entirely and the `do_type` column is dropped. The `DELETE FROM durable_object_instance WHERE do_type IN ('workspace', 'document')` migration in Phase 3 drops the orphan rows before the column is dropped, so the type narrows cleanly.
 
 ### URL encoding
 
-Existing call sites pass `${doc.ydoc.guid}` raw. Guids generated by `docGuid()` look like `epicenter.fuji.entries.entry_123.body`: dot-separated, ASCII-safe. Switching to `encodeURIComponent` via the new `syncRoomUrl()` helper is a behavioral no-op today and a defensive correctness win for any future guid containing `?`, `#`, or `/`.
+Existing call sites pass `${doc.ydoc.guid}` raw. Guids generated by `docGuid()` look like `epicenter.fuji.entries.entry_123.body`: dot-separated, ASCII-safe. Switching to `encodeURIComponent` via the new `roomUrl()` / `roomWsUrl()` helpers is a behavioral no-op today and a defensive correctness win for any future guid containing `?`, `#`, or `/`. The helpers also strip trailing slashes from `apiUrl` so callers can pass either `https://api.example.com` or `https://api.example.com/`.
 
 ## Edge Cases
 
@@ -592,28 +600,32 @@ same room string + different user id = different Durable Object
 Room ids may contain slashes or punctuation if derived from document paths. Provide a helper that encodes room ids consistently.
 
 ```ts
-function syncRoomUrl(apiUrl: string, roomId: string) {
-	return websocketUrl(`${apiUrl}/sync/${encodeURIComponent(roomId)}`);
+function roomUrl(apiUrl: string, roomId: string) {
+	const base = apiUrl.replace(/\/+$/, '');
+	return `${base}/rooms/${encodeURIComponent(roomId)}`;
+}
+
+function roomWsUrl(apiUrl: string, roomId: string) {
+	return websocketUrl(roomUrl(apiUrl, roomId));
 }
 ```
 
 ## Testing Plan
 
-- [ ] `apps/api` route tests cover `GET /sync/:room`, `POST /sync/:room`, and WebSocket upgrade.
+- [ ] `apps/api` route tests cover `GET /rooms/:room`, `POST /rooms/:room`, and WebSocket upgrade. **Pre-deploy blocker for the destructive `v2` migration.**
 - [x] Existing sync handler tests continue to pass.
-- [ ] A browser-style client can sync a doc through `/sync/:room`.
+- [ ] A browser-style client can sync a doc through `/rooms/:room`.
 - [ ] Two clients with the same user and room converge.
 - [ ] Two users with the same room string do not share a Durable Object.
-- [ ] Storage tracking records `doType: sync` or an equivalent new type.
+- [ ] Storage tracking records the room without a `do_type` discriminator (column removed; `resourceName` is the room id).
 - [ ] Old `/workspaces/*` and `/documents/*` routes are unused before deletion.
 - [ ] Checkpoint tests, when Phase 4 happens, cover create, list, fetch, delete, restore, and retention limits.
 
 ## Open Questions
 
-1. Should the public route be `/sync/:room` or `/rooms/:room`?
-   Recommendation: `/sync/:room` in the hosted API because it names the capability. `/rooms/:room` is also fine for a pure local sync server.
+1. ~~Should the public route be `/sync/:room` or `/rooms/:room`?~~ **Resolved (2026-05-14):** `/rooms/:room`. The URL space is a resource hierarchy; rooms are the resource, and sync is one of several verbs (sync now, checkpoint later, members/policy/quota even later). Naming the verb in the URL prefix would force every future verb into `/sync/...`, which would stop being true.
 
-2. Should `GET /sync/:room/checkpoints/:id` return metadata, binary data, or content negotiation?
+2. Should `GET /rooms/:room/checkpoints/:id` return metadata, binary data, or content negotiation?
    Recommendation: list returns metadata; binary export can be `/data` if needed.
 
 3. Should restore be implemented by replacing the DO storage or by appending a CRDT update?

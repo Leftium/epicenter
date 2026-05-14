@@ -6,7 +6,7 @@
  * - `parseBearer`: header parsing used by both the well-formedness layer
  *   (`single-credential`) and the resolvers below.
  * - `resolveBearerUser`: cheap resolver used by `requireOAuthUser` for every
- *   protected app resource (`/ai/*`, `/sync/*`,
+ *   protected app resource (`/ai/*`, `/rooms/*`,
  *   `/api/billing/*`, `/api/assets/*`).
  * - `resolveBearerIdentity`: full resolver used by `/workspace-identity`,
  *   adding per-user encryption keys to the returned payload.

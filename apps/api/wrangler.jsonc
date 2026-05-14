@@ -36,8 +36,8 @@
 	"durable_objects": {
 		"bindings": [
 			{
-				"name": "SYNC_ROOM",
-				"class_name": "SyncRoom"
+				"name": "ROOM",
+				"class_name": "Room"
 			}
 		]
 	},
@@ -49,7 +49,7 @@
 		},
 		{
 			"tag": "v2",
-			"new_sqlite_classes": ["SyncRoom"],
+			"new_sqlite_classes": ["Room"],
 			"deleted_classes": ["WorkspaceRoom", "DocumentRoom"]
 		}
 	],

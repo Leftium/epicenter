@@ -133,7 +133,7 @@ import {
 	defineQuery,
 	defineTable,
 	openCollaboration,
-	syncRoomUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
 import { createMachineAuthClient } from '@epicenter/auth/node';
@@ -158,7 +158,7 @@ async function openTabManagerDaemon() {
 	});
 	const auth = await createMachineAuthClient();
 	const collaboration = openCollaboration(ydoc, {
-		url: syncRoomUrl('https://api.epicenter.so', ydoc.guid),
+		url: roomWsUrl('https://api.epicenter.so', ydoc.guid),
 		openWebSocket: auth.openWebSocket,
 		identity: {
 			id: 'tab-manager-daemon',

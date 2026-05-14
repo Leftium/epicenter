@@ -14,7 +14,7 @@ import {
 	type OpenWebSocket,
 	onLocalUpdate,
 	openCollaboration,
-	syncRoomUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
@@ -62,7 +62,7 @@ export function openFujiBrowser({
 		const childIdb = owner.attachIndexedDb(ydoc);
 		owner.attachBroadcastChannel(ydoc);
 		const childSync = openCollaboration(ydoc, {
-			url: syncRoomUrl(APP_URLS.API, ydoc.guid),
+			url: roomWsUrl(APP_URLS.API, ydoc.guid),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
 			replicaId,
@@ -93,7 +93,7 @@ export function openFujiBrowser({
 
 	const actions = createFujiActions(tables);
 	const collaboration = openCollaboration(rootYdoc, {
-		url: syncRoomUrl(APP_URLS.API, rootYdoc.guid),
+		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		replicaId,

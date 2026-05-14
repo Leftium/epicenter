@@ -25,7 +25,7 @@ import {
 	attachEncryption,
 	defineActions,
 	openCollaboration,
-	websocketUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
 import {
@@ -58,7 +58,7 @@ const persistence = attachYjsLog(ydoc, {
 const actions = defineActions({});
 
 const collaboration = openCollaboration(ydoc, {
-	url: websocketUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
+	url: roomWsUrl(SERVER_URL, ydoc.guid),
 	openWebSocket: auth.openWebSocket,
 	replicaId: 'tab-manager-playground-daemon',
 	actions,

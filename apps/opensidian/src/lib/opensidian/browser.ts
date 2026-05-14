@@ -12,7 +12,7 @@ import {
 	type OpenWebSocket,
 	onLocalUpdate,
 	openCollaboration,
-	syncRoomUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import { opensidianTables } from 'opensidian';
@@ -96,7 +96,7 @@ export function openOpensidianBrowser({
 	});
 
 	const collaboration = openCollaboration(rootYdoc, {
-		url: syncRoomUrl(APP_URLS.API, rootYdoc.guid),
+		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		replicaId,

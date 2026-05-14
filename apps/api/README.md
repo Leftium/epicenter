@@ -18,11 +18,11 @@ Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is 
 
 Cloudflare Durable Objects are the current deployment target. Three things make them a natural fit for per-user Yjs sync:
 
-- **Single-threaded per object.** Each user's SyncRoom runs in its own isolate. No mutex, no race conditions on CRDT state. The runtime guarantees it.
+- **Single-threaded per object.** Each user's Room runs in its own isolate. No mutex, no race conditions on CRDT state. The runtime guarantees it.
 - **Built-in SQLite.** The update log lives inside the Durable Object's storage. No external database for sync state, no connection pooling, no cold-start latency from network hops.
 - **WebSocket Hibernation.** Idle connections don't consume compute. A user can leave a tab open for hours and the DO sleeps until the next message arrives. Costs stay proportional to actual sync traffic, not connection count.
 
-We're focused on Durable Objects to keep the maintenance surface small and iterate fast. The Cloudflare-specific sync code lives in `sync-room.ts` and `base-sync-room.ts`. Everything else, routes, auth, AI, and validation, is runtime-portable Hono code.
+We're focused on Durable Objects to keep the maintenance surface small and iterate fast. The Cloudflare-specific sync code lives in `room.ts`. Everything else, routes, auth, AI, and validation, is runtime-portable Hono code.
 
 We want self-hosting adapters. The plan is to stabilize the API surface on Durable Objects first, then extract the sync room logic into a runtime-agnostic layer backed by Node.js WebSockets + SQLite. If you want to deploy today, fork the repo and use the existing `wrangler.jsonc`. Everything you need is in there.
 
@@ -65,9 +65,9 @@ Cloudflare Workers
 ├── Hono app (src/app.ts)
 │   ├── /auth/*          Better Auth (email/password, Google OAuth, OAuth provider)
 │   ├── /ai/chat         AI streaming (OpenAI, Anthropic via @tanstack/ai)
-│   └── /sync/:room      Yjs sync (WebSocket upgrade or HTTP)
+│   └── /rooms/:room     Yjs sync (WebSocket upgrade or HTTP)
 │
-└── SyncRoom (Durable Object, SQLite-backed)
+└── Room (Durable Object, SQLite-backed)
     └── Per-user Yjs document for any app-owned room id
 ```
 

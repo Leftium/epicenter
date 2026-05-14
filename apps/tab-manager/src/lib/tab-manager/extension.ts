@@ -9,7 +9,7 @@ import {
 	type LocalOwner,
 	type OpenWebSocket,
 	openCollaboration,
-	syncRoomUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createTabManagerActions } from '$lib/workspace/actions';
@@ -48,7 +48,7 @@ export function openTabManagerBrowser({
 	});
 
 	const collaboration = openCollaboration(ydoc, {
-		url: syncRoomUrl(APP_URLS.API, ydoc.guid),
+		url: roomWsUrl(APP_URLS.API, ydoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		replicaId,

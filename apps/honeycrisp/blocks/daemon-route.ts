@@ -3,7 +3,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachEncryption,
 	openCollaboration,
-	websocketUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
@@ -38,7 +38,7 @@ export function defineHoneycrispDaemon({
 			});
 			const actions = createHoneycrispActions(tables);
 			const collaboration = openCollaboration(ydoc, {
-				url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
+				url: roomWsUrl(EPICENTER_API_URL, ydoc.guid),
 				openWebSocket: session.openWebSocket,
 				replicaId: 'honeycrisp-daemon',
 				actions,

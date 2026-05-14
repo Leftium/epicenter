@@ -43,8 +43,8 @@ import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import { TRUSTED_ORIGINS } from './trusted-origins';
 
-// Re-export so wrangler types generates DurableObjectNamespace<SyncRoom>.
-export { SyncRoom } from './sync-room';
+// Re-export so wrangler types generates DurableObjectNamespace<Room>.
+export { Room } from './room';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -314,7 +314,7 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 });
 
 app.use('/ai/*', requireOAuthUser);
-app.use('/sync/*', requireOAuthUser);
+app.use('/rooms/*', requireOAuthUser);
 app.use('/api/billing/*', requireOAuthUser);
 app.use('/api/assets/*', requireOAuthUser);
 
@@ -370,11 +370,11 @@ app.post(
 );
 
 // ---------------------------------------------------------------------------
-// Sync routes: one SyncRoom DO per named Y.Doc (gc: true)
+// Room routes: one Room DO per named Y.Doc (gc: true)
 // ---------------------------------------------------------------------------
 
 /**
- * DO name namespacing: `user:{userId}:sync:{room}`
+ * DO name namespacing: `user:{userId}:rooms:{room}`
  *
  * We use user-scoped DO names (Google Docs model) rather than org-scoped names
  * (Vercel/Supabase model). Each user gets their own DO instance per room.
@@ -401,13 +401,12 @@ app.post(
  * a tenant prefix added at the routing layer, not embedded in the app's data model.
  */
 
-/** Get a SyncRoom DO stub and its DO name for the authenticated user's room. */
-function getSyncStub(c: Context<Env>) {
-	const room = c.req.param('room');
-	if (!room) throw new Error('Missing sync room route param');
-	const doName = `user:${c.var.user.id}:sync:${room}`;
+/** Get a Room DO stub and its DO name for the authenticated user's room. */
+function getRoomStub(c: Context<Env>) {
+	const room = c.req.param('room')!;
+	const doName = `user:${c.var.user.id}:rooms:${room}`;
 	return {
-		stub: c.env.SYNC_ROOM.get(c.env.SYNC_ROOM.idFromName(doName)),
+		stub: c.env.ROOM.get(c.env.ROOM.idFromName(doName)),
 		doName,
 		room,
 	};
@@ -455,6 +454,14 @@ function upsertDoInstance(
 		.catch((e) => console.error('[do-tracking] upsert failed:', e));
 }
 
+/**
+ * Wrap a Uint8Array in a Response with a fresh ArrayBuffer copy.
+ *
+ * Yjs encoders (`Y.encodeStateAsUpdateV2`, sync diffs) return `Uint8Array`s
+ * that are subarray views of a larger internal encoder buffer. Passing the
+ * raw view to `new Response()` causes some runtimes to serialize the entire
+ * backing buffer. The copy isolates the bytes we actually want to send.
+ */
 function binaryResponse(data: Uint8Array): Response {
 	const body = new ArrayBuffer(data.byteLength);
 	new Uint8Array(body).set(data);
@@ -464,13 +471,13 @@ function binaryResponse(data: Uint8Array): Response {
 }
 
 app.get(
-	'/sync/:room',
+	'/rooms/:room',
 	describeRoute({
-		description: 'Get sync room doc or upgrade to WebSocket',
-		tags: ['sync'],
+		description: 'Get room doc or upgrade to WebSocket',
+		tags: ['rooms'],
 	}),
 	async (c) => {
-		const { stub, doName, room } = getSyncStub(c);
+		const { stub, doName, room } = getRoomStub(c);
 
 		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
@@ -497,10 +504,10 @@ app.get(
 );
 
 app.post(
-	'/sync/:room',
+	'/rooms/:room',
 	describeRoute({
 		description: 'Sync room doc',
-		tags: ['sync'],
+		tags: ['rooms'],
 	}),
 	async (c) => {
 		const body = new Uint8Array(await c.req.arrayBuffer());
@@ -508,7 +515,7 @@ app.post(
 			return c.body('Payload too large', 413);
 		}
 
-		const { stub, doName, room } = getSyncStub(c);
+		const { stub, doName, room } = getRoomStub(c);
 		let diff: Uint8Array | null;
 		let storageBytes: number;
 		try {
@@ -529,7 +536,7 @@ app.post(
 			}),
 		);
 
-		if (!diff) return c.body(null, 304);
+		if (!diff) return c.body(null, 204);
 		return binaryResponse(diff);
 	},
 );

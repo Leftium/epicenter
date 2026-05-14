@@ -1,4 +1,3 @@
-import { requireIdentity } from '@epicenter/auth';
 import { createSession } from '@epicenter/svelte';
 import { createReplicaId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
@@ -14,12 +13,12 @@ import { createSampleDataLoader } from './utils/load-sample-data.svelte';
 
 export const session = createSession({
 	auth,
-	build: (identity) => {
+	build: ({ identity, encryptionKeys }) => {
 		const opensidian = openOpensidianBrowser({
 			userId: identity.user.id,
 			replicaId: createReplicaId({ storage: localStorage }),
 			openWebSocket: auth.openWebSocket,
-			encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+			encryptionKeys,
 		});
 		const editor = createEditorState();
 		const files = createFilesState({ binding: opensidian });

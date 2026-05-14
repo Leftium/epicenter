@@ -23,9 +23,9 @@
  * ```ts
  * export const session = createSession({
  *   auth,
- *   build: (identity) => openFujiBrowser({
+ *   build: ({ identity, encryptionKeys }) => openFujiBrowser({
  *     userId: identity.user.id,
- *     encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+ *     encryptionKeys,
  *     ...
  *   }),
  * });
@@ -34,23 +34,34 @@
  * ```
  */
 
-import type { AuthClient, AuthState, WorkspaceIdentity } from '@epicenter/auth';
+import {
+	requireIdentity,
+	type AuthClient,
+	type AuthState,
+	type WorkspaceIdentity,
+} from '@epicenter/auth';
+
+type SessionBuildContext = {
+	identity: WorkspaceIdentity;
+	encryptionKeys: () => WorkspaceIdentity['encryptionKeys'];
+};
 
 export function createSession<T extends Disposable>({
 	auth,
 	build,
 }: {
 	auth: AuthClient;
-	build: (identity: WorkspaceIdentity) => T;
+	build: (context: SessionBuildContext) => T;
 }) {
 	let payload = $state<T | null>(null);
+	const encryptionKeys = () => requireIdentity(auth).encryptionKeys;
 
 	function reconcile(state: AuthState) {
 		if (state.status === 'signed-out') {
 			payload?.[Symbol.dispose]();
 			payload = null;
 		} else {
-			payload ??= build(state.identity);
+			payload ??= build({ identity: state.identity, encryptionKeys });
 		}
 	}
 

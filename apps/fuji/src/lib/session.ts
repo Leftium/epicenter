@@ -1,4 +1,3 @@
-import { requireIdentity } from '@epicenter/auth';
 import { createSession } from '@epicenter/svelte';
 import { createReplicaId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
@@ -7,12 +6,12 @@ import { createEntriesState } from './entries-state.svelte';
 
 export const session = createSession({
 	auth,
-	build: (identity) => {
+	build: ({ identity, encryptionKeys }) => {
 		const fuji = openFujiBrowser({
 			userId: identity.user.id,
 			replicaId: createReplicaId({ storage: localStorage }),
 			openWebSocket: auth.openWebSocket,
-			encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+			encryptionKeys,
 		});
 		const entries = createEntriesState(fuji);
 		return {

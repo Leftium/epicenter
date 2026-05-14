@@ -136,8 +136,8 @@ export function openCollaboration<TActions extends ActionRegistry>(
 				case 'describe-actions':
 					return Ok(
 						Object.fromEntries(
-							Object.entries(userActions).map(([path, action]) => [
-								path,
+							Object.entries(userActions).map(([key, action]) => [
+								key,
 								toActionMeta(action),
 							]),
 						),

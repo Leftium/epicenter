@@ -80,7 +80,6 @@
 export type {
 	Action,
 	ActionManifest,
-	ActionMeta,
 	ActionRegistry,
 } from './shared/actions';
 export {
@@ -91,8 +90,6 @@ export {
 	invokeAction,
 	invokeActionForRpc,
 	isAction,
-	isMutation,
-	isQuery,
 	toActionMeta,
 } from './shared/actions';
 

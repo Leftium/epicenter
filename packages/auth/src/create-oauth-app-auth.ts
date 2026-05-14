@@ -138,8 +138,6 @@ export function createOAuthAppAuth({
 				await persistedAuthStorage.set(next);
 				if (persisted !== startedFrom) return false;
 				persisted = next;
-				networkAuthPaused = false;
-				publishState();
 				return true;
 			} catch (cause) {
 				if (persisted === startedFrom) {

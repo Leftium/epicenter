@@ -19,9 +19,12 @@ import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
-import { type ActionManifest, toActionMeta } from '../shared/actions.js';
-import { executeRun } from './run-handler.js';
-import type { StartedDaemonRoute } from './types.js';
+import {
+	type ActionManifest,
+	type ActionRegistry,
+	toActionMeta,
+} from '../shared/actions.js';
+import { executeRun, type DaemonRunRoute } from './run-handler.js';
 
 /**
  * Wire body for `/run`. The schema serves two roles:
@@ -61,6 +64,37 @@ export const PeerSnapshot = type({
 export type PeerSnapshot = typeof PeerSnapshot.infer;
 
 /**
+ * Route plus action registry, the only data `/list` needs.
+ *
+ * This makes manifest projection a single production helper instead of a Hono
+ * route behavior duplicated in tests. The daemon app maps full runtimes down
+ * to this shape before projection.
+ */
+export type RouteActionSource = {
+	route: string;
+	actions: ActionRegistry;
+};
+
+/**
+ * Build the route-qualified daemon action manifest.
+ *
+ * `/list` and its tests both use this helper, so the action prefix rule has one
+ * source of truth: `${route}.${actionKey}`. The Hono route only handles request
+ * and response plumbing.
+ */
+export function createRouteActionManifest(
+	routes: readonly RouteActionSource[],
+): ActionManifest {
+	const manifest: ActionManifest = {};
+	for (const entry of routes) {
+		for (const [path, action] of Object.entries(entry.actions)) {
+			manifest[`${entry.route}.${path}`] = toActionMeta(action);
+		}
+	}
+	return manifest;
+}
+
+/**
  * Build the daemon's Hono app. Tests import this directly; production serves
  * the app through the daemon server factory.
  *
@@ -69,7 +103,7 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * locally or over RPC.
  */
 export function buildDaemonApp(
-	runtimes: StartedDaemonRoute[],
+	runtimes: DaemonRunRoute[],
 	triggerShutdown?: () => void,
 ) {
 	return new Hono()
@@ -89,15 +123,16 @@ export function buildDaemonApp(
 			return c.json(Ok(rows));
 		})
 		.post('/list', (c) => {
-			const manifest: ActionManifest = {};
-			for (const entry of runtimes) {
-				for (const [path, action] of Object.entries(
-					entry.runtime.collaboration.actions,
-				)) {
-					manifest[`${entry.route}.${path}`] = toActionMeta(action);
-				}
-			}
-			return c.json(Ok(manifest));
+			return c.json(
+				Ok(
+					createRouteActionManifest(
+						runtimes.map((entry) => ({
+							route: entry.route,
+							actions: entry.runtime.collaboration.actions,
+						})),
+					),
+				),
+			);
 		})
 		.post('/run', sValidator('json', RunRequest), async (c) => {
 			const request = c.req.valid('json');

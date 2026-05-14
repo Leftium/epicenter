@@ -19,17 +19,19 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import type { EncryptionKeys } from '@epicenter/encryption';
 import { betterAuth } from 'better-auth';
-import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
-import { generateCodeChallenge } from 'better-auth/oauth2';
+import { memoryAdapter } from 'better-auth/adapters/memory';
 import { jwt } from 'better-auth/plugins';
+import {
+	createOAuthTestDb,
+	isAddressInUse,
+	issueOAuthTokens,
+} from '../test-helpers/oauth.js';
 import {
 	parseBearer,
 	resolveBearerIdentity,
 	resolveBearerUser,
 } from './resource-boundary.js';
 
-const redirectUri = 'http://localhost:5174/auth/callback';
-const verifier = 'test-verifier-test-verifier-test-verifier';
 const encryptionKeys: EncryptionKeys = [
 	{
 		version: 1,
@@ -65,7 +67,11 @@ test('parseBearer returns null for missing, empty, or non-bearer input', () => {
 test('resolveBearerUser resolves a valid scoped token to the calling user', async () => {
 	const setup = createBoundaryTestServer();
 	try {
-		const { accessToken } = await issueOAuthTokens(setup);
+		const { accessToken } = await issueOAuthTokens(setup, {
+			clientName: 'Resource Boundary Test',
+			email: 'boundary-test@example.com',
+			name: 'Boundary Test',
+		});
 		const { data, error } = await callUser(setup, accessToken);
 
 		expect(error).toBeNull();
@@ -82,6 +88,9 @@ test('resolveBearerUser rejects tokens missing the workspaces:open scope', async
 	const setup = createBoundaryTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
+			clientName: 'Resource Boundary Test',
+			email: 'boundary-test@example.com',
+			name: 'Boundary Test',
 			scope: 'openid profile email offline_access',
 		});
 		const { data, error } = await callUser(setup, accessToken);
@@ -100,6 +109,9 @@ test('resolveBearerUser rejects tokens issued for the wrong audience as InvalidT
 	const setup = createBoundaryTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
+			clientName: 'Resource Boundary Test',
+			email: 'boundary-test@example.com',
+			name: 'Boundary Test',
 			resource: setup.wrongAudience,
 		});
 		const { data, error } = await callUser(setup, accessToken);
@@ -114,7 +126,11 @@ test('resolveBearerUser rejects tokens issued for the wrong audience as InvalidT
 test('resolveBearerUser rejects tokens verified against the wrong issuer as InvalidToken', async () => {
 	const setup = createBoundaryTestServer();
 	try {
-		const { accessToken } = await issueOAuthTokens(setup);
+		const { accessToken } = await issueOAuthTokens(setup, {
+			clientName: 'Resource Boundary Test',
+			email: 'boundary-test@example.com',
+			name: 'Boundary Test',
+		});
 		const { data, error } = await callUser(setup, accessToken, {
 			issuer: `${setup.baseURL}/some-other-issuer`,
 		});
@@ -150,7 +166,11 @@ test('resolveBearerUser rejects malformed bearer input before calling the verifi
 test('resolveBearerUser rejects tokens whose user no longer exists as InvalidToken', async () => {
 	const setup = createBoundaryTestServer();
 	try {
-		const { accessToken } = await issueOAuthTokens(setup);
+		const { accessToken } = await issueOAuthTokens(setup, {
+			clientName: 'Resource Boundary Test',
+			email: 'boundary-test@example.com',
+			name: 'Boundary Test',
+		});
 		setup.db.user = [];
 
 		const { data, error } = await callUser(setup, accessToken);
@@ -169,7 +189,11 @@ test('resolveBearerUser rejects tokens whose user no longer exists as InvalidTok
 test('resolveBearerIdentity returns user + encryption keys for a valid token', async () => {
 	const setup = createBoundaryTestServer();
 	try {
-		const { accessToken } = await issueOAuthTokens(setup);
+		const { accessToken } = await issueOAuthTokens(setup, {
+			clientName: 'Resource Boundary Test',
+			email: 'boundary-test@example.com',
+			name: 'Boundary Test',
+		});
 		const { data, error } = await callIdentity(setup, accessToken);
 
 		expect(error).toBeNull();
@@ -206,17 +230,7 @@ test('resolveBearerIdentity short-circuits findUserById and key derivation on ve
 // ---------------------------------------------------------------------------
 
 function createBoundaryTestServer() {
-	const db: MemoryDB = {
-		user: [],
-		session: [],
-		account: [],
-		verification: [],
-		oauthClient: [],
-		oauthAccessToken: [],
-		oauthConsent: [],
-		oauthRefreshToken: [],
-		jwks: [],
-	};
+	const db = createOAuthTestDb();
 
 	for (let attempt = 0; attempt < 40; attempt += 1) {
 		const port = nextBoundaryTestPort++;
@@ -264,14 +278,6 @@ function createBoundaryTestServer() {
 	throw new Error('Failed to find an available resource-boundary test port.');
 }
 
-function isAddressInUse(error: unknown) {
-	return (
-		error instanceof Error &&
-		'code' in error &&
-		(error as { code?: unknown }).code === 'EADDRINUSE'
-	);
-}
-
 function commonResolverDeps(
 	setup: ReturnType<typeof createBoundaryTestServer>,
 	accessToken: string,
@@ -306,86 +312,4 @@ async function callIdentity(
 		...commonResolverDeps(setup, accessToken, overrides),
 		deriveUserEncryptionKeys: async () => encryptionKeys,
 	});
-}
-
-async function issueOAuthTokens(
-	{ auth, baseURL }: ReturnType<typeof createBoundaryTestServer>,
-	{
-		resource = baseURL,
-		scope = 'openid profile email offline_access workspaces:open',
-	}: { resource?: string; scope?: string } = {},
-) {
-	const signUpResponse = await auth.handler(
-		new Request(`${baseURL}/auth/sign-up/email`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				email: 'boundary-test@example.com',
-				password: 'password123',
-				name: 'Boundary Test',
-			}),
-		}),
-	);
-	const cookie = signUpResponse.headers.get('set-cookie');
-	expect(cookie).toBeTruthy();
-
-	const client = (await auth.api.adminCreateOAuthClient({
-		body: {
-			client_name: 'Resource Boundary Test',
-			redirect_uris: [redirectUri],
-			token_endpoint_auth_method: 'none',
-			grant_types: ['authorization_code'],
-			response_types: ['code'],
-			scope: 'openid profile email offline_access workspaces:open',
-			skip_consent: true,
-			require_pkce: true,
-		},
-	})) as { client_id: string };
-	const authorizeUrl = new URL(`${baseURL}/auth/oauth2/authorize`);
-	for (const [key, value] of Object.entries({
-		response_type: 'code',
-		client_id: client.client_id,
-		redirect_uri: redirectUri,
-		scope,
-		state: 'state-1',
-		code_challenge: await generateCodeChallenge(verifier),
-		code_challenge_method: 'S256',
-		resource,
-	})) {
-		authorizeUrl.searchParams.set(key, value);
-	}
-
-	const authorizeResponse = await auth.handler(
-		new Request(authorizeUrl.toString(), {
-			headers: { cookie: cookie ?? '' },
-		}),
-	);
-	const location = authorizeResponse.headers.get('location');
-	expect(location).toBeTruthy();
-	const code = new URL(location ?? redirectUri).searchParams.get('code');
-	expect(code).toBeTruthy();
-
-	const tokenResponse = await auth.handler(
-		new Request(`${baseURL}/auth/oauth2/token`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				grant_type: 'authorization_code',
-				client_id: client.client_id,
-				redirect_uri: redirectUri,
-				code: code ?? '',
-				code_verifier: verifier,
-				resource,
-			}),
-		}),
-	);
-	expect(tokenResponse.status).toBe(200);
-	const tokenBody = (await tokenResponse.json()) as {
-		access_token: string;
-		refresh_token?: string;
-	};
-	return {
-		accessToken: tokenBody.access_token,
-		refreshToken: tokenBody.refresh_token ?? null,
-	};
 }

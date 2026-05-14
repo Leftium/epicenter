@@ -15,7 +15,7 @@ import {
 	type OpenWebSocket,
 	openCollaboration,
 	type Replica,
-	toWsUrl,
+	websocketUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -102,7 +102,7 @@ export function openOpensidianBrowser({
 	});
 
 	const collaboration = openCollaboration(rootYdoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
+		url: websocketUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		replica,

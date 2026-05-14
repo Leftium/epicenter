@@ -12,7 +12,7 @@ import {
 	type OpenWebSocket,
 	openCollaboration,
 	type Replica,
-	toWsUrl,
+	websocketUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -59,7 +59,7 @@ export function openTabManagerBrowser({
 	});
 
 	const collaboration = openCollaboration(ydoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+		url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		replica,

@@ -102,7 +102,7 @@ import {
 	attachTables,
 	defineDocument,
 	openCollaboration,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 
 const app = defineDocument((id: string) => {
@@ -111,7 +111,7 @@ const app = defineDocument((id: string) => {
 	const kv = attachKv(ydoc, { themeMode });
 	const idb = attachIndexedDb(ydoc);
 	const collaboration = openCollaboration(ydoc, {
-		url: toWsUrl(`https://sync.example.com/workspaces/${ydoc.guid}`),
+		url: websocketUrl(`https://sync.example.com/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		identity: { id: 'browser', name: 'Browser', platform: 'web' },
 		actions: {},
@@ -210,7 +210,7 @@ import {
 	defineQuery,
 	defineTable,
 	openCollaboration,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 
 const conversationsTable = defineTable(/* ... */);
@@ -233,7 +233,7 @@ const opensidian = defineDocument((id: string) => {
 		}),
 	});
 	const collaboration = openCollaboration(ydoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+		url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		openWebSocket: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
 		identity: { id: 'browser', name: 'Browser', platform: 'web' },

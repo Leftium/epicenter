@@ -31,7 +31,7 @@ import {
 	getOrCreateInstallationId,
 	openCollaboration,
 	type PeerIdentity,
-	toWsUrl,
+	websocketUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import { requireSignedIn } from '@epicenter/auth';
@@ -81,7 +81,7 @@ function openMyApp({
 	attachOwnedBroadcastChannel(doc.ydoc, { userId });
 
 	const collaboration = openCollaboration(doc.ydoc, {
-		url: toWsUrl(`https://api.epicenter.so/workspaces/${doc.ydoc.guid}`),
+		url: websocketUrl(`https://api.epicenter.so/workspaces/${doc.ydoc.guid}`),
 		openWebSocket,
 		waitFor: idb.whenLoaded,
 		identity,

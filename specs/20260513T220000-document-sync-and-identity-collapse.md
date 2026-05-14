@@ -294,7 +294,7 @@ This wave is the one that needs the server-side reviewer per Open Question #1.
 
 - [x] **6.1** Deleted `packages/workspace/src/document/attach-yjs-sync.ts` (and its smoke test). Every caller migrated to `openCollaboration(ydoc, { ..., actions: {} })`: fuji + honeycrisp browser content docs reuse the parent's `replica`, daemon scripts (`apps/{honeycrisp,opensidian,zhongwen}/blocks/script.ts`) pass a `'{app}-script'` node replica.
 - [x] **6.2** `SyncSupervisorConfig` makes `awareness`, `onActionRequest`, `onRuntimeRequest` required. Removed every `?? null` indirection and the `if (!awareness)` / `if (!handler)` guards from `sync-supervisor.ts`. `dispatchIncomingRequest` no longer takes an `errorLabel`/fallback path.
-- [x] **6.3** `toWsUrl` moved out of `sync-supervisor.ts` to `packages/workspace/src/document/transport.ts`; re-exported from the package root.
+- [x] **6.3** `websocketUrl` moved out of `sync-supervisor.ts` to `packages/workspace/src/document/transport.ts`; re-exported from the package root.
 - [x] **6.4** Dropped the `SelfInvocationError` wire fallback in `open-collaboration.ts`. The peers surface still filters self by `replica.id`, so the only path that could have hit the fallback (stale clientID reference, test injection) now relies on caller hygiene. The `SelfInvocationError` type, its `RemoteCallError` membership, the CLI rendering branch, and the corresponding cli test were all removed.
 - [x] **6.5** `PeerIdentity` / `PeerRuntime` are gone. The legacy section of `peer-identity.ts` is deleted; `packages/workspace/src/shared/device-id.ts` (and its test) are deleted; `replica-id.ts` carries the `SimpleStorage` / `AsyncStorage` definitions directly. `getOrCreateInstallationId{,Async}` are no longer exported.
 
@@ -361,7 +361,7 @@ No special workspace-internal wiring needed: auth-state changes are an applicati
 - [ ] Awareness payload validates against `peerAwarenessSchema = { replica, actionPaths }`. No `subject` in the payload.
 - [ ] Server stamps `subject` on the envelope from the auth session. A test confirms a client-forged subject in the payload is ignored.
 - [ ] `openCollaboration` accepts `actions` as optional, defaults to `{}`. Content docs construct it without `actions`.
-- [ ] `toWsUrl` is no longer exported from `sync-supervisor.ts`.
+- [ ] `websocketUrl` is no longer exported from `sync-supervisor.ts`.
 - [ ] `SelfInvocationError` wire fallback in `open-collaboration.ts` is removed.
 - [ ] Workspace package typechecks. Full test suite passes.
 - [ ] Manual smoke: open fuji, honeycrisp, zhongwen, whispering, opensidian. Peers list shows correct subject. Content docs lazy-load and sync. Two-tab scenario shows two clientIDs with one subject + replica.

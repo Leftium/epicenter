@@ -220,7 +220,7 @@ export {
 	type SyncStatus,
 	SyncSupervisorError,
 } from './document/internal/sync-supervisor.js';
-export { toWsUrl } from './document/transport.js';
+export { websocketUrl } from './document/transport.js';
 export {
 	type Collaboration,
 	type OpenCollaborationConfig,

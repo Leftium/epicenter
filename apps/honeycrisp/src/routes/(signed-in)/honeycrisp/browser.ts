@@ -11,7 +11,7 @@ import {
 	type OpenWebSocket,
 	openCollaboration,
 	type Replica,
-	toWsUrl,
+	websocketUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -63,7 +63,7 @@ export function openHoneycrispBrowser({
 		const childIdb = encryption.attachIndexedDb(ydoc, { userId });
 		attachOwnedBroadcastChannel(ydoc, { userId });
 		const childSync = openCollaboration(ydoc, {
-			url: toWsUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
+			url: websocketUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
 			replica,
@@ -93,7 +93,7 @@ export function openHoneycrispBrowser({
 
 	const actions = createHoneycrispActions(tables);
 	const collaboration = openCollaboration(rootYdoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
+		url: websocketUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		replica,

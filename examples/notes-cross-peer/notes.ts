@@ -9,7 +9,7 @@ import {
 	defineQuery,
 	defineTable,
 	PeerIdentity,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 import Type from 'typebox';
@@ -47,7 +47,7 @@ export async function openNotes(peer: PeerIdentity) {
 	});
 	const auth = await createMachineAuthClient();
 	const sync = attachSync(ydoc, {
-		url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
+		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 		bearerToken: () => auth.bearerToken,
 		awareness,
 	});

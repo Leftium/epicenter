@@ -227,7 +227,7 @@ import {
   attachEncryption,
   attachYjsSync,
   type ProjectDir,
-  toWsUrl,
+  websocketUrl,
 } from '@epicenter/workspace';
 import {
   attachYjsLogReader,
@@ -254,7 +254,7 @@ export async function openHoneycrispScript({
     filePath: yjsPath(projectDir, ydoc.guid),
   });
   const sync = attachYjsSync(ydoc, {
-    url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
+    url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
     openWebSocket: auth.openWebSocket,
   });
   return {

@@ -91,7 +91,7 @@ Every consumer (13 call sites across 11 files) passes the two as separate fields
 
 ```ts
 attachSync(doc, {
-    url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+    url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
     waitFor: idb,
     openWebSocket: auth.openWebSocket,
     onCredentialChange: auth.onChange,
@@ -307,7 +307,7 @@ Single PR. Waves are sequential; each wave leaves the workspace in a typecheckab
 
 ### Wave 2: re-export from workspace package
 
-- [x] **2.1** Add `SyncAuth` to `packages/workspace/src/index.ts` re-exports (alongside the existing `attachSync`, `toWsUrl`, etc.).
+- [x] **2.1** Add `SyncAuth` to `packages/workspace/src/index.ts` re-exports (alongside the existing `attachSync`, `websocketUrl`, etc.).
 - [x] **2.2** Update the JSDoc example in `index.ts` (~line 34) to use the new `auth:` form.
 
 ### Wave 3: migrate workspace tests

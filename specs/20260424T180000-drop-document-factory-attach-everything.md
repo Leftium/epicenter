@@ -417,7 +417,7 @@ import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
   attachBroadcastChannel, attachIndexedDb, attachSync,
-  createDisposableCache, dispatchAction, toWsUrl,
+  createDisposableCache, dispatchAction, websocketUrl,
 } from '@epicenter/workspace';
 import { createEntryContentDoc } from '$lib/entry-content-docs';
 import type { EntryId } from '$lib/workspace';
@@ -435,7 +435,7 @@ export function openFuji({ auth }: { auth: AuthClient }) {
     { gcTime: 5_000 },
   );
   const sync = attachSync(doc.ydoc, {
-    url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+    url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
     waitFor: idb.whenLoaded,
     awareness: doc.awareness.raw,
     getToken: () => auth.getToken(),
@@ -495,7 +495,7 @@ import { createPersistedState } from '@epicenter/svelte';
 import {
   attachAwareness, attachBroadcastChannel, attachEncryption,
   attachIndexedDb, attachSync, dispatchAction,
-  serializeActionManifest, invoke, toWsUrl,
+  serializeActionManifest, invoke, websocketUrl,
 } from '@epicenter/workspace';
 import { createFujiActions, fujiTables } from '$lib/workspace';
 import { createEntryContentDocs } from '$lib/entry-content-docs';
@@ -524,7 +524,7 @@ const actions = createFujiActions(tables);
 
 // ── Network ────────────────────────────────────────────────────────
 const sync = attachSync(ydoc, {
-  url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+  url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
   waitFor: idb.whenLoaded,
   awareness: awareness.raw,
   getToken: () => auth.getToken(),

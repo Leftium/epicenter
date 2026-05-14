@@ -282,7 +282,7 @@ awareness.setLocalState({
 
 // ── Network ────────────────────────────────────────────────────────
 const sync = attachSync(ydoc, {
-  url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+  url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
   waitFor: idb.whenLoaded,
   awareness: awareness.raw,
   getToken: () => auth.getToken(),         // ← presence implies token-required

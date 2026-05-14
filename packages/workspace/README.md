@@ -25,7 +25,7 @@ import {
 	attachTables,
 	attachYjsSync,
 	defineTable,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 
 const posts = defineTable(
@@ -44,7 +44,7 @@ export function openBlog() {
 	const kv = attachKv(ydoc, {});
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachYjsSync(ydoc, {
-		url: toWsUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
+		url: websocketUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 	});
 
@@ -134,7 +134,7 @@ import {
 	type EncryptionKeys,
 	openCollaboration,
 	type PeerIdentity,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { appTables } from '$lib/workspace/definition';
@@ -162,7 +162,7 @@ export function openApp({
 	attachOwnedBroadcastChannel(ydoc, { userId });
 
 	const collaboration = openCollaboration(ydoc, {
-		url: toWsUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
+		url: websocketUrl(`https://api.epicenter.so/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		identity,
@@ -815,7 +815,7 @@ import {
 	attachTables,
 	attachYjsSync,
 	openCollaboration,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 import { attachYjsLog } from '@epicenter/workspace/node';
 ```
@@ -873,7 +873,7 @@ import {
 	attachTables,
 	attachYjsSync,
 	defineTable,
-	toWsUrl,
+	websocketUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 
@@ -885,7 +885,7 @@ function openTabs() {
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
 	const sync = attachYjsSync(ydoc, {
-		url: toWsUrl(`https://sync.epicenter.so/rooms/${ydoc.guid}`),
+		url: websocketUrl(`https://sync.epicenter.so/rooms/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 	});
 

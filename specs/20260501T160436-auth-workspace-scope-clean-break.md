@@ -355,7 +355,7 @@ export function openFuji({
 	});
 
 	const sync = attachSync(doc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+		url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
 		getToken: async () => {
 			await auth.whenLoaded;

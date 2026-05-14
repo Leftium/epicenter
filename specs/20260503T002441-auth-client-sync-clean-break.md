@@ -60,7 +60,7 @@ Browser apps adapt auth into that shape:
 const tokenSource = createAuthTokenSource(auth);
 
 const sync = attachSync(doc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+	url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 	waitFor: idb,
 	tokenSource,
 	awareness,
@@ -145,7 +145,7 @@ export function openFuji({
 	peer: PeerIdentity;
 }) {
 	const sync = attachSync(doc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+		url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb,
 		auth,
 		awareness,
@@ -683,7 +683,7 @@ Pass auth to every sync attachment:
 
 ```diff
  const childSync = attachSync(ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+	url: websocketUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 	waitFor: childIdb.whenLoaded,
 -	tokenSource,
 +	auth,
@@ -694,7 +694,7 @@ and:
 
 ```diff
  const sync = attachSync(doc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+	url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 	waitFor: idb,
 -	tokenSource,
 +	auth,

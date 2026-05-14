@@ -27,7 +27,7 @@ import {
 	tabManagerAwarenessDefs,
 	tabManagerTables,
 } from '@epicenter/tab-manager';
-import { attachEncryption, attachSync, toWsUrl } from '@epicenter/workspace';
+import { attachEncryption, attachSync, websocketUrl } from '@epicenter/workspace';
 import { defineConfig } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
@@ -64,7 +64,7 @@ const persistence = attachYjsLog(ydoc, {
 });
 
 const sync = attachSync(ydoc, {
-	url: toWsUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
+	url: websocketUrl(`${SERVER_URL}/workspaces/${ydoc.guid}`),
 	// Gate connection on local hydrate so the handshake only exchanges the
 	// delta, not the whole document.
 	waitFor: Promise.resolve(),

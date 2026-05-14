@@ -207,7 +207,7 @@ import {
   attachTables,
   defineDocument,
   defineTable,
-  toWsUrl,
+  websocketUrl,
 } from '@epicenter/workspace';
 
 const posts = defineTable(
@@ -219,7 +219,7 @@ const blog = defineDocument((id: string) => {
   const tables = attachTables(ydoc, { posts });
   const idb = attachIndexedDb(ydoc);
   const sync = attachSync(ydoc, {
-    url: (docId) => toWsUrl(`http://localhost:3913/rooms/${docId}`),
+    url: (docId) => websocketUrl(`http://localhost:3913/rooms/${docId}`),
     waitFor: idb.whenLoaded,
   });
 

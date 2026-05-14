@@ -95,7 +95,7 @@ const fuji = defineDocument((id: string) => {
   const idb = attachIndexedDb(ydoc);
   attachBroadcastChannel(ydoc);
   const sync = attachSync(ydoc, {
-    url: (docId) => toWsUrl(`${APP_URLS.API}/workspaces/${docId}`),
+    url: (docId) => websocketUrl(`${APP_URLS.API}/workspaces/${docId}`),
     loadToken: async () => auth.token,
     waitFor: idb.whenReady,
     awareness: awareness.raw,

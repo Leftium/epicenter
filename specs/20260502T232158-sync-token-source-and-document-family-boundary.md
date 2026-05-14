@@ -120,7 +120,7 @@ Sync call sites should pass a token source instead of a one-off `getToken` closu
 const tokenSource = createAuthTokenSource(auth);
 
 const sync = attachSync(doc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+	url: websocketUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 	waitFor: idb,
 	tokenSource,
 	awareness,
@@ -131,7 +131,7 @@ Child docs use the same source:
 
 ```ts
 const childSync = attachSync(ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+	url: websocketUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 	waitFor: childIdb.whenLoaded,
 	tokenSource,
 });

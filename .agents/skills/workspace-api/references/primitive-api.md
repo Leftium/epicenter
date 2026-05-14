@@ -14,8 +14,8 @@ You construct a `Y.Doc` yourself and call `attach*` functions on it. `ydoc.destr
 import {
   attachIndexedDb,
   attachRichText,
-  attachSync,
   onLocalUpdate,
+  openCollaboration,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
@@ -26,7 +26,12 @@ function buildMyDoc(id: string) {
 
   const content = attachRichText(ydoc);
   const idb = attachIndexedDb(ydoc);
-  const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded });
+  const collaboration = openCollaboration(ydoc, {
+    url,
+    openWebSocket,
+    replicaId,
+    waitFor: idb.whenLoaded,
+  });
 
   onLocalUpdate(ydoc, () => { /* bump parent row updatedAt, etc. */ });
 
@@ -34,7 +39,7 @@ function buildMyDoc(id: string) {
     ydoc,
     content,
     idb,
-    sync,
+    collaboration,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 }
@@ -57,16 +62,15 @@ Each helper takes a `Y.Doc` and registers cleanup on `ydoc.on('destroy')`. Each 
 | Helper | Returns |
 |---|---|
 | `attachIndexedDb(ydoc)` | `{ whenLoaded, clearLocal, whenDisposed }` |
-| `attachSync(ydoc, { url, getToken?, waitFor?, awareness? })` | `{ whenConnected, status, onStatusChange, reconnect, whenDisposed }` |
+| `openCollaboration(ydoc, { url, openWebSocket?, replicaId, actions?, waitFor? })` | `{ whenConnected, status, onStatusChange, reconnect, whenDisposed, peers, dispatch }` |
 | `attachRichText(ydoc)` | `RichTextAttachment`: `{ read, write, binding: Y.XmlFragment }` |
 | `attachPlainText(ydoc)` | `PlainTextAttachment`: `{ read, write, binding: Y.Text }` |
 | `attachTable(ydoc, name, def)` | Typed row helper over `Y.Map` |
 | `attachKv(ydoc, defs)` | Typed KV helper |
-| `attachAwareness(ydoc, defs)` | Typed awareness helper |
 
-`attachSync`'s `waitFor` gates the first connection attempt on another promise, typically `idb.whenLoaded`, so the first handshake exchanges only a delta, not the full document.
+`openCollaboration`'s `waitFor` gates the first connection attempt on another promise, typically `idb.whenLoaded`, so the first handshake exchanges only a delta, not the full document.
 
-> **`attach*` is NOT idempotent.** Hold the reference from the first call. Calling any `attach*` helper twice against the same `Y.Doc` + slot is a caller bug; the framework does not catch it. For observer-installing primitives (`attachTable`, `attachKv`, `attachAwareness`, `attachEncryption`) double-attach silently installs duplicate observers, causing undefined behavior. One attach site per slot, one reference, held for the life of the `Y.Doc`.
+> **`attach*` is NOT idempotent.** Hold the reference from the first call. Calling any `attach*` helper twice against the same `Y.Doc` + slot is a caller bug; the framework does not catch it. For observer-installing primitives (`attachTable`, `attachKv`, `attachEncryption`) double-attach silently installs duplicate observers, causing undefined behavior. One attach site per slot, one reference, held for the life of the `Y.Doc`.
 
 ## Encrypted Variants (from `@epicenter/workspace`)
 
@@ -97,16 +101,16 @@ Encryption is opt-in per slot; the coordinator carries the intent. Plaintext `at
 
 > **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `encryption.attachTable('posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns, a silent data-at-rest leak. The framework does not catch this; the grep-able call-site shape (`encryption.attach*` vs top-level `attach*`) is the defense. One slot name, one variant, one intent.
 
-IDB / broadcast / sync / sqlite transitively see already-encrypted bytes once encryption is registered. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
+IDB / broadcast / collaboration / sqlite transitively see already-encrypted bytes once encryption is registered. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
 
 ## Readiness Signals: Split, Don't Precompose
 
 Each helper returns what it actually knows. Callers compose at the call site.
 
 - `idb.whenLoaded`: "local draft is in memory, edits are safe" (offline-first UI usually only needs this).
-- `sync.whenConnected`: "transport established, first sync exchange finished" (CLIs that need remote state await this).
+- `collaboration.whenConnected`: "transport established, first sync exchange finished" (CLIs that need remote state await this).
 
-There is no `whenSynced` composite. If you need both, call `Promise.all([idb.whenLoaded, sync.whenConnected])` at the call site. This is intentional: `y-indexeddb`'s upstream `whenSynced` is a misnomer (it's local load, not convergence).
+There is no `whenSynced` composite. If you need both, call `Promise.all([idb.whenLoaded, collaboration.whenConnected])` at the call site. This is intentional: `y-indexeddb`'s upstream `whenSynced` is a misnomer (it's local load, not convergence).
 
 ## Canonical Per-Row Content Doc
 
@@ -117,11 +121,11 @@ Replaces the old `.withDocument('content', { content: richText, guid: 'id', onUp
 import {
   attachIndexedDb,
   attachRichText,
-  attachSync,
   createDisposableCache,
   docGuid,
   onLocalUpdate,
-  toWsUrl,
+  openCollaboration,
+  websocketUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { auth, workspace } from '$lib/client';
@@ -139,9 +143,10 @@ export const entryContentDocs = createDisposableCache((entryId: EntryId) => {
 
   const content = attachRichText(ydoc);
   const idb = attachIndexedDb(ydoc);
-  const sync = attachSync(ydoc, {
-    url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
-    getToken: async () => auth.token,
+  const collaboration = openCollaboration(ydoc, {
+    url: websocketUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+    openWebSocket: auth.openWebSocket,
+    replicaId,
     waitFor: idb.whenLoaded,
   });
 
@@ -155,12 +160,12 @@ export const entryContentDocs = createDisposableCache((entryId: EntryId) => {
     ydoc,
     content,
     idb,
-    sync,
+    collaboration,
     // Consumers await `handle.idb.whenLoaded` directly. Add a
     // `whenReady: Promise.all([...])` field only when the bundle has
     // two or more subsystem signals to compose into one barrier
     // (e.g. `Promise.all([persistence.whenLoaded, unlock.whenChecked,
-    // sync.whenConnected])`). A flat `whenReady: idb.whenLoaded`
+    // collaboration.whenConnected])`). A flat `whenReady: idb.whenLoaded`
     // alias lies about composition; expose the subsystem instead.
     // See specs/20260506T020000-expose-attachments-not-aliases.md.
     [Symbol.dispose]() { ydoc.destroy(); },
@@ -287,10 +292,10 @@ handle.content.binding;  // for editor bindings (Y.XmlFragment / Y.Text)
 ```
 
 ```typescript
-// ❌ Don't compose a "whenSynced" that Promise.alls idb + sync
+// Don't compose a "whenSynced" that Promise.alls idb + collaboration
 // You're hiding which signal the caller actually depends on.
 
-// ✅ Expose atoms; compose at the call site only when you truly need both
+// Expose atoms; compose at the call site only when you truly need both
 await doc.whenLoaded;                                         // typical UI
 await Promise.all([doc.whenLoaded, doc.whenConnected]);       // CLI needing remote state
 ```
@@ -305,13 +310,13 @@ new Y.Doc({ guid, gc: false });
 
 ## One primitive for every doc
 
-There is no separate workspace/document split anymore. The app's top-level workspace doc is usually a direct `openX()` builder with `attachTables` + `attachKv` + `attachAwareness` + persistence + sync inside. Per-row content docs use `createDisposableCache` with `attachRichText` / `attachPlainText` / `attachTimeline` + their own persistence + sync. Those are keyed by id and refcounted by the cache.
+There is no separate workspace/document split anymore. The app's top-level workspace doc is usually a direct `openX()` builder with `attachTables` + `attachKv` + persistence + `openCollaboration` inside. Per-row content docs use `createDisposableCache` with `attachRichText` / `attachPlainText` / `attachTimeline` + their own persistence + `openCollaboration`. Those are keyed by id and refcounted by the cache.
 
 ## Code References
 
 - `packages/workspace/src/cache/disposable-cache.ts`: the cache + refcount primitive
 - `packages/workspace/src/document/attach-indexed-db.ts`: persistence attach
-- `packages/workspace/src/document/attach-sync.ts`: sync attach (supervisor, backoff, awareness)
+- `packages/workspace/src/document/open-collaboration.ts`: sync, presence, peers, and remote dispatch
 - `packages/workspace/src/document/attach-rich-text.ts`, `attach-plain-text.ts`
 - `apps/fuji/src/lib/entry-content-doc.ts`: canonical per-row example
 - `apps/tab-manager/src/lib/client.ts`: canonical workspace-scale example

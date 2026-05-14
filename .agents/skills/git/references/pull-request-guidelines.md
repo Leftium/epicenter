@@ -604,13 +604,14 @@ RESPONSE: [101] [1=RES] [requestId] [requesterClientId]                         
 The DO is a dumb relay. It forwards a REQUEST to the target peer if they're connected, or synthesizes a PeerOffline RESPONSE if they're not. No RPC logic lives in the server — it just routes bytes.
 
 ```typescript
-const peers = workspace.extensions.sync.peers();
-const ext = peers.find(p => p.client === 'browser-extension');
+const ext = workspace.collaboration.peers
+  .list()
+  .find((p) => p.replicaId === 'browser-extension');
 
-const { data, error } = await workspace.extensions.sync.rpc(
-  ext.clientId,
-  'tabs.close',
-  { tabIds: [1, 2] }
+const { data, error } = await workspace.collaboration.dispatch(
+  'tabs_close',
+  { tabIds: [1, 2] },
+  { to: ext.connId, signal: AbortSignal.timeout(10_000) },
 );
 ```
 

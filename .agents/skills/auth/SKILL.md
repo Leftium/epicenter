@@ -227,11 +227,12 @@ requests. Storage writes are awaited before the refreshed token is used.
 Use `auth.openWebSocket` for sync:
 
 ```ts
-const sync = attachSync(ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+const collaboration = openCollaboration(ydoc, {
+	url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 	waitFor: idb.whenLoaded,
 	openWebSocket: auth.openWebSocket,
-	awareness,
+	replicaId,
+	actions,
 });
 ```
 

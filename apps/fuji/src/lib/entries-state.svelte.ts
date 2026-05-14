@@ -1,6 +1,6 @@
+import type { EntryId } from '@epicenter/fuji';
 import { fromTable } from '@epicenter/svelte';
 import type { FujiBrowser } from '../routes/(signed-in)/fuji/browser';
-import type { EntryId } from '@epicenter/fuji';
 
 /**
  * Reactive entries selectors derived from the fuji binding's entries table.

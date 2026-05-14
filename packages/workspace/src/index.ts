@@ -200,20 +200,6 @@ export {
 	xmlFragmentToPlaintext,
 } from './document/attach-rich-text.js';
 export {
-	type OpenWebSocket,
-	type SyncError,
-	SyncFailedError,
-	type SyncFailedReason,
-	type SyncStatus,
-	SyncSupervisorError,
-} from './document/internal/sync-supervisor.js';
-export { websocketUrl } from './document/transport.js';
-export {
-	type Collaboration,
-	type OpenCollaborationConfig,
-	openCollaboration,
-} from './document/open-collaboration.js';
-export {
 	attachReadonlyTable,
 	attachReadonlyTables,
 	attachTable,
@@ -248,24 +234,41 @@ export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { docGuid } from './document/doc-guid.js';
 export {
+	type OpenWebSocket,
+	type SyncError,
+	SyncFailedError,
+	type SyncFailedReason,
+	type SyncStatus,
+	SyncSupervisorError,
+} from './document/internal/sync-supervisor.js';
+export {
 	KV_KEY,
 	type KvKey,
 	PRESENCE_KEY,
 	RPC_KEY,
 	TableKey,
 } from './document/keys.js';
+export { onLocalUpdate } from './document/on-local-update.js';
 export {
+	type Collaboration,
+	type OpenCollaborationConfig,
+	openCollaboration,
+} from './document/open-collaboration.js';
+export {
+	createPresenceSurface,
+	type PresenceEntry,
+	type PresenceSurface,
+} from './document/presence.js';
+export {
+	attachActionRunner,
 	type Call,
 	DispatchError,
 	type DispatchOptions,
-	attachActionRunner,
 	dispatch,
 } from './document/rpc.js';
-export {
-	type PresenceEntry,
-	type PresenceSurface,
-	createPresenceSurface,
-} from './document/presence.js';
+export type { CombinedStandardSchema } from './document/standard-schema.js';
+export { websocketUrl } from './document/transport.js';
+export { wipeOwnerLocalYjsData } from './document/wipe-owner-local-yjs-data.js';
 export type {
 	KvEntry,
 	KvStoreChange,
@@ -274,9 +277,6 @@ export {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
 } from './document/y-keyvalue/y-keyvalue-lww.js';
-export { onLocalUpdate } from './document/on-local-update.js';
-export type { CombinedStandardSchema } from './document/standard-schema.js';
-export { wipeOwnerLocalYjsData } from './document/wipe-owner-local-yjs-data.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

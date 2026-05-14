@@ -2,8 +2,8 @@ import { requireIdentity } from '@epicenter/auth';
 import { createSession } from '@epicenter/svelte';
 import { createReplicaId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
-import { createEntriesState } from './entries-state.svelte';
 import { openFujiBrowser } from '../routes/(signed-in)/fuji/browser';
+import { createEntriesState } from './entries-state.svelte';
 
 export const session = createSession({
 	auth,

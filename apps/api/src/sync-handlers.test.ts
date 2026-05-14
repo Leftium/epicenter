@@ -22,12 +22,12 @@ import * as Y from 'yjs';
 
 import {
 	applyMessage,
+	type Connection,
+	type RoomContext,
 	registerConnection,
 	SyncHandlerError,
 	teardownConnection,
 	updateTouchesPresence,
-	type Connection,
-	type RoomContext,
 } from './sync-handlers';
 
 // ============================================================================

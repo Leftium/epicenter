@@ -4,8 +4,8 @@ import {
 	type EncryptionKeys,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
-import * as Y from 'yjs';
 import { zhongwenKv, zhongwenTables } from '@epicenter/zhongwen';
+import * as Y from 'yjs';
 
 export function openZhongwenBrowser({
 	userId,

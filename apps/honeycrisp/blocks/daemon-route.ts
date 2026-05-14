@@ -1,10 +1,6 @@
 import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
-	createHoneycrispActions,
-	honeycrispTables,
-} from './workspace.js';
-import {
 	attachEncryption,
 	openCollaboration,
 	websocketUrl,
@@ -12,6 +8,7 @@ import {
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
+import { createHoneycrispActions, honeycrispTables } from './workspace.js';
 
 export const DEFAULT_HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
 

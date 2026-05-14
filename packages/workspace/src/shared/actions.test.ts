@@ -224,7 +224,9 @@ describe('defineActions', () => {
 			'tabs.close': defineMutation({ handler: () => null }),
 		} as unknown as Parameters<typeof defineActions>[0];
 		// Cast simulates `Object.fromEntries(...)` or `as ActionRegistry` bypass.
-		expect(() => defineActions(dynamic)).toThrow(/Invalid action key "tabs.close"/);
+		expect(() => defineActions(dynamic)).toThrow(
+			/Invalid action key "tabs.close"/,
+		);
 	});
 
 	test('throws on a name longer than 64 chars', () => {

@@ -16,10 +16,7 @@ import {
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createTabManagerActions } from '$lib/workspace/actions';
-import {
-	type DeviceId,
-	tabManagerTables,
-} from '$lib/workspace/definition';
+import { type DeviceId, tabManagerTables } from '$lib/workspace/definition';
 
 /**
  * Build the tab-manager binding. Synchronous: callers must resolve the

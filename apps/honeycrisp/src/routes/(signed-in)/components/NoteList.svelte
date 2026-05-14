@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Note } from '@epicenter/honeycrisp';
 	import { Button } from '@epicenter/ui/button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
@@ -8,7 +9,6 @@
 	import { requireHoneycrisp } from '$lib/session';
 	import { getDateLabel } from '$lib/utils/date';
 	import NoteCard from '../components/NoteCard.svelte';
-	import type { Note } from '@epicenter/honeycrisp';
 
 	const honeycrisp = requireHoneycrisp();
 
@@ -89,7 +89,9 @@
 >
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<div class="flex items-center gap-2">
-			<h2 class="text-sm font-semibold">{honeycrisp.state.view.currentTitle}</h2>
+			<h2 class="text-sm font-semibold">
+				{honeycrisp.state.view.currentTitle}
+			</h2>
 			<span class="text-xs text-muted-foreground"
 				>{honeycrisp.state.view.currentNotes.length}</span
 			>

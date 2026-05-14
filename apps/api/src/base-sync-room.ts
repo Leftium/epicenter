@@ -32,8 +32,8 @@ import { MAX_PAYLOAD_BYTES } from './constants';
 import {
 	applyMessage,
 	type Connection,
-	registerConnection,
 	type RoomContext,
+	registerConnection,
 	SyncHandlerError,
 	teardownConnection,
 	updateTouchesPresence,
@@ -83,7 +83,9 @@ const SERVER_ORIGIN = Symbol('SERVER_ORIGIN');
 export class PresenceWriteForbidden extends Error {
 	override readonly name = 'PresenceWriteForbidden';
 	constructor() {
-		super('Client SYNC update attempted to write to the reserved presence array');
+		super(
+			'Client SYNC update attempted to write to the reserved presence array',
+		);
 	}
 }
 

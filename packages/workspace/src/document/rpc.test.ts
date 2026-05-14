@@ -22,16 +22,16 @@ import Type from 'typebox';
 import { Err, Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import {
+	type ActionRegistry,
 	defineMutation,
 	defineQuery,
-	type ActionRegistry,
 } from '../shared/actions.js';
 import { RPC_KEY } from './keys.js';
 import {
 	attachActionRunner,
-	dispatch,
-	DispatchError,
 	type Call,
+	DispatchError,
+	dispatch,
 } from './rpc.js';
 import { YKeyValueLww } from './y-keyvalue/y-keyvalue-lww.js';
 
@@ -85,12 +85,10 @@ describe('rpc', () => {
 			answer: defineQuery({ handler: () => 42 }),
 		});
 
-		const result = await dispatch<undefined, number>(
-			rpc,
-			'answer',
-			undefined,
-			{ to: targetConnId, signal: AbortSignal.timeout(1000) },
-		);
+		const result = await dispatch<undefined, number>(rpc, 'answer', undefined, {
+			to: targetConnId,
+			signal: AbortSignal.timeout(1000),
+		});
 
 		expect(result.error).toBeNull();
 		expect(result.data).toBe(42);

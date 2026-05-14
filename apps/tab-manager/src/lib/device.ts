@@ -22,7 +22,7 @@ import type { DeviceId } from './workspace/definition';
  */
 export async function createDeviceProfile() {
 	const [id, defaultName] = await Promise.all([
-		createReplicaIdAsync<DeviceId>({
+		createReplicaIdAsync({
 			storage: {
 				getItem: (k) => storage.getItem<string>(`local:${k}`),
 				setItem: async (k, v) => {
@@ -33,7 +33,7 @@ export async function createDeviceProfile() {
 		generateDefaultDeviceName(),
 	]);
 	return {
-		replica: { id, platform: 'chrome-extension' as const },
+		replica: { id: id as DeviceId, platform: 'chrome-extension' as const },
 		defaultName,
 	};
 }

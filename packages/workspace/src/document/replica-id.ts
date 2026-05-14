@@ -27,30 +27,33 @@ export type AsyncStorage = {
 	setItem(key: string, value: string): Promise<void>;
 };
 
+// Persisted under the legacy "installation.id" key. Do not rename: every
+// existing user has this key in storage today; renaming invalidates their
+// replica id and shows them up as a new device.
 const KEY = 'epicenter.installation.id';
 
 /** Read or lazily generate the replica id from a synchronous storage. */
-export function createReplicaId<T extends string = string>({
+export function createReplicaId({
 	storage,
 }: {
 	storage: SimpleStorage;
-}): T {
+}): string {
 	const existing = storage.getItem(KEY);
-	if (existing) return existing as T;
+	if (existing) return existing;
 	const fresh = generateGuid();
 	storage.setItem(KEY, fresh);
-	return fresh as unknown as T;
+	return fresh;
 }
 
 /** Read or lazily generate the replica id from an async storage. */
-export async function createReplicaIdAsync<T extends string = string>({
+export async function createReplicaIdAsync({
 	storage,
 }: {
 	storage: AsyncStorage;
-}): Promise<T> {
+}): Promise<string> {
 	const existing = await storage.getItem(KEY);
-	if (existing) return existing as T;
+	if (existing) return existing;
 	const fresh = generateGuid();
 	await storage.setItem(KEY, fresh);
-	return fresh as unknown as T;
+	return fresh;
 }

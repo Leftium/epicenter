@@ -2,272 +2,39 @@
  * Protocol Unit Tests
  *
  * Tests y-websocket-compatible protocol helpers used by the server sync endpoint.
- * Coverage focuses on message encoding/decoding, compatibility with y-protocols,
- * and end-to-end synchronization behavior under common and edge conditions.
+ * Coverage focuses on sync message encoding/decoding, compatibility with
+ * y-protocols, and end-to-end synchronization behavior under common and edge
+ * conditions.
  *
- * Key behaviors:
- * - Sync and awareness frames encode/decode with expected wire formats.
- * - Handshake and incremental updates converge document state across peers.
+ * After the RPC-on-Yjs-state collapse, the wire protocol is byte-identical
+ * to plain y-websocket sync: only `MESSAGE_TYPE.SYNC` produces traffic;
+ * `MESSAGE_TYPE.AUTH` is a reserved sentinel for the 4401 close path.
  */
 
 import { describe, expect, test } from 'bun:test';
-import { Ok } from 'wellcrafted/result';
-import {
-	Awareness,
-	applyAwarenessUpdate,
-	encodeAwarenessUpdate,
-} from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import * as decoding from 'lib0/decoding';
 import {
-	decodeAwarenessAttestedPayload,
 	decodeMessageType,
-	decodeRpcMessage,
 	decodeSyncMessage,
-	encodeAwareness,
-	encodeAwarenessAttested,
-	encodeAwarenessStates,
-	encodeQueryAwareness,
-	encodeRpcActionRequest,
-	encodeRpcResponse,
-	encodeRpcRuntimeRequest,
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
 	handleSyncPayload,
 	MESSAGE_TYPE,
-	RPC_TYPE,
 	SYNC_MESSAGE_TYPE,
 } from './protocol';
-import { RpcError } from './rpc-errors';
 
 // ============================================================================
 // MESSAGE_TYPE Constants
 // ============================================================================
 
 describe('MESSAGE_TYPE constants', () => {
-	test('match y-websocket protocol values', () => {
-		// These values are defined by y-websocket and must not change
+	test('expose only the SYNC and AUTH wire slots', () => {
+		// Wire protocol is byte-identical to plain y-websocket sync after the
+		// awareness/RPC collapse: only SYNC produces traffic; AUTH is a
+		// reserved sentinel for the 4401 close path.
 		expect(MESSAGE_TYPE.SYNC).toBe(0);
-		expect(MESSAGE_TYPE.AWARENESS).toBe(1);
 		expect(MESSAGE_TYPE.AUTH).toBe(2);
-		expect(MESSAGE_TYPE.QUERY_AWARENESS).toBe(3);
-		expect(MESSAGE_TYPE.AWARENESS_ATTESTED).toBe(100);
-	});
-});
-
-// ============================================================================
-// Awareness-Attested Encode/Decode Tests
-// ============================================================================
-
-describe('AWARENESS_ATTESTED protocol', () => {
-	test('round-trips subject + opaque payload', () => {
-		const awareness = new Awareness(new Y.Doc());
-		awareness.setLocalState({ replica: { id: 'r-1', platform: 'node' } });
-		const update = encodeAwarenessUpdate(awareness, [awareness.clientID]);
-
-		const message = encodeAwarenessAttested({
-			subject: 'user_abc',
-			update,
-		});
-
-		expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.AWARENESS_ATTESTED);
-
-		const decoder = decoding.createDecoder(message);
-		decoding.readVarUint(decoder); // discard type tag
-		const decoded = decodeAwarenessAttestedPayload(decoder);
-		expect(decoded.subject).toBe('user_abc');
-		expect(decoded.update).toEqual(update);
-	});
-
-	test('preserves opaque payload bytes verbatim (server stays oblivious to y-protocols)', () => {
-		const opaque = new Uint8Array([1, 2, 3, 4, 5, 254, 255]);
-		const message = encodeAwarenessAttested({
-			subject: '',
-			update: opaque,
-		});
-
-		const decoder = decoding.createDecoder(message);
-		decoding.readVarUint(decoder);
-		const decoded = decodeAwarenessAttestedPayload(decoder);
-		expect(decoded.subject).toBe('');
-		expect(decoded.update).toEqual(opaque);
-	});
-
-	test('subject is the server-stamped value, not whatever lives in the payload', () => {
-		// Encode an "awareness state" whose payload happens to claim a different
-		// subject. The envelope subject is what consumers read; the payload is
-		// opaque to the envelope layer.
-		const forgedClaim = new TextEncoder().encode(
-			JSON.stringify({ subject: 'attacker', replica: { id: 'r-1' } }),
-		);
-		const message = encodeAwarenessAttested({
-			subject: 'real_user',
-			update: forgedClaim,
-		});
-
-		const decoder = decoding.createDecoder(message);
-		decoding.readVarUint(decoder);
-		const decoded = decodeAwarenessAttestedPayload(decoder);
-		expect(decoded.subject).toBe('real_user');
-	});
-});
-
-// ============================================================================
-// RPC Encode/Decode Tests
-// ============================================================================
-
-describe('RPC protocol', () => {
-	test('MESSAGE_TYPE.RPC is 101', () => {
-		expect(MESSAGE_TYPE.RPC).toBe(101);
-	});
-
-	test('RPC_TYPE constants', () => {
-		expect(RPC_TYPE.ACTION_REQUEST).toBe(0);
-		expect(RPC_TYPE.RESPONSE).toBe(1);
-		expect(RPC_TYPE.RUNTIME_REQUEST).toBe(2);
-	});
-
-	test('round-trip: encode/decode RPC ACTION_REQUEST', () => {
-		const encoded = encodeRpcActionRequest({
-			requestId: 42,
-			targetClientId: 100,
-			requesterClientId: 200,
-			action: 'tabs.close',
-			input: { tabIds: [1, 2, 3] },
-		});
-
-		expect(decodeMessageType(encoded)).toBe(MESSAGE_TYPE.RPC);
-
-		const decoded = decodeRpcMessage(encoded);
-		expect(decoded.type).toBe('action-request');
-		if (decoded.type === 'action-request') {
-			expect(decoded.requestId).toBe(42);
-			expect(decoded.targetClientId).toBe(100);
-			expect(decoded.requesterClientId).toBe(200);
-			expect(decoded.action).toBe('tabs.close');
-			expect(decoded.input).toEqual({ tabIds: [1, 2, 3] });
-		}
-	});
-
-	test('round-trip: encode/decode RPC RESPONSE', () => {
-		const encoded = encodeRpcResponse({
-			requestId: 42,
-			requesterClientId: 200,
-			result: Ok({ closedCount: 3 }),
-		});
-
-		expect(decodeMessageType(encoded)).toBe(MESSAGE_TYPE.RPC);
-
-		const decoded = decodeRpcMessage(encoded);
-		expect(decoded.type).toBe('response');
-		if (decoded.type === 'response') {
-			expect(decoded.requestId).toBe(42);
-			expect(decoded.requesterClientId).toBe(200);
-			expect(decoded.result).toEqual(Ok({ closedCount: 3 }));
-		}
-	});
-
-	test('ACTION_REQUEST with null input', () => {
-		const encoded = encodeRpcActionRequest({
-			requestId: 0,
-			targetClientId: 50,
-			requesterClientId: 60,
-			action: 'devices.list',
-		});
-
-		const decoded = decodeRpcMessage(encoded);
-		expect(decoded.type).toBe('action-request');
-		if (decoded.type === 'action-request') {
-			expect(decoded.input).toBeNull();
-		}
-	});
-
-	test('RESPONSE with error', () => {
-		const encoded = encodeRpcResponse({
-			requestId: 7,
-			requesterClientId: 300,
-			result: RpcError.PeerOffline(),
-		});
-
-		const decoded = decodeRpcMessage(encoded);
-		expect(decoded.type).toBe('response');
-		if (decoded.type === 'response') {
-			expect(decoded.result.data).toBeNull();
-			expect(decoded.result.error).toMatchObject({
-				name: 'PeerOffline',
-				message: 'Target peer is not connected',
-			});
-		}
-	});
-
-	test('decodeRpcMessage discriminates ACTION_REQUEST vs RESPONSE vs RUNTIME_REQUEST', () => {
-		const actionRequest = encodeRpcActionRequest({
-			requestId: 1,
-			targetClientId: 10,
-			requesterClientId: 20,
-			action: 'test',
-		});
-		const response = encodeRpcResponse({
-			requestId: 1,
-			requesterClientId: 20,
-			result: Ok('ok'),
-		});
-		const runtimeRequest = encodeRpcRuntimeRequest({
-			requestId: 1,
-			targetClientId: 10,
-			requesterClientId: 20,
-			verb: 'describe-actions',
-		});
-
-		expect(decodeRpcMessage(actionRequest).type).toBe('action-request');
-		expect(decodeRpcMessage(response).type).toBe('response');
-		expect(decodeRpcMessage(runtimeRequest).type).toBe('runtime-request');
-	});
-
-	test('round-trip: encode/decode RPC RUNTIME_REQUEST', () => {
-		const encoded = encodeRpcRuntimeRequest({
-			requestId: 7,
-			targetClientId: 100,
-			requesterClientId: 200,
-			verb: 'describe-actions',
-		});
-
-		expect(decodeMessageType(encoded)).toBe(MESSAGE_TYPE.RPC);
-
-		const decoded = decodeRpcMessage(encoded);
-		expect(decoded.type).toBe('runtime-request');
-		if (decoded.type === 'runtime-request') {
-			expect(decoded.requestId).toBe(7);
-			expect(decoded.targetClientId).toBe(100);
-			expect(decoded.requesterClientId).toBe(200);
-			expect(decoded.verb).toBe('describe-actions');
-		}
-	});
-
-	test('decodeRpcMessage throws on non-RPC message', () => {
-		const syncMessage = encodeSyncStep1({ doc: new Y.Doc() });
-		expect(() => decodeRpcMessage(syncMessage)).toThrow(
-			'Expected RPC message (101), got 0',
-		);
-	});
-
-	// The discriminator is the value of `error` (wellcrafted Result convention),
-	// not key presence. JSON.stringify drops `data: undefined`, so a void
-	// handler's response arrives as `{ error: null }` with no `data` key —
-	// that is fine: the decoder validates on `error`, callers discriminate on
-	// `error === null`, and `result.data` is correctly `undefined`.
-	test('void handler round-trips: data dropped on wire, decodes as success', () => {
-		const encoded = encodeRpcResponse({
-			requestId: 1,
-			requesterClientId: 1,
-			result: Ok(undefined),
-		});
-		const decoded = decodeRpcMessage(encoded);
-		expect(decoded.type).toBe('response');
-		if (decoded.type !== 'response') return;
-		expect(decoded.result.error).toBeNull();
-		expect(decoded.result.data).toBeUndefined();
 	});
 });
 
@@ -456,139 +223,6 @@ describe('MESSAGE_SYNC', () => {
 });
 
 // ============================================================================
-// MESSAGE_AWARENESS Tests
-// ============================================================================
-
-describe('MESSAGE_AWARENESS', () => {
-	describe('encodeAwarenessStates', () => {
-		test('encodes single client state', () => {
-			const doc = createDoc();
-			const awareness = new Awareness(doc);
-			awareness.setLocalState({ name: 'User 1', cursor: { x: 10, y: 20 } });
-
-			const message = encodeAwarenessStates({
-				awareness,
-				clients: [awareness.clientID],
-			});
-
-			expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.AWARENESS);
-		});
-
-		test('encodes complex nested state', () => {
-			const doc = createDoc();
-			const awareness = new Awareness(doc);
-			awareness.setLocalState({
-				user: { name: 'Test', color: '#ff0000' },
-				cursor: { position: { x: 100, y: 200 }, selection: [0, 10] },
-				metadata: { version: 1, flags: ['active'] },
-			});
-
-			const message = encodeAwarenessStates({
-				awareness,
-				clients: [awareness.clientID],
-			});
-
-			expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.AWARENESS);
-		});
-
-		test('handles special characters in state', () => {
-			const doc = createDoc();
-			const awareness = new Awareness(doc);
-			awareness.setLocalState({
-				name: 'User with "quotes" and \'apostrophes\'',
-				emoji: '🎉🚀',
-				newlines: 'line1\nline2',
-			});
-
-			const message = encodeAwarenessStates({
-				awareness,
-				clients: [awareness.clientID],
-			});
-
-			expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.AWARENESS);
-		});
-
-		test('handles large awareness state', () => {
-			const doc = createDoc();
-			const awareness = new Awareness(doc);
-			awareness.setLocalState({
-				largeArray: Array(1000).fill('item'),
-				largeString: 'x'.repeat(10000),
-			});
-
-			const message = encodeAwarenessStates({
-				awareness,
-				clients: [awareness.clientID],
-			});
-
-			expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.AWARENESS);
-			expect(message.length).toBeGreaterThan(10000);
-		});
-	});
-
-	describe('encodeAwareness', () => {
-		test('wraps raw awareness update', () => {
-			const doc = createDoc();
-			const awareness = new Awareness(doc);
-			awareness.setLocalState({ name: 'Test' });
-
-			const update = encodeAwarenessUpdate(awareness, [awareness.clientID]);
-			const message = encodeAwareness({ update });
-
-			expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.AWARENESS);
-		});
-	});
-
-	describe('awareness protocol compatibility', () => {
-		test('encoded awareness can be applied to another instance', () => {
-			const doc1 = createDoc();
-			const awareness1 = new Awareness(doc1);
-			awareness1.setLocalState({ name: 'User 1' });
-
-			const doc2 = createDoc();
-			const awareness2 = new Awareness(doc2);
-
-			// Encode from awareness1
-			const update = encodeAwarenessUpdate(awareness1, [awareness1.clientID]);
-
-			// Apply to awareness2
-			applyAwarenessUpdate(awareness2, update, 'remote');
-
-			// awareness2 should have awareness1's state
-			const states = awareness2.getStates();
-			expect(states.has(awareness1.clientID)).toBe(true);
-			expect(states.get(awareness1.clientID)).toEqual({ name: 'User 1' });
-		});
-
-		test('null state removes client (disconnect)', () => {
-			const doc = createDoc();
-			const awareness = new Awareness(doc);
-			awareness.setLocalState({ name: 'User' });
-
-			expect(awareness.getStates().has(awareness.clientID)).toBe(true);
-
-			// Setting null removes the state
-			awareness.setLocalState(null);
-
-			expect(awareness.getStates().has(awareness.clientID)).toBe(false);
-		});
-	});
-});
-
-// ============================================================================
-// MESSAGE_QUERY_AWARENESS Tests
-// ============================================================================
-
-describe('MESSAGE_QUERY_AWARENESS', () => {
-	test('query awareness message is single byte', () => {
-		const message = encodeQueryAwareness();
-
-		expect(message.length).toBe(1);
-		expect(message[0]).toBe(MESSAGE_TYPE.QUERY_AWARENESS);
-	});
-});
-
-// ============================================================================
 // Decoder Tests
 // ============================================================================
 
@@ -637,20 +271,6 @@ describe('decodeSyncMessage', () => {
 		}
 	});
 
-	test('throws on non-SYNC message type', () => {
-		const doc = createDoc();
-		const awareness = new Awareness(doc);
-		awareness.setLocalState({ name: 'Test' });
-		const awarenessMessage = encodeAwarenessStates({
-			awareness,
-			clients: [awareness.clientID],
-		});
-
-		expect(() => decodeSyncMessage(awarenessMessage)).toThrow(
-			'Expected SYNC message (0), got 1',
-		);
-	});
-
 	test('roundtrip: encode then decode preserves data', () => {
 		const doc = createDoc((d) => {
 			d.getMap('users').set('alice', { name: 'Alice', age: 30 });
@@ -674,22 +294,6 @@ describe('decodeMessageType', () => {
 		const doc = createDoc();
 		const message = encodeSyncStep1({ doc });
 		expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.SYNC);
-	});
-
-	test('decodes AWARENESS message type', () => {
-		const doc = createDoc();
-		const awareness = new Awareness(doc);
-		awareness.setLocalState({ name: 'Test' });
-		const message = encodeAwarenessStates({
-			awareness,
-			clients: [awareness.clientID],
-		});
-		expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.AWARENESS);
-	});
-
-	test('decodes QUERY_AWARENESS message type', () => {
-		const message = encodeQueryAwareness();
-		expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.QUERY_AWARENESS);
 	});
 });
 

@@ -14,7 +14,7 @@ import {
 	onLocalUpdate,
 	type OpenWebSocket,
 	openCollaboration,
-	type PeerIdentity,
+	type Replica,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -25,12 +25,12 @@ import { createOpensidianActions } from './actions';
 
 export function openOpensidianBrowser({
 	userId,
-	peer,
+	replica,
 	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	peer: PeerIdentity;
+	replica: Replica;
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
@@ -105,7 +105,7 @@ export function openOpensidianBrowser({
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		identity: peer,
+		replica,
 		actions,
 	});
 	let disposed = false;

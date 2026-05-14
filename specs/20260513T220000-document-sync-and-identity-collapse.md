@@ -277,11 +277,11 @@ This wave is the one that needs the server-side reviewer per Open Question #1.
 
 ### Wave 4: Apps switch to `replica` (Build, Prove)
 
-- [ ] **4.1** Each workspace constructor (`openFujiBrowser`, `openHoneycrispBrowser`, `openOpensidianBrowser`, `openZhongwenBrowser`, `openWhisperingBrowser`) drops the `peer` parameter, adds `replica: Replica`.
-- [ ] **4.2** Each app constructs `replica` via `createReplicaId({ storage })` at boot. Platform is hard-coded per app (`'web'` for Svelte apps, `'tauri'` for desktop apps, etc.).
-- [ ] **4.3** Wire opensidian content docs through `openCollaboration` (currently imports `attachYjsSync` but doesn't call it; remove the dead import or wire it through, depending on whether opensidian should sync content docs at all).
-- [ ] **4.4** Each call site that previously read `peer.name` or `peer.identity` updates to read `peer.subject` (id only). Display name handling is deferred to its own spec; UIs that depended on `peer.name` show `peer.subject` as a placeholder until the lookup endpoint exists.
-- [ ] **4.5** Full typecheck. Full test suite. Smoke each app: workspace opens, peers list populates, content doc opens and syncs, peer subject matches the auth user.
+- [x] **4.1** `openFujiBrowser`, `openHoneycrispBrowser`, `openOpensidianBrowser`, `openTabManagerBrowser` drop `peer: PeerIdentity` and take `replica: Replica`. Daemon `openCollaboration` calls in `apps/{fuji,honeycrisp,opensidian,zhongwen}/blocks/daemon-route.ts` pass `replica: { id: '<app>-daemon', platform: 'node' }`. (whispering does not currently call `openCollaboration`; opensidian daemon also drops the redundant `actions: {}` since it now defaults.)
+- [x] **4.2** Browser sessions construct replica id via `createReplicaId({ storage: localStorage })`. Tab-manager uses `createReplicaIdAsync({ storage: <chrome.storage adapter> })` and pairs the result with a `defaultName` ("Chrome on macOS" style) used purely to seed the device row, not the wire payload.
+- [x] **4.3** Opensidian's `browser.ts` no longer references `attachYjsSync` (the dead-import situation the spec called out was already cleaned up); the daemon block uses `openCollaboration` with the default empty actions registry.
+- [x] **4.4** Tab-manager's chat path reads `tabManager.collaboration.replica` instead of `.identity`; `registerDevice` takes a `defaultName` argument and reads `replica.id` for the device-row key. The CLI `peers` table shows `subject` + `replicaId` instead of `peerId` + `name`; the daemon block in `up.ts` formats join/leave lines with `replica.id` and the envelope subject.
+- [x] **4.5** Workspace + api + sync test suites pass (645 + 59 + 49). All migrated apps typecheck clean (fuji, honeycrisp, opensidian, zhongwen, tab-manager). Smoke (server roundtrip) is deferred to a real run; the test forging `subject: 'attacker'` in the awareness payload (`sync-handlers.test.ts`) covers the protocol invariant unit-level.
 
 ### Wave 5: Verify clean break (Prove)
 

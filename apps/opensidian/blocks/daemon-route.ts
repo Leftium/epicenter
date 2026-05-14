@@ -38,12 +38,7 @@ export function defineOpensidianDaemon({
 			const collaboration = openCollaboration(ydoc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
-				identity: {
-					id: 'opensidian-daemon',
-					name: 'Opensidian Daemon',
-					platform: 'node',
-				},
-				actions: {},
+				replica: { id: 'opensidian-daemon', platform: 'node' },
 			});
 
 			return {

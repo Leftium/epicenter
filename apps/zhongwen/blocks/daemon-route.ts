@@ -34,12 +34,7 @@ export function defineZhongwenDaemon({
 			const collaboration = openCollaboration(ydoc, {
 				url: toWsUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
 				openWebSocket: auth.openWebSocket,
-				identity: {
-					id: 'zhongwen-daemon',
-					name: 'Zhongwen Daemon',
-					platform: 'node',
-				},
-				actions: {},
+				replica: { id: 'zhongwen-daemon', platform: 'node' },
 			});
 
 			return {

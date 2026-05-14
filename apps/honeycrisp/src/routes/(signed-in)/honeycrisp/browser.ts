@@ -11,7 +11,7 @@ import {
 	onLocalUpdate,
 	type OpenWebSocket,
 	openCollaboration,
-	type PeerIdentity,
+	type Replica,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -35,12 +35,12 @@ function noteBodyDocGuid({
 
 export function openHoneycrispBrowser({
 	userId,
-	peer,
+	replica,
 	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	peer: PeerIdentity;
+	replica: Replica;
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
@@ -96,7 +96,7 @@ export function openHoneycrispBrowser({
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		identity: peer,
+		replica,
 		actions,
 	});
 

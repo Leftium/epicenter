@@ -1,6 +1,6 @@
 import { requireIdentity } from '@epicenter/auth';
 import { createSession } from '@epicenter/svelte';
-import { getOrCreateInstallationId } from '@epicenter/workspace';
+import { createReplicaId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { createEntriesState } from './entries-state.svelte';
 import { openFujiBrowser } from '../routes/(signed-in)/fuji/browser';
@@ -10,9 +10,8 @@ export const session = createSession({
 	build: (identity) => {
 		const fuji = openFujiBrowser({
 			userId: identity.user.id,
-			peer: {
-				id: getOrCreateInstallationId(localStorage),
-				name: 'Fuji',
+			replica: {
+				id: createReplicaId({ storage: localStorage }),
 				platform: 'web',
 			},
 			openWebSocket: auth.openWebSocket,

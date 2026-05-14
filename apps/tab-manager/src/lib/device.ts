@@ -1,55 +1,60 @@
 /**
  * Device identity helpers for the tab-manager extension.
  *
- * The extension's peer identity is the (id, name, platform) tuple stored
- * in `chrome.storage.local` and surfaced through the collaboration's
- * awareness + the devices table. These helpers compute it at binding-build
- * time and register the device record once IndexedDB has loaded.
+ * The extension publishes a `replica` descriptor in awareness (install-stable
+ * id + platform) and seeds a row in the local `devices` table with a
+ * human-readable name. Replica is the wire concept; the device row is the
+ * app's product concept (display name, last seen, browser kind).
  */
 
-import { getOrCreateInstallationIdAsync } from '@epicenter/workspace';
+import { createReplicaIdAsync } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
 import type { TabManagerBrowser } from './tab-manager/extension';
 import type { DeviceId } from './workspace/definition';
 
 /**
- * Compute the extension's peer identity. The installation id is read from
- * (or created in) `chrome.storage.local`; the default device name combines
- * the browser brand and the host OS (e.g. "Chrome on macOS").
+ * Compute the extension's replica descriptor + the default device label.
+ *
+ * Replica.id is read from (or created in) `chrome.storage.local`. The
+ * default name combines the browser brand and the host OS (e.g.
+ * "Chrome on macOS") and is used to seed the device row when no row exists
+ * yet; subsequent renames live on the row, not the replica.
  */
-export async function createPeer() {
-	const [id, name] = await Promise.all([
-		getOrCreateInstallationIdAsync<DeviceId>({
-			getItem: (k) => storage.getItem<string>(`local:${k}`),
-			setItem: async (k, v) => {
-				await storage.setItem(`local:${k}`, v);
+export async function createDeviceProfile() {
+	const [id, defaultName] = await Promise.all([
+		createReplicaIdAsync<DeviceId>({
+			storage: {
+				getItem: (k) => storage.getItem<string>(`local:${k}`),
+				setItem: async (k, v) => {
+					await storage.setItem(`local:${k}`, v);
+				},
 			},
 		}),
 		generateDefaultDeviceName(),
 	]);
 	return {
-		id,
-		name,
-		platform: 'chrome-extension' as const,
+		replica: { id, platform: 'chrome-extension' as const },
+		defaultName,
 	};
 }
 
 /**
  * Write the device record after IndexedDB loads. Preserves a previously-set
- * device name if one exists in the local doc; otherwise falls back to the
- * peer's default name.
+ * device name if one exists in the local doc; otherwise seeds with the
+ * default label captured at boot.
  */
 export async function registerDevice(
 	tabManager: TabManagerBrowser,
+	defaultName: string,
 ): Promise<void> {
-	// The binding's openTabManagerBrowser narrows peer.id to DeviceId at construction;
-	// PeerIdentity's id field is a plain string, so cast back to the branded type.
-	const id = tabManager.collaboration.identity.id as DeviceId;
+	// openTabManagerBrowser narrows replica.id to DeviceId at construction; the
+	// schema-validated Replica type carries plain strings, so cast back.
+	const id = tabManager.collaboration.replica.id as DeviceId;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
 	tabManager.tables.devices.set({
 		id,
-		name: existingName ?? tabManager.collaboration.identity.name,
+		name: existingName ?? defaultName,
 		lastSeen: new Date().toISOString(),
 		browser: import.meta.env.BROWSER,
 		_v: 1,

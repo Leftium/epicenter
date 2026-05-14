@@ -7,7 +7,7 @@ import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { authSessionStorage, oauthLauncher } from './platform/auth/auth';
 import { createAiChatState } from './chat/chat-state.svelte';
-import { createPeer, registerDevice } from './device';
+import { createDeviceProfile, registerDevice } from './device';
 import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
@@ -36,27 +36,27 @@ let session: ReturnType<typeof buildSession> | undefined;
 
 const whenReady = Promise.all([
 	authSessionStorage.whenReady,
-	createPeer(),
-]).then(([, peer]) => {
+	createDeviceProfile(),
+]).then(([, profile]) => {
 	authClient = createOAuthAppAuth({
 		baseURL: APP_URLS.API,
 		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 		sessionStorage: authSessionStorage,
 		launcher: oauthLauncher,
 	});
-	session = buildSession(authClient, peer);
+	session = buildSession(authClient, profile);
 });
 
 function buildSession(
 	auth: AuthClient,
-	peer: Awaited<ReturnType<typeof createPeer>>,
+	profile: Awaited<ReturnType<typeof createDeviceProfile>>,
 ) {
 	return createSession({
 		auth,
 		build: (identity) => {
 			const tabManager = openTabManagerBrowser({
 				userId: identity.user.id,
-				peer,
+				replica: profile.replica,
 				openWebSocket: auth.openWebSocket,
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
 			});
@@ -68,7 +68,9 @@ function buildSession(
 			const aiChat = createAiChatState({ auth, tabManager, sessionAiTools });
 			const state = { savedTabs, bookmarks, toolTrust, unifiedView, aiChat };
 
-			void tabManager.idb.whenLoaded.then(() => registerDevice(tabManager));
+			void tabManager.idb.whenLoaded.then(() =>
+				registerDevice(tabManager, profile.defaultName),
+			);
 
 			return {
 				...tabManager,

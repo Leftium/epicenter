@@ -11,7 +11,7 @@ import {
 	type EncryptionKeys,
 	type OpenWebSocket,
 	openCollaboration,
-	type PeerIdentity,
+	type Replica,
 	toWsUrl,
 	wipeOwnerLocalYjsData,
 } from '@epicenter/workspace';
@@ -22,24 +22,24 @@ import {
 	tabManagerTables,
 } from '$lib/workspace/definition';
 
-type TabManagerPeer = PeerIdentity & { id: DeviceId };
+type TabManagerReplica = Replica & { id: DeviceId };
 
 /**
  * Build the tab-manager binding. Synchronous: callers must resolve the
- * peer identity before invoking (the extension's identity comes from
- * `chrome.storage.local` and from `createPeer()` in `device.ts`).
+ * replica descriptor before invoking (the extension's replica id comes from
+ * `chrome.storage.local` and from `createDeviceProfile()` in `device.ts`).
  *
  * Consumers gate UI render on `tabManager.idb.whenLoaded`; sync (the
  * WebSocket) is independent and connects whenever the network allows.
  */
 export function openTabManagerBrowser({
 	userId,
-	peer,
+	replica,
 	openWebSocket,
 	encryptionKeys,
 }: {
 	userId: string;
-	peer: TabManagerPeer;
+	replica: TabManagerReplica;
 	openWebSocket?: OpenWebSocket;
 	encryptionKeys: () => EncryptionKeys;
 }) {
@@ -55,14 +55,14 @@ export function openTabManagerBrowser({
 	const actions = createTabManagerActions({
 		tables,
 		batch,
-		deviceId: Promise.resolve(peer.id),
+		deviceId: Promise.resolve(replica.id),
 	});
 
 	const collaboration = openCollaboration(ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		identity: peer,
+		replica,
 		actions,
 	});
 

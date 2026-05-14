@@ -8,7 +8,7 @@ import {
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { opensidianTables } from './workspace.js';
+import { OPENSIDIAN_WORKSPACE_ID, opensidianTables } from './workspace.js';
 
 export const DEFAULT_OPENSIDIAN_DAEMON_ROUTE = 'opensidian';
 
@@ -21,7 +21,7 @@ export function defineOpensidianDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const ydoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
+			const ydoc = new Y.Doc({ guid: OPENSIDIAN_WORKSPACE_ID, gc: false });
 			ydoc.clientID = hashClientId(projectDir);
 			const encryption = attachEncryption(ydoc, {
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,

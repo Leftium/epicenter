@@ -30,6 +30,8 @@ import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
+export const HONEYCRISP_WORKSPACE_ID = 'epicenter.honeycrisp';
+
 // ─── Branded IDs ──────────────────────────────────────────────────────────────
 
 /**

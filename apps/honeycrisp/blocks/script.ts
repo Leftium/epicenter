@@ -13,7 +13,7 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { honeycrispTables } from './workspace.js';
+import { HONEYCRISP_WORKSPACE_ID, honeycrispTables } from './workspace.js';
 
 export async function openHoneycrispScript({
 	projectDir = findEpicenterDir(),
@@ -23,7 +23,7 @@ export async function openHoneycrispScript({
 	clientID?: number;
 }) {
 	const auth = await createMachineAuthClient();
-	const ydoc = new Y.Doc({ guid: 'epicenter.honeycrisp', gc: false });
+	const ydoc = new Y.Doc({ guid: HONEYCRISP_WORKSPACE_ID, gc: false });
 	ydoc.clientID = clientID;
 	const encryption = attachEncryption(ydoc, {
 		encryptionKeys: () => requireIdentity(auth).encryptionKeys,

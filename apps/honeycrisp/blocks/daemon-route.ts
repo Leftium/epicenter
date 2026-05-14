@@ -8,7 +8,11 @@ import {
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { createHoneycrispActions, honeycrispTables } from './workspace.js';
+import {
+	createHoneycrispActions,
+	HONEYCRISP_WORKSPACE_ID,
+	honeycrispTables,
+} from './workspace.js';
 
 export const DEFAULT_HONEYCRISP_DAEMON_ROUTE = 'honeycrisp';
 
@@ -21,7 +25,7 @@ export function defineHoneycrispDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const ydoc = new Y.Doc({ guid: 'epicenter.honeycrisp', gc: false });
+			const ydoc = new Y.Doc({ guid: HONEYCRISP_WORKSPACE_ID, gc: false });
 			ydoc.clientID = hashClientId(projectDir);
 			const encryption = attachEncryption(ydoc, {
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,

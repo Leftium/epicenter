@@ -23,6 +23,8 @@ import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 
+export const OPENSIDIAN_WORKSPACE_ID = 'epicenter.opensidian';
+
 /**
  * Branded conversation ID for a single chat thread.
  *

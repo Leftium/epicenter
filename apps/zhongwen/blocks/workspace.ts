@@ -24,6 +24,8 @@ import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 
+export const ZHONGWEN_WORKSPACE_ID = 'epicenter.zhongwen';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Branded ID Types
 // ─────────────────────────────────────────────────────────────────────────────

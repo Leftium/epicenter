@@ -8,7 +8,11 @@ import {
 import type { DaemonRouteDefinition } from '@epicenter/workspace/daemon';
 import { attachYjsLog, hashClientId, yjsPath } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
-import { zhongwenKv, zhongwenTables } from './workspace.js';
+import {
+	ZHONGWEN_WORKSPACE_ID,
+	zhongwenKv,
+	zhongwenTables,
+} from './workspace.js';
 
 export const DEFAULT_ZHONGWEN_DAEMON_ROUTE = 'zhongwen';
 
@@ -21,7 +25,7 @@ export function defineZhongwenDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
+			const ydoc = new Y.Doc({ guid: ZHONGWEN_WORKSPACE_ID, gc: false });
 			ydoc.clientID = hashClientId(projectDir);
 			const encryption = attachEncryption(ydoc, {
 				encryptionKeys: () => requireIdentity(auth).encryptionKeys,

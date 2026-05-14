@@ -4,7 +4,7 @@ import {
 	attachEncryption,
 	openCollaboration,
 	type ProjectDir,
-	websocketUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import {
 	attachYjsLogReader,
@@ -35,7 +35,7 @@ export async function openHoneycrispScript({
 		filePath: yjsPath(projectDir, ydoc.guid),
 	});
 	const collaboration = openCollaboration(ydoc, {
-		url: websocketUrl(`${EPICENTER_API_URL}/workspaces/${ydoc.guid}`),
+		url: roomWsUrl(EPICENTER_API_URL, ydoc.guid),
 		openWebSocket: session.openWebSocket,
 		replicaId: 'honeycrisp-script',
 		actions: {},

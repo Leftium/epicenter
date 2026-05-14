@@ -99,10 +99,11 @@ import {
     defineActions,
     defineMutation,
     openCollaboration,
+    roomWsUrl,
 } from '@epicenter/workspace';
 
 const collaboration = openCollaboration(ydoc, {
-    url: 'wss://api.example.com/workspaces/' + ydoc.guid,
+    url: roomWsUrl('https://api.example.com', ydoc.guid),
     waitFor: idb.whenLoaded,
     openWebSocket: auth.openWebSocket,
     replica: { id: 'macbook', platform: 'tauri' },
@@ -122,10 +123,10 @@ await phone?.invoke('tabs_close', { tabIds: [1, 2] });
 For content documents nested inside a workspace (rich-text bodies, attachments, anything that syncs independently). No replica, no actions, no peers; just bytes over the wire.
 
 ```ts
-import { attachYjsSync } from '@epicenter/workspace';
+import { attachYjsSync, roomWsUrl } from '@epicenter/workspace';
 
 const sync = attachYjsSync(bodyDoc, {
-    url: 'wss://api.example.com/documents/' + bodyDoc.guid,
+    url: roomWsUrl('https://api.example.com', bodyDoc.guid),
     waitFor: bodyIdb.whenLoaded,
     openWebSocket: auth.openWebSocket,
 });

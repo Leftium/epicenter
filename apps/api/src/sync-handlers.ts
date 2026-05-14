@@ -265,7 +265,7 @@ export function applyMessage({
  *
  * Calls `connection.unregister()` to remove the `doc.on('updateV2')`
  * listener. Presence rows for the closed connection are deleted by
- * `webSocketClose` in `BaseSyncRoom`, not here, because deletion needs
+ * `webSocketClose` in `Room`, not here, because deletion needs
  * the room's `presence` store and the `SERVER_ORIGIN` transaction tag.
  */
 export function teardownConnection({

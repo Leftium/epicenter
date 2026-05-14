@@ -10,9 +10,6 @@ import {
 	timestamp,
 } from 'drizzle-orm/pg-core';
 
-/** Discriminator for the type of Durable Object instance. */
-export type DoType = 'workspace' | 'document';
-
 export const user = pgTable('user', {
 	id: text('id').primaryKey(),
 	name: text('name').notNull(),
@@ -195,7 +192,6 @@ export const durableObjectInstance = pgTable(
 		userId: text('user_id')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
-		doType: text('do_type').notNull().$type<DoType>(),
 		resourceName: text('resource_name').notNull(),
 		doName: text('do_name').primaryKey(),
 		storageBytes: bigint('storage_bytes', { mode: 'number' }),

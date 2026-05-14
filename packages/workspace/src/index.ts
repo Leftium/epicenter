@@ -1,8 +1,8 @@
 /**
  * Epicenter: YJS-First Collaborative Workspace System
  *
- * `@epicenter/workspace` attaches typed primitives — tables, KV, plain/rich
- * text, presence, timeline, and an action registry — to a `Y.Doc`, then
+ * `@epicenter/workspace` attaches typed primitives: tables, KV, plain/rich
+ * text, presence, timeline, and an action registry to a `Y.Doc`, then
  * wires the result to IndexedDB persistence, end-to-end encryption, and
  * WebSocket sync via `openCollaboration`.
  *
@@ -17,7 +17,7 @@
  *   defineTable,
  *   docGuid,
  *   openCollaboration,
- *   syncRoomUrl,
+ *   roomWsUrl,
  * } from '@epicenter/workspace';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
@@ -35,7 +35,7 @@
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
  * const collaboration = openCollaboration(ydoc, {
- *   url: syncRoomUrl('https://api.example.com', ydoc.guid),
+ *   url: roomWsUrl('https://api.example.com', ydoc.guid),
  *   waitFor: idb.whenLoaded,
  *   openWebSocket,
  *   replicaId,
@@ -56,7 +56,7 @@
  *     });
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
  *     const bodySync = openCollaboration(bodyYdoc, {
- *       url: syncRoomUrl('https://api.example.com', bodyYdoc.guid),
+ *       url: roomWsUrl('https://api.example.com', bodyYdoc.guid),
  *       waitFor: bodyIdb.whenLoaded,
  *       openWebSocket,
  *       replicaId,
@@ -160,4 +160,4 @@ export {
 } from './document/open-collaboration.js';
 export { type PresenceEntry } from './document/presence.js';
 export { DispatchError } from './document/rpc.js';
-export { syncRoomUrl, websocketUrl } from './document/transport.js';
+export { roomUrl, roomWsUrl, websocketUrl } from './document/transport.js';

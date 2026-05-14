@@ -13,7 +13,7 @@ import {
 	type OpenWebSocket,
 	onLocalUpdate,
 	openCollaboration,
-	websocketUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
@@ -61,7 +61,7 @@ export function openHoneycrispBrowser({
 		const childIdb = owner.attachIndexedDb(ydoc);
 		owner.attachBroadcastChannel(ydoc);
 		const childSync = openCollaboration(ydoc, {
-			url: websocketUrl(`${APP_URLS.API}/documents/${ydoc.guid}`),
+			url: roomWsUrl(APP_URLS.API, ydoc.guid),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
 			replicaId,
@@ -92,7 +92,7 @@ export function openHoneycrispBrowser({
 
 	const actions = createHoneycrispActions(tables);
 	const collaboration = openCollaboration(rootYdoc, {
-		url: websocketUrl(`${APP_URLS.API}/workspaces/${rootYdoc.guid}`),
+		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		replicaId,

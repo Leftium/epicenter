@@ -4,7 +4,7 @@
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import('./src/app');
-		durableNamespaces: 'WorkspaceRoom' | 'DocumentRoom';
+		durableNamespaces: 'Room';
 	}
 	interface Env {
 		SESSION_KV: KVNamespace;
@@ -20,8 +20,7 @@ declare namespace Cloudflare {
 		ANTHROPIC_API_KEY: string;
 		AUTUMN_SECRET_KEY: string;
 		GEMINI_API_KEY: string;
-		WORKSPACE_ROOM: DurableObjectNamespace<import('./src/app').WorkspaceRoom>;
-		DOCUMENT_ROOM: DurableObjectNamespace<import('./src/app').DocumentRoom>;
+		ROOM: DurableObjectNamespace<import('./src/app').Room>;
 	}
 }
 interface Env extends Cloudflare.Env {}
@@ -4413,9 +4412,9 @@ declare abstract class AiSearchInstance {
 	 * @returns Statistics with counts per status and last activity time.
 	 */
 	stats(): Promise<AiSearchStatsResponse>;
-	/** Items collection — list, upload, and manage items in this instance. */
+	/** Items collection: list, upload, and manage items in this instance. */
 	get items(): AiSearchItems;
-	/** Jobs collection — list, create, and inspect indexing jobs. */
+	/** Jobs collection: list, create, and inspect indexing jobs. */
 	get jobs(): AiSearchJobs;
 }
 /**
@@ -4461,7 +4460,7 @@ declare abstract class AiSearchNamespace {
 	list(): Promise<AiSearchListResponse>;
 	/**
 	 * Create a new instance within the bound namespace.
-	 * @param config Instance configuration. Only `id` is required — omit `type` and `source` to create with built-in storage.
+	 * @param config Instance configuration. Only `id` is required. Omit `type` and `source` to create with built-in storage.
 	 * @returns Instance service for the newly created instance.
 	 *
 	 * @example

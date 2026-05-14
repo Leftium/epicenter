@@ -8,7 +8,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
                  +--------+--------------------------------------------------+
                  | Verb   | Workspace primitive                              |
                  +--------+--------------------------------------------------+
-   Enumerate     | list   | describeActions(collaboration.actions)           |
+   Enumerate     | list   | Object.entries(collaboration.actions)            |
    Invoke        | run    | invokeAction(...) | peer.invoke(path, input)     |
    Presence      | peers  | collaboration.peers.list()                       |
                  +--------+--------------------------------------------------+
@@ -125,6 +125,7 @@ injects the project context when it starts them, so configs do not need to call
 import * as Y from 'yjs';
 import {
 	attachTables,
+	defineActions,
 	defineMutation,
 	defineQuery,
 	defineTable,
@@ -141,19 +142,17 @@ const SavedTab = defineTable(type({ id: 'string', title: 'string', url: 'string'
 async function openTabManagerDaemon() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager' });
 	const tables = attachTables(ydoc, { savedTabs: SavedTab });
-	const actions = {
-		savedTabs: {
-			list: defineQuery({
-				description: 'List all saved tabs',
-				handler: () => tables.savedTabs.getAllValid(),
-			}),
-			delete: defineMutation({
-				input: Type.Object({ id: Type.String() }),
-				description: 'Delete a saved tab by id',
-				handler: ({ id }) => tables.savedTabs.delete(id),
-			}),
-		},
-	};
+	const actions = defineActions({
+		saved_tabs_list: defineQuery({
+			description: 'List all saved tabs',
+			handler: () => tables.savedTabs.getAllValid(),
+		}),
+		saved_tabs_delete: defineMutation({
+			input: Type.Object({ id: Type.String() }),
+			description: 'Delete a saved tab by id',
+			handler: ({ id }) => tables.savedTabs.delete(id),
+		}),
+	});
 	const auth = await createMachineAuthClient();
 	const collaboration = openCollaboration(ydoc, {
 		url: toWsUrl('https://api.epicenter.so/workspaces/epicenter.tab-manager'),
@@ -212,21 +211,20 @@ There is no auto-expose for `attachTable` / `attachKv` methods. If you want an o
 
 This is deliberate. Auto-exposing CRUD would put methods nobody asked for in your CLI tree, and the curated set would either be too narrow for some apps or too wide for others. Explicit wrapping keeps the CLI surface intentional and small.
 
-The common convention is to group actions under `actions:` first, then nest by the domain they operate on:
+The common convention is a flat registry keyed by `<domain>_<action>` snake_case strings, with cross-cutting actions as standalone keys at the same level:
 
 ```ts
-const actions = {
-    tabs: {                                        // domain
-        list: defineQuery({ ... }),                // action
-        open: defineMutation({ ... }),
-    },
-    bookmarks: {
-        list: defineQuery({ ... }),
-    },
+const actions = defineActions({
+    // tabs domain
+    tabs_list: defineQuery({ ... }),
+    tabs_open: defineMutation({ ... }),
 
-    // Cross-cutting actions can sit beside domain groups
-    importBackup: defineMutation({ ... }),
-};
+    // bookmarks domain
+    bookmarks_list: defineQuery({ ... }),
+
+    // Cross-cutting actions sit beside the domain-prefixed keys
+    import_backup: defineMutation({ ... }),
+});
 
 const collaboration = openCollaboration(ydoc, {
     url, identity, openWebSocket: auth.openWebSocket, actions,
@@ -244,9 +242,9 @@ return {
 };
 ```
 
-CLI keys: `tabManager.tabs_list`, `tabManager.bookmarks_list`, `tabManager.import_backup`.
+CLI keys are `<route>.<action_key>`: `tabManager.tabs_list`, `tabManager.bookmarks_list`, `tabManager.import_backup`.
 
-The CLI walks `runtime.collaboration.actions`. Infrastructure such as `ydoc`, tables, persistence, and materializers is not public unless you deliberately mount action leaves under the `actions` registry passed to `openCollaboration`.
+The CLI iterates `runtime.collaboration.actions` with `Object.entries(...)`. Infrastructure such as `ydoc`, tables, persistence, and materializers is not public unless you deliberately add it as an entry in the flat `actions` registry passed to `openCollaboration`.
 
 ## Naming Routes
 

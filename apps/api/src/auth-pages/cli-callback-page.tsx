@@ -1,5 +1,3 @@
-/** @jsxImportSource hono/jsx */
-
 import { CLI_CALLBACK_SCRIPT } from './scripts/cli-callback';
 
 /**

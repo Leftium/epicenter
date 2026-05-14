@@ -1,5 +1,3 @@
-/** @jsxImportSource hono/jsx */
-
 import { raw } from 'hono/html';
 import type { Child } from 'hono/jsx';
 import { AUTH_STYLES } from './styles';

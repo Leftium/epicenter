@@ -21,8 +21,6 @@ const GOOGLE_ICON =
  * After successful auth, Better Auth returns a redirect URL to continue
  * the OAuth flow. For non-OAuth sign-ins, the page reloads.
  */
-/** @jsxImportSource hono/jsx */
-
 export function SignInPage() {
 	return (
 		<>

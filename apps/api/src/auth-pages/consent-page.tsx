@@ -11,8 +11,6 @@ import { CONSENT_SCRIPT } from './scripts/consent';
  * - `client_id` — the requesting application
  * - `scope` — space-separated list of requested scopes
  */
-/** @jsxImportSource hono/jsx */
-
 export function ConsentPage({
 	clientId,
 	scope,

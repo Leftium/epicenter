@@ -13,7 +13,7 @@ import {
 	EPICENTER_LINK_RE,
 	type EpicenterLink,
 	parseEpicenterLink,
-} from '@epicenter/workspace';
+} from '@epicenter/workspace/links';
 
 /**
  * Configuration for the link decoration plugin.

@@ -27,12 +27,7 @@ import {
 	defineQuery,
 } from '../shared/actions.js';
 import { RPC_KEY } from './keys.js';
-import {
-	attachActionRunner,
-	type Call,
-	DispatchError,
-	dispatch,
-} from './rpc.js';
+import { attachActionRunner, type Call, dispatch } from './rpc.js';
 import { YKeyValueLww } from './y-keyvalue/y-keyvalue-lww.js';
 
 function setup(actions: ActionRegistry, targetConnId = 'target') {

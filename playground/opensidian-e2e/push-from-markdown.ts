@@ -13,7 +13,7 @@ import type { FileRow } from '@epicenter/filesystem';
 import {
 	convertWikilinksToEpicenterLinks,
 	makeEpicenterLink,
-} from '@epicenter/workspace';
+} from '@epicenter/workspace/links';
 import { parseMarkdownFile } from '@epicenter/workspace/document/materializer/markdown';
 import type { opensidian } from './epicenter.config';
 

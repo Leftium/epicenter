@@ -9,7 +9,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
                  | Verb   | Workspace primitive                              |
                  +--------+--------------------------------------------------+
    Enumerate     | list   | Object.entries(collaboration.actions)            |
-   Invoke        | run    | invokeAction(...) | peer.invoke(path, input)     |
+   Invoke        | run    | actions[...](input) | dispatch(replicaId, ...)   |
    Presence      | peers  | collaboration.peers.list()                       |
                  +--------+--------------------------------------------------+
 
@@ -19,7 +19,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
 `list` is the local view of what *this* device exposes across all hosted
 routes. `peers` shows who is online across those routes. `run --peer
 <peerId>` invokes a remote action through the selected route's
-`collaboration.peers.find(peerId)?.invoke(path, input)` dispatch.
+`collaboration.dispatch(replicaId, actionKey, input)` channel.
 
 Anything that would need a flag to fan out across peers, loop, or
 compose is a user-authored `.ts` script that imports app packages or
@@ -84,10 +84,10 @@ prefixed by route. `run` is local by default and remote when `--peer
 <deviceId>` is set; the verb and schema are unchanged, only the dispatch
 target moves.
 
-Fan-out across peers (e.g. "who exposes action X?") is a five-line
-script that walks `collaboration.peers.list()` and calls `peer.describe()`
-(or filters `peer.actionKeys` directly when full schemas aren't needed).
-The CLI deliberately does not grow a flag for it.
+Fan-out across peers (e.g. "invoke X on every connected peer") is a
+five-line script that walks `collaboration.peers.list()` and calls
+`collaboration.dispatch(peer.replicaId, ...)` for each entry. The CLI
+deliberately does not grow a flag for it.
 
 Peer awareness has a ~30s liveness window: a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--wait <ms>` expires (default 5000). `peers` reads the current awareness snapshot one-shot.
 
@@ -109,7 +109,7 @@ Scripts can distinguish these cases without parsing stderr:
 | Code | Meaning |
 | ---- | ------- |
 | `1` | Usage or setup error: unknown command, bad flag, missing config, unknown route, or action key does not exist. |
-| `2` | Runtime error: local action returned `Err`, or a remote RPC completed with a failure (ActionFailed, Timeout, PeerOffline, Disconnected). |
+| `2` | Runtime error: local action returned `Err`, or a remote dispatch completed with a failure (ActionFailed, ActionNotFound, Cancelled). |
 | `3` | Peer miss: `--peer <target>` did not resolve within `--wait`. Distinct from `2` so scripts can retry or re-enumerate peers. |
 
 ## What your `epicenter.config.ts` exports

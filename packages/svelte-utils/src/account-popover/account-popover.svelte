@@ -254,11 +254,7 @@
 				{#if signInError}
 					<p class="text-xs text-destructive">{signInError}</p>
 				{/if}
-				<Button
-					class="w-full"
-					onclick={startSignIn}
-					disabled={signingIn || auth.state.status === 'reauth-required'}
-				>
+				<Button class="w-full" onclick={startSignIn} disabled={signingIn}>
 					{#if signingIn}
 						<LoaderCircle class="size-4 animate-spin" />
 						Signing in…

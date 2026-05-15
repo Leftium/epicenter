@@ -130,6 +130,11 @@ This was an asymmetric win during Wave 2: the `watch` hook added an optional sto
 
 ## Profile is memory-only
 
+> **Superseded by**: `specs/20260514T210000-profile-as-application-data.md`.
+> The grant/unlock split and network gate below remain load-bearing. The
+> memory-only profile part does not: auth state no longer carries `email`, and
+> `/api/me` display data is fetched by the account surface that shows it.
+
 Email is exposed directly on the AuthState as `email: string | null`. There is no separate `Profile` type and no arktype for it: the value is fetched from `/api/me`, never persisted, and `null` means "no `/api/me` has succeeded for the current persisted cell in this runtime."
 
 ## AuthState
@@ -657,7 +662,7 @@ The Wave 2 blockers from the fresh-eyes pass were resolved during implementation
 
 13. **Cold boot refreshes stale grants before fetching profile.** `/api/me` is protected by the access token, so an expired access token must be repaired before the identity refresh can be trusted. `/api/me` itself fires lazily on the first network call rather than eagerly at construction.
 
-14. **Profile freshness is implicit via `email !== null`.** An earlier draft carried a 4-value `profileStatus` enum (`missing | refreshing | fresh | stale`). The implementation showed the auth client only ever branches on fresh-vs-not-fresh, and that predicate is exactly `email !== null` because cell mutations clear email back to null. The named `Profile` type was also dropped for the same reason: inlined `email: string | null` on `AuthState` is what the consumers actually need.
+14. **Superseded: profile freshness is no longer auth state.** `specs/20260514T210000-profile-as-application-data.md` keeps the grant/unlock split but removes the memory-only email field. The auth client now tracks `/api/me` verification without carrying profile data, and account UI fetches email as application data.
 
 15. **Different-user sign-in replaces the local unlock in pre-launch builds.** Previously `replaceSession` threw on a user mismatch. This spec deliberately changes sign-in to let a new account win, which can orphan the prior account's local encrypted blobs on that device. That is acceptable while there are no launched users; reviewers should see this called out in the Wave 2 commit message.
 

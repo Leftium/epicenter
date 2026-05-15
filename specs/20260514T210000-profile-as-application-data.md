@@ -1,7 +1,7 @@
 # Profile is application data, not auth state
 
 **Date**: 2026-05-14
-**Status**: In Progress
+**Status**: Implemented
 **Author**: AI-assisted
 **Supersedes** (in part):
 - `specs/20260514T200000-api-me-three-field-token-bundle.md` (the "Profile is memory-only" section and the `email` / `profileStatus` fields on `AuthState`; the grant/unlock split and the network gate are retained)
@@ -281,7 +281,8 @@ REFRESH / SIGN-OUT / REAUTH-REQUIRED
 ### Phase 4: Remove
 
 - [x] **4.1** Delete `Profile` type, `ProfileStatus` type, and any `profile.email` references that survived Phase 1.
-- [ ] **4.2** Delete the prior spec's "Profile is memory-only" section (or mark it superseded inline with a pointer to this spec).
+- [x] **4.2** Delete the prior spec's "Profile is memory-only" section (or mark it superseded inline with a pointer to this spec).
+  > **Note**: Marked the old section superseded inline so the historical grant/unlock rationale remains readable while pointing profile-state readers here.
 - [x] **4.3** Search for `?? 'Account'` across the workspace; expect zero hits.
 
 ## Edge Cases
@@ -367,3 +368,24 @@ Not in scope. Today, `PersistedAuthStorage` is one cell. If multi-account lands,
 - `apps/dashboard/src/routes/(signed-in)/+layout.svelte` - chrome example to adapt.
 - `apps/zhongwen/src/routes/(signed-in)/+page.svelte` - chrome example to adapt.
 - TanStack Query patterns in this codebase: `packages/svelte-utils/` and `apps/*/src/lib/query/` for `createQuery` usage and conventions.
+
+## Review
+
+**Completed**: 2026-05-15
+**Branch**: `codex/wave1-cli-callback-and-health`
+
+### Summary
+
+Auth state is now capability-only in the implemented surface: consumers no longer read `auth.state.email`, and the account popover fetches `/api/me` as application data. Dashboard and Zhongwen chrome stopped showing account email, while the shared popover remains the place where the email appears when profile data loads.
+
+### Deviations from Spec
+
+- The shared account popover uses a component-local `QueryClient` passed directly to `createQuery`. This keeps the query inline without requiring every app that mounts `AccountPopover` to add a `QueryClientProvider`.
+- The dashboard account menu uses a generic user icon and "Epicenter account" label instead of deriving initials from `unlock.userId`.
+- `auth.fetch('/api/me')` support for relative API paths was already present in the auth implementation in this checkout; the wave added a regression test covering it.
+- The review pass also fixed the reauth-required popover button so "Reconnect" is clickable.
+
+### Follow-up Work
+
+- Full `@epicenter/dashboard` typecheck is still blocked by unrelated existing diagnostics in chart, D3 type declarations, and a button variant.
+- Manual browser smoke for cold boot online, cold boot offline, and sign-out remains to be run against a live auth/API setup.

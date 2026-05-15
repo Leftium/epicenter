@@ -26,6 +26,7 @@
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@lucide/svelte": "catalog:",
+		"@tanstack/svelte-query": "catalog:",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
 		"idb": "^8.0.3",

@@ -11,7 +11,23 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import { createQuery, QueryClient } from '@tanstack/svelte-query';
 	import { extractErrorMessage } from 'wellcrafted/error';
+
+	const accountProfileQueryClient = new QueryClient({
+		defaultOptions: {
+			queries: {
+				refetchOnWindowFocus: false,
+			},
+		},
+	});
+
+	type AccountProfile = {
+		user: {
+			id: string;
+			email: string;
+		};
+	};
 
 	/**
 	 * Shared account popover.
@@ -53,6 +69,27 @@
 	let signInError = $state<string | null>(null);
 	let forgettingDevice = $state(false);
 	const isSignedIn = $derived(auth.state.status === 'signed-in');
+	const profileUserId = $derived(
+		auth.state.status === 'signed-out' ? null : auth.state.unlock.userId,
+	);
+	const profile = createQuery(
+		() => ({
+			queryKey: ['account-profile', profileUserId],
+			queryFn: async (): Promise<AccountProfile> => {
+				const response = await auth.fetch('/api/me');
+				if (!response.ok) {
+					throw new Error(`Failed to load account (${response.status}).`);
+				}
+				return (await response.json()) as AccountProfile;
+			},
+			enabled: auth.state.status !== 'signed-out',
+			staleTime: Infinity,
+		}),
+		() => accountProfileQueryClient,
+	);
+	const accountLabel = $derived(
+		profile.data?.user.email ?? (profile.error ? 'Offline' : 'Loading...'),
+	);
 
 	$effect(() => {
 		syncStatus = collaboration.status;
@@ -157,7 +194,7 @@
 		{#if auth.state.status === 'signed-in'}
 			<div class="p-4 space-y-3">
 				<div class="space-y-1">
-					<p class="text-sm font-medium">{auth.state.email ?? 'Account'}</p>
+					<p class="text-sm font-medium">{accountLabel}</p>
 				</div>
 				<div class="border-t pt-3 space-y-1">
 					<p class="text-xs text-muted-foreground">

@@ -68,9 +68,6 @@
 					{showPinyin.current ? 'Hide Pinyin' : 'Show Pinyin'}
 				</Button>
 
-				<span class="text-sm text-muted-foreground">
-					{auth.state.status === 'signed-out' ? '' : (auth.state.email ?? 'Account')}
-				</span>
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device
 				</Button>

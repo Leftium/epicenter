@@ -41,7 +41,10 @@ function grant({
 function cell({
 	userId = 'user-1',
 	grant: g = grant(),
-}: { userId?: string; grant?: OAuthTokenGrant } = {}): PersistedAuth {
+}: {
+	userId?: string;
+	grant?: OAuthTokenGrant;
+} = {}): PersistedAuth {
 	return {
 		grant: g,
 		unlock: { userId, encryptionKeys: [...encryptionKeys] },
@@ -417,7 +420,8 @@ test('network verification clears on grant refresh until /api/me confirms new ce
 				return secondApiMePromise;
 			}
 			resourceAuths.push(authorization);
-			if (resourceAuths.length === 2) return new Response(null, { status: 401 });
+			if (resourceAuths.length === 2)
+				return new Response(null, { status: 401 });
 			return new Response(null, { status: 204 });
 		}) as unknown as typeof fetch,
 	});

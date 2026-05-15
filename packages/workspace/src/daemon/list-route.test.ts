@@ -1,119 +1,91 @@
 /**
- * Coverage for the `/list` route. Exercises the route via `app.request`
- * against an in-memory Hono app, no unix socket spun up. The wire shape
- * round-trips through serialization the same way the daemonClient sees
- * it, so this is the load-bearing test surface for list dispatch logic.
+ * Coverage for the `/list` manifest projection.
  *
  * `/list` is now a one-primitive route: describe every hosted route and
- * prefix each action key with the route name.
+ * prefix each action key with the route name. The shared action path helpers
+ * are covered here because `/list` and `/run` both rely on the same route
+ * qualifier rules.
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { Result } from 'wellcrafted/result';
-import * as Y from 'yjs';
-
-import type { Collaboration } from '../document/open-collaboration.js';
+import { defineQuery } from '../shared/actions.js';
 import {
-	type ActionManifest,
-	type ActionRegistry,
-	defineQuery,
-} from '../shared/actions.js';
-import { buildDaemonApp } from './app.js';
-import type { StartedDaemonRoute } from './types.js';
+	createRouteActionManifest,
+	joinDaemonActionPath,
+	parseDaemonActionPath,
+} from './action-path.js';
 
-type ListResult = Result<ActionManifest, never>;
-
-function fakeEntry(
-	name: string,
-	actions: ActionRegistry = {},
-): StartedDaemonRoute {
-	const ydoc = new Y.Doc();
-	const collaboration = {
-		replicaId: 'self',
-		connId: 'self-conn',
-		actions,
-		status: { phase: 'connected' },
-		whenConnected: Promise.resolve(),
-		whenDisposed: Promise.resolve(),
-		onStatusChange: () => () => {},
-		reconnect() {},
-		peers: {
-			list: () => [],
-			find: () => undefined,
-			observe: () => () => {},
-		},
-		async dispatch() {
-			return { data: null, error: null };
-		},
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	} as unknown as Collaboration<typeof actions>;
-
-	return {
-		route: name,
-		runtime: {
-			collaboration,
-			async [Symbol.asyncDispose]() {
-				ydoc.destroy();
-			},
-		},
-	};
-}
-
-async function postList(runtimes: StartedDaemonRoute[]): Promise<ListResult> {
-	const app = buildDaemonApp(runtimes);
-	const res = await app.request('/list', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({}),
+describe('daemon action path helpers', () => {
+	test('joinDaemonActionPath prefixes local action paths with the route', () => {
+		expect(joinDaemonActionPath('demo', 'counter_get')).toBe(
+			'demo.counter_get',
+		);
 	});
-	return res.json();
-}
+
+	test('joinDaemonActionPath returns the route when local path is empty', () => {
+		expect(joinDaemonActionPath('demo', '')).toBe('demo');
+	});
+
+	test('parseDaemonActionPath separates the route from the local action path', () => {
+		expect(parseDaemonActionPath('demo.counter_get')).toEqual({
+			routeName: 'demo',
+			localPath: 'counter_get',
+		});
+	});
+
+	test('parseDaemonActionPath preserves dotted local action paths', () => {
+		expect(parseDaemonActionPath('demo.counter.get')).toEqual({
+			routeName: 'demo',
+			localPath: 'counter.get',
+		});
+	});
+});
 
 describe('/list route', () => {
-	test('returns route-prefixed paths under the action root', async () => {
-		const reply = await postList([
-			fakeEntry('demo', {
-				counter_get: defineQuery({
-					description: 'Read the counter',
-					handler: () => 0,
-				}),
-			}),
-		]);
-		expect(reply.error).toBeNull();
-		if (reply.error === null) {
-			expect(Object.keys(reply.data).sort()).toEqual(['demo.counter_get']);
-			expect(reply.data['demo.counter_get']?.description).toBe(
-				'Read the counter',
-			);
-		}
-	});
-
-	test('returns an empty manifest when the collaboration has no actions', async () => {
-		const reply = await postList([fakeEntry('demo')]);
-		expect(reply.error).toBeNull();
-		if (reply.error === null) {
-			expect(reply.data).toEqual({});
-		}
-	});
-
-	test('prefixes actions from every daemon route', async () => {
-		const reply = await postList([
-			fakeEntry('notes', {
-				notes_add: defineQuery({ handler: () => null }),
-			}),
-			fakeEntry('tasks', {
-				tasks_list: defineQuery({ handler: () => [] }),
-			}),
+	test('returns route-prefixed paths under the action root', () => {
+		const manifest = createRouteActionManifest([
+			{
+				route: 'demo',
+				actions: {
+					counter_get: defineQuery({
+						description: 'Read the counter',
+						handler: () => 0,
+					}),
+				},
+			},
 		]);
 
-		expect(reply.error).toBeNull();
-		if (reply.error === null) {
-			expect(Object.keys(reply.data).sort()).toEqual([
-				'notes.notes_add',
-				'tasks.tasks_list',
-			]);
-		}
+		expect(Object.keys(manifest).sort()).toEqual(['demo.counter_get']);
+		expect(manifest['demo.counter_get']?.description).toBe('Read the counter');
+	});
+
+	test('returns an empty manifest when the collaboration has no actions', () => {
+		const manifest = createRouteActionManifest([
+			{ route: 'demo', actions: {} },
+		]);
+
+		expect(manifest).toEqual({});
+	});
+
+	test('prefixes actions from every daemon route', () => {
+		const manifest = createRouteActionManifest([
+			{
+				route: 'notes',
+				actions: {
+					notes_add: defineQuery({ handler: () => null }),
+				},
+			},
+			{
+				route: 'tasks',
+				actions: {
+					tasks_list: defineQuery({ handler: () => [] }),
+				},
+			},
+		]);
+
+		expect(Object.keys(manifest).sort()).toEqual([
+			'notes.notes_add',
+			'tasks.tasks_list',
+		]);
 	});
 });

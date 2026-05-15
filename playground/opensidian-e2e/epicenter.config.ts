@@ -27,7 +27,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { createMachineAuthClient, requireIdentity } from '@epicenter/auth/node';
+import { createMachineAuthClient } from '@epicenter/auth/node';
 import { fileContentDocGuid } from '@epicenter/filesystem';
 import {
 	attachEncryption,
@@ -60,7 +60,12 @@ const auth = await createMachineAuthClient();
 
 const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 const encryption = attachEncryption(ydoc, {
-	encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+	encryptionKeys: () => {
+		if (auth.state.status === 'signed-out') {
+			throw new Error('[opensidian-playground] auth signed-out.');
+		}
+		return auth.state.unlock.encryptionKeys;
+	},
 });
 const tables = encryption.attachTables(opensidianTables);
 const kv = encryption.attachKv({});

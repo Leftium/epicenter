@@ -127,7 +127,6 @@ Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both
 Minimal encrypted workspace: encryption + IndexedDB + cross-tab + collaboration (sync + presence + RPC) wired end-to-end:
 
 ```typescript
-import { requireIdentity } from '@epicenter/auth';
 import {
 	attachEncryption,
 	attachOwnedBroadcastChannel,
@@ -189,7 +188,12 @@ export const workspace = openApp({
 	userId,
 	replica: { id: 'macbook', platform: 'tauri' },
 	openWebSocket: auth.openWebSocket,
-	encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+	encryptionKeys: () => {
+		if (auth.state.status === 'signed-out') {
+			throw new Error('[workspace] auth signed-out.');
+		}
+		return auth.state.unlock.encryptionKeys;
+	},
 });
 ```
 

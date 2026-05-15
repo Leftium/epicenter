@@ -1,10 +1,13 @@
 /**
  * OAuth public client id for `epicenter auth login`.
  *
- * Better Auth's device authorization plugin requires `client_id` on both
- * `/auth/device/code` and `/auth/device/token`. This identifies the CLI app
- * type, not a user, machine, install, or secret. Every CLI install uses the
- * same value.
+ * The CLI uses an out-of-band (OOB) authorization-code + PKCE flow against
+ * the same `/auth/oauth2/token` endpoint the browser uses. After sign-in
+ * on the hosted portal, Better Auth redirects to
+ * `https://api.epicenter.so/auth/cli-callback`, which renders the one-time
+ * code; the user pastes it into the terminal. This identifies the CLI app
+ * type, not a user, machine, install, or secret. Every CLI install uses
+ * the same value.
  */
 export const EPICENTER_CLI_OAUTH_CLIENT_ID = 'epicenter-cli';
 
@@ -73,7 +76,7 @@ export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 	{
 		clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
 		name: 'Epicenter CLI',
-		runtime: 'device',
-		redirectUris: [],
+		runtime: 'native',
+		redirectUris: ['https://api.epicenter.so/auth/cli-callback'],
 	},
 ] as const;

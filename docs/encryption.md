@@ -10,7 +10,7 @@ This page only makes claims visible in the current code:
 - `apps/api/src/auth/create-auth.ts`
 - `packages/svelte-utils/src/auth/create-auth.svelte.ts`
 - `packages/workspace/src/document/attach-indexed-db.ts`
-- `apps/api/src/base-sync-room.ts`
+- `apps/api/src/room.ts`
 If something is not visible there, it is not presented as fact here.
 
 ## What this system is
@@ -51,23 +51,22 @@ On the client, the encryption coordinator (`attachEncryption(ydoc, { encryptionK
 The highest version becomes the current key for new writes.
 
 ## How keys reach the client
-Keys come through the auth session.
-There is no separate key-fetch endpoint in the reviewed code.
-`apps/api/src/auth/create-auth.ts` attaches `encryptionKeys` to `/auth/get-session`.
-`@epicenter/auth` exposes those keys through `auth.state.identity.encryptionKeys` while the user is signed in.
-That happens in two places:
-- on boot from a cached session
-- on every authenticated session update from Better Auth
-The boot path exists so the workspace can unlock before the first auth roundtrip finishes.
-The workspace does not hold an independently mutable copy of the keys. `attachEncryption` takes an `encryptionKeys` callback and calls it when an encrypted table, KV store, or IndexedDB provider attaches. Each attached store keeps the keyring derived at that attachment boundary. In per-app session modules, the workspace builder passes `() => requireSignedIn(auth).encryptionKeys` straight through:
+Keys come through `/api/me`.
+`apps/api/src/app.ts` mounts `GET /api/me` behind the bearer + `workspaces:open` scope check from `resolveRequestWorkspaceIdentity`. The handler returns `{ user: { id, email }, encryptionKeys }`.
+`@epicenter/auth` calls `/api/me` at sign-in and at cold-boot when online, persists `{ userId, encryptionKeys }` as the `unlock` section of the cell, and exposes them through `auth.state.unlock.encryptionKeys` whenever the auth state is not `signed-out`.
+Cold-boot offline keeps the cached `unlock` so the workspace can decrypt local Yjs data without a network roundtrip; the bearer is not attached to outbound requests until `/api/me` re-confirms the cell in this runtime.
+The workspace does not hold an independently mutable copy of the keys. `attachEncryption` takes an `encryptionKeys` callback and calls it when an encrypted table, KV store, or IndexedDB provider attaches. Each attached store keeps the keyring derived at that attachment boundary. In per-app session modules, the workspace builder reads `auth.state.unlock.encryptionKeys` directly:
 ```ts
-import { requireSignedIn } from '@epicenter/auth';
-
 const fuji = openFuji({
 	userId,
 	peer,
 	bearerToken: () => auth.bearerToken,
-	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+	encryptionKeys: () => {
+		if (auth.state.status === 'signed-out') {
+			throw new Error('[fuji] auth signed-out.');
+		}
+		return auth.state.unlock.encryptionKeys;
+	},
 });
 ```
 Same-user identity updates do not remount the workspace. Auth callbacks read `auth.state` at the boundary that asks for them: sync can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached. There is no mutation hook on the workspace.
@@ -80,8 +79,6 @@ Two inputs flow into the workspace:
 
 The browser factory shape is:
 ```ts
-import { requireSignedIn } from '@epicenter/auth';
-
 export function openMyApp({
 	userId,
 	peer,
@@ -120,17 +117,21 @@ The closest Bitwarden analogy is lock, not logout: Bitwarden documents unlock as
 The logout path is owned by the per-app session module. `createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user update is a no-op at the session boundary, and a different-user transition disposes the workspace and reloads the page:
 ```ts
 import { createSession, type InferSignedIn } from '@epicenter/svelte';
-import { requireSignedIn } from '@epicenter/auth';
 
 export const session = createSession({
 	auth,
-	build: (identity) => {
-		const userId = identity.user.id;
+	build: ({ owner }) => {
+		const userId = owner.userId;
 		const workspace = openMyApp({
 			userId,
 			peer,
 			bearerToken: () => auth.bearerToken,
-			encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+			encryptionKeys: () => {
+				if (auth.state.status === 'signed-out') {
+					throw new Error('[my-app] auth signed-out.');
+				}
+				return auth.state.unlock.encryptionKeys;
+			},
 		});
 		return {
 			userId,
@@ -266,7 +267,7 @@ Blobs for versions absent from the keyring stay unreadable and unchanged until a
 
 ## What the sync server sees
 The sync server sees Yjs updates and relays them.
-In the reviewed server code, `BaseSyncRoom.sync()` calls `Y.applyUpdateV2(this.doc, update, 'http')` and returns diffs with `Y.encodeStateAsUpdateV2(this.doc, clientSV)`.
+In the reviewed server code, `Room.sync()` calls `Y.applyUpdateV2(this.doc, update, 'http')` and returns diffs with `Y.encodeStateAsUpdateV2(this.doc, clientSV)`.
 The WebSocket path broadcasts raw protocol messages to peers.
 There is no decryption step in that sync room code.
 Because encryption happens before values are written into the Yjs document, the synced value payloads are ciphertext blobs.

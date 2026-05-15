@@ -21,14 +21,14 @@ import type { DaemonLease } from './lease.js';
 import { validateDaemonRouteNames } from './route-validation.js';
 import { unlinkSocketFile } from './runtime-files.js';
 import { StartupError } from './startup-errors.js';
-import type { StartedDaemonRoute } from './types.js';
+import type { DaemonServedRoute } from './types.js';
 import { bindOrRecover } from './unix-socket.js';
 
 export type DaemonServerOptions = {
 	/** Already-claimed project daemon lease. */
 	lease: DaemonLease;
-	/** Started daemon routes served by the unix-socket app. */
-	routes: readonly StartedDaemonRoute[];
+	/** Daemon routes served by the unix-socket app. */
+	routes: readonly DaemonServedRoute[];
 	/** Called by the optional `/shutdown` route after the response is queued. */
 	triggerShutdown?: () => void;
 };
@@ -62,7 +62,7 @@ export async function startDaemonServer({
 		return StartupError.RouteNameRejected(routeIssue);
 	}
 
-	const app = buildDaemonApp([...routes], triggerShutdown);
+	const app = buildDaemonApp(routes, triggerShutdown);
 	const result = await bindOrRecover({
 		socketPath,
 		fetch: app.fetch,

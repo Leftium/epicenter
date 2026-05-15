@@ -1,434 +1,469 @@
 /**
- * Machine Auth Tests
+ * Machine auth tests.
  *
- * Verifies the Node-side device-code coordinator and keychain serialization
- * used by CLI and machine processes.
- *
- * Key behaviors:
- * - Device login stores the normalized `OAuthSession`
- * - Status refreshes rotated access tokens
- * - Keychain storage persists one OAuthSession value
+ * Covers loginWithOob / status / logout / createMachineAuthClient against
+ * tmpfile-backed `~/.epicenter/auth.json` cells. Stubs `fetch` for both
+ * `/auth/oauth2/token` (launcher) and `/api/me` (createOAuthAppAuth's
+ * identity probe).
  */
-import { beforeEach, describe, expect, test } from 'bun:test';
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import { createLogger, type Logger, memorySink } from 'wellcrafted/logger';
-import type { OAuthSession, WorkspaceIdentity } from '../auth-types.js';
+
+import { afterEach, expect, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import type { PersistedAuth } from '../auth-types.js';
 import {
 	createMachineAuthClient,
-	type DeviceTokenError,
-	loginWithDeviceCode,
+	loginWithOob,
 	logout,
-	type MachineAuthClient,
-	type MachineAuthRequestError,
 	status,
 } from './machine-auth.js';
 import {
-	loadMachineSession,
-	type MachineAuthStorageError,
-	saveMachineSession,
-} from './machine-session-store.js';
+	loadMachineTokens,
+	saveMachineTokens,
+} from './machine-tokens-store.js';
 
-type Expect<TValue extends true> = TValue;
-type Equal<TActual, TExpected> =
-	(<TValue>() => TValue extends TActual ? 1 : 2) extends <
-		TValue,
-	>() => TValue extends TExpected ? 1 : 2
-		? true
-		: false;
-type ResultError<TValue extends { error: unknown }> = NonNullable<
-	TValue['error']
->;
-export type LoginWithDeviceCodeError = Expect<
-	Equal<
-		ResultError<Awaited<ReturnType<typeof loginWithDeviceCode>>>,
-		MachineAuthRequestError | DeviceTokenError | MachineAuthStorageError
-	>
->;
-export type StatusError = Expect<
-	Equal<
-		ResultError<Awaited<ReturnType<typeof status>>>,
-		MachineAuthStorageError
-	>
->;
-export type LogoutError = Expect<
-	Equal<
-		ResultError<Awaited<ReturnType<typeof logout>>>,
-		MachineAuthStorageError
-	>
->;
+const BASE_URL = 'http://localhost:8787';
+const CLIENT_ID = 'epicenter-cli';
+const NOW = 1_700_000_000_000;
 
 const encryptionKeys = [
-	{
-		version: 1,
-		userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-	},
-] satisfies WorkspaceIdentity['encryptionKeys'];
+	{ version: 1, userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=' },
+] as const;
 
-function identity(): WorkspaceIdentity {
-	return {
-		user: { id: 'user-1', email: 'user@example.com' },
-		encryptionKeys: [...encryptionKeys],
-	};
+const cleanupPaths: string[] = [];
+
+function tmpAuthPath() {
+	const filePath = path.join(
+		os.tmpdir(),
+		`epicenter-test-${randomUUID()}.json`,
+	);
+	cleanupPaths.push(filePath);
+	return filePath;
 }
 
-function session({
-	accessToken = 'authorization-token',
-	accessTokenExpiresAt = Date.now() + 3_600_000,
-}: {
-	accessToken?: string;
-	accessTokenExpiresAt?: number;
-} = {}): OAuthSession {
-	return {
-		tokens: {
-			accessToken,
-			refreshToken: 'refresh-token',
-			accessTokenExpiresAt,
-		},
-		identity: identity(),
-	};
-}
+afterEach(async () => {
+	while (cleanupPaths.length) {
+		const filePath = cleanupPaths.pop()!;
+		try {
+			await fs.unlink(filePath);
+		} catch {
+			// best effort
+		}
+		try {
+			await fs.unlink(`${filePath}.tmp`);
+		} catch {
+			// best effort
+		}
+	}
+});
 
-function jsonResponse(value: unknown, init?: ResponseInit): Response {
+function jsonResponse(value: unknown, init?: ResponseInit) {
 	return new Response(JSON.stringify(value), {
 		status: 200,
 		...init,
-		headers: {
-			'content-type': 'application/json',
-			...init?.headers,
-		},
+		headers: { 'content-type': 'application/json', ...init?.headers },
 	});
 }
 
-function makeTestAuthClient(fetchImpl: typeof globalThis.fetch) {
-	return {
-		deviceCode: (body: unknown) =>
-			callFakeAuth(fetchImpl, '/auth/device/code', {
-				method: 'POST',
-				body,
-			}),
-		deviceToken: (body: unknown) =>
-			callFakeAuth(fetchImpl, '/auth/device/token', {
-				method: 'POST',
-				body,
-			}),
-		getSession: (input?: {
-			fetchOptions?: {
-				headers?: RequestInit['headers'];
-				onSuccess?: (context: { response: Response }) => void;
-			};
-		}) =>
-			callFakeAuth(fetchImpl, '/auth/get-session', {
-				method: 'GET',
-				fetchOptions: input?.fetchOptions,
-			}),
-		signOut: (input?: {
-			fetchOptions?: {
-				headers?: RequestInit['headers'];
-			};
-		}) =>
-			callFakeAuth(fetchImpl, '/auth/sign-out', {
-				method: 'POST',
-				body: {},
-				fetchOptions: input?.fetchOptions,
-			}),
-	} as unknown as MachineAuthClient;
+type RecordedRequest = {
+	url: string;
+	method: string;
+	body: string | null;
+	headers: Record<string, string>;
+};
+
+type Route = (request: RecordedRequest) => Response | Promise<Response>;
+
+type FetchLike = typeof globalThis.fetch;
+
+function asFetch(impl: (input: unknown, init?: unknown) => Promise<Response>) {
+	return impl as unknown as FetchLike;
 }
 
-async function callFakeAuth(
-	fetchImpl: typeof globalThis.fetch,
-	path: string,
-	{
-		method,
-		body,
-		fetchOptions,
-	}: {
-		method: string;
-		body?: unknown;
-		fetchOptions?: {
-			headers?: RequestInit['headers'];
-			onSuccess?: (context: { response: Response }) => void;
-		};
-	},
-) {
-	const headers = new Headers(fetchOptions?.headers);
-	let requestBody: string | undefined;
-	if (body !== undefined) {
-		headers.set('content-type', 'application/json');
-		requestBody = JSON.stringify(body);
-	}
-	const response = await fetchImpl(`${EPICENTER_API_URL}${path}`, {
-		method,
-		headers,
-		body: requestBody,
-	});
-	if (response.ok) fetchOptions?.onSuccess?.({ response });
-	const text = await response.text();
-	let parsed: unknown = {};
-	try {
-		parsed = text ? JSON.parse(text) : {};
-	} catch {
-		parsed = { error: text };
-	}
-	if (response.ok) return { data: parsed, error: null };
-	return { data: null, error: parsed };
-}
-
-function makeMemoryKeychainBackend(): typeof Bun.secrets & {
-	values: Map<string, string>;
+function createFetch({
+	tokenRoute,
+	apiMeRoute,
+	revokeRoute,
+}: {
+	tokenRoute?: Route;
+	apiMeRoute?: Route;
+	revokeRoute?: Route;
+} = {}): {
+	fetch: FetchLike;
+	recorded: RecordedRequest[];
 } {
-	const values = new Map<string, string>();
-	const key = (options: { service: string; name: string }) =>
-		`${options.service}:${options.name}`;
-	return {
-		values,
-		async get(options) {
-			return values.get(key(options)) ?? null;
-		},
-		async set(options) {
-			values.set(key(options), options.value);
-		},
-		async delete(options) {
-			return values.delete(key(options));
-		},
-	};
+	const recorded: RecordedRequest[] = [];
+	const fetchImpl = asFetch(async (rawInput, rawInit) => {
+		const input = rawInput as Request | string | URL;
+		const init = rawInit as RequestInit | undefined;
+		const url =
+			typeof input === 'string'
+				? input
+				: input instanceof URL
+					? input.toString()
+					: input.url;
+		const method = (init?.method ?? 'GET').toUpperCase();
+		const body =
+			init?.body == null
+				? null
+				: typeof init.body === 'string'
+					? init.body
+					: init.body instanceof URLSearchParams
+						? init.body.toString()
+						: null;
+		const headers: Record<string, string> = {};
+		if (init?.headers) {
+			const h = new Headers(init.headers);
+			h.forEach((value, key) => {
+				headers[key.toLowerCase()] = value;
+			});
+		}
+		const request: RecordedRequest = { url, method, body, headers };
+		recorded.push(request);
+		if (url.endsWith('/auth/oauth2/token') && tokenRoute) {
+			return tokenRoute(request);
+		}
+		if (url.endsWith('/auth/oauth2/revoke') && revokeRoute) {
+			return revokeRoute(request);
+		}
+		if (url.endsWith('/api/me') && apiMeRoute) {
+			return apiMeRoute(request);
+		}
+		return new Response(null, { status: 404 });
+	});
+	return { fetch: fetchImpl, recorded };
 }
 
-let log: Logger;
+function tokenSuccess(): Route {
+	return () =>
+		jsonResponse({
+			access_token: 'access-1',
+			refresh_token: 'refresh-1',
+			expires_in: 3600,
+			token_type: 'bearer',
+		});
+}
 
-beforeEach(() => {
-	const { sink } = memorySink();
-	log = createLogger('machine-auth-test', sink);
+function apiMeOk(userId = 'user-1'): Route {
+	return () =>
+		jsonResponse({
+			user: { id: userId, email: `${userId}@example.com` },
+			encryptionKeys: [...encryptionKeys],
+		});
+}
+
+test('loginWithOob writes PersistedAuth and returns identity', async () => {
+	const filePath = tmpAuthPath();
+	const { fetch } = createFetch({
+		tokenRoute: tokenSuccess(),
+		apiMeRoute: apiMeOk('user-1'),
+	});
+
+	const result = await loginWithOob({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+		print: () => {},
+		openBrowser: () => {},
+		readCode: async () => 'CODE',
+	});
+	expect(result.error).toBeNull();
+	expect(result.data?.identity.user).toEqual({
+		id: 'user-1',
+		email: 'user-1@example.com',
+	});
+
+	const loaded = await loadMachineTokens({ filePath });
+	expect(loaded.error).toBeNull();
+	expect(loaded.data).toEqual({
+		grant: {
+			accessToken: 'access-1',
+			refreshToken: 'refresh-1',
+			accessTokenExpiresAt: NOW + 3_600_000,
+		},
+		unlock: { userId: 'user-1', encryptionKeys: [...encryptionKeys] },
+	});
+
+	if (process.platform !== 'win32') {
+		const stat = await fs.stat(filePath);
+		expect(stat.mode & 0o777).toBe(0o600);
+	}
 });
 
-describe('machine auth free functions', () => {
-	test('login stores one OAuthSession using the authorization token', async () => {
-		const backend = makeMemoryKeychainBackend();
-		const fetchImpl = (async (input, init) => {
-			const url = new URL(String(input));
-			expect(url.origin).toBe(EPICENTER_API_URL);
-			if (url.pathname === '/auth/device/code') {
-				expect(JSON.parse(String(init?.body))).toMatchObject({
-					client_id: EPICENTER_CLI_OAUTH_CLIENT_ID,
-				});
-				return jsonResponse({
-					device_code: 'device-code',
-					user_code: 'USER-CODE',
-					verification_uri: `${EPICENTER_API_URL}/device`,
-					verification_uri_complete: `${EPICENTER_API_URL}/device?code=USER`,
-					expires_in: 600,
-					interval: 0,
-				});
-			}
-			if (url.pathname === '/auth/device/token') {
-				expect(JSON.parse(String(init?.body))).toMatchObject({
-					client_id: EPICENTER_CLI_OAUTH_CLIENT_ID,
-					device_code: 'device-code',
-				});
-				return jsonResponse({
-					access_token: 'device-token',
-					refresh_token: 'device-refresh-token',
-					expires_in: 3600,
-				});
-			}
-			return jsonResponse(identity());
-		}) as typeof fetch;
-
-		const result = await loginWithDeviceCode({
-			authClient: makeTestAuthClient(fetchImpl),
-			backend,
-			sleep: async () => {},
-		});
-
-		const { data: savedSession, error: loadError } = await loadMachineSession({
-			backend,
-			log,
-		});
-		expect(result.error).toBeNull();
-		expect(loadError).toBeNull();
-		expect(result.data?.session.user.email).toBe('user@example.com');
-		expect(savedSession?.tokens.accessToken).toBe('device-token');
-		expect(savedSession?.tokens.refreshToken).toBe('device-refresh-token');
-		expect(JSON.stringify(savedSession)).not.toContain('session');
+test('loginWithOob with empty paste writes no file', async () => {
+	const filePath = tmpAuthPath();
+	const { fetch } = createFetch({
+		tokenRoute: tokenSuccess(),
+		apiMeRoute: apiMeOk(),
 	});
-
-	test('status verifies the stored session token', async () => {
-		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(session({ accessToken: 'old-token' }), {
-			backend,
-		});
-		const seenTokens: string[] = [];
-		const fetchImpl = (async (_input, init) => {
-			seenTokens.push(new Headers(init?.headers).get('authorization') ?? '');
-			return jsonResponse(identity());
-		}) as typeof fetch;
-
-		const result = await status({
-			authClient: makeTestAuthClient(fetchImpl),
-			backend,
-			log,
-		});
-
-		const { data: savedSession, error: loadError } = await loadMachineSession({
-			backend,
-			log,
-		});
-		expect(result.error).toBeNull();
-		expect(loadError).toBeNull();
-		expect(result.data?.status).toBe('valid');
-		expect(seenTokens).toEqual(['Bearer old-token']);
-		expect(savedSession?.tokens.accessToken).toBe('old-token');
+	const result = await loginWithOob({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+		print: () => {},
+		openBrowser: () => {},
+		readCode: async () => '',
 	});
+	expect(result.error).toBeDefined();
+	let exists = true;
+	try {
+		await fs.stat(filePath);
+	} catch {
+		exists = false;
+	}
+	expect(exists).toBe(false);
+});
 
-	test('machine auth refresh pauses network auth when keychain save fails', async () => {
-		const now = 1_000_000;
-		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(
-			session({
-				accessToken: 'old-token',
-				accessTokenExpiresAt: now + 1,
-			}),
-			{ backend },
-		);
-		backend.set = async () => {
-			throw new Error('keychain unavailable');
-		};
-		const authorizations: Array<string | null> = [];
-		const originalConsoleError = console.error;
-		console.error = () => {};
-		const auth = await createMachineAuthClient({
-			backend,
-			log,
-			now: () => now,
-			refreshOAuthToken: async () => ({
-				accessToken: 'new-token',
-				refreshToken: 'new-refresh-token',
-				accessTokenExpiresAt: now + 3_600_000,
-			}),
-			fetch: (async (_input, init) => {
-				authorizations.push(new Headers(init?.headers).get('authorization'));
-				return new Response(null, { status: 204 });
-			}) as typeof fetch,
-		});
-
-		const response = await (async () => {
-			try {
-				return await auth.fetch(`${EPICENTER_API_URL}/resource`);
-			} finally {
-				console.error = originalConsoleError;
-			}
-		})();
-		const { data: savedSession, error: loadError } = await loadMachineSession({
-			backend,
-			log,
-		});
-
-		expect(response.status).toBe(204);
-		expect(loadError).toBeNull();
-		expect(savedSession?.tokens.accessToken).toBe('old-token');
-		expect(authorizations).toEqual([null]);
-		expect(auth.state).toEqual({
-			status: 'reauth-required',
-			identity: session({ accessToken: 'old-token' }).identity,
-		});
+test('loginWithOob with /api/me 401 returns Err and writes no file', async () => {
+	const filePath = tmpAuthPath();
+	const { fetch } = createFetch({
+		tokenRoute: tokenSuccess(),
+		apiMeRoute: () => new Response(null, { status: 401 }),
 	});
-
-	test('status reports stored session when remote verification fails', async () => {
-		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(session(), { backend });
-		const fetchImpl = (async () =>
-			new Response('nope', { status: 503 })) as unknown as typeof fetch;
-
-		const result = await status({
-			authClient: makeTestAuthClient(fetchImpl),
-			backend,
-			log,
-		});
-
-		expect(result.error).toBeNull();
-		expect(result.data?.status).toBe('unverified');
+	const result = await loginWithOob({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+		print: () => {},
+		openBrowser: () => {},
+		readCode: async () => 'CODE',
 	});
+	expect(result.error).toBeDefined();
+	let exists = true;
+	try {
+		await fs.stat(filePath);
+	} catch {
+		exists = false;
+	}
+	expect(exists).toBe(false);
+});
 
-	test('login returns DeviceCodeExpired when the server reports expired_token', async () => {
-		const backend = makeMemoryKeychainBackend();
-		const fetchImpl = (async (input) => {
-			const url = new URL(String(input));
-			if (url.pathname === '/auth/device/code') {
-				return jsonResponse({
-					device_code: 'device-code',
-					user_code: 'USER-CODE',
-					verification_uri: `${EPICENTER_API_URL}/device`,
-					verification_uri_complete: `${EPICENTER_API_URL}/device?code=USER`,
-					expires_in: 600,
-					interval: 0,
-				});
-			}
-			return new Response(JSON.stringify({ error: 'expired_token' }), {
-				status: 400,
-				headers: { 'content-type': 'application/json' },
+async function preWriteCell(filePath: string, userId = 'user-1') {
+	const cell: PersistedAuth = {
+		grant: {
+			accessToken: 'access-stored',
+			refreshToken: 'refresh-stored',
+			accessTokenExpiresAt: NOW + 3_600_000,
+		},
+		unlock: { userId, encryptionKeys: [...encryptionKeys] },
+	};
+	const { error } = await saveMachineTokens(cell, { filePath });
+	if (error) throw error;
+	return cell;
+}
+
+test('status valid when /api/me returns 200 with same userId', async () => {
+	const filePath = tmpAuthPath();
+	await preWriteCell(filePath, 'user-1');
+	const { fetch } = createFetch({ apiMeRoute: apiMeOk('user-1') });
+	const result = await status({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+	});
+	expect(result.error).toBeNull();
+	expect(result.data).toMatchObject({
+		status: 'valid',
+		identity: {
+			user: { id: 'user-1', email: 'user-1@example.com' },
+		},
+	});
+});
+
+test('status unverified on network failure preserves cell', async () => {
+	const filePath = tmpAuthPath();
+	const cell = await preWriteCell(filePath, 'user-1');
+	const fetchImpl = asFetch(async () => {
+		throw new Error('network down');
+	});
+	const result = await status({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch: fetchImpl,
+		now: () => NOW,
+	});
+	expect(result.error).toBeNull();
+	expect(result.data?.status).toBe('unverified');
+	const stillThere = await loadMachineTokens({ filePath });
+	expect(stillThere.data).toEqual(cell);
+});
+
+test('status signedOut when no file', async () => {
+	const filePath = tmpAuthPath();
+	const { fetch } = createFetch();
+	const result = await status({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+	});
+	expect(result.error).toBeNull();
+	expect(result.data).toEqual({ status: 'signedOut' });
+});
+
+test('same-user guard wipes cell when /api/me returns different userId', async () => {
+	const filePath = tmpAuthPath();
+	await preWriteCell(filePath, 'alice');
+	const { fetch } = createFetch({ apiMeRoute: apiMeOk('bob') });
+	await status({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+	});
+	let exists = true;
+	try {
+		await fs.stat(filePath);
+	} catch {
+		exists = false;
+	}
+	expect(exists).toBe(false);
+});
+
+test('logout revokes refresh token and deletes the file', async () => {
+	const filePath = tmpAuthPath();
+	await preWriteCell(filePath, 'user-1');
+	const { fetch, recorded } = createFetch({
+		revokeRoute: () => new Response(null, { status: 200 }),
+	});
+	const result = await logout({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+	});
+	expect(result.error).toBeNull();
+	expect(result.data).toEqual({ status: 'loggedOut' });
+	const revoke = recorded.find((r) => r.url.endsWith('/auth/oauth2/revoke'));
+	expect(revoke).toBeDefined();
+	const body = new URLSearchParams(revoke!.body ?? '');
+	expect(body.get('token')).toBe('refresh-stored');
+	expect(body.get('token_type_hint')).toBe('refresh_token');
+	expect(body.get('client_id')).toBe('epicenter-cli');
+	let exists = true;
+	try {
+		await fs.stat(filePath);
+	} catch {
+		exists = false;
+	}
+	expect(exists).toBe(false);
+});
+
+test('logout survives revoke failure and still deletes the file', async () => {
+	const filePath = tmpAuthPath();
+	await preWriteCell(filePath, 'user-1');
+	const { fetch } = createFetch({
+		revokeRoute: () => new Response(null, { status: 503 }),
+	});
+	const result = await logout({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+	});
+	expect(result.error).toBeNull();
+	expect(result.data).toEqual({ status: 'loggedOut' });
+	let exists = true;
+	try {
+		await fs.stat(filePath);
+	} catch {
+		exists = false;
+	}
+	expect(exists).toBe(false);
+});
+
+test('createMachineAuthClient throws when no file', async () => {
+	const filePath = tmpAuthPath();
+	const { fetch } = createFetch();
+	let thrown: unknown = null;
+	try {
+		await createMachineAuthClient({
+			baseURL: BASE_URL,
+			clientId: CLIENT_ID,
+			filePath,
+			fetch,
+			now: () => NOW,
+		});
+	} catch (cause) {
+		thrown = cause;
+	}
+	expect(thrown).toBeInstanceOf(Error);
+	expect((thrown as Error).message).toContain('epicenter auth login');
+});
+
+test('createMachineAuthClient loads file and attaches Bearer after gate', async () => {
+	const filePath = tmpAuthPath();
+	await preWriteCell(filePath, 'user-1');
+
+	const recorded: RecordedRequest[] = [];
+	const fetchImpl = asFetch(async (rawInput, rawInit) => {
+		const input = rawInput as Request | string | URL;
+		const init = rawInit as RequestInit | undefined;
+		const url =
+			typeof input === 'string'
+				? input
+				: input instanceof URL
+					? input.toString()
+					: input.url;
+		const headers: Record<string, string> = {};
+		if (init?.headers) {
+			const h = new Headers(init.headers);
+			h.forEach((value, key) => {
+				headers[key.toLowerCase()] = value;
 			});
-		}) as typeof fetch;
-
-		const result = await loginWithDeviceCode({
-			authClient: makeTestAuthClient(fetchImpl),
-			backend,
-			sleep: async () => {},
+		}
+		recorded.push({
+			url,
+			method: (init?.method ?? 'GET').toUpperCase(),
+			body: null,
+			headers,
 		});
-
-		expect(result.data).toBeNull();
-		expect(result.error?.name).toBe('DeviceCodeExpired');
+		if (url.endsWith('/api/me')) {
+			return jsonResponse({
+				user: { id: 'user-1', email: 'user-1@example.com' },
+				encryptionKeys: [...encryptionKeys],
+			});
+		}
+		if (url.endsWith('/api/something')) {
+			return new Response(null, { status: 200 });
+		}
+		return new Response(null, { status: 404 });
 	});
 
-	test('logout signs out and clears the stored session', async () => {
-		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(session({ accessToken: 'logout-token' }), {
-			backend,
-		});
-		const seenTokens: string[] = [];
-		const fetchImpl = (async (_input, init) => {
-			seenTokens.push(new Headers(init?.headers).get('authorization') ?? '');
-			return new Response('', { status: 200 });
-		}) as typeof fetch;
-
-		const result = await logout({
-			authClient: makeTestAuthClient(fetchImpl),
-			backend,
-			log,
-		});
-
-		const { data: savedSession, error: loadError } = await loadMachineSession({
-			backend,
-			log,
-		});
-		expect(result).toEqual({ data: { status: 'loggedOut' }, error: null });
-		expect(loadError).toBeNull();
-		expect(seenTokens).toEqual(['Bearer logout-token']);
-		expect(savedSession).toBeNull();
+	const auth = await createMachineAuthClient({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch: fetchImpl,
+		now: () => NOW,
 	});
-});
+	const response = await auth.fetch('/api/something');
+	expect(response.status).toBe(200);
 
-describe('machine session storage', () => {
-	test('keychain storage writes one OAuthSession item', async () => {
-		const backend = makeMemoryKeychainBackend();
-		await saveMachineSession(session({ accessToken: 'stored-token' }), {
-			backend,
-		});
+	const meIndex = recorded.findIndex((r) => r.url.endsWith('/api/me'));
+	const somethingIndex = recorded.findIndex((r) =>
+		r.url.endsWith('/api/something'),
+	);
+	expect(meIndex).toBeGreaterThanOrEqual(0);
+	expect(somethingIndex).toBeGreaterThanOrEqual(0);
+	expect(meIndex).toBeLessThan(somethingIndex);
 
-		expect(backend.values.size).toBe(1);
-		const { data: loaded } = await loadMachineSession({ backend, log });
-		expect(loaded).toMatchObject({ tokens: { accessToken: 'stored-token' } });
-		expect([...backend.values.values()][0]).not.toContain(
-			'server-session-token',
-		);
-	});
-
-	test('keychain storage discards a corrupt blob and returns Ok(null)', async () => {
-		const backend = makeMemoryKeychainBackend();
-		backend.values.set('epicenter.auth.session:current', '{not valid json');
-
-		const { data, error } = await loadMachineSession({ backend, log });
-
-		expect(error).toBeNull();
-		expect(data).toBeNull();
-	});
+	const somethingReq = recorded[somethingIndex]!;
+	expect(somethingReq.headers['authorization']).toBe('Bearer access-stored');
+	auth[Symbol.dispose]();
 });

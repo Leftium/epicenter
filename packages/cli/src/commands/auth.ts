@@ -1,10 +1,14 @@
 /**
  * `epicenter auth`: manage authentication with Epicenter.
  *
- * Uses the RFC 8628 device code flow: the CLI prints a URL and one-time code,
- * the user approves in a browser, and the CLI picks up the session automatically.
+ * Uses an OOB (out-of-band) OAuth 2.1 authorization-code flow with PKCE.
+ * `auth login` prints a URL; the user signs in on the hosted portal,
+ * copies the one-time code from the success page, and pastes it into the
+ * terminal. Tokens and the local-unlock bundle live at
+ * `~/.epicenter/auth.json` with file mode 0o600.
  *
- * The local machine session is stored in the OS keychain.
+ * Same shape and same source as the browser, dashboard, and extension
+ * clients (see specs/20260514T200000-api-me-three-field-token-bundle.md).
  */
 
 import * as machineAuth from '@epicenter/auth/node/machine-auth';
@@ -29,18 +33,16 @@ const loginCommand = cmd({
 	command: 'login',
 	describe: 'Log in to Epicenter',
 	handler: async () => {
-		const result = await machineAuth.loginWithDeviceCode({
-			onDeviceCode: ({ verificationUriComplete, userCode }) => {
-				console.log(`\nVisit: ${verificationUriComplete}`);
-				console.log(`Enter code: ${userCode}\n`);
-			},
+		const result = await machineAuth.loginWithOob({
+			print: (line) => console.log(line),
 		});
 		if (result.error) {
 			failAuthCommand(result.error);
 			return;
 		}
 
-		console.log(`✓ Logged in as ${result.data.session.user.email}`);
+		const email = result.data.identity.user.email;
+		console.log(email ? `Signed in as ${email}.` : 'Signed in.');
 	},
 });
 
@@ -59,7 +61,7 @@ const logoutCommand = cmd({
 			return;
 		}
 
-		console.log('✓ Logged out.');
+		console.log('Logged out.');
 	},
 });
 
@@ -78,7 +80,9 @@ const statusCommand = cmd({
 			return;
 		}
 
-		console.log(`Logged in as: ${result.data.session.user.email}`);
+		const { identity } = result.data;
+		const label = identity.user.email || 'Account';
+		console.log(`Logged in as: ${label}`);
 		if (result.data.status === 'valid') {
 			console.log('Session:      verified');
 		} else {

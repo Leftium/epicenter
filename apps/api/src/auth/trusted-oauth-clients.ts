@@ -90,7 +90,7 @@ function toOAuthClientType(
 		case 'browser':
 		case 'extension':
 			return 'user-agent-based';
-		case 'device':
+		case 'native':
 			return 'native';
 	}
 }

@@ -6,18 +6,57 @@
  * started daemon route has to satisfy: async dispose plus the hosted
  * `Collaboration<TActions>` that owns identity, actions, sync, and peers.
  *
- * `StartedDaemonRoute` is one routed runtime the daemon serves internally. The
- * CLI's config loader opens route definitions from the default
- * `{ daemon: { routes } }` export in `epicenter.config.ts`.
+ * `DaemonServedRoute` is the narrowed route handler contract for the socket
+ * app. `StartedDaemonRoute` is the lifecycle-owning route shape opened by the
+ * CLI's config loader from the default `{ daemon: { routes } }` export in
+ * `epicenter.config.ts`.
  */
 
+import type { Result } from 'wellcrafted/result';
+import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
+import type { PresenceEntry } from '../document/presence.js';
+import type { DispatchError } from '../document/rpc.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
 
 export type DaemonRouteContext = {
 	projectDir: ProjectDir;
 	route: string;
+};
+
+/**
+ * Collaboration fields the daemon socket app reads while serving `/peers`,
+ * `/list`, and `/run`.
+ */
+export type DaemonServedCollaboration<
+	TActions extends ActionRegistry = ActionRegistry,
+> = {
+	actions: TActions;
+	peers: {
+		list(): PresenceEntry[];
+	};
+	status: SyncStatus;
+	dispatch(
+		action: string,
+		input: unknown,
+		options: { to: string; signal: AbortSignal },
+	): Promise<Result<unknown, DispatchError>>;
+};
+
+/**
+ * One routed runtime as served by the daemon socket app.
+ *
+ * Full started routes can pass through structurally, but route handlers do not
+ * depend on lifecycle fields such as async disposal.
+ */
+export type DaemonServedRoute<
+	TActions extends ActionRegistry = ActionRegistry,
+> = {
+	route: string;
+	runtime: {
+		collaboration: DaemonServedCollaboration<TActions>;
+	};
 };
 
 /**

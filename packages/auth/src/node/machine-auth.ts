@@ -1,7 +1,26 @@
+/**
+ * Machine auth API surface for CLI and daemons.
+ *
+ * `loginWithOob` runs the OOB OAuth dance once, fetches `/api/me` to derive
+ * the local unlock bundle, and persists a `PersistedAuth` cell to
+ * `~/.epicenter/auth.json` (mode 0o600). `status` and `logout` read that
+ * cell and reach the server through a regular `createOAuthAppAuth` client.
+ * `createMachineAuthClient` is the daemon entry point: it loads the cell,
+ * constructs the auth client, and never spawns an interactive launcher.
+ *
+ * Architectural note: `loginWithOob` deliberately bypasses
+ * `createOAuthAppAuth`. The factory is for daemons (long-lived, refresh on
+ * 401, network gate); login is a one-shot human action that fetches a grant,
+ * calls `/api/me`, persists, and exits. Routing login through the factory
+ * would double the round-trip count (the factory would call `/api/me`
+ * internally, but the CLI also needs the email for "Signed in as ...").
+ */
+
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import { createAuthClient } from 'better-auth/client';
-import { deviceAuthorizationClient } from 'better-auth/client/plugins';
+import type { EncryptionKeys } from '@epicenter/encryption';
+import { EncryptionKeys as EncryptionKeysSchema } from '@epicenter/encryption';
+import { type } from 'arktype';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -10,35 +29,14 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient } from '../auth-contract.js';
-import {
-	OAuthSession,
-	type OAuthSession as OAuthSessionType,
-	type OAuthTokenGrant,
-	WorkspaceIdentity,
-} from '../auth-types.js';
-import type {
-	OAuthRefreshTokenRevoker,
-	OAuthTokenRefresher,
-} from '../create-oauth-app-auth.js';
+import { AuthUser, type PersistedAuth } from '../auth-types.js';
 import { createOAuthAppAuth } from '../create-oauth-app-auth.js';
 import {
-	loadMachineSession,
-	saveMachineSession,
-} from './machine-session-store.js';
-
-const rawDefaultAuthClient = createAuthClient({
-	baseURL: EPICENTER_API_URL,
-	basePath: '/auth',
-	plugins: [deviceAuthorizationClient()],
-});
-
-const defaultAuthClient =
-	rawDefaultAuthClient as typeof rawDefaultAuthClient & {
-		deviceCode: typeof rawDefaultAuthClient.device.code;
-		deviceToken: typeof rawDefaultAuthClient.device.token;
-	};
-
-export type MachineAuthClient = typeof defaultAuthClient;
+	loadMachineTokens,
+	type MachineAuthStorageError,
+	saveMachineTokens,
+} from './machine-tokens-store.js';
+import { createOobOAuthLauncher } from './oob-launcher.js';
 
 export const MachineAuthRequestError = defineErrors({
 	RequestFailed: ({ cause }: { cause: unknown }) => ({
@@ -50,335 +48,319 @@ export type MachineAuthRequestError = InferErrors<
 	typeof MachineAuthRequestError
 >;
 
-export const DeviceTokenError = defineErrors({
-	DeviceCodeExpired: () => ({
-		message: 'Device code expired. Run login again.',
-	}),
-	DeviceAccessDenied: () => ({
-		message: 'Authorization denied.',
-	}),
-	DeviceAuthorizationFailed: ({
-		code,
-		description,
-	}: {
-		code: string;
-		description?: string;
-	}) => ({
-		message: description ?? code,
-		code,
-		description,
-	}),
+/**
+ * Identity returned to the CLI for display. `user.email` is fetched from
+ * `/api/me` and returned by value here so the CLI can print "Signed in as
+ * <email>" without a second round-trip. `email` may be empty when the
+ * machine is offline during `status`.
+ */
+export type WorkspaceIdentity = {
+	user: { id: string; email: string };
+	encryptionKeys: EncryptionKeys;
+};
+
+const ApiMeResponse = type({
+	'+': 'delete',
+	user: AuthUser,
+	encryptionKeys: EncryptionKeysSchema,
 });
-export type DeviceTokenError = InferErrors<typeof DeviceTokenError>;
+type ApiMeResponse = typeof ApiMeResponse.infer;
 
-function sessionSummary(session: OAuthSessionType) {
-	return { user: session.identity.user };
-}
-
-/**
- * Start Better Auth device-code login and save the resulting session.
- */
-export async function loginWithDeviceCode({
-	authClient = defaultAuthClient,
-	sleep = Bun.sleep,
-	backend = Bun.secrets,
-	onDeviceCode,
-}: {
-	authClient?: MachineAuthClient;
-	sleep?: (ms: number) => Promise<void>;
-	backend?: typeof Bun.secrets;
-	onDeviceCode?: (device: {
-		userCode: string;
-		verificationUriComplete: string;
-	}) => void | Promise<void>;
-} = {}) {
-	const { data: code, error: codeError } = await authClient.deviceCode({
-		client_id: EPICENTER_CLI_OAUTH_CLIENT_ID,
-	});
-	if (codeError) {
-		return MachineAuthRequestError.RequestFailed({ cause: codeError });
-	}
-
-	const device = {
-		userCode: code.user_code,
-		verificationUriComplete: code.verification_uri_complete,
-	};
-	await onDeviceCode?.(device);
-
-	const { data: tokens, error: pollError } = await pollForAccessToken({
-		authClient,
-		deviceCode: code.device_code,
-		intervalMs: code.interval * 1000,
-		expiresInMs: code.expires_in * 1000,
-		sleep,
-	});
-	if (pollError) return Err(pollError);
-
-	const { data: session, error: fetchError } = await fetchOAuthSession({
-		authClient,
-		tokens,
-	});
-	if (fetchError) return Err(fetchError);
-
-	const { error: saveError } = await saveMachineSession(session, {
-		backend,
-	});
-	if (saveError) return Err(saveError);
-
-	return Ok({
-		status: 'loggedIn' as const,
-		session: sessionSummary(session),
-		device,
-	});
-}
-
-/**
- * Read the saved session and verify it remotely when possible. Network
- * failures surface as `unverified`, not `Err`, so the CLI can show the cached
- * identity even when offline.
- */
-export async function status({
-	authClient = defaultAuthClient,
-	backend = Bun.secrets,
-	log = createLogger('machine-auth'),
-}: {
-	authClient?: MachineAuthClient;
-	backend?: typeof Bun.secrets;
-	log?: Logger;
-} = {}) {
-	const { data: session, error: loadError } = await loadMachineSession({
-		backend,
-		log,
-	});
-	if (loadError) return Err(loadError);
-	if (session === null) return Ok({ status: 'signedOut' as const });
-
-	const { data: remoteSession, error: fetchError } = await fetchOAuthSession({
-		authClient,
-		tokens: session.tokens,
-	});
-	if (fetchError) {
-		return Ok({
-			status: 'unverified' as const,
-			session: sessionSummary(session),
-			verificationError: fetchError,
-		});
-	}
-
-	const { error: saveError } = await saveMachineSession(remoteSession, {
-		backend,
-	});
-	if (saveError) return Err(saveError);
-	return Ok({
-		status: 'valid' as const,
-		session: sessionSummary(remoteSession),
-	});
-}
-
-export async function logout({
-	authClient = defaultAuthClient,
-	backend = Bun.secrets,
-	log = createLogger('machine-auth'),
-}: {
-	authClient?: MachineAuthClient;
-	backend?: typeof Bun.secrets;
-	log?: Logger;
-} = {}) {
-	const { data: session, error: loadError } = await loadMachineSession({
-		backend,
-		log,
-	});
-	if (loadError) return Err(loadError);
-	if (session === null) return Ok({ status: 'signedOut' as const });
-
-	try {
-		const { error: signOutError } = await authClient.signOut({
-			fetchOptions: {
-				headers: { Authorization: `Bearer ${session.tokens.accessToken}` },
-			},
-		});
-		if (signOutError) {
-			const wrappedError = MachineAuthRequestError.RequestFailed({
-				cause: signOutError,
-			}).error;
-			if (wrappedError) log.warn(wrappedError);
-		}
-	} catch (cause) {
-		const wrappedError = MachineAuthRequestError.RequestFailed({
-			cause,
-		}).error;
-		if (wrappedError) log.warn(wrappedError);
-	}
-
-	const { error: saveError } = await saveMachineSession(null, { backend });
-	if (saveError) return Err(saveError);
-	return Ok({ status: 'loggedOut' as const });
-}
-
-async function pollForAccessToken({
-	authClient,
-	deviceCode,
-	intervalMs,
-	expiresInMs,
-	sleep,
-}: {
-	authClient: MachineAuthClient;
-	deviceCode: string;
-	intervalMs: number;
-	expiresInMs: number;
-	sleep: (ms: number) => Promise<void>;
-}): Promise<
-	Result<OAuthTokenGrant, DeviceTokenError | MachineAuthRequestError>
-> {
-	const deadline = Date.now() + expiresInMs;
-	let interval = intervalMs;
-	while (Date.now() < deadline) {
-		await sleep(interval);
-		const { data, error } = await authClient.deviceToken({
-			grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-			device_code: deviceCode,
-			client_id: EPICENTER_CLI_OAUTH_CLIENT_ID,
-		});
-		if (data) {
-			const tokenData = readRecord(data, 'device token response');
-			return Ok({
-				accessToken: readString(tokenData, 'access_token'),
-				refreshToken: readString(tokenData, 'refresh_token'),
-				accessTokenExpiresAt:
-					Date.now() + readPositiveNumber(tokenData, 'expires_in') * 1000,
-			});
-		}
-		if (!error) {
-			return MachineAuthRequestError.RequestFailed({
-				cause: new Error('device.token returned neither data nor error'),
-			});
-		}
-
-		switch (error.error) {
-			case 'authorization_pending':
-				continue;
-			case 'slow_down':
-				interval += 5_000;
-				continue;
-			case 'expired_token':
-				return DeviceTokenError.DeviceCodeExpired();
-			case 'access_denied':
-				return DeviceTokenError.DeviceAccessDenied();
-			default:
-				return DeviceTokenError.DeviceAuthorizationFailed({
-					code: error.error,
-					description: error.error_description,
-				});
-		}
-	}
-	return DeviceTokenError.DeviceCodeExpired();
-}
-
-function readRecord(value: unknown, label: string): Record<string, unknown> {
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		throw new Error(`Expected ${label} to be an object.`);
-	}
-	return value as Record<string, unknown>;
-}
-
-function readString(record: Record<string, unknown>, key: string) {
-	const value = record[key];
-	if (typeof value !== 'string') {
-		throw new Error(`Expected ${key} to be a string.`);
-	}
-	return value;
-}
-
-function readPositiveNumber(record: Record<string, unknown>, key: string) {
-	const value = record[key];
-	if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-		throw new Error(`Expected ${key} to be a positive number.`);
-	}
-	return value;
-}
-
-async function fetchOAuthSession({
-	authClient,
-	tokens,
-}: {
-	authClient: MachineAuthClient;
-	tokens: OAuthTokenGrant;
-}): Promise<Result<OAuthSessionType, MachineAuthRequestError>> {
-	const { data, error } = await authClient.getSession({
-		fetchOptions: {
-			headers: { Authorization: `Bearer ${tokens.accessToken}` },
-		},
-	});
-	if (error) return MachineAuthRequestError.RequestFailed({ cause: error });
-	if (data === null) {
-		return MachineAuthRequestError.RequestFailed({
-			cause: new Error('getSession returned null after device-code login'),
-		});
-	}
-
-	try {
-		const identity = WorkspaceIdentity.assert(data);
-		return Ok(OAuthSession.assert({ tokens, identity }));
-	} catch (cause) {
-		return MachineAuthRequestError.RequestFailed({ cause });
-	}
-}
-
-/**
- * Create an auth client backed by saved machine auth.
- *
- * Storage failures are propagated; daemons should crash rather than silently
- * boot signed-out when the keychain is unreadable.
- */
-export async function createMachineAuthClient({
-	backend = Bun.secrets,
-	fetch,
-	log = createLogger('machine-auth'),
-	now,
-	refreshOAuthToken,
-	revokeOAuthRefreshToken,
-}: {
-	backend?: typeof Bun.secrets;
+type CommonConfig = {
+	baseURL?: string;
+	clientId?: string;
+	redirectUri?: string;
+	filePath?: string;
 	fetch?: typeof globalThis.fetch;
 	log?: Logger;
 	now?: () => number;
-	refreshOAuthToken?: OAuthTokenRefresher;
-	revokeOAuthRefreshToken?: OAuthRefreshTokenRevoker;
-} = {}): Promise<AuthClient> {
-	const { data: loadedSession, error } = await loadMachineSession({
-		backend,
+};
+
+export type LoginWithOobConfig = CommonConfig & {
+	print?: (line: string) => void;
+	openBrowser?: (url: string) => Promise<void> | void;
+	readCode?: () => Promise<string>;
+};
+
+export type LoginWithOobResult = { identity: WorkspaceIdentity };
+
+export type StatusResult =
+	| { status: 'signedOut' }
+	| { status: 'valid'; identity: WorkspaceIdentity }
+	| { status: 'unverified'; identity: WorkspaceIdentity };
+
+export type LogoutResult = { status: 'signedOut' } | { status: 'loggedOut' };
+
+/**
+ * Run the OOB OAuth dance, call `/api/me` for the unlock bundle, persist
+ * `PersistedAuth`, and return the identity for the CLI to display.
+ */
+export async function loginWithOob({
+	baseURL = EPICENTER_API_URL,
+	clientId = EPICENTER_CLI_OAUTH_CLIENT_ID,
+	redirectUri,
+	filePath,
+	fetch = globalThis.fetch.bind(globalThis),
+	log = createLogger('machine-auth'),
+	now = Date.now,
+	print,
+	openBrowser,
+	readCode,
+}: LoginWithOobConfig = {}): Promise<
+	Result<LoginWithOobResult, MachineAuthRequestError | MachineAuthStorageError>
+> {
+	void log;
+	const launcher = createOobOAuthLauncher({
+		baseURL,
+		clientId,
+		redirectUri: redirectUri ?? `${baseURL}/auth/cli-callback`,
+		fetch,
+		now,
+		...(print ? { print } : {}),
+		...(openBrowser ? { openBrowser } : {}),
+		...(readCode ? { readCode } : {}),
+	});
+
+	const grantResult = await launcher.startSignIn();
+	if (grantResult.error) {
+		return Err(
+			MachineAuthRequestError.RequestFailed({ cause: grantResult.error }).error,
+		);
+	}
+	if (!grantResult.data) {
+		return Err(
+			MachineAuthRequestError.RequestFailed({
+				cause: new Error('OOB launcher returned no grant.'),
+			}).error,
+		);
+	}
+	const grant = grantResult.data;
+
+	const meResult = await fetchApiMe({
+		baseURL,
+		accessToken: grant.accessToken,
+		fetch,
+	});
+	if (meResult.error) return Err(meResult.error);
+	const me = meResult.data;
+
+	const cell: PersistedAuth = {
+		grant,
+		unlock: { userId: me.user.id, encryptionKeys: me.encryptionKeys },
+	};
+	const saved = await saveMachineTokens(
+		cell,
+		...(filePath ? [{ filePath }] : []),
+	);
+	if (saved.error) return Err(saved.error);
+
+	return Ok({
+		identity: {
+			user: { id: me.user.id, email: me.user.email },
+			encryptionKeys: me.encryptionKeys,
+		},
+	});
+}
+
+/**
+ * Load the persisted cell and verify it by hitting `/api/me` through a
+ * regular `createOAuthAppAuth` client (so refresh-on-401 fires automatically
+ * and the same-user guard wipes the cell on mismatch). Returns `unverified`
+ * on network failures so the CLI can still report the cached identity.
+ */
+export async function status({
+	baseURL = EPICENTER_API_URL,
+	clientId = EPICENTER_CLI_OAUTH_CLIENT_ID,
+	filePath,
+	fetch = globalThis.fetch.bind(globalThis),
+	log = createLogger('machine-auth'),
+	now = Date.now,
+}: CommonConfig = {}): Promise<
+	Result<StatusResult, MachineAuthStorageError | MachineAuthRequestError>
+> {
+	const loaded = await loadMachineTokens({
+		...(filePath ? { filePath } : {}),
 		log,
 	});
-	if (error) throw error;
-	if (loadedSession === null) {
+	if (loaded.error) return Err(loaded.error);
+	if (!loaded.data) return Ok({ status: 'signedOut' as const });
+	const cachedUnlock = loaded.data.unlock;
+
+	const client = await createMachineAuthClient({
+		baseURL,
+		clientId,
+		filePath,
+		fetch,
+		log,
+		now,
+	});
+
+	let response: Response;
+	try {
+		response = await client.fetch('/api/me');
+	} catch (cause) {
+		void cause;
+		return Ok({
+			status: 'unverified' as const,
+			identity: {
+				user: { id: cachedUnlock.userId, email: '' },
+				encryptionKeys: cachedUnlock.encryptionKeys,
+			},
+		});
+	}
+
+	if (response.status === 200) {
+		let body: unknown;
+		try {
+			body = await response.json();
+		} catch (cause) {
+			return Err(MachineAuthRequestError.RequestFailed({ cause }).error);
+		}
+		let me: ApiMeResponse;
+		try {
+			me = ApiMeResponse.assert(body);
+		} catch (cause) {
+			return Err(MachineAuthRequestError.RequestFailed({ cause }).error);
+		}
+		return Ok({
+			status: 'valid' as const,
+			identity: {
+				user: { id: me.user.id, email: me.user.email },
+				encryptionKeys: me.encryptionKeys,
+			},
+		});
+	}
+
+	// Network or auth failure. Cell may still be valid for local decrypt; the
+	// underlying auth client will have wiped it on same-user mismatch or
+	// reauth-required already. Email is unknown without /api/me.
+	return Ok({
+		status: 'unverified' as const,
+		identity: {
+			user: { id: cachedUnlock.userId, email: '' },
+			encryptionKeys: cachedUnlock.encryptionKeys,
+		},
+	});
+}
+
+/**
+ * Revoke the persisted refresh token (best effort) and delete the file.
+ * Uses `auth.signOut`, which calls `/auth/oauth2/revoke` and then
+ * `persistedAuthStorage.set(null)`; revoke failures are swallowed inside
+ * `createOAuthAppAuth` so the file is always cleared.
+ */
+export async function logout({
+	baseURL = EPICENTER_API_URL,
+	clientId = EPICENTER_CLI_OAUTH_CLIENT_ID,
+	filePath,
+	fetch = globalThis.fetch.bind(globalThis),
+	log = createLogger('machine-auth'),
+	now = Date.now,
+}: CommonConfig = {}): Promise<
+	Result<LogoutResult, MachineAuthStorageError | MachineAuthRequestError>
+> {
+	const loaded = await loadMachineTokens({
+		...(filePath ? { filePath } : {}),
+		log,
+	});
+	if (loaded.error) return Err(loaded.error);
+	if (!loaded.data) return Ok({ status: 'signedOut' as const });
+
+	const client = await createMachineAuthClient({
+		baseURL,
+		clientId,
+		filePath,
+		fetch,
+		log,
+		now,
+	});
+	await client.signOut();
+	return Ok({ status: 'loggedOut' as const });
+}
+
+/**
+ * Load the persisted cell and construct an `AuthClient` over it. Daemons
+ * call this on boot; they never spawn an interactive sign-in launcher.
+ */
+export async function createMachineAuthClient({
+	baseURL = EPICENTER_API_URL,
+	clientId = EPICENTER_CLI_OAUTH_CLIENT_ID,
+	filePath,
+	fetch = globalThis.fetch.bind(globalThis),
+	log = createLogger('machine-auth'),
+	now = Date.now,
+}: CommonConfig = {}): Promise<AuthClient> {
+	void log;
+	const loaded = await loadMachineTokens({
+		...(filePath ? { filePath } : {}),
+		log,
+	});
+	if (loaded.error) throw loaded.error;
+	if (!loaded.data) {
 		throw new Error(
-			'[machine-auth] no saved session in the system keychain. ' +
+			'[machine-auth] no saved session at ~/.epicenter/auth.json. ' +
 				'Run `epicenter auth login` first.',
 		);
 	}
-	let currentSession: OAuthSessionType | null = loadedSession;
+	let currentCell: PersistedAuth | null = loaded.data;
 	return createOAuthAppAuth({
-		baseURL: EPICENTER_API_URL,
-		clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
+		baseURL,
+		clientId,
 		launcher: {
+			// Daemons never sign in interactively; a human must run
+			// `epicenter auth login` to refresh the persisted cell.
 			startSignIn: async () => Ok(null),
 		},
-		sessionStorage: {
-			get: () => currentSession,
+		persistedAuthStorage: {
+			get: () => currentCell,
 			set: async (next) => {
-				const { error: saveError } = await saveMachineSession(next, {
-					backend,
-				});
-				if (saveError) {
-					log.error(saveError);
-					throw saveError;
-				}
-				currentSession = next;
+				const saved = await saveMachineTokens(
+					next,
+					...(filePath ? [{ filePath }] : []),
+				);
+				if (saved.error) throw saved.error;
+				currentCell = next;
 			},
 		},
-		...(fetch ? { fetch } : {}),
-		...(now ? { now } : {}),
-		...(refreshOAuthToken ? { refreshOAuthToken } : {}),
-		...(revokeOAuthRefreshToken ? { revokeOAuthRefreshToken } : {}),
+		fetch,
+		now,
 	});
+}
+
+async function fetchApiMe({
+	baseURL,
+	accessToken,
+	fetch,
+}: {
+	baseURL: string;
+	accessToken: string;
+	fetch: typeof globalThis.fetch;
+}): Promise<Result<ApiMeResponse, MachineAuthRequestError>> {
+	let response: Response;
+	try {
+		response = await fetch(`${baseURL}/api/me`, {
+			headers: { Authorization: `Bearer ${accessToken}` },
+			credentials: 'omit',
+		});
+	} catch (cause) {
+		return Err(MachineAuthRequestError.RequestFailed({ cause }).error);
+	}
+	if (response.status !== 200) {
+		return Err(
+			MachineAuthRequestError.RequestFailed({
+				cause: new Error(`/api/me returned ${response.status}.`),
+			}).error,
+		);
+	}
+	let payload: unknown;
+	try {
+		payload = await response.json();
+	} catch (cause) {
+		return Err(MachineAuthRequestError.RequestFailed({ cause }).error);
+	}
+	try {
+		return Ok(ApiMeResponse.assert(payload));
+	} catch (cause) {
+		return Err(MachineAuthRequestError.RequestFailed({ cause }).error);
+	}
 }

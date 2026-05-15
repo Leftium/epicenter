@@ -6,7 +6,7 @@ import { createSession } from '@epicenter/svelte';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { createDeviceProfile, registerDevice } from './device';
-import { authSessionStorage, oauthLauncher } from './platform/auth/auth';
+import { oauthLauncher, persistedAuthStorage } from './platform/auth/auth';
 import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
@@ -20,7 +20,7 @@ export type SessionAiTools = ReturnType<
 export type SessionTools = SessionAiTools['tools'];
 
 /**
- * Deferred-init values: set exactly once when `authSessionStorage.whenReady`
+ * Deferred-init values: set exactly once when `persistedAuthStorage.whenReady`
  * AND the peer identity have resolved. They are plain `let`, not `$state`,
  * because nothing needs the assignment itself to drive reactivity; consumers
  * await `tabManagerSession.whenReady` before reading.
@@ -34,13 +34,13 @@ let authClient: AuthClient | undefined;
 let session: ReturnType<typeof buildSession> | undefined;
 
 const whenReady = Promise.all([
-	authSessionStorage.whenReady,
+	persistedAuthStorage.whenReady,
 	createDeviceProfile(),
 ]).then(([, profile]) => {
 	authClient = createOAuthAppAuth({
 		baseURL: APP_URLS.API,
 		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
-		sessionStorage: authSessionStorage,
+		persistedAuthStorage,
 		launcher: oauthLauncher,
 	});
 	session = buildSession(authClient, profile);

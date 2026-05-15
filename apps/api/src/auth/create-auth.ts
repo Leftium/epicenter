@@ -24,12 +24,12 @@ type Db = NodePgDatabase<typeof schema>;
  * Wires up:
  * - Drizzle adapter (Postgres via Hyperdrive)
  * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
- * - Plugins: JWT, OAuth provider (PKCE)
+ * - Plugins: JWT (ES256), OAuth provider (PKCE)
  * - Autumn billing customer creation on user signup
  * - Cloudflare KV secondary storage for session caching
  *
- * `/workspace-identity` is the single Epicenter identity surface; this builder
- * no longer enriches `/auth/get-session` with encryption keys.
+ * `/api/me` is the single Epicenter identity surface; this builder no longer
+ * enriches `/auth/get-session` with encryption keys.
  */
 export function createAuth({
 	db,
@@ -173,7 +173,12 @@ export function createAuth({
 	return betterAuth({
 		...authOptionsBase,
 		plugins: [
-			jwt(),
+			// ES256 (P-256 ECDSA) signs the id_token and JWT access tokens. The
+			// jose default would be EdDSA (Ed25519); pinning ES256 gives the
+			// broadest verifier-library support across browser `jose`, Tauri
+			// Rust crates, and mobile platforms. The `id_token_signing_alg_values_supported`
+			// claim on `/.well-known/openid-configuration` reflects this.
+			jwt({ jwks: { keyPairConfig: { alg: 'ES256' } } }),
 			oauthProvider({
 				loginPage: '/sign-in',
 				consentPage: '/consent',

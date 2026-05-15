@@ -248,7 +248,7 @@ export function handleSyncPayload({
  * update together:
  *
  *   Client POST: [stateVector, update?]
- *   Server response: V2 diff the client is missing (or 304 if already in sync)
+ *   Server response: V2 diff the client is missing (or 204 if already in sync)
  *
  * The state vector tells the server "what I already have." The update (if
  * present) pushes local changes the server is missing. The server applies the

@@ -12,7 +12,7 @@ export type { AuthClient };
  *
  * Bridges the core state listener into Svelte reactivity.
  */
-function withReactiveState(auth: AuthClient): AuthClient {
+function withReactiveState(auth: AuthClient) {
 	const subscribe = createSubscriber((update) => {
 		return auth.onStateChange(update);
 	});

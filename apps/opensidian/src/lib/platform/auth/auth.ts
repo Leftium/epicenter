@@ -1,4 +1,4 @@
-import { OAuthSession } from '@epicenter/auth';
+import { PersistedAuth } from '@epicenter/auth';
 import {
 	createBrowserOAuthLauncher,
 	createStorageAdapter,
@@ -12,9 +12,9 @@ import { base } from '$app/paths';
 export const auth = createOAuthAppAuth({
 	baseURL: APP_URLS.API,
 	clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
-	sessionStorage: createPersistedState({
-		key: 'opensidian.auth.session',
-		schema: OAuthSession.or('null'),
+	persistedAuthStorage: createPersistedState({
+		key: 'opensidian.auth.persisted',
+		schema: PersistedAuth.or('null'),
 		defaultValue: null,
 	}),
 	launcher: createBrowserOAuthLauncher({

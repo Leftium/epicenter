@@ -1,8 +1,4 @@
-import {
-	type AuthClient,
-	type AuthState,
-	requireIdentity,
-} from '@epicenter/auth';
+import type { AuthClient, AuthState } from '@epicenter/auth';
 import { createLocalOwner, type LocalOwner } from '@epicenter/workspace';
 
 /**
@@ -12,10 +8,9 @@ import { createLocalOwner, type LocalOwner } from '@epicenter/workspace';
  * states are always the same user.
  *
  * The build callback receives a `LocalOwner` (`@epicenter/workspace`) that
- * carries `userId` plus a lazy `encryptionKeys()` reader. Apps forward `owner`
- * to their browser bundle and call `owner.attachEncryption(ydoc)`,
- * `owner.attachIndexedDb(ydoc)`, etc., instead of threading `userId` and
- * `encryptionKeys` separately.
+ * carries `userId` plus a lazy `encryptionKeys()` reader. The reader pulls
+ * from the live `state.unlock` so refreshed encryption keys (after `/api/me`
+ * adjusts them) are picked up on next access without rebuilding the payload.
  *
  * Requires an `AuthClient` whose `state` is Svelte-reactive (use
  * `@epicenter/auth-svelte`, not `@epicenter/auth` directly).
@@ -38,8 +33,15 @@ export function createSession<T extends Disposable>({
 		if (payload) return;
 		payload = build({
 			owner: createLocalOwner({
-				userId: state.identity.user.id,
-				encryptionKeys: () => requireIdentity(auth).encryptionKeys,
+				userId: state.unlock.userId,
+				encryptionKeys: () => {
+					if (auth.state.status === 'signed-out') {
+						throw new Error(
+							'[session] encryptionKeys() called while signed-out.',
+						);
+					}
+					return auth.state.unlock.encryptionKeys;
+				},
 			}),
 		});
 	}

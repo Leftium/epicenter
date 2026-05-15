@@ -3,6 +3,7 @@
 **Date**: 2026-05-15
 **Status**: Draft
 **Author**: Braden + Codex
+**Current state**: auth unblocker PR `#1762` is merged. The next implementation lane is daemon shared auth.
 
 ## One Sentence
 
@@ -12,17 +13,73 @@ Finish the live auth and daemon unblockers first, then run isolated product lane
 
 The latest specs are not one linear project. They are a small portfolio:
 
-1. A broken or incomplete runtime plane that should be fixed first.
+1. A runtime plane that has just been unblocked by the OOB CLI auth work.
 2. A daemon and scripting architecture cleanup that becomes easier once auth is stable.
 3. Product expansion work that should not sit on top of daemon churn unless it truly needs to.
 
 This guide orders the six active specs by dependency, importance, and implementation risk.
 
+## Execution Contract
+
+Treat this guide as the portfolio map, not as the implementation spec for each branch.
+Each branch still starts by rereading its source spec and writing a short branch plan.
+
+The execution loop is:
+
+```txt
+preflight the source spec
+  -> create the branch from the right base
+  -> implement one reviewable behavior change
+  -> run the branch gate
+  -> append implementation notes to the source spec
+  -> commit code and spec notes together
+```
+
+The branch plan should answer four questions before code changes begin:
+
+```txt
+1. What current behavior is broken or missing?
+2. Which files own that behavior?
+3. What is the smallest reviewable PR that fixes it?
+4. Which command or smoke test proves it?
+```
+
+Do not start a branch if the answer to question 3 is "the whole spec."
+
+## Preflight Before Any Branch
+
+Before starting a lane, verify the source spec exists and has enough implementation detail to run without guessing.
+
+```bash
+test -f specs/20260514T210000-execute-oob-cli-phases-3-4.md
+test -f specs/20260514T120000-machine-auth-oob-clean-break.md
+test -f specs/20260514T170000-single-daemon-multi-workspace.md
+test -f specs/20260514T160000-script-surfaces-resolution.md
+test -f specs/20260514T013918-source-app-manifest-bridge-slice.md
+test -f specs/20260514T220000-self-host-first-class.md
+```
+
+If a source spec is missing, stop and recover it or replace the reference with the current canonical spec. Do not implement from this guide alone. This guide compresses intent; the source specs carry the design evidence, open questions, and acceptance details.
+
+Each source spec must have:
+
+```txt
+one sentence
+current state with real code references
+target state
+explicit out of scope
+implementation waves or PR slices
+verification commands
+open questions
+```
+
+If a source spec lacks those pieces, update that spec first. That is planning work, not implementation work.
+
 ## The Six Work Items
 
 | # | Work item | Source spec | Difficulty | Importance | Recommended lane |
 | --- | --- | --- | --- | --- | --- |
-| 1 | OOB CLI Phases 3-4 | `20260514T210000-execute-oob-cli-phases-3-4.md` | 4/5 | 5/5 | Auth unblocker |
+| 1 | OOB CLI Phases 3-4 | `20260514T210000-execute-oob-cli-phases-3-4.md` | Done in `#1762` | 5/5 | Auth unblocker |
 | 2 | Machine Auth OOB cleanup | `20260514T120000-machine-auth-oob-clean-break.md` | 4/5 | 5/5 | Auth unblocker |
 | 3 | Single daemon, many workspaces | `20260514T170000-single-daemon-multi-workspace.md` | 3/5 for Phase 1, 4/5 overall | 4/5 | Daemon cleanup |
 | 4 | Script surfaces resolution | `20260514T160000-script-surfaces-resolution.md` | 3/5 | 4/5 | Scripting cleanup |
@@ -35,9 +92,9 @@ Difficulty means expected implementation and review complexity. Importance means
 
 ### 1. Ship OOB CLI Phases 3-4
 
-Do this first.
+This landed first in `#1762`.
 
-This is the current bottleneck. The execution spec says the CLI auth surface and daemon plane are still stubbed or broken. Until this lands, daemon smoke tests are weak, and anything that depends on `createMachineAuthClient()` is built on uncertain ground.
+This was the current bottleneck. The execution spec said the CLI auth surface and daemon plane were still stubbed or broken. Now that it is merged, daemon smoke tests can start depending on the real `createMachineAuthClient()` path.
 
 Target branch:
 
@@ -71,6 +128,13 @@ epicenter auth status
 one daemon route boots and can reach /api/me
 ```
 
+Branch gate:
+
+```txt
+Nothing can stack on this branch until login, status, and one daemon route
+work against the same persisted machine auth session.
+```
+
 ### 2. Split Single Daemon Phase 1 Into Its Own PR
 
 Do not start with the whole single daemon spec. Extract the highest value piece: shared auth injection.
@@ -99,6 +163,13 @@ rg "createMachineAuthClient" apps/*/blocks/daemon-route.ts
 
 bun run typecheck
 bun test packages/workspace packages/cli
+```
+
+Branch gate:
+
+```txt
+Every daemon route receives auth from the route startup boundary.
+No route constructs its own machine auth client.
 ```
 
 Decision point after this PR:
@@ -135,11 +206,18 @@ Exit criteria:
 rg "openFujiScript|openFujiSnapshot|openHoneycrispScript|openOpensidianScript|openZhongwenScript" --glob '!specs/**'
 # expect zero matches
 
-bunx jsrepo build
+bun x jsrepo build
 bun run typecheck
 ```
 
 Keep this PR out of the full single daemon naming pass. It should be a behavioral cleanup, not a rename festival.
+
+Branch gate:
+
+```txt
+Every removed script surface has a documented replacement:
+read from SQLite, write through daemon actions.
+```
 
 ### 4. Finish Single Daemon Root Config And Naming
 
@@ -172,6 +250,13 @@ bun test packages/workspace packages/cli
 bun run typecheck
 ```
 
+Branch gate:
+
+```txt
+The naming pass must not change runtime behavior. Behavior changed earlier.
+This branch makes the mental model match the already-stable runtime.
+```
+
 ### 5. Build Source App Manifest Bridge In Parallel
 
 This one can run independently once someone has bandwidth.
@@ -201,6 +286,13 @@ bun --cwd packages/app typecheck
 
 This is a good parallel task because conflicts should be low.
 
+Branch gate:
+
+```txt
+The package is contract only. No app loader, install flow, permissions UI,
+Tauri shell integration, or workspace RPC surface enters this PR.
+```
+
 ### 6. Start Self-Host Only After OOB CLI Is Real
 
 Self-host is strategically important but should not start on top of an unfinished auth story.
@@ -229,6 +321,13 @@ Exit criteria for PR 1:
 bun run typecheck
 bun test apps/api
 wrangler dev smoke still reaches /sign-in, /api/me, and /rooms/:room
+```
+
+Branch gate for PR 1:
+
+```txt
+Cloudflare behavior remains unchanged. The only new concept is the runtime
+adapter boundary.
 ```
 
 Exit criteria for PR 2:

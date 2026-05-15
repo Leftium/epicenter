@@ -5,7 +5,8 @@
 **Status**: Ready to execute
 **Drives**:
 - `specs/20260514T120000-machine-auth-oob-clean-break.md` (Phases 3-4 only)
-- `specs/20260514T200000-api-me-three-field-token-bundle.md` (authoritative shape source; do not re-litigate)
+- `specs/20260514T200000-api-me-three-field-token-bundle.md` (PersistedAuth shape, grant/unlock split, network gate)
+- `specs/20260514T210000-profile-as-application-data.md` (AuthState carries `unlock` only; email is fetched where displayed)
 
 ## What you are doing
 
@@ -45,12 +46,14 @@ add tests, and verify daemon boot.
 
 4. `packages/auth/src/auth-contract.ts` — `AuthClient` and `AuthState` contracts.
 
-5. `packages/auth/src/create-oauth-app-auth.ts` — what `machine-auth.ts`
-   instantiates. Pay attention to:
+5. `packages/auth/src/create-oauth-app-auth.ts` — what `createMachineAuthClient`
+   instantiates (for daemons). Pay attention to:
    - the `persistedAuthStorage` parameter shape
    - the `launcher.startSignIn` contract
-   - the `fetchProfile` / network gate behavior
-   - `auth.state.unlock` and `auth.state.profile` semantics
+   - the network gate / refresh-on-401 / same-user guard behavior
+   - `auth.state.unlock` semantics (NOTE: per `profile-as-application-data`,
+     `auth.state` carries only `status` + `unlock`; no `email`, no `profile`,
+     no `profileStatus`. The CLI fetches `/api/me` itself for display.)
 
 6. `packages/auth/src/node/machine-tokens-store.ts` — `loadMachineTokens` /
    `saveMachineTokens` signatures; the storage adapter you wire in.
@@ -207,15 +210,17 @@ export async function createMachineAuthClient(config?): Promise<AuthClient>;
 
 Implementation details:
 
+**Important shape note.** Per `specs/20260514T210000-profile-as-application-data.md`, `AuthState` carries `unlock` only (no `email`, no `profile`, no `profileStatus`). Email lives at the query layer for surfaces that display it. The CLI is such a surface, so `loginWithOob` and `status` must fetch `/api/me` themselves to get the email for display; they do not read it from `auth.state`.
+
 ```ts
-// loginWithOob: wires the OOB launcher + file-backed storage into
-// createOAuthAppAuth, calls startSignIn, returns identity from auth.state.
+// loginWithOob: run the OOB launcher, fetch /api/me with the new bearer,
+// build PersistedAuth, persist atomically, return identity for display.
 async function loginWithOob({
   baseURL = EPICENTER_API_URL,
   clientId = EPICENTER_CLI_OAUTH_CLIENT_ID,
   redirectUri = `${baseURL}/auth/cli-callback`,
   filePath,
-  fetch,
+  fetch = globalThis.fetch,
   log = createLogger('machine-auth'),
   print, openBrowser, readCode,
   now = Date.now,
@@ -225,52 +230,54 @@ async function loginWithOob({
     openBrowser, readCode, print, now,
   });
 
-  let currentCell: PersistedAuth | null = null;
-  const auth = createOAuthAppAuth({
-    baseURL,
-    clientId,
-    launcher,
-    persistedAuthStorage: {
-      get: () => currentCell,
-      set: async (next) => {
-        const { error } = await saveMachineTokens(next, { filePath });
-        if (error) throw error;
-        currentCell = next;
-      },
-    },
-    fetch,
-    now,
+  // Step 1: OAuth dance returns OAuthTokenGrant.
+  const grantResult = await launcher.startSignIn();
+  if (grantResult.error) return Err(grantResult.error);
+  if (!grantResult.data) {
+    return Err(MachineAuthRequestError.RequestFailed({
+      cause: new Error('launcher returned no grant'),
+    }));
+  }
+  const grant = grantResult.data;
+
+  // Step 2: GET /api/me with the new bearer to load unlock + email.
+  const meResponse = await fetch(`${baseURL}/api/me`, {
+    headers: { Authorization: `Bearer ${grant.accessToken}` },
+    credentials: 'omit',
   });
-
-  const result = await auth.startSignIn();
-  if (result.error) return Err(result.error);
-
-  // After startSignIn: the launcher returned a grant, createOAuthAppAuth
-  // wrote the grant section, then fetchProfile (GET /api/me) populated the
-  // unlock section and the in-memory profile. auth.state reflects both.
-  const state = auth.state;
-  if (state.status !== 'signed-in') {
+  if (meResponse.status !== 200) {
     return Err(MachineAuthRequestError.RequestFailed({
-      cause: new Error('sign-in completed but state is not signed-in'),
+      cause: new Error(`/api/me returned ${meResponse.status}`),
     }));
   }
-  if (!state.profile) {
-    return Err(MachineAuthRequestError.RequestFailed({
-      cause: new Error('sign-in completed but /api/me did not return a profile'),
-    }));
-  }
+  const me = await meResponse.json();
+  // Expected shape: { user: { id, email }, encryptionKeys }
 
+  // Step 3: Build PersistedAuth and persist atomically.
+  const cell: PersistedAuth = {
+    grant,
+    unlock: { userId: me.user.id, encryptionKeys: me.encryptionKeys },
+  };
+  const { error: saveError } = await saveMachineTokens(cell, { filePath });
+  if (saveError) return Err(saveError);
+
+  // Step 4: Return identity for the CLI to display. Email is not persisted;
+  // it is returned by value here so the CLI can print "Signed in as <email>"
+  // without having to refetch.
   return Ok({
     identity: {
-      user: { id: state.unlock.userId, email: state.profile.email },
-      encryptionKeys: state.unlock.encryptionKeys,
+      user: { id: me.user.id, email: me.user.email },
+      encryptionKeys: me.encryptionKeys,
     },
   });
 }
 ```
 
+Note: this `loginWithOob` does NOT go through `createOAuthAppAuth`. The auth client factory is for daemons (long-lived; needs refresh + network gate); the CLI's login command runs once, persists, and exits. Using the factory for login would be circuitous (it would call the launcher and then internally call /api/me, but the CLI also needs the email out, so we'd still call /api/me twice or read from a removed `state.email` field).
+
 ```ts
-// status: load cell; verify with a /api/me probe through createMachineAuthClient.
+// status: load cell; verify with a /api/me probe through createMachineAuthClient
+// (so refresh-on-401 fires automatically); decode email from the /api/me response.
 async function status({ filePath, fetch, log, now } = {}) {
   const { data: cell, error } = await loadMachineTokens({ filePath, log });
   if (error) return Err(error);
@@ -278,27 +285,26 @@ async function status({ filePath, fetch, log, now } = {}) {
 
   const auth = await createMachineAuthClient({ filePath, fetch, log, now });
   const response = await auth.fetch('/api/me');
-  const identity = identityFromState(auth.state);
-  if (response.status === 200) return Ok({ status: 'valid' as const, identity });
-  return Ok({ status: 'unverified' as const, identity });
-}
-```
-
-Private helper:
-
-```ts
-function identityFromState(state: AuthState): WorkspaceIdentity {
-  if (state.status === 'signed-out') {
-    // unreachable from status() because we already checked cell !== null
-    throw new Error('identityFromState called on signed-out state');
+  if (response.status === 200) {
+    const me = await response.json();
+    return Ok({
+      status: 'valid' as const,
+      identity: {
+        user: { id: me.user.id, email: me.user.email },
+        encryptionKeys: me.encryptionKeys,
+      },
+    });
   }
-  return {
-    user: {
-      id: state.unlock.userId,
-      email: state.profile?.email ?? '',
+  // Network failure, 401 with revoked refresh, etc. Cell may still be valid for
+  // local decrypt. Surface the cached unlock; email is unknown without /api/me,
+  // so leave it empty and let the CLI print "Account" or similar.
+  return Ok({
+    status: 'unverified' as const,
+    identity: {
+      user: { id: cell.unlock.userId, email: '' },
+      encryptionKeys: cell.unlock.encryptionKeys,
     },
-    encryptionKeys: state.unlock.encryptionKeys,
-  };
+  });
 }
 ```
 

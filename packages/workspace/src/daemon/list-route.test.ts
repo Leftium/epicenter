@@ -60,7 +60,9 @@ describe('/list route', () => {
 	});
 
 	test('returns an empty manifest when the collaboration has no actions', () => {
-		const manifest = createRouteActionManifest([{ route: 'demo', actions: {} }]);
+		const manifest = createRouteActionManifest([
+			{ route: 'demo', actions: {} },
+		]);
 
 		expect(manifest).toEqual({});
 	});

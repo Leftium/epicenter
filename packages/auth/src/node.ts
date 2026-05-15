@@ -1,13 +1,13 @@
 export {
 	createMachineAuthClient,
-	loginWithOob,
-	logout,
-	MachineAuthRequestError,
-	status,
 	type LoginWithOobConfig,
 	type LoginWithOobResult,
 	type LogoutResult,
+	loginWithOob,
+	logout,
+	MachineAuthRequestError,
 	type StatusResult,
+	status,
 	type WorkspaceIdentity,
 } from './node/machine-auth.js';
 export {
@@ -16,7 +16,7 @@ export {
 	saveMachineTokens,
 } from './node/machine-tokens-store.js';
 export {
+	type CreateOobOAuthLauncherConfig,
 	createOobOAuthLauncher,
 	OobLauncherError,
-	type CreateOobOAuthLauncherConfig,
 } from './node/oob-launcher.js';

@@ -45,20 +45,21 @@ async function base64UrlSha256(input: string) {
 	for (let i = 0; i < bytes.byteLength; i += 1) {
 		binary += String.fromCharCode(bytes[i] as number);
 	}
-	return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
+	return btoa(binary)
+		.replace(/\+/g, '-')
+		.replace(/\//g, '_')
+		.replace(/=+$/u, '');
 }
 
-function setup(
-	{
-		readCode = async () => 'CODE123',
-		openBrowser = async () => {},
-		fetchImpl,
-	}: {
-		readCode?: () => Promise<string>;
-		openBrowser?: (url: string) => Promise<void> | void;
-		fetchImpl?: FetchLike;
-	} = {},
-) {
+function setup({
+	readCode = async () => 'CODE123',
+	openBrowser = async () => {},
+	fetchImpl,
+}: {
+	readCode?: () => Promise<string>;
+	openBrowser?: (url: string) => Promise<void> | void;
+	fetchImpl?: FetchLike;
+} = {}) {
 	const printed: string[] = [];
 	const tokenRequests: Array<{ url: string; body: URLSearchParams }> = [];
 	const defaultFetch = asFetch(async (input, init) => {
@@ -146,7 +147,9 @@ test('PKCE verifier and challenge are linked', async () => {
 	const challenge = url.searchParams.get('code_challenge');
 	const method = url.searchParams.get('code_challenge_method');
 	expect(method).toBe('S256');
-	expect(challenge).toBe(await base64UrlSha256(receivedVerifier as unknown as string));
+	expect(challenge).toBe(
+		await base64UrlSha256(receivedVerifier as unknown as string),
+	);
 });
 
 test('cancellation: empty paste returns Err(AuthorizationCancelled) and no network', async () => {
@@ -182,17 +185,20 @@ test('invalid token_type returns Err(InvalidTokenResponse)', async () => {
 
 test('server 400 returns Err(TokenExchangeFailed) with status + body', async () => {
 	const { launcher } = setup({
-		fetchImpl: asFetch(async () =>
-			new Response(JSON.stringify({ error: 'invalid_grant' }), {
-				status: 400,
-				headers: { 'content-type': 'application/json' },
-			}),
+		fetchImpl: asFetch(
+			async () =>
+				new Response(JSON.stringify({ error: 'invalid_grant' }), {
+					status: 400,
+					headers: { 'content-type': 'application/json' },
+				}),
 		),
 	});
 	const result = await launcher.startSignIn();
-	const err = result.error as
-		| { name?: string; status?: number; body?: string }
-		| null;
+	const err = result.error as {
+		name?: string;
+		status?: number;
+		body?: string;
+	} | null;
 	expect(err?.name).toBe('TokenExchangeFailed');
 	expect(err?.status).toBe(400);
 	expect(err?.body).toContain('invalid_grant');

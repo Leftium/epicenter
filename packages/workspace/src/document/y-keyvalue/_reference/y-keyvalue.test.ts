@@ -188,9 +188,7 @@ describe('YKeyValue', () => {
 
 		test('concurrent updates converge to same value across all clients', () => {
 			for (let i = 0; i < 10; i++) {
-				const { doc1, doc2, array1, array2 } = setupSyncedArrays(
-					`shared-${i}`,
-				);
+				const { doc1, doc2, array1, array2 } = setupSyncedArrays(`shared-${i}`);
 
 				const kv1 = new YKeyValue(array1);
 				const kv2 = new YKeyValue(array2);
@@ -210,9 +208,8 @@ describe('YKeyValue', () => {
 			// Client 2 updates the same key
 			// Who wins after sync?
 
-			const { doc1, doc2, array1, array2 } = setupSyncedArrays(
-				'shared-delete-test',
-			);
+			const { doc1, doc2, array1, array2 } =
+				setupSyncedArrays('shared-delete-test');
 
 			// First, establish initial state in both docs
 			const kv1 = new YKeyValue(array1);

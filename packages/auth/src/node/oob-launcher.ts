@@ -26,7 +26,11 @@ export const OobLauncherError = defineErrors({
 		status,
 		body,
 		cause,
-	}: { status: number; body: string; cause?: unknown }) => ({
+	}: {
+		status: number;
+		body: string;
+		cause?: unknown;
+	}) => ({
 		message: `OAuth token exchange failed with status ${status}: ${body}`,
 		status,
 		body,
@@ -187,7 +191,11 @@ function parseTokenResponse(
 	payload: unknown,
 	now: () => number,
 ): OAuthTokenGrant {
-	if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+	if (
+		payload === null ||
+		typeof payload !== 'object' ||
+		Array.isArray(payload)
+	) {
 		throw new Error('Expected token response to be an object.');
 	}
 	const record = payload as Record<string, unknown>;
@@ -243,9 +251,11 @@ async function defaultOpenBrowser(url: string): Promise<void> {
 	if (!command) return;
 	try {
 		// Bun.spawn is available in the CLI runtime. Failure is best-effort.
-		const proc = (globalThis as unknown as {
-			Bun?: { spawn: (cmd: string[]) => unknown };
-		}).Bun?.spawn([...command, url]);
+		const proc = (
+			globalThis as unknown as {
+				Bun?: { spawn: (cmd: string[]) => unknown };
+			}
+		).Bun?.spawn([...command, url]);
 		void proc;
 	} catch {
 		// swallow; the printed URL is the source of truth

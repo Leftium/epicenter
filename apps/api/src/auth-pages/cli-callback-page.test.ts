@@ -45,9 +45,7 @@ test('GET /auth/cli-callback sets Cache-Control: no-store, no-transform', async 
 	const app = createCallbackApp();
 	const response = await app.request('/auth/cli-callback?code=test');
 
-	expect(response.headers.get('cache-control')).toBe(
-		'no-store, no-transform',
-	);
+	expect(response.headers.get('cache-control')).toBe('no-store, no-transform');
 });
 
 test('GET /auth/cli-callback applies secureHeaders defaults', async () => {

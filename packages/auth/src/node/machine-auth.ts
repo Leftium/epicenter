@@ -19,6 +19,7 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import type { EncryptionKeys } from '@epicenter/encryption';
+import { EncryptionKeys as EncryptionKeysSchema } from '@epicenter/encryption';
 import { type } from 'arktype';
 import {
 	defineErrors,
@@ -30,7 +31,6 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient } from '../auth-contract.js';
 import { AuthUser, type PersistedAuth } from '../auth-types.js';
 import { createOAuthAppAuth } from '../create-oauth-app-auth.js';
-import { EncryptionKeys as EncryptionKeysSchema } from '@epicenter/encryption';
 import {
 	loadMachineTokens,
 	type MachineAuthStorageError,
@@ -89,9 +89,7 @@ export type StatusResult =
 	| { status: 'valid'; identity: WorkspaceIdentity }
 	| { status: 'unverified'; identity: WorkspaceIdentity };
 
-export type LogoutResult =
-	| { status: 'signedOut' }
-	| { status: 'loggedOut' };
+export type LogoutResult = { status: 'signedOut' } | { status: 'loggedOut' };
 
 /**
  * Run the OOB OAuth dance, call `/api/me` for the unlock bundle, persist
@@ -150,7 +148,10 @@ export async function loginWithOob({
 		grant,
 		unlock: { userId: me.user.id, encryptionKeys: me.encryptionKeys },
 	};
-	const saved = await saveMachineTokens(cell, ...(filePath ? [{ filePath }] : []));
+	const saved = await saveMachineTokens(
+		cell,
+		...(filePath ? [{ filePath }] : []),
+	);
 	if (saved.error) return Err(saved.error);
 
 	return Ok({

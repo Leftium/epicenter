@@ -20,12 +20,12 @@ import { memoryAdapter } from 'better-auth/adapters/memory';
 import { jwt } from 'better-auth/plugins';
 import { Hono } from 'hono';
 import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource.js';
+import { resolveBearerUser } from './auth/resource-boundary.js';
 import {
 	createOAuthTestDb,
 	isAddressInUse,
 	issueOAuthTokens,
 } from './test-helpers/oauth.js';
-import { resolveBearerUser } from './auth/resource-boundary.js';
 
 type HealthEnv = { Variables: { user: AuthUser } };
 

@@ -6,7 +6,7 @@ import { createSession } from '@epicenter/svelte';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { createDeviceProfile, registerDevice } from './device';
-import { persistedAuthStorage, oauthLauncher } from './platform/auth/auth';
+import { oauthLauncher, persistedAuthStorage } from './platform/auth/auth';
 import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';

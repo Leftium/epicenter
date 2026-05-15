@@ -6,11 +6,11 @@
  * corrupt blob -> Ok(null), permissions-too-open refusal.
  */
 
+import { afterEach, expect, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { afterEach, expect, test } from 'bun:test';
 import type { PersistedAuth } from '../auth-types.js';
 import {
 	loadMachineTokens,

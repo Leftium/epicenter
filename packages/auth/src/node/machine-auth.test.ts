@@ -7,11 +7,11 @@
  * identity probe).
  */
 
+import { afterEach, expect, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { afterEach, expect, test } from 'bun:test';
 import type { PersistedAuth } from '../auth-types.js';
 import {
 	createMachineAuthClient,
@@ -19,7 +19,10 @@ import {
 	logout,
 	status,
 } from './machine-auth.js';
-import { loadMachineTokens, saveMachineTokens } from './machine-tokens-store.js';
+import {
+	loadMachineTokens,
+	saveMachineTokens,
+} from './machine-tokens-store.js';
 
 const BASE_URL = 'http://localhost:8787';
 const CLIENT_ID = 'epicenter-cli';

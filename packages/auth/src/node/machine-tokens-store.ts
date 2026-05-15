@@ -18,7 +18,13 @@ export const MachineAuthStorageError = defineErrors({
 		message: `Could not access machine auth storage: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	PermissionsTooOpen: ({ filePath, mode }: { filePath: string; mode: number }) => ({
+	PermissionsTooOpen: ({
+		filePath,
+		mode,
+	}: {
+		filePath: string;
+		mode: number;
+	}) => ({
 		message: `Refusing to load ${filePath}: permissions ${mode.toString(8)} are too permissive. Run: chmod 600 ${filePath}`,
 		filePath,
 		mode,

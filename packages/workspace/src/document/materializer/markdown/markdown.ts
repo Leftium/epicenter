@@ -6,4 +6,7 @@
  * only, so behavior and tests do not fork between materializer and document
  * markdown folders.
  */
-export { assembleMarkdown, type SerializeResult } from '../../markdown/markdown.js';
+export {
+	assembleMarkdown,
+	type SerializeResult,
+} from '../../markdown/markdown.js';

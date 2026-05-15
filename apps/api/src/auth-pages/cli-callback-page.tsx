@@ -41,9 +41,7 @@ export function CliCallbackPage({
 		return (
 			<>
 				<h1>Sign-in failed</h1>
-				<p class="subtitle">
-					The authorization server rejected the request.
-				</p>
+				<p class="subtitle">The authorization server rejected the request.</p>
 				<p>
 					Error: <code>{error}</code>
 				</p>

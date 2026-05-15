@@ -260,7 +260,7 @@ export function createOAuthAppAuth({
 		} else {
 			headers.delete('Authorization');
 		}
-		return fetchImpl(replayableInput(input, baseURL), {
+		return fetchImpl(normalizeFetchInput(input, baseURL), {
 			...init,
 			headers,
 			credentials: 'omit',
@@ -309,21 +309,25 @@ export function createOAuthAppAuth({
 		},
 		async signOut() {
 			try {
-				const cellToRevoke = persisted;
+				const refreshTokenToRevoke = persisted?.grant.refreshToken;
 				identityPromise = null;
-				if (cellToRevoke !== null) {
-					await revokeOAuthRefreshToken({
-						baseURL,
-						clientId,
-						refreshToken: cellToRevoke.grant.refreshToken,
-						fetch: fetchImpl,
-					}).catch(() => undefined);
-				}
 				await persistedAuthStorage.set(null);
 				persisted = null;
 				verifiedPersisted = null;
 				networkAuthPaused = false;
 				publishState();
+				if (refreshTokenToRevoke) {
+					void Promise.resolve()
+						.then(() =>
+							revokeOAuthRefreshToken({
+								baseURL,
+								clientId,
+								refreshToken: refreshTokenToRevoke,
+								fetch: fetchImpl,
+							}),
+						)
+						.catch(() => undefined);
+				}
 				return Ok(undefined);
 			} catch (cause) {
 				return AuthError.SignOutFailed({ cause });
@@ -358,13 +362,13 @@ function shouldRefreshGrant(grant: OAuthTokenGrant, now: number) {
 	return grant.accessTokenExpiresAt <= now + REFRESH_SKEW_MS;
 }
 
-function replayableInput<TInput extends Request | string | URL>(
-	input: TInput,
+function normalizeFetchInput(
+	input: Request | string | URL,
 	baseURL: string,
 ) {
-	if (input instanceof Request) return input.clone() as unknown as TInput;
+	if (input instanceof Request) return input.clone();
 	if (typeof input === 'string' && input.startsWith('/')) {
-		return new URL(input, baseURL).toString() as TInput;
+		return new URL(input, baseURL).toString();
 	}
 	return input;
 }

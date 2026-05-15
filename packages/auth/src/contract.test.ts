@@ -346,6 +346,14 @@ test('signOut clears cell and network pause even when revoke fails', async () =>
 	const setup = createStorage(cell());
 	const originalConsoleError = console.error;
 	console.error = () => undefined;
+	let markRevokeStarted!: () => void;
+	let rejectRevoke!: (error: Error) => void;
+	const revokeStarted = new Promise<void>((r) => {
+		markRevokeStarted = r;
+	});
+	const revokePromise = new Promise<void>((_, reject) => {
+		rejectRevoke = reject;
+	});
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
 		clientId: 'client-1',
@@ -357,7 +365,8 @@ test('signOut clears cell and network pause even when revoke fails', async () =>
 		},
 		revokeOAuthRefreshToken: async ({ refreshToken }) => {
 			expect(refreshToken).toBe('refresh-token');
-			throw new Error('revoke failed');
+			markRevokeStarted();
+			await revokePromise;
 		},
 		fetch: (async (input: Request | string | URL) => {
 			if (String(input).endsWith('/api/me')) return json(apiMeBody('user-1'));
@@ -373,10 +382,14 @@ test('signOut clears cell and network pause even when revoke fails', async () =>
 		});
 		expect('email' in auth.state).toBe(false);
 
-		const result = await auth.signOut();
-		expect(result).toEqual(Ok(undefined));
+		const signOutPromise = auth.signOut();
+		await Promise.resolve();
 		expect(setup.current).toBeNull();
 		expect(auth.state).toEqual({ status: 'signed-out' });
+		expect(await signOutPromise).toEqual(Ok(undefined));
+		await revokeStarted;
+		rejectRevoke(new Error('revoke failed'));
+		await Promise.resolve();
 	} finally {
 		console.error = originalConsoleError;
 		auth[Symbol.dispose]();

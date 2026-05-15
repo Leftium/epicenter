@@ -41,7 +41,7 @@ function authStatesEqual(left: AuthState, right: AuthState): boolean {
 	return unlocksEqual(left.unlock, right.unlock);
 }
 
-export function unlocksEqual(
+function unlocksEqual(
 	left: LocalUnlockBundle,
 	right: LocalUnlockBundle,
 ): boolean {

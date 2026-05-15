@@ -81,17 +81,10 @@ export function createOAuthAppAuth({
 	now = Date.now,
 }: CreateOAuthAppAuthConfig): AuthClient {
 	let persisted = persistedAuthStorage.get();
-	/**
-	 * In-memory display label fetched from `/api/me`. `email !== null` is the
-	 * single freshness predicate: it implies `/api/me` succeeded for the
-	 * *current* `persisted` reference in this runtime. Every cell mutation
-	 * clears `email` back to `null`, forcing a fresh verification before the
-	 * next bearer attachment.
-	 */
-	let email: string | null = null;
+	let verifiedPersisted: PersistedAuthType | null = null;
 	let networkAuthPaused = false;
 	let refreshPromise: Promise<boolean> | null = null;
-	let profilePromise: Promise<Result<ApiMeResponse, AuthError>> | null = null;
+	let identityPromise: Promise<Result<ApiMeResponse, AuthError>> | null = null;
 
 	const stateStore = createAuthStateStore(deriveState());
 
@@ -101,13 +94,11 @@ export function createOAuthAppAuth({
 			return {
 				status: 'reauth-required',
 				unlock: persisted.unlock,
-				email,
 			};
 		}
 		return {
 			status: 'signed-in',
 			unlock: persisted.unlock,
-			email,
 		};
 	}
 
@@ -138,7 +129,7 @@ export function createOAuthAppAuth({
 				await persistedAuthStorage.set(next);
 				if (persisted !== startedFrom) return false;
 				persisted = next;
-				email = null;
+				verifiedPersisted = null;
 				publishState();
 				return true;
 			} catch (cause) {
@@ -166,39 +157,39 @@ export function createOAuthAppAuth({
 				credentials: 'omit',
 			});
 		} catch (cause) {
-			return AuthError.FetchProfileFailed({ cause });
+			return AuthError.VerifyIdentityFailed({ cause });
 		}
 		if (!response.ok) {
-			return AuthError.FetchProfileFailed({
+			return AuthError.VerifyIdentityFailed({
 				cause: new Error(`/api/me failed with ${response.status}.`),
 			});
 		}
 		try {
 			return Ok(ApiMeResponse.assert(await response.json()));
 		} catch (cause) {
-			return AuthError.FetchProfileFailed({ cause });
+			return AuthError.VerifyIdentityFailed({ cause });
 		}
 	}
 
 	/**
-	 * Verify `/api/me` against the persisted cell. Updates `email` in memory;
+	 * Verify `/api/me` against the persisted cell. Marks the cell verified;
 	 * writes the unlock cell only when `encryptionKeys` actually changed.
 	 * Wipes the cell on same-user-guard mismatch. Single-flight: concurrent
 	 * callers share the in-flight promise.
 	 */
-	async function verifyProfile(
+	async function verifyIdentity(
 		startedFrom: PersistedAuthType,
 	): Promise<Result<ApiMeResponse, AuthError>> {
-		if (profilePromise) return profilePromise;
-		profilePromise = (async (): Promise<Result<ApiMeResponse, AuthError>> => {
+		if (identityPromise) return identityPromise;
+		identityPromise = (async (): Promise<Result<ApiMeResponse, AuthError>> => {
 			const { data: apiMe, error } = await callApiMe(startedFrom.grant);
-			if (error) return AuthError.FetchProfileFailed({ cause: error });
+			if (error) return AuthError.VerifyIdentityFailed({ cause: error });
 			if (persisted !== startedFrom) return Ok(apiMe);
 
 			if (persisted.unlock.userId !== apiMe.user.id) {
 				await persistedAuthStorage.set(null);
 				persisted = null;
-				email = null;
+				verifiedPersisted = null;
 				networkAuthPaused = false;
 				publishState();
 				return Ok(apiMe);
@@ -221,14 +212,14 @@ export function createOAuthAppAuth({
 				if (persisted !== startedFrom) return Ok(apiMe);
 				persisted = next;
 			}
-			email = apiMe.user.email;
+			verifiedPersisted = persisted;
 			publishState();
 			return Ok(apiMe);
 		})().finally(() => {
-			profilePromise = null;
+			identityPromise = null;
 		});
 
-		return profilePromise;
+		return identityPromise;
 	}
 
 	/**
@@ -236,7 +227,7 @@ export function createOAuthAppAuth({
 	 * request, or `null` if no bearer should be attached.
 	 *
 	 * Refuses to attach unless `/api/me` has confirmed the current cell in
-	 * this runtime (`email !== null`). Cold-boot online: refresh grant if
+	 * this runtime. Cold boot online: refresh grant if
 	 * stale, call `/api/me`, then attach. Offline: fails closed; local
 	 * workspace decrypt continues via `unlock`.
 	 */
@@ -244,9 +235,13 @@ export function createOAuthAppAuth({
 		if (persisted === null || networkAuthPaused) return null;
 		const refreshed = await refreshGrant(force);
 		if (!refreshed || persisted === null || networkAuthPaused) return null;
-		if (email === null) {
-			await verifyProfile(persisted);
-			if (persisted === null || networkAuthPaused || email === null) {
+		if (verifiedPersisted !== persisted) {
+			await verifyIdentity(persisted);
+			if (
+				persisted === null ||
+				networkAuthPaused ||
+				verifiedPersisted !== persisted
+			) {
 				return null;
 			}
 		}
@@ -265,7 +260,7 @@ export function createOAuthAppAuth({
 		} else {
 			headers.delete('Authorization');
 		}
-		return fetchImpl(replayableInput(input), {
+		return fetchImpl(replayableInput(input, baseURL), {
 			...init,
 			headers,
 			credentials: 'omit',
@@ -289,7 +284,7 @@ export function createOAuthAppAuth({
 		};
 		await persistedAuthStorage.set(next);
 		persisted = next;
-		email = apiMe.user.email;
+		verifiedPersisted = next;
 		networkAuthPaused = false;
 		publishState();
 		return Ok(undefined);
@@ -315,7 +310,7 @@ export function createOAuthAppAuth({
 		async signOut() {
 			try {
 				const cellToRevoke = persisted;
-				profilePromise = null;
+				identityPromise = null;
 				if (cellToRevoke !== null) {
 					await revokeOAuthRefreshToken({
 						baseURL,
@@ -326,7 +321,7 @@ export function createOAuthAppAuth({
 				}
 				await persistedAuthStorage.set(null);
 				persisted = null;
-				email = null;
+				verifiedPersisted = null;
 				networkAuthPaused = false;
 				publishState();
 				return Ok(undefined);
@@ -363,8 +358,15 @@ function shouldRefreshGrant(grant: OAuthTokenGrant, now: number) {
 	return grant.accessTokenExpiresAt <= now + REFRESH_SKEW_MS;
 }
 
-function replayableInput<TInput extends Request | string | URL>(input: TInput) {
-	return (input instanceof Request ? input.clone() : input) as TInput;
+function replayableInput<TInput extends Request | string | URL>(
+	input: TInput,
+	baseURL: string,
+) {
+	if (input instanceof Request) return input.clone() as TInput;
+	if (typeof input === 'string' && input.startsWith('/')) {
+		return new URL(input, baseURL).toString() as TInput;
+	}
+	return input;
 }
 
 async function refreshOAuthTokenWithEndpoint({

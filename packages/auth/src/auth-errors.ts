@@ -14,13 +14,12 @@ export const AuthError = defineErrors({
 		cause,
 	}),
 	/**
-	 * `/api/me` failed during sign-in or cold-boot. Non-fatal on cold-boot:
+	 * `/api/me` failed during sign-in or cold boot. Non-fatal on cold boot:
 	 * the cached `unlock` keeps the user signed-in and able to decrypt local
-	 * Yjs data; the UI degrades to a generic "Account" label until the next
-	 * successful fetch.
+	 * Yjs data.
 	 */
-	FetchProfileFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to fetch /api/me: ${extractErrorMessage(cause)}`,
+	VerifyIdentityFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to verify identity: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });

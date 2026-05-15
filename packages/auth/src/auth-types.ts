@@ -42,8 +42,8 @@ export type LocalUnlockBundle = typeof LocalUnlockBundle.infer;
  *
  * Browser persists to localStorage, extension to chrome.storage.local, CLI
  * to `~/.epicenter/auth.json` (mode 0o600). All three cells validate against
- * this arktype. Profile (email) is intentionally absent: memory-only, fetched
- * from `/api/me`.
+ * this arktype. Profile data is intentionally absent; application surfaces
+ * fetch it when they display it.
  */
 export const PersistedAuth = type({
 	'+': 'delete',

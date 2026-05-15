@@ -38,9 +38,7 @@ function authStatesEqual(left: AuthState, right: AuthState): boolean {
 	if (left.status === 'signed-out' || right.status === 'signed-out') {
 		return left.status === right.status;
 	}
-	return (
-		unlocksEqual(left.unlock, right.unlock) && left.email === right.email
-	);
+	return unlocksEqual(left.unlock, right.unlock);
 }
 
 export function unlocksEqual(

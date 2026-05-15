@@ -3,11 +3,11 @@
  *
  * Covers:
  * - PersistedAuth = { grant, unlock } shape
- * - AuthState three variants; `email` is the implicit freshness predicate
+ * - AuthState three variants; profile data is absent from state
  * - Refresh writes only grant, unlock byte-identical
  * - Same-user guard at /api/me response
  * - Network gate: bearer not attached until /api/me confirms same user
- * - Cold-boot offline keeps signed-in with unlock + email=null
+ * - Cold-boot offline keeps signed-in with unlock and no profile field
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -107,7 +107,7 @@ test('signed-out by default; AuthClient satisfies the public contract', () => {
 	auth[Symbol.dispose]();
 });
 
-test('cold-boot signed-in exposes unlock immediately with email=null', () => {
+test('cold-boot signed-in exposes unlock immediately without profile data', () => {
 	const setup = createStorage(cell());
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -120,8 +120,8 @@ test('cold-boot signed-in exposes unlock immediately with email=null', () => {
 	expect(auth.state).toEqual({
 		status: 'signed-in',
 		unlock: { userId: 'user-1', encryptionKeys: [...encryptionKeys] },
-		email: null,
 	});
+	expect('email' in auth.state).toBe(false);
 	auth[Symbol.dispose]();
 });
 
@@ -160,8 +160,8 @@ test('startSignIn calls /api/me and writes both sections', async () => {
 	});
 	expect(auth.state).toMatchObject({
 		status: 'signed-in',
-		email: 'user-1@example.com',
 	});
+	expect('email' in auth.state).toBe(false);
 	auth[Symbol.dispose]();
 });
 
@@ -246,6 +246,39 @@ test('network gate: no Authorization header until /api/me confirms same user', a
 	auth[Symbol.dispose]();
 });
 
+test('auth.fetch resolves relative API paths against the auth base URL', async () => {
+	const setup = createStorage(cell());
+	const fetches: Array<{ url: string; authorization: string | null }> = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => Ok(null) },
+		fetch: (async (input: Request | string | URL, init?: RequestInit) => {
+			fetches.push({
+				url: String(input),
+				authorization: new Headers(init?.headers).get('authorization'),
+			});
+			return json(apiMeBody('user-1'));
+		}) as unknown as typeof fetch,
+	});
+
+	const response = await auth.fetch('/api/me');
+	expect(response.status).toBe(200);
+	expect(fetches).toEqual([
+		{
+			url: 'http://localhost:8787/api/me',
+			authorization: 'Bearer access-token',
+		},
+		{
+			url: 'http://localhost:8787/api/me',
+			authorization: 'Bearer access-token',
+		},
+	]);
+	auth[Symbol.dispose]();
+});
+
 test('network gate: no WebSocket bearer protocol until /api/me confirms same user', async () => {
 	const setup = createStorage(cell());
 	const { openings, WebSocketRecorder } = createWebSocketRecorder();
@@ -282,7 +315,7 @@ test('network gate: no WebSocket bearer protocol until /api/me confirms same use
 	auth[Symbol.dispose]();
 });
 
-test('cold-boot offline keeps signed-in with unlock and email=null', async () => {
+test('cold-boot offline keeps signed-in with unlock and no profile field', async () => {
 	const setup = createStorage(cell());
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -297,8 +330,8 @@ test('cold-boot offline keeps signed-in with unlock and email=null', async () =>
 
 	expect(auth.state).toMatchObject({
 		status: 'signed-in',
-		email: null,
 	});
+	expect('email' in auth.state).toBe(false);
 	expect((auth.state as { unlock: LocalUnlockBundle }).unlock).toEqual({
 		userId: 'user-1',
 		encryptionKeys: [...encryptionKeys],
@@ -306,7 +339,7 @@ test('cold-boot offline keeps signed-in with unlock and email=null', async () =>
 	auth[Symbol.dispose]();
 });
 
-test('signOut clears cell, email, and network pause even when revoke fails', async () => {
+test('signOut clears cell and network pause even when revoke fails', async () => {
 	const setup = createStorage(cell());
 	const originalConsoleError = console.error;
 	console.error = () => undefined;
@@ -334,8 +367,8 @@ test('signOut clears cell, email, and network pause even when revoke fails', asy
 		expect(auth.state).toEqual({
 			status: 'reauth-required',
 			unlock: { userId: 'user-1', encryptionKeys: [...encryptionKeys] },
-			email: 'user-1@example.com',
 		});
+		expect('email' in auth.state).toBe(false);
 
 		const result = await auth.signOut();
 		expect(result).toEqual(Ok(undefined));
@@ -347,7 +380,7 @@ test('signOut clears cell, email, and network pause even when revoke fails', asy
 	}
 });
 
-test('profile freshness clears on grant refresh until /api/me confirms new cell', async () => {
+test('network verification clears on grant refresh until /api/me confirms new cell', async () => {
 	const setup = createStorage(cell());
 	const resourceAuths: Array<string | null> = [];
 	const apiMeAuths: Array<string | null> = [];
@@ -390,21 +423,23 @@ test('profile freshness clears on grant refresh until /api/me confirms new cell'
 	});
 
 	await auth.fetch('http://localhost:8787/resource');
-	expect(auth.state).toMatchObject({ status: 'signed-in', email: 'user-1@example.com' });
+	expect(auth.state).toMatchObject({ status: 'signed-in' });
+	expect('email' in auth.state).toBe(false);
 
 	const retryPromise = auth.fetch('http://localhost:8787/resource');
 	await secondApiMeRequested;
 	expect(auth.state).toEqual({
 		status: 'signed-in',
 		unlock: { userId: 'user-1', encryptionKeys: [...encryptionKeys] },
-		email: null,
 	});
+	expect('email' in auth.state).toBe(false);
 	expect(resourceAuths).toEqual(['Bearer access-token', 'Bearer access-token']);
 	expect(apiMeAuths).toEqual(['Bearer access-token', 'Bearer new-access']);
 
 	resolveSecondApiMe(json(apiMeBody('user-1')));
 	await retryPromise;
-	expect(auth.state).toMatchObject({ status: 'signed-in', email: 'user-1@example.com' });
+	expect(auth.state).toMatchObject({ status: 'signed-in' });
+	expect('email' in auth.state).toBe(false);
 	expect(resourceAuths).toEqual([
 		'Bearer access-token',
 		'Bearer access-token',

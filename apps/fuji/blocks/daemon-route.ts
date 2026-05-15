@@ -27,11 +27,7 @@ import {
 	fujiTables,
 } from './workspace.js';
 
-export function defineFujiDaemon({
-	route = 'fuji',
-}: {
-	route?: string;
-} = {}) {
+export function defineFujiDaemon({ route = 'fuji' }: { route?: string } = {}) {
 	return {
 		route,
 		async start({ projectDir }) {

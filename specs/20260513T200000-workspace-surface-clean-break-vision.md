@@ -2,9 +2,11 @@
 
 **Date**: 2026-05-13
 **Status**: Partially superseded
-**Landed**: flat action registry (under snake_case via `specs/20260513T231157-actions-snake-case-only-no-dots.md`).
+**Landed**: flat action registry (under snake_case via `specs/20260513T231157-actions-snake-case-only-no-dots.md`); the script-vs-daemon overlap collapsed by deleting `apps/honeycrisp/blocks/script.ts`, `apps/opensidian/blocks/script.ts`, `apps/zhongwen/blocks/script.ts` and removing their jsrepo entries.
 **Reversed**: dot-path action keys (`'entries.create'`) became snake_case (`entries_create`); `attachYjsSync` was deleted and content docs now use `openCollaboration(ydoc, { actions: {} })` (see `packages/workspace/src/document/open-collaboration.ts:1-25, 71-74`).
-**Still live**: markdown link helpers exported from the root `@epicenter/workspace` barrel (`packages/workspace/src/index.ts:281-292`); script-vs-daemon overlap in `apps/honeycrisp`, `apps/opensidian`, `apps/zhongwen` (only Fuji is on the snapshot+proxy reference shape).
+**Superseded (script-surfaces portion)**: the "Fuji-shape script as a per-app recipe" goal is replaced by `20260514T160000-script-surfaces-resolution.md`. The conclusion is sharper: no `script.ts` recipe for any app. Scripts read SQLite and write via `connectDaemonActions`.
+**Still live**: markdown link helpers exported from the root `@epicenter/workspace` barrel (`packages/workspace/src/index.ts:281-292`).
+**Related**: `20260514T170000-single-daemon-multi-workspace.md` (the daemon becomes one process hosting N workspace routes).
 **Author**: Braden + Codex
 
 ## Overview

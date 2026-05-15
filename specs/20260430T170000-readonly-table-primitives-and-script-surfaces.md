@@ -1,7 +1,9 @@
 # Readonly Table Primitives And Fuji Script Surfaces
 
 **Date**: 2026-04-30
-**Status**: Implemented
+**Status**: Superseded (script-surfaces portion)
+**Superseded by**: `20260514T160000-script-surfaces-resolution.md`
+**Still live**: the readonly-table-primitives concept (the `encryption.attachTables` / `attachKv` split) is unchanged. The script-surfaces direction (per-app `openXSnapshot` + `openXScript` recipes) is replaced: scripts read SQLite directly and write through `connectDaemonActions`; there is no per-app script recipe.
 **Author**: AI-assisted
 
 ## Overview

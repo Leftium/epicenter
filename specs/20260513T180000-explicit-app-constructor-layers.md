@@ -1,7 +1,12 @@
 # Explicit App Constructor Layers
 
-Status: Implemented
+Status: Partially superseded (Script column)
 Date: 2026-05-13
+Superseded by: `20260514T160000-script-surfaces-resolution.md`
+
+The Script column of the naming table no longer applies. `openHoneycrispScript`, `openOpensidianScript`, and `openZhongwenScript` have been deleted; `openFujiScript` and `openFujiSnapshot` will be deleted as part of the script-surfaces resolution. Scripts are not a constructor layer; they are user-owned Bun files that import `connectDaemonActions` and open SQLite read-only.
+
+The Document, Browser, and Daemon columns remain accurate.
 
 Each app constructor names the runtime layer it builds, and every runtime layer composes the same pure document constructor.
 

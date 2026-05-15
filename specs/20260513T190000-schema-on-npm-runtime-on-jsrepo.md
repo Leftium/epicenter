@@ -1,7 +1,10 @@
 # Schema on npm, Runtime on jsrepo
 
 **Date**: 2026-05-13
-**Status**: Implemented
+**Status**: Partially superseded (script-recipe portion)
+**Superseded by**: `20260514T160000-script-surfaces-resolution.md`
+**Still live**: the schema-on-npm + daemon-route-on-jsrepo split. `workspace.ts` (schema) and `daemon-route.ts` (writer recipe) remain canonical blocks for every app.
+**Removed**: `script.ts` as a per-app jsrepo recipe. The `openHoneycrispScript` / `openOpensidianScript` / `openZhongwenScript` examples in the body of this spec describe a defunct shape. Scripts now compose `connectDaemonActions` + read-only SQLite at the user's call site; there is nothing to copy.
 **Author**: AI-assisted
 **Branch**: feat/miscellaneous-spec-implementations
 

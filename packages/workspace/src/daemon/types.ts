@@ -12,6 +12,7 @@
  * `epicenter.config.ts`.
  */
 
+import type { AuthClient } from '@epicenter/auth';
 import type { Result } from 'wellcrafted/result';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
@@ -23,6 +24,7 @@ import type { MaybePromise, ProjectDir } from '../shared/types.js';
 export type DaemonRouteContext = {
 	projectDir: ProjectDir;
 	route: string;
+	auth: AuthClient;
 };
 
 /**

@@ -362,10 +362,7 @@ function shouldRefreshGrant(grant: OAuthTokenGrant, now: number) {
 	return grant.accessTokenExpiresAt <= now + REFRESH_SKEW_MS;
 }
 
-function normalizeFetchInput(
-	input: Request | string | URL,
-	baseURL: string,
-) {
+function normalizeFetchInput(input: Request | string | URL, baseURL: string) {
 	if (input instanceof Request) return input.clone();
 	if (typeof input === 'string' && input.startsWith('/')) {
 		return new URL(input, baseURL).toString();

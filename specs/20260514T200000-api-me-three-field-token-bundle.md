@@ -706,7 +706,7 @@ Predecessor specs:
 [x] Migration is documented as a clean break with key renames
 [x] Verification targets reference real file:line locations
 [x] Open questions are listed (fresh-eyes blockers resolved into spec body)
-[ ] Reviewed by Braden; product UX cost on cold-boot offline accepted
+[x] Reviewed by Braden; product UX cost on cold-boot offline accepted (Waves 2-4 landed)
 [x] No em or en dashes in spec body (verified by grep)
 ```
 

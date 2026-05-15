@@ -1,15 +1,33 @@
 # Machine Auth: OOB Code Paste + File-Backed Session
 
 **Date**: 2026-05-14
-**Status**: Proposed
+**Status**: Partially implemented (Phases 1-2 landed via `specs/20260514T200000-api-me-three-field-token-bundle.md` Waves 1-2; Phases 3-4 open).
 **Branch**: `codex/pr-workspace-api-surface` (target; implementation lands on a follow-up branch)
 **Depends on**: `specs/20260512T111335-post-oauth-audit-remediation.md` (resolves Phase 4)
+**Composes with**: `specs/20260514T200000-api-me-three-field-token-bundle.md` (defines the persisted shape; this spec is the CLI's flavor of that architecture)
 **Resolves**: `specs/20260512T111335-post-oauth-audit-remediation.md` Open Question 2 ("Is CLI/device login currently shipped to users?")
 **Supersedes**: `specs/20260512T111335-post-oauth-audit-remediation.md` Phase 4 Option A and Option B (loopback PKCE recommendation withdrawn; device authorization restoration declined).
 
+## Status update (post-api-me)
+
+Reality on `main` after the `/api/me` spec's Waves 1-4 landed (2026-05-14):
+
+| Phase | Originally proposed here | Actual landing | Outcome |
+| --- | --- | --- | --- |
+| 1 | Server callback page + constants + trusted-client projection | Landed in api-me Wave 1 (commits `9f32ea0bc` and follow-ons) | **DONE** |
+| 2 | File-backed `machine-session-store.ts` persisting `OAuthSession` | api-me Wave 2 replaced this with `machine-tokens-store.ts` persisting `PersistedAuth = { grant, unlock }` (commit `58a5e9b36`) | **DONE, with a sharper shape** |
+| 3 | OOB launcher (`oob-launcher.ts`) | Not started | **OPEN** |
+| 4 | Rewrite `machine-auth.ts` to use the OOB launcher | `machine-auth.ts` is stubbed (`PENDING_WAVE_3` errors); needs the OOB rewrite consuming `PersistedAuthStorage` | **OPEN** |
+| 5 | Daemon smoke + consumer audit | Cannot run until Phases 3-4 land; daemons currently throw on boot | **OPEN** |
+| 6 | Docs | api-me Wave 4 already deleted `/workspace-identity` and updated `docs/encryption.md` references | Mostly done; CLI README still needs the OOB walkthrough |
+
+The persisted-shape and identity-source decisions below are **superseded by the api-me spec**. Where this spec says `OAuthSession`, read `PersistedAuth`. Where it says `/workspace-identity`, read `/api/me`. Where it says `machine-session-store.ts`, read `machine-tokens-store.ts`. The narrative below is preserved with these substitutions called out inline.
+
+The conceptual goal of this spec is still correct: an OOB code paste flow against `/auth/oauth2/token`, file-backed persistence at `~/.epicenter/auth.json` (mode 0o600), no Bun.secrets dependency. Only the shape on disk and the identity endpoint name changed under us, and both changed for the better.
+
 ## One Sentence
 
-`epicenter auth login` prints an OAuth 2.1 authorize URL, the user signs in on the hosted portal, copies the displayed code, pastes it into the terminal, and an `OAuthSession` (tokens + identity loaded from `/workspace-identity`) lands at `~/.epicenter/auth.json` (0600); every daemon and script reads that file through `createOAuthAppAuth` like every other client.
+`epicenter auth login` prints an OAuth 2.1 authorize URL, the user signs in on the hosted portal, copies the displayed code, pastes it into the terminal, the CLI exchanges the code at `/auth/oauth2/token` and calls `/api/me` for the local-unlock bundle, then a `PersistedAuth` cell (`{ grant, unlock }`) lands at `~/.epicenter/auth.json` (0600); every daemon and script reads that file through `createOAuthAppAuth` like every other client.
 
 This is the cohesion test for the spec. Anything that does not protect that sentence (one flow, one file, one auth surface, identity from the same source every other client uses) belongs elsewhere. Specifically excluded: keychain storage, loopback listener, device-grant restoration, personal access tokens, per-platform fallback logic, id_token-borne capability claims, and any CLI-specific identity-decode path.
 
@@ -95,20 +113,23 @@ On macOS, the same binary running via SSH without a console session triggers `er
 ### Desired State
 
 ```txt
-~/.epicenter/auth.json (mode 0o600)
-  tokens
+~/.epicenter/auth.json (mode 0o600)   --- shape per api-me spec ---
+  grant
     accessToken            string  JWT bearer for /api/*
     refreshToken           string  opaque rotation key
     accessTokenExpiresAt   number  ms-since-epoch; mirrors /token's expires_at
-  identity
-    user                   { id, email }
-    encryptionKeys         loaded once from /workspace-identity at sign-in
+  unlock
+    userId                 string  same-user guard; binds keys to a subject
+    encryptionKeys         EncryptionKeys  decrypts local Yjs blobs offline
+
+  profile = { email } lives in memory only (not persisted; rehydrated from
+  /api/me when online)
         |
         v
 createOAuthAppAuth(
   baseURL,
   clientId,
-  sessionStorage = file at ~/.epicenter/auth.json,
+  persistedAuthStorage = file at ~/.epicenter/auth.json,
   launcher = OOB paste launcher,
   refreshOAuthToken = POST /auth/oauth2/token,
   revokeOAuthRefreshToken = POST /auth/oauth2/revoke,
@@ -117,8 +138,10 @@ createOAuthAppAuth(
         v
 AuthClient
   state, fetch(), openWebSocket(), startSignIn(), signOut()
-  (identity is the cached WorkspaceIdentity on OAuthSession; same shape and
-   same source as every browser / extension client)
+  state.unlock is the persisted local-decrypt capability;
+  state.profile?.email is in-memory only (cold-boot offline shows
+  "Account" until /api/me succeeds). Same shape and same source as
+  every browser / extension client.
 ```
 
 `epicenter auth login` triggers the OOB launcher. The launcher:
@@ -127,11 +150,11 @@ AuthClient
 2. Builds an authorize URL: `GET /auth/oauth2/authorize?response_type=code&client_id=epicenter-cli&redirect_uri=https://api.epicenter.so/auth/cli-callback&scope=openid+profile+email+offline_access+workspaces:open&state=...&code_challenge=...&code_challenge_method=S256&resource=https://api.epicenter.so`.
 3. Prints the URL. Attempts to open it best-effort. Tells the user "if your browser does not open, copy the URL above."
 4. Reads the code from stdin.
-5. Exchanges at `/auth/oauth2/token` with `grant_type=authorization_code`. The response is `{ access_token, refresh_token, expires_in, token_type }`.
-6. Calls `GET /workspace-identity` with the new access token to load `{ user, encryptionKeys }`. Same identity source every browser / extension client uses (`createOAuthAppAuth.loadIdentity`).
-7. Writes the resulting `OAuthSession` (`{ tokens, identity }`) to `~/.epicenter/auth.json`.
+5. Exchanges at `/auth/oauth2/token` with `grant_type=authorization_code`. The response is `{ access_token, refresh_token, expires_in, token_type }`. The CLI writes the `grant` section of `PersistedAuth`.
+6. Calls `GET /api/me` with the new access token to load `{ user, encryptionKeys }`. Same identity source every browser / extension client uses (`createOAuthAppAuth.fetchProfile`).
+7. Writes the `unlock` section (`userId` + `encryptionKeys`) to `~/.epicenter/auth.json`. `profile.email` from the response is held in memory only and surfaced through `auth.state.profile`.
 
-Identity persists on disk so daemons and scripts can decrypt local Yjs data on cold boot without a network round-trip. This matches the browser's `localStorage` behavior (identity nested in `OAuthSession`) and preserves local-first offline use.
+The `unlock` section persists so daemons and scripts can decrypt local Yjs data on cold boot without a network round-trip. This matches the browser's `localStorage` behavior (browser and extension persist the same `PersistedAuth` arktype) and preserves local-first offline use.
 
 `epicenter auth logout` revokes the refresh token (`POST /auth/oauth2/revoke`) and deletes the file.
 
@@ -365,11 +388,11 @@ createOAuthAppAuth({
 
 Ordered patches. Each step lands as one commit unless noted.
 
-### Phase 1: Server callback page
+### Phase 1: Server callback page  [DONE — api-me Wave 1]
 
-The server side is small and lands first because it is the prerequisite for any CLI testing.
+Landed in commits `9f32ea0bc` (`/api/me` route) and follow-on Wave 1 commits. The CLI callback page, the `/auth/cli-callback` route, the constants update, and the `toOAuthClientType` collapse are all on `main`. Items below are preserved as the original task list; treat all as `[x]`.
 
-- [ ] **1.1** Add `apps/api/src/auth-pages/cli-callback-page.tsx`. Export `CliCallbackPage` returning JSX. Props: `{ code?: string; state?: string; error?: string; errorDescription?: string }`. Render layout:
+- [x] **1.1** Add `apps/api/src/auth-pages/cli-callback-page.tsx`. Export `CliCallbackPage` returning JSX. Props: `{ code?: string; state?: string; error?: string; errorDescription?: string }`. Render layout:
   - Success branch (when `code` is present): heading "Signed in to Epicenter CLI", monospace `<code>` block containing `code`, a "Copy" button that uses `navigator.clipboard.writeText(code)` from an inline script tag in `auth-pages/scripts/`, body text "Paste it into the terminal where you ran `epicenter auth login`."
   - Error branch (when `error` is present): heading "Sign-in failed", body text showing `error` and `errorDescription` literally (these come from Better Auth and are not user-injected). Link back to home.
   - Missing-code fallback: same as error branch with `error="missing_code"`.
@@ -405,9 +428,17 @@ The server side is small and lands first because it is the prerequisite for any 
 
 Acceptance: `bun --cwd apps/api run build` passes; `bun --cwd apps/api test` passes; manual smoke clean.
 
-### Phase 2: File-backed session store
+### Phase 2: File-backed session store  [DONE — api-me Wave 2, with a sharper shape]
 
-- [ ] **2.1** Rewrite `packages/auth/src/node/machine-session-store.ts` end-to-end (keep the file name; it still persists the full `OAuthSession`, not just tokens). Remove every `Bun.secrets` import and reference. Remove the injectable `backend` parameter from the public API (tests inject a custom path instead). New module shape:
+Landed in commit `58a5e9b36` as `packages/auth/src/node/machine-tokens-store.ts` (the file was renamed from `machine-session-store.ts` during the api-me Wave 2 schema break). The persisted shape is `PersistedAuth = { grant, unlock }` per the api-me spec, not `OAuthSession`. The original task list below is preserved as a historical record; for the as-shipped contract, see `specs/20260514T200000-api-me-three-field-token-bundle.md`.
+
+What landed:
+- `loadMachineTokens({ filePath?, log? }) -> Result<PersistedAuth | null, MachineAuthStorageError>`
+- `saveMachineTokens(value: PersistedAuth | null, { filePath? }) -> Result<undefined, MachineAuthStorageError>`
+- Atomic rename, mode 0o600, parent dir 0o700, corrupt-blob → `Ok(null)` + warn.
+- No `Bun.secrets` references remain in `packages/auth`.
+
+- [x] **2.1** Rewrite `packages/auth/src/node/machine-session-store.ts` end-to-end (keep the file name; it still persists the full `OAuthSession`, not just tokens). Remove every `Bun.secrets` import and reference. Remove the injectable `backend` parameter from the public API (tests inject a custom path instead). New module shape:
   ```ts
   import { OAuthSession } from '../auth-types.js';
 
@@ -445,7 +476,9 @@ Acceptance: `bun --cwd apps/api run build` passes; `bun --cwd apps/api test` pas
 
 Acceptance: `bun --cwd packages/auth test machine-session-store` passes; the test suite does not require `Bun.secrets` or any keyring availability.
 
-### Phase 3: OOB launcher
+### Phase 3: OOB launcher  [OPEN]
+
+`packages/auth/src/node/oob-launcher.ts` does not exist yet. The launcher returns an `OAuthTokenGrant` (3 fields per api-me spec). The caller (`machine-auth.ts`, Phase 4) is responsible for pairing the grant with a `GET /api/me` call to construct the `unlock` section of `PersistedAuth`. The launcher itself is concerned only with the OAuth dance.
 
 - [ ] **3.1** Add `packages/auth/src/node/oob-launcher.ts`:
   ```ts
@@ -490,9 +523,21 @@ Acceptance: `bun --cwd packages/auth test machine-session-store` passes; the tes
 
 Acceptance: `bun --cwd packages/auth test oob-launcher` passes.
 
-### Phase 4: Rewrite `machine-auth.ts`
+### Phase 4: Rewrite `machine-auth.ts`  [OPEN; currently stubbed]
 
-This is the visible API surface for the CLI and daemons.
+This is the visible API surface for the CLI and daemons. Today the module is **stubbed** (every function throws `PENDING_WAVE_3`). The rewrite below adopts the as-shipped `PersistedAuth` shape, `loadMachineTokens` / `saveMachineTokens` (the renamed store from api-me Wave 2), and `/api/me` (the as-shipped identity endpoint from api-me Wave 1). The original draft below references `OAuthSession` and `machine-session-store`; treat as historical and substitute `PersistedAuth` and `machine-tokens-store` throughout when implementing.
+
+The shape the rewrite must construct on sign-in:
+
+```ts
+const persisted: PersistedAuth = {
+    grant: { accessToken, refreshToken, accessTokenExpiresAt },
+    unlock: { userId: meResponse.user.id, encryptionKeys: meResponse.encryptionKeys },
+};
+// meResponse.user.email goes into in-memory profile, NOT into PersistedAuth.
+```
+
+`createOAuthAppAuth` already takes a `persistedAuthStorage` (not `sessionStorage`) parameter and handles the network gate (lazy `/api/me` verification on first `auth.fetch`). The CLI just plugs in the file-backed storage and the OOB launcher.
 
 - [ ] **4.1** Replace the file. The new shape:
   ```ts

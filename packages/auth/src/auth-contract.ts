@@ -1,11 +1,23 @@
 import type { Result } from 'wellcrafted/result';
 import type { AuthError } from './auth-errors.js';
-import type { WorkspaceIdentity } from './auth-types.js';
+import type { LocalUnlockBundle } from './auth-types.js';
 
+/**
+ * Three variants. `unlock` is always present in `signed-in` and
+ * `reauth-required` because we persist it. Auth state carries capability
+ * material only; profile data is fetched by application surfaces that display
+ * it.
+ */
 export type AuthState =
-	| { status: 'signed-in'; identity: WorkspaceIdentity }
-	| { status: 'reauth-required'; identity: WorkspaceIdentity }
-	| { status: 'signed-out' };
+	| { status: 'signed-out' }
+	| {
+			status: 'signed-in';
+			unlock: LocalUnlockBundle;
+	  }
+	| {
+			status: 'reauth-required';
+			unlock: LocalUnlockBundle;
+	  };
 
 export type AuthClient = {
 	state: AuthState;

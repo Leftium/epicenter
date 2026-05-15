@@ -507,7 +507,7 @@ describe('createEncryptedYkvLww', () => {
 						tampered[2] = (tampered[2] ?? 0) ^ 0xff;
 						return tampered as EncryptedBlob;
 					})(),
-					ts: Date.now(),
+					ts: 10_000,
 				},
 			]);
 
@@ -531,7 +531,7 @@ describe('createEncryptedYkvLww', () => {
 						tampered[2] = (tampered[2] ?? 0) ^ 0xff;
 						return tampered as EncryptedBlob;
 					})(),
-					ts: Date.now(),
+					ts: 10_001,
 				},
 			]);
 

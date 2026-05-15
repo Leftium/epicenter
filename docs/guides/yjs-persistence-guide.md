@@ -25,7 +25,7 @@ import {
 	attachTables,
 	defineDocument,
 	openCollaboration,
-	websocketUrl,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
@@ -34,7 +34,7 @@ const app = defineDocument((id: string) => {
 	const tables = attachTables(ydoc, appTables);
 	const idb = attachIndexedDb(ydoc);                          // local persistence
 	const collaboration = openCollaboration(ydoc, {              // sync + presence + RPC
-		url: websocketUrl(`${serverUrl}/workspaces/${ydoc.guid}`),
+		url: roomWsUrl(serverUrl, ydoc.guid),
 		waitFor: idb.whenLoaded,                                   // delta-only on reconnect
 		identity: { id: 'browser', name: 'Browser', platform: 'web' },
 		actions: {},

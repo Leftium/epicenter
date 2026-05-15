@@ -19,16 +19,17 @@
 import { Ok } from 'wellcrafted/result';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import { invokeAction } from '../shared/actions.js';
+import { joinDaemonActionPath, parseDaemonActionPath } from './action-path.js';
 import type { RunRequest } from './app.js';
 import {
 	RunError,
 	type RunResponse,
 	type RunSyncStatus,
 } from './run-errors.js';
-import type { StartedDaemonRoute } from './types.js';
+import type { DaemonServedRoute } from './types.js';
 
 type DaemonActionTarget = {
-	entry: StartedDaemonRoute;
+	entry: DaemonServedRoute;
 	localPath: string;
 };
 
@@ -38,7 +39,7 @@ type DaemonRouteError = {
 };
 
 export async function executeRun(
-	runtimes: StartedDaemonRoute[],
+	runtimes: readonly DaemonServedRoute[],
 	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
 	const target = resolveDaemonActionTarget(runtimes, actionPath);
@@ -84,12 +85,12 @@ export async function executeRun(
 }
 
 function resolveDaemonActionTarget(
-	runtimes: StartedDaemonRoute[],
+	runtimes: readonly DaemonServedRoute[],
 	actionPath: string,
 ):
 	| { data: DaemonActionTarget; error: null }
 	| { data: null; error: DaemonRouteError } {
-	const [routeName = '', ...rest] = actionPath.split('.');
+	const { routeName, localPath } = parseDaemonActionPath(actionPath);
 	const entry = runtimes.find((candidate) => candidate.route === routeName);
 	if (!entry) {
 		return {
@@ -103,7 +104,7 @@ function resolveDaemonActionTarget(
 	return {
 		data: {
 			entry,
-			localPath: rest.join('.'),
+			localPath,
 		},
 		error: null,
 	};
@@ -117,7 +118,7 @@ async function invokeRemote({
 	waitMs,
 }: {
 	actionInput: unknown;
-	entry: StartedDaemonRoute;
+	entry: DaemonServedRoute;
 	localPath: string;
 	peerTarget: string;
 	waitMs: number;
@@ -176,27 +177,20 @@ function toRunSyncStatus(status: SyncStatus): RunSyncStatus {
 	}
 }
 
-function toDaemonActionPath(
-	entry: StartedDaemonRoute,
-	localPath: string,
-): string {
-	return localPath ? `${entry.route}.${localPath}` : entry.route;
-}
-
 function daemonActionSuggestionLines(
-	entry: StartedDaemonRoute,
+	entry: DaemonServedRoute,
 	prefix: string,
 ): string[] {
 	return Object.entries(entry.runtime.collaboration.actions)
 		.filter(([path]) => !prefix || path.startsWith(prefix))
 		.map(
 			([path, action]) =>
-				`  ${toDaemonActionPath(entry, path)}  (${action.type})`,
+				`  ${joinDaemonActionPath(entry.route, path)}  (${action.type})`,
 		);
 }
 
 function daemonActionNearestSiblingLines(
-	entry: StartedDaemonRoute,
+	entry: DaemonServedRoute,
 	missedPath: string,
 ): string[] {
 	const parts = missedPath.split('_');

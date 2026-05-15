@@ -1,4 +1,4 @@
-import { createMachineAuthClient, requireSession } from '@epicenter/auth/node';
+import { createMachineAuthClient } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachTables,
@@ -39,10 +39,12 @@ export async function openNotes(replicaId: string) {
 	};
 
 	const auth = await createMachineAuthClient();
-	const session = requireSession(auth);
+	if (auth.state.status === 'signed-out') {
+		throw new Error('[notes-cross-peer] auth signed-out at start.');
+	}
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(EPICENTER_API_URL, ydoc.guid),
-		openWebSocket: session.openWebSocket,
+		openWebSocket: auth.openWebSocket,
 		replicaId,
 		actions,
 	});

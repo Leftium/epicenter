@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { requireIdentity } from '@epicenter/auth';
 	import { fromKv } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
@@ -69,9 +68,6 @@
 					{showPinyin.current ? 'Hide Pinyin' : 'Show Pinyin'}
 				</Button>
 
-				<span class="text-sm text-muted-foreground">
-					{requireIdentity(auth).user.email}
-				</span>
 				<Button variant="ghost" size="sm" onclick={openForgetDeviceDialog}>
 					Forget device
 				</Button>

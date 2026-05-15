@@ -1,15 +1,22 @@
 export {
 	createMachineAuthClient,
-	DeviceTokenError,
-	loginWithDeviceCode,
+	type LoginWithOobConfig,
+	type LoginWithOobResult,
+	type LogoutResult,
+	loginWithOob,
 	logout,
 	MachineAuthRequestError,
+	type StatusResult,
 	status,
+	type WorkspaceIdentity,
 } from './node/machine-auth.js';
 export {
-	loadMachineSession,
+	loadMachineTokens,
 	MachineAuthStorageError,
-	saveMachineSession,
-} from './node/machine-session-store.js';
-export { requireIdentity } from './require-identity.js';
-export { requireSession, type Session } from './require-session.js';
+	saveMachineTokens,
+} from './node/machine-tokens-store.js';
+export {
+	type CreateOobOAuthLauncherConfig,
+	createOobOAuthLauncher,
+	OobLauncherError,
+} from './node/oob-launcher.js';

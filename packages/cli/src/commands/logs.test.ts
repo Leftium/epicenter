@@ -25,6 +25,18 @@ let originalHome: string | undefined;
 let runtimeRoot: string;
 let homeRoot: string;
 
+async function waitFor(
+	predicate: () => boolean,
+	{ timeoutMs = 1_000, intervalMs = 20 } = {},
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (predicate()) return;
+		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+	}
+	expect(predicate()).toBe(true);
+}
+
 beforeEach(() => {
 	originalXdg = process.env.XDG_RUNTIME_DIR;
 	originalHome = process.env.HOME;
@@ -72,19 +84,17 @@ describe('followLog', () => {
 
 		const stop = followLog(p);
 		try {
-			// Append more bytes; fs.watch should fire 'change'.
-			await new Promise((r) => setTimeout(r, 50));
 			appendFileSync(p, 'second\n');
-			await new Promise((r) => setTimeout(r, 200));
+			await waitFor(() => captured.join('').includes('second'));
 
 			// Rotate: rename current to .1, then create a fresh current.
 			renameSync(p, `${p}.1`);
 			writeFileSync(p, 'third\n');
-			await new Promise((r) => setTimeout(r, 300));
+			await waitFor(() => captured.join('').includes('third'));
 
 			// Append after rotate; should reach the new fd.
 			appendFileSync(p, 'fourth\n');
-			await new Promise((r) => setTimeout(r, 300));
+			await waitFor(() => captured.join('').includes('fourth'));
 		} finally {
 			stop();
 			(process.stdout as unknown as { write: typeof origWrite }).write =

@@ -8,25 +8,28 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import type { Result } from 'wellcrafted/result';
 
-import * as Y from 'yjs';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
-import type { Collaboration } from '../document/open-collaboration.js';
-import type { PresenceEntry, PresenceSurface } from '../document/presence.js';
+import type { PresenceEntry } from '../document/presence.js';
 import { DispatchError } from '../document/rpc.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import type { RunSyncStatus } from './run-errors.js';
 import { executeRun } from './run-handler.js';
-import type { StartedDaemonRoute } from './types.js';
+import type { DaemonServedCollaboration, DaemonServedRoute } from './types.js';
 
 type FakeDispatch = (
 	action: string,
 	input: unknown,
 	options: { to: string; signal: AbortSignal },
-) => Promise<{ data: unknown; error: unknown }>;
+) => Promise<Result<unknown, DispatchError>>;
 
-function fakePresence({ known }: { known: string[] }): PresenceSurface {
+function fakePresence({
+	known,
+}: {
+	known: string[];
+}): DaemonServedCollaboration['peers'] {
 	const entries: PresenceEntry[] = known.map((replicaId) => ({
 		connId: `${replicaId}-conn`,
 		replicaId,
@@ -34,7 +37,6 @@ function fakePresence({ known }: { known: string[] }): PresenceSurface {
 	}));
 	return {
 		list: () => entries,
-		observe: () => () => {},
 	};
 }
 
@@ -46,28 +48,19 @@ function fakeCollaboration<TActions extends ActionRegistry>({
 }: {
 	actions: TActions;
 	syncStatus?: SyncStatus;
-	peers: PresenceSurface;
+	peers: DaemonServedCollaboration['peers'];
 	dispatch: FakeDispatch;
-}): Collaboration<TActions> {
-	const ydoc = new Y.Doc();
+}): DaemonServedCollaboration<TActions> {
 	return {
-		replicaId: 'self',
-		connId: 'self-conn',
 		actions,
 		status: syncStatus,
-		whenConnected: Promise.resolve(),
-		whenDisposed: Promise.resolve(),
-		onStatusChange: () => () => {},
-		reconnect() {},
 		peers,
-		dispatch: dispatch as Collaboration<TActions>['dispatch'],
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	} as unknown as Collaboration<TActions>;
+		dispatch,
+	};
 }
 
 function fakeEntry({
+	route = 'demo',
 	actions = {
 		tabs_list: defineQuery({ handler: () => [] }),
 	},
@@ -75,11 +68,12 @@ function fakeEntry({
 	knownPeers = [],
 	dispatch = async () => ({ data: null, error: null }),
 }: {
+	route?: string;
 	actions?: ActionRegistry;
 	syncStatus?: SyncStatus;
 	knownPeers?: string[];
 	dispatch?: FakeDispatch;
-} = {}): StartedDaemonRoute {
+} = {}): DaemonServedRoute {
 	const peers = fakePresence({ known: knownPeers });
 	const collaboration = fakeCollaboration({
 		actions,
@@ -88,10 +82,9 @@ function fakeEntry({
 		dispatch,
 	});
 	return {
-		route: 'demo',
+		route,
 		runtime: {
 			collaboration,
-			async [Symbol.asyncDispose]() {},
 		},
 	};
 }
@@ -177,13 +170,13 @@ describe('executeRun peer dispatch', () => {
 describe('executeRun route-prefixed routing', () => {
 	test('invokes action under the selected daemon route', async () => {
 		const entry = fakeEntry({
+			route: 'notes',
 			actions: {
 				notes_add: defineMutation({
 					handler: () => ({ body: 'hello' }),
 				}),
 			},
 		});
-		entry.route = 'notes';
 
 		const result = await executeRun([entry], {
 			actionPath: 'notes.notes_add',
@@ -197,13 +190,13 @@ describe('executeRun route-prefixed routing', () => {
 
 	test('missing prefix suggests action-root-relative sibling', async () => {
 		const entry = fakeEntry({
+			route: 'notes',
 			actions: {
 				notes_add: defineMutation({
 					handler: () => ({ body: 'hello' }),
 				}),
 			},
 		});
-		entry.route = 'notes';
 
 		const result = await executeRun([entry], {
 			actionPath: 'notes.notes',
@@ -220,14 +213,7 @@ describe('executeRun route-prefixed routing', () => {
 
 	test('unknown route returns available route suggestions', async () => {
 		const result = await executeRun(
-			[
-				fakeEntry({}),
-				(() => {
-					const tasks = fakeEntry({ actions: {} });
-					tasks.route = 'tasks';
-					return tasks;
-				})(),
-			],
+			[fakeEntry({}), fakeEntry({ route: 'tasks', actions: {} })],
 			{
 				actionPath: 'missing.actions_add',
 				input: undefined,

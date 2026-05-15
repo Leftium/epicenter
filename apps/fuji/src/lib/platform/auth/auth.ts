@@ -1,4 +1,4 @@
-import { OAuthSession } from '@epicenter/auth';
+import { PersistedAuth } from '@epicenter/auth';
 import {
 	createBrowserOAuthLauncher,
 	createStorageAdapter,
@@ -11,9 +11,9 @@ import { createPersistedState } from '@epicenter/svelte';
 export const auth = createOAuthAppAuth({
 	baseURL: APP_URLS.API,
 	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
-	sessionStorage: createPersistedState({
-		key: 'fuji.auth.session',
-		schema: OAuthSession.or('null'),
+	persistedAuthStorage: createPersistedState({
+		key: 'fuji.auth.persisted',
+		schema: PersistedAuth.or('null'),
 		defaultValue: null,
 	}),
 	launcher: createBrowserOAuthLauncher({

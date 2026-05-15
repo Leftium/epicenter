@@ -1,6 +1,6 @@
 import { encryptionKeysEqual } from '@epicenter/encryption';
 import type { AuthState } from './auth-contract.js';
-import type { AuthUser, WorkspaceIdentity } from './auth-types.js';
+import type { LocalUnlockBundle } from './auth-types.js';
 
 export function createAuthStateStore(initialState: AuthState) {
 	let state = initialState;
@@ -33,36 +33,20 @@ export function createAuthStateStore(initialState: AuthState) {
 	};
 }
 
-export function authStateFromIdentity(
-	identity: WorkspaceIdentity | null,
-): AuthState {
-	return identity === null
-		? { status: 'signed-out' }
-		: { status: 'signed-in', identity };
+function authStatesEqual(left: AuthState, right: AuthState): boolean {
+	if (left.status !== right.status) return false;
+	if (left.status === 'signed-out' || right.status === 'signed-out') {
+		return left.status === right.status;
+	}
+	return unlocksEqual(left.unlock, right.unlock);
 }
 
-export function identitiesEqual(
-	left: WorkspaceIdentity | null,
-	right: WorkspaceIdentity | null,
-) {
-	if (left === null || right === null) return left === right;
+function unlocksEqual(
+	left: LocalUnlockBundle,
+	right: LocalUnlockBundle,
+): boolean {
 	return (
-		usersEqual(left.user, right.user) &&
+		left.userId === right.userId &&
 		encryptionKeysEqual(left.encryptionKeys, right.encryptionKeys)
 	);
-}
-
-function authStatesEqual(left: AuthState, right: AuthState) {
-	if (left.status !== right.status) return false;
-	if (
-		(left.status !== 'signed-in' && left.status !== 'reauth-required') ||
-		(right.status !== 'signed-in' && right.status !== 'reauth-required')
-	) {
-		return true;
-	}
-	return identitiesEqual(left.identity, right.identity);
-}
-
-function usersEqual(left: AuthUser, right: AuthUser) {
-	return left.id === right.id && left.email === right.email;
 }

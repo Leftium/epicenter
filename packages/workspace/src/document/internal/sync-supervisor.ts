@@ -159,7 +159,7 @@ function parsePermanentFailure(event: {
 export function createSyncSupervisor(
 	ydoc: Y.Doc,
 	config: SyncSupervisorConfig,
-): SyncSupervisor {
+) {
 	const waitForPromise = config.waitFor;
 	const log = config.log ?? createLogger('sync');
 

@@ -68,6 +68,7 @@
 
 		const [item] = visibleSeries;
 		const tooltipData = chartCtx.tooltip.data;
+		if (!item) return null;
 
 		// Get the x-axis label value from the raw tooltip data (e.g. a Date or month string)
 		const dataLabel = tooltipData != null ? chartCtx.x(tooltipData) : undefined;

@@ -3,7 +3,6 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import type { WorkspaceIdentity } from '@epicenter/auth';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -11,6 +10,7 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
+import { secureHeaders } from 'hono/secure-headers';
 import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
@@ -28,10 +28,12 @@ import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
 import {
 	resolveRequestOAuthUser,
 	resolveRequestWorkspaceIdentity,
+	type WorkspaceIdentity,
 } from './auth/resource-boundary';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
 import {
+	renderCliCallbackPage,
 	renderConsentPage,
 	renderSignedInPage,
 	renderSignInPage,
@@ -235,11 +237,47 @@ app.get(
 		return c.html(renderConsentPage({ clientId, scope }));
 	},
 );
+// OAuth CLI callback: the OOB authorization-code flow lands here after the
+// user signs in on the hosted portal. The page renders the one-time code in
+// a monospace block so the user can paste it into the terminal. The code is
+// useless without the PKCE verifier held in the CLI process; even so, set
+// Cache-Control: no-store, no-transform to keep Cloudflare's edge from
+// caching or mutating the value. secureHeaders applies CSP, X-Frame-Options,
+// X-Content-Type-Options, Referrer-Policy, and HSTS as a group.
 app.get(
-	'/workspace-identity',
+	'/auth/cli-callback',
 	describeRoute({
-		description: 'Resolve an OAuth access token to Epicenter identity',
+		description: 'CLI OAuth out-of-band callback page',
 		tags: ['auth', 'oauth'],
+	}),
+	secureHeaders(),
+	(c) => {
+		c.header('Cache-Control', 'no-store, no-transform');
+		return c.html(
+			renderCliCallbackPage({
+				code: c.req.query('code'),
+				state: c.req.query('state'),
+				error: c.req.query('error'),
+				errorDescription: c.req.query('error_description'),
+			}),
+		);
+	},
+);
+// Current-user endpoint: returns the authenticated user record plus their
+// workspace encryption keys. This is the single Epicenter identity surface
+// every client (browser apps, browser extension, CLI) calls at sign-in and
+// at cold-boot when online to refresh the persisted unlock cell.
+//
+// Inherits the bearer + workspaces:open scope check from
+// resolveRequestWorkspaceIdentity, so unauthenticated/under-scoped callers
+// get the standard 401/403 OAuth resource responses (WWW-Authenticate +
+// JSON body) without a separate middleware layer.
+app.get(
+	'/api/me',
+	describeRoute({
+		description:
+			'Return the authenticated user and their workspace encryption keys',
+		tags: ['auth'],
 	}),
 	async (c) => {
 		const { data: identity, error } = await resolveRequestWorkspaceIdentity(
@@ -315,8 +353,21 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 
 app.use('/ai/*', requireOAuthUser);
 app.use('/rooms/*', requireOAuthUser);
+app.use('/api/health', requireOAuthUser);
 app.use('/api/billing/*', requireOAuthUser);
 app.use('/api/assets/*', requireOAuthUser);
+
+// Bearer-liveness probe. The CLI's `status` command pings this to verify
+// the current access token still works after a local id_token decode. Plain
+// 200 'ok' body; identity comes from the id_token, not from this response.
+app.get(
+	'/api/health',
+	describeRoute({
+		description: 'Bearer liveness probe (200 with a valid OAuth token)',
+		tags: ['health', 'auth'],
+	}),
+	(c) => c.text('ok'),
+);
 
 // Ensure Autumn customer exists and stash planId for model gating.
 // Runs after requireOAuthUser for AI routes so c.var.user is available.

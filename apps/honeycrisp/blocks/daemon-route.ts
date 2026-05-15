@@ -1,4 +1,4 @@
-import { createMachineAuthClient, requireSession } from '@epicenter/auth/node';
+import { createMachineAuthClient } from '@epicenter/auth/node';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachEncryption,
@@ -25,11 +25,18 @@ export function defineHoneycrispDaemon({
 		route,
 		async start({ projectDir }) {
 			const auth = await createMachineAuthClient();
-			const session = requireSession(auth);
+			if (auth.state.status === 'signed-out') {
+				throw new Error('[honeycrisp-daemon] auth signed-out at start.');
+			}
 			const ydoc = new Y.Doc({ guid: HONEYCRISP_WORKSPACE_ID, gc: false });
 			ydoc.clientID = hashClientId(projectDir);
 			const encryption = attachEncryption(ydoc, {
-				encryptionKeys: () => session.encryptionKeys,
+				encryptionKeys: () => {
+					if (auth.state.status === 'signed-out') {
+						throw new Error('[honeycrisp-daemon] auth signed-out.');
+					}
+					return auth.state.unlock.encryptionKeys;
+				},
 			});
 			const tables = encryption.attachTables(honeycrispTables);
 			const kv = encryption.attachKv({});
@@ -39,7 +46,7 @@ export function defineHoneycrispDaemon({
 			const actions = createHoneycrispActions(tables);
 			const collaboration = openCollaboration(ydoc, {
 				url: roomWsUrl(EPICENTER_API_URL, ydoc.guid),
-				openWebSocket: session.openWebSocket,
+				openWebSocket: auth.openWebSocket,
 				replicaId: 'honeycrisp-daemon',
 				actions,
 			});

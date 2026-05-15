@@ -39,7 +39,11 @@
 	<Alert.Root class="mb-6">
 		<Alert.Description class="flex items-center justify-between">
 			<span>Add a payment method to keep Ultra after your trial ends.</span>
-			<Button variant="link" size="sm" onclick={openBillingPortal}
+			<Button
+				variant="ghost"
+				size="sm"
+				class="h-auto px-0 text-primary hover:bg-transparent hover:underline"
+				onclick={openBillingPortal}
 				>Update billing →</Button
 			>
 		</Alert.Description>
@@ -86,7 +90,7 @@
 		{#if topUp.isPending}
 			<Spinner class="size-3.5" />
 		{:else}
-			Buy 500 credits — $5
+			Buy 500 credits ($5)
 		{/if}
 	</Button>
 	<Button variant="outline" onclick={openBillingPortal}>Manage billing</Button>

@@ -17,11 +17,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineQuery } from '../shared/actions.js';
+import { type ActionRegistry, defineQuery } from '../shared/actions.js';
 import { daemonClient } from './client.js';
 import { claimDaemonLease, type DaemonLease } from './lease.js';
 import { startDaemonServer } from './server.js';
-import type { DaemonRuntime } from './types.js';
+import type { DaemonServedRoute } from './types.js';
 import { bindUnixSocket } from './unix-socket.js';
 
 let originalXdg: string | undefined;
@@ -29,23 +29,18 @@ let runtimeRoot: string;
 let workDir: string;
 
 function makeRuntime(
-	actions: DaemonRuntime['collaboration']['actions'] = {},
-): DaemonRuntime {
+	actions: ActionRegistry = {},
+): DaemonServedRoute['runtime'] {
 	return {
 		collaboration: {
 			actions,
 			peers: {
 				list: () => [],
-				find: () => undefined,
-				observe: () => () => {},
 			},
-			onStatusChange: () => () => {},
 			status: { phase: 'connected' },
+			dispatch: async () => ({ data: null, error: null }),
 		},
-		async [Symbol.asyncDispose]() {
-			/* no-op */
-		},
-	} as unknown as DaemonRuntime;
+	};
 }
 
 function claimTestLease(): DaemonLease {
@@ -104,8 +99,8 @@ describe('startDaemonServer', () => {
 			const result = await startDaemonServer({
 				lease,
 				routes: [
-					{ route: 'demo', runtime: {} as never },
-					{ route: 'demo', runtime: {} as never },
+					{ route: 'demo', runtime: makeRuntime() },
+					{ route: 'demo', runtime: makeRuntime() },
 				],
 			});
 			expect(result.data).toBeNull();
@@ -125,7 +120,7 @@ describe('startDaemonServer', () => {
 		try {
 			const result = await startDaemonServer({
 				lease,
-				routes: [{ route: 'bad.route', runtime: {} as never }],
+				routes: [{ route: 'bad.route', runtime: makeRuntime() }],
 			});
 			expect(result.data).toBeNull();
 			expect(result.error).toMatchObject({

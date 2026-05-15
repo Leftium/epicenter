@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { AuthUser } from '@epicenter/auth-svelte';
 	import * as Avatar from '@epicenter/ui/avatar';
 	import { Badge } from '@epicenter/ui/badge';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
@@ -8,14 +7,13 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import MoonIcon from '@lucide/svelte/icons/moon';
 	import SunIcon from '@lucide/svelte/icons/sun';
+	import UserIcon from '@lucide/svelte/icons/user';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { mode, toggleMode } from 'mode-watcher';
 	import { api } from '$lib/api';
 	import { billing } from '$lib/query/billing';
-	import { capitalize, getInitials } from '$lib/utils';
+	import { capitalize } from '$lib/utils';
 	import { auth } from '$platform/auth';
-
-	let { user }: { user: AuthUser } = $props();
 
 	const balance = createQuery(() => billing.balance.options);
 
@@ -27,8 +25,6 @@
 			(subscription?.planId ? capitalize(subscription.planId) : 'Free'),
 	);
 	const isOnTrial = $derived(subscription?.trialEndsAt != null);
-
-	const initials = $derived(getInitials(user.email));
 
 	/** Open Stripe billing portal via the API. */
 	async function openBillingPortal() {
@@ -50,14 +46,14 @@
 		class="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
 	>
 		<Avatar.Root class="size-8">
-			<Avatar.Fallback class="text-xs">{initials}</Avatar.Fallback>
+			<Avatar.Fallback> <UserIcon class="size-4" /> </Avatar.Fallback>
 		</Avatar.Root>
 	</DropdownMenu.Trigger>
 
 	<DropdownMenu.Content align="end" class="w-56">
 		<DropdownMenu.Label class="font-normal">
 			<div class="flex flex-col gap-1">
-				<p class="text-sm font-medium leading-none">{user.email}</p>
+				<p class="text-sm font-medium leading-none">Epicenter account</p>
 				<div class="flex items-center gap-1.5 pt-1">
 					<Badge variant="secondary" class="text-[10px] px-1.5 py-0">
 						{planName}

@@ -1,31 +1,30 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Exports persisted session storage and the OAuth sign-in launcher. The
- * auth client itself is created after storage readiness in
- * `../../session.svelte`.
+ * Exports persisted auth storage and the OAuth sign-in launcher. The auth
+ * client itself is created after storage readiness in `../../session.svelte`.
  *
  * @see {@link ../../session.svelte} auth, workspace, and identity wiring
  * @see {@link ../../state/storage-state.svelte} chrome.storage reactive wrapper
  */
 
 import { createExtensionOAuthLauncher } from '@epicenter/auth/oauth-launchers';
-import { OAuthSession } from '@epicenter/auth-svelte';
+import { PersistedAuth } from '@epicenter/auth-svelte';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createStorageState } from '../../state/storage-state.svelte';
 
 /**
- * Persisted OAuth session in `chrome.storage.local`.
+ * Persisted auth cell in `chrome.storage.local`.
  *
- * Older builds persisted a `BearerSession`-shaped value at this key. After
- * this migration, schema validation fails for the legacy shape and the
- * session reads as null, forcing a one-time sign-in. Workspace IndexedDB
+ * Older builds persisted under `local:auth.session` with the OAuthSession
+ * shape. After this migration, schema validation fails for the legacy shape
+ * and the cell reads as null, forcing a one-time sign-in. Workspace IndexedDB
  * data is keyed by userId and survives the reset.
  */
-export const authSessionStorage = createStorageState('local:auth.session', {
+export const persistedAuthStorage = createStorageState('local:auth.persisted', {
 	fallback: null,
-	schema: OAuthSession.or('null'),
+	schema: PersistedAuth.or('null'),
 });
 
 export const oauthLauncher = createExtensionOAuthLauncher({

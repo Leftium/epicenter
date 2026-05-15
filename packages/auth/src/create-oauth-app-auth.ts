@@ -85,8 +85,8 @@ export function createOAuthAppAuth({
 	 * In-memory display label fetched from `/api/me`. `email !== null` is the
 	 * single freshness predicate: it implies `/api/me` succeeded for the
 	 * *current* `persisted` reference in this runtime. Every cell mutation
-	 * (sign-in, sign-out, same-user-guard wipe) clears `email` back to `null`,
-	 * forcing a fresh verification before the next bearer attachment.
+	 * clears `email` back to `null`, forcing a fresh verification before the
+	 * next bearer attachment.
 	 */
 	let email: string | null = null;
 	let networkAuthPaused = false;
@@ -138,6 +138,8 @@ export function createOAuthAppAuth({
 				await persistedAuthStorage.set(next);
 				if (persisted !== startedFrom) return false;
 				persisted = next;
+				email = null;
+				publishState();
 				return true;
 			} catch (cause) {
 				if (persisted === startedFrom) {

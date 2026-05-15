@@ -82,6 +82,17 @@ function apiMeBody(userId = 'user-1') {
 	};
 }
 
+function createWebSocketRecorder() {
+	const openings: Array<{ url: string; protocols: string[] }> = [];
+	const WebSocketRecorder = class {
+		constructor(url: string | URL, protocols: string[] = []) {
+			openings.push({ url: String(url), protocols });
+		}
+	} as unknown as typeof WebSocket;
+
+	return { openings, WebSocketRecorder };
+}
+
 test('signed-out by default; AuthClient satisfies the public contract', () => {
 	const setup = createStorage(null);
 	const auth: AuthClient = createOAuthAppAuth({
@@ -235,6 +246,42 @@ test('network gate: no Authorization header until /api/me confirms same user', a
 	auth[Symbol.dispose]();
 });
 
+test('network gate: no WebSocket bearer protocol until /api/me confirms same user', async () => {
+	const setup = createStorage(cell());
+	const { openings, WebSocketRecorder } = createWebSocketRecorder();
+	let resolveApiMe!: (response: Response) => void;
+	const apiMePromise = new Promise<Response>((r) => {
+		resolveApiMe = r;
+	});
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => Ok(null) },
+		WebSocket: WebSocketRecorder,
+		fetch: (async (input: Request | string | URL) => {
+			if (String(input).endsWith('/api/me')) return apiMePromise;
+			return new Response(null, { status: 204 });
+		}) as unknown as typeof fetch,
+	});
+
+	const socketPromise = auth.openWebSocket('ws://localhost:8787/sync', [
+		'epicenter.v1',
+	]);
+	await Promise.resolve();
+	expect(openings).toEqual([]);
+	resolveApiMe(json(apiMeBody('user-1')));
+	await socketPromise;
+	expect(openings).toEqual([
+		{
+			url: 'ws://localhost:8787/sync',
+			protocols: ['epicenter.v1', 'bearer.access-token'],
+		},
+	]);
+	auth[Symbol.dispose]();
+});
+
 test('cold-boot offline keeps signed-in with unlock and email=null', async () => {
 	const setup = createStorage(cell());
 	const auth = createOAuthAppAuth({
@@ -256,6 +303,208 @@ test('cold-boot offline keeps signed-in with unlock and email=null', async () =>
 		userId: 'user-1',
 		encryptionKeys: [...encryptionKeys],
 	});
+	auth[Symbol.dispose]();
+});
+
+test('signOut clears cell, email, and network pause even when revoke fails', async () => {
+	const setup = createStorage(cell());
+	const originalConsoleError = console.error;
+	console.error = () => undefined;
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => Ok(null) },
+		refreshOAuthToken: async () => {
+			throw new Error('refresh failed');
+		},
+		revokeOAuthRefreshToken: async ({ refreshToken }) => {
+			expect(refreshToken).toBe('refresh-token');
+			throw new Error('revoke failed');
+		},
+		fetch: (async (input: Request | string | URL) => {
+			if (String(input).endsWith('/api/me')) return json(apiMeBody('user-1'));
+			return new Response(null, { status: 401 });
+		}) as unknown as typeof fetch,
+	});
+
+	try {
+		await auth.fetch('http://localhost:8787/resource');
+		expect(auth.state).toEqual({
+			status: 'reauth-required',
+			unlock: { userId: 'user-1', encryptionKeys: [...encryptionKeys] },
+			email: 'user-1@example.com',
+		});
+
+		const result = await auth.signOut();
+		expect(result).toEqual(Ok(undefined));
+		expect(setup.current).toBeNull();
+		expect(auth.state).toEqual({ status: 'signed-out' });
+	} finally {
+		console.error = originalConsoleError;
+		auth[Symbol.dispose]();
+	}
+});
+
+test('profile freshness clears on grant refresh until /api/me confirms new cell', async () => {
+	const setup = createStorage(cell());
+	const resourceAuths: Array<string | null> = [];
+	const apiMeAuths: Array<string | null> = [];
+	let apiMeCalls = 0;
+	let resolveSecondApiMe!: (response: Response) => void;
+	let markSecondApiMeRequested!: () => void;
+	const secondApiMePromise = new Promise<Response>((r) => {
+		resolveSecondApiMe = r;
+	});
+	const secondApiMeRequested = new Promise<void>((r) => {
+		markSecondApiMeRequested = r;
+	});
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => Ok(null) },
+		refreshOAuthToken: async () => ({
+			accessToken: 'new-access',
+			refreshToken: 'new-refresh',
+			accessTokenExpiresAt: now + 3_600_000,
+		}),
+		fetch: (async (
+			input: Request | string | URL,
+			init?: RequestInit,
+		): Promise<Response> => {
+			const authorization = new Headers(init?.headers).get('authorization');
+			if (String(input).endsWith('/api/me')) {
+				apiMeCalls += 1;
+				apiMeAuths.push(authorization);
+				if (apiMeCalls === 1) return json(apiMeBody('user-1'));
+				markSecondApiMeRequested();
+				return secondApiMePromise;
+			}
+			resourceAuths.push(authorization);
+			if (resourceAuths.length === 2) return new Response(null, { status: 401 });
+			return new Response(null, { status: 204 });
+		}) as unknown as typeof fetch,
+	});
+
+	await auth.fetch('http://localhost:8787/resource');
+	expect(auth.state).toMatchObject({ status: 'signed-in', email: 'user-1@example.com' });
+
+	const retryPromise = auth.fetch('http://localhost:8787/resource');
+	await secondApiMeRequested;
+	expect(auth.state).toEqual({
+		status: 'signed-in',
+		unlock: { userId: 'user-1', encryptionKeys: [...encryptionKeys] },
+		email: null,
+	});
+	expect(resourceAuths).toEqual(['Bearer access-token', 'Bearer access-token']);
+	expect(apiMeAuths).toEqual(['Bearer access-token', 'Bearer new-access']);
+
+	resolveSecondApiMe(json(apiMeBody('user-1')));
+	await retryPromise;
+	expect(auth.state).toMatchObject({ status: 'signed-in', email: 'user-1@example.com' });
+	expect(resourceAuths).toEqual([
+		'Bearer access-token',
+		'Bearer access-token',
+		'Bearer new-access',
+	]);
+	auth[Symbol.dispose]();
+});
+
+test('concurrent refresh shares one promise and signOut during refresh wins', async () => {
+	const setup = createStorage(
+		cell({ grant: grant({ accessTokenExpiresAt: now + 1 }) }),
+	);
+	const resourceAuths: Array<string | null> = [];
+	let refreshCalls = 0;
+	let markRefreshStarted!: () => void;
+	let resolveRefresh!: (grant: OAuthTokenGrant) => void;
+	const refreshStarted = new Promise<void>((r) => {
+		markRefreshStarted = r;
+	});
+	const refreshPromise = new Promise<OAuthTokenGrant>((r) => {
+		resolveRefresh = r;
+	});
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => Ok(null) },
+		refreshOAuthToken: async () => {
+			refreshCalls += 1;
+			markRefreshStarted();
+			return refreshPromise;
+		},
+		revokeOAuthRefreshToken: async ({ refreshToken }) => {
+			expect(refreshToken).toBe('refresh-token');
+		},
+		fetch: (async (_input: Request | string | URL, init?: RequestInit) => {
+			resourceAuths.push(new Headers(init?.headers).get('authorization'));
+			return new Response(null, { status: 204 });
+		}) as unknown as typeof fetch,
+	});
+
+	const firstFetch = auth.fetch('http://localhost:8787/first');
+	const secondFetch = auth.fetch('http://localhost:8787/second');
+	await refreshStarted;
+	expect(refreshCalls).toBe(1);
+	expect(resourceAuths).toEqual([]);
+
+	const signOutResult = await auth.signOut();
+	expect(signOutResult).toEqual(Ok(undefined));
+	expect(setup.current).toBeNull();
+	expect(auth.state).toEqual({ status: 'signed-out' });
+
+	resolveRefresh({
+		accessToken: 'new-access',
+		refreshToken: 'new-refresh',
+		accessTokenExpiresAt: now + 3_600_000,
+	});
+	await Promise.all([firstFetch, secondFetch]);
+	expect(setup.current).toBeNull();
+	expect(resourceAuths).toEqual([null, null]);
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	auth[Symbol.dispose]();
+});
+
+test('/api/me response after signOut is discarded without corrupting state', async () => {
+	const setup = createStorage(cell());
+	const resourceAuths: Array<string | null> = [];
+	let resolveApiMe!: (response: Response) => void;
+	const apiMePromise = new Promise<Response>((r) => {
+		resolveApiMe = r;
+	});
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => Ok(null) },
+		revokeOAuthRefreshToken: async ({ refreshToken }) => {
+			expect(refreshToken).toBe('refresh-token');
+		},
+		fetch: (async (input: Request | string | URL, init?: RequestInit) => {
+			if (String(input).endsWith('/api/me')) return apiMePromise;
+			resourceAuths.push(new Headers(init?.headers).get('authorization'));
+			return new Response(null, { status: 204 });
+		}) as unknown as typeof fetch,
+	});
+
+	const fetchPromise = auth.fetch('http://localhost:8787/resource');
+	await Promise.resolve();
+	const signOutResult = await auth.signOut();
+	expect(signOutResult).toEqual(Ok(undefined));
+	expect(setup.current).toBeNull();
+	expect(auth.state).toEqual({ status: 'signed-out' });
+
+	resolveApiMe(json(apiMeBody('user-1')));
+	await fetchPromise;
+	expect(setup.current).toBeNull();
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	expect(resourceAuths).toEqual([null]);
 	auth[Symbol.dispose]();
 });
 

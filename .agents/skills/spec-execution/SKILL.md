@@ -1,6 +1,6 @@
 ---
 name: spec-execution
-description: Execute a specification document through planned waves of parallel and sequential changes, updating the spec and committing after each wave, then running a final post-implementation review. Use when the user says "execute this spec", "implement this plan", "run the spec", or when given a specs/*.md file to implement.
+description: Execute a specification document through planned waves of parallel and sequential changes, keeping each wave working, updating the spec as reality changes, and committing either by wave or by logical grouping. Use when the user says "execute this spec", "implement this plan", "run the spec", or when given a specs/*.md file to implement.
 metadata:
   author: epicenter
   version: '1.0'
@@ -8,7 +8,9 @@ metadata:
 
 # Spec Execution
 
-When handed a specification document (a `specs/*.md` file), execute it methodically in waves. Each wave produces working code, an updated spec, and a commit. The goal is a clean git history where each commit represents a coherent unit of progress against the spec.
+When handed a specification document (a `specs/*.md` file), execute it methodically in waves. A wave is an implementation checkpoint: after it lands, the repo should build, relevant tests should pass, and the spec should describe what is now true.
+
+Commits should follow the shape of the work. Commit after a wave when that wave is a natural review unit. Combine waves into one larger commit when the changes are tightly coupled. Break a large wave into smaller commits when that makes the history easier to audit. The goal is working checkpoints first, readable git history second.
 
 ## When to Apply This Skill
 
@@ -17,7 +19,7 @@ Use this pattern when you need to:
 - Implement a `specs/*.md` plan end-to-end in structured waves.
 - Decide which spec tasks run in parallel vs sequentially.
 - Update spec checkboxes and implementation notes after each wave.
-- Commit code changes together with spec progress for every wave.
+- Commit code changes together with spec progress at sensible review boundaries.
 - Finish execution by running `post-implementation-review`, setting spec status, and adding a review section.
 
 ## The Execution Loop
@@ -31,7 +33,7 @@ PLAN WAVES (which tasks are parallel vs sequential?)
 │  1. Execute tasks (sub-agents for ALL tasks)     │
 │  2. Verify (type-check, tests if applicable)     │
 │  3. Update spec (check off items, add notes)     │
-│  4. Commit (code changes + spec updates)         │
+│  4. Commit or checkpoint, based on review shape  │
 └──────────────────────────────────────────────────┘
     ↓
 REPEAT until spec is complete
@@ -52,7 +54,9 @@ If the spec has unresolved Open Questions that block implementation, surface the
 
 ## Phase 2: Plan Waves
 
-Break the spec's implementation plan into execution waves. A wave is a set of changes that can be made together without breaking anything.
+Break the spec's implementation plan into execution waves. A wave is a set of changes that can land together while leaving the repo working.
+
+Breaking API changes are allowed inside a wave. The boundary matters: by the end of the wave, update affected consumers, migrations, tests, or documentation so the repo is coherent again.
 
 ### Deciding Parallel vs Sequential
 
@@ -74,14 +78,20 @@ Before executing, write out your wave plan:
 Wave 1: [Foundation, types and interfaces]
   - Task 1.1 (parallel with 1.2)
   - Task 1.2 (parallel with 1.1)
+  - Checkpoint: verify and update spec
+  - Commit: optional, if this is a reviewable unit
 
 Wave 2: [Core logic, depends on Wave 1 types]
   - Task 2.1 (sequential, modifies shared module)
   - Task 2.2 (after 2.1, uses its exports)
+  - Checkpoint: verify and update spec
+  - Commit: likely, because this changes behavior
 
 Wave 3: [Integration, consumers of Wave 2]
   - Task 3.1 (parallel with 3.2)
   - Task 3.2 (parallel with 3.1)
+  - Checkpoint: verify and update spec
+  - Commit: combine with Wave 2 if the API and consumers should be reviewed together
 ```
 
 Present this plan to the user before executing. Get a thumbs up.
@@ -114,9 +124,9 @@ If verification fails, fix issues before proceeding. Don't carry broken state in
 Check off completed items in the spec's Implementation Plan:
 
 ```markdown
-- [x] **1.1** Add IconDefinition type ← was [ ], now [x]
+- [x] **1.1** Add IconDefinition type
 - [x] **1.2** Add CoverDefinition type
-- [ ] **2.1** Update factory functions  ← not yet
+- [ ] **2.1** Update factory functions
 ```
 
 If implementation deviated from the spec (it often does), add a note:
@@ -129,9 +139,18 @@ If implementation deviated from the spec (it often does), add a note:
 
 If you discovered something during implementation, add it to the spec's Research Findings or Edge Cases section.
 
-### 4. Commit the Wave
+### 4. Commit or Checkpoint the Wave
 
-Each commit includes BOTH the code changes AND the spec updates. This means every commit in the history shows what was planned and what was actually done.
+Each committed unit should include BOTH the code changes AND the spec updates that describe those changes. This keeps history honest: each commit shows what was planned, what changed, and what was actually built.
+
+You do not have to create one commit per wave. Use the commit shape that best fits the review:
+
+| Situation | Commit Shape |
+| --- | --- |
+| Wave is a self-contained foundation or behavior change | Commit the wave |
+| Several waves are tightly coupled and make sense only together | Combine them into one larger commit |
+| One wave contains multiple independently reviewable changes | Split it into logical commits |
+| The user wants one large commit | Keep intermediate working checkpoints, then create one final commit |
 
 Follow `git` and `incremental-commits` skill conventions:
 
@@ -173,7 +192,7 @@ After all waves complete:
 - [Anything discovered during implementation that should be a future spec]
 ```
 
-4. **Final commit** with the review section added
+4. **Final commit or final amend/squash** with the review section included, matching the commit strategy chosen earlier
 
 ## Sub-Agent Prompts
 
@@ -193,7 +212,7 @@ Keep sub-agent prompts focused. A sub-agent that knows too much will try to do t
 
 | Situation | Response |
 | --- | --- |
-| Type-check fails after a wave | Fix before committing. Don't carry broken state. |
+| Type-check fails after a wave | Fix before moving on. Don't carry broken state. |
 | Sub-agent made changes outside its scope | Revert the out-of-scope changes. Keep only what was asked for. |
 | Spec item is ambiguous mid-implementation | Stop. Ask the user. Add clarification to the spec. |
 | Discovery invalidates a later spec phase | Update the spec's plan. Inform the user. Re-plan remaining waves. |
@@ -215,7 +234,7 @@ No. Read the spec. Plan waves. Get approval. Then execute.
 Wave 1: Implement everything in the spec
 ```
 
-If a wave touches more than 5-8 files, it's too big. Break it down.
+If a wave touches more than 5-8 files, ask whether it still represents one coherent working checkpoint. Sometimes a broad breaking change needs to happen together, but default to smaller waves when reviewability or verification would improve.
 
 ### Spec Drift
 
@@ -247,11 +266,11 @@ For each wave:
 - [ ] Execute tasks (every task in a sub-agent)
 - [ ] Verify (type-check, tests)
 - [ ] Update spec (check items, add notes)
-- [ ] Commit (code + spec together)
+- [ ] Commit if this wave is a logical review unit, or checkpoint and continue
 
 After all waves:
 
 - [ ] Run `post-implementation-review` on touched files
 - [ ] Update spec status to Implemented
 - [ ] Add Review section
-- [ ] Final commit
+- [ ] Finalize commits using the chosen strategy

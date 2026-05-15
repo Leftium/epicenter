@@ -273,7 +273,7 @@ REFRESH / SIGN-OUT / REAUTH-REQUIRED
 ### Phase 3: Prove
 
 - [ ] **3.1** Typecheck across the workspace: `bun run build` and `bun run check`.
-  > **Note**: Focused typechecks passed for `@epicenter/auth`, `@epicenter/svelte`, and `@epicenter/zhongwen`. `@epicenter/dashboard` still has unrelated pre-existing diagnostics in chart/D3/button variant code, so full workspace proof remains open.
+  > **Note**: Focused typechecks passed for `@epicenter/auth`, `@epicenter/api`, and `@epicenter/dashboard` after this follow-up. Full workspace proof remains open because `bun run typecheck` now reaches unrelated existing diagnostics in `@epicenter/ui`, and `bun run check` still sees unrelated format drift outside this spec wave.
 - [x] **3.2** Run existing auth contract tests; add a regression test asserting `auth.state` shape is the three-variant collapsed form.
 - [ ] **3.3** Manual smoke: cold-boot online (popover query fires, email loads), cold-boot offline (popover shows "Loading…" or an offline placeholder, no other UI broken), sign-out (popover query disables, state goes to signed-out).
 - [x] **3.4** Verify network-gate semantics still hold via the existing test that pre-writes a cell with userId=alice and stubs `/api/me` to return userId=bob.
@@ -387,5 +387,6 @@ Auth state is now capability-only in the implemented surface: consumers no longe
 
 ### Follow-up Work
 
-- Full `@epicenter/dashboard` typecheck is still blocked by unrelated existing diagnostics in chart, D3 type declarations, and a button variant.
+- Full workspace typecheck is still blocked by unrelated existing diagnostics in `@epicenter/ui`.
+- Full workspace check is still blocked by unrelated format drift outside this spec wave.
 - Manual browser smoke for cold boot online, cold boot offline, and sign-out remains to be run against a live auth/API setup.

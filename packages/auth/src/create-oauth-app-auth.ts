@@ -362,7 +362,7 @@ function replayableInput<TInput extends Request | string | URL>(
 	input: TInput,
 	baseURL: string,
 ) {
-	if (input instanceof Request) return input.clone() as TInput;
+	if (input instanceof Request) return input.clone() as unknown as TInput;
 	if (typeof input === 'string' && input.startsWith('/')) {
 		return new URL(input, baseURL).toString() as TInput;
 	}

@@ -3,7 +3,6 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import type { WorkspaceIdentity } from '@epicenter/auth';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -29,6 +28,7 @@ import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
 import {
 	resolveRequestOAuthUser,
 	resolveRequestWorkspaceIdentity,
+	type WorkspaceIdentity,
 } from './auth/resource-boundary';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
@@ -275,7 +275,8 @@ app.get(
 app.get(
 	'/api/me',
 	describeRoute({
-		description: 'Return the authenticated user and their workspace encryption keys',
+		description:
+			'Return the authenticated user and their workspace encryption keys',
 		tags: ['auth'],
 	}),
 	async (c) => {

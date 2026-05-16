@@ -10,8 +10,8 @@
  * - Cold-boot offline keeps signed-in with unlock and no profile field
  */
 
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import { describe, expect, test } from 'bun:test';
+import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import { Ok } from 'wellcrafted/result';
 import type {
 	AuthClient,
@@ -356,10 +356,7 @@ test('network gate: no WebSocket bearer protocol until /api/me confirms same use
 	expect(openings).toEqual([
 		{
 			url: 'ws://localhost:8787/sync',
-			protocols: [
-				'epicenter.v1',
-				`${BEARER_SUBPROTOCOL_PREFIX}access-token`,
-			],
+			protocols: ['epicenter.v1', `${BEARER_SUBPROTOCOL_PREFIX}access-token`],
 		},
 	]);
 	auth[Symbol.dispose]();

@@ -9,8 +9,8 @@
  * - Bearer tokens are extracted from comma-separated subprotocol headers
  */
 
-import { BEARER_SUBPROTOCOL_PREFIX as SHARED_PREFIX } from '@epicenter/constants/auth';
 import { expect, test } from 'bun:test';
+import { BEARER_SUBPROTOCOL_PREFIX as SHARED_PREFIX } from '@epicenter/constants/auth';
 import {
 	BEARER_SUBPROTOCOL_PREFIX,
 	extractBearerToken,

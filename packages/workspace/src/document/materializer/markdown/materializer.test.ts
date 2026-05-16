@@ -584,9 +584,9 @@ describe('rebuild', () => {
 
 	test('throws on unknown table name', async () => {
 		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
-		await expect(
-			workspace.materializer.rebuild('notAThing'),
-		).rejects.toThrow(/not in the materialized table set/);
+		await expect(workspace.materializer.rebuild('notAThing')).rejects.toThrow(
+			/not in the materialized table set/,
+		);
 
 		workspace[Symbol.dispose]();
 	});

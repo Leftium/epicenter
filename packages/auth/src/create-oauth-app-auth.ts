@@ -1,6 +1,8 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import { EncryptionKeys, encryptionKeysEqual } from '@epicenter/encryption';
 import { type } from 'arktype';
+import { createLogger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient, AuthState } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
@@ -10,6 +12,7 @@ import {
 	type OAuthTokenGrant,
 	type PersistedAuth as PersistedAuthType,
 } from './auth-types.js';
+import { parseOAuthTokenGrant } from './oauth-token-response.js';
 import { headersFromRequest } from './request-headers.js';
 
 /**
@@ -28,20 +31,12 @@ export type OAuthSignInLauncher = {
 	startSignIn(): Promise<Result<OAuthTokenGrant | null, unknown>>;
 };
 
-export type OAuthTokenRefresher = (input: {
-	baseURL: string;
-	clientId: string;
-	grant: OAuthTokenGrant;
-	fetch: typeof fetch;
-	now: () => number;
-}) => Promise<OAuthTokenGrant>;
+type AuthFetchInput = Request | string | URL;
 
-export type OAuthRefreshTokenRevoker = (input: {
-	baseURL: string;
-	clientId: string;
-	refreshToken: string;
-	fetch: typeof fetch;
-}) => Promise<void>;
+export type AuthFetch = (
+	input: AuthFetchInput,
+	init?: RequestInit,
+) => Promise<Response>;
 
 /**
  * Shape returned by `GET /api/me`. Internal; not exported as a top-level
@@ -54,20 +49,19 @@ const ApiMeResponse = type({
 });
 type ApiMeResponse = typeof ApiMeResponse.infer;
 
+const log = createLogger('oauth-app-auth');
+
 export type CreateOAuthAppAuthConfig = {
 	baseURL?: string;
 	clientId: string;
 	persistedAuthStorage: PersistedAuthStorage;
 	launcher: OAuthSignInLauncher;
-	fetch?: typeof fetch;
+	fetch?: AuthFetch;
 	WebSocket?: typeof WebSocket;
-	refreshOAuthToken?: OAuthTokenRefresher;
-	revokeOAuthRefreshToken?: OAuthRefreshTokenRevoker;
 	now?: () => number;
 };
 
 const REFRESH_SKEW_MS = 60_000;
-const BEARER_SUBPROTOCOL_PREFIX = 'bearer.';
 
 export function createOAuthAppAuth({
 	baseURL = EPICENTER_API_URL,
@@ -76,8 +70,6 @@ export function createOAuthAppAuth({
 	launcher,
 	fetch: fetchImpl = globalThis.fetch.bind(globalThis),
 	WebSocket: WebSocketImpl = globalThis.WebSocket,
-	refreshOAuthToken = refreshOAuthTokenWithEndpoint,
-	revokeOAuthRefreshToken = revokeOAuthRefreshTokenWithEndpoint,
 	now = Date.now,
 }: CreateOAuthAppAuthConfig): AuthClient {
 	let persisted = persistedAuthStorage.get();
@@ -114,7 +106,7 @@ export function createOAuthAppAuth({
 		const startedFrom = persisted;
 		refreshPromise = (async () => {
 			try {
-				const grant = await refreshOAuthToken({
+				const grant = await refreshOAuthTokenWithEndpoint({
 					baseURL,
 					clientId,
 					grant: startedFrom.grant,
@@ -136,7 +128,7 @@ export function createOAuthAppAuth({
 				if (persisted === startedFrom) {
 					networkAuthPaused = true;
 					publishState();
-					console.error('[auth] failed to refresh OAuth grant:', cause);
+					log.error(AuthError.RefreshGrantFailed({ cause }));
 				}
 				return false;
 			} finally {
@@ -249,7 +241,7 @@ export function createOAuthAppAuth({
 	}
 
 	async function fetchWithAuth(
-		input: Request | string | URL,
+		input: AuthFetchInput,
 		init: RequestInit | undefined,
 		forceRefresh: boolean,
 	) {
@@ -261,7 +253,7 @@ export function createOAuthAppAuth({
 			headers.delete('Authorization');
 		}
 		const normalizedInput = normalizeFetchInput(input, baseURL);
-		return fetchImpl(normalizedInput as Parameters<typeof fetchImpl>[0], {
+		return fetchImpl(normalizedInput, {
 			...init,
 			headers,
 			credentials: 'omit',
@@ -320,7 +312,7 @@ export function createOAuthAppAuth({
 				if (refreshTokenToRevoke) {
 					void Promise.resolve()
 						.then(() =>
-							revokeOAuthRefreshToken({
+							revokeOAuthRefreshTokenWithEndpoint({
 								baseURL,
 								clientId,
 								refreshToken: refreshTokenToRevoke,
@@ -363,8 +355,11 @@ function shouldRefreshGrant(grant: OAuthTokenGrant, now: number) {
 	return grant.accessTokenExpiresAt <= now + REFRESH_SKEW_MS;
 }
 
-function normalizeFetchInput(input: Request | string | URL, baseURL: string) {
-	if (input instanceof Request) return input.clone();
+function normalizeFetchInput(
+	input: AuthFetchInput,
+	baseURL: string,
+): AuthFetchInput {
+	if (input instanceof Request) return input.clone() as Request;
 	if (typeof input === 'string' && input.startsWith('/')) {
 		return new URL(input, baseURL).toString();
 	}
@@ -381,7 +376,7 @@ async function refreshOAuthTokenWithEndpoint({
 	baseURL: string;
 	clientId: string;
 	grant: OAuthTokenGrant;
-	fetch: typeof globalThis.fetch;
+	fetch: AuthFetch;
 	now: () => number;
 }): Promise<OAuthTokenGrant> {
 	const body = new URLSearchParams({
@@ -400,16 +395,10 @@ async function refreshOAuthTokenWithEndpoint({
 		throw new Error(`OAuth refresh failed with ${response.status}.`);
 	}
 	const data = await response.json();
-	const tokenType = readString(data, 'token_type');
-	if (tokenType.toLowerCase() !== 'bearer') {
-		throw new Error(`Expected token_type to be bearer, got ${tokenType}.`);
-	}
-	return {
-		accessToken: readString(data, 'access_token'),
-		refreshToken:
-			readOptionalString(data, 'refresh_token') ?? grant.refreshToken,
-		accessTokenExpiresAt: now() + readPositiveNumber(data, 'expires_in') * 1000,
-	} satisfies OAuthTokenGrant;
+	return parseOAuthTokenGrant(data, {
+		now,
+		fallbackRefreshToken: grant.refreshToken,
+	});
 }
 
 async function revokeOAuthRefreshTokenWithEndpoint({
@@ -421,7 +410,7 @@ async function revokeOAuthRefreshTokenWithEndpoint({
 	baseURL: string;
 	clientId: string;
 	refreshToken: string;
-	fetch: typeof globalThis.fetch;
+	fetch: AuthFetch;
 }) {
 	const body = new URLSearchParams({
 		client_id: clientId,
@@ -437,39 +426,4 @@ async function revokeOAuthRefreshTokenWithEndpoint({
 	if (!response.ok) {
 		throw new Error(`OAuth revoke failed with ${response.status}.`);
 	}
-}
-
-function readRecord(value: unknown): Record<string, unknown> {
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-		throw new Error('Expected OAuth token response to be an object.');
-	}
-	return value as Record<string, unknown>;
-}
-
-function readString(value: unknown, key: string) {
-	const record = readRecord(value);
-	const field = record[key];
-	if (typeof field !== 'string') {
-		throw new Error(`Expected ${key} to be a string.`);
-	}
-	return field;
-}
-
-function readOptionalString(value: unknown, key: string) {
-	const record = readRecord(value);
-	const field = record[key];
-	if (field === undefined || field === null) return null;
-	if (typeof field !== 'string') {
-		throw new Error(`Expected ${key} to be a string.`);
-	}
-	return field;
-}
-
-function readPositiveNumber(value: unknown, key: string) {
-	const record = readRecord(value);
-	const field = record[key];
-	if (typeof field !== 'number' || !Number.isFinite(field) || field <= 0) {
-		throw new Error(`Expected ${key} to be a positive number.`);
-	}
-	return field;
 }

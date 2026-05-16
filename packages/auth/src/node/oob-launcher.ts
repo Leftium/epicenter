@@ -20,6 +20,8 @@ import {
 } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { OAuthTokenGrant } from '../auth-types.js';
+import type { AuthFetch } from '../create-oauth-app-auth.js';
+import { parseOAuthTokenGrant } from '../oauth-token-response.js';
 
 export const OobLauncherError = defineErrors({
 	TokenExchangeFailed: ({
@@ -71,7 +73,7 @@ export type CreateOobOAuthLauncherConfig = {
 	openBrowser?: (url: string) => Promise<void> | void;
 	readCode?: () => Promise<string>;
 	print?: (line: string) => void;
-	fetch?: typeof globalThis.fetch;
+	fetch?: AuthFetch;
 	crypto?: Crypto;
 	now?: () => number;
 };
@@ -100,15 +102,12 @@ export function createOobOAuthLauncher({
 				),
 			);
 			const codeChallenge = base64UrlEncode(challengeBytes);
-			const state = base64UrlEncode(randomBytes(crypto, 16));
-
 			const authorizeUrl = new URL(`${baseURL}/auth/oauth2/authorize`);
 			authorizeUrl.search = new URLSearchParams({
 				response_type: 'code',
 				client_id: clientId,
 				redirect_uri: redirectUri,
 				scope: scopes.join(' '),
-				state,
 				code_challenge: codeChallenge,
 				code_challenge_method: 'S256',
 				resource: baseURL,
@@ -178,53 +177,12 @@ export function createOobOAuthLauncher({
 			}
 
 			try {
-				const grant = parseTokenResponse(payload, now);
+				const grant = parseOAuthTokenGrant(payload, { now });
 				return Ok(grant);
 			} catch (cause) {
 				return Err(OobLauncherError.InvalidTokenResponse({ cause }).error);
 			}
 		},
-	};
-}
-
-function parseTokenResponse(
-	payload: unknown,
-	now: () => number,
-): OAuthTokenGrant {
-	if (
-		payload === null ||
-		typeof payload !== 'object' ||
-		Array.isArray(payload)
-	) {
-		throw new Error('Expected token response to be an object.');
-	}
-	const record = payload as Record<string, unknown>;
-	const tokenType = record['token_type'];
-	if (typeof tokenType !== 'string' || tokenType.toLowerCase() !== 'bearer') {
-		throw new Error(
-			`Expected token_type 'bearer', got ${JSON.stringify(tokenType)}.`,
-		);
-	}
-	const accessToken = record['access_token'];
-	if (typeof accessToken !== 'string') {
-		throw new Error('Expected access_token to be a string.');
-	}
-	const refreshToken = record['refresh_token'];
-	if (typeof refreshToken !== 'string') {
-		throw new Error('Expected refresh_token to be a string.');
-	}
-	const expiresIn = record['expires_in'];
-	if (
-		typeof expiresIn !== 'number' ||
-		!Number.isFinite(expiresIn) ||
-		expiresIn <= 0
-	) {
-		throw new Error('Expected expires_in to be a positive finite number.');
-	}
-	return {
-		accessToken,
-		refreshToken,
-		accessTokenExpiresAt: now() + expiresIn * 1000,
 	};
 }
 

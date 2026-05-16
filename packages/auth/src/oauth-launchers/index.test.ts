@@ -11,6 +11,7 @@
  */
 
 import { expect, test } from 'bun:test';
+import type { AuthFetch } from '../create-oauth-app-auth.js';
 import { createOAuthClient, type OAuthTemporaryStorage } from './index.js';
 
 function createMemoryStorage(seed: Record<string, string> = {}) {
@@ -41,8 +42,8 @@ function createFetch({
 	tokenStatus?: number;
 	tokenBody?: Record<string, unknown>;
 	onTokenBody?: (body: URLSearchParams) => void;
-} = {}) {
-	return (async (input: Request | URL | string, init?: RequestInit) => {
+} = {}): AuthFetch {
+	return async (input, init) => {
 		const url = new URL(input instanceof Request ? input.url : input);
 		if (url.pathname === '/.well-known/oauth-authorization-server/auth') {
 			return Response.json({
@@ -60,7 +61,7 @@ function createFetch({
 			);
 		}
 		throw new Error(`Unexpected fetch: ${url.toString()}`);
-	}) as typeof fetch;
+	};
 }
 
 test('createAuthorizationUrl stores verifier state and returns PKCE URL', async () => {
@@ -313,4 +314,35 @@ test('handleCallback rejects a token response without expires_in', async () => {
 	);
 
 	expect(error?.name).toBe('MissingExpiresIn');
+});
+
+test('handleCallback rejects a non-bearer token response', async () => {
+	const { storage } = createMemoryStorage({
+		'epicenter.oauth.client-1': JSON.stringify({
+			state: 'state-1',
+			codeVerifier: 'verifier-1',
+			redirectUri: 'http://app.test/auth/callback',
+		}),
+	});
+	const client = createOAuthClient({
+		issuer: 'http://auth.test/auth',
+		clientId: 'client-1',
+		redirectUri: 'http://app.test/auth/callback',
+		resource: 'http://auth.test',
+		storage,
+		fetch: createFetch({
+			tokenBody: {
+				access_token: 'access-token',
+				refresh_token: 'refresh-token',
+				expires_in: 900,
+				token_type: 'mac',
+			},
+		}),
+	});
+
+	const { error } = await client.handleCallback(
+		'http://app.test/auth/callback?code=code-1&state=state-1',
+	);
+
+	expect(error?.name).toBe('TokenExchangeFailed');
 });

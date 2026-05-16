@@ -13,6 +13,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { PersistedAuth } from '../auth-types.js';
+import type { AuthFetch } from '../create-oauth-app-auth.js';
 import {
 	createMachineAuthClient,
 	loginWithOob,
@@ -76,12 +77,6 @@ type RecordedRequest = {
 
 type Route = (request: RecordedRequest) => Response | Promise<Response>;
 
-type FetchLike = typeof globalThis.fetch;
-
-function asFetch(impl: (input: unknown, init?: unknown) => Promise<Response>) {
-	return impl as unknown as FetchLike;
-}
-
 function createFetch({
 	tokenRoute,
 	apiMeRoute,
@@ -91,13 +86,13 @@ function createFetch({
 	apiMeRoute?: Route;
 	revokeRoute?: Route;
 } = {}): {
-	fetch: FetchLike;
+	fetch: AuthFetch;
 	recorded: RecordedRequest[];
 } {
 	const recorded: RecordedRequest[] = [];
-	const fetchImpl = asFetch(async (rawInput, rawInit) => {
-		const input = rawInput as Request | string | URL;
-		const init = rawInit as RequestInit | undefined;
+	const fetchImpl: AuthFetch = async (rawInput, rawInit) => {
+		const input = rawInput;
+		const init = rawInit;
 		const url =
 			typeof input === 'string'
 				? input
@@ -132,7 +127,7 @@ function createFetch({
 			return apiMeRoute(request);
 		}
 		return new Response(null, { status: 404 });
-	});
+	};
 	return { fetch: fetchImpl, recorded };
 }
 
@@ -283,9 +278,9 @@ test('status valid when /api/me returns 200 with same userId', async () => {
 test('status unverified on network failure preserves cell', async () => {
 	const filePath = tmpAuthPath();
 	const cell = await preWriteCell(filePath, 'user-1');
-	const fetchImpl = asFetch(async () => {
+	const fetchImpl: AuthFetch = async () => {
 		throw new Error('network down');
-	});
+	};
 	const result = await status({
 		baseURL: BASE_URL,
 		clientId: CLIENT_ID,
@@ -411,9 +406,7 @@ test('createMachineAuthClient loads file and attaches Bearer after gate', async 
 	await preWriteCell(filePath, 'user-1');
 
 	const recorded: RecordedRequest[] = [];
-	const fetchImpl = asFetch(async (rawInput, rawInit) => {
-		const input = rawInput as Request | string | URL;
-		const init = rawInit as RequestInit | undefined;
+	const fetchImpl: AuthFetch = async (input, init) => {
 		const url =
 			typeof input === 'string'
 				? input
@@ -443,7 +436,7 @@ test('createMachineAuthClient loads file and attaches Bearer after gate', async 
 			return new Response(null, { status: 200 });
 		}
 		return new Response(null, { status: 404 });
-	});
+	};
 
 	const auth = await createMachineAuthClient({
 		baseURL: BASE_URL,

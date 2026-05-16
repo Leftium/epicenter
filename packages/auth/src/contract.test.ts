@@ -416,10 +416,7 @@ test('network gate: no WebSocket bearer protocol until /api/me confirms same sub
 	expect(openings).toEqual([
 		{
 			url: 'ws://localhost:8787/sync',
-			protocols: [
-				'epicenter.v1',
-				`${BEARER_SUBPROTOCOL_PREFIX}access-token`,
-			],
+			protocols: ['epicenter.v1', `${BEARER_SUBPROTOCOL_PREFIX}access-token`],
 		},
 	]);
 	auth[Symbol.dispose]();

@@ -40,9 +40,7 @@ export function createSession<T extends Disposable>({
 				ownerId: state.localIdentity.subject,
 				keyring: () => {
 					if (auth.state.status === 'signed-out') {
-						throw new Error(
-							'[session] keyring() called while signed-out.',
-						);
+						throw new Error('[session] keyring() called while signed-out.');
 					}
 					return auth.state.localIdentity.keyring;
 				},

@@ -3,6 +3,7 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
+import type { ApiMeResponse, AuthUser } from '@epicenter/auth';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -29,7 +30,6 @@ import {
 	resolveRequestApiMe,
 	resolveRequestOAuthUser,
 } from './auth/resource-boundary';
-import type { ApiMeResponse, AuthUser } from '@epicenter/auth';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
 import {

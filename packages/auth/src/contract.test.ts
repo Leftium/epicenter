@@ -10,16 +10,16 @@
  * - Cold-boot offline keeps signed-in with localIdentity and no profile field
  */
 
+import { describe, expect, test } from 'bun:test';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
-import { describe, expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
 import type {
 	AuthClient,
-	SubjectIdentity,
 	OAuthTokenGrant,
 	PersistedAuth,
 	PersistedAuthStorage,
+	SubjectIdentity,
 } from './index.js';
 import { createOAuthAppAuth } from './index.js';
 
@@ -416,10 +416,7 @@ test('network gate: no WebSocket bearer protocol until /api/me confirms same sub
 	expect(openings).toEqual([
 		{
 			url: 'ws://localhost:8787/sync',
-			protocols: [
-				'epicenter.v1',
-				`${BEARER_SUBPROTOCOL_PREFIX}access-token`,
-			],
+			protocols: ['epicenter.v1', `${BEARER_SUBPROTOCOL_PREFIX}access-token`],
 		},
 	]);
 	auth[Symbol.dispose]();

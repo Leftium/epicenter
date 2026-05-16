@@ -3,8 +3,8 @@
 import {
 	decryptBytes,
 	type EncryptedBlob,
-	type SubjectKeyring,
 	encryptBytes,
+	type SubjectKeyring,
 } from '@epicenter/encryption';
 import * as idb from 'lib0/indexeddb';
 import {

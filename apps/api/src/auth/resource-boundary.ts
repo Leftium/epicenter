@@ -1,8 +1,5 @@
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import {
-	type ApiMeResponse,
-	AuthUser,
-} from '@epicenter/auth';
+import { type ApiMeResponse, AuthUser } from '@epicenter/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
 import type { User } from 'better-auth';
 import { eq } from 'drizzle-orm';

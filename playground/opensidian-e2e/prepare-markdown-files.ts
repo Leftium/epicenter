@@ -1,8 +1,21 @@
+/**
+ * Vault recipe local to the opensidian playground: walk a flat directory
+ * of `.md` files and inject a generated `id` into the frontmatter of any
+ * file missing one, aborting on id collisions.
+ *
+ * Built on top of the workspace's markdown primitives
+ * (`@epicenter/workspace/markdown`). Lives here because the "flat
+ * directory, `id` field, abort on collision" convention is too
+ * vault-specific for the library to maintain.
+ */
+
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { generateId } from '../../shared/id.js';
-import { assembleMarkdown } from './markdown.js';
-import { parseMarkdownFile } from './parse-markdown-file.js';
+import { generateId } from '@epicenter/workspace';
+import {
+	assembleMarkdown,
+	parseMarkdownFile,
+} from '@epicenter/workspace/markdown';
 
 type PrepareResult = {
 	prepared: number;
@@ -11,25 +24,9 @@ type PrepareResult = {
 };
 
 /**
- * Walk a directory of `.md` files and ensure each has a unique `id` in its
- * YAML frontmatter. Files that already have an `id` are left untouched.
- * Files without one get a generated nanoid written back.
- *
- * **Duplicate check**: Before any writes, the function scans every file. If
- * two or more files share the same `id`, it returns an error listing every
- * conflict and modifies nothing.
- *
- * Only reads top-level `.md` files: does not recurse into subdirectories.
- *
- * @example
- * ```typescript
- * const result = await prepareMarkdownFiles('./my-vault');
- * if (result.errors.length > 0) {
- *   console.error('Conflicts:', result.errors);
- * } else {
- *   console.log(`Prepared ${result.prepared}, skipped ${result.skipped}`);
- * }
- * ```
+ * Walk a directory of `.md` files and inject a generated `id` into the
+ * frontmatter of any file missing one. Aborts (zero writes) if any
+ * existing files share an id.
  */
 export async function prepareMarkdownFiles(
 	directory: string,
@@ -37,7 +34,6 @@ export async function prepareMarkdownFiles(
 	const entries = await readdir(directory);
 	const mdFiles = entries.filter((f) => f.endsWith('.md'));
 
-	// First pass: parse all files and collect existing IDs
 	const idToFiles = new Map<string, string[]>();
 	const filesToPrepare: {
 		filename: string;
@@ -51,7 +47,6 @@ export async function prepareMarkdownFiles(
 		const content = await readFile(filePath, 'utf-8');
 		const parsed = parseMarkdownFile(content);
 
-		// Skip files without valid frontmatter
 		if (!parsed) {
 			skipped++;
 			continue;
@@ -61,7 +56,6 @@ export async function prepareMarkdownFiles(
 		const existingId = frontmatter.id;
 
 		if (typeof existingId === 'string' && existingId.length > 0) {
-			// Track existing IDs for duplicate detection
 			const existing = idToFiles.get(existingId) ?? [];
 			existing.push(filename);
 			idToFiles.set(existingId, existing);
@@ -71,7 +65,6 @@ export async function prepareMarkdownFiles(
 		}
 	}
 
-	// Check for duplicate IDs before modifying anything
 	const errors: string[] = [];
 	for (const [id, files] of idToFiles) {
 		if (files.length > 1) {
@@ -83,7 +76,6 @@ export async function prepareMarkdownFiles(
 		return { prepared: 0, skipped, errors };
 	}
 
-	// Second pass: generate IDs and write back
 	for (const { filename, frontmatter, body } of filesToPrepare) {
 		const filePath = join(directory, filename);
 		const newId = generateId();

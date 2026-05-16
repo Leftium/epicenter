@@ -142,9 +142,9 @@ function parsePermanentFailure(event: {
 			parsed !== null &&
 			typeof parsed === 'object' &&
 			'code' in parsed &&
-			typeof (parsed as { code: unknown }).code === 'string'
+			typeof parsed.code === 'string'
 		) {
-			return { type: 'auth', code: (parsed as { code: string }).code };
+			return { type: 'auth', code: parsed.code };
 		}
 	} catch {
 		// fall through to 'unknown'
@@ -182,6 +182,10 @@ export function createSyncSupervisor(
 			case 'offline':
 				log.info('sync offline', { phase: next.phase, docGuid: ydoc.guid });
 				break;
+			case 'connecting':
+				break;
+			default:
+				next satisfies never;
 		}
 	}
 

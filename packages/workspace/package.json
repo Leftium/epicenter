@@ -27,12 +27,12 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
+		"./markdown": "./src/markdown/index.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
 		"./daemon": "./src/daemon/index.ts",
 		"./ai": "./src/ai/index.ts",
 		"./node": "./src/node.ts",
 		"./document/materializer/sqlite": "./src/document/materializer/sqlite/index.ts",
-		"./logger/jsonl-sink": "./src/shared/logger/jsonl-sink.ts",
 		"./test-utils": "./src/shared/test-utils.ts",
 		"./links": "./src/links.ts",
 		"./document/keys": "./src/document/keys.ts",

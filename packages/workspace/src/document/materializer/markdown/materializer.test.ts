@@ -26,11 +26,11 @@ import {
 	createDisposableCache,
 	defineTable,
 } from '../../../index.js';
+import { parseMarkdownFile } from '../../../markdown/parse-markdown-file.js';
 import {
 	attachMarkdownMaterializer,
 	type MarkdownShape,
 } from './materializer.js';
-import { parseMarkdownFile } from './parse-markdown-file.js';
 
 // ============================================================================
 // Test Table Definitions
@@ -141,7 +141,7 @@ describe('push', () => {
 			'---\nid: post-2\ntitle: Draft Post\npublished: false\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = await workspace.materializer.push();
 
 		expect(result.imported).toBe(2);
 		expect(result.skipped).toBe(0);
@@ -166,7 +166,7 @@ describe('push', () => {
 		await writeTestFile('posts/readme.txt', 'not a markdown file');
 		await writeTestFile('posts/data.json', '{"id": "test"}');
 
-		const result = await workspace.materializer.push({});
+		const result = await workspace.materializer.push();
 
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(0);
@@ -185,7 +185,7 @@ describe('push', () => {
 			'# Just a heading\n\nSome content\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = await workspace.materializer.push();
 
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(1);
@@ -195,8 +195,8 @@ describe('push', () => {
 
 	test('silently skips tables whose directories do not exist', async () => {
 		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
-		// Don't create the posts directory — it should not exist
-		const result = await workspace.materializer.push({});
+		// Don't create the posts directory. It should not exist.
+		const result = await workspace.materializer.push();
 
 		expect(result.imported).toBe(0);
 		expect(result.skipped).toBe(0);
@@ -207,7 +207,7 @@ describe('push', () => {
 
 	test('emits error event when frontmatter fails schema validation', async () => {
 		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
-		// Valid frontmatter structure but wrong type — title must be a string,
+		// Valid frontmatter structure but wrong type: title must be a string,
 		// here it's a number. `fromMarkdown` happily returns it; `table.parse()`
 		// catches the schema violation.
 		await writeTestFile(
@@ -215,7 +215,7 @@ describe('push', () => {
 			'---\nid: post-bad\ntitle: 42\npublished: true\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = await workspace.materializer.push();
 
 		expect(result.imported).toBe(0);
 		expect(result.skipped).toBe(0);
@@ -250,7 +250,7 @@ describe('push', () => {
 			'---\nid: note-boom\n---\n\nirrelevant\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = await workspace.materializer.push();
 
 		expect(result.errored).toBe(1);
 		const errorEvent = result.events.find((e) => e.kind === 'error');
@@ -275,7 +275,7 @@ describe('push', () => {
 			'---\nid: p3\ntitle: 42\npublished: true\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = await workspace.materializer.push();
 
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(1);
@@ -308,7 +308,7 @@ describe('push', () => {
 			'---\nid: note-1\n---\n\nThis is the body content\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = await workspace.materializer.push();
 
 		expect(result.imported).toBe(1);
 
@@ -327,7 +327,7 @@ describe('push', () => {
 			'---\nid: p1\ntitle: Hello\npublished: false\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = await workspace.materializer.push();
 
 		expect(result.imported).toBe(1);
 		expect(workspace.tables.posts.has('p1')).toBe(true);
@@ -343,7 +343,7 @@ describe('push', () => {
 			'---\nid: p1\ntitle: Original\npublished: false\n_v: 1\n---\n',
 		);
 
-		const first = await workspace.materializer.push({});
+		const first = await workspace.materializer.push();
 		expect(first.imported).toBe(1);
 
 		const { data: originalPost } = workspace.tables.posts.get('p1');
@@ -358,7 +358,7 @@ describe('push', () => {
 			'---\nid: p1\ntitle: Updated From Disk\npublished: true\n_v: 1\n---\n',
 		);
 
-		const second = await workspace.materializer.push({});
+		const second = await workspace.materializer.push();
 		expect(second.imported).toBe(1);
 
 		const { data: updatedPost } = workspace.tables.posts.get('p1');
@@ -379,7 +379,7 @@ describe('push', () => {
 			'---\nid: n1\nbody: Note body\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = await workspace.materializer.push();
 
 		expect(result.imported).toBe(2);
 		expect(workspace.tables.posts.has('p1')).toBe(true);
@@ -409,7 +409,7 @@ describe('pull', () => {
 			_v: 1,
 		});
 
-		const result = await workspace.materializer.pull({});
+		const result = await workspace.materializer.pull();
 
 		expect(result.written).toBe(2);
 
@@ -432,7 +432,7 @@ describe('pull', () => {
 			_v: 1,
 		});
 
-		await workspace.materializer.pull({});
+		await workspace.materializer.pull();
 
 		const entries = await listTestDir('posts');
 		expect(entries).toContain('p1.md');
@@ -457,7 +457,7 @@ describe('pull', () => {
 		});
 		workspace.tables.notes.set({ id: 'n1', body: 'Custom body', _v: 1 });
 
-		const result = await workspace.materializer.pull({});
+		const result = await workspace.materializer.pull();
 
 		expect(result.written).toBe(1);
 
@@ -478,7 +478,7 @@ describe('pull', () => {
 			_v: 1,
 		});
 
-		await workspace.materializer.pull({});
+		await workspace.materializer.pull();
 
 		const entries = await listTestDir('blog');
 		expect(entries).toContain('p1.md');
@@ -488,7 +488,7 @@ describe('pull', () => {
 
 	test('writes nothing when table is empty', async () => {
 		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
-		const result = await workspace.materializer.pull({});
+		const result = await workspace.materializer.pull();
 
 		expect(result.written).toBe(0);
 
@@ -505,7 +505,7 @@ describe('pull', () => {
 		});
 		workspace.tables.notes.set({ id: 'n1', body: 'Note', _v: 1 });
 
-		const result = await workspace.materializer.pull({});
+		const result = await workspace.materializer.pull();
 
 		expect(result.written).toBe(2);
 
@@ -533,7 +533,7 @@ describe('rebuild', () => {
 			published: true,
 			_v: 1,
 		});
-		await workspace.materializer.pull({});
+		await workspace.materializer.pull();
 		await writeTestFile(
 			'posts/orphan.md',
 			'---\nid: orphan\ntitle: Orphan\npublished: false\n_v: 1\n---\n',
@@ -543,7 +543,7 @@ describe('rebuild', () => {
 		expect(before).toContain('p1.md');
 		expect(before).toContain('orphan.md');
 
-		const result = await workspace.materializer.rebuild({});
+		const result = await workspace.materializer.rebuild();
 
 		expect(result.deleted).toBe(2); // p1.md + orphan.md both unlinked
 		expect(result.written).toBe(1); // only p1 re-written
@@ -564,18 +564,18 @@ describe('rebuild', () => {
 			_v: 1,
 		});
 		workspace.tables.notes.set({ id: 'n1', body: 'Note', _v: 1 });
-		await workspace.materializer.pull({});
+		await workspace.materializer.pull();
 		await writeTestFile(
 			'notes/orphan.md',
 			'---\nid: x\nbody: gone\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.rebuild({ table: 'posts' });
+		const result = await workspace.materializer.rebuild('posts');
 
 		expect(result.deleted).toBe(1); // p1.md
 		expect(result.written).toBe(1); // p1 re-written
 
-		// notes/ is untouched — orphan still there
+		// notes/ is untouched; orphan still there
 		const notesEntries = await listTestDir('notes');
 		expect(notesEntries).toContain('orphan.md');
 
@@ -584,14 +584,14 @@ describe('rebuild', () => {
 
 	test('throws on unknown table name', async () => {
 		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
-		await expect(
-			workspace.materializer.rebuild({ table: 'notAThing' }),
-		).rejects.toThrow(/not in the materialized table set/);
+		await expect(workspace.materializer.rebuild('notAThing')).rejects.toThrow(
+			/not in the materialized table set/,
+		);
 
 		workspace[Symbol.dispose]();
 	});
 
-	test('is idempotent — rebuild twice produces identical filesystem state', async () => {
+	test('is idempotent: rebuild twice produces identical filesystem state', async () => {
 		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
 		workspace.tables.posts.set({
 			id: 'p1',
@@ -606,13 +606,13 @@ describe('rebuild', () => {
 			_v: 1,
 		});
 
-		const first = await workspace.materializer.rebuild({});
+		const first = await workspace.materializer.rebuild();
 		const stateAfterFirst = await listTestDir('posts');
 		const contentsAfterFirst = await Promise.all(
 			stateAfterFirst.map((f) => readTestFile(`posts/${f}`)),
 		);
 
-		const second = await workspace.materializer.rebuild({});
+		const second = await workspace.materializer.rebuild();
 		const stateAfterSecond = await listTestDir('posts');
 		const contentsAfterSecond = await Promise.all(
 			stateAfterSecond.map((f) => readTestFile(`posts/${f}`)),
@@ -671,14 +671,14 @@ describe('round-trip', () => {
 			_v: 1,
 		});
 
-		await workspace1.materializer.pull({});
+		await workspace1.materializer.pull();
 		workspace1[Symbol.dispose]();
 
 		// Verify files on disk have valid frontmatter
 		const p1Content = await readTestFile('posts/p1.md');
 		const p1Parsed = parseMarkdownFile(p1Content);
-		expect(p1Parsed).not.toBeNull();
-		expect(p1Parsed!.frontmatter.title).toBe('Round Trip');
+		if (p1Parsed === null) throw new Error('expected p1.md to parse');
+		expect(p1Parsed.frontmatter.title).toBe('Round Trip');
 
 		// Second workspace: fresh instance, push from the same directory
 		const cache2 = createDisposableCache((id: string) => {
@@ -701,7 +701,7 @@ describe('round-trip', () => {
 		const workspace2 = cache2.open('test.roundtrip.2');
 		await workspace2.whenReady;
 
-		const result = await workspace2.materializer.push({});
+		const result = await workspace2.materializer.push();
 		expect(result.imported).toBe(2);
 
 		const { data: p1 } = workspace2.tables.posts.get('p1');
@@ -715,7 +715,7 @@ describe('round-trip', () => {
 		workspace2[Symbol.dispose]();
 	});
 
-	test('fromMarkdown(toMarkdown(row)) preserves row — MarkdownShape round-trip', async () => {
+	test('fromMarkdown(toMarkdown(row)) preserves row: MarkdownShape round-trip', async () => {
 		// Explicit toMarkdown / fromMarkdown pair over the shared MarkdownShape
 		// type, so the compiler guarantees one is the inverse of the other.
 		const toMarkdownFn = (row: {
@@ -746,7 +746,7 @@ describe('round-trip', () => {
 		workspace.tables.notes.set(original);
 
 		// Pull to disk, then push from disk into a fresh workspace.
-		await workspace.materializer.pull({});
+		await workspace.materializer.pull();
 
 		// Also assert the pure inverse identity: fromMarkdown(toMarkdown(x)) ≡ x
 		expect(fromMarkdownFn(toMarkdownFn(original))).toEqual(original);
@@ -754,8 +754,8 @@ describe('round-trip', () => {
 		// And verify the end-to-end disk round trip.
 		const disk = await readTestFile('notes/n1.md');
 		const parsed = parseMarkdownFile(disk);
-		expect(parsed).not.toBeNull();
-		expect(fromMarkdownFn(parsed!)).toEqual(original);
+		if (parsed === null) throw new Error('expected notes/n1.md to parse');
+		expect(fromMarkdownFn(parsed)).toEqual(original);
 
 		workspace[Symbol.dispose]();
 	});
@@ -763,7 +763,7 @@ describe('round-trip', () => {
 	test('inline field-to-body pair round-trips over MarkdownShape', async () => {
 		// Most real apps store body content in a separate Y.Doc (via
 		// createDisposableCache). This test covers the simpler case where body IS a
-		// row field — `notes.body` here. Inline callbacks keep the intent
+		// row field: `notes.body` here. Inline callbacks keep the intent
 		// at the call site; no helper abstracts the destructure.
 		const { workspace } = await setup({
 			tables: (t) =>
@@ -788,14 +788,14 @@ describe('round-trip', () => {
 		const original = { id: 'n1', body: 'Body content here', _v: 1 as const };
 		workspace.tables.notes.set(original);
 
-		await workspace.materializer.pull({});
+		await workspace.materializer.pull();
 
 		const disk = await readTestFile('notes/n1.md');
 		const parsed = parseMarkdownFile(disk);
-		expect(parsed).not.toBeNull();
+		if (parsed === null) throw new Error('expected notes/n1.md to parse');
 		// Body ended up in the markdown body section, not frontmatter.
-		expect(parsed!.body).toBe('Body content here');
-		expect(parsed!.frontmatter.body).toBeUndefined();
+		expect(parsed.body).toBe('Body content here');
+		expect(parsed.frontmatter.body).toBeUndefined();
 
 		workspace[Symbol.dispose]();
 	});

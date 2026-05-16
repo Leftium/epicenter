@@ -10,6 +10,7 @@
  */
 
 import type { Result } from 'wellcrafted/result';
+import { joinDaemonActionPath } from '../daemon/action-path.js';
 import type { DaemonClient, DaemonError } from '../daemon/client.js';
 import type { RunError } from '../daemon/run-errors.js';
 import type { Action, ActionRegistry } from '../shared/actions.js';
@@ -52,28 +53,6 @@ export type DaemonActions<TActions> = Simplify<{
 }>;
 
 /**
- * Flat proxy rooted at the action registry. Property access returns a
- * callable for that key; calling it dispatches `client.run` with the joined
- * `${route}.${key}` path. `then` is masked at the root (one place, not at
- * every level) so an accidental `await` on the workspace handle does not
- * turn it into a thenable.
- */
-function buildDaemonActionProxy(client: DaemonClient, route: string): unknown {
-	return new Proxy({} as Record<string, unknown>, {
-		get(_target, prop) {
-			if (typeof prop !== 'string') return undefined;
-			if (prop === 'then') return undefined;
-			return (input?: unknown, options?: DaemonActionOptions) =>
-				client.run({
-					actionPath: `${route}.${prop}`,
-					input,
-					waitMs: options?.waitMs ?? DEFAULT_RUN_WAIT_MS,
-				});
-		},
-	});
-}
-
-/**
  * Compose the daemon action facade. Generic `TActions` is the in-process
  * `ActionRegistry`; `DaemonActions<TActions>` rewrites each entry to the
  * daemon `/run` result shape.
@@ -82,5 +61,16 @@ export function buildDaemonActions<TActions extends ActionRegistry>(
 	client: DaemonClient,
 	route: string,
 ): DaemonActions<TActions> {
-	return buildDaemonActionProxy(client, route) as DaemonActions<TActions>;
+	return new Proxy({} as Record<string, unknown>, {
+		get(_target, prop) {
+			if (typeof prop !== 'string') return undefined;
+			if (prop === 'then') return undefined;
+			return (input?: unknown, options?: DaemonActionOptions) =>
+				client.run({
+					actionPath: joinDaemonActionPath(route, prop),
+					input,
+					waitMs: options?.waitMs ?? DEFAULT_RUN_WAIT_MS,
+				});
+		},
+	}) as DaemonActions<TActions>;
 }

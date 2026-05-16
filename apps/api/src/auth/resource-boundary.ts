@@ -1,6 +1,6 @@
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import { AuthUser, type AuthUser as AuthUserType } from '@epicenter/auth';
-import type { EncryptionKeys } from '@epicenter/encryption';
+import { type ApiMeResponse, AuthUser } from '@epicenter/auth';
+import type { SubjectKeyring } from '@epicenter/encryption';
 import type { User } from 'better-auth';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -11,11 +11,6 @@ import { hasScope, OAuthError, WORKSPACES_OPEN_SCOPE } from './oauth-error.js';
 import { createOAuthIssuerURL, createOAuthJwksURL } from './oauth-metadata.js';
 
 export { WORKSPACES_OPEN_SCOPE };
-
-export type WorkspaceIdentity = {
-	user: AuthUserType;
-	encryptionKeys: EncryptionKeys;
-};
 
 type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
@@ -57,9 +52,9 @@ export function parseBearer(value: string | null): string | null {
  * resolve the calling Better Auth user. The single source of truth for what
  * "a token good enough to reach a protected resource" means in this codebase.
  *
- * Wrappers project the user differently:
- * - `resolveBearerUser` returns the lean `AuthUser` for the middleware path.
- * - `resolveBearerIdentity` adds derived encryption keys for `/api/me`.
+ * Both wrappers (`resolveBearerUser`, `resolveBearerIdentity`) project the
+ * Better Auth `User` through `AuthUser.assert`, then `resolveBearerIdentity`
+ * additionally derives the subject keyring.
  */
 async function verifyBearerToUser(
 	deps: ResolverDeps,
@@ -89,7 +84,7 @@ async function verifyBearerToUser(
 /**
  * Cheap resolver for the protected-resource boundary (`/ai/*`,
  * `/rooms/*`, `/api/billing/*`, `/api/assets/*`).
- * Skips encryption-key derivation; only the calling user is needed once
+ * Skips subject keyring derivation; only the calling user is needed once
  * the scope is proven.
  */
 export async function resolveBearerUser(
@@ -97,24 +92,27 @@ export async function resolveBearerUser(
 ): Promise<Result<AuthUser, OAuthError>> {
 	const { data: user, error } = await verifyBearerToUser(deps);
 	if (error) return Err(error);
-	return Ok({ id: user.id, email: user.email });
+	return Ok(AuthUser.assert(user));
 }
 
 /**
  * Full resolver for `/api/me`. Returns the local-first payload the apps
- * need at boot: the calling user plus the per-user encryption key set
- * derived from the workspace identity secret.
+ * need at boot: the calling user plus the per-subject keyring derived from
+ * the root keyring.
  */
 export async function resolveBearerIdentity(
 	deps: ResolverDeps & {
-		deriveUserEncryptionKeys(userId: string): Promise<EncryptionKeys>;
+		deriveSubjectKeyring(subject: string): Promise<SubjectKeyring>;
 	},
-): Promise<Result<WorkspaceIdentity, OAuthError>> {
+): Promise<Result<ApiMeResponse, OAuthError>> {
 	const { data: user, error } = await verifyBearerToUser(deps);
 	if (error) return Err(error);
 	return Ok({
 		user: AuthUser.assert(user),
-		encryptionKeys: await deps.deriveUserEncryptionKeys(user.id),
+		localIdentity: {
+			subject: user.id,
+			keyring: await deps.deriveSubjectKeyring(user.id),
+		},
 	});
 }
 
@@ -129,17 +127,18 @@ export function resolveRequestOAuthUser<E extends RequestOAuthEnv>(
 }
 
 /**
- * Resolve the OAuth bearer on the current request to the full workspace
- * identity payload. Key derivation stays injected so this module remains
- * free of Worker-only imports and easy to test through the pure resolver.
+ * Resolve the OAuth bearer on the current request into the canonical
+ * `/api/me` response payload. Subject keyring derivation stays injected so
+ * this module remains free of Worker-only imports and easy to test through
+ * the pure resolver.
  */
-export function resolveRequestWorkspaceIdentity<E extends RequestOAuthEnv>(
+export function resolveRequestApiMe<E extends RequestOAuthEnv>(
 	c: Context<E>,
-	deriveUserEncryptionKeys: (userId: string) => Promise<EncryptionKeys>,
+	deriveSubjectKeyring: (subject: string) => Promise<SubjectKeyring>,
 ) {
 	return resolveBearerIdentity({
 		...createResolverDeps(c),
-		deriveUserEncryptionKeys,
+		deriveSubjectKeyring,
 	});
 }
 

@@ -17,7 +17,7 @@ The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, co
 | attachTable / attachTables / attachKv                          |
 | attachEncryption -> .attachTable / .attachTables / .attachKv    |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
-| attachOwnedBroadcastChannel                                    |
+| LocalOwner -> attachIndexedDb / attachBroadcastChannel / wipe   |
 | openCollaboration (sync + presence + RPC + peers; actions: {} for content docs)|
 | attachSqliteMaterializer                                       |
 +----------------------------------------------------------------+
@@ -69,11 +69,12 @@ The factory body is where you wire everything. Because you own the return shape,
 The encryption coordinator owns sibling attachments: `attachTable` / `attachTables` / `attachKv` are methods on it, not top-level exports.
 
 ```typescript
-import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
+import { attachEncryption } from '@epicenter/workspace';
+import type { SubjectKeyring } from '@epicenter/encryption';
 
-function openBlog({ encryptionKeys }: { encryptionKeys: () => EncryptionKeys }) {
+function openBlog({ keyring }: { keyring: () => SubjectKeyring }) {
   const ydoc = new Y.Doc({ guid: 'blog' });
-  const encryption = attachEncryption(ydoc, { encryptionKeys });
+  const encryption = attachEncryption(ydoc, { keyring });
   const tables = encryption.attachTables(myTables);
   const kv = encryption.attachKv(myKv);
   return { ydoc, tables, kv, encryption, [Symbol.dispose]() { ydoc.destroy(); } };
@@ -89,25 +90,30 @@ requests, and exposes a `peers` surface for cross-peer dispatch.
 
 ```typescript
 import {
-  attachIndexedDb,
-  attachOwnedBroadcastChannel,
+  type LocalOwner,
   openCollaboration,
   roomWsUrl,
 } from '@epicenter/workspace';
-import { auth } from './auth';
 
-function openBlog() {
+function openBlog({
+  owner,
+  openWebSocket,
+}: {
+  owner: LocalOwner;
+  openWebSocket?: (
+    url: string | URL,
+    protocols?: string[],
+  ) => WebSocket | Promise<WebSocket>;
+}) {
   const ydoc = new Y.Doc({ guid: 'blog' });
   const tables = attachTables(ydoc, myTables);
-  if (auth.state.status === 'signed-out') return null;
-
-  const idb = attachIndexedDb(ydoc);
-  attachOwnedBroadcastChannel(ydoc, { userId: auth.state.unlock.userId });
+  const idb = owner.attachIndexedDb(ydoc);
+  owner.attachBroadcastChannel(ydoc);
   const collaboration = openCollaboration(ydoc, {
     url: roomWsUrl('https://api.example.com', ydoc.guid),
-    openWebSocket: auth.openWebSocket,
+    openWebSocket,
     waitFor: idb.whenLoaded,
-    identity: { id: 'browser', name: 'Browser', platform: 'web' },
+    replicaId: 'browser',
     actions: {},
   });
 

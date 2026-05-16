@@ -1,10 +1,11 @@
 export { type AuthClient, type AuthState } from './auth-contract.js';
 export * from './auth-errors.js';
 export {
+	ApiMeResponse,
 	AuthUser,
-	type LocalUnlockBundle,
 	type OAuthTokenGrant,
 	PersistedAuth,
+	SubjectIdentity,
 } from './auth-types.js';
 export {
 	type AuthFetch,

@@ -16,26 +16,26 @@ If something is not visible there, it is not presented as fact here.
 ## What this system is
 This is server-managed encryption at the workspace value layer.
 It is not user-held end-to-end encryption.
-The auth server derives per-user keys from `ENCRYPTION_SECRETS` and returns them in the session response.
+The auth server derives per-subject keys from `ENCRYPTION_SECRETS` and returns them in the session response.
 The client derives per-workspace keys locally and uses those keys to encrypt individual CRDT values.
 That split is the trust boundary.
 The sync path only relays encrypted values.
-The auth path can derive user keys because it has access to the deployment secret.
+The auth path can derive subject keys because it has access to the deployment root keyring.
 
 ## Key hierarchy
 The hierarchy is two-stage.
-Server code derives a per-user key.
-Client code derives a per-workspace key from that user key.
+Server code derives a per-subject key.
+Client code derives a per-workspace key from that subject key.
 ```text
-ENCRYPTION_SECRETS entry
+ENCRYPTION_SECRETS entry        (root keyring)
         |
         | SHA-256(secret)
         v
 root key material
         |
-        | HKDF-SHA256 info = "user:{userId}"
+        | HKDF-SHA256 info = "subject:{subject}"
         v
-user key
+subject key                     (per-subject keyring)
         |
         | HKDF-SHA256 info = "workspace:{workspaceId}"
         v
@@ -45,67 +45,61 @@ workspace key
         v
 encrypted CRDT value
 ```
-On the server, `apps/api/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption` to parse the keyring and derive per-user keys.
-It returns one `{ version, userKeyBase64 }` entry per configured secret version.
-On the client, the encryption coordinator (`attachEncryption(ydoc, { encryptionKeys })`) reads `encryptionKeys()` synchronously at every `attachTable` / `attachKv` / `attachIndexedDb` site, decodes each `userKeyBase64`, runs `deriveWorkspaceKey(userKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
+On the server, `apps/api/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption` to parse the root keyring and derive per-subject keys.
+It returns one `{ version, subjectKeyBase64 }` entry per configured root keyring version.
+On the client, the encryption coordinator (`attachEncryption(ydoc, { keyring })`) reads `keyring()` synchronously at every `attachTable` / `attachKv` / `attachIndexedDb` site, decodes each `subjectKeyBase64`, runs `deriveWorkspaceKey(subjectKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
 The highest version becomes the current key for new writes.
 
 ## How keys reach the client
 Keys come through `/api/me`.
-`apps/api/src/app.ts` mounts `GET /api/me` behind the bearer + `workspaces:open` scope check from `resolveRequestWorkspaceIdentity`. The handler returns `{ user: { id, email }, encryptionKeys }`.
-`@epicenter/auth` calls `/api/me` at sign-in and at cold-boot when online, persists `{ userId, encryptionKeys }` as the `unlock` section of the cell, and exposes them through `auth.state.unlock.encryptionKeys` whenever the auth state is not `signed-out`.
-Cold-boot offline keeps the cached `unlock` so the workspace can decrypt local Yjs data without a network roundtrip; the bearer is not attached to outbound requests until `/api/me` re-confirms the cell in this runtime.
-The workspace does not hold an independently mutable copy of the keys. `attachEncryption` takes an `encryptionKeys` callback and calls it when an encrypted table, KV store, or IndexedDB provider attaches. Each attached store keeps the keyring derived at that attachment boundary. In per-app session modules, the workspace builder reads `auth.state.unlock.encryptionKeys` directly:
+`apps/api/src/app.ts` mounts `GET /api/me` behind the bearer + `workspaces:open` scope check from `resolveRequestWorkspaceIdentity`. The handler returns `{ user: { id, email }, localIdentity: { subject, keyring } }`.
+`@epicenter/auth` calls `/api/me` at sign-in and at cold-boot when online, persists `{ subject, keyring }` as the `localIdentity` section of the cell, and exposes it through `auth.state.localIdentity.keyring` whenever the auth state is not `signed-out`.
+Cold-boot offline keeps the cached `localIdentity` so the workspace can decrypt local Yjs data without a network roundtrip; the bearer is not attached to outbound requests until `/api/me` re-confirms the cell in this runtime.
+The workspace does not hold an independently mutable copy of the keys. `attachEncryption` takes a `keyring` callback and calls it when an encrypted table, KV store, or IndexedDB provider attaches. Each attached store keeps the keyring derived at that attachment boundary. Browser app session modules usually receive a `LocalOwner` from `createSession`; that owner carries the lazy keyring reader:
 ```ts
-const fuji = openFuji({
-	userId,
-	peer,
-	bearerToken: () => auth.bearerToken,
-	encryptionKeys: () => {
-		if (auth.state.status === 'signed-out') {
-			throw new Error('[fuji] auth signed-out.');
-		}
-		return auth.state.unlock.encryptionKeys;
-	},
+export const session = createSession({
+	auth,
+	build: ({ owner }) =>
+		openMyApp({
+			owner,
+			replicaId: createReplicaId({ storage: localStorage }),
+			openWebSocket: auth.openWebSocket,
+		}),
 });
 ```
-Same-user identity updates do not remount the workspace. Auth callbacks read `auth.state` at the boundary that asks for them: sync can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached. There is no mutation hook on the workspace.
+Same-subject identity updates do not remount the workspace. Auth callbacks read `auth.state` at the boundary that asks for them: sync can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached. There is no mutation hook on the workspace.
 
 ## Browser local persistence
 Authenticated browser workspaces open local IndexedDB only after auth has settled into a signed-in state. The session module guarantees that boundary: it builds the workspace lazily once `auth.state.status === 'signed-in'` and disposes it on sign-out.
 Two inputs flow into the workspace:
-- `userId` scopes local IndexedDB and BroadcastChannel names to the owner. It is captured once at build time because IDB and BroadcastChannel keys are immutable for the lifetime of the workspace.
-- `encryptionKeys: () => EncryptionKeys` is a callback the encryption coordinator invokes when an encrypted store is attached. Already-attached stores keep their derived keyring; same-user key rotation needs a re-attach to affect those stores.
+- `owner: LocalOwner` scopes local IndexedDB and BroadcastChannel names to the owner. `createSession` builds it from `localIdentity.subject` once at session mount because IDB and BroadcastChannel keys are immutable for the lifetime of the workspace.
+- The owner also carries a `keyring: () => SubjectKeyring` callback. The encryption coordinator invokes it when an encrypted store is attached. Already-attached stores keep their derived keyring; same-subject key rotation needs a re-attach to affect those stores.
 
 The browser factory shape is:
 ```ts
 export function openMyApp({
-	userId,
-	peer,
-	bearerToken,
-	encryptionKeys,
+	owner,
+	replicaId,
+	openWebSocket,
 }: {
-	userId: string;
-	peer: PeerIdentity;
-	bearerToken?: () => string | null;
-	encryptionKeys: () => EncryptionKeys;
+	owner: LocalOwner;
+	replicaId: string;
+	openWebSocket?: OpenWebSocket;
 }) {
-	const doc = openMyAppDoc({ encryptionKeys });
+	const doc = openMyAppDoc({ owner });
 
-	const idb = doc.encryption.attachIndexedDb(doc.ydoc, { userId });
-	attachOwnedBroadcastChannel(doc.ydoc, { userId });
+	const idb = owner.attachIndexedDb(doc.ydoc);
+	owner.attachBroadcastChannel(doc.ydoc);
 	// ...
 }
 ```
 
 The storage name is derived inside `@epicenter/workspace` as:
 ```text
-epicenter.v1.user.{userId}.yjs.{ydocGuid}
+epicenter.owner.{ownerId}.yjs.{ydocGuid}
 ```
 
-The `v1` segment names the local Yjs storage namespace. It gives future cleanup or migration code one prefix to target, while app code still treats the full string as an implementation detail.
-
-App code should not build that string. Device cleanup uses `wipeOwnerLocalYjsData({ userId, ydocGuids })`, which deletes known document databases and also sweeps enumerable IndexedDB names with the same owner prefix when the browser exposes `indexedDB.databases()`.
+App code should not build that string. Device cleanup uses `owner.wipeLocalYjsData(ydocGuids)`, which deletes known document databases and also sweeps enumerable IndexedDB names with the same owner prefix when the browser exposes `indexedDB.databases()`.
 
 ## Key lifecycle in the current code
 Keys are definitely loaded on login.
@@ -114,27 +108,19 @@ Sign-out disposes the live workspace after the auth session changes.
 It does not wipe local IndexedDB data.
 The reviewed code still does not show an explicit in-memory key wipe inside `createEncryptedYkvLww`; workspace disposal is the current key-drop boundary for `createSession` apps.
 The closest Bitwarden analogy is lock, not logout: Bitwarden documents unlock as using encrypted data already stored on disk and lock as deleting decrypted vault data and the account encryption key from memory. Bitwarden separately documents that logout wipes PIN settings. See [Understand Log In vs. Unlock](https://bitwarden.com/help/understand-log-in-vs-unlock/) and [Unlock With PIN](https://bitwarden.com/help/unlock-with-pin/).
-The logout path is owned by the per-app session module. `createSession` reconciles `auth.state` against the live workspace: a sign-out disposes the workspace, a same-user update is a no-op at the session boundary, and a different-user transition disposes the workspace and reloads the page:
+The logout path is owned by the per-app session module. `createSession` reconciles `auth.state` against the live workspace: sign-out disposes the workspace, and same-subject updates are a no-op at the session boundary. A different subject from `/api/me` is rejected by auth before the workspace is reused:
 ```ts
 import { createSession, type InferSignedIn } from '@epicenter/svelte';
 
 export const session = createSession({
 	auth,
 	build: ({ owner }) => {
-		const userId = owner.userId;
 		const workspace = openMyApp({
-			userId,
-			peer,
-			bearerToken: () => auth.bearerToken,
-			encryptionKeys: () => {
-				if (auth.state.status === 'signed-out') {
-					throw new Error('[my-app] auth signed-out.');
-				}
-				return auth.state.unlock.encryptionKeys;
-			},
+			owner,
+			replicaId: createReplicaId({ storage: localStorage }),
+			openWebSocket: auth.openWebSocket,
 		});
 		return {
-			userId,
 			workspace,
 			[Symbol.dispose]() {
 				workspace[Symbol.dispose]();
@@ -148,7 +134,7 @@ export type MyAppSignedIn = InferSignedIn<typeof session>;
 So these points are implemented and verifiable:
 - keys are loaded on login
 - sign-out disposes the live workspace
-- identity switch reloads the browser client
+- a different `/api/me` subject wipes the persisted auth cell and publishes `signed-out`
 - owner-scoped IndexedDB data remains available for the same authenticated owner after reload
 This point is not visible as an explicit step in the reviewed code:
 - clearing the in-memory encryption state after logout

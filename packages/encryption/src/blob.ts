@@ -1,7 +1,10 @@
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import type { Brand } from 'wellcrafted/brand';
-import { assertEncryptionKeyVersion } from './keys.js';
+import {
+	assertEncryptionKeyVersion,
+	type ReadonlyWorkspaceKeyring,
+} from './keys.js';
 
 const NONCE_LENGTH = 24;
 const TAG_LENGTH = 16;
@@ -28,35 +31,10 @@ export type EncryptBytesOptions = {
 };
 
 export type DecryptBytesOptions = {
-	keyring: ReadonlyMap<number, Uint8Array>;
+	keyring: ReadonlyWorkspaceKeyring;
 	blob: EncryptedBlob;
 	aad?: Uint8Array;
 };
-
-function encryptPlaintextBytes({
-	key,
-	keyVersion,
-	plaintext,
-	aad,
-}: EncryptBytesOptions): EncryptedBlob {
-	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
-	assertEncryptionKeyVersion(keyVersion);
-	const nonce = randomBytes(NONCE_LENGTH);
-	const cipher = aad
-		? xchacha20poly1305(key, nonce, aad)
-		: xchacha20poly1305(key, nonce);
-	const ciphertext = cipher.encrypt(plaintext);
-
-	const packed = new Uint8Array(
-		HEADER_LENGTH + nonce.length + ciphertext.length,
-	);
-	packed[0] = 1;
-	packed[1] = keyVersion;
-	packed.set(nonce, HEADER_LENGTH);
-	packed.set(ciphertext, HEADER_LENGTH + nonce.length);
-
-	return packed as EncryptedBlob;
-}
 
 function decryptCiphertextBytes(
 	blob: EncryptedBlob,
@@ -86,8 +64,29 @@ function decryptCiphertextBytes(
  * have bytes, such as Yjs update payloads, should use this instead of
  * round-tripping through strings.
  */
-export function encryptBytes(options: EncryptBytesOptions): EncryptedBlob {
-	return encryptPlaintextBytes(options);
+export function encryptBytes({
+	key,
+	keyVersion,
+	plaintext,
+	aad,
+}: EncryptBytesOptions): EncryptedBlob {
+	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
+	assertEncryptionKeyVersion(keyVersion);
+	const nonce = randomBytes(NONCE_LENGTH);
+	const cipher = aad
+		? xchacha20poly1305(key, nonce, aad)
+		: xchacha20poly1305(key, nonce);
+	const ciphertext = cipher.encrypt(plaintext);
+
+	const packed = new Uint8Array(
+		HEADER_LENGTH + nonce.length + ciphertext.length,
+	);
+	packed[0] = 1;
+	packed[1] = keyVersion;
+	packed.set(nonce, HEADER_LENGTH);
+	packed.set(ciphertext, HEADER_LENGTH + nonce.length);
+
+	return packed as EncryptedBlob;
 }
 
 /**
@@ -131,7 +130,7 @@ export function encryptValue(
 	aad?: Uint8Array,
 	keyVersion: number = 1,
 ): EncryptedBlob {
-	return encryptPlaintextBytes({
+	return encryptBytes({
 		key,
 		keyVersion,
 		plaintext: textEncoder.encode(plaintext),

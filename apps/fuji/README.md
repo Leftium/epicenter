@@ -21,35 +21,33 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
-Fuji's root workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The session module captures `userId` once at build time because IDB and BroadcastChannel keys are immutable for the workspace's lifetime. It passes auth-bound callbacks to the workspace at construction time: sync opens sockets through auth on connection attempts, while encrypted stores keep the keyring derived when they attach.
+Fuji's root workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The session module receives a `LocalOwner` from `createSession` and passes it into the browser factory. The owner hides the subject to owner handoff and carries the lazy keyring reader. Sync opens sockets through auth on connection attempts, while encrypted stores keep the keyring derived when they attach.
 
 ```ts
 export function openFujiBrowser({
-  userId,
-  peer,
+  owner,
+  replicaId,
   openWebSocket,
-  encryptionKeys,
 }: {
-  userId: string;
-  peer: PeerIdentity;
+  owner: LocalOwner;
+  replicaId: string;
   openWebSocket?: (
     url: string | URL,
     protocols?: string[],
   ) => WebSocket | Promise<WebSocket>;
-  encryptionKeys: () => EncryptionKeys;
 }) {
   const rootYdoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
-  const encryption = attachEncryption(rootYdoc, { encryptionKeys });
+  const encryption = owner.attachEncryption(rootYdoc);
   const tables = encryption.attachTables(fujiTables);
   const kv = encryption.attachKv({});
-  const idb = encryption.attachIndexedDb(rootYdoc, { userId });
-  attachOwnedBroadcastChannel(rootYdoc, { userId });
+  const idb = owner.attachIndexedDb(rootYdoc);
+  owner.attachBroadcastChannel(rootYdoc);
   const actions = createFujiActions(tables);
   const collaboration = openCollaboration(rootYdoc, {
     url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
     waitFor: idb.whenLoaded,
     openWebSocket,
-    identity: peer,
+    replicaId,
     actions,
   });
   return { ydoc: rootYdoc, tables, kv, idb, collaboration };

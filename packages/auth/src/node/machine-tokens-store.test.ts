@@ -37,18 +37,21 @@ afterEach(async () => {
 	}
 });
 
-const encryptionKeys = [
-	{ version: 1, userKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=' },
+const keyring = [
+	{
+		version: 1,
+		subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+	},
 ] as const;
 
-function makeCell(userId = 'user-1'): PersistedAuth {
+function makeCell(subject = 'user-1'): PersistedAuth {
 	return {
 		grant: {
 			accessToken: 'a',
 			refreshToken: 'r',
 			accessTokenExpiresAt: 1_700_000_000_000,
 		},
-		unlock: { userId, encryptionKeys: [...encryptionKeys] },
+		localIdentity: { subject, keyring: [...keyring] },
 	};
 }
 

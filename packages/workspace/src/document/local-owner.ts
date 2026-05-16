@@ -1,77 +1,87 @@
 /// <reference lib="dom" />
 
 /**
- * createLocalOwner: identity-scoped facade for authenticated browser
- * workspaces.
+ * Browser-local owner facade for an authenticated workspace session.
  *
- * One owner per signed-in user session. Every browser-local Yjs artifact
- * (IndexedDB database name, BroadcastChannel key, wipe namespace) is keyed by
- * `(userId, ydocGuid)`, and every encrypted resource is bound to the same
- * user's encryption keys. The owner is the one named place that knows the
- * pair.
+ * Auth calls the server-issued identity label a `subject` because it derives
+ * a `SubjectKeyring`. This package calls the same value `ownerId` once it is
+ * used to name IndexedDB, BroadcastChannel, and wipe boundaries.
  *
- * Daemons do not construct an owner: they call `attachEncryption` directly
- * with just `encryptionKeys` and persist via filesystem instead of IDB.
+ * Auth exposes this value as `auth.state.localIdentity.subject`. The workspace
+ * layer receives the same string as `ownerId`. The rename is intentional: auth
+ * names where the value comes from, while workspace names what the value owns
+ * locally.
+ *
+ * Daemons do not construct an owner. They call `attachEncryption` directly
+ * with `keyring` and persist through the filesystem instead of IndexedDB.
  */
 
-import type { EncryptionKeys } from '@epicenter/encryption';
+import type { SubjectKeyring } from '@epicenter/encryption';
 import { clearDocument } from 'y-indexeddb';
 import type * as Y from 'yjs';
-import { attachBroadcastChannelWithKey } from './attach-broadcast-channel.js';
+import { attachBroadcastChannel } from './attach-broadcast-channel.js';
 import { attachEncryptedIndexedDb } from './attach-encrypted-indexed-db.js';
 import { attachEncryption } from './attach-encryption.js';
-import { createOwnedYjsKey } from './local-yjs-key.js';
+import { createOwnedYjsKey, getOwnedYjsPrefix } from './local-yjs-key.js';
 
 export type LocalOwner = ReturnType<typeof createLocalOwner>;
 
 export function createLocalOwner({
-	userId,
-	encryptionKeys,
+	ownerId,
+	keyring,
 }: {
-	userId: string;
-	encryptionKeys: () => EncryptionKeys;
+	/**
+	 * Stable owner label for browser-local workspace data.
+	 *
+	 * The auth package exposes this value as `localIdentity.subject`; workspace
+	 * code receives the same string as `ownerId`. This scopes IndexedDB
+	 * databases, BroadcastChannel names, and wipe boundaries so two accounts in
+	 * the same browser profile do not share local workspace data.
+	 */
+	ownerId: string;
+	keyring: () => SubjectKeyring;
 }) {
 	return {
 		/**
 		 * Attach per-ydoc encrypted tables and KV. Thin delegate to the free
-		 * `attachEncryption(ydoc, { encryptionKeys })`; browsers go through
-		 * the owner so the encryption keys never have to be re-passed.
+		 * `attachEncryption(ydoc, { keyring })`; browsers go through the owner
+		 * so the keyring callback never has to be re-passed.
 		 */
 		attachEncryption(ydoc: Y.Doc) {
-			return attachEncryption(ydoc, { encryptionKeys });
+			return attachEncryption(ydoc, { keyring });
 		},
 		/**
 		 * Attach encrypted local IndexedDB persistence. The database name is
-		 * `createOwnedYjsKey(userId, ydoc.guid)` so other signed-in users on
-		 * the same browser profile cannot read this user's persisted CRDT
-		 * state.
+		 * `createOwnedYjsKey(ownerId, ydoc.guid)`. Another signed-in owner in
+		 * the same browser profile gets a different database name for the same
+		 * document guid.
 		 */
 		attachIndexedDb(ydoc: Y.Doc) {
 			return attachEncryptedIndexedDb(ydoc, {
-				databaseName: createOwnedYjsKey(userId, ydoc.guid),
-				encryptionKeys,
+				databaseName: createOwnedYjsKey(ownerId, ydoc.guid),
+				keyring,
 			});
 		},
 		/**
 		 * Attach owner-scoped cross-tab BroadcastChannel sync. Two signed-in
-		 * users in the same browser profile cannot exchange plaintext updates
-		 * through BroadcastChannel.
+		 * subjects in the same browser profile cannot exchange plaintext
+		 * updates through BroadcastChannel.
 		 */
 		attachBroadcastChannel(ydoc: Y.Doc) {
-			attachBroadcastChannelWithKey(ydoc, createOwnedYjsKey(userId, ydoc.guid));
+			attachBroadcastChannel(ydoc, createOwnedYjsKey(ownerId, ydoc.guid));
 		},
 		/**
 		 * Delete every owner-scoped IndexedDB database currently visible to
 		 * this browser profile, plus any explicitly named ones. Use from
-		 * `wipe()` paths on sign-out so the next signed-in user starts from a
-		 * clean slate.
+		 * `wipe()` paths on sign-out so the next signed-in subject starts
+		 * from a clean slate.
 		 */
 		async wipeLocalYjsData(ydocGuids: Iterable<string> = []) {
-			const prefix = `epicenter.v1.user.${userId}.yjs.`;
+			const prefix = getOwnedYjsPrefix(ownerId);
 			const names = new Set<string>();
 
 			for (const guid of ydocGuids) {
-				names.add(createOwnedYjsKey(userId, guid));
+				names.add(createOwnedYjsKey(ownerId, guid));
 			}
 
 			if ('databases' in indexedDB) {

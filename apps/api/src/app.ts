@@ -3,6 +3,7 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
+import type { ApiMeResponse, AuthUser } from '@epicenter/auth';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -16,7 +17,7 @@ import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
-import { deriveUserEncryptionKeys } from './auth/encryption';
+import { deriveSubjectKeyring } from './auth/encryption';
 import {
 	createOAuthIssuerURL,
 	OAUTH_AUTHORIZATION_SERVER_METADATA_PATH,
@@ -26,9 +27,8 @@ import {
 } from './auth/oauth-metadata';
 import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
 import {
+	resolveRequestApiMe,
 	resolveRequestOAuthUser,
-	resolveRequestWorkspaceIdentity,
-	type WorkspaceIdentity,
 } from './auth/resource-boundary';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
@@ -105,7 +105,7 @@ export type Env = {
 		db: Db;
 		auth: Auth;
 		authBaseURL: string;
-		user: WorkspaceIdentity['user'];
+		user: AuthUser;
 		afterResponse: AfterResponseQueue;
 		/** Current plan ID. Only set by ensureAutumnCustomer middleware on /ai/* routes. */
 		planId: string | undefined;
@@ -264,28 +264,29 @@ app.get(
 	},
 );
 // Current-user endpoint: returns the authenticated user record plus their
-// workspace encryption keys. This is the single Epicenter identity surface
-// every client (browser apps, browser extension, CLI) calls at sign-in and
-// at cold-boot when online to refresh the persisted unlock cell.
+// local workspace identity (subject + per-subject keyring). This is the
+// single Epicenter identity surface every client (browser apps, browser
+// extension, CLI) calls at sign-in and at cold-boot when online to refresh
+// the persisted localIdentity cell.
 //
 // Inherits the bearer + workspaces:open scope check from
-// resolveRequestWorkspaceIdentity, so unauthenticated/under-scoped callers
-// get the standard 401/403 OAuth resource responses (WWW-Authenticate +
-// JSON body) without a separate middleware layer.
+// resolveRequestApiMe, so unauthenticated/under-scoped callers get the
+// standard 401/403 OAuth resource responses (WWW-Authenticate + JSON body)
+// without a separate middleware layer.
 app.get(
 	'/api/me',
 	describeRoute({
 		description:
-			'Return the authenticated user and their workspace encryption keys',
+			'Return the authenticated user and their local workspace identity',
 		tags: ['auth'],
 	}),
 	async (c) => {
-		const { data: identity, error } = await resolveRequestWorkspaceIdentity(
+		const { data: identity, error } = await resolveRequestApiMe(
 			c,
-			deriveUserEncryptionKeys,
+			deriveSubjectKeyring,
 		);
 		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
-		return c.json(identity);
+		return c.json(identity satisfies ApiMeResponse);
 	},
 );
 // OAuth discovery. Register issuer-path routes before the /auth/* catch-all
@@ -353,21 +354,8 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 
 app.use('/ai/*', requireOAuthUser);
 app.use('/rooms/*', requireOAuthUser);
-app.use('/api/health', requireOAuthUser);
 app.use('/api/billing/*', requireOAuthUser);
 app.use('/api/assets/*', requireOAuthUser);
-
-// Bearer-liveness probe. The CLI's `status` command pings this to verify
-// the current access token still works after a local id_token decode. Plain
-// 200 'ok' body; identity comes from the id_token, not from this response.
-app.get(
-	'/api/health',
-	describeRoute({
-		description: 'Bearer liveness probe (200 with a valid OAuth token)',
-		tags: ['health', 'auth'],
-	}),
-	(c) => c.text('ok'),
-);
 
 // Ensure Autumn customer exists and stash planId for model gating.
 // Runs after requireOAuthUser for AI routes so c.var.user is available.
@@ -425,37 +413,44 @@ app.post(
 // ---------------------------------------------------------------------------
 
 /**
- * DO name namespacing: `user:{userId}:rooms:{room}`
+ * DO name namespacing: `subject:{subject}:rooms:{room}`
  *
- * We use user-scoped DO names (Google Docs model) rather than org-scoped names
- * (Vercel/Supabase model). Each user gets their own DO instance per room.
+ * We use subject-scoped DO names (Google Docs model) rather than org-scoped
+ * names (Vercel/Supabase model). Each owner gets their own DO instance per
+ * room. `subject` mirrors the client-side `localIdentity.subject` and equals
+ * the Better Auth `user.id` today; naming the prefix `subject:` matches the
+ * encryption derivation labels (`subject:{subject}`, `workspace:{wsId}`).
+ * Browser-local storage receives this same value as `ownerId`; it is named
+ * for its storage role there, not for its auth role.
  *
  * Alternatives considered:
  *
- * - **Org-scoped (`org:{orgId}:{name}`)**: Evaluated for enterprise and self-hosted.
- *   Problems: most rooms hold personal data that should not merge into a
- *   shared Y.Doc. Org-scoped would require a per-room `scope` flag anyway,
- *   adding complexity without simplifying.
+ * - **Org-scoped (`org:{orgId}:{name}`)**: Evaluated for enterprise and
+ *   self-hosted. Problems: most rooms hold personal data that should not
+ *   merge into a shared Y.Doc. Org-scoped would require a per-room `scope`
+ *   flag anyway, adding complexity without simplifying.
  *
- * - **Org-scoped with personal sub-scope (`org:{orgId}:user:{userId}:{name}`)**:
- *   Embeds org management in the app. For self-hosted enterprise, the deployment
- *   itself IS the org boundary (like GitLab, Outline, Mattermost), so org tables
- *   and Better Auth organization plugin are unnecessary overhead.
+ * - **Org-scoped with personal sub-scope (`org:{orgId}:subject:{subject}:{name}`)**:
+ *   Embeds org management in the app. For self-hosted enterprise, the
+ *   deployment itself IS the org boundary (like GitLab, Outline, Mattermost),
+ *   so org tables and Better Auth organization plugin are unnecessary overhead.
  *
- * Current scheme keeps the app auth-simple ("user has account, user accesses
- * their data") and works for both cloud and self-hosted without org infrastructure.
- * When sharing is needed, it follows the Google Docs pattern: the owner's DO
- * name stays the same, an ACL table grants access to other users, and auth
- * middleware checks "is this user the owner OR in the ACL?"
+ * Current scheme keeps the app auth-simple ("subject has account, subject
+ * accesses their data") and works for both cloud and self-hosted without org
+ * infrastructure. When sharing is needed, it follows the Google Docs pattern:
+ * the owner's DO name stays the same, an ACL table grants access to other
+ * subjects, and auth middleware checks "is this caller the owner OR in the
+ * ACL?"
  *
  * Multi-tenant cloud isolation (if needed later) is a platform-layer concern,
- * a tenant prefix added at the routing layer, not embedded in the app's data model.
+ * a tenant prefix added at the routing layer, not embedded in the app's data
+ * model.
  */
 
-/** Get a Room DO stub and its DO name for the authenticated user's room. */
+/** Get a Room DO stub and its DO name for the authenticated subject's room. */
 function getRoomStub(c: Context<Env>) {
 	const room = c.req.param('room')!;
-	const doName = `user:${c.var.user.id}:rooms:${room}`;
+	const doName = `subject:${c.var.user.id}:rooms:${room}`;
 	return {
 		stub: c.env.ROOM.get(c.env.ROOM.idFromName(doName)),
 		doName,

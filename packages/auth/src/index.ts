@@ -3,9 +3,9 @@ export * from './auth-errors.js';
 export {
 	ApiMeResponse,
 	AuthUser,
-	SubjectIdentity,
 	type OAuthTokenGrant,
 	PersistedAuth,
+	SubjectIdentity,
 } from './auth-types.js';
 export {
 	type AuthFetch,

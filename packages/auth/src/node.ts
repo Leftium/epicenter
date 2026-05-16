@@ -6,9 +6,9 @@ export {
 	loginWithOob,
 	logout,
 	MachineAuthRequestError,
+	type MachineIdentity,
 	type StatusResult,
 	status,
-	type MachineIdentity,
 } from './node/machine-auth.js';
 export {
 	loadMachineTokens,

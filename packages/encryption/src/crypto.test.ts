@@ -286,7 +286,9 @@ describe('deriveWorkspaceKey', () => {
 		];
 
 		for (const fixture of fixtures) {
-			expect(deriveWorkspaceKey(fixture.subjectKey, fixture.workspaceId)).toEqual(
+			expect(
+				deriveWorkspaceKey(fixture.subjectKey, fixture.workspaceId),
+			).toEqual(
 				await deriveWorkspaceKeyWithWebCrypto(
 					fixture.subjectKey,
 					fixture.workspaceId,

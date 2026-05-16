@@ -10,16 +10,16 @@
  * - Cold-boot offline keeps signed-in with localIdentity and no profile field
  */
 
+import { describe, expect, test } from 'bun:test';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
-import { describe, expect, test } from 'bun:test';
 import { Ok } from 'wellcrafted/result';
 import type {
 	AuthClient,
-	SubjectIdentity,
 	OAuthTokenGrant,
 	PersistedAuth,
 	PersistedAuthStorage,
+	SubjectIdentity,
 } from './index.js';
 import { createOAuthAppAuth } from './index.js';
 

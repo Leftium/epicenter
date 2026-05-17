@@ -1,21 +1,13 @@
 /**
- * Honeycrisp workspace: schema definition, branded IDs, and actions factory.
+ * Honeycrisp workspace contract: schema, branded IDs, shared opener, and
+ * cross-table action factory.
  *
- * Honeycrisp is an Apple Notes clone with three-column layout: sidebar folders,
- * note list, and rich-text editor. Folders organize notes; notes have Y.XmlFragment
- * bodies for collaborative editing via Tiptap + y-prosemirror.
- *
- * Contains branded NoteId/FolderId types, folders and notes table definitions
- * with DateTimeString timestamps, and the cross-table actions factory. The Y.Doc
- * is constructed in `browser.ts` (browser) and `blocks/script.ts` (Bun),
- * composing these tables with `attachTables`.
- *
- * Distribution: this file is both the `@epicenter/honeycrisp` npm root export
- * AND the `epicenter/honeycrisp/workspace` jsrepo block. The table shapes
- * here are the wire contract for sync: forking a column shape breaks sync
- * compatibility with peers running the canonical schema. Recipes (script.ts,
- * daemon-route.ts) are yours to edit freely. See apps/README.md for the
- * dual-channel convention.
+ * Distribution: this file is the `@epicenter/honeycrisp` package root export.
+ * It stays browser-safe because the SPA, daemon, and scripts all import it.
+ * The table shapes here are the wire contract for sync; forking a column
+ * shape breaks sync compatibility with peers running the canonical schema.
+ * Recipes (browser.ts, daemon.ts) compose around this opener and are yours
+ * to edit freely.
  */
 
 import {
@@ -23,12 +15,15 @@ import {
 	defineActions,
 	defineMutation,
 	defineTable,
+	docGuid,
 	type InferTableRow,
+	type LocalOwner,
 	type Tables,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
+import * as Y from 'yjs';
 
 export const HONEYCRISP_WORKSPACE_ID = 'epicenter.honeycrisp';
 
@@ -69,6 +64,16 @@ const foldersTable = defineTable(
 );
 export type Folder = InferTableRow<typeof foldersTable>;
 
+const noteBase = type({
+	id: NoteId,
+	'folderId?': FolderId.or('undefined'),
+	title: 'string',
+	preview: 'string',
+	pinned: 'boolean',
+	createdAt: DateTimeString,
+	updatedAt: DateTimeString,
+});
+
 /**
  * Notes table: individual notes with rich-text bodies.
  *
@@ -86,26 +91,12 @@ export type Folder = InferTableRow<typeof foldersTable>;
  * `onLocalUpdate`.
  */
 const notesTable = defineTable(
-	type({
-		id: NoteId,
-		'folderId?': FolderId.or('undefined'),
-		title: 'string',
-		preview: 'string',
-		pinned: 'boolean',
-		createdAt: DateTimeString,
-		updatedAt: DateTimeString,
+	noteBase.merge({
 		_v: '1',
 	}),
-	type({
-		id: NoteId,
-		'folderId?': FolderId.or('undefined'),
-		title: 'string',
-		preview: 'string',
-		pinned: 'boolean',
+	noteBase.merge({
 		'deletedAt?': DateTimeString.or('undefined'),
 		'wordCount?': 'number | undefined',
-		createdAt: DateTimeString,
-		updatedAt: DateTimeString,
 		_v: '2',
 	}),
 ).migrate((row) => {
@@ -120,14 +111,90 @@ export type Note = InferTableRow<typeof notesTable>;
 
 // ─── Table map ─────────────────────────────────────────────────────────────────
 
-/**
- * Table definitions for the honeycrisp workspace. Composed directly in
- * `client.ts` via `attachTables(ydoc, honeycrispTables)`. Kept separate so
- * actions and future consumers can derive their input types from one source
- * of truth.
- */
 export const honeycrispTables = { folders: foldersTable, notes: notesTable };
 export type HoneycrispTables = Tables<typeof honeycrispTables>;
+type AttachHoneycrispEncryption = LocalOwner['attachEncryption'];
+
+/**
+ * Compute the deterministic guid of a note's rich-text body sub-doc.
+ * Browser editors, daemon materializers, and wipe paths reach this through
+ * the `workspace.noteBodyDocGuid(noteId)` method so every layer points at
+ * the same Y.Doc identity.
+ *
+ * Kept private so callers go through the workspace bundle (which already
+ * knows its own `ydoc.guid`) rather than re-deriving `workspaceId` by hand.
+ */
+function noteBodyDocGuid({
+	workspaceId,
+	noteId,
+}: {
+	workspaceId: string;
+	noteId: NoteId;
+}): string {
+	return docGuid({
+		workspaceId,
+		collection: 'notes',
+		rowId: noteId,
+		field: 'body',
+	});
+}
+
+/**
+ * Open the canonical Honeycrisp workspace: a Y.Doc keyed by
+ * `HONEYCRISP_WORKSPACE_ID` with encrypted Honeycrisp tables and kv attached.
+ *
+ * Browser code composes browser-only attachments (IndexedDB, BroadcastChannel,
+ * collaboration) around `workspace.ydoc`. Daemon code composes daemon-only
+ * attachments (Yjs log, SQLite, Markdown materializers, collaboration) around
+ * the same `workspace.ydoc`.
+ *
+ * Pass `clientId` to pin the Y.Doc clientID; daemons hash `projectDir` so two
+ * daemons in different project directories produce distinct update streams.
+ */
+export function openHoneycrispWorkspace(
+	attachEncryption: AttachHoneycrispEncryption,
+	options: { clientId?: number } = {},
+) {
+	const ydoc = createHoneycrispYdoc();
+	if (options.clientId !== undefined) {
+		ydoc.clientID = options.clientId;
+	}
+	return attachHoneycrispWorkspace(ydoc, attachEncryption);
+}
+
+export type HoneycrispWorkspace = ReturnType<typeof openHoneycrispWorkspace>;
+
+function createHoneycrispYdoc(): Y.Doc {
+	return new Y.Doc({ guid: HONEYCRISP_WORKSPACE_ID, gc: false });
+}
+
+function attachHoneycrispWorkspace(
+	ydoc: Y.Doc,
+	attachEncryption: AttachHoneycrispEncryption,
+) {
+	const encryption = attachEncryption(ydoc);
+	const tables = encryption.attachTables(honeycrispTables);
+	const kv = encryption.attachKv({});
+	/**
+	 * Single source of truth for the Honeycrisp action surface. Browser and
+	 * daemon both pass this directly to `openCollaboration({ actions })`, so
+	 * the action handlers (and their inputs/outputs) are guaranteed identical
+	 * across layers without a second `createHoneycrispActions(tables)` call.
+	 */
+	const actions = createHoneycrispActions(tables);
+
+	return {
+		ydoc,
+		encryption,
+		tables,
+		kv,
+		actions,
+		batch: (fn: () => void) => ydoc.transact(fn),
+		noteBodyDocGuid(noteId: NoteId) {
+			return noteBodyDocGuid({ workspaceId: ydoc.guid, noteId });
+		},
+	};
+}
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 

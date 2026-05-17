@@ -1,14 +1,24 @@
+/**
+ * Honeycrisp browser runtime composition.
+ *
+ * Wraps `openHoneycrispWorkspace(owner.attachEncryption)` with browser-only
+ * attachments (encrypted IndexedDB, BroadcastChannel, root collaboration) and
+ * a disposable cache of per-note rich-text body sub-docs that each open their
+ * own IDB/BroadcastChannel/sync. The action set comes from the shared
+ * workspace opener so daemon-side and browser-side action surfaces stay
+ * identical without a second factory call here.
+ *
+ * The bundle's `wipe()` drops every encrypted IDB database for this owner;
+ * `Symbol.dispose` tears down the root + cached child Y.Docs without
+ * touching local storage.
+ */
+
 import { APP_URLS } from '@epicenter/constants/vite';
-import {
-	createHoneycrispActions,
-	honeycrispTables,
-	type NoteId,
-} from '@epicenter/honeycrisp';
+import { type NoteId, openHoneycrispWorkspace } from '@epicenter/honeycrisp';
 import {
 	attachRichText,
 	createDisposableCache,
 	DateTimeString,
-	docGuid,
 	type LocalOwner,
 	type OpenWebSocket,
 	onLocalUpdate,
@@ -16,21 +26,6 @@ import {
 	roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-
-function noteBodyDocGuid({
-	workspaceId,
-	noteId,
-}: {
-	workspaceId: string;
-	noteId: NoteId;
-}): string {
-	return docGuid({
-		workspaceId,
-		collection: 'notes',
-		rowId: noteId,
-		field: 'body',
-	});
-}
 
 export function openHoneycrispBrowser({
 	owner,
@@ -41,25 +36,22 @@ export function openHoneycrispBrowser({
 	replicaId: string;
 	openWebSocket?: OpenWebSocket;
 }) {
-	const rootYdoc = new Y.Doc({ guid: 'epicenter.honeycrisp', gc: false });
-	const encryption = owner.attachEncryption(rootYdoc);
-	const tables = encryption.attachTables(honeycrispTables);
-	const kv = encryption.attachKv({});
+	const workspace = openHoneycrispWorkspace(owner.attachEncryption);
+	const { ydoc: rootYdoc, tables, kv } = workspace;
 
-	const idb = owner.attachIndexedDb(rootYdoc);
-	owner.attachBroadcastChannel(rootYdoc);
+	const idb = owner.attachLocal(rootYdoc);
 
 	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
 		const ydoc = new Y.Doc({
-			guid: noteBodyDocGuid({
-				workspaceId: rootYdoc.guid,
-				noteId,
-			}),
+			guid: workspace.noteBodyDocGuid(noteId),
 			gc: false,
 		});
 		const body = attachRichText(ydoc);
-		const childIdb = owner.attachIndexedDb(ydoc);
-		owner.attachBroadcastChannel(ydoc);
+		const childIdb = owner.attachLocal(ydoc);
+		// Each rich-text body is its own Y.Doc (its own sync room keyed by the
+		// body guid), so opening a per-body WebSocket here is intentional:
+		// the server multiplexes by room, not by client. Tear-down lives in
+		// the cache's `Symbol.dispose`.
 		const childSync = openCollaboration(ydoc, {
 			url: roomWsUrl(APP_URLS.API, ydoc.guid),
 			waitFor: childIdb.whenLoaded,
@@ -90,32 +82,28 @@ export function openHoneycrispBrowser({
 		};
 	});
 
-	const actions = createHoneycrispActions(tables);
 	const collaboration = openCollaboration(rootYdoc, {
 		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		replicaId,
-		actions,
+		actions: workspace.actions,
 	});
 
 	return {
 		ydoc: rootYdoc,
 		tables,
 		kv,
-		batch: (fn: () => void) => rootYdoc.transact(fn),
+		batch: workspace.batch,
 		idb,
 		noteBodyDocs,
 		collaboration,
 		async wipe() {
 			const fallbackGuids = [
 				rootYdoc.guid,
-				...tables.notes.getAllValid().map((note) =>
-					noteBodyDocGuid({
-						workspaceId: rootYdoc.guid,
-						noteId: note.id,
-					}),
-				),
+				...tables.notes
+					.getAllValid()
+					.map((note) => workspace.noteBodyDocGuid(note.id)),
 			];
 			noteBodyDocs[Symbol.dispose]();
 			rootYdoc.destroy();

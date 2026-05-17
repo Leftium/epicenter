@@ -1,7 +1,5 @@
 # Temporal Is a Value Type, Not a Storage Format
 
-> **Preservation status (2026-05-17):** Reference article. Preserved from worktree `valencia-v1` (branch `braden-w/column-dsl-spec`). Durable reasoning on why Epicenter stores `DateTimeString` rather than a serialized Temporal value. Companion to the column DSL draft at `packages/workspace/specs/20260429T000000-column-dsl-and-define-table.md`. Em dashes from the original were rewritten to comply with house style.
-
 Temporal is the right answer for date math. It's the wrong answer for what sits in your SQLite column. Epicenter stores `DateTimeString` (a branded text format) and only constructs a `Temporal.ZonedDateTime` when something actually needs to compute with it. Two layers, two jobs.
 
 ## The two questions are not the same

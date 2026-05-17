@@ -1,7 +1,5 @@
 # Column DSL and `defineTable` Refactor
 
-> **Preservation status (2026-05-17):** Draft. Preserved from worktree `valencia-v1` (branch `braden-w/column-dsl-spec`). This is the **dirty working-tree version** (the most recent committed snapshot still referenced `column.id()` and `column.zonedDateTime()`; the dirty refinements switched to `column.string<T>()` plus `DateTimeString.schema()`, wellcrafted `Brand<>`, version guards, and `tableActions(table)`, which are the most valuable parts). Spec is unimplemented: current `main` still uses arktype / Standard Schema in `defineTable`. Treat as a design proposal, not an implementation plan. Refresh against current `main` before executing.
-
 **Date**: 2026-04-29
 **Status**: Draft
 **Author**: AI-assisted (extensive design dialogue)

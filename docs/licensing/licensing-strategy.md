@@ -1,7 +1,5 @@
 # Licensing Strategy
 
-> **Preservation status (2026-05-17):** Active decision doc. Preserved from worktree `caracas-v2` (branch `braden-w/licensing-research`, untracked file). The doc is preserved here; the in-tree license/package.json edits from that worktree (root `LICENSE`, `FINANCIAL_SUSTAINABILITY.md`, new `apps/{breddit,dashboard,skills,zhongwen}/LICENSE` and `packages/{auth,auth-svelte,skills}/LICENSE`) are **not** carried over and should be evaluated as a separate consistency PR against current `main`. Cross-check: `apps/dashboard/package.json` declares `AGPL-3.0` but the current root `LICENSE` lists only `apps/api` and `packages/sync` as AGPL. That mismatch is real and worth a follow-up.
-
 **Status:** Active
 **Date:** 2026-04-28
 **Owner:** Braden Wong

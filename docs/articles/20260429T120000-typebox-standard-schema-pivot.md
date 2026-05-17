@@ -1,7 +1,5 @@
 # The Schema Wars Just Shifted: TypeBox, Standard Schema, and the JSON Schema Bet
 
-> **Preservation status (2026-05-17):** Reference article. Preserved from worktree `sun-valley` (branch `workspace-as-daemon-transport`). Captures durable reasoning about the TypeBox 1.0.28 / Standard Schema split and the JSON-Schema-as-interop-currency bet. Not an implementation plan. The daemon transport work that originally sat alongside this article is stale against current `main` and was not preserved.
-
 **TL;DR**: TypeBox 1.0.28 removed Standard Schema support and TypeMap got archived with no migration path. The bet TypeBox is making: JSON Schema is the real interop currency, not a shared runtime validation contract. If you're building tooling that accepts multiple schema libraries, this changes your architecture.
 
 ## The Surprise

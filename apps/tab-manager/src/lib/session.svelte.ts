@@ -121,4 +121,3 @@ export function requireTabManager() {
 	}
 	return session.require();
 }
-

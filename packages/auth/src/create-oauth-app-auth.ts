@@ -1,10 +1,7 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import { subjectKeyringsEqual } from '@epicenter/encryption';
-import {
-	defineErrors,
-	extractErrorMessage,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient, AuthState } from './auth-contract.js';
@@ -119,7 +116,10 @@ export function createOAuthAppAuth({
 
 	async function refreshGrant(force: boolean): Promise<boolean> {
 		if (persisted === null || networkAuthPaused) return false;
-		if (!force && persisted.grant.accessTokenExpiresAt > now() + REFRESH_SKEW_MS) {
+		if (
+			!force &&
+			persisted.grant.accessTokenExpiresAt > now() + REFRESH_SKEW_MS
+		) {
 			return true;
 		}
 		if (refreshPromise) return refreshPromise;
@@ -372,10 +372,7 @@ export function createOAuthAppAuth({
 	};
 }
 
-function headersFromRequest(
-	input: Request | string | URL,
-	init?: RequestInit,
-) {
+function headersFromRequest(input: Request | string | URL, init?: RequestInit) {
 	const headers = new Headers(
 		input instanceof Request ? input.headers : undefined,
 	);

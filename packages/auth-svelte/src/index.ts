@@ -1,7 +1,7 @@
 export {
 	ApiMeResponse,
-	AuthError,
 	type AuthClient,
+	AuthError,
 	type AuthFetch,
 	type AuthState,
 	AuthUser,
@@ -12,6 +12,4 @@ export {
 	type PersistedAuthStorage,
 	type SubjectIdentity,
 } from '@epicenter/auth';
-export {
-	createOAuthAppAuth,
-} from './create-auth.svelte.js';
+export { createOAuthAppAuth } from './create-auth.svelte.js';

@@ -27,7 +27,11 @@ export function parseOAuthTokenGrant(
 		fallbackRefreshToken?: string;
 	},
 ): OAuthTokenGrant {
-	if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+	if (
+		payload === null ||
+		typeof payload !== 'object' ||
+		Array.isArray(payload)
+	) {
 		throw new OAuthTokenResponseError(
 			'invalid_response',
 			'Expected OAuth token response to be an object.',

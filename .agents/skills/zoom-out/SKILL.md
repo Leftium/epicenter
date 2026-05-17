@@ -1,7 +1,10 @@
 ---
 name: zoom-out
-description: Tell the agent to zoom out and give broader context or a higher-level perspective. Use when you're unfamiliar with a section of code or need to understand how it fits into the bigger picture.
+description: Step back from the current file and explain how it fits into the wider system: surrounding modules, consumers, sibling concepts, and the boundary the file lives on. Use when the user says "zoom out", "give me the bigger picture", "what does this fit into", "I'm lost in this file", or invokes /zoom-out before making changes to unfamiliar code.
 disable-model-invocation: true
+metadata:
+  upstream: mattpocock/skills
+  forked: 2026-05-17
 ---
 
 I don't know this area of code well. Go up a layer of abstraction. Give me a map of all the relevant modules and callers, using the project's domain glossary vocabulary.

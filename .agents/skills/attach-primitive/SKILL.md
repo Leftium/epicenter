@@ -1,6 +1,6 @@
 ---
 name: attach-primitive
-description: Contract and invariants for `attach*` composition primitives, the side-effectful building blocks composed inside workspace builders. Also covers when to use `create*` (pure construction).
+description: Contract and invariants for `attach*` composition primitives in `packages/workspace` (side-effectful building blocks like attachIndexedDb, attachSqlite, attachBroadcastChannel, attachEncryption, attachTable, openCollaboration), and when to use `create*` (pure construction) instead. Use when writing or reviewing an `attach*` or `create*` function, naming a new workspace primitive, composing inside a workspace builder, or deciding whether a primitive registers listeners at call time.
 ---
 
 # Attach Primitives
@@ -39,7 +39,7 @@ attachAwareness(ydoc, defs)
 attachRichText(ydoc) / attachPlainText(ydoc) / attachTimeline(ydoc)
 ```
 
-**Chainable return is allowed** when per-entity configuration is incremental. Materializers follow the same `attachX(ydoc, opts)` shape — the builder registers specific table/kv references via `.table(ref, cfg)`:
+**Chainable return is allowed** when per-entity configuration is incremental. Materializers follow the same `attachX(ydoc, opts)` shape: the builder registers specific table/kv references via `.table(ref, cfg)`:
 
 ```ts
 attachMarkdownMaterializer(ydoc, { dir, waitFor })
@@ -61,9 +61,9 @@ attachSqliteMaterializer(ydoc, { db, waitFor })
   .table(tables.posts, { fts: ['title'] });
 ```
 
-Passing `tables.files` directly (rather than a string name) mirrors y-prosemirror / y-codemirror — take the specific shared resource, not a bag plus a lookup key. The materializer reads `table.name` and `table.definition` off the reference internally. All `.table()` / `.kv()` registrations must happen synchronously after construction; calls after `whenFlushed` resolves throw.
+Passing `tables.files` directly (rather than a string name) mirrors y-prosemirror / y-codemirror: take the specific shared resource, not a bag plus a lookup key. The materializer reads `table.name` and `table.definition` off the reference internally. All `.table()` / `.kv()` registrations must happen synchronously after construction; calls after `whenFlushed` resolves throw.
 
-## The one exception — non-ydoc subject
+## The One Exception: Non-Ydoc Subject
 
 When a primitive modifies a sibling attachment and the coordination is cross-package (so it can't be a method on the coordinator), it's a top-level function with the attachment as first arg:
 
@@ -71,7 +71,7 @@ When a primitive modifies a sibling attachment and the coordination is cross-pac
 attachSessionUnlock(encryption, { sessions, serverUrl, waitFor })
 ```
 
-This is rare — one example in the whole codebase. It lives in `@epicenter/cli` and operates on an `EncryptionAttachment` defined in `@epicenter/workspace`; making it a method on the workspace type would couple packages backwards, so it stays a top-level function.
+This is rare: one example in the whole codebase. It lives in `@epicenter/cli` and operates on an `EncryptionAttachment` defined in `@epicenter/workspace`; making it a method on the workspace type would couple packages backwards, so it stays a top-level function.
 
 If the primitive is in-package with its coordinator, prefer method-on-coordinator (below) over a top-level `attachX(attachment, opts)`.
 
@@ -102,13 +102,13 @@ The method form says "use the encryption's attach-tables" directly. Preferred wh
    - Chainable builders (materializers): `[Symbol.dispose]()` method on the builder, unsubscribes observers.
 3. **Idempotent cleanup.** If the underlying library also registers a destroy handler (like `y-indexeddb`), your handler must be safe to run alongside it.
 4. **Plain data returned.** The attachment is a record of promises, functions, and occasionally mutable state. No ES classes, no getters that lazy-init.
-5. **No id option on ydoc-bound primitives.** `ydoc.guid` is the identity — read it off the doc.
+5. **No id option on ydoc-bound primitives.** `ydoc.guid` is the identity. Read it off the doc.
 6. **Barrier naming is semantic, not mechanical.** Pick the name that describes the actual event:
-   - `whenLoaded` — local state replayed into the ydoc (IDB, SQLite)
-   - `whenConnected` — remote transport up + first exchange done (sync)
-   - `whenChecked` — configuration action settled (session-unlock — resolves even if nothing was applied)
-   - `whenFlushed` — initial side-effect pass done (materializer)
-   - `whenReady` — bundle-level aggregate only; not on individual attachments
+   - `whenLoaded`: local state replayed into the ydoc (IDB, SQLite)
+   - `whenConnected`: remote transport up + first exchange done (sync)
+   - `whenChecked`: configuration action settled (session-unlock; resolves even if nothing was applied)
+   - `whenFlushed`: initial side-effect pass done (materializer)
+   - `whenReady`: bundle-level aggregate only; not on individual attachments
 
 ## Composition inside a workspace builder
 
@@ -160,18 +160,18 @@ Use it whenever a primitive's startup must follow another's. Examples:
 
 ## Anti-patterns
 
-- **Don't revive `ExtensionContext` / `RawExtension` / `defineExtension`.** Those were deleted for a reason — the lifecycle framework added a registration indirection that primitives don't need.
+- **Don't revive `ExtensionContext` / `RawExtension` / `defineExtension`.** Those were deleted for a reason: the lifecycle framework added a registration indirection that primitives don't need.
 - **Don't wrap attachments in a `createWorkspace().with(...)` chain.** Compose inline in the factory.
 - **Don't expose `dispose()` on a ydoc-bound attachment.** Destroy the Y.Doc.
-- **Don't duck-type an attachment.** If you need to brand it, use a `Symbol.for` marker. See `skills/typescript` — runtime shape-checking is a code smell.
+- **Don't duck-type an attachment.** If you need to brand it, use a `Symbol.for` marker. See `skills/typescript`: runtime shape-checking is a code smell.
 - **Don't take an `id` on a ydoc-bound primitive.** Use `ydoc.guid`.
 - **Don't use `createX` for a side-effectful primitive.** If it registers listeners, it's `attach*`.
 - **Don't introduce `attachEncryptedX(ydoc, encryption, ...)` top-level exports.** Use `encryption.attachX(...)`: the coordinator owns its siblings.
 
 ## Reference implementations
 
-- `packages/workspace/src/document/attach-indexed-db.ts` — the canonical 40-line example.
-- `packages/workspace/src/document/open-collaboration.ts` — document collaboration surface with sync, presence, peers, and action dispatch.
-- `packages/workspace/src/document/attach-encryption.ts` — state-owning coordinator; exposes `attachTable` / `attachTables` / `attachKv` as methods.
-- `packages/workspace/src/document/materializer/markdown/materializer.ts` — chainable builder with `.table()/.kv()`.
+- `packages/workspace/src/document/attach-indexed-db.ts` ; the canonical 40-line example.
+- `packages/workspace/src/document/open-collaboration.ts` ; document collaboration surface with sync, presence, peers, and action dispatch.
+- `packages/workspace/src/document/attach-encryption.ts` ; state-owning coordinator; exposes `attachTable` / `attachTables` / `attachKv` as methods.
+- `packages/workspace/src/document/materializer/markdown/materializer.ts` ; chainable builder with `.table()/.kv()`.
 - `apps/whispering/src/lib/client.ts`: full singleton composition.

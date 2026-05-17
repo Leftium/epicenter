@@ -1,6 +1,6 @@
 ---
 name: workflow
-description: Workflow for implementing features with specs and planning docs. Use when: "start a new feature", "how should I plan this", "what's the process", or any non-trivial task.
+description: Standard feature workflow with timestamped specs under `specs/`, checklist-driven plans, plan verification before code, and a post-implementation review step. Use when starting a multi-file feature, when the user says "start a new feature", "how should I plan this", "what's the process", "write a spec for this", or before any non-trivial implementation that needs a planning doc.
 metadata:
   author: epicenter
   version: '1.0'

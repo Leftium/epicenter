@@ -1,6 +1,6 @@
 ---
 name: code-audit
-description: "Smell categories with grep patterns: duck-typing leaks, untyped boundaries, ceremony tails, union-churn. Use for periodic code review or cleanup pass."
+description: "Codebase-specific smell catalog with calibrated grep recipes: duck-typing at boundaries, yargs argv re-assertions, value-discarding promise tails, console.* in library code, exhaustive `never` over-broad unions, single-method `Pick` deps, `*Like` boundary shape copies. Use for a periodic audit pass, scoping a cleanup PR, after a major refactor, or reviewing a primitive's consumers. Pairs with refactoring (fix mechanics) and post-implementation-review (second-read hub)."
 metadata:
   author: epicenter
   version: '1.0'

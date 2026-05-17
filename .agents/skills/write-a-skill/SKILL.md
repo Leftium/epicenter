@@ -1,6 +1,9 @@
 ---
 name: write-a-skill
 description: Create new agent skills with proper structure, progressive disclosure, and bundled resources. Use when user wants to create, write, or build a new skill.
+metadata:
+  upstream: mattpocock/skills
+  forked: 2026-05-17
 ---
 
 # Writing Skills

@@ -23,9 +23,7 @@ Use this pattern when you need to:
 - **Over-structured responses**: Don't use headers, numbered sections, or bullet lists for simple replies. A conversational paragraph is usually better.
 - **Formulaic openings**: Don't start every comment identically. Match the tone to the conversation.
 - **Restating what's obvious**: If someone asked a question, just answer it. Don't recap what they said.
-- **Corporate announcements**: "We are pleased to announce..." — just say what changed.
-
-Follow [writing-voice](../writing-voice/SKILL.md) for tone.
+- **Corporate announcements**: "We are pleased to announce..."; just say what changed.
 
 Follow [writing-voice](../writing-voice/SKILL.md) for tone.
 

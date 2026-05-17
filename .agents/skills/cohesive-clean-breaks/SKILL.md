@@ -1,6 +1,6 @@
 ---
 name: cohesive-clean-breaks
-description: "Asymmetric-wins pass: refuse 10-20% of functionality to collapse 80-90% of complexity. Use for architecture decisions, API redesigns, breaking changes, migrations."
+description: "Asymmetric-wins pass for decisions that change public shape, package boundaries, runtime contracts, naming, config structure, lifecycle ownership, or migration strategy. Refuse 10-20% of functionality to collapse 80-90% of complexity. Use when proposing a breaking change, replacing an API, redesigning ownership, planning a multi-wave replacement, or deciding whether to keep both old and new paths alive."
 ---
 
 # Cohesive Clean Breaks

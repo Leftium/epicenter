@@ -1,17 +1,13 @@
 /**
- * Fuji workspace schema, branded IDs, and actions factory.
+ * Fuji workspace contract: schema, branded IDs, shared opener, and CLI/script
+ * action factory.
  *
- * Fuji is a personal CMS with a 1:1 mapping to your blog. Entries are content
- * pieces: articles, thoughts, ideas: organized by tags and type, displayed in a
- * data table with an editor panel. Each entry has a rich-text content document
- * for collaborative editing via ProseMirror + y-prosemirror.
- *
- * Distribution: this file is both the `@epicenter/fuji` npm root export AND
- * the `epicenter/fuji/workspace` jsrepo block. The table shapes here are the
- * wire contract for sync: forking a column shape breaks sync compatibility
- * with peers running the canonical schema. Recipes (script.ts, snapshot.ts,
- * daemon-route.ts) are yours to edit freely. See apps/README.md for the
- * dual-channel convention.
+ * Distribution: this file is the `@epicenter/fuji` package root export. It
+ * stays browser-safe because the SPA, daemon, and scripts all import it. The
+ * table shapes here are the wire contract for sync; forking a column shape
+ * breaks sync compatibility with peers running the canonical schema. Recipes
+ * (browser.ts, daemon.ts, script.ts, snapshot.ts) compose around this opener
+ * and are yours to edit freely.
  */
 
 import {
@@ -20,45 +16,41 @@ import {
 	defineMutation,
 	defineQuery,
 	defineTable,
+	docGuid,
 	generateId,
 	type InferTableRow,
+	type LocalOwner,
 	type Tables,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
+import * as Y from 'yjs';
 
 export const FUJI_WORKSPACE_ID = 'epicenter.fuji';
 
 export type EntryId = string & Brand<'EntryId'>;
 export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
 
+const entryBase = type({
+	id: EntryId,
+	title: 'string',
+	subtitle: 'string',
+	type: 'string[]',
+	tags: 'string[]',
+	pinned: 'boolean',
+	'deletedAt?': DateTimeString.or('undefined'),
+	date: DateTimeString,
+	createdAt: DateTimeString,
+	updatedAt: DateTimeString,
+});
+
 const entriesTable = defineTable(
-	type({
-		id: EntryId,
-		title: 'string',
-		subtitle: 'string',
-		type: 'string[]',
-		tags: 'string[]',
-		pinned: 'boolean',
-		'deletedAt?': DateTimeString.or('undefined'),
-		date: DateTimeString,
-		createdAt: DateTimeString,
-		updatedAt: DateTimeString,
+	entryBase.merge({
 		_v: '1',
 	}),
-	type({
-		id: EntryId,
-		title: 'string',
-		subtitle: 'string',
-		type: 'string[]',
-		tags: 'string[]',
-		pinned: 'boolean',
+	entryBase.merge({
 		rating: 'number',
-		'deletedAt?': DateTimeString.or('undefined'),
-		date: DateTimeString,
-		createdAt: DateTimeString,
-		updatedAt: DateTimeString,
 		_v: '2',
 	}),
 ).migrate((row) => {
@@ -74,6 +66,82 @@ export type Entry = InferTableRow<typeof entriesTable>;
 
 export const fujiTables = { entries: entriesTable };
 export type FujiTables = Tables<typeof fujiTables>;
+type AttachFujiEncryption = LocalOwner['attachEncryption'];
+
+/**
+ * Compute the deterministic guid of an entry's rich-text content sub-doc.
+ *
+ * Both browser and daemon use this so that materializers, browser editors,
+ * and wipe paths all reference the exact same Y.Doc identity.
+ */
+export function entryContentDocGuid({
+	workspaceId,
+	entryId,
+}: {
+	workspaceId: string;
+	entryId: EntryId;
+}): string {
+	return docGuid({
+		workspaceId,
+		collection: 'entries',
+		rowId: entryId,
+		field: 'content',
+	});
+}
+
+/**
+ * Open the canonical Fuji workspace: a Y.Doc keyed by `FUJI_WORKSPACE_ID`
+ * with encrypted Fuji tables and kv attached.
+ *
+ * Browser code composes browser-only attachments (IndexedDB, BroadcastChannel,
+ * collaboration) around `workspace.ydoc`. Daemon code composes daemon-only
+ * attachments (Yjs log, SQLite, Markdown materializers, collaboration) around
+ * the same `workspace.ydoc`.
+ *
+ * Pass `clientId` to pin the Y.Doc clientID; daemons hash `projectDir` so two
+ * daemons in different project directories produce distinct update streams.
+ */
+export function openFujiWorkspace(
+	attachEncryption: AttachFujiEncryption,
+	options: { clientId?: number } = {},
+) {
+	const ydoc = createFujiYdoc();
+	if (options.clientId !== undefined) {
+		ydoc.clientID = options.clientId;
+	}
+	return attachFujiWorkspace(ydoc, attachEncryption);
+}
+
+export type FujiWorkspace = ReturnType<typeof openFujiWorkspace>;
+
+function createFujiYdoc(): Y.Doc {
+	return new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
+}
+
+function attachFujiWorkspace(
+	ydoc: Y.Doc,
+	attachEncryption: AttachFujiEncryption,
+) {
+	const encryption = attachEncryption(ydoc);
+	const tables = encryption.attachTables(fujiTables);
+	const kv = encryption.attachKv({});
+
+	return {
+		ydoc,
+		encryption,
+		tables,
+		kv,
+		batch: (fn: () => void) => ydoc.transact(fn),
+		touchEntry(entryId: EntryId) {
+			tables.entries.update(entryId, {
+				updatedAt: DateTimeString.now(),
+			});
+		},
+		entryContentDocGuid(entryId: EntryId) {
+			return entryContentDocGuid({ workspaceId: ydoc.guid, entryId });
+		},
+	};
+}
 
 export function createFujiActions(tables: FujiTables) {
 	return defineActions({

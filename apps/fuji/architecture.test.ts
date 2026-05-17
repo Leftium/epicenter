@@ -41,7 +41,7 @@ describe('Fuji workspace architecture', () => {
 		expect(daemonSource).toContain('openFujiWorkspace');
 		expect(daemonSource).toContain('{ clientId }');
 		expect(daemonSource).toContain('replicaId');
-		expect(daemonSource).toContain('attachYjsLog');
+		expect(daemonSource).toContain('attachDaemonInfrastructure');
 		expect(daemonSource).toContain('attachSqliteMaterializer');
 		expect(daemonSource).toContain('attachMarkdownMaterializer');
 	});

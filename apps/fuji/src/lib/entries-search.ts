@@ -1,4 +1,4 @@
-import type { Entry } from '@epicenter/fuji';
+import type { Entry } from './workspace';
 
 /**
  * Test whether an entry matches a search query.

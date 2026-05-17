@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { EntryId } from '@epicenter/fuji';
+	import type { EntryId } from '$lib/workspace';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';

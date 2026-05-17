@@ -14,7 +14,6 @@
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
-import { type EntryId, openFujiWorkspace } from '@epicenter/fuji';
 import {
 	attachRichText,
 	createDisposableCache,
@@ -26,6 +25,7 @@ import {
 	roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
+import { type EntryId, openFujiWorkspace } from './workspace';
 
 export function openFujiBrowser({
 	owner,

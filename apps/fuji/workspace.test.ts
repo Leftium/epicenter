@@ -12,7 +12,7 @@ import { bytesToBase64, type SubjectKeyring } from '@epicenter/encryption';
 import { attachEncryption } from '@epicenter/workspace';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import type * as Y from 'yjs';
-import { FUJI_WORKSPACE_ID, openFujiWorkspace } from './workspace.js';
+import { FUJI_WORKSPACE_ID, openFujiWorkspace } from './src/lib/workspace.js';
 
 function toKeyring(key: Uint8Array): SubjectKeyring {
 	return [{ version: 1, subjectKeyBase64: bytesToBase64(key) }];

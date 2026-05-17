@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Entry } from '@epicenter/fuji';
+	import type { Entry } from '$lib/workspace';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { DateTimeString } from '@epicenter/workspace';

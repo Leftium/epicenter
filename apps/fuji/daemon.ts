@@ -88,10 +88,7 @@ export function defineFujiDaemon({ route = 'fuji' }: { route?: string } = {}) {
 				yjsLog,
 				async [Symbol.asyncDispose]() {
 					workspace.ydoc.destroy();
-					await Promise.all([
-						collaboration.whenDisposed,
-						yjsLog.whenDisposed,
-					]);
+					await Promise.all([collaboration.whenDisposed, yjsLog.whenDisposed]);
 				},
 			};
 		},

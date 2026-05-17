@@ -8,17 +8,14 @@
  * behavior; behavior tests live in workspace.test.ts.
  */
 
+import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, test } from 'bun:test';
 
 const fujiDir = dirname(fileURLToPath(import.meta.url));
 
-const workspaceSource = readFileSync(
-	join(fujiDir, 'workspace.ts'),
-	'utf8',
-);
+const workspaceSource = readFileSync(join(fujiDir, 'workspace.ts'), 'utf8');
 const browserSource = readFileSync(
 	join(fujiDir, 'src/routes/(signed-in)/fuji/browser.ts'),
 	'utf8',

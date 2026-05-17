@@ -35,7 +35,9 @@ describe('openFujiWorkspace', () => {
 
 	test('applies optional clientId', () => {
 		const attachTestEncryption = createTestEncryption();
-		const workspace = openFujiWorkspace(attachTestEncryption, { clientId: 1234 });
+		const workspace = openFujiWorkspace(attachTestEncryption, {
+			clientId: 1234,
+		});
 		expect(workspace.ydoc.clientID).toBe(1234);
 		workspace.ydoc.destroy();
 	});

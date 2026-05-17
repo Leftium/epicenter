@@ -10,6 +10,12 @@ metadata:
 
 > **Related Skills**: See `standalone-commits` for making each commit reviewable and auditable. See `incremental-commits` for breaking multi-file changes into ordered waves.
 
+## Skill Shape
+
+Keep commits, branch orchestration, and pull requests in this one skill. They are usually one workflow in practice: inspect the diff, split commits, push branches, write PR descriptions, merge in order. Split out a separate pull-request skill only if PR writing starts needing its own scripts, templates, or long reference set that makes the git skill noisy.
+
+For now, keep the top-level skill small and put detailed PR writing guidance in `references/pull-request-guidelines.md`.
+
 ## When to Apply This Skill
 
 Use this pattern when you need to:

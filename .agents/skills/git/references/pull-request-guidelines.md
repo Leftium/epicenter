@@ -259,6 +259,91 @@ Never let prose run for more than a short paragraph without a visual break. The 
 
 Each visual (code snippet, ASCII diagram, before/after block) should be preceded by 1-3 sentences of context and optionally followed by a sentence explaining the subtle detail. If you're writing more than 4-5 sentences of prose in a row, you're missing an opportunity for a diagram or code block.
 
+#### Reviewer-Oriented Bodies for Stacked PRs
+
+When rewriting descriptions for a stack that has already been split, write for the developer who is deciding where to spend attention. They care about the contract, the shape change, and the shortest honest review path. They do not need a second changelog, a test transcript, or a list of files GitHub already shows.
+
+Use this as a pressure test:
+
+- What contract stayed stable or changed?
+- What one call site teaches the new shape?
+- What ownership boundary should the reviewer understand before reading files?
+- Is there a best file order for reviewing the diff?
+
+For a cleanup PR where the public surface stays stable, make that stability explicit before discussing internals:
+
+```ts
+// Still the public shape:
+const thing = createThing(options);
+
+await thing.start();
+await thing.refresh();
+await thing.stop();
+```
+
+Then use a tiny tree to show what moved:
+
+```txt
+Before:
+  createThing
+    -> helperA
+    -> helperB
+    -> internal type visible outside the module
+
+After:
+  createThing
+    -> owns helper mechanics locally
+    -> exposes only the public contract
+```
+
+For a tracer or architecture PR, show the shape before prose gets abstract:
+
+```txt
+feature-root/
+  shared.ts   shared model, schema, actions
+  client.ts   browser or UI runtime
+  server.ts   server, daemon, or persistence runtime
+```
+
+Then show how two runtimes compose the same shared root:
+
+```ts
+const clientFeature = openFeature(owner.shared);
+attachClientRuntime(clientFeature);
+
+const serverFeature = openFeature(server.shared);
+attachServerRuntime(serverFeature);
+```
+
+For a loader, convention, or framework change, make the new rule small enough to remember:
+
+```txt
+<root>/<name>/<entrypoint>.ts
+```
+
+Then show the smallest user-written module that proves the contract:
+
+```ts
+export default defineFeature({
+	async open(ctx) {
+		const feature = openFeature(ctx.shared);
+		return attachRuntime(feature, ctx);
+	},
+});
+```
+
+The review path is not a "Changes" section. It is a map for the human reviewer:
+
+```md
+Good review path:
+
+1. Start with the contract or discovery file.
+2. Read the runtime adapter that consumes it.
+3. Skim one migrated caller as proof the shape works.
+```
+
+Only include that path when the order genuinely helps. For a two-file fix, prose plus one code snippet is enough.
+
 #### Framing Patterns That Work
 
 These patterns consistently produce strong PR descriptions. They're not formulas—they're thinking tools for finding the angle.

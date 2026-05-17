@@ -12,6 +12,7 @@
  */
 
 import * as machineAuth from '@epicenter/auth/node';
+import { resolveApiEndpoint } from '../util/api-url.js';
 import { cmd } from '../util/cmd.js';
 
 function failAuthCommand(error: { message: string }) {
@@ -33,7 +34,10 @@ const loginCommand = cmd({
 	command: 'login',
 	describe: 'Log in to Epicenter',
 	handler: async () => {
+		const { baseURL, filePath } = resolveApiEndpoint();
 		const result = await machineAuth.loginWithOob({
+			baseURL,
+			filePath,
 			print: (line) => console.log(line),
 		});
 		if (result.error) {
@@ -50,7 +54,8 @@ const logoutCommand = cmd({
 	command: 'logout',
 	describe: 'Log out from Epicenter',
 	handler: async () => {
-		const result = await machineAuth.logout();
+		const { baseURL, filePath } = resolveApiEndpoint();
+		const result = await machineAuth.logout({ baseURL, filePath });
 		if (result.error) {
 			failAuthCommand(result.error);
 			return;
@@ -69,7 +74,8 @@ const statusCommand = cmd({
 	command: 'status',
 	describe: 'Show current authentication status',
 	handler: async () => {
-		const result = await machineAuth.status();
+		const { baseURL, filePath } = resolveApiEndpoint();
+		const result = await machineAuth.status({ baseURL, filePath });
 		if (result.error) {
 			failAuthCommand(result.error);
 			return;

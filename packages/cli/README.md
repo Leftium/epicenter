@@ -16,6 +16,21 @@ Each verb is a one-line shell shortcut for one workspace primitive:
  Supporting systems: auth (machine session), daemon (process lifecycle)
 ```
 
+## Targeting an environment
+
+When you iterate on `apps/api`, you want CLI commands hitting your local server, not prod. The CLI reads `EPICENTER_API_URL` from the environment; named scripts wrap the two real workflows so the target is always explicit.
+
+| I want to... | I run... |
+| --- | --- |
+| Develop against my local API server | `bun run cli:local auth login` |
+| Run from source against prod (rare: bug repro, demos) | `bun run cli auth login` |
+| Use the published binary (end user) | `epicenter auth login` |
+| Override the target anywhere | `EPICENTER_API_URL=https://staging.example.com bun run cli auth login` |
+
+Tokens are stored per host so prod and local sessions coexist. The prod host writes `~/.epicenter/auth.json`; any other host writes `~/.epicenter/auth.<host>.json` with `:` replaced by `_`. So `http://localhost:8787` lands at `~/.epicenter/auth.localhost_8787.json`, and a fresh `cli:local auth login` will not overwrite your existing prod session. When the env var is set, the CLI prints `Using API at <url>.` to stderr once per process. The daemon freezes its target at boot; to retarget, `daemon stop` and start it again.
+
+The same env var and scripts apply to every command that talks to the API, including `daemon`, not just `auth`.
+
 ## Commands
 
 `epicenter daemon up` opens every `workspaces/<route>/daemon.ts` extension for the project. `list`, `run`, and `peers` dispatch to that local daemon over the project socket.

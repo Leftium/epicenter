@@ -290,6 +290,16 @@ bun install
 
 You rarely need `bun nuke`. Cargo handles incremental builds well. Use `bun clean` first.
 
+### Developing against a local API
+
+Most CLI commands default to the hosted Epicenter API at `https://api.epicenter.so`. If you are iterating on `apps/api` and want the CLI pointed at your local server, use the `cli:local` script:
+
+```bash
+bun run cli:local auth login
+```
+
+See [`packages/cli/README.md`](packages/cli/README.md) for the full environment table and per-host token file behavior.
+
 ## Contributing
 
 We're looking for contributors who are passionate about open source, local-first software, or just want to build with Svelte and TypeScript.

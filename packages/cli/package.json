@@ -23,8 +23,13 @@
 	"bin": {
 		"epicenter": "./bin/epicenter.mjs"
 	},
+	"scripts": {
+		"cli": "bun src/bin.ts",
+		"cli:local": "EPICENTER_API_URL=http://localhost:8787 bun src/bin.ts"
+	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
+		"@epicenter/constants": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@hono/standard-validator": "catalog:",
 		"arktype": "catalog:",

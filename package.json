@@ -118,6 +118,8 @@
 		"bump-version": "bun run scripts/bump-version.ts",
 		"clean": "bun run scripts/clean.ts",
 		"nuke": "bun run scripts/clean.ts --nuke",
+		"cli": "bun packages/cli/src/bin.ts",
+		"cli:local": "EPICENTER_API_URL=http://localhost:8787 bun packages/cli/src/bin.ts",
 		"epicenter": "EPICENTER_SERVER=http://localhost:8787 bun run --bun epicenter",
 		"jsrepo:build": "jsrepo build"
 	},

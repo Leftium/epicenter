@@ -33,6 +33,7 @@ import {
 } from '@epicenter/workspace/node';
 import { Ok, type Result, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
+import { resolveApiEndpoint } from '../util/api-url.js';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
 import type { StartedDaemonRoute } from '@epicenter/workspace/daemon';
@@ -124,7 +125,8 @@ export async function runUp(
 		return teardownPromise;
 	};
 
-	auth = await createMachineAuthClient();
+	const { baseURL, filePath } = resolveApiEndpoint();
+	auth = await createMachineAuthClient({ baseURL, filePath });
 	const startResult = await startDaemonWorkspaceApps({
 		projectDir,
 		auth,

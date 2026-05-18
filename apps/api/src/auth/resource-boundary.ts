@@ -126,22 +126,6 @@ export function resolveRequestOAuthUser<E extends RequestOAuthEnv>(
 	return resolveBearerUser(createResolverDeps(c));
 }
 
-/**
- * Resolve the OAuth bearer on the current request into the canonical
- * `/api/me` response payload. Subject keyring derivation stays injected so
- * this module remains free of Worker-only imports and easy to test through
- * the pure resolver.
- */
-export function resolveRequestApiMe<E extends RequestOAuthEnv>(
-	c: Context<E>,
-	deriveSubjectKeyring: (subject: string) => Promise<SubjectKeyring>,
-) {
-	return resolveBearerIdentity({
-		...createResolverDeps(c),
-		deriveSubjectKeyring,
-	});
-}
-
 function createResolverDeps<E extends RequestOAuthEnv>(c: Context<E>) {
 	const audience = c.var.authBaseURL;
 	return {

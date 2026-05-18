@@ -16,7 +16,7 @@ import {
 } from '../shared/actions.js';
 import { openCollaboration } from './open-collaboration.js';
 
-const replicaId = 'self';
+const installationId = 'self';
 
 /**
  * Returns a fake WebSocket that parks in CONNECTING until `close()` is
@@ -58,20 +58,20 @@ function setup<TActions extends ActionRegistry = ActionRegistry>(
 	const collaboration = openCollaboration<TActions>(ydoc, {
 		url: 'wss://ignored.invalid/',
 		openWebSocket: stalledOpenWebSocket,
-		replicaId,
+		installationId,
 		actions,
 	});
 	return { ydoc, collaboration };
 }
 
 describe('openCollaboration', () => {
-	test('exposes the supplied replicaId, a minted connId, and user actions', () => {
+	test('exposes the supplied installationId, a minted connectionId, and user actions', () => {
 		const list = defineQuery({ handler: () => [] });
 		const { ydoc, collaboration } = setup({ tabs_list: list });
 		try {
-			expect(collaboration.replicaId).toBe(replicaId);
-			expect(typeof collaboration.connId).toBe('string');
-			expect(collaboration.connId.length).toBeGreaterThan(0);
+			expect(collaboration.installationId).toBe(installationId);
+			expect(typeof collaboration.connectionId).toBe('string');
+			expect(collaboration.connectionId.length).toBeGreaterThan(0);
 			expect(collaboration.actions).toEqual({ tabs_list: list });
 		} finally {
 			ydoc.destroy();

@@ -198,7 +198,7 @@ export class Room extends DurableObject {
 
 			// --- Restore connections that survived hibernation ---
 			// Iterates ctx.getWebSockets(), deserializes each attachment to recover
-			// the connId, and re-registers sync handlers. No initial messages: the
+			// the connectionId, and re-registers sync handlers. No initial messages: the
 			// client already received them before hibernation.
 			for (const ws of ctx.getWebSockets()) {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
@@ -210,20 +210,21 @@ export class Room extends DurableObject {
 
 			// --- Boot orphan sweep ---
 			// If a DO eviction skipped `webSocketClose`, a presence row may linger
-			// for a connId that no surviving socket owns. Sweep them now using the
+			// for a connectionId that no surviving socket owns. Sweep them now using the
 			// live socket set we just re-registered above.
 			const live = new Set<string>();
 			for (const ws of ctx.getWebSockets()) {
 				const att = ws.deserializeAttachment() as WsAttachment | null;
-				if (att?.connId) live.add(att.connId);
+				if (att?.connectionId) live.add(att.connectionId);
 			}
 			const orphans: string[] = [];
-			for (const [connId] of this.presence.entries()) {
-				if (!live.has(connId)) orphans.push(connId);
+			for (const [connectionId] of this.presence.entries()) {
+				if (!live.has(connectionId)) orphans.push(connectionId);
 			}
 			if (orphans.length > 0) {
 				this.doc.transact(() => {
-					for (const connId of orphans) this.presence.delete(connId);
+					for (const connectionId of orphans)
+						this.presence.delete(connectionId);
 				}, SERVER_ORIGIN);
 			}
 		});
@@ -251,10 +252,10 @@ export class Room extends DurableObject {
 	 * connection, runs the initial Yjs sync handshake (SyncStep1), and returns
 	 * the 101 Switching Protocols response.
 	 *
-	 * The `replicaId` and `connId` query parameters are required: `replicaId`
-	 * is the client's install id (human-meaningful identity), `connId` is the
-	 * per-socket routing address used by `dispatch({ to })`. Missing either
-	 * yields a 400.
+	 * The `installationId` and `connectionId` query parameters are required:
+	 * `installationId` is the client's install id (human-meaningful identity),
+	 * `connectionId` is the per-socket routing address used by `dispatch({ to })`.
+	 * Missing either yields a 400.
 	 *
 	 * Cancels any pending compaction alarm: a new client just connected, so
 	 * compacting now would be wasteful.
@@ -266,10 +267,12 @@ export class Room extends DurableObject {
 	 */
 	private upgrade(request: Request): Response {
 		const url = new URL(request.url);
-		const replicaId = url.searchParams.get('replicaId');
-		const connId = url.searchParams.get('connId');
-		if (!replicaId || !connId) {
-			return new Response('missing replicaId or connId', { status: 400 });
+		const installationId = url.searchParams.get('installationId');
+		const connectionId = url.searchParams.get('connectionId');
+		if (!installationId || !connectionId) {
+			return new Response('missing installationId or connectionId', {
+				status: 400,
+			});
 		}
 
 		void this.ctx.storage.deleteAlarm();
@@ -279,12 +282,12 @@ export class Room extends DurableObject {
 
 		this.ctx.acceptWebSocket(server);
 
-		server.serializeAttachment({ connId } satisfies WsAttachment);
+		server.serializeAttachment({ connectionId } satisfies WsAttachment);
 
 		this.doc.transact(() => {
-			this.presence.set(connId, {
-				connId,
-				replicaId,
+			this.presence.set(connectionId, {
+				connectionId,
+				installationId,
 				subject: this.room.subject,
 			});
 		}, SERVER_ORIGIN);
@@ -458,10 +461,10 @@ export class Room extends DurableObject {
 		if (!connection) return;
 
 		const att = ws.deserializeAttachment() as WsAttachment | null;
-		if (att?.connId) {
-			const orphanConnId = att.connId;
+		if (att?.connectionId) {
+			const orphanConnectionId = att.connectionId;
 			this.doc.transact(() => {
-				this.presence.delete(orphanConnId);
+				this.presence.delete(orphanConnectionId);
 			}, SERVER_ORIGIN);
 		}
 
@@ -566,12 +569,12 @@ const COMPACTION_DELAY_MS = 30_000;
 
 /**
  * Per-connection metadata persisted via `ws.serializeAttachment` to survive
- * hibernation. Only the server-issued `connId` is stored: it identifies
- * which presence row this socket owns for delete-on-close and the boot
- * orphan sweep.
+ * hibernation. Only the client-minted, server-echoed `connectionId` is stored:
+ * it identifies which presence row this socket owns for delete-on-close and
+ * the boot orphan sweep.
  */
 type WsAttachment = {
-	connId: string;
+	connectionId: string;
 };
 
 // ============================================================================

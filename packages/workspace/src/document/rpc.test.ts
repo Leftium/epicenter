@@ -14,7 +14,7 @@
  * - External cancel and timeout both surface as `Cancelled` with the
  *   appropriate `reason`
  * - Row is deleted from the store after settle
- * - Routing by `connId` only dispatches to the matching runner
+ * - Routing by `connectionId` only dispatches to the matching runner
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -30,16 +30,16 @@ import { RPC_KEY } from './keys.js';
 import { attachActionRunner, type Call, dispatch } from './rpc.js';
 import { YKeyValueLww } from './y-keyvalue/y-keyvalue-lww.js';
 
-function setup(actions: ActionRegistry, targetConnId = 'target') {
+function setup(actions: ActionRegistry, targetConnectionId = 'target') {
 	const ydoc = new Y.Doc();
 	const rpc = new YKeyValueLww<Call>(ydoc.getArray(RPC_KEY));
-	const detach = attachActionRunner(rpc, targetConnId, actions);
-	return { ydoc, rpc, targetConnId, detach };
+	const detach = attachActionRunner(rpc, targetConnectionId, actions);
+	return { ydoc, rpc, targetConnectionId, detach };
 }
 
 describe('rpc', () => {
 	test('happy path (no input): query returns Ok value', async () => {
-		const { rpc, targetConnId, detach } = setup({
+		const { rpc, targetConnectionId, detach } = setup({
 			noop_ping: defineQuery({ handler: () => Ok('pong') }),
 		});
 
@@ -47,7 +47,7 @@ describe('rpc', () => {
 			rpc,
 			'noop_ping',
 			undefined,
-			{ to: targetConnId, signal: AbortSignal.timeout(1000) },
+			{ to: targetConnectionId, signal: AbortSignal.timeout(1000) },
 		);
 
 		expect(result.error).toBeNull();
@@ -56,7 +56,7 @@ describe('rpc', () => {
 	});
 
 	test('happy path (with input): echoes the payload', async () => {
-		const { rpc, targetConnId, detach } = setup({
+		const { rpc, targetConnectionId, detach } = setup({
 			echo: defineQuery({
 				input: Type.Object({ msg: Type.String() }),
 				handler: ({ msg }) => Ok({ echoed: msg }),
@@ -67,7 +67,7 @@ describe('rpc', () => {
 			rpc,
 			'echo',
 			{ msg: 'hi' },
-			{ to: targetConnId, signal: AbortSignal.timeout(1000) },
+			{ to: targetConnectionId, signal: AbortSignal.timeout(1000) },
 		);
 
 		expect(result.error).toBeNull();
@@ -76,12 +76,12 @@ describe('rpc', () => {
 	});
 
 	test('raw return value: Ok-wrapped by the runner', async () => {
-		const { rpc, targetConnId, detach } = setup({
+		const { rpc, targetConnectionId, detach } = setup({
 			answer: defineQuery({ handler: () => 42 }),
 		});
 
 		const result = await dispatch<undefined, number>(rpc, 'answer', undefined, {
-			to: targetConnId,
+			to: targetConnectionId,
 			signal: AbortSignal.timeout(1000),
 		});
 
@@ -91,14 +91,14 @@ describe('rpc', () => {
 	});
 
 	test('Err return: wrapped into ActionFailed with cause preserved', async () => {
-		const { rpc, targetConnId, detach } = setup({
+		const { rpc, targetConnectionId, detach } = setup({
 			fail_err: defineMutation({
 				handler: () => Err(new Error('domain error')),
 			}),
 		});
 
 		const result = await dispatch(rpc, 'fail_err', undefined, {
-			to: targetConnId,
+			to: targetConnectionId,
 			signal: AbortSignal.timeout(1000),
 		});
 
@@ -112,7 +112,7 @@ describe('rpc', () => {
 	});
 
 	test('thrown error: wrapped into ActionFailed with cause preserved', async () => {
-		const { rpc, targetConnId, detach } = setup({
+		const { rpc, targetConnectionId, detach } = setup({
 			fail_throw: defineMutation({
 				handler: () => {
 					throw new Error('boom');
@@ -121,7 +121,7 @@ describe('rpc', () => {
 		});
 
 		const result = await dispatch(rpc, 'fail_throw', undefined, {
-			to: targetConnId,
+			to: targetConnectionId,
 			signal: AbortSignal.timeout(1000),
 		});
 
@@ -134,13 +134,13 @@ describe('rpc', () => {
 	});
 
 	test('unknown action: ActionNotFound with the missing key', async () => {
-		const { rpc, targetConnId, detach } = setup({
+		const { rpc, targetConnectionId, detach } = setup({
 			// Registered something, just not the one we ask for.
 			something_else: defineQuery({ handler: () => Ok(null) }),
 		});
 
 		const result = await dispatch(rpc, 'no_such_action', undefined, {
-			to: targetConnId,
+			to: targetConnectionId,
 			signal: AbortSignal.timeout(1000),
 		});
 
@@ -188,12 +188,12 @@ describe('rpc', () => {
 	});
 
 	test('row is deleted after settle (finally branch ran)', async () => {
-		const { rpc, targetConnId, detach } = setup({
+		const { rpc, targetConnectionId, detach } = setup({
 			noop_ping: defineQuery({ handler: () => Ok('pong') }),
 		});
 
 		const result = await dispatch(rpc, 'noop_ping', undefined, {
-			to: targetConnId,
+			to: targetConnectionId,
 			signal: AbortSignal.timeout(1000),
 		});
 
@@ -202,7 +202,7 @@ describe('rpc', () => {
 		detach();
 	});
 
-	test('routing: only the matching connId observer runs', async () => {
+	test('routing: only the matching connectionId observer runs', async () => {
 		const ydoc = new Y.Doc();
 		const rpc = new YKeyValueLww<Call>(ydoc.getArray(RPC_KEY));
 

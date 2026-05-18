@@ -1,5 +1,5 @@
 import { createSession } from '@epicenter/svelte';
-import { createReplicaId } from '@epicenter/workspace';
+import { createInstallationId } from '@epicenter/workspace';
 import { auth } from '$platform/auth';
 import { openHoneycrispBrowser } from '../../browser';
 import { createHoneycrispState } from '../routes/(signed-in)/state';
@@ -9,7 +9,7 @@ export const session = createSession({
 	build: ({ owner }) => {
 		const honeycrisp = openHoneycrispBrowser({
 			owner,
-			replicaId: createReplicaId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 			openWebSocket: auth.openWebSocket,
 		});
 		const state = createHoneycrispState(honeycrisp);

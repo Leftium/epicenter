@@ -26,7 +26,7 @@ export default defineDaemonWorkspace({
 		projectDir,
 		route,
 		clientId,
-		replicaId,
+		installationId,
 		attachEncryption,
 		openWebSocket,
 	}) {
@@ -35,7 +35,7 @@ export default defineDaemonWorkspace({
 		const infra = attachDaemonInfrastructure(workspace.ydoc, {
 			projectDir,
 			openWebSocket,
-			replicaId,
+			installationId,
 			actions: workspace.actions,
 		});
 

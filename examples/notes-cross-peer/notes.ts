@@ -3,12 +3,13 @@
  *
  * Each peer's `daemon.ts` calls `openNotes(ctx-derived-args)` so both peers
  * agree on the workspace id, the table schema, and the action set; the only
- * thing that differs between peers is the `replicaId` (the daemon ctx default
- * is `${route}-daemon`, but cross-peer sync requires distinct replicaIds for
+ * thing that differs between peers is the `installationId` (the daemon ctx default
+ * is `${route}-daemon`, but cross-peer sync requires distinct installationIds for
  * the same workspace, so each peer hard-codes its own).
  */
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import type { OpenWebSocket } from '@epicenter/workspace';
 import {
 	attachTables,
 	defineMutation,
@@ -17,7 +18,6 @@ import {
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
-import type { OpenWebSocket } from '@epicenter/workspace';
 import { type } from 'arktype';
 import Type from 'typebox';
 import * as Y from 'yjs';
@@ -30,10 +30,10 @@ const WORKSPACE_ID = 'epicenter.notes-repro';
 const Note = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
 export function openNotes({
-	replicaId,
+	installationId,
 	openWebSocket,
 }: {
-	replicaId: string;
+	installationId: string;
 	openWebSocket: OpenWebSocket;
 }) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
@@ -57,7 +57,7 @@ export function openNotes({
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(EPICENTER_API_URL, ydoc.guid),
 		openWebSocket,
-		replicaId,
+		installationId,
 		actions,
 	});
 

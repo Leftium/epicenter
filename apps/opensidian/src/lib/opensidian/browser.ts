@@ -21,11 +21,11 @@ import { createOpensidianActions } from './actions';
 
 export function openOpensidianBrowser({
 	owner,
-	replicaId,
+	installationId,
 	openWebSocket,
 }: {
 	owner: LocalOwner;
-	replicaId: string;
+	installationId: string;
 	openWebSocket?: OpenWebSocket;
 }) {
 	const workspace = openOpensidianWorkspace(owner.attachEncryption);
@@ -95,7 +95,7 @@ export function openOpensidianBrowser({
 		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		replicaId,
+		installationId,
 		actions,
 	});
 	let disposed = false;

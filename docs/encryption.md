@@ -62,7 +62,7 @@ export const session = createSession({
 	build: ({ owner }) =>
 		openMyApp({
 			owner,
-			replicaId: createReplicaId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 			openWebSocket: auth.openWebSocket,
 		}),
 });
@@ -79,11 +79,11 @@ The browser factory shape is:
 ```ts
 export function openMyApp({
 	owner,
-	replicaId,
+	installationId,
 	openWebSocket,
 }: {
 	owner: LocalOwner;
-	replicaId: string;
+	installationId: string;
 	openWebSocket?: OpenWebSocket;
 }) {
 	const doc = openMyAppDoc({ owner });
@@ -117,7 +117,7 @@ export const session = createSession({
 	build: ({ owner }) => {
 		const workspace = openMyApp({
 			owner,
-			replicaId: createReplicaId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 			openWebSocket: auth.openWebSocket,
 		});
 		return {

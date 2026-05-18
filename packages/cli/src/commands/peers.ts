@@ -68,7 +68,9 @@ function emit(rows: PeerSnapshot[], format: OutputFormat | undefined): void {
 		if (i > 0) console.log('');
 		console.log(route);
 		console.table(
-			group.map(toRow).sort((a, b) => a.connId.localeCompare(b.connId)),
+			group
+				.map(toRow)
+				.sort((a, b) => a.connectionId.localeCompare(b.connectionId)),
 		);
 		i++;
 	}
@@ -76,8 +78,8 @@ function emit(rows: PeerSnapshot[], format: OutputFormat | undefined): void {
 
 function toRow(snap: PeerSnapshot) {
 	return {
-		connId: snap.connId,
+		connectionId: snap.connectionId,
 		subject: snap.subject,
-		replicaId: snap.replicaId,
+		installationId: snap.installationId,
 	};
 }

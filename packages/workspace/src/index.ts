@@ -13,7 +13,7 @@
  *   attachRichText,
  *   attachTables,
  *   createDisposableCache,
- *   createReplicaId,
+ *   createInstallationId,
  *   defineTable,
  *   docGuid,
  *   openCollaboration,
@@ -28,7 +28,7 @@
  *   protocols?: string[],
  * ) => Promise<WebSocket>;
  *
- * const replicaId = createReplicaId({ storage: localStorage });
+ * const installationId = createInstallationId({ storage: localStorage });
  *
  * // Singleton document + collaboration: inline at module scope, no factory wrapper.
  * const ydoc = new Y.Doc({ guid: 'notes' });
@@ -38,7 +38,7 @@
  *   url: roomWsUrl('https://api.example.com', ydoc.guid),
  *   waitFor: idb.whenLoaded,
  *   openWebSocket,
- *   replicaId,
+ *   installationId,
  *   actions: {},
  * });
  *
@@ -59,7 +59,7 @@
  *       url: roomWsUrl('https://api.example.com', bodyYdoc.guid),
  *       waitFor: bodyIdb.whenLoaded,
  *       openWebSocket,
- *       replicaId,
+ *       installationId,
  *       actions: {},
  *     });
  *     return {
@@ -91,13 +91,13 @@ export {
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════
-// REPLICA IDENTITY
+// INSTALLATION IDENTITY
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
-	createReplicaId,
-	createReplicaIdAsync,
-} from './document/replica-id.js';
+	createInstallationId,
+	createInstallationIdAsync,
+} from './document/installation-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PATH TYPES (for daemon callers)

@@ -29,7 +29,7 @@ The first design was straightforward. Calls live in `YKeyValueLww<Call>`. An orp
 ```ts
 // the old shape
 calls.set(callId, {
-  to: targetConnId,
+  to: targetConnectionId,
   action: 'open_note',
   input: { ... },
   sent_at: Date.now(),
@@ -51,7 +51,7 @@ The relay also stamps `from` on the inbound frame, because it knows authoritativ
 
 ```ts
 collab.dispatch({
-  to: replicaId,                          // stable per install
+  to: installationId,                          // stable per install
   action: 'open_note',
   input: { ... },
   expiresAt: Date.now() + 30_000,
@@ -76,7 +76,7 @@ No `platform` field on devices. The only reason it existed was to predict which 
 No durable devices registry. Offline devices don't exist for the purpose of dispatch. Discovery is just one method on the relay-backed liveness view:
 
 ```ts
-collab.devices.list()   // [{ replicaId, displayName, actions }, ...]
+collab.devices.list()   // [{ installationId, displayName, actions }, ...]
 ```
 
 Three fields per device. We had more. Each one we cut, the design got smaller.

@@ -1,16 +1,16 @@
 /**
- * Replica id helper.
+ * Installation id helper.
  *
- * A replica id is a stable string that identifies one installation of an
+ * An installation id is a stable string that identifies one installation of an
  * Epicenter app. Browser tabs in the same app share localStorage and therefore
- * share a replica id; separate browsers, machines, or device classes get
- * distinct replica ids. The id is generated on first call and persisted in the
- * supplied storage; subsequent calls return the persisted value.
+ * share an installation id; separate browsers, machines, or device classes get
+ * distinct installation ids. The id is generated on first call and persisted
+ * in the supplied storage; subsequent calls return the persisted value.
  *
- * Replica ids are claimed by the client and only the client knows them. They
- * are passed to `openCollaboration` as the `replicaId` config field and
- * echoed by the server onto a presence row inside the workspace Y.Doc. The
- * server stamps the authenticated `subject` on the same row; the two are
+ * Installation ids are claimed by the client and only the client knows them.
+ * They are passed to `openCollaboration` as the `installationId` config field
+ * and echoed by the server onto a presence row inside the workspace Y.Doc.
+ * The server stamps the authenticated `subject` on the same row; the two are
  * joined by the presence surface.
  */
 
@@ -30,11 +30,11 @@ export type AsyncStorage = {
 
 // Persisted under the legacy "installation.id" key. Do not rename: every
 // existing user has this key in storage today; renaming invalidates their
-// replica id and shows them up as a new device.
+// installation id and shows them up as a new device.
 const KEY = 'epicenter.installation.id';
 
-/** Read or lazily generate the replica id from a synchronous storage. */
-export function createReplicaId({
+/** Read or lazily generate the installation id from synchronous storage. */
+export function createInstallationId({
 	storage,
 }: {
 	storage: SimpleStorage;
@@ -46,8 +46,8 @@ export function createReplicaId({
 	return fresh;
 }
 
-/** Read or lazily generate the replica id from an async storage. */
-export async function createReplicaIdAsync({
+/** Read or lazily generate the installation id from async storage. */
+export async function createInstallationIdAsync({
 	storage,
 }: {
 	storage: AsyncStorage;

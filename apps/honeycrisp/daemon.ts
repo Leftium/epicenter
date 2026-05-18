@@ -7,18 +7,18 @@
  * and Markdown materializer for notes.
  */
 
-import {
-	attachDaemonInfrastructure,
-	markdownPath,
-	openWriterSqlite,
-	sqlitePath,
-} from '@epicenter/workspace/node';
 import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
+import {
+	attachDaemonInfrastructure,
+	markdownPath,
+	openWriterSqlite,
+	sqlitePath,
+} from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
 import { openHoneycrispWorkspace } from './workspace.js';
 
@@ -27,7 +27,7 @@ export default defineDaemonWorkspace({
 		projectDir,
 		route,
 		clientId,
-		replicaId,
+		installationId,
 		attachEncryption,
 		openWebSocket,
 	}) {
@@ -36,7 +36,7 @@ export default defineDaemonWorkspace({
 		const infra = attachDaemonInfrastructure(workspace.ydoc, {
 			projectDir,
 			openWebSocket,
-			replicaId,
+			installationId,
 			actions: workspace.actions,
 		});
 

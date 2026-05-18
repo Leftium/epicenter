@@ -24,4 +24,12 @@ export const APPS = {
 } as const;
 
 export type AppId = keyof typeof APPS;
-export const EPICENTER_API_URL = APPS.API.urls[0];
+/**
+ * Default API base URL for Node consumers (CLI, daemon, tests). The constant
+ * resolves to `process.env.EPICENTER_API_URL` when set, else the canonical
+ * production URL. Browsers and Workers lack `process.env`, so they fall
+ * through to the production default automatically.
+ */
+export const EPICENTER_API_URL =
+	(typeof process !== 'undefined' && process.env?.EPICENTER_API_URL) ||
+	APPS.API.urls[0];

@@ -9,8 +9,16 @@
  * consumer picks it up automatically.
  */
 
+/**
+ * Canonical production origin for the Epicenter API. Used by both the `API`
+ * entry and the `DASHBOARD` entry (the dashboard SPA is mounted at
+ * `/dashboard/*` on the API origin), and as the fallback for
+ * {@link EPICENTER_API_URL}.
+ */
+const PRODUCTION_API_URL = 'https://api.epicenter.so';
+
 export const APPS = {
-	API: { port: 8787, urls: ['https://api.epicenter.so'] },
+	API: { port: 8787, urls: [PRODUCTION_API_URL] },
 	SH: { port: 5173, urls: ['https://epicenter.sh'] },
 	AUDIO: { port: 1420, urls: ['https://whispering.epicenter.so'] },
 	FUJI: { port: 5174, urls: ['https://fuji.epicenter.so'] },
@@ -20,16 +28,17 @@ export const APPS = {
 		urls: ['https://opensidian.com', 'https://opensidian.epicenter.so'],
 	},
 	ZHONGWEN: { port: 8888, urls: ['https://zhongwen.epicenter.so'] },
-	DASHBOARD: { port: 5178, urls: ['https://api.epicenter.so'] },
+	DASHBOARD: { port: 5178, urls: [PRODUCTION_API_URL] },
 } as const;
 
 export type AppId = keyof typeof APPS;
+
 /**
  * Default API base URL for Node consumers (CLI, daemon, tests). The constant
- * resolves to `process.env.EPICENTER_API_URL` when set, else the canonical
- * production URL. Browsers and Workers lack `process.env`, so they fall
- * through to the production default automatically.
+ * resolves to `process.env.EPICENTER_API_URL` when set, else
+ * {@link PRODUCTION_API_URL}. Browsers and Workers lack `process.env`, so
+ * they fall through to the production default automatically.
  */
 export const EPICENTER_API_URL =
 	(typeof process !== 'undefined' && process.env?.EPICENTER_API_URL) ||
-	APPS.API.urls[0];
+	PRODUCTION_API_URL;

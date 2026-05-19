@@ -70,15 +70,9 @@ function emit(rows: PeerSnapshot[], format: OutputFormat | undefined): void {
 		console.log(route);
 		console.table(
 			group
-				.map(toRow)
+				.map((snap) => ({ installationId: snap.installationId }))
 				.sort((a, b) => a.installationId.localeCompare(b.installationId)),
 		);
 		i++;
 	}
-}
-
-function toRow(snap: PeerSnapshot) {
-	return {
-		installationId: snap.installationId,
-	};
 }

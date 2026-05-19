@@ -4,6 +4,7 @@
 **Status**: Historical, partially superseded
 **Author**: AI-assisted (Sisyphus)
 **Superseded in part by**: `specs/20260512T150000-cloud-modules-and-networks.md`
+**Related growth spec**: `specs/20260518T160639-theark-marp-shortform-content-engine.md`
 
 ## Historical Note
 

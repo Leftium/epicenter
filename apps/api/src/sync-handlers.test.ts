@@ -79,10 +79,6 @@ function expectOk<T>(result: Result<T, unknown>): T {
 	return result.data as T;
 }
 
-function frameSyncUpdate(update: Uint8Array): Uint8Array {
-	return encodeSyncUpdate({ update });
-}
-
 function frameSingleByte(messageType: number): Uint8Array {
 	return encoding.encode((enc) => {
 		encoding.writeVarUint(enc, messageType);
@@ -226,7 +222,7 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 		const source = new Y.Doc();
 		source.getMap('data').set('hello', 'world');
 		const update = Y.encodeStateAsUpdateV2(source);
-		const frame = frameSyncUpdate(update);
+		const frame = encodeSyncUpdate({ update });
 
 		const room = makeRoom();
 		const { connection } = makeConnection(room.doc);

@@ -94,7 +94,7 @@ export type SyncMessageType =
  * Decoded sync message: discriminated union of the three sync sub-types.
  * Update payloads are V2-encoded.
  */
-export type DecodedSyncMessage =
+type DecodedSyncMessage =
 	| { type: 'step1'; stateVector: Uint8Array }
 	| { type: 'step2'; update: Uint8Array }
 	| { type: 'update'; update: Uint8Array };

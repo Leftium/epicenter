@@ -410,15 +410,9 @@ app.use('/ai/*', async (c, next) => {
 app.get('/billing', (c) => c.redirect('/dashboard'));
 
 // Dashboard SPA: static assets served by Workers Static Assets (wrangler.jsonc).
-// This catch-all handles SPA client-side routing: when no static file matches,
-// serve index.html so the SvelteKit router takes over.
-app.get('/dashboard/*', async (c) => {
-	const assets = c.env.ASSETS;
-	if (!assets) return c.notFound();
-	const indexUrl = new URL('/dashboard/index.html', c.req.url);
-	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
-});
-app.get('/dashboard', async (c) => {
+// Both `/dashboard` and `/dashboard/*` serve index.html so the SvelteKit
+// router takes over on SPA routes that have no matching static file.
+app.on('GET', ['/dashboard', '/dashboard/*'], async (c) => {
 	const assets = c.env.ASSETS;
 	if (!assets) return c.notFound();
 	const indexUrl = new URL('/dashboard/index.html', c.req.url);

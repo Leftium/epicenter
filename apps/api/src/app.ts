@@ -17,6 +17,7 @@ import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
+import { requireOriginForCookieMutations } from './auth/csrf';
 import { deriveSubjectKeyring } from './auth/encryption';
 import {
 	createOAuthIssuerURL,
@@ -25,7 +26,6 @@ import {
 	OAUTH_OPENID_CONFIGURATION_PATH,
 	OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
 } from './auth/oauth-metadata';
-import { requireOriginForCookieMutations } from './auth/csrf';
 import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
 import { resolveRequestOAuthUser } from './auth/resource-boundary';
 import { singleCredential } from './auth/single-credential';

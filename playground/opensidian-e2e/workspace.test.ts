@@ -15,7 +15,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileContentDocGuid, type FileId } from '@epicenter/filesystem';
+import { type FileId, fileContentDocGuid } from '@epicenter/filesystem';
 import {
 	attachEncryption,
 	attachTimeline,
@@ -32,8 +32,7 @@ const WORKSPACE_ID = 'opensidian';
 const TEST_ENCRYPTION_KEYS = [
 	{
 		version: 1,
-		subjectKeyBase64:
-			'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+		subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
 ];
 

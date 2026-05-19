@@ -212,9 +212,7 @@ export type TypedDispatch<TTargetActions extends ActionRegistry> = <
  * ```
  */
 export function typedDispatch<TTargetActions extends ActionRegistry>(
-	dispatch: (
-		req: DispatchRequest,
-	) => Promise<Result<unknown, DispatchError>>,
+	dispatch: (req: DispatchRequest) => Promise<Result<unknown, DispatchError>>,
 ): TypedDispatch<TTargetActions> {
 	return dispatch as TypedDispatch<TTargetActions>;
 }
@@ -230,9 +228,7 @@ export function typedDispatch<TTargetActions extends ActionRegistry>(
  * becomes `http(s)://host/rooms/<encoded-room>/dispatch`.
  */
 export function deriveDispatchUrl(wsUrl: string): string {
-	const httpUrl = wsUrl
-		.replace(/^wss:/, 'https:')
-		.replace(/^ws:/, 'http:');
+	const httpUrl = wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
 	return `${httpUrl}/dispatch`;
 }
 

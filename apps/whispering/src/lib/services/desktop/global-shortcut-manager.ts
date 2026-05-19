@@ -170,7 +170,6 @@ export const GlobalShortcutManagerLive = {
 	},
 };
 
-
 /**
  * Validates if a string is a valid Electron accelerator
  */

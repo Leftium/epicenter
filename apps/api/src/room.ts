@@ -41,11 +41,8 @@ import {
 	parseSubprotocols,
 	stateVectorsEqual,
 } from '@epicenter/sync';
+import { Awareness, removeAwarenessStates } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import {
-	Awareness,
-	removeAwarenessStates,
-} from 'y-protocols/awareness';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import {
 	applyMessage,
@@ -73,9 +70,7 @@ type DispatchInboundFrame = {
 };
 
 /** Wire form of a `Result<unknown, DispatchError>`. */
-export type DispatchResult =
-	| { data: unknown }
-	| { error: DispatchErrorWire };
+export type DispatchResult = { data: unknown } | { error: DispatchErrorWire };
 
 export type DispatchErrorWire =
 	| { name: 'RecipientOffline'; to: string; message: string }

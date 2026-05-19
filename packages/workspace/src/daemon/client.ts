@@ -31,8 +31,8 @@ import type { ActionManifest } from '../shared/actions.js';
 
 import type { PeerSnapshot, RunRequest } from './app.js';
 import { socketPathFor } from './paths.js';
-import type { RunError } from './run-errors.js';
 import { WORKSPACES_DIRNAME } from './route-validation.js';
+import type { RunError } from './run-errors.js';
 
 /**
  * Tagged-error variants returned by daemon client surfaces. Domain errors

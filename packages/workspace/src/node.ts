@@ -5,11 +5,6 @@
  * bundles do not traverse modules that import `node:*` or `bun:*`.
  */
 
-export {
-	attachDaemonInfrastructure,
-	type AttachDaemonInfrastructureOptions,
-	type DaemonInfrastructure,
-} from './daemon/attach-daemon-infrastructure.js';
 export { connectDaemonActions } from './client/connect-daemon-actions.js';
 export type {
 	DaemonActionOptions,
@@ -19,6 +14,11 @@ export { buildDaemonActions } from './client/daemon-actions.js';
 export { epicenterPaths } from './client/epicenter-paths.js';
 export { findEpicenterDir } from './client/find-epicenter-dir.js';
 export { PeerSnapshot, RunRequest } from './daemon/app.js';
+export {
+	type AttachDaemonInfrastructureOptions,
+	attachDaemonInfrastructure,
+	type DaemonInfrastructure,
+} from './daemon/attach-daemon-infrastructure.js';
 export {
 	type DaemonClient,
 	DaemonError,
@@ -46,12 +46,6 @@ export {
 	runtimeDir,
 	socketPathFor,
 } from './daemon/paths.js';
-export {
-	type StartDaemonWorkspaceAppsOptions,
-	type StartDaemonWorkspaceAppsResult,
-	startDaemonWorkspaceApps,
-} from './workspace-apps/start-daemon-workspace-apps.js';
-export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
 	RunError,
 	type RunResponse,
@@ -92,3 +86,9 @@ export {
 	yjsPath,
 } from './document/workspace-paths.js';
 export { hashClientId } from './shared/client-id.js';
+export { WorkspaceAppError } from './workspace-apps/errors.js';
+export {
+	type StartDaemonWorkspaceAppsOptions,
+	type StartDaemonWorkspaceAppsResult,
+	startDaemonWorkspaceApps,
+} from './workspace-apps/start-daemon-workspace-apps.js';

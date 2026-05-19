@@ -70,7 +70,8 @@ export function createOAuthAppAuth({
 	let verifiedPersisted: PersistedAuthType | null = null;
 	let networkAuthPaused = false;
 	let refreshPromise: Promise<boolean> | null = null;
-	let identityPromise: Promise<Result<ApiSessionResponse, AuthError>> | null = null;
+	let identityPromise: Promise<Result<ApiSessionResponse, AuthError>> | null =
+		null;
 
 	let state = deriveState();
 	const stateChangeListeners = new Set<(state: AuthState) => void>();
@@ -194,7 +195,9 @@ export function createOAuthAppAuth({
 		startedFrom: PersistedAuthType,
 	): Promise<Result<ApiSessionResponse, AuthError>> {
 		if (identityPromise) return identityPromise;
-		identityPromise = (async (): Promise<Result<ApiSessionResponse, AuthError>> => {
+		identityPromise = (async (): Promise<
+			Result<ApiSessionResponse, AuthError>
+		> => {
 			const { data: session, error } = await callApiSession(startedFrom.grant);
 			if (error) return AuthError.VerifyIdentityFailed({ cause: error });
 			if (persisted !== startedFrom) return Ok(session);

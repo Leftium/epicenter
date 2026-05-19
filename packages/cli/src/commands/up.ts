@@ -256,18 +256,14 @@ function subscribePeers(entry: StartedDaemonRoute, quiet: boolean): void {
 		for (const installationId of next) {
 			if (!prev.has(installationId)) {
 				if (!quiet) {
-					process.stderr.write(
-						`${entry.route}: ${installationId} joined\n`,
-					);
+					process.stderr.write(`${entry.route}: ${installationId} joined\n`);
 				}
 			}
 		}
 		for (const installationId of prev) {
 			if (!next.has(installationId)) {
 				if (!quiet) {
-					process.stderr.write(
-						`${entry.route}: ${installationId} left\n`,
-					);
+					process.stderr.write(`${entry.route}: ${installationId} left\n`);
 				}
 			}
 		}

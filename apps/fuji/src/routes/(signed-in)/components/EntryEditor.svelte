@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { Entry } from '$lib/workspace';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
@@ -21,6 +20,7 @@
 	import ProseMirrorEditor from '$lib/components/ProseMirrorEditor.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
 	import { requireFuji } from '$lib/session';
+	import type { Entry } from '$lib/workspace';
 
 	let { entry }: { entry: Entry } = $props();
 	const fuji = requireFuji();

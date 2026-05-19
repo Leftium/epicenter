@@ -45,7 +45,6 @@ export const TrayIconServiceLive = {
 		}),
 };
 
-
 async function initTray() {
 	const existingTray = await TrayIcon.getById(TRAY_ID);
 	if (existingTray) return existingTray;

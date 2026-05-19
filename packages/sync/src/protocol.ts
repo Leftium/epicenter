@@ -50,8 +50,6 @@ export const MESSAGE_TYPE = {
 	AUTH: 2,
 } as const;
 
-export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
-
 /**
  * Decodes the top-level message type from raw message data.
  *

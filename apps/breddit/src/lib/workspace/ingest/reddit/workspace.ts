@@ -336,10 +336,10 @@ const redditKv = {
 
 export function openReddit() {
 	const id = 'reddit';
-	const ydoc = new Y.Doc({ guid: id, gc: false });
+	const ydoc = new Y.Doc({ guid: id, gc: true });
 	const tables = attachTables(ydoc, redditTables);
 	const kv = attachKv(ydoc, redditKv);
-	// no persistence/sync/encryption — in-memory-only importer target
+	// no persistence/sync/encryption: in-memory-only importer target
 	return {
 		ydoc,
 		tables,

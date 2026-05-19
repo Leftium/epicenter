@@ -26,10 +26,7 @@ import type { DaemonRuntime, StartedDaemonRoute } from '../daemon/index.js';
 import { attachEncryption } from '../document/attach-encryption.js';
 import { hashClientId } from '../shared/client-id.js';
 import type { ProjectDir } from '../shared/types.js';
-import {
-	discoverWorkspaceApps,
-	type WorkspaceAppEntry,
-} from './discover.js';
+import { discoverWorkspaceApps, type WorkspaceAppEntry } from './discover.js';
 import {
 	WorkspaceAppError,
 	type WorkspaceAppError as WorkspaceAppErrorType,
@@ -108,9 +105,7 @@ async function openOneWorkspaceApp({
 	entry,
 	projectDir,
 	auth,
-}: OpenOneOptions): Promise<
-	Result<StartedDaemonRoute, WorkspaceAppErrorType>
-> {
+}: OpenOneOptions): Promise<Result<StartedDaemonRoute, WorkspaceAppErrorType>> {
 	let mod: unknown;
 	try {
 		mod = await import(Bun.pathToFileURL(entry.daemonEntryPath).href);
@@ -133,8 +128,11 @@ async function openOneWorkspaceApp({
 		projectDir,
 		route: entry.route,
 		clientId: hashClientId(projectDir),
-		replicaId: `${entry.route}-daemon`,
-		attachEncryption: createDaemonAttachEncryption({ auth, route: entry.route }),
+		installationId: `${entry.route}-daemon`,
+		attachEncryption: createDaemonAttachEncryption({
+			auth,
+			route: entry.route,
+		}),
 		openWebSocket: auth.openWebSocket,
 	};
 	try {

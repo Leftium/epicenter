@@ -12,7 +12,7 @@ export function openSkills({
 	workspaceId = SKILLS_WORKSPACE_ID,
 	clientID,
 }: OpenSkillsOptions = {}) {
-	const ydoc = new Y.Doc({ guid: workspaceId, gc: false });
+	const ydoc = new Y.Doc({ guid: workspaceId, gc: true });
 	if (clientID !== undefined) ydoc.clientID = clientID;
 
 	const tables = attachTables(ydoc, {

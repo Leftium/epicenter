@@ -19,14 +19,14 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { openFujiWorkspace } from './workspace.js';
+import { openFujiWorkspace } from './src/lib/workspace.js';
 
 export default defineDaemonWorkspace({
 	async open({
 		projectDir,
 		route,
 		clientId,
-		replicaId,
+		installationId,
 		attachEncryption,
 		openWebSocket,
 	}) {
@@ -35,7 +35,7 @@ export default defineDaemonWorkspace({
 		const infra = attachDaemonInfrastructure(workspace.ydoc, {
 			projectDir,
 			openWebSocket,
-			replicaId,
+			installationId,
 			actions: workspace.actions,
 		});
 

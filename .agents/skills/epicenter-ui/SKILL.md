@@ -60,6 +60,20 @@ Collapse wrapper elements whenever a component can own the layout directly. `Emp
 
 Add a wrapper only when it owns a real layout boundary that the component should not own: scroll containment, pane sizing, table cell structure, sticky headers, or sibling spacing.
 
+Use this boundary ladder before copying or forking component internals:
+
+1. Use an existing local `@epicenter/ui` component and variant.
+2. Pass a `class` or supported prop.
+3. Add a local variant to the wrapper component.
+4. Wrap the component for a real composition boundary.
+5. Copy upstream component code only when Epicenter needs to own behavior, tokens, persistence, shortcuts, or app state.
+
+Import compound components as namespaces, such as `import * as Dialog from '@epicenter/ui/dialog'`. Import single components by name, such as `import { Button } from '@epicenter/ui/button'`.
+
+Dialog, Sheet, and Drawer surfaces need accessible titles. Use an `sr-only` title when the visual design already supplies equivalent context. Form controls with validation state should expose `aria-invalid` or the local component equivalent.
+
+Before pulling upstream shadcn-svelte component updates, commit local wrapper state. Then reconcile upstream changes against local deltas instead of overwriting the wrapper.
+
 ## Empty States
 
 Use the `Empty.*` compound component for an absent or failed surface:
@@ -177,3 +191,9 @@ Use different copy for true empty data and filtered empty data:
 ## Boundary With Svelte
 
 Svelte decides which branch renders: `{#if}`, `{#await}`, query status, or derived state. Epicenter UI decides what the branch looks like: `Spinner`, `Skeleton`, `Progress`, `Empty`, `Command.Empty`, `Button tooltip`, or chat typing state.
+
+## Extras And Chat
+
+- Prefer existing local extras such as copy buttons, snippets, links, and chat components before adding one-off equivalents.
+- Chat list, message bubble variants, typing state, copy actions, and auto-scroll behavior belong in local wrappers. App code should compose them, not duplicate their internals.
+- Copy small generic primitives into `packages/ui` when the primitive is stable and visual. Wrap instead when Epicenter adds domain behavior or persistent app state.

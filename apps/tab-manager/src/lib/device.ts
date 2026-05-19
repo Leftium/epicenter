@@ -1,28 +1,28 @@
 /**
  * Device identity helpers for the tab-manager extension.
  *
- * The extension publishes a `replicaId` in presence (install-stable id) and
- * seeds a row in the local `devices` table with a human-readable name.
- * Replica id is the wire concept; the device row is the app's product
+ * The extension publishes an `installationId` in presence (install-stable id)
+ * and seeds a row in the local `devices` table with a human-readable name.
+ * Installation id is the wire concept; the device row is the app's product
  * concept (display name, last seen, browser kind).
  */
 
-import { createReplicaIdAsync } from '@epicenter/workspace';
+import { createInstallationIdAsync } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
 import type { TabManagerBrowser } from './tab-manager/extension';
 import type { DeviceId } from './workspace/definition';
 
 /**
- * Compute the extension's replica id + the default device label.
+ * Compute the extension's installation id and default device label.
  *
- * The replica id is read from (or created in) `chrome.storage.local`. The
+ * The installation id is read from (or created in) `chrome.storage.local`. The
  * default name combines the browser brand and the host OS (e.g.
  * "Chrome on macOS") and is used to seed the device row when no row exists
- * yet; subsequent renames live on the row, not the replica.
+ * yet; subsequent renames live on the row, not the installation id.
  */
 export async function createDeviceProfile() {
 	const [id, defaultName] = await Promise.all([
-		createReplicaIdAsync({
+		createInstallationIdAsync({
 			storage: {
 				getItem: (k) => storage.getItem<string>(`local:${k}`),
 				setItem: async (k, v) => {
@@ -33,7 +33,7 @@ export async function createDeviceProfile() {
 		generateDefaultDeviceName(),
 	]);
 	return {
-		replicaId: id as DeviceId,
+		installationId: id as DeviceId,
 		defaultName,
 	};
 }
@@ -47,9 +47,9 @@ export async function registerDevice(
 	tabManager: TabManagerBrowser,
 	defaultName: string,
 ): Promise<void> {
-	// openTabManagerBrowser narrows replicaId to DeviceId at construction; the
-	// schema-validated presence carries plain strings, so cast back.
-	const id = tabManager.collaboration.replicaId as DeviceId;
+	// openTabManagerBrowser narrows installationId to DeviceId at construction;
+	// the schema-validated presence carries plain strings, so cast back.
+	const id = tabManager.collaboration.installationId as DeviceId;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
 	tabManager.tables.devices.set({

@@ -11,12 +11,12 @@
  * `null` to `Result`; presence is a server-written row per connected socket.
  * No awareness, no RPC envelopes, no runtime envelopes.
  *
- * Routing is by per-socket `connId` (client-minted at startup, echoed by the
- * server as a query param). `replicaId` is install-stable but can map to many
- * `connId`s (one per tab). Callers pick a concrete connection at the call
- * site: `collab.peers.list().find((p) => p.replicaId === id)` for "any tab,"
- * `peers.list().filter(...)` for fan-out. The presence surface deliberately
- * does not hide that choice behind a `find` verb.
+ * Routing is by per-socket `connectionId` (client-minted at startup, echoed by
+ * the server as a query param). `installationId` is install-stable but can map
+ * to many `connectionId`s (one per tab). Callers pick a concrete connection at
+ * the call site: `collab.peers.list().find((p) => p.installationId === id)`
+ * for "any tab," `peers.list().filter(...)` for fan-out. The presence surface
+ * deliberately does not hide that choice behind a `find` verb.
  *
  * Content docs (rich-text bodies, attachments, anything nested under a parent
  * that syncs independently) use this same primitive with `actions: {}`: the
@@ -57,11 +57,11 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	openWebSocket?: OpenWebSocket;
 	log?: Logger;
 	/**
-	 * Install-stable replica id. Identifies "this install" across reconnects
-	 * and tabs. Multiple tabs on the same install publish the same
-	 * `replicaId` with distinct per-socket `connId`s.
+	 * Install-stable identity. Identifies "this install" across reconnects and
+	 * tabs. Multiple tabs on the same install publish the same
+	 * `installationId` with distinct per-socket `connectionId`s.
 	 */
-	replicaId: string;
+	installationId: string;
 	/**
 	 * Local action registry. Pass `{}` for content docs and consume-only
 	 * participants. When the registry is empty, no action runner observer is
@@ -71,13 +71,13 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 };
 
 export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
-	readonly replicaId: string;
+	readonly installationId: string;
 	/**
 	 * Per-socket routing address, client-minted at startup via
 	 * `crypto.randomUUID()`. Stable for the lifetime of this
-	 * `openCollaboration` call; a new call mints a new `connId`.
+	 * `openCollaboration` call; a new call mints a new `connectionId`.
 	 */
-	readonly connId: string;
+	readonly connectionId: string;
 	readonly actions: TActions;
 
 	readonly status: SyncStatus;
@@ -89,9 +89,9 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	readonly peers: PresenceSurface;
 
 	/**
-	 * Dispatch a remote call. The target is identified by `connId`; resolve
+	 * Dispatch a remote call. The target is identified by `connectionId`; resolve
 	 * one from `peers.list()`, e.g.:
-	 * `peers.list().find((p) => p.replicaId === id)?.connId`.
+	 * `peers.list().find((p) => p.installationId === id)?.connectionId`.
 	 * `options.signal` is required: timeout via `AbortSignal.timeout(ms)`,
 	 * user cancel via `AbortController`, compose with `AbortSignal.any([...])`.
 	 */
@@ -127,19 +127,19 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		}
 	}
 
-	const replicaId = config.replicaId;
-	const connId = crypto.randomUUID();
+	const installationId = config.installationId;
+	const connectionId = crypto.randomUUID();
 
 	const rpc = new YKeyValueLww<Call>(ydoc.getArray(RPC_KEY));
 	const presence = new YKeyValueLww<PresenceEntry>(ydoc.getArray(PRESENCE_KEY));
 
 	// Wrap the user-supplied opener so every connect (including reconnects)
-	// carries `?replicaId=&connId=` without callers re-encoding the URL.
+	// carries `?installationId=&connectionId=` without callers re-encoding the URL.
 	const userOpen = config.openWebSocket;
 	const openWebSocket: OpenWebSocket = (rawUrl, protocols) => {
 		const url = new URL(rawUrl.toString());
-		url.searchParams.set('replicaId', replicaId);
-		url.searchParams.set('connId', connId);
+		url.searchParams.set('installationId', installationId);
+		url.searchParams.set('connectionId', connectionId);
 		return userOpen ? userOpen(url, protocols) : new WebSocket(url, protocols);
 	};
 
@@ -153,11 +153,11 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	// Skip the observer entirely when there is nothing to handle. Pure
 	// listeners (content docs, consume-only participants) pay zero cost.
 	if (Object.keys(userActions).length > 0) {
-		const detachRunner = attachActionRunner(rpc, connId, userActions);
+		const detachRunner = attachActionRunner(rpc, connectionId, userActions);
 		ydoc.once('destroy', detachRunner);
 	}
 
-	const peers = createPresenceSurface(presence, connId);
+	const peers = createPresenceSurface(presence, connectionId);
 
 	// Client-side orphan sweep. If a previous run crashed between writing a
 	// call and reaching `finally { rpc.delete(id) }`, the entry persists in
@@ -176,8 +176,8 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	})();
 
 	return {
-		replicaId,
-		connId,
+		installationId,
+		connectionId,
 		actions: userActions,
 		get status() {
 			return supervisor.status;

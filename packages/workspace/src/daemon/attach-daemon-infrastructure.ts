@@ -40,7 +40,7 @@ export type AttachDaemonInfrastructureOptions<TActions extends ActionRegistry> =
 	{
 		projectDir: ProjectDir;
 		openWebSocket: OpenWebSocket;
-		replicaId: string;
+		installationId: string;
 		actions: TActions;
 		/** Defaults to `EPICENTER_API_URL`. Override for self-hosted hubs. */
 		apiUrl?: string;
@@ -57,7 +57,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 	{
 		projectDir,
 		openWebSocket,
-		replicaId,
+		installationId,
 		actions,
 		apiUrl = EPICENTER_API_URL,
 	}: AttachDaemonInfrastructureOptions<TActions>,
@@ -69,7 +69,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(apiUrl, ydoc.guid),
 		openWebSocket,
-		replicaId,
+		installationId,
 		actions,
 	});
 

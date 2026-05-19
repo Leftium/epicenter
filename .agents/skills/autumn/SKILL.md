@@ -26,6 +26,13 @@ Use this when you need to:
 - Push/pull billing config with the `atmn` CLI.
 - Debug billing issues (insufficient credits, customer sync, refunds).
 
+## Domain Model Checks
+
+- Use Autumn's current nouns precisely: Feature, Entitlement, Product, ProductItem, Price, Customer, and CustomerProduct.
+- Validate ProductItem shapes before pushing config. Most failures come from invalid interval combinations, missing linked features, or price/reset variants that do not match the feature type.
+- Decide fail-open versus fail-closed behavior for `check()` errors at each endpoint. AI credit charging should fail closed before expensive provider calls.
+- If Stripe webhooks or CustomerProduct state transitions are touched, make the handler idempotent around retries.
+
 ---
 
 ## Naming Conventions (CRITICAL)

@@ -3,26 +3,25 @@
  *
  * These tests do not exercise IndexedDB, BroadcastChannel, sync, or any
  * runtime composed by browser.ts or daemon.ts. They pin the canonical
- * Y.Doc identity, the optional `clientId`, and the encrypted tables/kv
- * surface that both layers compose around.
+ * Y.Doc identity, garbage collection policy, the optional `clientId`, and
+ * the encrypted tables/kv surface that both layers compose around.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { bytesToBase64, type SubjectKeyring } from '@epicenter/encryption';
 import { attachEncryption } from '@epicenter/workspace';
-import { randomBytes } from '@noble/ciphers/utils.js';
 import type * as Y from 'yjs';
 import {
 	HONEYCRISP_WORKSPACE_ID,
 	openHoneycrispWorkspace,
 } from './workspace.js';
 
-function toKeyring(key: Uint8Array): SubjectKeyring {
-	return [{ version: 1, subjectKeyBase64: bytesToBase64(key) }];
-}
+const testKey = new Uint8Array(32).fill(7);
 
 function createTestEncryption(
-	keyring: SubjectKeyring = toKeyring(randomBytes(32)),
+	keyring: SubjectKeyring = [
+		{ version: 1, subjectKeyBase64: bytesToBase64(testKey) },
+	],
 ): (ydoc: Y.Doc) => ReturnType<typeof attachEncryption> {
 	return (ydoc) => {
 		return attachEncryption(ydoc, { keyring: () => keyring });
@@ -30,9 +29,10 @@ function createTestEncryption(
 }
 
 describe('openHoneycrispWorkspace', () => {
-	test('creates a Y.Doc with HONEYCRISP_WORKSPACE_ID', () => {
+	test('creates a gc:true Y.Doc with HONEYCRISP_WORKSPACE_ID', () => {
 		const workspace = openHoneycrispWorkspace(createTestEncryption());
 		expect(workspace.ydoc.guid).toBe(HONEYCRISP_WORKSPACE_ID);
+		expect(workspace.ydoc.gc).toBe(true);
 		workspace.ydoc.destroy();
 	});
 

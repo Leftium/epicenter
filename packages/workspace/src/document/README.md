@@ -113,7 +113,7 @@ function openBlog({
     url: roomWsUrl('https://api.example.com', ydoc.guid),
     openWebSocket,
     waitFor: idb.whenLoaded,
-    replicaId: 'browser',
+    installationId: 'browser',
     actions: {},
   });
 

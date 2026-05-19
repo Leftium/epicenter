@@ -64,7 +64,7 @@ export const generateChatMessageId = (): ChatMessageId =>
 	generateId() as ChatMessageId;
 
 /**
- * Conversations — metadata for each chat thread.
+ * Conversations: metadata for each chat thread.
  *
  * Stores the thread title, optional parent/subpage relationship, source
  * message linkage, and the model/provider metadata needed to resume or audit
@@ -87,7 +87,7 @@ const conversationsTable = defineTable(
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 /**
- * Chat messages — the persisted content of each conversation turn.
+ * Chat messages: the persisted content of each conversation turn.
  *
  * Stores the role, structured content parts, and creation timestamp so the UI
  * can replay the exact chat history without depending on live model state.
@@ -105,7 +105,7 @@ const chatMessagesTable = defineTable(
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
 /**
- * Tool trust — per-tool approval preferences for chat actions.
+ * Tool trust: per-tool approval preferences for chat actions.
  *
  * Tracks whether a tool should keep asking for approval or be auto-approved,
  * which lets Opensidian remember the user's trust decisions across sessions.
@@ -138,7 +138,7 @@ export function openOpensidianWorkspace(
 	attachEncryption: AttachOpensidianEncryption,
 	options: { clientId?: number } = {},
 ) {
-	const ydoc = new Y.Doc({ guid: OPENSIDIAN_WORKSPACE_ID, gc: false });
+	const ydoc = new Y.Doc({ guid: OPENSIDIAN_WORKSPACE_ID, gc: true });
 	if (options.clientId !== undefined) {
 		ydoc.clientID = options.clientId;
 	}

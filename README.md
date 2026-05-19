@@ -213,14 +213,14 @@ const posts = defineTable(
   type({ id: 'string', title: 'string', published: 'boolean', _v: '1' }),
 );
 
-function openBlog(id: string, replicaId: string) {
+function openBlog(id: string, installationId: string) {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, { posts });
   const idb = attachIndexedDb(ydoc);
   const collaboration = openCollaboration(ydoc, {
     url: websocketUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
-    replicaId,
+    installationId,
   });
 
   return {
@@ -289,6 +289,16 @@ bun install
 ```
 
 You rarely need `bun nuke`. Cargo handles incremental builds well. Use `bun clean` first.
+
+### Developing against a local API
+
+Most CLI commands default to the hosted Epicenter API at `https://api.epicenter.so`. If you are iterating on `apps/api` and want the CLI pointed at your local server, use the `cli:local` script:
+
+```bash
+bun run cli:local auth login
+```
+
+See [`packages/cli/README.md`](packages/cli/README.md) for the full environment table and per-host token file behavior.
 
 ## Contributing
 

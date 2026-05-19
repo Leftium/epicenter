@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Entry } from '@epicenter/fuji';
+	import type { Entry } from '$lib/workspace';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import {
 	type AsyncStorage,
-	createReplicaId,
-	createReplicaIdAsync,
+	createInstallationId,
+	createInstallationIdAsync,
 	type SimpleStorage,
-} from './replica-id.js';
+} from './installation-id.js';
 
 function makeMemoryStorage(
 	initial: Record<string, string> = {},
@@ -30,54 +30,54 @@ function makeAsyncMemoryStorage(
 	};
 }
 
-describe('createReplicaId', () => {
+describe('createInstallationId', () => {
 	it('returns the existing value when storage already holds one', () => {
 		const storage = makeMemoryStorage({
 			'epicenter.installation.id': 'preexisting-id',
 		});
-		expect(createReplicaId({ storage })).toBe('preexisting-id');
+		expect(createInstallationId({ storage })).toBe('preexisting-id');
 	});
 
 	it('generates and persists when storage is empty', () => {
 		const storage = makeMemoryStorage();
-		const fresh = createReplicaId({ storage });
+		const fresh = createInstallationId({ storage });
 		expect(fresh).toMatch(/^[a-z0-9]{15}$/);
 		expect(storage.getItem('epicenter.installation.id')).toBe(fresh);
 	});
 
 	it('returns the same value on subsequent calls (idempotent)', () => {
 		const storage = makeMemoryStorage();
-		const first = createReplicaId({ storage });
-		const second = createReplicaId({ storage });
+		const first = createInstallationId({ storage });
+		const second = createInstallationId({ storage });
 		expect(second).toBe(first);
 	});
 
 	it('does not collide on independent storages', () => {
-		const a = createReplicaId({ storage: makeMemoryStorage() });
-		const b = createReplicaId({ storage: makeMemoryStorage() });
+		const a = createInstallationId({ storage: makeMemoryStorage() });
+		const b = createInstallationId({ storage: makeMemoryStorage() });
 		expect(a).not.toBe(b);
 	});
 });
 
-describe('createReplicaIdAsync', () => {
+describe('createInstallationIdAsync', () => {
 	it('returns the existing value when storage already holds one', async () => {
 		const storage = makeAsyncMemoryStorage({
 			'epicenter.installation.id': 'preexisting-id',
 		});
-		expect(await createReplicaIdAsync({ storage })).toBe('preexisting-id');
+		expect(await createInstallationIdAsync({ storage })).toBe('preexisting-id');
 	});
 
 	it('generates and persists when storage is empty', async () => {
 		const storage = makeAsyncMemoryStorage();
-		const fresh = await createReplicaIdAsync({ storage });
+		const fresh = await createInstallationIdAsync({ storage });
 		expect(fresh).toMatch(/^[a-z0-9]{15}$/);
 		expect(await storage.getItem('epicenter.installation.id')).toBe(fresh);
 	});
 
 	it('returns the same value on subsequent calls (idempotent)', async () => {
 		const storage = makeAsyncMemoryStorage();
-		const first = await createReplicaIdAsync({ storage });
-		const second = await createReplicaIdAsync({ storage });
+		const first = await createInstallationIdAsync({ storage });
+		const second = await createInstallationIdAsync({ storage });
 		expect(second).toBe(first);
 	});
 });

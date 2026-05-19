@@ -28,8 +28,25 @@ Use this pattern when you need to:
 - Bridge workspace actions into TanStack AI tools.
 - Debug streamed responses, reload behavior, stop behavior, or tool approvals.
 
+## Package Boundaries
+
+- Server activity functions live in `@tanstack/ai`: `chat`, generation helpers, stream conversion, model-message conversion, and server tool definitions.
+- Client lifecycle lives in `@tanstack/ai-client`: chat client state, stream processing, tool approval plumbing, and client tool results.
+- Svelte runes integration lives in `@tanstack/ai-svelte`: `createChat`, `fetchServerSentEvents`, and Svelte-friendly reactive state.
+- Import provider adapters from their specific packages for tree shaking, such as `@tanstack/ai-openai` or `@tanstack/ai-anthropic`.
+
+## Streaming And Tool Calls
+
+- Prefer `toServerSentEventsResponse` on the server and `fetchServerSentEvents` on the client for chat streams.
+- Treat AG-UI stream chunks and `MessagePart` variants as a discriminated stream protocol. Render every known part deliberately and keep an unknown fallback for forward compatibility.
+- Use `StreamProcessor` when replaying, debugging, or transforming stream chunks outside the normal chat client.
+- Approval flow uses the approval id. Do not assume it is the same as the tool call id.
+- After a client tool produces a result, continue the chat through the TanStack AI client path instead of manually appending a fake assistant response.
+- In Svelte components that own a chat instance, call `chat.stop()` or dispose the owner on unmount when a stream may still be active.
+- Use `aiEventClient` observability events when diagnosing stream, adapter, or tool behavior.
+
 ## Local Anchors
 
-- `apps/opensidian/src/lib/chat/chat-state.svelte.ts` shows Svelte chat state, persistence, streaming, and tool approval handling.
-- `apps/opensidian/src/lib/chat/ui-message.ts` owns the persisted-message to TanStack-message boundary.
+- `apps/tab-manager/src/lib/chat/chat-state.svelte.ts` shows Svelte chat state, persistence, streaming, and tool approval handling.
+- `apps/tab-manager/src/lib/chat/ui-message.ts` owns the persisted-message to TanStack-message boundary.
 - `packages/workspace/src/ai/tool-bridge.ts` converts workspace actions into client tools and serializable server tool definitions.

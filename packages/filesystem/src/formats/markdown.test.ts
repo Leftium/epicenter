@@ -169,7 +169,7 @@ describe('markdown integration with YjsFileSystem', () => {
 			(fileId: FileId) => {
 				const contentYdoc = new Y.Doc({
 					guid: fileContentDocGuid({ workspaceId: ws.id, fileId }),
-					gc: false,
+					gc: true,
 				});
 				onLocalUpdate(contentYdoc, () =>
 					ws.tables.files.update(fileId, { updatedAt: Date.now() }),

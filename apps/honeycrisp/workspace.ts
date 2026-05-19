@@ -155,7 +155,7 @@ export function openHoneycrispWorkspace(
 	attachEncryption: AttachHoneycrispEncryption,
 	options: { clientId?: number } = {},
 ) {
-	const ydoc = createHoneycrispYdoc();
+	const ydoc = new Y.Doc({ guid: HONEYCRISP_WORKSPACE_ID, gc: true });
 	if (options.clientId !== undefined) {
 		ydoc.clientID = options.clientId;
 	}
@@ -163,10 +163,6 @@ export function openHoneycrispWorkspace(
 }
 
 export type HoneycrispWorkspace = ReturnType<typeof openHoneycrispWorkspace>;
-
-function createHoneycrispYdoc(): Y.Doc {
-	return new Y.Doc({ guid: HONEYCRISP_WORKSPACE_ID, gc: false });
-}
 
 function attachHoneycrispWorkspace(
 	ydoc: Y.Doc,

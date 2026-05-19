@@ -2,12 +2,11 @@
  * Fuji workspace contract: schema, branded IDs, shared opener, and CLI/script
  * action factory.
  *
- * Distribution: this file is the `@epicenter/fuji` package root export. It
- * stays browser-safe because the SPA, daemon, and scripts all import it. The
+ * Distribution: `apps/fuji/package.json` exports this file as the
+ * `@epicenter/fuji` package root. Browser code imports this module through
+ * `$lib` or relative paths so Vite serves it from the app source tree. The
  * table shapes here are the wire contract for sync; forking a column shape
- * breaks sync compatibility with peers running the canonical schema. Recipes
- * (browser.ts, daemon.ts, script.ts, snapshot.ts) compose around this opener
- * and are yours to edit freely.
+ * breaks sync compatibility with peers running the canonical schema.
  */
 
 import {
@@ -108,7 +107,7 @@ export function openFujiWorkspace(
 	attachEncryption: AttachFujiEncryption,
 	options: { clientId?: number } = {},
 ) {
-	const ydoc = createFujiYdoc();
+	const ydoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: true });
 	if (options.clientId !== undefined) {
 		ydoc.clientID = options.clientId;
 	}
@@ -116,10 +115,6 @@ export function openFujiWorkspace(
 }
 
 export type FujiWorkspace = ReturnType<typeof openFujiWorkspace>;
-
-function createFujiYdoc(): Y.Doc {
-	return new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
-}
 
 function attachFujiWorkspace(
 	ydoc: Y.Doc,

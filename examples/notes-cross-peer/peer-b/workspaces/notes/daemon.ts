@@ -1,5 +1,5 @@
 /**
- * Peer-B daemon for the cross-peer sync repro. Uses a hard-coded `replicaId`
+ * Peer-B daemon for the cross-peer sync repro. Uses a hard-coded `installationId`
  * so peer-B is distinguishable from peer-A in the same workspace.
  */
 
@@ -9,7 +9,7 @@ import { openNotes } from '../../../notes';
 export default defineDaemonWorkspace({
 	open: ({ openWebSocket }) =>
 		openNotes({
-			replicaId: 'notes-repro-peer-b',
+			installationId: 'notes-repro-peer-b',
 			openWebSocket,
 		}),
 });

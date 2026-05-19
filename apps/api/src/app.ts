@@ -3,7 +3,7 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import type { ApiMeResponse, AuthUser } from '@epicenter/auth';
+import { type ApiMeResponse, AuthUser } from '@epicenter/auth';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -25,11 +25,9 @@ import {
 	OAUTH_OPENID_CONFIGURATION_PATH,
 	OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
 } from './auth/oauth-metadata';
+import { requireOriginForCookieMutations } from './auth/csrf';
 import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource';
-import {
-	resolveRequestApiMe,
-	resolveRequestOAuthUser,
-} from './auth/resource-boundary';
+import { resolveRequestOAuthUser } from './auth/resource-boundary';
 import { singleCredential } from './auth/single-credential';
 import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients';
 import {
@@ -185,6 +183,37 @@ const factory = createFactory<Env>({
 
 const app = factory.createApp();
 
+// ---------------------------------------------------------------------------
+// Auth middlewares
+// ---------------------------------------------------------------------------
+
+/**
+ * Cookie-or-bearer authentication. Resolves `c.var.user` from a Better Auth
+ * session cookie if one is present; otherwise falls back to an OAuth bearer
+ * (which carries its own `workspaces:open` scope check). Use this on routes
+ * served to both first-party browser callers (portal, dashboard) and external
+ * OAuth clients (CLI, Tauri, extension). For routes that are external-clients
+ * only (`/ai/*`, `/rooms/*`), use {@link requireOAuthUser} below.
+ *
+ * Ambiguous requests (both credentials present) never reach this middleware;
+ * {@link singleCredential} rejects them at the edge.
+ */
+const requireUser = factory.createMiddleware(async (c, next) => {
+	const session = await c.var.auth.api.getSession({
+		headers: c.req.raw.headers,
+	});
+	if (session) {
+		c.set('user', AuthUser.assert(session.user));
+		return next();
+	}
+	const { data: user, error } = await resolveRequestOAuthUser(c);
+	if (error) return createOAuthUnauthorizedResourceResponse(c, error);
+	c.set('user', user);
+	await next();
+});
+
+app.use('/api/*', requireOriginForCookieMutations);
+
 // Health
 app.get(
 	'/',
@@ -270,10 +299,10 @@ app.get(
 // extension, CLI) calls at sign-in and at cold-boot when online to refresh
 // the persisted localIdentity cell.
 //
-// Inherits the bearer + workspaces:open scope check from
-// resolveRequestApiMe, so unauthenticated/under-scoped callers get the
-// standard 401/403 OAuth resource responses (WWW-Authenticate + JSON body)
-// without a separate middleware layer.
+// Accepts cookie OR bearer via {@link requireUser}. Bearer callers go through
+// the `workspaces:open` scope check inside `resolveRequestOAuthUser`; cookie
+// callers implicitly satisfy it (the session was minted by Better Auth and is
+// fully trusted within the parent domain).
 app.get(
 	'/api/me',
 	describeRoute({
@@ -281,13 +310,16 @@ app.get(
 			'Return the authenticated user and their local workspace identity',
 		tags: ['auth'],
 	}),
+	requireUser,
 	async (c) => {
-		const { data: identity, error } = await resolveRequestApiMe(
-			c,
-			deriveSubjectKeyring,
-		);
-		if (error) return createOAuthUnauthorizedResourceResponse(c, error);
-		return c.json(identity satisfies ApiMeResponse);
+		const user = c.var.user;
+		return c.json({
+			user,
+			localIdentity: {
+				subject: user.id,
+				keyring: await deriveSubjectKeyring(user.id),
+			},
+		} satisfies ApiMeResponse);
 	},
 );
 // OAuth discovery. Register issuer-path routes before the /auth/* catch-all
@@ -355,8 +387,8 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 
 app.use('/ai/*', requireOAuthUser);
 app.use('/rooms/*', requireOAuthUser);
-app.use('/api/billing/*', requireOAuthUser);
-app.use('/api/assets/*', requireOAuthUser);
+app.use('/api/billing/*', requireUser);
+app.use('/api/assets/*', requireUser);
 
 // Ensure Autumn customer exists and stash planId for model gating.
 // Runs after requireOAuthUser for AI routes so c.var.user is available.

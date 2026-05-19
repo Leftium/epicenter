@@ -1,6 +1,6 @@
 ---
 name: refactoring
-description: "Refactoring: caller counting, type safety boundaries, inlining single-use extractions, collapsing duplicate branches. Use when cleaning up code or auditing smells."
+description: "Per-change refactoring mechanics: count callers exactly, decide inline vs keep, collapse duplicate switch branches, route raw access through a single typed boundary, surgical one-change-per-commit, post-refactor straggler sweep for stale JSDoc and dead exports. Use when actually editing code to clean it up, when deciding whether a 1-caller helper earns its keep, or when planning a sequence of small refactor commits. For the smell catalog use code-audit; for session-long simplification use collapse-pass."
 metadata:
   author: epicenter
   version: '1.0'

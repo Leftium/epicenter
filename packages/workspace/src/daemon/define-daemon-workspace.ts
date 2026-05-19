@@ -9,10 +9,10 @@
  * See `specs/20260516T180000-folder-routed-daemon-extensions.md`.
  */
 
+import type * as Y from 'yjs';
 import type { EncryptionAttachment } from '../document/attach-encryption.js';
 import type { OpenWebSocket } from '../document/internal/sync-supervisor.js';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
-import type * as Y from 'yjs';
 import type { DaemonRuntime } from './types.js';
 
 /**
@@ -32,7 +32,7 @@ import type { DaemonRuntime } from './types.js';
  * - `clientId` is the deterministic Y.Doc clientID for this daemon (derived
  *   from `projectDir` so two daemons in different projects produce distinct
  *   update streams). Pass it to the workspace opener.
- * - `replicaId` is the conventional collaboration replicaId for the daemon
+ * - `installationId` is the conventional collaboration installationId for the daemon
  *   side of this route (`<route>-daemon`). Pass it to `openCollaboration`.
  * - `attachEncryption` mirrors `LocalOwner.attachEncryption`: hand it a
  *   `Y.Doc` and get back the encryption attachment. The host bakes the
@@ -45,7 +45,7 @@ export type DaemonWorkspaceContext = {
 	projectDir: ProjectDir;
 	route: string;
 	clientId: number;
-	replicaId: string;
+	installationId: string;
 	attachEncryption: (ydoc: Y.Doc) => EncryptionAttachment;
 	openWebSocket: OpenWebSocket;
 };

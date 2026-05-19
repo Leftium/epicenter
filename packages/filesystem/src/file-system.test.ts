@@ -32,7 +32,7 @@ function setup() {
 		(fileId: FileId) => {
 			const contentYdoc = new Y.Doc({
 				guid: fileContentDocGuid({ workspaceId: ws.id, fileId }),
-				gc: false,
+				gc: true,
 			});
 			onLocalUpdate(contentYdoc, () =>
 				ws.tables.files.update(fileId, { updatedAt: Date.now() }),
@@ -419,7 +419,7 @@ describe('ydoc destroy lifecycle', () => {
 		const beforeId = fs.lookupId('/before.txt');
 		expect(beforeId).toBeDefined();
 
-		// Tear down the ydoc — the observer registered via
+		// Tear down the ydoc: the observer registered via
 		// ydoc.once('destroy', unobserve) should unregister.
 		ws.ydoc.destroy();
 

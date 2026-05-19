@@ -29,8 +29,8 @@ const MARKDOWN_DIR = join(import.meta.dir, 'data');
 const WORKSPACE_ID = 'epicenter.tab-manager';
 
 export default defineDaemonWorkspace({
-	async open({ replicaId, attachEncryption, openWebSocket }) {
-		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
+	async open({ installationId, attachEncryption, openWebSocket }) {
+		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 		const encryption = attachEncryption(ydoc);
 		const tables = encryption.attachTables(tabManagerTables);
 		const kv = encryption.attachKv({});
@@ -44,7 +44,7 @@ export default defineDaemonWorkspace({
 		const collaboration = openCollaboration(ydoc, {
 			url: roomWsUrl(SERVER_URL, ydoc.guid),
 			openWebSocket,
-			replicaId,
+			installationId,
 			actions,
 		});
 

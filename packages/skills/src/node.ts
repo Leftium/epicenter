@@ -85,7 +85,7 @@ export function openSkillsNodeWorkspace({
 	function openInstructionsDoc(skillId: string) {
 		const ydoc = new Y.Doc({
 			guid: skillInstructionsDocGuid({ workspaceId, skillId }),
-			gc: false,
+			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
 			tables.skills.update(skillId, { updatedAt: Date.now() }),
@@ -103,7 +103,7 @@ export function openSkillsNodeWorkspace({
 	function openReferenceDoc(referenceId: string) {
 		const ydoc = new Y.Doc({
 			guid: referenceContentDocGuid({ workspaceId, referenceId }),
-			gc: false,
+			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
 			tables.references.update(referenceId, { updatedAt: Date.now() }),

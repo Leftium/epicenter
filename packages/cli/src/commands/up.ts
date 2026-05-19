@@ -19,6 +19,7 @@
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createMachineAuthClient } from '@epicenter/auth/node';
+import type { StartedDaemonRoute } from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
 	type DaemonMetadata,
@@ -27,15 +28,14 @@ import {
 	type StartupError as StartupErrorType,
 	startDaemonServer,
 	startDaemonWorkspaceApps,
-	type WorkspaceAppError,
 	unlinkMetadata,
+	type WorkspaceAppError,
 	writeMetadata,
 } from '@epicenter/workspace/node';
 import { Ok, type Result, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
-import type { StartedDaemonRoute } from '@epicenter/workspace/daemon';
 
 const CLI_VERSION = packageJson.version;
 
@@ -240,7 +240,7 @@ function printPeersSnapshot(entry: StartedDaemonRoute): void {
 	}
 	for (const peer of peers) {
 		process.stderr.write(
-			`${entry.route}: peer ${peer.replicaId} (connId=${peer.connId}, subject=${peer.subject})\n`,
+			`${entry.route}: peer ${peer.installationId} (connectionId=${peer.connectionId}, subject=${peer.subject})\n`,
 		);
 	}
 }
@@ -250,25 +250,25 @@ function subscribePeers(entry: StartedDaemonRoute, quiet: boolean): void {
 		new Map(
 			entry.runtime.collaboration.peers
 				.list()
-				.map((peer) => [peer.connId, peer]),
+				.map((peer) => [peer.connectionId, peer]),
 		);
 	let prev = snapshot();
 	entry.runtime.collaboration.peers.observe(() => {
 		const next = snapshot();
-		for (const [connId, peer] of next) {
-			if (!prev.has(connId)) {
+		for (const [connectionId, peer] of next) {
+			if (!prev.has(connectionId)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.route}: ${peer.replicaId} joined (connId=${connId})\n`,
+						`${entry.route}: ${peer.installationId} joined (connectionId=${connectionId})\n`,
 					);
 				}
 			}
 		}
-		for (const [connId, peer] of prev) {
-			if (!next.has(connId)) {
+		for (const [connectionId, peer] of prev) {
+			if (!next.has(connectionId)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.route}: ${peer.replicaId} left (connId=${connId})\n`,
+						`${entry.route}: ${peer.installationId} left (connectionId=${connectionId})\n`,
 					);
 				}
 			}

@@ -55,7 +55,7 @@ function buildSession(
 		build: ({ owner }) => {
 			const tabManager = openTabManagerBrowser({
 				owner,
-				replicaId: profile.replicaId,
+				installationId: profile.installationId,
 				openWebSocket: auth.openWebSocket,
 			});
 			const sessionAiTools = actionsToAiTools(tabManager.collaboration.actions);

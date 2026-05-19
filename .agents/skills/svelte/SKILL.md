@@ -36,6 +36,14 @@ Use this pattern when you need to:
 - Avoid template gotchas (unicode escapes in HTML vs JS context).
 - Extract repetitive markup into data-driven `{#each}` or `{#snippet}` patterns.
 
+## Svelte 5 Baseline
+
+- Use `$state` for reactive values that the component mutates. Use `$state.raw` for large reassigned objects or handles that should not be deep-proxied.
+- Prefer `$derived` for computed state. Treat `$effect` as an escape hatch for DOM integration, analytics, subscriptions, and external systems.
+- Props can change. Values derived from `$props()` should usually be `$derived`, not one-time initialization.
+- Prefer snippets and `{@render}` over slots for new Svelte 5 code. Type snippet props with `Snippet<[...args]>`.
+- Avoid legacy patterns in runes-mode code: `$:` declarations, `export let`, `on:click`, `<svelte:component>`, `<svelte:self>`, `beforeUpdate`, `afterUpdate`, and `createEventDispatcher`.
+
 # Prop-Keyed Resources: Let the Tree Own the Lifecycle
 
 When a component owns a disposable resource (subscription, socket, timer, any handle with a `dispose()`/`close()`/`unsubscribe()` method) whose identity depends on a prop, open it synchronously and let the parent control mount/unmount with `{#key}` or `{#if}`. Don't store the resource in nullable `$state` and re-open it inside an `$effect` — that reimplements component mount/unmount in user-space.

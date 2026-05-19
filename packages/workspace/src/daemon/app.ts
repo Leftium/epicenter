@@ -45,17 +45,17 @@ export const RunRequest = type({
 export type RunRequest = typeof RunRequest.infer;
 
 /**
- * Row shape returned by `/peers`. One row per `(route, connId)` pair,
+ * Row shape returned by `/peers`. One row per `(route, connectionId)` pair,
  * tagged with its route name so a multi-route daemon can fan out.
  *
- * `subject` is the server-attested user id; `replicaId` is the install-stable,
- * client-claimed identity; `connId` is the per-socket routing address used
+ * `subject` is the server-attested user id; `installationId` is the install-stable,
+ * client-claimed identity; `connectionId` is the per-socket routing address used
  * by `collab.dispatch({ to })`.
  */
 export const PeerSnapshot = type({
 	route: 'string',
-	connId: 'string',
-	replicaId: 'string',
+	connectionId: 'string',
+	installationId: 'string',
 	subject: 'string',
 });
 export type PeerSnapshot = typeof PeerSnapshot.infer;
@@ -80,8 +80,8 @@ export function buildDaemonApp(
 				for (const peer of entry.runtime.collaboration.peers.list()) {
 					rows.push({
 						route: entry.route,
-						connId: peer.connId,
-						replicaId: peer.replicaId,
+						connectionId: peer.connectionId,
+						installationId: peer.installationId,
 						subject: peer.subject,
 					});
 				}

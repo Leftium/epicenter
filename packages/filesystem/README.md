@@ -41,7 +41,7 @@ const tables = attachTables(ydoc, { files: filesTable });
 function openContentDoc(fileId) {
 	const contentYdoc = new Y.Doc({
 		guid: fileContentDocGuid({ workspaceId: ydoc.guid, fileId }),
-		gc: false,
+		gc: true,
 	});
 	onLocalUpdate(contentYdoc, () =>
 		tables.files.update(fileId, { updatedAt: Date.now() }),

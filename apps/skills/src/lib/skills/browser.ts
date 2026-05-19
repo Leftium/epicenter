@@ -26,7 +26,7 @@ export function openSkillsBrowser() {
 					workspaceId: doc.ydoc.guid,
 					skillId,
 				}),
-				gc: false,
+				gc: true,
 			});
 			onLocalUpdate(ydoc, () =>
 				doc.tables.skills.update(skillId, { updatedAt: Date.now() }),
@@ -55,7 +55,7 @@ export function openSkillsBrowser() {
 					workspaceId: doc.ydoc.guid,
 					referenceId,
 				}),
-				gc: false,
+				gc: true,
 			});
 			onLocalUpdate(ydoc, () =>
 				doc.tables.references.update(referenceId, { updatedAt: Date.now() }),

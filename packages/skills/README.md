@@ -43,7 +43,7 @@ const instructionsDocs = createDisposableCache(
 				workspaceId: doc.ydoc.guid,
 				skillId,
 			}),
-			gc: false,
+			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
 			doc.tables.skills.update(skillId, { updatedAt: Date.now() }),

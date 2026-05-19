@@ -5,7 +5,7 @@
  * `epicenter run` is a shell shortcut for one daemon runtime primitive:
  *
  *   request.peerTarget === undefined   ->  invokeAction(...)
- *   request.peerTarget === <replicaId> ->  collab.peers.list().find((p) => p.replicaId === ...) -> collab.dispatch(...)
+ *   request.peerTarget === <installationId> ->  collab.peers.list().find((p) => p.installationId === ...) -> collab.dispatch(...)
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
@@ -91,13 +91,13 @@ async function invokeRemote({
 }): Promise<RunResponse> {
 	const { runtime } = routeRuntime;
 
-	// `peerTarget` is a `replicaId` from the CLI; presence rows are keyed by
-	// `connId`, so pick the first (lowest-`connId`) tab on that install.
-	// `peers.list()` is already sorted by `connId` ascending, so `find` here
+	// `peerTarget` is an `installationId` from the CLI; presence rows are keyed by
+	// `connectionId`, so pick the first (lowest-`connectionId`) tab on that install.
+	// `peers.list()` is already sorted by `connectionId` ascending, so `find` here
 	// is deterministic without an extra sort.
 	const peer = runtime.collaboration.peers
 		.list()
-		.find((p) => p.replicaId === peerTarget);
+		.find((p) => p.installationId === peerTarget);
 	if (!peer) {
 		return RunError.PeerNotFound({
 			peerTarget,
@@ -107,7 +107,7 @@ async function invokeRemote({
 	}
 
 	const result = await runtime.collaboration.dispatch(localPath, actionInput, {
-		to: peer.connId,
+		to: peer.connectionId,
 		signal: AbortSignal.timeout(waitMs),
 	});
 

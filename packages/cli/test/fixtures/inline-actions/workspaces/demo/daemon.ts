@@ -40,8 +40,8 @@ const actions = {
 };
 
 const collaboration = {
-	replicaId: 'fixture',
-	connId: 'fixture-conn',
+	installationId: 'fixture',
+	connectionId: 'fixture-conn',
 	actions,
 	status: { phase: 'connected' as const },
 	whenConnected: Promise.resolve(),

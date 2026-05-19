@@ -40,9 +40,9 @@ function fakeEntry({
 	knownPeers?: string[];
 	dispatch?: FakeDispatch;
 } = {}): DaemonServedRoute {
-	const peers: PresenceEntry[] = knownPeers.map((replicaId) => ({
-		connId: `${replicaId}-conn`,
-		replicaId,
+	const peers: PresenceEntry[] = knownPeers.map((installationId) => ({
+		connectionId: `${installationId}-conn`,
+		installationId,
 		subject: 'test-user',
 	}));
 	return {
@@ -89,7 +89,7 @@ describe('executeRun peer dispatch', () => {
 		expect(result.error.syncStatus).toEqual(runSyncStatus);
 	});
 
-	test('remote dispatch sends only the action key, to the resolved connId', async () => {
+	test('remote dispatch sends only the action key, to the resolved connectionId', async () => {
 		let invokedAction = '';
 		let invokedTo = '';
 		const entry = fakeEntry({

@@ -22,8 +22,8 @@ import {
 	roomWsUrl,
 } from '@epicenter/workspace';
 import {
-	defineDaemonWorkspace,
 	type DaemonWorkspaceContext,
+	defineDaemonWorkspace,
 } from '@epicenter/workspace/daemon';
 import { attachMarkdownMaterializer } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
@@ -42,11 +42,11 @@ const WORKSPACE_ID = 'opensidian';
 mkdirSync(MATERIALIZER_DIR, { recursive: true });
 
 async function openOpensidianPlayground({
-	replicaId,
+	installationId,
 	attachEncryption,
 	openWebSocket,
 }: DaemonWorkspaceContext) {
-	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
+	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(opensidianTables);
 	const kv = encryption.attachKv({});
@@ -68,7 +68,7 @@ async function openOpensidianPlayground({
 					workspaceId: WORKSPACE_ID,
 					fileId: fileId as never,
 				}),
-				gc: false,
+				gc: true,
 			});
 			const contentPersistence = attachYjsLog(contentYdoc, {
 				filePath: join(contentDir, `${contentYdoc.guid}.db`),
@@ -103,7 +103,7 @@ async function openOpensidianPlayground({
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(SERVER_URL, ydoc.guid),
 		openWebSocket,
-		replicaId,
+		installationId,
 		actions,
 	});
 

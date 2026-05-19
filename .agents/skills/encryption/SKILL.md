@@ -92,6 +92,7 @@ AES-256-GCM via WebCrypto uses hardware AES-NI and is faster, but it's async. We
 - Uses Web Crypto HKDF with SHA-256 hash
 - Empty salt (acceptable for HKDF when input key material has high entropy)
 - Info strings are domain-separation labels, NOT version identifiers
+- Treat HKDF info strings as protocol strings. Document their allowed shape, keep them stable, and require a migration or format boundary when they change.
 - `user:{userId}` for per-user keys, `workspace:{wsId}` for per-workspace keys
 - Different secrets with the same info string produce cryptographically independent keys (RFC 5869)
 
@@ -158,3 +159,22 @@ encrypted wrapper's error containment.
 ### AAD (Additional Authenticated Data)
 
 When encrypting workspace values, the entry key is bound as AAD to prevent ciphertext transplant attacks (moving an encrypted value from one key to another).
+
+Authenticate every piece of metadata that changes plaintext interpretation. If ciphertext can cross workspace, table, row, or entry boundaries, bind those identifiers as AAD too.
+
+## Version Boundaries
+
+Keep these concepts separate:
+
+- Blob format version: binary layout and algorithm.
+- Key version: which secret encrypted a blob.
+- Protocol or serialization version: how plaintext is interpreted before encryption.
+
+Do not use one version number to stand in for another.
+
+## Test Vectors And Operational Gates
+
+- Add fixed test vectors for HKDF labels, blob packing, version-byte parsing, AAD mismatch, tampering, unknown key version, and old-key decrypt.
+- Define server visibility plainly: what the server can decrypt, what it only stores, and what metadata remains visible.
+- Bulk or account-level rotation should validate the encrypted object set before committing the rotation.
+- Keep auth secrets, encryption secrets, recovery flows, and session invalidation separate. Rotating or invalidating one should not silently imply another.

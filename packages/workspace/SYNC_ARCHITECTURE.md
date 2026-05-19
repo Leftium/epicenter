@@ -106,21 +106,28 @@ const collaboration = openCollaboration(ydoc, {
     url: roomWsUrl('https://api.example.com', ydoc.guid),
     waitFor: idb.whenLoaded,
     openWebSocket: auth.openWebSocket,
-    replica: { id: 'macbook', platform: 'tauri' },
+    installationId: 'macbook',
     actions: defineActions({ tabs_close: defineMutation({ ... }) }),
 });
 
 // Local invocation: direct function call against the registry.
 await collaboration.actions.tabs_close({ tabIds: [1, 2] });
 
-// Remote invocation: find by stable replica id, dispatch by snake_case key.
-const phone = collaboration.peers.find('phone');
-await phone?.invoke('tabs_close', { tabIds: [1, 2] });
+// Remote invocation: resolve a stable installation id to a live connection.
+const phone = collaboration.peers
+    .list()
+    .find((peer) => peer.installationId === 'phone');
+if (phone) {
+    await collaboration.dispatch('tabs_close', { tabIds: [1, 2] }, {
+        to: phone.connectionId,
+        signal: AbortSignal.timeout(5_000),
+    });
+}
 ```
 
 ### `attachYjsSync`
 
-For content documents nested inside a workspace (rich-text bodies, attachments, anything that syncs independently). No replica, no actions, no peers; just bytes over the wire.
+For content documents nested inside a workspace (rich-text bodies, attachments, anything that syncs independently). No installation identity, no actions, no peers; just bytes over the wire.
 
 ```ts
 import { attachYjsSync, roomWsUrl } from '@epicenter/workspace';
@@ -260,56 +267,58 @@ The RESPONSE envelope is shared so the request-id table on the client side stays
 
 ```ts
 collaboration.peers
-    .list()                        // Peer[], clientID-ascending, never self
-    .find<TMap>(replicaId)         // Peer<TMap> | undefined
+    .list()                        // PresenceEntry[], connectionId-ascending, never self
     .observe(callback)             // unsubscribe = peers.observe(cb)
 ```
 
-Each `Peer<TMap>` carries:
+Each `PresenceEntry` carries:
 
 ```ts
-type Peer<TMap = unknown> = {
-    readonly clientID: number;       // session-local; do not persist
-    readonly subject: Subject;       // auth-derived user id from the server
-    readonly replica: Replica;       // install-stable peer descriptor
-    readonly actionKeys: readonly string[];
-    invoke<TPath>(path, input, options?): Promise<Result<...>>;
-    describe(options?): Promise<Result<ActionManifest, ...>>;
+type PresenceEntry = {
+    readonly connectionId: string;   // live routing address
+    readonly installationId: string; // install-stable peer identity
+    readonly subject: string;        // auth-derived user id from the server
 };
 ```
 
-### Self filtering, in two layers
+### Self filtering
 
-`peers.list()` and `peers.find()` filter self twice:
+`peers.list()` filters self by `connectionId`, so the current collaboration
+instance is never returned from its own peers surface.
 
-1. By transport `clientID`: drops the entry under `awareness.clientID`.
-2. By `replica.id`: drops any entry whose published replica matches `collaboration.replica.id` (catches stale-self after reconnect under a new clientID).
-
-Self is never reachable through the peers surface; local actions are reached via `collaboration.actions.*`. A wire-layer fallback in `openCollaboration` returns `SelfInvocationError` if a stale clientId reference ever reaches the supervisor.
+Self is never reachable through the peers surface; local actions are reached via
+`collaboration.actions.*`.
 
 ### `waitForPeer` helper
 
 ```ts
-const phone = await waitForPeer(collaboration.peers, 'phone', {
-    timeoutMs: 5000,
-});
-if (!phone) return notFoundUi();
-await phone.invoke('tabs_close', { tabIds: [1] });
+const phone = collaboration.peers
+    .list()
+    .find((peer) => peer.installationId === 'phone');
+
+if (phone) {
+    await collaboration.dispatch('tabs_close', { tabIds: [1] }, {
+        to: phone.connectionId,
+        signal: AbortSignal.timeout(5_000),
+    });
+}
 ```
 
-Resolves with the `Peer` on first sighting, or `undefined` on timeout. `timeoutMs <= 0` is a synchronous one-shot lookup wrapped in a promise.
+Callers that need bounded waiting can layer that over `peers.observe()`.
 
 ### Capability-based picks
 
-`peers.list()` plus `actionKeys` covers fan-out without any extra surface:
+The current presence surface does not publish action manifests. Capability
+selection belongs in the app's own device table or in a future dispatch roster:
 
 ```ts
-const recorders = collaboration.peers
+const phone = collaboration.peers
     .list()
-    .filter((p) => p.actionKeys.includes('whispering_start_recording'));
+    .find((peer) => peer.installationId === selectedInstallationId);
 ```
 
-No dedicated `peers.hosts(path)` helper exists; standard array methods are sufficient.
+No dedicated `peers.hosts(path)` helper exists; standard array methods are
+sufficient.
 
 ## Error variants
 
@@ -388,9 +397,10 @@ cycleController           aborts on reconnect();
 
 Outbound RPC requests live in `pendingRequests: Map<requestId, { action, resolve, timer }>`. Cleared on every `ws.onclose`: a fresh server-side context will never resolve the prior connection's IDs, so callers receive `RpcError.Disconnected` immediately rather than waiting out the timeout.
 
-## A full call: `peer.describe('macbook-pro')`
+## A full call: `dispatch(..., { to })`
 
-End-to-end. A fuji-running script asks `macbook-pro` (a tab-manager peer) for its action manifest.
+End-to-end. A fuji-running script asks `macbook-pro` (a tab-manager peer) to
+run an action.
 
 ```
 ┌─────────────────────┐                          ┌─────────────────────┐
@@ -398,51 +408,26 @@ End-to-end. A fuji-running script asks `macbook-pro` (a tab-manager peer) for it
 │  collaboration.*    │                          │  (tab-manager)      │
 └──────────┬──────────┘                          └─────────┬───────────┘
            │                                               │
-           │ 1. peer = collaboration.peers.find('macbook-pro')
-           │    (reads Awareness, filters self,           │
-           │     returns Peer { clientID: 42 })           │
+           │ 1. peer = collaboration.peers.list()
+           │      .find(p => p.installationId === 'macbook-pro')
+           │    (reads presence, filters self,            │
+           │     returns PresenceEntry { connectionId })  │
            │                                               │
-           │ 2. peer.describe()                           │
-           │    → dispatch via sendRuntimeRequest         │
-           │      (verb = 'describe-actions')             │
+           │ 2. collaboration.dispatch('tabs_close', ...)  │
+           │    → writes RPC row with to=connectionId      │
            │                                               │
-           │ 3. supervisor.sendRuntimeRequest(            │
-           │      target=42, 'describe-actions', opts)    │
+           │ 3. target action runner observes the row      │
+           │    where call.to === self connectionId        │
            │                                               │
-           │ ── encodeRpcRuntimeRequest ────────────►     │
-           │    [varuint MESSAGE_TYPE.RPC]                │
-           │    [varuint RPC_TYPE.RUNTIME_REQUEST]        │
-           │    [varuint requestId]                       │
-           │    [varuint targetClientId=42]               │
-           │    [varuint requesterClientId]               │
-           │    [varString verb='describe-actions']       │
+           │ ── Yjs sync carries the RPC row ───────►     │
            │                                               │
-           │    [pending-request timer running, 5s]       │
-           │                                               │ 4. ws.onmessage
-           │                                               │    decodeRpcPayload
-           │                                               │    → { type: 'runtime-request', verb }
+           │                                               │ 4. action runner invokes
+           │                                               │    actions.tabs_close(input)
            │                                               │
-           │                                               │ 5. supervisor calls
-           │                                               │    onRuntimeRequest(rpc)
+           │ ◄── Yjs sync carries response update ───     │
            │                                               │
-           │                                               │ 6. switch(rpc.verb) {
-           │                                               │      case 'describe-actions':
-           │                                               │        return Ok(Object.fromEntries(
-           │                                               │          Object.entries(userActions).map(
-           │                                               │            ([key, action]) => [key, toActionMeta(action)]
-           │                                               │          )
-           │                                               │        ))
-           │                                               │    }
-           │                                               │
-           │ ◄── encodeRpcResponse ───────────────────    │
-           │     [varuint RPC_TYPE.RESPONSE]              │
-           │     [varuint requestId]                      │
-           │     [varuint requesterClientId]              │
-           │     [JSON Result envelope]                   │
-           │                                               │
-           │ 7. ws.onmessage matches requestId in         │
-           │    pendingRequests, clears the timer,        │
-           │    resolves with the manifest                │
+           │ 5. caller observes response, clears row,     │
+           │    resolves with Result                     │
            │                                               │
            │ 8. peer.describe() resolves                  │
            │    → Result<ActionManifest, RemoteCallError> │

@@ -26,17 +26,17 @@ Fuji's root workspace is built once per signed-in session by `createSession`. `o
 ```ts
 export function openFujiBrowser({
   owner,
-  replicaId,
+  installationId,
   openWebSocket,
 }: {
   owner: LocalOwner;
-  replicaId: string;
+  installationId: string;
   openWebSocket?: (
     url: string | URL,
     protocols?: string[],
   ) => WebSocket | Promise<WebSocket>;
 }) {
-  const rootYdoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
+  const rootYdoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: true });
   const encryption = owner.attachEncryption(rootYdoc);
   const tables = encryption.attachTables(fujiTables);
   const kv = encryption.attachKv({});
@@ -47,7 +47,7 @@ export function openFujiBrowser({
     url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
     waitFor: idb.whenLoaded,
     openWebSocket,
-    replicaId,
+    installationId,
     actions,
   });
   return { ydoc: rootYdoc, tables, kv, idb, collaboration };

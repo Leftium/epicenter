@@ -14,7 +14,6 @@
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
-import { type EntryId, openFujiWorkspace } from '@epicenter/fuji';
 import {
 	attachRichText,
 	createDisposableCache,
@@ -26,14 +25,15 @@ import {
 	roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
+import { type EntryId, openFujiWorkspace } from './workspace';
 
 export function openFujiBrowser({
 	owner,
-	replicaId,
+	installationId,
 	openWebSocket,
 }: {
 	owner: LocalOwner;
-	replicaId: string;
+	installationId: string;
 	openWebSocket?: OpenWebSocket;
 }) {
 	const workspace = openFujiWorkspace(owner.attachEncryption);
@@ -44,7 +44,7 @@ export function openFujiBrowser({
 	const entryContentDocs = createDisposableCache((entryId: EntryId) => {
 		const ydoc = new Y.Doc({
 			guid: workspace.entryContentDocGuid(entryId),
-			gc: false,
+			gc: true,
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);
@@ -56,7 +56,7 @@ export function openFujiBrowser({
 			url: roomWsUrl(APP_URLS.API, ydoc.guid),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
-			replicaId,
+			installationId,
 			actions: {},
 		});
 
@@ -86,7 +86,7 @@ export function openFujiBrowser({
 		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		replicaId,
+		installationId,
 		actions: workspace.actions,
 	});
 

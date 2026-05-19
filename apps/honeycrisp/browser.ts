@@ -29,11 +29,11 @@ import * as Y from 'yjs';
 
 export function openHoneycrispBrowser({
 	owner,
-	replicaId,
+	installationId,
 	openWebSocket,
 }: {
 	owner: LocalOwner;
-	replicaId: string;
+	installationId: string;
 	openWebSocket?: OpenWebSocket;
 }) {
 	const workspace = openHoneycrispWorkspace(owner.attachEncryption);
@@ -44,7 +44,7 @@ export function openHoneycrispBrowser({
 	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
 		const ydoc = new Y.Doc({
 			guid: workspace.noteBodyDocGuid(noteId),
-			gc: false,
+			gc: true,
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);
@@ -56,7 +56,7 @@ export function openHoneycrispBrowser({
 			url: roomWsUrl(APP_URLS.API, ydoc.guid),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
-			replicaId,
+			installationId,
 			actions: {},
 		});
 
@@ -86,7 +86,7 @@ export function openHoneycrispBrowser({
 		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		replicaId,
+		installationId,
 		actions: workspace.actions,
 	});
 

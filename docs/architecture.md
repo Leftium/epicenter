@@ -113,7 +113,7 @@ const app = defineDocument((id: string) => {
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl('https://sync.example.com', ydoc.guid),
 		waitFor: idb.whenLoaded,
-		replicaId: 'browser',
+		installationId: 'browser',
 		actions: {},
 	});
 	return { id, ydoc, tables, kv, idb, collaboration, /* ... */ };
@@ -236,7 +236,7 @@ const opensidian = defineDocument((id: string) => {
 		url: roomWsUrl(APP_URLS.API, ydoc.guid),
 		openWebSocket: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
-		replicaId: 'browser',
+		installationId: 'browser',
 		actions,
 	});
 	return { id, ydoc, tables, idb, collaboration, sqliteIndex, /* ... */ };
@@ -253,7 +253,7 @@ defineDocument(builder).open('opensidian')
     +-- attachTables(ydoc, {...})
     +-- attachIndexedDb(ydoc)
     +-- createSqliteIndex(...)
-    +-- openCollaboration(ydoc, { waitFor: idb.whenLoaded, replicaId, actions })
+    +-- openCollaboration(ydoc, { waitFor: idb.whenLoaded, installationId, actions })
     |
     +-- attachYjsFileSystem(...)              -> editor + terminal + file tree
     +-- actionsToAiTools(...).tools           -> local AI tool execution

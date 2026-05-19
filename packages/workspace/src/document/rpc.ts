@@ -16,7 +16,7 @@
  * ──────                                         ──────
  * rpc.set(id, { to, action, input, response: null })
  *           ──────── sync ────────▶
- *                                                observer sees to === selfConnId,
+ *                                                observer sees to === selfConnectionId,
  *                                                runs action,
  *                                                rpc.set(id, { ...call, response })
  *           ◀──────── sync ────────
@@ -24,7 +24,7 @@
  * rpc.delete(id)  // finally
  * ```
  *
- * Addressing is by `connId` (per-socket), not `replicaId` (per-install): a
+ * Addressing is by `connectionId` (per-socket), not `installationId` (per-install): a
  * single install with two tabs would race two observers otherwise.
  *
  * @module
@@ -46,7 +46,7 @@ import type { YKeyValueLww } from './y-keyvalue/y-keyvalue-lww.js';
  * workspace's `YKeyValueLww<Call>` under {@link RPC_KEY}.
  *
  * Five fields, every one load-bearing:
- * - `to`: target `connId` (per-socket). Not `replicaId`.
+ * - `to`: target `connectionId` (per-socket). Not `installationId`.
  * - `action`: snake_case dispatch key.
  * - `input`: action payload.
  * - `sent_at`: caller-side timestamp, read only by the boot-time orphan sweep.
@@ -99,8 +99,8 @@ export type DispatchError = InferErrors<typeof DispatchError>;
 /**
  * Per-call options for {@link dispatch}. Both fields are required.
  *
- * - `to`: concrete `connId` from a `PresenceEntry` (resolve via
- *   `peers.list().find((p) => p.replicaId === id)?.connId` when only the
+ * - `to`: concrete `connectionId` from a `PresenceEntry` (resolve via
+ *   `peers.list().find((p) => p.installationId === id)?.connectionId` when only the
  *   replica is known).
  * - `signal`: required because the dispatcher has no internal timeout. A
  *   call to a dead target would hang forever otherwise. Compose timeout +
@@ -192,7 +192,7 @@ function waitFor<O>(
 
 /**
  * Attach the target-side observer that picks up calls addressed to
- * `selfConnId` and writes responses back. Returns a cleanup function that
+ * `selfConnectionId` and writes responses back. Returns a cleanup function that
  * unregisters the observer.
  *
  * The read-modify-write preserves `to`, `action`, `input`, `sent_at` via
@@ -201,14 +201,14 @@ function waitFor<O>(
  */
 export function attachActionRunner(
 	rpc: YKeyValueLww<Call>,
-	selfConnId: string,
+	selfConnectionId: string,
 	actions: ActionRegistry,
 ): () => void {
 	const handler = (changes: Map<string, KvStoreChange<Call>>) => {
 		for (const [id, change] of changes) {
 			if (change.action === 'delete') continue;
 			const call = change.newValue;
-			if (call.to !== selfConnId || call.response !== null) continue;
+			if (call.to !== selfConnectionId || call.response !== null) continue;
 
 			const respond = (response: Result<unknown, DispatchError>) => {
 				rpc.set(id, { ...call, response });

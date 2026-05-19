@@ -24,7 +24,7 @@ On the client, `@epicenter/workspace` provides the primitives: define your schem
 
 ```typescript
 import {
-	createReplicaId,
+	createInstallationId,
 	defineTable,
 	type LocalOwner,
 	openCollaboration,
@@ -46,7 +46,7 @@ const appTables = {
 };
 
 function openMyAppDoc({ owner }: { owner: LocalOwner }) {
-	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: true });
 	const encryption = owner.attachEncryption(ydoc);
 	const tables = encryption.attachTables(appTables);
 	const kv = encryption.attachKv({});
@@ -55,11 +55,11 @@ function openMyAppDoc({ owner }: { owner: LocalOwner }) {
 
 function openMyApp({
 	owner,
-	replicaId,
+	installationId,
 	openWebSocket,
 }: {
 	owner: LocalOwner;
-	replicaId: string;
+	installationId: string;
 	openWebSocket?: (
 		url: string | URL,
 		protocols?: string[],
@@ -73,7 +73,7 @@ function openMyApp({
 		url: roomWsUrl('https://api.epicenter.so', doc.ydoc.guid),
 		openWebSocket,
 		waitFor: idb.whenLoaded,
-		replicaId,
+		installationId,
 		actions: {},
 	});
 
@@ -99,7 +99,7 @@ export const session = createSession({
 	build: ({ owner }) => {
 		const workspace = openMyApp({
 			owner,
-			replicaId: createReplicaId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 			openWebSocket: auth.openWebSocket,
 		});
 		return {

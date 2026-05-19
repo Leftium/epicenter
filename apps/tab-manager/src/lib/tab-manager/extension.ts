@@ -17,22 +17,22 @@ import { type DeviceId, tabManagerTables } from '$lib/workspace/definition';
 
 /**
  * Build the tab-manager binding. Synchronous: callers must resolve the
- * replica id before invoking (the extension's replica id comes from
- * `chrome.storage.local` and from `createDeviceProfile()` in `device.ts`).
+ * installation id before invoking (the extension's installation id comes from
+ * `chrome.storage.local` via `createDeviceProfile()` in `device.ts`).
  *
  * Consumers gate UI render on `tabManager.idb.whenLoaded`; sync (the
  * WebSocket) is independent and connects whenever the network allows.
  */
 export function openTabManagerBrowser({
 	owner,
-	replicaId,
+	installationId,
 	openWebSocket,
 }: {
 	owner: LocalOwner;
-	replicaId: DeviceId;
+	installationId: DeviceId;
 	openWebSocket?: OpenWebSocket;
 }) {
-	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: true });
 	const encryption = owner.attachEncryption(ydoc);
 	const tables = encryption.attachTables(tabManagerTables);
 	const kv = encryption.attachKv({});
@@ -43,14 +43,14 @@ export function openTabManagerBrowser({
 	const actions = createTabManagerActions({
 		tables,
 		batch,
-		deviceId: Promise.resolve(replicaId),
+		deviceId: Promise.resolve(installationId),
 	});
 
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(APP_URLS.API, ydoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		replicaId,
+		installationId,
 		actions,
 	});
 

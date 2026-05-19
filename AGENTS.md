@@ -8,7 +8,15 @@ Always use bun: Prefer `bun` over npm, yarn, pnpm, and node. Use `bun run`, `bun
 
 Destructive actions need approval: Force pushes, hard resets (`--hard`), branch deletions.
 
-Token-efficient execution: When possible, delegate to sub-agent with only the command. Instruct it to execute without re-analyzing.
+Token-efficient execution: When the runtime permits sub-agents, use them for scoped work: parallel exploration, disjoint file edits, verification, or command-only checks. Keep prompts bounded, avoid overlapping write sets, and instruct command-only agents to execute without re-analyzing.
+
+External grounding: When external library behavior affects correctness, verify against DeepWiki, official docs, or local installed types before changing code. Skip this for stable basics and repo-local patterns already documented in skills.
+
+Git hygiene: Stage specific files only. Never use `git add .` or `git add -A`. Do not include AI or tool attribution in commits.
+
+Library logging: Do not use direct `console.*` in library code. Use `wellcrafted/logger`, except in CLIs, tests, and benchmarks.
+
+Svelte UI: Prefer local `@epicenter/ui` components before one-off loading, empty, spinner, skeleton, tooltip, and pending states.
 
 Writing conventions: Load `writing-voice` skill for any user-facing text (UI strings, tooltips, error messages, docs). Do not use em dashes (`—`) or en dashes (`–`) anywhere, including prose, comments, JSDoc, and error strings. Use a colon, comma, semicolon, parenthesis, or sentence break instead. This applies to source files, markdown, and commit messages.
 

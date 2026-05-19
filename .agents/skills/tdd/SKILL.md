@@ -49,18 +49,17 @@ RIGHT (vertical):
 
 When exploring the codebase, use the project's domain glossary so that test names and interface vocabulary match the project's language, and respect ADRs in the area you're touching.
 
-Before writing any code:
+Before writing code, identify the smallest observable behavior that proves the path works. Ask the user only when the public interface, behavior priority, or acceptance criteria are unclear.
 
-- [ ] Confirm with user what interface changes are needed
-- [ ] Confirm with user which behaviors to test (prioritize)
+- [ ] Identify the public interface the behavior should exercise
+- [ ] Choose the first behavior to test
 - [ ] Identify opportunities for [deep modules](deep-modules.md) (small interface, deep implementation)
 - [ ] Design interfaces for [testability](interface-design.md)
 - [ ] List the behaviors to test (not implementation steps)
-- [ ] Get user approval on the plan
 
-Ask: "What should the public interface look like? Which behaviors are most important to test?"
+Ask only when needed: "What should the public interface look like?" or "Which behavior matters most?"
 
-**You can't test everything.** Confirm with the user exactly which behaviors matter most. Focus testing effort on critical paths and complex logic, not every possible edge case.
+**You can't test everything.** Focus testing effort on critical paths and complex logic, not every possible edge case. When priority is obvious from the task or existing tests, proceed without a separate approval step.
 
 ### 2. Tracer Bullet
 

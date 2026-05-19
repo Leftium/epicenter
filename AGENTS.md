@@ -6,6 +6,8 @@ Structure: `apps/whispering/` (Tauri transcription app), `apps/tab-manager/` (Ch
 
 Always use bun: Prefer `bun` over npm, yarn, pnpm, and node. Use `bun run`, `bun test`, `bun install`, and `bun x` (instead of npx).
 
+Agent instruction files: Treat `AGENTS.md` as the canonical shared instructions file. `CLAUDE.md` files are compatibility shims for Claude Code and should only import a sibling `AGENTS.md` with `@AGENTS.md`, plus rare Claude-specific notes if needed. When adding a nested `AGENTS.md`, add a sibling `CLAUDE.md` shim. Do not create orphan `CLAUDE.md` files.
+
 Destructive actions need approval: Force pushes, hard resets (`--hard`), branch deletions.
 
 Token-efficient execution: When the runtime permits sub-agents, use them for scoped work: parallel exploration, disjoint file edits, verification, or command-only checks. Keep prompts bounded, avoid overlapping write sets, and instruct command-only agents to execute without re-analyzing.

@@ -5,10 +5,6 @@
  * Coverage focuses on sync message encoding/decoding, compatibility with
  * y-protocols, and end-to-end synchronization behavior under common and edge
  * conditions.
- *
- * After the RPC-on-Yjs-state collapse, the wire protocol is byte-identical
- * to plain y-websocket sync: only `MESSAGE_TYPE.SYNC` produces traffic;
- * `MESSAGE_TYPE.AUTH` is a reserved sentinel for the 4401 close path.
  */
 
 import { describe, expect, test } from 'bun:test';

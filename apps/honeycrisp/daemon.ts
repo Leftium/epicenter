@@ -23,6 +23,7 @@ import { createLogger } from 'wellcrafted/logger';
 import { openHoneycrispWorkspace } from './workspace.js';
 
 export default defineDaemonWorkspace({
+	route: 'honeycrisp',
 	async open({
 		projectDir,
 		route,

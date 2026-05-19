@@ -12,6 +12,7 @@ import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
 import { openOpensidianWorkspace } from './workspace.js';
 
 export default defineDaemonWorkspace({
+	route: 'opensidian',
 	async open({
 		projectDir,
 		clientId,

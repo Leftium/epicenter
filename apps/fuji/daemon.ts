@@ -22,6 +22,7 @@ import { createLogger } from 'wellcrafted/logger';
 import { openFujiWorkspace } from './src/lib/workspace.js';
 
 export default defineDaemonWorkspace({
+	route: 'fuji',
 	async open({
 		projectDir,
 		route,

@@ -14,6 +14,7 @@ type Equal<TActual, TExpected> =
 describe('defineConfig', () => {
 	test('returns the config unchanged', () => {
 		const route = {
+			route: 'demo',
 			open: () => {
 				throw new Error('test route should not open');
 			},

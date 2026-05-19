@@ -1,12 +1,12 @@
 /**
  * Unit-level tests for `epicenter daemon up`.
  *
- * These tests run `runUp` in-process against tiny folder-routed daemon
+ * These tests run `runUp` in-process against tiny config-routed daemon
  * fixtures. They never spawn a child or call `process.exit`; each test owns a
  * temp project, temp runtime root, and temp home.
  *
  * Key behaviors:
- * - happy path discovers workspaces/demo/daemon.ts, writes metadata, binds the
+ * - happy path loads epicenter.config.ts, writes metadata, binds the
  *   socket, and replies to ping
  * - startup failures release the daemon lease
  * - responsive legacy sockets return AlreadyRunning and dispose opened routes
@@ -106,6 +106,18 @@ function writeDemoDaemon(source: string): string {
 	return path;
 }
 
+function writeDemoConfig(): void {
+	writeFileSync(
+		join(workDir, 'epicenter.config.ts'),
+		[
+			"import demo from './workspaces/demo/daemon.ts';",
+			'',
+			'export default { routes: [demo] };',
+			'',
+		].join('\n'),
+	);
+}
+
 function writeRuntimeDaemon({
 	onImportMarker,
 	onDisposeMarker,
@@ -134,6 +146,7 @@ function writeRuntimeDaemon({
 		};
 
 		export default {
+			route: 'demo',
 			async open() {
 				return {
 					collaboration,
@@ -144,6 +157,7 @@ function writeRuntimeDaemon({
 			},
 		};
 	`);
+	writeDemoConfig();
 }
 
 describe('runUp: happy path', () => {
@@ -162,6 +176,9 @@ describe('runUp: happy path', () => {
 			expect(handle.metadata.discoveredAt).toEqual(expect.any(String));
 			expect(handle.runtimes).toHaveLength(1);
 			expect(handle.runtimes[0]?.route).toBe('demo');
+			expect(
+				readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8'),
+			).toContain('routes: [demo]');
 
 			const sockPath = socketPathFor(workDir);
 			expect(existsSync(sockPath)).toBe(true);
@@ -176,7 +193,7 @@ describe('runUp: happy path', () => {
 });
 
 describe('runUp: failure cleanup', () => {
-	test('starts with no routes when no workspace daemon entrypoints exist', async () => {
+	test('writes the default config and starts with no routes when config is missing', async () => {
 		mkdirSync(join(workDir, 'workspaces', 'demo'), { recursive: true });
 
 		const handle = expectOk(
@@ -188,19 +205,61 @@ describe('runUp: failure cleanup', () => {
 
 		try {
 			expect(handle.runtimes).toEqual([]);
+			expect(readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8')).toBe(
+				"import { defineConfig } from '@epicenter/workspace';\n\nexport default defineConfig({});\n",
+			);
+			expect(
+				readFileSync(join(workDir, '.epicenter', '.gitignore'), 'utf8'),
+			).toBe('sqlite/\nyjs/\nmd/\nlog/\n');
 		} finally {
 			await handle.teardown();
 		}
 	});
 
+	test('does not overwrite an existing config when provisioning project data', async () => {
+		const original = ['export default {};', '', '// keep me', ''].join('\n');
+		writeFileSync(join(workDir, 'epicenter.config.ts'), original);
+
+		const handle = expectOk(
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+			}),
+		);
+
+		try {
+			expect(readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8')).toBe(
+				original,
+			);
+		} finally {
+			await handle.teardown();
+		}
+	});
+
+	test('releases the daemon lease when config loading throws', async () => {
+		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default {;\n');
+
+		await expect(
+			runUp({
+				projectDir: workDir,
+				quiet: true,
+			}),
+		).rejects.toThrow('loadProjectConfig: failed to load');
+
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+
 	test('releases the daemon lease when workspace startup fails', async () => {
 		writeDemoDaemon(`
 			export default {
+				route: 'demo',
 				async open() {
 					throw new Error('route failed');
 				},
 			};
 		`);
+		writeDemoConfig();
 
 		const error = expectErr(
 			await runUp({

@@ -1,133 +1,65 @@
 /**
- * Discovery tests for folder-routed daemon extensions.
+ * Tests for config-routed daemon extension registration.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, expect, test } from 'bun:test';
 
 import { expectErr, expectOk } from '@epicenter/test-utils/result';
 
+import type { DaemonWorkspaceModule } from '../daemon/define-daemon-workspace.js';
 import { discoverWorkspaceApps } from './discover.js';
 
-let projectDir: string;
-
-beforeEach(() => {
-	projectDir = mkdtempSync(join(tmpdir(), 'workspace-apps-discover-'));
-});
-
-afterEach(() => {
-	rmSync(projectDir, { recursive: true, force: true });
-});
-
-function isCaseSensitiveFs(dir: string): boolean {
-	const probe = join(dir, 'cAsE-pRoBe');
-	try {
-		mkdirSync(probe, { recursive: true });
-		const lower = join(dir, 'case-probe');
-		const result = !existsSync(lower);
-		rmSync(probe, { recursive: true, force: true });
-		return result;
-	} catch {
-		return false;
-	}
-}
-
-function makeWorkspace(
-	route: string,
-	{ withDaemon = true }: { withDaemon?: boolean } = {},
-): string {
-	const dir = join(projectDir, 'workspaces', route);
-	mkdirSync(dir, { recursive: true });
-	if (withDaemon) {
-		writeFileSync(join(dir, 'daemon.ts'), 'export default {};\n');
-	}
-	return dir;
+function route(name: string): DaemonWorkspaceModule {
+	return {
+		route: name,
+		open: () => {
+			throw new Error('test route should not open');
+		},
+	};
 }
 
 describe('discoverWorkspaceApps', () => {
-	test('returns an empty list when workspaces/ does not exist', () => {
-		const result = discoverWorkspaceApps(projectDir);
+	test('returns an empty list when the config declares no routes', () => {
+		const result = discoverWorkspaceApps();
 		const data = expectOk(result);
 		expect(data).toEqual([]);
 	});
 
-	test('resolves each workspace folder with its execution paths', () => {
-		const fujiDir = makeWorkspace('fuji');
-		const opensidianDir = makeWorkspace('opensidian');
+	test('turns config routes into startup entries', () => {
+		const fuji = route('fuji');
+		const opensidian = route('opensidian');
 
-		const result = discoverWorkspaceApps(projectDir);
+		const result = discoverWorkspaceApps([fuji, opensidian]);
 		const data = expectOk(result);
-		const entries = data.slice().sort((a, b) => a.route.localeCompare(b.route));
-		expect(entries).toEqual([
+		expect(data).toEqual([
 			{
 				route: 'fuji',
-				daemonEntryPath: join(fujiDir, 'daemon.ts'),
+				module: fuji,
 			},
 			{
 				route: 'opensidian',
-				daemonEntryPath: join(opensidianDir, 'daemon.ts'),
+				module: opensidian,
 			},
 		]);
 	});
 
-	test('skips dotfile folders silently', () => {
-		makeWorkspace('fuji');
-		makeWorkspace('.archive');
-		makeWorkspace('.DS_Store', { withDaemon: false });
-
-		const result = discoverWorkspaceApps(projectDir);
-		const data = expectOk(result);
-		expect(data.map((entry) => entry.route)).toEqual(['fuji']);
-	});
-
-	test('skips a workspace folder missing daemon.ts', () => {
-		makeWorkspace('fuji');
-		makeWorkspace('headless', { withDaemon: false });
-
-		const result = discoverWorkspaceApps(projectDir);
-		const data = expectOk(result);
-		expect(data.map((entry) => entry.route)).toEqual(['fuji']);
-	});
-
-	test('rejects invalid folder names before requiring daemon.ts', () => {
-		mkdirSync(join(projectDir, 'workspaces', '__proto__'), {
-			recursive: true,
-		});
-		writeFileSync(
-			join(projectDir, 'workspaces', '__proto__', 'daemon.ts'),
-			'export default {};\n',
-		);
-
-		const result = discoverWorkspaceApps(projectDir);
+	test('rejects invalid route names', () => {
+		const result = discoverWorkspaceApps([route('__proto__')]);
 		const error = expectErr(result);
-		expect(error.name).toBe('WorkspaceFolderInvalid');
 		expect(error).toMatchObject({
-			folderName: '__proto__',
-			reason: 'invalid-name',
+			name: 'WorkspaceRouteRejected',
+			route: '__proto__',
+			reason: 'invalid',
 		});
 	});
 
-	test.skipIf(!isCaseSensitiveFs(tmpdir()))(
-		'rejects case-insensitive route collisions',
-		() => {
-			makeWorkspace('fuji');
-			makeWorkspace('Fuji');
-
-			const result = discoverWorkspaceApps(projectDir);
-			const error = expectErr(result);
-			if (error.name !== 'WorkspaceFolderCollision') {
-				throw new Error(`Expected WorkspaceFolderCollision, got ${error.name}`);
-			}
-			expect(error).toMatchObject({ route: 'fuji' });
-			expect(error.folderNames.slice().sort()).toEqual(['Fuji', 'fuji']);
-		},
-	);
+	test('rejects duplicate route names', () => {
+		const result = discoverWorkspaceApps([route('fuji'), route('fuji')]);
+		const error = expectErr(result);
+		expect(error).toMatchObject({
+			name: 'WorkspaceRouteRejected',
+			route: 'fuji',
+			reason: 'duplicate',
+		});
+	});
 });

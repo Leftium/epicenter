@@ -1,7 +1,7 @@
 /**
- * `defineDaemonWorkspace`: typed entry contract for a folder-routed daemon
- * extension module. Each `workspaces/<route>/daemon.ts` default-exports one of
- * these; the host calls `open(ctx)` once on `epicenter daemon up`.
+ * `defineDaemonWorkspace`: typed entry contract for a daemon extension module.
+ * A project config imports these modules and lists them in `routes`; the host
+ * calls `open(ctx)` once on `epicenter daemon up`.
  *
  * The returned runtime shape matches `DaemonRuntime` so the socket app does
  * not branch on extension origin.
@@ -27,8 +27,8 @@ import type { DaemonRuntime } from './types.js';
  * - `projectDir` is the resolved project root (same value the daemon lease
  *   owns). Disk-writing helpers like `yjsPath` derive every absolute path
  *   from it.
- * - `route` is the folder-derived route name. Pinned here so extensions do
- *   not re-encode the same string as a constant.
+ * - `route` is the config-registered route name. Pinned here so extensions can
+ *   share the same string with logs, materializers, and installation ids.
  * - `clientId` is the deterministic Y.Doc clientID for this daemon (derived
  *   from `projectDir` so two daemons in different projects produce distinct
  *   update streams). Pass it to the workspace opener.
@@ -51,7 +51,7 @@ export type DaemonWorkspaceContext = {
 };
 
 /**
- * The module shape every daemon extension `daemon.ts` default-exports.
+ * The module shape every daemon extension default-exports.
  *
  * `open(ctx)` opens long-lived resources and returns a `DaemonRuntime` that
  * the daemon socket app can serve immediately. The runtime owns its own async
@@ -60,6 +60,7 @@ export type DaemonWorkspaceContext = {
 export type DaemonWorkspaceModule<
 	TRuntime extends DaemonRuntime = DaemonRuntime,
 > = {
+	route: string;
 	open(ctx: DaemonWorkspaceContext): MaybePromise<TRuntime>;
 };
 

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -12,12 +12,13 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import type { ProjectDir } from '../shared/types.js';
 import {
+	DEFAULT_PROJECT_CONFIG_SOURCE,
 	type EpicenterConfig,
 	PROJECT_CONFIG_FILENAME,
 } from './define-config.js';
 
 const EpicenterConfigSchema = type({
-	'routes?': type({ open: 'Function' }).array(),
+	'routes?': type({ route: 'string', open: 'Function' }).array(),
 });
 
 export const ProjectConfigError = defineErrors({
@@ -65,9 +66,24 @@ async function importProjectConfig(
 			default?: unknown;
 		};
 	} catch (cause) {
+		if (isDefaultConfigSelfImportMiss(projectConfigPath, cause)) {
+			return { default: {} };
+		}
 		throw new Error(
 			`loadProjectConfig: failed to load ${projectConfigPath}: ${extractErrorMessage(cause)}`,
 			{ cause },
 		);
 	}
+}
+
+function isDefaultConfigSelfImportMiss(
+	projectConfigPath: string,
+	cause: unknown,
+): boolean {
+	return (
+		extractErrorMessage(cause).includes(
+			"Cannot find module '@epicenter/workspace'",
+		) &&
+		readFileSync(projectConfigPath, 'utf8') === DEFAULT_PROJECT_CONFIG_SOURCE
+	);
 }

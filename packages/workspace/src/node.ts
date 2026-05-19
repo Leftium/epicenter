@@ -12,7 +12,12 @@ export type {
 } from './client/daemon-actions.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
 export { epicenterPaths } from './client/epicenter-paths.js';
-export { findEpicenterDir } from './client/find-epicenter-dir.js';
+export { findProjectRoot } from './client/find-project-root.js';
+export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/define-config.js';
+export {
+	loadProjectConfig,
+	ProjectConfigError,
+} from './config/load-project-config.js';
 export { PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
 	type AttachDaemonInfrastructureOptions,

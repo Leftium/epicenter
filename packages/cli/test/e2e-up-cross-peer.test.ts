@@ -66,7 +66,7 @@ type EnvOverrides = Disposable & {
 };
 
 function makeEnv(): EnvOverrides {
-	const xdgRoot = mkdtempSync(join(tmpdir(), 'ep-e2e-xdg-'));
+	const xdgRoot = mkdtempSync('/tmp/ep-e2e-xdg-');
 	const home = mkdtempSync(join(tmpdir(), 'ep-e2e-home-'));
 	mkdirSync(join(xdgRoot, 'epicenter'), { recursive: true });
 	mkdirSync(join(home, '.epicenter'), { recursive: true });
@@ -135,8 +135,8 @@ async function spawnUp(env: EnvOverrides, dir: string) {
 	});
 
 	let stderr = '';
-	child.stderr!.setEncoding('utf8');
-	child.stderr!.on('data', (chunk: string) => {
+	child.stderr?.setEncoding('utf8');
+	child.stderr?.on('data', (chunk: string) => {
 		stderr += chunk;
 	});
 

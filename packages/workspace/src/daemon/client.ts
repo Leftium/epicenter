@@ -8,8 +8,8 @@
  *   merging transport and domain failures into one tagged union the
  *   renderer narrows by `error.name`.
  * - {@link getDaemon}: dispatch decision for `run` / `list` / `peers`.
- *   Returns a typed client on success, or `MissingConfig` / `Required` when
- *   the project has no workspace extensions or has no live daemon.
+ *   Returns a typed client on success, or `Required` when the project has no
+ *   live daemon.
  *
  * The wire protocol is dead simple: POST a JSON body to a path on the unix
  * socket, get back a `Result<T, DomainErr>` JSON envelope from the handler.
@@ -19,8 +19,6 @@
  * gets a typed 400 instead of a confusing downstream cast failure.
  */
 
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -31,7 +29,6 @@ import type { ActionManifest } from '../shared/actions.js';
 
 import type { PeerSnapshot, RunRequest } from './app.js';
 import { socketPathFor } from './paths.js';
-import { WORKSPACES_DIRNAME } from './route-validation.js';
 import type { RunError } from './run-errors.js';
 
 /**
@@ -48,10 +45,6 @@ import type { RunError } from './run-errors.js';
  *   `Result` instead.
  */
 export const DaemonError = defineErrors({
-	MissingConfig: ({ projectDir }: { projectDir: string }) => ({
-		message: `No ${WORKSPACES_DIRNAME}/ directory found in ${projectDir}`,
-		projectDir,
-	}),
 	Required: ({ projectDir }: { projectDir: string }) => ({
 		message: `no daemon running for ${projectDir}; start one with \`epicenter daemon up\` first`,
 		projectDir,
@@ -187,22 +180,15 @@ export type DaemonClient = ReturnType<typeof daemonClient>;
 /**
  * Resolve the daemon client for `projectDir`, or surface why we can't.
  *
- *   - `MissingConfig`: no `workspaces/` in `projectDir`. Surfaced distinctly
- *     from `Required` so unconfigured users don't get pointed at
- *     `epicenter daemon up` (which would fail and mislead).
- *   - `Required`: workspace extensions exist but no daemon is running. Renderer
- *     prints the start-with-`daemon up` hint.
+ *   - `Required`: no daemon is running. Renderer prints the
+ *     start-with-`daemon up` hint.
  *
  * `run`, `list`, and `peers` are mandatory-daemon commands; if they hit
- * neither variant they have a typed client to dispatch against.
+ * no error they have a typed client to dispatch against.
  */
 export async function getDaemon(
 	projectDir: string,
 ): Promise<Result<DaemonClient, DaemonError>> {
-	const workspacesPath = join(projectDir, WORKSPACES_DIRNAME);
-	if (!existsSync(workspacesPath)) {
-		return DaemonError.MissingConfig({ projectDir });
-	}
 	const sock = socketPathFor(projectDir);
 	if (!(await pingDaemon(sock))) {
 		return DaemonError.Required({ projectDir });

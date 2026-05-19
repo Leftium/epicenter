@@ -39,7 +39,7 @@ describe('loadProjectConfig', () => {
 	});
 
 	test('loads routes from the config default export', async () => {
-		writeConfig('export default { routes: [{ open() {} }] };\n');
+		writeConfig("export default { routes: [{ route: 'demo', open() {} }] };\n");
 
 		const { data, error } = await loadProjectConfig(projectDir);
 		if (error !== null) throw new Error(error.message);

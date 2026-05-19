@@ -7,6 +7,7 @@ import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
 import { openNotes } from '../../../notes';
 
 export default defineDaemonWorkspace({
+	route: 'notes',
 	open: ({ openWebSocket }) =>
 		openNotes({
 			installationId: 'notes-repro-peer-a',

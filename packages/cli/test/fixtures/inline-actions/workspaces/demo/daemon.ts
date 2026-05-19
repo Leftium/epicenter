@@ -2,7 +2,7 @@
  * Minimal fixture: one daemon route with inline `defineQuery` /
  * `defineMutation` nodes grouped under `actions:`. No sqlite or encryption,
  * no real WebSocket: a hand-stubbed `collaboration` matches the daemon's
- * structural contract so folder-routed daemon startup accepts it.
+ * structural contract so config-routed daemon startup accepts it.
  *
  * CLI paths are `demo.counter_{get,increment,set}`.
  */
@@ -69,5 +69,6 @@ export const demo = {
 };
 
 export default defineDaemonWorkspace({
+	route: 'demo',
 	open: () => demo,
 });

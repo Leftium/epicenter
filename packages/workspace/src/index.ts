@@ -108,6 +108,7 @@ export {
 
 export { findProjectRoot } from './client/find-project-root.js';
 export {
+	DEFAULT_PROJECT_CONFIG_SOURCE,
 	defineConfig,
 	type EpicenterConfig,
 	PROJECT_CONFIG_FILENAME,

@@ -1,9 +1,7 @@
 /**
- * Folder name under each project root that holds folder-routed daemon
- * extension subfolders (`<projectDir>/workspaces/<route>/daemon.ts`). The
- * daemon discovery scanner, the daemon client's `getDaemon`, and the
- * project-root detector all key off this name; keeping the constant in
- * exactly one place is the whole point.
+ * Conventional folder name for route modules (`<projectDir>/workspaces/<route>`).
+ * It is not a project marker or registry; `epicenter.config.ts` owns route
+ * registration.
  */
 export const WORKSPACES_DIRNAME = 'workspaces';
 

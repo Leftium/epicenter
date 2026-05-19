@@ -11,6 +11,7 @@ import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
 import { openZhongwenWorkspace } from './workspace.js';
 
 export default defineDaemonWorkspace({
+	route: 'zhongwen',
 	async open({
 		projectDir,
 		clientId,

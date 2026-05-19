@@ -1,12 +1,12 @@
 /**
  * `epicenter daemon up`: start the long-lived foreground daemon for one project.
  *
- * Discovers every daemon extension under `<projectDir>/workspaces/*`, opens
- * each one in parallel, and exposes a Unix-socket IPC channel for that
- * project. `peers`, `list`, and `run` dispatch to this daemon over IPC;
- * without `daemon up` they error with a hint pointing back here.
+ * Loads every daemon extension declared in `epicenter.config.ts`, opens each
+ * one in parallel, and exposes a Unix-socket IPC channel for that project.
+ * `peers`, `list`, and `run` dispatch to this daemon over IPC; without
+ * `daemon up` they error with a hint pointing back here.
  *
- * One daemon per project; that daemon serves every folder-routed extension.
+ * One daemon per project; that daemon serves every configured extension.
  * Resource isolation between extensions is expressed by splitting them into
  * different projects, not by a flag.
  *
@@ -16,14 +16,17 @@
  * See `specs/20260516T180000-folder-routed-daemon-extensions.md`.
  */
 
-import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { createMachineAuthClient } from '@epicenter/auth/node';
 import type { StartedDaemonRoute } from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
 	type DaemonMetadata,
 	type DaemonServer,
+	DEFAULT_PROJECT_CONFIG_SOURCE,
+	findProjectRoot,
+	loadProjectConfig,
 	StartupError,
 	type StartupError as StartupErrorType,
 	startDaemonServer,
@@ -75,20 +78,22 @@ export type UpHandle = {
 };
 
 /**
- * Daemon body. Idempotently sets up disk state, opens every discovered daemon
+ * Daemon body. Idempotently sets up disk state, opens every configured daemon
  * extension, binds the IPC socket, and returns a handle. The yargs `handler`
  * calls this, prints the operator-facing banner, installs SIGINT/SIGTERM,
  * and parks the process; tests call it directly and assert on the returned
  * handle.
  *
  * A SQLite daemon lease claims ownership before any extension import. After
- * that, `startDaemonWorkspaceApps` opens every folder-routed extension and
- * `startDaemonServer` binds the socket.
+ * that, `loadProjectConfig` imports the config, `startDaemonWorkspaceApps`
+ * opens every configured extension, and `startDaemonServer` binds the socket.
  */
 export async function runUp(
 	options: UpOptions,
 ): Promise<Result<UpHandle, WorkspaceAppError | StartupErrorType>> {
-	const projectDir = realpathSync(resolve(options.projectDir));
+	const projectDir = realpathSync(resolveProjectForUp(options.projectDir));
+	provisionProject(projectDir);
+
 	const leaseResult = claimDaemonLease(projectDir);
 	if (leaseResult.error !== null) return leaseResult;
 	const lease = leaseResult.data;
@@ -124,10 +129,28 @@ export async function runUp(
 		return teardownPromise;
 	};
 
-	auth = await createMachineAuthClient();
+	try {
+		auth = await createMachineAuthClient();
+	} catch (cause) {
+		await teardown();
+		throw cause;
+	}
+
+	const config = await (async () => {
+		try {
+			const { data, error } = await loadProjectConfig(projectDir);
+			if (error !== null) throw new Error(error.message);
+			return data;
+		} catch (cause) {
+			await teardown();
+			throw cause;
+		}
+	})();
+
 	const startResult = await startDaemonWorkspaceApps({
 		projectDir,
 		auth,
+		routes: config.routes ?? [],
 	});
 	if (startResult.error) {
 		await teardown();
@@ -173,7 +196,7 @@ export async function runUp(
 export const upCommand = cmd({
 	command: 'up',
 	describe:
-		'Open every daemon extension under <projectDir>/workspaces/ and serve them on the project socket (foreground).',
+		'Open every daemon extension in epicenter.config.ts and serve them on the project socket (foreground).',
 	builder: {
 		C: projectOption,
 		quiet: {
@@ -229,6 +252,34 @@ async function safeDisposeStartedRoutes(
 		runtimes.map((entry) =>
 			Promise.resolve(entry.runtime[Symbol.asyncDispose]()),
 		),
+	);
+}
+
+function resolveProjectForUp(start: string): string {
+	try {
+		return findProjectRoot(start);
+	} catch {
+		return resolve(start);
+	}
+}
+
+function provisionProject(projectDir: string): void {
+	const projectConfigPath = join(projectDir, 'epicenter.config.ts');
+	if (!existsSync(projectConfigPath)) {
+		writeFileSync(projectConfigPath, DEFAULT_PROJECT_CONFIG_SOURCE, {
+			mode: 0o600,
+		});
+	}
+
+	const projectDataDir = join(projectDir, '.epicenter');
+	mkdirSync(join(projectDataDir, 'sqlite'), { recursive: true, mode: 0o700 });
+	mkdirSync(join(projectDataDir, 'yjs'), { recursive: true, mode: 0o700 });
+	mkdirSync(join(projectDataDir, 'md'), { recursive: true, mode: 0o700 });
+	mkdirSync(join(projectDataDir, 'log'), { recursive: true, mode: 0o700 });
+	writeFileSync(
+		join(projectDataDir, '.gitignore'),
+		['sqlite/', 'yjs/', 'md/', 'log/', ''].join('\n'),
+		{ mode: 0o600 },
 	);
 }
 

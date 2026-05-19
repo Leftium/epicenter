@@ -1,12 +1,11 @@
 /**
- * Folder-routed daemon extension discovery and startup. Node/Bun-only.
+ * Config-routed daemon extension discovery and startup. Node/Bun-only.
  *
- * Each `<projectDir>/workspaces/<route>/daemon.ts` is one daemon extension.
- * See `specs/20260516T180000-folder-routed-daemon-extensions.md`.
+ * `epicenter.config.ts` imports daemon extension modules and lists them in
+ * `routes`.
  */
 
 export {
-	DAEMON_ENTRY_FILENAME,
 	discoverWorkspaceApps,
 	WORKSPACES_DIRNAME,
 	type WorkspaceAppEntry,

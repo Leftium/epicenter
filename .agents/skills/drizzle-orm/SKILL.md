@@ -1,6 +1,6 @@
 ---
 name: drizzle-orm
-description: Drizzle ORM patterns: schema definitions, Drizzle Kit migrations, query builders, type branding, custom types, SQLite, Postgres, D1, and Turso/libSQL boundaries. Use when mentioning Drizzle, drizzle-orm, DB schemas, migrations, branded column types, or typed SQL queries.
+description: 'Drizzle ORM patterns: schema definitions, Drizzle Kit migrations, query builders, type branding, custom types, SQLite, Postgres, D1, and Turso/libSQL boundaries. Use when mentioning Drizzle, drizzle-orm, DB schemas, migrations, branded column types, or typed SQL queries.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -9,8 +9,8 @@ metadata:
 # Drizzle ORM Guidelines
 ## Reference Repositories
 
-- [Drizzle ORM](https://github.com/drizzle-team/drizzle-orm) — TypeScript ORM with SQL-like query builder
-- [Turso](https://github.com/tursodatabase/turso) — Edge-hosted LibSQL database (Epicenter's database)
+- [Drizzle ORM](https://github.com/drizzle-team/drizzle-orm) : TypeScript ORM with SQL-like query builder
+- [Turso](https://github.com/tursodatabase/turso) : Edge-hosted LibSQL database (Epicenter's database)
 
 ## When to Apply This Skill
 

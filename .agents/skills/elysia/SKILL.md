@@ -1,6 +1,6 @@
 ---
 name: elysia
-description: Elysia.js: error handling, status responses, plugin composition. Use for Elysia, Eden Treaty, API route handlers, HTTP errors, type-safe clients.
+description: 'Elysia.js: error handling, status responses, plugin composition. Use for Elysia, Eden Treaty, API route handlers, HTTP errors, type-safe clients.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -9,8 +9,8 @@ metadata:
 # Elysia.js Patterns (v1.2+)
 ## Reference Repositories
 
-- [Hono](https://github.com/honojs/hono) — Ultrafast web framework for Cloudflare Workers
-- [Cloudflare Docs](https://github.com/cloudflare/cloudflare-docs) — Cloudflare Workers, Durable Objects, KV documentation
+- [Hono](https://github.com/honojs/hono) : Ultrafast web framework for Cloudflare Workers
+- [Cloudflare Docs](https://github.com/cloudflare/cloudflare-docs) : Cloudflare Workers, Durable Objects, KV documentation
 
 ## Upstream Grounding
 
@@ -209,7 +209,7 @@ response: {
 
 ## Plugin Composition
 
-Elysia plugins are just functions that return Elysia instances. Use `new Elysia()` inside the plugin, not `new Elysia({ prefix })` — let the consumer control mounting:
+Elysia plugins are just functions that return Elysia instances. Use `new Elysia()` inside the plugin, not `new Elysia({ prefix })` : let the consumer control mounting:
 
 ```typescript
 // GOOD: Plugin is prefix-agnostic

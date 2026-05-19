@@ -1,6 +1,6 @@
 ---
 name: organization-best-practices
-description: Better Auth organization plugin: multi-tenant orgs, members, invitations, roles, teams, RBAC. Use when needing org setup, team management, member roles, or access control.
+description: 'Better Auth organization plugin: organizations, members, invitations, roles, teams, and RBAC. Use when adding org setup, team management, member roles, invitations, permissions, or multi-tenant access control.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -30,7 +30,7 @@ Skip DeepWiki for stable setup basics already documented below.
 
 1. Add `organization()` plugin to server config
 2. Add `organizationClient()` plugin to client config
-3. Run `npx @better-auth/cli migrate`
+3. Run `bun x @better-auth/cli migrate`
 4. Verify: check that organization, member, invitation tables exist in your database
 
 ```ts

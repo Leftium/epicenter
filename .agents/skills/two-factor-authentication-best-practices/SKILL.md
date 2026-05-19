@@ -1,6 +1,6 @@
 ---
 name: two-factor-authentication-best-practices
-description: Better Auth twoFactor plugin: TOTP, OTP via email/SMS, backup codes, trusted devices, 2FA sign-in. Use when needing MFA, multi-factor auth, authenticator setup.
+description: 'Better Auth twoFactor plugin: TOTP, OTP, backup codes, trusted devices, and 2FA sign-in. Use when adding MFA, authenticator setup, two-factor enrollment, backup codes, or trusted-device flows.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -30,7 +30,7 @@ Skip DeepWiki for stable setup basics already documented below.
 
 1. Add `twoFactor()` plugin to server config with `issuer`
 2. Add `twoFactorClient()` plugin to client config
-3. Run `npx @better-auth/cli migrate`
+3. Run `bun x @better-auth/cli migrate`
 4. Verify: check that `twoFactorSecret` column exists on user table
 
 ```ts

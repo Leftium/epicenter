@@ -1,6 +1,6 @@
 ---
 name: workspace-app-layout
-description: File layout for workspace-backed apps under `apps/*`: iso doc factory (`index.ts`), environment factories (`browser.ts`, `extension.ts`, `tauri.ts`), daemon and script bindings, and the auth/session singleton split. Use when creating a new app, adding platform-specific imports, placing `daemon.ts` or `script.ts`, choosing between auth-gated (Shape A) vs module-singleton (Shape B), or wiring `createSession`/`open<App>`.
+description: 'File layout for workspace-backed apps under `apps/*`: iso doc factory (`index.ts`), environment factories (`browser.ts`, `extension.ts`, `tauri.ts`), daemon and script bindings, and the auth/session singleton split. Use when creating a new app, adding platform-specific imports, placing `daemon.ts` or `script.ts`, choosing between auth-gated (Shape A) vs module-singleton (Shape B), or wiring `createSession`/`open<App>`.'
 metadata:
   author: epicenter
   version: '4.0'

@@ -1,6 +1,6 @@
 ---
 name: arktype
-description: Arktype: runtime validation, discriminated unions with .merge()/.or(), spread keys. Use when mentioning arktype, type(), union types, command/event schemas.
+description: 'Arktype: runtime validation, discriminated unions with .merge()/.or(), spread keys. Use when mentioning arktype, type(), union types, command/event schemas.'
 metadata:
   author: epicenter
   version: '1.0'

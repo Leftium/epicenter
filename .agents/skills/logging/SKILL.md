@@ -1,6 +1,6 @@
 ---
 name: logging
-description: wellcrafted/logger for library diagnostics: 5 levels, typed errors, DI sink. Use for attach primitives, background errors, file-backed logs. No console.* in library code.
+description: 'wellcrafted/logger for library diagnostics: 5 levels, typed errors, DI sink. Use for attach primitives, background errors, file-backed logs. No console.* in library code.'
 metadata:
   author: epicenter
   version: '2.0'
@@ -12,7 +12,7 @@ Structured, level-keyed, field-oriented logging for library code. Modeled on Rus
 
 ## Where it lives
 
-All of it ships from **`wellcrafted/logger`** — `createLogger`, `consoleSink`, `memorySink`, `composeSinks`, `tapErr`, and the types. Runtime-agnostic, browser-safe. No file sink in-process: durability is a *host* concern (shell redirect, systemd journal, Cloudflare tail). The library emits to `consoleSink`; the operator decides where stdout/stderr go.
+All of it ships from **`wellcrafted/logger`** : `createLogger`, `consoleSink`, `memorySink`, `composeSinks`, `tapErr`, and the types. Runtime-agnostic, browser-safe. No file sink in-process: durability is a *host* concern (shell redirect, systemd journal, Cloudflare tail). The library emits to `consoleSink`; the operator decides where stdout/stderr go.
 
 ## Quickstart
 
@@ -27,22 +27,22 @@ log.warn(MarkdownError.TableWrite({ path, cause }));
 
 ## The 5 levels
 
-`trace | debug | info | warn | error`. No `fatal` — process termination is the app's call, not the library's.
+`trace | debug | info | warn | error`. No `fatal` : process termination is the app's call, not the library's.
 
 | Level | Signature | Use for |
 |---|---|---|
 | `trace` | `(message, data?)` | Per-token / per-message noise; off in prod |
 | `debug` | `(message, data?)` | Internal state transitions (handshakes, cache loads) |
 | `info`  | `(message, data?)` | Lifecycle events (connected, loaded, flushed) |
-| `warn`  | `(err)` | Recoverable failure — retry, fallback, partial result |
+| `warn`  | `(err)` | Recoverable failure : retry, fallback, partial result |
 | `error` | `(err)` | Unrecoverable at this layer; the operation has given up |
 
-**Shape split is intentional.** `warn` / `error` take a typed error unary — the variant carries `message`, `name`, and captured fields. `trace` / `debug` / `info` are free-form because free-running diagnostic events don't need enumeration.
+**Shape split is intentional.** `warn` / `error` take a typed error unary : the variant carries `message`, `name`, and captured fields. `trace` / `debug` / `info` are free-form because free-running diagnostic events don't need enumeration.
 
 ## Level is a call-site decision, not a variant property
 
 ```ts
-// Right — same error, different levels in different contexts
+// Right : same error, different levels in different contexts
 log.warn(SyncError.ConnectionFailed({ cause }));  // inside retry loop
 log.error(SyncError.ConnectionFailed({ cause })); // last attempt, giving up
 ```
@@ -51,7 +51,7 @@ Do NOT attach a `severity` to `defineErrors` variants. That's `miette`'s pattern
 
 ## Sinks
 
-A sink is `((event) => void) & Partial<AsyncDisposable>` — a callable with optional resource cleanup.
+A sink is `((event) => void) & Partial<AsyncDisposable>` : a callable with optional resource cleanup.
 
 ```ts
 import {
@@ -75,7 +75,7 @@ systemd-run --user bun run start       # journal (structured queries via journal
 
 This used to be `jsonlFileSink`; that primitive was removed because owning a file writer in-process bought complexity (backpressure, dispose semantics, error fallbacks) that shell redirection already solves.
 
-### `composeSinks(...)` — fan out
+### `composeSinks(...)` : fan out
 
 ```ts
 const sink = composeSinks(consoleSink, myCustomSink);
@@ -84,7 +84,7 @@ const log = createLogger('source', sink);
 
 `composeSinks` forwards disposal to members that implement it (via `sink[Symbol.asyncDispose]?.()`). `consoleSink` is a no-op on dispose; stateful sinks flush and close.
 
-### `memorySink()` — for tests
+### `memorySink()` : for tests
 
 ```ts
 const { sink, events } = memorySink();
@@ -96,7 +96,7 @@ expect(events[0]).toMatchObject({ level: 'warn', source: 'test' });
 
 Do NOT assert on `console.*` output. Inject a `memorySink` and inspect the event array.
 
-## `tapErr` — the Result-flow combinator
+## `tapErr` : the Result-flow combinator
 
 `tapErr(logFn)` logs on the Err branch and returns the Result unchanged. Takes a log *method*, not a whole logger, so the caller picks the level at the pipeline site.
 
@@ -107,7 +107,7 @@ const result = await tryAsync({
 }).then(tapErr(log.warn));
 ```
 
-Mirrors Rust's `.inspect_err` and Effect's `tapErrorCause`. No message argument — the typed error owns its message.
+Mirrors Rust's `.inspect_err` and Effect's `tapErrorCause`. No message argument : the typed error owns its message.
 
 ## DI, not globals
 
@@ -140,7 +140,7 @@ type LogEvent = {
   ts:      number;    // epoch millis
   level:   LogLevel;  // 'trace' | 'debug' | 'info' | 'warn' | 'error'
   source:  string;    // from createLogger()
-  message: string;    // human text — for warn/error, inherited from the typed error
+  message: string;    // human text : for warn/error, inherited from the typed error
   data?:   unknown;   // the typed error for warn/error; free-form for info/debug/trace
 };
 ```
@@ -149,6 +149,6 @@ Custom sinks that serialize for the wire should convert `ts` to ISO-8601 and fla
 
 ## See also
 
-- `error-handling` skill — the `tryAsync.catch:` → `tapErr(log.warn)` pipeline
-- `define-errors` skill — how to mint the typed error variants the logger consumes
-- `rust-errors` skill — full `tracing` ↔ `Logger` mapping
+- `error-handling` skill : the `tryAsync.catch:` → `tapErr(log.warn)` pipeline
+- `define-errors` skill : how to mint the typed error variants the logger consumes
+- `rust-errors` skill : full `tracing` ↔ `Logger` mapping

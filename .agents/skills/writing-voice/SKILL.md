@@ -1,6 +1,6 @@
 ---
 name: writing-voice
-description: Voice/tone rules for prose, UI text, tooltips, error messages. Use when: "fix the tone", "rewrite this", "sounds like AI", "sounds corporate", or writing user-facing text and docs.
+description: 'Voice/tone rules for prose, UI text, tooltips, error messages. Use when: "fix the tone", "rewrite this", "sounds like AI", "sounds corporate", or writing user-facing text and docs.'
 metadata:
   author: epicenter
   version: '1.0'

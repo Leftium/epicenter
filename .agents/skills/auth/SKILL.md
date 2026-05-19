@@ -1,6 +1,6 @@
 ---
 name: auth
-description: Epicenter @epicenter/auth and @epicenter/auth-svelte: OAuth, OAuthSession, identity, auth-owned fetch/WebSocket, workspace lifecycle binding.
+description: 'Epicenter auth packages: `@epicenter/auth`, `@epicenter/auth-svelte`, OAuth sessions, identity state, auth-owned fetch/WebSocket, and workspace lifecycle binding. Use when editing Epicenter auth clients, session state, hosted sign-in, or auth/workspace integration.'
 metadata:
   author: epicenter
   version: '5.0'

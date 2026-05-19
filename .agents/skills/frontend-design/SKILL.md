@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: Distinctive frontend interfaces avoiding generic AI aesthetics. Use for web components, pages, posters, landing pages, dashboards, React components, HTML/CSS.
+description: 'Visual design direction for new or redesigned frontend surfaces: layout, typography, color, motion, and anti-generic aesthetics. Use when designing pages, dashboards, posters, marketing surfaces, or exploratory UI variations.'
 metadata:
   author: epicenter
   version: '1.0'

@@ -27,9 +27,13 @@
  */
 
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Err, isResult, Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { Awareness } from 'y-protocols/awareness';
-import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
+import {
+	ACTION_KEY_PATTERN,
+	type ActionRegistry,
+	invokeAction,
+} from '../shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -348,7 +352,7 @@ export async function runInboundDispatch({
 		} satisfies DispatchResponseFrame);
 	}
 
-	const result = await runHandler(handler, input);
+	const result = await invokeAction(handler, input);
 	if (result.error !== null) {
 		return JSON.stringify({
 			type: 'dispatch_response',
@@ -367,26 +371,6 @@ export async function runInboundDispatch({
 		id,
 		result: Ok(result.data),
 	} satisfies DispatchResponseFrame);
-}
-
-/**
- * Invoke an action handler, Ok-wrapping raw return values, preserving
- * existing `Result`s, and catching throws as `Err(cause)`. Symmetric
- * with the local `invokeAction` helper.
- */
-async function runHandler(
-	action: ActionRegistry[string],
-	input: unknown,
-): Promise<Result<unknown, unknown>> {
-	try {
-		const ret =
-			action.input !== undefined
-				? await (action as (i: unknown) => unknown)(input)
-				: await (action as () => unknown)();
-		return isResult(ret) ? ret : Ok(ret);
-	} catch (cause) {
-		return Err(cause);
-	}
 }
 
 /**

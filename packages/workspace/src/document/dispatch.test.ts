@@ -1,8 +1,7 @@
 /**
  * Tests for the live-device dispatch module.
  *
- * Covers the three independent pieces that make up `openCollaboration`'s
- * dispatch surface:
+ * Covers the four pieces that make up dispatch:
  *
  *   - `deriveDispatchUrl`: ws -> http URL transformation.
  *   - `getOnlineInstallationIds`: awareness-derived liveness readout.

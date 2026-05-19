@@ -44,14 +44,13 @@ import {
 import * as Y from 'yjs';
 import {
 	Awareness,
-	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import {
 	applyMessage,
 	type Connection,
-	encodeAwarenessFrame,
+	encodeAwarenessFrameForClients,
 	type RoomContext,
 	registerConnection,
 } from './sync-handlers';
@@ -211,14 +210,15 @@ export class Room extends DurableObject {
 	 * In-flight dispatches awaiting `dispatch_response`. Keyed by the
 	 * server-minted correlation id. Each entry captures the recipient
 	 * socket (for "did this close mid-flight?" cleanup) and a `resolve`
-	 * that completes the awaiting RPC promise.
+	 * that completes the awaiting RPC promise. `resolve`'s closure also
+	 * clears the safety timeout, so the rest of the DO never has to
+	 * touch the timer directly.
 	 */
 	private pendingDispatches = new Map<
 		string,
 		{
 			recipientWs: WebSocket;
 			resolve: (result: DispatchResult) => void;
-			timeoutHandle: ReturnType<typeof setTimeout>;
 		}
 	>();
 
@@ -232,10 +232,11 @@ export class Room extends DurableObject {
 		ctx.blockConcurrencyWhile(async () => {
 			this.doc = new Y.Doc({ gc: true });
 			this.awareness = new Awareness(this.doc);
-			// The server-side Awareness instance is a holding area for remote
-			// clients' states; it never publishes a "self" state of its own.
-			// Clearing the implicit `{}` local state keeps `awareness.getStates()`
-			// consistent with the "remote peers only" view.
+			// The y-protocols `Awareness` constructor publishes an implicit
+			// empty `{}` self-state on the doc's clientID. The relay never
+			// participates in dispatch and has no liveness of its own to
+			// announce, so we drop that placeholder. The result is that
+			// `awareness.getStates()` is exactly "online remote peers".
 			this.awareness.setLocalState(null);
 
 			this.room = {
@@ -302,8 +303,9 @@ export class Room extends DurableObject {
 			// Broadcast restored liveness so peers don't have to wait for the
 			// next 15s awareness heartbeat to refresh their view.
 			if (restoredClientIDs.length > 0) {
-				const frame = encodeAwarenessFrame(
-					encodeAwarenessUpdate(this.awareness, restoredClientIDs),
+				const frame = encodeAwarenessFrameForClients(
+					this.awareness,
+					restoredClientIDs,
 				);
 				for (const [ws] of this.connections) {
 					try {
@@ -493,25 +495,24 @@ export class Room extends DurableObject {
 					clearTimeout(timeoutHandle);
 					resolve(result);
 				},
-				timeoutHandle,
 			});
 
 			try {
 				recipientWs.send(JSON.stringify(frame));
 			} catch {
-				// Socket died between pickRecipient and send. Clear and bail.
+				// Socket died between pickRecipient and send. Route through the
+				// pending entry's `resolve` so the safety timeout is cleared.
 				const pending = this.pendingDispatches.get(id);
 				if (pending) {
-					clearTimeout(pending.timeoutHandle);
 					this.pendingDispatches.delete(id);
+					pending.resolve({
+						error: {
+							name: 'RecipientOffline',
+							to: req.to,
+							message: `Recipient "${req.to}" is offline`,
+						},
+					});
 				}
-				resolve({
-					error: {
-						name: 'RecipientOffline',
-						to: req.to,
-						message: `Recipient "${req.to}" is offline`,
-					},
-				});
 			}
 		});
 	}
@@ -563,14 +564,12 @@ export class Room extends DurableObject {
 		}
 
 		if (typeof message === 'string') {
-			this.handleTextFrame(ws, message);
+			this.handleTextFrame(ws, connection, message);
 			return;
 		}
 
-		const data = new Uint8Array(message);
-
-		const { data: result, error } = applyMessage({
-			data,
+		const { data: effect, error } = applyMessage({
+			data: new Uint8Array(message),
 			room: this.room,
 			connection,
 		});
@@ -578,33 +577,17 @@ export class Room extends DurableObject {
 			console.error(error.message);
 			return;
 		}
+		if (!effect) return;
 
-		switch (result.kind) {
-			case 'sync': {
-				if (!result.result) return;
-				switch (result.result.action) {
-					case 'reply':
-						ws.send(result.result.data);
-						break;
-					case 'broadcast':
-						this.broadcast(ws, result.result.data);
-						break;
-				}
-				return;
-			}
-			case 'awareness': {
-				const { broadcastFrame, clientIDs } = result.apply;
-				if (clientIDs.length > 0) {
-					this.maybeRecordClientID(ws, connection, clientIDs[0] as number);
-				}
-				if (broadcastFrame) {
-					this.broadcast(ws, broadcastFrame);
-				}
-				return;
-			}
-			case 'noop':
-				return;
+		if (effect.action === 'reply') {
+			ws.send(effect.data);
+			return;
 		}
+		// broadcast
+		if (effect.learnedClientIDs?.length) {
+			this.maybeRecordClientID(ws, connection, effect.learnedClientIDs[0]!);
+		}
+		this.broadcast(ws, effect.data);
 	}
 
 	/**
@@ -612,7 +595,11 @@ export class Room extends DurableObject {
 	 * is `dispatch_response`; anything else closes the socket with
 	 * `4400 protocol-error`.
 	 */
-	private handleTextFrame(ws: WebSocket, message: string): void {
+	private handleTextFrame(
+		ws: WebSocket,
+		connection: Connection,
+		message: string,
+	): void {
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(message);
@@ -647,13 +634,11 @@ export class Room extends DurableObject {
 		if (!isDispatchResult(result)) {
 			// Recipient sent a malformed result; treat as offline so the caller
 			// gets a usable Result rather than hanging until the safety timeout.
-			const installationId =
-				this.connections.get(ws)?.installationId ?? 'unknown';
 			this.pendingDispatches.delete(id);
 			pending.resolve({
 				error: {
 					name: 'RecipientOffline',
-					to: installationId,
+					to: connection.installationId,
 					message: 'Recipient returned a malformed dispatch response',
 				},
 			});
@@ -724,16 +709,17 @@ export class Room extends DurableObject {
 		const attachment = ws.deserializeAttachment() as WsAttachment | null;
 		if (attachment?.clientID != null) {
 			removeAwarenessStates(this.awareness, [attachment.clientID], 'close');
-			const removalFrame = encodeAwarenessFrame(
-				encodeAwarenessUpdate(this.awareness, [attachment.clientID]),
+			this.broadcast(
+				ws,
+				encodeAwarenessFrameForClients(this.awareness, [attachment.clientID]),
 			);
-			this.broadcast(ws, removalFrame);
 		}
 
 		// Fail any in-flight dispatches that were waiting on this socket.
+		// `pending.resolve` clears the safety timeout via its closure, so we
+		// only need to delete the map entry and call resolve here.
 		for (const [id, pending] of this.pendingDispatches) {
 			if (pending.recipientWs !== ws) continue;
-			clearTimeout(pending.timeoutHandle);
 			this.pendingDispatches.delete(id);
 			pending.resolve({
 				error: {

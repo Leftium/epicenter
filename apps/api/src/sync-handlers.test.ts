@@ -12,7 +12,6 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-
 import {
 	encodeSyncStep1,
 	encodeSyncStep2,
@@ -21,10 +20,8 @@ import {
 	SYNC_MESSAGE_TYPE,
 } from '@epicenter/sync';
 import * as encoding from 'lib0/encoding';
-import {
-	Awareness,
-	encodeAwarenessUpdate,
-} from 'y-protocols/awareness';
+import type { Result } from 'wellcrafted/result';
+import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 import {
@@ -76,6 +73,12 @@ function makeConnection(
 	return { ws, connection };
 }
 
+function expectOk<T>(result: Result<T, unknown>): T {
+	expect(result.error).toBeNull();
+	if (result.error !== null) throw result.error;
+	return result.data as T;
+}
+
 function frameSyncUpdate(update: Uint8Array): Uint8Array {
 	return encodeSyncUpdate({ update });
 }
@@ -95,18 +98,20 @@ function frameAuth(): Uint8Array {
  * the local client of an Awareness instance. Used to simulate what a
  * client would send on the wire.
  */
-function clientAwarenessFrame({
-	installationId,
-}: {
-	installationId: string;
-}): { frame: Uint8Array; clientID: number } {
+function clientAwarenessFrame({ installationId }: { installationId: string }): {
+	frame: Uint8Array;
+	clientID: number;
+} {
 	const clientDoc = new Y.Doc();
 	const clientAwareness = new Awareness(clientDoc);
 	clientAwareness.setLocalStateField('liveness', { installationId });
 	const update = encodeAwarenessUpdate(clientAwareness, [
 		clientAwareness.clientID,
 	]);
-	return { frame: encodeAwarenessFrame(update), clientID: clientAwareness.clientID };
+	return {
+		frame: encodeAwarenessFrame(update),
+		clientID: clientAwareness.clientID,
+	};
 }
 
 // ============================================================================
@@ -180,24 +185,24 @@ describe('applyMessage SYNC STEP1', () => {
 		const step1 = encodeSyncStep1({ doc: clientDoc });
 
 		const { connection } = makeConnection(room.doc);
-		const { data: result, error } = applyMessage({
-			data: step1,
-			room,
-			connection,
-		});
+		const effect = expectOk(
+			applyMessage({
+				data: step1,
+				room,
+				connection,
+			}),
+		);
 
-		expect(error).toBeNull();
-		expect(result?.kind).toBe('sync');
-		if (result?.kind !== 'sync') throw new Error('unreachable');
-		expect(result.result?.action).toBe('reply');
-		const reply = result.result?.data as Uint8Array;
+		expect(effect?.action).toBe('reply');
+		if (effect?.action !== 'reply') throw new Error('Expected reply effect');
+		const reply = effect.data;
 		expect(reply[0]).toBe(MESSAGE_TYPE.SYNC);
 		expect(reply[1]).toBe(SYNC_MESSAGE_TYPE.STEP2);
 	});
 });
 
 describe('applyMessage SYNC STEP2 / UPDATE', () => {
-	test('STEP2 payload applies state to the target doc', () => {
+	test('STEP2 payload applies state to the target doc, no effect emitted', () => {
 		const source = new Y.Doc();
 		source.getMap('data').set('shared', 'yes');
 		const step2 = encodeSyncStep2({ doc: source });
@@ -205,20 +210,19 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 		const room = makeRoom();
 		const { connection } = makeConnection(room.doc);
 
-		const { data: result, error } = applyMessage({
-			data: step2,
-			room,
-			connection,
-		});
+		const effect = expectOk(
+			applyMessage({
+				data: step2,
+				room,
+				connection,
+			}),
+		);
 
-		expect(error).toBeNull();
-		expect(result?.kind).toBe('sync');
-		if (result?.kind !== 'sync') throw new Error('unreachable');
-		expect(result.result).toBeNull();
+		expect(effect).toBeNull();
 		expect(room.doc.getMap('data').get('shared')).toBe('yes');
 	});
 
-	test('UPDATE payload applies state to the target doc', () => {
+	test('UPDATE payload applies state to the target doc, no effect emitted', () => {
 		const source = new Y.Doc();
 		source.getMap('data').set('hello', 'world');
 		const update = Y.encodeStateAsUpdateV2(source);
@@ -227,14 +231,15 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 		const room = makeRoom();
 		const { connection } = makeConnection(room.doc);
 
-		const { data: result, error } = applyMessage({
-			data: frame,
-			room,
-			connection,
-		});
+		const effect = expectOk(
+			applyMessage({
+				data: frame,
+				room,
+				connection,
+			}),
+		);
 
-		expect(error).toBeNull();
-		expect(result?.kind).toBe('sync');
+		expect(effect).toBeNull();
 		expect(room.doc.getMap('data').get('hello')).toBe('world');
 	});
 });
@@ -252,17 +257,19 @@ describe('applyMessage AWARENESS', () => {
 			installationId: 'R_laptop',
 		});
 
-		const { data: result, error } = applyMessage({
-			data: frame,
-			room,
-			connection,
-		});
+		const effect = expectOk(
+			applyMessage({
+				data: frame,
+				room,
+				connection,
+			}),
+		);
 
-		expect(error).toBeNull();
-		expect(result?.kind).toBe('awareness');
-		if (result?.kind !== 'awareness') throw new Error('unreachable');
-		expect(result.apply.broadcastFrame).not.toBeNull();
-		expect(result.apply.clientIDs).toEqual([clientID]);
+		expect(effect?.action).toBe('broadcast');
+		if (effect?.action !== 'broadcast') {
+			throw new Error('Expected broadcast effect');
+		}
+		expect(effect.learnedClientIDs).toEqual([clientID]);
 
 		// Server-side awareness reflects the peer's liveness.
 		const states = room.awareness.getStates();
@@ -279,17 +286,15 @@ describe('applyMessage AWARENESS', () => {
 			installationId: 'R_phone', // tries to claim a different install
 		});
 
-		const { data: result, error } = applyMessage({
-			data: frame,
-			room,
-			connection,
-		});
+		const effect = expectOk(
+			applyMessage({
+				data: frame,
+				room,
+				connection,
+			}),
+		);
 
-		expect(error).toBeNull();
-		expect(result?.kind).toBe('awareness');
-		if (result?.kind !== 'awareness') throw new Error('unreachable');
-		expect(result.apply.broadcastFrame).toBeNull();
-		expect(result.apply.clientIDs).toEqual([]);
+		expect(effect).toBeNull();
 
 		// Peers never observe the bad state.
 		expect(room.awareness.getStates().has(clientID)).toBe(false);
@@ -309,16 +314,18 @@ describe('applyMessage AWARENESS', () => {
 		]);
 		const frame = encodeAwarenessFrame(update);
 
-		const { data: result, error } = applyMessage({
-			data: frame,
-			room,
-			connection,
-		});
+		const effect = expectOk(
+			applyMessage({
+				data: frame,
+				room,
+				connection,
+			}),
+		);
 
-		expect(error).toBeNull();
-		expect(result?.kind).toBe('awareness');
-		if (result?.kind !== 'awareness') throw new Error('unreachable');
-		expect(result.apply.broadcastFrame).not.toBeNull();
+		expect(effect?.action).toBe('broadcast');
+		if (effect?.action !== 'broadcast') {
+			throw new Error('Expected broadcast effect');
+		}
 		expect(room.awareness.getStates().get(clientAwareness.clientID)).toEqual({
 			cursor: { x: 1, y: 2 },
 		});
@@ -351,14 +358,15 @@ describe('applyMessage AUTH', () => {
 		const room = makeRoom();
 		const { connection } = makeConnection(room.doc);
 
-		const { data: result, error } = applyMessage({
-			data: frameAuth(),
-			room,
-			connection,
-		});
+		const effect = expectOk(
+			applyMessage({
+				data: frameAuth(),
+				room,
+				connection,
+			}),
+		);
 
-		expect(error).toBeNull();
-		expect(result?.kind).toBe('noop');
+		expect(effect).toBeNull();
 	});
 });
 
@@ -367,13 +375,14 @@ describe('applyMessage unknown message type', () => {
 		const room = makeRoom();
 		const { connection } = makeConnection(room.doc);
 
-		const { data: result, error } = applyMessage({
-			data: frameSingleByte(99),
-			room,
-			connection,
-		});
+		const effect = expectOk(
+			applyMessage({
+				data: frameSingleByte(99),
+				room,
+				connection,
+			}),
+		);
 
-		expect(error).toBeNull();
-		expect(result?.kind).toBe('noop');
+		expect(effect).toBeNull();
 	});
 });

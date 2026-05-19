@@ -40,7 +40,6 @@
 import {
 	encodeSyncUpdate,
 	MESSAGE_TYPE,
-	SYNC_MESSAGE_TYPE,
 	handleSyncPayload,
 	type SyncMessageType,
 } from '@epicenter/sync';
@@ -112,13 +111,23 @@ export type Connection = {
  *   `reply`:     Send data back to the sender only.
  *   `broadcast`: Fan out to all other connections.
  *
- * `applyMessage` returns `Result<MessageResult | null>`: `null` means valid
- * message with no action needed (AUTH, dropped awareness entries, unknown
- * types).
+ * `learnedClientIDs` rides on `broadcast` effects from AWARENESS frames:
+ * it tells the DO which Yjs `clientID`s just published valid `liveness`,
+ * so the WS attachment can be amended for force-clear on close. SYNC
+ * frames never set it (SYNC broadcasts happen via the doc-update
+ * listener inside {@link registerConnection}, not via this return).
+ *
+ * `applyMessage` returns `Result<MessageEffect | null>`: `null` means
+ * valid message with no further effect (AUTH, dropped awareness entries,
+ * STEP2/UPDATE, unknown types).
  */
-export type MessageResult =
+export type MessageEffect =
 	| { action: 'reply'; data: Uint8Array }
-	| { action: 'broadcast'; data: Uint8Array };
+	| {
+			action: 'broadcast';
+			data: Uint8Array;
+			learnedClientIDs?: number[];
+	  };
 
 // ============================================================================
 // Awareness encoding helpers
@@ -257,31 +266,16 @@ export function registerConnection({
 // ============================================================================
 
 /**
- * Result type for awareness handling: the filtered broadcast frame (if
- * any) and the clientIDs that successfully published liveness for this
- * connection.
- */
-export type AwarenessApply = {
-	broadcastFrame: Uint8Array | null;
-	clientIDs: number[];
-};
-
-/**
  * Dispatch an incoming binary WebSocket message.
  *
  * Mutates `room.doc` and/or `room.awareness` as appropriate, then returns
- * a `Result`. `Ok` carries one of:
+ * `Result<MessageEffect | null>`. `null` is the "valid, no further work"
+ * outcome: STEP2/UPDATE applied to the doc (broadcast happens inside the
+ * doc-update listener registered by {@link registerConnection}), AWARENESS
+ * with every entry rejected, AUTH, unknown message types.
  *
- *   - `{ kind: 'sync'; result: MessageResult | null }`: standard sync
- *     reply or broadcast, or null when no action is needed.
- *   - `{ kind: 'awareness'; broadcastFrame; clientIDs }`: the filtered
- *     awareness update to broadcast to other peers (null if every entry
- *     was dropped), and the surviving Yjs client ids so the caller can
- *     record them into the WS attachment.
- *   - `{ kind: 'noop' }`: AUTH or unknown message type.
- *
- * `Err(SyncHandlerError.MessageDecode)` is returned if the binary frame
- * is malformed.
+ * `Err(SyncHandlerError.MessageDecode)` covers lib0 buffer underflow on
+ * truncated input.
  */
 export function applyMessage({
 	data,
@@ -293,10 +287,7 @@ export function applyMessage({
 	connection: Connection;
 }) {
 	return trySync({
-		try: ():
-			| { kind: 'sync'; result: MessageResult | null }
-			| { kind: 'awareness'; apply: AwarenessApply }
-			| { kind: 'noop' } => {
+		try: (): MessageEffect | null => {
 			const decoder = decoding.createDecoder(data);
 			const messageType = decoding.readVarUint(decoder);
 
@@ -310,20 +301,7 @@ export function applyMessage({
 						doc: room.doc,
 						origin: connection.ws,
 					});
-					if (response) {
-						return { kind: 'sync', result: { action: 'reply', data: response } };
-					}
-					// STEP2 / UPDATE: applyUpdateV2 already ran inside
-					// handleSyncPayload and the doc.on('updateV2') registered by
-					// registerConnection broadcasts the result to other peers.
-					// Acknowledge with null; the caller has nothing to send.
-					if (
-						syncType === SYNC_MESSAGE_TYPE.STEP2 ||
-						syncType === SYNC_MESSAGE_TYPE.UPDATE
-					) {
-						return { kind: 'sync', result: null };
-					}
-					return { kind: 'sync', result: null };
+					return response ? { action: 'reply', data: response } : null;
 				}
 
 				case MESSAGE_TYPE.AWARENESS: {
@@ -332,21 +310,14 @@ export function applyMessage({
 						update: payload,
 						expectedInstallationId: connection.installationId,
 					});
-					if (!filtered) {
-						return {
-							kind: 'awareness',
-							apply: { broadcastFrame: null, clientIDs },
-						};
-					}
+					if (!filtered) return null;
 					// Mutate the shared Awareness so the relay's view stays in sync;
 					// peers receive the filtered update via the broadcast frame.
 					applyAwarenessUpdate(room.awareness, filtered, connection.ws);
 					return {
-						kind: 'awareness',
-						apply: {
-							broadcastFrame: encodeAwarenessFrame(filtered),
-							clientIDs,
-						},
+						action: 'broadcast',
+						data: encodeAwarenessFrame(filtered),
+						learnedClientIDs: clientIDs,
 					};
 				}
 
@@ -357,12 +328,12 @@ export function applyMessage({
 					console.warn(
 						'[sync] Unexpected AUTH message on authenticated WebSocket',
 					);
-					return { kind: 'noop' };
+					return null;
 				}
 
 				default:
 					console.warn(`[sync] Unknown WS message type: ${messageType}`);
-					return { kind: 'noop' };
+					return null;
 			}
 		},
 		catch: (cause) => SyncHandlerError.MessageDecode({ cause }),

@@ -188,8 +188,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	};
 	awareness.on('update', awarenessUpdateHandler);
 
-	// devices.list() reads awareness; devices.subscribe wires a change
-	// listener and re-derives the snapshot.
+	// devices.list() delegates to `getOnlineInstallationIds` (the awareness
+	// reader); devices.subscribe wires a change listener and re-derives the
+	// snapshot. Dedup-by-installationId folds multi-tab same-install into
+	// one entry.
 	const devices = {
 		list(): LiveDevice[] {
 			return getOnlineInstallationIds({
@@ -206,12 +208,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 
 	const dispatchUrl = deriveDispatchUrl(config.url);
 
-	// Teardown on ydoc destroy: Awareness listens for doc destroy and
-	// cleans up its own interval; we still pull our outbound listener off
-	// so the closure can GC.
-	ydoc.once('destroy', () => {
-		awareness.off('update', awarenessUpdateHandler);
-	});
+	// No explicit awareness teardown: y-protocols `Awareness` registers
+	// its own `doc.on('destroy', () => this.destroy())` listener; its
+	// `destroy()` calls `super.destroy()` on the lib0 Observable, which
+	// clears every subscriber (including our `awarenessUpdateHandler`).
 
 	return {
 		installationId,

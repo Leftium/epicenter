@@ -23,22 +23,22 @@
  * discovery.
  */
 
-import type { Logger } from 'wellcrafted/logger';
-import type { Result } from 'wellcrafted/result';
+import { MESSAGE_TYPE } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
+import type { Logger } from 'wellcrafted/logger';
+import type { Result } from 'wellcrafted/result';
 import {
-	applyAwarenessUpdate,
 	Awareness,
+	applyAwarenessUpdate,
 	encodeAwarenessUpdate,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { MESSAGE_TYPE } from '@epicenter/sync';
 import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
 import {
-	deriveDispatchUrl,
 	type DispatchError,
 	type DispatchRequest,
+	deriveDispatchUrl,
 	dispatch as dispatchOverHttp,
 	getOnlineInstallationIds,
 	type LiveDevice,
@@ -104,9 +104,7 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	 * Always returns `Result<unknown, DispatchError>`. For type-narrowed
 	 * success payloads, lift through `typedDispatch<TActions>(collab.dispatch)`.
 	 */
-	dispatch(
-		req: DispatchRequest,
-	): Promise<Result<unknown, DispatchError>>;
+	dispatch(req: DispatchRequest): Promise<Result<unknown, DispatchError>>;
 
 	/**
 	 * Sugar for `ydoc.destroy()`. Both cascade to all attached primitives
@@ -257,7 +255,10 @@ function encodeAwarenessFrame(
 ): Uint8Array {
 	return encoding.encode((enc) => {
 		encoding.writeVarUint(enc, MESSAGE_TYPE.AWARENESS);
-		encoding.writeVarUint8Array(enc, encodeAwarenessUpdate(awareness, clientIDs));
+		encoding.writeVarUint8Array(
+			enc,
+			encodeAwarenessUpdate(awareness, clientIDs),
+		);
 	});
 }
 

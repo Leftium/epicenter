@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { EntryId } from '$lib/workspace';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
@@ -7,6 +6,7 @@
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
 	import { requireFuji } from '$lib/session';
+	import type { EntryId } from '$lib/workspace';
 
 	// ─── Config ──────────────────────────────────────────────────────────────────
 	const fuji = requireFuji();

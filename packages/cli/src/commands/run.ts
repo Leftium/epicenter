@@ -188,9 +188,7 @@ export function emitRemoteCallError(
 			);
 			return;
 		case 'RecipientOffline':
-			console.error(
-				`error: peer ${peerTarget} went offline before responding`,
-			);
+			console.error(`error: peer ${peerTarget} went offline before responding`);
 			return;
 		case 'NetworkFailed':
 			console.error(

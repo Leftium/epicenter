@@ -39,8 +39,8 @@
 
 import {
 	encodeSyncUpdate,
-	MESSAGE_TYPE,
 	handleSyncPayload,
+	MESSAGE_TYPE,
 	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
@@ -48,8 +48,8 @@ import * as encoding from 'lib0/encoding';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, trySync } from 'wellcrafted/result';
 import {
-	applyAwarenessUpdate,
 	type Awareness,
+	applyAwarenessUpdate,
 	encodeAwarenessUpdate,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
@@ -164,15 +164,12 @@ export function filterAwarenessUpdate({
 		const stateJson = decoding.readVarString(decoder);
 		// Parse only to inspect liveness; we keep the original JSON string for
 		// re-encoding to preserve byte-exact non-liveness sub-fields.
-		const state = JSON.parse(stateJson) as
-			| { liveness?: { installationId?: unknown } }
-			| null;
+		const state = JSON.parse(stateJson) as {
+			liveness?: { installationId?: unknown };
+		} | null;
 		if (state && state.liveness) {
 			const claimed = state.liveness.installationId;
-			if (
-				typeof claimed !== 'string' ||
-				claimed !== expectedInstallationId
-			) {
+			if (typeof claimed !== 'string' || claimed !== expectedInstallationId) {
 				// Drop this client's entry silently. No close, no error frame.
 				continue;
 			}

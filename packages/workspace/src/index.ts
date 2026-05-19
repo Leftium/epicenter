@@ -147,6 +147,15 @@ export {
 export { attachTimeline } from './document/attach-timeline/index.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
+export {
+	type ActionInput,
+	type ActionOutput,
+	DispatchError,
+	type DispatchRequest,
+	type LiveDevice,
+	type TypedDispatch,
+	typedDispatch,
+} from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
 export {
 	type OpenWebSocket,
@@ -161,13 +170,4 @@ export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-export {
-	type ActionInput,
-	type ActionOutput,
-	DispatchError,
-	type DispatchRequest,
-	type LiveDevice,
-	type TypedDispatch,
-	typedDispatch,
-} from './document/dispatch.js';
 export { roomWsUrl, websocketUrl } from './document/transport.js';

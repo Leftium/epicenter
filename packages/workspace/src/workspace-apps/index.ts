@@ -8,8 +8,8 @@
 export {
 	DAEMON_ENTRY_FILENAME,
 	discoverWorkspaceApps,
-	type WorkspaceAppEntry,
 	WORKSPACES_DIRNAME,
+	type WorkspaceAppEntry,
 } from './discover.js';
 export { WorkspaceAppError } from './errors.js';
 export {

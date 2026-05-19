@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { Entry } from '$lib/workspace';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { DateTimeString } from '@epicenter/workspace';
@@ -18,6 +17,7 @@
 	import { goto } from '$app/navigation';
 	import { matchesEntrySearch } from '$lib/entries-search';
 	import { requireFuji } from '$lib/session';
+	import type { Entry } from '$lib/workspace';
 	import { viewState } from '../state/view.svelte';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();

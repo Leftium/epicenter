@@ -185,7 +185,6 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 	},
 };
 
-
 /**
  * Determines the best supported audio MIME type for the current browser.
  *

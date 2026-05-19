@@ -1,7 +1,7 @@
 export {
 	type AttachDaemonInfrastructureOptions,
-	type DaemonInfrastructure,
 	attachDaemonInfrastructure,
+	type DaemonInfrastructure,
 } from './attach-daemon-infrastructure.js';
 export {
 	type DaemonWorkspaceContext,

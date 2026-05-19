@@ -107,7 +107,7 @@ export function openFujiWorkspace(
 	attachEncryption: AttachFujiEncryption,
 	options: { clientId?: number } = {},
 ) {
-	const ydoc = createFujiYdoc();
+	const ydoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: true });
 	if (options.clientId !== undefined) {
 		ydoc.clientID = options.clientId;
 	}
@@ -115,10 +115,6 @@ export function openFujiWorkspace(
 }
 
 export type FujiWorkspace = ReturnType<typeof openFujiWorkspace>;
-
-function createFujiYdoc(): Y.Doc {
-	return new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: true });
-}
 
 function attachFujiWorkspace(
 	ydoc: Y.Doc,

@@ -15,12 +15,10 @@ import { FUJI_WORKSPACE_ID, openFujiWorkspace } from './src/lib/workspace.js';
 
 const testKey = new Uint8Array(32).fill(7);
 
-function toKeyring(key: Uint8Array): SubjectKeyring {
-	return [{ version: 1, subjectKeyBase64: bytesToBase64(key) }];
-}
-
 function createTestEncryption(
-	keyring: SubjectKeyring = toKeyring(testKey),
+	keyring: SubjectKeyring = [
+		{ version: 1, subjectKeyBase64: bytesToBase64(testKey) },
+	],
 ): (ydoc: Y.Doc) => ReturnType<typeof attachEncryption> {
 	return (ydoc) => {
 		return attachEncryption(ydoc, { keyring: () => keyring });

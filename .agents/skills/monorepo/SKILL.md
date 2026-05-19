@@ -1,6 +1,6 @@
 ---
 name: monorepo
-description: Monorepo scripts, package boilerplate, conventions. Use when: "how do I run", "bun run", "build this", "run tests", "typecheck", "create a new package", linting, scaffolding packages.
+description: 'Monorepo scripts, package boilerplate, conventions. Use when: "how do I run", "bun run", "build this", "run tests", "typecheck", "create a new package", linting, scaffolding packages.'
 metadata:
   author: epicenter
   version: '2.0'
@@ -10,8 +10,8 @@ metadata:
 
 ## Reference Repositories
 
-- [jsrepo](https://github.com/jsrepojs/jsrepo) — Package distribution for monorepos
-- [WXT](https://github.com/wxt-dev/wxt) — Browser extension framework (used by tab-manager app)
+- [jsrepo](https://github.com/jsrepojs/jsrepo) : Package distribution for monorepos
+- [WXT](https://github.com/wxt-dev/wxt) : Browser extension framework (used by tab-manager app)
 
 The monorepo uses consistent script naming conventions:
 
@@ -40,7 +40,7 @@ Use this pattern when you need to:
 - `:check` suffix = check only (for CI, no modifications)
 - `typecheck` alone = type checking (separate concern, cannot auto-fix)
 - `test` runs only `*.test.ts`; `bench` runs only `*.bench.ts`. A file is
-  one or the other — never both. Benchmarks print reports; tests assert.
+  one or the other : never both. Benchmarks print reports; tests assert.
 
 ## Dev Scripts
 
@@ -48,11 +48,11 @@ Every app uses explicit `dev:local` / `dev:remote` naming:
 
 | Script | Meaning |
 | --- | --- |
-| `dev:local` | Local everything—local API, local secrets |
+| `dev:local` | Local everything:local API, local secrets |
 | `dev:remote` | Local app, remote/prod resources |
 | `dev` | Alias for `dev:local` (convenience) |
 
-Not every app has `dev:remote`—only add it when there's a real use case.
+Not every app has `dev:remote`:only add it when there's a real use case.
 
 ## CLI (`epicenter`)
 
@@ -64,7 +64,7 @@ bun epicenter list files -C playground/opensidian-e2e
 ```
 
 The bare `epicenter` command (global install) defaults to `api.epicenter.so`.
-Config files read `process.env.EPICENTER_SERVER` with a prod fallback—the root
+Config files read `process.env.EPICENTER_SERVER` with a prod fallback:the root
 script sets it automatically.
 
 ## After Completing Code Changes
@@ -106,7 +106,7 @@ When creating a new package in `packages/`, follow this exact structure.
 
 Key conventions:
 
-- `main` and `types` both point to `./src/index.ts` (no build step—consumers import source directly).
+- `main` and `types` both point to `./src/index.ts` (no build step:consumers import source directly).
 - Use `"workspace:*"` for internal deps (e.g., `"@epicenter/workspace": "workspace:*"`).
 - Use `"catalog:"` for shared versions managed in the root `package.json` catalogs.
 - `peerDependencies` for packages consumers must also install (e.g., `yjs`).

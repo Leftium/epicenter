@@ -1,6 +1,6 @@
 ---
 name: autumn
-description: Autumn billing: autumn.config.ts, autumn-js SDK for credit checks, atmn CLI. Use when working on billing, pricing, credits, plan gating, metered usage.
+description: 'Autumn billing in Epicenter: `autumn.config.ts`, `autumn-js` credit checks, `atmn` CLI, plan gates, and metered AI usage. Use when changing billing, pricing, credits, plan access, refunds, or usage events.'
 metadata:
   author: epicenter
   version: '1.2'
@@ -230,8 +230,8 @@ Use when the operation fails after credits were already deducted (e.g., AI strea
 ### Setup
 
 ```bash
-bunx atmn login        # OAuth login, saves keys to .env
-bunx atmn env          # Verify org and environment
+bun x atmn login       # OAuth login, saves keys to .env
+bun x atmn env         # Verify org and environment
 ```
 
 ### Config File
@@ -245,20 +245,20 @@ import { feature, item, plan } from 'atmn';
 ### Push/Pull
 
 ```bash
-bunx atmn preview      # Dry run — shows what would change
-bunx atmn push         # Push to sandbox (interactive confirmation)
-bunx atmn push --prod  # Push to production
-bunx atmn push --yes   # Auto-confirm (for CI/CD)
-bunx atmn pull         # Pull remote config, generate SDK types
+bun x atmn preview     # Dry run, shows what would change
+bun x atmn push        # Push to sandbox (interactive confirmation)
+bun x atmn push --prod # Push to production
+bun x atmn push --yes  # Auto-confirm (for CI/CD)
+bun x atmn pull        # Pull remote config, generate SDK types
 ```
 
 ### Data Inspection
 
 ```bash
-bunx atmn customers    # Browse customers
-bunx atmn plans        # Browse plans
-bunx atmn features     # Browse features
-bunx atmn events       # Browse usage events
+bun x atmn customers   # Browse customers
+bun x atmn plans       # Browse plans
+bun x atmn features    # Browse features
+bun x atmn events      # Browse usage events
 ```
 
 ---

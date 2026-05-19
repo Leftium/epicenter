@@ -1,6 +1,6 @@
 ---
 name: git
-description: Git commits and PRs using conventional commits. Use when: "commit this", "stage and commit", "write a commit message", "create a PR", or reviewing PR descriptions.
+description: 'Git commits and PRs using conventional commits. Use when: "commit this", "stage and commit", "write a commit message", "create a PR", or reviewing PR descriptions.'
 metadata:
   author: epicenter
   version: '2.0'

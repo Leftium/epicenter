@@ -1,6 +1,6 @@
 ---
 name: encryption
-description: Encryption: HKDF, XChaCha20-Poly1305, blob formats, key hierarchy/rotation. Use for "encrypt this", "key management", crypto primitives, EncryptedBlob.
+description: 'Encryption: HKDF, XChaCha20-Poly1305, blob formats, key hierarchy/rotation. Use for "encrypt this", "key management", crypto primitives, EncryptedBlob.'
 ---
 
 # Encryption Patterns
@@ -9,13 +9,13 @@ description: Encryption: HKDF, XChaCha20-Poly1305, blob formats, key hierarchy/r
 
 When working with encryption, consult these repositories for patterns and documentation:
 
-- [noble-ciphers](https://github.com/paulmillr/noble-ciphers) — Audited JS implementation of ChaCha, Salsa, AES (our crypto primitive library)
-- [libsodium](https://github.com/jedisct1/libsodium) — Crypto primitives, secretbox/AEAD patterns, XChaCha20-Poly1305
-- [Signal Protocol (libsignal)](https://github.com/signalapp/libsignal) — Key hierarchy, HKDF usage, Double Ratchet, message encryption
-- [Vault Transit](https://developer.hashicorp.com/vault/docs/secrets/transit) — Key versioning, rotation, ciphertext format (`vault:v1:base64`)
-- [Bitwarden](https://github.com/bitwarden/server) — Client-side vault encryption, key hierarchy (master key -> org key -> cipher key)
-- [AWS KMS](https://docs.aws.amazon.com/kms/) — Envelope encryption patterns, key rotation lifecycle
-- [age](https://github.com/FiloSottile/age) — Simple file encryption design philosophy
+- [noble-ciphers](https://github.com/paulmillr/noble-ciphers) : Audited JS implementation of ChaCha, Salsa, AES (our crypto primitive library)
+- [libsodium](https://github.com/jedisct1/libsodium) : Crypto primitives, secretbox/AEAD patterns, XChaCha20-Poly1305
+- [Signal Protocol (libsignal)](https://github.com/signalapp/libsignal) : Key hierarchy, HKDF usage, Double Ratchet, message encryption
+- [Vault Transit](https://developer.hashicorp.com/vault/docs/secrets/transit) : Key versioning, rotation, ciphertext format (`vault:v1:base64`)
+- [Bitwarden](https://github.com/bitwarden/server) : Client-side vault encryption, key hierarchy (master key -> org key -> cipher key)
+- [AWS KMS](https://docs.aws.amazon.com/kms/) : Envelope encryption patterns, key rotation lifecycle
+- [age](https://github.com/FiloSottile/age) : Simple file encryption design philosophy
 
 ### What We Borrow From Each
 
@@ -67,11 +67,11 @@ ENCRYPTION_SECRETS="1:base64Secret"
 
 ### Key Delivery Best Practices
 
-**Prefer inline key delivery over separate endpoints.** If the session already authenticates the user, derive and embed key material in the session response. HKDF-SHA256 derivation adds <0.1ms—the optimization of splitting key delivery from session delivery costs more in complexity (version-tracking state, extra round-trips, duplicated callbacks) than it saves in compute.
+**Prefer inline key delivery over separate endpoints.** If the session already authenticates the user, derive and embed key material in the session response. HKDF-SHA256 derivation adds <0.1ms:the optimization of splitting key delivery from session delivery costs more in complexity (version-tracking state, extra round-trips, duplicated callbacks) than it saves in compute.
 
-**Make unlock operations idempotent.** Calling `unlock()` with the same key twice should be a no-op, and calling it with a different key should cleanly replace the active key. This eliminates client-side version tracking—the client receives the key, calls unlock, done. No mutable `lastVersion` state, no conditional fetches.
+**Make unlock operations idempotent.** Calling `unlock()` with the same key twice should be a no-op, and calling it with a different key should cleanly replace the active key. This eliminates client-side version tracking:the client receives the key, calls unlock, done. No mutable `lastVersion` state, no conditional fetches.
 
-**Embed key version in the ciphertext, not in application logic.** The blob header (`blob[1]`) carries the version that encrypted it. Decryption reads the version from the blob and selects the matching key from the keyring. Clients never need to track which version they’re using—the data is self-describing.
+**Embed key version in the ciphertext, not in application logic.** The blob header (`blob[1]`) carries the version that encrypted it. Decryption reads the version from the blob and selects the matching key from the keyring. Clients never need to track which version they’re using:the data is self-describing.
 
 **Minimize client-side key state.** Ideally zero mutable state. The session carries the key, the client passes it to `unlock()`, the workspace derives per-workspace keys internally. No caches to invalidate, no version comparisons, no separate fetch methods.
 

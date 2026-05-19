@@ -1,6 +1,6 @@
 ---
 name: spec-execution
-description: Execute a spec through planned waves of parallel/sequential changes. Use for "execute this spec", "implement this plan", "run the spec", a specs/*.md file.
+description: Execute `specs/*.md` plans through working checkpoints. Use when the user says "execute this spec", "implement this plan", "run the spec", or points at a spec file.
 metadata:
   author: epicenter
   version: '1.0'
@@ -30,7 +30,7 @@ READ SPEC
 PLAN WAVES (which tasks are parallel vs sequential?)
     ↓
 ┌─── WAVE N ──────────────────────────────────────┐
-│  1. Execute tasks (sub-agents for ALL tasks)     │
+│  1. Execute tasks (sub-agents when useful)       │
 │  2. Verify (type-check, tests if applicable)     │
 │  3. Update spec (check off items, add notes)     │
 │  4. Commit or checkpoint, based on review shape  │
@@ -60,7 +60,7 @@ Breaking API changes are allowed inside a wave. The boundary matters: by the end
 
 ### Deciding Parallel vs Sequential
 
-Every task runs in a sub-agent regardless. The question is only whether sub-agents run concurrently or one-at-a-time.
+Use sub-agents whenever the runtime permits and the task can be scoped cleanly. The question is whether each task is small, bounded, and non-overlapping enough to delegate safely, and whether delegated tasks should run concurrently or sequentially.
 
 | Condition | Ordering |
 | --- | --- |
@@ -94,7 +94,7 @@ Wave 3: [Integration, consumers of Wave 2]
   - Commit: combine with Wave 2 if the API and consumers should be reviewed together
 ```
 
-Present this plan to the user before executing. Get a thumbs up.
+Proceed after planning unless the spec has unresolved product choices, architecture choices, destructive actions, broad scope risk, or conflicts with current code. Surface those blockers and pause for user input.
 
 ## Phase 3: Execute Waves
 
@@ -102,10 +102,11 @@ For each wave:
 
 ### 1. Execute Tasks
 
-**Every task gets its own sub-agent.** This is non-negotiable. Sub-agents exist to scope context. Each one sees only what it needs for its task, which produces better results than a single agent juggling everything. Parallelism is a bonus, not the reason for sub-agents.
+Use sub-agents for scoped implementation work when they are available. They are strongest when each agent owns a bounded task, a clear file set, and a non-overlapping write surface. The primary agent still owns orchestration, integration, verification, spec updates, and final review.
 
-- **Independent tasks**: Launch sub-agents in parallel. Each gets a focused prompt with only the context it needs: the relevant spec section, the files to modify, and the patterns to follow.
-- **Dependent tasks**: Launch sub-agents sequentially. Wait for one to complete before launching the next. The second agent gets the output/context from the first.
+- **Independent tasks**: Launch sub-agents in parallel when write sets do not overlap. Each gets a focused prompt with only the context it needs: the relevant spec section, the files to modify, and the patterns to follow.
+- **Dependent tasks**: Launch sub-agents sequentially when one task imports from another task's output or modifies the same files. Wait for one to complete before launching the next. The second agent gets the output/context from the first.
+- **Local tasks**: Keep work local when the task is tightly coupled, urgent, too ambiguous to delegate, or likely to block the next orchestration step.
 - **Keep changes minimal**: Each task should do exactly what the spec says. No bonus refactors, no "while I'm here" improvements.
 
 ### 2. Verify the Wave
@@ -113,7 +114,7 @@ For each wave:
 After all tasks in a wave complete:
 
 ```bash
-bun run tsc --noEmit          # type-check
+bun typecheck                 # repo-standard type-check
 bun test                       # if tests exist for changed code
 ```
 
@@ -196,7 +197,7 @@ After all waves complete:
 
 ## Sub-Agent Prompts
 
-Every task, parallel or sequential, runs in a sub-agent. The primary agent orchestrates: it plans waves, launches sub-agents, verifies results, updates the spec, and commits. It does not implement code directly.
+The primary agent orchestrates: it plans waves, launches sub-agents when useful, verifies results, updates the spec, and commits. It may implement tightly coupled or blocking work directly when delegation would add coordination cost or risk.
 
 When spinning up sub-agents, each agent needs:
 
@@ -226,7 +227,7 @@ Keep sub-agent prompts focused. A sub-agent that knows too much will try to do t
 "Let me just start implementing..."
 ```
 
-No. Read the spec. Plan waves. Get approval. Then execute.
+No. Read the spec, plan waves, then execute. Pause only for unresolved product choices, architecture choices, destructive actions, broad scope risk, or conflicts with current code.
 
 ### Giant Wave
 
@@ -259,11 +260,11 @@ Before starting:
 - [ ] Read entire spec
 - [ ] Identify phases and dependencies
 - [ ] Plan waves (parallel vs sequential)
-- [ ] Present plan to user
+- [ ] Surface blockers that need user input
 
 For each wave:
 
-- [ ] Execute tasks (every task in a sub-agent)
+- [ ] Execute tasks (sub-agents when useful)
 - [ ] Verify (type-check, tests)
 - [ ] Update spec (check items, add notes)
 - [ ] Commit if this wave is a logical review unit, or checkpoint and continue

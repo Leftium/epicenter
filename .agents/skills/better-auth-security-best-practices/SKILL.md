@@ -1,6 +1,6 @@
 ---
 name: better-auth-security-best-practices
-description: Better Auth security: rate limiting, secrets, CSRF, trusted origins, sessions, OAuth tokens, audit logging. Use to harden auth or prevent brute force.
+description: 'Better Auth security hardening: rate limits, secrets, CSRF, trusted origins, cookies, sessions, OAuth tokens, and audit logging. Use when reviewing auth security, brute-force protection, token handling, or deployment safety.'
 metadata:
   author: epicenter
   version: '1.0'

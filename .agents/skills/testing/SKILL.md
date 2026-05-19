@@ -1,6 +1,6 @@
 ---
 name: testing
-description: Test file conventions: setup functions, factories, organization, type testing, naming. Use when: "write tests", "add a test", "fix this test", or modifying *.test.ts files.
+description: 'Test file conventions: setup functions, factories, organization, type testing, naming. Use when: "write tests", "add a test", "fix this test", or modifying *.test.ts files.'
 metadata:
   author: epicenter
   version: '2.0'
@@ -28,11 +28,11 @@ Load these on demand based on what you're working on:
 
 External reading:
 
-- Kent C. Dodds, ["Avoid Nesting When You're Testing"](https://kentcdodds.com/blog/avoid-nesting-when-youre-testing) — setup functions over beforeEach, flat tests
-- Kent C. Dodds, ["AHA Testing"](https://kentcdodds.com/blog/aha-testing) — avoid hasty abstractions in tests
-- Kent C. Dodds, [Testing JavaScript](https://testingjavascript.com) — Test Object Factory Pattern
-- Matt Pocock, ["How to test your types"](https://www.totaltypescript.com/how-to-test-your-types) — vitest `expectTypeOf` for type testing
-- Matt Pocock, [`shoehorn`](https://github.com/total-typescript/shoehorn) — partial mocks for test ergonomics
+- Kent C. Dodds, ["Avoid Nesting When You're Testing"](https://kentcdodds.com/blog/avoid-nesting-when-youre-testing) : setup functions over beforeEach, flat tests
+- Kent C. Dodds, ["AHA Testing"](https://kentcdodds.com/blog/aha-testing) : avoid hasty abstractions in tests
+- Kent C. Dodds, [Testing JavaScript](https://testingjavascript.com) : Test Object Factory Pattern
+- Matt Pocock, ["How to test your types"](https://www.totaltypescript.com/how-to-test-your-types) : vitest `expectTypeOf` for type testing
+- Matt Pocock, [`shoehorn`](https://github.com/total-typescript/shoehorn) : partial mocks for test ergonomics
 
 > **Related Skills**: See `services-layer` for the service patterns being tested. See `typescript` for type testing conventions.
 
@@ -40,10 +40,10 @@ External reading:
 
 Two distinct file extensions, two distinct purposes:
 
-- **`*.test.ts`** — asserts behavior with `expect()`. Runs under `bun test`
+- **`*.test.ts`** : asserts behavior with `expect()`. Runs under `bun test`
   (repo default, CI). A test file without at least one `expect()` call does
   not belong under this extension.
-- **`*.bench.ts`** — measures and reports. Prints tables, timings, or
+- **`*.bench.ts`** : measures and reports. Prints tables, timings, or
   storage sizes. Runs under `bun bench` only. No assertions required
   (perf thresholds on shared hardware flake; prefer visual trends).
 

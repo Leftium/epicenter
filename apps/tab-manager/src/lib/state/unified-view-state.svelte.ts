@@ -379,4 +379,3 @@ export function createUnifiedViewState({
 		},
 	};
 }
-export type UnifiedViewState = ReturnType<typeof createUnifiedViewState>;

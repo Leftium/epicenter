@@ -50,11 +50,11 @@ class MockWebSocket {
 	}
 }
 
-function makeRoom(subject = 'test-user'): RoomContext {
+function makeRoom(): RoomContext {
 	const doc = new Y.Doc();
 	const awareness = new Awareness(doc);
 	awareness.setLocalState(null);
-	return { doc, awareness, subject };
+	return { doc, awareness, subject: 'test-user' };
 }
 
 function makeConnection(

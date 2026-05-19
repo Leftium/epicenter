@@ -553,5 +553,5 @@ export function createAiChatState({
 }
 
 /** A reactive handle for a single conversation backed by `createChat`. */
-export type AiChatState = ReturnType<typeof createAiChatState>;
+type AiChatState = ReturnType<typeof createAiChatState>;
 export type ConversationHandle = NonNullable<ReturnType<AiChatState['get']>>;

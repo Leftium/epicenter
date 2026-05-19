@@ -44,7 +44,7 @@ export function openFujiBrowser({
 	const entryContentDocs = createDisposableCache((entryId: EntryId) => {
 		const ydoc = new Y.Doc({
 			guid: workspace.entryContentDocGuid(entryId),
-			gc: false,
+			gc: true,
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);

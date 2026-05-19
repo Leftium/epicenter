@@ -31,12 +31,14 @@ describe('Fuji workspace architecture', () => {
 		expect(workspaceSource).not.toContain(
 			'export function attachFujiWorkspace',
 		);
+		expect(workspaceSource).not.toContain('gc: false');
 		expect(packageJson.exports['.']).toBe('./src/lib/workspace.ts');
 	});
 
 	test('browser composes browser runtime around the shared opener', () => {
 		expect(browserSource).toContain('openFujiWorkspace');
 		expect(browserSource).not.toContain('new Y.Doc({ guid: FUJI_WORKSPACE_ID');
+		expect(browserSource).not.toContain('gc: false');
 		expect(browserSource).not.toContain('connectDaemonActions');
 		expect(browserSource).not.toContain('runPath');
 	});

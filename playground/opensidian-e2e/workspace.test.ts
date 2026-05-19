@@ -48,7 +48,7 @@ function dbPath(id: string) {
 
 /** Create a workspace client with filesystem persistence for testing. */
 function createTestClient() {
-	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
+	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 	const encryption = attachEncryption(ydoc, {
 		keyring: () => TEST_ENCRYPTION_KEYS,
 	});
@@ -60,7 +60,7 @@ function createTestClient() {
 		(fileId: FileId) => {
 			const contentDoc = new Y.Doc({
 				guid: fileContentDocGuid({ workspaceId: WORKSPACE_ID, fileId }),
-				gc: false,
+				gc: true,
 			});
 			attachYjsLog(contentDoc, {
 				filePath: join(PERSISTENCE_DIR, 'content', `${contentDoc.guid}.db`),
@@ -217,7 +217,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	const IMPORT_FILES_DIR = join(IMPORT_DIR, 'files');
 
 	function createImportClient() {
-		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
+		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 		const encryption = attachEncryption(ydoc, {
 			keyring: () => TEST_ENCRYPTION_KEYS,
 		});
@@ -231,7 +231,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 			(fileId: FileId) => {
 				const contentDoc = new Y.Doc({
 					guid: fileContentDocGuid({ workspaceId: WORKSPACE_ID, fileId }),
-					gc: false,
+					gc: true,
 				});
 				attachYjsLog(contentDoc, {
 					filePath: join(

@@ -39,7 +39,7 @@ export function openOpensidianBrowser({
 				workspaceId: rootYdoc.guid,
 				fileId,
 			}),
-			gc: false,
+			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
 			tables.files.update(fileId, { updatedAt: Date.now() }),

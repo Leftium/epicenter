@@ -44,7 +44,7 @@ export function openHoneycrispBrowser({
 	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
 		const ydoc = new Y.Doc({
 			guid: workspace.noteBodyDocGuid(noteId),
-			gc: false,
+			gc: true,
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);

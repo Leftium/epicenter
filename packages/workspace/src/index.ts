@@ -52,7 +52,7 @@
  *         rowId: noteId,
  *         field: 'body',
  *       }),
- *       gc: false,
+ *       gc: true,
  *     });
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
  *     const bodySync = openCollaboration(bodyYdoc, {

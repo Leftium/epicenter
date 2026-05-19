@@ -165,7 +165,7 @@ export function openHoneycrispWorkspace(
 export type HoneycrispWorkspace = ReturnType<typeof openHoneycrispWorkspace>;
 
 function createHoneycrispYdoc(): Y.Doc {
-	return new Y.Doc({ guid: HONEYCRISP_WORKSPACE_ID, gc: false });
+	return new Y.Doc({ guid: HONEYCRISP_WORKSPACE_ID, gc: true });
 }
 
 function attachHoneycrispWorkspace(

@@ -148,7 +148,7 @@ export function openApp({
 	installationId: string;
 	openWebSocket?: OpenWebSocket;
 }) {
-	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: true });
 
 	const encryption = owner.attachEncryption(ydoc);
 	const tables = encryption.attachTables(appTables);
@@ -629,7 +629,7 @@ function fileContentDocGuid(fileId: string) {
 export const fileContentDocs = createDisposableCache((fileId: string) => {
 	const ydoc = new Y.Doc({
 		guid: fileContentDocGuid(fileId),
-		gc: false,
+		gc: true,
 	});
 	const content = attachPlainText(ydoc, 'content');
 	const idb = attachIndexedDb(ydoc);

@@ -32,7 +32,7 @@ export function openTabManagerBrowser({
 	installationId: DeviceId;
 	openWebSocket?: OpenWebSocket;
 }) {
-	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: true });
 	const encryption = owner.attachEncryption(ydoc);
 	const tables = encryption.attachTables(tabManagerTables);
 	const kv = encryption.attachKv({});

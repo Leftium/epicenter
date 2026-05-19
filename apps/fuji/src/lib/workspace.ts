@@ -117,7 +117,7 @@ export function openFujiWorkspace(
 export type FujiWorkspace = ReturnType<typeof openFujiWorkspace>;
 
 function createFujiYdoc(): Y.Doc {
-	return new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
+	return new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: true });
 }
 
 function attachFujiWorkspace(

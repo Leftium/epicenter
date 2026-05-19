@@ -36,7 +36,7 @@ export function openFujiBrowser({
     protocols?: string[],
   ) => WebSocket | Promise<WebSocket>;
 }) {
-  const rootYdoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: false });
+  const rootYdoc = new Y.Doc({ guid: FUJI_WORKSPACE_ID, gc: true });
   const encryption = owner.attachEncryption(rootYdoc);
   const tables = encryption.attachTables(fujiTables);
   const kv = encryption.attachKv({});

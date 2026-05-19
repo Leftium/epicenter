@@ -84,7 +84,7 @@ export function openZhongwenWorkspace(
 	attachEncryption: AttachZhongwenEncryption,
 	options: { clientId?: number } = {},
 ) {
-	const ydoc = new Y.Doc({ guid: ZHONGWEN_WORKSPACE_ID, gc: false });
+	const ydoc = new Y.Doc({ guid: ZHONGWEN_WORKSPACE_ID, gc: true });
 	if (options.clientId !== undefined) {
 		ydoc.clientID = options.clientId;
 	}

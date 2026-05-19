@@ -30,7 +30,7 @@ const WORKSPACE_ID = 'epicenter.tab-manager';
 
 export default defineDaemonWorkspace({
 	async open({ installationId, attachEncryption, openWebSocket }) {
-		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
+		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 		const encryption = attachEncryption(ydoc);
 		const tables = encryption.attachTables(tabManagerTables);
 		const kv = encryption.attachKv({});

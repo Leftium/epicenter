@@ -46,7 +46,7 @@ const appTables = {
 };
 
 function openMyAppDoc({ owner }: { owner: LocalOwner }) {
-	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: true });
 	const encryption = owner.attachEncryption(ydoc);
 	const tables = encryption.attachTables(appTables);
 	const kv = encryption.attachKv({});

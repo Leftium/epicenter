@@ -96,7 +96,7 @@ async function databaseNames(): Promise<string[]> {
 
 describe('LocalOwner.attachLocal', () => {
 	test('throws when keyring throws', () => {
-		const ydoc = new Y.Doc({ guid: 'encrypted-idb-no-keys', gc: false });
+		const ydoc = new Y.Doc({ guid: 'encrypted-idb-no-keys', gc: true });
 		const owner = createLocalOwner({
 			ownerId: 'user-no-keys',
 			keyring: () => {
@@ -115,7 +115,7 @@ describe('LocalOwner.attachLocal', () => {
 
 		const firstDoc = new Y.Doc({
 			guid: 'encrypted-idb-roundtrip',
-			gc: false,
+			gc: true,
 		});
 		const firstOwner = createLocalOwner({
 			ownerId,
@@ -134,7 +134,7 @@ describe('LocalOwner.attachLocal', () => {
 
 		const secondDoc = new Y.Doc({
 			guid: 'encrypted-idb-roundtrip',
-			gc: false,
+			gc: true,
 		});
 		const secondOwner = createLocalOwner({
 			ownerId,
@@ -153,7 +153,7 @@ describe('LocalOwner.attachLocal', () => {
 		const ownerId = `user-${crypto.randomUUID()}`;
 		const databaseName = `epicenter.owner.${ownerId}.yjs.encrypted-idb-guid-a`;
 		const keyring = toKeyring(randomBytes(32));
-		const ydoc = new Y.Doc({ guid: 'encrypted-idb-guid-a', gc: false });
+		const ydoc = new Y.Doc({ guid: 'encrypted-idb-guid-a', gc: true });
 		const owner = createLocalOwner({ ownerId, keyring: () => keyring });
 		const idb = owner.attachLocal(ydoc);
 		await idb.whenLoaded;
@@ -179,7 +179,7 @@ describe('LocalOwner.attachLocal', () => {
 		const ownerId = `user-${crypto.randomUUID()}`;
 		const keyring = toKeyring(randomBytes(32));
 
-		const firstDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: false });
+		const firstDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: true });
 		const firstOwner = createLocalOwner({
 			ownerId,
 			keyring: () => keyring,
@@ -192,7 +192,7 @@ describe('LocalOwner.attachLocal', () => {
 		await firstIdb.whenDisposed;
 		await firstIdb.clearLocal();
 
-		const secondDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: false });
+		const secondDoc = new Y.Doc({ guid: 'encrypted-idb-clear', gc: true });
 		const secondOwner = createLocalOwner({
 			ownerId,
 			keyring: () => keyring,

@@ -46,7 +46,7 @@ async function openOpensidianPlayground({
 	attachEncryption,
 	openWebSocket,
 }: DaemonWorkspaceContext) {
-	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
+	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(opensidianTables);
 	const kv = encryption.attachKv({});
@@ -68,7 +68,7 @@ async function openOpensidianPlayground({
 					workspaceId: WORKSPACE_ID,
 					fileId: fileId as never,
 				}),
-				gc: false,
+				gc: true,
 			});
 			const contentPersistence = attachYjsLog(contentYdoc, {
 				filePath: join(contentDir, `${contentYdoc.guid}.db`),

@@ -164,5 +164,3 @@ export const GroqTranscriptionServiceLive = {
 		});
 	},
 };
-
-export type GroqTranscriptionService = typeof GroqTranscriptionServiceLive;

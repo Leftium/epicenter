@@ -150,6 +150,3 @@ export const MistralTranscriptionServiceLive = {
 		return Ok(transcription.text.trim());
 	},
 };
-
-export type MistralTranscriptionService =
-	typeof MistralTranscriptionServiceLive;

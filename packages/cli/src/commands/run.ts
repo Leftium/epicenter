@@ -184,7 +184,17 @@ export function emitRemoteCallError(
 			return;
 		case 'ActionFailed':
 			console.error(
-				`error: "${cause.action}" failed on ${peerTarget}: ${extractErrorMessage(cause.cause)}`,
+				`error: "${cause.action}" failed on ${peerTarget}: ${cause.cause}`,
+			);
+			return;
+		case 'RecipientOffline':
+			console.error(
+				`error: peer ${peerTarget} went offline before responding`,
+			);
+			return;
+		case 'NetworkFailed':
+			console.error(
+				`error: dispatch to ${peerTarget} failed: ${extractErrorMessage(cause.cause)}`,
 			);
 			return;
 		default:

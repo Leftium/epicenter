@@ -1,5 +1,6 @@
 /**
- * Yjs sync protocol handlers, tailored for Cloudflare Durable Objects.
+ * Yjs sync + awareness protocol handlers, tailored for Cloudflare Durable
+ * Objects.
  *
  * Inlined from the generic @epicenter/sync-server package. Narrowed to CF
  * WebSocket types: no framework-agnostic indirection, no WeakMap tricks.
@@ -7,7 +8,22 @@
  * ## API surface
  *
  * {@link registerConnection}: side-effectful, registers doc update listener.
- * {@link applyMessage}: mutates doc, returns additional effects.
+ * {@link applyMessage}: mutates doc / awareness, returns additional effects.
+ *
+ * ## Wire surfaces
+ *
+ * Three binary message types ride this WebSocket:
+ *
+ *   SYNC      (0): standard y-protocols document sync.
+ *   AWARENESS (1): standard y-protocols awareness updates. Used to
+ *                  publish per-peer `liveness.installationId`. The relay
+ *                  validates the `liveness` sub-field on every inbound
+ *                  update and discards entries that try to claim a
+ *                  different installationId than the URL-stamped value.
+ *   AUTH      (2): reserved sentinel; no frames are exchanged.
+ *
+ * Dispatch (`dispatch_inbound` / `dispatch_response`) rides on WebSocket
+ * *text* frames and is handled outside this module.
  *
  * ## Error handling rationale (grounded in Yjs internals)
  *
@@ -19,27 +35,23 @@
  * throw on buffer underflow. Since WebSocket messages are untrusted input,
  * `applyMessage` wraps the decode+dispatch path with `trySync` to catch
  * these at the system boundary.
- *
- * Inbound `SYNC` updates that touch `PRESENCE_KEY` are rejected: only the
- * server writes presence rows, so a client mutation of that reserved array
- * is a protocol violation. `applyMessage` decodes such payloads into a
- * scratch `Y.Doc` for the validation check and returns
- * `Err(SyncHandlerError.PresenceWriteForbidden)`; the caller closes the
- * socket with code `4400` and reason `'presence-write-forbidden'`.
  */
 
 import {
-	encodeSyncStep1,
 	encodeSyncUpdate,
-	handleSyncPayload,
 	MESSAGE_TYPE,
-	SYNC_MESSAGE_TYPE,
+	handleSyncPayload,
 	type SyncMessageType,
 } from '@epicenter/sync';
-import { PRESENCE_KEY } from '@epicenter/workspace/document/keys';
 import * as decoding from 'lib0/decoding';
+import * as encoding from 'lib0/encoding';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, trySync } from 'wellcrafted/result';
+import {
+	applyAwarenessUpdate,
+	type Awareness,
+	encodeAwarenessUpdate,
+} from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 // ============================================================================
@@ -50,21 +62,13 @@ import * as Y from 'yjs';
  * Errors from the sync handler layer.
  *
  * `MessageDecode` covers all failures when processing untrusted WebSocket
- *   binary frames: lib0 buffer underflow (truncated messages) and any other
- *   decode-time exceptions.
- * `PresenceWriteForbidden` is returned when a client `SYNC` update writes
- *   to the reserved `PRESENCE_KEY` array. Only the server writes presence;
- *   the caller closes the socket with `4400` and reason
- *   `'presence-write-forbidden'`.
+ * binary frames: lib0 buffer underflow (truncated messages) and any other
+ * decode-time exceptions.
  */
 export const SyncHandlerError = defineErrors({
 	MessageDecode: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to decode WebSocket message: ${extractErrorMessage(cause)}`,
 		cause,
-	}),
-	PresenceWriteForbidden: (_: Record<string, never>) => ({
-		message:
-			'Client SYNC update attempted to write to the reserved presence array',
 	}),
 });
 
@@ -73,25 +77,27 @@ export const SyncHandlerError = defineErrors({
 // ============================================================================
 
 /**
- * Shared room state: the doc and auth-derived subject that all connections
- * in a room share. The DO is user-scoped (DO name encodes the owning user
- * id), so every connection in this room carries the same `subject`. The
- * server stamps `subject` onto `PresenceEntry` rows it writes on connect.
+ * Shared room state: the doc, awareness, and auth-derived subject that all
+ * connections in a room share. The DO is user-scoped (DO name encodes the
+ * owning user id), so every connection in this room carries the same
+ * `subject`.
  */
 export type RoomContext = {
 	doc: Y.Doc;
+	awareness: Awareness;
 	subject: string;
 };
 
 /**
  * Per-connection state stored in `Map<WebSocket, Connection>`.
  *
- * Contains only per-connection data: the socket and an `unregister` closure
- * that removes the doc update listener registered by
- * {@link registerConnection}.
+ * Contains only per-connection data: the socket, the URL-stamped
+ * `installationId`, and an `unregister` closure that removes the doc update
+ * listener registered by {@link registerConnection}.
  */
 export type Connection = {
 	ws: WebSocket;
+	installationId: string;
 	/** Removes the `doc.on('updateV2')` listener for this connection. */
 	unregister: () => void;
 };
@@ -102,37 +108,122 @@ export type Connection = {
  * Discriminated union on `action`. Each variant maps to one routing pattern
  * in the DO caller:
  *
- * `reply`: Send data back to the sender only.
- * `broadcast`: Fan out to all other connections.
+ *   `reply`:     Send data back to the sender only.
+ *   `broadcast`: Fan out to all other connections.
  *
- * `applyMessage` returns `Result<MessageResult | null>`: `null` means valid
- * message with no action needed (AUTH, unknown types).
+ * `learnedClientIDs` rides on `broadcast` effects from AWARENESS frames:
+ * it tells the DO which Yjs `clientID`s just published valid `liveness`,
+ * so the WS attachment can be amended for force-clear on close. SYNC
+ * frames never set it (SYNC broadcasts happen via the doc-update
+ * listener inside {@link registerConnection}, not via this return).
+ *
+ * `applyMessage` returns `Result<MessageEffect | null>`: `null` means
+ * valid message with no further effect (AUTH, dropped awareness entries,
+ * STEP2/UPDATE, unknown types).
  */
-export type MessageResult =
+export type MessageEffect =
 	| { action: 'reply'; data: Uint8Array }
-	| { action: 'broadcast'; data: Uint8Array };
+	| {
+			action: 'broadcast';
+			data: Uint8Array;
+			learnedClientIDs?: number[];
+	  };
 
 // ============================================================================
-// Helpers
+// Awareness encoding helpers
 // ============================================================================
 
 /**
- * Decode an inbound update into a scratch doc and check whether it writes
- * to the reserved `PRESENCE_KEY` array.
+ * Filter an inbound awareness update so only entries whose
+ * `state.liveness.installationId` matches the connection's URL-stamped
+ * value survive. Entries with no `liveness` sub-field pass through
+ * untouched; entries with a mismatching `liveness.installationId` are
+ * dropped (the spec calls this "drop the update silently" per client).
  *
- * Only the server writes presence rows; a client mutation of that array is
- * a protocol violation. The scratch doc uses `gc: true` to keep the check
- * lightweight: we only need to know whether the presence array received
- * any items, not preserve history.
+ * Returns:
+ *   - `filtered`: re-encoded awareness update with only the surviving
+ *     entries (null if all entries were dropped).
+ *   - `clientIDs`: the Yjs client ids that survived. The caller uses these
+ *     to record `clientID` into the WS attachment for force-clear on close.
  */
-export function updateTouchesPresence(payload: Uint8Array): boolean {
-	const scratch = new Y.Doc({ gc: true });
-	Y.applyUpdateV2(scratch, payload);
-	return scratch.getArray(PRESENCE_KEY).length > 0;
+export function filterAwarenessUpdate({
+	update,
+	expectedInstallationId,
+}: {
+	update: Uint8Array;
+	expectedInstallationId: string;
+}): { filtered: Uint8Array | null; clientIDs: number[] } {
+	const decoder = decoding.createDecoder(update);
+	const len = decoding.readVarUint(decoder);
+	const kept: Array<{ clientID: number; clock: number; stateJson: string }> =
+		[];
+	const clientIDs: number[] = [];
+	for (let i = 0; i < len; i++) {
+		const clientID = decoding.readVarUint(decoder);
+		const clock = decoding.readVarUint(decoder);
+		const stateJson = decoding.readVarString(decoder);
+		// Parse only to inspect liveness; we keep the original JSON string for
+		// re-encoding to preserve byte-exact non-liveness sub-fields.
+		const state = JSON.parse(stateJson) as
+			| { liveness?: { installationId?: unknown } }
+			| null;
+		if (state && state.liveness) {
+			const claimed = state.liveness.installationId;
+			if (
+				typeof claimed !== 'string' ||
+				claimed !== expectedInstallationId
+			) {
+				// Drop this client's entry silently. No close, no error frame.
+				continue;
+			}
+		}
+		kept.push({ clientID, clock, stateJson });
+		clientIDs.push(clientID);
+	}
+	if (kept.length === 0) {
+		return { filtered: null, clientIDs };
+	}
+	const filtered = encoding.encode((enc) => {
+		encoding.writeVarUint(enc, kept.length);
+		for (const k of kept) {
+			encoding.writeVarUint(enc, k.clientID);
+			encoding.writeVarUint(enc, k.clock);
+			encoding.writeVarString(enc, k.stateJson);
+		}
+	});
+	return { filtered, clientIDs };
+}
+
+/**
+ * Wrap a raw awareness update payload in the top-level AWARENESS frame
+ * suitable for sending on the wire:
+ *
+ *   [varUint MESSAGE_TYPE.AWARENESS][varUint8Array awarenessUpdate]
+ *
+ * This matches the y-websocket convention used by every y-protocols
+ * implementation.
+ */
+export function encodeAwarenessFrame(awarenessUpdate: Uint8Array): Uint8Array {
+	return encoding.encode((enc) => {
+		encoding.writeVarUint(enc, MESSAGE_TYPE.AWARENESS);
+		encoding.writeVarUint8Array(enc, awarenessUpdate);
+	});
+}
+
+/**
+ * Encode the current awareness state for a set of client ids as a full
+ * AWARENESS broadcast frame. Used on hibernation wake to restore peers'
+ * view of liveness.
+ */
+export function encodeAwarenessFrameForClients(
+	awareness: Awareness,
+	clientIDs: number[],
+): Uint8Array {
+	return encodeAwarenessFrame(encodeAwarenessUpdate(awareness, clientIDs));
 }
 
 // ============================================================================
-// Handlers
+// Connection registration
 // ============================================================================
 
 /**
@@ -141,19 +232,17 @@ export function updateTouchesPresence(payload: Uint8Array): boolean {
  * Side-effectful: registers a `doc.on('updateV2')` handler that forwards
  * updates to the WebSocket. Returns a {@link Connection} with an
  * `unregister` closure that removes the listener when the socket closes.
- *
- * @param options.doc: The shared Yjs document
- * @param options.ws: The WebSocket to register the listener for
- * @returns Per-connection state with cleanup handle
  */
 export function registerConnection({
 	doc,
 	ws,
+	installationId,
 }: {
 	doc: Y.Doc;
 	ws: WebSocket;
+	installationId: string;
 }): Connection {
-	// Forward V2 doc updates to this connection (skip echo via identity check)
+	// Forward V2 doc updates to this connection (skip echo via identity check).
 	const updateHandler = (update: Uint8Array, origin: unknown) => {
 		if (origin === ws) return;
 		trySync({
@@ -165,29 +254,28 @@ export function registerConnection({
 
 	return {
 		ws,
+		installationId,
 		unregister() {
 			doc.off('updateV2', updateHandler);
 		},
 	};
 }
 
+// ============================================================================
+// Message dispatcher
+// ============================================================================
+
 /**
  * Dispatch an incoming binary WebSocket message.
  *
- * Mutates `room.doc` via `applyUpdateV2`, then returns a `Result`: `Ok`
- * with a {@link MessageResult} describing what the caller should do,
- * `Err(SyncHandlerError.MessageDecode)` if the binary frame is malformed,
- * or `Err(SyncHandlerError.PresenceWriteForbidden)` if the inbound update
- * writes to the reserved `PRESENCE_KEY` array.
+ * Mutates `room.doc` and/or `room.awareness` as appropriate, then returns
+ * `Result<MessageEffect | null>`. `null` is the "valid, no further work"
+ * outcome: STEP2/UPDATE applied to the doc (broadcast happens inside the
+ * doc-update listener registered by {@link registerConnection}), AWARENESS
+ * with every entry rejected, AUTH, unknown message types.
  *
- * The `trySync` wrapper catches lib0 decoder throws (buffer underflow on
- * truncated messages). Yjs's own `applyUpdateV2` is resilient and won't
- * throw: it stores unresolved dependencies in `doc.store.pendingStructs`
- * automatically.
- *
- * @param options.data: Raw binary WebSocket message
- * @param options.room: The shared room context (doc + subject)
- * @param options.connection: The per-connection state (ws + cleanup)
+ * `Err(SyncHandlerError.MessageDecode)` covers lib0 buffer underflow on
+ * truncated input.
  */
 export function applyMessage({
 	data,
@@ -198,8 +286,8 @@ export function applyMessage({
 	room: RoomContext;
 	connection: Connection;
 }) {
-	const decoded = trySync({
-		try: (): { result: MessageResult | null; forbidden: boolean } => {
+	return trySync({
+		try: (): MessageEffect | null => {
 			const decoder = decoding.createDecoder(data);
 			const messageType = decoding.readVarUint(decoder);
 
@@ -207,29 +295,29 @@ export function applyMessage({
 				case MESSAGE_TYPE.SYNC: {
 					const syncType = decoding.readVarUint(decoder) as SyncMessageType;
 					const payload = decoding.readVarUint8Array(decoder);
-
-					// STEP1 is a state-vector probe with no doc mutation, so it
-					// needs no validation. STEP2 and UPDATE both call
-					// Y.applyUpdateV2 inside handleSyncPayload; reject early if
-					// the payload would write to the reserved presence array.
-					if (
-						syncType === SYNC_MESSAGE_TYPE.STEP2 ||
-						syncType === SYNC_MESSAGE_TYPE.UPDATE
-					) {
-						if (updateTouchesPresence(payload)) {
-							return { result: null, forbidden: true };
-						}
-					}
-
 					const response = handleSyncPayload({
 						syncType,
 						payload,
 						doc: room.doc,
 						origin: connection.ws,
 					});
+					return response ? { action: 'reply', data: response } : null;
+				}
+
+				case MESSAGE_TYPE.AWARENESS: {
+					const payload = decoding.readVarUint8Array(decoder);
+					const { filtered, clientIDs } = filterAwarenessUpdate({
+						update: payload,
+						expectedInstallationId: connection.installationId,
+					});
+					if (!filtered) return null;
+					// Mutate the shared Awareness so the relay's view stays in sync;
+					// peers receive the filtered update via the broadcast frame.
+					applyAwarenessUpdate(room.awareness, filtered, connection.ws);
 					return {
-						result: response ? { action: 'reply', data: response } : null,
-						forbidden: false,
+						action: 'broadcast',
+						data: encodeAwarenessFrame(filtered),
+						learnedClientIDs: clientIDs,
 					};
 				}
 
@@ -240,20 +328,14 @@ export function applyMessage({
 					console.warn(
 						'[sync] Unexpected AUTH message on authenticated WebSocket',
 					);
-					return { result: null, forbidden: false };
+					return null;
 				}
 
 				default:
 					console.warn(`[sync] Unknown WS message type: ${messageType}`);
-					return { result: null, forbidden: false };
+					return null;
 			}
 		},
 		catch: (cause) => SyncHandlerError.MessageDecode({ cause }),
 	});
-
-	if (decoded.error) return decoded;
-	if (decoded.data.forbidden) {
-		return SyncHandlerError.PresenceWriteForbidden({});
-	}
-	return Ok(decoded.data.result);
 }

@@ -3,7 +3,7 @@
  *
  * `DaemonRuntime` is the contract every opened daemon extension returns:
  * async dispose plus the hosted `Collaboration<TActions>` that owns identity,
- * actions, sync, and peers.
+ * actions, sync, and the live-device surface.
  *
  * `DaemonServedRoute` is the narrowed route handler contract for the socket
  * app. `StartedDaemonRoute` is the lifecycle-owning route shape opened from a
@@ -11,10 +11,13 @@
  */
 
 import type { Result } from 'wellcrafted/result';
+import type {
+	DispatchError,
+	DispatchRequest,
+	LiveDevice,
+} from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { Collaboration } from '../document/open-collaboration.js';
-import type { PresenceEntry } from '../document/presence.js';
-import type { DispatchError } from '../document/rpc.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import type { MaybePromise } from '../shared/types.js';
 
@@ -22,19 +25,15 @@ import type { MaybePromise } from '../shared/types.js';
  * Collaboration fields the daemon socket app reads while serving `/peers`,
  * `/list`, and `/run`.
  */
-export type DaemonServedCollaboration<
+type DaemonServedCollaboration<
 	TActions extends ActionRegistry = ActionRegistry,
 > = {
 	actions: TActions;
-	peers: {
-		list(): PresenceEntry[];
+	devices: {
+		list(): LiveDevice[];
 	};
 	status: SyncStatus;
-	dispatch(
-		action: string,
-		input: unknown,
-		options: { to: string; signal: AbortSignal },
-	): Promise<Result<unknown, DispatchError>>;
+	dispatch(req: DispatchRequest): Promise<Result<unknown, DispatchError>>;
 };
 
 /**
@@ -61,7 +60,7 @@ export type DaemonRuntime<TActions extends ActionRegistry = ActionRegistry> = {
 
 	/**
 	 * The hosted collaboration. Identity, action registry, sync status, and
-	 * the peers surface for cross-route dispatch all live here.
+	 * the live-device surface for cross-route dispatch all live here.
 	 */
 	readonly collaboration: Collaboration<TActions>;
 };

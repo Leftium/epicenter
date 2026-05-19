@@ -233,42 +233,40 @@ async function safeDisposeStartedRoutes(
 }
 
 function printPeersSnapshot(entry: StartedDaemonRoute): void {
-	const peers = entry.runtime.collaboration.peers.list();
-	if (peers.length === 0) {
+	const devices = entry.runtime.collaboration.devices.list();
+	if (devices.length === 0) {
 		process.stderr.write(`${entry.route}: no peers connected\n`);
 		return;
 	}
-	for (const peer of peers) {
-		process.stderr.write(
-			`${entry.route}: peer ${peer.installationId} (connectionId=${peer.connectionId}, subject=${peer.subject})\n`,
-		);
+	for (const device of devices) {
+		process.stderr.write(`${entry.route}: peer ${device.installationId}\n`);
 	}
 }
 
 function subscribePeers(entry: StartedDaemonRoute, quiet: boolean): void {
 	const snapshot = () =>
-		new Map(
-			entry.runtime.collaboration.peers
+		new Set(
+			entry.runtime.collaboration.devices
 				.list()
-				.map((peer) => [peer.connectionId, peer]),
+				.map((device) => device.installationId),
 		);
 	let prev = snapshot();
-	entry.runtime.collaboration.peers.observe(() => {
+	entry.runtime.collaboration.devices.subscribe(() => {
 		const next = snapshot();
-		for (const [connectionId, peer] of next) {
-			if (!prev.has(connectionId)) {
+		for (const installationId of next) {
+			if (!prev.has(installationId)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.route}: ${peer.installationId} joined (connectionId=${connectionId})\n`,
+						`${entry.route}: ${installationId} joined\n`,
 					);
 				}
 			}
 		}
-		for (const [connectionId, peer] of prev) {
-			if (!next.has(connectionId)) {
+		for (const installationId of prev) {
+			if (!next.has(installationId)) {
 				if (!quiet) {
 					process.stderr.write(
-						`${entry.route}: ${peer.installationId} left (connectionId=${connectionId})\n`,
+						`${entry.route}: ${installationId} left\n`,
 					);
 				}
 			}

@@ -410,15 +410,9 @@ app.use('/ai/*', async (c, next) => {
 app.get('/billing', (c) => c.redirect('/dashboard'));
 
 // Dashboard SPA: static assets served by Workers Static Assets (wrangler.jsonc).
-// This catch-all handles SPA client-side routing: when no static file matches,
-// serve index.html so the SvelteKit router takes over.
-app.get('/dashboard/*', async (c) => {
-	const assets = c.env.ASSETS;
-	if (!assets) return c.notFound();
-	const indexUrl = new URL('/dashboard/index.html', c.req.url);
-	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
-});
-app.get('/dashboard', async (c) => {
+// Both `/dashboard` and `/dashboard/*` serve index.html so the SvelteKit
+// router takes over on SPA routes that have no matching static file.
+app.on('GET', ['/dashboard', '/dashboard/*'], async (c) => {
 	const assets = c.env.ASSETS;
 	if (!assets) return c.notFound();
 	const indexUrl = new URL('/dashboard/index.html', c.req.url);
@@ -595,16 +589,7 @@ app.post(
 		}
 
 		const { stub, doName, room } = getRoomStub(c);
-		let diff: Uint8Array | null;
-		let storageBytes: number;
-		try {
-			({ diff, storageBytes } = await stub.sync(body));
-		} catch (err) {
-			if (err instanceof Error && err.name === 'PresenceWriteForbidden') {
-				return c.body('presence-write-forbidden', 403);
-			}
-			throw err;
-		}
+		const { diff, storageBytes } = await stub.sync(body);
 
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
@@ -617,6 +602,52 @@ app.post(
 
 		if (!diff) return c.body(null, 204);
 		return binaryResponse(diff);
+	},
+);
+
+/**
+ * Dispatch a live-device call via the relay.
+ *
+ * The request body fully describes the dispatch: caller (`from`) and
+ * recipient (`to`) installation ids, the action key, and the input.
+ * Within a subject-scoped room, `from` is treated as a trusted routing
+ * label (the OAuth boundary already proved the subject). The DO mints
+ * a correlation id, pushes `dispatch_inbound` over the recipient's
+ * WebSocket, and the response body is the recipient's `dispatch_response`
+ * result (or `RecipientOffline` on no live socket).
+ *
+ * The HTTP response is always 200 unless the body is malformed; the
+ * `Result<...>` body is the only failure channel for the caller.
+ */
+app.post(
+	'/rooms/:room/dispatch',
+	describeRoute({
+		description: 'Dispatch a live-device call via the relay',
+		tags: ['rooms'],
+	}),
+	sValidator(
+		'json',
+		type({
+			from: '/^[A-Za-z0-9_-]+$/ <= 128',
+			to: '/^[A-Za-z0-9_-]+$/ <= 128',
+			action: '/^[a-z][a-z0-9_]{0,63}$/',
+			'input?': 'unknown',
+		}),
+	),
+	async (c) => {
+		const { stub, doName, room } = getRoomStub(c);
+		const body = c.req.valid('json');
+		const result = await stub.dispatch(body);
+
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				resourceName: room,
+				doName,
+			}),
+		);
+
+		return c.json(result);
 	},
 );
 

@@ -3,8 +3,7 @@
  *
  * No real WebSocket: `openWebSocket` returns a never-resolving promise, so
  * the supervisor parks in `connecting` and the synchronous setup is what we
- * exercise here. RPC roundtrip coverage lives in `rpc.test.ts` against a
- * shared Y.Doc (no WebSocket needed).
+ * exercise here.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -20,9 +19,7 @@ const installationId = 'self';
 
 /**
  * Returns a fake WebSocket that parks in CONNECTING until `close()` is
- * called, at which point it transitions to CLOSED and fires `onclose`. The
- * promise resolves synchronously so the supervisor's abort listener kicks
- * in cleanly when the ydoc is destroyed.
+ * called, at which point it transitions to CLOSED and fires `onclose`.
  */
 function stalledOpenWebSocket(): Promise<WebSocket> {
 	const listeners: Record<string, EventListener[]> = {};
@@ -65,13 +62,11 @@ function setup<TActions extends ActionRegistry = ActionRegistry>(
 }
 
 describe('openCollaboration', () => {
-	test('exposes the supplied installationId, a minted connectionId, and user actions', () => {
+	test('exposes the supplied installationId and user actions', () => {
 		const list = defineQuery({ handler: () => [] });
 		const { ydoc, collaboration } = setup({ tabs_list: list });
 		try {
 			expect(collaboration.installationId).toBe(installationId);
-			expect(typeof collaboration.connectionId).toBe('string');
-			expect(collaboration.connectionId.length).toBeGreaterThan(0);
 			expect(collaboration.actions).toEqual({ tabs_list: list });
 		} finally {
 			ydoc.destroy();
@@ -87,12 +82,12 @@ describe('openCollaboration', () => {
 		}
 	});
 
-	test('peers.list() returns [] when no remote peers are present (self is filtered)', () => {
+	test('devices.list() returns [] when no remote peers have published liveness', () => {
 		const { ydoc, collaboration } = setup({
 			tabs_list: defineQuery({ handler: () => [] }),
 		});
 		try {
-			expect(collaboration.peers.list()).toEqual([]);
+			expect(collaboration.devices.list()).toEqual([]);
 		} finally {
 			ydoc.destroy();
 		}
@@ -107,29 +102,7 @@ describe('openCollaboration', () => {
 	});
 });
 
-describe('action key publication shape', () => {
-	test('Object.keys + alphabetical sort produces the publication order', () => {
-		const actions = {
-			z_close: defineMutation({ handler: () => null }),
-			a_list: defineQuery({ handler: () => [] }),
-			m_ping: defineQuery({ handler: () => 'pong' }),
-		} satisfies ActionRegistry;
-		expect(Object.keys(actions).sort()).toEqual([
-			'a_list',
-			'm_ping',
-			'z_close',
-		]);
-	});
-
-	test('a top-level `system` key in user actions is legal', () => {
-		// The runtime previously reserved `system.*`; the runtime/action plane
-		// split means user code can use the name freely now.
-		const actions = {
-			system_ping: defineQuery({ handler: () => 'pong' }),
-		} satisfies ActionRegistry;
-		expect(Object.keys(actions).sort()).toEqual(['system_ping']);
-	});
-
+describe('action key validation', () => {
 	test('rejects invalid action keys at the collaboration boundary', () => {
 		expect(() =>
 			setup({

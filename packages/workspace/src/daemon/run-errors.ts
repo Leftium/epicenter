@@ -18,11 +18,11 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
+import type { DispatchError } from '../document/dispatch.js';
 import type {
 	SyncError,
 	SyncFailedReason,
 } from '../document/internal/sync-supervisor.js';
-import type { DispatchError } from '../document/rpc.js';
 
 export type RunSyncStatus =
 	| { phase: 'offline' }

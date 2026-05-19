@@ -23,10 +23,10 @@
  * the lookup.
  *
  * Local callers use `invokeAction`, which Ok-wraps raw values, preserves
- * existing Results, and catches throws as `Err(cause)`. The RPC wire boundary
- * (`attachActionRunner` in `document/rpc.ts`) has its own inlined invoker that
- * wraps thrown causes into `DispatchError.ActionFailed` before the response
- * crosses the wire.
+ * existing Results, and catches throws as `Err(cause)`. The dispatch wire
+ * boundary (`runInboundDispatch` in `document/dispatch.ts`) has its own
+ * inlined invoker that wraps thrown causes into `DispatchError.ActionFailed`
+ * before the response crosses the wire.
  *
  * @module
  */
@@ -336,8 +336,8 @@ export function toActionMeta({
  *
  * Raw values get `Ok`-wrapped, existing `Result`s pass through, and thrown
  * errors become `Err(cause)` with the raw thrown value under `.error`. The
- * RPC wire boundary (`attachActionRunner` in `document/rpc.ts`) is
- * responsible for wrapping the cause into `DispatchError.ActionFailed`
+ * dispatch wire boundary (`runInboundDispatch` in `document/dispatch.ts`)
+ * is responsible for wrapping the cause into `DispatchError.ActionFailed`
  * before the response crosses the wire; callers in-process see whatever
  * the handler actually threw or returned.
  *

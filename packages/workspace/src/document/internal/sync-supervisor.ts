@@ -98,6 +98,25 @@ export type SyncSupervisorConfig = {
 	waitFor?: Promise<unknown>;
 	openWebSocket?: OpenWebSocket;
 	log?: Logger;
+	/**
+	 * Receive non-SYNC binary frames (e.g. AWARENESS). The supervisor
+	 * handles SYNC internally; everything else is forwarded with the
+	 * leading message-type varint included.
+	 */
+	onBinaryFrame?: (data: Uint8Array) => void;
+	/**
+	 * Receive WebSocket text frames. The supervisor never interprets
+	 * text frames itself; downstream code (e.g. dispatch_inbound
+	 * handlers) receives the raw string.
+	 */
+	onTextFrame?: (text: string) => void;
+	/**
+	 * Called after the sync handshake completes on each connect cycle.
+	 * Use to publish initial awareness state, etc. Receives a `send`
+	 * scoped to the current connection; calling `send` after the
+	 * connection drops is a no-op.
+	 */
+	onConnected?: (send: (frame: Uint8Array | string) => void) => void;
 };
 
 export type SyncSupervisor = {
@@ -106,6 +125,13 @@ export type SyncSupervisor = {
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
 	reconnect(): void;
 	whenDisposed: Promise<void>;
+	/**
+	 * Send a frame on the active connection. Silently drops if the
+	 * socket is not currently OPEN; this matches the awareness model
+	 * where local-only state updates may fire while offline and should
+	 * not throw.
+	 */
+	send(frame: Uint8Array | string): void;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -214,7 +240,7 @@ export function createSyncSupervisor(
 
 	let websocket: WebSocket | null = null;
 
-	function send(message: Uint8Array) {
+	function send(message: Uint8Array | string) {
 		if (websocket?.readyState === WebSocket.OPEN) {
 			websocket.send(message);
 		}
@@ -339,7 +365,10 @@ export function createSyncSupervisor(
 
 		ws.onmessage = (event: MessageEvent) => {
 			liveness.touch();
-			if (typeof event.data === 'string') return;
+			if (typeof event.data === 'string') {
+				config.onTextFrame?.(event.data);
+				return;
+			}
 
 			const data: Uint8Array = new Uint8Array(event.data);
 			const decoder = decoding.createDecoder(data);
@@ -365,9 +394,14 @@ export function createSyncSupervisor(
 						handshakeComplete = true;
 						setStatus({ phase: 'connected' });
 						connected.resolve();
+						config.onConnected?.(send);
 					}
 					break;
 				}
+				default:
+					// Forward everything else (AWARENESS, etc.) verbatim so the
+					// downstream handler can decode using the same lib0 helpers.
+					config.onBinaryFrame?.(data);
 			}
 		};
 
@@ -483,6 +517,7 @@ export function createSyncSupervisor(
 		onStatusChange: status.subscribe,
 		reconnect,
 		whenDisposed,
+		send,
 	} satisfies SyncSupervisor;
 }
 

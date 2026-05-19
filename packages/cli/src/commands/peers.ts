@@ -1,8 +1,9 @@
 /**
- * `epicenter peers`: presence view of who's connected right now.
+ * `epicenter peers`: live-device view of who's connected right now.
  *
- * Shows the identity fields needed to target a peer with `run --peer`:
- * replica id, subject, and the session-local connection id.
+ * Shows the installation id needed to target a peer with `run --peer`.
+ * The relay carries only `installationId` on the wire; product-level
+ * display names live in app-owned state and are out of scope here.
  *
  * `epicenter peers` requires a running daemon for the discovered project.
  * Without `daemon up`, the handler errors with a hint pointing at
@@ -69,17 +70,9 @@ function emit(rows: PeerSnapshot[], format: OutputFormat | undefined): void {
 		console.log(route);
 		console.table(
 			group
-				.map(toRow)
-				.sort((a, b) => a.connectionId.localeCompare(b.connectionId)),
+				.map((snap) => ({ installationId: snap.installationId }))
+				.sort((a, b) => a.installationId.localeCompare(b.installationId)),
 		);
 		i++;
 	}
-}
-
-function toRow(snap: PeerSnapshot) {
-	return {
-		connectionId: snap.connectionId,
-		subject: snap.subject,
-		installationId: snap.installationId,
-	};
 }

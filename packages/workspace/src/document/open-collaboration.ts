@@ -1,51 +1,54 @@
 /**
  * `openCollaboration`: the one collaboration primitive on a document.
  *
- * Identity, presence, and RPC all live in Y.Doc state. The workspace ydoc
- * reserves two top-level Y.Arrays (see `keys.ts`):
+ * Connects a Yjs document to the relay, publishes per-peer liveness via
+ * y-protocols awareness (`liveness.installationId`), and wires inbound
+ * dispatch text frames to the local action registry. Caller-side
+ * dispatch fires HTTP `POST /rooms/:room/dispatch` and resolves when
+ * the recipient's `dispatch_response` arrives.
  *
- *     RPC_KEY       'rpc'        backs YKeyValueLww<Call>
- *     PRESENCE_KEY  'presence'   backs YKeyValueLww<PresenceEntry>
+ * Three independent wire surfaces ride one auth context:
  *
- * The wire is plain Yjs sync. Calls are LWW rows whose `response` flips from
- * `null` to `Result`; presence is a server-written row per connected socket.
- * No awareness, no RPC envelopes, no runtime envelopes.
+ *   binary WS frames  -> standard y-protocols SYNC + AWARENESS
+ *   text WS frames    -> dispatch_inbound (server -> recipient) and
+ *                        dispatch_response (recipient -> server)
+ *   HTTP              -> POST .../dispatch (caller-side fire-and-await)
  *
- * Routing is by per-socket `connectionId` (client-minted at startup, echoed by
- * the server as a query param). `installationId` is install-stable but can map
- * to many `connectionId`s (one per tab). Callers pick a concrete connection at
- * the call site: `collab.peers.list().find((p) => p.installationId === id)`
- * for "any tab," `peers.list().filter(...)` for fan-out. The presence surface
- * deliberately does not hide that choice behind a `find` verb.
+ * The Y.Doc holds durable workspace state; liveness lives in awareness;
+ * dispatch lives on HTTP. None of the three touch the others.
  *
- * Content docs (rich-text bodies, attachments, anything nested under a parent
- * that syncs independently) use this same primitive with `actions: {}`: the
- * action runner is skipped entirely and the byte transport is identical.
+ * Content docs (rich-text bodies, attachments, nested independently-
+ * syncing docs) use the same primitive with `actions: {}`: dispatch
+ * handlers stay inert, awareness still publishes liveness for online
+ * discovery.
  */
 
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
-import type * as Y from 'yjs';
+import * as decoding from 'lib0/decoding';
+import * as encoding from 'lib0/encoding';
+import {
+	applyAwarenessUpdate,
+	Awareness,
+	encodeAwarenessUpdate,
+} from 'y-protocols/awareness';
+import * as Y from 'yjs';
+import { MESSAGE_TYPE } from '@epicenter/sync';
 import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
+import {
+	deriveDispatchUrl,
+	type DispatchError,
+	type DispatchRequest,
+	dispatch as dispatchOverHttp,
+	getOnlineInstallationIds,
+	type LiveDevice,
+	runInboundDispatch,
+} from './dispatch.js';
 import {
 	createSyncSupervisor,
 	type OpenWebSocket,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
-import { PRESENCE_KEY, RPC_KEY } from './keys.js';
-import {
-	createPresenceSurface,
-	type PresenceEntry,
-	type PresenceSurface,
-} from './presence.js';
-import {
-	attachActionRunner,
-	type Call,
-	type DispatchError,
-	type DispatchOptions,
-	dispatch as dispatchCall,
-} from './rpc.js';
-import { YKeyValueLww } from './y-keyvalue/y-keyvalue-lww.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -57,27 +60,22 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	openWebSocket?: OpenWebSocket;
 	log?: Logger;
 	/**
-	 * Install-stable identity. Identifies "this install" across reconnects and
-	 * tabs. Multiple tabs on the same install publish the same
-	 * `installationId` with distinct per-socket `connectionId`s.
+	 * Install-stable identity. Identifies "this install" across reconnects
+	 * and tabs. Multiple tabs on the same install publish the same
+	 * `installationId`; the relay routes inbound dispatch to the most-
+	 * recently-connected socket for that id.
 	 */
 	installationId: string;
 	/**
 	 * Local action registry. Pass `{}` for content docs and consume-only
-	 * participants. When the registry is empty, no action runner observer is
-	 * attached: pure listeners pay zero handler cost.
+	 * participants. When the registry is empty, inbound `dispatch_inbound`
+	 * frames always reply with `ActionNotFound`.
 	 */
 	actions: TActions;
 };
 
 export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	readonly installationId: string;
-	/**
-	 * Per-socket routing address, client-minted at startup via
-	 * `crypto.randomUUID()`. Stable for the lifetime of this
-	 * `openCollaboration` call; a new call mints a new `connectionId`.
-	 */
-	readonly connectionId: string;
 	readonly actions: TActions;
 
 	readonly status: SyncStatus;
@@ -86,25 +84,34 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	onStatusChange(listener: (status: SyncStatus) => void): () => void;
 	reconnect(): void;
 
-	readonly peers: PresenceSurface;
-
 	/**
-	 * Dispatch a remote call. The target is identified by `connectionId`; resolve
-	 * one from `peers.list()`, e.g.:
-	 * `peers.list().find((p) => p.installationId === id)?.connectionId`.
-	 * `options.signal` is required: timeout via `AbortSignal.timeout(ms)`,
-	 * user cancel via `AbortController`, compose with `AbortSignal.any([...])`.
+	 * Online installs in this workspace, derived from awareness liveness
+	 * states. Deduplicated by `installationId` (multi-tab same-install
+	 * collapses to one entry). Self is excluded.
 	 */
-	dispatch<TInput, TOutput>(
-		action: string,
-		input: TInput,
-		options: DispatchOptions,
-	): Promise<Result<TOutput, DispatchError>>;
+	readonly devices: {
+		list(): LiveDevice[];
+		subscribe(fn: (devices: LiveDevice[]) => void): () => void;
+	};
 
 	/**
-	 * Sugar for `ydoc.destroy()`. Both cascade to all attached primitives via
-	 * the standard ydoc destroy listener. If the app owns the ydoc directly,
-	 * destroying it produces the same teardown.
+	 * Fire a dispatch via HTTP POST. The request is sent over the
+	 * Worker's HTTP endpoint, not the WebSocket. The relay pushes
+	 * `dispatch_inbound` to the recipient's socket and awaits
+	 * `dispatch_response` before completing this HTTP request. The
+	 * caller's `signal` (or fetch timeout) is the deadline.
+	 *
+	 * Always returns `Result<unknown, DispatchError>`. For type-narrowed
+	 * success payloads, lift through `typedDispatch<TActions>(collab.dispatch)`.
+	 */
+	dispatch(
+		req: DispatchRequest,
+	): Promise<Result<unknown, DispatchError>>;
+
+	/**
+	 * Sugar for `ydoc.destroy()`. Both cascade to all attached primitives
+	 * via the standard ydoc destroy listener. If the app owns the ydoc
+	 * directly, destroying it produces the same teardown.
 	 */
 	[Symbol.dispose](): void;
 };
@@ -128,18 +135,15 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	}
 
 	const installationId = config.installationId;
-	const connectionId = crypto.randomUUID();
-
-	const rpc = new YKeyValueLww<Call>(ydoc.getArray(RPC_KEY));
-	const presence = new YKeyValueLww<PresenceEntry>(ydoc.getArray(PRESENCE_KEY));
+	const awareness = new Awareness(ydoc);
+	awareness.setLocalStateField('liveness', { installationId });
 
 	// Wrap the user-supplied opener so every connect (including reconnects)
-	// carries `?installationId=&connectionId=` without callers re-encoding the URL.
+	// carries `?installationId=` without callers re-encoding the URL.
 	const userOpen = config.openWebSocket;
 	const openWebSocket: OpenWebSocket = (rawUrl, protocols) => {
 		const url = new URL(rawUrl.toString());
 		url.searchParams.set('installationId', installationId);
-		url.searchParams.set('connectionId', connectionId);
 		return userOpen ? userOpen(url, protocols) : new WebSocket(url, protocols);
 	};
 
@@ -148,36 +152,72 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		waitFor: config.waitFor,
 		openWebSocket,
 		log: config.log,
+		// Inbound AWARENESS frames: apply to our awareness so devices.list()
+		// reflects peer state.
+		onBinaryFrame(data) {
+			const messageType = data[0];
+			if (messageType !== MESSAGE_TYPE.AWARENESS) return;
+			// Skip the leading message-type byte and the varuint length header
+			// of the inner payload; rather than decoding manually we re-read
+			// using the canonical lib0 helpers via a small wrapper.
+			decodeAndApplyAwarenessFrame({ data, awareness, origin: supervisor });
+		},
+		// Inbound dispatch_inbound text frames: run the local action,
+		// emit dispatch_response back over the same socket.
+		onTextFrame(text) {
+			void runInboundDispatch({ rawFrame: text, actions: userActions }).then(
+				(response) => {
+					if (response !== null) supervisor.send(response);
+				},
+			);
+		},
+		// On (re)connect, publish our liveness so the relay can record the
+		// clientID in the attachment and broadcast to peers.
+		onConnected(send) {
+			send(encodeAwarenessFrame(awareness, [awareness.clientID]));
+		},
 	});
 
-	// Skip the observer entirely when there is nothing to handle. Pure
-	// listeners (content docs, consume-only participants) pay zero cost.
-	if (Object.keys(userActions).length > 0) {
-		const detachRunner = attachActionRunner(rpc, connectionId, userActions);
-		ydoc.once('destroy', detachRunner);
-	}
+	// Outbound: any local awareness change (cursor, typing, liveness)
+	// re-encodes our state and forwards to the supervisor. `origin === 'local'`
+	// per y-protocols Awareness contract for local-state changes; ignore
+	// echoes from applyAwarenessUpdate (origin === supervisor).
+	const awarenessUpdateHandler = (
+		_changes: { added: number[]; updated: number[]; removed: number[] },
+		origin: unknown,
+	) => {
+		if (origin === supervisor) return;
+		supervisor.send(encodeAwarenessFrame(awareness, [awareness.clientID]));
+	};
+	awareness.on('update', awarenessUpdateHandler);
 
-	const peers = createPresenceSurface(presence, connectionId);
+	// devices.list() delegates to `getOnlineInstallationIds` (the awareness
+	// reader); devices.subscribe wires a change listener and re-derives the
+	// snapshot. Dedup-by-installationId folds multi-tab same-install into
+	// one entry.
+	const devices = {
+		list(): LiveDevice[] {
+			return getOnlineInstallationIds({
+				awareness,
+				selfInstallationId: installationId,
+			});
+		},
+		subscribe(fn: (devices: LiveDevice[]) => void): () => void {
+			const handler = () => fn(devices.list());
+			awareness.on('change', handler);
+			return () => awareness.off('change', handler);
+		},
+	};
 
-	// Client-side orphan sweep. If a previous run crashed between writing a
-	// call and reaching `finally { rpc.delete(id) }`, the entry persists in
-	// the workspace doc. Sweep anything older than 1h once we are online.
-	void (async () => {
-		try {
-			await supervisor.whenConnected;
-			const cutoff = Date.now() - 1000 * 60 * 60;
-			for (const [id, entry] of rpc.entries()) {
-				if (entry.val.sent_at < cutoff) rpc.delete(id);
-			}
-		} catch {
-			// The supervisor rejects `whenConnected` on permanent auth failure, and
-			// orphan cleanup should not surface that failure here.
-		}
-	})();
+	const dispatchUrl = deriveDispatchUrl(config.url);
+
+	// No explicit awareness teardown: y-protocols `Awareness` registers
+	// its own `doc.on('destroy', () => this.destroy())` listener; its
+	// `destroy()` calls `super.destroy()` on the lib0 Observable, which
+	// clears every subscriber (including our `awarenessUpdateHandler`).
 
 	return {
 		installationId,
-		connectionId,
 		actions: userActions,
 		get status() {
 			return supervisor.status;
@@ -186,16 +226,58 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		whenDisposed: supervisor.whenDisposed,
 		onStatusChange: supervisor.onStatusChange,
 		reconnect: supervisor.reconnect,
-		peers,
-		dispatch<TInput, TOutput>(
-			action: string,
-			input: TInput,
-			options: DispatchOptions,
-		): Promise<Result<TOutput, DispatchError>> {
-			return dispatchCall<TInput, TOutput>(rpc, action, input, options);
+		devices,
+		dispatch(req: DispatchRequest) {
+			return dispatchOverHttp({
+				dispatchUrl,
+				installationId,
+				req,
+			});
 		},
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
 	};
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// AWARENESS FRAME ENCODING
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Encode a y-protocols awareness update as a wire-ready AWARENESS frame:
+ *
+ *   [varUint MESSAGE_TYPE.AWARENESS][varUint8Array awarenessUpdate]
+ *
+ * This matches the y-websocket convention used everywhere.
+ */
+function encodeAwarenessFrame(
+	awareness: Awareness,
+	clientIDs: number[],
+): Uint8Array {
+	return encoding.encode((enc) => {
+		encoding.writeVarUint(enc, MESSAGE_TYPE.AWARENESS);
+		encoding.writeVarUint8Array(enc, encodeAwarenessUpdate(awareness, clientIDs));
+	});
+}
+
+/**
+ * Decode an inbound AWARENESS frame and apply its payload to the local
+ * awareness. The frame layout is `[varUint MESSAGE_TYPE][varUint8Array
+ * awarenessUpdate]`; we re-read the leading message-type byte to
+ * advance the decoder rather than rely on the caller having stripped it.
+ */
+function decodeAndApplyAwarenessFrame({
+	data,
+	awareness,
+	origin,
+}: {
+	data: Uint8Array;
+	awareness: Awareness;
+	origin: unknown;
+}): void {
+	const decoder = decoding.createDecoder(data);
+	decoding.readVarUint(decoder); // message type (already inspected by caller)
+	const payload = decoding.readVarUint8Array(decoder);
+	applyAwarenessUpdate(awareness, payload, origin);
 }

@@ -41,17 +41,15 @@ const actions = {
 
 const collaboration = {
 	installationId: 'fixture',
-	connectionId: 'fixture-conn',
 	actions,
 	status: { phase: 'connected' as const },
 	whenConnected: Promise.resolve(),
 	whenDisposed: Promise.resolve(),
 	onStatusChange: () => () => {},
 	reconnect: () => {},
-	peers: {
+	devices: {
 		list: () => [],
-		find: () => undefined,
-		observe: () => () => {},
+		subscribe: () => () => {},
 	},
 	dispatch: async () => {
 		throw new Error('fixture does not dispatch');

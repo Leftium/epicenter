@@ -2,9 +2,12 @@
  * Epicenter: YJS-First Collaborative Workspace System
  *
  * `@epicenter/workspace` attaches typed primitives: tables, KV, plain/rich
- * text, presence, timeline, and an action registry to a `Y.Doc`, then
- * wires the result to IndexedDB persistence, end-to-end encryption, and
- * WebSocket sync via `openCollaboration`.
+ * text, timeline, and an action registry to a `Y.Doc`, then wires the
+ * result to IndexedDB persistence, end-to-end encryption, and WebSocket
+ * sync via `openCollaboration`. `openCollaboration` also publishes
+ * per-peer liveness via y-protocols awareness and exposes the live-device
+ * surface (`devices.list()`) plus HTTP-backed `dispatch()` for cross-
+ * device calls.
  *
  * @example
  * ```typescript
@@ -158,6 +161,13 @@ export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-export { type PresenceEntry } from './document/presence.js';
-export { DispatchError } from './document/rpc.js';
+export {
+	type ActionInput,
+	type ActionOutput,
+	DispatchError,
+	type DispatchRequest,
+	type LiveDevice,
+	type TypedDispatch,
+	typedDispatch,
+} from './document/dispatch.js';
 export { roomWsUrl, websocketUrl } from './document/transport.js';

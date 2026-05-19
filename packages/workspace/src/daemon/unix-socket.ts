@@ -24,14 +24,14 @@ import {
 	type StartupError as StartupErrorType,
 } from './startup-errors.js';
 
-export type BindUnixSocketOptions = {
+type BindUnixSocketOptions = {
 	socketPath: string;
 	fetch: (
 		request: Request,
 		server: Bun.Server<undefined>,
 	) => Response | Promise<Response>;
 };
-export type BindOrRecoverOptions = BindUnixSocketOptions & {
+type BindOrRecoverOptions = BindUnixSocketOptions & {
 	projectDir: string;
 	isSocketResponsive: (
 		socketPath: string,

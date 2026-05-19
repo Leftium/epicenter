@@ -69,8 +69,8 @@ state, network) live only in the singleton (`session.svelte.ts` for shape A,
 | `client.ts` | B | App singleton + auth wait | One env factory plus auth/session lifecycle | `auth` plus a running app singleton; module-level `await session.whenReady` |
 
 Daemon and script factories live in the same directory as the iso/browser
-factories regardless of shape; they're consumed by the `cli` package for
-`epicenter up` (daemon) and one-shot script entry points.
+factories regardless of shape. Project configs import daemon modules and list
+them in `routes`; script entry points import script factories directly.
 
 ## Iso Factory
 
@@ -166,7 +166,7 @@ export function openFuji({
 	bearerToken,
 	encryptionKeys,
 	device,
-	projectDir = findEpicenterDir(),
+	projectDir = findProjectRoot(),
 	clientID = hashClientId(projectDir),
 	apiUrl = EPICENTER_API_URL,
 }: {
@@ -191,12 +191,26 @@ export function openFuji({
 
 Defaults:
 
-- `projectDir = findEpicenterDir()`
+- `projectDir = findProjectRoot()`
 - `clientID = hashClientId(projectDir)`
 - `apiUrl = EPICENTER_API_URL`
 
-The public lifecycle command is `epicenter up`. Do not document daemon
+The public lifecycle command is `epicenter daemon up`. Do not document daemon
 factories as `epicenter serve` consumers.
+
+Register daemon modules from the project root:
+
+```ts
+import { defineConfig } from '@epicenter/workspace';
+import fuji from './workspaces/fuji/daemon.ts';
+
+export default defineConfig({
+	routes: [fuji],
+});
+```
+
+`epicenter.config.ts` is the project marker and route registry. `.epicenter/`
+is project-local data, not a discovery marker.
 
 ## Script Factory
 
@@ -206,7 +220,7 @@ Script factories read the daemon's local Yjs log and write through sync.
 export function openFuji({
 	bearerToken,
 	encryptionKeys,
-	projectDir = findEpicenterDir(),
+	projectDir = findProjectRoot(),
 	clientID = hashClientId(Bun.main),
 	apiUrl = EPICENTER_API_URL,
 }: {
@@ -230,7 +244,7 @@ export function openFuji({
 
 Defaults:
 
-- `projectDir = findEpicenterDir()`
+- `projectDir = findProjectRoot()`
 - `clientID = hashClientId(Bun.main)`
 - `apiUrl = EPICENTER_API_URL`
 

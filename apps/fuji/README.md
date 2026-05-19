@@ -83,6 +83,19 @@ bun dev
 
 This starts the app dev server on port 5174. Auth and sync expect the local API on `localhost:8787`; start it from the repo root with `bun run dev:api`.
 
+Fuji's daemon route is registered from the project root, not discovered from a marker folder. A project that wants the Fuji route needs an `epicenter.config.ts` like this:
+
+```ts
+import { defineConfig } from '@epicenter/workspace';
+import fuji from './workspaces/fuji/daemon.ts';
+
+export default defineConfig({
+	routes: [fuji],
+});
+```
+
+`epicenter daemon up -C <project>` creates `.epicenter/` for local materializers when it is missing, but sockets and daemon logs live in platform user paths instead of inside the project.
+
 ---
 
 ## Tech stack

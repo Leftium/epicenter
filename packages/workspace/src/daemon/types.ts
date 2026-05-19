@@ -33,9 +33,7 @@ type DaemonServedCollaboration<
 		list(): LiveDevice[];
 	};
 	status: SyncStatus;
-	dispatch<TOutput = unknown>(
-		req: DispatchRequest,
-	): Promise<Result<TOutput, DispatchError>>;
+	dispatch(req: DispatchRequest): Promise<Result<unknown, DispatchError>>;
 };
 
 /**

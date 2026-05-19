@@ -15,16 +15,20 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { Err, Ok } from 'wellcrafted/result';
+import Type from 'typebox';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import {
+	type ActionInput,
+	type ActionOutput,
 	deriveDispatchUrl,
 	dispatch,
 	DispatchError,
 	getOnlineInstallationIds,
 	runInboundDispatch,
+	typedDispatch,
 } from './dispatch.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -219,14 +223,14 @@ describe('dispatch', () => {
 			});
 		});
 
-		const result = await dispatch<{ closed: number }>({
+		const result = await dispatch({
 			dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
 			installationId: 'R_laptop',
 			req: { to: 'R_phone', action: 'tabs_close', input: { tabIds: [1, 2] } },
 		});
 
 		expect(result.error).toBeNull();
-		expect(result.data?.closed).toBe(2);
+		expect((result.data as { closed: number } | null)?.closed).toBe(2);
 		const sent = JSON.parse(capturedBody);
 		expect(sent).toEqual({
 			from: 'R_laptop',
@@ -347,3 +351,105 @@ describe('DispatchError variant factory', () => {
 		expect(typeof error?.cause).toBe('string');
 	});
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// typedDispatch (typed overlay)
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('typedDispatch', () => {
+	test('delegates to the wrapped dispatch with the same arguments', async () => {
+		let captured: unknown = null;
+		const fakeDispatch = async (req: unknown) => {
+			captured = req;
+			return Ok({ closedCount: 2 });
+		};
+		const actions = {
+			tabs_close: defineMutation({
+				input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
+				handler: ({ tabIds }) => ({ closedCount: tabIds.length }),
+			}),
+		};
+		type Actions = typeof actions;
+
+		const tabManager = typedDispatch<Actions>(fakeDispatch);
+		const result = await tabManager({
+			to: 'R_phone',
+			action: 'tabs_close',
+			input: { tabIds: [1, 2] },
+		});
+
+		expect(captured).toEqual({
+			to: 'R_phone',
+			action: 'tabs_close',
+			input: { tabIds: [1, 2] },
+		});
+		expect(result.error).toBeNull();
+		expect(result.data?.closedCount).toBe(2);
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Type-level tests for ActionInput / ActionOutput
+// ════════════════════════════════════════════════════════════════════════════
+
+// `bun test` runs these as runtime no-ops; they exist for the TypeScript
+// compiler to enforce the type-level claims via assignability.
+
+type Equals<A, B> =
+	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+		? true
+		: false;
+
+const _typeTests = () => {
+	const noInput = defineQuery({ handler: () => 'pong' });
+	const withInput = defineMutation({
+		input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
+		handler: ({ tabIds }) => ({ closedCount: tabIds.length }),
+	});
+	const asyncRaw = defineQuery({ handler: async () => 42 });
+	const syncResult = defineMutation({
+		handler: () => Ok('done') as Result<'done', { name: 'AppError' }>,
+	});
+	const asyncResult = defineQuery({
+		handler: async () =>
+			Ok({ a: 1 }) as Result<{ a: number }, { name: 'AppError' }>,
+	});
+
+	// ActionInput
+	const _i1: Equals<ActionInput<typeof noInput>, { input?: never }> = true;
+	const _i2: Equals<
+		ActionInput<typeof withInput>,
+		{ input: { tabIds: number[] } }
+	> = true;
+
+	// ActionOutput: peels Promise and Result down to T.
+	const _o1: Equals<ActionOutput<typeof noInput>, string> = true;
+	const _o2: Equals<
+		ActionOutput<typeof withInput>,
+		{ closedCount: number }
+	> = true;
+	const _o3: Equals<ActionOutput<typeof asyncRaw>, number> = true;
+	const _o4: Equals<ActionOutput<typeof syncResult>, 'done'> = true;
+	const _o5: Equals<ActionOutput<typeof asyncResult>, { a: number }> = true;
+
+	// Call-site shape via the typed overlay.
+	const dx = typedDispatch<{
+		ping: typeof noInput;
+		tabs_close: typeof withInput;
+	}>(async () => Ok(undefined));
+
+	// No-input action: `input` field is forbidden.
+	void dx({ to: 'x', action: 'ping' });
+	// @ts-expect-error -- `input` not allowed on no-input action.
+	void dx({ to: 'x', action: 'ping', input: 'nope' });
+
+	// With-input action: `input` field is required and typed.
+	void dx({ to: 'x', action: 'tabs_close', input: { tabIds: [1, 2] } });
+	// @ts-expect-error -- missing required input.
+	void dx({ to: 'x', action: 'tabs_close' });
+
+	// Discourage `_typeTests` from being flagged as unused; the function is
+	// only evaluated by the TypeScript compiler.
+	return { _i1, _i2, _o1, _o2, _o3, _o4, _o5 };
+};
+void _typeTests;

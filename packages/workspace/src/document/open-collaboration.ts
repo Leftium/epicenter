@@ -100,10 +100,13 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	 * `dispatch_inbound` to the recipient's socket and awaits
 	 * `dispatch_response` before completing this HTTP request. The
 	 * caller's `signal` (or fetch timeout) is the deadline.
+	 *
+	 * Always returns `Result<unknown, DispatchError>`. For type-narrowed
+	 * success payloads, lift through `typedDispatch<TActions>(collab.dispatch)`.
 	 */
-	dispatch<TOutput = unknown>(
+	dispatch(
 		req: DispatchRequest,
-	): Promise<Result<TOutput, DispatchError>>;
+	): Promise<Result<unknown, DispatchError>>;
 
 	/**
 	 * Sugar for `ydoc.destroy()`. Both cascade to all attached primitives
@@ -224,8 +227,8 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		onStatusChange: supervisor.onStatusChange,
 		reconnect: supervisor.reconnect,
 		devices,
-		dispatch<TOutput = unknown>(req: DispatchRequest) {
-			return dispatchOverHttp<TOutput>({
+		dispatch(req: DispatchRequest) {
+			return dispatchOverHttp({
 				dispatchUrl,
 				installationId,
 				req,

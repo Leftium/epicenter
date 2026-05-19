@@ -5,7 +5,7 @@
  * the relay's `/dispatch` endpoint, where the relay pushes a
  * `dispatch_inbound` text frame over the recipient's WebSocket and
  * awaits the recipient's `dispatch_response`. The HTTP response body is
- * always a `Result<TOutput, DispatchError>` (HTTP 200 unless the request
+ * always a `Result<unknown, DispatchError>` (HTTP 200 unless the request
  * is malformed). The caller's `AbortSignal` (or fetch timeout) decides
  * when to give up.
  *
@@ -48,14 +48,16 @@ import {
 export type LiveDevice = { installationId: string };
 
 /**
- * Per-call options. Required: `to`, `action`, `input`. Optional: an
- * `AbortSignal` for the dispatch deadline. With no signal, the fetch
- * runs to the platform's default timeout (Cloudflare Workers: ~100s).
+ * Per-call options. Required: `to`, `action`. Optional: `input` (omit
+ * for no-argument actions; `JSON.stringify` drops `undefined` keys, so
+ * the recipient sees no `input` field on the wire), and `signal` for
+ * the dispatch deadline. With no signal, the fetch runs to the
+ * platform's default timeout (Cloudflare Workers: ~100s).
  */
 export type DispatchRequest = {
 	to: string;
 	action: string;
-	input: unknown;
+	input?: unknown;
 	signal?: AbortSignal;
 };
 
@@ -130,29 +132,92 @@ type DispatchResponseFrame = {
 };
 
 /**
- * Phantom-typed view of `dispatch` for a known target registry. Caller-
- * asserted: the relay routes by `installationId` only; it does not prove
- * a given install implements `TTargetActions`.
+ * Project an action's handler parameters into the dispatch request's
+ * `input` slot.
  *
- * ```ts
- * import type { DispatchFor } from '@epicenter/workspace';
- * import type { TabManagerActions } from '@epicenter/tab-manager/actions';
+ *   - Handler `() => R`           ->  `{ input?: never }` (field forbidden)
+ *   - Handler `(i: I) => R`       ->  `{ input: I }`      (field required)
  *
- * const dispatchTabManager: DispatchFor<TabManagerActions> = collab.dispatch;
- * ```
+ * Reads from the callable side of the action (`ActionHandler`'s variadic
+ * tuple, which is `[input: Static<TInput>] | []`). Designed for object
+ * spread into the typed dispatch request so the field is literally absent
+ * at the call site when the action takes no argument.
  */
-export type DispatchFor<TTargetActions extends ActionRegistry> = <
+// biome-ignore lint/suspicious/noExplicitAny: structural callable check.
+export type ActionInput<A extends (...args: any[]) => unknown> =
+	Parameters<A> extends []
+		? { input?: never }
+		: // biome-ignore lint/suspicious/noExplicitAny: rest spread.
+			Parameters<A> extends [infer I, ...any[]]
+			? { input: I }
+			: { input?: never };
+
+/**
+ * Project an action's handler return type into the dispatch success
+ * payload, peeling the `Result<T, E>` layer (sync or async) that the wire
+ * boundary consumes.
+ *
+ *   - `() => T`                       ->  `T`
+ *   - `() => Promise<T>`              ->  `T`
+ *   - `() => Result<T, E>`            ->  `T`
+ *   - `() => Promise<Result<T, E>>`   ->  `T`
+ *
+ * `runInboundDispatch` Ok-wraps raw returns, preserves existing Results,
+ * and converts `Err(E)` -> `ActionFailed` over the wire. Successful
+ * remote calls always carry the inner `T` in the `data` field, never a
+ * doubly-nested `Result<Result<T, E>, DispatchError>`.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: structural callable for ReturnType.
+export type ActionOutput<A extends (...args: any[]) => unknown> =
+	Awaited<ReturnType<A>> extends Result<infer T, unknown>
+		? T
+		: Awaited<ReturnType<A>>;
+
+/**
+ * Typed overlay on `dispatch` for a known target registry. Same runtime
+ * function, narrower types: action keys are constrained to `keyof
+ * TTargetActions`, the `input` field is required/forbidden by the action's
+ * schema, and the success branch carries the unwrapped handler return
+ * (Result peeled to `T`).
+ *
+ * Caller-asserted: the relay routes by `installationId` only; it does not
+ * prove a given install implements `TTargetActions`.
+ */
+export type TypedDispatch<TTargetActions extends ActionRegistry> = <
 	TAction extends keyof TTargetActions & string,
 >(
 	req: {
 		to: string;
 		action: TAction;
-		input: Parameters<TTargetActions[TAction]>[0];
 		signal?: AbortSignal;
-	},
-) => Promise<
-	Result<Awaited<ReturnType<TTargetActions[TAction]>>, DispatchError>
->;
+	} & ActionInput<TTargetActions[TAction]>,
+) => Promise<Result<ActionOutput<TTargetActions[TAction]>, DispatchError>>;
+
+/**
+ * Lift the untyped `dispatch` function into a typed overlay for a known
+ * target registry. The runtime call is unchanged; the helper exists to
+ * make the caller-side assertion explicit and named instead of buried in
+ * a variable annotation.
+ *
+ * ```ts
+ * import { typedDispatch } from '@epicenter/workspace';
+ * import type { TabManagerActions } from '@epicenter/tab-manager/actions';
+ *
+ * const tabManager = typedDispatch<TabManagerActions>(collab.dispatch);
+ * await tabManager({
+ *   to: tabManagerInstallationId,
+ *   action: 'tabs_close',
+ *   input: { tabIds: [1, 2] },
+ * });
+ * ```
+ */
+export function typedDispatch<TTargetActions extends ActionRegistry>(
+	dispatch: (
+		req: DispatchRequest,
+	) => Promise<Result<unknown, DispatchError>>,
+): TypedDispatch<TTargetActions> {
+	return dispatch as TypedDispatch<TTargetActions>;
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // URL DERIVATION
@@ -213,11 +278,15 @@ export function getOnlineInstallationIds({
  * is the only deadline; the relay holds the HTTP request open until
  * either the recipient responds or the request is aborted.
  *
+ * Always returns `Result<unknown, DispatchError>`. Callers that want a
+ * narrower success type should compose with `typedDispatch<TActions>`
+ * for compile-time precision against a known target registry.
+ *
  * @param installationId The caller's own install id, sent as `from`.
  *   The relay validates the subject scope at the Worker boundary; within
  *   that scope, `from` is a trusted routing label, not an auth principal.
  */
-export async function dispatch<TOutput = unknown>({
+export async function dispatch({
 	dispatchUrl,
 	installationId,
 	req,
@@ -225,7 +294,7 @@ export async function dispatch<TOutput = unknown>({
 	dispatchUrl: string;
 	installationId: string;
 	req: DispatchRequest;
-}): Promise<Result<TOutput, DispatchError>> {
+}): Promise<Result<unknown, DispatchError>> {
 	// Issue the request. Network failures and aborts both throw; everything
 	// else (including handler-level errors) comes back inside a 200 body.
 	let response: Response;
@@ -302,7 +371,7 @@ export async function dispatch<TOutput = unknown>({
 	}
 
 	if ('data' in body) {
-		return Ok((body as { data: TOutput }).data);
+		return Ok((body as { data: unknown }).data);
 	}
 
 	return DispatchError.NetworkFailed({

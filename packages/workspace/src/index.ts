@@ -162,9 +162,12 @@ export {
 	openCollaboration,
 } from './document/open-collaboration.js';
 export {
+	type ActionInput,
+	type ActionOutput,
 	DispatchError,
-	type DispatchFor,
 	type DispatchRequest,
 	type LiveDevice,
+	type TypedDispatch,
+	typedDispatch,
 } from './document/dispatch.js';
 export { roomWsUrl, websocketUrl } from './document/transport.js';

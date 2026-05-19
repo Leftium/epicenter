@@ -110,5 +110,3 @@ export function createToolTrustState(tabManager: TabManagerBrowser) {
 		},
 	};
 }
-
-export type ToolTrustState = ReturnType<typeof createToolTrustState>;

@@ -27,18 +27,25 @@ import * as Y from 'yjs';
  * Top-level message types in the y-websocket protocol.
  * The first varint in any message identifies its type.
  *
- * After the RPC-on-Yjs-state collapse, only two values remain on the wire:
+ * Three values are reserved:
  *
- *   SYNC (0): document synchronization (the only frame that produces traffic)
- *   AUTH (2): reserved sentinel for the 4401 close path; no frames exchanged
+ *   SYNC (0):      document synchronization (standard y-protocols)
+ *   AWARENESS (1): ephemeral per-peer state, including device liveness
+ *                  (standard y-protocols). The relay validates the
+ *                  `liveness.installationId` sub-field on every inbound
+ *                  awareness update and force-clears on socket close.
+ *   AUTH (2):      reserved sentinel for the 4401 close path; no frames
+ *                  exchanged on this channel (Epicenter convention).
  *
- * Awareness, query-awareness, attested-awareness, and RPC envelopes have
- * been removed: identity, presence, and remote calls now live as rows in
- * reserved Y.Doc arrays and ride the SYNC channel like any other state.
+ * Dispatch (server -> recipient `dispatch_inbound`, recipient -> server
+ * `dispatch_response`) rides on WebSocket *text* frames, not the binary
+ * channel, so it does not consume a MESSAGE_TYPE varint.
  */
 export const MESSAGE_TYPE = {
 	/** Document synchronization messages (sync step 1, 2, or update) */
 	SYNC: 0,
+	/** Awareness updates (y-protocols awareness). Used for device liveness. */
+	AWARENESS: 1,
 	/** Authentication (reserved sentinel for the 4401 close path; no frames are exchanged) */
 	AUTH: 2,
 } as const;
@@ -50,12 +57,13 @@ export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
  *
  * The first varint in any y-websocket message is the message type:
  * - 0: MESSAGE_SYNC (document sync)
+ * - 1: MESSAGE_AWARENESS (awareness updates)
  * - 2: MESSAGE_AUTH (authentication, reserved sentinel)
  *
  * Useful for quickly determining message type before full parsing.
  *
  * @param data - Raw message bytes
- * @returns The message type constant (0=SYNC, 2=AUTH)
+ * @returns The message type constant (0=SYNC, 1=AWARENESS, 2=AUTH)
  */
 export function decodeMessageType(data: Uint8Array): number {
 	const decoder = decoding.createDecoder(data);

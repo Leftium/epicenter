@@ -1,16 +1,36 @@
 /**
- * Self-contained Yjs sync room for Cloudflare Durable Objects.
+ * Self-contained Yjs sync + dispatch room for Cloudflare Durable Objects.
  *
- * Everything a room needs lives in this file: SQLite persistence,
- * WebSocket lifecycle, connection management, presence writes, and the
- * `Room` class itself. The only external dependency is `sync-handlers.ts`
- * for the Yjs wire protocol (encode/decode/dispatch).
+ * Everything a room needs lives in this file: SQLite update log persistence,
+ * WebSocket lifecycle, awareness liveness tracking, dispatch correlation,
+ * and the `Room` class itself.
  *
  * ## Module structure
  *
- * {@link Room}: the Durable Object class wiring persistence and connections together.
- * {@link PresenceWriteForbidden}: thrown by `sync()` RPC when an HTTP
- *   update tries to mutate the reserved presence array
+ * {@link Room}: the Durable Object class wiring persistence, sync, awareness,
+ *   and dispatch together.
+ *
+ * ## Wire surfaces
+ *
+ * Three surfaces share auth context but are independent at the wire level:
+ *
+ *   binary WS frames  -> standard y-protocols (SYNC + AWARENESS).
+ *   text WS frames    -> dispatch push/response: server -> recipient
+ *                        `dispatch_inbound`, recipient -> server
+ *                        `dispatch_response`.
+ *   RPC method        -> {@link Room.dispatch}: the Worker forwards
+ *                        `POST /rooms/:room/dispatch` here. The DO mints
+ *                        a correlation id, pushes `dispatch_inbound` to
+ *                        the recipient's socket, and resolves the RPC
+ *                        promise when the recipient's `dispatch_response`
+ *                        arrives.
+ *
+ * ## Liveness
+ *
+ * Liveness is published as a Yjs awareness `liveness.installationId`
+ * field. The relay validates every inbound awareness update against the
+ * URL-stamped `installationId` and force-clears the peer's state on
+ * socket close. There is no durable presence row.
  */
 
 import { DurableObject } from 'cloudflare:workers';
@@ -21,86 +41,127 @@ import {
 	parseSubprotocols,
 	stateVectorsEqual,
 } from '@epicenter/sync';
-import { type PresenceEntry } from '@epicenter/workspace';
-import { PRESENCE_KEY } from '@epicenter/workspace/document/keys';
-import { YKeyValueLww } from '@epicenter/workspace/document/y-keyvalue/y-keyvalue-lww';
 import * as Y from 'yjs';
+import {
+	Awareness,
+	encodeAwarenessUpdate,
+	removeAwarenessStates,
+} from 'y-protocols/awareness';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import {
 	applyMessage,
 	type Connection,
+	encodeAwarenessFrame,
 	type RoomContext,
 	registerConnection,
-	SyncHandlerError,
-	updateTouchesPresence,
 } from './sync-handlers';
 
 // ============================================================================
-// Origins & errors
+// Dispatch wire types (text frames + RPC)
 // ============================================================================
 
 /**
- * Transaction origin for server-owned presence writes.
- *
- * Stamps the `doc.transact(...)` calls inside `upgrade()` and
- * `webSocketClose()` so observers and tests can distinguish presence
- * mutations performed by the server from client-driven sync updates.
+ * Server -> recipient text frame. Pushed by the DO when an HTTP dispatch
+ * call resolves a live socket for `to`. The recipient runs the action and
+ * replies with `dispatch_response` carrying the same `id`.
  */
-const SERVER_ORIGIN = Symbol('SERVER_ORIGIN');
+type DispatchInboundFrame = {
+	type: 'dispatch_inbound';
+	id: string;
+	from: string;
+	action: string;
+	input: unknown;
+};
+
+/** Wire form of a `Result<unknown, DispatchError>`. */
+export type DispatchResult =
+	| { data: unknown }
+	| { error: DispatchErrorWire };
+
+export type DispatchErrorWire =
+	| { name: 'RecipientOffline'; to: string; message: string }
+	| { name: 'ActionNotFound'; action: string; message: string }
+	| {
+			name: 'ActionFailed';
+			action: string;
+			cause: string;
+			message: string;
+	  };
+
+export type DispatchRpcRequest = {
+	from: string;
+	to: string;
+	action: string;
+	input: unknown;
+};
+
+// ============================================================================
+// Constants
+// ============================================================================
 
 /**
- * Thrown by `sync()` RPC when an inbound HTTP update writes to the
- * reserved `PRESENCE_KEY` array. The Worker layer (`app.ts`) catches it
- * by name and maps it to HTTP 403; the WebSocket path closes the socket
- * with code 4400.
+ * Max compacted update size (2 MB). Cloudflare DO SQLite enforces a hard
+ * 2 MB per-row BLOB limit.
  */
-export class PresenceWriteForbidden extends Error {
-	override readonly name = 'PresenceWriteForbidden';
-	constructor() {
-		super(
-			'Client SYNC update attempted to write to the reserved presence array',
-		);
-	}
-}
+const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
+
+/** Delay before alarm-based compaction fires (30 seconds). */
+const COMPACTION_DELAY_MS = 30_000;
+
+/**
+ * Internal cap on how long the DO holds an in-flight dispatch open before
+ * giving up on the recipient. The HTTP request's lifetime is the actual
+ * deadline (the caller's `AbortSignal` or fetch timeout); this is a safety
+ * net so the pending map cannot grow unbounded if both the recipient and
+ * the caller misbehave.
+ *
+ * Set well under Cloudflare Workers' HTTP request timeout (~100s) so the
+ * `RecipientOffline` response always rides the original request.
+ */
+const DISPATCH_INTERNAL_TIMEOUT_MS = 60_000;
+
+/**
+ * Per-connection metadata persisted via `ws.serializeAttachment` to survive
+ * hibernation.
+ *
+ * - `installationId`: URL-stamped at upgrade, the address used by dispatch.
+ * - `clientID`: the Yjs awareness `clientID` for this peer, learned from
+ *   the first inbound awareness update. Needed by `removeAwarenessStates`
+ *   on close so peers see the liveness drop within one RTT.
+ *
+ * The added `clientID` keeps the attachment well under the 2 KB budget.
+ */
+type WsAttachment = {
+	installationId: string;
+	clientID?: number;
+};
 
 // ============================================================================
 // Room
 // ============================================================================
 
 /**
- * Yjs sync room backed by a Cloudflare Durable Object.
+ * Yjs sync + dispatch room backed by a Cloudflare Durable Object.
  *
  * Owns: SQLite update log persistence, WebSocket lifecycle via the
- * Hibernation API, HTTP sync via RPC, connection management, and
- * server-stamped presence writes. Every room runs with `gc: true`.
- * Retained-history policies (Yjs snapshots needing `gc: false`) are
- * deferred and, if they return, will be a per-room policy lookup in
- * this constructor, not a sibling DO class.
+ * Hibernation API, HTTP sync via RPC, dispatch correlation, and the
+ * shared `Awareness` instance for device liveness. Every room runs with
+ * `gc: true`.
  *
  * ## Worker to DO interface
  *
- * The Hono Worker in `app.ts` calls into this DO via two mechanisms:
- *
- * **RPC** (`stub.sync()`, `stub.getDoc()`): for HTTP sync and bootstrap.
- *   Direct method calls avoid Request/Response serialization overhead
- *   for binary payloads. The Worker handles HTTP concerns (status codes,
- *   content-type headers); the DO handles only Yjs logic.
+ * **RPC** (`stub.sync()`, `stub.getDoc()`, `stub.dispatch()`): for HTTP
+ *   sync, snapshot bootstrap, and the HTTP `POST /rooms/:room/dispatch`
+ *   endpoint. Direct method calls avoid Request/Response serialization
+ *   overhead for binary payloads.
  * **fetch** (`stub.fetch(request)`): for WebSocket upgrades only, since
  *   the 101 Switching Protocols handshake requires HTTP request/response
- *   semantics. After upgrade, all sync traffic flows through the Hibernation
- *   API callbacks (`webSocketMessage`, `webSocketClose`, `webSocketError`).
+ *   semantics.
  *
  * ## Storage model
  *
  * Append-only update log in DO SQLite with opportunistic cold-start
  * compaction. Initialized inside `blockConcurrencyWhile` in the constructor.
- *
- * ## Presence
- *
- * Server-stamped presence rows live in the Yjs doc under `PRESENCE_KEY`,
- * backed by a `YKeyValueLww<PresenceEntry>`. The server writes a row on
- * WebSocket upgrade, deletes it on close, and sweeps orphans on boot. The
- * sync handlers reject any client SYNC update that writes to that array.
  *
  * ## Auth & data isolation
  *
@@ -110,14 +171,10 @@ export class PresenceWriteForbidden extends Error {
  * itself does not re-validate (it trusts the Worker boundary).
  *
  * DO names are subject-scoped: the Worker constructs
- * `subject:{subject}:rooms:{room}` before calling `idFromName()`. This ensures
- * each owner's data is isolated in separate DO instances, even if multiple
- * subjects access rooms with the same name (e.g., "epicenter.tab-manager").
- *
- * We chose subject-scoped DO names (Google Docs model) over org-scoped names
- * (Vercel/Supabase model) because most rooms hold personal data. For
- * enterprise self-hosted, the deployment itself is the org boundary.
- * See `getRoomStub` in app.ts for the full rationale.
+ * `subject:{subject}:rooms:{room}` before calling `idFromName()`. This
+ * ensures each owner's data is isolated in separate DO instances. The
+ * relay treats `from` on a dispatch as a routing label within the
+ * authenticated subject, not as a cross-subject auth principal.
  */
 export class Room extends DurableObject {
 	/**
@@ -128,14 +185,11 @@ export class Room extends DurableObject {
 	 * guarantees working together:
 	 *
 	 * 1. **Cloudflare runtime guarantee**: `blockConcurrencyWhile` prevents
-	 *    the DO from receiving any incoming requests (`fetch`, `webSocketMessage`,
-	 *    etc.) until the initialization promise resolves. So no method on this
-	 *    class can run before `doc` is set.
-	 *
+	 *    the DO from receiving any incoming requests until the
+	 *    initialization promise resolves.
 	 * 2. **Synchronous async callback**: The callback passed to
 	 *    `blockConcurrencyWhile` contains no `await`, so it executes to
-	 *    completion synchronously. This means `doc` is assigned before the
-	 *    constructor returns.
+	 *    completion synchronously.
 	 *
 	 * If an `await` is ever added to the `blockConcurrencyWhile` callback,
 	 * guarantee (2) breaks.
@@ -144,14 +198,29 @@ export class Room extends DurableObject {
 	 */
 	private doc!: Y.Doc;
 
-	/** Shared room state: the Yjs doc and auth-derived subject. */
-	private room!: RoomContext;
+	/** Shared awareness, holds every connected peer's `liveness.installationId`. */
+	private awareness!: Awareness;
 
-	/** Server-writable presence rows, persisted in the shared Y.Doc. */
-	private presence!: YKeyValueLww<PresenceEntry>;
+	/** Shared room state forwarded into sync handlers. */
+	private room!: RoomContext;
 
 	/** Active WebSocket connections and their per-connection sync state. */
 	private connections = new Map<WebSocket, Connection>();
+
+	/**
+	 * In-flight dispatches awaiting `dispatch_response`. Keyed by the
+	 * server-minted correlation id. Each entry captures the recipient
+	 * socket (for "did this close mid-flight?" cleanup) and a `resolve`
+	 * that completes the awaiting RPC promise.
+	 */
+	private pendingDispatches = new Map<
+		string,
+		{
+			recipientWs: WebSocket;
+			resolve: (result: DispatchResult) => void;
+			timeoutHandle: ReturnType<typeof setTimeout>;
+		}
+	>();
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -162,8 +231,16 @@ export class Room extends DurableObject {
 
 		ctx.blockConcurrencyWhile(async () => {
 			this.doc = new Y.Doc({ gc: true });
+			this.awareness = new Awareness(this.doc);
+			// The server-side Awareness instance is a holding area for remote
+			// clients' states; it never publishes a "self" state of its own.
+			// Clearing the implicit `{}` local state keeps `awareness.getStates()`
+			// consistent with the "remote peers only" view.
+			this.awareness.setLocalState(null);
+
 			this.room = {
 				doc: this.doc,
+				awareness: this.awareness,
 				subject: subjectFromDoName(ctx.id.name),
 			};
 
@@ -189,43 +266,53 @@ export class Room extends DurableObject {
 				ctx.storage.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
 			});
 
-			// --- Presence: wrap the reserved Y.Array ---
-			// Constructed AFTER the SQL replay so initial entries (if any) are
-			// already in the array when YKeyValueLww builds its in-memory index.
-			this.presence = new YKeyValueLww<PresenceEntry>(
-				this.doc.getArray(PRESENCE_KEY),
-			);
-
 			// --- Restore connections that survived hibernation ---
-			// Iterates ctx.getWebSockets(), deserializes each attachment to recover
-			// the connectionId, and re-registers sync handlers. No initial messages: the
-			// client already received them before hibernation.
+			// Iterates ctx.getWebSockets(), reads the URL-stamped installationId
+			// and the awareness clientID (if learned before hibernation) from
+			// each attachment, and re-registers sync handlers.
+			//
+			// For sockets whose attachment carries a clientID we also restore
+			// liveness state programmatically so `awareness.getStates()` is
+			// non-empty immediately after wake, closing the "picker shows no
+			// devices for 15s" race called out in the spec.
+			const restoredClientIDs: number[] = [];
 			for (const ws of ctx.getWebSockets()) {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
 				if (!attachment) continue;
 
-				const connection = registerConnection({ doc: this.doc, ws });
+				const connection = registerConnection({
+					doc: this.doc,
+					ws,
+					installationId: attachment.installationId,
+				});
 				this.connections.set(ws, connection);
+
+				if (attachment.clientID != null) {
+					this.awareness.states.set(attachment.clientID, {
+						liveness: { installationId: attachment.installationId },
+					});
+					this.awareness.meta.set(attachment.clientID, {
+						clock: 1,
+						lastUpdated: Math.floor(Date.now() / 1000),
+					});
+					restoredClientIDs.push(attachment.clientID);
+				}
 			}
 
-			// --- Boot orphan sweep ---
-			// If a DO eviction skipped `webSocketClose`, a presence row may linger
-			// for a connectionId that no surviving socket owns. Sweep them now using the
-			// live socket set we just re-registered above.
-			const live = new Set<string>();
-			for (const ws of ctx.getWebSockets()) {
-				const att = ws.deserializeAttachment() as WsAttachment | null;
-				if (att?.connectionId) live.add(att.connectionId);
-			}
-			const orphans: string[] = [];
-			for (const [connectionId] of this.presence.entries()) {
-				if (!live.has(connectionId)) orphans.push(connectionId);
-			}
-			if (orphans.length > 0) {
-				this.doc.transact(() => {
-					for (const connectionId of orphans)
-						this.presence.delete(connectionId);
-				}, SERVER_ORIGIN);
+			// Broadcast restored liveness so peers don't have to wait for the
+			// next 15s awareness heartbeat to refresh their view.
+			if (restoredClientIDs.length > 0) {
+				const frame = encodeAwarenessFrame(
+					encodeAwarenessUpdate(this.awareness, restoredClientIDs),
+				);
+				for (const [ws] of this.connections) {
+					try {
+						ws.send(frame);
+					} catch {
+						// Socket may already be in a bad state after wake. The
+						// next inbound message will trigger close-time cleanup.
+					}
+				}
 			}
 		});
 	}
@@ -233,8 +320,8 @@ export class Room extends DurableObject {
 	// --- fetch: WebSocket upgrades only ---
 
 	/**
-	 * Only handles WebSocket upgrades. HTTP sync operations are
-	 * exposed as RPC methods called directly on the stub, avoiding the overhead
+	 * Only handles WebSocket upgrades. HTTP sync operations are exposed
+	 * as RPC methods called directly on the stub, avoiding the overhead
 	 * of constructing/parsing Request/Response objects for binary payloads.
 	 */
 	override async fetch(request: Request): Promise<Response> {
@@ -248,31 +335,25 @@ export class Room extends DurableObject {
 	 * Accept a WebSocket upgrade via the Hibernation API.
 	 *
 	 * Creates a `WebSocketPair`, registers the server side with the Cloudflare
-	 * runtime for hibernation, writes a server-stamped `PresenceEntry` for this
-	 * connection, runs the initial Yjs sync handshake (SyncStep1), and returns
-	 * the 101 Switching Protocols response.
+	 * runtime for hibernation, stashes the URL-stamped `installationId` in
+	 * the attachment, runs the initial Yjs sync handshake (SyncStep1), and
+	 * returns the 101 Switching Protocols response.
 	 *
-	 * The `installationId` and `connectionId` query parameters are required:
-	 * `installationId` is the client's install id (human-meaningful identity),
-	 * `connectionId` is the per-socket routing address used by `dispatch({ to })`.
-	 * Missing either yields a 400.
+	 * The `installationId` query parameter is required: it is the address
+	 * used by `dispatch({ to })` and the value the relay enforces on every
+	 * inbound awareness update via the liveness validation hook.
 	 *
 	 * Cancels any pending compaction alarm: a new client just connected, so
 	 * compacting now would be wasteful.
 	 *
 	 * The client offers `sec-websocket-protocol: <MAIN_SUBPROTOCOL>, bearer.<token>`;
-	 * we echo only the main subprotocol to complete the handshake. The bearer
-	 * entry is consumed by `singleCredential` earlier in the chain and must not
-	 * round-trip.
+	 * we echo only the main subprotocol to complete the handshake.
 	 */
 	private upgrade(request: Request): Response {
 		const url = new URL(request.url);
 		const installationId = url.searchParams.get('installationId');
-		const connectionId = url.searchParams.get('connectionId');
-		if (!installationId || !connectionId) {
-			return new Response('missing installationId or connectionId', {
-				status: 400,
-			});
+		if (!installationId) {
+			return new Response('missing installationId', { status: 400 });
 		}
 
 		void this.ctx.storage.deleteAlarm();
@@ -282,17 +363,13 @@ export class Room extends DurableObject {
 
 		this.ctx.acceptWebSocket(server);
 
-		server.serializeAttachment({ connectionId } satisfies WsAttachment);
+		server.serializeAttachment({ installationId } satisfies WsAttachment);
 
-		this.doc.transact(() => {
-			this.presence.set(connectionId, {
-				connectionId,
-				installationId,
-				subject: this.room.subject,
-			});
-		}, SERVER_ORIGIN);
-
-		const connection = registerConnection({ doc: this.doc, ws: server });
+		const connection = registerConnection({
+			doc: this.doc,
+			ws: server,
+			installationId,
+		});
 		this.connections.set(server, connection);
 
 		server.send(encodeSyncStep1({ doc: this.doc }));
@@ -312,7 +389,7 @@ export class Room extends DurableObject {
 		});
 	}
 
-	// --- RPC methods (called via stub.sync() / stub.getDoc()) ---
+	// --- RPC methods (called via stub.sync() / stub.getDoc() / stub.dispatch()) ---
 
 	/**
 	 * HTTP sync via RPC.
@@ -320,14 +397,8 @@ export class Room extends DurableObject {
 	 * Binary body format: `[length-prefixed stateVector][length-prefixed update]`
 	 * (encoded via `encodeSyncRequest` from sync-core).
 	 *
-	 * 1. Validates the client update does not write to the reserved
-	 *    `PRESENCE_KEY` array (only the server writes presence). Throws
-	 *    {@link PresenceWriteForbidden} on violation.
-	 * 2. Applies client update to the live doc (triggers `updateV2` then SQLite
-	 *    persist + broadcast to WebSocket peers).
-	 * 3. Compares state vectors: returns `null` if already in sync (caller
-	 *    maps to 204 No Content).
-	 * 4. Otherwise returns the binary diff the client is missing.
+	 * Applies the client update to the live doc and returns the binary
+	 * diff the client is missing, or `null` if already in sync.
 	 */
 	async sync(
 		body: Uint8Array,
@@ -335,9 +406,6 @@ export class Room extends DurableObject {
 		const { stateVector: clientSV, update } = decodeSyncRequest(body);
 
 		if (update.byteLength > 0) {
-			if (updateTouchesPresence(update)) {
-				throw new PresenceWriteForbidden();
-			}
 			Y.applyUpdateV2(this.doc, update, 'http');
 		}
 
@@ -352,9 +420,9 @@ export class Room extends DurableObject {
 	/**
 	 * Snapshot bootstrap via RPC.
 	 *
-	 * Returns the full doc state via `Y.encodeStateAsUpdateV2`. Clients apply
-	 * this with `Y.applyUpdateV2` to hydrate their local doc before opening a
-	 * WebSocket, reducing the initial sync payload size.
+	 * Returns the full doc state via `Y.encodeStateAsUpdateV2`. Clients
+	 * apply this with `Y.applyUpdateV2` to hydrate their local doc before
+	 * opening a WebSocket, reducing the initial sync payload size.
 	 */
 	async getDoc(): Promise<{ data: Uint8Array; storageBytes: number }> {
 		return {
@@ -368,22 +436,117 @@ export class Room extends DurableObject {
 		await this.ctx.storage.deleteAll();
 	}
 
+	/**
+	 * Dispatch RPC: route an HTTP `POST /rooms/:room/dispatch` body to a
+	 * live recipient socket, await its response, and return the result.
+	 *
+	 * Picks the most-recently-connected socket for `to`. On miss returns
+	 * `RecipientOffline` immediately. Otherwise mints a correlation id,
+	 * pushes `dispatch_inbound` to the recipient, and resolves the
+	 * Promise either:
+	 *   - on matching `dispatch_response`,
+	 *   - on the recipient socket closing (the relay observes the close
+	 *     and resolves pending entries with `RecipientOffline`),
+	 *   - on the internal safety-net timeout firing (`RecipientOffline`).
+	 *
+	 * The caller's HTTP request lifetime is the *real* deadline. If the
+	 * caller aborts, the DO's Promise resolution is discarded by the
+	 * Worker; the internal timeout cleans up the pending entry.
+	 */
+	async dispatch(req: DispatchRpcRequest): Promise<DispatchResult> {
+		const recipientWs = this.pickRecipient(req.to);
+		if (!recipientWs) {
+			return {
+				error: {
+					name: 'RecipientOffline',
+					to: req.to,
+					message: `Recipient "${req.to}" is offline`,
+				},
+			};
+		}
+
+		const id = crypto.randomUUID();
+		const frame: DispatchInboundFrame = {
+			type: 'dispatch_inbound',
+			id,
+			from: req.from,
+			action: req.action,
+			input: req.input,
+		};
+
+		return new Promise<DispatchResult>((resolve) => {
+			const timeoutHandle = setTimeout(() => {
+				if (!this.pendingDispatches.has(id)) return;
+				this.pendingDispatches.delete(id);
+				resolve({
+					error: {
+						name: 'RecipientOffline',
+						to: req.to,
+						message: `Recipient "${req.to}" is offline`,
+					},
+				});
+			}, DISPATCH_INTERNAL_TIMEOUT_MS);
+
+			this.pendingDispatches.set(id, {
+				recipientWs,
+				resolve: (result) => {
+					clearTimeout(timeoutHandle);
+					resolve(result);
+				},
+				timeoutHandle,
+			});
+
+			try {
+				recipientWs.send(JSON.stringify(frame));
+			} catch {
+				// Socket died between pickRecipient and send. Clear and bail.
+				const pending = this.pendingDispatches.get(id);
+				if (pending) {
+					clearTimeout(pending.timeoutHandle);
+					this.pendingDispatches.delete(id);
+				}
+				resolve({
+					error: {
+						name: 'RecipientOffline',
+						to: req.to,
+						message: `Recipient "${req.to}" is offline`,
+					},
+				});
+			}
+		});
+	}
+
+	/**
+	 * Resolve a recipient `installationId` to the most-recently-connected
+	 * open socket, if any. Iteration order in `Map` is insertion order, so
+	 * the *last* match in a forward scan is the newest.
+	 */
+	private pickRecipient(installationId: string): WebSocket | null {
+		let newest: WebSocket | null = null;
+		for (const [ws, connection] of this.connections) {
+			if (
+				connection.installationId === installationId &&
+				ws.readyState === WebSocket.OPEN
+			) {
+				newest = ws;
+			}
+		}
+		return newest;
+	}
+
 	// --- WebSocket lifecycle ---
 
 	/**
 	 * Handle an incoming WebSocket message.
 	 *
-	 * Validates payload size against {@link MAX_PAYLOAD_BYTES}, converts the
-	 * raw message to a `Uint8Array`, then delegates to `applyMessage` from
-	 * `sync-handlers.ts` for protocol decoding. Routes the result:
+	 * Routes on the message envelope:
+	 *   - text frames: dispatch_response correlation.
+	 *   - binary frames: standard y-protocols SYNC / AWARENESS / AUTH.
 	 *
-	 * `reply`: Send data back to the sender only.
-	 * `broadcast`: Fan out to all other connections.
-	 *
-	 * A `PresenceWriteForbidden` error closes the socket with code `4400`
-	 * and reason `'presence-write-forbidden'`: only the server writes
-	 * presence, so a client mutation of that reserved array is a protocol
-	 * violation.
+	 * For AWARENESS, captures the surviving `clientID` so a later close
+	 * can call `removeAwarenessStates` for that specific peer. Updates
+	 * the WS attachment in place; the added field stays inside the 2 KB
+	 * attachment budget.
 	 */
 	override async webSocketMessage(
 		ws: WebSocket,
@@ -399,10 +562,12 @@ export class Room extends DurableObject {
 			return;
 		}
 
-		const data =
-			message instanceof ArrayBuffer
-				? new Uint8Array(message)
-				: new TextEncoder().encode(message);
+		if (typeof message === 'string') {
+			this.handleTextFrame(ws, message);
+			return;
+		}
+
+		const data = new Uint8Array(message);
 
 		const { data: result, error } = applyMessage({
 			data,
@@ -410,46 +575,142 @@ export class Room extends DurableObject {
 			connection,
 		});
 		if (error) {
-			if (error.name === SyncHandlerError.PresenceWriteForbidden.name) {
-				ws.close(4400, 'presence-write-forbidden');
-				return;
-			}
 			console.error(error.message);
 			return;
 		}
-		if (!result) return;
 
-		switch (result.action) {
-			case 'reply':
-				ws.send(result.data);
-				break;
-			case 'broadcast':
-				for (const [peer] of this.connections) {
-					if (peer !== ws && peer.readyState === WebSocket.OPEN) {
-						try {
-							peer.send(result.data);
-						} catch {
-							/* Socket may have died between readyState check and send.
-							   Safe to ignore: the close event will fire and trigger
-							   proper cleanup via webSocketClose(). */
-						}
-					}
+		switch (result.kind) {
+			case 'sync': {
+				if (!result.result) return;
+				switch (result.result.action) {
+					case 'reply':
+						ws.send(result.result.data);
+						break;
+					case 'broadcast':
+						this.broadcast(ws, result.result.data);
+						break;
 				}
-				break;
+				return;
+			}
+			case 'awareness': {
+				const { broadcastFrame, clientIDs } = result.apply;
+				if (clientIDs.length > 0) {
+					this.maybeRecordClientID(ws, connection, clientIDs[0] as number);
+				}
+				if (broadcastFrame) {
+					this.broadcast(ws, broadcastFrame);
+				}
+				return;
+			}
+			case 'noop':
+				return;
 		}
+	}
+
+	/**
+	 * Handle a recipient -> server text frame. Today the only valid type
+	 * is `dispatch_response`; anything else closes the socket with
+	 * `4400 protocol-error`.
+	 */
+	private handleTextFrame(ws: WebSocket, message: string): void {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(message);
+		} catch {
+			ws.close(4400, 'protocol-error');
+			return;
+		}
+
+		if (
+			!parsed ||
+			typeof parsed !== 'object' ||
+			!('type' in parsed) ||
+			typeof (parsed as { type: unknown }).type !== 'string'
+		) {
+			ws.close(4400, 'protocol-error');
+			return;
+		}
+
+		const frame = parsed as { type: string; id?: unknown; result?: unknown };
+		if (frame.type !== 'dispatch_response') {
+			ws.close(4400, 'protocol-error');
+			return;
+		}
+
+		const id = typeof frame.id === 'string' ? frame.id : null;
+		if (!id) return;
+
+		const pending = this.pendingDispatches.get(id);
+		if (!pending) return; // late response, HTTP request already gone
+
+		const result = frame.result as DispatchResult | undefined;
+		if (!isDispatchResult(result)) {
+			// Recipient sent a malformed result; treat as offline so the caller
+			// gets a usable Result rather than hanging until the safety timeout.
+			const installationId =
+				this.connections.get(ws)?.installationId ?? 'unknown';
+			this.pendingDispatches.delete(id);
+			pending.resolve({
+				error: {
+					name: 'RecipientOffline',
+					to: installationId,
+					message: 'Recipient returned a malformed dispatch response',
+				},
+			});
+			return;
+		}
+
+		this.pendingDispatches.delete(id);
+		pending.resolve(result);
+	}
+
+	/**
+	 * Fan out a frame to every connection other than `origin`. Silently
+	 * swallows per-socket send failures: if a peer just died, the close
+	 * event will fire and trigger the full cleanup path.
+	 */
+	private broadcast(origin: WebSocket, data: Uint8Array | string): void {
+		for (const [peer] of this.connections) {
+			if (peer === origin) continue;
+			if (peer.readyState !== WebSocket.OPEN) continue;
+			try {
+				peer.send(data);
+			} catch {
+				/* see comment above */
+			}
+		}
+	}
+
+	/**
+	 * Record a learned awareness `clientID` into the WS attachment so
+	 * `webSocketClose` can call `removeAwarenessStates(awareness, [clientID])`
+	 * for an immediate force-clear (no 30s heartbeat timeout). Subsequent
+	 * awareness updates from the same socket may also pass through here;
+	 * the no-op branch keeps the write count to one.
+	 */
+	private maybeRecordClientID(
+		ws: WebSocket,
+		connection: Connection,
+		clientID: number,
+	): void {
+		const attachment = ws.deserializeAttachment() as WsAttachment | null;
+		if (!attachment) return;
+		if (attachment.clientID === clientID) return;
+		ws.serializeAttachment({
+			installationId: connection.installationId,
+			clientID,
+		} satisfies WsAttachment);
 	}
 
 	/**
 	 * Clean up a closed WebSocket connection.
 	 *
-	 * Deletes the server-stamped presence row for this socket (if its
-	 * attachment is still readable), unregisters Yjs doc update handlers,
-	 * removes the connection from the states map, and attempts to close the
-	 * underlying socket (no-op if already closed by the remote end).
-	 * Presence deletion stays here because it needs the room's `presence`
-	 * store and the `SERVER_ORIGIN` transaction tag.
-	 *
-	 * When the last connection leaves, schedules a deferred compaction alarm.
+	 * - Force-clears the peer's awareness liveness state (broadcasts a
+	 *   null state so peers see the device drop within one RTT).
+	 * - Resolves any in-flight dispatches to this recipient with
+	 *   `RecipientOffline` so callers don't wait for the safety timeout.
+	 * - Unregisters Yjs doc update handlers.
+	 * - Schedules deferred compaction if the last socket just left.
 	 */
 	override async webSocketClose(
 		ws: WebSocket,
@@ -460,12 +721,27 @@ export class Room extends DurableObject {
 		const connection = this.connections.get(ws);
 		if (!connection) return;
 
-		const att = ws.deserializeAttachment() as WsAttachment | null;
-		if (att?.connectionId) {
-			const orphanConnectionId = att.connectionId;
-			this.doc.transact(() => {
-				this.presence.delete(orphanConnectionId);
-			}, SERVER_ORIGIN);
+		const attachment = ws.deserializeAttachment() as WsAttachment | null;
+		if (attachment?.clientID != null) {
+			removeAwarenessStates(this.awareness, [attachment.clientID], 'close');
+			const removalFrame = encodeAwarenessFrame(
+				encodeAwarenessUpdate(this.awareness, [attachment.clientID]),
+			);
+			this.broadcast(ws, removalFrame);
+		}
+
+		// Fail any in-flight dispatches that were waiting on this socket.
+		for (const [id, pending] of this.pendingDispatches) {
+			if (pending.recipientWs !== ws) continue;
+			clearTimeout(pending.timeoutHandle);
+			this.pendingDispatches.delete(id);
+			pending.resolve({
+				error: {
+					name: 'RecipientOffline',
+					to: connection.installationId,
+					message: `Recipient "${connection.installationId}" is offline`,
+				},
+			});
 		}
 
 		connection.unregister();
@@ -474,8 +750,7 @@ export class Room extends DurableObject {
 		try {
 			ws.close(code, reason);
 		} catch {
-			/* Already closed by the remote end. Cleanup above (handler
-			   deregistration, presence delete) completed regardless. */
+			/* already closed by the remote end */
 		}
 
 		if (this.connections.size === 0) {
@@ -485,10 +760,8 @@ export class Room extends DurableObject {
 
 	/**
 	 * Handle a WebSocket error by closing with status 1011 (Internal Error).
-	 *
-	 * Delegates to {@link webSocketClose} so the same cleanup path
-	 * (handler deregistration, presence delete, compaction scheduling)
-	 * runs regardless of whether the socket closed cleanly or errored.
+	 * Delegates to {@link webSocketClose} so the same cleanup path runs
+	 * regardless of whether the socket closed cleanly or errored.
 	 */
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
 		await this.webSocketClose(ws, 1011, 'WebSocket error', false);
@@ -501,10 +774,6 @@ export class Room extends DurableObject {
 	 *
 	 * Scheduled 30s after the last WebSocket closes via `ctx.storage.setAlarm`.
 	 * Cancelled if a client reconnects before the alarm fires (see `upgrade()`).
-	 *
-	 * If the DO is evicted before the alarm fires, the alarm still wakes it:
-	 * the constructor re-runs `blockConcurrencyWhile` which does cold-start
-	 * compaction, so the alarm handler finds <= 1 row and no-ops.
 	 *
 	 * @see {@link https://developers.cloudflare.com/durable-objects/api/alarms/ | Durable Objects Alarms}
 	 */
@@ -524,13 +793,9 @@ export class Room extends DurableObject {
  * DO names are formatted by `getRoomStub` in app.ts as
  * `subject:{subject}:rooms:{room}`. Every connection to this DO shares the
  * same auth context, so `subject` is room-scoped, not connection-scoped.
- * Parsing once at construction lets the value survive hibernation without
- * extra plumbing through `WsAttachment`.
  *
- * Throws on an unrecognized shape so misconfigured deployments (test rigs
- * using `idFromString` / `newUniqueId`, or a future name builder regressing
- * the format) fail loudly at boot rather than silently broadcasting an empty
- * subject on every presence row.
+ * Throws on an unrecognized shape so misconfigured deployments fail loudly
+ * at boot rather than silently mishandling subject scope.
  */
 function subjectFromDoName(name: string | undefined): string {
 	const match = name?.match(/^subject:([^:]+):/);
@@ -544,38 +809,18 @@ function subjectFromDoName(name: string | undefined): string {
 }
 
 // ============================================================================
-// Constants
+// Dispatch wire validators
 // ============================================================================
 
-/**
- * Max compacted update size (2 MB). Cloudflare DO SQLite enforces a hard
- * 2 MB per-row BLOB limit.
- *
- * During compaction (cold-start or alarm), the current doc state is encoded
- * via `Y.encodeStateAsUpdateV2`. If the result fits under this limit, all
- * update rows are atomically replaced with a single compacted row. This
- * collapses thousands of tiny keystroke-level updates into one row,
- * dramatically improving future cold-start load times.
- */
-const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
-
-/**
- * Delay before alarm-based compaction fires (30 seconds).
- *
- * Long enough to skip reconnect storms (user refresh, network blip),
- * short enough to fire before DO eviction (~60s idle timeout).
- */
-const COMPACTION_DELAY_MS = 30_000;
-
-/**
- * Per-connection metadata persisted via `ws.serializeAttachment` to survive
- * hibernation. Only the client-minted, server-echoed `connectionId` is stored:
- * it identifies which presence row this socket owns for delete-on-close and
- * the boot orphan sweep.
- */
-type WsAttachment = {
-	connectionId: string;
-};
+/** Structural check that `value` is a wire-shaped `DispatchResult`. */
+function isDispatchResult(value: unknown): value is DispatchResult {
+	if (!value || typeof value !== 'object') return false;
+	const hasData = 'data' in value;
+	const hasError = 'error' in value;
+	if (hasData && hasError) return false;
+	if (!hasData && !hasError) return false;
+	return true;
+}
 
 // ============================================================================
 // compactUpdateLog
@@ -587,8 +832,8 @@ type WsAttachment = {
  * Encodes the current doc state via `Y.encodeStateAsUpdateV2`: produces
  * smaller output than `Y.mergeUpdatesV2` because deleted items become
  * lightweight GC structs (with `gc: true`) and struct merging is more
- * thorough (with `gc: false`). Also avoids the exponential performance
- * edge case documented in yjs#710.
+ * thorough. Also avoids the exponential performance edge case documented
+ * in yjs#710.
  *
  * No-ops if the log already has <= 1 row or the compacted blob exceeds
  * the 2 MB per-row BLOB limit.

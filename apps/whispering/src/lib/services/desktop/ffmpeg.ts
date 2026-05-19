@@ -145,7 +145,6 @@ export const FfmpegServiceLive = {
 	},
 };
 
-export type FfmpegService = typeof FfmpegServiceLive;
 
 /**
  * Builds a complete FFmpeg compression command string.

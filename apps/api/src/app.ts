@@ -631,7 +631,7 @@ app.post(
 			from: '/^[A-Za-z0-9_-]+$/ <= 128',
 			to: '/^[A-Za-z0-9_-]+$/ <= 128',
 			action: '/^[a-z][a-z0-9_]{0,63}$/',
-			input: 'unknown',
+			'input?': 'unknown',
 		}),
 	),
 	async (c) => {

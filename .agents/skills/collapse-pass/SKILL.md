@@ -21,6 +21,7 @@ Load on demand:
 - For the operating principle that decides hard cases, read [references/library-refusal.md](references/library-refusal.md).
 - For the per-checkpoint surface format and the stop-time final report shape, read [references/report-format.md](references/report-format.md).
 - For a thin `/goal` template that invokes this skill, read [references/goal-template.md](references/goal-template.md).
+- For Epicenter's repeatable monorepo maintenance pass, read [references/periodic-monorepo-pass.md](references/periodic-monorepo-pass.md).
 
 ## Operating principle
 

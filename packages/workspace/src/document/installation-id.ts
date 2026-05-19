@@ -7,11 +7,11 @@
  * distinct installation ids. The id is generated on first call and persisted
  * in the supplied storage; subsequent calls return the persisted value.
  *
- * Installation ids are claimed by the client and only the client knows them.
- * They are passed to `openCollaboration` as the `installationId` config field
- * and echoed by the server onto a presence row inside the workspace Y.Doc.
- * The server stamps the authenticated `subject` on the same row; the two are
- * joined by the presence surface.
+ * Installation ids are claimed by the client and only the client knows
+ * them. They are passed to `openCollaboration` as the `installationId`
+ * config field, stamped onto the WebSocket upgrade URL, validated on
+ * every inbound awareness `liveness.installationId` update by the relay,
+ * and echoed as the `from` field on every HTTP dispatch.
  */
 
 import { generateGuid } from '../shared/id.js';

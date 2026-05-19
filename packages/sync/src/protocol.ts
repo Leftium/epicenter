@@ -53,11 +53,7 @@ export const MESSAGE_TYPE = {
 /**
  * Decodes the top-level message type from raw message data.
  *
- * The first varint in any y-websocket message is the message type:
- * - 0: MESSAGE_SYNC (document sync)
- * - 1: MESSAGE_AWARENESS (awareness updates)
- * - 2: MESSAGE_AUTH (authentication, reserved sentinel)
- *
+ * The first varint in any y-websocket message is the message type.
  * Useful for quickly determining message type before full parsing.
  *
  * @param data - Raw message bytes

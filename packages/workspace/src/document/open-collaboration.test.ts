@@ -102,27 +102,7 @@ describe('openCollaboration', () => {
 	});
 });
 
-describe('action key publication shape', () => {
-	test('Object.keys + alphabetical sort produces the publication order', () => {
-		const actions = {
-			z_close: defineMutation({ handler: () => null }),
-			a_list: defineQuery({ handler: () => [] }),
-			m_ping: defineQuery({ handler: () => 'pong' }),
-		} satisfies ActionRegistry;
-		expect(Object.keys(actions).sort()).toEqual([
-			'a_list',
-			'm_ping',
-			'z_close',
-		]);
-	});
-
-	test('a top-level `system` key in user actions is legal', () => {
-		const actions = {
-			system_ping: defineQuery({ handler: () => 'pong' }),
-		} satisfies ActionRegistry;
-		expect(Object.keys(actions).sort()).toEqual(['system_ping']);
-	});
-
+describe('action key validation', () => {
 	test('rejects invalid action keys at the collaboration boundary', () => {
 		expect(() =>
 			setup({

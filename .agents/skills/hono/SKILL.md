@@ -27,3 +27,14 @@ Use this pattern when you need to:
 - Type request params, query values, context variables, or response bodies.
 - Adapt Hono handlers to Cloudflare Workers runtime constraints.
 - Debug streaming, WebSockets, CORS, auth middleware, or per-route bindings.
+
+## Middleware And Context
+
+- Middleware is onion-style and order-sensitive. Resource setup belongs before auth; auth belongs before protected routes.
+- Use `createFactory<Env>()` and `Env['Variables']` to type `c.var` and `c.set()`.
+- Middleware that continues must `await next()`. Middleware that rejects or redirects should return the response and skip `next()`.
+- Handlers should return Hono response helpers such as `c.json()`, `c.text()`, `c.html()`, or a `Response`.
+- On Cloudflare Workers, read bindings from `c.env` and request lifecycle APIs from `c.executionCtx`.
+- Register CORS before auth routes when cookie auth or credentialed cross-origin frontend calls are involved.
+- Test route behavior with `app.request()` or `testClient` plus mocked bindings and execution context before reaching for a network server.
+- Keep WebSocket upgrade detection explicit whenever generic middleware might mutate response headers.

@@ -49,9 +49,5 @@ export function createAnthropicCompletionService() {
 	} satisfies CompletionService;
 }
 
-export type AnthropicCompletionService = ReturnType<
-	typeof createAnthropicCompletionService
->;
-
 export const AnthropicCompletionServiceLive =
 	createAnthropicCompletionService();

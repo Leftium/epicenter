@@ -106,6 +106,23 @@ export {
 // PATH TYPES (for daemon callers)
 // ════════════════════════════════════════════════════════════════════════════
 
+export { findProjectRoot } from './client/find-project-root.js';
+export {
+	defineConfig,
+	type EpicenterConfig,
+	PROJECT_CONFIG_FILENAME,
+} from './config/define-config.js';
+export {
+	loadProjectConfig,
+	ProjectConfigError,
+	type ProjectConfigError as ProjectConfigErrorType,
+} from './config/load-project-config.js';
+export {
+	userCacheDir,
+	userConfigDir,
+	userDataDir,
+	userLogDir,
+} from './paths/user-paths.js';
 export type { ProjectDir } from './shared/types';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -157,9 +174,9 @@ export {
 	typedDispatch,
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
-export {
-	type OpenWebSocket,
-	type SyncStatus,
+export type {
+	OpenWebSocket,
+	SyncStatus,
 } from './document/internal/sync-supervisor.js';
 export {
 	createLocalOwner,

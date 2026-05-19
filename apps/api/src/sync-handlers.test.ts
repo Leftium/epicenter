@@ -85,10 +85,6 @@ function frameSingleByte(messageType: number): Uint8Array {
 	});
 }
 
-function frameAuth(): Uint8Array {
-	return frameSingleByte(MESSAGE_TYPE.AUTH);
-}
-
 /**
  * Build an awareness frame that publishes `liveness.installationId` for
  * the local client of an Awareness instance. Used to simulate what a
@@ -356,7 +352,7 @@ describe('applyMessage AUTH', () => {
 
 		const effect = expectOk(
 			applyMessage({
-				data: frameAuth(),
+				data: frameSingleByte(MESSAGE_TYPE.AUTH),
 				room,
 				connection,
 			}),

@@ -292,9 +292,13 @@ export class Room extends DurableObject {
 					this.awareness.states.set(attachment.clientID, {
 						liveness: { installationId: attachment.installationId },
 					});
+					// y-protocols compares `outdatedTimeout` (30000) against
+					// `Date.now() - lastUpdated`; lib0's `getUnixTime` is `Date.now`
+					// (milliseconds). Writing seconds here causes the outlier loop
+					// to reap restored liveness within ~100ms of wake.
 					this.awareness.meta.set(attachment.clientID, {
 						clock: 1,
-						lastUpdated: Math.floor(Date.now() / 1000),
+						lastUpdated: Date.now(),
 					});
 					restoredClientIDs.push(attachment.clientID);
 				}

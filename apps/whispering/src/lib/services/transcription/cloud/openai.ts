@@ -178,5 +178,3 @@ export const OpenaiTranscriptionServiceLive = {
 		});
 	},
 };
-
-export type OpenaiTranscriptionService = typeof OpenaiTranscriptionServiceLive;

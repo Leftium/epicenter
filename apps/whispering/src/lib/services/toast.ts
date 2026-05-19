@@ -91,5 +91,3 @@ function convertActionToSonner(action: UnifiedNotificationOptions['action']) {
 			};
 	}
 }
-
-export type ToastService = typeof ToastServiceLive;

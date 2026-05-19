@@ -171,6 +171,3 @@ export const DeepgramTranscriptionServiceLive = {
 		return Ok(transcript.trim());
 	},
 };
-
-export type DeepgramTranscriptionService =
-	typeof DeepgramTranscriptionServiceLive;

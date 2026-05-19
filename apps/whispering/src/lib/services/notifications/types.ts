@@ -203,54 +203,6 @@ export function toBrowserNotification({
 }
 
 /**
- * Transform UnifiedNotificationOptions to Chrome extension notification options
- *
- * Mappings:
- * - description → message
- * - icon → iconUrl (with fallback)
- * - silent → priority (-2 for silent, 0 for normal)
- * - action → buttons[0] (single button, excludes 'more-details')
- * - variant: Ignored (only for toasts)
- *
- * @future This will be implemented when extension support is added
- */
-export function toExtensionNotification({
-	action,
-	description,
-	icon,
-	requireInteraction,
-	silent,
-	title,
-}: UnifiedNotificationOptions): ChromeNotificationOptions {
-	return {
-		type: 'basic',
-		title,
-		message: description,
-		iconUrl: icon || '/icon-192.png',
-		requireInteraction,
-		priority: silent ? -2 : 0,
-		buttons:
-			action && action.type !== 'more-details'
-				? [{ title: action.label }]
-				: undefined,
-	};
-}
-
-/**
- * Chrome extension notification options type
- * @future This type will be properly imported when extension support is added
- */
-type ChromeNotificationOptions = {
-	type: 'basic' | 'image' | 'list' | 'progress';
-	title: string;
-	message: string;
-	iconUrl: string;
-	requireInteraction?: boolean;
-	priority?: -2 | -1 | 0 | 1 | 2;
-	buttons?: Array<{ title: string }>;
-};
-
-/**
  * Converts a nanoid string to a numeric ID for Tauri notifications.
  *
  * This function takes a nanoid (alphanumeric random string like "V1StGXR8_Z5jdHi6B-myT")

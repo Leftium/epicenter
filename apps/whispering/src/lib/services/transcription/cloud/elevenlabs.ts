@@ -65,6 +65,3 @@ export const ElevenLabsTranscriptionServiceLive = {
 		});
 	},
 };
-
-export type ElevenLabsTranscriptionService =
-	typeof ElevenLabsTranscriptionServiceLive;

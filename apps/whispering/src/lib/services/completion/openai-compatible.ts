@@ -4,7 +4,7 @@ import { customFetch } from '$lib/services/http';
 import type { CompletionService } from './types';
 import { CompletionError } from './types';
 
-export type OpenAiCompatibleConfig = {
+type OpenAiCompatibleConfig = {
 	/**
 	 * Human-readable provider name used in error messages.
 	 *

@@ -59,7 +59,6 @@ export const FsServiceLive = {
 		}),
 };
 
-export type FsService = typeof FsServiceLive;
 
 /** Reads a file from disk and creates a Blob with the correct MIME type. */
 async function createBlobFromPath(path: string): Promise<Blob> {

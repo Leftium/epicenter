@@ -2,28 +2,29 @@
  * executeRun peer dispatch tests.
  *
  * Verifies the daemon preserves remote dispatch errors in one `/run` envelope
- * before the response crosses the IPC boundary. The presence surface is
- * faked here so the test can exercise `peers.list()` and the
+ * before the response crosses the IPC boundary. The live-device surface is
+ * faked here so the test can exercise `devices.list()` and the
  * `collab.dispatch` path without spinning up real Yjs sync.
  */
 
 import { describe, expect, test } from 'bun:test';
 import type { Result } from 'wellcrafted/result';
 
+import {
+	DispatchError,
+	type DispatchRequest,
+	type LiveDevice,
+} from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
-import type { PresenceEntry } from '../document/presence.js';
-import { DispatchError } from '../document/rpc.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import type { RunSyncStatus } from './run-errors.js';
 import { executeRun } from './run-handler.js';
 import type { DaemonServedRoute } from './types.js';
 
-type FakeDispatch = (
-	action: string,
-	input: unknown,
-	options: { to: string; signal: AbortSignal },
-) => Promise<Result<unknown, DispatchError>>;
+type FakeDispatch = <TOutput = unknown>(
+	req: DispatchRequest,
+) => Promise<Result<TOutput, DispatchError>>;
 
 function fakeEntry({
 	route = 'demo',
@@ -31,19 +32,17 @@ function fakeEntry({
 		tabs_list: defineQuery({ handler: () => [] }),
 	},
 	syncStatus = { phase: 'connected' },
-	knownPeers = [],
-	dispatch = async () => ({ data: null, error: null }),
+	knownInstalls = [],
+	dispatch = (async () => ({ data: null, error: null })) as FakeDispatch,
 }: {
 	route?: string;
 	actions?: ActionRegistry;
 	syncStatus?: SyncStatus;
-	knownPeers?: string[];
+	knownInstalls?: string[];
 	dispatch?: FakeDispatch;
 } = {}): DaemonServedRoute {
-	const peers: PresenceEntry[] = knownPeers.map((installationId) => ({
-		connectionId: `${installationId}-conn`,
+	const devices: LiveDevice[] = knownInstalls.map((installationId) => ({
 		installationId,
-		subject: 'test-user',
 	}));
 	return {
 		route,
@@ -51,8 +50,8 @@ function fakeEntry({
 			collaboration: {
 				actions,
 				status: syncStatus,
-				peers: {
-					list: () => peers,
+				devices: {
+					list: () => devices,
 				},
 				dispatch,
 			},
@@ -72,7 +71,7 @@ describe('executeRun peer dispatch', () => {
 			retries: 2,
 			lastErrorType: 'connection',
 		} satisfies RunSyncStatus;
-		const entry = fakeEntry({ syncStatus, knownPeers: [] });
+		const entry = fakeEntry({ syncStatus, knownInstalls: [] });
 
 		const result = await executeRun([entry], {
 			actionPath: 'demo.tabs_list',
@@ -89,16 +88,16 @@ describe('executeRun peer dispatch', () => {
 		expect(result.error.syncStatus).toEqual(runSyncStatus);
 	});
 
-	test('remote dispatch sends only the action key, to the resolved connectionId', async () => {
+	test('remote dispatch sends the resolved installationId and action key', async () => {
 		let invokedAction = '';
 		let invokedTo = '';
 		const entry = fakeEntry({
-			knownPeers: ['mac'],
-			dispatch: async (action, _input, { to }) => {
-				invokedAction = action;
-				invokedTo = to;
+			knownInstalls: ['mac'],
+			dispatch: (async (req) => {
+				invokedAction = req.action;
+				invokedTo = req.to;
 				return { data: [], error: null };
-			},
+			}) as FakeDispatch,
 		});
 
 		const result = await executeRun([entry], {
@@ -110,17 +109,17 @@ describe('executeRun peer dispatch', () => {
 
 		expect(result.error).toBeNull();
 		expect(invokedAction).toBe('tabs_list');
-		expect(invokedTo).toBe('mac-conn');
+		expect(invokedTo).toBe('mac');
 	});
 
 	test('remote dispatch surfaces DispatchError unchanged', async () => {
 		const entry = fakeEntry({
-			knownPeers: ['mac'],
-			dispatch: async () =>
+			knownInstalls: ['mac'],
+			dispatch: (async () =>
 				DispatchError.ActionFailed({
 					action: 'tabs_list',
-					cause: new Error('boom'),
-				}),
+					cause: 'boom',
+				})) as FakeDispatch,
 		});
 
 		const result = await executeRun([entry], {
@@ -135,6 +134,29 @@ describe('executeRun peer dispatch', () => {
 			throw new Error('expected RemoteCallFailed');
 		}
 		expect(result.error.cause).toMatchObject({ name: 'ActionFailed' });
+	});
+
+	test('RecipientOffline from the relay surfaces as RemoteCallFailed', async () => {
+		// A live local awareness state plus a relay that reports the target as
+		// offline (e.g. socket dropped between the local list and the dispatch).
+		const entry = fakeEntry({
+			knownInstalls: ['mac'],
+			dispatch: (async () =>
+				DispatchError.RecipientOffline({ to: 'mac' })) as FakeDispatch,
+		});
+
+		const result = await executeRun([entry], {
+			actionPath: 'demo.tabs_list',
+			input: undefined,
+			peerTarget: 'mac',
+			waitMs: 25,
+		});
+
+		expect(result.error?.name).toBe('RemoteCallFailed');
+		if (result.error?.name !== 'RemoteCallFailed') {
+			throw new Error('expected RemoteCallFailed');
+		}
+		expect(result.error.cause).toMatchObject({ name: 'RecipientOffline' });
 	});
 });
 

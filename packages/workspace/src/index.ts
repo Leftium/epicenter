@@ -158,6 +158,10 @@ export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-export { type PresenceEntry } from './document/presence.js';
-export { DispatchError } from './document/rpc.js';
+export {
+	DispatchError,
+	type DispatchFor,
+	type DispatchRequest,
+	type LiveDevice,
+} from './document/dispatch.js';
 export { roomWsUrl, websocketUrl } from './document/transport.js';

@@ -66,7 +66,7 @@ describe('emitRemoteCallError', () => {
 			'macbook-pro',
 			DispatchError.ActionFailed({
 				action: 'tabs_close',
-				cause: new Error('handler boom'),
+				cause: 'handler boom',
 			}).error,
 		);
 		expect(cap.lines).toEqual([

@@ -34,11 +34,11 @@ function makeRuntime(
 	return {
 		collaboration: {
 			actions,
-			peers: {
+			devices: {
 				list: () => [],
 			},
 			status: { phase: 'connected' },
-			dispatch: async () => ({ data: null, error: null }),
+			dispatch: async () => ({ data: null, error: null }) as never,
 		},
 	};
 }

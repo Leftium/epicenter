@@ -5,9 +5,9 @@
  *
  * Each verb is a one-line shell shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  collaboration.peers.list()                       all routes
- *   /list   ->  flat manifest of `${route}.${action_key}` -> meta  all routes
- *   /run    ->  invokeAction(...) | collab.dispatch(...)          route-routed
+ *   /peers  ->  collaboration.devices.list()                       all routes
+ *   /list   ->  flat manifest of `${route}.${action_key}` -> meta   all routes
+ *   /run    ->  invokeAction(...) | collab.dispatch(...)            route-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -45,18 +45,18 @@ export const RunRequest = type({
 export type RunRequest = typeof RunRequest.infer;
 
 /**
- * Row shape returned by `/peers`. One row per `(route, connectionId)` pair,
+ * Row shape returned by `/peers`. One row per `(route, installationId)` pair,
  * tagged with its route name so a multi-route daemon can fan out.
  *
- * `subject` is the server-attested user id; `installationId` is the install-stable,
- * client-claimed identity; `connectionId` is the per-socket routing address used
- * by `collab.dispatch({ to })`.
+ * `installationId` is the install-stable, client-claimed identity and the
+ * address used by `collab.dispatch({ to })`. There is no per-socket
+ * `connectionId` or server-stamped `subject` on the wire: the relay routes
+ * by `installationId` only, and every connection in a subject-scoped DO
+ * shares the same subject by construction.
  */
 export const PeerSnapshot = type({
 	route: 'string',
-	connectionId: 'string',
 	installationId: 'string',
-	subject: 'string',
 });
 export type PeerSnapshot = typeof PeerSnapshot.infer;
 
@@ -77,12 +77,10 @@ export function buildDaemonApp(
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
 			for (const entry of runtimes) {
-				for (const peer of entry.runtime.collaboration.peers.list()) {
+				for (const device of entry.runtime.collaboration.devices.list()) {
 					rows.push({
 						route: entry.route,
-						connectionId: peer.connectionId,
-						installationId: peer.installationId,
-						subject: peer.subject,
+						installationId: device.installationId,
 					});
 				}
 			}

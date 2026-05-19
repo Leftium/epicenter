@@ -4,8 +4,14 @@
  *
  * `epicenter run` is a shell shortcut for one daemon runtime primitive:
  *
- *   request.peerTarget === undefined   ->  invokeAction(...)
- *   request.peerTarget === <installationId> ->  collab.peers.list().find((p) => p.installationId === ...) -> collab.dispatch(...)
+ *   request.peerTarget === undefined        ->  invokeAction(...)
+ *   request.peerTarget === <installationId> ->  collab.dispatch({ to, action, input, signal })
+ *
+ * The dispatch endpoint is HTTP-backed and addresses devices by
+ * `installationId` directly; the relay routes to the most-recently-
+ * connected socket for that install. If the relay has no live socket
+ * for the target, the dispatch resolves with `RecipientOffline`; the
+ * `/run` route forwards that under `RemoteCallFailed`.
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
@@ -91,14 +97,17 @@ async function invokeRemote({
 }): Promise<RunResponse> {
 	const { runtime } = routeRuntime;
 
-	// `peerTarget` is an `installationId` from the CLI; presence rows are keyed by
-	// `connectionId`, so pick the first (lowest-`connectionId`) tab on that install.
-	// `peers.list()` is already sorted by `connectionId` ascending, so `find` here
-	// is deterministic without an extra sort.
-	const peer = runtime.collaboration.peers
+	// Local liveness pre-check: if no awareness state reports this
+	// `installationId` online, return `PeerNotFound` so the renderer
+	// distinguishes "you addressed a device that isn't connected" from
+	// "the target was online but the call failed." The HTTP dispatch
+	// would otherwise return `RecipientOffline`, which the renderer maps
+	// to `RemoteCallFailed`; keeping the local check preserves the
+	// existing exit-code split.
+	const online = runtime.collaboration.devices
 		.list()
-		.find((p) => p.installationId === peerTarget);
-	if (!peer) {
+		.some((d) => d.installationId === peerTarget);
+	if (!online) {
 		return RunError.PeerNotFound({
 			peerTarget,
 			waitMs,
@@ -106,8 +115,10 @@ async function invokeRemote({
 		});
 	}
 
-	const result = await runtime.collaboration.dispatch(localPath, actionInput, {
-		to: peer.connectionId,
+	const result = await runtime.collaboration.dispatch({
+		to: peerTarget,
+		action: localPath,
+		input: actionInput,
 		signal: AbortSignal.timeout(waitMs),
 	});
 

@@ -473,8 +473,13 @@ app.post(
  * model.
  */
 
-/** Resolve the authenticated subject's room to the internal sync namespace. */
-function getResolvedRoom(c: Context<Env>) {
+/**
+ * Resolve a route room for the authenticated subject.
+ *
+ * The route owns the subject boundary, so the sync engine receives the
+ * internal Durable Object name and never needs to know about auth state.
+ */
+function resolveSubjectRoom(c: Context<Env>) {
 	const room = c.req.param('room');
 	if (room == null) {
 		throw new Error('Room route is missing required room parameter');
@@ -534,7 +539,7 @@ app.get(
 		tags: ['rooms'],
 	}),
 	async (c) => {
-		const { roomName, room } = getResolvedRoom(c);
+		const { roomName, room } = resolveSubjectRoom(c);
 		const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
 
 		if (isWebSocketUpgrade(c)) {
@@ -571,7 +576,7 @@ app.post(
 		tags: ['rooms'],
 	}),
 	async (c) => {
-		const { roomName, room } = getResolvedRoom(c);
+		const { roomName, room } = resolveSubjectRoom(c);
 		const sync = createSyncEngine({
 			rooms: cloudflareDurableObjectRooms(c.env.ROOM),
 		});
@@ -622,7 +627,7 @@ app.post(
 		}),
 	),
 	async (c) => {
-		const { roomName, room } = getResolvedRoom(c);
+		const { roomName, room } = resolveSubjectRoom(c);
 		const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
 		const body = c.req.valid('json');
 		const result = await rooms.dispatch(roomName, body);

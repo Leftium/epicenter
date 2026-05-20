@@ -1,7 +1,7 @@
 import { MAX_PAYLOAD_BYTES } from './constants';
 import type { DispatchResult, DispatchRpcRequest, Room } from './room';
 
-export type SyncHttpRooms = {
+type SyncHttpRooms = {
 	sync(
 		roomName: string,
 		body: Uint8Array,
@@ -12,7 +12,7 @@ export type SyncHttpRooms = {
 	getDoc(roomName: string): Promise<{ data: Uint8Array; storageBytes: number }>;
 };
 
-export type SyncRooms = SyncHttpRooms & {
+type SyncRooms = SyncHttpRooms & {
 	handleWebSocket(roomName: string, request: Request): Promise<Response>;
 	dispatch(
 		roomName: string,

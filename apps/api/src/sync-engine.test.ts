@@ -15,7 +15,7 @@ import { expect, test } from 'bun:test';
 import { createSyncEngine, type SyncRoom } from './sync-engine.js';
 
 class FakeRoom implements SyncRoom {
-	fetchRequests: Request[] = [];
+	webSocketRequests: Request[] = [];
 	syncBodies: Uint8Array[] = [];
 
 	constructor(
@@ -26,8 +26,8 @@ class FakeRoom implements SyncRoom {
 		} = {},
 	) {}
 
-	async fetch(request: Request): Promise<Response> {
-		this.fetchRequests.push(request);
+	async handleWebSocket(request: Request): Promise<Response> {
+		this.webSocketRequests.push(request);
 		return new Response('upgraded', { status: 101 });
 	}
 
@@ -140,7 +140,7 @@ test('handleHttpSync rejects oversized payloads before selecting a room', async 
 	expect(room.syncBodies).toEqual([]);
 });
 
-test('handleWebSocket forwards the raw request by resolved room name', async () => {
+test('handleWebSocket forwards the raw request to the room WebSocket capability', async () => {
 	const room = new FakeRoom();
 	const { engine, requestedRoomNames } = setup({
 		'subject:user-1:rooms:notes': room,
@@ -156,7 +156,7 @@ test('handleWebSocket forwards the raw request by resolved room name', async () 
 
 	expect(response.status).toBe(101);
 	expect(requestedRoomNames).toEqual(['subject:user-1:rooms:notes']);
-	expect(room.fetchRequests).toEqual([request]);
+	expect(room.webSocketRequests).toEqual([request]);
 });
 
 test('sync engine source has no host auth or billing imports', async () => {

@@ -6,7 +6,7 @@ export type SyncRooms = {
 };
 
 export type SyncRoom = {
-	fetch(request: Request): Promise<Response>;
+	handleWebSocket(request: Request): Promise<Response>;
 	sync(body: Uint8Array): Promise<{
 		diff: Uint8Array | null;
 		storageBytes: number;
@@ -20,7 +20,21 @@ export function cloudflareDurableObjectRooms(
 ): SyncRooms {
 	return {
 		get(roomName) {
-			return roomNamespace.get(roomNamespace.idFromName(roomName));
+			const room = roomNamespace.get(roomNamespace.idFromName(roomName));
+			return {
+				handleWebSocket(request) {
+					return room.fetch(request);
+				},
+				sync(body) {
+					return room.sync(body);
+				},
+				getDoc() {
+					return room.getDoc();
+				},
+				dispatch(request) {
+					return room.dispatch(request);
+				},
+			};
 		},
 	};
 }
@@ -44,7 +58,7 @@ export function createSyncEngine(
 				roomName: string;
 			},
 		): Promise<Response> {
-			return rooms.get(input.roomName).fetch(request);
+			return rooms.get(input.roomName).handleWebSocket(request);
 		},
 
 		async handleHttpSync(

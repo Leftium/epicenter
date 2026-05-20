@@ -88,9 +88,7 @@ describe('loadProjectConfig', () => {
 	});
 
 	test('throws when daemon routes are still an array', async () => {
-		writeConfig(
-			'export default { daemon: { routes: [{ open() {} }] } };\n',
-		);
+		writeConfig('export default { daemon: { routes: [{ open() {} }] } };\n');
 
 		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
 			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} is invalid`,

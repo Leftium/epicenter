@@ -195,7 +195,7 @@ type SyncRooms = {
 };
 
 type SyncRoom = {
-  fetch(request: Request): Promise<Response>;
+  handleWebSocket(request: Request): Promise<Response>;
   sync(update: Uint8Array): Promise<{ diff: Uint8Array | null; storageBytes: number }>;
   getDoc(): Promise<{ data: Uint8Array; storageBytes: number }>;
   dispatch(request: DispatchRpcRequest): Promise<DispatchResult>;
@@ -203,6 +203,12 @@ type SyncRoom = {
 ```
 
 The exact method names can change during implementation. Phase 1 keeps the Cloudflare WebSocket upgrade as a raw `Request`, so `Room.upgrade()` still reads `installationId` from the URL. The important constraint is that the engine receives a resolved `roomName`, not a user session or auth client.
+
+Phase 1 follow-up decision: the internal `SyncRoom` contract uses
+`handleWebSocket(request)`, not Durable Object `fetch(request)`. The Cloudflare
+adapter is the only place that maps `handleWebSocket` to `room.fetch(request)`.
+This keeps Cloudflare runtime vocabulary out of the engine contract without
+pretending the package API is final.
 
 ## Host Composition
 
@@ -318,6 +324,7 @@ roomName =
 | Deletion | Deferred engine method | Keep deletion out of Phase 1 until an admin route needs it. |
 | Token verifier | Not in v1 engine | Token verification belongs to the host route unless we build a separate relay process. |
 | Room boundary | One Yjs doc room | A Durable Object per Yjs doc is the clean Cloudflare boundary. |
+| WebSocket room method | `handleWebSocket(request)` | The engine names the capability it needs; the Cloudflare adapter owns the `fetch(request)` bridge. |
 | Read-only mode | Deferred | Write access is the only v1 sync capability. |
 
 ## What This Refuses
@@ -344,6 +351,7 @@ These can be built in host applications or in a later packaged relay. They shoul
 - [x] **1.4** Keep `requireOAuthUser` and billing checks in `apps/api/src/app.ts`.
 - [x] **1.5** Return metering data from engine calls instead of adding callbacks.
 - [x] **1.6** Add tests proving auth stays outside the engine.
+- [x] **1.7** Rename the internal WebSocket room capability away from Durable Object `fetch(request)`.
 
 Phase 1 note: the first implementation keeps the boundary inside `apps/api`.
 `app.ts` still resolves the subject-scoped room name and records Postgres usage.
@@ -361,6 +369,10 @@ host-owned storage facts outside the engine. Incoming sync traffic and persisted
 update bytes may still be useful for diagnostics, abuse detection, or cost
 analysis, but they should not become billing fields until the product model
 needs them and the persistence layer can measure them honestly.
+
+Adapter stance: crossws stays a future runtime adapter candidate. It should not
+become the core sync engine contract unless a second runtime proves that shape.
+For now, `apps/api` keeps one Cloudflare adapter around the Durable Object room.
 
 ### Phase 2: Make The Engine Package Boundary Explicit
 
@@ -386,7 +398,7 @@ needs them and the persistence layer can measure them honestly.
 1. Should `roomName` stay subject-scoped (`subject:{subject}:rooms:{room}`) or move to workspace-scoped names when workspace IDs become first-class sync namespaces?
 2. Should `handleWebSocket` read `installationId` from the URL, headers, or a parsed input supplied by the host route?
 3. Should `dispatch` remain part of the sync engine, or should live-device RPC become a separate engine layered beside sync?
-4. Should the Cloudflare Durable Object adapter live in `apps/api` first or move directly into a package?
+4. When the package boundary is extracted, should the Cloudflare Durable Object adapter move with the engine package or remain host-owned?
 5. Should WebSocket sync eventually report storage observations, or should
    storage metering stay tied to HTTP sync and periodic host-side measurement?
 

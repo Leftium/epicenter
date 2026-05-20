@@ -401,9 +401,10 @@ export class Room extends DurableObject {
 	 * Applies the client update to the live doc and returns the binary
 	 * diff the client is missing, or `null` if already in sync.
 	 */
-	async sync(
-		body: Uint8Array,
-	): Promise<{ diff: Uint8Array | null; storageBytes: number }> {
+	async sync(body: Uint8Array): Promise<{
+		diff: Uint8Array | null;
+		storageBytes: number;
+	}> {
 		const { stateVector: clientSV, update } = decodeSyncRequest(body);
 
 		if (update.byteLength > 0) {
@@ -415,7 +416,10 @@ export class Room extends DurableObject {
 			? null
 			: Y.encodeStateAsUpdateV2(this.doc, clientSV);
 
-		return { diff, storageBytes: this.ctx.storage.sql.databaseSize };
+		return {
+			diff,
+			storageBytes: this.ctx.storage.sql.databaseSize,
+		};
 	}
 
 	/**
@@ -584,7 +588,10 @@ export class Room extends DurableObject {
 		}
 		// broadcast
 		if (effect.learnedClientIDs?.length) {
-			this.maybeRecordClientID(ws, connection, effect.learnedClientIDs[0]!);
+			const firstLearnedClientID = effect.learnedClientIDs[0];
+			if (firstLearnedClientID != null) {
+				this.maybeRecordClientID(ws, connection, firstLearnedClientID);
+			}
 		}
 		this.broadcast(ws, effect.data);
 	}
@@ -775,7 +782,7 @@ export class Room extends DurableObject {
 /**
  * Extract the owning subject from the DO name.
  *
- * DO names are formatted by `getRoomStub` in app.ts as
+ * DO names are formatted by the host route in app.ts as
  * `subject:{subject}:rooms:{room}`. Every connection to this DO shares the
  * same auth context, so `subject` is room-scoped, not connection-scoped.
  *

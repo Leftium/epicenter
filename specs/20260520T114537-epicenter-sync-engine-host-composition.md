@@ -1,7 +1,7 @@
 # Epicenter Sync Engine Host Composition
 
 **Date**: 2026-05-20
-**Status**: Draft
+**Status**: In Progress
 **Author**: AI-assisted
 
 ## Overview
@@ -99,7 +99,6 @@ const result = await sync.handleHttpSync(c.req.raw, {
 await recordUsage({
   subject: access.subject,
   room: access.room,
-  bytesWritten: result.bytesWritten,
   storageBytes: result.storageBytes,
 });
 
@@ -144,8 +143,6 @@ The engine has no idea whether the host used Better Auth, a reverse proxy, a sha
 ## Proposed Surface
 
 ```ts
-export type SyncEngine = ReturnType<typeof createSyncEngine>;
-
 export function createSyncEngine(
   {
     rooms,
@@ -161,10 +158,9 @@ export function createSyncEngine(
       request: Request,
       input: {
         roomName: string;
-        installationId: string;
       },
     ) {
-      // Upgrade, route to room, and return 101 response.
+      // Route the already-authorized upgrade request to the room backend.
     },
 
     async handleHttpSync(
@@ -176,7 +172,6 @@ export function createSyncEngine(
       // Decode sync request, route to room, and return response + metering.
       return {
         response,
-        bytesWritten,
         storageBytes,
       };
     },
@@ -187,10 +182,6 @@ export function createSyncEngine(
 
     async dispatch(roomName: string, request: DispatchRpcRequest) {
       // Route live-device dispatch through the room runtime.
-    },
-
-    async deleteRoom(roomName: string) {
-      // Delete persisted room state.
     },
   };
 }
@@ -204,15 +195,14 @@ type SyncRooms = {
 };
 
 type SyncRoom = {
-  handleWebSocket(request: Request, input: { installationId: string }): Promise<Response>;
+  fetch(request: Request): Promise<Response>;
   sync(update: Uint8Array): Promise<{ diff: Uint8Array | null; storageBytes: number }>;
-  getSnapshot(): Promise<{ data: Uint8Array; storageBytes: number }>;
+  getDoc(): Promise<{ data: Uint8Array; storageBytes: number }>;
   dispatch(request: DispatchRpcRequest): Promise<DispatchResult>;
-  deleteStorage(): Promise<void>;
 };
 ```
 
-The exact method names can change during implementation. The important constraint is that the engine receives a resolved `roomName`, not a user session or auth client.
+The exact method names can change during implementation. Phase 1 keeps the Cloudflare WebSocket upgrade as a raw `Request`, so `Room.upgrade()` still reads `installationId` from the URL. The important constraint is that the engine receives a resolved `roomName`, not a user session or auth client.
 
 ## Host Composition
 
@@ -259,7 +249,6 @@ app.all('/rooms/:room/*', async (c) => {
 
   return sync.handleWebSocket(c.req.raw, {
     roomName: `subject:solo:rooms:${c.req.param('room')}`,
-    installationId: readInstallationId(c.req.raw),
   });
 });
 ```
@@ -280,7 +269,6 @@ app.get('/rooms/:room', async (c) => {
 
   return sync.handleWebSocket(c.req.raw, {
     roomName: `subject:${user.tenantScopedId}:rooms:${c.req.param('room')}`,
-    installationId: readInstallationId(c.req.raw),
   });
 });
 ```
@@ -327,7 +315,7 @@ roomName =
 | Auth ownership | Host route | Better Auth, enterprise IAM, and self-host secrets are host concerns. |
 | Room access | Resolved before engine call | The engine receives `roomName`, not sessions or users. |
 | Metering | Return values, not hooks | The host can record usage after engine calls. |
-| Deletion | Explicit engine method | Hosts call `deleteRoom` from their own admin routes. |
+| Deletion | Deferred engine method | Keep deletion out of Phase 1 until an admin route needs it. |
 | Token verifier | Not in v1 engine | Token verification belongs to the host route unless we build a separate relay process. |
 | Room boundary | One Yjs doc room | A Durable Object per Yjs doc is the clean Cloudflare boundary. |
 | Read-only mode | Deferred | Write access is the only v1 sync capability. |
@@ -350,12 +338,29 @@ These can be built in host applications or in a later packaged relay. They shoul
 
 ### Phase 1: Extract Engine Shape From `apps/api`
 
-- [ ] **1.1** Create a sync engine module near the existing room route code.
-- [ ] **1.2** Move HTTP sync request handling behind `sync.handleHttpSync(...)`.
-- [ ] **1.3** Move WebSocket upgrade forwarding behind `sync.handleWebSocket(...)`.
-- [ ] **1.4** Keep `requireOAuthUser` and billing checks in `apps/api/src/app.ts`.
-- [ ] **1.5** Return metering data from engine calls instead of adding callbacks.
-- [ ] **1.6** Add tests proving auth stays outside the engine.
+- [x] **1.1** Create a sync engine module near the existing room route code.
+- [x] **1.2** Move HTTP sync request handling behind `sync.handleHttpSync(...)`.
+- [x] **1.3** Move WebSocket upgrade forwarding behind `sync.handleWebSocket(...)`.
+- [x] **1.4** Keep `requireOAuthUser` and billing checks in `apps/api/src/app.ts`.
+- [x] **1.5** Return metering data from engine calls instead of adding callbacks.
+- [x] **1.6** Add tests proving auth stays outside the engine.
+
+Phase 1 note: the first implementation keeps the boundary inside `apps/api`.
+`app.ts` still resolves the subject-scoped room name and records Postgres usage.
+`sync-engine.ts` only receives `roomName`, forwards sync calls to the room
+runtime, and returns HTTP sync metering to the host route.
+
+Write-through metering is deferred. Phase 1 returns `storageBytes`, the durable
+measurement the host can record today. If write-throughput billing becomes
+necessary, it should be measured at the persistence boundary rather than naming
+incoming update bytes as written bytes.
+
+Billing stance: bill durable footprint before sync churn. Epicenter Cloud can
+periodically aggregate room `storageBytes`, asset or blob storage, and other
+host-owned storage facts outside the engine. Incoming sync traffic and persisted
+update bytes may still be useful for diagnostics, abuse detection, or cost
+analysis, but they should not become billing fields until the product model
+needs them and the persistence layer can measure them honestly.
 
 ### Phase 2: Make The Engine Package Boundary Explicit
 
@@ -382,7 +387,8 @@ These can be built in host applications or in a later packaged relay. They shoul
 2. Should `handleWebSocket` read `installationId` from the URL, headers, or a parsed input supplied by the host route?
 3. Should `dispatch` remain part of the sync engine, or should live-device RPC become a separate engine layered beside sync?
 4. Should the Cloudflare Durable Object adapter live in `apps/api` first or move directly into a package?
-5. Should HTTP sync and WebSocket sync return the same metering shape?
+5. Should WebSocket sync eventually report storage observations, or should
+   storage metering stay tied to HTTP sync and periodic host-side measurement?
 
 ## Working Rule
 

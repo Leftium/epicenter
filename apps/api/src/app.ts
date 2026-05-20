@@ -38,9 +38,9 @@ import {
 } from './auth-pages';
 import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
-import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
+import { cloudflareDurableObjectRooms, createSyncEngine } from './sync-engine';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
@@ -473,15 +473,22 @@ app.post(
  * model.
  */
 
-/** Get a Room DO stub and its DO name for the authenticated subject's room. */
-function getRoomStub(c: Context<Env>) {
-	const room = c.req.param('room')!;
-	const doName = `subject:${c.var.user.id}:rooms:${room}`;
+/** Resolve the authenticated subject's room to the internal sync namespace. */
+function getResolvedRoom(c: Context<Env>) {
+	const room = c.req.param('room');
+	if (room == null) {
+		throw new Error('Room route is missing required room parameter');
+	}
 	return {
-		stub: c.env.ROOM.get(c.env.ROOM.idFromName(doName)),
-		doName,
+		roomName: `subject:${c.var.user.id}:rooms:${room}`,
 		room,
 	};
+}
+
+function getSyncEngine(c: Context<Env>) {
+	return createSyncEngine({
+		rooms: cloudflareDurableObjectRooms(c.env.ROOM),
+	});
 }
 
 /**
@@ -526,22 +533,6 @@ function upsertDoInstance(
 		.catch((e) => console.error('[do-tracking] upsert failed:', e));
 }
 
-/**
- * Wrap a Uint8Array in a Response with a fresh ArrayBuffer copy.
- *
- * Yjs encoders (`Y.encodeStateAsUpdateV2`, sync diffs) return `Uint8Array`s
- * that are subarray views of a larger internal encoder buffer. Passing the
- * raw view to `new Response()` causes some runtimes to serialize the entire
- * backing buffer. The copy isolates the bytes we actually want to send.
- */
-function binaryResponse(data: Uint8Array): Response {
-	const body = new ArrayBuffer(data.byteLength);
-	new Uint8Array(body).set(data);
-	return new Response(body, {
-		headers: { 'content-type': 'application/octet-stream' },
-	});
-}
-
 app.get(
 	'/rooms/:room',
 	describeRoute({
@@ -549,29 +540,30 @@ app.get(
 		tags: ['rooms'],
 	}),
 	async (c) => {
-		const { stub, doName, room } = getRoomStub(c);
+		const { roomName, room } = getResolvedRoom(c);
+		const sync = getSyncEngine(c);
 
 		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
 					userId: c.var.user.id,
 					resourceName: room,
-					doName,
+					doName: roomName,
 				}),
 			);
-			return stub.fetch(c.req.raw);
+			return sync.handleWebSocket(c.req.raw, { roomName });
 		}
 
-		const { data, storageBytes } = await stub.getDoc();
+		const { response, storageBytes } = await sync.getSnapshot(roomName);
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
 				resourceName: room,
-				doName,
+				doName: roomName,
 				storageBytes,
 			}),
 		);
-		return binaryResponse(data);
+		return response;
 	},
 );
 
@@ -582,25 +574,22 @@ app.post(
 		tags: ['rooms'],
 	}),
 	async (c) => {
-		const body = new Uint8Array(await c.req.arrayBuffer());
-		if (body.byteLength > MAX_PAYLOAD_BYTES) {
-			return c.body('Payload too large', 413);
+		const { roomName, room } = getResolvedRoom(c);
+		const sync = getSyncEngine(c);
+		const result = await sync.handleHttpSync(c.req.raw, { roomName });
+
+		if (result.storageBytes != null) {
+			c.var.afterResponse.push(
+				upsertDoInstance(c.var.db, {
+					userId: c.var.user.id,
+					resourceName: room,
+					doName: roomName,
+					storageBytes: result.storageBytes,
+				}),
+			);
 		}
 
-		const { stub, doName, room } = getRoomStub(c);
-		const { diff, storageBytes } = await stub.sync(body);
-
-		c.var.afterResponse.push(
-			upsertDoInstance(c.var.db, {
-				userId: c.var.user.id,
-				resourceName: room,
-				doName,
-				storageBytes,
-			}),
-		);
-
-		if (!diff) return c.body(null, 204);
-		return binaryResponse(diff);
+		return result.response;
 	},
 );
 
@@ -634,15 +623,16 @@ app.post(
 		}),
 	),
 	async (c) => {
-		const { stub, doName, room } = getRoomStub(c);
+		const { roomName, room } = getResolvedRoom(c);
+		const sync = getSyncEngine(c);
 		const body = c.req.valid('json');
-		const result = await stub.dispatch(body);
+		const result = await sync.dispatch(roomName, body);
 
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
 				resourceName: room,
-				doName,
+				doName: roomName,
 			}),
 		);
 

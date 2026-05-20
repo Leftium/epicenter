@@ -63,6 +63,7 @@
 		"diff": "^8.0.3",
 		"drizzle-orm": "catalog:",
 		"elysia": "^1.2.25",
+		"env-paths": "^3.0.0",
 		"fflate": "catalog:",
 		"hono": "catalog:",
 		"lib0": "catalog:",

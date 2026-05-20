@@ -104,9 +104,7 @@ async function openOneDaemonRoute({
 	definition: DaemonWorkspaceDefinition;
 	projectDir: ProjectDir;
 	auth: AuthClient;
-}): Promise<
-	Result<StartedDaemonRoute, WorkspaceAppError>
-> {
+}): Promise<Result<StartedDaemonRoute, WorkspaceAppError>> {
 	const ctx: DaemonWorkspaceContext = {
 		projectDir,
 		route,

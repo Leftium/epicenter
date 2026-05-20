@@ -18,7 +18,7 @@ import type { AuthClient } from '@epicenter/auth';
 import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import type {
 	DaemonWorkspaceContext,
-	DaemonWorkspaceModule,
+	DaemonWorkspaceDefinition,
 } from '../daemon/define-daemon-workspace.js';
 import type { DaemonRuntime } from '../daemon/types.js';
 
@@ -54,35 +54,29 @@ function testRuntime(
 }
 
 describe('startDaemonWorkspaceApps', () => {
-	test('opens every configured workspace and returns the started routes', async () => {
-		const modules: DaemonWorkspaceModule[] = [
-			{
-				route: 'alpha',
+	test('opens every configured daemon route and returns the started routes', async () => {
+		const routes: Record<string, DaemonWorkspaceDefinition> = {
+			alpha: {
 				async open(ctx: DaemonWorkspaceContext) {
-					return {
-						...testRuntime(),
-						route: ctx.route,
-					};
+					expect(ctx.route).toBe('alpha');
+					return testRuntime();
 				},
 			},
-			{
-				route: 'beta',
+			beta: {
 				async open(ctx: DaemonWorkspaceContext) {
-					return {
-						...testRuntime(),
-						route: ctx.route,
-					};
+					expect(ctx.route).toBe('beta');
+					return testRuntime();
 				},
 			},
-		];
+		};
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
 			auth: stubAuthClient(),
-			routes: modules,
+			routes,
 		});
 		const data = expectOk(result);
-		const routeNames = data.routes
+		const routeNames = data
 			.map((entry) => entry.route)
 			.slice()
 			.sort();
@@ -91,20 +85,18 @@ describe('startDaemonWorkspaceApps', () => {
 
 	test('disposes successfully opened runtimes when a sibling open fails', async () => {
 		const goodMarker = disposeMarkerPath('good');
-		const routes: DaemonWorkspaceModule[] = [
-			{
-				route: 'good',
+		const routes: Record<string, DaemonWorkspaceDefinition> = {
+			good: {
 				async open() {
 					return testRuntime(() => writeFileSync(goodMarker, 'disposed'));
 				},
 			},
-			{
-				route: 'bad',
+			bad: {
 				async open() {
 					throw new Error('boom');
 				},
 			},
-		];
+		};
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
@@ -120,15 +112,16 @@ describe('startDaemonWorkspaceApps', () => {
 
 	test('rejects invalid route names before opening routes', async () => {
 		const marker = disposeMarkerPath('invalid');
-		const routes = [
-			{
-				route: '__proto__',
-				async open() {
-					writeFileSync(marker, 'opened');
-					return testRuntime();
-				},
+		const routes = Object.create(null) as Record<
+			string,
+			DaemonWorkspaceDefinition
+		>;
+		routes.__proto__ = {
+			async open() {
+				writeFileSync(marker, 'opened');
+				return testRuntime();
 			},
-		] satisfies DaemonWorkspaceModule[];
+		};
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
@@ -144,25 +137,49 @@ describe('startDaemonWorkspaceApps', () => {
 		expect(await Bun.file(marker).exists()).toBe(false);
 	});
 
+	test('rejects reserved object route keys before opening routes', async () => {
+		const marker = disposeMarkerPath('constructor');
+		const routes: Record<string, DaemonWorkspaceDefinition> = {
+			constructor: {
+				async open() {
+					writeFileSync(marker, 'opened');
+					return testRuntime();
+				},
+			},
+		};
+
+		const result = await startDaemonWorkspaceApps({
+			projectDir,
+			auth: stubAuthClient(),
+			routes,
+		});
+		const error = expectErr(result);
+		expect(error).toMatchObject({
+			name: 'WorkspaceRouteRejected',
+			route: 'constructor',
+			reason: 'invalid',
+		});
+		expect(await Bun.file(marker).exists()).toBe(false);
+	});
+
 	test('returns an empty result when the config declares no routes', async () => {
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
 			auth: stubAuthClient(),
-			routes: [],
+			routes: {},
 		});
 		const data = expectOk(result);
-		expect(data.routes).toEqual([]);
+		expect(data).toEqual([]);
 	});
 
-	test('refuses to open workspaces when machine auth is signed out', async () => {
-		const routes = [
-			{
-				route: 'alpha',
+	test('refuses to open routes when machine auth is signed out', async () => {
+		const routes = {
+			alpha: {
 				async open() {
 					throw new Error('must not open');
 				},
 			},
-		] satisfies DaemonWorkspaceModule[];
+		} satisfies Record<string, DaemonWorkspaceDefinition>;
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,

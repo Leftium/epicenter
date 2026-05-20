@@ -24,7 +24,7 @@ export const WorkspaceAppError = defineErrors({
 	}),
 	WorkspaceAuthSignedOut: () => ({
 		message:
-			'Cannot open daemon extensions while machine auth is signed out. Run `epicenter auth login` first.',
+			'Cannot open daemon routes while machine auth is signed out. Run `epicenter auth login` first.',
 	}),
 	WorkspaceOpenFailed: ({
 		route,

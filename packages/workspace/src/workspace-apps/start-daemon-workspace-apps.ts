@@ -1,5 +1,5 @@
 /**
- * Config-routed daemon extension startup.
+ * Config-routed daemon route startup.
  *
  * `startDaemonWorkspaceApps()` is the daemon entry point: validate the routes
  * from `epicenter.config.ts`, run every `open(ctx)` in parallel, and either
@@ -7,7 +7,7 @@
  * sibling failed.
  *
  * The host owns auth. It refuses to start when machine auth is signed-out,
- * then builds a per-extension `DaemonWorkspaceContext` where
+ * then builds a per-route `DaemonWorkspaceContext` where
  * `attachEncryption` and `openWebSocket` already carry the auth bindings.
  * Daemon code never touches the auth client directly: it consumes the
  * capabilities in the context and composes a runtime.
@@ -23,13 +23,13 @@ import type * as Y from 'yjs';
 
 import type {
 	DaemonWorkspaceContext,
-	DaemonWorkspaceModule,
+	DaemonWorkspaceDefinition,
 } from '../daemon/define-daemon-workspace.js';
-import type { DaemonRuntime, StartedDaemonRoute } from '../daemon/index.js';
+import type { StartedDaemonRoute } from '../daemon/index.js';
+import { validateDaemonRouteNames } from '../daemon/route-validation.js';
 import { attachEncryption } from '../document/attach-encryption.js';
 import { hashClientId } from '../shared/client-id.js';
 import type { ProjectDir } from '../shared/types.js';
-import { discoverWorkspaceApps, type WorkspaceAppEntry } from './discover.js';
 import {
 	WorkspaceAppError,
 	type WorkspaceAppError as WorkspaceAppErrorType,
@@ -38,35 +38,37 @@ import {
 export type StartDaemonWorkspaceAppsOptions = {
 	projectDir: ProjectDir | string;
 	auth: AuthClient;
-	routes: readonly DaemonWorkspaceModule[];
-};
-
-export type StartDaemonWorkspaceAppsResult = {
-	routes: StartedDaemonRoute[];
+	routes: Readonly<Record<string, DaemonWorkspaceDefinition>>;
 };
 
 /**
- * Bring every configured daemon extension online.
+ * Bring every configured daemon route online.
  *
- * Opens run in parallel because each extension owns its own resources. If any
+ * Opens run in parallel because each route owns its own resources. If any
  * open fails, every successfully opened runtime is disposed before returning
  * the first failure as a structured error.
  */
 export async function startDaemonWorkspaceApps(
 	options: StartDaemonWorkspaceAppsOptions,
-): Promise<Result<StartDaemonWorkspaceAppsResult, WorkspaceAppErrorType>> {
+): Promise<Result<StartedDaemonRoute[], WorkspaceAppErrorType>> {
 	const { auth, routes } = options;
 	const projectDir = resolve(options.projectDir) as ProjectDir;
 	if (auth.state.status === 'signed-out') {
 		return WorkspaceAppError.WorkspaceAuthSignedOut();
 	}
 
-	const discovery = discoverWorkspaceApps(routes);
-	if (discovery.error) return discovery;
-	const entries = discovery.data;
+	const routeEntries = Object.entries(routes);
+	const routeIssue = validateDaemonRouteNames(
+		routeEntries.map(([route]) => route),
+	);
+	if (routeIssue !== null) {
+		return WorkspaceAppError.WorkspaceRouteRejected(routeIssue);
+	}
 
 	const settled = await Promise.allSettled(
-		entries.map((entry) => openOneWorkspaceApp({ entry, projectDir, auth })),
+		routeEntries.map(([route, definition]) =>
+			openOneDaemonRoute({ route, definition, projectDir, auth }),
+		),
 	);
 
 	const opened: StartedDaemonRoute[] = [];
@@ -95,44 +97,48 @@ export async function startDaemonWorkspaceApps(
 		return Err(firstError);
 	}
 
-	return Ok({ routes: opened });
+	return Ok(opened);
 }
 
-type OpenOneOptions = {
-	entry: WorkspaceAppEntry;
+type OpenOneRouteOptions = {
+	route: string;
+	definition: DaemonWorkspaceDefinition;
 	projectDir: ProjectDir;
 	auth: AuthClient;
 };
 
-async function openOneWorkspaceApp({
-	entry,
+async function openOneDaemonRoute({
+	route,
+	definition,
 	projectDir,
 	auth,
-}: OpenOneOptions): Promise<Result<StartedDaemonRoute, WorkspaceAppErrorType>> {
+}: OpenOneRouteOptions): Promise<
+	Result<StartedDaemonRoute, WorkspaceAppErrorType>
+> {
 	const ctx: DaemonWorkspaceContext = {
 		projectDir,
-		route: entry.route,
+		route,
 		clientId: hashClientId(projectDir),
-		installationId: `${entry.route}-daemon`,
+		installationId: `${route}-daemon`,
 		attachEncryption: createDaemonAttachEncryption({
 			auth,
-			route: entry.route,
+			route,
 		}),
 		openWebSocket: auth.openWebSocket,
 	};
 	try {
-		const runtime = (await entry.module.open(ctx)) as DaemonRuntime;
-		return Ok({ route: entry.route, runtime });
+		const runtime = await definition.open(ctx);
+		return Ok({ route, runtime });
 	} catch (cause) {
 		return WorkspaceAppError.WorkspaceOpenFailed({
-			route: entry.route,
+			route,
 			cause,
 		});
 	}
 }
 
 /**
- * Build the encryption attacher the daemon ctx hands to extensions. The
+ * Build the encryption attacher the daemon ctx hands to routes. The
  * keyring closure reads `auth.state` lazily so a late sign-out throws at the
  * next encryption call instead of the host having to re-check on every open.
  */

@@ -10,22 +10,25 @@ import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
 import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
 import { openZhongwenWorkspace } from './workspace.js';
 
-export default defineDaemonWorkspace({
-	route: 'zhongwen',
-	async open({
-		projectDir,
-		clientId,
-		installationId,
-		attachEncryption,
-		openWebSocket,
-	}) {
-		const workspace = openZhongwenWorkspace(attachEncryption, { clientId });
-		const infra = attachDaemonInfrastructure(workspace.ydoc, {
+export function defineZhongwenDaemon() {
+	return defineDaemonWorkspace({
+		async open({
 			projectDir,
-			openWebSocket,
+			clientId,
 			installationId,
-			actions: {},
-		});
-		return { ...workspace, ...infra };
-	},
-});
+			attachEncryption,
+			openWebSocket,
+		}) {
+			const workspace = openZhongwenWorkspace(attachEncryption, { clientId });
+			const infra = attachDaemonInfrastructure(workspace.ydoc, {
+				projectDir,
+				openWebSocket,
+				installationId,
+				actions: {},
+			});
+			return { ...workspace, ...infra };
+		},
+	});
+}
+
+export default defineZhongwenDaemon();

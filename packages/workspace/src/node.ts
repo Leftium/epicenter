@@ -94,6 +94,5 @@ export { hashClientId } from './shared/client-id.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
 	type StartDaemonWorkspaceAppsOptions,
-	type StartDaemonWorkspaceAppsResult,
 	startDaemonWorkspaceApps,
 } from './workspace-apps/start-daemon-workspace-apps.js';

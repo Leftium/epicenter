@@ -18,7 +18,13 @@ import {
 } from './define-config.js';
 
 const EpicenterConfigSchema = type({
-	'routes?': type({ route: 'string', open: 'Function' }).array(),
+	'+': 'reject',
+	'daemon?': {
+		'+': 'reject',
+		'routes?': {
+			'[string]': { '+': 'reject', open: 'Function' },
+		},
+	},
 });
 
 export const ProjectConfigError = defineErrors({
@@ -52,6 +58,11 @@ export async function loadProjectConfig(
 	if (loaded instanceof type.errors) {
 		throw new Error(
 			`loadProjectConfig: ${projectConfigPath} is invalid: ${loaded.toString()}`,
+		);
+	}
+	if (Array.isArray(loaded.daemon?.routes)) {
+		throw new Error(
+			`loadProjectConfig: ${projectConfigPath} is invalid: daemon.routes must be an object keyed by route name.`,
 		);
 	}
 

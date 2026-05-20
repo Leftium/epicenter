@@ -1,19 +1,19 @@
 /**
  * `epicenter daemon up`: start the long-lived foreground daemon for one project.
  *
- * Loads every daemon extension declared in `epicenter.config.ts`, opens each
+ * Loads every daemon route declared in `epicenter.config.ts`, opens each
  * one in parallel, and exposes a Unix-socket IPC channel for that project.
  * `peers`, `list`, and `run` dispatch to this daemon over IPC; without
  * `daemon up` they error with a hint pointing back here.
  *
- * One daemon per project; that daemon serves every configured extension.
- * Resource isolation between extensions is expressed by splitting them into
+ * One daemon per project; that daemon serves every configured route.
+ * Resource isolation between routes is expressed by splitting them into
  * different projects, not by a flag.
  *
  * Foreground by design; backgrounding is the user's job (see Invariant 5
  * in the design spec).
  *
- * See `specs/20260516T180000-folder-routed-daemon-extensions.md`.
+ * See `specs/20260520T120000-code-composed-daemon-route-map.md`.
  */
 
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
@@ -38,9 +38,17 @@ import {
 import { Ok, type Result, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import { cmd } from '../util/cmd.js';
-import { projectOption } from '../util/common-options.js';
 
 const CLI_VERSION = packageJson.version;
+
+const upProjectOption = {
+	type: 'string' as const,
+	description:
+		'Project root, directory under a project, or directory where daemon up should create epicenter.config.ts.',
+	default: () => process.cwd(),
+	defaultDescription: 'current working directory',
+	coerce: (projectDir: string) => projectDir,
+};
 
 /**
  * Sync-status / presence lines write directly to stderr so they reach the
@@ -64,7 +72,7 @@ export type UpOptions = {
  * startup, exercise the IPC handler in-process, and call `teardown()` to
  * release resources without spawning a child.
  *
- * - `runtimes` is every daemon extension runtime the project declares; the
+ * - `runtimes` is every daemon route runtime the project declares; the
  *   daemon serves them all and routes IPC requests by route.
  * - `metadata` is what was written to disk.
  * - `teardown()` closes the server, asyncDisposes the runtimes, releases the
@@ -73,20 +81,19 @@ export type UpOptions = {
 export type UpHandle = {
 	runtimes: StartedDaemonRoute[];
 	metadata: DaemonMetadata;
-	socketPath: string;
 	teardown: () => Promise<void>;
 };
 
 /**
  * Daemon body. Idempotently sets up disk state, opens every configured daemon
- * extension, binds the IPC socket, and returns a handle. The yargs `handler`
+ * route, binds the IPC socket, and returns a handle. The yargs `handler`
  * calls this, prints the operator-facing banner, installs SIGINT/SIGTERM,
  * and parks the process; tests call it directly and assert on the returned
  * handle.
  *
- * A SQLite daemon lease claims ownership before any extension import. After
+ * A SQLite daemon lease claims ownership before any route opens. After
  * that, `loadProjectConfig` imports the config, `startDaemonWorkspaceApps`
- * opens every configured extension, and `startDaemonServer` binds the socket.
+ * opens every configured route, and `startDaemonServer` binds the socket.
  */
 export async function runUp(
 	options: UpOptions,
@@ -111,6 +118,7 @@ export async function runUp(
 	let daemonServer: DaemonServer | null = null;
 	let auth: Awaited<ReturnType<typeof createMachineAuthClient>> | null = null;
 	let teardownPromise: Promise<void> | null = null;
+	let startupComplete = false;
 	const teardown = (): Promise<void> => {
 		if (teardownPromise) return teardownPromise;
 		teardownPromise = (async () => {
@@ -120,7 +128,11 @@ export async function runUp(
 			} catch (cause) {
 				closeError = cause;
 			}
-			await safeDisposeStartedRoutes(runtimes);
+			await Promise.allSettled(
+				runtimes.map((entry) =>
+					Promise.resolve(entry.runtime[Symbol.asyncDispose]()),
+				),
+			);
 			if (auth) auth[Symbol.dispose]();
 			if (metadataWritten) unlinkMetadata(projectDir);
 			lease.release();
@@ -131,74 +143,59 @@ export async function runUp(
 
 	try {
 		auth = await createMachineAuthClient();
-	} catch (cause) {
-		await teardown();
-		throw cause;
-	}
 
-	const config = await (async () => {
-		try {
-			const { data, error } = await loadProjectConfig(projectDir);
-			if (error !== null) throw new Error(error.message);
-			return data;
-		} catch (cause) {
+		const { data: config, error: configError } =
+			await loadProjectConfig(projectDir);
+		if (configError !== null) throw new Error(configError.message);
+
+		const startResult = await startDaemonWorkspaceApps({
+			projectDir,
+			auth,
+			routes: config.daemon?.routes ?? {},
+		});
+		if (startResult.error) return startResult;
+		runtimes = startResult.data;
+
+		const serverResult = await startDaemonServer({
+			lease,
+			routes: runtimes,
+			triggerShutdown: () => void teardown(),
+		});
+		if (serverResult.error) return serverResult;
+		daemonServer = serverResult.data;
+
+		const metadataResult = trySync({
+			try: () => writeMetadata(projectDir, metadata),
+			catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
+		});
+		if (metadataResult.error) return metadataResult;
+		metadataWritten = true;
+		startupComplete = true;
+
+		return Ok({
+			runtimes,
+			metadata,
+			teardown,
+		});
+	} finally {
+		if (!startupComplete) {
 			await teardown();
-			throw cause;
 		}
-	})();
-
-	const startResult = await startDaemonWorkspaceApps({
-		projectDir,
-		auth,
-		routes: config.routes ?? [],
-	});
-	if (startResult.error) {
-		await teardown();
-		return startResult;
 	}
-	runtimes = startResult.data.routes;
-
-	const serverResult = await startDaemonServer({
-		lease,
-		routes: runtimes,
-		triggerShutdown: () => void teardown(),
-	});
-	if (serverResult.error) {
-		await teardown();
-		return serverResult;
-	}
-	daemonServer = serverResult.data;
-
-	const metadataResult = trySync({
-		try: () => writeMetadata(projectDir, metadata),
-		catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
-	});
-	if (metadataResult.error) {
-		await teardown();
-		return metadataResult;
-	}
-	metadataWritten = true;
-
-	return Ok({
-		runtimes,
-		metadata,
-		socketPath: lease.socketPath,
-		teardown,
-	});
 }
 
 /**
  * Yargs `daemon up` command. Thin glue: parses argv, calls {@link runUp}, prints
  * the operator-facing banner + initial peers snapshot, wires SIGINT/SIGTERM,
- * subscribes to presence/status across every loaded extension, and parks
+ * subscribes to presence/status across every loaded route, and parks
  * until a signal triggers teardown.
  */
 export const upCommand = cmd({
 	command: 'up',
 	describe:
-		'Open every daemon extension in epicenter.config.ts and serve them on the project socket (foreground).',
+		'Open every daemon route in epicenter.config.ts and serve them on the daemon socket (foreground).',
 	builder: {
-		C: projectOption,
+		C: upProjectOption,
 		quiet: {
 			type: 'boolean',
 			default: false,
@@ -245,16 +242,6 @@ export const upCommand = cmd({
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function safeDisposeStartedRoutes(
-	runtimes: readonly StartedDaemonRoute[],
-): Promise<void> {
-	await Promise.allSettled(
-		runtimes.map((entry) =>
-			Promise.resolve(entry.runtime[Symbol.asyncDispose]()),
-		),
-	);
-}
-
 function resolveProjectForUp(start: string): string {
 	try {
 		return findProjectRoot(start);
@@ -276,11 +263,16 @@ function provisionProject(projectDir: string): void {
 	mkdirSync(join(projectDataDir, 'yjs'), { recursive: true, mode: 0o700 });
 	mkdirSync(join(projectDataDir, 'md'), { recursive: true, mode: 0o700 });
 	mkdirSync(join(projectDataDir, 'log'), { recursive: true, mode: 0o700 });
-	writeFileSync(
-		join(projectDataDir, '.gitignore'),
-		['sqlite/', 'yjs/', 'md/', 'log/', ''].join('\n'),
-		{ mode: 0o600 },
-	);
+	const gitignorePath = join(projectDataDir, '.gitignore');
+	if (!existsSync(gitignorePath)) {
+		writeFileSync(
+			gitignorePath,
+			['sqlite/', 'yjs/', 'md/', 'log/', ''].join('\n'),
+			{
+				mode: 0o600,
+			},
+		);
+	}
 }
 
 function printPeersSnapshot(entry: StartedDaemonRoute): void {

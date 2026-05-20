@@ -5,7 +5,8 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./src/lib/workspace.ts"
+		".": "./src/lib/workspace.ts",
+		"./daemon": "./daemon.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

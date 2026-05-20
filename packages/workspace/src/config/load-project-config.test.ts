@@ -1,3 +1,16 @@
+/**
+ * Project config loading tests.
+ *
+ * Verifies that `epicenter.config.ts` is discovered, imported, and runtime
+ * validated before daemon startup consumes route maps.
+ *
+ * Key behaviors:
+ * - missing configs return a typed not-found error
+ * - daemon route maps load from the default export
+ * - stale route-array and route-owned identity shapes are rejected
+ * - malformed or missing default exports include the config path in failures
+ */
+
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -38,17 +51,56 @@ describe('loadProjectConfig', () => {
 		expect(data).toEqual({});
 	});
 
-	test('loads routes from the config default export', async () => {
-		writeConfig("export default { routes: [{ route: 'demo', open() {} }] };\n");
+	test('loads daemon route maps from the config default export', async () => {
+		writeConfig(
+			'export default { daemon: { routes: { demo: { open() {} } } } };\n',
+		);
 
 		const { data, error } = await loadProjectConfig(projectDir);
 		if (error !== null) throw new Error(error.message);
-		expect(data.routes).toHaveLength(1);
-		expect(data.routes?.[0]?.open).toBeFunction();
+		expect(data.daemon?.routes?.demo?.open).toBeFunction();
 	});
 
 	test('throws with the config path when the default export is invalid', async () => {
-		writeConfig('export default { routes: {} };\n');
+		writeConfig(
+			'export default { daemon: { routes: { demo: { open: 1 } } } };\n',
+		);
+
+		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
+			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} is invalid`,
+		);
+	});
+
+	test('throws when a daemon route definition is missing open()', async () => {
+		writeConfig('export default { daemon: { routes: { demo: {} } } };\n');
+
+		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
+			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} is invalid`,
+		);
+	});
+
+	test('throws when the config uses the old top-level routes array', async () => {
+		writeConfig("export default { routes: [{ route: 'demo', open() {} }] };\n");
+
+		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
+			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} is invalid`,
+		);
+	});
+
+	test('throws when daemon routes are still an array', async () => {
+		writeConfig(
+			'export default { daemon: { routes: [{ open() {} }] } };\n',
+		);
+
+		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
+			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} is invalid`,
+		);
+	});
+
+	test('throws when a daemon definition includes its own route', async () => {
+		writeConfig(
+			"export default { daemon: { routes: { demo: { route: 'demo', open() {} } } } };\n",
+		);
 
 		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
 			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} is invalid`,

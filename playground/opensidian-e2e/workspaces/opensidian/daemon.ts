@@ -1,6 +1,6 @@
 /**
  * Opensidian workspace playground: markdown and SQLite materializers around
- * the folder-routed daemon extension contract.
+ * the daemon extension contract.
  *
  * Run with:
  *

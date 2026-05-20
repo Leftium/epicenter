@@ -2,10 +2,11 @@
 
 Two-peer minimal repro for the `system.describe` cross-peer fetch.
 
-Both configs construct the same workspace (`epicenter.notes-repro`) with
-distinct peer ids, so each appears in the other's awareness. Exercises
-`createRemoteClient({ awareness, rpc }).describe(peerId)` end-to-end against the
-deployed API.
+Both project configs register a `notes` daemon route. Each route imports a daemon module from `workspaces/notes/daemon.ts`, but the route identity comes from `epicenter.config.ts`; `workspaces/` is only the source layout. The two daemon modules construct the same workspace (`epicenter.notes-repro`) with distinct peer ids, so each appears in the other's awareness.
+
+This example runs one daemon process per project directory. In a normal project, one daemon process can host many route keys from the same `daemon.routes` map. This repro keeps peer-a and peer-b in separate project directories so they behave like two different machines.
+
+Exercises `createRemoteClient({ awareness, rpc }).describe(peerId)` end-to-end against the deployed API.
 
 ## Setup
 
@@ -19,13 +20,13 @@ bun x epicenter auth login        # one-time, https://api.epicenter.so
 **Terminal 1**: bring peer-a online as a long-lived peer (Ctrl-C to stop):
 
 ```bash
-bun x epicenter up -C examples/notes-cross-peer/peer-a
+bun x epicenter daemon up -C examples/notes-cross-peer/peer-a
 ```
 
 **Terminal 2**: bring peer-b online too, then dispatch via its daemon to peer-a:
 
 ```bash
-bun x epicenter up -C examples/notes-cross-peer/peer-b &
+bun x epicenter daemon up -C examples/notes-cross-peer/peer-b &
 bun x epicenter peers -C examples/notes-cross-peer/peer-b
 bun x epicenter run notes.notes.add --peer notes-repro-peer-a '{"body":"from peer-b"}' -C examples/notes-cross-peer/peer-b
 ```

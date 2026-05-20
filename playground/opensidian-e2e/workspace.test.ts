@@ -1,11 +1,10 @@
 /**
- * End-to-end test: Opensidian workspace through the CLI pipeline.
+ * End-to-end test: Opensidian workspace persistence and import behavior.
  *
  * Verifies that the opensidian workspace (filesystem-backed note-taking)
  * works end-to-end with persistence and document content.
  *
  * Key behaviors:
- * - folder-routed daemon discovery can host this workspace from workspaces/
  * - Table CRUD works for the files table (folders + files)
  * - Document content round-trips through write → read
  * - Persistence survives restart (table data + document content)

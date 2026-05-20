@@ -52,11 +52,11 @@ epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' --peer u
 epicenter peers -C ~/vault
 ```
 
-`-C` is a start directory for project discovery. Discovery walks upward until it finds `epicenter.config.ts`.
+`-C` is a start directory for project discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon starts every route in that config.
 
 ## Daemon Extensions
 
-`epicenter.config.ts` is the route registry:
+`epicenter.config.ts` owns route identity. The daemon module path is only an import chosen by the project, and one daemon process can host every route in the map.
 
 ```
 my-vault/
@@ -73,27 +73,33 @@ import { defineConfig } from '@epicenter/workspace';
 import fuji from './workspaces/fuji/daemon.ts';
 
 export default defineConfig({
-	routes: [fuji],
+	daemon: {
+		routes: {
+			fuji,
+		},
+	},
 });
 ```
 
-`workspaces/fuji/daemon.ts` default-exports a daemon workspace module with its route name:
+The imported module exports a route-agnostic daemon workspace definition. The route name comes from the `daemon.routes` object key:
 
 ```ts
 import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
 
 export default defineDaemonWorkspace({
-	route: 'fuji',
-	async open({ auth, projectDir, route }) {
+	async open({ attachEncryption, openWebSocket, projectDir, route }) {
 		// Open the long-lived local runtime.
+		// `route` was supplied by epicenter.config.ts.
 		// Return { collaboration, [Symbol.asyncDispose] }.
 	},
 });
 ```
 
-The module's `route` is the CLI route prefix. `workspaces/fuji/daemon.ts` exposes actions as `fuji.<action_key>` when the project config includes that module.
+The route key is the CLI route prefix. The same daemon module can be mounted under a different key, and the CLI follows that key. In the example above, Fuji actions are exposed as `fuji.<action_key>` because the project config includes the module under `fuji`.
 
-`.epicenter/` holds project-local data such as SQLite materializers, Yjs logs, markdown materializers, and its generated `.gitignore`. Runtime files live outside the project: sockets and daemon metadata use the OS runtime directory, while daemon logs use the platform log directory from `env-paths`.
+`workspaces/` is an organization convention for source files. It is not scanned, and it does not enable routes by itself. A small project can import daemon modules from any path as long as `epicenter.config.ts` registers them.
+
+`.epicenter/` holds generated project data such as SQLite materializers, Yjs update logs, markdown materializers, and its generated `.gitignore`. It is not a registry. Runtime files live outside the project: sockets and daemon metadata use the OS runtime directory, while daemon logs use the platform log directory from `env-paths`.
 
 ## Scripting
 

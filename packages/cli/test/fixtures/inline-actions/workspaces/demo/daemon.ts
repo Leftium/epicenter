@@ -69,6 +69,5 @@ export const demo = {
 };
 
 export default defineDaemonWorkspace({
-	route: 'demo',
 	open: () => demo,
 });

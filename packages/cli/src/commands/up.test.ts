@@ -112,10 +112,14 @@ function writeDemoConfig(): void {
 		[
 			"import demo from './workspaces/demo/daemon.ts';",
 			'',
-			'export default { routes: [demo] };',
+			'export default { daemon: { routes: { demo } } };',
 			'',
 		].join('\n'),
 	);
+}
+
+function writeConfig(source: string): void {
+	writeFileSync(join(workDir, 'epicenter.config.ts'), source);
 }
 
 function writeRuntimeDaemon({
@@ -146,7 +150,6 @@ function writeRuntimeDaemon({
 		};
 
 		export default {
-			route: 'demo',
 			async open() {
 				return {
 					collaboration,
@@ -178,7 +181,7 @@ describe('runUp: happy path', () => {
 			expect(handle.runtimes[0]?.route).toBe('demo');
 			expect(
 				readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8'),
-			).toContain('routes: [demo]');
+			).toContain('routes: { demo }');
 
 			const sockPath = socketPathFor(workDir);
 			expect(existsSync(sockPath)).toBe(true);
@@ -253,7 +256,6 @@ describe('runUp: failure cleanup', () => {
 	test('releases the daemon lease when workspace startup fails', async () => {
 		writeDemoDaemon(`
 			export default {
-				route: 'demo',
 				async open() {
 					throw new Error('route failed');
 				},
@@ -269,6 +271,81 @@ describe('runUp: failure cleanup', () => {
 		);
 
 		expect(error.name).toBe('WorkspaceOpenFailed');
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+
+	test('disposes opened sibling routes and leaves no socket or metadata when one route fails', async () => {
+		const goodDir = join(workDir, 'workspaces', 'good');
+		const badDir = join(workDir, 'workspaces', 'bad');
+		mkdirSync(goodDir, { recursive: true });
+		mkdirSync(badDir, { recursive: true });
+		const disposeMarker = markerPath('good-dispose');
+		writeFileSync(
+			join(goodDir, 'daemon.ts'),
+			`
+				import { writeFileSync } from 'node:fs';
+
+				const collaboration = {
+					actions: {},
+					whenConnected: new Promise(() => {}),
+					status: { phase: 'connected' },
+					onStatusChange: () => () => {},
+					devices: {
+						list: () => [],
+						subscribe: () => () => {},
+					},
+					dispatch: async () => {
+						throw new Error('fixture does not dispatch');
+					},
+				};
+
+				export default {
+					async open() {
+						return {
+							collaboration,
+							async [Symbol.asyncDispose]() {
+								writeFileSync(${JSON.stringify(disposeMarker)}, 'disposed');
+							},
+						};
+					},
+				};
+			`,
+		);
+		writeFileSync(
+			join(badDir, 'daemon.ts'),
+			`
+				export default {
+					async open() {
+						throw new Error('bad route failed');
+					},
+				};
+			`,
+		);
+		writeConfig(
+			[
+				"import good from './workspaces/good/daemon.ts';",
+				"import bad from './workspaces/bad/daemon.ts';",
+				'',
+				'export default { daemon: { routes: { good, bad } } };',
+				'',
+			].join('\n'),
+		);
+
+		const error = expectErr(
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+			}),
+		);
+
+		expect(error).toMatchObject({
+			name: 'WorkspaceOpenFailed',
+			route: 'bad',
+		});
+		expect(readFileSync(disposeMarker, 'utf8')).toBe('disposed');
+		expect(existsSync(metadataPathFor(workDir))).toBe(false);
+		expect(existsSync(socketPathFor(workDir))).toBe(false);
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
 	});

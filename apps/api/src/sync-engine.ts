@@ -1,7 +1,7 @@
 import { MAX_PAYLOAD_BYTES } from './constants';
-import type { DispatchResult, DispatchRpcRequest, Room } from './room';
+import type { DispatchRpcRequest, Room } from './room';
 
-type SyncHttpRooms = {
+type RoomSyncBackend = {
 	sync(
 		roomName: string,
 		body: Uint8Array,
@@ -12,31 +12,23 @@ type SyncHttpRooms = {
 	getDoc(roomName: string): Promise<{ data: Uint8Array; storageBytes: number }>;
 };
 
-type SyncRooms = SyncHttpRooms & {
-	handleWebSocket(roomName: string, request: Request): Promise<Response>;
-	dispatch(
-		roomName: string,
-		request: DispatchRpcRequest,
-	): Promise<DispatchResult>;
-};
-
 export function cloudflareDurableObjectRooms(
 	roomNamespace: DurableObjectNamespace<Room>,
-): SyncRooms {
+) {
 	const getRoom = (roomName: string) =>
 		roomNamespace.get(roomNamespace.idFromName(roomName));
 
 	return {
-		handleWebSocket(roomName, request) {
+		handleWebSocket(roomName: string, request: Request) {
 			return getRoom(roomName).fetch(request);
 		},
-		sync(roomName, body) {
+		sync(roomName: string, body: Uint8Array) {
 			return getRoom(roomName).sync(body);
 		},
-		getDoc(roomName) {
+		getDoc(roomName: string) {
 			return getRoom(roomName).getDoc();
 		},
-		dispatch(roomName, request) {
+		dispatch(roomName: string, request: DispatchRpcRequest) {
 			return getRoom(roomName).dispatch(request);
 		},
 	};
@@ -46,7 +38,7 @@ export function createSyncEngine(
 	{
 		rooms,
 	}: {
-		rooms: SyncHttpRooms;
+		rooms: RoomSyncBackend;
 	},
 	options?: {
 		maxPayloadBytes?: number;

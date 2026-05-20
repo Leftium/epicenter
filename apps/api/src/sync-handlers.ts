@@ -76,16 +76,10 @@ export const SyncHandlerError = defineErrors({
 // Types
 // ============================================================================
 
-/**
- * Shared room state: the doc, awareness, and auth-derived subject that all
- * connections in a room share. The DO is user-scoped (DO name encodes the
- * owning user id), so every connection in this room carries the same
- * `subject`.
- */
+/** Shared room state for every connection in a room. */
 export type RoomContext = {
 	doc: Y.Doc;
 	awareness: Awareness;
-	subject: string;
 };
 
 /**

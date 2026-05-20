@@ -64,16 +64,31 @@ mock.module('./auth/trusted-oauth-clients', () => ({
 	ensureTrustedOAuthClients: async () => {},
 }));
 
-mock.module('./sync-engine', () => ({
+mock.module('./room-gateway', () => ({
 	cloudflareDurableObjectRooms: () => {
 		durableObjectRoomFactoryCalls += 1;
 		return {
-			get() {
+			sync() {
 				roomNamespaceCalls += 1;
-				throw new Error('Room namespace should not be reached');
+				throw new Error('Room gateway should not be reached');
+			},
+			getDoc() {
+				roomNamespaceCalls += 1;
+				throw new Error('Room gateway should not be reached');
+			},
+			handleWebSocket() {
+				roomNamespaceCalls += 1;
+				throw new Error('Room gateway should not be reached');
+			},
+			dispatch() {
+				roomNamespaceCalls += 1;
+				throw new Error('Room gateway should not be reached');
 			},
 		};
 	},
+}));
+
+mock.module('./sync-engine', () => ({
 	createSyncEngine: () => {
 		createSyncEngineCalls += 1;
 		throw new Error('Sync engine should not be created');

@@ -54,7 +54,7 @@ function makeRoom(): RoomContext {
 	const doc = new Y.Doc();
 	const awareness = new Awareness(doc);
 	awareness.setLocalState(null);
-	return { doc, awareness, subject: 'test-user' };
+	return { doc, awareness };
 }
 
 function makeConnection(

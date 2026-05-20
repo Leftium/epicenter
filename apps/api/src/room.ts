@@ -237,7 +237,6 @@ export class Room extends DurableObject {
 			this.room = {
 				doc: this.doc,
 				awareness: this.awareness,
-				subject: subjectFromDoName(ctx.id.name),
 			};
 
 			// --- Update log: DDL + cold-start load + compaction + live persist ---
@@ -773,31 +772,6 @@ export class Room extends DurableObject {
 		if (this.connections.size > 0) return;
 		compactUpdateLog(this.ctx, this.doc);
 	}
-}
-
-// ============================================================================
-// Subject parser
-// ============================================================================
-
-/**
- * Extract the owning subject from the DO name.
- *
- * DO names are formatted by the host route in app.ts as
- * `subject:{subject}:rooms:{room}`. Every connection to this DO shares the
- * same auth context, so `subject` is room-scoped, not connection-scoped.
- *
- * Throws on an unrecognized shape so misconfigured deployments fail loudly
- * at boot rather than silently mishandling subject scope.
- */
-function subjectFromDoName(name: string | undefined): string {
-	const match = name?.match(/^subject:([^:]+):/);
-	if (!match) {
-		throw new Error(
-			`[room] DO name does not match expected ` +
-				`"subject:{subject}:rooms:{room}" format: ${JSON.stringify(name)}`,
-		);
-	}
-	return match[1] as string;
 }
 
 // ============================================================================

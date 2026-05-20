@@ -40,7 +40,8 @@ import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
 import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
-import { cloudflareDurableObjectRooms, createSyncEngine } from './sync-engine';
+import { cloudflareDurableObjectRooms } from './room-gateway';
+import { createSyncEngine } from './sync-engine';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.

@@ -61,7 +61,7 @@ const BIN_PATH = join(import.meta.dir, '..', 'src', 'bin.ts');
 type EnvOverrides = Disposable & {
 	/** Stable `runtimeDir()` root: $XDG_RUNTIME_DIR/epicenter. */
 	xdgRoot: string;
-	/** Stable `epicenterPaths.home()`: $HOME/.epicenter (logs land here). */
+	/** Stable auth home; user logs resolve from this HOME via env-paths. */
 	home: string;
 };
 

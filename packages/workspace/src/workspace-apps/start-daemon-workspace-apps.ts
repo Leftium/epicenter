@@ -11,9 +11,6 @@
  * `attachEncryption` and `openWebSocket` already carry the auth bindings.
  * Daemon code never touches the auth client directly: it consumes the
  * capabilities in the context and composes a runtime.
- *
- * Returns only routes. Static-app serving was removed; the daemon has no UI
- * surface.
  */
 
 import { resolve } from 'node:path';
@@ -30,10 +27,7 @@ import { validateDaemonRouteNames } from '../daemon/route-validation.js';
 import { attachEncryption } from '../document/attach-encryption.js';
 import { hashClientId } from '../shared/client-id.js';
 import type { ProjectDir } from '../shared/types.js';
-import {
-	WorkspaceAppError,
-	type WorkspaceAppError as WorkspaceAppErrorType,
-} from './errors.js';
+import { WorkspaceAppError } from './errors.js';
 
 export type StartDaemonWorkspaceAppsOptions = {
 	projectDir: ProjectDir | string;
@@ -50,7 +44,7 @@ export type StartDaemonWorkspaceAppsOptions = {
  */
 export async function startDaemonWorkspaceApps(
 	options: StartDaemonWorkspaceAppsOptions,
-): Promise<Result<StartedDaemonRoute[], WorkspaceAppErrorType>> {
+): Promise<Result<StartedDaemonRoute[], WorkspaceAppError>> {
 	const { auth, routes } = options;
 	const projectDir = resolve(options.projectDir) as ProjectDir;
 	if (auth.state.status === 'signed-out') {
@@ -72,7 +66,7 @@ export async function startDaemonWorkspaceApps(
 	);
 
 	const opened: StartedDaemonRoute[] = [];
-	let firstError: WorkspaceAppErrorType | null = null;
+	let firstError: WorkspaceAppError | null = null;
 
 	for (const result of settled) {
 		if (result.status !== 'fulfilled') {
@@ -100,20 +94,18 @@ export async function startDaemonWorkspaceApps(
 	return Ok(opened);
 }
 
-type OpenOneRouteOptions = {
-	route: string;
-	definition: DaemonWorkspaceDefinition;
-	projectDir: ProjectDir;
-	auth: AuthClient;
-};
-
 async function openOneDaemonRoute({
 	route,
 	definition,
 	projectDir,
 	auth,
-}: OpenOneRouteOptions): Promise<
-	Result<StartedDaemonRoute, WorkspaceAppErrorType>
+}: {
+	route: string;
+	definition: DaemonWorkspaceDefinition;
+	projectDir: ProjectDir;
+	auth: AuthClient;
+}): Promise<
+	Result<StartedDaemonRoute, WorkspaceAppError>
 > {
 	const ctx: DaemonWorkspaceContext = {
 		projectDir,

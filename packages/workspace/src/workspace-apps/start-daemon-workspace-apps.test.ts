@@ -2,7 +2,7 @@
  * Startup tests for `startDaemonWorkspaceApps`.
  *
  * Pin three contracts:
- * - happy path opens every configured workspace in parallel and returns the
+ * - happy path opens every configured daemon route in parallel and returns the
  *   started routes
  * - if any sibling `open(ctx)` rejects, all successfully opened runtimes are
  *   asyncDispose'd before the structured error propagates

@@ -1,10 +1,3 @@
-/**
- * Conventional folder name for route modules (`<projectDir>/workspaces/<route>`).
- * It is not a project marker or registry; `epicenter.config.ts` owns route
- * registration.
- */
-export const WORKSPACES_DIRNAME = 'workspaces';
-
 const ROUTE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 // Route names become object keys in `/list` action manifests.
 const RESERVED_OBJECT_ROUTE_KEYS = new Set([

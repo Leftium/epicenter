@@ -7,17 +7,6 @@
  * route-local action key. Valid action keys are snake_case, so additional dots
  * remain part of an invalid key and resolve as ActionNotFound.
  */
-import {
-	type ActionManifest,
-	type ActionRegistry,
-	toActionMeta,
-} from '../shared/actions.js';
-
-type RouteActionSource = {
-	route: string;
-	actions: ActionRegistry;
-};
-
 type ParsedDaemonActionPath = {
 	routeName: string;
 	localPath: string;
@@ -52,23 +41,4 @@ export function parseDaemonActionPath(
 		routeName,
 		localPath: rest.join('.'),
 	};
-}
-
-/**
- * Project hosted route action registries into the flat `/list` manifest.
- *
- * The daemon keeps each route's registry local, but the CLI needs one manifest
- * keyed by the same paths that `/run` accepts. This is the production bridge
- * between those two views.
- */
-export function createRouteActionManifest(
-	routes: readonly RouteActionSource[],
-): ActionManifest {
-	const manifest: ActionManifest = {};
-	for (const entry of routes) {
-		for (const [path, action] of Object.entries(entry.actions)) {
-			manifest[joinDaemonActionPath(entry.route, path)] = toActionMeta(action);
-		}
-	}
-	return manifest;
 }

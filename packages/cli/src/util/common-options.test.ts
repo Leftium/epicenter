@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import yargs from 'yargs';
 
 import { projectOption } from './common-options.js';
@@ -17,7 +17,7 @@ afterEach(() => {
 function tempProject() {
 	const root = mkdtempSync(join(tmpdir(), 'ep-cli-project-'));
 	roots.push(root);
-	mkdirSync(join(root, 'workspaces'));
+	writeFileSync(join(root, 'epicenter.config.ts'), 'export default {};\n');
 	const nested = join(root, 'nested', 'child');
 	mkdirSync(nested, { recursive: true });
 	return { root, nested };
@@ -28,14 +28,18 @@ describe('projectOption', () => {
 		const { root, nested } = tempProject();
 		const argv = yargs().option('C', projectOption).parseSync(['-C', nested]);
 
-		expect(argv.C).toBe(root);
+		expect(argv.C).toBe(root as typeof argv.C);
 	});
 
-	test('falls back to an absolute start path when discovery misses', () => {
+	test('fails when discovery misses', () => {
 		const root = mkdtempSync(join(tmpdir(), 'ep-cli-no-project-'));
 		roots.push(root);
-		const argv = yargs().option('C', projectOption).parseSync(['-C', root]);
 
-		expect(argv.C).toBe(resolve(root));
+		expect(() =>
+			yargs()
+				.exitProcess(false)
+				.option('C', projectOption)
+				.parseSync(['-C', root]),
+		).toThrow('findProjectRoot: no epicenter.config.ts found');
 	});
 });

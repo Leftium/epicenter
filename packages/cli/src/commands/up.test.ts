@@ -139,10 +139,9 @@ function writeRuntimeDaemon({
 			whenConnected: new Promise(() => {}),
 			status: { phase: 'connected' },
 			onStatusChange: () => () => {},
-			peers: {
+			devices: {
 				list: () => [],
-				find: () => undefined,
-				observe: () => () => {},
+				subscribe: () => () => {},
 			},
 			dispatch: async () => {
 				throw new Error('fixture does not dispatch');
@@ -222,6 +221,9 @@ describe('runUp: failure cleanup', () => {
 	test('does not overwrite an existing config when provisioning project data', async () => {
 		const original = ['export default {};', '', '// keep me', ''].join('\n');
 		writeFileSync(join(workDir, 'epicenter.config.ts'), original);
+		const gitignore = 'custom-rule\n';
+		mkdirSync(join(workDir, '.epicenter'), { recursive: true });
+		writeFileSync(join(workDir, '.epicenter', '.gitignore'), gitignore);
 
 		const handle = expectOk(
 			await runUp({
@@ -234,6 +236,9 @@ describe('runUp: failure cleanup', () => {
 			expect(readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8')).toBe(
 				original,
 			);
+			expect(
+				readFileSync(join(workDir, '.epicenter', '.gitignore'), 'utf8'),
+			).toBe(gitignore);
 		} finally {
 			await handle.teardown();
 		}

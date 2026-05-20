@@ -8,18 +8,18 @@
 
 Epicenter sync should move down one abstraction layer: the core package should expose a sync engine that host applications compose into their own routes, not a full relay server that owns auth hooks, billing hooks, or product policy.
 
-Epicenter Cloud, a solo self-host server, and an enterprise host should all call the same sync engine. They differ in route ownership, authentication, billing, and policy. The engine only owns Yjs room mechanics.
+Epicenter Cloud, a solo self-host server, and an enterprise host should all call the same HTTP sync helper and room backend contract. They differ in route ownership, authentication, billing, policy, and room-name construction. The room backend owns live Yjs room mechanics; the sync engine owns HTTP sync and snapshot response framing.
 
 ## One Sentence
 
-Epicenter Sync is a Yjs room engine that host applications compose after authorization; it does not own users, auth sessions, billing, or access-control policy.
+Epicenter Sync is host composition around an authorized room name: the host owns policy and naming, the room backend owns live Yjs mechanics, and the sync engine owns HTTP sync responses.
 
 Shorter versions:
 
 ```txt
-Host routes decide who may enter. SyncEngine decides how the room syncs.
+Host routes decide who may enter. Room backends decide how rooms run. SyncEngine formats HTTP sync responses.
 
-The engine owns Yjs mechanics. The host owns policy.
+The room backend owns Yjs mechanics. The host owns policy.
 
 Move the boundary down one layer: compose routes around an engine, not hooks into a relay.
 ```
@@ -125,17 +125,18 @@ Host route
       |
       v
 SyncEngine
-  HTTP sync
-  WebSocket sync
-  awareness
-  dispatch
-  room persistence
+  HTTP sync response framing
+  snapshot response framing
       |
       v
 Room backend
   Cloudflare Durable Object
   local process
   test in-memory runtime
+  WebSocket sync
+  awareness
+  dispatch
+  room persistence
 ```
 
 The engine has no idea whether the host used Better Auth, a reverse proxy, a shared secret, or enterprise IAM. It receives an already-authorized room name.
@@ -229,7 +230,7 @@ app.post('/rooms/:room', async (c) => {
 });
 ```
 
-Epicenter Cloud owns Better Auth, billing, Postgres metadata, and route errors. The sync engine owns the Yjs mechanics.
+Epicenter Cloud owns Better Auth, billing, Postgres metadata, room-name construction, and route errors. The room backend owns the live Yjs mechanics. The sync engine owns the HTTP response shape for sync and snapshots.
 
 ### Solo Self-Host
 
@@ -271,6 +272,60 @@ app.get('/rooms/:room', async (c) => {
 
 The enterprise app keeps its IAM, database, audit policy, and SSO model. Epicenter sync does not import those concepts.
 
+## Room Name Scope
+
+`roomName` is the sync address after the host has already made the access decision. The sync engine treats it as opaque.
+
+Current Epicenter Cloud should keep personal owner-scoped rooms:
+
+```txt
+subject:{subject}:rooms:{room}
+```
+
+That name says only this:
+
+```txt
+the current host has authorized this subject to open this room
+```
+
+It does not say the product has organizations, team workspaces, grants, workspace transfer, or enterprise custody. Those are larger product invariants and should not be smuggled into the sync engine.
+
+Solo self-host can use the same shape with a local subject:
+
+```txt
+subject:solo:rooms:{room}
+```
+
+It can also choose a simpler local-only name if the host truly has one owner:
+
+```txt
+rooms:{room}
+```
+
+Enterprise self-hosting does not require org-scoped rooms in the engine. The first enterprise isolation boundary can be the deployment itself:
+
+```txt
+Acme deployment
+  auth issuer
+  database
+  room backend
+  asset storage
+```
+
+If one deployment hosts several enterprise customers, the host can choose a tenant-scoped room name outside the engine:
+
+```txt
+tenant:{tenantId}:subject:{subject}:rooms:{room}
+```
+
+If Epicenter later ships real team workspaces, room names can move to workspace scope only after workspace rows, workspace access checks, and migration rules exist:
+
+```txt
+workspace:{workspaceId}:docs:{docId}
+```
+
+Until then, workspace-scoped room names are a future migration target, not the current Cloud contract.
+
 ## Terms
 
 ```txt
@@ -300,7 +355,8 @@ passphrase =
 
 roomName =
   internal sync namespace
-  should already include subject or tenant scoping before it reaches SyncEngine
+  opaque to SyncEngine
+  should already include whatever owner, subject, tenant, or workspace scoping the host has proven
 ```
 
 ## Design Decisions
@@ -310,6 +366,7 @@ roomName =
 | Core abstraction | Host composition plus `createSyncEngine` for HTTP sync responses | It removes policy hooks by making the host route the composer. |
 | Auth ownership | Host route | Better Auth, enterprise IAM, and self-host secrets are host concerns. |
 | Room access | Resolved before engine call | The engine receives `roomName`, not sessions or users. |
+| Room-name scope | Host-owned | Personal Cloud can use subject scope, self-host can use local scope, enterprise can use deployment or tenant scope, and future workspace scope needs real workspace access checks first. |
 | Metering | Return values, not hooks | The host can record usage after engine calls. |
 | Deletion | Deferred room backend method | Keep deletion out of Phase 1 until an admin route needs it. |
 | Token verifier | Not in v1 engine | Token verification belongs to the host route unless we build a separate relay process. |
@@ -321,7 +378,7 @@ roomName =
 
 ```txt
 No Better Auth imports in SyncEngine.
-No org or team model in SyncEngine.
+No org, team, tenant, workspace, or grant model in SyncEngine.
 No grant tables in SyncEngine.
 No callback hooks for billing or policy.
 No signed relay token issuer in v1.
@@ -376,6 +433,7 @@ For now, `apps/api` keeps one Cloudflare adapter around the Durable Object room.
 - [ ] **3.1** Add a minimal solo self-host example with a shared-secret route guard.
 - [ ] **3.2** Keep passphrase or shared-secret handling outside the engine.
 - [ ] **3.3** Show how a host maps `{ subject, room }` into `roomName`.
+- [ ] **3.4** Keep enterprise examples deployment-scoped or host-scoped until an actual multi-tenant control plane exists.
 
 ### Phase 4: Optional Packaged Relay
 
@@ -385,7 +443,7 @@ For now, `apps/api` keeps one Cloudflare adapter around the Durable Object room.
 
 ## Open Questions
 
-1. Should `roomName` stay subject-scoped (`subject:{subject}:rooms:{room}`) or move to workspace-scoped names when workspace IDs become first-class sync namespaces?
+1. What exact workspace access model, migration plan, and product route justify moving from subject-scoped personal rooms to workspace-scoped room names?
 2. Should `handleWebSocket` read `installationId` from the URL, headers, or a parsed input supplied by the host route?
 3. Should dispatch stay on the room backend, or should live-device RPC become a separate backend capability beside sync?
 4. What second runtime would prove package extraction is safer than staying inside `apps/api`?
@@ -400,7 +458,7 @@ When a hook appears, ask whether the host route should own the surrounding contr
 If host owns the decision:
   host route should call the engine
 
-If engine owns the mechanism:
+If room backend owns the live mechanism:
   engine method should return the data the host needs
 
 If both seem true:

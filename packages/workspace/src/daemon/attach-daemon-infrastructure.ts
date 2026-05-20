@@ -1,7 +1,7 @@
 /**
  * Daemon-side persistence + sync infrastructure for a single workspace doc.
  *
- * `attachDaemonInfrastructure(ydoc, opts)` is the recipe every folder-routed
+ * `attachDaemonInfrastructure(ydoc, opts)` is the recipe every config-routed
  * daemon extension needs: persist the Y.Doc update log to disk under
  * `yjsPath(projectDir, guid)`, join the room at
  * `roomWsUrl(apiUrl, guid)`, and own the ordered async dispose

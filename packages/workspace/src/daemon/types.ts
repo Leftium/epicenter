@@ -7,7 +7,7 @@
  *
  * `DaemonServedRoute` is the narrowed route handler contract for the socket
  * app. `StartedDaemonRoute` is the lifecycle-owning route shape opened from a
- * folder-routed daemon extension.
+ * configured daemon extension.
  */
 
 import type { Result } from 'wellcrafted/result';
@@ -65,7 +65,7 @@ export type DaemonRuntime<TActions extends ActionRegistry = ActionRegistry> = {
 	readonly collaboration: Collaboration<TActions>;
 };
 
-/** One routed daemon runtime hosted by the daemon. */
+/** One configured daemon runtime hosted by the daemon. */
 export type StartedDaemonRoute = {
 	route: string;
 	runtime: DaemonRuntime;

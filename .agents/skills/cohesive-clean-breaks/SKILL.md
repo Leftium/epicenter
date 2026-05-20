@@ -390,9 +390,7 @@ validated boundary.
 export const fuji = defineFujiDaemon();
 
 export default defineConfig({
-	daemon: {
-		routes: [fuji],
-	},
+	routes: [fuji],
 });
 ```
 
@@ -401,6 +399,9 @@ makes startup side effects harder to reason about.
 
 Do not introduce a second config file shape just because it looks cleaner in
 isolation. A new config filename is a product decision, not a local refactor.
+
+For the Epicenter worked example, read
+`specs/20260519T150000-epicenter-project-as-first-class.md`.
 
 ## File Organization Check
 

@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,7 +18,6 @@ let root: string;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), 'connect-daemon-'));
-	mkdirSync(join(root, 'workspaces'));
 });
 
 afterEach(() => {
@@ -26,25 +25,6 @@ afterEach(() => {
 });
 
 describe('connectDaemonActions', () => {
-	test('throws DaemonError.MissingConfig when explicit project has no workspaces directory', async () => {
-		rmSync(join(root, 'workspaces'), { recursive: true, force: true });
-
-		let caught: unknown;
-		try {
-			await connectDaemonActions({
-				route: 'demo',
-				projectDir: root as ProjectDir,
-			});
-		} catch (err) {
-			caught = err;
-		}
-
-		expect(caught).toBeDefined();
-		const e = caught as Extract<DaemonError, { name: 'MissingConfig' }>;
-		expect(e.name).toBe('MissingConfig');
-		expect(e.projectDir).toBe(root);
-	});
-
 	test('throws DaemonError.Required when no daemon is listening', async () => {
 		let caught: unknown;
 		try {

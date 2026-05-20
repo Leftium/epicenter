@@ -1,11 +1,10 @@
 /**
  * Daemon-process path helpers.
  *
- * Per-user runtime: socket, metadata sidecar, log file. All live under the
- * runtime dir (`$XDG_RUNTIME_DIR/epicenter` on Linux, `~/.epicenter/run`
- * elsewhere) or under `~/.epicenter/log/` (persistent log). Keyed by a hash
- * of the daemon's project directory so two daemons on the same machine never
- * collide.
+ * Per-project runtime: socket and metadata sidecar live under the OS runtime
+ * directory. Persistent logs live under the user log directory resolved by
+ * `env-paths`. Every file is keyed by a hash of the daemon's project
+ * directory so two daemons on the same machine never collide.
  *
  * For per-workspace data layout (yjs/sqlite/markdown under `<projectDir>/.epicenter/`),
  * see `document/workspace-paths.ts`. Different audience, different rationale.
@@ -17,26 +16,25 @@
 
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-function epicenterHome(): string {
-	return join(homedir(), '.epicenter');
-}
+import { userLogDir } from '../paths/user-paths.js';
+
+const SAFE_UNIX_SOCKET_PATH_BYTES = 95;
 
 /**
  * Resolve the runtime directory for daemon sockets and metadata.
  *
  * - Linux with `XDG_RUNTIME_DIR` uses `$XDG_RUNTIME_DIR/epicenter` (tmpfs,
  *   reboot-cleaned by the OS).
- * - macOS / Windows / Linux without XDG uses `~/.epicenter/run` (orphan
- *   cleanup at `daemon up` startup substitutes for the missing tmpfs reset).
+ * - macOS / Windows / Linux without XDG uses `os.tmpdir()/epicenter`.
  */
 export function runtimeDir(): string {
 	if (process.env.XDG_RUNTIME_DIR) {
 		return join(process.env.XDG_RUNTIME_DIR, 'epicenter');
 	}
-	return join(epicenterHome(), 'run');
+	return join(tmpdir(), 'epicenter');
 }
 
 /**
@@ -57,7 +55,14 @@ export function dirHash(dir: string): string {
 
 /** Unix-socket path for the daemon serving `dir`. */
 export function socketPathFor(dir: string): string {
-	return join(runtimeDir(), `${dirHash(dir)}.sock`);
+	const socketPath = join(runtimeDir(), `${dirHash(dir)}.sock`);
+	if (Buffer.byteLength(socketPath) > SAFE_UNIX_SOCKET_PATH_BYTES) {
+		throw new Error(
+			`socketPathFor: resolved path is ${Buffer.byteLength(socketPath)} bytes, ` +
+				`exceeds safe Unix socket limit (${SAFE_UNIX_SOCKET_PATH_BYTES}). projectDir=${dir}`,
+		);
+	}
+	return socketPath;
 }
 
 /** Metadata JSON sidecar for the daemon serving `dir`. */
@@ -73,9 +78,9 @@ export function leasePathFor(dir: string): string {
 /**
  * Log file for the daemon serving `dir`.
  *
- * Always lives under `~/.epicenter/log/` (persistent), never tmpfs, so
+ * Always lives under the user log directory (persistent), never tmpfs, so
  * the operator can read post-mortem logs after a crash or reboot.
  */
 export function logPathFor(dir: string): string {
-	return join(epicenterHome(), 'log', `${dirHash(dir)}.log`);
+	return join(userLogDir, `${dirHash(dir)}.log`);
 }

@@ -11,21 +11,25 @@ import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
 import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
 import { openOpensidianWorkspace } from './workspace.js';
 
-export default defineDaemonWorkspace({
-	async open({
-		projectDir,
-		clientId,
-		installationId,
-		attachEncryption,
-		openWebSocket,
-	}) {
-		const workspace = openOpensidianWorkspace(attachEncryption, { clientId });
-		const infra = attachDaemonInfrastructure(workspace.ydoc, {
+export function defineOpensidianDaemon() {
+	return defineDaemonWorkspace({
+		async open({
 			projectDir,
-			openWebSocket,
+			clientId,
 			installationId,
-			actions: {},
-		});
-		return { ...workspace, ...infra };
-	},
-});
+			attachEncryption,
+			openWebSocket,
+		}) {
+			const workspace = openOpensidianWorkspace(attachEncryption, { clientId });
+			const infra = attachDaemonInfrastructure(workspace.ydoc, {
+				projectDir,
+				openWebSocket,
+				installationId,
+				actions: {},
+			});
+			return { ...workspace, ...infra };
+		},
+	});
+}
+
+export default defineOpensidianDaemon();

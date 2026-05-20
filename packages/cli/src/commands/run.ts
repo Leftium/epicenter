@@ -13,13 +13,12 @@
  *
  * Exit codes:
  *   1: usage error (unknown route, unknown action, invalid input for
- *      `--peer`), or no daemon / workspace folder (`MissingConfig`, `Required`,
- *      transport error)
+ *      `--peer`), or no daemon (`Required`, transport error)
  *   2: runtime error (local action returned Err, or remote RPC failed)
  *   3: peer not found (`--peer <target>` did not resolve within `--wait`)
  */
 
-import { type DispatchError } from '@epicenter/workspace';
+import type { DispatchError } from '@epicenter/workspace';
 import {
 	type DaemonError,
 	type RunError as DaemonRunError,
@@ -128,7 +127,6 @@ function renderRunResult(
 			process.exitCode = 2;
 			return;
 		}
-		case 'MissingConfig':
 		case 'Required':
 		case 'Timeout':
 		case 'Unreachable':

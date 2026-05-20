@@ -57,7 +57,6 @@ function renderResult(
 ): void {
 	if (result.error !== null) {
 		switch (result.error.name) {
-			case 'MissingConfig':
 			case 'Required':
 			case 'Timeout':
 			case 'Unreachable':

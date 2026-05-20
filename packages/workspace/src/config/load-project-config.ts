@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -12,12 +12,19 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import type { ProjectDir } from '../shared/types.js';
 import {
+	DEFAULT_PROJECT_CONFIG_SOURCE,
 	type EpicenterConfig,
 	PROJECT_CONFIG_FILENAME,
 } from './define-config.js';
 
 const EpicenterConfigSchema = type({
-	'routes?': type({ open: 'Function' }).array(),
+	'+': 'reject',
+	'daemon?': {
+		'+': 'reject',
+		'routes?': {
+			'[string]': { '+': 'reject', open: 'Function' },
+		},
+	},
 });
 
 export const ProjectConfigError = defineErrors({
@@ -53,6 +60,11 @@ export async function loadProjectConfig(
 			`loadProjectConfig: ${projectConfigPath} is invalid: ${loaded.toString()}`,
 		);
 	}
+	if (Array.isArray(loaded.daemon?.routes)) {
+		throw new Error(
+			`loadProjectConfig: ${projectConfigPath} is invalid: daemon.routes must be an object keyed by route name.`,
+		);
+	}
 
 	return Ok(loaded as EpicenterConfig);
 }
@@ -65,9 +77,24 @@ async function importProjectConfig(
 			default?: unknown;
 		};
 	} catch (cause) {
+		if (isDefaultConfigSelfImportMiss(projectConfigPath, cause)) {
+			return { default: {} };
+		}
 		throw new Error(
 			`loadProjectConfig: failed to load ${projectConfigPath}: ${extractErrorMessage(cause)}`,
 			{ cause },
 		);
 	}
+}
+
+function isDefaultConfigSelfImportMiss(
+	projectConfigPath: string,
+	cause: unknown,
+): boolean {
+	return (
+		extractErrorMessage(cause).includes(
+			"Cannot find module '@epicenter/workspace'",
+		) &&
+		readFileSync(projectConfigPath, 'utf8') === DEFAULT_PROJECT_CONFIG_SOURCE
+	);
 }

@@ -2,20 +2,25 @@
  * Startup tests for `startDaemonWorkspaceApps`.
  *
  * Pin three contracts:
- * - happy path opens every discovered workspace in parallel and returns the
+ * - happy path opens every configured workspace in parallel and returns the
  *   started routes
  * - if any sibling `open(ctx)` rejects, all successfully opened runtimes are
  *   asyncDispose'd before the structured error propagates
- * - an invalid default export rejects with `WorkspaceDaemonInvalidExport`
+ * - invalid route names fail before any route opens
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { AuthClient } from '@epicenter/auth';
 import { expectErr, expectOk } from '@epicenter/test-utils/result';
+import type {
+	DaemonWorkspaceContext,
+	DaemonWorkspaceDefinition,
+} from '../daemon/define-daemon-workspace.js';
+import type { DaemonRuntime } from '../daemon/types.js';
 
 import { startDaemonWorkspaceApps } from './start-daemon-workspace-apps.js';
 
@@ -29,14 +34,6 @@ afterEach(() => {
 	rmSync(projectDir, { recursive: true, force: true });
 });
 
-function writeWorkspaceDaemon(route: string, source: string): string {
-	const dir = join(projectDir, 'workspaces', route);
-	mkdirSync(dir, { recursive: true });
-	const path = join(dir, 'daemon.ts');
-	writeFileSync(path, source);
-	return path;
-}
-
 function disposeMarkerPath(route: string): string {
 	return join(projectDir, `${route}.disposed`);
 }
@@ -45,77 +42,66 @@ function stubAuthClient(): AuthClient {
 	return { state: { status: 'signed-in' } } as AuthClient;
 }
 
+function testRuntime(
+	onDispose: () => void | Promise<void> = () => {},
+): DaemonRuntime {
+	return {
+		collaboration: {} as DaemonRuntime['collaboration'],
+		async [Symbol.asyncDispose]() {
+			await onDispose();
+		},
+	};
+}
+
 describe('startDaemonWorkspaceApps', () => {
-	test('opens every discovered workspace and returns the started routes', async () => {
-		writeWorkspaceDaemon(
-			'alpha',
-			`export default {
-				async open(ctx) {
-					return {
-						route: ctx.route,
-						collaboration: {},
-						async [Symbol.asyncDispose]() {},
-					};
+	test('opens every configured daemon route and returns the started routes', async () => {
+		const routes: Record<string, DaemonWorkspaceDefinition> = {
+			alpha: {
+				async open(ctx: DaemonWorkspaceContext) {
+					expect(ctx.route).toBe('alpha');
+					return testRuntime();
 				},
-			};
-			`,
-		);
-		writeWorkspaceDaemon(
-			'beta',
-			`export default {
-				async open(ctx) {
-					return {
-						route: ctx.route,
-						collaboration: {},
-						async [Symbol.asyncDispose]() {},
-					};
+			},
+			beta: {
+				async open(ctx: DaemonWorkspaceContext) {
+					expect(ctx.route).toBe('beta');
+					return testRuntime();
 				},
-			};
-			`,
-		);
+			},
+		};
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
 			auth: stubAuthClient(),
+			routes,
 		});
 		const data = expectOk(result);
-		const routes = data.routes
+		const routeNames = data
 			.map((entry) => entry.route)
 			.slice()
 			.sort();
-		expect(routes).toEqual(['alpha', 'beta']);
+		expect(routeNames).toEqual(['alpha', 'beta']);
 	});
 
 	test('disposes successfully opened runtimes when a sibling open fails', async () => {
 		const goodMarker = disposeMarkerPath('good');
-		writeWorkspaceDaemon(
-			'good',
-			`import { writeFileSync } from 'node:fs';
-			export default {
+		const routes: Record<string, DaemonWorkspaceDefinition> = {
+			good: {
 				async open() {
-					return {
-						collaboration: {},
-						async [Symbol.asyncDispose]() {
-							writeFileSync(${JSON.stringify(goodMarker)}, 'disposed');
-						},
-					};
+					return testRuntime(() => writeFileSync(goodMarker, 'disposed'));
 				},
-			};
-			`,
-		);
-		writeWorkspaceDaemon(
-			'bad',
-			`export default {
+			},
+			bad: {
 				async open() {
 					throw new Error('boom');
 				},
-			};
-			`,
-		);
+			},
+		};
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
 			auth: stubAuthClient(),
+			routes,
 		});
 		const error = expectErr(result);
 		expect(error.name).toBe('WorkspaceOpenFailed');
@@ -124,45 +110,81 @@ describe('startDaemonWorkspaceApps', () => {
 		expect(await Bun.file(goodMarker).exists()).toBe(true);
 	});
 
-	test('rejects when a daemon default export has no open()', async () => {
-		writeWorkspaceDaemon(
-			'broken',
-			`export default { notOpen: 'oops' };
-			`,
-		);
+	test('rejects invalid route names before opening routes', async () => {
+		const marker = disposeMarkerPath('invalid');
+		const routes = Object.create(null) as Record<
+			string,
+			DaemonWorkspaceDefinition
+		>;
+		routes.__proto__ = {
+			async open() {
+				writeFileSync(marker, 'opened');
+				return testRuntime();
+			},
+		};
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
 			auth: stubAuthClient(),
+			routes,
 		});
 		const error = expectErr(result);
-		expect(error.name).toBe('WorkspaceDaemonInvalidExport');
-		expect(error).toMatchObject({ route: 'broken' });
+		expect(error).toMatchObject({
+			name: 'WorkspaceRouteRejected',
+			route: '__proto__',
+			reason: 'invalid',
+		});
+		expect(await Bun.file(marker).exists()).toBe(false);
 	});
 
-	test('returns an empty result when there is no workspaces/ directory', async () => {
+	test('rejects reserved object route keys before opening routes', async () => {
+		const marker = disposeMarkerPath('constructor');
+		const routes: Record<string, DaemonWorkspaceDefinition> = {
+			constructor: {
+				async open() {
+					writeFileSync(marker, 'opened');
+					return testRuntime();
+				},
+			},
+		};
+
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
 			auth: stubAuthClient(),
+			routes,
 		});
-		const data = expectOk(result);
-		expect(data.routes).toEqual([]);
+		const error = expectErr(result);
+		expect(error).toMatchObject({
+			name: 'WorkspaceRouteRejected',
+			route: 'constructor',
+			reason: 'invalid',
+		});
+		expect(await Bun.file(marker).exists()).toBe(false);
 	});
 
-	test('refuses to open workspaces when machine auth is signed out', async () => {
-		writeWorkspaceDaemon(
-			'alpha',
-			`export default {
+	test('returns an empty result when the config declares no routes', async () => {
+		const result = await startDaemonWorkspaceApps({
+			projectDir,
+			auth: stubAuthClient(),
+			routes: {},
+		});
+		const data = expectOk(result);
+		expect(data).toEqual([]);
+	});
+
+	test('refuses to open routes when machine auth is signed out', async () => {
+		const routes = {
+			alpha: {
 				async open() {
 					throw new Error('must not open');
 				},
-			};
-			`,
-		);
+			},
+		} satisfies Record<string, DaemonWorkspaceDefinition>;
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
 			auth: { state: { status: 'signed-out' } } as AuthClient,
+			routes,
 		});
 		const error = expectErr(result);
 		expect(error.name).toBe('WorkspaceAuthSignedOut');

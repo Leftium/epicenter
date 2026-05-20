@@ -21,37 +21,41 @@ import {
 import { createLogger } from 'wellcrafted/logger';
 import { openFujiWorkspace } from './src/lib/workspace.js';
 
-export default defineDaemonWorkspace({
-	async open({
-		projectDir,
-		route,
-		clientId,
-		installationId,
-		attachEncryption,
-		openWebSocket,
-	}) {
-		const workspace = openFujiWorkspace(attachEncryption, { clientId });
-
-		const infra = attachDaemonInfrastructure(workspace.ydoc, {
+export function defineFujiDaemon() {
+	return defineDaemonWorkspace({
+		async open({
 			projectDir,
-			openWebSocket,
+			route,
+			clientId,
 			installationId,
-			actions: workspace.actions,
-		});
+			attachEncryption,
+			openWebSocket,
+		}) {
+			const workspace = openFujiWorkspace(attachEncryption, { clientId });
 
-		const sqliteDb = openWriterSqlite({
-			filePath: sqlitePath(projectDir, workspace.ydoc.guid),
-			log: createLogger(`${route}-sqlite`),
-		});
-		workspace.ydoc.once('destroy', () => sqliteDb.close());
+			const infra = attachDaemonInfrastructure(workspace.ydoc, {
+				projectDir,
+				openWebSocket,
+				installationId,
+				actions: workspace.actions,
+			});
 
-		attachSqliteMaterializer(workspace.ydoc, { db: sqliteDb }).table(
-			workspace.tables.entries,
-		);
-		attachMarkdownMaterializer(workspace.ydoc, {
-			dir: markdownPath(projectDir, workspace.ydoc.guid),
-		}).table(workspace.tables.entries, { filename: slugFilename('title') });
+			const sqliteDb = openWriterSqlite({
+				filePath: sqlitePath(projectDir, workspace.ydoc.guid),
+				log: createLogger(`${route}-sqlite`),
+			});
+			workspace.ydoc.once('destroy', () => sqliteDb.close());
 
-		return infra;
-	},
-});
+			attachSqliteMaterializer(workspace.ydoc, { db: sqliteDb }).table(
+				workspace.tables.entries,
+			);
+			attachMarkdownMaterializer(workspace.ydoc, {
+				dir: markdownPath(projectDir, workspace.ydoc.guid),
+			}).table(workspace.tables.entries, { filename: slugFilename('title') });
+
+			return infra;
+		},
+	});
+}
+
+export default defineFujiDaemon();

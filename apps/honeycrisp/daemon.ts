@@ -22,38 +22,42 @@ import {
 import { createLogger } from 'wellcrafted/logger';
 import { openHoneycrispWorkspace } from './workspace.js';
 
-export default defineDaemonWorkspace({
-	async open({
-		projectDir,
-		route,
-		clientId,
-		installationId,
-		attachEncryption,
-		openWebSocket,
-	}) {
-		const workspace = openHoneycrispWorkspace(attachEncryption, { clientId });
-
-		const infra = attachDaemonInfrastructure(workspace.ydoc, {
+export function defineHoneycrispDaemon() {
+	return defineDaemonWorkspace({
+		async open({
 			projectDir,
-			openWebSocket,
+			route,
+			clientId,
 			installationId,
-			actions: workspace.actions,
-		});
+			attachEncryption,
+			openWebSocket,
+		}) {
+			const workspace = openHoneycrispWorkspace(attachEncryption, { clientId });
 
-		const sqliteDb = openWriterSqlite({
-			filePath: sqlitePath(projectDir, workspace.ydoc.guid),
-			log: createLogger(`${route}-sqlite`),
-		});
-		workspace.ydoc.once('destroy', () => sqliteDb.close());
+			const infra = attachDaemonInfrastructure(workspace.ydoc, {
+				projectDir,
+				openWebSocket,
+				installationId,
+				actions: workspace.actions,
+			});
 
-		const sqlite = attachSqliteMaterializer(workspace.ydoc, { db: sqliteDb });
-		sqlite.table(workspace.tables.folders);
-		sqlite.table(workspace.tables.notes);
+			const sqliteDb = openWriterSqlite({
+				filePath: sqlitePath(projectDir, workspace.ydoc.guid),
+				log: createLogger(`${route}-sqlite`),
+			});
+			workspace.ydoc.once('destroy', () => sqliteDb.close());
 
-		attachMarkdownMaterializer(workspace.ydoc, {
-			dir: markdownPath(projectDir, workspace.ydoc.guid),
-		}).table(workspace.tables.notes, { filename: slugFilename('title') });
+			const sqlite = attachSqliteMaterializer(workspace.ydoc, { db: sqliteDb });
+			sqlite.table(workspace.tables.folders);
+			sqlite.table(workspace.tables.notes);
 
-		return infra;
-	},
-});
+			attachMarkdownMaterializer(workspace.ydoc, {
+				dir: markdownPath(projectDir, workspace.ydoc.guid),
+			}).table(workspace.tables.notes, { filename: slugFilename('title') });
+
+			return infra;
+		},
+	});
+}
+
+export default defineHoneycrispDaemon();

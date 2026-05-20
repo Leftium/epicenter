@@ -7,12 +7,12 @@
 
 import { resolve } from 'node:path';
 
-import { findEpicenterDir } from '@epicenter/workspace/node';
+import { findProjectRoot } from '@epicenter/workspace/node';
 import type { Options } from 'yargs';
 
 function resolveProjectDir(start: string): string {
 	try {
-		return findEpicenterDir(start);
+		return findProjectRoot(start);
 	} catch {
 		return resolve(start);
 	}
@@ -20,7 +20,8 @@ function resolveProjectDir(start: string): string {
 
 export const projectOption = {
 	type: 'string',
-	description: 'Start directory for Epicenter project discovery',
+	description:
+		'Project root (or any directory under it; discovery walks up to the nearest `epicenter.config.ts`).',
 	default: () => process.cwd(),
 	defaultDescription: 'current working directory',
 	coerce: resolveProjectDir,

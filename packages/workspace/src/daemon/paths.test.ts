@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { realpathSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -30,18 +30,31 @@ describe('daemon/paths', () => {
 		expect(dirHash(symlinked)).toBe(dirHash(real));
 	});
 
-	test('socketPathFor stays comfortably under macOS 104-char limit', () => {
-		// Worst-case: a long $EPICENTER_HOME with no XDG override.
+	test('socketPathFor stays under the configured safe Unix socket limit', () => {
 		delete process.env.XDG_RUNTIME_DIR;
 		const dir = realpathSync(tmpdir());
-		expect(socketPathFor(dir).length).toBeLessThanOrEqual(100);
+		expect(Buffer.byteLength(socketPathFor(dir))).toBeLessThanOrEqual(95);
 	});
 
-	test('runtimeDir honors XDG_RUNTIME_DIR when set, falls back to home/run when unset', () => {
+	test('socketPathFor rejects unsafe socket paths', () => {
+		const longRuntimeDir = mkdtempSync(
+			join(tmpdir(), 'epicenter-runtime-path-that-is-too-long-for-sockets-'),
+		);
+		process.env.XDG_RUNTIME_DIR = longRuntimeDir;
+		try {
+			expect(() => socketPathFor(tmpdir())).toThrow(
+				/exceeds safe Unix socket limit/,
+			);
+		} finally {
+			rmSync(longRuntimeDir, { recursive: true, force: true });
+		}
+	});
+
+	test('runtimeDir honors XDG_RUNTIME_DIR when set, falls back to tmpdir when unset', () => {
 		process.env.XDG_RUNTIME_DIR = '/tmp/fake-xdg';
 		expect(runtimeDir()).toBe(join('/tmp/fake-xdg', 'epicenter'));
 
 		delete process.env.XDG_RUNTIME_DIR;
-		expect(runtimeDir().endsWith('/run')).toBe(true);
+		expect(runtimeDir()).toBe(join(tmpdir(), 'epicenter'));
 	});
 });

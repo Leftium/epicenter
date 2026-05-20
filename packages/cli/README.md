@@ -1,6 +1,6 @@
 # @epicenter/cli
 
-> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by folder-routed daemon extensions, locally or on a peer that's online right now.
+> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by configured daemon routes, locally or on a peer that's online right now.
 
 Each verb is a one-line shell shortcut for one workspace primitive:
 
@@ -33,7 +33,7 @@ The same env var and scripts apply to every command that talks to the API, inclu
 
 ## Commands
 
-`epicenter daemon up` opens every `workspaces/<route>/daemon.ts` extension for the project. `list`, `run`, and `peers` dispatch to that local daemon over the project socket.
+`epicenter daemon up` opens every route listed in the project's `epicenter.config.ts`. `list`, `run`, and `peers` dispatch to that local daemon over its Unix socket.
 
 ```bash
 epicenter auth login
@@ -52,14 +52,15 @@ epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' --peer u
 epicenter peers -C ~/vault
 ```
 
-`-C` is a start directory for project discovery. Discovery walks upward until it finds `workspaces/` or `.epicenter/`.
+`-C` is a start directory for project discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon starts every route in that config.
 
 ## Daemon Extensions
 
-One folder is one route:
+`epicenter.config.ts` owns route identity. The daemon module path is only an import chosen by the project, and one daemon process can host every route in the map.
 
 ```
 my-vault/
+├── epicenter.config.ts
 ├── workspaces/
 │   └── fuji/
 │       ├── daemon.ts
@@ -67,20 +68,38 @@ my-vault/
 └── .epicenter/
 ```
 
-`workspaces/fuji/daemon.ts` default-exports a daemon workspace module:
+```ts
+import { defineConfig } from '@epicenter/workspace';
+import fuji from './workspaces/fuji/daemon.ts';
+
+export default defineConfig({
+	daemon: {
+		routes: {
+			fuji,
+		},
+	},
+});
+```
+
+The imported module exports a route-agnostic daemon workspace definition. The route name comes from the `daemon.routes` object key:
 
 ```ts
 import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
 
 export default defineDaemonWorkspace({
-	async open({ auth, projectDir, route }) {
+	async open({ attachEncryption, openWebSocket, projectDir, route }) {
 		// Open the long-lived local runtime.
+		// `route` was supplied by epicenter.config.ts.
 		// Return { collaboration, [Symbol.asyncDispose] }.
 	},
 });
 ```
 
-The folder name is the CLI route prefix. `workspaces/fuji/daemon.ts` exposes actions as `fuji.<action_key>`.
+The route key is the CLI route prefix. The same daemon module can be mounted under a different key, and the CLI follows that key. In the example above, Fuji actions are exposed as `fuji.<action_key>` because the project config includes the module under `fuji`.
+
+`workspaces/` is an organization convention for source files. It is not scanned, and it does not enable routes by itself. A small project can import daemon modules from any path as long as `epicenter.config.ts` registers them.
+
+`.epicenter/` holds generated project data such as SQLite materializers, Yjs update logs, markdown materializers, and its generated `.gitignore`. It is not a registry. Runtime files live outside the project: sockets and daemon metadata use the OS runtime directory, while daemon logs use the platform log directory from `env-paths`.
 
 ## Scripting
 

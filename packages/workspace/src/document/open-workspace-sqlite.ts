@@ -28,10 +28,10 @@ import { sqlitePath } from './workspace-paths.js';
  *
  * @example
  * ```ts
- * import { findEpicenterDir, openWorkspaceSqlite } from '@epicenter/workspace/node';
+ * import { findProjectRoot, openWorkspaceSqlite } from '@epicenter/workspace/node';
  * import { FUJI_WORKSPACE_ID } from '@epicenter/fuji';
  *
- * const db = openWorkspaceSqlite(findEpicenterDir(), FUJI_WORKSPACE_ID);
+ * const db = openWorkspaceSqlite(findProjectRoot(), FUJI_WORKSPACE_ID);
  * const urgent = db.query('SELECT * FROM entries WHERE tag = ?').all('urgent');
  * db.close();
  * ```

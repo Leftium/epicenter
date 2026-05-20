@@ -1,13 +1,13 @@
 /**
- * Folder-routed daemon extension startup.
+ * Config-routed daemon route startup.
  *
- * `startDaemonWorkspaceApps()` is the daemon entry point: discover
- * `<projectDir>/workspaces/*`, import each `daemon.ts`, validate the default
- * export, run every `open(ctx)` in parallel, and either return the started
- * runtimes or dispose the successfully opened ones if any sibling failed.
+ * `startDaemonWorkspaceApps()` is the daemon entry point: validate the routes
+ * from `epicenter.config.ts`, run every `open(ctx)` in parallel, and either
+ * return the started runtimes or dispose the successfully opened ones if any
+ * sibling failed.
  *
  * The host owns auth. It refuses to start when machine auth is signed-out,
- * then builds a per-extension `DaemonWorkspaceContext` where
+ * then builds a per-route `DaemonWorkspaceContext` where
  * `attachEncryption` and `openWebSocket` already carry the auth bindings.
  * Daemon code never touches the auth client directly: it consumes the
  * capabilities in the context and composes a runtime.
@@ -21,12 +21,15 @@ import type { AuthClient } from '@epicenter/auth';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 
-import type { DaemonWorkspaceContext } from '../daemon/define-daemon-workspace.js';
-import type { DaemonRuntime, StartedDaemonRoute } from '../daemon/index.js';
+import type {
+	DaemonWorkspaceContext,
+	DaemonWorkspaceDefinition,
+} from '../daemon/define-daemon-workspace.js';
+import type { StartedDaemonRoute } from '../daemon/index.js';
+import { validateDaemonRouteNames } from '../daemon/route-validation.js';
 import { attachEncryption } from '../document/attach-encryption.js';
 import { hashClientId } from '../shared/client-id.js';
 import type { ProjectDir } from '../shared/types.js';
-import { discoverWorkspaceApps, type WorkspaceAppEntry } from './discover.js';
 import {
 	WorkspaceAppError,
 	type WorkspaceAppError as WorkspaceAppErrorType,
@@ -35,35 +38,37 @@ import {
 export type StartDaemonWorkspaceAppsOptions = {
 	projectDir: ProjectDir | string;
 	auth: AuthClient;
-};
-
-export type StartDaemonWorkspaceAppsResult = {
-	routes: StartedDaemonRoute[];
+	routes: Readonly<Record<string, DaemonWorkspaceDefinition>>;
 };
 
 /**
- * Bring every daemon extension under `<projectDir>/workspaces/` online.
+ * Bring every configured daemon route online.
  *
- * Imports run in parallel because they only resolve modules; opens run in
- * parallel because each extension owns its own resources. If any open or
- * import fails, every successfully opened runtime is disposed before
- * returning the first failure as a structured error.
+ * Opens run in parallel because each route owns its own resources. If any
+ * open fails, every successfully opened runtime is disposed before returning
+ * the first failure as a structured error.
  */
 export async function startDaemonWorkspaceApps(
 	options: StartDaemonWorkspaceAppsOptions,
-): Promise<Result<StartDaemonWorkspaceAppsResult, WorkspaceAppErrorType>> {
-	const { auth } = options;
+): Promise<Result<StartedDaemonRoute[], WorkspaceAppErrorType>> {
+	const { auth, routes } = options;
 	const projectDir = resolve(options.projectDir) as ProjectDir;
 	if (auth.state.status === 'signed-out') {
 		return WorkspaceAppError.WorkspaceAuthSignedOut();
 	}
 
-	const discovery = discoverWorkspaceApps(projectDir);
-	if (discovery.error) return discovery;
-	const entries = discovery.data;
+	const routeEntries = Object.entries(routes);
+	const routeIssue = validateDaemonRouteNames(
+		routeEntries.map(([route]) => route),
+	);
+	if (routeIssue !== null) {
+		return WorkspaceAppError.WorkspaceRouteRejected(routeIssue);
+	}
 
 	const settled = await Promise.allSettled(
-		entries.map((entry) => openOneWorkspaceApp({ entry, projectDir, auth })),
+		routeEntries.map(([route, definition]) =>
+			openOneDaemonRoute({ route, definition, projectDir, auth }),
+		),
 	);
 
 	const opened: StartedDaemonRoute[] = [];
@@ -92,62 +97,48 @@ export async function startDaemonWorkspaceApps(
 		return Err(firstError);
 	}
 
-	return Ok({ routes: opened });
+	return Ok(opened);
 }
 
-type OpenOneOptions = {
-	entry: WorkspaceAppEntry;
+type OpenOneRouteOptions = {
+	route: string;
+	definition: DaemonWorkspaceDefinition;
 	projectDir: ProjectDir;
 	auth: AuthClient;
 };
 
-async function openOneWorkspaceApp({
-	entry,
+async function openOneDaemonRoute({
+	route,
+	definition,
 	projectDir,
 	auth,
-}: OpenOneOptions): Promise<Result<StartedDaemonRoute, WorkspaceAppErrorType>> {
-	let mod: unknown;
-	try {
-		mod = await import(Bun.pathToFileURL(entry.daemonEntryPath).href);
-	} catch (cause) {
-		return WorkspaceAppError.WorkspaceOpenFailed({
-			route: entry.route,
-			cause,
-		});
-	}
-
-	const open = readOpenFunction(mod);
-	if (open === null) {
-		return WorkspaceAppError.WorkspaceDaemonInvalidExport({
-			route: entry.route,
-			daemonEntryPath: entry.daemonEntryPath,
-		});
-	}
-
+}: OpenOneRouteOptions): Promise<
+	Result<StartedDaemonRoute, WorkspaceAppErrorType>
+> {
 	const ctx: DaemonWorkspaceContext = {
 		projectDir,
-		route: entry.route,
+		route,
 		clientId: hashClientId(projectDir),
-		installationId: `${entry.route}-daemon`,
+		installationId: `${route}-daemon`,
 		attachEncryption: createDaemonAttachEncryption({
 			auth,
-			route: entry.route,
+			route,
 		}),
 		openWebSocket: auth.openWebSocket,
 	};
 	try {
-		const runtime = (await open(ctx)) as DaemonRuntime;
-		return Ok({ route: entry.route, runtime });
+		const runtime = await definition.open(ctx);
+		return Ok({ route, runtime });
 	} catch (cause) {
 		return WorkspaceAppError.WorkspaceOpenFailed({
-			route: entry.route,
+			route,
 			cause,
 		});
 	}
 }
 
 /**
- * Build the encryption attacher the daemon ctx hands to extensions. The
+ * Build the encryption attacher the daemon ctx hands to routes. The
  * keyring closure reads `auth.state` lazily so a late sign-out throws at the
  * next encryption call instead of the host having to re-check on every open.
  */
@@ -167,21 +158,6 @@ function createDaemonAttachEncryption({
 				return auth.state.localIdentity.keyring;
 			},
 		});
-}
-
-type OpenFn = (ctx: DaemonWorkspaceContext) => unknown | Promise<unknown>;
-
-function readOpenFunction(mod: unknown): OpenFn | null {
-	if (!isObjectRecord(mod)) return null;
-	const defaultExport = mod.default;
-	if (!isObjectRecord(defaultExport)) return null;
-	const open = defaultExport.open;
-	if (typeof open !== 'function') return null;
-	return open.bind(defaultExport) as OpenFn;
-}
-
-function isObjectRecord(value: unknown): value is Record<PropertyKey, unknown> {
-	return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 async function disposeOpenedRuntimes(

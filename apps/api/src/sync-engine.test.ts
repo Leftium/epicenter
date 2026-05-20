@@ -7,15 +7,16 @@
  * Key behaviors:
  * - HTTP sync forwards the raw request body to the selected room and returns
  *   metering data to the host route.
- * - WebSocket upgrades are forwarded by resolved room name.
+ * - Snapshot reads return the selected room doc as an HTTP response.
  * - The engine module stays free of Better Auth and billing imports.
  */
 
 import { expect, test } from 'bun:test';
-import { createSyncEngine, type SyncRoom } from './sync-engine.js';
+import { createSyncEngine } from './sync-engine.js';
 
-class FakeRoom implements SyncRoom {
-	webSocketRequests: Request[] = [];
+const ROOM_NAME = 'subject:user-1:rooms:notes';
+
+class FakeSyncRoom {
 	syncBodies: Uint8Array[] = [];
 
 	constructor(
@@ -25,11 +26,6 @@ class FakeRoom implements SyncRoom {
 			snapshot?: Uint8Array;
 		} = {},
 	) {}
-
-	async handleWebSocket(request: Request): Promise<Response> {
-		this.webSocketRequests.push(request);
-		return new Response('upgraded', { status: 101 });
-	}
 
 	async sync(body: Uint8Array): Promise<{
 		diff: Uint8Array | null;
@@ -48,22 +44,24 @@ class FakeRoom implements SyncRoom {
 			storageBytes: this.options.storageBytes ?? 42,
 		};
 	}
-
-	async dispatch(): Promise<{ data: unknown }> {
-		return { data: 'ok' };
-	}
 }
 
-function setup(roomsByName: Record<string, SyncRoom>) {
+function setup(room: FakeSyncRoom) {
 	const requestedRoomNames: string[] = [];
+	const selectRoom = (roomName: string) => {
+		requestedRoomNames.push(roomName);
+		if (roomName !== ROOM_NAME)
+			throw new Error(`Unexpected test room: ${roomName}`);
+		return room;
+	};
 	const engine = createSyncEngine(
 		{
 			rooms: {
-				get(roomName) {
-					requestedRoomNames.push(roomName);
-					const room = roomsByName[roomName];
-					if (!room) throw new Error(`Missing test room: ${roomName}`);
-					return room;
+				sync(roomName, body) {
+					return selectRoom(roomName).sync(body);
+				},
+				getDoc(roomName) {
+					return selectRoom(roomName).getDoc();
 				},
 			},
 		},
@@ -73,23 +71,21 @@ function setup(roomsByName: Record<string, SyncRoom>) {
 }
 
 test('handleHttpSync forwards the request body to the resolved room name', async () => {
-	const room = new FakeRoom({
+	const room = new FakeSyncRoom({
 		diff: new Uint8Array([9, 8]),
 		storageBytes: 128,
 	});
-	const { engine, requestedRoomNames } = setup({
-		'subject:user-1:rooms:notes': room,
-	});
+	const { engine, requestedRoomNames } = setup(room);
 
 	const result = await engine.handleHttpSync(
 		new Request('https://api.test/rooms/notes', {
 			method: 'POST',
 			body: new Uint8Array([1, 2, 3]),
 		}),
-		{ roomName: 'subject:user-1:rooms:notes' },
+		{ roomName: ROOM_NAME },
 	);
 
-	expect(requestedRoomNames).toEqual(['subject:user-1:rooms:notes']);
+	expect(requestedRoomNames).toEqual([ROOM_NAME]);
 	expect(room.syncBodies).toHaveLength(1);
 	const syncBody = room.syncBodies[0];
 	if (!syncBody) throw new Error('Expected sync body');
@@ -105,15 +101,15 @@ test('handleHttpSync forwards the request body to the resolved room name', async
 });
 
 test('handleHttpSync returns 204 and metering when the room has no diff', async () => {
-	const room = new FakeRoom({ diff: null, storageBytes: 64 });
-	const { engine } = setup({ 'subject:user-1:rooms:notes': room });
+	const room = new FakeSyncRoom({ diff: null, storageBytes: 64 });
+	const { engine } = setup(room);
 
 	const result = await engine.handleHttpSync(
 		new Request('https://api.test/rooms/notes', {
 			method: 'POST',
 			body: new Uint8Array([1]),
 		}),
-		{ roomName: 'subject:user-1:rooms:notes' },
+		{ roomName: ROOM_NAME },
 	);
 
 	expect(result.response.status).toBe(204);
@@ -121,17 +117,15 @@ test('handleHttpSync returns 204 and metering when the room has no diff', async 
 });
 
 test('handleHttpSync rejects oversized payloads before selecting a room', async () => {
-	const room = new FakeRoom();
-	const { engine, requestedRoomNames } = setup({
-		'subject:user-1:rooms:notes': room,
-	});
+	const room = new FakeSyncRoom();
+	const { engine, requestedRoomNames } = setup(room);
 
 	const result = await engine.handleHttpSync(
 		new Request('https://api.test/rooms/notes', {
 			method: 'POST',
 			body: new Uint8Array([1, 2, 3, 4, 5]),
 		}),
-		{ roomName: 'subject:user-1:rooms:notes' },
+		{ roomName: ROOM_NAME },
 	);
 
 	expect(result.response.status).toBe(413);
@@ -140,23 +134,23 @@ test('handleHttpSync rejects oversized payloads before selecting a room', async 
 	expect(room.syncBodies).toEqual([]);
 });
 
-test('handleWebSocket forwards the raw request to the room WebSocket capability', async () => {
-	const room = new FakeRoom();
-	const { engine, requestedRoomNames } = setup({
-		'subject:user-1:rooms:notes': room,
+test('getSnapshot returns the selected room snapshot as an octet stream', async () => {
+	const room = new FakeSyncRoom({
+		snapshot: new Uint8Array([4, 5, 6]),
+		storageBytes: 256,
 	});
-	const request = new Request(
-		'https://api.test/rooms/notes?installationId=device-1',
-		{ headers: { upgrade: 'websocket' } },
+	const { engine, requestedRoomNames } = setup(room);
+
+	const result = await engine.getSnapshot(ROOM_NAME);
+
+	expect(requestedRoomNames).toEqual([ROOM_NAME]);
+	expect(result.storageBytes).toBe(256);
+	expect(result.response.headers.get('content-type')).toBe(
+		'application/octet-stream',
 	);
-
-	const response = await engine.handleWebSocket(request, {
-		roomName: 'subject:user-1:rooms:notes',
-	});
-
-	expect(response.status).toBe(101);
-	expect(requestedRoomNames).toEqual(['subject:user-1:rooms:notes']);
-	expect(room.webSocketRequests).toEqual([request]);
+	expect(
+		Array.from(new Uint8Array(await result.response.arrayBuffer())),
+	).toEqual([4, 5, 6]);
 });
 
 test('sync engine source has no host auth or billing imports', async () => {

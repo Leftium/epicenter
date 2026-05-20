@@ -485,12 +485,6 @@ function getResolvedRoom(c: Context<Env>) {
 	};
 }
 
-function getSyncEngine(c: Context<Env>) {
-	return createSyncEngine({
-		rooms: cloudflareDurableObjectRooms(c.env.ROOM),
-	});
-}
-
 /**
  * Fire-and-forget upsert for DO instance tracking.
  *
@@ -541,7 +535,7 @@ app.get(
 	}),
 	async (c) => {
 		const { roomName, room } = getResolvedRoom(c);
-		const sync = getSyncEngine(c);
+		const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
 
 		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
@@ -551,9 +545,12 @@ app.get(
 					doName: roomName,
 				}),
 			);
-			return sync.handleWebSocket(c.req.raw, { roomName });
+			return rooms.handleWebSocket(roomName, c.req.raw);
 		}
 
+		const sync = createSyncEngine({
+			rooms,
+		});
 		const { response, storageBytes } = await sync.getSnapshot(roomName);
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
@@ -575,7 +572,9 @@ app.post(
 	}),
 	async (c) => {
 		const { roomName, room } = getResolvedRoom(c);
-		const sync = getSyncEngine(c);
+		const sync = createSyncEngine({
+			rooms: cloudflareDurableObjectRooms(c.env.ROOM),
+		});
 		const result = await sync.handleHttpSync(c.req.raw, { roomName });
 
 		if (result.storageBytes != null) {
@@ -624,9 +623,9 @@ app.post(
 	),
 	async (c) => {
 		const { roomName, room } = getResolvedRoom(c);
-		const sync = getSyncEngine(c);
+		const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
 		const body = c.req.valid('json');
-		const result = await sync.dispatch(roomName, body);
+		const result = await rooms.dispatch(roomName, body);
 
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {

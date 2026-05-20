@@ -147,22 +147,13 @@ export function createSyncEngine(
   {
     rooms,
   }: {
-    rooms: SyncRooms;
+    rooms: SyncHttpRooms;
   },
   options?: {
     maxPayloadBytes?: number;
   },
 ) {
   return {
-    async handleWebSocket(
-      request: Request,
-      input: {
-        roomName: string;
-      },
-    ) {
-      // Route the already-authorized upgrade request to the room backend.
-    },
-
     async handleHttpSync(
       request: Request,
       input: {
@@ -179,10 +170,6 @@ export function createSyncEngine(
     async getSnapshot(roomName: string) {
       // Return encoded Yjs state for bootstrap.
     },
-
-    async dispatch(roomName: string, request: DispatchRpcRequest) {
-      // Route live-device dispatch through the room runtime.
-    },
   };
 }
 ```
@@ -190,34 +177,37 @@ export function createSyncEngine(
 The engine depends on room infrastructure, not auth infrastructure.
 
 ```ts
-type SyncRooms = {
-  get(roomName: string): SyncRoom;
+type SyncHttpRooms = {
+  sync(roomName: string, update: Uint8Array): Promise<{ diff: Uint8Array | null; storageBytes: number }>;
+  getDoc(roomName: string): Promise<{ data: Uint8Array; storageBytes: number }>;
 };
 
-type SyncRoom = {
-  handleWebSocket(request: Request): Promise<Response>;
-  sync(update: Uint8Array): Promise<{ diff: Uint8Array | null; storageBytes: number }>;
-  getDoc(): Promise<{ data: Uint8Array; storageBytes: number }>;
-  dispatch(request: DispatchRpcRequest): Promise<DispatchResult>;
+type SyncRooms = SyncHttpRooms & {
+  handleWebSocket(roomName: string, request: Request): Promise<Response>;
+  dispatch(roomName: string, request: DispatchRpcRequest): Promise<DispatchResult>;
 };
 ```
 
 The exact method names can change during implementation. Phase 1 keeps the Cloudflare WebSocket upgrade as a raw `Request`, so `Room.upgrade()` still reads `installationId` from the URL. The important constraint is that the engine receives a resolved `roomName`, not a user session or auth client.
 
-Phase 1 follow-up decision: the internal `SyncRoom` contract uses
-`handleWebSocket(request)`, not Durable Object `fetch(request)`. The Cloudflare
-adapter is the only place that maps `handleWebSocket` to `room.fetch(request)`.
-This keeps Cloudflare runtime vocabulary out of the engine contract without
-pretending the package API is final.
+Phase 1 follow-up decision: the internal `SyncRooms` contract takes `roomName`
+on each backend method instead of returning a per-room object. That keeps the
+runtime path honest: the backend resolves the named room and performs one
+operation. There is no room object lifecycle, cache, or reusable instance owned
+by the engine today.
+
+Second follow-up decision: pass-through WebSocket and dispatch methods do not
+belong on `createSyncEngine`. Host routes call the room backend directly for
+those capabilities. `createSyncEngine` depends only on `SyncHttpRooms` and stays
+focused on HTTP sync response construction and snapshot response construction.
 
 ## Host Composition
 
 ### Epicenter Cloud
 
 ```ts
-const sync = createSyncEngine({
-  rooms: cloudflareDurableObjectRooms(c.env.ROOM),
-});
+const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
+const sync = createSyncEngine({ rooms });
 
 app.use('/rooms/*', requireOAuthUser);
 
@@ -244,18 +234,17 @@ Epicenter Cloud owns Better Auth, billing, Postgres metadata, and route errors. 
 ### Solo Self-Host
 
 ```ts
-const sync = createSyncEngine({
-  rooms: localRooms({ dir: './.epicenter/sync' }),
-});
+const rooms = localRooms({ dir: './.epicenter/sync' });
 
 app.all('/rooms/:room/*', async (c) => {
   if (!hasSharedSecret(c.req.raw)) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  return sync.handleWebSocket(c.req.raw, {
-    roomName: `subject:solo:rooms:${c.req.param('room')}`,
-  });
+  return rooms.handleWebSocket(
+    `subject:solo:rooms:${c.req.param('room')}`,
+    c.req.raw,
+  );
 });
 ```
 
@@ -273,9 +262,10 @@ app.get('/rooms/:room', async (c) => {
 
   if (!allowed) return new Response('Forbidden', { status: 403 });
 
-  return sync.handleWebSocket(c.req.raw, {
-    roomName: `subject:${user.tenantScopedId}:rooms:${c.req.param('room')}`,
-  });
+  return rooms.handleWebSocket(
+    `subject:${user.tenantScopedId}:rooms:${c.req.param('room')}`,
+    c.req.raw,
+  );
 });
 ```
 
@@ -317,14 +307,14 @@ roomName =
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Core abstraction | `createSyncEngine` | It removes policy hooks by making the host route the composer. |
+| Core abstraction | Host composition plus `createSyncEngine` for HTTP sync responses | It removes policy hooks by making the host route the composer. |
 | Auth ownership | Host route | Better Auth, enterprise IAM, and self-host secrets are host concerns. |
 | Room access | Resolved before engine call | The engine receives `roomName`, not sessions or users. |
 | Metering | Return values, not hooks | The host can record usage after engine calls. |
-| Deletion | Deferred engine method | Keep deletion out of Phase 1 until an admin route needs it. |
+| Deletion | Deferred room backend method | Keep deletion out of Phase 1 until an admin route needs it. |
 | Token verifier | Not in v1 engine | Token verification belongs to the host route unless we build a separate relay process. |
 | Room boundary | One Yjs doc room | A Durable Object per Yjs doc is the clean Cloudflare boundary. |
-| WebSocket room method | `handleWebSocket(request)` | The engine names the capability it needs; the Cloudflare adapter owns the `fetch(request)` bridge. |
+| WebSocket room method | `rooms.handleWebSocket(roomName, request)` | The room backend names the capability it needs; the Cloudflare adapter owns the `fetch(request)` bridge. |
 | Read-only mode | Deferred | Write access is the only v1 sync capability. |
 
 ## What This Refuses
@@ -347,7 +337,7 @@ These can be built in host applications or in a later packaged relay. They shoul
 
 - [x] **1.1** Create a sync engine module near the existing room route code.
 - [x] **1.2** Move HTTP sync request handling behind `sync.handleHttpSync(...)`.
-- [x] **1.3** Move WebSocket upgrade forwarding behind `sync.handleWebSocket(...)`.
+- [x] **1.3** Keep WebSocket upgrade forwarding behind the room backend capability.
 - [x] **1.4** Keep `requireOAuthUser` and billing checks in `apps/api/src/app.ts`.
 - [x] **1.5** Return metering data from engine calls instead of adding callbacks.
 - [x] **1.6** Add tests proving auth stays outside the engine.
@@ -355,8 +345,8 @@ These can be built in host applications or in a later packaged relay. They shoul
 
 Phase 1 note: the first implementation keeps the boundary inside `apps/api`.
 `app.ts` still resolves the subject-scoped room name and records Postgres usage.
-`sync-engine.ts` only receives `roomName`, forwards sync calls to the room
-runtime, and returns HTTP sync metering to the host route.
+`sync-engine.ts` only receives `roomName` for HTTP sync and snapshot response
+construction. WebSocket upgrades and dispatch now call the room backend directly.
 
 Write-through metering is deferred. Phase 1 returns `storageBytes`, the durable
 measurement the host can record today. If write-throughput billing becomes
@@ -374,12 +364,12 @@ Adapter stance: crossws stays a future runtime adapter candidate. It should not
 become the core sync engine contract unless a second runtime proves that shape.
 For now, `apps/api` keeps one Cloudflare adapter around the Durable Object room.
 
-### Phase 2: Make The Engine Package Boundary Explicit
+### Phase 2: Prove Package Pressure Before Extraction
 
-- [ ] **2.1** Move reusable engine code into a package or internal module with no Better Auth imports.
-- [ ] **2.2** Define `SyncRooms` and Cloudflare Durable Object room adapter.
-- [ ] **2.3** Add an in-memory or test room adapter.
-- [ ] **2.4** Document the host-route pattern.
+- [ ] **2.1** Identify a second real host or runtime that would share the engine code.
+- [ ] **2.2** Prove that host shares behavior beyond HTTP response framing.
+- [ ] **2.3** Decide whether raw `Request` WebSocket forwarding survives outside Cloudflare.
+- [ ] **2.4** Extract only after the second runtime proves the package contract.
 
 ### Phase 3: Self-Host Host Routes
 
@@ -397,8 +387,8 @@ For now, `apps/api` keeps one Cloudflare adapter around the Durable Object room.
 
 1. Should `roomName` stay subject-scoped (`subject:{subject}:rooms:{room}`) or move to workspace-scoped names when workspace IDs become first-class sync namespaces?
 2. Should `handleWebSocket` read `installationId` from the URL, headers, or a parsed input supplied by the host route?
-3. Should `dispatch` remain part of the sync engine, or should live-device RPC become a separate engine layered beside sync?
-4. When the package boundary is extracted, should the Cloudflare Durable Object adapter move with the engine package or remain host-owned?
+3. Should dispatch stay on the room backend, or should live-device RPC become a separate backend capability beside sync?
+4. What second runtime would prove package extraction is safer than staying inside `apps/api`?
 5. Should WebSocket sync eventually report storage observations, or should
    storage metering stay tied to HTTP sync and periodic host-side measurement?
 

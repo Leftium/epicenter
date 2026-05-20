@@ -1,40 +1,43 @@
 import { MAX_PAYLOAD_BYTES } from './constants';
 import type { DispatchResult, DispatchRpcRequest, Room } from './room';
 
-export type SyncRooms = {
-	get(roomName: string): SyncRoom;
-};
-
-export type SyncRoom = {
-	handleWebSocket(request: Request): Promise<Response>;
-	sync(body: Uint8Array): Promise<{
+export type SyncHttpRooms = {
+	sync(
+		roomName: string,
+		body: Uint8Array,
+	): Promise<{
 		diff: Uint8Array | null;
 		storageBytes: number;
 	}>;
-	getDoc(): Promise<{ data: Uint8Array; storageBytes: number }>;
-	dispatch(request: DispatchRpcRequest): Promise<DispatchResult>;
+	getDoc(roomName: string): Promise<{ data: Uint8Array; storageBytes: number }>;
+};
+
+export type SyncRooms = SyncHttpRooms & {
+	handleWebSocket(roomName: string, request: Request): Promise<Response>;
+	dispatch(
+		roomName: string,
+		request: DispatchRpcRequest,
+	): Promise<DispatchResult>;
 };
 
 export function cloudflareDurableObjectRooms(
 	roomNamespace: DurableObjectNamespace<Room>,
 ): SyncRooms {
+	const getRoom = (roomName: string) =>
+		roomNamespace.get(roomNamespace.idFromName(roomName));
+
 	return {
-		get(roomName) {
-			const room = roomNamespace.get(roomNamespace.idFromName(roomName));
-			return {
-				handleWebSocket(request) {
-					return room.fetch(request);
-				},
-				sync(body) {
-					return room.sync(body);
-				},
-				getDoc() {
-					return room.getDoc();
-				},
-				dispatch(request) {
-					return room.dispatch(request);
-				},
-			};
+		handleWebSocket(roomName, request) {
+			return getRoom(roomName).fetch(request);
+		},
+		sync(roomName, body) {
+			return getRoom(roomName).sync(body);
+		},
+		getDoc(roomName) {
+			return getRoom(roomName).getDoc();
+		},
+		dispatch(roomName, request) {
+			return getRoom(roomName).dispatch(request);
 		},
 	};
 }
@@ -43,7 +46,7 @@ export function createSyncEngine(
 	{
 		rooms,
 	}: {
-		rooms: SyncRooms;
+		rooms: SyncHttpRooms;
 	},
 	options?: {
 		maxPayloadBytes?: number;
@@ -52,15 +55,6 @@ export function createSyncEngine(
 	const maxPayloadBytes = options?.maxPayloadBytes ?? MAX_PAYLOAD_BYTES;
 
 	return {
-		async handleWebSocket(
-			request: Request,
-			input: {
-				roomName: string;
-			},
-		): Promise<Response> {
-			return rooms.get(input.roomName).handleWebSocket(request);
-		},
-
 		async handleHttpSync(
 			request: Request,
 			input: {
@@ -78,7 +72,7 @@ export function createSyncEngine(
 				};
 			}
 
-			const { diff, storageBytes } = await rooms.get(input.roomName).sync(body);
+			const { diff, storageBytes } = await rooms.sync(input.roomName, body);
 
 			return {
 				response: diff
@@ -92,15 +86,8 @@ export function createSyncEngine(
 			response: Response;
 			storageBytes: number;
 		}> {
-			const { data, storageBytes } = await rooms.get(roomName).getDoc();
+			const { data, storageBytes } = await rooms.getDoc(roomName);
 			return { response: binaryResponse(data), storageBytes };
-		},
-
-		async dispatch(
-			roomName: string,
-			request: DispatchRpcRequest,
-		): Promise<DispatchResult> {
-			return rooms.get(roomName).dispatch(request);
 		},
 	};
 }

@@ -56,13 +56,11 @@ function setup(room: FakeSyncRoom) {
 	};
 	const engine = createSyncEngine(
 		{
-			rooms: {
-				sync(roomName, body) {
-					return selectRoom(roomName).sync(body);
-				},
-				getDoc(roomName) {
-					return selectRoom(roomName).getDoc();
-				},
+			sync(roomName, body) {
+				return selectRoom(roomName).sync(body);
+			},
+			getDoc(roomName) {
+				return selectRoom(roomName).getDoc();
 			},
 		},
 		{ maxPayloadBytes: 4 },

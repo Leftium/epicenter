@@ -35,11 +35,7 @@ export function cloudflareDurableObjectRooms(
 }
 
 export function createSyncEngine(
-	{
-		rooms,
-	}: {
-		rooms: RoomSyncBackend;
-	},
+	rooms: RoomSyncBackend,
 	options?: {
 		maxPayloadBytes?: number;
 	},

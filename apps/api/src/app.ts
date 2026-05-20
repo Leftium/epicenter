@@ -553,9 +553,7 @@ app.get(
 			return rooms.handleWebSocket(roomName, c.req.raw);
 		}
 
-		const sync = createSyncEngine({
-			rooms,
-		});
+		const sync = createSyncEngine(rooms);
 		const { response, storageBytes } = await sync.getSnapshot(roomName);
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
@@ -577,9 +575,7 @@ app.post(
 	}),
 	async (c) => {
 		const { roomName, room } = resolveSubjectRoom(c);
-		const sync = createSyncEngine({
-			rooms: cloudflareDurableObjectRooms(c.env.ROOM),
-		});
+		const sync = createSyncEngine(cloudflareDurableObjectRooms(c.env.ROOM));
 		const result = await sync.handleHttpSync(c.req.raw, { roomName });
 
 		if (result.storageBytes != null) {

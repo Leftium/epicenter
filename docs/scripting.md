@@ -21,9 +21,12 @@ const db = openWorkspaceSqlite(projectDir, FUJI_WORKSPACE_ID);
 const urgent = db.query('SELECT * FROM entries WHERE tag = ?').all('urgent');
 
 // writes: typed proxy over unix socket to the daemon
-const fuji = await connectDaemonActions<FujiActions>({ route: 'fuji', projectDir });
+const fuji = await connectDaemonActions<FujiActions>({
+	route: 'fuji',
+	projectDir,
+});
 for (const note of urgent) {
-  await fuji.entries_update({ id: note.id, tags: ['triaged'] });
+	await fuji.entries_update({ id: note.id, tags: ['triaged'] });
 }
 
 db.close();

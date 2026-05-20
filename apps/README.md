@@ -12,7 +12,7 @@ apps/<app>/
 └── package.json     "exports": { ".": "./workspace.ts" }
 ```
 
-The repo root has `workspaces -> apps`, so `epicenter daemon up -C <repoRoot>` discovers app daemons exactly like an installed project discovers `workspaces/<route>/daemon.ts`.
+The repo root `epicenter.config.ts` registers app daemon modules. `epicenter daemon up -C <repoRoot>` starts those configured routes; `apps/<app>/daemon.ts` is the local module each app can expose.
 
 ## Boundaries
 

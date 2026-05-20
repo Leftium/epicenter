@@ -19,7 +19,8 @@ import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
-import { createRouteActionManifest } from './action-path.js';
+import { type ActionManifest, toActionMeta } from '../shared/actions.js';
+import { joinDaemonActionPath } from './action-path.js';
 import { executeRun } from './run-handler.js';
 import type { DaemonServedRoute } from './types.js';
 
@@ -69,14 +70,14 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * locally or over RPC.
  */
 export function buildDaemonApp(
-	runtimes: readonly DaemonServedRoute[],
+	routes: readonly DaemonServedRoute[],
 	triggerShutdown?: () => void,
 ) {
 	return new Hono()
 		.post('/ping', (c) => c.json(Ok('pong' as const)))
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
-			for (const entry of runtimes) {
+			for (const entry of routes) {
 				for (const device of entry.runtime.collaboration.devices.list()) {
 					rows.push({
 						route: entry.route,
@@ -87,20 +88,20 @@ export function buildDaemonApp(
 			return c.json(Ok(rows));
 		})
 		.post('/list', (c) => {
-			return c.json(
-				Ok(
-					createRouteActionManifest(
-						runtimes.map((entry) => ({
-							route: entry.route,
-							actions: entry.runtime.collaboration.actions,
-						})),
-					),
-				),
-			);
+			const manifest: ActionManifest = {};
+			for (const entry of routes) {
+				for (const [path, action] of Object.entries(
+					entry.runtime.collaboration.actions,
+				)) {
+					manifest[joinDaemonActionPath(entry.route, path)] =
+						toActionMeta(action);
+				}
+			}
+			return c.json(Ok(manifest));
 		})
 		.post('/run', sValidator('json', RunRequest), async (c) => {
 			const request = c.req.valid('json');
-			return c.json(await executeRun(runtimes, request));
+			return c.json(await executeRun(routes, request));
 		})
 		.post('/shutdown', (c) => {
 			setTimeout(() => triggerShutdown?.(), 0);

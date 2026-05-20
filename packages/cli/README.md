@@ -10,7 +10,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
                  +--------+---------------------------------------------+
    Enumerate     | list   | Object.entries(collaboration.actions)       |
    Invoke        | run    | actions[key](input) or dispatch(peer, ...)  |
-   Presence      | peers  | collaboration.peers.list()                  |
+   Presence      | peers  | collaboration.devices.list()                |
                  +--------+---------------------------------------------+
 
  Supporting systems: auth (machine session), daemon (process lifecycle)

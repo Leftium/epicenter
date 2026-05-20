@@ -60,7 +60,7 @@ function logSyncStatus(message: string): void {
 	process.stderr.write(`${message}\n`);
 }
 
-export type UpOptions = {
+type UpOptions = {
 	projectDir: string;
 	quiet: boolean;
 	cliVersion?: string;
@@ -78,7 +78,7 @@ export type UpOptions = {
  * - `teardown()` closes the server, asyncDisposes the runtimes, releases the
  *   lease, and unlinks metadata + socket. Idempotent.
  */
-export type UpHandle = {
+type UpHandle = {
 	runtimes: StartedDaemonRoute[];
 	metadata: DaemonMetadata;
 	teardown: () => Promise<void>;

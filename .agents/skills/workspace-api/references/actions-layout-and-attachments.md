@@ -273,7 +273,7 @@ await workspace.dispose();
 
 Writes propagate through sync to the daemon, which owns the materializer (markdown, SQLite mirror, etc.).
 
-Use `connectWorkspace` for one-off scripts and agent-written automation. Use a folder-routed `workspaces/<route>/daemon.ts` (`defineDaemonWorkspace({ open })`) for long-running daemons and materializers that need persistence and custom workspace-specific extensions.
+Use `connectWorkspace` for one-off scripts and agent-written automation. Use `epicenter.config.ts` to register long-running daemon modules and materializers that need persistence and custom workspace-specific extensions. A per-route `daemon.ts` file is a conventional module layout, not a discovery rule.
 
 
 ## The `_v` Convention

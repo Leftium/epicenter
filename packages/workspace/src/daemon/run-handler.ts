@@ -35,15 +35,15 @@ import {
 import type { DaemonServedRoute } from './types.js';
 
 export async function executeRun(
-	runtimes: readonly DaemonServedRoute[],
+	routes: readonly DaemonServedRoute[],
 	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
 ): Promise<RunResponse> {
 	const { routeName, localPath } = parseDaemonActionPath(actionPath);
-	const routeRuntime = runtimes.find(
+	const routeRuntime = routes.find(
 		(candidate) => candidate.route === routeName,
 	);
 	if (!routeRuntime) {
-		const available = runtimes.map((candidate) => candidate.route);
+		const available = routes.map((candidate) => candidate.route);
 		return RunError.UsageError({
 			message: `No daemon route "${routeName}". Available: ${available.join(', ')}`,
 			suggestions: available.map((name) => `  ${name}`),

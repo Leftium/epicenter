@@ -12,10 +12,9 @@
  * See spec: `20260429T004302-workspace-as-daemon-transport.md` § Phase 2.
  */
 
-import { Ok, type Result } from 'wellcrafted/result';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import { buildDaemonApp } from './app.js';
-import { bestEffortAsync } from './best-effort.js';
 import { pingDaemon } from './client.js';
 import type { DaemonLease } from './lease.js';
 import { validateDaemonRouteNames } from './route-validation.js';
@@ -79,7 +78,10 @@ export async function startDaemonServer({
 		async close() {
 			if (isClosed) return;
 			isClosed = true;
-			await bestEffortAsync(() => server.stop(true));
+			await tryAsync({
+				try: () => server.stop(true),
+				catch: () => Ok(undefined),
+			});
 			unlinkSocketFile(socketPath);
 		},
 	});

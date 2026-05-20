@@ -33,7 +33,7 @@ export const WorkspaceAppError = defineErrors({
 		route: string;
 		cause: unknown;
 	}) => ({
-		message: `Workspace "${route}" failed to open: ${extractErrorMessage(cause)}`,
+		message: `Daemon route "${route}" failed to open: ${extractErrorMessage(cause)}`,
 		route,
 		cause,
 	}),

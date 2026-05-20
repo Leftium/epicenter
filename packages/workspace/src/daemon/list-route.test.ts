@@ -8,12 +8,34 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { defineQuery } from '../shared/actions.js';
-import {
-	createRouteActionManifest,
-	joinDaemonActionPath,
-	parseDaemonActionPath,
-} from './action-path.js';
+import { expectOk } from '@epicenter/test-utils/result';
+import type { Result } from 'wellcrafted/result';
+import { type ActionManifest, defineQuery } from '../shared/actions.js';
+import { joinDaemonActionPath, parseDaemonActionPath } from './action-path.js';
+import { buildDaemonApp } from './app.js';
+import type { DaemonServedRoute } from './types.js';
+
+function makeRoute({
+	route,
+	actions,
+}: {
+	route: string;
+	actions: DaemonServedRoute['runtime']['collaboration']['actions'];
+}): DaemonServedRoute {
+	return {
+		route,
+		runtime: {
+			collaboration: {
+				actions,
+				devices: {
+					list: () => [],
+				},
+				status: { phase: 'connected' },
+				dispatch: async () => ({ data: null, error: null }) as never,
+			},
+		},
+	};
+}
 
 describe('daemon action path helpers', () => {
 	test('joinDaemonActionPath prefixes local action paths with the route', () => {
@@ -42,9 +64,9 @@ describe('daemon action path helpers', () => {
 });
 
 describe('/list route', () => {
-	test('returns route-prefixed paths under the action root', () => {
-		const manifest = createRouteActionManifest([
-			{
+	test('returns route-prefixed paths under the action root', async () => {
+		const res = await buildDaemonApp([
+			makeRoute({
 				route: 'demo',
 				actions: {
 					counter_get: defineQuery({
@@ -52,37 +74,46 @@ describe('/list route', () => {
 						handler: () => 0,
 					}),
 				},
-			},
-		]);
+			}),
+		]).request('/list', { method: 'POST' });
 
+		const manifest = expectOk(
+			(await res.json()) as Result<ActionManifest, never>,
+		);
 		expect(Object.keys(manifest).sort()).toEqual(['demo.counter_get']);
 		expect(manifest['demo.counter_get']?.description).toBe('Read the counter');
 	});
 
-	test('returns an empty manifest when the collaboration has no actions', () => {
-		const manifest = createRouteActionManifest([
-			{ route: 'demo', actions: {} },
-		]);
+	test('returns an empty manifest when the collaboration has no actions', async () => {
+		const res = await buildDaemonApp([
+			makeRoute({ route: 'demo', actions: {} }),
+		]).request('/list', { method: 'POST' });
 
+		const manifest = expectOk(
+			(await res.json()) as Result<ActionManifest, never>,
+		);
 		expect(manifest).toEqual({});
 	});
 
-	test('prefixes actions from every daemon route', () => {
-		const manifest = createRouteActionManifest([
-			{
+	test('prefixes actions from every daemon route', async () => {
+		const res = await buildDaemonApp([
+			makeRoute({
 				route: 'notes',
 				actions: {
 					notes_add: defineQuery({ handler: () => null }),
 				},
-			},
-			{
+			}),
+			makeRoute({
 				route: 'tasks',
 				actions: {
 					tasks_list: defineQuery({ handler: () => [] }),
 				},
-			},
-		]);
+			}),
+		]).request('/list', { method: 'POST' });
 
+		const manifest = expectOk(
+			(await res.json()) as Result<ActionManifest, never>,
+		);
 		expect(Object.keys(manifest).sort()).toEqual([
 			'notes.notes_add',
 			'tasks.tasks_list',

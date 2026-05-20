@@ -28,6 +28,12 @@ Lead with a strong opening paragraph that states the key insight in plain langua
 
 Code speaks louder than prose. Show real examples from actual codebases, not abstract `foo`/`bar` illustrations. If the code is self-explanatory, don't over-explain.
 
+Preserve the article's altitude. If the draft is a general lesson with a real
+code example, do not recenter it around the current project problem. The code is
+evidence for the lesson, not automatically the subject. Keep the reusable
+insight in the foreground and put project-specific mechanics in specs,
+reference docs, or implementation notes.
+
 ## Section Headings Are Arguments
 
 Section headings should make claims, not announce topics. The reader should know your position from the heading alone.

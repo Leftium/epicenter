@@ -145,11 +145,7 @@ The engine has no idea whether the host used Better Auth, a reverse proxy, a sha
 
 ```ts
 export function createSyncEngine(
-  {
-    rooms,
-  }: {
-    rooms: SyncHttpRooms;
-  },
+  rooms: SyncHttpRooms,
   options?: {
     maxPayloadBytes?: number;
   },
@@ -189,6 +185,46 @@ type SyncRooms = SyncHttpRooms & {
 };
 ```
 
+This is the small surface area:
+
+```txt
+roomName =
+  opaque sync address
+  built by the host after access has already been checked
+
+rooms.sync(roomName, update) =
+  apply one HTTP sync request body to that room
+  return the room's reply bytes, if the caller is missing anything
+  return storageBytes as a mechanical observation for the host
+
+rooms.getDoc(roomName) =
+  read the current encoded Yjs document state for that room
+  return storageBytes with the read so the host can record durable footprint
+
+sync.handleHttpSync(request, { roomName }) =
+  enforce HTTP-level limits such as max payload size
+  read request bytes
+  call rooms.sync(roomName, bytes)
+  turn the result into an HTTP Response
+  return storageBytes beside the Response
+
+sync.getSnapshot(roomName) =
+  call rooms.getDoc(roomName)
+  wrap the encoded document bytes in an HTTP Response
+  return storageBytes beside the Response
+```
+
+`handleHttpSync` is the one-shot POST path. A client sends a compact Yjs sync
+request that says, "here is what I know, give me what I am missing, and accept
+my update if I have one." The engine does not interpret ownership. It only
+checks the request size, forwards bytes to the selected room, and maps the
+room's answer to either `200 application/octet-stream` or `204 No Content`.
+
+`getSnapshot` is the bootstrap read path. A client or tool asks for the current
+encoded room state without opening a live WebSocket. The room backend still owns
+how that state is stored and encoded; the engine only makes it an HTTP
+response.
+
 The exact method names can change during implementation. Phase 1 keeps the Cloudflare WebSocket upgrade as a raw `Request`, so `Room.upgrade()` still reads `installationId` from the URL. The important constraint is that the engine receives a resolved `roomName`, not a user session or auth client.
 
 Phase 1 follow-up decision: the internal `SyncRooms` contract takes `roomName`
@@ -208,7 +244,7 @@ focused on HTTP sync response construction and snapshot response construction.
 
 ```ts
 const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
-const sync = createSyncEngine({ rooms });
+const sync = createSyncEngine(rooms);
 
 app.use('/rooms/*', requireOAuthUser);
 

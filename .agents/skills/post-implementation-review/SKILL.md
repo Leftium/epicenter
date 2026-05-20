@@ -90,6 +90,7 @@ identity wrappers and pass-through modules
 unnecessary casts or duck-typing inside typed code
 fallback parsers for old shapes
 callbacks that mirror internal implementation steps
+decision callbacks that could be caller-owned composition
 single-file directories and pointless barrels
 ```
 

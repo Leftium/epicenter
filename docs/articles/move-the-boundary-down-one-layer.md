@@ -1,6 +1,8 @@
 # Move the Boundary Down One Layer
 
-When you're writing code, if you see the usage of callback hooks or hooks like that, you want to be very careful and make sure that you are genuinely sure about the abstraction levels. Hooks are not always wrong. But they often mean one layer owns the decision and another layer owns the effect.
+When callback hooks start showing up in an abstraction, slow down and check the layer boundary.
+
+Hooks are not always wrong. Some hooks are real lifecycle points. But hooks that ask one layer to make a decision so another layer can keep driving the effect often mean the boundary is wrong.
 
 The smell looks like this:
 
@@ -13,7 +15,7 @@ createSyncRelay({
 });
 ```
 
-The relay wants to stay generic, so it asks the host for decisions through callbacks. But the host still owns the real policy: who may connect, who pays, what gets deleted, what gets logged. The hooks are a sign that the abstraction is sitting one layer too high.
+The relay wants to stay generic, so it asks the host for decisions through callbacks. But the host still owns the real decisions: who may connect, who pays, what gets deleted, what gets logged. The hooks are a sign that the abstraction may be sitting one layer too high.
 
 The cleaner version is usually one layer lower:
 
@@ -26,7 +28,6 @@ const result = await sync.handleHttpSync(request, {
 
 await recordUsage({
   roomName: access.roomName,
-  bytesWritten: result.bytesWritten,
   storageBytes: result.storageBytes,
 });
 
@@ -35,7 +36,7 @@ return result.response;
 
 The hook disappeared because the host route became the composer.
 
-## Hooks appear when decisions and effects are split apart
+## Hooks Appear When Decisions And Effects Split Apart
 
 The callback version has two owners for one workflow:
 
@@ -51,7 +52,7 @@ relay:
   counts storage
 ```
 
-Now the relay needs hooks to tell the host what happened. The more complete the product gets, the more hooks appear.
+Now the relay needs hooks to tell the host what happened. The more complete the workflow gets, the more hooks appear.
 
 ```typescript
 createSyncRelay({
@@ -65,42 +66,74 @@ createSyncRelay({
 });
 ```
 
-At that point the generic abstraction is not generic anymore. It is a route handler with policy removed and callbacks stapled on.
+At that point the generic abstraction is not generic anymore. It is a workflow with decision points removed and callbacks stapled on.
 
-## The lower boundary is often smaller
+## The Lower Boundary Is Often Smaller
 
 Move the reusable part down until it owns only the mechanism.
 
 ```typescript
-const sync = createSyncEngine({ rooms });
+const sync = createSyncEngine(rooms);
 ```
 
-The engine does not know users, sessions, plans, or invoices. It knows how to sync a room.
+The engine does not know users, sessions, plans, invoices, or access-control rows. It receives an already-authorized room name and performs the mechanical sync work.
 
 ```typescript
-await sync.handleWebSocket(request, {
+const result = await sync.handleHttpSync(request, {
   roomName,
-  installationId,
 });
 ```
 
 Everything around that call belongs to the host.
 
 ```typescript
-app.get('/rooms/:room', async (c) => {
+app.post('/rooms/:room', async (c) => {
   const user = await requireUser(c);
   await requirePlanAllowsSync(user);
 
-  return sync.handleWebSocket(c.req.raw, {
-    roomName: `subject:${user.id}:rooms:${c.req.param('room')}`,
-    installationId: c.req.query('installationId'),
+  const roomName = `subject:${user.id}:rooms:${c.req.param('room')}`;
+  const result = await sync.handleHttpSync(c.req.raw, { roomName });
+
+  await recordUsage({
+    userId: user.id,
+    roomName,
+    storageBytes: result.storageBytes,
   });
+
+  return result.response;
 });
 ```
 
 The host route is not a callback. It is the workflow.
 
-## The test is simple
+## A Concrete Rule
+
+The reusable layer should own the thing it can do without asking the caller to make workflow decisions in the middle of its own control flow.
+
+For a sync engine, that might be:
+
+```txt
+read request bytes
+reject oversized payloads
+call the selected room
+turn room bytes into an HTTP response
+return mechanical observations like storageBytes
+```
+
+The host owns the questions that choose the workflow:
+
+```txt
+who is this user?
+which room are they allowed to open?
+what namespace should this room live under?
+does their plan allow this?
+what should we audit or bill?
+what route error should the caller see?
+```
+
+That distinction is what keeps the smaller abstraction honest. The lower layer can be reused because it does not pretend to understand decisions its caller already owns.
+
+## The Test Is Simple
 
 Ask what happens when you delete the hooks.
 
@@ -116,9 +149,9 @@ No:
 
 Some hooks are real. A database transaction hook, a lifecycle event from a framework, or a low-level protocol callback may be the right shape because the lower layer genuinely owns the timing.
 
-But product hooks are suspicious. If the hook is about billing, access, audit, deletion, or user-facing errors, the host likely owns the workflow and should compose the lower-level primitive directly.
+But decision hooks are suspicious. If the hook asks the caller to decide access, billing, audit, deletion, org membership, retry behavior, route errors, or what should happen next, the caller may own the workflow and should compose the lower-level primitive directly.
 
-## Compose up, do not callback sideways
+## Compose Up, Do Not Callback Sideways
 
 The direction matters.
 
@@ -130,7 +163,7 @@ Compose upward:
   host route -> sync engine -> host records result
 ```
 
-The second version is less magical. The route reads in order. The host owns policy. The reusable code owns mechanics. Nobody has to guess which callback fires when.
+The second version is less magical. The route reads in order. The caller owns the decisions. The reusable code owns mechanics. Nobody has to guess which callback fires when.
 
 That is the design rule I want to keep:
 

@@ -15,11 +15,11 @@
  *   attachIndexedDb,
  *   attachRichText,
  *   attachTables,
- *   cloudWorkspaceSync,
  *   createDisposableCache,
  *   createInstallationId,
  *   defineTable,
  *   docGuid,
+ *   openCloudAppSync,
  * } from '@epicenter/workspace';
  * import type { AuthClient } from '@epicenter/auth';
  * import { type } from 'arktype';
@@ -28,15 +28,14 @@
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
  * declare const auth: AuthClient;
  *
- * const installationId = createInstallationId({ storage: localStorage });
- *
- * // One factory per app instance: captures auth + appId, runs /api/workspaces
- * // once across every doc the app opens, and subscribes to auth state so
- * // sign-in transitions re-attach every live handle automatically.
- * const notesCloud = cloudWorkspaceSync.forApp({
+ * // One factory per app instance: captures auth, appId, and installationId,
+ * // runs /api/workspaces once across every doc the app opens, and subscribes
+ * // to auth state so sign-in transitions re-attach every live handle.
+ * const notesCloud = openCloudAppSync({
  *   auth,
  *   apiUrl: 'https://api.example.com',
  *   appId: 'notes',
+ *   installationId: createInstallationId({ storage: localStorage }),
  * });
  *
  * const ydoc = new Y.Doc({ guid: 'notes' });
@@ -45,7 +44,6 @@
  * const collaboration = notesCloud.open(ydoc, {
  *   docId: 'root',
  *   waitFor: idb.whenLoaded,
- *   installationId,
  *   actions: {},
  * });
  *
@@ -65,7 +63,6 @@
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
  *     const bodySync = notesCloud.open(bodyYdoc, {
  *       waitFor: bodyIdb.whenLoaded,
- *       installationId,
  *       actions: {},
  *     });
  *     return {
@@ -179,12 +176,8 @@ export {
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
 export {
-	cloudWorkspaceSync,
-	resolveDefaultCloudWorkspaceId,
-	type CloudWorkspaceAppOpenConfig,
-	type CloudWorkspaceAppSync,
-	type CloudWorkspaceLookupFailure,
-	type DefaultCloudWorkspaceAuth,
+	type CloudAppSync,
+	openCloudAppSync,
 } from './document/cloud-workspace-sync.js';
 export type {
 	OpenWebSocket,
@@ -199,12 +192,9 @@ export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-// `roomWsUrl` is intentionally NOT re-exported. The `/rooms/:room` route is a
-// per-user sync surface kept only for the workspace daemon
-// (`packages/workspace/src/daemon/attach-daemon-infrastructure.ts`) and
-// non-Cloud sample apps. Browser callers must use `cloudWorkspaceSync.forApp`
-// so every Cloud doc routes through Workspace membership; importing
-// `roomWsUrl` here would let any app open a parallel sync surface that
-// bypasses that boundary. Daemon code imports from `./document/transport.js`
-// directly.
-export { websocketUrl, workspaceAppDocWsUrl } from './document/transport.js';
+// Transport URL builders (`roomWsUrl`, `websocketUrl`, `workspaceAppDocWsUrl`)
+// are intentionally NOT re-exported. `/rooms/:room` is a daemon-only sync
+// surface; the workspace/app/doc routing is owned by `openCloudAppSync`.
+// Daemon code and the sync factory import from `./document/transport.js`
+// directly so apps cannot open a parallel sync surface that bypasses
+// Workspace membership.

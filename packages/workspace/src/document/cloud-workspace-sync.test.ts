@@ -1,27 +1,23 @@
 /**
- * Cloud Workspace Sync Tests
- *
- * Verifies the app-scoped `cloudWorkspaceSync.forApp` factory and the legacy
- * resolution helpers that the factory replaces.
+ * openCloudAppSync Tests
  *
  * Key behaviors:
- * - Signed-out and reauth-required auth states do not call the Workspace API.
- * - Failed or malformed Workspace API responses return no URL.
+ * - Signed-out construction does not call the Workspace API; signing in
+ *   reattaches every live handle.
  * - The factory fetches `/api/workspaces` once for N child docs.
- * - The factory reconnects live handles when auth transitions to signed-in.
- * - The factory rejects non-route-safe doc ids synchronously at the call site.
- * - A 409 from `/api/workspaces` surfaces as `personal-workspace-missing`.
+ * - Failed or malformed Workspace API responses keep handles offline; the
+ *   factory neither throws nor surfaces structured failure to the caller.
+ * - `installationId` is captured at construction and reused for every `.open()`.
+ * - `docId` defaults to `ydoc.guid` and is otherwise forwarded verbatim.
+ * - `dispatch()` before the underlying collaboration attaches resolves to
+ *   `NetworkFailed`.
+ * - Action key validation throws synchronously at `.open()`.
  */
 
 import { describe, expect, test } from 'bun:test';
 import type { AuthClient, AuthState, LocalIdentity } from '@epicenter/auth';
 import * as Y from 'yjs';
-import {
-	cloudWorkspaceSync,
-	resolveDefaultCloudWorkspaceId,
-	type CloudWorkspaceLookupFailure,
-	type DefaultCloudWorkspaceAuth,
-} from './cloud-workspace-sync.js';
+import { openCloudAppSync } from './cloud-workspace-sync.js';
 
 const localIdentity: LocalIdentity = {
 	subject: 'user_1',
@@ -32,69 +28,6 @@ const localIdentity: LocalIdentity = {
 		},
 	],
 };
-
-function authHarness({
-	state = { status: 'signed-in', localIdentity },
-	response = Response.json({ defaultWorkspaceId: 'ws_123' }),
-	throwOnFetch = false,
-}: {
-	state?: AuthState;
-	response?: Response;
-	throwOnFetch?: boolean;
-} = {}) {
-	const fetches: string[] = [];
-	const auth: DefaultCloudWorkspaceAuth = {
-		state,
-		async fetch(input: Request | string | URL) {
-			fetches.push(String(input));
-			if (throwOnFetch) throw new Error('offline');
-			return response;
-		},
-	};
-	return { auth, fetches };
-}
-
-describe('resolveDefaultCloudWorkspaceId', () => {
-	test('signed out returns undefined without fetching', async () => {
-		const { auth, fetches } = authHarness({ state: { status: 'signed-out' } });
-
-		await expect(resolveDefaultCloudWorkspaceId(auth)).resolves.toBeUndefined();
-		expect(fetches).toEqual([]);
-	});
-
-	test('reauth-required returns undefined without fetching', async () => {
-		const { auth, fetches } = authHarness({
-			state: { status: 'reauth-required', localIdentity },
-		});
-
-		await expect(resolveDefaultCloudWorkspaceId(auth)).resolves.toBeUndefined();
-		expect(fetches).toEqual([]);
-	});
-
-	test('offline fetch returns undefined', async () => {
-		const { auth } = authHarness({ throwOnFetch: true });
-
-		await expect(resolveDefaultCloudWorkspaceId(auth)).resolves.toBeUndefined();
-	});
-
-	test('/api/workspaces non-ok returns undefined', async () => {
-		const { auth } = authHarness({
-			response: new Response(null, { status: 500 }),
-		});
-
-		await expect(resolveDefaultCloudWorkspaceId(auth)).resolves.toBeUndefined();
-	});
-
-	test('missing defaultWorkspaceId returns undefined', async () => {
-		const { auth } = authHarness({ response: Response.json({}) });
-
-		await expect(resolveDefaultCloudWorkspaceId(auth)).resolves.toBeUndefined();
-	});
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// cloudWorkspaceSync.forApp
-// ════════════════════════════════════════════════════════════════════════════
 
 function createFactoryAuthHarness({
 	initialState = { status: 'signed-in', localIdentity } as AuthState,
@@ -150,19 +83,23 @@ async function tick(): Promise<void> {
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-describe('cloudWorkspaceSync.forApp', () => {
+describe('openCloudAppSync', () => {
 	test('opening N docs hits /api/workspaces exactly once', async () => {
 		const { auth, fetches, openedSocketUrls } = createFactoryAuthHarness();
 
-		const sync = cloudWorkspaceSync.forApp({
+		const sync = openCloudAppSync({
 			auth,
 			apiUrl: 'https://api.example.com',
 			appId: 'fuji',
+			installationId: 'install-1',
 		});
 
-		const docs = Array.from({ length: 5 }, (_, i) => new Y.Doc({ guid: `entry.${i}.body` }));
+		const docs = Array.from(
+			{ length: 5 },
+			(_, i) => new Y.Doc({ guid: `entry.${i}.body` }),
+		);
 		for (const ydoc of docs) {
-			sync.open(ydoc, { installationId: 'install-1', actions: {} });
+			sync.open(ydoc, { actions: {} });
 		}
 
 		await tick();
@@ -175,19 +112,19 @@ describe('cloudWorkspaceSync.forApp', () => {
 		);
 	});
 
-	test('valid docId passes through to the URL verbatim (no encoding)', async () => {
+	test('docId is forwarded verbatim (no encoding, no client-side validation)', async () => {
 		const { auth, openedSocketUrls } = createFactoryAuthHarness();
 
-		const sync = cloudWorkspaceSync.forApp({
+		const sync = openCloudAppSync({
 			auth,
 			apiUrl: 'https://api.example.com',
 			appId: 'honeycrisp',
+			installationId: 'install-1',
 		});
 
 		const ydoc = new Y.Doc({ guid: 'irrelevant' });
 		sync.open(ydoc, {
 			docId: 'note.01HVXYZ.body',
-			installationId: 'install-1',
 			actions: {},
 		});
 
@@ -198,42 +135,17 @@ describe('cloudWorkspaceSync.forApp', () => {
 		);
 	});
 
-	test('invalid docId throws synchronously at open() with allowed alphabet quoted', () => {
-		const { auth } = createFactoryAuthHarness();
-		const sync = cloudWorkspaceSync.forApp({
-			auth,
-			apiUrl: 'https://api.example.com',
-			appId: 'fuji',
-		});
-
-		const ydoc = new Y.Doc({ guid: 'root' });
-
-		expect(() =>
-			sync.open(ydoc, {
-				docId: 'entry/1',
-				installationId: 'install-1',
-				actions: {},
-			}),
-		).toThrow(/Invalid docId "entry\/1"/);
-		expect(() =>
-			sync.open(ydoc, {
-				docId: 'entry/1',
-				installationId: 'install-1',
-				actions: {},
-			}),
-		).toThrow(/\[A-Za-z0-9\._-\]/);
-	});
-
 	test('docId defaults to ydoc.guid', async () => {
 		const { auth, openedSocketUrls } = createFactoryAuthHarness();
-		const sync = cloudWorkspaceSync.forApp({
+		const sync = openCloudAppSync({
 			auth,
 			apiUrl: 'https://api.example.com',
 			appId: 'fuji',
+			installationId: 'install-1',
 		});
 
 		const ydoc = new Y.Doc({ guid: 'root' });
-		sync.open(ydoc, { installationId: 'install-1', actions: {} });
+		sync.open(ydoc, { actions: {} });
 
 		await tick();
 
@@ -245,17 +157,15 @@ describe('cloudWorkspaceSync.forApp', () => {
 			initialState: { status: 'signed-out' },
 		});
 
-		const sync = cloudWorkspaceSync.forApp({
+		const sync = openCloudAppSync({
 			auth: harness.auth,
 			apiUrl: 'https://api.example.com',
 			appId: 'fuji',
+			installationId: 'install-1',
 		});
 
 		const ydoc = new Y.Doc({ guid: 'root' });
-		const handle = sync.open(ydoc, {
-			installationId: 'install-1',
-			actions: {},
-		});
+		const handle = sync.open(ydoc, { actions: {} });
 
 		await tick();
 
@@ -272,51 +182,25 @@ describe('cloudWorkspaceSync.forApp', () => {
 		expect(harness.openedSocketUrls).toHaveLength(1);
 	});
 
-	test('409 PersonalWorkspaceMissing surfaces as a hard lookupFailure', async () => {
-		const harness = createFactoryAuthHarness({
-			workspacesResponse: () =>
-				Response.json(
-					{ name: 'PersonalWorkspaceMissing', message: 'missing' },
-					{ status: 409 },
-				),
-		});
-
-		const sync = cloudWorkspaceSync.forApp({
-			auth: harness.auth,
-			apiUrl: 'https://api.example.com',
-			appId: 'fuji',
-		});
-
-		const failures: Array<CloudWorkspaceLookupFailure | null> = [];
-		sync.onLookupFailureChange((failure) => failures.push(failure));
-
-		const ydoc = new Y.Doc({ guid: 'root' });
-		sync.open(ydoc, { installationId: 'install-1', actions: {} });
-
-		await tick();
-
-		expect(sync.lookupFailure).toBe('personal-workspace-missing');
-		expect(failures).toEqual(['personal-workspace-missing']);
-		expect(harness.openedSocketUrls).toEqual([]);
-	});
-
-	test('network failure surfaces as a transient lookupFailure', async () => {
+	test('non-ok workspaces response keeps handle offline', async () => {
 		const harness = createFactoryAuthHarness({
 			workspacesResponse: () => new Response(null, { status: 500 }),
 		});
 
-		const sync = cloudWorkspaceSync.forApp({
+		const sync = openCloudAppSync({
 			auth: harness.auth,
 			apiUrl: 'https://api.example.com',
 			appId: 'fuji',
+			installationId: 'install-1',
 		});
 
 		const ydoc = new Y.Doc({ guid: 'root' });
-		sync.open(ydoc, { installationId: 'install-1', actions: {} });
+		const handle = sync.open(ydoc, { actions: {} });
 
 		await tick();
 
-		expect(sync.lookupFailure).toBe('network');
+		expect(handle.status.phase).toBe('offline');
+		expect(harness.openedSocketUrls).toEqual([]);
 	});
 
 	test('sign-out during in-flight /api/workspaces discards the resolved id', async () => {
@@ -359,14 +243,15 @@ describe('cloudWorkspaceSync.forApp', () => {
 			[Symbol.dispose]() {},
 		};
 
-		const sync = cloudWorkspaceSync.forApp({
+		const sync = openCloudAppSync({
 			auth,
 			apiUrl: 'https://api.example.com',
 			appId: 'fuji',
+			installationId: 'install-1',
 		});
 
 		const ydoc = new Y.Doc({ guid: 'root' });
-		sync.open(ydoc, { installationId: 'install-1', actions: {} });
+		sync.open(ydoc, { actions: {} });
 		await tick();
 
 		// Sign out while the fetch is parked at the gate.
@@ -382,34 +267,6 @@ describe('cloudWorkspaceSync.forApp', () => {
 		// No WebSocket is opened: the post-fetch re-check sees signed-out and
 		// discards the resolved id.
 		expect(openedSocketUrls).toEqual([]);
-		expect(sync.lookupFailure).toBeNull();
-	});
-
-	test('sign-out clears lookupFailure (signed-out is not a failure)', async () => {
-		const harness = createFactoryAuthHarness({
-			workspacesResponse: () =>
-				Response.json(
-					{ name: 'PersonalWorkspaceMissing', message: 'missing' },
-					{ status: 409 },
-				),
-		});
-
-		const sync = cloudWorkspaceSync.forApp({
-			auth: harness.auth,
-			apiUrl: 'https://api.example.com',
-			appId: 'fuji',
-		});
-
-		const ydoc = new Y.Doc({ guid: 'root' });
-		sync.open(ydoc, { installationId: 'install-1', actions: {} });
-
-		await tick();
-		expect(sync.lookupFailure).toBe('personal-workspace-missing');
-
-		harness.transition({ status: 'signed-out' });
-		await tick();
-
-		expect(sync.lookupFailure).toBeNull();
 	});
 
 	test('dispatch() before attach resolves to NetworkFailed', async () => {
@@ -420,17 +277,15 @@ describe('cloudWorkspaceSync.forApp', () => {
 			initialState: { status: 'signed-out' },
 		});
 
-		const sync = cloudWorkspaceSync.forApp({
+		const sync = openCloudAppSync({
 			auth: harness.auth,
 			apiUrl: 'https://api.example.com',
 			appId: 'fuji',
+			installationId: 'install-1',
 		});
 
 		const ydoc = new Y.Doc({ guid: 'root' });
-		const handle = sync.open(ydoc, {
-			installationId: 'install-1',
-			actions: {},
-		});
+		const handle = sync.open(ydoc, { actions: {} });
 
 		await tick();
 
@@ -446,22 +301,22 @@ describe('cloudWorkspaceSync.forApp', () => {
 
 	test('action key validation throws synchronously at open()', () => {
 		const { auth } = createFactoryAuthHarness();
-		const sync = cloudWorkspaceSync.forApp({
+		const sync = openCloudAppSync({
 			auth,
 			apiUrl: 'https://api.example.com',
 			appId: 'fuji',
+			installationId: 'install-1',
 		});
 
 		const ydoc = new Y.Doc({ guid: 'root' });
 
 		// Pre-defineActions-style key check fires before any handler runs;
 		// the action value shape is irrelevant for this assertion.
-		const badRegistry = { 'Bad-Key': async () => undefined } as unknown as Parameters<
-			typeof sync.open
-		>[1]['actions'];
+		const badRegistry = {
+			'Bad-Key': async () => undefined,
+		} as unknown as Parameters<typeof sync.open>[1]['actions'];
 		expect(() =>
 			sync.open(ydoc, {
-				installationId: 'install-1',
 				actions: badRegistry,
 			}),
 		).toThrow(/Invalid action key/);

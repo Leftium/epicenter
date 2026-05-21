@@ -67,11 +67,6 @@ export function openCloudAppSync({
 		} catch {
 			return null;
 		}
-		// The user may have signed out while the request was in flight; without
-		// this re-check the resolved id would propagate to the original
-		// attach() and the supervisor would open a socket for an unauthenticated
-		// handle.
-		if (auth.state.status !== 'signed-in') return null;
 		if (!response.ok) return null;
 		let body: { defaultWorkspaceId?: unknown };
 		try {
@@ -79,6 +74,10 @@ export function openCloudAppSync({
 		} catch {
 			return null;
 		}
+		// The user may have signed out while either await was in flight. Without
+		// this guard a resolved id would propagate to the original attach() and
+		// the supervisor would open a socket for an unauthenticated handle.
+		if (auth.state.status !== 'signed-in') return null;
 		return typeof body.defaultWorkspaceId === 'string'
 			? body.defaultWorkspaceId
 			: null;
@@ -183,9 +182,11 @@ function openDeferredCollaboration<TActions extends ActionRegistry>(
 	let status: SyncStatus = { phase: 'offline' };
 	let live: Collaboration<TActions> | undefined;
 	let liveStatusUnsubscribe: (() => void) | undefined;
+	let liveDevicesUnsubscribe: (() => void) | undefined;
 	let resolving = false;
 	let disposed = false;
 	const statusListeners = new Set<(status: SyncStatus) => void>();
+	const devicesListeners = new Set<(devices: LiveDevice[]) => void>();
 	const whenConnected = Promise.withResolvers<void>();
 	const whenDisposed = Promise.withResolvers<void>();
 
@@ -197,7 +198,9 @@ function openDeferredCollaboration<TActions extends ActionRegistry>(
 	function finishDisposed() {
 		disposed = true;
 		liveStatusUnsubscribe?.();
+		liveDevicesUnsubscribe?.();
 		statusListeners.clear();
+		devicesListeners.clear();
 		whenDisposed.resolve();
 	}
 
@@ -228,6 +231,9 @@ function openDeferredCollaboration<TActions extends ActionRegistry>(
 				url,
 			});
 			liveStatusUnsubscribe = live.onStatusChange(setStatus);
+			liveDevicesUnsubscribe = live.devices.subscribe((devices) => {
+				for (const listener of devicesListeners) listener(devices);
+			});
 			setStatus(live.status);
 			void live.whenConnected.then(
 				() => whenConnected.resolve(),
@@ -271,8 +277,15 @@ function openDeferredCollaboration<TActions extends ActionRegistry>(
 				return live?.devices.list() ?? [];
 			},
 			subscribe(fn: (devices: LiveDevice[]) => void) {
-				if (live) return live.devices.subscribe(fn);
-				return () => {};
+				// Always go through the local listener set. When `live` attaches,
+				// `attach()` wires a single fan-out subscription on `live.devices`
+				// that forwards into these listeners; callers who subscribe before
+				// attach (e.g., a UI mounting during the offline phase) start
+				// receiving updates as soon as `live` is set.
+				devicesListeners.add(fn);
+				return () => {
+					devicesListeners.delete(fn);
+				};
 			},
 		},
 		dispatch(req: DispatchRequest) {

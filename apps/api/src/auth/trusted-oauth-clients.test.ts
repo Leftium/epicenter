@@ -23,10 +23,9 @@ import { projectTrustedOAuthClientToRow } from './trusted-oauth-clients.js';
 
 const trustedClientDefinition = EPICENTER_TRUSTED_OAUTH_CLIENTS.find(
 	(client) => client.clientId === EPICENTER_FUJI_OAUTH_CLIENT_ID,
-);
-if (!trustedClientDefinition) {
+) ?? (() => {
 	throw new Error('Expected test trusted client to exist');
-}
+})();
 
 const redirectUri = trustedClientDefinition.redirectUris[0];
 const verifier = 'test-verifier-test-verifier-test-verifier';
@@ -77,13 +76,30 @@ test('trusted OAuth client exchanges code for API-origin access token', async ()
 	});
 	if (!code) throw new Error('Expected authorization code');
 
-	const response = await exchangeCode(setup, {
-		clientId: setup.trustedClientId,
-		code,
-	});
+	const response = await setup.auth.handler(
+		new Request(`${setup.baseURL}/auth/oauth2/token`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({
+				grant_type: 'authorization_code',
+				code,
+				code_verifier: verifier,
+				client_id: setup.trustedClientId,
+				redirect_uri: redirectUri,
+				resource: setup.baseURL,
+			}),
+		}),
+	);
 	const body = await response.json();
-	const accessToken = readAccessToken(body);
-	const payload = decodeJwtPayload(accessToken);
+	if (
+		!body ||
+		typeof body !== 'object' ||
+		!('access_token' in body) ||
+		typeof body.access_token !== 'string'
+	) {
+		throw new Error('Expected token response with access_token');
+	}
+	const payload = decodeJwtPayload(body.access_token);
 	const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
 
 	expect(response.status).toBe(200);
@@ -197,42 +213,10 @@ async function authorizeResponse(
 	);
 }
 
-async function exchangeCode(
-	{ auth, baseURL }: ReturnType<typeof createTrustedClientTestAuth>,
-	{ clientId, code }: { clientId: string; code: string },
-) {
-	return auth.handler(
-		new Request(`${baseURL}/auth/oauth2/token`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				grant_type: 'authorization_code',
-				code,
-				code_verifier: verifier,
-				client_id: clientId,
-				redirect_uri: redirectUri,
-				resource: baseURL,
-			}),
-		}),
-	);
-}
-
 function decodeJwtPayload(token: string) {
 	const [, payload] = token.split('.');
 	if (!payload) throw new Error('Expected JWT access token');
 	const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
 	const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
 	return JSON.parse(atob(padded)) as Record<string, unknown>;
-}
-
-function readAccessToken(body: unknown) {
-	if (
-		body &&
-		typeof body === 'object' &&
-		'access_token' in body &&
-		typeof body.access_token === 'string'
-	) {
-		return body.access_token;
-	}
-	return '';
 }

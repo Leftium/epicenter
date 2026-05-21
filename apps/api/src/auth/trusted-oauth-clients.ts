@@ -35,38 +35,36 @@ export function projectTrustedOAuthClientToRow<
 export async function ensureTrustedOAuthClients(
 	db: NodePgDatabase<typeof schema>,
 ) {
-	trustedOAuthClientsSeed ??= upsertTrustedOAuthClients(db);
+	trustedOAuthClientsSeed ??= (async () => {
+		for (const client of EPICENTER_TRUSTED_OAUTH_CLIENTS) {
+			const row = projectTrustedOAuthClientToRow(client);
+			await db
+				.insert(schema.oauthClient)
+				.values(row)
+				.onConflictDoUpdate({
+					target: schema.oauthClient.clientId,
+					set: {
+						disabled: false,
+						skipConsent: true,
+						scopes: row.scopes,
+						updatedAt: row.updatedAt,
+						name: row.name,
+						redirectUris: row.redirectUris,
+						tokenEndpointAuthMethod: row.tokenEndpointAuthMethod,
+						grantTypes: row.grantTypes,
+						responseTypes: row.responseTypes,
+						public: true,
+						type: row.type,
+						requirePKCE: true,
+					},
+				});
+		}
+	})();
 	try {
 		await trustedOAuthClientsSeed;
 	} catch (error) {
 		trustedOAuthClientsSeed = null;
 		throw error;
-	}
-}
-
-async function upsertTrustedOAuthClients(db: NodePgDatabase<typeof schema>) {
-	for (const client of EPICENTER_TRUSTED_OAUTH_CLIENTS) {
-		const row = projectTrustedOAuthClientToRow(client);
-		await db
-			.insert(schema.oauthClient)
-			.values(row)
-			.onConflictDoUpdate({
-				target: schema.oauthClient.clientId,
-				set: {
-					disabled: false,
-					skipConsent: true,
-					scopes: row.scopes,
-					updatedAt: row.updatedAt,
-					name: row.name,
-					redirectUris: row.redirectUris,
-					tokenEndpointAuthMethod: row.tokenEndpointAuthMethod,
-					grantTypes: row.grantTypes,
-					responseTypes: row.responseTypes,
-					public: true,
-					type: row.type,
-					requirePKCE: true,
-				},
-			});
 	}
 }
 

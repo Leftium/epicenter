@@ -116,7 +116,20 @@ export function openCloudAppSync({
 				installationId,
 				actions: config.actions,
 				async resolveUrl() {
-					workspaceIdPromise ??= fetchWorkspaceId();
+					if (!workspaceIdPromise) {
+						const promise = fetchWorkspaceId();
+						workspaceIdPromise = promise;
+						// Don't cache transient failures: signed-out, network, non-ok,
+						// or malformed body all resolve to `null`. Clear the slot on
+						// `null` so the next `.open()` or `.reconnect()` retries. The
+						// identity check guards against onStateChange having already
+						// invalidated and replaced the cache while we awaited.
+						void promise.then((result) => {
+							if (result === null && workspaceIdPromise === promise) {
+								workspaceIdPromise = null;
+							}
+						});
+					}
 					const workspaceId = await workspaceIdPromise;
 					if (workspaceId === null) return null;
 					return workspaceAppDocWsUrl(apiUrl, {

@@ -207,6 +207,41 @@ describe('openCloudAppSync', () => {
 		expect(harness.openedSocketUrls).toEqual([]);
 	});
 
+	test('transient /api/workspaces failure does not stick; reconnect retries', async () => {
+		// A 5xx (or any null-producing) response must not be cached: the next
+		// resolve attempt should re-hit /api/workspaces. Without retry, a single
+		// network blip during sync bootstrap leaves the handle permanently
+		// offline until the user signs out and back in.
+		let nthFetch = 0;
+		const harness = createFactoryAuthHarness({
+			workspacesResponse: () => {
+				nthFetch += 1;
+				if (nthFetch === 1) return new Response(null, { status: 500 });
+				return Response.json({ defaultWorkspaceId: 'ws_123' });
+			},
+		});
+
+		const sync = openCloudAppSync({
+			auth: harness.auth,
+			apiUrl: 'https://api.example.com',
+			appId: 'fuji',
+			installationId: 'install-1',
+		});
+
+		const ydoc = new Y.Doc({ guid: 'root' });
+		const handle = sync.open(ydoc, { actions: {} });
+
+		await tick();
+		expect(handle.status.phase).toBe('offline');
+		expect(harness.openedSocketUrls).toEqual([]);
+
+		handle.reconnect();
+		await tick();
+
+		expect(harness.fetches).toEqual(['/api/workspaces', '/api/workspaces']);
+		expect(harness.openedSocketUrls).toHaveLength(1);
+	});
+
 	test('sign-out during in-flight /api/workspaces discards the resolved id', async () => {
 		// Race: signed-in -> open() starts the fetch -> user signs out before
 		// the response arrives -> response carries a valid workspaceId. Without

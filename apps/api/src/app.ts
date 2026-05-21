@@ -38,6 +38,11 @@ import {
 } from './auth-pages';
 import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
+import {
+	createDrizzleCloudWorkspaceStore,
+	ensurePersonalCloudWorkspace,
+	listCloudWorkspaces,
+} from './cloud-workspaces';
 import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import { cloudflareDurableObjectRooms } from './room-gateway';
@@ -300,11 +305,11 @@ app.get(
 		);
 	},
 );
-// Session projection endpoint: returns the authenticated user record plus
-// their local workspace identity (subject + per-subject keyring). This is the
-// single Epicenter session surface every client (browser apps, browser
-// extension, CLI) calls at sign-in and at cold-boot when online to refresh
-// the persisted localIdentity cell.
+// Session projection endpoint: returns the authenticated user record, their
+// local workspace identity (subject + per-subject keyring), and the default
+// Cloud Workspace id. This is the single Epicenter session surface every
+// client (browser apps, browser extension, CLI) calls at sign-in and at
+// cold-boot when online to refresh the persisted localIdentity cell.
 //
 // Accepts cookie OR bearer via {@link requireUser}. Bearer callers go through
 // the `workspaces:open` scope check inside `resolveRequestOAuthUser`; cookie
@@ -319,14 +324,34 @@ app.get(
 	requireUser,
 	async (c) => {
 		const user = c.var.user;
+		const defaultWorkspaceId = await ensurePersonalCloudWorkspace(
+			createDrizzleCloudWorkspaceStore(c.var.db),
+			user,
+		);
 		return c.json({
 			user,
 			localIdentity: {
 				subject: user.id,
 				keyring: await deriveSubjectKeyring(user.id),
 			},
+			defaultWorkspaceId,
 		} satisfies ApiSessionResponse);
 	},
+);
+app.get(
+	'/api/workspaces',
+	describeRoute({
+		description: 'List Cloud Workspaces for the authenticated user',
+		tags: ['workspaces'],
+	}),
+	requireUser,
+	async (c) =>
+		c.json(
+			await listCloudWorkspaces(
+				createDrizzleCloudWorkspaceStore(c.var.db),
+				c.var.user,
+			),
+		),
 );
 // OAuth discovery. Register issuer-path routes before the /auth/* catch-all
 // because Hono matches routes in registration order.
@@ -394,6 +419,13 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 app.use('/ai/*', requireOAuthUser);
 app.use('/rooms/*', requireOAuthUser);
 app.use('/workspaces/*', requireUser);
+app.use('/workspaces/*', async (c, next) => {
+	await ensurePersonalCloudWorkspace(
+		createDrizzleCloudWorkspaceStore(c.var.db),
+		c.var.user,
+	);
+	await next();
+});
 app.use('/api/billing/*', requireUser);
 app.use('/api/assets/*', requireUser);
 

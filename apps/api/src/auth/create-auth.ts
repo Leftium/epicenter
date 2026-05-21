@@ -6,6 +6,10 @@ import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createAutumn } from '../autumn';
 import { FEATURE_IDS } from '../billing-plans';
+import {
+	createDrizzleCloudWorkspaceStore,
+	ensurePersonalCloudWorkspace,
+} from '../cloud-workspaces';
 import * as schema from '../db/schema';
 import { TRUSTED_ORIGINS } from '../trusted-origins';
 import { BASE_AUTH_CONFIG, BASE_AUTH_PLUGINS } from './base-config';
@@ -106,6 +110,10 @@ export function createAuth({
 							customerId: user.id,
 							email: user.email,
 						});
+						await ensurePersonalCloudWorkspace(
+							createDrizzleCloudWorkspaceStore(db),
+							user,
+						);
 					},
 				},
 				delete: {

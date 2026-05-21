@@ -1,7 +1,7 @@
 # Cloud Workspace App Namespace Clean Break
 
 **Date**: 2026-05-20
-**Status**: In Progress (Phase 1 sync route landed; Workspace APIs and personal workspace creation pending)
+**Status**: In Progress (Phase 1 sync route and Phase 2 Workspace API landed; cleanup pending)
 **Author**: Epicenter
 
 ## Overview
@@ -855,9 +855,9 @@ Apps own their document graph in every deployment mode. Cloud does not need to u
 ### Phase 2: Better Auth Organization As Workspace
 
 - [x] **2.1** Enable Better Auth organization plugin for Cloud Workspaces.
-- [ ] **2.2** Create a personal Cloud Workspace as a one-member organization during signup or first Cloud use.
-- [ ] **2.3** Expose Workspace APIs that wrap Better Auth organization APIs.
-- [ ] **2.4** Keep Better Auth organization naming below the product API boundary.
+- [x] **2.2** Create a personal Cloud Workspace as a one-member organization during signup or first Cloud use.
+- [x] **2.3** Expose Workspace APIs that wrap Better Auth organization APIs.
+- [x] **2.4** Keep Better Auth organization naming below the product API boundary.
 - [x] **2.5** Do not create `cloud_workspace`, `workspace_member`, `workspace_invitation`, or `workspace_role` tables.
 - [x] **2.6** Defer `workspace_profile` until Workspace owns product fields that Better Auth organization metadata should not carry.
 
@@ -959,6 +959,24 @@ v1:workspace:{workspaceId}:app:{appId}:doc:{docId}
 ```
 
 Route compatibility remains for `/rooms/:room` because existing clients still depend on it. No `app_instance`, `app_sync_doc`, `app_asset`, scoped sync token, Workspace head Y.Doc, or app management table was added.
+
+### 2026-05-21 Phase 2 Workspace API
+
+Implemented the minimal Cloud Workspace product surface in `apps/api`:
+
+```txt
+GET /api/workspaces
+```
+
+Cloud Workspace remains backed by Better Auth `organization` and `member` rows. `workspaceId` is `organization.id`; the API does not expose Organization as a product noun. A deterministic personal Workspace is ensured during signup, `/api/session`, `/api/workspaces`, and first `/workspaces/*` use so older accounts are backfilled without a separate migration.
+
+`/api/session` now includes `defaultWorkspaceId` for clients that need to open:
+
+```txt
+/workspaces/:workspaceId/apps/:appId/docs/root
+```
+
+No `cloud_workspace`, `workspace_member`, `app_instance`, `app_sync_doc`, `app_asset`, scoped sync token, or Workspace head Y.Doc was added.
 
 ## Open Questions
 

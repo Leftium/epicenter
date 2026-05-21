@@ -111,15 +111,14 @@ export function openOpensidianBrowser({
 		waitFor: idb.whenLoaded,
 		actions,
 	});
-	let disposed = false;
+	let docsTornDown = false;
 
-	function disposeResources() {
-		if (disposed) return;
-		disposed = true;
+	function teardownDocs() {
+		if (docsTornDown) return;
+		docsTornDown = true;
 		fileContentDocs[Symbol.dispose]();
 		sqliteIndex[Symbol.dispose]();
 		rootYdoc.destroy();
-		opensidianCloud[Symbol.dispose]();
 	}
 
 	return {
@@ -143,12 +142,13 @@ export function openOpensidianBrowser({
 					}),
 				),
 			];
-			disposeResources();
+			teardownDocs();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await owner.wipeLocalYjsData(fallbackGuids);
 		},
 		[Symbol.dispose]() {
-			disposeResources();
+			teardownDocs();
+			opensidianCloud[Symbol.dispose]();
 		},
 	};
 }

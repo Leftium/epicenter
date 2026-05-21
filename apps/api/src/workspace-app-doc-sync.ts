@@ -1,9 +1,4 @@
 import type { AuthUser } from '@epicenter/auth';
-import { and, eq } from 'drizzle-orm';
-import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import * as schema from './db/schema';
-
-type Db = NodePgDatabase<typeof schema>;
 
 const ROUTE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -51,27 +46,6 @@ export function buildWorkspaceAppDocRoomName(params: {
 		'doc',
 		encodeURIComponent(params.docId),
 	].join(':');
-}
-
-export async function checkBetterAuthOrganizationMembership(
-	db: Db,
-	params: {
-		userId: string;
-		workspaceId: string;
-	},
-) {
-	const rows = await db
-		.select({ id: schema.member.id })
-		.from(schema.member)
-		.where(
-			and(
-				eq(schema.member.userId, params.userId),
-				eq(schema.member.organizationId, params.workspaceId),
-			),
-		)
-		.limit(1);
-
-	return rows.length > 0;
 }
 
 export async function resolveAuthorizedWorkspaceAppDoc({

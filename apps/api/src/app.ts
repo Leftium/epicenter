@@ -50,7 +50,6 @@ import { createSyncEngine } from './sync-engine';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 import {
 	type AuthorizedWorkspaceAppDoc,
-	checkBetterAuthOrganizationMembership,
 	resolveAuthorizedWorkspaceAppDoc,
 } from './workspace-app-doc-sync';
 
@@ -533,13 +532,14 @@ async function resolveWorkspaceAppDocRoute(
 	| { data: AuthorizedWorkspaceAppDoc; response?: never }
 	| { data?: never; response: Response }
 > {
+	const cloudWorkspaces = createDrizzleCloudWorkspaceStore(c.var.db);
 	const result = await resolveAuthorizedWorkspaceAppDoc({
 		user: c.var.user,
 		workspaceId: c.req.param('workspaceId'),
 		appId: c.req.param('appId'),
 		docId: c.req.param('docId'),
-		checkWorkspaceMembership: (params) =>
-			checkBetterAuthOrganizationMembership(c.var.db, params),
+		checkWorkspaceMembership: async (params) =>
+			(await cloudWorkspaces.findWorkspaceMember(params)) != null,
 	});
 
 	if (result.error) {

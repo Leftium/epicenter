@@ -8,17 +8,15 @@
  * Key behaviors:
  * - Non-members are rejected before room resolution succeeds.
  * - Members can open root and arbitrary valid app-owned docs.
- * - Invalid app/doc ids are rejected before membership checks.
- * - Room names are encoded by one builder and cannot collide across parts.
+ * - Invalid app/doc ids are rejected before the builder is called, so the
+ *   delimiter colon used in room names can never appear in a validated
+ *   segment.
  * - Room and SyncEngine modules do not import host auth or billing code.
  */
 
 import { expect, test } from 'bun:test';
 import type { AuthUser } from '@epicenter/auth';
-import {
-	buildWorkspaceSyncDocRoomName,
-	resolveAuthorizedWorkspaceSyncDoc,
-} from './workspace-sync-doc.js';
+import { resolveAuthorizedWorkspaceSyncDoc } from './workspace-sync-doc.js';
 
 const user = {
 	id: 'user_1',
@@ -152,23 +150,6 @@ test('resolver rejects invalid workspaceId, appId, and docId before membership c
 		status: 400,
 	});
 	expect(membershipChecks).toEqual([]);
-});
-
-test('room name builder encodes parts so delimiter collisions cannot merge identities', () => {
-	const first = buildWorkspaceSyncDocRoomName({
-		workspaceId: 'a:b',
-		appId: 'c',
-		docId: 'd',
-	});
-	const second = buildWorkspaceSyncDocRoomName({
-		workspaceId: 'a',
-		appId: 'b:c',
-		docId: 'd',
-	});
-
-	expect(first).toBe('v1:workspace:a%3Ab:app:c:doc:d');
-	expect(second).toBe('v1:workspace:a:app:b%3Ac:doc:d');
-	expect(first).not.toBe(second);
 });
 
 test('Room and SyncEngine source do not import host auth or billing code', async () => {

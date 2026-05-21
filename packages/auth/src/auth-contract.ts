@@ -25,13 +25,6 @@ export type AuthState =
 			 * fetch display data separately.
 			 */
 			localIdentity: SubjectIdentity;
-			/**
-			 * Default Cloud Workspace id returned by `/api/session`.
-			 *
-			 * This is routing material for online Workspace app docs, not profile
-			 * data. It is absent on cold boot until `/api/session` is reachable.
-			 */
-			defaultWorkspaceId?: string;
 	  }
 	| {
 			status: 'reauth-required';
@@ -42,12 +35,6 @@ export type AuthState =
 			 * open with this owner label and keyring.
 			 */
 			localIdentity: SubjectIdentity;
-			/**
-			 * Last known default Cloud Workspace id returned by `/api/session`.
-			 *
-			 * Reauth may be required before it can be used online again.
-			 */
-			defaultWorkspaceId?: string;
 	  };
 
 export type AuthClient = {

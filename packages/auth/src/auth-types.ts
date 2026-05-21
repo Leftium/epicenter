@@ -105,14 +105,6 @@ export const ApiSessionResponse = type({
 	 * do not depend on a live network request.
 	 */
 	localIdentity: SubjectIdentity,
-	/**
-	 * Default Cloud Workspace for online workspace routes.
-	 *
-	 * The value is the backing Better Auth organization id. Clients can use it
-	 * to open `/workspaces/:workspaceId/apps/:appId/docs/root` when the user has
-	 * not selected another workspace.
-	 */
-	'defaultWorkspaceId?': 'string',
 });
 
 export type ApiSessionResponse = typeof ApiSessionResponse.infer;

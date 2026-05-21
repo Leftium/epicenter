@@ -98,16 +98,10 @@ function oauthTokenResponse({
 	return json(body);
 }
 
-function apiSessionBody(
-	subject = 'user-1',
-	options: { defaultWorkspaceId?: string } = {},
-) {
+function apiSessionBody(subject = 'user-1') {
 	return {
 		user: { id: subject, email: `${subject}@example.com` },
 		localIdentity: { subject, keyring: [...keyring] },
-		...(options.defaultWorkspaceId
-			? { defaultWorkspaceId: options.defaultWorkspaceId }
-			: {}),
 	};
 }
 
@@ -191,44 +185,6 @@ test('startSignIn calls /api/session and writes both sections', async () => {
 		status: 'signed-in',
 	});
 	expect('email' in auth.state).toBe(false);
-	auth[Symbol.dispose]();
-});
-
-test('startSignIn projects defaultWorkspaceId into signed-in state', async () => {
-	const setup = createStorage(null);
-	const auth = createOAuthAppAuth({
-		baseURL: 'http://localhost:8787',
-		clientId: 'client-1',
-		now: () => now,
-		persistedAuthStorage: setup.storage,
-		launcher: {
-			startSignIn: async () =>
-				Ok({
-					accessToken: 'sign-in-access',
-					refreshToken: 'sign-in-refresh',
-					accessTokenExpiresAt: now + 3_600_000,
-				}),
-		},
-		fetch: async () =>
-			json(apiSessionBody('user-1', { defaultWorkspaceId: 'ws_123' })),
-	});
-
-	const result = await auth.startSignIn();
-
-	expect(result).toEqual(Ok(undefined));
-	expect(auth.state).toEqual({
-		status: 'signed-in',
-		localIdentity: { subject: 'user-1', keyring: [...keyring] },
-		defaultWorkspaceId: 'ws_123',
-	});
-	expect(setup.saved[0]).toEqual({
-		grant: {
-			accessToken: 'sign-in-access',
-			refreshToken: 'sign-in-refresh',
-			accessTokenExpiresAt: now + 3_600_000,
-		},
-		localIdentity: { subject: 'user-1', keyring: [...keyring] },
-	});
 	auth[Symbol.dispose]();
 });
 
@@ -332,35 +288,6 @@ test('same-subject /api/session preserves state when keyring is unchanged', asyn
 	// No localIdentity write should have happened: keyring unchanged.
 	expect(setup.saved).toEqual([]);
 	expect(auth.state).toMatchObject({ status: 'signed-in' });
-	auth[Symbol.dispose]();
-});
-
-test('/api/session verification projects defaultWorkspaceId into signed-in state', async () => {
-	const setup = createStorage(cell());
-	const auth = createOAuthAppAuth({
-		baseURL: 'http://localhost:8787',
-		clientId: 'client-1',
-		now: () => now,
-		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
-		fetch: async (input) => {
-			if (String(input).endsWith('/api/session')) {
-				return json(
-					apiSessionBody('user-1', { defaultWorkspaceId: 'ws_verified' }),
-				);
-			}
-			return new Response(null, { status: 204 });
-		},
-	});
-
-	await auth.fetch('http://localhost:8787/resource');
-
-	expect(auth.state).toEqual({
-		status: 'signed-in',
-		localIdentity: { subject: 'user-1', keyring: [...keyring] },
-		defaultWorkspaceId: 'ws_verified',
-	});
-	expect(setup.saved).toEqual([]);
 	auth[Symbol.dispose]();
 });
 

@@ -9,12 +9,9 @@
  * - Personal Cloud Workspace creation is idempotent.
  * - Listing returns only organizations where the current user is a member.
  * - The schema keeps Cloud Workspace backed by Better Auth organization tables.
- * - `/api/session` can expose a default Cloud Workspace id explicitly.
  */
 
 import { expect, test } from 'bun:test';
-import { ApiSessionResponse } from '@epicenter/auth';
-import type { SubjectKeyring } from '@epicenter/encryption';
 import {
 	type CloudWorkspaceStore,
 	ensurePersonalCloudWorkspace,
@@ -101,23 +98,6 @@ test('schema has no duplicate Cloud workspace or app namespace tables', () => {
 	expect(tableNames).not.toContain('app_instance');
 	expect(tableNames).not.toContain('app_sync_doc');
 	expect(tableNames).not.toContain('app_asset');
-});
-
-test('session default workspace behavior is explicit', () => {
-	const keyring: SubjectKeyring = [
-		{
-			version: 1,
-			subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-		},
-	];
-
-	const session = ApiSessionResponse.assert({
-		user: { id: 'user_1', email: 'test@example.com' },
-		localIdentity: { subject: 'user_1', keyring },
-		defaultWorkspaceId: 'ws_123',
-	});
-
-	expect(session.defaultWorkspaceId).toBe('ws_123');
 });
 
 function createMemoryCloudWorkspaceStore(seed?: {

@@ -21,20 +21,46 @@ import { createLocalOwner, type LocalOwner } from '@epicenter/workspace';
  */
 export function createSession<T extends Disposable>({
 	auth,
+	prepare,
 	build,
 }: {
 	auth: AuthClient;
+	prepare?: (context: {
+		state: Exclude<AuthState, { status: 'signed-out' }>;
+	}) => Promise<void> | void;
 	build: (context: { owner: LocalOwner }) => T;
 }) {
 	let payload = $state<T | null>(null);
+	let buildVersion = 0;
 
 	function reconcile(state: AuthState) {
+		buildVersion += 1;
+		const version = buildVersion;
 		if (state.status === 'signed-out') {
 			payload?.[Symbol.dispose]();
 			payload = null;
 			return;
 		}
 		if (payload) return;
+
+		if (prepare) {
+			void Promise.resolve(prepare({ state })).then(() => {
+				if (
+					version !== buildVersion ||
+					payload ||
+					auth.state.status === 'signed-out'
+				) {
+					return;
+				}
+				buildPayload(auth.state);
+			});
+			return;
+		}
+
+		buildPayload(state);
+	}
+
+	function buildPayload(state: Exclude<AuthState, { status: 'signed-out' }>) {
 		payload = build({
 			owner: createLocalOwner({
 				ownerId: state.localIdentity.subject,

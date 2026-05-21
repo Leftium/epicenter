@@ -68,7 +68,6 @@ export function createOAuthAppAuth({
 }: CreateOAuthAppAuthConfig): AuthClient {
 	let persisted = persistedAuthStorage.get();
 	let verifiedPersisted: PersistedAuthType | null = null;
-	let defaultWorkspaceId: string | undefined;
 	let networkAuthPaused = false;
 	let refreshPromise: Promise<boolean> | null = null;
 	let identityPromise: Promise<Result<ApiSessionResponse, AuthError>> | null =
@@ -83,13 +82,11 @@ export function createOAuthAppAuth({
 			return {
 				status: 'reauth-required',
 				localIdentity: persisted.localIdentity,
-				...(defaultWorkspaceId ? { defaultWorkspaceId } : {}),
 			};
 		}
 		return {
 			status: 'signed-in',
 			localIdentity: persisted.localIdentity,
-			...(defaultWorkspaceId ? { defaultWorkspaceId } : {}),
 		};
 	}
 
@@ -100,7 +97,6 @@ export function createOAuthAppAuth({
 			if (
 				next.status !== 'signed-out' &&
 				state.localIdentity.subject === next.localIdentity.subject &&
-				state.defaultWorkspaceId === next.defaultWorkspaceId &&
 				subjectKeyringsEqual(
 					state.localIdentity.keyring,
 					next.localIdentity.keyring,
@@ -210,7 +206,6 @@ export function createOAuthAppAuth({
 				await persistedAuthStorage.set(null);
 				persisted = null;
 				verifiedPersisted = null;
-				defaultWorkspaceId = undefined;
 				networkAuthPaused = false;
 				publishState();
 				return Ok(session);
@@ -231,7 +226,6 @@ export function createOAuthAppAuth({
 				persisted = next;
 			}
 			verifiedPersisted = persisted;
-			defaultWorkspaceId = session.defaultWorkspaceId;
 			publishState();
 			return Ok(session);
 		})().finally(() => {
@@ -307,7 +301,6 @@ export function createOAuthAppAuth({
 		await persistedAuthStorage.set(next);
 		persisted = next;
 		verifiedPersisted = next;
-		defaultWorkspaceId = session.defaultWorkspaceId;
 		networkAuthPaused = false;
 		publishState();
 		return Ok(undefined);
@@ -342,7 +335,6 @@ export function createOAuthAppAuth({
 				await persistedAuthStorage.set(null);
 				persisted = null;
 				verifiedPersisted = null;
-				defaultWorkspaceId = undefined;
 				networkAuthPaused = false;
 				publishState();
 				if (refreshTokenToRevoke) {

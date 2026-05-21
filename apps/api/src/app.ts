@@ -309,11 +309,11 @@ app.get(
 		);
 	},
 );
-// Session projection endpoint: returns the authenticated user record, their
-// local workspace identity (subject + per-subject keyring), and the default
-// Cloud Workspace id. This is the single Epicenter session surface every
-// client (browser apps, browser extension, CLI) calls at sign-in and at
-// cold-boot when online to refresh the persisted localIdentity cell.
+// Session projection endpoint: returns the authenticated user record and their
+// local workspace identity (subject + per-subject keyring). This is the single
+// Epicenter session surface every client (browser apps, browser extension, CLI)
+// calls at sign-in and at cold-boot when online to refresh the persisted
+// localIdentity cell.
 //
 // Accepts cookie OR bearer via {@link requireUser}. Bearer callers go through
 // the `workspaces:open` scope check inside `resolveRequestOAuthUser`; cookie
@@ -328,17 +328,12 @@ app.get(
 	requireUser,
 	async (c) => {
 		const user = c.var.user;
-		const defaultWorkspaceId = await ensurePersonalCloudWorkspace(
-			createDrizzleCloudWorkspaceStore(c.var.db),
-			user,
-		);
 		return c.json({
 			user,
 			localIdentity: {
 				subject: user.id,
 				keyring: await deriveSubjectKeyring(user.id),
 			},
-			defaultWorkspaceId,
 		} satisfies ApiSessionResponse);
 	},
 );

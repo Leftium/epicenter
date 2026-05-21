@@ -44,36 +44,49 @@ const whenReady = Promise.all([
 		launcher: oauthLauncher,
 	});
 	authClient = auth;
-	return primeDefaultWorkspace(auth).then(() => {
-		session = buildSession(auth, profile);
+	return resolveDefaultWorkspaceId(auth).then((defaultWorkspaceId) => {
+		session = buildSession(auth, profile, defaultWorkspaceId);
 	});
 });
 
-async function primeDefaultWorkspace(auth: AuthClient) {
+async function resolveDefaultWorkspaceId(auth: AuthClient) {
 	if (auth.state.status === 'signed-out') return;
-	if (auth.state.defaultWorkspaceId) return;
 	try {
-		await auth.fetch('/api/session');
+		const response = await auth.fetch('/api/workspaces');
+		if (!response.ok) return undefined;
+		const body = (await response.json()) as { defaultWorkspaceId?: unknown };
+		return typeof body.defaultWorkspaceId === 'string'
+			? body.defaultWorkspaceId
+			: undefined;
 	} catch {
 		// Local workspace data can still open while offline or reauth is needed.
+		return undefined;
 	}
 }
 
 function buildSession(
 	auth: AuthClient,
 	profile: Awaited<ReturnType<typeof createDeviceProfile>>,
+	initialDefaultWorkspaceId: string | undefined,
 ) {
+	let defaultWorkspaceId = initialDefaultWorkspaceId;
+	let hasInitialWorkspaceResolution = auth.state.status !== 'signed-out';
+
 	return createSession({
 		auth,
+		async prepare() {
+			if (hasInitialWorkspaceResolution) {
+				hasInitialWorkspaceResolution = false;
+				return;
+			}
+			defaultWorkspaceId = await resolveDefaultWorkspaceId(auth);
+		},
 		build: ({ owner }) => {
 			const tabManager = openTabManagerBrowser({
 				owner,
 				installationId: profile.installationId,
 				openWebSocket: auth.openWebSocket,
-				defaultWorkspaceId:
-					auth.state.status === 'signed-in'
-						? auth.state.defaultWorkspaceId
-						: undefined,
+				defaultWorkspaceId,
 			});
 			const sessionAiTools = actionsToAiTools(tabManager.collaboration.actions);
 			const savedTabs = createSavedTabState(tabManager);

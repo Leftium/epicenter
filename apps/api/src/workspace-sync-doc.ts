@@ -32,6 +32,33 @@ type ResolveAuthorizedWorkspaceSyncDocResult =
 			};
 	  };
 
+type ResolveAuthorizedDefaultWorkspaceSyncDocInput = {
+	user: AuthUser;
+	appId: string | undefined;
+	docId: string | undefined;
+	getDefaultWorkspaceForUser: (params: {
+		userId: string;
+	}) => Promise<string | null>;
+	checkWorkspaceMembership: (params: {
+		userId: string;
+		workspaceId: string;
+	}) => Promise<boolean>;
+};
+
+type ResolveAuthorizedDefaultWorkspaceSyncDocResult =
+	| { data: AuthorizedWorkspaceSyncDoc; error?: never }
+	| {
+			data?: never;
+			error: {
+				name:
+					| 'InvalidWorkspaceSyncDoc'
+					| 'WorkspaceForbidden'
+					| 'PersonalWorkspaceMissing';
+				message: string;
+				status: 400 | 403 | 409;
+			};
+	  };
+
 export function buildWorkspaceSyncDocRoomName(params: {
 	workspaceId: string;
 	appId: string;
@@ -96,6 +123,50 @@ export async function resolveAuthorizedWorkspaceSyncDoc({
 			syncDocResourceName: `${workspaceId}/${appId}/${docId}`,
 		},
 	};
+}
+
+/**
+ * Resolve the authenticated user's default workspace sync doc.
+ *
+ * Looks up the user's default (personal) workspace, then delegates to
+ * {@link resolveAuthorizedWorkspaceSyncDoc} so the explicit-workspace and
+ * default-workspace routes share one membership and validation path. The
+ * route layer uses this for `/me/apps/:appId/docs/:docId` so the client
+ * never has to fetch `/api/workspaces` before opening a sync socket.
+ */
+export async function resolveAuthorizedDefaultWorkspaceSyncDoc({
+	user,
+	appId,
+	docId,
+	getDefaultWorkspaceForUser,
+	checkWorkspaceMembership,
+}: ResolveAuthorizedDefaultWorkspaceSyncDocInput): Promise<ResolveAuthorizedDefaultWorkspaceSyncDocResult> {
+	if (!isValidRouteId(appId)) {
+		return invalid('appId');
+	}
+	if (!isValidRouteId(docId)) {
+		return invalid('docId');
+	}
+
+	const workspaceId = await getDefaultWorkspaceForUser({ userId: user.id });
+	if (workspaceId == null) {
+		return {
+			error: {
+				name: 'PersonalWorkspaceMissing',
+				message:
+					'Your personal Cloud Workspace is missing. This is an account provisioning bug; please contact support.',
+				status: 409,
+			},
+		};
+	}
+
+	return resolveAuthorizedWorkspaceSyncDoc({
+		user,
+		workspaceId,
+		appId,
+		docId,
+		checkWorkspaceMembership,
+	});
 }
 
 function isValidRouteId(value: string | undefined): value is string {

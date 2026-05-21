@@ -16,7 +16,10 @@
 
 import { expect, test } from 'bun:test';
 import type { AuthUser } from '@epicenter/auth';
-import { resolveAuthorizedWorkspaceSyncDoc } from './workspace-sync-doc.js';
+import {
+	resolveAuthorizedDefaultWorkspaceSyncDoc,
+	resolveAuthorizedWorkspaceSyncDoc,
+} from './workspace-sync-doc.js';
 
 const user = {
 	id: 'user_1',
@@ -150,6 +153,120 @@ test('resolver rejects invalid workspaceId, appId, and docId before membership c
 		status: 400,
 	});
 	expect(membershipChecks).toEqual([]);
+});
+
+test('default resolver returns PersonalWorkspaceMissing when user has no default workspace', async () => {
+	const { checkWorkspaceMembership, membershipChecks } = setup({ member: true });
+	const defaultLookups: Array<{ userId: string }> = [];
+
+	const result = await resolveAuthorizedDefaultWorkspaceSyncDoc({
+		user,
+		appId: 'whispering',
+		docId: 'root',
+		getDefaultWorkspaceForUser: async (params) => {
+			defaultLookups.push(params);
+			return null;
+		},
+		checkWorkspaceMembership,
+	});
+
+	expect(result.error).toEqual({
+		name: 'PersonalWorkspaceMissing',
+		message:
+			'Your personal Cloud Workspace is missing. This is an account provisioning bug; please contact support.',
+		status: 409,
+	});
+	expect(result.data).toBeUndefined();
+	expect(defaultLookups).toEqual([{ userId: 'user_1' }]);
+	// Membership is checked downstream of the default lookup, never before it.
+	expect(membershipChecks).toEqual([]);
+});
+
+test('default resolver delegates to the workspace resolver after the default lookup', async () => {
+	const { checkWorkspaceMembership, membershipChecks } = setup({ member: true });
+	const defaultLookups: Array<{ userId: string }> = [];
+
+	const result = await resolveAuthorizedDefaultWorkspaceSyncDoc({
+		user,
+		appId: 'whispering',
+		docId: 'root',
+		getDefaultWorkspaceForUser: async (params) => {
+			defaultLookups.push(params);
+			return 'workspace_1';
+		},
+		checkWorkspaceMembership,
+	});
+
+	expect(result.error).toBeUndefined();
+	expect(result.data).toEqual({
+		workspaceId: 'workspace_1',
+		appId: 'whispering',
+		docId: 'root',
+		roomName: 'v1:workspace:workspace_1:app:whispering:doc:root',
+		syncDocResourceName: 'workspace_1/whispering/root',
+	});
+	expect(defaultLookups).toEqual([{ userId: 'user_1' }]);
+	expect(membershipChecks).toEqual([
+		{ userId: 'user_1', workspaceId: 'workspace_1' },
+	]);
+});
+
+test('default resolver rejects invalid appId and docId before the default lookup runs', async () => {
+	const { checkWorkspaceMembership, membershipChecks } = setup();
+	let defaultLookupCalls = 0;
+	const getDefaultWorkspaceForUser = async () => {
+		defaultLookupCalls += 1;
+		return 'workspace_1';
+	};
+
+	const invalidApp = await resolveAuthorizedDefaultWorkspaceSyncDoc({
+		user,
+		appId: 'bad/app',
+		docId: 'root',
+		getDefaultWorkspaceForUser,
+		checkWorkspaceMembership,
+	});
+	const invalidDoc = await resolveAuthorizedDefaultWorkspaceSyncDoc({
+		user,
+		appId: 'whispering',
+		docId: 'bad:doc',
+		getDefaultWorkspaceForUser,
+		checkWorkspaceMembership,
+	});
+
+	expect(invalidApp.error).toMatchObject({
+		name: 'InvalidWorkspaceSyncDoc',
+		message: 'Invalid appId',
+		status: 400,
+	});
+	expect(invalidDoc.error).toMatchObject({
+		name: 'InvalidWorkspaceSyncDoc',
+		message: 'Invalid docId',
+		status: 400,
+	});
+	expect(defaultLookupCalls).toBe(0);
+	expect(membershipChecks).toEqual([]);
+});
+
+test('default resolver surfaces WorkspaceForbidden when the lifted membership check fails', async () => {
+	const { checkWorkspaceMembership, membershipChecks } = setup({ member: false });
+
+	const result = await resolveAuthorizedDefaultWorkspaceSyncDoc({
+		user,
+		appId: 'whispering',
+		docId: 'root',
+		getDefaultWorkspaceForUser: async () => 'workspace_1',
+		checkWorkspaceMembership,
+	});
+
+	expect(result.error).toEqual({
+		name: 'WorkspaceForbidden',
+		message: 'User is not a member of this workspace',
+		status: 403,
+	});
+	expect(membershipChecks).toEqual([
+		{ userId: 'user_1', workspaceId: 'workspace_1' },
+	]);
 });
 
 test('Room and SyncEngine source do not import host auth or billing code', async () => {

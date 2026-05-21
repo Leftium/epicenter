@@ -194,6 +194,20 @@ async function createPersonalCloudWorkspaceIdentity(userId: string) {
 	};
 }
 
+/**
+ * Derive the deterministic personal Cloud workspace id for a user.
+ *
+ * Shared rule between the `/api/workspaces` listing and the
+ * `/me/apps/:appId/docs/:docId` sync routes. Returning a derived id (rather
+ * than running a query) keeps this function side-effect free; route handlers
+ * still verify membership against the `member` table before authorizing
+ * access.
+ */
+export async function personalCloudWorkspaceIdForUser(userId: string) {
+	const identity = await createPersonalCloudWorkspaceIdentity(userId);
+	return identity.workspaceId;
+}
+
 async function sha256Hex(value: string) {
 	const bytes = new TextEncoder().encode(value);
 	const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);

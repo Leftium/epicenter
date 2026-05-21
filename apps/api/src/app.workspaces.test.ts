@@ -48,8 +48,12 @@ class ShimWebSocketPair {
 	}
 }
 const shimPairs: ShimWebSocketPair[] = [];
+// Use `=` rather than `??=`: other test files in this project (presence.test.ts)
+// install their own `WebSocketPair` global with a different `WebSocket` shape.
+// Whichever test file runs first wins under `??=`, which produces opaque
+// "accept is not a function" failures depending on file order.
 // biome-ignore lint/suspicious/noExplicitAny: globalThis shim for test runtime
-(globalThis as any).WebSocketPair ??= ShimWebSocketPair;
+(globalThis as any).WebSocketPair = ShimWebSocketPair;
 
 let createSyncEngineCalls = 0;
 let durableObjectRoomFactoryCalls = 0;
@@ -106,6 +110,10 @@ mock.module('./auth/trusted-oauth-clients', () => ({
 
 mock.module('./workspace-sync-doc', () => ({
 	resolveAuthorizedWorkspaceSyncDoc: async () => {
+		resolveAuthorizedWorkspaceSyncDocCalls += 1;
+		throw new Error('workspace-sync-doc resolver should not be reached');
+	},
+	resolveAuthorizedDefaultWorkspaceSyncDoc: async () => {
 		resolveAuthorizedWorkspaceSyncDocCalls += 1;
 		throw new Error('workspace-sync-doc resolver should not be reached');
 	},

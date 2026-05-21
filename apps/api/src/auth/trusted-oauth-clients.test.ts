@@ -17,10 +17,8 @@ import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import { jwt } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
-import {
-	projectTrustedOAuthClientToRow,
-	trustedOAuthClientIds,
-} from './trusted-oauth-clients.js';
+import { AUTH_OAUTH_SCOPES, TRUSTED_OAUTH_CLIENT_IDS } from './oauth-config.js';
+import { projectTrustedOAuthClientToRow } from './trusted-oauth-clients.js';
 
 const redirectUri = 'http://localhost:5174/auth/callback';
 const verifier = 'test-verifier-test-verifier-test-verifier';
@@ -121,18 +119,11 @@ function createTrustedClientTestAuth() {
 				consentPage: '/consent',
 				requirePKCE: true,
 				cachedTrustedClients: new Set([
-					...trustedOAuthClientIds,
+					...TRUSTED_OAUTH_CLIENT_IDS,
 					trustedClient.clientId,
 				]),
-				validAudiences: [baseURL],
 				allowDynamicClientRegistration: false,
-				scopes: [
-					'openid',
-					'profile',
-					'email',
-					'offline_access',
-					'workspaces:open',
-				],
+				scopes: [...AUTH_OAUTH_SCOPES],
 				silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
 			}),
 		],

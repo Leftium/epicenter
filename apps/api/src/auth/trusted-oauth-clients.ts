@@ -1,20 +1,7 @@
 import { EPICENTER_TRUSTED_OAUTH_CLIENTS } from '@epicenter/constants/oauth';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema';
-
-const trustedOAuthScopes = [
-	'openid',
-	'profile',
-	'email',
-	'offline_access',
-	'workspaces:open',
-];
-const authorizationCodeGrantTypes = ['authorization_code'];
-const codeResponseTypes = ['code'];
-
-export const trustedOAuthClientIds = new Set(
-	EPICENTER_TRUSTED_OAUTH_CLIENTS.map((client) => client.clientId),
-);
+import { AUTH_OAUTH_SCOPES } from './oauth-config';
 
 let trustedOAuthClientsSeed: Promise<void> | null = null;
 
@@ -31,14 +18,14 @@ export function projectTrustedOAuthClientToRow<
 		clientId: client.clientId,
 		disabled: false,
 		skipConsent: true,
-		scopes: [...trustedOAuthScopes],
+		scopes: [...AUTH_OAUTH_SCOPES],
 		createdAt: now,
 		updatedAt: now,
 		name: client.name,
 		redirectUris: [...client.redirectUris],
 		tokenEndpointAuthMethod: 'none',
-		grantTypes: [...authorizationCodeGrantTypes],
-		responseTypes: [...codeResponseTypes],
+		grantTypes: ['authorization_code'],
+		responseTypes: ['code'],
 		public: true,
 		type: toOAuthClientType(client.runtime),
 		requirePKCE: true,

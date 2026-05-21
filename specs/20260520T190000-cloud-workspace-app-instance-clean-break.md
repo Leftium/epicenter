@@ -889,7 +889,7 @@ Apps own their document graph in every deployment mode. Cloud does not need to u
 
 ### Phase 6: Client Adoption
 
-- [x] **6.1** Resolve a default Cloud Workspace from `/api/session.defaultWorkspaceId` for at least one real client path.
+- [x] **6.1** Resolve a default Cloud Workspace from `/api/workspaces` for at least one real client path.
 - [x] **6.2** Open the client root Sync Doc at `/workspaces/:workspaceId/apps/:appId/docs/root` by default.
 - [x] **6.3** Keep `/rooms/:room` as a compatibility path when the default Workspace is not available.
 - [x] **6.4** Add tests for the client Workspace app doc URL construction.
@@ -975,9 +975,9 @@ Implemented the minimal Cloud Workspace product surface in `apps/api`:
 GET /api/workspaces
 ```
 
-Cloud Workspace remains backed by Better Auth `organization` and `member` rows. `workspaceId` is `organization.id`; the API does not expose Organization as a product noun. A deterministic personal Workspace is ensured during signup, `/api/session`, `/api/workspaces`, and first `/workspaces/*` use so older accounts are backfilled without a separate migration.
+Cloud Workspace remains backed by Better Auth `organization` and `member` rows. `workspaceId` is `organization.id`; the API does not expose Organization as a product noun. A deterministic personal Workspace is ensured during signup and `/api/workspaces` so older accounts are backfilled when clients ask for their workspace list.
 
-`/api/session` now includes `defaultWorkspaceId` for clients that need to open:
+`/api/workspaces` returns `defaultWorkspaceId` for clients that need to open:
 
 ```txt
 /workspaces/:workspaceId/apps/:appId/docs/root
@@ -987,7 +987,7 @@ No `cloud_workspace`, `workspace_member`, `app_instance`, `app_sync_doc`, `app_a
 
 ### 2026-05-21 Phase 3 Client Adoption
 
-Tab Manager now resolves the default Cloud Workspace through `/api/session.defaultWorkspaceId` and opens its root sync document at:
+Tab Manager now resolves the default Cloud Workspace through `/api/workspaces` and opens its root sync document at:
 
 ```txt
 /workspaces/:workspaceId/apps/tab-manager/docs/root
@@ -995,7 +995,7 @@ Tab Manager now resolves the default Cloud Workspace through `/api/session.defau
 
 `@epicenter/workspace` exposes a `workspaceAppDocWsUrl()` helper for the product-shaped WebSocket route while keeping `roomWsUrl()` for compatibility. Tab Manager uses the Workspace app doc URL when the default Workspace is known and falls back to `/rooms/:room` when the user is offline, signed out, or reauth is required before the default Workspace can be refreshed.
 
-Auth keeps `defaultWorkspaceId` in memory after `/api/session` verification or sign-in. It does not persist the value into the local auth cell, so offline local workspace boot still depends only on `localIdentity`.
+Tab Manager resolves `defaultWorkspaceId` when the signed-in app payload is built. Auth does not keep product Workspace selection in memory, and offline local workspace boot still depends only on `localIdentity`.
 
 No `app_instance`, `app_sync_doc`, `app_asset`, scoped sync token, Workspace head Y.Doc, or Better Auth Organization product surface was added.
 

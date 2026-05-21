@@ -13,6 +13,7 @@ import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
 import type { TabManagerBrowser } from './tab-manager/extension';
 import { openTabManagerBrowser } from './tab-manager/extension';
+import { createDefaultWorkspaceIdResolver } from './tab-manager/default-workspace';
 
 export type SessionAiTools = ReturnType<
 	typeof actionsToAiTools<TabManagerBrowser['collaboration']['actions']>
@@ -44,49 +45,24 @@ const whenReady = Promise.all([
 		launcher: oauthLauncher,
 	});
 	authClient = auth;
-	return resolveDefaultWorkspaceId(auth).then((defaultWorkspaceId) => {
-		session = buildSession(auth, profile, defaultWorkspaceId);
-	});
+	session = buildSession(auth, profile);
 });
-
-async function resolveDefaultWorkspaceId(auth: AuthClient) {
-	if (auth.state.status === 'signed-out') return;
-	try {
-		const response = await auth.fetch('/api/workspaces');
-		if (!response.ok) return undefined;
-		const body = (await response.json()) as { defaultWorkspaceId?: unknown };
-		return typeof body.defaultWorkspaceId === 'string'
-			? body.defaultWorkspaceId
-			: undefined;
-	} catch {
-		// Local workspace data can still open while offline or reauth is needed.
-		return undefined;
-	}
-}
 
 function buildSession(
 	auth: AuthClient,
 	profile: Awaited<ReturnType<typeof createDeviceProfile>>,
-	initialDefaultWorkspaceId: string | undefined,
 ) {
-	let defaultWorkspaceId = initialDefaultWorkspaceId;
-	let hasInitialWorkspaceResolution = auth.state.status !== 'signed-out';
+	const defaultWorkspaceId = createDefaultWorkspaceIdResolver(auth);
 
 	return createSession({
 		auth,
-		async prepare() {
-			if (hasInitialWorkspaceResolution) {
-				hasInitialWorkspaceResolution = false;
-				return;
-			}
-			defaultWorkspaceId = await resolveDefaultWorkspaceId(auth);
-		},
+		prepare: () => defaultWorkspaceId.resolve(),
 		build: ({ owner }) => {
 			const tabManager = openTabManagerBrowser({
 				owner,
 				installationId: profile.installationId,
 				openWebSocket: auth.openWebSocket,
-				defaultWorkspaceId,
+				defaultWorkspaceId: defaultWorkspaceId.value,
 			});
 			const sessionAiTools = actionsToAiTools(tabManager.collaboration.actions);
 			const savedTabs = createSavedTabState(tabManager);

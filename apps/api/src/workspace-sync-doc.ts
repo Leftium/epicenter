@@ -37,14 +37,16 @@ export function buildWorkspaceSyncDocRoomName(params: {
 	appId: string;
 	docId: string;
 }) {
+	// Segments are pre-validated against ROUTE_ID_PATTERN, which rejects every
+	// character that would need URL encoding.
 	return [
 		'v1',
 		'workspace',
-		encodeURIComponent(params.workspaceId),
+		params.workspaceId,
 		'app',
-		encodeURIComponent(params.appId),
+		params.appId,
 		'doc',
-		encodeURIComponent(params.docId),
+		params.docId,
 	].join(':');
 }
 

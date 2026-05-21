@@ -8,9 +8,9 @@
  * workspace opener so daemon-side and browser-side action surfaces stay
  * identical without a second factory call here.
  *
- * Cloud sync is routed through one `cloudWorkspaceSync.forApp(...)` factory
- * per app instance: the root doc and every note-body child doc share that
- * factory's workspace lookup and auth-state subscription.
+ * Cloud sync is routed through one `openCloudAppSync(...)` factory per app
+ * instance: the root doc and every note-body child doc share that factory's
+ * workspace lookup and auth-state subscription.
  *
  * The bundle's `wipe()` drops every encrypted IDB database for this owner;
  * `Symbol.dispose` tears down the root + cached child Y.Docs and the cloud
@@ -22,11 +22,11 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { type NoteId, openHoneycrispWorkspace } from '@epicenter/honeycrisp';
 import {
 	attachRichText,
-	cloudWorkspaceSync,
 	createDisposableCache,
 	DateTimeString,
 	type LocalOwner,
 	onLocalUpdate,
+	openCloudAppSync,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
@@ -44,10 +44,11 @@ export function openHoneycrispBrowser({
 
 	const idb = owner.attachLocal(rootYdoc);
 
-	const honeycrispCloud = cloudWorkspaceSync.forApp({
+	const honeycrispCloud = openCloudAppSync({
 		auth,
 		apiUrl: APP_URLS.API,
 		appId: 'honeycrisp',
+		installationId,
 	});
 
 	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
@@ -62,7 +63,6 @@ export function openHoneycrispBrowser({
 		// ROUTE_ID_PATTERN. One canonical id for both local and cloud.
 		const childSync = honeycrispCloud.open(ydoc, {
 			waitFor: childIdb.whenLoaded,
-			installationId,
 			actions: {},
 		});
 
@@ -93,7 +93,6 @@ export function openHoneycrispBrowser({
 		// app entry document; rootYdoc.guid is the workspace id, not "root".
 		docId: 'root',
 		waitFor: idb.whenLoaded,
-		installationId,
 		actions: workspace.actions,
 	});
 

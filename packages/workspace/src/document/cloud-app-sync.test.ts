@@ -110,6 +110,10 @@ describe('openCloudAppSync', () => {
 		expect(openedSocketUrls[0]).toMatch(
 			/^wss:\/\/api\.example\.com\/workspaces\/ws_123\/apps\/fuji\/docs\/entry\.0\.body\?installationId=install-1$/,
 		);
+		// Every URL carries the factory-captured installationId verbatim.
+		for (const url of openedSocketUrls) {
+			expect(url).toContain('installationId=install-1');
+		}
 	});
 
 	test('docId is forwarded verbatim to the URL', async () => {

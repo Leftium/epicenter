@@ -59,13 +59,7 @@ export function openCloudAppSync({
 	let disposed = false;
 	const liveHandles = new Set<Collaboration>();
 
-	function resolveWorkspaceId(): Promise<string | null> {
-		if (workspaceIdPromise) return workspaceIdPromise;
-		workspaceIdPromise = doResolve();
-		return workspaceIdPromise;
-	}
-
-	async function doResolve(): Promise<string | null> {
+	async function fetchWorkspaceId(): Promise<string | null> {
 		if (auth.state.status !== 'signed-in') return null;
 		let response: Response;
 		try {
@@ -93,7 +87,7 @@ export function openCloudAppSync({
 	const unsubscribeAuth = auth.onStateChange(() => {
 		if (disposed) return;
 		// Any auth transition invalidates the cached lookup. Reconnect each
-		// live handle so it re-runs resolveWorkspaceId with the new state.
+		// live handle so it re-runs fetchWorkspaceId with the new state.
 		workspaceIdPromise = null;
 		for (const handle of liveHandles) {
 			handle.reconnect();
@@ -122,7 +116,8 @@ export function openCloudAppSync({
 				installationId,
 				actions: config.actions,
 				async resolveUrl() {
-					const workspaceId = await resolveWorkspaceId();
+					workspaceIdPromise ??= fetchWorkspaceId();
+					const workspaceId = await workspaceIdPromise;
 					if (workspaceId === null) return null;
 					return workspaceAppDocWsUrl(apiUrl, {
 						workspaceId,
@@ -207,7 +202,10 @@ function openDeferredCollaboration<TActions extends ActionRegistry>(
 		setStatus({ phase: 'connecting', retries: 0 });
 		try {
 			const url = await resolveUrl();
-			if (disposed || live) return;
+			// `live` cannot be set here: it's only assigned below in this same
+			// closure, and concurrent calls are gated by `resolving`. Only the
+			// dispose race matters.
+			if (disposed) return;
 			if (!url) {
 				setStatus({ phase: 'offline' });
 				return;

@@ -189,9 +189,16 @@ export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-// Transport URL builders (`roomWsUrl`, `workspaceAppDocWsUrl`) are
-// intentionally NOT re-exported. `/rooms/:room` is a daemon-only sync
-// surface; the workspace/app/doc routing is owned by `openCloudAppSync`.
-// Daemon code and the sync factory import from `./document/transport.js`
-// directly so apps cannot open a parallel sync surface that bypasses
-// Workspace membership.
+// Transport URL builders.
+//
+// `defaultWorkspaceAppDocWsUrl` is re-exported because apps build the URL
+// themselves when calling `openCollaboration` directly: the server resolves
+// the workspaceId from the auth token, so no client-side workspace lookup
+// is required.
+//
+// `roomWsUrl` and `workspaceAppDocWsUrl` are intentionally NOT re-exported.
+// `/rooms/:room` is a daemon-only sync surface, and the explicit-workspace
+// route is owned by the daemon path; both import from
+// `./document/transport.js` directly so apps cannot open a parallel sync
+// surface that bypasses Workspace membership.
+export { defaultWorkspaceAppDocWsUrl } from './document/transport.js';

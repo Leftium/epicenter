@@ -184,10 +184,14 @@ export {
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
 export {
+	cloudWorkspaceSync,
 	openDefaultWorkspaceAppDocCollaboration,
 	resolveDefaultCloudWorkspaceId,
 	resolveDefaultWorkspaceAppDocWsUrl,
 	routeSafeWorkspaceAppDocId,
+	type CloudWorkspaceAppOpenConfig,
+	type CloudWorkspaceAppSync,
+	type CloudWorkspaceLookupFailure,
 	type DefaultCloudWorkspaceAuth,
 } from './document/cloud-workspace-sync.js';
 export type {

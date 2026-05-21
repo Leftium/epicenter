@@ -44,10 +44,11 @@ test('personal workspace provisioning creates owner membership before listing', 
 	const user = { id: 'user_1' };
 
 	const defaultWorkspaceId = await createPersonalCloudWorkspace(store, user);
-	const result = await listCloudWorkspaces(store, user);
+	const { data, error } = await listCloudWorkspaces(store, user);
 
-	expect(result.defaultWorkspaceId).toBe(defaultWorkspaceId);
-	expect(result.workspaces).toEqual([
+	expect(error).toBeNull();
+	expect(data?.defaultWorkspaceId).toBe(defaultWorkspaceId);
+	expect(data?.workspaces).toEqual([
 		{
 			id: defaultWorkspaceId,
 			name: 'Personal Workspace',
@@ -91,27 +92,31 @@ test('workspace list returns only organizations where the user is a member', asy
 	});
 	const organizationCount = store.organizations.length;
 	const memberCount = store.members.length;
-	const result = await listCloudWorkspaces(store, { id: 'user_1' });
+	const { data, error } = await listCloudWorkspaces(store, { id: 'user_1' });
 
-	expect(result.defaultWorkspaceId).toBe(defaultWorkspaceId);
-	expect(result.workspaces.map((workspace) => workspace.id)).toEqual([
-		result.defaultWorkspaceId,
+	expect(error).toBeNull();
+	expect(data?.defaultWorkspaceId).toBe(defaultWorkspaceId);
+	expect(data?.workspaces.map((workspace) => workspace.id)).toEqual([
+		defaultWorkspaceId,
 		'workspace_a',
 		'workspace_c',
 	]);
-	expect(result.workspaces).not.toContainEqual(
+	expect(data?.workspaces).not.toContainEqual(
 		expect.objectContaining({ id: 'workspace_b' }),
 	);
 	expect(store.organizations).toHaveLength(organizationCount);
 	expect(store.members).toHaveLength(memberCount);
 });
 
-test('workspace list fails instead of creating missing personal workspace', async () => {
+test('workspace list returns PersonalWorkspaceMissing when membership is missing', async () => {
 	const store = createMemoryCloudWorkspaceStore();
 
-	await expect(listCloudWorkspaces(store, { id: 'user_1' })).rejects.toThrow(
-		'Missing personal Cloud Workspace membership',
-	);
+	const { data, error } = await listCloudWorkspaces(store, { id: 'user_1' });
+
+	expect(data).toBeNull();
+	expect(error?.name).toBe('PersonalWorkspaceMissing');
+	expect(error?.userId).toBe('user_1');
+	expect(error?.workspaceId).toMatch(/^ws_/);
 });
 
 test('schema has no duplicate Cloud workspace or app namespace tables', () => {

@@ -1,8 +1,35 @@
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { Ok, type Result } from 'wellcrafted/result';
 import * as schema from './db/schema';
 
 type Db = NodePgDatabase<typeof schema>;
+
+/**
+ * Errors surfaced by Cloud Workspace read paths.
+ *
+ * `PersonalWorkspaceMissing` is an account provisioning bug: signup is
+ * supposed to create the user's personal workspace membership, so missing
+ * membership at list time means provisioning silently failed. We surface it
+ * as a typed error so the route can return `409` and the client can
+ * distinguish this from "signed out".
+ */
+export const CloudWorkspaceError = defineErrors({
+	PersonalWorkspaceMissing: ({
+		userId,
+		workspaceId,
+	}: {
+		userId: string;
+		workspaceId: string;
+	}) => ({
+		message:
+			'Your personal Cloud Workspace is missing. This is an account provisioning bug; please contact support.',
+		userId,
+		workspaceId,
+	}),
+});
+export type CloudWorkspaceError = InferErrors<typeof CloudWorkspaceError>;
 
 type CloudWorkspaceStore = {
 	createPersonalWorkspace(params: {
@@ -107,26 +134,41 @@ export async function createPersonalCloudWorkspace(
 	return identity.workspaceId;
 }
 
+export type CloudWorkspaceListing = {
+	defaultWorkspaceId: string;
+	workspaces: Array<{
+		id: string;
+		name: string;
+		role: string;
+		isDefault: boolean;
+	}>;
+};
+
 /**
  * Return the cloud workspaces a signed-in user may open.
  *
  * Use this for account/workspace pickers after signup has created the user's
  * personal workspace. This is a read path: missing personal workspace
  * membership is an account provisioning bug, not something the list endpoint
- * creates.
+ * creates. The function returns a `Result` so callers can branch on
+ * `CloudWorkspaceError.PersonalWorkspaceMissing` and respond with a typed
+ * `409` instead of leaking a generic `500`.
  */
 export async function listCloudWorkspaces(
 	store: CloudWorkspaceStore,
 	user: { id: string },
-) {
+): Promise<Result<CloudWorkspaceListing, CloudWorkspaceError>> {
 	const identity = await createPersonalCloudWorkspaceIdentity(user.id);
 	const defaultWorkspaceId = identity.workspaceId;
 	const workspaces = await store.listWorkspaceMemberships(user.id);
 	if (!workspaces.some((workspace) => workspace.id === defaultWorkspaceId)) {
-		throw new Error('Missing personal Cloud Workspace membership');
+		return CloudWorkspaceError.PersonalWorkspaceMissing({
+			userId: user.id,
+			workspaceId: defaultWorkspaceId,
+		});
 	}
 
-	return {
+	return Ok({
 		defaultWorkspaceId,
 		workspaces: workspaces
 			.map((workspace) => ({
@@ -137,7 +179,7 @@ export async function listCloudWorkspaces(
 				if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
 				return a.name.localeCompare(b.name);
 			}),
-	};
+	});
 }
 
 // Personal workspace ids are derived, not random, so account creation,

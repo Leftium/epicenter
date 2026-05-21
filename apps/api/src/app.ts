@@ -343,13 +343,20 @@ app.get(
 		tags: ['workspaces'],
 	}),
 	requireCookieOrBearerUser,
-	async (c) =>
-		c.json(
-			await listCloudWorkspaces(
-				createDrizzleCloudWorkspaceStore(c.var.db),
-				c.var.user,
-			),
-		),
+	async (c) => {
+		const { data, error } = await listCloudWorkspaces(
+			createDrizzleCloudWorkspaceStore(c.var.db),
+			c.var.user,
+		);
+		if (error) {
+			// PersonalWorkspaceMissing is an account provisioning bug, not a
+			// transient failure. Surface it as `409` with a typed body so the
+			// client can distinguish "your personal workspace is missing" from
+			// "you are signed out".
+			return c.json({ name: error.name, message: error.message }, 409);
+		}
+		return c.json(data);
+	},
 );
 // OAuth discovery. Register issuer-path routes before the /auth/* catch-all
 // because Hono matches routes in registration order.
@@ -684,6 +691,13 @@ app.post(
 	},
 );
 
+// `/rooms/:room` is the user-scoped sync path (room name format
+// `subject:{user.id}:rooms:{room}`). Cloud Workspace apps use the Workspace
+// App Doc routes above; this path serves:
+//   - the workspace daemon (`packages/workspace/src/daemon/attach-daemon-infrastructure.ts`)
+//   - non-Cloud sample apps under `examples/` and `playground/`
+// Do not call from Cloud client code: doing so would create a second
+// per-user identity for data that is otherwise scoped to a Workspace.
 app.get(
 	'/rooms/:room',
 	describeRoute({

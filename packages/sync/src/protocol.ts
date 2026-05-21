@@ -29,22 +29,23 @@ import * as Y from 'yjs';
  *
  * Three values are reserved:
  *
- *   SYNC (0):      document synchronization (standard y-protocols)
- *   AWARENESS (1): ephemeral per-peer state, including device liveness
- *                  (standard y-protocols). The relay validates the
- *                  `liveness.installationId` sub-field on every inbound
- *                  awareness update and force-clears on socket close.
+ *   SYNC (0):      document synchronization (standard y-protocols).
+ *   AWARENESS (1): reserved for future cursor/typing/selection sync. The
+ *                  relay does not consume AWARENESS frames today; presence
+ *                  rides text frames, awareness rides binary frames, they
+ *                  share a socket and never collide in the wire decoder.
  *   AUTH (2):      reserved sentinel for the 4401 close path; no frames
  *                  exchanged on this channel (Epicenter convention).
  *
  * Dispatch (server -> recipient `dispatch_inbound`, recipient -> server
- * `dispatch_response`) rides on WebSocket *text* frames, not the binary
- * channel, so it does not consume a MESSAGE_TYPE varint.
+ * `dispatch_response`) and presence (`presence_snapshot`, `presence_added`,
+ * `presence_removed`) ride on WebSocket *text* frames, not the binary
+ * channel, so they do not consume a MESSAGE_TYPE varint.
  */
 export const MESSAGE_TYPE = {
 	/** Document synchronization messages (sync step 1, 2, or update) */
 	SYNC: 0,
-	/** Awareness updates (y-protocols awareness). Used for device liveness. */
+	/** Awareness updates (y-protocols awareness). Reserved for future cursor/typing/selection sync; not consumed by the relay today. */
 	AWARENESS: 1,
 	/** Authentication (reserved sentinel for the 4401 close path; no frames are exchanged) */
 	AUTH: 2,

@@ -1,25 +1,22 @@
 /**
  * Tests for the live-device dispatch module.
  *
- * Covers the four pieces that make up dispatch:
+ * Covers the three pieces that make up dispatch:
  *
  *   - `deriveDispatchUrl`: ws -> http URL transformation.
- *   - `getOnlineInstallationIds`: awareness-derived liveness readout.
  *   - `runInboundDispatch`: recipient-side text-frame handler that runs
  *     the local action registry and emits a `dispatch_response`.
  *   - `dispatch`: caller-side HTTP wrapper, error decoding, abort
  *     handling.
  *
- * Network IO is faked with `globalThis.fetch` overrides; awareness uses
- * the real y-protocols Awareness class against a throwaway Y.Doc.
+ * Network IO is faked with `globalThis.fetch` overrides. Liveness reads
+ * live in `presence.test.ts`; dispatch no longer owns a reader.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import Type from 'typebox';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { Awareness } from 'y-protocols/awareness';
-import * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import {
 	type ActionInput,
@@ -27,7 +24,6 @@ import {
 	DispatchError,
 	deriveDispatchUrl,
 	dispatch,
-	getOnlineInstallationIds,
 	runInboundDispatch,
 	typedDispatch,
 } from './dispatch.js';
@@ -46,35 +42,6 @@ describe('deriveDispatchUrl', () => {
 		expect(deriveDispatchUrl('ws://localhost:8787/rooms/wid')).toBe(
 			'http://localhost:8787/rooms/wid/dispatch',
 		);
-	});
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// getOnlineInstallationIds (spec §3.7 reader)
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('getOnlineInstallationIds', () => {
-	test('returns each peer install once, sorted, with self excluded', () => {
-		const doc = new Y.Doc();
-		const awareness = new Awareness(doc);
-		// Self-state under our own clientID; should be excluded.
-		awareness.setLocalStateField('liveness', { installationId: 'self' });
-		// Simulate two remote peers, one with a duplicate (multi-tab same-install).
-		awareness.states.set(101, { liveness: { installationId: 'R_phone' } });
-		awareness.states.set(102, { liveness: { installationId: 'R_laptop' } });
-		awareness.states.set(103, { liveness: { installationId: 'R_phone' } });
-		// Peer without a liveness sub-field is skipped.
-		awareness.states.set(104, { cursor: { x: 1, y: 2 } });
-
-		const devices = getOnlineInstallationIds({
-			awareness,
-			selfInstallationId: 'self',
-		});
-
-		expect(devices).toEqual([
-			{ installationId: 'R_laptop' },
-			{ installationId: 'R_phone' },
-		]);
 	});
 });
 

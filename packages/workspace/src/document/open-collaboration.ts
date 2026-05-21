@@ -9,8 +9,7 @@
  *
  * Three independent wire surfaces ride one auth context:
  *
- *   binary WS frames  -> standard y-protocols SYNC (and, during the
- *                        migration, AWARENESS that nothing reads).
+ *   binary WS frames  -> standard y-protocols SYNC.
  *   text WS frames    -> presence_snapshot / presence_added /
  *                        presence_removed (server-to-client), and
  *                        dispatch_inbound (server -> recipient) /
@@ -27,16 +26,8 @@
  * online discovery.
  */
 
-import { MESSAGE_TYPE } from '@epicenter/sync';
-import * as decoding from 'lib0/decoding';
-import * as encoding from 'lib0/encoding';
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
-import {
-	Awareness,
-	applyAwarenessUpdate,
-	encodeAwarenessUpdate,
-} from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
 import {
@@ -153,15 +144,11 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	}
 
 	const installationId = config.installationId;
-	const awareness = new Awareness(ydoc);
-	awareness.setLocalStateField('liveness', { installationId });
 
 	// Server-owned presence tracker: derives `devices.list()` from text
 	// frames pushed by the relay (`presence_snapshot`, `presence_added`,
-	// `presence_removed`) instead of from y-protocols Awareness states.
-	// Commit 2 deletes the Awareness instance entirely; for now both
-	// systems run in parallel so the change can land in two reviewable
-	// steps without ever leaving the system broken.
+	// `presence_removed`). The relay's `connections` map is the source of
+	// truth; this tracker is purely a reactive mirror.
 	const presence = createPresenceTracker(installationId);
 
 	// Wrap the user-supplied opener so every connect (including reconnects)
@@ -178,16 +165,6 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		waitFor: config.waitFor,
 		openWebSocket,
 		log: config.log,
-		// Inbound AWARENESS frames: apply to our awareness so devices.list()
-		// reflects peer state.
-		onBinaryFrame(data) {
-			const messageType = data[0];
-			if (messageType !== MESSAGE_TYPE.AWARENESS) return;
-			// Skip the leading message-type byte and the varuint length header
-			// of the inner payload; rather than decoding manually we re-read
-			// using the canonical lib0 helpers via a small wrapper.
-			decodeAndApplyAwarenessFrame({ data, awareness, origin: supervisor });
-		},
 		// Text frames carry two unrelated server-to-client channels:
 		// presence (`presence_snapshot` / `presence_added` /
 		// `presence_removed`) and dispatch (`dispatch_inbound`). Try the
@@ -200,25 +177,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 				},
 			);
 		},
-		// On (re)connect, publish our liveness so the relay can record the
-		// clientID in the attachment and broadcast to peers.
-		onConnected(send) {
-			send(encodeAwarenessFrame(awareness, [awareness.clientID]));
-		},
 	});
-
-	// Outbound: any local awareness change (cursor, typing, liveness)
-	// re-encodes our state and forwards to the supervisor. `origin === 'local'`
-	// per y-protocols Awareness contract for local-state changes; ignore
-	// echoes from applyAwarenessUpdate (origin === supervisor).
-	const awarenessUpdateHandler = (
-		_changes: { added: number[]; updated: number[]; removed: number[] },
-		origin: unknown,
-	) => {
-		if (origin === supervisor) return;
-		supervisor.send(encodeAwarenessFrame(awareness, [awareness.clientID]));
-	};
-	awareness.on('update', awarenessUpdateHandler);
 
 	// `devices` reads directly from the server-owned presence tracker.
 	// The tracker dedupes multi-tab same-install (the relay only ever
@@ -234,11 +193,6 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	};
 
 	const dispatchUrl = deriveDispatchUrl(config.url);
-
-	// No explicit awareness teardown: y-protocols `Awareness` registers
-	// its own `doc.on('destroy', () => this.destroy())` listener; its
-	// `destroy()` calls `super.destroy()` on the lib0 Observable, which
-	// clears every subscriber (including our `awarenessUpdateHandler`).
 
 	return {
 		installationId,
@@ -267,49 +221,4 @@ export function openCollaboration<TActions extends ActionRegistry>(
 			ydoc.destroy();
 		},
 	};
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// AWARENESS FRAME ENCODING
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Encode a y-protocols awareness update as a wire-ready AWARENESS frame:
- *
- *   [varUint MESSAGE_TYPE.AWARENESS][varUint8Array awarenessUpdate]
- *
- * This matches the y-websocket convention used everywhere.
- */
-function encodeAwarenessFrame(
-	awareness: Awareness,
-	clientIDs: number[],
-): Uint8Array {
-	return encoding.encode((enc) => {
-		encoding.writeVarUint(enc, MESSAGE_TYPE.AWARENESS);
-		encoding.writeVarUint8Array(
-			enc,
-			encodeAwarenessUpdate(awareness, clientIDs),
-		);
-	});
-}
-
-/**
- * Decode an inbound AWARENESS frame and apply its payload to the local
- * awareness. The frame layout is `[varUint MESSAGE_TYPE][varUint8Array
- * awarenessUpdate]`; we re-read the leading message-type byte to
- * advance the decoder rather than rely on the caller having stripped it.
- */
-function decodeAndApplyAwarenessFrame({
-	data,
-	awareness,
-	origin,
-}: {
-	data: Uint8Array;
-	awareness: Awareness;
-	origin: unknown;
-}): void {
-	const decoder = decoding.createDecoder(data);
-	decoding.readVarUint(decoder); // message type (already inspected by caller)
-	const payload = decoding.readVarUint8Array(decoder);
-	applyAwarenessUpdate(awareness, payload, origin);
 }

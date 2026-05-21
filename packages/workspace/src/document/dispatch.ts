@@ -13,11 +13,11 @@
  * routes text frames here; we look up `action` in the local registry,
  * invoke it, and emit the `dispatch_response` back over the same socket.
  *
- * `getOnlineInstallationIds()` is the read side of liveness, derived
- * from awareness states (`liveness.installationId` sub-field). The
- * relay validates these on inbound and force-clears them on socket
- * close, so the answer is "what's connected right now" with no 30s
- * heartbeat window.
+ * Liveness is consumed via the server-owned presence channel (see
+ * `presence.ts` and `Collaboration.devices`). This module no longer
+ * carries a liveness reader: the relay's `connections` map is the source
+ * of truth, and clients learn its contents from `presence_snapshot`,
+ * `presence_added`, and `presence_removed` text frames.
  *
  * Identity and routing in one sentence: the relay maps `installationId`
  * to "most-recently-connected open socket"; multi-tab same-install is
@@ -28,7 +28,6 @@
 
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { Awareness } from 'y-protocols/awareness';
 import {
 	ACTION_KEY_PATTERN,
 	type ActionRegistry,
@@ -229,39 +228,6 @@ export function typedDispatch<TTargetActions extends ActionRegistry>(
 export function deriveDispatchUrl(wsUrl: string): string {
 	const httpUrl = wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
 	return `${httpUrl}/dispatch`;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// LIVENESS READ (awareness derived)
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Read live installation ids from awareness states. Dedupes multi-tab
- * same-install entries (two tabs on the same install both publish the
- * same `installationId` from distinct Yjs `clientID`s).
- *
- * Self is excluded via `selfInstallationId`: callers that want to see
- * themselves in the picker should compose with their own identity state,
- * not re-derive it here.
- */
-export function getOnlineInstallationIds({
-	awareness,
-	selfInstallationId,
-}: {
-	awareness: Awareness;
-	selfInstallationId: string;
-}): LiveDevice[] {
-	const seen = new Set<string>();
-	for (const [, state] of awareness.getStates()) {
-		const claimed = (state as { liveness?: { installationId?: unknown } })
-			?.liveness?.installationId;
-		if (typeof claimed !== 'string') continue;
-		if (claimed === selfInstallationId) continue;
-		seen.add(claimed);
-	}
-	return Array.from(seen)
-		.sort()
-		.map((installationId) => ({ installationId }));
 }
 
 // ════════════════════════════════════════════════════════════════════════════

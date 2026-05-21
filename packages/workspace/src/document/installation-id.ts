@@ -9,9 +9,10 @@
  *
  * Installation ids are claimed by the client and only the client knows
  * them. They are passed to `openCollaboration` as the `installationId`
- * config field, stamped onto the WebSocket upgrade URL, validated on
- * every inbound awareness `liveness.installationId` update by the relay,
- * and echoed as the `from` field on every HTTP dispatch.
+ * config field, stamped onto the WebSocket upgrade URL (the relay binds
+ * the id to the socket at upgrade and stores it on the socket attachment
+ * for the lifetime of the connection: no round-trip validation), and
+ * echoed as the `from` field on every HTTP dispatch.
  */
 
 import { generateGuid } from '../shared/id.js';

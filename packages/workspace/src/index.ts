@@ -4,10 +4,9 @@
  * `@epicenter/workspace` attaches typed primitives: tables, KV, plain/rich
  * text, timeline, and an action registry to a `Y.Doc`, then wires the
  * result to IndexedDB persistence, end-to-end encryption, and WebSocket
- * sync via `openCollaboration`. `openCollaboration` also publishes
- * per-peer liveness via y-protocols awareness and exposes the live-device
- * surface (`devices.list()`) plus HTTP-backed `dispatch()` for cross-
- * device calls.
+ * sync via `openCollaboration`. `openCollaboration` also consumes the
+ * server-owned presence channel and exposes the live-device surface
+ * (`devices.list()`) plus HTTP-backed `dispatch()` for cross-device calls.
  *
  * @example
  * ```typescript

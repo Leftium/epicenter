@@ -8,10 +8,12 @@
  * These prefixes are reserved. Do not create Y.Doc arrays with keys
  * matching these patterns outside of the document API.
  *
- * Liveness no longer lives in the Y.Doc; it rides standard y-protocols
- * awareness with a server-validated `liveness.installationId` sub-field.
- * Cross-device dispatch rides a sibling HTTP endpoint correlated with
- * two WebSocket text frames; no Y.Doc array is reserved for it.
+ * Liveness does not live in the Y.Doc. Presence is server-owned: the
+ * relay binds `installationId` to a socket by URL stamp at upgrade, and
+ * the client derives `devices.list()` from `presence_snapshot`,
+ * `presence_added`, and `presence_removed` text frames. Cross-device
+ * dispatch rides a sibling HTTP endpoint correlated with two WebSocket
+ * text frames; no Y.Doc array is reserved for it.
  *
  * @example
  * ```typescript

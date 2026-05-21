@@ -2,19 +2,19 @@
  * Self-contained Yjs sync + dispatch room for Cloudflare Durable Objects.
  *
  * Everything a room needs lives in this file: SQLite update log persistence,
- * WebSocket lifecycle, awareness liveness tracking, dispatch correlation,
- * and the `Room` class itself.
+ * WebSocket lifecycle, server-owned presence, dispatch correlation, and the
+ * `Room` class itself.
  *
  * ## Module structure
  *
- * {@link Room}: the Durable Object class wiring persistence, sync, awareness,
+ * {@link Room}: the Durable Object class wiring persistence, sync, presence,
  *   and dispatch together.
  *
  * ## Wire surfaces
  *
  * Three surfaces share auth context but are independent at the wire level:
  *
- *   binary WS frames  -> standard y-protocols (SYNC + AWARENESS).
+ *   binary WS frames  -> standard y-protocols SYNC.
  *   text WS frames    -> dispatch push/response (`dispatch_inbound`,
  *                        `dispatch_response`) and the server-owned
  *                        presence channel (`presence_snapshot`,
@@ -26,18 +26,14 @@
  *                        promise when the recipient's `dispatch_response`
  *                        arrives.
  *
- * ## Liveness / presence
+ * ## Presence
  *
  * Presence is server-owned: the `connections` map is the source of truth,
  * and the DO emits three text frame types (`presence_snapshot`,
  * `presence_added`, `presence_removed`) so clients can derive
- * `devices.list()` without round-tripping through y-protocols Awareness.
- *
- * Note: commit 1 of the server-owned presence migration adds the presence
- * path alongside the legacy Awareness liveness path. The Awareness instance
- * still exists, `filterAwarenessUpdate` still runs on inbound, and the
- * hibernation restore loop still seeds awareness state; commit 2 deletes
- * all of that.
+ * `devices.list()` directly from the relay's view. There is no Awareness
+ * instance on the relay; the y-protocols Awareness slot is reserved for
+ * future cursor/typing/selection work, not liveness.
  */
 
 import { DurableObject } from 'cloudflare:workers';
@@ -53,14 +49,11 @@ import type {
 	PresenceRemovedFrame,
 	PresenceSnapshotFrame,
 } from '@epicenter/workspace/document/presence';
-import { Awareness, removeAwarenessStates } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import {
 	applyMessage,
 	type Connection,
-	encodeAwarenessFrameForClients,
-	type RoomContext,
 	registerConnection,
 } from './sync-handlers';
 
@@ -152,16 +145,11 @@ const DISPATCH_INTERNAL_TIMEOUT_MS = 60_000;
  * Per-connection metadata persisted via `ws.serializeAttachment` to survive
  * hibernation.
  *
- * - `installationId`: URL-stamped at upgrade, the address used by dispatch.
- * - `clientID`: the Yjs awareness `clientID` for this peer, learned from
- *   the first inbound awareness update. Needed by `removeAwarenessStates`
- *   on close so peers see the liveness drop within one RTT.
- *
- * The added `clientID` keeps the attachment well under the 2 KB budget.
+ * - `installationId`: URL-stamped at upgrade, the address used by dispatch
+ *   and the only identity the relay carries for a socket.
  */
 type WsAttachment = {
 	installationId: string;
-	clientID?: number;
 };
 
 // ============================================================================
@@ -173,8 +161,7 @@ type WsAttachment = {
  *
  * Owns: SQLite update log persistence, WebSocket lifecycle via the
  * Hibernation API, HTTP sync via RPC, dispatch correlation, and the
- * shared `Awareness` instance for device liveness. Every room runs with
- * `gc: true`.
+ * server-owned presence channel. Every room runs with `gc: true`.
  *
  * ## Worker to DO interface
  *
@@ -224,12 +211,6 @@ export class Room extends DurableObject {
 	 * @see {@link https://developers.cloudflare.com/durable-objects/api/state/#blockconcurrencywhile | blockConcurrencyWhile docs}
 	 */
 	private doc!: Y.Doc;
-
-	/** Shared awareness, holds every connected peer's `liveness.installationId`. */
-	private awareness!: Awareness;
-
-	/** Shared room state forwarded into sync handlers. */
-	private room!: RoomContext;
 
 	/** Active WebSocket connections and their per-connection sync state. */
 	private connections = new Map<WebSocket, Connection>();
@@ -284,18 +265,6 @@ export class Room extends DurableObject {
 
 		ctx.blockConcurrencyWhile(async () => {
 			this.doc = new Y.Doc({ gc: true });
-			this.awareness = new Awareness(this.doc);
-			// The y-protocols `Awareness` constructor publishes an implicit
-			// empty `{}` self-state on the doc's clientID. The relay never
-			// participates in dispatch and has no liveness of its own to
-			// announce, so we drop that placeholder. The result is that
-			// `awareness.getStates()` is exactly "online remote peers".
-			this.awareness.setLocalState(null);
-
-			this.room = {
-				doc: this.doc,
-				awareness: this.awareness,
-			};
 
 			// --- Update log: DDL + cold-start load + compaction + live persist ---
 
@@ -321,16 +290,14 @@ export class Room extends DurableObject {
 
 			// --- Restore connections that survived hibernation ---
 			// Iterates ctx.getWebSockets(), reads the URL-stamped installationId
-			// and the awareness clientID (if learned before hibernation) from
-			// each attachment, and re-registers sync handlers.
+			// from each attachment, and re-registers sync handlers.
 			//
-			// For sockets whose attachment carries a clientID we also seed the
-			// server's awareness so the relay's view (dispatch routing, the
-			// `webSocketClose` force-clear) is non-empty immediately after wake.
-			// The real client awareness frame overwrites this seed on the next
-			// renewal (within 15s). We do not broadcast the seed to peers:
-			// y-protocols rejects a clock 0 non-null update, and peers preserve
-			// their own view of these clients through hibernation anyway.
+			// Presence is rebuilt implicitly: the connections Map is the
+			// source of truth, so once these entries are restored,
+			// `snapshotInstalls()` and `pickRecipient()` return correct
+			// results immediately. No broadcast, no clock seeding, no
+			// force-clear; any subsequent upgrade or close drives the next
+			// presence delta the same way it would on a never-hibernated DO.
 			for (const ws of ctx.getWebSockets()) {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
 				if (!attachment) continue;
@@ -341,21 +308,6 @@ export class Room extends DurableObject {
 					installationId: attachment.installationId,
 				});
 				this.connections.set(ws, connection);
-
-				if (attachment.clientID != null) {
-					this.awareness.states.set(attachment.clientID, {
-						liveness: { installationId: attachment.installationId },
-					});
-					// Seed meta with clock 0 so the next inbound frame from the real
-					// client (which y-protocols ships at clock >= 1) passes the
-					// strict `currClock < clock` accept gate.
-					// `lastUpdated` is Date.now() (ms) so the outdatedTimeout reaper
-					// gives the restored entry 30s to be refreshed by a real frame.
-					this.awareness.meta.set(attachment.clientID, {
-						clock: 0,
-						lastUpdated: Date.now(),
-					});
-				}
 			}
 		});
 	}
@@ -383,8 +335,9 @@ export class Room extends DurableObject {
 	 * returns the 101 Switching Protocols response.
 	 *
 	 * The `installationId` query parameter is required: it is the address
-	 * used by `dispatch({ to })` and the value the relay enforces on every
-	 * inbound awareness update via the liveness validation hook.
+	 * used by `dispatch({ to })` and the value the relay stamps on the
+	 * socket attachment for the lifetime of the connection. No round-trip
+	 * validation: the URL stamp is the binding.
 	 *
 	 * Cancels any pending compaction alarm: a new client just connected, so
 	 * compacting now would be wasteful.
@@ -727,12 +680,7 @@ export class Room extends DurableObject {
 	 *
 	 * Routes on the message envelope:
 	 *   - text frames: dispatch_response correlation.
-	 *   - binary frames: standard y-protocols SYNC / AWARENESS / AUTH.
-	 *
-	 * For AWARENESS, captures the surviving `clientID` so a later close
-	 * can call `removeAwarenessStates` for that specific peer. Updates
-	 * the WS attachment in place; the added field stays inside the 2 KB
-	 * attachment budget.
+	 *   - binary frames: standard y-protocols SYNC.
 	 */
 	override async webSocketMessage(
 		ws: WebSocket,
@@ -755,7 +703,7 @@ export class Room extends DurableObject {
 
 		const { data: effect, error } = applyMessage({
 			data: new Uint8Array(message),
-			room: this.room,
+			doc: this.doc,
 			connection,
 		});
 		if (error) {
@@ -767,13 +715,6 @@ export class Room extends DurableObject {
 		if (effect.action === 'reply') {
 			ws.send(effect.data);
 			return;
-		}
-		// broadcast
-		if (effect.learnedClientIDs?.length) {
-			const firstLearnedClientID = effect.learnedClientIDs[0];
-			if (firstLearnedClientID != null) {
-				this.maybeRecordClientID(ws, connection, firstLearnedClientID);
-			}
 		}
 		this.broadcast(ws, effect.data);
 	}
@@ -855,31 +796,10 @@ export class Room extends DurableObject {
 	}
 
 	/**
-	 * Record a learned awareness `clientID` into the WS attachment so
-	 * `webSocketClose` can call `removeAwarenessStates(awareness, [clientID])`
-	 * for an immediate force-clear (no 30s heartbeat timeout). Subsequent
-	 * awareness updates from the same socket may also pass through here;
-	 * the no-op branch keeps the write count to one.
-	 */
-	private maybeRecordClientID(
-		ws: WebSocket,
-		connection: Connection,
-		clientID: number,
-	): void {
-		const attachment = ws.deserializeAttachment() as WsAttachment | null;
-		if (!attachment) return;
-		if (attachment.clientID === clientID) return;
-		ws.serializeAttachment({
-			installationId: connection.installationId,
-			clientID,
-		} satisfies WsAttachment);
-	}
-
-	/**
 	 * Clean up a closed WebSocket connection.
 	 *
-	 * - Force-clears the peer's awareness liveness state (broadcasts a
-	 *   null state so peers see the device drop within one RTT).
+	 * - Emits `presence_removed` if this was the last socket for the
+	 *   install (or immediately on auth-failure close codes).
 	 * - Resolves any in-flight dispatches to this recipient with
 	 *   `RecipientOffline` so callers don't wait for the safety timeout.
 	 * - Unregisters Yjs doc update handlers.
@@ -893,15 +813,6 @@ export class Room extends DurableObject {
 	): Promise<void> {
 		const connection = this.connections.get(ws);
 		if (!connection) return;
-
-		const attachment = ws.deserializeAttachment() as WsAttachment | null;
-		if (attachment?.clientID != null) {
-			removeAwarenessStates(this.awareness, [attachment.clientID], 'close');
-			this.broadcast(
-				ws,
-				encodeAwarenessFrameForClients(this.awareness, [attachment.clientID]),
-			);
-		}
 
 		// Fail any in-flight dispatches that were waiting on this socket.
 		// `pending.resolve` clears the safety timeout via its closure, so we

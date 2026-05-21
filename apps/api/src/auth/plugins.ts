@@ -9,11 +9,15 @@ const trustedOAuthClientIds = new Set(
 	EPICENTER_TRUSTED_OAUTH_CLIENTS.map((client) => client.clientId),
 );
 
-export function authPlugins({
-	resourceAudience,
-}: {
-	resourceAudience: string;
-}) {
+/**
+ * Build the Better Auth plugins that define Epicenter's OAuth server boundary.
+ *
+ * Use this only from the API auth factory, where the request URL is known. The
+ * `resourceAudience` must be the API base URL that clients pass as OAuth
+ * `resource`; keeping those values equal is what prevents access tokens minted
+ * for one resource server from being replayed against another.
+ */
+export function authPlugins(resourceAudience: string) {
 	return [
 		organization(),
 		// ES256 (P-256 ECDSA) signs the id_token and JWT access tokens. The

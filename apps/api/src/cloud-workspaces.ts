@@ -4,23 +4,7 @@ import * as schema from './db/schema';
 
 type Db = NodePgDatabase<typeof schema>;
 
-export type CloudWorkspaceUser = {
-	id: string;
-};
-
-export type CloudWorkspace = {
-	id: string;
-	name: string;
-	role: string;
-	isDefault: boolean;
-};
-
-export type CloudWorkspaceList = {
-	defaultWorkspaceId: string;
-	workspaces: CloudWorkspace[];
-};
-
-export type CloudWorkspaceStore = {
+type CloudWorkspaceStore = {
 	findWorkspaceMember(params: {
 		userId: string;
 		workspaceId: string;
@@ -47,6 +31,14 @@ export type CloudWorkspaceStore = {
 
 const PERSONAL_WORKSPACE_NAME = 'Personal Workspace';
 
+/**
+ * Adapt the Better Auth organization tables to the cloud-workspace store shape.
+ *
+ * Use this in API code that wants workspace semantics without depending on the
+ * Drizzle schema directly. The store preserves the boundary that cloud
+ * workspaces are Better Auth organizations, with membership rows as the source
+ * of truth for authorization.
+ */
 export function createDrizzleCloudWorkspaceStore(db: Db): CloudWorkspaceStore {
 	return {
 		async findWorkspaceMember({ userId, workspaceId }) {
@@ -103,9 +95,17 @@ export function createDrizzleCloudWorkspaceStore(db: Db): CloudWorkspaceStore {
 	};
 }
 
+/**
+ * Ensure the user has exactly one deterministic personal cloud workspace.
+ *
+ * Use this during account creation and when listing workspaces so older users
+ * get backfilled lazily. The deterministic ids make the operation idempotent:
+ * repeated calls converge on the same organization and owner membership instead
+ * of minting new personal workspaces.
+ */
 export async function ensurePersonalCloudWorkspace(
 	store: CloudWorkspaceStore,
-	user: CloudWorkspaceUser,
+	user: { id: string },
 ) {
 	const identity = await createPersonalCloudWorkspaceIdentity(user.id);
 
@@ -131,10 +131,18 @@ export async function ensurePersonalCloudWorkspace(
 	return identity.workspaceId;
 }
 
+/**
+ * Return the cloud workspaces a signed-in user may open.
+ *
+ * Use this for account/workspace pickers after the caller has already resolved
+ * the Better Auth user. It preserves the default-workspace invariant by
+ * backfilling the personal workspace first, marking it as default, and sorting
+ * it ahead of any shared workspaces.
+ */
 export async function listCloudWorkspaces(
 	store: CloudWorkspaceStore,
-	user: CloudWorkspaceUser,
-): Promise<CloudWorkspaceList> {
+	user: { id: string },
+) {
 	const defaultWorkspaceId = await ensurePersonalCloudWorkspace(store, user);
 	const workspaces = await store.listWorkspaceMemberships(user.id);
 
@@ -152,7 +160,9 @@ export async function listCloudWorkspaces(
 	};
 }
 
-export async function createPersonalCloudWorkspaceIdentity(userId: string) {
+// Personal workspace ids are derived, not random, so account creation,
+// migration, and lazy backfill can all retry without creating duplicates.
+async function createPersonalCloudWorkspaceIdentity(userId: string) {
 	const hash = await sha256Hex(`personal-cloud-workspace:${userId}`);
 	const suffix = hash.slice(0, 32);
 	return {

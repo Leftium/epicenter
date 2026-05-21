@@ -174,6 +174,6 @@ export function createAuth({
 		verification: {
 			storeInDatabase: true,
 		},
-		plugins: authPlugins({ resourceAudience: baseURL }),
+		plugins: authPlugins(baseURL),
 	} satisfies BetterAuthOptions);
 }

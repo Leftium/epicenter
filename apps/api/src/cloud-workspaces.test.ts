@@ -13,7 +13,6 @@
 
 import { expect, test } from 'bun:test';
 import {
-	type CloudWorkspaceStore,
 	ensurePersonalCloudWorkspace,
 	listCloudWorkspaces,
 } from './cloud-workspaces.js';
@@ -112,7 +111,7 @@ function createMemoryCloudWorkspaceStore(seed?: {
 	const organizations = [...(seed?.organizations ?? [])];
 	const members = [...(seed?.members ?? [])];
 
-	const store: CloudWorkspaceStore & {
+	const store: Parameters<typeof ensurePersonalCloudWorkspace>[0] & {
 		organizations: typeof organizations;
 		members: typeof members;
 	} = {

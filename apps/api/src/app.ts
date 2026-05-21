@@ -40,7 +40,6 @@ import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
 import {
 	createDrizzleCloudWorkspaceStore,
-	ensurePersonalCloudWorkspace,
 	listCloudWorkspaces,
 } from './cloud-workspaces';
 import * as schema from './db/schema';
@@ -417,13 +416,6 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 app.use('/ai/*', requireOAuthUser);
 app.use('/rooms/*', requireOAuthUser);
 app.use('/workspaces/*', requireUser);
-app.use('/workspaces/*', async (c, next) => {
-	await ensurePersonalCloudWorkspace(
-		createDrizzleCloudWorkspaceStore(c.var.db),
-		c.var.user,
-	);
-	await next();
-});
 app.use('/api/billing/*', requireUser);
 app.use('/api/assets/*', requireUser);
 

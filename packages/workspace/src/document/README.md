@@ -64,7 +64,7 @@ workspace.tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
 
 The factory body is where you wire everything. Because you own the return shape, you can expose whatever handles your app needs.
 
-### Encryption (client-side E2E)
+### Encryption (server-managed value encryption)
 
 The encryption coordinator owns sibling attachments: `attachTable` / `attachTables` / `attachKv` are methods on it, not top-level exports.
 

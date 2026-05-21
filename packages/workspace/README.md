@@ -124,7 +124,7 @@ Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, 
 
 Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 
-Minimal encrypted workspace: encryption + IndexedDB + cross-tab + collaboration (sync + presence + RPC) wired end-to-end:
+Minimal encrypted browser workspace: encryption + IndexedDB + cross-tab + collaboration (sync + presence + RPC) wired together:
 
 ```typescript
 import {
@@ -193,7 +193,7 @@ export const session = createSession({
 
 `openCollaboration` is the workspace primitive: it wraps the sync supervisor, publishes the local installation in presence, dispatches inbound action and runtime requests, and exposes a `peers` surface (`workspace.collaboration.peers.list().find((p) => p.installationId === installationId)`). For content documents that need bytes-only sync (no presence, no RPC), use the sibling primitive `attachYjsSync(ydoc, { url, ... })`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
-The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.
+When using raw room transport, the `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud Workspace app sync uses product routes under `/workspaces/:workspaceId/apps/:appId/docs/:docId`; the server builds the internal room name after membership checks.
 
 For production-shaped browser wiring, see `apps/fuji/src/routes/(signed-in)/fuji/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.svelte.ts`.
 

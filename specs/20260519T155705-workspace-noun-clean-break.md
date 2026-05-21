@@ -8,6 +8,8 @@ Supersedes the product model in `specs/20260519T160000-subject-principal-surface
 
 Revision note, 2026-05-20: `specs/20260520T001032-workspace-capsule-clean-break.md` and `specs/20260520T114537-epicenter-sync-engine-host-composition.md` keep the Workspace direction but narrow the immediate sync work. Current Cloud sync remains personal owner-scoped with `subject:{subject}:rooms:{room}`. Workspace-scoped room names are still the likely team-ready shape, but only after Workspace rows, access checks, and migration rules exist. Do not read the Phase 1 `Subject.toRoomName` item below as the active next step for the sync engine.
 
+Superseded note, 2026-05-20: `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md` supersedes this spec for Epicenter Cloud hierarchy. It keeps Workspace as the daily product noun, but rejects the Cloud `owner_user_id` / `owner_organization_id` direction. In the active Cloud model, Better Auth organization backs Cloud Workspace, Better Auth member backs Workspace membership, and App Namespace is `workspaceId + appId`; `app_instance` is deferred until installed-app lifecycle operations earn it.
+
 ## One Sentence
 
 Epicenter work happens inside a workspace: a user or organization can own it, a signed-in principal can access it, every replicated `Y.Doc` syncs through a room, and subject stays a low-level auth and cryptographic label.

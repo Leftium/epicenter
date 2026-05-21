@@ -348,10 +348,10 @@ Acme deployment
   asset storage
 ```
 
-If one deployment hosts several enterprise customers, the host can choose a tenant-scoped room name outside the engine:
+If one deployment hosts several enterprise customers, the host can choose a customer-scoped room name outside the engine:
 
 ```txt
-tenant:{tenantId}:subject:{subject}:rooms:{room}
+customer:{customerId}:subject:{subject}:rooms:{room}
 ```
 
 If Epicenter later ships real team workspaces, room names can move to workspace scope only after workspace rows, workspace access checks, and migration rules exist:
@@ -392,7 +392,7 @@ passphrase =
 roomName =
   internal sync namespace
   opaque to SyncEngine
-  should already include whatever owner, subject, tenant, or workspace scoping the host has proven
+  should already include whatever owner, subject, customer, or workspace scoping the host has proven
 ```
 
 ## Design Decisions
@@ -402,7 +402,7 @@ roomName =
 | Core abstraction | Host composition plus `createSyncEngine` for HTTP sync responses | It removes policy hooks by making the host route the composer. |
 | Auth ownership | Host route | Better Auth, enterprise IAM, and self-host secrets are host concerns. |
 | Room access | Resolved before engine call | The engine receives `roomName`, not sessions or users. |
-| Room-name scope | Host-owned | Personal Cloud can use subject scope, self-host can use local scope, enterprise can use deployment or tenant scope, and future workspace scope needs real workspace access checks first. |
+| Room-name scope | Host-owned | Personal Cloud can use subject scope, self-host can use local scope, enterprise can use deployment or customer scope, and future workspace scope needs real workspace access checks first. |
 | Metering | Return values, not hooks | The host can record usage after engine calls. |
 | Deletion | Deferred room backend method | Keep deletion out of Phase 1 until an admin route needs it. |
 | Token verifier | Not in v1 engine | Token verification belongs to the host route unless we build a separate relay process. |
@@ -414,7 +414,7 @@ roomName =
 
 ```txt
 No Better Auth imports in SyncEngine.
-No org, team, tenant, workspace, or grant model in SyncEngine.
+No org, team, customer, workspace, or grant model in SyncEngine.
 No grant tables in SyncEngine.
 No callback hooks for billing or policy.
 No signed relay token issuer in v1.

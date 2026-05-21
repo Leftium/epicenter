@@ -49,9 +49,9 @@ import { cloudflareDurableObjectRooms } from './room-gateway';
 import { createSyncEngine } from './sync-engine';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 import {
-	type AuthorizedWorkspaceAppDoc,
-	resolveAuthorizedWorkspaceAppDoc,
-} from './workspace-app-doc-sync';
+	type AuthorizedWorkspaceSyncDoc,
+	resolveAuthorizedWorkspaceSyncDoc,
+} from './workspace-sync-doc';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
 export { Room } from './room';
@@ -519,13 +519,13 @@ function resolveSubjectRoom(c: Context<Env>) {
 	};
 }
 
-async function resolveWorkspaceAppDocRoute(
+async function resolveWorkspaceSyncDocRoute(
 	c: Context<Env>,
 ): Promise<
-	| { data: AuthorizedWorkspaceAppDoc; response?: never }
+	| { data: AuthorizedWorkspaceSyncDoc; response?: never }
 	| { data?: never; response: Response }
 > {
-	const result = await resolveAuthorizedWorkspaceAppDoc({
+	const result = await resolveAuthorizedWorkspaceSyncDoc({
 		user: c.var.user,
 		workspaceId: c.req.param('workspaceId'),
 		appId: c.req.param('appId'),
@@ -602,11 +602,11 @@ function upsertDoInstance(
 app.get(
 	'/workspaces/:workspaceId/apps/:appId/docs/:docId',
 	describeRoute({
-		description: 'Get workspace app doc or upgrade to WebSocket',
-		tags: ['workspace-app-docs'],
+		description: 'Get workspace sync doc or upgrade to WebSocket',
+		tags: ['workspace-sync-docs'],
 	}),
 	async (c) => {
-		const resolved = await resolveWorkspaceAppDocRoute(c);
+		const resolved = await resolveWorkspaceSyncDocRoute(c);
 		if (resolved.response) return resolved.response;
 
 		const target = resolved.data;
@@ -616,7 +616,7 @@ app.get(
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
 					userId: c.var.user.id,
-					resourceName: target.resourceName,
+					resourceName: target.syncDocResourceName,
 					doName: target.roomName,
 				}),
 			);
@@ -628,7 +628,7 @@ app.get(
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
-				resourceName: target.resourceName,
+				resourceName: target.syncDocResourceName,
 				doName: target.roomName,
 				storageBytes,
 			}),
@@ -640,11 +640,11 @@ app.get(
 app.post(
 	'/workspaces/:workspaceId/apps/:appId/docs/:docId',
 	describeRoute({
-		description: 'Sync workspace app doc',
-		tags: ['workspace-app-docs'],
+		description: 'Sync workspace sync doc',
+		tags: ['workspace-sync-docs'],
 	}),
 	async (c) => {
-		const resolved = await resolveWorkspaceAppDocRoute(c);
+		const resolved = await resolveWorkspaceSyncDocRoute(c);
 		if (resolved.response) return resolved.response;
 
 		const target = resolved.data;
@@ -657,7 +657,7 @@ app.post(
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
 					userId: c.var.user.id,
-					resourceName: target.resourceName,
+					resourceName: target.syncDocResourceName,
 					doName: target.roomName,
 					storageBytes: result.storageBytes,
 				}),
@@ -671,8 +671,8 @@ app.post(
 app.post(
 	'/workspaces/:workspaceId/apps/:appId/docs/:docId/dispatch',
 	describeRoute({
-		description: 'Dispatch a workspace app doc live-device call via the relay',
-		tags: ['workspace-app-docs'],
+		description: 'Dispatch a workspace sync doc live-device call via the relay',
+		tags: ['workspace-sync-docs'],
 	}),
 	sValidator(
 		'json',
@@ -684,7 +684,7 @@ app.post(
 		}),
 	),
 	async (c) => {
-		const resolved = await resolveWorkspaceAppDocRoute(c);
+		const resolved = await resolveWorkspaceSyncDocRoute(c);
 		if (resolved.response) return resolved.response;
 
 		const target = resolved.data;
@@ -695,7 +695,7 @@ app.post(
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
-				resourceName: target.resourceName,
+				resourceName: target.syncDocResourceName,
 				doName: target.roomName,
 			}),
 		);

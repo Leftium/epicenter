@@ -16,11 +16,13 @@
 
 ## Overview
 
-The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, AI inference, and encryption key derivation. It runs on Cloudflare Workers with Durable Objects; each user gets isolated DOs for their workspaces and documents. There is no shared state between accounts.
+The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, AI inference, and encryption key derivation. It runs on Cloudflare Workers with Durable Objects. Cloud product sync enters through Workspace app document routes such as `/workspaces/:workspaceId/apps/:appId/docs/:docId`; the older `/rooms/:room` route remains for daemon, private room, and compatibility wiring.
 
 On the client, `@epicenter/workspace` provides the primitives: define your schema with `defineTable` / `defineKv`, compose a live document by creating a `Y.Doc` and calling `attach*`, authenticate with `@epicenter/auth`, and gate the workspace lifecycle on signed-in identity with `createSession` from `@epicenter/svelte`.
 
-## Minimal end-to-end shape
+## Minimal private-room shape
+
+This snippet shows the raw room transport shape. Use it for local, daemon, or private room wiring. Signed-in Cloud apps should resolve a Cloud Workspace through the API and open `/workspaces/:workspaceId/apps/:appId/docs/:docId` instead of treating `ydoc.guid` as a Cloud product route.
 
 ```typescript
 import {
@@ -114,6 +116,6 @@ export const session = createSession({
 export type MyAppSignedIn = InferSignedIn<typeof session>;
 ```
 
-The `ydoc.guid` becomes the sync room name. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin.
+In this raw room transport shape, the `ydoc.guid` becomes the sync room name. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin. In Cloud Workspace sync, the public route names the Workspace, App Namespace, and Sync Doc explicitly; the server builds the internal room name after membership checks.
 For authenticated browser workspaces, `createSession` gives app code a `LocalOwner`. The owner hides the subject to owner translation and scopes local IndexedDB, BroadcastChannel, and wipe paths for the signed-in subject.
 `createSession` reconciles `auth.state` against the live workspace: sign-out disposes the workspace, and same-subject identity updates keep the workspace mounted. A different subject from `/api/session` is rejected by auth before the workspace is reused. Auth-bound callbacks still read `auth.state` at their own boundaries: sync can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached.

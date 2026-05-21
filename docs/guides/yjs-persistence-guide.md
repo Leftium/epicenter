@@ -4,7 +4,7 @@
 > (`setupPersistence`, `@epicenter/workspace/providers/*`, `text()` / `ytext()`
 > column builders) that no longer exists in this codebase.
 >
-> Persistence today is an *attachment*, not a provider — you call
+> Persistence today is an *attachment*, not a provider. You call
 > `attachIndexedDb(ydoc)` in the browser or `attachYjsLog(ydoc, { filePath })`
 > on Node/Bun, both inside a `defineDocument(builder)` closure. See
 > [`packages/workspace/README.md`](../../packages/workspace/README.md) for the
@@ -13,9 +13,11 @@
 
 ## What is YJS?
 
-YJS is a **CRDT (Conflict-free Replicated Data Type)** library. In Epicenter, YJS is the source of truth for all your data. Every workspace is a `Y.Doc`. Tables, KV entries, and document content are typed helpers layered over YJS shared types.
+YJS is a **CRDT (Conflict-free Replicated Data Type)** library. In Epicenter, YJS is the source of truth for app data. A Cloud Workspace is a product account container; a synced `Y.Doc` is a Sync Doc inside an app namespace. Tables, KV entries, and document content are typed helpers layered over YJS shared types.
 
-## Current model
+## Current raw-room model
+
+The example below uses raw room transport. Cloud Workspace apps should prefer the product route shape `/workspaces/:workspaceId/apps/:appId/docs/:docId`; `roomWsUrl(...)` remains useful for daemon, local, and compatibility paths.
 
 Each app composes its workspace in a single builder:
 
@@ -57,7 +59,7 @@ Offline and sync behavior:
 
 1. Writes go through the typed helpers into the `Y.Doc`.
 2. `attachIndexedDb` (or `attachYjsLog`) mirrors the Y.Doc to local storage.
-3. `openCollaboration` waits for `idb.whenLoaded` before opening the WebSocket, so the first remote exchange is a CRDT delta against an already-populated local state — not a full document transfer.
+3. `openCollaboration` waits for `idb.whenLoaded` before opening the WebSocket, so the first remote exchange is a CRDT delta against an already-populated local state, not a full document transfer.
 4. When offline, writes accumulate in IndexedDB/SQLite; when back online, Yjs replays them against whatever peers did in the meantime. CRDT merge rules guarantee convergence.
 
 For content documents that only need bytes-on-the-wire (no presence, no RPC), use the sibling `attachYjsSync(ydoc, { url, ... })` instead of `openCollaboration`.

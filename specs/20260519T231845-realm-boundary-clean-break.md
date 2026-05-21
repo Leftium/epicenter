@@ -6,6 +6,8 @@
 
 Superseded note, 2026-05-20: this was a useful pressure test, but it is not the active direction. `specs/20260520T001032-workspace-capsule-clean-break.md` replaced Realm and Tenant with Workspace as the portable product boundary, and `specs/20260520T114537-epicenter-sync-engine-host-composition.md` kept the first sync-engine pass inside host composition. Use this spec for the rejected Realm argument and self-hosting pressure tests, not as the implementation plan.
 
+Second superseded note, 2026-05-20: `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md` supersedes the Cloud hierarchy again. It keeps the rejection of Realm and the warning that one Durable Object per top-level boundary would bottleneck, but it makes Cloud Workspace the Better Auth backed product account container and App Namespace (`workspaceId + appId`) the lower app-data boundary. `app_instance` is deferred until installed-app lifecycle operations earn it.
+
 Builds on `specs/20260519T155705-workspace-noun-clean-break.md` and revises its ownership center. That spec moved the durable product noun from `Subject` to `Workspace`; this spec moves the portable trust and hosting boundary above `Workspace` to `Realm`.
 
 ## One Sentence

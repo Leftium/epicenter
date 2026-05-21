@@ -92,7 +92,9 @@ workspace.tables.files.set({ id: 'readme.md', name: 'README.md', _v: 1 });
 The split is conceptual, not cosmetic. Definitions describe what data means; the builder is the runtime that can actually hold and mutate that data.
 
 ### 3. Extend means adding more `attach*` calls
-There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + RPC + peers) mounts through the `openCollaboration` primitive. You add them to the builder alongside tables and KV:
+There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + RPC + peers) mounts through the `openCollaboration` primitive. You add them to the builder alongside tables and KV.
+
+The example below uses raw room transport. For Cloud Workspace product sync, app routes should carry Workspace, App Namespace, and Sync Doc identity with `/workspaces/:workspaceId/apps/:appId/docs/:docId`; the server then builds the internal room name after access checks.
 
 ```ts
 import * as Y from 'yjs';

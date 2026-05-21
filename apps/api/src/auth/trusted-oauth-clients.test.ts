@@ -11,14 +11,22 @@
  */
 
 import { expect, test } from 'bun:test';
-import { EPICENTER_TRUSTED_OAUTH_CLIENTS } from '@epicenter/constants/oauth';
+import {
+	EPICENTER_FUJI_OAUTH_CLIENT_ID,
+	EPICENTER_TRUSTED_OAUTH_CLIENTS,
+} from '@epicenter/constants/oauth';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import { authPlugins } from './plugins.js';
 import { projectTrustedOAuthClientToRow } from './trusted-oauth-clients.js';
 
-const trustedClientDefinition = getTrustedClientDefinition();
+const trustedClientDefinition = EPICENTER_TRUSTED_OAUTH_CLIENTS.find(
+	(client) => client.clientId === EPICENTER_FUJI_OAUTH_CLIENT_ID,
+);
+if (!trustedClientDefinition) {
+	throw new Error('Expected test trusted client to exist');
+}
 
 const redirectUri = trustedClientDefinition.redirectUris[0];
 const verifier = 'test-verifier-test-verifier-test-verifier';
@@ -215,14 +223,6 @@ function decodeJwtPayload(token: string) {
 	const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
 	const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
 	return JSON.parse(atob(padded)) as Record<string, unknown>;
-}
-
-function getTrustedClientDefinition() {
-	const client = EPICENTER_TRUSTED_OAUTH_CLIENTS.find(
-		(client) => client.clientId === 'epicenter-fuji',
-	);
-	if (!client) throw new Error('Expected test trusted client to exist');
-	return client;
 }
 
 function readAccessToken(body: unknown) {

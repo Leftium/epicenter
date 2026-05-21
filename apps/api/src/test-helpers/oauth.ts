@@ -63,6 +63,10 @@ export function isAddressInUse(error: unknown) {
 	);
 }
 
+export function randomOAuthTestPort() {
+	return 10_000 + Math.floor(Math.random() * 50_000);
+}
+
 /**
  * Issue a real OAuth access token through the Better Auth protocol.
  *

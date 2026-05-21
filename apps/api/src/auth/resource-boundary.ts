@@ -1,16 +1,17 @@
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import { type ApiSessionResponse, AuthUser } from '@epicenter/auth';
-import type { SubjectKeyring } from '@epicenter/encryption';
+import { AuthUser } from '@epicenter/auth';
 import type { User } from 'better-auth';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import * as schema from '../db/schema';
-import { hasScope, OAuthError, WORKSPACES_OPEN_SCOPE } from './oauth-error.js';
+import {
+	hasWorkspaceOpenScope,
+	OAuthError,
+	WORKSPACES_OPEN_SCOPE,
+} from './oauth-error.js';
 import { createOAuthIssuerURL, createOAuthJwksURL } from './oauth-metadata.js';
-
-export { WORKSPACES_OPEN_SCOPE };
 
 type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
@@ -52,9 +53,8 @@ export function parseBearer(value: string | null): string | null {
  * resolve the calling Better Auth user. The single source of truth for what
  * "a token good enough to reach a protected resource" means in this codebase.
  *
- * Both wrappers (`resolveBearerUser`, `resolveBearerIdentity`) project the
- * Better Auth `User` through `AuthUser.assert`, then `resolveBearerIdentity`
- * additionally derives the subject keyring.
+ * `resolveBearerUser` projects the Better Auth `User` through
+ * `AuthUser.assert` once the bearer has passed all resource checks.
  */
 async function verifyBearerToUser(
 	deps: ResolverDeps,
@@ -71,7 +71,7 @@ async function verifyBearerToUser(
 	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
 	if (!userId) return OAuthError.InvalidToken();
 
-	if (!hasScope(payload, WORKSPACES_OPEN_SCOPE)) {
+	if (!hasWorkspaceOpenScope(payload)) {
 		return OAuthError.InsufficientScope({ scope: WORKSPACES_OPEN_SCOPE });
 	}
 
@@ -93,27 +93,6 @@ export async function resolveBearerUser(
 	const { data: user, error } = await verifyBearerToUser(deps);
 	if (error) return Err(error);
 	return Ok(AuthUser.assert(user));
-}
-
-/**
- * Full resolver for `/api/session`. Returns the local-first payload the apps
- * need at boot: the calling user plus the per-subject keyring derived from
- * the root keyring.
- */
-export async function resolveBearerIdentity(
-	deps: ResolverDeps & {
-		deriveSubjectKeyring(subject: string): Promise<SubjectKeyring>;
-	},
-): Promise<Result<ApiSessionResponse, OAuthError>> {
-	const { data: user, error } = await verifyBearerToUser(deps);
-	if (error) return Err(error);
-	return Ok({
-		user: AuthUser.assert(user),
-		localIdentity: {
-			subject: user.id,
-			keyring: await deps.deriveSubjectKeyring(user.id),
-		},
-	});
 }
 
 /**

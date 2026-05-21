@@ -49,12 +49,10 @@ test('WebSocket InvalidToken closes with 4401', async () => {
 		createOAuthUnauthorizedResourceResponse(
 			c,
 			OAuthError.InvalidToken().error,
-			{
-				createWebSocketPair: () => ({
-					0: {} as WebSocket,
-					1: server as WebSocket,
-				}),
-			},
+			() => ({
+				0: {} as WebSocket,
+				1: server as WebSocket,
+			}),
 		),
 	);
 
@@ -107,12 +105,10 @@ test('WebSocket InsufficientScope closes with 4403 and scope payload', async () 
 		createOAuthUnauthorizedResourceResponse(
 			c,
 			OAuthError.InsufficientScope({ scope: 'workspaces:open' }).error,
-			{
-				createWebSocketPair: () => ({
-					0: {} as WebSocket,
-					1: server as WebSocket,
-				}),
-			},
+			() => ({
+				0: {} as WebSocket,
+				1: server as WebSocket,
+			}),
 		),
 	);
 

@@ -5,14 +5,25 @@ import { AUTH_OAUTH_SCOPES } from './oauth-config';
 
 let trustedOAuthClientsSeed: Promise<void> | null = null;
 
-export function projectTrustedOAuthClientToRow<
-	const TClient extends {
-		clientId: string;
-		name: string;
-		runtime: (typeof EPICENTER_TRUSTED_OAUTH_CLIENTS)[number]['runtime'];
-		redirectUris: readonly string[];
-	},
->(client: TClient, now = new Date()) {
+type TrustedOAuthClientInput = {
+	clientId: string;
+	name: string;
+	runtime: (typeof EPICENTER_TRUSTED_OAUTH_CLIENTS)[number]['runtime'];
+	redirectUris: readonly string[];
+};
+
+/**
+ * Project a checked-in trusted client definition into Better Auth's client row.
+ *
+ * Use this for seeding and tests that need the exact database representation.
+ * It preserves the trusted-client invariant: first-party apps are public PKCE
+ * clients, consent is skipped only for the checked-in ids, and every seeded
+ * client receives the same API scopes.
+ */
+export function projectTrustedOAuthClientToRow(
+	client: TrustedOAuthClientInput,
+	now = new Date(),
+) {
 	return {
 		id: client.clientId,
 		clientId: client.clientId,
@@ -32,6 +43,14 @@ export function projectTrustedOAuthClientToRow<
 	} satisfies typeof schema.oauthClient.$inferInsert;
 }
 
+/**
+ * Upsert the first-party OAuth clients Better Auth is allowed to trust.
+ *
+ * Call this before handling OAuth requests in a fresh database. The module-level
+ * promise makes concurrent workers share one seed attempt; if the attempt fails,
+ * the cache is cleared so a later request can retry instead of pinning a bad
+ * startup state.
+ */
 export async function ensureTrustedOAuthClients(
 	db: NodePgDatabase<typeof schema>,
 ) {

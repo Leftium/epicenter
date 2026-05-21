@@ -1,24 +1,19 @@
 /**
  * Protected Resource Boundary Tests
  *
- * Covers the three exported helpers in `resource-boundary.ts`:
+ * Covers the two exported helpers in `resource-boundary.ts`:
  *
  * - `parseBearer`: header parsing used by both the well-formedness layer
  *   (`single-credential`) and the resolvers below.
  * - `resolveBearerUser`: cheap resolver used by `requireOAuthUser` for every
  *   protected app resource (`/ai/*`, `/rooms/*`,
  *   `/api/billing/*`, `/api/assets/*`).
- * - `resolveBearerIdentity`: full resolver used by `/api/session`, adding the
- *   derived local workspace identity (subject + per-subject keyring) to the
- *   returned payload.
- *
  * HTTP and WebSocket wire-format coverage lives in `oauth-resource.test.ts`.
  */
 
 import { expect, test } from 'bun:test';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import type { SubjectKeyring } from '@epicenter/encryption';
 import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import { betterAuth } from 'better-auth';
 import { memoryAdapter } from 'better-auth/adapters/memory';
@@ -27,20 +22,9 @@ import {
 	createOAuthTestDb,
 	isAddressInUse,
 	issueOAuthTokens,
+	randomOAuthTestPort,
 } from '../test-helpers/oauth.js';
-import {
-	parseBearer,
-	resolveBearerIdentity,
-	resolveBearerUser,
-} from './resource-boundary.js';
-
-const keyring: SubjectKeyring = [
-	{
-		version: 1,
-		subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-	},
-];
-let nextBoundaryTestPort = 51_000 + Math.floor(Math.random() * 10_000);
+import { parseBearer, resolveBearerUser } from './resource-boundary.js';
 
 // ---------------------------------------------------------------------------
 // parseBearer
@@ -74,7 +58,9 @@ test('resolveBearerUser resolves a valid scoped token to the calling user', asyn
 			email: 'boundary-test@example.com',
 			name: 'Boundary Test',
 		});
-		const data = expectOk(await callUser(setup, accessToken));
+		const data = expectOk(
+			await resolveBearerUser(commonResolverDeps(setup, accessToken)),
+		);
 
 		expect(data).toEqual({
 			id: expect.any(String),
@@ -94,7 +80,9 @@ test('resolveBearerUser rejects tokens missing the workspaces:open scope', async
 			name: 'Boundary Test',
 			scope: 'openid profile email offline_access',
 		});
-		const error = expectErr(await callUser(setup, accessToken));
+		const error = expectErr(
+			await resolveBearerUser(commonResolverDeps(setup, accessToken)),
+		);
 
 		expect(error.name).toBe('InsufficientScope');
 		if (error.name !== 'InsufficientScope') {
@@ -115,7 +103,9 @@ test('resolveBearerUser rejects tokens issued for the wrong audience as InvalidT
 			name: 'Boundary Test',
 			resource: setup.wrongAudience,
 		});
-		const error = expectErr(await callUser(setup, accessToken));
+		const error = expectErr(
+			await resolveBearerUser(commonResolverDeps(setup, accessToken)),
+		);
 
 		expect(error.name).toBe('InvalidToken');
 	} finally {
@@ -132,9 +122,11 @@ test('resolveBearerUser rejects tokens verified against the wrong issuer as Inva
 			name: 'Boundary Test',
 		});
 		const error = expectErr(
-			await callUser(setup, accessToken, {
-				issuer: `${setup.baseURL}/some-other-issuer`,
-			}),
+			await resolveBearerUser(
+				commonResolverDeps(setup, accessToken, {
+					issuer: `${setup.baseURL}/some-other-issuer`,
+				}),
+			),
 		);
 
 		expect(error.name).toBe('InvalidToken');
@@ -175,56 +167,14 @@ test('resolveBearerUser rejects tokens whose user no longer exists as InvalidTok
 		});
 		setup.db.user = [];
 
-		const error = expectErr(await callUser(setup, accessToken));
+		const error = expectErr(
+			await resolveBearerUser(commonResolverDeps(setup, accessToken)),
+		);
 
 		expect(error.name).toBe('InvalidToken');
 	} finally {
 		setup.server.stop(true);
 	}
-});
-
-// ---------------------------------------------------------------------------
-// resolveBearerIdentity
-// ---------------------------------------------------------------------------
-
-test('resolveBearerIdentity returns user + local workspace identity for a valid token', async () => {
-	const setup = createBoundaryTestServer();
-	try {
-		const { accessToken } = await issueOAuthTokens(setup, {
-			clientName: 'Resource Boundary Test',
-			email: 'boundary-test@example.com',
-			name: 'Boundary Test',
-		});
-		const data = expectOk(await callIdentity(setup, accessToken));
-
-		expect(data.user.email).toBe('boundary-test@example.com');
-		expect(data.localIdentity.subject).toBe(data.user.id);
-		expect(data.localIdentity.keyring).toEqual(keyring);
-	} finally {
-		setup.server.stop(true);
-	}
-});
-
-test('resolveBearerIdentity short-circuits findUserById and key derivation on verifier failure', async () => {
-	const error = expectErr(
-		await resolveBearerIdentity({
-			authorization: 'Bearer expired-token',
-			audience: 'http://localhost:8787',
-			issuer: 'http://localhost:8787/auth',
-			jwksUrl: 'http://localhost:8787/auth/jwks',
-			verifyOAuthAccessToken: async () => {
-				throw new Error('JWTExpired');
-			},
-			findUserById: async () => {
-				throw new Error('findUserById should not run');
-			},
-			deriveSubjectKeyring: async () => {
-				throw new Error('deriveSubjectKeyring should not run');
-			},
-		}),
-	);
-
-	expect(error.name).toBe('InvalidToken');
 });
 
 // ---------------------------------------------------------------------------
@@ -234,8 +184,8 @@ test('resolveBearerIdentity short-circuits findUserById and key derivation on ve
 function createBoundaryTestServer() {
 	const db = createOAuthTestDb();
 
-	for (let attempt = 0; attempt < 40; attempt += 1) {
-		const port = nextBoundaryTestPort++;
+	for (let attempt = 0; attempt < 200; attempt += 1) {
+		const port = randomOAuthTestPort();
 		const baseURL = `http://localhost:${port}`;
 		const wrongAudience = `${baseURL}/other-resource`;
 		const auth = betterAuth({
@@ -295,23 +245,4 @@ function commonResolverDeps(
 		findUserById: async (userId: string) =>
 			setup.db.user?.find((user) => user.id === userId) ?? null,
 	};
-}
-
-async function callUser(
-	setup: ReturnType<typeof createBoundaryTestServer>,
-	accessToken: string,
-	overrides: { audience?: string; issuer?: string } = {},
-) {
-	return resolveBearerUser(commonResolverDeps(setup, accessToken, overrides));
-}
-
-async function callIdentity(
-	setup: ReturnType<typeof createBoundaryTestServer>,
-	accessToken: string,
-	overrides: { audience?: string; issuer?: string } = {},
-) {
-	return resolveBearerIdentity({
-		...commonResolverDeps(setup, accessToken, overrides),
-		deriveSubjectKeyring: async () => keyring,
-	});
 }

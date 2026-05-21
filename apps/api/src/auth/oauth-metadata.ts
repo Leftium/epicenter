@@ -3,10 +3,24 @@ import { AUTH_BASE_PATH } from './base-config';
 const AUTH_ISSUER_PATH = AUTH_BASE_PATH.replace(/\/+$/, '');
 const AUTH_ISSUER_SEGMENT = AUTH_ISSUER_PATH.replace(/^\/+/, '');
 
+/**
+ * Return the issuer URL used in OAuth discovery and JWT verification.
+ *
+ * Use this anywhere the API needs to compare or publish issuer metadata. The
+ * invariant is that the issuer includes Better Auth's base path (`/auth`), so
+ * tokens minted by this server are not confused with root-level API URLs.
+ */
 export function createOAuthIssuerURL(baseURL: string) {
 	return `${baseURL.replace(/\/+$/, '')}${AUTH_ISSUER_PATH}`;
 }
 
+/**
+ * Return the JWKS URL paired with {@link createOAuthIssuerURL}.
+ *
+ * Resource servers use this URL with the issuer and audience checks. Keeping it
+ * derived from the same base URL prevents metadata routes and token verifiers
+ * from drifting apart when the API origin changes.
+ */
 export function createOAuthJwksURL(baseURL: string) {
 	return `${createOAuthIssuerURL(baseURL)}/jwks`;
 }

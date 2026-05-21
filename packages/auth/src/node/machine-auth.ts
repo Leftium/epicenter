@@ -130,11 +130,7 @@ export async function loginWithOob({
 	}
 	const grant = grantResult.data;
 
-	const sessionResult = await fetchApiSession({
-		baseURL,
-		accessToken: grant.accessToken,
-		fetch,
-	});
+	const sessionResult = await fetchApiSession(baseURL, grant.accessToken, fetch);
 	if (sessionResult.error) return Err(sessionResult.error);
 	const session = sessionResult.data;
 
@@ -321,15 +317,11 @@ export async function createMachineAuthClient({
 	});
 }
 
-async function fetchApiSession({
-	baseURL,
-	accessToken,
-	fetch,
-}: {
-	baseURL: string;
-	accessToken: string;
-	fetch: AuthFetch;
-}): Promise<Result<ApiSessionResponse, MachineAuthRequestError>> {
+async function fetchApiSession(
+	baseURL: string,
+	accessToken: string,
+	fetch: AuthFetch,
+): Promise<Result<ApiSessionResponse, MachineAuthRequestError>> {
 	let response: Response;
 	try {
 		response = await fetch(`${baseURL}/api/session`, {

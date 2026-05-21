@@ -54,8 +54,9 @@ export function createAuth({
 			// 2. A signed state cookie set during the sign-in POST
 			//
 			// Layer 2 fails in our architecture. The sign-in POST is a cross-origin
-			// fetch (opensidian.com → api.epicenter.so), and modern browsers block
-			// third-party Set-Cookie from fetch responses, even with SameSite=None.
+			// fetch from a browser app origin to the API origin, and modern browsers
+			// block third-party Set-Cookie from fetch responses, even with
+			// SameSite=None.
 			// Chrome Privacy Sandbox, Safari ITP, and Firefox ETP all enforce this.
 			// The cookie is never stored, so the callback can't read it back.
 			//

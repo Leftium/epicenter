@@ -56,6 +56,16 @@ const AuthStateChangeError = defineErrors({
 	}),
 });
 
+/**
+ * Create the app-side auth boundary for browser, extension, and machine clients.
+ *
+ * Use this once per runtime around a single persisted auth cell. The returned
+ * client exposes capabilities (`fetch`, `openWebSocket`) instead of raw tokens:
+ * it refreshes grants, verifies `/api/session` before attaching a bearer, and
+ * keeps `localIdentity` available when network auth pauses. That preserves the
+ * local-first invariant: offline workspace boot can continue, but server access
+ * fails closed until the current cell has been verified by the API.
+ */
 export function createOAuthAppAuth({
 	baseURL = EPICENTER_API_URL,
 	clientId,

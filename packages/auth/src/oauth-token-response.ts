@@ -17,6 +17,15 @@ export class OAuthTokenResponseError extends Error {
 	}
 }
 
+/**
+ * Normalize an OAuth token endpoint payload into Epicenter's persisted grant.
+ *
+ * Use this immediately after authorization-code and refresh-token exchanges.
+ * It enforces the client-side token invariant before anything is written to
+ * storage: grants must be bearer tokens with an access token, a refresh token
+ * (or refresh fallback during rotation), and a positive `expires_in` value that
+ * becomes an absolute refresh hint.
+ */
 export function parseOAuthTokenGrant(
 	payload: unknown,
 	{

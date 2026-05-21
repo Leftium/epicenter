@@ -8,7 +8,7 @@
  * createOAuthUnauthorizedResourceResponse.
  *
  * Built on a minimal memory-adapter Better Auth instance plus the pure bearer
- * identity resolver behind the Hono adapter wired in `app.ts`.
+ * user resolver behind the Hono adapter wired in `app.ts`.
  */
 
 import { expect, test } from 'bun:test';
@@ -20,11 +20,12 @@ import { memoryAdapter } from 'better-auth/adapters/memory';
 import { jwt } from 'better-auth/plugins';
 import { Hono } from 'hono';
 import { createOAuthUnauthorizedResourceResponse } from './auth/oauth-resource.js';
-import { resolveBearerIdentity } from './auth/resource-boundary.js';
+import { resolveBearerUser } from './auth/resource-boundary.js';
 import {
 	createOAuthTestDb,
 	isAddressInUse,
 	issueOAuthTokens,
+	randomOAuthTestPort,
 } from './test-helpers/oauth.js';
 
 const keyring: SubjectKeyring = [
@@ -33,7 +34,6 @@ const keyring: SubjectKeyring = [
 		subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
 ];
-let nextApiSessionTestPort = 47_000 + Math.floor(Math.random() * 4_000);
 
 test('GET /api/session returns user + local workspace identity for a valid scoped bearer', async () => {
 	const setup = createApiSessionTestServer();
@@ -122,8 +122,8 @@ test('GET /api/session returns 401 for a malformed bearer', async () => {
 function createApiSessionTestServer() {
 	const db = createOAuthTestDb();
 
-	for (let attempt = 0; attempt < 40; attempt += 1) {
-		const port = nextApiSessionTestPort++;
+	for (let attempt = 0; attempt < 200; attempt += 1) {
+		const port = randomOAuthTestPort();
 		const baseURL = `http://localhost:${port}`;
 		const auth = betterAuth({
 			database: memoryAdapter(db),
@@ -163,7 +163,7 @@ function createApiSessionTestServer() {
 			const resource = oauthProviderResourceClient();
 			const app = new Hono();
 			app.get('/api/session', async (c) => {
-				const { data: identity, error } = await resolveBearerIdentity({
+				const { data: user, error } = await resolveBearerUser({
 					authorization: c.req.header('authorization') ?? null,
 					audience: baseURL,
 					issuer: `${baseURL}/auth`,
@@ -171,10 +171,15 @@ function createApiSessionTestServer() {
 					verifyOAuthAccessToken: resource.getActions().verifyAccessToken,
 					findUserById: async (userId) =>
 						db.user?.find((u) => u.id === userId) ?? null,
-					deriveSubjectKeyring: async () => keyring,
 				});
 				if (error) return createOAuthUnauthorizedResourceResponse(c, error);
-				return c.json(identity);
+				return c.json({
+					user,
+					localIdentity: {
+						subject: user.id,
+						keyring,
+					},
+				});
 			});
 
 			return { auth, baseURL, db, server, app };

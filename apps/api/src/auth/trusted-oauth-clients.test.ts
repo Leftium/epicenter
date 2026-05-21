@@ -11,22 +11,22 @@
  */
 
 import { expect, test } from 'bun:test';
-import {
-	EPICENTER_FUJI_OAUTH_CLIENT_ID,
-	EPICENTER_TRUSTED_OAUTH_CLIENTS,
-} from '@epicenter/constants/oauth';
+import { EPICENTER_FUJI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import { authPlugins } from './plugins.js';
 import { projectTrustedOAuthClientToRow } from './trusted-oauth-clients.js';
 
-const trustedClientDefinition = EPICENTER_TRUSTED_OAUTH_CLIENTS.find(
-	(client) => client.clientId === EPICENTER_FUJI_OAUTH_CLIENT_ID,
-) ?? (() => {
-	throw new Error('Expected test trusted client to exist');
-})();
-
+const trustedClientDefinition = {
+	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
+	name: 'Fuji',
+	runtime: 'browser',
+	redirectUris: [
+		'http://localhost:5174/auth/callback',
+		'https://fuji.epicenter.so/auth/callback',
+	],
+} as const;
 const redirectUri = trustedClientDefinition.redirectUris[0];
 const verifier = 'test-verifier-test-verifier-test-verifier';
 
@@ -154,7 +154,7 @@ function createTrustedClientTestAuth() {
 		basePath: '/auth',
 		baseURL,
 		secret: 'test-secret-test-secret-test-secret',
-		plugins: authPlugins({ resourceAudience: baseURL }),
+		plugins: authPlugins(baseURL),
 	});
 
 	return { auth, baseURL, trustedClientId: trustedClient.clientId };
@@ -214,6 +214,8 @@ async function authorizeResponse(
 }
 
 function decodeJwtPayload(token: string) {
+	// Better Auth access tokens are JWTs here. This test reads unverified claims
+	// because token verification is covered at the protected resource boundary.
 	const [, payload] = token.split('.');
 	if (!payload) throw new Error('Expected JWT access token');
 	const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');

@@ -21,9 +21,7 @@ type CreateWebSocketPair = () => InstanceType<typeof WebSocketPair>;
 export function createOAuthUnauthorizedResourceResponse(
 	c: Context,
 	error: OAuthError,
-	{
-		createWebSocketPair = () => new WebSocketPair(),
-	}: { createWebSocketPair?: CreateWebSocketPair } = {},
+	createWebSocketPair: CreateWebSocketPair = () => new WebSocketPair(),
 ) {
 	const isUpgrade = isWebSocketUpgrade(c);
 

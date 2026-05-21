@@ -97,22 +97,32 @@ async function invokeRemote({
 }): Promise<RunResponse> {
 	const { runtime } = routeRuntime;
 
-	// Local liveness pre-check: if no awareness state reports this
-	// `installationId` online, return `PeerNotFound` so the renderer
+	// Local liveness pre-check: if presence reports no socket for this
+	// `installationId`, return `PeerNotFound` so the renderer
 	// distinguishes "you addressed a device that isn't connected" from
 	// "the target was online but the call failed." The HTTP dispatch
 	// would otherwise return `RecipientOffline`, which the renderer maps
 	// to `RemoteCallFailed`; keeping the local check preserves the
 	// existing exit-code split.
-	const online = runtime.collaboration.devices
-		.list()
-		.some((d) => d.installationId === peerTarget);
-	if (!online) {
-		return RunError.PeerNotFound({
-			peerTarget,
-			waitMs,
-			syncStatus: toRunSyncStatus(runtime.collaboration.status),
-		});
+	//
+	// Gate the pre-check on `presence.hasSnapshot`. Between WebSocket
+	// upgrade and the first `presence_snapshot` text frame,
+	// `devices.list()` is empty, which would briefly report every peer as
+	// `PeerNotFound` even when they are online. During that window we
+	// skip the local check and let the HTTP dispatch produce the real
+	// result (a `RecipientOffline` surfaces as `RemoteCallFailed`, but
+	// only for the genuinely-offline case once the relay confirms it).
+	if (runtime.collaboration.presence.hasSnapshot) {
+		const online = runtime.collaboration.devices
+			.list()
+			.some((d) => d.installationId === peerTarget);
+		if (!online) {
+			return RunError.PeerNotFound({
+				peerTarget,
+				waitMs,
+				syncStatus: toRunSyncStatus(runtime.collaboration.status),
+			});
+		}
 	}
 
 	const result = await runtime.collaboration.dispatch({

@@ -1,26 +1,30 @@
 /**
  * `openCollaboration`: the one collaboration primitive on a document.
  *
- * Connects a Yjs document to the relay, publishes per-peer liveness via
- * y-protocols awareness (`liveness.installationId`), and wires inbound
- * dispatch text frames to the local action registry. Caller-side
- * dispatch posts to the selected sync URL's `/dispatch` endpoint and resolves
- * when the recipient's `dispatch_response` arrives.
+ * Connects a Yjs document to the relay, derives per-peer liveness from
+ * the server-owned presence channel, and wires inbound dispatch text
+ * frames to the local action registry. Caller-side dispatch posts to the
+ * selected sync URL's `/dispatch` endpoint and resolves when the
+ * recipient's `dispatch_response` arrives.
  *
  * Three independent wire surfaces ride one auth context:
  *
- *   binary WS frames  -> standard y-protocols SYNC + AWARENESS
- *   text WS frames    -> dispatch_inbound (server -> recipient) and
- *                        dispatch_response (recipient -> server)
+ *   binary WS frames  -> standard y-protocols SYNC (and, during the
+ *                        migration, AWARENESS that nothing reads).
+ *   text WS frames    -> presence_snapshot / presence_added /
+ *                        presence_removed (server-to-client), and
+ *                        dispatch_inbound (server -> recipient) /
+ *                        dispatch_response (recipient -> server).
  *   HTTP              -> POST .../dispatch (caller-side fire-and-await)
  *
- * The Y.Doc holds durable workspace state; liveness lives in awareness;
- * dispatch lives on HTTP. None of the three touch the others.
+ * The Y.Doc holds durable workspace state; presence lives on the relay's
+ * `connections` map; dispatch lives on HTTP. None of the three touch the
+ * others.
  *
  * Content docs (rich-text bodies, attachments, nested independently-
  * syncing docs) use the same primitive with `actions: {}`: dispatch
- * handlers stay inert, awareness still publishes liveness for online
- * discovery.
+ * handlers stay inert, presence still flows in over the socket for
+ * online discovery.
  */
 
 import { MESSAGE_TYPE } from '@epicenter/sync';
@@ -40,7 +44,6 @@ import {
 	type DispatchRequest,
 	deriveDispatchUrl,
 	dispatch as dispatchOverHttp,
-	getOnlineInstallationIds,
 	type LiveDevice,
 	runInboundDispatch,
 } from './dispatch.js';
@@ -49,6 +52,7 @@ import {
 	type OpenWebSocket,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
+import { createPresenceTracker } from './presence.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -85,13 +89,29 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	reconnect(): void;
 
 	/**
-	 * Online installs in this workspace, derived from awareness liveness
-	 * states. Deduplicated by `installationId` (multi-tab same-install
-	 * collapses to one entry). Self is excluded.
+	 * Online installs in this workspace, derived from the server-owned
+	 * presence channel (`presence_snapshot`, `presence_added`,
+	 * `presence_removed` text frames). Deduplicated by `installationId`
+	 * (multi-tab same-install collapses to one entry). Self is excluded.
 	 */
 	readonly devices: {
 		list(): LiveDevice[];
 		subscribe(fn: (devices: LiveDevice[]) => void): () => void;
+	};
+
+	/**
+	 * Presence-tracker accessor for callers that need to know whether the
+	 * server has delivered its initial snapshot for this session.
+	 *
+	 * `hasSnapshot` is `false` between WebSocket upgrade and the first
+	 * `presence_snapshot` frame, then `true` for the rest of the session.
+	 * Consumers like `run-handler.ts` use it to suppress
+	 * `PeerNotFound` during the brief pre-snapshot window when
+	 * `devices.list()` would otherwise return `[]` for a peer that is in
+	 * fact online.
+	 */
+	readonly presence: {
+		readonly hasSnapshot: boolean;
 	};
 
 	/**
@@ -136,6 +156,14 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	const awareness = new Awareness(ydoc);
 	awareness.setLocalStateField('liveness', { installationId });
 
+	// Server-owned presence tracker: derives `devices.list()` from text
+	// frames pushed by the relay (`presence_snapshot`, `presence_added`,
+	// `presence_removed`) instead of from y-protocols Awareness states.
+	// Commit 2 deletes the Awareness instance entirely; for now both
+	// systems run in parallel so the change can land in two reviewable
+	// steps without ever leaving the system broken.
+	const presence = createPresenceTracker(installationId);
+
 	// Wrap the user-supplied opener so every connect (including reconnects)
 	// carries `?installationId=` without callers re-encoding the URL.
 	const userOpen = config.openWebSocket;
@@ -160,9 +188,12 @@ export function openCollaboration<TActions extends ActionRegistry>(
 			// using the canonical lib0 helpers via a small wrapper.
 			decodeAndApplyAwarenessFrame({ data, awareness, origin: supervisor });
 		},
-		// Inbound dispatch_inbound text frames: run the local action,
-		// emit dispatch_response back over the same socket.
+		// Text frames carry two unrelated server-to-client channels:
+		// presence (`presence_snapshot` / `presence_added` /
+		// `presence_removed`) and dispatch (`dispatch_inbound`). Try the
+		// presence tracker first; on a miss, fall through to dispatch.
 		onTextFrame(text) {
+			if (presence.handleFrame(text)) return;
 			void runInboundDispatch({ rawFrame: text, actions: userActions }).then(
 				(response) => {
 					if (response !== null) supervisor.send(response);
@@ -189,21 +220,16 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	};
 	awareness.on('update', awarenessUpdateHandler);
 
-	// devices.list() delegates to `getOnlineInstallationIds` (the awareness
-	// reader); devices.subscribe wires a change listener and re-derives the
-	// snapshot. Dedup-by-installationId folds multi-tab same-install into
-	// one entry.
+	// `devices` reads directly from the server-owned presence tracker.
+	// The tracker dedupes multi-tab same-install (the relay only ever
+	// emits one `presence_added` per install) and excludes self via the
+	// `selfInstallationId` it was constructed with.
 	const devices = {
 		list(): LiveDevice[] {
-			return getOnlineInstallationIds({
-				awareness,
-				selfInstallationId: installationId,
-			});
+			return presence.list();
 		},
 		subscribe(fn: (devices: LiveDevice[]) => void): () => void {
-			const handler = () => fn(devices.list());
-			awareness.on('change', handler);
-			return () => awareness.off('change', handler);
+			return presence.subscribe(fn);
 		},
 	};
 
@@ -225,6 +251,11 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		onStatusChange: supervisor.onStatusChange,
 		reconnect: supervisor.reconnect,
 		devices,
+		presence: {
+			get hasSnapshot() {
+				return presence.hasSnapshot;
+			},
+		},
 		dispatch(req: DispatchRequest) {
 			return dispatchOverHttp({
 				dispatchUrl,

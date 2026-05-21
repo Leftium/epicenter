@@ -35,12 +35,14 @@ function fakeEntry({
 	syncStatus = { phase: 'connected' },
 	knownInstalls = [],
 	dispatch = (async () => ({ data: null, error: null })) as FakeDispatch,
+	hasSnapshot = true,
 }: {
 	route?: string;
 	actions?: ActionRegistry;
 	syncStatus?: SyncStatus;
 	knownInstalls?: string[];
 	dispatch?: FakeDispatch;
+	hasSnapshot?: boolean;
 } = {}): DaemonServedRoute {
 	const devices: LiveDevice[] = knownInstalls.map((installationId) => ({
 		installationId,
@@ -53,6 +55,11 @@ function fakeEntry({
 				status: syncStatus,
 				devices: {
 					list: () => devices,
+				},
+				presence: {
+					get hasSnapshot() {
+						return hasSnapshot;
+					},
 				},
 				dispatch,
 			},
@@ -140,7 +147,7 @@ describe('executeRun peer dispatch', () => {
 	});
 
 	test('RecipientOffline from the relay surfaces as RemoteCallFailed', async () => {
-		// A live local awareness state plus a relay that reports the target as
+		// A live local presence state plus a relay that reports the target as
 		// offline (e.g. socket dropped between the local list and the dispatch).
 		const entry = fakeEntry({
 			knownInstalls: ['mac'],
@@ -161,6 +168,58 @@ describe('executeRun peer dispatch', () => {
 			throw new Error('expected RemoteCallFailed');
 		}
 		expect(error.cause).toMatchObject({ name: 'RecipientOffline' });
+	});
+
+	test('pre-snapshot window: local pre-check is skipped and HTTP dispatch runs', async () => {
+		// Before the first `presence_snapshot` arrives, `devices.list()` is
+		// empty even when the peer is actually online. The pre-check is
+		// suppressed so the HTTP dispatch produces the real result instead
+		// of an incorrect PeerNotFound.
+		let dispatched = false;
+		const entry = fakeEntry({
+			hasSnapshot: false,
+			knownInstalls: [], // empty: snapshot has not arrived yet
+			dispatch: (async () => {
+				dispatched = true;
+				return { data: 'ok', error: null };
+			}) as FakeDispatch,
+		});
+
+		const result = await executeRun([entry], {
+			actionPath: 'demo.tabs_list',
+			input: undefined,
+			peerTarget: 'mac',
+			waitMs: 25,
+		});
+
+		expectOk(result);
+		expect(dispatched).toBe(true);
+	});
+
+	test('post-snapshot: absent peer still yields PeerNotFound', async () => {
+		// After the snapshot arrives and shows the peer is genuinely
+		// missing, the local pre-check fires and short-circuits the HTTP
+		// dispatch with PeerNotFound.
+		let dispatched = false;
+		const entry = fakeEntry({
+			hasSnapshot: true,
+			knownInstalls: ['someone-else'],
+			dispatch: (async () => {
+				dispatched = true;
+				return { data: null, error: null };
+			}) as FakeDispatch,
+		});
+
+		const result = await executeRun([entry], {
+			actionPath: 'demo.tabs_list',
+			input: undefined,
+			peerTarget: 'ghost',
+			waitMs: 25,
+		});
+
+		const error = expectErr(result);
+		expect(error.name).toBe('PeerNotFound');
+		expect(dispatched).toBe(false);
 	});
 });
 

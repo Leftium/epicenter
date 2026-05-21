@@ -143,6 +143,7 @@ function writeRuntimeDaemon({
 				list: () => [],
 				subscribe: () => () => {},
 			},
+			presence: { hasSnapshot: true },
 			dispatch: async () => {
 				throw new Error('fixture does not dispatch');
 			},
@@ -300,6 +301,7 @@ describe('runUp: failure cleanup', () => {
 						list: () => [],
 						subscribe: () => () => {},
 					},
+					presence: { hasSnapshot: true },
 					dispatch: async () => {
 						throw new Error('fixture does not dispatch');
 					},

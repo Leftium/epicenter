@@ -288,6 +288,15 @@ function openDeferredCollaboration<TActions extends ActionRegistry>(
 				};
 			},
 		},
+		presence: {
+			// Before attach, no live collaboration exists, so we cannot have
+			// received a snapshot. After attach, mirror the underlying
+			// presence tracker so consumers (run-handler) see the real
+			// pre-snapshot window.
+			get hasSnapshot() {
+				return live?.presence.hasSnapshot ?? false;
+			},
+		},
 		dispatch(req: DispatchRequest) {
 			if (live) return live.dispatch(req);
 			return Promise.resolve(

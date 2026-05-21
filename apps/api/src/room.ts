@@ -15,9 +15,10 @@
  * Three surfaces share auth context but are independent at the wire level:
  *
  *   binary WS frames  -> standard y-protocols (SYNC + AWARENESS).
- *   text WS frames    -> dispatch push/response: server -> recipient
- *                        `dispatch_inbound`, recipient -> server
- *                        `dispatch_response`.
+ *   text WS frames    -> dispatch push/response (`dispatch_inbound`,
+ *                        `dispatch_response`) and the server-owned
+ *                        presence channel (`presence_snapshot`,
+ *                        `presence_added`, `presence_removed`).
  *   RPC method        -> {@link Room.dispatch}: the Worker forwards
  *                        a route-level `/dispatch` request here. The DO mints
  *                        a correlation id, pushes `dispatch_inbound` to
@@ -25,12 +26,18 @@
  *                        promise when the recipient's `dispatch_response`
  *                        arrives.
  *
- * ## Liveness
+ * ## Liveness / presence
  *
- * Liveness is published as a Yjs awareness `liveness.installationId`
- * field. The relay validates every inbound awareness update against the
- * URL-stamped `installationId` and force-clears the peer's state on
- * socket close. There is no durable presence row.
+ * Presence is server-owned: the `connections` map is the source of truth,
+ * and the DO emits three text frame types (`presence_snapshot`,
+ * `presence_added`, `presence_removed`) so clients can derive
+ * `devices.list()` without round-tripping through y-protocols Awareness.
+ *
+ * Note: commit 1 of the server-owned presence migration adds the presence
+ * path alongside the legacy Awareness liveness path. The Awareness instance
+ * still exists, `filterAwarenessUpdate` still runs on inbound, and the
+ * hibernation restore loop still seeds awareness state; commit 2 deletes
+ * all of that.
  */
 
 import { DurableObject } from 'cloudflare:workers';
@@ -41,6 +48,11 @@ import {
 	parseSubprotocols,
 	stateVectorsEqual,
 } from '@epicenter/sync';
+import type {
+	PresenceAddedFrame,
+	PresenceRemovedFrame,
+	PresenceSnapshotFrame,
+} from '@epicenter/workspace/document/presence';
 import { Awareness, removeAwarenessStates } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
@@ -101,6 +113,28 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
 
 /** Delay before alarm-based compaction fires (30 seconds). */
 const COMPACTION_DELAY_MS = 30_000;
+
+/**
+ * Grace window before a `presence_removed` broadcast fires after the last
+ * socket for an install closes.
+ *
+ * A graceful tab handoff (T1 closes, T2 connects within a few hundred ms)
+ * would otherwise emit `presence_removed(X)` immediately followed by
+ * `presence_added(X)`, even though install X was continuously present from
+ * the user's perspective. The grace window lets `upgrade()` cancel the
+ * pending removed-broadcast before peers ever see the flap.
+ *
+ * Close-code policy: WebSocket close code 4401 (permanent auth failure)
+ * bypasses the grace window and emits `presence_removed` immediately. There
+ * is no legitimate handoff for an auth-failed socket, and forcing peers to
+ * wait 300 ms to learn an install is permanently offline yields no benefit.
+ * All other close codes (1000, 1006, 1009, 1011, 4400, ...) respect the
+ * grace window.
+ *
+ * 300 ms is a starting point. See the spec's "Grace-window justification"
+ * section for the rationale.
+ */
+const PRESENCE_REMOVE_GRACE_MS = 300;
 
 /**
  * Internal cap on how long the DO holds an in-flight dispatch open before
@@ -199,6 +233,31 @@ export class Room extends DurableObject {
 
 	/** Active WebSocket connections and their per-connection sync state. */
 	private connections = new Map<WebSocket, Connection>();
+
+	/**
+	 * Pending `presence_removed` broadcasts, keyed by installationId. Armed
+	 * when the last socket for an install closes; cleared either by the
+	 * timeout firing (real disconnect) or by a new socket for the same
+	 * install arriving inside the grace window (handoff).
+	 *
+	 * Per-installation rather than per-socket so a graceful tab handoff
+	 * (close T1, open T2 within grace) cancels exactly the right pending
+	 * broadcast.
+	 */
+	private pendingRemovals = new Map<string, ReturnType<typeof setTimeout>>();
+
+	/**
+	 * @see {@link PRESENCE_REMOVE_GRACE_MS}
+	 */
+	private static readonly PRESENCE_REMOVE_GRACE_MS = PRESENCE_REMOVE_GRACE_MS;
+
+	/**
+	 * WebSocket close code emitted by the auth layer when the connection's
+	 * credentials are permanently invalid. Bypasses the presence grace
+	 * window: peers see the install drop immediately instead of waiting
+	 * 300 ms for a handoff that cannot happen.
+	 */
+	private static readonly CLOSE_CODE_AUTH_FAILED = 4401;
 
 	/**
 	 * In-flight dispatches awaiting `dispatch_response`. Keyed by the
@@ -358,6 +417,28 @@ export class Room extends DurableObject {
 
 		server.send(encodeSyncStep1({ doc: this.doc }));
 
+		// Presence: send the snapshot to the new socket, then broadcast
+		// `presence_added` to existing sockets if and only if this is the
+		// FIRST socket for `installationId` (multi-tab subsequent sockets
+		// do not re-announce the install). If a `presence_removed` was
+		// pending from a just-closed sibling socket, cancel it and emit
+		// nothing to peers: from their point of view the install never left.
+		server.send(
+			JSON.stringify({
+				type: 'presence_snapshot',
+				installs: this.snapshotInstalls(server),
+			} satisfies PresenceSnapshotFrame),
+		);
+
+		if (this.countInstallSockets(installationId) === 1) {
+			if (!this.cancelPendingRemoval(installationId)) {
+				this.presenceBroadcast(
+					{ type: 'presence_added', install: installationId } satisfies PresenceAddedFrame,
+					server,
+				);
+			}
+		}
+
 		const responseHeaders = new Headers();
 		const offered = parseSubprotocols(
 			request.headers.get('sec-websocket-protocol'),
@@ -501,6 +582,124 @@ export class Room extends DurableObject {
 				}
 			}
 		});
+	}
+
+	// --- Presence helpers ---
+
+	/**
+	 * Snapshot of currently-connected `installationId`s, deduped (multi-tab
+	 * same-install collapses to one entry). Pass `exclude` to omit the
+	 * caller's own socket; if the caller's installationId still has other
+	 * open sockets, those siblings are excluded too. The result is "remote
+	 * installs" from the perspective of the receiver.
+	 */
+	private snapshotInstalls(exclude?: WebSocket): string[] {
+		const excludeInstall = exclude
+			? this.connections.get(exclude)?.installationId
+			: undefined;
+		const seen = new Set<string>();
+		for (const [ws, connection] of this.connections) {
+			if (ws === exclude) continue;
+			if (excludeInstall && connection.installationId === excludeInstall) {
+				continue;
+			}
+			seen.add(connection.installationId);
+		}
+		return Array.from(seen).sort();
+	}
+
+	/**
+	 * Count the number of OPEN sockets currently associated with
+	 * `installationId`. Used to gate `presence_added` (only the first
+	 * socket emits) and `presence_removed` (only the last close emits).
+	 */
+	private countInstallSockets(installationId: string): number {
+		let count = 0;
+		for (const [, connection] of this.connections) {
+			if (connection.installationId === installationId) count++;
+		}
+		return count;
+	}
+
+	/**
+	 * Fan out a presence frame to every connection other than `exclude`.
+	 * Wraps each `ws.send` in try/catch so a wedged socket cannot abort
+	 * the loop (the close event will fire and trigger the full cleanup
+	 * path eventually).
+	 */
+	private presenceBroadcast(
+		frame: PresenceSnapshotFrame | PresenceAddedFrame | PresenceRemovedFrame,
+		exclude?: WebSocket,
+	): void {
+		const payload = JSON.stringify(frame);
+		for (const [peer] of this.connections) {
+			if (peer === exclude) continue;
+			if (peer.readyState !== WebSocket.OPEN) continue;
+			try {
+				peer.send(payload);
+			} catch {
+				/* peer's close event will run the full cleanup path */
+			}
+		}
+	}
+
+	/**
+	 * Arm a `presence_removed` broadcast for `installationId` after the
+	 * grace window. If an upgrade for the same install lands inside the
+	 * window, {@link cancelPendingRemoval} clears the pending broadcast so
+	 * peers never see a flap. If the timer fires and the install still
+	 * has zero sockets, the broadcast goes out.
+	 *
+	 * Re-arming for an install with an existing pending removal replaces
+	 * the older timer; the install's eventual `presence_removed` lands at
+	 * `now + grace`, not at the original `lastClose + grace`.
+	 */
+	private schedulePresenceRemoved(installationId: string): void {
+		const existing = this.pendingRemovals.get(installationId);
+		if (existing) clearTimeout(existing);
+		const handle = setTimeout(() => {
+			this.pendingRemovals.delete(installationId);
+			if (this.countInstallSockets(installationId) > 0) return;
+			this.presenceBroadcast({
+				type: 'presence_removed',
+				install: installationId,
+			} satisfies PresenceRemovedFrame);
+		}, Room.PRESENCE_REMOVE_GRACE_MS);
+		this.pendingRemovals.set(installationId, handle);
+	}
+
+	/**
+	 * Cancel a pending `presence_removed` for `installationId`. Returns
+	 * `true` if a pending broadcast was actually cancelled (graceful tab
+	 * handoff), `false` if no timer was armed (genuinely first socket for
+	 * this install).
+	 *
+	 * `upgrade()` uses the return value to decide whether to emit
+	 * `presence_added`: a cancelled removal means peers never observed
+	 * the install leave, so the add would be spurious.
+	 */
+	private cancelPendingRemoval(installationId: string): boolean {
+		const handle = this.pendingRemovals.get(installationId);
+		if (!handle) return false;
+		clearTimeout(handle);
+		this.pendingRemovals.delete(installationId);
+		return true;
+	}
+
+	/**
+	 * Emit `presence_removed` for `installationId` right now, bypassing
+	 * the grace window. Used for close code 4401 (permanent auth failure)
+	 * where no legitimate handoff is possible.
+	 *
+	 * Also clears any pending grace-window timer for the same install so
+	 * a stale timer from an earlier non-auth close cannot double-fire.
+	 */
+	private presenceRemovedImmediate(installationId: string): void {
+		this.cancelPendingRemoval(installationId);
+		this.presenceBroadcast({
+			type: 'presence_removed',
+			install: installationId,
+		} satisfies PresenceRemovedFrame);
 	}
 
 	/**
@@ -721,6 +920,18 @@ export class Room extends DurableObject {
 
 		connection.unregister();
 		this.connections.delete(ws);
+
+		// Presence: if this was the LAST socket for the install, emit
+		// `presence_removed`. Close code 4401 (permanent auth failure)
+		// bypasses the grace window; every other close code respects it so
+		// graceful tab handoffs do not produce a wire-visible flap.
+		if (this.countInstallSockets(connection.installationId) === 0) {
+			if (code === Room.CLOSE_CODE_AUTH_FAILED) {
+				this.presenceRemovedImmediate(connection.installationId);
+			} else {
+				this.schedulePresenceRemoved(connection.installationId);
+			}
+		}
 
 		try {
 			ws.close(code, reason);

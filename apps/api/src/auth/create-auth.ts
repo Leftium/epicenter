@@ -8,7 +8,7 @@ import { createAutumn } from '../autumn';
 import { FEATURE_IDS } from '../billing-plans';
 import * as schema from '../db/schema';
 import { TRUSTED_ORIGINS } from '../trusted-origins';
-import { BASE_AUTH_CONFIG } from './base-config';
+import { BASE_AUTH_CONFIG, BASE_AUTH_PLUGINS } from './base-config';
 import { createCookieAdvancedConfig } from './cookie-config';
 import { trustedOAuthClientIds } from './trusted-oauth-clients';
 
@@ -173,6 +173,7 @@ export function createAuth({
 	return betterAuth({
 		...authOptionsBase,
 		plugins: [
+			...BASE_AUTH_PLUGINS,
 			// ES256 (P-256 ECDSA) signs the id_token and JWT access tokens. The
 			// jose default would be EdDSA (Ed25519); pinning ES256 gives the
 			// broadest verifier-library support across browser `jose`, Tauri

@@ -159,16 +159,15 @@ type WsAttachment = {
  *
  * ## Auth & data isolation
  *
- * Handled upstream by `requireOAuthUser` in app.ts. The Worker validates
- * the session (cookie, or `bearer.<token>` subprotocol for WebSocket) via
- * Better Auth before calling RPC methods or forwarding fetch. The DO
- * itself does not re-validate (it trusts the Worker boundary).
+ * Handled upstream by Hono routes in app.ts. The Worker validates the caller,
+ * checks any route-owned policy, and constructs the internal DO name before
+ * calling RPC methods or forwarding fetch. The DO itself does not re-validate.
  *
- * DO names are subject-scoped: the Worker constructs
- * `subject:{subject}:rooms:{room}` before calling `idFromName()`. This
- * ensures each owner's data is isolated in separate DO instances. The
- * relay treats `from` on a dispatch as a routing label within the
- * authenticated subject, not as a cross-subject auth principal.
+ * DO names are host-owned opaque strings. Legacy rooms use
+ * `subject:{subject}:rooms:{room}`. Cloud Workspace app docs use
+ * `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}`. The relay treats
+ * `from` on a dispatch as a routing label inside the already authorized room,
+ * not as a cross-room auth principal.
  */
 export class Room extends DurableObject {
 	/**

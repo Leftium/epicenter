@@ -26,7 +26,7 @@ import { config } from 'dotenv';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { LOCAL_DATABASE_URL } from './env';
-import { BASE_AUTH_CONFIG } from './src/auth/base-config';
+import { BASE_AUTH_CONFIG, BASE_AUTH_PLUGINS } from './src/auth/base-config';
 
 config({ path: fileURLToPath(new URL('.dev.vars', import.meta.url)) });
 const env = type({
@@ -50,4 +50,5 @@ export const auth = betterAuth({
 	baseURL: `http://localhost:${APPS.API.port}`,
 	database: drizzleAdapter(db, { provider: 'pg' }),
 	secret: env.BETTER_AUTH_SECRET,
+	plugins: BASE_AUTH_PLUGINS,
 });

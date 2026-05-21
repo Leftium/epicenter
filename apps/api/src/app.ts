@@ -43,6 +43,11 @@ import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import { cloudflareDurableObjectRooms } from './room-gateway';
 import { createSyncEngine } from './sync-engine';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
+import {
+	type AuthorizedWorkspaceAppDoc,
+	checkBetterAuthOrganizationMembership,
+	resolveAuthorizedWorkspaceAppDoc,
+} from './workspace-app-doc-sync';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
 export { Room } from './room';
@@ -214,6 +219,7 @@ const requireUser = factory.createMiddleware(async (c, next) => {
 });
 
 app.use('/api/*', requireOriginForCookieMutations);
+app.use('/workspaces/*', requireOriginForCookieMutations);
 
 // Health
 app.get(
@@ -387,6 +393,7 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 
 app.use('/ai/*', requireOAuthUser);
 app.use('/rooms/*', requireOAuthUser);
+app.use('/workspaces/*', requireUser);
 app.use('/api/billing/*', requireUser);
 app.use('/api/assets/*', requireUser);
 
@@ -462,12 +469,10 @@ app.post(
  *   deployment itself IS the org boundary (like GitLab, Outline, Mattermost),
  *   so org tables and Better Auth organization plugin are unnecessary overhead.
  *
- * Current scheme keeps the app auth-simple ("subject has account, subject
- * accesses their data") and works for both cloud and self-hosted without org
- * infrastructure. When sharing is needed, it follows the Google Docs pattern:
- * the owner's DO name stays the same, an ACL table grants access to other
- * subjects, and auth middleware checks "is this caller the owner OR in the
- * ACL?"
+ * This route is temporary compatibility for clients that still open personal
+ * subject-scoped rooms. Product-shaped Cloud sync uses
+ * `/workspaces/:workspaceId/apps/:appId/docs/:docId`, where the route checks
+ * Better Auth organization membership and builds the workspace/app/doc DO name.
  *
  * Multi-tenant cloud isolation (if needed later) is a platform-layer concern,
  * a tenant prefix added at the routing layer, not embedded in the app's data
@@ -489,6 +494,33 @@ function resolveSubjectRoom(c: Context<Env>) {
 		roomName: `subject:${c.var.user.id}:rooms:${room}`,
 		room,
 	};
+}
+
+async function resolveWorkspaceAppDocRoute(
+	c: Context<Env>,
+): Promise<
+	| { data: AuthorizedWorkspaceAppDoc; response?: never }
+	| { data?: never; response: Response }
+> {
+	const result = await resolveAuthorizedWorkspaceAppDoc({
+		user: c.var.user,
+		workspaceId: c.req.param('workspaceId'),
+		appId: c.req.param('appId'),
+		docId: c.req.param('docId'),
+		checkWorkspaceMembership: (params) =>
+			checkBetterAuthOrganizationMembership(c.var.db, params),
+	});
+
+	if (result.error) {
+		return {
+			response: c.json(
+				{ name: result.error.name, message: result.error.message },
+				result.error.status,
+			),
+		};
+	}
+
+	return { data: result.data };
 }
 
 /**
@@ -532,6 +564,111 @@ function upsertDoInstance(
 		})
 		.catch((e) => console.error('[do-tracking] upsert failed:', e));
 }
+
+app.get(
+	'/workspaces/:workspaceId/apps/:appId/docs/:docId',
+	describeRoute({
+		description: 'Get workspace app doc or upgrade to WebSocket',
+		tags: ['workspace-app-docs'],
+	}),
+	async (c) => {
+		const resolved = await resolveWorkspaceAppDocRoute(c);
+		if (resolved.response) return resolved.response;
+
+		const target = resolved.data;
+		const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
+
+		if (isWebSocketUpgrade(c)) {
+			c.var.afterResponse.push(
+				upsertDoInstance(c.var.db, {
+					userId: c.var.user.id,
+					resourceName: target.resourceName,
+					doName: target.roomName,
+				}),
+			);
+			return rooms.handleWebSocket(target.roomName, c.req.raw);
+		}
+
+		const sync = createSyncEngine(rooms);
+		const { response, storageBytes } = await sync.getSnapshot(target.roomName);
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				resourceName: target.resourceName,
+				doName: target.roomName,
+				storageBytes,
+			}),
+		);
+		return response;
+	},
+);
+
+app.post(
+	'/workspaces/:workspaceId/apps/:appId/docs/:docId',
+	describeRoute({
+		description: 'Sync workspace app doc',
+		tags: ['workspace-app-docs'],
+	}),
+	async (c) => {
+		const resolved = await resolveWorkspaceAppDocRoute(c);
+		if (resolved.response) return resolved.response;
+
+		const target = resolved.data;
+		const sync = createSyncEngine(cloudflareDurableObjectRooms(c.env.ROOM));
+		const result = await sync.handleHttpSync(c.req.raw, {
+			roomName: target.roomName,
+		});
+
+		if (result.storageBytes != null) {
+			c.var.afterResponse.push(
+				upsertDoInstance(c.var.db, {
+					userId: c.var.user.id,
+					resourceName: target.resourceName,
+					doName: target.roomName,
+					storageBytes: result.storageBytes,
+				}),
+			);
+		}
+
+		return result.response;
+	},
+);
+
+app.post(
+	'/workspaces/:workspaceId/apps/:appId/docs/:docId/dispatch',
+	describeRoute({
+		description: 'Dispatch a workspace app doc live-device call via the relay',
+		tags: ['workspace-app-docs'],
+	}),
+	sValidator(
+		'json',
+		type({
+			from: '/^[A-Za-z0-9_-]+$/ <= 128',
+			to: '/^[A-Za-z0-9_-]+$/ <= 128',
+			action: '/^[a-z][a-z0-9_]{0,63}$/',
+			'input?': 'unknown',
+		}),
+	),
+	async (c) => {
+		const resolved = await resolveWorkspaceAppDocRoute(c);
+		if (resolved.response) return resolved.response;
+
+		const target = resolved.data;
+		const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
+		const body = c.req.valid('json');
+		const result = await rooms.dispatch(target.roomName, body);
+
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				resourceName: target.resourceName,
+				doName: target.roomName,
+			}),
+		);
+
+		return c.json(result);
+	},
+);
 
 app.get(
 	'/rooms/:room',

@@ -62,29 +62,29 @@ type RuntimeAuthState =
 	| { status: 'signed-out' }
 	| {
 			status: 'signed-in';
-			cell: PersistedAuthType;
+			persistedAuth: PersistedAuthType;
 			networkAccess: NetworkAccess;
 	  };
 
 type RefreshFlight = {
-	cell: PersistedAuthType;
+	persistedAuth: PersistedAuthType;
 	promise: Promise<boolean>;
 };
 
 type IdentityVerificationFlight = {
-	cell: PersistedAuthType;
+	persistedAuth: PersistedAuthType;
 	promise: Promise<Result<ApiSessionResponse, AuthError>>;
 };
 
 /**
  * Create the app-side auth boundary for browser, extension, and machine clients.
  *
- * Use this once per runtime around a single persisted auth cell. The returned
+ * Use this once per runtime around one persisted auth record. The returned
  * client exposes capabilities (`fetch`, `openWebSocket`) instead of raw tokens:
  * it refreshes grants, verifies `/api/session` before attaching a bearer, and
  * keeps `localIdentity` available when network auth pauses. That preserves the
  * local-first invariant: offline workspace boot can continue, but server access
- * fails closed until the current cell has been verified by the API.
+ * fails closed until the current persisted auth has been verified by the API.
  */
 export function createOAuthAppAuth({
 	baseURL = EPICENTER_API_URL,
@@ -100,12 +100,15 @@ export function createOAuthAppAuth({
 	let refreshFlight: RefreshFlight | null = null;
 	let identityVerificationFlight: IdentityVerificationFlight | null = null;
 	let storageWriteQueue: Promise<void> = Promise.resolve();
+	let authOperationVersion = 0;
 
 	let state = publicStateFromRuntime(runtimeState);
 	const stateChangeListeners = new Set<(state: AuthState) => void>();
 
-	function currentCell(): PersistedAuthType | null {
-		return runtimeState.status === 'signed-out' ? null : runtimeState.cell;
+	function currentPersistedAuth(): PersistedAuthType | null {
+		return runtimeState.status === 'signed-out'
+			? null
+			: runtimeState.persistedAuth;
 	}
 
 	function isNetworkAuthPaused() {
@@ -115,10 +118,10 @@ export function createOAuthAppAuth({
 		);
 	}
 
-	function verifiedNetworkCell(): PersistedAuthType | null {
+	function verifiedPersistedAuthForNetwork(): PersistedAuthType | null {
 		if (runtimeState.status === 'signed-out') return null;
 		if (runtimeState.networkAccess !== 'verified') return null;
-		return runtimeState.cell;
+		return runtimeState.persistedAuth;
 	}
 
 	function publishState() {
@@ -141,19 +144,28 @@ export function createOAuthAppAuth({
 		publishState();
 	}
 
-	function replaceWithUnverifiedCell(cell: PersistedAuthType) {
+	function beginAuthReplacement() {
+		authOperationVersion += 1;
+		return authOperationVersion;
+	}
+
+	function cancelInFlightAuthWork() {
+		authOperationVersion += 1;
+	}
+
+	function installUnverifiedPersistedAuth(persistedAuth: PersistedAuthType) {
 		runtimeState = {
 			status: 'signed-in',
-			cell,
+			persistedAuth,
 			networkAccess: 'unverified',
 		};
 		publishState();
 	}
 
-	function replaceWithVerifiedCell(cell: PersistedAuthType) {
+	function installVerifiedPersistedAuth(persistedAuth: PersistedAuthType) {
 		runtimeState = {
 			status: 'signed-in',
-			cell,
+			persistedAuth,
 			networkAccess: 'verified',
 		};
 		publishState();
@@ -175,12 +187,13 @@ export function createOAuthAppAuth({
 	}
 
 	async function clearPersistedAuth() {
+		cancelInFlightAuthWork();
 		transitionToSignedOut();
 		await writePersistedAuth(null);
 	}
 
 	async function refreshGrant(force: boolean): Promise<boolean> {
-		const startedFrom = currentCell();
+		const startedFrom = currentPersistedAuth();
 		if (startedFrom === null || isNetworkAuthPaused()) return false;
 		if (
 			!force &&
@@ -188,7 +201,9 @@ export function createOAuthAppAuth({
 		) {
 			return true;
 		}
-		if (refreshFlight?.cell === startedFrom) return refreshFlight.promise;
+		if (refreshFlight?.persistedAuth === startedFrom) {
+			return refreshFlight.promise;
+		}
 
 		const promise = (async () => {
 			try {
@@ -199,26 +214,28 @@ export function createOAuthAppAuth({
 					fetch: fetchImpl,
 					now,
 				});
-				if (currentCell() !== startedFrom) return false;
+				if (currentPersistedAuth() !== startedFrom) return false;
 				const next: PersistedAuthType = {
 					grant,
 					localIdentity: startedFrom.localIdentity,
 				};
 				await writePersistedAuth(next);
-				if (currentCell() !== startedFrom) return false;
-				replaceWithUnverifiedCell(next);
+				if (currentPersistedAuth() !== startedFrom) return false;
+				installUnverifiedPersistedAuth(next);
 				return true;
 			} catch (cause) {
-				if (currentCell() === startedFrom) {
+				if (currentPersistedAuth() === startedFrom) {
 					pauseNetworkAuth();
 					log.error(AuthError.RefreshGrantFailed({ cause }));
 				}
 				return false;
 			} finally {
-				if (refreshFlight?.cell === startedFrom) refreshFlight = null;
+				if (refreshFlight?.persistedAuth === startedFrom) {
+					refreshFlight = null;
+				}
 			}
 		})();
-		refreshFlight = { cell: startedFrom, promise };
+		refreshFlight = { persistedAuth: startedFrom, promise };
 
 		return promise;
 	}
@@ -248,15 +265,15 @@ export function createOAuthAppAuth({
 	}
 
 	/**
-	 * Verify `/api/session` against the persisted cell. Marks the cell verified;
-	 * writes the localIdentity cell only when the keyring actually changed.
-	 * Wipes the cell on same-subject-guard mismatch. Single-flight: concurrent
-	 * callers share the in-flight promise.
+	 * Verify `/api/session` against the current persisted auth. Marks it
+	 * verified; writes localIdentity only when the keyring actually changed.
+	 * Wipes storage on same-subject-guard mismatch. Single-flight: concurrent
+	 * callers for the same persisted auth share the in-flight promise.
 	 */
-	async function verifyCurrentCell(
+	async function verifyCurrentPersistedAuth(
 		startedFrom: PersistedAuthType,
 	): Promise<Result<ApiSessionResponse, AuthError>> {
-		if (identityVerificationFlight?.cell === startedFrom) {
+		if (identityVerificationFlight?.persistedAuth === startedFrom) {
 			return identityVerificationFlight.promise;
 		}
 		const promise = (async (): Promise<
@@ -264,7 +281,7 @@ export function createOAuthAppAuth({
 		> => {
 			const { data: session, error } = await callApiSession(startedFrom.grant);
 			if (error) return AuthError.VerifyIdentityFailed({ cause: error });
-			const current = currentCell();
+			const current = currentPersistedAuth();
 			if (current !== startedFrom) return Ok(session);
 
 			if (current.localIdentity.subject !== session.localIdentity.subject) {
@@ -283,18 +300,18 @@ export function createOAuthAppAuth({
 					localIdentity: session.localIdentity,
 				};
 				await writePersistedAuth(next);
-				if (currentCell() !== startedFrom) return Ok(session);
-				replaceWithVerifiedCell(next);
+				if (currentPersistedAuth() !== startedFrom) return Ok(session);
+				installVerifiedPersistedAuth(next);
 				return Ok(session);
 			}
-			replaceWithVerifiedCell(current);
+			installVerifiedPersistedAuth(current);
 			return Ok(session);
 		})().finally(() => {
-			if (identityVerificationFlight?.cell === startedFrom) {
+			if (identityVerificationFlight?.persistedAuth === startedFrom) {
 				identityVerificationFlight = null;
 			}
 		});
-		identityVerificationFlight = { cell: startedFrom, promise };
+		identityVerificationFlight = { persistedAuth: startedFrom, promise };
 
 		return promise;
 	}
@@ -303,25 +320,29 @@ export function createOAuthAppAuth({
 	 * Network gate. Returns the access token to attach to a bearer-bearing
 	 * request, or `null` if no bearer should be attached.
 	 *
-	 * Refuses to attach unless `/api/session` has confirmed the current cell in
-	 * this runtime. Cold boot online: refresh grant if
+	 * Refuses to attach unless `/api/session` has confirmed the current persisted
+	 * auth in this runtime. Cold boot online: refresh grant if
 	 * stale, call `/api/session`, then attach. Offline: fails closed; local
 	 * workspace decrypt continues via `localIdentity`.
 	 */
 	async function bearerForNetwork(force: boolean): Promise<string | null> {
-		if (currentCell() === null || isNetworkAuthPaused()) return null;
+		if (currentPersistedAuth() === null || isNetworkAuthPaused()) return null;
 		const refreshed = await refreshGrant(force);
-		const refreshedCell = currentCell();
-		if (!refreshed || refreshedCell === null || isNetworkAuthPaused()) {
+		const refreshedPersistedAuth = currentPersistedAuth();
+		if (
+			!refreshed ||
+			refreshedPersistedAuth === null ||
+			isNetworkAuthPaused()
+		) {
 			return null;
 		}
-		let verifiedCell = verifiedNetworkCell();
-		if (verifiedCell === null) {
-			await verifyCurrentCell(refreshedCell);
-			verifiedCell = verifiedNetworkCell();
-			if (verifiedCell === null) return null;
+		let verifiedPersistedAuth = verifiedPersistedAuthForNetwork();
+		if (verifiedPersistedAuth === null) {
+			await verifyCurrentPersistedAuth(refreshedPersistedAuth);
+			verifiedPersistedAuth = verifiedPersistedAuthForNetwork();
+			if (verifiedPersistedAuth === null) return null;
 		}
-		return verifiedCell.grant.accessToken;
+		return verifiedPersistedAuth.grant.accessToken;
 	}
 
 	async function fetchWithAuth(
@@ -352,24 +373,29 @@ export function createOAuthAppAuth({
 	async function completeSignInWithGrant(
 		grant: OAuthTokenGrant,
 	): Promise<Result<undefined, AuthError>> {
-		const previous = currentCell();
+		const operationVersion = beginAuthReplacement();
+		const previous = currentPersistedAuth();
 		const callResult = await callApiSession(grant);
 		if (callResult.error) {
 			return AuthError.StartSignInFailed({ cause: callResult.error });
 		}
+		if (authOperationVersion !== operationVersion) return Ok(undefined);
 		const session = callResult.data;
 		if (
 			previous !== null &&
 			previous.localIdentity.subject !== session.localIdentity.subject
 		) {
-			await clearPersistedAuth();
+			transitionToSignedOut();
+			await writePersistedAuth(null);
+			if (authOperationVersion !== operationVersion) return Ok(undefined);
 		}
 		const next: PersistedAuthType = {
 			grant,
 			localIdentity: session.localIdentity,
 		};
 		await writePersistedAuth(next);
-		replaceWithVerifiedCell(next);
+		if (authOperationVersion !== operationVersion) return Ok(undefined);
+		installVerifiedPersistedAuth(next);
 		return Ok(undefined);
 	}
 
@@ -397,7 +423,7 @@ export function createOAuthAppAuth({
 		},
 		async signOut() {
 			try {
-				const refreshTokenToRevoke = currentCell()?.grant.refreshToken;
+				const refreshTokenToRevoke = currentPersistedAuth()?.grant.refreshToken;
 				await clearPersistedAuth();
 				if (refreshTokenToRevoke) {
 					void revokeOAuthRefreshTokenWithEndpoint({
@@ -437,12 +463,12 @@ export function createOAuthAppAuth({
 }
 
 function runtimeStateFromPersistedAuth(
-	cell: PersistedAuthType | null,
+	persistedAuth: PersistedAuthType | null,
 ): RuntimeAuthState {
-	if (cell === null) return { status: 'signed-out' };
+	if (persistedAuth === null) return { status: 'signed-out' };
 	return {
 		status: 'signed-in',
-		cell,
+		persistedAuth,
 		networkAccess: 'unverified',
 	};
 }
@@ -452,12 +478,12 @@ function publicStateFromRuntime(runtimeState: RuntimeAuthState): AuthState {
 	if (runtimeState.networkAccess === 'paused') {
 		return {
 			status: 'reauth-required',
-			localIdentity: runtimeState.cell.localIdentity,
+			localIdentity: runtimeState.persistedAuth.localIdentity,
 		};
 	}
 	return {
 		status: 'signed-in',
-		localIdentity: runtimeState.cell.localIdentity,
+		localIdentity: runtimeState.persistedAuth.localIdentity,
 	};
 }
 

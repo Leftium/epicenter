@@ -236,6 +236,115 @@ test('startSignIn publishes signed-out before installing a different subject', a
 	auth[Symbol.dispose]();
 });
 
+test('signOut during startSignIn prevents the in-flight grant from being installed', async () => {
+	const setup = createStorage(null);
+	let resolveApiSession!: (response: Response) => void;
+	let markApiSessionRequested!: () => void;
+	const apiSessionRequested = new Promise<void>((r) => {
+		markApiSessionRequested = r;
+	});
+	const apiSessionPromise = new Promise<Response>((r) => {
+		resolveApiSession = r;
+	});
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: {
+			startSignIn: async () =>
+				Ok({
+					accessToken: 'bob-access',
+					refreshToken: 'bob-refresh',
+					accessTokenExpiresAt: now + 3_600_000,
+				}),
+		},
+		fetch: async (input) => {
+			if (String(input).endsWith('/api/session')) {
+				markApiSessionRequested();
+				return apiSessionPromise;
+			}
+			return new Response(null, { status: 204 });
+		},
+	});
+
+	const signInPromise = auth.startSignIn();
+	await apiSessionRequested;
+	const signOutResult = await auth.signOut();
+	expect(signOutResult).toEqual(Ok(undefined));
+	expect(auth.state).toEqual({ status: 'signed-out' });
+
+	resolveApiSession(json(apiSessionBody('bob')));
+	expect(await signInPromise).toEqual(Ok(undefined));
+
+	expect(setup.current).toBeNull();
+	expect(setup.saved.at(-1)).toBeNull();
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	auth[Symbol.dispose]();
+});
+
+test('newer startSignIn wins over an older in-flight sign-in', async () => {
+	const setup = createStorage(null);
+	let signInAttempts = 0;
+	let resolveAliceApiSession!: (response: Response) => void;
+	const aliceApiSessionPromise = new Promise<Response>((r) => {
+		resolveAliceApiSession = r;
+	});
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: {
+			startSignIn: async () => {
+				signInAttempts += 1;
+				return Ok({
+					accessToken: signInAttempts === 1 ? 'alice-access' : 'bob-access',
+					refreshToken: signInAttempts === 1 ? 'alice-refresh' : 'bob-refresh',
+					accessTokenExpiresAt: now + 3_600_000,
+				});
+			},
+		},
+		fetch: async (input, init) => {
+			if (String(input).endsWith('/api/session')) {
+				const authorization = new Headers(init?.headers).get('authorization');
+				if (authorization === 'Bearer alice-access') {
+					return aliceApiSessionPromise;
+				}
+				return json(apiSessionBody('bob'));
+			}
+			return new Response(null, { status: 204 });
+		},
+	});
+
+	const aliceSignIn = auth.startSignIn();
+	await Promise.resolve();
+	const bobSignIn = auth.startSignIn();
+
+	expect(await bobSignIn).toEqual(Ok(undefined));
+	expect(auth.state).toEqual({
+		status: 'signed-in',
+		localIdentity: { subject: 'bob', keyring: [...keyring] },
+	});
+
+	resolveAliceApiSession(json(apiSessionBody('alice')));
+	expect(await aliceSignIn).toEqual(Ok(undefined));
+
+	expect(setup.current).toEqual({
+		grant: {
+			accessToken: 'bob-access',
+			refreshToken: 'bob-refresh',
+			accessTokenExpiresAt: now + 3_600_000,
+		},
+		localIdentity: { subject: 'bob', keyring: [...keyring] },
+	});
+	expect(auth.state).toEqual({
+		status: 'signed-in',
+		localIdentity: { subject: 'bob', keyring: [...keyring] },
+	});
+	auth[Symbol.dispose]();
+});
+
 test('stale /api/session verification after subject-switch sign-in cannot replace the new subject', async () => {
 	const setup = createStorage(cell({ subject: 'alice' }));
 	let resolveOldApiSession!: (response: Response) => void;

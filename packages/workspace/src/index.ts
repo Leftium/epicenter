@@ -19,13 +19,15 @@
  *   createInstallationId,
  *   defineTable,
  *   docGuid,
- *   openCollaboration,
- *   roomWsUrl,
+ *   openDefaultWorkspaceAppDocCollaboration,
+ *   routeSafeWorkspaceAppDocId,
  * } from '@epicenter/workspace';
+ * import type { AuthClient } from '@epicenter/auth';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+ * declare const auth: Pick<AuthClient, 'state' | 'fetch' | 'openWebSocket'>;
  * declare const openWebSocket: (
  *   url: string | URL,
  *   protocols?: string[],
@@ -37,8 +39,11 @@
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
- * const collaboration = openCollaboration(ydoc, {
- *   url: roomWsUrl('https://api.example.com', ydoc.guid),
+ * const collaboration = openDefaultWorkspaceAppDocCollaboration(ydoc, {
+ *   auth,
+ *   apiUrl: 'https://api.example.com',
+ *   appId: 'notes',
+ *   docId: 'root',
  *   waitFor: idb.whenLoaded,
  *   openWebSocket,
  *   installationId,
@@ -58,8 +63,11 @@
  *       gc: true,
  *     });
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
- *     const bodySync = openCollaboration(bodyYdoc, {
- *       url: roomWsUrl('https://api.example.com', bodyYdoc.guid),
+ *     const bodySync = openDefaultWorkspaceAppDocCollaboration(bodyYdoc, {
+ *       auth,
+ *       apiUrl: 'https://api.example.com',
+ *       appId: 'notes',
+ *       docId: routeSafeWorkspaceAppDocId({ prefix: 'post', id: noteId }),
  *       waitFor: bodyIdb.whenLoaded,
  *       openWebSocket,
  *       installationId,
@@ -175,6 +183,13 @@ export {
 	typedDispatch,
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
+export {
+	openDefaultWorkspaceAppDocCollaboration,
+	resolveDefaultCloudWorkspaceId,
+	resolveDefaultWorkspaceAppDocWsUrl,
+	routeSafeWorkspaceAppDocId,
+	type DefaultCloudWorkspaceAuth,
+} from './document/cloud-workspace-sync.js';
 export type {
 	OpenWebSocket,
 	SyncStatus,

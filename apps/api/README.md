@@ -4,7 +4,7 @@ The hub server. Handles authentication, real-time sync, and AI inference: everyt
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. Self-hosting the unmodified server is encouraged; see the encryption and trust model below.
 
-Runs on Cloudflare Workers with Durable Objects. Each user gets dedicated sync-room Durable Objects, providing per-user isolation with WebSocket-based real-time sync.
+Runs on Cloudflare Workers with Durable Objects. Product-shaped Cloud sync opens Workspace app docs through `/workspaces/:workspaceId/apps/:appId/docs/:docId`; legacy clients can still open personal `/rooms/:room` routes. In both paths, the Hono route authorizes the caller before it builds the internal room name.
 
 ## Why a hub exists
 
@@ -16,9 +16,9 @@ The hub handles auth, sync relay, and AI. Local servers handle filesystem access
 
 Hono handles HTTP routing. We originally wanted Elysia: it's faster, the API is more ergonomic, and it runs natively on Bun. But Elysia depends on Bun-specific APIs that don't exist in the Cloudflare Workers runtime, and Workers compatibility was non-negotiable. Hono runs on Cloudflare Workers, Node.js, Deno, Bun, and AWS Lambda. When we build self-hosting adapters, the route layer comes along for free.
 
-Cloudflare Durable Objects are the current deployment target. Three things make them a natural fit for per-user Yjs sync:
+Cloudflare Durable Objects are the current deployment target. Three things make them a natural fit for Yjs sync rooms:
 
-- **Single-threaded per object.** Each user's Room runs in its own isolate. No mutex, no race conditions on CRDT state. The runtime guarantees it.
+- **Single-threaded per object.** Each Room runs in its own isolate. No mutex, no race conditions on CRDT state. The runtime guarantees it.
 - **Built-in SQLite.** The update log lives inside the Durable Object's storage. No external database for sync state, no connection pooling, no cold-start latency from network hops.
 - **WebSocket Hibernation.** Idle connections don't consume compute. A user can leave a tab open for hours and the DO sleeps until the next message arrives. Costs stay proportional to actual sync traffic, not connection count.
 
@@ -65,10 +65,12 @@ Cloudflare Workers
 ├── Hono app (src/app.ts)
 │   ├── /auth/*          Better Auth (email/password, Google OAuth, OAuth provider)
 │   ├── /ai/chat         AI streaming (OpenAI, Anthropic via @tanstack/ai)
-│   └── /rooms/:room     Yjs sync (WebSocket upgrade or HTTP)
+│   ├── /workspaces/:workspaceId/apps/:appId/docs/:docId
+│   │                    Workspace app-doc sync (WebSocket upgrade or HTTP)
+│   └── /rooms/:room     Legacy personal room sync (WebSocket upgrade or HTTP)
 │
 └── Room (Durable Object, SQLite-backed)
-    └── Per-user Yjs document for any app-owned room id
+    └── One Yjs document for one authorized sync room
 ```
 
 API keys for AI providers are environment secrets (`wrangler secret put`). They never leave the hub. The client sends a session token, the hub validates it and swaps in the real key before forwarding to the provider.

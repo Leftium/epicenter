@@ -10,6 +10,7 @@ export const session = createSession({
 		const honeycrisp = openHoneycrispBrowser({
 			owner,
 			installationId: createInstallationId({ storage: localStorage }),
+			auth,
 			openWebSocket: auth.openWebSocket,
 		});
 		const state = createHoneycrispState(honeycrisp);

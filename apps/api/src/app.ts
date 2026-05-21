@@ -470,36 +470,16 @@ app.post(
 // ---------------------------------------------------------------------------
 
 /**
- * DO name namespacing: `subject:{subject}:rooms:{room}`
+ * Legacy room route compatibility.
  *
- * We use subject-scoped DO names (Google Docs model) rather than org-scoped
- * names (Vercel/Supabase model). Each owner gets their own DO instance per
- * room. `subject` mirrors the client-side `localIdentity.subject` and equals
- * the Better Auth `user.id` today; naming the prefix `subject:` matches the
- * encryption derivation labels (`subject:{subject}`, `workspace:{wsId}`).
- * Browser-local storage receives this same value as `ownerId`; it is named
- * for its storage role there, not for its auth role.
+ * Existing clients may still open personal rooms by path. This route keeps the
+ * old internal DO name, `subject:{subject}:rooms:{room}`, so those clients do
+ * not lose their room history.
  *
- * Alternatives considered:
- *
- * - **Org-scoped (`org:{orgId}:{name}`)**: Evaluated for enterprise and
- *   self-hosted. Problems: most rooms hold personal data that should not
- *   merge into a shared Y.Doc. Org-scoped would require a per-room `scope`
- *   flag anyway, adding complexity without simplifying.
- *
- * - **Org-scoped with personal sub-scope (`org:{orgId}:subject:{subject}:{name}`)**:
- *   Embeds org management in the app. For self-hosted enterprise, the
- *   deployment itself IS the org boundary (like GitLab, Outline, Mattermost),
- *   so org tables and Better Auth organization plugin are unnecessary overhead.
- *
- * This route is temporary compatibility for clients that still open personal
- * subject-scoped rooms. Product-shaped Cloud sync uses
- * `/workspaces/:workspaceId/apps/:appId/docs/:docId`, where the route checks
- * Better Auth organization membership and builds the workspace/app/doc DO name.
- *
- * Multi-tenant cloud isolation (if needed later) is a platform-layer concern,
- * a tenant prefix added at the routing layer, not embedded in the app's data
- * model.
+ * Product-shaped Cloud sync uses
+ * `/workspaces/:workspaceId/apps/:appId/docs/:docId`: the route checks Better
+ * Auth organization membership and builds the workspace/app/doc DO name before
+ * the room backend sees the request.
  */
 
 /**
@@ -770,8 +750,8 @@ app.post(
  *
  * The request body fully describes the dispatch: caller (`from`) and
  * recipient (`to`) installation ids, the action key, and the input.
- * Within a subject-scoped room, `from` is treated as a trusted routing
- * label (the OAuth boundary already proved the subject). The DO mints
+ * Within an already authorized room, `from` is treated as a trusted routing
+ * label, not an auth principal. The DO mints
  * a correlation id, pushes `dispatch_inbound` over the recipient's
  * WebSocket, and the response body is the recipient's `dispatch_response`
  * result (or `RecipientOffline` on no live socket).

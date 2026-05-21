@@ -4,8 +4,8 @@
  * Connects a Yjs document to the relay, publishes per-peer liveness via
  * y-protocols awareness (`liveness.installationId`), and wires inbound
  * dispatch text frames to the local action registry. Caller-side
- * dispatch fires HTTP `POST /rooms/:room/dispatch` and resolves when
- * the recipient's `dispatch_response` arrives.
+ * dispatch posts to the selected sync URL's `/dispatch` endpoint and resolves
+ * when the recipient's `dispatch_response` arrives.
  *
  * Three independent wire surfaces ride one auth context:
  *

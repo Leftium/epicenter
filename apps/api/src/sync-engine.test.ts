@@ -2,7 +2,7 @@
  * Sync Engine Boundary Tests
  *
  * Verifies the same-process engine that apps/api composes after OAuth and
- * host policy have already resolved a subject-scoped room name.
+ * host policy have already resolved an opaque room name.
  *
  * Key behaviors:
  * - HTTP sync forwards the raw request body to the selected room and returns
@@ -14,7 +14,7 @@
 import { expect, test } from 'bun:test';
 import { createSyncEngine } from './sync-engine.js';
 
-const ROOM_NAME = 'subject:user-1:rooms:notes';
+const ROOM_NAME = 'test:v1:authorized-room';
 
 class FakeSyncRoom {
 	syncBodies: Uint8Array[] = [];

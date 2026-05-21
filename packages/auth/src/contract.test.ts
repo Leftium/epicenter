@@ -13,13 +13,13 @@
 import { describe, expect, test } from 'bun:test';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
-import { Ok } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import type {
 	AuthClient,
 	OAuthTokenGrant,
 	PersistedAuth,
 	PersistedAuthStorage,
-	SubjectIdentity,
+	LocalIdentity,
 } from './index.js';
 import { createOAuthAppAuth } from './index.js';
 
@@ -283,12 +283,17 @@ test('signOut during startSignIn prevents the in-flight grant from being install
 	auth[Symbol.dispose]();
 });
 
-test('newer startSignIn wins over an older in-flight sign-in', async () => {
+test('concurrent startSignIn shares one launcher flight', async () => {
 	const setup = createStorage(null);
 	let signInAttempts = 0;
-	let resolveAliceApiSession!: (response: Response) => void;
-	const aliceApiSessionPromise = new Promise<Response>((r) => {
-		resolveAliceApiSession = r;
+	let resolveLauncher!: (result: Result<OAuthTokenGrant, unknown>) => void;
+	const launcherPromise = new Promise<Result<OAuthTokenGrant, unknown>>((r) => {
+		resolveLauncher = r;
+	});
+	let apiSessionCalls = 0;
+	let markLauncherStarted!: () => void;
+	const launcherStarted = new Promise<void>((r) => {
+		markLauncherStarted = r;
 	});
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -298,38 +303,39 @@ test('newer startSignIn wins over an older in-flight sign-in', async () => {
 		launcher: {
 			startSignIn: async () => {
 				signInAttempts += 1;
-				return Ok({
-					accessToken: signInAttempts === 1 ? 'alice-access' : 'bob-access',
-					refreshToken: signInAttempts === 1 ? 'alice-refresh' : 'bob-refresh',
-					accessTokenExpiresAt: now + 3_600_000,
-				});
+				markLauncherStarted();
+				return launcherPromise;
 			},
 		},
-		fetch: async (input, init) => {
+		fetch: async (input) => {
 			if (String(input).endsWith('/api/session')) {
-				const authorization = new Headers(init?.headers).get('authorization');
-				if (authorization === 'Bearer alice-access') {
-					return aliceApiSessionPromise;
-				}
+				apiSessionCalls += 1;
 				return json(apiSessionBody('bob'));
 			}
 			return new Response(null, { status: 204 });
 		},
 	});
 
-	const aliceSignIn = auth.startSignIn();
-	await Promise.resolve();
-	const bobSignIn = auth.startSignIn();
+	const firstSignIn = auth.startSignIn();
+	await launcherStarted;
+	const secondSignIn = auth.startSignIn();
 
-	expect(await bobSignIn).toEqual(Ok(undefined));
+	expect(signInAttempts).toBe(1);
+	resolveLauncher(
+		Ok({
+			accessToken: 'bob-access',
+			refreshToken: 'bob-refresh',
+			accessTokenExpiresAt: now + 3_600_000,
+		}),
+	);
+
+	expect(await firstSignIn).toEqual(Ok(undefined));
+	expect(await secondSignIn).toEqual(Ok(undefined));
+	expect(apiSessionCalls).toBe(1);
 	expect(auth.state).toEqual({
 		status: 'signed-in',
 		localIdentity: { subject: 'bob', keyring: [...keyring] },
 	});
-
-	resolveAliceApiSession(json(apiSessionBody('alice')));
-	expect(await aliceSignIn).toEqual(Ok(undefined));
-
 	expect(setup.current).toEqual({
 		grant: {
 			accessToken: 'bob-access',
@@ -338,10 +344,68 @@ test('newer startSignIn wins over an older in-flight sign-in', async () => {
 		},
 		localIdentity: { subject: 'bob', keyring: [...keyring] },
 	});
+	auth[Symbol.dispose]();
+});
+
+for (const status of [401, 403] as const) {
+	test(`/api/session ${status} pauses network auth without attaching a bearer`, async () => {
+		const setup = createStorage(cell());
+		const resourceAuths: Array<string | null> = [];
+		const auth = createOAuthAppAuth({
+			baseURL: 'http://localhost:8787',
+			clientId: 'client-1',
+			now: () => now,
+			persistedAuthStorage: setup.storage,
+			launcher: { startSignIn: async () => Ok(null) },
+			fetch: async (input, init) => {
+				if (String(input).endsWith('/api/session')) {
+					return new Response(null, { status });
+				}
+				resourceAuths.push(new Headers(init?.headers).get('authorization'));
+				return new Response(null, { status: 204 });
+			},
+		});
+
+		const response = await auth.fetch('http://localhost:8787/resource');
+
+		expect(response.status).toBe(204);
+		expect(resourceAuths).toEqual([null]);
+		expect(auth.state).toEqual({
+			status: 'reauth-required',
+			localIdentity: { subject: 'user-1', keyring: [...keyring] },
+		});
+		expect(setup.current).toEqual(cell());
+		auth[Symbol.dispose]();
+	});
+}
+
+test('/api/session 503 leaves local auth signed-in without attaching a bearer', async () => {
+	const setup = createStorage(cell());
+	const resourceAuths: Array<string | null> = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => Ok(null) },
+		fetch: async (input, init) => {
+			if (String(input).endsWith('/api/session')) {
+				return new Response(null, { status: 503 });
+			}
+			resourceAuths.push(new Headers(init?.headers).get('authorization'));
+			return new Response(null, { status: 204 });
+		},
+	});
+
+	const response = await auth.fetch('http://localhost:8787/resource');
+
+	expect(response.status).toBe(204);
+	expect(resourceAuths).toEqual([null]);
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		localIdentity: { subject: 'bob', keyring: [...keyring] },
+		localIdentity: { subject: 'user-1', keyring: [...keyring] },
 	});
+	expect(setup.current).toEqual(cell());
 	auth[Symbol.dispose]();
 });
 
@@ -660,7 +724,7 @@ test('cold-boot offline keeps signed-in with localIdentity and no profile field'
 	});
 	expect('email' in auth.state).toBe(false);
 	expect(
-		(auth.state as { localIdentity: SubjectIdentity }).localIdentity,
+		(auth.state as { localIdentity: LocalIdentity }).localIdentity,
 	).toEqual({
 		subject: 'user-1',
 		keyring: [...keyring],
@@ -1000,7 +1064,7 @@ describe('removed legacy surface', () => {
 		expect(mod.requireSession).toBeUndefined();
 		// @ts-expect-error: OAuthSession deleted; use PersistedAuth.
 		expect(mod.OAuthSession).toBeUndefined();
-		// @ts-expect-error: LocalUnlockBundle replaced by SubjectIdentity.
+		// @ts-expect-error: LocalUnlockBundle replaced by LocalIdentity.
 		expect(mod.LocalUnlockBundle).toBeUndefined();
 	});
 });

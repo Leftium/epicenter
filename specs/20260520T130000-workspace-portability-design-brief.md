@@ -3,6 +3,8 @@
 **Date**: 2026-05-20
 **Status**: Worth committing
 
+Revision note, 2026-05-20: `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md` supersedes this brief for Cloud naming. The portability requirements still stand, but in Cloud the portable app-data boundary is App Instance. The top-level Cloud Workspace is now the product account, membership, policy, and billing container backed by Better Auth organization.
+
 ## Purpose
 
 This brief captures the broader requirements behind the Workspace Capsule work. It should guide open-ended design iteration before implementation.

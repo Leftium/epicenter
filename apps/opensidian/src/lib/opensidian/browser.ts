@@ -8,24 +8,30 @@ import {
 import {
 	attachTimeline,
 	createDisposableCache,
+	type DefaultCloudWorkspaceAuth,
 	type LocalOwner,
 	type OpenWebSocket,
 	onLocalUpdate,
-	openCollaboration,
-	roomWsUrl,
+	openDefaultWorkspaceAppDocCollaboration,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import { openOpensidianWorkspace } from 'opensidian';
 import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
+import {
+	OPENSIDIAN_CLOUD_APP_ID,
+	OPENSIDIAN_ROOT_DOC_ID,
+} from './sync-docs';
 
 export function openOpensidianBrowser({
 	owner,
 	installationId,
+	auth,
 	openWebSocket,
 }: {
 	owner: LocalOwner;
 	installationId: string;
+	auth: DefaultCloudWorkspaceAuth;
 	openWebSocket?: OpenWebSocket;
 }) {
 	const workspace = openOpensidianWorkspace(owner.attachEncryption);
@@ -91,8 +97,11 @@ export function openOpensidianBrowser({
 		bash,
 	});
 
-	const collaboration = openCollaboration(rootYdoc, {
-		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
+	const collaboration = openDefaultWorkspaceAppDocCollaboration(rootYdoc, {
+		auth,
+		apiUrl: APP_URLS.API,
+		appId: OPENSIDIAN_CLOUD_APP_ID,
+		docId: OPENSIDIAN_ROOT_DOC_ID,
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		installationId,

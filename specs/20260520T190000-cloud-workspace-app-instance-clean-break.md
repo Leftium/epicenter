@@ -635,7 +635,7 @@ GET /workspaces/:workspaceId/apps/:appId/docs/:docId
   -> authenticate user
   -> require Better Auth member in organization workspaceId
   -> validate appId and docId syntax
-  -> optionally require appId is known to the Cloud app registry
+  -> optionally check appId against a static first-party app catalog
   -> build roomName
   -> if WebSocket upgrade, hand to Room
   -> else return snapshot
@@ -840,8 +840,16 @@ Apps own their document graph in every deployment mode. Cloud does not need to u
 | Read-only live sync | Deferred | Snapshot-only until frame filtering exists | Yjs protocol does not enforce read-only peers by itself. |
 | Better Auth teams | Deferred | Do not map to App Namespace | Teams are people groupings, not app data boundaries. |
 | Workspace profile table | Deferred | Add only when product fields earn it | Start with Better Auth organization metadata and add a 1:1 profile table only for real Workspace fields. |
+| App-level privacy | Deferred | Every Workspace member can open every phase 1 app namespace | Add app_instance_member only when one app namespace must be visible to some Workspace members and forbidden to others. |
+| Sync Doc inventory | Deferred | App root Y.Doc owns child doc references | Add app_sync_doc only when Cloud needs deletion, migration, support inspection, metering, retention, legal hold, or cross-doc search over docs without reading app-owned root data. |
 | App asset table | Deferred | Avoid by default | Apps own blob references in Yjs. Cloud object storage can stay opaque and prefix-addressed. |
 | Key grants | Deferred | Server-managed only in phase 1 | True user-held or customer-managed keys need an earned grant store later. |
+| App registry | Deferred | Static first-party app catalog is enough | Add an app registry table only for third-party publishing, app version policy, central disablement, marketplace metadata, or app-bound billing and policy. |
+| Greenfield compatibility | 2 coherence | Refuse `/rooms/:room` as a Cloud client fallback | A signed-in Cloud app has one sync identity: Workspace, App, Doc. Local-only offline boot is a real mode; legacy room sync is a second product path. |
+| Workspace repair | 2 coherence | Signup owns personal Workspace provisioning | `/api/workspaces` lists memberships. It does not repair missing rows because repair-by-read hides a broken account invariant. |
+| Subject switch | 2 coherence | Auth must publish a signed-out gap before mounting another subject | A mounted local workspace payload belongs to one subject. Downstream session code should not defend against account switching. |
+| Workspace route helper ownership | 2 coherence | App or Cloud owns product route construction | `packages/workspace` owns Yjs collaboration primitives. Cloud product route vocabulary should not become a published workspace-library helper unless external consumers need it. |
+| Session prepare values | 3 taste | Prefer `prepare` return values over mutable sidecars | Prepared values should flow into `build`; a mutable resolver object hides ordering between two callbacks. |
 
 ## Implementation Plan
 
@@ -883,16 +891,27 @@ Apps own their document graph in every deployment mode. Cloud does not need to u
 
 ### Phase 5: Cleanup
 
-- [ ] **5.1** Remove public `/rooms/:room` as the Cloud sync route.
+- [x] **5.1** Remove `/rooms/:room` from the Cloud sync route. The server handler remains only as explicit non-Cloud personal-room and daemon compatibility until remaining `roomWsUrl()` callers migrate.
 - [x] **5.2** Remove subject-scoped room names from Cloud product routes.
-- [ ] **5.3** Remove owner-user versus owner-organization workspace schema proposals from active Cloud plans.
+- [x] **5.3** Remove owner-user versus owner-organization workspace schema proposals from active Cloud plans.
+- [x] **5.4** Remove `/rooms/:room` fallback from Tab Manager Cloud sync. Offline or unavailable Workspace lookup produces local-only boot, not legacy Cloud sync.
+- [x] **5.5** Rehome Tab Manager Workspace app doc URL construction out of `@epicenter/workspace`. Public package export removal is deferred because it is a published API break.
 
 ### Phase 6: Client Adoption
 
 - [x] **6.1** Resolve a default Cloud Workspace from `/api/workspaces` for at least one real client path.
 - [x] **6.2** Open the client root Sync Doc at `/workspaces/:workspaceId/apps/:appId/docs/root` by default.
-- [x] **6.3** Keep `/rooms/:room` as a compatibility path when the default Workspace is not available.
+- [x] **6.3** Replace `/rooms/:room` compatibility with explicit local-only behavior when the default Workspace is not available.
 - [x] **6.4** Add tests for the client Workspace app doc URL construction.
+- [x] **6.5** Make the signed-in app payload receive prepared Workspace defaults directly, without a mutable resolver object.
+
+### Phase 7: Auth And Account Invariants
+
+- [x] **7.1** Add an account-provisioning invariant test: a newly created user has a deterministic personal Cloud Workspace and owner membership before `/api/workspaces` is useful.
+- [x] **7.2** Keep `/api/workspaces` read-only. It may assert missing personal Workspace membership as a provisioning bug, but it must not create rows.
+- [x] **7.3** Add an explicit account-switch boundary that publishes signed-out before installing another subject.
+- [x] **7.4** Add a session lifecycle test proving a different subject disposes the old local workspace payload before a new payload is built.
+- [x] **7.5** Keep `PersistedAuth`, `ApiSessionResponse`, and local storage schema changes out of this pass unless the spec is updated with a migration rule.
 
 ## Test And Migration Invariants
 
@@ -922,6 +941,10 @@ docId, Y.Doc.guid, IndexedDB docName, BroadcastChannel name, and roomName collis
 SyncEngine imports no Better Auth, Autumn, Workspace membership, or billing code.
 Viewer live sync is not enabled until update frames are filtered.
 Cloud v1 encryption is server-managed and must not be described as zero-knowledge.
+Cloud clients do not fall back from Workspace App Doc sync to public `/rooms/:room`.
+`/api/workspaces` is read-only and does not create missing personal Workspaces.
+Auth subject changes unmount local workspace state before another subject mounts.
+Product Cloud route helpers are not exported from `@epicenter/workspace` unless that package explicitly owns them.
 ```
 
 ## Execution Readiness
@@ -934,7 +957,7 @@ Do:
   use Better Auth organization membership as Workspace authorization
   build roomName from workspaceId + appId + docId
   keep Room and SyncEngine policy-free
-  keep /rooms/:room only as a temporary compatibility route if needed
+  treat missing Workspace lookup as local-only or unavailable, not legacy sync
 
 Do not:
   add app_instance
@@ -943,6 +966,7 @@ Do not:
   add scoped sync tokens
   add a Workspace head Y.Doc
   add app-level billing, disablement, migration, or dashboard state
+  preserve `/rooms/:room` as a greenfield Cloud client fallback
 ```
 
 The first implementation should change the route boundary and identity construction. It should not solve future Cloud app management.
@@ -993,22 +1017,848 @@ Tab Manager now resolves the default Cloud Workspace through `/api/workspaces` a
 /workspaces/:workspaceId/apps/tab-manager/docs/root
 ```
 
-`@epicenter/workspace` exposes a `workspaceAppDocWsUrl()` helper for the product-shaped WebSocket route while keeping `roomWsUrl()` for compatibility. Tab Manager uses the Workspace app doc URL when the default Workspace is known and falls back to `/rooms/:room` when the user is offline, signed out, or reauth is required before the default Workspace can be refreshed.
+`@epicenter/workspace` exposed a `workspaceAppDocWsUrl()` helper for the product-shaped WebSocket route while keeping `roomWsUrl()` for compatibility. Tab Manager used the Workspace app doc URL when the default Workspace was known and fell back to `/rooms/:room` when the user was offline, signed out, or reauth was required before the default Workspace could be refreshed.
 
 Tab Manager resolves `defaultWorkspaceId` when the signed-in app payload is built. Auth does not keep product Workspace selection in memory, and offline local workspace boot still depends only on `localIdentity`.
 
 No `app_instance`, `app_sync_doc`, `app_asset`, scoped sync token, Workspace head Y.Doc, or Better Auth Organization product surface was added.
 
-## Open Questions
+### 2026-05-21 Greenfield Cleanup Pass
 
-1. Should the product API expose Better Auth `activeOrganizationId` as `activeWorkspaceId`, or should Epicenter keep active Workspace selection outside Better Auth session state?
-2. Should every new Workspace show default apps in UI, or should app namespaces appear only after first use?
-3. What exact product requirement would justify multiple instances of the same app in one Workspace?
-4. Is app-level privacy needed in phase 1, or can every Workspace member open every app namespace?
-5. What exact product field would justify a future `workspace_profile` table instead of Better Auth organization metadata?
-6. What product requirement would justify `app_sync_doc` despite the app-owned root Y.Doc?
-7. What product requirement would justify `app_asset` despite app-owned blob references?
-8. Should a future user-held or customer-managed custody mode use `app_key_grant`, or should it require self-hosting/customer-managed deployment first?
+The compatibility path was useful while proving the route, but it should not survive the greenfield clean break.
+
+```txt
+Product sentence:
+  A signed-in Cloud app syncs one Workspace App Doc address.
+
+Refuse:
+  public `/rooms/:room` as a Cloud client fallback
+  read-time personal Workspace repair
+  silent subject replacement while a local workspace payload is mounted
+  Cloud product route helpers as default `@epicenter/workspace` exports
+  mutable prepare/build sidecars for app payload construction
+```
+
+### 2026-05-21 Phase 5, 6, And 7 Cleanup
+
+Checkpoint 1 refused Tab Manager's `/rooms/:room` Cloud fallback.
+
+```txt
+Product sentence:
+  Tab Manager syncs Cloud data through one Workspace App Doc URL when a
+  default Workspace is known.
+
+Current drift:
+  Missing defaultWorkspaceId opened /rooms/:room, and buildSession passed the
+  Workspace id through a mutable resolver object.
+
+Owner:
+  resolveDefaultWorkspaceId owns Workspace lookup. createSession owns
+  prepare/build sequencing. Tab Manager owns its product route string.
+
+Refusal option:
+  Refuse legacy room fallback and sidecar state.
+
+User loss:
+  If /api/workspaces is offline or unavailable, Tab Manager opens local data
+  without Cloud sync.
+
+Decision:
+  Refused. tabManagerSyncUrl now returns undefined without a Workspace id, and
+  openTabManagerBrowser installs a local-only collaboration object instead of
+  opening /rooms/:room.
+```
+
+Checkpoint 2 kept `/api/workspaces` read-only and proved signup provisioning.
+
+```txt
+Product sentence:
+  Signup creates the personal Cloud Workspace before Workspace listing matters.
+
+Current drift:
+  The creation and read-only listing tests existed separately, but no single
+  test proved the creation path made /api/workspaces useful.
+
+Owner:
+  createPersonalCloudWorkspace owns organization and owner membership creation.
+  listCloudWorkspaces owns read-only membership listing.
+
+Refusal option:
+  Refuse repair-by-read.
+
+User loss:
+  Broken accounts get an error instead of hidden repair.
+
+Decision:
+  Refused. The new provisioning test creates the personal Workspace, lists
+  workspaces, and asserts the default owner membership is already present.
+```
+
+Checkpoint 3 refused silent subject replacement.
+
+```txt
+Product sentence:
+  A mounted local workspace payload belongs to one auth subject.
+
+Current drift:
+  applySignIn could replace a persisted subject directly if another sign-in
+  grant completed while a payload was mounted.
+
+Owner:
+  Auth owns account switching. Session owns disposal when auth publishes
+  signed-out.
+
+Refusal option:
+  Refuse silent subject replacement by publishing a signed-out gap before
+  installing a different subject.
+
+User loss:
+  Account switching has an observable sign-out boundary. Same-subject reauth
+  still works.
+
+Decision:
+  Refused. startSignIn publishes signed-out before installing a different
+  subject, and createSession has a lifecycle test for dispose-before-remount
+  across that gap.
+```
+
+Checkpoint 4 rehomed the Cloud route helper for Tab Manager and deferred the
+published package API removal.
+
+```txt
+Product sentence:
+  packages/workspace owns collaboration primitives; Cloud apps own product
+  route construction.
+
+Current drift:
+  @epicenter/workspace exports workspaceAppDocWsUrl(), but the only in-repo
+  production caller was Tab Manager.
+
+Owner:
+  Tab Manager owns its app route. @epicenter/workspace owns websocketUrl(),
+  roomWsUrl(), openCollaboration(), and Yjs primitives.
+
+Refusal option:
+  Refuse new app callers for workspaceAppDocWsUrl() and rehome Tab Manager's
+  route construction locally.
+
+User loss:
+  None for in-repo callers. Removing the root export itself can break external
+  package consumers.
+
+Decision:
+  Rehomed the in-repo caller. Deferred deleting the public export because
+  @epicenter/workspace is a published package API.
+
+Trigger to revisit:
+  The next intentional @epicenter/workspace breaking API pass may remove
+  workspaceAppDocWsUrl() after release notes or a migration note name the
+  replacement.
+```
+
+`/rooms/:room` remains in the API only as explicit non-Cloud personal-room and
+daemon compatibility. In-repo callers still include Fuji, Honeycrisp,
+Opensidian, Zhongwen daemon paths, and workspace daemon infrastructure. Deleting
+the handler is deferred until those callers move to Workspace App Doc routes or
+a separate personal-room compatibility decision removes them.
+
+Files changed in this cleanup checkpoint:
+
+```txt
+apps/api/src/cloud-workspaces.test.ts
+apps/tab-manager/src/lib/session.svelte.ts
+apps/tab-manager/src/lib/tab-manager/default-workspace.ts
+apps/tab-manager/src/lib/tab-manager/default-workspace.test.ts
+apps/tab-manager/src/lib/tab-manager/extension.ts
+apps/tab-manager/src/lib/tab-manager/sync-url.ts
+apps/tab-manager/src/lib/tab-manager/sync-url.test.ts
+packages/auth/src/contract.test.ts
+packages/auth/src/create-oauth-app-auth.ts
+packages/svelte-utils/src/session.svelte.ts
+packages/svelte-utils/src/session.svelte.test.ts
+specs/20260520T190000-cloud-workspace-app-instance-clean-break.md
+```
+
+The target flow is smaller:
+
+```txt
+sign up
+  -> create user
+  -> create deterministic personal Workspace organization
+  -> create owner membership
+
+sign in
+  -> fetch /api/session
+  -> fetch /api/workspaces
+  -> build app payload for localIdentity.subject
+  -> open /workspaces/:workspaceId/apps/:appId/docs/root
+
+Workspace lookup unavailable
+  -> open local data without Cloud sync, or stay unavailable
+  -> do not sync to /rooms/:room
+
+account switch
+  -> publish signed-out
+  -> dispose mounted local workspace payload
+  -> install new subject
+  -> build a new payload
+```
+
+The implementation should run as build, prove, remove:
+
+```txt
+1. Build explicit local-only or unavailable behavior for missing Workspace lookup.
+2. Prove Tab Manager opens only Workspace App Doc sync when Cloud sync is available.
+3. Remove `/rooms/:room` fallback from Tab Manager and its tests.
+4. Remove or rehome `workspaceAppDocWsUrl()` from the public workspace package surface if no external package owns that helper.
+5. Prove account provisioning owns personal Workspace membership.
+6. Prove auth subject changes dispose before remount.
+```
+
+## Greenfield Review Protocol
+
+Use this review loop any time a cleanup pass finds a fallback, optional shape, helper, or exported type that only exists because the invariant is checked too late.
+
+```txt
+1. Write the product sentence.
+2. Name each important value and its owner.
+3. Mark the late invariant.
+4. List the code family the late invariant creates.
+5. Ask what disappears if the invariant moves to its owner.
+6. Apply only changes that remove a second path, shrink public surface, or move the invariant earlier.
+7. Re-read every touched file and update this spec with what was refused, kept, or deferred.
+```
+
+Use this finding format before editing:
+
+```txt
+Product sentence:
+  ...
+
+Current drift:
+  ...
+
+Owner:
+  ...
+
+Refusal option:
+  ...
+
+User loss:
+  ...
+
+Decision:
+  Refuse it / keep it / defer it because ...
+```
+
+If the decision keeps or defers a table, name the earned-table trigger in the same finding.
+
+```txt
+Earned-table trigger:
+  ...
+```
+
+Do not leave a cleanup ambiguity with only an unspecified future revisit. It must resolve to one of these outcomes:
+
+```txt
+Refusal:
+  the behavior is not part of the greenfield product
+
+Owner:
+  an existing layer owns the invariant without a new table
+
+Earned-table trigger:
+  the first concrete product operation that makes a new table worth adding
+```
+
+## Greenfield Ambiguity Ledger
+
+Every Cloud Workspace and app sync ambiguity must fit this ledger shape before implementation starts.
+
+### Subject-Scoped Cloud Fallback
+
+```txt
+Product sentence:
+  A signed-in Cloud app syncs one Workspace App Doc address.
+
+Current drift:
+  Tab Manager still treats missing defaultWorkspaceId as permission to open
+  /rooms/:room. The API also still exposes /rooms/:room for compatibility.
+
+Owner:
+  The client session owns local-only or unavailable behavior. The Cloud sync
+  route owns Workspace, App, Doc authorization and roomName construction.
+
+Refusal option:
+  Refuse /rooms/:room as a Cloud app fallback. Keep it only as an explicit
+  personal-room compatibility route until the cleanup phase removes it.
+
+User loss:
+  When /api/workspaces is unavailable, a signed-in Cloud app will not silently
+  sync through the old personal route. It must open local data without Cloud
+  sync or show an unavailable state.
+
+Decision:
+  Refuse the fallback. Greenfield Cloud sync has one identity:
+  workspaceId + appId + docId.
+```
+
+### Read-Time Workspace Repair
+
+```txt
+Product sentence:
+  Signup creates the personal Cloud Workspace before Workspace listing matters.
+
+Current drift:
+  /api/workspaces could be tempted to create missing organization/member rows
+  because it knows the deterministic personal Workspace id.
+
+Owner:
+  Better Auth user.create hook owns personal Workspace provisioning.
+  /api/workspaces owns read-only membership listing.
+
+Refusal option:
+  Refuse repair-by-read. A missing personal Workspace membership is an account
+  provisioning bug.
+
+User loss:
+  A broken account gets an error instead of a hidden repair.
+
+Decision:
+  Refuse read-time repair. Add invariant tests around signup provisioning and
+  keep /api/workspaces read-only.
+```
+
+### Silent Subject Replacement
+
+```txt
+Product sentence:
+  A mounted local workspace payload belongs to exactly one auth subject.
+
+Current drift:
+  createOAuthAppAuth can apply a new sign-in grant over an existing signed-in
+  state. createSession assumes two identity-bearing states are the same subject
+  and keeps the payload mounted.
+
+Owner:
+  Auth owns account switching. Session owns disposing the payload when auth
+  publishes signed-out.
+
+Refusal option:
+  Refuse silent account replacement. startSignIn must be invalid while signed
+  in, or account switching must publish signed-out before installing a new
+  subject.
+
+User loss:
+  Switching accounts needs an explicit sign-out or account-switch flow.
+
+Decision:
+  Refuse silent replacement. Do not make downstream workspace code defend
+  against two subjects in one mounted payload.
+```
+
+### Public Cloud Route Helper In Workspace Package
+
+```txt
+Product sentence:
+  packages/workspace owns collaboration primitives; Cloud apps own product
+  route construction.
+
+Current drift:
+  @epicenter/workspace exports workspaceAppDocWsUrl(), which bakes Cloud
+  route vocabulary into a published workspace-library surface.
+
+Owner:
+  App packages or the Cloud API client own product routes. packages/workspace
+  owns websocketUrl(), roomWsUrl(), openCollaboration(), and Yjs primitives.
+
+Refusal option:
+  Refuse a public Cloud product helper in @epicenter/workspace unless external
+  workspace consumers need it.
+
+User loss:
+  App packages write the short Workspace App Doc URL builder themselves or
+  import it from a Cloud-owned helper later.
+
+Decision:
+  Refuse the public export by default. Pause before removing the published API;
+  the spec authorizes the investigation but not an unreviewed package API break.
+```
+
+### Mutable Prepare Sidecar
+
+```txt
+Product sentence:
+  Session preparation returns the data needed to build the identity-bound app
+  payload.
+
+Current drift:
+  Tab Manager stores defaultWorkspaceId in a resolver object between prepare()
+  and build(), so the ordering contract is implicit.
+
+Owner:
+  createSession owns prepare/build sequencing. The app build callback owns how
+  prepared Workspace defaults enter app construction.
+
+Refusal option:
+  Refuse mutable sidecars for prepared values. prepare() should return the
+  value build() receives.
+
+User loss:
+  None visible. The implementation shape changes.
+
+Decision:
+  Refuse sidecars when changing this surface. This can require a shared
+  createSession API change, so pause if the published auth/session contract
+  would need a migration rule.
+```
+
+### Active Workspace In Auth Session
+
+```txt
+Product sentence:
+  Auth says who is signed in; routes and UI state say which Workspace is open.
+
+Current drift:
+  Better Auth exposes activeOrganizationId, which could be projected as
+  activeWorkspaceId in ApiSessionResponse.
+
+Owner:
+  Auth owns user identity and localIdentity. Workspace route parameters,
+  app navigation, or user preferences own selected Workspace.
+
+Refusal option:
+  Refuse activeWorkspaceId in auth/session.
+
+User loss:
+  The UI cannot get selected Workspace from /api/session. It must use route
+  state, local UI state, or a future preference.
+
+Decision:
+  Refuse. Do not change PersistedAuth, ApiSessionResponse, or session schema
+  for Workspace selection in this pass.
+```
+
+### Default App Rows
+
+```txt
+Product sentence:
+  Apps are available by catalog; app data exists when the app opens its root doc.
+
+Current drift:
+  New Workspace provisioning could create default app, installation, or
+  app_instance rows so the UI can list first-party apps.
+
+Owner:
+  The app catalog owns available app definitions. The app root Y.Doc owns
+  app data. Cloud Workspace provisioning owns only organization and membership.
+
+Refusal option:
+  Refuse default app rows.
+
+User loss:
+  Cloud cannot infer "installed apps" from SQL in phase 1. The UI lists
+  catalog apps and opens root docs directly.
+
+Decision:
+  Refuse. Default app rows would create a second lifecycle before any product
+  operation needs one.
+```
+
+### Multiple Instances Of One App
+
+```txt
+Product sentence:
+  One Workspace has one app namespace per appId.
+
+Current drift:
+  Product language around App Instance could invite multiple copies of the same
+  app in one Workspace.
+
+Owner:
+  App Namespace owns workspaceId + appId. App root Y.Doc owns app semantics
+  inside that namespace.
+
+Refusal option:
+  Refuse multiple same-app instances in phase 1.
+
+User loss:
+  A Workspace cannot create "Tab Manager A" and "Tab Manager B" as separate
+  Cloud-managed instances.
+
+Decision:
+  Refuse until a product lifecycle operation earns app_instance.
+
+Earned-table trigger:
+  Add app_instance only when Cloud must rename, delete, duplicate, disable,
+  bill, configure, permission, or list installed app instances independently
+  of app-owned Yjs data.
+```
+
+### App-Level Privacy
+
+```txt
+Product sentence:
+  Workspace membership grants access to phase 1 app namespaces.
+
+Current drift:
+  Private apps or app-level roles could be modeled with app_instance_member,
+  Better Auth teams, app metadata, or route conditionals.
+
+Owner:
+  Cloud Workspace membership owns phase 1 access. App root Y.Doc may own
+  app-level product visibility that does not protect sync access.
+
+Refusal option:
+  Refuse app-level privacy in phase 1.
+
+User loss:
+  Every Workspace member can open every valid first-party app namespace.
+
+Decision:
+  Defer behind an earned table. Do not compress app privacy into route parsing,
+  Better Auth teams, or app metadata.
+
+Earned-table trigger:
+  Add app_instance_member, or an equivalent policy table, only when Cloud must
+  make one app namespace visible to some Workspace members and forbidden to
+  others.
+```
+
+### Workspace Profile Table
+
+```txt
+Product sentence:
+  Better Auth organization is the phase 1 Cloud Workspace row.
+
+Current drift:
+  Workspace-specific product fields could be added to Better Auth metadata or
+  a duplicate cloud_workspace table without a clear owner.
+
+Owner:
+  Better Auth organization owns identity, name, slug, and membership.
+  workspace_profile owns only product fields that do not belong to Better Auth.
+
+Refusal option:
+  Refuse workspace_profile in phase 1.
+
+User loss:
+  Workspace product fields are limited to Better Auth organization fields and
+  metadata.
+
+Decision:
+  Defer behind an earned table. Do not add cloud_workspace as a duplicate
+  identity row.
+
+Earned-table trigger:
+  Add workspace_profile only when Cloud needs custody mode, deletion lifecycle,
+  export/import lineage, default app policy, or billing cache fields that should
+  not live in Better Auth organization metadata.
+```
+
+### Sync Doc Inventory
+
+```txt
+Product sentence:
+  The app root Y.Doc owns the app's document graph.
+
+Current drift:
+  Cloud could add app_sync_doc so every docId has a relational row before sync.
+
+Owner:
+  App root Y.Doc owns child doc references. The sync route owns syntax,
+  membership authorization, and roomName construction.
+
+Refusal option:
+  Refuse required app_sync_doc rows in phase 1.
+
+User loss:
+  Cloud cannot list, delete, migrate, support, or meter every Sync Doc from SQL
+  without reading app data or room telemetry.
+
+Decision:
+  Defer behind an earned table. A valid docId can sync without a Postgres row.
+
+Earned-table trigger:
+  Add app_sync_doc only when Cloud must run a product operation over Sync Docs
+  without app-owned root data: deletion, migration, support inspection, metering,
+  retention, legal hold, or cross-doc search.
+```
+
+### App Asset Inventory
+
+```txt
+Product sentence:
+  Apps own blob references; object storage owns bytes.
+
+Current drift:
+  Existing asset and reconciliation code is user-scoped, while this spec says
+  Cloud billing and app namespaces are Workspace-shaped. A new app_asset table
+  could be added before the product operation is real.
+
+Owner:
+  App root Y.Doc owns blob references. Object storage owns bytes under a
+  workspace/app/doc-aware prefix. Billing reconciliation owns aggregate totals.
+
+Refusal option:
+  Refuse app_asset in phase 1.
+
+User loss:
+  Cloud cannot list app files, cascade-delete one app namespace's blobs, or
+  produce per-app asset inventory from SQL.
+
+Decision:
+  Defer behind an earned table. Do not use app_asset to repair a prefix or
+  billing ambiguity that can be solved by owner-aware object keys and aggregate
+  reconciliation.
+
+Earned-table trigger:
+  Add app_asset only when Cloud must list, delete, retain, meter, export, or
+  support blobs independently of app-owned Yjs references.
+```
+
+### Customer-Managed Or User-Held Keys
+
+```txt
+Product sentence:
+  Phase 1 Cloud custody is server-managed.
+
+Current drift:
+  User-held keys, customer-managed keys, or app_key_grant could be introduced
+  while there is still only one custody mode.
+
+Owner:
+  Server-managed Cloud owns key derivation and recovery in phase 1. A future
+  custody subsystem owns grants only after a second mode exists.
+
+Refusal option:
+  Refuse app_key_grant and custody_mode storage in phase 1.
+
+User loss:
+  Cloud cannot claim zero-knowledge, user-held, or customer-managed custody.
+
+Decision:
+  Defer behind an earned table. Do not represent a second custody mode before
+  the product can execute it.
+
+Earned-table trigger:
+  Add app_key_grant, or require self-host/customer-managed deployment, only when
+  a Workspace can actually grant, revoke, rotate, recover, and audit user-held
+  or customer-managed keys.
+```
+
+### App Registry Requirement
+
+```txt
+Product sentence:
+  Cloud validates the namespace, not app semantics.
+
+Current drift:
+  The route flow says appId may optionally require a known Cloud app registry.
+  Without a decision, that optional check becomes another source of truth.
+
+Owner:
+  A static app catalog owns first-party app definitions in phase 1. The sync
+  route owns appId syntax and Workspace membership.
+
+Refusal option:
+  Refuse a required app registry table in phase 1.
+
+User loss:
+  Cloud cannot dynamically enable, disable, or discover app definitions from SQL.
+
+Decision:
+  Use a static catalog if the UI needs display metadata. Do not add a registry
+  table or require per-Workspace app rows before lifecycle operations earn them.
+
+Earned-table trigger:
+  Add an app registry table only when Cloud must publish third-party apps,
+  manage versions, disable apps centrally, review marketplace metadata, or
+  bind app definitions to billing/policy.
+```
+
+Candidate greenfield smells:
+
+```txt
+compatibility fallback beside the canonical path
+read endpoint that repairs missing write-side state
+optional argument that keeps an old mental model alive
+helper exported only so one app can hide product route construction
+state object that passes data between lifecycle callbacks
+type alias that duplicates a factory return shape
+test fixture that preserves old behavior as a requirement
+```
+
+## Execution Prompts
+
+### Implementation Prompt
+
+```txt
+Implement the greenfield cleanup pass in `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md`.
+
+First read `AGENTS.md`, the spec, and the `cohesive-clean-breaks`, `one-sentence-test`, `refactoring`, `approachability-audit`, and `post-implementation-review` skills. Treat the spec as greenfield: there are no existing users and no `/rooms/:room` migration burden.
+
+Review these surfaces first:
+
+- `apps/tab-manager/src/lib/tab-manager/sync-url.ts`
+- `apps/tab-manager/src/lib/tab-manager/default-workspace.ts`
+- `apps/tab-manager/src/lib/session.svelte.ts`
+- `packages/svelte-utils/src/session.svelte.ts`
+- `packages/auth/src/create-oauth-app-auth.ts`
+- `packages/auth/src/auth-contract.ts`
+- `packages/workspace/src/document/transport.ts`
+- `packages/workspace/src/index.ts`
+- `apps/api/src/cloud-workspaces.ts`
+- `apps/api/src/auth/create-auth.ts`
+- `apps/api/src/app.ts`
+
+Before editing each surface, report findings in this shape: Product sentence, Current drift, Owner, Refusal option, User loss, Decision. Include Earned-table trigger when the decision defers a table.
+
+Apply only changes that remove a duplicate path, shrink public surface, or move an invariant to its owner. Do not add `app_instance`, `app_sync_doc`, `app_asset`, scoped sync tokens, a Workspace head Y.Doc, or read-time Workspace repair.
+
+Expected outcomes:
+
+- Tab Manager no longer falls back to public `/rooms/:room` for Cloud sync.
+- Missing Workspace lookup becomes explicit local-only or unavailable behavior.
+- `/api/workspaces` remains read-only.
+- Account provisioning owns personal Workspace creation.
+- Auth subject switching disposes the old local workspace payload before a new subject mounts.
+- Product Cloud route helpers are not public `@epicenter/workspace` exports unless the spec records that package ownership decision.
+
+Validate with targeted `bun test` for changed files and package `typecheck` for changed packages. Update the spec checklist and Implementation Notes after each checkpoint. Pause before changing durable storage schemas, `PersistedAuth`, `ApiSessionResponse`, Better Auth generated schema, or published package APIs not already called out by the spec.
+```
+
+### Continuous Greenfield Goal
+
+```txt
+/goal Continue the greenfield clean-break pass for `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md` until every checklist item in Phases 5, 6, and 7 is either complete or explicitly deferred in the spec. First read `AGENTS.md`, the spec, and the `cohesive-clean-breaks`, `collapse-pass`, `one-sentence-test`, `refactoring`, `approachability-audit`, and `post-implementation-review` skills. Work in checkpoints. For each checkpoint, inspect one changed feature surface from the last relevant commits, write Product sentence, Current drift, Owner, Refusal option, User loss, Decision, and Earned-table trigger when a table is deferred, then apply only changes that remove a duplicate path, shrink public surface, or move an invariant to its owner. After each edit, run targeted `bun test` plus package `typecheck`, re-read touched files, update the spec checklist and Implementation Notes, and surface the validation result. Stop when Phases 5, 6, and 7 are complete or after three consecutive reviewed surfaces produce no findings. Pause before durable storage schema changes, Better Auth generated schema edits, `PersistedAuth` or `ApiSessionResponse` changes, published package API removals not already authorized by the spec, or any migration policy that contradicts greenfield assumptions.
+```
+
+## Greenfield Review Rules
+
+Use this section for future cleanup passes. The product sentence is:
+
+```txt
+Cloud Workspace is the product account boundary; app namespaces are entered by workspaceId + appId; sync docs are addressed explicitly.
+```
+
+Anything that makes that sentence need an exception is a clean-break candidate.
+
+### Active Workspace
+
+Do not expose Better Auth `activeOrganizationId` as `activeWorkspaceId`.
+
+```txt
+Auth session:
+  who is signed in?
+
+Workspace route:
+  which workspace is this request for?
+```
+
+Workspace selection is route or UI state. Cloud resource URLs already carry the workspace:
+
+```txt
+/workspaces/:workspaceId/apps/:appId/docs/:docId
+```
+
+If the UI later needs "last opened workspace", store that as a user preference or local UI state. Do not put product navigation state into the auth/session contract.
+
+### Default Apps
+
+Do not create default app rows for every new Workspace.
+
+```txt
+Apps are available by definition.
+App data exists when opened.
+```
+
+The UI may show first-party apps from a static app catalog, but Cloud should not insert `workspace_app`, `app_instance`, or `app_installation` rows for each new Workspace. Opening an app is enough:
+
+```txt
+/workspaces/ws_123/apps/tab-manager/docs/root
+```
+
+The app-owned root Y.Doc is the source of truth for that app namespace until a Cloud operation earns a table.
+
+### Multiple Instances
+
+Do not support multiple instances of the same app in one Workspace.
+
+```txt
+One Workspace has one namespace per appId.
+```
+
+Supported:
+
+```txt
+/workspaces/ws_123/apps/tab-manager/docs/root
+```
+
+Refused for now:
+
+```txt
+/workspaces/ws_123/apps/tab-manager-1/docs/root
+/workspaces/ws_123/apps/tab-manager-2/docs/root
+```
+
+An `app_instance` table is earned only by product lifecycle operations:
+
+```txt
+rename instance
+delete instance
+duplicate instance
+disable instance
+bill instance
+set instance-specific permissions
+list installed app instances
+```
+
+Until one of those operations exists, `workspaceId + appId` is the boundary.
+
+### Greenfield Cleanup Loop
+
+Run this loop after any Cloud Workspace or app sync change:
+
+```txt
+1. Write the product sentence for the changed surface.
+2. List every owner: auth, Workspace API, app catalog, app root Y.Doc, sync route, Room.
+3. Search for repair paths: ensure*, fallback, optional response fields, compatibility aliases, default rows, duplicate helpers.
+4. Ask whether the product sentence survives if that behavior is refused.
+5. If it survives, delete the behavior and record the refusal.
+6. Validate with targeted tests and typecheck.
+```
+
+Refusal defaults:
+
+```txt
+No activeWorkspaceId in auth.
+No default app rows.
+No multiple app instances.
+No app_sync_doc table.
+No app_asset table.
+No app registry table.
+No app_instance_member table.
+No app_key_grant table.
+No Workspace head Y.Doc.
+No scoped sync token.
+No public Organization product surface.
+No subject-scoped Cloud sync route in greenfield mode.
+```
+
+## Resolved And Deferred Questions
+
+Resolved for greenfield:
+
+1. `activeWorkspaceId` in auth is refused. Workspace selection is route or UI state.
+2. Default app rows are refused. Show apps from a catalog; create app data on open.
+3. Multiple app instances are refused. Add `app_instance` only when lifecycle operations earn it.
+4. App-level privacy is deferred. Every Workspace member can open every phase 1 app namespace. Add `app_instance_member` only when Cloud must make one app namespace visible to some Workspace members and forbidden to others.
+5. `workspace_profile` is deferred. Add it only for custody mode, deletion lifecycle, export/import lineage, default app policy, or billing cache fields that should not live in Better Auth organization metadata.
+6. `app_sync_doc` is deferred. Add it only when Cloud must delete, migrate, inspect, meter, retain, legally hold, or search Sync Docs without reading app-owned root data.
+7. `app_asset` is deferred. Add it only when Cloud must list, delete, retain, meter, export, or support blobs independently of app-owned Yjs references.
+8. `app_key_grant` is deferred. Add it, or require self-host/customer-managed deployment, only when a Workspace can actually grant, revoke, rotate, recover, and audit user-held or customer-managed keys.
+9. An app registry table is deferred. Use a static first-party app catalog until third-party publishing, app version policy, central disablement, marketplace metadata, or app-bound billing and policy earns a table.
 
 ## References
 

@@ -19,7 +19,7 @@
  *                        `dispatch_inbound`, recipient -> server
  *                        `dispatch_response`.
  *   RPC method        -> {@link Room.dispatch}: the Worker forwards
- *                        `POST /rooms/:room/dispatch` here. The DO mints
+ *                        a route-level `/dispatch` request here. The DO mints
  *                        a correlation id, pushes `dispatch_inbound` to
  *                        the recipient's socket, and resolves the RPC
  *                        promise when the recipient's `dispatch_response`
@@ -145,9 +145,9 @@ type WsAttachment = {
  * ## Worker to DO interface
  *
  * **RPC** (`stub.sync()`, `stub.getDoc()`, `stub.dispatch()`): for HTTP
- *   sync, snapshot bootstrap, and the HTTP `POST /rooms/:room/dispatch`
- *   endpoint. Direct method calls avoid Request/Response serialization
- *   overhead for binary payloads.
+ *   sync, snapshot bootstrap, and route-level dispatch endpoints. Direct
+ *   method calls avoid Request/Response serialization overhead for binary
+ *   payloads.
  * **fetch** (`stub.fetch(request)`): for WebSocket upgrades only, since
  *   the 101 Switching Protocols handshake requires HTTP request/response
  *   semantics.
@@ -440,7 +440,7 @@ export class Room extends DurableObject {
 	}
 
 	/**
-	 * Dispatch RPC: route an HTTP `POST /rooms/:room/dispatch` body to a
+	 * Dispatch RPC: route an HTTP dispatch body to a
 	 * live recipient socket, await its response, and return the result.
 	 *
 	 * Picks the most-recently-connected socket for `to`. On miss returns

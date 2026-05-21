@@ -224,8 +224,7 @@ export function typedDispatch<TTargetActions extends ActionRegistry>(
 /**
  * Derive the HTTP dispatch URL from the WebSocket sync URL.
  *
- * Inverts `roomWsUrl(api, room)`: `ws(s)://host/rooms/<encoded-room>`
- * becomes `http(s)://host/rooms/<encoded-room>/dispatch`.
+ * Converts the selected WebSocket URL to HTTP and appends `/dispatch`.
  */
 export function deriveDispatchUrl(wsUrl: string): string {
 	const httpUrl = wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
@@ -279,8 +278,8 @@ export function getOnlineInstallationIds({
  * for compile-time precision against a known target registry.
  *
  * @param installationId The caller's own install id, sent as `from`.
- *   The relay validates the subject scope at the Worker boundary; within
- *   that scope, `from` is a trusted routing label, not an auth principal.
+ *   The host authorizes the room before the relay sees the request; within
+ *   that room, `from` is a trusted routing label, not an auth principal.
  */
 export async function dispatch({
 	dispatchUrl,

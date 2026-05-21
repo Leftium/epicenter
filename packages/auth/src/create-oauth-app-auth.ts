@@ -1,9 +1,13 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import { subjectKeyringsEqual } from '@epicenter/encryption';
-import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AuthClient, AuthState } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
 import {
@@ -56,6 +60,18 @@ const AuthStateChangeError = defineErrors({
 	}),
 });
 
+const ApiSessionRequestError = defineErrors({
+	AuthRejected: ({ status }: { status: 401 | 403 }) => ({
+		message: `API session rejected the current token with ${status}.`,
+		status,
+	}),
+	Unavailable: ({ cause }: { cause: unknown }) => ({
+		message: `Could not verify API session: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+type ApiSessionRequestError = InferErrors<typeof ApiSessionRequestError>;
+
 type NetworkAccess = 'unverified' | 'verified' | 'paused';
 
 type RuntimeAuthState =
@@ -73,8 +89,13 @@ type RefreshFlight = {
 
 type IdentityVerificationFlight = {
 	persistedAuth: PersistedAuthType;
-	promise: Promise<Result<ApiSessionResponse, AuthError>>;
+	promise: Promise<ApiSessionRequestResult>;
 };
+
+type ApiSessionRequestResult = Result<
+	ApiSessionResponse,
+	ApiSessionRequestError
+>;
 
 /**
  * Create the app-side auth boundary for browser, extension, and machine clients.
@@ -96,105 +117,44 @@ export function createOAuthAppAuth({
 	now = Date.now,
 	log = createLogger('auth/oauth-app'),
 }: CreateOAuthAppAuthConfig): AuthClient {
-	let runtimeState = runtimeStateFromPersistedAuth(persistedAuthStorage.get());
+	const authSession = createAuthSessionRuntime({
+		initialPersistedAuth: persistedAuthStorage.get(),
+		persistedAuthStorage,
+		log,
+	});
 	let refreshFlight: RefreshFlight | null = null;
 	let identityVerificationFlight: IdentityVerificationFlight | null = null;
-	let storageWriteQueue: Promise<void> = Promise.resolve();
-	let authOperationVersion = 0;
+	let signInFlight: Promise<Result<undefined, AuthError>> | null = null;
+	let signInGeneration = 0;
 
-	let state = publicStateFromRuntime(runtimeState);
-	const stateChangeListeners = new Set<(state: AuthState) => void>();
-
-	function currentPersistedAuth(): PersistedAuthType | null {
-		return runtimeState.status === 'signed-out'
-			? null
-			: runtimeState.persistedAuth;
+	function beginSignInGeneration() {
+		signInGeneration += 1;
+		return signInGeneration;
 	}
 
-	function isNetworkAuthPaused() {
-		return (
-			runtimeState.status === 'signed-in' &&
-			runtimeState.networkAccess === 'paused'
-		);
+	function isCurrentSignIn(generation: number) {
+		return signInGeneration === generation;
 	}
 
-	function verifiedPersistedAuthForNetwork(): PersistedAuthType | null {
-		if (runtimeState.status === 'signed-out') return null;
-		if (runtimeState.networkAccess !== 'verified') return null;
-		return runtimeState.persistedAuth;
+	function cancelInFlightSignIn() {
+		signInGeneration += 1;
+		signInFlight = null;
 	}
 
-	function publishState() {
-		const next = publicStateFromRuntime(runtimeState);
-		if (authStatesEqual(state, next)) return;
-		state = next;
-		for (const listener of stateChangeListeners) {
-			try {
-				listener(next);
-			} catch (error) {
-				log.error(AuthStateChangeError.SubscriberThrew({ cause: error }));
-			}
-		}
-	}
-
-	function transitionToSignedOut() {
-		runtimeState = { status: 'signed-out' };
+	async function clearAuthSession() {
 		refreshFlight = null;
 		identityVerificationFlight = null;
-		publishState();
-	}
-
-	function beginAuthReplacement() {
-		authOperationVersion += 1;
-		return authOperationVersion;
-	}
-
-	function cancelInFlightAuthWork() {
-		authOperationVersion += 1;
-	}
-
-	function installUnverifiedPersistedAuth(persistedAuth: PersistedAuthType) {
-		runtimeState = {
-			status: 'signed-in',
-			persistedAuth,
-			networkAccess: 'unverified',
-		};
-		publishState();
-	}
-
-	function installVerifiedPersistedAuth(persistedAuth: PersistedAuthType) {
-		runtimeState = {
-			status: 'signed-in',
-			persistedAuth,
-			networkAccess: 'verified',
-		};
-		publishState();
-	}
-
-	function pauseNetworkAuth() {
-		if (runtimeState.status === 'signed-out') return;
-		runtimeState = {
-			...runtimeState,
-			networkAccess: 'paused',
-		};
-		publishState();
-	}
-
-	async function writePersistedAuth(value: PersistedAuthType | null) {
-		const write = storageWriteQueue.then(() => persistedAuthStorage.set(value));
-		storageWriteQueue = write.catch(() => undefined);
-		await write;
+		await authSession.clear();
 	}
 
 	async function clearPersistedAuth() {
-		cancelInFlightAuthWork();
-		transitionToSignedOut();
-		await writePersistedAuth(null);
+		cancelInFlightSignIn();
+		await clearAuthSession();
 	}
 
 	async function refreshGrant(force: boolean): Promise<boolean> {
-		const startedFrom = currentPersistedAuth();
-		if (startedFrom === null || isNetworkAuthPaused()) return false;
+		const startedFrom = authSession.persistedAuth;
+		if (startedFrom === null || authSession.networkAuthPaused) return false;
 		if (
 			!force &&
 			startedFrom.grant.accessTokenExpiresAt > now() + REFRESH_SKEW_MS
@@ -214,18 +174,18 @@ export function createOAuthAppAuth({
 					fetch: fetchImpl,
 					now,
 				});
-				if (currentPersistedAuth() !== startedFrom) return false;
+				if (authSession.persistedAuth !== startedFrom) return false;
 				const next: PersistedAuthType = {
 					grant,
 					localIdentity: startedFrom.localIdentity,
 				};
-				await writePersistedAuth(next);
-				if (currentPersistedAuth() !== startedFrom) return false;
-				installUnverifiedPersistedAuth(next);
+				await authSession.write(next);
+				if (authSession.persistedAuth !== startedFrom) return false;
+				authSession.installUnverified(next);
 				return true;
 			} catch (cause) {
-				if (currentPersistedAuth() === startedFrom) {
-					pauseNetworkAuth();
+				if (authSession.persistedAuth === startedFrom) {
+					authSession.pauseNetworkAuth();
 					log.error(AuthError.RefreshGrantFailed({ cause }));
 				}
 				return false;
@@ -240,9 +200,9 @@ export function createOAuthAppAuth({
 		return promise;
 	}
 
-	async function callApiSession(
+	async function requestApiSession(
 		grant: OAuthTokenGrant,
-	): Promise<Result<ApiSessionResponse, AuthError>> {
+	): Promise<ApiSessionRequestResult> {
 		let response: Response;
 		try {
 			response = await fetchImpl(`${baseURL}/api/session`, {
@@ -250,17 +210,20 @@ export function createOAuthAppAuth({
 				credentials: 'omit',
 			});
 		} catch (cause) {
-			return AuthError.VerifyIdentityFailed({ cause });
+			return ApiSessionRequestError.Unavailable({ cause });
 		}
 		if (!response.ok) {
-			return AuthError.VerifyIdentityFailed({
+			if (response.status === 401 || response.status === 403) {
+				return ApiSessionRequestError.AuthRejected({ status: response.status });
+			}
+			return ApiSessionRequestError.Unavailable({
 				cause: new Error(`/api/session failed with ${response.status}.`),
 			});
 		}
 		try {
 			return Ok(ApiSessionResponse.assert(await response.json()));
 		} catch (cause) {
-			return AuthError.VerifyIdentityFailed({ cause });
+			return ApiSessionRequestError.Unavailable({ cause });
 		}
 	}
 
@@ -270,18 +233,26 @@ export function createOAuthAppAuth({
 	 * Wipes storage on same-subject-guard mismatch. Single-flight: concurrent
 	 * callers for the same persisted auth share the in-flight promise.
 	 */
-	async function verifyCurrentPersistedAuth(
+	async function verifyPersistedAuthForNetwork(
 		startedFrom: PersistedAuthType,
-	): Promise<Result<ApiSessionResponse, AuthError>> {
+	): Promise<ApiSessionRequestResult> {
 		if (identityVerificationFlight?.persistedAuth === startedFrom) {
 			return identityVerificationFlight.promise;
 		}
-		const promise = (async (): Promise<
-			Result<ApiSessionResponse, AuthError>
-		> => {
-			const { data: session, error } = await callApiSession(startedFrom.grant);
-			if (error) return AuthError.VerifyIdentityFailed({ cause: error });
-			const current = currentPersistedAuth();
+		const promise = (async (): Promise<ApiSessionRequestResult> => {
+			const { data: session, error } = await requestApiSession(
+				startedFrom.grant,
+			);
+			if (error) {
+				if (
+					error.name === 'AuthRejected' &&
+					authSession.persistedAuth === startedFrom
+				) {
+					authSession.pauseNetworkAuth();
+				}
+				return Err(error);
+			}
+			const current = authSession.persistedAuth;
 			if (current !== startedFrom) return Ok(session);
 
 			if (current.localIdentity.subject !== session.localIdentity.subject) {
@@ -299,12 +270,12 @@ export function createOAuthAppAuth({
 					grant: current.grant,
 					localIdentity: session.localIdentity,
 				};
-				await writePersistedAuth(next);
-				if (currentPersistedAuth() !== startedFrom) return Ok(session);
-				installVerifiedPersistedAuth(next);
+				await authSession.write(next);
+				if (authSession.persistedAuth !== startedFrom) return Ok(session);
+				authSession.installVerified(next);
 				return Ok(session);
 			}
-			installVerifiedPersistedAuth(current);
+			authSession.installVerified(current);
 			return Ok(session);
 		})().finally(() => {
 			if (identityVerificationFlight?.persistedAuth === startedFrom) {
@@ -326,20 +297,25 @@ export function createOAuthAppAuth({
 	 * workspace decrypt continues via `localIdentity`.
 	 */
 	async function bearerForNetwork(force: boolean): Promise<string | null> {
-		if (currentPersistedAuth() === null || isNetworkAuthPaused()) return null;
+		if (authSession.persistedAuth === null || authSession.networkAuthPaused) {
+			return null;
+		}
 		const refreshed = await refreshGrant(force);
-		const refreshedPersistedAuth = currentPersistedAuth();
+		const refreshedPersistedAuth = authSession.persistedAuth;
 		if (
 			!refreshed ||
 			refreshedPersistedAuth === null ||
-			isNetworkAuthPaused()
+			authSession.networkAuthPaused
 		) {
 			return null;
 		}
-		let verifiedPersistedAuth = verifiedPersistedAuthForNetwork();
+		let verifiedPersistedAuth = authSession.verifiedPersistedAuth;
 		if (verifiedPersistedAuth === null) {
-			await verifyCurrentPersistedAuth(refreshedPersistedAuth);
-			verifiedPersistedAuth = verifiedPersistedAuthForNetwork();
+			const verification = await verifyPersistedAuthForNetwork(
+				refreshedPersistedAuth,
+			);
+			if (verification.error) return null;
+			verifiedPersistedAuth = authSession.verifiedPersistedAuth;
 			if (verifiedPersistedAuth === null) return null;
 		}
 		return verifiedPersistedAuth.grant.accessToken;
@@ -372,58 +348,69 @@ export function createOAuthAppAuth({
 
 	async function completeSignInWithGrant(
 		grant: OAuthTokenGrant,
+		generation: number,
 	): Promise<Result<undefined, AuthError>> {
-		const operationVersion = beginAuthReplacement();
-		const previous = currentPersistedAuth();
-		const callResult = await callApiSession(grant);
-		if (callResult.error) {
-			return AuthError.StartSignInFailed({ cause: callResult.error });
+		if (!isCurrentSignIn(generation)) return Ok(undefined);
+		const previous = authSession.persistedAuth;
+		const { data: session, error } = await requestApiSession(grant);
+		if (error) {
+			return AuthError.StartSignInFailed({ cause: error });
 		}
-		if (authOperationVersion !== operationVersion) return Ok(undefined);
-		const session = callResult.data;
+		if (!isCurrentSignIn(generation)) return Ok(undefined);
 		if (
 			previous !== null &&
 			previous.localIdentity.subject !== session.localIdentity.subject
 		) {
-			transitionToSignedOut();
-			await writePersistedAuth(null);
-			if (authOperationVersion !== operationVersion) return Ok(undefined);
+			await clearAuthSession();
+			if (!isCurrentSignIn(generation)) return Ok(undefined);
 		}
 		const next: PersistedAuthType = {
 			grant,
 			localIdentity: session.localIdentity,
 		};
-		await writePersistedAuth(next);
-		if (authOperationVersion !== operationVersion) return Ok(undefined);
-		installVerifiedPersistedAuth(next);
+		await authSession.write(next);
+		if (!isCurrentSignIn(generation)) return Ok(undefined);
+		authSession.installVerified(next);
 		return Ok(undefined);
 	}
 
 	return {
 		get state() {
-			return state;
+			return authSession.state;
 		},
 		onStateChange(fn) {
-			stateChangeListeners.add(fn);
-			return () => {
-				stateChangeListeners.delete(fn);
-			};
+			return authSession.onStateChange(fn);
 		},
 		async startSignIn() {
-			try {
-				const result = await launcher.startSignIn();
-				if (result.error) {
-					return AuthError.StartSignInFailed({ cause: result.error });
+			if (signInFlight !== null) return signInFlight;
+			const generation = beginSignInGeneration();
+			const promise = (async () => {
+				try {
+					const result = await launcher.startSignIn();
+					if (!isCurrentSignIn(generation)) {
+						return Ok(undefined);
+					}
+					if (result.error) {
+						return AuthError.StartSignInFailed({ cause: result.error });
+					}
+					if (result.data === null) return Ok(undefined);
+					return completeSignInWithGrant(result.data, generation);
+				} catch (cause) {
+					if (!isCurrentSignIn(generation)) {
+						return Ok(undefined);
+					}
+					return AuthError.StartSignInFailed({ cause });
 				}
-				if (result.data === null) return Ok(undefined);
-				return completeSignInWithGrant(result.data);
-			} catch (cause) {
-				return AuthError.StartSignInFailed({ cause });
-			}
+			})().finally(() => {
+				if (signInFlight === promise) signInFlight = null;
+			});
+			signInFlight = promise;
+			return promise;
 		},
 		async signOut() {
 			try {
-				const refreshTokenToRevoke = currentPersistedAuth()?.grant.refreshToken;
+				const refreshTokenToRevoke =
+					authSession.persistedAuth?.grant.refreshToken;
 				await clearPersistedAuth();
 				if (refreshTokenToRevoke) {
 					void revokeOAuthRefreshTokenWithEndpoint({
@@ -445,7 +432,7 @@ export function createOAuthAppAuth({
 			if (!refreshed) return response;
 			const retryResponse = await fetchWithAuth(input, init, false);
 			if (retryResponse.status === 401) {
-				pauseNetworkAuth();
+				authSession.pauseNetworkAuth();
 			}
 			return retryResponse;
 		},
@@ -457,19 +444,114 @@ export function createOAuthAppAuth({
 			return new WebSocketImpl(String(url), authProtocols);
 		},
 		[Symbol.dispose]() {
-			stateChangeListeners.clear();
+			authSession.dispose();
 		},
 	};
 }
 
-function runtimeStateFromPersistedAuth(
-	persistedAuth: PersistedAuthType | null,
-): RuntimeAuthState {
-	if (persistedAuth === null) return { status: 'signed-out' };
+function createAuthSessionRuntime({
+	initialPersistedAuth,
+	persistedAuthStorage,
+	log,
+}: {
+	initialPersistedAuth: PersistedAuthType | null;
+	persistedAuthStorage: PersistedAuthStorage;
+	log: Logger;
+}) {
+	let runtimeState: RuntimeAuthState =
+		initialPersistedAuth === null
+			? { status: 'signed-out' }
+			: {
+					status: 'signed-in',
+					persistedAuth: initialPersistedAuth,
+					networkAccess: 'unverified',
+				};
+	let publicState = publicStateFromRuntime(runtimeState);
+	let storageWriteQueue: Promise<void> = Promise.resolve();
+	const stateChangeListeners = new Set<(state: AuthState) => void>();
+
+	function publishState() {
+		const next = publicStateFromRuntime(runtimeState);
+		if (authStatesEqual(publicState, next)) return;
+		publicState = next;
+		for (const listener of stateChangeListeners) {
+			try {
+				listener(next);
+			} catch (error) {
+				log.error(AuthStateChangeError.SubscriberThrew({ cause: error }));
+			}
+		}
+	}
+
+	async function write(value: PersistedAuthType | null) {
+		const pendingWrite = storageWriteQueue.then(() =>
+			persistedAuthStorage.set(value),
+		);
+		storageWriteQueue = pendingWrite.catch(() => undefined);
+		await pendingWrite;
+	}
+
 	return {
-		status: 'signed-in',
-		persistedAuth,
-		networkAccess: 'unverified',
+		get state() {
+			return publicState;
+		},
+		get persistedAuth(): PersistedAuthType | null {
+			return runtimeState.status === 'signed-out'
+				? null
+				: runtimeState.persistedAuth;
+		},
+		get networkAuthPaused() {
+			return (
+				runtimeState.status === 'signed-in' &&
+				runtimeState.networkAccess === 'paused'
+			);
+		},
+		get verifiedPersistedAuth(): PersistedAuthType | null {
+			if (runtimeState.status === 'signed-out') return null;
+			if (runtimeState.networkAccess !== 'verified') return null;
+			return runtimeState.persistedAuth;
+		},
+		onStateChange(fn: (state: AuthState) => void) {
+			stateChangeListeners.add(fn);
+			return () => {
+				stateChangeListeners.delete(fn);
+			};
+		},
+		installUnverified(persistedAuth: PersistedAuthType) {
+			runtimeState = {
+				status: 'signed-in',
+				persistedAuth,
+				networkAccess: 'unverified',
+			};
+			publishState();
+		},
+		installVerified(persistedAuth: PersistedAuthType) {
+			runtimeState = {
+				status: 'signed-in',
+				persistedAuth,
+				networkAccess: 'verified',
+			};
+			publishState();
+		},
+		pauseNetworkAuth() {
+			if (runtimeState.status === 'signed-out') return;
+			runtimeState = {
+				...runtimeState,
+				networkAccess: 'paused',
+			};
+			publishState();
+		},
+		async write(value: PersistedAuthType | null) {
+			await write(value);
+		},
+		async clear() {
+			runtimeState = { status: 'signed-out' };
+			publishState();
+			await write(null);
+		},
+		dispose() {
+			stateChangeListeners.clear();
+		},
 	};
 }
 

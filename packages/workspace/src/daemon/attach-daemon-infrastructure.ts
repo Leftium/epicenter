@@ -3,10 +3,14 @@
  *
  * `attachDaemonInfrastructure(ydoc, opts)` is the recipe every config-routed
  * daemon extension needs: persist the Y.Doc update log to disk under
- * `yjsPath(projectDir, guid)`, join the room at
+ * `yjsPath(projectDir, guid)`, join the compatibility room at
  * `roomWsUrl(apiUrl, guid)`, and own the ordered async dispose
  * (destroy first so writes flush before sockets close, then await both
  * `whenDisposed` promises).
+ *
+ * Daemon routes remain on compatibility rooms until each route has an
+ * explicit Cloud Workspace appId/docId mapping and machine auth can resolve
+ * the default Cloud Workspace through `/api/workspaces`.
  *
  * The helper takes the ydoc and the daemon ctx capabilities directly so the
  * caller stays explicit about its `actions` choice: app workspaces with

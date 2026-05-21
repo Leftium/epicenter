@@ -51,9 +51,8 @@ export type RunRequest = typeof RunRequest.infer;
  *
  * `installationId` is the install-stable, client-claimed identity and the
  * address used by `collab.dispatch({ to })`. There is no per-socket
- * `connectionId` or server-stamped `subject` on the wire: the relay routes
- * by `installationId` only, and every connection in a subject-scoped DO
- * shares the same subject by construction.
+ * `connectionId` or server-stamped identity on the wire. The relay routes by
+ * `installationId` inside the already authorized sync room.
  */
 export const PeerSnapshot = type({
 	route: 'string',

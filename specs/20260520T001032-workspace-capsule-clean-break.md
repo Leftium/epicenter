@@ -3,6 +3,8 @@
 **Date**: 2026-05-20
 **Status**: Worth committing
 
+Revision note, 2026-05-20: `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md` supersedes this spec for Cloud product naming. The capsule pressure test still applies, but the Cloud data capsule is now App Instance, not the top-level Cloud Workspace. Read this spec as the local and portability argument for why there must be a smaller app data boundary below the Cloud Workspace.
+
 Current sync-room decision: keep subject-scoped `/rooms/:room` for now. Do not add org-scoped rooms. Do not move to workspace-scoped Room names until the host has real workspace access checks. When that future route exists, the host builds the Room Durable Object name after authorization.
 
 ## One Sentence

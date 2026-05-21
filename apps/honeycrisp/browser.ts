@@ -19,21 +19,28 @@ import {
 	attachRichText,
 	createDisposableCache,
 	DateTimeString,
+	type DefaultCloudWorkspaceAuth,
 	type LocalOwner,
 	type OpenWebSocket,
 	onLocalUpdate,
-	openCollaboration,
-	roomWsUrl,
+	openDefaultWorkspaceAppDocCollaboration,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
+import {
+	HONEYCRISP_CLOUD_APP_ID,
+	HONEYCRISP_ROOT_DOC_ID,
+	honeycrispNoteBodyDocId,
+} from './sync-docs';
 
 export function openHoneycrispBrowser({
 	owner,
 	installationId,
+	auth,
 	openWebSocket,
 }: {
 	owner: LocalOwner;
 	installationId: string;
+	auth: DefaultCloudWorkspaceAuth;
 	openWebSocket?: OpenWebSocket;
 }) {
 	const workspace = openHoneycrispWorkspace(owner.attachEncryption);
@@ -48,12 +55,11 @@ export function openHoneycrispBrowser({
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);
-		// Each rich-text body is its own Y.Doc (its own sync room keyed by the
-		// body guid), so opening a per-body WebSocket here is intentional:
-		// the server multiplexes by room, not by client. Tear-down lives in
-		// the cache's `Symbol.dispose`.
-		const childSync = openCollaboration(ydoc, {
-			url: roomWsUrl(APP_URLS.API, ydoc.guid),
+		const childSync = openDefaultWorkspaceAppDocCollaboration(ydoc, {
+			auth,
+			apiUrl: APP_URLS.API,
+			appId: HONEYCRISP_CLOUD_APP_ID,
+			docId: honeycrispNoteBodyDocId(noteId),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
 			installationId,
@@ -82,8 +88,11 @@ export function openHoneycrispBrowser({
 		};
 	});
 
-	const collaboration = openCollaboration(rootYdoc, {
-		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
+	const collaboration = openDefaultWorkspaceAppDocCollaboration(rootYdoc, {
+		auth,
+		apiUrl: APP_URLS.API,
+		appId: HONEYCRISP_CLOUD_APP_ID,
+		docId: HONEYCRISP_ROOT_DOC_ID,
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		installationId,

@@ -18,22 +18,29 @@ import {
 	attachRichText,
 	createDisposableCache,
 	DateTimeString,
+	type DefaultCloudWorkspaceAuth,
 	type LocalOwner,
 	type OpenWebSocket,
 	onLocalUpdate,
-	openCollaboration,
-	roomWsUrl,
+	openDefaultWorkspaceAppDocCollaboration,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
+import {
+	FUJI_CLOUD_APP_ID,
+	FUJI_ROOT_DOC_ID,
+	fujiEntryContentDocId,
+} from './sync-docs';
 import { type EntryId, openFujiWorkspace } from './workspace';
 
 export function openFujiBrowser({
 	owner,
 	installationId,
+	auth,
 	openWebSocket,
 }: {
 	owner: LocalOwner;
 	installationId: string;
+	auth: DefaultCloudWorkspaceAuth;
 	openWebSocket?: OpenWebSocket;
 }) {
 	const workspace = openFujiWorkspace(owner.attachEncryption);
@@ -48,12 +55,11 @@ export function openFujiBrowser({
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);
-		// Each rich-text body is its own Y.Doc (its own sync room keyed by the
-		// content guid), so opening a per-body WebSocket here is intentional:
-		// the server multiplexes by room, not by client. Tear-down lives in
-		// the cache's `Symbol.dispose`.
-		const childSync = openCollaboration(ydoc, {
-			url: roomWsUrl(APP_URLS.API, ydoc.guid),
+		const childSync = openDefaultWorkspaceAppDocCollaboration(ydoc, {
+			auth,
+			apiUrl: APP_URLS.API,
+			appId: FUJI_CLOUD_APP_ID,
+			docId: fujiEntryContentDocId(entryId),
 			waitFor: childIdb.whenLoaded,
 			openWebSocket,
 			installationId,
@@ -82,8 +88,11 @@ export function openFujiBrowser({
 		};
 	});
 
-	const collaboration = openCollaboration(rootYdoc, {
-		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
+	const collaboration = openDefaultWorkspaceAppDocCollaboration(rootYdoc, {
+		auth,
+		apiUrl: APP_URLS.API,
+		appId: FUJI_CLOUD_APP_ID,
+		docId: FUJI_ROOT_DOC_ID,
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		installationId,

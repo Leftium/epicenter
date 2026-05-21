@@ -35,7 +35,7 @@ export function openTabManagerBrowser({
 	const actions = createTabManagerActions({
 		tables,
 		batch,
-		deviceId: Promise.resolve(installationId),
+		deviceId: installationId,
 	});
 
 	return {

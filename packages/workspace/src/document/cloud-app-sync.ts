@@ -116,7 +116,7 @@ export function openCloudAppSync({
 		): Collaboration<TActions> {
 			const docId = config.docId ?? ydoc.guid;
 
-			const handle = attachDeferredCollaboration<TActions>(ydoc, {
+			const handle = openDeferredCollaboration<TActions>(ydoc, {
 				waitFor: config.waitFor,
 				openWebSocket: auth.openWebSocket,
 				installationId,
@@ -155,7 +155,7 @@ export function openCloudAppSync({
  * - `dispatch()` resolves to `DispatchError.NetworkFailed` while detached.
  * - Y.Doc destroy cascades into both the deferred handle and the live one.
  */
-function attachDeferredCollaboration<TActions extends ActionRegistry>(
+function openDeferredCollaboration<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	{
 		resolveUrl,

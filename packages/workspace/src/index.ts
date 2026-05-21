@@ -189,8 +189,8 @@ export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-// Transport URL builders (`roomWsUrl`, `websocketUrl`, `workspaceAppDocWsUrl`)
-// are intentionally NOT re-exported. `/rooms/:room` is a daemon-only sync
+// Transport URL builders (`roomWsUrl`, `workspaceAppDocWsUrl`) are
+// intentionally NOT re-exported. `/rooms/:room` is a daemon-only sync
 // surface; the workspace/app/doc routing is owned by `openCloudAppSync`.
 // Daemon code and the sync factory import from `./document/transport.js`
 // directly so apps cannot open a parallel sync surface that bypasses

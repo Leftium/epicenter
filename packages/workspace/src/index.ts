@@ -199,8 +199,12 @@ export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-export {
-	roomWsUrl,
-	websocketUrl,
-	workspaceAppDocWsUrl,
-} from './document/transport.js';
+// `roomWsUrl` is intentionally NOT re-exported. The `/rooms/:room` route is a
+// per-user sync surface kept only for the workspace daemon
+// (`packages/workspace/src/daemon/attach-daemon-infrastructure.ts`) and
+// non-Cloud sample apps. Browser callers must use `cloudWorkspaceSync.forApp`
+// so every Cloud doc routes through Workspace membership; importing
+// `roomWsUrl` here would let any app open a parallel sync surface that
+// bypasses that boundary. Daemon code imports from `./document/transport.js`
+// directly.
+export { websocketUrl, workspaceAppDocWsUrl } from './document/transport.js';

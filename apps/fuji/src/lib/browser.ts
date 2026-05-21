@@ -8,9 +8,9 @@
  * workspace opener so daemon-side and browser-side action surfaces stay
  * identical without a second factory call here.
  *
- * Cloud sync is routed through one `cloudWorkspaceSync.forApp(...)` factory
- * per app instance: the root doc and every entry-body child doc share that
- * factory's workspace lookup and auth-state subscription.
+ * Cloud sync is routed through one `openCloudAppSync(...)` factory per app
+ * instance: the root doc and every entry-body child doc share that factory's
+ * workspace lookup and auth-state subscription.
  *
  * The bundle's `wipe()` drops every encrypted IDB database for this owner;
  * `Symbol.dispose` tears down the root + cached child Y.Docs and the cloud
@@ -21,11 +21,11 @@ import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachRichText,
-	cloudWorkspaceSync,
 	createDisposableCache,
 	DateTimeString,
 	type LocalOwner,
 	onLocalUpdate,
+	openCloudAppSync,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { type EntryId, openFujiWorkspace } from './workspace';
@@ -44,10 +44,11 @@ export function openFujiBrowser({
 
 	const idb = owner.attachLocal(rootYdoc);
 
-	const fujiCloud = cloudWorkspaceSync.forApp({
+	const fujiCloud = openCloudAppSync({
 		auth,
 		apiUrl: APP_URLS.API,
 		appId: 'fuji',
+		installationId,
 	});
 
 	const entryContentDocs = createDisposableCache((entryId: EntryId) => {
@@ -62,7 +63,6 @@ export function openFujiBrowser({
 		// ROUTE_ID_PATTERN. One canonical id for both local and cloud.
 		const childSync = fujiCloud.open(ydoc, {
 			waitFor: childIdb.whenLoaded,
-			installationId,
 			actions: {},
 		});
 
@@ -93,7 +93,6 @@ export function openFujiBrowser({
 		// app entry document; rootYdoc.guid is the workspace id, not "root".
 		docId: 'root',
 		waitFor: idb.whenLoaded,
-		installationId,
 		actions: workspace.actions,
 	});
 

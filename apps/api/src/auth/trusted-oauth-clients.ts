@@ -1,3 +1,4 @@
+import type { SchemaClient } from '@better-auth/oauth-provider';
 import {
 	EPICENTER_OAUTH_SCOPES,
 	EPICENTER_TRUSTED_OAUTH_CLIENTS,
@@ -8,11 +9,32 @@ import * as schema from '../db/schema';
 let trustedOAuthClientsSeed: Promise<void> | null = null;
 
 type TrustedOAuthClientInput = {
-	clientId: string;
-	name: string;
-	runtime: (typeof EPICENTER_TRUSTED_OAUTH_CLIENTS)[number]['runtime'];
+	[K in 'clientId' | 'name']-?: NonNullable<SchemaClient[K]>;
+} & {
+	type: Extract<NonNullable<SchemaClient['type']>, 'native' | 'user-agent-based'>;
 	redirectUris: readonly string[];
 };
+
+const TRUSTED_OAUTH_CLIENT_POLICY = {
+	disabled: false,
+	skipConsent: true,
+	tokenEndpointAuthMethod: 'none',
+	grantTypes: ['authorization_code'],
+	responseTypes: ['code'],
+	public: true,
+	requirePKCE: true,
+} satisfies Required<
+	Pick<
+		SchemaClient,
+		| 'disabled'
+		| 'skipConsent'
+		| 'tokenEndpointAuthMethod'
+		| 'grantTypes'
+		| 'responseTypes'
+		| 'public'
+		| 'requirePKCE'
+	>
+>;
 
 /**
  * Project a checked-in trusted client definition into Better Auth's client row.
@@ -29,19 +51,19 @@ export function projectTrustedOAuthClientToRow(
 	return {
 		id: client.clientId,
 		clientId: client.clientId,
-		disabled: false,
-		skipConsent: true,
+		disabled: TRUSTED_OAUTH_CLIENT_POLICY.disabled,
+		skipConsent: TRUSTED_OAUTH_CLIENT_POLICY.skipConsent,
 		scopes: [...EPICENTER_OAUTH_SCOPES],
 		createdAt: now,
 		updatedAt: now,
 		name: client.name,
 		redirectUris: [...client.redirectUris],
-		tokenEndpointAuthMethod: 'none',
-		grantTypes: ['authorization_code'],
-		responseTypes: ['code'],
-		public: true,
-		type: client.runtime === 'native' ? 'native' : 'user-agent-based',
-		requirePKCE: true,
+		tokenEndpointAuthMethod: TRUSTED_OAUTH_CLIENT_POLICY.tokenEndpointAuthMethod,
+		grantTypes: TRUSTED_OAUTH_CLIENT_POLICY.grantTypes,
+		responseTypes: TRUSTED_OAUTH_CLIENT_POLICY.responseTypes,
+		public: TRUSTED_OAUTH_CLIENT_POLICY.public,
+		type: client.type,
+		requirePKCE: TRUSTED_OAUTH_CLIENT_POLICY.requirePKCE,
 	} satisfies typeof schema.oauthClient.$inferInsert;
 }
 

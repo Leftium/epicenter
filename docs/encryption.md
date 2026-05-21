@@ -52,7 +52,7 @@ The highest version becomes the current key for new writes.
 
 ## How keys reach the client
 Keys come through `/api/session`.
-`apps/api/src/app.ts` mounts `GET /api/session` behind `requireUser` (cookie OR bearer); bearer callers are checked for the `workspaces:open` scope inside `resolveRequestOAuthUser`. The handler returns `{ user: { id, email }, localIdentity: { subject, keyring } }`.
+`apps/api/src/app.ts` mounts `GET /api/session` behind cookie-or-bearer authentication. A valid Better Auth cookie session or a valid API-audience bearer token for the user can fetch `{ user: { id, email }, localIdentity: { subject, keyring } }`.
 `@epicenter/auth` calls `/api/session` at sign-in and at cold-boot when online, persists `{ subject, keyring }` as the `localIdentity` section of the cell, and exposes it through `auth.state.localIdentity.keyring` whenever the auth state is not `signed-out`.
 Cold-boot offline keeps the cached `localIdentity` so the workspace can decrypt local Yjs data without a network roundtrip; the bearer is not attached to outbound requests until `/api/session` re-confirms the cell in this runtime.
 The workspace does not hold an independently mutable copy of the keys. `attachEncryption` takes a `keyring` callback and calls it when an encrypted table, KV store, or IndexedDB provider attaches. Each attached store keeps the keyring derived at that attachment boundary. Browser app session modules usually receive a `LocalOwner` from `createSession`; that owner carries the lazy keyring reader:

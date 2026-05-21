@@ -19,6 +19,7 @@
 		"./ai-chat-errors": "./src/ai-chat-errors.ts"
 	},
 	"devDependencies": {
+		"@better-auth/oauth-provider": "catalog:",
 		"@types/node": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:"

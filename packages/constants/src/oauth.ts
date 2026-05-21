@@ -1,3 +1,32 @@
+import type { SchemaClient } from '@better-auth/oauth-provider';
+
+/**
+ * Better Auth calls server-side confidential clients `web`.
+ *
+ * Epicenter's checked-in trusted clients are public PKCE clients:
+ * `tokenEndpointAuthMethod: "none"`, `public: true`, and no client secret.
+ * For that policy, Better Auth only accepts `native` and `user-agent-based`.
+ */
+type TrustedPublicOAuthClientType = Extract<
+	NonNullable<SchemaClient['type']>,
+	'native' | 'user-agent-based'
+>;
+
+/**
+ * Checked-in Better Auth client registration for first-party public apps.
+ *
+ * Keep this shape close to Better Auth's `SchemaClient`, but do not mirror the
+ * whole type. The registry only owns stable app identity and redirect URIs;
+ * the API seed layer owns the repeated public-client policy such as PKCE,
+ * skipped consent, scopes, and `tokenEndpointAuthMethod: "none"`.
+ */
+type TrustedPublicOAuthClientDefinition = {
+	clientId: NonNullable<SchemaClient['clientId']>;
+	name: NonNullable<SchemaClient['name']>;
+	type: TrustedPublicOAuthClientType;
+	redirectUris: readonly string[];
+};
+
 /**
  * OAuth public client id for `epicenter auth login`.
  *
@@ -20,14 +49,11 @@ export const EPICENTER_OPENSIDIAN_LOCAL_OAUTH_CLIENT_ID =
 export const EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID = 'epicenter-tab-manager';
 export const EPICENTER_ZHONGWEN_OAUTH_CLIENT_ID = 'epicenter-zhongwen';
 
-export const EPICENTER_WORKSPACES_OPEN_SCOPE = 'workspaces:open';
-
 export const EPICENTER_OAUTH_SCOPES = [
 	'openid',
 	'profile',
 	'email',
 	'offline_access',
-	EPICENTER_WORKSPACES_OPEN_SCOPE,
 ] as const;
 
 export const EPICENTER_OAUTH_SCOPE = EPICENTER_OAUTH_SCOPES.join(' ');
@@ -36,7 +62,7 @@ export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 	{
 		clientId: EPICENTER_DASHBOARD_OAUTH_CLIENT_ID,
 		name: 'Epicenter Dashboard',
-		runtime: 'browser',
+		type: 'user-agent-based',
 		redirectUris: [
 			'http://localhost:5178/dashboard/auth/callback',
 			'https://api.epicenter.so/dashboard/auth/callback',
@@ -45,7 +71,7 @@ export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 	{
 		clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
 		name: 'Fuji',
-		runtime: 'browser',
+		type: 'user-agent-based',
 		redirectUris: [
 			'http://localhost:5174/auth/callback',
 			'https://fuji.epicenter.so/auth/callback',
@@ -54,7 +80,7 @@ export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 	{
 		clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 		name: 'Honeycrisp',
-		runtime: 'browser',
+		type: 'user-agent-based',
 		redirectUris: [
 			'http://localhost:5175/auth/callback',
 			'https://honeycrisp.epicenter.so/auth/callback',
@@ -63,7 +89,7 @@ export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 	{
 		clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
 		name: 'Opensidian',
-		runtime: 'browser',
+		type: 'user-agent-based',
 		redirectUris: [
 			'http://localhost:5176/auth/callback',
 			'https://opensidian.com/auth/callback',
@@ -73,13 +99,13 @@ export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 	{
 		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 		name: 'Tab Manager extension',
-		runtime: 'extension',
+		type: 'user-agent-based',
 		redirectUris: ['https://mkbnicfhpacdofmoocppnjjmdfmkkgda.chromiumapp.org/'],
 	},
 	{
 		clientId: EPICENTER_ZHONGWEN_OAUTH_CLIENT_ID,
 		name: 'Zhongwen',
-		runtime: 'browser',
+		type: 'user-agent-based',
 		redirectUris: [
 			'http://localhost:8888/auth/callback',
 			'https://zhongwen.epicenter.so/auth/callback',
@@ -88,7 +114,7 @@ export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 	{
 		clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
 		name: 'Epicenter CLI',
-		runtime: 'native',
+		type: 'native',
 		redirectUris: ['https://api.epicenter.so/auth/cli-callback'],
 	},
-] as const;
+] as const satisfies readonly TrustedPublicOAuthClientDefinition[];

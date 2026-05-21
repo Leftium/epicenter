@@ -6,11 +6,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
 import * as schema from '../db/schema';
-import {
-	hasWorkspaceOpenScope,
-	OAuthError,
-	WORKSPACES_OPEN_SCOPE,
-} from './oauth-error.js';
+import { OAuthError } from './oauth-error.js';
 import { createOAuthIssuerURL, createOAuthJwksURL } from './oauth-metadata.js';
 
 type VerifyOAuthAccessToken = ReturnType<
@@ -52,7 +48,11 @@ export function parseBearer(value: string | null): string | null {
  * Cheap resolver for the protected-resource boundary (`/ai/*`,
  * `/rooms/*`, `/api/billing/*`, `/api/assets/*`).
  * Skips subject keyring derivation; only the calling user is needed once
- * the scope is proven.
+ * the token proves issuer, audience, signature, expiration, and subject.
+ *
+ * Add custom OAuth scopes back only when two valid clients need different
+ * API powers. Until then, the API audience is the bearer boundary and product
+ * middleware owns route-specific policy.
  */
 export async function resolveBearerUser(
 	deps: ResolverDeps,
@@ -68,10 +68,6 @@ export async function resolveBearerUser(
 		.catch(() => null);
 	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
 	if (!userId) return OAuthError.InvalidToken();
-
-	if (!hasWorkspaceOpenScope(payload)) {
-		return OAuthError.InsufficientScope({ scope: WORKSPACES_OPEN_SCOPE });
-	}
 
 	const user = await deps.findUserById(userId);
 	if (!user) return OAuthError.InvalidToken();

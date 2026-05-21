@@ -577,6 +577,7 @@
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
+        "@better-auth/oauth-provider": "catalog:",
         "@types/node": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",

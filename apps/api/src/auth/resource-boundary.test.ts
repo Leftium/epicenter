@@ -51,7 +51,7 @@ test('parseBearer returns null for missing, empty, or non-bearer input', () => {
 // resolveBearerUser
 // ---------------------------------------------------------------------------
 
-test('resolveBearerUser resolves a valid scoped token to the calling user', async () => {
+test('resolveBearerUser resolves a valid API-audience token to the calling user', async () => {
 	const setup = createBoundaryTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
@@ -72,7 +72,7 @@ test('resolveBearerUser resolves a valid scoped token to the calling user', asyn
 	}
 });
 
-test('resolveBearerUser rejects tokens missing the workspaces:open scope', async () => {
+test('resolveBearerUser accepts a valid API-audience token without a custom resource scope', async () => {
 	const setup = createBoundaryTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
@@ -81,15 +81,14 @@ test('resolveBearerUser rejects tokens missing the workspaces:open scope', async
 			name: 'Boundary Test',
 			scope: 'openid profile email offline_access',
 		});
-		const error = expectErr(
+		const data = expectOk(
 			await resolveBearerUser(commonResolverDeps(setup, accessToken)),
 		);
 
-		expect(error.name).toBe('InsufficientScope');
-		if (error.name !== 'InsufficientScope') {
-			throw new Error('Expected InsufficientScope');
-		}
-		expect(error.scope).toBe('workspaces:open');
+		expect(data).toEqual({
+			id: expect.any(String),
+			email: 'boundary-test@example.com',
+		});
 	} finally {
 		setup.server.stop(true);
 	}

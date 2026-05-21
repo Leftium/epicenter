@@ -24,7 +24,7 @@ import { projectTrustedOAuthClientToRow } from './trusted-oauth-clients.js';
 const trustedClientDefinition = {
 	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	name: 'Fuji',
-	runtime: 'browser',
+	type: 'user-agent-based',
 	redirectUris: [
 		'http://localhost:5174/auth/callback',
 		'https://fuji.epicenter.so/auth/callback',
@@ -37,7 +37,7 @@ test('trusted OAuth clients project to public PKCE client rows', () => {
 	const row = projectTrustedOAuthClientToRow({
 		clientId: 'trusted-client-1',
 		name: 'Trusted Client',
-		runtime: 'browser',
+		type: 'user-agent-based',
 		redirectUris: [redirectUri],
 	});
 
@@ -134,7 +134,7 @@ function createTrustedClientTestAuth() {
 		...projectTrustedOAuthClientToRow({
 			clientId: 'registered-client-1',
 			name: 'Registered Client',
-			runtime: 'browser',
+			type: 'user-agent-based',
 			redirectUris: [redirectUri],
 		}),
 		skipConsent: false,

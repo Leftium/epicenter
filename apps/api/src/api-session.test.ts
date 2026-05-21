@@ -4,7 +4,7 @@
  * The session projection endpoint is the single Epicenter session surface
  * clients fetch at sign-in and at cold-boot when online. It returns
  * { user: AuthUser, localIdentity: SubjectIdentity }; unauthenticated
- * or under-scoped callers get RFC 6750-shaped errors via
+ * bearer callers get RFC 6750-shaped errors via
  * createOAuthUnauthorizedResourceResponse.
  *
  * Built on a minimal memory-adapter Better Auth instance plus the pure bearer
@@ -36,7 +36,7 @@ const keyring: SubjectKeyring = [
 	},
 ];
 
-test('GET /api/session returns user + local workspace identity for a valid scoped bearer', async () => {
+test('GET /api/session returns user + local workspace identity for a valid bearer', async () => {
 	const setup = createApiSessionTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
@@ -78,7 +78,7 @@ test('GET /api/session returns 401 without a bearer', async () => {
 	}
 });
 
-test('GET /api/session returns 403 when the token lacks workspaces:open scope', async () => {
+test('GET /api/session accepts a valid API-audience token without a custom resource scope', async () => {
 	const setup = createApiSessionTestServer();
 	try {
 		const { accessToken } = await issueOAuthTokens(setup, {
@@ -91,13 +91,14 @@ test('GET /api/session returns 403 when the token lacks workspaces:open scope', 
 			headers: { authorization: `Bearer ${accessToken}` },
 		});
 
-		expect(response.status).toBe(403);
-		expect(response.headers.get('WWW-Authenticate')).toBe(
-			'Bearer error="insufficient_scope" scope="workspaces:open"',
-		);
-		const body = (await response.json()) as { name: string; scope: string };
-		expect(body.name).toBe('InsufficientScope');
-		expect(body.scope).toBe('workspaces:open');
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as {
+			user: { id: string; email: string };
+			localIdentity: { subject: string; keyring: SubjectKeyring };
+		};
+		expect(body.user.email).toBe('api-session-test@example.com');
+		expect(body.localIdentity.subject).toBe(body.user.id);
+		expect(body.localIdentity.keyring).toEqual(keyring);
 	} finally {
 		setup.server.stop(true);
 	}

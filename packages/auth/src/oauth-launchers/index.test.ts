@@ -11,6 +11,7 @@
  */
 
 import { expect, test } from 'bun:test';
+import { EPICENTER_OAUTH_SCOPE } from '@epicenter/constants/oauth';
 import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import type { AuthFetch } from '../create-oauth-app-auth.js';
 import { createOAuthClient, type OAuthTemporaryStorage } from './index.js';
@@ -36,7 +37,7 @@ function createFetch({
 		refresh_token: 'refresh-token',
 		expires_in: 900,
 		token_type: 'Bearer',
-		scope: 'openid profile email offline_access workspaces:open',
+		scope: EPICENTER_OAUTH_SCOPE,
 	},
 	onTokenBody,
 }: {
@@ -80,9 +81,7 @@ test('createAuthorizationUrl stores verifier state and returns PKCE URL', async 
 
 	expect(url.searchParams.get('response_type')).toBe('code');
 	expect(url.searchParams.get('client_id')).toBe('client-1');
-	expect(url.searchParams.get('scope')).toBe(
-		'openid profile email offline_access workspaces:open',
-	);
+	expect(url.searchParams.get('scope')).toBe(EPICENTER_OAUTH_SCOPE);
 	expect(url.searchParams.get('resource')).toBe('http://auth.test');
 	expect(url.searchParams.get('code_challenge_method')).toBe('S256');
 	expect(url.searchParams.get('code_challenge')).toBeTruthy();

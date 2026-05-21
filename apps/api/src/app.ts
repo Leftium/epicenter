@@ -204,10 +204,10 @@ const app = factory.createApp();
 /**
  * Cookie-or-bearer authentication. Resolves `c.var.user` from a Better Auth
  * session cookie if one is present; otherwise falls back to an OAuth bearer
- * (which carries its own `workspaces:open` scope check). Use this on routes
- * served to both first-party browser callers (portal, dashboard) and external
- * OAuth clients (CLI, Tauri, extension). For routes that are external-clients
- * only (`/ai/*`, `/rooms/*`), use {@link requireOAuthUser} below.
+ * for the API audience. Use this on routes served to both first-party browser
+ * callers (portal, dashboard) and external OAuth clients (CLI, Tauri,
+ * extension). For routes that are external-clients only (`/ai/*`, `/rooms/*`),
+ * use {@link requireOAuthUser} below.
  *
  * Ambiguous requests (both credentials present) never reach this middleware;
  * {@link singleCredential} rejects them at the edge.
@@ -315,9 +315,9 @@ app.get(
 // localIdentity cell.
 //
 // Accepts cookie OR bearer via {@link requireCookieOrBearerUser}. Bearer
-// callers go through the `workspaces:open` scope check inside
-// `resolveRequestOAuthUser`; cookie callers implicitly satisfy it because the
-// session was minted by Better Auth and is trusted within the parent domain.
+// callers prove issuer, audience, signature, expiration, subject, and user
+// existence inside `resolveRequestOAuthUser`; cookie callers rely on the
+// Better Auth session minted within the parent domain.
 app.get(
 	'/api/session',
 	describeRoute({

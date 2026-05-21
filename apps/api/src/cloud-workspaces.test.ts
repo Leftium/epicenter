@@ -39,6 +39,24 @@ test('personal workspace creation retries converge on one workspace', async () =
 	]);
 });
 
+test('personal workspace provisioning creates owner membership before listing', async () => {
+	const store = createMemoryCloudWorkspaceStore();
+	const user = { id: 'user_1' };
+
+	const defaultWorkspaceId = await createPersonalCloudWorkspace(store, user);
+	const result = await listCloudWorkspaces(store, user);
+
+	expect(result.defaultWorkspaceId).toBe(defaultWorkspaceId);
+	expect(result.workspaces).toEqual([
+		{
+			id: defaultWorkspaceId,
+			name: 'Personal Workspace',
+			role: 'owner',
+			isDefault: true,
+		},
+	]);
+});
+
 test('workspace list returns only organizations where the user is a member', async () => {
 	const store = createMemoryCloudWorkspaceStore({
 		organizations: [
@@ -150,14 +168,6 @@ function createMemoryCloudWorkspaceStore(seed?: {
 	} = {
 		organizations,
 		members,
-		async findWorkspaceMember({ userId, workspaceId }) {
-			return (
-				members.find(
-					(member) =>
-						member.userId === userId && member.workspaceId === workspaceId,
-				) ?? null
-			);
-		},
 		async createPersonalWorkspace({ id, name }) {
 			if (organizations.some((workspace) => workspace.id === id)) return;
 			organizations.push({ id, name });

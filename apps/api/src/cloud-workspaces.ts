@@ -1,14 +1,10 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from './db/schema';
 
 type Db = NodePgDatabase<typeof schema>;
 
 type CloudWorkspaceStore = {
-	findWorkspaceMember(params: {
-		userId: string;
-		workspaceId: string;
-	}): Promise<{ id: string } | null>;
 	createPersonalWorkspace(params: {
 		id: string;
 		name: string;
@@ -41,19 +37,6 @@ const PERSONAL_WORKSPACE_NAME = 'Personal Workspace';
  */
 export function createDrizzleCloudWorkspaceStore(db: Db): CloudWorkspaceStore {
 	return {
-		async findWorkspaceMember({ userId, workspaceId }) {
-			const [row] = await db
-				.select({ id: schema.member.id })
-				.from(schema.member)
-				.where(
-					and(
-						eq(schema.member.userId, userId),
-						eq(schema.member.organizationId, workspaceId),
-					),
-				)
-				.limit(1);
-			return row ?? null;
-		},
 		async createPersonalWorkspace({ id, name, slug }) {
 			await db
 				.insert(schema.organization)

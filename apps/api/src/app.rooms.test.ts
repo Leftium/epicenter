@@ -12,6 +12,7 @@
 
 import { expect, mock, test } from 'bun:test';
 import { OAuthError } from './auth/oauth-error.js';
+import { projectTrustedOAuthClientToRow } from './auth/trusted-oauth-clients.js';
 
 let createSyncEngineCalls = 0;
 let durableObjectRoomFactoryCalls = 0;
@@ -62,6 +63,7 @@ mock.module('./auth/resource-boundary', () => ({
 
 mock.module('./auth/trusted-oauth-clients', () => ({
 	ensureTrustedOAuthClients: async () => {},
+	projectTrustedOAuthClientToRow,
 }));
 
 mock.module('./room-gateway', () => ({

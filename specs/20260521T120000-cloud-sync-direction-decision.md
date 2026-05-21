@@ -1,13 +1,15 @@
 # Cloud Sync Direction Decision
 
 **Date**: 2026-05-21
-**Status**: Draft
+**Status**: Retrospective
 **Author**: AI-assisted
 **Branch**: codex/daemon-route-startup-cleanup
 
+> **Retrospective:** this is a retrospective record of decisions already merged on this branch; the option comparison below is presented for posterity, not as a pending decision. The Cloud Workspace App Namespace direction (Option C) shipped: `/workspaces/:workspaceId/apps/:appId/docs/:docId` with internal room name `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}`, `workspaceId` backed by Better Auth `organization.id`, no `app_instance` table, and `/rooms/:room` retained only for non-Cloud personal-room and daemon compatibility. The canonical reference for the landed shape is `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md`. Read what follows as the rationale that was used to justify those commits, not as an open choice.
+
 ## Overview
 
-This note pressure-tests the recent move from subject-scoped rooms to Cloud Workspace app docs. It compares the old user-room model, a pure user namespace, the current Workspace app namespace, and a heavier App Instance model.
+This note records the rationale for the move from subject-scoped rooms to Cloud Workspace app docs. It compares the old user-room model, a pure user namespace, the Workspace app namespace that landed, and a heavier App Instance model that was deferred.
 
 ## One Sentence
 
@@ -61,7 +63,7 @@ The current code now has this shape:
 
 ## Direct Judgment
 
-The current direction is better than the old rooms-as-product-boundary direction. Do not revert to `/rooms/:room` as the main Cloud API.
+The landed direction is better than the old rooms-as-product-boundary direction. The decision to not revert to `/rooms/:room` as the main Cloud API stands.
 
 The old model was more generic, but it was generic at the wrong layer. A room is the right sync primitive and the wrong product primitive. It can replicate one named Y.Doc, but it cannot answer the product questions that Cloud must answer:
 
@@ -75,7 +77,7 @@ What route should a support, billing, export, or deletion policy start from?
 
 A user-only namespace is easier to understand for solo sync, but it collapses as soon as shared Cloud data exists. It makes sharing an exception instead of a first-class path.
 
-The current model is good if the words stay disciplined:
+The model that landed is good if the words stay disciplined:
 
 ```txt
 Auth user:
@@ -173,7 +175,7 @@ internal room:
   v1:workspace:{workspaceId}:app:{appId}:doc:{docId}
 ```
 
-This is the current direction. It makes Cloud authorization explicit without making Cloud understand app records.
+This is the direction that shipped. It makes Cloud authorization explicit without making Cloud understand app records.
 
 ```txt
 Workspace:
@@ -191,7 +193,7 @@ Room:
 
 This keeps the useful part of generic rooms while moving product checks to the edge. The route has enough information to check membership and build an opaque room name. The sync engine still sees only bytes and a room name.
 
-Verdict: recommended phase 1 direction.
+Verdict: chosen phase 1 direction (already merged).
 
 ### Option D: Workspace Plus App Instance Rows
 
@@ -222,9 +224,9 @@ Earned by:
 
 Verdict: defer. It is the right future escape hatch, not the right phase 1 default.
 
-## Recommendation
+## Recommendation (Retrospective)
 
-Keep the current Workspace App Namespace direction, but revise the product language so the design does not pretend Workspace and Organization are separate product nouns.
+The Workspace App Namespace direction was kept, and the product language was revised so the design no longer treats Workspace and Organization as separate product nouns.
 
 In phase 1:
 

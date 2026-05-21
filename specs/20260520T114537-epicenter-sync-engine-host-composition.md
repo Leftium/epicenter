@@ -1,7 +1,13 @@
 # Epicenter Sync Engine Host Composition
 
+> **Status:** SUPERSEDED by `20260520T190000-cloud-workspace-app-instance-clean-break.md`
+>
+> This spec describes a direction that did not ship. The Cloud sync route shape that landed is `/workspaces/:workspaceId/apps/:appId/docs/:docId` with the App Namespace model (no `app_instance` table). The body below is preserved as historical context only and should not be used as a current-state reference.
+>
+> The host-composition boundary that this spec introduces (host owns auth and `roomName` construction; the engine receives an opaque `roomName`) is the part that T190000 builds on. What is now stale: the examples that show Epicenter Cloud building `subject:{user.id}:rooms:{room}` for `/rooms/:room`, and the claim that workspace-scoped room names are still a future migration target. They have shipped as `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}` behind `/workspaces/:workspaceId/apps/:appId/docs/:docId`.
+
 **Date**: 2026-05-20
-**Status**: In Progress
+**Status**: Superseded (host-composition boundary retained by T190000; concrete Cloud examples below are stale)
 **Author**: AI-assisted
 
 ## Overview
@@ -25,6 +31,8 @@ Move the boundary down one layer: compose routes around an engine, not hooks int
 ```
 
 ## Current State
+
+> [SUPERSEDED] This "Current State" snapshot pre-dates T190000. Today, `apps/api/src/app.ts` resolves `/workspaces/:workspaceId/apps/:appId/docs/:docId`, checks Better Auth membership, and builds `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}` before calling the sync engine. The subject-scoped `/rooms/:room` handler still exists, but only for non-Cloud personal-room and daemon compatibility, not as the main Cloud sync surface.
 
 The current Cloudflare API already has the rough shape, but the boundary is not named as a reusable engine yet.
 
@@ -242,6 +250,8 @@ focused on HTTP sync response construction and snapshot response construction.
 
 ### Epicenter Cloud
 
+> [SUPERSEDED] The Epicenter Cloud example below shows the pre-T190000 subject-scoped composition. The current Cloud composition mounts `/workspaces/:workspaceId/apps/:appId/docs/:docId`, runs the Better Auth organization membership check in the resolver, and builds `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}`. The host-composition boundary (host builds `roomName`, engine receives it opaquely) is the part that carries forward; the route path and room-name format below are stale.
+
 ```ts
 const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
 const sync = createSyncEngine(rooms);
@@ -309,6 +319,8 @@ app.get('/rooms/:room', async (c) => {
 The enterprise app keeps its IAM, database, audit policy, and SSO model. Epicenter sync does not import those concepts.
 
 ## Room Name Scope
+
+> [SUPERSEDED] The "Current Epicenter Cloud should keep personal owner-scoped rooms" recommendation below was overtaken by T190000. The current Cloud room name is `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}`, and the workspace-scoped room name (`workspace:{workspaceId}:docs:{docId}`) shown as a future migration target later in this section has shipped, in App Namespace form. Treat the section below as historical justification for the host-builds-`roomName` boundary, not as current naming guidance.
 
 `roomName` is the sync address after the host has already made the access decision. The sync engine treats it as opaque.
 

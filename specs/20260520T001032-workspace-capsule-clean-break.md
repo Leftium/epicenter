@@ -1,11 +1,19 @@
 # Workspace Capsule Clean Break
 
+> **Status:** SUPERSEDED by `20260520T190000-cloud-workspace-app-instance-clean-break.md`
+>
+> This spec describes a direction that did not ship. The Cloud sync route shape that landed is `/workspaces/:workspaceId/apps/:appId/docs/:docId` with the App Namespace model (no `app_instance` table). The body below is preserved as historical context only and should not be used as a current-state reference.
+>
+> Specifically: the canonical model uses App Namespace (`workspaceId + appId`) as the workspace-local sync namespace, not App Instance. `workspaceId` is Better Auth `organization.id` in phase 1, no `cloud_workspace` row is added, and `/rooms/:room` is no longer the current Cloud sync path (it remains only for non-Cloud personal-room and daemon compatibility). The capsule pressure test below still illustrates why a smaller-than-Workspace app data boundary must exist, but read it as historical motivation, not current implementation guidance.
+
 **Date**: 2026-05-20
-**Status**: Worth committing
+**Status**: Superseded (historical)
 
-Revision note, 2026-05-20: `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md` supersedes this spec for Cloud product naming. The capsule pressure test still applies, but the Cloud data capsule is now App Instance, not the top-level Cloud Workspace. Read this spec as the local and portability argument for why there must be a smaller app data boundary below the Cloud Workspace.
+Revision note, 2026-05-20: `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md` supersedes this spec for Cloud product naming. The capsule pressure test still applies, but the Cloud data capsule is now App Namespace (`workspaceId + appId`), not an `app_instance` row and not the top-level Cloud Workspace. Read this spec as the local and portability argument for why there must be a smaller app data boundary below the Cloud Workspace.
 
-Current sync-room decision: keep subject-scoped `/rooms/:room` for now. Do not add org-scoped rooms. Do not move to workspace-scoped Room names until the host has real workspace access checks. When that future route exists, the host builds the Room Durable Object name after authorization.
+> [SUPERSEDED] The "keep subject-scoped `/rooms/:room` for now" stance below was overtaken by T190000. The current Cloud sync route is `/workspaces/:workspaceId/apps/:appId/docs/:docId`; `/rooms/:room` survives only as non-Cloud personal-room and daemon compatibility, not as the active Cloud product route.
+
+Current sync-room decision (historical, no longer accurate): keep subject-scoped `/rooms/:room` for now. Do not add org-scoped rooms. Do not move to workspace-scoped Room names until the host has real workspace access checks. When that future route exists, the host builds the Room Durable Object name after authorization.
 
 ## One Sentence
 
@@ -44,6 +52,8 @@ Yjs doc id
 Do not explain the product with `AppInstallation`, `SyncUnit`, `SyncStream`, `Replica`, `RoomActor`, or `app_doc`. Those names make the implementation feel larger than the product. If a future registry exists, describe it as an index or inventory, not as the thing that makes app data real.
 
 ## Current Evidence
+
+> [SUPERSEDED] This section described pre-T190000 state. Current hosted Cloud sync is no longer subject-scoped: the active route is `/workspaces/:workspaceId/apps/:appId/docs/:docId` with internal room name `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}`. The subject-scoped DO name shown below remains only in the `/rooms/:room` compatibility handler.
 
 Current hosted sync is subject-scoped. `/api/session` returns the Better Auth user id as the local identity subject:
 
@@ -808,6 +818,8 @@ control.sqlite
 
 ## Route Shape
 
+> [SUPERSEDED] T190000 replaced the proposed `/workspaces/:workspaceId/docs/:docId` shape with `/workspaces/:workspaceId/apps/:appId/docs/:docId`. The App Namespace segment (`:appId`) is part of the route, and the internal room name is `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}`. The "future" route described below has shipped, but in the App Namespace form, not the bare workspace+doc form.
+
 Future clean hosted route:
 
 ```txt
@@ -833,6 +845,8 @@ Future Room DO name:
 ```txt
 workspace:{workspaceId}:docs:{docId}
 ```
+
+> [SUPERSEDED] The room name that actually shipped is `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}`. The `v1:` version prefix and the `:app:{appId}` segment are part of the live contract per T190000.
 
 This route proves the caller may sync docs inside the Workspace. It does not prove the server knows where `docId` sits in the app graph. The host owns this name construction because authorization and deployment routing are host responsibilities, not app, auth-package, or client responsibilities.
 

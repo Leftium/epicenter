@@ -56,6 +56,26 @@ const AuthStateChangeError = defineErrors({
 	}),
 });
 
+type NetworkAccess = 'unverified' | 'verified' | 'paused';
+
+type RuntimeAuthState =
+	| { status: 'signed-out' }
+	| {
+			status: 'signed-in';
+			cell: PersistedAuthType;
+			networkAccess: NetworkAccess;
+	  };
+
+type RefreshFlight = {
+	cell: PersistedAuthType;
+	promise: Promise<boolean>;
+};
+
+type IdentityVerificationFlight = {
+	cell: PersistedAuthType;
+	promise: Promise<Result<ApiSessionResponse, AuthError>>;
+};
+
 /**
  * Create the app-side auth boundary for browser, extension, and machine clients.
  *
@@ -76,45 +96,34 @@ export function createOAuthAppAuth({
 	now = Date.now,
 	log = createLogger('auth/oauth-app'),
 }: CreateOAuthAppAuthConfig): AuthClient {
-	let persisted = persistedAuthStorage.get();
-	let verifiedPersisted: PersistedAuthType | null = null;
-	let networkAuthPaused = false;
-	let refreshPromise: Promise<boolean> | null = null;
-	let identityPromise: Promise<Result<ApiSessionResponse, AuthError>> | null =
-		null;
+	let runtimeState = runtimeStateFromPersistedAuth(persistedAuthStorage.get());
+	let refreshFlight: RefreshFlight | null = null;
+	let identityVerificationFlight: IdentityVerificationFlight | null = null;
+	let storageWriteQueue: Promise<void> = Promise.resolve();
 
-	let state = deriveState();
+	let state = publicStateFromRuntime(runtimeState);
 	const stateChangeListeners = new Set<(state: AuthState) => void>();
 
-	function deriveState(): AuthState {
-		if (persisted === null) return { status: 'signed-out' };
-		if (networkAuthPaused) {
-			return {
-				status: 'reauth-required',
-				localIdentity: persisted.localIdentity,
-			};
-		}
-		return {
-			status: 'signed-in',
-			localIdentity: persisted.localIdentity,
-		};
+	function currentCell(): PersistedAuthType | null {
+		return runtimeState.status === 'signed-out' ? null : runtimeState.cell;
+	}
+
+	function isNetworkAuthPaused() {
+		return (
+			runtimeState.status === 'signed-in' &&
+			runtimeState.networkAccess === 'paused'
+		);
+	}
+
+	function verifiedNetworkCell(): PersistedAuthType | null {
+		if (runtimeState.status === 'signed-out') return null;
+		if (runtimeState.networkAccess !== 'verified') return null;
+		return runtimeState.cell;
 	}
 
 	function publishState() {
-		const next = deriveState();
-		if (state.status === next.status) {
-			if (state.status === 'signed-out') return;
-			if (
-				next.status !== 'signed-out' &&
-				state.localIdentity.subject === next.localIdentity.subject &&
-				subjectKeyringsEqual(
-					state.localIdentity.keyring,
-					next.localIdentity.keyring,
-				)
-			) {
-				return;
-			}
-		}
+		const next = publicStateFromRuntime(runtimeState);
+		if (authStatesEqual(state, next)) return;
 		state = next;
 		for (const listener of stateChangeListeners) {
 			try {
@@ -125,18 +134,63 @@ export function createOAuthAppAuth({
 		}
 	}
 
+	function transitionToSignedOut() {
+		runtimeState = { status: 'signed-out' };
+		refreshFlight = null;
+		identityVerificationFlight = null;
+		publishState();
+	}
+
+	function replaceWithUnverifiedCell(cell: PersistedAuthType) {
+		runtimeState = {
+			status: 'signed-in',
+			cell,
+			networkAccess: 'unverified',
+		};
+		publishState();
+	}
+
+	function replaceWithVerifiedCell(cell: PersistedAuthType) {
+		runtimeState = {
+			status: 'signed-in',
+			cell,
+			networkAccess: 'verified',
+		};
+		publishState();
+	}
+
+	function pauseNetworkAuth() {
+		if (runtimeState.status === 'signed-out') return;
+		runtimeState = {
+			...runtimeState,
+			networkAccess: 'paused',
+		};
+		publishState();
+	}
+
+	async function writePersistedAuth(value: PersistedAuthType | null) {
+		const write = storageWriteQueue.then(() => persistedAuthStorage.set(value));
+		storageWriteQueue = write.catch(() => undefined);
+		await write;
+	}
+
+	async function clearPersistedAuth() {
+		transitionToSignedOut();
+		await writePersistedAuth(null);
+	}
+
 	async function refreshGrant(force: boolean): Promise<boolean> {
-		if (persisted === null || networkAuthPaused) return false;
+		const startedFrom = currentCell();
+		if (startedFrom === null || isNetworkAuthPaused()) return false;
 		if (
 			!force &&
-			persisted.grant.accessTokenExpiresAt > now() + REFRESH_SKEW_MS
+			startedFrom.grant.accessTokenExpiresAt > now() + REFRESH_SKEW_MS
 		) {
 			return true;
 		}
-		if (refreshPromise) return refreshPromise;
+		if (refreshFlight?.cell === startedFrom) return refreshFlight.promise;
 
-		const startedFrom = persisted;
-		refreshPromise = (async () => {
+		const promise = (async () => {
 			try {
 				const grant = await refreshOAuthTokenWithEndpoint({
 					baseURL,
@@ -145,30 +199,28 @@ export function createOAuthAppAuth({
 					fetch: fetchImpl,
 					now,
 				});
-				if (persisted !== startedFrom) return false;
+				if (currentCell() !== startedFrom) return false;
 				const next: PersistedAuthType = {
 					grant,
 					localIdentity: startedFrom.localIdentity,
 				};
-				await persistedAuthStorage.set(next);
-				if (persisted !== startedFrom) return false;
-				persisted = next;
-				verifiedPersisted = null;
-				publishState();
+				await writePersistedAuth(next);
+				if (currentCell() !== startedFrom) return false;
+				replaceWithUnverifiedCell(next);
 				return true;
 			} catch (cause) {
-				if (persisted === startedFrom) {
-					networkAuthPaused = true;
-					publishState();
+				if (currentCell() === startedFrom) {
+					pauseNetworkAuth();
 					log.error(AuthError.RefreshGrantFailed({ cause }));
 				}
 				return false;
 			} finally {
-				refreshPromise = null;
+				if (refreshFlight?.cell === startedFrom) refreshFlight = null;
 			}
 		})();
+		refreshFlight = { cell: startedFrom, promise };
 
-		return refreshPromise;
+		return promise;
 	}
 
 	async function callApiSession(
@@ -201,48 +253,50 @@ export function createOAuthAppAuth({
 	 * Wipes the cell on same-subject-guard mismatch. Single-flight: concurrent
 	 * callers share the in-flight promise.
 	 */
-	async function verifyIdentity(
+	async function verifyCurrentCell(
 		startedFrom: PersistedAuthType,
 	): Promise<Result<ApiSessionResponse, AuthError>> {
-		if (identityPromise) return identityPromise;
-		identityPromise = (async (): Promise<
+		if (identityVerificationFlight?.cell === startedFrom) {
+			return identityVerificationFlight.promise;
+		}
+		const promise = (async (): Promise<
 			Result<ApiSessionResponse, AuthError>
 		> => {
 			const { data: session, error } = await callApiSession(startedFrom.grant);
 			if (error) return AuthError.VerifyIdentityFailed({ cause: error });
-			if (persisted !== startedFrom) return Ok(session);
+			const current = currentCell();
+			if (current !== startedFrom) return Ok(session);
 
-			if (persisted.localIdentity.subject !== session.localIdentity.subject) {
-				await persistedAuthStorage.set(null);
-				persisted = null;
-				verifiedPersisted = null;
-				networkAuthPaused = false;
-				publishState();
+			if (current.localIdentity.subject !== session.localIdentity.subject) {
+				await clearPersistedAuth();
 				return Ok(session);
 			}
 
 			if (
 				!subjectKeyringsEqual(
-					persisted.localIdentity.keyring,
+					current.localIdentity.keyring,
 					session.localIdentity.keyring,
 				)
 			) {
 				const next: PersistedAuthType = {
-					grant: persisted.grant,
+					grant: current.grant,
 					localIdentity: session.localIdentity,
 				};
-				await persistedAuthStorage.set(next);
-				if (persisted !== startedFrom) return Ok(session);
-				persisted = next;
+				await writePersistedAuth(next);
+				if (currentCell() !== startedFrom) return Ok(session);
+				replaceWithVerifiedCell(next);
+				return Ok(session);
 			}
-			verifiedPersisted = persisted;
-			publishState();
+			replaceWithVerifiedCell(current);
 			return Ok(session);
 		})().finally(() => {
-			identityPromise = null;
+			if (identityVerificationFlight?.cell === startedFrom) {
+				identityVerificationFlight = null;
+			}
 		});
+		identityVerificationFlight = { cell: startedFrom, promise };
 
-		return identityPromise;
+		return promise;
 	}
 
 	/**
@@ -255,20 +309,19 @@ export function createOAuthAppAuth({
 	 * workspace decrypt continues via `localIdentity`.
 	 */
 	async function bearerForNetwork(force: boolean): Promise<string | null> {
-		if (persisted === null || networkAuthPaused) return null;
+		if (currentCell() === null || isNetworkAuthPaused()) return null;
 		const refreshed = await refreshGrant(force);
-		if (!refreshed || persisted === null || networkAuthPaused) return null;
-		if (verifiedPersisted !== persisted) {
-			await verifyIdentity(persisted);
-			if (
-				persisted === null ||
-				networkAuthPaused ||
-				verifiedPersisted !== persisted
-			) {
-				return null;
-			}
+		const refreshedCell = currentCell();
+		if (!refreshed || refreshedCell === null || isNetworkAuthPaused()) {
+			return null;
 		}
-		return persisted.grant.accessToken;
+		let verifiedCell = verifiedNetworkCell();
+		if (verifiedCell === null) {
+			await verifyCurrentCell(refreshedCell);
+			verifiedCell = verifiedNetworkCell();
+			if (verifiedCell === null) return null;
+		}
+		return verifiedCell.grant.accessToken;
 	}
 
 	async function fetchWithAuth(
@@ -296,23 +349,27 @@ export function createOAuthAppAuth({
 		});
 	}
 
-	async function applySignIn(
+	async function completeSignInWithGrant(
 		grant: OAuthTokenGrant,
 	): Promise<Result<undefined, AuthError>> {
+		const previous = currentCell();
 		const callResult = await callApiSession(grant);
 		if (callResult.error) {
 			return AuthError.StartSignInFailed({ cause: callResult.error });
 		}
 		const session = callResult.data;
+		if (
+			previous !== null &&
+			previous.localIdentity.subject !== session.localIdentity.subject
+		) {
+			await clearPersistedAuth();
+		}
 		const next: PersistedAuthType = {
 			grant,
 			localIdentity: session.localIdentity,
 		};
-		await persistedAuthStorage.set(next);
-		persisted = next;
-		verifiedPersisted = next;
-		networkAuthPaused = false;
-		publishState();
+		await writePersistedAuth(next);
+		replaceWithVerifiedCell(next);
 		return Ok(undefined);
 	}
 
@@ -333,20 +390,15 @@ export function createOAuthAppAuth({
 					return AuthError.StartSignInFailed({ cause: result.error });
 				}
 				if (result.data === null) return Ok(undefined);
-				return applySignIn(result.data);
+				return completeSignInWithGrant(result.data);
 			} catch (cause) {
 				return AuthError.StartSignInFailed({ cause });
 			}
 		},
 		async signOut() {
 			try {
-				const refreshTokenToRevoke = persisted?.grant.refreshToken;
-				identityPromise = null;
-				await persistedAuthStorage.set(null);
-				persisted = null;
-				verifiedPersisted = null;
-				networkAuthPaused = false;
-				publishState();
+				const refreshTokenToRevoke = currentCell()?.grant.refreshToken;
+				await clearPersistedAuth();
 				if (refreshTokenToRevoke) {
 					void revokeOAuthRefreshTokenWithEndpoint({
 						baseURL,
@@ -367,8 +419,7 @@ export function createOAuthAppAuth({
 			if (!refreshed) return response;
 			const retryResponse = await fetchWithAuth(input, init, false);
 			if (retryResponse.status === 401) {
-				networkAuthPaused = true;
-				publishState();
+				pauseNetworkAuth();
 			}
 			return retryResponse;
 		},
@@ -383,6 +434,44 @@ export function createOAuthAppAuth({
 			stateChangeListeners.clear();
 		},
 	};
+}
+
+function runtimeStateFromPersistedAuth(
+	cell: PersistedAuthType | null,
+): RuntimeAuthState {
+	if (cell === null) return { status: 'signed-out' };
+	return {
+		status: 'signed-in',
+		cell,
+		networkAccess: 'unverified',
+	};
+}
+
+function publicStateFromRuntime(runtimeState: RuntimeAuthState): AuthState {
+	if (runtimeState.status === 'signed-out') return { status: 'signed-out' };
+	if (runtimeState.networkAccess === 'paused') {
+		return {
+			status: 'reauth-required',
+			localIdentity: runtimeState.cell.localIdentity,
+		};
+	}
+	return {
+		status: 'signed-in',
+		localIdentity: runtimeState.cell.localIdentity,
+	};
+}
+
+function authStatesEqual(left: AuthState, right: AuthState) {
+	if (left.status !== right.status) return false;
+	if (left.status === 'signed-out') return true;
+	if (right.status === 'signed-out') return false;
+	return (
+		left.localIdentity.subject === right.localIdentity.subject &&
+		subjectKeyringsEqual(
+			left.localIdentity.keyring,
+			right.localIdentity.keyring,
+		)
+	);
 }
 
 function headersFromRequest(input: Request | string | URL, init?: RequestInit) {

@@ -17,7 +17,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthClient, AuthState, LocalIdentity } from '@epicenter/auth';
 import * as Y from 'yjs';
-import { openCloudAppSync } from './cloud-workspace-sync.js';
+import { openCloudAppSync } from './cloud-app-sync.js';
 
 const localIdentity: LocalIdentity = {
 	subject: 'user_1',

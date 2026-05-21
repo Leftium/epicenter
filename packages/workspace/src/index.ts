@@ -175,10 +175,7 @@ export {
 	typedDispatch,
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
-export {
-	type CloudAppSync,
-	openCloudAppSync,
-} from './document/cloud-workspace-sync.js';
+export { openCloudAppSync } from './document/cloud-app-sync.js';
 export type {
 	OpenWebSocket,
 	SyncStatus,

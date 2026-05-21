@@ -8,45 +8,47 @@
  * workspace opener so daemon-side and browser-side action surfaces stay
  * identical without a second factory call here.
  *
+ * Cloud sync is routed through one `cloudWorkspaceSync.forApp(...)` factory
+ * per app instance: the root doc and every entry-body child doc share that
+ * factory's workspace lookup and auth-state subscription.
+ *
  * The bundle's `wipe()` drops every encrypted IDB database for this owner;
- * `Symbol.dispose` tears down the root + cached child Y.Docs without
- * touching local storage.
+ * `Symbol.dispose` tears down the root + cached child Y.Docs and the cloud
+ * sync factory without touching local storage.
  */
 
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachRichText,
+	cloudWorkspaceSync,
 	createDisposableCache,
 	DateTimeString,
-	type DefaultCloudWorkspaceAuth,
 	type LocalOwner,
-	type OpenWebSocket,
 	onLocalUpdate,
-	openDefaultWorkspaceAppDocCollaboration,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import {
-	FUJI_CLOUD_APP_ID,
-	FUJI_ROOT_DOC_ID,
-	fujiEntryContentDocId,
-} from './sync-docs';
 import { type EntryId, openFujiWorkspace } from './workspace';
 
 export function openFujiBrowser({
 	owner,
 	installationId,
 	auth,
-	openWebSocket,
 }: {
 	owner: LocalOwner;
 	installationId: string;
-	auth: DefaultCloudWorkspaceAuth;
-	openWebSocket?: OpenWebSocket;
+	auth: AuthClient;
 }) {
 	const workspace = openFujiWorkspace(owner.attachEncryption);
 	const { ydoc: rootYdoc, tables, kv } = workspace;
 
 	const idb = owner.attachLocal(rootYdoc);
+
+	const fujiCloud = cloudWorkspaceSync.forApp({
+		auth,
+		apiUrl: APP_URLS.API,
+		appId: 'fuji',
+	});
 
 	const entryContentDocs = createDisposableCache((entryId: EntryId) => {
 		const ydoc = new Y.Doc({
@@ -55,13 +57,11 @@ export function openFujiBrowser({
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);
-		const childSync = openDefaultWorkspaceAppDocCollaboration(ydoc, {
-			auth,
-			apiUrl: APP_URLS.API,
-			appId: FUJI_CLOUD_APP_ID,
-			docId: fujiEntryContentDocId(entryId),
+		// docId defaults to ydoc.guid (`${workspaceId}.entries.${entryId}.content`),
+		// which is the same string used as the local guid and matches
+		// ROUTE_ID_PATTERN. One canonical id for both local and cloud.
+		const childSync = fujiCloud.open(ydoc, {
 			waitFor: childIdb.whenLoaded,
-			openWebSocket,
 			installationId,
 			actions: {},
 		});
@@ -88,13 +88,11 @@ export function openFujiBrowser({
 		};
 	});
 
-	const collaboration = openDefaultWorkspaceAppDocCollaboration(rootYdoc, {
-		auth,
-		apiUrl: APP_URLS.API,
-		appId: FUJI_CLOUD_APP_ID,
-		docId: FUJI_ROOT_DOC_ID,
+	const collaboration = fujiCloud.open(rootYdoc, {
+		// Explicit "root" preserves the cloud-side identity of the canonical
+		// app entry document; rootYdoc.guid is the workspace id, not "root".
+		docId: 'root',
 		waitFor: idb.whenLoaded,
-		openWebSocket,
 		installationId,
 		actions: workspace.actions,
 	});
@@ -122,6 +120,7 @@ export function openFujiBrowser({
 		[Symbol.dispose]() {
 			entryContentDocs[Symbol.dispose]();
 			rootYdoc.destroy();
+			fujiCloud[Symbol.dispose]();
 		},
 	};
 }

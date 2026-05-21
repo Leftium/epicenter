@@ -4,17 +4,10 @@
  * `browser-state.svelte.ts`.
  */
 
-import { APP_URLS } from '@epicenter/constants/vite';
-import {
-	type Collaboration,
-	type LocalOwner,
-	type OpenWebSocket,
-	openCollaboration,
-} from '@epicenter/workspace';
+import type { LocalOwner } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createTabManagerActions } from '$lib/workspace/actions';
 import { type DeviceId, tabManagerTables } from '$lib/workspace/definition';
-import { tabManagerSyncUrl } from './sync-url.js';
 
 /**
  * Build the tab-manager binding. Synchronous: callers must resolve the
@@ -65,26 +58,3 @@ export function openTabManagerBrowser({
 }
 
 export type TabManagerBrowser = ReturnType<typeof openTabManagerBrowser>;
-
-export function openTabManagerCloudCollaboration({
-	tabManager,
-	openWebSocket,
-	defaultWorkspaceId,
-}: {
-	tabManager: TabManagerBrowser;
-	openWebSocket?: OpenWebSocket;
-	defaultWorkspaceId?: string;
-}): Collaboration<TabManagerBrowser['actions']> | undefined {
-	const syncUrl = tabManagerSyncUrl({
-		apiUrl: APP_URLS.API,
-		defaultWorkspaceId,
-	});
-	if (!syncUrl) return undefined;
-	return openCollaboration(tabManager.ydoc, {
-		url: syncUrl,
-		waitFor: tabManager.idb.whenLoaded,
-		openWebSocket,
-		installationId: tabManager.installationId,
-		actions: tabManager.actions,
-	});
-}

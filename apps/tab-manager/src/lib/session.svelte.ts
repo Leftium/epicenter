@@ -3,6 +3,7 @@ import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createSession } from '@epicenter/svelte';
+import { openCloudAppSync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { createDeviceProfile, registerDevice } from './device';
@@ -11,11 +12,9 @@ import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
-import { resolveDefaultWorkspaceId } from './tab-manager/default-workspace';
-import type { TabManagerBrowser } from './tab-manager/extension';
 import {
 	openTabManagerBrowser,
-	openTabManagerCloudCollaboration,
+	type TabManagerBrowser,
 } from './tab-manager/extension';
 
 export type SessionAiTools = ReturnType<
@@ -62,31 +61,18 @@ function buildSession(
 				owner,
 				installationId: profile.installationId,
 			});
-			let collaboration =
-				$state<ReturnType<typeof openTabManagerCloudCollaboration>>();
-			let disposed = false;
-			let attachingCloud = false;
 
-			async function attachCloudCollaboration() {
-				if (disposed || collaboration || attachingCloud) return;
-				attachingCloud = true;
-				try {
-					const defaultWorkspaceId = await resolveDefaultWorkspaceId(auth);
-					if (disposed || collaboration || !defaultWorkspaceId) return;
-					collaboration = openTabManagerCloudCollaboration({
-						tabManager,
-						openWebSocket: auth.openWebSocket,
-						defaultWorkspaceId,
-					});
-				} finally {
-					attachingCloud = false;
-				}
-			}
-
-			const unsubscribeAuthState = auth.onStateChange((state) => {
-				if (state.status === 'signed-in') void attachCloudCollaboration();
+			const tabManagerCloud = openCloudAppSync({
+				auth,
+				apiUrl: APP_URLS.API,
+				appId: 'tab-manager',
+				installationId: profile.installationId,
 			});
-			void attachCloudCollaboration();
+			const collaboration = tabManagerCloud.open(tabManager.ydoc, {
+				docId: 'root',
+				waitFor: tabManager.idb.whenLoaded,
+				actions: tabManager.actions,
+			});
 
 			const sessionAiTools = actionsToAiTools(tabManager.actions);
 			const savedTabs = createSavedTabState(tabManager);
@@ -102,20 +88,16 @@ function buildSession(
 
 			return {
 				...tabManager,
-				get collaboration() {
-					return collaboration;
-				},
+				collaboration,
 				state,
 				sessionAiTools,
 				[Symbol.dispose]() {
-					disposed = true;
-					unsubscribeAuthState();
 					aiChat[Symbol.dispose]();
 					toolTrust[Symbol.dispose]();
 					bookmarks[Symbol.dispose]();
 					savedTabs[Symbol.dispose]();
-					collaboration?.[Symbol.dispose]();
 					tabManager[Symbol.dispose]();
+					tabManagerCloud[Symbol.dispose]();
 				},
 			};
 		},

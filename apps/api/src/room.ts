@@ -265,11 +265,13 @@ export class Room extends DurableObject {
 			// and the awareness clientID (if learned before hibernation) from
 			// each attachment, and re-registers sync handlers.
 			//
-			// For sockets whose attachment carries a clientID we also restore
-			// liveness state programmatically so `awareness.getStates()` is
-			// non-empty immediately after wake, closing the "picker shows no
-			// devices for 15s" race called out in the spec.
-			const restoredClientIDs: number[] = [];
+			// For sockets whose attachment carries a clientID we also seed the
+			// server's awareness so the relay's view (dispatch routing, the
+			// `webSocketClose` force-clear) is non-empty immediately after wake.
+			// The real client awareness frame overwrites this seed on the next
+			// renewal (within 15s). We do not broadcast the seed to peers:
+			// y-protocols rejects a clock 0 non-null update, and peers preserve
+			// their own view of these clients through hibernation anyway.
 			for (const ws of ctx.getWebSockets()) {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
 				if (!attachment) continue;
@@ -285,35 +287,15 @@ export class Room extends DurableObject {
 					this.awareness.states.set(attachment.clientID, {
 						liveness: { installationId: attachment.installationId },
 					});
-					// Seed meta with clock 0 so the next inbound awareness frame from
-					// the real client (which y-protocols ships at clock >= 1) passes
-					// the `clock > prevClock` accept check. Seeding at clock 1 used to
-					// swallow that first frame whenever the client's local clock had
-					// not yet incremented past wake.
-					// `lastUpdated` is set to Date.now() (ms) so the outdatedTimeout
-					// reaper does not strip restored liveness within ~100ms of wake.
+					// Seed meta with clock 0 so the next inbound frame from the real
+					// client (which y-protocols ships at clock >= 1) passes the
+					// strict `currClock < clock` accept gate.
+					// `lastUpdated` is Date.now() (ms) so the outdatedTimeout reaper
+					// gives the restored entry 30s to be refreshed by a real frame.
 					this.awareness.meta.set(attachment.clientID, {
 						clock: 0,
 						lastUpdated: Date.now(),
 					});
-					restoredClientIDs.push(attachment.clientID);
-				}
-			}
-
-			// Broadcast restored liveness so peers don't have to wait for the
-			// next 15s awareness heartbeat to refresh their view.
-			if (restoredClientIDs.length > 0) {
-				const frame = encodeAwarenessFrameForClients(
-					this.awareness,
-					restoredClientIDs,
-				);
-				for (const [ws] of this.connections) {
-					try {
-						ws.send(frame);
-					} catch {
-						// Socket may already be in a bad state after wake. The
-						// next inbound message will trigger close-time cleanup.
-					}
 				}
 			}
 		});

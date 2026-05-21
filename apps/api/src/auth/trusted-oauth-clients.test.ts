@@ -11,16 +11,16 @@
  */
 
 import { expect, test } from 'bun:test';
-import { oauthProvider } from '@better-auth/oauth-provider';
+import { EPICENTER_TRUSTED_OAUTH_CLIENTS } from '@epicenter/constants/oauth';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
-import { jwt } from 'better-auth/plugins';
-import { bearer } from 'better-auth/plugins/bearer';
-import { AUTH_OAUTH_SCOPES, TRUSTED_OAUTH_CLIENT_IDS } from './oauth-config.js';
+import { authPlugins } from './plugins.js';
 import { projectTrustedOAuthClientToRow } from './trusted-oauth-clients.js';
 
-const redirectUri = 'http://localhost:5174/auth/callback';
+const trustedClientDefinition = getTrustedClientDefinition();
+
+const redirectUri = trustedClientDefinition.redirectUris[0];
 const verifier = 'test-verifier-test-verifier-test-verifier';
 
 test('trusted OAuth clients project to public PKCE client rows', () => {
@@ -52,11 +52,35 @@ test('trusted OAuth client skips consent during authorization', async () => {
 
 	const cookie = await signUpTestUser(setup.auth, setup.baseURL);
 	const code = await authorize(setup, {
-		clientId: 'trusted-client-1',
+		clientId: setup.trustedClientId,
 		cookie,
 	});
 
 	expect(code).toBeTruthy();
+});
+
+test('trusted OAuth client exchanges code for API-origin access token', async () => {
+	const setup = createTrustedClientTestAuth();
+
+	const cookie = await signUpTestUser(setup.auth, setup.baseURL);
+	const code = await authorize(setup, {
+		clientId: setup.trustedClientId,
+		cookie,
+	});
+	if (!code) throw new Error('Expected authorization code');
+
+	const response = await exchangeCode(setup, {
+		clientId: setup.trustedClientId,
+		code,
+	});
+	const body = await response.json();
+	const accessToken = readAccessToken(body);
+	const payload = decodeJwtPayload(accessToken);
+	const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+
+	expect(response.status).toBe(200);
+	expect(audiences).toContain(setup.baseURL);
+	expect(payload.iss).toBe(`${setup.baseURL}/auth`);
 });
 
 test('registered non-trusted OAuth client requires consent', async () => {
@@ -78,12 +102,7 @@ test('registered non-trusted OAuth client requires consent', async () => {
 
 function createTrustedClientTestAuth() {
 	const baseURL = 'http://localhost:47878';
-	const trustedClient = projectTrustedOAuthClientToRow({
-		clientId: 'trusted-client-1',
-		name: 'Trusted Client',
-		runtime: 'browser',
-		redirectUris: [redirectUri],
-	});
+	const trustedClient = projectTrustedOAuthClientToRow(trustedClientDefinition);
 	const registeredClient = {
 		...projectTrustedOAuthClientToRow({
 			clientId: 'registered-client-1',
@@ -111,25 +130,10 @@ function createTrustedClientTestAuth() {
 		basePath: '/auth',
 		baseURL,
 		secret: 'test-secret-test-secret-test-secret',
-		plugins: [
-			bearer(),
-			jwt(),
-			oauthProvider({
-				loginPage: '/sign-in',
-				consentPage: '/consent',
-				requirePKCE: true,
-				cachedTrustedClients: new Set([
-					...TRUSTED_OAUTH_CLIENT_IDS,
-					trustedClient.clientId,
-				]),
-				allowDynamicClientRegistration: false,
-				scopes: [...AUTH_OAUTH_SCOPES],
-				silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
-			}),
-		],
+		plugins: authPlugins({ resourceAudience: baseURL }),
 	});
 
-	return { auth, baseURL };
+	return { auth, baseURL, trustedClientId: trustedClient.clientId };
 }
 
 async function signUpTestUser(
@@ -183,4 +187,52 @@ async function authorizeResponse(
 	return auth.handler(
 		new Request(authorizeUrl.toString(), { headers: { cookie } }),
 	);
+}
+
+async function exchangeCode(
+	{ auth, baseURL }: ReturnType<typeof createTrustedClientTestAuth>,
+	{ clientId, code }: { clientId: string; code: string },
+) {
+	return auth.handler(
+		new Request(`${baseURL}/auth/oauth2/token`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({
+				grant_type: 'authorization_code',
+				code,
+				code_verifier: verifier,
+				client_id: clientId,
+				redirect_uri: redirectUri,
+				resource: baseURL,
+			}),
+		}),
+	);
+}
+
+function decodeJwtPayload(token: string) {
+	const [, payload] = token.split('.');
+	if (!payload) throw new Error('Expected JWT access token');
+	const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+	const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+	return JSON.parse(atob(padded)) as Record<string, unknown>;
+}
+
+function getTrustedClientDefinition() {
+	const client = EPICENTER_TRUSTED_OAUTH_CLIENTS.find(
+		(client) => client.clientId === 'epicenter-fuji',
+	);
+	if (!client) throw new Error('Expected test trusted client to exist');
+	return client;
+}
+
+function readAccessToken(body: unknown) {
+	if (
+		body &&
+		typeof body === 'object' &&
+		'access_token' in body &&
+		typeof body.access_token === 'string'
+	) {
+		return body.access_token;
+	}
+	return '';
 }

@@ -4,7 +4,11 @@ import { jwt } from 'better-auth/plugins/jwt';
 import { organization } from 'better-auth/plugins/organization';
 import { AUTH_OAUTH_SCOPES, TRUSTED_OAUTH_CLIENT_IDS } from './oauth-config';
 
-export function authPlugins() {
+export function authPlugins({
+	resourceAudience,
+}: {
+	resourceAudience: string;
+}) {
 	return [
 		organization(),
 		// ES256 (P-256 ECDSA) signs the id_token and JWT access tokens. The
@@ -18,6 +22,7 @@ export function authPlugins() {
 			consentPage: '/consent',
 			requirePKCE: true,
 			cachedTrustedClients: TRUSTED_OAUTH_CLIENT_IDS,
+			validAudiences: [resourceAudience],
 			allowDynamicClientRegistration: false,
 			scopes: [...AUTH_OAUTH_SCOPES],
 			// The plugin warns that /.well-known/oauth-authorization-server/auth must exist

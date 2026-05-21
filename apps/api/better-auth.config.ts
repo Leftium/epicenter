@@ -5,7 +5,7 @@
  * config and emit the correct Drizzle schema. It is never used at runtime: the
  * Cloudflare Worker uses `createAuth()` in `src/auth/create-auth.ts` instead.
  *
- * Both configs spread `BASE_AUTH_CONFIG` and call `authPlugins()` so the
+ * Both configs spread `BASE_AUTH_CONFIG` and call `authPlugins(...)` so the
  * CLI and runtime always agree on which tables exist.
  *
  * Run via:
@@ -53,5 +53,5 @@ export const auth = betterAuth({
 	baseURL,
 	database: drizzleAdapter(db, { provider: 'pg', schema }),
 	secret: env.BETTER_AUTH_SECRET,
-	plugins: authPlugins(),
+	plugins: authPlugins({ resourceAudience: baseURL }),
 });

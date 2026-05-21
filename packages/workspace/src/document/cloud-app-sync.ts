@@ -1,5 +1,5 @@
 /**
- * Cloud Workspace sync glue.
+ * Cloud sync glue for one app.
  *
  * The platform primitive is `openCollaboration`, which takes a fully formed
  * WebSocket URL. Cloud sync needs two extra ingredients before that URL can
@@ -37,6 +37,12 @@ import { workspaceAppDocWsUrl } from './transport.js';
  * installationId)` once and reuses the workspace lookup across every doc
  * opened through `.open()`. Subscribes to `auth.onStateChange` so signing in
  * after construction reattaches every live handle.
+ *
+ * The factory owns the auth subscription, not the docs: callers own each
+ * `ydoc` passed to `.open()` and must destroy it (directly or via
+ * `[Symbol.dispose]` on the returned Collaboration) before disposing the
+ * factory. Disposing the factory unsubscribes auth and forgets the handle
+ * set; it does not destroy any docs.
  */
 export function openCloudAppSync({
 	auth,
@@ -172,8 +178,8 @@ function attachDeferredCollaboration<TActions extends ActionRegistry>(
 	let resolving = false;
 	let disposed = false;
 	const statusListeners = new Set<(status: SyncStatus) => void>();
-	const whenConnected = createDeferred<void>();
-	const whenDisposed = createDeferred<void>();
+	const whenConnected = Promise.withResolvers<void>();
+	const whenDisposed = Promise.withResolvers<void>();
 
 	function setStatus(next: SyncStatus) {
 		status = next;
@@ -270,14 +276,4 @@ function attachDeferredCollaboration<TActions extends ActionRegistry>(
 			ydoc.destroy();
 		},
 	};
-}
-
-function createDeferred<T>() {
-	let resolve!: (value: T | PromiseLike<T>) => void;
-	let reject!: (reason?: unknown) => void;
-	const promise = new Promise<T>((promiseResolve, promiseReject) => {
-		resolve = promiseResolve;
-		reject = promiseReject;
-	});
-	return { promise, resolve, reject };
 }

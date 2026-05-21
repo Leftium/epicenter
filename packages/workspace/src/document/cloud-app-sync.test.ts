@@ -182,7 +182,7 @@ describe('openCloudAppSync', () => {
 		expect(harness.openedSocketUrls).toHaveLength(1);
 	});
 
-	test('non-ok workspaces response keeps handle offline', async () => {
+	test('500 response keeps handle offline', async () => {
 		const harness = createFactoryAuthHarness({
 			workspacesResponse: () => new Response(null, { status: 500 }),
 		});

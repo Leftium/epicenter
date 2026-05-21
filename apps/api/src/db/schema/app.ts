@@ -1,8 +1,6 @@
 import { relations } from 'drizzle-orm';
 import { bigint, index, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
-import { user } from './auth-schema';
-
-export * from './auth-schema';
+import { user } from './auth';
 
 export const durableObjectInstance = pgTable(
 	'durable_object_instance',
@@ -34,6 +32,11 @@ export const asset = pgTable(
 	},
 	(table) => [index('asset_user_id_idx').on(table.userId)],
 );
+
+export const userAppRelations = relations(user, ({ many }) => ({
+	durableObjectInstances: many(durableObjectInstance),
+	assets: many(asset),
+}));
 
 export const durableObjectInstanceRelations = relations(
 	durableObjectInstance,

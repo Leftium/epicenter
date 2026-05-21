@@ -96,14 +96,13 @@ export function createDrizzleCloudWorkspaceStore(db: Db): CloudWorkspaceStore {
 }
 
 /**
- * Ensure the user has exactly one deterministic personal cloud workspace.
+ * Create the user's deterministic personal cloud workspace.
  *
- * Use this during account creation and when listing workspaces so older users
- * get backfilled lazily. The deterministic ids make the operation idempotent:
- * repeated calls converge on the same organization and owner membership instead
- * of minting new personal workspaces.
+ * Use this from account creation only. The deterministic ids make signup
+ * retries converge on the same organization and owner membership instead of
+ * minting duplicate personal workspaces.
  */
-export async function ensurePersonalCloudWorkspace(
+export async function createPersonalCloudWorkspace(
 	store: CloudWorkspaceStore,
 	user: { id: string },
 ) {
@@ -114,12 +113,6 @@ export async function ensurePersonalCloudWorkspace(
 		name: PERSONAL_WORKSPACE_NAME,
 		slug: identity.slug,
 	});
-
-	const existingMember = await store.findWorkspaceMember({
-		userId: user.id,
-		workspaceId: identity.workspaceId,
-	});
-	if (existingMember) return identity.workspaceId;
 
 	await store.createPersonalWorkspaceMember({
 		id: identity.memberId,
@@ -134,17 +127,21 @@ export async function ensurePersonalCloudWorkspace(
 /**
  * Return the cloud workspaces a signed-in user may open.
  *
- * Use this for account/workspace pickers after the caller has already resolved
- * the Better Auth user. It preserves the default-workspace invariant by
- * backfilling the personal workspace first, marking it as default, and sorting
- * it ahead of any shared workspaces.
+ * Use this for account/workspace pickers after signup has created the user's
+ * personal workspace. This is a read path: missing personal workspace
+ * membership is an account provisioning bug, not something the list endpoint
+ * creates.
  */
 export async function listCloudWorkspaces(
 	store: CloudWorkspaceStore,
 	user: { id: string },
 ) {
-	const defaultWorkspaceId = await ensurePersonalCloudWorkspace(store, user);
+	const identity = await createPersonalCloudWorkspaceIdentity(user.id);
+	const defaultWorkspaceId = identity.workspaceId;
 	const workspaces = await store.listWorkspaceMemberships(user.id);
+	if (!workspaces.some((workspace) => workspace.id === defaultWorkspaceId)) {
+		throw new Error('Missing personal Cloud Workspace membership');
+	}
 
 	return {
 		defaultWorkspaceId,
@@ -161,7 +158,7 @@ export async function listCloudWorkspaces(
 }
 
 // Personal workspace ids are derived, not random, so account creation,
-// migration, and lazy backfill can all retry without creating duplicates.
+// signup retries, and idempotent inserts converge without creating duplicates.
 async function createPersonalCloudWorkspaceIdentity(userId: string) {
 	const hash = await sha256Hex(`personal-cloud-workspace:${userId}`);
 	const suffix = hash.slice(0, 32);

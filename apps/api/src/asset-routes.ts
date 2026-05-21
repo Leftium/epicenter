@@ -27,7 +27,7 @@ import type { Env } from './app.js';
 import { createAutumn } from './autumn.js';
 import { FEATURE_IDS } from './billing-plans.js';
 import { MAX_ASSET_BYTES } from './constants.js';
-import * as schema from './db/schema.js';
+import * as schema from './db/schema/index.js';
 
 const ALLOWED_MIME_TYPES = new Set([
 	'image/png',

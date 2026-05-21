@@ -6,7 +6,7 @@ import { createAutumn } from '../autumn';
 import { FEATURE_IDS } from '../billing-plans';
 import {
 	createDrizzleCloudWorkspaceStore,
-	ensurePersonalCloudWorkspace,
+	createPersonalCloudWorkspace,
 } from '../cloud-workspaces';
 import * as schema from '../db/schema';
 import { TRUSTED_ORIGINS } from '../trusted-origins';
@@ -109,7 +109,7 @@ export function createAuth({
 							customerId: user.id,
 							email: user.email,
 						});
-						await ensurePersonalCloudWorkspace(
+						await createPersonalCloudWorkspace(
 							createDrizzleCloudWorkspaceStore(db),
 							user,
 						);

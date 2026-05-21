@@ -6,24 +6,26 @@
  * duplicate workspace tables or app namespace inventory.
  *
  * Key behaviors:
- * - Personal Cloud Workspace creation is idempotent.
- * - Listing returns only organizations where the current user is a member.
+ * - Personal Cloud Workspace creation is retry-safe.
+ * - Listing is read-only and returns only organizations where the current user is a member.
  * - The schema keeps Cloud Workspace backed by Better Auth organization tables.
  */
 
 import { expect, test } from 'bun:test';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import pg from 'pg';
 import {
-	ensurePersonalCloudWorkspace,
+	createPersonalCloudWorkspace,
 	listCloudWorkspaces,
 } from './cloud-workspaces.js';
-import * as schema from './db/schema.js';
+import * as schema from './db/schema/index.js';
 
-test('first-use personal workspace creation is idempotent', async () => {
+test('personal workspace creation retries converge on one workspace', async () => {
 	const store = createMemoryCloudWorkspaceStore();
 	const user = { id: 'user_1' };
 
-	const firstWorkspaceId = await ensurePersonalCloudWorkspace(store, user);
-	const secondWorkspaceId = await ensurePersonalCloudWorkspace(store, user);
+	const firstWorkspaceId = await createPersonalCloudWorkspace(store, user);
+	const secondWorkspaceId = await createPersonalCloudWorkspace(store, user);
 
 	expect(secondWorkspaceId).toBe(firstWorkspaceId);
 	expect(store.organizations).toHaveLength(1);
@@ -66,9 +68,14 @@ test('workspace list returns only organizations where the user is a member', asy
 		],
 	});
 
+	const defaultWorkspaceId = await createPersonalCloudWorkspace(store, {
+		id: 'user_1',
+	});
+	const organizationCount = store.organizations.length;
+	const memberCount = store.members.length;
 	const result = await listCloudWorkspaces(store, { id: 'user_1' });
 
-	expect(result.defaultWorkspaceId).toMatch(/^ws_[a-f0-9]{32}$/);
+	expect(result.defaultWorkspaceId).toBe(defaultWorkspaceId);
 	expect(result.workspaces.map((workspace) => workspace.id)).toEqual([
 		result.defaultWorkspaceId,
 		'workspace_a',
@@ -76,6 +83,16 @@ test('workspace list returns only organizations where the user is a member', asy
 	]);
 	expect(result.workspaces).not.toContainEqual(
 		expect.objectContaining({ id: 'workspace_b' }),
+	);
+	expect(store.organizations).toHaveLength(organizationCount);
+	expect(store.members).toHaveLength(memberCount);
+});
+
+test('workspace list fails instead of creating missing personal workspace', async () => {
+	const store = createMemoryCloudWorkspaceStore();
+
+	await expect(listCloudWorkspaces(store, { id: 'user_1' })).rejects.toThrow(
+		'Missing personal Cloud Workspace membership',
 	);
 });
 
@@ -99,6 +116,22 @@ test('schema has no duplicate Cloud workspace or app namespace tables', () => {
 	expect(tableNames).not.toContain('app_asset');
 });
 
+test('schema keeps app-owned user query relations after auth generation split', () => {
+	const db = drizzle(new pg.Client({ connectionString: 'postgres://unused' }), {
+		schema,
+	});
+	const userQuery = db.query.user as unknown as {
+		tableConfig: { relations: Record<string, unknown> };
+	};
+	const relationNames = Object.keys(userQuery.tableConfig.relations);
+
+	expect(relationNames).toContain('sessions');
+	expect(relationNames).toContain('memberships');
+	expect(relationNames).toContain('oauthClients');
+	expect(relationNames).toContain('assets');
+	expect(relationNames).toContain('durableObjectInstances');
+});
+
 function createMemoryCloudWorkspaceStore(seed?: {
 	organizations?: Array<{ id: string; name: string }>;
 	members?: Array<{
@@ -111,7 +144,7 @@ function createMemoryCloudWorkspaceStore(seed?: {
 	const organizations = [...(seed?.organizations ?? [])];
 	const members = [...(seed?.members ?? [])];
 
-	const store: Parameters<typeof ensurePersonalCloudWorkspace>[0] & {
+	const store: Parameters<typeof createPersonalCloudWorkspace>[0] & {
 		organizations: typeof organizations;
 		members: typeof members;
 	} = {

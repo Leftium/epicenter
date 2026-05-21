@@ -15,3 +15,26 @@ export function roomWsUrl(apiUrl: string, roomId: string): string {
 	const base = apiUrl.replace(/\/+$/, '');
 	return websocketUrl(`${base}/rooms/${encodeURIComponent(roomId)}`);
 }
+
+/**
+ * Build the WebSocket URL for a Cloud Workspace app document.
+ *
+ * `docId = "root"` is the conventional app entry document. The API route
+ * treats it like any other app-owned document id after Workspace membership
+ * has been checked.
+ */
+export function workspaceAppDocWsUrl(
+	apiUrl: string,
+	params: {
+		workspaceId: string;
+		appId: string;
+		docId: string;
+	},
+): string {
+	const base = apiUrl.replace(/\/+$/, '');
+	return websocketUrl(
+		`${base}/workspaces/${encodeURIComponent(params.workspaceId)}` +
+			`/apps/${encodeURIComponent(params.appId)}` +
+			`/docs/${encodeURIComponent(params.docId)}`,
+	);
+}

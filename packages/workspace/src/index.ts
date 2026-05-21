@@ -188,4 +188,8 @@ export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-export { roomWsUrl, websocketUrl } from './document/transport.js';
+export {
+	roomWsUrl,
+	websocketUrl,
+	workspaceAppDocWsUrl,
+} from './document/transport.js';

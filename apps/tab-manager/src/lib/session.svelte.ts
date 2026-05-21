@@ -37,14 +37,27 @@ const whenReady = Promise.all([
 	persistedAuthStorage.whenReady,
 	createDeviceProfile(),
 ]).then(([, profile]) => {
-	authClient = createOAuthAppAuth({
+	const auth = createOAuthAppAuth({
 		baseURL: APP_URLS.API,
 		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 		persistedAuthStorage,
 		launcher: oauthLauncher,
 	});
-	session = buildSession(authClient, profile);
+	authClient = auth;
+	return primeDefaultWorkspace(auth).then(() => {
+		session = buildSession(auth, profile);
+	});
 });
+
+async function primeDefaultWorkspace(auth: AuthClient) {
+	if (auth.state.status === 'signed-out') return;
+	if (auth.state.defaultWorkspaceId) return;
+	try {
+		await auth.fetch('/api/session');
+	} catch {
+		// Local workspace data can still open while offline or reauth is needed.
+	}
+}
 
 function buildSession(
 	auth: AuthClient,
@@ -57,6 +70,10 @@ function buildSession(
 				owner,
 				installationId: profile.installationId,
 				openWebSocket: auth.openWebSocket,
+				defaultWorkspaceId:
+					auth.state.status === 'signed-in'
+						? auth.state.defaultWorkspaceId
+						: undefined,
 			});
 			const sessionAiTools = actionsToAiTools(tabManager.collaboration.actions);
 			const savedTabs = createSavedTabState(tabManager);

@@ -1,7 +1,7 @@
 # Cloud Workspace App Namespace Clean Break
 
 **Date**: 2026-05-20
-**Status**: In Progress (Phase 1 sync route and Phase 2 Workspace API landed; cleanup pending)
+**Status**: In Progress (sync route, Workspace API, and first client adoption landed; cleanup pending)
 **Author**: Epicenter
 
 ## Overview
@@ -887,6 +887,13 @@ Apps own their document graph in every deployment mode. Cloud does not need to u
 - [x] **5.2** Remove subject-scoped room names from Cloud product routes.
 - [ ] **5.3** Remove owner-user versus owner-organization workspace schema proposals from active Cloud plans.
 
+### Phase 6: Client Adoption
+
+- [x] **6.1** Resolve a default Cloud Workspace from `/api/session.defaultWorkspaceId` for at least one real client path.
+- [x] **6.2** Open the client root Sync Doc at `/workspaces/:workspaceId/apps/:appId/docs/root` by default.
+- [x] **6.3** Keep `/rooms/:room` as a compatibility path when the default Workspace is not available.
+- [x] **6.4** Add tests for the client Workspace app doc URL construction.
+
 ## Test And Migration Invariants
 
 Even in a clean break, these should become tests or migration gates.
@@ -977,6 +984,20 @@ Cloud Workspace remains backed by Better Auth `organization` and `member` rows. 
 ```
 
 No `cloud_workspace`, `workspace_member`, `app_instance`, `app_sync_doc`, `app_asset`, scoped sync token, or Workspace head Y.Doc was added.
+
+### 2026-05-21 Phase 3 Client Adoption
+
+Tab Manager now resolves the default Cloud Workspace through `/api/session.defaultWorkspaceId` and opens its root sync document at:
+
+```txt
+/workspaces/:workspaceId/apps/tab-manager/docs/root
+```
+
+`@epicenter/workspace` exposes a `workspaceAppDocWsUrl()` helper for the product-shaped WebSocket route while keeping `roomWsUrl()` for compatibility. Tab Manager uses the Workspace app doc URL when the default Workspace is known and falls back to `/rooms/:room` when the user is offline, signed out, or reauth is required before the default Workspace can be refreshed.
+
+Auth keeps `defaultWorkspaceId` in memory after `/api/session` verification or sign-in. It does not persist the value into the local auth cell, so offline local workspace boot still depends only on `localIdentity`.
+
+No `app_instance`, `app_sync_doc`, `app_asset`, scoped sync token, Workspace head Y.Doc, or Better Auth Organization product surface was added.
 
 ## Open Questions
 

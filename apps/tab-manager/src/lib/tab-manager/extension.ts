@@ -9,11 +9,11 @@ import {
 	type LocalOwner,
 	type OpenWebSocket,
 	openCollaboration,
-	roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createTabManagerActions } from '$lib/workspace/actions';
 import { type DeviceId, tabManagerTables } from '$lib/workspace/definition';
+import { tabManagerSyncUrl } from './sync-url.js';
 
 /**
  * Build the tab-manager binding. Synchronous: callers must resolve the
@@ -27,10 +27,12 @@ export function openTabManagerBrowser({
 	owner,
 	installationId,
 	openWebSocket,
+	defaultWorkspaceId,
 }: {
 	owner: LocalOwner;
 	installationId: DeviceId;
 	openWebSocket?: OpenWebSocket;
+	defaultWorkspaceId?: string;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: true });
 	const encryption = owner.attachEncryption(ydoc);
@@ -47,7 +49,11 @@ export function openTabManagerBrowser({
 	});
 
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(APP_URLS.API, ydoc.guid),
+		url: tabManagerSyncUrl({
+			apiUrl: APP_URLS.API,
+			roomId: ydoc.guid,
+			defaultWorkspaceId,
+		}),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		installationId,

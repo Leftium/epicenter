@@ -8,45 +8,47 @@
  * workspace opener so daemon-side and browser-side action surfaces stay
  * identical without a second factory call here.
  *
+ * Cloud sync is routed through one `cloudWorkspaceSync.forApp(...)` factory
+ * per app instance: the root doc and every note-body child doc share that
+ * factory's workspace lookup and auth-state subscription.
+ *
  * The bundle's `wipe()` drops every encrypted IDB database for this owner;
- * `Symbol.dispose` tears down the root + cached child Y.Docs without
- * touching local storage.
+ * `Symbol.dispose` tears down the root + cached child Y.Docs and the cloud
+ * sync factory without touching local storage.
  */
 
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { type NoteId, openHoneycrispWorkspace } from '@epicenter/honeycrisp';
 import {
 	attachRichText,
+	cloudWorkspaceSync,
 	createDisposableCache,
 	DateTimeString,
-	type DefaultCloudWorkspaceAuth,
 	type LocalOwner,
-	type OpenWebSocket,
 	onLocalUpdate,
-	openDefaultWorkspaceAppDocCollaboration,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import {
-	HONEYCRISP_CLOUD_APP_ID,
-	HONEYCRISP_ROOT_DOC_ID,
-	honeycrispNoteBodyDocId,
-} from './sync-docs';
 
 export function openHoneycrispBrowser({
 	owner,
 	installationId,
 	auth,
-	openWebSocket,
 }: {
 	owner: LocalOwner;
 	installationId: string;
-	auth: DefaultCloudWorkspaceAuth;
-	openWebSocket?: OpenWebSocket;
+	auth: AuthClient;
 }) {
 	const workspace = openHoneycrispWorkspace(owner.attachEncryption);
 	const { ydoc: rootYdoc, tables, kv } = workspace;
 
 	const idb = owner.attachLocal(rootYdoc);
+
+	const honeycrispCloud = cloudWorkspaceSync.forApp({
+		auth,
+		apiUrl: APP_URLS.API,
+		appId: 'honeycrisp',
+	});
 
 	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
 		const ydoc = new Y.Doc({
@@ -55,13 +57,11 @@ export function openHoneycrispBrowser({
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);
-		const childSync = openDefaultWorkspaceAppDocCollaboration(ydoc, {
-			auth,
-			apiUrl: APP_URLS.API,
-			appId: HONEYCRISP_CLOUD_APP_ID,
-			docId: honeycrispNoteBodyDocId(noteId),
+		// docId defaults to ydoc.guid (`${workspaceId}.notes.${noteId}.body`),
+		// which is the same string used as the local guid and matches
+		// ROUTE_ID_PATTERN. One canonical id for both local and cloud.
+		const childSync = honeycrispCloud.open(ydoc, {
 			waitFor: childIdb.whenLoaded,
-			openWebSocket,
 			installationId,
 			actions: {},
 		});
@@ -88,13 +88,11 @@ export function openHoneycrispBrowser({
 		};
 	});
 
-	const collaboration = openDefaultWorkspaceAppDocCollaboration(rootYdoc, {
-		auth,
-		apiUrl: APP_URLS.API,
-		appId: HONEYCRISP_CLOUD_APP_ID,
-		docId: HONEYCRISP_ROOT_DOC_ID,
+	const collaboration = honeycrispCloud.open(rootYdoc, {
+		// Explicit "root" preserves the cloud-side identity of the canonical
+		// app entry document; rootYdoc.guid is the workspace id, not "root".
+		docId: 'root',
 		waitFor: idb.whenLoaded,
-		openWebSocket,
 		installationId,
 		actions: workspace.actions,
 	});
@@ -122,6 +120,7 @@ export function openHoneycrispBrowser({
 		[Symbol.dispose]() {
 			noteBodyDocs[Symbol.dispose]();
 			rootYdoc.destroy();
+			honeycrispCloud[Symbol.dispose]();
 		},
 	};
 }

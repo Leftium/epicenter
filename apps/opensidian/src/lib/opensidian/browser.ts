@@ -1,3 +1,4 @@
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
@@ -7,37 +8,35 @@ import {
 } from '@epicenter/filesystem';
 import {
 	attachTimeline,
+	cloudWorkspaceSync,
 	createDisposableCache,
-	type DefaultCloudWorkspaceAuth,
 	type LocalOwner,
-	type OpenWebSocket,
 	onLocalUpdate,
-	openDefaultWorkspaceAppDocCollaboration,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import { openOpensidianWorkspace } from 'opensidian';
 import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
-import {
-	OPENSIDIAN_CLOUD_APP_ID,
-	OPENSIDIAN_ROOT_DOC_ID,
-} from './sync-docs';
 
 export function openOpensidianBrowser({
 	owner,
 	installationId,
 	auth,
-	openWebSocket,
 }: {
 	owner: LocalOwner;
 	installationId: string;
-	auth: DefaultCloudWorkspaceAuth;
-	openWebSocket?: OpenWebSocket;
+	auth: AuthClient;
 }) {
 	const workspace = openOpensidianWorkspace(owner.attachEncryption);
 	const { ydoc: rootYdoc, tables, kv } = workspace;
 
 	const idb = owner.attachLocal(rootYdoc);
+
+	const opensidianCloud = cloudWorkspaceSync.forApp({
+		auth,
+		apiUrl: APP_URLS.API,
+		appId: 'opensidian',
+	});
 
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
 		const ydoc = new Y.Doc({
@@ -51,10 +50,20 @@ export function openOpensidianBrowser({
 			tables.files.update(fileId, { updatedAt: Date.now() }),
 		);
 		const childIdb = owner.attachLocal(ydoc);
+		// docId defaults to ydoc.guid (`${workspaceId}.files.${fileId}.content`),
+		// which is the same string used as the local guid and matches
+		// ROUTE_ID_PATTERN. File bodies sync through Cloud so device loss does
+		// not lose the largest data class.
+		const childSync = opensidianCloud.open(ydoc, {
+			waitFor: childIdb.whenLoaded,
+			installationId,
+			actions: {},
+		});
 		return {
 			ydoc,
 			content: attachTimeline(ydoc),
 			idb: childIdb,
+			sync: childSync,
 			/**
 			 * child disposer rejections do not propagate; bundle.wipe() relies on
 			 * IDB's deleteDatabase native blocking as belt-and-suspenders for
@@ -97,13 +106,11 @@ export function openOpensidianBrowser({
 		bash,
 	});
 
-	const collaboration = openDefaultWorkspaceAppDocCollaboration(rootYdoc, {
-		auth,
-		apiUrl: APP_URLS.API,
-		appId: OPENSIDIAN_CLOUD_APP_ID,
-		docId: OPENSIDIAN_ROOT_DOC_ID,
+	const collaboration = opensidianCloud.open(rootYdoc, {
+		// Explicit "root" preserves the cloud-side identity of the canonical
+		// app entry document; rootYdoc.guid is the workspace id, not "root".
+		docId: 'root',
 		waitFor: idb.whenLoaded,
-		openWebSocket,
 		installationId,
 		actions,
 	});
@@ -115,6 +122,7 @@ export function openOpensidianBrowser({
 		fileContentDocs[Symbol.dispose]();
 		sqliteIndex[Symbol.dispose]();
 		rootYdoc.destroy();
+		opensidianCloud[Symbol.dispose]();
 	}
 
 	return {

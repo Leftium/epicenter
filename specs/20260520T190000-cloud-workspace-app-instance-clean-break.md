@@ -855,7 +855,7 @@ Apps own their document graph in every deployment mode. Cloud does not need to u
 ### Phase 2: Better Auth Organization As Workspace
 
 - [x] **2.1** Enable Better Auth organization plugin for Cloud Workspaces.
-- [x] **2.2** Create a personal Cloud Workspace as a one-member organization during signup or first Cloud use.
+- [x] **2.2** Create a personal Cloud Workspace as a one-member organization during signup.
 - [x] **2.3** Expose Workspace APIs that wrap Better Auth organization APIs.
 - [x] **2.4** Keep Better Auth organization naming below the product API boundary.
 - [x] **2.5** Do not create `cloud_workspace`, `workspace_member`, `workspace_invitation`, or `workspace_role` tables.
@@ -975,7 +975,7 @@ Implemented the minimal Cloud Workspace product surface in `apps/api`:
 GET /api/workspaces
 ```
 
-Cloud Workspace remains backed by Better Auth `organization` and `member` rows. `workspaceId` is `organization.id`; the API does not expose Organization as a product noun. A deterministic personal Workspace is ensured during signup and `/api/workspaces` so older accounts are backfilled when clients ask for their workspace list.
+Cloud Workspace remains backed by Better Auth `organization` and `member` rows. `workspaceId` is `organization.id`; the API does not expose Organization as a product noun. A deterministic personal Workspace is created during signup. `/api/workspaces` lists existing Workspace memberships and does not create missing personal Workspaces.
 
 `/api/workspaces` returns `defaultWorkspaceId` for clients that need to open:
 

@@ -285,12 +285,15 @@ export class Room extends DurableObject {
 					this.awareness.states.set(attachment.clientID, {
 						liveness: { installationId: attachment.installationId },
 					});
-					// y-protocols compares `outdatedTimeout` (30000) against
-					// `Date.now() - lastUpdated`; lib0's `getUnixTime` is `Date.now`
-					// (milliseconds). Writing seconds here causes the outlier loop
-					// to reap restored liveness within ~100ms of wake.
+					// Seed meta with clock 0 so the next inbound awareness frame from
+					// the real client (which y-protocols ships at clock >= 1) passes
+					// the `clock > prevClock` accept check. Seeding at clock 1 used to
+					// swallow that first frame whenever the client's local clock had
+					// not yet incremented past wake.
+					// `lastUpdated` is set to Date.now() (ms) so the outdatedTimeout
+					// reaper does not strip restored liveness within ~100ms of wake.
 					this.awareness.meta.set(attachment.clientID, {
-						clock: 1,
+						clock: 0,
 						lastUpdated: Date.now(),
 					});
 					restoredClientIDs.push(attachment.clientID);

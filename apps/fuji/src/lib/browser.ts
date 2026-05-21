@@ -58,9 +58,6 @@ export function openFujiBrowser({
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);
-		// docId defaults to ydoc.guid (`${workspaceId}.entries.${entryId}.content`),
-		// which is the same string used as the local guid and matches
-		// ROUTE_ID_PATTERN. One canonical id for both local and cloud.
 		const childSync = fujiCloud.open(ydoc, {
 			waitFor: childIdb.whenLoaded,
 			actions: {},

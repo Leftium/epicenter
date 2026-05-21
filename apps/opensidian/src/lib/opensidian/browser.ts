@@ -51,10 +51,8 @@ export function openOpensidianBrowser({
 			tables.files.update(fileId, { updatedAt: Date.now() }),
 		);
 		const childIdb = owner.attachLocal(ydoc);
-		// docId defaults to ydoc.guid (`${workspaceId}.files.${fileId}.content`),
-		// which is the same string used as the local guid and matches
-		// ROUTE_ID_PATTERN. File bodies sync through Cloud so device loss does
-		// not lose the largest data class.
+		// File bodies sync through Cloud so device loss doesn't drop the
+		// largest data class.
 		const childSync = opensidianCloud.open(ydoc, {
 			waitFor: childIdb.whenLoaded,
 			actions: {},

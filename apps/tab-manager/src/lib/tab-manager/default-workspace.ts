@@ -19,16 +19,3 @@ export async function resolveDefaultWorkspaceId(auth: WorkspaceAuth) {
 		return undefined;
 	}
 }
-
-export function createDefaultWorkspaceIdResolver(auth: WorkspaceAuth) {
-	let value: string | undefined;
-
-	return {
-		get value() {
-			return value;
-		},
-		async resolve() {
-			value = await resolveDefaultWorkspaceId(auth);
-		},
-	};
-}

@@ -11,12 +11,15 @@ import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
+import { resolveDefaultWorkspaceId } from './tab-manager/default-workspace';
 import type { TabManagerBrowser } from './tab-manager/extension';
-import { openTabManagerBrowser } from './tab-manager/extension';
-import { createDefaultWorkspaceIdResolver } from './tab-manager/default-workspace';
+import {
+	openTabManagerBrowser,
+	openTabManagerCloudCollaboration,
+} from './tab-manager/extension';
 
 export type SessionAiTools = ReturnType<
-	typeof actionsToAiTools<TabManagerBrowser['collaboration']['actions']>
+	typeof actionsToAiTools<TabManagerBrowser['actions']>
 >;
 export type SessionTools = SessionAiTools['tools'];
 
@@ -52,19 +55,40 @@ function buildSession(
 	auth: AuthClient,
 	profile: Awaited<ReturnType<typeof createDeviceProfile>>,
 ) {
-	const defaultWorkspaceId = createDefaultWorkspaceIdResolver(auth);
-
 	return createSession({
 		auth,
-		prepare: () => defaultWorkspaceId.resolve(),
 		build: ({ owner }) => {
 			const tabManager = openTabManagerBrowser({
 				owner,
 				installationId: profile.installationId,
-				openWebSocket: auth.openWebSocket,
-				defaultWorkspaceId: defaultWorkspaceId.value,
 			});
-			const sessionAiTools = actionsToAiTools(tabManager.collaboration.actions);
+			let collaboration =
+				$state<ReturnType<typeof openTabManagerCloudCollaboration>>();
+			let disposed = false;
+			let attachingCloud = false;
+
+			async function attachCloudCollaboration() {
+				if (disposed || collaboration || attachingCloud) return;
+				attachingCloud = true;
+				try {
+					const defaultWorkspaceId = await resolveDefaultWorkspaceId(auth);
+					if (disposed || collaboration || !defaultWorkspaceId) return;
+					collaboration = openTabManagerCloudCollaboration({
+						tabManager,
+						openWebSocket: auth.openWebSocket,
+						defaultWorkspaceId,
+					});
+				} finally {
+					attachingCloud = false;
+				}
+			}
+
+			const unsubscribeAuthState = auth.onStateChange((state) => {
+				if (state.status === 'signed-in') void attachCloudCollaboration();
+			});
+			void attachCloudCollaboration();
+
+			const sessionAiTools = actionsToAiTools(tabManager.actions);
 			const savedTabs = createSavedTabState(tabManager);
 			const bookmarks = createBookmarkState(tabManager);
 			const toolTrust = createToolTrustState(tabManager);
@@ -78,13 +102,19 @@ function buildSession(
 
 			return {
 				...tabManager,
+				get collaboration() {
+					return collaboration;
+				},
 				state,
 				sessionAiTools,
 				[Symbol.dispose]() {
+					disposed = true;
+					unsubscribeAuthState();
 					aiChat[Symbol.dispose]();
 					toolTrust[Symbol.dispose]();
 					bookmarks[Symbol.dispose]();
 					savedTabs[Symbol.dispose]();
+					collaboration?.[Symbol.dispose]();
 					tabManager[Symbol.dispose]();
 				},
 			};

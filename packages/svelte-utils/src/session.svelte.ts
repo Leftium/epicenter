@@ -4,8 +4,8 @@ import { createLocalOwner, type LocalOwner } from '@epicenter/workspace';
 /**
  * Auth-gated payload built once per identity-bearing auth state and disposed
  * on sign-out. `reauth-required` keeps the existing payload mounted: OAuth
- * sessions are single-subject by structure, so two consecutive identity-bearing
- * states are always the same subject.
+ * sessions publish a signed-out gap before a different subject mounts, so two
+ * consecutive identity-bearing states are always the same subject.
  *
  * The build callback receives a `LocalOwner` (`@epicenter/workspace`). It uses
  * `state.localIdentity.subject` as the local `ownerId`, plus a lazy `keyring()`
@@ -21,41 +21,20 @@ import { createLocalOwner, type LocalOwner } from '@epicenter/workspace';
  */
 export function createSession<T extends Disposable>({
 	auth,
-	prepare,
 	build,
 }: {
 	auth: AuthClient;
-	prepare?: (context: {
-		state: Exclude<AuthState, { status: 'signed-out' }>;
-	}) => Promise<void> | void;
 	build: (context: { owner: LocalOwner }) => T;
 }) {
 	let payload = $state<T | null>(null);
-	let buildVersion = 0;
 
 	function reconcile(state: AuthState) {
-		buildVersion += 1;
-		const version = buildVersion;
 		if (state.status === 'signed-out') {
 			payload?.[Symbol.dispose]();
 			payload = null;
 			return;
 		}
 		if (payload) return;
-
-		if (prepare) {
-			void Promise.resolve(prepare({ state })).then(() => {
-				if (
-					version !== buildVersion ||
-					payload ||
-					auth.state.status === 'signed-out'
-				) {
-					return;
-				}
-				buildPayload(auth.state);
-			});
-			return;
-		}
 
 		buildPayload(state);
 	}

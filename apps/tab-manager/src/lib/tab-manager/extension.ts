@@ -6,6 +6,7 @@
 
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	type Collaboration,
 	type LocalOwner,
 	type OpenWebSocket,
 	openCollaboration,
@@ -20,19 +21,15 @@ import { tabManagerSyncUrl } from './sync-url.js';
  * installation id before invoking (the extension's installation id comes from
  * `chrome.storage.local` via `createDeviceProfile()` in `device.ts`).
  *
- * Consumers gate UI render on `tabManager.idb.whenLoaded`; sync (the
- * WebSocket) is independent and connects whenever the network allows.
+ * Consumers gate UI render on `tabManager.idb.whenLoaded`; Cloud sync is
+ * independent and connects whenever a Workspace route is available.
  */
 export function openTabManagerBrowser({
 	owner,
 	installationId,
-	openWebSocket,
-	defaultWorkspaceId,
 }: {
 	owner: LocalOwner;
 	installationId: DeviceId;
-	openWebSocket?: OpenWebSocket;
-	defaultWorkspaceId?: string;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: true });
 	const encryption = owner.attachEncryption(ydoc);
@@ -48,28 +45,17 @@ export function openTabManagerBrowser({
 		deviceId: Promise.resolve(installationId),
 	});
 
-	const collaboration = openCollaboration(ydoc, {
-		url: tabManagerSyncUrl({
-			apiUrl: APP_URLS.API,
-			roomId: ydoc.guid,
-			defaultWorkspaceId,
-		}),
-		waitFor: idb.whenLoaded,
-		openWebSocket,
-		installationId,
-		actions,
-	});
-
 	return {
+		installationId,
 		ydoc,
 		tables,
 		kv,
 		batch,
 		idb,
-		collaboration,
+		actions,
 		async wipe() {
 			ydoc.destroy();
-			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
+			await idb.whenDisposed;
 			await owner.wipeLocalYjsData([ydoc.guid]);
 		},
 		[Symbol.dispose]() {
@@ -79,3 +65,26 @@ export function openTabManagerBrowser({
 }
 
 export type TabManagerBrowser = ReturnType<typeof openTabManagerBrowser>;
+
+export function openTabManagerCloudCollaboration({
+	tabManager,
+	openWebSocket,
+	defaultWorkspaceId,
+}: {
+	tabManager: TabManagerBrowser;
+	openWebSocket?: OpenWebSocket;
+	defaultWorkspaceId?: string;
+}): Collaboration<TabManagerBrowser['actions']> | undefined {
+	const syncUrl = tabManagerSyncUrl({
+		apiUrl: APP_URLS.API,
+		defaultWorkspaceId,
+	});
+	if (!syncUrl) return undefined;
+	return openCollaboration(tabManager.ydoc, {
+		url: syncUrl,
+		waitFor: tabManager.idb.whenLoaded,
+		openWebSocket,
+		installationId: tabManager.installationId,
+		actions: tabManager.actions,
+	});
+}

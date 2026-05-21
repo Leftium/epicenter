@@ -1,12 +1,12 @@
 /**
  * Tab Manager Sync URL Tests
  *
- * Verifies the extension's default Cloud sync route and the compatibility
- * fallback used when no default Cloud Workspace is available.
+ * Verifies the extension's default Cloud sync route and the absent sync URL
+ * used when no default Cloud Workspace is available.
  *
  * Key behaviors:
  * - Known default Workspace opens the Tab Manager root app doc.
- * - Missing default Workspace keeps the legacy room route.
+ * - Missing default Workspace returns no Cloud sync URL.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -17,7 +17,6 @@ describe('tabManagerSyncUrl', () => {
 		expect(
 			tabManagerSyncUrl({
 				apiUrl: 'https://api.example.com/',
-				roomId: 'epicenter.tab-manager',
 				defaultWorkspaceId: 'ws_123',
 			}),
 		).toBe(
@@ -25,12 +24,11 @@ describe('tabManagerSyncUrl', () => {
 		);
 	});
 
-	test('keeps the room route as a compatibility fallback', () => {
+	test('returns no Cloud sync URL without a default Workspace', () => {
 		expect(
 			tabManagerSyncUrl({
 				apiUrl: 'https://api.example.com/',
-				roomId: 'epicenter.tab-manager',
 			}),
-		).toBe('wss://api.example.com/rooms/epicenter.tab-manager');
+		).toBeUndefined();
 	});
 });

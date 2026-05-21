@@ -47,9 +47,7 @@ export async function registerDevice(
 	tabManager: TabManagerBrowser,
 	defaultName: string,
 ): Promise<void> {
-	// openTabManagerBrowser narrows installationId to DeviceId at construction;
-	// the schema-validated presence carries plain strings, so cast back.
-	const id = tabManager.collaboration.installationId as DeviceId;
+	const id = tabManager.installationId;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
 	tabManager.tables.devices.set({

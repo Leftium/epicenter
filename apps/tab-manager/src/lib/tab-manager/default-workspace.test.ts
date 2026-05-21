@@ -1,17 +1,18 @@
 /**
  * Tab Manager Default Workspace Tests
  *
- * Verifies that Tab Manager resolves the product Workspace from `/api/workspaces`
- * at signed-in payload build time, not once during module readiness.
+ * Verifies that Tab Manager resolves the product Workspace from
+ * `/api/workspaces` when Cloud collaboration can attach, not once during
+ * module readiness.
  *
  * Key behaviors:
  * - Signed-out resolution does not call the Workspace API.
- * - A later signed-in resolution replaces the missing value with the server default.
+ * - A later signed-in resolution returns the server default.
  */
 
-import type { AuthState, SubjectIdentity } from '@epicenter/auth';
 import { expect, test } from 'bun:test';
-import { createDefaultWorkspaceIdResolver } from './default-workspace.js';
+import type { AuthState, SubjectIdentity } from '@epicenter/auth';
+import { resolveDefaultWorkspaceId } from './default-workspace.js';
 
 const localIdentity: SubjectIdentity = {
 	subject: 'user_1',
@@ -26,19 +27,17 @@ const localIdentity: SubjectIdentity = {
 test('default Workspace resolution retries after signed-out startup', async () => {
 	let state: AuthState = { status: 'signed-out' };
 	const fetches: string[] = [];
-	const resolver = createDefaultWorkspaceIdResolver({
+	const auth = {
 		get state() {
 			return state;
 		},
-		async fetch(input) {
+		async fetch(input: Request | string | URL) {
 			fetches.push(String(input));
 			return Response.json({ defaultWorkspaceId: 'ws_after_sign_in' });
 		},
-	});
+	};
 
-	await resolver.resolve();
-
-	expect(resolver.value).toBeUndefined();
+	await expect(resolveDefaultWorkspaceId(auth)).resolves.toBeUndefined();
 	expect(fetches).toEqual([]);
 
 	state = {
@@ -46,8 +45,8 @@ test('default Workspace resolution retries after signed-out startup', async () =
 		localIdentity,
 	};
 
-	await resolver.resolve();
-
+	await expect(resolveDefaultWorkspaceId(auth)).resolves.toBe(
+		'ws_after_sign_in',
+	);
 	expect(fetches).toEqual(['/api/workspaces']);
-	expect(resolver.value).toBe('ws_after_sign_in');
 });

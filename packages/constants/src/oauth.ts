@@ -13,12 +13,17 @@ type TrustedPublicOAuthClientType = Extract<
 >;
 
 /**
- * Checked-in Better Auth client registration for first-party public apps.
+ * Per-app facts for a checked-in first-party public OAuth client.
  *
- * Keep this shape close to Better Auth's `SchemaClient`, but do not mirror the
- * whole type. The registry only owns stable app identity and redirect URIs;
- * the API seed layer owns the repeated public-client policy such as PKCE,
- * skipped consent, scopes, and `tokenEndpointAuthMethod: "none"`.
+ * This is deliberately smaller than Better Auth's full `SchemaClient`. Each
+ * entry only says which app is asking and which redirect URIs are allowed. The
+ * API seed layer fills in the shared policy for every trusted app: no client
+ * secret, PKCE required, consent skipped, authorization-code flow, and the
+ * common Epicenter scopes.
+ *
+ * The fields stay spelled out instead of using `Pick` or a mapped type because
+ * this file is meant to be read as config. The Better Auth indexed types keep
+ * the field names tied to upstream without making the shape cryptic.
  */
 type TrustedPublicOAuthClientDefinition = {
 	clientId: NonNullable<SchemaClient['clientId']>;

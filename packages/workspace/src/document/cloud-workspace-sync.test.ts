@@ -19,8 +19,6 @@ import * as Y from 'yjs';
 import {
 	cloudWorkspaceSync,
 	resolveDefaultCloudWorkspaceId,
-	resolveDefaultWorkspaceAppDocWsUrl,
-	routeSafeWorkspaceAppDocId,
 	type CloudWorkspaceLookupFailure,
 	type DefaultCloudWorkspaceAuth,
 } from './cloud-workspace-sync.js';
@@ -91,47 +89,6 @@ describe('resolveDefaultCloudWorkspaceId', () => {
 		const { auth } = authHarness({ response: Response.json({}) });
 
 		await expect(resolveDefaultCloudWorkspaceId(auth)).resolves.toBeUndefined();
-	});
-});
-
-describe('resolveDefaultWorkspaceAppDocWsUrl', () => {
-	test('string defaultWorkspaceId returns a workspace app doc URL', async () => {
-		const { auth, fetches } = authHarness();
-
-		await expect(
-			resolveDefaultWorkspaceAppDocWsUrl({
-				auth,
-				apiUrl: 'https://api.example.com/',
-				appId: 'fuji',
-				docId: 'root',
-			}),
-		).resolves.toBe('wss://api.example.com/workspaces/ws_123/apps/fuji/docs/root');
-		expect(fetches).toEqual(['/api/workspaces']);
-	});
-
-	test('route ids are encoded by workspaceAppDocWsUrl', async () => {
-		const { auth } = authHarness({
-			response: Response.json({ defaultWorkspaceId: 'ws/a' }),
-		});
-
-		await expect(
-			resolveDefaultWorkspaceAppDocWsUrl({
-				auth,
-				apiUrl: 'http://localhost:8787',
-				appId: 'app?b',
-				docId: 'doc#c',
-			}),
-		).resolves.toBe(
-			'ws://localhost:8787/workspaces/ws%2Fa/apps/app%3Fb/docs/doc%23c',
-		);
-	});
-});
-
-describe('routeSafeWorkspaceAppDocId', () => {
-	test('builds a route-safe stable document id from arbitrary input', () => {
-		expect(routeSafeWorkspaceAppDocId({ prefix: 'entry', id: 'a/b:c' })).toBe(
-			'entry.h612f623a63',
-		);
 	});
 });
 

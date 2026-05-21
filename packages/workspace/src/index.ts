@@ -15,42 +15,42 @@
  *   attachIndexedDb,
  *   attachRichText,
  *   attachTables,
+ *   cloudWorkspaceSync,
  *   createDisposableCache,
  *   createInstallationId,
  *   defineTable,
  *   docGuid,
- *   openDefaultWorkspaceAppDocCollaboration,
- *   routeSafeWorkspaceAppDocId,
  * } from '@epicenter/workspace';
  * import type { AuthClient } from '@epicenter/auth';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * declare const auth: Pick<AuthClient, 'state' | 'fetch' | 'openWebSocket'>;
- * declare const openWebSocket: (
- *   url: string | URL,
- *   protocols?: string[],
- * ) => Promise<WebSocket>;
+ * declare const auth: AuthClient;
  *
  * const installationId = createInstallationId({ storage: localStorage });
  *
- * // Singleton document + collaboration: inline at module scope, no factory wrapper.
- * const ydoc = new Y.Doc({ guid: 'notes' });
- * const tables = attachTables(ydoc, { posts });
- * const idb = attachIndexedDb(ydoc);
- * const collaboration = openDefaultWorkspaceAppDocCollaboration(ydoc, {
+ * // One factory per app instance: captures auth + appId, runs /api/workspaces
+ * // once across every doc the app opens, and subscribes to auth state so
+ * // sign-in transitions re-attach every live handle automatically.
+ * const notesCloud = cloudWorkspaceSync.forApp({
  *   auth,
  *   apiUrl: 'https://api.example.com',
  *   appId: 'notes',
+ * });
+ *
+ * const ydoc = new Y.Doc({ guid: 'notes' });
+ * const tables = attachTables(ydoc, { posts });
+ * const idb = attachIndexedDb(ydoc);
+ * const collaboration = notesCloud.open(ydoc, {
  *   docId: 'root',
  *   waitFor: idb.whenLoaded,
- *   openWebSocket,
  *   installationId,
  *   actions: {},
  * });
  *
- * // Content docs use the same primitive with an empty action registry.
+ * // Content docs use the same factory with an empty action registry. The
+ * // local Y.Doc guid doubles as the cloud docId, so no second id system.
  * const noteBodyDocs = createDisposableCache(
  *   (noteId: string) => {
  *     const bodyYdoc = new Y.Doc({
@@ -63,13 +63,8 @@
  *       gc: true,
  *     });
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
- *     const bodySync = openDefaultWorkspaceAppDocCollaboration(bodyYdoc, {
- *       auth,
- *       apiUrl: 'https://api.example.com',
- *       appId: 'notes',
- *       docId: routeSafeWorkspaceAppDocId({ prefix: 'post', id: noteId }),
+ *     const bodySync = notesCloud.open(bodyYdoc, {
  *       waitFor: bodyIdb.whenLoaded,
- *       openWebSocket,
  *       installationId,
  *       actions: {},
  *     });
@@ -185,10 +180,7 @@ export {
 export { docGuid } from './document/doc-guid.js';
 export {
 	cloudWorkspaceSync,
-	openDefaultWorkspaceAppDocCollaboration,
 	resolveDefaultCloudWorkspaceId,
-	resolveDefaultWorkspaceAppDocWsUrl,
-	routeSafeWorkspaceAppDocId,
 	type CloudWorkspaceAppOpenConfig,
 	type CloudWorkspaceAppSync,
 	type CloudWorkspaceLookupFailure,

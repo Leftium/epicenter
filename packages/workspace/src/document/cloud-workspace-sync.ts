@@ -13,9 +13,9 @@
  * after construction. Apps never see `auth.fetch`, the workspace lookup, or
  * the route shape.
  *
- * The legacy `openDefaultWorkspaceAppDocCollaboration` wrapper stays in the
- * file until the per-app migrations land. Both routes go through the same
- * private `attachDeferredCollaboration` helper so behavior cannot drift.
+ * `resolveDefaultCloudWorkspaceId` is exported separately for callers
+ * (Tab Manager) that already own a URL-resolution flow and only need the
+ * raw workspace id.
  */
 
 import type { AuthClient } from '@epicenter/auth';
@@ -251,11 +251,25 @@ function assertRouteSafeDocId(docId: string): void {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// LEGACY: kept until per-app migrations land (Phase 7 deletes them)
+// LOW-LEVEL: kept for Tab Manager and other callers that already own a URL
+// resolution flow and just want the workspace id
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Minimum auth surface required to read the user's default Cloud Workspace
+ * id without subscribing to state transitions. Most call sites should use
+ * `cloudWorkspaceSync.forApp(auth, ...)` instead, which owns the lookup,
+ * the subscription, and per-doc URL construction.
+ */
 export type DefaultCloudWorkspaceAuth = Pick<AuthClient, 'state' | 'fetch'>;
 
+/**
+ * Read the signed-in user's default Cloud Workspace id from
+ * `/api/workspaces`. Returns `undefined` on signed-out, reauth-required,
+ * network failure, or any non-OK response (including the typed 409
+ * PersonalWorkspaceMissing); callers that need to distinguish those cases
+ * should go through `cloudWorkspaceSync.forApp(...).lookupFailure` instead.
+ */
 export async function resolveDefaultCloudWorkspaceId(
 	auth: DefaultCloudWorkspaceAuth,
 ): Promise<string | undefined> {
@@ -270,67 +284,6 @@ export async function resolveDefaultCloudWorkspaceId(
 	} catch {
 		return undefined;
 	}
-}
-
-export async function resolveDefaultWorkspaceAppDocWsUrl({
-	auth,
-	apiUrl,
-	appId,
-	docId,
-}: {
-	auth: DefaultCloudWorkspaceAuth;
-	apiUrl: string;
-	appId: string;
-	docId: string;
-}): Promise<string | undefined> {
-	const workspaceId = await resolveDefaultCloudWorkspaceId(auth);
-	if (!workspaceId) return undefined;
-	return workspaceAppDocWsUrl(apiUrl, { workspaceId, appId, docId });
-}
-
-export function routeSafeWorkspaceAppDocId({
-	prefix,
-	id,
-}: {
-	prefix: string;
-	id: string;
-}): string {
-	const encodedId = Array.from(new TextEncoder().encode(id), (byte) =>
-		byte.toString(16).padStart(2, '0'),
-	).join('');
-	return `${prefix}.h${encodedId}`;
-}
-
-export function openDefaultWorkspaceAppDocCollaboration<
-	TActions extends ActionRegistry,
->(
-	ydoc: Y.Doc,
-	{
-		auth,
-		apiUrl,
-		appId,
-		docId,
-		...collaborationConfig
-	}: Omit<OpenCollaborationConfig<TActions>, 'url'> & {
-		auth: DefaultCloudWorkspaceAuth;
-		apiUrl: string;
-		appId: string;
-		docId: string;
-	},
-): Collaboration<TActions> {
-	return attachDeferredCollaboration(ydoc, {
-		...collaborationConfig,
-		async resolveUrl() {
-			return (
-				(await resolveDefaultWorkspaceAppDocWsUrl({
-					auth,
-					apiUrl,
-					appId,
-					docId,
-				})) ?? null
-			);
-		},
-	});
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -346,6 +346,38 @@ describe('cloudWorkspaceSync.forApp', () => {
 		expect(sync.lookupFailure).toBeNull();
 	});
 
+	test('dispatch() before attach resolves to NetworkFailed', async () => {
+		// Signed-out at construction: no URL ever resolves, no underlying
+		// collaboration attaches. dispatch() must surface the disconnection
+		// rather than throwing or hanging.
+		const harness = createFactoryAuthHarness({
+			initialState: { status: 'signed-out' },
+		});
+
+		const sync = cloudWorkspaceSync.forApp({
+			auth: harness.auth,
+			apiUrl: 'https://api.example.com',
+			appId: 'fuji',
+		});
+
+		const ydoc = new Y.Doc({ guid: 'root' });
+		const handle = sync.open(ydoc, {
+			installationId: 'install-1',
+			actions: {},
+		});
+
+		await tick();
+
+		const result = await handle.dispatch({
+			to: 'peer-1',
+			action: 'noop',
+			input: {},
+		});
+
+		expect(result.error?.name).toBe('NetworkFailed');
+		expect(result.data).toBeNull();
+	});
+
 	test('action key validation throws synchronously at open()', () => {
 		const { auth } = createFactoryAuthHarness();
 		const sync = cloudWorkspaceSync.forApp({

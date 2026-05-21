@@ -156,6 +156,15 @@ function forApp({
 			setLookupFailure('network');
 			return { kind: 'failure', reason: 'network' };
 		}
+		// The user may have signed out while the request was in flight; the
+		// onStateChange listener already invalidated workspaceIdPromise but the
+		// resolved value here would still propagate to the original attach()'s
+		// open() call. Discard it so we don't hand a workspaceId to a handle
+		// whose owner is no longer authenticated.
+		if (auth.state.status !== 'signed-in') {
+			setLookupFailure(null);
+			return { kind: 'not-signed-in' };
+		}
 		if (response.status === 409) {
 			setLookupFailure('personal-workspace-missing');
 			return { kind: 'failure', reason: 'personal-workspace-missing' };

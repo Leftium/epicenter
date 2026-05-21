@@ -319,6 +319,72 @@ describe('cloudWorkspaceSync.forApp', () => {
 		expect(sync.lookupFailure).toBe('network');
 	});
 
+	test('sign-out during in-flight /api/workspaces discards the resolved id', async () => {
+		// Race: signed-in -> open() starts the fetch -> user signs out before
+		// the response arrives -> response carries a valid workspaceId. Without
+		// the post-await re-check, that id would propagate to the handle and
+		// the supervisor would open an unauthenticated WebSocket.
+		let releaseFetch!: () => void;
+		const fetchGate = new Promise<void>((resolve) => {
+			releaseFetch = resolve;
+		});
+
+		let currentState: AuthState = { status: 'signed-in', localIdentity };
+		const stateListeners = new Set<(state: AuthState) => void>();
+		const openedSocketUrls: string[] = [];
+		const auth: AuthClient = {
+			get state() {
+				return currentState;
+			},
+			onStateChange(fn) {
+				stateListeners.add(fn);
+				return () => {
+					stateListeners.delete(fn);
+				};
+			},
+			async startSignIn() {
+				return { data: undefined, error: null };
+			},
+			async signOut() {
+				return { data: undefined, error: null };
+			},
+			async fetch() {
+				await fetchGate;
+				return Response.json({ defaultWorkspaceId: 'ws_123' });
+			},
+			async openWebSocket(url: string | URL) {
+				openedSocketUrls.push(String(url));
+				return new Promise<WebSocket>(() => {});
+			},
+			[Symbol.dispose]() {},
+		};
+
+		const sync = cloudWorkspaceSync.forApp({
+			auth,
+			apiUrl: 'https://api.example.com',
+			appId: 'fuji',
+		});
+
+		const ydoc = new Y.Doc({ guid: 'root' });
+		sync.open(ydoc, { installationId: 'install-1', actions: {} });
+		await tick();
+
+		// Sign out while the fetch is parked at the gate.
+		currentState = { status: 'signed-out' };
+		for (const listener of stateListeners) listener(currentState);
+		await tick();
+
+		// Release the in-flight response carrying a valid workspaceId.
+		releaseFetch();
+		await tick();
+		await tick();
+
+		// No WebSocket is opened: the post-fetch re-check sees signed-out and
+		// discards the resolved id.
+		expect(openedSocketUrls).toEqual([]);
+		expect(sync.lookupFailure).toBeNull();
+	});
+
 	test('sign-out clears lookupFailure (signed-out is not a failure)', async () => {
 		const harness = createFactoryAuthHarness({
 			workspacesResponse: () =>

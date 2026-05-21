@@ -8,10 +8,10 @@ import {
 } from '@epicenter/filesystem';
 import {
 	attachTimeline,
-	cloudWorkspaceSync,
 	createDisposableCache,
 	type LocalOwner,
 	onLocalUpdate,
+	openCloudAppSync,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import { openOpensidianWorkspace } from 'opensidian';
@@ -32,10 +32,11 @@ export function openOpensidianBrowser({
 
 	const idb = owner.attachLocal(rootYdoc);
 
-	const opensidianCloud = cloudWorkspaceSync.forApp({
+	const opensidianCloud = openCloudAppSync({
 		auth,
 		apiUrl: APP_URLS.API,
 		appId: 'opensidian',
+		installationId,
 	});
 
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
@@ -56,7 +57,6 @@ export function openOpensidianBrowser({
 		// not lose the largest data class.
 		const childSync = opensidianCloud.open(ydoc, {
 			waitFor: childIdb.whenLoaded,
-			installationId,
 			actions: {},
 		});
 		return {
@@ -111,7 +111,6 @@ export function openOpensidianBrowser({
 		// app entry document; rootYdoc.guid is the workspace id, not "root".
 		docId: 'root',
 		waitFor: idb.whenLoaded,
-		installationId,
 		actions,
 	});
 	let disposed = false;

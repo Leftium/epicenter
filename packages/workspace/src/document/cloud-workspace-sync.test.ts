@@ -112,7 +112,7 @@ describe('openCloudAppSync', () => {
 		);
 	});
 
-	test('docId is forwarded verbatim (no encoding, no client-side validation)', async () => {
+	test('docId is forwarded verbatim to the URL', async () => {
 		const { auth, openedSocketUrls } = createFactoryAuthHarness();
 
 		const sync = openCloudAppSync({

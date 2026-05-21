@@ -17,7 +17,6 @@
  */
 
 import type { AuthClient } from '@epicenter/auth';
-import type { Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
 import {
@@ -25,18 +24,13 @@ import {
 	type DispatchRequest,
 	type LiveDevice,
 } from './dispatch.js';
-import type {
-	OpenWebSocket,
-	SyncStatus,
-} from './internal/sync-supervisor.js';
+import type { SyncStatus } from './internal/sync-supervisor.js';
 import {
 	type Collaboration,
 	type OpenCollaborationConfig,
 	openCollaboration,
 } from './open-collaboration.js';
 import { workspaceAppDocWsUrl } from './transport.js';
-
-export type CloudAppSync = ReturnType<typeof openCloudAppSync>;
 
 /**
  * Open an app-scoped Cloud sync runtime. Captures `(auth, apiUrl, appId,
@@ -112,21 +106,13 @@ export function openCloudAppSync({
 				 */
 				docId?: string;
 				waitFor?: Promise<unknown>;
-				log?: Logger;
-				/**
-				 * Override the WebSocket opener. Defaults to
-				 * `auth.openWebSocket`, which carries the bearer token as a
-				 * subprotocol. Tests pass a stub here.
-				 */
-				openWebSocket?: OpenWebSocket;
 			},
 		): Collaboration<TActions> {
 			const docId = config.docId ?? ydoc.guid;
 
 			const handle = attachDeferredCollaboration<TActions>(ydoc, {
 				waitFor: config.waitFor,
-				openWebSocket: config.openWebSocket ?? auth.openWebSocket,
-				log: config.log,
+				openWebSocket: auth.openWebSocket,
 				installationId,
 				actions: config.actions,
 				async resolveUrl() {
@@ -153,10 +139,6 @@ export function openCloudAppSync({
 		},
 	};
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// INTERNAL: deferred-collaboration lifecycle
-// ════════════════════════════════════════════════════════════════════════════
 
 /**
  * Returns a `Collaboration` synchronously and attaches the underlying

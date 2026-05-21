@@ -13,6 +13,7 @@
 
 import * as readline from 'node:readline';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -52,13 +53,7 @@ export const OobLauncherError = defineErrors({
 
 export type OobLauncherError = InferErrors<typeof OobLauncherError>;
 
-const DEFAULT_SCOPES = [
-	'openid',
-	'profile',
-	'email',
-	'offline_access',
-	'workspaces:open',
-] as const;
+const DEFAULT_SCOPES = EPICENTER_OAUTH_SCOPES;
 
 export type CreateOobOAuthLauncherConfig = {
 	baseURL?: string;

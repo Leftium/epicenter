@@ -14,6 +14,7 @@
 import { expect, test } from 'bun:test';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
+import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth';
 import type { SubjectKeyring } from '@epicenter/encryption';
 import { betterAuth } from 'better-auth';
 import { memoryAdapter } from 'better-auth/adapters/memory';
@@ -139,13 +140,7 @@ function createApiSessionTestServer() {
 					requirePKCE: true,
 					validAudiences: [baseURL],
 					allowDynamicClientRegistration: false,
-					scopes: [
-						'openid',
-						'profile',
-						'email',
-						'offline_access',
-						'workspaces:open',
-					],
+					scopes: [...EPICENTER_OAUTH_SCOPES],
 					silenceWarnings: {
 						oauthAuthServerConfig: true,
 						openidConfig: true,

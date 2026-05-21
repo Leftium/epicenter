@@ -1,3 +1,4 @@
+import { EPICENTER_OAUTH_SCOPE } from '@epicenter/constants/oauth';
 import * as oauth from 'oauth4webapi';
 import {
 	defineErrors,
@@ -85,7 +86,7 @@ type OAuthTransaction = {
 type RedirectTo = (url: string) => MaybePromise<void>;
 type LaunchWebAuthFlow = (url: string) => Promise<string>;
 
-const DEFAULT_SCOPE = 'openid profile email offline_access workspaces:open';
+const DEFAULT_SCOPE = EPICENTER_OAUTH_SCOPE;
 
 /**
  * Create the browser redirect launcher for hosted sign-in.

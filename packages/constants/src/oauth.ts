@@ -20,6 +20,18 @@ export const EPICENTER_OPENSIDIAN_LOCAL_OAUTH_CLIENT_ID =
 export const EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID = 'epicenter-tab-manager';
 export const EPICENTER_ZHONGWEN_OAUTH_CLIENT_ID = 'epicenter-zhongwen';
 
+export const EPICENTER_WORKSPACES_OPEN_SCOPE = 'workspaces:open';
+
+export const EPICENTER_OAUTH_SCOPES = [
+	'openid',
+	'profile',
+	'email',
+	'offline_access',
+	EPICENTER_WORKSPACES_OPEN_SCOPE,
+] as const;
+
+export const EPICENTER_OAUTH_SCOPE = EPICENTER_OAUTH_SCOPES.join(' ');
+
 export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 	{
 		clientId: EPICENTER_DASHBOARD_OAUTH_CLIENT_ID,

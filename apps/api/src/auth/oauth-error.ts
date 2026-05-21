@@ -1,3 +1,4 @@
+import { EPICENTER_WORKSPACES_OPEN_SCOPE } from '@epicenter/constants/oauth';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
 /**
@@ -7,7 +8,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * key release; protected resource middleware enforces it before the
  * route handler runs.
  */
-export const WORKSPACES_OPEN_SCOPE = 'workspaces:open';
+export const WORKSPACES_OPEN_SCOPE = EPICENTER_WORKSPACES_OPEN_SCOPE;
 
 /**
  * Failure shapes produced by every OAuth resource-boundary resolver in this

@@ -7,6 +7,7 @@ import { type ApiSessionResponse, AuthUser } from '@epicenter/auth';
 import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
+import { and, eq } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
@@ -211,7 +212,7 @@ const app = factory.createApp();
  * Ambiguous requests (both credentials present) never reach this middleware;
  * {@link singleCredential} rejects them at the edge.
  */
-const requireUser = factory.createMiddleware(async (c, next) => {
+const requireCookieOrBearerUser = factory.createMiddleware(async (c, next) => {
 	const session = await c.var.auth.api.getSession({
 		headers: c.req.raw.headers,
 	});
@@ -313,17 +314,17 @@ app.get(
 // calls at sign-in and at cold-boot when online to refresh the persisted
 // localIdentity cell.
 //
-// Accepts cookie OR bearer via {@link requireUser}. Bearer callers go through
-// the `workspaces:open` scope check inside `resolveRequestOAuthUser`; cookie
-// callers implicitly satisfy it (the session was minted by Better Auth and is
-// fully trusted within the parent domain).
+// Accepts cookie OR bearer via {@link requireCookieOrBearerUser}. Bearer
+// callers go through the `workspaces:open` scope check inside
+// `resolveRequestOAuthUser`; cookie callers implicitly satisfy it because the
+// session was minted by Better Auth and is trusted within the parent domain.
 app.get(
 	'/api/session',
 	describeRoute({
 		description: 'Return the authenticated session projection',
 		tags: ['auth'],
 	}),
-	requireUser,
+	requireCookieOrBearerUser,
 	async (c) => {
 		const user = c.var.user;
 		return c.json({
@@ -341,7 +342,7 @@ app.get(
 		description: 'List Cloud Workspaces for the authenticated user',
 		tags: ['workspaces'],
 	}),
-	requireUser,
+	requireCookieOrBearerUser,
 	async (c) =>
 		c.json(
 			await listCloudWorkspaces(
@@ -415,9 +416,9 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 
 app.use('/ai/*', requireOAuthUser);
 app.use('/rooms/*', requireOAuthUser);
-app.use('/workspaces/*', requireUser);
-app.use('/api/billing/*', requireUser);
-app.use('/api/assets/*', requireUser);
+app.use('/workspaces/*', requireCookieOrBearerUser);
+app.use('/api/billing/*', requireCookieOrBearerUser);
+app.use('/api/assets/*', requireCookieOrBearerUser);
 
 // Ensure Autumn customer exists and stash planId for model gating.
 // Runs after requireOAuthUser for AI routes so c.var.user is available.
@@ -524,14 +525,24 @@ async function resolveWorkspaceAppDocRoute(
 	| { data: AuthorizedWorkspaceAppDoc; response?: never }
 	| { data?: never; response: Response }
 > {
-	const cloudWorkspaces = createDrizzleCloudWorkspaceStore(c.var.db);
 	const result = await resolveAuthorizedWorkspaceAppDoc({
 		user: c.var.user,
 		workspaceId: c.req.param('workspaceId'),
 		appId: c.req.param('appId'),
 		docId: c.req.param('docId'),
-		checkWorkspaceMembership: async (params) =>
-			(await cloudWorkspaces.findWorkspaceMember(params)) != null,
+		checkWorkspaceMembership: async ({ userId, workspaceId }) => {
+			const [row] = await c.var.db
+				.select({ id: schema.member.id })
+				.from(schema.member)
+				.where(
+					and(
+						eq(schema.member.userId, userId),
+						eq(schema.member.organizationId, workspaceId),
+					),
+				)
+				.limit(1);
+			return row != null;
+		},
 	});
 
 	if (result.error) {

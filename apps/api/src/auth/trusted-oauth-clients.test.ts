@@ -11,7 +11,10 @@
  */
 
 import { expect, test } from 'bun:test';
-import { EPICENTER_FUJI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
+import {
+	EPICENTER_FUJI_OAUTH_CLIENT_ID,
+	EPICENTER_OAUTH_SCOPES,
+} from '@epicenter/constants/oauth';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
@@ -46,7 +49,7 @@ test('trusted OAuth clients project to public PKCE client rows', () => {
 		tokenEndpointAuthMethod: 'none',
 		grantTypes: ['authorization_code'],
 		responseTypes: ['code'],
-		scopes: ['openid', 'profile', 'email', 'offline_access', 'workspaces:open'],
+		scopes: [...EPICENTER_OAUTH_SCOPES],
 		public: true,
 		type: 'user-agent-based',
 		requirePKCE: true,

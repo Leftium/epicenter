@@ -1,7 +1,9 @@
-import { EPICENTER_TRUSTED_OAUTH_CLIENTS } from '@epicenter/constants/oauth';
+import {
+	EPICENTER_OAUTH_SCOPES,
+	EPICENTER_TRUSTED_OAUTH_CLIENTS,
+} from '@epicenter/constants/oauth';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema';
-import { AUTH_OAUTH_SCOPES } from './oauth-config';
 
 let trustedOAuthClientsSeed: Promise<void> | null = null;
 
@@ -29,7 +31,7 @@ export function projectTrustedOAuthClientToRow(
 		clientId: client.clientId,
 		disabled: false,
 		skipConsent: true,
-		scopes: [...AUTH_OAUTH_SCOPES],
+		scopes: [...EPICENTER_OAUTH_SCOPES],
 		createdAt: now,
 		updatedAt: now,
 		name: client.name,
@@ -38,7 +40,7 @@ export function projectTrustedOAuthClientToRow(
 		grantTypes: ['authorization_code'],
 		responseTypes: ['code'],
 		public: true,
-		type: toOAuthClientType(client.runtime),
+		type: client.runtime === 'native' ? 'native' : 'user-agent-based',
 		requirePKCE: true,
 	} satisfies typeof schema.oauthClient.$inferInsert;
 }
@@ -63,8 +65,8 @@ export async function ensureTrustedOAuthClients(
 				.onConflictDoUpdate({
 					target: schema.oauthClient.clientId,
 					set: {
-						disabled: false,
-						skipConsent: true,
+						disabled: row.disabled,
+						skipConsent: row.skipConsent,
 						scopes: row.scopes,
 						updatedAt: row.updatedAt,
 						name: row.name,
@@ -72,9 +74,9 @@ export async function ensureTrustedOAuthClients(
 						tokenEndpointAuthMethod: row.tokenEndpointAuthMethod,
 						grantTypes: row.grantTypes,
 						responseTypes: row.responseTypes,
-						public: true,
+						public: row.public,
 						type: row.type,
-						requirePKCE: true,
+						requirePKCE: row.requirePKCE,
 					},
 				});
 		}
@@ -84,17 +86,5 @@ export async function ensureTrustedOAuthClients(
 	} catch (error) {
 		trustedOAuthClientsSeed = null;
 		throw error;
-	}
-}
-
-function toOAuthClientType(
-	runtime: (typeof EPICENTER_TRUSTED_OAUTH_CLIENTS)[number]['runtime'],
-) {
-	switch (runtime) {
-		case 'browser':
-		case 'extension':
-			return 'user-agent-based';
-		case 'native':
-			return 'native';
 	}
 }

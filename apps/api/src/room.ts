@@ -443,11 +443,6 @@ export class Room extends DurableObject {
 		};
 	}
 
-	/** Delete all storage for this DO. Used for cleanup of renamed/orphaned rooms. */
-	async deleteStorage(): Promise<void> {
-		await this.ctx.storage.deleteAll();
-	}
-
 	/**
 	 * Dispatch RPC: route an HTTP dispatch body to a
 	 * live recipient socket, await its response, and return the result.

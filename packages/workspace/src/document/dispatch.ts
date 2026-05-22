@@ -47,8 +47,8 @@ export type LiveDevice = { installationId: string };
  * Per-call options. Required: `to`, `action`. Optional: `input` (omit
  * for no-argument actions; `JSON.stringify` drops `undefined` keys, so
  * the recipient sees no `input` field on the wire), and `signal` for
- * the dispatch deadline. With no signal, the fetch runs to the
- * platform's default timeout (Cloudflare Workers: ~100s).
+ * the dispatch deadline. With no signal, the dispatch settles at the
+ * caller-side response ceiling (~90s) if the relay never answers.
  */
 export type DispatchRequest = {
 	to: string;
@@ -78,8 +78,8 @@ type WireErrorFields<N extends DispatchErrorWire['name']> = Omit<
  *   - `ActionNotFound`: recipient has no handler for `action`.
  *   - `ActionFailed`: recipient handler threw or returned `Err`. `cause`
  *     is a serialized string (JSON cannot round-trip Error instances).
- *   - `Cancelled`: the caller's `AbortSignal` aborted before the HTTP
- *     response arrived.
+ *   - `Cancelled`: the caller's `AbortSignal` aborted before the
+ *     dispatch result arrived.
  *   - `NetworkFailed`: the socket dispatch did not complete because the
  *     connection was unavailable, dropped, or returned a malformed result.
  *

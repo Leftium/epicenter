@@ -252,24 +252,28 @@ async function upgrade(
 
 type PresenceFrame = { type: 'presence'; installs: string[] };
 
-/** Parse all `presence` text frames out of the wire. */
-function presenceFrames(ws: StubWebSocket): PresenceFrame[] {
+/** Parse text frames of a given `type` off the wire. */
+function jsonFrames(
+	ws: StubWebSocket,
+	type: string,
+): Array<Record<string, unknown>> {
 	return ws
 		.textFrames()
 		.map((t) => {
 			try {
-				return JSON.parse(t);
+				return JSON.parse(t) as Record<string, unknown>;
 			} catch {
 				return null;
 			}
 		})
-		.filter(
-			(p): p is PresenceFrame =>
-				p !== null &&
-				typeof p === 'object' &&
-				p.type === 'presence' &&
-				Array.isArray(p.installs),
-		);
+		.filter((f): f is Record<string, unknown> => f !== null && f.type === type);
+}
+
+/** Parse all `presence` text frames out of the wire. */
+function presenceFrames(ws: StubWebSocket): PresenceFrame[] {
+	return jsonFrames(ws, 'presence').filter(
+		(p): p is PresenceFrame => Array.isArray(p.installs),
+	);
 }
 
 /** Wrap a frame as the `ArrayBuffer` `webSocketMessage` expects for binary input. */
@@ -605,23 +609,6 @@ describe('Room sync: HTTP sync RPC', () => {
 // ────────────────────────────────────────────────────────────────────────────
 // DISPATCH
 // ────────────────────────────────────────────────────────────────────────────
-
-/** Parse text frames of a given `type` off the wire. */
-function jsonFrames(
-	ws: StubWebSocket,
-	type: string,
-): Array<Record<string, unknown>> {
-	return ws
-		.textFrames()
-		.map((t) => {
-			try {
-				return JSON.parse(t) as Record<string, unknown>;
-			} catch {
-				return null;
-			}
-		})
-		.filter((f): f is Record<string, unknown> => f !== null && f.type === type);
-}
 
 describe('Room dispatch: relay round trip', () => {
 	test('dispatch_request routes dispatch_inbound to the recipient', async () => {

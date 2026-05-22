@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
+import type { DateTimeString } from '@epicenter/workspace';
 import {
 	localTimezone,
 	parseNaturalLanguageDate,
@@ -84,7 +85,9 @@ describe('toDateTimeString', () => {
 			'America/New_York',
 		);
 
-		expect(value).toBe('2024-01-01T20:00:00.000Z|America/New_York');
+		expect(value).toBe(
+			'2024-01-01T20:00:00.000Z|America/New_York' as DateTimeString,
+		);
 		expect(value).toContain('|');
 		expect(value).toContain('America/New_York');
 	});

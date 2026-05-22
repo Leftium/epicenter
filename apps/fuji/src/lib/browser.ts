@@ -8,9 +8,9 @@
  * workspace opener so daemon-side and browser-side action surfaces stay
  * identical without a second factory call here.
  *
- * Cloud sync calls `openCollaboration` directly: the server resolves the
- * workspace from the auth token, so each doc builds its URL with
- * `defaultWorkspaceAppDocWsUrl(appId, docId)` and no client-side lookup. One
+ * Cloud sync calls `openCollaboration` directly: each doc is owned by the
+ * authenticated subject and addressed by its own `ydoc.guid`, so the URL is
+ * `roomWsUrl(API, ydoc.guid)` with no client-side lookup. One
  * `auth.onStateChange` listener reconnects the root collaboration and every
  * live child sync across sign-in and sign-out transitions.
  *
@@ -25,10 +25,10 @@ import {
 	attachRichText,
 	createDisposableCache,
 	DateTimeString,
-	defaultWorkspaceAppDocWsUrl,
 	type LocalOwner,
 	onLocalUpdate,
 	openCollaboration,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { type EntryId, openFujiWorkspace } from './workspace';
@@ -56,10 +56,7 @@ export function openFujiBrowser({
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);
 		const childSync = openCollaboration(ydoc, {
-			url: defaultWorkspaceAppDocWsUrl(APP_URLS.API, {
-				appId: 'fuji',
-				docId: childDocId,
-			}),
+			url: roomWsUrl(APP_URLS.API, ydoc.guid),
 			openWebSocket: auth.openWebSocket,
 			waitFor: childIdb.whenLoaded,
 			installationId,
@@ -89,12 +86,7 @@ export function openFujiBrowser({
 	});
 
 	const collaboration = openCollaboration(rootYdoc, {
-		// Explicit "root" preserves the cloud-side identity of the canonical
-		// app entry document; rootYdoc.guid is the workspace id, not "root".
-		url: defaultWorkspaceAppDocWsUrl(APP_URLS.API, {
-			appId: 'fuji',
-			docId: 'root',
-		}),
+		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
 		openWebSocket: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
 		installationId,

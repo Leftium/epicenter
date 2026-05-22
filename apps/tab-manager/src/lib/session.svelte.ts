@@ -3,10 +3,7 @@ import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createSession } from '@epicenter/svelte';
-import {
-	defaultWorkspaceAppDocWsUrl,
-	openCollaboration,
-} from '@epicenter/workspace';
+import { openCollaboration, roomWsUrl } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { createDeviceProfile, registerDevice } from './device';
@@ -66,10 +63,7 @@ function buildSession(
 			});
 
 			const collaboration = openCollaboration(tabManager.ydoc, {
-				url: defaultWorkspaceAppDocWsUrl(APP_URLS.API, {
-					appId: 'tab-manager',
-					docId: 'root',
-				}),
+				url: roomWsUrl(APP_URLS.API, tabManager.ydoc.guid),
 				openWebSocket: auth.openWebSocket,
 				waitFor: tabManager.idb.whenLoaded,
 				installationId: profile.installationId,

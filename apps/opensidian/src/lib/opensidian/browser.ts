@@ -9,10 +9,10 @@ import {
 import {
 	attachTimeline,
 	createDisposableCache,
-	defaultWorkspaceAppDocWsUrl,
 	type LocalOwner,
 	onLocalUpdate,
 	openCollaboration,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import { openOpensidianWorkspace } from 'opensidian';
@@ -49,10 +49,7 @@ export function openOpensidianBrowser({
 		// File bodies sync through Cloud so device loss doesn't drop the
 		// largest data class.
 		const childSync = openCollaboration(ydoc, {
-			url: defaultWorkspaceAppDocWsUrl(APP_URLS.API, {
-				appId: 'opensidian',
-				docId: childDocId,
-			}),
+			url: roomWsUrl(APP_URLS.API, ydoc.guid),
 			openWebSocket: auth.openWebSocket,
 			waitFor: childIdb.whenLoaded,
 			installationId,
@@ -106,12 +103,7 @@ export function openOpensidianBrowser({
 	});
 
 	const collaboration = openCollaboration(rootYdoc, {
-		// Explicit "root" preserves the cloud-side identity of the canonical
-		// app entry document; rootYdoc.guid is the workspace id, not "root".
-		url: defaultWorkspaceAppDocWsUrl(APP_URLS.API, {
-			appId: 'opensidian',
-			docId: 'root',
-		}),
+		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
 		openWebSocket: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
 		installationId,

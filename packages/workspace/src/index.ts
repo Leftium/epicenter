@@ -16,10 +16,10 @@
  *   attachTables,
  *   createDisposableCache,
  *   createInstallationId,
- *   defaultWorkspaceAppDocWsUrl,
  *   defineTable,
  *   docGuid,
  *   openCollaboration,
+ *   roomWsUrl,
  * } from '@epicenter/workspace';
  * import type { AuthClient } from '@epicenter/auth';
  * import { type } from 'arktype';
@@ -31,21 +31,22 @@
  * const apiUrl = 'https://api.example.com';
  * const installationId = createInstallationId({ storage: localStorage });
  *
- * // The server resolves the workspace from the auth token, so the client
- * // builds the sync URL from (apiUrl, appId, docId) with no workspace lookup.
+ * // A cloud doc is owned by the authenticated subject and addressed by its
+ * // Y.Doc guid: `roomWsUrl(apiUrl, ydoc.guid)` resolves to the room
+ * // `subject:${userId}:rooms:${ydoc.guid}` server-side.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
  * const collaboration = openCollaboration(ydoc, {
- *   url: defaultWorkspaceAppDocWsUrl(apiUrl, { appId: 'notes', docId: 'root' }),
+ *   url: roomWsUrl(apiUrl, ydoc.guid),
  *   openWebSocket: auth.openWebSocket,
  *   waitFor: idb.whenLoaded,
  *   installationId,
  *   actions: {},
  * });
  *
- * // Content docs build the same URL with their own docId. The local Y.Doc
- * // guid doubles as the cloud docId, so there is no second id system.
+ * // Content docs build the same URL from their own guid. The local Y.Doc
+ * // guid doubles as the cloud room id, so there is no second id system.
  * const noteBodyDocs = createDisposableCache(
  *   (noteId: string) => {
  *     const bodyYdoc = new Y.Doc({
@@ -59,10 +60,7 @@
  *     });
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
  *     const bodySync = openCollaboration(bodyYdoc, {
- *       url: defaultWorkspaceAppDocWsUrl(apiUrl, {
- *         appId: 'notes',
- *         docId: bodyYdoc.guid,
- *       }),
+ *       url: roomWsUrl(apiUrl, bodyYdoc.guid),
  *       openWebSocket: auth.openWebSocket,
  *       waitFor: bodyIdb.whenLoaded,
  *       installationId,
@@ -136,6 +134,7 @@ export type { ProjectDir } from './shared/types';
 export { DateTimeString } from './shared/datetime-string';
 export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId } from './shared/id';
+export { debounce } from './shared/debounce';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES
@@ -191,15 +190,10 @@ export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-// Transport URL builders.
+// Transport URL builder.
 //
-// `defaultWorkspaceAppDocWsUrl` is re-exported because apps build the URL
-// themselves when calling `openCollaboration` directly: the server resolves
-// the workspaceId from the auth token, so no client-side workspace lookup
-// is required.
-//
-// `roomWsUrl` is intentionally NOT re-exported: `/rooms/:room` is a
-// daemon-only sync surface, imported from `./document/transport.js`
-// directly so apps cannot open a parallel sync surface that bypasses
-// Workspace membership.
-export { defaultWorkspaceAppDocWsUrl } from './document/transport.js';
+// `roomWsUrl(apiUrl, ydoc.guid)` builds the WebSocket URL for `/rooms/:room`.
+// A cloud doc is owned by the authenticated subject; the room id is the
+// Y.Doc guid and the server resolves it to `subject:${userId}:rooms:${room}`.
+// Both browser apps and the daemon use this one builder.
+export { roomWsUrl } from './document/transport.js';

@@ -68,7 +68,6 @@ import {
  * `@epicenter/workspace/document/dispatch-protocol`, shared with the client.
  */
 export type DispatchRpcRequest = {
-	from: string;
 	to: string;
 	action: string;
 	input?: unknown;
@@ -164,9 +163,7 @@ type WsAttachment = {
  * calling RPC methods or forwarding fetch. The DO itself does not re-validate.
  *
  * DO names are host-owned opaque strings, built by app.ts as
- * `subject:{user.id}:rooms:{room}`. The relay treats `from` on a dispatch
- * as a routing label inside the already authorized room, not as a
- * cross-room auth principal.
+ * `subject:{user.id}:rooms:{room}`.
  */
 export class Room extends DurableObject {
 	/**
@@ -458,7 +455,6 @@ export class Room extends DurableObject {
 		const frame: DispatchInboundFrame = {
 			type: 'dispatch_inbound',
 			id,
-			from: req.from,
 			action: req.action,
 			input: req.input,
 		};

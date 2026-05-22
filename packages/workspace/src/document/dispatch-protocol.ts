@@ -21,7 +21,6 @@ import type { Result } from 'wellcrafted/result';
 export type DispatchInboundFrame = {
 	type: 'dispatch_inbound';
 	id: string;
-	from: string;
 	action: string;
 	input: unknown;
 };

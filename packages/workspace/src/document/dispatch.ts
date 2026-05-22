@@ -237,18 +237,12 @@ export function deriveDispatchUrl(wsUrl: string): string {
  * Always returns `Result<unknown, DispatchError>`. Callers that want a
  * narrower success type should compose with `typedDispatch<TActions>`
  * for compile-time precision against a known target registry.
- *
- * @param installationId The caller's own install id, sent as `from`.
- *   The host authorizes the room before the relay sees the request; within
- *   that room, `from` is a trusted routing label, not an auth principal.
  */
 export async function dispatch({
 	dispatchUrl,
-	installationId,
 	req,
 }: {
 	dispatchUrl: string;
-	installationId: string;
 	req: DispatchRequest;
 }): Promise<Result<unknown, DispatchError>> {
 	// Issue the request. Network failures and aborts both throw; everything
@@ -259,7 +253,6 @@ export async function dispatch({
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
-				from: installationId,
 				to: req.to,
 				action: req.action,
 				input: req.input,
@@ -450,7 +443,6 @@ function isDispatchInbound(value: unknown): value is DispatchInboundFrame {
 	return (
 		v.type === 'dispatch_inbound' &&
 		typeof v.id === 'string' &&
-		typeof v.from === 'string' &&
 		typeof v.action === 'string' &&
 		ACTION_KEY_PATTERN.test(v.action)
 	);

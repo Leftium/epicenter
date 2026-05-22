@@ -217,7 +217,6 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		dispatch(req: DispatchRequest) {
 			return dispatchOverHttp({
 				dispatchUrl,
-				installationId,
 				req,
 			});
 		},

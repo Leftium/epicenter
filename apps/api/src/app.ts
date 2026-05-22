@@ -570,10 +570,8 @@ app.post(
 /**
  * Dispatch a live-device call via the relay.
  *
- * The request body fully describes the dispatch: caller (`from`) and
- * recipient (`to`) installation ids, the action key, and the input.
- * Within an already authorized room, `from` is treated as a trusted routing
- * label, not an auth principal. The DO mints
+ * The request body describes the dispatch: the recipient (`to`)
+ * installation id, the action key, and the input. The DO mints
  * a correlation id, pushes `dispatch_inbound` over the recipient's
  * WebSocket, and the response body is the recipient's `dispatch_response`
  * result (or `RecipientOffline` on no live socket).
@@ -590,7 +588,6 @@ app.post(
 	sValidator(
 		'json',
 		type({
-			from: '/^[A-Za-z0-9_-]+$/ <= 128',
 			to: '/^[A-Za-z0-9_-]+$/ <= 128',
 			action: '/^[a-z][a-z0-9_]{0,63}$/',
 			'input?': 'unknown',

@@ -143,7 +143,7 @@ End to end:
 caller                      relay                        recipient
 ──────                      ─────                        ─────────
 POST /dispatch ───────────▶  look up `to` in
-{ from, to, action, input }  the connections Map
+{ to, action, input }        the connections Map
                              │
                              ├─ no live socket ─▶ 200 { error: RecipientOffline }
                              │

@@ -57,7 +57,6 @@ describe('runInboundDispatch', () => {
 		const inbound = JSON.stringify({
 			type: 'dispatch_inbound',
 			id: 'i7',
-			from: 'R_laptop',
 			action: 'noop_ping',
 			input: undefined,
 		});
@@ -75,7 +74,6 @@ describe('runInboundDispatch', () => {
 		const inbound = JSON.stringify({
 			type: 'dispatch_inbound',
 			id: 'i8',
-			from: 'R_laptop',
 			action: 'missing_action',
 			input: undefined,
 		});
@@ -101,7 +99,6 @@ describe('runInboundDispatch', () => {
 		const inbound = JSON.stringify({
 			type: 'dispatch_inbound',
 			id: 'i9',
-			from: 'R_laptop',
 			action: 'boom',
 			input: undefined,
 		});
@@ -123,7 +120,6 @@ describe('runInboundDispatch', () => {
 		const inbound = JSON.stringify({
 			type: 'dispatch_inbound',
 			id: 'i10',
-			from: 'R_laptop',
 			action: 'fail_err',
 			input: undefined,
 		});
@@ -153,7 +149,6 @@ describe('runInboundDispatch', () => {
 		const inbound = JSON.stringify({
 			type: 'dispatch_inbound',
 			id: 'i11',
-			from: 'R_laptop',
 			action: 'already_ok',
 			input: undefined,
 		});
@@ -198,7 +193,6 @@ describe('dispatch', () => {
 
 		const result = await dispatch({
 			dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
-			installationId: 'R_laptop',
 			req: { to: 'R_phone', action: 'tabs_close', input: { tabIds: [1, 2] } },
 		});
 
@@ -206,7 +200,6 @@ describe('dispatch', () => {
 		expect(data.closed).toBe(2);
 		const sent = JSON.parse(capturedBody);
 		expect(sent).toEqual({
-			from: 'R_laptop',
 			to: 'R_phone',
 			action: 'tabs_close',
 			input: { tabIds: [1, 2] },
@@ -224,7 +217,6 @@ describe('dispatch', () => {
 
 		const result = await dispatch({
 			dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
-			installationId: 'R_laptop',
 			req: { to: 'R_phone', action: 'noop', input: {} },
 		});
 
@@ -243,7 +235,6 @@ describe('dispatch', () => {
 		const error = expectErr(
 			await dispatch({
 				dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
-				installationId: 'R_laptop',
 				req: { to: 'R_phone', action: 'tabs_close', input: {} },
 			}),
 		);
@@ -255,9 +246,7 @@ describe('dispatch', () => {
 		installFetch(
 			async () =>
 				new Response(
-					JSON.stringify(
-						Err({ name: 'RecipientOffline', to: 'R_phone' }),
-					),
+					JSON.stringify(Err({ name: 'RecipientOffline', to: 'R_phone' })),
 					{ status: 200, headers: { 'content-type': 'application/json' } },
 				),
 		);
@@ -265,7 +254,6 @@ describe('dispatch', () => {
 		const error = expectErr(
 			await dispatch({
 				dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
-				installationId: 'R_laptop',
 				req: { to: 'R_phone', action: 'tabs_close', input: {} },
 			}),
 		);
@@ -277,9 +265,7 @@ describe('dispatch', () => {
 		installFetch(
 			async () =>
 				new Response(
-					JSON.stringify(
-						Err({ name: 'ActionNotFound', action: 'tabs_close' }),
-					),
+					JSON.stringify(Err({ name: 'ActionNotFound', action: 'tabs_close' })),
 					{ status: 200, headers: { 'content-type': 'application/json' } },
 				),
 		);
@@ -287,7 +273,6 @@ describe('dispatch', () => {
 		const error = expectErr(
 			await dispatch({
 				dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
-				installationId: 'R_laptop',
 				req: { to: 'R_phone', action: 'tabs_close', input: {} },
 			}),
 		);
@@ -310,7 +295,6 @@ describe('dispatch', () => {
 		const controller = new AbortController();
 		const pending = dispatch({
 			dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
-			installationId: 'R_laptop',
 			req: {
 				to: 'R_phone',
 				action: 'tabs_close',
@@ -335,7 +319,6 @@ describe('dispatch', () => {
 		const error = expectErr(
 			await dispatch({
 				dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
-				installationId: 'R_laptop',
 				req: { to: 'R_phone', action: 'tabs_close', input: {} },
 			}),
 		);

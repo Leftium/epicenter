@@ -14,10 +14,10 @@
  * invoke it, and emit the `dispatch_response` back over the same socket.
  *
  * Liveness is consumed via the server-owned presence channel (see
- * `presence.ts` and `Collaboration.devices`). This module no longer
- * carries a liveness reader: the relay's `connections` map is the source
- * of truth, and clients learn its contents from `presence_snapshot`,
- * `presence_added`, and `presence_removed` text frames.
+ * `presence-protocol.ts` and `Collaboration.devices`). This module no
+ * longer carries a liveness reader: the relay's `connections` map is the
+ * source of truth, and clients learn its contents from the relay's
+ * `presence` full-list text frame.
  *
  * Identity and routing in one sentence: the relay maps `installationId`
  * to "most-recently-connected open socket"; multi-tab same-install is
@@ -293,51 +293,50 @@ export async function dispatch({
 		return DispatchError.NetworkFailed({ cause });
 	}
 
-	if (!body || typeof body !== 'object') {
+	// The dispatch body is a wellcrafted `Result`: `{ data, error }` with
+	// one side null. Both the recipient (`Ok`/`Err`) and the relay
+	// (`RecipientOffline` via `Err`) produce this shape; anything else is a
+	// protocol fault.
+	if (
+		!body ||
+		typeof body !== 'object' ||
+		!('data' in body) ||
+		!('error' in body)
+	) {
 		return DispatchError.NetworkFailed({
-			cause: new Error('Dispatch response was not a JSON object'),
+			cause: new Error('Dispatch response was not a Result'),
 		});
 	}
 
-	// wellcrafted's `Result` carries both keys (one is `null`). Branch on
-	// the non-null value rather than key presence so we work whether the
-	// relay strips the null counterpart or keeps it.
-	const wireError = (body as { error?: unknown }).error;
-	if (wireError != null) {
-		if (typeof wireError !== 'object' || !('name' in wireError)) {
-			return DispatchError.NetworkFailed({
-				cause: new Error('Dispatch error body missing name discriminator'),
+	// Discriminate on the error side only: a successful action may return
+	// `null`, so `data` cannot distinguish success from failure.
+	const { data, error } = body as Result<unknown, unknown>;
+	if (error === null) return Ok(data);
+
+	if (typeof error !== 'object' || error === null || !('name' in error)) {
+		return DispatchError.NetworkFailed({
+			cause: new Error('Dispatch error missing name discriminator'),
+		});
+	}
+	switch (error.name) {
+		case 'RecipientOffline':
+			return DispatchError.RecipientOffline({
+				to: (error as { to?: string }).to ?? req.to,
 			});
-		}
-		const name = (wireError as { name: unknown }).name;
-		switch (name) {
-			case 'RecipientOffline':
-				return DispatchError.RecipientOffline({
-					to: (wireError as { to?: string }).to ?? req.to,
-				});
-			case 'ActionNotFound':
-				return DispatchError.ActionNotFound({
-					action: (wireError as { action?: string }).action ?? req.action,
-				});
-			case 'ActionFailed':
-				return DispatchError.ActionFailed({
-					action: (wireError as { action?: string }).action ?? req.action,
-					cause: (wireError as { cause?: string }).cause ?? 'unknown',
-				});
-			default:
-				return DispatchError.NetworkFailed({
-					cause: new Error(`Unknown dispatch error: ${String(name)}`),
-				});
-		}
+		case 'ActionNotFound':
+			return DispatchError.ActionNotFound({
+				action: (error as { action?: string }).action ?? req.action,
+			});
+		case 'ActionFailed':
+			return DispatchError.ActionFailed({
+				action: (error as { action?: string }).action ?? req.action,
+				cause: (error as { cause?: string }).cause ?? 'unknown',
+			});
+		default:
+			return DispatchError.NetworkFailed({
+				cause: new Error(`Unknown dispatch error: ${String(error.name)}`),
+			});
 	}
-
-	if ('data' in body) {
-		return Ok((body as { data: unknown }).data);
-	}
-
-	return DispatchError.NetworkFailed({
-		cause: new Error('Dispatch response missing data and error fields'),
-	});
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -32,15 +32,6 @@ type DaemonServedCollaboration<
 	devices: {
 		list(): LiveDevice[];
 	};
-	/**
-	 * Server-owned presence tracker status, surfaced so the daemon's
-	 * local-liveness pre-check (see `run-handler.ts`) can suppress
-	 * `PeerNotFound` during the brief pre-snapshot window after a
-	 * WebSocket upgrade.
-	 */
-	presence: {
-		readonly hasSnapshot: boolean;
-	};
 	status: SyncStatus;
 	dispatch(req: DispatchRequest): Promise<Result<unknown, DispatchError>>;
 };

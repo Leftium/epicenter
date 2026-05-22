@@ -36,7 +36,7 @@
 		"./test-utils": "./src/shared/test-utils.ts",
 		"./links": "./src/links.ts",
 		"./document/keys": "./src/document/keys.ts",
-		"./document/presence": "./src/document/presence.ts",
+		"./document/presence": "./src/document/presence-protocol.ts",
 		"./document/y-keyvalue/y-keyvalue-lww": "./src/document/y-keyvalue/y-keyvalue-lww.ts",
 		"./document/attach-timeline": "./src/document/attach-timeline/index.ts"
 	},

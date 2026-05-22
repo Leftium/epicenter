@@ -10,8 +10,8 @@
  * Three independent wire surfaces ride one auth context:
  *
  *   binary WS frames  -> standard y-protocols SYNC.
- *   text WS frames    -> presence_snapshot / presence_added /
- *                        presence_removed (server-to-client), and
+ *   text WS frames    -> presence (server -> client, the full install
+ *                        list on every connection change) and
  *                        dispatch_inbound (server -> recipient) /
  *                        dispatch_response (recipient -> server).
  *   HTTP              -> POST .../dispatch (caller-side fire-and-await)
@@ -43,7 +43,6 @@ import {
 	type OpenWebSocket,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
-import { createPresenceTracker } from './presence.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -81,28 +80,14 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 
 	/**
 	 * Online installs in this workspace, derived from the server-owned
-	 * presence channel (`presence_snapshot`, `presence_added`,
-	 * `presence_removed` text frames). Deduplicated by `installationId`
-	 * (multi-tab same-install collapses to one entry). Self is excluded.
+	 * presence channel: the relay pushes the full install list as a
+	 * `presence` text frame on every connection change. Deduplicated and
+	 * self-excluded by the relay; the client stores the latest list
+	 * verbatim.
 	 */
 	readonly devices: {
 		list(): LiveDevice[];
 		subscribe(fn: (devices: LiveDevice[]) => void): () => void;
-	};
-
-	/**
-	 * Presence-tracker accessor for callers that need to know whether the
-	 * server has delivered its initial snapshot for this session.
-	 *
-	 * `hasSnapshot` is `false` between WebSocket upgrade and the first
-	 * `presence_snapshot` frame, then `true` for the rest of the session.
-	 * Consumers like `run-handler.ts` use it to suppress
-	 * `PeerNotFound` during the brief pre-snapshot window when
-	 * `devices.list()` would otherwise return `[]` for a peer that is in
-	 * fact online.
-	 */
-	readonly presence: {
-		readonly hasSnapshot: boolean;
 	};
 
 	/**
@@ -145,11 +130,36 @@ export function openCollaboration<TActions extends ActionRegistry>(
 
 	const installationId = config.installationId;
 
-	// Server-owned presence tracker: derives `devices.list()` from text
-	// frames pushed by the relay (`presence_snapshot`, `presence_added`,
-	// `presence_removed`). The relay's `connections` map is the source of
-	// truth; this tracker is purely a reactive mirror.
-	const presence = createPresenceTracker(installationId);
+	// Server-owned presence: the relay pushes the full install list as a
+	// `presence` text frame on every connection change. The client stores
+	// the latest list and notifies subscribers; there is no delta protocol
+	// and no client-side reassembly. The relay dedupes multi-tab
+	// same-install and excludes the receiver's own install, so the client
+	// stores `installs` verbatim.
+	let remoteDevices: LiveDevice[] = [];
+	const presenceListeners = new Set<(devices: LiveDevice[]) => void>();
+
+	// Returns true if `text` was a recognized `presence` frame (and thus
+	// consumed); false if the caller should route it elsewhere (dispatch).
+	function handlePresenceFrame(text: string): boolean {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(text);
+		} catch {
+			return false;
+		}
+		if (!parsed || typeof parsed !== 'object') return false;
+		if ((parsed as { type?: unknown }).type !== 'presence') return false;
+		const installs = (parsed as { installs?: unknown }).installs;
+		if (!Array.isArray(installs)) return false;
+		remoteDevices = installs
+			.filter((id): id is string => typeof id === 'string')
+			.map((deviceInstallationId) => ({
+				installationId: deviceInstallationId,
+			}));
+		for (const listener of presenceListeners) listener(remoteDevices);
+		return true;
+	}
 
 	// Wrap the user-supplied opener so every connect (including reconnects)
 	// carries `?installationId=` without callers re-encoding the URL.
@@ -166,11 +176,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		openWebSocket,
 		log: config.log,
 		// Text frames carry two unrelated server-to-client channels:
-		// presence (`presence_snapshot` / `presence_added` /
-		// `presence_removed`) and dispatch (`dispatch_inbound`). Try the
-		// presence tracker first; on a miss, fall through to dispatch.
+		// presence (the full install list) and dispatch (`dispatch_inbound`).
+		// Try presence first; on a miss, fall through to dispatch.
 		onTextFrame(text) {
-			if (presence.handleFrame(text)) return;
+			if (handlePresenceFrame(text)) return;
 			void runInboundDispatch({ rawFrame: text, actions: userActions }).then(
 				(response) => {
 					if (response !== null) supervisor.send(response);
@@ -179,16 +188,16 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		},
 	});
 
-	// `devices` reads directly from the server-owned presence tracker.
-	// The tracker dedupes multi-tab same-install (the relay only ever
-	// emits one `presence_added` per install) and excludes self via the
-	// `selfInstallationId` it was constructed with.
+	// `devices` reads the latest relay-pushed presence list directly.
 	const devices = {
 		list(): LiveDevice[] {
-			return presence.list();
+			return remoteDevices;
 		},
 		subscribe(fn: (devices: LiveDevice[]) => void): () => void {
-			return presence.subscribe(fn);
+			presenceListeners.add(fn);
+			return () => {
+				presenceListeners.delete(fn);
+			};
 		},
 	};
 
@@ -205,11 +214,6 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		onStatusChange: supervisor.onStatusChange,
 		reconnect: supervisor.reconnect,
 		devices,
-		presence: {
-			get hasSnapshot() {
-				return presence.hasSnapshot;
-			},
-		},
 		dispatch(req: DispatchRequest) {
 			return dispatchOverHttp({
 				dispatchUrl,

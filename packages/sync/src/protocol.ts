@@ -38,9 +38,9 @@ import * as Y from 'yjs';
  *                  exchanged on this channel (Epicenter convention).
  *
  * Dispatch (server -> recipient `dispatch_inbound`, recipient -> server
- * `dispatch_response`) and presence (`presence_snapshot`, `presence_added`,
- * `presence_removed`) ride on WebSocket *text* frames, not the binary
- * channel, so they do not consume a MESSAGE_TYPE varint.
+ * `dispatch_response`) and presence (the `presence` full-list frame) ride
+ * on WebSocket *text* frames, not the binary channel, so they do not
+ * consume a MESSAGE_TYPE varint.
  */
 export const MESSAGE_TYPE = {
 	/** Document synchronization messages (sync step 1, 2, or update) */

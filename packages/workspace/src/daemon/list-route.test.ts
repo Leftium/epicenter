@@ -30,7 +30,6 @@ function makeRoute({
 				devices: {
 					list: () => [],
 				},
-				presence: { hasSnapshot: true },
 				status: { phase: 'connected' },
 				dispatch: async () => ({ data: null, error: null }) as never,
 			},

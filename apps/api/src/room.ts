@@ -17,8 +17,7 @@
  *   binary WS frames  -> standard y-protocols SYNC.
  *   text WS frames    -> dispatch push/response (`dispatch_inbound`,
  *                        `dispatch_response`) and the server-owned
- *                        presence channel (`presence_snapshot`,
- *                        `presence_added`, `presence_removed`).
+ *                        presence channel (`presence`).
  *   RPC method        -> {@link Room.dispatch}: the Worker forwards
  *                        a route-level `/dispatch` request here. The DO mints
  *                        a correlation id, pushes `dispatch_inbound` to
@@ -28,12 +27,12 @@
  *
  * ## Presence
  *
- * Presence is server-owned: the `connections` map is the source of truth,
- * and the DO emits three text frame types (`presence_snapshot`,
- * `presence_added`, `presence_removed`) so clients can derive
- * `devices.list()` directly from the relay's view. There is no Awareness
- * instance on the relay; the y-protocols Awareness slot is reserved for
- * future cursor/typing/selection work, not liveness.
+ * Presence is server-owned: the `connections` map is the source of truth.
+ * On every connection change the DO broadcasts one `presence` text frame
+ * carrying the FULL install list (computed per-recipient, self excluded),
+ * so clients store `devices.list()` verbatim with no delta reassembly.
+ * There is no Awareness instance on the relay; the y-protocols Awareness
+ * slot is reserved for future cursor/typing/selection work, not liveness.
  */
 
 import { DurableObject } from 'cloudflare:workers';
@@ -44,11 +43,8 @@ import {
 	parseSubprotocols,
 	stateVectorsEqual,
 } from '@epicenter/sync';
-import type {
-	PresenceAddedFrame,
-	PresenceRemovedFrame,
-	PresenceSnapshotFrame,
-} from '@epicenter/workspace/document/presence';
+import type { PresenceFrame } from '@epicenter/workspace/document/presence';
+import { Err, type Result } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import {
@@ -74,8 +70,14 @@ type DispatchInboundFrame = {
 	input: unknown;
 };
 
-/** Wire form of a `Result<unknown, DispatchError>`. */
-export type DispatchResult = { data: unknown } | { error: DispatchErrorWire };
+/**
+ * Wire form of the dispatch outcome: a wellcrafted `Result`. Success
+ * carries the action's return value in `data`; failure carries a
+ * `DispatchErrorWire` in `error`. The recipient produces this with
+ * `Ok`/`Err`; the relay produces its own `RecipientOffline` failures
+ * with `Err`. Discriminate by `error === null`, never by key presence.
+ */
+export type DispatchResult = Result<unknown, DispatchErrorWire>;
 
 export type DispatchErrorWire =
 	| { name: 'RecipientOffline'; to: string; message: string }
@@ -108,26 +110,25 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
 const COMPACTION_DELAY_MS = 30_000;
 
 /**
- * Grace window before a `presence_removed` broadcast fires after the last
- * socket for an install closes.
+ * Grace window before the debounced presence rebroadcast fires after the
+ * last socket for an install closes.
  *
  * A graceful tab handoff (T1 closes, T2 connects within a few hundred ms)
- * would otherwise emit `presence_removed(X)` immediately followed by
- * `presence_added(X)`, even though install X was continuously present from
- * the user's perspective. The grace window lets `upgrade()` cancel the
- * pending removed-broadcast before peers ever see the flap.
+ * would otherwise broadcast the install as gone and then back, even though
+ * it was continuously present from the user's perspective. The debounce
+ * lets a reconnecting socket supersede the pending rebroadcast before peers
+ * ever see the flap.
  *
  * Close-code policy: WebSocket close code 4401 (permanent auth failure)
- * bypasses the grace window and emits `presence_removed` immediately. There
- * is no legitimate handoff for an auth-failed socket, and forcing peers to
- * wait 300 ms to learn an install is permanently offline yields no benefit.
- * All other close codes (1000, 1006, 1009, 1011, 4400, ...) respect the
- * grace window.
+ * bypasses the debounce and rebroadcasts immediately. There is no
+ * legitimate handoff for an auth-failed socket, and forcing peers to wait
+ * 300 ms to learn an install is permanently offline yields no benefit. All
+ * other close codes (1000, 1006, 1009, 1011, 4400, ...) respect the window.
  *
  * 300 ms is a starting point. See the spec's "Grace-window justification"
  * section for the rationale.
  */
-const PRESENCE_REMOVE_GRACE_MS = 300;
+const PRESENCE_REBROADCAST_GRACE_MS = 300;
 
 /**
  * Internal cap on how long the DO holds an in-flight dispatch open before
@@ -216,21 +217,21 @@ export class Room extends DurableObject {
 	private connections = new Map<WebSocket, Connection>();
 
 	/**
-	 * Pending `presence_removed` broadcasts, keyed by installationId. Armed
-	 * when the last socket for an install closes; cleared either by the
-	 * timeout firing (real disconnect) or by a new socket for the same
-	 * install arriving inside the grace window (handoff).
+	 * Pending debounced presence rebroadcast, or `null` if none is armed.
+	 * Armed when the last socket for an install closes; cleared by the timer
+	 * firing (real disconnect) or by a connect superseding it (handoff).
 	 *
-	 * Per-installation rather than per-socket so a graceful tab handoff
-	 * (close T1, open T2 within grace) cancels exactly the right pending
-	 * broadcast.
+	 * A single shared timer suffices because the rebroadcast reads the live
+	 * connection list at fire time, so a burst of departures collapses into
+	 * one frame.
 	 */
-	private pendingRemovals = new Map<string, ReturnType<typeof setTimeout>>();
+	private pendingRebroadcast: ReturnType<typeof setTimeout> | null = null;
 
 	/**
-	 * @see {@link PRESENCE_REMOVE_GRACE_MS}
+	 * @see {@link PRESENCE_REBROADCAST_GRACE_MS}
 	 */
-	private static readonly PRESENCE_REMOVE_GRACE_MS = PRESENCE_REMOVE_GRACE_MS;
+	private static readonly PRESENCE_REBROADCAST_GRACE_MS =
+		PRESENCE_REBROADCAST_GRACE_MS;
 
 	/**
 	 * WebSocket close code emitted by the auth layer when the connection's
@@ -370,26 +371,21 @@ export class Room extends DurableObject {
 
 		server.send(encodeSyncStep1({ doc: this.doc }));
 
-		// Presence: send the snapshot to the new socket, then broadcast
-		// `presence_added` to existing sockets if and only if this is the
-		// FIRST socket for `installationId` (multi-tab subsequent sockets
-		// do not re-announce the install). If a `presence_removed` was
-		// pending from a just-closed sibling socket, cancel it and emit
-		// nothing to peers: from their point of view the install never left.
+		// Presence: send the full install list to the new socket. If this is
+		// the FIRST socket for `installationId`, room membership changed, so
+		// rebroadcast the live list to every other socket; subsequent tabs of
+		// the same install leave the list unchanged and need no rebroadcast.
+		// A connect supersedes any pending debounced rebroadcast.
 		server.send(
 			JSON.stringify({
-				type: 'presence_snapshot',
+				type: 'presence',
 				installs: this.snapshotInstalls(server),
-			} satisfies PresenceSnapshotFrame),
+			} satisfies PresenceFrame),
 		);
 
 		if (this.countInstallSockets(installationId) === 1) {
-			if (!this.cancelPendingRemoval(installationId)) {
-				this.presenceBroadcast(
-					{ type: 'presence_added', install: installationId } satisfies PresenceAddedFrame,
-					server,
-				);
-			}
+			this.cancelPendingRebroadcast();
+			this.broadcastPresence(server);
 		}
 
 		const responseHeaders = new Headers();
@@ -478,13 +474,7 @@ export class Room extends DurableObject {
 	async dispatch(req: DispatchRpcRequest): Promise<DispatchResult> {
 		const recipientWs = this.pickRecipient(req.to);
 		if (!recipientWs) {
-			return {
-				error: {
-					name: 'RecipientOffline',
-					to: req.to,
-					message: `Recipient "${req.to}" is offline`,
-				},
-			};
+			return recipientOffline(req.to);
 		}
 
 		const id = crypto.randomUUID();
@@ -500,13 +490,7 @@ export class Room extends DurableObject {
 			const timeoutHandle = setTimeout(() => {
 				if (!this.pendingDispatches.has(id)) return;
 				this.pendingDispatches.delete(id);
-				resolve({
-					error: {
-						name: 'RecipientOffline',
-						to: req.to,
-						message: `Recipient "${req.to}" is offline`,
-					},
-				});
+				resolve(recipientOffline(req.to));
 			}, DISPATCH_INTERNAL_TIMEOUT_MS);
 
 			this.pendingDispatches.set(id, {
@@ -525,13 +509,7 @@ export class Room extends DurableObject {
 				const pending = this.pendingDispatches.get(id);
 				if (pending) {
 					this.pendingDispatches.delete(id);
-					pending.resolve({
-						error: {
-							name: 'RecipientOffline',
-							to: req.to,
-							message: `Recipient "${req.to}" is offline`,
-						},
-					});
+					pending.resolve(recipientOffline(req.to));
 				}
 			}
 		});
@@ -563,8 +541,9 @@ export class Room extends DurableObject {
 
 	/**
 	 * Count the number of OPEN sockets currently associated with
-	 * `installationId`. Used to gate `presence_added` (only the first
-	 * socket emits) and `presence_removed` (only the last close emits).
+	 * `installationId`. Used to detect the first socket for an install (on
+	 * connect) and the last socket (on close), the two events that change
+	 * room membership and therefore trigger a presence rebroadcast.
 	 */
 	private countInstallSockets(installationId: string): number {
 		let count = 0;
@@ -575,21 +554,23 @@ export class Room extends DurableObject {
 	}
 
 	/**
-	 * Fan out a presence frame to every connection other than `exclude`.
-	 * Wraps each `ws.send` in try/catch so a wedged socket cannot abort
-	 * the loop (the close event will fire and trigger the full cleanup
-	 * path eventually).
+	 * Push the current presence list to every open socket, optionally
+	 * skipping `exclude` (a freshly-upgraded socket that was already sent
+	 * its list directly). Each socket receives its own install excluded, so
+	 * the frame is that receiver's "remote installs" view. A wedged socket's
+	 * `send` is swallowed; its close event runs the full cleanup path.
 	 */
-	private presenceBroadcast(
-		frame: PresenceSnapshotFrame | PresenceAddedFrame | PresenceRemovedFrame,
-		exclude?: WebSocket,
-	): void {
-		const payload = JSON.stringify(frame);
+	private broadcastPresence(exclude?: WebSocket): void {
 		for (const [peer] of this.connections) {
 			if (peer === exclude) continue;
 			if (peer.readyState !== WebSocket.OPEN) continue;
 			try {
-				peer.send(payload);
+				peer.send(
+					JSON.stringify({
+						type: 'presence',
+						installs: this.snapshotInstalls(peer),
+					} satisfies PresenceFrame),
+				);
 			} catch {
 				/* peer's close event will run the full cleanup path */
 			}
@@ -597,62 +578,32 @@ export class Room extends DurableObject {
 	}
 
 	/**
-	 * Arm a `presence_removed` broadcast for `installationId` after the
-	 * grace window. If an upgrade for the same install lands inside the
-	 * window, {@link cancelPendingRemoval} clears the pending broadcast so
-	 * peers never see a flap. If the timer fires and the install still
-	 * has zero sockets, the broadcast goes out.
-	 *
-	 * Re-arming for an install with an existing pending removal replaces
-	 * the older timer; the install's eventual `presence_removed` lands at
-	 * `now + grace`, not at the original `lastClose + grace`.
+	 * Arm the debounced presence rebroadcast after the grace window. Called
+	 * when the last socket for an install closes. A single shared timer: if
+	 * one is already pending, leave it, so a burst of departures is
+	 * announced at most one grace window after the FIRST departure. When it
+	 * fires it broadcasts the then-current full list, reflecting every
+	 * departure (and any reconnect) that happened during the window.
 	 */
-	private schedulePresenceRemoved(installationId: string): void {
-		const existing = this.pendingRemovals.get(installationId);
-		if (existing) clearTimeout(existing);
-		const handle = setTimeout(() => {
-			this.pendingRemovals.delete(installationId);
-			if (this.countInstallSockets(installationId) > 0) return;
-			this.presenceBroadcast({
-				type: 'presence_removed',
-				install: installationId,
-			} satisfies PresenceRemovedFrame);
-		}, Room.PRESENCE_REMOVE_GRACE_MS);
-		this.pendingRemovals.set(installationId, handle);
+	private schedulePresenceRebroadcast(): void {
+		if (this.pendingRebroadcast) return;
+		this.pendingRebroadcast = setTimeout(() => {
+			this.pendingRebroadcast = null;
+			this.broadcastPresence();
+		}, Room.PRESENCE_REBROADCAST_GRACE_MS);
 	}
 
 	/**
-	 * Cancel a pending `presence_removed` for `installationId`. Returns
-	 * `true` if a pending broadcast was actually cancelled (graceful tab
-	 * handoff), `false` if no timer was armed (genuinely first socket for
-	 * this install).
-	 *
-	 * `upgrade()` uses the return value to decide whether to emit
-	 * `presence_added`: a cancelled removal means peers never observed
-	 * the install leave, so the add would be spurious.
+	 * Cancel a pending debounced rebroadcast. Called on connect: the connect
+	 * path broadcasts the live list immediately, which supersedes whatever
+	 * the debounced timer would have sent. A graceful tab handoff lands here
+	 * (T1 closes and arms the timer, T2 connects and cancels it), so peers
+	 * never observe the install leave.
 	 */
-	private cancelPendingRemoval(installationId: string): boolean {
-		const handle = this.pendingRemovals.get(installationId);
-		if (!handle) return false;
-		clearTimeout(handle);
-		this.pendingRemovals.delete(installationId);
-		return true;
-	}
-
-	/**
-	 * Emit `presence_removed` for `installationId` right now, bypassing
-	 * the grace window. Used for close code 4401 (permanent auth failure)
-	 * where no legitimate handoff is possible.
-	 *
-	 * Also clears any pending grace-window timer for the same install so
-	 * a stale timer from an earlier non-auth close cannot double-fire.
-	 */
-	private presenceRemovedImmediate(installationId: string): void {
-		this.cancelPendingRemoval(installationId);
-		this.presenceBroadcast({
-			type: 'presence_removed',
-			install: installationId,
-		} satisfies PresenceRemovedFrame);
+	private cancelPendingRebroadcast(): void {
+		if (!this.pendingRebroadcast) return;
+		clearTimeout(this.pendingRebroadcast);
+		this.pendingRebroadcast = null;
 	}
 
 	/**
@@ -753,30 +704,23 @@ export class Room extends DurableObject {
 		const pending = this.pendingDispatches.get(id);
 		if (!pending) return; // late response, HTTP request already gone
 
-		const result = frame.result as DispatchResult | undefined;
-		if (!isDispatchResult(result)) {
-			// Recipient sent a malformed result; treat as offline so the caller
-			// gets a usable Result rather than hanging until the safety timeout.
+		if (!isDispatchResult(frame.result)) {
+			// Recipient sent a non-`Result` payload; treat it as offline so the
+			// caller gets a usable `Result` instead of waiting for the timeout.
 			this.pendingDispatches.delete(id);
-			pending.resolve({
-				error: {
-					name: 'RecipientOffline',
-					to: connection.installationId,
-					message: 'Recipient returned a malformed dispatch response',
-				},
-			});
+			pending.resolve(recipientOffline(connection.installationId));
 			return;
 		}
 
 		this.pendingDispatches.delete(id);
-		pending.resolve(result);
+		pending.resolve(frame.result);
 	}
 
 	/**
 	 * Clean up a closed WebSocket connection.
 	 *
-	 * - Emits `presence_removed` if this was the last socket for the
-	 *   install (or immediately on auth-failure close codes).
+	 * - Rebroadcasts the presence list if this was the last socket for the
+	 *   install (debounced, or immediately on auth-failure close codes).
 	 * - Resolves any in-flight dispatches to this recipient with
 	 *   `RecipientOffline` so callers don't wait for the safety timeout.
 	 * - Unregisters Yjs doc update handlers.
@@ -797,27 +741,22 @@ export class Room extends DurableObject {
 		for (const [id, pending] of this.pendingDispatches) {
 			if (pending.recipientWs !== ws) continue;
 			this.pendingDispatches.delete(id);
-			pending.resolve({
-				error: {
-					name: 'RecipientOffline',
-					to: connection.installationId,
-					message: `Recipient "${connection.installationId}" is offline`,
-				},
-			});
+			pending.resolve(recipientOffline(connection.installationId));
 		}
 
 		connection.unregister();
 		this.connections.delete(ws);
 
-		// Presence: if this was the LAST socket for the install, emit
-		// `presence_removed`. Close code 4401 (permanent auth failure)
-		// bypasses the grace window; every other close code respects it so
-		// graceful tab handoffs do not produce a wire-visible flap.
+		// Presence: if this was the LAST socket for the install, room
+		// membership changed. Close code 4401 (permanent auth failure)
+		// rebroadcasts immediately; every other close code debounces the
+		// rebroadcast so a graceful tab handoff does not produce a flap.
 		if (this.countInstallSockets(connection.installationId) === 0) {
 			if (code === Room.CLOSE_CODE_AUTH_FAILED) {
-				this.presenceRemovedImmediate(connection.installationId);
+				this.cancelPendingRebroadcast();
+				this.broadcastPresence();
 			} else {
-				this.schedulePresenceRemoved(connection.installationId);
+				this.schedulePresenceRebroadcast();
 			}
 		}
 
@@ -858,17 +797,36 @@ export class Room extends DurableObject {
 }
 
 // ============================================================================
-// Dispatch wire validators
+// Dispatch wire helpers
 // ============================================================================
 
-/** Structural check that `value` is a wire-shaped `DispatchResult`. */
+/**
+ * The relay's one self-produced dispatch outcome: the recipient has no
+ * usable socket (never connected, dropped mid-flight, timed out, or sent
+ * a non-`Result` reply). Shaped as `Err` so the wire body is always a
+ * `Result`.
+ */
+function recipientOffline(to: string): DispatchResult {
+	return Err({
+		name: 'RecipientOffline',
+		to,
+		message: `Recipient "${to}" is offline`,
+	});
+}
+
+/**
+ * Structural check that an untrusted wire value is a wellcrafted `Result`
+ * (`{ data, error }`, both keys present). This is the boundary guard that
+ * lets the relay forward a recipient's reply as a typed `DispatchResult`
+ * without an `as` cast.
+ */
 function isDispatchResult(value: unknown): value is DispatchResult {
-	if (!value || typeof value !== 'object') return false;
-	const hasData = 'data' in value;
-	const hasError = 'error' in value;
-	if (hasData && hasError) return false;
-	if (!hasData && !hasError) return false;
-	return true;
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		'data' in value &&
+		'error' in value
+	);
 }
 
 // ============================================================================

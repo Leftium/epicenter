@@ -10,8 +10,9 @@
  * The dispatch endpoint is HTTP-backed and addresses devices by
  * `installationId` directly; the relay routes to the most-recently-
  * connected socket for that install. If the relay has no live socket
- * for the target, the dispatch resolves with `RecipientOffline`; the
- * `/run` route forwards that under `RemoteCallFailed`.
+ * for the target, the dispatch resolves with `RecipientOffline`, which
+ * the `/run` route surfaces as `PeerNotFound`; any other dispatch error
+ * is forwarded under `RemoteCallFailed`.
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
@@ -97,34 +98,6 @@ async function invokeRemote({
 }): Promise<RunResponse> {
 	const { runtime } = routeRuntime;
 
-	// Local liveness pre-check: if presence reports no socket for this
-	// `installationId`, return `PeerNotFound` so the renderer
-	// distinguishes "you addressed a device that isn't connected" from
-	// "the target was online but the call failed." The HTTP dispatch
-	// would otherwise return `RecipientOffline`, which the renderer maps
-	// to `RemoteCallFailed`; keeping the local check preserves the
-	// existing exit-code split.
-	//
-	// Gate the pre-check on `presence.hasSnapshot`. Between WebSocket
-	// upgrade and the first `presence_snapshot` text frame,
-	// `devices.list()` is empty, which would briefly report every peer as
-	// `PeerNotFound` even when they are online. During that window we
-	// skip the local check and let the HTTP dispatch produce the real
-	// result (a `RecipientOffline` surfaces as `RemoteCallFailed`, but
-	// only for the genuinely-offline case once the relay confirms it).
-	if (runtime.collaboration.presence.hasSnapshot) {
-		const online = runtime.collaboration.devices
-			.list()
-			.some((d) => d.installationId === peerTarget);
-		if (!online) {
-			return RunError.PeerNotFound({
-				peerTarget,
-				waitMs,
-				syncStatus: toRunSyncStatus(runtime.collaboration.status),
-			});
-		}
-	}
-
 	const result = await runtime.collaboration.dispatch({
 		to: peerTarget,
 		action: localPath,
@@ -133,6 +106,19 @@ async function invokeRemote({
 	});
 
 	if (result.error !== null) {
+		// The relay owns reachability: it returns `RecipientOffline` when it
+		// has no live socket for `peerTarget`. Surface that as `PeerNotFound`
+		// so the renderer keeps the "you addressed a device that isn't
+		// connected" exit code distinct from a call that reached the peer
+		// and failed. The relay is authoritative and in the dispatch path,
+		// so no client-side presence pre-check is needed (or correct).
+		if (result.error.name === 'RecipientOffline') {
+			return RunError.PeerNotFound({
+				peerTarget,
+				waitMs,
+				syncStatus: toRunSyncStatus(runtime.collaboration.status),
+			});
+		}
 		return RunError.RemoteCallFailed({
 			cause: result.error,
 			peerTarget,

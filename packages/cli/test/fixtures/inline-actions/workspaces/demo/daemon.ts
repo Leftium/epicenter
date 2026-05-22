@@ -51,7 +51,6 @@ const collaboration = {
 		list: () => [],
 		subscribe: () => () => {},
 	},
-	presence: { hasSnapshot: true },
 	dispatch: async () => {
 		throw new Error('fixture does not dispatch');
 	},

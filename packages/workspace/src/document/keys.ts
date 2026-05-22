@@ -10,10 +10,10 @@
  *
  * Liveness does not live in the Y.Doc. Presence is server-owned: the
  * relay binds `installationId` to a socket by URL stamp at upgrade, and
- * the client derives `devices.list()` from `presence_snapshot`,
- * `presence_added`, and `presence_removed` text frames. Cross-device
- * dispatch rides a sibling HTTP endpoint correlated with two WebSocket
- * text frames; no Y.Doc array is reserved for it.
+ * the client derives `devices.list()` from the relay's `presence`
+ * full-list text frame. Cross-device dispatch rides a sibling HTTP
+ * endpoint correlated with two WebSocket text frames; no Y.Doc array is
+ * reserved for it.
  *
  * @example
  * ```typescript

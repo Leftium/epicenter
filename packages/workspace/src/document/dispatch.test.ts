@@ -213,6 +213,44 @@ describe('dispatch', () => {
 		});
 	});
 
+	test('Ok(null) body: success carrying null, not an error', async () => {
+		installFetch(
+			async () =>
+				new Response(JSON.stringify(Ok(null)), {
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				}),
+		);
+
+		const result = await dispatch({
+			dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
+			installationId: 'R_laptop',
+			req: { to: 'R_phone', action: 'noop', input: {} },
+		});
+
+		expect(expectOk(result)).toBeNull();
+	});
+
+	test('body is not a Result: NetworkFailed', async () => {
+		installFetch(
+			async () =>
+				new Response(JSON.stringify({ unexpected: true }), {
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				}),
+		);
+
+		const error = expectErr(
+			await dispatch({
+				dispatchUrl: 'https://api.example.com/rooms/wid/dispatch',
+				installationId: 'R_laptop',
+				req: { to: 'R_phone', action: 'tabs_close', input: {} },
+			}),
+		);
+
+		expect(error.name).toBe('NetworkFailed');
+	});
+
 	test('RecipientOffline: decodes from Err body', async () => {
 		installFetch(
 			async () =>

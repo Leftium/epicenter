@@ -18,9 +18,9 @@
  * does not route it. AUTH is reserved as a sentinel close path and never
  * appears on the wire today.
  *
- * Dispatch (`dispatch_inbound` / `dispatch_response`) and presence
- * (`presence_snapshot` / `presence_added` / `presence_removed`) ride on
- * WebSocket *text* frames and are handled outside this module.
+ * Dispatch (`dispatch_inbound` / `dispatch_response`) and presence (the
+ * `presence` full-list frame) ride on WebSocket *text* frames and are
+ * handled outside this module.
  *
  * ## Error handling rationale (grounded in Yjs internals)
  *

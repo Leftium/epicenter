@@ -145,7 +145,7 @@ export function openFuji({
 		initial: { peer },
 	});
 	const sync = attachSync(doc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+		url: roomWsUrl(APP_URLS.API, doc.ydoc.guid),
 		waitFor: idb,
 		bearerToken,
 		awareness,
@@ -182,7 +182,7 @@ export function openFuji({
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
-		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+		url: roomWsUrl(apiUrl, doc.ydoc.guid),
 		bearerToken,
 	});
 	return { ...doc, persistence, sync };
@@ -235,7 +235,7 @@ export function openFuji({
 		filePath: yjsPath(projectDir, doc.ydoc.guid),
 	});
 	const sync = attachSync(doc, {
-		url: toWsUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+		url: roomWsUrl(apiUrl, doc.ydoc.guid),
 		bearerToken,
 	});
 	return { ...doc, persistence, sync };

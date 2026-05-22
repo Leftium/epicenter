@@ -228,7 +228,7 @@ Use `auth.openWebSocket` for sync:
 
 ```ts
 const collaboration = openCollaboration(ydoc, {
-	url: websocketUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+	url: roomWsUrl(APP_URLS.API, ydoc.guid),
 	waitFor: idb.whenLoaded,
 	openWebSocket: auth.openWebSocket,
 	replicaId,
@@ -289,16 +289,13 @@ Protected resources use `requireOAuthUser`:
 
 ```txt
 /ai/*
-/workspaces/*
-/documents/*
-/api/billing/*
-/api/assets/*
+/rooms/*
 ```
 
 `requireOAuthUser` calls `/auth/me` logic internally: verify bearer token, load
 the user, derive identity, then set `c.var.user`.
 
-WebSocket sync enters through the same protected workspace and document routes.
+WebSocket sync enters through the protected `/rooms/*` route.
 The API accepts the upgrade only after `singleCredential` and
 `requireOAuthUser` have resolved one user.
 

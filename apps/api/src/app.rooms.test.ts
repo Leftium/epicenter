@@ -1,8 +1,9 @@
 /**
- * Room Route Boundary Tests
+ * App route boundary tests.
  *
- * Verifies that the host route owns protected-resource authorization before
- * handing requests to the Room Durable Object.
+ * Verifies that the host routes own protected-resource authorization before
+ * handing requests to the Room Durable Object, and that route registration
+ * order holds where Hono's first-match semantics depend on it.
  *
  * Key behaviors:
  * - `/rooms/:room` rejects unauthenticated callers at the OAuth resource
@@ -11,11 +12,13 @@
  * - Authenticated room routes forward bodies to the selected Room DO and
  *   shape binary snapshot/sync responses.
  * - Oversized sync bodies are rejected before selecting a Room DO.
+ * - OAuth discovery routes register before the Better Auth /auth/* catch-all.
  */
 
 import { expect, mock, test } from 'bun:test';
 import { Err, Ok } from 'wellcrafted/result';
 import { OAuthError } from './auth/oauth-error.js';
+import { OAUTH_OPENID_CONFIGURATION_PATH } from './auth/oauth-metadata.js';
 import { projectTrustedOAuthClientToRow } from './auth/trusted-oauth-clients.js';
 import { MAX_PAYLOAD_BYTES } from './constants.js';
 
@@ -321,4 +324,19 @@ test('GET /rooms/:room returns the selected room snapshot as an octet stream', a
 			userId: 'user-1',
 		}),
 	]);
+});
+
+test('OAuth discovery routes register before the /auth/* catch-all', async () => {
+	// Hono matches routes in registration order. If the OpenID discovery
+	// route were registered after the Better Auth /auth/* catch-all, the
+	// catch-all would swallow discovery requests. app.ts depends on this
+	// ordering; only a comment guarded it before.
+	const { default: app } = await import('./app.js');
+	const paths = app.routes.map((route) => route.path);
+	const discoveryIndex = paths.indexOf(OAUTH_OPENID_CONFIGURATION_PATH);
+	const catchAllIndex = paths.indexOf('/auth/*');
+
+	expect(discoveryIndex).toBeGreaterThanOrEqual(0);
+	expect(catchAllIndex).toBeGreaterThanOrEqual(0);
+	expect(discoveryIndex).toBeLessThan(catchAllIndex);
 });

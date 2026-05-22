@@ -303,7 +303,7 @@ function createDoc(init?: (doc: Y.Doc) => void): Y.Doc {
 
 /**
  * Decode a binary sync frame into its sub-type and payload. Mirrors the
- * production transport decode (`sync-handlers` / `sync-supervisor`),
+ * production transport decode (`Room.webSocketMessage` / `sync-supervisor`),
  * which asserts the sub-type varint as `SyncMessageType`.
  */
 function readFrame(data: Uint8Array): {

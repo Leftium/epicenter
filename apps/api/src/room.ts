@@ -53,8 +53,7 @@ import type {
 import type { PresenceFrame } from '@epicenter/workspace/document/presence';
 import * as decoding from 'lib0/decoding';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { Err, type Result } from 'wellcrafted/result';
-import { trySync } from 'wellcrafted/result';
+import { Err, type Result, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
 

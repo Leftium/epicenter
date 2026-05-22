@@ -9,8 +9,10 @@
  * `whenDisposed` promises).
  *
  * Daemon routes remain on compatibility rooms until each route has an
- * explicit Cloud Workspace appId/docId mapping and machine auth can resolve
- * the default Cloud Workspace through `/api/workspaces`.
+ * explicit Cloud Workspace appId/docId mapping and daemon machine auth lands.
+ * Default-workspace resolution is server-side now: the `/me/...` routes
+ * resolve it from the auth token, so the daemon does not fetch
+ * `/api/workspaces` to discover a workspace id.
  *
  * The helper takes the ydoc and the daemon ctx capabilities directly so the
  * caller stays explicit about its `actions` choice: app workspaces with

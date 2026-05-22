@@ -30,17 +30,11 @@ import { applyMessage } from './sync-handlers';
 // ============================================================================
 
 /**
- * Minimal stand-in for a Cloudflare WebSocket. `send` captures outbound
- * frames so tests can assert on them; `readyState = 1` matches
- * `WebSocket.OPEN` so production code probing readiness is happy.
+ * Distinct object identity standing in for a WebSocket. `applyMessage` only
+ * uses `ws` as the Yjs transaction origin, so no send/readyState surface is
+ * needed.
  */
-class MockWebSocket {
-	sent: Array<Uint8Array | string> = [];
-	readyState = 1;
-	send(data: Uint8Array | string): void {
-		this.sent.push(data);
-	}
-}
+class MockWebSocket {}
 
 /** A `MockWebSocket` typed as the CF `WebSocket` the handlers expect. */
 function mockWs(): WebSocket {

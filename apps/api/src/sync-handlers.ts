@@ -1,8 +1,8 @@
 /**
- * Yjs sync protocol handlers, tailored for Cloudflare Durable Objects.
+ * Yjs binary sync-frame decoder for the relay's WebSocket path.
  *
- * Concrete to CF WebSocket types: no framework-agnostic indirection, no
- * WeakMap tricks.
+ * Framework-free: kept in its own module so {@link applyMessage} can be
+ * unit-tested without the Durable Object harness.
  *
  * ## API surface
  *
@@ -48,7 +48,7 @@ import * as Y from 'yjs';
  * binary frames: lib0 buffer underflow (truncated messages) and any other
  * decode-time exceptions.
  */
-export const SyncHandlerError = defineErrors({
+const SyncHandlerError = defineErrors({
 	MessageDecode: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to decode WebSocket message: ${extractErrorMessage(cause)}`,
 		cause,

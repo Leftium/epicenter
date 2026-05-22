@@ -1,38 +1,25 @@
 /**
  * Protocol Unit Tests
  *
- * Tests y-websocket-compatible protocol helpers used by the server sync endpoint.
- * Coverage focuses on sync message encoding/decoding, compatibility with
- * y-protocols, and end-to-end synchronization behavior under common and edge
- * conditions.
+ * Tests the Yjs sync protocol helpers used by the server sync endpoint.
+ * Coverage focuses on sync message encoding/decoding and end-to-end
+ * synchronization behavior under common and edge conditions.
  */
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import {
-	decodeMessageType,
 	decodeSyncMessage,
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
 	handleSyncPayload,
-	MESSAGE_TYPE,
 	SYNC_MESSAGE_TYPE,
 } from './protocol';
 
 // ============================================================================
-// MESSAGE_TYPE Constants
+// SYNC_MESSAGE_TYPE Constants
 // ============================================================================
-
-describe('MESSAGE_TYPE constants', () => {
-	test('expose only the SYNC and AUTH wire slots', () => {
-		// Wire protocol is byte-identical to plain y-websocket sync after the
-		// awareness/RPC collapse: only SYNC produces traffic; AUTH is a
-		// reserved sentinel for the 4401 close path.
-		expect(MESSAGE_TYPE.SYNC).toBe(0);
-		expect(MESSAGE_TYPE.AUTH).toBe(2);
-	});
-});
 
 describe('SYNC_MESSAGE_TYPE constants', () => {
 	test('have expected numeric values', () => {
@@ -43,10 +30,10 @@ describe('SYNC_MESSAGE_TYPE constants', () => {
 });
 
 // ============================================================================
-// MESSAGE_SYNC Tests
+// Sync Frame Tests
 // ============================================================================
 
-describe('MESSAGE_SYNC', () => {
+describe('sync frames', () => {
 	describe('encodeSyncStep1', () => {
 		test('encodes empty document', () => {
 			const doc = createDoc();
@@ -140,7 +127,7 @@ describe('MESSAGE_SYNC', () => {
 		test('handles empty update', () => {
 			const message = encodeSyncUpdate({ update: new Uint8Array(0) });
 
-			expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.SYNC);
+			expect(decodeSyncMessage(message).type).toBe('update');
 		});
 	});
 
@@ -282,14 +269,6 @@ describe('decodeSyncMessage', () => {
 		const step2 = encodeSyncStep2({ doc });
 		const decodedStep2 = decodeSyncMessage(step2);
 		expect(decodedStep2.type).toBe('step2');
-	});
-});
-
-describe('decodeMessageType', () => {
-	test('decodes SYNC message type', () => {
-		const doc = createDoc();
-		const message = encodeSyncStep1({ doc });
-		expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.SYNC);
 	});
 });
 

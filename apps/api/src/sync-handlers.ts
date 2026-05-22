@@ -11,12 +11,9 @@
  *
  * ## Wire surfaces
  *
- * Binary frames handled here carry standard y-protocols document sync
- * (`MESSAGE_TYPE.SYNC`). AWARENESS frames are no longer consumed (presence
- * is server-owned and rides text frames); the slot stays reserved in
- * `@epicenter/sync` for future cursor/typing/selection work, but the DO
- * does not route it. AUTH is reserved as a sentinel close path and never
- * appears on the wire today.
+ * Binary frames handled here carry Yjs document sync (y-protocols/sync
+ * framing: STEP1/STEP2/UPDATE). A binary frame is a sync frame; there is
+ * no top-level message-type discriminator.
  *
  * Dispatch (`dispatch_inbound` / `dispatch_response`) and presence (the
  * `presence` full-list frame) ride on WebSocket *text* frames and are
@@ -36,7 +33,6 @@
 
 import {
 	handleSyncPayload,
-	MESSAGE_TYPE,
 	type SyncMessageType,
 	encodeSyncUpdate,
 } from '@epicenter/sync';
@@ -127,11 +123,12 @@ export function registerConnection({
 /**
  * Dispatch an incoming binary WebSocket message.
  *
- * Mutates `doc` as appropriate, then returns `Result<Uint8Array | null>`:
- * the STEP2 reply frame for a SYNC STEP1, or `null` for the "valid, no
- * reply" outcome (STEP2/UPDATE applied to the doc, with fan-out handled
- * inside the doc-update listener registered by {@link registerConnection};
- * unknown message types).
+ * A binary frame is a sync frame: the first varint is the sync sub-type,
+ * with no top-level message-type discriminator. Mutates `doc` as
+ * appropriate, then returns `Result<Uint8Array | null>`: the STEP2 reply
+ * frame for a SYNC STEP1, or `null` for the "valid, no reply" outcome
+ * (STEP2/UPDATE applied to the doc, with fan-out handled inside the
+ * doc-update listener registered by {@link registerConnection}).
  *
  * `Err(SyncHandlerError.MessageDecode)` covers lib0 buffer underflow on
  * truncated input.
@@ -148,25 +145,15 @@ export function applyMessage({
 	return trySync({
 		try: (): Uint8Array | null => {
 			const decoder = decoding.createDecoder(data);
-			const messageType = decoding.readVarUint(decoder);
-
-			switch (messageType) {
-				case MESSAGE_TYPE.SYNC: {
-					const syncType = decoding.readVarUint(decoder) as SyncMessageType;
-					const payload = decoding.readVarUint8Array(decoder);
-					const response = handleSyncPayload({
-						syncType,
-						payload,
-						doc,
-						origin: connection.ws,
-					});
-					return response ?? null;
-				}
-
-				default:
-					console.warn(`[sync] Unknown WS message type: ${messageType}`);
-					return null;
-			}
+			const syncType = decoding.readVarUint(decoder) as SyncMessageType;
+			const payload = decoding.readVarUint8Array(decoder);
+			const response = handleSyncPayload({
+				syncType,
+				payload,
+				doc,
+				origin: connection.ws,
+			});
+			return response ?? null;
 		},
 		catch: (cause) => SyncHandlerError.MessageDecode({ cause }),
 	});

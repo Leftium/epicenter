@@ -1,18 +1,21 @@
 /**
- * Yjs WebSocket Protocol Encoding/Decoding Utilities
+ * Yjs Sync Protocol Encoding/Decoding Utilities
  *
- * Pure functions for encoding and decoding y-websocket protocol messages.
- * Separates protocol handling from transport (WebSocket handling).
+ * Pure functions for encoding and decoding the binary WebSocket channel.
+ *
+ * The binary channel carries exactly one message family: Yjs document
+ * sync. A binary frame *is* a sync frame, so there is no top-level
+ * message-type varint; the first varint is the sync sub-type (STEP1,
+ * STEP2, or UPDATE). This is byte-identical to raw y-protocols/sync
+ * framing. Wire-format versioning, if ever needed, rides the WebSocket
+ * subprotocol (`MAIN_SUBPROTOCOL`), not an in-band discriminator.
+ *
+ * Dispatch and presence ride WebSocket *text* frames, not this channel.
  *
  * All sync payloads use Yjs V2 encoding for ~40% smaller wire size.
  * State vectors are version-independent (same format for V1 and V2).
  *
- * Based on patterns from y-redis protocol.js:
- * - Message type constants as first-class exports
- * - Pure encoder/decoder functions
- * - Single responsibility: protocol only, no transport logic
- *
- * @see https://github.com/yjs/y-redis/blob/main/src/protocol.js
+ * Pure encoder/decoder functions: protocol only, no transport logic.
  */
 
 import * as decoding from 'lib0/decoding';
@@ -20,60 +23,15 @@ import * as encoding from 'lib0/encoding';
 import * as Y from 'yjs';
 
 // ============================================================================
-// Top-Level Message Types
-// ============================================================================
-
-/**
- * Top-level message types in the y-websocket protocol.
- * The first varint in any message identifies its type.
- *
- * Three values are reserved:
- *
- *   SYNC (0):      document synchronization (standard y-protocols).
- *   AWARENESS (1): reserved for future cursor/typing/selection sync. The
- *                  relay does not consume AWARENESS frames today; presence
- *                  rides text frames, awareness rides binary frames, they
- *                  share a socket and never collide in the wire decoder.
- *   AUTH (2):      reserved sentinel for the 4401 close path; no frames
- *                  exchanged on this channel (Epicenter convention).
- *
- * Dispatch (server -> recipient `dispatch_inbound`, recipient -> server
- * `dispatch_response`) and presence (the `presence` full-list frame) ride
- * on WebSocket *text* frames, not the binary channel, so they do not
- * consume a MESSAGE_TYPE varint.
- */
-export const MESSAGE_TYPE = {
-	/** Document synchronization messages (sync step 1, 2, or update) */
-	SYNC: 0,
-	/** Awareness updates (y-protocols awareness). Reserved for future cursor/typing/selection sync; not consumed by the relay today. */
-	AWARENESS: 1,
-	/** Authentication (reserved sentinel for the 4401 close path; no frames are exchanged) */
-	AUTH: 2,
-} as const;
-
-/**
- * Decodes the top-level message type from raw message data.
- *
- * The first varint in any y-websocket message is the message type.
- * Useful for quickly determining message type before full parsing.
- *
- * @param data - Raw message bytes
- * @returns The message type constant (0=SYNC, 1=AWARENESS, 2=AUTH)
- */
-export function decodeMessageType(data: Uint8Array): number {
-	const decoder = decoding.createDecoder(data);
-	return decoding.readVarUint(decoder);
-}
-
-// ============================================================================
 // Sync Protocol (V2 encoding)
 // ============================================================================
 
 /**
- * Sub-message types within SYNC messages.
+ * Sub-message types within sync frames.
  * Derived from y-protocols/sync constants for consistency.
  *
- * These are the second varint in a SYNC message, after MESSAGE_TYPE.SYNC.
+ * This is the first (and only) varint preceding the payload in a binary
+ * WebSocket frame.
  */
 export const SYNC_MESSAGE_TYPE = {
 	/** Initial handshake: "here's my state vector, what am I missing?" */
@@ -111,7 +69,6 @@ type DecodedSyncMessage =
  */
 export function encodeSyncStep1({ doc }: { doc: Y.Doc }): Uint8Array {
 	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC);
 		encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.STEP1);
 		encoding.writeVarUint8Array(encoder, Y.encodeStateVector(doc));
 	});
@@ -126,11 +83,10 @@ export function encodeSyncStep1({ doc }: { doc: Y.Doc }): Uint8Array {
  * that has no prior state.
  *
  * @param options.doc - The Yjs document to encode in full
- * @returns Encoded MESSAGE_SYNC + STEP2 message with full doc state
+ * @returns Encoded STEP2 frame with full doc state
  */
 export function encodeSyncStep2({ doc }: { doc: Y.Doc }): Uint8Array {
 	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC);
 		encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.STEP2);
 		encoding.writeVarUint8Array(encoder, Y.encodeStateAsUpdateV2(doc));
 	});
@@ -152,7 +108,6 @@ export function encodeSyncUpdate({
 	update: Uint8Array;
 }): Uint8Array {
 	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC);
 		encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.UPDATE);
 		encoding.writeVarUint8Array(encoder, update);
 	});
@@ -161,21 +116,16 @@ export function encodeSyncUpdate({
 /**
  * Decodes a sync protocol message into its components.
  *
- * Pure decoder that returns the message type and payload without side effects.
- * Useful for testing, logging, and protocol inspection. Update payloads are
- * V2-encoded.
+ * Pure decoder that returns the sync sub-type and payload without side
+ * effects. Useful for testing, logging, and protocol inspection. Update
+ * payloads are V2-encoded.
  *
- * @param data - Raw message bytes
+ * @param data - Raw frame bytes
  * @returns Decoded message with type discriminator and payload
- * @throws Error if message is not a valid SYNC message or has unknown sync type
+ * @throws Error if the frame has an unknown sync sub-type
  */
 export function decodeSyncMessage(data: Uint8Array): DecodedSyncMessage {
 	const decoder = decoding.createDecoder(data);
-	const messageType = decoding.readVarUint(decoder);
-	if (messageType !== MESSAGE_TYPE.SYNC) {
-		throw new Error(`Expected SYNC message (0), got ${messageType}`);
-	}
-
 	const syncType = decoding.readVarUint(decoder);
 	const payload = decoding.readVarUint8Array(decoder);
 
@@ -224,7 +174,6 @@ export function handleSyncPayload({
 		case SYNC_MESSAGE_TYPE.STEP1: {
 			const diff = Y.encodeStateAsUpdateV2(doc, payload);
 			return encoding.encode((encoder) => {
-				encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC);
 				encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.STEP2);
 				encoding.writeVarUint8Array(encoder, diff);
 			});

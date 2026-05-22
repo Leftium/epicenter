@@ -2,8 +2,8 @@
  * Sync handler integration tests.
  *
  * Exercises the slimmed `applyMessage` / `registerConnection` surface:
- * standard y-protocols SYNC frames and the connection-update broadcast
- * wiring.
+ * y-protocols/sync frames (a binary frame is a sync frame) and the
+ * connection-update broadcast wiring.
  *
  * Dispatch text-frame correlation is covered against the Durable Object
  * elsewhere (`room.dispatch` tests). This file deliberately does not
@@ -19,7 +19,6 @@ import {
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
-	MESSAGE_TYPE,
 	SYNC_MESSAGE_TYPE,
 } from '@epicenter/sync';
 import { expectOk } from '@epicenter/test-utils/result';
@@ -65,9 +64,11 @@ function makeConnection(
 	return { ws, connection };
 }
 
-function frameSingleByte(messageType: number): Uint8Array {
+/** A well-formed binary frame (sync sub-type varint + empty payload). */
+function frameWithSyncType(syncType: number): Uint8Array {
 	return encoding.encode((enc) => {
-		encoding.writeVarUint(enc, messageType);
+		encoding.writeVarUint(enc, syncType);
+		encoding.writeVarUint8Array(enc, new Uint8Array(0));
 	});
 }
 
@@ -86,8 +87,7 @@ describe('registerConnection', () => {
 
 		expect(ws.sent.length).toBe(1);
 		const sent = ws.sent[0] as Uint8Array;
-		expect(sent[0]).toBe(MESSAGE_TYPE.SYNC);
-		expect(sent[1]).toBe(SYNC_MESSAGE_TYPE.UPDATE);
+		expect(sent[0]).toBe(SYNC_MESSAGE_TYPE.UPDATE);
 	});
 
 	test('skips echo when origin is the connection itself', () => {
@@ -151,8 +151,7 @@ describe('applyMessage SYNC STEP1', () => {
 		);
 
 		if (!reply) throw new Error('Expected a STEP2 reply frame');
-		expect(reply[0]).toBe(MESSAGE_TYPE.SYNC);
-		expect(reply[1]).toBe(SYNC_MESSAGE_TYPE.STEP2);
+		expect(reply[0]).toBe(SYNC_MESSAGE_TYPE.STEP2);
 	});
 });
 
@@ -200,17 +199,17 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 });
 
 // ============================================================================
-// Unknown message types
+// Unknown sync sub-types
 // ============================================================================
 
-describe('applyMessage unknown message type', () => {
-	test('unknown top-level type is a no-op', () => {
+describe('applyMessage unknown sync sub-type', () => {
+	test('out-of-range sync sub-type is a no-op', () => {
 		const doc = new Y.Doc();
 		const { connection } = makeConnection(doc);
 
 		const reply = expectOk(
 			applyMessage({
-				data: frameSingleByte(99),
+				data: frameWithSyncType(99),
 				doc,
 				connection,
 			}),

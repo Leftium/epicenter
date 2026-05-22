@@ -6,8 +6,8 @@
  *
  * ## API surface
  *
- * {@link registerConnection}: side-effectful, registers doc update listener.
- * {@link applyMessage}: mutates doc, returns the reply frame or null.
+ * {@link applyMessage}: decodes a binary sync frame, mutates the doc, and
+ * returns the reply frame or null.
  *
  * ## Wire surfaces
  *
@@ -31,14 +31,10 @@
  * these at the system boundary.
  */
 
-import {
-	handleSyncPayload,
-	type SyncMessageType,
-	encodeSyncUpdate,
-} from '@epicenter/sync';
+import { handleSyncPayload, type SyncMessageType } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { Ok, trySync } from 'wellcrafted/result';
+import { trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 
 // ============================================================================
@@ -60,63 +56,6 @@ export const SyncHandlerError = defineErrors({
 });
 
 // ============================================================================
-// Types
-// ============================================================================
-
-/**
- * Per-connection state stored in `Map<WebSocket, Connection>`.
- *
- * Contains only per-connection data: the socket, the URL-stamped
- * `installationId`, and an `unregister` closure that removes the doc update
- * listener registered by {@link registerConnection}.
- */
-export type Connection = {
-	ws: WebSocket;
-	installationId: string;
-	/** Removes the `doc.on('updateV2')` listener for this connection. */
-	unregister: () => void;
-};
-
-// ============================================================================
-// Connection registration
-// ============================================================================
-
-/**
- * Register a WebSocket connection's doc update listener.
- *
- * Side-effectful: registers a `doc.on('updateV2')` handler that forwards
- * updates to the WebSocket. Returns a {@link Connection} with an
- * `unregister` closure that removes the listener when the socket closes.
- */
-export function registerConnection({
-	doc,
-	ws,
-	installationId,
-}: {
-	doc: Y.Doc;
-	ws: WebSocket;
-	installationId: string;
-}): Connection {
-	// Forward V2 doc updates to this connection (skip echo via identity check).
-	const updateHandler = (update: Uint8Array, origin: unknown) => {
-		if (origin === ws) return;
-		trySync({
-			try: () => ws.send(encodeSyncUpdate({ update })),
-			catch: () => Ok(undefined), // connection already dead
-		});
-	};
-	doc.on('updateV2', updateHandler);
-
-	return {
-		ws,
-		installationId,
-		unregister() {
-			doc.off('updateV2', updateHandler);
-		},
-	};
-}
-
-// ============================================================================
 // Message dispatcher
 // ============================================================================
 
@@ -127,8 +66,8 @@ export function registerConnection({
  * with no top-level message-type discriminator. Mutates `doc` as
  * appropriate, then returns `Result<Uint8Array | null>`: the STEP2 reply
  * frame for a SYNC STEP1, or `null` for the "valid, no reply" outcome
- * (STEP2/UPDATE applied to the doc, with fan-out handled inside the
- * doc-update listener registered by {@link registerConnection}).
+ * (STEP2/UPDATE applied to the doc, with fan-out to peers handled by the
+ * room-level `updateV2` listener owned by the `Room` DO).
  *
  * `Err(SyncHandlerError.MessageDecode)` covers lib0 buffer underflow on
  * truncated input.

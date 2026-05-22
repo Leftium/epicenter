@@ -9,6 +9,9 @@
  * handoff cancellation, the 4401 grace bypass, and broadcast resilience
  * against wedged sockets.
  *
+ * Also covers the room-level binary update fan-out: a sync update from one
+ * socket reaches peer sockets but not its origin.
+ *
  * Bun's test runtime does not provide Cloudflare Workers globals, so we
  * mock `cloudflare:workers` (DurableObject base class), shim
  * `WebSocketPair` / `WebSocket`, and drive the Room via its public
@@ -16,6 +19,8 @@
  */
 
 import { describe, expect, mock, test } from 'bun:test';
+import { encodeSyncUpdate } from '@epicenter/sync';
+import * as Y from 'yjs';
 
 // ────────────────────────────────────────────────────────────────────────────
 // CLOUDFLARE WORKERS SHIMS
@@ -260,6 +265,11 @@ function presenceFrames(ws: StubWebSocket): PresenceFrame[] {
 		);
 }
 
+/** Wrap a frame as the `ArrayBuffer` `webSocketMessage` expects for binary input. */
+function toArrayBuffer(frame: Uint8Array): ArrayBuffer {
+	return frame.slice().buffer;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // TESTS
 // ────────────────────────────────────────────────────────────────────────────
@@ -487,5 +497,30 @@ describe('Room presence: broadcast resilience', () => {
 			type: 'presence',
 			installs: ['A', 'B'],
 		});
+	});
+});
+
+describe('Room sync: binary update fan-out', () => {
+	test('an update from one socket reaches peers but not its origin', async () => {
+		const { room } = await makeRoom();
+		const wsA = await upgrade(room, 'A');
+		const wsB = await upgrade(room, 'B');
+
+		const beforeA = wsA.sent.length;
+		const beforeB = wsB.sent.length;
+
+		// wsA sends a sync UPDATE frame carrying fresh doc state.
+		const source = new Y.Doc();
+		source.getMap('data').set('hello', 'world');
+		const frame = encodeSyncUpdate({
+			update: Y.encodeStateAsUpdateV2(source),
+		});
+		await room.webSocketMessage(wsA, toArrayBuffer(frame));
+
+		// The peer receives one new binary frame; the origin receives none.
+		const newBinary = (ws: StubWebSocket, before: number) =>
+			ws.sent.slice(before).filter((f) => f instanceof Uint8Array);
+		expect(newBinary(wsB, beforeB).length).toBe(1);
+		expect(newBinary(wsA, beforeA).length).toBe(0);
 	});
 });

@@ -1,17 +1,16 @@
 /**
- * Sync handler integration tests.
+ * Sync handler tests.
  *
- * Exercises the slimmed `applyMessage` / `registerConnection` surface:
- * y-protocols/sync frames (a binary frame is a sync frame) and the
- * connection-update broadcast wiring.
+ * Exercises `applyMessage`: a binary frame is a y-protocols/sync frame
+ * (sync sub-type varint + payload), decoded and applied to the doc.
+ *
+ * Update fan-out to peer sockets is no longer wired per-connection here;
+ * it is a single room-level `updateV2` listener owned by the `Room` DO,
+ * covered in `presence.test.ts`.
  *
  * Dispatch text-frame correlation is covered against the Durable Object
  * elsewhere (`room.dispatch` tests). This file deliberately does not
  * exercise text frames; `applyMessage` is a binary-only dispatcher.
- *
- * AWARENESS routing and `liveness.installationId` validation are gone:
- * presence is server-owned (see `presence.test.ts`) and the relay no
- * longer maintains a y-protocols Awareness instance.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -24,11 +23,7 @@ import { expectOk } from '@epicenter/test-utils/result';
 import * as encoding from 'lib0/encoding';
 import * as Y from 'yjs';
 
-import {
-	applyMessage,
-	type Connection,
-	registerConnection,
-} from './sync-handlers';
+import { applyMessage } from './sync-handlers';
 
 // ============================================================================
 // Test helpers
@@ -47,20 +42,9 @@ class MockWebSocket {
 	}
 }
 
-function makeConnection(
-	doc: Y.Doc,
-	installationId = 'self-install',
-): {
-	ws: MockWebSocket;
-	connection: Connection;
-} {
-	const ws = new MockWebSocket();
-	const connection = registerConnection({
-		doc,
-		ws: ws as unknown as WebSocket,
-		installationId,
-	});
-	return { ws, connection };
+/** A `MockWebSocket` typed as the CF `WebSocket` the handlers expect. */
+function mockWs(): WebSocket {
+	return new MockWebSocket() as unknown as WebSocket;
 }
 
 /** A well-formed binary frame: sync sub-type varint + payload. */
@@ -75,63 +59,6 @@ function frameWithSyncType(
 }
 
 // ============================================================================
-// registerConnection
-// ============================================================================
-
-describe('registerConnection', () => {
-	test('forwards doc updates from other origins to the socket', () => {
-		const doc = new Y.Doc();
-		const { ws } = makeConnection(doc);
-
-		doc.transact(() => {
-			doc.getMap('data').set('hello', 'world');
-		}, 'some-other-origin');
-
-		expect(ws.sent.length).toBe(1);
-		const sent = ws.sent[0] as Uint8Array;
-		expect(sent[0]).toBe(SYNC_MESSAGE_TYPE.UPDATE);
-	});
-
-	test('skips echo when origin is the connection itself', () => {
-		const doc = new Y.Doc();
-		const ws = new MockWebSocket();
-		const connection = registerConnection({
-			doc,
-			ws: ws as unknown as WebSocket,
-			installationId: 'self-install',
-		});
-
-		doc.transact(() => {
-			doc.getMap('data').set('hello', 'world');
-		}, connection.ws);
-
-		expect(ws.sent.length).toBe(0);
-	});
-
-	test('unregister stops forwarding doc updates', () => {
-		const doc = new Y.Doc();
-		const ws = new MockWebSocket();
-		const connection = registerConnection({
-			doc,
-			ws: ws as unknown as WebSocket,
-			installationId: 'self-install',
-		});
-
-		doc.transact(() => {
-			doc.getMap('data').set('pre', 1);
-		}, 'other-origin');
-		expect(ws.sent.length).toBe(1);
-
-		connection.unregister();
-
-		doc.transact(() => {
-			doc.getMap('data').set('post', 2);
-		}, 'other-origin');
-		expect(ws.sent.length).toBe(1);
-	});
-});
-
-// ============================================================================
 // applyMessage: SYNC
 // ============================================================================
 
@@ -143,12 +70,11 @@ describe('applyMessage SYNC STEP1', () => {
 		const clientDoc = new Y.Doc();
 		const step1 = encodeSyncStep1({ doc: clientDoc });
 
-		const { connection } = makeConnection(doc);
 		const reply = expectOk(
 			applyMessage({
 				data: step1,
 				doc,
-				ws: connection.ws,
+				ws: mockWs(),
 			}),
 		);
 
@@ -167,13 +93,12 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 		);
 
 		const doc = new Y.Doc();
-		const { connection } = makeConnection(doc);
 
 		const reply = expectOk(
 			applyMessage({
 				data: step2,
 				doc,
-				ws: connection.ws,
+				ws: mockWs(),
 			}),
 		);
 
@@ -188,13 +113,12 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 		const frame = encodeSyncUpdate({ update });
 
 		const doc = new Y.Doc();
-		const { connection } = makeConnection(doc);
 
 		const reply = expectOk(
 			applyMessage({
 				data: frame,
 				doc,
-				ws: connection.ws,
+				ws: mockWs(),
 			}),
 		);
 
@@ -210,13 +134,12 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 describe('applyMessage unknown sync sub-type', () => {
 	test('out-of-range sync sub-type is a no-op', () => {
 		const doc = new Y.Doc();
-		const { connection } = makeConnection(doc);
 
 		const reply = expectOk(
 			applyMessage({
 				data: frameWithSyncType(99),
 				doc,
-				ws: connection.ws,
+				ws: mockWs(),
 			}),
 		);
 

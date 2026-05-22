@@ -39,6 +39,7 @@ import { DurableObject } from 'cloudflare:workers';
 import {
 	decodeSyncRequest,
 	encodeSyncStep1,
+	encodeSyncUpdate,
 	MAIN_SUBPROTOCOL,
 	parseSubprotocols,
 	stateVectorsEqual,
@@ -51,11 +52,7 @@ import type { PresenceFrame } from '@epicenter/workspace/document/presence';
 import { Err, type Result } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
-import {
-	applyMessage,
-	type Connection,
-	registerConnection,
-} from './sync-handlers';
+import { applyMessage } from './sync-handlers';
 
 // ============================================================================
 // Dispatch RPC types
@@ -187,8 +184,8 @@ export class Room extends DurableObject {
 	 */
 	private doc!: Y.Doc;
 
-	/** Active WebSocket connections and their per-connection sync state. */
-	private connections = new Map<WebSocket, Connection>();
+	/** Open WebSocket connections, each mapped to its URL-stamped installationId. */
+	private connections = new Map<WebSocket, string>();
 
 	/**
 	 * Pending debounced presence rebroadcast, or `null` if none is armed.
@@ -263,9 +260,26 @@ export class Room extends DurableObject {
 				ctx.storage.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
 			});
 
+			// Fan every doc update out to all connected sockets except the
+			// one that originated it. A single room-level listener replaces
+			// the old per-connection listeners: the frame is encoded once,
+			// and `connections` is read at fire time so it always reflects
+			// the live socket set.
+			this.doc.on('updateV2', (update: Uint8Array, origin: unknown) => {
+				const frame = encodeSyncUpdate({ update });
+				for (const ws of this.connections.keys()) {
+					if (ws === origin) continue;
+					try {
+						ws.send(frame);
+					} catch {
+						/* socket already dead; its close event runs cleanup */
+					}
+				}
+			});
+
 			// --- Restore connections that survived hibernation ---
-			// Iterates ctx.getWebSockets(), reads the URL-stamped installationId
-			// from each attachment, and re-registers sync handlers.
+			// Iterates ctx.getWebSockets() and records each socket's
+			// URL-stamped installationId.
 			//
 			// Presence is rebuilt implicitly: the connections Map is the
 			// source of truth, so once these entries are restored,
@@ -276,13 +290,7 @@ export class Room extends DurableObject {
 			for (const ws of ctx.getWebSockets()) {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
 				if (!attachment) continue;
-
-				const connection = registerConnection({
-					doc: this.doc,
-					ws,
-					installationId: attachment.installationId,
-				});
-				this.connections.set(ws, connection);
+				this.connections.set(ws, attachment.installationId);
 			}
 		});
 	}
@@ -336,12 +344,7 @@ export class Room extends DurableObject {
 
 		server.serializeAttachment({ installationId } satisfies WsAttachment);
 
-		const connection = registerConnection({
-			doc: this.doc,
-			ws: server,
-			installationId,
-		});
-		this.connections.set(server, connection);
+		this.connections.set(server, installationId);
 
 		server.send(encodeSyncStep1({ doc: this.doc }));
 
@@ -499,15 +502,15 @@ export class Room extends DurableObject {
 	 */
 	private snapshotInstalls(exclude?: WebSocket): string[] {
 		const excludeInstall = exclude
-			? this.connections.get(exclude)?.installationId
+			? this.connections.get(exclude)
 			: undefined;
 		const seen = new Set<string>();
-		for (const [ws, connection] of this.connections) {
+		for (const [ws, installationId] of this.connections) {
 			if (ws === exclude) continue;
-			if (excludeInstall && connection.installationId === excludeInstall) {
+			if (excludeInstall && installationId === excludeInstall) {
 				continue;
 			}
-			seen.add(connection.installationId);
+			seen.add(installationId);
 		}
 		return Array.from(seen).sort();
 	}
@@ -520,8 +523,8 @@ export class Room extends DurableObject {
 	 */
 	private countInstallSockets(installationId: string): number {
 		let count = 0;
-		for (const [, connection] of this.connections) {
-			if (connection.installationId === installationId) count++;
+		for (const [, id] of this.connections) {
+			if (id === installationId) count++;
 		}
 		return count;
 	}
@@ -586,11 +589,8 @@ export class Room extends DurableObject {
 	 */
 	private pickRecipient(installationId: string): WebSocket | null {
 		let newest: WebSocket | null = null;
-		for (const [ws, connection] of this.connections) {
-			if (
-				connection.installationId === installationId &&
-				ws.readyState === WebSocket.OPEN
-			) {
+		for (const [ws, id] of this.connections) {
+			if (id === installationId && ws.readyState === WebSocket.OPEN) {
 				newest = ws;
 			}
 		}
@@ -610,8 +610,8 @@ export class Room extends DurableObject {
 		ws: WebSocket,
 		message: ArrayBuffer | string,
 	): Promise<void> {
-		const connection = this.connections.get(ws);
-		if (!connection) return;
+		const installationId = this.connections.get(ws);
+		if (installationId === undefined) return;
 
 		const byteLength =
 			message instanceof ArrayBuffer ? message.byteLength : message.length;
@@ -621,7 +621,7 @@ export class Room extends DurableObject {
 		}
 
 		if (typeof message === 'string') {
-			this.handleTextFrame(ws, connection, message);
+			this.handleTextFrame(ws, installationId, message);
 			return;
 		}
 
@@ -644,7 +644,7 @@ export class Room extends DurableObject {
 	 */
 	private handleTextFrame(
 		ws: WebSocket,
-		connection: Connection,
+		installationId: string,
 		message: string,
 	): void {
 		let parsed: unknown;
@@ -681,7 +681,7 @@ export class Room extends DurableObject {
 			// Recipient sent a non-`Result` payload; treat it as offline so the
 			// caller gets a usable `Result` instead of waiting for the timeout.
 			this.pendingDispatches.delete(id);
-			pending.resolve(recipientOffline(connection.installationId));
+			pending.resolve(recipientOffline(installationId));
 			return;
 		}
 
@@ -696,7 +696,6 @@ export class Room extends DurableObject {
 	 *   install (debounced, or immediately on auth-failure close codes).
 	 * - Resolves any in-flight dispatches to this recipient with
 	 *   `RecipientOffline` so callers don't wait for the safety timeout.
-	 * - Unregisters Yjs doc update handlers.
 	 * - Schedules deferred compaction if the last socket just left.
 	 */
 	override async webSocketClose(
@@ -705,8 +704,8 @@ export class Room extends DurableObject {
 		reason: string,
 		_wasClean: boolean,
 	): Promise<void> {
-		const connection = this.connections.get(ws);
-		if (!connection) return;
+		const installationId = this.connections.get(ws);
+		if (installationId === undefined) return;
 
 		// Fail any in-flight dispatches that were waiting on this socket.
 		// `pending.resolve` clears the safety timeout via its closure, so we
@@ -714,17 +713,16 @@ export class Room extends DurableObject {
 		for (const [id, pending] of this.pendingDispatches) {
 			if (pending.recipientWs !== ws) continue;
 			this.pendingDispatches.delete(id);
-			pending.resolve(recipientOffline(connection.installationId));
+			pending.resolve(recipientOffline(installationId));
 		}
 
-		connection.unregister();
 		this.connections.delete(ws);
 
 		// Presence: if this was the LAST socket for the install, room
 		// membership changed. Close code 4401 (permanent auth failure)
 		// rebroadcasts immediately; every other close code debounces the
 		// rebroadcast so a graceful tab handoff does not produce a flap.
-		if (this.countInstallSockets(connection.installationId) === 0) {
+		if (this.countInstallSockets(installationId) === 0) {
 			if (code === Room.CLOSE_CODE_AUTH_FAILED) {
 				this.cancelPendingRebroadcast();
 				this.broadcastPresence();

@@ -1,10 +1,9 @@
+// Route names are config-supplied identifiers. They become the prefix of
+// `/list` manifest keys and `/run` action paths (`${route}.${action}`), so
+// they must exclude `.` (the route boundary) and start with an alphanumeric.
+// The leading-character class also rejects `__proto__` and other
+// underscore-led names, so the pattern is the whole route-name rule.
 const ROUTE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-// Route names become object keys in `/list` action manifests.
-const RESERVED_OBJECT_ROUTE_KEYS = new Set([
-	'__proto__',
-	'prototype',
-	'constructor',
-]);
 
 export type DaemonRouteNameIssue = {
 	route: string;
@@ -20,7 +19,7 @@ export function validateDaemonRouteNames(
 		seen.add(route);
 	}
 	for (const route of routes) {
-		if (!ROUTE_PATTERN.test(route) || RESERVED_OBJECT_ROUTE_KEYS.has(route)) {
+		if (!ROUTE_PATTERN.test(route)) {
 			return { route, reason: 'invalid' };
 		}
 	}

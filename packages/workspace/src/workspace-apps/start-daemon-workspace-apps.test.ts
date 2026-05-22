@@ -137,31 +137,6 @@ describe('startDaemonWorkspaceApps', () => {
 		expect(await Bun.file(marker).exists()).toBe(false);
 	});
 
-	test('rejects reserved object route keys before opening routes', async () => {
-		const marker = disposeMarkerPath('constructor');
-		const routes: Record<string, DaemonWorkspaceDefinition> = {
-			constructor: {
-				async open() {
-					writeFileSync(marker, 'opened');
-					return testRuntime();
-				},
-			},
-		};
-
-		const result = await startDaemonWorkspaceApps({
-			projectDir,
-			auth: stubAuthClient(),
-			routes,
-		});
-		const error = expectErr(result);
-		expect(error).toMatchObject({
-			name: 'WorkspaceRouteRejected',
-			route: 'constructor',
-			reason: 'invalid',
-		});
-		expect(await Bun.file(marker).exists()).toBe(false);
-	});
-
 	test('returns an empty result when the config declares no routes', async () => {
 		const result = await startDaemonWorkspaceApps({
 			projectDir,

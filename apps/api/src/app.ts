@@ -63,14 +63,6 @@ type OAuthAuthServerConfigAuth = Parameters<
 const PRODUCTION_API_ORIGIN = APPS.API.urls[0];
 const LOCAL_API_ORIGIN = `http://localhost:${APPS.API.port}`;
 
-function resolveAuthBaseURL(requestUrl: string) {
-	const origin = new URL(requestUrl).origin;
-	if (origin === LOCAL_API_ORIGIN || origin === WRANGLER_DEV_API_ORIGIN) {
-		return LOCAL_API_ORIGIN;
-	}
-	return PRODUCTION_API_ORIGIN;
-}
-
 /**
  * Create a queue for fire-and-forget promises that run after the HTTP response.
  *
@@ -173,7 +165,11 @@ const factory = createFactory<Env>({
 
 		// Layer 2: Auth: pure, reads db from context.
 		app.use('*', async (c, next) => {
-			const baseURL = resolveAuthBaseURL(c.req.url);
+			const origin = new URL(c.req.url).origin;
+			const baseURL =
+				origin === LOCAL_API_ORIGIN || origin === WRANGLER_DEV_API_ORIGIN
+					? LOCAL_API_ORIGIN
+					: PRODUCTION_API_ORIGIN;
 			await ensureTrustedOAuthClients(c.var.db);
 			c.set('authBaseURL', baseURL);
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));

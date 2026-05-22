@@ -1,8 +1,43 @@
 # Cloud Workspace App Namespace Clean Break
 
 **Date**: 2026-05-20
-**Status**: In Progress (sync route, Workspace API, and first client adoption landed; cleanup pending)
+**Status**: Substantially landed; the route family and client architecture were superseded by server-default-workspace routing (see amendment)
 **Author**: Epicenter
+
+## Post-implementation amendment (2026-05-21)
+
+The product model in this spec landed, but two of its mechanisms were
+superseded before this spec's checklist was closed out. The supersession is
+recorded in `specs/20260521T160000-server-default-workspace-route.md`.
+
+```txt
+This spec planned:
+  public route   /workspaces/:workspaceId/apps/:appId/docs/:docId
+  client owns    workspaceId, resolved from /api/workspaces
+  client wrapper deferred-collaboration shell (cloud-app-sync.ts)
+
+What shipped instead:
+  public route   /me/apps/:appId/docs/:docId
+  server owns    default-workspace resolution from the auth token
+  client wrapper deleted; apps call openCollaboration directly
+```
+
+Unchanged by the supersession, and still the current direction:
+
+```txt
+workspaceId is Better Auth organization.id
+Better Auth membership is the sync authorization check
+roomName is host-built, opaque, v1:-prefixed
+SyncEngine and Room stay policy-free
+/api/workspaces is read-only and never repairs missing rows
+/rooms/:room is daemon and non-Cloud compatibility only, not a Cloud fallback
+no app_instance, app_sync_doc, app_asset, scoped sync token, or head Y.Doc
+```
+
+Checklist items below that named the `/workspaces/:workspaceId/...` route or
+client-side workspaceId resolution are kept checked, because they were
+genuinely implemented, and annotated as superseded. See the closing
+Implementation Note for the landed/deferred/rejected summary.
 
 ## Overview
 
@@ -855,10 +890,10 @@ Apps own their document graph in every deployment mode. Cloud does not need to u
 
 ### Phase 1: Spec And Vocabulary
 
-- [ ] **1.1** Mark older Cloud ownership specs as superseded by this model.
-- [ ] **1.2** Rename Cloud product language from Organization to Workspace.
-- [ ] **1.3** Use App Namespace for `workspaceId + appId`; reserve App Instance for a future installed-app row.
-- [ ] **1.4** Keep App for app definitions and packages.
+- [x] **1.1** Mark older Cloud ownership specs as superseded by this model. (All five superseded specs carry a superseded/revision note referencing this spec.)
+- [x] **1.2** Rename Cloud product language from Organization to Workspace. (`organization` survives only as the Better Auth backing table, below the product boundary.)
+- [x] **1.3** Use App Namespace for `workspaceId + appId`; reserve App Instance for a future installed-app row.
+- [x] **1.4** Keep App for app definitions and packages.
 
 ### Phase 2: Better Auth Organization As Workspace
 
@@ -874,15 +909,15 @@ Apps own their document graph in every deployment mode. Cloud does not need to u
 - [x] **3.1** Do not add `app_instance` in phase 1.
 - [x] **3.2** Add `appId` and `docId` validators.
 - [x] **3.3** Do not add `app_sync_doc`, `app_asset`, `app_instance_member`, `app_key_grant`, or `billing_cache` in phase 1.
-- [ ] **3.4** Keep app display metadata, child doc references, and blob references in the app root Y.Doc unless a Cloud operation earns a table.
-- [ ] **3.5** Treat Add App as navigation or app-owned root-doc initialization unless Cloud product state earns an installed-app row.
+- [x] **3.4** Keep app display metadata, child doc references, and blob references in the app root Y.Doc unless a Cloud operation earns a table. (Refusal decision; satisfied by inaction, no Cloud app table exists.)
+- [x] **3.5** Treat Add App as navigation or app-owned root-doc initialization unless Cloud product state earns an installed-app row. (Refusal decision; satisfied by inaction, no installed-app row exists.)
 - [x] **3.6** Treat `docId = root` as the conventional app entry document, not as a special platform resource type.
 - [x] **3.7** Do not add a Workspace head Y.Doc in phase 1.
 
 ### Phase 4: Workspace App Sync Routes
 
-- [x] **4.1** Add `/workspaces/:workspaceId/apps/:appId/docs/:docId`.
-- [x] **4.2** Add `/workspaces/:workspaceId/apps/:appId/docs/:docId/dispatch`.
+- [x] **4.1** Add `/workspaces/:workspaceId/apps/:appId/docs/:docId`. (Superseded: the clientless explicit-workspace routes were later deleted; `/me/apps/:appId/docs/:docId` replaced them.)
+- [x] **4.2** Add `/workspaces/:workspaceId/apps/:appId/docs/:docId/dispatch`. (Superseded: replaced by `/me/apps/:appId/docs/:docId/dispatch`.)
 - [x] **4.3** Build `roomName` with `v1:` and encoded route parts.
 - [x] **4.4** Keep SyncEngine policy-free.
 - [x] **4.5** Use `docs/root` as the default App Namespace entry point.
@@ -899,11 +934,11 @@ Apps own their document graph in every deployment mode. Cloud does not need to u
 
 ### Phase 6: Client Adoption
 
-- [x] **6.1** Resolve a default Cloud Workspace from `/api/workspaces` for at least one real client path.
-- [x] **6.2** Open the client root Sync Doc at `/workspaces/:workspaceId/apps/:appId/docs/root` by default.
+- [x] **6.1** Resolve a default Cloud Workspace from `/api/workspaces` for at least one real client path. (Superseded: clients no longer resolve workspaceId; the server resolves the default workspace from the auth token.)
+- [x] **6.2** Open the client root Sync Doc at `/workspaces/:workspaceId/apps/:appId/docs/root` by default. (Superseded: clients open `/me/apps/:appId/docs/root`.)
 - [x] **6.3** Replace `/rooms/:room` compatibility with explicit local-only behavior when the default Workspace is not available.
 - [x] **6.4** Add tests for the client Workspace app doc URL construction.
-- [x] **6.5** Make the signed-in app payload receive prepared Workspace defaults directly, without a mutable resolver object.
+- [x] **6.5** Make the signed-in app payload receive prepared Workspace defaults directly, without a mutable resolver object. (Superseded: the prepare/build sidecar and the deferred-collaboration wrapper were deleted; apps call `openCollaboration` directly with a static `/me/...` URL.)
 
 ### Phase 7: Auth And Account Invariants
 
@@ -1214,6 +1249,56 @@ The implementation should run as build, prove, remove:
 5. Prove account provisioning owns personal Workspace membership.
 6. Prove auth subject changes dispose before remount.
 ```
+
+### 2026-05-21 Spec Reconciliation Checkpoint
+
+A later spec, `20260521T160000-server-default-workspace-route.md`, landed on
+this branch and superseded the route family and client architecture this spec
+planned. This checkpoint reconciles the checklist with the code that is
+actually on `redesign/server-owned-presence`. No tables, schemas, or public
+APIs were changed in this checkpoint.
+
+```txt
+Landed and still standing:
+  Better Auth organization backs Cloud Workspace (Phase 2)
+  appId/docId validators; no app_instance, app_sync_doc, app_asset (Phase 3)
+  host-built v1: roomName; policy-free SyncEngine and Room (Phase 4.3-4.7)
+  /rooms/:room narrowed to daemon and non-Cloud compatibility (Phase 5)
+  read-only /api/workspaces; signup-owned provisioning; account-switch
+    boundary; dispose-before-remount lifecycle test (Phase 7)
+
+Superseded by server-default-workspace routing:
+  /workspaces/:workspaceId/apps/:appId/docs/:docId route family (Phase 4.1-4.2)
+    deleted; /me/apps/:appId/docs/:docId replaced it
+  client-side workspaceId resolution from /api/workspaces (Phase 6.1)
+  client opening /workspaces/:workspaceId/... URLs (Phase 6.2)
+  prepare/build Workspace-default sidecar and the deferred-collaboration
+    wrapper: cloud-app-sync.ts, openCloudAppSync, and the client
+    workspaceAppDocWsUrl builder (Phase 6.5); apps now call openCollaboration
+    directly
+
+Rejected as stale, not implemented:
+  re-adding the explicit /workspaces/:workspaceId/... route family
+    (zero clients; re-add only if a workspace-switching UI needs to name a
+    workspaceId)
+  migrating the daemon off /rooms/:room (the daemon is a config-known
+    service principal; /rooms/:room stays as its compatibility path and
+    cannot be narrowed further while the daemon and examples/ call it)
+  app_instance, app_sync_doc, app_asset, app_key_grant, app registry,
+    workspace_profile (all still deferred behind their earned-table triggers
+    in the Greenfield Ambiguity Ledger; no product operation has earned one)
+
+Decisions affirmed:
+  the server resolves the default workspace; clients do not own workspaceId
+  /api/workspaces stays read-only and off the sync critical path
+  /rooms/:room is not a Cloud client fallback
+```
+
+The `/api/workspaces` listing currently has no client consumer. It is kept
+deliberately, per the server-default-workspace spec, for a future
+workspace-switching UI; it is no longer on the sync critical path. The only
+code edit in this checkpoint was dropping a stale `/api/workspaces`
+default-resolution reference from the daemon-infrastructure JSDoc.
 
 ## Greenfield Review Protocol
 

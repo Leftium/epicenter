@@ -43,7 +43,6 @@
 		"@epicenter/api": "workspace:*",
 		"@epicenter/honeycrisp": "workspace:*",
 		"@epicenter/tab-manager": "workspace:*",
-		"@epicenter/test-utils": "workspace:*",
 		"@types/bun": "catalog:",
 		"@types/yargs": "catalog:",
 		"typescript": "catalog:"

@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { expectOk } from '@epicenter/test-utils/result';
+import { expectOk } from 'wellcrafted/testing';
 import type { Result } from 'wellcrafted/result';
 import { type ActionManifest, defineQuery } from '../shared/actions.js';
 import { joinDaemonActionPath, parseDaemonActionPath } from './action-path.js';

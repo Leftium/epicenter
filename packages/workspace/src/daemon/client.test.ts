@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expectErr, expectOk } from '@epicenter/test-utils/result';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';

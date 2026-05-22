@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { expectErr, expectOk } from '@epicenter/test-utils/result';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';

@@ -16,9 +16,10 @@
  *   attachTables,
  *   createDisposableCache,
  *   createInstallationId,
+ *   defaultWorkspaceAppDocWsUrl,
  *   defineTable,
  *   docGuid,
- *   openCloudAppSync,
+ *   openCollaboration,
  * } from '@epicenter/workspace';
  * import type { AuthClient } from '@epicenter/auth';
  * import { type } from 'arktype';
@@ -27,27 +28,24 @@
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
  * declare const auth: AuthClient;
  *
- * // One factory per app instance: captures auth, appId, and installationId,
- * // runs /api/workspaces once across every doc the app opens, and subscribes
- * // to auth state so sign-in transitions re-attach every live handle.
- * const notesCloud = openCloudAppSync({
- *   auth,
- *   apiUrl: 'https://api.example.com',
- *   appId: 'notes',
- *   installationId: createInstallationId({ storage: localStorage }),
- * });
+ * const apiUrl = 'https://api.example.com';
+ * const installationId = createInstallationId({ storage: localStorage });
  *
+ * // The server resolves the workspace from the auth token, so the client
+ * // builds the sync URL from (apiUrl, appId, docId) with no workspace lookup.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
- * const collaboration = notesCloud.open(ydoc, {
- *   docId: 'root',
+ * const collaboration = openCollaboration(ydoc, {
+ *   url: defaultWorkspaceAppDocWsUrl(apiUrl, { appId: 'notes', docId: 'root' }),
+ *   openWebSocket: auth.openWebSocket,
  *   waitFor: idb.whenLoaded,
+ *   installationId,
  *   actions: {},
  * });
  *
- * // Content docs use the same factory with an empty action registry. The
- * // local Y.Doc guid doubles as the cloud docId, so no second id system.
+ * // Content docs build the same URL with their own docId. The local Y.Doc
+ * // guid doubles as the cloud docId, so there is no second id system.
  * const noteBodyDocs = createDisposableCache(
  *   (noteId: string) => {
  *     const bodyYdoc = new Y.Doc({
@@ -60,8 +58,14 @@
  *       gc: true,
  *     });
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
- *     const bodySync = notesCloud.open(bodyYdoc, {
+ *     const bodySync = openCollaboration(bodyYdoc, {
+ *       url: defaultWorkspaceAppDocWsUrl(apiUrl, {
+ *         appId: 'notes',
+ *         docId: bodyYdoc.guid,
+ *       }),
+ *       openWebSocket: auth.openWebSocket,
  *       waitFor: bodyIdb.whenLoaded,
+ *       installationId,
  *       actions: {},
  *     });
  *     return {
@@ -174,7 +178,6 @@ export {
 	typedDispatch,
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
-export { openCloudAppSync } from './document/cloud-app-sync.js';
 export type {
 	OpenWebSocket,
 	SyncStatus,

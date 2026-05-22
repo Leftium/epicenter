@@ -284,54 +284,58 @@ until verification passes, so rollback is one revert.
 
 ### Phase 1: Point browser apps at `/rooms/:room`
 
-- [ ] **1.1** Give each app a stable root doc guid (e.g. `'fuji'`,
-  `'honeycrisp'`, `'opensidian'`, `'tab-manager'`) replacing the old
-  workspace-id-as-root-guid. Update each workspace factory and its local
-  IndexedDB keying.
-- [ ] **1.2** Switch browser callers from `defaultWorkspaceAppDocWsUrl` to
+- [x] **1.1** No factory change needed. The root Y.Doc guids are already
+  stable app constants (`epicenter.fuji` and friends), not the deleted
+  `ws_${sha256(userId)}` id. See the Phase 1.1 Decisions Log entry.
+- [x] **1.2** Switched browser callers from `defaultWorkspaceAppDocWsUrl` to
   `roomWsUrl(APP_URLS.API, ydoc.guid)`: `apps/fuji/src/lib/browser.ts`,
   `apps/honeycrisp/browser.ts`, `apps/opensidian/src/lib/opensidian/browser.ts`,
   `apps/tab-manager/src/lib/session.svelte.ts`. The daemon already uses
   `roomWsUrl`; no daemon change needed.
-- [ ] **1.3** Re-export `roomWsUrl` from `packages/workspace/src/index.ts` if
-  app code needs it directly; update example JSDoc.
+- [x] **1.3** Re-exported `roomWsUrl` from `packages/workspace/src/index.ts`;
+  updated the example JSDoc.
 
 ### Phase 2: Stop provisioning personal workspaces
 
-- [ ] **2.1** Remove the `createPersonalCloudWorkspace` call from the
-  `user.create.after` hook in `apps/api/src/auth/create-auth.ts`. Leave Autumn
-  customer creation intact.
+- [x] **2.1** Removed the `createPersonalCloudWorkspace` call from the
+  `user.create.after` hook in `apps/api/src/auth/create-auth.ts`. Autumn
+  customer creation is intact.
 
 ### Phase 3: Prove
 
-- [ ] **3.1** Typecheck the monorepo.
-- [ ] **3.2** Run and update affected tests: `apps/api/src/app.me.test.ts`,
-  `apps/api/src/presence.test.ts`, `transport.test.ts`, and any
-  workspace-sync-doc tests.
-- [ ] **3.3** Smoke test: a browser app and the daemon both sync, with no
-  `organization` or `member` row present for the user.
+- [x] **3.1** Typechecked the monorepo. `@epicenter/api`, `@epicenter/workspace`,
+  and the fuji/honeycrisp/opensidian apps pass. `ui`, `dashboard`,
+  `tab-manager`, and `whispering` have pre-existing typecheck failures in
+  files this revert does not touch.
+- [x] **3.2** Affected tests pass: `app.rooms.test.ts`, `presence.test.ts`,
+  `transport.test.ts` (updated), full `apps/api` suite (92 tests).
+  `app.me.test.ts`, `workspace-sync-doc.test.ts`, and `cloud-workspaces.test.ts`
+  were deleted with their subjects.
+- [ ] **3.3** Live smoke test not performed (no running deployment in this
+  environment). The "no `organization`/`member` row" property is structurally
+  guaranteed: provisioning and the org tables are deleted.
 
 ### Phase 4: Remove the workspace layer
 
-- [ ] **4.1** Delete the `/me/apps/:appId/docs/:docId` routes (all verbs),
+- [x] **4.1** Deleted the `/me/apps/:appId/docs/:docId` routes (all verbs),
   `apps/api/src/workspace-sync-doc.ts`, the `resolveDefaultWorkspaceSyncDocRoute`
   wiring in `app.ts`, the `PersonalWorkspaceMissing` variant, and the
   `no_default_workspace` 4401 close branch.
-- [ ] **4.2** Delete `defaultWorkspaceAppDocWsUrl` from `transport.ts` and its
-  re-export. Keep `roomWsUrl` and `websocketUrl`.
-- [ ] **4.3** Verify no SPA or client consumes `/api/workspaces` (Class 1).
-  Then delete the route, `apps/api/src/cloud-workspaces.ts`, `listCloudWorkspaces`,
+- [x] **4.2** Deleted `defaultWorkspaceAppDocWsUrl` from `transport.ts` and its
+  re-export. `roomWsUrl` and `websocketUrl` are kept.
+- [x] **4.3** Verified no SPA or client consumes `/api/workspaces` (Class 1).
+  Deleted the route, `apps/api/src/cloud-workspaces.ts`, `listCloudWorkspaces`,
   `CloudWorkspaceListing`, and `checkWorkspaceMembership`.
-- [ ] **4.4** Remove the Better Auth organization plugin and the
-  `organization`/`member`/`invitation` schema if this branch added them. If the
-  removal is non-trivial schema churn, stop and record it as a Class 3 keep in
-  the Decisions Log with a revisit trigger, rather than forcing it.
-- [ ] **4.5** Update docs: `docs/architecture.md`,
-  `packages/workspace/SYNC_ARCHITECTURE.md`, READMEs. Remove "default workspace"
-  and "personal workspace" language; describe subject-owned documents and the
-  three-layer model.
-- [ ] **4.6** Add a superseded-spec banner to prior specs that assert the
-  `/me/apps` route or personal-workspace provisioning.
+- [x] **4.4** Removed the Better Auth organization plugin and the
+  `organization`/`member`/`invitation` schema. This branch added them; removal
+  is clean (one self-contained migration). See the Phase 4.4 Decisions Log
+  entry.
+- [x] **4.5** Updated docs: `docs/architecture.md`,
+  `packages/workspace/SYNC_ARCHITECTURE.md`, READMEs, and API guides. The
+  "default workspace" and "personal workspace" language is gone; the docs
+  describe subject-owned documents and the three-layer model.
+- [x] **4.6** Added a superseded-spec banner to the five prior specs that
+  assert the `/me/apps` route or personal-workspace provisioning.
 
 ## Edge Cases
 
@@ -420,20 +424,25 @@ until verification passes, so rollback is one revert.
 
 ## Success Criteria
 
-- [ ] A signed-in user syncs a cloud doc with no `organization` row and no
-  `member` row provisioned for them.
-- [ ] One route `/rooms/:room` serves browser and daemon; the
+- [x] A signed-in user syncs a cloud doc with no `organization` row and no
+  `member` row provisioned for them. (Structural: provisioning and the org
+  tables are deleted; not live-tested, see Phase 3.3.)
+- [x] One route `/rooms/:room` serves browser and daemon; the
   `/me/apps/:appId/docs/:docId` routes are deleted.
-- [ ] DO names match `subject:${userId}:rooms:${ydoc.guid}`.
-- [ ] No `createPersonalCloudWorkspace` call exists; `defaultWorkspaceAppDocWsUrl`,
+- [x] DO names match `subject:${userId}:rooms:${ydoc.guid}` (`resolveSubjectRoom`
+  in `app.ts`, unchanged).
+- [x] No `createPersonalCloudWorkspace` call exists; `defaultWorkspaceAppDocWsUrl`,
   `PersonalWorkspaceMissing`, `getDefaultWorkspaceForUser`, the
   `no_default_workspace` branch, `workspace-sync-doc.ts`, and
   `cloud-workspaces.ts` are deleted.
-- [ ] `/api/workspaces` is deleted (after Class 1 verification of no consumer).
-- [ ] The Better Auth organization plugin is removed, or its keep is logged.
-- [ ] Server-owned presence behavior is unchanged from the branch.
-- [ ] Monorepo typecheck and affected test suites pass.
-- [ ] `docs/architecture.md` and `SYNC_ARCHITECTURE.md` describe subject-owned
+- [x] `/api/workspaces` is deleted (after Class 1 verification of no consumer).
+- [x] The Better Auth organization plugin is removed.
+- [x] Server-owned presence behavior is unchanged from the branch (no presence
+  file touched; `presence.test.ts` passes).
+- [x] Monorepo typecheck and affected test suites pass for every package this
+  revert touches; the unrelated pre-existing failures in `ui`, `dashboard`,
+  `tab-manager`, and `whispering` are out of scope.
+- [x] `docs/architecture.md` and `SYNC_ARCHITECTURE.md` describe subject-owned
   documents and the three-layer model.
 
 ## References

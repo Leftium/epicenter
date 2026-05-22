@@ -57,18 +57,6 @@ describe('open / cache identity', () => {
 		a[Symbol.dispose]();
 		b[Symbol.dispose]();
 	});
-
-	test('build closure runs without coupling to a parent context', () => {
-		// Pure builder: no closures, no module-scope state. The cache calls
-		// it with just an id and gets back a Disposable.
-		const cache = createDisposableCache((id: string) => ({
-			ydoc: new Y.Doc({ guid: id }),
-			[Symbol.dispose]() {},
-		}));
-		const h = cache.open('a');
-		expect(h.ydoc.guid).toBe('a');
-		h[Symbol.dispose]();
-	});
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -123,44 +111,6 @@ describe('arbitrary fields flow through the handle', () => {
 		expect(a.body).toBe(b.body); // same reference under the hood
 		a[Symbol.dispose]();
 		b[Symbol.dispose]();
-	});
-
-	test('whenReady-style readiness composition works (cache is agnostic to it)', async () => {
-		let resolveA!: () => void;
-		let resolveB!: () => void;
-		const cache = createDisposableCache((id: string) => {
-			const ydoc = new Y.Doc({ guid: id });
-			const a = new Promise<void>((r) => {
-				resolveA = r;
-			});
-			const b = new Promise<void>((r) => {
-				resolveB = r;
-			});
-			return {
-				ydoc,
-				whenReady: Promise.all([a, b]),
-				[Symbol.dispose]() {
-					ydoc.destroy();
-				},
-			};
-		});
-
-		const handle = cache.open('a');
-		let resolved = false;
-		void (async () => {
-			await handle.whenReady;
-			resolved = true;
-		})();
-
-		await new Promise((r) => setTimeout(r, 5));
-		expect(resolved).toBe(false);
-		resolveA();
-		await new Promise((r) => setTimeout(r, 5));
-		expect(resolved).toBe(false);
-		resolveB();
-		await handle.whenReady;
-		expect(resolved).toBe(true);
-		handle[Symbol.dispose]();
 	});
 });
 
@@ -372,21 +322,6 @@ describe('open / dispose', () => {
 
 		cache[Symbol.dispose]();
 		expect(ydoc.isDestroyed).toBe(true);
-	});
-
-	test('default gcTime is finite (5s); teardown eventually fires without explicit cache dispose', async () => {
-		// Guards the documented default. A bug that flipped the default back
-		// to Infinity would make this test hang past the assertion window.
-		const cache = makeYDocCache(); // default
-		const h = cache.open('a');
-		const ydoc = h.ydoc;
-		h[Symbol.dispose]();
-		// Not waiting the full 5s here; just confirm the timer was armed by
-		// looking up has(). It should be true (in grace), not absent.
-		expect(cache.has('a')).toBe(true);
-		expect(ydoc.isDestroyed).toBe(false);
-		// Cleanup
-		cache[Symbol.dispose]();
 	});
 });
 

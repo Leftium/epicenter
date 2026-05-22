@@ -42,8 +42,8 @@ import {
 	handleSyncPayload,
 	MAIN_SUBPROTOCOL,
 	parseSubprotocols,
-	stateVectorsEqual,
 	type SyncMessageType,
+	stateVectorsEqual,
 } from '@epicenter/sync';
 import type {
 	DispatchErrorWire,
@@ -441,9 +441,7 @@ export class Room extends DurableObject {
 	 * installs" from the perspective of the receiver.
 	 */
 	private snapshotInstalls(exclude?: WebSocket): string[] {
-		const excludeInstall = exclude
-			? this.connections.get(exclude)
-			: undefined;
+		const excludeInstall = exclude ? this.connections.get(exclude) : undefined;
 		const seen = new Set<string>();
 		for (const [ws, installationId] of this.connections) {
 			if (ws === exclude) continue;

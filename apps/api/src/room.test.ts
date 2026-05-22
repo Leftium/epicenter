@@ -122,13 +122,19 @@ function makeSqlStorage() {
 	const updates: SqlRow[] = [];
 	let nextId = 1;
 
-	function exec(query: string, ...params: unknown[]): { toArray(): SqlRow[]; one(): { count: number } } {
+	function exec(
+		query: string,
+		...params: unknown[]
+	): { toArray(): SqlRow[]; one(): { count: number } } {
 		const q = query.trim().toUpperCase();
 		if (q.startsWith('CREATE TABLE')) {
 			return { toArray: () => [], one: () => ({ count: 0 }) };
 		}
 		if (q.startsWith('SELECT DATA FROM UPDATES')) {
-			return { toArray: () => [...updates], one: () => ({ count: updates.length }) };
+			return {
+				toArray: () => [...updates],
+				one: () => ({ count: updates.length }),
+			};
 		}
 		if (q.startsWith('SELECT COUNT(*)')) {
 			return {
@@ -223,16 +229,13 @@ async function makeRoom(): Promise<{ room: RoomLike; ctx: StubCtx }> {
 }
 
 function upgradeRequest(installationId: string): Request {
-	return new Request(
-		`https://relay.test/?installationId=${installationId}`,
-		{
-			method: 'GET',
-			headers: {
-				Upgrade: 'websocket',
-				'sec-websocket-protocol': 'epicenter',
-			},
+	return new Request(`https://relay.test/?installationId=${installationId}`, {
+		method: 'GET',
+		headers: {
+			Upgrade: 'websocket',
+			'sec-websocket-protocol': 'epicenter',
 		},
-	);
+	});
 }
 
 /** Drive an upgrade end-to-end and return the server-side socket. */
@@ -271,8 +274,8 @@ function jsonFrames(
 
 /** Parse all `presence` text frames out of the wire. */
 function presenceFrames(ws: StubWebSocket): PresenceFrame[] {
-	return jsonFrames(ws, 'presence').filter(
-		(p): p is PresenceFrame => Array.isArray(p.installs),
+	return jsonFrames(ws, 'presence').filter((p): p is PresenceFrame =>
+		Array.isArray(p.installs),
 	);
 }
 
@@ -307,9 +310,7 @@ describe('Room presence: directed frame on upgrade', () => {
 		const { room } = await makeRoom();
 		await upgrade(room, 'A');
 		const ws = await upgrade(room, 'B');
-		expect(presenceFrames(ws)).toEqual([
-			{ type: 'presence', installs: ['A'] },
-		]);
+		expect(presenceFrames(ws)).toEqual([{ type: 'presence', installs: ['A'] }]);
 	});
 
 	test('directed frame to a new tab excludes the receiver own install', async () => {

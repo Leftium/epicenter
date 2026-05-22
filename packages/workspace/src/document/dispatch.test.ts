@@ -163,9 +163,7 @@ describe('interpretDispatchResult', () => {
 
 	test('RecipientOffline: decoded from the Err body', () => {
 		const error = expectErr(
-			interpretDispatchResult(
-				Err({ name: 'RecipientOffline', to: 'R_phone' }),
-			),
+			interpretDispatchResult(Err({ name: 'RecipientOffline', to: 'R_phone' })),
 		);
 		expect(error.name).toBe('RecipientOffline');
 	});

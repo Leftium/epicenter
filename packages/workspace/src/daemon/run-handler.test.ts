@@ -13,10 +13,7 @@ import { describe, expect, test } from 'bun:test';
 import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import type { Result } from 'wellcrafted/result';
 
-import {
-	DispatchError,
-	type DispatchRequest,
-} from '../document/dispatch.js';
+import { DispatchError, type DispatchRequest } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';

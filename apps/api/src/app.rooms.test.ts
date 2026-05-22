@@ -222,12 +222,10 @@ test('POST /rooms/:room forwards the request body to the resolved room name', as
 	expect(room.syncBodies).toHaveLength(1);
 	expect(Array.from(room.syncBodies[0] ?? [])).toEqual([1, 2, 3]);
 	expect(response.status).toBe(200);
-	expect(response.headers.get('content-type')).toBe(
-		'application/octet-stream',
-	);
-	expect(
-		Array.from(new Uint8Array(await response.arrayBuffer())),
-	).toEqual([9, 8]);
+	expect(response.headers.get('content-type')).toBe('application/octet-stream');
+	expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual([
+		9, 8,
+	]);
 	expect(upsertedDoInstances).toEqual([
 		expect.objectContaining({
 			doName: 'subject:user-1:rooms:notes',
@@ -313,12 +311,10 @@ test('GET /rooms/:room returns the selected room snapshot as an octet stream', a
 	);
 
 	expect(requestedRoomNames).toEqual(['subject:user-1:rooms:notes']);
-	expect(response.headers.get('content-type')).toBe(
-		'application/octet-stream',
-	);
-	expect(
-		Array.from(new Uint8Array(await response.arrayBuffer())),
-	).toEqual([4, 5, 6]);
+	expect(response.headers.get('content-type')).toBe('application/octet-stream');
+	expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual([
+		4, 5, 6,
+	]);
 	expect(upsertedDoInstances).toEqual([
 		expect.objectContaining({
 			doName: 'subject:user-1:rooms:notes',

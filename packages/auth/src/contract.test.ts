@@ -16,10 +16,10 @@ import type { SubjectKeyring } from '@epicenter/encryption';
 import { Ok, type Result } from 'wellcrafted/result';
 import type {
 	AuthClient,
+	LocalIdentity,
 	OAuthTokenGrant,
 	PersistedAuth,
 	PersistedAuthStorage,
-	LocalIdentity,
 } from './index.js';
 import { createOAuthAppAuth } from './index.js';
 

@@ -38,10 +38,10 @@ import {
 } from './auth-pages';
 import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
+import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import type { DispatchRpcRequest, Room } from './room';
-import { createSyncEngine } from './sync-engine';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
@@ -446,8 +446,8 @@ app.post(
 /**
  * Resolve a route room for the authenticated subject.
  *
- * The route owns the subject boundary, so the sync engine receives the
- * internal Durable Object name and never needs to know about auth state.
+ * The route owns the subject boundary, so the Room DO receives the internal
+ * Durable Object name and never needs to know about auth state.
  */
 function resolveSubjectRoom(c: Context<Env>) {
 	const room = c.req.param('room');
@@ -465,6 +465,20 @@ function getRoomStub(
 	roomName: string,
 ) {
 	return roomNamespace.get(roomNamespace.idFromName(roomName));
+}
+
+/**
+ * Wrap a Uint8Array in a Response with a fresh ArrayBuffer copy.
+ *
+ * Yjs encoders return Uint8Array views that may share a larger internal
+ * backing buffer. The copy isolates exactly the bytes that should be sent.
+ */
+function binaryResponse(data: Uint8Array): Response {
+	const body = new ArrayBuffer(data.byteLength);
+	new Uint8Array(body).set(data);
+	return new Response(body, {
+		headers: { 'content-type': 'application/octet-stream' },
+	});
 }
 
 /**
@@ -534,15 +548,7 @@ app.get(
 			return roomStub.fetch(c.req.raw);
 		}
 
-		const sync = createSyncEngine({
-			sync(_roomName, body) {
-				return roomStub.sync(body);
-			},
-			getDoc() {
-				return roomStub.getDoc();
-			},
-		});
-		const { response, storageBytes } = await sync.getSnapshot(roomName);
+		const { data, storageBytes } = await roomStub.getDoc();
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
@@ -551,7 +557,7 @@ app.get(
 				storageBytes,
 			}),
 		);
-		return response;
+		return binaryResponse(data);
 	},
 );
 
@@ -563,29 +569,24 @@ app.post(
 	}),
 	async (c) => {
 		const { roomName, room } = resolveSubjectRoom(c);
-		const roomStub = getRoomStub(c.env.ROOM, roomName);
-		const sync = createSyncEngine({
-			sync(_roomName, body) {
-				return roomStub.sync(body);
-			},
-			getDoc() {
-				return roomStub.getDoc();
-			},
-		});
-		const result = await sync.handleHttpSync(c.req.raw, { roomName });
-
-		if (result.storageBytes != null) {
-			c.var.afterResponse.push(
-				upsertDoInstance(c.var.db, {
-					userId: c.var.user.id,
-					resourceName: room,
-					doName: roomName,
-					storageBytes: result.storageBytes,
-				}),
-			);
+		const body = new Uint8Array(await c.req.raw.arrayBuffer());
+		if (body.byteLength > MAX_PAYLOAD_BYTES) {
+			return new Response('Payload too large', { status: 413 });
 		}
 
-		return result.response;
+		const roomStub = getRoomStub(c.env.ROOM, roomName);
+		const { diff, storageBytes } = await roomStub.sync(body);
+
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				resourceName: room,
+				doName: roomName,
+				storageBytes,
+			}),
+		);
+
+		return diff ? binaryResponse(diff) : new Response(null, { status: 204 });
 	},
 );
 

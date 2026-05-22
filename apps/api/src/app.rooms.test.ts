@@ -2,21 +2,31 @@
  * Room Route Boundary Tests
  *
  * Verifies that the host route owns protected-resource authorization before
- * handing requests to the same-process sync engine.
+ * handing requests to the Room Durable Object.
  *
  * Key behaviors:
  * - `/rooms/:room` rejects unauthenticated callers at the OAuth resource
  *   boundary.
  * - The room route body is not touched when auth fails.
+ * - Authenticated room routes forward bodies to the selected Room DO and
+ *   shape binary snapshot/sync responses.
+ * - Oversized sync bodies are rejected before selecting a Room DO.
  */
 
 import { expect, mock, test } from 'bun:test';
 import { OAuthError } from './auth/oauth-error.js';
 import { projectTrustedOAuthClientToRow } from './auth/trusted-oauth-clients.js';
+import { MAX_PAYLOAD_BYTES } from './constants.js';
 
-let durableObjectRoomFactoryCalls = 0;
+const AUTHENTICATED_USER = { id: 'user-1', email: 'user@example.test' };
+
+let resolveRequestOAuthUserResult: {
+	data: unknown;
+	error: unknown;
+} = { data: null, error: OAuthError.InvalidToken().error };
 let resolveRequestOAuthUserCalls = 0;
 const waitUntilPromises: Promise<unknown>[] = [];
+const upsertedDoInstances: unknown[] = [];
 
 mock.module('pg', () => ({
 	default: {
@@ -28,7 +38,20 @@ mock.module('pg', () => ({
 }));
 
 mock.module('drizzle-orm/node-postgres', () => ({
-	drizzle: () => ({}),
+	drizzle: () => ({
+		insert() {
+			return {
+				values(value: unknown) {
+					upsertedDoInstances.push(value);
+					return {
+						onConflictDoUpdate() {
+							return Promise.resolve();
+						},
+					};
+				},
+			};
+		},
+	}),
 }));
 
 mock.module('./room', () => ({
@@ -55,7 +78,7 @@ mock.module('./auth/resource-boundary', () => ({
 	},
 	resolveRequestOAuthUser: async () => {
 		resolveRequestOAuthUserCalls += 1;
-		return { data: null, error: OAuthError.InvalidToken().error };
+		return resolveRequestOAuthUserResult;
 	},
 }));
 
@@ -64,22 +87,78 @@ mock.module('./auth/trusted-oauth-clients', () => ({
 	projectTrustedOAuthClientToRow,
 }));
 
-test('POST /rooms/:room rejects unauthenticated callers before sync engine entry', async () => {
+class FakeRoom {
+	syncBodies: Uint8Array[] = [];
+
+	constructor(
+		private readonly options: {
+			diff?: Uint8Array | null;
+			storageBytes?: number;
+			snapshot?: Uint8Array;
+		} = {},
+	) {}
+
+	async sync(body: Uint8Array): Promise<{
+		diff: Uint8Array | null;
+		storageBytes: number;
+	}> {
+		this.syncBodies.push(body);
+		return {
+			diff: this.options.diff ?? null,
+			storageBytes: this.options.storageBytes ?? 42,
+		};
+	}
+
+	async getDoc(): Promise<{ data: Uint8Array; storageBytes: number }> {
+		return {
+			data: this.options.snapshot ?? new Uint8Array([1, 2, 3]),
+			storageBytes: this.options.storageBytes ?? 42,
+		};
+	}
+}
+
+function setup({
+	room = new FakeRoom(),
+	authenticated = true,
+}: {
+	room?: FakeRoom;
+	authenticated?: boolean;
+} = {}) {
+	resolveRequestOAuthUserResult = authenticated
+		? { data: AUTHENTICATED_USER, error: null }
+		: { data: null, error: OAuthError.InvalidToken().error };
+	resolveRequestOAuthUserCalls = 0;
+	waitUntilPromises.length = 0;
+	upsertedDoInstances.length = 0;
+
+	const requestedRoomNames: string[] = [];
+	const roomNamespace = {
+		idFromName(roomName: string) {
+			requestedRoomNames.push(roomName);
+			return roomName;
+		},
+		get(roomName: string) {
+			if (roomName !== requestedRoomNames[requestedRoomNames.length - 1]) {
+				throw new Error(`Unexpected room id: ${roomName}`);
+			}
+			return room;
+		},
+	};
+
+	return { requestedRoomNames, room, roomNamespace };
+}
+
+async function fetchRoomRoute(
+	path: string,
+	init: RequestInit,
+	roomNamespace: unknown,
+) {
 	const { default: app } = await import('./app.js');
 	const response = await app.fetch(
-		new Request('https://api.test/rooms/notes', {
-			method: 'POST',
-			headers: { 'content-type': 'application/octet-stream' },
-			body: new Uint8Array([1, 2, 3]),
-		}),
+		new Request(`https://api.test${path}`, init),
 		{
 			HYPERDRIVE: { connectionString: 'postgres://test' },
-			ROOM: {
-				idFromName() {
-					durableObjectRoomFactoryCalls += 1;
-					throw new Error('Room namespace should not be reached');
-				},
-			},
+			ROOM: roomNamespace,
 		},
 		{
 			waitUntil(promise: Promise<unknown>) {
@@ -91,11 +170,134 @@ test('POST /rooms/:room rejects unauthenticated callers before sync engine entry
 	);
 
 	await Promise.all(waitUntilPromises);
+	return response;
+}
+
+test('POST /rooms/:room rejects unauthenticated callers before sync engine entry', async () => {
+	const { roomNamespace, requestedRoomNames } = setup({ authenticated: false });
+	const response = await fetchRoomRoute(
+		'/rooms/notes',
+		{
+			method: 'POST',
+			headers: { 'content-type': 'application/octet-stream' },
+			body: new Uint8Array([1, 2, 3]),
+		},
+		roomNamespace,
+	);
 
 	expect(response.status).toBe(401);
 	expect(response.headers.get('WWW-Authenticate')).toBe(
 		'Bearer error="invalid_token"',
 	);
 	expect(resolveRequestOAuthUserCalls).toBe(1);
-	expect(durableObjectRoomFactoryCalls).toBe(0);
+	expect(requestedRoomNames).toEqual([]);
+});
+
+test('POST /rooms/:room forwards the request body to the resolved room name', async () => {
+	const { room, roomNamespace, requestedRoomNames } = setup({
+		room: new FakeRoom({
+			diff: new Uint8Array([9, 8]),
+			storageBytes: 128,
+		}),
+	});
+
+	const response = await fetchRoomRoute(
+		'/rooms/notes',
+		{
+			method: 'POST',
+			body: new Uint8Array([1, 2, 3]),
+		},
+		roomNamespace,
+	);
+
+	expect(requestedRoomNames).toEqual(['subject:user-1:rooms:notes']);
+	expect(room.syncBodies).toHaveLength(1);
+	expect(Array.from(room.syncBodies[0] ?? [])).toEqual([1, 2, 3]);
+	expect(response.status).toBe(200);
+	expect(response.headers.get('content-type')).toBe(
+		'application/octet-stream',
+	);
+	expect(
+		Array.from(new Uint8Array(await response.arrayBuffer())),
+	).toEqual([9, 8]);
+	expect(upsertedDoInstances).toEqual([
+		expect.objectContaining({
+			doName: 'subject:user-1:rooms:notes',
+			resourceName: 'notes',
+			storageBytes: 128,
+			userId: 'user-1',
+		}),
+	]);
+});
+
+test('POST /rooms/:room returns 204 and metering when the room has no diff', async () => {
+	const { roomNamespace } = setup({
+		room: new FakeRoom({ diff: null, storageBytes: 64 }),
+	});
+
+	const response = await fetchRoomRoute(
+		'/rooms/notes',
+		{
+			method: 'POST',
+			body: new Uint8Array([1]),
+		},
+		roomNamespace,
+	);
+
+	expect(response.status).toBe(204);
+	expect(upsertedDoInstances).toEqual([
+		expect.objectContaining({
+			storageBytes: 64,
+		}),
+	]);
+});
+
+test('POST /rooms/:room rejects oversized payloads before selecting a room', async () => {
+	const { room, roomNamespace, requestedRoomNames } = setup();
+
+	const response = await fetchRoomRoute(
+		'/rooms/notes',
+		{
+			method: 'POST',
+			body: new Uint8Array(MAX_PAYLOAD_BYTES + 1),
+		},
+		roomNamespace,
+	);
+
+	expect(response.status).toBe(413);
+	expect(await response.text()).toBe('Payload too large');
+	expect(requestedRoomNames).toEqual([]);
+	expect(room.syncBodies).toEqual([]);
+	expect(upsertedDoInstances).toEqual([]);
+});
+
+test('GET /rooms/:room returns the selected room snapshot as an octet stream', async () => {
+	const { roomNamespace, requestedRoomNames } = setup({
+		room: new FakeRoom({
+			snapshot: new Uint8Array([4, 5, 6]),
+			storageBytes: 256,
+		}),
+	});
+
+	const response = await fetchRoomRoute(
+		'/rooms/notes',
+		{ method: 'GET' },
+		roomNamespace,
+	);
+
+	expect(requestedRoomNames).toEqual(['subject:user-1:rooms:notes']);
+	expect(response.headers.get('content-type')).toBe(
+		'application/octet-stream',
+	);
+	expect(
+		Array.from(new Uint8Array(await response.arrayBuffer())),
+	).toEqual([4, 5, 6]);
+	expect(upsertedDoInstances).toEqual([
+		expect.objectContaining({
+			doName: 'subject:user-1:rooms:notes',
+			resourceName: 'notes',
+			storageBytes: 256,
+			userId: 'user-1',
+		}),
+	]);
 });

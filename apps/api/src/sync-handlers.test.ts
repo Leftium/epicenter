@@ -17,7 +17,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	encodeSyncStep1,
-	encodeSyncStep2,
 	encodeSyncUpdate,
 	SYNC_MESSAGE_TYPE,
 } from '@epicenter/sync';
@@ -64,11 +63,14 @@ function makeConnection(
 	return { ws, connection };
 }
 
-/** A well-formed binary frame (sync sub-type varint + empty payload). */
-function frameWithSyncType(syncType: number): Uint8Array {
+/** A well-formed binary frame: sync sub-type varint + payload. */
+function frameWithSyncType(
+	syncType: number,
+	payload: Uint8Array = new Uint8Array(0),
+): Uint8Array {
 	return encoding.encode((enc) => {
 		encoding.writeVarUint(enc, syncType);
-		encoding.writeVarUint8Array(enc, new Uint8Array(0));
+		encoding.writeVarUint8Array(enc, payload);
 	});
 }
 
@@ -159,7 +161,10 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 	test('STEP2 payload applies state to the target doc, no effect emitted', () => {
 		const source = new Y.Doc();
 		source.getMap('data').set('shared', 'yes');
-		const step2 = encodeSyncStep2({ doc: source });
+		const step2 = frameWithSyncType(
+			SYNC_MESSAGE_TYPE.STEP2,
+			Y.encodeStateAsUpdateV2(source),
+		);
 
 		const doc = new Y.Doc();
 		const { connection } = makeConnection(doc);

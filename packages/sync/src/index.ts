@@ -26,11 +26,9 @@ export {
 } from './origins';
 // Protocol (encode/decode for WS messages and HTTP sync requests)
 export {
-	decodeSyncMessage,
 	decodeSyncRequest,
 	encodeSyncRequest,
 	encodeSyncStep1,
-	encodeSyncStep2,
 	encodeSyncUpdate,
 	handleSyncPayload,
 	SYNC_MESSAGE_TYPE,

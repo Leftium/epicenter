@@ -216,12 +216,6 @@ export class Room extends DurableObject {
 	private pendingRebroadcast: ReturnType<typeof setTimeout> | null = null;
 
 	/**
-	 * @see {@link PRESENCE_REBROADCAST_GRACE_MS}
-	 */
-	private static readonly PRESENCE_REBROADCAST_GRACE_MS =
-		PRESENCE_REBROADCAST_GRACE_MS;
-
-	/**
 	 * WebSocket close code emitted by the auth layer when the connection's
 	 * credentials are permanently invalid. Bypasses the presence grace
 	 * window: peers see the install drop immediately instead of waiting
@@ -578,7 +572,7 @@ export class Room extends DurableObject {
 		this.pendingRebroadcast = setTimeout(() => {
 			this.pendingRebroadcast = null;
 			this.broadcastPresence();
-		}, Room.PRESENCE_REBROADCAST_GRACE_MS);
+		}, PRESENCE_REBROADCAST_GRACE_MS);
 	}
 
 	/**

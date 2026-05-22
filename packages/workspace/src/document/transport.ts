@@ -15,29 +15,3 @@ export function roomWsUrl(apiUrl: string, roomId: string): string {
 	const base = apiUrl.replace(/\/+$/, '');
 	return websocketUrl(`${base}/rooms/${encodeURIComponent(roomId)}`);
 }
-
-/**
- * Build the WebSocket URL for the authenticated user's default-workspace
- * app document.
- *
- * Targets the `/me/apps/:appId/docs/:docId` route family. The server
- * resolves which workspaceId to use from the bearer token (the user's
- * default workspace); the client never embeds one in the URL. If the user
- * has no default workspace, the server closes the WebSocket with a
- * permanent-failure reason and the sync supervisor parks in `failed`.
- *
- * `docId = "root"` is the conventional app entry document.
- */
-export function defaultWorkspaceAppDocWsUrl(
-	apiUrl: string,
-	params: {
-		appId: string;
-		docId: string;
-	},
-): string {
-	const base = apiUrl.replace(/\/+$/, '');
-	return websocketUrl(
-		`${base}/me/apps/${encodeURIComponent(params.appId)}` +
-			`/docs/${encodeURIComponent(params.docId)}`,
-	);
-}

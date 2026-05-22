@@ -43,8 +43,12 @@ import {
 	parseSubprotocols,
 	stateVectorsEqual,
 } from '@epicenter/sync';
+import type {
+	DispatchInboundFrame,
+	DispatchResult,
+} from '@epicenter/workspace/document/dispatch-protocol';
 import type { PresenceFrame } from '@epicenter/workspace/document/presence';
-import { Err, type Result } from 'wellcrafted/result';
+import { Err } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import {
@@ -54,41 +58,14 @@ import {
 } from './sync-handlers';
 
 // ============================================================================
-// Dispatch wire types (text frames + RPC)
+// Dispatch RPC types
 // ============================================================================
 
 /**
- * Server -> recipient text frame. Pushed by the DO when an HTTP dispatch
- * call resolves a live socket for `to`. The recipient runs the action and
- * replies with `dispatch_response` carrying the same `id`.
+ * Worker -> DO RPC argument for {@link Room.dispatch}. The text-frame wire
+ * types ({@link DispatchInboundFrame}, {@link DispatchResult}) live in
+ * `@epicenter/workspace/document/dispatch-protocol`, shared with the client.
  */
-type DispatchInboundFrame = {
-	type: 'dispatch_inbound';
-	id: string;
-	from: string;
-	action: string;
-	input: unknown;
-};
-
-/**
- * Wire form of the dispatch outcome: a wellcrafted `Result`. Success
- * carries the action's return value in `data`; failure carries a
- * `DispatchErrorWire` in `error`. The recipient produces this with
- * `Ok`/`Err`; the relay produces its own `RecipientOffline` failures
- * with `Err`. Discriminate by `error === null`, never by key presence.
- */
-export type DispatchResult = Result<unknown, DispatchErrorWire>;
-
-export type DispatchErrorWire =
-	| { name: 'RecipientOffline'; to: string; message: string }
-	| { name: 'ActionNotFound'; action: string; message: string }
-	| {
-			name: 'ActionFailed';
-			action: string;
-			cause: string;
-			message: string;
-	  };
-
 export type DispatchRpcRequest = {
 	from: string;
 	to: string;
@@ -807,11 +784,7 @@ export class Room extends DurableObject {
  * `Result`.
  */
 function recipientOffline(to: string): DispatchResult {
-	return Err({
-		name: 'RecipientOffline',
-		to,
-		message: `Recipient "${to}" is offline`,
-	});
+	return Err({ name: 'RecipientOffline', to });
 }
 
 /**

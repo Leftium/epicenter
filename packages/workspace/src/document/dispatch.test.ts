@@ -256,11 +256,7 @@ describe('dispatch', () => {
 			async () =>
 				new Response(
 					JSON.stringify(
-						Err({
-							name: 'RecipientOffline',
-							to: 'R_phone',
-							message: 'Recipient "R_phone" is offline',
-						}),
+						Err({ name: 'RecipientOffline', to: 'R_phone' }),
 					),
 					{ status: 200, headers: { 'content-type': 'application/json' } },
 				),
@@ -282,11 +278,7 @@ describe('dispatch', () => {
 			async () =>
 				new Response(
 					JSON.stringify(
-						Err({
-							name: 'ActionNotFound',
-							action: 'tabs_close',
-							message: 'no handler',
-						}),
+						Err({ name: 'ActionNotFound', action: 'tabs_close' }),
 					),
 					{ status: 200, headers: { 'content-type': 'application/json' } },
 				),

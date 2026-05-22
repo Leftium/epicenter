@@ -33,6 +33,10 @@ import {
 	type ActionRegistry,
 	invokeAction,
 } from '../shared/actions.js';
+import type {
+	DispatchInboundFrame,
+	DispatchResponseFrame,
+} from './dispatch-protocol.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -101,34 +105,6 @@ export const DispatchError = defineErrors({
 	}),
 });
 export type DispatchError = InferErrors<typeof DispatchError>;
-
-/**
- * Subset of `DispatchError` that crosses the `dispatch_response` text
- * frame: only what the recipient itself can produce. `RecipientOffline`
- * is added by the relay; `Cancelled`/`NetworkFailed` are local-only.
- */
-type ActionResponseError =
-	| { name: 'ActionNotFound'; action: string; message: string }
-	| {
-			name: 'ActionFailed';
-			action: string;
-			cause: string;
-			message: string;
-	  };
-
-type DispatchInboundFrame = {
-	type: 'dispatch_inbound';
-	id: string;
-	from: string;
-	action: string;
-	input: unknown;
-};
-
-type DispatchResponseFrame = {
-	type: 'dispatch_response';
-	id: string;
-	result: Result<unknown, ActionResponseError>;
-};
 
 /**
  * Project an action's handler parameters into the dispatch request's
@@ -373,11 +349,7 @@ export async function runInboundDispatch({
 		return JSON.stringify({
 			type: 'dispatch_response',
 			id,
-			result: Err({
-				name: 'ActionNotFound',
-				action,
-				message: `Target has no handler for "${action}"`,
-			}),
+			result: Err({ name: 'ActionNotFound', action }),
 		} satisfies DispatchResponseFrame);
 	}
 
@@ -390,7 +362,6 @@ export async function runInboundDispatch({
 				name: 'ActionFailed',
 				action,
 				cause: extractCauseString(result.error),
-				message: `Action "${action}" failed`,
 			}),
 		} satisfies DispatchResponseFrame);
 	}

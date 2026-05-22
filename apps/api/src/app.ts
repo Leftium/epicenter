@@ -52,7 +52,6 @@ import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 import {
 	type AuthorizedWorkspaceSyncDoc,
 	resolveAuthorizedDefaultWorkspaceSyncDoc,
-	resolveAuthorizedWorkspaceSyncDoc,
 } from './workspace-sync-doc';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
@@ -229,7 +228,6 @@ const requireCookieOrBearerUser = factory.createMiddleware(async (c, next) => {
 });
 
 app.use('/api/*', requireOriginForCookieMutations);
-app.use('/workspaces/*', requireOriginForCookieMutations);
 app.use('/me/*', requireOriginForCookieMutations);
 
 // Health
@@ -426,7 +424,6 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 
 app.use('/ai/*', requireOAuthUser);
 app.use('/rooms/*', requireOAuthUser);
-app.use('/workspaces/*', requireCookieOrBearerUser);
 app.use('/me/*', requireCookieOrBearerUser);
 app.use('/api/billing/*', requireCookieOrBearerUser);
 app.use('/api/assets/*', requireCookieOrBearerUser);
@@ -487,17 +484,10 @@ app.post(
  * old internal DO name, `subject:{subject}:rooms:{room}`, so those clients do
  * not lose their room history.
  *
- * Product-shaped Cloud sync uses two route families that share one resolver
- * pipeline:
- *
- *   - `/workspaces/:workspaceId/apps/:appId/docs/:docId` for callers that
- *     already know which workspace they want (the daemon, workspace-switching
- *     UI). The route checks Better Auth organization membership for the URL-
- *     supplied workspace and builds the workspace/app/doc DO name.
- *   - `/me/apps/:appId/docs/:docId` for the common case of "the signed-in
- *     user's default workspace". The route resolves the workspace id from
- *     the authenticated user's deterministic personal workspace, then runs
- *     the same membership check before delegating to the same DO machinery.
+ * Product-shaped Cloud sync uses `/me/apps/:appId/docs/:docId`: the route
+ * resolves the workspace id from the authenticated user's deterministic
+ * personal workspace, runs a Better Auth organization membership check, then
+ * builds the workspace/app/doc DO name.
  */
 
 /**
@@ -515,33 +505,6 @@ function resolveSubjectRoom(c: Context<Env>) {
 		roomName: `subject:${c.var.user.id}:rooms:${room}`,
 		room,
 	};
-}
-
-async function resolveWorkspaceSyncDocRoute(
-	c: Context<Env>,
-): Promise<
-	| { data: AuthorizedWorkspaceSyncDoc; response?: never }
-	| { data?: never; response: Response }
-> {
-	const result = await resolveAuthorizedWorkspaceSyncDoc({
-		user: c.var.user,
-		workspaceId: c.req.param('workspaceId'),
-		appId: c.req.param('appId'),
-		docId: c.req.param('docId'),
-		checkWorkspaceMembership: ({ userId, workspaceId }) =>
-			checkWorkspaceMembership(c.var.db, { userId, workspaceId }),
-	});
-
-	if (result.error) {
-		return {
-			response: c.json(
-				{ name: result.error.name, message: result.error.message },
-				result.error.status,
-			),
-		};
-	}
-
-	return { data: result.data };
 }
 
 async function checkWorkspaceMembership(
@@ -564,13 +527,12 @@ async function checkWorkspaceMembership(
 /**
  * Resolve the authenticated user's default-workspace sync doc target.
  *
- * Mirrors {@link resolveWorkspaceSyncDocRoute} but takes the workspace id
- * from the user's deterministic personal workspace rather than the URL. On
- * `PersonalWorkspaceMissing` returns an HTTP 409 for non-upgrade requests;
- * for WebSocket upgrades the caller must close the upgraded socket with
- * code 4401 + JSON reason `{ code: 'no_default_workspace' }` so the
- * supervisor's `parsePermanentFailure` parks the connection in
- * `failed` instead of retrying with backoff.
+ * Takes the workspace id from the user's deterministic personal workspace.
+ * On `PersonalWorkspaceMissing` returns an HTTP 409 for non-upgrade
+ * requests; for WebSocket upgrades the caller must close the upgraded
+ * socket with code 4401 + JSON reason `{ code: 'no_default_workspace' }` so
+ * the supervisor's `parsePermanentFailure` parks the connection in `failed`
+ * instead of retrying with backoff.
  */
 async function resolveDefaultWorkspaceSyncDocRoute(
 	c: Context<Env>,
@@ -681,120 +643,14 @@ function upsertDoInstance(
 		.catch((e) => console.error('[do-tracking] upsert failed:', e));
 }
 
-app.get(
-	'/workspaces/:workspaceId/apps/:appId/docs/:docId',
-	describeRoute({
-		description: 'Get workspace sync doc or upgrade to WebSocket',
-		tags: ['workspace-sync-docs'],
-	}),
-	async (c) => {
-		const resolved = await resolveWorkspaceSyncDocRoute(c);
-		if (resolved.response) return resolved.response;
-
-		const target = resolved.data;
-		const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
-
-		if (isWebSocketUpgrade(c)) {
-			c.var.afterResponse.push(
-				upsertDoInstance(c.var.db, {
-					userId: c.var.user.id,
-					resourceName: target.syncDocResourceName,
-					doName: target.roomName,
-				}),
-			);
-			return rooms.handleWebSocket(target.roomName, c.req.raw);
-		}
-
-		const sync = createSyncEngine(rooms);
-		const { response, storageBytes } = await sync.getSnapshot(target.roomName);
-		c.var.afterResponse.push(
-			upsertDoInstance(c.var.db, {
-				userId: c.var.user.id,
-				resourceName: target.syncDocResourceName,
-				doName: target.roomName,
-				storageBytes,
-			}),
-		);
-		return response;
-	},
-);
-
-app.post(
-	'/workspaces/:workspaceId/apps/:appId/docs/:docId',
-	describeRoute({
-		description: 'Sync workspace sync doc',
-		tags: ['workspace-sync-docs'],
-	}),
-	async (c) => {
-		const resolved = await resolveWorkspaceSyncDocRoute(c);
-		if (resolved.response) return resolved.response;
-
-		const target = resolved.data;
-		const sync = createSyncEngine(cloudflareDurableObjectRooms(c.env.ROOM));
-		const result = await sync.handleHttpSync(c.req.raw, {
-			roomName: target.roomName,
-		});
-
-		if (result.storageBytes != null) {
-			c.var.afterResponse.push(
-				upsertDoInstance(c.var.db, {
-					userId: c.var.user.id,
-					resourceName: target.syncDocResourceName,
-					doName: target.roomName,
-					storageBytes: result.storageBytes,
-				}),
-			);
-		}
-
-		return result.response;
-	},
-);
-
-app.post(
-	'/workspaces/:workspaceId/apps/:appId/docs/:docId/dispatch',
-	describeRoute({
-		description: 'Dispatch a workspace sync doc live-device call via the relay',
-		tags: ['workspace-sync-docs'],
-	}),
-	sValidator(
-		'json',
-		type({
-			from: '/^[A-Za-z0-9_-]+$/ <= 128',
-			to: '/^[A-Za-z0-9_-]+$/ <= 128',
-			action: '/^[a-z][a-z0-9_]{0,63}$/',
-			'input?': 'unknown',
-		}),
-	),
-	async (c) => {
-		const resolved = await resolveWorkspaceSyncDocRoute(c);
-		if (resolved.response) return resolved.response;
-
-		const target = resolved.data;
-		const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
-		const body = c.req.valid('json');
-		const result = await rooms.dispatch(target.roomName, body);
-
-		c.var.afterResponse.push(
-			upsertDoInstance(c.var.db, {
-				userId: c.var.user.id,
-				resourceName: target.syncDocResourceName,
-				doName: target.roomName,
-			}),
-		);
-
-		return c.json(result);
-	},
-);
-
 // ---------------------------------------------------------------------------
 // Default-workspace sync doc routes
 // ---------------------------------------------------------------------------
 //
-// Mirror the `/workspaces/:workspaceId/apps/:appId/docs/:docId` routes but
-// resolve the workspace id from the authenticated user's deterministic
-// personal workspace instead of the URL. Clients with one default workspace
-// (every signed-in user today) open these routes directly without first
-// fetching `/api/workspaces`.
+// Resolve the workspace id from the authenticated user's deterministic
+// personal workspace. Clients with one default workspace (every signed-in
+// user today) open these routes directly without first fetching
+// `/api/workspaces`.
 
 app.get(
 	'/me/apps/:appId/docs/:docId',

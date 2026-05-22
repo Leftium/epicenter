@@ -129,10 +129,10 @@ export async function resolveAuthorizedWorkspaceSyncDoc({
  * Resolve the authenticated user's default workspace sync doc.
  *
  * Looks up the user's default (personal) workspace, then delegates to
- * {@link resolveAuthorizedWorkspaceSyncDoc} so the explicit-workspace and
- * default-workspace routes share one membership and validation path. The
- * route layer uses this for `/me/apps/:appId/docs/:docId` so the client
- * never has to fetch `/api/workspaces` before opening a sync socket.
+ * {@link resolveAuthorizedWorkspaceSyncDoc} for the shared membership and
+ * validation path. The route layer uses this for `/me/apps/:appId/docs/:docId`
+ * so the client never has to fetch `/api/workspaces` before opening a sync
+ * socket.
  */
 export async function resolveAuthorizedDefaultWorkspaceSyncDoc({
 	user,

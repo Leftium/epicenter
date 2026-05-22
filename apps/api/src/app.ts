@@ -41,7 +41,7 @@ import { billingRoutes } from './billing-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
-import type { DispatchRpcRequest, Room } from './room';
+import type { DispatchRpcRequest } from './room';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
@@ -456,13 +456,6 @@ function resolveSubjectRoom(c: Context<Env>) {
 	};
 }
 
-function getRoomStub(
-	roomNamespace: DurableObjectNamespace<Room>,
-	roomName: string,
-) {
-	return roomNamespace.get(roomNamespace.idFromName(roomName));
-}
-
 /**
  * Wrap a Uint8Array in a Response with a fresh ArrayBuffer copy.
  *
@@ -531,7 +524,7 @@ app.get(
 	}),
 	async (c) => {
 		const { roomName, room } = resolveSubjectRoom(c);
-		const roomStub = getRoomStub(c.env.ROOM, roomName);
+		const roomStub = c.env.ROOM.get(c.env.ROOM.idFromName(roomName));
 
 		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
@@ -570,7 +563,7 @@ app.post(
 			return new Response('Payload too large', { status: 413 });
 		}
 
-		const roomStub = getRoomStub(c.env.ROOM, roomName);
+		const roomStub = c.env.ROOM.get(c.env.ROOM.idFromName(roomName));
 		const { data: synced, error } = await roomStub.sync(body);
 		if (error) {
 			return new Response('Malformed sync body', { status: 400 });
@@ -619,9 +612,9 @@ app.post(
 	async (c) => {
 		const { roomName, room } = resolveSubjectRoom(c);
 		const body = c.req.valid('json');
-		const result = await getRoomStub(c.env.ROOM, roomName).dispatch(
-			body satisfies DispatchRpcRequest,
-		);
+		const result = await c.env.ROOM
+			.get(c.env.ROOM.idFromName(roomName))
+			.dispatch(body satisfies DispatchRpcRequest);
 
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {

@@ -279,7 +279,7 @@ URL today. The asset URL shape is greenfield and can change with no migration.
 | Asset key + URL | 2 coherence | `assets/<assetId>`, flat; URL `/api/assets/<assetId>`; `userId` removed from the key/URL, kept in the `asset` table row | Read is unauthenticated, the unguessable id IS the capability; identity in a shareable URL leaks a stable identifier and is not an authz mechanism. Applies to the R2 backend too |
 | Content-addressed assets (`sha256(bytes)`) | 1 evidence | Rejected | A content-hash address is computable by anyone holding the file, which destroys the unguessable-URL-as-credential model |
 | Storage engine for the portable Yjs log | 2 coherence | SQLite file per room, not Postgres | A SQLite file per room is the literal analog of one DO's embedded SQLite; keeps synchronous per-update durability and ports `compactUpdateLog` verbatim |
-| Asset storage backend (portable) | 2 coherence | Filesystem directory via the `AssetStore` contract | Asset bytes in Postgres bloat `pg_dump`/WAL; a directory keeps Postgres small. `AssetStore` keeps S3 available as an ENV swap |
+| Asset storage backend (portable) | 2 coherence | Filesystem directory via the `AssetStore` contract; opaque bytes in, opaque bytes out | Asset bytes in Postgres bloat `pg_dump`/WAL; a directory keeps Postgres small. `AssetStore` keeps S3 available as an ENV swap. Confidentiality model owned by `specs/20260522T240000-cloud-asset-access-model.md`: link-shared via the encrypted document, not encrypted at rest, so the contract stays plaintext-only with no encryption, chunking, or AEAD |
 | KV session cache | 2 coherence | Bun backend drops `secondaryStorage`; Postgres is the only session store | `create-auth.ts:139-155` documents KV as a pure read-through cache; a single-region self-host has no distant edge to cache for |
 | Bun room construction | 1 evidence | Fully synchronous; `RoomRegistry.getRoom(name)` is a `Map` get-or-create with no async init gate | `bun:sqlite` open + replay are synchronous (verified); the DO needs `blockConcurrencyWhile`, Bun needs nothing |
 | Postgres connection on Bun/Node | 1 evidence | Module-scope `pg.Pool`, not per-request `pg.Client` | No Hyperdrive doing the pooling, no isolate-per-request; a long-lived process pools once |
@@ -734,6 +734,9 @@ at every step. No phase removes the Cloudflare path.
   at module scope (Phase 4.1).
 - `apps/api/src/asset-routes.ts` - the R2 object API to abstract behind
   `AssetStore`; the `userId/assetId` key to flatten to `assetId`.
+- `specs/20260522T240000-cloud-asset-access-model.md` - the asset
+  confidentiality model: link-shared via the encrypted document. Pins
+  `AssetStore` as plaintext-only, opaque bytes.
 - `apps/api/src/auth/create-auth.ts` - the KV `secondaryStorage`, the Autumn
   signup hook, the R2 user-delete cleanup.
 - `apps/api/src/auth/oauth-resource.ts` - `WebSocketPair` in the auth-failure

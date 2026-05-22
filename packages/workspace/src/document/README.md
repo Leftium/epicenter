@@ -90,9 +90,9 @@ inbound dispatch frames against the local action registry.
 
 ```typescript
 import {
-  defaultWorkspaceAppDocWsUrl,
   type LocalOwner,
   openCollaboration,
+  roomWsUrl,
 } from '@epicenter/workspace';
 
 function openBlog({
@@ -110,10 +110,7 @@ function openBlog({
   const idb = owner.attachIndexedDb(ydoc);
   owner.attachBroadcastChannel(ydoc);
   const collaboration = openCollaboration(ydoc, {
-    url: defaultWorkspaceAppDocWsUrl('https://api.example.com', {
-      appId: 'blog',
-      docId: 'root',
-    }),
+    url: roomWsUrl('https://api.example.com', ydoc.guid),
     openWebSocket,
     waitFor: idb.whenLoaded,
     installationId: 'browser',

@@ -125,10 +125,10 @@ Minimal encrypted browser workspace: encryption + IndexedDB + cross-tab + collab
 ```typescript
 import {
 	createInstallationId,
-	defaultWorkspaceAppDocWsUrl,
 	type LocalOwner,
 	type OpenWebSocket,
 	openCollaboration,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import { createSession } from '@epicenter/svelte';
 import * as Y from 'yjs';
@@ -153,10 +153,7 @@ export function openApp({
 	owner.attachBroadcastChannel(ydoc);
 
 	const collaboration = openCollaboration(ydoc, {
-		url: defaultWorkspaceAppDocWsUrl('https://api.epicenter.so', {
-			appId: 'my-app',
-			docId: 'root',
-		}),
+		url: roomWsUrl('https://api.epicenter.so', ydoc.guid),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		installationId,
@@ -192,7 +189,7 @@ export const session = createSession({
 
 `openCollaboration` is the workspace primitive: it wraps the sync supervisor, mirrors the relay's server-owned presence channel as `collaboration.devices`, and runs inbound dispatch frames against the local action registry. Find an online install with `workspace.collaboration.devices.list().find((d) => d.installationId === installationId)`, then call it with `workspace.collaboration.dispatch(...)`. Content documents use the same primitive with `actions: {}`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
-The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud Workspace app sync targets `/me/apps/:appId/docs/:docId`: build the URL with `defaultWorkspaceAppDocWsUrl(apiUrl, { appId, docId })` and the server resolves the workspace from the auth token, then builds the internal room name after a membership check.
+The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync targets the single route `/rooms/:room`: build the URL with `roomWsUrl(apiUrl, ydoc.guid)`. A cloud doc is owned by the authenticated subject, so the server resolves the DO name `subject:${userId}:rooms:${room}` from the auth token with no workspace lookup.
 
 For production-shaped browser wiring, see `apps/fuji/src/lib/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.ts`.
 
@@ -784,8 +781,8 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachTables,
-	defaultWorkspaceAppDocWsUrl,
 	openCollaboration,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import { attachYjsLog } from '@epicenter/workspace/node';
 ```
@@ -842,9 +839,9 @@ import {
 	attachIndexedDb,
 	attachTables,
 	createInstallationId,
-	defaultWorkspaceAppDocWsUrl,
 	defineTable,
 	openCollaboration,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 
@@ -856,10 +853,7 @@ function openTabs() {
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
 	const collaboration = openCollaboration(ydoc, {
-		url: defaultWorkspaceAppDocWsUrl('https://api.epicenter.so', {
-			appId: 'tabs',
-			docId: 'root',
-		}),
+		url: roomWsUrl('https://api.epicenter.so', ydoc.guid),
 		waitFor: idb.whenLoaded,
 		installationId: createInstallationId({ storage: localStorage }),
 		actions: {},
@@ -1249,7 +1243,7 @@ and a few utility surfaces.
 
 | Import path | What it exports | Public today |
 | --- | --- | --- |
-| `@epicenter/workspace` | `createDisposableCache`, `defineTable`, `defineKv`, browser-safe `attach*` (tables, kv, indexeddb, broadcast-channel, encryption, rich-text, plain-text, timeline), `openCollaboration`, `defaultWorkspaceAppDocWsUrl`, action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
+| `@epicenter/workspace` | `createDisposableCache`, `defineTable`, `defineKv`, browser-safe `attach*` (tables, kv, indexeddb, broadcast-channel, encryption, rich-text, plain-text, timeline), `openCollaboration`, `roomWsUrl`, action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
 | `@epicenter/workspace/node` | Bun/Node `attach*` and `open*` (`attachYjsLog`, `attachYjsLogReader`, `openSqliteReader`, `openWriterSqlite`), daemon helpers, workspace paths | Yes |
 | `@epicenter/workspace/document/materializer/markdown` | `attachMarkdownMaterializer`, serializers | Yes |
 | `@epicenter/workspace/document/materializer/sqlite` | `attachSqliteMaterializer`, `generateDdl`, types | Yes |

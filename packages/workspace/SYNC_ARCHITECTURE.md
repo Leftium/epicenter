@@ -10,17 +10,14 @@ Every document that participates in sync, the workspace doc and every nested con
 
 ```ts
 import {
-    defaultWorkspaceAppDocWsUrl,
     defineActions,
     defineMutation,
     openCollaboration,
+    roomWsUrl,
 } from '@epicenter/workspace';
 
 const collaboration = openCollaboration(ydoc, {
-    url: defaultWorkspaceAppDocWsUrl('https://api.epicenter.so', {
-        appId: 'tab-manager',
-        docId: 'root',
-    }),
+    url: roomWsUrl('https://api.epicenter.so', ydoc.guid),
     waitFor: idb.whenLoaded,
     openWebSocket: auth.openWebSocket,
     installationId: 'macbook',
@@ -195,21 +192,25 @@ The recipient side is `runInboundDispatch`: the supervisor routes inbound text f
 
 ## URLs and routing
 
-The client never embeds a workspaceId. It builds the URL from `(apiUrl, appId, docId)`:
+A cloud document is owned by the authenticated subject (the user's identity) and addressed by its own `ydoc.guid`. The client builds the URL from `(apiUrl, ydoc.guid)`:
 
 ```ts
-defaultWorkspaceAppDocWsUrl('https://api.epicenter.so', {
-    appId: 'tab-manager',
-    docId: 'root',
-});
-// -> wss://api.epicenter.so/me/apps/tab-manager/docs/root
+roomWsUrl('https://api.epicenter.so', ydoc.guid);
+// -> wss://api.epicenter.so/rooms/<ydoc.guid>
 ```
 
-The relay resolves which workspace to use from the auth token (the user's default workspace), runs a Workspace membership check, then builds the internal Durable Object name. If the user has no default workspace, the relay closes the socket with code 4401 and reason `{ code: 'no_default_workspace' }`, and the supervisor parks in `failed`.
+The relay takes the subject from the auth token and builds the internal Durable Object name `subject:${userId}:rooms:${room}`. There is no workspace lookup and no membership check: the route's auth middleware is the whole authorization story, because you cannot fail to be yourself.
+
+This is the consumer Google Docs model and the first of three account layers, introduced over time:
+
+- **Layer 1 (this)**: personal content. `subject:${userId}` owns the doc.
+- **Layer 1.5 (future)**: sharing. A per-document ACL grants other subjects access; the owner's DO name does not change.
+- **Layer 2 (future)**: shared-drive content. An org owns a namespace so content survives a departing employee.
+- **Layer 3 (future)**: tenancy and billing. An organization groups user accounts for one invoice and admin policy; it never owns a document.
 
 `installationId` is appended as a query parameter (`?installationId=`) on every connect, including reconnects. It is a routing label stamped on the socket at upgrade, not an auth principal: the relay authorizes the room from the token, and within that room `installationId` only decides which socket dispatch is delivered to.
 
-The workspace daemon and non-Cloud sample apps use the `/rooms/:room` route family via `roomWsUrl`, imported directly from `@epicenter/workspace`'s internal `transport` module rather than the package root, so app code cannot open a parallel sync surface that bypasses Workspace membership.
+`/rooms/:room` is the single cloud sync route. Browser apps and the workspace daemon both build their URL with `roomWsUrl`, exported from the `@epicenter/workspace` package root.
 
 ## Supervisor lifecycle
 

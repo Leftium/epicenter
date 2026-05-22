@@ -94,7 +94,7 @@ The split is conceptual, not cosmetic. Definitions describe what data means; the
 ### 3. Extend means adding more `attach*` calls
 There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + dispatch) mounts through the `openCollaboration` primitive. You add them to the builder alongside tables and KV.
 
-The example below uses Cloud Workspace product sync. The client builds the URL from `(apiUrl, appId, docId)` with `defaultWorkspaceAppDocWsUrl`; the server resolves which workspace to use from the auth token and builds the internal room name after a membership check.
+The example below syncs a cloud document. A cloud doc is owned by the authenticated subject and addressed by its own `ydoc.guid`, so the client builds the URL with `roomWsUrl(apiUrl, ydoc.guid)`; the server resolves it to the room `subject:${userId}:rooms:${room}`. There is no workspace lookup and no membership check: ownership is identity.
 
 ```ts
 import * as Y from 'yjs';
@@ -102,9 +102,9 @@ import {
 	attachIndexedDb,
 	attachKv,
 	attachTables,
-	defaultWorkspaceAppDocWsUrl,
 	defineDocument,
 	openCollaboration,
+	roomWsUrl,
 } from '@epicenter/workspace';
 
 const app = defineDocument((id: string) => {
@@ -113,10 +113,7 @@ const app = defineDocument((id: string) => {
 	const kv = attachKv(ydoc, { themeMode });
 	const idb = attachIndexedDb(ydoc);
 	const collaboration = openCollaboration(ydoc, {
-		url: defaultWorkspaceAppDocWsUrl('https://api.example.com', {
-			appId: 'files',
-			docId: 'root',
-		}),
+		url: roomWsUrl('https://api.example.com', ydoc.guid),
 		waitFor: idb.whenLoaded,
 		installationId: 'browser',
 		actions: {},
@@ -210,12 +207,12 @@ import * as Y from 'yjs';
 import {
 	attachIndexedDb,
 	attachTables,
-	defaultWorkspaceAppDocWsUrl,
 	defineActions,
 	defineDocument,
 	defineQuery,
 	defineTable,
 	openCollaboration,
+	roomWsUrl,
 } from '@epicenter/workspace';
 
 const conversationsTable = defineTable(/* ... */);
@@ -238,10 +235,7 @@ const opensidian = defineDocument((id: string) => {
 		}),
 	});
 	const collaboration = openCollaboration(ydoc, {
-		url: defaultWorkspaceAppDocWsUrl(APP_URLS.API, {
-			appId: 'opensidian',
-			docId: 'root',
-		}),
+		url: roomWsUrl(APP_URLS.API, ydoc.guid),
 		openWebSocket: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
 		installationId: 'browser',

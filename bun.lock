@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -299,7 +298,7 @@
         "@codemirror/lang-markdown": "^6.5.0",
         "@codemirror/language": "^6.12.2",
         "@codemirror/state": "^6.6.0",
-        "@codemirror/view": "^6.40.0",
+        "@codemirror/view": "^6.41.0",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",

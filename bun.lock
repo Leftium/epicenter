@@ -257,6 +257,7 @@
         "@codemirror/view": "^6.41.0",
         "@epicenter/filesystem": "workspace:*",
         "@epicenter/ui": "workspace:*",
+        "@epicenter/util": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lezer/highlight": "^1.2.3",
         "@lucide/svelte": "catalog:",
@@ -600,6 +601,7 @@
       "name": "@epicenter/filesystem",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/util": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@libsql/client": "^0.14.0",
         "@libsql/client-wasm": "^0.14.0",
@@ -729,6 +731,14 @@
         "svelte": ">=5.0.0",
       },
     },
+    "packages/util": {
+      "name": "@epicenter/util",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/workspace": {
       "name": "@epicenter/workspace",
       "version": "0.2.0",
@@ -738,6 +748,7 @@
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/sync": "workspace:*",
+        "@epicenter/util": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "@sindresorhus/slugify": "catalog:",
         "@standard-schema/spec": "catalog:",
@@ -1063,6 +1074,8 @@
     "@epicenter/test-utils": ["@epicenter/test-utils@workspace:packages/test-utils"],
 
     "@epicenter/ui": ["@epicenter/ui@workspace:packages/ui"],
+
+    "@epicenter/util": ["@epicenter/util@workspace:packages/util"],
 
     "@epicenter/whispering": ["@epicenter/whispering@workspace:apps/whispering"],
 

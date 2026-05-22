@@ -1,7 +1,7 @@
 import type { FileId } from '@epicenter/filesystem';
 import { createPersistedState } from '@epicenter/svelte';
 import type { CommandPaletteItem } from '@epicenter/ui/command-palette';
-import { debounce } from '@epicenter/workspace';
+import { debounce } from '@epicenter/util';
 import { type } from 'arktype';
 import type { OpensidianBrowser } from '$lib/opensidian/browser';
 import { getFileIcon } from '$lib/utils/file-icons';

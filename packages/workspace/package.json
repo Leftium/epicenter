@@ -55,6 +55,7 @@
 		"@hono/standard-validator": "catalog:",
 		"@tanstack/ai": "catalog:",
 		"@epicenter/sync": "workspace:*",
+		"@epicenter/util": "workspace:*",
 		"@sindresorhus/slugify": "catalog:",
 		"@standard-schema/spec": "catalog:",
 		"@tursodatabase/database": "^0.3.2",

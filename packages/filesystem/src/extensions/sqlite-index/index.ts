@@ -26,7 +26,8 @@
  * @module
  */
 
-import { debounce, type Table } from '@epicenter/workspace';
+import { debounce } from '@epicenter/util';
+import type { Table } from '@epicenter/workspace';
 import type { Client, InStatement } from '@libsql/client-wasm';
 import { createClient } from '@libsql/client-wasm';
 

@@ -10,6 +10,7 @@
  * @module
  */
 
+import { debounce } from '@epicenter/util';
 import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import Type from 'typebox';
 import {
@@ -20,7 +21,6 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
-import { debounce } from '../../../shared/debounce.js';
 import { standardSchemaToJsonSchema } from '../../../shared/standard-schema.js';
 import type { BaseRow, Table, TableDefinition } from '../../attach-table.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';

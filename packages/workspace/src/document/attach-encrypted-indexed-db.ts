@@ -6,6 +6,7 @@ import {
 	encryptBytes,
 	type SubjectKeyring,
 } from '@epicenter/encryption';
+import { debounce } from '@epicenter/util';
 import * as idb from 'lib0/indexeddb';
 import {
 	defineErrors,
@@ -16,7 +17,6 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import { clearDocument } from 'y-indexeddb';
 import type * as Y from 'yjs';
 import { applyUpdateV2, encodeStateAsUpdateV2, transact } from 'yjs';
-import { debounce } from '../shared/debounce.js';
 import type { IndexedDbAttachment } from './attach-indexed-db.js';
 import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
 

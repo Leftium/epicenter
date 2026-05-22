@@ -54,7 +54,6 @@
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
-		"@epicenter/test-utils": "workspace:*",
 		"@types/bun": "catalog:",
 		"@types/pg": "^8.18.0",
 		"atmn": "^1.1.5",

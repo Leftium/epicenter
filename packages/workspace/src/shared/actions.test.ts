@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import Type from 'typebox';
 import { Err, Ok } from 'wellcrafted/result';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import {
 	ACTION_KEY_PATTERN,
 	type ActionRegistry,

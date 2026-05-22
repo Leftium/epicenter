@@ -24,7 +24,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import {
 	claimDaemonLease,
 	metadataPathFor,
@@ -32,6 +31,7 @@ import {
 	socketPathFor,
 	writeMetadata,
 } from '@epicenter/workspace/node';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import { runUp } from './up';
 
 let originalXdg: string | undefined;

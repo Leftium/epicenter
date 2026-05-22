@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { AuthClient } from '@epicenter/auth';
-import { expectErr, expectOk } from '@epicenter/test-utils/result';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import type {
 	DaemonWorkspaceContext,
 	DaemonWorkspaceDefinition,

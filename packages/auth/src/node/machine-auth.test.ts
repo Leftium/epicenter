@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { expectOk } from '@epicenter/test-utils/result';
+import { expectOk } from 'wellcrafted/testing';
 import type { PersistedAuth } from '../auth-types.js';
 import type { AuthFetch } from '../create-oauth-app-auth.js';
 import {

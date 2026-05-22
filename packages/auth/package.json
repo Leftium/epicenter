@@ -22,7 +22,6 @@
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
-		"@epicenter/test-utils": "workspace:*",
 		"@types/bun": "catalog:",
 		"typescript": "catalog:"
 	},

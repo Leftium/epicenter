@@ -148,7 +148,7 @@ describe('applyMessage SYNC STEP1', () => {
 			applyMessage({
 				data: step1,
 				doc,
-				connection,
+				ws: connection.ws,
 			}),
 		);
 
@@ -173,7 +173,7 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 			applyMessage({
 				data: step2,
 				doc,
-				connection,
+				ws: connection.ws,
 			}),
 		);
 
@@ -194,7 +194,7 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 			applyMessage({
 				data: frame,
 				doc,
-				connection,
+				ws: connection.ws,
 			}),
 		);
 
@@ -216,7 +216,7 @@ describe('applyMessage unknown sync sub-type', () => {
 			applyMessage({
 				data: frameWithSyncType(99),
 				doc,
-				connection,
+				ws: connection.ws,
 			}),
 		);
 

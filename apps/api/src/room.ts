@@ -628,7 +628,7 @@ export class Room extends DurableObject {
 		const { data: reply, error } = applyMessage({
 			data: new Uint8Array(message),
 			doc: this.doc,
-			connection,
+			ws,
 		});
 		if (error) {
 			console.error(error.message);

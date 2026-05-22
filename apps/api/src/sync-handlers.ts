@@ -136,11 +136,11 @@ export function registerConnection({
 export function applyMessage({
 	data,
 	doc,
-	connection,
+	ws,
 }: {
 	data: Uint8Array;
 	doc: Y.Doc;
-	connection: Connection;
+	ws: WebSocket;
 }) {
 	return trySync({
 		try: (): Uint8Array | null => {
@@ -151,7 +151,7 @@ export function applyMessage({
 				syncType,
 				payload,
 				doc,
-				origin: connection.ws,
+				origin: ws,
 			});
 			return response ?? null;
 		},

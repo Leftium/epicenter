@@ -207,42 +207,6 @@ billingRoutes.post('/upgrade', sValidator('json', attachSchema), async (c) => {
 	return c.json(result);
 });
 
-// ── Cancel subscription ──────────────────────────────────────────────────
-
-/**
- * POST /billing/cancel
- *
- * Cancel a subscription at end of billing cycle.
- */
-billingRoutes.post('/cancel', sValidator('json', planIdSchema), async (c) => {
-	const autumn = createAutumn(c.env);
-	const { planId } = c.req.valid('json');
-	const result = await autumn.billing.update({
-		customerId: c.var.user.id,
-		planId,
-		cancelAction: 'cancel_end_of_cycle',
-	});
-	return c.json(result);
-});
-
-// ── Uncancel ─────────────────────────────────────────────────────────────
-
-/**
- * POST /billing/uncancel
- *
- * Reverse a pending cancellation.
- */
-billingRoutes.post('/uncancel', sValidator('json', planIdSchema), async (c) => {
-	const autumn = createAutumn(c.env);
-	const { planId } = c.req.valid('json');
-	const result = await autumn.billing.update({
-		customerId: c.var.user.id,
-		planId,
-		cancelAction: 'uncancel',
-	});
-	return c.json(result);
-});
-
 // ── Top-up ───────────────────────────────────────────────────────────────
 
 /**
@@ -281,59 +245,5 @@ billingRoutes.get('/portal', async (c) => {
 	});
 	return c.json(result);
 });
-
-// ── Billing controls (spend limits, alerts, auto top-ups) ────────────────
-
-const controlsSchema = type({
-	'spendLimits?': type({
-		featureId: 'string',
-		enabled: 'boolean',
-		'overageLimit?': 'number | undefined',
-	})
-		.array()
-		.or('undefined'),
-	'usageAlerts?': type({
-		featureId: 'string',
-		threshold: 'number',
-		thresholdType: "'usage' | 'usage_percentage'",
-		enabled: 'boolean',
-		'name?': 'string | undefined',
-	})
-		.array()
-		.or('undefined'),
-	'autoTopups?': type({
-		featureId: 'string',
-		enabled: 'boolean',
-		threshold: 'number',
-		quantity: 'number',
-		'purchaseLimit?': type({
-			interval: "'month'",
-			intervalCount: 'number',
-			limit: 'number',
-		}).or('undefined'),
-	})
-		.array()
-		.or('undefined'),
-});
-
-/**
- * POST /billing/controls
- *
- * Update per-user billing controls: spend limits, usage alerts, auto top-ups.
- * These are stored and evaluated by Autumn—no infrastructure on our side.
- */
-billingRoutes.post(
-	'/controls',
-	sValidator('json', controlsSchema),
-	async (c) => {
-		const autumn = createAutumn(c.env);
-		const data = c.req.valid('json');
-		const result = await autumn.customers.update({
-			customerId: c.var.user.id,
-			billingControls: data,
-		});
-		return c.json(result);
-	},
-);
 
 export { billingRoutes };

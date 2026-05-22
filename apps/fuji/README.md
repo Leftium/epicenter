@@ -44,7 +44,10 @@ export function openFujiBrowser({
   owner.attachBroadcastChannel(rootYdoc);
   const actions = createFujiActions(tables);
   const collaboration = openCollaboration(rootYdoc, {
-    url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
+    url: defaultWorkspaceAppDocWsUrl(APP_URLS.API, {
+      appId: 'fuji',
+      docId: 'root',
+    }),
     waitFor: idb.whenLoaded,
     openWebSocket,
     installationId,

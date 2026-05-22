@@ -60,7 +60,6 @@ Content docs (rich-text bodies, attachments, anything nested that syncs independ
 | `onStatusChange`  | Subscribe to status changes; returns unsubscribe                   |
 | `reconnect`       | Manually wake the supervisor (resets backoff)                      |
 | `devices`         | `list()` / `subscribe()` over the server-owned presence channel    |
-| `presence`        | `{ hasSnapshot }`: has the relay's first snapshot landed yet       |
 | `dispatch`        | Fire a cross-device call over HTTP                                 |
 | `[Symbol.dispose]`| Sugar for `ydoc.destroy()`; cascades through every attachment      |
 
@@ -75,9 +74,7 @@ WebSocket
 │
 ├─ binary frames   Yjs CRDT sync (STEP1 / STEP2 / UPDATE)
 │
-└─ text frames     server -> client:  presence_snapshot
-                                      presence_added
-                                      presence_removed
+└─ text frames     server -> client:  presence (full install list)
                    server -> client:  dispatch_inbound
                    client -> server:  dispatch_response
 
@@ -100,30 +97,29 @@ Standard Yjs sync: STEP1 (state vector), STEP2 (missing updates), UPDATE (increm
 
 ### Presence plane (server-owned)
 
-The relay tracks live WebSocket connections in a `connections` Map. That map is the source of truth for "who is online." It publishes changes as three server-to-client text frames:
+The relay tracks live WebSocket connections in a `connections` Map. That map is the source of truth for "who is online." On every connection change it broadcasts one server-to-client text frame carrying the whole list:
 
 ```ts
-type PresenceSnapshotFrame = { type: 'presence_snapshot'; installs: string[] };
-type PresenceAddedFrame    = { type: 'presence_added';    install: string };
-type PresenceRemovedFrame  = { type: 'presence_removed';  install: string };
+type PresenceFrame = { type: 'presence'; installs: string[] };
 ```
 
-- `presence_snapshot` is sent to a freshly-upgraded socket. It lists every other connected install (the receiver is excluded) and replaces the client's local set.
-- `presence_added` fires when the FIRST socket for an install connects. Multi-tab same-install does not re-emit it.
-- `presence_removed` fires when the LAST socket for an install closes, after a short grace window that coalesces a graceful tab handoff into no wire-visible transition.
+- The frame is sent to a freshly-upgraded socket, and rebroadcast to every other socket whenever an install joins or leaves.
+- `installs` is computed per recipient with the receiver's own install excluded, so the client stores it verbatim.
+- The first socket for an install triggers a rebroadcast; a second tab for an install already present does not (the list is unchanged).
+- A last-socket close arms a short debounced rebroadcast. A reconnecting socket inside that window supersedes the pending rebroadcast, so a graceful tab handoff produces no wire-visible transition.
 
-Clients never SEND presence frames. Connecting is the publish; the URL-stamped `installationId` is the address.
+There is no delta protocol. The relay owns the whole truth and ships the whole truth on every change; the client never reassembles `added` / `removed` events. Clients never SEND presence frames either: connecting is the publish, and the URL-stamped `installationId` is the address.
 
-The client side is `createPresenceTracker`: it ingests frames into a `Set<string>`, dedupes multi-tab, excludes self, and notifies subscribers. `Collaboration.devices` reads straight from it:
+`openCollaboration` parses the frame inline and stores `installs` as the `LiveDevice[]` behind `devices`:
 
 ```ts
-collaboration.devices.list();        // LiveDevice[], self excluded, id-sorted
-collaboration.devices.subscribe(fn); // fires on every snapshot/add/remove
+collaboration.devices.list();        // LiveDevice[], the latest relay-pushed list
+collaboration.devices.subscribe(fn); // fires on every `presence` frame
 ```
 
 `LiveDevice` is exactly `{ installationId: string }`. Display names, cursors, and capability lists are app concerns and live in app-owned tables, not on the presence wire.
 
-`presence.hasSnapshot` is `false` between the WebSocket upgrade and the first `presence_snapshot`, then `true` for the session. The daemon's run-handler reads it to suppress a spurious `PeerNotFound` during that one-RTT window, when `devices.list()` would otherwise return `[]` for an install that is in fact online.
+`devices` is a display mirror, not a decision input. The client never reads it to decide whether a call will reach a peer; "is this install reachable" is answered authoritatively by the relay on every dispatch (see below). The daemon's run-handler used to keep a local pre-check against this list; it now just maps the relay's `RecipientOffline` to `PeerNotFound`.
 
 #### Why server-owned, not awareness
 
@@ -176,6 +172,8 @@ The caller's `signal` (or the platform fetch timeout) is the only deadline; the 
 | `NetworkFailed`    | local       | The HTTP request failed before reaching the relay          |
 
 `RecipientOffline`, `ActionNotFound`, and `ActionFailed` arrive inside the HTTP 200 body; `Cancelled` and `NetworkFailed` are produced locally.
+
+Because the relay answers reachability inline (its `connections` Map decides, on the same request that routes the call), callers that need to tell "addressed an offline install" apart from "the call reached the peer and failed" branch on `RecipientOffline` directly. There is no separate liveness pre-check, and no window where a client cache disagrees with the relay.
 
 For a type-narrowed success payload against a known target registry, lift through `typedDispatch`:
 
@@ -272,7 +270,6 @@ cycleController    aborts on reconnect(); kills the current iteration only
 ```
 t=0      openCollaboration(ydoc, { url, installationId, actions, ... })
          ├─ validate action keys against ACTION_KEY_PATTERN
-         ├─ createPresenceTracker(installationId)
          ├─ createSyncSupervisor(ydoc, { url, waitFor, openWebSocket, onTextFrame })
          │   ├─ ydoc.on('updateV2', handleDocUpdate)
          │   ├─ ydoc.once('destroy', dispose-cascade)
@@ -288,9 +285,7 @@ t=N+ε    attemptConnection(signal):
            ws.onopen   -> send encodeSyncStep1
            ws.onmessage SYNC STEP2/UPDATE -> handshake complete
                         -> status 'connected', whenConnected resolves
-           ws.onmessage text presence_snapshot -> presence.hasSnapshot = true
-
-t=N+δ    devices.list() reflects the relay's connections Map
+           ws.onmessage text `presence` -> devices.list() reflects the relay
 ```
 
 ## Mental model in one paragraph

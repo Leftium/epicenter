@@ -277,7 +277,7 @@ The server is a relay, not the authority. Clients own schema meaning, table help
 
 `@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions, while `openCollaboration` plugs those primitives into a live document that already knows how to read and write its own data.
 
-That means the server does not need to understand your tables. It forwards Yjs sync messages. Presence is server state: the relay owns the `connections` map and pushes `presence_*` text frames to clients. Cross-device dispatch is a plain HTTP POST the relay routes to the recipient's socket. Neither rides the CRDT, and neither needs the server to decode your data.
+That means the server does not need to understand your tables. It forwards Yjs sync messages. Presence is server state: the relay owns the `connections` map and pushes a `presence` text frame, the full list of connected installs, on every change. Cross-device dispatch is a plain HTTP POST the relay routes to the recipient's socket. Neither rides the CRDT, and neither needs the server to decode your data.
 
 This is what "smart client" means here. The client can boot locally, read persisted state, apply encryption keys, expose actions, open document timelines, and keep working offline before the network helps at all.
 

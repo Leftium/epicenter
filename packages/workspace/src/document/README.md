@@ -131,7 +131,7 @@ For content documents (rich-text bodies, attachments) that only need bytes-on-th
 
 ### Per-row content documents
 
-Tables stay lean (ids, titles, metadata). Rich content lives in a separate `openContent(guid)` factory keyed on the row's content guid. The row holds the guid; the factory opens a Y.Doc per row on demand. See `apps/fuji/src/lib/entry-content-doc.ts` for the canonical pattern.
+Tables stay lean (ids, titles, metadata). Rich content lives in a separate per-row content cache keyed on the row's content guid. The row holds the guid; the cache opens a Y.Doc per row on demand. See `apps/fuji/src/lib/browser.ts` for the canonical pattern.
 
 ## Design Decisions
 
@@ -151,7 +151,7 @@ Tests live in `*.test.ts` next to the implementation. Use `new Y.Doc()` for in-m
 
 ## Canonical references
 
-- `apps/whispering/src/lib/workspace/`: encryption + IndexedDB + BroadcastChannel + per-row materialization
+- `apps/whispering/src/lib/whispering/client.ts`: encryption + IndexedDB + BroadcastChannel + per-row materialization
 - `apps/fuji/src/lib/browser.ts`: encryption + IndexedDB + sync + server-owned presence
 - `packages/workspace/README.md`: quick start
 - `packages/workspace/SYNC_ARCHITECTURE.md`: multi-device sync design

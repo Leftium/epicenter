@@ -194,7 +194,7 @@ export const session = createSession({
 
 The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud Workspace app sync targets `/me/apps/:appId/docs/:docId`: build the URL with `defaultWorkspaceAppDocWsUrl(apiUrl, { appId, docId })` and the server resolves the workspace from the auth token, then builds the internal room name after a membership check.
 
-For production-shaped browser wiring, see `apps/fuji/src/routes/(signed-in)/fuji/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.svelte.ts`.
+For production-shaped browser wiring, see `apps/fuji/src/lib/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.ts`.
 
 ## Core Philosophy
 
@@ -432,7 +432,7 @@ cache primitive.
 
 The `$derived` swaps handles when `fileId` changes; the `$effect` cleanup releases the old handle. Refcount 0 arms the cache's `gcTime` timer; a fresh open during the grace window cancels the pending teardown, so rapid navigation doesn't flap persistence or sync.
 
-Reference implementations: `apps/opensidian/src/lib/opensidian/browser.ts`, `apps/skills/src/lib/skills/browser.ts`, `apps/fuji/src/routes/(signed-in)/fuji/browser.ts`, `apps/honeycrisp/src/routes/(signed-in)/honeycrisp/browser.ts`.
+Reference implementations: `apps/opensidian/src/lib/opensidian/browser.ts`, `apps/skills/src/lib/skills/browser.ts`, `apps/fuji/src/lib/browser.ts`, `apps/honeycrisp/browser.ts`.
 
 ## Schema definition
 
@@ -522,9 +522,9 @@ KV is validate-or-default. There is no migration function.
 ### Presence
 
 Presence (which installs are connected right now) is not a client-defined
-schema. The relay owns it: it tracks live WebSocket connections and pushes
-`presence_snapshot` / `presence_added` / `presence_removed` text frames to
-each client. `openCollaboration` mirrors those frames and exposes the result
+schema. The relay owns it: it tracks live WebSocket connections and, on every
+connection change, pushes one `presence` text frame carrying the full list of
+connected installs. `openCollaboration` stores the latest list and exposes it
 as `collaboration.devices`:
 
 ```typescript
@@ -1533,7 +1533,6 @@ import {
 
 - `collaboration.devices.list()`: `LiveDevice[]`, the local install excluded
 - `collaboration.devices.subscribe(fn)`: returns an unsubscribe function
-- `collaboration.presence.hasSnapshot`: `false` until the relay's first snapshot lands
 
 Cross-device calls:
 

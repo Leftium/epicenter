@@ -1,5 +1,5 @@
 /**
- * `daemonClient` is the typed `hc<DaemonApp>` wrapper consumers use. These
+ * `daemonClient` is the hand-rolled typed client consumers use. These
  * tests stand up a real Hono app on a real unix socket and exercise the
  * client's transport-error mapping (the typed inputs/outputs are checked
  * by the compiler).

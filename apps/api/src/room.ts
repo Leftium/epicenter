@@ -40,19 +40,23 @@ import {
 	decodeSyncRequest,
 	encodeSyncStep1,
 	encodeSyncUpdate,
+	handleSyncPayload,
 	MAIN_SUBPROTOCOL,
 	parseSubprotocols,
 	stateVectorsEqual,
+	type SyncMessageType,
 } from '@epicenter/sync';
 import type {
 	DispatchErrorWire,
 	DispatchInboundFrame,
 } from '@epicenter/workspace/document/dispatch-protocol';
 import type { PresenceFrame } from '@epicenter/workspace/document/presence';
+import * as decoding from 'lib0/decoding';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, type Result } from 'wellcrafted/result';
+import { trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
-import { applyMessage } from './sync-handlers';
 
 // ============================================================================
 // Dispatch RPC types
@@ -115,6 +119,20 @@ const PRESENCE_REBROADCAST_GRACE_MS = 300;
  * `RecipientOffline` response always rides the original request.
  */
 const DISPATCH_INTERNAL_TIMEOUT_MS = 60_000;
+
+/**
+ * Errors from the room WebSocket boundary.
+ *
+ * `MessageDecode` covers all failures when processing untrusted WebSocket
+ * binary frames: lib0 buffer underflow (truncated messages) and any other
+ * decode-time exceptions.
+ */
+const RoomError = defineErrors({
+	MessageDecode: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to decode WebSocket message: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
 
 /**
  * Per-connection metadata persisted via `ws.serializeAttachment` to survive
@@ -625,10 +643,20 @@ export class Room extends DurableObject {
 			return;
 		}
 
-		const { data: reply, error } = applyMessage({
-			data: new Uint8Array(message),
-			doc: this.doc,
-			ws,
+		const { data: reply, error } = trySync({
+			try: (): Uint8Array | null => {
+				const decoder = decoding.createDecoder(new Uint8Array(message));
+				const syncType = decoding.readVarUint(decoder) as SyncMessageType;
+				const payload = decoding.readVarUint8Array(decoder);
+				const response = handleSyncPayload({
+					syncType,
+					payload,
+					doc: this.doc,
+					origin: ws,
+				});
+				return response ?? null;
+			},
+			catch: (cause) => RoomError.MessageDecode({ cause }),
 		});
 		if (error) {
 			console.error(error.message);

@@ -19,7 +19,12 @@
  */
 
 import { describe, expect, mock, test } from 'bun:test';
-import { encodeSyncUpdate } from '@epicenter/sync';
+import {
+	encodeSyncStep1,
+	encodeSyncUpdate,
+	SYNC_MESSAGE_TYPE,
+} from '@epicenter/sync';
+import * as encoding from 'lib0/encoding';
 import * as Y from 'yjs';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -270,6 +275,17 @@ function toArrayBuffer(frame: Uint8Array): ArrayBuffer {
 	return frame.slice().buffer;
 }
 
+/** A well-formed binary sync frame: sync sub-type varint + payload. */
+function frameWithSyncType(
+	syncType: number,
+	payload: Uint8Array = new Uint8Array(0),
+): Uint8Array {
+	return encoding.encode((enc) => {
+		encoding.writeVarUint(enc, syncType);
+		encoding.writeVarUint8Array(enc, payload);
+	});
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // TESTS
 // ────────────────────────────────────────────────────────────────────────────
@@ -501,6 +517,23 @@ describe('Room presence: broadcast resilience', () => {
 });
 
 describe('Room sync: binary update fan-out', () => {
+	test('STEP1 frames receive a STEP2 reply', async () => {
+		const { room } = await makeRoom();
+		const ws = await upgrade(room, 'A');
+		const before = ws.sent.length;
+
+		await room.webSocketMessage(
+			ws,
+			toArrayBuffer(encodeSyncStep1({ doc: new Y.Doc() })),
+		);
+
+		const replies = ws.sent
+			.slice(before)
+			.filter((frame): frame is Uint8Array => frame instanceof Uint8Array);
+		expect(replies).toHaveLength(1);
+		expect(replies[0]?.[0]).toBe(SYNC_MESSAGE_TYPE.STEP2);
+	});
+
 	test('an update from one socket reaches peers but not its origin', async () => {
 		const { room } = await makeRoom();
 		const wsA = await upgrade(room, 'A');
@@ -522,5 +555,36 @@ describe('Room sync: binary update fan-out', () => {
 			ws.sent.slice(before).filter((f) => f instanceof Uint8Array);
 		expect(newBinary(wsB, beforeB).length).toBe(1);
 		expect(newBinary(wsA, beforeA).length).toBe(0);
+	});
+
+	test('truncated frames are caught without throwing out of the handler', async () => {
+		const { room } = await makeRoom();
+		const ws = await upgrade(room, 'A');
+		const before = ws.sent.length;
+		const truncated = new Uint8Array([SYNC_MESSAGE_TYPE.UPDATE, 10]);
+		const originalConsoleError = console.error;
+		const errorSpy = mock(() => {});
+		console.error = errorSpy as typeof console.error;
+
+		try {
+			await room.webSocketMessage(ws, toArrayBuffer(truncated));
+		} finally {
+			console.error = originalConsoleError;
+		}
+
+		expect(errorSpy).toHaveBeenCalledTimes(1);
+		expect(ws.sent.slice(before)).toEqual([]);
+		expect(ws.closeCalls).toEqual([]);
+	});
+
+	test('decodable out-of-range sync sub-types are no-ops', async () => {
+		const { room } = await makeRoom();
+		const ws = await upgrade(room, 'A');
+		const before = ws.sent.length;
+
+		await room.webSocketMessage(ws, toArrayBuffer(frameWithSyncType(99)));
+
+		expect(ws.sent.slice(before)).toEqual([]);
+		expect(ws.closeCalls).toEqual([]);
 	});
 });

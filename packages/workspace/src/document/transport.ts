@@ -17,36 +17,6 @@ export function roomWsUrl(apiUrl: string, roomId: string): string {
 }
 
 /**
- * Build the WebSocket URL for a Cloud Workspace app document under an
- * explicit `workspaceId`.
- *
- * Use this when the caller already owns a workspaceId (for example, the
- * daemon path reads its workspace from local config). For the typical
- * browser-app path where the authenticated user has a single default
- * workspace, prefer {@link defaultWorkspaceAppDocWsUrl}: the server resolves
- * the workspaceId from the auth token, so the client never names one.
- *
- * `docId = "root"` is the conventional app entry document. The API route
- * treats it like any other app-owned document id after Workspace membership
- * has been checked.
- */
-export function workspaceAppDocWsUrl(
-	apiUrl: string,
-	params: {
-		workspaceId: string;
-		appId: string;
-		docId: string;
-	},
-): string {
-	const base = apiUrl.replace(/\/+$/, '');
-	return websocketUrl(
-		`${base}/workspaces/${encodeURIComponent(params.workspaceId)}` +
-			`/apps/${encodeURIComponent(params.appId)}` +
-			`/docs/${encodeURIComponent(params.docId)}`,
-	);
-}
-
-/**
  * Build the WebSocket URL for the authenticated user's default-workspace
  * app document.
  *
@@ -55,9 +25,6 @@ export function workspaceAppDocWsUrl(
  * default workspace); the client never embeds one in the URL. If the user
  * has no default workspace, the server closes the WebSocket with a
  * permanent-failure reason and the sync supervisor parks in `failed`.
- *
- * Use {@link workspaceAppDocWsUrl} instead when the caller already owns a
- * workspaceId (for example, the daemon path).
  *
  * `docId = "root"` is the conventional app entry document.
  */

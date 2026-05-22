@@ -198,9 +198,8 @@ export {
 // the workspaceId from the auth token, so no client-side workspace lookup
 // is required.
 //
-// `roomWsUrl` and `workspaceAppDocWsUrl` are intentionally NOT re-exported.
-// `/rooms/:room` is a daemon-only sync surface, and the explicit-workspace
-// route is owned by the daemon path; both import from
-// `./document/transport.js` directly so apps cannot open a parallel sync
-// surface that bypasses Workspace membership.
+// `roomWsUrl` is intentionally NOT re-exported: `/rooms/:room` is a
+// daemon-only sync surface, imported from `./document/transport.js`
+// directly so apps cannot open a parallel sync surface that bypasses
+// Workspace membership.
 export { defaultWorkspaceAppDocWsUrl } from './document/transport.js';

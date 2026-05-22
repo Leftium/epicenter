@@ -1,16 +1,18 @@
 /**
- * Server-owned presence tests.
+ * `Room` Durable Object tests.
  *
- * Exercises the `Room` DO's presence emission path: the relay broadcasts
- * one `presence` text frame carrying the FULL install list on every
- * connection change. Covers the directed frame on upgrade, the
- * first-socket rebroadcast, multi-tab dedup (the list is unchanged so no
- * rebroadcast), the debounced rebroadcast on last-socket close, graceful
- * handoff cancellation, the 4401 grace bypass, and broadcast resilience
- * against wedged sockets.
+ * Exercises the relay's two WebSocket wire surfaces through the live `Room`:
  *
- * Also covers the room-level binary update fan-out: a sync update from one
- * socket reaches peer sockets but not its origin.
+ * Presence: the relay broadcasts one `presence` text frame carrying the
+ * FULL install list on every connection change. Covers the directed frame
+ * on upgrade, the first-socket rebroadcast, multi-tab dedup (the list is
+ * unchanged so no rebroadcast), the debounced rebroadcast on last-socket
+ * close, graceful handoff cancellation, the 4401 grace bypass, and
+ * broadcast resilience against wedged sockets.
+ *
+ * Binary sync: a y-protocols update from one socket fans out to peer
+ * sockets but not its origin, and a malformed binary frame is logged
+ * rather than thrown out of the message handler.
  *
  * Bun's test runtime does not provide Cloudflare Workers globals, so we
  * mock `cloudflare:workers` (DurableObject base class), shim

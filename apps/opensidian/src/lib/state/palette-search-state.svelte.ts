@@ -1,6 +1,7 @@
 import type { FileId } from '@epicenter/filesystem';
 import { createPersistedState } from '@epicenter/svelte';
 import type { CommandPaletteItem } from '@epicenter/ui/command-palette';
+import { debounce } from '@epicenter/workspace';
 import { type } from 'arktype';
 import type { OpensidianBrowser } from '$lib/opensidian/browser';
 import { getFileIcon } from '$lib/utils/file-icons';
@@ -28,9 +29,6 @@ export function createPaletteSearchState({
 	// Content search results (updated via debounce)
 	let contentResults = $state<CommandPaletteItem[]>([]);
 	let isSearching = $state(false);
-
-	// Debounce timer
-	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// ── File items (instant, in-memory) ─────────────────────────────
 	const fileItems = $derived.by((): CommandPaletteItem[] => {
@@ -62,41 +60,42 @@ export function createPaletteSearchState({
 	});
 
 	// ── Content search (debounced FTS5) ─────────────────────────────
-	function triggerContentSearch(query: string) {
-		if (debounceTimer) clearTimeout(debounceTimer);
+	const runContentSearch = debounce(async (trimmed: string) => {
+		try {
+			const scope = scopeState.current;
+			// Add column filter for content-only mode
+			const ftsQuery = scope === 'content' ? `content:${trimmed}` : trimmed;
+			const results = await binding.sqliteIndex.search(ftsQuery);
 
+			contentResults = results.map((r) => ({
+				id: r.id,
+				label: r.name,
+				description: r.path
+					? r.path.slice(1, r.path.lastIndexOf('/')) || undefined
+					: undefined,
+				snippet: r.snippet,
+				icon: getFileIcon(r.name),
+				group: 'Content Matches',
+				onSelect: () => files.selectFile(r.id as FileId),
+			}));
+		} catch {
+			contentResults = [];
+		} finally {
+			isSearching = false;
+		}
+	}, 150);
+
+	function triggerContentSearch(query: string) {
 		const trimmed = query.trim();
 		if (trimmed.length < 2) {
+			runContentSearch.cancel();
 			contentResults = [];
 			isSearching = false;
 			return;
 		}
 
 		isSearching = true;
-		debounceTimer = setTimeout(async () => {
-			try {
-				const scope = scopeState.current;
-				// Add column filter for content-only mode
-				const ftsQuery = scope === 'content' ? `content:${trimmed}` : trimmed;
-				const results = await binding.sqliteIndex.search(ftsQuery);
-
-				contentResults = results.map((r) => ({
-					id: r.id,
-					label: r.name,
-					description: r.path
-						? r.path.slice(1, r.path.lastIndexOf('/')) || undefined
-						: undefined,
-					snippet: r.snippet,
-					icon: getFileIcon(r.name),
-					group: 'Content Matches',
-					onSelect: () => files.selectFile(r.id as FileId),
-				}));
-			} catch {
-				contentResults = [];
-			} finally {
-				isSearching = false;
-			}
-		}, 150);
+		runContentSearch(trimmed);
 	}
 
 	// ── Merged results (derived from scope) ─────────────────────────
@@ -159,10 +158,10 @@ export function createPaletteSearchState({
 			searchQuery = '';
 			contentResults = [];
 			isSearching = false;
-			if (debounceTimer) clearTimeout(debounceTimer);
+			runContentSearch.cancel();
 		},
 		[Symbol.dispose]() {
-			if (debounceTimer) clearTimeout(debounceTimer);
+			runContentSearch.cancel();
 		},
 	};
 }

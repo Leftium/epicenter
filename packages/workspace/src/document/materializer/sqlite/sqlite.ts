@@ -20,6 +20,7 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
+import { debounce } from '../../../shared/debounce.js';
 import { standardSchemaToJsonSchema } from '../../../shared/standard-schema.js';
 import type { BaseRow, Table, TableDefinition } from '../../attach-table.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
@@ -116,7 +117,6 @@ export function attachSqliteMaterializer(
 ) {
 	const registered = new Map<string, RegisteredTable>();
 	let pendingSync = new Map<string, Set<string>>();
-	let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 	let syncQueue = Promise.resolve();
 	let isDisposed = false;
 	/**
@@ -170,6 +170,12 @@ export function attachSqliteMaterializer(
 
 	// ── Sync engine ──────────────────────────────────────────────
 
+	const flushAfterDebounce = debounce(() => {
+		syncQueue = syncQueue.then(flushPendingSync).catch((cause: unknown) => {
+			log.error(SqliteMaterializerError.SyncFailed({ cause }));
+		});
+	}, debounceMs);
+
 	function scheduleSync(tableName: string, changedIds: ReadonlySet<string>) {
 		if (isDisposed) return;
 
@@ -181,14 +187,7 @@ export function attachSqliteMaterializer(
 
 		for (const id of changedIds) tableIds.add(id);
 
-		if (syncTimeout !== null) clearTimeout(syncTimeout);
-
-		syncTimeout = setTimeout(() => {
-			syncTimeout = null;
-			syncQueue = syncQueue.then(flushPendingSync).catch((cause: unknown) => {
-				log.error(SqliteMaterializerError.SyncFailed({ cause }));
-			});
-		}, debounceMs);
+		flushAfterDebounce();
 	}
 
 	async function flushPendingSync() {
@@ -282,10 +281,7 @@ export function attachSqliteMaterializer(
 		// Close the registration window even if `initialize()` never ran
 		// (e.g., waitFor stalled and the ydoc was destroyed before init).
 		isRegistrationOpen = false;
-		if (syncTimeout !== null) {
-			clearTimeout(syncTimeout);
-			syncTimeout = null;
-		}
+		flushAfterDebounce.cancel();
 		for (const entry of registered.values()) entry.unsubscribe?.();
 	}
 

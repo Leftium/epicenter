@@ -26,7 +26,7 @@
  * @module
  */
 
-import type { Table } from '@epicenter/workspace';
+import { debounce, type Table } from '@epicenter/workspace';
 import type { Client, InStatement } from '@libsql/client-wasm';
 import { createClient } from '@libsql/client-wasm';
 
@@ -149,7 +149,6 @@ export function createSqliteIndex(
 		const filesTable = context.tables.files;
 
 		const client = createClient({ url: ':memory:' });
-		let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 		let pendingIds = new Set<string>();
 		let unobserve: (() => void) | null = null;
 
@@ -174,15 +173,15 @@ export function createSqliteIndex(
 		})();
 
 		// ── Debounced sync ────────────────────────────────────────────
+		const syncAfterDebounce = debounce(() => {
+			const ids = pendingIds;
+			pendingIds = new Set();
+			void syncRows(ids);
+		}, debounceMs);
+
 		function scheduleSync(changedIds: ReadonlySet<string>) {
 			for (const id of changedIds) pendingIds.add(id);
-			if (syncTimeout) clearTimeout(syncTimeout);
-			syncTimeout = setTimeout(() => {
-				syncTimeout = null;
-				const ids = pendingIds;
-				pendingIds = new Set();
-				void syncRows(ids);
-			}, debounceMs);
+			syncAfterDebounce();
 		}
 
 		// ── Full rebuild ──────────────────────────────────────────
@@ -441,7 +440,7 @@ export function createSqliteIndex(
 			},
 			init: whenReady,
 			[Symbol.dispose]() {
-				if (syncTimeout) clearTimeout(syncTimeout);
+				syncAfterDebounce.cancel();
 				unobserve?.();
 				client.close();
 			},

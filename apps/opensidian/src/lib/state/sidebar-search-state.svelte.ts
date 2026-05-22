@@ -1,4 +1,5 @@
 import { createPersistedState } from '@epicenter/svelte';
+import { debounce } from '@epicenter/workspace';
 import { type } from 'arktype';
 import type { OpensidianBrowser } from '$lib/opensidian/browser';
 
@@ -48,7 +49,6 @@ export function createSidebarSearchState({
 	let totalFiles = $state(0);
 	let hasMore = $state(false);
 	let currentOffset = 0;
-	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
 	function groupByFile(
 		rows: Array<{
@@ -158,11 +158,23 @@ export function createSidebarSearchState({
 		}
 	}
 
-	function triggerSearch(query: string) {
-		if (debounceTimer) clearTimeout(debounceTimer);
+	const runSearch = debounce(async (trimmed: string) => {
+		currentOffset = 0;
+		const result = await executeSearch(trimmed, 0);
 
+		const groups = groupByFile(result.rows);
+		fileGroups = groups;
+		totalResults = result.rows.length;
+		totalFiles = groups.length;
+		hasMore = result.hasMore;
+		currentOffset = result.consumedRows;
+		isSearching = false;
+	}, 200);
+
+	function triggerSearch(query: string) {
 		const trimmed = query.trim();
 		if (trimmed.length < 2) {
+			runSearch.cancel();
 			fileGroups = [];
 			totalResults = 0;
 			totalFiles = 0;
@@ -173,18 +185,7 @@ export function createSidebarSearchState({
 		}
 
 		isSearching = true;
-		debounceTimer = setTimeout(async () => {
-			currentOffset = 0;
-			const result = await executeSearch(trimmed, 0);
-
-			const groups = groupByFile(result.rows);
-			fileGroups = groups;
-			totalResults = result.rows.length;
-			totalFiles = groups.length;
-			hasMore = result.hasMore;
-			currentOffset = result.consumedRows;
-			isSearching = false;
-		}, 200);
+		runSearch(trimmed);
 	}
 
 	return {
@@ -276,7 +277,7 @@ export function createSidebarSearchState({
 		},
 
 		[Symbol.dispose]() {
-			if (debounceTimer) clearTimeout(debounceTimer);
+			runSearch.cancel();
 		},
 	};
 }

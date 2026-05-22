@@ -1,8 +1,8 @@
 /**
  * Yjs sync protocol handlers, tailored for Cloudflare Durable Objects.
  *
- * Inlined from the generic @epicenter/sync-server package. Narrowed to CF
- * WebSocket types: no framework-agnostic indirection, no WeakMap tricks.
+ * Concrete to CF WebSocket types: no framework-agnostic indirection, no
+ * WeakMap tricks.
  *
  * ## API surface
  *

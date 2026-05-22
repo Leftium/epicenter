@@ -386,7 +386,7 @@ export class Room extends DurableObject {
 	 * HTTP sync via RPC.
 	 *
 	 * Binary body format: `[length-prefixed stateVector][length-prefixed update]`
-	 * (encoded via `encodeSyncRequest` from sync-core).
+	 * (encoded via `encodeSyncRequest` from `@epicenter/sync`).
 	 *
 	 * Applies the client update to the live doc and returns the binary
 	 * diff the client is missing, or `null` if already in sync.

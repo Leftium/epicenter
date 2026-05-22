@@ -6,9 +6,6 @@
  * The binary WebSocket channel carries a single message family: Yjs
  * document sync. A binary frame is a sync frame, with no top-level
  * message-type discriminator. Presence and dispatch ride text frames.
- *
- * For server-side WebSocket lifecycle handlers, import from
- * `@epicenter/sync/server` instead.
  */
 
 // WebSocket subprotocol auth (shared client/server constants + helpers)

@@ -3,6 +3,5 @@
 	"compilerOptions": {
 		"checkJs": true,
 		"types": ["bun"]
-	},
-	"include": ["src/**/*.ts", "src/**/*.svelte"]
+	}
 }

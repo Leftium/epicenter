@@ -74,6 +74,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/api": "workspace:*",
+        "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",

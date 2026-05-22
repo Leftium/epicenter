@@ -1,7 +1,6 @@
 {
-	"extends": "../../tsconfig.base.json",
+	"extends": "../../tsconfig.dom.json",
 	"compilerOptions": {
-		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"types": ["bun"],
 		"noUnusedLocals": true,
 		"noUnusedParameters": true

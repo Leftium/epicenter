@@ -87,8 +87,6 @@ When creating a new package in `packages/`, follow this exact structure.
 {
   "name": "@epicenter/<package-name>",
   "version": "0.0.1",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -106,23 +104,26 @@ When creating a new package in `packages/`, follow this exact structure.
 
 Key conventions:
 
-- `main` and `types` both point to `./src/index.ts` (no build step:consumers import source directly).
+- `exports` only, no `main`/`types`: modern resolvers ignore `main`/`types` when `exports` is present. The entry point is `./src/index.ts`; there is no build step, consumers import the source directly.
 - Use `"workspace:*"` for internal deps (e.g., `"@epicenter/workspace": "workspace:*"`).
 - Use `"catalog:"` for shared versions managed in the root `package.json` catalogs.
 - `peerDependencies` for packages consumers must also install (e.g., `yjs`).
 
 ### `tsconfig.json`
 
+A leaf config picks a tier and adds nothing that repeats a base. For a Bun library:
+
 ```json
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "module": "preserve",
+    "types": ["bun"],
     "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noPropertyAccessFromIndexSignature": false
+    "noUnusedParameters": true
   }
 }
 ```
+
+A Svelte or browser library extends `../../tsconfig.dom.json` instead. For all eight leaf tiers, the never-redeclare list, and the module strategy, see the `tsconfig` skill.
 
 After creating the package, run `bun install` from the repo root to register it in the workspace.

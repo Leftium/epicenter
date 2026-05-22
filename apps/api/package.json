@@ -4,8 +4,6 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
-	"main": "./src/app.ts",
-	"types": "./src/app.ts",
 	"exports": {
 		".": "./src/app.ts",
 		"./billing-contract": "./src/billing-contract.ts",

@@ -426,8 +426,9 @@ export function createAiChatState({
 	void tabManager.idb.whenLoaded.then(() => {
 		reconcileHandles();
 		const newId = ensureDefaultConversation();
-		if (conversations.length > 0) {
-			activeConversationId = newId ?? conversations[0].id;
+		const [firstConversation] = conversations;
+		if (firstConversation) {
+			activeConversationId = newId ?? firstConversation.id;
 		}
 	});
 

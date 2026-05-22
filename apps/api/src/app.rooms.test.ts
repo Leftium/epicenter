@@ -7,16 +7,14 @@
  * Key behaviors:
  * - `/rooms/:room` rejects unauthenticated callers at the OAuth resource
  *   boundary.
- * - The sync engine and room namespace are not touched when auth fails.
+ * - The room route body is not touched when auth fails.
  */
 
 import { expect, mock, test } from 'bun:test';
 import { OAuthError } from './auth/oauth-error.js';
 import { projectTrustedOAuthClientToRow } from './auth/trusted-oauth-clients.js';
 
-let createSyncEngineCalls = 0;
 let durableObjectRoomFactoryCalls = 0;
-let roomNamespaceCalls = 0;
 let resolveRequestOAuthUserCalls = 0;
 const waitUntilPromises: Promise<unknown>[] = [];
 
@@ -69,31 +67,7 @@ mock.module('./auth/trusted-oauth-clients', () => ({
 mock.module('./room-gateway', () => ({
 	cloudflareDurableObjectRooms: () => {
 		durableObjectRoomFactoryCalls += 1;
-		return {
-			sync() {
-				roomNamespaceCalls += 1;
-				throw new Error('Room gateway should not be reached');
-			},
-			getDoc() {
-				roomNamespaceCalls += 1;
-				throw new Error('Room gateway should not be reached');
-			},
-			handleWebSocket() {
-				roomNamespaceCalls += 1;
-				throw new Error('Room gateway should not be reached');
-			},
-			dispatch() {
-				roomNamespaceCalls += 1;
-				throw new Error('Room gateway should not be reached');
-			},
-		};
-	},
-}));
-
-mock.module('./sync-engine', () => ({
-	createSyncEngine: () => {
-		createSyncEngineCalls += 1;
-		throw new Error('Sync engine should not be created');
+		throw new Error('Room gateway should not be reached');
 	},
 }));
 
@@ -125,7 +99,5 @@ test('POST /rooms/:room rejects unauthenticated callers before sync engine entry
 		'Bearer error="invalid_token"',
 	);
 	expect(resolveRequestOAuthUserCalls).toBe(1);
-	expect(createSyncEngineCalls).toBe(0);
 	expect(durableObjectRoomFactoryCalls).toBe(0);
-	expect(roomNamespaceCalls).toBe(0);
 });

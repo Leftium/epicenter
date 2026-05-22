@@ -142,7 +142,7 @@ describe('applyMessage SYNC STEP1', () => {
 		const step1 = encodeSyncStep1({ doc: clientDoc });
 
 		const { connection } = makeConnection(doc);
-		const effect = expectOk(
+		const reply = expectOk(
 			applyMessage({
 				data: step1,
 				doc,
@@ -150,9 +150,7 @@ describe('applyMessage SYNC STEP1', () => {
 			}),
 		);
 
-		expect(effect?.action).toBe('reply');
-		if (effect?.action !== 'reply') throw new Error('Expected reply effect');
-		const reply = effect.data;
+		if (!reply) throw new Error('Expected a STEP2 reply frame');
 		expect(reply[0]).toBe(MESSAGE_TYPE.SYNC);
 		expect(reply[1]).toBe(SYNC_MESSAGE_TYPE.STEP2);
 	});
@@ -167,7 +165,7 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 		const doc = new Y.Doc();
 		const { connection } = makeConnection(doc);
 
-		const effect = expectOk(
+		const reply = expectOk(
 			applyMessage({
 				data: step2,
 				doc,
@@ -175,7 +173,7 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 			}),
 		);
 
-		expect(effect).toBeNull();
+		expect(reply).toBeNull();
 		expect(doc.getMap('data').get('shared')).toBe('yes');
 	});
 
@@ -188,7 +186,7 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 		const doc = new Y.Doc();
 		const { connection } = makeConnection(doc);
 
-		const effect = expectOk(
+		const reply = expectOk(
 			applyMessage({
 				data: frame,
 				doc,
@@ -196,7 +194,7 @@ describe('applyMessage SYNC STEP2 / UPDATE', () => {
 			}),
 		);
 
-		expect(effect).toBeNull();
+		expect(reply).toBeNull();
 		expect(doc.getMap('data').get('hello')).toBe('world');
 	});
 });
@@ -210,7 +208,7 @@ describe('applyMessage unknown message type', () => {
 		const doc = new Y.Doc();
 		const { connection } = makeConnection(doc);
 
-		const effect = expectOk(
+		const reply = expectOk(
 			applyMessage({
 				data: frameSingleByte(99),
 				doc,
@@ -218,6 +216,6 @@ describe('applyMessage unknown message type', () => {
 			}),
 		);
 
-		expect(effect).toBeNull();
+		expect(reply).toBeNull();
 	});
 });

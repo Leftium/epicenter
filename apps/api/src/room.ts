@@ -701,7 +701,7 @@ export class Room extends DurableObject {
 			return;
 		}
 
-		const { data: effect, error } = applyMessage({
+		const { data: reply, error } = applyMessage({
 			data: new Uint8Array(message),
 			doc: this.doc,
 			connection,
@@ -710,13 +710,7 @@ export class Room extends DurableObject {
 			console.error(error.message);
 			return;
 		}
-		if (!effect) return;
-
-		if (effect.action === 'reply') {
-			ws.send(effect.data);
-			return;
-		}
-		this.broadcast(ws, effect.data);
+		if (reply) ws.send(reply);
 	}
 
 	/**
@@ -776,23 +770,6 @@ export class Room extends DurableObject {
 
 		this.pendingDispatches.delete(id);
 		pending.resolve(result);
-	}
-
-	/**
-	 * Fan out a frame to every connection other than `origin`. Silently
-	 * swallows per-socket send failures: if a peer just died, the close
-	 * event will fire and trigger the full cleanup path.
-	 */
-	private broadcast(origin: WebSocket, data: Uint8Array | string): void {
-		for (const [peer] of this.connections) {
-			if (peer === origin) continue;
-			if (peer.readyState !== WebSocket.OPEN) continue;
-			try {
-				peer.send(data);
-			} catch {
-				/* see comment above */
-			}
-		}
 	}
 
 	/**

@@ -7,7 +7,7 @@
  * ## API surface
  *
  * {@link registerConnection}: side-effectful, registers doc update listener.
- * {@link applyMessage}: mutates doc, returns additional effects.
+ * {@link applyMessage}: mutates doc, returns the reply frame or null.
  *
  * ## Wire surfaces
  *
@@ -81,22 +81,6 @@ export type Connection = {
 	unregister: () => void;
 };
 
-/**
- * Result of handling a single WebSocket message.
- *
- * Discriminated union on `action`. Each variant maps to one routing pattern
- * in the DO caller:
- *
- *   `reply`:     Send data back to the sender only.
- *   `broadcast`: Fan out to all other connections.
- *
- * `applyMessage` returns `Result<MessageEffect | null>`: `null` means
- * valid message with no further effect (STEP2/UPDATE, unknown types).
- */
-export type MessageEffect =
-	| { action: 'reply'; data: Uint8Array }
-	| { action: 'broadcast'; data: Uint8Array };
-
 // ============================================================================
 // Connection registration
 // ============================================================================
@@ -143,10 +127,11 @@ export function registerConnection({
 /**
  * Dispatch an incoming binary WebSocket message.
  *
- * Mutates `doc` as appropriate, then returns `Result<MessageEffect | null>`.
- * `null` is the "valid, no further work" outcome: STEP2/UPDATE applied to
- * the doc (broadcast happens inside the doc-update listener registered by
- * {@link registerConnection}), unknown message types.
+ * Mutates `doc` as appropriate, then returns `Result<Uint8Array | null>`:
+ * the STEP2 reply frame for a SYNC STEP1, or `null` for the "valid, no
+ * reply" outcome (STEP2/UPDATE applied to the doc, with fan-out handled
+ * inside the doc-update listener registered by {@link registerConnection};
+ * unknown message types).
  *
  * `Err(SyncHandlerError.MessageDecode)` covers lib0 buffer underflow on
  * truncated input.
@@ -161,7 +146,7 @@ export function applyMessage({
 	connection: Connection;
 }) {
 	return trySync({
-		try: (): MessageEffect | null => {
+		try: (): Uint8Array | null => {
 			const decoder = decoding.createDecoder(data);
 			const messageType = decoding.readVarUint(decoder);
 
@@ -175,7 +160,7 @@ export function applyMessage({
 						doc,
 						origin: connection.ws,
 					});
-					return response ? { action: 'reply', data: response } : null;
+					return response ?? null;
 				}
 
 				default:

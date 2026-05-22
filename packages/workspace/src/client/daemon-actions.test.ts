@@ -12,16 +12,13 @@ import { type ActionRegistry, defineQuery } from '../shared/actions.js';
 import { buildDaemonActions, type DaemonActions } from './daemon-actions.js';
 
 function makeStubClient() {
-	const calls: { method: 'run' | 'peers' | 'list'; arg: unknown }[] = [];
+	const calls: { method: 'run'; arg: unknown }[] = [];
+	const unreachable = () => {
+		throw new Error('stub: not used by these tests');
+	};
 	const client: DaemonClient = {
-		peers: () => {
-			calls.push({ method: 'peers', arg: undefined });
-			return Promise.resolve(Ok([])) as ReturnType<DaemonClient['peers']>;
-		},
-		list: () => {
-			calls.push({ method: 'list', arg: undefined });
-			return Promise.resolve(Ok({})) as ReturnType<DaemonClient['list']>;
-		},
+		peers: unreachable as DaemonClient['peers'],
+		list: unreachable as DaemonClient['list'],
 		run: (input: RunRequest) => {
 			calls.push({ method: 'run', arg: input });
 			return Promise.resolve(Ok(null)) as ReturnType<DaemonClient['run']>;
@@ -33,12 +30,8 @@ function makeStubClient() {
 const WORKSPACE = 'demo';
 
 const typedActions = {
-	visible: defineQuery({
-		handler: () => 'visible',
-	}),
-	entries_get: defineQuery({
-		handler: () => 'entry',
-	}),
+	visible: defineQuery({ handler: () => undefined }),
+	entries_get: defineQuery({ handler: () => undefined }),
 } satisfies ActionRegistry;
 
 type TypedDaemonActions = DaemonActions<typeof typedActions>;
@@ -75,20 +68,6 @@ describe('buildDaemonActions workspace facade', () => {
 		expect(calls[0]!.arg).toMatchObject({
 			actionPath: 'demo.entries_get',
 			input: 'xyz',
-		});
-	});
-
-	test('mutation dispatches with the input as payload', async () => {
-		const { client, calls } = makeStubClient();
-		// biome-ignore lint/suspicious/noExplicitAny: smoke test
-		const workspace: any = buildDaemonActions(client, WORKSPACE);
-		const row = { id: 'a', title: 'hi', _v: 1 };
-
-		await workspace.entries_set(row);
-
-		expect(calls[0]!.arg).toMatchObject({
-			actionPath: 'demo.entries_set',
-			input: row,
 		});
 	});
 

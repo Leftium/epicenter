@@ -14,7 +14,7 @@ import { Hono } from 'hono';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
 import type { ModelsResponse } from './billing-contract';
-import { ANNUAL_PLANS, FEATURE_IDS, PLAN_IDS, PLANS } from './billing-plans';
+import { FEATURE_IDS, PLAN_IDS } from './billing-plans';
 import { MODEL_CREDITS } from './model-costs';
 
 const billingRoutes = new Hono<Env>();
@@ -136,15 +136,11 @@ billingRoutes.get('/plans', async (c) => {
 /**
  * GET /billing/models
  *
- * Returns the MODEL_CREDITS map as JSON plus plan metadata.
+ * Returns the MODEL_CREDITS map as JSON.
  * Powers the Model Cost Guide table in the dashboard.
  */
 billingRoutes.get('/models', (c) => {
-	return c.json({
-		credits: MODEL_CREDITS,
-		plans: PLANS,
-		annualPlans: ANNUAL_PLANS,
-	} satisfies ModelsResponse);
+	return c.json({ credits: MODEL_CREDITS } satisfies ModelsResponse);
 });
 
 // ── Upgrade preview ──────────────────────────────────────────────────────

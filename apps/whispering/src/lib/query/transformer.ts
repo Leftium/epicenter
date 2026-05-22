@@ -117,12 +117,13 @@ export const transformer = {
 		mutationFn: async ({
 			input,
 			transformation,
-			steps,
 		}: {
 			input: string;
 			transformation: Transformation;
-			steps: TransformationStep[];
 		}): Promise<WhisperingResult<string>> => {
+			const steps = transformationSteps.getByTransformationId(
+				transformation.id,
+			);
 			const getTransformationOutput = async (): Promise<
 				Result<string, WhisperingError>
 			> => {

@@ -6,6 +6,8 @@
 **Branch**: `redesign/server-owned-presence`
 **Builds on**: server-owned-presence (recommended to land first, but the two are orthogonal)
 
+> **Superseded, 2026-05-22:** The `/me/apps/:appId/docs/:docId` route this spec adds, along with server-resolved personal-workspace provisioning, was reverted by `specs/20260522T160000-revert-cloud-workspace-sync-layer.md`. A cloud document is now owned by `subject:${userId}` and synced through the single route `/rooms/:room` via `roomWsUrl`. Read this spec as historical context only.
+
 ## Post-implementation amendment (2026-05-21)
 
 Goal 5 and Appendix B planned to **preserve** the `/workspaces/:workspaceId/...`

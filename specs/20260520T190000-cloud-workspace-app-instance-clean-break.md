@@ -4,6 +4,8 @@
 **Status**: Substantially landed; the route family and client architecture were superseded by server-default-workspace routing (see amendment)
 **Author**: Epicenter
 
+> **Superseded, 2026-05-22:** The cloud-workspace product model this spec lands (workspaces as the data boundary, the App Namespace, organization-backed membership) was reverted by `specs/20260522T160000-revert-cloud-workspace-sync-layer.md`. A cloud document is now owned by `subject:${userId}` and synced through the single route `/rooms/:room`; the org concept moves to a future tenancy layer. Read this spec as historical context only.
+
 ## Post-implementation amendment (2026-05-21)
 
 The product model in this spec landed, but two of its mechanisms were

@@ -5,6 +5,8 @@
 **Author**: AI-assisted
 **Branch**: codex/daemon-route-startup-cleanup
 
+> **Superseded, 2026-05-22:** The move to Cloud Workspace app docs and personal-workspace provisioning recorded here was reverted by `specs/20260522T160000-revert-cloud-workspace-sync-layer.md`. A cloud document is now owned by `subject:${userId}` and synced through the single route `/rooms/:room`. Read this spec as historical context only.
+
 > **Retrospective:** this is a retrospective record of decisions already merged on this branch; the option comparison below is presented for posterity, not as a pending decision. The Cloud Workspace App Namespace direction (Option C) shipped: `/workspaces/:workspaceId/apps/:appId/docs/:docId` with internal room name `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}`, `workspaceId` backed by Better Auth `organization.id`, no `app_instance` table, and `/rooms/:room` retained only for non-Cloud personal-room and daemon compatibility. The canonical reference for the landed shape is `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md`. Read what follows as the rationale that was used to justify those commits, not as an open choice.
 
 ## Overview

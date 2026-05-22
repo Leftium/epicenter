@@ -3,6 +3,8 @@
 **Date**: 2026-05-20
 **Status**: Draft
 
+> **Superseded, 2026-05-22:** The cloud-workspace and organization-as-content-container model this spec designs was reverted by `specs/20260522T160000-revert-cloud-workspace-sync-layer.md`. A cloud document is now owned by `subject:${userId}` and synced through the single route `/rooms/:room`; the organization concept moves to a future tenancy and billing layer that never owns a document. Read this spec as historical context only.
+
 Superseded note, 2026-05-20: `specs/20260520T190000-cloud-workspace-app-instance-clean-break.md` supersedes this spec for Epicenter Cloud product hierarchy, ownership, billing, and public sync routes. This spec is still useful for the reasoning that SyncEngine stays generic, roomName is host-built and opaque, read-only Yjs sync needs frame filtering, and current server-managed key custody must not be called E2E. Do not implement `workspace.owner_user_id`, `workspace.owner_organization_id`, custom `workspace_member`, or `/workspaces/:workspaceId/docs/:docId` from this spec as the active Cloud plan. The active Cloud plan is: Better Auth organization backs Cloud Workspace, Better Auth member backs Workspace membership, the App Namespace (`workspaceId + appId`) is the sync namespace with the app root Y.Doc owning app data (no `app_instance` table), and `/me/apps/:appId/docs/:docId` is the sync route, where the server resolves the default workspace from the auth token instead of the client naming a workspaceId.
 
 ## Overview

@@ -27,6 +27,7 @@
 
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
+import { debounce } from '../shared/debounce.js';
 import { openWriterSqlite } from './sqlite-writer.js';
 
 /** Max compacted update size (2 MB). Matches the Cloudflare DO limit. */
@@ -116,24 +117,17 @@ export function attachYjsLog(
 	compactUpdateLog();
 
 	let bytesSinceCompaction = 0;
-	let compactionTimer: ReturnType<typeof setTimeout> | null = null;
 
-	function resetCompactionTimer() {
-		if (compactionTimer) {
-			clearTimeout(compactionTimer);
-			compactionTimer = null;
-		}
-	}
+	const compactAfterDebounce = debounce(() => {
+		if (compactUpdateLog()) bytesSinceCompaction = 0;
+	}, COMPACTION_DEBOUNCE_MS);
 
 	const updateHandler = (update: Uint8Array) => {
 		insertUpdate.run(update);
 
 		bytesSinceCompaction += update.byteLength;
 		if (bytesSinceCompaction > COMPACTION_BYTE_THRESHOLD) {
-			resetCompactionTimer();
-			compactionTimer = setTimeout(() => {
-				if (compactUpdateLog()) bytesSinceCompaction = 0;
-			}, COMPACTION_DEBOUNCE_MS);
+			compactAfterDebounce();
 		}
 	};
 
@@ -146,7 +140,7 @@ export function attachYjsLog(
 		Promise.withResolvers<void>();
 	ydoc.once('destroy', async () => {
 		try {
-			resetCompactionTimer();
+			compactAfterDebounce.cancel();
 			ydoc.off('updateV2', updateHandler);
 			// Final compaction can throw on a corrupt write or a closed db.
 			// Swallowing silently inside teardown leaves no trace for

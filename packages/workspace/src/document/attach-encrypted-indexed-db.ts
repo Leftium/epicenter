@@ -16,12 +16,15 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import { clearDocument } from 'y-indexeddb';
 import type * as Y from 'yjs';
 import { applyUpdateV2, encodeStateAsUpdateV2, transact } from 'yjs';
+import { debounce } from '../shared/debounce.js';
 import type { IndexedDbAttachment } from './attach-indexed-db.js';
 import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
 
 const UPDATES_STORE_NAME = 'updates';
 const CUSTOM_STORE_NAME = 'custom';
 const PREFERRED_TRIM_SIZE = 500;
+/** Coalesce a burst of over-threshold writes into one compaction run. */
+const COMPACTION_DEBOUNCE_MS = 1_000;
 const textEncoder = new TextEncoder();
 
 /** Background failures logged by attachEncryptedIndexedDb. */
@@ -97,7 +100,6 @@ export function attachEncryptedIndexedDb(
 	let db: IDBDatabase | undefined;
 	let dbref = 0;
 	let dbsize = 0;
-	let storeTimeoutId: ReturnType<typeof setTimeout> | undefined;
 
 	const aad = textEncoder.encode(`yjs-update-v2:${ydoc.guid}`);
 	const {
@@ -198,6 +200,14 @@ export function attachEncryptedIndexedDb(
 		dbsize = await idb.count(updatesStore);
 	}
 
+	const compactAfterDebounce = debounce(() => {
+		compactUpdates().catch((cause) => {
+			log.warn(
+				EncryptedIndexedDbError.CompactionFailed({ cause, databaseName }),
+			);
+		});
+	}, COMPACTION_DEBOUNCE_MS);
+
 	const handleUpdate = (update: Uint8Array, origin: unknown) => {
 		if (db === undefined || origin === attachment) return;
 		const [updatesStore] = idb.transact(db, [UPDATES_STORE_NAME]);
@@ -207,17 +217,7 @@ export function attachEncryptedIndexedDb(
 				EncryptedIndexedDbError.PersistUpdateFailed({ cause, databaseName }),
 			);
 		});
-		if (dbsize >= PREFERRED_TRIM_SIZE) {
-			if (storeTimeoutId !== undefined) clearTimeout(storeTimeoutId);
-			storeTimeoutId = setTimeout(() => {
-				compactUpdates().catch((cause) => {
-					log.warn(
-						EncryptedIndexedDbError.CompactionFailed({ cause, databaseName }),
-					);
-				});
-				storeTimeoutId = undefined;
-			}, 1000);
-		}
+		if (dbsize >= PREFERRED_TRIM_SIZE) compactAfterDebounce();
 	};
 
 	dbPromise
@@ -237,7 +237,7 @@ export function attachEncryptedIndexedDb(
 
 	ydoc.on('updateV2', handleUpdate);
 	ydoc.once('destroy', async () => {
-		if (storeTimeoutId !== undefined) clearTimeout(storeTimeoutId);
+		compactAfterDebounce.cancel();
 		ydoc.off('updateV2', handleUpdate);
 		// Settle the load barrier if destroy lands before the boot chain
 		// resolves it. No-op when `whenLoaded` is already settled.

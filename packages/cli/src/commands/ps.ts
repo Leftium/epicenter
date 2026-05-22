@@ -18,20 +18,9 @@ import {
 	sweepDaemonRuntimeFiles,
 } from '@epicenter/workspace/node';
 import { cmd } from '../util/cmd.js';
+import { isProcessAlive } from '../util/process-alive.js';
 
 const PING_TIMEOUT_MS = 250;
-
-// `ps` shows a liveness column and sweeps obviously-dead entries it sees;
-// the kernel-level `kill -0` predicate stays small and inline rather than
-// re-exported from metadata.ts (no startup-time correctness gate uses it).
-function isProcessAlive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (cause) {
-		return (cause as NodeJS.ErrnoException).code === 'EPERM';
-	}
-}
 
 type PsRow = {
 	dir: string;

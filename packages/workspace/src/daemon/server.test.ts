@@ -8,7 +8,6 @@
  * Key behaviors:
  * - valid routes are served over the daemon client
  * - invalid route declarations fail before binding a socket
- * - responsive legacy sockets return AlreadyRunning instead of being clobbered
  * - close stops the listener, removes the socket file, and can run twice
  * - /run dispatches a real action handler over the Unix socket
  */
@@ -23,7 +22,6 @@ import { daemonClient } from './client.js';
 import { claimDaemonLease, type DaemonLease } from './lease.js';
 import { startDaemonServer } from './server.js';
 import type { DaemonServedRoute } from './types.js';
-import { bindUnixSocket } from './unix-socket.js';
 
 let originalXdg: string | undefined;
 let runtimeRoot: string;
@@ -167,28 +165,6 @@ describe('startDaemonServer', () => {
 			expect(data).toBe('hello');
 		} finally {
 			if (serverResult.error === null) await serverResult.data.close();
-			lease.release();
-		}
-	});
-
-	test('returns AlreadyRunning when a responsive legacy socket exists', async () => {
-		const lease = claimTestLease();
-		const occupant = bindUnixSocket({
-			socketPath: lease.socketPath,
-			fetch: () => new Response('ok'),
-		});
-		try {
-			const error = expectErr(
-				await startDaemonServer({
-					lease,
-					routes: [{ route: 'demo', runtime: makeRuntime() }],
-				}),
-			);
-			expect(error.name).toBe('AlreadyRunning');
-		} finally {
-			await occupant.stop(true).catch(() => {
-				// best-effort
-			});
 			lease.release();
 		}
 	});

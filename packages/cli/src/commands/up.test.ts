@@ -9,7 +9,6 @@
  * - happy path loads epicenter.config.ts, writes metadata, binds the
  *   socket, and replies to ping
  * - startup failures release the daemon lease
- * - responsive legacy sockets return AlreadyRunning and dispose opened routes
  * - held SQLite leases short-circuit before daemon module import
  * - orphan socket files are swept and replaced by a fresh daemon
  */
@@ -33,8 +32,6 @@ import {
 	socketPathFor,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Hono } from 'hono';
-import { Ok } from 'wellcrafted/result';
 import { runUp } from './up';
 
 let originalXdg: string | undefined;
@@ -42,11 +39,6 @@ let originalHome: string | undefined;
 let runtimeRoot: string;
 let workDir: string;
 let homeRoot: string;
-
-function servePingDaemon(socketPath: string): Bun.Server<undefined> {
-	const app = new Hono().post('/ping', (c) => c.json(Ok('pong' as const)));
-	return Bun.serve({ unix: socketPath, fetch: app.fetch });
-}
 
 beforeEach(() => {
 	originalXdg = process.env.XDG_RUNTIME_DIR;
@@ -374,41 +366,6 @@ describe('runUp: failure cleanup', () => {
 });
 
 describe('runUp: already running', () => {
-	test('returns AlreadyRunning when a responsive legacy socket is detected', async () => {
-		const sockPath = socketPathFor(workDir);
-		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
-
-		const server = servePingDaemon(sockPath);
-		const disposeMarker = markerPath('dispose');
-		writeRuntimeDaemon({ onDisposeMarker: disposeMarker });
-
-		writeMetadata(workDir, {
-			pid: process.pid,
-			dir: workDir,
-			startedAt: new Date().toISOString(),
-			cliVersion: '0.0.0',
-			discoveredAt: new Date().toISOString(),
-		});
-
-		try {
-			const error = expectErr(
-				await runUp({
-					projectDir: workDir,
-					quiet: true,
-				}),
-			);
-			expect(error).toMatchObject({
-				name: 'AlreadyRunning',
-				pid: process.pid,
-			});
-			expect(readFileSync(disposeMarker, 'utf8')).toBe('disposed');
-		} finally {
-			await server.stop(true).catch(() => {
-				// best-effort
-			});
-		}
-	});
-
 	test('does not import workspace daemons when the daemon lease is held', async () => {
 		const lease = expectOk(claimDaemonLease(workDir));
 		const importMarker = markerPath('import');

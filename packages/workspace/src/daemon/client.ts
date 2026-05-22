@@ -167,7 +167,6 @@ export function daemonClient(
 		list: () => call<ActionManifest, never>(socketPath, timeoutMs, '/list'),
 		run: (request: RunRequest) =>
 			call<unknown, RunError>(socketPath, timeoutMs, '/run', request),
-		shutdown: () => call<null, never>(socketPath, timeoutMs, '/shutdown'),
 	};
 }
 

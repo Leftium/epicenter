@@ -1,30 +1,25 @@
 /**
  * Unix Socket Binding Tests
  *
- * Verifies the filesystem and recovery contract around Bun unix-socket
+ * Verifies the filesystem and hardening contract around Bun unix-socket
  * listeners. Route behavior lives in `app.ts`; this file pins the binding,
- * hardening, orphan recovery, and best-effort cleanup behavior.
+ * hardening, and best-effort cleanup behavior.
  *
  * Key behaviors:
  * - bound sockets route requests and use mode 0600
  * - graceful server stop removes the socket file
- * - responsive existing sockets return AlreadyRunning with metadata pid
- * - orphan socket files and stale metadata are swept before rebinding
  * - manual socket unlink is best-effort when the file is already gone
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expectErr, expectOk } from '@epicenter/test-utils/result';
 
 import { Hono } from 'hono';
 
-import { writeMetadata } from './metadata';
-import { metadataPathFor, socketPathFor } from './paths';
 import { unlinkSocketFile } from './runtime-files';
-import { bindOrRecover, bindUnixSocket } from './unix-socket';
+import { bindUnixSocket } from './unix-socket';
 
 let socketPath: string;
 let servers: Bun.Server<undefined>[] = [];
@@ -106,97 +101,5 @@ describe('bindUnixSocket', () => {
 	test('unlinkSocketFile ignores an already-missing socket file', () => {
 		expect(existsSync(socketPath)).toBe(false);
 		expect(() => unlinkSocketFile(socketPath)).not.toThrow();
-	});
-});
-
-describe('bindOrRecover', () => {
-	let originalXdg: string | undefined;
-	let runtimeRoot: string;
-	let workDir: string;
-
-	beforeEach(() => {
-		originalXdg = process.env.XDG_RUNTIME_DIR;
-		runtimeRoot = mkdtempSync(join(tmpdir(), 'ep-'));
-		process.env.XDG_RUNTIME_DIR = runtimeRoot;
-		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
-		workDir = mkdtempSync(join(tmpdir(), 'ep-d-'));
-	});
-
-	afterEach(() => {
-		if (originalXdg === undefined) delete process.env.XDG_RUNTIME_DIR;
-		else process.env.XDG_RUNTIME_DIR = originalXdg;
-		rmSync(runtimeRoot, { recursive: true, force: true });
-		rmSync(workDir, { recursive: true, force: true });
-	});
-
-	test('clean bind: succeeds and returns the server', async () => {
-		const sock = socketPathFor(workDir);
-		const server = expectOk(
-			await bindOrRecover({
-				socketPath: sock,
-				projectDir: workDir,
-				fetch: fetchOk,
-				isSocketResponsive: async () => false,
-			}),
-		);
-		servers.push(server);
-		expect(existsSync(sock)).toBe(true);
-	});
-
-	test('ping-finds-occupant: returns AlreadyRunning with metadata pid', async () => {
-		const sock = socketPathFor(workDir);
-		const occupant = bindUnixSocket({
-			socketPath: sock,
-			fetch: fetchOk,
-		});
-		servers.push(occupant);
-		writeMetadata(workDir, {
-			pid: 4242,
-			dir: workDir,
-			startedAt: new Date(0).toISOString(),
-			cliVersion: '0.0.0-test',
-			discoveredAt: new Date(0).toISOString(),
-		});
-
-		const error = expectErr(
-			await bindOrRecover({
-				socketPath: sock,
-				projectDir: workDir,
-				fetch: fetchOk,
-				isSocketResponsive: async () => true,
-			}),
-		);
-		if (error.name === 'AlreadyRunning') {
-			expect(error.pid).toBe(4242);
-		} else {
-			throw new Error('expected AlreadyRunning');
-		}
-	});
-
-	test('orphan recovery: phantom socket + metadata get swept and bind succeeds', async () => {
-		const sock = socketPathFor(workDir);
-		// Phantom socket file with no listener (kill -9'd predecessor).
-		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
-		await Bun.write(sock, '');
-		writeMetadata(workDir, {
-			pid: 99999999,
-			dir: workDir,
-			startedAt: new Date(0).toISOString(),
-			cliVersion: '0.0.0-test',
-			discoveredAt: new Date(0).toISOString(),
-		});
-
-		const server = expectOk(
-			await bindOrRecover({
-				socketPath: sock,
-				projectDir: workDir,
-				fetch: fetchOk,
-				isSocketResponsive: async () => false,
-			}),
-		);
-		servers.push(server);
-		expect(existsSync(sock)).toBe(true);
-		// Stale metadata is swept on the recovery branch.
-		expect(existsSync(metadataPathFor(workDir))).toBe(false);
 	});
 });

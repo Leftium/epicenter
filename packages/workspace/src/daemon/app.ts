@@ -68,10 +68,7 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * prefix to pick the hosted daemon runtime before dispatching the action key
  * locally or over RPC.
  */
-export function buildDaemonApp(
-	routes: readonly DaemonServedRoute[],
-	triggerShutdown?: () => void,
-) {
+export function buildDaemonApp(routes: readonly DaemonServedRoute[]) {
 	return new Hono()
 		.post('/ping', (c) => c.json(Ok('pong' as const)))
 		.post('/peers', (c) => {
@@ -101,9 +98,5 @@ export function buildDaemonApp(
 		.post('/run', sValidator('json', RunRequest), async (c) => {
 			const request = c.req.valid('json');
 			return c.json(await executeRun(routes, request));
-		})
-		.post('/shutdown', (c) => {
-			setTimeout(() => triggerShutdown?.(), 0);
-			return c.json(Ok(null));
 		});
 }

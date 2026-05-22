@@ -3,22 +3,20 @@
  *
  * Connects a Yjs document to the relay, derives per-peer liveness from
  * the server-owned presence channel, and wires inbound dispatch text
- * frames to the local action registry. Caller-side dispatch posts to the
- * selected sync URL's `/dispatch` endpoint and resolves when the
- * recipient's `dispatch_response` arrives.
+ * frames to the local action registry. Caller-side dispatch also rides
+ * this socket: it sends `dispatch_request` and resolves from
+ * `dispatch_result`.
  *
- * Three independent wire surfaces ride one auth context:
+ * Two wire surfaces ride one auth context:
  *
  *   binary WS frames  -> standard y-protocols SYNC.
  *   text WS frames    -> presence (server -> client, the full install
  *                        list on every connection change) and
- *                        dispatch_inbound (server -> recipient) /
- *                        dispatch_response (recipient -> server).
- *   HTTP              -> POST .../dispatch (caller-side fire-and-await)
+ *                        dispatch_request / dispatch_result plus
+ *                        dispatch_inbound / dispatch_response.
  *
  * The Y.Doc holds durable workspace state; presence lives on the relay's
- * `connections` map; dispatch lives on HTTP. None of the three touch the
- * others.
+ * `connections` map; dispatch lives on the authenticated WebSocket.
  *
  * Content docs (rich-text bodies, attachments, nested independently-
  * syncing docs) use the same primitive with `actions: {}`: dispatch
@@ -31,18 +29,23 @@ import type { Result } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
 import {
-	type DispatchError,
+	DispatchError,
 	type DispatchRequest,
-	deriveDispatchUrl,
-	dispatch as dispatchOverHttp,
+	interpretDispatchResult,
 	type LiveDevice,
 	runInboundDispatch,
 } from './dispatch.js';
+import type {
+	DispatchRequestFrame,
+	DispatchResultFrame,
+} from './dispatch-protocol.js';
 import {
 	createSyncSupervisor,
 	type OpenWebSocket,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
+
+const DISPATCH_RESPONSE_CEILING_MS = 90_000;
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -91,11 +94,10 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	};
 
 	/**
-	 * Fire a dispatch via HTTP POST. The request is sent over the
-	 * Worker's HTTP endpoint, not the WebSocket. The relay pushes
-	 * `dispatch_inbound` to the recipient's socket and awaits
-	 * `dispatch_response` before completing this HTTP request. The
-	 * caller's `signal` (or fetch timeout) is the deadline.
+	 * Fire a dispatch over the collaboration WebSocket. The relay pushes
+	 * `dispatch_inbound` to the recipient's socket and returns the outcome
+	 * as `dispatch_result`. The caller's `signal`, connection lifecycle,
+	 * or ceiling timer settles the promise if no result arrives.
 	 *
 	 * Always returns `Result<unknown, DispatchError>`. For type-narrowed
 	 * success payloads, lift through `typedDispatch<TActions>(collab.dispatch)`.
@@ -129,6 +131,17 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	}
 
 	const installationId = config.installationId;
+	const pendingDispatches = new Map<
+		string,
+		(result: Result<unknown, DispatchError>) => void
+	>();
+
+	function settlePendingDispatches(cause: unknown): void {
+		const pending = [...pendingDispatches.values()];
+		for (const settle of pending) {
+			settle(DispatchError.NetworkFailed({ cause }));
+		}
+	}
 
 	// Server-owned presence: the relay pushes the full install list as a
 	// `presence` text frame on every connection change. The client stores
@@ -161,6 +174,25 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		return true;
 	}
 
+	function handleDispatchResultFrame(text: string): boolean {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(text);
+		} catch {
+			return false;
+		}
+		if (!parsed || typeof parsed !== 'object') return false;
+		if ((parsed as { type?: unknown }).type !== 'dispatch_result') {
+			return false;
+		}
+		const frame = parsed as Partial<DispatchResultFrame>;
+		if (typeof frame.id !== 'string') return true;
+		const settle = pendingDispatches.get(frame.id);
+		if (!settle) return true;
+		settle(interpretDispatchResult(frame.result));
+		return true;
+	}
+
 	// Wrap the user-supplied opener so every connect (including reconnects)
 	// carries `?installationId=` without callers re-encoding the URL.
 	const userOpen = config.openWebSocket;
@@ -176,16 +208,26 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		openWebSocket,
 		log: config.log,
 		// Text frames carry two unrelated server-to-client channels:
-		// presence (the full install list) and dispatch (`dispatch_inbound`).
-		// Try presence first; on a miss, fall through to dispatch.
+		// presence (the full install list) and dispatch. Try presence first,
+		// then caller-side dispatch results, then recipient-side inbound calls.
 		onTextFrame(text) {
 			if (handlePresenceFrame(text)) return;
+			if (handleDispatchResultFrame(text)) return;
 			void runInboundDispatch({ rawFrame: text, actions: userActions }).then(
 				(response) => {
 					if (response !== null) supervisor.send(response);
 				},
 			);
 		},
+	});
+
+	const unsubscribeDispatchSweep = supervisor.onStatusChange((status) => {
+		if (status.phase === 'connected') return;
+		settlePendingDispatches(new Error('Dispatch connection lost'));
+	});
+	void supervisor.whenDisposed.then(() => {
+		unsubscribeDispatchSweep();
+		settlePendingDispatches(new Error('Dispatch connection disposed'));
 	});
 
 	// `devices` reads the latest relay-pushed presence list directly.
@@ -201,8 +243,6 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		},
 	};
 
-	const dispatchUrl = deriveDispatchUrl(config.url);
-
 	return {
 		installationId,
 		actions: userActions,
@@ -215,9 +255,56 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		reconnect: supervisor.reconnect,
 		devices,
 		dispatch(req: DispatchRequest) {
-			return dispatchOverHttp({
-				dispatchUrl,
-				req,
+			if (req.signal?.aborted) {
+				return Promise.resolve(
+					DispatchError.Cancelled({ reason: req.signal.reason }),
+				);
+			}
+			if (supervisor.status.phase !== 'connected') {
+				return Promise.resolve(
+					DispatchError.NetworkFailed({
+						cause: new Error('Dispatch socket is not connected'),
+					}),
+				);
+			}
+
+			const id = crypto.randomUUID();
+			return new Promise((resolve) => {
+				let settle: (result: Result<unknown, DispatchError>) => void;
+				const onAbort = () => {
+					settle(DispatchError.Cancelled({ reason: req.signal?.reason }));
+				};
+				const ceiling = setTimeout(() => {
+					settle(
+						DispatchError.NetworkFailed({
+							cause: new Error('No dispatch result from relay'),
+						}),
+					);
+				}, DISPATCH_RESPONSE_CEILING_MS);
+
+				settle = (result) => {
+					if (!pendingDispatches.delete(id)) return;
+					clearTimeout(ceiling);
+					req.signal?.removeEventListener('abort', onAbort);
+					resolve(result);
+				};
+
+				pendingDispatches.set(id, settle);
+				req.signal?.addEventListener('abort', onAbort, { once: true });
+
+				try {
+					supervisor.send(
+						JSON.stringify({
+							type: 'dispatch_request',
+							id,
+							to: req.to,
+							action: req.action,
+							input: req.input,
+						} satisfies DispatchRequestFrame),
+					);
+				} catch (cause) {
+					settle(DispatchError.NetworkFailed({ cause }));
+				}
 			});
 		},
 		[Symbol.dispose]() {

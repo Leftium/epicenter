@@ -601,3 +601,158 @@ describe('Room sync: HTTP sync RPC', () => {
 		expect(error?.name).toBe('MalformedSyncBody');
 	});
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// DISPATCH
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Parse text frames of a given `type` off the wire. */
+function jsonFrames(
+	ws: StubWebSocket,
+	type: string,
+): Array<Record<string, unknown>> {
+	return ws
+		.textFrames()
+		.map((t) => {
+			try {
+				return JSON.parse(t) as Record<string, unknown>;
+			} catch {
+				return null;
+			}
+		})
+		.filter((f): f is Record<string, unknown> => f !== null && f.type === type);
+}
+
+describe('Room dispatch: relay round trip', () => {
+	test('dispatch_request routes dispatch_inbound to the recipient', async () => {
+		const { room } = await makeRoom();
+		const callerWs = await upgrade(room, 'caller');
+		const recipientWs = await upgrade(room, 'recipient');
+
+		await room.webSocketMessage(
+			callerWs,
+			JSON.stringify({
+				type: 'dispatch_request',
+				id: 'd1',
+				to: 'recipient',
+				action: 'noop_ping',
+				input: { x: 1 },
+			}),
+		);
+
+		const inbound = jsonFrames(recipientWs, 'dispatch_inbound');
+		expect(inbound).toHaveLength(1);
+		expect(inbound[0]).toMatchObject({
+			id: 'd1',
+			action: 'noop_ping',
+			input: { x: 1 },
+		});
+	});
+
+	test('dispatch_response routes a dispatch_result back to the caller', async () => {
+		const { room } = await makeRoom();
+		const callerWs = await upgrade(room, 'caller');
+		const recipientWs = await upgrade(room, 'recipient');
+
+		await room.webSocketMessage(
+			callerWs,
+			JSON.stringify({
+				type: 'dispatch_request',
+				id: 'd2',
+				to: 'recipient',
+				action: 'noop_ping',
+			}),
+		);
+		await room.webSocketMessage(
+			recipientWs,
+			JSON.stringify({
+				type: 'dispatch_response',
+				id: 'd2',
+				result: { data: 'pong', error: null },
+			}),
+		);
+
+		const results = jsonFrames(callerWs, 'dispatch_result');
+		expect(results).toHaveLength(1);
+		expect(results[0]).toMatchObject({
+			id: 'd2',
+			result: { data: 'pong', error: null },
+		});
+	});
+});
+
+describe('Room dispatch: recipient offline', () => {
+	test('no live socket for `to`: immediate RecipientOffline result', async () => {
+		const { room } = await makeRoom();
+		const callerWs = await upgrade(room, 'caller');
+
+		await room.webSocketMessage(
+			callerWs,
+			JSON.stringify({
+				type: 'dispatch_request',
+				id: 'd3',
+				to: 'ghost',
+				action: 'noop_ping',
+			}),
+		);
+
+		const results = jsonFrames(callerWs, 'dispatch_result');
+		expect(results).toHaveLength(1);
+		expect(results[0]).toMatchObject({
+			id: 'd3',
+			result: { error: { name: 'RecipientOffline', to: 'ghost' } },
+		});
+	});
+
+	test('recipient socket closing mid-dispatch fails the caller', async () => {
+		const { room } = await makeRoom();
+		const callerWs = await upgrade(room, 'caller');
+		const recipientWs = await upgrade(room, 'recipient');
+
+		await room.webSocketMessage(
+			callerWs,
+			JSON.stringify({
+				type: 'dispatch_request',
+				id: 'd4',
+				to: 'recipient',
+				action: 'noop_ping',
+			}),
+		);
+		await room.webSocketClose(recipientWs, 1000, 'bye', true);
+
+		const results = jsonFrames(callerWs, 'dispatch_result');
+		expect(results).toHaveLength(1);
+		expect(results[0]).toMatchObject({
+			id: 'd4',
+			result: { error: { name: 'RecipientOffline' } },
+		});
+	});
+});
+
+describe('Room dispatch: malformed frames', () => {
+	test('a dispatch_request missing fields is dropped, the socket stays open', async () => {
+		const { room } = await makeRoom();
+		const callerWs = await upgrade(room, 'caller');
+
+		await room.webSocketMessage(
+			callerWs,
+			JSON.stringify({ type: 'dispatch_request', id: 'd5' }),
+		);
+
+		expect(callerWs.closeCalls).toHaveLength(0);
+		expect(jsonFrames(callerWs, 'dispatch_result')).toHaveLength(0);
+	});
+
+	test('an unknown text frame type closes the socket with 4400', async () => {
+		const { room } = await makeRoom();
+		const callerWs = await upgrade(room, 'caller');
+
+		await room.webSocketMessage(
+			callerWs,
+			JSON.stringify({ type: 'totally_bogus' }),
+		);
+
+		expect(callerWs.closeCalls).toHaveLength(1);
+		expect(callerWs.closeCalls[0]?.code).toBe(4400);
+	});
+});

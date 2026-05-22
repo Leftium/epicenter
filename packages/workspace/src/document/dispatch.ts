@@ -1,14 +1,6 @@
 /**
  * Live-device dispatch over the relay.
  *
- * `dispatch()` is the caller-side primitive. It fires an HTTP `POST` to
- * the relay's `/dispatch` endpoint, where the relay pushes a
- * `dispatch_inbound` text frame over the recipient's WebSocket and
- * awaits the recipient's `dispatch_response`. The HTTP response body is
- * always a `Result<unknown, DispatchError>` (HTTP 200 unless the request
- * is malformed). The caller's `AbortSignal` (or fetch timeout) decides
- * when to give up.
- *
  * `runInboundDispatch()` is the recipient-side handler. The supervisor
  * routes text frames here; we look up `action` in the local registry,
  * invoke it, and emit the `dispatch_response` back over the same socket.
@@ -88,12 +80,12 @@ type WireErrorFields<N extends DispatchErrorWire['name']> = Omit<
  *     is a serialized string (JSON cannot round-trip Error instances).
  *   - `Cancelled`: the caller's `AbortSignal` aborted before the HTTP
  *     response arrived.
- *   - `NetworkFailed`: the HTTP request itself failed before reaching
- *     the relay (CORS, DNS, offline, etc.).
+ *   - `NetworkFailed`: the socket dispatch did not complete because the
+ *     connection was unavailable, dropped, or returned a malformed result.
  *
- * `RecipientOffline`, `ActionNotFound`, `ActionFailed` arrive in the
- * HTTP response body. `Cancelled` and `NetworkFailed` are produced
- * locally by this module.
+ * `RecipientOffline`, `ActionNotFound`, `ActionFailed` arrive in
+ * `dispatch_result` frames. `Cancelled` and `NetworkFailed` are produced
+ * locally by the caller-side collaboration primitive.
  *
  * The three wire-crossing variants derive their constructor params from
  * `DispatchErrorWire` via {@link WireErrorFields}: the wire contract in
@@ -119,7 +111,7 @@ export const DispatchError = defineErrors({
 		reason,
 	}),
 	NetworkFailed: ({ cause }: { cause: unknown }) => ({
-		message: 'Dispatch HTTP request failed before reaching the relay',
+		message: 'Dispatch did not complete over the relay socket',
 		cause,
 	}),
 });
@@ -212,75 +204,19 @@ export function typedDispatch<TTargetActions extends ActionRegistry>(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// URL DERIVATION
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Derive the HTTP dispatch URL from the WebSocket sync URL.
- *
- * Converts the selected WebSocket URL to HTTP and appends `/dispatch`.
- */
-export function deriveDispatchUrl(wsUrl: string): string {
-	const httpUrl = wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
-	return `${httpUrl}/dispatch`;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 // CALLER-SIDE DISPATCH
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Fire a dispatch over HTTP. The caller's `signal` (or fetch timeout)
- * is the only deadline; the relay holds the HTTP request open until
- * either the recipient responds or the request is aborted.
+ * Interpret a relay `dispatch_result.result` payload.
  *
- * Always returns `Result<unknown, DispatchError>`. Callers that want a
- * narrower success type should compose with `typedDispatch<TActions>`
- * for compile-time precision against a known target registry.
+ * The relay forwards recipient replies opaquely and can also produce its
+ * own `RecipientOffline` result. This function owns the untrusted boundary:
+ * it accepts only wellcrafted `Result` objects and known wire errors.
  */
-export async function dispatch({
-	dispatchUrl,
-	req,
-}: {
-	dispatchUrl: string;
-	req: DispatchRequest;
-}): Promise<Result<unknown, DispatchError>> {
-	// Issue the request. Network failures and aborts both throw; everything
-	// else (including handler-level errors) comes back inside a 200 body.
-	let response: Response;
-	try {
-		response = await fetch(dispatchUrl, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				to: req.to,
-				action: req.action,
-				input: req.input,
-			}),
-			signal: req.signal,
-		});
-	} catch (cause) {
-		if (req.signal?.aborted) {
-			return DispatchError.Cancelled({ reason: req.signal.reason });
-		}
-		return DispatchError.NetworkFailed({ cause });
-	}
-
-	if (!response.ok) {
-		return DispatchError.NetworkFailed({
-			cause: new Error(
-				`Dispatch HTTP request failed: ${response.status} ${response.statusText}`,
-			),
-		});
-	}
-
-	let body: unknown;
-	try {
-		body = await response.json();
-	} catch (cause) {
-		return DispatchError.NetworkFailed({ cause });
-	}
-
+export function interpretDispatchResult(
+	body: unknown,
+): Result<unknown, DispatchError> {
 	// The dispatch body is a wellcrafted `Result`: `{ data, error }` with
 	// one side null. Both the recipient (`Ok`/`Err`) and the relay
 	// (`RecipientOffline` via `Err`) produce this shape; anything else is a
@@ -292,7 +228,7 @@ export async function dispatch({
 		!('error' in body)
 	) {
 		return DispatchError.NetworkFailed({
-			cause: new Error('Dispatch response was not a Result'),
+			cause: new Error('Dispatch result was not a Result'),
 		});
 	}
 

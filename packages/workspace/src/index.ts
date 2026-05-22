@@ -6,7 +6,7 @@
  * result to IndexedDB persistence, end-to-end encryption, and WebSocket
  * sync via `openCollaboration`. `openCollaboration` also consumes the
  * server-owned presence channel and exposes the live-device surface
- * (`devices.list()`) plus HTTP-backed `dispatch()` for cross-device calls.
+ * (`devices.list()`) plus socket-backed `dispatch()` for cross-device calls.
  *
  * @example
  * ```typescript

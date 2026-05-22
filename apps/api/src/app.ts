@@ -41,7 +41,6 @@ import { billingRoutes } from './billing-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
-import type { DispatchRpcRequest } from './room';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
@@ -580,51 +579,6 @@ app.post(
 		);
 
 		return diff ? binaryResponse(diff) : new Response(null, { status: 204 });
-	},
-);
-
-/**
- * Dispatch a live-device call via the relay.
- *
- * The request body describes the dispatch: the recipient (`to`)
- * installation id, the action key, and the input. The DO mints
- * a correlation id, pushes `dispatch_inbound` over the recipient's
- * WebSocket, and the response body is the recipient's `dispatch_response`
- * result (or `RecipientOffline` on no live socket).
- *
- * The HTTP response is always 200 unless the body is malformed; the
- * `Result<...>` body is the only failure channel for the caller.
- */
-app.post(
-	'/rooms/:room/dispatch',
-	describeRoute({
-		description: 'Dispatch a live-device call via the relay',
-		tags: ['rooms'],
-	}),
-	sValidator(
-		'json',
-		type({
-			to: '/^[A-Za-z0-9_-]+$/ <= 128',
-			action: '/^[a-z][a-z0-9_]{0,63}$/',
-			'input?': 'unknown',
-		}),
-	),
-	async (c) => {
-		const { roomName, room } = resolveSubjectRoom(c);
-		const body = c.req.valid('json');
-		const result = await c.env.ROOM
-			.get(c.env.ROOM.idFromName(roomName))
-			.dispatch(body satisfies DispatchRpcRequest);
-
-		c.var.afterResponse.push(
-			upsertDoInstance(c.var.db, {
-				userId: c.var.user.id,
-				resourceName: room,
-				doName: roomName,
-			}),
-		);
-
-		return c.json(result);
 	},
 );
 

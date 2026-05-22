@@ -12,18 +12,17 @@
  *
  * ## Wire surfaces
  *
- * Three surfaces share auth context but are independent at the wire level:
+ * Two surfaces share one authenticated socket but are independent at the
+ * wire level:
  *
  *   binary WS frames  -> standard y-protocols SYNC.
- *   text WS frames    -> dispatch push/response (`dispatch_inbound`,
- *                        `dispatch_response`) and the server-owned
+ *   text WS frames    -> live-device dispatch and the server-owned
  *                        presence channel (`presence`).
- *   RPC method        -> {@link Room.dispatch}: the Worker forwards
- *                        a route-level `/dispatch` request here. The DO mints
- *                        a correlation id, pushes `dispatch_inbound` to
- *                        the recipient's socket, and resolves the RPC
- *                        promise when the recipient's `dispatch_response`
- *                        arrives.
+ *
+ * Dispatch is relay-mediated and rides text frames: a caller's
+ * `dispatch_request` is routed to the recipient as `dispatch_inbound`; the
+ * recipient's `dispatch_response` is routed back to the caller as
+ * `dispatch_result`, correlated by a caller-minted `id`.
  *
  * ## Presence
  *
@@ -49,6 +48,7 @@ import {
 import type {
 	DispatchErrorWire,
 	DispatchInboundFrame,
+	DispatchResultFrame,
 } from '@epicenter/workspace/document/dispatch-protocol';
 import type { PresenceFrame } from '@epicenter/workspace/document/presence';
 import * as decoding from 'lib0/decoding';
@@ -56,22 +56,6 @@ import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
-
-// ============================================================================
-// Dispatch RPC types
-// ============================================================================
-
-/**
- * Worker -> DO RPC argument for {@link Room.dispatch}. The text-frame wire
- * type ({@link DispatchInboundFrame}) and the error vocabulary
- * ({@link DispatchErrorWire}) live in
- * `@epicenter/workspace/document/dispatch-protocol`, shared with the client.
- */
-export type DispatchRpcRequest = {
-	to: string;
-	action: string;
-	input?: unknown;
-};
 
 // ============================================================================
 // Constants
@@ -108,14 +92,12 @@ const COMPACTION_DELAY_MS = 30_000;
 const PRESENCE_REBROADCAST_GRACE_MS = 300;
 
 /**
- * Internal cap on how long the DO holds an in-flight dispatch open before
- * giving up on the recipient. The HTTP request's lifetime is the actual
- * deadline (the caller's `AbortSignal` or fetch timeout); this is a safety
- * net so the pending map cannot grow unbounded if both the recipient and
- * the caller misbehave.
- *
- * Set well under Cloudflare Workers' HTTP request timeout (~100s) so the
- * `RecipientOffline` response always rides the original request.
+ * How long the relay holds an in-flight dispatch before answering the
+ * caller with `RecipientOffline`. This bounds the `pendingDispatches` map
+ * for long-lived sockets; it is not the caller's deadline. The caller's
+ * `dispatch()` carries its own ceiling (it has to: a hibernated DO loses
+ * this timer along with the in-memory map), so this only needs to be a
+ * reasonable relay-side cap.
  */
 const DISPATCH_INTERNAL_TIMEOUT_MS = 60_000;
 
@@ -161,10 +143,9 @@ type WsAttachment = {
  *
  * ## Worker to DO interface
  *
- * **RPC** (`stub.sync()`, `stub.getDoc()`, `stub.dispatch()`): for HTTP
- *   sync, snapshot bootstrap, and route-level dispatch endpoints. Direct
- *   method calls avoid Request/Response serialization overhead for binary
- *   payloads.
+ * **RPC** (`stub.sync()`, `stub.getDoc()`): for HTTP sync and snapshot
+ *   bootstrap. Direct method calls avoid Request/Response serialization
+ *   overhead for binary payloads.
  * **fetch** (`stub.fetch(request)`): for WebSocket upgrades only, since
  *   the 101 Switching Protocols handshake requires HTTP request/response
  *   semantics.
@@ -228,18 +209,18 @@ export class Room extends DurableObject {
 	private static readonly CLOSE_CODE_AUTH_FAILED = 4401;
 
 	/**
-	 * In-flight dispatches awaiting `dispatch_response`. Keyed by the
-	 * server-minted correlation id. Each entry captures the recipient
-	 * socket (for "did this close mid-flight?" cleanup) and a `resolve`
-	 * that completes the awaiting RPC promise. `resolve`'s closure also
-	 * clears the safety timeout, so the rest of the DO never has to
-	 * touch the timer directly.
+	 * In-flight dispatches awaiting a `dispatch_response`. Keyed by the
+	 * caller-minted correlation id. Each entry is a plain routing record:
+	 * the caller socket the `dispatch_result` goes back to, the recipient
+	 * socket the call is waiting on, and the safety timeout that answers
+	 * `RecipientOffline` if the recipient never replies.
 	 */
 	private pendingDispatches = new Map<
 		string,
 		{
+			callerWs: WebSocket;
 			recipientWs: WebSocket;
-			resolve: (result: Result<unknown, unknown>) => void;
+			timeout: ReturnType<typeof setTimeout>;
 		}
 	>();
 
@@ -395,7 +376,7 @@ export class Room extends DurableObject {
 		});
 	}
 
-	// --- RPC methods (called via stub.sync() / stub.getDoc() / stub.dispatch()) ---
+	// --- RPC methods (called via stub.sync() / stub.getDoc()) ---
 
 	/**
 	 * HTTP sync via RPC.
@@ -448,66 +429,6 @@ export class Room extends DurableObject {
 			data: Y.encodeStateAsUpdateV2(this.doc),
 			storageBytes: this.ctx.storage.sql.databaseSize,
 		};
-	}
-
-	/**
-	 * Dispatch RPC: route an HTTP dispatch body to a
-	 * live recipient socket, await its response, and return the result.
-	 *
-	 * Picks the most-recently-connected socket for `to`. On miss returns
-	 * `RecipientOffline` immediately. Otherwise mints a correlation id,
-	 * pushes `dispatch_inbound` to the recipient, and resolves the
-	 * Promise either:
-	 *   - on matching `dispatch_response`,
-	 *   - on the recipient socket closing (the relay observes the close
-	 *     and resolves pending entries with `RecipientOffline`),
-	 *   - on the internal safety-net timeout firing (`RecipientOffline`).
-	 *
-	 * The caller's HTTP request lifetime is the *real* deadline. If the
-	 * caller aborts, the DO's Promise resolution is discarded by the
-	 * Worker; the internal timeout cleans up the pending entry.
-	 */
-	async dispatch(req: DispatchRpcRequest): Promise<Result<unknown, unknown>> {
-		const recipientWs = this.pickRecipient(req.to);
-		if (!recipientWs) {
-			return recipientOffline(req.to);
-		}
-
-		const id = crypto.randomUUID();
-		const frame: DispatchInboundFrame = {
-			type: 'dispatch_inbound',
-			id,
-			action: req.action,
-			input: req.input,
-		};
-
-		return new Promise<Result<unknown, unknown>>((resolve) => {
-			const timeoutHandle = setTimeout(() => {
-				if (!this.pendingDispatches.has(id)) return;
-				this.pendingDispatches.delete(id);
-				resolve(recipientOffline(req.to));
-			}, DISPATCH_INTERNAL_TIMEOUT_MS);
-
-			this.pendingDispatches.set(id, {
-				recipientWs,
-				resolve: (result) => {
-					clearTimeout(timeoutHandle);
-					resolve(result);
-				},
-			});
-
-			try {
-				recipientWs.send(JSON.stringify(frame));
-			} catch {
-				// Socket died between pickRecipient and send. Route through the
-				// pending entry's `resolve` so the safety timeout is cleared.
-				const pending = this.pendingDispatches.get(id);
-				if (pending) {
-					this.pendingDispatches.delete(id);
-					pending.resolve(recipientOffline(req.to));
-				}
-			}
-		});
 	}
 
 	// --- Presence helpers ---
@@ -622,7 +543,8 @@ export class Room extends DurableObject {
 	 * Handle an incoming WebSocket message.
 	 *
 	 * Routes on the message envelope:
-	 *   - text frames: dispatch_response correlation.
+	 *   - text frames: dispatch correlation (`dispatch_request`,
+	 *     `dispatch_response`) and other client text frames.
 	 *   - binary frames: standard y-protocols SYNC.
 	 */
 	override async webSocketMessage(
@@ -667,9 +589,12 @@ export class Room extends DurableObject {
 	}
 
 	/**
-	 * Handle a recipient -> server text frame. Today the only valid type
-	 * is `dispatch_response`; anything else closes the socket with
-	 * `4400 protocol-error`.
+	 * Route a client -> relay text frame. Valid types are `dispatch_request`
+	 * (a caller starting a dispatch) and `dispatch_response` (a recipient
+	 * answering one). Unparseable JSON or an unknown frame type is a genuine
+	 * protocol desync and closes the socket with `4400 protocol-error`; a
+	 * recognized frame with malformed fields is dropped without closing,
+	 * because one bad dispatch frame must not tear down sync and presence.
 	 */
 	private handleTextFrame(
 		ws: WebSocket,
@@ -694,17 +619,89 @@ export class Room extends DurableObject {
 			return;
 		}
 
-		const frame = parsed as { type: string; id?: unknown; result?: unknown };
-		if (frame.type !== 'dispatch_response') {
-			ws.close(4400, 'protocol-error');
+		const frame = parsed as { type: string } & Record<string, unknown>;
+		switch (frame.type) {
+			case 'dispatch_request':
+				this.handleDispatchRequest(ws, frame);
+				return;
+			case 'dispatch_response':
+				this.handleDispatchResponse(installationId, frame);
+				return;
+			default:
+				ws.close(4400, 'protocol-error');
+		}
+	}
+
+	/**
+	 * Caller -> relay: start a dispatch. Picks the most-recently-connected
+	 * socket for `to`, pushes `dispatch_inbound` to it, and records the
+	 * pending entry so the recipient's `dispatch_response` can be routed
+	 * back to `callerWs`. A malformed frame is dropped silently: the
+	 * caller's own ceiling settles it.
+	 */
+	private handleDispatchRequest(
+		callerWs: WebSocket,
+		frame: Record<string, unknown>,
+	): void {
+		const { id, to, action, input } = frame;
+		if (
+			typeof id !== 'string' ||
+			typeof to !== 'string' ||
+			typeof action !== 'string'
+		) {
 			return;
 		}
 
+		const recipientWs = this.pickRecipient(to);
+		if (!recipientWs) {
+			this.sendDispatchResult(callerWs, id, recipientOffline(to));
+			return;
+		}
+
+		const timeout = setTimeout(() => {
+			const pending = this.pendingDispatches.get(id);
+			if (!pending) return;
+			this.pendingDispatches.delete(id);
+			this.sendDispatchResult(pending.callerWs, id, recipientOffline(to));
+		}, DISPATCH_INTERNAL_TIMEOUT_MS);
+
+		this.pendingDispatches.set(id, { callerWs, recipientWs, timeout });
+
+		try {
+			recipientWs.send(
+				JSON.stringify({
+					type: 'dispatch_inbound',
+					id,
+					action,
+					input,
+				} satisfies DispatchInboundFrame),
+			);
+		} catch {
+			// Recipient socket died between pickRecipient and send.
+			clearTimeout(timeout);
+			this.pendingDispatches.delete(id);
+			this.sendDispatchResult(callerWs, id, recipientOffline(to));
+		}
+	}
+
+	/**
+	 * Recipient -> relay: an action outcome. Routes the result back to the
+	 * caller that started the dispatch. A `dispatch_response` with no
+	 * matching pending entry is a late reply (the caller already gave up,
+	 * or the entry was lost to hibernation) and is dropped.
+	 */
+	private handleDispatchResponse(
+		installationId: string,
+		frame: Record<string, unknown>,
+	): void {
 		const id = typeof frame.id === 'string' ? frame.id : null;
 		if (!id) return;
 
 		const pending = this.pendingDispatches.get(id);
-		if (!pending) return; // late response, HTTP request already gone
+		if (!pending) return;
+
+		clearTimeout(pending.timeout);
+		this.pendingDispatches.delete(id);
 
 		const result = frame.result;
 		const isResult =
@@ -714,16 +711,45 @@ export class Room extends DurableObject {
 			'error' in result;
 		if (!isResult) {
 			// Recipient sent a non-`Result` payload; treat it as offline so the
-			// caller gets a usable `Result` instead of waiting for the timeout.
-			this.pendingDispatches.delete(id);
-			pending.resolve(recipientOffline(installationId));
+			// caller gets a usable `Result` instead of waiting for its ceiling.
+			this.sendDispatchResult(
+				pending.callerWs,
+				id,
+				recipientOffline(installationId),
+			);
 			return;
 		}
 
-		this.pendingDispatches.delete(id);
 		// The relay forwards the recipient's reply opaquely: it never inspects
 		// the error side. The caller validates errors against `DispatchErrorWire`.
-		pending.resolve(result as Result<unknown, unknown>);
+		this.sendDispatchResult(
+			pending.callerWs,
+			id,
+			result as Result<unknown, unknown>,
+		);
+	}
+
+	/**
+	 * Send a `dispatch_result` frame to the caller socket. A dead caller
+	 * socket is swallowed: its close event already ran (or will run) the
+	 * pending-entry cleanup.
+	 */
+	private sendDispatchResult(
+		callerWs: WebSocket,
+		id: string,
+		result: Result<unknown, unknown>,
+	): void {
+		try {
+			callerWs.send(
+				JSON.stringify({
+					type: 'dispatch_result',
+					id,
+					result,
+				} satisfies DispatchResultFrame),
+			);
+		} catch {
+			/* caller socket already dead; close cleanup handles the entry */
+		}
 	}
 
 	/**
@@ -731,8 +757,9 @@ export class Room extends DurableObject {
 	 *
 	 * - Rebroadcasts the presence list if this was the last socket for the
 	 *   install (debounced, or immediately on auth-failure close codes).
-	 * - Resolves any in-flight dispatches to this recipient with
-	 *   `RecipientOffline` so callers don't wait for the safety timeout.
+	 * - Fails any in-flight dispatches touching this socket: a closed
+	 *   recipient answers the caller `RecipientOffline`; a closed caller
+	 *   just drops the entry.
 	 * - Schedules deferred compaction if the last socket just left.
 	 */
 	override async webSocketClose(
@@ -744,13 +771,22 @@ export class Room extends DurableObject {
 		const installationId = this.connections.get(ws);
 		if (installationId === undefined) return;
 
-		// Fail any in-flight dispatches that were waiting on this socket.
-		// `pending.resolve` clears the safety timeout via its closure, so we
-		// only need to delete the map entry and call resolve here.
+		// Fail any in-flight dispatches touching this socket. A closed
+		// recipient answers the caller `RecipientOffline`; a closed caller
+		// just drops the entry (nobody to answer).
 		for (const [id, pending] of this.pendingDispatches) {
-			if (pending.recipientWs !== ws) continue;
-			this.pendingDispatches.delete(id);
-			pending.resolve(recipientOffline(installationId));
+			if (pending.recipientWs === ws) {
+				clearTimeout(pending.timeout);
+				this.pendingDispatches.delete(id);
+				this.sendDispatchResult(
+					pending.callerWs,
+					id,
+					recipientOffline(installationId),
+				);
+			} else if (pending.callerWs === ws) {
+				clearTimeout(pending.timeout);
+				this.pendingDispatches.delete(id);
+			}
 		}
 
 		this.connections.delete(ws);

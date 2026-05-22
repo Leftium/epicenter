@@ -23,8 +23,6 @@
 		"directory": "packages/workspace"
 	},
 	"homepage": "https://epicenter.so",
-	"main": "./src/index.ts",
-	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
 		"./markdown": "./src/markdown/index.ts",
@@ -36,6 +34,8 @@
 		"./test-utils": "./src/shared/test-utils.ts",
 		"./links": "./src/links.ts",
 		"./document/keys": "./src/document/keys.ts",
+		"./document/presence": "./src/document/presence-protocol.ts",
+		"./document/dispatch-protocol": "./src/document/dispatch-protocol.ts",
 		"./document/y-keyvalue/y-keyvalue-lww": "./src/document/y-keyvalue/y-keyvalue-lww.ts",
 		"./document/attach-timeline": "./src/document/attach-timeline/index.ts"
 	},
@@ -53,6 +53,7 @@
 		"@hono/standard-validator": "catalog:",
 		"@tanstack/ai": "catalog:",
 		"@epicenter/sync": "workspace:*",
+		"@epicenter/util": "workspace:*",
 		"@sindresorhus/slugify": "catalog:",
 		"@standard-schema/spec": "catalog:",
 		"@tursodatabase/database": "^0.3.2",
@@ -73,8 +74,7 @@
 		"tinybase": "^5.4.2",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
-		"y-indexeddb": "catalog:",
-		"y-protocols": "catalog:"
+		"y-indexeddb": "catalog:"
 	},
 	"peerDependencies": {
 		"yjs": "catalog:"

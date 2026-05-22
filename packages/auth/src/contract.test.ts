@@ -13,13 +13,13 @@
 import { describe, expect, test } from 'bun:test';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
-import { Ok } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import type {
 	AuthClient,
 	OAuthTokenGrant,
 	PersistedAuth,
 	PersistedAuthStorage,
-	SubjectIdentity,
+	LocalIdentity,
 } from './index.js';
 import { createOAuthAppAuth } from './index.js';
 
@@ -185,6 +185,286 @@ test('startSignIn calls /api/session and writes both sections', async () => {
 		status: 'signed-in',
 	});
 	expect('email' in auth.state).toBe(false);
+	auth[Symbol.dispose]();
+});
+
+test('startSignIn publishes signed-out before installing a different subject', async () => {
+	const setup = createStorage(cell({ subject: 'alice' }));
+	const states: string[] = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: {
+			startSignIn: async () =>
+				Ok({
+					accessToken: 'bob-access',
+					refreshToken: 'bob-refresh',
+					accessTokenExpiresAt: now + 3_600_000,
+				}),
+		},
+		fetch: async () => json(apiSessionBody('bob')),
+	});
+	auth.onStateChange((state) => {
+		states.push(
+			state.status === 'signed-out'
+				? 'signed-out'
+				: `${state.status}:${state.localIdentity.subject}`,
+		);
+	});
+
+	const result = await auth.startSignIn();
+
+	expect(result).toEqual(Ok(undefined));
+	expect(states).toEqual(['signed-out', 'signed-in:bob']);
+	expect(setup.saved).toEqual([
+		null,
+		{
+			grant: {
+				accessToken: 'bob-access',
+				refreshToken: 'bob-refresh',
+				accessTokenExpiresAt: now + 3_600_000,
+			},
+			localIdentity: { subject: 'bob', keyring: [...keyring] },
+		},
+	]);
+	expect(auth.state).toEqual({
+		status: 'signed-in',
+		localIdentity: { subject: 'bob', keyring: [...keyring] },
+	});
+	auth[Symbol.dispose]();
+});
+
+test('signOut during startSignIn prevents the in-flight grant from being installed', async () => {
+	const setup = createStorage(null);
+	let resolveApiSession!: (response: Response) => void;
+	let markApiSessionRequested!: () => void;
+	const apiSessionRequested = new Promise<void>((r) => {
+		markApiSessionRequested = r;
+	});
+	const apiSessionPromise = new Promise<Response>((r) => {
+		resolveApiSession = r;
+	});
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: {
+			startSignIn: async () =>
+				Ok({
+					accessToken: 'bob-access',
+					refreshToken: 'bob-refresh',
+					accessTokenExpiresAt: now + 3_600_000,
+				}),
+		},
+		fetch: async (input) => {
+			if (String(input).endsWith('/api/session')) {
+				markApiSessionRequested();
+				return apiSessionPromise;
+			}
+			return new Response(null, { status: 204 });
+		},
+	});
+
+	const signInPromise = auth.startSignIn();
+	await apiSessionRequested;
+	const signOutResult = await auth.signOut();
+	expect(signOutResult).toEqual(Ok(undefined));
+	expect(auth.state).toEqual({ status: 'signed-out' });
+
+	resolveApiSession(json(apiSessionBody('bob')));
+	expect(await signInPromise).toEqual(Ok(undefined));
+
+	expect(setup.current).toBeNull();
+	expect(setup.saved.at(-1)).toBeNull();
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	auth[Symbol.dispose]();
+});
+
+test('concurrent startSignIn shares one launcher flight', async () => {
+	const setup = createStorage(null);
+	let signInAttempts = 0;
+	let resolveLauncher!: (result: Result<OAuthTokenGrant, unknown>) => void;
+	const launcherPromise = new Promise<Result<OAuthTokenGrant, unknown>>((r) => {
+		resolveLauncher = r;
+	});
+	let apiSessionCalls = 0;
+	let markLauncherStarted!: () => void;
+	const launcherStarted = new Promise<void>((r) => {
+		markLauncherStarted = r;
+	});
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: {
+			startSignIn: async () => {
+				signInAttempts += 1;
+				markLauncherStarted();
+				return launcherPromise;
+			},
+		},
+		fetch: async (input) => {
+			if (String(input).endsWith('/api/session')) {
+				apiSessionCalls += 1;
+				return json(apiSessionBody('bob'));
+			}
+			return new Response(null, { status: 204 });
+		},
+	});
+
+	const firstSignIn = auth.startSignIn();
+	await launcherStarted;
+	const secondSignIn = auth.startSignIn();
+
+	expect(signInAttempts).toBe(1);
+	resolveLauncher(
+		Ok({
+			accessToken: 'bob-access',
+			refreshToken: 'bob-refresh',
+			accessTokenExpiresAt: now + 3_600_000,
+		}),
+	);
+
+	expect(await firstSignIn).toEqual(Ok(undefined));
+	expect(await secondSignIn).toEqual(Ok(undefined));
+	expect(apiSessionCalls).toBe(1);
+	expect(auth.state).toEqual({
+		status: 'signed-in',
+		localIdentity: { subject: 'bob', keyring: [...keyring] },
+	});
+	expect(setup.current).toEqual({
+		grant: {
+			accessToken: 'bob-access',
+			refreshToken: 'bob-refresh',
+			accessTokenExpiresAt: now + 3_600_000,
+		},
+		localIdentity: { subject: 'bob', keyring: [...keyring] },
+	});
+	auth[Symbol.dispose]();
+});
+
+for (const status of [401, 403] as const) {
+	test(`/api/session ${status} pauses network auth without attaching a bearer`, async () => {
+		const setup = createStorage(cell());
+		const resourceAuths: Array<string | null> = [];
+		const auth = createOAuthAppAuth({
+			baseURL: 'http://localhost:8787',
+			clientId: 'client-1',
+			now: () => now,
+			persistedAuthStorage: setup.storage,
+			launcher: { startSignIn: async () => Ok(null) },
+			fetch: async (input, init) => {
+				if (String(input).endsWith('/api/session')) {
+					return new Response(null, { status });
+				}
+				resourceAuths.push(new Headers(init?.headers).get('authorization'));
+				return new Response(null, { status: 204 });
+			},
+		});
+
+		const response = await auth.fetch('http://localhost:8787/resource');
+
+		expect(response.status).toBe(204);
+		expect(resourceAuths).toEqual([null]);
+		expect(auth.state).toEqual({
+			status: 'reauth-required',
+			localIdentity: { subject: 'user-1', keyring: [...keyring] },
+		});
+		expect(setup.current).toEqual(cell());
+		auth[Symbol.dispose]();
+	});
+}
+
+test('/api/session 503 leaves local auth signed-in without attaching a bearer', async () => {
+	const setup = createStorage(cell());
+	const resourceAuths: Array<string | null> = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => Ok(null) },
+		fetch: async (input, init) => {
+			if (String(input).endsWith('/api/session')) {
+				return new Response(null, { status: 503 });
+			}
+			resourceAuths.push(new Headers(init?.headers).get('authorization'));
+			return new Response(null, { status: 204 });
+		},
+	});
+
+	const response = await auth.fetch('http://localhost:8787/resource');
+
+	expect(response.status).toBe(204);
+	expect(resourceAuths).toEqual([null]);
+	expect(auth.state).toEqual({
+		status: 'signed-in',
+		localIdentity: { subject: 'user-1', keyring: [...keyring] },
+	});
+	expect(setup.current).toEqual(cell());
+	auth[Symbol.dispose]();
+});
+
+test('stale /api/session verification after subject-switch sign-in cannot replace the new subject', async () => {
+	const setup = createStorage(cell({ subject: 'alice' }));
+	let resolveOldApiSession!: (response: Response) => void;
+	const oldApiSessionPromise = new Promise<Response>((r) => {
+		resolveOldApiSession = r;
+	});
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: {
+			startSignIn: async () =>
+				Ok({
+					accessToken: 'bob-access',
+					refreshToken: 'bob-refresh',
+					accessTokenExpiresAt: now + 3_600_000,
+				}),
+		},
+		fetch: async (input, init) => {
+			const authorization = new Headers(init?.headers).get('authorization');
+			if (String(input).endsWith('/api/session')) {
+				if (authorization === 'Bearer access-token') {
+					return oldApiSessionPromise;
+				}
+				return json(apiSessionBody('bob'));
+			}
+			return new Response(null, { status: 204 });
+		},
+	});
+
+	const staleFetch = auth.fetch('http://localhost:8787/resource');
+	await Promise.resolve();
+
+	const result = await auth.startSignIn();
+	expect(result).toEqual(Ok(undefined));
+	expect(auth.state).toEqual({
+		status: 'signed-in',
+		localIdentity: { subject: 'bob', keyring: [...keyring] },
+	});
+
+	resolveOldApiSession(json(apiSessionBody('alice')));
+	await staleFetch;
+
+	expect(setup.current).toEqual({
+		grant: {
+			accessToken: 'bob-access',
+			refreshToken: 'bob-refresh',
+			accessTokenExpiresAt: now + 3_600_000,
+		},
+		localIdentity: { subject: 'bob', keyring: [...keyring] },
+	});
+	expect(auth.state).toEqual({
+		status: 'signed-in',
+		localIdentity: { subject: 'bob', keyring: [...keyring] },
+	});
 	auth[Symbol.dispose]();
 });
 
@@ -444,7 +724,7 @@ test('cold-boot offline keeps signed-in with localIdentity and no profile field'
 	});
 	expect('email' in auth.state).toBe(false);
 	expect(
-		(auth.state as { localIdentity: SubjectIdentity }).localIdentity,
+		(auth.state as { localIdentity: LocalIdentity }).localIdentity,
 	).toEqual({
 		subject: 'user-1',
 		keyring: [...keyring],
@@ -628,6 +908,63 @@ test('concurrent refresh shares one promise and signOut during refresh wins', as
 	auth[Symbol.dispose]();
 });
 
+test('signOut remains the final storage write when refresh persistence is in flight', async () => {
+	const initial = cell({ grant: grant({ accessTokenExpiresAt: now + 1 }) });
+	let current: PersistedAuth | null = initial;
+	const saved: Array<PersistedAuth | null> = [];
+	let markRefreshWriteStarted!: () => void;
+	let resolveRefreshWrite!: () => void;
+	const refreshWriteStarted = new Promise<void>((r) => {
+		markRefreshWriteStarted = r;
+	});
+	const refreshWriteCanFinish = new Promise<void>((r) => {
+		resolveRefreshWrite = r;
+	});
+	const storage: PersistedAuthStorage = {
+		get: () => current,
+		set: async (next) => {
+			if (next?.grant.accessToken === 'new-access') {
+				markRefreshWriteStarted();
+				await refreshWriteCanFinish;
+			}
+			current = next;
+			saved.push(next);
+		},
+	};
+	const resourceAuths: Array<string | null> = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: storage,
+		launcher: { startSignIn: async () => Ok(null) },
+		fetch: async (input, init) => {
+			if (String(input).endsWith('/auth/oauth2/token')) {
+				return oauthTokenResponse();
+			}
+			if (String(input).endsWith('/auth/oauth2/revoke')) {
+				return new Response(null, { status: 200 });
+			}
+			resourceAuths.push(new Headers(init?.headers).get('authorization'));
+			return new Response(null, { status: 204 });
+		},
+	});
+
+	const fetchPromise = auth.fetch('http://localhost:8787/resource');
+	await refreshWriteStarted;
+	const signOutPromise = auth.signOut();
+	await Promise.resolve();
+
+	resolveRefreshWrite();
+	await Promise.all([fetchPromise, signOutPromise]);
+
+	expect(current).toBeNull();
+	expect(saved.at(-1)).toBeNull();
+	expect(resourceAuths).toEqual([null]);
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	auth[Symbol.dispose]();
+});
+
 test('/api/session response after signOut is discarded without corrupting state', async () => {
 	const setup = createStorage(cell());
 	const resourceAuths: Array<string | null> = [];
@@ -727,7 +1064,7 @@ describe('removed legacy surface', () => {
 		expect(mod.requireSession).toBeUndefined();
 		// @ts-expect-error: OAuthSession deleted; use PersistedAuth.
 		expect(mod.OAuthSession).toBeUndefined();
-		// @ts-expect-error: LocalUnlockBundle replaced by SubjectIdentity.
+		// @ts-expect-error: LocalUnlockBundle replaced by LocalIdentity.
 		expect(mod.LocalUnlockBundle).toBeUndefined();
 	});
 });

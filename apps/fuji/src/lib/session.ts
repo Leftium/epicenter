@@ -10,7 +10,7 @@ export const session = createSession({
 		const fuji = openFujiBrowser({
 			owner,
 			installationId: createInstallationId({ storage: localStorage }),
-			openWebSocket: auth.openWebSocket,
+			auth,
 		});
 		const entries = createEntriesState(fuji);
 		return {

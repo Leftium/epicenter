@@ -1,12 +1,11 @@
 /**
- * Server metadata sidecar: the JSON-on-disk record that lets `bindOrRecover`
+ * Server metadata sidecar: the JSON-on-disk record that lets `claimDaemonLease`
  * surface a useful "already running (pid=X)" error when a second `daemon up`
- * tries to take the same socket.
+ * tries to claim a lease another daemon already holds.
  *
  * One `<runtimeDir>/<dirHash>.meta.json` per running server. Written once at
- * startup, unlinked at clean shutdown. Stale-socket recovery in
- * `unix-socket.ts` trusts the socket itself (ping it, recover if dead),
- * not the pid in this file; pid is for human-facing diagnostics only.
+ * startup, unlinked at clean shutdown. The pid is for human-facing
+ * diagnostics only; the SQLite lease, not this file, decides ownership.
  */
 
 import {

@@ -296,6 +296,19 @@ export function createDisposableCache<
 			return entries.has(id);
 		},
 
+		/**
+		 * Iterate the live underlying values (refcounted or in the grace
+		 * window). Yields the instance `build` constructed, not a per-handle
+		 * spread wrapper, so callers must not dispose what they receive.
+		 * Intended for cross-cutting sweeps such as reconnecting every cached
+		 * child sync after an auth-state change.
+		 */
+		*values(): IterableIterator<TValue> {
+			for (const entry of entries.values()) {
+				yield entry.value;
+			}
+		},
+
 		[Symbol.dispose]() {
 			const snapshot = Array.from(entries.entries());
 			entries.clear();

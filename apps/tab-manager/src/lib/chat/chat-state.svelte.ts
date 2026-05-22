@@ -131,7 +131,7 @@ export function createAiChatState({
 			initialMessages: loadMessages(conversationId),
 			tools: sessionAiTools.tools,
 			connection: fetchServerSentEvents(`${APP_URLS.API}/ai/chat`, async () => {
-				const deviceId = tabManager.collaboration.installationId;
+				const deviceId = tabManager.installationId;
 				return {
 					fetchClient: createAiChatFetch(auth.fetch),
 					body: {
@@ -426,8 +426,9 @@ export function createAiChatState({
 	void tabManager.idb.whenLoaded.then(() => {
 		reconcileHandles();
 		const newId = ensureDefaultConversation();
-		if (conversations.length > 0) {
-			activeConversationId = newId ?? conversations[0].id;
+		const [firstConversation] = conversations;
+		if (firstConversation) {
+			activeConversationId = newId ?? firstConversation.id;
 		}
 	});
 

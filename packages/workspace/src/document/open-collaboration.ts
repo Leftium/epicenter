@@ -1,54 +1,51 @@
 /**
  * `openCollaboration`: the one collaboration primitive on a document.
  *
- * Connects a Yjs document to the relay, publishes per-peer liveness via
- * y-protocols awareness (`liveness.installationId`), and wires inbound
- * dispatch text frames to the local action registry. Caller-side
- * dispatch fires HTTP `POST /rooms/:room/dispatch` and resolves when
- * the recipient's `dispatch_response` arrives.
+ * Connects a Yjs document to the relay, derives per-peer liveness from
+ * the server-owned presence channel, and wires inbound dispatch text
+ * frames to the local action registry. Caller-side dispatch also rides
+ * this socket: it sends `dispatch_request` and resolves from
+ * `dispatch_result`.
  *
- * Three independent wire surfaces ride one auth context:
+ * Two wire surfaces ride one auth context:
  *
- *   binary WS frames  -> standard y-protocols SYNC + AWARENESS
- *   text WS frames    -> dispatch_inbound (server -> recipient) and
- *                        dispatch_response (recipient -> server)
- *   HTTP              -> POST .../dispatch (caller-side fire-and-await)
+ *   binary WS frames  -> standard y-protocols SYNC.
+ *   text WS frames    -> presence (server -> client, the full install
+ *                        list on every connection change) and
+ *                        dispatch_request / dispatch_result plus
+ *                        dispatch_inbound / dispatch_response.
  *
- * The Y.Doc holds durable workspace state; liveness lives in awareness;
- * dispatch lives on HTTP. None of the three touch the others.
+ * The Y.Doc holds durable workspace state; presence lives on the relay's
+ * `connections` map; dispatch lives on the authenticated WebSocket.
  *
  * Content docs (rich-text bodies, attachments, nested independently-
  * syncing docs) use the same primitive with `actions: {}`: dispatch
- * handlers stay inert, awareness still publishes liveness for online
- * discovery.
+ * handlers stay inert, presence still flows in over the socket for
+ * online discovery.
  */
 
-import { MESSAGE_TYPE } from '@epicenter/sync';
-import * as decoding from 'lib0/decoding';
-import * as encoding from 'lib0/encoding';
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
-import {
-	Awareness,
-	applyAwarenessUpdate,
-	encodeAwarenessUpdate,
-} from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
 import {
-	type DispatchError,
+	DispatchError,
 	type DispatchRequest,
-	deriveDispatchUrl,
-	dispatch as dispatchOverHttp,
-	getOnlineInstallationIds,
+	interpretDispatchResult,
 	type LiveDevice,
 	runInboundDispatch,
 } from './dispatch.js';
+import type {
+	DispatchRequestFrame,
+	DispatchResultFrame,
+} from './dispatch-protocol.js';
 import {
 	createSyncSupervisor,
 	type OpenWebSocket,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
+
+const DISPATCH_RESPONSE_CEILING_MS = 90_000;
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -85,9 +82,11 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	reconnect(): void;
 
 	/**
-	 * Online installs in this workspace, derived from awareness liveness
-	 * states. Deduplicated by `installationId` (multi-tab same-install
-	 * collapses to one entry). Self is excluded.
+	 * Online installs in this workspace, derived from the server-owned
+	 * presence channel: the relay pushes the full install list as a
+	 * `presence` text frame on every connection change. Deduplicated and
+	 * self-excluded by the relay; the client stores the latest list
+	 * verbatim.
 	 */
 	readonly devices: {
 		list(): LiveDevice[];
@@ -95,11 +94,10 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	};
 
 	/**
-	 * Fire a dispatch via HTTP POST. The request is sent over the
-	 * Worker's HTTP endpoint, not the WebSocket. The relay pushes
-	 * `dispatch_inbound` to the recipient's socket and awaits
-	 * `dispatch_response` before completing this HTTP request. The
-	 * caller's `signal` (or fetch timeout) is the deadline.
+	 * Fire a dispatch over the collaboration WebSocket. The relay pushes
+	 * `dispatch_inbound` to the recipient's socket and returns the outcome
+	 * as `dispatch_result`. The caller's `signal`, connection lifecycle,
+	 * or ceiling timer settles the promise if no result arrives.
 	 *
 	 * Always returns `Result<unknown, DispatchError>`. For type-narrowed
 	 * success payloads, lift through `typedDispatch<TActions>(collab.dispatch)`.
@@ -133,8 +131,67 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	}
 
 	const installationId = config.installationId;
-	const awareness = new Awareness(ydoc);
-	awareness.setLocalStateField('liveness', { installationId });
+	const pendingDispatches = new Map<
+		string,
+		(result: Result<unknown, DispatchError>) => void
+	>();
+
+	function settlePendingDispatches(cause: unknown): void {
+		const pending = [...pendingDispatches.values()];
+		for (const settle of pending) {
+			settle(DispatchError.NetworkFailed({ cause }));
+		}
+	}
+
+	// Server-owned presence: the relay pushes the full install list as a
+	// `presence` text frame on every connection change. The client stores
+	// the latest list and notifies subscribers; there is no delta protocol
+	// and no client-side reassembly. The relay dedupes multi-tab
+	// same-install and excludes the receiver's own install, so the client
+	// stores `installs` verbatim.
+	let remoteDevices: LiveDevice[] = [];
+	const presenceListeners = new Set<(devices: LiveDevice[]) => void>();
+
+	// Returns true if `text` was a recognized `presence` frame (and thus
+	// consumed); false if the caller should route it elsewhere (dispatch).
+	function handlePresenceFrame(text: string): boolean {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(text);
+		} catch {
+			return false;
+		}
+		if (!parsed || typeof parsed !== 'object') return false;
+		if ((parsed as { type?: unknown }).type !== 'presence') return false;
+		const installs = (parsed as { installs?: unknown }).installs;
+		if (!Array.isArray(installs)) return false;
+		remoteDevices = installs
+			.filter((id): id is string => typeof id === 'string')
+			.map((deviceInstallationId) => ({
+				installationId: deviceInstallationId,
+			}));
+		for (const listener of presenceListeners) listener(remoteDevices);
+		return true;
+	}
+
+	function handleDispatchResultFrame(text: string): boolean {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(text);
+		} catch {
+			return false;
+		}
+		if (!parsed || typeof parsed !== 'object') return false;
+		if ((parsed as { type?: unknown }).type !== 'dispatch_result') {
+			return false;
+		}
+		const frame = parsed as Partial<DispatchResultFrame>;
+		if (typeof frame.id !== 'string') return true;
+		const settle = pendingDispatches.get(frame.id);
+		if (!settle) return true;
+		settle(interpretDispatchResult(frame.result));
+		return true;
+	}
 
 	// Wrap the user-supplied opener so every connect (including reconnects)
 	// carries `?installationId=` without callers re-encoding the URL.
@@ -150,69 +207,41 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		waitFor: config.waitFor,
 		openWebSocket,
 		log: config.log,
-		// Inbound AWARENESS frames: apply to our awareness so devices.list()
-		// reflects peer state.
-		onBinaryFrame(data) {
-			const messageType = data[0];
-			if (messageType !== MESSAGE_TYPE.AWARENESS) return;
-			// Skip the leading message-type byte and the varuint length header
-			// of the inner payload; rather than decoding manually we re-read
-			// using the canonical lib0 helpers via a small wrapper.
-			decodeAndApplyAwarenessFrame({ data, awareness, origin: supervisor });
-		},
-		// Inbound dispatch_inbound text frames: run the local action,
-		// emit dispatch_response back over the same socket.
+		// Text frames carry two unrelated server-to-client channels:
+		// presence (the full install list) and dispatch. Try presence first,
+		// then caller-side dispatch results, then recipient-side inbound calls.
 		onTextFrame(text) {
+			if (handlePresenceFrame(text)) return;
+			if (handleDispatchResultFrame(text)) return;
 			void runInboundDispatch({ rawFrame: text, actions: userActions }).then(
 				(response) => {
 					if (response !== null) supervisor.send(response);
 				},
 			);
 		},
-		// On (re)connect, publish our liveness so the relay can record the
-		// clientID in the attachment and broadcast to peers.
-		onConnected(send) {
-			send(encodeAwarenessFrame(awareness, [awareness.clientID]));
-		},
 	});
 
-	// Outbound: any local awareness change (cursor, typing, liveness)
-	// re-encodes our state and forwards to the supervisor. `origin === 'local'`
-	// per y-protocols Awareness contract for local-state changes; ignore
-	// echoes from applyAwarenessUpdate (origin === supervisor).
-	const awarenessUpdateHandler = (
-		_changes: { added: number[]; updated: number[]; removed: number[] },
-		origin: unknown,
-	) => {
-		if (origin === supervisor) return;
-		supervisor.send(encodeAwarenessFrame(awareness, [awareness.clientID]));
-	};
-	awareness.on('update', awarenessUpdateHandler);
+	const unsubscribeDispatchSweep = supervisor.onStatusChange((status) => {
+		if (status.phase === 'connected') return;
+		settlePendingDispatches(new Error('Dispatch connection lost'));
+	});
+	void supervisor.whenDisposed.then(() => {
+		unsubscribeDispatchSweep();
+		settlePendingDispatches(new Error('Dispatch connection disposed'));
+	});
 
-	// devices.list() delegates to `getOnlineInstallationIds` (the awareness
-	// reader); devices.subscribe wires a change listener and re-derives the
-	// snapshot. Dedup-by-installationId folds multi-tab same-install into
-	// one entry.
+	// `devices` reads the latest relay-pushed presence list directly.
 	const devices = {
 		list(): LiveDevice[] {
-			return getOnlineInstallationIds({
-				awareness,
-				selfInstallationId: installationId,
-			});
+			return remoteDevices;
 		},
 		subscribe(fn: (devices: LiveDevice[]) => void): () => void {
-			const handler = () => fn(devices.list());
-			awareness.on('change', handler);
-			return () => awareness.off('change', handler);
+			presenceListeners.add(fn);
+			return () => {
+				presenceListeners.delete(fn);
+			};
 		},
 	};
-
-	const dispatchUrl = deriveDispatchUrl(config.url);
-
-	// No explicit awareness teardown: y-protocols `Awareness` registers
-	// its own `doc.on('destroy', () => this.destroy())` listener; its
-	// `destroy()` calls `super.destroy()` on the lib0 Observable, which
-	// clears every subscriber (including our `awarenessUpdateHandler`).
 
 	return {
 		installationId,
@@ -226,59 +255,60 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		reconnect: supervisor.reconnect,
 		devices,
 		dispatch(req: DispatchRequest) {
-			return dispatchOverHttp({
-				dispatchUrl,
-				installationId,
-				req,
+			if (req.signal?.aborted) {
+				return Promise.resolve(
+					DispatchError.Cancelled({ reason: req.signal.reason }),
+				);
+			}
+			if (supervisor.status.phase !== 'connected') {
+				return Promise.resolve(
+					DispatchError.NetworkFailed({
+						cause: new Error('Dispatch socket is not connected'),
+					}),
+				);
+			}
+
+			const id = crypto.randomUUID();
+			return new Promise((resolve) => {
+				let settle: (result: Result<unknown, DispatchError>) => void;
+				const onAbort = () => {
+					settle(DispatchError.Cancelled({ reason: req.signal?.reason }));
+				};
+				const ceiling = setTimeout(() => {
+					settle(
+						DispatchError.NetworkFailed({
+							cause: new Error('No dispatch result from relay'),
+						}),
+					);
+				}, DISPATCH_RESPONSE_CEILING_MS);
+
+				settle = (result) => {
+					if (!pendingDispatches.delete(id)) return;
+					clearTimeout(ceiling);
+					req.signal?.removeEventListener('abort', onAbort);
+					resolve(result);
+				};
+
+				pendingDispatches.set(id, settle);
+				req.signal?.addEventListener('abort', onAbort, { once: true });
+
+				try {
+					supervisor.send(
+						JSON.stringify({
+							type: 'dispatch_request',
+							id,
+							to: req.to,
+							action: req.action,
+							input: req.input,
+						} satisfies DispatchRequestFrame),
+					);
+				} catch (cause) {
+					settle(DispatchError.NetworkFailed({ cause }));
+				}
 			});
 		},
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
 	};
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// AWARENESS FRAME ENCODING
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Encode a y-protocols awareness update as a wire-ready AWARENESS frame:
- *
- *   [varUint MESSAGE_TYPE.AWARENESS][varUint8Array awarenessUpdate]
- *
- * This matches the y-websocket convention used everywhere.
- */
-function encodeAwarenessFrame(
-	awareness: Awareness,
-	clientIDs: number[],
-): Uint8Array {
-	return encoding.encode((enc) => {
-		encoding.writeVarUint(enc, MESSAGE_TYPE.AWARENESS);
-		encoding.writeVarUint8Array(
-			enc,
-			encodeAwarenessUpdate(awareness, clientIDs),
-		);
-	});
-}
-
-/**
- * Decode an inbound AWARENESS frame and apply its payload to the local
- * awareness. The frame layout is `[varUint MESSAGE_TYPE][varUint8Array
- * awarenessUpdate]`; we re-read the leading message-type byte to
- * advance the decoder rather than rely on the caller having stripped it.
- */
-function decodeAndApplyAwarenessFrame({
-	data,
-	awareness,
-	origin,
-}: {
-	data: Uint8Array;
-	awareness: Awareness;
-	origin: unknown;
-}): void {
-	const decoder = decoding.createDecoder(data);
-	decoding.readVarUint(decoder); // message type (already inspected by caller)
-	const payload = decoding.readVarUint8Array(decoder);
-	applyAwarenessUpdate(awareness, payload, origin);
 }

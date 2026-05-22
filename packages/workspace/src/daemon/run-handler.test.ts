@@ -1,10 +1,12 @@
 /**
  * executeRun peer dispatch tests.
  *
- * Verifies the daemon preserves remote dispatch errors in one `/run` envelope
- * before the response crosses the IPC boundary. The live-device surface is
- * faked here so the test can exercise `devices.list()` and the
- * `collab.dispatch` path without spinning up real Yjs sync.
+ * Verifies the daemon preserves remote dispatch outcomes in one `/run`
+ * envelope before the response crosses the IPC boundary. The relay owns
+ * reachability: a `RecipientOffline` dispatch error surfaces as
+ * `PeerNotFound`, every other dispatch error as `RemoteCallFailed`. The
+ * `collab.dispatch` path is faked here so the test can drive those outcomes
+ * without spinning up real Yjs sync.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -14,7 +16,6 @@ import type { Result } from 'wellcrafted/result';
 import {
 	DispatchError,
 	type DispatchRequest,
-	type LiveDevice,
 } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { ActionRegistry } from '../shared/actions.js';
@@ -33,18 +34,13 @@ function fakeEntry({
 		tabs_list: defineQuery({ handler: () => [] }),
 	},
 	syncStatus = { phase: 'connected' },
-	knownInstalls = [],
 	dispatch = (async () => ({ data: null, error: null })) as FakeDispatch,
 }: {
 	route?: string;
 	actions?: ActionRegistry;
 	syncStatus?: SyncStatus;
-	knownInstalls?: string[];
 	dispatch?: FakeDispatch;
 } = {}): DaemonServedRoute {
-	const devices: LiveDevice[] = knownInstalls.map((installationId) => ({
-		installationId,
-	}));
 	return {
 		route,
 		runtime: {
@@ -52,7 +48,7 @@ function fakeEntry({
 				actions,
 				status: syncStatus,
 				devices: {
-					list: () => devices,
+					list: () => [],
 				},
 				dispatch,
 			},
@@ -61,7 +57,7 @@ function fakeEntry({
 }
 
 describe('executeRun peer dispatch', () => {
-	test('peer miss returns RunError.PeerNotFound with sync status', async () => {
+	test('relay RecipientOffline surfaces as PeerNotFound with sync status', async () => {
 		const syncStatus: SyncStatus = {
 			phase: 'connecting',
 			retries: 2,
@@ -72,7 +68,11 @@ describe('executeRun peer dispatch', () => {
 			retries: 2,
 			lastErrorType: 'connection',
 		} satisfies RunSyncStatus;
-		const entry = fakeEntry({ syncStatus, knownInstalls: [] });
+		const entry = fakeEntry({
+			syncStatus,
+			dispatch: (async () =>
+				DispatchError.RecipientOffline({ to: 'ghost' })) as FakeDispatch,
+		});
 
 		const result = await executeRun([entry], {
 			actionPath: 'demo.tabs_list',
@@ -94,7 +94,6 @@ describe('executeRun peer dispatch', () => {
 		let invokedAction = '';
 		let invokedTo = '';
 		const entry = fakeEntry({
-			knownInstalls: ['mac'],
 			dispatch: (async (req) => {
 				invokedAction = req.action;
 				invokedTo = req.to;
@@ -114,9 +113,8 @@ describe('executeRun peer dispatch', () => {
 		expect(invokedTo).toBe('mac');
 	});
 
-	test('remote dispatch surfaces DispatchError unchanged', async () => {
+	test('non-offline DispatchError surfaces as RemoteCallFailed', async () => {
 		const entry = fakeEntry({
-			knownInstalls: ['mac'],
 			dispatch: (async () =>
 				DispatchError.ActionFailed({
 					action: 'tabs_list',
@@ -137,30 +135,6 @@ describe('executeRun peer dispatch', () => {
 			throw new Error('expected RemoteCallFailed');
 		}
 		expect(error.cause).toMatchObject({ name: 'ActionFailed' });
-	});
-
-	test('RecipientOffline from the relay surfaces as RemoteCallFailed', async () => {
-		// A live local awareness state plus a relay that reports the target as
-		// offline (e.g. socket dropped between the local list and the dispatch).
-		const entry = fakeEntry({
-			knownInstalls: ['mac'],
-			dispatch: (async () =>
-				DispatchError.RecipientOffline({ to: 'mac' })) as FakeDispatch,
-		});
-
-		const result = await executeRun([entry], {
-			actionPath: 'demo.tabs_list',
-			input: undefined,
-			peerTarget: 'mac',
-			waitMs: 25,
-		});
-
-		const error = expectErr(result);
-		expect(error.name).toBe('RemoteCallFailed');
-		if (error.name !== 'RemoteCallFailed') {
-			throw new Error('expected RemoteCallFailed');
-		}
-		expect(error.cause).toMatchObject({ name: 'RecipientOffline' });
 	});
 });
 

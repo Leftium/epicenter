@@ -232,6 +232,35 @@ Do not use dependency injection as a dumping ground. Inject stable policies,
 clients, sinks, and factories. Do not inject a bag of callbacks that mirrors
 every internal step of an implementation.
 
+When callback hooks ask the caller to make decisions mid-flow, pause and test
+the boundary. Hooks are not wrong by default, but decision callbacks often mean
+one layer owns the decision and another layer owns the effect.
+
+```txt
+Smell:
+  createRelay({
+    resolveAccess,
+    onAccessRecorded,
+    onUsageChanged,
+    onDisconnected,
+  })
+
+Question:
+  Can the caller do this work before or after calling the lower primitive?
+
+If yes:
+  move the boundary down and let the caller compose the workflow
+
+If no:
+  the lower layer may own a real lifecycle point
+```
+
+Decision callbacks are especially suspicious when they mention access, billing,
+audit, deletion, org membership, retry behavior, route errors, or what should
+happen next. Prefer a smaller primitive that receives already-decided inputs and
+returns mechanical facts the caller can record or act on. See
+`docs/articles/move-the-boundary-down-one-layer.md` for the broader lesson.
+
 Treat single-method `Pick<Thing, 'method'>` dependencies as a smell worth
 checking. A single-method `Pick` often means the old object boundary leaked into
 a place that only needed one verb. Prefer a named capability function in the

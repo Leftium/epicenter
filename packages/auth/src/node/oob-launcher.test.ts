@@ -12,6 +12,7 @@
  */
 
 import { expect, test } from 'bun:test';
+import { EPICENTER_OAUTH_SCOPE } from '@epicenter/constants/oauth';
 import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import type { AuthFetch } from '../create-oauth-app-auth.js';
 import { createOobOAuthLauncher } from './oob-launcher.js';
@@ -109,6 +110,9 @@ test('happy path returns a 3-field OAuthTokenGrant', async () => {
 	);
 	expect(body.get('resource')).toBe('http://localhost:8787');
 	expect(printed[0]).toContain('/auth/oauth2/authorize');
+	expect(new URL(printed[0] ?? '').searchParams.get('scope')).toBe(
+		EPICENTER_OAUTH_SCOPE,
+	);
 });
 
 test('PKCE verifier and challenge are linked', async () => {

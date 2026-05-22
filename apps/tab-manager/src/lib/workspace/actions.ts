@@ -71,7 +71,7 @@ export function createTabManagerActions({
 }: {
 	tables: Tables<typeof tabManagerTables>;
 	batch: (fn: () => void) => void;
-	deviceId: Promise<DeviceId>;
+	deviceId: DeviceId;
 }) {
 	return defineActions({
 		devices_list: defineQuery({
@@ -165,7 +165,7 @@ export function createTabManagerActions({
 				close: Type.Optional(Type.Boolean()),
 			}),
 			handler: async ({ tabIds, close }) => {
-				const sourceDeviceId = await deviceId;
+				const sourceDeviceId = deviceId;
 				const results = await Promise.allSettled(
 					tabIds.map((id) => browser.tabs.get(id)),
 				);
@@ -289,7 +289,7 @@ export function createTabManagerActions({
 				pinned: Type.Boolean(),
 			}),
 			handler: async ({ browserTabId, url, title, favIconUrl, pinned }) => {
-				const sourceDeviceId = await deviceId;
+				const sourceDeviceId = deviceId;
 				tables.savedTabs.set({
 					id: generateSavedTabId(),
 					url,
@@ -393,7 +393,7 @@ export function createTabManagerActions({
 						removedCount: allMatching.length,
 					};
 				}
-				const sourceDeviceId = await deviceId;
+				const sourceDeviceId = deviceId;
 				tables.bookmarks.set({
 					id: generateBookmarkId(),
 					url,

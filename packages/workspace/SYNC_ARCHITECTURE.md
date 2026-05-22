@@ -1,98 +1,12 @@
 # Multi-Device Sync Architecture
 
-Epicenter replicates a `Y.Doc` across many devices over WebSocket. Any device with a filesystem can run a sync server; browser clients and other servers connect to it. Yjs's CRDT semantics keep every replica eventually consistent, regardless of provider count or message order.
+Epicenter replicates a `Y.Doc` across many devices over a WebSocket relay. Yjs's CRDT semantics keep every replica eventually consistent regardless of message order or how many devices are connected.
 
-This document describes the runtime: the two public primitives (`openCollaboration` and `attachYjsSync`), what they do at construction, and how the underlying wire is organized.
+This document describes the runtime: the one public primitive (`openCollaboration`), the handle it returns, and how the wire is organized.
 
-## Core concepts
+## One primitive: `openCollaboration`
 
-### Sync nodes
-
-A **sync node** is any device running a server with the Epicenter sync plugin. Sync nodes:
-
-- Hold a `Y.Doc` instance in memory
-- Accept WebSocket connections from browsers and other servers
-- Broadcast updates to all connected clients
-- Can connect to OTHER sync nodes as a client (server-to-server sync)
-
-### Multi-provider architecture
-
-A `Y.Doc` can be wired to multiple sync nodes simultaneously. Each provider connects to a different node; CRDT updates merge automatically:
-
-```ts
-const ydoc = new Y.Doc({ guid: 'epicenter.blog' });
-
-attachYjsSync(ydoc, { url: 'ws://desktop.tailnet:3913/rooms/blog' });
-attachYjsSync(ydoc, { url: 'ws://laptop.tailnet:3913/rooms/blog' });
-attachYjsSync(ydoc, { url: 'wss://sync.myapp.com/rooms/blog' });
-```
-
-### Why this works
-
-- **CRDTs**: Yjs uses Conflict-free Replicated Data Types; updates merge regardless of order
-- **Vector clocks**: Each update has a unique ID; the same update received twice is applied once
-- **Eventual consistency**: All `Y.Doc` instances converge to identical state, guaranteed
-
-## Network topology
-
-### Example setup (3 devices + cloud)
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          SYNC NODE NETWORK                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   PHONE                    LAPTOP                     DESKTOP               │
-│   ┌──────────┐            ┌──────────┐              ┌──────────┐            │
-│   │ Browser  │            │ Browser  │              │ Browser  │            │
-│   │ Y.Doc    │            │ Y.Doc    │              │ Y.Doc    │            │
-│   └────┬─────┘            └────┬─────┘              └────┬─────┘            │
-│        │                       │                         │                  │
-│   (no server)             ┌────▼─────┐              ┌────▼─────┐            │
-│        │                  │ Server   │◄────────────►│ Server   │            │
-│        │                  │ Y.Doc    │  server-to-  │ Y.Doc    │            │
-│        │                  │ :3913    │    server    │ :3913    │            │
-│        │                  └────┬─────┘              └────┬─────┘            │
-│        │                       │                         │                  │
-│        │                       └──────────┬──────────────┘                  │
-│        │                                  │                                 │
-│        │                           ┌──────▼──────┐                          │
-│        └──────────────────────────►│ Cloud Y.Doc │◄─────────────────────────│
-│                                    │   :3913     │                          │
-│                                    └─────────────┘                          │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-| Location        | Y.Doc count | Notes                          |
-| --------------- | ----------- | ------------------------------ |
-| Phone browser   | 1           | Client only (no local server)  |
-| Laptop browser  | 1           | Connects to localhost          |
-| Desktop browser | 1           | Connects to localhost          |
-| Laptop server   | 1           | Sync node                      |
-| Desktop server  | 1           | Sync node                      |
-| Cloud server    | 1           | Sync node (optional)           |
-
-### Provider strategy per device
-
-| Device              | Acts as         | Connects to                                  |
-| ------------------- | --------------- | -------------------------------------------- |
-| Phone browser       | Client only     | desktop, laptop, cloud (no local server)     |
-| Laptop browser      | Client          | localhost                                    |
-| Desktop browser     | Client          | localhost                                    |
-| Laptop server       | Server + client | desktop, cloud                               |
-| Desktop server      | Server + client | laptop, cloud                                |
-| Cloud server        | Server only     | (none; accepts connections, never initiates) |
-
-The browser on a device with a local server connects only to localhost. The local server then handles cross-device sync over the LAN/Tailnet to other servers, and out to the cloud.
-
-## The two public primitives
-
-Apps reach the wire through one of two primitives. Both are sync clients; the difference is whether the document also participates in cross-peer collaboration (presence + RPC).
-
-### `openCollaboration`
-
-For the workspace document: tables, KV, replica, action registry, peers.
+Every document that participates in sync, the workspace doc and every nested content doc, goes through `openCollaboration`. There is no second primitive. The workspace doc passes a real action registry; content docs pass `actions: {}`.
 
 ```ts
 import {
@@ -103,390 +17,278 @@ import {
 } from '@epicenter/workspace';
 
 const collaboration = openCollaboration(ydoc, {
-    url: roomWsUrl('https://api.example.com', ydoc.guid),
+    url: roomWsUrl('https://api.epicenter.so', ydoc.guid),
     waitFor: idb.whenLoaded,
     openWebSocket: auth.openWebSocket,
     installationId: 'macbook',
-    actions: defineActions({ tabs_close: defineMutation({ ... }) }),
+    actions: defineActions({ tabs_close: defineMutation({ /* ... */ }) }),
 });
 
 // Local invocation: direct function call against the registry.
 await collaboration.actions.tabs_close({ tabIds: [1, 2] });
 
-// Remote invocation: resolve a stable installation id to a live connection.
-const phone = collaboration.peers
+// Remote invocation: pick an online install, dispatch to it over HTTP.
+const phone = collaboration.devices
     .list()
-    .find((peer) => peer.installationId === 'phone');
+    .find((device) => device.installationId === 'phone');
 if (phone) {
-    await collaboration.dispatch('tabs_close', { tabIds: [1, 2] }, {
-        to: phone.connectionId,
+    const { data, error } = await collaboration.dispatch({
+        to: phone.installationId,
+        action: 'tabs_close',
+        input: { tabIds: [1, 2] },
         signal: AbortSignal.timeout(5_000),
     });
 }
 ```
 
-### `attachYjsSync`
+Content docs (rich-text bodies, attachments, anything nested that syncs independently) use the same call with `actions: {}`. Inbound dispatch frames reply `ActionNotFound`; sync and presence are unchanged.
 
-For content documents nested inside a workspace (rich-text bodies, attachments, anything that syncs independently). No installation identity, no actions, no peers; just bytes over the wire.
+## The `Collaboration` handle
 
-```ts
-import { attachYjsSync, roomWsUrl } from '@epicenter/workspace';
+`openCollaboration` returns synchronously:
 
-const sync = attachYjsSync(bodyDoc, {
-    url: roomWsUrl('https://api.example.com', bodyDoc.guid),
-    waitFor: bodyIdb.whenLoaded,
-    openWebSocket: auth.openWebSocket,
-});
+| Field             | What it is                                                         |
+| ----------------- | ------------------------------------------------------------------ |
+| `installationId`  | Install-stable routing label, echoed from config                  |
+| `actions`         | Live local action registry; call directly                         |
+| `status`          | Current `SyncStatus` (`offline`/`connecting`/`connected`/`failed`) |
+| `whenConnected`   | Resolves on first successful handshake; rejects on permanent fail  |
+| `whenDisposed`    | Resolves once the supervisor exits and the socket closes           |
+| `onStatusChange`  | Subscribe to status changes; returns unsubscribe                   |
+| `reconnect`       | Manually wake the supervisor (resets backoff)                      |
+| `devices`         | `list()` / `subscribe()` over the server-owned presence channel    |
+| `dispatch`        | Fire a cross-device call over HTTP                                 |
+| `[Symbol.dispose]`| Sugar for `ydoc.destroy()`; cascades through every attachment      |
 
-await sync.whenConnected;
-```
+There is no `peers` surface, no `identity`, no `actionKeys`. Presence is server-owned and surfaced as `devices`; cross-device calls are HTTP and surfaced as `dispatch`.
 
-The status surface (`status`, `whenConnected`, `whenDisposed`, `onStatusChange`, `reconnect`) mirrors the sync portion of `openCollaboration`, so app code that gates UI on `whenConnected` works the same for either primitive.
+## The wire: one socket, two frame kinds, plus HTTP
 
-## What `openCollaboration` does at construction
-
-```
-openCollaboration(ydoc, { url, identity, actions, ... })
-        │
-        ├─ build awareness  ─────────────────────┐
-        │  attachAwareness(awareness, {          │
-        │    schema: { identity, actionKeys },  │
-        │    initial: { identity, actionKeys }  │
-        │  })                                    │
-        │                                        │
-        ├─ start sync supervisor ────────────────┤
-        │  createSyncSupervisor(ydoc, {          │
-        │    awareness,                          │
-        │    onRpcRequest:     dispatch action   │
-        │    onRuntimeRequest: dispatch verb     │
-        │  })                                    │
-        │                                        │
-        └─ build peers surface ──────────────────┘
-           createPeersSurface(awareness, identity.id, {
-             sendRequest:        ACTION dispatch
-             sendRuntimeRequest: RUNTIME dispatch
-           })
-```
-
-The returned `Collaboration<TActions>` exposes:
-
-| Field             | What it is                                                          |
-| ----------------- | ------------------------------------------------------------------- |
-| `identity`        | Stable peer identity, echoed back from config                       |
-| `actions`         | Live local action registry; call directly                           |
-| `peers`           | Remote surface (`list`, `find`, `observe`)                          |
-| `status`          | Current `SyncStatus` (`offline`/`connecting`/`connected`/`failed`)  |
-| `whenConnected`   | Resolves on first successful handshake; rejects on permanent fail   |
-| `whenDisposed`    | Resolves once the supervisor exits and the WebSocket closes         |
-| `onStatusChange`  | Subscribe; returns unsubscribe                                      |
-| `reconnect`       | Manually wake the supervisor (resets backoff)                       |
-| `[Symbol.dispose]`| Sugar for `ydoc.destroy()`; cascades through every attachment       |
-
-### `actionKeys` is alphabetically sorted, computed once
-
-Every peer publishes its full set of action keys in the awareness state, sorted alphabetically. Because two peers running the same code produce byte-identical arrays, awareness updates do not ping-pong on irrelevant ordering differences.
-
-`actionKeys` enables capability-based picks without an extra roundtrip:
-
-```ts
-const recorder = collaboration.peers.list().find((p) =>
-    p.actionKeys.includes('whispering_start_recording'),
-);
-await recorder?.invoke('whispering_start_recording', { deviceId });
-```
-
-## The wire: three planes on one WebSocket
+`openCollaboration` opens exactly one WebSocket per `(Y.Doc, relay)` pair, and uses one HTTP endpoint alongside it.
 
 ```
-WebSocket (one socket per (Y.Doc, sync node) pair)
+WebSocket
 │
-├─ MESSAGE_TYPE.SYNC          Yjs CRDT replication (STEP1/STEP2/UPDATE)
-├─ MESSAGE_TYPE.AWARENESS     Presence frames
-└─ MESSAGE_TYPE.RPC           Two sub-types share an envelope:
-                              │
-                              ├─ RPC_TYPE.ACTION_REQUEST   peer.invoke
-                              ├─ RPC_TYPE.RUNTIME_REQUEST  peer.describe
-                              └─ RPC_TYPE.RESPONSE         shared reply
+├─ binary frames   Yjs CRDT sync (STEP1 / STEP2 / UPDATE)
+│
+└─ text frames     server -> client:  presence (full install list)
+                   server -> client:  dispatch_inbound
+                   client -> server:  dispatch_response
+
+HTTP
+│
+└─ POST .../dispatch   caller-side dispatch (fire and await)
 ```
 
-### Sync plane (Yjs CRDT)
+Three concerns, three transports inside one connection:
 
-Standard Yjs sync protocol: STEP1 (state vector), STEP2 (missing updates), UPDATE (incremental changes). The supervisor encodes/decodes via `@epicenter/sync`'s `handleSyncPayload`.
+- **Durable doc state** rides binary Yjs frames. Multi-writer, conflict-free.
+- **Presence** rides text frames pushed by the relay. The relay owns it.
+- **Dispatch** is a request/response over HTTP; the relay forwards `dispatch_inbound` / `dispatch_response` text frames in the middle.
 
-### Awareness plane
+None of the three touch the others. There is no awareness protocol, and no reserved Y.Doc array for presence or RPC.
 
-Each peer publishes:
+### Sync plane (binary)
+
+Standard Yjs sync: STEP1 (state vector), STEP2 (missing updates), UPDATE (incremental changes). The supervisor encodes and decodes through `@epicenter/sync`'s `handleSyncPayload`. The first STEP2 or UPDATE after connect completes the handshake and flips status to `connected`.
+
+### Presence plane (server-owned)
+
+The relay tracks live WebSocket connections in a `connections` Map. That map is the source of truth for "who is online." On every connection change it broadcasts one server-to-client text frame carrying the whole list:
 
 ```ts
-{
-    identity: { id, name, platform },
-    actionKeys: ['tabs_close', 'tabs_list', 'whispering_start_recording', ...],
-}
+type PresenceFrame = { type: 'presence'; installs: string[] };
 ```
 
-`actionKeys` is the alphabetically sorted snake_case key listing computed at workspace startup; full schemas (input shapes, descriptions) are not in awareness. Apps that need them call `peer.describe()` on demand.
+- The frame is sent to a freshly-upgraded socket, and rebroadcast to every other socket whenever an install joins or leaves.
+- `installs` is computed per recipient with the receiver's own install excluded, so the client stores it verbatim.
+- The first socket for an install triggers a rebroadcast; a second tab for an install already present does not (the list is unchanged).
+- A last-socket close arms a short debounced rebroadcast. A reconnecting socket inside that window supersedes the pending rebroadcast, so a graceful tab handoff produces no wire-visible transition.
 
-Custom awareness fields (cursors, typing indicators) are not added through `openCollaboration`; if you want them on the same socket, attach a separate `Awareness` instance and reuse the supervisor pattern. The standard fields above are owned by `openCollaboration` and reserved.
+There is no delta protocol. The relay owns the whole truth and ships the whole truth on every change; the client never reassembles `added` / `removed` events. Clients never SEND presence frames either: connecting is the publish, and the URL-stamped `installationId` is the address.
 
-### RPC plane: two sub-types
-
-Two distinct request kinds keep app behavior and collaboration runtime behavior on separate planes:
+`openCollaboration` parses the frame inline and stores `installs` as the `LiveDevice[]` behind `devices`:
 
 ```ts
-export const RPC_TYPE = {
-    ACTION_REQUEST: 0,   // app action invocation by snake_case key ('tabs_close', ...)
-    RESPONSE:       1,   // shared envelope for both request kinds
-    RUNTIME_REQUEST: 2,  // closed-set runtime verb ('describe-actions')
-} as const;
+collaboration.devices.list();        // LiveDevice[], the latest relay-pushed list
+collaboration.devices.subscribe(fn); // fires on every `presence` frame
 ```
 
-| Sub-type        | Authored by | Carries     | Surface                       |
-| --------------- | ----------- | ----------- | ----------------------------- |
-| ACTION_REQUEST  | App         | snake_case key    | `peer.invoke(path, input)`    |
-| RUNTIME_REQUEST | Framework   | runtime verb| `peer.describe()` and friends |
-| RESPONSE        | (envelope)  | result      | shared by both                |
+`LiveDevice` is exactly `{ installationId: string }`. Display names, cursors, and capability lists are app concerns and live in app-owned tables, not on the presence wire.
 
-The runtime verb set is closed:
+`devices` is a display mirror, not a decision input. The client never reads it to decide whether a call will reach a peer; "is this install reachable" is answered authoritatively by the relay on every dispatch (see below). The daemon's run-handler used to keep a local pre-check against this list; it now just maps the relay's `RecipientOffline` to `PeerNotFound`.
+
+#### Why server-owned, not awareness
+
+Presence used to ride y-protocols Awareness. Awareness is built for ephemeral peer-to-peer state with concurrent per-peer writers (cursors, selections, typing indicators), not for a server-authoritative fact the relay already holds in its `connections` Map. Moving presence onto a plain server-pushed channel deleted the awareness round-trip, the Durable Object hibernation restore loop, and the clock-fabrication seed. See `specs/20260521T121500-server-owned-presence.md` for the full argument.
+
+Cursor and selection sync, when they arrive, bring Awareness back, used for what it is designed for and kept separate from this presence channel.
+
+### Dispatch (HTTP)
+
+A cross-device call is an HTTP `POST` to the relay's `/dispatch` endpoint, derived from the sync URL by `deriveDispatchUrl` (swap `ws`/`wss` to `http`/`https`, append `/dispatch`).
 
 ```ts
-export type RuntimeVerb = 'describe-actions';
+const { data, error } = await collaboration.dispatch({
+    to: 'phone',                       // target installationId
+    action: 'tabs_close',              // snake_case action key
+    input: { tabIds: [1, 2] },         // omit for no-argument actions
+    signal: AbortSignal.timeout(5_000),
+});
 ```
 
-Adding a new verb is a single union edit + a single switch branch in `openCollaboration`. The closed set is intentional: the framework decides what runtime introspection is universally available; the app decides everything else.
+End to end:
 
-### Why two RPC sub-types
+```
+caller                      relay                        recipient
+──────                      ─────                        ─────────
+POST /dispatch ───────────▶  look up `to` in
+{ to, action, input }        the connections Map
+                             │
+                             ├─ no live socket ─▶ 200 { error: RecipientOffline }
+                             │
+                             └─ push dispatch_inbound ──▶ runInboundDispatch:
+                                  (text frame)              actions[action](input)
+                                                            │
+                             ◀── dispatch_response ─────────┘
+                                  (text frame)
+       200 { data } ◀──────  relay completes the held
+       or { error }          HTTP request
+```
 
-Apps own the action namespace fully. Earlier designs reserved `system.*` for runtime introspection (`system.describe`), which crowded the namespace and forced a string convention to keep them apart. Splitting at the wire kind makes the separation structural:
+The caller's `signal` (or the platform fetch timeout) is the only deadline; the relay holds the HTTP request open until the recipient responds or the caller aborts.
 
-- App actions can use any name (including `system.foo`); they ride ACTION_REQUEST.
-- Runtime verbs can never be shadowed; they ride RUNTIME_REQUEST and have a closed type.
+`dispatch` always resolves to `Result<unknown, DispatchError>`:
 
-The RESPONSE envelope is shared so the request-id table on the client side stays one map.
+| Variant            | Produced by | When                                                       |
+| ------------------ | ----------- | ---------------------------------------------------------- |
+| `RecipientOffline` | relay       | No live socket for `to`, or its socket closed mid-handler  |
+| `ActionNotFound`   | recipient   | Recipient has no handler for `action`                      |
+| `ActionFailed`     | recipient   | Recipient handler threw or returned `Err`; `cause` is a string |
+| `Cancelled`        | local       | Caller's `AbortSignal` aborted before the response arrived |
+| `NetworkFailed`    | local       | The HTTP request failed before reaching the relay          |
 
-## The peers surface
+`RecipientOffline`, `ActionNotFound`, and `ActionFailed` arrive inside the HTTP 200 body; `Cancelled` and `NetworkFailed` are produced locally.
+
+Because the relay answers reachability inline (its `connections` Map decides, on the same request that routes the call), callers that need to tell "addressed an offline install" apart from "the call reached the peer and failed" branch on `RecipientOffline` directly. There is no separate liveness pre-check, and no window where a client cache disagrees with the relay.
+
+For a type-narrowed success payload against a known target registry, lift through `typedDispatch`:
 
 ```ts
-collaboration.peers
-    .list()                        // PresenceEntry[], connectionId-ascending, never self
-    .observe(callback)             // unsubscribe = peers.observe(cb)
+import { typedDispatch } from '@epicenter/workspace';
+import type { TabManagerActions } from '@epicenter/tab-manager/actions';
+
+const tabManager = typedDispatch<TabManagerActions>(collaboration.dispatch);
+const { data } = await tabManager({
+    to: phone.installationId,
+    action: 'tabs_close',
+    input: { tabIds: [1, 2] },
+});
 ```
 
-Each `PresenceEntry` carries:
+The runtime call is unchanged; `typedDispatch` only constrains the action key and the input/output types. The relay routes by `installationId` only; it does not prove the target install implements `TActions`.
+
+The recipient side is `runInboundDispatch`: the supervisor routes inbound text frames to it, it looks up the action in the local registry, runs it, and emits the `dispatch_response`. A content doc with `actions: {}` always replies `ActionNotFound`.
+
+## URLs and routing
+
+A cloud document is owned by the authenticated subject (the user's identity) and addressed by its own `ydoc.guid`. The client builds the URL from `(apiUrl, ydoc.guid)`:
 
 ```ts
-type PresenceEntry = {
-    readonly connectionId: string;   // live routing address
-    readonly installationId: string; // install-stable peer identity
-    readonly subject: string;        // auth-derived user id from the server
-};
+roomWsUrl('https://api.epicenter.so', ydoc.guid);
+// -> wss://api.epicenter.so/rooms/<ydoc.guid>
 ```
 
-### Self filtering
+The relay takes the subject from the auth token and builds the internal Durable Object name `subject:${userId}:rooms:${room}`. There is no workspace lookup and no membership check: the route's auth middleware is the whole authorization story, because you cannot fail to be yourself.
 
-`peers.list()` filters self by `connectionId`, so the current collaboration
-instance is never returned from its own peers surface.
+This is the consumer Google Docs model and the first of three account layers, introduced over time:
 
-Self is never reachable through the peers surface; local actions are reached via
-`collaboration.actions.*`.
+- **Layer 1 (this)**: personal content. `subject:${userId}` owns the doc.
+- **Layer 1.5 (future)**: sharing. A per-document ACL grants other subjects access; the owner's DO name does not change.
+- **Layer 2 (future)**: shared-drive content. An org owns a namespace so content survives a departing employee.
+- **Layer 3 (future)**: tenancy and billing. An organization groups user accounts for one invoice and admin policy; it never owns a document.
 
-### `waitForPeer` helper
+`installationId` is appended as a query parameter (`?installationId=`) on every connect, including reconnects. It is a routing label stamped on the socket at upgrade, not an auth principal: the relay authorizes the room from the token, and within that room `installationId` only decides which socket dispatch is delivered to.
 
-```ts
-const phone = collaboration.peers
-    .list()
-    .find((peer) => peer.installationId === 'phone');
-
-if (phone) {
-    await collaboration.dispatch('tabs_close', { tabIds: [1] }, {
-        to: phone.connectionId,
-        signal: AbortSignal.timeout(5_000),
-    });
-}
-```
-
-Callers that need bounded waiting can layer that over `peers.observe()`.
-
-### Capability-based picks
-
-The current presence surface does not publish action manifests. Capability
-selection belongs in the app's own device table or in a future dispatch roster:
-
-```ts
-const phone = collaboration.peers
-    .list()
-    .find((peer) => peer.installationId === selectedInstallationId);
-```
-
-No dedicated `peers.hosts(path)` helper exists; standard array methods are
-sufficient.
-
-## Error variants
-
-```ts
-type RemoteCallError = RpcError | SelfInvocationError | PeerLeftError;
-```
-
-| Variant                       | Source                          | When                                    |
-| ----------------------------- | ------------------------------- | --------------------------------------- |
-| `RpcError.ActionNotFound`     | `@epicenter/sync`               | Bad action key on the remote           |
-| `RpcError.Timeout`            | `@epicenter/sync`               | No response within the timeout         |
-| `RpcError.PeerOffline`        | `@epicenter/sync`               | Server says the target is not connected |
-| `RpcError.ActionFailed`       | `@epicenter/sync`               | Remote handler threw or returned Err    |
-| `RpcError.Disconnected`       | `@epicenter/sync`               | Local socket closed mid-call           |
-| `SelfInvocationError.SelfInvocation` | `@epicenter/workspace/document/peer` | Stale self-clientId reached the wire |
-| `PeerLeftError.PeerLeft`      | `@epicenter/workspace/document/peer` | Peer disappeared from awareness mid-call |
-
-Callers exhaustively switch on `error.name`; each variant carries the fields needed to render a useful message.
+`/rooms/:room` is the single cloud sync route. Browser apps and the workspace daemon both build their URL with `roomWsUrl`, exported from the `@epicenter/workspace` package root.
 
 ## Supervisor lifecycle
 
-The internal `createSyncSupervisor` runs one loop that owns the WebSocket. Three timers participate:
+`openCollaboration` wraps an internal `createSyncSupervisor` that owns the WebSocket. Three timers participate:
 
-| Timer                 | Default | Job                                             |
-| --------------------- | ------- | ----------------------------------------------- |
-| `CONNECT_TIMEOUT_MS`  | 15 s    | Abort a stuck-in-CONNECTING socket              |
-| `PING_INTERVAL_MS`    | 60 s    | Keep the socket alive with a `'ping'` message   |
-| `LIVENESS_TIMEOUT_MS` | 90 s    | Close the socket if no traffic for ≥ this long  |
+| Timer                 | Default | Job                                                         |
+| --------------------- | ------- | ----------------------------------------------------------- |
+| `CONNECT_TIMEOUT_MS`  | 15 s    | Abort a socket stuck in CONNECTING                          |
+| `PING_INTERVAL_MS`    | 60 s    | Send a `'ping'` text frame to keep the socket alive         |
+| `LIVENESS_TIMEOUT_MS` | 90 s    | Close the socket if no traffic arrives for this long (checked every 10 s) |
 
 ### Connect, reconnect, backoff
 
 ```
-                    ┌─────────────┐
-                    │   offline   │ ◄── ydoc.destroy()
-                    └──────┬──────┘
-                           │ supervisor starts
-                           ▼
-                    ┌─────────────┐
-       reconnect()  │ connecting  │
-       wakes loop ─►│ retries=N   │ ──► attemptConnection(signal)
-                    └──────┬──────┘
-                           │ success
-                           ▼
-                    ┌─────────────┐
-                    │  connected  │ ──► whenConnected.resolve()
-                    └──────┬──────┘
-                           │ ws.onclose
-                           ▼
-                       backoff sleep (jitter, capped at 30s)
-                           │
-                           └─► retry
+   ┌─────────────┐
+   │   offline   │ ◄── ydoc.destroy()
+   └──────┬──────┘
+          │ waitFor resolves
+          ▼
+   ┌─────────────┐
+   │ connecting  │ ──► attemptConnection(signal)
+   │ retries=N   │ ◄── reconnect() wakes the loop
+   └──────┬──────┘
+          │ STEP2/UPDATE handshake
+          ▼
+   ┌─────────────┐
+   │  connected  │ ──► whenConnected.resolve()
+   └──────┬──────┘
+          │ ws.onclose
+          ▼
+   backoff sleep (jittered, capped at 30 s)
+          │
+          └─► retry
 ```
 
-Backoff: `min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS)` * `(0.5 + Math.random() * 0.5)`. Window `online`, `offline`, and `visibilitychange` events wake the backoff or close the socket as appropriate.
+Backoff is `min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS)` scaled by `0.5 + Math.random() * 0.5`. Window `online`, `offline`, and `visibilitychange` events wake the backoff or close the socket as appropriate.
 
 ### Permanent failure
 
-Server-side rejection of auth uses the WebSocket close code `4401` with a JSON body `{ "code": "<reason>" }`. Documented reasons today: `'invalid_token'`, `'token_expired'`, `'deauthorized'`, `'unknown'`. On 4401:
+A server-side auth rejection closes the WebSocket with code `4401` and a JSON reason `{ "code": "<reason>" }`. Codes seen today: `invalid_token`, `token_expired`, `deauthorized`, `unknown`. On 4401:
 
-- Status transitions to `{ phase: 'failed', reason: { type: 'auth', code } }`
-- `whenConnected` rejects with `SyncFailedError.AuthRejected({ code })`
-- Loop parks; only a manual `reconnect()` reopens
+- Status becomes `{ phase: 'failed', reason: { type: 'auth', code } }`.
+- `whenConnected` rejects with `SyncFailedError.AuthRejected({ code })`.
+- The supervisor parks; only `reconnect()` reopens it. Apps wire `reconnect()` to `auth.onStateChange` so a sign-in retries automatically.
 
 ### Cancellation hierarchy
 
 ```
-masterController          aborts on ydoc.destroy(); kills everything
+masterController   aborts on ydoc.destroy(); kills everything
    ▼
-cycleController           aborts on reconnect();
-                          kills the current iteration only
+cycleController    aborts on reconnect(); kills the current iteration only
 ```
 
-`cycleController` is replaced (not just re-aborted) by `reconnect()` so the new cycle has a fresh signal unrelated to the old. The supervisor reads `cycleController.signal` fresh at the top of each iteration; aborting the old wakes a parked supervisor and the next iteration picks up the replacement.
+`reconnect()` replaces `cycleController` (rather than just re-aborting it) so the next cycle gets a fresh signal unrelated to the old one. The supervisor reads `cycleController.signal` fresh at the top of each iteration; aborting the old one wakes a parked supervisor and the next iteration picks up the replacement.
 
-### Pending-RPC table
-
-Outbound RPC requests live in `pendingRequests: Map<requestId, { action, resolve, timer }>`. Cleared on every `ws.onclose`: a fresh server-side context will never resolve the prior connection's IDs, so callers receive `RpcError.Disconnected` immediately rather than waiting out the timeout.
-
-## A full call: `dispatch(..., { to })`
-
-End-to-end. A fuji-running script asks `macbook-pro` (a tab-manager peer) to
-run an action.
+## Construction to first connect, in time
 
 ```
-┌─────────────────────┐                          ┌─────────────────────┐
-│  Fuji process       │                          │  macbook-pro        │
-│  collaboration.*    │                          │  (tab-manager)      │
-└──────────┬──────────┘                          └─────────┬───────────┘
-           │                                               │
-           │ 1. peer = collaboration.peers.list()
-           │      .find(p => p.installationId === 'macbook-pro')
-           │    (reads presence, filters self,            │
-           │     returns PresenceEntry { connectionId })  │
-           │                                               │
-           │ 2. collaboration.dispatch('tabs_close', ...)  │
-           │    → writes RPC row with to=connectionId      │
-           │                                               │
-           │ 3. target action runner observes the row      │
-           │    where call.to === self connectionId        │
-           │                                               │
-           │ ── Yjs sync carries the RPC row ───────►     │
-           │                                               │
-           │                                               │ 4. action runner invokes
-           │                                               │    actions.tabs_close(input)
-           │                                               │
-           │ ◄── Yjs sync carries response update ───     │
-           │                                               │
-           │ 5. caller observes response, clears row,     │
-           │    resolves with Result                     │
-           │                                               │
-           │ 8. peer.describe() resolves                  │
-           │    → Result<ActionManifest, RemoteCallError> │
-           │                                               │
-```
+t=0      openCollaboration(ydoc, { url, installationId, actions, ... })
+         ├─ validate action keys against ACTION_KEY_PATTERN
+         ├─ createSyncSupervisor(ydoc, { url, waitFor, openWebSocket, onTextFrame })
+         │   ├─ ydoc.on('updateV2', handleDocUpdate)
+         │   ├─ ydoc.once('destroy', dispose-cascade)
+         │   └─ supervisor loop starts
+         └─ returns Collaboration synchronously
 
-`peer.invoke(path, input)` follows the same shape, but rides ACTION_REQUEST and `onRpcRequest` resolves the path against `collaboration.actions`.
+t=1ms    supervisor: await waitFor (e.g. idb.whenLoaded)
 
-### Peer-removed race semantics
+t=Nms    waitFor resolves; supervisor enters the connecting loop
 
-`peer.invoke` and `peer.describe` race the dispatch against a peer-removed signal. The dispatch helper subscribes to `awareness.on('change', ...)` for the lifetime of the call; if the target's clientID disappears from awareness before the response arrives, the in-flight Promise resolves with `PeerLeftError.PeerLeft({ peerId, action })` instead of waiting out the RPC timeout.
-
-```
-peer.invoke('tabs_close', { tabIds: [1] })
-  │
-  ├─ subscribe: awareness.on('change', onChange)
-  ├─ check:    peer still in readPeers()? If no → PeerLeft (synchronous)
-  ├─ fire:     supervisor.sendRpcRequest(...)
-  │
-  ├─ if RPC resolves first:        → return its Result
-  ├─ if peer leaves awareness first → return PeerLeft
-  └─ either way:                    awareness.off('change', onChange)
-```
-
-## Construction → first connect, in time
-
-```
-t=0           openCollaboration(ydoc, { url, identity, actions, ... })
-              ├─ Object.freeze(actionKeys.sort())     // computed once
-              ├─ new Awareness(ydoc)
-              ├─ attachAwareness(awareness, { schema, initial })
-              │   └─ awareness.setLocalState({ identity, actionKeys })
-              │
-              ├─ createSyncSupervisor(ydoc, {
-              │     awareness, onRpcRequest, onRuntimeRequest, ...
-              │   })
-              │   └─ ydoc.on('updateV2', handleDocUpdate)
-              │   └─ awareness.on('update', handleAwarenessUpdate)
-              │   └─ ydoc.once('destroy', dispose-cascade)
-              │   └─ supervisor loop starts
-              │
-              └─ createPeersSurface(awareness, identity.id, hooks)
-
-t=0.x         Returns Collaboration<TActions>. Synchronous so far.
-
-t=1ms         Supervisor: await waitFor (e.g. idb.whenLoaded).
-
-t=Nms         waitFor resolves. Supervisor enters connecting loop.
-
-t=N+ε         attemptConnection(signal):
-                openWebSocket(url, [MAIN_SUBPROTOCOL])
-                ws.onopen → encodeSyncStep1, sendLocalAwarenessState
-                ws.onmessage SYNC STEP2/UPDATE → handshakeComplete
-                setStatus({ phase: 'connected' })
-                connected.resolve()
-
-t=N+δ         whenConnected resolves. Apps can call collaboration.peers.list().
+t=N+ε    attemptConnection(signal):
+           openWebSocket(url + '?installationId=...', [MAIN_SUBPROTOCOL])
+           ws.onopen   -> send encodeSyncStep1
+           ws.onmessage SYNC STEP2/UPDATE -> handshake complete
+                        -> status 'connected', whenConnected resolves
+           ws.onmessage text `presence` -> devices.list() reflects the relay
 ```
 
 ## Mental model in one paragraph
 
-`openCollaboration(ydoc, config)` is the wire and the supervisor for a participating workspace. It builds an `Awareness` for presence (`identity` + `actionKeys`), starts the supervisor loop that owns the WebSocket and runs the Yjs sync protocol, and exposes a `peers` surface backed by two wire kinds: `peer.invoke` rides ACTION_REQUEST (app actions by snake_case key), `peer.describe` rides RUNTIME_REQUEST (closed-set framework verbs). Self is filtered at two layers and reachable only as `collaboration.actions.*` (the live local registry, called directly). Errors are typed: `RpcError | SelfInvocationError | PeerLeftError` as `RemoteCallError`. Lifecycle is supervisor-driven (exponential backoff with jitter, 60 s pings, 90 s liveness, permanent-park on close code 4401), and `whenDisposed` resolves once the cascade from `ydoc.destroy()` finishes. Content documents that need bytes-only sync use `attachYjsSync(ydoc, config)`: same supervisor lifecycle, no presence, no RPC.
+`openCollaboration(ydoc, config)` is the one collaboration primitive: it opens a single WebSocket to the relay, runs the Yjs binary sync protocol, mirrors the relay's server-owned presence channel into `devices`, and runs inbound dispatch frames against the local `actions` registry. Cross-device calls go out through `dispatch(...)`, a plain HTTP POST the relay routes to the recipient's socket and answers with a typed `Result<unknown, DispatchError>`. Presence is the relay's `connections` Map, not Yjs Awareness; dispatch is HTTP, not a Y.Doc array. Lifecycle is supervisor-driven: exponential backoff with jitter, 60 s pings, 90 s liveness, permanent park on close code 4401, and `whenDisposed` resolves once the cascade from `ydoc.destroy()` finishes. Content docs use the same primitive with `actions: {}`.

@@ -1,11 +1,11 @@
 import { expect } from 'bun:test';
+import { EPICENTER_OAUTH_SCOPE } from '@epicenter/constants/oauth';
 import type { MemoryDB } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 
 export const OAUTH_TEST_REDIRECT_URI = 'http://localhost:5174/auth/callback';
 
-export const OAUTH_TEST_SCOPE =
-	'openid profile email offline_access workspaces:open';
+export const OAUTH_TEST_SCOPE = EPICENTER_OAUTH_SCOPE;
 
 const verifier = 'test-verifier-test-verifier-test-verifier';
 
@@ -61,6 +61,10 @@ export function isAddressInUse(error: unknown) {
 		'code' in error &&
 		(error as { code?: unknown }).code === 'EADDRINUSE'
 	);
+}
+
+export function randomOAuthTestPort() {
+	return 10_000 + Math.floor(Math.random() * 50_000);
 }
 
 /**

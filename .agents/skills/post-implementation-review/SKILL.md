@@ -12,9 +12,31 @@ Use this skill after code changes and before final handoff. The goal is a hard
 second read: catch stale abstractions, dead paths, bad ownership, and confusing
 names while the edit context is still fresh.
 
-Do not silently fix structural concerns. Flag what is wrong, explain why, then
-make the smallest coherent follow-up edit if the user asked you to continue
-through cleanup.
+Do not silently fix structural concerns. Flag what is wrong and explain why
+before touching it.
+
+## Scope
+
+Scope is set by the user's signal, not by who introduced the smell.
+
+```txt
+No cleanup signal (a focused change)        flag only; edit just direct
+                                            compile or test failures
+"continue through cleanup", "expand scope   well-grounded adjacent fixes are
+aggressively", "do the worthwhile ones",    in scope, including pre-existing
+"clean this up"                             smells this review surfaced
+```
+
+Two things never move when scope widens:
+
+- Scope never widens silently. Every expanded edit is still flagged first,
+  and lands as its own commit.
+- The evidence bar never drops. "Within reason" still means grounded in
+  caller counts, a real invariant, or a named smell, never a hunch. A user
+  signal widens what you may touch; it does not lower the bar for why.
+
+Authorship is not the gate. A smell the review uncovered is in scope on the
+right signal even if an earlier commit, not this change, introduced it.
 
 ## Related Skills
 
@@ -90,6 +112,7 @@ identity wrappers and pass-through modules
 unnecessary casts or duck-typing inside typed code
 fallback parsers for old shapes
 callbacks that mirror internal implementation steps
+decision callbacks that could be caller-owned composition
 single-file directories and pointless barrels
 ```
 

@@ -62,7 +62,7 @@ export function createBookmarkState(tabManager: TabManagerBrowser) {
 		 */
 		async toggle(tab: BrowserTab) {
 			if (!tab.url) return;
-			return tabManager.collaboration.actions.bookmarks_toggle({
+			return tabManager.actions.bookmarks_toggle({
 				url: tab.url,
 				title: tab.title || 'Untitled',
 				favIconUrl: tab.favIconUrl,
@@ -71,19 +71,19 @@ export function createBookmarkState(tabManager: TabManagerBrowser) {
 
 		/** Open a bookmark in a new browser tab without removing the bookmark. */
 		async open(bookmark: Bookmark) {
-			return tabManager.collaboration.actions.bookmarks_open({
+			return tabManager.actions.bookmarks_open({
 				url: bookmark.url,
 			});
 		},
 
 		/** Delete a bookmark by ID. Synchronous CRDT delete. */
 		remove(id: BookmarkId) {
-			return tabManager.collaboration.actions.bookmarks_remove({ id });
+			return tabManager.actions.bookmarks_remove({ id });
 		},
 
 		/** Delete all bookmarks. Synchronous CRDT batch delete. */
 		removeAll() {
-			return tabManager.collaboration.actions.bookmarks_remove_all();
+			return tabManager.actions.bookmarks_remove_all();
 		},
 	};
 }

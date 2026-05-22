@@ -1,3 +1,4 @@
+import { EPICENTER_OAUTH_SCOPE } from '@epicenter/constants/oauth';
 import * as oauth from 'oauth4webapi';
 import {
 	defineErrors,
@@ -85,8 +86,17 @@ type OAuthTransaction = {
 type RedirectTo = (url: string) => MaybePromise<void>;
 type LaunchWebAuthFlow = (url: string) => Promise<string>;
 
-const DEFAULT_SCOPE = 'openid profile email offline_access workspaces:open';
+const DEFAULT_SCOPE = EPICENTER_OAUTH_SCOPE;
 
+/**
+ * Create the browser redirect launcher for hosted sign-in.
+ *
+ * Use this in web apps that can complete OAuth by returning to their own
+ * redirect URI. It first tries to consume the current URL as a callback, then
+ * starts a new authorization request only when no callback transaction is
+ * present. That preserves the PKCE/state invariant across a full-page redirect
+ * without exposing tokens to application routing code.
+ */
 export function createBrowserOAuthLauncher({
 	redirectTo = (url) => {
 		window.location.href = url;
@@ -112,6 +122,15 @@ export function createBrowserOAuthLauncher({
 	} satisfies OAuthLauncher;
 }
 
+/**
+ * Create the extension launcher around the browser extension web-auth API.
+ *
+ * Use this when the runtime can open the hosted authorization URL and return
+ * the final redirect URL without navigating the extension UI. It keeps the same
+ * PKCE/state transaction as the browser launcher, but the token grant is
+ * returned directly so the extension can persist it without relying on page
+ * reloads.
+ */
 export function createExtensionOAuthLauncher({
 	launchWebAuthFlow,
 	...config
@@ -134,6 +153,14 @@ export function createExtensionOAuthLauncher({
 	} satisfies OAuthLauncher;
 }
 
+/**
+ * Create the shared OAuth authorization-code client used by browser launchers.
+ *
+ * Use this when a runtime needs explicit control over authorization URL
+ * creation and callback handling. The client stores only transient PKCE state
+ * and code verifier data; durable session storage belongs to
+ * `createOAuthAppAuth` after the token exchange succeeds.
+ */
 export function createOAuthClient({
 	issuer,
 	clientId,

@@ -4,10 +4,9 @@
  * `@epicenter/workspace` attaches typed primitives: tables, KV, plain/rich
  * text, timeline, and an action registry to a `Y.Doc`, then wires the
  * result to IndexedDB persistence, end-to-end encryption, and WebSocket
- * sync via `openCollaboration`. `openCollaboration` also publishes
- * per-peer liveness via y-protocols awareness and exposes the live-device
- * surface (`devices.list()`) plus HTTP-backed `dispatch()` for cross-
- * device calls.
+ * sync via `openCollaboration`. `openCollaboration` also consumes the
+ * server-owned presence channel and exposes the live-device surface
+ * (`devices.list()`) plus socket-backed `dispatch()` for cross-device calls.
  *
  * @example
  * ```typescript
@@ -22,30 +21,32 @@
  *   openCollaboration,
  *   roomWsUrl,
  * } from '@epicenter/workspace';
+ * import type { AuthClient } from '@epicenter/auth';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * declare const openWebSocket: (
- *   url: string | URL,
- *   protocols?: string[],
- * ) => Promise<WebSocket>;
+ * declare const auth: AuthClient;
  *
+ * const apiUrl = 'https://api.example.com';
  * const installationId = createInstallationId({ storage: localStorage });
  *
- * // Singleton document + collaboration: inline at module scope, no factory wrapper.
+ * // A cloud doc is owned by the authenticated subject and addressed by its
+ * // Y.Doc guid: `roomWsUrl(apiUrl, ydoc.guid)` resolves to the room
+ * // `subject:${userId}:rooms:${ydoc.guid}` server-side.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
  * const collaboration = openCollaboration(ydoc, {
- *   url: roomWsUrl('https://api.example.com', ydoc.guid),
+ *   url: roomWsUrl(apiUrl, ydoc.guid),
+ *   openWebSocket: auth.openWebSocket,
  *   waitFor: idb.whenLoaded,
- *   openWebSocket,
  *   installationId,
  *   actions: {},
  * });
  *
- * // Content docs use the same primitive with an empty action registry.
+ * // Content docs build the same URL from their own guid. The local Y.Doc
+ * // guid doubles as the cloud room id, so there is no second id system.
  * const noteBodyDocs = createDisposableCache(
  *   (noteId: string) => {
  *     const bodyYdoc = new Y.Doc({
@@ -59,9 +60,9 @@
  *     });
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
  *     const bodySync = openCollaboration(bodyYdoc, {
- *       url: roomWsUrl('https://api.example.com', bodyYdoc.guid),
+ *       url: roomWsUrl(apiUrl, bodyYdoc.guid),
+ *       openWebSocket: auth.openWebSocket,
  *       waitFor: bodyIdb.whenLoaded,
- *       openWebSocket,
  *       installationId,
  *       actions: {},
  *     });
@@ -106,18 +107,16 @@ export {
 // PATH TYPES (for daemon callers)
 // ════════════════════════════════════════════════════════════════════════════
 
-export { findProjectRoot } from './client/find-project-root.js';
+// `findProjectRoot` and `loadProjectConfig` import `node:fs` and `node:path`.
+// They are node-only and are exported from `@epicenter/workspace/node`; keeping
+// them out of this root barrel stops browser bundles (whispering, etc.) from
+// traversing `node:*` modules.
 export {
 	DEFAULT_PROJECT_CONFIG_SOURCE,
 	defineConfig,
 	type EpicenterConfig,
 	PROJECT_CONFIG_FILENAME,
 } from './config/define-config.js';
-export {
-	loadProjectConfig,
-	ProjectConfigError,
-	type ProjectConfigError as ProjectConfigErrorType,
-} from './config/load-project-config.js';
 export {
 	userCacheDir,
 	userConfigDir,
@@ -188,4 +187,10 @@ export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-export { roomWsUrl, websocketUrl } from './document/transport.js';
+// Transport URL builder.
+//
+// `roomWsUrl(apiUrl, ydoc.guid)` builds the WebSocket URL for `/rooms/:room`.
+// A cloud doc is owned by the authenticated subject; the room id is the
+// Y.Doc guid and the server resolves it to `subject:${userId}:rooms:${room}`.
+// Both browser apps and the daemon use this one builder.
+export { roomWsUrl } from './document/transport.js';

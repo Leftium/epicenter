@@ -3,6 +3,7 @@ import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createSession } from '@epicenter/svelte';
+import { openCollaboration, roomWsUrl } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createAiChatState } from './chat/chat-state.svelte';
 import { createDeviceProfile, registerDevice } from './device';
@@ -11,11 +12,13 @@ import { createBookmarkState } from './state/bookmark-state.svelte';
 import { createSavedTabState } from './state/saved-tab-state.svelte';
 import { createToolTrustState } from './state/tool-trust.svelte';
 import { createUnifiedViewState } from './state/unified-view-state.svelte';
-import type { TabManagerBrowser } from './tab-manager/extension';
-import { openTabManagerBrowser } from './tab-manager/extension';
+import {
+	openTabManagerBrowser,
+	type TabManagerBrowser,
+} from './tab-manager/extension';
 
 export type SessionAiTools = ReturnType<
-	typeof actionsToAiTools<TabManagerBrowser['collaboration']['actions']>
+	typeof actionsToAiTools<TabManagerBrowser['actions']>
 >;
 export type SessionTools = SessionAiTools['tools'];
 
@@ -37,13 +40,14 @@ const whenReady = Promise.all([
 	persistedAuthStorage.whenReady,
 	createDeviceProfile(),
 ]).then(([, profile]) => {
-	authClient = createOAuthAppAuth({
+	const auth = createOAuthAppAuth({
 		baseURL: APP_URLS.API,
 		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 		persistedAuthStorage,
 		launcher: oauthLauncher,
 	});
-	session = buildSession(authClient, profile);
+	authClient = auth;
+	session = buildSession(auth, profile);
 });
 
 function buildSession(
@@ -56,9 +60,24 @@ function buildSession(
 			const tabManager = openTabManagerBrowser({
 				owner,
 				installationId: profile.installationId,
-				openWebSocket: auth.openWebSocket,
 			});
-			const sessionAiTools = actionsToAiTools(tabManager.collaboration.actions);
+
+			const collaboration = openCollaboration(tabManager.ydoc, {
+				url: roomWsUrl(APP_URLS.API, tabManager.ydoc.guid),
+				openWebSocket: auth.openWebSocket,
+				waitFor: tabManager.idb.whenLoaded,
+				installationId: profile.installationId,
+				actions: tabManager.actions,
+			});
+
+			// Auth transitions: tell the live socket to retry. Sign-in
+			// reconnects with the new token; sign-out lets the supervisor
+			// recover if the user signs back in.
+			const unsubscribeAuth = auth.onStateChange(() => {
+				collaboration.reconnect();
+			});
+
+			const sessionAiTools = actionsToAiTools(tabManager.actions);
 			const savedTabs = createSavedTabState(tabManager);
 			const bookmarks = createBookmarkState(tabManager);
 			const toolTrust = createToolTrustState(tabManager);
@@ -72,9 +91,11 @@ function buildSession(
 
 			return {
 				...tabManager,
+				collaboration,
 				state,
 				sessionAiTools,
 				[Symbol.dispose]() {
+					unsubscribeAuth();
 					aiChat[Symbol.dispose]();
 					toolTrust[Symbol.dispose]();
 					bookmarks[Symbol.dispose]();

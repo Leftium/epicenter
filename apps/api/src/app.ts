@@ -59,6 +59,9 @@ type OAuthAuthServerConfigAuth = Parameters<
 	typeof oauthProviderAuthServerMetadata
 >[0];
 
+const PRODUCTION_API_ORIGIN = APPS.API.urls[0];
+const LOCAL_API_ORIGIN = `http://localhost:${APPS.API.port}`;
+
 /**
  * Create a queue for fire-and-forget promises that run after the HTTP response.
  *
@@ -160,15 +163,12 @@ const factory = createFactory<Env>({
 		});
 
 		// Layer 2: Auth: pure, reads db from context.
-		// Wrangler dev uses the custom domain from routes config as the Host header,
-		// producing http://api.epicenter.so (no TLS). Detect this via the named
-		// WRANGLER_DEV_API_ORIGIN constant and use localhost.
 		app.use('*', async (c, next) => {
 			const origin = new URL(c.req.url).origin;
 			const baseURL =
-				origin === WRANGLER_DEV_API_ORIGIN
-					? `http://localhost:${APPS.API.port}`
-					: origin;
+				origin === LOCAL_API_ORIGIN || origin === WRANGLER_DEV_API_ORIGIN
+					? LOCAL_API_ORIGIN
+					: PRODUCTION_API_ORIGIN;
 			await ensureTrustedOAuthClients(c.var.db);
 			c.set('authBaseURL', baseURL);
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
@@ -190,15 +190,15 @@ const app = factory.createApp();
 /**
  * Cookie-or-bearer authentication. Resolves `c.var.user` from a Better Auth
  * session cookie if one is present; otherwise falls back to an OAuth bearer
- * (which carries its own `workspaces:open` scope check). Use this on routes
- * served to both first-party browser callers (portal, dashboard) and external
- * OAuth clients (CLI, Tauri, extension). For routes that are external-clients
- * only (`/ai/*`, `/rooms/*`), use {@link requireOAuthUser} below.
+ * for the API audience. Use this on routes served to both first-party browser
+ * callers (portal, dashboard) and external OAuth clients (CLI, Tauri,
+ * extension). For routes that are external-clients only (`/ai/*`, `/rooms/*`),
+ * use {@link requireOAuthUser} below.
  *
  * Ambiguous requests (both credentials present) never reach this middleware;
  * {@link singleCredential} rejects them at the edge.
  */
-const requireUser = factory.createMiddleware(async (c, next) => {
+const requireCookieOrBearerUser = factory.createMiddleware(async (c, next) => {
 	const session = await c.var.auth.api.getSession({
 		headers: c.req.raw.headers,
 	});
@@ -293,23 +293,23 @@ app.get(
 		);
 	},
 );
-// Session projection endpoint: returns the authenticated user record plus
-// their local workspace identity (subject + per-subject keyring). This is the
-// single Epicenter session surface every client (browser apps, browser
-// extension, CLI) calls at sign-in and at cold-boot when online to refresh
-// the persisted localIdentity cell.
+// Session projection endpoint: returns the authenticated user record and their
+// local workspace identity (subject + per-subject keyring). This is the single
+// Epicenter session surface every client (browser apps, browser extension, CLI)
+// calls at sign-in and at cold-boot when online to refresh the persisted
+// localIdentity cell.
 //
-// Accepts cookie OR bearer via {@link requireUser}. Bearer callers go through
-// the `workspaces:open` scope check inside `resolveRequestOAuthUser`; cookie
-// callers implicitly satisfy it (the session was minted by Better Auth and is
-// fully trusted within the parent domain).
+// Accepts cookie OR bearer via {@link requireCookieOrBearerUser}. Bearer
+// callers prove issuer, audience, signature, expiration, subject, and user
+// existence inside `resolveRequestOAuthUser`; cookie callers rely on the
+// Better Auth session minted within the parent domain.
 app.get(
 	'/api/session',
 	describeRoute({
 		description: 'Return the authenticated session projection',
 		tags: ['auth'],
 	}),
-	requireUser,
+	requireCookieOrBearerUser,
 	async (c) => {
 		const user = c.var.user;
 		return c.json({
@@ -386,8 +386,8 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 
 app.use('/ai/*', requireOAuthUser);
 app.use('/rooms/*', requireOAuthUser);
-app.use('/api/billing/*', requireUser);
-app.use('/api/assets/*', requireUser);
+app.use('/api/billing/*', requireCookieOrBearerUser);
+app.use('/api/assets/*', requireCookieOrBearerUser);
 
 // Ensure Autumn customer exists and stash planId for model gating.
 // Runs after requireOAuthUser for AI routes so c.var.user is available.
@@ -439,49 +439,34 @@ app.post(
 // ---------------------------------------------------------------------------
 
 /**
- * DO name namespacing: `subject:{subject}:rooms:{room}`
+ * Resolve a route room for the authenticated subject.
  *
- * We use subject-scoped DO names (Google Docs model) rather than org-scoped
- * names (Vercel/Supabase model). Each owner gets their own DO instance per
- * room. `subject` mirrors the client-side `localIdentity.subject` and equals
- * the Better Auth `user.id` today; naming the prefix `subject:` matches the
- * encryption derivation labels (`subject:{subject}`, `workspace:{wsId}`).
- * Browser-local storage receives this same value as `ownerId`; it is named
- * for its storage role there, not for its auth role.
- *
- * Alternatives considered:
- *
- * - **Org-scoped (`org:{orgId}:{name}`)**: Evaluated for enterprise and
- *   self-hosted. Problems: most rooms hold personal data that should not
- *   merge into a shared Y.Doc. Org-scoped would require a per-room `scope`
- *   flag anyway, adding complexity without simplifying.
- *
- * - **Org-scoped with personal sub-scope (`org:{orgId}:subject:{subject}:{name}`)**:
- *   Embeds org management in the app. For self-hosted enterprise, the
- *   deployment itself IS the org boundary (like GitLab, Outline, Mattermost),
- *   so org tables and Better Auth organization plugin are unnecessary overhead.
- *
- * Current scheme keeps the app auth-simple ("subject has account, subject
- * accesses their data") and works for both cloud and self-hosted without org
- * infrastructure. When sharing is needed, it follows the Google Docs pattern:
- * the owner's DO name stays the same, an ACL table grants access to other
- * subjects, and auth middleware checks "is this caller the owner OR in the
- * ACL?"
- *
- * Multi-tenant cloud isolation (if needed later) is a platform-layer concern,
- * a tenant prefix added at the routing layer, not embedded in the app's data
- * model.
+ * The route owns the subject boundary, so the Room DO receives the internal
+ * Durable Object name and never needs to know about auth state.
  */
-
-/** Get a Room DO stub and its DO name for the authenticated subject's room. */
-function getRoomStub(c: Context<Env>) {
-	const room = c.req.param('room')!;
-	const doName = `subject:${c.var.user.id}:rooms:${room}`;
+function resolveSubjectRoom(c: Context<Env>) {
+	const room = c.req.param('room');
+	if (room == null) {
+		throw new Error('Room route is missing required room parameter');
+	}
 	return {
-		stub: c.env.ROOM.get(c.env.ROOM.idFromName(doName)),
-		doName,
+		roomName: `subject:${c.var.user.id}:rooms:${room}`,
 		room,
 	};
+}
+
+/**
+ * Wrap a Uint8Array in a Response with a fresh ArrayBuffer copy.
+ *
+ * Yjs encoders return Uint8Array views that may share a larger internal
+ * backing buffer. The copy isolates exactly the bytes that should be sent.
+ */
+function binaryResponse(data: Uint8Array): Response {
+	const body = new ArrayBuffer(data.byteLength);
+	new Uint8Array(body).set(data);
+	return new Response(body, {
+		headers: { 'content-type': 'application/octet-stream' },
+	});
 }
 
 /**
@@ -526,22 +511,10 @@ function upsertDoInstance(
 		.catch((e) => console.error('[do-tracking] upsert failed:', e));
 }
 
-/**
- * Wrap a Uint8Array in a Response with a fresh ArrayBuffer copy.
- *
- * Yjs encoders (`Y.encodeStateAsUpdateV2`, sync diffs) return `Uint8Array`s
- * that are subarray views of a larger internal encoder buffer. Passing the
- * raw view to `new Response()` causes some runtimes to serialize the entire
- * backing buffer. The copy isolates the bytes we actually want to send.
- */
-function binaryResponse(data: Uint8Array): Response {
-	const body = new ArrayBuffer(data.byteLength);
-	new Uint8Array(body).set(data);
-	return new Response(body, {
-		headers: { 'content-type': 'application/octet-stream' },
-	});
-}
-
+// `/rooms/:room` is the single cloud sync path. A cloud doc is owned by the
+// authenticated subject and addressed by its Y.Doc guid; the route resolves
+// the DO name `subject:{user.id}:rooms:{room}`. Browser apps and the
+// workspace daemon both build their URL with `roomWsUrl(api, ydoc.guid)`.
 app.get(
 	'/rooms/:room',
 	describeRoute({
@@ -549,25 +522,26 @@ app.get(
 		tags: ['rooms'],
 	}),
 	async (c) => {
-		const { stub, doName, room } = getRoomStub(c);
+		const { roomName, room } = resolveSubjectRoom(c);
+		const roomStub = c.env.ROOM.get(c.env.ROOM.idFromName(roomName));
 
 		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
 					userId: c.var.user.id,
 					resourceName: room,
-					doName,
+					doName: roomName,
 				}),
 			);
-			return stub.fetch(c.req.raw);
+			return roomStub.fetch(c.req.raw);
 		}
 
-		const { data, storageBytes } = await stub.getDoc();
+		const { data, storageBytes } = await roomStub.getDoc();
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
 				resourceName: room,
-				doName,
+				doName: roomName,
 				storageBytes,
 			}),
 		);
@@ -582,71 +556,29 @@ app.post(
 		tags: ['rooms'],
 	}),
 	async (c) => {
-		const body = new Uint8Array(await c.req.arrayBuffer());
+		const { roomName, room } = resolveSubjectRoom(c);
+		const body = new Uint8Array(await c.req.raw.arrayBuffer());
 		if (body.byteLength > MAX_PAYLOAD_BYTES) {
-			return c.body('Payload too large', 413);
+			return new Response('Payload too large', { status: 413 });
 		}
 
-		const { stub, doName, room } = getRoomStub(c);
-		const { diff, storageBytes } = await stub.sync(body);
+		const roomStub = c.env.ROOM.get(c.env.ROOM.idFromName(roomName));
+		const { data: synced, error } = await roomStub.sync(body);
+		if (error) {
+			return new Response('Malformed sync body', { status: 400 });
+		}
+		const { diff, storageBytes } = synced;
 
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
 				resourceName: room,
-				doName,
+				doName: roomName,
 				storageBytes,
 			}),
 		);
 
-		if (!diff) return c.body(null, 204);
-		return binaryResponse(diff);
-	},
-);
-
-/**
- * Dispatch a live-device call via the relay.
- *
- * The request body fully describes the dispatch: caller (`from`) and
- * recipient (`to`) installation ids, the action key, and the input.
- * Within a subject-scoped room, `from` is treated as a trusted routing
- * label (the OAuth boundary already proved the subject). The DO mints
- * a correlation id, pushes `dispatch_inbound` over the recipient's
- * WebSocket, and the response body is the recipient's `dispatch_response`
- * result (or `RecipientOffline` on no live socket).
- *
- * The HTTP response is always 200 unless the body is malformed; the
- * `Result<...>` body is the only failure channel for the caller.
- */
-app.post(
-	'/rooms/:room/dispatch',
-	describeRoute({
-		description: 'Dispatch a live-device call via the relay',
-		tags: ['rooms'],
-	}),
-	sValidator(
-		'json',
-		type({
-			from: '/^[A-Za-z0-9_-]+$/ <= 128',
-			to: '/^[A-Za-z0-9_-]+$/ <= 128',
-			action: '/^[a-z][a-z0-9_]{0,63}$/',
-			'input?': 'unknown',
-		}),
-	),
-	async (c) => {
-		const { stub, doName, room } = getRoomStub(c);
-		const body = c.req.valid('json');
-		const result = await stub.dispatch(body);
-
-		c.var.afterResponse.push(
-			upsertDoInstance(c.var.db, {
-				userId: c.var.user.id,
-				resourceName: room,
-				doName,
-			}),
-		);
-
-		return c.json(result);
+		return diff ? binaryResponse(diff) : new Response(null, { status: 204 });
 	},
 );
 

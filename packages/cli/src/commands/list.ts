@@ -64,8 +64,10 @@ function renderResult(
 				console.error(`error: ${result.error.message}`);
 				process.exitCode = 1;
 				return;
+			default:
+				result.error satisfies never;
+				return;
 		}
-		return;
 	}
 	if (format) {
 		renderJson(result.data, path, format);

@@ -1,7 +1,5 @@
-import { oauthProvider } from '@better-auth/oauth-provider';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { jwt } from 'better-auth/plugins/jwt';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createAutumn } from '../autumn';
@@ -10,7 +8,7 @@ import * as schema from '../db/schema';
 import { TRUSTED_ORIGINS } from '../trusted-origins';
 import { BASE_AUTH_CONFIG } from './base-config';
 import { createCookieAdvancedConfig } from './cookie-config';
-import { trustedOAuthClientIds } from './trusted-oauth-clients';
+import { authPlugins } from './plugins';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -40,9 +38,9 @@ export function createAuth({
 	env: Cloudflare.Env;
 	baseURL: string;
 }) {
-	const authOptionsBase = {
+	return betterAuth({
 		...BASE_AUTH_CONFIG,
-		database: drizzleAdapter(db, { provider: 'pg' }),
+		database: drizzleAdapter(db, { provider: 'pg', schema }),
 		baseURL,
 		secret: env.BETTER_AUTH_SECRET,
 		account: {
@@ -52,8 +50,9 @@ export function createAuth({
 			// 2. A signed state cookie set during the sign-in POST
 			//
 			// Layer 2 fails in our architecture. The sign-in POST is a cross-origin
-			// fetch (opensidian.com → api.epicenter.so), and modern browsers block
-			// third-party Set-Cookie from fetch responses, even with SameSite=None.
+			// fetch from a browser app origin to the API origin, and modern browsers
+			// block third-party Set-Cookie from fetch responses, even with
+			// SameSite=None.
 			// Chrome Privacy Sandbox, Safari ITP, and Firefox ETP all enforce this.
 			// The cookie is never stored, so the callback can't read it back.
 			//
@@ -168,36 +167,6 @@ export function createAuth({
 		verification: {
 			storeInDatabase: true,
 		},
-	} satisfies Omit<BetterAuthOptions, 'plugins'>;
-
-	return betterAuth({
-		...authOptionsBase,
-		plugins: [
-			// ES256 (P-256 ECDSA) signs the id_token and JWT access tokens. The
-			// jose default would be EdDSA (Ed25519); pinning ES256 gives the
-			// broadest verifier-library support across browser `jose`, Tauri
-			// Rust crates, and mobile platforms. The `id_token_signing_alg_values_supported`
-			// claim on `/.well-known/openid-configuration` reflects this.
-			jwt({ jwks: { keyPairConfig: { alg: 'ES256' } } }),
-			oauthProvider({
-				loginPage: '/sign-in',
-				consentPage: '/consent',
-				requirePKCE: true,
-				cachedTrustedClients: trustedOAuthClientIds,
-				validAudiences: [baseURL],
-				allowDynamicClientRegistration: false,
-				scopes: [
-					'openid',
-					'profile',
-					'email',
-					'offline_access',
-					'workspaces:open',
-				],
-				// The plugin warns that /.well-known/oauth-authorization-server/auth must exist
-				// because basePath is /auth (not /), so it can't auto-mount at the root.
-				// We already mount both discovery endpoints manually in app.ts.
-				silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
-			}),
-		],
-	});
+		plugins: authPlugins(baseURL),
+	} satisfies BetterAuthOptions);
 }

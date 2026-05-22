@@ -1,16 +1,13 @@
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
-import { type ApiSessionResponse, AuthUser } from '@epicenter/auth';
-import type { SubjectKeyring } from '@epicenter/encryption';
+import { AuthUser } from '@epicenter/auth';
 import type { User } from 'better-auth';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import * as schema from '../db/schema';
-import { hasScope, OAuthError, WORKSPACES_OPEN_SCOPE } from './oauth-error.js';
+import { OAuthError } from './oauth-error.js';
 import { createOAuthIssuerURL, createOAuthJwksURL } from './oauth-metadata.js';
-
-export { WORKSPACES_OPEN_SCOPE };
 
 type VerifyOAuthAccessToken = ReturnType<
 	ReturnType<typeof oauthProviderResourceClient>['getActions']
@@ -48,17 +45,18 @@ export function parseBearer(value: string | null): string | null {
 }
 
 /**
- * Verify a bearer access token, enforce the `workspaces:open` scope, and
- * resolve the calling Better Auth user. The single source of truth for what
- * "a token good enough to reach a protected resource" means in this codebase.
+ * Cheap resolver for the protected-resource boundary (`/ai/*`,
+ * `/rooms/*`, `/api/billing/*`, `/api/assets/*`).
+ * Skips subject keyring derivation; only the calling user is needed once
+ * the token proves issuer, audience, signature, expiration, and subject.
  *
- * Both wrappers (`resolveBearerUser`, `resolveBearerIdentity`) project the
- * Better Auth `User` through `AuthUser.assert`, then `resolveBearerIdentity`
- * additionally derives the subject keyring.
+ * Add custom OAuth scopes back only when two valid clients need different
+ * API powers. Until then, the API audience is the bearer boundary and product
+ * middleware owns route-specific policy.
  */
-async function verifyBearerToUser(
+export async function resolveBearerUser(
 	deps: ResolverDeps,
-): Promise<Result<User, OAuthError>> {
+): Promise<Result<AuthUser, OAuthError>> {
 	const accessToken = parseBearer(deps.authorization);
 	if (!accessToken) return OAuthError.InvalidToken();
 
@@ -71,64 +69,22 @@ async function verifyBearerToUser(
 	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
 	if (!userId) return OAuthError.InvalidToken();
 
-	if (!hasScope(payload, WORKSPACES_OPEN_SCOPE)) {
-		return OAuthError.InsufficientScope({ scope: WORKSPACES_OPEN_SCOPE });
-	}
-
 	const user = await deps.findUserById(userId);
 	if (!user) return OAuthError.InvalidToken();
 
-	return Ok(user);
-}
-
-/**
- * Cheap resolver for the protected-resource boundary (`/ai/*`,
- * `/rooms/*`, `/api/billing/*`, `/api/assets/*`).
- * Skips subject keyring derivation; only the calling user is needed once
- * the scope is proven.
- */
-export async function resolveBearerUser(
-	deps: ResolverDeps,
-): Promise<Result<AuthUser, OAuthError>> {
-	const { data: user, error } = await verifyBearerToUser(deps);
-	if (error) return Err(error);
 	return Ok(AuthUser.assert(user));
 }
 
 /**
- * Full resolver for `/api/session`. Returns the local-first payload the apps
- * need at boot: the calling user plus the per-subject keyring derived from
- * the root keyring.
- */
-export async function resolveBearerIdentity(
-	deps: ResolverDeps & {
-		deriveSubjectKeyring(subject: string): Promise<SubjectKeyring>;
-	},
-): Promise<Result<ApiSessionResponse, OAuthError>> {
-	const { data: user, error } = await verifyBearerToUser(deps);
-	if (error) return Err(error);
-	return Ok({
-		user: AuthUser.assert(user),
-		localIdentity: {
-			subject: user.id,
-			keyring: await deps.deriveSubjectKeyring(user.id),
-		},
-	});
-}
-
-/**
  * Resolve the OAuth bearer on the current request to the calling user.
- * This is the Hono adapter around the pure bearer resolver above.
+ * Shows the resource boundary mapping directly: the API origin is the audience,
+ * and the same origin plus `/auth` is the issuer.
  */
 export function resolveRequestOAuthUser<E extends RequestOAuthEnv>(
 	c: Context<E>,
 ) {
-	return resolveBearerUser(createResolverDeps(c));
-}
-
-function createResolverDeps<E extends RequestOAuthEnv>(c: Context<E>) {
 	const audience = c.var.authBaseURL;
-	return {
+	return resolveBearerUser({
 		authorization: c.req.header('authorization') ?? null,
 		audience,
 		issuer: createOAuthIssuerURL(audience),
@@ -143,5 +99,5 @@ function createResolverDeps<E extends RequestOAuthEnv>(c: Context<E>) {
 				.limit(1);
 			return row ?? null;
 		},
-	} satisfies ResolverDeps;
+	} satisfies ResolverDeps);
 }

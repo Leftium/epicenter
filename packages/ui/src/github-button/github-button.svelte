@@ -3,7 +3,7 @@
 	Adapted for our button API (no sizeMap/Size exports).
 -->
 <script lang="ts" module>
-	import type { ButtonProps, ButtonSize } from '../button/button.svelte';
+	import type { ButtonProps } from '../button/button.svelte';
 
 	export type GithubButtonProps = Omit<ButtonProps, 'href' | 'children'> & {
 		repo: {

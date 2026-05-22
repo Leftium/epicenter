@@ -8,7 +8,7 @@
  * @see specs/20260313T163000-settings-data-migration.md
  */
 
-import { Ok, tryAsync, trySync } from 'wellcrafted/result';
+import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { whispering } from '$lib/whispering/client';
 import { whisperingKv } from '$lib/workspace';
@@ -80,7 +80,7 @@ export async function migrateOldSettings(): Promise<void> {
 		try: () => whispering.whenReady,
 		catch: (err) => {
 			console.warn('[settings-migration] whenReady failed, aborting:', err);
-			return Ok(undefined);
+			return Err(err);
 		},
 	});
 	if (readyError) return;

@@ -8,11 +8,18 @@
  * workspace opener so daemon-side and browser-side action surfaces stay
  * identical without a second factory call here.
  *
+ * Cloud sync calls `openCollaboration` directly: each doc is owned by the
+ * authenticated subject and addressed by its own `ydoc.guid`, so the URL is
+ * `roomWsUrl(API, ydoc.guid)` with no client-side lookup. One
+ * `auth.onStateChange` listener reconnects the root collaboration and every
+ * live child sync across sign-in and sign-out transitions.
+ *
  * The bundle's `wipe()` drops every encrypted IDB database for this owner;
- * `Symbol.dispose` tears down the root + cached child Y.Docs without
- * touching local storage.
+ * `Symbol.dispose` tears down the root + cached child Y.Docs and detaches the
+ * auth listener without touching local storage.
  */
 
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { type NoteId, openHoneycrispWorkspace } from '@epicenter/honeycrisp';
 import {
@@ -20,7 +27,6 @@ import {
 	createDisposableCache,
 	DateTimeString,
 	type LocalOwner,
-	type OpenWebSocket,
 	onLocalUpdate,
 	openCollaboration,
 	roomWsUrl,
@@ -30,11 +36,11 @@ import * as Y from 'yjs';
 export function openHoneycrispBrowser({
 	owner,
 	installationId,
-	openWebSocket,
+	auth,
 }: {
 	owner: LocalOwner;
 	installationId: string;
-	openWebSocket?: OpenWebSocket;
+	auth: AuthClient;
 }) {
 	const workspace = openHoneycrispWorkspace(owner.attachEncryption);
 	const { ydoc: rootYdoc, tables, kv } = workspace;
@@ -42,20 +48,17 @@ export function openHoneycrispBrowser({
 	const idb = owner.attachLocal(rootYdoc);
 
 	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
+		const childDocId = workspace.noteBodyDocGuid(noteId);
 		const ydoc = new Y.Doc({
-			guid: workspace.noteBodyDocGuid(noteId),
+			guid: childDocId,
 			gc: true,
 		});
 		const body = attachRichText(ydoc);
 		const childIdb = owner.attachLocal(ydoc);
-		// Each rich-text body is its own Y.Doc (its own sync room keyed by the
-		// body guid), so opening a per-body WebSocket here is intentional:
-		// the server multiplexes by room, not by client. Tear-down lives in
-		// the cache's `Symbol.dispose`.
 		const childSync = openCollaboration(ydoc, {
 			url: roomWsUrl(APP_URLS.API, ydoc.guid),
+			openWebSocket: auth.openWebSocket,
 			waitFor: childIdb.whenLoaded,
-			openWebSocket,
 			installationId,
 			actions: {},
 		});
@@ -84,10 +87,22 @@ export function openHoneycrispBrowser({
 
 	const collaboration = openCollaboration(rootYdoc, {
 		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
+		openWebSocket: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
-		openWebSocket,
 		installationId,
 		actions: workspace.actions,
+	});
+
+	// Auth transitions: tell live sockets to retry.
+	// Sign-in: a previously-rejected socket reconnects with the new token.
+	// Sign-out: the server closes the existing socket on its own (4401);
+	//   reconnect() ensures the supervisor doesn't sit in 'failed' if the
+	//   user signs back in.
+	const unsubscribeAuth = auth.onStateChange(() => {
+		collaboration.reconnect();
+		for (const child of noteBodyDocs.values()) {
+			child.sync.reconnect();
+		}
 	});
 
 	return {
@@ -111,6 +126,7 @@ export function openHoneycrispBrowser({
 			await owner.wipeLocalYjsData(fallbackGuids);
 		},
 		[Symbol.dispose]() {
+			unsubscribeAuth();
 			noteBodyDocs[Symbol.dispose]();
 			rootYdoc.destroy();
 		},

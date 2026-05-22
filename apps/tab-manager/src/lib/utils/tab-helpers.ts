@@ -1,7 +1,7 @@
 /**
  * Pure tab-analysis helpers shared by the command palette.
  *
- * These functions take a tab array and return analysis results—no dependency
+ * These functions take a tab array and return analysis results, with no dependency
  * on `browserState` or any other reactive data source.
  * Consumers provide their own tab arrays from whatever source they use.
  *
@@ -13,7 +13,6 @@
  * ```
  */
 
-import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import { getDomain } from '$lib/utils/format';
 
 /**
@@ -21,7 +20,7 @@ import { getDomain } from '$lib/utils/format';
  *
  * Strips the fragment (client-side anchor) and trailing slash, and sorts
  * query parameters so identical param sets in different order still match.
- * Query parameters are preserved—`?v=A` and `?v=B` are different pages.
+ * Query parameters are preserved: `?v=A` and `?v=B` are different pages.
  *
  * @example
  * ```typescript
@@ -48,10 +47,12 @@ export function normalizeUrl(url: string): string {
 }
 
 /**
- * Minimum fields needed for tab analysis helpers, derived from the browser
- * state ingestion boundary.
+ * Minimum field needed for URL-based tab analysis. The generic return type
+ * preserves the caller's full record shape.
  */
-type TabAnalysisInput = Pick<BrowserTab, 'id' | 'url' | 'title'>;
+type TabAnalysisInput = {
+	url?: string;
+};
 
 /**
  * Find groups of tabs with the same normalized URL.
@@ -93,7 +94,7 @@ export function findDuplicateGroups<T extends TabAnalysisInput>(
  *
  * Returns a Map from domain string to the tabs on that domain.
  * Tabs without a URL are skipped. Includes all domains, even those
- * with a single tab—callers should filter to 2+ if needed.
+ * with a single tab. Callers should filter to 2+ if needed.
  *
  * @example
  * ```typescript

@@ -12,24 +12,21 @@
  * See spec: `20260429T004302-workspace-as-daemon-transport.md` § Phase 2.
  */
 
-import { Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
 import { buildDaemonApp } from './app.js';
-import { pingDaemon } from './client.js';
 import type { DaemonLease } from './lease.js';
 import { validateDaemonRouteNames } from './route-validation.js';
 import { unlinkSocketFile } from './runtime-files.js';
 import { StartupError } from './startup-errors.js';
 import type { DaemonServedRoute } from './types.js';
-import { bindOrRecover } from './unix-socket.js';
+import { bindUnixSocket } from './unix-socket.js';
 
 export type DaemonServerOptions = {
 	/** Already-claimed project daemon lease. */
 	lease: DaemonLease;
 	/** Daemon routes served by the unix-socket app. */
 	routes: readonly DaemonServedRoute[];
-	/** Called by the optional `/shutdown` route after the response is queued. */
-	triggerShutdown?: () => void;
 };
 
 export type DaemonServer = {
@@ -47,13 +44,16 @@ export type DaemonServer = {
  * Start a daemon server for already-started routes. The caller must claim the
  * daemon lease before route startup; this function owns only route validation
  * and socket binding.
+ *
+ * The lease (`lease.ts`) is the sole ownership primitive: holding it means no
+ * other daemon is live, so any leftover socket file is stale and `Bun.serve`
+ * clobbers it on bind. There is no socket-liveness pre-check.
  */
 export async function startDaemonServer({
 	lease,
 	routes,
-	triggerShutdown,
 }: DaemonServerOptions): Promise<Result<DaemonServer, StartupError>> {
-	const { projectDir, socketPath } = lease;
+	const { socketPath } = lease;
 	const routeIssue = validateDaemonRouteNames(
 		routes.map((entry) => entry.route),
 	);
@@ -61,16 +61,14 @@ export async function startDaemonServer({
 		return StartupError.RouteNameRejected(routeIssue);
 	}
 
-	const app = buildDaemonApp(routes, triggerShutdown);
-	const result = await bindOrRecover({
-		socketPath,
-		fetch: app.fetch,
-		projectDir,
-		isSocketResponsive: pingDaemon,
+	const app = buildDaemonApp(routes);
+	const bindResult = trySync({
+		try: () => bindUnixSocket({ socketPath, fetch: app.fetch }),
+		catch: (cause) => StartupError.BindFailed({ cause }),
 	});
-	if (result.error !== null) return result;
+	if (bindResult.error !== null) return bindResult;
 
-	const server = result.data;
+	const server = bindResult.data;
 	let isClosed = false;
 
 	return Ok({

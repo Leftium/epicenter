@@ -5,22 +5,25 @@
 > builder chain. That API is gone. There is one pattern today: a user-owned
 > document factory, with every attachment (`attachTables`, `attachIndexedDb`,
 > `attachEncryption`, etc.) composed inline plus the `openCollaboration`
-> primitive that wraps sync, presence, RPC, and the peers surface in one call.
+> primitive that wraps sync, server-owned presence, and HTTP dispatch in one
+> call.
 >
 > Rather than maintain two versions of the same narrative, this guide now
 > points at the canonical sources:
 >
 > - **Quick Start**: [`packages/workspace/README.md`](../../packages/workspace/README.md)
 > - **Multi-device sync**: [`packages/workspace/SYNC_ARCHITECTURE.md`](../../packages/workspace/SYNC_ARCHITECTURE.md)
-> - **Production wiring**: `apps/tab-manager/src/lib/tab-manager/client.ts` (browser extension auth binding), `apps/tab-manager/src/lib/tab-manager/extension.ts` (encryption + IndexedDB + WebSocket + BroadcastChannel), `apps/fuji/src/routes/(signed-in)/fuji/browser.ts` (per-row content docs)
+> - **Production wiring**: `apps/tab-manager/src/lib/session.svelte.ts` (browser extension auth binding), `apps/tab-manager/src/lib/tab-manager/extension.ts` (encryption + IndexedDB + WebSocket + BroadcastChannel), `apps/fuji/src/lib/browser.ts` (per-row content docs)
 
 ## Overview
 
-The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, AI inference, and encryption key derivation. It runs on Cloudflare Workers with Durable Objects; each user gets isolated DOs for their workspaces and documents. There is no shared state between accounts.
+The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, AI inference, and encryption key derivation. It runs on Cloudflare Workers with Durable Objects. Cloud sync enters through the single route `/rooms/:room`: a cloud doc is owned by the authenticated subject and addressed by its `ydoc.guid`, and the server resolves the room from the auth token. Browser apps and the workspace daemon both use this route.
 
 On the client, `@epicenter/workspace` provides the primitives: define your schema with `defineTable` / `defineKv`, compose a live document by creating a `Y.Doc` and calling `attach*`, authenticate with `@epicenter/auth`, and gate the workspace lifecycle on signed-in identity with `createSession` from `@epicenter/svelte`.
 
-## Minimal end-to-end shape
+## Minimal Cloud workspace shape
+
+This snippet shows a signed-in cloud workspace. The client builds the sync URL with `roomWsUrl(apiUrl, ydoc.guid)`; the server resolves the room from the auth token, so the client never names a workspaceId.
 
 ```typescript
 import {
@@ -114,6 +117,6 @@ export const session = createSession({
 export type MyAppSignedIn = InferSignedIn<typeof session>;
 ```
 
-The `ydoc.guid` becomes the sync room name. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin.
+The `ydoc.guid` is both the local IndexedDB key and the cloud room id. Namespace it to your app, for example `epicenter.my-app`, to avoid collisions when multiple apps share the same IndexedDB origin. The cloud sync route `/rooms/:room` takes the room straight from `ydoc.guid`; the server resolves the DO name `subject:${userId}:rooms:${room}` from the auth token, with no workspace lookup.
 For authenticated browser workspaces, `createSession` gives app code a `LocalOwner`. The owner hides the subject to owner translation and scopes local IndexedDB, BroadcastChannel, and wipe paths for the signed-in subject.
 `createSession` reconciles `auth.state` against the live workspace: sign-out disposes the workspace, and same-subject identity updates keep the workspace mounted. A different subject from `/api/session` is rejected by auth before the workspace is reused. Auth-bound callbacks still read `auth.state` at their own boundaries: sync can see refreshed bearer tokens on connection attempts, while encrypted stores keep the keyring they derived when they were attached.

@@ -1,13 +1,14 @@
 /**
  * `epicenter daemon down`: stop a running `daemon up` daemon.
  *
- * Default: shut down the daemon for the discovered project via IPC
- * `shutdown` (1 s budget).
- * If the daemon doesn't reply in time (hung handler, unresponsive socket),
- * fall back to `SIGTERM` against the recorded pid. `--all` enumerates every
- * daemon for the current user and shuts them down in parallel.
+ * Sends `SIGTERM` to the recorded pid and polls until the process exits. The
+ * daemon installs a `SIGTERM` handler that runs the same teardown as the
+ * `daemon up` Ctrl-C path, so the OS signal is the whole shutdown channel:
+ * there is no separate IPC `/shutdown` route. If the daemon has not exited
+ * within {@link SHUTDOWN_TIMEOUT_MS} (hung handler), escalate to `SIGKILL`.
  *
- * No confirmation prompt: daemons are kill-friendly by design.
+ * `--all` enumerates every daemon for the current user and stops them in
+ * parallel. No confirmation prompt: daemons are kill-friendly by design.
  *
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Process lifecycle".
  */
@@ -15,55 +16,56 @@
 import { resolve } from 'node:path';
 import {
 	type DaemonMetadata,
-	daemonClient,
 	enumerateDaemons,
 	readMetadata,
-	socketPathFor,
 	unlinkMetadata,
 } from '@epicenter/workspace/node';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
+import { isProcessAlive } from '../util/process-alive.js';
 
 const SHUTDOWN_TIMEOUT_MS = 1000;
+const POLL_INTERVAL_MS = 50;
 
-// SIGTERM fallback only fires when the IPC shutdown didn't ack; we still
-// guard the kill on pid liveness to avoid signaling a recycled pid.
-function isProcessAlive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (cause) {
-		return (cause as NodeJS.ErrnoException).code === 'EPERM';
-	}
-}
-
-type Outcome =
-	| { kind: 'graceful'; pid: number; dir: string }
-	| { kind: 'sigterm'; pid: number; dir: string };
+type Outcome = { kind: 'stopped' | 'killed'; pid: number };
 
 /**
- * Stop a single daemon by metadata. Tries IPC `shutdown` first; falls back
- * to `SIGTERM` after {@link SHUTDOWN_TIMEOUT_MS} ms or on any non-ok reply.
+ * Stop a single daemon by metadata. Sends `SIGTERM`, then polls the pid until
+ * it exits. Escalates to `SIGKILL` if the daemon is still alive after
+ * {@link SHUTDOWN_TIMEOUT_MS}. Sweeps the metadata sidecar on the exit paths a
+ * graceful daemon shutdown would not have reached it itself.
  */
 async function shutdownOne(meta: DaemonMetadata): Promise<Outcome> {
-	const sock = socketPathFor(meta.dir);
-	const { error } = await daemonClient(sock, SHUTDOWN_TIMEOUT_MS).shutdown();
-	if (!error) {
-		return { kind: 'graceful', pid: meta.pid, dir: meta.dir };
+	if (!isProcessAlive(meta.pid)) {
+		// Already gone; clear the sidecar a crash left behind.
+		unlinkMetadata(meta.dir);
+		return { kind: 'stopped', pid: meta.pid };
 	}
 
-	// IPC didn't ack; fall back to SIGTERM if the pid is alive.
-	if (isProcessAlive(meta.pid)) {
-		try {
-			process.kill(meta.pid, 'SIGTERM');
-		} catch {
-			// pid raced to exit between the alive check and the kill;
-			// equivalent to graceful from our perspective.
-		}
+	try {
+		process.kill(meta.pid, 'SIGTERM');
+	} catch {
+		// Raced to exit between the liveness check and the signal.
+		unlinkMetadata(meta.dir);
+		return { kind: 'stopped', pid: meta.pid };
 	}
-	// Best-effort sweep; graceful shutdown would have removed these.
+
+	const deadline = Date.now() + SHUTDOWN_TIMEOUT_MS;
+	while (Date.now() < deadline) {
+		if (!isProcessAlive(meta.pid)) {
+			return { kind: 'stopped', pid: meta.pid };
+		}
+		await new Promise((done) => setTimeout(done, POLL_INTERVAL_MS));
+	}
+
+	// The SIGTERM handler hung or ignored the signal; force the exit.
+	try {
+		process.kill(meta.pid, 'SIGKILL');
+	} catch {
+		// Exited in the gap between the last poll and the kill.
+	}
 	unlinkMetadata(meta.dir);
-	return { kind: 'sigterm', pid: meta.pid, dir: meta.dir };
+	return { kind: 'killed', pid: meta.pid };
 }
 
 export const downCommand = cmd({
@@ -96,11 +98,11 @@ export const downCommand = cmd({
 		}
 
 		const outcome = await shutdownOne(meta);
-		if (outcome.kind === 'graceful') {
+		if (outcome.kind === 'stopped') {
 			process.stdout.write(`stopped (pid=${outcome.pid})\n`);
 		} else {
 			process.stderr.write(
-				`shutdown timed out, sent SIGTERM (pid=${outcome.pid})\n`,
+				`shutdown timed out, sent SIGKILL (pid=${outcome.pid})\n`,
 			);
 		}
 	},

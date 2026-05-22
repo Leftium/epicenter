@@ -1,3 +1,4 @@
+import type { AuthClient } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
@@ -9,7 +10,6 @@ import {
 	attachTimeline,
 	createDisposableCache,
 	type LocalOwner,
-	type OpenWebSocket,
 	onLocalUpdate,
 	openCollaboration,
 	roomWsUrl,
@@ -22,11 +22,11 @@ import { createOpensidianActions } from './actions';
 export function openOpensidianBrowser({
 	owner,
 	installationId,
-	openWebSocket,
+	auth,
 }: {
 	owner: LocalOwner;
 	installationId: string;
-	openWebSocket?: OpenWebSocket;
+	auth: AuthClient;
 }) {
 	const workspace = openOpensidianWorkspace(owner.attachEncryption);
 	const { ydoc: rootYdoc, tables, kv } = workspace;
@@ -34,21 +34,32 @@ export function openOpensidianBrowser({
 	const idb = owner.attachLocal(rootYdoc);
 
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
+		const childDocId = fileContentDocGuid({
+			workspaceId: rootYdoc.guid,
+			fileId,
+		});
 		const ydoc = new Y.Doc({
-			guid: fileContentDocGuid({
-				workspaceId: rootYdoc.guid,
-				fileId,
-			}),
+			guid: childDocId,
 			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
 			tables.files.update(fileId, { updatedAt: Date.now() }),
 		);
 		const childIdb = owner.attachLocal(ydoc);
+		// File bodies sync through Cloud so device loss doesn't drop the
+		// largest data class.
+		const childSync = openCollaboration(ydoc, {
+			url: roomWsUrl(APP_URLS.API, ydoc.guid),
+			openWebSocket: auth.openWebSocket,
+			waitFor: childIdb.whenLoaded,
+			installationId,
+			actions: {},
+		});
 		return {
 			ydoc,
 			content: attachTimeline(ydoc),
 			idb: childIdb,
+			sync: childSync,
 			/**
 			 * child disposer rejections do not propagate; bundle.wipe() relies on
 			 * IDB's deleteDatabase native blocking as belt-and-suspenders for
@@ -93,16 +104,29 @@ export function openOpensidianBrowser({
 
 	const collaboration = openCollaboration(rootYdoc, {
 		url: roomWsUrl(APP_URLS.API, rootYdoc.guid),
+		openWebSocket: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
-		openWebSocket,
 		installationId,
 		actions,
 	});
-	let disposed = false;
 
-	function disposeResources() {
-		if (disposed) return;
-		disposed = true;
+	// Auth transitions: tell live sockets to retry.
+	// Sign-in: a previously-rejected socket reconnects with the new token.
+	// Sign-out: the server closes the existing socket on its own (4401);
+	//   reconnect() ensures the supervisor doesn't sit in 'failed' if the
+	//   user signs back in.
+	const unsubscribeAuth = auth.onStateChange(() => {
+		collaboration.reconnect();
+		for (const child of fileContentDocs.values()) {
+			child.sync.reconnect();
+		}
+	});
+
+	let docsTornDown = false;
+
+	function teardownDocs() {
+		if (docsTornDown) return;
+		docsTornDown = true;
 		fileContentDocs[Symbol.dispose]();
 		sqliteIndex[Symbol.dispose]();
 		rootYdoc.destroy();
@@ -129,12 +153,13 @@ export function openOpensidianBrowser({
 					}),
 				),
 			];
-			disposeResources();
+			teardownDocs();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await owner.wipeLocalYjsData(fallbackGuids);
 		},
 		[Symbol.dispose]() {
-			disposeResources();
+			unsubscribeAuth();
+			teardownDocs();
 		},
 	};
 }

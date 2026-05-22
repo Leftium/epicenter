@@ -4,13 +4,7 @@
  * `browser-state.svelte.ts`.
  */
 
-import { APP_URLS } from '@epicenter/constants/vite';
-import {
-	type LocalOwner,
-	type OpenWebSocket,
-	openCollaboration,
-	roomWsUrl,
-} from '@epicenter/workspace';
+import type { LocalOwner } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createTabManagerActions } from '$lib/workspace/actions';
 import { type DeviceId, tabManagerTables } from '$lib/workspace/definition';
@@ -20,17 +14,15 @@ import { type DeviceId, tabManagerTables } from '$lib/workspace/definition';
  * installation id before invoking (the extension's installation id comes from
  * `chrome.storage.local` via `createDeviceProfile()` in `device.ts`).
  *
- * Consumers gate UI render on `tabManager.idb.whenLoaded`; sync (the
- * WebSocket) is independent and connects whenever the network allows.
+ * Consumers gate UI render on `tabManager.idb.whenLoaded`; Cloud sync is
+ * independent and connects whenever a Workspace route is available.
  */
 export function openTabManagerBrowser({
 	owner,
 	installationId,
-	openWebSocket,
 }: {
 	owner: LocalOwner;
 	installationId: DeviceId;
-	openWebSocket?: OpenWebSocket;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: true });
 	const encryption = owner.attachEncryption(ydoc);
@@ -43,27 +35,20 @@ export function openTabManagerBrowser({
 	const actions = createTabManagerActions({
 		tables,
 		batch,
-		deviceId: Promise.resolve(installationId),
-	});
-
-	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(APP_URLS.API, ydoc.guid),
-		waitFor: idb.whenLoaded,
-		openWebSocket,
-		installationId,
-		actions,
+		deviceId: installationId,
 	});
 
 	return {
+		installationId,
 		ydoc,
 		tables,
 		kv,
 		batch,
 		idb,
-		collaboration,
+		actions,
 		async wipe() {
 			ydoc.destroy();
-			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
+			await idb.whenDisposed;
 			await owner.wipeLocalYjsData([ydoc.guid]);
 		},
 		[Symbol.dispose]() {

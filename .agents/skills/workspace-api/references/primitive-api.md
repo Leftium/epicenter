@@ -125,7 +125,7 @@ import {
   docGuid,
   onLocalUpdate,
   openCollaboration,
-  websocketUrl,
+  roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { auth, workspace } from '$lib/client';
@@ -144,7 +144,7 @@ export const entryContentDocs = createDisposableCache((entryId: EntryId) => {
   const content = attachRichText(ydoc);
   const idb = attachIndexedDb(ydoc);
   const collaboration = openCollaboration(ydoc, {
-    url: websocketUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
+    url: roomWsUrl(APP_URLS.API, ydoc.guid),
     openWebSocket: auth.openWebSocket,
     replicaId,
     waitFor: idb.whenLoaded,

@@ -17,7 +17,7 @@ export const session = createSession({
 		const opensidian = openOpensidianBrowser({
 			owner,
 			installationId: createInstallationId({ storage: localStorage }),
-			openWebSocket: auth.openWebSocket,
+			auth,
 		});
 		const editor = createEditorState();
 		const files = createFilesState({ binding: opensidian });

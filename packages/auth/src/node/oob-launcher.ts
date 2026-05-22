@@ -13,6 +13,7 @@
 
 import * as readline from 'node:readline';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -52,13 +53,7 @@ export const OobLauncherError = defineErrors({
 
 export type OobLauncherError = InferErrors<typeof OobLauncherError>;
 
-const DEFAULT_SCOPES = [
-	'openid',
-	'profile',
-	'email',
-	'offline_access',
-	'workspaces:open',
-] as const;
+const DEFAULT_SCOPES = EPICENTER_OAUTH_SCOPES;
 
 export type CreateOobOAuthLauncherConfig = {
 	baseURL?: string;
@@ -73,6 +68,15 @@ export type CreateOobOAuthLauncherConfig = {
 	now?: () => number;
 };
 
+/**
+ * Create the CLI out-of-band OAuth launcher.
+ *
+ * Use this for one-shot human login from terminals where a localhost callback
+ * is not guaranteed. It prints the authorize URL, exchanges the pasted code
+ * with PKCE, and returns only the OAuth grant. The caller must still call
+ * `/api/session` before persisting anything, preserving the split between
+ * network credentials and local workspace identity.
+ */
 export function createOobOAuthLauncher({
 	baseURL = EPICENTER_API_URL,
 	clientId,
@@ -215,7 +219,7 @@ async function defaultOpenBrowser(url: string): Promise<void> {
 	}
 }
 
-function pickOpenCommand(): readonly string[] | null {
+function pickOpenCommand(): string[] | null {
 	switch (process.platform) {
 		case 'darwin':
 			return ['open'];

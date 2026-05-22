@@ -2,11 +2,11 @@
  * CLI-only config for Better Auth schema tools.
  *
  * This file exists solely for `@better-auth/cli generate` to introspect the auth
- * config and emit the correct Drizzle schema. It is never used at runtime—the
+ * config and emit the correct Drizzle schema. It is never used at runtime: the
  * Cloudflare Worker uses `createAuth()` in `src/auth/create-auth.ts` instead.
  *
- * Both configs spread `BASE_AUTH_CONFIG` (which owns the plugin list) so the CLI
- * and runtime always agree on which tables exist.
+ * Both configs spread `BASE_AUTH_CONFIG` and call `authPlugins(...)` so the
+ * CLI and runtime always agree on which tables exist.
  *
  * Run via:
  *   bun run auth:generate
@@ -27,6 +27,8 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { LOCAL_DATABASE_URL } from './env';
 import { BASE_AUTH_CONFIG } from './src/auth/base-config';
+import { authPlugins } from './src/auth/plugins';
+import * as schema from './src/db/schema';
 
 config({ path: fileURLToPath(new URL('.dev.vars', import.meta.url)) });
 const env = type({
@@ -39,15 +41,17 @@ const client = new pg.Client({
 });
 await client.connect();
 const db = drizzle(client);
+const baseURL = `http://localhost:${APPS.API.port}`;
 
 export const auth = betterAuth({
 	...BASE_AUTH_CONFIG,
 	/**
 	 * The CLI always runs locally, so we hardcode the dev URL. The value doesn't
-	 * affect schema generation—it only prevents `oauthProvider` from crashing on
+	 * affect schema generation. It only prevents `oauthProvider` from crashing on
 	 * `new URL('')` during plugin init. The runtime config derives baseURL from the request.
 	 */
-	baseURL: `http://localhost:${APPS.API.port}`,
-	database: drizzleAdapter(db, { provider: 'pg' }),
+	baseURL,
+	database: drizzleAdapter(db, { provider: 'pg', schema }),
 	secret: env.BETTER_AUTH_SECRET,
+	plugins: authPlugins(baseURL),
 });

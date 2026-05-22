@@ -1,9 +1,16 @@
 /**
  * Tests for `openCollaboration`.
  *
- * No real WebSocket: `openWebSocket` returns a never-resolving promise, so
- * the supervisor parks in `connecting` and the synchronous setup is what we
- * exercise here.
+ * The fake `openWebSocket` resolves immediately with a socket that stays in
+ * `CONNECTING` (we never call `onopen`), so the supervisor parks in
+ * `attemptConnection`. That means these tests only cover the synchronous
+ * setup of `openCollaboration`: the action-key guard, identity pass-through,
+ * and the `Symbol.dispose` sugar. Socket-coupled behavior (presence routing,
+ * dispatch result routing, `?installationId=` URL wrapping, disconnect
+ * settling) is intentionally out of scope here and needs a different fake.
+ *
+ * The fake's `close() -> onclose` is what lets `ydoc.destroy()` unpark the
+ * supervisor so the test process exits cleanly.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -18,31 +25,19 @@ import { openCollaboration } from './open-collaboration.js';
 const installationId = 'self';
 
 /**
- * Returns a fake WebSocket that parks in CONNECTING until `close()` is
- * called, at which point it transitions to CLOSED and fires `onclose`.
+ * Minimal fake WebSocket. Stays in CONNECTING (readyState 0) until `close()`
+ * is called, at which point it transitions to CLOSED and fires `onclose`.
+ * The supervisor assigns `binaryType`, `onopen`, `onerror`, `onmessage` on
+ * the way through; those writes land on the plain object and are never read.
  */
-function stalledOpenWebSocket(): Promise<WebSocket> {
-	const listeners: Record<string, EventListener[]> = {};
+function fakeWebSocket(): Promise<WebSocket> {
 	const ws = {
 		readyState: 0,
-		binaryType: 'arraybuffer' as BinaryType,
-		onopen: null as ((e: Event) => void) | null,
 		onclose: null as ((e: CloseEvent) => void) | null,
-		onerror: null as ((e: Event) => void) | null,
-		onmessage: null as ((e: MessageEvent) => void) | null,
-		send: () => {},
-		close: function close() {
+		close() {
 			if (ws.readyState === 3) return;
 			ws.readyState = 3;
-			const event = { code: 1000, reason: '' } as CloseEvent;
-			ws.onclose?.(event);
-			for (const listener of listeners.close ?? []) listener(event as Event);
-		},
-		addEventListener: (type: string, listener: EventListener) => {
-			(listeners[type] ??= []).push(listener);
-		},
-		removeEventListener: (type: string, listener: EventListener) => {
-			listeners[type] = (listeners[type] ?? []).filter((l) => l !== listener);
+			ws.onclose?.({ code: 1000, reason: '' } as CloseEvent);
 		},
 	};
 	return Promise.resolve(ws as unknown as WebSocket);
@@ -54,7 +49,7 @@ function setup<TActions extends ActionRegistry = ActionRegistry>(
 	const ydoc = new Y.Doc({ guid: 'open-collab-test' });
 	const collaboration = openCollaboration<TActions>(ydoc, {
 		url: 'wss://ignored.invalid/',
-		openWebSocket: stalledOpenWebSocket,
+		openWebSocket: fakeWebSocket,
 		installationId,
 		actions,
 	});
@@ -68,15 +63,6 @@ describe('openCollaboration', () => {
 		try {
 			expect(collaboration.installationId).toBe(installationId);
 			expect(collaboration.actions).toEqual({ tabs_list: list });
-		} finally {
-			ydoc.destroy();
-		}
-	});
-
-	test('initial status is offline or connecting (supervisor started, no waitFor)', () => {
-		const { ydoc, collaboration } = setup();
-		try {
-			expect(['offline', 'connecting']).toContain(collaboration.status.phase);
 		} finally {
 			ydoc.destroy();
 		}

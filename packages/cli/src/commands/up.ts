@@ -23,7 +23,6 @@ import type { StartedDaemonRoute } from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
 	type DaemonMetadata,
-	type DaemonServer,
 	DEFAULT_PROJECT_CONFIG_SOURCE,
 	findProjectRoot,
 	loadProjectConfig,
@@ -113,75 +112,54 @@ export async function runUp(
 		discoveredAt: new Date().toISOString(),
 	};
 
-	let metadataWritten = false;
-	let runtimes: StartedDaemonRoute[] = [];
-	let daemonServer: DaemonServer | null = null;
-	let auth: Awaited<ReturnType<typeof createMachineAuthClient>> | null = null;
-	let teardownPromise: Promise<void> | null = null;
-	let startupComplete = false;
-	const teardown = (): Promise<void> => {
-		if (teardownPromise) return teardownPromise;
-		teardownPromise = (async () => {
-			let closeError: unknown;
-			try {
-				if (daemonServer) await daemonServer.close();
-			} catch (cause) {
-				closeError = cause;
-			}
-			await Promise.allSettled(
-				runtimes.map((entry) =>
-					Promise.resolve(entry.runtime[Symbol.asyncDispose]()),
-				),
-			);
-			if (auth) auth[Symbol.dispose]();
-			if (metadataWritten) unlinkMetadata(projectDir);
-			lease.release();
-			if (closeError) throw closeError;
-		})();
-		return teardownPromise;
-	};
+	// Ordered unwinding for partially-completed startup. Each resource
+	// registers its disposer as it is acquired; `AsyncDisposableStack` runs
+	// them in reverse. On any early `return` or `throw` before `stack.move()`,
+	// `await using` disposes exactly what was acquired. On success, `move()`
+	// transfers the stack to the caller as the returned `teardown`.
+	await using stack = new AsyncDisposableStack();
+	stack.defer(() => lease.release());
 
-	try {
-		auth = await createMachineAuthClient();
+	const auth = await createMachineAuthClient();
+	stack.defer(() => auth[Symbol.dispose]());
 
-		const { data: config, error: configError } =
-			await loadProjectConfig(projectDir);
-		if (configError !== null) throw new Error(configError.message);
+	const { data: config, error: configError } =
+		await loadProjectConfig(projectDir);
+	if (configError !== null) throw new Error(configError.message);
 
-		const startResult = await startDaemonWorkspaceApps({
-			projectDir,
-			auth,
-			routes: config.daemon?.routes ?? {},
-		});
-		if (startResult.error) return startResult;
-		runtimes = startResult.data;
+	const startResult = await startDaemonWorkspaceApps({
+		projectDir,
+		auth,
+		routes: config.daemon?.routes ?? {},
+	});
+	if (startResult.error) return startResult;
+	const runtimes = startResult.data;
+	stack.defer(() =>
+		Promise.allSettled(
+			runtimes.map((entry) =>
+				Promise.resolve(entry.runtime[Symbol.asyncDispose]()),
+			),
+		).then(() => undefined),
+	);
 
-		const serverResult = await startDaemonServer({
-			lease,
-			routes: runtimes,
-			triggerShutdown: () => void teardown(),
-		});
-		if (serverResult.error) return serverResult;
-		daemonServer = serverResult.data;
+	const serverResult = await startDaemonServer({ lease, routes: runtimes });
+	if (serverResult.error) return serverResult;
+	const daemonServer = serverResult.data;
+	stack.defer(() => daemonServer.close());
 
-		const metadataResult = trySync({
-			try: () => writeMetadata(projectDir, metadata),
-			catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
-		});
-		if (metadataResult.error) return metadataResult;
-		metadataWritten = true;
-		startupComplete = true;
+	const metadataResult = trySync({
+		try: () => writeMetadata(projectDir, metadata),
+		catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
+	});
+	if (metadataResult.error) return metadataResult;
+	stack.defer(() => unlinkMetadata(projectDir));
 
-		return Ok({
-			runtimes,
-			metadata,
-			teardown,
-		});
-	} finally {
-		if (!startupComplete) {
-			await teardown();
-		}
-	}
+	const teardownStack = stack.move();
+	return Ok({
+		runtimes,
+		metadata,
+		teardown: () => teardownStack.disposeAsync(),
+	});
 }
 
 /**

@@ -3,6 +3,10 @@ import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
 import { skills as skillsWorkspace } from '$lib/skills/client';
 
+export type SkillMetadataUpdate = Partial<
+	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
+>;
+
 /**
  * Reactive skills state singleton.
  *
@@ -107,12 +111,7 @@ function createSkillsState() {
 		 * Automatically bumps `updatedAt`. Only name, description,
 		 * license, and compatibility are editable through this method.
 		 */
-		updateSkill(
-			id: string,
-			updates: Partial<
-				Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
-			>,
-		) {
+		updateSkill(id: string, updates: SkillMetadataUpdate) {
 			skillsWorkspace.tables.skills.update(id, {
 				...updates,
 				updatedAt: Date.now(),

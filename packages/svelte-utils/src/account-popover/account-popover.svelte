@@ -11,6 +11,7 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import User from '@lucide/svelte/icons/user';
 	import { createQuery, QueryClient } from '@tanstack/svelte-query';
 	import { extractErrorMessage } from 'wellcrafted/error';
 
@@ -32,11 +33,11 @@
 	/**
 	 * Shared account popover.
 	 *
-	 * Renders sync status from a collaboration runtime alongside auth
-	 * identity, reconnect, and sign-out. Takes only the three fields it
-	 * actually needs (`status`, `onStatusChange`, `reconnect`) rather than the
-	 * full `Collaboration` value, so RPC, peers, and presence do not leak
-	 * into the account UI surface.
+	 * Renders auth identity and sign-out. When a collaboration runtime is
+	 * present, it also renders sync status from the three fields it actually
+	 * needs (`status`, `onStatusChange`, `reconnect`) rather than the full
+	 * `Collaboration` value, so RPC, peers, and presence do not leak into the
+	 * account UI surface.
 	 *
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
 	 */
@@ -44,12 +45,10 @@
 		/** The auth client from `createOAuthAppAuth()`. */
 		auth: AuthClient;
 		/**
-		 * Sync surface slice from the binding's `collaboration`. Pass
-		 * `binding.collaboration` and TypeScript narrows; or build a literal
-		 * `{ status, onStatusChange, reconnect }` when the consumer holds a
-		 * smaller adapter.
+		 * Sync surface slice from the binding's optional `collaboration`.
+		 * Omit it until Cloud sync is attached.
 		 */
-		collaboration: Pick<
+		collaboration?: Pick<
 			Collaboration,
 			'status' | 'onStatusChange' | 'reconnect'
 		>;
@@ -69,21 +68,21 @@
 	let { auth, collaboration, syncNoun, onForgetDevice }: AccountPopoverProps =
 		$props();
 
-	let syncStatus = $state<SyncStatus>({ phase: 'offline' });
+	let syncStatus = $state<SyncStatus>();
 	let popoverOpen = $state(false);
 	let signingOut = $state(false);
 	let signingIn = $state(false);
 	let signInError = $state<string | null>(null);
 	let forgettingDevice = $state(false);
 	const isSignedIn = $derived(auth.state.status === 'signed-in');
-	const profileSubject = $derived(
+	const accountCacheKey = $derived(
 		auth.state.status === 'signed-out'
 			? null
 			: auth.state.localIdentity.subject,
 	);
 	const profile = createQuery(
 		() => ({
-			queryKey: ['account-profile', profileSubject],
+			queryKey: ['account-profile', accountCacheKey],
 			queryFn: async (): Promise<AccountProfile> => {
 				const response = await auth.fetch('/api/session');
 				if (!response.ok) {
@@ -101,6 +100,10 @@
 	);
 
 	$effect(() => {
+		if (!collaboration) {
+			syncStatus = undefined;
+			return;
+		}
 		syncStatus = collaboration.status;
 		const unsubscribe = collaboration.onStatusChange((status) => {
 			syncStatus = status;
@@ -111,7 +114,11 @@
 	/**
 	 * Tooltip string for the trigger pill, derived from sync phase + auth.
 	 */
-	function getSyncTooltip(s: SyncStatus, isAuthenticated: boolean): string {
+	function getSyncTooltip(
+		s: SyncStatus | undefined,
+		isAuthenticated: boolean,
+	): string {
+		if (!s) return isAuthenticated ? 'Account' : 'Sign in';
 		if (!isAuthenticated) return 'Sign in to sync across devices';
 		switch (s.phase) {
 			case 'connected':
@@ -155,8 +162,7 @@
 		popoverOpen = false;
 		confirmationDialog.open({
 			title: 'Forget this device?',
-			description:
-				'This deletes local data for this account on this device. Synced data stays in your account.',
+			description: 'This deletes local data for this account on this device.',
 			confirm: { text: 'Forget device', variant: 'destructive' },
 			onConfirm: async () => {
 				forgettingDevice = true;
@@ -184,6 +190,8 @@
 						<LoaderCircle class="size-4 animate-spin" />
 					{:else if !isSignedIn}
 						<CloudOff class="size-4 text-muted-foreground" />
+					{:else if !syncStatus}
+						<User class="size-4" />
 					{:else if syncStatus.phase === 'connected'}
 						<Cloud class="size-4" />
 					{:else if syncStatus.phase === 'connecting'}
@@ -206,19 +214,21 @@
 				<div class="space-y-1">
 					<p class="text-sm font-medium">{accountLabel}</p>
 				</div>
-				<div class="border-t pt-3 space-y-1">
-					<p class="text-xs text-muted-foreground">
-						Sync:
-						{({
-							connected: 'Connected',
-							connecting: 'Connecting…',
-							offline: 'Offline',
-							failed: 'Failed',
-						} satisfies Record<SyncStatus['phase'], string>)[syncStatus.phase]}
-					</p>
-				</div>
+				{#if collaboration && syncStatus}
+					<div class="border-t pt-3 space-y-1">
+						<p class="text-xs text-muted-foreground">
+							Sync:
+							{({
+								connected: 'Connected',
+								connecting: 'Connecting…',
+								offline: 'Offline',
+								failed: 'Failed',
+							} satisfies Record<SyncStatus['phase'], string>)[syncStatus.phase]}
+						</p>
+					</div>
+				{/if}
 				<div class="border-t pt-3 flex gap-2">
-					{#if syncStatus.phase !== 'connected'}
+					{#if collaboration && syncStatus?.phase !== 'connected'}
 						<Button
 							variant="outline"
 							size="sm"

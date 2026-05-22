@@ -1,4 +1,5 @@
 import type { DateTimeString } from '@epicenter/workspace';
+import type { ParsedComponents } from 'chrono-node';
 import * as chrono from 'chrono-node/en';
 
 export type DateComponents = {
@@ -176,7 +177,7 @@ export function localTimezone(): string {
 }
 
 function extractDateComponents(
-	components: chrono.ParsingComponents,
+	components: ParsedComponents,
 ): DateComponents | null {
 	const year = components.get('year');
 	const month = components.get('month');

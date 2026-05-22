@@ -16,7 +16,6 @@ import {
 	handleSyncPayload,
 	isTransportOrigin,
 	MAIN_SUBPROTOCOL,
-	MESSAGE_TYPE,
 	SYNC_MESSAGE_TYPE,
 	SYNC_ORIGIN,
 	type SyncMessageType,
@@ -99,24 +98,11 @@ export type SyncSupervisorConfig = {
 	openWebSocket?: OpenWebSocket;
 	log?: Logger;
 	/**
-	 * Receive non-SYNC binary frames (e.g. AWARENESS). The supervisor
-	 * handles SYNC internally; everything else is forwarded with the
-	 * leading message-type varint included.
-	 */
-	onBinaryFrame?: (data: Uint8Array) => void;
-	/**
 	 * Receive WebSocket text frames. The supervisor never interprets
 	 * text frames itself; downstream code (e.g. dispatch_inbound
 	 * handlers) receives the raw string.
 	 */
 	onTextFrame?: (text: string) => void;
-	/**
-	 * Called after the sync handshake completes on each connect cycle.
-	 * Use to publish initial awareness state, etc. Receives a `send`
-	 * scoped to the current connection; calling `send` after the
-	 * connection drops is a no-op.
-	 */
-	onConnected?: (send: (frame: Uint8Array | string) => void) => void;
 };
 
 export type SyncSupervisor = {
@@ -370,38 +356,27 @@ export function createSyncSupervisor(
 				return;
 			}
 
-			const data: Uint8Array = new Uint8Array(event.data);
-			const decoder = decoding.createDecoder(data);
-			const messageType = decoding.readVarUint(decoder);
-
-			switch (messageType) {
-				case MESSAGE_TYPE.SYNC: {
-					const syncType = decoding.readVarUint(decoder) as SyncMessageType;
-					const payload = decoding.readVarUint8Array(decoder);
-					const response = handleSyncPayload({
-						syncType,
-						payload,
-						doc: ydoc,
-						origin: SYNC_ORIGIN,
-					});
-					if (response) {
-						send(response);
-					} else if (
-						!handshakeComplete &&
-						(syncType === SYNC_MESSAGE_TYPE.STEP2 ||
-							syncType === SYNC_MESSAGE_TYPE.UPDATE)
-					) {
-						handshakeComplete = true;
-						setStatus({ phase: 'connected' });
-						connected.resolve();
-						config.onConnected?.(send);
-					}
-					break;
-				}
-				default:
-					// Forward everything else (AWARENESS, etc.) verbatim so the
-					// downstream handler can decode using the same lib0 helpers.
-					config.onBinaryFrame?.(data);
+			// A binary frame is a sync frame: the first varint is the sync
+			// sub-type, with no top-level message-type discriminator.
+			const decoder = decoding.createDecoder(new Uint8Array(event.data));
+			const syncType = decoding.readVarUint(decoder) as SyncMessageType;
+			const payload = decoding.readVarUint8Array(decoder);
+			const response = handleSyncPayload({
+				syncType,
+				payload,
+				doc: ydoc,
+				origin: SYNC_ORIGIN,
+			});
+			if (response) {
+				send(response);
+			} else if (
+				!handshakeComplete &&
+				(syncType === SYNC_MESSAGE_TYPE.STEP2 ||
+					syncType === SYNC_MESSAGE_TYPE.UPDATE)
+			) {
+				handshakeComplete = true;
+				setStatus({ phase: 'connected' });
+				connected.resolve();
 			}
 		};
 

@@ -134,6 +134,9 @@ function renderRunResult(
 			console.error(`error: ${result.error.message}`);
 			process.exitCode = 1;
 			return;
+		default:
+			result.error satisfies never;
+			return;
 	}
 }
 
@@ -166,17 +169,14 @@ export function emitRemoteCallError(
 	cause: DispatchError,
 ): void {
 	switch (cause.name) {
-		case 'Cancelled': {
-			const reason = cause.reason;
-			if (reason instanceof DOMException && reason.name === 'TimeoutError') {
-				console.error(`error: timeout calling ${peerTarget}`);
-			} else {
-				console.error(
-					`error: dispatch to ${peerTarget} was cancelled: ${extractErrorMessage(reason)}`,
-				);
-			}
+		case 'Cancelled':
+			// The daemon owns the dispatch `AbortSignal` (`AbortSignal.timeout(waitMs)`
+			// in run-handler.ts), so a `Cancelled` dispatch error that reaches the
+			// CLI is always the `--wait` deadline. Its abort reason is a
+			// `DOMException`, which cannot survive the daemon's JSON response, so
+			// it is not inspected here.
+			console.error(`error: timeout calling ${peerTarget}`);
 			return;
-		}
 		case 'ActionNotFound':
 			console.error(`error: ActionNotFound "${cause.action}" on ${peerTarget}`);
 			return;

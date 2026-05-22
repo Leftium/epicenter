@@ -239,7 +239,7 @@ createDisposableCache((id) => {
   const tables = attachTables(ydoc, myTables);
   const idb = attachIndexedDb(ydoc);
   const collaboration = openCollaboration(ydoc, {
-    url: toWsUrl(`${serverUrl}/workspaces/${ydoc.guid}`),
+    url: roomWsUrl(serverUrl, ydoc.guid),
     waitFor: idb.whenLoaded,
     openWebSocket,
     replicaId,

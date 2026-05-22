@@ -18,7 +18,7 @@ The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, co
 | attachEncryption -> .attachTable / .attachTables / .attachKv    |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
 | LocalOwner -> attachIndexedDb / attachBroadcastChannel / wipe   |
-| openCollaboration (sync + presence + RPC + peers; actions: {} for content docs)|
+| openCollaboration (sync + presence + dispatch)                 |
 | attachSqliteMaterializer                                       |
 +----------------------------------------------------------------+
 | Y.Doc (raw CRDT)                                               |
@@ -64,7 +64,7 @@ workspace.tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
 
 The factory body is where you wire everything. Because you own the return shape, you can expose whatever handles your app needs.
 
-### Encryption (client-side E2E)
+### Encryption (server-managed value encryption)
 
 The encryption coordinator owns sibling attachments: `attachTable` / `attachTables` / `attachKv` are methods on it, not top-level exports.
 
@@ -85,8 +85,8 @@ function openBlog({ keyring }: { keyring: () => SubjectKeyring }) {
 
 Auth belongs to the app. The workspace factory receives an auth-owned WebSocket
 opener and passes it to `openCollaboration`, which wraps the sync supervisor,
-publishes peer identity in awareness, dispatches inbound action and runtime
-requests, and exposes a `peers` surface for cross-peer dispatch.
+mirrors the relay's server-owned presence channel as `devices`, and runs
+inbound dispatch frames against the local action registry.
 
 ```typescript
 import {
@@ -124,11 +124,11 @@ function openBlog({
 }
 ```
 
-For content documents (rich-text bodies, attachments) that only need bytes-on-the-wire, use `openCollaboration` with an empty `actions: {}` registry. The action runner is skipped entirely; the byte transport is identical, and the workspace's presence/RPC arrays simply stay empty.
+For content documents (rich-text bodies, attachments) that only need bytes-on-the-wire, use `openCollaboration` with an empty `actions: {}` registry. Inbound dispatch frames reply `ActionNotFound`; the byte transport and presence channel are identical.
 
 ### Per-row content documents
 
-Tables stay lean (ids, titles, metadata). Rich content lives in a separate `openContent(guid)` factory keyed on the row's content guid. The row holds the guid; the factory opens a Y.Doc per row on demand. See `apps/fuji/src/lib/entry-content-doc.ts` for the canonical pattern.
+Tables stay lean (ids, titles, metadata). Rich content lives in a separate per-row content cache keyed on the row's content guid. The row holds the guid; the cache opens a Y.Doc per row on demand. See `apps/fuji/src/lib/browser.ts` for the canonical pattern.
 
 ## Design Decisions
 
@@ -148,7 +148,7 @@ Tests live in `*.test.ts` next to the implementation. Use `new Y.Doc()` for in-m
 
 ## Canonical references
 
-- `apps/whispering/src/lib/client.ts`: encryption + IndexedDB + BroadcastChannel + per-row materialization
-- `apps/fuji/src/lib/client.ts`: encryption + IndexedDB + sync + awareness
+- `apps/whispering/src/lib/whispering/client.ts`: encryption + IndexedDB + BroadcastChannel + per-row materialization
+- `apps/fuji/src/lib/browser.ts`: encryption + IndexedDB + sync + server-owned presence
 - `packages/workspace/README.md`: quick start
 - `packages/workspace/SYNC_ARCHITECTURE.md`: multi-device sync design

@@ -10,8 +10,9 @@
  * The dispatch endpoint is HTTP-backed and addresses devices by
  * `installationId` directly; the relay routes to the most-recently-
  * connected socket for that install. If the relay has no live socket
- * for the target, the dispatch resolves with `RecipientOffline`; the
- * `/run` route forwards that under `RemoteCallFailed`.
+ * for the target, the dispatch resolves with `RecipientOffline`, which
+ * the `/run` route surfaces as `PeerNotFound`; any other dispatch error
+ * is forwarded under `RemoteCallFailed`.
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
@@ -97,24 +98,6 @@ async function invokeRemote({
 }): Promise<RunResponse> {
 	const { runtime } = routeRuntime;
 
-	// Local liveness pre-check: if no awareness state reports this
-	// `installationId` online, return `PeerNotFound` so the renderer
-	// distinguishes "you addressed a device that isn't connected" from
-	// "the target was online but the call failed." The HTTP dispatch
-	// would otherwise return `RecipientOffline`, which the renderer maps
-	// to `RemoteCallFailed`; keeping the local check preserves the
-	// existing exit-code split.
-	const online = runtime.collaboration.devices
-		.list()
-		.some((d) => d.installationId === peerTarget);
-	if (!online) {
-		return RunError.PeerNotFound({
-			peerTarget,
-			waitMs,
-			syncStatus: toRunSyncStatus(runtime.collaboration.status),
-		});
-	}
-
 	const result = await runtime.collaboration.dispatch({
 		to: peerTarget,
 		action: localPath,
@@ -123,11 +106,31 @@ async function invokeRemote({
 	});
 
 	if (result.error !== null) {
-		return RunError.RemoteCallFailed({
-			cause: result.error,
-			peerTarget,
-			syncStatus: toRunSyncStatus(runtime.collaboration.status),
-		});
+		const syncStatus = toRunSyncStatus(runtime.collaboration.status);
+		// Translate the full `DispatchError` union into the `RunError`
+		// taxonomy. `RecipientOffline` is promoted to its own variant because
+		// the renderer maps it to a distinct exit code (3): "you addressed a
+		// device that isn't connected" stays separate from a call that
+		// reached the peer and failed. The relay owns reachability and sits
+		// in the dispatch path, so no client-side presence pre-check is
+		// needed (or correct). The other four variants collapse into
+		// `RemoteCallFailed` (exit code 2); the `satisfies never` default
+		// forces this mapping to be revisited if `DispatchError` grows.
+		switch (result.error.name) {
+			case 'RecipientOffline':
+				return RunError.PeerNotFound({ peerTarget, waitMs, syncStatus });
+			case 'ActionNotFound':
+			case 'ActionFailed':
+			case 'Cancelled':
+			case 'NetworkFailed':
+				return RunError.RemoteCallFailed({
+					cause: result.error,
+					peerTarget,
+					syncStatus,
+				});
+			default:
+				return result.error satisfies never;
+		}
 	}
 	return Ok(result.data);
 }

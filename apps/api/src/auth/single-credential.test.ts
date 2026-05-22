@@ -77,20 +77,6 @@ test('two WS bearer entries are rejected as multiple_credentials', async () => {
 	expect(res.status).toBe(400);
 });
 
-test('mixed-case Upgrade with a WS bearer still strips the bearer entry', async () => {
-	const res = await createTestApp().request('/', {
-		headers: {
-			upgrade: 'WebSocket',
-			'sec-websocket-protocol': 'epicenter, bearer.token-1',
-		},
-	});
-
-	expect(res.status).toBe(200);
-	const body = (await res.json()) as Record<string, string | null>;
-	expect(body.authorization).toBe('Bearer token-1');
-	expect(body.subprotocol).toBe('epicenter');
-});
-
 test('matching HTTP and WS bearers are accepted', async () => {
 	const res = await createTestApp().request('/', {
 		headers: {

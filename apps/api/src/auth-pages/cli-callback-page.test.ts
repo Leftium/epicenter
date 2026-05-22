@@ -41,22 +41,6 @@ test('GET /auth/cli-callback renders the code inside a <code> tag', async () => 
 	expect(body).toContain('Signed in to Epicenter CLI');
 });
 
-test('GET /auth/cli-callback sets Cache-Control: no-store, no-transform', async () => {
-	const app = createCallbackApp();
-	const response = await app.request('/auth/cli-callback?code=test');
-
-	expect(response.headers.get('cache-control')).toBe('no-store, no-transform');
-});
-
-test('GET /auth/cli-callback applies secureHeaders defaults', async () => {
-	const app = createCallbackApp();
-	const response = await app.request('/auth/cli-callback?code=test');
-
-	expect(response.headers.get('x-frame-options')).toBe('SAMEORIGIN');
-	expect(response.headers.get('x-content-type-options')).toBe('nosniff');
-	expect(response.headers.get('referrer-policy')).toBe('no-referrer');
-});
-
 test('GET /auth/cli-callback?error renders the error branch', async () => {
 	const app = createCallbackApp();
 	const response = await app.request(

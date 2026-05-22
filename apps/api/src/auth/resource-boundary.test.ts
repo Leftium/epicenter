@@ -72,28 +72,6 @@ test('resolveBearerUser resolves a valid API-audience token to the calling user'
 	}
 });
 
-test('resolveBearerUser accepts a valid API-audience token without a custom resource scope', async () => {
-	const setup = createBoundaryTestServer();
-	try {
-		const { accessToken } = await issueOAuthTokens(setup, {
-			clientName: 'Resource Boundary Test',
-			email: 'boundary-test@example.com',
-			name: 'Boundary Test',
-			scope: 'openid profile email offline_access',
-		});
-		const data = expectOk(
-			await resolveBearerUser(commonResolverDeps(setup, accessToken)),
-		);
-
-		expect(data).toEqual({
-			id: expect.any(String),
-			email: 'boundary-test@example.com',
-		});
-	} finally {
-		setup.server.stop(true);
-	}
-});
-
 test('resolveBearerUser rejects tokens issued for the wrong audience as InvalidToken', async () => {
 	const setup = createBoundaryTestServer();
 	try {

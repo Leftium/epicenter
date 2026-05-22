@@ -706,7 +706,13 @@ export class Room extends DurableObject {
 		const pending = this.pendingDispatches.get(id);
 		if (!pending) return; // late response, HTTP request already gone
 
-		if (!isDispatchResult(frame.result)) {
+		const result = frame.result;
+		const isResult =
+			typeof result === 'object' &&
+			result !== null &&
+			'data' in result &&
+			'error' in result;
+		if (!isResult) {
 			// Recipient sent a non-`Result` payload; treat it as offline so the
 			// caller gets a usable `Result` instead of waiting for the timeout.
 			this.pendingDispatches.delete(id);
@@ -715,7 +721,9 @@ export class Room extends DurableObject {
 		}
 
 		this.pendingDispatches.delete(id);
-		pending.resolve(frame.result);
+		// The relay forwards the recipient's reply opaquely: it never inspects
+		// the error side. The caller validates errors against `DispatchErrorWire`.
+		pending.resolve(result as Result<unknown, unknown>);
 	}
 
 	/**
@@ -811,22 +819,6 @@ function recipientOffline(
 	to: string,
 ): Result<unknown, Extract<DispatchErrorWire, { name: 'RecipientOffline' }>> {
 	return Err({ name: 'RecipientOffline', to });
-}
-
-/**
- * Structural check that an untrusted wire value is a wellcrafted `Result`
- * (`{ data, error }`, both keys present). The relay forwards a recipient's
- * reply opaquely: it never inspects `error`, so the honest narrowed type is
- * `Result<unknown, unknown>`. The caller (`dispatch.ts`) is what validates
- * the error against `DispatchErrorWire`.
- */
-function isDispatchResult(value: unknown): value is Result<unknown, unknown> {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		'data' in value &&
-		'error' in value
-	);
 }
 
 // ============================================================================

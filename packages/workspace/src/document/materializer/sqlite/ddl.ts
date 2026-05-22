@@ -113,7 +113,7 @@ export function generateDdl(
  * // Picks the `_v: 2` schema, including its `title` property.
  * ```
  */
-export function resolveSchema(schema: JsonSchema): JsonSchema {
+function resolveSchema(schema: JsonSchema): JsonSchema {
 	const candidates = Array.isArray(schema.oneOf)
 		? schema.oneOf.filter(isRecord)
 		: undefined;

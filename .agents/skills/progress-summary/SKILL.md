@@ -81,95 +81,9 @@ and update the migration guide.
 
 ### Architecture Overview (explaining a complex change)
 
-For "explain what's happening here" on larger work:
+For "explain what's happening here" on larger work, use [notebook-explanation](../notebook-explanation/SKILL.md). It owns the mental model and diagram grammar: ownership, boundaries, flows, good/bad examples, durable rules, and the diagram-shape taxonomy.
 
-Use ASCII diagrams liberally. They're more scannable than prose. When the user is trying to build a mental model, switch into notebook style:
-
-```txt
-Question:
-  What are we trying to understand?
-
-Notebook model:
-  term = meaning
-  owner = boundary
-
-Flow:
-  thing A
-    -> thing B
-    -> thing C
-
-Rule:
-  durable takeaway
-```
-
-**Journey/Evolution Diagrams** (when work iterates on previous attempts):
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  First attempt: Direct Y.Map                                     │
-│  Problem: 524,985 bytes storage overhead                         │
-└───────────────────────────────────────┬─────────────────────────┘
-                                        │
-                                        ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Second attempt: YKeyValue wrapper                               │
-│  Result: 271 bytes (1935x improvement!)                          │
-│  Problem: Unpredictable conflict resolution                      │
-└───────────────────────────────────────┬─────────────────────────┘
-                                        │
-                                        ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Current: YKeyValue with LWW timestamps                          │
-│  Keeps the storage wins, adds predictable "latest wins"          │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Layer Diagrams** (for architectural changes):
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  createDisposableCache((id) => { ... }).open(id)                 │  ← High-level
-│    User-owned Y.Doc builder, composes attach* primitives         │
-├─────────────────────────────────────────────────────────────────┤
-│  attachTables(ydoc, {...}) / attachKv(ydoc, {...})               │  ← Mid-level
-│    Binds to an existing Y.Doc                                    │
-├─────────────────────────────────────────────────────────────────┤
-│  defineTable() / defineKv()                                      │  ← Low-level
-│    Pure schema definitions                                       │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Flow Diagrams** (for data/control flow):
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│  Client A (2:00pm)  ──┐                                        │
-│                       │──→  Sync  ──→  Winner: Client B        │
-│  Client B (3:00pm)  ──┘                                        │
-│                                                                │
-│  With timestamps: Latest always wins                           │
-│  Without: Whoever syncs first wins (unpredictable)             │
-└────────────────────────────────────────────────────────────────┘
-```
-
-**Comparison Tables** (for trade-offs):
-
-```
-┌────────────────────────────────────┬────────────────────────────┐
-│  Use Case                          │  Recommendation            │
-├────────────────────────────────────┼────────────────────────────┤
-│  Real-time collab, simple cases    │  YKeyValue (positional)    │
-│  Offline-first, multi-device       │  YKeyValueLww (timestamp)  │
-│  Clock sync unreliable             │  YKeyValue (no clock dep)  │
-└────────────────────────────────────┴────────────────────────────┘
-```
-
-## When to Use Diagrams
-
-- **Journey diagrams**: Work iterates on previous attempts or fixes past decisions
-- **Layer diagrams**: Architectural changes with distinct levels
-- **Comparison tables**: Trade-offs between approaches
-- **Flow diagrams**: How data or control moves between components
+`progress-summary` still frames the recap around it: what changed, why it changed, and what is still open.
 
 ## What to Avoid
 
@@ -200,9 +114,3 @@ git log --oneline --since="1 hour ago"
 For Conductor workspaces, use `GetWorkspaceDiff` to see the full diff.
 
 Read key files that were modified to understand the substance of changes, not just the diff stats.
-
-## ASCII Art Characters
-
-For clean diagrams: `┌ ┐ └ ┘ ─ │ ├ ┤ ┬ ┴ ┼ ▼ ▲ ◀ ▶ ──→ ←──`
-
-Keep box edges aligned. Use consistent spacing inside boxes.

@@ -70,7 +70,7 @@ Good (direct, conversational):
 
 > A `console.log("Hello World")` compiles to 57MB. Your code adds almost nothing. The binary is the entire Bun runtime.
 
-Parenthetical asides, dashes for emphasis, and sentence fragments are all fine when they serve clarity. "Stripping the JIT? Now your code runs 10-100x slower." reads better than a formally constructed alternative.
+Parenthetical asides, punctuation for emphasis, and sentence fragments are all fine when they serve clarity. "Stripping the JIT? Now your code runs 10-100x slower." reads better than a formally constructed alternative.
 
 ## Visual Elements Are Tools, Not Checkboxes
 
@@ -79,6 +79,18 @@ ASCII diagrams, tables, and before/after code blocks are tools to reach for when
 Use a diagram when showing flow or architecture that's hard to describe linearly. Use a table when there's a genuine comparison with 3+ items. Use before/after code when the contrast IS the point. Skip all of them when the article doesn't need them.
 
 When you have multiple independent reasons for something, write them as regular prose with natural transitions. Don't use numbered bold headings (`**1. Bold heading**` followed by explanation):that pattern is one of the most recognizable AI writing tells.
+
+## Architecture Article Composition
+
+For articles about ownership, routing, auth, billing, sync, tenancy, API shape, or deployment boundaries, compose skills in this order:
+
+1. Use [notebook-explanation](../notebook-explanation/SKILL.md) to build the private model: ownership, boundaries, flow, good/bad examples, and durable rules.
+2. Use this skill to turn that model into a public argument: title, opening, section claims, rhythm, code, diagrams, and closing.
+3. Use [writing-voice](../writing-voice/SKILL.md) as the final pass.
+
+Do not publish the notebook scaffold unchanged unless the article is intentionally notebook-style. The notebook is the thinking format; the article is the reader format.
+
+The private model for an architecture article answers four questions: the old model, the tell that broke it, the new model, and the rule to remember. Build that model with [notebook-explanation](../notebook-explanation/SKILL.md), then turn it into the public argument here.
 
 ## Rhythm and Pacing
 
@@ -188,7 +200,7 @@ Section headings: use sparingly. Not every paragraph needs a heading. Let conten
 
 Bold text: avoid in body content. Use sparingly if needed for emphasis.
 
-No space-dash-space: use colons, semicolons, or em dashes per writing-voice.
+No space-dash-space. No em dashes or en dashes. Use periods, colons, semicolons, commas, or parentheses per writing-voice.
 
 No rigid template: structure should fit the content, not the other way around. Some articles need a "Problem/Solution" flow; others just show code and explain. Don't force sections.
 

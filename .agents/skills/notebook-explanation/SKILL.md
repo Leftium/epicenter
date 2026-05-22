@@ -107,6 +107,81 @@ private draft
   -> public record
 ```
 
+When an architecture explanation will feed an article, the first pass answers four questions:
+
+```txt
+Old model:  What did we think owned the thing?
+Tell:       What route, type, query, or error revealed the model was wrong?
+New model:  What owns it now?
+Rule:       What sentence should future readers remember?
+```
+
+## Diagram Choices
+
+Write the takeaway first, then draw only what proves it. A diagram that needs more than a short paragraph to explain is probably carrying too many concerns.
+
+Choose the diagram shape by the reader's question:
+
+```txt
+Journey / evolution:
+  old decision
+    -> pressure or failure
+    -> current decision
+
+Layer:
+  high-level owner
+    -> narrower owner
+      -> primitive
+
+Flow:
+  caller
+    -> route
+    -> policy
+    -> storage
+
+Composition tree:
+  public surface
+    -> domain layer
+      -> primitive
+
+Comparison:
+  model A | model B | current choice
+```
+
+Use journey diagrams when the important part is how a decision changed. Use layer diagrams when the important part is ownership level. Use flow diagrams when the important part is movement. Use composition trees when the important part is which layer delegates to which. Use comparison tables when the important part is a tradeoff with 3+ stable columns.
+
+Reach for indent-arrow diagrams by default. They are cheap to write and fit working notes. Reach for box art when the diagram is a deliverable: something meant to be looked at and remembered in an article, a polished summary, or a spec.
+
+A layer is hierarchy, and indentation already expresses hierarchy, so indent-arrow is enough:
+
+```txt
+Layer (workspace builder):
+  createDisposableCache(id => ...).open(id)
+    -> attachTables(ydoc, ...) / attachKv(ydoc, ...)
+      -> defineTable() / defineKv()
+```
+
+For box art and a worked example of all four shapes, see `docs/articles/four-diagrams-explain-the-ykeyvalue-decision.md`. It takes one decision and draws it four ways, journey, layer, flow, and comparison, each shape answering a different question.
+
+That article is the reference rendering. Do not copy a second rendering of those diagrams into this skill. Cite the article, so the prose that makes each diagram teach stays in one place and cannot drift.
+
+Keep each diagram at one abstraction level. If a diagram mixes product concepts, routes, database tables, and implementation helpers, split it.
+
+Label arrows when the relationship is not obvious:
+
+```txt
+Good:
+  user token
+    -> proves identity
+    -> subject-owned room
+
+Bad:
+  user token
+    -> room
+```
+
+For clean diagrams, use these characters when useful: `┌ ┐ └ ┘ ─ │ ├ ┤ ┬ ┴ ┼ ▼ ▲ ◀ ▶ ──→ ←──`.
+
 ## API And Auth Explanations
 
 For API, auth, and capability boundaries, separate where, what, and policy:

@@ -1,25 +1,24 @@
 /**
  * Sync handler tests.
  *
- * Exercises `applyMessage`: a binary frame is a y-protocols/sync frame
- * (sync sub-type varint + payload), decoded and applied to the doc.
+ * `sync-handlers.ts` owns one job: decode an untrusted binary WebSocket
+ * frame and turn a lib0 decode failure into a typed `Result` error. It
+ * does not own protocol semantics. STEP1 -> STEP2, STEP2/UPDATE apply,
+ * and the unknown sub-type fall-through all belong to `@epicenter/sync`'s
+ * `handleSyncPayload`, covered in `packages/sync/src/protocol.test.ts`.
+ * The room-level binary update fan-out is covered in `presence.test.ts`.
  *
- * Update fan-out to peer sockets is no longer wired per-connection here;
- * it is a single room-level `updateV2` listener owned by the `Room` DO,
- * covered in `presence.test.ts`.
- *
- * Dispatch text-frame correlation is covered against the Durable Object
- * elsewhere (`room.dispatch` tests). This file deliberately does not
- * exercise text frames; `applyMessage` is a binary-only dispatcher.
+ * So this file tests only what `applyMessage` adds on top of
+ * `handleSyncPayload`:
+ *   - the binary frame decode is wired through to a reply frame,
+ *   - a truncated frame is caught as `Err(MessageDecode)` rather than
+ *     thrown out of the WebSocket message handler,
+ *   - a decodable but out-of-range sub-type is a safe no-op.
  */
 
 import { describe, expect, test } from 'bun:test';
-import {
-	encodeSyncStep1,
-	encodeSyncUpdate,
-	SYNC_MESSAGE_TYPE,
-} from '@epicenter/sync';
-import { expectOk } from '@epicenter/test-utils/result';
+import { encodeSyncStep1, SYNC_MESSAGE_TYPE } from '@epicenter/sync';
+import { expectErr, expectOk } from '@epicenter/test-utils/result';
 import * as encoding from 'lib0/encoding';
 import * as Y from 'yjs';
 
@@ -53,86 +52,40 @@ function frameWithSyncType(
 }
 
 // ============================================================================
-// applyMessage: SYNC
+// applyMessage
 // ============================================================================
 
-describe('applyMessage SYNC STEP1', () => {
-	test('replies with a STEP2 frame containing the server diff', () => {
+describe('applyMessage', () => {
+	test('decodes a STEP1 frame and wires the dispatch through to a STEP2 reply', () => {
 		const doc = new Y.Doc();
 		doc.getMap('data').set('seed', 'value');
 
-		const clientDoc = new Y.Doc();
-		const step1 = encodeSyncStep1({ doc: clientDoc });
+		const step1 = encodeSyncStep1({ doc: new Y.Doc() });
 
-		const reply = expectOk(
-			applyMessage({
-				data: step1,
-				doc,
-				ws: mockWs(),
-			}),
-		);
+		const reply = expectOk(applyMessage({ data: step1, doc, ws: mockWs() }));
 
 		if (!reply) throw new Error('Expected a STEP2 reply frame');
 		expect(reply[0]).toBe(SYNC_MESSAGE_TYPE.STEP2);
 	});
-});
 
-describe('applyMessage SYNC STEP2 / UPDATE', () => {
-	test('STEP2 payload applies state to the target doc, no effect emitted', () => {
-		const source = new Y.Doc();
-		source.getMap('data').set('shared', 'yes');
-		const step2 = frameWithSyncType(
-			SYNC_MESSAGE_TYPE.STEP2,
-			Y.encodeStateAsUpdateV2(source),
+	test('catches a truncated frame as Err(MessageDecode) instead of throwing', () => {
+		// A sync sub-type varint followed by a length prefix claiming 10
+		// payload bytes that are not present: lib0 `readVarUint8Array`
+		// underflows. This is the boundary `applyMessage` exists to guard.
+		const truncated = new Uint8Array([SYNC_MESSAGE_TYPE.UPDATE, 10]);
+
+		const error = expectErr(
+			applyMessage({ data: truncated, doc: new Y.Doc(), ws: mockWs() }),
 		);
 
-		const doc = new Y.Doc();
-
-		const reply = expectOk(
-			applyMessage({
-				data: step2,
-				doc,
-				ws: mockWs(),
-			}),
-		);
-
-		expect(reply).toBeNull();
-		expect(doc.getMap('data').get('shared')).toBe('yes');
+		expect(error.name).toBe('MessageDecode');
 	});
 
-	test('UPDATE payload applies state to the target doc, no effect emitted', () => {
-		const source = new Y.Doc();
-		source.getMap('data').set('hello', 'world');
-		const update = Y.encodeStateAsUpdateV2(source);
-		const frame = encodeSyncUpdate({ update });
-
-		const doc = new Y.Doc();
-
-		const reply = expectOk(
-			applyMessage({
-				data: frame,
-				doc,
-				ws: mockWs(),
-			}),
-		);
-
-		expect(reply).toBeNull();
-		expect(doc.getMap('data').get('hello')).toBe('world');
-	});
-});
-
-// ============================================================================
-// Unknown sync sub-types
-// ============================================================================
-
-describe('applyMessage unknown sync sub-type', () => {
-	test('out-of-range sync sub-type is a no-op', () => {
-		const doc = new Y.Doc();
-
+	test('treats a decodable but out-of-range sub-type as a no-op', () => {
 		const reply = expectOk(
 			applyMessage({
 				data: frameWithSyncType(99),
-				doc,
+				doc: new Y.Doc(),
 				ws: mockWs(),
 			}),
 		);

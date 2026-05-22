@@ -38,10 +38,6 @@ import {
 } from './auth-pages';
 import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
-import {
-	createDrizzleCloudWorkspaceStore,
-	listCloudWorkspaces,
-} from './cloud-workspaces';
 import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import { cloudflareDurableObjectRooms } from './room-gateway';
@@ -328,28 +324,6 @@ app.get(
 				keyring: await deriveSubjectKeyring(user.id),
 			},
 		} satisfies ApiSessionResponse);
-	},
-);
-app.get(
-	'/api/workspaces',
-	describeRoute({
-		description: 'List Cloud Workspaces for the authenticated user',
-		tags: ['workspaces'],
-	}),
-	requireCookieOrBearerUser,
-	async (c) => {
-		const { data, error } = await listCloudWorkspaces(
-			createDrizzleCloudWorkspaceStore(c.var.db),
-			c.var.user,
-		);
-		if (error) {
-			// PersonalWorkspaceMissing is an account provisioning bug, not a
-			// transient failure. Surface it as `409` with a typed body so the
-			// client can distinguish "your personal workspace is missing" from
-			// "you are signed out".
-			return c.json({ name: error.name, message: error.message }, 409);
-		}
-		return c.json(data);
 	},
 );
 // OAuth discovery. Register issuer-path routes before the /auth/* catch-all

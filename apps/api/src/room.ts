@@ -44,11 +44,11 @@ import {
 	stateVectorsEqual,
 } from '@epicenter/sync';
 import type {
+	DispatchErrorWire,
 	DispatchInboundFrame,
-	DispatchResult,
 } from '@epicenter/workspace/document/dispatch-protocol';
 import type { PresenceFrame } from '@epicenter/workspace/document/presence';
-import { Err } from 'wellcrafted/result';
+import { Err, type Result } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import {
@@ -63,7 +63,8 @@ import {
 
 /**
  * Worker -> DO RPC argument for {@link Room.dispatch}. The text-frame wire
- * types ({@link DispatchInboundFrame}, {@link DispatchResult}) live in
+ * type ({@link DispatchInboundFrame}) and the error vocabulary
+ * ({@link DispatchErrorWire}) live in
  * `@epicenter/workspace/document/dispatch-protocol`, shared with the client.
  */
 export type DispatchRpcRequest = {
@@ -230,7 +231,7 @@ export class Room extends DurableObject {
 		string,
 		{
 			recipientWs: WebSocket;
-			resolve: (result: DispatchResult) => void;
+			resolve: (result: Result<unknown, unknown>) => void;
 		}
 	>();
 
@@ -448,7 +449,7 @@ export class Room extends DurableObject {
 	 * caller aborts, the DO's Promise resolution is discarded by the
 	 * Worker; the internal timeout cleans up the pending entry.
 	 */
-	async dispatch(req: DispatchRpcRequest): Promise<DispatchResult> {
+	async dispatch(req: DispatchRpcRequest): Promise<Result<unknown, unknown>> {
 		const recipientWs = this.pickRecipient(req.to);
 		if (!recipientWs) {
 			return recipientOffline(req.to);
@@ -463,7 +464,7 @@ export class Room extends DurableObject {
 			input: req.input,
 		};
 
-		return new Promise<DispatchResult>((resolve) => {
+		return new Promise<Result<unknown, unknown>>((resolve) => {
 			const timeoutHandle = setTimeout(() => {
 				if (!this.pendingDispatches.has(id)) return;
 				this.pendingDispatches.delete(id);
@@ -781,19 +782,23 @@ export class Room extends DurableObject {
  * The relay's one self-produced dispatch outcome: the recipient has no
  * usable socket (never connected, dropped mid-flight, timed out, or sent
  * a non-`Result` reply). Shaped as `Err` so the wire body is always a
- * `Result`.
+ * `Result`. The return type is pinned to the wire contract's
+ * `RecipientOffline` variant, so a field added there fails to compile here.
  */
-function recipientOffline(to: string): DispatchResult {
+function recipientOffline(
+	to: string,
+): Result<unknown, Extract<DispatchErrorWire, { name: 'RecipientOffline' }>> {
 	return Err({ name: 'RecipientOffline', to });
 }
 
 /**
  * Structural check that an untrusted wire value is a wellcrafted `Result`
- * (`{ data, error }`, both keys present). This is the boundary guard that
- * lets the relay forward a recipient's reply as a typed `DispatchResult`
- * without an `as` cast.
+ * (`{ data, error }`, both keys present). The relay forwards a recipient's
+ * reply opaquely: it never inspects `error`, so the honest narrowed type is
+ * `Result<unknown, unknown>`. The caller (`dispatch.ts`) is what validates
+ * the error against `DispatchErrorWire`.
  */
-function isDispatchResult(value: unknown): value is DispatchResult {
+function isDispatchResult(value: unknown): value is Result<unknown, unknown> {
 	return (
 		typeof value === 'object' &&
 		value !== null &&

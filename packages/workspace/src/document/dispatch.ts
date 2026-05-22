@@ -34,6 +34,7 @@ import {
 	invokeAction,
 } from '../shared/actions.js';
 import type {
+	DispatchErrorWire,
 	DispatchInboundFrame,
 	DispatchResponseFrame,
 } from './dispatch-protocol.js';
@@ -65,6 +66,19 @@ export type DispatchRequest = {
 };
 
 /**
+ * Fields of one wire-error variant, minus the `name` discriminant.
+ *
+ * The bridge between the wire contract and the local `defineErrors`
+ * factory: `DispatchError`'s wire-crossing constructors take this instead
+ * of re-declaring `{ action; cause }` by hand, so a field added to
+ * `DispatchErrorWire` flows into the factory param automatically.
+ */
+type WireErrorFields<N extends DispatchErrorWire['name']> = Omit<
+	Extract<DispatchErrorWire, { name: N }>,
+	'name'
+>;
+
+/**
  * Caller-side dispatch error union. Five variants:
  *
  *   - `RecipientOffline`: relay confirmed no live socket for `to` (or
@@ -80,20 +94,25 @@ export type DispatchRequest = {
  * `RecipientOffline`, `ActionNotFound`, `ActionFailed` arrive in the
  * HTTP response body. `Cancelled` and `NetworkFailed` are produced
  * locally by this module.
+ *
+ * The three wire-crossing variants derive their constructor params from
+ * `DispatchErrorWire` via {@link WireErrorFields}: the wire contract in
+ * `dispatch-protocol.ts` is the single source for their field shapes.
+ * `Cancelled` and `NetworkFailed` never cross the wire, so they have no
+ * wire source and are hand-typed.
  */
 export const DispatchError = defineErrors({
-	RecipientOffline: ({ to }: { to: string }) => ({
-		message: `Recipient "${to}" is offline`,
-		to,
+	RecipientOffline: (wire: WireErrorFields<'RecipientOffline'>) => ({
+		message: `Recipient "${wire.to}" is offline`,
+		...wire,
 	}),
-	ActionNotFound: ({ action }: { action: string }) => ({
-		message: `Target has no handler for "${action}"`,
-		action,
+	ActionNotFound: (wire: WireErrorFields<'ActionNotFound'>) => ({
+		message: `Target has no handler for "${wire.action}"`,
+		...wire,
 	}),
-	ActionFailed: ({ action, cause }: { action: string; cause: string }) => ({
-		message: `Action "${action}" failed`,
-		action,
-		cause,
+	ActionFailed: (wire: WireErrorFields<'ActionFailed'>) => ({
+		message: `Action "${wire.action}" failed`,
+		...wire,
 	}),
 	Cancelled: ({ reason }: { reason: unknown }) => ({
 		message: 'Dispatch was cancelled',
@@ -285,34 +304,69 @@ export async function dispatch({
 	}
 
 	// Discriminate on the error side only: a successful action may return
-	// `null`, so `data` cannot distinguish success from failure.
-	const { data, error } = body as Result<unknown, unknown>;
+	// `null`, so `data` cannot distinguish success from failure. `body` is
+	// already narrowed to `{ data: unknown; error: unknown }` by the guard
+	// above, so this destructure needs no cast.
+	const { data, error } = body;
 	if (error === null) return Ok(data);
 
-	if (typeof error !== 'object' || error === null || !('name' in error)) {
+	// Validate the untrusted error into a known `DispatchErrorWire`, then
+	// hand the narrowed variant straight to its local factory: each factory
+	// reads only its own fields and ignores the extra `name`.
+	const wireError = asDispatchWireError(error);
+	if (!wireError) {
 		return DispatchError.NetworkFailed({
-			cause: new Error('Dispatch error missing name discriminator'),
+			cause: new Error(
+				`Dispatch error was not a recognized wire variant: ${JSON.stringify(error)}`,
+			),
 		});
 	}
-	switch (error.name) {
+	switch (wireError.name) {
 		case 'RecipientOffline':
-			return DispatchError.RecipientOffline({
-				to: (error as { to?: string }).to ?? req.to,
-			});
+			return DispatchError.RecipientOffline(wireError);
 		case 'ActionNotFound':
-			return DispatchError.ActionNotFound({
-				action: (error as { action?: string }).action ?? req.action,
-			});
+			return DispatchError.ActionNotFound(wireError);
 		case 'ActionFailed':
-			return DispatchError.ActionFailed({
-				action: (error as { action?: string }).action ?? req.action,
-				cause: (error as { cause?: string }).cause ?? 'unknown',
-			});
-		default:
-			return DispatchError.NetworkFailed({
-				cause: new Error(`Unknown dispatch error: ${String(error.name)}`),
-			});
+			return DispatchError.ActionFailed(wireError);
 	}
+}
+
+/**
+ * Boundary guard: an untrusted JSON value -> a known `DispatchErrorWire`,
+ * or `null` if it matches no variant. Every `return` is an object literal
+ * checked against `DispatchErrorWire`, so this function cannot drift from
+ * the wire contract: add a field there and the matching `return` stops
+ * compiling. `typeof`/`in` narrowing carries `value` from `unknown` to
+ * typed fields with no `as` cast.
+ */
+function asDispatchWireError(value: unknown): DispatchErrorWire | null {
+	if (typeof value !== 'object' || value === null || !('name' in value)) {
+		return null;
+	}
+	if (
+		value.name === 'RecipientOffline' &&
+		'to' in value &&
+		typeof value.to === 'string'
+	) {
+		return { name: 'RecipientOffline', to: value.to };
+	}
+	if (
+		value.name === 'ActionNotFound' &&
+		'action' in value &&
+		typeof value.action === 'string'
+	) {
+		return { name: 'ActionNotFound', action: value.action };
+	}
+	if (
+		value.name === 'ActionFailed' &&
+		'action' in value &&
+		typeof value.action === 'string' &&
+		'cause' in value &&
+		typeof value.cause === 'string'
+	) {
+		return { name: 'ActionFailed', action: value.action, cause: value.cause };
+	}
+	return null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

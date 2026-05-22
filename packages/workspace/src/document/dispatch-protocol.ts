@@ -7,7 +7,8 @@
  *
  *   relay     -> recipient : `dispatch_inbound`  (DispatchInboundFrame)
  *   recipient -> relay     : `dispatch_response` (DispatchResponseFrame)
- *   relay     -> caller    : HTTP response body  (DispatchResult)
+ *   relay     -> caller    : HTTP response body  (a `Result` carrying
+ *                            `DispatchErrorWire` on the error side)
  *
  * Errors carry only their discriminant fields. The human-readable message
  * is not on the wire: the caller rebuilds each error through its local
@@ -44,9 +45,3 @@ export type DispatchResponseFrame = {
 export type DispatchErrorWire =
 	| ActionResponseError
 	| { name: 'RecipientOffline'; to: string };
-
-/**
- * Wire form of the dispatch outcome the caller receives: a wellcrafted
- * `Result`. Discriminate by `error === null`, never by key presence.
- */
-export type DispatchResult = Result<unknown, DispatchErrorWire>;

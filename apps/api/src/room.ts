@@ -163,11 +163,10 @@ type WsAttachment = {
  * checks any route-owned policy, and constructs the internal DO name before
  * calling RPC methods or forwarding fetch. The DO itself does not re-validate.
  *
- * DO names are host-owned opaque strings. Legacy rooms use
- * `subject:{subject}:rooms:{room}`. Cloud Workspace app docs use
- * `v1:workspace:{workspaceId}:app:{appId}:doc:{docId}`. The relay treats
- * `from` on a dispatch as a routing label inside the already authorized room,
- * not as a cross-room auth principal.
+ * DO names are host-owned opaque strings, built by app.ts as
+ * `subject:{user.id}:rooms:{room}`. The relay treats `from` on a dispatch
+ * as a routing label inside the already authorized room, not as a
+ * cross-room auth principal.
  */
 export class Room extends DurableObject {
 	/**

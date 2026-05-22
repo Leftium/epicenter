@@ -24,17 +24,9 @@ export function createOAuthUnauthorizedResourceResponse(
 		c.header('WWW-Authenticate', 'Bearer error="invalid_token"');
 		return c.json(error, 401);
 	}
-	return closeUpgrade(createWebSocketPair, 4401, error);
-}
-
-function closeUpgrade(
-	createWebSocketPair: CreateWebSocketPair,
-	code: 4401,
-	error: OAuthError,
-) {
 	const pair = createWebSocketPair();
 	const [client, server] = [pair[0], pair[1]];
 	server.accept();
-	server.close(code, JSON.stringify(error));
+	server.close(4401, JSON.stringify(error));
 	return new Response(null, { status: 101, webSocket: client });
 }

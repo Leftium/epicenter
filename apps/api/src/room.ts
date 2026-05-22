@@ -53,7 +53,7 @@ import type {
 import type { PresenceFrame } from '@epicenter/workspace/document/presence';
 import * as decoding from 'lib0/decoding';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { Err, type Result, trySync } from 'wellcrafted/result';
+import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
 
@@ -120,15 +120,19 @@ const PRESENCE_REBROADCAST_GRACE_MS = 300;
 const DISPATCH_INTERNAL_TIMEOUT_MS = 60_000;
 
 /**
- * Errors from the room WebSocket boundary.
+ * Errors from the room's untrusted-input boundaries.
  *
- * `MessageDecode` covers all failures when processing untrusted WebSocket
- * binary frames: lib0 buffer underflow (truncated messages) and any other
- * decode-time exceptions.
+ * `MessageDecode` covers the WebSocket binary frame path; `MalformedSyncBody`
+ * covers the HTTP sync RPC body. Both wrap lib0 buffer underflow (truncated
+ * input) and any other decode-time exception thrown on untrusted bytes.
  */
 const RoomError = defineErrors({
 	MessageDecode: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to decode WebSocket message: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	MalformedSyncBody: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to decode HTTP sync body: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -399,28 +403,37 @@ export class Room extends DurableObject {
 	 * Binary body format: `[length-prefixed stateVector][length-prefixed update]`
 	 * (encoded via `encodeSyncRequest` from `@epicenter/sync`).
 	 *
-	 * Applies the client update to the live doc and returns the binary
-	 * diff the client is missing, or `null` if already in sync.
+	 * Applies the client update to the live doc and returns the binary diff
+	 * the client is missing (or `null` if already in sync) wrapped in `Ok`.
+	 * Returns `Err(MalformedSyncBody)` when the untrusted body fails to
+	 * decode, so the route can answer 400 instead of 500.
 	 */
-	async sync(body: Uint8Array): Promise<{
-		diff: Uint8Array | null;
-		storageBytes: number;
-	}> {
-		const { stateVector: clientSV, update } = decodeSyncRequest(body);
-
-		if (update.byteLength > 0) {
-			Y.applyUpdateV2(this.doc, update, 'http');
-		}
+	async sync(body: Uint8Array) {
+		// `decodeSyncRequest` (lib0 framing) and `applyUpdateV2` (the V2
+		// decoder) both throw on truncated or corrupt bytes, and the body is
+		// untrusted. Guard the decode here so the route turns a failure into
+		// 400; this mirrors the WebSocket path's boundary in webSocketMessage.
+		const { data: clientSV, error } = trySync({
+			try: (): Uint8Array => {
+				const { stateVector, update } = decodeSyncRequest(body);
+				if (update.byteLength > 0) {
+					Y.applyUpdateV2(this.doc, update, 'http');
+				}
+				return stateVector;
+			},
+			catch: (cause) => RoomError.MalformedSyncBody({ cause }),
+		});
+		if (error) return Err(error);
 
 		const serverSV = Y.encodeStateVector(this.doc);
 		const diff = stateVectorsEqual(serverSV, clientSV)
 			? null
 			: Y.encodeStateAsUpdateV2(this.doc, clientSV);
 
-		return {
+		return Ok({
 			diff,
 			storageBytes: this.ctx.storage.sql.databaseSize,
-		};
+		});
 	}
 
 	/**

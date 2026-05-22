@@ -590,3 +590,14 @@ describe('Room sync: binary update fan-out', () => {
 		expect(ws.closeCalls).toEqual([]);
 	});
 });
+
+describe('Room sync: HTTP sync RPC', () => {
+	test('a malformed sync body resolves to Err(MalformedSyncBody)', async () => {
+		const { room } = await makeRoom();
+		// A length prefix claiming 10 payload bytes that are not present:
+		// lib0 readVarUint8Array underflows inside decodeSyncRequest.
+		const { error } = await room.sync(new Uint8Array([10]));
+
+		expect(error?.name).toBe('MalformedSyncBody');
+	});
+});

@@ -14,6 +14,7 @@
  */
 
 import { expect, mock, test } from 'bun:test';
+import { Err, Ok } from 'wellcrafted/result';
 import { OAuthError } from './auth/oauth-error.js';
 import { projectTrustedOAuthClientToRow } from './auth/trusted-oauth-clients.js';
 import { MAX_PAYLOAD_BYTES } from './constants.js';
@@ -95,18 +96,19 @@ class FakeRoom {
 			diff?: Uint8Array | null;
 			storageBytes?: number;
 			snapshot?: Uint8Array;
+			malformed?: boolean;
 		} = {},
 	) {}
 
-	async sync(body: Uint8Array): Promise<{
-		diff: Uint8Array | null;
-		storageBytes: number;
-	}> {
+	async sync(body: Uint8Array) {
 		this.syncBodies.push(body);
-		return {
+		if (this.options.malformed) {
+			return Err({ name: 'MalformedSyncBody' as const });
+		}
+		return Ok({
 			diff: this.options.diff ?? null,
 			storageBytes: this.options.storageBytes ?? 42,
-		};
+		});
 	}
 
 	async getDoc(): Promise<{ data: Uint8Array; storageBytes: number }> {
@@ -268,6 +270,25 @@ test('POST /rooms/:room rejects oversized payloads before selecting a room', asy
 	expect(await response.text()).toBe('Payload too large');
 	expect(requestedRoomNames).toEqual([]);
 	expect(room.syncBodies).toEqual([]);
+	expect(upsertedDoInstances).toEqual([]);
+});
+
+test('POST /rooms/:room returns 400 when the Room reports a malformed sync body', async () => {
+	const { room, roomNamespace } = setup({
+		room: new FakeRoom({ malformed: true }),
+	});
+
+	const response = await fetchRoomRoute(
+		'/rooms/notes',
+		{
+			method: 'POST',
+			body: new Uint8Array([1, 2, 3]),
+		},
+		roomNamespace,
+	);
+
+	expect(response.status).toBe(400);
+	expect(room.syncBodies).toHaveLength(1);
 	expect(upsertedDoInstances).toEqual([]);
 });
 

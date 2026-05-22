@@ -575,7 +575,11 @@ app.post(
 		}
 
 		const roomStub = getRoomStub(c.env.ROOM, roomName);
-		const { diff, storageBytes } = await roomStub.sync(body);
+		const { data: synced, error } = await roomStub.sync(body);
+		if (error) {
+			return new Response('Malformed sync body', { status: 400 });
+		}
+		const { diff, storageBytes } = synced;
 
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {

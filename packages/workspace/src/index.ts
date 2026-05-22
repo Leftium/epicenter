@@ -107,18 +107,16 @@ export {
 // PATH TYPES (for daemon callers)
 // ════════════════════════════════════════════════════════════════════════════
 
-export { findProjectRoot } from './client/find-project-root.js';
+// `findProjectRoot` and `loadProjectConfig` import `node:fs` and `node:path`.
+// They are node-only and are exported from `@epicenter/workspace/node`; keeping
+// them out of this root barrel stops browser bundles (whispering, etc.) from
+// traversing `node:*` modules.
 export {
 	DEFAULT_PROJECT_CONFIG_SOURCE,
 	defineConfig,
 	type EpicenterConfig,
 	PROJECT_CONFIG_FILENAME,
 } from './config/define-config.js';
-export {
-	loadProjectConfig,
-	ProjectConfigError,
-	type ProjectConfigError as ProjectConfigErrorType,
-} from './config/load-project-config.js';
 export {
 	userCacheDir,
 	userConfigDir,

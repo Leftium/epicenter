@@ -1,11 +1,12 @@
 /**
  * Typed Hono routes for the billing dashboard SPA.
  *
- * All routes require authentication (requireSession applied in app.ts).
- * Data flows from Autumn's API—no custom tables needed.
+ * All routes require auth (requireCookieOrBearerUser, applied in app.ts).
+ * Data flows from Autumn's API; no custom tables needed.
  *
- * Response types are defined in billing-contract.ts (the shared contract).
- * The dashboard imports those same types for its typed fetch client.
+ * Most routes return Autumn SDK responses verbatim. The dashboard derives
+ * its typed fetch client from billing-contract.ts; `/models` is the one
+ * route that returns repo-owned data and satisfies its contract type.
  */
 
 import { sValidator } from '@hono/standard-validator';

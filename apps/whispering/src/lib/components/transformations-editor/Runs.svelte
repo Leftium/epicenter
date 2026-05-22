@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
-	import * as Card from '@epicenter/ui/card';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Label } from '@epicenter/ui/label';
@@ -12,10 +11,8 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
-	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
 	import { rpc } from '$lib/query';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
-	import { viewTransition } from '$lib/utils/viewTransitions';
 	import type { TransformationRun } from '$lib/workspace';
 
 	let { runs }: { runs: TransformationRun[] } = $props();
@@ -141,71 +138,6 @@
 									{:else if run.status === 'failed'}
 										<Label class="text-sm font-medium">Error</Label>
 										<CopyablePre variant="error" copyableText={run.error} />
-									{/if}
-									{#if run.stepRuns.length > 0}
-										<div class="flex flex-col gap-2">
-											<Label class="text-sm font-medium">Steps</Label>
-											<Card.Root>
-												<Table.Root>
-													<Table.Header>
-														<Table.Row>
-															<Table.Head>Status</Table.Head>
-															<Table.Head>Started</Table.Head>
-															<Table.Head>Completed</Table.Head>
-															<Table.Head>Input</Table.Head>
-															<Table.Head>Output</Table.Head>
-														</Table.Row>
-													</Table.Header>
-													<Table.Body>
-														{#each run.stepRuns as stepRun}
-															<Table.Row>
-																<Table.Cell>
-																	<Badge variant={`status.${stepRun.status}`}>
-																		{stepRun.status}
-																	</Badge>
-																</Table.Cell>
-																<Table.Cell>
-																	{formatDate(stepRun.startedAt)}
-																</Table.Cell>
-																<Table.Cell>
-																	{stepRun.completedAt
-																		? formatDate(stepRun.completedAt)
-																		: '-'}
-																</Table.Cell>
-																<Table.Cell>
-																	<TextPreviewDialog
-																		id={viewTransition.stepRun(stepRun.id)
-																			.input}
-																		title="Step Input"
-																		label="step input"
-																		text={stepRun.input}
-																	/>
-																</Table.Cell>
-																<Table.Cell>
-																	{#if stepRun.status === 'completed'}
-																		<TextPreviewDialog
-																			id={viewTransition.stepRun(stepRun.id)
-																				.output}
-																			title="Step Output"
-																			label="step output"
-																			text={stepRun.output}
-																		/>
-																	{:else if stepRun.status === 'failed'}
-																		<TextPreviewDialog
-																			id={viewTransition.stepRun(stepRun.id)
-																				.error}
-																			title="Step Error"
-																			label="step error"
-																			text={stepRun.error}
-																		/>
-																	{/if}
-																</Table.Cell>
-															</Table.Row>
-														{/each}
-													</Table.Body>
-												</Table.Root>
-											</Card.Root>
-										</div>
 									{/if}
 								</Table.Cell>
 							</Table.Row>

@@ -22,13 +22,6 @@
       "when": 1778827600452,
       "tag": "0002_salty_hex",
       "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1779322301147,
-      "tag": "0003_pink_mephisto",
-      "breakpoints": true
     }
   ]
 }

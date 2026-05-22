@@ -5,7 +5,6 @@ import {
 } from '@epicenter/constants/oauth';
 import type { BetterAuthOptions } from 'better-auth';
 import { jwt } from 'better-auth/plugins/jwt';
-import { organization } from 'better-auth/plugins/organization';
 
 const trustedOAuthClientIds = new Set(
 	EPICENTER_TRUSTED_OAUTH_CLIENTS.map((client) => client.clientId),
@@ -21,7 +20,6 @@ const trustedOAuthClientIds = new Set(
  */
 export function authPlugins(resourceAudience: string) {
 	return [
-		organization(),
 		// ES256 (P-256 ECDSA) signs the id_token and JWT access tokens. The
 		// jose default would be EdDSA (Ed25519); pinning ES256 gives the
 		// broadest verifier-library support across browser `jose`, Tauri

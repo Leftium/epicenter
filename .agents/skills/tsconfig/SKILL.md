@@ -47,7 +47,7 @@ Pick the tier, copy the shape, change nothing else.
 | --- | --- | --- |
 | Bun library | `"../../tsconfig.base.json"` | `types:["bun"]`, `noUnusedLocals`, `noUnusedParameters` |
 | Node library | `"../../tsconfig.base.json"` | `types:["node"]`, `noUnusedLocals`, `noUnusedParameters` |
-| Svelte library | `"../../tsconfig.dom.json"` | `types:["bun"]` |
+| Svelte library | `"../../tsconfig.dom.json"` | `types:["bun"]`, `noUnusedLocals`, `noUnusedParameters` |
 | SvelteKit app | `["../../tsconfig.base.json", "./.svelte-kit/tsconfig.json"]` | `checkJs:true`, `types:["bun"]` |
 | Cloudflare Worker | `"../../tsconfig.base.json"` | `jsx`, `jsxImportSource`, `types`, `include` |
 | Bun app | `"../../tsconfig.base.json"` | `types:["bun"]`, `include` |
@@ -74,7 +74,11 @@ The two canonical library shapes in full:
 // svelte library  — packages/ui, auth-svelte, svelte-utils
 {
 	"extends": "../../tsconfig.dom.json",
-	"compilerOptions": { "types": ["bun"] }
+	"compilerOptions": {
+		"types": ["bun"],
+		"noUnusedLocals": true,
+		"noUnusedParameters": true
+	}
 }
 ```
 

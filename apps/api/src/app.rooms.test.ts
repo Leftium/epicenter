@@ -19,6 +19,7 @@ import { expect, mock, test } from 'bun:test';
 import { Err, Ok } from 'wellcrafted/result';
 import { OAuthError } from './auth/oauth-error.js';
 import { OAUTH_OPENID_CONFIGURATION_PATH } from './auth/oauth-metadata.js';
+import * as resourceBoundary from './auth/resource-boundary.js';
 import { projectTrustedOAuthClientToRow } from './auth/trusted-oauth-clients.js';
 import { MAX_PAYLOAD_BYTES } from './constants.js';
 
@@ -75,11 +76,13 @@ mock.module('./auth/encryption', () => ({
 	deriveSubjectKeyring: async () => [],
 }));
 
+// Spread the real module so the exports this test does not override
+// (`parseBearer`, `resolveBearerUser`) survive. `mock.module` replaces the
+// whole module process-wide; a partial mock makes the un-listed exports
+// vanish for any test file that loads after this one, which crashed
+// `resource-boundary.test.ts` on `resolveBearerUser`.
 mock.module('./auth/resource-boundary', () => ({
-	parseBearer: (authorization: string | null) => {
-		const match = authorization?.match(/^Bearer\s+(.+)$/i);
-		return match?.[1]?.trim() || null;
-	},
+	...resourceBoundary,
 	resolveRequestOAuthUser: async () => {
 		resolveRequestOAuthUserCalls += 1;
 		return resolveRequestOAuthUserResult;

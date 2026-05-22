@@ -1,10 +1,22 @@
 # Server-Default-Workspace Route: Stop Resolving Workspace IDs On The Client
 
 **Date**: 2026-05-21
-**Status**: Draft
+**Status**: Implemented on `redesign/server-owned-presence` (see amendment below)
 **Author**: AI-assisted (with adversarial review)
-**Branch**: TBD (proposed: `redesign/server-default-workspace-route`)
+**Branch**: `redesign/server-owned-presence`
 **Builds on**: server-owned-presence (recommended to land first, but the two are orthogonal)
+
+## Post-implementation amendment (2026-05-21)
+
+Goal 5 and Appendix B planned to **preserve** the `/workspaces/:workspaceId/...`
+route family "for the daemon and a future workspace-switching UI". That
+rationale was wrong: the daemon syncs through `/rooms/:room` via `roomWsUrl`,
+not the explicit-workspace route. Once `cloud-app-sync.ts` was deleted, the
+explicit route had zero clients, so it was removed along with
+`resolveWorkspaceSyncDocRoute`, the client `workspaceAppDocWsUrl` builder, and
+`app.workspaces.test.ts`. `resolveAuthorizedWorkspaceSyncDoc` stays as the
+shared resolver the `/me/...` path delegates to. Re-add the explicit route
+family if a workspace-switching UI ever needs to name a workspaceId.
 
 ## One sentence
 
@@ -653,13 +665,13 @@ The only refusal available here is the workspaceId-in-URL one. Everything else i
 - `cloud-app-sync.ts` and `cloud-app-sync.test.ts` deleted.
 - `attachDeferredCollaboration` no longer exists anywhere in the codebase.
 - `defaultWorkspaceAppDocWsUrl` exists in `packages/workspace/src/document/transport.ts` and is re-exported from `packages/workspace/src/index.ts`.
-- `workspaceAppDocWsUrl` either continues to exist for daemon use or is moved into the daemon package; either way, no broken imports.
+- `workspaceAppDocWsUrl` is deleted: it lost its only caller with `cloud-app-sync.ts` and the daemon uses `roomWsUrl`. See the amendment above.
 - `apps/api/src/workspace-sync-doc.ts` exports `resolveAuthorizedDefaultWorkspaceSyncDoc`.
 - `apps/api/src/app.ts` registers `GET /me/apps/:appId/docs/:docId`, `POST /me/apps/:appId/docs/:docId`, and `POST /me/apps/:appId/docs/:docId/dispatch`.
 - WebSocket upgrade for a user with no default workspace closes with 4401 `{ code: 'no_default_workspace' }` and the supervisor parks in `failed` with that reason.
 - `apps/fuji/src/lib/browser.ts`, `apps/honeycrisp/browser.ts`, `apps/opensidian/src/lib/opensidian/browser.ts` call `openCollaboration` directly with `defaultWorkspaceAppDocWsUrl`, each with an inline `auth.onStateChange` reconnect listener.
 - All tests in the Test Plan section pass.
-- A short note in `docs/adr/` or equivalent recording the decision (default-workspace routing is server-side; client never owns workspaceId for the sync path).
+- The decision (default-workspace routing is server-side; the client never owns workspaceId for the sync path) is recorded in this spec and its Decisions Log. This project keeps decision records in `specs/`, so no separate `docs/adr/` file is created.
 - One bundled PR with the commit sequence in the Migration section.
 - JSDoc updates land in the same PR:
   - `packages/workspace/src/index.ts` header rewrites the cloud-sync paragraph (workspaceId is no longer client-side).

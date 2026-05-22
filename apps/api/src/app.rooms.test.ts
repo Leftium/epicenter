@@ -64,13 +64,6 @@ mock.module('./auth/trusted-oauth-clients', () => ({
 	projectTrustedOAuthClientToRow,
 }));
 
-mock.module('./room-gateway', () => ({
-	cloudflareDurableObjectRooms: () => {
-		durableObjectRoomFactoryCalls += 1;
-		throw new Error('Room gateway should not be reached');
-	},
-}));
-
 test('POST /rooms/:room rejects unauthenticated callers before sync engine entry', async () => {
 	const { default: app } = await import('./app.js');
 	const response = await app.fetch(
@@ -81,7 +74,12 @@ test('POST /rooms/:room rejects unauthenticated callers before sync engine entry
 		}),
 		{
 			HYPERDRIVE: { connectionString: 'postgres://test' },
-			ROOM: {},
+			ROOM: {
+				idFromName() {
+					durableObjectRoomFactoryCalls += 1;
+					throw new Error('Room namespace should not be reached');
+				},
+			},
 		},
 		{
 			waitUntil(promise: Promise<unknown>) {

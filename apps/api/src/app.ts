@@ -40,7 +40,7 @@ import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
 import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
-import { cloudflareDurableObjectRooms } from './room-gateway';
+import type { DispatchRpcRequest, Room } from './room';
 import { createSyncEngine } from './sync-engine';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 
@@ -460,6 +460,13 @@ function resolveSubjectRoom(c: Context<Env>) {
 	};
 }
 
+function getRoomStub(
+	roomNamespace: DurableObjectNamespace<Room>,
+	roomName: string,
+) {
+	return roomNamespace.get(roomNamespace.idFromName(roomName));
+}
+
 /**
  * Fire-and-forget upsert for DO instance tracking.
  *
@@ -514,7 +521,7 @@ app.get(
 	}),
 	async (c) => {
 		const { roomName, room } = resolveSubjectRoom(c);
-		const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
+		const roomStub = getRoomStub(c.env.ROOM, roomName);
 
 		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
@@ -524,10 +531,17 @@ app.get(
 					doName: roomName,
 				}),
 			);
-			return rooms.handleWebSocket(roomName, c.req.raw);
+			return roomStub.fetch(c.req.raw);
 		}
 
-		const sync = createSyncEngine(rooms);
+		const sync = createSyncEngine({
+			sync(_roomName, body) {
+				return roomStub.sync(body);
+			},
+			getDoc() {
+				return roomStub.getDoc();
+			},
+		});
 		const { response, storageBytes } = await sync.getSnapshot(roomName);
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
@@ -549,7 +563,15 @@ app.post(
 	}),
 	async (c) => {
 		const { roomName, room } = resolveSubjectRoom(c);
-		const sync = createSyncEngine(cloudflareDurableObjectRooms(c.env.ROOM));
+		const roomStub = getRoomStub(c.env.ROOM, roomName);
+		const sync = createSyncEngine({
+			sync(_roomName, body) {
+				return roomStub.sync(body);
+			},
+			getDoc() {
+				return roomStub.getDoc();
+			},
+		});
 		const result = await sync.handleHttpSync(c.req.raw, { roomName });
 
 		if (result.storageBytes != null) {
@@ -595,9 +617,10 @@ app.post(
 	),
 	async (c) => {
 		const { roomName, room } = resolveSubjectRoom(c);
-		const rooms = cloudflareDurableObjectRooms(c.env.ROOM);
 		const body = c.req.valid('json');
-		const result = await rooms.dispatch(roomName, body);
+		const result = await getRoomStub(c.env.ROOM, roomName).dispatch(
+			body satisfies DispatchRpcRequest,
+		);
 
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {

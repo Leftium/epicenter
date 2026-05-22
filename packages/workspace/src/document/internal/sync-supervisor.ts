@@ -103,13 +103,6 @@ export type SyncSupervisorConfig = {
 	 * handlers) receives the raw string.
 	 */
 	onTextFrame?: (text: string) => void;
-	/**
-	 * Called after the sync handshake completes on each connect cycle.
-	 * Use to publish initial awareness state, etc. Receives a `send`
-	 * scoped to the current connection; calling `send` after the
-	 * connection drops is a no-op.
-	 */
-	onConnected?: (send: (frame: Uint8Array | string) => void) => void;
 };
 
 export type SyncSupervisor = {
@@ -384,7 +377,6 @@ export function createSyncSupervisor(
 				handshakeComplete = true;
 				setStatus({ phase: 'connected' });
 				connected.resolve();
-				config.onConnected?.(send);
 			}
 		};
 

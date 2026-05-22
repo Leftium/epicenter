@@ -468,9 +468,19 @@ export function attachMarkdownMaterializer(
 		let skipped = 0;
 		let errored = 0;
 		for (const event of events) {
-			if (event.kind === 'imported') imported++;
-			else if (event.kind === 'skipped') skipped++;
-			else errored++;
+			switch (event.kind) {
+				case 'imported':
+					imported++;
+					break;
+				case 'skipped':
+					skipped++;
+					break;
+				case 'error':
+					errored++;
+					break;
+				default:
+					event satisfies never;
+			}
 		}
 
 		return { imported, skipped, errored, events };

@@ -134,6 +134,8 @@ function renderRunResult(
 			console.error(`error: ${result.error.message}`);
 			process.exitCode = 1;
 			return;
+		default:
+			return result.error satisfies never;
 	}
 }
 

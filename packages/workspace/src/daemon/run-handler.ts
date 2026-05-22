@@ -106,24 +106,31 @@ async function invokeRemote({
 	});
 
 	if (result.error !== null) {
-		// The relay owns reachability: it returns `RecipientOffline` when it
-		// has no live socket for `peerTarget`. Surface that as `PeerNotFound`
-		// so the renderer keeps the "you addressed a device that isn't
-		// connected" exit code distinct from a call that reached the peer
-		// and failed. The relay is authoritative and in the dispatch path,
-		// so no client-side presence pre-check is needed (or correct).
-		if (result.error.name === 'RecipientOffline') {
-			return RunError.PeerNotFound({
-				peerTarget,
-				waitMs,
-				syncStatus: toRunSyncStatus(runtime.collaboration.status),
-			});
+		const syncStatus = toRunSyncStatus(runtime.collaboration.status);
+		// Translate the full `DispatchError` union into the `RunError`
+		// taxonomy. `RecipientOffline` is promoted to its own variant because
+		// the renderer maps it to a distinct exit code (3): "you addressed a
+		// device that isn't connected" stays separate from a call that
+		// reached the peer and failed. The relay owns reachability and sits
+		// in the dispatch path, so no client-side presence pre-check is
+		// needed (or correct). The other four variants collapse into
+		// `RemoteCallFailed` (exit code 2); the `satisfies never` default
+		// forces this mapping to be revisited if `DispatchError` grows.
+		switch (result.error.name) {
+			case 'RecipientOffline':
+				return RunError.PeerNotFound({ peerTarget, waitMs, syncStatus });
+			case 'ActionNotFound':
+			case 'ActionFailed':
+			case 'Cancelled':
+			case 'NetworkFailed':
+				return RunError.RemoteCallFailed({
+					cause: result.error,
+					peerTarget,
+					syncStatus,
+				});
+			default:
+				return result.error satisfies never;
 		}
-		return RunError.RemoteCallFailed({
-			cause: result.error,
-			peerTarget,
-			syncStatus: toRunSyncStatus(runtime.collaboration.status),
-		});
 	}
 	return Ok(result.data);
 }

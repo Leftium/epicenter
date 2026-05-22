@@ -1,7 +1,9 @@
-import { describe, expect, test } from 'bun:test';
-
-import type { DaemonWorkspaceDefinition } from '../daemon/define-daemon-workspace.js';
 import { defineConfig, type EpicenterConfig } from './define-config.js';
+
+// `defineConfig` is `(config) => config`. The contract worth pinning is
+// type inference, asserted below via @ts-expect-error and the Equal
+// type-level test. The runtime identity behavior is JS-trivial and
+// covered indirectly by load-project-config.test.ts.
 
 type Expect<TValue extends true> = TValue;
 type Equal<TActual, TExpected> =
@@ -10,23 +12,6 @@ type Equal<TActual, TExpected> =
 		: 2
 		? true
 		: false;
-
-describe('defineConfig', () => {
-	test('returns the config unchanged', () => {
-		const route = {
-			open: () => {
-				throw new Error('test route should not open');
-			},
-		} satisfies DaemonWorkspaceDefinition;
-		const config = { daemon: { routes: { demo: route } } };
-
-		expect(defineConfig(config)).toBe(config);
-	});
-
-	test('accepts an empty config', () => {
-		expect(defineConfig({})).toEqual({});
-	});
-});
 
 const inferred = defineConfig({});
 export type InferredConfigIsEpicenterConfig = Expect<

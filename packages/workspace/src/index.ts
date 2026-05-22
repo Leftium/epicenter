@@ -134,7 +134,6 @@ export type { ProjectDir } from './shared/types';
 export { DateTimeString } from './shared/datetime-string';
 export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId } from './shared/id';
-export { debounce } from './shared/debounce';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES

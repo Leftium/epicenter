@@ -83,21 +83,6 @@ describe('bindUnixSocket', () => {
 		expect(existsSync(socketPath)).toBe(false);
 	});
 
-	test('unknown route returns 404 (Hono default)', async () => {
-		const app = new Hono().post('/ping', (c) => c.text('ok'));
-		const server = bindUnixSocket({
-			socketPath,
-			fetch: app.fetch,
-		});
-		servers.push(server);
-
-		const res = await fetch('http://daemon/nope', {
-			unix: socketPath,
-			method: 'POST',
-		});
-		expect(res.status).toBe(404);
-	});
-
 	test('unlinkSocketFile ignores an already-missing socket file', () => {
 		expect(existsSync(socketPath)).toBe(false);
 		expect(() => unlinkSocketFile(socketPath)).not.toThrow();

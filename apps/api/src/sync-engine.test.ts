@@ -12,6 +12,7 @@
  */
 
 import { expect, test } from 'bun:test';
+import { MAX_PAYLOAD_BYTES } from './constants.js';
 import { createSyncEngine } from './sync-engine.js';
 
 const ROOM_NAME = 'test:v1:authorized-room';
@@ -63,7 +64,6 @@ function setup(room: FakeSyncRoom) {
 				return selectRoom(roomName).getDoc();
 			},
 		},
-		{ maxPayloadBytes: 4 },
 	);
 	return { engine, requestedRoomNames };
 }
@@ -121,7 +121,7 @@ test('handleHttpSync rejects oversized payloads before selecting a room', async 
 	const result = await engine.handleHttpSync(
 		new Request('https://api.test/rooms/notes', {
 			method: 'POST',
-			body: new Uint8Array([1, 2, 3, 4, 5]),
+			body: new Uint8Array(MAX_PAYLOAD_BYTES + 1),
 		}),
 		{ roomName: ROOM_NAME },
 	);

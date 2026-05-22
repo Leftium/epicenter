@@ -13,12 +13,7 @@ type RoomSyncBackend = {
 
 export function createSyncEngine(
 	rooms: RoomSyncBackend,
-	options?: {
-		maxPayloadBytes?: number;
-	},
 ) {
-	const maxPayloadBytes = options?.maxPayloadBytes ?? MAX_PAYLOAD_BYTES;
-
 	return {
 		async handleHttpSync(
 			request: Request,
@@ -30,7 +25,7 @@ export function createSyncEngine(
 			storageBytes: number | null;
 		}> {
 			const body = new Uint8Array(await request.arrayBuffer());
-			if (body.byteLength > maxPayloadBytes) {
+			if (body.byteLength > MAX_PAYLOAD_BYTES) {
 				return {
 					response: new Response('Payload too large', { status: 413 }),
 					storageBytes: null,

@@ -250,7 +250,7 @@ Backoff is `min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS)` scaled by `0.5 + Ma
 
 ### Permanent failure
 
-A server-side auth rejection closes the WebSocket with code `4401` and a JSON reason `{ "code": "<reason>" }`. Codes seen today: `invalid_token`, `token_expired`, `deauthorized`, `no_default_workspace`, `unknown`. On 4401:
+A server-side auth rejection closes the WebSocket with code `4401` and a JSON reason `{ "code": "<reason>" }`. Codes seen today: `invalid_token`, `token_expired`, `deauthorized`, `unknown`. On 4401:
 
 - Status becomes `{ phase: 'failed', reason: { type: 'auth', code } }`.
 - `whenConnected` rejects with `SyncFailedError.AuthRejected({ code })`.

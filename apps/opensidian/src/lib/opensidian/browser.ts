@@ -9,9 +9,10 @@ import {
 import {
 	attachTimeline,
 	createDisposableCache,
+	defaultWorkspaceAppDocWsUrl,
 	type LocalOwner,
 	onLocalUpdate,
-	openCloudAppSync,
+	openCollaboration,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import { openOpensidianWorkspace } from 'opensidian';
@@ -32,19 +33,13 @@ export function openOpensidianBrowser({
 
 	const idb = owner.attachLocal(rootYdoc);
 
-	const opensidianCloud = openCloudAppSync({
-		auth,
-		apiUrl: APP_URLS.API,
-		appId: 'opensidian',
-		installationId,
-	});
-
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
+		const childDocId = fileContentDocGuid({
+			workspaceId: rootYdoc.guid,
+			fileId,
+		});
 		const ydoc = new Y.Doc({
-			guid: fileContentDocGuid({
-				workspaceId: rootYdoc.guid,
-				fileId,
-			}),
+			guid: childDocId,
 			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
@@ -53,8 +48,14 @@ export function openOpensidianBrowser({
 		const childIdb = owner.attachLocal(ydoc);
 		// File bodies sync through Cloud so device loss doesn't drop the
 		// largest data class.
-		const childSync = opensidianCloud.open(ydoc, {
+		const childSync = openCollaboration(ydoc, {
+			url: defaultWorkspaceAppDocWsUrl(APP_URLS.API, {
+				appId: 'opensidian',
+				docId: childDocId,
+			}),
+			openWebSocket: auth.openWebSocket,
 			waitFor: childIdb.whenLoaded,
+			installationId,
 			actions: {},
 		});
 		return {
@@ -104,13 +105,31 @@ export function openOpensidianBrowser({
 		bash,
 	});
 
-	const collaboration = opensidianCloud.open(rootYdoc, {
+	const collaboration = openCollaboration(rootYdoc, {
 		// Explicit "root" preserves the cloud-side identity of the canonical
 		// app entry document; rootYdoc.guid is the workspace id, not "root".
-		docId: 'root',
+		url: defaultWorkspaceAppDocWsUrl(APP_URLS.API, {
+			appId: 'opensidian',
+			docId: 'root',
+		}),
+		openWebSocket: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
+		installationId,
 		actions,
 	});
+
+	// Auth transitions: tell live sockets to retry.
+	// Sign-in: a previously-rejected socket reconnects with the new token.
+	// Sign-out: the server closes the existing socket on its own (4401);
+	//   reconnect() ensures the supervisor doesn't sit in 'failed' if the
+	//   user signs back in.
+	const unsubscribeAuth = auth.onStateChange(() => {
+		collaboration.reconnect();
+		for (const child of fileContentDocs.values()) {
+			child.sync.reconnect();
+		}
+	});
+
 	let docsTornDown = false;
 
 	function teardownDocs() {
@@ -147,8 +166,8 @@ export function openOpensidianBrowser({
 			await owner.wipeLocalYjsData(fallbackGuids);
 		},
 		[Symbol.dispose]() {
+			unsubscribeAuth();
 			teardownDocs();
-			opensidianCloud[Symbol.dispose]();
 		},
 	};
 }

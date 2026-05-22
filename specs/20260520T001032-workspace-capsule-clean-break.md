@@ -2,7 +2,7 @@
 
 > **Status:** SUPERSEDED by `20260520T190000-cloud-workspace-app-instance-clean-break.md`
 >
-> This spec describes a direction that did not ship. The Cloud sync route shape that landed is `/workspaces/:workspaceId/apps/:appId/docs/:docId` with the App Namespace model (no `app_instance` table). The body below is preserved as historical context only and should not be used as a current-state reference.
+> This spec describes a direction that did not ship. The Cloud sync route shape that landed is `/me/apps/:appId/docs/:docId` with the App Namespace model (no `app_instance` table); the server resolves the default workspace from the auth token, so the client never names a workspaceId. The body below is preserved as historical context only and should not be used as a current-state reference.
 >
 > Specifically: the canonical model uses App Namespace (`workspaceId + appId`) as the workspace-local sync namespace, not App Instance. `workspaceId` is Better Auth `organization.id` in phase 1, no `cloud_workspace` row is added, and `/rooms/:room` is no longer the current Cloud sync path (it remains only for non-Cloud personal-room and daemon compatibility). The capsule pressure test below still illustrates why a smaller-than-Workspace app data boundary must exist, but read it as historical motivation, not current implementation guidance.
 

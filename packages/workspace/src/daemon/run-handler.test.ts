@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { Result } from 'wellcrafted/result';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import { DispatchError, type DispatchRequest } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';

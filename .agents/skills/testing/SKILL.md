@@ -17,6 +17,7 @@ Use this pattern when you need to:
 - Split large test files into focused behavior/type/scenario files.
 - Enforce behavior-based test naming and clear failure intent.
 - Add or review negative type tests using `@ts-expect-error`.
+- Audit a test file for assertions that cannot fail or fakes that don't earn their lines.
 
 ## References
 
@@ -25,6 +26,7 @@ Load these on demand based on what you're working on:
 - If working with **negative type tests** (`@ts-expect-error`, `bun:test` type strategy, no `as any`), read [references/type-testing.md](references/type-testing.md)
 - If working with **test setup architecture** (`setup()` patterns, composable setup, `beforeEach` avoidance, shared schemas), read [references/setup-pattern.md](references/setup-pattern.md)
 - If working with **test organization structure** (flat tests, `describe()` boundaries, helper-over-nesting), read [references/test-structure.md](references/test-structure.md)
+- If **auditing existing tests** for hedged assertions, pass-through getters, stalled fakes, dead fake surface, or docstrings that contradict the code, read [references/honest-tests.md](references/honest-tests.md)
 
 External reading:
 

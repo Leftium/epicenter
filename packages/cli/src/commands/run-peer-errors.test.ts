@@ -27,26 +27,16 @@ describe('emitRemoteCallError', () => {
 	let cap: ReturnType<typeof captureErrors>;
 	afterEach(() => cap?.restore());
 
-	test('Cancelled with TimeoutError reason prints timeout label', () => {
+	// The daemon owns the dispatch deadline (`AbortSignal.timeout(waitMs)`), so
+	// a `Cancelled` dispatch error always means the `--wait` timeout. The abort
+	// reason never survives the daemon's JSON response, so it is not inspected.
+	test('Cancelled prints the timeout label', () => {
 		cap = captureErrors();
 		emitRemoteCallError(
 			'macbook-pro',
-			DispatchError.Cancelled({
-				reason: new DOMException('Timed out', 'TimeoutError'),
-			}).error,
+			DispatchError.Cancelled({ reason: 'ignored' }).error,
 		);
 		expect(cap.lines).toEqual(['error: timeout calling macbook-pro']);
-	});
-
-	test('Cancelled with non-timeout reason prints generic cancel label', () => {
-		cap = captureErrors();
-		emitRemoteCallError(
-			'macbook-pro',
-			DispatchError.Cancelled({ reason: 'user-cancel' }).error,
-		);
-		expect(cap.lines).toEqual([
-			'error: dispatch to macbook-pro was cancelled: user-cancel',
-		]);
 	});
 
 	test('ActionNotFound labels with peer id', () => {

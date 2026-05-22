@@ -63,4 +63,26 @@ describe('emitRemoteCallError', () => {
 			'error: "tabs_close" failed on macbook-pro: handler boom',
 		]);
 	});
+
+	test('RecipientOffline labels the peer as gone', () => {
+		cap = captureErrors();
+		emitRemoteCallError(
+			'macbook-pro',
+			DispatchError.RecipientOffline({ to: 'macbook-pro' }).error,
+		);
+		expect(cap.lines).toEqual([
+			'error: peer macbook-pro went offline before responding',
+		]);
+	});
+
+	test('NetworkFailed surfaces the transport cause', () => {
+		cap = captureErrors();
+		emitRemoteCallError(
+			'macbook-pro',
+			DispatchError.NetworkFailed({ cause: 'connection refused' }).error,
+		);
+		expect(cap.lines).toEqual([
+			'error: dispatch to macbook-pro failed: connection refused',
+		]);
+	});
 });

@@ -594,7 +594,9 @@ function copyHeaders(target: Headers, source: RequestInit['headers']) {
 	if (!source) return;
 
 	if (source instanceof Headers) {
-		source.forEach((value, key) => target.set(key, value));
+		source.forEach((value, key) => {
+			target.set(key, value);
+		});
 		return;
 	}
 

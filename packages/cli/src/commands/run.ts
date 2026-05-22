@@ -135,7 +135,8 @@ function renderRunResult(
 			process.exitCode = 1;
 			return;
 		default:
-			return result.error satisfies never;
+			result.error satisfies never;
+			return;
 	}
 }
 

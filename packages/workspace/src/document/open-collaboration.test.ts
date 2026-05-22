@@ -39,7 +39,8 @@ function stalledOpenWebSocket(): Promise<WebSocket> {
 			for (const listener of listeners.close ?? []) listener(event as Event);
 		},
 		addEventListener: (type: string, listener: EventListener) => {
-			(listeners[type] ??= []).push(listener);
+			listeners[type] ??= [];
+			listeners[type].push(listener);
 		},
 		removeEventListener: (type: string, listener: EventListener) => {
 			listeners[type] = (listeners[type] ?? []).filter((l) => l !== listener);

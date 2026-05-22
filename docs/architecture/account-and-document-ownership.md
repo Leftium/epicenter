@@ -4,11 +4,6 @@ This is the canonical reference for who owns a document in Epicenter, how cloud
 sync is addressed, and where "organization" fits. For the narrative behind the
 decision, see `docs/articles/20260522T170000-documents-belong-to-you-not-a-workspace.md`.
 
-Status: the `redesign/server-owned-presence` branch currently carries a
-cloud-workspace routing layer that contradicts this model. It is being reverted
-to match what is written here. See
-`specs/20260522T160000-revert-cloud-workspace-sync-layer.md`.
-
 ## The core rule
 
 A document is owned by a user, addressed by the user's identity. There is no
@@ -81,11 +76,11 @@ so nothing else is composed into the name.
 Browser apps and the daemon use the same route and the same builder. They sync
 the same document by using the same guid.
 
-There is no `appId` segment. A user may hold documents from several apps; cross
--app collision is avoided by convention (each app names its root doc after
-itself, child docs carry unique guids), not by infrastructure. Guid uniqueness
-per user is already required for local IndexedDB, so cloud sync adds no new
-collision surface.
+There is no `appId` segment. A user may hold documents from several apps;
+cross-app collision is avoided by convention (each app names its root doc
+after itself, child docs carry unique guids), not by infrastructure. Guid
+uniqueness per user is already required for local IndexedDB, so cloud sync
+adds no new collision surface.
 
 ## What "organization" means here
 
@@ -122,6 +117,6 @@ require content to be owned by anything other than the user.
 ## Related
 
 - `docs/articles/20260522T170000-documents-belong-to-you-not-a-workspace.md` - the narrative
-- `specs/20260522T160000-revert-cloud-workspace-sync-layer.md` - the in-flight revert to this model
+- `specs/20260522T160000-revert-cloud-workspace-sync-layer.md` - the spec that reverted the code to this model
 - `packages/workspace/SYNC_ARCHITECTURE.md` - the sync transport, presence, and dispatch surfaces
 - `docs/encryption.md` - the per-subject keyring whose labels `subject:` mirrors

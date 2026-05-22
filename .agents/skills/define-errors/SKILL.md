@@ -212,12 +212,14 @@ Two shapes are legitimate and should stay as an `if` or a plain expression:
       && chat.error.detail.name === 'InsufficientCredits';
   }
   ```
-- **Guard**: special-case one variant, let the rest flow through a shared path.
+- **Guard**: special-case one variant, then let the rest flow through a
+  shared path.
   ```ts
-  if (result.error.name === 'PersonalWorkspaceMissing' && isWebSocketUpgrade(c)) {
-    return upgradeAnyway(c);
+  if (result.error.name === 'Throttled') {
+    await waitFor(result.error.retryAfterMs);
+    return retry();
   }
-  // common handling continues
+  // every other variant flows to the shared handling below
   ```
 
 The smell is specifically the **total fold**: every branch consumes the union into a different output, with no compiler pin. If you are translating the whole union, switch on it. This is not error-specific: the same rule applies to any closed discriminated union (state enums keyed by `kind`, `phase`, or `state`). See `code-audit` category 8 for the detection grep recipe.

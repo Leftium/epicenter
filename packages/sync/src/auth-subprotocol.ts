@@ -36,18 +36,3 @@ export function parseSubprotocols(header: string | null): string[] {
 	if (!header) return [];
 	return header.split(',').map((s) => s.trim());
 }
-
-/**
- * Extract the bearer token from a `Sec-WebSocket-Protocol` header, if present.
- *
- * The client encodes the token as `bearer.<token>` in the subprotocol list.
- * Returns `null` when no bearer entry is offered (e.g. cookie-only browser
- * auth, or an unauthenticated request the caller will reject downstream).
- */
-export function extractBearerToken(headers: Headers): string | null {
-	const offered = headers.get('sec-websocket-protocol');
-	const bearer = parseSubprotocols(offered).find((s) =>
-		s.startsWith(BEARER_SUBPROTOCOL_PREFIX),
-	);
-	return bearer ? bearer.slice(BEARER_SUBPROTOCOL_PREFIX.length) : null;
-}

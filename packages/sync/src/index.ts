@@ -11,7 +11,6 @@
 // WebSocket subprotocol auth (shared client/server constants + helpers)
 export {
 	BEARER_SUBPROTOCOL_PREFIX,
-	extractBearerToken,
 	MAIN_SUBPROTOCOL,
 	parseSubprotocols,
 } from './auth-subprotocol';

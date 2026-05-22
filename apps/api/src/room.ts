@@ -395,7 +395,7 @@ export class Room extends DurableObject {
 		// untrusted. Guard the decode here so the route turns a failure into
 		// 400; this mirrors the WebSocket path's boundary in webSocketMessage.
 		const { data: clientSV, error } = trySync({
-			try: (): Uint8Array => {
+			try: () => {
 				const { stateVector, update } = decodeSyncRequest(body);
 				if (update.byteLength > 0) {
 					Y.applyUpdateV2(this.doc, update, 'http');
@@ -567,7 +567,7 @@ export class Room extends DurableObject {
 		}
 
 		const { data: reply, error } = trySync({
-			try: (): Uint8Array | null => {
+			try: () => {
 				const decoder = decoding.createDecoder(new Uint8Array(message));
 				const syncType = decoding.readVarUint(decoder) as SyncMessageType;
 				const payload = decoding.readVarUint8Array(decoder);

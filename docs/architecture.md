@@ -65,7 +65,7 @@ const themeMode = defineKv(type("'light' | 'dark' | 'system'"), 'system');
 That purity is what makes cross-package reuse work. The same table and KV declarations can be imported by an app, a CLI tool, a migration utility, a test, or another package without dragging runtime side effects along for the ride.
 
 ### 2. `defineDocument` is where the live bundle appears
-`defineDocument(builder)` is the boundary where static meaning turns into live state. The user-owned builder allocates the `Y.Doc`, wires up table/KV helpers via `attachTables` / `attachKv`, attaches persistence, calls `openCollaboration` for the live network surface (sync, presence, RPC), and returns a typed bundle. `.open(id)` hands back a refcounted handle.
+`defineDocument(builder)` is the boundary where static meaning turns into live state. The user-owned builder allocates the `Y.Doc`, wires up table/KV helpers via `attachTables` / `attachKv`, attaches persistence, calls `openCollaboration` for the live network surface (sync, server-owned presence, dispatch), and returns a typed bundle. `.open(id)` hands back a refcounted handle.
 
 ```ts
 import * as Y from 'yjs';
@@ -92,9 +92,9 @@ workspace.tables.files.set({ id: 'readme.md', name: 'README.md', _v: 1 });
 The split is conceptual, not cosmetic. Definitions describe what data means; the builder is the runtime that can actually hold and mutate that data.
 
 ### 3. Extend means adding more `attach*` calls
-There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + RPC + peers) mounts through the `openCollaboration` primitive. You add them to the builder alongside tables and KV.
+There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + dispatch) mounts through the `openCollaboration` primitive. You add them to the builder alongside tables and KV.
 
-The example below uses raw room transport. For Cloud Workspace product sync, app routes should carry Workspace, App Namespace, and Sync Doc identity with `/workspaces/:workspaceId/apps/:appId/docs/:docId`; the server then builds the internal room name after access checks.
+The example below uses Cloud Workspace product sync. The client builds the URL from `(apiUrl, appId, docId)` with `defaultWorkspaceAppDocWsUrl`; the server resolves which workspace to use from the auth token and builds the internal room name after a membership check.
 
 ```ts
 import * as Y from 'yjs';
@@ -102,9 +102,9 @@ import {
 	attachIndexedDb,
 	attachKv,
 	attachTables,
+	defaultWorkspaceAppDocWsUrl,
 	defineDocument,
 	openCollaboration,
-	roomWsUrl,
 } from '@epicenter/workspace';
 
 const app = defineDocument((id: string) => {
@@ -113,7 +113,10 @@ const app = defineDocument((id: string) => {
 	const kv = attachKv(ydoc, { themeMode });
 	const idb = attachIndexedDb(ydoc);
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl('https://sync.example.com', ydoc.guid),
+		url: defaultWorkspaceAppDocWsUrl('https://api.example.com', {
+			appId: 'files',
+			docId: 'root',
+		}),
 		waitFor: idb.whenLoaded,
 		installationId: 'browser',
 		actions: {},
@@ -124,10 +127,10 @@ const app = defineDocument((id: string) => {
 
 Ordering is lexical. `openCollaboration` reads `idb.whenLoaded` as `waitFor` because `idb` is already in scope. Later attachments see earlier ones directly. There is no context object to route through.
 
-For extensions that need their own Y.Doc per row (file content, note bodies), define a *second* `defineDocument` keyed on the row's content guid. Content docs use the same `openCollaboration` primitive with an empty `actions` registry, which skips the action runner observer entirely. Same byte transport, no app-defined handlers.
+For extensions that need their own Y.Doc per row (file content, note bodies), define a *second* `defineDocument` keyed on the row's content guid. Content docs use the same `openCollaboration` primitive with an empty `actions` registry. Inbound dispatch frames reply `ActionNotFound`; the byte transport and presence channel are identical.
 
 ### 4. Collaboration is just another attachment, but it changes the topology
-`openCollaboration` does not own the document. It attaches to a Y.Doc that already exists and starts moving CRDT updates between peers, plus publishing presence and dispatching RPC. The `waitFor: idb.whenLoaded` option ensures local state is replayed first, so the initial handshake is a delta, not a full document transfer.
+`openCollaboration` does not own the document. It attaches to a Y.Doc that already exists and starts moving CRDT updates between peers. The relay publishes presence over its own channel; cross-device dispatch rides a plain HTTP POST. The `waitFor: idb.whenLoaded` option ensures local state is replayed first, so the initial handshake is a delta, not a full document transfer.
 
 Local state exists first, then optional durability, then optional network coordination.
 
@@ -207,12 +210,12 @@ import * as Y from 'yjs';
 import {
 	attachIndexedDb,
 	attachTables,
+	defaultWorkspaceAppDocWsUrl,
 	defineActions,
 	defineDocument,
 	defineQuery,
 	defineTable,
 	openCollaboration,
-	roomWsUrl,
 } from '@epicenter/workspace';
 
 const conversationsTable = defineTable(/* ... */);
@@ -235,7 +238,10 @@ const opensidian = defineDocument((id: string) => {
 		}),
 	});
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(APP_URLS.API, ydoc.guid),
+		url: defaultWorkspaceAppDocWsUrl(APP_URLS.API, {
+			appId: 'opensidian',
+			docId: 'root',
+		}),
 		openWebSocket: auth.openWebSocket,
 		waitFor: idb.whenLoaded,
 		installationId: 'browser',
@@ -271,7 +277,7 @@ The server is a relay, not the authority. Clients own schema meaning, table help
 
 `@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions, while `openCollaboration` plugs those primitives into a live document that already knows how to read and write its own data.
 
-That means the server does not need to understand your tables. It forwards Yjs sync messages. Presence and RPC are themselves writes to reserved Y.Doc arrays, carried by the same byte transport; the server validates that peers do not write to the presence array, but it never decodes the RPC array.
+That means the server does not need to understand your tables. It forwards Yjs sync messages. Presence is server state: the relay owns the `connections` map and pushes `presence_*` text frames to clients. Cross-device dispatch is a plain HTTP POST the relay routes to the recipient's socket. Neither rides the CRDT, and neither needs the server to decode your data.
 
 This is what "smart client" means here. The client can boot locally, read persisted state, apply encryption keys, expose actions, open document timelines, and keep working offline before the network helps at all.
 

@@ -4,7 +4,7 @@ The hub server. Handles authentication, real-time sync, and AI inference: everyt
 
 Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. Self-hosting the unmodified server is encouraged; see the encryption and trust model below.
 
-Runs on Cloudflare Workers with Durable Objects. Product-shaped Cloud sync opens Workspace app docs through `/workspaces/:workspaceId/apps/:appId/docs/:docId`; legacy clients can still open personal `/rooms/:room` routes. In both paths, the Hono route authorizes the caller before it builds the internal room name.
+Runs on Cloudflare Workers with Durable Objects. Product-shaped Cloud sync opens Workspace app docs through `/me/apps/:appId/docs/:docId`: the route resolves the caller's default workspace from the auth token, never from a client-supplied id. The workspace daemon and non-Cloud sample apps use personal `/rooms/:room` routes. In both paths, the Hono route authorizes the caller before it builds the internal room name.
 
 ## Why a hub exists
 
@@ -65,9 +65,11 @@ Cloudflare Workers
 ├── Hono app (src/app.ts)
 │   ├── /auth/*          Better Auth (email/password, Google OAuth, OAuth provider)
 │   ├── /ai/chat         AI streaming (OpenAI, Anthropic via @tanstack/ai)
-│   ├── /workspaces/:workspaceId/apps/:appId/docs/:docId
+│   ├── /me/apps/:appId/docs/:docId
 │   │                    Workspace app-doc sync (WebSocket upgrade or HTTP)
-│   └── /rooms/:room     Legacy personal room sync (WebSocket upgrade or HTTP)
+│   ├── /me/apps/:appId/docs/:docId/dispatch
+│   │                    Cross-device dispatch (HTTP POST)
+│   └── /rooms/:room     Daemon + non-Cloud room sync (WebSocket upgrade or HTTP)
 │
 └── Room (Durable Object, SQLite-backed)
     └── One Yjs document for one authorized sync room

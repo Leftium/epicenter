@@ -15,9 +15,9 @@
 
 YJS is a **CRDT (Conflict-free Replicated Data Type)** library. In Epicenter, YJS is the source of truth for app data. A Cloud Workspace is a product account container; a synced `Y.Doc` is a Sync Doc inside an app namespace. Tables, KV entries, and document content are typed helpers layered over YJS shared types.
 
-## Current raw-room model
+## Current sync model
 
-The example below uses raw room transport. Cloud Workspace apps should prefer the product route shape `/workspaces/:workspaceId/apps/:appId/docs/:docId`; `roomWsUrl(...)` remains useful for daemon, local, and compatibility paths.
+The example below uses Cloud Workspace sync: the client builds the URL with `defaultWorkspaceAppDocWsUrl` and the server resolves the workspace from the auth token.
 
 Each app composes its workspace in a single builder:
 
@@ -25,9 +25,9 @@ Each app composes its workspace in a single builder:
 import {
 	attachIndexedDb,
 	attachTables,
+	defaultWorkspaceAppDocWsUrl,
 	defineDocument,
 	openCollaboration,
-	roomWsUrl,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
@@ -35,10 +35,13 @@ const app = defineDocument((id: string) => {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, appTables);
 	const idb = attachIndexedDb(ydoc);                          // local persistence
-	const collaboration = openCollaboration(ydoc, {              // sync + presence + RPC
-		url: roomWsUrl(serverUrl, ydoc.guid),
+	const collaboration = openCollaboration(ydoc, {              // sync + presence + dispatch
+		url: defaultWorkspaceAppDocWsUrl(apiUrl, {
+			appId: 'myapp',
+			docId: 'root',
+		}),
 		waitFor: idb.whenLoaded,                                   // delta-only on reconnect
-		identity: { id: 'browser', name: 'Browser', platform: 'web' },
+		installationId: 'browser',
 		actions: {},
 	});
 
@@ -62,6 +65,6 @@ Offline and sync behavior:
 3. `openCollaboration` waits for `idb.whenLoaded` before opening the WebSocket, so the first remote exchange is a CRDT delta against an already-populated local state, not a full document transfer.
 4. When offline, writes accumulate in IndexedDB/SQLite; when back online, Yjs replays them against whatever peers did in the meantime. CRDT merge rules guarantee convergence.
 
-For content documents that only need bytes-on-the-wire (no presence, no RPC), use the sibling `attachYjsSync(ydoc, { url, ... })` instead of `openCollaboration`.
+For content documents that only need bytes-on-the-wire, use `openCollaboration` with `actions: {}`. Inbound dispatch frames reply `ActionNotFound`; the byte transport and presence channel are identical.
 
-For the server-side (Elysia) equivalent of accepting sync connections, see the `createSyncPlugin` helper in `@epicenter/server-remote-cloudflare` or the `apps/api/` hub.
+For the server side that accepts these connections, see the `apps/api/` hub: a Hono app on Cloudflare Workers with Durable Objects. Its [README](../../apps/api/README.md) covers the route family and trust model.

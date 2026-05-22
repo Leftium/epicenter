@@ -170,6 +170,20 @@ helper type from a stable exported function. It becomes a smell when tests use i
 to reverse-engineer an unnamed seam, or when the index gymnastics hide the fact
 that the caller wants a smaller named capability.
 
+## 8. Non-Exhaustive Union Folds (`if/else` Where a `switch` Belongs)
+
+**Pattern**: an `if (x.type === '...')` / `else` chain that *folds an entire closed discriminated union* (every branch maps a variant to a different output) with no `satisfies never` pin. The inverse of category 5.
+
+```bash
+grep -rn "\.error\.name === '" packages apps --include="*.ts" | grep -v test
+```
+
+**Why it matters**: the `else` silently absorbs any variant added later; a `switch` with `default: x satisfies never` makes the producer's new variant break the consumer's build instead.
+
+**Validated**: a sweep of `workspace`/`sync`/`cli`/`api` found four (`run-handler.ts`, `run.ts`, `list.ts`, `materializer.ts`), all fixed. Re-run after adding variants to a wire or IPC error union.
+
+**The pattern itself lives elsewhere**: the rule, the predicate/guard/fold triage, and the before/after are in the `define-errors` skill ("Consuming a Variant Union"). This entry is only the detection recipe: use it to find hits, use that skill to classify them.
+
 ## What This Skill Doesn't Catch (Reject from the Hunt)
 
 Tested and rejected as not-actually-smells in this codebase:

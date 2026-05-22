@@ -174,6 +174,54 @@ type HttpError = InferErrors<typeof HttpError>;
 type ConnectionError = InferError<typeof HttpError.Connection>;
 ```
 
+## Consuming a Variant Union: Exhaustive `switch`, Not `if/else`
+
+`defineErrors` builds a discriminated union tagged by `name`. When you *translate the whole union* (every variant mapped to another error, an exit code, a UI state), discriminate with an exhaustive `switch (error.name)` and pin it with `default: error satisfies never`. Do not use an `if/else` chain.
+
+```ts
+// ❌ non-exhaustive fold: a 6th DispatchError variant lands in `else` silently
+if (result.error.name === 'RecipientOffline') {
+  return RunError.PeerNotFound({ peerTarget, waitMs, syncStatus });
+}
+return RunError.RemoteCallFailed({ cause: result.error, peerTarget, syncStatus });
+
+// ✅ exhaustive: a 6th variant fails to compile until someone buckets it
+switch (result.error.name) {
+  case 'RecipientOffline':
+    return RunError.PeerNotFound({ peerTarget, waitMs, syncStatus });
+  case 'ActionNotFound':
+  case 'ActionFailed':
+  case 'Cancelled':
+  case 'NetworkFailed':
+    return RunError.RemoteCallFailed({ cause: result.error, peerTarget, syncStatus });
+  default:
+    return result.error satisfies never;
+}
+```
+
+**Why**: error unions grow. The `satisfies never` default makes the *producer* adding a variant break the *consumer's* build, forcing a deliberate decision instead of a silent fall-through into the catch-all branch. Collapsing several variants into one output is fine: list their `case` labels explicitly so the collapse is visible and intentional.
+
+### Not every `error.name === 'X'` is wrong
+
+Two shapes are legitimate and should stay as an `if` or a plain expression:
+
+- **Predicate**: one boolean about one variant.
+  ```ts
+  get isCreditsExhausted() {
+    return chat.error instanceof AiChatHttpError
+      && chat.error.detail.name === 'InsufficientCredits';
+  }
+  ```
+- **Guard**: special-case one variant, let the rest flow through a shared path.
+  ```ts
+  if (result.error.name === 'PersonalWorkspaceMissing' && isWebSocketUpgrade(c)) {
+    return upgradeAnyway(c);
+  }
+  // common handling continues
+  ```
+
+The smell is specifically the **total fold**: every branch consumes the union into a different output, with no compiler pin. If you are translating the whole union, switch on it. This is not error-specific: the same rule applies to any closed discriminated union (state enums keyed by `kind`, `phase`, or `state`). See `code-audit` category 8 for the detection grep recipe.
+
 ## Anti-Patterns
 
 ```typescript

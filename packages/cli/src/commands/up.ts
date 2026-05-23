@@ -34,7 +34,7 @@ import {
 	type WorkspaceAppError,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Ok, type Result, trySync } from 'wellcrafted/result';
+import { Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import { cmd } from '../util/cmd.js';
 
@@ -120,7 +120,12 @@ export async function runUp(
 	await using stack = new AsyncDisposableStack();
 	stack.defer(() => lease.release());
 
-	const auth = await createMachineAuthClient();
+	const authResult = await tryAsync({
+		try: () => createMachineAuthClient(),
+		catch: (cause) => StartupError.AuthFailed({ cause }),
+	});
+	if (authResult.error) return authResult;
+	const auth = authResult.data;
 	stack.defer(() => auth[Symbol.dispose]());
 
 	const { data: config, error: configError } =

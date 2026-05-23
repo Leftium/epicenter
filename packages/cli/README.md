@@ -27,7 +27,17 @@ When you iterate on `apps/api`, you want CLI commands hitting your local server,
 | Use the published binary (end user) | `epicenter auth login` |
 | Override the target anywhere | `EPICENTER_API_URL=https://staging.example.com bun run cli auth login` |
 
-Tokens are stored per host so prod and local sessions coexist. Each API host writes `~/.epicenter/auth.<host>.json` with `:` replaced by `_`. So `https://api.epicenter.so` lands at `~/.epicenter/auth.api.epicenter.so.json` and `http://localhost:8787` lands at `~/.epicenter/auth.localhost_8787.json`. A fresh `cli:local auth login` will not overwrite your prod session. When the env var is set, the CLI prints `Using API at <url>.` to stderr once per process. The daemon freezes its target at boot; to retarget, `daemon down` then `daemon up` again.
+Tokens are stored per API target so prod and local sessions coexist. Each target writes one file at `<dataDir>/auth/<host>.json`, with `:` in the host replaced by `_`. `dataDir` is the platform user-data directory:
+
+| Platform | `dataDir` |
+| --- | --- |
+| macOS   | `~/Library/Application Support/epicenter` |
+| Linux   | `$XDG_DATA_HOME/epicenter` or `~/.local/share/epicenter` |
+| Windows | `%APPDATA%\epicenter\Data` |
+
+So on macOS, `https://api.epicenter.so` lands at `~/Library/Application Support/epicenter/auth/api.epicenter.so.json` and `http://localhost:8787` lands at `~/Library/Application Support/epicenter/auth/localhost_8787.json`. A fresh `cli:local auth login` will not overwrite your prod session. When `EPICENTER_API_URL` is set, the CLI prints `Using API at <url>.` to stderr once per process. The daemon freezes its target at boot; to retarget, `daemon down` then `daemon up` again.
+
+Set `EPICENTER_DATA_DIR=<path>` to relocate the entire auth directory. This is an escape hatch for sandboxed setups (Nix, snap, ephemeral homes) and the test suite; you should not need it otherwise.
 
 The same env var and scripts apply to every command that talks to the API, including `daemon`, not just `auth`.
 

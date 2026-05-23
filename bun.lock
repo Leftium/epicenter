@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -520,6 +519,7 @@
         "@epicenter/encryption": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
+        "env-paths": "^3.0.0",
         "oauth4webapi": "catalog:",
         "wellcrafted": "catalog:",
       },

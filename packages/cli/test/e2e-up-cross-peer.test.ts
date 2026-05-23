@@ -262,8 +262,9 @@ describe('daemon up lifecycle (scaled down, no real cross-peer)', () => {
 			const { child } = await spawnUp(env, FIXTURE_DIR);
 			try {
 				const result = await runCli(env, ['daemon', 'logs', '-C', FIXTURE_DIR]);
-				// Log file is written under $HOME/.epicenter/log/<h>.log; if
-				// the daemon has emitted anything by now, `logs` succeeds with
+				// Log file lives under the platform log directory from env-paths
+				// (macOS `~/Library/Logs/epicenter`, Linux `$XDG_STATE_HOME/.../log`).
+				// If the daemon has emitted anything by now, `logs` succeeds with
 				// some output. A bare exitCode=0 is the load-bearing assertion.
 				expect(result.exitCode).toBe(0);
 			} finally {

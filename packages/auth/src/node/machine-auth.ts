@@ -3,7 +3,7 @@
  *
  * `loginWithOob` runs the OOB OAuth dance once, fetches `/api/session` to derive
  * the local workspace identity, and persists a `PersistedAuth` cell to the
- * API-host-specific machine auth file (mode 0o600). `status` and `logout`
+ * API-target-specific machine auth file (mode 0o600). `status` and `logout`
  * read that cell and reach the server through a regular `createOAuthAppAuth`
  * client. `createMachineAuthClient` is the daemon entry point: it loads the
  * cell, constructs the auth client, and never spawns an interactive launcher.
@@ -17,11 +17,11 @@
  */
 
 import { promises as fs } from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import type { SubjectKeyring } from '@epicenter/encryption';
+import envPaths from 'env-paths';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -42,20 +42,45 @@ import {
 import { createOobOAuthLauncher } from './oob-launcher.js';
 
 /**
+ * Platform user-data directory for the `epicenter` app, resolved via
+ * `env-paths`. macOS: `~/Library/Application Support/epicenter`. Linux:
+ * `$XDG_DATA_HOME/epicenter` or `~/.local/share/epicenter`. Windows:
+ * `%APPDATA%\epicenter\Data`. The same string is what `packages/workspace`
+ * uses for daemon logs and other persistent user data; keeping them aligned
+ * is intentional.
+ *
+ * `EPICENTER_DATA_DIR`, if set, overrides this. It exists for users with
+ * unusual home layouts (Nix, snap, ephemeral homes, CI sandboxes) and for
+ * the integration tests in `packages/cli` which need to redirect the
+ * lookup into a temp directory at runtime; `env-paths` itself caches
+ * `os.homedir()` at module load and cannot be re-pointed.
+ */
+function defaultDataDir(): string {
+	return (
+		process.env.EPICENTER_DATA_DIR ??
+		envPaths('epicenter', { suffix: '' }).data
+	);
+}
+
+/**
  * The on-disk machine auth file for a given API target.
  *
- * One file per API host: `~/.epicenter/auth.<host>.json` with `:` replaced
- * by `_`. Prod resolves to `~/.epicenter/auth.api.epicenter.so.json`;
- * `cli:local` (`EPICENTER_API_URL=http://localhost:8787`) resolves to
- * `~/.epicenter/auth.localhost_8787.json`. Different targets cannot
- * trample each other.
+ * One file per API target under the platform data directory, in an `auth/`
+ * subdirectory: `<dataDir>/auth/<host>.json` with `:` in the host replaced
+ * by `_`. Prod resolves to `<dataDir>/auth/api.epicenter.so.json`; `cli:local`
+ * (`EPICENTER_API_URL=http://localhost:8787`) resolves to
+ * `<dataDir>/auth/localhost_8787.json`. Different targets cannot trample
+ * each other.
+ *
+ * `dataDir` defaults to `env-paths('epicenter').data` and exists only as an
+ * override for tests; production callers should never pass it.
  */
 export function machineAuthFilePath({
 	baseURL = EPICENTER_API_URL,
-	homeDir = process.env.HOME ?? os.homedir(),
+	dataDir = defaultDataDir(),
 }: {
 	baseURL?: string;
-	homeDir?: string;
+	dataDir?: string;
 } = {}): string {
 	let host: string;
 	try {
@@ -63,11 +88,7 @@ export function machineAuthFilePath({
 	} catch (cause) {
 		throw new Error(`Invalid Epicenter API URL: ${baseURL}`, { cause });
 	}
-	return path.join(
-		homeDir,
-		'.epicenter',
-		`auth.${host.replaceAll(':', '_')}.json`,
-	);
+	return path.join(dataDir, 'auth', `${host.replaceAll(':', '_')}.json`);
 }
 
 export const MachineAuthRequestError = defineErrors({

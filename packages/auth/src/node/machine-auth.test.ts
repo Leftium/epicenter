@@ -57,8 +57,8 @@ function tmpAuthPath() {
 	return filePath;
 }
 
-function tmpHomePath() {
-	const dirPath = path.join(os.tmpdir(), `epicenter-home-${randomUUID()}`);
+function tmpDataDir() {
+	const dirPath = path.join(os.tmpdir(), `epicenter-data-${randomUUID()}`);
 	cleanupDirs.push(dirPath);
 	return dirPath;
 }
@@ -176,20 +176,20 @@ function apiSessionOk(subject = 'user-1'): Route {
 		});
 }
 
-test('machineAuthFilePath uses auth.<host>.json for every API target', () => {
-	const homeDir = path.join(os.tmpdir(), `epicenter-home-${randomUUID()}`);
+test('machineAuthFilePath uses <dataDir>/auth/<host>.json for every API target', () => {
+	const dataDir = path.join(os.tmpdir(), `epicenter-data-${randomUUID()}`);
 	expect(
 		machineAuthFilePath({
 			baseURL: 'https://api.epicenter.so',
-			homeDir,
+			dataDir,
 		}),
-	).toBe(path.join(homeDir, '.epicenter', 'auth.api.epicenter.so.json'));
+	).toBe(path.join(dataDir, 'auth', 'api.epicenter.so.json'));
 	expect(
 		machineAuthFilePath({
 			baseURL: 'http://localhost:8787',
-			homeDir,
+			dataDir,
 		}),
-	).toBe(path.join(homeDir, '.epicenter', 'auth.localhost_8787.json'));
+	).toBe(path.join(dataDir, 'auth', 'localhost_8787.json'));
 });
 
 test('loginWithOob writes PersistedAuth and returns identity', async () => {
@@ -231,38 +231,30 @@ test('loginWithOob writes PersistedAuth and returns identity', async () => {
 	}
 });
 
-test('loginWithOob writes to the API-host-specific default path', async () => {
-	const originalHome = process.env.HOME;
-	const homeDir = tmpHomePath();
-	process.env.HOME = homeDir;
-	try {
-		const { fetch } = createFetch({
-			tokenRoute: tokenSuccess(),
-			apiSessionRoute: apiSessionOk('user-1'),
-		});
+test('loginWithOob writes to the API-target-specific default path under the data dir', async () => {
+	const dataDir = tmpDataDir();
+	const filePath = machineAuthFilePath({ baseURL: BASE_URL, dataDir });
 
-		const result = await loginWithOob({
-			baseURL: BASE_URL,
-			clientId: CLIENT_ID,
-			fetch,
-			now: () => NOW,
-			print: () => {},
-			openBrowser: () => {},
-			readCode: async () => 'CODE',
-		});
-		expectOk(result);
+	const { fetch } = createFetch({
+		tokenRoute: tokenSuccess(),
+		apiSessionRoute: apiSessionOk('user-1'),
+	});
 
-		const filePath = machineAuthFilePath({
-			baseURL: BASE_URL,
-			homeDir,
-		});
-		const loaded = (await readCellRaw(filePath)) as PersistedAuth;
-		expect(loaded.grant.accessToken).toBe('access-1');
-		expect(path.basename(filePath)).toBe('auth.localhost_8787.json');
-	} finally {
-		if (originalHome === undefined) delete process.env.HOME;
-		else process.env.HOME = originalHome;
-	}
+	const result = await loginWithOob({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+		print: () => {},
+		openBrowser: () => {},
+		readCode: async () => 'CODE',
+	});
+	expectOk(result);
+
+	const loaded = (await readCellRaw(filePath)) as PersistedAuth;
+	expect(loaded.grant.accessToken).toBe('access-1');
+	expect(filePath).toBe(path.join(dataDir, 'auth', 'localhost_8787.json'));
 });
 
 test('loginWithOob with empty paste writes no file', async () => {

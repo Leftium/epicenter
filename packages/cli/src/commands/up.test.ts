@@ -23,7 +23,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { machineAuthFilePath } from '@epicenter/auth/node';
 import {
 	claimDaemonLease,
@@ -36,24 +36,26 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import { runUp } from './up';
 
 let originalXdg: string | undefined;
-let originalHome: string | undefined;
+let originalDataDir: string | undefined;
 let runtimeRoot: string;
 let workDir: string;
-let homeRoot: string;
+let dataRoot: string;
 
 beforeEach(() => {
 	originalXdg = process.env.XDG_RUNTIME_DIR;
-	originalHome = process.env.HOME;
+	originalDataDir = process.env.EPICENTER_DATA_DIR;
 
 	runtimeRoot = mkdtempSync(join(tmpdir(), 'ep-up-'));
 	process.env.XDG_RUNTIME_DIR = runtimeRoot;
 	mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
-	homeRoot = mkdtempSync(join(tmpdir(), 'ep-home-'));
-	process.env.HOME = homeRoot;
-	mkdirSync(join(homeRoot, '.epicenter'), { recursive: true });
+	dataRoot = mkdtempSync(join(tmpdir(), 'ep-data-'));
+	process.env.EPICENTER_DATA_DIR = dataRoot;
+
+	const authPath = currentAuthPath();
+	mkdirSync(dirname(authPath), { recursive: true, mode: 0o700 });
 	writeFileSync(
-		machineAuthPath(homeRoot),
+		authPath,
 		JSON.stringify({
 			grant: {
 				accessToken: 'access-stored',
@@ -79,11 +81,11 @@ beforeEach(() => {
 afterEach(() => {
 	if (originalXdg === undefined) delete process.env.XDG_RUNTIME_DIR;
 	else process.env.XDG_RUNTIME_DIR = originalXdg;
-	if (originalHome === undefined) delete process.env.HOME;
-	else process.env.HOME = originalHome;
+	if (originalDataDir === undefined) delete process.env.EPICENTER_DATA_DIR;
+	else process.env.EPICENTER_DATA_DIR = originalDataDir;
 
 	rmSync(runtimeRoot, { recursive: true, force: true });
-	rmSync(homeRoot, { recursive: true, force: true });
+	rmSync(dataRoot, { recursive: true, force: true });
 	rmSync(workDir, { recursive: true, force: true });
 });
 
@@ -91,8 +93,8 @@ function markerPath(name: string): string {
 	return join(workDir, `${name}.marker`);
 }
 
-function machineAuthPath(homeDir: string): string {
-	return machineAuthFilePath({ homeDir });
+function currentAuthPath(): string {
+	return machineAuthFilePath();
 }
 
 function writeDemoDaemon(source: string): string {
@@ -193,7 +195,7 @@ describe('runUp: happy path', () => {
 
 describe('runUp: failure cleanup', () => {
 	test('returns AuthFailed and releases the lease when machine auth is missing', async () => {
-		rmSync(machineAuthPath(homeRoot), { force: true });
+		rmSync(currentAuthPath(), { force: true });
 
 		const error = expectErr(
 			await runUp({

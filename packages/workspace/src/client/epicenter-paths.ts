@@ -1,9 +1,12 @@
 /**
- * Node-only path helpers for files under the Epicenter home directory.
+ * Node-only path helpers for the playground daemons' persistence files under
+ * `~/.epicenter/persistence/<workspaceId>.db`. Override the base directory
+ * with `$EPICENTER_HOME`.
  *
- * Override the home directory with `$EPICENTER_HOME`. These paths are
- * machine-local, not project-local. Project data under `<projectDir>/.epicenter`
- * is handled by `document/workspace-paths.ts`.
+ * Scope: this is a playground convention only. Production machine state
+ * (machine auth, daemon logs) lives under the platform user-data directory
+ * via `env-paths('epicenter')`. Project-local state lives under
+ * `<projectDir>/.epicenter/` via `document/workspace-paths.ts`.
  */
 
 import { homedir } from 'node:os';

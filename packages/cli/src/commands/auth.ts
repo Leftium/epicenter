@@ -4,8 +4,8 @@
  * Uses an OOB (out-of-band) OAuth 2.1 authorization-code flow with PKCE.
  * `auth login` prints a URL; the user signs in on the hosted portal,
  * copies the one-time code from the success page, and pastes it into the
- * terminal. Tokens and the local workspace identity live at
- * `~/.epicenter/auth.json` with file mode 0o600.
+ * terminal. Tokens and the local workspace identity live in the
+ * API-host-specific machine auth file with file mode 0o600.
  *
  * Same shape and same source as the browser, dashboard, and extension
  * clients (see specs/20260514T200000-api-me-three-field-token-bundle.md).

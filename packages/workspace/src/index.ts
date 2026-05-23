@@ -87,7 +87,7 @@
 // ACTION SYSTEM
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { Action, ActionManifest } from './shared/actions';
+export type { ActionManifest } from './shared/actions';
 export {
 	defineActions,
 	defineMutation,
@@ -117,8 +117,6 @@ export {
 export {
 	DEFAULT_PROJECT_CONFIG_SOURCE,
 	defineConfig,
-	type EpicenterConfig,
-	PROJECT_CONFIG_FILENAME,
 } from './config/define-config.js';
 export { defineWorkspace } from './daemon/define-workspace.js';
 export type { ProjectDir } from './shared/types';
@@ -162,15 +160,7 @@ export {
 export { attachTimeline } from './document/attach-timeline/index.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
-export {
-	type ActionInput,
-	type ActionOutput,
-	DispatchError,
-	type DispatchRequest,
-	type LiveDevice,
-	type TypedDispatch,
-	typedDispatch,
-} from './document/dispatch.js';
+export { DispatchError } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
 export type {
 	OpenWebSocket,

@@ -76,11 +76,7 @@ if (!token) {
 	process.exit(1);
 }
 
-async function cf<T>(
-	method: string,
-	path: string,
-	body?: unknown,
-): Promise<T> {
+async function cf<T>(method: string, path: string, body?: unknown): Promise<T> {
 	const res = await fetch(`${CF_API}${path}`, {
 		method,
 		headers: {
@@ -117,7 +113,9 @@ for (const [id, app] of Object.entries(APPS)) {
 	}
 }
 if (orphans.length > 0) {
-	console.error(`URLs in APPS are not on any declared zone:\n  ${orphans.join('\n  ')}`);
+	console.error(
+		`URLs in APPS are not on any declared zone:\n  ${orphans.join('\n  ')}`,
+	);
 	console.error('Add the zone to ZONES in scripts/cf/apply.ts or fix the URL.');
 	process.exit(1);
 }
@@ -127,7 +125,9 @@ const tag = isPlan ? '[plan]' : '[apply]';
 let drift = 0;
 const dsRecords: Array<{ zone: string; ds: string }> = [];
 
-console.log(`${tag} Cloudflare baseline reconciliation across ${ZONES.length} zones`);
+console.log(
+	`${tag} Cloudflare baseline reconciliation across ${ZONES.length} zones`,
+);
 
 for (const zone of ZONES) {
 	console.log(`\n==> ${zone.name} (email: ${zone.email})`);
@@ -153,7 +153,9 @@ for (const zone of ZONES) {
 			continue;
 		}
 		drift++;
-		console.log(`    diff    ${id}: ${shortJson(got.value)} -> ${shortJson(want)}`);
+		console.log(
+			`    diff    ${id}: ${shortJson(got.value)} -> ${shortJson(want)}`,
+		);
 		if (!isPlan) {
 			await cf('PATCH', `/zones/${zoneId}/settings/${id}`, { value: want });
 			console.log(`    applied ${id}`);
@@ -234,7 +236,9 @@ for (const zone of ZONES) {
 console.log(`\n${tag} done. ${drift} drift item(s).`);
 
 if (dsRecords.length > 0) {
-	console.log('\nDS records (paste at registrar for any zone NOT registered at Cloudflare):');
+	console.log(
+		'\nDS records (paste at registrar for any zone NOT registered at Cloudflare):',
+	);
 	for (const { zone, ds } of dsRecords) console.log(`  ${zone}: ${ds}`);
 }
 
@@ -242,7 +246,12 @@ if (isPlan && drift > 0) process.exit(2);
 
 function deepEqual(a: unknown, b: unknown): boolean {
 	if (a === b) return true;
-	if (typeof a !== typeof b || typeof a !== 'object' || a === null || b === null) {
+	if (
+		typeof a !== typeof b ||
+		typeof a !== 'object' ||
+		a === null ||
+		b === null
+	) {
 		return false;
 	}
 	const ak = Object.keys(a as object);

@@ -3,7 +3,13 @@
  *
  * These tests run `runUp` in-process against tiny config-routed daemon
  * fixtures. They never spawn a child or call `process.exit`; each test owns a
- * temp project, temp runtime root, and temp home.
+ * temp project and temp runtime root.
+ *
+ * Auth is injected: every test passes a `createAuthClient` factory to
+ * `runUp`. Happy paths return `STUB_AUTH`; the AuthFailed test returns a
+ * factory that throws. The real `createMachineAuthClient` is not exercised
+ * here, by design - it has its own unit tests in
+ * `@epicenter/auth/src/node/machine-auth.test.ts`.
  *
  * Key behaviors:
  * - happy path loads epicenter.config.ts, writes metadata, binds the
@@ -23,8 +29,8 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { machineAuthFilePath } from '@epicenter/auth/node';
+import { join } from 'node:path';
+import type { AuthClient } from '@epicenter/auth';
 import {
 	claimDaemonLease,
 	metadataPathFor,
@@ -32,48 +38,45 @@ import {
 	socketPathFor,
 	writeMetadata,
 } from '@epicenter/workspace/node';
+import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { runUp } from './up';
 
+const STUB_AUTH: AuthClient = {
+	state: {
+		status: 'signed-in',
+		localIdentity: {
+			subject: 'user-1',
+			keyring: [
+				{
+					version: 1,
+					subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+				},
+			],
+		},
+	},
+	onStateChange: () => () => {},
+	startSignIn: async () => Ok(undefined),
+	signOut: async () => Ok(undefined),
+	fetch: async () => new Response(null, { status: 404 }),
+	openWebSocket: async () => {
+		throw new Error('STUB_AUTH: openWebSocket not implemented');
+	},
+	[Symbol.dispose]: () => {},
+};
+
+const stubAuthFactory = async () => STUB_AUTH;
+
 let originalXdg: string | undefined;
-let originalDataDir: string | undefined;
 let runtimeRoot: string;
 let workDir: string;
-let dataRoot: string;
 
 beforeEach(() => {
 	originalXdg = process.env.XDG_RUNTIME_DIR;
-	originalDataDir = process.env.EPICENTER_DATA_DIR;
 
 	runtimeRoot = mkdtempSync(join(tmpdir(), 'ep-up-'));
 	process.env.XDG_RUNTIME_DIR = runtimeRoot;
 	mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
-
-	dataRoot = mkdtempSync(join(tmpdir(), 'ep-data-'));
-	process.env.EPICENTER_DATA_DIR = dataRoot;
-
-	const authPath = currentAuthPath();
-	mkdirSync(dirname(authPath), { recursive: true, mode: 0o700 });
-	writeFileSync(
-		authPath,
-		JSON.stringify({
-			grant: {
-				accessToken: 'access-stored',
-				refreshToken: 'refresh-stored',
-				accessTokenExpiresAt: Date.now() + 3_600_000,
-			},
-			localIdentity: {
-				subject: 'user-1',
-				keyring: [
-					{
-						version: 1,
-						subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-					},
-				],
-			},
-		}),
-		{ mode: 0o600 },
-	);
 
 	workDir = mkdtempSync(join(tmpdir(), 'ep-dir-'));
 });
@@ -81,20 +84,13 @@ beforeEach(() => {
 afterEach(() => {
 	if (originalXdg === undefined) delete process.env.XDG_RUNTIME_DIR;
 	else process.env.XDG_RUNTIME_DIR = originalXdg;
-	if (originalDataDir === undefined) delete process.env.EPICENTER_DATA_DIR;
-	else process.env.EPICENTER_DATA_DIR = originalDataDir;
 
 	rmSync(runtimeRoot, { recursive: true, force: true });
-	rmSync(dataRoot, { recursive: true, force: true });
 	rmSync(workDir, { recursive: true, force: true });
 });
 
 function markerPath(name: string): string {
 	return join(workDir, `${name}.marker`);
-}
-
-function currentAuthPath(): string {
-	return machineAuthFilePath();
 }
 
 function writeDemoDaemon(source: string): string {
@@ -169,6 +165,7 @@ describe('runUp: happy path', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
+				createAuthClient: stubAuthFactory,
 			}),
 		);
 		try {
@@ -194,13 +191,14 @@ describe('runUp: happy path', () => {
 });
 
 describe('runUp: failure cleanup', () => {
-	test('returns AuthFailed and releases the lease when machine auth is missing', async () => {
-		rmSync(currentAuthPath(), { force: true });
-
+	test('returns AuthFailed and releases the lease when createAuthClient throws', async () => {
 		const error = expectErr(
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
+				createAuthClient: async () => {
+					throw new Error('no saved session');
+				},
 			}),
 		);
 
@@ -217,6 +215,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
+				createAuthClient: stubAuthFactory,
 			}),
 		);
 
@@ -244,6 +243,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
+				createAuthClient: stubAuthFactory,
 			}),
 		);
 
@@ -266,6 +266,7 @@ describe('runUp: failure cleanup', () => {
 			runUp({
 				projectDir: workDir,
 				quiet: true,
+				createAuthClient: stubAuthFactory,
 			}),
 		).rejects.toThrow('loadProjectConfig: failed to load');
 
@@ -287,6 +288,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
+				createAuthClient: stubAuthFactory,
 			}),
 		);
 
@@ -356,6 +358,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
+				createAuthClient: stubAuthFactory,
 			}),
 		);
 
@@ -378,6 +381,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
+				createAuthClient: stubAuthFactory,
 			}),
 		);
 
@@ -399,6 +403,7 @@ describe('runUp: already running', () => {
 				await runUp({
 					projectDir: workDir,
 					quiet: true,
+					createAuthClient: stubAuthFactory,
 				}),
 			);
 
@@ -429,6 +434,7 @@ describe('runUp: orphan path', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
+				createAuthClient: stubAuthFactory,
 			}),
 		);
 

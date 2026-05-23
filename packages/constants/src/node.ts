@@ -2,17 +2,15 @@
  * Node-only runtime configuration: every Epicenter env var and platform
  * path, resolved through one named singleton.
  *
- * Read `epicenterEnv.dataDir` (or `.logDir`, `.runtimeDir`, ...) wherever
- * you would have reached for `process.env.X` or hand-rolled an XDG
- * fallback. Each property is a lazy getter: env vars are re-read on
- * every access so tests that mutate `process.env` between setup and
- * exercise continue to work without ceremony.
+ * Most fields are eager. They read `process.env` and the env-paths defaults
+ * once at module load, which matches how production runs: env vars are set
+ * by the shell or CI before the process starts and do not change.
  *
- * env-paths captures `os.homedir()` at module load and cannot be
- * re-pointed at runtime, so the platform fallbacks (`paths.data`,
- * `paths.log`, etc.) are computed once on import. Tests that need to
- * redirect a directory must do so via the `EPICENTER_*_DIR` overrides
- * this module consumes.
+ * `runtimeDir` is the one lazy getter. The in-process tests in
+ * `packages/cli/src/commands/up.test.ts` mutate `XDG_RUNTIME_DIR` between
+ * tests to give each test its own socket directory, and that mutation has
+ * to be visible at access time. Production callers see the same value
+ * either way because they read it once at boot.
  */
 
 import { tmpdir } from 'node:os';
@@ -23,21 +21,9 @@ import { EPICENTER_API_URL as DEFAULT_API_URL } from './apps.js';
 const paths = envPaths('epicenter', { suffix: '' });
 
 export const epicenterEnv = {
-	get apiUrl(): string {
-		return process.env.EPICENTER_API_URL ?? DEFAULT_API_URL;
-	},
-	get dataDir(): string {
-		return process.env.EPICENTER_DATA_DIR ?? paths.data;
-	},
-	get logDir(): string {
-		return process.env.EPICENTER_LOG_DIR ?? paths.log;
-	},
-	get cacheDir(): string {
-		return process.env.EPICENTER_CACHE_DIR ?? paths.cache;
-	},
-	get configDir(): string {
-		return process.env.EPICENTER_CONFIG_DIR ?? paths.config;
-	},
+	apiUrl: process.env.EPICENTER_API_URL ?? DEFAULT_API_URL,
+	dataDir: process.env.EPICENTER_DATA_DIR ?? paths.data,
+	logDir: process.env.EPICENTER_LOG_DIR ?? paths.log,
 	get runtimeDir(): string {
 		return join(process.env.XDG_RUNTIME_DIR ?? tmpdir(), 'epicenter');
 	},

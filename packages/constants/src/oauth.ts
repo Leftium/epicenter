@@ -2,34 +2,30 @@ import type { SchemaClient } from '@better-auth/oauth-provider';
 import { APPS, localUrl } from '#apps';
 
 /**
- * Better Auth calls server-side confidential clients `web`.
- *
- * Epicenter's checked-in trusted clients are public PKCE clients:
- * `tokenEndpointAuthMethod: "none"`, `public: true`, and no client secret.
- * For that policy, Better Auth only accepts `native` and `user-agent-based`.
- */
-type TrustedPublicOAuthClientType = Extract<
-	NonNullable<SchemaClient['type']>,
-	'native' | 'user-agent-based'
->;
-
-/**
  * Shape of one checked-in first-party public OAuth client.
  *
- * The API seed layer fills in the shared policy for every trusted app: no
- * client secret, PKCE required, consent skipped, authorization-code flow,
- * and the common Epicenter scopes. `redirectUris` is the final resolved
- * list for a specific deployment, built by {@link buildTrustedOAuthClients}
- * from `APPS` plus the deployment's API base URL.
+ * Better Auth calls server-side confidential clients `web`. Epicenter's
+ * checked-in trusted clients are public PKCE clients
+ * (`tokenEndpointAuthMethod: 'none'`, `public: true`, no client secret), so
+ * Better Auth only accepts `native` and `user-agent-based` for this policy.
+ * The API seed layer fills in the rest (PKCE required, consent skipped,
+ * authorization-code flow, Epicenter scopes).
+ *
+ * `redirectUris` is the final resolved list for a specific deployment,
+ * built by {@link buildTrustedOAuthClients} from `APPS` plus the
+ * deployment's API base URL.
  *
  * Field names stay spelled out instead of using `Pick` or a mapped type so
  * this file reads as config. The Better Auth indexed types keep the field
  * names tied to upstream without making the shape cryptic.
  */
-type TrustedPublicOAuthClient = {
+export type TrustedOAuthClient = {
 	clientId: NonNullable<SchemaClient['clientId']>;
 	name: NonNullable<SchemaClient['name']>;
-	type: TrustedPublicOAuthClientType;
+	type: Extract<
+		NonNullable<SchemaClient['type']>,
+		'native' | 'user-agent-based'
+	>;
 	redirectUris: readonly string[];
 };
 
@@ -131,5 +127,5 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 			type: 'native',
 			redirectUris: [`${apiBaseURL}/auth/cli-callback`],
 		},
-	] as const satisfies readonly TrustedPublicOAuthClient[];
+	] as const satisfies readonly TrustedOAuthClient[];
 }

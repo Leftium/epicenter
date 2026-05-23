@@ -16,15 +16,13 @@ import {
 	EPICENTER_CLI_OAUTH_CLIENT_ID,
 	EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	EPICENTER_OAUTH_SCOPES,
+	type TrustedOAuthClient,
 } from '@epicenter/constants/oauth';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import { authPlugins } from './plugins.js';
-import {
-	projectTrustedOAuthClientToRow,
-	type TrustedOAuthClientInput,
-} from './trusted-oauth-clients.js';
+import { projectTrustedOAuthClientToRow } from './trusted-oauth-clients.js';
 
 const trustedClientFixture = {
 	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
@@ -34,7 +32,7 @@ const trustedClientFixture = {
 		'http://localhost:5174/auth/callback',
 		'https://fuji.epicenter.so/auth/callback',
 	],
-} as const satisfies TrustedOAuthClientInput;
+} as const satisfies TrustedOAuthClient;
 const redirectUri = trustedClientFixture.redirectUris[0];
 
 function findCliClient(baseURL: string) {
@@ -182,7 +180,7 @@ function createTrustedClientTestAuth({
 	trustedClient: inputTrustedClient = trustedClientFixture,
 	baseURL = 'http://localhost:47878',
 }: {
-	trustedClient?: TrustedOAuthClientInput;
+	trustedClient?: TrustedOAuthClient;
 	baseURL?: string;
 } = {}) {
 	const trustedClient = projectTrustedOAuthClientToRow(inputTrustedClient);

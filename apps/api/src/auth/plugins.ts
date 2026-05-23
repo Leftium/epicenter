@@ -9,16 +9,16 @@ import { jwt } from 'better-auth/plugins/jwt';
 /**
  * Build the Better Auth plugins that define Epicenter's OAuth server boundary.
  *
- * Use this only from the API auth factory, where the request URL is known. The
- * `resourceAudience` must be the API base URL that clients pass as OAuth
- * `resource`; keeping those values equal is what prevents access tokens minted
- * for one resource server from being replayed against another. The same base
- * URL feeds `buildTrustedOAuthClients`, so the trusted-client-id set matches
- * the clients the seeder will install for this deployment.
+ * Use this only from the API auth factory, where the request URL is known.
+ * `apiBaseURL` plays two roles: it's the OAuth resource audience (clients
+ * pass it as `resource`, and we accept tokens minted only for this audience,
+ * preventing tokens from one resource server being replayed against another),
+ * and it's the deployment input to `buildTrustedOAuthClients` so the
+ * trusted-client-id set matches the clients the seeder will install.
  */
-export function authPlugins(resourceAudience: string) {
+export function authPlugins(apiBaseURL: string) {
 	const trustedOAuthClientIds = new Set(
-		buildTrustedOAuthClients(resourceAudience).map((client) => client.clientId),
+		buildTrustedOAuthClients(apiBaseURL).map((client) => client.clientId),
 	);
 	return [
 		// ES256 (P-256 ECDSA) signs the id_token and JWT access tokens. The
@@ -32,7 +32,7 @@ export function authPlugins(resourceAudience: string) {
 			consentPage: '/consent',
 			requirePKCE: true,
 			cachedTrustedClients: trustedOAuthClientIds,
-			validAudiences: [resourceAudience],
+			validAudiences: [apiBaseURL],
 			allowDynamicClientRegistration: false,
 			scopes: [...EPICENTER_OAUTH_SCOPES],
 			// The plugin warns that /.well-known/oauth-authorization-server/auth must exist

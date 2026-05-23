@@ -1,9 +1,35 @@
 # Server package split: @epicenter/server + apps/api
 
-Status: draft
-Date: 2026-05-22
+Status: in progress on `braden-w/buffalo`
+Started: 2026-05-22
+Last updated: 2026-05-23
 Owner: braden
 Supersedes: specs/20260522T120000-personal-vs-team-deployment-mode.md
+
+## 0. How to read this spec
+
+This spec describes a multi-wave refactor that lives on branch
+`braden-w/buffalo`. The intent is one coherent design (sections 1 to 9,
+plus 10 for the client-side companion). The execution happens in waves
+so the diff stays reviewable. Section A at the end tracks which waves
+have landed and which are still ahead.
+
+If you want the design only, read sections 1 to 10 top to bottom and
+stop. If you want to know what is actually in the worktree right now,
+jump to section A.
+
+The shorthand throughout:
+
+```
+Server side       packages/server  (the Hono sub-app factories)
+Cloud deployment  apps/api          (composes the library + Autumn extras)
+Client side       packages/auth, packages/workspace, packages/svelte-utils,
+                  packages/cli, apps/whispering, apps/dashboard, etc.
+```
+
+A single shared vocabulary spans all three: `Owner`, `ownerId(owner)`,
+`ownerPath(owner)`, `doName(owner, ...)`. The next nine sections define
+that vocabulary.
 
 ## 1. The punchline
 
@@ -33,12 +59,39 @@ Self-hosted team customers write their own `apps/server-team/` entrypoint
 
 ## 3. The Owner concept
 
+`Owner` is the **shared vocabulary** across server, cloud, and every
+client. The type definition lives in `@epicenter/auth` (the contract
+package) so clients can import it without taking a dependency on
+`@epicenter/server`. Server-side derivations (`doName`, `assetKey`,
+`keyringLabel`, `assetOwnerFilter`) live in `@epicenter/server` and
+consume the type. The string-form helper `ownerId(owner)` lives next to
+the type in `@epicenter/auth` because both server and client compute it.
+
 ```ts
-// packages/server/src/owner.ts
+// packages/auth/src/owner.ts                  (the shared contract)
 
 export type Owner =
   | { kind: 'personal'; userId: string }
   | { kind: 'team' };
+
+export type OwnerKind = Owner['kind'];
+
+/**
+ * Stable string identifier for an Owner. Personal owners produce
+ * `users/<userId>` (the partition prefix the server writes for DO names,
+ * R2 keys, and HKDF labels). Team owners produce the literal `team`.
+ *
+ * Use this everywhere the client previously read `localIdentity.subject`.
+ */
+export function ownerId(owner: Owner): string {
+  return owner.kind === 'personal' ? `users/${owner.userId}` : 'team';
+}
+```
+
+```ts
+// packages/server/src/owner.ts                (server-only derivations)
+
+import type { Owner } from '@epicenter/auth';
 
 export type OwnerPath = `users/${string}` | '';
 
@@ -71,6 +124,14 @@ One function (`ownerPath`) produces the partition segment. Every durable
 string is built by concatenating it with a resource type and an id.
 `joinPath` drops the empty partition segment so team mode strings have no
 leading prefix.
+
+**Why the split between auth and server.** Browser apps, the CLI, and the
+workspace daemon all need to talk about Owners to render team-aware UI,
+key local storage, and decide which signed-in account they are operating
+as. None of them should depend on the Hono server library to do that.
+`Owner` and `ownerId` are pure types and string functions; they belong
+with the auth contract. The derivations that touch DO names, R2 keys,
+and HKDF labels are server-only and stay in `@epicenter/server`.
 
 ## 4. Every durable string under one rule
 
@@ -173,7 +234,163 @@ buckets, per-deployment Postgres, per-deployment KV. The server has
 nothing to do here; it cannot reach another deployment's resources by
 name.
 
-## 9. Library public API
+## 9. Client-side companion: local Yjs prefix
+
+The server design above only solves half the problem. Clients persist
+Yjs documents in IndexedDB (browser, extension) and on disk (Tauri, CLI
+daemon). Those local stores must partition the same way the server does
+so that two signed-in accounts on the same machine cannot collide.
+
+### 10.1 The legacy shape
+
+Today's `packages/workspace/src/document/local-yjs-key.ts` builds:
+
+```
+epicenter.owner.<subject>.yjs.<ydoc.guid>
+```
+
+`<subject>` was the value of `localIdentity.subject` (the user id today).
+That string carries two unearned segments and one missing one:
+
+```
+"epicenter." app namespace                EARNED (collides with other
+                                          IDB consumers on the origin)
+"owner."     decorative middle            NOT EARNED (zero partition info;
+                                          the next segment IS the owner)
+"<subject>." owner identity               EARNED, but stringly typed and
+                                          named for the old Better-Auth
+                                          vocabulary instead of the Owner
+                                          shape
+".yjs."      "this is yjs data"           NOT EARNED (y-indexeddb library
+                                          prepends its own `yjs.` already;
+                                          the live name in IndexedDB is
+                                          `yjs.epicenter.owner.X.yjs.Y`,
+                                          with TWO `yjs.` segments)
+
+(missing)    server origin                FAILURE: two self-hosted team
+                                          servers signed into the same
+                                          browser produce the same
+                                          `epicenter.owner.team.yjs.*`
+                                          prefix and collide
+```
+
+### 10.2 The greenfield shape
+
+```
+epicenter/<server-origin>/<owner-segment>/<ydoc.guid>
+```
+
+`<owner-segment>` is `users/<userId>` for personal owners and is dropped
+entirely for team owners (the server origin already disambiguates teams
+across deployments).
+
+Examples:
+
+```
+Personal Alice on Epicenter Cloud:   epicenter/api.epicenter.so/users/alice/<guid>
+Personal Bob   on Epicenter Cloud:   epicenter/api.epicenter.so/users/bob/<guid>
+Team on Acme self-host:              epicenter/team.acme.com/<guid>
+Team on Beta self-host:              epicenter/team.beta.com/<guid>
+```
+
+Y-indexeddb still prepends its own `yjs.` at the IndexedDB layer; the
+live database name becomes `yjs.epicenter/api.epicenter.so/users/alice/<guid>`.
+Mixed `/` and `.` at the very front is the library's, not ours.
+
+### 10.3 What this earns
+
+```
+Cross-server isolation                FIXED (was broken)
+Cross-app isolation                   PRESERVED (epicenter/ prefix)
+Cross-user isolation                  PRESERVED (users/<id>/)
+Cross-doc isolation                   PRESERVED (caller appends ydoc.guid)
+Mirrors server's doName(owner, ...)   NEW (same address shape on wire and disk)
+Type-safe Owner input                 NEW (Owner replaces stringly-typed subject)
+Duplicate `.yjs.` segment             REMOVED
+Decorative `.owner.` segment          REMOVED
+```
+
+### 10.4 New signatures
+
+```ts
+// packages/workspace/src/document/local-yjs-key.ts
+
+import type { Owner } from '@epicenter/auth';
+
+const APP = 'epicenter';
+
+/**
+ * Per-owner-per-server prefix for client-side persisted Yjs data on this
+ * browser profile. Mirrors the server's `doName(owner, ...)` shape so the
+ * same `(server, owner, doc)` tuple lands on the same address on the wire
+ * and on disk.
+ */
+export function getOwnedYjsPrefix(server: string, owner: Owner): string {
+  const ownerSeg = owner.kind === 'personal' ? `/users/${owner.userId}` : '';
+  return `${APP}/${server}${ownerSeg}/`;
+}
+
+export function createOwnedYjsKey(
+  server: string,
+  owner: Owner,
+  ydocGuid: string,
+): string {
+  return `${getOwnedYjsPrefix(server, owner)}${ydocGuid}`;
+}
+```
+
+### 10.5 Caller updates
+
+```
+Touched files in packages/workspace/:
+
+  document/local-yjs-key.ts          rewritten (signature change)
+  document/local-yjs-key.test.ts     literal-shape assertions updated
+  document/local-owner.ts            passes (server, owner) instead of ownerId
+  document/attach-local-storage.ts   accepts server + owner, threads through
+  document/attach-local-storage.test.ts  prefix assertions updated
+  document/wipe-local-storage.ts     accepts server + owner
+
+Touched files in packages/svelte-utils/:
+
+  session.svelte.ts                  pass server + state.owner downstream
+  session.svelte.test.ts             update test fixtures
+
+Touched files in packages/auth-svelte/:                (none expected;
+                                                       imports re-exported types)
+```
+
+The server origin comes from the auth session's source URL (the auth
+client already knows the API origin it signs into; it is what
+`authBaseURL` carries on the server side and what every client uses to
+construct its `fetch` and WebSocket URLs).
+
+### 10.6 What this breaks
+
+```
+Durable storage format               yes, every existing IndexedDB blob is
+                                     orphaned. Greenfield assumption holds
+                                     (no users in production with persisted
+                                     encrypted Yjs blobs that need to
+                                     migrate). Documented refusal.
+
+Workspace-package signatures         getOwnedYjsPrefix(ownerId: string)
+                                     -> getOwnedYjsPrefix(server, owner)
+                                     Six callers in two packages.
+
+Tests                                Two test files assert the literal
+                                     `epicenter.owner.<x>.yjs.<y>` shape;
+                                     both rewritten.
+```
+
+### 10.7 Trigger to revisit
+
+If a future client needs to multiplex more than one server simultaneously
+(e.g., a CLI that holds accounts on Cloud AND a team server), the design
+already supports it: each prefix carries its own server origin segment.
+No further change needed.
+
+## 10. Library public API
 
 ```ts
 // packages/server/src/types.ts
@@ -227,7 +444,7 @@ That is the entire public surface. The `ownerPath`, `doName`, `assetKey`,
 `keyringLabel`, and `assetOwnerFilter` functions stay internal because no
 consumer needs them.
 
-## 10. Library internals: how ownerKind dispatches
+## 11. Library internals: how ownerKind dispatches
 
 `opts.ownerKind` is the only static config the library reads. It is used
 in exactly one place: route registration shape.
@@ -266,7 +483,7 @@ the constant `{ kind: 'team' }`. The `Owner` flows into `doName`,
 This is the only conditional branch on `ownerKind` in the library.
 Everything downstream operates on the resolved `Owner` value.
 
-## 11. Deployment composition
+## 12. Deployment composition
 
 ### 11.1 Self-hosted team (`apps/server-team/src/index.ts`)
 
@@ -327,7 +544,7 @@ export { Room } from '@epicenter/server';
 Any reader sees the entire URL surface of either deployment in one file,
 top to bottom.
 
-## 12. Package shape
+## 13. Package shape
 
 ```
 packages/server/
@@ -374,7 +591,7 @@ apps/api/                     Epicenter Cloud deployment
                               customer runs one
 ```
 
-## 13. Env reads, not opts
+## 14. Env reads, not opts
 
 The library reads everything from `c.env` at request time. Cloud and team
 each declare their own bindings in their own `wrangler.jsonc`; the library
@@ -396,7 +613,7 @@ Cloud-only env (read inside apps/api, NOT inside @epicenter/server):
   ADMIN_USER_IDS
 ```
 
-## 14. Sign-up policy
+## 15. Sign-up policy
 
 ```ts
 type SignUpPolicy = 'open' | 'disabled';
@@ -409,7 +626,7 @@ accounts out of band (via the Better Auth admin API or a CLI tool).
 When invitation tokens are designed, `'invite-only'` becomes a third
 value. Until that exists, the meaningful gradient is `open` or `disabled`.
 
-## 15. Migration plan (one-shot clean break)
+## 16. Migration plan (one-shot clean break)
 
 ```
 1. Create packages/server. Move from apps/api/src/:
@@ -451,7 +668,7 @@ value. Until that exists, the meaningful gradient is `open` or `disabled`.
     asset URLs. Replace any installationId usage with clientId.
 ```
 
-## 16. Tests
+## 17. Tests
 
 ```
 packages/server/
@@ -481,7 +698,7 @@ apps/api/
   index.test.ts                composed app shape (mount points exist)
 ```
 
-## 17. Non-goals
+## 18. Non-goals
 
 ```
 - No @epicenter/server-cloud package. apps/api is the only cloud-shaped
@@ -504,7 +721,7 @@ apps/api/
 - mountDefaults helper: each deployment mounts explicitly for visibility.
 ```
 
-## 18. Open questions
+## 19. Open questions
 
 ```
 1. Should the WebSocket URL place clientId in the query string or in a
@@ -529,7 +746,7 @@ apps/api/
    would not interoperate. Acceptable because greenfield.
 ```
 
-## 19. Success criteria
+## 20. Success criteria
 
 ```
 1. Anyone can read apps/api/src/index.ts and apps/server-team/src/index.ts
@@ -561,7 +778,7 @@ apps/api/
    through ownerPath() + joinPath().
 ```
 
-## 20. References
+## 21. References
 
 ```
 - Personal-vs-team deployment-mode spec (superseded):

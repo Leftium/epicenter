@@ -1,4 +1,4 @@
-import type { AuthClient, AuthState } from '@epicenter/auth';
+import { type AuthClient, type AuthState, ownerId } from '@epicenter/auth';
 import { createLocalOwner, type LocalOwner } from '@epicenter/workspace';
 
 /**
@@ -42,12 +42,12 @@ export function createSession<T extends Disposable>({
 	function buildPayload(state: Exclude<AuthState, { status: 'signed-out' }>) {
 		payload = build({
 			owner: createLocalOwner({
-				ownerId: state.localIdentity.subject,
+				ownerId: ownerId(state.owner),
 				keyring: () => {
 					if (auth.state.status === 'signed-out') {
 						throw new Error('[session] keyring() called while signed-out.');
 					}
-					return auth.state.localIdentity.keyring;
+					return auth.state.keyring;
 				},
 			}),
 		});

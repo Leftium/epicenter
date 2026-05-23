@@ -1,24 +1,22 @@
 import { expect, test } from 'bun:test';
-import type { AuthClient, AuthState, LocalIdentity } from '@epicenter/auth';
+import type { AuthClient, AuthState } from '@epicenter/auth';
 import { Ok } from 'wellcrafted/result';
 import { createSession } from './session.svelte.js';
 
 (globalThis as unknown as { $state: <T>(value: T) => T }).$state = (value) =>
 	value;
 
-const localIdentity = (subject: string): LocalIdentity => ({
-	subject,
-	keyring: [
-		{
-			version: 1,
-			subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-		},
-	],
-});
+const keyring = [
+	{
+		version: 1,
+		subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+	},
+] as const;
 
-const signedIn = (subject: string): AuthState => ({
+const signedIn = (userId: string): AuthState => ({
 	status: 'signed-in',
-	localIdentity: localIdentity(subject),
+	owner: { kind: 'personal', userId },
+	keyring: [...keyring],
 });
 
 test('signed-out gap disposes old payload before building the next subject', () => {
@@ -28,16 +26,18 @@ test('signed-out gap disposes old payload before building the next subject', () 
 	const session = createSession({
 		auth,
 		build: () => {
-			const subject =
+			const label =
 				auth.state.status === 'signed-out'
 					? 'signed-out'
-					: auth.state.localIdentity.subject;
-			events.push(`build:${subject}`);
+					: auth.state.owner.kind === 'personal'
+						? auth.state.owner.userId
+						: 'team';
+			events.push(`build:${label}`);
 
 			return {
-				subject,
+				label,
 				[Symbol.dispose]() {
-					events.push(`dispose:${subject}`);
+					events.push(`dispose:${label}`);
 				},
 			};
 		},
@@ -47,7 +47,7 @@ test('signed-out gap disposes old payload before building the next subject', () 
 	setState(signedIn('bob'));
 
 	expect(events).toEqual(['build:alice', 'dispose:alice', 'build:bob']);
-	expect(session.current?.subject).toBe('bob');
+	expect(session.current?.label).toBe('bob');
 
 	session[Symbol.dispose]();
 });

@@ -3,10 +3,10 @@ export * from './auth-errors.js';
 export {
 	ApiSessionResponse,
 	AuthUser,
-	LocalIdentity,
 	type OAuthTokenGrant,
 	PersistedAuth,
 } from './auth-types.js';
+export { Owner, type OwnerKind, ownerId } from './owner.js';
 export {
 	type AuthFetch,
 	type CreateOAuthAppAuthConfig,

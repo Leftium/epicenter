@@ -145,7 +145,7 @@ function createDaemonAttachEncryption({
 				if (auth.state.status === 'signed-out') {
 					throw new Error(`[${route}-daemon] auth signed-out.`);
 				}
-				return auth.state.localIdentity.keyring;
+				return auth.state.keyring;
 			},
 		});
 }

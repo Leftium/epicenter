@@ -170,7 +170,12 @@ export {
 export { attachTimeline } from './document/attach-timeline/index.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
-export { DispatchError } from './document/dispatch.js';
+export {
+	DispatchError,
+	type DispatchRequest,
+	type TypedDispatch,
+	typedDispatch,
+} from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
 export type { SyncStatus } from './document/internal/sync-supervisor.js';
 export { onLocalUpdate } from './document/on-local-update.js';
@@ -181,6 +186,7 @@ export {
 	type OpenWebSocketFn,
 	openCollaboration,
 } from './document/open-collaboration.js';
+export type { PresenceDevice } from './document/presence-protocol.js';
 // Transport URL builder.
 //
 // `roomWsUrl({ baseURL, owner, guid, installationId })` builds the WebSocket URL

@@ -551,9 +551,9 @@ const unsubscribe = workspace.collaboration.devices.subscribe((devices) => {
 });
 ```
 
-Each entry is a `LiveDevice` (`{ installationId }`); the local install is
-excluded. Product-level data (display name, cursor, capability list) lives in
-app-owned tables, not on the presence wire. See
+Each entry is a `PresenceDevice` (`{ installationId, connectedAt, actions }`);
+the local install is excluded. Product-level data (display name, cursor,
+capability list) lives in app-owned tables, not on the presence wire. See
 [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
 Cursor and selection sync (genuine ephemeral peer-to-peer state) is future
@@ -1553,7 +1553,7 @@ import {
 	type Collaboration,
 	DispatchError,
 	type DispatchRequest,
-	type LiveDevice,
+	type PresenceDevice,
 	type TypedDispatch,
 	typedDispatch,
 } from '@epicenter/workspace';
@@ -1561,7 +1561,7 @@ import {
 
 `openCollaboration` returns a `Collaboration`. Online devices (relay-owned presence, with each device's `installationId`, `connectedAt`, and published `actions` manifest):
 
-- `collaboration.devices.list()`: `LiveDevice[]`, the local install excluded
+- `collaboration.devices.list()`: `PresenceDevice[]`, the local install excluded
 - `collaboration.devices.subscribe(fn)`: returns an unsubscribe function
 
 Cross-device calls:

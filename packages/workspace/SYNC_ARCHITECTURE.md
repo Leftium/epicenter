@@ -61,7 +61,7 @@ Content docs (rich-text bodies, attachments, anything nested that syncs independ
 | `dispatch`        | Fire a cross-device call over the relay socket                     |
 | `[Symbol.dispose]`| Sugar for `ydoc.destroy()`; cascades through every attachment      |
 
-`devices.list()` returns `LiveDevice[]`, where each device carries `{ installationId, connectedAt, actions }`. `actions` is the device's published `ActionManifest` (the metadata-only projection of its `ActionRegistry`), suitable for rendering UI affordances, validating input against schemas, or feeding an AI tool layer.
+`devices.list()` returns `PresenceDevice[]`, where each device carries `{ installationId, connectedAt, actions }`. `actions` is the device's published `ActionManifest` (the metadata-only projection of its `ActionRegistry`), suitable for rendering UI affordances, validating input against schemas, or feeding an AI tool layer.
 
 ## The wire: one socket, three channels
 

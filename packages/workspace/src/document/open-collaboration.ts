@@ -39,7 +39,6 @@ import {
 	DispatchError,
 	type DispatchRequest,
 	interpretDispatchResult,
-	type LiveDevice,
 	runInboundDispatch,
 } from './dispatch.js';
 import {
@@ -52,6 +51,7 @@ import {
 } from './internal/sync-supervisor.js';
 import {
 	checkPresenceFrame,
+	type PresenceDevice,
 	type PresencePublishFrame,
 } from './presence-protocol.js';
 
@@ -128,8 +128,8 @@ export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
 	 * verbatim.
 	 */
 	readonly devices: {
-		list(): LiveDevice[];
-		subscribe(fn: (devices: LiveDevice[]) => void): () => void;
+		list(): PresenceDevice[];
+		subscribe(fn: (devices: PresenceDevice[]) => void): () => void;
 	};
 
 	/**
@@ -188,8 +188,8 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	// there is no delta protocol and no client-side reassembly. The relay
 	// dedupes multi-tab same-install (newest-wins by connectedAt) and excludes
 	// the receiver's own install, so the client stores `devices` verbatim.
-	let remoteDevices: LiveDevice[] = [];
-	const presenceListeners = new Set<(devices: LiveDevice[]) => void>();
+	let remoteDevices: PresenceDevice[] = [];
+	const presenceListeners = new Set<(devices: PresenceDevice[]) => void>();
 
 	// Returns true if `text` was a recognized `presence` frame (and thus
 	// consumed); false if the caller should route it elsewhere (dispatch).
@@ -279,10 +279,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 
 	// `devices` reads the latest relay-pushed presence list directly.
 	const devices = {
-		list(): LiveDevice[] {
+		list(): PresenceDevice[] {
 			return remoteDevices;
 		},
-		subscribe(fn: (devices: LiveDevice[]) => void): () => void {
+		subscribe(fn: (devices: PresenceDevice[]) => void): () => void {
 			presenceListeners.add(fn);
 			return () => {
 				presenceListeners.delete(fn);

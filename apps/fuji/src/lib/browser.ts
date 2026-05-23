@@ -16,7 +16,6 @@
  * touching local storage.
  */
 
-import { APP_URLS } from '@epicenter/constants/vite';
 import type { SignedIn } from '@epicenter/svelte';
 import {
 	attachEncryption,
@@ -53,7 +52,7 @@ export function openFujiBrowser({
 
 	const idb = attachLocalStorage(ydoc, signedIn);
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(APP_URLS.API, ydoc.guid),
+		url: roomWsUrl(signedIn.auth.baseURL, ydoc.guid),
 		auth: signedIn.auth,
 		waitFor: idb.whenLoaded,
 		installationId,
@@ -68,7 +67,7 @@ export function openFujiBrowser({
 		const body = attachRichText(childYdoc);
 		const childIdb = attachLocalStorage(childYdoc, signedIn);
 		const childSync = openCollaboration(childYdoc, {
-			url: roomWsUrl(APP_URLS.API, childYdoc.guid),
+			url: roomWsUrl(signedIn.auth.baseURL, childYdoc.guid),
 			auth: signedIn.auth,
 			waitFor: childIdb.whenLoaded,
 			installationId,
@@ -109,7 +108,7 @@ export function openFujiBrowser({
 			entryContentDocs[Symbol.dispose]();
 			ydoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-			await wipeLocalStorage({ server: signedIn.server, owner: signedIn.owner });
+			await wipeLocalStorage(signedIn);
 		},
 		[Symbol.dispose]() {
 			entryContentDocs[Symbol.dispose]();

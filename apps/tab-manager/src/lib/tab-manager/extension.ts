@@ -68,7 +68,7 @@ export function openTabManagerBrowser({
 		async wipe() {
 			ydoc.destroy();
 			await idb.whenDisposed;
-			await wipeLocalStorage({ server: signedIn.server, owner: signedIn.owner });
+			await wipeLocalStorage(signedIn);
 		},
 		[Symbol.dispose]() {
 			ydoc.destroy();

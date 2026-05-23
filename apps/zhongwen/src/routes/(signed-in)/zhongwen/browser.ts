@@ -14,7 +14,6 @@
  * `Symbol.dispose` tears down the root Y.Doc without touching local storage.
  */
 
-import { APP_URLS } from '@epicenter/constants/vite';
 import type { SignedIn } from '@epicenter/svelte';
 import {
 	attachEncryption,
@@ -40,7 +39,7 @@ export function openZhongwenBrowser({
 
 	const idb = attachLocalStorage(ydoc, signedIn);
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(APP_URLS.API, ydoc.guid),
+		url: roomWsUrl(signedIn.auth.baseURL, ydoc.guid),
 		auth: signedIn.auth,
 		waitFor: idb.whenLoaded,
 		installationId,
@@ -56,7 +55,7 @@ export function openZhongwenBrowser({
 		async wipe() {
 			ydoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-			await wipeLocalStorage({ server: signedIn.server, owner: signedIn.owner });
+			await wipeLocalStorage(signedIn);
 		},
 		[Symbol.dispose]() {
 			ydoc.destroy();

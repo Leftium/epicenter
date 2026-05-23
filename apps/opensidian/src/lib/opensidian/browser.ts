@@ -18,7 +18,6 @@
  * local storage.
  */
 
-import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachYjsFileSystem,
 	createSqliteIndex,
@@ -70,7 +69,7 @@ export function openOpensidianBrowser({
 		// File bodies sync through Cloud so device loss doesn't drop the largest
 		// data class.
 		const childSync = openCollaboration(childYdoc, {
-			url: roomWsUrl(APP_URLS.API, childYdoc.guid),
+			url: roomWsUrl(signedIn.auth.baseURL, childYdoc.guid),
 			auth: signedIn.auth,
 			waitFor: childIdb.whenLoaded,
 			installationId,
@@ -124,7 +123,7 @@ export function openOpensidianBrowser({
 	});
 
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(APP_URLS.API, ydoc.guid),
+		url: roomWsUrl(signedIn.auth.baseURL, ydoc.guid),
 		auth: signedIn.auth,
 		waitFor: idb.whenLoaded,
 		installationId,
@@ -155,7 +154,7 @@ export function openOpensidianBrowser({
 		async wipe() {
 			teardownDocs();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-			await wipeLocalStorage({ server: signedIn.server, owner: signedIn.owner });
+			await wipeLocalStorage(signedIn);
 		},
 		[Symbol.dispose]() {
 			teardownDocs();

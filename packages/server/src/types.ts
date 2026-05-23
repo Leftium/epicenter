@@ -60,7 +60,7 @@ export type ServerOptions = {
  * `userId` values because every member shares the DO. The DO never branches
  * on which mode it is in.
  */
-export type ConnectionId = {
+export type Connection = {
 	userId: string;
 	installationId: string;
 	connectedAt: number;

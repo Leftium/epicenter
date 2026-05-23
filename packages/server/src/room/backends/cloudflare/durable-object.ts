@@ -30,7 +30,7 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';
-import type { ConnectionId } from '../../../types.js';
+import type { Connection } from '../../../types.js';
 import { createRoomCore, type RoomCore } from '../../core.js';
 import { createDurableObjectUpdateLog } from './update-log.js';
 
@@ -104,7 +104,7 @@ export class Room extends DurableObject {
 			// upgrade or close drives the next presence delta the same way
 			// it would on a never-hibernated DO.
 			for (const ws of ctx.getWebSockets()) {
-				const attachment = ws.deserializeAttachment() as ConnectionId | null;
+				const attachment = ws.deserializeAttachment() as Connection | null;
 				if (!attachment) continue;
 				this.core.addConnection(ws, attachment);
 			}
@@ -118,7 +118,7 @@ export class Room extends DurableObject {
 	 * parsing Request/Response objects for binary payloads.
 	 *
 	 * The `userId` and `installationId` query parameters are required: together
-	 * they form the {@link ConnectionId} stamped on the socket attachment
+	 * they form the {@link Connection} stamped on the socket attachment
 	 * for the lifetime of the connection. `userId` is what presence carries
 	 * to peers; `installationId` is the address `dispatch({ to })` routes to. No
 	 * round-trip validation: the URL stamp is the binding.
@@ -152,7 +152,7 @@ export class Room extends DurableObject {
 		// Stash the connection attachment so presence survives hibernation. The
 		// device's published action manifest arrives later via `presence_publish`
 		// and the core re-serializes the attachment when it does.
-		const attachment: ConnectionId = {
+		const attachment: Connection = {
 			userId,
 			installationId,
 			connectedAt: Date.now(),

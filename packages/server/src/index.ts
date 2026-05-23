@@ -24,7 +24,7 @@ export type {
 // Public configuration surface.
 export type {
 	AfterResponseQueue,
-	ConnectionId,
+	Connection,
 	Env,
 	ServerOptions,
 	SignUpPolicy,

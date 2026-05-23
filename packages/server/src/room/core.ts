@@ -36,7 +36,7 @@
  *
  * Backends drive `RoomCore` through six entry points:
  *
- *   - `addConnection(socket, connectionId)`    on accept
+ *   - `addConnection(socket, connection)`     on accept
  *   - `removeConnection(socket, code)`         on close
  *   - `handleMessage(socket, message)`         on inbound frame
  *   - `sync(body)` / `getDoc()`                for HTTP RPC
@@ -70,7 +70,7 @@ import * as decoding from 'lib0/decoding';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from '../constants.js';
-import type { ConnectionId } from '../types.js';
+import type { Connection } from '../types.js';
 import { RoomError, type RoomSocket, type RoomUpdateLog } from './contracts.js';
 
 // ============================================================================
@@ -171,8 +171,8 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	/** The shared Yjs document for this room. Always `gc: true`. */
 	const doc = new Y.Doc({ gc: true });
 
-	/** Open connections, mapped to their per-connection {@link ConnectionId}. */
-	const connections = new Map<RoomSocket, ConnectionId>();
+	/** Open connections, mapped to their per-connection {@link Connection}. */
+	const connections = new Map<RoomSocket, Connection>();
 
 	/**
 	 * Pending debounced presence rebroadcast, or `null` if none is armed.
@@ -441,7 +441,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		if (!checkPresencePublishFrame.Check(frame)) return;
 		const existing = connections.get(socket);
 		if (!existing) return;
-		const updated: ConnectionId = { ...existing, actions: frame.actions };
+		const updated: Connection = { ...existing, actions: frame.actions };
 		connections.set(socket, updated);
 		socket.serializeAttachment?.(updated);
 		broadcastPresence();
@@ -508,13 +508,13 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * @param socket - The accepted WebSocket. The backend is
 		 *   responsible for the runtime-specific accept (hibernation API
 		 *   or `Bun.serve` upgrade) before calling this.
-		 * @param connectionId - The connection attachment URL-stamped at
+		 * @param connection - The connection attachment URL-stamped at
 		 *   upgrade. `installationId` is the dispatch address; `userId`
 		 *   is the auth principal; `connectedAt` and `actions` are mirrored
 		 *   on the wire so receivers can render device affordances.
 		 */
-		addConnection(socket: RoomSocket, connectionId: ConnectionId): void {
-			connections.set(socket, connectionId);
+		addConnection(socket: RoomSocket, connection: Connection): void {
+			connections.set(socket, connection);
 
 			socket.send(encodeSyncStep1({ doc }));
 			socket.send(
@@ -524,7 +524,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 				} satisfies PresenceFrame),
 			);
 
-			if (countInstallationSockets(connectionId.installationId) === 1) {
+			if (countInstallationSockets(connection.installationId) === 1) {
 				cancelPendingRebroadcast();
 				broadcastPresence(socket);
 			}

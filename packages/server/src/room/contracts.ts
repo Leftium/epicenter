@@ -77,7 +77,7 @@ export type RoomUpdateLog = {
  * socket to {@link RoomCore.addConnection}.
  *
  * Per-connection state that must survive runtime quirks (the
- * `ConnectionId`) is tracked inside `RoomCore`'s own map. This contract
+ * `Connection`) is tracked inside `RoomCore`'s own map. This contract
  * carries no attachment slot, because attachment persistence is
  * backend-specific (`serializeAttachment` on Cloudflare's hibernation API,
  * `ws.data` on Bun) and the adapter owns it.
@@ -93,7 +93,7 @@ export type RoomSocket = {
 	 * Persist per-connection state across the runtime's hibernate cycle.
 	 * Cloudflare's hibernation API provides this; Bun and other backends
 	 * with in-memory connection sets leave it undefined. The core calls it
-	 * (if present) whenever the in-memory `ConnectionId` changes, so peer
+	 * (if present) whenever the in-memory `Connection` changes, so peer
 	 * state survives a DO eviction.
 	 */
 	serializeAttachment?(value: unknown): void;

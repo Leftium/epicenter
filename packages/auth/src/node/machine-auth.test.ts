@@ -168,11 +168,11 @@ function tokenSuccess(): Route {
 		});
 }
 
-function apiSessionOk(subject = 'user-1'): Route {
+function apiSessionOk(userId = 'user-1'): Route {
 	return () =>
 		jsonResponse({
-			user: { id: subject, email: `${subject}@example.com` },
-			owner: { kind: 'personal' as const, userId: subject },
+			user: { id: userId, email: `${userId}@example.com` },
+			owner: { kind: 'personal' as const, userId },
 			keyring: [...keyring],
 		});
 }
@@ -311,14 +311,14 @@ test('loginWithOob with /api/session 401 returns Err and writes no file', async 
 	expect(exists).toBe(false);
 });
 
-async function preWriteCell(filePath: string, subject = 'user-1') {
+async function preWriteCell(filePath: string, userId = 'user-1') {
 	const cell: PersistedAuth = {
 		grant: {
 			accessToken: 'access-stored',
 			refreshToken: 'refresh-stored',
 			accessTokenExpiresAt: NOW + 3_600_000,
 		},
-		owner: { kind: 'personal' as const, userId: subject },
+		owner: { kind: 'personal' as const, userId },
 		keyring: [...keyring],
 	};
 	await writeCell(filePath, cell);
@@ -349,7 +349,7 @@ test('sign-in writes the new persisted shape', async () => {
 	expect('unlock' in parsed).toBe(false);
 });
 
-test('status valid when /api/session returns 200 with same subject', async () => {
+test('status valid when /api/session returns 200 with same owner', async () => {
 	const filePath = tmpAuthPath();
 	await preWriteCell(filePath, 'user-1');
 	const { fetch } = createFetch({ apiSessionRoute: apiSessionOk('user-1') });
@@ -435,7 +435,7 @@ test('status signedOut when no file', async () => {
 	expect(data).toEqual({ status: 'signedOut' });
 });
 
-test('same-subject guard wipes cell when /api/session returns different subject', async () => {
+test('same-owner guard wipes cell when /api/session returns different owner', async () => {
 	const filePath = tmpAuthPath();
 	await preWriteCell(filePath, 'alice');
 	const { fetch } = createFetch({ apiSessionRoute: apiSessionOk('bob') });

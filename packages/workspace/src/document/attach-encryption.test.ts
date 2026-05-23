@@ -3,7 +3,7 @@
  * at every registration site (table, kv). Plaintext mode does not exist:
  * registration always activates encryption.
  *
- * Encrypted IndexedDB and subject-scoped BroadcastChannel behavior live on
+ * Encrypted IndexedDB and owner-scoped BroadcastChannel behavior live on
  * `attachLocalStorage`; see `attach-local-storage.test.ts` for those
  * round-trip tests.
  */

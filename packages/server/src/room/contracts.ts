@@ -77,7 +77,7 @@ export type RoomUpdateLog = {
  * socket to {@link RoomCore.addConnection}.
  *
  * Per-connection state that must survive runtime quirks (the
- * `installationId`) is tracked inside `RoomCore`'s own map. This contract
+ * `Connection`) is tracked inside `RoomCore`'s own map. This contract
  * carries no attachment slot, because attachment persistence is
  * backend-specific (`serializeAttachment` on Cloudflare's hibernation API,
  * `ws.data` on Bun) and the adapter owns it.
@@ -89,6 +89,14 @@ export type RoomSocket = {
 	close(code: number, reason: string): void;
 	/** WebSocket-spec readyState (CONNECTING=0, OPEN=1, CLOSING=2, CLOSED=3). */
 	readonly readyState: number;
+	/**
+	 * Persist per-connection state across the runtime's hibernate cycle.
+	 * Cloudflare's hibernation API provides this; Bun and other backends
+	 * with in-memory connection sets leave it undefined. The core calls it
+	 * (if present) whenever the in-memory `Connection` changes, so peer
+	 * state survives a DO eviction.
+	 */
+	serializeAttachment?(value: unknown): void;
 };
 
 // ============================================================================
@@ -135,9 +143,9 @@ export type ResolvedRoom = {
  * `DurableObjectNamespace`; a Bun backend wraps an in-process
  * `Map<string, RoomCore>` with lazy synchronous creation.
  *
- * The host-owned room name is built upstream by `resolveSubjectRoom` in
- * `app.ts` as `subject:<userId>:rooms:<guid>`. This contract treats the
- * name as opaque.
+ * The host-owned room name is built upstream by `doName(owner, roomId)`
+ * in `owner.ts`, e.g. `users/<userId>/rooms/<roomId>` in personal mode or
+ * `rooms/<roomId>` in team mode. This contract treats the name as opaque.
  */
 export type Rooms = {
 	/** Resolve a room by its opaque host-owned name. */

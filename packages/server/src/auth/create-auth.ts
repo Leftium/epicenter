@@ -2,13 +2,12 @@ import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { createAutumn } from '../autumn';
-import { FEATURE_IDS } from '../billing-plans';
-import * as schema from '../db/schema';
-import { TRUSTED_ORIGINS } from '../trusted-origins';
-import { BASE_AUTH_CONFIG } from './base-config';
-import { createCookieAdvancedConfig } from './cookie-config';
-import { authPlugins } from './plugins';
+import * as schema from '../db/schema/index.js';
+import { TRUSTED_ORIGINS } from '../trusted-origins.js';
+import type { SignUpPolicy } from '../types.js';
+import { BASE_AUTH_CONFIG } from './base-config.js';
+import { createCookieAdvancedConfig } from './cookie-config.js';
+import { authPlugins } from './plugins.js';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -23,8 +22,9 @@ type Db = NodePgDatabase<typeof schema>;
  * - Drizzle adapter (Postgres via Hyperdrive)
  * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
  * - Plugins: JWT (ES256), OAuth provider (PKCE)
- * - Autumn billing customer creation on user signup
+ * - Optional cleanup hook for R2 assets when a user is deleted
  * - Cloudflare KV secondary storage for session caching
+ * - {@link SignUpPolicy} gating via a Better Auth `before` hook
  *
  * `/api/session` is the single Epicenter session surface; this builder no longer
  * enriches `/auth/get-session` with encryption keys.
@@ -33,10 +33,12 @@ export function createAuth({
 	db,
 	env,
 	baseURL,
+	signUpPolicy = 'open',
 }: {
 	db: Db;
 	env: Cloudflare.Env;
 	baseURL: string;
+	signUpPolicy?: SignUpPolicy;
 }) {
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
@@ -99,13 +101,11 @@ export function createAuth({
 		databaseHooks: {
 			user: {
 				create: {
-					after: async (user) => {
-						const autumn = createAutumn(env);
-						await autumn.customers.getOrCreate({
-							customerId: user.id,
-							email: user.email,
-						});
-					},
+					// Sign-up gate. When policy is 'disabled', Better Auth aborts
+					// the create operation by returning `false`. Out-of-band
+					// provisioning (Better Auth admin API or a CLI) bypasses this
+					// hook because it operates on the adapter directly.
+					before: signUpPolicy === 'disabled' ? async () => false : undefined,
 				},
 				delete: {
 					before: async (user) => {
@@ -119,18 +119,6 @@ export function createAuth({
 							const keys = assets.map((a) => a.id);
 							await env.ASSETS_BUCKET.delete(keys);
 						}
-
-						// Zero Autumn storage balance
-						const autumn = createAutumn(env);
-						await autumn.balances
-							.update({
-								customerId: user.id,
-								featureId: FEATURE_IDS.storageBytes,
-								usage: 0,
-							})
-							.catch((e) =>
-								console.error('[user-delete] Autumn zero failed:', e),
-							);
 					},
 				},
 			},

@@ -29,14 +29,14 @@
  *
  * Presence is server-owned: the `connections` map is the source of truth.
  * On every connection change a `presence` text frame is broadcast carrying
- * the FULL install list (computed per-recipient, self excluded), so
- * clients store `devices.list()` verbatim with no delta reassembly.
+ * the FULL client list (computed per-recipient, self excluded), so clients
+ * store the list verbatim with no delta reassembly.
  *
  * ## Adapter contract
  *
  * Backends drive `RoomCore` through six entry points:
  *
- *   - `addConnection(socket, installationId)`  on accept
+ *   - `addConnection(socket, connection)`     on accept
  *   - `removeConnection(socket, code)`         on close
  *   - `handleMessage(socket, message)`         on inbound frame
  *   - `sync(body)` / `getDoc()`                for HTTP RPC
@@ -54,17 +54,24 @@ import {
 	type SyncMessageType,
 	stateVectorsEqual,
 } from '@epicenter/sync';
-import type {
-	DispatchErrorWire,
-	DispatchInboundFrame,
-	DispatchResultFrame,
+import {
+	checkDispatchRequestFrame,
+	checkDispatchResponseFrame,
+	type DispatchErrorWire,
+	type DispatchInboundFrame,
+	type DispatchResultFrame,
 } from '@epicenter/workspace/document/dispatch-protocol';
-import type { PresenceFrame } from '@epicenter/workspace/document/presence';
+import {
+	checkPresencePublishFrame,
+	type PresenceDevice,
+	type PresenceFrame,
+} from '@epicenter/workspace/document/presence';
 import * as decoding from 'lib0/decoding';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
-import { MAX_PAYLOAD_BYTES } from '../constants';
-import { RoomError, type RoomSocket, type RoomUpdateLog } from './contracts';
+import { MAX_PAYLOAD_BYTES } from '../constants.js';
+import type { Connection } from '../types.js';
+import { RoomError, type RoomSocket, type RoomUpdateLog } from './contracts.js';
 
 // ============================================================================
 // Constants
@@ -82,10 +89,10 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
 
 /**
  * Grace window before the debounced presence rebroadcast fires after the
- * last socket for an install closes.
+ * last socket for a client closes.
  *
  * A graceful tab handoff (T1 closes, T2 connects within a few hundred ms)
- * would otherwise broadcast the install as gone and then back, even though
+ * would otherwise broadcast the client as gone and then back, even though
  * it was continuously present from the user's perspective. The debounce
  * lets a reconnecting socket supersede the pending rebroadcast before
  * peers ever see the flap.
@@ -93,7 +100,7 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
  * Close-code policy: WebSocket close code 4401 (permanent auth failure)
  * bypasses the debounce and rebroadcasts immediately. There is no
  * legitimate handoff for an auth-failed socket, and forcing peers to wait
- * 300 ms to learn an install is permanently offline yields no benefit.
+ * 300 ms to learn a client is permanently offline yields no benefit.
  * All other close codes (1000, 1006, 1009, 1011, 4400, ...) respect the
  * window.
  */
@@ -110,7 +117,7 @@ const DISPATCH_INTERNAL_TIMEOUT_MS = 60_000;
 /**
  * WebSocket close code emitted by the auth layer when the connection's
  * credentials are permanently invalid. Bypasses the presence grace window:
- * peers see the install drop immediately instead of waiting 300 ms for a
+ * peers see the client drop immediately instead of waiting 300 ms for a
  * handoff that cannot happen.
  */
 const CLOSE_CODE_AUTH_FAILED = 4401;
@@ -164,12 +171,12 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	/** The shared Yjs document for this room. Always `gc: true`. */
 	const doc = new Y.Doc({ gc: true });
 
-	/** Open connections, mapped to their per-connection metadata. */
-	const connections = new Map<RoomSocket, { installationId: string }>();
+	/** Open connections, mapped to their per-connection {@link Connection}. */
+	const connections = new Map<RoomSocket, Connection>();
 
 	/**
 	 * Pending debounced presence rebroadcast, or `null` if none is armed.
-	 * Armed when the last socket for an install closes; cleared by the
+	 * Armed when the last socket for a client closes; cleared by the
 	 * timer firing (real disconnect) or by a connect superseding it
 	 * (handoff).
 	 */
@@ -216,31 +223,42 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	// ==========================================================================
 
 	/**
-	 * Deduped snapshot of currently-connected `installationId`s. Pass
-	 * `exclude` to omit the caller's own socket; if the caller's
-	 * installation still has other open sockets, those siblings are
-	 * excluded too. The result is "remote installs" from the perspective
-	 * of the receiver.
+	 * Deduped snapshot of currently-connected devices, newest-wins per
+	 * `installationId`. Pass `exclude` to omit the caller's own socket; if the
+	 * caller's install still has other open sockets (multi-tab one-install
+	 * edge case), those siblings are excluded too. The result is "remote
+	 * devices" from the perspective of the receiver, sorted by
+	 * `installationId` for deterministic output.
 	 */
-	function snapshotInstalls(exclude?: RoomSocket): string[] {
+	function snapshotDevices(exclude?: RoomSocket): PresenceDevice[] {
 		const excludeInstall = exclude
 			? connections.get(exclude)?.installationId
 			: undefined;
-		const seen = new Set<string>();
-		for (const [ws, { installationId }] of connections) {
+		const seen = new Map<string, PresenceDevice>();
+		for (const [ws, attachment] of connections) {
 			if (ws === exclude) continue;
-			if (excludeInstall && installationId === excludeInstall) continue;
-			seen.add(installationId);
+			if (excludeInstall && attachment.installationId === excludeInstall) {
+				continue;
+			}
+			const existing = seen.get(attachment.installationId);
+			if (existing && existing.connectedAt >= attachment.connectedAt) continue;
+			seen.set(attachment.installationId, {
+				installationId: attachment.installationId,
+				connectedAt: attachment.connectedAt,
+				actions: attachment.actions,
+			});
 		}
-		return Array.from(seen).sort();
+		return Array.from(seen.values()).sort((a, b) =>
+			a.installationId.localeCompare(b.installationId),
+		);
 	}
 
 	/**
-	 * Count OPEN sockets currently associated with `installationId`. Used
-	 * to detect the first socket for an install (on connect) and the last
-	 * (on close): the two events that change room membership.
+	 * Count OPEN sockets currently associated with `installationId`. Used to
+	 * detect the first socket for an install (on connect) and the last (on
+	 * close): the two events that change room membership.
 	 */
-	function countInstallSockets(installationId: string): number {
+	function countInstallationSockets(installationId: string): number {
 		let count = 0;
 		for (const [, data] of connections) {
 			if (data.installationId === installationId) count++;
@@ -262,7 +280,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 				peer.send(
 					JSON.stringify({
 						type: 'presence',
-						installs: snapshotInstalls(peer),
+						devices: snapshotDevices(peer),
 					} satisfies PresenceFrame),
 				);
 			} catch {
@@ -273,7 +291,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 
 	/**
 	 * Arm the debounced presence rebroadcast after the grace window.
-	 * Called when the last socket for an install closes. A single shared
+	 * Called when the last socket for a client closes. A single shared
 	 * timer: if one is already pending, leave it, so a burst of departures
 	 * is announced at most one grace window after the FIRST departure.
 	 * When it fires it broadcasts the then-current full list, reflecting
@@ -292,7 +310,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * connect path broadcasts the live list immediately, which supersedes
 	 * whatever the debounced timer would have sent. A graceful tab handoff
 	 * lands here (T1 closes and arms the timer, T2 connects and cancels
-	 * it), so peers never observe the install leave.
+	 * it), so peers never observe the client leave.
 	 */
 	function cancelPendingRebroadcast(): void {
 		if (!pendingRebroadcast) return;
@@ -301,9 +319,9 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	}
 
 	/**
-	 * Resolve a recipient `installationId` to the most-recently-connected
-	 * open socket, if any. `Map` iteration is insertion order, so the
-	 * LAST matching socket in a forward scan is the newest.
+	 * Resolve a recipient `installationId` to the most-recently-connected open
+	 * socket, if any. `Map` iteration is insertion order, so the LAST
+	 * matching socket in a forward scan is the newest.
 	 */
 	function pickRecipient(installationId: string): RoomSocket | null {
 		let newest: RoomSocket | null = null;
@@ -329,18 +347,9 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * back to `callerWs`. A malformed frame is dropped silently: the
 	 * caller's own ceiling settles it.
 	 */
-	function handleDispatchRequest(
-		callerWs: RoomSocket,
-		frame: Record<string, unknown>,
-	): void {
+	function handleDispatchRequest(callerWs: RoomSocket, frame: unknown): void {
+		if (!checkDispatchRequestFrame.Check(frame)) return;
 		const { id, to, action, input } = frame;
-		if (
-			typeof id !== 'string' ||
-			typeof to !== 'string' ||
-			typeof action !== 'string'
-		) {
-			return;
-		}
 
 		const recipientWs = pickRecipient(to);
 		if (!recipientWs) {
@@ -379,46 +388,22 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * caller that started the dispatch. A `dispatch_response` with no
 	 * matching pending entry is a late reply (the caller already gave up,
 	 * or the entry was lost to hibernation) and is dropped.
+	 *
+	 * The TypeBox validator guarantees `frame.result` is a well-formed
+	 * `Result<unknown, ActionResponseError>`. The relay still forwards the
+	 * error side opaquely; the caller's own validator narrows it again to
+	 * `DispatchErrorWire` (which adds `RecipientOffline` to the union).
 	 */
-	function handleDispatchResponse(
-		installationId: string,
-		frame: Record<string, unknown>,
-	): void {
-		const id = typeof frame.id === 'string' ? frame.id : null;
-		if (!id) return;
+	function handleDispatchResponse(frame: unknown): void {
+		if (!checkDispatchResponseFrame.Check(frame)) return;
 
-		const pending = pendingDispatches.get(id);
+		const pending = pendingDispatches.get(frame.id);
 		if (!pending) return;
 
 		clearTimeout(pending.timeout);
-		pendingDispatches.delete(id);
+		pendingDispatches.delete(frame.id);
 
-		const result = frame.result;
-		const isResult =
-			typeof result === 'object' &&
-			result !== null &&
-			'data' in result &&
-			'error' in result;
-		if (!isResult) {
-			// Recipient sent a non-`Result` payload; treat it as offline so
-			// the caller gets a usable `Result` instead of waiting for its
-			// ceiling.
-			sendDispatchResult(
-				pending.callerWs,
-				id,
-				recipientOffline(installationId),
-			);
-			return;
-		}
-
-		// The relay forwards the recipient's reply opaquely: it never
-		// inspects the error side. The caller validates errors against
-		// `DispatchErrorWire`.
-		sendDispatchResult(
-			pending.callerWs,
-			id,
-			result as Result<unknown, unknown>,
-		);
+		sendDispatchResult(pending.callerWs, frame.id, frame.result);
 	}
 
 	/**
@@ -445,19 +430,35 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	}
 
 	/**
-	 * Route a client -> relay text frame. Valid types are
-	 * `dispatch_request` (a caller starting a dispatch) and
-	 * `dispatch_response` (a recipient answering one). Unparseable JSON
-	 * or an unknown frame type is a genuine protocol desync and closes
-	 * the socket with `4400 protocol-error`; a recognized frame with
-	 * malformed fields is dropped without closing, because one bad
-	 * dispatch frame must not tear down sync and presence.
+	 * Device -> relay: publish this socket's action manifest. The relay stores
+	 * the manifest against the connection attachment, persists it via
+	 * `serializeAttachment` when the runtime supports hibernation, and
+	 * rebroadcasts presence so peers see the update. A malformed payload is
+	 * dropped silently: the relay never trusts client input but never tears
+	 * down a sync socket for one bad manifest publish either.
 	 */
-	function handleTextFrame(
-		ws: RoomSocket,
-		installationId: string,
-		message: string,
-	): void {
+	function handlePresencePublish(socket: RoomSocket, frame: unknown): void {
+		if (!checkPresencePublishFrame.Check(frame)) return;
+		const existing = connections.get(socket);
+		if (!existing) return;
+		const updated: Connection = { ...existing, actions: frame.actions };
+		connections.set(socket, updated);
+		socket.serializeAttachment?.(updated);
+		broadcastPresence();
+	}
+
+	/**
+	 * Route a client -> relay text frame. Recognized types are `dispatch_request`,
+	 * `dispatch_response`, and `presence_publish`. The TypeBox-compiled validator
+	 * inside each handler narrows the frame; this dispatcher only owns the
+	 * `type` switch and the protocol-error close path.
+	 *
+	 * Unparseable JSON or an unknown frame type is a genuine protocol desync and
+	 * closes the socket with `4400 protocol-error`. A recognized frame with
+	 * malformed fields is dropped without closing, because one bad text frame
+	 * must not tear down sync and presence.
+	 */
+	function handleTextFrame(ws: RoomSocket, message: string): void {
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(message);
@@ -466,23 +467,20 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			return;
 		}
 
-		if (
-			!parsed ||
-			typeof parsed !== 'object' ||
-			!('type' in parsed) ||
-			typeof (parsed as { type: unknown }).type !== 'string'
-		) {
-			ws.close(4400, 'protocol-error');
-			return;
-		}
+		const type =
+			parsed && typeof parsed === 'object' && 'type' in parsed
+				? (parsed as { type: unknown }).type
+				: undefined;
 
-		const frame = parsed as { type: string } & Record<string, unknown>;
-		switch (frame.type) {
+		switch (type) {
 			case 'dispatch_request':
-				handleDispatchRequest(ws, frame);
+				handleDispatchRequest(ws, parsed);
 				return;
 			case 'dispatch_response':
-				handleDispatchResponse(installationId, frame);
+				handleDispatchResponse(parsed);
+				return;
+			case 'presence_publish':
+				handlePresencePublish(ws, parsed);
 				return;
 			default:
 				ws.close(4400, 'protocol-error');
@@ -498,11 +496,11 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * Register a newly-accepted socket and run the connect-time
 		 * presence flow.
 		 *
-		 * Sends the new socket its initial Yjs `SyncStep1` and an install
-		 * snapshot (the receiver's "remote installs"). If this is the
-		 * FIRST socket for `installationId`, room membership changed, so
-		 * peers are rebroadcast the live list. Subsequent tabs of the
-		 * same install leave the list unchanged and need no rebroadcast.
+		 * Sends the new socket its initial Yjs `SyncStep1` and a device
+		 * snapshot (the receiver's "remote devices"). If this is the FIRST
+		 * socket for `installationId`, room membership changed, so peers are
+		 * rebroadcast the live list. Subsequent tabs of the same install
+		 * leave the list unchanged and need no rebroadcast.
 		 *
 		 * A connect supersedes any pending debounced rebroadcast (the
 		 * graceful tab handoff case).
@@ -510,22 +508,23 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * @param socket - The accepted WebSocket. The backend is
 		 *   responsible for the runtime-specific accept (hibernation API
 		 *   or `Bun.serve` upgrade) before calling this.
-		 * @param installationId - URL-stamped at upgrade; the address used
-		 *   by dispatch and the only identity the relay carries for a
-		 *   socket.
+		 * @param connection - The connection attachment URL-stamped at
+		 *   upgrade. `installationId` is the dispatch address; `userId`
+		 *   is the auth principal; `connectedAt` and `actions` are mirrored
+		 *   on the wire so receivers can render device affordances.
 		 */
-		addConnection(socket: RoomSocket, installationId: string): void {
-			connections.set(socket, { installationId });
+		addConnection(socket: RoomSocket, connection: Connection): void {
+			connections.set(socket, connection);
 
 			socket.send(encodeSyncStep1({ doc }));
 			socket.send(
 				JSON.stringify({
 					type: 'presence',
-					installs: snapshotInstalls(socket),
+					devices: snapshotDevices(socket),
 				} satisfies PresenceFrame),
 			);
 
-			if (countInstallSockets(installationId) === 1) {
+			if (countInstallationSockets(connection.installationId) === 1) {
 				cancelPendingRebroadcast();
 				broadcastPresence(socket);
 			}
@@ -538,7 +537,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 *   recipient answers the caller `RecipientOffline`; a closed
 		 *   caller just drops the entry (nobody to answer).
 		 * - Removes the socket from `connections`.
-		 * - If this was the LAST socket for the install, schedules the
+		 * - If this was the LAST socket for the client, schedules the
 		 *   debounced presence rebroadcast (or fires it immediately on
 		 *   close code 4401, permanent auth failure).
 		 *
@@ -567,7 +566,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 
 			connections.delete(socket);
 
-			if (countInstallSockets(data.installationId) === 0) {
+			if (countInstallationSockets(data.installationId) === 0) {
 				if (code === CLOSE_CODE_AUTH_FAILED) {
 					cancelPendingRebroadcast();
 					broadcastPresence();
@@ -601,7 +600,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			}
 
 			if (typeof message === 'string') {
-				handleTextFrame(socket, data.installationId, message);
+				handleTextFrame(socket, message);
 				return;
 			}
 

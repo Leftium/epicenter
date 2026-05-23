@@ -10,7 +10,7 @@
 
 import { expect, test } from 'bun:test';
 import { Hono } from 'hono';
-import { requireOriginForCookieMutations } from './csrf.js';
+import { requireOriginForCookieMutations } from './require-origin-for-cookie-mutations.js';
 
 const PORTAL_ORIGIN = 'http://localhost:5178';
 

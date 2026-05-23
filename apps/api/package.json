@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./src/app.ts",
+		".": "./src/index.ts",
 		"./billing-contract": "./src/billing-contract.ts",
 		"./billing-plans": "./src/billing-plans.ts"
 	},
@@ -31,6 +31,7 @@
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/encryption": "workspace:*",
+		"@epicenter/server": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@hono/standard-validator": "catalog:",

@@ -30,8 +30,9 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';
-import { createRoomCore, type RoomCore } from '../../core';
-import { createDurableObjectUpdateLog } from './update-log';
+import type { Connection } from '../../../types.js';
+import { createRoomCore, type RoomCore } from '../../core.js';
+import { createDurableObjectUpdateLog } from './update-log.js';
 
 /** Delay before alarm-based compaction fires (30 seconds). */
 const COMPACTION_DELAY_MS = 30_000;
@@ -53,11 +54,12 @@ const COMPACTION_DELAY_MS = 30_000;
  *
  * ## Auth & data isolation
  *
- * Handled upstream by Hono routes in `app.ts`. The Worker validates the
- * caller, checks any route-owned policy, and builds the internal DO name
- * before calling RPC methods or forwarding `fetch`. The DO itself does
- * not re-validate. DO names are host-owned opaque strings of the form
- * `subject:{user.id}:rooms:{room}`.
+ * Handled upstream by Hono routes in `@epicenter/server`. The Worker
+ * validates the caller, checks any route-owned policy, and builds the
+ * internal DO name before calling RPC methods or forwarding `fetch`. The
+ * DO itself does not re-validate. DO names are host-owned opaque strings
+ * built by `doName(owner, roomId)`: `users/<userId>/rooms/<roomId>` in
+ * personal mode, `rooms/<roomId>` in team mode.
  */
 export class Room extends DurableObject {
 	/**
@@ -80,7 +82,7 @@ export class Room extends DurableObject {
 	 */
 	private core!: RoomCore;
 
-	constructor(ctx: DurableObjectState, env: Env) {
+	constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
 		super(ctx, env);
 
 		ctx.setWebSocketAutoResponse(
@@ -102,11 +104,9 @@ export class Room extends DurableObject {
 			// upgrade or close drives the next presence delta the same way
 			// it would on a never-hibernated DO.
 			for (const ws of ctx.getWebSockets()) {
-				const attachment = ws.deserializeAttachment() as {
-					installationId: string;
-				} | null;
+				const attachment = ws.deserializeAttachment() as Connection | null;
 				if (!attachment) continue;
-				this.core.addConnection(ws, attachment.installationId);
+				this.core.addConnection(ws, attachment);
 			}
 		});
 	}
@@ -117,9 +117,10 @@ export class Room extends DurableObject {
 	 * / {@link Room.getDoc}), avoiding the overhead of constructing and
 	 * parsing Request/Response objects for binary payloads.
 	 *
-	 * The `installationId` query parameter is required: it is the
-	 * address used by `dispatch({ to })` and the value the relay stamps
-	 * on the socket attachment for the lifetime of the connection. No
+	 * The `userId` and `installationId` query parameters are required: together
+	 * they form the {@link Connection} stamped on the socket attachment
+	 * for the lifetime of the connection. `userId` is what presence carries
+	 * to peers; `installationId` is the address `dispatch({ to })` routes to. No
 	 * round-trip validation: the URL stamp is the binding.
 	 *
 	 * Cancels any pending compaction alarm: a new client just connected,
@@ -135,9 +136,10 @@ export class Room extends DurableObject {
 		}
 
 		const url = new URL(request.url);
+		const userId = url.searchParams.get('userId');
 		const installationId = url.searchParams.get('installationId');
-		if (!installationId) {
-			return new Response('missing installationId', { status: 400 });
+		if (!userId || !installationId) {
+			return new Response('missing userId or installationId', { status: 400 });
 		}
 
 		void this.ctx.storage.deleteAlarm();
@@ -147,13 +149,21 @@ export class Room extends DurableObject {
 
 		this.ctx.acceptWebSocket(server);
 
-		// Stash installationId so it survives hibernation.
-		server.serializeAttachment({ installationId });
+		// Stash the connection attachment so presence survives hibernation. The
+		// device's published action manifest arrives later via `presence_publish`
+		// and the core re-serializes the attachment when it does.
+		const attachment: Connection = {
+			userId,
+			installationId,
+			connectedAt: Date.now(),
+			actions: {},
+		};
+		server.serializeAttachment(attachment);
 
 		// Register with the core. addConnection sends the initial
 		// SyncStep1 and presence snapshot, and rebroadcasts presence to
-		// peers if this is the first socket for the install.
-		this.core.addConnection(server, installationId);
+		// peers if this is the first socket for the client.
+		this.core.addConnection(server, attachment);
 
 		const responseHeaders = new Headers();
 		const offered = parseSubprotocols(

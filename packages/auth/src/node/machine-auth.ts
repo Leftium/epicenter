@@ -257,9 +257,9 @@ export async function loginWithOob({
 	const launcher = createOobOAuthLauncher({
 		baseURL,
 		clientId,
-		redirectUri: redirectUri ?? `${baseURL}/auth/cli-callback`,
 		fetch,
 		now,
+		...(redirectUri ? { redirectUri } : {}),
 		...(print ? { print } : {}),
 		...(openBrowser ? { openBrowser } : {}),
 		...(readCode ? { readCode } : {}),

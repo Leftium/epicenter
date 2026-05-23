@@ -9,7 +9,7 @@
 		"./billing-contract": "./src/billing-contract.ts",
 		"./billing-plans": "./src/billing-plans.ts"
 	},
-	"license": "AGPL-3.0",
+	"license": "AGPL-3.0-or-later",
 	"scripts": {
 		"test": "bun test",
 		"typecheck": "tsc --noEmit",
@@ -36,7 +36,6 @@
 		"@epicenter/workspace": "workspace:*",
 		"@hono/standard-validator": "catalog:",
 		"@tanstack/ai": "catalog:",
-		"@tanstack/ai-anthropic": "catalog:",
 		"@tanstack/ai-openai": "catalog:",
 		"@tanstack/ai-gemini": "catalog:",
 		"@tanstack/ai-grok": "catalog:",

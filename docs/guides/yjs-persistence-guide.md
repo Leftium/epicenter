@@ -17,7 +17,7 @@ YJS is a **CRDT (Conflict-free Replicated Data Type)** library. In Epicenter, YJ
 
 ## Current sync model
 
-The example below uses cloud sync: the client builds the URL with `roomWsUrl({ baseURL, owner, guid, clientId })` and the server resolves the room from the auth token.
+The example below uses cloud sync: the client builds the URL with `roomWsUrl({ baseURL, owner, guid, installationId })` and the server resolves the room from the auth token.
 
 Each app composes its workspace in a single builder:
 
@@ -36,7 +36,7 @@ const app = defineDocument((id: string) => {
 	const tables = attachTables(ydoc, appTables);
 	const idb = attachIndexedDb(ydoc);                          // local persistence
 	const collaboration = openCollaboration(ydoc, {              // sync + presence + dispatch
-		url: roomWsUrl({ baseURL: auth.baseURL, owner, guid: ydoc.guid, clientId }),
+		url: roomWsUrl({ baseURL: auth.baseURL, owner, guid: ydoc.guid, installationId }),
 		openWebSocket: auth.openWebSocket,
 		onReconnectSignal: auth.onStateChange,
 		waitFor: idb.whenLoaded,                                   // delta-only on reconnect

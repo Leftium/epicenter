@@ -65,7 +65,7 @@ export const session = createSession({
 	build: (signedIn: SignedIn) =>
 		openMyApp({
 			signedIn,
-			clientId: createInstallationId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 		}),
 });
 ```
@@ -73,7 +73,7 @@ export const session = createSession({
 
 Same-subject identity updates do not remount the workspace. Auth callbacks read `auth.state` at the boundary that asks for them: sync can see refreshed bearer tokens on connection attempts, encrypted-store registrations re-derive on each new `attachTable` / `attachKv` call, and `attachLocalStorage`'s IDB writes pick up rotated keys on the next persisted update. Already-attached encrypted tables and KVs keep the keyring they derived when they were attached.
 
-Daemon-side openers receive the same shape via `DaemonWorkspaceContext`: `{ projectDir, route, yDocClientId, clientId, owner, keyring: () => SubjectKeyring, openWebSocket, onReconnectSignal }`. The host's `keyring` closure throws when auth is signed-out, so a late sign-out becomes a thrown error at the next encrypted-write or registration site rather than silent ciphertext loss. The `openWebSocket` and `onReconnectSignal` refs flow through to `attachDaemonInfrastructure({ openWebSocket, onReconnectSignal })` for cloud sync.
+Daemon-side openers receive the same shape via `DaemonWorkspaceContext`: `{ projectDir, route, yDocClientId, installationId, owner, keyring: () => SubjectKeyring, openWebSocket, onReconnectSignal }`. The host's `keyring` closure throws when auth is signed-out, so a late sign-out becomes a thrown error at the next encrypted-write or registration site rather than silent ciphertext loss. The `openWebSocket` and `onReconnectSignal` refs flow through to `attachDaemonInfrastructure({ openWebSocket, onReconnectSignal })` for cloud sync.
 
 ## Browser local persistence
 Authenticated browser workspaces open local IndexedDB only after auth has settled into an identity-bearing state. The session module guarantees that boundary: it builds the workspace lazily once auth produces a `SignedIn` payload and disposes it on sign-out.
@@ -86,10 +86,10 @@ The browser factory shape is (from `apps/fuji/src/lib/browser.ts`):
 ```ts
 export function openFujiBrowser({
 	signedIn,
-	clientId,
+	installationId,
 }: {
 	signedIn: SignedIn;
-	clientId: string;
+	installationId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -106,7 +106,7 @@ export function openFujiBrowser({
 			baseURL: signedIn.auth.baseURL,
 			owner: signedIn.owner,
 			guid: ydoc.guid,
-			clientId,
+			installationId,
 		}),
 		openWebSocket: signedIn.auth.openWebSocket,
 		onReconnectSignal: signedIn.auth.onStateChange,
@@ -146,7 +146,7 @@ export const session = createSession({
 	build: (signedIn: SignedIn) =>
 		openFujiBrowser({
 			signedIn,
-			clientId: createInstallationId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 		}),
 });
 ```

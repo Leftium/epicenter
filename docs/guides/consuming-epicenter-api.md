@@ -23,7 +23,7 @@ On the client, `@epicenter/workspace` exposes the primitives directly: define yo
 
 ## Minimal cloud workspace shape
 
-This snippet shows a signed-in cloud workspace. The client builds the sync URL with `roomWsUrl({ baseURL, owner, guid, clientId })`; the server resolves the room from the auth token, so the client never names a workspaceId.
+This snippet shows a signed-in cloud workspace. The client builds the sync URL with `roomWsUrl({ baseURL, owner, guid, installationId })`; the server resolves the room from the auth token, so the client never names a workspaceId.
 
 The per-app browser opener is the single source of truth for "how this app mounts in a browser." Every `attach*` call is visible top-to-bottom, with no factory hiding the order.
 
@@ -56,10 +56,10 @@ const myAppTables = {
 
 export function openMyAppBrowser({
 	signedIn,
-	clientId,
+	installationId,
 }: {
 	signedIn: SignedIn;
-	clientId: string;
+	installationId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: MY_APP_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -81,7 +81,7 @@ export function openMyAppBrowser({
 			baseURL: signedIn.auth.baseURL,
 			owner: signedIn.owner,
 			guid: ydoc.guid,
-			clientId,
+			installationId,
 		}),
 		openWebSocket: signedIn.auth.openWebSocket,
 		onReconnectSignal: signedIn.auth.onStateChange,
@@ -115,7 +115,7 @@ export const session = createSession({
 	build: (signedIn) => {
 		const workspace = openMyAppBrowser({
 			signedIn,
-			clientId: createInstallationId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 		});
 		return {
 			...workspace,

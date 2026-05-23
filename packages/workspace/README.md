@@ -138,10 +138,10 @@ import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
 	signedIn,
-	clientId,
+	installationId,
 }: {
 	signedIn: SignedIn;
-	clientId: string;
+	installationId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: true });
 
@@ -160,7 +160,7 @@ export function openApp({
 			baseURL: signedIn.auth.baseURL,
 			owner: signedIn.owner,
 			guid: ydoc.guid,
-			clientId,
+			installationId,
 		}),
 		waitFor: idb.whenLoaded,
 		openWebSocket: signedIn.auth.openWebSocket,
@@ -197,16 +197,16 @@ export const session = createSession({
 	build: ({ signedIn }) =>
 		openApp({
 			signedIn,
-			clientId: createInstallationId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 		}),
 });
 ```
 
 `attachLocalStorage(ydoc, { server, owner, keyring })` pairs the encrypted IndexedDB store with an owner-scoped BroadcastChannel: two tabs of the same owner share both persisted state and live updates, while two different owners on the same browser profile never see each other's data. On sign-out, call `wipeLocalStorage({ server, owner })` to delete every owner-scoped local database.
 
-`openCollaboration` is the workspace primitive: it wraps the sync supervisor, mirrors the relay's server-owned presence channel as `collaboration.devices`, and runs inbound dispatch frames against the local action registry. Find an online install with `workspace.collaboration.devices.list().find((d) => d.installationId === clientId)`, then call it with `workspace.collaboration.dispatch(...)`. Content documents use the same primitive with `actions: {}`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
+`openCollaboration` is the workspace primitive: it wraps the sync supervisor, mirrors the relay's server-owned presence channel as `collaboration.devices`, and runs inbound dispatch frames against the local action registry. Find an online install with `workspace.collaboration.devices.list().find((d) => d.installationId === installationId)`, then call it with `workspace.collaboration.dispatch(...)`. Content documents use the same primitive with `actions: {}`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
-The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync targets `/api/users/:userId/rooms/:roomId` (personal) or `/api/rooms/:roomId` (team): build the URL with `roomWsUrl({ baseURL, owner, guid: ydoc.guid, clientId })`. A cloud doc is owned by the authenticated `owner`, so the server resolves the DO name `users/${userId}/rooms/${room}` (personal) or `rooms/${room}` (team) from the auth token, with no workspace lookup.
+The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync targets `/api/users/:userId/rooms/:roomId` (personal) or `/api/rooms/:roomId` (team): build the URL with `roomWsUrl({ baseURL, owner, guid: ydoc.guid, installationId })`. A cloud doc is owned by the authenticated `owner`, so the server resolves the DO name `users/${userId}/rooms/${room}` (personal) or `rooms/${room}` (team) from the auth token, with no workspace lookup.
 
 For production-shaped browser wiring, see `apps/fuji/src/lib/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.ts`.
 
@@ -880,13 +880,13 @@ function openTabs({
 	const tables = attachTables(ydoc, { tabs });
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
-	const clientId = createInstallationId({ storage: localStorage });
+	const installationId = createInstallationId({ storage: localStorage });
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
 			baseURL: 'https://api.epicenter.so',
 			owner,
 			guid: ydoc.guid,
-			clientId,
+			installationId,
 		}),
 		waitFor: idb.whenLoaded,
 		openWebSocket,

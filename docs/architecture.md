@@ -94,7 +94,7 @@ The split is conceptual, not cosmetic. Definitions describe what data means; the
 ### 3. Extend means adding more `attach*` calls
 There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + dispatch) mounts through the `openCollaboration` primitive. You add them to the builder alongside tables and KV.
 
-The example below syncs a cloud document. A cloud doc is owned by the authenticated `owner` and addressed by its own `ydoc.guid`, so the client builds the URL with `roomWsUrl({ baseURL, owner, guid: ydoc.guid, clientId })`; the server resolves it to the DO name `users/${userId}/rooms/${room}` (personal) or `rooms/${room}` (team). There is no workspace lookup and no membership check: ownership is identity.
+The example below syncs a cloud document. A cloud doc is owned by the authenticated `owner` and addressed by its own `ydoc.guid`, so the client builds the URL with `roomWsUrl({ baseURL, owner, guid: ydoc.guid, installationId })`; the server resolves it to the DO name `users/${userId}/rooms/${room}` (personal) or `rooms/${room}` (team). There is no workspace lookup and no membership check: ownership is identity.
 
 ```ts
 import * as Y from 'yjs';
@@ -117,7 +117,7 @@ const app = defineDocument((id: string) => {
 			baseURL: auth.baseURL,
 			owner,
 			guid: ydoc.guid,
-			clientId,
+			installationId,
 		}),
 		openWebSocket: auth.openWebSocket,
 		onReconnectSignal: auth.onStateChange,
@@ -245,7 +245,7 @@ const opensidian = defineDocument((id: string) => {
 			baseURL: auth.baseURL,
 			owner,
 			guid: ydoc.guid,
-			clientId,
+			installationId,
 		}),
 		openWebSocket: auth.openWebSocket,
 		onReconnectSignal: auth.onStateChange,

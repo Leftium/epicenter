@@ -194,6 +194,76 @@ STEP 2: [Step name]
 
 ```
 
+### Catalogs (when introducing a primitive set)
+
+When the spec introduces a coherent set of new primitives (column types, action variants, error kinds, modifier methods, etc.), present them as a **catalog**: a compact code block that lists every primitive with a one-line annotation, followed by detail sections only for the ones that need elaboration.
+
+Catalogs let a reader scan the entire surface in one glance before diving into any single primitive.
+
+````markdown
+## The 8-column catalog
+
+```ts
+column.id<TBrand?>(s?)          // TEXT PRIMARY KEY, auto nanoid on insert
+column.string<TBrand?>(s?)      // TEXT (TBrand for branded strings)
+column.number(s?)               // REAL
+column.integer(s?)              // INTEGER (covers ms-epoch timestamps)
+column.boolean()                // INTEGER 0/1
+column.enum([...])              // TEXT + CHECK constraint
+column.json<T extends JsonValue>(s?)  // TEXT JSON-encoded
+column.timestamp()              // sugar for column.string(type("string.date.iso"))
+```
+
+Every primitive justified by N+ existing call sites in the audit.
+
+### What was considered and rejected
+
+| Candidate | Why rejected |
+|---|---|
+| `column.array(of)` | Subsumed by `column.json<T>(s?)` |
+| `column.literal(value)` | Only useful for `_v` markers, which become auto |
+````
+
+A "rejected candidates" table is often as useful as the catalog itself: it shows the implementer what *not* to add, and why. The reader gains confidence that the surface is tight.
+
+### Call Sites (before/after on real code)
+
+When the spec changes a consumer-facing API, show **at least 2-3 real call sites translated**, not invented examples. Real code surfaces semantic shifts the abstract proposal misses.
+
+Find actual usages in the codebase first. Show the verbatim "Before" with file:line, then the "After" translation. Annotate any non-obvious mapping with a brief comment.
+
+````markdown
+## Call sites: before and after
+
+### honeycrisp notes table
+
+**Before** (`apps/honeycrisp/src/lib/workspace.ts:78`):
+
+```ts
+const notesTable = defineTable(
+  type({ id: NoteId, title: 'string', _v: '1' }),
+  type({ id: NoteId, title: 'string', wordCount: 'number | undefined', _v: '2' }),
+).migrate(...)
+```
+
+**After**:
+
+```ts
+const notesTable = defineTable(
+  { id: column.id<'NoteId'>(), title: column.string() },
+  {
+    id: column.id<'NoteId'>(),
+    title: column.string(),
+    wordCount: column.number().nullable(),
+  },
+).migrate(...)
+```
+
+**Semantic shift to flag**: rows previously stored with `wordCount` key absent will now read as `null` instead of `undefined`. Affects app code doing `if (row.wordCount === undefined)`.
+````
+
+The "semantic shift to flag" callouts are critical: they're what the implementer needs to grep for and codemod across the codebase.
+
 ### Implementation Plan
 
 Break into phases. Use checkboxes for tracking. Phase 1 should be detailed; later phases can be rougher (the implementer will flesh them out).
@@ -357,7 +427,9 @@ If your spec is too prescriptive, the agent will blindly follow it. If it's too 
 - [ ] Design decisions have classes
 - [ ] Class 1 decisions were verified
 - [ ] Class 3 keeps are logged with `Revisit when:`
+- [ ] Catalogs (when introducing a primitive set: code block + rejected candidates table)
 - [ ] Architecture (ASCII diagrams)
+- [ ] Call Sites (before/after on 2-3 real usages with file:line)
 - [ ] Implementation Plan (phased checkboxes)
 - [ ] Edge Cases
 - [ ] Open Questions (with recommendations)
